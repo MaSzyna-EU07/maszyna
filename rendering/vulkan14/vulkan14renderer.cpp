@@ -113,6 +113,21 @@ bool vulkan14_renderer::context::create_frames(std::uint32_t const Count, std::s
 		}
 	}
 
+	// the async compute: a family of its own for the passes of the sky and the weather, the frames it's done with counted apart
+	async_compute = Global.gfx_vulkan_asynccompute && device.families().dedicated_compute && (device.families().compute != vk14::queue_families::invalid) && (device.compute_queue() != VK_NULL_HANDLE);
+	if (async_compute)
+	{
+		if (!VK14_VERIFY(vkCreateSemaphore(handle, &semaphoreinfo, nullptr, &compute_timeline)))
+		{
+			compute_timeline = VK_NULL_HANDLE;
+			async_compute = false;
+		}
+		else
+		{
+			instance.set_object_name(handle, VK_OBJECT_TYPE_SEMAPHORE, reinterpret_cast<std::uint64_t>(compute_timeline), "compute timeline");
+		}
+	}
+
 	frames.resize(Count);
 	for (std::uint32_t i = 0; i < Count; ++i)
 	{
@@ -136,6 +151,22 @@ bool vulkan14_renderer::context::create_frames(std::uint32_t const Count, std::s
 			return false;
 		}
 		instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].uploads), "uploads " + std::to_string(i));
+		frames[i].compute_stream.set_compute_queue(true);
+		if (async_compute)
+		{
+			poolinfo.queueFamilyIndex = device.families().compute;
+			bufferinfo.commandPool = VK_NULL_HANDLE;
+			if (VK14_VERIFY(vkCreateCommandPool(handle, &poolinfo, nullptr, &frames[i].compute_pool)))
+			{
+				bufferinfo.commandPool = frames[i].compute_pool;
+			}
+			if ((bufferinfo.commandPool == VK_NULL_HANDLE) || !VK14_VERIFY(vkAllocateCommandBuffers(handle, &bufferinfo, &frames[i].compute_buffer)))
+			{
+				Reason = "no command buffer of the compute queue";
+				return false;
+			}
+			instance.set_object_name(handle, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<std::uint64_t>(frames[i].compute_buffer), "async compute " + std::to_string(i));
+		}
 	}
 	if (Global.gfx_vulkan_renderthread)
 	{
@@ -144,7 +175,7 @@ bool vulkan14_renderer::context::create_frames(std::uint32_t const Count, std::s
 	return true;
 }
 
-bool vulkan14_renderer::context::record(frame &Frame, bool const Uploads)
+bool vulkan14_renderer::context::record(frame &Frame, bool const Uploads, bool const Compute)
 {
 	auto const handle{device.handle()};
 	auto const start{std::chrono::steady_clock::now()};
@@ -158,6 +189,13 @@ bool vulkan14_renderer::context::record(frame &Frame, bool const Uploads)
 		VK14_VERIFY(vkBeginCommandBuffer(Frame.uploads, &begin));
 		Frame.upload_stream.replay(Frame.uploads);
 		VK14_VERIFY(vkEndCommandBuffer(Frame.uploads));
+	}
+	if (Compute)
+	{
+		Frame.compute_stream.finish();
+		VK14_VERIFY(vkBeginCommandBuffer(Frame.compute_buffer, &begin));
+		Frame.compute_stream.replay(Frame.compute_buffer);
+		VK14_VERIFY(vkEndCommandBuffer(Frame.compute_buffer));
 	}
 	// the chunks split evenly between the workers, each with a command pool of its own (a pool is used by one thread at a time);
 	// which worker records a chunk doesn't matter: each chunk has a command buffer of its own, they go to the queue in their order
@@ -233,10 +271,40 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 	{
 		main->latency_marker(Job.present_id, VK_LATENCY_MARKER_RENDERSUBMIT_START_NV);
 	}
-	if (false == record(frame, Job.uploaded))
+	if (false == record(frame, Job.uploaded, Job.async))
 	{
 		Failure = "recording a frame";
 		return false;
+	}
+	if (Job.async)
+	{
+		// the passes of the compute queue, once the graphics queue is done with the frame before, which read what they write
+		VkSemaphoreSubmitInfo wait{};
+		wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		wait.semaphore = timeline;
+		wait.value = Job.value - 1;
+		wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		VkSemaphoreSubmitInfo signal{};
+		signal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		signal.semaphore = compute_timeline;
+		signal.value = Job.value;
+		signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		VkCommandBufferSubmitInfo buffer{};
+		buffer.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+		buffer.commandBuffer = frame.compute_buffer;
+		VkSubmitInfo2 compute{};
+		compute.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+		compute.waitSemaphoreInfoCount = (Job.value > 1 ? 1 : 0);
+		compute.pWaitSemaphoreInfos = &wait;
+		compute.commandBufferInfoCount = 1;
+		compute.pCommandBufferInfos = &buffer;
+		compute.signalSemaphoreInfoCount = 1;
+		compute.pSignalSemaphoreInfos = &signal;
+		if (!VK14_VERIFY(vkQueueSubmit2(device.compute_queue(), 1, &compute, VK_NULL_HANDLE)))
+		{
+			Failure = "submitting the async compute of a frame";
+			return false;
+		}
 	}
 	// the uploads first, in the same submit: their barriers make them done before the frame uses what they copied
 	std::vector<VkCommandBufferSubmitInfo> commands;
@@ -255,22 +323,43 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 		info.commandBuffer = chunk;
 		commands.push_back(info);
 	}
-	VkSubmitInfo2 submit{};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
 	VkLatencySubmissionPresentIdNV latency{};
 	latency.sType = VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV;
 	latency.presentID = Job.present_id;
+	// with the async compute in two submits: the part before the split goes on at the same time as the compute queue, the rest waits
+	// for it. the waits for the images of the windows and the signals go with the rest, which draws them
+	std::array<VkSubmitInfo2, 2> submits{};
+	std::uint32_t count{0};
+	auto first{commands.size()};
+	std::vector<VkSemaphoreSubmitInfo> waits;
+	if (Job.async)
+	{
+		first = (Job.uploaded ? 1 : 0) + std::min(frame.commands.split_chunk(), frame.chunks.size());
+		auto &before{submits[count++]};
+		before.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+		before.commandBufferInfoCount = static_cast<std::uint32_t>(first);
+		before.pCommandBufferInfos = commands.data();
+		VkSemaphoreSubmitInfo compute{};
+		compute.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		compute.semaphore = compute_timeline;
+		compute.value = Job.value;
+		compute.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		waits.push_back(compute);
+	}
+	waits.insert(waits.end(), Job.waits.begin(), Job.waits.end());
+	auto &submit{submits[count++]};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
 	if (lowlatency)
 	{
 		submit.pNext = &latency;
 	}
-	submit.waitSemaphoreInfoCount = static_cast<std::uint32_t>(Job.waits.size());
-	submit.pWaitSemaphoreInfos = Job.waits.data();
-	submit.commandBufferInfoCount = static_cast<std::uint32_t>(commands.size());
-	submit.pCommandBufferInfos = commands.data();
+	submit.waitSemaphoreInfoCount = static_cast<std::uint32_t>(waits.size());
+	submit.pWaitSemaphoreInfos = waits.data();
+	submit.commandBufferInfoCount = static_cast<std::uint32_t>(commands.size() - (Job.async ? first : 0));
+	submit.pCommandBufferInfos = commands.data() + (Job.async ? first : 0);
 	submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(Job.signals.size());
 	submit.pSignalSemaphoreInfos = Job.signals.data();
-	if (!VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), 1, &submit, VK_NULL_HANDLE)))
+	if (!VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), count, submits.data(), VK_NULL_HANDLE)))
 	{
 		Failure = "submitting a frame";
 		return false;
@@ -505,14 +594,23 @@ bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::st
 	{
 		return false;
 	}
+	if (async_compute)
+	{
+		// what the passes of the compute queue read and write is shared by the two families
+		memory.share_between(device.families().graphics, device.families().compute);
+	}
 	uploads.init(memory, deletions, device.physical());
+	// the textures of the background threads filled by the host, where the device can do it to the layout they're sampled in
+	uploads.enable_host_copy(device.caps().host_image_copy && device.caps().host_copy_sampled);
 	if (false == sampling.create(device, static_cast<float>(Global.AnisotropicFiltering), Reason, lod_bias))
 	{
 		return false;
 	}
 	auto const &limits{device.caps().limits};
 	(void)limits;
-	if (false == ring.create(memory, ring_size, Frames, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "frame ring", ring_tail))
+	// the blocks of the frame are read by the passes of the compute queue too (the async compute)
+	auto const ringusage{VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT};
+	if (false == ring.create(memory, ring_size, Frames, ringusage, "frame ring", ring_tail, true))
 	{
 		Reason = "no ring for the data of the frames";
 		return false;
@@ -529,6 +627,7 @@ bool vulkan14_renderer::context::create_core(std::uint32_t const Frames, std::st
 	resources.images = &images;
 	resources.thread = std::this_thread::get_id();
 	resources.pending = &pending;
+	resources.background = (Global.gfx_vulkan_asyncresources ? &background : nullptr);
 	resources.raytracing = device.raytracing_enabled();
 	textures = std::make_unique<texture_bank>([this]() -> texture_source * { return new vk14::vulkan14_texture(resources); });
 	return imgui.create(resources, shaders, pipelines, ring, Reason);
@@ -562,6 +661,8 @@ bool vulkan14_renderer::context::wait(std::uint64_t const Value) const
 void vulkan14_renderer::context::destroy()
 {
 	auto const handle{device.handle()};
+	// the background threads use what goes below
+	background.stop();
 	// the frame given to the render thread goes to the queue first
 	stop_render_thread();
 	if (handle != VK_NULL_HANDLE)
@@ -575,7 +676,7 @@ void vulkan14_renderer::context::destroy()
 	// the textures give their images to the deletion queue, which goes now that the gpu is idle
 	textures.reset();
 	uploads.end_frame();
-	uploads = vk14::uploader{};
+	uploads.reset();
 	images.clear();
 	deletions.flush();
 	// the features of dlss released by the deletions above, ngx goes before the device
@@ -597,6 +698,10 @@ void vulkan14_renderer::context::destroy()
 			{
 				vkDestroyCommandPool(handle, worker.pool, nullptr);
 			}
+			if (frame.compute_pool != VK_NULL_HANDLE)
+			{
+				vkDestroyCommandPool(handle, frame.compute_pool, nullptr);
+			}
 		}
 		if (timeline != VK_NULL_HANDLE)
 		{
@@ -606,11 +711,17 @@ void vulkan14_renderer::context::destroy()
 		{
 			vkDestroySemaphore(handle, reflex, nullptr);
 		}
+		if (compute_timeline != VK_NULL_HANDLE)
+		{
+			vkDestroySemaphore(handle, compute_timeline, nullptr);
+		}
 	}
 	memory.destroy();
 	frames.clear();
 	timeline = VK_NULL_HANDLE;
 	reflex = VK_NULL_HANDLE;
+	compute_timeline = VK_NULL_HANDLE;
+	async_compute = false;
 	device.destroy();
 	instance.destroy();
 }
@@ -719,7 +830,8 @@ void vulkan14_renderer::start_dlss()
 
 bool vulkan14_renderer::Init(GLFWwindow *Window)
 {
-	m_context = std::make_unique<context>();
+	m_contextstore = std::make_unique<context>();
+	m_context = m_contextstore.get();
 	auto &ctx{*m_context};
 
 	std::string reason;
@@ -772,7 +884,8 @@ bool vulkan14_renderer::Init(GLFWwindow *Window)
 	if (false == ok)
 	{
 		vk14::log_error("the renderer can't start: " + reason);
-		m_context.reset();
+		m_contextstore.reset();
+		m_context = nullptr;
 		return false;
 	}
 
@@ -780,7 +893,8 @@ bool vulkan14_renderer::Init(GLFWwindow *Window)
 	{
 		vk14::log_error("the renderer can't start: " + reason);
 		destroy_scene();
-		m_context.reset();
+		m_contextstore.reset();
+		m_context = nullptr;
 		return false;
 	}
 	init_frame_data();
@@ -855,6 +969,15 @@ bool vulkan14_renderer::AddViewport(global_settings::extraviewport_config const 
 
 void vulkan14_renderer::Shutdown()
 {
+	if (m_main != nullptr)
+	{
+		// a walker has nothing of its own to let go of
+		return;
+	}
+	if (m_context)
+	{
+		join_walks();
+	}
 	if (m_context && (m_context->device.handle() != VK_NULL_HANDLE))
 	{
 		// the end of the renderer, not a frame: everything on the gpu has to be done, the frame of the render thread with it
@@ -870,8 +993,11 @@ void vulkan14_renderer::Shutdown()
 		}
 	}
 	destroy_scene();
+	m_walkers.clear();
+	m_walkstreams.clear();
 	m_draw.reset();
-	m_context.reset();
+	m_contextstore.reset();
+	m_context = nullptr;
 }
 
 void vulkan14_renderer::report_device_lost(char const *Where)
@@ -1049,7 +1175,7 @@ void vulkan14_renderer::update_info()
 	ctx.memory.budget(usage, budget);
 	m_infostats = "device memory: " + vk14::memory_size_string(usage) + " of " + vk14::memory_size_string(budget) + (ctx.device.memory_budget_enabled() ? "" : " (no budget from the driver)") + "\n" + "images: " + std::to_string(ctx.images.size()) +
 	              ", uploaded " + vk14::memory_size_string(ctx.uploads.uploaded()) + ", waiting for the gpu to be deleted: " + std::to_string(ctx.deletions.size()) + "\n" + (ctx.textures ? ctx.textures->info() + "\n" : std::string{}) + ctx.shaders.info() +
-	              "\n" + ctx.pipelines.info() + "\n" + "frame ring: " + vk14::memory_size_string(ctx.ring.used()) + " of " + vk14::memory_size_string(ctx.ring.capacity()) + "\n";
+	              "\n" + ctx.pipelines.info() + "\n" + background_info() + "frame ring: " + vk14::memory_size_string(ctx.ring.used()) + " of " + vk14::memory_size_string(ctx.ring.capacity()) + "\n";
 	for (auto const &window : ctx.windows)
 	{
 		auto const extent{window->extent()};
@@ -1063,6 +1189,49 @@ void vulkan14_renderer::update_info()
 	// the statistics of the scene and of the cullings, as the opengl renderer gives them
 	collect_cluster_stats();
 	m_infostats += "\n" + scene_info() + cull_info();
+}
+
+std::string vulkan14_renderer::background_info() const
+{
+	auto const &ctx{*m_context};
+	std::string info;
+	if (ctx.background.running())
+	{
+		auto const pending{ctx.pending.made_count.load()};
+		info += "background threads: " + std::to_string(ctx.background.pending()) + " tasks waiting; pipelines made ahead: " + std::to_string(ctx.warm_made.load()) + ", made late: " +
+		        std::to_string(ctx.pipelines_late.load()) + "; textures made: " + std::to_string(pending) + ", draws without theirs: " + std::to_string(ctx.pending.late_count.load()) + "\n";
+	}
+	else
+	{
+		info += "background threads: off (gfx.vulkan.asyncresources)\n";
+	}
+	if (ctx.walks.running())
+	{
+		info += "walkers: " + std::to_string(m_walkpasses) + " passes in the last frame, " + std::to_string(vk14::walk_threads()) + (vk14::walk_threads() == 1 ? " thread" : " threads") +
+		        ", the main thread waited for them: " + to_string(m_walkwait, 2) + " ms\n";
+	}
+	else
+	{
+		info += "walkers: off (gfx.vulkan.parallelpasses)\n";
+	}
+	if (ctx.models.running())
+	{
+		info += "helpers of the walks: " + std::to_string(m_helpedgroups) + " groups of the cullings walked by them in the last frame\n";
+	}
+	else
+	{
+		info += "helpers of the walks: off (gfx.vulkan.parallelmodels)\n";
+	}
+	if (ctx.async_compute)
+	{
+		info += std::string("async compute: the sky and the weather on the compute queue (family ") + std::to_string(ctx.device.families().compute) + "), " +
+		        (m_asyncframe ? "in the last frame" : "not in the last frame") + "\n";
+	}
+	else
+	{
+		info += (Global.gfx_vulkan_asynccompute ? "async compute: off (no compute family of its own)\n" : "async compute: off (gfx.vulkan.asynccompute)\n");
+	}
+	return info;
 }
 
 bool vulkan14_renderer::Debug_Ui_State(std::optional<bool> State)

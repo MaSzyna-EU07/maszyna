@@ -29,6 +29,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/instancecull.h"
 
 #include <array>
+#include <functional>
+#include <optional>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
@@ -185,6 +187,15 @@ class scene_walk
 	void Render_Alpha(TSubModel *Submodel);
 	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 
+	// TDynamicObject::renderme as the walk sets and reads it: the walk keeps its own while the passes are walked by several threads at
+	// once (walk_sync), which the main thread puts in the vehicles once they're done (Keep) or drops
+	void set_renderme(TDynamicObject *Dynamic, bool const Value);
+	bool renderme(TDynamicObject const *Dynamic) const;
+	void Settle_Renderme(bool const Keep);
+	// what the walks put off while the passes are walked by several threads at once, done by the main thread once they're done: the
+	// beams of the far tracks let go, the sleepers of the tracks coming near worked out ahead (Render_Timbers())
+	void Release_Deferred();
+
 	// the colour of the picking of the item of the index, and the index of a colour read back
 	static glm::vec3 pick_color(std::size_t const Index);
 	static std::size_t pick_index(glm::ivec3 const &Color);
@@ -252,6 +263,21 @@ class scene_walk
 	virtual void walk_instances_end() {}
 	// the geometry of the backend and whether it draws blended now, for the draws recorded for the gpu culling
 	virtual gfx::geometrybank_manager &walk_geometry() = 0;
+	// the walks of the groups of a culling split among several threads (the stage M3 of claude/vulkan14-renderer-plan.md): whether the
+	// backend does it for this many groups (by default not), and the tasks run, each by a helper given the state of this walk (its
+	// pass, its model block and blending, its recording of the draws), which Work walks a part of the groups with; returns once all of
+	// them are done
+	virtual bool walk_groups_parallel(std::size_t const Groups)
+	{
+		return false;
+	}
+	virtual void walk_groups_run(std::size_t const Tasks, std::function<void(scene_walk &Helper, std::size_t const Task)> const &Work) {}
+	// where the chunk is in its bank, for a draw recorded for the gpu culling (by default geometrybank_manager::indirect_source(), which
+	// marks the bank as used)
+	virtual bool walk_indirect_source(gfx::geometry_handle const &Geometry, gfx::indirect_source &Source)
+	{
+		return walk_geometry().indirect_source(Geometry, Source);
+	}
 	virtual bool walk_blending_enabled() const = 0;
 
 	// the gpu culling of the instances (Global.gfx_gpucull, stage N6c): what the walk queues in the culling of the pass and the
@@ -278,6 +304,9 @@ class scene_walk
 	// the walk of the submodel trees of the groups culled by Cull, once per lod band, which records their draws
 	// (m_indirectdraws, m_indirectcommands). Cascade: the pass is one of the cascades of the sun shadows, which share the walks
 	void Walk_Indirect_Draws(gfx::instance_cull const &Cull, bool const Cascade);
+	// the walks of the groups split among the helpers of the backend (walk_groups_run()): what they share made first, the groups walked
+	// by them, their draws put in the order of the groups as Walk_Indirect_Draws() would record them
+	void Walk_Groups_Parallel(gfx::instance_cull const &Cull, bool const Cascade, bool const Walkcache, bool const Shadows);
 	// a draw of the walk of Walk_Indirect_Draws(), with the state the walk left for it (model_ubs with the modelview set)
 	void Record_Indirect_Draw(gfx::geometry_handle const &Geometry);
 	// multi draws of the recorded draws (Global.gfx_gpucull_multidraw): puts the draws in an order in which the ones with the
@@ -463,6 +492,32 @@ class scene_walk
 	walk_counts m_walkcounts;
 	walk_counts m_lastwalkcounts;
 	unsigned int m_walkcountsframe{0};
+	// the working space of Walk_Groups_Parallel(): for each group what its walks share, and for each task of the helpers the draws it
+	// recorded with the bands they're of
+	struct group_plan
+	{
+		walk_record *kept{nullptr};
+		cascade_record *walks{nullptr};
+		bool skip{true};
+	};
+	struct group_span
+	{
+		std::uint32_t group;
+		std::uint32_t band;
+		std::uint32_t first;
+		std::uint32_t count;
+	};
+	struct group_task
+	{
+		std::vector<indirect_draw> draws;
+		std::vector<gl::instance_draw_command> commands;
+		std::vector<group_span> spans;
+		walk_counts counts;
+		int submodels{0};
+		int drawcalls{0};
+	};
+	std::vector<group_plan> m_groupplans;
+	std::vector<group_task> m_grouptasks;
 	// appends the draws of a walk kept from an earlier frame to the recorded draws, with the commands of the entry under way
 	void Replay_Walk(walk_band const &Walk, bool const Shadows);
 	// working space of Order_Indirect_Draws(), kept between frames
@@ -528,6 +583,10 @@ class scene_walk
 	// the quad of the glare of lamps and its texture
 	gfx::geometry_handle m_billboardgeometry{0, 0};
 	texture_handle m_glaretexture{-1};
+	// the walk's own TDynamicObject::renderme, and what it put off (set_renderme(), Release_Deferred())
+	std::unordered_map<TDynamicObject const *, bool> m_renderme;
+	std::optional<std::pair<glm::dvec3, double>> m_deferredrelease;
+	std::vector<TTrack *> m_deferredprefetch;
 
   private:
 	static float editor_ortho_reach();

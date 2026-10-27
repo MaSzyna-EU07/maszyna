@@ -136,6 +136,8 @@ class instance_cull : public gfx::instance_cull
 	void read_counters(command_stream *Commands);
 
 	std::shared_ptr<shared_data> m_shared;
+	// the record buffer of the dispatch, which its second phase reads too (another pass may make the shared one anew in between)
+	std::shared_ptr<buffer> m_recordbuffer;
 	std::shared_ptr<buffer> m_counters;
 	std::shared_ptr<buffer> m_output;
 	std::shared_ptr<buffer> m_commands;

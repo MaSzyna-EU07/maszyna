@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14texture.h"
 #include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14device.h"
+#include "rendering/vulkan14/vulkan14tasks.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 
@@ -28,8 +29,26 @@ void uploader::init(allocator const &Allocator, deletion_queue &Deletions, VkPhy
 	m_physical = Physical;
 }
 
+void uploader::reset()
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_allocator = nullptr;
+	m_deletions = nullptr;
+	m_physical = VK_NULL_HANDLE;
+	m_commands = nullptr;
+	m_value = 0;
+	m_recorded = false;
+	m_buffercopies = false;
+	m_pending.clear();
+	m_uploaded = 0;
+	m_blittable.clear();
+	m_hostcopy = false;
+	m_hostcopyable.clear();
+}
+
 bool uploader::can_blit(VkFormat Format) const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	auto const lookup{m_blittable.find(Format)};
 	if (lookup != m_blittable.end())
 	{
@@ -43,8 +62,48 @@ bool uploader::can_blit(VkFormat Format) const
 	return result;
 }
 
+bool uploader::can_host_copy(VkFormat Format) const
+{
+	if (false == m_hostcopy)
+	{
+		return false;
+	}
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto const lookup{m_hostcopyable.find(Format)};
+	if (lookup != m_hostcopyable.end())
+	{
+		return lookup->second;
+	}
+	// the format filled by the host, and an image which can be is as fast for the gpu as one which can't
+	VkFormatProperties3 properties3{};
+	properties3.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3;
+	VkFormatProperties2 properties{};
+	properties.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+	properties.pNext = &properties3;
+	vkGetPhysicalDeviceFormatProperties2(m_physical, Format, &properties);
+	auto result{(properties3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT) != 0};
+	if (result)
+	{
+		VkHostImageCopyDevicePerformanceQuery performance{};
+		performance.sType = VK_STRUCTURE_TYPE_HOST_IMAGE_COPY_DEVICE_PERFORMANCE_QUERY;
+		VkImageFormatProperties2 imageproperties{};
+		imageproperties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
+		imageproperties.pNext = &performance;
+		VkPhysicalDeviceImageFormatInfo2 info{};
+		info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2;
+		info.format = Format;
+		info.type = VK_IMAGE_TYPE_2D;
+		info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_HOST_TRANSFER_BIT;
+		result = (vkGetPhysicalDeviceImageFormatProperties2(m_physical, &info, &imageproperties) == VK_SUCCESS) && (performance.optimalDeviceAccess == VK_TRUE);
+	}
+	m_hostcopyable.emplace(Format, result);
+	return result;
+}
+
 void uploader::begin_frame(command_stream *Commands, std::uint64_t Value)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	m_commands = Commands;
 	m_value = Value;
 	m_recorded = false;
@@ -58,6 +117,7 @@ void uploader::begin_frame(command_stream *Commands, std::uint64_t Value)
 
 bool uploader::end_frame()
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if (m_buffercopies && (m_commands != nullptr))
 	{
 		// the draws of the frame read what was copied
@@ -100,6 +160,7 @@ bool uploader::upload_buffer(std::shared_ptr<buffer> const &Target, void const *
 	std::memcpy(upload.staging->mapped(), Data, static_cast<std::size_t>(Size));
 	upload.staging->flush(0, Size);
 	m_uploaded += Size;
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if (m_commands != nullptr)
 	{
 		record(upload);
@@ -113,19 +174,45 @@ bool uploader::upload_buffer(std::shared_ptr<buffer> const &Target, void const *
 
 bool uploader::upload(std::shared_ptr<image> const &Image, void const *Data, VkDeviceSize Size, std::vector<level> const &Levels, bool const Mipmaps)
 {
-	job upload;
-	upload.target = Image;
-	upload.levels = Levels;
-	upload.mipmaps = Mipmaps;
-	upload.staging = std::make_shared<buffer>();
-	if ((false == upload.staging->create(*m_allocator, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memory_kind::upload)) || (upload.staging->mapped() == nullptr))
+	prepared upload;
+	if (false == prepare(Image, Data, Size, Levels, Mipmaps, upload))
 	{
-		log_error("no staging buffer of " + memory_size_string(Size) + " for an upload");
 		return false;
 	}
-	std::memcpy(upload.staging->mapped(), Data, static_cast<std::size_t>(Size));
-	upload.staging->flush(0, Size);
+	submit(std::move(upload));
+	return true;
+}
+
+bool uploader::prepare(std::shared_ptr<image> const &Image, void const *Data, VkDeviceSize Size, std::vector<level> const &Levels, bool const Mipmaps, prepared &Upload)
+{
+	Upload.target = Image;
+	Upload.levels = Levels;
+	Upload.mipmaps = Mipmaps;
+	Upload.staging = std::make_shared<buffer>();
+	if ((false == Upload.staging->create(*m_allocator, Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memory_kind::upload)) || (Upload.staging->mapped() == nullptr))
+	{
+		log_error("no staging buffer of " + memory_size_string(Size) + " for an upload");
+		Upload = prepared{};
+		return false;
+	}
+	std::memcpy(Upload.staging->mapped(), Data, static_cast<std::size_t>(Size));
+	Upload.staging->flush(0, Size);
 	m_uploaded += Size;
+	return true;
+}
+
+void uploader::submit(prepared &&Upload)
+{
+	if ((Upload.target == nullptr) || (Upload.staging == nullptr))
+	{
+		return;
+	}
+	job upload;
+	upload.target = std::move(Upload.target);
+	upload.staging = std::move(Upload.staging);
+	upload.levels = std::move(Upload.levels);
+	upload.mipmaps = Upload.mipmaps;
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if (m_commands != nullptr)
 	{
 		record(upload);
@@ -134,7 +221,6 @@ bool uploader::upload(std::shared_ptr<image> const &Image, void const *Data, VkD
 	{
 		m_pending.emplace_back(std::move(upload));
 	}
-	return true;
 }
 
 void uploader::record(job &Job)
@@ -270,6 +356,7 @@ void uploader::record(job &Job)
 
 std::uint64_t image_table::add(std::shared_ptr<image> const &Image, VkSampler Sampler)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	std::uint64_t id;
 	if (false == m_free.empty())
 	{
@@ -287,6 +374,7 @@ std::uint64_t image_table::add(std::shared_ptr<image> const &Image, VkSampler Sa
 
 void image_table::replace(std::uint64_t Id, std::shared_ptr<image> const &Image, VkSampler Sampler)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if ((Id > 0) && (Id < m_entries.size()))
 	{
 		m_entries[Id] = entry{Image, Sampler};
@@ -295,6 +383,7 @@ void image_table::replace(std::uint64_t Id, std::shared_ptr<image> const &Image,
 
 void image_table::remove(std::uint64_t Id, deletion_queue &Deletions, std::uint64_t Value)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if ((Id == 0) || (Id >= m_entries.size()) || (m_entries[Id].target == nullptr))
 	{
 		return;
@@ -306,6 +395,7 @@ void image_table::remove(std::uint64_t Id, deletion_queue &Deletions, std::uint6
 
 image_table::entry const *image_table::find(std::uint64_t Id) const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if ((Id == 0) || (Id >= m_entries.size()) || (m_entries[Id].target == nullptr))
 	{
 		return nullptr;
@@ -315,6 +405,7 @@ image_table::entry const *image_table::find(std::uint64_t Id) const
 
 void image_table::clear()
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	m_entries.assign(1, entry{});
 	m_free.clear();
 }
@@ -386,15 +477,184 @@ texture_format texture_format_of(GLint Format, GLint Hint)
 
 vulkan14_texture::~vulkan14_texture()
 {
+	// a background thread making the texture is done with it first
+	wait_job();
 	if (m_resources.pending != nullptr)
 	{
 		std::lock_guard<std::mutex> lock(m_resources.pending->mutex);
-		auto &list{m_resources.pending->textures};
-		list.erase(std::remove(list.begin(), list.end(), this), list.end());
+		for (auto *list : {&m_resources.pending->textures, &m_resources.pending->made})
+		{
+			list->erase(std::remove(list->begin(), list->end(), this), list->end());
+		}
+	}
+}
+
+void vulkan14_texture::wait_job() const
+{
+	while ((m_job == job_running) || (m_job == job_making))
+	{
+		std::this_thread::yield();
+	}
+}
+
+bool vulkan14_texture::claim()
+{
+	auto const renderer{std::this_thread::get_id() == m_resources.thread};
+	while (true)
+	{
+		auto state{m_job.load()};
+		if (state == job_done)
+		{
+			if (false == renderer)
+			{
+				// what a background thread made is taken over by the thread of the renderer
+				return false;
+			}
+			publish();
+			continue;
+		}
+		if (state != job_none)
+		{
+			// made by another thread at the moment (a background thread, or the walk of a pass on another thread)
+			std::this_thread::yield();
+			continue;
+		}
+		if (m_job.compare_exchange_weak(state, job_making))
+		{
+			return true;
+		}
 	}
 }
 
 bool vulkan14_texture::create(bool const Static)
+{
+	if (m_made)
+	{
+		return true;
+	}
+	if ((type == "make:") && (std::this_thread::get_id() != m_resources.thread))
+	{
+		// the request of the generated content goes from the thread of the renderer
+		return false;
+	}
+	if (false == claim())
+	{
+		return false;
+	}
+	auto const result{make(false)};
+	auto ready{true};
+	switch (result)
+	{
+	case make_result::none:
+		ready = false;
+		break;
+	case make_result::done:
+		break;
+	case make_result::failed:
+		is_ready = true;
+		break;
+	case make_result::made:
+		if (type == "make:")
+		{
+			// for generated textures send a request to have the actual content of the texture generated
+			make_request();
+		}
+		is_static = Static;
+		is_ready = true;
+		break;
+	}
+	m_job = job_none;
+	return ready;
+}
+
+bool vulkan14_texture::request_background()
+{
+	if (m_made)
+	{
+		return true;
+	}
+	auto state{m_job.load()};
+	if ((state == job_done) && (std::this_thread::get_id() == m_resources.thread))
+	{
+		// made meanwhile by a background thread
+		publish();
+		if (m_made)
+		{
+			return true;
+		}
+		state = m_job.load();
+	}
+	if (state != job_none)
+	{
+		// being made, or made and waiting for the thread of the renderer
+		if (m_resources.pending != nullptr)
+		{
+			++m_resources.pending->late_count;
+		}
+		return false;
+	}
+	if ((m_resources.background == nullptr) || (false == m_resources.background->running()) || (m_resources.pending == nullptr))
+	{
+		return create();
+	}
+	// asked for by one of the threads walking the passes at a time
+	if (false == m_job.compare_exchange_strong(state, job_running))
+	{
+		++m_resources.pending->late_count;
+		return false;
+	}
+	++m_resources.pending->late_count;
+	// the texture outlives the job: its destruction waits for it (the background threads are stopped before the bank goes, too)
+	m_resources.background->add([this]() {
+		auto const result{make(true)};
+		m_madefailed = (result == make_result::failed);
+		m_madeempty = (result == make_result::none);
+		std::lock_guard<std::mutex> lock(m_resources.pending->mutex);
+		m_job = job_done;
+		m_resources.pending->made.push_back(this);
+	});
+	return false;
+}
+
+void vulkan14_texture::publish()
+{
+	int expected{job_done};
+	if (false == m_job.compare_exchange_strong(expected, job_making))
+	{
+		return;
+	}
+	if (m_madeimage != nullptr)
+	{
+		if (m_madestaged)
+		{
+			m_resources.uploads->submit(std::move(m_madeupload));
+		}
+		m_image = std::move(m_madeimage);
+		m_id = m_resources.images->add(m_image, m_madesampler);
+		m_made = true;
+		if (type == "make:")
+		{
+			make_request();
+		}
+		is_static = false;
+		is_ready = true;
+		++m_resources.pending->made_count;
+	}
+	else if (m_madefailed)
+	{
+		// counted as made, without an image (on_failed())
+		is_ready = true;
+	}
+	// otherwise there was no data yet: asked for again by the next draw
+	m_madeimage.reset();
+	m_madeupload = uploader::prepared{};
+	m_madestaged = false;
+	m_madefailed = false;
+	m_madeempty = false;
+	m_job = job_none;
+}
+
+vulkan14_texture::make_result vulkan14_texture::make(bool const Background)
 {
 	if ((data_state == resource_state::none) && (true == reload_on_use))
 	{
@@ -408,12 +668,13 @@ bool vulkan14_texture::create(bool const Static)
 	}
 	if (m_made)
 	{
-		return true;
+		// made before, or failed while the data was read (on_failed() of a texture without an id leaves the table alone)
+		return make_result::done;
 	}
 	if (data_state != resource_state::good)
 	{
 		// don't bother until we have useful texture data
-		return false;
+		return make_result::none;
 	}
 
 	auto const format{texture_format_of(data_format, components_hint != 0 ? components_hint : GL_SRGB_ALPHA)};
@@ -422,12 +683,14 @@ bool vulkan14_texture::create(bool const Static)
 	{
 		vkGetPhysicalDeviceFormatProperties(m_resources.gpu->physical(), format.format, &properties);
 	}
+	auto const failed = [this]() {
+		on_failed();
+		return make_result::failed;
+	};
 	if ((format.format == VK_FORMAT_UNDEFINED) || ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0))
 	{
 		ErrorLog("Bad texture: the format of \"" + name + "\" can't be sampled by the gpu", logtype::texture);
-		on_failed();
-		is_ready = true;
-		return true;
+		return failed();
 	}
 
 	std::vector<uploader::level> levels;
@@ -478,41 +741,92 @@ bool vulkan14_texture::create(bool const Static)
 	if (levels.empty() || (size > available) || (data_width == 0) || (data_height == 0))
 	{
 		ErrorLog("Bad texture: \"" + name + "\" holds less data than its size needs", logtype::texture);
-		on_failed();
-		is_ready = true;
-		return true;
+		return failed();
 	}
 
 	// a single level is made into the whole chain on the gpu, as glGenerateMipmap() does for the opengl renderer
 	auto const generate{(levels.size() == 1) && (false == format.compressed) && m_resources.uploads->can_blit(format.format)};
+	// the levels the file gives are filled by the host where it can, by a background thread (what the gpu makes goes through the
+	// commands of a frame)
+	auto const hostcopy{Background && (false == generate) && m_resources.uploads->can_host_copy(format.format)};
 	image_desc desc;
 	desc.format = format.format;
 	desc.extent = {data_width, data_height, 1};
 	desc.mips = (generate ? static_cast<std::uint32_t>(std::floor(std::log2(std::max(data_width, data_height)))) + 1 : static_cast<std::uint32_t>(levels.size()));
-	desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | (generate ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
+	desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | (generate ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0) | (hostcopy ? VK_IMAGE_USAGE_HOST_TRANSFER_BIT : 0);
 	desc.components = format.components;
 	auto image{std::make_shared<vk14::image>()};
 	if (false == image->create(*m_resources.memory, desc, name))
 	{
 		ErrorLog("Bad texture: no gpu image for \"" + name + "\"", logtype::texture);
-		on_failed();
-		is_ready = true;
-		return true;
+		return failed();
 	}
-	if (false == m_resources.uploads->upload(image, source, size, levels, generate))
+	auto staged{false};
+	if (hostcopy)
+	{
+		// straight to the layout the image is sampled in: no command buffer, nothing for the frames to wait for
+		auto const device{m_resources.gpu->handle()};
+		VkHostImageLayoutTransitionInfo transition{};
+		transition.sType = VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO;
+		transition.image = image->handle();
+		transition.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		transition.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		transition.subresourceRange = {image->aspect(), 0, desc.mips, 0, desc.layers};
+		std::vector<VkMemoryToImageCopy> regions(levels.size());
+		for (std::size_t i = 0; i < levels.size(); ++i)
+		{
+			auto &region{regions[i]};
+			region.sType = VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY;
+			region.pHostPointer = source + levels[i].offset;
+			region.imageSubresource = {image->aspect(), static_cast<std::uint32_t>(i), 0, desc.layers};
+			region.imageExtent = levels[i].extent;
+		}
+		VkCopyMemoryToImageInfo copy{};
+		copy.sType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO;
+		copy.dstImage = image->handle();
+		copy.dstImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		copy.regionCount = static_cast<std::uint32_t>(regions.size());
+		copy.pRegions = regions.data();
+		if ((false == VK14_VERIFY(vkTransitionImageLayout(device, 1, &transition))) || (false == VK14_VERIFY(vkCopyMemoryToImage(device, &copy))))
+		{
+			ErrorLog("Bad texture: \"" + name + "\" couldn't be copied to its gpu image", logtype::texture);
+			return failed();
+		}
+		image->state = image_state{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
+	}
+	else if (Background)
+	{
+		// the staging buffer filled here, the copies recorded by the thread of the renderer
+		if (false == m_resources.uploads->prepare(image, source, size, levels, generate, m_madeupload))
+		{
+			ErrorLog("Bad texture: \"" + name + "\" couldn't be uploaded", logtype::texture);
+			return failed();
+		}
+		staged = true;
+	}
+	else if (false == m_resources.uploads->upload(image, source, size, levels, generate))
 	{
 		// never filled, so never sampled
 		ErrorLog("Bad texture: \"" + name + "\" couldn't be uploaded", logtype::texture);
-		on_failed();
-		is_ready = true;
-		return true;
+		return failed();
 	}
 
 	// the traits of the file: clamped along s or t
 	auto const clamped{(traits.find('s') != std::string::npos) || (traits.find('t') != std::string::npos)};
-	m_image = image;
-	m_id = m_resources.images->add(image, clamped ? m_resources.sampling->clamp_aniso : m_resources.sampling->repeat_aniso);
-	m_made = true;
+	auto const sampler{clamped ? m_resources.sampling->clamp_aniso : m_resources.sampling->repeat_aniso};
+	if (Background)
+	{
+		// the thread of the renderer puts it in the table (publish())
+		m_madeimage = image;
+		m_madesampler = sampler;
+		m_madestaged = staged;
+	}
+	else
+	{
+		m_image = image;
+		m_id = m_resources.images->add(image, sampler);
+		m_made = true;
+	}
 
 	if ((true == Global.ResourceMove) || (false == Global.ResourceSweep) || (true == streamed()))
 	{
@@ -520,14 +834,7 @@ bool vulkan14_texture::create(bool const Static)
 		data = std::vector<unsigned char>();
 		data_state = resource_state::none;
 	}
-	if (type == "make:")
-	{
-		// for generated textures send a request to have the actual content of the texture generated
-		make_request();
-	}
-	is_static = Static;
-	is_ready = true;
-	return true;
+	return make_result::made;
 }
 
 void vulkan14_texture::release()
@@ -569,6 +876,20 @@ void vulkan14_texture::release()
 
 void vulkan14_texture::destroy()
 {
+	wait_job();
+	if (m_job == job_done)
+	{
+		// made and not taken over: what was made goes now
+		if (m_resources.pending != nullptr)
+		{
+			std::lock_guard<std::mutex> lock(m_resources.pending->mutex);
+			auto &list{m_resources.pending->made};
+			list.erase(std::remove(list.begin(), list.end(), this), list.end());
+		}
+		m_madeimage.reset();
+		m_madeupload = uploader::prepared{};
+		m_job = job_none;
+	}
 	if (m_id != 0)
 	{
 		m_resources.images->remove(m_id, *m_resources.deletions, m_resources.uploads->current_value());

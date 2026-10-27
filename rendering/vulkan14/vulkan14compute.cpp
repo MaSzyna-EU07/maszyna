@@ -317,14 +317,14 @@ void update_buffer(command_stream *Commands, buffer const &Target, void const *D
 
 // readback
 
-bool readback_ring::create(allocator const &Allocator, VkDeviceSize const Size, std::uint32_t const Frames, std::string const &Name)
+bool readback_ring::create(allocator const &Allocator, VkDeviceSize const Size, std::uint32_t const Frames, std::string const &Name, bool const Shared)
 {
 	m_size = Size;
 	m_slots.clear();
 	m_slots.resize(Frames);
 	for (std::uint32_t i = 0; i < Frames; ++i)
 	{
-		if (false == m_slots[i].data.create(Allocator, Size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, memory_kind::readback, Name + " " + std::to_string(i)))
+		if (false == m_slots[i].data.create(Allocator, Size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, memory_kind::readback, Name + " " + std::to_string(i), Shared))
 		{
 			return false;
 		}

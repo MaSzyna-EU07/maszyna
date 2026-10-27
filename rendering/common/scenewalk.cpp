@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/common/scenewalk.h"
+#include "rendering/common/walksync.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
 #include "vehicle/Train.h"
@@ -99,6 +100,7 @@ std::size_t scene_walk::pick_index(glm::ivec3 const &Color)
 }
 
 bool scene_walk::Render_interior( bool const Alpha ) {
+    gfx::walk_sync::vehicle_hold hold;
     // TODO: early frustum based cull, camera might be pointing elsewhere
     std::vector< std::pair<float, TDynamicObject *> > dynamics;
     auto *dynamic { simulation::Train->Dynamic() };
@@ -135,6 +137,7 @@ bool scene_walk::Render_interior( bool const Alpha ) {
 bool scene_walk::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha ) {
 
     if( Dynamic->mdLowPolyInt == nullptr ) { return false; }
+    gfx::walk_sync::vehicle_hold hold;
 
     // low poly interior
     if( Setup ) {
@@ -209,6 +212,7 @@ bool scene_walk::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredist
 bool scene_walk::Render_coupler_adapter( TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha ) {
 
     if( Dynamic->m_coupleradapters[ End ] == nullptr ) { return false; }
+    gfx::walk_sync::vehicle_hold hold;
 
     auto const position { glm::dvec3 {
         0.f,
@@ -352,7 +356,12 @@ void scene_walk::Render(section_sequence::iterator First, section_sequence::iter
 	{
 
 		auto *section = *First;
-		section->create_geometry();
+		gfx::walk_sync::yield();
+		{
+			// made by the first walk which needs it, one at a time (walk_sync)
+			gfx::walk_sync::change change{section->geometry_pending()};
+			section->create_geometry();
+		}
 
 		// render shapes held by the section
 		switch (m_renderpass.draw_mode)
@@ -453,8 +462,12 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 	{
 
 		auto *cell = First->second;
-		// przeliczenia animacji torów w sektorze
-		cell->RaAnimate(m_framestamp);
+		gfx::walk_sync::yield();
+		{
+			// przeliczenia animacji torów w sektorze
+			gfx::walk_sync::change change{cell->animation_pending(m_framestamp)};
+			cell->RaAnimate(m_framestamp);
+		}
 		bool const tracks_only{editor_far_tracks_only(far_paths, cell, camera, scenery_limit)};
 
 		switch (m_renderpass.draw_mode)
@@ -561,6 +574,7 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 	{
 
 		auto const *cell = first->second;
+		gfx::walk_sync::yield();
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -698,6 +712,7 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 	auto const compare { walk_instances_begin() };
 	for( auto &bucket : m_frame_instance_buckets ) {
 		if( bucket.second.empty() ) { continue; }
+		gfx::walk_sync::yield();
 		Render_Instanced( bucket.first.pModel, bucket.second, ( compare ? &m_instance_bandcounts : nullptr ) );
 		if( compare ) {
 			walk_instances_compare( bucket.first, m_instance_bandcounts );
@@ -853,6 +868,8 @@ void scene_walk::Render(TAnimModel *Instance)
 	}
 	}
 
+	// the animations and the lights of the instance are set in the model the instances share, held till it's drawn (walk_sync)
+	gfx::walk_sync::model_hold hold{Instance->pModel};
 	Instance->RaAnimate(m_framestamp); // jednorazowe przeliczenie animacji
 	Instance->RaPrepare();
 	if (Instance->pModel)
@@ -913,9 +930,15 @@ void scene_walk::Queue_Instances( scene::basic_cell const *Cell )
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
 		auto const &instancebucket { bucket.second };
-		if( ( instancebucket.recordsversion != m_instancerecordsversion )
-		 || ( instancebucket.records.size() != instancebucket.instances.size() ) ) {
-			Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
+		auto const stale = [ & ]() {
+			return ( instancebucket.recordsversion != m_instancerecordsversion )
+			    || ( instancebucket.records.size() != instancebucket.instances.size() ); };
+		if( stale() ) {
+			// the records the passes share are made by one walk at a time (walk_sync)
+			gfx::walk_sync::change change;
+			if( stale() ) {
+				Update_Instance_Records( bucket.first.pModel, instancebucket, Cell->m_area.center );
+			}
 		}
 		if( buckettests && Bucket_Culled( instancebucket ) ) {
 			walk_bucket_culled( instancebucket );
@@ -1086,6 +1109,8 @@ void scene_walk::Render_Instanced( TModel3d *Model, std::vector<queued_instance>
 	if( Bandcounts != nullptr ) { Bandcounts->clear(); }
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
+	// the first instance drawn prepares the model the instances share, held till the bands are drawn (walk_sync)
+	gfx::walk_sync::model_hold hold { Model };
 
 	// LOD: a submodel is drawn only while fSquareDist lies inside its [fSquareMinDist, fSquareMaxDist)
 	// range, so the distinct range bounds split distance into bands with constant LOD. The bucket
@@ -1394,6 +1419,7 @@ void scene_walk::Render_Sleepers( TTrack *Track )
 	// draw uses an in-band fSquareDist, so each sleeper renders at the LOD its own
 	// distance selects while instancing stays fully in effect.
 	auto *Model = Track->m_sleeper_model;
+	gfx::walk_sync::model_hold hold { Model };
 	std::size_t const total = instance_modelviews.size();
 	auto const baseinstance { walk_instances( instance_modelviews.data(), total ) };
 	std::size_t band_start = 0;
@@ -1457,9 +1483,15 @@ void scene_walk::Render_Timbers( scene::basic_cell::path_sequence::const_iterato
 	auto const camera = ( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() );
 	auto const range = static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance );
 	if( m_renderpass.draw_mode == rendermode::color && m_timbersweepframe != m_framestamp ) {
-		// once a frame the beams of the tracks well past where they're laid and worked out ahead are let go
+		// once a frame the beams of the tracks well past where they're laid and worked out ahead are let go. with the passes walked
+		// by several threads, after they're done (Release_Deferred())
 		m_timbersweepframe = m_framestamp;
-		track_sleepers::release_far( camera, range + 600.0 );
+		if( gfx::walk_sync::parallel() ) {
+			m_deferredrelease = std::make_pair( camera, range + 600.0 );
+		}
+		else {
+			track_sleepers::release_far( camera, range + 600.0 );
+		}
 	}
 	glm::mat4 const originmodelview = OpenGLMatrices.data( GL_MODELVIEW );
 	for( auto &bucket : m_timberbuckets ) {
@@ -1504,12 +1536,21 @@ void scene_walk::Render_Timbers( scene::basic_cell::path_sequence::const_iterato
 		if( glm::length( track->location() - camera ) > range + track->radius() ) {
 			// worked out ahead, in the background, before it comes in range
 			if( false == shadows && track->m_sleepers3d.dirty && glm::length( track->location() - camera ) < range + track->radius() + 300.0 ) {
-				track_sleepers::prefetch( *track );
+				if( gfx::walk_sync::parallel() ) {
+					m_deferredprefetch.push_back( track );
+				}
+				else {
+					track_sleepers::prefetch( *track );
+				}
 			}
 			continue;
 		}
 		if( track->m_sleepers3d.dirty ) {
-			track_sleepers::lay( *track );
+			// laid by one walk at a time (walk_sync)
+			gfx::walk_sync::change change;
+			if( track->m_sleepers3d.dirty ) {
+				track_sleepers::lay( *track );
+			}
 		}
 		auto const &laid = track->m_sleepers3d;
 		if( laid.timbers == nullptr ) { continue; }
@@ -1545,6 +1586,8 @@ void scene_walk::Render_Timbers( scene::basic_cell::path_sequence::const_iterato
 		total += instances.size();
 		auto const &beammodel = *bucket.model;
 		auto *model = beammodel.model;
+		// the parts of the model shown and hidden for the bucket, held till it's drawn (walk_sync)
+		gfx::walk_sync::model_hold hold { model };
 		if( bucket.part >= 0 ) {
 			// only the part of the model is visible, its siblings are skipped as the model is walked
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
@@ -1587,11 +1630,11 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
 	if (!Global.render_cab && Global.pCamera.m_owner == Dynamic)
 		return false;
 
-    Dynamic->renderme = (
+    set_renderme( Dynamic,
         ( Global.pCamera.m_owner == Dynamic && !FreeFlyModeFlag )
      || ( m_renderpass.pass_camera.visible( Dynamic ) ) );
 
-    if (false == Dynamic->renderme) { return false; }
+    if (false == renderme( Dynamic )) { return false; }
 
 	// setup
 	TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(Dynamic); //żeby nie robić cudzych animacji
@@ -1642,14 +1685,16 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
     }
     // second stage visibility cull, reject vehicles too far away to be noticeable
     auto const squareradius{ Dynamic->radius() * Dynamic->radius() };
-    Dynamic->renderme = ( squareradius * Global.ZoomFactor / squaredistance > 0.003 * 0.003 );
-    if( false == Dynamic->renderme ) {
+    set_renderme( Dynamic, ( squareradius * Global.ZoomFactor / squaredistance > 0.003 * 0.003 ) );
+    if( false == renderme( Dynamic ) ) {
         return false;
     }
 
     // debug data
     ++m_renderpass.draw_stats.dynamics;
 
+	// the submodels of the models the vehicle shares, set up for it and held till it's drawn (walk_sync)
+	gfx::walk_sync::vehicle_hold hold;
 	Dynamic->ABuLittleUpdate(squaredistance); // ustawianie zmiennych submodeli dla wspólnego modelu
 
 	glm::mat4 future_stack = model_ubs.future;
@@ -1761,6 +1806,8 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
 // rendering kabiny gdy jest oddzielnym modelem i ma byc wyswietlana
 bool scene_walk::Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha)
 {
+	// the cab models of the vehicles are held with the vehicles (walk_sync)
+	gfx::walk_sync::vehicle_hold hold;
 
 	if (Dynamic == nullptr)
 	{
@@ -2524,6 +2571,7 @@ void scene_walk::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequen
 		{
 
 			auto const *cell = first->second;
+			gfx::walk_sync::yield();
 
 			// translucent parts of instanced models
 			for (auto *instance : cell->m_instancetranslucent)
@@ -2612,6 +2660,7 @@ void scene_walk::Render_Alpha(TAnimModel *Instance)
         return;
     }
 
+	gfx::walk_sync::model_hold hold{Instance->pModel};
 	Instance->RaPrepare();
 	if (Instance->pModel)
 	{
@@ -2733,12 +2782,66 @@ void scene_walk::Render_Alpha(scene::lines_node const &Lines)
 	++m_renderpass.draw_stats.drawcalls;
 }
 
+// TDynamicObject::renderme, which only the walks read: kept by the walk itself while the passes are walked by several threads at once
+// (walk_sync), where it falls back on the value of the vehicle for a vehicle it didn't set (as when the passes come one after another)
+void scene_walk::set_renderme(TDynamicObject *Dynamic, bool const Value)
+{
+	if (gfx::walk_sync::parallel())
+	{
+		m_renderme[Dynamic] = Value;
+		return;
+	}
+	Dynamic->renderme = Value;
+}
+
+bool scene_walk::renderme(TDynamicObject const *Dynamic) const
+{
+	if (false == m_renderme.empty())
+	{
+		auto const lookup{m_renderme.find(Dynamic)};
+		if (lookup != m_renderme.end())
+		{
+			return lookup->second;
+		}
+	}
+	return Dynamic->renderme;
+}
+
+void scene_walk::Settle_Renderme(bool const Keep)
+{
+	if (Keep)
+	{
+		for (auto const &[dynamic, value] : m_renderme)
+		{
+			const_cast<TDynamicObject *>(dynamic)->renderme = value;
+		}
+	}
+	m_renderme.clear();
+}
+
+void scene_walk::Release_Deferred()
+{
+	if (m_deferredrelease)
+	{
+		track_sleepers::release_far(m_deferredrelease->first, m_deferredrelease->second);
+		m_deferredrelease.reset();
+	}
+	for (auto *track : m_deferredprefetch)
+	{
+		if (track->m_sleepers3d.dirty)
+		{
+			track_sleepers::prefetch(*track);
+		}
+	}
+	m_deferredprefetch.clear();
+}
+
 bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
 {
 	if (!Global.render_cab && Global.pCamera.m_owner == Dynamic)
 		return false;
 
-	if (false == Dynamic->renderme)
+	if (false == renderme(Dynamic))
 	{
 		return false;
 	}
@@ -2758,6 +2861,7 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
 		break;
 	}
 	}
+	gfx::walk_sync::vehicle_hold hold;
 	Dynamic->ABuLittleUpdate(squaredistance); // ustawianie zmiennych submodeli dla wspólnego modelu
 
 	glm::mat4 future_stack = model_ubs.future;

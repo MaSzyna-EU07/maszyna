@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14memory.h"
 
 #include <memory>
+#include <mutex>
 
 namespace vk14
 {
@@ -55,12 +56,9 @@ class vulkan14_geometrybank : public gfx::geometry_bank
 	~vulkan14_geometrybank() override;
 
 	// the chunk with its data on the gpu: uploaded now when it changed since the last time. false: nothing to draw.
-	// gfx::geometrybank_manager::indirect_source() calls it too (which marks the bank as used), and keeps its answer in last()
+	// gfx::geometrybank_manager::indirect_source() calls it too (which marks the bank as used). any thread walking the passes (M2);
+	// what changes the chunks is made while none of them draws (gfx::walk_sync)
 	bool source(gfx::geometry_handle const &Geometry, chunk_source &Source);
-	chunk_source const &last() const
-	{
-		return m_last;
-	}
 	// the bytes on the gpu, for the debug panel
 	VkDeviceSize gpu_bytes() const
 	{
@@ -101,7 +99,8 @@ class vulkan14_geometrybank : public gfx::geometry_bank
 	bool m_layoutdirty{true}; // the buffers have to be made anew
 	bool m_chunksdirty{false}; // some chunks have to be copied
 	VkDeviceSize m_bytes{0};
-	chunk_source m_last;
+	// the buffers made or updated by one of the threads drawing from the bank at a time
+	std::mutex m_mutex;
 };
 
 } // namespace vk14

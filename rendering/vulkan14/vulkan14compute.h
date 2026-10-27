@@ -122,7 +122,8 @@ void update_buffer(command_stream *Commands, buffer const &Target, void const *D
 class readback_ring
 {
   public:
-	bool create(allocator const &Allocator, VkDeviceSize Size, std::uint32_t Frames, std::string const &Name);
+	// Shared: copied to by the queues of the families the allocator shares between (the async compute of M6)
+	bool create(allocator const &Allocator, VkDeviceSize Size, std::uint32_t Frames, std::string const &Name, bool Shared = false);
 	void destroy();
 	// the copy of Size bytes (at most the size of the ring) of Source from Offset, in the frame of the slot, done by the gpu once
 	// it reaches Value of the timeline

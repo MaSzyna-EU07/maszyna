@@ -72,6 +72,11 @@ class device
 	{
 		return m_graphics_queue;
 	}
+	// the queue of the compute family; the graphics queue where the family is the same
+	VkQueue compute_queue() const
+	{
+		return m_compute_queue;
+	}
 	// VK_EXT_memory_budget is on (the allocator keeps to the budget of the heaps)
 	bool memory_budget_enabled() const
 	{

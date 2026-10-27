@@ -188,6 +188,12 @@ class local_shadows
 	// the timing of the drawing of the maps of the headlights in this frame
 	void headlights_timer_begin();
 	void headlights_timer_end();
+	// the draws of the maps of lamps and of headlights the walkers of the vulkan renderer made in the frame (M2), counted once they're done
+	void add_drawcalls(std::uint32_t const Lamps, std::uint32_t const Headlights)
+	{
+		m_lampsdrawcalls += Lamps;
+		m_headlightsdrawcalls += Headlights;
+	}
 	// the slot of the headlights with their map ready in this frame, -1 if there is none
 	int headlight_map(TDynamicObject const *Owner, int const Index) const;
 	// the headlight_shadow_params of the map of the slot, see gl::scene_ubs

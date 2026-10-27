@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 namespace vk14
 {
@@ -103,7 +104,8 @@ void write_file(std::string const &Path, void const *Data, std::size_t const Siz
 {
 	std::error_code error;
 	std::filesystem::create_directories(std::filesystem::path(Path).parent_path(), error);
-	auto const temporary{Path + ".tmp"};
+	// a temporary file of each thread: two of them may write the same file of the cache at once
+	auto const temporary{Path + ".tmp" + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()))};
 	{
 		std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
 		if (false == file.is_open())
@@ -218,16 +220,29 @@ void shader_library::shutdown()
 	}
 }
 
+std::shared_ptr<shader_code const> shader_library::find(std::string const &Name, std::string const &Defines) const
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto const lookup{m_shaders.find(Name + "|" + Defines)};
+	return (lookup != m_shaders.end() ? lookup->second : nullptr);
+}
+
 std::shared_ptr<shader_code const> shader_library::get(std::string const &Name, std::string const &Defines)
 {
 	auto const key{Name + "|" + Defines};
-	auto const lookup{m_shaders.find(key)};
-	if (lookup != m_shaders.end())
 	{
-		return lookup->second;
+		std::lock_guard<std::mutex> lock(m_mutex);
+		auto const lookup{m_shaders.find(key)};
+		if (lookup != m_shaders.end())
+		{
+			return lookup->second;
+		}
 	}
+	// read or compiled outside of the lock: two threads asking for the same shader at once both make it, the first one kept
 
 	auto code{std::make_shared<shader_code>()};
+	code->name = Name;
+	code->defines = Defines;
 	code->source = gfx::preprocess_shader(gfx::shader_api::vulkan14, Name, Defines, m_preamble, true);
 	code->stage = stage_bit(code->source.stage);
 	auto const label{Name + (code->source.variant.empty() ? "" : " (" + code->source.variant + ")")};
@@ -243,7 +258,6 @@ std::shared_ptr<shader_code const> shader_library::get(std::string const &Name, 
 		if (false == code->spirv.empty())
 		{
 			code->origin = "binary";
-			++m_frombinary;
 		}
 	}
 	if (code->spirv.empty())
@@ -260,20 +274,24 @@ std::shared_ptr<shader_code const> shader_library::get(std::string const &Name, 
 		if (false == code->spirv.empty())
 		{
 			code->origin = "cache";
-			++m_fromcache;
 		}
 		else
 		{
 			code->spirv = compile(code->source);
 			code->origin = "compiled";
-			++m_compiled;
 			write_file(cachepath, code->spirv.data(), code->spirv.size() * sizeof(std::uint32_t));
 		}
 	}
 	// the text isn't needed any more
 	code->source.text = std::string();
-	m_shaders.emplace(key, code);
-	return code;
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto const [entry, added]{m_shaders.emplace(key, code)};
+	if (added)
+	{
+		auto const origin{std::string(code->origin)};
+		++(origin == "binary" ? m_frombinary : origin == "cache" ? m_fromcache : m_compiled);
+	}
+	return entry->second;
 }
 
 std::vector<std::uint32_t> shader_library::compile(gfx::shader_source const &Source) const
@@ -314,6 +332,7 @@ std::vector<std::uint32_t> shader_library::compile(gfx::shader_source const &Sou
 
 std::string shader_library::info() const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	return "shaders: " + std::to_string(m_shaders.size()) + " (" + std::to_string(m_frombinary) + " binaries, " + std::to_string(m_fromcache) + " from the cache, " + std::to_string(m_compiled) + " compiled)";
 }
 
@@ -478,13 +497,42 @@ std::vector<VkDynamicState> const dynamic_states{VK_DYNAMIC_STATE_VIEWPORT,
 
 } // namespace
 
+bool pipeline_library::find(pipeline_desc const &Desc, VkPipeline &Pipeline) const
+{
+	auto const key{key_of(Desc)};
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto const lookup{m_pipelines.find(key)};
+	if (lookup == m_pipelines.end())
+	{
+		return false;
+	}
+	Pipeline = lookup->second;
+	return true;
+}
+
+VkPipeline pipeline_library::keep(std::uint64_t const Key, VkPipeline const Pipeline, double const Milliseconds)
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_creationms += Milliseconds;
+	auto const [entry, added]{m_pipelines.emplace(Key, Pipeline)};
+	if ((false == added) && (Pipeline != VK_NULL_HANDLE) && (entry->second != Pipeline))
+	{
+		// made by another thread meanwhile
+		vkDestroyPipeline(m_device->handle(), Pipeline, nullptr);
+	}
+	return entry->second;
+}
+
 VkPipeline pipeline_library::get(pipeline_desc const &Desc)
 {
 	auto const key{key_of(Desc)};
-	auto const lookup{m_pipelines.find(key)};
-	if (lookup != m_pipelines.end())
 	{
-		return lookup->second;
+		std::lock_guard<std::mutex> lock(m_mutex);
+		auto const lookup{m_pipelines.find(key)};
+		if (lookup != m_pipelines.end())
+		{
+			return lookup->second;
+		}
 	}
 	auto const start{std::chrono::steady_clock::now()};
 
@@ -666,9 +714,7 @@ VkPipeline pipeline_library::get(pipeline_desc const &Desc)
 	{
 		name_object(m_device->handle(), VK_OBJECT_TYPE_PIPELINE, handle_value(pipeline), Desc.name);
 	}
-	m_creationms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-	m_pipelines.emplace(key, pipeline);
-	return pipeline;
+	return keep(key, pipeline, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 }
 
 VkPipeline pipeline_library::compute(std::shared_ptr<shader_code const> const &Shader, VkPipelineLayout Layout, std::vector<std::uint32_t> const &Specialization, std::string const &Name)
@@ -680,10 +726,13 @@ VkPipeline pipeline_library::compute(std::shared_ptr<shader_code const> const &S
 	{
 		hash_value(key, value);
 	}
-	auto const lookup{m_pipelines.find(key)};
-	if (lookup != m_pipelines.end())
 	{
-		return lookup->second;
+		std::lock_guard<std::mutex> lock(m_mutex);
+		auto const lookup{m_pipelines.find(key)};
+		if (lookup != m_pipelines.end())
+		{
+			return lookup->second;
+		}
 	}
 	auto const start{std::chrono::steady_clock::now()};
 
@@ -722,13 +771,12 @@ VkPipeline pipeline_library::compute(std::shared_ptr<shader_code const> const &S
 	{
 		name_object(m_device->handle(), VK_OBJECT_TYPE_PIPELINE, handle_value(pipeline), Name);
 	}
-	m_creationms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-	m_pipelines.emplace(key, pipeline);
-	return pipeline;
+	return keep(key, pipeline, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 }
 
 std::string pipeline_library::info() const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	char buffer[32] = {};
 	std::snprintf(buffer, sizeof(buffer), "%.1f", m_creationms);
 	return "pipelines: " + std::to_string(m_pipelines.size()) + " (made in " + buffer + " ms)";

@@ -12466,6 +12466,7 @@ void train_table::updateAsync(double dt)
 	const int threads = std::max(1, Global.trainThreads);
 	const size_t total = m_items.size();
 	const size_t chunkSize = (total + threads - 1) / threads;
+	auto const instance{TSubModel::iInstance};
 
 	std::vector<std::jthread> workers;
 	std::vector<std::future<void>> results; // przekazują wyjątki z wątków do głównego wątku
@@ -12480,7 +12481,12 @@ void train_table::updateAsync(double dt)
 		if (start >= end)
 			break; // brak więcej danych
 
-		std::packaged_task<void()> task([this, start, end, dt]() { update_trains(m_items, start, end, dt); });
+		// the instance whose animations the gauges set (TSubModel::iInstance, per thread since the walks of the vulkan renderer went on
+		// several threads) is the one the main thread set for the driven vehicle
+		std::packaged_task<void()> task([this, start, end, dt, instance]() {
+			TSubModel::iInstance = instance;
+			update_trains(m_items, start, end, dt);
+		});
 		results.emplace_back(task.get_future());
 		workers.emplace_back(std::move(task));
 	}

@@ -82,6 +82,11 @@ struct texture_source : public ITexture {
     // the object of the renderer goes, with the bank of the textures
     virtual void
         destroy() = 0;
+    // another thread of the renderer works on the texture (makes its object from the data, which it reads too): what it holds isn't for
+    // the other threads to read until it's done
+    virtual bool
+        busy() const {
+            return false; }
 
 // members
     bool has_alpha{ false }; // indicates the texture has alpha channel

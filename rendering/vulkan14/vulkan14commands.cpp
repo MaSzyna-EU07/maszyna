@@ -208,6 +208,55 @@ struct label_call
 	std::size_t name;
 };
 
+// the stage and the access of one side of a barrier, without what a queue of the compute family doesn't have (the async compute of M6)
+void compute_queue_scope(VkPipelineStageFlags2 &Stage, VkAccessFlags2 &Access)
+{
+	auto stage{Stage};
+	if ((stage & VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT) != 0)
+	{
+		stage = (stage & ~VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT) | VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT;
+	}
+	stage &= (VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_COPY_BIT |
+	          VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_HOST_BIT | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+	VkAccessFlags2 allowed{VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT};
+	if ((stage & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) != 0)
+	{
+		allowed |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+		           VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_HOST_READ_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
+	}
+	if ((stage & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0)
+	{
+		allowed |= VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+	}
+	if ((stage & VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT) != 0)
+	{
+		allowed |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+	}
+	if ((stage & VK_PIPELINE_STAGE_2_COPY_BIT) != 0)
+	{
+		allowed |= VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	}
+	if ((stage & VK_PIPELINE_STAGE_2_CLEAR_BIT) != 0)
+	{
+		allowed |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	}
+	if ((stage & VK_PIPELINE_STAGE_2_HOST_BIT) != 0)
+	{
+		allowed |= VK_ACCESS_2_HOST_READ_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
+	}
+	Stage = (stage != 0 ? stage : VK_PIPELINE_STAGE_2_NONE);
+	Access = (stage != 0 ? (Access & allowed) : VK_ACCESS_2_NONE);
+}
+
+template <typename Barrier_> void compute_queue_barriers(Barrier_ *Barriers, std::uint32_t const Count)
+{
+	for (std::uint32_t i = 0; i < Count; ++i)
+	{
+		compute_queue_scope(Barriers[i].srcStageMask, Barriers[i].srcAccessMask);
+		compute_queue_scope(Barriers[i].dstStageMask, Barriers[i].dstAccessMask);
+	}
+}
+
 bool compute_stages(VkShaderStageFlags const Stages)
 {
 	return (Stages & VK_SHADER_STAGE_COMPUTE_BIT) != 0;
@@ -231,6 +280,115 @@ void command_stream::clear()
 	m_work = 0;
 	m_calls = 0;
 	m_finished = false;
+	m_pieces.clear();
+	m_piecefirst = 0;
+	m_order.clear();
+	m_split = no_call;
+	m_splitchunk = 0;
+}
+
+void command_stream::split()
+{
+	assert((m_rendering == no_call) && (m_queries == 0));
+	if (m_chunks.empty())
+	{
+		clear();
+	}
+	if (m_split != no_call)
+	{
+		return;
+	}
+	cut();
+	m_split = m_chunks.size() - 1;
+}
+
+void command_stream::splice(command_stream const &Other)
+{
+	assert((m_rendering == no_call) && (m_queries == 0));
+	assert(Other.m_pieces.empty());
+	if (m_chunks.empty())
+	{
+		clear();
+	}
+	// the chunk under way ends here, with the part of the stream it closes and the state the part leaves
+	auto &current{m_chunks.back()};
+	current.end = m_data.size();
+	current.suspended = no_call;
+	piece own;
+	own.stream = this;
+	own.first = m_piecefirst;
+	own.end = m_chunks.size();
+	own.state.assign(m_state.begin(), m_state.end());
+	own.pushes = m_pushes;
+	m_pieces.push_back(std::move(own));
+	piece spliced;
+	spliced.stream = &Other;
+	m_pieces.push_back(std::move(spliced));
+	// the calls after it begin a part of their own, with no state of its own yet: what they inherit comes from the spliced stream
+	chunk next;
+	next.first = m_data.size();
+	m_chunks.push_back(std::move(next));
+	m_piecefirst = m_chunks.size() - 1;
+	m_state.fill(no_call);
+	m_pushes.clear();
+	m_work = 0;
+}
+
+bool command_stream::empty() const
+{
+	if (false == (m_chunks.empty() || m_data.empty()))
+	{
+		return false;
+	}
+	for (auto const &piece : m_pieces)
+	{
+		if ((piece.stream != this) && (false == piece.stream->empty()))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+std::size_t command_stream::calls() const
+{
+	auto calls{m_calls};
+	for (auto const &piece : m_pieces)
+	{
+		if (piece.stream != this)
+		{
+			calls += piece.stream->m_calls;
+		}
+	}
+	return calls;
+}
+
+void command_stream::leave_state(std::size_t const Piece, merged_state &State) const
+{
+	auto const &piece{m_pieces[Piece]};
+	auto const *stream{piece.stream};
+	// the part of the stream itself left what was kept when it was closed, a spliced stream what it set last
+	auto const &slots{(stream == this) ? piece.state : std::vector<std::size_t>{stream->m_state.begin(), stream->m_state.end()}};
+	auto const &pushes{(stream == this) ? piece.pushes : stream->m_pushes};
+	State.slots.resize(slot_count);
+	for (std::size_t slot = 0; (slot < slots.size()) && (slot < State.slots.size()); ++slot)
+	{
+		if (slots[slot] != no_call)
+		{
+			State.slots[slot] = state_ref{stream, slots[slot], Piece};
+		}
+	}
+	for (auto const push : pushes)
+	{
+		auto const &info{stream->payload<constants_call>(push).info};
+		State.pushes.erase(std::remove_if(State.pushes.begin(), State.pushes.end(),
+		                                  [&](state_ref const &Other) {
+			                                  auto const &other{Other.stream->payload<constants_call>(Other.call).info};
+			                                  return (other.offset == info.offset) && (other.size == info.size) && (other.stageFlags == info.stageFlags);
+		                                  }),
+		                   State.pushes.end());
+		State.pushes.push_back(state_ref{stream, push, Piece});
+	}
 }
 
 std::size_t command_stream::add(std::uint32_t const Type, std::size_t const Size)
@@ -306,12 +464,92 @@ void command_stream::finish()
 	m_chunks.back().end = m_data.size();
 	m_chunks.back().suspended = no_call;
 	// a chunk left without calls
-	if ((m_chunks.size() > 1) && (m_chunks.back().first == m_chunks.back().end))
+	if ((m_chunks.size() > 1) && (m_chunks.back().first == m_chunks.back().end) && (m_chunks.size() - 1 > m_piecefirst))
 	{
 		m_chunks.pop_back();
 		m_chunks.back().suspended = no_call;
 	}
 	m_finished = true;
+	if (m_pieces.empty())
+	{
+		m_splitchunk = std::min(m_split, m_chunks.size());
+		return;
+	}
+	// the last part of the stream itself
+	piece last;
+	last.stream = this;
+	last.first = m_piecefirst;
+	last.end = m_chunks.size();
+	m_pieces.push_back(std::move(last));
+	// the spliced streams with all their chunks, and the state each part begins with: what the parts before it left
+	merged_state state;
+	state.slots.resize(slot_count);
+	m_order.clear();
+	for (std::size_t index = 0; index < m_pieces.size(); ++index)
+	{
+		auto &piece{m_pieces[index]};
+		if (piece.stream != this)
+		{
+			assert(piece.stream->m_finished);
+			piece.first = 0;
+			piece.end = piece.stream->m_chunks.size();
+		}
+		piece.inherited.clear();
+		std::vector<state_ref> refs;
+		for (auto const &slot : state.slots)
+		{
+			if (slot.stream != nullptr)
+			{
+				refs.push_back(slot);
+			}
+		}
+		refs.insert(refs.end(), state.pushes.begin(), state.pushes.end());
+		// in the order they were made: by the part, then by the place in its stream
+		std::sort(refs.begin(), refs.end(), [](state_ref const &Left, state_ref const &Right) { return (Left.piece != Right.piece) ? (Left.piece < Right.piece) : (Left.call < Right.call); });
+		refs.erase(std::unique(refs.begin(), refs.end(), [](state_ref const &Left, state_ref const &Right) { return (Left.stream == Right.stream) && (Left.call == Right.call); }), refs.end());
+		for (auto const &ref : refs)
+		{
+			piece.inherited.emplace_back(ref.stream, ref.call);
+		}
+		for (auto chunk = piece.first; chunk < piece.end; ++chunk)
+		{
+			auto const &source{piece.stream->m_chunks[chunk]};
+			if ((source.first == source.end) && (source.resumed == no_call))
+			{
+				// nothing in it: no command buffer
+				continue;
+			}
+			m_order.emplace_back(index, chunk);
+		}
+		leave_state(index, state);
+	}
+	if (m_order.empty())
+	{
+		// a frame with nothing in it still has a command buffer
+		m_order.emplace_back(0, m_pieces.front().first);
+	}
+	// the split is in a part of the stream itself: the chunks after it begin the second submit, with the parts after that part
+	m_splitchunk = m_order.size();
+	if (m_split != no_call)
+	{
+		for (std::size_t index = 0; index < m_pieces.size(); ++index)
+		{
+			auto const &piece{m_pieces[index]};
+			if ((piece.stream != this) || (m_split < piece.first) || (m_split >= piece.end))
+			{
+				continue;
+			}
+			for (std::size_t position = 0; position < m_order.size(); ++position)
+			{
+				if ((m_order[position].first > index) || ((m_order[position].first == index) && (m_order[position].second >= m_split)))
+				{
+					m_splitchunk = position;
+					break;
+				}
+			}
+			break;
+		}
+	}
 }
 
 // the calls
@@ -358,6 +596,12 @@ void command_stream::pipeline_barrier2(VkDependencyInfo const *Dependency)
 	data.memory = memory;
 	data.buffers = buffers;
 	data.images = images;
+	if (m_compute)
+	{
+		compute_queue_barriers(memory != no_data ? reinterpret_cast<VkMemoryBarrier2 *>(m_data.data() + memory) : nullptr, data.memory_count);
+		compute_queue_barriers(buffers != no_data ? reinterpret_cast<VkBufferMemoryBarrier2 *>(m_data.data() + buffers) : nullptr, data.buffer_count);
+		compute_queue_barriers(images != no_data ? reinterpret_cast<VkImageMemoryBarrier2 *>(m_data.data() + images) : nullptr, data.image_count);
+	}
 	close(call);
 }
 
@@ -1042,6 +1286,27 @@ void command_stream::execute(std::size_t const Call, VkCommandBuffer const Buffe
 
 void command_stream::replay(std::size_t const Chunk, VkCommandBuffer const Buffer) const
 {
+	if (false == m_pieces.empty())
+	{
+		if (Chunk >= m_order.size())
+		{
+			return;
+		}
+		auto const &[index, chunk]{m_order[Chunk]};
+		auto const &piece{m_pieces[index]};
+		// the state the parts before it left, then the chunk of its stream as it was recorded there
+		for (auto const &[stream, call] : piece.inherited)
+		{
+			stream->execute(call, Buffer);
+		}
+		piece.stream->replay_chunk(chunk, Buffer);
+		return;
+	}
+	replay_chunk(Chunk, Buffer);
+}
+
+void command_stream::replay_chunk(std::size_t const Chunk, VkCommandBuffer const Buffer) const
+{
 	if (Chunk >= m_chunks.size())
 	{
 		return;
@@ -1071,8 +1336,27 @@ void command_stream::replay(std::size_t const Chunk, VkCommandBuffer const Buffe
 
 void command_stream::replay(VkCommandBuffer const Buffer) const
 {
+	if (false == m_pieces.empty())
+	{
+		// the parts in their order, each a range of the calls of its stream
+		for (auto const &piece : m_pieces)
+		{
+			if (piece.first >= piece.end)
+			{
+				continue;
+			}
+			auto const &chunks{piece.stream->m_chunks};
+			piece.stream->replay_calls(chunks[piece.first].first, chunks[piece.end - 1].end, Buffer);
+		}
+		return;
+	}
+	replay_calls(0, m_data.size(), Buffer);
+}
+
+void command_stream::replay_calls(std::size_t const First, std::size_t const End, VkCommandBuffer const Buffer) const
+{
 	// the chunks one after another, the cuts made whole again: each call as it was made
-	for (auto call = std::size_t{0}; call < m_data.size();)
+	for (auto call = First; call < End;)
 	{
 		auto const &header{*reinterpret_cast<call_header const *>(m_data.data() + call)};
 		execute(call, Buffer);

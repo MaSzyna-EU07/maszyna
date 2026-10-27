@@ -28,19 +28,31 @@ VkPipelineStageFlags2 const sampled_stage{VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BI
 
 } // namespace
 
-// the rendering of the map the maps set up last (begin(), begin_lamp(), begin_headlight()), and the pass of the walk into it
+// the rendering of the map the maps set up last (begin(), begin_lamp(), begin_headlight()), and the pass of the walk into it: the map
+// made ready for it (the states of the images are tracked by the main renderer), then begun (by the main renderer, or by a walker given
+// the target, begin_local_shadow_target())
 void vulkan14_renderer::begin_local_shadow_rendering()
+{
+	m_draw->local_target = m_context->scene.lamps.target();
+	auto const &target{m_draw->local_target};
+	if ((target.map == nullptr) || (target.view == VK_NULL_HANDLE))
+	{
+		return;
+	}
+	vk14::barriers(m_commands, {vk14::use_of(*target.map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+}
+
+void vulkan14_renderer::begin_local_shadow_target()
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
-	auto const &target{scene.lamps.target()};
-	auto const commands{ctx.commands};
+	auto const &target{m_draw->local_target};
+	auto const commands{m_commands};
 	if ((target.map == nullptr) || (target.view == VK_NULL_HANDLE))
 	{
 		return;
 	}
 	auto const use{vk14::use_of(*target.map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)};
-	vk14::barriers(commands, {use});
 	VkRenderingAttachmentInfo depth{};
 	depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 	depth.imageView = target.view;
@@ -70,7 +82,7 @@ void vulkan14_renderer::end_local_shadow_rendering()
 {
 	if (m_draw->rendering)
 	{
-		m_context->commands->end_rendering();
+		m_commands->end_rendering();
 	}
 	end_draws();
 }
@@ -89,7 +101,7 @@ void vulkan14_renderer::ready_lamp_maps()
 	}
 	if (false == uses.empty())
 	{
-		vk14::barriers(m_context->commands, uses);
+		vk14::barriers(m_commands, uses);
 	}
 }
 
@@ -112,6 +124,7 @@ void vulkan14_renderer::render_local_shadows()
 	OpenGLMatrices.load_matrix(glm::mat4{glm::translate(glm::dmat4{1.0}, -glm::dvec3{lamps.lamp()}) * glm::inverse(vehicle->mMatrix)});
 	lamps.begin();
 	begin_local_shadow_rendering();
+	begin_local_shadow_target();
 	m_cubeshadows = true;
 	Render_cab(vehicle, 0.0f, false);
 	m_cubeshadows = false;
@@ -198,13 +211,46 @@ void vulkan14_renderer::render_lamp_shadow(std::size_t const Slot, bool const Ve
 	camera.update_frustum();
 	OpenGLMatrices.mode(GL_MODELVIEW);
 	OpenGLMatrices.load_matrix(glm::mat4{1.f});
-
 	lamps.begin_lamp(Slot, Vehicles, m_instancerecordsversion, m_framestamp);
 	begin_local_shadow_rendering();
+	// the vehicles by the lamp; or the scenery, with its instances culled on the gpu, each scenery part drawn in a frame with a culling
+	// of its own
+	std::vector<TDynamicObject *> vehicles;
+	vk14::instance_cull *cull{nullptr};
+	if (Vehicles)
+	{
+		vehicles = lamps.slot_vehicles();
+	}
+	else
+	{
+		cull = light_shadow_cull(m_context->scene.cull.lamps, m_lampscenerydrawn++, Global.gfx_gpucull_shadows_lamps);
+	}
+	auto const *owner{static_cast<TAnimModel const *>(slot.owner)};
+	if (walks_wanted())
+	{
+		// walked by a walker (gfx.vulkan.parallelpasses), its draws counted once it's done
+		fork_walk([target = m_draw->local_target, Vehicles, vehicles, Cab, owner, cull](vulkan14_renderer &Walker) {
+			Walker.m_draw->local_target = target;
+			Walker.walk_lamp(Vehicles, vehicles, Cab, owner, cull);
+		}, walk_kind::lamp);
+		lamps.end_lamp(0);
+	}
+	else
+	{
+		walk_lamp(Vehicles, vehicles, Cab, owner, cull);
+		lamps.end_lamp(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	}
+	m_renderpass = m_colorpass;
+}
+
+// the walk of the map of a lamp set up by render_lamp_shadow()
+void vulkan14_renderer::walk_lamp(bool const Vehicles, std::vector<TDynamicObject *> const &Dynamics, TDynamicObject *Cab, TAnimModel const *Owner, vk14::instance_cull *Cull)
+{
+	begin_local_shadow_target();
 	m_cubeshadows = true;
 	if (Vehicles)
 	{
-		for (auto *vehicle : lamps.slot_vehicles())
+		for (auto *vehicle : Dynamics)
 		{
 			Render(vehicle);
 		}
@@ -216,18 +262,15 @@ void vulkan14_renderer::render_lamp_shadow(std::size_t const Slot, bool const Ve
 	else
 	{
 		m_cubescenery = true;
-		m_cubeskipinstance = static_cast<TAnimModel const *>(slot.owner);
-		// the instances culled on the gpu, each scenery part drawn in a frame with a culling of its own
-		m_lightshadowcull = light_shadow_cull(m_context->scene.cull.lamps, m_lampscenerydrawn++, Global.gfx_gpucull_shadows_lamps);
-		Render(simulation::Region);
+		m_cubeskipinstance = Owner;
+		m_lightshadowcull = Cull;
+		walk_region(simulation::Region, false);
 		m_lightshadowcull = nullptr;
 		m_cubeskipinstance = nullptr;
 		m_cubescenery = false;
 	}
 	m_cubeshadows = false;
 	end_local_shadow_rendering();
-	lamps.end_lamp(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
-	m_renderpass = m_colorpass;
 }
 
 void vulkan14_renderer::render_headlight_shadows()
@@ -311,23 +354,46 @@ void vulkan14_renderer::render_headlight_shadow(std::size_t const Slot, light_ar
 	setup_matrices();
 	auto const colorprojection{scene_ubs.projection};
 	scene_ubs.projection = projection;
-
 	lamps.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
 	begin_local_shadow_rendering();
-	m_shadowskipvehicle = Light.owner;
-	// the instances culled on the gpu, each slot with a culling of its own
-	m_lightshadowcull = light_shadow_cull(m_context->scene.cull.headlights, Slot, Global.gfx_gpucull_shadows_headlights);
-	Render(simulation::Region);
+	// the instances culled on the gpu, each slot with a culling of its own; the occupied cab, within the reach
+	auto *cull{light_shadow_cull(m_context->scene.cull.headlights, Slot, Global.gfx_gpucull_shadows_headlights)};
+	auto *cab{((Cab != nullptr) && (Cab != Light.owner) && (glm::length(Cab->GetPosition() - projector) <= reach + Cab->radius())) ? Cab : nullptr};
+	auto const *owner{Light.owner};
+	if (walks_wanted())
+	{
+		// walked by a walker (gfx.vulkan.parallelpasses), its draws counted once it's done
+		fork_walk([target = m_draw->local_target, owner, cab, cull](vulkan14_renderer &Walker) {
+			Walker.m_draw->local_target = target;
+			Walker.walk_headlight(owner, cab, cull);
+		}, walk_kind::headlight);
+		lamps.end_headlight(0);
+	}
+	else
+	{
+		walk_headlight(owner, cab, cull);
+		lamps.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	}
+	scene_ubs.projection = colorprojection;
+	m_renderpass = m_colorpass;
+}
+
+// the walk of the map of a set of headlights set up by render_headlight_shadow()
+void vulkan14_renderer::walk_headlight(TDynamicObject const *Owner, TDynamicObject *Cab, vk14::instance_cull *Cull)
+{
+	// the matrices of the projector (the walker's own, made from the pass it was given)
+	setup_matrices();
+	begin_local_shadow_target();
+	m_shadowskipvehicle = Owner;
+	m_lightshadowcull = Cull;
+	walk_region(simulation::Region, false);
 	m_lightshadowcull = nullptr;
-	if ((Cab != nullptr) && (Cab != Light.owner) && (glm::length(Cab->GetPosition() - projector) <= reach + Cab->radius()))
+	if (Cab != nullptr)
 	{
 		Render_cab(Cab, 0.0f, false);
 	}
 	m_shadowskipvehicle = nullptr;
 	end_local_shadow_rendering();
-	lamps.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
-	scene_ubs.projection = colorprojection;
-	m_renderpass = m_colorpass;
 }
 
 vk14::instance_cull *vulkan14_renderer::light_shadow_cull(std::vector<std::unique_ptr<vk14::instance_cull>> &Culls, std::size_t const Index, bool const Enabled)

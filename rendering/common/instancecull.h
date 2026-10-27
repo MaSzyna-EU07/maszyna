@@ -205,6 +205,10 @@ class instance_cull
 	void frustum_planes(glm::vec4 (&Planes)[6]) const;
 	// the end of the dispatch of the first phase
 	void dispatch_end();
+	// the buckets of the pass placed again where the record buffer was started over by another pass since they were placed, and the
+	// places of the jobs taken again where another pass placed their buckets anew (the passes walked by several threads at once,
+	// walk_sync). before the dispatch, with the change held by the caller while the walks are parallel
+	void refresh_places();
 	// with a culling made for another pass: shares the records with it
 	void share_records(instance_cull const &Shared)
 	{

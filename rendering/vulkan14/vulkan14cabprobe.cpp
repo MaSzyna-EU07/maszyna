@@ -318,7 +318,7 @@ void vulkan14_renderer::render_cab_probe()
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &probe{scene.cabprobe};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto *vehicle{cab_probe_vehicle()};
 	glm::vec3 center{0.f};
 	glm::vec3 extent{0.f};

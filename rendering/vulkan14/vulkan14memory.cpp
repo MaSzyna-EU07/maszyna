@@ -77,6 +77,24 @@ void allocator::destroy()
 	m_device = VK_NULL_HANDLE;
 }
 
+void allocator::share_between(std::uint32_t const First, std::uint32_t const Second)
+{
+	m_shared = {First, Second};
+}
+
+VkSharingMode allocator::sharing(bool const Shared, std::uint32_t &Count, std::uint32_t const *&Families) const
+{
+	Count = 0;
+	Families = nullptr;
+	if ((false == Shared) || (m_shared[0] == VK_QUEUE_FAMILY_IGNORED) || (m_shared[1] == VK_QUEUE_FAMILY_IGNORED) || (m_shared[0] == m_shared[1]))
+	{
+		return VK_SHARING_MODE_EXCLUSIVE;
+	}
+	Count = 2;
+	Families = m_shared.data();
+	return VK_SHARING_MODE_CONCURRENT;
+}
+
 void allocator::budget(VkDeviceSize &Usage, VkDeviceSize &Budget) const
 {
 	Usage = 0;
@@ -124,7 +142,7 @@ buffer::~buffer()
 	destroy();
 }
 
-bool buffer::create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsageFlags Usage, memory_kind Kind, std::string const &Name)
+bool buffer::create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsageFlags Usage, memory_kind Kind, std::string const &Name, bool const Shared)
 {
 	destroy();
 
@@ -132,7 +150,7 @@ bool buffer::create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsage
 	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	info.size = std::max<VkDeviceSize>(Size, 4);
 	info.usage = Usage;
-	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	info.sharingMode = Allocator.sharing(Shared, info.queueFamilyIndexCount, info.pQueueFamilyIndices);
 
 	VmaAllocationCreateInfo allocation{};
 	allocation.usage = VMA_MEMORY_USAGE_AUTO;
@@ -249,7 +267,7 @@ bool image::create(allocator const &Allocator, image_desc const &Desc, std::stri
 	info.samples = Desc.samples;
 	info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	info.usage = Desc.usage;
-	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	info.sharingMode = Allocator.sharing(Desc.shared, info.queueFamilyIndexCount, info.pQueueFamilyIndices);
 	info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	VmaAllocationCreateInfo allocation{};
@@ -353,38 +371,50 @@ void transition(command_stream *Commands, image &Image, VkImageLayout Layout, Vk
 
 void deletion_queue::push(std::uint64_t Value, std::function<void()> &&Deleter)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	m_entries.emplace_back(Value, std::move(Deleter));
 }
 
 void deletion_queue::collect(std::uint64_t Completed)
 {
-	// the values only grow, so the queue is in their order
-	while ((false == m_entries.empty()) && (m_entries.front().first <= Completed))
+	// the values only grow, so the queue is in their order (an object let go by another thread while the frame is made takes the
+	// value of the frame too). the deleters run outside of the lock
+	std::vector<std::function<void()>> deleters;
 	{
-		auto deleter{std::move(m_entries.front().second)};
-		m_entries.pop_front();
+		std::lock_guard<std::mutex> lock(m_mutex);
+		while ((false == m_entries.empty()) && (m_entries.front().first <= Completed))
+		{
+			deleters.emplace_back(std::move(m_entries.front().second));
+			m_entries.pop_front();
+		}
+	}
+	for (auto &deleter : deleters)
+	{
 		deleter();
 	}
 }
 
 void deletion_queue::flush()
 {
-	while (false == m_entries.empty())
+	std::deque<std::pair<std::uint64_t, std::function<void()>>> entries;
 	{
-		auto deleter{std::move(m_entries.front().second)};
-		m_entries.pop_front();
-		deleter();
+		std::lock_guard<std::mutex> lock(m_mutex);
+		entries.swap(m_entries);
+	}
+	for (auto &entry : entries)
+	{
+		entry.second();
 	}
 }
 
 // frame ring
 
-bool frame_ring::create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name, VkDeviceSize Tail)
+bool frame_ring::create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name, VkDeviceSize Tail, bool const Shared)
 {
 	m_sizeperframe = SizePerFrame;
 	m_base = 0;
 	m_used = 0;
-	return m_buffer.create(Allocator, SizePerFrame * Frames + Tail, Usage, memory_kind::upload, Name) && (m_buffer.mapped() != nullptr);
+	return m_buffer.create(Allocator, SizePerFrame * Frames + Tail, Usage, memory_kind::upload, Name, Shared) && (m_buffer.mapped() != nullptr);
 }
 
 void frame_ring::destroy()
@@ -396,12 +426,14 @@ void frame_ring::destroy()
 
 void frame_ring::begin_frame(std::uint32_t Frame)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	m_base = m_sizeperframe * Frame;
 	m_used = 0;
 }
 
 ring_slice frame_ring::allocate(VkDeviceSize Size, VkDeviceSize Alignment)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	auto const alignment{std::max<VkDeviceSize>(Alignment, 4)};
 	auto const offset{(m_used + alignment - 1) / alignment * alignment};
 	if ((m_buffer.mapped() == nullptr) || (offset + Size > m_sizeperframe))
@@ -419,7 +451,73 @@ ring_slice frame_ring::allocate(VkDeviceSize Size, VkDeviceSize Alignment)
 
 void frame_ring::flush() const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	m_buffer.flush(m_base, m_used);
+}
+
+void ring_cache::reset(frame_ring *const Ring, VkDeviceSize const Part)
+{
+	m_ring = Ring;
+	m_partsize = Part;
+	m_part = ring_slice{};
+	m_used = 0;
+}
+
+VkDeviceSize ring_cache::next(VkDeviceSize const Alignment) const
+{
+	auto const alignment{std::max<VkDeviceSize>(Alignment, 4)};
+	return (m_part.offset + m_used + alignment - 1) / alignment * alignment;
+}
+
+ring_slice ring_cache::allocate_before(VkDeviceSize const Size, VkDeviceSize const Alignment, VkDeviceSize const Limit)
+{
+	if (false == bool(m_part))
+	{
+		return {};
+	}
+	auto const offset{next(Alignment)};
+	if ((offset + Size > m_part.offset + m_part.size) || (offset + Size > Limit))
+	{
+		return {};
+	}
+	m_used = offset + Size - m_part.offset;
+	ring_slice slice;
+	slice.buffer = m_part.buffer;
+	slice.offset = offset;
+	slice.size = Size;
+	slice.data = m_part.data + (offset - m_part.offset);
+	return slice;
+}
+
+ring_slice ring_cache::allocate(VkDeviceSize const Size, VkDeviceSize const Alignment)
+{
+	if (auto const slice{allocate_before(Size, Alignment, std::numeric_limits<VkDeviceSize>::max())})
+	{
+		return slice;
+	}
+	if (m_ring == nullptr)
+	{
+		return {};
+	}
+	// the parts begin aligned for any of the slices
+	auto const partalignment{std::max<VkDeviceSize>(Alignment, 256)};
+	if (Size > m_partsize / 2)
+	{
+		// a large one gets a part of its own, the part held is kept for the small ones
+		return m_ring->allocate(Size, partalignment);
+	}
+	m_part = m_ring->allocate(m_partsize, partalignment);
+	m_used = 0;
+	if (false == bool(m_part))
+	{
+		// the ring is nearly full: the rest of it in a part of the size of the slice
+		m_part = m_ring->allocate(Size, partalignment);
+		if (false == bool(m_part))
+		{
+			return {};
+		}
+	}
+	return allocate_before(Size, Alignment, std::numeric_limits<VkDeviceSize>::max());
 }
 
 } // namespace vk14

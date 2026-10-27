@@ -122,6 +122,10 @@ public:
     // legacy method, updates geometry for pieces in the animation list
     void
         RaAnimate( unsigned int const Framestamp );
+    // whether RaAnimate() has anything to update in the frame
+    bool
+        animation_pending( unsigned int const Framestamp ) const {
+            return ( tTrackAnim != nullptr ) && ( Framestamp != m_framestamp ); }
     // sends content of the class to provided stream
     void
         serialize( std::ostream &Output ) const;
@@ -405,6 +409,10 @@ public:
 	// generates renderable version of held non-instanced geometry
     void
         create_geometry();
+    // whether create_geometry() has anything to make or to load
+    bool
+        geometry_pending() const {
+            return ( false == m_terrain.empty() ) || ( false == m_geometrycreated ); }
     // loads geometry of the section kept in binary terrain files, if any is waiting
     void
         load_terrain();

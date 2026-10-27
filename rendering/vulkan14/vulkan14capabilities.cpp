@@ -227,6 +227,17 @@ void query_capabilities(VkPhysicalDevice Physical, feature_chain &Queried, capab
 		properties2.pNext = &properties14;
 		vkGetPhysicalDeviceProperties2(Physical, &properties2);
 		Caps.max_push_descriptors = properties14.maxPushDescriptors;
+		// the layouts the host can fill images in (hostImageCopy): the textures are filled straight to the one they're sampled in
+		std::vector<VkImageLayout> copylayouts(properties14.copyDstLayoutCount);
+		if (false == copylayouts.empty())
+		{
+			properties14.pCopyDstLayouts = copylayouts.data();
+			properties14.copySrcLayoutCount = 0;
+			properties14.pCopySrcLayouts = nullptr;
+			vkGetPhysicalDeviceProperties2(Physical, &properties2);
+			copylayouts.resize(properties14.copyDstLayoutCount);
+			Caps.host_copy_sampled = (std::find(copylayouts.begin(), copylayouts.end(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) != copylayouts.end());
+		}
 	}
 
 	// features
@@ -319,10 +330,10 @@ std::string capability_report(capabilities const &Caps)
 	line("driver            " + Caps.driver_name + " " + Caps.driver_info);
 	line("device memory     " + memory_size_string(Caps.device_local_memory));
 	line(std::string("draw indirect count     ") + flag(Caps.draw_indirect_count));
+	line(std::string("host image copy         ") + flag(Caps.host_image_copy) + (Caps.host_image_copy ? (Caps.host_copy_sampled ? " (to the sampled layout)" : " (not to the sampled layout)") : ""));
 	line(std::string("extended dynamic state3 ") + flag(Caps.ext_extended_dynamic_state3));
 	line(std::string("memory budget           ") + flag(Caps.ext_memory_budget));
 	line(std::string("swapchain maintenance1  ") + flag(Caps.ext_swapchain_maintenance1));
-	line(std::string("host image copy         ") + flag(Caps.host_image_copy));
 	line(std::string("sampler filter minmax   ") + flag(Caps.sampler_filter_minmax));
 	line(std::string("shader output layer     ") + flag(Caps.shader_output_layer));
 	line(std::string("fill mode non solid     ") + flag(Caps.fill_mode_non_solid));

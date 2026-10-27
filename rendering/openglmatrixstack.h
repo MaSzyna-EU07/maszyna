@@ -194,7 +194,8 @@ private:
     openglstack_array m_stacks;
 };
 
-extern opengl_matrices OpenGLMatrices;
+// per thread: the vulkan renderer walks the passes of the scene on several of them at once (gfx.vulkan.parallelpasses)
+extern thread_local opengl_matrices OpenGLMatrices;
 
 // NOTE: standard opengl calls re-definitions
 

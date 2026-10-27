@@ -277,6 +277,8 @@ public:
     // buffers of the bank of the specified chunk. the same for chunks of banks which share their buffers, the bank otherwise.
     // valid once the chunk was made ready for drawing (indirect_source())
     auto draw_group( gfx::geometry_handle const &Geometry ) const -> std::uint32_t;
+    // marks the bank of the chunk as used, as the draws do (the vulkan renderer marks the banks its walkers drew from, M2)
+    void mark_used( gfx::geometry_handle const &Geometry );
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 

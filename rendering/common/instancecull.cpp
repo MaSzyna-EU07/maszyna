@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/common/instancecull.h"
+#include "rendering/common/walksync.h"
 
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
@@ -96,9 +97,14 @@ void instance_cull::add(scene::basic_cell::instance_bucket_key const &Key, scene
 	{
 		// lod bounds of the model, the same set Render_Instanced() splits the distance into bands with, found once for the model
 		auto const lodfirst{static_cast<std::uint32_t>(m_lodlist.size())};
-		auto const &lodbounds{Key.pModel->lod_bounds()};
-		m_lodlist.insert(m_lodlist.end(), lodbounds.begin(), lodbounds.end());
-		auto const lodcount{static_cast<std::uint32_t>(lodbounds.size())};
+		std::uint32_t lodcount{0};
+		{
+			// found by the first pass which asks, of the passes walked at the same time (walk_sync)
+			gfx::walk_sync::model_hold hold{Key.pModel};
+			auto const &lodbounds{Key.pModel->lod_bounds()};
+			m_lodlist.insert(m_lodlist.end(), lodbounds.begin(), lodbounds.end());
+			lodcount = static_cast<std::uint32_t>(lodbounds.size());
+		}
 
 		group_data const group{static_cast<std::uint32_t>(m_grouplist.size()), m_entries, lodcount + 1, distancemin, distancemax};
 		m_grouplist.push_back({lodfirst, lodcount, m_entries, 0});
@@ -142,7 +148,12 @@ void instance_cull::add(scene::basic_cell::instance_bucket_key const &Key, scene
 		}
 	}
 
-	place(Bucket);
+	{
+		// the places in the record buffer the passes share are given by one walk at a time (walk_sync)
+		auto const &shared{*m_records};
+		gfx::walk_sync::change change{(Bucket.gpugeneration != shared.recordgeneration) || Bucket.gpustale};
+		place(Bucket);
+	}
 
 	gl::instance_cull_job job{};
 	job.origin = packed_vec3{Bucket.recordorigin - m_setup.camera};
@@ -220,6 +231,24 @@ void instance_cull::place(scene::basic_cell::instance_bucket const &Bucket)
 		}
 	}
 	allocate(Bucket);
+}
+
+void instance_cull::refresh_places()
+{
+	auto const &shared{*m_records};
+	auto const moved{std::any_of(m_buckets.begin(), m_buckets.end(), [&](scene::basic_cell::instance_bucket const *Bucket) { return (Bucket->gpugeneration != shared.recordgeneration) || Bucket->gpustale; })};
+	if (moved)
+	{
+		for (std::size_t job = 0; job < m_buckets.size(); ++job)
+		{
+			place(*m_buckets[job]);
+		}
+	}
+	// another pass which started the buffer over placed the buckets it shares with this one anew, current again
+	for (std::size_t job = 0; job < m_buckets.size(); ++job)
+	{
+		m_joblist[job].first = m_buckets[job]->gpufirst;
+	}
 }
 
 bool instance_cull::dispatch_begin()

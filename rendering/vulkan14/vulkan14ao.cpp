@@ -141,7 +141,7 @@ bool vulkan14_renderer::compute_ao_lighting(std::size_t const Index)
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &targets{scene.targets[Index]};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	if ((false == bool(targets.ssao)) || (false == bool(targets.ssao_blur)) || (false == bool(targets.scene_depth)))
 	{
 		return false;
@@ -187,7 +187,7 @@ void vulkan14_renderer::render_ao(std::size_t const Index, int const Mode)
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &targets{scene.targets[Index]};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	if ((false == bool(targets.ssao)) || (false == bool(targets.ssao_blur)))
 	{
 		return;

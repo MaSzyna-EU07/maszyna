@@ -146,6 +146,8 @@ bool vulkan14_renderer::init_weather(std::string &Reason)
 		desc.extent = {static_cast<std::uint32_t>(Size), static_cast<std::uint32_t>(Size), Volume ? static_cast<std::uint32_t>(Size) : 1u};
 		desc.mips = static_cast<std::uint32_t>(std::floor(std::log2(static_cast<float>(Size)))) + 1;
 		desc.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		// read by the passes of the weather on the compute queue (the async compute of M6)
+		desc.shared = true;
 		Image = std::make_shared<vk14::image>();
 		if (false == Image->create(ctx.memory, desc, Name))
 		{
@@ -164,6 +166,7 @@ bool vulkan14_renderer::init_weather(std::string &Reason)
 		vk14::image_desc desc;
 		desc.format = VK_FORMAT_R32_SFLOAT;
 		desc.usage = VK_IMAGE_USAGE_STORAGE_BIT;
+		desc.shared = true;
 		weather.depth_dummy = std::make_shared<vk14::image>();
 		if (false == weather.depth_dummy->create(ctx.memory, desc, "clouds panorama depth"))
 		{
@@ -223,8 +226,10 @@ void vulkan14_renderer::destroy_weather()
 namespace
 {
 
-// an image of the weather made anew: the old one goes once the gpu is done with the frames which used it (Value)
-std::shared_ptr<vk14::image> weather_image(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::shared_ptr<vk14::image> &Image, VkImageType const Type, VkFormat const Format, glm::ivec3 const &Size, char const *Name)
+// an image of the weather made anew: the old one goes once the gpu is done with the frames which used it (Value). Shared: made by the
+// passes of the weather on the compute queue (the async compute of M6)
+std::shared_ptr<vk14::image> weather_image(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::shared_ptr<vk14::image> &Image, VkImageType const Type, VkFormat const Format, glm::ivec3 const &Size, char const *Name,
+                                           bool const Shared = false)
 {
 	if (Image)
 	{
@@ -236,6 +241,7 @@ std::shared_ptr<vk14::image> weather_image(vk14::allocator &Memory, vk14::deleti
 	desc.format = Format;
 	desc.extent = {static_cast<std::uint32_t>(std::max(Size.x, 1)), static_cast<std::uint32_t>(std::max(Size.y, 1)), static_cast<std::uint32_t>(std::max(Size.z, 1))};
 	desc.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	desc.shared = Shared;
 	Image = std::make_shared<vk14::image>();
 	if (false == Image->create(Memory, desc, Name))
 	{
@@ -251,7 +257,7 @@ void vulkan14_renderer::make_cloud_noise()
 {
 	auto &ctx{*m_context};
 	auto &weather{ctx.scene.weather};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const device{ctx.device.handle()};
 	ctx.passes.begin_pass("clouds noise", {vk14::use_of(*weather.shape_noise, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write), vk14::use_of(*weather.detail_noise, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write),
 	                                       vk14::use_of(*weather.coverage_noise, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write)});
@@ -364,7 +370,7 @@ void vulkan14_renderer::update_weather()
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &weather{scene.weather};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	if (false == weather.noise_made)
 	{
 		make_cloud_noise();
@@ -376,7 +382,7 @@ void vulkan14_renderer::update_weather()
 		if (weather.shadow_size != Global.gfx_clouds_shadows_size)
 		{
 			weather.shadow_size = Global.gfx_clouds_shadows_size;
-			weather_image(ctx.memory, ctx.deletions, ctx.uploads.current_value(), weather.shadow_map, VK_IMAGE_TYPE_2D, VK_FORMAT_R16_SFLOAT, glm::ivec3{weather.shadow_size, weather.shadow_size, 1}, "cloud shadow map");
+			weather_image(ctx.memory, ctx.deletions, ctx.uploads.current_value(), weather.shadow_map, VK_IMAGE_TYPE_2D, VK_FORMAT_R16_SFLOAT, glm::ivec3{weather.shadow_size, weather.shadow_size, 1}, "cloud shadow map", true);
 			if (weather.shadow_map)
 			{
 				// read before it's first drawn (the pass sets hold it)
@@ -430,7 +436,7 @@ void vulkan14_renderer::update_weather()
 		if ((weather.panorama_size != level.panorama) || (false == bool(weather.panorama)))
 		{
 			weather.panorama_size = level.panorama;
-			weather_image(ctx.memory, ctx.deletions, ctx.uploads.current_value(), weather.panorama, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, glm::ivec3{weather.panorama_size, 1}, "clouds panorama");
+			weather_image(ctx.memory, ctx.deletions, ctx.uploads.current_value(), weather.panorama, VK_IMAGE_TYPE_2D, VK_FORMAT_R16G16B16A16_SFLOAT, glm::ivec3{weather.panorama_size, 1}, "clouds panorama", true);
 			m_weatherstate.panorama_resized();
 		}
 		if (weather.panorama)
@@ -460,7 +466,7 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 {
 	auto &ctx{*m_context};
 	auto &weather{ctx.scene.weather};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const level{gfx::weather_state::quality(Global.gfx_clouds, Global.gfx_fog_quality)};
 	// the images of the clouds of the main view and of the fog volume, for the size and the quality
 	auto const cloudsize{glm::max((Size + level.divisor - 1) / level.divisor, glm::ivec2{1})};

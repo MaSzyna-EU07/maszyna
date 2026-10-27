@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14cull.h"
+#include "rendering/common/walksync.h"
 #include "rendering/vulkan14/vulkan14commands.h"
 
 #include "rendering/frustum.h"
@@ -108,6 +109,7 @@ void instance_cull::destroy(VkDevice Device)
 		m_shared->commands.destroy(Device);
 	}
 	m_shared.reset();
+	m_recordbuffer.reset();
 	m_counters.reset();
 	m_output.reset();
 	m_commands.reset();
@@ -234,7 +236,7 @@ std::vector<descriptor> instance_cull::cull_descriptors(cull_occlusion const *Oc
 {
 	auto const &environment{m_shared->environment};
 	auto const slice = [](ring_slice const &Slice) { return buffer_descriptor(Slice.buffer, Slice.offset, Slice.size); };
-	return {buffer_descriptor(m_shared->records->handle(), 0, VK_WHOLE_SIZE),
+	return {buffer_descriptor(m_recordbuffer->handle(), 0, VK_WHOLE_SIZE),
 	        slice(m_jobs),
 	        slice(m_groups),
 	        slice(m_lods),
@@ -252,7 +254,14 @@ void instance_cull::dispatch(command_stream *Commands, glm::mat4 const &View, cu
 	}
 	auto &shared{*m_shared};
 	auto const &environment{shared.environment};
-	flush_records();
+	{
+		// the places of the records of the pass, the records the passes sent and the buffer they're in, together: another pass may start
+		// the buffer over in between (walk_sync, the passes walked by several threads at once)
+		gfx::walk_sync::change change{gfx::walk_sync::parallel()};
+		refresh_places();
+		flush_records();
+		m_recordbuffer = shared.records;
+	}
 
 	m_countersize = (gl::INSTANCE_COUNTER_HEADER + 3 * m_entries) * sizeof(std::uint32_t);
 	if ((false == reserve(m_counters, std::max(m_countersize, READBACK_SIZE), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, "instance counters")) ||

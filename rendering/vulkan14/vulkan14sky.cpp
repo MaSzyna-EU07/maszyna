@@ -85,11 +85,11 @@ bool vulkan14_renderer::init_sky(std::string &Reason)
 	auto const device{ctx.device.handle()};
 	auto const frames{static_cast<std::uint32_t>(ctx.frames.size())};
 
-	// the buffers the shading reads
-	if ((false == sky.sky.create(ctx.memory, sizeof(gl::sky_data), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::device, "sky ambient")) ||
-	    (false == sky.atmosphere.create(ctx.memory, sizeof(gl::atmosphere_ubs), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::device, "atmosphere")) ||
-	    (false == sky.result.create(ctx.memory, sizeof(gl::atmosphere_result), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, vk14::memory_kind::device, "atmosphere result")) ||
-	    (false == sky.result_readback.create(ctx.memory, sizeof(gl::atmosphere_result), frames, "atmosphere result readback")) ||
+	// the buffers the shading reads; what the passes of the sky make is shared with the compute queue (the async compute of M6)
+	if ((false == sky.sky.create(ctx.memory, sizeof(gl::sky_data), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::device, "sky ambient", true)) ||
+	    (false == sky.atmosphere.create(ctx.memory, sizeof(gl::atmosphere_ubs), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::device, "atmosphere", true)) ||
+	    (false == sky.result.create(ctx.memory, sizeof(gl::atmosphere_result), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, vk14::memory_kind::device, "atmosphere result", true)) ||
+	    (false == sky.result_readback.create(ctx.memory, sizeof(gl::atmosphere_result), frames, "atmosphere result readback", true)) ||
 	    (false == exposure.data.create(ctx.memory, sizeof(gl::exposure_data), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::device, "exposure")) ||
 	    (false == exposure.readback.create(ctx.memory, 4 * sizeof(float), frames, "exposure readback")))
 	{
@@ -111,6 +111,7 @@ bool vulkan14_renderer::init_sky(std::string &Reason)
 		vk14::image_desc desc;
 		desc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 		desc.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		desc.shared = true;
 		desc.extent = {gl::ATMOSPHERE_TRANSMITTANCE_WIDTH, gl::ATMOSPHERE_TRANSMITTANCE_HEIGHT, 1};
 		if (false == make_image(sky.transmittance, desc, "atmosphere transmittance"))
 		{
@@ -245,7 +246,7 @@ void vulkan14_renderer::clear_sky_images()
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &sky{scene.sky};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	std::vector<vk14::image_use> uses;
 	for (auto *image : {sky.transmittance.get(), sky.multiscattering.get(), sky.skyview.get(), sky.ggx.get()})
 	{
@@ -294,7 +295,7 @@ void vulkan14_renderer::update_sky()
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &sky{scene.sky};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const &sun{simulation::Environment.sun()};
 	auto const sundirection{sun.getDirection()};
 
@@ -353,7 +354,7 @@ void vulkan14_renderer::prefilter_environment()
 	{
 		return;
 	}
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	ctx.passes.begin_pass("envmap ggx", {vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, compute_stage, sampled_access),
 	                                     vk14::use_of(*sky.ggx, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write)});
 	for (std::size_t level = 0; level < gl::ENVMAP_GGX_LEVELS; ++level)
@@ -430,7 +431,7 @@ void vulkan14_renderer::measure_exposure(vk14::image &Image)
 {
 	auto &ctx{*m_context};
 	auto &exposure{ctx.scene.exposure};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	float data[4];
 	if (exposure.readback.pop(ctx.completed(), data, sizeof(data)))
 	{

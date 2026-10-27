@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14context.h"
 #include "rendering/vulkan14/vulkan14commands.h"
+#include "rendering/common/walksync.h"
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "utilities/Globals.h"
@@ -103,22 +104,29 @@ vk14::instance_cull &vulkan14_renderer::pass_cull()
 
 // the gpu culling runs along the first color pass of the main viewport of a frame, and the passes of the cascades of the sun
 // shadows and of the faces of the environment map drawn for it, each with a culling of its own (opengl46_renderer::walk_region_begin())
+// the cullings made the first time they're wanted, by the main renderer (before it gives the passes to the walkers)
+void vulkan14_renderer::ensure_cull()
+{
+	auto &cull{m_context->scene.cull};
+	static bool tried{false};
+	if ((m_main == nullptr) && (Global.gfx_gpucull != 0) && (false == cull.ready) && (false == tried))
+	{
+		tried = true;
+		if (false == init_cull())
+		{
+			ErrorLog("vulkan: the gpu culling of the instances can't be used, the cpu culls them (gfx.gpucull)");
+			destroy_cull();
+		}
+	}
+}
+
 void vulkan14_renderer::walk_region_begin()
 {
 	vk14::instance_cull *passcull{nullptr};
 	auto &cull{m_context->scene.cull};
 	if ((Global.gfx_gpucull != 0) && (m_current_viewport != nullptr) && (m_current_viewport->main) && m_draw->rendering)
 	{
-		static bool tried{false};
-		if ((false == cull.ready) && (false == tried))
-		{
-			tried = true;
-			if (false == init_cull())
-			{
-				ErrorLog("vulkan: the gpu culling of the instances can't be used, the cpu culls them (gfx.gpucull)");
-				destroy_cull();
-			}
-		}
+		ensure_cull();
 		if (cull.ready)
 		{
 			if ((m_renderpass.draw_mode == rendermode::color) && (m_instancecullframe != m_framestamp))
@@ -169,7 +177,7 @@ bool vulkan14_renderer::walk_instances_begin()
 		{
 			// the view of the pass is in place here, the one Render_Instanced() takes
 			suspend_rendering();
-			pass_cull().dispatch(m_context->commands, OpenGLMatrices.data(GL_MODELVIEW));
+			pass_cull().dispatch(m_commands, OpenGLMatrices.data(GL_MODELVIEW));
 			resume_rendering();
 			// what the cpu drew of the sleepers and the models drawn on their own
 			Compare_Pass_Cull();
@@ -219,7 +227,7 @@ void vulkan14_renderer::suspend_rendering()
 	{
 		return;
 	}
-	m_context->commands->end_rendering();
+	m_commands->end_rendering();
 	draw.rendering = false;
 }
 
@@ -231,9 +239,17 @@ void vulkan14_renderer::resume_rendering()
 	{
 		return;
 	}
-	auto const commands{m_context->commands};
-	// what the rendering stored before is loaded again
-	vk14::barriers(commands, resume.uses);
+	auto const commands{m_commands};
+	// what the rendering stored before is loaded again. a walker leaves the states of the images the main thread tracks as they were:
+	// the rendering left them as it found them
+	if (m_main != nullptr)
+	{
+		vk14::barriers_again(commands, resume.uses);
+	}
+	else
+	{
+		vk14::barriers(commands, resume.uses);
+	}
 	commands->begin_rendering(&resume.info);
 	// the dynamic state starts anew with the rendering, the state of the walk goes on
 	auto const set{draw.set};
@@ -263,6 +279,8 @@ void vulkan14_renderer::resume_rendering()
 
 vk14::scene_program *vulkan14_renderer::multidraw_program(vk14::scene_program &Program)
 {
+	// made by one of the threads walking the passes (M2)
+	std::lock_guard<std::mutex> lock(Program.mutex);
 	if (Program.multidraw_tried)
 	{
 		return Program.multidraw.get();
@@ -309,12 +327,11 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 		return false;
 	}
 	// the buffers of the bank of the chunks, with their data on the gpu (the chunks of a multi draw are of one bank)
-	gfx::indirect_source source;
-	if (false == m_geometry.indirect_source(geometry, source))
+	vk14::chunk_source chunk;
+	if (false == chunk_of(geometry, chunk))
 	{
 		return false;
 	}
-	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[geometry.bank - 1])->last()};
 	if (false == bind_scene_pipeline(Program, *draw.targets, Blend, static_cast<int>(chunk.topology)))
 	{
 		return false;
@@ -334,21 +351,26 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 	else
 	{
 		auto &draws{scene.draws};
+		auto &window{draw.draws_window};
 		auto const size{static_cast<VkDeviceSize>(Count) * draws.stride};
-		auto const slice{size <= draws.window ? draws.ring.allocate(size, draws.stride) : vk14::ring_slice{}};
-		if (slice)
+		auto slice{(window.open && (size <= draws.window)) ? draw.draws_cache.allocate_before(size, draws.stride, window.base + draws.window) : vk14::ring_slice{}};
+		if ((false == bool(slice)) && (size <= draws.window))
 		{
-			if ((false == draws.open) || (slice.offset + size > draws.base + draws.window))
+			slice = draw.draws_cache.allocate(size, draws.stride);
+			if (slice)
 			{
-				draws.base = slice.offset;
-				draws.open = true;
+				window.base = slice.offset;
+				window.open = true;
 				draw.set_dirty = true;
 			}
+		}
+		if (slice)
+		{
 			for (std::uint32_t i = 0; i < Count; ++i)
 			{
 				std::memcpy(slice.data + i * draws.stride, &m_indirectdraws[First + i].ubs, sizeof(gl::model_ubs));
 			}
-			block = static_cast<std::uint32_t>((slice.offset - draws.base) / draws.stride);
+			block = static_cast<std::uint32_t>((slice.offset - window.base) / draws.stride);
 		}
 	}
 	// the next draw of the walk pushes a block of its own
@@ -416,6 +438,7 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_colour(vk14:
 	indirect_counts counts;
 	auto const count{m_indirectdraws.size()};
 	auto const longest{static_cast<std::size_t>(scene.draws.window / scene.draws.stride)};
+	draw.replaying = true;
 	for (std::size_t index = 0; index < count;)
 	{
 		auto const blending{m_indirectdraws[index].blending};
@@ -450,6 +473,7 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_colour(vk14:
 			walk_blending(false);
 		}
 	}
+	draw.replaying = false;
 	if (count > 0)
 	{
 		// the model block the draws made one by one leave behind
@@ -463,7 +487,7 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_depth(vk14::
 {
 	auto &draw{*m_draw};
 	auto &scene{m_context->scene};
-	auto const commands{m_context->commands};
+	auto const commands{m_commands};
 	// as in draw_indirect_colour(): the seed the draws were recorded with
 	TSubModel::iVariantSeed = 0;
 	indirect_counts counts;
@@ -601,7 +625,7 @@ void vulkan14_renderer::record_indirect_draws(vk14::instance_cull &Cull, bool co
 	{
 		Order_Indirect_Draws();
 	}
-	Cull.fill_commands(m_context->commands, m_indirectcommands);
+	Cull.fill_commands(m_commands, m_indirectcommands);
 	m_walkcounts.ordertime += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - orderstart).count();
 }
 
@@ -614,7 +638,7 @@ void vulkan14_renderer::render_instances_indirect()
 	auto &scene{ctx.scene};
 	auto &cull{scene.cull.main};
 	auto &draw{*m_draw};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const viewport{static_cast<std::size_t>(m_current_viewport - m_viewports.data())};
 	auto *targets{viewport < scene.targets.size() ? &scene.targets[viewport] : nullptr};
 	auto const projection{OpenGLMatrices.data(GL_PROJECTION)};
@@ -718,7 +742,7 @@ void vulkan14_renderer::render_instances_indirect_pass()
 	auto &cull{pass_cull()};
 	auto &cascades{m_context->scene.cull.cascades};
 	suspend_rendering();
-	cull.dispatch(m_context->commands, OpenGLMatrices.data(GL_MODELVIEW));
+	cull.dispatch(m_commands, OpenGLMatrices.data(GL_MODELVIEW));
 	record_indirect_draws(cull, (&cull >= cascades.data()) && (&cull < cascades.data() + cascades.size()));
 	resume_rendering();
 
@@ -807,7 +831,7 @@ void vulkan14_renderer::measure_shadow_fit(std::size_t const Viewport)
 		return;
 	}
 	auto &targets{scene.targets[Viewport]};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	vk14::barriers(commands, {vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, compute_stage, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT)});
 	gfx::shadow_fit::view const view{m_colorpass.pass_camera.position(), m_colorpass.pass_camera.projection(), glm::mat3{m_colorpass.pass_camera.modelview()},
 	                                 gfx::shadow_fit::light_rotation(m_sunlight.direction), gfx::shadow_fit::fixed_splits().back()};

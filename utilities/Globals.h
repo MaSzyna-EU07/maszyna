@@ -425,6 +425,17 @@ struct global_settings {
     bool gfx_vulkan_renderthread { true };
     // threads recording the command buffers of the vulkan renderer; 0: the cores less two, 1: one thread records them all
     int gfx_threads { 0 };
+    // (vulkan) the pipelines and the textures a draw needs first made by the background threads, the draw left out till then (the
+    // cab waits for them); the pipelines of the last session made ahead at the start
+    bool gfx_vulkan_asyncresources { true };
+    // (vulkan) the cascades of the sun shadows and the shadow maps of the lamps and the headlights walked by threads of their own while
+    // the main thread walks the colour pass
+    bool gfx_vulkan_parallelpasses { true };
+    // (vulkan) the submodel trees of the instances culled on the gpu walked by the threads of gfx.threads, model by model
+    bool gfx_vulkan_parallelmodels { true };
+    // (vulkan) the passes of the sky and the weather run on the compute queue, at the same time as the sun shadows, where the gpu has a
+    // compute family of its own; off until a measurement on such a gpu shows what it gains
+    bool gfx_vulkan_asynccompute { false };
     bool vr = false;
     std::string vr_backend;
 

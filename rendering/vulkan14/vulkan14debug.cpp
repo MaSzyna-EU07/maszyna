@@ -414,7 +414,7 @@ void vulkan14_renderer::render_cluster_heatmap(std::size_t const Index)
 	auto &scene{ctx.scene};
 	auto &targets{scene.targets[Index]};
 	auto &draw{*m_draw};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	if ((scene.clusters.params.valid == 0) || (false == bool(targets.output)) || (false == bool(targets.depth)))
 	{
 		return;

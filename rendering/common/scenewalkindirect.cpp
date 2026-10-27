@@ -13,11 +13,14 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/common/scenewalk.h"
+#include "rendering/common/walksync.h"
 
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+
+#include <cassert>
 
 namespace gfx
 {
@@ -434,13 +437,22 @@ void scene_walk::Walk_Indirect_Draws(gfx::instance_cull const &Cull, bool const 
 	}
 	auto const shadows{m_renderpass.draw_mode == rendermode::shadows};
 	m_indirectrecording = true;
-	for (auto const &group : Cull.draw_groups())
+	// the groups walked by several threads (the backend decides), or one after another below
+	auto const parallel{walk_groups_parallel(Cull.draw_groups().size())};
+	if (parallel)
+	{
+		Walk_Groups_Parallel(Cull, cascade, walkcache, shadows);
+	}
+	static std::vector<gfx::instance_cull::draw_group> const walkedalready;
+	for (auto const &group : (parallel ? walkedalready : Cull.draw_groups()))
 	{
 		auto *model{group.key->pModel};
 		if ((model == nullptr) || (model->Root == nullptr) || ((group.instance == nullptr) && (false == group.sleepers)))
 		{
 			continue;
 		}
+		// the model the instances share is prepared and walked for the group, held till the walks are made (walk_sync)
+		gfx::walk_sync::model_hold hold{model};
 		// a model drawn on its own is prepared with its lights and animations each time; the others are prepared only for a walk.
 		// the version is taken before, so a walk prepared by something which changes the model isn't taken up again
 		walk_record *kept{nullptr};
@@ -585,12 +597,246 @@ void scene_walk::Walk_Indirect_Draws(gfx::instance_cull const &Cull, bool const 
 	m_walkcounts.walktime += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - walkstart).count();
 }
 
+void scene_walk::Walk_Groups_Parallel(gfx::instance_cull const &Cull, bool const Cascade, bool const Walkcache, bool const Shadows)
+{
+	auto const &groups{Cull.draw_groups()};
+	auto const &lodbounds{Cull.lod_bounds()};
+	auto constexpr nowalk{std::numeric_limits<std::uint32_t>::max()};
+	// what the walks of the groups share, made before they're split: the records of the walks of the earlier frames and those of the
+	// cascades of this one
+	m_groupplans.assign(groups.size(), group_plan{});
+	for (std::size_t index = 0; index < groups.size(); ++index)
+	{
+		auto const &group{groups[index]};
+		auto *model{group.key->pModel};
+		auto &plan{m_groupplans[index]};
+		plan.skip = (model == nullptr) || (model->Root == nullptr) || ((group.instance == nullptr) && (false == group.sleepers));
+		if (plan.skip)
+		{
+			continue;
+		}
+		if (Walkcache && (group.key->instance == nullptr))
+		{
+			plan.kept = &m_walkrecords[*group.key];
+			plan.kept->frame = m_framestamp;
+			auto &bands{plan.kept->bands[Shadows ? 1 : 0]};
+			if (bands.size() != group.lodcount + 1)
+			{
+				bands.clear();
+				bands.resize(group.lodcount + 1);
+			}
+		}
+		if (Cascade)
+		{
+			plan.walks = &m_cascaderecords[*group.key];
+			if ((plan.walks->frame != m_framestamp) || (plan.walks->bands.size() != group.lodcount + 1))
+			{
+				plan.walks->frame = m_framestamp;
+				plan.walks->bands.assign(group.lodcount + 1, cascade_band{nowalk, 0});
+			}
+		}
+	}
+	// the bands of a group: those within the distances its instances are at
+	auto const band_range = [&](gfx::instance_cull::draw_group const &Group, std::uint32_t const Band, float &Bandmin) {
+		Bandmin = (Band == 0 ? 0.f : lodbounds[Group.lodfirst + Band - 1]);
+		auto const bandmax{Band == Group.lodcount ? std::numeric_limits<float>::max() : lodbounds[Group.lodfirst + Band]};
+		return (Bandmin <= Group.distancemax) && (bandmax > Group.distancemin);
+	};
+	// the groups split among the tasks one run after another, each walked by a helper as Walk_Indirect_Draws() walks it (the walks the
+	// cascades made before are copied below)
+	auto const tasks{std::max<std::size_t>(1, std::min<std::size_t>(groups.size() / 8, 4))};
+	if (m_grouptasks.size() < tasks)
+	{
+		m_grouptasks.resize(tasks);
+	}
+	walk_groups_run(tasks, [&](scene_walk &Helper, std::size_t const Task) {
+		auto &result{m_grouptasks[Task]};
+		result.spans.clear();
+		result.counts = {};
+		Helper.m_indirectdraws.clear();
+		Helper.m_indirectcommands.clear();
+		Helper.m_renderpass.draw_stats = {};
+		for (auto index = groups.size() * Task / tasks; index < groups.size() * (Task + 1) / tasks; ++index)
+		{
+			auto const &plan{m_groupplans[index]};
+			if (plan.skip)
+			{
+				continue;
+			}
+			auto const &group{groups[index]};
+			auto *model{group.key->pModel};
+			// the model the instances share is prepared and walked for the group, held till the walks are made (walk_sync)
+			gfx::walk_sync::model_hold hold{model};
+			auto *kept{plan.kept};
+			auto const modelversion{model->state_version()};
+			material_handle const *skins{nullptr};
+			auto alpha{0x30300030};
+			auto prepared{false};
+			auto const prepare = [&]() {
+				prepared = true;
+				if (group.sleepers)
+				{
+					if (group.key->skins[1] != null_handle)
+					{
+						skins = group.key->skins.data();
+					}
+					TSubModel::iVariantSeed = 0;
+				}
+				else
+				{
+					if (group.key->instance != nullptr)
+					{
+						group.instance->RaAnimate(m_framestamp);
+					}
+					group.instance->RaPrepare();
+					auto const *material{group.instance->Material()};
+					if (material != nullptr)
+					{
+						skins = material->replacable_skins;
+						alpha = material->textures_alpha;
+					}
+				}
+				alpha ^= 0x0F0F000F;
+			};
+			if ((plan.walks == nullptr) && (kept == nullptr))
+			{
+				prepare();
+			}
+			for (std::uint32_t band = 0; band <= group.lodcount; ++band)
+			{
+				float bandmin;
+				if (false == band_range(group, band, bandmin))
+				{
+					continue;
+				}
+				if ((plan.walks != nullptr) && (plan.walks->bands[band].first != nowalk))
+				{
+					// walked by another cascade
+					continue;
+				}
+				Helper.m_indirectentry = group.entryfirst + band;
+				auto const walkfirst{Helper.m_indirectdraws.size()};
+				auto *keptwalk{kept != nullptr ? &kept->bands[Shadows ? 1 : 0][band] : nullptr};
+				if ((keptwalk != nullptr) && (keptwalk->valid) && (keptwalk->bandmin == bandmin) && (keptwalk->modelversion == modelversion) &&
+				    (keptwalk->blending == Helper.walk_blending_enabled()))
+				{
+					Helper.Replay_Walk(*keptwalk, Shadows);
+					++result.counts.reused;
+				}
+				else
+				{
+					if (false == prepared)
+					{
+						prepare();
+					}
+					auto const blending{Helper.walk_blending_enabled()};
+					Helper.m_indirectchanging = false;
+					::glPushMatrix();
+					::glLoadIdentity();
+					model->Root->fSquareDist = bandmin;
+					model->Root->ReplacableSet(skins, alpha);
+					model->Root->pRoot = model;
+					Helper.Render(model->Root);
+					::glPopMatrix();
+					++result.counts.walked;
+					if (Helper.m_indirectchanging)
+					{
+						++result.counts.changing;
+					}
+					if (keptwalk != nullptr)
+					{
+						keptwalk->valid = (false == Helper.m_indirectchanging);
+						if (keptwalk->valid)
+						{
+							keptwalk->draws.assign(Helper.m_indirectdraws.begin() + walkfirst, Helper.m_indirectdraws.end());
+							keptwalk->bandmin = bandmin;
+							keptwalk->modelversion = modelversion;
+							keptwalk->blending = blending;
+						}
+						else
+						{
+							keptwalk->draws.clear();
+						}
+					}
+				}
+				result.spans.push_back(group_span{static_cast<std::uint32_t>(index), band, static_cast<std::uint32_t>(walkfirst), static_cast<std::uint32_t>(Helper.m_indirectdraws.size() - walkfirst)});
+			}
+		}
+		result.draws.swap(Helper.m_indirectdraws);
+		result.commands.swap(Helper.m_indirectcommands);
+		result.submodels = Helper.m_renderpass.draw_stats.submodels;
+		result.drawcalls = Helper.m_renderpass.draw_stats.drawcalls;
+	});
+	// the draws in the order of the groups and their bands, with the walks of the cascades copied, as one walk would record them
+	std::size_t task{0};
+	std::size_t cursor{0};
+	for (std::size_t index = 0; index < groups.size(); ++index)
+	{
+		// the task the group was in, and where its walks are among those of the task
+		while (index >= groups.size() * (task + 1) / tasks)
+		{
+			++task;
+			cursor = 0;
+		}
+		auto const &plan{m_groupplans[index]};
+		if (plan.skip)
+		{
+			continue;
+		}
+		auto const &group{groups[index]};
+		for (std::uint32_t band = 0; band <= group.lodcount; ++band)
+		{
+			float bandmin;
+			if (false == band_range(group, band, bandmin))
+			{
+				continue;
+			}
+			m_indirectentry = group.entryfirst + band;
+			if ((plan.walks != nullptr) && (plan.walks->bands[band].first != nowalk))
+			{
+				// walked by another cascade: its draws, for the instances of this entry
+				auto const &walk{plan.walks->bands[band]};
+				m_indirectdraws.insert(m_indirectdraws.end(), m_cascadedraws.begin() + walk.first, m_cascadedraws.begin() + walk.first + walk.count);
+				for (std::uint32_t draw = 0; draw < walk.count; ++draw)
+				{
+					auto &command{m_indirectcommands.emplace_back(m_cascadecommands[walk.first + draw])};
+					command.entry = m_indirectentry;
+				}
+				m_renderpass.draw_stats.submodels += static_cast<int>(walk.count);
+				m_renderpass.draw_stats.drawcalls += static_cast<int>(walk.count);
+				continue;
+			}
+			auto &result{m_grouptasks[task]};
+			auto const &span{result.spans[cursor++]};
+			assert((span.group == index) && (span.band == band));
+			auto const walkfirst{m_indirectdraws.size()};
+			m_indirectdraws.insert(m_indirectdraws.end(), result.draws.begin() + span.first, result.draws.begin() + span.first + span.count);
+			m_indirectcommands.insert(m_indirectcommands.end(), result.commands.begin() + span.first, result.commands.begin() + span.first + span.count);
+			if (plan.walks != nullptr)
+			{
+				plan.walks->bands[band] = cascade_band{static_cast<std::uint32_t>(m_cascadedraws.size()), static_cast<std::uint32_t>(m_indirectdraws.size() - walkfirst)};
+				m_cascadedraws.insert(m_cascadedraws.end(), m_indirectdraws.begin() + walkfirst, m_indirectdraws.end());
+				m_cascadecommands.insert(m_cascadecommands.end(), m_indirectcommands.begin() + walkfirst, m_indirectcommands.end());
+			}
+		}
+	}
+	for (std::size_t index = 0; index < tasks; ++index)
+	{
+		auto const &result{m_grouptasks[index]};
+		m_walkcounts.walked += result.counts.walked;
+		m_walkcounts.changing += result.counts.changing;
+		m_walkcounts.reused += result.counts.reused;
+		m_renderpass.draw_stats.submodels += result.submodels;
+		m_renderpass.draw_stats.drawcalls += result.drawcalls;
+	}
+}
+
 void scene_walk::Record_Indirect_Draw(gfx::geometry_handle const &Geometry)
 {
 	// the walk of Walk_Indirect_Draws(): the draw is made later, from the gpu culling, with this state
 	auto &geometry{walk_geometry()};
 	gfx::indirect_source source;
-	if (geometry.indirect_source(Geometry, source))
+	if (walk_indirect_source(Geometry, source))
 	{
 		m_indirectcommands.push_back({source.count, 0, source.first, static_cast<std::uint32_t>(source.basevertex), 0, m_indirectentry, (source.indexed ? 1u : 0u), 0});
 		m_indirectdraws.push_back({model_ubs, m_indirectmaterial, m_indirectsubmodel, Geometry, source.type, walk_blending_enabled(), geometry.draw_group(Geometry)});
@@ -605,7 +851,7 @@ void scene_walk::Replay_Walk(walk_band const &Walk, bool const Shadows)
 		// the place of the chunk in its bank is asked for again: the bank may have been let go since and made anew, which the
 		// question (as the walk) takes care of, uploading the chunk
 		gfx::indirect_source source;
-		if (false == geometry.indirect_source(walkdraw.geometry, source))
+		if (false == walk_indirect_source(walkdraw.geometry, source))
 		{
 			continue;
 		}

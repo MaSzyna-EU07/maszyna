@@ -86,30 +86,74 @@ class command_stream
 	using external_function = void (*)(VkCommandBuffer Buffer, void *Data);
 	void external(external_function Function, void *Data);
 
+	// the calls of Other go to the gpu here, where this stream is now (the stage M2: the passes recorded by other threads at the same
+	// time): the calls made after this one follow them, with the state they leave (the pipelines, the sets, the constants, the buffers,
+	// the dynamic state), as if they were made in this stream. outside of a rendering and of a query; Other is a stream without
+	// streams of its own spliced into it, finished before this one is, and kept until this one is replayed
+	void splice(command_stream const &Other);
+
+	// the stream goes to a queue of the compute family (the async compute of M6): the stages and the accesses of its barriers which such
+	// a queue doesn't have are left out. the work of the graphics queue they wait for is done before it through the semaphores
+	void set_compute_queue(bool Compute)
+	{
+		m_compute = Compute;
+	}
+	// the frame goes to the queue in two submits from here on, the calls after this one in the second, which waits for the work of the
+	// compute queue (M6). outside of a rendering and of a query; the first one made counts
+	void split();
+	// the first chunk of the second submit (chunks() when nothing was split), valid after finish()
+	std::size_t split_chunk() const
+	{
+		return m_splitchunk;
+	}
+
 	// the stream is made anew
 	void clear();
-	bool empty() const
-	{
-		return m_chunks.empty() || (m_data.empty());
-	}
+	bool empty() const;
 	// the stream is ended: no calls after it
 	void finish();
-	// the chunks, valid after finish()
+	// the chunks, valid after finish(); those of the streams spliced into it, in their places
 	std::size_t chunks() const
 	{
-		return m_chunks.size();
+		return m_pieces.empty() ? m_chunks.size() : m_order.size();
 	}
-	// the calls recorded since the start
-	std::size_t calls() const
-	{
-		return m_calls;
-	}
+	// the calls recorded since the start, with those of the streams spliced into it
+	std::size_t calls() const;
 	// the chunk recorded into Buffer (begun already, ended by the caller)
 	void replay(std::size_t Chunk, VkCommandBuffer Buffer) const;
 	// all of it into one command buffer
 	void replay(VkCommandBuffer Buffer) const;
 
   private:
+	// a call of a stream, the stream itself or one spliced into it
+	using call_ref = std::pair<command_stream const *, std::size_t>;
+	// a part of the stream as the gpu gets it: chunks of the stream itself or of a stream spliced into it, the state the calls before
+	// it left (the calls they made last of each kind, in the order they were made) and the state the part leaves with them
+	struct piece
+	{
+		command_stream const *stream{nullptr};
+		std::size_t first{0}; // chunks of the stream
+		std::size_t end{0};
+		std::vector<call_ref> inherited;
+		// the calls of the part setting the state last, kept when the part is of the stream itself (splice())
+		std::vector<std::size_t> state;
+		std::vector<std::size_t> pushes;
+	};
+	// the calls setting the state, of all the parts so far: a slot each (state_slot), and the pushes of the constants of each range
+	// and stages; the part of each, for their order
+	struct state_ref
+	{
+		command_stream const *stream{nullptr};
+		std::size_t call{0};
+		std::size_t piece{0};
+	};
+	struct merged_state
+	{
+		std::vector<state_ref> slots;
+		std::vector<state_ref> pushes;
+	};
+	// the state the calls of the part leave behind, over the state the parts before it left
+	void leave_state(std::size_t Piece, merged_state &State) const;
 	// the calls of the state a chunk sets again; the dynamic states have a slot each
 	enum state_slot : std::uint32_t
 	{
@@ -176,6 +220,9 @@ class command_stream
 	void cut();
 	// Flags: added to those of a begin of a rendering
 	void execute(std::size_t Call, VkCommandBuffer Buffer, VkRenderingFlags Flags = 0) const;
+	// a chunk of this stream alone, and the calls between two offsets
+	void replay_chunk(std::size_t Chunk, VkCommandBuffer Buffer) const;
+	void replay_calls(std::size_t First, std::size_t End, VkCommandBuffer Buffer) const;
 
 	static constexpr std::size_t header_size{8};
 	std::vector<std::uint8_t> m_data;
@@ -188,6 +235,15 @@ class command_stream
 	std::uint32_t m_work{0}; // of the chunk under way
 	std::size_t m_calls{0};
 	bool m_finished{false};
+	// the parts of the stream with the streams spliced into it, empty without them; the first chunk of the part of the stream itself
+	// under way; the chunks in the order of the parts (the part, the chunk of its stream)
+	std::vector<piece> m_pieces;
+	std::size_t m_piecefirst{0};
+	std::vector<std::pair<std::size_t, std::size_t>> m_order;
+	bool m_compute{false};
+	// the chunk of the stream itself the split begins, and the first chunk of the second submit
+	std::size_t m_split{no_call};
+	std::size_t m_splitchunk{0};
 };
 
 } // namespace vk14

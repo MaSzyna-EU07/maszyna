@@ -237,6 +237,7 @@ bool vulkan14_geometrybank::source(gfx::geometry_handle const &Geometry, chunk_s
 	{
 		return false;
 	}
+	std::lock_guard<std::mutex> lock(m_mutex);
 	if (m_layoutdirty)
 	{
 		build();
@@ -281,15 +282,15 @@ bool vulkan14_geometrybank::source(gfx::geometry_handle const &Geometry, chunk_s
 
 bool vulkan14_geometrybank::indirect_source_(gfx::geometry_handle const &Geometry, gfx::indirect_source &Source)
 {
-	m_last = chunk_source{};
-	if (false == source(Geometry, m_last))
+	chunk_source chunk;
+	if (false == source(Geometry, chunk))
 	{
 		return false;
 	}
-	Source.count = m_last.count;
-	Source.first = m_last.first;
-	Source.basevertex = m_last.basevertex;
-	Source.indexed = (m_last.indices != VK_NULL_HANDLE);
+	Source.count = chunk.count;
+	Source.first = chunk.first;
+	Source.basevertex = chunk.basevertex;
+	Source.indexed = (chunk.indices != VK_NULL_HANDLE);
 	Source.type = m_chunks[Geometry.chunk - 1].type;
 	return true;
 }

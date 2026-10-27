@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14common.h"
 
 #include <deque>
+#include <mutex>
 #include <functional>
 #include <vk_mem_alloc.h>
 
@@ -47,10 +48,16 @@ class allocator
 	}
 	// device memory used and the budget of the heaps which are local to the device, bytes
 	void budget(VkDeviceSize &Usage, VkDeviceSize &Budget) const;
+	// the buffers and images made shared from now on are used by the queues of both families without transfers of their ownership
+	// (VK_SHARING_MODE_CONCURRENT, the async compute of M6); nothing changes when the families are the same
+	void share_between(std::uint32_t First, std::uint32_t Second);
+	// the sharing of a buffer or an image made shared: the mode, and the families of the concurrent one (two of them)
+	VkSharingMode sharing(bool Shared, std::uint32_t &Count, std::uint32_t const *&Families) const;
 
   private:
 	VmaAllocator m_allocator{VK_NULL_HANDLE};
 	VkDevice m_device{VK_NULL_HANDLE};
+	std::array<std::uint32_t, 2> m_shared{VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED};
 	std::uint32_t m_heapcount{0};
 	std::vector<bool> m_deviceheaps;
 };
@@ -73,7 +80,8 @@ class buffer
 	buffer &operator=(buffer &&Other) noexcept;
 	~buffer();
 
-	bool create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsageFlags Usage, memory_kind Kind, std::string const &Name = {});
+	// Shared: used by the queues of the families the allocator shares between (allocator::share_between())
+	bool create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsageFlags Usage, memory_kind Kind, std::string const &Name = {}, bool Shared = false);
 	void destroy();
 
 	VkBuffer handle() const
@@ -130,6 +138,8 @@ struct image_desc
 	VkImageCreateFlags flags{0};
 	// the channels the default view reads, e.g. a single channel texture seen as rrr1
 	VkComponentMapping components{VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
+	// used by the queues of the families the allocator shares between (allocator::share_between())
+	bool shared{false};
 };
 
 class image
@@ -183,6 +193,8 @@ class image
 void transition(command_stream *Commands, image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access);
 
 // objects destroyed once the gpu is done with the frame which used them last
+// pushed to from any thread (the walks of the passes and the background threads make and let go of objects too), collected by the
+// thread of the renderer
 class deletion_queue
 {
   public:
@@ -194,10 +206,12 @@ class deletion_queue
 	void flush();
 	std::size_t size() const
 	{
+		std::lock_guard<std::mutex> lock(m_mutex);
 		return m_entries.size();
 	}
 
   private:
+	mutable std::mutex m_mutex;
 	std::deque<std::pair<std::uint64_t, std::function<void()>>> m_entries;
 };
 
@@ -220,21 +234,23 @@ class frame_ring
 {
   public:
 	// Tail: bytes past the part of the last frame, so a descriptor of a fixed range can be given an offset anywhere in a part
-	bool create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name, VkDeviceSize Tail = 0);
+	bool create(allocator const &Allocator, VkDeviceSize SizePerFrame, std::uint32_t Frames, VkBufferUsageFlags Usage, std::string const &Name, VkDeviceSize Tail = 0, bool Shared = false);
 	void destroy();
 	// the part of the frame Frame is used from its start again
 	void begin_frame(std::uint32_t Frame);
-	// Size bytes aligned to Alignment; empty when the part of the frame is full
+	// Size bytes aligned to Alignment; empty when the part of the frame is full. any thread (the walks of the passes, M2)
 	ring_slice allocate(VkDeviceSize Size, VkDeviceSize Alignment);
 	// makes the writes of the frame seen by the gpu, where the memory isn't coherent
 	void flush() const;
 	VkDeviceSize used() const
 	{
+		std::lock_guard<std::mutex> lock(m_mutex);
 		return m_used;
 	}
 	// the offset in the buffer the next allocation aligned to Alignment would get
 	VkDeviceSize next_offset(VkDeviceSize Alignment) const
 	{
+		std::lock_guard<std::mutex> lock(m_mutex);
 		auto const alignment{std::max<VkDeviceSize>(Alignment, 4)};
 		return m_base + (m_used + alignment - 1) / alignment * alignment;
 	}
@@ -248,10 +264,35 @@ class frame_ring
 	}
 
   private:
+	mutable std::mutex m_mutex;
 	buffer m_buffer;
 	VkDeviceSize m_sizeperframe{0};
 	VkDeviceSize m_base{0};
 	VkDeviceSize m_used{0};
+};
+
+// a part of a frame ring taken by a thread for the many small slices it places there (the blocks of the draws, the matrices of the
+// instances), so the threads walking the passes (M2) don't take the lock of the ring for each of them. the slices follow one another
+// in the part; one which doesn't fit in what's left of it takes a new part (or a part of its own size when it's larger than a part)
+class ring_cache
+{
+  public:
+	// Ring: where the parts come from (null: none), Part: their size, bytes. the part held is let go
+	void reset(frame_ring *Ring, VkDeviceSize Part);
+	// Size bytes aligned to Alignment (at most 256); empty when the ring is full
+	ring_slice allocate(VkDeviceSize Size, VkDeviceSize Alignment);
+	// the same, only when the slice fits in the part held and ends before Limit (an offset in the buffer); empty, with nothing taken,
+	// otherwise
+	ring_slice allocate_before(VkDeviceSize Size, VkDeviceSize Alignment, VkDeviceSize Limit);
+
+  private:
+	// where the next slice aligned to Alignment would begin in the part held, as an offset in the buffer
+	VkDeviceSize next(VkDeviceSize Alignment) const;
+
+	frame_ring *m_ring{nullptr};
+	VkDeviceSize m_partsize{0};
+	ring_slice m_part;
+	VkDeviceSize m_used{0}; // of the part held
 };
 
 } // namespace vk14

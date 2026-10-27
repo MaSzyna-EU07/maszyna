@@ -325,6 +325,7 @@ set(SOURCES
 "rendering/common/shadersource.cpp"
 "rendering/common/scenewalk.cpp"
 "rendering/common/scenewalkindirect.cpp"
+"rendering/common/walksync.cpp"
 "rendering/common/instancecull.cpp"
 "rendering/common/shadowfit.cpp"
 "rendering/common/localshadows.cpp"
@@ -487,6 +488,8 @@ if (WITH_VULKAN)
 		"rendering/vulkan14/vulkan14commands.cpp"
 		"rendering/vulkan14/vulkan14raytracing.cpp"
 		"rendering/vulkan14/vulkan14dlss.cpp"
+		"rendering/vulkan14/vulkan14tasks.cpp"
+		"rendering/vulkan14/vulkan14walkers.cpp"
 		"ref/volk/volk.c")
 	set(DEFINITIONS ${DEFINITIONS} "WITH_VULKAN")
 

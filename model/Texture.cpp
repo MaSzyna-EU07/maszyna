@@ -1590,6 +1590,8 @@ texture_bank::memory() const {
     memory_data result;
     for( auto const &texture : m_textures ) {
         if( texture.first == nullptr ) { continue; }
+        // made by another thread at the moment
+        if( texture.first->busy() ) { continue; }
         if( false == texture.first->data.empty() ) {
             ++result.cpu.count;
             result.cpu.bytes += memory_of( texture.first->data );
@@ -1668,6 +1670,10 @@ texture_bank::info() const {
 
     for( auto const& texture : m_textures ) {
 
+        if( texture.first->busy() ) {
+            // made by another thread at the moment, counted once it's done
+            continue;
+        }
         totaltexturesize += texture.first->size;
 #ifdef EU07_DEFERRED_TEXTURE_UPLOAD
 

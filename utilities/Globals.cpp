@@ -1830,6 +1830,26 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_threads;
         gfx_threads = std::clamp(gfx_threads, 0, 64);
     }
+    else if (Token == "gfx.vulkan.asyncresources")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_asyncresources;
+    }
+    else if (Token == "gfx.vulkan.parallelpasses")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_parallelpasses;
+    }
+    else if (Token == "gfx.vulkan.parallelmodels")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_parallelmodels;
+    }
+    else if (Token == "gfx.vulkan.asynccompute")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_asynccompute;
+    }
 
     else if (ConfigParse_gfx_sky(Parser, Token))
     {
@@ -2362,6 +2382,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.vulkan.framesinflight", gfx_vulkan_framesinflight );
     export_as_text( Output, "gfx.vulkan.renderthread", gfx_vulkan_renderthread );
     export_as_text( Output, "gfx.threads", gfx_threads );
+    export_as_text( Output, "gfx.vulkan.asyncresources", gfx_vulkan_asyncresources );
+    export_as_text( Output, "gfx.vulkan.parallelpasses", gfx_vulkan_parallelpasses );
+    export_as_text( Output, "gfx.vulkan.parallelmodels", gfx_vulkan_parallelmodels );
+    export_as_text( Output, "gfx.vulkan.asynccompute", gfx_vulkan_asynccompute );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
     export_as_text( Output, "gfx.shadow.sdsm", gfx_shadow_sdsm );

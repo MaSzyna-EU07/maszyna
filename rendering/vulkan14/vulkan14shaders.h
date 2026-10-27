@@ -15,7 +15,11 @@ http://mozilla.org/MPL/2.0/.
 // cache. the pipelines are made from a description of what isn't dynamic (the shaders, the layout of the vertices, the class
 // of the primitives, the blending, the formats of the attachments, the samples); the rest of the state is dynamic. the
 // VkPipelineCache is read from and written to the directory of the user, and thrown away when it comes from another device
-// or driver. no VkShaderModule: the code goes to the stages of the pipelines (maintenance5)
+// or driver. no VkShaderModule: the code goes to the stages of the pipelines (maintenance5).
+//
+// both libraries may be asked from any thread (the stage M5 of the plan: the pipelines of the scene made by the background
+// threads): their maps are guarded, the shaders are compiled and the pipelines made outside of the locks (the VkPipelineCache
+// is synchronized by vulkan)
 
 #pragma once
 
@@ -23,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/shadersource.h"
 
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 namespace vk14
@@ -38,6 +43,9 @@ struct shader_code
 	std::vector<std::uint32_t> spirv;
 	// where it came from: "binary", "cache", "compiled"
 	char const *origin{""};
+	// what it was asked for by (shader_library::get()), for the list of the pipelines made in a session
+	std::string name;
+	std::string defines;
 };
 
 class shader_library
@@ -53,12 +61,15 @@ class shader_library
 	void shutdown();
 	// the shader of shaders/vk14 (Defines: the variant). throws gfx::shader_exception
 	std::shared_ptr<shader_code const> get(std::string const &Name, std::string const &Defines = {});
+	// the shader, when it was got before; nothing is loaded or compiled
+	std::shared_ptr<shader_code const> find(std::string const &Name, std::string const &Defines = {}) const;
 	// what was loaded from where, for the debug panel
 	std::string info() const;
 
   private:
 	std::vector<std::uint32_t> compile(gfx::shader_source const &Source) const;
 
+	mutable std::mutex m_mutex;
 	std::string m_preamble;
 	std::string m_cachedir;
 	std::string m_compilerversion;
@@ -123,12 +134,17 @@ class pipeline_library
 	void shutdown();
 	// the pipeline of the description, made at the first call (from the cache on the disk, when it has it). null when it can't be made
 	VkPipeline get(pipeline_desc const &Desc);
+	// the pipeline of the description when it was made already (Pipeline: it, null when it couldn't be); false: not made yet
+	bool find(pipeline_desc const &Desc, VkPipeline &Pipeline) const;
 	VkPipeline compute(std::shared_ptr<shader_code const> const &Shader, VkPipelineLayout Layout, std::vector<std::uint32_t> const &Specialization = {}, std::string const &Name = {});
 	std::string info() const;
 
   private:
 	std::uint64_t key_of(pipeline_desc const &Desc) const;
+	// the pipeline made for the key by another thread meanwhile is kept, the one of the caller destroyed
+	VkPipeline keep(std::uint64_t Key, VkPipeline Pipeline, double Milliseconds);
 
+	mutable std::mutex m_mutex;
 	device const *m_device{nullptr};
 	VkPipelineCache m_cache{VK_NULL_HANDLE};
 	std::string m_cachepath;

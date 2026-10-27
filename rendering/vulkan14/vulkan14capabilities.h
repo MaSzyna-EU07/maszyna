@@ -89,6 +89,8 @@ struct capabilities
 	// optional features, each with a way without it
 	bool draw_indirect_count{false};
 	bool host_image_copy{false};
+	// the host fills images straight to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL (one of the copy layouts of 1.4)
+	bool host_copy_sampled{false};
 	bool fill_mode_non_solid{false};
 	bool pipeline_statistics_query{false};
 	bool sampler_filter_minmax{false};

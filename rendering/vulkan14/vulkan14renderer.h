@@ -36,8 +36,10 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 
 #include <array>
+#include <functional>
 
 class world_environment;
+struct texture_source;
 struct VkRenderingInfo;
 namespace vk14
 {
@@ -50,12 +52,17 @@ enum class blend_mode;
 class instance_cull;
 struct image_use;
 struct ray_draw;
+struct chunk_source;
+class command_stream;
 } // namespace vk14
 
 class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 {
   public:
 	vulkan14_renderer();
+	// a walker (the stage M2): walks the passes the main renderer gives it on a thread of its own, drawing with what the main renderer
+	// draws with (the objects of the api, the geometry, the materials, the textures). it isn't a renderer of the application
+	explicit vulkan14_renderer(vulkan14_renderer &Main);
 	~vulkan14_renderer() override;
 
 	// lifecycle
@@ -184,6 +191,12 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
 	void walk_editor_cursor() override;
 	gfx::geometrybank_manager &walk_geometry() override;
+	bool walk_indirect_source(gfx::geometry_handle const &Geometry, gfx::indirect_source &Source) override;
+	// the walks of the groups of a culling split among the helpers (vulkan14walkers.cpp, the stage M3, gfx.vulkan.parallelmodels)
+	bool walk_groups_parallel(std::size_t const Groups) override;
+	void walk_groups_run(std::size_t const Tasks, std::function<void(gfx::scene_walk &Helper, std::size_t const Task)> const &Work) override;
+	// the chunk with its data on the gpu (vk14::vulkan14_geometrybank::source()), its bank marked as used
+	bool chunk_of(gfx::geometry_handle const &Geometry, vk14::chunk_source &Chunk);
 	bool walk_blending_enabled() const override;
 	void walk_region_begin() override;
 	bool walk_instances_begin() override;
@@ -193,6 +206,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// rest): the cullings of the passes and the depth pyramid, made when the renderer starts
 	bool init_cull();
 	void destroy_cull();
+	void ensure_cull();
 	// the rendering of the pass under way, kept to be begun again where it was: it's ended for the compute passes of the culling
 	// in the middle of the walk, and begun again with what it drew loaded, with the state of the draws as it was
 	void remember_rendering(VkRenderingInfo const &Info, std::vector<vk14::image_use> const &Uses);
@@ -246,6 +260,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void render_headlight_shadow(std::size_t const Slot, light_array::light_record const &Light, TDynamicObject *Cab);
 	vk14::instance_cull *light_shadow_cull(std::vector<std::unique_ptr<vk14::instance_cull>> &Culls, std::size_t const Index, bool const Enabled);
 	void begin_local_shadow_rendering();
+	void begin_local_shadow_target();
 	void end_local_shadow_rendering();
 	void ready_lamp_maps();
 	bool m_cubeshadows{false}; // the shadow pass draws to a cube map, with the programs of the cube maps
@@ -267,6 +282,67 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	float m_shadowslicesize{0.f};
 	float m_shadowdrawnsize{0.f};
 
+	// the passes of the sky and the weather of this frame go to the compute queue (the async compute, M6, gfx.vulkan.asynccompute): the
+	// frame is split before the first pass which reads what they make
+	bool m_asyncframe{false};
+	void split_frame();
+
+	// the passes walked by the walkers (vulkan14walkers.cpp, the stage M2, gfx.vulkan.parallelpasses): the sun cascades and the shadow
+	// maps of the lamps and the headlights, walked at the same time as the main thread walks the colour pass, each recorded to a stream
+	// of its own spliced into the commands of the frame where it would have been recorded (vk14::command_stream::splice()). the main
+	// thread sets up a pass as it would for itself, hands the state of the frame over to a walker and goes on (gfx::walk_sync); the
+	// walkers are joined once the colour pass of the main view is recorded
+	// whether the passes of the main view of this frame go to the walkers
+	bool walks_wanted() const;
+	// what a pass of a walker is, for what the main renderer counts of it once it's done
+	enum class walk_kind
+	{
+		other,
+		lamp,
+		headlight
+	};
+	// a walker given the pass Job, with the state of the frame of this renderer, recorded to a stream spliced here
+	void fork_walk(std::function<void(vulkan14_renderer &)> Job, walk_kind const Kind = walk_kind::other);
+	// waits for the walkers, takes what they did over
+	void join_walks();
+	// the state of the frame a walker takes from the main renderer, before it walks a pass; and a helper from the walk it works for
+	void take_state(vulkan14_renderer const &Main);
+	void take_helper_state(vulkan14_renderer const &Walk);
+	// the helpers of the walks of this renderer (M3)
+	std::vector<std::unique_ptr<vulkan14_renderer>> m_helpers;
+	// for the panel: the groups the helpers walked in the last frame; the groups of the walk under way
+	std::size_t m_helpedgroups{0};
+	std::size_t m_helpgroups{0};
+	// the passes the walkers walk, as the main renderer walked them (render_shadows(), render_lamp_shadow(), render_headlight_shadow())
+	void walk_cascade(std::size_t const Index);
+	void walk_lamp(bool const Vehicles, std::vector<TDynamicObject *> const &Dynamics, TDynamicObject *Cab, TAnimModel const *Owner, vk14::instance_cull *Cull);
+	void walk_headlight(TDynamicObject const *Owner, TDynamicObject *Cab, vk14::instance_cull *Cull);
+	// the walk lock taken by the main thread for the frame (walk_sync::open()) and the walkers given passes in it
+	bool m_walkwindow{false};
+	std::size_t m_walkjobs{0};
+	std::vector<std::unique_ptr<vulkan14_renderer>> m_walkers;
+	// the streams of the passes of the walkers, one each, kept by the frames in flight
+	std::vector<std::vector<std::unique_ptr<vk14::command_stream>>> m_walkstreams;
+	// for the panel: the passes the walkers walked in the last frame, the time the main thread waited for them, averaged
+	std::size_t m_walkpasses{0};
+	double m_walkwait{0.0};
+	// a pass the walker failed to walk (its stream is dropped, the pass left out of the frame)
+	bool m_walkfailed{false};
+	// of a walker: what its pass is, and the state of the thread of the main renderer it takes when it begins (the matrix stack, the
+	// state of the walk of the submodels, both per thread)
+	walk_kind m_walkkind{walk_kind::other};
+	opengl_matrices m_forkmatrices;
+	struct submodel_state
+	{
+		std::size_t instance{0};
+		std::uint32_t variantseed{0};
+		material_handle const *skins{nullptr};
+		int alpha{0};
+		float squaredistance{0.f};
+		TModel3d *root{nullptr};
+		std::string *text{nullptr};
+	} m_forksubmodels;
+
 	// the scene (vulkan14scene.cpp)
 	bool init_scene(std::string &Reason);
 	// what the renderer prepares for the frames once it's there: the viewport of the main window, the common textures and geometry
@@ -274,6 +350,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void destroy_scene();
 	// the scene of the frame: the passes of the viewports
 	void render_scene();
+	// a walk of the region (Render() or Render_Alpha()) whose draws may wait for their pipelines and textures (the stage M5)
+	void walk_region(scene::basic_region *Region, bool const Alpha);
 	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear = 0.f, float const Zfar = 1.f, bool const Ignoredebug = false);
 	void setup_matrices();
 	// the colour of a viewport, with the passes it needs first: the sun shadows, the environment map, the light clusters
@@ -415,20 +493,32 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool bind_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, int const Topology);
 	void apply_draw_state();
 	void push_textures();
+	bool texture_ready(texture_source &Texture);
+	texture_source &used_texture(texture_handle const Texture);
 	std::uint32_t push_draw_block();
 	void open_instance_window();
 	void update_texture_release();
 
-	std::unique_ptr<context> m_context;
+	// the objects of the vulkan api: made by the main renderer, taken from it by a walker
+	std::unique_ptr<context> m_contextstore;
+	context *m_context{nullptr};
+	// the main renderer, for a walker
+	vulkan14_renderer *m_main{nullptr};
+	// what this renderer records to: the commands of the frame, or the pass given to a walker
+	vk14::command_stream *m_commands{nullptr};
 	// the light of the sky and the weather of the frame, shared with the opengl renderer
 	gfx::sky_light m_skylight;
 	gfx::weather_state m_weatherstate;
 	// the environment map prefiltered with the GGX lobe is bound for the pass (light_data.env_ggx)
 	bool m_envmap_bound{false};
-	// the data of the geometry, which the simulation reads back, and the banks with it on the gpu
-	gfx::geometrybank_manager m_geometry;
-	std::vector<gfx::geometry_bank *> m_banks;
-	material_manager m_materials;
+	// the data of the geometry, which the simulation reads back, and the banks with it on the gpu; the materials. a walker has those
+	// of the main renderer
+	gfx::geometrybank_manager m_geometrystore;
+	gfx::geometrybank_manager &m_geometry{m_geometrystore};
+	std::vector<gfx::geometry_bank *> m_bankstore;
+	std::vector<gfx::geometry_bank *> &m_banks{m_bankstore};
+	material_manager m_materialstore;
+	material_manager &m_materials{m_materialstore};
 	material_handle m_invalid_material{null_handle};
 	std::vector<viewport_config> m_viewports;
 	viewport_config *m_current_viewport{nullptr};
@@ -519,6 +609,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	debug_stats m_laststats;
 
 	void update_info();
+	// the lines of the debug panel about the threads of the renderer other than the recording ones (the stages M2, M3, M5, M6)
+	std::string background_info() const;
 	// the debug windows (vulkan14debug.cpp, opengl46_renderer::draw_debug_ui()), the lines of the cullings and of the scene for them
 	// and for the statistics, the counters of the light clusters read back, and the heatmap of the clusters over the output of a
 	// viewport (opengl46_renderer::Render_cluster_heatmap())

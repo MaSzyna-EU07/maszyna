@@ -37,6 +37,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14raytracing.h"
 #include "rendering/vulkan14/vulkan14dlss.h"
+#include "rendering/vulkan14/vulkan14tasks.h"
 #include "utilities/workerpool.h"
 #include "model/material.h"
 #include "gl/ubo.h"
@@ -49,6 +50,7 @@ http://mozilla.org/MPL/2.0/.
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace vk14
@@ -92,7 +94,36 @@ struct scene_program : public gfx::shader_program
 	std::shared_ptr<scene_program> multidraw;
 	bool multidraw_tried{false};
 	vertex_kind vertices{vertex_kind::scene};
+	// the pipelines made, by the key of bind_scene_pipeline(), and the ones the background threads are making (M5). guarded by the
+	// mutex, as are the variants above made when they're first needed: the walks of the passes and the background threads ask for
+	// them at once
+	std::mutex mutex;
 	std::unordered_map<std::uint64_t, VkPipeline> pipelines;
+	std::unordered_set<std::uint64_t> pending;
+};
+
+// a pipeline of the scene as the list of the pipelines made in a session keeps it, to be made ahead at the start of the next one
+// (gfx.vulkan.asyncresources, the stage M5): what bind_scene_pipeline() makes it of, by the names of the shaders
+struct scene_pipeline_record
+{
+	// the shaders, by the names and the variants shader_library::get() takes
+	std::string vertex;
+	std::string vertex_defines;
+	std::string fragment;
+	std::string fragment_defines;
+	vertex_kind vertices{vertex_kind::scene};
+	VkPrimitiveTopology topology{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST}; // the class
+	std::uint32_t blending{0};
+	std::array<VkFormat, 2> colour{VK_FORMAT_UNDEFINED, VK_FORMAT_UNDEFINED};
+	std::uint32_t colours{0};
+	VkFormat depth{VK_FORMAT_UNDEFINED};
+	std::uint32_t samples{1};
+	std::uint32_t view_mask{0};
+	std::uint32_t settings{0};
+	std::string name;
+	// one line of the list, and the record of it; false: not a line of the list
+	std::string line() const;
+	bool parse(std::string const &Line);
 };
 
 // what a pass of the scene draws to; the pipelines are made for these
@@ -188,13 +219,18 @@ struct generation_targets
 
 // the ring of a frame some data of the draws goes through, the descriptor of which reads a window of it: the window starts again
 // further on when it's full, and the pass set is bound again with the new offset
+// the threads of the walkers (the stage M2): as many as the passes they're given in a frame use, within gfx.threads
+std::size_t walk_threads();
+
+// the parts of the rings of the draws and of the instances a renderer (the main one, a walker) takes for its slices (vk14::ring_cache)
+constexpr VkDeviceSize draw_ring_part{64 * 1024};
+constexpr VkDeviceSize instance_ring_part{128 * 1024};
+
 struct window_ring
 {
 	frame_ring ring;
 	VkDeviceSize window{0}; // the size of the window, bytes
 	VkDeviceSize stride{0};
-	VkDeviceSize base{0}; // where the current window starts
-	bool open{false};
 };
 
 // the light clusters (gl::cluster_grid), of the colour pass of each viewport in turn
@@ -487,6 +523,11 @@ struct vulkan14_renderer::context
 		std::vector<worker_commands> workers;
 		// the command buffers of the chunks of the frame, in their order
 		std::vector<VkCommandBuffer> chunks;
+		// the passes of the frame for the compute queue (the async compute of M6, the sky and the weather), recorded into a command
+		// buffer of the compute family
+		vk14::command_stream compute_stream;
+		VkCommandPool compute_pool{VK_NULL_HANDLE};
+		VkCommandBuffer compute_buffer{VK_NULL_HANDLE};
 		// the value of the timeline semaphore the gpu reaches when it's done with the frame; 0: never submitted
 		std::uint64_t done{0};
 		// the number of the frame, for the report of a lost device
@@ -521,12 +562,36 @@ struct vulkan14_renderer::context
 	double submit_time{0.0}; // seconds
 	// the textures of the files; made after the objects above and gone before them
 	std::unique_ptr<texture_bank> textures;
+	// the background threads (the stage M5): the pipelines and the textures made when they're first needed, the pipelines of the last
+	// session made ahead. stopped before anything they use goes
+	vk14::background_tasks background;
+	// the threads of the walkers (the stage M2): the passes of the frame walked at the same time as the main thread walks its own
+	vk14::background_tasks walks;
+	// the threads of the helpers of the walks (the stage M3): the groups of a culling walked by several of them, the walk waiting
+	vk14::background_tasks models;
+	// the groups they walked since the frame began
+	std::atomic<std::size_t> helped{0};
+	// the pass sets of the scene and those of the cullings made anew (the main thread) and those of the cullings written (any walker)
+	std::mutex passsets_mutex;
+	// the pipelines of the scene made in the session, written to the list at the end (cache/vulkan14/pipelines.txt), and how many of the
+	// list of the last session were made ahead and how many weren't made in time for the draw which needed them
+	std::mutex warm_mutex;
+	std::vector<vk14::scene_pipeline_record> warm_records;
+	std::unordered_set<std::string> warm_lines;
+	std::atomic<std::size_t> warm_made{0};
+	std::atomic<std::size_t> pipelines_late{0};
 	// [0]: the main window, then the windows of the extra viewports
 	std::vector<std::unique_ptr<vk14::swapchain>> windows;
 	std::vector<frame> frames;
 	// one semaphore counts the frames done by the gpu; the binary ones are only between the swapchains and the queue
 	VkSemaphore timeline{VK_NULL_HANDLE};
 	std::uint64_t timelinevalue{0};
+	// the async compute (gfx.vulkan.asynccompute, M6), on a device with a compute family of its own: the passes of the sky and the
+	// weather go to its queue, which signals the frames done by it on a timeline of its own. its work of a frame waits for the
+	// graphics queue to be done with the frame before (what it writes is read there), the part of the frame after the first pass
+	// which reads what it makes waits for it
+	bool async_compute{false};
+	VkSemaphore compute_timeline{VK_NULL_HANDLE};
 	// frames recorded since the start
 	std::uint64_t framecount{0};
 	// the windows with an image acquired in the frame being made
@@ -547,6 +612,9 @@ struct vulkan14_renderer::context
 	{
 		frame *target{nullptr};
 		bool uploaded{false};
+		// the value of the timeline of the frame, and whether part of it goes to the compute queue
+		std::uint64_t value{0};
+		bool async{false};
 		std::vector<VkSemaphoreSubmitInfo> waits;
 		std::vector<VkSemaphoreSubmitInfo> signals;
 		// the windows presented once the frame is submitted (the render thread)
@@ -575,8 +643,9 @@ struct vulkan14_renderer::context
 	}
 
 	bool create_frames(std::uint32_t const Count, std::string &Reason);
-	// the streams of Frame recorded into its command buffers; false: no command buffer for them
-	bool record(frame &Frame, bool Uploads);
+	// the streams of Frame recorded into its command buffers (Compute: the one of the compute queue too); false: no command buffer for
+	// them
+	bool record(frame &Frame, bool Uploads, bool Compute);
 
 	// the job done; false: Failure says where it failed
 	bool execute(render_job &Job, char const *&Failure);
@@ -604,6 +673,18 @@ struct vulkan14_renderer::context
 	void wait_submitted();
 	// the parts of the renderer made once the device is there
 	bool create_core(std::uint32_t const Frames, std::string &Reason);
+	// the pipelines of the scene (vulkan14scene.cpp, vulkan14_renderer::bind_scene_pipeline()): the fragment shader of a program for
+	// targets with or without the velocity (Compile: made when it isn't there yet, otherwise null then); the pipeline made now, found
+	// made already, or made by the background threads (Key: of the program's map); the ones of the list of the last session made
+	// ahead, the list of this one written
+	std::shared_ptr<vk14::shader_code const> scene_fragment(vk14::scene_program &Program, bool Single, bool Compile);
+	VkPipeline make_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode Blend, VkPrimitiveTopology Primitiveclass, std::uint32_t Settings, bool Single);
+	bool find_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode Blend, VkPrimitiveTopology Primitiveclass, std::uint32_t Settings, bool Single,
+	                         VkPipeline &Pipeline);
+	void queue_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode Blend, VkPrimitiveTopology Primitiveclass, std::uint32_t Settings, bool Single,
+	                          std::uint64_t Key);
+	void warm_scene_pipelines();
+	void save_scene_pipelines();
 	// the value of the timeline the gpu reached, 0 when it can't be read
 	std::uint64_t completed() const;
 	// waits until the gpu reached the value of the timeline; false: the device is lost
@@ -647,6 +728,32 @@ struct vulkan14_renderer::draw_state
 	bool cullface{true};
 	bool glare{false};
 	bool depthmask_off{false}; // the editor overlay: no depth written whatever the blending
+	// the pipelines and the textures a draw needs first may be made by the background threads, the draw left out till then (the walks
+	// of the scene, gfx.vulkan.asyncresources); the draws outside of them (the cab, the sky, the particles) wait for what they need
+	bool async{false};
+	// the pipeline of the draw before, which the next one takes without asking the program when it's the same
+	vk14::scene_program const *lastprogram{nullptr};
+	std::uint64_t lastkey{0};
+	VkPipeline lastpipeline{VK_NULL_HANDLE};
+	// the windows of the rings of the draws and of the instances the draws read (where the current one starts), and the parts of the
+	// rings the renderer places its slices in (vk14::ring_cache; each walker has its own, M2)
+	struct ring_window
+	{
+		VkDeviceSize base{0};
+		bool open{false};
+	};
+	ring_window draws_window;
+	ring_window instances_window;
+	vk14::ring_cache draws_cache;
+	vk14::ring_cache instances_cache;
+	// the map of a lamp or of headlights the pass draws to (begin_local_shadow_rendering())
+	vk14::local_shadow_maps::draw_target local_target;
+	// the pass sets of the scene a walker binds: those of the frame when it was given its pass (the main renderer binds them as they are)
+	std::array<VkDescriptorSet, vk14::scene_state::set_count> pass_sets{};
+	// what a walker's draws used, marked as used by the main renderer once the walks are done (the marks aren't made by several
+	// threads): the banks of the geometry and the textures
+	std::vector<std::uint32_t> used_banks;
+	std::vector<texture_handle> used_textures;
 	// the occlusion queries of the glare of the lamps in the frame: the submodels, by the index of their query
 	std::vector<TSubModel const *> queries;
 	std::uint32_t query{~0u}; // the query under way
@@ -658,6 +765,9 @@ struct vulkan14_renderer::draw_state
 	bool depthskip{true};
 	// the probe of the cab (the stage A4): the walk draws with the programs of the probe, what they don't draw is left out alike
 	bool probepass{false};
+	// the draws recorded by the walk of the groups of a culling are made (draw_indirect_colour()): they take the model blocks recorded
+	// with them, the state of their submodels isn't read (the passes walked by other threads set it up for theirs, walk_sync)
+	bool replaying{false};
 	// the pass sets of a culling, the instance buffer its output, for the indirect draws of its instances; null: the pass sets
 	VkDescriptorSet const *cull_sets{nullptr};
 	// the rendering under way, begun again where it was after it was ended for the compute passes of the culling

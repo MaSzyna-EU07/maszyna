@@ -172,15 +172,17 @@ public:
     bool is_emitter() const;
 
 public:
-	static size_t iInstance; // identyfikator egzemplarza, który aktualnie renderuje model
+	// the state of the walk drawing a model: per thread, as the vulkan renderer walks the passes of the scene on several of them at
+	// once (gfx.vulkan.parallelpasses)
+	static thread_local size_t iInstance; // identyfikator egzemplarza, który aktualnie renderuje model
 	// seed of the currently rendered model instance, combined with m_variantgroup it picks
 	// texture variants for materials which declare them. 0 for instances without own seed
-	static std::uint32_t iVariantSeed;
-	static material_handle const *ReplacableSkinId;
-	static int iAlpha; // maska bitowa dla danego przebiegu
-	static float fSquareDist;
-	static TModel3d *pRoot;
-	static std::string *pasText; // tekst dla wyświetlacza (!!!! do przemyślenia)
+	static thread_local std::uint32_t iVariantSeed;
+	static thread_local material_handle const *ReplacableSkinId;
+	static thread_local int iAlpha; // maska bitowa dla danego przebiegu
+	static thread_local float fSquareDist;
+	static thread_local TModel3d *pRoot;
+	static thread_local std::string *pasText; // tekst dla wyświetlacza (!!!! do przemyślenia)
     TSubModel() = default;
 	~TSubModel();
 	std::pair<int, int> Load(cParser &Parser, /*TModel3d *Model, int Pos,*/ bool dynamic);

@@ -40,6 +40,9 @@ image_use use_of(image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage
 
 // the barriers which bring the images from their states to the uses, the states updated
 void barriers(command_stream *Commands, std::vector<image_use> const &Uses);
+// the barriers between two uses of the images in the states of the uses, made one after another (a rendering ended and begun again
+// by a walker, M2), without the states, which the main thread tracks
+void barriers_again(command_stream *Commands, std::vector<image_use> const &Uses);
 
 class pass_list
 {
@@ -57,6 +60,10 @@ class pass_list
 	// a pass: the barriers of its images, its label and the timestamp of its start
 	void begin_pass(char const *Name, std::vector<image_use> const &Uses = {});
 	void end_pass();
+	// the passes from here on go to Commands, for the compute queue (the async compute of M6), until end_async(); timed with queries of
+	// their own, as their times overlap those of the passes of the graphics queue: they're shown apart, not in the total
+	void begin_async(command_stream *Commands);
+	void end_async();
 	void end_frame();
 	// the gpu times of the frame Frame, once the gpu is done with it (after the wait for its value of the timeline)
 	void collect(std::uint32_t Frame);
@@ -76,20 +83,29 @@ class pass_list
 		VkQueryPool pool{VK_NULL_HANDLE};
 		std::vector<std::string> names;
 		std::uint32_t used{0};
+		// those of the compute queue, reset from the host
+		VkQueryPool async_pool{VK_NULL_HANDLE};
+		std::vector<std::string> async_names;
+		std::uint32_t async_used{0};
 		std::uint64_t number{0};
 		bool recorded{false};
 	};
 	static constexpr std::uint32_t max_passes{32};
+	static constexpr std::uint32_t max_async{8};
 
 	VkDevice m_device{VK_NULL_HANDLE};
 	float m_period{1.f}; // ns per tick
 	std::uint64_t m_mask{~0ull}; // the valid bits of the timestamps
+	std::uint64_t m_asyncmask{~0ull}; // those of the compute queue
 	std::vector<frame_queries> m_frames;
 	command_stream *m_commands{nullptr};
+	command_stream *m_graphics{nullptr}; // the stream of the graphics queue, while the passes go to the compute one
+	bool m_async{false};
 	std::uint32_t m_frame{0};
 	int m_open{-1};
 	// averaged times of the parts, ms
 	std::vector<std::pair<std::string, double>> m_times;
+	std::vector<std::pair<std::string, double>> m_asynctimes; // of the compute queue
 	double m_framems{0.0};
 };
 

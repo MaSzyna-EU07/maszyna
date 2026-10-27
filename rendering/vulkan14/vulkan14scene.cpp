@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14context.h"
 #include "rendering/vulkan14/vulkan14commands.h"
+#include "rendering/common/walksync.h"
 #include "rendering/nullrenderer.h"
 #include "model/Model3d.h"
 #include "model/AnimModel.h"
@@ -22,7 +23,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/color.h"
+#include "utilities/utilities.h"
 
+#include <filesystem>
+#include <fstream>
 #include <unordered_set>
 
 namespace
@@ -538,7 +542,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			return false;
 		}
 		if (false == scene.weather_horizon.create(ctx.memory, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		                                          vk14::memory_kind::device, "fog horizon"))
+		                                          vk14::memory_kind::device, "fog horizon", true))
 		{
 			Reason = "no buffer of the colours of the fog";
 			return false;
@@ -700,7 +704,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		vk14::gpu_particles::host host;
 		host.compute = [this]() {
 			suspend_rendering();
-			return m_context->commands;
+			return m_commands;
 		};
 		host.bind = [this](vk14::compute_kernel const &Kernel) { bind_compute_set(Kernel); };
 		host.draw = [this](vk14::scene_program &Program, VkBuffer const Output, VkBuffer const Command, glm::vec4 const &Data0, glm::vec4 const &Data1) {
@@ -750,7 +754,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		vk14::windscreen_water::host host;
 		host.commands = [this]() {
 			suspend_rendering();
-			return m_context->commands;
+			return m_commands;
 		};
 		host.texture = [this](texture_handle const Texture, VkImageView &View, VkSampler &Sampler) {
 			auto &ctx{*m_context};
@@ -825,7 +829,43 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 
 	m_draw = std::make_unique<draw_state>();
 	m_draw->textures.fill(null_handle);
+
+	// the background threads (the stage M5), with the pipelines of the last session to make ahead. two of them: the frames go on
+	// meanwhile, with the threads of the simulation and of the recording
+	if (Global.gfx_vulkan_asyncresources)
+	{
+		ctx.background.start(2);
+		ctx.warm_scene_pipelines();
+	}
+	// the threads of the walkers (the stage M2), a stream of the passes they record for each frame in flight
+	if (Global.gfx_vulkan_parallelpasses)
+	{
+		ctx.walks.start(vk14::walk_threads());
+	}
+	// and of the helpers of the walks (the stage M3)
+	if (Global.gfx_vulkan_parallelmodels)
+	{
+		ctx.models.start(vk14::walk_threads());
+	}
+	m_walkstreams.resize(ctx.frames.size());
 	return true;
+}
+
+// a walk of the region: what its draws need first may be made by the background threads meanwhile, the draws left out till then
+void vulkan14_renderer::walk_region(scene::basic_region *Region, bool const Alpha)
+{
+	auto &draw{*m_draw};
+	auto const async{draw.async};
+	draw.async = true;
+	if (Alpha)
+	{
+		Render_Alpha(Region);
+	}
+	else
+	{
+		Render(Region);
+	}
+	draw.async = async;
 }
 
 void vulkan14_renderer::destroy_scene()
@@ -841,6 +881,12 @@ void vulkan14_renderer::destroy_scene()
 	{
 		return;
 	}
+	// the background threads and the threads of the walkers use the programs and the textures: done first, then the list of the
+	// pipelines of the session is written
+	ctx.walks.stop();
+	ctx.models.stop();
+	ctx.background.stop();
+	ctx.save_scene_pipelines();
 	destroy_cull();
 	if (scene.raytracing)
 	{
@@ -938,6 +984,11 @@ void vulkan14_renderer::destroy_scene()
 // the pass sets, made anew when the images they read changed: the old ones go once the gpu is done with them
 void vulkan14_renderer::update_pass_sets()
 {
+	if (m_main != nullptr)
+	{
+		// a walker binds the pass sets of the frame as they were when it was given its pass
+		return;
+	}
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto const device{ctx.device.handle()};
@@ -969,6 +1020,8 @@ void vulkan14_renderer::update_pass_sets()
 	{
 		return;
 	}
+	// the walkers write the pass sets of their cullings from the same state (use_cull_pass_sets())
+	std::lock_guard<std::mutex> lock(ctx.passsets_mutex);
 	scene.pass_sets_stale = false;
 	scene.headlights_view = headlights;
 	scene.pass_images = pass_images;
@@ -1084,8 +1137,15 @@ void vulkan14_renderer::use_cull_pass_sets(vk14::instance_cull *Cull)
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	update_pass_sets();
-	if ((Cull->set_pool == VK_NULL_HANDLE) || (Cull->sets_generation != scene.pass_generation) || (Cull->sets_output != Cull->output_buffer()))
+	auto const stale = [&]() {
+		std::lock_guard<std::mutex> lock(ctx.passsets_mutex);
+		return (Cull->set_pool == VK_NULL_HANDLE) || (Cull->sets_generation != scene.pass_generation) || (Cull->sets_output != Cull->output_buffer());
+	};
+	if (stale())
 	{
+		// written by a walker while the main thread doesn't change what they hold (gfx::walk_sync)
+		gfx::walk_sync::change change{m_main != nullptr};
+		std::lock_guard<std::mutex> lock(ctx.passsets_mutex);
 		auto const device{ctx.device.handle()};
 		if (Cull->set_pool != VK_NULL_HANDLE)
 		{
@@ -1116,15 +1176,15 @@ void vulkan14_renderer::bind_pass_set()
 	auto &scene{m_context->scene};
 	// the dynamic offsets in the order of the bindings
 	// the instances of the indirect draws come from the output of the culling, in the pass sets of the culling
-	auto const instancebase{draw.cull_sets != nullptr ? 0u : static_cast<std::uint32_t>(scene.instances.base)};
-	std::array<std::uint32_t, vk14::bindings::PASS_DYNAMIC_OFFSETS> const offsets{draw.scene_offset, static_cast<std::uint32_t>(scene.draws.base), instancebase, draw.light_offset, draw.cluster_offset, draw.weather_offset};
+	auto const instancebase{draw.cull_sets != nullptr ? 0u : static_cast<std::uint32_t>(draw.instances_window.base)};
+	std::array<std::uint32_t, vk14::bindings::PASS_DYNAMIC_OFFSETS> const offsets{draw.scene_offset, static_cast<std::uint32_t>(draw.draws_window.base), instancebase, draw.light_offset, draw.cluster_offset, draw.weather_offset};
 	VkBindDescriptorSetsInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO;
 	info.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	info.layout = scene.scene_layout;
 	info.firstSet = vk14::bindings::PASS_SET;
 	info.descriptorSetCount = 1;
-	info.pDescriptorSets = (draw.cull_sets != nullptr ? &draw.cull_sets[draw.set] : &scene.pass_sets[draw.set]);
+	info.pDescriptorSets = (draw.cull_sets != nullptr ? &draw.cull_sets[draw.set] : (m_main != nullptr ? &draw.pass_sets[draw.set] : &scene.pass_sets[draw.set]));
 	info.dynamicOffsetCount = static_cast<std::uint32_t>(offsets.size());
 	info.pDynamicOffsets = offsets.data();
 	draw.commands->bind_descriptor_sets2(&info);
@@ -1151,7 +1211,7 @@ void vulkan14_renderer::bind_compute_set(vk14::compute_kernel const &Kernel)
 	auto &scene{m_context->scene};
 	auto &draw{*m_draw};
 	update_pass_sets();
-	std::array<std::uint32_t, vk14::bindings::PASS_DYNAMIC_OFFSETS> const offsets{draw.scene_offset, static_cast<std::uint32_t>(scene.draws.base), static_cast<std::uint32_t>(scene.instances.base), draw.light_offset, draw.cluster_offset, draw.weather_offset};
+	std::array<std::uint32_t, vk14::bindings::PASS_DYNAMIC_OFFSETS> const offsets{draw.scene_offset, static_cast<std::uint32_t>(draw.draws_window.base), static_cast<std::uint32_t>(draw.instances_window.base), draw.light_offset, draw.cluster_offset, draw.weather_offset};
 	VkBindDescriptorSetsInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO;
 	info.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -1161,13 +1221,15 @@ void vulkan14_renderer::bind_compute_set(vk14::compute_kernel const &Kernel)
 	info.pDescriptorSets = &scene.pass_sets[vk14::scene_state::set_colour];
 	info.dynamicOffsetCount = static_cast<std::uint32_t>(offsets.size());
 	info.pDynamicOffsets = offsets.data();
-	m_context->commands->bind_descriptor_sets2(&info);
+	m_commands->bind_descriptor_sets2(&info);
 }
 
 // geometry
 
 gfx::geometrybank_handle vulkan14_renderer::Create_Bank()
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	if (!m_context)
 	{
 		return m_geometry.register_bank(std::make_unique<null_geometrybank>());
@@ -1185,30 +1247,40 @@ gfx::geometrybank_handle vulkan14_renderer::Create_Bank()
 
 gfx::geometry_handle vulkan14_renderer::Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	// NOTE: we expect indexed geometry to come with calculated tangents
 	return m_geometry.create_chunk(Indices, Vertices, Userdata, Geometry, Type);
 }
 
 gfx::geometry_handle vulkan14_renderer::Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
 	return m_geometry.create_chunk(Vertices, Userdata, Geometry, Type);
 }
 
 bool vulkan14_renderer::Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, std::size_t const Offset)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
 	return m_geometry.replace(Vertices, Userdata, Geometry, Offset);
 }
 
 bool vulkan14_renderer::Replace_Indexed(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	// NOTE: we expect indexed geometry to come with calculated tangents
 	return m_geometry.replace(Indices, Vertices, Userdata, Geometry);
 }
 
 bool vulkan14_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	gfx::calculate_tangents(Vertices, gfx::index_array(), Type);
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
@@ -1238,26 +1310,36 @@ int vulkan14_renderer::Primitive(gfx::geometry_handle const &Geometry) const
 
 material_handle vulkan14_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	return m_materials.create(Filename, Loadnow);
 }
 
 material_handle vulkan14_renderer::Matte_Material(material_handle const Material)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	return m_materials.create_matte(Material);
 }
 
 material_handle vulkan14_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	return m_materials.create_tinted(Material, Colour);
 }
 
 material_handle vulkan14_renderer::Blend_Material(material_handle const Material, std::array<material_handle, 3> const &Others)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	return m_materials.create_blend(Material, Others);
 }
 
 bool vulkan14_renderer::Blendable_Material(material_handle const Material)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	return m_materials.blendable(Material);
 }
 
@@ -1269,6 +1351,8 @@ IMaterial const *vulkan14_renderer::Material(material_handle const Material) con
 material_handle vulkan14_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
                                                     int const HoleSamples, std::uint8_t const *Holes)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	if (m_context && m_context->scene.terrain)
 	{
 		auto const material{m_context->scene.terrain->make(Reuse, Layers, Samples, Weights, Placement, HoleSamples, Holes)};
@@ -1283,6 +1367,8 @@ material_handle vulkan14_renderer::Terrain_Material(material_handle const Reuse,
 
 void vulkan14_renderer::Terrain_Release(material_handle const Material)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	if (m_context && m_context->scene.terrain)
 	{
 		m_context->scene.terrain->release(Material);
@@ -1291,6 +1377,8 @@ void vulkan14_renderer::Terrain_Release(material_handle const Material)
 
 void vulkan14_renderer::Terrain_Grass(std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	if (m_context)
 	{
 		m_context->scene.grass.update(Kinds, Chunks);
@@ -1299,6 +1387,8 @@ void vulkan14_renderer::Terrain_Grass(std::vector<gfx::grass_kind> const &Kinds,
 
 std::shared_ptr<gfx::shader_program> vulkan14_renderer::Fetch_Shader(std::string const &name)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	if (!m_context)
 	{
 		return nullptr;
@@ -1374,22 +1464,23 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 	}
 
 	std::memcpy(&model_ubs.param[0], &material.params[0], sizeof(model_ubs.param));
+	auto const *walked{m_draw->replaying ? nullptr : Submodel};
 	for (auto const &entry : material.params_state)
 	{
 		glm::vec4 src(1.0f);
 		// submodel-based parameters
-		if (Submodel)
+		if (walked)
 		{
 			switch (entry.defaultparam)
 			{
 			case gfx::shader_param_default::ambient:
-				src = Submodel->f4Ambient;
+				src = walked->f4Ambient;
 				break;
 			case gfx::shader_param_default::diffuse:
-				src = Submodel->f4Diffuse;
+				src = walked->f4Diffuse;
 				break;
 			case gfx::shader_param_default::specular:
-				src = Submodel->f4Specular;
+				src = walked->f4Specular;
 				break;
 			default:
 				break;
@@ -1439,7 +1530,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 	{
 		model_ubs.opacity = (m_draw->blending ? 0.0f : 0.5f);
 	}
-	model_ubs.alpha_mult = (Submodel ? Submodel->fVisible : 1.0f);
+	model_ubs.alpha_mult = (walked ? walked->fVisible : 1.0f);
 	if (m_indirectrecording)
 	{
 		// the walk of the groups of the gpu culling only notes what would be bound, it's bound when the draw is made
@@ -1477,7 +1568,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 					return;
 				}
 				auto &texture{m_context->textures->mark_as_used(materialtextures[0])};
-				if ((false == texture.create()) || (m_context->images.find(texture.get_id()) == nullptr))
+				if ((false == texture_ready(texture)) || (m_context->images.find(texture.get_id()) == nullptr))
 				{
 					return;
 				}
@@ -1495,7 +1586,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 				return;
 			}
 			auto &texture{m_context->textures->mark_as_used(materialtextures[0])};
-			if ((false == texture.create()) || (m_context->images.find(texture.get_id()) == nullptr))
+			if ((false == texture_ready(texture)) || (m_context->images.find(texture.get_id()) == nullptr))
 			{
 				return;
 			}
@@ -1594,6 +1685,45 @@ void vulkan14_renderer::walk_blending(bool const Alpha)
 gfx::geometrybank_manager &vulkan14_renderer::walk_geometry()
 {
 	return m_geometry;
+}
+
+bool vulkan14_renderer::walk_indirect_source(gfx::geometry_handle const &Geometry, gfx::indirect_source &Source)
+{
+	vk14::chunk_source chunk;
+	if (false == chunk_of(Geometry, chunk))
+	{
+		return false;
+	}
+	Source.count = chunk.count;
+	Source.first = chunk.first;
+	Source.basevertex = chunk.basevertex;
+	Source.indexed = (chunk.indices != VK_NULL_HANDLE);
+	Source.type = m_geometry.type(Geometry);
+	return true;
+}
+
+// the chunk with its data on the gpu, its bank marked as used: by the main renderer, or once the walks are done for the banks a
+// walker drew from (the marks aren't made by several threads at once)
+bool vulkan14_renderer::chunk_of(gfx::geometry_handle const &Geometry, vk14::chunk_source &Chunk)
+{
+	if ((Geometry == null_handle) || (Geometry.bank == 0) || (Geometry.bank > m_banks.size()) || (m_banks[Geometry.bank - 1] == nullptr))
+	{
+		return false;
+	}
+	if (m_main != nullptr)
+	{
+		auto &used{m_draw->used_banks};
+		if (used.empty() || (used.back() != Geometry.bank))
+		{
+			used.push_back(Geometry.bank);
+		}
+	}
+	else
+	{
+		m_geometry.mark_used(Geometry);
+	}
+	Chunk = vk14::chunk_source{};
+	return static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->source(Geometry, Chunk);
 }
 
 bool vulkan14_renderer::walk_blending_enabled() const
@@ -1715,22 +1845,24 @@ void vulkan14_renderer::setup_shadow_color(glm::vec4 const &Shadowcolor)
 
 std::uint32_t vulkan14_renderer::push_draw_block()
 {
-	auto &scene{m_context->scene};
-	auto &draws{scene.draws};
-	auto const slice{draws.ring.allocate(draws.stride, draws.stride)};
+	auto &draws{m_context->scene.draws};
+	auto &draw{*m_draw};
+	auto &window{draw.draws_window};
+	auto slice{window.open ? draw.draws_cache.allocate_before(draws.stride, draws.stride, window.base + draws.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
-		return ~0u;
-	}
-	if ((false == draws.open) || (slice.offset + draws.stride > draws.base + draws.window))
-	{
+		slice = draw.draws_cache.allocate(draws.stride, draws.stride);
+		if (false == bool(slice))
+		{
+			return ~0u;
+		}
 		// a new window of the blocks, the pass set is bound with its offset
-		draws.base = slice.offset;
-		draws.open = true;
-		m_draw->set_dirty = true;
+		window.base = slice.offset;
+		window.open = true;
+		draw.set_dirty = true;
 	}
 	std::memcpy(slice.data, &model_ubs, sizeof(gl::model_ubs));
-	return static_cast<std::uint32_t>((slice.offset - draws.base) / draws.stride);
+	return static_cast<std::uint32_t>((slice.offset - window.base) / draws.stride);
 }
 
 std::uint32_t vulkan14_renderer::walk_instances(glm::mat4 const *Modelviews, std::size_t const Count)
@@ -1742,44 +1874,69 @@ std::uint32_t vulkan14_renderer::walk_instances(glm::mat4 const *Modelviews, std
 		m_rtinstances.insert(m_rtinstances.end(), Modelviews, Modelviews + Count);
 		return base;
 	}
-	auto &scene{m_context->scene};
-	auto &instances{scene.instances};
+	auto &instances{m_context->scene.instances};
+	auto &draw{*m_draw};
+	auto &window{draw.instances_window};
 	auto const capacity{static_cast<std::size_t>(instances.window / instances.stride) - 1};
 	auto const count{std::min(Count, capacity)};
 	auto const size{static_cast<VkDeviceSize>(count) * instances.stride};
-	if ((false == instances.open) || (instances.ring.next_offset(instances.stride) + size > instances.base + instances.window))
+	auto slice{window.open ? draw.instances_cache.allocate_before(size, instances.stride, window.base + instances.window) : vk14::ring_slice{}};
+	if (false == bool(slice))
 	{
-		open_instance_window();
-	}
-	auto const slice{instances.ring.allocate(size, instances.stride)};
-	if ((false == instances.open) || (false == bool(slice)) || (slice.offset + size > instances.base + instances.window))
-	{
-		// the ring of the frame is full: the instances are drawn where the draws which aren't instanced are
-		return 0;
+		// a new window, which begins with the identity of the draws which aren't instanced, followed by the instances
+		auto const alignment{m_context->device.caps().limits.minStorageBufferOffsetAlignment};
+		auto const block{draw.instances_cache.allocate(instances.stride + size, std::max<VkDeviceSize>(alignment, instances.stride))};
+		if (false == bool(block))
+		{
+			// the ring of the frame is full: the instances are drawn where the draws which aren't instanced are
+			window.open = false;
+			return 0;
+		}
+		glm::mat4 const one{1.f};
+		std::memcpy(block.data, &one, sizeof(one));
+		window.base = block.offset;
+		window.open = true;
+		draw.set_dirty = true;
+		slice = block;
+		slice.data += instances.stride;
+		slice.offset += instances.stride;
+		slice.size = size;
 	}
 	std::memcpy(slice.data, Modelviews, static_cast<std::size_t>(size));
-	return static_cast<std::uint32_t>((slice.offset - instances.base) / instances.stride);
+	return static_cast<std::uint32_t>((slice.offset - window.base) / instances.stride);
 }
 
 // a new window of the instance ring, which begins with the identity of the draws which aren't instanced
 void vulkan14_renderer::open_instance_window()
 {
 	auto &instances{m_context->scene.instances};
+	auto &draw{*m_draw};
+	auto &window{draw.instances_window};
 	auto const alignment{m_context->device.caps().limits.minStorageBufferOffsetAlignment};
-	auto const identity{instances.ring.allocate(instances.stride, std::max<VkDeviceSize>(alignment, instances.stride))};
+	auto const identity{draw.instances_cache.allocate(instances.stride, std::max<VkDeviceSize>(alignment, instances.stride))};
 	if (false == bool(identity))
 	{
-		instances.open = false;
+		window.open = false;
 		return;
 	}
 	glm::mat4 const one{1.f};
 	std::memcpy(identity.data, &one, sizeof(one));
-	instances.base = identity.offset;
-	instances.open = true;
-	if (m_draw)
+	window.base = identity.offset;
+	window.open = true;
+	draw.set_dirty = true;
+}
+
+// the texture of a draw: marked as used by the main renderer, or once the walks are done for the ones a walker drew with (the marks
+// aren't made by several threads at once)
+texture_source &vulkan14_renderer::used_texture(texture_handle const Texture)
+{
+	auto &textures{*m_context->textures};
+	if (m_main != nullptr)
 	{
-		m_draw->set_dirty = true;
+		m_draw->used_textures.push_back(Texture);
+		return textures.texture(Texture);
 	}
+	return textures.mark_as_used(Texture);
 }
 
 void vulkan14_renderer::walk_draw(gfx::geometry_handle const &Geometry)
@@ -1831,12 +1988,11 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 		return;
 	}
 	// marks the bank as used, and has its data on the gpu
-	gfx::indirect_source source;
-	if (false == m_geometry.indirect_source(Geometry, source))
+	vk14::chunk_source chunk;
+	if (false == chunk_of(Geometry, chunk))
 	{
 		return;
 	}
-	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->last()};
 
 	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (topology_class(chunk.topology) != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
 	{
@@ -1909,12 +2065,158 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	++draw.draws;
 }
 
+// the pipelines of the scene (bind_scene_pipeline()): the description of one, for the shaders, the vertices of the program, the targets
+// of the pass, the blending, the class of the primitive and the settings of the game the shaders take as specialization constants
+namespace
+{
+
+vk14::pipeline_desc scene_pipeline_desc(std::shared_ptr<vk14::shader_code const> const &Vertex, std::shared_ptr<vk14::shader_code const> const &Fragment, vk14::vertex_kind const Vertices,
+                                        VkPipelineLayout const Layout, VkPrimitiveTopology const Primitiveclass, vk14::blend_mode const Blend, std::array<VkFormat, 2> const &Colour,
+                                        std::uint32_t const Colours, VkFormat const Depth, VkSampleCountFlagBits const Samples, std::uint32_t const Viewmask, std::uint32_t const Settings,
+                                        std::string const &Name)
+{
+	vk14::pipeline_desc desc;
+	desc.stages = {Vertex, Fragment};
+	desc.layout = Layout;
+	desc.vertices = layout_of(Vertices);
+	{
+		auto const read{vertex_input_locations(Vertex->spirv)};
+		auto &attributes{desc.vertices.attributes};
+		attributes.erase(std::remove_if(attributes.begin(), attributes.end(), [&](VkVertexInputAttributeDescription const &Attribute) { return std::find(read.begin(), read.end(), Attribute.location) == read.end(); }),
+		                 attributes.end());
+	}
+	desc.topology = Primitiveclass;
+	desc.blending = Blend;
+	desc.colour_formats.assign(Colour.begin(), Colour.begin() + Colours);
+	desc.depth_format = Depth;
+	desc.samples = Samples;
+	desc.view_mask = Viewmask;
+	desc.specialization = {Settings & 1u, (Settings >> 1) & 1u, (Settings >> 2) & 1u, (Settings >> 3) & 1u, (Settings >> 4) & 1u, (Settings >> 5) & 1u};
+	desc.name = Name;
+	return desc;
+}
+
+// the list of the pipelines of a session: one line a pipeline, the fields apart by '|', with \n, | and % in them as %0a, %7c, %25
+std::string list_field(std::string const &Value)
+{
+	std::string result;
+	for (auto const c : Value)
+	{
+		switch (c)
+		{
+		case '\n':
+			result += "%0a";
+			break;
+		case '|':
+			result += "%7c";
+			break;
+		case '%':
+			result += "%25";
+			break;
+		default:
+			result += c;
+			break;
+		}
+	}
+	return result;
+}
+
+std::string list_value(std::string const &Field)
+{
+	std::string result;
+	for (std::size_t i = 0; i < Field.size(); ++i)
+	{
+		if ((Field[i] == '%') && (i + 2 < Field.size()))
+		{
+			auto const code{Field.substr(i + 1, 2)};
+			result += (code == "0a" ? '\n' : code == "7c" ? '|' : '%');
+			i += 2;
+			continue;
+		}
+		result += Field[i];
+	}
+	return result;
+}
+
+std::string pipeline_list_path()
+{
+	auto const path{user_config_path("cache")};
+	return (path.empty() ? std::string{"cache/vulkan14/pipelines.txt"} : (path / "vulkan14" / "pipelines.txt").string());
+}
+
+// the number of pipelines the list keeps; the oldest go
+std::size_t constexpr pipeline_list_limit{4096};
+
+} // namespace
+
+std::string vk14::scene_pipeline_record::line() const
+{
+	std::string result{"1"};
+	for (auto const &field : {vertex, vertex_defines, fragment, fragment_defines, name})
+	{
+		result += "|" + list_field(field);
+	}
+	for (auto const value : {static_cast<std::uint32_t>(vertices), static_cast<std::uint32_t>(topology), blending, static_cast<std::uint32_t>(colour[0]), static_cast<std::uint32_t>(colour[1]), colours,
+	                         static_cast<std::uint32_t>(depth), samples, view_mask, settings})
+	{
+		result += "|" + std::to_string(value);
+	}
+	return result;
+}
+
+bool vk14::scene_pipeline_record::parse(std::string const &Line)
+{
+	std::vector<std::string> fields;
+	std::size_t start{0};
+	while (true)
+	{
+		auto const end{Line.find('|', start)};
+		fields.push_back(list_value(Line.substr(start, end == std::string::npos ? std::string::npos : end - start)));
+		if (end == std::string::npos)
+		{
+			break;
+		}
+		start = end + 1;
+	}
+	if ((fields.size() != 16) || (fields[0] != "1") || fields[1].empty() || fields[3].empty())
+	{
+		return false;
+	}
+	try
+	{
+		vertex = fields[1];
+		vertex_defines = fields[2];
+		fragment = fields[3];
+		fragment_defines = fields[4];
+		name = fields[5];
+		std::array<std::uint32_t, 10> values;
+		for (std::size_t i = 0; i < values.size(); ++i)
+		{
+			values[i] = static_cast<std::uint32_t>(std::stoul(fields[6 + i]));
+		}
+		vertices = static_cast<vertex_kind>(values[0]);
+		topology = static_cast<VkPrimitiveTopology>(values[1]);
+		blending = values[2];
+		colour = {static_cast<VkFormat>(values[3]), static_cast<VkFormat>(values[4])};
+		colours = std::min<std::uint32_t>(values[5], 2);
+		depth = static_cast<VkFormat>(values[6]);
+		samples = values[7];
+		view_mask = values[8];
+		settings = values[9];
+	}
+	catch (std::exception const &)
+	{
+		return false;
+	}
+	return true;
+}
+
 // the pipeline of the program for the targets of the pass, the blending and the class of the primitive, made the first time it's
-// asked for; bound with the primitive as dynamic state. false: it can't be made
+// asked for; bound with the primitive as dynamic state. false: it can't be made, or it's being made by the background threads for
+// the walk of the scene, which leaves out the draw till it's there (gfx.vulkan.asyncresources, the stage M5)
 bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, int const Topology)
 {
 	auto &ctx{*m_context};
-	auto &scene{ctx.scene};
 	auto &draw{*m_draw};
 	auto const topology{static_cast<VkPrimitiveTopology>(Topology)};
 	auto const primitiveclass{topology_class(topology)};
@@ -1923,53 +2225,45 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 	std::uint32_t const settings{(Global.gfx_shadergamma ? 1u : 0u) | (Global.gfx_shadowmap_enabled ? 2u : 0u) | (Global.gfx_envmap_enabled ? 4u : 0u) | (motion ? 8u : 0u) | 16u | (Global.gfx_extraeffects ? 32u : 0u)};
 	auto const key{(static_cast<std::uint64_t>(Targets.id)) | (static_cast<std::uint64_t>(Blend) << 16) | (static_cast<std::uint64_t>(primitiveclass) << 24) | (static_cast<std::uint64_t>(settings) << 32)};
 	VkPipeline pipeline{VK_NULL_HANDLE};
-	auto const lookup{Program.pipelines.find(key)};
-	if (lookup != Program.pipelines.end())
+	if ((draw.lastprogram == &Program) && (draw.lastkey == key))
 	{
-		pipeline = lookup->second;
+		pipeline = draw.lastpipeline;
 	}
 	else
 	{
-		auto fragment{Program.fragment};
-		if ((false == motion) && (Targets.colours > 0))
+		auto found{false};
+		{
+			std::lock_guard<std::mutex> lock(Program.mutex);
+			auto const lookup{Program.pipelines.find(key)};
+			if (lookup != Program.pipelines.end())
+			{
+				pipeline = lookup->second;
+				found = true;
+			}
+		}
+		if (false == found)
 		{
 			// a shader writing the velocity without its target is reported by the validation layer
-			if (!Program.fragment_single)
+			auto const single{(false == motion) && (Targets.colours > 0)};
+			if ((draw.async || (m_main != nullptr)) && Global.gfx_vulkan_asyncresources && ctx.background.running())
 			{
-				try
+				// made ahead (the list of the last session), or made for another program of the same shaders: taken at once
+				if (false == ctx.find_scene_pipeline(Program, Targets, Blend, primitiveclass, settings, single, pipeline))
 				{
-					Program.fragment_single = ctx.shaders.get(Program.fragment_name, Program.defines + "#define NO_MOTION_OUTPUT\n");
-				}
-				catch (gfx::shader_exception const &Exception)
-				{
-					vk14::log_error(Exception.what());
+					ctx.queue_scene_pipeline(Program, Targets, Blend, primitiveclass, settings, single, key);
+					return false;
 				}
 			}
-			if (Program.fragment_single)
+			else
 			{
-				fragment = Program.fragment_single;
+				pipeline = ctx.make_scene_pipeline(Program, Targets, Blend, primitiveclass, settings, single);
 			}
+			std::lock_guard<std::mutex> lock(Program.mutex);
+			Program.pipelines.emplace(key, pipeline);
 		}
-		vk14::pipeline_desc desc;
-		desc.stages = {Program.vertex, fragment};
-		desc.layout = scene.scene_layout;
-		desc.vertices = layout_of(Program.vertices);
-		{
-			auto const read{vertex_input_locations(Program.vertex->spirv)};
-			auto &attributes{desc.vertices.attributes};
-			attributes.erase(std::remove_if(attributes.begin(), attributes.end(), [&](VkVertexInputAttributeDescription const &Attribute) { return std::find(read.begin(), read.end(), Attribute.location) == read.end(); }),
-			                 attributes.end());
-		}
-		desc.topology = primitiveclass;
-		desc.blending = Blend;
-		desc.colour_formats.assign(Targets.colour.begin(), Targets.colour.begin() + Targets.colours);
-		desc.depth_format = Targets.depth;
-		desc.samples = Targets.samples;
-		desc.view_mask = Targets.view_mask;
-		desc.specialization = {settings & 1u, (settings >> 1) & 1u, (settings >> 2) & 1u, (settings >> 3) & 1u, (settings >> 4) & 1u, (settings >> 5) & 1u};
-		desc.name = Program.name;
-		pipeline = ctx.pipelines.get(desc);
-		Program.pipelines.emplace(key, pipeline);
+		draw.lastprogram = &Program;
+		draw.lastkey = key;
+		draw.lastpipeline = pipeline;
 	}
 	if (pipeline == VK_NULL_HANDLE)
 	{
@@ -1986,6 +2280,218 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 		draw.topology = topology;
 	}
 	return true;
+}
+
+// the fragment shader of the program for the targets: the one without the velocity target, made when it's first needed (null when it
+// isn't there and Compile is false), or the program's own
+std::shared_ptr<vk14::shader_code const> vulkan14_renderer::context::scene_fragment(vk14::scene_program &Program, bool const Single, bool const Compile)
+{
+	auto &ctx{*this};
+	if (false == Single)
+	{
+		return Program.fragment;
+	}
+	{
+		std::lock_guard<std::mutex> lock(Program.mutex);
+		if (Program.fragment_single)
+		{
+			return Program.fragment_single;
+		}
+	}
+	auto const defines{Program.defines + "#define NO_MOTION_OUTPUT\n"};
+	std::shared_ptr<vk14::shader_code const> fragment{ctx.shaders.find(Program.fragment_name, defines)};
+	if ((fragment == nullptr) && Compile)
+	{
+		try
+		{
+			fragment = ctx.shaders.get(Program.fragment_name, defines);
+		}
+		catch (gfx::shader_exception const &Exception)
+		{
+			vk14::log_error(Exception.what());
+			// the program's own then, as before
+			return Program.fragment;
+		}
+	}
+	if (fragment != nullptr)
+	{
+		std::lock_guard<std::mutex> lock(Program.mutex);
+		if (!Program.fragment_single)
+		{
+			Program.fragment_single = fragment;
+		}
+	}
+	return fragment;
+}
+
+VkPipeline vulkan14_renderer::context::make_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, VkPrimitiveTopology const Primitiveclass,
+                                                 std::uint32_t const Settings, bool const Single)
+{
+	auto &ctx{*this};
+	auto const fragment{scene_fragment(Program, Single, true)};
+	if ((Program.vertex == nullptr) || (fragment == nullptr))
+	{
+		return VK_NULL_HANDLE;
+	}
+	auto const desc{scene_pipeline_desc(Program.vertex, fragment, Program.vertices, ctx.scene.scene_layout, Primitiveclass, Blend, Targets.colour, Targets.colours, Targets.depth, Targets.samples,
+	                                    Targets.view_mask, Settings, Program.name)};
+	auto const pipeline{ctx.pipelines.get(desc)};
+	if (pipeline != VK_NULL_HANDLE)
+	{
+		// for the list of the session
+		vk14::scene_pipeline_record record;
+		record.vertex = Program.vertex->name;
+		record.vertex_defines = Program.vertex->defines;
+		record.fragment = fragment->name;
+		record.fragment_defines = fragment->defines;
+		record.vertices = Program.vertices;
+		record.topology = Primitiveclass;
+		record.blending = static_cast<std::uint32_t>(Blend);
+		record.colour = Targets.colour;
+		record.colours = Targets.colours;
+		record.depth = Targets.depth;
+		record.samples = static_cast<std::uint32_t>(Targets.samples);
+		record.view_mask = Targets.view_mask;
+		record.settings = Settings;
+		record.name = Program.name;
+		auto line{record.line()};
+		std::lock_guard<std::mutex> lock(ctx.warm_mutex);
+		if (ctx.warm_lines.insert(line).second)
+		{
+			ctx.warm_records.push_back(std::move(record));
+		}
+	}
+	return pipeline;
+}
+
+bool vulkan14_renderer::context::find_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, VkPrimitiveTopology const Primitiveclass,
+                                            std::uint32_t const Settings, bool const Single, VkPipeline &Pipeline)
+{
+	auto &ctx{*this};
+	auto const fragment{scene_fragment(Program, Single, false)};
+	if ((Program.vertex == nullptr) || (fragment == nullptr))
+	{
+		return false;
+	}
+	return ctx.pipelines.find(scene_pipeline_desc(Program.vertex, fragment, Program.vertices, ctx.scene.scene_layout, Primitiveclass, Blend, Targets.colour, Targets.colours, Targets.depth,
+	                                              Targets.samples, Targets.view_mask, Settings, Program.name),
+	                          Pipeline);
+}
+
+void vulkan14_renderer::context::queue_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, VkPrimitiveTopology const Primitiveclass,
+                                             std::uint32_t const Settings, bool const Single, std::uint64_t const Key)
+{
+	auto &ctx{*this};
+	{
+		std::lock_guard<std::mutex> lock(Program.mutex);
+		if (false == Program.pending.insert(Key).second)
+		{
+			// being made already
+			return;
+		}
+	}
+	++ctx.pipelines_late;
+	// the program and the renderer outlive the background threads (stopped first when the scene goes)
+	ctx.background.add([this, program = &Program, targets = Targets, Blend, Primitiveclass, Settings, Single, Key]() {
+		auto const pipeline{make_scene_pipeline(*program, targets, Blend, Primitiveclass, Settings, Single)};
+		std::lock_guard<std::mutex> lock(program->mutex);
+		program->pipelines.emplace(Key, pipeline);
+		program->pending.erase(Key);
+	});
+}
+
+// the pipelines of the list of the last session made ahead by the background threads, after the ones the draws wait for
+void vulkan14_renderer::context::warm_scene_pipelines()
+{
+	auto &ctx{*this};
+	if ((false == Global.gfx_vulkan_asyncresources) || (false == ctx.background.running()))
+	{
+		return;
+	}
+	std::ifstream file(pipeline_list_path());
+	if (false == file.is_open())
+	{
+		return;
+	}
+	std::vector<vk14::scene_pipeline_record> records;
+	std::string line;
+	while (std::getline(file, line))
+	{
+		vk14::scene_pipeline_record record;
+		if (record.parse(line))
+		{
+			records.push_back(std::move(record));
+		}
+	}
+	{
+		// the list of this session keeps them, in their order, even when nothing asks for them now
+		std::lock_guard<std::mutex> lock(ctx.warm_mutex);
+		for (auto const &record : records)
+		{
+			if (ctx.warm_lines.insert(record.line()).second)
+			{
+				ctx.warm_records.push_back(record);
+			}
+		}
+	}
+	vk14::log_info("pipelines of the last session made ahead: " + std::to_string(records.size()));
+	auto const layout{ctx.scene.scene_layout};
+	for (auto const &record : records)
+	{
+		ctx.background.add(
+		    [this, record, layout]() {
+			    auto &ctx{*this};
+			    try
+			    {
+				    auto const vertex{ctx.shaders.get(record.vertex, record.vertex_defines)};
+				    auto const fragment{ctx.shaders.get(record.fragment, record.fragment_defines)};
+				    ctx.pipelines.get(scene_pipeline_desc(vertex, fragment, record.vertices, layout, record.topology, static_cast<vk14::blend_mode>(record.blending), record.colour, record.colours,
+				                                          record.depth, static_cast<VkSampleCountFlagBits>(record.samples), record.view_mask, record.settings, record.name));
+				    ++ctx.warm_made;
+			    }
+			    catch (gfx::shader_exception const &Exception)
+			    {
+				    // the shader went or changed meanwhile
+				    vk14::log_info(std::string("a pipeline of the last session can't be made ahead: ") + Exception.what());
+			    }
+		    },
+		    false);
+	}
+}
+
+// the list of the pipelines of the session, for the next one
+void vulkan14_renderer::context::save_scene_pipelines()
+{
+	auto &ctx{*this};
+	std::vector<vk14::scene_pipeline_record> records;
+	{
+		std::lock_guard<std::mutex> lock(ctx.warm_mutex);
+		records = ctx.warm_records;
+	}
+	if (records.empty())
+	{
+		return;
+	}
+	if (records.size() > pipeline_list_limit)
+	{
+		records.erase(records.begin(), records.end() - pipeline_list_limit);
+	}
+	auto const path{pipeline_list_path()};
+	std::error_code error;
+	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
+	auto const temporary{path + ".tmp"};
+	{
+		std::ofstream file(temporary, std::ios::trunc);
+		if (false == file.is_open())
+		{
+			return;
+		}
+		for (auto const &record : records)
+		{
+			file << record.line() << '\n';
+		}
+	}
+	std::filesystem::rename(temporary, path, error);
 }
 
 // the dynamic state of the draws for the state of the walk: the faces culled, the depth tested and written
@@ -2027,8 +2533,8 @@ void vulkan14_renderer::push_textures()
 		{
 			continue;
 		}
-		auto &source{ctx.textures->mark_as_used(texture)};
-		if (false == source.create())
+		auto &source{used_texture(texture)};
+		if (false == texture_ready(source))
 		{
 			continue;
 		}
@@ -2039,6 +2545,17 @@ void vulkan14_renderer::push_textures()
 	}
 	scene.material_set.push(draw.commands, scene.scene_layout, images.data());
 	draw.textures_dirty = false;
+}
+
+// a texture a draw needs: made by the background threads for the walks of the scene (the draw goes without it till then), made now
+// otherwise
+bool vulkan14_renderer::texture_ready(texture_source &Texture)
+{
+	if ((m_draw != nullptr) && (m_draw->async || (m_main != nullptr)))
+	{
+		return static_cast<vk14::vulkan14_texture &>(Texture).request_background();
+	}
+	return Texture.create();
 }
 
 // which program of the depth prepass stands for the program of the material (opengl46_renderer::Prepass_Class()): 0 none, 1 the
@@ -2084,6 +2601,8 @@ int vulkan14_renderer::prepass_class(material_handle const Material)
 
 texture_handle vulkan14_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
 {
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
 	if (!m_context || !m_context->textures)
 	{
 		return null_handle;

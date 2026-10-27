@@ -526,6 +526,8 @@ bool vulkan14_renderer::Render()
 	auto const device{ctx.device.handle()};
 	auto const slot{static_cast<std::uint32_t>(ctx.framecount % ctx.frames.size())};
 	auto &frame{ctx.frames[slot]};
+	// the walkers of a frame which didn't get to its end
+	join_walks();
 
 	Timer::subsystem.gfx_total.start();
 
@@ -566,6 +568,10 @@ bool vulkan14_renderer::Render()
 	// what the frames done used last goes
 	ctx.deletions.collect(std::max(ctx.completed(), frame.done));
 	VK14_VERIFY(vkResetCommandPool(device, frame.pool, 0));
+	if (frame.compute_pool != VK_NULL_HANDLE)
+	{
+		VK14_VERIFY(vkResetCommandPool(device, frame.compute_pool, 0));
+	}
 	for (auto &worker : frame.workers)
 	{
 		VK14_VERIFY(vkResetCommandPool(device, worker.pool, 0));
@@ -574,8 +580,11 @@ bool vulkan14_renderer::Render()
 	ctx.ring.begin_frame(slot);
 	scene.draws.ring.begin_frame(slot);
 	scene.instances.ring.begin_frame(slot);
-	scene.draws.open = false;
-	scene.instances.open = false;
+	// the parts of the rings the main renderer places its draws in, and their windows, anew
+	m_draw->draws_cache.reset(&scene.draws.ring, vk14::draw_ring_part);
+	m_draw->instances_cache.reset(&scene.instances.ring, vk14::instance_ring_part);
+	m_draw->draws_window = {};
+	m_draw->instances_window = {};
 	// the draws which aren't instanced read the identity at the start of the window from the first draw of the frame on
 	open_instance_window();
 	// the occlusion queries of the lamps the slot made the last time
@@ -599,36 +608,45 @@ bool vulkan14_renderer::Render()
 	// the calls of the frame are kept, recorded into the command buffers once the frame is done
 	frame.upload_stream.clear();
 	frame.commands.clear();
+	frame.compute_stream.clear();
 	auto const value{ctx.timelinevalue + 1};
 	ctx.uploads.begin_frame(&frame.upload_stream, value);
 	ctx.slot = slot;
 	ctx.commands = &frame.commands;
+	m_commands = ctx.commands;
 	if (scene.cull.ready)
 	{
 		// the cullings share what they need of the frame
 		scene.cull.main.begin_frame(slot, value, ctx.completed());
 	}
-	scene.lamps.begin_frame(ctx.commands, value);
+	scene.lamps.begin_frame(m_commands, value);
 	scene.cabprobe.begin_frame(value);
 	scene.skyocclusion.begin_frame(value);
 	if (scene.terrain)
 	{
 		// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
-		scene.terrain->begin_frame(ctx.commands, value);
+		scene.terrain->begin_frame(m_commands, value);
 		scene.terrain->update();
 	}
 	// the copies of the light buffer were in the part of the ring of another frame
 	m_lightheaders.clear();
-	// the content other threads gave the textures (python)
+	// the content other threads gave the textures (python), and the textures the background threads made: in the table before the
+	// walks of the frame, their copies with the uploads of the frame
 	{
 		std::vector<vk14::vulkan14_texture *> pending;
+		std::vector<vk14::vulkan14_texture *> made;
 		{
 			std::lock_guard<std::mutex> lock(ctx.pending.mutex);
 			pending.swap(ctx.pending.textures);
+			made.swap(ctx.pending.made);
 		}
 		for (auto *texture : pending)
 		{
 			texture->apply_pending();
+		}
+		for (auto *texture : made)
+		{
+			texture->publish();
 		}
 	}
 
@@ -675,7 +693,11 @@ bool vulkan14_renderer::Render()
 	}
 
 	frame.number = ctx.framecount;
-	ctx.passes.begin_frame(ctx.commands, slot, ctx.framecount);
+	ctx.passes.begin_frame(m_commands, slot, ctx.framecount);
+	// the passes of the sky and the weather go to the compute queue once the images of the scene are in their layouts (cleared by the
+	// graphics queue below the first time) and the noises of the clouds are made (their mipmaps are blitted, which the compute queue
+	// can't do)
+	m_asyncframe = ctx.async_compute && scene.images_ready && scene.weather.noise_made && simulation::is_ready && (false == Global.gfx_skiprendering);
 
 	// the stand-ins put in place the first time: the empty maps cleared
 	if (false == scene.images_ready)
@@ -699,11 +721,11 @@ bool vulkan14_renderer::Render()
 			VkImageSubresourceRange const range{image->aspect(), 0, image->desc().mips, 0, image->desc().layers};
 			if (image->aspect() == VK_IMAGE_ASPECT_DEPTH_BIT)
 			{
-				ctx.commands->clear_depth_stencil_image(image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &farthest, 1, &range);
+				m_commands->clear_depth_stencil_image(image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &farthest, 1, &range);
 			}
 			else
 			{
-				ctx.commands->clear_color_image(image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+				m_commands->clear_color_image(image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
 			}
 			uses.push_back(vk14::use_of(*image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access));
 		}
@@ -716,11 +738,11 @@ bool vulkan14_renderer::Render()
 		{
 			uses.push_back(vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access));
 		}
-		vk14::barriers(ctx.commands, uses);
+		vk14::barriers(m_commands, uses);
 		// no light is assigned to any cluster until the culling pass runs
-		ctx.commands->fill_buffer(scene.clusters.ranges.handle(), 0, VK_WHOLE_SIZE, 0);
+		m_commands->fill_buffer(scene.clusters.ranges.handle(), 0, VK_WHOLE_SIZE, 0);
 		// nor does the cab light itself until its probe is drawn
-		ctx.commands->fill_buffer(scene.cabprobe_bounce.handle(), 0, VK_WHOLE_SIZE, 0);
+		m_commands->fill_buffer(scene.cabprobe_bounce.handle(), 0, VK_WHOLE_SIZE, 0);
 		VkMemoryBarrier2 barrier{};
 		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
 		barrier.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
@@ -731,7 +753,7 @@ bool vulkan14_renderer::Render()
 		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 		dependency.memoryBarrierCount = 1;
 		dependency.pMemoryBarriers = &barrier;
-		ctx.commands->pipeline_barrier2(&dependency);
+		m_commands->pipeline_barrier2(&dependency);
 		// the light of the sky and the exposure from their first state
 		clear_sky_images();
 		ctx.passes.end_pass();
@@ -739,7 +761,7 @@ bool vulkan14_renderer::Render()
 	// the set of the ray tracing of the frame has a structure to read from its first frame on
 	if (scene.raytracing)
 	{
-		scene.raytracing->begin_frame(ctx.commands, slot, value);
+		scene.raytracing->begin_frame(m_commands, slot, value);
 	}
 	// the block of the weather and the scene for the compute passes before the first pass of the scene
 	m_draw->scene_offset = 0;
@@ -760,11 +782,21 @@ bool vulkan14_renderer::Render()
 		// directional part of the ambient light. the volumetric clouds of the previous frame tell the sky whether to look overcast
 		// and dim the sun itself
 		m_skylight.set_clouds(m_weatherstate.clouds_drawn(), m_weatherstate.cloud_shadows());
+		if (m_asyncframe)
+		{
+			m_commands = &frame.compute_stream;
+			ctx.passes.begin_async(m_commands);
+		}
 		update_sky();
 		// fog, clouds and stars of the weather, in the light of the sky worked out above
 		if (false == Global.gfx_skiprendering)
 		{
 			update_weather();
+		}
+		if (m_asyncframe)
+		{
+			ctx.passes.end_async();
+			m_commands = ctx.commands;
 		}
 		// lamps of models and vehicles around the camera and the cab lamp, for the views of the frame to take into their light buffers
 		if ((false == Global.gfx_skiprendering) && (simulation::Region != nullptr))
@@ -800,7 +832,7 @@ bool vulkan14_renderer::Render()
 		m_nodestateversion = scene::node_state_version;
 	}
 	// what the maps of the occlusion of the sky were given, copied to them
-	scene.skyocclusion.flush(ctx.commands);
+	scene.skyocclusion.flush(m_commands);
 	// the sleeper records of tracks out of sight for a while, and the records of the models drawn on their own
 	Expire_Indirect_Records();
 	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
@@ -851,7 +883,9 @@ bool vulkan14_renderer::Render()
 		}
 	}
 
-	// the windows: the image of their viewport, the user interface over the main one
+	// the windows: the image of their viewport, the user interface over the main one. what's left of the frame waits for the compute
+	// queue, where the scene wasn't drawn
+	split_frame();
 	bool uidrawn{false};
 	for (auto *window : ctx.acquired)
 	{
@@ -882,19 +916,19 @@ bool vulkan14_renderer::Render()
 		rendering.layerCount = 1;
 		rendering.colorAttachmentCount = 1;
 		rendering.pColorAttachments = &attachment;
-		ctx.commands->begin_rendering(&rendering);
+		m_commands->begin_rendering(&rendering);
 		if (drawscene && (viewport < scene.targets.size()) && scene.targets[viewport].output)
 		{
 			present_viewport(viewport);
 		}
 		if (ismain)
 		{
-			ctx.imgui.record(ctx.commands, window->extent(), window->format(), window->srgb());
+			ctx.imgui.record(m_commands, window->extent(), window->format(), window->srgb());
 			uidrawn = true;
 		}
-		ctx.commands->end_rendering();
+		m_commands->end_rendering();
 		ctx.passes.end_pass();
-		vk14::barriers(ctx.commands, {window->use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)});
+		vk14::barriers(m_commands, {window->use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)});
 	}
 	if (false == uidrawn)
 	{
@@ -910,7 +944,7 @@ bool vulkan14_renderer::Render()
 		scene.screenshot = std::make_shared<vk14::buffer>();
 		if (scene.screenshot->create(ctx.memory, static_cast<VkDeviceSize>(extent.width) * extent.height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::readback, "screenshot"))
 		{
-			vk14::barriers(ctx.commands, {vk14::use_of(output, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT)});
+			vk14::barriers(m_commands, {vk14::use_of(output, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT)});
 			VkBufferImageCopy2 region{};
 			region.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
 			region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -922,19 +956,24 @@ bool vulkan14_renderer::Render()
 			copy.dstBuffer = scene.screenshot->handle();
 			copy.regionCount = 1;
 			copy.pRegions = &region;
-			ctx.commands->copy_image_to_buffer2(&copy);
-			host_read_barrier(ctx.commands);
+			m_commands->copy_image_to_buffer2(&copy);
+			host_read_barrier(m_commands);
 			scene.screenshot_pending = true;
 			scene.screenshot_value = value;
 			scene.screenshot_extent = extent;
 		}
 	}
+	// nothing is left to the walkers when the frame is handed over
+	join_walks();
 	ctx.passes.end_frame();
 	vulkan14_renderer::context::render_job job;
 	job.target = &frame;
 	job.uploaded = ctx.uploads.end_frame();
+	job.value = value;
+	job.async = m_asyncframe;
 	// the stream of the frame is the render thread's now: nothing records into it any more
 	ctx.commands = nullptr;
+	m_commands = nullptr;
 	m_draw->commands = nullptr;
 	scene.lamps.end_frame();
 	if (scene.terrain)
@@ -1043,12 +1082,15 @@ void vulkan14_renderer::render_scene()
 			ctx.passes.begin_pass("reflection history", {vk14::use_of(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
 			VkClearColorValue const black{{0.f, 0.f, 0.f, 0.f}};
 			VkImageSubresourceRange const range{VK_IMAGE_ASPECT_COLOR_BIT, 0, image.desc().mips, 0, 1};
-			ctx.commands->clear_color_image(image.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
-			vk14::barriers(ctx.commands, {vk14::use_of(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+			m_commands->clear_color_image(image.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+			vk14::barriers(m_commands, {vk14::use_of(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
 			ctx.passes.end_pass();
 		}
 		render_viewport(i);
 	}
+	// the passes given to the walkers are done before the frame goes on (they were walked at the same time as the viewports)
+	join_walks();
+	m_helpedgroups = ctx.helped.exchange(0);
 	m_current_viewport = (m_viewports.empty() ? nullptr : &m_viewports.front());
 }
 
@@ -1057,7 +1099,7 @@ void vulkan14_renderer::render_scene()
 void vulkan14_renderer::start_draws(vk14::target_formats const &Targets, int const Width, int const Height, int const Set, bool const Shadows)
 {
 	auto &draw{*m_draw};
-	draw.commands = m_context->commands;
+	draw.commands = m_commands;
 	draw.targets = &Targets;
 	draw.extent = {static_cast<std::uint32_t>(Width), static_cast<std::uint32_t>(Height)};
 	draw.set = static_cast<vk14::scene_state::pass_set_kind>(Set);
@@ -1378,14 +1420,29 @@ void vulkan14_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 }
 
 // the colour pass of a viewport (opengl46_renderer::Render_pass(), rendermode::color)
+// the frame goes to the queue in two submits from here on, the second waiting for the passes of the sky and the weather on the compute
+// queue (the async compute); the first split counts
+void vulkan14_renderer::split_frame()
+{
+	if (m_asyncframe && (m_main == nullptr) && (m_commands != nullptr))
+	{
+		m_commands->split();
+	}
+}
+
 void vulkan14_renderer::render_viewport(std::size_t const Index)
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &vp{m_viewports[Index]};
 	auto &targets{scene.targets[Index]};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	m_current_viewport = &vp;
+	if (false == vp.main)
+	{
+		// the views other than the main one have no sun shadows to draw before what reads the sky and the weather
+		split_frame();
+	}
 
 	setup_pass(vp, m_renderpass, rendermode::color);
 	// the temporal anti-aliasing or dlss: the projection of the frame moved by a part of a pixel, the velocities pointed to the last
@@ -1490,6 +1547,9 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		m_renderpass = m_colorpass;
 		Timer::subsystem.gfx_shadows.stop();
 	}
+	// the sun shadows went on at the same time as the passes of the sky and the weather on the compute queue; the passes from here on
+	// read what they made (the reflections draw the sky)
+	split_frame();
 	if (Global.gfx_envmap_enabled && vp.main && scene.env_map)
 	{
 		m_renderpass.draw_stats = {};
@@ -1654,7 +1714,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	setup_shadow_color(m_shadowcolor);
 	model_ubs.future = future;
-	Render(simulation::Region);
+	walk_region(simulation::Region, false);
 	m_indirectcolourpending = false;
 
 	// the grass of the terrain, opaque, over the ground drawn
@@ -1667,7 +1727,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	// ...translucent parts
 	ctx.passes.begin_pass("colour, translucent and cab");
 	walk_blending(true);
-	Render_Alpha(simulation::Region);
+	walk_region(simulation::Region, true);
 	render_editor_overlay();
 	// the depth drawn so far, which the particles of the gpu fade in front of
 	m_particlesoft = (Global.gfx_particles_soft > 0.f) && ((Global.Smoke && Global.gfx_smoke_gpu && (false == simulation::Particles.sequence().empty())) || (Global.gfx_precipitation_gpu && (Global.Overcast > 1.f))) &&
@@ -1740,7 +1800,7 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	auto &scene{ctx.scene};
 	auto &targets{scene.targets[Index]};
 	auto &draw{*m_draw};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const msaa{targets.samples != VK_SAMPLE_COUNT_1_BIT};
 	// the depth copied apart from the one the colour pass goes on with, for the contact shadows, the screen space reflections and the
 	// ambient occlusion in the light of the surfaces
@@ -1813,7 +1873,7 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 		Render_cab(vehicle, vehicle->InteriorLightLevel, false);
 	}
 	model_ubs.future = Future;
-	Render(simulation::Region);
+	walk_region(simulation::Region, false);
 	m_renderpass.draw_stats = colourstats;
 	commands->set_depth_bias_enable(VK_FALSE);
 	draw.depthpass = false;
@@ -1966,7 +2026,7 @@ void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
 
 	auto const buildstart{std::chrono::steady_clock::now()};
 	ctx.passes.begin_pass("ray tracing scene");
-	scene.raytracing->build(ctx.commands, ctx.slot, ctx.uploads.current_value(), m_framestamp, m_rtdraws, ctx.images);
+	scene.raytracing->build(m_commands, ctx.slot, ctx.uploads.current_value(), m_framestamp, m_rtdraws, ctx.images);
 	ctx.passes.end_pass();
 	auto const buildend{std::chrono::steady_clock::now()};
 	m_rtwalkms += (std::chrono::duration<double, std::milli>(buildstart - walkstart).count() - m_rtwalkms) * 0.05;
@@ -1986,12 +2046,11 @@ void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
 	{
 		return;
 	}
-	gfx::indirect_source indirect;
-	if (false == m_geometry.indirect_source(Geometry, indirect))
+	vk14::chunk_source chunk;
+	if (false == chunk_of(Geometry, chunk))
 	{
 		return;
 	}
-	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->last()};
 	if (((chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) && (chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) && (chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)) || (chunk.vertex_address == 0))
 	{
 		return;
@@ -2060,7 +2119,7 @@ void vulkan14_renderer::store_ssr_history(std::size_t const Index, vk14::image &
 	{
 		return;
 	}
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto &image{*targets.ssr_history};
 	auto const mips{image.desc().mips};
 	auto const width{static_cast<std::int32_t>(image.desc().extent.width)};
@@ -2165,7 +2224,7 @@ void vulkan14_renderer::begin_colour_rendering(std::size_t const Index, bool con
 	rendering.colorAttachmentCount = targets.formats.colours;
 	rendering.pColorAttachments = colours.data();
 	rendering.pDepthAttachment = &depth;
-	ctx.commands->begin_rendering(&rendering);
+	m_commands->begin_rendering(&rendering);
 	remember_rendering(rendering, colour_target_uses(targets));
 }
 
@@ -2181,7 +2240,7 @@ void vulkan14_renderer::walk_editor_cursor()
 		return;
 	}
 	auto &targets{scene.targets.front()};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	glm::vec2 mousepos = Global.cursor_pos;
 	// cursor coordinates are flipped compared to opengl, whose rows the images keep
 	mousepos.y = Global.window_size.y - mousepos.y;
@@ -2238,7 +2297,7 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	setup_pass(Viewport, m_renderpass, rendermode::shadows);
 	auto csmstageboundaries{gfx::shadow_fit::fixed_splits()};
 	// the cascades fitted to the depth of the view (gfx.shadow.sdsm) go between the distances of its pixels, each map covering the
@@ -2247,6 +2306,12 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 	auto const fitted{shadow_fit(Viewport, csmstageboundaries, fitareas)};
 	scene_ubs.shadow_fit = glm::vec4{fitted ? 1.f : 0.f, 0.f, 0.f, 0.f};
 	m_shadowfitstate.splits = csmstageboundaries;
+	// the cascades walked by the walkers (gfx.vulkan.parallelpasses), each with a culling of its own made beforehand
+	auto const walkers{walks_wanted()};
+	if (walkers)
+	{
+		ensure_cull();
+	}
 	static char const *const parts[] = {"sun shadows 1", "sun shadows 2", "sun shadows 3"};
 	for (std::size_t idx = 0; idx < m_shadowpass.size(); ++idx)
 	{
@@ -2261,37 +2326,54 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		auto const csmstagezfar{(csmstageboundaries[idx + 1]) + (m_shadowpass.size() - idx)};
 		scene_ubs.cascade_end[idx] = csmstagezfar * csmstagezfar;
-
-		VkClearValue clear{};
-		clear.depthStencil = {0.f, 0};
-		auto depth{attachment_info(scene.shadow_layers[idx], VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, true, clear)};
-		VkRenderingInfo rendering{};
-		rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-		rendering.renderArea = {{0, 0}, {scene.shadow_size, scene.shadow_size}};
-		rendering.layerCount = 1;
-		rendering.pDepthAttachment = &depth;
-		commands->begin_rendering(&rendering);
-		remember_rendering(rendering, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
-		start_draws(scene.shadow_formats, static_cast<int>(scene.shadow_size), static_cast<int>(scene.shadow_size), vk14::scene_state::set_plain, true);
-		m_shadowcascade = static_cast<int>(idx);
-		walk_blending(false);
-		upload_scene_block();
-		if (m_shadowcolor != colors::white)
+		if (walkers)
 		{
-			Render(simulation::Region);
-			// render cab only in the closest csm stage
-			if ((idx == 0) && !FreeFlyModeFlag && Global.render_cab && simulation::Train)
-			{
-				Render_cab(simulation::Train->Dynamic(), 0.0f, false);
-				Render_cab(simulation::Train->Dynamic(), 0.0f, true);
-			}
+			fork_walk([idx](vulkan14_renderer &Walker) { Walker.walk_cascade(idx); });
 		}
-		m_shadowcascade = -1;
-		commands->end_rendering();
-		end_draws();
+		else
+		{
+			walk_cascade(idx);
+		}
 		ctx.passes.end_pass();
 	}
 	vk14::barriers(commands, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+}
+
+// the walk of a cascade of the sun shadows set up by render_shadows(): by the main renderer, or by a walker given the state of the frame
+void vulkan14_renderer::walk_cascade(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const commands{m_commands};
+	// the matrices of the camera of the cascade (the walker's own, made from the pass it was given)
+	setup_matrices();
+	VkClearValue clear{};
+	clear.depthStencil = {0.f, 0};
+	auto depth{attachment_info(scene.shadow_layers[Index], VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, true, clear)};
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, {scene.shadow_size, scene.shadow_size}};
+	rendering.layerCount = 1;
+	rendering.pDepthAttachment = &depth;
+	commands->begin_rendering(&rendering);
+	remember_rendering(rendering, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+	start_draws(scene.shadow_formats, static_cast<int>(scene.shadow_size), static_cast<int>(scene.shadow_size), vk14::scene_state::set_plain, true);
+	m_shadowcascade = static_cast<int>(Index);
+	walk_blending(false);
+	upload_scene_block();
+	if (m_shadowcolor != colors::white)
+	{
+		walk_region(simulation::Region, false);
+		// render cab only in the closest csm stage
+		if ((Index == 0) && !FreeFlyModeFlag && Global.render_cab && simulation::Train)
+		{
+			Render_cab(simulation::Train->Dynamic(), 0.0f, false);
+			Render_cab(simulation::Train->Dynamic(), 0.0f, true);
+		}
+	}
+	m_shadowcascade = -1;
+	commands->end_rendering();
+	end_draws();
 }
 
 // the environment map (the sky and the clouds around the camera), a face of it per frame (opengl46_renderer::Render_reflections())
@@ -2322,14 +2404,14 @@ bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
 	for (; m_environmentupdateface <= lastface; ++m_environmentupdateface)
 	{
 		// the depth of the faces is the same image: the clear of a face waits for the draws of the one before
-		vk14::barriers(ctx.commands, {vk14::use_of(*scene.env_depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+		vk14::barriers(m_commands, {vk14::use_of(*scene.env_depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
 		m_environmentcubetextureface = m_environmentupdateface;
 		render_reflection_face(Viewport);
 	}
 	if (m_environmentupdateface >= 6)
 	{
 		// the mipmaps, each level from the one before it
-		auto const commands{ctx.commands};
+		auto const commands{m_commands};
 		auto &image{*scene.env_map};
 		auto const mips{image.desc().mips};
 		auto const size{static_cast<std::int32_t>(image.desc().extent.width)};
@@ -2390,7 +2472,7 @@ bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
 	}
 	else
 	{
-		vk14::barriers(ctx.commands, {vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+		vk14::barriers(m_commands, {vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
 	}
 	return true;
 }
@@ -2399,7 +2481,7 @@ void vulkan14_renderer::render_reflection_face(viewport_config &Viewport)
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const size{scene.env_map->desc().extent.width};
 	setup_pass(Viewport, m_renderpass, rendermode::reflections);
 
@@ -2825,7 +2907,7 @@ bool vulkan14_renderer::setup_particles_depth(std::size_t const Index)
 			return false;
 		}
 	}
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	suspend_rendering();
 	vk14::barriers(commands, {vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
 	                          vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
@@ -3108,7 +3190,7 @@ void vulkan14_renderer::post_pass(char const *Fragment, vk14::image &Target, std
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	VkExtent2D const extent{Target.desc().extent.width, Target.desc().extent.height};
 	std::vector<vk14::image_use> uses{vk14::use_of(Target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access)};
 	for (auto *input : Inputs)
@@ -3204,7 +3286,7 @@ void vulkan14_renderer::render_dlss(std::size_t const Index)
 	inputs.jitter = m_taa.jitter();
 	inputs.reset = m_dlssreset || (false == m_taa.history_valid());
 	inputs.frame_time = static_cast<float>(Timer::GetDeltaRenderTime() * 1000.0);
-	ctx.dlss.evaluate(*ctx.commands, inputs, ctx.deletions, ctx.uploads.current_value());
+	ctx.dlss.evaluate(*m_commands, inputs, ctx.deletions, ctx.uploads.current_value());
 	m_dlssreset = false;
 	ctx.passes.end_pass();
 }
@@ -3381,14 +3463,14 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 			rendering.layerCount = 1;
 			rendering.colorAttachmentCount = 1;
 			rendering.pColorAttachments = &attachment;
-			ctx.commands->begin_rendering(&rendering);
+			m_commands->begin_rendering(&rendering);
 			if (drawn)
 			{
 				present_viewport(Index);
 			}
 			// the user interface in each of them (kept for the next one but the last)
-			ctx.imgui.record(ctx.commands, extent, window.format(), window.srgb(), false == last);
-			ctx.commands->end_rendering();
+			ctx.imgui.record(m_commands, extent, window.format(), window.srgb(), false == last);
+			m_commands->end_rendering();
 			ctx.passes.end_pass();
 		}
 		std::vector<vk14::image_use> presents{window.use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)};
@@ -3396,7 +3478,7 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 		{
 			presents.push_back(window.generated_use(i, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE));
 		}
-		vk14::barriers(ctx.commands, presents);
+		vk14::barriers(m_commands, presents);
 		return;
 	}
 
@@ -3410,13 +3492,13 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 		rendering.layerCount = 1;
 		rendering.colorAttachmentCount = 1;
 		rendering.pColorAttachments = &attachment;
-		ctx.commands->begin_rendering(&rendering);
+		m_commands->begin_rendering(&rendering);
 		present_viewport(Index, &Target);
 		if (Ui)
 		{
-			ctx.imgui.record(ctx.commands, extent, Target.desc().format, false);
+			ctx.imgui.record(m_commands, extent, Target.desc().format, false);
 		}
-		ctx.commands->end_rendering();
+		m_commands->end_rendering();
 		ctx.passes.end_pass();
 	};
 	drawto(*generation.hudless, false, "frame generation hudless");
@@ -3455,7 +3537,7 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 	// its history is of no use after a frame without it (minimized, not drawn, without the images)
 	inputs.reset = (false == m_taa.history_valid()) || (m_generationframe + 1 != ctx.framecount);
 	m_generationframe = ctx.framecount;
-	ctx.dlss.generate(*ctx.commands, inputs, ctx.deletions, ctx.uploads.current_value());
+	ctx.dlss.generate(*m_commands, inputs, ctx.deletions, ctx.uploads.current_value());
 	ctx.passes.end_pass();
 
 	// the frames to the images of the window: the ones generated first, in the order they are shown, then the one drawn
@@ -3487,7 +3569,7 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 			blit.regionCount = 1;
 			blit.pRegions = &region;
 			blit.filter = VK_FILTER_NEAREST;
-			ctx.commands->blit_image2(&blit);
+			m_commands->blit_image2(&blit);
 			return;
 		}
 		VkImageCopy2 region{};
@@ -3503,7 +3585,7 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 		copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		copy.regionCount = 1;
 		copy.pRegions = &region;
-		ctx.commands->copy_image2(&copy);
+		m_commands->copy_image2(&copy);
 	};
 	for (std::uint32_t i = 0; i < window.generated_count(); ++i)
 	{
@@ -3516,7 +3598,7 @@ void vulkan14_renderer::render_generation(std::size_t const Index)
 	{
 		presents.push_back(window.generated_use(i, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE));
 	}
-	vk14::barriers(ctx.commands, presents);
+	vk14::barriers(m_commands, presents);
 }
 
 // the post-processing of a viewport: from the colour of the scene to its output, which the window shows (the part of
@@ -3526,7 +3608,7 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &targets{scene.targets[Index]};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 
 	// the occlusion goes into the image before the blur, which smears both alike. the targets are there only when it was on as they
 	// were made. in the light of the surfaces it's in the image already
@@ -3624,7 +3706,7 @@ void vulkan14_renderer::present_viewport(std::size_t const Index, vk14::image co
 	auto &scene{ctx.scene};
 	auto &targets{scene.targets[Index]};
 	auto const &window{*ctx.windows[m_viewports[Index].window]};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const format{Target != nullptr ? Target->desc().format : window.format()};
 	auto const srgb{Target != nullptr ? false : window.srgb()};
 	VkExtent2D const extent{Target != nullptr ? VkExtent2D{Target->desc().extent.width, Target->desc().extent.height} : window.extent()};
@@ -3858,7 +3940,7 @@ void vulkan14_renderer::update_lights(light_array &Lights, bool const Headlights
 		auto &ctx{*m_context};
 		auto &scene{ctx.scene};
 		auto &clusters{scene.clusters};
-		auto const commands{ctx.commands};
+		auto const commands{m_commands};
 		auto const lightsize{offsetof(gl::light_data, lights) + sizeof(gl::light_element) * m_lightcount};
 		auto const lights{ctx.ring.allocate(sizeof(gl::light_data), ctx.device.caps().limits.minStorageBufferOffsetAlignment)};
 		if (false == bool(lights))
@@ -3945,7 +4027,7 @@ void vulkan14_renderer::update_clusters(glm::ivec2 const &Targetsize)
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto &clusters{scene.clusters};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto const projection{OpenGLMatrices.data(GL_PROJECTION)};
 	auto const znear{m_renderpass.znear};
 	auto const zfar{m_renderpass.zfar};
@@ -4010,7 +4092,7 @@ void vulkan14_renderer::render_picking(rendermode const Mode)
 {
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
-	auto const commands{ctx.commands};
+	auto const commands{m_commands};
 	auto &readback{Mode == rendermode::pickcontrols ? scene.pick_controls : scene.pick_scenery};
 	if (readback.pending || m_viewports.empty())
 	{

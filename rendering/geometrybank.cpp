@@ -571,6 +571,15 @@ geometrybank_manager::indirect_source( gfx::geometry_handle const &Geometry, gfx
     return bankrecord.first->indirect_source( Geometry, Source );
 }
 
+// marks the bank of the chunk as used, as the draws do
+void
+geometrybank_manager::mark_used( gfx::geometry_handle const &Geometry ) {
+
+    if( false == valid( Geometry ) ) { return; }
+
+    bank( Geometry ).second = m_garbagecollector.timestamp();
+}
+
 // draws geometry stored in specified chunk with the command at Offset in the bound draw indirect buffer
 void
 geometrybank_manager::draw_indirect( gfx::geometry_handle const &Geometry, std::intptr_t const Offset, unsigned int const Streams ) {
