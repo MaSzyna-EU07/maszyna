@@ -99,3 +99,71 @@ TEST_CASE("switch on a curve: the ends of a cant ramp at the ends of the switch 
 	CHECK(switch_curve::snapped_start(ramps, 160.0, 30.0, 1, 3.0, &what) == doctest::Approx(160.0));
 	CHECK(what.empty());
 }
+
+namespace {
+
+// a track of one curvature from its start, heading as given there, a point every half metre
+std::vector<switch_curve::track_point> arc(double const Length, double const Heading, double const Curvature) {
+	std::vector<switch_curve::track_point> points;
+	for (double s{0.0}; s <= Length + 1e-9; s += 0.5)
+		points.push_back({s, Heading + Curvature * s, 0.0});
+	return points;
+}
+
+// a slip of 1:9 with the slip curves of R 190 m bent onto the line from the station on: the tracks through it with the curvature of the
+// line, the slip curves with theirs plus the one of the line, one turning as the line does, the other against it
+switch_curve::slip_report bent_slip(std::vector<switch_curve::track_point> const &Line, double const From, double const Curvature) {
+	auto const angle{std::atan(1.0 / 9.0)};
+	auto const half{16.6};
+	auto const tracks{std::vector{arc(2.0 * half, 0.0, Curvature), arc(2.0 * half, angle, Curvature * std::cos(angle))}};
+	auto const curves{std::vector{arc(190.0 * angle, 0.0, 1.0 / 190.0 + Curvature), arc(190.0 * angle, angle, -1.0 / 190.0 + Curvature)}};
+	return switch_curve::check_slip(tracks, curves, Line, From, From + 2.0 * half);
+}
+
+} // namespace
+
+TEST_CASE("slip bent into a curve: in a side track only, its slip curve bent the way of the curve no sharper than a side track takes") {
+	auto const sharp{bent_slip(line(0.0, 0.0, 400.0, 800.0, 0.0), 150.0, 1.0 / 800.0)};
+	CHECK(sharp.curved);
+	CHECK(says(sharp.warnings, "11.4 pkt 4b"));
+	CHECK(sharp.first == doctest::Approx(1.0 / 800.0).epsilon(0.02));
+	CHECK(sharp.second == doctest::Approx(std::cos(std::atan(1.0 / 9.0)) / 800.0).epsilon(0.02));
+	REQUIRE(sharp.curves.size() == 2);
+	// 1/190 + 1/800: R 153.5 m, 1/190 - 1/800: R 249.2 m
+	CHECK(1.0 / sharp.curves[0] == doctest::Approx(153.5).epsilon(0.01));
+	CHECK(1.0 / sharp.curves[1] == doctest::Approx(249.2).epsilon(0.01));
+	CHECK(says(sharp.warnings, "R 154 m, below the least 180 m"));
+	CHECK(false == says(sharp.warnings, "R 249 m"));
+	CHECK(false == says(sharp.warnings, "9.7 pkt 12"));
+
+	// R 4000 m: the slip curve of 1/190 + 1/4000, R 181.4 m, still within the side tracks
+	auto const gentle{bent_slip(line(0.0, 0.0, 400.0, 4000.0, 0.0), 150.0, 1.0 / 4000.0)};
+	CHECK(gentle.curved);
+	CHECK(says(gentle.warnings, "11.4 pkt 4b"));
+	CHECK(false == says(gentle.warnings, "table 9.2"));
+	CHECK(gentle.notes.empty());
+
+	// one on a straight is no bent one
+	auto const straight{bent_slip(line(400.0, 0.0, 0.0, 1000.0, 0.0), 150.0, 0.0)};
+	CHECK_FALSE(straight.curved);
+	CHECK(straight.warnings.empty());
+}
+
+TEST_CASE("slip bent into a curve: the cant of the side track, a track through it turning from one side to the other") {
+	// the cant the same over it, none recommended in a side track though
+	auto const canted{bent_slip(line(0.0, 0.0, 400.0, 1000.0, 30.0), 150.0, 1.0 / 1000.0)};
+	CHECK(canted.cant_start == doctest::Approx(30.0));
+	CHECK(canted.cant_end == doctest::Approx(30.0));
+	CHECK(false == says(canted.warnings, "The cant changes"));
+	CHECK(says(canted.notes, "9.3 pkt 5"));
+
+	// a reverse curve under it
+	auto const curve{line(0.0, 0.0, 400.0, 1000.0, 0.0)};
+	auto first{arc(33.2, 0.0, 1.0 / 1000.0)};
+	for (auto &point : first)
+		if (point.station > 16.6)
+			point.heading = 16.6 / 1000.0 - (point.station - 16.6) / 1000.0;
+	auto const angle{std::atan(1.0 / 9.0)};
+	auto const report{switch_curve::check_slip({first, arc(33.2, angle, 1.0 / 1000.0)}, {arc(21.0, 0.0, 1.0 / 190.0)}, curve, 150.0, 183.2)};
+	CHECK(says(report.warnings, "9.7 pkt 12"));
+}

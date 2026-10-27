@@ -28,6 +28,8 @@ constexpr double kStraight{2e-5};
 constexpr double kAtEnd{0.3};
 // m: how far off the switch a ramp keeps, 9.6 pkt 16
 constexpr double kRampClear{6.0};
+// m: the least radius of a side track, table 9.2
+constexpr double kSideRadius{180.0};
 
 // the curved switches bent from the basic ones, table 11.9: the radius of the basic switch, the limiting curvature of the
 // diverging track and the least radius of the main track; the values in its brackets, allowed only by way of exception, are past
@@ -62,6 +64,34 @@ double cant_at(std::vector<track_point> const &Track, double const Station)
 	auto const previous{std::prev(next)};
 	auto const span{std::max(1e-9, next->station - previous->station)};
 	return previous->cant + (next->cant - previous->cant) * (Station - previous->station) / span;
+}
+
+// the cant of the line over a switch From to To along it: the same all along it, a ramp off it by 6 m at least or ending at its ends
+// (11.4 pkt 7, 9.6 pkt 16-17), as much as table 9.6 lets a switch have, Curved or straight
+void check_cant(std::vector<track_point> const &Line, double const From, double const To, bool const Curved, double &Start, double &End, std::vector<std::string> &Notes, std::vector<std::string> &Warnings)
+{
+	Start = std::abs(cant_at(Line, From));
+	End = std::abs(cant_at(Line, To));
+	if (std::abs(End - Start) > 1.0)
+		Warnings.emplace_back(format(STR_C("The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7)"), Start, End));
+	auto const low{std::min(From, To)};
+	auto const high{std::max(From, To)};
+	for (auto const end : ramp_ends(Line))
+	{
+		if (end > low + kAtEnd && end < high - kAtEnd)
+			Warnings.emplace_back(format(STR_C("A cant ramp starts or ends within the switch, %.1f m from its start: at the start or the end of the switch, or 6 m off it at least (9.6 pkt 16-17)"), std::abs(end - From)));
+		else if (std::abs(end - low) <= kAtEnd || std::abs(end - high) <= kAtEnd)
+			Notes.emplace_back(STR_C("A cant ramp starts or ends at an end of the switch"));
+		else if (auto const off{end < low ? low - end : end - high}; off < kRampClear)
+			Warnings.emplace_back(format(STR_C("A cant ramp ends %.1f m off the switch, 6 m at least (9.6 pkt 16)"), off));
+	}
+	auto const cant{std::max(Start, End)};
+	if (Curved && cant > 100.0 + 1e-6)
+		Warnings.emplace_back(format(STR_C("Cant %.0f mm in a bent switch, over 100 mm (table 9.6)"), cant));
+	else if (Curved && cant > 60.0 + 1e-6)
+		Notes.emplace_back(format(STR_C("Cant %.0f mm: over the 60 mm recommended for a bent switch, up to 100 mm (table 9.6)"), cant));
+	else if (false == Curved && cant > 1.0)
+		Notes.emplace_back(format(STR_C("Cant %.0f mm in a straight switch: none recommended, up to 100 mm (table 9.6)"), cant));
 }
 
 } // namespace
@@ -140,8 +170,6 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 	report.main_end = main.last;
 	report.branch_start = branch.first;
 	report.branch_end = branch.last;
-	report.cant_start = std::abs(cant_at(Line, From));
-	report.cant_end = std::abs(cant_at(Line, To));
 	report.curved = main.sharpest > kStraight;
 	report.transition = report.curved && std::abs(main.last - main.first) > std::max(2e-6, 0.05 * std::max(std::abs(main.first), std::abs(main.last)));
 
@@ -166,27 +194,63 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 			report.warnings.emplace_back(format(STR_C("A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"), Ratio));
 	}
 
-	// the cant: the same all along the switch, a ramp off it by 6 m at least or ending at its ends (11.4 pkt 7, 9.6 pkt 16-17)
-	if (std::abs(report.cant_end - report.cant_start) > 1.0)
-		report.warnings.emplace_back(format(STR_C("The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7)"), report.cant_start, report.cant_end));
-	auto const low{std::min(From, To)};
-	auto const high{std::max(From, To)};
-	for (auto const end : ramp_ends(Line))
+	check_cant(Line, From, To, report.curved, report.cant_start, report.cant_end, report.notes, report.warnings);
+	return report;
+}
+
+slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std::vector<std::vector<track_point>> const &Curves, std::vector<track_point> const &Line, double const From, double const To)
+{
+	slip_report report;
+	if (Tracks.size() < 2 || Line.size() < 2 || std::any_of(Tracks.begin(), Tracks.end(), [](std::vector<track_point> const &Track) { return Track.size() < 2; }))
+		return report;
+	// the curvatures counted positive the way the line turns, as the first track goes along it
+	auto const sign{(Line.back().heading - Line.front().heading < 0.0 ? -1.0 : 1.0) * (To >= From ? 1.0 : -1.0)};
+	struct span
 	{
-		if (end > low + kAtEnd && end < high - kAtEnd)
-			report.warnings.emplace_back(format(STR_C("A cant ramp starts or ends within the switch, %.1f m from its start: at the start or the end of the switch, or 6 m off it at least (9.6 pkt 16-17)"), std::abs(end - From)));
-		else if (std::abs(end - low) <= kAtEnd || std::abs(end - high) <= kAtEnd)
-			report.notes.emplace_back(STR_C("A cant ramp starts or ends at an end of the switch"));
-		else if (auto const off{end < low ? low - end : end - high}; off < kRampClear)
-			report.warnings.emplace_back(format(STR_C("A cant ramp ends %.1f m off the switch, 6 m at least (9.6 pkt 16)"), off));
+		double low{std::numeric_limits<double>::max()};
+		double high{std::numeric_limits<double>::lowest()};
+		double sharpest{0.0};
+	};
+	auto const along = [&](std::vector<track_point> const &Track) {
+		span result;
+		auto const margin{std::min(1.0, (Track.back().station - Track.front().station) * 0.25)};
+		for (auto s{Track.front().station + margin}; s <= Track.back().station - margin + 1e-9; s += 0.5)
+		{
+			auto const curvature{sign * curvature_at(Track, s)};
+			result.low = std::min(result.low, curvature);
+			result.high = std::max(result.high, curvature);
+			result.sharpest = std::max(result.sharpest, std::abs(curvature));
+		}
+		return result;
+	};
+	auto const middle = [&](std::vector<track_point> const &Track) { return sign * curvature_at(Track, 0.5 * (Track.front().station + Track.back().station)); };
+	report.first = middle(Tracks[0]);
+	report.second = middle(Tracks[1]);
+	// the curvature of each track through it of one sign all along it, as in the main track of a switch (9.7 pkt 12); the slip curves
+	// begin with the leads along the stock rails, which bend with the line even where the curve turns against it
+	auto turning{false};
+	for (auto const &track : Tracks)
+	{
+		auto const curvatures{along(track)};
+		report.curved = report.curved || curvatures.sharpest > kStraight;
+		turning = turning || (curvatures.low < -kStraight && curvatures.high > kStraight);
 	}
-	auto const cant{std::max(report.cant_start, report.cant_end)};
-	if (report.curved && cant > 100.0 + 1e-6)
-		report.warnings.emplace_back(format(STR_C("Cant %.0f mm in a bent switch, over 100 mm (table 9.6)"), cant));
-	else if (report.curved && cant > 60.0 + 1e-6)
-		report.notes.emplace_back(format(STR_C("Cant %.0f mm: over the 60 mm recommended for a bent switch, up to 100 mm (table 9.6)"), cant));
-	else if (false == report.curved && cant > 1.0)
-		report.notes.emplace_back(format(STR_C("Cant %.0f mm in a straight switch: none recommended, up to 100 mm (table 9.6)"), cant));
+	if (turning)
+		report.warnings.emplace_back(STR_C("The curvature of a track through the slip turns from one side to the other within it, which isn't allowed (9.7 pkt 12)"));
+	for (auto const &curve : Curves)
+		if (curve.size() >= 2)
+			report.curves.push_back(along(curve).sharpest);
+	if (report.curved)
+	{
+		report.warnings.emplace_back(STR_C("A slip isn't bent in the running nor in the main tracks, a bent one goes into a side track only (11.4 pkt 4b)"));
+		// bent the way the curve of the slip turns it gets sharper: no sharper than the side tracks take
+		for (auto const curvature : report.curves)
+			if (curvature > 1.0 / kSideRadius + 1e-9)
+				report.warnings.emplace_back(format(STR_C("A slip curve bent to R %.0f m, below the least %.0f m of a side track (table 9.2)"), 1.0 / curvature, kSideRadius));
+	}
+	check_cant(Line, From, To, report.curved, report.cant_start, report.cant_end, report.notes, report.warnings);
+	if (report.curved && std::max(report.cant_start, report.cant_end) > 1.0)
+		report.notes.emplace_back(STR_C("In a side track the layouts needing no cant are recommended (9.3 pkt 5)"));
 	return report;
 }
 

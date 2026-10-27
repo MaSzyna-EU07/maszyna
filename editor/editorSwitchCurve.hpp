@@ -54,6 +54,28 @@ struct switch_report
 switch_report check(std::vector<track_point> const &Main, std::vector<track_point> const &Branch, std::vector<track_point> const &Line, double const From, double const To, double const Radius,
                     double const Ratio);
 
+// a slip switch bent into a curve, as ST-T1-A6 sees it: in a side track only (11.4 pkt 4b), the curvature of each track through it of
+// one sign all along it (9.7 pkt 12), its slip curves no sharper than a side track may be (table 9.2), the cant as over a switch bent,
+// none recommended in a side track (9.3 pkt 5)
+struct slip_report
+{
+	// of the two tracks through the slip in its middle, 1/m, positive turning the way the line does
+	double first{0.0};
+	double second{0.0};
+	// of the slip curves at their sharpest, 1/m
+	std::vector<double> curves;
+	// of the line, mm
+	double cant_start{0.0};
+	double cant_end{0.0};
+	bool curved{false}; // the tracks through it bent
+	std::vector<std::string> notes;
+	std::vector<std::string> warnings;
+};
+
+// Tracks: the two tracks through the slip, Curves: its slip curves, each from its start, the stations from 0 there; Line as for a switch,
+// From and To the stations of the ends of the first track through the slip along it
+slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std::vector<std::vector<track_point>> const &Curves, std::vector<track_point> const &Line, double const From, double const To);
+
 // the start of a switch Length long, going Direction along the line, drawn to where its start or its end meets an end of a cant ramp,
 // or to where it keeps the 6 m off it, when the station pressed is within Reach of that; What receives which of them, empty for none
 double snapped_start(std::vector<double> const &Ramps, double const Pressed, double const Length, int const Direction, double const Reach, std::string *What = nullptr);
