@@ -75,6 +75,10 @@ float const EU07_OPACITYDEFAULT { 0.5f };
 bool
 opengl_renderer::Init( GLFWwindow *Window ) {
 
+    glClearColor( 0.f, 0.f, 0.f, 1.f );
+    glClear( GL_COLOR_BUFFER_BIT );
+    glfwSwapBuffers( Window );
+
     if( false == Init_caps() ) { return false; }
 
     m_window = Window;
