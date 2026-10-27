@@ -451,17 +451,21 @@ void place(record &Entry, TTrack const &First)
 	Entry.km = alignment_store::chainage_at(Entry.start);
 }
 
-void classify(record &Entry, TTrack const &Switch)
+double main_radius_of(TTrack const &Switch)
 {
 	geometry::bezier const main{Switch.m_paths[0]};
-	auto const &diverging{Switch.m_paths[1]};
-	Entry.hand = geometry::cross(Entry.direction, geometry::plan_of(diverging.points[segment_data::point::end] - Entry.start)) > 0.0 ? 'R' : 'L';
 	auto const first{geometry::plan_of(main.first(0.0))};
 	auto const last{geometry::plan_of(main.first(1.0))};
 	auto const turn{glm::length(first) > 1e-12 && glm::length(last) > 1e-12 ? geometry::signed_angle(glm::normalize(first), glm::normalize(last)) : 0.0};
-	Entry.main_radius = std::abs(turn) > 1e-6 ? main.plan_length() / turn : 0.0;
-	if (std::abs(Entry.main_radius) > 20000.0)
-		Entry.main_radius = 0.0;
+	auto const radius{std::abs(turn) > 1e-6 ? main.plan_length() / turn : 0.0};
+	return std::abs(radius) > 20000.0 ? 0.0 : radius;
+}
+
+void classify(record &Entry, TTrack const &Switch)
+{
+	auto const &diverging{Switch.m_paths[1]};
+	Entry.hand = geometry::cross(Entry.direction, geometry::plan_of(diverging.points[segment_data::point::end] - Entry.start)) > 0.0 ? 'R' : 'L';
+	Entry.main_radius = main_radius_of(Switch);
 	if (Entry.type == "Rz" || Entry.type == "Rlj" || Entry.type == "Rld")
 		Entry.type = Entry.main_radius == 0.0 ? "Rz" : (Entry.main_radius > 0.0) == (Entry.hand == 'R') ? "Rlj" : "Rld";
 }

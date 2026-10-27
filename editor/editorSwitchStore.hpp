@@ -72,6 +72,8 @@ double branch_radius(record const &Record);
 void put(record Entry, scene::layer_handle const Layer);
 void place(record &Entry, TTrack const &First);
 void classify(record &Entry, TTrack const &Switch);
+// of the first path of the switch, signed as record::main_radius: + to the right, - to the left, 0 straight
+double main_radius_of(TTrack const &Switch);
 void forget(std::string const &Name);
 // the records follow renamed switches: their parts and the records named after them; Bases renames the records of slips and
 // crossings, whose names aren't the names of their parts

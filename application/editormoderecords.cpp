@@ -369,6 +369,8 @@ void editor_mode::record_slip(std::vector<TTrack *> const &Parts, std::string co
 	if (first == nullptr || first->m_paths.empty())
 		return;
 	switch_store::place(entry, *first);
+	// a slip bent into a curve, as a switch is
+	entry.main_radius = switch_store::main_radius_of(*first);
 	switch_store::put(entry, alignment_store::layer_of(*first));
 }
 
