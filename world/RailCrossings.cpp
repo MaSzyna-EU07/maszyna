@@ -96,6 +96,16 @@ bool cut_rails( TTrack const &Track ) {
              Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ] );
 }
 
+// a track with rails laid, cut or whole
+bool railed( TTrack const &Track ) {
+
+    return ( Track.iCategoryFlag & 15 ) == 1
+        && Track.m_material1 != null_handle
+        && false == Track.m_editorremoved
+        && ( Track.eType == tt_Normal ? Track.Segment != nullptr :
+             Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ] );
+}
+
 bool shaped_blades( TTrack const &Track ) {
 
     if( cut_rails( Track ) ) {
@@ -105,8 +115,7 @@ bool shaped_blades( TTrack const &Track ) {
         && ( Track.iCategoryFlag & 15 ) == 1
         && Track.m_material1 != null_handle
         && false == Track.m_editorremoved
-        && Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ]
-        && false == Track.DoubleSlip();
+        && Track.eType == tt_Switch && Track.SwitchExtension && Track.SwitchExtension->m_frogs && Track.SwitchExtension->Segments[ 0 ] && Track.SwitchExtension->Segments[ 1 ];
 }
 
 int blade_steps( TTrack const &Track, int const Path ) {
@@ -252,7 +261,8 @@ struct rail_run {
     double length { 0.0 };
 };
 
-std::vector<TTrack *> nearby_rails( TTrack &Track ) {
+// the tracks with rails around the track: the ones whose rails are cut, or with Whole all of them
+std::vector<TTrack *> nearby_rails( TTrack &Track, bool const Whole = false ) {
 
     std::vector<TTrack *> others;
     auto const sections { simulation::Region->sections( Track.location(), static_cast<float>( Track.radius() + 50.0 ) ) };
@@ -262,7 +272,7 @@ std::vector<TTrack *> nearby_rails( TTrack &Track ) {
                 continue;
             }
             for( auto *other : cell.m_directories.paths ) {
-                if( other == nullptr || other == &Track || false == cut_rails( *other ) ) {
+                if( other == nullptr || other == &Track || false == ( Whole ? railed( *other ) : cut_rails( *other ) ) ) {
                     continue;
                 }
                 if( glm::length( other->location() - Track.location() ) > other->radius() + Track.radius() + 1.0 ) {
@@ -427,11 +437,12 @@ std::vector<rail_crossing> own_crossings( TTrack &Track ) {
 // with the blades of the other parts left out of the account, as they're yet to be made as short; at the latest short of their throats,
 // the check rails then cut to begin past the heels
 // crossings of the rails of the track with the rails of the tracks around, with the blades of switches left out of the account
-std::vector<rail_crossing> unbladed_crossings( TTrack const &Track ) {
+// Whole: the rails of the tracks around taken whole too, where they aren't cut
+std::vector<rail_crossing> unbladed_crossings( TTrack const &Track, bool const Whole = false ) {
 
     auto &track { const_cast<TTrack &>( Track ) };
     std::vector<rail_crossing> found;
-    for( auto *other : nearby_rails( track ) ) {
+    for( auto *other : nearby_rails( track, Whole ) ) {
         for( int otherpath = 0; otherpath < path_count( *other ); ++otherpath ) {
             rail_run theirs { other, otherpath };
             theirs.length = path_segment( *other, otherpath ).GetLength();
@@ -453,7 +464,8 @@ std::pair<double, double> slip_blade_reach( TTrack const &Track ) {
 
     auto reach { 1e9 };
     auto latest { 1e9 };
-    for( auto const &crossing : unbladed_crossings( Track ) ) {
+    // the crossings of the diamond end the blades whether its rails are cut there or laid whole
+    for( auto const &crossing : unbladed_crossings( Track, true ) ) {
         if( crossing.angle <= middle_angle ) {
             auto const slope { std::tan( crossing.angle ) };
             reach = std::min( reach, crossing.at - 0.25 - 0.5 * check_length( slope ) - 0.3 );
