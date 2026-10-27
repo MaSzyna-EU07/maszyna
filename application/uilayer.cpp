@@ -395,10 +395,15 @@ bool ui_layer::init(GLFWwindow *Window)
 	  }
 
 	// panels can be docked together, and dragged out of the simulator window into windows of their own (e.g. on another monitor)
-	// when both backends can do it. glfw can't place windows under wayland. both flags have to be set before the first frame
+	// when both backends can do it. glfw can't place windows under wayland. gamescope does not work well with popup windows.
+	// both flags have to be set before the first frame
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
+	const char* gamepadui = std::getenv("SteamGamepadUI");
+	if (!desktop) desktop = "";
+	if (!gamepadui) gamepadui = "";
 	auto const viewportsupport{(m_imguiio->BackendFlags & ImGuiBackendFlags_PlatformHasViewports) && (m_imguiio->BackendFlags & ImGuiBackendFlags_RendererHasViewports) &&
-	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND};
+	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND && std::string_view{desktop} != "gamescope" && std::string_view{gamepadui} != "1"};
 	if (Global.ui_viewports && viewportsupport)
 	{
 		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
