@@ -1754,6 +1754,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	}
 	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
 		hints = {{"List in the panel", "the type of the switch"}, {"LMB on a track", "another track"}};
+	else if (m_track_tab == track_tab::turnout && current_switch_kind() == switch_kind::slip)
+		hints = {{"Press+drag at a crossing", "of two straights at the skos of the slip"}};
 	else if (m_track_tab == track_tab::turnout)
 		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"LMB on another track", "choose it"}};
 	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())

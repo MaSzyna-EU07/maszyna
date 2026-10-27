@@ -1674,6 +1674,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::array<glm::dvec3, 4> points{};
 	};
 	bool plan_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape, slip_plan &Plan) const;
+	// a slip is made for its skos: where the tracks cross at another one, the refusal, which tells the template made for theirs; empty
+	// where it fits, and for a crossing
+	std::string slip_skew(editor_track::switch_template const &Shape, double const Angle) const;
 	// the cursor where it points at the straight, at the height of the straight there
 	glm::dvec3 cursor_on_straight(editor_track::straight const &Line) const;
 	bool insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape);

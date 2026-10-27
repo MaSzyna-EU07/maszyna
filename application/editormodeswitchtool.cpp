@@ -139,7 +139,10 @@ std::string template_tooltip(editor_track::switch_template const &Template)
 		text += "\n";
 		text += Template.type == "Rkp" ? STR_C("Single slip (Rkp)") : Template.type == "Rkpd" ? STR_C("Double slip (Rkpd)") : STR_C("Crossing (Skrz)");
 		text += "\n" + format(STR_C("a %.3f m from the middle of the crossing to the joint"), Template.a) + "\n";
-		text += Template.type == "Rkp" ? STR_C("Drag at a crossing of two straights, on the side of the tracks to join") : STR_C("Drag at a crossing of two straights");
+		if (Template.type == "Skrz")
+			text += STR_C("Drag at a crossing of two straights");
+		else
+			text += Template.type == "Rkp" ? STR_C("Drag at a crossing of two straights at its skos, on the side of the tracks to join") : STR_C("Drag at a crossing of two straights at its skos");
 		return text;
 	}
 	text += "\n" + format(STR_C("a %.3f m to the centre of the switch, b %.3f m on to its end"), Template.a, Template.b);
@@ -228,7 +231,7 @@ void editor_mode::render_switch_ui()
 		char const *tooltip;
 	};
 	choice const choices[] = {{switch_kind::single, "Switch", "A switch in a straight or a curve"},
-	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd at a crossing of two straights"},
+	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd at a crossing of two straights at its skos"},
 	                          {switch_kind::crossing, "Crossing", "A crossing of two straights"},
 	                          {switch_kind::connection, "Connection", "Crossover, double, scissors, ladder"}};
 	{
@@ -274,7 +277,7 @@ void editor_mode::render_switch_ui()
 	std::vector<std::pair<char const *, char const *>> how;
 	switch (kind)
 	{
-	case switch_kind::slip:
+	case switch_kind::slip: how = {{"Drag at a crossing", "of two straights at the skos of the slip: it goes there"}}; break;
 	case switch_kind::crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
 	case switch_kind::connection:
 		how = {{"Drag", "from a straight onto the other track"}, {"Shift+wheel", "the kind"}, {"Ctrl+wheel", "R of the aligning curve"}};

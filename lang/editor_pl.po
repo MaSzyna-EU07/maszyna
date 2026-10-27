@@ -12366,3 +12366,24 @@ msgstr "Przeciągnij na skrzyżowaniu dwóch prostych"
 
 msgid "Drag at a crossing of two straights, on the side of the tracks to join"
 msgstr "Przeciągnij na skrzyżowaniu dwóch prostych, po stronie torów do połączenia"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f: %s fits that crossing"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f: do tego skrzyżowania pasuje %s"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template is made for that"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f i żaden szablon rozjazdu krzyżowego nie jest na taki skos"
+
+msgid "Drag at a crossing of two straights at its skos, on the side of the tracks to join"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem, po stronie torów do połączenia"
+
+msgid "Drag at a crossing of two straights at its skos"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Rkp or Rkpd at a crossing of two straights at its skos"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "of two straights at the skos of the slip: it goes there"
+msgstr "dwóch prostych pod skosem rozjazdu: tam stanie"
+
+msgid "of two straights at the skos of the slip"
+msgstr "dwóch prostych pod skosem rozjazdu"

@@ -44,6 +44,9 @@ http:
 
 using namespace track_mode;
 
+// the name of the template in the language of the editor, editormodeswitchtool.cpp
+std::string switch_name_translated(std::string Title);
+
 std::vector<segment_data> editor_mode::switch_preview() const
 {
 	auto const &tool{m_switch};
@@ -1065,6 +1068,11 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 		Plan.problem = STR_C("The straights cross at an angle unsuitable for a double slip");
 		return false;
 	}
+	if (auto const skew{slip_skew(Shape, angle)}; false == skew.empty())
+	{
+		Plan.problem = skew;
+		return false;
+	}
 	auto const alongfirst{glm::dot(crossing - plan_of(Line.start), Line.direction)};
 	auto const alongsecond{glm::dot(crossing - plan_of(second.start), second.direction)};
 	auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5};
@@ -1108,6 +1116,33 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 	Plan.points = {at(crossing - first * half, heightfirst(alongfirst - half)), at(crossing + first * half, heightfirst(alongfirst + half)), at(crossing - direction * half, heightsecond(alongsecond - sign * half)),
 	               at(crossing + direction * half, heightsecond(alongsecond + sign * half))};
 	return true;
+}
+
+std::string editor_mode::slip_skew(editor_track::switch_template const &Shape, double const Angle) const
+{
+	// rad: the tracks crossing at the skos of the slip to within this, half of what keeps 1:9.51 and 1:10 of the catalogue apart
+	auto const tolerance{glm::radians(0.14)};
+	auto const fits = [&](editor_track::switch_template const &Template) { return Template.ratio > 0.0 && std::abs(Angle - std::atan(1.0 / Template.ratio)) <= tolerance; };
+	if (Shape.type == "Skrz" || false == Shape.double_slip || Shape.ratio <= 0.0 || fits(Shape))
+		return {};
+	// a slip of the same kind made for the skos of the tracks, of the same rail and radius before the others
+	editor_track::switch_template const *fitting{nullptr};
+	auto best{-1};
+	for (auto const &entry : m_switch.templates)
+	{
+		if (false == entry.double_slip || entry.type != Shape.type || false == fits(entry))
+			continue;
+		auto const rank{(entry.rail == Shape.rail ? 2 : 0) + (std::abs(entry.radius - Shape.radius) < 0.5 ? 1 : 0)};
+		if (rank > best)
+		{
+			best = rank;
+			fitting = &entry;
+		}
+	}
+	auto const ratio{1.0 / std::tan(Angle)};
+	if (fitting == nullptr)
+		return format(STR_C("The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template is made for that"), ratio, switch_name_translated(Shape.title()).c_str(), Shape.ratio);
+	return format(STR_C("The straights cross at 1:%.2f, %s is made for 1:%.2f: %s fits that crossing"), ratio, switch_name_translated(Shape.title()).c_str(), Shape.ratio, switch_name_translated(fitting->title()).c_str());
 }
 
 bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape)
@@ -1241,6 +1276,11 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 	auto const t{cross(plan_of(c.point) - plan_of(a.point), direction) / determinant};
 	glm::dvec2 const crossing{plan_of(a.point) + first * t};
 	auto const angle{std::atan2(std::abs(cross(first, direction)), glm::dot(first, direction))};
+	if (auto const skew{slip_skew(Shape, angle)}; false == skew.empty())
+	{
+		state.status = refused(skew);
+		return false;
+	}
 	auto const oldhalf{glm::distance(plan_of(a.point), crossing)};
 	auto const blade{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
 	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, angle, 0.5 * std::abs(switches[0]->fTrackWidth) + switches[0]->rail_dimensions().head + 0.002, blade.first, blade.second)};
