@@ -1148,8 +1148,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		while (last < inner && mode_of(last) == lay_mode::curve)
 			++last;
 		auto const reaching{last == inner && joined};
-		// one point of a curve right after the end of the diverging track of a switch: the curve of the switch goes on towards it, then a
-		// straight from where it heads for the point; the curve fitted to the points once more of them are clicked
+		// one point of a curve right after the end of the diverging track of a switch: the curve of the switch goes on as far as abreast of
+		// the point, seen from its centre, the line ending on it there; the curve fitted to the points once more of them are clicked
 		if (i == 1 && last == 2 && false == reaching && along.has_value() && design.start_curved && design.start_radius > 0.0 && tool.start.track != nullptr && tool.start.track->eType == tt_Switch)
 		{
 			auto const radius{design.start_radius};
@@ -1157,25 +1157,21 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 			auto const from{plan_of(anchor)};
 			glm::dvec2 const inward{-along->y * side, along->x * side};
 			auto const centre{from + inward * radius};
-			auto const point{plan_of(Points[1])};
-			auto const outward{point - centre};
-			auto const distance{glm::length(outward)};
-			if (distance > radius + 0.5)
+			auto const outward{plan_of(Points[1]) - centre};
+			if (glm::length(outward) > 0.5)
 			{
-				// where the straight to the point touches the circle, and how far round the curve turns to there
-				auto const heading{std::atan2(outward.y, outward.x) - side * std::acos(radius / distance)};
-				glm::dvec2 const touch{centre + glm::dvec2{std::cos(heading), std::sin(heading)} * radius};
-				auto turned{std::fmod(side * (heading - std::atan2(from.y - centre.y, from.x - centre.x)), 2.0 * glm::pi<double>())};
-				if (turned < 0.0)
-					turned += 2.0 * glm::pi<double>();
-				if (turned > 1e-3 && turned < glm::pi<double>())
+				// how far round the curve turns to there
+				auto sweep{std::fmod(side * (std::atan2(outward.y, outward.x) - std::atan2(from.y - centre.y, from.x - centre.x)), 2.0 * glm::pi<double>())};
+				if (sweep < 0.0)
+					sweep += 2.0 * glm::pi<double>();
+				if (sweep > 1e-3 && sweep < glm::pi<double>())
 				{
 					alignment::vertex curve;
 					curve.radius = radius;
 					curve.cant = design.start_cant;
-					bends.push_back({lifted(from + *along * (radius * std::tan(0.5 * turned)), anchor.y), curve, false});
-					anchor = Points[1];
-					along = glm::normalize(point - touch);
+					bends.push_back({lifted(from + *along * (radius * std::tan(0.5 * sweep)), anchor.y), curve, false});
+					anchor = lifted(centre + glm::normalize(outward) * radius, Points[1].y);
+					along = turned(*along, side * sweep);
 					i = last;
 					continue;
 				}
