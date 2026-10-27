@@ -1730,6 +1730,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_switch.placing && m_switch.free)
 		hints = m_switch.free_end.track != nullptr ? std::vector<key_hint>{{"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}}
 		                                           : std::vector<key_hint>{{"Drag along", "the direction of the main track, held from 4 m on"}, {"Drag sideways", "side of the diverging track"}, {"Back to the start", "the direction free again"}, {"Esc", "cancel"}};
+	else if (m_switch.placing && m_switch.curved && current_switch_kind() == switch_kind::slip)
+		hints = {{"Drag", "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
 		hints = m_switch.connection >= 0 && false == m_switch.curved ?
 		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
@@ -1741,7 +1743,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		switch (current_switch_kind())
 		{
 		case switch_kind::connection: hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
-		case switch_kind::slip:
+		case switch_kind::slip: hints = {{"Press+drag at a crossing", "of two straights"}, {"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"}}; break;
 		case switch_kind::crossing: hints = {{"Press+drag at a crossing", "of two straights"}}; break;
 		default: hints = {{"LMB on a track", "the straight or the curve for the switch"}, {"Press+drag on the ground", "a switch with no track, on from a free end near it"}}; break;
 		}
@@ -1755,7 +1757,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
 		hints = {{"List in the panel", "the type of the switch"}, {"LMB on a track", "another track"}};
 	else if (m_track_tab == track_tab::turnout && current_switch_kind() == switch_kind::slip)
-		hints = {{"Press+drag at a crossing", "of two straights at the skos of the slip"}};
+		hints = {{"Press+drag at a crossing", "of two straights at the skos of the slip"}, {"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"}};
 	else if (m_track_tab == track_tab::turnout)
 		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"LMB on another track", "choose it"}};
 	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())
@@ -2522,22 +2524,43 @@ void editor_mode::draw_build_overlay() const
 			int side;
 			curved_switch_pose(forward, side);
 			std::string snapped;
-			auto const station{curved_switch_start(forward, &snapped)};
-			auto const report{curved_switch_report(preview, station, forward)};
-			// a radius counted positive the way the line turns, the other way with a minus
-			auto const radius = [](double const Curvature) { return std::abs(Curvature) < 2e-5 ? std::string{STR_C("straight")} : format("%.0f m", 1.0 / Curvature); };
+			std::vector<std::string> notes;
+			std::vector<std::string> warnings;
 			std::vector<std::pair<std::string, ImU32>> lines;
-			if (false == snapped.empty())
-				lines.emplace_back(snapped, IM_COL32(255, 170, 40, 255));
-			if (report.curved)
+			double station;
+			if (auto const &shape{tool.templates[tool.armed]}; shape.double_slip)
 			{
-				lines.emplace_back(format(STR_C("main track R %s at the start, %s at the end"), radius(report.main_start).c_str(), radius(report.main_end).c_str()), IM_COL32(255, 255, 255, 235));
-				lines.emplace_back(format(STR_C("diverging track R %s at the start, %s at the end"), radius(report.branch_start).c_str(), radius(report.branch_end).c_str()), IM_COL32(255, 255, 255, 235));
+				// a slip bent: the radii of its tracks and its slip curves, its middle where the station is
+				curved_slip plan;
+				plan_curved_slip(shape, forward, side, plan);
+				snapped = plan.snapped;
+				station = plan.middle;
+				auto const report{curved_slip_report(plan, shape.type)};
+				for (auto const &line : slip_report_lines(report))
+					lines.emplace_back(line, IM_COL32(255, 255, 255, 235));
+				notes = report.notes;
+				warnings = report.warnings;
 			}
-			lines.emplace_back(format(STR_C("cant %.0f mm at the start, %.0f mm at the end"), report.cant_start, report.cant_end), IM_COL32(255, 255, 255, 235));
-			for (auto const &note : report.notes)
+			else
+			{
+				station = curved_switch_start(forward, &snapped);
+				auto const report{curved_switch_report(preview, station, forward)};
+				// a radius counted positive the way the line turns, the other way with a minus
+				auto const radius = [](double const Curvature) { return std::abs(Curvature) < 2e-5 ? std::string{STR_C("straight")} : format("%.0f m", 1.0 / Curvature); };
+				if (report.curved)
+				{
+					lines.emplace_back(format(STR_C("main track R %s at the start, %s at the end"), radius(report.main_start).c_str(), radius(report.main_end).c_str()), IM_COL32(255, 255, 255, 235));
+					lines.emplace_back(format(STR_C("diverging track R %s at the start, %s at the end"), radius(report.branch_start).c_str(), radius(report.branch_end).c_str()), IM_COL32(255, 255, 255, 235));
+				}
+				lines.emplace_back(format(STR_C("cant %.0f mm at the start, %.0f mm at the end"), report.cant_start, report.cant_end), IM_COL32(255, 255, 255, 235));
+				notes = report.notes;
+				warnings = report.warnings;
+			}
+			if (false == snapped.empty())
+				lines.emplace(lines.begin(), snapped, IM_COL32(255, 170, 40, 255));
+			for (auto const &note : notes)
 				lines.emplace_back(note, IM_COL32(170, 200, 230, 235));
-			for (auto const &warning : report.warnings)
+			for (auto const &warning : warnings)
 				lines.emplace_back(warning, overlay_color::invalid);
 			ImVec2 screen;
 			if (projection.project(sample_at(tool.frame, station).position, screen))

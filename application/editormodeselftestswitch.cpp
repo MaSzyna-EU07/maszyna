@@ -68,6 +68,20 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				text += format(", drive %.3f m from the joint", geometry::plan_distance(found->standing.location, start));
 			else
 				text += ", no drive";
+			// how far apart the rail of the blade and the one it lies at are along the path, where the blades of a slip are shaped
+			if (track->DoubleSlip())
+				for (int path = 0; path < 2; ++path)
+				{
+					auto const &shape{track->blade(path)};
+					auto const gap = [&](double const At) {
+						auto const &gauge{shape.gauge};
+						auto const next{std::find_if(gauge.begin(), gauge.end(), [&](glm::dvec2 const &Sample) { return Sample.x >= At; })};
+						return next == gauge.end() ? (gauge.empty() ? -1.0 : gauge.back().y) : next->y;
+					};
+					text += format(", path %d %s side %d gaps", path, shape.valid ? "shaped" : "not shaped", track->SwitchExtension->RightSwitch == (path == 0) ? 1 : -1);
+					for (auto const at : {0.354, 1.0, 1.248, 2.0, 4.0, 6.0, 8.0, 9.4})
+						text += format(" %.1f:%.4f", at, gap(at));
+				}
 			WriteLog(text);
 		}
 		return selftest_result::handled;
@@ -575,7 +589,29 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			tool.frame_tracks = chain.tracks;
 			tool.curved = true;
 			tool.along = nearest_station(tool.frame, point);
-			insert_curved_switch(direction, side);
+			tool.pressed = tool.along;
+			// a slip bent into the curve with its crossing track, its paths and its record logged
+			if (tool.templates[tool.armed].double_slip)
+			{
+				insert_curved_slip(direction, side);
+				if (auto const *part{selected_track()}; part != nullptr && part->DoubleSlip())
+					if (auto const known{switch_store::named(*part)})
+					{
+						WriteLog(format("SELFTEST switchcurve slip %s: %s, %zu parts", known->name.c_str(), switch_store::label(*known).c_str(), known->parts.size()));
+						for (auto const &name : known->parts)
+							if (auto const *track{simulation::Paths.find(name)})
+								for (std::size_t i = 0; i < track->m_paths.size(); ++i)
+								{
+									auto const &path{track->m_paths[i]};
+									auto const &a{path.points[segment_data::point::start]};
+									auto const &b{path.points[segment_data::point::end]};
+									WriteLog(format("SELFTEST switchcurve slip path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f, R %.1f, %zu pieces, rolls %.2f %.2f", name.c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, static_cast<double>(path.radius), path.pieces.size(),
+									                static_cast<double>(path.rolls[0]), static_cast<double>(path.rolls[1])));
+								}
+					}
+			}
+			else
+				insert_curved_switch(direction, side);
 		}
 		else
 		{

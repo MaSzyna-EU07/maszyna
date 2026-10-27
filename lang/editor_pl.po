@@ -12387,3 +12387,48 @@ msgstr "dwóch prostych pod skosem rozjazdu: tam stanie"
 
 msgid "of two straights at the skos of the slip"
 msgstr "dwóch prostych pod skosem rozjazdu"
+
+msgid "The curvature of a track through the slip turns from one side to the other within it, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru przez rozjazd krzyżowy zmienia stronę w jego obrębie, co jest niedopuszczalne (9.7 pkt 12)"
+
+msgid "A slip isn't bent in the running nor in the main tracks, a bent one goes into a side track only (11.4 pkt 4b)"
+msgstr "Rozjazdów krzyżowych nie łukuje się w torach szlakowych ani głównych, łukowany kładzie się tylko w torze bocznym (11.4 pkt 4b)"
+
+msgid "A slip curve bent to R %.0f m, below the least %.0f m of a side track (table 9.2)"
+msgstr "Łuk rozjazdu krzyżowego wygięty do R %.0f m, poniżej najmniejszego %.0f m w torze bocznym (tabela 9.2)"
+
+msgid "In a side track the layouts needing no cant are recommended (9.3 pkt 5)"
+msgstr "W torze bocznym zaleca się układy niewymagające przechyłki (9.3 pkt 5)"
+
+msgid "A crossing goes only where two straights cross"
+msgstr "Skrzyżowanie stawia się tylko na przecięciu dwóch prostych"
+
+msgid "The curve of R %.0f m is as sharp as the slip curves of R %.0f m or sharper, the slip isn't bent into it"
+msgstr "Łuk R %.0f m jest tak ostry jak łuki rozjazdu krzyżowego R %.0f m albo ostrzejszy, rozjazdu nie da się w niego wygiąć"
+
+msgid "tracks through the slip R %s and %s"
+msgstr "tory przez rozjazd R %s i %s"
+
+msgid "slip curves R %s at their sharpest"
+msgstr "łuki rozjazdu R %s w najostrzejszym miejscu"
+
+msgid "Slip bent into the curve, the ends of its crossing track free: lay on from them"
+msgstr "Rozjazd krzyżowy wygięty w łuk, końce toru przecinającego wolne: kładź od nich dalej"
+
+msgid "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"
+msgstr "tor przecinający w przód przez ćwiartkę kursora, łuk rozjazdu pojedynczego po jej stronie"
+
+msgid "Press+drag on a curve"
+msgstr "Wciśnij i przeciągnij na łuku"
+
+msgid "the slip bent into it, in a side track only (11.4 pkt 4b)"
+msgstr "rozjazd krzyżowy wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
+
+msgid "Drag on a curve"
+msgstr "Przeciągnij na łuku"
+
+msgid "bent into it, in a side track only (11.4 pkt 4b)"
+msgstr "wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
+
+msgid "Rkp or Rkpd at a crossing of two straights at its skos, or bent into a curve of a side track"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"

@@ -1598,6 +1598,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	switch_curve::switch_report curved_switch_report(std::vector<segment_data> const &Paths, double const Station, int const Direction) const;
 	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
 	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
+	// the path of a switch template laid into the curve: x of the template across the main track to the Side, z along it from the
+	// Station on, going Direction along the curve. The heights and the cant are those of the line where the point is along it
+	static segment_data frame_path(segment_data const &Local, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
 	void insert_curved_switch(int const Direction, int const Side);
 	// a crossover between two tracks running side by side along a curve (editormodeconnectioncurve.cpp)
 	struct curve_mapping;
@@ -1681,7 +1684,41 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 cursor_on_straight(editor_track::straight const &Line) const;
 	bool insert_double_slip(editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape);
 	bool replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape);
-	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd");
+	// Bend: what a path of the slip laid out as on straights turns into where it's bent into a curve
+	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd",
+	                                        std::function<segment_data(segment_data const &)> const &Bend = {});
+	// a slip switch bent into a curve of a side track (ST-T1-A6 11.4 pkt 4b): laid out on the tangent to the curve at its crossing, where
+	// it was pressed, and bent onto the curve as a switch laid into it is, its crossing track coming along with its ends free. Direction
+	// and Side as of a switch dragged into a curve: the crossing track goes ahead to that side, through the quarter of the cursor, and the
+	// slip curve of a single slip lies on that side
+	struct curved_slip
+	{
+		std::string problem;
+		std::string snapped; // what the ends of the slip were drawn to
+		double middle{0.0}; // the station of the crossing along the curve
+		double half{0.0}; // from the crossing to the ends of the slip
+		double reach{0.0}; // from the crossing to the joints of the template, the straights of both tracks laid out that far
+		int direction{1};
+		double angle{0.0};
+		editor_track::slip_curve curve;
+		// as the slip is laid out on the tangent, before it's bent: its crossing, its tracks going Direction along the curve, its ends
+		glm::dvec2 crossing{0.0};
+		glm::dvec2 first{0.0, 1.0};
+		glm::dvec2 second{0.0, 1.0};
+		std::array<glm::dvec3, 4> points{};
+	};
+	bool plan_curved_slip(editor_track::switch_template const &Shape, int const Direction, int const Side, curved_slip &Plan) const;
+	// the path of the slip laid out on the tangent, bent onto the curve
+	segment_data bent_slip_path(curved_slip const &Plan, segment_data const &Path) const;
+	// the two tracks through the slip and its slip curves, each from end to end, bent: the first track, the slip curve leaving it at its
+	// start, the second track, the other slip curve of a double slip
+	std::vector<segment_data> curved_slip_lines(curved_slip const &Plan, std::string const &Type) const;
+	// the straights of both tracks from the ends of the slip out to the joints of the template, bent
+	std::vector<segment_data> curved_slip_reaches(curved_slip const &Plan) const;
+	switch_curve::slip_report curved_slip_report(curved_slip const &Plan, std::string const &Type) const;
+	// the radii of the slip and its cant, as the view and the status tell them
+	static std::vector<std::string> slip_report_lines(switch_curve::slip_report const &Report);
+	void insert_curved_slip(int const Direction, int const Side);
 	bool start_extend(editor_track::snap_target const &End);
 	void finish_extend();
 	std::vector<segment_data> extend_pieces() const;
