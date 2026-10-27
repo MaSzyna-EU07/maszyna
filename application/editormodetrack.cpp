@@ -1650,6 +1650,53 @@ void editor_mode::delete_selected_track()
 		straight_refresh();
 		return;
 	}
+	// a slip goes whole, its two tracks left crossing in its place unless Shift asks for all of it
+	if (auto const slip{slip_of(*track)})
+	{
+		for (auto const *part : slip->parts)
+			if (false == part->Dynamics.empty())
+			{
+				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
+				return;
+			}
+		switch_store::forget(slip->record.name);
+		auto &style{*slip->switches.front()};
+		auto const velocity{speed_check::path_velocity(style, 0)};
+		for (auto *part : slip->parts)
+			editor_track::retire(*part);
+		std::vector<TTrack *> created;
+		if (false == Global.shiftState)
+		{
+			for (auto const &path : slip_throughs(*slip))
+				if (auto *through{editor_track::create_path(style, path)})
+				{
+					editor_track::velocity(*through, velocity);
+					created.push_back(through);
+				}
+			editor_track::commit(created);
+			// kept in the scenery as a crossing
+			auto const recorded = [](std::string const &Name) {
+				auto const &records{switch_store::records()};
+				return std::any_of(records.begin(), records.end(), [&](switch_store::record const &Record) { return Record.name == Name; });
+			};
+			std::string base;
+			for (int i = 1; base.empty() || recorded(base); ++i)
+				base = "editor_skrz" + std::to_string(i);
+			record_slip(created, "crossing", "Skrz", 0.0, slip->record.ratio > 0.0 ? std::atan(1.0 / slip->record.ratio) : 0.0, base);
+			ui()->set_status(STR_C("The slip is replaced by its two tracks crossing, Shift+Del removes all of it"), false);
+		}
+		if (auto const note{designs_trimmed(slip->parts)}; false == note.empty())
+			ui()->set_status(note, false);
+		push_track_snapshot({}, created, slip->parts);
+		drives_deleted(slip->switches);
+		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return std::find(slip->parts.begin(), slip->parts.end(), Each) != slip->parts.end(); }))
+			m_route = {};
+		m_node = nullptr;
+		ui()->set_node(nullptr);
+		m_track_point = {};
+		straight_refresh();
+		return;
+	}
 	// retired first, so the infrastructure it carried and moves elsewhere is in the same undo step
 	if (auto const known{switch_store::of(*track)})
 		switch_store::forget(known->name);
@@ -2339,6 +2386,12 @@ void editor_mode::draw_build_overlay() const
 				}
 			}
 	};
+	// a slip is selected whole: all its tracks with the one picked
+	if (auto const *selected{selected_track()}; selected != nullptr && false == m_switch.slide.active)
+		if (auto const slip{slip_of(*selected)})
+			for (auto const *part : slip->parts)
+				for (auto const &path : part->m_paths)
+					drawpath(path, overlay_color::highlight);
 	if (false == GfxRenderer->Mouse_Hit() && false == ImGui::GetIO().WantCaptureMouse)
 	{
 		auto const centre{m_lay.active ? m_lay.mouse : cursor_ground()};

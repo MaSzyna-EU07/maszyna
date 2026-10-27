@@ -702,10 +702,129 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 	return true;
 }
 
+bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string &Reason) const
+{
+	Slide = slip_slide{};
+	Reason.clear();
+	// one laid out of straights only, along its first one
+	for (auto const *part : Slip.switches)
+		if (has_controls(part->m_paths.front()))
+		{
+			Reason = STR_C("A slip bent into a curve isn't slid along it: delete it and lay it again");
+			return false;
+		}
+	if (false == tracks_editable(Slip.parts, Reason))
+		return false;
+	auto const chord{Slip.ends[1] - Slip.ends[0]};
+	auto const run{glm::length(plan_of(chord))};
+	if (run < 1e-6)
+		return false;
+	Slide.shift = chord / run;
+	Slide.movers = Slip.parts;
+	auto const outside = [&](TTrack const *Track) { return std::find(Slip.parts.begin(), Slip.parts.end(), Track) == Slip.parts.end(); };
+	// its crossing track goes along where it goes on into tracks ending free, as when it was laid on one straight
+	for (std::size_t end = 2; end < 4; ++end)
+	{
+		for (auto const *part : Slip.parts)
+			for (auto const &[other, point] : editor_track::connected_points(*part, Slip.ends[end]))
+			{
+				if (false == outside(other) || std::find(Slide.movers.begin(), Slide.movers.end(), other) != Slide.movers.end())
+					continue;
+				auto const free{other->eType == tt_Normal && other->m_paths.size() == 1 &&
+				                editor_track::connected_points(*other, editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start})).empty()};
+				if (false == free)
+				{
+					Reason = STR_C("The crossing track of the slip is joined on beyond it: the slip stays where the two tracks cross");
+					return false;
+				}
+				Slide.movers.push_back(other);
+			}
+	}
+	// the straights of its first track out to the joints of its template, as long as the ones of its crossing track going along, go
+	// along too, the joints with them
+	auto const extension{Slide.movers.size() > Slip.parts.size() ? geometry::chord_length(Slide.movers.back()->m_paths.front()) : 0.0};
+	auto const straight_along = [&](TTrack const &Track) {
+		return Track.eType == tt_Normal && Track.m_paths.size() == 1 && false == has_controls(Track.m_paths.front()) &&
+		       std::abs(geometry::cross(glm::normalize(plan_of(Track.m_paths.front().points[segment_data::point::end] - Track.m_paths.front().points[segment_data::point::start])), plan_of(Slide.shift))) < 1e-3;
+	};
+	std::array<glm::dvec3, 2> joints{Slip.ends[0], Slip.ends[1]};
+	for (std::size_t end = 0; end < 2 && extension > 0.0; ++end)
+		for (auto const *part : Slip.parts)
+			for (auto const &[other, point] : editor_track::connected_points(*part, Slip.ends[end]))
+				if (outside(other) && straight_along(*other) && std::abs(geometry::chord_length(other->m_paths.front()) - extension) < 0.01 &&
+				    std::find(Slide.movers.begin(), Slide.movers.end(), other) == Slide.movers.end())
+				{
+					Slide.movers.push_back(other);
+					joints[end] = editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start});
+				}
+	Slide.joints = joints;
+	// the straights of its first track before it and past it give and take the length, a metre of them kept at least
+	double room[2]{1e4, 1e4};
+	bool straight[2]{true, true};
+	for (std::size_t end = 0; end < 2; ++end)
+		for (auto *track : Slide.movers)
+			for (auto const &[other, point] : editor_track::connected_points(*track, joints[end]))
+			{
+				if (std::find(Slide.movers.begin(), Slide.movers.end(), other) != Slide.movers.end() || Slide.ends[end].first != nullptr)
+					continue;
+				Slide.ends[end] = {other, point};
+				straight[end] = other->eType == tt_Normal && other->m_paths.size() == 1 && false == has_controls(other->m_paths.front()) &&
+				                std::abs(geometry::cross(glm::normalize(plan_of(other->m_paths.front().points[segment_data::point::end] - other->m_paths.front().points[segment_data::point::start])), plan_of(Slide.shift))) < 1e-3;
+				room[end] = straight[end] ? geometry::chord_length(other->m_paths.front()) - 1.0 : 0.0;
+			}
+	// back, it shortens the track before it and lengthens the one past it; on, the other way
+	Slide.low = straight[1] ? -std::max(0.0, room[0]) : 0.0;
+	Slide.high = straight[0] ? std::max(0.0, room[1]) : 0.0;
+	return true;
+}
+
+bool editor_mode::slide_slip(slip_set const &Slip, double const Distance)
+{
+	slip_slide slide;
+	std::string reason;
+	if (false == slip_room(Slip, slide, reason))
+	{
+		m_switch.status = refused(reason);
+		ui()->set_status(m_switch.status, true);
+		return false;
+	}
+	auto const distance{std::clamp(Distance, slide.low, slide.high)};
+	if (std::abs(distance) < 0.005)
+		return false;
+	auto const shift{slide.shift * distance};
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> changed;
+	for (auto *mover : slide.movers)
+	{
+		states.emplace_back(mover, editor_track::capture(*mover));
+		for (auto &path : mover->m_paths)
+			path.translate(shift);
+		changed.push_back(mover);
+	}
+	for (std::size_t end = 0; end < 2; ++end)
+		if (auto const &[other, point]{slide.ends[end]}; other != nullptr)
+		{
+			states.emplace_back(other, editor_track::capture(*other));
+			editor_track::move_point(*other, point, slide.joints[end] + shift);
+			changed.push_back(other);
+		}
+	editor_track::commit(changed);
+	push_track_snapshot(std::move(states), {}, {});
+	switch_store::follow();
+	records_to_history();
+	straight_refresh();
+	m_switch.status = format(STR_C("Slip %s moved %.2f m along its track, its crossing track with it"), Slip.record.name.c_str(), distance);
+	ui()->set_status(m_switch.status, false);
+	return true;
+}
+
 bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 {
 	if (std::abs(Distance) < 0.005)
 		return false;
+	// a slip slides whole
+	if (auto const slip{slip_of(Track)})
+		return slide_slip(*slip, Distance);
 	// a switch of a crossover along a curve takes the crossover with it
 	if (crossover_of(Track).has_value())
 		return slide_curved_connection(Track, Distance);
@@ -744,6 +863,12 @@ bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 
 bool editor_mode::switch_slides(TTrack const &Track) const
 {
+	if (auto const slip{slip_of(Track)})
+	{
+		slip_slide room;
+		std::string reason;
+		return slip_room(*slip, room, reason);
+	}
 	if (Track.eType == tt_Normal)
 	{
 		auto const set{double_of(Track)};
@@ -757,6 +882,27 @@ void editor_mode::switch_slide_start(TTrack &Track)
 	auto &slide{m_switch.slide};
 	slide = {};
 	std::string reason;
+	// a slip along its first track, from its first switch
+	if (auto const slip{slip_of(Track)})
+	{
+		slip_slide room;
+		auto const axis{editor_track::main_axis(*slip->switches.front())};
+		if (false == slip_room(*slip, room, reason) || false == axis.has_value())
+		{
+			if (false == reason.empty())
+				ui()->set_status(reason, true);
+			return;
+		}
+		auto const &mouse{ImGui::GetIO().MousePos};
+		slide.active = true;
+		slide.track = slip->switches.front();
+		slide.pressed = {mouse.x, mouse.y};
+		slide.grip = axis->along(cursor_level(axis->origin.y));
+		slide.length = 0.0;
+		slide.low = room.low;
+		slide.high = room.high;
+		return;
+	}
 	auto const set{double_of(Track)};
 	auto &first{set.has_value() ? *set->first : Track};
 	auto const axis{editor_track::main_axis(first)};
@@ -856,7 +1002,21 @@ void editor_mode::draw_switch_slide() const
 	auto paths{editor_track::slid(*slide.track, slide.distance)};
 	if (paths.empty())
 		return;
-	if (auto const set{double_of(*slide.track)})
+	// a slip with all it takes along
+	if (auto const slip{slip_of(*slide.track)})
+	{
+		slip_slide room;
+		std::string reason;
+		slip_room(*slip, room, reason);
+		paths.clear();
+		for (auto const *mover : room.movers)
+			for (auto path : mover->m_paths)
+			{
+				path.translate(room.shift * slide.distance);
+				paths.push_back(path);
+			}
+	}
+	else if (auto const set{double_of(*slide.track)})
 	{
 		auto const shift{paths.front().points[segment_data::point::start] - slide.track->m_paths.front().points[segment_data::point::start]};
 		paths = double_paths(*set);

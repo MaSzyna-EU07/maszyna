@@ -1100,6 +1100,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		TTrack *second{nullptr};
 	};
 	std::optional<double_switch> double_of(TTrack const &Track) const;
+	// a slip of the scenery the track is a part of: its switches, all its tracks, the switches among them, and its ends where it joins
+	// the tracks around, A and B of its first track through, C and D of the other one, with the way into the slip at each
+	struct slip_set
+	{
+		switch_store::record record;
+		std::vector<TTrack *> switches;
+		std::vector<TTrack *> parts;
+		glm::dvec2 crossing{0.0};
+		std::array<glm::dvec3, 4> ends{};
+		std::array<glm::dvec2, 4> into{};
+	};
+	std::optional<slip_set> slip_of(TTrack const &Track) const;
+	// the two tracks of the slip through it from end to end, as they cross where it's taken out
+	static std::array<segment_data, 2> slip_throughs(slip_set const &Slip);
 	// the paths of the set in the order editor_track::place_switch gives them
 	static std::vector<segment_data> double_paths(double_switch const &Set);
 	// the switch of the template, or the two switches of a double one with the plain track between them, committed and recorded
@@ -1373,6 +1387,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool move_double_paths(double_switch const &Set, std::vector<segment_data> const &Paths, std::string &Status);
 	bool slide_switch(TTrack &Track, double const Distance);
 	bool switch_slides(TTrack const &Track) const;
+	// a slip slid along its first track: the slip and the tracks its crossing track goes on into with their ends free move whole, the
+	// straights of its first track before it and past it give and take the length. Low and High: how far back and on it may go
+	struct slip_slide
+	{
+		glm::dvec3 shift{0.0}; // along its first track, a metre of it
+		std::vector<TTrack *> movers;
+		// where it joins the tracks of its first track before it and past it: at its ends A and B, or at the joints of its template
+		// with the straights out to them going along; those tracks, the end of each there
+		std::array<glm::dvec3, 2> joints{};
+		std::array<std::pair<TTrack *, editor_track::point_ref>, 2> ends{};
+		double low{0.0};
+		double high{0.0};
+	};
+	bool slip_room(slip_set const &Slip, slip_slide &Slide, std::string &Reason) const;
+	bool slide_slip(slip_set const &Slip, double const Distance);
 	void switch_slide_start(TTrack &Track);
 	void switch_slide_update();
 	void switch_slide_finish();

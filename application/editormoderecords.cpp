@@ -340,6 +340,134 @@ std::optional<editor_mode::double_switch> editor_mode::double_of(TTrack const &T
 	return std::nullopt;
 }
 
+std::optional<editor_mode::slip_set> editor_mode::slip_of(TTrack const &Track) const
+{
+	if (Track.m_editorremoved)
+		return std::nullopt;
+	auto const record_of = [](TTrack const &Each) -> std::optional<switch_store::record> {
+		if (Each.eType != tt_Switch || Each.m_editorremoved)
+			return std::nullopt;
+		auto found{switch_store::named(Each)};
+		return found.has_value() && found->kind == "slip" ? found : std::nullopt;
+	};
+	// the record of the switch, or of a switch of the slip the track between them is joined to
+	auto known{record_of(Track)};
+	if (false == known.has_value() && Track.eType == tt_Normal && Track.m_paths.size() == 1)
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			for (auto const &[other, point] : editor_track::connected_points(Track, Track.m_paths.front().points[index]))
+				if (false == known.has_value())
+					known = record_of(*other);
+	if (false == known.has_value())
+		return std::nullopt;
+	slip_set slip;
+	slip.record = *known;
+	for (auto const &name : known->parts)
+	{
+		auto *part{simulation::Paths.find(name)};
+		if (part == nullptr || part->m_editorremoved || part->eType != tt_Switch || part->m_paths.size() < 2)
+			return std::nullopt;
+		slip.switches.push_back(part);
+	}
+	if (slip.switches.size() < 2)
+		return std::nullopt;
+	// where the straights of its first and its last switch meet: the joints of its tracks near it are inside the slip, its ends far off
+	auto const heading = [](segment_data const &Path) {
+		auto const &control{Path.points[segment_data::point::control1]};
+		auto const direction{plan_of(control != glm::dvec3{} ? control : Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
+		return glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
+	};
+	auto const &first{slip.switches.front()->m_paths.front()};
+	auto const &last{slip.switches.back()->m_paths.front()};
+	auto const a{plan_of(first.points[segment_data::point::start])};
+	auto const d{plan_of(last.points[segment_data::point::start])};
+	auto const da{heading(first)};
+	auto const dd{heading(last)};
+	auto const determinant{geometry::cross(da, dd)};
+	if (std::abs(determinant) < 1e-9)
+		return std::nullopt;
+	auto const crossing{a + da * (geometry::cross(d - a, dd) / determinant)};
+	auto const inside{0.5 * glm::distance(a, crossing)};
+	slip.parts = slip.switches;
+	for (std::size_t i = 0; i < slip.parts.size(); ++i)
+		for (auto const &path : slip.parts[i]->m_paths)
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+			{
+				auto const &position{path.points[index]};
+				if (glm::distance(plan_of(position), crossing) > inside)
+					continue;
+				for (auto const &[other, point] : editor_track::connected_points(*slip.parts[i], position))
+					if (false == other->m_editorremoved && std::find(slip.parts.begin(), slip.parts.end(), other) == slip.parts.end())
+						slip.parts.push_back(other);
+			}
+	// its ends, each with the way into the slip there
+	std::vector<std::pair<glm::dvec3, glm::dvec2>> ends;
+	for (auto const *part : slip.parts)
+		for (auto const &path : part->m_paths)
+			for (auto const atend : {false, true})
+			{
+				auto const &position{path.points[atend ? segment_data::point::end : segment_data::point::start]};
+				if (glm::distance(plan_of(position), crossing) <= inside ||
+				    std::any_of(ends.begin(), ends.end(), [&](auto const &End) { return glm::distance(End.first, position) < geometry::same_point; }))
+					continue;
+				auto const &control{path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
+				auto const into{plan_of(control != glm::dvec3{} ? control : path.points[atend ? segment_data::point::start : segment_data::point::end] - position)};
+				if (glm::length(into) < 1e-9)
+					return std::nullopt;
+				ends.emplace_back(position, glm::normalize(into));
+			}
+	if (ends.size() != 4)
+		return std::nullopt;
+	// A where its first switch starts, B on along its first track, D where its last switch starts, C the other one
+	auto const at = [&](glm::dvec2 const &Point) {
+		return static_cast<std::size_t>(std::min_element(ends.begin(), ends.end(), [&](auto const &One, auto const &Other) { return glm::distance(plan_of(One.first), Point) < glm::distance(plan_of(Other.first), Point); }) -
+		                                ends.begin());
+	};
+	auto const ia{at(a)};
+	auto const id{at(d)};
+	if (ia == id)
+		return std::nullopt;
+	std::vector<std::size_t> others;
+	for (std::size_t i = 0; i < 4; ++i)
+		if (i != ia && i != id)
+			others.push_back(i);
+	if (others.size() != 2)
+		return std::nullopt;
+	// of the other two the one farther on along the first track
+	auto const ahead = [&](std::size_t const Index) { return glm::dot(plan_of(ends[Index].first) - crossing, da); };
+	auto const ib{ahead(others[0]) >= ahead(others[1]) ? others[0] : others[1]};
+	auto const ic{ib == others[0] ? others[1] : others[0]};
+	std::size_t const order[]{ia, ib, ic, id};
+	for (std::size_t i = 0; i < 4; ++i)
+	{
+		slip.ends[i] = ends[order[i]].first;
+		slip.into[i] = ends[order[i]].second;
+	}
+	slip.crossing = (plan_of(slip.ends[0]) + plan_of(slip.ends[1]) + plan_of(slip.ends[2]) + plan_of(slip.ends[3])) * 0.25;
+	return slip;
+}
+
+std::array<segment_data, 2> editor_mode::slip_throughs(slip_set const &Slip)
+{
+	// from end to end, a straight where the slip is one, else heading out of the ends as the slip does
+	auto const through = [&](std::size_t const From, std::size_t const To) {
+		segment_data path;
+		path.points[segment_data::point::start] = Slip.ends[From];
+		path.points[segment_data::point::end] = Slip.ends[To];
+		auto const chord{plan_of(Slip.ends[To] - Slip.ends[From])};
+		auto const length{glm::length(chord)};
+		if (length > 1e-6 && std::abs(geometry::cross(Slip.into[From], chord / length)) + std::abs(geometry::cross(Slip.into[To], chord / length)) > 1e-5)
+		{
+			auto const handle{length / 3.0};
+			auto const rise{Slip.ends[To].y - Slip.ends[From].y};
+			path.points[segment_data::point::control1] = {Slip.into[From].x * handle, rise / 3.0, Slip.into[From].y * handle};
+			path.points[segment_data::point::control2] = {Slip.into[To].x * handle, -rise / 3.0, Slip.into[To].y * handle};
+			path.radius = static_cast<float>(Slip.record.main_radius);
+		}
+		return path;
+	};
+	return {through(0, 1), through(2, 3)};
+}
+
 std::vector<segment_data> editor_mode::double_paths(double_switch const &Set)
 {
 	auto link{Set.link->m_paths.front()};

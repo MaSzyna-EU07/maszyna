@@ -12432,3 +12432,15 @@ msgstr "wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
 
 msgid "Rkp or Rkpd at a crossing of two straights at its skos, or bent into a curve of a side track"
 msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"
+
+msgid "The slip is replaced by its two tracks crossing, Shift+Del removes all of it"
+msgstr "Rozjazd krzyżowy zastąpiony skrzyżowaniem jego dwóch torów, Shift+Del usuwa wszystko"
+
+msgid "A slip bent into a curve isn't slid along it: delete it and lay it again"
+msgstr "Rozjazdu krzyżowego wygiętego w łuk nie przesuwa się wzdłuż: usuń go i połóż od nowa"
+
+msgid "The crossing track of the slip is joined on beyond it: the slip stays where the two tracks cross"
+msgstr "Tor przecinający rozjazdu krzyżowego jest dalej połączony: rozjazd zostaje tam, gdzie tory się przecinają"
+
+msgid "Slip %s moved %.2f m along its track, its crossing track with it"
+msgstr "Rozjazd krzyżowy %s przesunięty o %.2f m wzdłuż toru, razem z torem przecinającym"
