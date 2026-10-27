@@ -48,6 +48,13 @@ double vehicle_length( std::string const &Folder, std::string const &Type ) {
     return probe.LoadFIZ( paths::dynamic + Folder + "/" ) ? probe.Dim.L : 0.0;
 }
 
+// the catenary straight in the scenery file belongs to the file (layer) it's in, the scenery save writes it there
+std::string catenary_file( cParser const &Input ) {
+
+    auto const layer { scene::Layers.handle() };
+    return ( ( layer != null_handle && Input.InLayerFile() ) ? scene::Layers.layer( layer ).name : Input.Name() );
+}
+
 } // namespace
 
 std::shared_ptr<deserializer_state>
@@ -176,6 +183,10 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
         else if( token == "catenary" ) {
             // sieć trakcyjna: plik z podwieszeniami, "catenary <plik> endcatenary"
             catenary_scene_load( Input );
+        }
+        else if( token == "skin" ) {
+            // domyślna tekstura podwieszeń sieci z tego pliku: plik sieci z dyrektywy "catenary" dołączony jako warstwa
+            catenary_scene_skin( Input, catenary_file( Input ) );
         }
         else {
             ErrorLog( "Bad scenario: unexpected token \"" + token + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( Input.Line() - 1 ) + ")" );
@@ -457,6 +468,8 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     simulation::Roads.InitRoads();
     // crossings and traffic points go by the lanes, which are complete at this point
     simulation::Roadpoints.InitRoadpoints();
+    // the catenary entries of the scenery files make their spans before these get tied together
+    catenary_scene_loaded();
     simulation::Traction.InitTraction();
     catenary_scene_resolve();
     simulation::Events.InitEvents();
@@ -516,6 +529,8 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     }
     // a run of plain model instances is taken straight from the text, instead of token by token
     if( true == deserialize_models( Input, Scratchpad, nodedata, inputline, sourcebegin ) ) { return; }
+    // the text of the header as written, for the entries which need the case of their names
+    auto const header { Input.remainingText() };
     // common data and node type indicator
     Input.getTokens( 4 );
     Input
@@ -584,10 +599,27 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         scene::Layers.track( road, { sourcebegin, Input.TokenEnd() } );
     }
     else if( nodedata.type == "suspension" || nodedata.type == "chain" || nodedata.type == "gantry" || nodedata.type == "anchor" ) {
-        // the catenary straight in the scenery file: it belongs to the file (layer) it's in, the scenery save writes it there
-        auto const layer { scene::Layers.handle() };
-        auto const file { ( layer != null_handle && Input.InLayerFile() ) ? scene::Layers.layer( layer ).name : Input.Name() };
-        catenary_scene_node( Input, nodedata.type, nodedata.range_max, nodedata.range_min, nodedata.name, file );
+        // the names are referred to by the other entries as they're written, the parser gives them in lower case
+        auto name { nodedata.name };
+        if( false == header.empty() ) {
+            std::string_view words[ 4 ];
+            auto const breaks { std::string_view { "\n\r\t ;" } };
+            std::size_t position { 0 };
+            for( auto &word : words ) {
+                position = std::min( header.find_first_not_of( breaks, position ), header.size() );
+                auto const end { std::min( header.find_first_of( breaks, position ), header.size() ) };
+                word = header.substr( position, end - position );
+                position = end;
+            }
+            auto lower { std::string { words[ 2 ] } };
+            std::transform( lower.begin(), lower.end(), lower.begin(), []( unsigned char const C ) { return static_cast<char>( std::tolower( C ) ); } );
+            auto type { std::string { words[ 3 ] } };
+            std::transform( type.begin(), type.end(), type.begin(), []( unsigned char const C ) { return static_cast<char>( std::tolower( C ) ); } );
+            if( false == name.empty() && lower == name && type == nodedata.type ) {
+                name = words[ 2 ];
+            }
+        }
+        catenary_scene_node( Input, nodedata.type, nodedata.range_max, nodedata.range_min, name, catenary_file( Input ) );
     }
     else if( nodedata.type == "sweep" ) {
 

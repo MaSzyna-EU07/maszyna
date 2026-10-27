@@ -21,6 +21,10 @@ void catenary_scene_load( cParser &Input );
 // wpis "node <max> <min> <nazwa> suspension|chain|gantry|anchor ... end<typ>" wprost w pliku scenerii; Input stoi za typem.
 // File: plik scenerii (warstwa), do którego wpis należy - jego wpisy sieci zapisuje zapis scenerii
 void catenary_scene_node( cParser &Input, std::string const &Type, double RangeMax, double RangeMin, std::string const &Name, std::string const &File );
+// "skin <tekstura>" w pliku scenerii: domyślna tekstura podwieszeń tego pliku (jak w osobnym pliku sieci)
+void catenary_scene_skin( cParser &Input, std::string const &File );
+// po wczytaniu wpisów scenerii, przed InitTraction: dodaje zebrane wpisy sieci z plików scenerii
+void catenary_scene_loaded();
 // po wczytaniu scenerii: wiąże podwieszenia z konstrukcjami wsporczymi i przęsłami po nazwach, zgłasza braki
 void catenary_scene_resolve();
 // przed wczytaniem nowej scenerii: usuwa podwieszenia poprzedniej
