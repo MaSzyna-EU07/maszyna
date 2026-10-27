@@ -218,6 +218,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_ao.init();
 		m_localshadows.init();
 		m_cabprobe.init();
+		m_skyocclusion.init();
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -684,11 +685,15 @@ bool opengl46_renderer::Render()
 		// lamps of models and vehicles around the camera and the cab lamp, for the views of the frame to take into their light buffers
 		if ((false == Global.gfx_skiprendering) && (simulation::Region != nullptr))
 			m_locallights.gather(Global.pCamera.Pos, *simulation::Region, m_geometry, m_framestamp);
+		// the occlusion of the sky by the scenery around the camera: the tiles which came in, what the background worked out
+		if (false == Global.gfx_skiprendering)
+			m_skyocclusion.update(simulation::Region, Global.pCamera.Pos, -m_sunlight.direction);
 	}
 	else
 	{
 		// a scenery is being loaded: the cells, instances and models the lights were taken from may be gone
 		m_locallights.reset();
+		m_skyocclusion.clear();
 		m_localshadows.reset_lamps();
 		m_localshadows.reset_headlights();
 		// and so may the tracks the sleeper records were made for, and the models drawn on their own
@@ -1055,6 +1060,7 @@ void opengl46_renderer::SwapBuffers()
                     ", off in this view\n" ) :
             std::string{} )
         + ( Global.gfx_cabprobe > 0 ? " " + m_cabprobe.info() + "\n" : std::string{} )
+        + ( Global.gfx_skyvisibility > 0 ? " " + m_skyocclusion.info() + "\n" : std::string{} )
         + shadowcascadestext
         + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
         + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
@@ -1471,6 +1477,8 @@ void opengl46_renderer::draw_debug_ui()
         m_ao.draw_debug_ui(!m_viewports.empty() && m_viewports.front()->ssao_tex != nullptr);
         m_cabprobe.draw_debug_ui();
         ImGui::Separator();
+        m_skyocclusion.draw_debug_ui();
+        ImGui::Separator();
         m_ssr.draw_debug_ui(nullptr);
     }
     ImGui::End();
@@ -1655,6 +1663,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		// pass of the main view only
 		scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, 0.f, 0.f};
 		gfx::screen_reflections::clear(scene_ubs);
+		// the occlusion of the sky by the scenery, seen from the camera of the view
+		m_skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
         scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_colorpass.pass_camera.modelview() } } );
         scene_ubo->update(scene_ubs);
@@ -1675,6 +1685,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		m_localshadows.bind();
 		// the probe of the cab, or the stand-ins
 		m_cabprobe.bind();
+		// the maps of the occlusion of the sky, or the stand-ins
+		m_skyocclusion.bind();
 
 		if (Global.gfx_shadowmap_enabled && vp.main)
 		{
@@ -5730,6 +5742,8 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 		scene_ubs.cascade_end[idx] = std::numeric_limits<float>::max();
 	}
 	scene_ubs.shadow_fit = glm::vec4{0.f};
+	// the model stands on its own, nothing around it
+	gfx::sky_occlusion::clear_scene(scene_ubs);
 	scene_ubo->update(scene_ubs);
 	scene_ubo->bind_uniform();
 	// the sun is the only light, and there's no fog
@@ -6113,13 +6127,8 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
 		renderlight.position = lightoffset;
 		renderlight.direction = scenelight.direction;
 
-		auto luminance = static_cast<float>(Global.fLuminance);
 		// adjust luminance level based on vehicle's location, e.g. tunnels
-		auto const environment = scenelight.owner->fShade;
-		if (environment > 0.f)
-		{
-			luminance *= environment;
-		}
+		auto const luminance = static_cast<float>(Global.fLuminance) * gfx::vehicle_light_level(scenelight.owner);
 		renderlight.diffuse = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color - glm::vec3{luminance}), renderlight.diffuse[3]};
 		renderlight.ambient = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color * glm::vec3{scenelight.intensity} - glm::vec3{luminance}), renderlight.ambient[3]};
 

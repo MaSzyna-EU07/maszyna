@@ -497,6 +497,18 @@ struct global_settings {
     int gfx_cabprobe_interval { 4 };
     float gfx_cabprobe_bounce { 1.f };
     bool gfx_cabprobe_reflections { true };
+    // the occlusion of the sky and of the sun by the scenery around the camera (opengl 4.6 and vulkan, gfx::sky_occlusion, the track T):
+    // tunnels, the ground under bridges and roofs, cuttings and the foot of slopes are dark by their geometry, worked out in the
+    // background from the scenery seen from above. 0 off (nothing is occluded), 1 low (256 m around the camera, texels of 1 m),
+    // 2 medium (512 m, 1 m), 3 high (512 m, 0.5 m, searched farther); whether the sun (the moon) is held back too, and the light of
+    // the volumetric fog
+    int gfx_skyvisibility { 2 };
+    bool gfx_skyvisibility_sun { true };
+    bool gfx_skyvisibility_fog { true };
+    // the environment flags of the tracks (tunnel, canyon) darken the tracks and the vehicles on them, as before the track T. off: the
+    // renderers leave them alone and the light comes from the geometry (gfx_skyvisibility); the flags stay in the scenery files for
+    // the sound and the driver
+    bool gfx_tunnelflags { false };
     float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab

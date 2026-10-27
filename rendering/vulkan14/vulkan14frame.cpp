@@ -610,6 +610,7 @@ bool vulkan14_renderer::Render()
 	}
 	scene.lamps.begin_frame(ctx.commands, value);
 	scene.cabprobe.begin_frame(value);
+	scene.skyocclusion.begin_frame(value);
 	if (scene.terrain)
 	{
 		// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
@@ -680,8 +681,9 @@ bool vulkan14_renderer::Render()
 	if (false == scene.images_ready)
 	{
 		scene.images_ready = true;
-		std::vector<vk14::image *> const standins{scene.shadow_empty.get(),           scene.env_empty.get(),   scene.volume_empty.get(),  scene.cube_shadow_empty.get(),
-		                                          scene.headlight_shadow_empty.get(), scene.depth_empty.get(), scene.cabprobe_empty.get()};
+		std::vector<vk14::image *> const standins{scene.shadow_empty.get(),           scene.env_empty.get(),   scene.volume_empty.get(),   scene.cube_shadow_empty.get(),
+		                                          scene.headlight_shadow_empty.get(), scene.depth_empty.get(), scene.cabprobe_empty.get(), scene.skyocclusion_heights_empty.get(),
+		                                          scene.skyocclusion_empty.get()};
 		std::vector<vk14::image_use> clears;
 		for (auto *image : standins)
 		{
@@ -769,11 +771,17 @@ bool vulkan14_renderer::Render()
 		{
 			m_locallights.gather(Global.pCamera.Pos, *simulation::Region, m_geometry, m_framestamp);
 		}
+		// the occlusion of the sky by the scenery around the camera: the tiles which came in, what the background worked out
+		if (false == Global.gfx_skiprendering)
+		{
+			scene.skyocclusion.update(simulation::Region, Global.pCamera.Pos, -m_sunlight.direction);
+		}
 	}
 	else
 	{
 		// a scenery is being loaded: the cells, instances and models the lights were taken from may be gone
 		m_locallights.reset();
+		scene.skyocclusion.clear();
 		scene.lamps.reset_lamps();
 		scene.lamps.reset_headlights();
 		// and so may the tracks the sleeper records were made for, and the models drawn on their own
@@ -791,6 +799,8 @@ bool vulkan14_renderer::Render()
 		++m_instancerecordsversion;
 		m_nodestateversion = scene::node_state_version;
 	}
+	// what the maps of the occlusion of the sky were given, copied to them
+	scene.skyocclusion.flush(ctx.commands);
 	// the sleeper records of tracks out of sight for a while, and the records of the models drawn on their own
 	Expire_Indirect_Records();
 	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
@@ -1547,6 +1557,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	// the clouds of the view and the fog volume, which take the lights of the clusters and the shadow map of the pass
 	{
 		auto const fogtarget{glm::ivec2{vp.width, vp.height}};
+		// the occlusion of the sky by the scenery, seen from the camera of the view
+		scene.skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
 		setup_shadow_matrices();
@@ -3737,12 +3749,7 @@ void vulkan14_renderer::update_lights(light_array &Lights, bool const Headlights
 		}
 		renderlight.position = lightoffset;
 		renderlight.direction = scenelight.direction;
-		auto luminance = static_cast<float>(Global.fLuminance);
-		auto const environment = scenelight.owner->fShade;
-		if (environment > 0.f)
-		{
-			luminance *= environment;
-		}
+		auto const luminance = static_cast<float>(Global.fLuminance) * gfx::vehicle_light_level(scenelight.owner);
 		renderlight.diffuse = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color - glm::vec3{luminance}), renderlight.diffuse[3]};
 		renderlight.ambient = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color * glm::vec3{scenelight.intensity} - glm::vec3{luminance}), renderlight.ambient[3]};
 		renderlight.factor = (scenelight.count * 0.5) * (scenelight.owner->DimHeadlights ? 0.5 : 1.0);

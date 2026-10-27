@@ -24,6 +24,7 @@ layout(std430, binding = CAB_PROBE_SSBO_BINDING) readonly buffer cab_probe_ssbo
 #include "ssr.glsl"
 #include "conversion.glsl"
 #include "weather_common.glsl"
+#include "sky_occlusion.glsl"
 
 float glossiness = 1.0;
 float metalic = 0.0;
@@ -860,6 +861,10 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         // attenuated by AMBIENT_SCALE - this only dims the indirect term.
         fragcolor *= AMBIENT_SCALE;
     }
+    // the scenery around holds back the sky (x) and the key light (y): tunnels, the ground under bridges and roofs, cuttings. not
+    // the light of the lamps and the headlights, nor of the cab lamp bounced around the cab, which come in below
+    vec2 skyoccl = sky_occlusion_world(mat3(inv_view) * f_pos.xyz, normalize(mat3(inv_view) * fragnormal));
+    fragcolor *= skyoccl.x;
 
     vec3 emissioncolor = vec3(emission);
     vec3 view_dir = normalize(-f_pos.xyz);
@@ -919,7 +924,8 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     vec4 scenecolor = vec4(0.0);
     if (!matte)
     {
-        envcolor = reflection_surroundings(fragnormal, env_roughness);
+        // the sky the surface would reflect is held back as the sky which lights it
+        envcolor = reflection_surroundings(fragnormal, env_roughness) * skyoccl.x;
         // inside the cab the cab is what the surroundings are, where the probe holds it
         if (cabprobe && (cab_probe_params.y > 0.0))
             envcolor = cab_probe_reflection(envcolor, fragnormal, env_roughness, cabambient);
@@ -942,6 +948,7 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     // the clouds hold back the sun (the moon at night) where their shadow falls
     float cloudsun = cloud_shadow(mat3(inv_view) * f_pos.xyz);
     // Sun HDR scale -> SUN_DIFFUSE_SCALE, the same for the diffuse and the specular light
+    cloudsun *= skyoccl.y;
     vec3 sunlight = lights[0].color * (SUN_DIFFUSE_SCALE * lights[0].intensity * cloudsun);
 
     float shadow = 0.0;

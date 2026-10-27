@@ -80,7 +80,11 @@ constexpr std::uint32_t SCENE_AO_TEX = 27;
 constexpr std::uint32_t CAB_PROBE_TEX = 28;
 constexpr std::uint32_t CAB_PROBE_ALBEDO_TEX = 29;
 constexpr std::uint32_t CAB_PROBE_SSBO = 30;
-constexpr std::uint32_t PASS_BINDING_COUNT = 31;
+// the occlusion of the sky and of the sun by the scenery around the camera (gfx::sky_occlusion, the track T): the height of the top of
+// the scenery and the shares of the sky and the limits of the key light, read texel by texel
+constexpr std::uint32_t SKY_OCCLUSION_HEIGHT_TEX = 31;
+constexpr std::uint32_t SKY_OCCLUSION_TEX = 32;
+constexpr std::uint32_t PASS_BINDING_COUNT = 33;
 // the offsets of the bindings above with dynamic offsets, in the order of the bindings
 constexpr std::uint32_t PASS_DYNAMIC_OFFSETS = 6;
 // the textures of a material take the bindings of their units (#pragma texture(name, unit, ...)), 0 .. MAX_TEXTURES - 1

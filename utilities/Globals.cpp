@@ -1918,6 +1918,19 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         gfx_cabprobe_interval = std::clamp( gfx_cabprobe_interval, 1, 120 ); }
     else if( Token == "gfx.cabprobe.bounce" ) { readvalue( gfx_cabprobe_bounce, 0.f, 4.f ); }
     else if( Token == "gfx.cabprobe.reflections" ) { readswitch( gfx_cabprobe_reflections ); }
+    else if( Token == "gfx.skyvisibility" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_skyvisibility =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.skyvisibility.sun" ) { readswitch( gfx_skyvisibility_sun ); }
+    else if( Token == "gfx.skyvisibility.fog" ) { readswitch( gfx_skyvisibility_fog ); }
+    else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
     else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
     else if( Token == "gfx.lights.shadows" ) {
         // no/low/medium/high, or the number of the level
@@ -2394,6 +2407,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.cabprobe.interval", gfx_cabprobe_interval );
     export_as_text( Output, "gfx.cabprobe.bounce", gfx_cabprobe_bounce );
     export_as_text( Output, "gfx.cabprobe.reflections", gfx_cabprobe_reflections );
+    export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
+    export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );
+    export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );

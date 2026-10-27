@@ -202,6 +202,11 @@ std::array<std::array<VkImageView, vk14::bindings::PASS_BINDING_COUNT>, 3> pass_
 		auto const probeempty{scene.cabprobe_empty ? scene.cabprobe_empty->view() : scene.env_empty->view()};
 		views[CAB_PROBE_TEX] = (colour && (probelight != nullptr) ? probelight->view() : probeempty);
 		views[CAB_PROBE_ALBEDO_TEX] = (colour && (probealbedo != nullptr) ? probealbedo->view() : probeempty);
+		// the occlusion of the sky by the scenery (the track T), for every pass which shades
+		auto const *occlusionheights{scene.skyocclusion.heights()};
+		auto const *occlusion{scene.skyocclusion.occlusion()};
+		views[SKY_OCCLUSION_HEIGHT_TEX] = (occlusionheights != nullptr ? occlusionheights->view() : scene.skyocclusion_heights_empty->view());
+		views[SKY_OCCLUSION_TEX] = (occlusion != nullptr ? occlusion->view() : scene.skyocclusion_empty->view());
 	}
 	return result;
 }
@@ -663,6 +668,29 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 	{
 		return false;
 	}
+	// the occlusion of the sky by the scenery: the stand-ins of its maps of one texel, cleared with the other stand-ins in the first
+	// frame (nothing reads them: the block of the scene tells there are no maps)
+	{
+		auto standin = [&](std::shared_ptr<vk14::image> &Image, VkFormat const Format, char const *Name) {
+			vk14::image_desc desc;
+			desc.format = Format;
+			desc.extent = {1, 1, 1};
+			desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			Image = std::make_shared<vk14::image>();
+			if (false == Image->create(ctx.memory, desc, Name))
+			{
+				Image.reset();
+				return false;
+			}
+			return true;
+		};
+		if ((false == standin(scene.skyocclusion_heights_empty, VK_FORMAT_R32_SFLOAT, "empty sky occlusion heights")) || (false == standin(scene.skyocclusion_empty, VK_FORMAT_R16G16B16A16_SFLOAT, "empty sky occlusion")))
+		{
+			Reason = "no stand-ins of the maps of the occlusion of the sky";
+			return false;
+		}
+		scene.skyocclusion.init(ctx.memory, ctx.deletions);
+	}
 
 	scene.lamps.init(device, ctx.memory, ctx.deletions);
 	// the layer maps of the heightmap terrain drawn into the layers of its arrays by the copy shader
@@ -832,6 +860,9 @@ void vulkan14_renderer::destroy_scene()
 	destroy_weather();
 	destroy_ao();
 	destroy_cab_probe();
+	scene.skyocclusion.destroy();
+	scene.skyocclusion_heights_empty.reset();
+	scene.skyocclusion_empty.reset();
 	for (auto *pool : scene.occlusion_pools)
 	{
 		vkDestroyQueryPool(device, pool, nullptr);
@@ -1032,6 +1063,8 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 		write(handle, CAB_PROBE_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_TEX]));
 		write(handle, CAB_PROBE_ALBEDO_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_ALBEDO_TEX]));
 		write(handle, CAB_PROBE_SSBO, &cabprobe, nullptr);
+		write(handle, SKY_OCCLUSION_HEIGHT_TEX, nullptr, image(ctx.sampling.repeat_nearest, views[SKY_OCCLUSION_HEIGHT_TEX]));
+		write(handle, SKY_OCCLUSION_TEX, nullptr, image(ctx.sampling.repeat_nearest, views[SKY_OCCLUSION_TEX]));
 	}
 	vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

@@ -8,6 +8,8 @@
 #ifndef PARTICLE_LIGHT_GLSL
 #define PARTICLE_LIGHT_GLSL
 
+#include "sky_occlusion.glsl"
+
 layout(binding = SHADOW_TEX) uniform sampler2DArrayShadow shadowmap;
 layout(binding = HEADLIGHT_TEX) uniform sampler2D headlightmap;
 layout(binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_shadowmap;
@@ -112,10 +114,12 @@ uint particle_cluster(vec3 position)
 vec3 particle_light(vec3 position, vec3 world, float forward)
 {
 	vec3 tocamera = -normalize(position);
-	vec3 light = ambient * PARTICLE_AMBIENT_SCALE;
+	// the scenery around holds back the sky and the key light (tunnels, bridges, roofs, gfx::sky_occlusion)
+	vec2 skyoccl = sky_occlusion_world(world, vec3(0.0));
+	vec3 light = ambient * (PARTICLE_AMBIENT_SCALE * skyoccl.x);
 	if (lights_count > 0U)
 	{
-		float sunlit = cloud_shadow(world) * (1.0 - particle_sun_shadow(position));
+		float sunlit = cloud_shadow(world) * skyoccl.y * (1.0 - particle_sun_shadow(position));
 		if (sunlit > 0.0)
 			light += lights[0].color * (0.5 * PARTICLE_SUN_SCALE * lights[0].intensity * sunlit * particle_phase(dot(normalize(lights[0].dir), tocamera), forward));
 	}

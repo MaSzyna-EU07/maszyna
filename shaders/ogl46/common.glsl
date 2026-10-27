@@ -109,6 +109,8 @@
 #define SCENE_AO_TEX 26
 #define CAB_PROBE_TEX 27
 #define CAB_PROBE_ALBEDO_TEX 28
+#define SKY_OCCLUSION_HEIGHT_TEX 29
+#define SKY_OCCLUSION_TEX 30
 #define CAB_PROBE_SSBO_BINDING 17
 #define CAB_PROBE_SH_SIZE 16
 #define CAB_PROBE_SH_GROUP_SIZE 64
@@ -329,6 +331,10 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 cab_probe_lamp;
     vec4 cab_probe_lamp_color;
     vec4 cab_probe_lamp_shadow;
+    // the occlusion of the sky and of the sun by the scenery around the camera, see gl::scene_ubs
+    vec4 sky_occlusion_origin;
+    vec4 sky_occlusion_params;
+    vec4 sky_occlusion_center;
 };
 
 #ifdef STAGE_VERTEX

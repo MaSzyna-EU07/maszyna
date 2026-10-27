@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 
 #include "utilities/Globals.h"
+#include "rendering/common/skyocclusion.h"
 #include "utilities/utilities.h"
 #include "scene/scene.h"
 #include "model/AnimModel.h"
@@ -320,7 +321,7 @@ void gfx::local_lights::gather_cab_lamp(gfx::geometrybank_manager const &Geometr
 		return;
 	}
 	// as bright as the ambient light it used to add to the cab: lost in the daylight
-	auto const luminance{Global.fLuminance * (vehicle->fShade > 0.0f ? vehicle->fShade : 1.0f)};
+	auto const luminance{Global.fLuminance * gfx::vehicle_light_level(vehicle)};
 	auto const level{vehicle->InteriorLightLevel * std::clamp(1.25f - static_cast<float>(luminance), 0.f, 1.f)};
 	if (level <= 0.f)
 	{

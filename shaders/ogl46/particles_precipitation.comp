@@ -64,6 +64,8 @@ void main()
 	vec3 walls = abs(world) / (0.5 * size);
 	opacity *= 1.0 - smoothstep(0.7, 1.0, max(max(walls.x, walls.y), walls.z));
 	opacity *= smoothstep(0.15, 0.6, length(world));
+	// none under the roofs, the bridges, in the tunnels
+	opacity *= 1.0 - sky_occlusion_cover(world);
 	if (opacity <= 0.002)
 		return;
 	vec3 tail = -move * timing.y;

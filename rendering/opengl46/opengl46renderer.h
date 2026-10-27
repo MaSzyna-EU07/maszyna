@@ -44,6 +44,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/locallights.h"
 #include "rendering/opengl46/opengl46localshadows.h"
 #include "rendering/opengl46/opengl46cabprobe.h"
+#include "rendering/opengl46/opengl46skyocclusion.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
@@ -783,6 +784,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// the probe of the occupied cab, and the colour mode draws the cab into it with its programs (Render_cab_probe())
 	opengl46_cab_probe m_cabprobe;
 	bool m_cabprobepass = false;
+	// the occlusion of the sky and of the sun by the scenery around the camera (tunnels, bridges, roofs: the track T)
+	opengl46_sky_occlusion m_skyocclusion;
 
     double m_precipitationrotation;
 

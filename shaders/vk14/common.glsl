@@ -65,7 +65,9 @@
 #define CAB_PROBE_TEX 28
 #define CAB_PROBE_ALBEDO_TEX 29
 #define CAB_PROBE_SSBO 30
-#define PASS_BINDING_COUNT 31
+#define SKY_OCCLUSION_HEIGHT_TEX 31
+#define SKY_OCCLUSION_TEX 32
+#define PASS_BINDING_COUNT 33
 #define MATERIAL_TEXTURE_FIRST 0
 #define CL_CLUSTER_UBO 0
 #define CL_AABB_SSBO 1
@@ -296,6 +298,10 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	vec4 cab_probe_lamp;
 	vec4 cab_probe_lamp_color;
 	vec4 cab_probe_lamp_shadow;
+	// the occlusion of the sky and of the sun by the scenery around the camera, see gl::scene_ubs
+	vec4 sky_occlusion_origin;
+	vec4 sky_occlusion_params;
+	vec4 sky_occlusion_center;
 };
 
 #ifndef LAYOUT_COMPUTE

@@ -26,9 +26,22 @@ http://mozilla.org/MPL/2.0/.
 #include "world/TrackSleepers.h"
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
+#include "rendering/common/skyocclusion.h"
 
 namespace gfx
 {
+
+namespace
+{
+
+// the environment of a track the drawing takes into its light: the flag of the track (a tunnel, a canyon) only with
+// Global.gfx_tunnelflags. otherwise the light is the one of the geometry around it (gfx::sky_occlusion)
+TEnvironmentType track_environment(TTrack const *Track)
+{
+	return (Global.gfx_tunnelflags ? Track->eEnvironment : e_flat);
+}
+
+} // namespace
 
 // the top view of the editor shows everything this close to the camera, the corners of the screen included
 float scene_walk::editor_ortho_reach()
@@ -150,13 +163,11 @@ bool scene_walk::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredist
             * ( std::max(
                 0.3,
                 ( Global.fLuminance - Global.Overcast )
-                * ( Dynamic->fShade > 0.0 ?
-                    Dynamic->fShade :
-                    1.0 ) ) ) ) };
+                * gfx::vehicle_light_level( Dynamic ) ) ) ) };
         walk_sunlight(
             std::clamp( (
-                Dynamic->fShade > 0.f ?
-                    Dynamic->fShade :
+                gfx::vehicle_shade( Dynamic ) > 0.f ?
+                    gfx::vehicle_shade( Dynamic ) :
                     1.f )
                 - luminance,
                 0.f, 1.f ) );
@@ -166,7 +177,7 @@ bool scene_walk::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredist
             // renderowanie nieprzezroczystego ładunku
             Render( Dynamic->mdLoad, Dynamic->Material(), Squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
         }
-        walk_sunlight( Dynamic->fShade > 0.f ? Dynamic->fShade : 1.f );
+        walk_sunlight( gfx::vehicle_shade( Dynamic ) > 0.f ? gfx::vehicle_shade( Dynamic ) : 1.f );
     }
     else {
 //        Render_Alpha( Dynamic->mdLowPolyInt, Dynamic->Material(), Squaredistance );
@@ -179,7 +190,7 @@ bool scene_walk::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredist
 
     if( Setup ) {
 
-        if( Dynamic->fShade > 0.0f ) {
+        if( gfx::vehicle_shade( Dynamic ) > 0.0f ) {
             // restore regular light level
             walk_sunlight();
         }
@@ -1659,10 +1670,10 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
 	case rendermode::color:
     case rendermode::reflections:
 	{
-		if (Dynamic->fShade > 0.0f)
+		if (gfx::vehicle_shade(Dynamic) > 0.0f)
 		{
 			// change light level based on light level of the occupied track
-			walk_sunlight(Dynamic->fShade);
+			walk_sunlight(gfx::vehicle_shade(Dynamic));
         }
 
 		// render
@@ -1690,7 +1701,7 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
         Render_coupler_adapter( Dynamic, squaredistance, end::rear );
 
         // post-render cleanup
-		if (Dynamic->fShade > 0.0f)
+		if (gfx::vehicle_shade(Dynamic) > 0.0f)
 		{
 			// restore regular light level
 			walk_sunlight();
@@ -1782,14 +1793,14 @@ bool scene_walk::Render_cab(TDynamicObject const *Dynamic, float const Lightleve
 		case rendermode::color:
 		{
 			// render path specific setup:
-			if (Dynamic->fShade > 0.0f)
+			if (gfx::vehicle_shade(Dynamic) > 0.0f)
 			{
 				// change light level based on light level of the occupied track
-				walk_sunlight(Dynamic->fShade);
+				walk_sunlight(gfx::vehicle_shade(Dynamic));
             }
 
             walk_ambient_save();
-            auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
+            auto const luminance { Global.fLuminance * gfx::vehicle_light_level( Dynamic ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place. with the lamp of the cab among the
                 // lights a share of it is kept for the light which bounces around the cab, unless the probe of the cab gives that light
@@ -2174,11 +2185,11 @@ void scene_walk::Render(scene::basic_cell::path_sequence::const_iterator First, 
 		case rendermode::color:
 		case rendermode::reflections:
 		{
-			if (track->eEnvironment != e_flat)
+			if (track_environment(track) != e_flat)
 			{
 				// track with light level of its own is drawn on its own
 				flush_batch();
-				walk_environment(track->eEnvironment);
+				walk_environment(track_environment(track));
 				walk_material(track->m_blendmaterial1 != null_handle ? track->m_blendmaterial1 : track->m_material1);
 				walk_draw(std::begin(track->Geometry1), std::end(track->Geometry1));
 				// restore default lighting
@@ -2244,10 +2255,10 @@ void scene_walk::Render(scene::basic_cell::path_sequence::const_iterator First, 
 		case rendermode::color:
 		case rendermode::reflections:
 		{
-			if (track->eEnvironment != e_flat)
+			if (track_environment(track) != e_flat)
 			{
 				flush_batch();
-				walk_environment(track->eEnvironment);
+				walk_environment(track_environment(track));
 				walk_material(track->m_blendmaterial2 != null_handle ? track->m_blendmaterial2 : track->m_material2);
 				walk_draw(std::begin(track->Geometry2), std::end(track->Geometry2));
 				// restore default lighting
@@ -2311,10 +2322,10 @@ void scene_walk::Render(scene::basic_cell::path_sequence::const_iterator First, 
 		case rendermode::color:
 		case rendermode::reflections:
 		{
-			if (track->eEnvironment != e_flat)
+			if (track_environment(track) != e_flat)
 			{
 				flush_batch();
-				walk_environment(track->eEnvironment);
+				walk_environment(track_environment(track));
 				walk_material(track->m_blendmaterial3 != null_handle ? track->m_blendmaterial3 : track->SwitchExtension->m_material3);
 				walk_draw(track->SwitchExtension->Geometry3);
 				// restore default lighting
@@ -2373,10 +2384,10 @@ void scene_walk::Render(scene::basic_cell::path_sequence::const_iterator First, 
 				{
 					continue;
 				}
-				if (track->eEnvironment != e_flat)
+				if (track_environment(track) != e_flat)
 				{
 					flush_batch();
-					walk_environment(track->eEnvironment);
+					walk_environment(track_environment(track));
 					walk_material(cuts.first);
 					walk_draw(std::begin(*cuts.second), std::end(*cuts.second));
 					walk_environment();
@@ -2762,10 +2773,10 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
 	::glTranslated(originoffset.x, originoffset.y, originoffset.z);
 	::glMultMatrixd(glm::value_ptr(Dynamic->mMatrix));
 
-	if (Dynamic->fShade > 0.0f)
+	if (gfx::vehicle_shade(Dynamic) > 0.0f)
 	{
 		// change light level based on light level of the occupied track
-		walk_sunlight(Dynamic->fShade);
+		walk_sunlight(gfx::vehicle_shade(Dynamic));
 	}
 
     // render
@@ -2790,7 +2801,7 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
     }
 
 	// post-render cleanup
-	if (Dynamic->fShade > 0.0f)
+	if (gfx::vehicle_shade(Dynamic) > 0.0f)
 	{
 		// restore regular light level
 		walk_sunlight();

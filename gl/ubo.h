@@ -91,6 +91,11 @@ namespace gl
     // the cab and of its albedo. bound directly, like the ones above
     const size_t CAB_PROBE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 15;
     const size_t CAB_PROBE_ALBEDO_TEX = MAX_TEXTURES + HELPER_TEXTURES + 16;
+    // the occlusion of the sky and of the sun by the scenery around the camera (gfx::sky_occlusion, gl::scene_ubs::sky_occlusion_*):
+    // the height of the top of the scenery (R32F) and the shares of the sky and the limits of the key light (RGBA16F), toroidal maps
+    // read texel by texel with textureGather. bound directly, like the ones above
+    const size_t SKY_OCCLUSION_HEIGHT_TEX = MAX_TEXTURES + HELPER_TEXTURES + 17;
+    const size_t SKY_OCCLUSION_TEX = MAX_TEXTURES + HELPER_TEXTURES + 18;
 
     struct scene_ubs
     {
@@ -154,9 +159,18 @@ namespace gl
         glm::vec4 cab_probe_lamp;
         glm::vec4 cab_probe_lamp_color;
         glm::vec4 cab_probe_lamp_shadow;
+        // the occlusion of the sky and of the sun by the scenery around the camera (gfx.skyvisibility, gfx::sky_occlusion), zero when
+        // there are no maps: x, y the world x, z of the camera of the pass wrapped to the size of the maps (the place of the camera on
+        // them), metres; z the world height of the camera; w 1 with the maps, 2 when the volumetric fog reads them too
+        glm::vec4 sky_occlusion_origin;
+        // x the size of the maps, metres, y their texels across, z the distance from the middle of the maps (the larger of the ones
+        // along x and z) the occlusion fades out from, w the distance it fades over
+        glm::vec4 sky_occlusion_params;
+        // xy the middle of the maps (the main camera they follow) less the camera of the pass, world x and z, metres; zw unused
+        glm::vec4 sky_occlusion_center;
     };
 
-    static_assert(sizeof(scene_ubs) == 864 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 912 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 

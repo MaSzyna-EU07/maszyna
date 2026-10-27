@@ -168,6 +168,10 @@ std::string vulkan14_renderer::scene_info()
 	{
 		text += " " + scene.cabprobe.info() + "\n";
 	}
+	if (Global.gfx_skyvisibility > 0)
+	{
+		text += " " + scene.skyocclusion.info() + "\n";
+	}
 	text += cascades + line(" submodels:", colour.submodels, shadowstats.submodels) + line(" paths:    ", colour.paths, shadowstats.paths) +
 	        line(" shapes:   ", colour.shapes, shadowstats.shapes) + " traction: " + to_string(colour.traction, 7) + "\n" + " lines:    " + to_string(colour.lines, 7) + "\n" +
 	        "particles: " + to_string(colour.particles, 7) + "\nlights:    " + to_string(static_cast<int>(m_lights_lit), 7) + " (" + std::to_string(m_lights_dropped) + " over capacity), " +
@@ -332,6 +336,8 @@ void vulkan14_renderer::draw_debug_ui()
 				ImGui::Checkbox("ao in the ambient light, not over the image (gfx.postfx.ao.lighting)", &Global.gfx_postfx_ao_lighting);
 			}
 		}
+		ImGui::Separator();
+		scene.skyocclusion.draw_debug_ui();
 		ImGui::Separator();
 		std::string raytracing;
 		if (m_context->scene.raytracing)

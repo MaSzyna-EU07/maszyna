@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Train.h"
+#include "rendering/common/skyocclusion.h"
 
 namespace gfx
 {
@@ -409,9 +410,7 @@ std::vector<light_array::light_record const *> const &local_shadows::pick_headli
 			if (light.intensity == 0.f)
 				continue;
 			// as in the light buffers: by day the light around takes the beam down to nothing
-			auto luminance{static_cast<float>(Global.fLuminance)};
-			if (light.owner->fShade > 0.f)
-				luminance *= light.owner->fShade;
+			auto const luminance{static_cast<float>(Global.fLuminance) * gfx::vehicle_light_level(light.owner)};
 			auto const beam{light.color - glm::vec3{luminance}};
 			if (std::max(beam.r, std::max(beam.g, beam.b)) <= 0.f)
 				continue;

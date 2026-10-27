@@ -269,6 +269,54 @@ the reflections of the cab.
 | `gfx.cabprobe.bounce` | `1.0` | 0..4: share of the light of the lamp the cab reflects which lights it again |
 | `gfx.cabprobe.reflections yes/no` | `yes` | the cab reflects itself where the screen space reflections find nothing; `no`: the sky, as before |
 
+### Tunnels, bridges and roofs: the occlusion of the sky
+
+The light of the sky and of the sun is held back by the geometry around, not by the environment flags of the tracks
+(`tunnel`, `canyon`): the tracks and the vehicles on them are drawn alike wherever they are, and a tunnel is dark because the
+hill and the vault over it hide the sky. A track with the `tunnel` flag and nothing built over it is lit as in the open; the
+flag stays in the scenery files (the sound in the tunnel, the driver turning the lights on). `gfx.tunnelflags yes` brings the
+old darkening by the flags back.
+
+The scenery around the camera is laid out seen from above, in tiles, in the background (a thread of its own): for each texel
+the height of the highest surface (the top) and of the lowest one facing down (the ceiling: the vault of a tunnel, the deck of a
+bridge seen from below, a roof). Taken are the shapes (the terrain, the heightmap terrain, roads, platforms) and the opaque parts
+of the models at their nearest level of detail; not the vehicles, the tracks, the catenary, nor what is see-through (trees).
+Things narrower than about three texels (poles, masts, fences) are left out. From the heights around, each texel gets:
+- the share of the sky a surface facing up sees above the top, and under the ceiling (light comes in under the vault from the
+  portal, along the tunnel);
+- the heights between which the sun (the moon at night) comes in: above the top what is higher than the shadow of the hills
+  and buildings towards it, under the ceiling what the rays reach under the vault from the portal (a low sun shines a little way
+  into a tunnel).
+
+The shading takes the ambient light, the reflection of the sky and the sun by them, wherever a surface is (the half of a train
+in the tunnel is dark, the other half in the light, with the passage over a few metres at the portal). The headlights, the lamps
+and the light of the cab are direct light and are not held back; the headlights fade in daylight by the light around the
+vehicle, which is read from the same maps, so in a tunnel they light by day as by night. The rain and the snow don't fall under
+the roofs, bridges and in tunnels, and the light of the volumetric fog and of the smoke is held back as well. A tile is laid out
+once, when it comes into the square around the camera, and again only when its scenery changes (the editor, the streamed
+terrain, models shown or hidden by events); the sun is followed every quarter of a degree.
+
+| Level | Square around the camera | Texel | Searched around a texel (sky / sun) |
+|---|---|---|---|
+| `low` (1) | 256 m (at least 96 m on each side) | 1 m | 32 m in 8 directions / 64 m |
+| `medium` (2) | 512 m (at least 192 m) | 1 m | 48 m in 12 directions / 128 m |
+| `high` (3) | 512 m (at least 192 m) | 0.5 m | 64 m in 16 directions / 128 m |
+
+Cost: on the main thread, the triangles of a tile gathered when it comes in (one tile a frame, more at the start), a fraction
+of a millisecond; in the background, a few to some tens of milliseconds per tile, which doesn't hold the frame up. On the GPU,
+two textures (`medium`: 3 MB, `high`: 12 MB) and five texture reads per pixel in the shading. With `no` nothing of it is made
+and the scenery is lit as in the open everywhere.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.skyvisibility` | `medium` | `no`/`low`/`medium`/`high` (or 0..3), see above |
+| `gfx.skyvisibility.sun yes/no` | `yes` | the sun is held back too (beyond the reach of the shadow map, and in the tunnels whatever the shadow map holds); `no`: the sun only by the shadow map |
+| `gfx.skyvisibility.fog yes/no` | `yes` | the light of the volumetric fog is held back too |
+| `gfx.tunnelflags yes/no` | `no` | `yes`: the flags `tunnel`/`canyon` of the tracks darken the tracks and the vehicles on them, as before (on top of the occlusion) |
+
+All of them can be changed while the simulator runs, in the **Sky and exposure** debug window, which also shows views of the
+maps around the camera (the share of the sky above the top and under the ceilings, the sun, the heights).
+
 ### Contact shadows
 
 Short shadows where things touch or nearly touch: the rails on the sleepers, bolts and edges of panels, a wheel on the rail,
