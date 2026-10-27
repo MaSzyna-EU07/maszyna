@@ -60,6 +60,8 @@ class opengl46_exposure
 	opengl_texture *bloom(bloom_chain &Chain, opengl_texture &Image, gl::stream_ubo &Modelubo, gl::model_ubs &Model);
 	// parameters of the tonemapping (postfx_tonemapping.frag), with bloom from a chain of Bloomlevels levels (0: none)
 	glm::vec4 tonemap_params(std::size_t const Bloomlevels) const;
+	// gains of the white balance of the tonemapping (gfx.postfx.whitebalance*), 0 when off
+	glm::vec3 white_balance() const;
 	// lines for the gpu times of the debug panel
 	std::string info_times();
 	// controls of the debug window

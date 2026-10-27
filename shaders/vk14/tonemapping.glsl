@@ -139,6 +139,22 @@ vec3 ApplyAgX(vec3 linearColorRec709)
     return linearColorRec709;
 }
 
+// white balance of the camera (von kries in the bradford cone space). Gains: ratios of the cone responses of the white of
+// the display to those of the light taken as white (gfx::exposure_settings::white_balance())
+vec3 white_balance(vec3 rgb, vec3 gains)
+{
+	// linear rec.709 -> xyz -> bradford, and back
+	const mat3 rgb_to_lms = mat3(
+		0.42272529, 0.05569978, 0.02138264,
+		0.49134532, 0.96153405, 0.08764187,
+		0.02735794, 0.02318381, 0.98050813);
+	const mat3 lms_to_rgb = mat3(
+		2.53804452, -0.14600406, -0.04229851,
+		-1.29327700, 1.11664831, -0.07160722,
+		-0.04023688, -0.02232903, 1.02275269);
+	return lms_to_rgb * (gains * (rgb_to_lms * rgb));
+}
+
 vec4 tonemap(vec4 x)
 {
 	// Use AgX by default. Reinhard and ACES above are kept for reference.

@@ -24,6 +24,51 @@ std::size_t const BLOOM_LEVELS{6};
 int const BLOOM_MIN_SIZE{8};
 // soft knee of the threshold, a fraction of it
 float const BLOOM_KNEE{0.5f};
+// colour temperature of the white the image is balanced to: the white of the display (d65 is the daylight of about 6500 K)
+float const WHITE_BALANCE_REFERENCE{6500.f};
+// distance off the daylight locus (duv, cie 1960 ucs) of the tint at its ends (-1, 1)
+float const WHITE_BALANCE_TINT_DUV{0.02f};
+
+// chromaticity (cie xy) of the cie daylight of the correlated colour temperature Kelvin; the formula holds for 4000..25000 K
+glm::dvec2 daylight_chromaticity(double const Kelvin)
+{
+	auto const t{std::clamp(Kelvin, 4000.0, 25000.0)};
+	auto const x{t <= 7000.0 ? (-4.6070e9 / (t * t * t) + 2.9678e6 / (t * t) + 0.09911e3 / t + 0.244063)
+	                         : (-2.0064e9 / (t * t * t) + 1.9018e6 / (t * t) + 0.24748e3 / t + 0.237040)};
+	return glm::dvec2{x, -3.0 * x * x + 2.87 * x - 0.275};
+}
+
+glm::dvec2 xy_to_uv(glm::dvec2 const &Xy)
+{
+	auto const d{-2.0 * Xy.x + 12.0 * Xy.y + 3.0};
+	return glm::dvec2{4.0 * Xy.x / d, 6.0 * Xy.y / d};
+}
+
+glm::dvec2 uv_to_xy(glm::dvec2 const &Uv)
+{
+	auto const d{2.0 * Uv.x - 8.0 * Uv.y + 4.0};
+	return glm::dvec2{3.0 * Uv.x / d, 2.0 * Uv.y / d};
+}
+
+// cone responses (bradford) of the light of the temperature Kelvin, taken off the daylight locus by Tint: + towards green
+// (v grows), so a positive tint takes the green out of the image and makes it magenta
+glm::dvec3 white_cone_response(double const Kelvin, double const Tint)
+{
+	auto uv{xy_to_uv(daylight_chromaticity(Kelvin))};
+	if (Tint != 0.0)
+	{
+		auto const along{xy_to_uv(daylight_chromaticity(Kelvin + 100.0)) - xy_to_uv(daylight_chromaticity(Kelvin - 100.0))};
+		auto normal{glm::normalize(glm::dvec2{-along.y, along.x})};
+		if (normal.y < 0.0)
+			normal = -normal;
+		uv += normal * (Tint * WHITE_BALANCE_TINT_DUV);
+	}
+	auto const xy{uv_to_xy(uv)};
+	glm::dvec3 const xyz{xy.x / xy.y, 1.0, (1.0 - xy.x - xy.y) / xy.y};
+	return glm::dvec3{0.8951 * xyz.x + 0.2664 * xyz.y - 0.1614 * xyz.z,
+	                  -0.7502 * xyz.x + 1.7135 * xyz.y + 0.0367 * xyz.z,
+	                  0.0389 * xyz.x - 0.0685 * xyz.y + 1.0296 * xyz.z};
+}
 
 } // namespace
 
@@ -77,6 +122,15 @@ glm::vec4 exposure_settings::tonemap_params(std::size_t const Bloomlevels)
 	return glm::vec4{bloom, Global.gfx_postfx_autoexposure ? 1.f : 0.f, std::exp2(Global.gfx_postfx_autoexposure_compensation), Bloomlevels > 0 ? 1.f / static_cast<float>(Bloomlevels) : 0.f};
 }
 
+glm::vec3 exposure_settings::white_balance()
+{
+	if (!Global.gfx_postfx_whitebalance)
+		return glm::vec3{0.f};
+	// von kries: the light of the set temperature becomes the white of the display; the luminance of grey stays
+	auto const gains{white_cone_response(WHITE_BALANCE_REFERENCE, 0.0) / white_cone_response(Global.gfx_postfx_whitebalance_temperature, Global.gfx_postfx_whitebalance_tint)};
+	return glm::vec3{gains};
+}
+
 void exposure_settings::draw_debug_ui(float const *Readback)
 {
 	ImGui::Checkbox("automatic exposure (gfx.postfx.autoexposure)", &Global.gfx_postfx_autoexposure);
@@ -90,6 +144,9 @@ void exposure_settings::draw_debug_ui(float const *Readback)
 	ImGui::Checkbox("bloom (gfx.postfx.bloom)", &Global.gfx_postfx_bloom);
 	ImGui::SliderFloat("bloom intensity", &Global.gfx_postfx_bloom_intensity, 0.f, 0.5f);
 	ImGui::SliderFloat("bloom threshold", &Global.gfx_postfx_bloom_threshold, 0.f, 10.f);
+	ImGui::Checkbox("white balance (gfx.postfx.whitebalance)", &Global.gfx_postfx_whitebalance);
+	ImGui::SliderFloat("temperature K, 6500 = none, more = warmer", &Global.gfx_postfx_whitebalance_temperature, 4000.f, 12000.f, "%.0f");
+	ImGui::SliderFloat("tint, + magenta, - green", &Global.gfx_postfx_whitebalance_tint, -1.f, 1.f, "%.2f");
 }
 
 } // namespace gfx

@@ -76,6 +76,9 @@ existed.
 | `gfx.postfx.bloom yes/no` | `yes` | glow around bright parts of the image |
 | `gfx.postfx.bloom.intensity` | `0.04` | share of the glow in the image |
 | `gfx.postfx.bloom.threshold` | `0.0` | luminance below which nothing glows; 0 = everything contributes a little (physically based) |
+| `gfx.postfx.whitebalance yes/no` | `yes` | white balance of the camera, applied to the image before the tonemapping (chromatic adaptation in the Bradford cone space) |
+| `gfx.postfx.whitebalance.temperature` | `7500` | 4000..25000 K: colour temperature of the light the camera takes as white. 6500 = no change; more makes the image warmer, less makes it cooler (as in a camera or a photo editor) |
+| `gfx.postfx.whitebalance.tint` | `0.0` | -1..1: shift off the daylight colours; + makes the image more magenta, - more green |
 
 The automatic exposure and the bloom need the post processing pipeline (`gfx.skippipeline no`, the default).
 Model previews of the editor use none of these.

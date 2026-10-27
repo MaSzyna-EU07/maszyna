@@ -37,6 +37,8 @@ struct exposure_settings
 	static glm::vec4 bloom_params(std::size_t const Level);
 	// parameters of the tonemapping (postfx_tonemapping.frag), with bloom from a chain of Bloomlevels levels (0: none)
 	static glm::vec4 tonemap_params(std::size_t const Bloomlevels);
+	// white balance of the tonemapping (gfx.postfx.whitebalance*): gains of the cone responses (bradford), 0 when off
+	static glm::vec3 white_balance();
 	// controls of the debug window; Readback: the adapted luminance, the exposure and the average luminance the gpu worked out
 	static void draw_debug_ui(float const *Readback);
 };

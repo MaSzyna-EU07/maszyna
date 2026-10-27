@@ -3544,7 +3544,7 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 	vk14::draw_constants tonemap;
 	tonemap.data[0] = gfx::exposure_settings::tonemap_params(bloom != nullptr ? targets.bloom_sizes.size() : 0);
 	// the dither goes to the last pass before the window: the chromatic aberration, when it follows
-	tonemap.data[1] = glm::vec4{targets.aberration ? 0.f : 1.f, 0.f, 0.f, 0.f};
+	tonemap.data[1] = glm::vec4{targets.aberration ? 0.f : 1.f, gfx::exposure_settings::white_balance()};
 	std::vector<vk14::image *> const tonemapinput{hdr, (bloom != nullptr ? bloom : hdr)};
 	if (targets.aberration && targets.tonemapped)
 	{

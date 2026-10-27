@@ -132,6 +132,11 @@ glm::vec4 opengl46_exposure::tonemap_params(std::size_t const Bloomlevels) const
 	return gfx::exposure_settings::tonemap_params(Bloomlevels);
 }
 
+glm::vec3 opengl46_exposure::white_balance() const
+{
+	return gfx::exposure_settings::white_balance();
+}
+
 std::string opengl46_exposure::info_times()
 {
 	std::string text;

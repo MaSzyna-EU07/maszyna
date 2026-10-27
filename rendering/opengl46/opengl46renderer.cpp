@@ -2055,7 +2055,7 @@ if (!Global.gfx_skippipeline)
 			}
 			model_ubs.param[0] = m_exposure.tonemap_params(bloomlevels);
 			// the dither goes to the last pass before the window: the chromatic aberration, when it follows
-			model_ubs.param[1] = glm::vec4{Global.gfx_postfx_chromaticaberration_enabled ? 0.f : 1.f, 0.f, 0.f, 0.f};
+			model_ubs.param[1] = glm::vec4{Global.gfx_postfx_chromaticaberration_enabled ? 0.f : 1.f, m_exposure.white_balance()};
 			model_ubo->update(model_ubs);
 			std::vector<opengl_texture *> tonemapinput{vp.main2_tex.get()};
 			if (bloomtexture != nullptr)
@@ -5864,8 +5864,9 @@ bool opengl46_renderer::Render_Preview(TAnimModel *Instance, int const Size, int
 	glViewport(0, 0, targetsize, targetsize);
 	if (!Global.gfx_shadergamma)
 		glEnable(GL_FRAMEBUFFER_SRGB);
-	// no bloom, no automatic exposure
+	// no bloom, no automatic exposure, no white balance
 	model_ubs.param[0] = glm::vec4{0.f, 0.f, 1.f, 0.f};
+	model_ubs.param[1].y = 0.f;
 	model_ubo->update(model_ubs);
 	m_pfx_tonemapping->apply(*m_preview.hdr_tex, m_preview.ldr_fb.get());
 	if (!Global.gfx_shadergamma)

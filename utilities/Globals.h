@@ -461,6 +461,9 @@ struct global_settings {
     bool gfx_postfx_bloom { true }; // glow around bright parts of the image
     float gfx_postfx_bloom_intensity { 0.04f }; // share of the blurred image in the result
     float gfx_postfx_bloom_threshold { 0.f }; // luminance below which nothing glows, 0 = everything contributes
+    bool gfx_postfx_whitebalance { true }; // white balance of the camera, applied to the image before the tonemapping
+    float gfx_postfx_whitebalance_temperature { 7500.f }; // colour temperature of the light taken as white, K; 6500 = none, more = warmer image
+    float gfx_postfx_whitebalance_tint { 0.f }; // -1..1, shift off the daylight locus: + magenta image, - green image
     // screen space ambient occlusion of the opengl 4.6 renderer, applied to the image (debug window "Sky and exposure").
     // 0 off, 1 the older ssao, 2 ground truth ambient occlusion; when 0 at the start the targets are not made at all
     int gfx_postfx_ao { 2 };
@@ -617,7 +620,7 @@ struct global_settings {
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
-	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.ao*)
+	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.whitebalance*, gfx.postfx.ao*)
 	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void

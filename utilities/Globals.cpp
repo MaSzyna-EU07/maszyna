@@ -1875,6 +1875,9 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.postfx.bloom" ) { readswitch( gfx_postfx_bloom ); }
     else if( Token == "gfx.postfx.bloom.intensity" ) { readvalue( gfx_postfx_bloom_intensity, 0.f, 1.f ); }
     else if( Token == "gfx.postfx.bloom.threshold" ) { readvalue( gfx_postfx_bloom_threshold, 0.f, 1000.f ); }
+    else if( Token == "gfx.postfx.whitebalance" ) { readswitch( gfx_postfx_whitebalance ); }
+    else if( Token == "gfx.postfx.whitebalance.temperature" ) { readvalue( gfx_postfx_whitebalance_temperature, 4000.f, 25000.f ); }
+    else if( Token == "gfx.postfx.whitebalance.tint" ) { readvalue( gfx_postfx_whitebalance_tint, -1.f, 1.f ); }
     else if( Token == "gfx.postfx.ao" ) {
         // yes/gtao: ground truth ambient occlusion, ssao: the older one, anything else: off
         Parser.getTokens( 1 );
@@ -2353,6 +2356,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.bloom", gfx_postfx_bloom );
     export_as_text( Output, "gfx.postfx.bloom.intensity", gfx_postfx_bloom_intensity );
     export_as_text( Output, "gfx.postfx.bloom.threshold", gfx_postfx_bloom_threshold );
+    export_as_text( Output, "gfx.postfx.whitebalance", gfx_postfx_whitebalance );
+    export_as_text( Output, "gfx.postfx.whitebalance.temperature", gfx_postfx_whitebalance_temperature );
+    export_as_text( Output, "gfx.postfx.whitebalance.tint", gfx_postfx_whitebalance_tint );
     export_as_text( Output, "gfx.postfx.ao", std::string{ gfx_postfx_ao == 2 ? "gtao" : gfx_postfx_ao == 1 ? "ssao" : "no" } );
     export_as_text( Output, "gfx.postfx.ao.radius", gfx_postfx_ao_radius );
     export_as_text( Output, "gfx.postfx.ao.strength", gfx_postfx_ao_strength );
