@@ -282,8 +282,9 @@ the height of the highest surface (the top) and of the lowest one facing down (t
 bridge seen from below, a roof). Taken are the shapes (the terrain, the heightmap terrain, roads, platforms) and the opaque parts
 of the models at their nearest level of detail; not the vehicles, the tracks, the catenary, nor what is see-through (trees).
 Things narrower than about three texels (poles, masts, fences) are left out. From the heights around, each texel gets:
-- the share of the sky a surface facing up sees above the top, and under the ceiling (light comes in under the vault from the
-  portal, along the tunnel);
+- the share of the sky seen above the top, and under the ceiling: near it and a metre above the ground around (the ground under
+  a high viaduct sees much of the sky on its sides, the vault of a tunnel lets light in only along the tunnel from the portal); a
+  point under the ceiling gets a blend of the two by its height;
 - the heights between which the sun (the moon at night) comes in: above the top what is higher than the shadow of the hills
   and buildings towards it, under the ceiling what the rays reach under the vault from the portal (a low sun shines a little way
   into a tunnel).
@@ -304,7 +305,7 @@ terrain, models shown or hidden by events); the sun is followed every quarter of
 
 Cost: on the main thread, the triangles of a tile gathered when it comes in (one tile a frame, more at the start), a fraction
 of a millisecond; in the background, a few to some tens of milliseconds per tile, which doesn't hold the frame up. On the GPU,
-two textures (`medium`: 3 MB, `high`: 12 MB) and five texture reads per pixel in the shading. With `no` nothing of it is made
+two textures (`medium`: 6 MB, `high`: 24 MB) and eight texture gathers per pixel in the shading. With `no` nothing of it is made
 and the scenery is lit as in the open everywhere.
 
 | Entry | Default | Meaning |

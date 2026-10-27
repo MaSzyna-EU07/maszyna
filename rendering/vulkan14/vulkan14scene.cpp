@@ -684,7 +684,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			}
 			return true;
 		};
-		if ((false == standin(scene.skyocclusion_heights_empty, VK_FORMAT_R32_SFLOAT, "empty sky occlusion heights")) || (false == standin(scene.skyocclusion_empty, VK_FORMAT_R16G16B16A16_SFLOAT, "empty sky occlusion")))
+		if ((false == standin(scene.skyocclusion_heights_empty, VK_FORMAT_R32G32B32A32_SFLOAT, "empty sky occlusion heights")) || (false == standin(scene.skyocclusion_empty, VK_FORMAT_R16G16B16A16_SFLOAT, "empty sky occlusion")))
 		{
 			Reason = "no stand-ins of the maps of the occlusion of the sky";
 			return false;

@@ -117,11 +117,13 @@ class sky_occlusion
 	void draw_debug_ui();
 
   protected:
-	// the textures of Side x Side texels: the height of the top (one 32 bit float per texel) and the occlusion (four 16 bit floats);
-	// false when they can't be made
+	// the textures of Side x Side texels: the heights (four 32 bit floats per texel: the top, the ceiling, the height below which the
+	// key light comes in under the ceiling, the height the deep share of the sky under the ceiling is worked out at) and the occlusion
+	// (four 16 bit floats: the share of the sky above the top, under the ceiling near it and deep, the height above the top over which
+	// the key light comes); false when they can't be made
 	virtual bool gpu_allocate(int const Side) = 0;
 	virtual void gpu_release() = 0;
-	// copies a square of Size x Size texels at X, Y of the textures: Heights one float per texel, Occlusion four halves per texel,
+	// copies a square of Size x Size texels at X, Y of the textures: Heights four floats per texel, Occlusion four halves per texel,
 	// rows along x, one after another along z
 	virtual void gpu_upload(int const X, int const Y, int const Size, float const *Heights, std::uint16_t const *Occlusion) = 0;
 
@@ -141,7 +143,7 @@ class sky_occlusion
 		std::uint32_t generation{0};
 		std::vector<triangle> triangles;
 	};
-	// what it gives back: the top and the occlusion of the texels of a tile
+	// what it gives back: the heights (four per texel) and the occlusion of the texels of a tile
 	struct tile_result
 	{
 		int slot{0};
@@ -193,11 +195,11 @@ class sky_occlusion
 	glm::ivec2 m_cameratile{0};
 	glm::dvec3 m_camera{0.0};
 	glm::vec3 m_keylight{0.f, 1.f, 0.f}; // the direction the thread was given last
-	// the copy of the maps the cpu samples (sample()): the top, and the occlusion as floats
-	std::vector<float> m_heights;
+	// the copy of the maps the cpu samples (sample()): the heights, and the occlusion as floats
+	std::vector<glm::vec4> m_heights;
 	std::vector<glm::vec4> m_occlusion;
 	// neutral tiles, uploaded when a tile comes into the square
-	std::vector<float> m_neutralheights;
+	std::vector<glm::vec4> m_neutralheights;
 	std::vector<std::uint16_t> m_neutralocclusion;
 	std::size_t m_checkslot{0}; // the slot whose signature is checked next
 	scene::basic_region const *m_region{nullptr};

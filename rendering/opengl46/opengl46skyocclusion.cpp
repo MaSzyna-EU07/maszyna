@@ -42,11 +42,11 @@ opengl46_sky_occlusion::~opengl46_sky_occlusion()
 void opengl46_sky_occlusion::init()
 {
 	// a sampler with no texture to read from is undefined, also where the shading doesn't read it
-	m_emptyheights = make_map(GL_R32F, 1);
-	float const none{-1.0e4f};
-	glClearTexImage(m_emptyheights, 0, GL_RED, GL_FLOAT, &none);
+	m_emptyheights = make_map(GL_RGBA32F, 1);
+	float const none[4]{-1.0e4f, 1.0e4f, 1.0e4f, -1.0e4f};
+	glClearTexImage(m_emptyheights, 0, GL_RGBA, GL_FLOAT, none);
 	m_emptyocclusion = make_map(GL_RGBA16F, 1);
-	float const open[4]{1.f, 1.f, -1000.f, 1000.f};
+	float const open[4]{1.f, 1.f, 1.f, -1000.f};
 	glClearTexImage(m_emptyocclusion, 0, GL_RGBA, GL_FLOAT, open);
 	bind();
 }
@@ -60,7 +60,7 @@ void opengl46_sky_occlusion::bind() const
 bool opengl46_sky_occlusion::gpu_allocate(int const Side)
 {
 	gpu_release();
-	m_heights = make_map(GL_R32F, Side);
+	m_heights = make_map(GL_RGBA32F, Side);
 	m_occlusion = make_map(GL_RGBA16F, Side);
 	if ((m_heights == 0) || (m_occlusion == 0))
 		return false;
@@ -90,7 +90,7 @@ void opengl46_sky_occlusion::gpu_upload(int const X, int const Y, int const Size
 	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-	glTextureSubImage2D(m_heights, 0, X, Y, Size, Size, GL_RED, GL_FLOAT, Heights);
+	glTextureSubImage2D(m_heights, 0, X, Y, Size, Size, GL_RGBA, GL_FLOAT, Heights);
 	glTextureSubImage2D(m_occlusion, 0, X, Y, Size, Size, GL_RGBA, GL_HALF_FLOAT, Occlusion);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpack));
 	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);

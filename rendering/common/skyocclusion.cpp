@@ -39,14 +39,20 @@ bool has_ceiling(float const Ceiling)
 {
 	return Ceiling < 0.5f * NONE_CEILING;
 }
-// the limits of the heights between which the key light is let through, relative to the top: lit always, never
+// the height above the top over which the key light comes, relative to the top: lit always, never
 float const LIT_ABOVE_ALWAYS{-1000.f};
-float const LIT_BELOW_ALWAYS{1000.f};
-float const LIT_NEVER_BELOW{-1000.f};
+float const LIT_ABOVE_NEVER{1000.f};
+// the height under the ceiling below which the key light comes in, world space: lit always, never
+float const LIT_BELOW_ALWAYS{1.0e4f};
+float const LIT_NEVER_BELOW{-1.0e4f};
 // how high above the top the share of the sky above it is worked out (a surface on the ground isn't held back by the slope it's on),
-// and how far below the ceiling the share under it (the middle of the height under a vault of a tunnel or a deck of a bridge)
+// and how far below the ceiling the share under it is worked out near the ceiling; the other share under it is worked out a metre
+// above the ground around (the ground under a viaduct sees the sky on the sides much more than a point right under the deck), at
+// most this far below the ceiling
 float const ABOVE_TOP{1.f};
 float const BELOW_CEILING{2.5f};
+float const DEEP_BELOW_CEILING_MAX{30.f};
+float const DEEP_BELOW_CEILING_UNKNOWN{6.f};
 // a fragment this far below the top of its texel is under it, fully this much further. as in light_common.glsl, sky_occlusion()
 float const COVER_START{0.75f};
 float const COVER_SPAN{1.f};
@@ -81,16 +87,22 @@ std::uint64_t hash_mix_double(std::uint64_t Hash, double const Value)
 	return hash_mix(Hash, bits);
 }
 
-// the share of the sky of an elevation band, weighed by the cosine on a surface facing up, from the tangents of its ends
+// the share of the sky of an elevation band, from the tangents of its ends: the share of the solid angle of the hemisphere, not
+// weighed by the cosine (the ambient light lights the surfaces facing every way, the low sky lights the walls and the sides of what
+// stands under a roof)
 float sky_share(float const Tangent)
 {
 	if (Tangent <= 0.f)
 		return 0.f;
 	if (Tangent >= 1.0e6f)
 		return 1.f;
-	auto const squared{Tangent * Tangent};
-	return squared / (1.f + squared);
+	return Tangent / std::sqrt(1.f + Tangent * Tangent);
 }
+
+// the values of a texel nothing is known of or which holds nothing: the heights (no top, no ceiling, the key light under the ceiling
+// always, the deep share under it at no height) and the occlusion (the whole sky, the key light always)
+glm::vec4 const NEUTRAL_HEIGHTS{NONE_TOP, NONE_CEILING, LIT_BELOW_ALWAYS, NONE_TOP};
+glm::vec4 const NEUTRAL_OCCLUSION{1.f, 1.f, 1.f, LIT_ABOVE_ALWAYS};
 
 float smoothstep(float const Edge0, float const Edge1, float const Value)
 {
@@ -98,14 +110,24 @@ float smoothstep(float const Edge0, float const Edge1, float const Value)
 	return t * t * (3.f - 2.f * t);
 }
 
-// the occlusion of a point at Height, over a texel of the given top and occlusion values: the share of the sky and of the key
-// light. the same as light_common.glsl, sky_occlusion_texel()
-glm::vec2 texel_occlusion(float const Top, glm::vec4 const &Occlusion, float const Height)
+// the occlusion of a point at Height, over a texel of the given heights (the top, the ceiling, the limit of the key light under the
+// ceiling, the height of the deep share under it) and occlusion values (the share above the top, under the ceiling near it and deep,
+// the limit of the key light above the top): the share of the sky and of the key light. the same as sky_occlusion.glsl
+glm::vec2 texel_occlusion(glm::vec4 const &Heights, glm::vec4 const &Occlusion, float const Height)
 {
-	auto const cover{std::clamp((Top - Height - COVER_START) / COVER_SPAN, 0.f, 1.f)};
-	auto const sky{Occlusion.x + (Occlusion.y - Occlusion.x) * cover};
-	auto const suntop{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, Height - (Top + Occlusion.z))};
-	auto const sununder{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, (Top + Occlusion.w) - Height)};
+	auto const top{Heights.x};
+	auto const ceiling{Heights.y};
+	auto const cover{std::clamp((top - Height - COVER_START) / COVER_SPAN, 0.f, 1.f)};
+	auto under{0.f};
+	if (has_ceiling(ceiling))
+	{
+		auto const nearheight{ceiling - BELOW_CEILING};
+		auto const t{std::clamp((Height - Heights.w) / std::max(nearheight - Heights.w, 1e-3f), 0.f, 1.f)};
+		under = Occlusion.z + (Occlusion.y - Occlusion.z) * t;
+	}
+	auto const sky{Occlusion.x + (under - Occlusion.x) * cover};
+	auto const suntop{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, Height - (top + Occlusion.w))};
+	auto const sununder{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, Heights.z - Height)};
 	return {sky, suntop + (sununder - suntop) * cover};
 }
 
@@ -217,21 +239,19 @@ void sky_occlusion::start(int const Level)
 	auto const count{static_cast<std::size_t>(m_layout.tiles * m_layout.tiles)};
 	m_slots.assign(count, slot{});
 	auto const texels{static_cast<std::size_t>(side) * side};
-	m_heights.assign(texels, NONE_TOP);
-	m_occlusion.assign(texels, glm::vec4{1.f, 1.f, LIT_ABOVE_ALWAYS, LIT_BELOW_ALWAYS});
+	m_heights.assign(texels, NEUTRAL_HEIGHTS);
+	m_occlusion.assign(texels, NEUTRAL_OCCLUSION);
 	auto const tiletexels{static_cast<std::size_t>(m_layout.tile_texels) * m_layout.tile_texels};
-	m_neutralheights.assign(tiletexels, NONE_TOP);
+	m_neutralheights.assign(tiletexels, NEUTRAL_HEIGHTS);
 	m_neutralocclusion.resize(tiletexels * 4);
 	for (std::size_t i = 0; i < tiletexels; ++i)
 	{
-		m_neutralocclusion[i * 4 + 0] = glm::packHalf1x16(1.f);
-		m_neutralocclusion[i * 4 + 1] = glm::packHalf1x16(1.f);
-		m_neutralocclusion[i * 4 + 2] = glm::packHalf1x16(LIT_ABOVE_ALWAYS);
-		m_neutralocclusion[i * 4 + 3] = glm::packHalf1x16(LIT_BELOW_ALWAYS);
+		for (int c = 0; c < 4; ++c)
+			m_neutralocclusion[i * 4 + c] = glm::packHalf1x16(NEUTRAL_OCCLUSION[c]);
 	}
 	for (int index = 0; index < static_cast<int>(count); ++index)
 	{
-		gpu_upload((index % m_layout.tiles) * m_layout.tile_texels, (index / m_layout.tiles) * m_layout.tile_texels, m_layout.tile_texels, m_neutralheights.data(), m_neutralocclusion.data());
+		gpu_upload((index % m_layout.tiles) * m_layout.tile_texels, (index / m_layout.tiles) * m_layout.tile_texels, m_layout.tile_texels, glm::value_ptr(m_neutralheights.front()), m_neutralocclusion.data());
 	}
 	m_rawtop.assign(texels, NONE_TOP);
 	m_rawceiling.assign(texels, NONE_CEILING);
@@ -305,10 +325,10 @@ void sky_occlusion::neutral(int const Slot)
 	for (int z = 0; z < px; ++z)
 	{
 		auto const row{static_cast<std::size_t>(z0 + z) * m_side + x0};
-		std::fill_n(m_heights.begin() + row, px, NONE_TOP);
-		std::fill_n(m_occlusion.begin() + row, px, glm::vec4{1.f, 1.f, LIT_ABOVE_ALWAYS, LIT_BELOW_ALWAYS});
+		std::fill_n(m_heights.begin() + row, px, NEUTRAL_HEIGHTS);
+		std::fill_n(m_occlusion.begin() + row, px, NEUTRAL_OCCLUSION);
 	}
-	gpu_upload(x0, z0, px, m_neutralheights.data(), m_neutralocclusion.data());
+	gpu_upload(x0, z0, px, glm::value_ptr(m_neutralheights.front()), m_neutralocclusion.data());
 	++m_uploaded;
 }
 
@@ -327,7 +347,7 @@ void sky_occlusion::apply(tile_result &Result)
 		for (int x = 0; x < px; ++x)
 		{
 			auto const source{static_cast<std::size_t>(z) * px + x};
-			m_heights[row + x] = Result.heights[source];
+			m_heights[row + x] = glm::vec4{Result.heights[source * 4 + 0], Result.heights[source * 4 + 1], Result.heights[source * 4 + 2], Result.heights[source * 4 + 3]};
 			m_occlusion[row + x] = glm::vec4{glm::unpackHalf1x16(Result.occlusion[source * 4 + 0]), glm::unpackHalf1x16(Result.occlusion[source * 4 + 1]),
 			                                 glm::unpackHalf1x16(Result.occlusion[source * 4 + 2]), glm::unpackHalf1x16(Result.occlusion[source * 4 + 3])};
 		}
@@ -1077,8 +1097,9 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 	auto const rise{overhead ? 1e6f : keylight.y / across};
 
 	// the share of the sky seen from the height Origin over a texel, the search around it. a ceiling above the origin lets the sky
-	// through below its underside, what has none blocks it from the horizon up to its top
-	auto const sky = [&](int const X, int const Z, float const Origin) {
+	// through below its underside, what has none blocks it from the horizon up to its top. Ground, when given, gets the lowest top
+	// without a ceiling met below the origin (the ground around what stands over the texel), or keeps its value when there's none
+	auto const sky = [&](int const X, int const Z, float const Origin, float *Ground) {
 		float sum{0.f};
 		for (auto const &direction : directions)
 		{
@@ -1095,7 +1116,9 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 					high = std::min(high, (c - Origin) / distance);
 				else if (t > Origin)
 					low = std::max(low, (t - Origin) / distance);
-				if (low >= high)
+				else if ((Ground != nullptr) && has_top(t) && (false == has_ceiling(c)))
+					*Ground = std::min(*Ground, t);
+				if ((low >= high) && (Ground == nullptr))
 					break;
 			}
 			sum += std::max(0.f, sky_share(high) - sky_share(low));
@@ -1103,7 +1126,7 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 		return sum / static_cast<float>(directions.size());
 	};
 
-	Result.heights.resize(static_cast<std::size_t>(px) * px);
+	Result.heights.resize(static_cast<std::size_t>(px) * px * 4);
 	Result.occlusion.resize(static_cast<std::size_t>(px) * px * 4);
 	for (int z = 0; z < px; ++z)
 	{
@@ -1112,18 +1135,22 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 			auto const index{at(x, z)};
 			auto const t0{top[index]};
 			auto const c0{ceiling[index]};
-			glm::vec4 value{1.f, 1.f, LIT_ABOVE_ALWAYS, LIT_BELOW_ALWAYS};
+			auto heights{NEUTRAL_HEIGHTS};
+			auto value{NEUTRAL_OCCLUSION};
 			if (has_top(t0))
 			{
+				heights.x = t0;
 				auto const origin{t0 + ABOVE_TOP};
-				value.x = sky(x, z, origin);
-				// under a top with no ceiling is the inside of what is solid (a hill, a wall seen edge on): no sky, no sun
+				value.x = sky(x, z, origin, nullptr);
+				// under a top with no ceiling is the inside of what is solid (a hill, a wall seen edge on): no sky, no key light
 				value.y = 0.f;
+				value.z = 0.f;
+				heights.z = (sun ? LIT_NEVER_BELOW : LIT_BELOW_ALWAYS);
 				// the key light above the top: the height above which the rays towards it pass over all
 				if (false == sun)
-					value.z = LIT_ABOVE_ALWAYS;
+					value.w = LIT_ABOVE_ALWAYS;
 				else if (false == keyup)
-					value.z = LIT_BELOW_ALWAYS;
+					value.w = LIT_ABOVE_NEVER;
 				else if (false == overhead)
 				{
 					auto shadow{NONE_TOP};
@@ -1138,19 +1165,25 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 							continue;
 						shadow = std::max(shadow, top[sample] - drop);
 					}
-					value.z = has_top(shadow) ? std::clamp(shadow - t0, LIT_ABOVE_ALWAYS, LIT_BELOW_ALWAYS) : LIT_ABOVE_ALWAYS;
+					value.w = has_top(shadow) ? std::clamp(shadow - t0, LIT_ABOVE_ALWAYS, LIT_ABOVE_NEVER) : LIT_ABOVE_ALWAYS;
 				}
 				else
-					value.z = LIT_ABOVE_ALWAYS;
+					value.w = LIT_ABOVE_ALWAYS;
 				if (has_ceiling(c0))
 				{
-					// under the ceiling
+					// under the ceiling: the share near it, and the one a metre above the ground around (the deeper the space under the
+					// ceiling, the more of the sky its bottom sees on the sides), which the shading blends by the height of the point
+					heights.y = c0;
 					auto const under{c0 - BELOW_CEILING};
-					value.y = sky(x, z, under);
+					auto ground{std::numeric_limits<float>::max()};
+					value.y = sky(x, z, under, &ground);
+					auto const deep{ground < c0 ? std::clamp(ground + 1.f, c0 - DEEP_BELOW_CEILING_MAX, under) : c0 - DEEP_BELOW_CEILING_UNKNOWN};
+					heights.w = deep;
+					value.z = (deep < under - 0.25f) ? sky(x, z, deep, nullptr) : value.y;
 					if (false == sun)
-						value.w = LIT_BELOW_ALWAYS;
+						heights.z = LIT_BELOW_ALWAYS;
 					else if (false == keyup)
-						value.w = LIT_NEVER_BELOW;
+						heights.z = LIT_NEVER_BELOW;
 					else
 					{
 						// the height below which the rays towards the key light pass under the ceilings, out to the open
@@ -1176,18 +1209,16 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 							}
 						}
 						// the rays which don't come out within the reach stay in the tunnel
-						value.w = (out && has_top(limit)) ? std::clamp(limit - t0, LIT_NEVER_BELOW, LIT_BELOW_ALWAYS) : LIT_NEVER_BELOW;
+						heights.z = (out && has_top(limit)) ? limit : LIT_NEVER_BELOW;
 					}
 				}
-				else
-					value.w = (sun ? LIT_NEVER_BELOW : LIT_BELOW_ALWAYS);
 			}
 			auto const target{static_cast<std::size_t>(z) * px + x};
-			Result.heights[target] = t0;
-			Result.occlusion[target * 4 + 0] = glm::packHalf1x16(value.x);
-			Result.occlusion[target * 4 + 1] = glm::packHalf1x16(value.y);
-			Result.occlusion[target * 4 + 2] = glm::packHalf1x16(value.z);
-			Result.occlusion[target * 4 + 3] = glm::packHalf1x16(value.w);
+			for (int c = 0; c < 4; ++c)
+			{
+				Result.heights[target * 4 + c] = heights[c];
+				Result.occlusion[target * 4 + c] = glm::packHalf1x16(value[c]);
+			}
 		}
 	}
 }
@@ -1250,7 +1281,8 @@ void sky_occlusion::draw_debug_ui()
 			auto const x{wrap(static_cast<int>(std::floor(wx / texel)), m_side)};
 			auto const z{wrap(static_cast<int>(std::floor(wz / texel)), m_side)};
 			auto const index{static_cast<std::size_t>(z) * m_side + x};
-			auto const top{m_heights[index]};
+			auto const &heights{m_heights[index]};
+			auto const top{heights.x};
 			auto const &occlusion{m_occlusion[index]};
 			float value{0.f};
 			switch (m_previewmode)
@@ -1259,10 +1291,11 @@ void sky_occlusion::draw_debug_ui()
 				value = occlusion.x;
 				break;
 			case 2:
-				value = occlusion.y;
+				// near the ground under them
+				value = occlusion.z;
 				break;
 			case 3:
-				value = texel_occlusion(top, occlusion, top + 0.1f).y;
+				value = texel_occlusion(heights, occlusion, top + 0.1f).y;
 				break;
 			default:
 				value = has_top(top) ? std::clamp(0.5f + static_cast<float>(top - camera.y) / 40.f, 0.f, 1.f) : 0.f;

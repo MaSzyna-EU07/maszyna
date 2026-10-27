@@ -92,8 +92,9 @@ namespace gl
     const size_t CAB_PROBE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 15;
     const size_t CAB_PROBE_ALBEDO_TEX = MAX_TEXTURES + HELPER_TEXTURES + 16;
     // the occlusion of the sky and of the sun by the scenery around the camera (gfx::sky_occlusion, gl::scene_ubs::sky_occlusion_*):
-    // the height of the top of the scenery (R32F) and the shares of the sky and the limits of the key light (RGBA16F), toroidal maps
-    // read texel by texel with textureGather. bound directly, like the ones above
+    // the heights of the scenery (RGBA32F: the top, the ceiling, the limit of the key light under it, the height of the deep share of
+    // the sky under it) and the shares of the sky and the limit of the key light above the top (RGBA16F), toroidal maps read texel by
+    // texel with textureGather. bound directly, like the ones above
     const size_t SKY_OCCLUSION_HEIGHT_TEX = MAX_TEXTURES + HELPER_TEXTURES + 17;
     const size_t SKY_OCCLUSION_TEX = MAX_TEXTURES + HELPER_TEXTURES + 18;
 

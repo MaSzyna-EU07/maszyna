@@ -63,7 +63,7 @@ bool sky_occlusion_maps::gpu_allocate(int const Side)
 		}
 		return true;
 	};
-	if ((false == make(m_heights, VK_FORMAT_R32_SFLOAT, "sky occlusion heights")) || (false == make(m_occlusion, VK_FORMAT_R16G16B16A16_SFLOAT, "sky occlusion")))
+	if ((false == make(m_heights, VK_FORMAT_R32G32B32A32_SFLOAT, "sky occlusion heights")) || (false == make(m_occlusion, VK_FORMAT_R16G16B16A16_SFLOAT, "sky occlusion")))
 	{
 		let_go();
 		return false;
@@ -99,9 +99,9 @@ void sky_occlusion_maps::gpu_upload(int const X, int const Y, int const Size, fl
 	}
 	auto const texels{static_cast<std::size_t>(Size) * Size};
 	auto const offset{m_data.size()};
-	m_data.resize(offset + texels * (sizeof(float) + 4 * sizeof(std::uint16_t)));
-	std::memcpy(m_data.data() + offset, Heights, texels * sizeof(float));
-	std::memcpy(m_data.data() + offset + texels * sizeof(float), Occlusion, texels * 4 * sizeof(std::uint16_t));
+	m_data.resize(offset + texels * (4 * sizeof(float) + 4 * sizeof(std::uint16_t)));
+	std::memcpy(m_data.data() + offset, Heights, texels * 4 * sizeof(float));
+	std::memcpy(m_data.data() + offset + texels * 4 * sizeof(float), Occlusion, texels * 4 * sizeof(std::uint16_t));
 	m_squares.push_back(square{X, Y, Size, offset});
 }
 
@@ -131,7 +131,7 @@ void sky_occlusion_maps::flush(command_stream *Commands)
 		region.imageOffset = {entry.x, entry.y, 0};
 		region.imageExtent = {static_cast<std::uint32_t>(entry.size), static_cast<std::uint32_t>(entry.size), 1};
 		heights.push_back(region);
-		region.bufferOffset += static_cast<VkDeviceSize>(entry.size) * entry.size * sizeof(float);
+		region.bufferOffset += static_cast<VkDeviceSize>(entry.size) * entry.size * 4 * sizeof(float);
 		occlusion.push_back(region);
 	}
 	auto copy = [&](image &Target, std::vector<VkBufferImageCopy2> const &Regions) {
