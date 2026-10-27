@@ -12,6 +12,17 @@ layout(set = PASS_SET, binding = LOCAL_SHADOW_LAMPS_TEX) uniform samplerCubeArra
 layout(set = PASS_SET, binding = HEADLIGHT_SHADOW_TEX) uniform sampler2DArrayShadow headlight_shadowmap;
 // depth of the opaque scene drawn before the colour, for the contact shadows (gl::scene_ubs::contact_shadow_params)
 layout(set = PASS_SET, binding = SCENE_DEPTH_TEX) uniform sampler2D scene_depth;
+// the ambient occlusion of the main view, half its size, for the ambient light (gl::scene_ubs::ao_params)
+layout(set = PASS_SET, binding = SCENE_AO_TEX) uniform sampler2D scene_ao;
+// the probe of the occupied cab (gl::scene_ubs::cab_probe_box, gfx::cab_probe): the light of its lamps the cab reflects and its
+// albedo, each premultiplied by the share of the direction the cab fills, which is in their alpha, and the light the cab lights
+// itself with again (gl::cab_probe_data)
+layout(set = PASS_SET, binding = CAB_PROBE_TEX) uniform samplerCube cab_probe_light;
+layout(set = PASS_SET, binding = CAB_PROBE_ALBEDO_TEX) uniform samplerCube cab_probe_albedo;
+layout(std430, set = PASS_SET, binding = CAB_PROBE_SSBO) readonly buffer cab_probe_ssbo
+{
+    vec4 cab_probe_sh[9];
+};
 
 #include "envmapping.glsl"
 #include "ssr.glsl"
@@ -48,6 +59,10 @@ float length2(vec3 v)
 {
         return dot(v, v);
 }
+
+// the largest difference of the distance of a texel of the ambient occlusion from the one of the fragment (a share of it) the
+// texel is taken to be of the surface of the fragment at
+const float AO_SURFACE_MATCH = 0.05;
 
 // how many more lamps and headlights the fragment traces contact shadows to, see add_headlights()
 int contact_shadow_budget = 0;
@@ -720,6 +735,103 @@ vec4 reflection_scene(vec3 fragnormal, float roughness, float weight)
     return result;
 }
 
+// the ambient occlusion of the view in the ambient light of the fragment, 0..1 (1: none): the occlusion of the main view worked out
+// from the depth of the opaque scene drawn before its colour (gfx.postfx.ao.lighting), half its size. the four nearest texels are
+// weighed by how close they are and by how close their distance is to the one of the fragment (as in postfx_ssao_apply.frag); where
+// none of them is of the surface of the fragment (what the depth before the colour doesn't hold: the blended surfaces, the grass,
+// the cab drawn after the precipitation, the edges of objects) there's no occlusion. the distance is the one along the axis of the
+// view, near / depth with the far plane at infinity
+float ambient_occlusion()
+{
+    if (ao_params.x <= 0.0)
+        return 1.0;
+    ivec2 full_size = textureSize(scene_depth, 0);
+    ivec2 half_size = textureSize(scene_ao, 0);
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    float distance = max(-f_pos.z, 1e-3);
+    vec2 position = vec2(pixel) * 0.5;
+    ivec2 base = ivec2(floor(position));
+    vec2 fraction = position - vec2(base);
+    float sum = 0.0;
+    float weights = 0.0;
+    float closest = 1e30;
+    for (int y = 0; y < 2; ++y)
+    {
+        for (int x = 0; x < 2; ++x)
+        {
+            ivec2 texel = clamp(base + ivec2(x, y), ivec2(0), half_size - 1);
+            float depth = texelFetch(scene_depth, min(texel * 2, full_size - 1), 0).r;
+            float difference = (depth > 0.0) ? abs(projection[3][2] / depth - distance) / distance : 1e30;
+            closest = min(closest, difference);
+            float bilinear = (x == 0 ? 1.0 - fraction.x : fraction.x) * (y == 0 ? 1.0 - fraction.y : fraction.y);
+            float weight = (bilinear + 1e-3) / (1e-3 + difference);
+            sum += texelFetch(scene_ao, texel, 0).r * weight;
+            weights += weight;
+        }
+    }
+    if (closest > AO_SURFACE_MATCH)
+        return 1.0;
+    return pow(clamp(sum / max(weights, 1e-6), 0.0, 1.0), ao_params.y);
+}
+
+// the light which comes back after more than one bounce off surfaces of the given albedo, for the occlusion of the ambient light
+// (Jimenez et al. 2016), for each channel
+vec3 ao_multi_bounce(float visibility, vec3 albedo)
+{
+    vec3 a = 2.0404 * albedo - 0.3324;
+    vec3 b = -4.7951 * albedo + 0.6417;
+    vec3 c = 2.7552 * albedo + 0.6903;
+    return max(vec3(visibility), ((visibility * a + b) * visibility + c) * visibility);
+}
+
+// the share of the reflection of the surroundings the occlusion leaves to a surface of the perceptual roughness seen at the angle
+// NdotV (Lagarde and de Rousiers 2014)
+float ao_specular(float visibility, float NdotV, float roughness)
+{
+    return clamp(pow(NdotV + visibility, exp2(-16.0 * roughness - 1.0)) - 1.0 + visibility, 0.0, 1.0);
+}
+
+// whether the fragment is a part of the occupied cab with its probe (gl::scene_ubs::cab_probe_box, gl::model_ubs::cab_interior)
+bool cab_probe_active()
+{
+    return (cab_probe_box.w > 0.0) && (cab_interior > 0.5);
+}
+
+// the light of the lamps the cab reflects which reaches a surface of the cab facing the view space Fragnormal, in the units of the
+// ambient light: the spherical harmonics cabprobe_sh.comp worked out from the probe, in the space of the probe
+vec3 cab_probe_bounce(vec3 fragnormal)
+{
+    vec3 n = normalize(mat3(cab_probe_view) * fragnormal);
+    vec3 light = cab_probe_sh[0].rgb * 0.282095
+               + cab_probe_sh[1].rgb * (0.488603 * n.y)
+               + cab_probe_sh[2].rgb * (0.488603 * n.z)
+               + cab_probe_sh[3].rgb * (0.488603 * n.x)
+               + cab_probe_sh[4].rgb * (1.092548 * n.x * n.y)
+               + cab_probe_sh[5].rgb * (1.092548 * n.y * n.z)
+               + cab_probe_sh[6].rgb * (0.315392 * (3.0 * n.z * n.z - 1.0))
+               + cab_probe_sh[7].rgb * (1.092548 * n.x * n.z)
+               + cab_probe_sh[8].rgb * (0.546274 * (n.x * n.x - n.y * n.y));
+    return max(light, vec3(0.0)) * cab_probe_params.x;
+}
+
+// the reflection of the cab in a surface of the cab of the perceptual roughness, over the reflection of the surroundings, where the
+// probe holds the cab: the reflected ray from the fragment to the box of the cab, looked up from the middle of the box, where the
+// probe was drawn from (the box stands for the walls of the cab). the cab shows the light of its lamps it reflects (the probe) and
+// its albedo lit by the ambient light of the fragment (Ambientlight), the light the cab gets from the outside
+vec3 cab_probe_reflection(vec3 surroundings, vec3 fragnormal, float roughness, vec3 ambientlight)
+{
+    vec3 position = (cab_probe_view * vec4(f_pos.xyz, 1.0)).xyz;
+    vec3 direction = normalize(mat3(cab_probe_view) * reflect(normalize(f_pos.xyz), fragnormal));
+    vec3 invdir = (step(0.0, direction) * 2.0 - 1.0) / max(abs(direction), vec3(1e-5));
+    vec3 far = max((cab_probe_box.xyz - position) * invdir, (-cab_probe_box.xyz - position) * invdir);
+    float reach = max(min(min(far.x, far.y), far.z), 0.0);
+    vec3 lookup = position + direction * reach;
+    float level = roughness * cab_probe_params.z;
+    vec4 light = textureLod(cab_probe_light, lookup, level);
+    vec4 albedo = textureLod(cab_probe_albedo, lookup, level);
+    return surroundings * (1.0 - albedo.a) + light.rgb + albedo.rgb * ambientlight;
+}
+
 // lights the surface: the ambient light, the sun (the moon), the headlights and lamps and the reflection of the surroundings.
 // the units are the ones of the ambient light, the irradiance over pi: a white lambertian surface lit by 1 of it shows 1.
 // Texturecolor is the albedo (the base colour of a metal), Specularity the specular level of a dielectric (0.5 is the
@@ -774,6 +886,23 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     spec_f0 = f0;
     spec_roughness = roughness;
 
+    // the light of the lamps the cab reflects, which lights the cab again (the probe of the cab), joins the ambient light
+    bool cabprobe = cab_probe_active();
+    vec3 cabambient = fragcolor;
+    if (cabprobe)
+        fragcolor += cab_probe_bounce(fragnormal);
+    // the ambient occlusion of the view holds back the ambient light of the diffuse layer (with the light coming back from more
+    // bounces off surfaces of the albedo) and the reflection of the surroundings; not the light of the sun and the lamps, nor the
+    // reflection of the scene, which the rays find as it is
+    float occlusion = ambient_occlusion();
+    vec3 diffuse_occlusion = vec3(1.0);
+    float specular_occlusion = 1.0;
+    if (occlusion < 1.0)
+    {
+        diffuse_occlusion = ao_multi_bounce(occlusion, texturecolor);
+        specular_occlusion = ao_specular(occlusion, NdotV, roughness);
+    }
+
     // Pre-integrated env BRDF: how much of the surroundings the surface reflects, for its F0, roughness and the view angle.
     // the surroundings are the cubemap where the material asks for it (reflectivity) and the ambient light elsewhere, so a
     // surface reflects them always, the rough one barely
@@ -804,16 +933,19 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     if (!matte)
     {
         envcolor = reflection_surroundings(fragnormal, env_roughness);
+        // inside the cab the cab is what the surroundings are, where the probe holds it
+        if (cabprobe && (cab_probe_params.y > 0.0))
+            envcolor = cab_probe_reflection(envcolor, fragnormal, env_roughness, cabambient);
         float sceneweight = cubemap_share * dot(cubemap_spec, vec3(1.0 / 3.0));
         if (((ssr_params.x > 0.0) || (ssr_params2.z > 0.0)) && (sceneweight > REFLECTION_SCENE_WEIGHT))
             scenecolor = reflection_scene(fragnormal, env_roughness, sceneweight);
     }
 
     if (lights_count == 0U)
-        return fragcolor * diffuse_albedo
+        return fragcolor * diffuse_occlusion * diffuse_albedo
              + emissioncolor * texturecolor
-             + fragcolor * env_spec * ambient_share
-             + (scenecolor.rgb + envcolor * (1.0 - scenecolor.a)) * cubemap_spec * cubemap_share;
+             + fragcolor * env_spec * ambient_share * specular_occlusion
+             + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * specular_occlusion)) * cubemap_spec * cubemap_share;
 
     vec3 light_dir = normalize(-lights[0].dir);
     float NdotL = max(dot(fragnormal, light_dir), 0.0);
@@ -844,8 +976,10 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         cubemap_shadow = 1.0 - (1.0 - shadowtone) * shadow * 0.5;
 
     // the reflection of the surroundings, before the light of the sun and the lamps joins the ambient light
-    vec3 env_reflection = fragcolor * env_spec * ambient_share
-                        + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * cubemap_shadow)) * cubemap_spec * cubemap_share;
+    vec3 env_reflection = fragcolor * env_spec * ambient_share * specular_occlusion
+                        + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * cubemap_shadow * specular_occlusion)) * cubemap_spec * cubemap_share;
+    // the occlusion of the ambient light, before the light of the sun and the lamps joins it
+    fragcolor *= diffuse_occlusion;
 
     // the shadow leaves the share of the sun Shadowtone tells (the old shadow colour of the scenery) to the diffuse light,
     // nothing to the highlight

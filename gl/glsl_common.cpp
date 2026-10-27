@@ -97,6 +97,12 @@ void gl::glsl_common_setup()
     "#define CLOUD_HISTORY_TEX " + std::to_string(CLOUD_HISTORY_TEX) + "\n" +
     "#define SCENE_DEPTH_TEX " + std::to_string(SCENE_DEPTH_TEX) + "\n" +
     "#define SSR_HISTORY_TEX " + std::to_string(SSR_HISTORY_TEX) + "\n" +
+    "#define SCENE_AO_TEX " + std::to_string(SCENE_AO_TEX) + "\n" +
+    "#define CAB_PROBE_TEX " + std::to_string(CAB_PROBE_TEX) + "\n" +
+    "#define CAB_PROBE_ALBEDO_TEX " + std::to_string(CAB_PROBE_ALBEDO_TEX) + "\n" +
+    "#define CAB_PROBE_SSBO_BINDING " + std::to_string(CAB_PROBE_SSBO_BINDING) + "\n" +
+    "#define CAB_PROBE_SH_SIZE " + std::to_string(CAB_PROBE_SH_SIZE) + "\n" +
+    "#define CAB_PROBE_SH_GROUP_SIZE " + std::to_string(CAB_PROBE_SH_GROUP_SIZE) + "\n" +
     "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
     "#define WEATHER_SCRATCH_SSBO_BINDING " + std::to_string(WEATHER_SCRATCH_SSBO_BINDING) + "\n" +
     "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +

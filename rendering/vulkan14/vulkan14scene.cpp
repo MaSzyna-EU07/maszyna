@@ -151,6 +151,7 @@ VkDescriptorType pass_binding_type(std::uint32_t const Binding)
 	case CLUSTER_INDEX_SSBO:
 	case SKY_SSBO:
 	case WATER_SSBO:
+	case CAB_PROBE_SSBO:
 		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	case ATMOSPHERE_UBO:
 	case WEATHER_HORIZON_UBO:
@@ -193,6 +194,14 @@ std::array<std::array<VkImageView, vk14::bindings::PASS_BINDING_COUNT>, 3> pass_
 		views[SCENE_DEPTH_TEX] = (colour && (false == scene.targets.empty()) && scene.targets.front().scene_depth ? scene.targets.front().scene_depth->view() : scene.depth_empty->view());
 		// the image of the last frame of the main view, which the screen space reflections take their colour from
 		views[SSR_HISTORY_TEX] = (colour && (false == scene.targets.empty()) && scene.targets.front().ssr_history ? scene.targets.front().ssr_history->view() : scene.white->view());
+		// the ambient occlusion of the main view the shading takes into the ambient light (the stage A3)
+		views[SCENE_AO_TEX] = (colour && (false == scene.targets.empty()) && scene.targets.front().ssao_blur ? scene.targets.front().ssao_blur->view() : scene.white->view());
+		// the probe of the cab, once it was drawn (the stage A4)
+		auto const *probelight{scene.cabprobe.light_map()};
+		auto const *probealbedo{scene.cabprobe.albedo_map()};
+		auto const probeempty{scene.cabprobe_empty ? scene.cabprobe_empty->view() : scene.env_empty->view()};
+		views[CAB_PROBE_TEX] = (colour && (probelight != nullptr) ? probelight->view() : probeempty);
+		views[CAB_PROBE_ALBEDO_TEX] = (colour && (probealbedo != nullptr) ? probealbedo->view() : probeempty);
 	}
 	return result;
 }
@@ -650,7 +659,7 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 	}
 
 	// the light of the sky, the exposure, the weather
-	if ((false == init_sky(Reason)) || (false == init_weather(Reason)) || (false == init_ao(Reason)))
+	if ((false == init_sky(Reason)) || (false == init_weather(Reason)) || (false == init_ao(Reason)) || (false == init_cab_probe(Reason)))
 	{
 		return false;
 	}
@@ -822,6 +831,7 @@ void vulkan14_renderer::destroy_scene()
 	destroy_sky();
 	destroy_weather();
 	destroy_ao();
+	destroy_cab_probe();
 	for (auto *pool : scene.occlusion_pools)
 	{
 		vkDestroyQueryPool(device, pool, nullptr);
@@ -968,6 +978,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 	VkDescriptorBufferInfo const weatherblock{ctx.ring.handle(), 0, offsetof(gl::weather_ubs, fog_horizon)};
 	VkDescriptorBufferInfo const horizonblock{scene.weather_horizon.handle(), 0, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES};
 	VkDescriptorBufferInfo const water{scene.water.storage(), 0, VK_WHOLE_SIZE};
+	VkDescriptorBufferInfo const cabprobe{scene.cabprobe_bounce.handle(), 0, sizeof(gl::cab_probe_data)};
 	VkDescriptorImageInfo const headlightsinfo{scene.headlights_sampler, scene.headlights_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	std::vector<VkWriteDescriptorSet> writes;
 	std::vector<std::unique_ptr<VkDescriptorImageInfo>> images;
@@ -1017,6 +1028,10 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 		write(handle, HEADLIGHT_SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[HEADLIGHT_SHADOW_TEX]));
 		write(handle, SCENE_DEPTH_TEX, nullptr, image(ctx.sampling.clamp_nearest, views[SCENE_DEPTH_TEX]));
 		write(handle, SSR_HISTORY_TEX, nullptr, image(ctx.sampling.clamp_linear, views[SSR_HISTORY_TEX]));
+		write(handle, SCENE_AO_TEX, nullptr, image(ctx.sampling.clamp_nearest, views[SCENE_AO_TEX]));
+		write(handle, CAB_PROBE_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_TEX]));
+		write(handle, CAB_PROBE_ALBEDO_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_ALBEDO_TEX]));
+		write(handle, CAB_PROBE_SSBO, &cabprobe, nullptr);
 	}
 	vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
@@ -1403,7 +1418,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 	// materials which declare texture variants provide a different texture set per model instance
 	auto const &materialtextures{material.texture_variants.empty() ? material.textures : material.GetTextures(TSubModel::VariantId(Submodel))};
 	auto &draw{*m_draw};
-	if (draw.depthpass)
+	if (draw.depthpass || draw.probepass)
 	{
 		// the depth of the whole scene: the programs of the depth prepass. what they can't draw (blended, materials of other programs)
 		// is left to the colour pass
@@ -1418,6 +1433,27 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 			return;
 		}
 		auto &scene{m_context->scene};
+		if (draw.probepass)
+		{
+			// the probe of the cab: the programs of the probe, of the same materials, the albedo from the diffuse texture (the white
+			// stand-in without it), alpha tested as the depth prepass tests it
+			if (prepassclass == 2)
+			{
+				if (materialtextures[0] == null_handle)
+				{
+					return;
+				}
+				auto &texture{m_context->textures->mark_as_used(materialtextures[0])};
+				if ((false == texture.create()) || (m_context->images.find(texture.get_id()) == nullptr))
+				{
+					return;
+				}
+			}
+			walk_texture(0, materialtextures[0]);
+			draw.program = (prepassclass == 2 ? scene.cabprobe_alpha_program.get() : scene.cabprobe_program.get());
+			draw.depthskip = (draw.program == nullptr);
+			return;
+		}
 		if (prepassclass == 2)
 		{
 			// a texture which isn't there (yet) would leave the one bound before to the alpha test
@@ -1769,7 +1805,7 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	}
 	auto const &chunk{static_cast<vk14::vulkan14_geometrybank *>(m_banks[Geometry.bank - 1])->last()};
 
-	if (draw.depthpass && (draw.depthskip || (topology_class(chunk.topology) != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
+	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (topology_class(chunk.topology) != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
 	{
 		// the depth of the scene: what the programs of the prepass don't draw, and no points or lines
 		return;

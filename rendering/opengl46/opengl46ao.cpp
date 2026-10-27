@@ -103,6 +103,15 @@ void opengl46_ao::apply(int const Mode, opengl_texture &Depth, opengl_texture &O
 	}
 }
 
+void opengl46_ao::end_timing()
+{
+	if (m_timing)
+	{
+		m_timer.end();
+		m_timing = false;
+	}
+}
+
 std::string opengl46_ao::info_times()
 {
 	std::string text;
@@ -127,4 +136,5 @@ void opengl46_ao::draw_debug_ui(bool const Available)
 	ImGui::SliderFloat("ao bounce albedo", &Global.gfx_postfx_ao_bounce, 0.f, 1.f);
 	ImGui::SliderInt("ao slices", &Global.gfx_postfx_ao_slices, 1, 8);
 	ImGui::SliderInt("ao steps per side", &Global.gfx_postfx_ao_steps, 1, 16);
+	ImGui::Checkbox("ao in the ambient light, not over the image (gfx.postfx.ao.lighting)", &Global.gfx_postfx_ao_lighting);
 }

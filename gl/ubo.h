@@ -83,6 +83,14 @@ namespace gl
     // the image of the last frame of the main view with its mipmaps, which the screen space reflections take their colour from
     // (light_common.glsl, gl::scene_ubs::ssr_params). bound directly, like the ones above
     const size_t SSR_HISTORY_TEX = MAX_TEXTURES + HELPER_TEXTURES + 12;
+    // (MAX_TEXTURES + HELPER_TEXTURES + 13 is WATER_MASK_TEX, below)
+    // the ambient occlusion of the main view worked out from the depth in SCENE_DEPTH_TEX before the colour, half its size, which
+    // the shading takes into the ambient light (gfx.postfx.ao.lighting, gl::scene_ubs::ao_params). bound directly, like the ones above
+    const size_t SCENE_AO_TEX = MAX_TEXTURES + HELPER_TEXTURES + 14;
+    // the probe of the occupied cab (gfx::cab_probe, gl::scene_ubs::cab_probe_box): cube maps of the light of its lamps reflected by
+    // the cab and of its albedo. bound directly, like the ones above
+    const size_t CAB_PROBE_TEX = MAX_TEXTURES + HELPER_TEXTURES + 15;
+    const size_t CAB_PROBE_ALBEDO_TEX = MAX_TEXTURES + HELPER_TEXTURES + 16;
 
     struct scene_ubs
     {
@@ -129,9 +137,26 @@ namespace gl
         // the water on the windscreens (mat_rain_windscreen): xyz the velocity of the air against the vehicle of the camera (the
         // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w unused
         glm::vec4 rain_wind;
+        // the ambient occlusion in the light of the surfaces (gfx.postfx.ao.lighting), set only for the colour pass of the main view,
+        // zero elsewhere: x 1 when SCENE_AO_TEX holds the occlusion of the depth in SCENE_DEPTH_TEX, y the power it's raised to
+        // (gfx.postfx.ao.strength), zw unused
+        glm::vec4 ao_params;
+        // the probe of the occupied cab (gfx::cab_probe), set only for the colour pass of the main view, zero elsewhere: the view
+        // space of the pass to the space of the probe (the axes of the cab model, metres, the origin in the middle of its box)
+        glm::mat4 cab_probe_view;
+        // xyz half the size of the box of the cab, w 1 when the probe is there
+        glm::vec4 cab_probe_box;
+        // x the share of the light of the lamps the cab reflects which lights it again (gfx.cabprobe.bounce), y 1 when the cab reflects
+        // itself (gfx.cabprobe.reflections), z the last level of the mipmaps of the probe, w unused
+        glm::vec4 cab_probe_params;
+        // the drawing of the probe (cabprobe.glsl), set for it only: xyz the cab lamp in the space of the probe, w 1 / its range
+        // squared (0: no lamp); rgb its light, a 1 with its shadow map (LOCAL_SHADOW_TEX); the headlight_weights of that map
+        glm::vec4 cab_probe_lamp;
+        glm::vec4 cab_probe_lamp_color;
+        glm::vec4 cab_probe_lamp_shadow;
     };
 
-    static_assert(sizeof(scene_ubs) == 704 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 864 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
@@ -147,7 +172,9 @@ namespace gl
         float fog_density;
         float alpha_mult;
         float shadow_tone;
-        UBS_PAD(12);
+        // 1 for the parts of the occupied cab, which the probe of the cab lights and reflects (gl::scene_ubs::cab_probe_box)
+        float cab_interior{0.f};
+        UBS_PAD(8);
 
         void set_modelview(const glm::mat4 &mv)
         {
@@ -367,6 +394,19 @@ namespace gl
     {
         glm::vec4 ambient_sh[SKY_SH_COEFFICIENTS];
     };
+
+    // layout std430: the light of the lamps the occupied cab reflects, which lights the cab again (GLSL: cab_probe_ssbo, written by
+    // cabprobe_sh.comp from the probe of the cab): the coefficients of the real spherical harmonics of the light a surface facing a
+    // direction of the space of the probe gets, bands 0..2, in units of light_data.ambient; rgb used, w is padding
+    struct cab_probe_data
+    {
+        glm::vec4 bounce_sh[SKY_SH_COEFFICIENTS];
+    };
+    // binding point of the opengl renderer, bound with the colour passes
+    const GLuint CAB_PROBE_SSBO_BINDING = 17;
+    // the face of the level of the probe the spherical harmonics are taken from, at most, and the work group of cabprobe_sh.comp
+    const size_t CAB_PROBE_SH_SIZE = 16;
+    const size_t CAB_PROBE_SH_GROUP_SIZE = 64;
 
     static_assert(sizeof(sky_data) == 144, "bad size of sky_data");
 

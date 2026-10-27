@@ -217,6 +217,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_exposure.init();
 		m_ao.init();
 		m_localshadows.init();
+		m_cabprobe.init();
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -952,6 +953,7 @@ void opengl46_renderer::SwapBuffers()
         text += m_weather.info_times();
         text += m_exposure.info_times();
         text += m_ao.info_times();
+        text += m_cabprobe.info_times();
         text += m_instancecull.info_times();
         // the cullings of the other passes; the environment map is drawn now and then, its numbers are of its last update
         if( Global.gfx_gpucull_shadows ) {
@@ -1052,6 +1054,7 @@ void opengl46_renderer::SwapBuffers()
                     ", rays " + to_string( Global.gfx_contactshadows_length, 2 ) + " m within " + to_string( Global.gfx_contactshadows_range, 0 ) + " m\n" :
                     ", off in this view\n" ) :
             std::string{} )
+        + ( Global.gfx_cabprobe > 0 ? " " + m_cabprobe.info() + "\n" : std::string{} )
         + shadowcascadestext
         + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
         + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
@@ -1466,6 +1469,7 @@ void opengl46_renderer::draw_debug_ui()
         m_exposure.draw_debug_ui();
         ImGui::Separator();
         m_ao.draw_debug_ui(!m_viewports.empty() && m_viewports.front()->ssao_tex != nullptr);
+        m_cabprobe.draw_debug_ui();
         ImGui::Separator();
         m_ssr.draw_debug_ui(nullptr);
     }
@@ -1669,6 +1673,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		setup_env_map(nullptr);
 		// the cube shadow maps of the lamps, or the stand-in for them
 		m_localshadows.bind();
+		// the probe of the cab, or the stand-ins
+		m_cabprobe.bind();
 
 		if (Global.gfx_shadowmap_enabled && vp.main)
 		{
@@ -1704,6 +1710,9 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			Render_local_shadows();
 			Render_lamp_shadows();
 			Render_headlight_shadows();
+			// after the map of the cab lamp, which it reads
+			gpupart("cab probe");
+			Render_cab_probe();
 		}
 
 		gpupart("clear, clusters, lights");
@@ -1822,18 +1831,31 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if( Global.gfx_shadowmap_enabled )
             setup_shadow_bind_map();
 
+		// the probe of the cab, which the parts of the cab drawn in the colour pass of the main view read
+		if (vp.main)
+		{
+			auto const *cab{Cab_Probe_Vehicle()};
+			m_cabprobe.setup_scene(scene_ubs, cab, m_colorpass.pass_camera.position(), glm::mat3{m_colorpass.pass_camera.modelview()});
+			m_cabprobelit = (scene_ubs.cab_probe_box.w > 0.f);
+			if (m_cabprobelit)
+				scene_ubo->update(scene_ubs);
+		}
+
 		// the depth of the whole opaque scene before its colour, which the contact shadows need
 		m_scenedepthdrawn = false;
 		m_indirectcolourpending = false;
 		m_scenerecorded = false;
+		m_aolighting = false;
 		auto const contactshadows{Contact_Shadows_Wanted(vp)};
 		// the screen space reflections trace the depth of the whole scene, not only of what the contact shadows reach
 		auto const reflections{m_ssrframe && (false == Global.bWireFrame)};
-		if ((Global.gfx_depthprepass_scene || contactshadows || reflections) && vp.main && (false == Global.bWireFrame))
+		// and so does the ambient occlusion in the light of the surfaces
+		auto const aolighting{Ao_Lighting_Wanted(vp)};
+		if ((Global.gfx_depthprepass_scene || contactshadows || reflections || aolighting) && vp.main && (false == Global.bWireFrame))
 		{
 			glDebug("render scene depth");
 			gpupart("scene depth");
-			Render_Scene_Depth(future, contactshadows && (false == Global.gfx_depthprepass_scene) && (false == reflections));
+			Render_Scene_Depth(future, contactshadows && (false == Global.gfx_depthprepass_scene) && (false == reflections) && (false == aolighting));
 			if (contactshadows)
 			{
 				gpupart("contact shadows depth");
@@ -1842,6 +1864,11 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			if (reflections)
 			{
 				Setup_Screen_Reflections(vp, taa);
+			}
+			if (aolighting)
+			{
+				gpupart("ambient occlusion");
+				Setup_Ao_Lighting(vp);
 			}
 		}
 		if (vp.main)
@@ -1946,14 +1973,17 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
             }
         }
 
-		if (m_contactshadows || m_ssractive)
+		if (m_contactshadows || m_ssractive || m_aolighting || m_cabprobelit)
 		{
-			// the depth they read is of this view only
+			// the depth they read is of this view only, and so is the probe of the cab
 			m_contactshadows = false;
 			m_ssractive = false;
+			m_cabprobelit = false;
 			scene_ubs.contact_shadow_params = glm::vec4{0.f};
 			scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+			scene_ubs.ao_params = glm::vec4{0.f};
 			gfx::screen_reflections::clear(scene_ubs);
+			gfx::cab_probe::clear_scene(scene_ubs);
 			scene_ubo->update(scene_ubs);
 		}
 
@@ -1970,8 +2000,10 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 if (!Global.gfx_skippipeline)
 		{
 			gpupart("resolve, ambient occlusion, motion blur");
-			// the targets of the ambient occlusion are there only when it was on at the start
-			auto const aomode{(vp.ssao_tex != nullptr) ? Global.gfx_postfx_ao : 0};
+			// the targets of the ambient occlusion are there only when it was on at the start. in the light of the surfaces it's
+			// in the image already
+			auto const aomode{((vp.ssao_tex != nullptr) && (false == m_aolighting)) ? Global.gfx_postfx_ao : 0};
+			m_aolighting = false;
 			if (motionblur || taa)
 			{
 				vp.main_fb->clear(GL_COLOR_BUFFER_BIT);
@@ -3297,7 +3329,7 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 		        material.textures :
 		        material.GetTextures(TSubModel::VariantId(sm))};
 
-		if (m_scenedepthpass)
+		if (m_scenedepthpass || m_cabprobepass)
 		{
 			// the depth of the whole scene: the programs of the depth prepass, the same choice as for the instances in
 			// Render_Instances_Indirect(). what they can't draw (blended, materials of other programs) is left to the colour pass
@@ -3307,6 +3339,24 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 			auto const prepassclass{Prepass_Class(Material)};
 			if (prepassclass == 0)
 				return;
+			if (m_cabprobepass)
+			{
+				// the probe of the cab: the programs of the probe, of the same materials, the albedo from the diffuse texture (a white
+				// one without it), alpha tested as the depth prepass tests it
+				auto texturebound{false};
+				if (materialtextures[0] != null_handle)
+					texturebound = m_textures.mark_as_used(materialtextures[0]).bind(0);
+				if (false == texturebound)
+				{
+					if (prepassclass == 2)
+						return;
+					::glBindTextureUnit(0, m_cabprobe.white());
+					opengl_texture::units[0] = m_cabprobe.white();
+				}
+				m_cabprobe.program(prepassclass == 2).bind();
+				m_scenedepthskip = false;
+				return;
+			}
 			if (prepassclass == 2)
 			{
 				// a texture which isn't there (yet) would leave the one bound before to the alpha test
@@ -3488,7 +3538,7 @@ void opengl46_renderer::draw(const gfx::geometry_handle &handle)
 		Record_Scene_Draw( &handle, 1, false );
 		return;
 	}
-	if( m_scenedepthpass && ( false == Scene_Depth_Draws( handle ) ) ) {
+	if( ( m_scenedepthpass || m_cabprobepass ) && ( false == Scene_Depth_Draws( handle ) ) ) {
 		return;
 	}
 	model_ubo->update(model_ubs);
@@ -3512,7 +3562,7 @@ void opengl46_renderer::draw(std::vector<gfx::geometrybank_handle>::iterator it,
 		}
 		return;
 	}
-	if( m_scenedepthpass && ( ( it == end ) || ( false == Scene_Depth_Draws( *it ) ) ) ) {
+	if( ( m_scenedepthpass || m_cabprobepass ) && ( ( it == end ) || ( false == Scene_Depth_Draws( *it ) ) ) ) {
 		return;
 	}
 	model_ubo->update(model_ubs);
@@ -4494,6 +4544,46 @@ void opengl46_renderer::Setup_Contact_Shadows( viewport_config &Viewport )
 	scene_ubs.contact_shadow_lamps = glm::vec4{ level.lamps, 0.f, 0.f, 0.f };
 	scene_ubo->update( scene_ubs );
 	m_contactshadows = true;
+}
+
+// the ambient occlusion goes into the light of the surfaces of the colour pass of the main view (gfx.postfx.ao.lighting): the ground
+// truth one, made from the depth of the whole scene drawn before the colour, which needs the targets of the occlusion and a
+// perspective projection with the far plane at infinity (the distance of a surface worked out from its depth), as the contact shadows
+bool opengl46_renderer::Ao_Lighting_Wanted( viewport_config const &Viewport ) const
+{
+	if( ( Global.gfx_postfx_ao != 2 ) || ( false == Global.gfx_postfx_ao_lighting ) || ( false == Viewport.main ) || Global.bWireFrame || Global.gfx_skippipeline
+	 || ( Viewport.msaa_fb == nullptr ) || ( Viewport.ssao_tex == nullptr ) || ( Viewport.ssao_blur_tex == nullptr ) ) {
+		return false;
+	}
+	auto const &projection { scene_ubs.projection };
+	return ( projection[ 2 ][ 3 ] != 0.f ) && ( projection[ 2 ][ 2 ] == 0.f ) && ( projection[ 3 ][ 2 ] > 0.f );
+}
+
+void opengl46_renderer::Setup_Ao_Lighting( viewport_config &Viewport )
+{
+	if( ( false == m_contactshadows ) && ( false == m_ssractive ) ) {
+		// the depth resolved apart from the buffer the colour pass draws to, as for the contact shadows
+		if( false == Resolved_Depth_Target( Viewport ) ) { return; }
+		Viewport.msaa_fb->bind();
+		auto const scissor { ::glIsEnabled( GL_SCISSOR_TEST ) == GL_TRUE };
+		if( scissor ) { ::glDisable( GL_SCISSOR_TEST ); }
+		::glBlitNamedFramebuffer(
+			*Viewport.msaa_fb, *Viewport.clusters_depth_fb,
+			0, 0, Viewport.width, Viewport.height, 0, 0, Viewport.width, Viewport.height,
+			GL_DEPTH_BUFFER_BIT, GL_NEAREST );
+		if( scissor ) { ::glEnable( GL_SCISSOR_TEST ); }
+		::glBindTextureUnit( gl::SCENE_DEPTH_TEX, Viewport.clusters_depth_tex->id );
+	}
+	glDebug( "ambient occlusion" );
+	// the projection the depth was drawn with
+	m_ao.compute( *Viewport.clusters_depth_tex, *Viewport.ssao_tex, *Viewport.ssao_blur_tex, m_colorpass.pass_camera.projection() );
+	m_ao.end_timing();
+	// the compute passes leave the units of the textures to be bound anew
+	::glBindTextureUnit( gl::SCENE_DEPTH_TEX, Viewport.clusters_depth_tex->id );
+	::glBindTextureUnit( gl::SCENE_AO_TEX, Viewport.ssao_blur_tex->id );
+	scene_ubs.ao_params = glm::vec4{ 1.f, Global.gfx_postfx_ao_strength, 0.f, 0.f };
+	scene_ubo->update( scene_ubs );
+	m_aolighting = true;
 }
 
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the
@@ -6192,6 +6282,54 @@ void opengl46_renderer::Render_local_shadows()
 	m_localshadows.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
+}
+
+TDynamicObject *opengl46_renderer::Cab_Probe_Vehicle() const
+{
+	if (FreeFlyModeFlag || (false == Global.render_cab) || (simulation::Train == nullptr))
+		return nullptr;
+	auto *vehicle{simulation::Train->Dynamic()};
+	if ((vehicle == nullptr) || (false == vehicle->bDisplayCab) || (vehicle->mdKabina == nullptr) || (vehicle->mdKabina == vehicle->mdModel))
+		return nullptr;
+	return vehicle;
+}
+
+void opengl46_renderer::Render_cab_probe()
+{
+	auto *vehicle{Cab_Probe_Vehicle()};
+	glm::vec3 center{0.f};
+	glm::vec3 extent{0.f};
+	if ((vehicle != nullptr) && (false == m_locallights.cab_bounds(vehicle->mdKabina, m_geometry, center, extent)))
+		vehicle = nullptr;
+	// the cab lamp lights the probe when it's a light of the frame
+	auto const *lamp{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_lamp() : nullptr};
+	if (false == m_cabprobe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lamp, m_framestamp))
+		return;
+
+	glDebug("render cab probe");
+	// the lamp with its shadow map, when the map holds the shadows of the lamp where it is
+	auto const shadows{(lamp != nullptr) && m_localshadows.ready(vehicle) && (m_localshadows.lamp() == m_locallights.cab_lamp_local())};
+	m_cabprobe.setup_drawing(scene_ubs, lamp, m_locallights.cab_lamp_local(), shadows, m_localshadows.weights());
+	scene_ubo->update(scene_ubs);
+	// the cab drawn by the colour mode with the programs of the probe. the camera is put at the vehicle, which Render_cab() places
+	// the cab relative to, and the modelview takes the cab model to the space of the probe
+	m_renderpass.draw_mode = rendermode::color;
+	m_renderpass.pass_camera.position() = vehicle->GetPosition();
+	m_renderpass.draw_stats = {};
+	OpenGLMatrices.mode(GL_MODELVIEW);
+	OpenGLMatrices.load_matrix(glm::mat4{m_cabprobe.model_to_probe() * glm::inverse(vehicle->mMatrix)});
+	setup_drawing(false);
+	m_cabprobe.begin();
+	m_cabprobepass = true;
+	m_scenedepthskip = true;
+	Render_cab(vehicle, 0.0f, false);
+	m_cabprobepass = false;
+	m_scenedepthskip = true;
+	m_cabprobe.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	m_renderpass = m_colorpass;
+	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
+	// the maps may have been made anew
+	m_cabprobe.bind();
 }
 
 void opengl46_renderer::Render_lamp_shadows()

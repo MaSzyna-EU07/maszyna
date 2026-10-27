@@ -24,7 +24,9 @@ class opengl_texture;
 //   (gtao_main.comp) and a depth aware smoothing (gtao_denoise.comp)
 // - its application to the image: a multiplier drawn over it (postfx_ssao_apply.frag), which also applies the older
 //   ssao (postfx_ssao.frag, run by the renderer) when that one is chosen
-// switched by Global.gfx_postfx_ao (0 off, 1 older ssao, 2 gtao); the targets are made with the viewport when it is not 0
+// switched by Global.gfx_postfx_ao (0 off, 1 older ssao, 2 gtao); the targets are made with the viewport when it is not 0. with
+// Global.gfx_postfx_ao_lighting the ground truth one is computed from the depth of the scene drawn before the colour and read by the
+// shading of the colour pass (light_common.glsl, ambient_occlusion()) instead of being applied to the image
 class opengl46_ao
 {
   public:
@@ -40,6 +42,8 @@ class opengl46_ao
 	// multiplies the image of the framebuffer by the occlusion. Mode: Global.gfx_postfx_ao. the viewport has to be set
 	// to the size of Depth. leaves the framebuffer bound
 	void apply(int const Mode, opengl_texture &Depth, opengl_texture &Occlusion, gl::framebuffer &Target, glm::mat4 const &Projection);
+	// ends the gpu time of the occlusion computed for the light of the surfaces (gfx.postfx.ao.lighting), which isn't applied
+	void end_timing();
 	// lines for the gpu times of the debug panel
 	std::string info_times();
 	// controls of the debug window. Available: the targets were made, so the mode can be changed

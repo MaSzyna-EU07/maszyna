@@ -1893,6 +1893,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         Parser >> gfx_postfx_ao_slices >> gfx_postfx_ao_steps;
         gfx_postfx_ao_slices = std::clamp( gfx_postfx_ao_slices, 1, 8 );
         gfx_postfx_ao_steps = std::clamp( gfx_postfx_ao_steps, 1, 16 ); }
+    else if( Token == "gfx.postfx.ao.lighting" ) { readswitch( gfx_postfx_ao_lighting ); }
     else if( Token == "gfx.lights.scenery" ) { readswitch( gfx_lights_scenery ); }
     else if( Token == "gfx.lights.vehicles" ) { readswitch( gfx_lights_vehicles ); }
     else if( Token == "gfx.lights.headlights" ) { readswitch( gfx_lights_headlights ); }
@@ -1901,6 +1902,22 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.lights.compartment.intensity" ) { readvalue( gfx_lights_compartment_intensity, 0.f, 100.f ); }
     else if( Token == "gfx.lights.cab.intensity" ) { readvalue( gfx_lights_cab_intensity, 0.f, 100.f ); }
     else if( Token == "gfx.lights.cab.bounce" ) { readvalue( gfx_lights_cab_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.cabprobe" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_cabprobe =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.cabprobe.interval" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_cabprobe_interval;
+        gfx_cabprobe_interval = std::clamp( gfx_cabprobe_interval, 1, 120 ); }
+    else if( Token == "gfx.cabprobe.bounce" ) { readvalue( gfx_cabprobe_bounce, 0.f, 4.f ); }
+    else if( Token == "gfx.cabprobe.reflections" ) { readswitch( gfx_cabprobe_reflections ); }
     else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
     else if( Token == "gfx.lights.shadows" ) {
         // no/low/medium/high, or the number of the level
@@ -2364,6 +2381,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.ao.strength", gfx_postfx_ao_strength );
     export_as_text( Output, "gfx.postfx.ao.bounce", gfx_postfx_ao_bounce );
     Output << "gfx.postfx.ao.quality " << gfx_postfx_ao_slices << " " << gfx_postfx_ao_steps << "\n";
+    export_as_text( Output, "gfx.postfx.ao.lighting", gfx_postfx_ao_lighting );
     export_as_text( Output, "gfx.lights.scenery", gfx_lights_scenery );
     export_as_text( Output, "gfx.lights.vehicles", gfx_lights_vehicles );
     export_as_text( Output, "gfx.lights.headlights", gfx_lights_headlights );
@@ -2372,6 +2390,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.compartment.intensity", gfx_lights_compartment_intensity );
     export_as_text( Output, "gfx.lights.cab.intensity", gfx_lights_cab_intensity );
     export_as_text( Output, "gfx.lights.cab.bounce", gfx_lights_cab_bounce );
+    export_as_text( Output, "gfx.cabprobe", std::string{ gfx_cabprobe == 3 ? "high" : gfx_cabprobe == 2 ? "medium" : gfx_cabprobe == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.cabprobe.interval", gfx_cabprobe_interval );
+    export_as_text( Output, "gfx.cabprobe.bounce", gfx_cabprobe_bounce );
+    export_as_text( Output, "gfx.cabprobe.reflections", gfx_cabprobe_reflections );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );

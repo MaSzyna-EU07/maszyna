@@ -85,6 +85,8 @@ class local_lights
 	{
 		return m_cablamplocal;
 	}
+	// the box of the cab model Cab (model space): its middle and half its size; false when the model has no geometry
+	bool cab_bounds(TModel3d *Cab, gfx::geometrybank_manager const &Geometry, glm::vec3 &Center, glm::vec3 &Extent);
 	// counts of the last pass which wrote the lights to the light buffer: placed, and left out for the lack of room
 	void placed(std::uint32_t const Placed, std::uint32_t const Dropped)
 	{

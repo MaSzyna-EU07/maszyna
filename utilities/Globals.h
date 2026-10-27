@@ -472,6 +472,10 @@ struct global_settings {
     float gfx_postfx_ao_bounce { 0.3f }; // albedo of the surfaces assumed for the light coming back after more bounces
     int gfx_postfx_ao_slices { 3 }; // directions searched around each pixel
     int gfx_postfx_ao_steps { 4 }; // samples on each side of a direction
+    // with gfx_postfx_ao 2 (opengl 4.6 and vulkan): the occlusion is worked out from the depth of the scene drawn before its colour
+    // (which it turns on, see gfx_depthprepass_scene) and darkens the ambient light and the reflection of the surroundings in the
+    // shading, not the light of the sun and the lamps. false: it darkens the finished image, as before
+    bool gfx_postfx_ao_lighting { true };
     // local lights of the opengl 4.6 renderer, besides the sun and the vehicle headlights (debug window "Light clusters").
     // they go through the light clusters, so they need gfx_lights_clustered
     bool gfx_lights_scenery { true }; // light points (freespot lights) of scenery models light their surroundings
@@ -484,6 +488,15 @@ struct global_settings {
     float gfx_lights_compartment_intensity { 1.f }; // brightness of the light of a lit vehicle compartment
     float gfx_lights_cab_intensity { 1.5f }; // brightness of the cab lamp
     float gfx_lights_cab_bounce { 0.3f }; // share of the former ambient light of the cab lamp kept, for the light which bounces around the cab
+    // the probe of the occupied cab (opengl 4.6 and vulkan, gfx::cab_probe): cube maps of the cab lit by its lamp (and what glows in
+    // it) and of its albedo, drawn every few frames: the light of the lamp bounces around the cab from it (in place of
+    // gfx_lights_cab_bounce) and the cab reflects itself in its glasses and glossy parts. 0 off, 1 low, 2 medium, 3 high (faces of
+    // 64, 128, 256 pixels); the frames between its updates, the share of the reflected light which lights the cab again, and
+    // whether the cab reflects itself (where the screen space reflections don't find it) instead of the sky
+    int gfx_cabprobe { 2 };
+    int gfx_cabprobe_interval { 4 };
+    float gfx_cabprobe_bounce { 1.f };
+    bool gfx_cabprobe_reflections { true };
     float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab

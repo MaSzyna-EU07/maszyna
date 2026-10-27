@@ -1792,10 +1792,14 @@ bool scene_walk::Render_cab(TDynamicObject const *Dynamic, float const Lightleve
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place. with the lamp of the cab among the
-                // lights a share of it is kept for the light which bounces around the cab
-                auto const share { m_cablamplit ? Global.gfx_lights_cab_bounce : 1.f };
-                walk_ambient_add( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) * share );
+                // lights a share of it is kept for the light which bounces around the cab, unless the probe of the cab gives that light
+                auto const share { m_cablamplit ? ( m_cabprobelit ? 0.f : Global.gfx_lights_cab_bounce ) : 1.f };
+                if( share > 0.f ) {
+                    walk_ambient_add( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) * share );
+                }
             }
+            // the parts of the cab read its probe
+            model_ubs.cab_interior = 1.f;
 
 			// render
 			if (true == Alpha)
@@ -1809,6 +1813,7 @@ bool scene_walk::Render_cab(TDynamicObject const *Dynamic, float const Lightleve
 				Render(Dynamic->mdKabina, Dynamic->Material(), 0.0);
 			}
 			// post-render restore
+            model_ubs.cab_interior = 0.f;
             walk_ambient_restore();
             walk_sunlight();
 

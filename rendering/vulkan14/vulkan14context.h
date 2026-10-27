@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14compute.h"
 #include "rendering/vulkan14/vulkan14cull.h"
 #include "rendering/vulkan14/vulkan14shadows.h"
+#include "rendering/vulkan14/vulkan14cabprobe.h"
 #include "rendering/vulkan14/vulkan14terrain.h"
 #include "rendering/vulkan14/vulkan14grass.h"
 #include "rendering/vulkan14/vulkan14particles.h"
@@ -390,6 +391,14 @@ struct scene_state
 	local_shadow_maps lamps;
 	std::shared_ptr<scene_program> cube_shadow, cube_alpha_shadow;
 	target_formats cube_formats;
+	// the probe of the occupied cab (the stage A4): its maps, the programs and the targets drawing it, the kernel of the spherical
+	// harmonics of the light it reflects and their storage (CAB_PROBE_SSBO), and the stand-in of its maps
+	cab_probe_maps cabprobe;
+	std::shared_ptr<scene_program> cabprobe_program, cabprobe_alpha_program;
+	target_formats cabprobe_formats;
+	compute_kernel cabprobe_sh;
+	buffer cabprobe_bounce;
+	std::shared_ptr<image> cabprobe_empty;
 	// the materials of the heightmap terrain (the stage P6), made with the bank of the textures
 	std::unique_ptr<terrain_materials> terrain;
 	// the grass of the heightmap terrain, and its program, made when it's first drawn
@@ -643,6 +652,8 @@ struct vulkan14_renderer::draw_state
 	// don't draw is left out (depthskip, set by walk_material())
 	bool depthpass{false};
 	bool depthskip{true};
+	// the probe of the cab (the stage A4): the walk draws with the programs of the probe, what they don't draw is left out alike
+	bool probepass{false};
 	// the pass sets of a culling, the instance buffer its output, for the indirect draws of its instances; null: the pass sets
 	VkDescriptorSet const *cull_sets{nullptr};
 	// the rendering under way, begun again where it was after it was ended for the compute passes of the culling

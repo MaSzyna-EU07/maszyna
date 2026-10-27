@@ -116,6 +116,70 @@ void vulkan14_renderer::destroy_ao()
 	scene.ssao_noise.reset();
 }
 
+// the ambient occlusion goes into the light of the surfaces of the colour pass of the main view (gfx.postfx.ao.lighting,
+// opengl46_renderer::Ao_Lighting_Wanted()): the ground truth one, made from the depth of the whole scene drawn before the colour,
+// which needs a perspective projection with the far plane at infinity (the distance of a surface worked out from its depth)
+bool vulkan14_renderer::ao_lighting_wanted(viewport_config const &Viewport) const
+{
+	if ((Global.gfx_postfx_ao != 2) || (false == Global.gfx_postfx_ao_lighting) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	{
+		return false;
+	}
+	auto const &targets{m_context->scene.targets};
+	if (targets.empty() || (false == bool(targets.front().ssao)) || (false == bool(targets.front().ssao_blur)))
+	{
+		return false;
+	}
+	auto const &projection{scene_ubs.projection};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+// the ground truth ambient occlusion of the depth of the scene drawn before the colour (render_scene_depth()), for the shading of the
+// colour pass, left in the layout it reads it in. outside a rendering
+bool vulkan14_renderer::compute_ao_lighting(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &targets{scene.targets[Index]};
+	auto const commands{ctx.commands};
+	if ((false == bool(targets.ssao)) || (false == bool(targets.ssao_blur)) || (false == bool(targets.scene_depth)))
+	{
+		return false;
+	}
+	ctx.passes.begin_pass("ambient occlusion");
+	// the projection the depth was drawn with
+	auto const &projection{m_colorpass.pass_camera.projection()};
+	auto const inverseprojection{glm::inverse(projection)};
+	auto const width{targets.ssao->desc().extent.width};
+	auto const height{targets.ssao->desc().extent.height};
+	auto const groups_x{(width + GROUP_SIZE - 1) / GROUP_SIZE};
+	auto const groups_y{(height + GROUP_SIZE - 1) / GROUP_SIZE};
+	// horizon search
+	vk14::barriers(commands, {vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access),
+	                          vk14::use_of(*targets.ssao, VK_IMAGE_LAYOUT_GENERAL, compute_stage, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)});
+	gtao_constants constants{};
+	constants.inv_projection = inverseprojection;
+	constants.params = glm::vec2{Global.gfx_postfx_ao_radius, projection[0][0] * 0.5f * static_cast<float>(width)};
+	constants.clipw_row = glm::vec4{projection[0][3], projection[1][3], projection[2][3], projection[3][3]};
+	constants.quality = glm::ivec2{Global.gfx_postfx_ao_slices, Global.gfx_postfx_ao_steps};
+	auto const depthimage{vk14::image_descriptor(ctx.sampling.clamp_nearest, targets.scene_depth->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)};
+	scene.gtao_main.dispatch(commands, {depthimage, vk14::storage_image(targets.ssao->view())}, constants, groups_x, groups_y);
+	// smoothing
+	vk14::barriers(commands, {vk14::use_of(*targets.ssao, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access),
+	                          vk14::use_of(*targets.ssao_blur, VK_IMAGE_LAYOUT_GENERAL, compute_stage, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)});
+	scene.gtao_denoise.dispatch(commands, {depthimage, vk14::image_descriptor(ctx.sampling.clamp_nearest, targets.ssao->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), vk14::storage_image(targets.ssao_blur->view())},
+	                            inverseprojection, groups_x, groups_y);
+	vk14::barriers(commands, {vk14::use_of(*targets.ssao_blur, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+	return true;
+}
+
+// the block of the scene of the colour pass set up to read the occlusion (light_common.glsl, ambient_occlusion())
+void vulkan14_renderer::setup_ao_lighting()
+{
+	scene_ubs.ao_params = glm::vec4{1.f, Global.gfx_postfx_ao_strength, 0.f, 0.f};
+	upload_scene_block();
+}
+
 // the ambient occlusion of the viewport from the depth of its scene (resolved), multiplied into its colour
 // (opengl46_renderer::Render_ambient_occlusion()). Mode: Global.gfx_postfx_ao. outside a rendering
 void vulkan14_renderer::render_ao(std::size_t const Index, int const Mode)

@@ -61,7 +61,11 @@
 #define SCENE_DEPTH_TEX 24
 #define SSR_HISTORY_TEX 25
 #define WATER_SSBO 26
-#define PASS_BINDING_COUNT 27
+#define SCENE_AO_TEX 27
+#define CAB_PROBE_TEX 28
+#define CAB_PROBE_ALBEDO_TEX 29
+#define CAB_PROBE_SSBO 30
+#define PASS_BINDING_COUNT 31
 #define MATERIAL_TEXTURE_FIRST 0
 #define CL_CLUSTER_UBO 0
 #define CL_AABB_SSBO 1
@@ -129,6 +133,8 @@
 #define WATER_TRAIL 1024
 #define WATER_MAP 256
 #define WATER_GROUP_SIZE 64
+#define CAB_PROBE_SH_SIZE 16
+#define CAB_PROBE_SH_GROUP_SIZE 64
 #endif
 
 #include "settings.glsl"
@@ -281,6 +287,15 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	vec4 env_params;
 	// the air against the vehicle of the camera, see gl::scene_ubs
 	vec4 rain_wind;
+	// the ambient occlusion in the light of the surfaces, see gl::scene_ubs
+	vec4 ao_params;
+	// the probe of the occupied cab, and the lamp it's drawn with, see gl::scene_ubs
+	mat4 cab_probe_view;
+	vec4 cab_probe_box;
+	vec4 cab_probe_params;
+	vec4 cab_probe_lamp;
+	vec4 cab_probe_lamp_color;
+	vec4 cab_probe_lamp_shadow;
 };
 
 #ifndef LAYOUT_COMPUTE
@@ -298,6 +313,8 @@ struct model_draw_s
 	float fog_density;
 	float alpha_mult;
 	float shadow_tone;
+	// 1 for the parts of the occupied cab, see gl::model_ubs
+	float cab_interior;
 };
 
 layout(std430, set = PASS_SET, binding = DRAW_SSBO) readonly buffer model_draw_ssbo
@@ -331,6 +348,7 @@ layout(location = 11) flat in uint f_model_draw;
 #define fog_density model_draws[MODEL_DRAW].fog_density
 #define alpha_mult model_draws[MODEL_DRAW].alpha_mult
 #define shadow_tone model_draws[MODEL_DRAW].shadow_tone
+#define cab_interior model_draws[MODEL_DRAW].cab_interior
 
 // per-instance modelview matrices of the instanced draws, element 0 the identity. a draw which isn't instanced is drawn with
 // firstInstance 0, an instanced one from its base instance on, with modelview set to the submodel-local chain (computed from

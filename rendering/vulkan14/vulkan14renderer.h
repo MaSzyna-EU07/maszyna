@@ -389,6 +389,19 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool init_ao(std::string &Reason);
 	void destroy_ao();
 	void render_ao(std::size_t const Viewport, int const Mode);
+	// the ambient occlusion in the light of the surfaces (gfx.postfx.ao.lighting, the stage A3): whether the colour pass of the
+	// viewport takes it, the occlusion worked out from the depth of the scene drawn before the colour (outside a rendering; false: it
+	// couldn't be), and the block of the scene set up for the colour pass to read it
+	bool ao_lighting_wanted(viewport_config const &Viewport) const;
+	bool compute_ao_lighting(std::size_t const Viewport);
+	void setup_ao_lighting();
+	bool m_aolighting{false};
+	// the probe of the occupied cab (vulkan14cabprobe.cpp, the stage A4; opengl46_renderer::Render_cab_probe()): the resources, the
+	// occupied vehicle whose cab is drawn (nullptr: none), the drawing of the probe when it needs it in this frame
+	bool init_cab_probe(std::string &Reason);
+	void destroy_cab_probe();
+	TDynamicObject *cab_probe_vehicle() const;
+	void render_cab_probe();
 	// the particles of the gpu: what the colour pass under way draws them with, and the depth of the scene drawn so far copied for
 	// the soft particles (false: they aren't soft)
 	gfx::gpu_particles::view particles_view() const;

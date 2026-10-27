@@ -128,17 +128,28 @@ should its test of the matrices show the camera motion the wrong way.
 
 ### Ambient occlusion
 
-Darkening of creases, corners and the ground under objects, worked out from the depth of the image (screen space)
-and multiplied into the image before the motion blur and the tonemapping. It works with and without motion blur.
-It darkens all light alike, the sun and the headlights included; limiting it to the ambient light needs the depth
-before the shading (a depth prepass), which is planned later.
+Darkening of creases, corners and the ground under objects, worked out from the depth of the image (screen space).
+With `gfx.postfx.ao.lighting yes` (the default, OpenGL and Vulkan) the ground truth occlusion is worked out from the depth
+of the whole scene drawn before its colour (it turns that depth pass on, like the contact shadows and the screen space
+reflections) and the shading takes it into the ambient light only: the diffuse ambient light, with the light coming back
+from more bounces off surfaces of their own albedo, and the reflection of the surroundings (specular occlusion,
+Lagarde 2014). The sun, the headlights, the lamps and the reflection of the scene the screen space reflections find
+aren't darkened. Surfaces the depth pass doesn't hold (translucent ones, the grass, the cab drawn after rain or snow,
+the edges of objects) get no occlusion. With `gfx.postfx.ao.lighting no`, or with `ssao`, the occlusion is multiplied
+into the image before the motion blur and the tonemapping, darkening all light alike, as before.
+
+Cost: with `lighting` the occlusion itself costs the same; the depth pass of the scene costs CPU in OpenGL when nothing
+else turned it on (`gfx.ssr`, `gfx.contactshadows`, `gfx.depthprepass.scene`; with `gfx.depthprepass.replay yes` it is
+the walk of the colour pass recorded, not a second walk), and every shaded pixel reads the occlusion. `gfx.postfx.ao.lighting no`
+is the cheaper setting.
 
 | Entry | Default | Meaning |
 |---|---|---|
 | `gfx.postfx.ao gtao/ssao/no` | `gtao` | `gtao` (or `yes`): ground truth ambient occlusion (Jimenez et al. 2016), at half the resolution with a depth aware smoothing and upsampling. `ssao`: the older, experimental ssao. `no`: none, and no targets are made for it; the mode can then not be turned on in the debug window |
 | `gfx.postfx.ao.radius` | `1.5` | 0.1..10: reach of the occluders, metres |
 | `gfx.postfx.ao.strength` | `1.0` | 0..4: power the occlusion is raised to; 1 = as computed, 0 = none |
-| `gfx.postfx.ao.bounce` | `0.3` | 0..1: albedo of the surfaces assumed for the light that comes back after more bounces (brightens the occlusion a little) |
+| `gfx.postfx.ao.bounce` | `0.3` | 0..1: albedo of the surfaces assumed for the light that comes back after more bounces (brightens the occlusion a little); over the image only, in the light of the surfaces their own albedo is taken |
+| `gfx.postfx.ao.lighting yes/no` | `yes` | with `gtao`: the occlusion darkens the ambient light and the reflection of the surroundings in the shading (needs the depth of the scene before its colour); `no`: it darkens the finished image |
 | `gfx.postfx.ao.quality slices steps` | `3 4` | directions searched around each pixel (1..8) and samples on each side of a direction (1..16) |
 
 ### Lamps
@@ -158,7 +169,8 @@ scales can also be changed in the **Light clusters** debug window.
   section holds light points of its own (these light it then, through its self-illumination).
 - **The cab lamp** of the occupied cab is a point light under the top of the cab model. Before, it added to the ambient
   light of the whole cab and weakened the shadows of the sun in it; now a share of that ambient light is kept for the light
-  which bounces around the cab (`gfx.lights.cab.bounce`), and the sun shadows stay.
+  which bounces around the cab (`gfx.lights.cab.bounce`), and the sun shadows stay. With the probe of the cab (below) the
+  light which bounces comes from the probe instead and nothing of the lamp is kept in the ambient light.
 
 The lamps of models and compartments fade in from the light level at which scenery lamps switch on (`ls_Dark`) to full
 darkness; in daylight they are not gathered at all. The cab lamp and the lamps of scenery models nearest to the camera cast
@@ -231,6 +243,31 @@ shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on 
 | `gfx.lights.shadows.vehicles.range` | `50` | distance from the camera within which vehicles (and the occupied cab) cast the shadows of scenery lamps, metres; 0: only the scenery does |
 | `gfx.lights.shadows.headlights` | `2` | 0..4: how many sets of headlights (vehicle ends) cast shadows; 0: none |
 | `gfx.lights.shadows.headlights.range` | `250` | 10..1000: distance ahead of the vehicle within which things cast the shadows of its headlights, metres |
+
+**The probe of the cab** (`gfx.cabprobe`, OpenGL and Vulkan): two cube maps drawn from the middle of the box of the cab model,
+in the space of the cab (they stay right while the vehicle moves): the light of the cab lamp the cab reflects (with the
+shadows of the lamp) and the light of what glows in it (the lights of the desk), and the albedo of the cab. The glasses
+aren't drawn, so through them the probe shows nothing. They are drawn every `gfx.cabprobe.interval` frames (for the moving
+parts and the lights of the desk) and at once when the cab or the lamp change, the six faces in one pass with the opaque
+parts of the cab (as the shadow map of the lamp). The parts of the cab read them:
+- the light of the lamp the cab reflects lights the cab again (`gfx.cabprobe.bounce`, from spherical harmonics of the
+  probe) in place of `gfx.lights.cab.bounce`, so the light bounces where the lamp actually lights the cab;
+- the cab reflects itself (`gfx.cabprobe.reflections`) where the screen space reflections find nothing: the glasses show the
+  lit cab at night, the glossy parts reflect the cab instead of the sky. The reflected ray is taken to the box of the cab
+  (the walls), the cab shows the light of the lamp it reflects and its albedo lit by the ambient light, through the windows
+  the sky is seen as before.
+
+The ambient light and the sun are left out of the probe, the cab gets them as before. `gfx.cabprobe no` is the old way (the
+share of the lamp in the ambient light, the sky in the reflections). Cost: one draw of the opaque cab (about the draw calls of
+the cab in the colour pass) every `interval` frames, 2 cube maps of the size of the level with their mipmaps and the depth (64: 0.5 MB, 128: 2 MB, 256: 8 MB), two texture reads in
+the reflections of the cab.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.cabprobe` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): the probe of the cab, faces of 64/128/256 pixels; `no`: none |
+| `gfx.cabprobe.interval` | `4` | 1..120: frames between the updates of the probe |
+| `gfx.cabprobe.bounce` | `1.0` | 0..4: share of the light of the lamp the cab reflects which lights it again |
+| `gfx.cabprobe.reflections yes/no` | `yes` | the cab reflects itself where the screen space reflections find nothing; `no`: the sky, as before |
 
 ### Contact shadows
 

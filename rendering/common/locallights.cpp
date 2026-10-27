@@ -502,6 +502,18 @@ gfx::local_lights::section_data const &gfx::local_lights::model_bounds(TModel3d 
 	return m_models.emplace(Model, data).first->second;
 }
 
+bool gfx::local_lights::cab_bounds(TModel3d *Cab, gfx::geometrybank_manager const &Geometry, glm::vec3 &Center, glm::vec3 &Extent)
+{
+	if (Cab == nullptr)
+	{
+		return false;
+	}
+	auto const &bounds{model_bounds(Cab, Geometry)};
+	Center = bounds.center;
+	Extent = bounds.extent;
+	return (bounds.extent != glm::vec3{0.f});
+}
+
 std::string gfx::local_lights::info() const
 {
 	return "local lights: " + std::to_string(m_lights.size()) + " (scenery " + std::to_string(m_scenerycount) + ", vehicles " + std::to_string(m_vehiclecount) + ", compartments " +

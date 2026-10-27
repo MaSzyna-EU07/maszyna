@@ -609,6 +609,7 @@ bool vulkan14_renderer::Render()
 		scene.cull.main.begin_frame(slot, value, ctx.completed());
 	}
 	scene.lamps.begin_frame(ctx.commands, value);
+	scene.cabprobe.begin_frame(value);
 	if (scene.terrain)
 	{
 		// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
@@ -679,7 +680,8 @@ bool vulkan14_renderer::Render()
 	if (false == scene.images_ready)
 	{
 		scene.images_ready = true;
-		std::vector<vk14::image *> const standins{scene.shadow_empty.get(), scene.env_empty.get(), scene.volume_empty.get(), scene.cube_shadow_empty.get(), scene.headlight_shadow_empty.get(), scene.depth_empty.get()};
+		std::vector<vk14::image *> const standins{scene.shadow_empty.get(),           scene.env_empty.get(),   scene.volume_empty.get(),  scene.cube_shadow_empty.get(),
+		                                          scene.headlight_shadow_empty.get(), scene.depth_empty.get(), scene.cabprobe_empty.get()};
 		std::vector<vk14::image_use> clears;
 		for (auto *image : standins)
 		{
@@ -715,6 +717,8 @@ bool vulkan14_renderer::Render()
 		vk14::barriers(ctx.commands, uses);
 		// no light is assigned to any cluster until the culling pass runs
 		ctx.commands->fill_buffer(scene.clusters.ranges.handle(), 0, VK_WHOLE_SIZE, 0);
+		// nor does the cab light itself until its probe is drawn
+		ctx.commands->fill_buffer(scene.cabprobe_bounce.handle(), 0, VK_WHOLE_SIZE, 0);
 		VkMemoryBarrier2 barrier{};
 		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
 		barrier.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
@@ -1500,6 +1504,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		render_lamp_shadows();
 		render_headlight_shadows();
 		ready_lamp_maps();
+		// the probe of the cab, which reads the map of the cab lamp
+		render_cab_probe();
 	}
 	// the scenery around the camera the reflections are traced through, before the passes which trace them
 	auto const raytracing{raytracing_wanted(vp)};
@@ -1557,6 +1563,11 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		upload_weather_block();
 	}
 
+	// the ambient occlusion the shading may read (SCENE_AO_TEX) is in the layout it's read in from the first frame on
+	if (targets.ssao_blur && (targets.ssao_blur->state.layout == VK_IMAGE_LAYOUT_UNDEFINED))
+	{
+		vk14::barriers(commands, {vk14::use_of(*targets.ssao_blur, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+	}
 	// the colour of the scene: drawn to the images with the samples, resolved to the single ones
 	auto const uses{colour_target_uses(targets)};
 	ctx.passes.begin_pass("sky", uses);
@@ -1579,11 +1590,25 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	setup_shadow_matrices();
 	upload_scene_block();
 
+	// the probe of the cab, which the parts of the cab drawn in the colour pass of the main view read
+	if (vp.main)
+	{
+		scene.cabprobe.setup_scene(scene_ubs, cab_probe_vehicle(), m_colorpass.pass_camera.position(), glm::mat3{m_colorpass.pass_camera.modelview()});
+		m_cabprobelit = (scene_ubs.cab_probe_box.w > 0.f);
+		if (m_cabprobelit)
+		{
+			upload_scene_block();
+		}
+	}
+
 	// the depth of the whole opaque scene before its colour, which the contact shadows need
 	m_indirectcolourpending = false;
+	m_aolighting = false;
 	auto const contactshadows{contact_shadows_wanted(vp)};
 	auto const reflections{m_ssrframe && (false == Global.bWireFrame)};
-	if ((Global.gfx_depthprepass_scene || contactshadows || reflections) && vp.main && (false == Global.bWireFrame))
+	// and the ambient occlusion in the light of the surfaces
+	auto const aolighting{ao_lighting_wanted(vp)};
+	if ((Global.gfx_depthprepass_scene || contactshadows || reflections || aolighting) && vp.main && (false == Global.bWireFrame))
 	{
 		render_scene_depth(Index, future);
 		if (contactshadows)
@@ -1593,6 +1618,10 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		if (reflections)
 		{
 			setup_screen_reflections(Index, taa);
+		}
+		if (m_aolighting)
+		{
+			setup_ao_lighting();
 		}
 	}
 
@@ -1668,14 +1697,17 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	commands->end_rendering();
 	end_draws();
-	if (m_contactshadows || m_ssractive)
+	if (m_contactshadows || m_ssractive || m_aolighting || m_cabprobelit)
 	{
-		// the depth they read is of this view only
+		// the depth they read is of this view only, and so is the probe of the cab
 		m_contactshadows = false;
 		m_ssractive = false;
+		m_cabprobelit = false;
 		scene_ubs.contact_shadow_params = glm::vec4{0.f};
 		scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+		scene_ubs.ao_params = glm::vec4{0.f};
 		gfx::screen_reflections::clear(scene_ubs);
+		gfx::cab_probe::clear_scene(scene_ubs);
 	}
 	// the images resolved and drawn are read by the post-processing
 	m_colorpass.draw_stats = m_renderpass.draw_stats;
@@ -1698,8 +1730,10 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	auto &draw{*m_draw};
 	auto const commands{ctx.commands};
 	auto const msaa{targets.samples != VK_SAMPLE_COUNT_1_BIT};
-	// the depth copied apart from the one the colour pass goes on with, for the contact shadows and the screen space reflections
-	auto const contact{contact_shadows_wanted(m_viewports[Index]) || m_ssrframe};
+	// the depth copied apart from the one the colour pass goes on with, for the contact shadows, the screen space reflections and the
+	// ambient occlusion in the light of the surfaces
+	auto const aolighting{ao_lighting_wanted(m_viewports[Index])};
+	auto const contact{contact_shadows_wanted(m_viewports[Index]) || m_ssrframe || aolighting};
 	commands->end_rendering();
 	// what the draws go on with
 	auto const set{draw.set};
@@ -1794,6 +1828,11 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 		copy.pRegions = &region;
 		commands->copy_image2(&copy);
 		vk14::barriers(commands, {vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+		// the ambient occlusion of the depth, between the renderings (compute)
+		if (aolighting)
+		{
+			m_aolighting = compute_ao_lighting(Index);
+		}
 	}
 	// the colour pass goes on where the sky left it
 	vk14::barriers(commands, colour_target_uses(targets));
@@ -3478,8 +3517,9 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 	auto const commands{ctx.commands};
 
 	// the occlusion goes into the image before the blur, which smears both alike. the targets are there only when it was on as they
-	// were made
-	auto const aomode{(targets.ssao != nullptr) ? Global.gfx_postfx_ao : 0};
+	// were made. in the light of the surfaces it's in the image already
+	auto const aomode{((targets.ssao != nullptr) && (false == m_aolighting)) ? Global.gfx_postfx_ao : 0};
+	m_aolighting = false;
 	if (aomode != 0)
 	{
 		ctx.passes.begin_pass("ambient occlusion");

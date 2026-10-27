@@ -512,6 +512,9 @@ class scene_walk
 	bool m_previewing{false};
 	// the last lighting of the pass placed the cab lamp among the lights: the cab is lit by it, not by an addition to the ambient light
 	bool m_cablamplit{false};
+	// the colour pass reads the probe of the cab (gfx::cab_probe): the light of the cab lamp the cab reflects lights it again from the
+	// probe, so the ambient light keeps no share of the lamp
+	bool m_cabprobelit{false};
 	// the shadow pass draws the kept scenery part of the map of a lamp: no vehicles, and not the model of the lamp itself
 	bool m_cubescenery{false};
 	TAnimModel const *m_cubeskipinstance{nullptr};

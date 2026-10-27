@@ -73,7 +73,14 @@ constexpr std::uint32_t SCENE_DEPTH_TEX = 24;
 constexpr std::uint32_t SSR_HISTORY_TEX = 25;
 // the water on the windscreens (gfx::windscreen_water): the drops, their grids and the wetted paths the glasses read
 constexpr std::uint32_t WATER_SSBO = 26;
-constexpr std::uint32_t PASS_BINDING_COUNT = 27;
+// the ambient occlusion of the main view in the light of the surfaces (gfx.postfx.ao.lighting, the stage A3), half its size
+constexpr std::uint32_t SCENE_AO_TEX = 27;
+// the probe of the occupied cab (gfx::cab_probe, the stage A4): the cube maps of the light of its lamps the cab reflects and of its
+// albedo, and the light it lights the cab with again (gl::cab_probe_data)
+constexpr std::uint32_t CAB_PROBE_TEX = 28;
+constexpr std::uint32_t CAB_PROBE_ALBEDO_TEX = 29;
+constexpr std::uint32_t CAB_PROBE_SSBO = 30;
+constexpr std::uint32_t PASS_BINDING_COUNT = 31;
 // the offsets of the bindings above with dynamic offsets, in the order of the bindings
 constexpr std::uint32_t PASS_DYNAMIC_OFFSETS = 6;
 // the textures of a material take the bindings of their units (#pragma texture(name, unit, ...)), 0 .. MAX_TEXTURES - 1

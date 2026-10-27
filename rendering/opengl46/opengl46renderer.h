@@ -43,6 +43,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46ao.h"
 #include "rendering/common/locallights.h"
 #include "rendering/opengl46/opengl46localshadows.h"
+#include "rendering/opengl46/opengl46cabprobe.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
@@ -319,6 +320,10 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	bool Render_reflections(viewport_config &vp);
 	// draws the cube shadow maps of the lamps which need it in this frame (the cab lamp: the cab)
 	void Render_local_shadows();
+	// the occupied vehicle whose cab is drawn in the colour pass, nullptr when there's none (the conditions of Render_cab())
+	TDynamicObject *Cab_Probe_Vehicle() const;
+	// draws the probe of the occupied cab when it needs it in this frame
+	void Render_cab_probe();
 	// draws the parts of the cube shadow maps of the scenery lamps which need it in this frame
 	void Render_lamp_shadows();
 	// one part of the map of a scenery lamp: the scenery, or the vehicles by it (and Cab, the occupied cab) over a copy of it
@@ -415,6 +420,11 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	void Setup_Contact_Shadows( viewport_config &Viewport );
 	// makes the target of the resolved depth of the viewport if it isn't there yet; false if it can't be made
 	bool Resolved_Depth_Target( viewport_config &Viewport );
+	// whether the colour pass of the viewport takes the ambient occlusion into the light of its surfaces (gfx.postfx.ao.lighting),
+	// which needs the depth pass of the scene
+	bool Ao_Lighting_Wanted( viewport_config const &Viewport ) const;
+	// works out the ambient occlusion of the depth drawn by Render_Scene_Depth() and sets it up for the colour pass
+	void Setup_Ao_Lighting( viewport_config &Viewport );
 	// resolves the depth drawn so far in the colour pass of the viewport for the soft particles (gfx.particles.soft) and binds it
 	// to gl::SCENE_DEPTH_TEX; false when the viewport has no such depth
 	bool Setup_Particles_Depth( viewport_config &Viewport );
@@ -708,6 +718,9 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// contact shadows: set up for the colour pass under way, and whether the last main view had them
 	bool m_contactshadows { false };
 	bool m_contactshadowslast { false };
+	// the ambient occlusion of the colour pass of the main view under way is in the light of its surfaces (gfx.postfx.ao.lighting),
+	// not applied to its image
+	bool m_aolighting { false };
 	// a vehicle drawn in the colour pass of the last frame moved, and one drawn in this frame did (motion blur, Render_pass())
 	bool m_vehiclesmoved { true };
 	gl::gpu_timer m_contactshadowstimer; // resolve of the depth
@@ -767,6 +780,9 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	opengl46_local_shadows m_localshadows;
 	// the shadow pass draws to a cube shadow map, with the programs of m_localshadows
 	bool m_cubeshadows = false;
+	// the probe of the occupied cab, and the colour mode draws the cab into it with its programs (Render_cab_probe())
+	opengl46_cab_probe m_cabprobe;
+	bool m_cabprobepass = false;
 
     double m_precipitationrotation;
 

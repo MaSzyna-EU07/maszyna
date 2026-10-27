@@ -7,7 +7,7 @@
 // the locations of the inputs and outputs between the stages, the same for a name in every shader (SPIR-V links the stages by
 // the locations, not by the names): 0 f_normal, 1 f_normal_raw, 2 f_coord, 3 f_pos, 4 f_clip_pos, 5 f_clip_future_pos,
 // 6 TangentFragPos, 7 UserData, 8-10 f_tbn, 11 f_model_draw, 12 f_albedo, 13 f_color, 14 f_coords, 15 f_local, 16 f_soft,
-// 17 f_streak, 18 g_coord, 19 g_coords, 20 g_pos
+// 17 f_streak, 18 g_coord, 19 g_coords, 20 g_pos, 21 g_normal
 #ifndef COMMON_GLSL
 #define COMMON_GLSL
 
@@ -106,6 +106,12 @@
 #define CLOUD_HISTORY_TEX 22
 #define SCENE_DEPTH_TEX 23
 #define SSR_HISTORY_TEX 24
+#define SCENE_AO_TEX 26
+#define CAB_PROBE_TEX 27
+#define CAB_PROBE_ALBEDO_TEX 28
+#define CAB_PROBE_SSBO_BINDING 17
+#define CAB_PROBE_SH_SIZE 16
+#define CAB_PROBE_SH_GROUP_SIZE 64
 #define WEATHER_UBO_BINDING 5
 #define WEATHER_SCRATCH_SSBO_BINDING 9
 #define MAX_CLOUD_LAYERS 4
@@ -239,6 +245,8 @@ struct model_draw_s
         float fog_density;
         float alpha_mult;
         float shadow_tone;
+        // 1 for the parts of the occupied cab, see gl::model_ubs
+        float cab_interior;
 };
 
 layout(std430, binding = MODEL_DRAW_SSBO_BINDING) readonly buffer model_draw_ssbo
@@ -265,6 +273,7 @@ layout(location = 11) flat in uint f_model_draw;
 #define fog_density model_draws[MODEL_DRAW].fog_density
 #define alpha_mult model_draws[MODEL_DRAW].alpha_mult
 #define shadow_tone model_draws[MODEL_DRAW].shadow_tone
+#define cab_interior model_draws[MODEL_DRAW].cab_interior
 #else
 layout(std140, binding = MODEL_UBO_BINDING) uniform model_ubo
 {
@@ -278,6 +287,8 @@ layout(std140, binding = MODEL_UBO_BINDING) uniform model_ubo
         float fog_density;
         float alpha_mult;
         float shadow_tone;
+        // 1 for the parts of the occupied cab, see gl::model_ubs
+        float cab_interior;
 };
 #endif
 
@@ -309,6 +320,15 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 env_params;
     // the air against the vehicle of the camera, see gl::scene_ubs
     vec4 rain_wind;
+    // the ambient occlusion in the light of the surfaces, see gl::scene_ubs
+    vec4 ao_params;
+    // the probe of the occupied cab, and the lamp it's drawn with, see gl::scene_ubs
+    mat4 cab_probe_view;
+    vec4 cab_probe_box;
+    vec4 cab_probe_params;
+    vec4 cab_probe_lamp;
+    vec4 cab_probe_lamp_color;
+    vec4 cab_probe_lamp_shadow;
 };
 
 #ifdef STAGE_VERTEX

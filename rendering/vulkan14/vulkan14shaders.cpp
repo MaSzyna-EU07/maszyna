@@ -803,6 +803,10 @@ std::string binding_preamble(bool const Raytracing)
 	define("SCENE_DEPTH_TEX", SCENE_DEPTH_TEX);
 	define("SSR_HISTORY_TEX", SSR_HISTORY_TEX);
 	define("WATER_SSBO", WATER_SSBO);
+	define("SCENE_AO_TEX", SCENE_AO_TEX);
+	define("CAB_PROBE_TEX", CAB_PROBE_TEX);
+	define("CAB_PROBE_ALBEDO_TEX", CAB_PROBE_ALBEDO_TEX);
+	define("CAB_PROBE_SSBO", CAB_PROBE_SSBO);
 	define("PASS_BINDING_COUNT", PASS_BINDING_COUNT);
 	define("MATERIAL_TEXTURE_FIRST", MATERIAL_TEXTURE_FIRST);
 	define("CL_CLUSTER_UBO", CL_CLUSTER_UBO);
@@ -873,6 +877,8 @@ std::string binding_preamble(bool const Raytracing)
 	define("WATER_TRAIL", gl::WATER_TRAIL);
 	define("WATER_MAP", gl::WATER_MAP);
 	define("WATER_GROUP_SIZE", gl::WATER_GROUP_SIZE);
+	define("CAB_PROBE_SH_SIZE", static_cast<unsigned int>(gl::CAB_PROBE_SH_SIZE));
+	define("CAB_PROBE_SH_GROUP_SIZE", static_cast<unsigned int>(gl::CAB_PROBE_SH_GROUP_SIZE));
 	return preamble;
 }
 

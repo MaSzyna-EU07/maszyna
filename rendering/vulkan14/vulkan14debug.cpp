@@ -164,6 +164,10 @@ std::string vulkan14_renderer::scene_info()
 		text += " contact shadows: " + std::string{Global.gfx_contactshadows == 3 ? "high" : Global.gfx_contactshadows == 2 ? "medium" : "low"} + ", rays " +
 		        to_string(Global.gfx_contactshadows_length, 2) + " m within " + to_string(Global.gfx_contactshadows_range, 0) + " m\n";
 	}
+	if (Global.gfx_cabprobe > 0)
+	{
+		text += " " + scene.cabprobe.info() + "\n";
+	}
 	text += cascades + line(" submodels:", colour.submodels, shadowstats.submodels) + line(" paths:    ", colour.paths, shadowstats.paths) +
 	        line(" shapes:   ", colour.shapes, shadowstats.shapes) + " traction: " + to_string(colour.traction, 7) + "\n" + " lines:    " + to_string(colour.lines, 7) + "\n" +
 	        "particles: " + to_string(colour.particles, 7) + "\nlights:    " + to_string(static_cast<int>(m_lights_lit), 7) + " (" + std::to_string(m_lights_dropped) + " over capacity), " +
@@ -222,6 +226,8 @@ void vulkan14_renderer::draw_debug_ui()
 		m_locallights.draw_debug_ui();
 		ImGui::Separator();
 		scene.lamps.draw_debug_ui();
+		ImGui::Separator();
+		scene.cabprobe.draw_debug_ui();
 		ImGui::Separator();
 		char const *contactlevels[]{"no", "low (the sun)", "medium (the sun and 2 lamps)", "high (the sun and 4 lamps)"};
 		ImGui::Combo("contact shadows (gfx.contactshadows)", &Global.gfx_contactshadows, contactlevels, IM_ARRAYSIZE(contactlevels));
@@ -323,6 +329,7 @@ void vulkan14_renderer::draw_debug_ui()
 				ImGui::SliderFloat("ao bounce albedo", &Global.gfx_postfx_ao_bounce, 0.f, 1.f);
 				ImGui::SliderInt("ao slices", &Global.gfx_postfx_ao_slices, 1, 8);
 				ImGui::SliderInt("ao steps per side", &Global.gfx_postfx_ao_steps, 1, 16);
+				ImGui::Checkbox("ao in the ambient light, not over the image (gfx.postfx.ao.lighting)", &Global.gfx_postfx_ao_lighting);
 			}
 		}
 		ImGui::Separator();
