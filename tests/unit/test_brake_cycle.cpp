@@ -77,3 +77,18 @@ TEST_CASE("brake cycle: every brake delay setting of the real vehicles") {
 		}
 	}
 }
+
+TEST_CASE("brake cycle: the valves the game knows but none of its vehicles has, fitted to a wagon") {
+	// the variants of the Westinghouse and Knorr valves, the Hik ones, the old ESt3 and the CV1 ones, with a name
+	// the game doesn't know at the end
+	for (auto const *name : {"W_Lu_L", "W_Lu_XR", "W_Lu_VI", "Kg", "Kp", "Kss", "Kkg", "Kkp", "Kks", "Hikp1", "Hikss", "Hikg1", "SW", "NESt3", "M483", "CV1", "CV1_L_TR",
+	                         "no such valve"}) {
+		CAPTURE(name);
+		test::reseed_random();
+		vehicle real{definition::fiz("3wl_v2/3wl").set("Brake", "BrakeValve", name)};
+		test::trace trace{std::string{"brake cycle/fitted/"} + name, test::channels::brakes(), 100};
+		real.record(trace);
+		run_cycle(real, trace);
+		trace.check();
+	}
+}

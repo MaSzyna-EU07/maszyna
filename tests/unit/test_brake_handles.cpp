@@ -31,6 +31,31 @@ void hold(vehicle &Vehicle, test::trace &Trace, std::string const &Event, double
 	Vehicle.run(Seconds);
 }
 
+// every position of the driver's handle, recorded in the trace
+void every_position(vehicle &Vehicle, test::trace &Trace) {
+	Vehicle.hold_main_reservoir(std::max(Vehicle->MaxCompressor, 8.0));
+	auto &handle{*Vehicle->Handle};
+	Vehicle.record(Trace);
+
+	hold(Vehicle, Trace, "running", handle.GetPos(bh_RP), 90.0);
+	// every position from the lowest to the highest, emergency included, then back to running
+	auto const lowest{static_cast<int>(std::ceil(handle.GetPos(bh_MIN)))};
+	auto const highest{static_cast<int>(std::floor(handle.GetPos(bh_MAX)))};
+	for (auto position = lowest; position <= highest; ++position) {
+		hold(Vehicle, Trace, "position " + std::to_string(position), position, 15.0);
+		hold(Vehicle, Trace, "running", handle.GetPos(bh_RP), 30.0);
+	}
+	// filling stroke, neutral and the positions of the ep brake, where the handle has them
+	hold(Vehicle, Trace, "filling stroke", handle.GetPos(bh_FS), 10.0);
+	hold(Vehicle, Trace, "neutral", handle.GetPos(bh_NP), 20.0);
+	hold(Vehicle, Trace, "first step", handle.GetPos(bh_MB), 20.0);
+	hold(Vehicle, Trace, "full service", handle.GetPos(bh_FB), 20.0);
+	hold(Vehicle, Trace, "ep release", handle.GetPos(bh_EPR), 10.0);
+	hold(Vehicle, Trace, "ep hold", handle.GetPos(bh_EPN), 10.0);
+	hold(Vehicle, Trace, "ep brake", handle.GetPos(bh_EPB), 10.0);
+	hold(Vehicle, Trace, "running", handle.GetPos(bh_RP), 60.0);
+}
+
 } // namespace
 
 TEST_CASE("brake handles: every position of the driver's handle of every real vehicle") {
@@ -41,28 +66,20 @@ TEST_CASE("brake handles: every position of the driver's handle of every real ve
 		if (false == has_handle(real)) {
 			continue;
 		}
-		real.hold_main_reservoir(std::max(real->MaxCompressor, 8.0));
-		auto &handle{*real->Handle};
 		test::trace trace{"brake handles/" + path, handle_channels(), 100};
-		real.record(trace);
+		every_position(real, trace);
+		trace.check();
+	}
+}
 
-		hold(real, trace, "running", handle.GetPos(bh_RP), 90.0);
-		// every position from the lowest to the highest, emergency included, then back to running
-		auto const lowest{static_cast<int>(std::ceil(handle.GetPos(bh_MIN)))};
-		auto const highest{static_cast<int>(std::floor(handle.GetPos(bh_MAX)))};
-		for (auto position = lowest; position <= highest; ++position) {
-			hold(real, trace, "position " + std::to_string(position), position, 15.0);
-			hold(real, trace, "running", handle.GetPos(bh_RP), 30.0);
-		}
-		// filling stroke, neutral and the positions of the ep brake, where the handle has them
-		hold(real, trace, "filling stroke", handle.GetPos(bh_FS), 10.0);
-		hold(real, trace, "neutral", handle.GetPos(bh_NP), 20.0);
-		hold(real, trace, "first step", handle.GetPos(bh_MB), 20.0);
-		hold(real, trace, "full service", handle.GetPos(bh_FB), 20.0);
-		hold(real, trace, "ep release", handle.GetPos(bh_EPR), 10.0);
-		hold(real, trace, "ep hold", handle.GetPos(bh_EPN), 10.0);
-		hold(real, trace, "ep brake", handle.GetPos(bh_EPB), 10.0);
-		hold(real, trace, "running", handle.GetPos(bh_RP), 60.0);
+TEST_CASE("brake handles: the handles the game knows but none of its vehicles has, fitted to an EU07") {
+	// test is a handle for trying things out, D2 and Westinghouse fall back to the plain handle of the base class
+	for (auto const *name : {"test", "D2", "Westinghouse", "MHZ_EN57", "St113", "no such handle"}) {
+		CAPTURE(name);
+		test::reseed_random();
+		vehicle real{definition::fiz("4e_v1/4e").set("Cntrl", "BrakeHandle", name)};
+		test::trace trace{std::string{"brake handles/fitted/"} + name, handle_channels(), 100};
+		every_position(real, trace);
 		trace.check();
 	}
 }
