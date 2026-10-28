@@ -42,7 +42,6 @@ extern char **environ;
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "world/Track.h"
-#include "utilities/Float3d.h"
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
 #include "scene/sceneterrain.h"
@@ -120,8 +119,8 @@ namespace
         for (TSubModel *sub = Submodel; sub != nullptr; sub = sub->Next)
         {
             glm::dmat4 mlocal = M;
-            if (sub->iFlags & 0xC000 && sub->GetMatrix() != nullptr)
-                mlocal = M * glm::dmat4(glm::make_mat4(sub->GetMatrix()->readArray()));
+		    if (sub->iFlags & 0xC000 && sub->iFlags & 0x8000)
+			    mlocal = M * glm::dmat4(sub->fMatrix);
 
             if (sub->eType < TP_ROTATOR) // a drawable mesh, not a rotator/light/etc.
             {
