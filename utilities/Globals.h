@@ -483,6 +483,7 @@ struct global_settings {
     float gfx_postfx_ao_bounce { 0.3f }; // albedo of the surfaces assumed for the light coming back after more bounces
     int gfx_postfx_ao_slices { 3 }; // directions searched around each pixel
     int gfx_postfx_ao_steps { 4 }; // samples on each side of a direction
+    float gfx_postfx_ao_cab { 0.5f }; // share of the occlusion the cab and the low poly interiors take, 1 = all of it
     // with gfx_postfx_ao 2 (opengl 4.6 and vulkan): the occlusion is worked out from the depth of the scene drawn before its colour
     // (which it turns on, see gfx_depthprepass_scene) and darkens the ambient light and the reflection of the surroundings in the
     // shading, not the light of the sun and the lamps. false: it darkens the finished image, as before
@@ -508,6 +509,12 @@ struct global_settings {
     int gfx_cabprobe_interval { 4 };
     float gfx_cabprobe_bounce { 1.f };
     bool gfx_cabprobe_reflections { true };
+    // the probe of the cab is lit by the sun (the moon) coming in through the windows too, so the light which bounces around the cab
+    // is the light of the sun where it falls in it; the scale of that light, 0 for none
+    float gfx_cabprobe_sun { 1.f };
+    // the light of the sun coming in through the windows of the low poly interiors of the vehicles and of the cab without its probe,
+    // bounced around them, as a share of the light of the sun on a surface facing it; 0 for none
+    float gfx_interior_bounce { 0.1f };
     // the occlusion of the sky and of the sun by the scenery around the camera (opengl 4.6 and vulkan, gfx::sky_occlusion, the track T):
     // tunnels, the ground under bridges and roofs, cuttings and the foot of slopes are dark by their geometry, worked out in the
     // background from the scenery seen from above. 0 off (nothing is occluded), 1 low (256 m around the camera, texels of 1 m),

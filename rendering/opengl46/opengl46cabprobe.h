@@ -28,8 +28,8 @@ class opengl46_cab_probe : public gfx::cab_probe
 
 	// creates the programs, the stand-ins and the storage of the spherical harmonics. throws gl::shader_exception
 	void init();
-	// puts the maps (or the stand-ins) on their texture units, gl::CAB_PROBE_TEX and gl::CAB_PROBE_ALBEDO_TEX, and the spherical
-	// harmonics on gl::CAB_PROBE_SSBO_BINDING. once per context and frame
+	// puts the maps (or the stand-ins) on their texture units, gl::CAB_PROBE_TEX, gl::CAB_PROBE_ALBEDO_TEX and the mask on
+	// gl::CAB_PROBE_MASK_TEX, and the spherical harmonics on gl::CAB_PROBE_SSBO_BINDING. once per context and frame
 	void bind();
 	// program of the probe, of the alpha tested materials when Alpha
 	gl::program &program(bool const Alpha)
@@ -60,6 +60,8 @@ class opengl46_cab_probe : public gfx::cab_probe
 	GLuint m_albedo{0};
 	GLuint m_depth{0};
 	GLuint m_framebuffer{0};
+	// the copy of a small level of the albedo of the last drawing, which the next one reads to tell where the windows are
+	GLuint m_mask{0};
 	// stand-ins: a cube map of 1x1 faces of nothing, a 1x1 white texture
 	GLuint m_empty{0};
 	GLuint m_white{0};

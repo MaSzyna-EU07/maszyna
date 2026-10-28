@@ -82,6 +82,7 @@ void opengl46_cab_probe::bind()
 {
 	glBindTextureUnit(gl::CAB_PROBE_TEX, (m_light != 0) ? m_light : m_empty);
 	glBindTextureUnit(gl::CAB_PROBE_ALBEDO_TEX, (m_albedo != 0) ? m_albedo : m_empty);
+	glBindTextureUnit(gl::CAB_PROBE_MASK_TEX, (m_mask != 0) ? m_mask : m_empty);
 	if (m_sh)
 		m_sh->bind_base();
 }
@@ -91,6 +92,13 @@ bool opengl46_cab_probe::gpu_allocate(int const Size)
 	m_light = make_cube(GL_RGBA16F, Size, true);
 	m_albedo = make_cube(GL_RGBA8, Size, true);
 	m_depth = make_cube(GL_DEPTH_COMPONENT32F, Size, false);
+	// the mask: the level of the albedo of at most CAB_PROBE_MASK_SIZE pixels a face, as mask_size() has it once the size is set
+	auto masksize{Size};
+	while (masksize > static_cast<int>(gl::CAB_PROBE_MASK_SIZE))
+		masksize >>= 1;
+	m_mask = make_cube(GL_RGBA8, std::max(masksize, 1), false);
+	glTextureParameteri(m_mask, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTextureParameteri(m_mask, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	// all the faces at once, the geometry shader picks the face
 	glCreateFramebuffers(1, &m_framebuffer);
 	glNamedFramebufferTexture(m_framebuffer, GL_COLOR_ATTACHMENT0, m_light, 0);
@@ -106,7 +114,7 @@ void opengl46_cab_probe::gpu_release()
 {
 	if (m_framebuffer != 0)
 		glDeleteFramebuffers(1, &m_framebuffer);
-	for (auto *texture : {&m_light, &m_albedo, &m_depth})
+	for (auto *texture : {&m_light, &m_albedo, &m_depth, &m_mask})
 	{
 		if (*texture != 0)
 			glDeleteTextures(1, texture);
@@ -143,6 +151,9 @@ void opengl46_cab_probe::gpu_end()
 	gl::framebuffer::unbind();
 	glGenerateTextureMipmap(m_light);
 	glGenerateTextureMipmap(m_albedo);
+	// where the windows are, for the next drawing
+	auto const masksize{mask_size()};
+	glCopyImageSubData(m_albedo, GL_TEXTURE_CUBE_MAP, mask_level(), 0, 0, 0, m_mask, GL_TEXTURE_CUBE_MAP, 0, 0, 0, 0, masksize, masksize, 6);
 	// the light the cab lights itself with again, from a small level of the light reflected
 	glBindTextureUnit(0, m_light);
 	glProgramUniform2i(*m_sh_program, SH_LEVEL_LOCATION, sh_level(), sh_size());

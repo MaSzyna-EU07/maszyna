@@ -2,14 +2,19 @@
 // towards the middle of its box lit by the cab lamp alone, with the cube shadow map of the lamp (and what glows in it, the lights
 // of the desk), and its albedo, each with 1 in the alpha: the probe is cleared to nothing, so the alpha of a direction tells how
 // much of it the cab fills, and both are premultiplied by it. the light of the cab lamp is the one the shading gives it
-// (calc_local_light() in light_common.glsl); the ambient light and the sun are left out, the cab gets those as before. the
-// parameters of the lamp are in the block of the scene (gl::scene_ubs::cab_probe_lamp), in the space of the probe
+// (calc_local_light() in light_common.glsl). the sun (the moon) lights the cab where it comes in through the windows
+// (gl::scene_ubs::cab_probe_sun), so the light which bounces around the cab holds it; the ambient light is left out, the cab gets it as
+// before. the parameters of the lamp and of the sun are in the block of the scene (gl::scene_ubs::cab_probe_lamp, cab_probe_sun), in
+// the space of the probe. the including shader declares cab_probe_mask (CAB_PROBE_MASK_TEX) and includes weather_common.glsl
 
 layout(location = 0) out vec4 out_light;
 layout(location = 1) out vec4 out_albedo;
 
 // closest distance (squared) the light of the lamp is computed for, as LOCAL_LIGHT_MIN_DISTANCE2 of light_common.glsl
 const float PROBE_LIGHT_MIN_DISTANCE2 = 0.01;
+// the light of the sun on a diffuse surface, as SUN_DIFFUSE_SCALE and SUN_NDOTL_SHARPNESS of light_common.glsl
+const float PROBE_SUN_SCALE = 1.5;
+const float PROBE_SUN_NDOTL_SHARPNESS = 1.25;
 
 // the diffuse colour of the submodel or shape, as material_diffuse() of light_common.glsl
 vec3 probe_material_diffuse()
@@ -35,6 +40,20 @@ float probe_lamp_shadow(vec3 position, vec3 normal)
 	return texture(probe_shadowmap, vec4(position, weights.x), reference);
 }
 
+// share of the sun which reaches a point of the space of the probe through the windows of the cab: the ray towards the sun is taken
+// to the box of the cab, and the probe drawn last (the mask) tells how much of the direction of the point it leaves the box at the cab
+// fills, seen from the middle of the box. what is in the way inside the cab (the desk, the seats) holds the sun back only where it
+// hides that point from the middle
+float probe_sun_through_windows(vec3 position, vec3 tosun)
+{
+	vec3 box = cab_probe_sun_box.xyz;
+	position = clamp(position, -box, box);
+	vec3 invdir = (step(0.0, tosun) * 2.0 - 1.0) / max(abs(tosun), vec3(1e-5));
+	vec3 far = max((box - position) * invdir, (-box - position) * invdir);
+	float reach = max(min(min(far.x, far.y), far.z), 0.0);
+	return 1.0 - textureLod(cab_probe_mask, position + tosun * reach, 0.0).a;
+}
+
 void probe_shade(vec4 tex_color)
 {
 	vec3 albedo = tex_color.rgb * probe_material_diffuse();
@@ -55,6 +74,12 @@ void probe_shade(vec4 tex_color)
 		if ((atten > 0.0) && (NdotL > 0.0) && (cab_probe_lamp_color.a > 0.5))
 			atten *= 1.0 - probe_lamp_shadow(-tolight, normal);
 		light += cab_probe_lamp_color.rgb * (NdotL * atten);
+	}
+	if (cab_probe_sun.w > 0.0)
+	{
+		float NdotL = max(dot(normal, cab_probe_sun.xyz), 0.0);
+		if (NdotL > 0.0)
+			light += cab_probe_sun_color.rgb * (PROBE_SUN_SCALE * pow(NdotL, PROBE_SUN_NDOTL_SHARPNESS) * probe_sun_through_windows(position, cab_probe_sun.xyz) * cloud_shadow(cab_probe_sun_world.xyz));
 	}
 	out_light = vec4(albedo * light, 1.0);
 	out_albedo = vec4(albedo, 1.0);

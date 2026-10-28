@@ -782,7 +782,7 @@ float ao_specular(float visibility, float NdotV, float roughness)
 // whether the fragment is a part of the occupied cab with its probe (gl::scene_ubs::cab_probe_box, gl::model_ubs::cab_interior)
 bool cab_probe_active()
 {
-    return (cab_probe_box.w > 0.0) && (cab_interior > 0.5);
+    return (cab_probe_box.w > 0.0) && (cab_interior > 0.5) && (cab_interior < 1.5);
 }
 
 // the light of the lamps the cab reflects which reaches a surface of the cab facing the view space Fragnormal, in the units of the
@@ -887,6 +887,10 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     // bounces off surfaces of the albedo) and the reflection of the surroundings; not the light of the sun and the lamps, nor the
     // reflection of the scene, which the rays find as it is
     float occlusion = ambient_occlusion();
+    // in the cab and the low poly interiors walls and things are near all around, and the occlusion of the view darkens the ambient
+    // light a lot; they take a share of it (gfx.postfx.ao.cab), the light which bounces inside them comes from the probe or below
+    if (cab_interior > 0.5)
+        occlusion = mix(1.0, occlusion, ao_params.z);
     vec3 diffuse_occlusion = vec3(1.0);
     float specular_occlusion = 1.0;
     if (occlusion < 1.0)
@@ -971,6 +975,10 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     // the reflection of the surroundings, before the light of the sun and the lamps joins the ambient light
     vec3 env_reflection = fragcolor * env_spec * ambient_share * specular_occlusion
                         + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * cubemap_shadow * specular_occlusion)) * cubemap_spec * cubemap_share;
+    // the sun coming in through the windows and bouncing around a low poly interior, or the cab without its probe (which gives that
+    // light from where the sun falls in the cab): a share of the light of the sun outside joins the ambient light (gfx.interior.bounce)
+    if ((cab_interior > 0.5) && (false == cabprobe))
+        fragcolor += sunlight * env_params.z;
     // the occlusion of the ambient light, before the light of the sun and the lamps joins it
     fragcolor *= diffuse_occlusion;
 

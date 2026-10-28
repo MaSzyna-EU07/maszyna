@@ -1661,7 +1661,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		}
 		// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour
 		// pass of the main view only
-		scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, 0.f, 0.f};
+		scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, Global.gfx_interior_bounce, 0.f};
 		gfx::screen_reflections::clear(scene_ubs);
 		// the occlusion of the sky by the scenery, seen from the camera of the view
 		m_skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
@@ -4593,7 +4593,7 @@ void opengl46_renderer::Setup_Ao_Lighting( viewport_config &Viewport )
 	// the compute passes leave the units of the textures to be bound anew
 	::glBindTextureUnit( gl::SCENE_DEPTH_TEX, Viewport.clusters_depth_tex->id );
 	::glBindTextureUnit( gl::SCENE_AO_TEX, Viewport.ssao_blur_tex->id );
-	scene_ubs.ao_params = glm::vec4{ 1.f, Global.gfx_postfx_ao_strength, 0.f, 0.f };
+	scene_ubs.ao_params = glm::vec4{ 1.f, Global.gfx_postfx_ao_strength, Global.gfx_postfx_ao_cab, 0.f };
 	scene_ubo->update( scene_ubs );
 	m_aolighting = true;
 }
@@ -6319,6 +6319,8 @@ void opengl46_renderer::Render_cab_probe()
 	// the lamp with its shadow map, when the map holds the shadows of the lamp where it is
 	auto const shadows{(lamp != nullptr) && m_localshadows.ready(vehicle) && (m_localshadows.lamp() == m_locallights.cab_lamp_local())};
 	m_cabprobe.setup_drawing(scene_ubs, lamp, m_locallights.cab_lamp_local(), shadows, m_localshadows.weights());
+	// the sun coming in through the windows, as the shading of the last frame got it
+	m_cabprobe.setup_sun(scene_ubs, vehicle, -m_sunlight.direction, glm::vec3{light_data.lights[0].color} * light_data.lights[0].intensity, m_colorpass.pass_camera.position());
 	scene_ubo->update(scene_ubs);
 	// the cab drawn by the colour mode with the programs of the probe. the camera is put at the vehicle, which Render_cab() places
 	// the cab relative to, and the modelview takes the cab model to the space of the probe

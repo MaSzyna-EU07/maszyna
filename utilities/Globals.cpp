@@ -1907,6 +1907,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.postfx.ao.radius" ) { readvalue( gfx_postfx_ao_radius, 0.1f, 10.f ); }
     else if( Token == "gfx.postfx.ao.strength" ) { readvalue( gfx_postfx_ao_strength, 0.f, 4.f ); }
     else if( Token == "gfx.postfx.ao.bounce" ) { readvalue( gfx_postfx_ao_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.postfx.ao.cab" ) { readvalue( gfx_postfx_ao_cab, 0.f, 1.f ); }
     else if( Token == "gfx.postfx.ao.quality" ) {
         // slices and steps per side
         Parser.getTokens( 2, false );
@@ -1938,6 +1939,8 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         gfx_cabprobe_interval = std::clamp( gfx_cabprobe_interval, 1, 120 ); }
     else if( Token == "gfx.cabprobe.bounce" ) { readvalue( gfx_cabprobe_bounce, 0.f, 4.f ); }
     else if( Token == "gfx.cabprobe.reflections" ) { readswitch( gfx_cabprobe_reflections ); }
+    else if( Token == "gfx.cabprobe.sun" ) { readvalue( gfx_cabprobe_sun, 0.f, 4.f ); }
+    else if( Token == "gfx.interior.bounce" ) { readvalue( gfx_interior_bounce, 0.f, 1.f ); }
     else if( Token == "gfx.skyvisibility" ) {
         // no/low/medium/high, or the number of the level
         Parser.getTokens( 1 );
@@ -2417,6 +2420,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.ao.radius", gfx_postfx_ao_radius );
     export_as_text( Output, "gfx.postfx.ao.strength", gfx_postfx_ao_strength );
     export_as_text( Output, "gfx.postfx.ao.bounce", gfx_postfx_ao_bounce );
+    export_as_text( Output, "gfx.postfx.ao.cab", gfx_postfx_ao_cab );
     Output << "gfx.postfx.ao.quality " << gfx_postfx_ao_slices << " " << gfx_postfx_ao_steps << "\n";
     export_as_text( Output, "gfx.postfx.ao.lighting", gfx_postfx_ao_lighting );
     export_as_text( Output, "gfx.lights.scenery", gfx_lights_scenery );
@@ -2431,6 +2435,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.cabprobe.interval", gfx_cabprobe_interval );
     export_as_text( Output, "gfx.cabprobe.bounce", gfx_cabprobe_bounce );
     export_as_text( Output, "gfx.cabprobe.reflections", gfx_cabprobe_reflections );
+    export_as_text( Output, "gfx.cabprobe.sun", gfx_cabprobe_sun );
+    export_as_text( Output, "gfx.interior.bounce", gfx_interior_bounce );
     export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
     export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );

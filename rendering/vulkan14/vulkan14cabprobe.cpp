@@ -178,8 +178,28 @@ bool cab_probe_maps::gpu_allocate(int const Size)
 		let_go();
 		return false;
 	}
+	// the mask: the level of the albedo of at most CAB_PROBE_MASK_SIZE pixels a face, as mask_size() has it once the size is set
+	auto masksize{size};
+	while (masksize > static_cast<std::uint32_t>(gl::CAB_PROBE_MASK_SIZE))
+	{
+		masksize >>= 1;
+	}
+	image_desc mask;
+	mask.format = ALBEDO_FORMAT;
+	mask.extent = {std::max(masksize, 1u), std::max(masksize, 1u), 1};
+	mask.layers = 6;
+	mask.view_type = VK_IMAGE_VIEW_TYPE_CUBE;
+	mask.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+	mask.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	m_mask = std::make_shared<image>();
+	if (false == m_mask->create(*m_memory, mask, "cab probe mask"))
+	{
+		let_go();
+		return false;
+	}
 	m_target = draw_target{m_light.get(), m_albedo.get(), m_depth.get(), m_lightview, m_albedoview, size};
 	m_drawn = false;
+	m_maskcopied = false;
 	return true;
 }
 
@@ -192,6 +212,7 @@ void cab_probe_maps::let_go()
 {
 	m_target = draw_target{};
 	m_drawn = false;
+	m_maskcopied = false;
 	std::vector<VkImageView> views;
 	for (auto *view : {&m_lightview, &m_albedoview})
 	{
@@ -204,7 +225,7 @@ void cab_probe_maps::let_go()
 	if (m_deletions != nullptr)
 	{
 		// the frames in flight may still read them
-		m_deletions->push(m_value, [device = m_device, views = std::move(views), light = std::move(m_light), albedo = std::move(m_albedo), depth = std::move(m_depth)]() {
+		m_deletions->push(m_value, [device = m_device, views = std::move(views), light = std::move(m_light), albedo = std::move(m_albedo), depth = std::move(m_depth), mask = std::move(m_mask)]() {
 			for (auto *view : views)
 			{
 				vkDestroyImageView(device, view, nullptr);
@@ -221,6 +242,7 @@ void cab_probe_maps::let_go()
 	m_light.reset();
 	m_albedo.reset();
 	m_depth.reset();
+	m_mask.reset();
 }
 
 } // namespace vk14
@@ -341,6 +363,12 @@ void vulkan14_renderer::render_cab_probe()
 	// the lamp with its shadow map, when the map holds the shadows of the lamp where it is
 	auto const shadows{(lamp != nullptr) && scene.lamps.ready(vehicle) && (scene.lamps.lamp() == m_locallights.cab_lamp_local())};
 	probe.setup_drawing(scene_ubs, lamp, m_locallights.cab_lamp_local(), shadows, scene.lamps.weights());
+	// the sun coming in through the windows, as the shading of the last frame got it. the mask is read once it was copied
+	probe.setup_sun(scene_ubs, vehicle, -m_sunlight.direction, glm::vec3{light_data.lights[0].color} * light_data.lights[0].intensity, m_colorpass.pass_camera.position());
+	if (probe.mask_map() == nullptr)
+	{
+		scene_ubs.cab_probe_sun.w = 0.f;
+	}
 	// the cab drawn by the colour mode with the programs of the probe. the camera is put at the vehicle, which Render_cab() places the cab
 	// relative to, and the modelview takes the cab model to the space of the probe
 	m_renderpass.draw_mode = rendermode::color;
@@ -389,6 +417,30 @@ void vulkan14_renderer::render_cab_probe()
 	// the mipmaps, and the light the cab lights itself with again from a small level of the light reflected
 	make_cube_mipmaps(commands, *target.light);
 	make_cube_mipmaps(commands, *target.albedo);
+	// where the windows are, for the next drawing: a small level of the albedo copied to the mask
+	if (auto *mask{probe.mask_target()})
+	{
+		vk14::barriers(commands, {vk14::use_of(*target.albedo, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
+		                          vk14::use_of(*mask, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+		auto const masksize{static_cast<std::uint32_t>(probe.mask_size())};
+		VkImageCopy2 region{};
+		region.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+		region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, static_cast<std::uint32_t>(probe.mask_level()), 0, 6};
+		region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 6};
+		region.extent = {masksize, masksize, 1};
+		VkCopyImageInfo2 copy{};
+		copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+		copy.srcImage = target.albedo->handle();
+		copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		copy.dstImage = mask->handle();
+		copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		copy.regionCount = 1;
+		copy.pRegions = &region;
+		commands->copy_image2(&copy);
+		vk14::barriers(commands, {vk14::use_of(*target.albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access),
+		                          vk14::use_of(*mask, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+		probe.mask_copied();
+	}
 	struct
 	{
 		glm::ivec2 level;

@@ -36,7 +36,12 @@ namespace gfx
 //   light lights the cab again, in place of the share of the light of the lamp the ambient light kept (Global.gfx_lights_cab_bounce),
 //   and the cab reflects itself where the screen space reflections don't find it, the box standing for its walls; what the cab
 //   shows there is the light of the lamp it reflects and its albedo lit by the ambient light of the reflecting surface.
-//   the ambient light and the sun are left out of the probe: the cab gets them as before
+//   the ambient light is left out of the probe, the cab gets it as before. the sun (the moon) lights the probe where it comes in
+//   through the windows (Global.gfx_cabprobe_sun), so the light which bounces around the cab is also the light of the sun where it
+//   falls in the cab; the cab gets the sun itself from the shading, as before. where the windows are the probe drawn last tells:
+//   a small level of its albedo is copied after each drawing (the mask, CAB_PROBE_MASK_TEX), and the ray towards the sun is taken
+//   from a point of the cab to the box of the cab and looked up in it. the first drawing of a cab has no mask yet, so it's drawn
+//   without the sun and again in the next frame
 class cab_probe
 {
   public:
@@ -54,6 +59,10 @@ class cab_probe
 	// the fields of the block of the scene the drawing of the probe reads: the cab lamp (Lamp, at Lamplocal in the space of the cab
 	// model, nullptr: none) with its shadow map when Shadows (Shadowweights: the headlight_weights of the map)
 	void setup_drawing(gl::scene_ubs &Scene, gfx::local_lights::light const *Lamp, glm::vec3 const &Lamplocal, bool const Shadows, glm::vec4 const &Shadowweights) const;
+	// the fields of the block of the scene the drawing of the probe takes the sun with: Vehicle the vehicle whose cab is drawn, Tosun the
+	// direction towards the sun (the moon), world space, Sunlight its light as the shading gets it (the colour of the light buffer times
+	// its intensity), Camera the camera of the main view (world space). no sun until the mask holds the cab
+	void setup_sun(gl::scene_ubs &Scene, TDynamicObject const *Vehicle, glm::vec3 const &Tosun, glm::vec3 const &Sunlight, glm::dvec3 const &Camera) const;
 	// the drawing to the probe: the target, the viewport, the cleared faces, the state of the faces. the cab is to be drawn with the
 	// programs of the probe and a modelview from the space of the cab model to the space of the probe (model_to_probe())
 	void begin();
@@ -79,6 +88,14 @@ class cab_probe
 	// the level of the mipmaps the spherical harmonics are taken from, and its size
 	int sh_level() const;
 	int sh_size() const;
+	// the level of the mipmaps of the albedo the mask is a copy of, and its size
+	int mask_level() const;
+	int mask_size() const;
+	// whether the mask holds the cab being drawn (the drawing of the probe reads it then)
+	bool masked() const
+	{
+		return m_masked;
+	}
 	// line for the statistics of the debug panel
 	std::string info() const;
 	// controls and counters for the debug window
@@ -99,6 +116,9 @@ class cab_probe
 
 	int m_level{-1};
 	bool m_valid{false};
+	// the mask holds the cab drawn; the probe was drawn without it and is drawn again in the next frame
+	bool m_masked{false};
+	bool m_settle{false};
 	TDynamicObject const *m_vehicle{nullptr};
 	TModel3d const *m_cab{nullptr};
 	glm::vec3 m_center{0.f};

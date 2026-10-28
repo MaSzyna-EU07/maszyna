@@ -149,6 +149,7 @@ is the cheaper setting.
 | `gfx.postfx.ao.radius` | `1.5` | 0.1..10: reach of the occluders, metres |
 | `gfx.postfx.ao.strength` | `1.0` | 0..4: power the occlusion is raised to; 1 = as computed, 0 = none |
 | `gfx.postfx.ao.bounce` | `0.3` | 0..1: albedo of the surfaces assumed for the light that comes back after more bounces (brightens the occlusion a little); over the image only, in the light of the surfaces their own albedo is taken |
+| `gfx.postfx.ao.cab` | `0.5` | 0..1: share of the occlusion the parts of the cab and the low poly interiors take (with `lighting`): walls and things are near all around in them and the whole occlusion darkens them too much; the light which bounces inside them comes from the probe of the cab (`gfx.cabprobe.sun`) or `gfx.interior.bounce`. 1: all of it, as before |
 | `gfx.postfx.ao.lighting yes/no` | `yes` | with `gtao`: the occlusion darkens the ambient light and the reflection of the surroundings in the shading (needs the depth of the scene before its colour); `no`: it darkens the finished image |
 | `gfx.postfx.ao.quality slices steps` | `3 4` | directions searched around each pixel (1..8) and samples on each side of a direction (1..16) |
 
@@ -257,8 +258,22 @@ parts of the cab (as the shadow map of the lamp). The parts of the cab read them
   (the walls), the cab shows the light of the lamp it reflects and its albedo lit by the ambient light, through the windows
   the sky is seen as before.
 
-The ambient light and the sun are left out of the probe, the cab gets them as before. `gfx.cabprobe no` is the old way (the
-share of the lamp in the ambient light, the sky in the reflections). Cost: one draw of the opaque cab (about the draw calls of
+The sun (the moon at night) lights the probe too, where it comes in through the windows (`gfx.cabprobe.sun`): the light the cab
+lights itself with again is then also the sunlight bouncing off the desk, the floor and the walls where it falls, and the cab
+reflects the sunlit spots. Where the windows are the probe drawn last tells: a small level of its albedo (32 pixels a face at most,
+the mask) is copied after each drawing; from a point of the cab the ray towards the sun is taken to the box of the cab and the
+mask, seen from the middle of the box, says whether the cab is there or a window (what is in the way inside the cab, the desk or
+a seat, holds the sun back only where it hides that point from the middle: a coarse shadow, enough for the light that bounces).
+The sun is held back by the scenery around the cab (`gfx.skyvisibility`, or the environment flags with `gfx.tunnelflags yes`)
+and by the shadows of the clouds, as outside. A cab drawn for the first time (another vehicle, another cab) has no mask yet,
+so its probe is drawn without the sun and again with it in the next frame. The cab gets the sun itself from the shading as
+before (the shadow map); the ambient light is left out of the probe, the cab gets it as before. `gfx.cabprobe no` is the old way
+(the share of the lamp in the ambient light, the sky in the reflections, `gfx.interior.bounce` for the sun).
+
+**The low poly interiors** of the vehicles (and the cab when it has no probe) get the sun which comes in through their windows
+and bounces around them as a share of the light of the sun outside (`gfx.interior.bounce`), held back by the scenery and the
+clouds like the sun; the interior isn't known well enough for more. Both kinds of interiors take only a share of the ambient
+occlusion of the view (`gfx.postfx.ao.cab`). Cost: one draw of the opaque cab (about the draw calls of
 the cab in the colour pass) every `interval` frames, 2 cube maps of the size of the level with their mipmaps and the depth (64: 0.5 MB, 128: 2 MB, 256: 8 MB), two texture reads in
 the reflections of the cab.
 
@@ -268,6 +283,8 @@ the reflections of the cab.
 | `gfx.cabprobe.interval` | `4` | 1..120: frames between the updates of the probe |
 | `gfx.cabprobe.bounce` | `1.0` | 0..4: share of the light of the lamp the cab reflects which lights it again |
 | `gfx.cabprobe.reflections yes/no` | `yes` | the cab reflects itself where the screen space reflections find nothing; `no`: the sky, as before |
+| `gfx.cabprobe.sun` | `1.0` | 0..4: the sun lights the probe where it comes in through the windows, so its light bounces around the cab; 0: no sun in the probe, as before |
+| `gfx.interior.bounce` | `0.1` | 0..1: share of the light of the sun outside the low poly interiors (and the cab without its probe) get as the light which comes in through their windows and bounces around them; 0: none, as before |
 
 ### Tunnels, bridges and roofs: the occlusion of the sky
 

@@ -97,6 +97,9 @@ namespace gl
     // texel with textureGather. bound directly, like the ones above
     const size_t SKY_OCCLUSION_HEIGHT_TEX = MAX_TEXTURES + HELPER_TEXTURES + 17;
     const size_t SKY_OCCLUSION_TEX = MAX_TEXTURES + HELPER_TEXTURES + 18;
+    // the probe of the cab drawn last, a small level of its albedo, which the drawing of the probe reads to tell where the windows of
+    // the cab are (gfx::cab_probe, gl::scene_ubs::cab_probe_sun). bound directly, like the ones above
+    const size_t CAB_PROBE_MASK_TEX = MAX_TEXTURES + HELPER_TEXTURES + 19;
 
     struct scene_ubs
     {
@@ -138,14 +141,16 @@ namespace gl
         // screen doesn't hold (the vulkan renderer, gfx.raytracing), w: the longest traced ray, metres
         glm::vec4 ssr_params2;
         // the reflection of the surroundings the screen space reflections and the ray tracing don't find, for every pass: x: albedo
-        // of the ground below the horizon of the environment map (gfx.ambient.groundalbedo), yzw unused
+        // of the ground below the horizon of the environment map (gfx.ambient.groundalbedo), y used by the vulkan renderer (the
+        // foliage traced), z: the share of the light of the sun the low poly interiors (and the cab without its probe) get as the light
+        // which comes in through their windows and bounces around them (gfx.interior.bounce), w unused
         glm::vec4 env_params;
         // the water on the windscreens (mat_rain_windscreen): xyz the velocity of the air against the vehicle of the camera (the
         // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w unused
         glm::vec4 rain_wind;
         // the ambient occlusion in the light of the surfaces (gfx.postfx.ao.lighting), set only for the colour pass of the main view,
         // zero elsewhere: x 1 when SCENE_AO_TEX holds the occlusion of the depth in SCENE_DEPTH_TEX, y the power it's raised to
-        // (gfx.postfx.ao.strength), zw unused
+        // (gfx.postfx.ao.strength), z the share of it the cab and the low poly interiors take (gfx.postfx.ao.cab), w unused
         glm::vec4 ao_params;
         // the probe of the occupied cab (gfx::cab_probe), set only for the colour pass of the main view, zero elsewhere: the view
         // space of the pass to the space of the probe (the axes of the cab model, metres, the origin in the middle of its box)
@@ -169,9 +174,18 @@ namespace gl
         glm::vec4 sky_occlusion_params;
         // xy the middle of the maps (the main camera they follow) less the camera of the pass, world x and z, metres; zw unused
         glm::vec4 sky_occlusion_center;
+        // the drawing of the probe of the cab (cabprobe.glsl), set for it only: the sun (the moon) coming in through the windows. xyz
+        // the direction towards it in the space of the probe, w 1 when it lights the probe (CAB_PROBE_MASK_TEX holds the cab); rgb its
+        // light, held back by the scenery around the cab (gfx::sky_occlusion) and scaled by gfx.cabprobe.sun, a unused; xyz half the
+        // size of the box of the cab, w unused; xyz the middle of the box less the camera of the main view, world space (the shadows
+        // of the clouds), w unused
+        glm::vec4 cab_probe_sun;
+        glm::vec4 cab_probe_sun_color;
+        glm::vec4 cab_probe_sun_box;
+        glm::vec4 cab_probe_sun_world;
     };
 
-    static_assert(sizeof(scene_ubs) == 912 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 976 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
@@ -187,7 +201,8 @@ namespace gl
         float fog_density;
         float alpha_mult;
         float shadow_tone;
-        // 1 for the parts of the occupied cab, which the probe of the cab lights and reflects (gl::scene_ubs::cab_probe_box)
+        // 1 for the parts of the occupied cab, which the probe of the cab lights and reflects (gl::scene_ubs::cab_probe_box), 2 for the
+        // low poly interiors of the vehicles (gl::scene_ubs::env_params)
         float cab_interior{0.f};
         UBS_PAD(8);
 
@@ -421,6 +436,8 @@ namespace gl
     const GLuint CAB_PROBE_SSBO_BINDING = 17;
     // the face of the level of the probe the spherical harmonics are taken from, at most, and the work group of cabprobe_sh.comp
     const size_t CAB_PROBE_SH_SIZE = 16;
+    // the face of the level of the probe CAB_PROBE_MASK_TEX is a copy of, at most
+    const size_t CAB_PROBE_MASK_SIZE = 32;
     const size_t CAB_PROBE_SH_GROUP_SIZE = 64;
 
     static_assert(sizeof(sky_data) == 144, "bad size of sky_data");

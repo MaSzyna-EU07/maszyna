@@ -100,6 +100,7 @@ void gl::glsl_common_setup()
     "#define SCENE_AO_TEX " + std::to_string(SCENE_AO_TEX) + "\n" +
     "#define CAB_PROBE_TEX " + std::to_string(CAB_PROBE_TEX) + "\n" +
     "#define CAB_PROBE_ALBEDO_TEX " + std::to_string(CAB_PROBE_ALBEDO_TEX) + "\n" +
+    "#define CAB_PROBE_MASK_TEX " + std::to_string(CAB_PROBE_MASK_TEX) + "\n" +
     "#define SKY_OCCLUSION_HEIGHT_TEX " + std::to_string(SKY_OCCLUSION_HEIGHT_TEX) + "\n" +
     "#define SKY_OCCLUSION_TEX " + std::to_string(SKY_OCCLUSION_TEX) + "\n" +
     "#define CAB_PROBE_SSBO_BINDING " + std::to_string(CAB_PROBE_SSBO_BINDING) + "\n" +

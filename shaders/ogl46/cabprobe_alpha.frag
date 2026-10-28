@@ -12,7 +12,10 @@ layout(location = 3) in vec4 f_pos;
 layout(binding = 0) uniform sampler2D diffuse;
 // the cube shadow map of the cab lamp, see gl::LOCAL_SHADOW_TEX
 layout(binding = LOCAL_SHADOW_TEX) uniform samplerCubeArrayShadow probe_shadowmap;
+// the probe drawn last, where the windows of the cab are, see gl::CAB_PROBE_MASK_TEX
+layout(binding = CAB_PROBE_MASK_TEX) uniform samplerCube cab_probe_mask;
 
+#include "weather_common.glsl"
 #include "cabprobe.glsl"
 
 void main()

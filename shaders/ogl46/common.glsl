@@ -111,6 +111,7 @@
 #define CAB_PROBE_ALBEDO_TEX 28
 #define SKY_OCCLUSION_HEIGHT_TEX 29
 #define SKY_OCCLUSION_TEX 30
+#define CAB_PROBE_MASK_TEX 31
 #define CAB_PROBE_SSBO_BINDING 17
 #define CAB_PROBE_SH_SIZE 16
 #define CAB_PROBE_SH_GROUP_SIZE 64
@@ -247,7 +248,7 @@ struct model_draw_s
         float fog_density;
         float alpha_mult;
         float shadow_tone;
-        // 1 for the parts of the occupied cab, see gl::model_ubs
+        // 1 for the parts of the occupied cab, 2 for the low poly interiors, see gl::model_ubs
         float cab_interior;
 };
 
@@ -289,7 +290,7 @@ layout(std140, binding = MODEL_UBO_BINDING) uniform model_ubo
         float fog_density;
         float alpha_mult;
         float shadow_tone;
-        // 1 for the parts of the occupied cab, see gl::model_ubs
+        // 1 for the parts of the occupied cab, 2 for the low poly interiors, see gl::model_ubs
         float cab_interior;
 };
 #endif
@@ -335,6 +336,11 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 sky_occlusion_origin;
     vec4 sky_occlusion_params;
     vec4 sky_occlusion_center;
+    // the sun coming in through the windows of the cab, for the drawing of its probe, see gl::scene_ubs
+    vec4 cab_probe_sun;
+    vec4 cab_probe_sun_color;
+    vec4 cab_probe_sun_box;
+    vec4 cab_probe_sun_world;
 };
 
 #ifdef STAGE_VERTEX

@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/common/cabprobe.h"
 
+#include "rendering/common/skyocclusion.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
@@ -69,6 +70,7 @@ void cab_probe::release()
 	gpu_release();
 	m_size = 0;
 	m_valid = false;
+	m_masked = false;
 }
 
 bool cab_probe::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Center, glm::vec3 const &Extent, gfx::local_lights::light const *Lamp, unsigned int const Framestamp)
@@ -81,22 +83,31 @@ bool cab_probe::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab
 		if (size != m_size)
 			allocate(size);
 		m_valid = false;
+		m_masked = false;
 	}
 	if ((m_size == 0) || (Vehicle == nullptr) || (Cab == nullptr) || (Extent == glm::vec3{0.f}))
 	{
 		// with no cab drawn nothing reads the probe; once there is one again it may be another
 		m_valid = false;
+		m_masked = false;
 		return false;
 	}
 	auto const lamp{Lamp != nullptr ? Lamp->color : glm::vec3{0.f}};
 	auto const lampchange{glm::length(lamp - m_lamp)};
 	auto const lampchanged{(lampchange > 0.f) && ((max_component(m_lamp) <= 0.f) || (max_component(lamp) <= 0.f) || (lampchange > LAMP_CHANGED * glm::length(m_lamp)))};
-	if ((Vehicle != m_vehicle) || (Cab != m_cab) || (Center != m_center) || (Extent != m_extent) || lampchanged)
+	if ((Vehicle != m_vehicle) || (Cab != m_cab) || (Center != m_center) || (Extent != m_extent))
+	{
+		// the mask is of another cab
+		m_valid = false;
+		m_masked = false;
+	}
+	if (lampchanged)
 	{
 		m_valid = false;
 	}
-	// the moving parts of the cab and the lights of the desk are followed every few frames
-	if (m_valid && (Framestamp - m_drawnframe < static_cast<unsigned int>(std::max(Global.gfx_cabprobe_interval, 1))))
+	// the moving parts of the cab, the lights of the desk and the sun are followed every few frames; a probe drawn without its mask
+	// is drawn again at once
+	if (m_valid && (false == m_settle) && (Framestamp - m_drawnframe < static_cast<unsigned int>(std::max(Global.gfx_cabprobe_interval, 1))))
 	{
 		return false;
 	}
@@ -124,6 +135,37 @@ void cab_probe::setup_drawing(gl::scene_ubs &Scene, gfx::local_lights::light con
 	Scene.cab_probe_lamp_shadow = Shadowweights;
 }
 
+void cab_probe::setup_sun(gl::scene_ubs &Scene, TDynamicObject const *Vehicle, glm::vec3 const &Tosun, glm::vec3 const &Sunlight, glm::dvec3 const &Camera) const
+{
+	Scene.cab_probe_sun = glm::vec4{0.f};
+	Scene.cab_probe_sun_color = glm::vec4{0.f};
+	Scene.cab_probe_sun_box = glm::vec4{m_extent, 0.f};
+	Scene.cab_probe_sun_world = glm::vec4{0.f};
+	if ((Vehicle == nullptr) || (false == m_masked) || (Global.gfx_cabprobe_sun <= 0.f) || (glm::length(Tosun) <= 0.f))
+		return;
+	auto const rotation{glm::dmat3{Vehicle->mMatrix}};
+	auto const middle{Vehicle->GetPosition() + rotation * glm::dvec3{m_center}};
+	// the scenery around the cab holds the sun back as it does in the shading (the vehicle's light level of the environment flags with
+	// Global.gfx_tunnelflags, as walk_sunlight() takes it in Render_cab())
+	auto share{1.f};
+	if (Global.gfx_tunnelflags)
+	{
+		auto const shade{vehicle_shade(Vehicle)};
+		share = (shade > 0.f ? shade : 1.f);
+	}
+	else if (auto const *occlusion{sky_occlusion::current()})
+	{
+		share = std::clamp(occlusion->sample(middle).y, 0.f, 1.f);
+	}
+	auto const light{Sunlight * (share * Global.gfx_cabprobe_sun)};
+	if (max_component(light) <= 0.f)
+		return;
+	auto const tosun{glm::normalize(glm::vec3{glm::inverse(rotation) * glm::dvec3{Tosun}})};
+	Scene.cab_probe_sun = glm::vec4{tosun, 1.f};
+	Scene.cab_probe_sun_color = glm::vec4{light, 0.f};
+	Scene.cab_probe_sun_world = glm::vec4{glm::vec3{middle - Camera}, 0.f};
+}
+
 void cab_probe::begin()
 {
 	m_cpustart = std::chrono::steady_clock::now();
@@ -133,6 +175,9 @@ void cab_probe::begin()
 void cab_probe::end(std::uint32_t const Drawcalls)
 {
 	gpu_end();
+	// the mask was copied from this drawing: a drawing without it is made again with it
+	m_settle = (false == m_masked);
+	m_masked = true;
 	m_valid = true;
 	m_drawcalls = Drawcalls;
 	++m_updatecount;
@@ -182,6 +227,19 @@ int cab_probe::sh_size() const
 	return std::max(m_size >> sh_level(), 1);
 }
 
+int cab_probe::mask_level() const
+{
+	auto level{0};
+	while ((m_size >> level) > static_cast<int>(gl::CAB_PROBE_MASK_SIZE))
+		++level;
+	return level;
+}
+
+int cab_probe::mask_size() const
+{
+	return std::max(m_size >> mask_level(), 1);
+}
+
 std::string cab_probe::info() const
 {
 	if (m_size == 0)
@@ -199,6 +257,7 @@ void cab_probe::draw_debug_ui()
 	ImGui::SliderInt("frames between its updates (gfx.cabprobe.interval)", &Global.gfx_cabprobe_interval, 1, 60);
 	ImGui::SliderFloat("light bounced around the cab (gfx.cabprobe.bounce)", &Global.gfx_cabprobe_bounce, 0.f, 4.f);
 	ImGui::Checkbox("the cab reflects itself (gfx.cabprobe.reflections)", &Global.gfx_cabprobe_reflections);
+	ImGui::SliderFloat("sun through the windows (gfx.cabprobe.sun)", &Global.gfx_cabprobe_sun, 0.f, 4.f);
 	ImGui::TextUnformatted(info().c_str());
 }
 

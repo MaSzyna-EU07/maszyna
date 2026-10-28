@@ -11,7 +11,10 @@ layout(location = 3) in vec4 f_pos;
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 0) uniform sampler2D diffuse;
 // the cube shadow map of the cab lamp
 layout(set = PASS_SET, binding = LOCAL_SHADOW_TEX) uniform samplerCubeArrayShadow probe_shadowmap;
+// the probe drawn last, where the windows of the cab are
+layout(set = PASS_SET, binding = CAB_PROBE_MASK_TEX) uniform samplerCube cab_probe_mask;
 
+#include "weather_common.glsl"
 #include "cabprobe.glsl"
 
 void main()

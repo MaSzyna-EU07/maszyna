@@ -61,6 +61,21 @@ class cab_probe_maps : public gfx::cab_probe
 	{
 		return m_drawn ? m_albedo.get() : nullptr;
 	}
+	// the copy of a small level of the albedo of the last drawing (gfx::cab_probe, the mask), which the next drawing reads to tell
+	// where the windows are; null until it was copied: the stand-in is read
+	image *mask_map() const
+	{
+		return m_maskcopied ? m_mask.get() : nullptr;
+	}
+	image *mask_target() const
+	{
+		return m_mask.get();
+	}
+	// the mask was copied and is in the layout the shading reads it in
+	void mask_copied()
+	{
+		m_maskcopied = true;
+	}
 	// the maps were drawn and are in the layout the shading reads them in
 	void drawn()
 	{
@@ -84,10 +99,12 @@ class cab_probe_maps : public gfx::cab_probe
 	std::shared_ptr<image> m_light;
 	std::shared_ptr<image> m_albedo;
 	std::shared_ptr<image> m_depth;
+	std::shared_ptr<image> m_mask;
 	VkImageView m_lightview{VK_NULL_HANDLE};
 	VkImageView m_albedoview{VK_NULL_HANDLE};
 	draw_target m_target;
 	bool m_drawn{false};
+	bool m_maskcopied{false};
 };
 
 } // namespace vk14

@@ -84,7 +84,9 @@ constexpr std::uint32_t CAB_PROBE_SSBO = 30;
 // the scenery and the shares of the sky and the limits of the key light, read texel by texel
 constexpr std::uint32_t SKY_OCCLUSION_HEIGHT_TEX = 31;
 constexpr std::uint32_t SKY_OCCLUSION_TEX = 32;
-constexpr std::uint32_t PASS_BINDING_COUNT = 33;
+// the probe of the cab drawn last, a small level of its albedo, which the drawing of the probe reads to tell where the windows are
+constexpr std::uint32_t CAB_PROBE_MASK_TEX = 33;
+constexpr std::uint32_t PASS_BINDING_COUNT = 34;
 // the offsets of the bindings above with dynamic offsets, in the order of the bindings
 constexpr std::uint32_t PASS_DYNAMIC_OFFSETS = 6;
 // the textures of a material take the bindings of their units (#pragma texture(name, unit, ...)), 0 .. MAX_TEXTURES - 1

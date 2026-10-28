@@ -206,6 +206,9 @@ std::array<std::array<VkImageView, vk14::bindings::PASS_BINDING_COUNT>, 3> pass_
 		auto const probeempty{scene.cabprobe_empty ? scene.cabprobe_empty->view() : scene.env_empty->view()};
 		views[CAB_PROBE_TEX] = (colour && (probelight != nullptr) ? probelight->view() : probeempty);
 		views[CAB_PROBE_ALBEDO_TEX] = (colour && (probealbedo != nullptr) ? probealbedo->view() : probeempty);
+		// the probe drawn last, which the drawing of the probe (the plain set) reads to tell where the windows are
+		auto const *probemask{scene.cabprobe.mask_map()};
+		views[CAB_PROBE_MASK_TEX] = (probemask != nullptr ? probemask->view() : probeempty);
 		// the occlusion of the sky by the scenery (the track T), for every pass which shades
 		auto const *occlusionheights{scene.skyocclusion.heights()};
 		auto const *occlusion{scene.skyocclusion.occlusion()};
@@ -1116,6 +1119,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 		write(handle, CAB_PROBE_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_TEX]));
 		write(handle, CAB_PROBE_ALBEDO_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_ALBEDO_TEX]));
 		write(handle, CAB_PROBE_SSBO, &cabprobe, nullptr);
+		write(handle, CAB_PROBE_MASK_TEX, nullptr, image(ctx.sampling.clamp_linear, views[CAB_PROBE_MASK_TEX]));
 		write(handle, SKY_OCCLUSION_HEIGHT_TEX, nullptr, image(ctx.sampling.repeat_nearest, views[SKY_OCCLUSION_HEIGHT_TEX]));
 		write(handle, SKY_OCCLUSION_TEX, nullptr, image(ctx.sampling.repeat_nearest, views[SKY_OCCLUSION_TEX]));
 	}

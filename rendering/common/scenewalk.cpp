@@ -174,12 +174,15 @@ bool scene_walk::Render_lowpoly( TDynamicObject *Dynamic, float const Squaredist
                     1.f )
                 - luminance,
                 0.f, 1.f ) );
+        // the sun coming in through the windows bounces around the interior
+        model_ubs.cab_interior = 2.f;
         Render( Dynamic->mdLowPolyInt, Dynamic->Material(), Squaredistance );
         // HACK: if the model has low poly interior, we presume the load is placed inside and also affected by reduced light level
         if( Dynamic->mdLoad ) {
             // renderowanie nieprzezroczystego ładunku
             Render( Dynamic->mdLoad, Dynamic->Material(), Squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
         }
+        model_ubs.cab_interior = 0.f;
         walk_sunlight( gfx::vehicle_shade( Dynamic ) > 0.f ? gfx::vehicle_shade( Dynamic ) : 1.f );
     }
     else {
@@ -2886,7 +2889,9 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
     // render
     if( Dynamic->mdLowPolyInt ) {
         // low poly interior
+        model_ubs.cab_interior = 2.f;
         Render_Alpha( Dynamic->mdLowPolyInt, Dynamic->Material(), squaredistance );
+        model_ubs.cab_interior = 0.f;
     }
     if( Dynamic->mdModel ) {
         // main model

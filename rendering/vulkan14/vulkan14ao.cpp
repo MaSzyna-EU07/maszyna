@@ -176,7 +176,7 @@ bool vulkan14_renderer::compute_ao_lighting(std::size_t const Index)
 // the block of the scene of the colour pass set up to read the occlusion (light_common.glsl, ambient_occlusion())
 void vulkan14_renderer::setup_ao_lighting()
 {
-	scene_ubs.ao_params = glm::vec4{1.f, Global.gfx_postfx_ao_strength, 0.f, 0.f};
+	scene_ubs.ao_params = glm::vec4{1.f, Global.gfx_postfx_ao_strength, Global.gfx_postfx_ao_cab, 0.f};
 	upload_scene_block();
 }
 
