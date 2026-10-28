@@ -237,6 +237,9 @@ TEST_CASE("commands: every command run on every real vehicle") {
 		CAPTURE(path);
 		test::reseed_random();
 		vehicle real{definition::fiz(path), 0.0, "test", 1};
+		// loading takes place where the command was given, which comes with the command (PutCommand). a
+		// vehicle gets none before its first one, TCommand::Location is left uninitialised
+		real->CommandIn.Location = real->Loc;
 		auto done{false};
 		auto channels{state()};
 		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
@@ -508,36 +511,36 @@ TEST_CASE("commands: a wagon loaded and unloaded by commands, which repeat until
 	test::trace trace{"commands/loading", state(), 100};
 	wagon.record(trace);
 
+	// the game gives the commands of loading through PutCommand, with the place of the platform or the ramp
 	SUBCASE("loading 12 tonnes of coal") {
 		trace.mark("load");
-		wagon->SetInternalCommand("Load=Coal", 12, 0, coupling::faux);
+		wagon->PutCommand("Load=Coal", 12, 0, wagon->Loc);
 		wagon.run(30.0);
 		CHECK(wagon->LoadAmount == doctest::Approx(12.0).epsilon(0.1));
 		CHECK(wagon->LoadType.name == "coal");
 		CHECK(wagon->CommandIn.Command.empty());
 
 		trace.mark("unload");
-		wagon->SetInternalCommand("UnLoad=Coal", 20, 0, coupling::faux);
+		wagon->PutCommand("UnLoad=Coal", 20, 0, wagon->Loc);
 		wagon.run(200.0);
 		CHECK(wagon->LoadAmount == doctest::Approx(0.0));
 		CHECK(wagon->LoadType.name.empty());
 		trace.check();
 	}
 	SUBCASE("a load the wagon doesn't take stays a command, not done") {
-		wagon->SetInternalCommand("Load=passengers", 12, 0, coupling::faux);
+		wagon->PutCommand("Load=passengers", 12, 0, wagon->Loc);
 		wagon.run(10.0);
 		CHECK(wagon->LoadAmount == doctest::Approx(0.0));
 		CHECK_FALSE(wagon->CommandIn.Command.empty());
 	}
 	SUBCASE("away from the place of the command nothing is loaded") {
-		wagon->SetInternalCommand("Load=Coal", 12, 5.0, coupling::faux);
-		wagon->CommandIn.Location.X = 100.0;
+		wagon->PutCommand("Load=Coal", 12, 5.0, TLocation{100.0, 0.0, 0.0});
 		wagon.run(10.0);
 		CHECK(wagon->LoadAmount == doctest::Approx(0.0));
 		CHECK(wagon->LastLoadChangeTime == doctest::Approx(0.0));
 	}
 	SUBCASE("unloading an empty wagon isn't done either") {
-		wagon->SetInternalCommand("UnLoad=Coal", 12, 0, coupling::faux);
+		wagon->PutCommand("UnLoad=Coal", 12, 0, wagon->Loc);
 		wagon.run(10.0);
 		CHECK_FALSE(wagon->CommandIn.Command.empty());
 	}
