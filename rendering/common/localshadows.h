@@ -93,6 +93,10 @@ class local_shadows
 		void const *part{nullptr};
 		glm::dvec3 position{0.0}; // world space
 		float range{0.f}; // of the light, metres
+		// near plane of the map, metres: what is closer to the lamp casts no shadow. the light of a lamp with a radius comes from
+		// the surface of its sphere, what is within it (the glass of the lamp the light point is in) doesn't hold it back
+		float nearplane{shadow_near};
+		bool shade_self{false}; // the instance of the lamp casts its shadows (local_lights::light::shade_self)
 		unsigned int wantedframe{~0u}; // framestamp it was last among the lamps given shadows
 		bool scenery{false}; // the scenery part of the map is drawn
 		std::uint64_t version{0}; // of the scene the scenery part was drawn for
@@ -124,7 +128,8 @@ class local_shadows
 		m_slots[Slot].vehicles = false;
 	}
 	// sets up the drawing to the scenery part (cleared) or to the working copy (a copy of the scenery part) of the map of the slot.
-	// the geometry is to be drawn with the programs of the cube maps and a modelview to world axes centred on the lamp
+	// the geometry is to be drawn with the programs of the cube maps and a modelview to world axes centred on the lamp, with the
+	// near plane of the slot
 	void begin_lamp(std::size_t const Slot, bool const Vehicles, std::uint64_t const Version, unsigned int const Framestamp);
 	// ends the drawing to the map of a lamp
 	void end_lamp(std::uint32_t const Drawcalls);
@@ -261,6 +266,7 @@ class local_shadows
 	// scenery lamps: the scenery parts of the slots first, then their working copies
 	int m_lampssize{0};
 	std::vector<lamp_slot> m_slots;
+	float m_lampnear{shadow_near}; // near plane of the map of a lamp begin_lamp() set up the drawing to
 	std::vector<std::size_t> m_wanted;
 	unsigned int m_frame{0}; // framestamp of the last update_lamps()
 	int m_sceneryleft{0}; // scenery parts which may still be drawn in this frame

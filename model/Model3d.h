@@ -127,6 +127,11 @@ public:
     float fFarDecayRadius { 100.0f }; // normalizacja j.w.
     float fCosFalloffAngle { 0.5f }; // cosinus kąta stożka pod którym widać światło
     float fCosHotspotAngle { 0.3f }; // cosinus kąta stożka pod którym widać aureolę i zwiększone natężenie światła
+	// opcjonalne parametry światła punktowego (np. z eksportu z blendera):
+	float fLightRadius { 0.0f }; // promień kuli świecącej (radius:), metry; 0 to punkt. świeci powierzchnia kuli, więc środek może być np. wewnątrz klosza
+	bool bShadeSelf { false }; // cienie światła rzuca także model, do którego ono należy (shadeself:)
+	bool bCastShadows { true }; // światło rzuca cienie (castshadows:)
+	bool bSoftFalloff { false }; // natężenie maleje jak 1 / (d^2 + r^2), jak przy soft falloff blendera, zamiast świecenia z powierzchni kuli (softfalloff:)
     float fCosViewAngle { 0.0f }; // cos kata pod jakim sie teraz patrzy
 
 	bool m_rotation_init_done = false;

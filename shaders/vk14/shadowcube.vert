@@ -5,8 +5,9 @@
 // geometry shader shadowcube.geom of the opengl renderer). the modelview takes the geometry to the space of the map, with the lamp at
 // the origin. the faces go in the order of the faces of a cube map (+x, -x, +y, -y, +z, -z), each looks the way glm::lookAt() with
 // the usual up vectors of cube maps sets it, with a 90 degree projection of infinite reach and reversed depth like the one of the
-// scene: the depth is near / d, d the distance along the axis of the face. the near plane of the map, LOCAL_SHADOW_NEAR: closer
-// surfaces (the lamp itself) cast no shadows
+// scene: the depth is near / d, d the distance along the axis of the face. the near plane of the map, shadow_fit.y of the scene block
+// for the map of a scenery lamp (past the radius of its light), LOCAL_SHADOW_NEAR otherwise: closer surfaces (the lamp itself) cast no
+// shadows
 #include "common.glsl"
 layout(location = 0) in vec3 v_vert;
 layout(location = 2) in vec2 v_coord;
@@ -22,7 +23,8 @@ void main()
 {
 	vec3 position = (effective_modelview() * vec4(v_vert, 1.0f)).xyz;
 	int face = int(gl_ViewIndex);
-	gl_Position = vec4(dot(position, face_right[face]), dot(position, face_up[face]), LOCAL_SHADOW_NEAR, dot(position, face_forward[face]));
+	float nearplane = (shadow_fit.y > 0.0) ? shadow_fit.y : LOCAL_SHADOW_NEAR;
+	gl_Position = vec4(dot(position, face_right[face]), dot(position, face_up[face]), nearplane, dot(position, face_forward[face]));
 	f_coord = v_coord;
 #ifdef MODEL_DRAWS
 	// which block of the multi draw the fragments read (common.glsl)

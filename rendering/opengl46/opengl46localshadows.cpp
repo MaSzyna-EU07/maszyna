@@ -153,6 +153,16 @@ void opengl46_local_shadows::init()
 	glClearTexImage(m_emptyheadlights, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 }
 
+void opengl46_local_shadows::set_near(float const Near)
+{
+	glProgramUniform1f(*m_program, NEAR_LOCATION, Near);
+	glProgramUniform1f(*m_alpha_program, NEAR_LOCATION, Near);
+	if (m_multidraw_program)
+		glProgramUniform1f(*m_multidraw_program, NEAR_LOCATION, Near);
+	if (m_alpha_multidraw_program)
+		glProgramUniform1f(*m_alpha_multidraw_program, NEAR_LOCATION, Near);
+}
+
 void opengl46_local_shadows::set_layer(int const Layer)
 {
 	glProgramUniform1i(*m_program, LAYER_LOCATION, Layer);
@@ -229,6 +239,7 @@ void opengl46_local_shadows::gpu_begin_cab()
 {
 	m_timer.begin();
 	set_layer(CAB_SLOT * 6);
+	set_near(SHADOW_NEAR);
 	setup_drawing(m_framebuffer, m_size);
 	float const farthest{0.f};
 	glClearNamedFramebufferfv(m_framebuffer, GL_DEPTH, 0, &farthest);
@@ -254,6 +265,8 @@ void opengl46_local_shadows::gpu_begin_lamp(int const Scenerycube, int const Wor
 		glClearTexSubImage(m_lampstexture, 0, 0, 0, Scenerycube * 6, m_lampssize, m_lampssize, 6, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 	}
 	set_layer((Vehicles ? Workingcube : Scenerycube) * 6);
+	// the near plane of the lamp, which the shading reads the map with (lamp_weights())
+	set_near(m_lampnear);
 	setup_drawing(m_lampsframebuffer, m_lampssize);
 }
 

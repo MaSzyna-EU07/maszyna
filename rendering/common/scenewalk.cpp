@@ -3078,13 +3078,23 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 			// NOTE: we're forced here to redo view angle calculations etc, because this data isn't instanced but stored along with the single mesh
 			// TODO: separate instance data from reusable geometry
 			auto const &modelview = OpenGLMatrices.data(GL_MODELVIEW);
-			auto const lightcenter = modelview * glm::mix(glm::vec4(0.f, 0.f, -0.05f, 1.f), glm::vec4(0.f, 0.f, -0.25f, 1.f),
-			                                                 static_cast<float>(TSubModel::fSquareDist / Submodel->fSquareMaxDist)); // pozycja punktu świecącego względem kamery
+			auto lightcenter = modelview * glm::mix(glm::vec4(0.f, 0.f, -0.05f, 1.f), glm::vec4(0.f, 0.f, -0.25f, 1.f),
+			                                           static_cast<float>(TSubModel::fSquareDist / Submodel->fSquareMaxDist)); // pozycja punktu świecącego względem kamery
+			if (Submodel->fLightRadius > 0.f)
+			{
+				// the light shines from the surface of its sphere: the point is seen on the side of it towards the camera, out of
+				// the glass of the lamp its middle may be in
+				auto const center{modelview * glm::vec4(0.f, 0.f, 0.f, 1.f)};
+				auto const centerdistance{glm::length(glm::vec3{center})};
+				lightcenter = (centerdistance > Submodel->fLightRadius ? center - glm::vec4(glm::vec3{center} * (Submodel->fLightRadius / centerdistance), 0.f) : center);
+			}
 			Submodel->fCosViewAngle = glm::dot(glm::normalize(modelview * glm::vec4(0.f, 0.f, -1.f, 1.f) - lightcenter), glm::normalize(-lightcenter));
+			// a point light (FalloffAngle 360) is seen all around
+			auto const pointlight{Submodel->fCosFalloffAngle <= -1.f};
 
 			if (Global.fLuminance < Submodel->fLight || Global.Overcast > 1.0f)
 			{
-				if (Submodel->fCosViewAngle > Submodel->fCosFalloffAngle)
+				if (pointlight || (Submodel->fCosViewAngle > Submodel->fCosFalloffAngle))
 				{
 					// only bother if the viewer is inside the visibility cone
 					// luminosity at night is at level of ~0.1, so the overall resulting transparency in clear conditions is ~0.5 at full 'brightness'
@@ -3092,7 +3102,7 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 						                                  Global.Overcast - 1.f), // ensure some glare in rainy/foggy conditions
 						                  0.f, 1.f)};
 					// view angle attenuation
-					float const anglefactor{std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f)};
+					float const anglefactor{pointlight ? 1.f : std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f)};
 
 					glarelevel *= anglefactor;
 
@@ -3124,12 +3134,12 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 				}
 			}
 
-			if (Submodel->fCosViewAngle > Submodel->fCosFalloffAngle)
+			if (pointlight || (Submodel->fCosViewAngle > Submodel->fCosFalloffAngle))
 			{
 				// kąt większy niż maksymalny stożek swiatła
 				float lightlevel = 1.f; // TODO, TBD: parameter to control light strength
 				// view angle attenuation
-				float const anglefactor = std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f);
+				float const anglefactor = pointlight ? 1.f : std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f);
 				lightlevel *= anglefactor;
 
 				// distance attenuation. NOTE: since it's fixed pipeline with built-in gamma correction we're using linear attenuation

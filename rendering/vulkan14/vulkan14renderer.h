@@ -315,7 +315,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	std::size_t m_helpgroups{0};
 	// the passes the walkers walk, as the main renderer walked them (render_shadows(), render_lamp_shadow(), render_headlight_shadow())
 	void walk_cascade(std::size_t const Index);
-	void walk_lamp(bool const Vehicles, std::vector<TDynamicObject *> const &Dynamics, TDynamicObject *Cab, TAnimModel const *Owner, vk14::instance_cull *Cull);
+	void walk_lamp(bool const Vehicles, std::vector<TDynamicObject *> const &Dynamics, TDynamicObject *Cab, TAnimModel const *Owner, vk14::instance_cull *Cull, float const Near);
 	void walk_headlight(TDynamicObject const *Owner, TDynamicObject *Cab, vk14::instance_cull *Cull);
 	// the walk lock taken by the main thread for the frame (walk_sync::open()) and the walkers given passes in it
 	bool m_walkwindow{false};

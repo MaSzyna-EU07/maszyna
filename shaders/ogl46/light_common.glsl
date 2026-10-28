@@ -473,9 +473,6 @@ vec2 calc_headlights(light_s light, vec3 fragnormal, vec3 dpdx, vec3 dpdy)
 	return vec2(part.x, 1.0) * (atten * lightintensity);
 }
 
-// closest distance (squared) the light of a lamp is computed for: nearer the inverse square would grow without a limit
-const float LOCAL_LIGHT_MIN_DISTANCE2 = 0.01;
-
 // one comparison with the cube shadow map at the point of the space of the map, moved towards the lamp by Bias (metres). the
 // map is in the array of the scenery lamps when Lamps, in the one of the cab lamp otherwise
 float local_light_shadow_tap(vec3 position, float layer, float near, float bias, bool lamps)
@@ -525,27 +522,65 @@ float local_light_shadow(light_s light, vec3 fragnormal)
 	return shadow / float(count);
 }
 
+// light reaching a surface from a sphere of uniform brightness (a lamp with a radius, as a sphere light of blender), in the units
+// in which a point gives n.l / d^2: the same while the sphere is whole above the horizon of the surface, the part above it at
+// grazing angles, and the light from all around within the sphere. Snyder, "Area light sources for real-time graphics", 1996, in
+// the form of Lagarde, de Rousiers, "Moving Frostbite to physically based rendering", 2014
+float sphere_light_irradiance(float NdotL, float distance2, float radius)
+{
+	float radius2 = radius * radius;
+	if (distance2 <= radius2)
+		return 1.0 / radius2;
+	float sin_sigma2 = radius2 / distance2;
+	if (NdotL * NdotL > sin_sigma2)
+		return max(NdotL, 0.0) / distance2;
+	float sin_theta = sqrt(max(1.0 - NdotL * NdotL, 1e-8));
+	float x = sqrt(max(1.0 / sin_sigma2 - 1.0, 1e-8));
+	float y = clamp(-x * NdotL / sin_theta, -1.0, 1.0);
+	float sin_theta_sqrt_y = sin_theta * sqrt(max(1.0 - y * y, 0.0));
+	float form = (NdotL * acos(y) - x * sin_theta_sqrt_y) * sin_sigma2 + atan(sin_theta_sqrt_y / x);
+	return max(form, 0.0) / (BRDF_PI * radius2);
+}
+
+// the point of the sphere of a lamp (Radius, around the end of Tolight, view space) closest to the reflected ray of the view, where
+// its highlight is, and in Energy the share of the light of the highlight widened by the sphere which the highlight of a point
+// takes. Karis, "Real shading in Unreal Engine 4", 2013
+vec3 sphere_light_specular(vec3 tolight, vec3 fragnormal, float radius, float roughness, out float energy)
+{
+	vec3 reflected = reflect(normalize(f_pos.xyz), fragnormal);
+	vec3 toray = dot(tolight, reflected) * reflected - tolight;
+	vec3 closest = tolight + toray * clamp(radius * inversesqrt(max(dot(toray, toray), 1e-8)), 0.0, 1.0);
+	float alpha = roughness * roughness;
+	float widened = clamp(alpha + 0.5 * radius * inversesqrt(max(dot(tolight, tolight), 1e-8)), 1e-4, 1.0);
+	energy = (alpha / widened) * (alpha / widened);
+	return closest;
+}
+
 // light of a lamp (point or spot light: the lamps of models and vehicles, the cab lamp) reaching the fragment, x the diffuse
-// part and y the light the specular reflection takes (specular_light() brings its own n.l). it falls off with the square of the distance, and smoothly to nothing at the range of the light,
-// 1 / sqrt(quadratic), past which the culling of the clusters does not take it. a spot light fades from its inner cone to the
-// outer one. a lamp with a shadow map is held back by what is between it and the fragment
+// part and y the light the specular reflection takes (specular_light() brings its own n.l). it falls off with the square of the
+// distance (lamp_falloff(), a lamp with a radius shines from its sphere: sphere_light_irradiance()), and smoothly to nothing at the
+// range of the light, 1 / sqrt(quadratic), past which the culling of the clusters does not take it. a spot light fades from its
+// inner cone to the outer one. a lamp with a shadow map is held back by what is between it and the fragment
 vec2 calc_local_light(light_s light, vec3 fragnormal)
 {
 	vec3 tolight = light.pos - f_pos.xyz;
 	float distance2 = dot(tolight, tolight);
 	vec3 light_dir = tolight * inversesqrt(max(distance2, 1e-8));
 	float edge = clamp(1.0 - distance2 * distance2 * (light.quadratic * light.quadratic), 0.0, 1.0);
-	float atten = edge * edge / max(distance2, LOCAL_LIGHT_MIN_DISTANCE2);
+	float atten = edge * edge;
 	if (light.type == LIGHT_SPOT)
 		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-light_dir, normalize(light.dir)));
-	if ((atten > 0.0) && (light.headlight_weights.x >= 0.0) && (dot(fragnormal, light_dir) > 0.0))
+	float falloff = lamp_falloff(light, distance2);
+	float NdotL = dot(fragnormal, light_dir);
+	float diffuse = (light.ambient > 0.0) ? sphere_light_irradiance(NdotL, distance2, light.ambient) : max(NdotL, 0.0) * falloff;
+	if ((atten > 0.0) && (light.headlight_weights.x >= 0.0) && (diffuse > 0.0))
 		atten *= 1.0 - local_light_shadow(light, fragnormal);
-	if ((atten > 0.0) && (contact_shadow_budget > 0))
+	if ((atten > 0.0) && (contact_shadow_budget > 0) && lamp_casts_shadows(light))
 		atten *= 1.0 - contact_shadow_lamp(light_dir, sqrt(distance2),
-		                                   atten * max(dot(fragnormal, light_dir), 0.0) * light.intensity * max(light.color.r, max(light.color.g, light.color.b)));
+		                                   atten * diffuse * light.intensity * max(light.color.r, max(light.color.g, light.color.b)));
 	if (atten <= 0.0)
 		return vec2(0.0);
-	return vec2(max(dot(fragnormal, light_dir), 0.0), 1.0) * atten;
+	return vec2(diffuse, falloff) * atten;
 }
 
 // index of the light cluster the fragment is in, see gl/cluster_grid.h: its screen tile and slice of depth. the depth is the clip
@@ -568,7 +603,12 @@ void add_local_light(light_s light, vec2 part, vec3 fragnormal, inout vec3 diffu
 	diffuse += color * part.x;
 	if (matte)
 		return;
-	specular += color * (part.y * param[1].y) * specular_light(normalize(light.pos - f_pos.xyz), fragnormal, spec_f0, spec_roughness, LOCAL_LIGHT_BRDF_LIMIT);
+	// the highlight of a lamp with a radius is that of its sphere
+	vec3 tolight = light.pos - f_pos.xyz;
+	float energy = 1.0;
+	if ((light.type != LIGHT_HEADLIGHTS) && (light.ambient != 0.0))
+		tolight = sphere_light_specular(tolight, fragnormal, abs(light.ambient), spec_roughness, energy);
+	specular += color * (part.y * param[1].y * energy) * specular_light(normalize(tolight), fragnormal, spec_f0, spec_roughness, LOCAL_LIGHT_BRDF_LIMIT);
 }
 
 // adds the light of the headlights and lamps which reach the fragment to its diffuse and specular light. these are the ones in

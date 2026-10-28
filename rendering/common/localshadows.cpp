@@ -30,6 +30,12 @@ double const LAMP_MOVED{0.01};
 // lamps with a shorter reach aren't worth a map, metres
 float const LAMP_RANGE_MIN{1.f};
 
+// near plane of the map of a lamp: out of its sphere, and well within its reach
+float lamp_near(gfx::local_lights::light const &Light)
+{
+	return std::clamp(Light.radius, local_shadows::shadow_near, std::max(local_shadows::shadow_near, Light.range * 0.5f));
+}
+
 } // namespace
 
 local_shadows::level_setup local_shadows::setup(int const Level)
@@ -203,7 +209,7 @@ void local_shadows::update_lamps(std::vector<gfx::local_lights::light> const &Li
 		{
 			break;
 		}
-		if ((light.owner == nullptr) || (light.range < LAMP_RANGE_MIN) || (glm::length(light.position - Camera) > reach))
+		if ((light.owner == nullptr) || (false == light.cast_shadows) || (light.range < LAMP_RANGE_MIN) || (glm::length(light.position - Camera) > reach))
 		{
 			continue;
 		}
@@ -226,6 +232,8 @@ void local_shadows::update_lamps(std::vector<gfx::local_lights::light> const &Li
 				}
 				slot.position = light->position;
 				slot.range = light->range;
+				slot.nearplane = lamp_near(*light);
+				slot.shade_self = light->shade_self;
 				slot.wantedframe = Framestamp;
 				m_wanted.emplace_back(idx);
 				placed = true;
@@ -252,6 +260,8 @@ void local_shadows::update_lamps(std::vector<gfx::local_lights::light> const &Li
 			slot.part = light->part;
 			slot.position = light->position;
 			slot.range = light->range;
+			slot.nearplane = lamp_near(*light);
+			slot.shade_self = light->shade_self;
 			slot.wantedframe = Framestamp;
 			m_wanted.emplace_back(idx);
 			break;
@@ -312,6 +322,7 @@ void local_shadows::begin_lamp(std::size_t const Slot, bool const Vehicles, std:
 		slot.vehicles = false;
 		++m_lampsscenery;
 	}
+	m_lampnear = slot.nearplane;
 	gpu_begin_lamp(scenerycube, workingcube, Vehicles);
 }
 
@@ -367,7 +378,7 @@ local_shadows::lamp_slot const *local_shadows::lamp(gfx::local_lights::light con
 glm::vec4 local_shadows::lamp_weights(std::size_t const Slot) const
 {
 	auto const cube{m_slots[Slot].vehicles ? m_slots.size() + Slot : Slot};
-	return glm::vec4{static_cast<float>(cube), shadow_near, 2.f / static_cast<float>(std::max(m_lampssize, 1)), setup(m_level).radius};
+	return glm::vec4{static_cast<float>(cube), m_slots[Slot].nearplane, 2.f / static_cast<float>(std::max(m_lampssize, 1)), setup(m_level).radius};
 }
 
 std::vector<TDynamicObject *> const &local_shadows::lamp_vehicles(glm::dvec3 const &Camera)

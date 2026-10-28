@@ -124,7 +124,8 @@ namespace gl
         // x: how many lamps and headlights a pixel traces the rays to (0: only the sun), yzw unused
         glm::vec4 contact_shadow_lamps;
         // x: 1 when the cascades of the sun shadows are fitted to the depth of the view (gfx.shadow.sdsm, opengl46_shadow_fit):
-        // a point outside the map of its cascade goes to the next cascade whose map holds it. yzw unused
+        // a point outside the map of its cascade goes to the next cascade whose map holds it. y: the near plane of the cube shadow
+        // map of a scenery lamp being drawn by the vulkan renderer (shadowcube.vert), 0 otherwise. zw unused
         glm::vec4 shadow_fit;
         // the screen space reflections (gfx.ssr, gfx::screen_reflections), set only for the colour pass of the main view, zero
         // elsewhere: the view space of the pass to the clip space of the frame whose image the history (SSR_HISTORY_TEX) holds, for
@@ -250,12 +251,15 @@ namespace gl
         float quadratic;
 
 		float intensity;
+		// SPOT and POINT (lamps): the radius of the sphere the light shines from, metres (0: a point), below 0 when its light falls
+		// off as 1 / (d^2 + r^2) (the soft falloff of blender), see lamp_falloff() of common.glsl
 		float ambient;
 
         // HEADLIGHTS: view space to the space of the beam texture, and the weights of its channels; w: 1 + the shadow map of the
         // headlights (scene_ubs::headlight_shadow), 0 when they have none.
         // SPOT and POINT (lamps): view space to the space of the cube shadow map of the lamp (origin at the lamp), and
-        // x: layer of the cube map array the map is in, below 0 when the lamp has no shadows; y: near plane of the map;
+        // x: layer of the cube map array the map is in, below 0 when the lamp has no shadow map, y then 1 when it casts no shadows at
+        // all (no contact shadows either); y: near plane of the map;
         // z: size of a texel of the map one metre from the lamp; w: radius of the filter, in texels. the map is in the array of
         // the scenery lamps (LOCAL_SHADOW_LAMPS_TEX) when linear is 1, in the one of the cab lamp (LOCAL_SHADOW_TEX) otherwise
         glm::mat4 headlight_projection;

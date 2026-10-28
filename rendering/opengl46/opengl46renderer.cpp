@@ -6260,13 +6260,14 @@ void opengl46_renderer::Write_Local_Light(gl::light_element &Light, gfx::local_l
 	}
 	Light.color = Source.color;
 	Light.intensity = 1.0f;
-	Light.ambient = 0.0f;
+	// the sphere the light shines from, see gl::light_element
+	Light.ambient = (Source.soft_falloff ? -Source.radius : Source.radius);
 	// the shading takes the light to end at 1 / sqrt(quadratic)
 	Light.linear = 0.0f;
 	Light.quadratic = 1.0f / sq(std::max(Source.range, 0.01f));
 	Light.headlight_projection = glm::mat4{1.0f};
-	// no shadow map
-	Light.headlight_weights = glm::vec4{-1.0f, 0.0f, 0.0f, 0.0f};
+	// no shadow map; a light which casts no shadows has no contact shadows either
+	Light.headlight_weights = glm::vec4{-1.0f, (Source.cast_shadows ? 0.0f : 1.0f), 0.0f, 0.0f};
 }
 
 void opengl46_renderer::Render_local_shadows()
@@ -6426,7 +6427,9 @@ void opengl46_renderer::Render_lamp_shadow(std::size_t const Slot, bool const Ve
 	else
 	{
 		m_cubescenery = true;
-		m_cubeskipinstance = static_cast<TAnimModel const *>(slot.owner);
+		// the model of the lamp is left out, unless its shadows are wanted (shadeself:): what is within the near plane of the map
+		// (the radius of the light) casts none even then
+		m_cubeskipinstance = (slot.shade_self ? nullptr : static_cast<TAnimModel const *>(slot.owner));
 		// the instances culled on the gpu, each scenery part drawn in a frame with a culling of its own
 		m_lightshadowcull = Light_Shadow_Cull(m_lampcull, m_lampscenerydrawn++, Global.gfx_gpucull_shadows_lamps);
 		Render(simulation::Region);

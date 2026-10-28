@@ -152,7 +152,7 @@ vec3 lamp_light(light_s light, vec3 position)
 	vec3 tolight = light.pos - position;
 	float distance2 = dot(tolight, tolight);
 	float edge = clamp(1.0 - distance2 * distance2 * (light.quadratic * light.quadratic), 0.0, 1.0);
-	float atten = edge * edge / max(distance2, 0.01);
+	float atten = edge * edge * lamp_falloff(light, distance2);
 	if (light.type == LIGHT_SPOT)
 		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-tolight * inversesqrt(max(distance2, 1e-8)), normalize(light.dir)));
 	return light.color * (atten * light.intensity);
@@ -210,7 +210,8 @@ vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float 
 	vec3 sum = vec3(0.0);
 	float closest = dot(lamp.pos - start, direction);
 	vec3 nearest = start + direction * closest;
-	float reach = sqrt(dot(lamp.pos - nearest, lamp.pos - nearest) + width * width);
+	// the sphere of a lamp with a radius spreads its light as the width of the cell does
+	float reach = sqrt(dot(lamp.pos - nearest, lamp.pos - nearest) + width * width + lamp.ambient * lamp.ambient);
 	float first = atan(-closest, reach);
 	float last = atan(span - closest, reach);
 	for (int i = 0; i < 2; i++)
@@ -219,7 +220,7 @@ vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float 
 		vec3 tolight = cone.pos - position;
 		// the light without its falloff, which the integral holds
 		vec3 fromlamp = position - lamp.pos;
-		sum += lamp_light(cone, position) * max(dot(tolight, tolight), 0.01) * henyey_greenstein(dot(fromlamp, -direction) * inversesqrt(max(dot(fromlamp, fromlamp), 1e-8)), 0.4);
+		sum += lamp_light(cone, position) / lamp_falloff(cone, dot(tolight, tolight)) * henyey_greenstein(dot(fromlamp, -direction) * inversesqrt(max(dot(fromlamp, fromlamp), 1e-8)), 0.4);
 	}
 	return sum * (0.5 * (last - first) / (reach * max(span, 1e-4)));
 }

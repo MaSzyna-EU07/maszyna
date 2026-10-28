@@ -3995,13 +3995,14 @@ void vulkan14_renderer::write_local_light(gl::light_element &Light, gfx::local_l
 	}
 	Light.color = Source.color;
 	Light.intensity = 1.0f;
-	Light.ambient = 0.0f;
+	// the sphere the light shines from, see gl::light_element
+	Light.ambient = (Source.soft_falloff ? -Source.radius : Source.radius);
 	// the shading takes the light to end at 1 / sqrt(quadratic)
 	Light.linear = 0.0f;
 	Light.quadratic = 1.0f / sq(std::max(Source.range, 0.01f));
 	Light.headlight_projection = glm::mat4{1.0f};
-	// no shadow map
-	Light.headlight_weights = glm::vec4{-1.0f, 0.0f, 0.0f, 0.0f};
+	// no shadow map; a light which casts no shadows has no contact shadows either
+	Light.headlight_weights = glm::vec4{-1.0f, (Source.cast_shadows ? 0.0f : 1.0f), 0.0f, 0.0f};
 }
 
 void vulkan14_renderer::headlight_projector(light_array::light_record const &Light, glm::dvec3 &Position, glm::mat3 &Rotation, glm::mat4 &Projection, float &Near, float &Fieldofview)

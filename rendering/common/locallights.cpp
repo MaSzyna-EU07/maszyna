@@ -402,6 +402,10 @@ void gfx::local_lights::add_light_point(TSubModel const &Submodel, glm::mat4 con
 	lightpoint.cos_outer = std::clamp(Submodel.fCosFalloffAngle, -1.f, 0.999f);
 	lightpoint.cos_inner = std::clamp(std::max(Submodel.fCosHotspotAngle, lightpoint.cos_outer + 0.05f), lightpoint.cos_outer + 0.001f, 1.f);
 	lightpoint.range = light_range(color);
+	lightpoint.radius = Submodel.fLightRadius;
+	lightpoint.soft_falloff = Submodel.bSoftFalloff;
+	lightpoint.cast_shadows = Submodel.bCastShadows;
+	lightpoint.shade_self = Submodel.bShadeSelf;
 	if (m_walkowner != nullptr)
 	{
 		lightpoint.owner = m_walkowner;

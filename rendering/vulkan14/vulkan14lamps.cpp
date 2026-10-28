@@ -225,27 +225,33 @@ void vulkan14_renderer::render_lamp_shadow(std::size_t const Slot, bool const Ve
 	{
 		cull = light_shadow_cull(m_context->scene.cull.lamps, m_lampscenerydrawn++, Global.gfx_gpucull_shadows_lamps);
 	}
-	auto const *owner{static_cast<TAnimModel const *>(slot.owner)};
+	// the model of the lamp is left out, unless its shadows are wanted (shadeself:): what is within the near plane of the map (the
+	// radius of the light) casts none even then
+	auto const *owner{slot.shade_self ? nullptr : static_cast<TAnimModel const *>(slot.owner)};
+	auto const nearplane{slot.nearplane};
 	if (walks_wanted())
 	{
 		// walked by a walker (gfx.vulkan.parallelpasses), its draws counted once it's done
-		fork_walk([target = m_draw->local_target, Vehicles, vehicles, Cab, owner, cull](vulkan14_renderer &Walker) {
+		fork_walk([target = m_draw->local_target, Vehicles, vehicles, Cab, owner, cull, nearplane](vulkan14_renderer &Walker) {
 			Walker.m_draw->local_target = target;
-			Walker.walk_lamp(Vehicles, vehicles, Cab, owner, cull);
+			Walker.walk_lamp(Vehicles, vehicles, Cab, owner, cull, nearplane);
 		}, walk_kind::lamp);
 		lamps.end_lamp(0);
 	}
 	else
 	{
-		walk_lamp(Vehicles, vehicles, Cab, owner, cull);
+		walk_lamp(Vehicles, vehicles, Cab, owner, cull, nearplane);
 		lamps.end_lamp(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	}
 	m_renderpass = m_colorpass;
 }
 
 // the walk of the map of a lamp set up by render_lamp_shadow()
-void vulkan14_renderer::walk_lamp(bool const Vehicles, std::vector<TDynamicObject *> const &Dynamics, TDynamicObject *Cab, TAnimModel const *Owner, vk14::instance_cull *Cull)
+void vulkan14_renderer::walk_lamp(bool const Vehicles, std::vector<TDynamicObject *> const &Dynamics, TDynamicObject *Cab, TAnimModel const *Owner, vk14::instance_cull *Cull, float const Near)
 {
+	// the near plane of the map, for shadowcube.vert, in the scene block begin_local_shadow_target() uploads
+	auto const previousnear{scene_ubs.shadow_fit.y};
+	scene_ubs.shadow_fit.y = Near;
 	begin_local_shadow_target();
 	m_cubeshadows = true;
 	if (Vehicles)
@@ -271,6 +277,7 @@ void vulkan14_renderer::walk_lamp(bool const Vehicles, std::vector<TDynamicObjec
 	}
 	m_cubeshadows = false;
 	end_local_shadow_rendering();
+	scene_ubs.shadow_fit.y = previousnear;
 }
 
 void vulkan14_renderer::render_headlight_shadows()

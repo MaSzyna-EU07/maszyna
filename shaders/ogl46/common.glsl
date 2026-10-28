@@ -149,6 +149,24 @@ struct light_s
         vec4 headlight_weights;
 };
 
+// the falloff of the light of a lamp (SPOT, POINT) with the squared distance Distance2 from its middle. the lamps shine from a
+// sphere, of the radius abs(ambient) (see gl::light_element, 0: a point): 1 / d^2 past it and 1 / r^2 within it, as a sphere light
+// of blender gives it, or 1 / (d^2 + r^2) with its soft falloff (ambient below 0). a point is no brighter than 0.1 m from it
+float lamp_falloff(light_s light, float distance2)
+{
+	float radius = abs(light.ambient);
+	if (light.ambient < 0.0)
+		return 1.0 / max(distance2 + radius * radius, 1e-6);
+	return 1.0 / max(distance2, (radius > 0.0) ? radius * radius : 0.01);
+}
+
+// whether the lamp casts shadows: one without a shadow map (headlight_weights.x below 0) has y 1 when it casts none at all (no
+// contact shadows either)
+bool lamp_casts_shadows(light_s light)
+{
+	return (light.headlight_weights.x >= 0.0) || (light.headlight_weights.y < 0.5);
+}
+
 // storage blocks are guaranteed only in fragment and compute shaders (GL 4.6 minimum for the other stages is 0)
 #if defined(STAGE_FRAGMENT) || defined(STAGE_COMPUTE)
 layout(std430, binding = LIGHT_SSBO_BINDING) readonly buffer light_ssbo

@@ -223,6 +223,21 @@ inline void readMatrix(cParser &parser, float4x4 &matrix)
 			parser >> matrix(x)[y];
 };
 
+// flags of the optional parameters of a light point in its submodel record of an e3d file, after its radius
+static constexpr std::uint32_t E3D_LIGHT_SHADESELF{0x1};
+static constexpr std::uint32_t E3D_LIGHT_NOSHADOWS{0x2};
+static constexpr std::uint32_t E3D_LIGHT_SOFTFALLOFF{0x4};
+
+// a light point whose cone takes the whole sphere (FalloffAngle 360) is a point light: it shines and is seen all around
+static void point_light_cones(float &Falloff, float &Hotspot)
+{
+	if (Falloff <= -0.9999f)
+	{
+		Falloff = -1.f;
+		Hotspot = -1.f;
+	}
+}
+
 template <typename T> void UserdataParse(cParser &parser, gfx::vertex_userdata &vertex)
 {
 	static_assert(sizeof(T) == sizeof(float), "userdata is stored as raw 32-bit values");
@@ -360,24 +375,58 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		parser >> fNearAttenStart >> discard >> fNearAttenEnd >> discard >> bUseNearAtten >> discard >> iFarAttenDecay >> discard >> fFarDecayRadius >> discard >>
 		    fCosFalloffAngle // kąt liczony dla średnicy, a nie promienia
 		    >> discard >> fCosHotspotAngle; // kąt liczony dla średnicy, a nie promienia
-		// opcjonalne natężenie światła w procentach. trzeba pobrać do kolejki 2 tokeny; jeśli to nie hotspotpower,
-		// zostają w kolejce dla odczytu zasięgu widoczności, który przywraca autoclear
-		parser.getTokens(2);
-		if (parser.peek() == "hotspotpower:")
+		// opcjonalne parametry, każdy to nazwa i wartość, w dowolnej kolejności: natężenie światła w procentach (hotspotpower:),
+		// promień kuli świecącej (radius:), cienie od własnego modelu (shadeself:), rzucanie cieni (castshadows:), spadek natężenia
+		// jak przy soft falloff blendera (softfalloff:). trzeba pobrać do kolejki 2 tokeny; jeśli to nie żaden z nich, zostają w
+		// kolejce dla odczytu zasięgu widoczności, który przywraca autoclear
+		while (true)
 		{
-			float power;
-			parser >> discard >> power;
-			if (power > 0.f)
+			parser.getTokens(2);
+			auto const key{parser.peek()};
+			if (key == "hotspotpower:")
 			{
-				fHotspotPower = power * 0.01f;
+				float power;
+				parser >> discard >> power;
+				if (power > 0.f)
+				{
+					fHotspotPower = power * 0.01f;
+				}
+				else
+				{
+					ErrorLog("Bad model: non-positive hotspotpower " + std::to_string(power) + " of light \"" + pName + "\" in model \"" + parser.Name() + "\", ignored", logtype::model);
+				}
+			}
+			else if (key == "radius:")
+			{
+				float radius;
+				parser >> discard >> radius;
+				if (radius >= 0.f)
+				{
+					fLightRadius = radius;
+				}
+				else
+				{
+					ErrorLog("Bad model: negative radius " + std::to_string(radius) + " of light \"" + pName + "\" in model \"" + parser.Name() + "\", ignored", logtype::model);
+				}
+			}
+			else if (key == "shadeself:")
+			{
+				parser >> discard >> bShadeSelf;
+			}
+			else if (key == "castshadows:")
+			{
+				parser >> discard >> bCastShadows;
+			}
+			else if (key == "softfalloff:")
+			{
+				parser >> discard >> bSoftFalloff;
 			}
 			else
 			{
-				ErrorLog("Bad model: non-positive hotspotpower " + std::to_string(power) + " of light \"" + pName + "\" in model \"" + parser.Name() + "\", ignored", logtype::model);
+				parser.autoclear(false);
+				break;
 			}
 		}
-		else
-			parser.autoclear(false);
 
 		// convert conve parameters if specified in degrees
 		if (fCosFalloffAngle > 1.0)
@@ -388,6 +437,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		{
 			fCosHotspotAngle = std::cos(glm::radians(0.5f * fCosHotspotAngle));
 		}
+		point_light_cones(fCosFalloffAngle, fCosHotspotAngle);
 		m_geometry.vertex_count = 1;
 		iFlags |= 0x4030; // drawn both in solid (light point) and transparent (light glare) phases
 	}
@@ -1924,6 +1974,9 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	// the renderer the model was converted with). the colour is written as it is now, 1 makes older programs leave it so
 	sn_utils::ls_float32(s, 1.f);
 	sn_utils::ls_float32(s, fHotspotPower);
+	// the optional parameters of light points. the zeros of the fill of older files are their defaults
+	sn_utils::ls_float32(s, fLightRadius);
+	sn_utils::ls_uint32(s, (bShadeSelf ? E3D_LIGHT_SHADESELF : 0u) | (bCastShadows ? 0u : E3D_LIGHT_NOSHADOWS) | (bSoftFalloff ? E3D_LIGHT_SOFTFALLOFF : 0u));
 
 	// fill empty space
 	size_t fill = end - s.tellp();
@@ -2106,6 +2159,11 @@ void TSubModel::deserialize(std::istream &s)
 			f4Diffuse /= fHotspotPower;
 		}
 	}
+	fLightRadius = std::max(sn_utils::ld_float32(s), 0.f);
+	auto const lightflags{sn_utils::ld_uint32(s)};
+	bShadeSelf = (lightflags & E3D_LIGHT_SHADESELF) != 0;
+	bCastShadows = (lightflags & E3D_LIGHT_NOSHADOWS) == 0;
+	bSoftFalloff = (lightflags & E3D_LIGHT_SOFTFALLOFF) != 0;
 
 	// necessary rotations were already done during t3d->e3d conversion
 	m_rotation_init_done = true;
@@ -2724,6 +2782,10 @@ void TSubModel::BinInit(TSubModel *s, float4x4 *m, std::vector<std::string> *t, 
 	if (fCosHotspotAngle > 1.0f)
 	{
 		fCosHotspotAngle = std::cos(glm::radians(0.5f * fCosHotspotAngle));
+	}
+	if (eType == TP_FREESPOTLIGHT)
+	{
+		point_light_cones(fCosFalloffAngle, fCosHotspotAngle);
 	}
 	// cap specular values for legacy models
 	f4Specular = glm::vec4{std::clamp(f4Specular.r, 0.0f, 1.0f), std::clamp(f4Specular.g, 0.0f, 1.0f), std::clamp(f4Specular.b, 0.0f, 1.0f), std::clamp(f4Specular.a, 0.0f, 1.0f)};

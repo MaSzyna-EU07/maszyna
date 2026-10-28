@@ -10,7 +10,7 @@
 layout(location = 0) out vec4 out_light;
 layout(location = 1) out vec4 out_albedo;
 
-// closest distance (squared) the light of the lamp is computed for, as LOCAL_LIGHT_MIN_DISTANCE2 of light_common.glsl
+// closest distance (squared) the light of the lamp is computed for, as lamp_falloff() of common.glsl takes it for a lamp without a radius
 const float PROBE_LIGHT_MIN_DISTANCE2 = 0.01;
 // the light of the sun on a diffuse surface, as SUN_DIFFUSE_SCALE and SUN_NDOTL_SHARPNESS of light_common.glsl
 const float PROBE_SUN_SCALE = 1.5;

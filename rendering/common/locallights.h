@@ -50,6 +50,14 @@ class local_lights
 		float cos_outer{-1.f}; // cosine of the half angle of the cone; not above 0: the light is not limited to a cone
 		float cos_inner{-1.f}; // cosine of the half angle within which the light is at its full brightness; above cos_outer
 		float range{0.f}; // distance at which the light ends, metres
+		// light points: the radius of the sphere the light shines from (metres, 0: a point), and its light falling off as
+		// 1 / (d^2 + r^2) (the soft falloff of blender) instead of the way the surface of the sphere gives it
+		float radius{0.f};
+		bool soft_falloff{false};
+		// the light casts shadows (the shadow maps of the lamps, the contact shadows), and its shadows are cast also by the model
+		// it comes from (the instance, owner)
+		bool cast_shadows{true};
+		bool shade_self{false};
 		// light point of a scenery model: the instance and the submodel it comes from, which name the lamp from frame to frame
 		// (opengl46_local_shadows keeps the shadow maps of scenery lamps by them). nullptr for the other lights
 		void const *owner{nullptr};

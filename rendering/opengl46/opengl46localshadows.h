@@ -68,6 +68,7 @@ class opengl46_local_shadows : public gfx::local_shadows
 
   private:
 	void set_layer(int const Layer);
+	void set_near(float const Near);
 
 	std::unique_ptr<gl::program> m_program;
 	std::unique_ptr<gl::program> m_alpha_program;

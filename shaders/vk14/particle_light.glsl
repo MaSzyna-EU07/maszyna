@@ -93,7 +93,7 @@ vec3 particle_lamp(light_s light, vec3 position)
 	vec3 tolight = light.pos - position;
 	float distance2 = dot(tolight, tolight);
 	float edge = clamp(1.0 - distance2 * distance2 * (light.quadratic * light.quadratic), 0.0, 1.0);
-	float atten = edge * edge / max(distance2, 0.01);
+	float atten = edge * edge * lamp_falloff(light, distance2);
 	if (light.type == LIGHT_SPOT)
 		atten *= smoothstep(light.out_cutoff, light.in_cutoff, dot(-tolight * inversesqrt(max(distance2, 1e-8)), normalize(light.dir)));
 	return light.color * (atten * light.intensity);
