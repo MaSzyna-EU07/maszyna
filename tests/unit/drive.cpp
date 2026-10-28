@@ -72,7 +72,10 @@ void release_brakes(TMoverParameters &Cab) {
 bool is_ready(driven const &Driven) {
 	auto const &mover{Driven.controlling};
 	auto const air{mover.VeselVolume <= 0.0 || mover.ScndPipePress >= 4.5};
-	return mover.Mains && air;
+	// the converter feeds the 110 V circuits (the electrodynamic brake's control among them); the AI switches
+	// it on once the line breaker is closed, so a train already charged with air isn't ready before it runs
+	auto const converter{mover.ConverterStart != start_t::manual || mover.ConverterFlag};
+	return mover.Mains && air && converter;
 }
 
 bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {

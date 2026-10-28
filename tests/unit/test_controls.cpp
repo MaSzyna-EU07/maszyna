@@ -346,17 +346,52 @@ TEST_CASE("controls: a train run with five physics steps in a frame") {
 	scenario.check();
 }
 
-TEST_CASE("controls: the automatic electrodynamic brake under service braking, from speed") {
+TEST_CASE("controls: the automatic electrodynamic brake of the EP09, in service braking held to a stop") {
+	// held for longer, a service application of the train brake makes the EP09 brake electrodynamically: the
+	// pressure its distributor asks for (GetEDBCP) brings the motors in as generators, the air of its own
+	// cylinders is let out, and given back as the train slows down and the motors' brake force fades
+	struct application {
+		char const *name;
+		double steps; // past the first braking position of the handle
+	};
+	for (auto const &[name, steps] : {application{"light", 0.0}, application{"medium", 1.0}, application{"high", 2.0}, application{"full service", 3.0}}) {
+		CAPTURE(name);
+		scenario scenario{std::string{"controls/dynamic brake held/ep09 "} + name, motion() + traction() + brakes()};
+		scenario.add("ep09_v2/104e", 1, test::consist::full_coupling, 120.0);
+		scenario.add("bdhpumn_v3/bdhpumn", 0, test::consist::full_coupling, 120.0);
+		scenario.add("bdhpumn_v3/bdhpumn", 0, test::consist::full_coupling, 120.0);
+		REQUIRE(scenario.start_up());
+		auto &ep09{scenario.cab()};
+		REQUIRE(ep09.Power110vIsAvailable);
+		scenario.act(std::string{"brake "} + name);
+		ep09.BrakeLevelSet(ep09.Handle->GetPos(bh_MB) + steps);
+		scenario.wait(10.0);
+		CHECK(ep09.DynamicBrakeFlag);
+		CHECK(ep09.Im < -100.0);
+		CHECK(ep09.BrakePress < 0.25 * ep09.Hamulec->GetEDBCP());
+		scenario.wait(110.0);
+		// stopped, held by the air alone. the flag of the electrodynamic brake stays on while the cylinders hold
+		// less than 2.1 bar, though the motors give nothing; a stronger application drops it before the stop
+		CHECK(ep09.Vel == doctest::Approx(0.0));
+		CHECK(ep09.Im == doctest::Approx(0.0));
+		CHECK(ep09.DynamicBrakeFlag == (ep09.BrakePress <= 2.1));
+		CHECK(ep09.BrakePress == doctest::Approx(ep09.Hamulec->GetEDBCP()).epsilon(0.05));
+		scenario.act("release");
+		ep09.BrakeLevelSet(ep09.Handle->GetPos(bh_RP));
+		scenario.wait(30.0);
+		scenario.check();
+	}
+}
+
+TEST_CASE("controls: the automatic electrodynamic brake under ep and service braking, from speed") {
 	// ep, light and full service braking of trains running at speed, whose locomotive or unit has the automatic
-	// electrodynamic brake. the E6ACT brings it in; the EP09 and the EW58 don't, in these runs: their
-	// DynamicBrakeFlag stays off and the air brakes them alone
+	// electrodynamic brake
 	struct train {
 		char const *name;
 		std::vector<char const *> cars; // the first one driven
 		double speed; // km/h at the start
 	};
 	for (auto const &[name, cars, speed] : {
-	         train{"ep09 with wagons", {"ep09_v2/104e", "bdhpumn_v3/bdhpumn", "bdhpumn_v3/bdhpumn"}, 100.0},
 	         train{"e6act with wagons", {"e6act_v2/e6acta", "bdhpumn_v3/bdhpumn", "bdhpumn_v3/bdhpumn"}, 100.0},
 	         train{"ew58", {"ew58_v1/ew58-sa", "ew58_v1/ew58-d", "ew58_v1/ew58-sb"}, 90.0},
 	     }) {
