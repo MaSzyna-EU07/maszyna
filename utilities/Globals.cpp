@@ -1975,7 +1975,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.lights.shadows.cab" ) {
         Parser.getTokens( 1 );
         Parser >> gfx_lights_shadows_cab;
-        gfx_lights_shadows_cab = std::clamp( gfx_lights_shadows_cab, 0, 8 ); }
+        gfx_lights_shadows_cab = std::clamp( gfx_lights_shadows_cab, 0, 16 ); }
     else if( Token == "gfx.lights.shadows.lamps" ) {
         Parser.getTokens( 1 );
         Parser >> gfx_lights_shadows_lamps;

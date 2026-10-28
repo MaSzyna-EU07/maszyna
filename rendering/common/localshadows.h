@@ -31,8 +31,9 @@ namespace gfx
 // - the lights of the occupied cab (gfx::local_lights::cab_lights(): its lamps, the lights of its desk), the brightest
 //   Global.gfx_lights_shadows_cab of them, with the shadows cast by the cab (the model drawn by Render_cab()). the map of a light is
 //   kept in the space of the cab model, centred on the light: it stays right while the vehicle moves and turns, and is drawn anew only
-//   every few frames (for the moving parts of the cab: levers, doors, wipers) or when the light, the cab or the level change. a light
-//   keeps its map (slot) while it's among those picked;
+//   every few frames (for the moving parts of the cab: levers, doors, wipers; a few maps per frame) or when the light, the cab or the
+//   level change. a light keeps its map (slot) while it's among those picked; the other lights of the cab take the map of the
+//   closest light with one. the near plane of these maps is a few centimetres: the desk right under its lights holds their light back;
 // - the lamps of scenery models closest to the camera (Global.gfx_lights_shadows_lamps of them, within
 //   Global.gfx_lights_shadows_lamps_range). the map of such a lamp is kept in world axes, centred on the lamp, and has two parts:
 //   the scenery (drawn once, when the lamp gets its slot or the scene changes) and a working copy of it, with the vehicles near
@@ -54,7 +55,7 @@ class local_shadows
 	// near plane of the maps, metres. surfaces closer to the lamp (its own fitting) cast no shadow
 	static constexpr float shadow_near{0.15f};
 	// lights of the cab with shadow maps, at most
-	static constexpr int cab_slots_max{8};
+	static constexpr int cab_slots_max{16};
 
 	local_shadows() = default;
 	virtual ~local_shadows() = default;
@@ -92,7 +93,8 @@ class local_shadows
 	void begin(std::size_t const Slot);
 	// ends the drawing to the map
 	void end(std::uint32_t const Drawcalls);
-	// the slot of the light of the cab of Vehicle with its shadows ready, -1 if it has none
+	// the slot of the light of the cab of Vehicle with its shadows ready, -1 if it has none. a light without a map of its own (past
+	// the number of maps, or too weak for one) takes the map of the closest light within a metre, whose shadows are close to its own
 	int cab_slot_of(TDynamicObject const *Vehicle, gfx::local_lights::cab_light const &Light) const;
 	// the headlight_weights of the light which reads the map of the slot: layer, near plane, size of a texel one metre from the lamp,
 	// radius of the filter in texels

@@ -35,6 +35,18 @@ float lamp_near(gfx::local_lights::light const &Light)
 {
 	return std::clamp(Light.radius, local_shadows::shadow_near, std::max(local_shadows::shadow_near, Light.range * 0.5f));
 }
+// the same for a light of the cab, which is often right by what it lights and what holds its light back (the lights of the desk
+// under its edge): only what is within a few centimetres, or within its sphere, casts no shadow
+float const CAB_SHADOW_NEAR{0.03f};
+float cab_near(gfx::local_lights::light const &Light)
+{
+	return std::clamp(Light.radius, CAB_SHADOW_NEAR, std::max(CAB_SHADOW_NEAR, Light.range * 0.5f));
+}
+// lights of the cab with a shorter reach aren't worth a map of their own, metres
+float const CAB_RANGE_MIN{0.25f};
+// a light of the cab without a map of its own takes the shadows of the map of the closest light within this, metres: the desk, the
+// walls are where they are for both
+float const CAB_SHARE_DISTANCE{1.0f};
 
 } // namespace
 
@@ -172,7 +184,7 @@ void local_shadows::update_cab(TDynamicObject const *Vehicle, TModel3d const *Ca
 		{
 			break;
 		}
-		if (light.source.cast_shadows && (light.source.range >= LAMP_RANGE_MIN))
+		if (light.source.cast_shadows && (light.source.range >= CAB_RANGE_MIN))
 		{
 			picked.emplace_back(&light);
 		}
@@ -191,7 +203,8 @@ void local_shadows::update_cab(TDynamicObject const *Vehicle, TModel3d const *Ca
 		}
 	}
 	auto const place = [&](cab_slot &Slot, std::size_t const Index, gfx::local_lights::cab_light const &Light) {
-		auto const nearplane{lamp_near(Light.source)};
+		// the lamp put under the top of a cab model without lights of its own keeps the near plane it had
+		auto const nearplane{Light.source.part == static_cast<void const *>(Vehicle) ? lamp_near(Light.source) : cab_near(Light.source)};
 		if ((Slot.lamp != Light.local) || (Slot.nearplane != nearplane))
 		{
 			Slot.valid = false;
@@ -200,12 +213,6 @@ void local_shadows::update_cab(TDynamicObject const *Vehicle, TModel3d const *Ca
 		Slot.nearplane = nearplane;
 		Slot.wantedframe = Framestamp;
 		m_cabwanted.emplace_back(Index);
-		// the moving parts of the cab are followed every few frames
-		if ((false == Slot.valid) || (Framestamp - Slot.drawnframe >= setup(level).interval))
-		{
-			Slot.drawnframe = Framestamp;
-			m_cabdraws.emplace_back(Index);
-		}
 	};
 	// lights which already have a slot keep it, the others take the slots of lights no longer picked
 	std::vector<gfx::local_lights::cab_light const *> unplaced;
@@ -242,6 +249,33 @@ void local_shadows::update_cab(TDynamicObject const *Vehicle, TModel3d const *Ca
 			break;
 		}
 	}
+	// the maps to be drawn: those which don't hold their light yet, at once, and those of the moving parts of the cab, every few
+	// frames, a few of them per frame (the ones drawn longest ago first): a cab may have many lights
+	std::vector<std::size_t> refresh;
+	for (auto const idx : m_cabwanted)
+	{
+		auto const &slot{m_cabslots[idx]};
+		if (false == slot.valid)
+		{
+			m_cabdraws.emplace_back(idx);
+		}
+		else if (Framestamp - slot.drawnframe >= setup(level).interval)
+		{
+			refresh.emplace_back(idx);
+		}
+	}
+	auto const refreshes{static_cast<std::size_t>(level >= 3 ? 4 : 2)};
+	if (refresh.size() > refreshes)
+	{
+		std::partial_sort(std::begin(refresh), std::begin(refresh) + refreshes, std::end(refresh),
+		                  [this, Framestamp](std::size_t const Left, std::size_t const Right) { return Framestamp - m_cabslots[Left].drawnframe > Framestamp - m_cabslots[Right].drawnframe; });
+		refresh.resize(refreshes);
+	}
+	m_cabdraws.insert(std::end(m_cabdraws), std::begin(refresh), std::end(refresh));
+	for (auto const idx : m_cabdraws)
+	{
+		m_cabslots[idx].drawnframe = Framestamp;
+	}
 }
 
 void local_shadows::begin(std::size_t const Slot)
@@ -277,15 +311,28 @@ int local_shadows::cab_slot_of(TDynamicObject const *Vehicle, gfx::local_lights:
 	{
 		return -1;
 	}
+	auto closest{-1};
+	auto closestdistance{CAB_SHARE_DISTANCE};
 	for (auto const idx : m_cabwanted)
 	{
 		auto const &slot{m_cabslots[idx]};
-		if ((slot.part == Light.source.part) && slot.valid && (slot.lamp == Light.local))
+		if (false == slot.valid)
+		{
+			continue;
+		}
+		if ((slot.part == Light.source.part) && (slot.lamp == Light.local))
 		{
 			return static_cast<int>(idx);
 		}
+		// a light without a map of its own takes the one closest to it
+		auto const distance{glm::length(slot.lamp - Light.local)};
+		if (Light.source.cast_shadows && (distance <= closestdistance))
+		{
+			closest = static_cast<int>(idx);
+			closestdistance = distance;
+		}
 	}
-	return -1;
+	return closest;
 }
 
 glm::vec4 local_shadows::weights(std::size_t const Slot) const

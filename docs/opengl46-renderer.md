@@ -187,7 +187,9 @@ shadows (see below); the others (lamps of vehicles, compartments, farther scener
 within their reach, which is kept short for compartments.
 
 **Shadows of the cab lamp** (`gfx.lights.shadows`): the cab casts shadows in the light of its lamp (and of the brightest
-`gfx.lights.shadows.cab` lights of the cab model, each with a map of its own; the maps are made as they're needed), the desk, the seats,
+`gfx.lights.shadows.cab` lights of the cab model, each with a map of its own, made as they're needed; the other lights of the
+cab take the map of the closest light with one; for the light points the near plane is 3 cm, or their `Radius:`, so the desk
+right under its lights holds their light back; a few maps are redrawn per frame), the desk, the seats,
 the levers and the walls (light leaves the cab only through the windows, glass doesn't stop it). They come from a cube
 shadow map around the lamp, drawn with the opaque parts of the cab model only. The map is kept in the space of the cab, so
 it stays right as the vehicle moves; it is drawn anew every few frames, for the moving parts of the cab, and at once when
@@ -247,7 +249,7 @@ shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on 
 | `gfx.lights.cab.bounce` | `0.3` | 0..1: share of the former ambient light of the cab lamp kept with the lamp on |
 | `gfx.lights.range` | `300` | distance from the camera the lamps of models and vehicles are gathered from, metres |
 | `gfx.lights.shadows` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): shadows of the cab lamp and the scenery lamps, see above |
-| `gfx.lights.shadows.cab` | `4` | 0..8: how many lights of the cab (the brightest; the lamp or the light points of the cab model) cast the shadows of the cab, a cube map each; 0: none |
+| `gfx.lights.shadows.cab` | `8` | 0..16: how many lights of the cab (the brightest; the lamp or the light points of the cab model) have a cube shadow map of their own; the others take the map of the closest light with one (within 1 m); 0: none |
 | `gfx.lights.shadows.lamps` | `8` | 0..32: how many scenery lamps nearest to the camera cast shadows; 0: none |
 | `gfx.lights.shadows.lamps.size` | `512` | 128..2048: size of a face of the shadow map of a scenery lamp |
 | `gfx.lights.shadows.lamps.range` | `100` | distance from the camera within which scenery lamps cast shadows, metres |
