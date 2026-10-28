@@ -15,6 +15,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `11xa_v2/93a.fiz` | 11XA | - | ESt4 | - | ManualBrake | Screw |
 | `14xa_v1/173a.fiz` | 14XA | - | ESt4HBG300-s216 | - | ManualBrake | Screw |
 | `168a_v1/168a.fiz` | 168A | - | ESt4HBG300 | - | ManualBrake | Screw |
+| `21xm_v1/218ma_a_kd.fiz` | 218M | DieselEngine | EStED | MHZ_K5P | PneumaticBrake | Screw |
 | `21xm_v1/214ma.fiz` | 214M | DieselEngine | EStED | MHZ_K5P | PneumaticBrake | Screw |
 | `3wl_v2/3wl.fiz` | 3WL | - | ESt3 | - | ManualBrake | Screw |
 | `430w_v2/430w.fiz` | 430W | - | ESt3AL2HBG300 | - | ManualBrake | Screw |
@@ -28,6 +29,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `e186_v2/eu47.fiz` | E186 | ElectricInductionMotor | EStED | MHZ_6P | PneumaticBrake | Screw |
 | `e6act_v2/e6acta.fiz` | E6ACT | ElectricInductionMotor | EStED | MHZ_K5P | PneumaticBrake | Screw |
 | `ed72_v1/5bs-rb.fiz` | ED72 | - | EP2 | FVel6 | ManualBrake | Automatic |
+| `elf_v1/22wec-a.fiz` | ELF 22WEc | ElectricInductionMotor | EStED | MHZ_K5P | PneumaticBrake | Automatic |
 | `elf_v1/21we-a.fiz` | ELF | ElectricInductionMotor | EStED | MHZ_K5P | PneumaticBrake | Automatic |
 | `en57_v1/5bgb.fiz` | EN57 | - | EP2 | FVel6 | ManualBrake | Automatic |
 | `en57_v1/6ba_840.fiz` | EN57 | - | EP2 | FVel6 | ManualBrake | Automatic |
@@ -43,6 +45,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `ew58_v1/ew58-sa.fiz` | EW58 | ElectricSeriesMotor | EP1 | FVE408 | ManualBrake | Automatic |
 | `impuls_v1/31we-a_pr.fiz` | IMPULS | ElectricInductionMotor | EStED | MHZ_6P | PneumaticBrake | Automatic |
 | `road/man/nl293.fiz` | MAN (road) | DieselEngine | - | - | HydraulicBrake | Bare |
+| `sa134_v1/218mc_a.fiz` | SA134 | DieselEngine | EStED | MHZ_K5P | PneumaticBrake | Screw |
 | `sieciowiec_v1/a.fiz` | SIECIOWIEC | - | - | - | NoBrake | Screw |
 | `sm03_v1/sm03.fiz` | SM03 | DieselEngine | K | Knorr | PneumaticBrake | Screw |
 | `sm31_v1/411d.fiz` | SM31 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
@@ -59,4 +62,4 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `wmb10_v1/wmb10.fiz` | WMB10 | DieselEngine | LSt | FV4a | PneumaticBrake | Screw |
 | `z1_v2/152a.fiz` | Z1 | - | KE | - | ManualBrake | Screw |
 
-The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.
+The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 218M (V2NList), the SA134 (HTCList) and the 22WEc (ffBrakeList) are there for lists the others lack. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.
