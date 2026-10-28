@@ -1850,6 +1850,11 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1);
         Parser >> gfx_vulkan_asynccompute;
     }
+    else if (Token == "gfx.vulkan.checkpoints")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_checkpoints;
+    }
 
     else if (ConfigParse_gfx_sky(Parser, Token))
     {
@@ -2391,6 +2396,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.vulkan.parallelpasses", gfx_vulkan_parallelpasses );
     export_as_text( Output, "gfx.vulkan.parallelmodels", gfx_vulkan_parallelmodels );
     export_as_text( Output, "gfx.vulkan.asynccompute", gfx_vulkan_asynccompute );
+    export_as_text( Output, "gfx.vulkan.checkpoints", gfx_vulkan_checkpoints );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
     export_as_text( Output, "gfx.shadow.sdsm", gfx_shadow_sdsm );

@@ -436,6 +436,9 @@ struct global_settings {
     // (vulkan) the passes of the sky and the weather run on the compute queue, at the same time as the sun shadows, where the gpu has a
     // compute family of its own; off until a measurement on such a gpu shows what it gains
     bool gfx_vulkan_asynccompute { false };
+    // (vulkan) the passes leave checkpoints where the gpu has them (VK_NV_device_diagnostic_checkpoints): the report of a lost device
+    // in the log tells the pass the gpu got to
+    bool gfx_vulkan_checkpoints { true };
     bool vr = false;
     std::string vr_backend;
 

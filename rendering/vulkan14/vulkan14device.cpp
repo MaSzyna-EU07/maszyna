@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14instance.h"
 #include "utilities/Globals.h"
 
+#include <cinttypes>
+#include <cstdio>
 #include <cstring>
 
 namespace vk14
@@ -34,6 +36,36 @@ std::string lowercase(std::string Text)
 {
 	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Char) { return static_cast<char>(std::tolower(Char)); });
 	return Text;
+}
+
+std::string hex(std::uint64_t const Value)
+{
+	char text[24];
+	std::snprintf(text, sizeof(text), "0x%" PRIx64, Value);
+	return text;
+}
+
+char const *fault_address_type(VkDeviceFaultAddressTypeEXT const Type)
+{
+	switch (Type)
+	{
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_NONE_EXT:
+		return "no address";
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_READ_INVALID_EXT:
+		return "invalid read";
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_WRITE_INVALID_EXT:
+		return "invalid write";
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_EXECUTE_INVALID_EXT:
+		return "invalid execution";
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_UNKNOWN_EXT:
+		return "instruction pointer (fault not known)";
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_INVALID_EXT:
+		return "instruction pointer (invalid instruction)";
+	case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_FAULT_EXT:
+		return "instruction pointer (fault)";
+	default:
+		return "address";
+	}
 }
 
 } // namespace
@@ -385,6 +417,46 @@ bool device::create(instance const &Instance, std::string &Reason, std::vector<s
 		log_info("gfx.raytracing: " + m_capabilities.device_name + " has no ray queries (or not what they need), the reflections keep to the screen and the environment map");
 	}
 
+	// what the report of a lost device can tell: the passes the gpu got to (checkpoints of nvidia, gfx.vulkan.checkpoints) and what the
+	// driver knows of the fault. neither costs anything until the device is lost, but for the few checkpoints of a frame
+	VkPhysicalDeviceFaultFeaturesEXT fault{};
+	fault.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+	m_checkpoints = false;
+	m_device_fault = false;
+	{
+		std::uint32_t count{0};
+		vkEnumerateDeviceExtensionProperties(m_physical, nullptr, &count, nullptr);
+		std::vector<VkExtensionProperties> available(count);
+		vkEnumerateDeviceExtensionProperties(m_physical, nullptr, &count, available.data());
+		auto const has = [&](char const *Name) { return std::any_of(available.begin(), available.end(), [Name](VkExtensionProperties const &Entry) { return std::strcmp(Entry.extensionName, Name) == 0; }); };
+		auto const add = [&](char const *Name) {
+			if (std::none_of(extensions.begin(), extensions.end(), [Name](char const *Entry) { return std::strcmp(Entry, Name) == 0; }))
+			{
+				extensions.push_back(Name);
+			}
+		};
+		if (Global.gfx_vulkan_checkpoints && has(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME))
+		{
+			add(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
+			m_checkpoints = true;
+		}
+		if (has(VK_EXT_DEVICE_FAULT_EXTENSION_NAME))
+		{
+			VkPhysicalDeviceFeatures2 features{};
+			features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+			features.pNext = &fault;
+			vkGetPhysicalDeviceFeatures2(m_physical, &features);
+			fault.pNext = nullptr;
+			// the binary of the vendor is for its own tools, only the description and the addresses go to the log
+			fault.deviceFaultVendorBinary = VK_FALSE;
+			if (fault.deviceFault == VK_TRUE)
+			{
+				add(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+				m_device_fault = true;
+			}
+		}
+	}
+
 	VkDeviceCreateInfo create{};
 	create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	create.pNext = enabled.head();
@@ -393,6 +465,11 @@ bool device::create(instance const &Instance, std::string &Reason, std::vector<s
 		presentid.presentId = VK_TRUE;
 		presentid.pNext = const_cast<void *>(create.pNext);
 		create.pNext = &presentid;
+	}
+	if (m_device_fault)
+	{
+		fault.pNext = const_cast<void *>(create.pNext);
+		create.pNext = &fault;
 	}
 	create.queueCreateInfoCount = static_cast<std::uint32_t>(queues.size());
 	create.pQueueCreateInfos = queues.data();
@@ -426,7 +503,62 @@ bool device::create(instance const &Instance, std::string &Reason, std::vector<s
 	{
 		log_info("VK_NV_low_latency2 on, for reflex (gfx.reflex)");
 	}
+	if (m_checkpoints || m_device_fault)
+	{
+		log_info(std::string("for the report of a lost device:") + (m_checkpoints ? " the checkpoints of the passes (gfx.vulkan.checkpoints)" : "") + (m_checkpoints && m_device_fault ? "," : "") +
+		         (m_device_fault ? " the fault info of the driver" : ""));
+	}
 	return true;
+}
+
+std::string device::fault_report() const
+{
+	if ((false == m_device_fault) || (m_device == VK_NULL_HANDLE) || (vkGetDeviceFaultInfoEXT == nullptr))
+	{
+		return {};
+	}
+	VkDeviceFaultCountsEXT counts{};
+	counts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+	auto result{vkGetDeviceFaultInfoEXT(m_device, &counts, nullptr)};
+	if (result != VK_SUCCESS)
+	{
+		return std::string("the fault info of the driver: vkGetDeviceFaultInfoEXT failed with ") + result_string(result);
+	}
+	std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+	std::vector<VkDeviceFaultVendorInfoEXT> vendor(counts.vendorInfoCount);
+	counts.vendorBinarySize = 0;
+	VkDeviceFaultInfoEXT info{};
+	info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+	info.pAddressInfos = (addresses.empty() ? nullptr : addresses.data());
+	info.pVendorInfos = (vendor.empty() ? nullptr : vendor.data());
+	result = vkGetDeviceFaultInfoEXT(m_device, &counts, &info);
+	if ((result != VK_SUCCESS) && (result != VK_INCOMPLETE))
+	{
+		return std::string("the fault info of the driver: vkGetDeviceFaultInfoEXT failed with ") + result_string(result);
+	}
+	addresses.resize(std::min<std::size_t>(addresses.size(), counts.addressInfoCount));
+	vendor.resize(std::min<std::size_t>(vendor.size(), counts.vendorInfoCount));
+	std::string report{std::string("the fault info of the driver: \"") + info.description + "\""};
+	for (auto const &address : addresses)
+	{
+		// the address is known to the precision (a power of two): the fault is within the aligned range of that size around it
+		auto const precision{std::max<VkDeviceSize>(address.addressPrecision, 1)};
+		auto const lower{address.reportedAddress & ~(precision - 1)};
+		report += std::string("; ") + fault_address_type(address.addressType) + " at " + hex(address.reportedAddress);
+		if (precision > 1)
+		{
+			report += " (" + hex(lower) + " to " + hex(lower + precision - 1) + ")";
+		}
+	}
+	for (auto const &entry : vendor)
+	{
+		report += std::string("; vendor: \"") + entry.description + "\" code " + hex(entry.vendorFaultCode) + " data " + hex(entry.vendorFaultData);
+	}
+	if (addresses.empty() && vendor.empty())
+	{
+		report += " (no addresses: more likely a gpu which hung, a shader which didn't end, than one which read or wrote where it shouldn't)";
+	}
+	return report;
 }
 
 void device::destroy()

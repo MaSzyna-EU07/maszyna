@@ -93,6 +93,15 @@ class device
 	{
 		return m_low_latency;
 	}
+	// VK_NV_device_diagnostic_checkpoints is on (gfx.vulkan.checkpoints): the passes mark where the gpu got to, for the report of a lost
+	// device
+	bool checkpoints_enabled() const
+	{
+		return m_checkpoints;
+	}
+	// what the driver tells of the fault which lost the device (VK_EXT_device_fault, where the device has it): its description, the
+	// addresses the gpu went wrong at and what the vendor adds. empty without the extension
+	std::string fault_report() const;
 
   private:
 	static queue_families find_queue_families(VkInstance Instance, VkPhysicalDevice Physical, VkSurfaceKHR Surface, std::uint32_t &TimestampBits);
@@ -107,6 +116,8 @@ class device
 	bool m_memory_budget{false};
 	bool m_raytracing{false};
 	bool m_low_latency{false};
+	bool m_checkpoints{false};
+	bool m_device_fault{false};
 
 	VkQueue m_graphics_queue{VK_NULL_HANDLE};
 	VkQueue m_compute_queue{VK_NULL_HANDLE};

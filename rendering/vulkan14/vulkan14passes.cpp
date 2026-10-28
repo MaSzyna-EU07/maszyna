@@ -15,6 +15,18 @@ http://mozilla.org/MPL/2.0/.
 namespace vk14
 {
 
+namespace
+{
+
+// the marker of a checkpoint: the number of the frame, the queue (bit 15: the compute one, of the async passes), the index of the pass
+// among those of the frame on its queue and whether it's the end of the pass (bit 0)
+std::uint64_t checkpoint_marker(std::uint64_t const Number, bool const Async, std::size_t const Index)
+{
+	return (Number << 16) | (Async ? 0x8000u : 0u) | (static_cast<std::uint64_t>(std::min<std::size_t>(Index, 0x3fff)) << 1);
+}
+
+} // namespace
+
 image_use use_of(image &Image, VkImageLayout Layout, VkPipelineStageFlags2 Stage, VkAccessFlags2 Access)
 {
 	return image_use{Image.handle(), Image.aspect(), &Image.state, Layout, Stage, Access};
@@ -103,6 +115,7 @@ bool pass_list::create(device const &Device, std::uint32_t Frames, std::string &
 {
 	m_device = Device.handle();
 	m_period = Device.caps().timestamp_period;
+	m_checkpoints = Device.checkpoints_enabled();
 	// the bits of the timestamps of the queue the frames go to
 	std::uint32_t count{0};
 	vkGetPhysicalDeviceQueueFamilyProperties(Device.physical(), &count, nullptr);
@@ -191,12 +204,20 @@ void pass_list::begin_pass(char const *Name, std::vector<image_use> const &Uses)
 	barriers(m_commands, Uses);
 	begin_label(m_commands, Name);
 	auto &frame{m_frames[m_frame]};
+	// every pass is named, the ones past the timed ones too (passes_of(), the checkpoints); the names of the timed ones go first, so
+	// they're those of the queries
+	auto &names{m_async ? frame.async_names : frame.names};
+	m_openmarker = checkpoint_marker(frame.number, m_async, names.size());
+	names.emplace_back(Name);
+	if (m_checkpoints)
+	{
+		m_commands->set_checkpoint(m_openmarker);
+	}
 	if (m_async)
 	{
 		if ((frame.async_used < max_async) && (m_asyncmask != 0))
 		{
 			m_commands->write_timestamp2(VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, frame.async_pool, frame.async_used * 2);
-			frame.async_names.emplace_back(Name);
 			m_open = static_cast<int>(frame.async_used);
 			++frame.async_used;
 		}
@@ -210,7 +231,6 @@ void pass_list::begin_pass(char const *Name, std::vector<image_use> const &Uses)
 	if ((frame.used < max_passes) && (m_mask != 0))
 	{
 		m_commands->write_timestamp2(VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, frame.pool, frame.used * 2);
-		frame.names.emplace_back(Name);
 		m_open = static_cast<int>(frame.used);
 		++frame.used;
 	}
@@ -229,6 +249,10 @@ void pass_list::end_pass()
 	if (m_open < static_cast<int>(max_passes))
 	{
 		m_commands->write_timestamp2(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, m_async ? m_frames[m_frame].async_pool : m_frames[m_frame].pool, static_cast<std::uint32_t>(m_open) * 2 + 1);
+	}
+	if (m_checkpoints)
+	{
+		m_commands->set_checkpoint(m_openmarker | 1u);
 	}
 	end_label(m_commands);
 	m_open = -1;
@@ -333,6 +357,50 @@ std::string pass_list::passes_of(std::uint64_t Number) const
 		}
 	}
 	return (result.empty() ? std::string("(not known)") : result);
+}
+
+std::string pass_list::describe_checkpoint(std::uint64_t const Marker) const
+{
+	auto const number{Marker >> 16};
+	auto const async{(Marker & 0x8000u) != 0};
+	auto const index{static_cast<std::size_t>((Marker >> 1) & 0x3fff)};
+	std::string name{"pass " + std::to_string(index)};
+	for (auto const &frame : m_frames)
+	{
+		auto const &names{async ? frame.async_names : frame.names};
+		if ((frame.number == number) && (index < names.size()))
+		{
+			name = names[index];
+		}
+	}
+	return std::string((Marker & 1u) ? "the end of " : "the start of ") + name + (async ? " (async)" : "") + " of frame " + std::to_string(number);
+}
+
+std::string pass_list::checkpoints(VkQueue const Queue) const
+{
+	if ((false == m_checkpoints) || (Queue == VK_NULL_HANDLE) || (vkGetQueueCheckpointData2NV == nullptr))
+	{
+		return "(not known)";
+	}
+	std::uint32_t count{0};
+	vkGetQueueCheckpointData2NV(Queue, &count, nullptr);
+	std::vector<VkCheckpointData2NV> data(count);
+	for (auto &entry : data)
+	{
+		entry.sType = VK_STRUCTURE_TYPE_CHECKPOINT_DATA_2_NV;
+	}
+	vkGetQueueCheckpointData2NV(Queue, &count, data.data());
+	data.resize(std::min<std::size_t>(data.size(), count));
+	std::string result;
+	for (auto const &entry : data)
+	{
+		auto const marker{static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(entry.pCheckpointMarker))};
+		auto const stage{(entry.stage == VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT)      ? std::string("taken in at the top of the pipe")
+		                 : (entry.stage == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT) ? std::string("done at the bottom of the pipe")
+		                                                                           : "reached in the stages " + std::to_string(entry.stage)};
+		result += (result.empty() ? "" : ", ") + stage + ": " + describe_checkpoint(marker);
+	}
+	return (result.empty() ? std::string("(no checkpoint reached)") : result);
 }
 
 std::string pass_list::info() const

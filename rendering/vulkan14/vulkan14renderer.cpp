@@ -641,6 +641,7 @@ std::uint64_t vulkan14_renderer::context::completed() const
 	{
 		return 0;
 	}
+	lastcompleted = value;
 	return value;
 }
 
@@ -1008,7 +1009,8 @@ void vulkan14_renderer::report_device_lost(char const *Where)
 		return;
 	}
 	ctx.devicelost = true;
-	auto const done{ctx.completed()};
+	// the timeline can't be read once the device is lost: the value read before then
+	auto const done{std::max(ctx.completed(), ctx.lastcompleted.load())};
 	std::string report{std::string("the device was lost (") + Where + "); the gpu was done with the timeline value " + std::to_string(done) + " of " + std::to_string(ctx.timelinevalue)};
 	for (auto const &frame : ctx.frames)
 	{
@@ -1016,6 +1018,19 @@ void vulkan14_renderer::report_device_lost(char const *Where)
 		{
 			report += "; frame " + std::to_string(frame.number) + " (value " + std::to_string(frame.done) + ") wasn't done, its passes: " + ctx.passes.passes_of(frame.number);
 		}
+	}
+	// where the gpu got to (the pass it hung or failed in is after the one done last, up to the one taken in last)
+	if (ctx.device.checkpoints_enabled())
+	{
+		report += "; the checkpoints of the graphics queue: " + ctx.passes.checkpoints(ctx.device.graphics_queue());
+		if (ctx.async_compute && (ctx.device.compute_queue() != ctx.device.graphics_queue()))
+		{
+			report += "; of the compute queue: " + ctx.passes.checkpoints(ctx.device.compute_queue());
+		}
+	}
+	if (auto const fault{ctx.device.fault_report()}; false == fault.empty())
+	{
+		report += "; " + fault;
 	}
 	vk14::log_error(report);
 	crashreport_add_info("vulkan_device_lost", report);

@@ -70,6 +70,9 @@ class pass_list
 
 	// the passes recorded in the frame done last, and the ones of the frame Number, for the report of a lost device
 	std::string passes_of(std::uint64_t Number) const;
+	// the checkpoints the gpu got to on Queue (device::checkpoints_enabled()): the pass of the frame whose start or end it reached last
+	// at the top of the pipe (the work it took in) and at the bottom (the work done), for the report of a lost device
+	std::string checkpoints(VkQueue Queue) const;
 	// the gpu times (ms) of the parts of the frame, averaged, as the opengl renderer gives them: "name: x.xx ms" lines
 	std::string info() const;
 	double frame_ms() const
@@ -103,6 +106,10 @@ class pass_list
 	bool m_async{false};
 	std::uint32_t m_frame{0};
 	int m_open{-1};
+	bool m_checkpoints{false};
+	std::uint64_t m_openmarker{0}; // the checkpoint of the start of the open pass
+	// the name of the pass of a checkpoint
+	std::string describe_checkpoint(std::uint64_t Marker) const;
 	// averaged times of the parts, ms
 	std::vector<std::pair<std::string, double>> m_times;
 	std::vector<std::pair<std::string, double>> m_asynctimes; // of the compute queue

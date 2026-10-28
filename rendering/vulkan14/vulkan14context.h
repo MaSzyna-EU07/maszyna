@@ -687,6 +687,8 @@ struct vulkan14_renderer::context
 	void save_scene_pipelines();
 	// the value of the timeline the gpu reached, 0 when it can't be read
 	std::uint64_t completed() const;
+	// the value completed() read last: once the device is lost the timeline can't be read
+	mutable std::atomic<std::uint64_t> lastcompleted{0};
 	// waits until the gpu reached the value of the timeline; false: the device is lost
 	bool wait(std::uint64_t const Value) const;
 	void destroy();

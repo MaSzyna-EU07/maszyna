@@ -78,6 +78,8 @@ class command_stream
 	void end_query(VkQueryPool Pool, std::uint32_t Query);
 	void begin_debug_utils_label(VkDebugUtilsLabelEXT const *Label);
 	void end_debug_utils_label();
+	// a checkpoint of VK_NV_device_diagnostic_checkpoints, with the number of the marker (vk14::pass_list)
+	void set_checkpoint(std::uint64_t Marker);
 	// the builds of acceleration structures (VK_KHR_acceleration_structure, gfx.raytracing), outside of a rendering
 	void build_acceleration_structures(std::uint32_t Count, VkAccelerationStructureBuildGeometryInfoKHR const *Infos, VkAccelerationStructureBuildRangeInfoKHR const *const *Ranges);
 	// a call of a library recording its own commands (the evaluation of dlss), outside of a rendering: Function gets the command

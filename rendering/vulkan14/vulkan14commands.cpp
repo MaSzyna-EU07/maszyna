@@ -65,6 +65,7 @@ enum call_type : std::uint32_t
 	call_begin_label,
 	call_end_label,
 	call_build_acceleration_structures,
+	call_set_checkpoint,
 	call_external
 };
 
@@ -174,6 +175,10 @@ struct build_call
 	std::size_t infos;
 	std::size_t geometries;
 	std::size_t ranges;
+};
+struct checkpoint_call
+{
+	std::uint64_t marker;
 };
 struct external_call
 {
@@ -948,6 +953,12 @@ void command_stream::end_debug_utils_label()
 	add(call_end_label, 0);
 }
 
+void command_stream::set_checkpoint(std::uint64_t const Marker)
+{
+	auto const call{add(call_set_checkpoint, sizeof(checkpoint_call))};
+	payload<checkpoint_call>(call) = checkpoint_call{Marker};
+}
+
 void command_stream::build_acceleration_structures(std::uint32_t const Count, VkAccelerationStructureBuildGeometryInfoKHR const *Infos, VkAccelerationStructureBuildRangeInfoKHR const *const *Ranges)
 {
 	if (Count == 0)
@@ -1273,6 +1284,13 @@ void command_stream::execute(std::size_t const Call, VkCommandBuffer const Buffe
 		vkCmdBuildAccelerationStructuresKHR(Buffer, data.count, infos.data(), ranges.data());
 		break;
 	}
+	case call_set_checkpoint:
+		if (vkCmdSetCheckpointNV != nullptr)
+		{
+			// the marker is the number itself, not a pointer to anything
+			vkCmdSetCheckpointNV(Buffer, reinterpret_cast<void const *>(static_cast<std::uintptr_t>(payload<checkpoint_call>(Call).marker)));
+		}
+		break;
 	case call_external:
 	{
 		auto const &data{payload<external_call>(Call)};
