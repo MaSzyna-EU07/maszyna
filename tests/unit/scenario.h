@@ -41,6 +41,12 @@ public:
 	bool start_up();
 	// releases the brakes and sets the direction forward, for a train to move off
 	void get_going();
+	// the main controller up to its full power position, a notch a second, and Seconds more there. the line
+	// contactors close at the first position, after their delay (InitialCtrlDelay) and once the pressure switch
+	// lets them (the cylinders under 2 bar, the pipe over 3.6), so it waits there for them, as the AI does
+	void full_power(double Seconds);
+	// the main controller back to the given position, a notch a second
+	void notch_back(int Position);
 	// checks the traces
 	void check();
 

@@ -40,31 +40,8 @@ namespace {
 using test::scenario;
 using namespace test::channels;
 
-void full_power(scenario &Scenario, double Seconds) {
-	auto &controlling{Scenario.driver().controlling};
-	// the line contactors close at the first position, after their delay (InitialCtrlDelay) and once the pressure
-	// switch lets them (the cylinders under 2 bar, the pipe over 3.6), as the AI waits
-	controlling.IncMainCtrl(1);
-	for (int i = 0; i < 90 && false == controlling.StLinFlag; ++i) {
-		Scenario.wait(1.0);
-	}
-	for (int i = 0; i < 60 && false == controlling.IsMainCtrlMaxPowerPos(); ++i) {
-		controlling.IncMainCtrl(1);
-		Scenario.wait(1.0);
-	}
-	Scenario.wait(Seconds);
-}
-
-// the main controller back to the given position, a notch a second
-void notch_back(scenario &Scenario, int Position) {
-	auto &controlling{Scenario.driver().controlling};
-	while (controlling.MainCtrlPos > Position && controlling.DecMainCtrl(1)) {
-		Scenario.wait(1.0);
-	}
-}
-
 void stop(scenario &Scenario) {
-	notch_back(Scenario, 0);
+	Scenario.notch_back(0);
 	Scenario.act("brake");
 	Scenario.cab().BrakeLevelSet(Scenario.cab().Handle->GetPos(bh_FB));
 	Scenario.wait(60.0);
@@ -86,7 +63,7 @@ TEST_CASE("traction: the line breaker opened by the catenary lost, and by too hi
 		REQUIRE(scenario.start_up());
 		scenario.get_going();
 		auto &controlling{scenario.driver().controlling};
-		full_power(scenario, 10.0);
+		scenario.full_power(10.0);
 		REQUIRE(controlling.Mains);
 		scenario.act("catenary lost");
 		scenario.line().voltage = 0.0;
@@ -95,9 +72,9 @@ TEST_CASE("traction: the line breaker opened by the catenary lost, and by too hi
 		CHECK(controlling.Im == doctest::Approx(0.0));
 		scenario.act("catenary back");
 		scenario.line().voltage = test::catenary_3kv;
-		notch_back(scenario, 0);
+		scenario.notch_back(0);
 		CHECK(scenario.start_up());
-		full_power(scenario, 5.0);
+		scenario.full_power(5.0);
 		scenario.act("overvoltage");
 		scenario.line().voltage = controlling.EnginePowerSource.CollectorParameters.MaxV + 300.0;
 		scenario.wait(5.0);
@@ -120,7 +97,7 @@ TEST_CASE("traction: the ET42 at the high current setting, its halves in series,
 		// the relay takes the setting at the next step, with the controller at zero
 		scenario.get_going();
 		CHECK((et42.Imax == et42.ImaxHi) == high);
-		full_power(scenario, 60.0);
+		scenario.full_power(60.0);
 		// at the high current setting the controller stops at the last series position: the halves' motors stay
 		// in series, at half the voltage each, for a heavy start, and the train crawls
 		CHECK((et42.RList[et42.MainCtrlPos].Bn > 1) != high);
@@ -133,14 +110,14 @@ TEST_CASE("traction: the ET42 at the high current setting, its halves in series,
 		scenario.act("dynamic brake");
 		CHECK(et42.DynamicBrakeSwitch(true));
 		scenario.wait(5.0);
-		full_power(scenario, 20.0);
+		scenario.full_power(20.0);
 		// the controller sets the brake's strength. from the low setting's top speed, over 100 km/h, the motors'
 		// current goes over 300 A at the first position and the overload relay trips, leaving the train to roll;
 		// from the high setting's, under 40 km/h, the brake stops the train
 		CHECK(et42.FuseFlag != high);
 		CHECK((et42.Vel == doctest::Approx(0.0)) == high);
 		scenario.act("dynamic brake off");
-		notch_back(scenario, 0);
+		scenario.notch_back(0);
 		et42.DynamicBrakeSwitch(false);
 		stop(scenario);
 		scenario.check();
@@ -167,13 +144,13 @@ TEST_CASE("traction: the field shunting relays of the diesel-electric locomotive
 		auto &controlling{scenario.driver().controlling};
 		CHECK(controlling.RelayType == relay);
 		scenario.get_going();
-		full_power(scenario, 120.0);
+		scenario.full_power(120.0);
 		CHECK(controlling.ScndCtrlPos == controlling.ScndCtrlPosNo);
 		auto expected{shunting.begin()};
 		for (auto const position : {11, 10, 7, 3}) {
 			CAPTURE(position);
 			scenario.act("notch back to " + std::to_string(position));
-			notch_back(scenario, position);
+			scenario.notch_back(position);
 			scenario.wait(15.0);
 			CHECK(controlling.ScndCtrlPos == *expected++);
 		}
@@ -217,7 +194,7 @@ TEST_CASE("traction: the induction motor drive's speed control, its electrodynam
 	// set, 3 raises it by 10 km/h every SpeedCtrlDelay, 4 sets the top speed, 1 lowers it, 0 drops it
 	REQUIRE(eu47.ScndCtrlPosNo == 4);
 	REQUIRE(eu47.SpeedCtrlTypeTime);
-	full_power(scenario, 0.0);
+	scenario.full_power(0.0);
 	scenario.act("speed up");
 	for (int i = 0; i < 3; ++i) {
 		eu47.IncScndCtrl(1);
@@ -245,7 +222,7 @@ TEST_CASE("traction: the induction motor drive's speed control, its electrodynam
 	scenario.act("speed control off");
 	while (eu47.DecScndCtrl(1)) {
 	}
-	notch_back(scenario, 0);
+	scenario.notch_back(0);
 	scenario.wait(2.0);
 	CHECK(eu47.SpeedCtrlValue == doctest::Approx(0.0));
 	// the local brake sets the flag of the electrodynamic brake, which keeps the train brake's air out of the

@@ -51,6 +51,26 @@ void scenario::get_going() {
 	wait(20.0);
 }
 
+void scenario::full_power(double Seconds) {
+	auto &controlling{driver().controlling};
+	controlling.IncMainCtrl(1);
+	for (int i = 0; i < 90 && false == controlling.StLinFlag; ++i) {
+		wait(1.0);
+	}
+	for (int i = 0; i < 60 && false == controlling.IsMainCtrlMaxPowerPos(); ++i) {
+		controlling.IncMainCtrl(1);
+		wait(1.0);
+	}
+	wait(Seconds);
+}
+
+void scenario::notch_back(int Position) {
+	auto &controlling{driver().controlling};
+	while (controlling.MainCtrlPos > Position && controlling.DecMainCtrl(1)) {
+		wait(1.0);
+	}
+}
+
 void scenario::check() {
 	for (auto &trace : m_traces) {
 		trace->check();
