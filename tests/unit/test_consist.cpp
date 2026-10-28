@@ -90,3 +90,42 @@ TEST_CASE("consist: a locomotive with wagons, driven, braked by its handle and p
 		CHECK(std::abs(train.gap(i)) < 0.5);
 	}
 }
+
+namespace {
+
+// what the cab's ammeters show (Train.cpp, the driver's panel) and the brake force the AI expects of the
+// vehicle (Driver.cpp), read of the driven vehicle. BrakeForceR() changes nothing, though it isn't const
+std::vector<test::channel> gauges() {
+	std::vector<test::channel> result;
+	for (int ammeter = 0; ammeter < 4; ++ammeter) {
+		result.push_back({"ShowCurrent" + std::to_string(ammeter), [ammeter](auto const &M) { return M.ShowCurrent(ammeter); }});
+	}
+	result.push_back({"BrakeForceR0.25", [](auto const &M) { return const_cast<TMoverParameters &>(M).BrakeForceR(0.25, M.Vel); }});
+	result.push_back({"BrakeForceR1", [](auto const &M) { return const_cast<TMoverParameters &>(M).BrakeForceR(1.0, M.Vel); }});
+	result.push_back({"BrakeForceR1at20", [](auto const &M) { return const_cast<TMoverParameters &>(M).BrakeForceR(1.0, 20.0); }});
+	using test::channels::operator+;
+	return result + test::channels::traction();
+}
+
+} // namespace
+
+TEST_CASE("consist: the gauges of units and locomotives in multiple, driven") {
+	auto trains{units};
+	trains.push_back({"eu07 pair", {"4e_v1/4e", "4e_v1/4e"}});
+	trains.push_back({"et22 pair", {"et22_v3/201e-w", "et22_v3/201e-rn"}});
+	trains.push_back({"ep09 pair", {"ep09_v2/104e", "ep09_v2/104e"}});
+	trains.push_back({"sn61 three", {"sn61_v2/sn61", "sn61_v2/sn61", "sn61_v2/sn61"}});
+	trains.push_back({"su45 pair", {"su45_v2/301d", "su45_v2/301d"}});
+	for (auto const &train : trains) {
+		CAPTURE(train.name);
+		test::reseed_random();
+		consist vehicles;
+		for (auto const *car : train.cars) {
+			vehicles.add(definition::fiz(car), vehicles.size() == 0 ? 1 : 0);
+		}
+		test::trace trace{std::string{"gauges/"} + train.name, gauges(), 100};
+		vehicles[0].record(trace);
+		test::drive_cycle(test::driving(vehicles), test::track{0.15, 0.0, test::catenary_3kv}, trace);
+		trace.check();
+	}
+}
