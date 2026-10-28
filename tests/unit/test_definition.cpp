@@ -134,3 +134,18 @@ TEST_CASE("definition: the highest power of an induction motor drive by the spee
 		CHECK(real->eimc[eimc_p_Pmax] == doctest::Approx(table(real->Vel)).epsilon(0.01));
 	}
 }
+
+TEST_CASE("definition: the colour and the brightness of the headlights") {
+	// only the 214M's own file has the section, which the definitions here can't hold (see data/fiz/README.md)
+	vehicle railbus{definition::fiz("21xm_v1/214ma")
+	                    .set("Headlights", "LampRed", 248)
+	                    .set("Headlights", "LampGreen", 221)
+	                    .set("Headlights", "LampBlue", 111)
+	                    .set("Headlights", "DimmedMultiplier", 0.4)
+	                    .set("Headlights", "NormalMultiplier", 0.9)};
+	CHECK(railbus->refR == doctest::Approx(248.0));
+	CHECK(railbus->refG == doctest::Approx(221.0));
+	CHECK(railbus->refB == doctest::Approx(111.0));
+	CHECK(railbus->dimMultiplier == doctest::Approx(0.4));
+	CHECK(railbus->normMultiplier == doctest::Approx(0.9));
+}

@@ -35,6 +35,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `en57_v1/6ba_840.fiz` | EN57 | - | EP2 | FVel6 | ManualBrake | Automatic |
 | `en57_v1/6bai.fiz` | EN57 | - | K | St113 | ManualBrake | Automatic |
 | `en57akl_v1/akl_ra.fiz` | EN57AKL | ElectricInductionMotor | EStED | MHZ_EN57 | PneumaticBrake | Automatic |
+| `ep05_v2/ep05.fiz` | EP05 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
 | `ep09_v2/104e.fiz` | EP09 | ElectricSeriesMotor | EStED | FV4a | PneumaticBrake | Screw |
 | `et22_v3/201e-rn.fiz` | ET22 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
 | `et22_v3/201e-w.fiz` | ET22 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
@@ -62,4 +63,4 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `wmb10_v1/wmb10.fiz` | WMB10 | DieselEngine | LSt | FV4a | PneumaticBrake | Screw |
 | `z1_v2/152a.fiz` | Z1 | - | KE | - | ManualBrake | Screw |
 
-The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 218M (V2NList), the SA134 (HTCList) and the 22WEc (ffBrakeList) are there for lists the others lack. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.
+The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 218M (V2NList), the SA134 (HTCList) and the 22WEc (ffBrakeList) are there for lists the others lack, the EP05 for its camshaft. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.
