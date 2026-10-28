@@ -100,11 +100,8 @@ public:
 				// bit 13: =1 wystarczy przesunięcie zamiast mnożenia macierzy (trzy jedynki)
 				// bit 14: =1 wymagane przechowanie macierzy (animacje)
 				// bit 15: =1 wymagane przechowanie macierzy (transform niejedynkowy)
-	union
-	{ // transform, nie każdy submodel musi mieć
-		glm::mat4 fMatrix { 1.0f }; // pojedyncza precyzja wystarcza
-		int iMatrix; // w pliku binarnym jest numer matrycy
-	};
+	glm::mat4 fMatrix { 1.0f }; // pojedyncza precyzja wystarcza, nie każdy submodel ma własny transform
+	int iMatrix; // w pliku binarnym jest numer matrycy
 	float transformscalestack { 1.0f }; // tolerancescale used in calculate_indices for whole matrix chain
     int iTexture { 0 }; // numer nazwy tekstury, -1 wymienna, 0 brak
     float fLight { -1.0f }; // próg jasności światła do zadziałania selfillum
@@ -236,7 +233,7 @@ public:
     // sets activation threshold of self-illumination to specitied value
     void SetSelfIllum( float const Threshold, bool const Includechildren = false, bool const Includesiblings = false );
 	inline glm::vec3 Translation1Get() {
-		return glm::vec3(fMatrix[3]) + v_TransVector; }
+		return iFlags & 0x8000 ? glm::vec3(fMatrix[3]) + v_TransVector : v_TransVector; }
 	inline glm::vec3 Translation2Get() {
 		return glm::vec3(fMatrix[3]) + Child->Translation1Get(); }
     material_handle GetMaterial() const {
