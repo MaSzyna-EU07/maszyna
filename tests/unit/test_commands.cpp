@@ -392,6 +392,48 @@ TEST_CASE("commands: every switch of the cab, sent to the next vehicle") {
 	}
 }
 
+TEST_CASE("commands: every switch of the cab, worked on a pair standing under the catenary") {
+	// the same switches with time for the vehicles to act on them, as a crew works them: the pantographs rise,
+	// the main switch closes, the converter and the compressor start, and the controllers take power
+	for (auto const &path : test::real_vehicles()) {
+		CAPTURE(path);
+		test::reseed_random();
+		test::consist pair;
+		pair.add(definition::fiz(path), 1);
+		pair.add(definition::fiz(path));
+		auto done{false};
+		auto channels{state()};
+		channels.insert(channels.end(), {
+		                                    {"PantFrontActive", [](auto const &M) { return flag(M.Pantographs[end::front].is_active); }},
+		                                    {"PantRearActive", [](auto const &M) { return flag(M.Pantographs[end::rear].is_active); }},
+		                                    {"PantPress", [](auto const &M) { return M.PantPress; }},
+		                                    {"GroundRelay", [](auto const &M) { return flag(M.GroundRelay); }},
+		                                    {"ConverterFlag", [](auto const &M) { return flag(M.ConverterFlag); }},
+		                                    {"CompressorFlag", [](auto const &M) { return flag(M.CompressorFlag); }},
+		                                    {"Compressor", [](auto const &M) { return M.Compressor; }},
+		                                    {"MainCtrlActualPos", [](auto const &M) { return M.MainCtrlActualPos; }},
+		                                    {"Itot", [](auto const &M) { return M.Itot; }},
+		                                    {"FuseFlag", [](auto const &M) { return flag(M.FuseFlag); }},
+		                                    {"EngineRotation", [](auto const &M) { return M.enrot; }},
+		                                });
+		auto const own{channels.size()};
+		for (std::size_t i = 0; i < own; ++i) {
+			channels.push_back({"next." + channels[i].name, [&pair, value = channels[i].value](auto const &) { return value(pair[1].mover()); }});
+		}
+		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
+		test::trace trace{"switches_live/" + path, channels, 1};
+		trace.sample(0.0, pair[0].mover());
+		test::track const catenary{.voltage = test::catenary_3kv};
+		for (std::size_t i = 0; i < actions.size(); ++i) {
+			trace.mark(actions[i].name);
+			done = actions[i].work(pair[0].mover());
+			pair.run(2.0, catenary);
+			trace.sample(static_cast<double>(i + 1), pair[0].mover());
+		}
+		trace.check();
+	}
+}
+
 namespace {
 
 // three locomotives coupled with the given coupling, the middle one facing backwards, as a train made up of
