@@ -390,10 +390,13 @@ TEST_CASE("controls: the automatic electrodynamic brake under ep and service bra
 		char const *name;
 		std::vector<char const *> cars; // the first one driven
 		double speed; // km/h at the start
+		bool epelectric; // whether the ep brake alone brings the motors in
 	};
-	for (auto const &[name, cars, speed] : {
-	         train{"e6act with wagons", {"e6act_v2/e6acta", "bdhpumn_v3/bdhpumn", "bdhpumn_v3/bdhpumn"}, 100.0},
-	         train{"ew58", {"ew58_v1/ew58-sa", "ew58_v1/ew58-d", "ew58_v1/ew58-sb"}, 90.0},
+	// the EW58's motors brake by the stages of the ep brake (TUHEX), with the 110 V of the converter in its
+	// middle car; the E6ACT's by its distributor, from a deeper service application
+	for (auto const &[name, cars, speed, epelectric] : {
+	         train{"e6act with wagons", {"e6act_v2/e6acta", "bdhpumn_v3/bdhpumn", "bdhpumn_v3/bdhpumn"}, 100.0, false},
+	         train{"ew58", {"ew58_v1/ew58-sa", "ew58_v1/ew58-d", "ew58_v1/ew58-sb"}, 90.0, true},
 	     }) {
 		CAPTURE(name);
 		scenario scenario{std::string{"controls/dynamic brake from speed/"} + name, motion() + traction() + brakes()};
@@ -408,9 +411,13 @@ TEST_CASE("controls: the automatic electrodynamic brake under ep and service bra
 			scenario.wait(Seconds);
 		}};
 		brake("ep brake", cab.Handle->GetPos(bh_EPB), 15.0);
+		CHECK(cab.DynamicBrakeFlag == epelectric);
+		CHECK((cab.Im < -100.0) == epelectric);
 		brake("ep hold", cab.Handle->GetPos(bh_EPN), 5.0);
 		brake("first step", cab.Handle->GetPos(bh_MB), 20.0);
 		brake("deeper", cab.Handle->GetPos(bh_MB) + 1.0, 15.0);
+		// the pipe alone doesn't bring the EW58's motors in
+		CHECK((cab.Im < -50.0) != epelectric);
 		brake("release", cab.Handle->GetPos(bh_RP), 20.0);
 		brake("full service", cab.Handle->GetPos(bh_FB), 40.0);
 		brake("release", cab.Handle->GetPos(bh_RP), 20.0);

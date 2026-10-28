@@ -86,6 +86,9 @@ bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 	auto const diesel{controlling.EngineType == TEngineType::DieselEngine || controlling.EngineType == TEngineType::DieselElectric};
 	auto const collector{pantographs.EnginePowerSource.SourceType == TPowerSource::CurrentCollector &&
 	                     pantographs.EnginePowerSource.CollectorParameters.CollectorsNo > 0};
+	// the converter and the compressor get switched on once the line breaker is closed, wherever in the train
+	// they are; a train already charged with air isn't ready before that
+	auto auxiliaries{false};
 	// one round of the driver's actions a second, as the AI reacts
 	for (auto second = 0.0; second < Seconds; second += 1.0) {
 		cab.BatterySwitch(true);
@@ -135,6 +138,7 @@ bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 			else {
 				cab.ConverterSwitch(true);
 				cab.CompressorSwitch(true);
+				auxiliaries = true;
 				if (cab.MotorBlowers[end::front].speed != 0) {
 					cab.MotorBlowersSwitchOff(false, end::front);
 					cab.MotorBlowersSwitch(true, end::front);
@@ -146,7 +150,7 @@ bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 			}
 		}
 		drive(Driven, Track, 1.0);
-		if (is_ready(Driven)) {
+		if (auxiliaries && is_ready(Driven)) {
 			mark(Trace, "ready");
 			return true;
 		}
