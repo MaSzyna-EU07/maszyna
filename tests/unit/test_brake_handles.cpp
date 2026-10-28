@@ -3,6 +3,7 @@
 #include "vehicle.h"
 #include "golden.h"
 #include "real_vehicles.h"
+#include "drive.h"
 
 #include "McZapkie/hamulce.h"
 
@@ -103,6 +104,51 @@ TEST_CASE("brake handles: the local brake handle of every real vehicle") {
 			real->LocalBrakePosA = position;
 			real.run(15.0);
 		}
+		trace.check();
+	}
+}
+
+TEST_CASE("brake handles: the overload and the high pressure buttons of the MHZ handles") {
+	// the overload button charges the pipe over its running pressure (TP), which then decays; the high pressure
+	// button gives the filling stroke its overpressure, where the handle has one only with the button pressed.
+	// from the cab, with the battery on and the driver attending to the vigilance: the electro-pneumatic handles
+	// work only so
+	// the MHZ_EN57, whose unit doesn't charge its pipe alone, fitted to an EU07
+	for (auto const &[name, definition] : std::vector<std::pair<std::string, test::definition>>{
+	         {"eu47", definition::fiz("e186_v2/eu47")},
+	         {"e6act", definition::fiz("e6act_v2/e6acta")},
+	         {"eu07 with MHZ_EN57", definition::fiz("4e_v1/4e").set("Cntrl", "BrakeHandle", "MHZ_EN57")}}) {
+		CAPTURE(name);
+		test::reseed_random();
+		vehicle real{definition, 0.0, "test", 1};
+		real->BatterySwitch(true);
+		real->CabActivisation();
+		real.hold_main_reservoir(std::max(real->MaxCompressor, 8.0));
+		test::trace trace{"brake handles/buttons/" + name, handle_channels(), 100};
+		real.record(trace);
+		auto &handle{*real->Handle};
+		auto const at{[&](std::string const &Event, double Position, double Seconds) {
+			trace.mark(Event);
+			real->BrakeLevelSet(Position);
+			test::drive(test::driving(real), {}, Seconds);
+		}};
+		at("running", handle.GetPos(bh_RP), 60.0);
+		auto const running{real->PipePress};
+		handle.SetUniversalFlag(TUniversalBrake::ub_Overload);
+		at("overload button", handle.GetPos(bh_RP), 30.0);
+		handle.SetUniversalFlag(0);
+		auto const overloaded{real->PipePress};
+		at("overload decaying", handle.GetPos(bh_RP), 240.0);
+		auto const decayed{real->PipePress};
+		handle.SetUniversalFlag(TUniversalBrake::ub_HighPressure);
+		at("high pressure button, filling stroke", handle.GetPos(bh_FS), 10.0);
+		auto const filled{real->PipePress};
+		handle.SetUniversalFlag(0);
+		at("running", handle.GetPos(bh_RP), 120.0);
+		CHECK(running == doctest::Approx(5.0).epsilon(0.01));
+		CHECK(overloaded > running + 0.3);
+		CHECK(decayed < overloaded);
+		CHECK(filled >= decayed - 0.05);
 		trace.check();
 	}
 }
