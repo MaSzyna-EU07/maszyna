@@ -1,0 +1,60 @@
+[start up]
+duration = 299.99 s
+brake pipe lowest = 2.577 bar
+brake pipe at the end = 2.577 bar
+brake cylinders peak = 2.484 bar
+[permit left]
+duration = 2.00 s
+brake pipe lowest = 2.572 bar
+brake pipe at the end = 2.572 bar
+brake cylinders peak = 2.484 bar
+[open left]
+duration = 10.00 s
+brake pipe lowest = 2.549 bar
+brake pipe at the end = 2.549 bar
+brake cylinders peak = 2.484 bar
+[close left]
+duration = 10.00 s
+brake pipe lowest = 2.526 bar
+brake pipe at the end = 2.526 bar
+brake cylinders peak = 2.484 bar
+[open right without permit]
+duration = 5.00 s
+brake pipe lowest = 2.514 bar
+brake pipe at the end = 2.514 bar
+brake cylinders peak = 2.484 bar
+[permit right, open]
+duration = 10.00 s
+brake pipe lowest = 2.491 bar
+brake pipe at the end = 2.491 bar
+brake cylinders peak = 2.484 bar
+[lock]
+duration = 5.00 s
+brake pipe lowest = 2.480 bar
+brake pipe at the end = 2.480 bar
+brake cylinders peak = 2.484 bar
+[permit preset, steps off, remote control]
+duration = 5.00 s
+brake pipe lowest = 2.469 bar
+brake pipe at the end = 2.469 bar
+brake cylinders peak = 2.484 bar
+[close all, unlock]
+duration = 10.00 s
+brake pipe lowest = 2.446 bar
+brake pipe at the end = 2.446 bar
+brake cylinders peak = 2.484 bar
+[open both and drive off]
+duration = 5.00 s
+brake pipe lowest = 2.435 bar
+brake pipe at the end = 2.435 bar
+brake cylinders peak = 2.484 bar
+[get going]
+duration = 52.00 s
+brake pipe lowest = 1.826 bar
+brake pipe at the end = 1.826 bar
+brake cylinders peak = 2.484 bar
+[brake to stop]
+duration = 80.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 1.506 bar
+brake cylinders peak = 2.484 bar

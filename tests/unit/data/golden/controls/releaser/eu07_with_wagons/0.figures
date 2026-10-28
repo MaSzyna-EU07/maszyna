@@ -1,0 +1,47 @@
+[start up]
+duration = 9.99 s
+brake pipe lowest = 3.356 bar
+brake pipe at the end = 3.356 bar
+brake cylinders peak = 3.998 bar
+[ready, get going]
+duration = 20.00 s
+brake pipe lowest = 3.364 bar
+brake pipe at the end = 4.951 bar
+brake pipe back at 4.9 bar after = 12.76 s
+brake cylinders peak = 3.998 bar
+[service brake]
+duration = 20.00 s
+brake pipe lowest = 3.402 bar
+brake pipe at the end = 3.402 bar
+brake cylinders peak = 3.998 bar
+[releaser of the locomotive]
+duration = 10.00 s
+brake pipe lowest = 3.383 bar
+brake pipe at the end = 3.383 bar
+brake cylinders peak = 3.998 bar
+[releaser of the wagon]
+duration = 10.00 s
+brake pipe lowest = 3.357 bar
+brake pipe at the end = 3.357 bar
+brake cylinders peak = 0.077 bar
+[universal button 0]
+duration = 10.00 s
+brake pipe lowest = 3.328 bar
+brake pipe at the end = 3.328 bar
+brake cylinders peak = 0.064 bar
+[universal button 1]
+duration = 10.00 s
+brake pipe lowest = 3.296 bar
+brake pipe at the end = 3.296 bar
+brake cylinders peak = 0.062 bar
+[universal button 2]
+duration = 10.00 s
+brake pipe lowest = 3.263 bar
+brake pipe at the end = 3.263 bar
+brake cylinders peak = 0.062 bar
+[running]
+duration = 60.00 s
+brake pipe lowest = 3.281 bar
+brake pipe at the end = 4.996 bar
+brake pipe back at 4.9 bar after = 2.07 s
+brake cylinders peak = 0.062 bar

@@ -19,6 +19,7 @@ add_executable(${UNIT_TESTS_NAME}
 	scenario.cpp
 	golden.cpp
 	invariants.cpp
+	figures.cpp
 	engine_stubs.cpp
 	${UNIT_TEST_CASES})
 

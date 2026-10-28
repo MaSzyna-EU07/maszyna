@@ -1,0 +1,65 @@
+[start]
+duration = 9.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.355 bar
+brake pipe at the end = 3.355 bar
+brake cylinders peak = 2.227 bar
+[get going]
+duration = 80.00 s
+speed at the start = 0.0 km/h
+speed at the end = 46.5 km/h
+speed peak = 46.6 km/h
+distance = 526.0 m
+brake pipe lowest = 3.360 bar
+brake pipe at the end = 4.995 bar
+brake pipe back at 4.9 bar after = 12.84 s
+brake cylinders peak = 2.242 bar
+[alarm chain in the wagon]
+duration = 40.00 s
+speed at the start = 46.5 km/h
+speed at the end = 0.0 km/h
+speed peak = 46.5 km/h
+distance = 110.4 m
+stopped after = 13.43 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.299 bar
+[alarm chain reset]
+duration = 60.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.299 bar
+[get going]
+duration = 80.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.299 bar
+[radio-stop]
+duration = 40.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.299 bar
+[radio-stop reset]
+duration = 60.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.299 bar

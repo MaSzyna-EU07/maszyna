@@ -243,7 +243,7 @@ TEST_CASE("commands: every command run on every real vehicle") {
 		auto done{false};
 		auto channels{state()};
 		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
-		test::trace trace{"commands/" + path, channels, 1};
+		test::trace trace{"commands/" + path, channels, 1, false};
 		trace.sample(0.0, real.mover());
 		for (std::size_t i = 0; i < commands.size(); ++i) {
 			auto const &command{commands[i]};
@@ -384,7 +384,7 @@ TEST_CASE("commands: every switch of the cab, sent to the next vehicle") {
 			channels.push_back({"next." + channel.name, [&next, value = channel.value](auto const &) { return value(next.mover()); }});
 		}
 		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
-		test::trace trace{"switches/" + path, channels, 1};
+		test::trace trace{"switches/" + path, channels, 1, false};
 		trace.sample(0.0, driven.mover());
 		for (std::size_t i = 0; i < actions.size(); ++i) {
 			trace.mark(actions[i].name);
@@ -424,7 +424,7 @@ TEST_CASE("commands: every switch of the cab, worked on a pair standing under th
 			channels.push_back({"next." + channels[i].name, [&pair, value = channels[i].value](auto const &) { return value(pair[1].mover()); }});
 		}
 		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
-		test::trace trace{"switches_live/" + path, channels, 1};
+		test::trace trace{"switches_live/" + path, channels, 1, false};
 		trace.sample(0.0, pair[0].mover());
 		test::track const catenary{.voltage = test::catenary_3kv};
 		for (std::size_t i = 0; i < actions.size(); ++i) {

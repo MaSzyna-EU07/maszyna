@@ -1,0 +1,113 @@
+[start up]
+duration = 26.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.193 bar
+brake pipe at the end = 3.193 bar
+brake cylinders peak = 3.190 bar
+tractive force peak = 43.5 kN
+[ready, release brakes]
+duration = 30.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.205 bar
+brake pipe at the end = 4.363 bar
+brake cylinders peak = 3.328 bar
+tractive force peak = 43.5 kN
+[forward]
+duration = 2.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 4.364 bar
+brake pipe at the end = 4.417 bar
+brake cylinders peak = 1.707 bar
+tractive force peak = 43.5 kN
+[notch up]
+duration = 10.00 s
+speed at the start = 0.0 km/h
+speed at the end = 2.8 km/h
+speed peak = 2.8 km/h
+distance = 0.8 m
+brake pipe lowest = 4.417 bar
+brake pipe at the end = 4.652 bar
+brake cylinders peak = 1.570 bar
+tractive force peak = 57.4 kN
+[full power]
+duration = 30.00 s
+speed at the start = 2.8 km/h
+speed at the end = 47.2 km/h
+speed peak = 47.2 km/h
+distance = 241.5 m
+brake pipe lowest = 4.652 bar
+brake pipe at the end = 4.945 bar
+brake pipe back at 4.9 bar after = 20.19 s
+brake cylinders peak = 0.945 bar
+tractive force peak = 77.1 kN
+[second controller up]
+duration = 30.00 s
+speed at the start = 47.2 km/h
+speed at the end = 75.5 km/h
+speed peak = 75.5 km/h
+distance = 531.0 m
+brake pipe lowest = 4.945 bar
+brake pipe at the end = 4.989 bar
+brake cylinders peak = 0.097 bar
+tractive force peak = 25.6 kN
+[second controller down]
+duration = 5.00 s
+speed at the start = 75.5 km/h
+speed at the end = 79.3 km/h
+speed peak = 79.3 km/h
+distance = 107.5 m
+brake pipe lowest = 4.989 bar
+brake pipe at the end = 4.991 bar
+brake cylinders peak = 0.003 bar
+tractive force peak = 14.9 kN
+[notch down]
+duration = 8.00 s
+speed at the start = 79.3 km/h
+speed at the end = 79.5 km/h
+speed peak = 80.6 km/h
+distance = 178.0 m
+brake pipe lowest = 4.991 bar
+brake pipe at the end = 4.993 bar
+brake cylinders peak = 0.002 bar
+tractive force peak = 14.8 kN
+[coast]
+duration = 10.00 s
+speed at the start = 79.5 km/h
+speed at the end = 77.3 km/h
+speed peak = 79.5 km/h
+distance = 217.6 m
+brake pipe lowest = 4.993 bar
+brake pipe at the end = 4.995 bar
+brake cylinders peak = 0.002 bar
+tractive force peak = 0.0 kN
+[brake]
+duration = 60.00 s
+speed at the start = 77.3 km/h
+speed at the end = 0.0 km/h
+speed peak = 77.3 km/h
+distance = 327.1 m
+stopped after = 23.97 s
+brake pipe lowest = 3.400 bar
+brake pipe at the end = 3.400 bar
+brake cylinders peak = 4.021 bar
+tractive force peak = 0.0 kN
+[release]
+duration = 20.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.400 bar
+brake pipe at the end = 4.897 bar
+brake pipe back at 4.9 bar after = 1.75 s
+brake cylinders peak = 4.021 bar
+tractive force peak = 0.0 kN

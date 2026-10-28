@@ -239,8 +239,8 @@ bool same(std::string const &Recorded, std::string const &Now, bool const Exact)
 
 } // namespace
 
-trace::trace(std::string Name, std::vector<channel> Channels, int Every)
-    : m_name(std::move(Name)), m_channels(std::move(Channels)), m_every(Every) {}
+trace::trace(std::string Name, std::vector<channel> Channels, int Every, bool Figures)
+    : m_name(std::move(Name)), m_channels(std::move(Channels)), m_every(Every), m_keep_figures(Figures) {}
 
 void trace::sample(double Time, TMoverParameters const &Vehicle) {
 	// the invariants on every step, the first time each is broken
@@ -258,6 +258,7 @@ void trace::sample(double Time, TMoverParameters const &Vehicle) {
 	}
 	m_before = {Time, Vehicle.V, Vehicle.DistCounter};
 	m_sampled = true;
+	m_figures.sample(Time, Vehicle);
 
 	if (m_step++ % m_every != 0) {
 		return;
@@ -277,6 +278,28 @@ void trace::sample(double Time, TMoverParameters const &Vehicle) {
 void trace::mark(std::string const &Event) {
 	m_event += (m_event.empty() ? "" : " ") + Event;
 	m_last_event = Event;
+	m_figures.mark(Event);
+}
+
+void trace::check_figures(std::filesystem::path const &Path) const {
+	std::ifstream file(Path, std::ios::binary);
+	if (false == file.is_open()) {
+		FAIL_CHECK("no key figures " << Path.string() << ", run the tests with EU07_UNIT_TESTS_UPDATE_GOLDEN=1 to record them");
+		return;
+	}
+	std::vector<std::string> recorded;
+	std::string line;
+	while (read_line(file, line)) {
+		recorded.push_back(line);
+	}
+	auto const differences{figures::compare(recorded, m_figures.lines())};
+	if (false == differences.empty()) {
+		std::string text;
+		for (auto const &difference : differences) {
+			text += "\n  " + difference;
+		}
+		FAIL_CHECK("key figures of " << m_name << " differ:" << text);
+	}
 }
 
 void trace::check() const {
@@ -296,6 +319,8 @@ void trace::check() const {
 	auto filename{m_name + ".csv"};
 	std::replace(filename.begin(), filename.end(), ' ', '_');
 	auto const path{std::filesystem::path{EU07_UNIT_TESTS_DATA} / "golden" / filename};
+	auto figurespath{path};
+	figurespath.replace_extension(".figures");
 	if (environment("EU07_UNIT_TESTS_UPDATE_GOLDEN")) {
 		std::filesystem::create_directories(path.parent_path());
 		std::ofstream file(path, std::ios::binary);
@@ -303,8 +328,18 @@ void trace::check() const {
 		for (auto const &row : m_rows) {
 			file << row << "\n";
 		}
+		if (m_keep_figures) {
+			std::ofstream figuresfile(figurespath, std::ios::binary);
+			for (auto const &line : m_figures.lines()) {
+				figuresfile << line << "\n";
+			}
+		}
 		MESSAGE("recorded the golden trace " << path.string());
 		return;
+	}
+
+	if (m_keep_figures) {
+		check_figures(figurespath);
 	}
 
 	std::ifstream file(path, std::ios::binary);

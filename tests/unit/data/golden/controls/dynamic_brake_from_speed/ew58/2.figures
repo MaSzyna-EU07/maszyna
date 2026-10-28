@@ -1,0 +1,89 @@
+[start]
+duration = 2.99 s
+speed at the start = 90.0 km/h
+speed at the end = 89.5 km/h
+speed peak = 90.0 km/h
+distance = 74.5 m
+brake pipe lowest = 4.912 bar
+brake pipe at the end = 4.990 bar
+brake cylinders peak = 0.000 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[ep brake]
+duration = 15.00 s
+speed at the start = 89.5 km/h
+speed at the end = 55.5 km/h
+speed peak = 89.5 km/h
+distance = 306.7 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 388 A
+tractive force peak = 66.3 kN
+[ep hold]
+duration = 5.00 s
+speed at the start = 55.5 km/h
+speed at the end = 41.3 km/h
+speed peak = 55.5 km/h
+distance = 67.5 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[first step]
+duration = 20.00 s
+speed at the start = 41.3 km/h
+speed at the end = 0.0 km/h
+speed peak = 41.2 km/h
+distance = 59.6 m
+stopped after = 9.06 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[deeper]
+duration = 15.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[release]
+duration = 20.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[full service]
+duration = 40.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[release]
+duration = 20.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN

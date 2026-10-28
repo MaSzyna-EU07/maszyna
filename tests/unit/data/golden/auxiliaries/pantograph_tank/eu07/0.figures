@@ -1,0 +1,20 @@
+[start up]
+duration = 8.99 s
+brake pipe lowest = 3.381 bar
+brake pipe at the end = 3.381 bar
+brake cylinders peak = 3.998 bar
+[ready, tank joined to the main reservoir]
+duration = 30.00 s
+brake pipe lowest = 3.302 bar
+brake pipe at the end = 3.302 bar
+brake cylinders peak = 3.998 bar
+[tank cut off the main reservoir]
+duration = 600.00 s
+brake pipe lowest = 2.059 bar
+brake pipe at the end = 2.059 bar
+brake cylinders peak = 3.998 bar
+[small compressor on]
+duration = 170.00 s
+brake pipe lowest = 1.801 bar
+brake pipe at the end = 1.801 bar
+brake cylinders peak = 3.998 bar

@@ -103,6 +103,34 @@ trace.check();
 - A trace with no assertion about what the behaviour should be is a characterisation, bugs included;
   put the behaviour the test is about into `CHECK`s besides.
 
+### Key figures
+
+Next to its samples, every trace keeps the figures a person reviews (`figures.h`), for each part of
+the run between two events, in `data/golden/<name>.figures`: the duration, the speeds, the distance,
+the time to stop, the brake pipe's lowest pressure and the time to get back to 4.9 bar, the peaks of
+the brake cylinders, the motor current and the tractive force.
+
+```
+[brake]
+duration = 60.00 s
+speed at the start = 118.5 km/h
+distance = 944.3 m
+stopped after = 45.97 s
+brake cylinders peak = 3.997 bar
+```
+
+They're compared within 0.5% or the last decimal written, loose enough for any compiler, and the
+differences are told by part and figure:
+
+```
+key figures of "traction/4e_v1/4e" differ:
+  [brake] distance: 944.3 m now, 980.0 m recorded
+```
+
+`EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records them with the samples. After a change which alters the
+behaviour on purpose, their diff says in a few lines what the thousands of changed samples mean. A
+trace sampled by hand, at times of its own (the commands and switches tests), keeps none.
+
 ### Invariants
 
 Every trace also checks, on every step of its vehicle and not only on the recorded ones, the rules

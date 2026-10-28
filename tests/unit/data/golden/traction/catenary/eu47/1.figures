@@ -1,0 +1,56 @@
+[start]
+duration = 15.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.457 bar
+brake pipe at the end = 3.499 bar
+brake cylinders peak = 2.296 bar
+[get going]
+duration = 126.00 s
+speed at the start = 0.0 km/h
+speed at the end = 52.6 km/h
+speed peak = 52.6 km/h
+distance = 71.8 m
+brake pipe lowest = 3.499 bar
+brake pipe at the end = 4.999 bar
+brake pipe back at 4.9 bar after = 10.34 s
+brake cylinders peak = 2.296 bar
+[catenary lost]
+duration = 5.00 s
+speed at the start = 52.6 km/h
+speed at the end = 52.0 km/h
+speed peak = 53.1 km/h
+distance = 72.7 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.001 bar
+[catenary back]
+duration = 114.00 s
+speed at the start = 52.0 km/h
+speed at the end = 63.7 km/h
+speed peak = 63.7 km/h
+distance = 1460.7 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.001 bar
+[overvoltage]
+duration = 12.00 s
+speed at the start = 63.7 km/h
+speed at the end = 62.0 km/h
+speed peak = 64.2 km/h
+distance = 209.6 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.000 bar
+[brake]
+duration = 60.00 s
+speed at the start = 62.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 62.0 km/h
+distance = 182.6 m
+stopped after = 18.26 s
+brake pipe lowest = 3.401 bar
+brake pipe at the end = 3.401 bar
+brake cylinders peak = 2.299 bar

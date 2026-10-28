@@ -1,0 +1,44 @@
+[start up]
+duration = 12.99 s
+speed at the start = 100.0 km/h
+speed at the end = 95.7 km/h
+speed peak = 100.0 km/h
+distance = 351.1 m
+brake pipe lowest = 4.926 bar
+brake pipe at the end = 4.998 bar
+brake cylinders peak = 0.000 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[ready, dynamic brake up]
+duration = 10.00 s
+speed at the start = 95.7 km/h
+speed at the end = 73.9 km/h
+speed peak = 95.7 km/h
+distance = 235.8 m
+brake pipe lowest = 4.998 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.000 bar
+motor current peak = 159 A
+tractive force peak = 75.0 kN
+[dynamic brake full]
+duration = 10.00 s
+speed at the start = 73.9 km/h
+speed at the end = 33.5 km/h
+speed peak = 73.9 km/h
+distance = 150.3 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.000 bar
+motor current peak = 227 A
+tractive force peak = 150.0 kN
+[dynamic brake off, local brake]
+duration = 5.00 s
+speed at the start = 33.5 km/h
+speed at the end = 26.5 km/h
+speed peak = 33.5 km/h
+distance = 41.9 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 2.975 bar
+motor current peak = 225 A
+tractive force peak = 148.6 kN

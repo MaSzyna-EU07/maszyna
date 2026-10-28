@@ -1,0 +1,369 @@
+[hand brake off, stroke]
+duration = 1.99 s
+speed at the start = 10.0 km/h
+speed at the end = 10.4 km/h
+speed peak = 10.6 km/h
+distance = 5.8 m
+brake pipe lowest = 4.984 bar
+brake pipe at the end = 4.984 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 10.4 km/h
+speed at the end = 10.3 km/h
+speed peak = 10.5 km/h
+distance = 5.8 m
+brake pipe lowest = 4.970 bar
+brake pipe at the end = 4.970 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 10.3 km/h
+speed at the end = 10.1 km/h
+speed peak = 10.3 km/h
+distance = 5.7 m
+brake pipe lowest = 4.955 bar
+brake pipe at the end = 4.955 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 10.1 km/h
+speed at the end = 10.0 km/h
+speed peak = 10.1 km/h
+distance = 5.6 m
+brake pipe lowest = 4.940 bar
+brake pipe at the end = 4.940 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 10.0 km/h
+speed at the end = 9.8 km/h
+speed peak = 9.9 km/h
+distance = 5.5 m
+brake pipe lowest = 4.925 bar
+brake pipe at the end = 4.925 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 9.8 km/h
+speed at the end = 9.7 km/h
+speed peak = 9.8 km/h
+distance = 5.4 m
+brake pipe lowest = 4.910 bar
+brake pipe at the end = 4.910 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 9.7 km/h
+speed at the end = 9.5 km/h
+speed peak = 9.7 km/h
+distance = 5.3 m
+brake pipe lowest = 4.896 bar
+brake pipe at the end = 4.896 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 9.5 km/h
+speed at the end = 9.3 km/h
+speed peak = 9.5 km/h
+distance = 5.2 m
+brake pipe lowest = 4.881 bar
+brake pipe at the end = 4.881 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 9.3 km/h
+speed at the end = 9.3 km/h
+speed peak = 9.4 km/h
+distance = 5.2 m
+brake pipe lowest = 4.867 bar
+brake pipe at the end = 4.867 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 9.3 km/h
+speed at the end = 9.1 km/h
+speed peak = 9.2 km/h
+distance = 5.1 m
+brake pipe lowest = 4.852 bar
+brake pipe at the end = 4.852 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 9.1 km/h
+speed at the end = 8.9 km/h
+speed peak = 9.1 km/h
+distance = 5.0 m
+brake pipe lowest = 4.837 bar
+brake pipe at the end = 4.837 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.9 km/h
+speed at the end = 8.8 km/h
+speed peak = 8.9 km/h
+distance = 4.9 m
+brake pipe lowest = 4.823 bar
+brake pipe at the end = 4.823 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.8 km/h
+speed at the end = 8.6 km/h
+speed peak = 8.8 km/h
+distance = 4.8 m
+brake pipe lowest = 4.809 bar
+brake pipe at the end = 4.809 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.6 km/h
+speed at the end = 8.5 km/h
+speed peak = 8.7 km/h
+distance = 4.8 m
+brake pipe lowest = 4.794 bar
+brake pipe at the end = 4.794 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.5 km/h
+speed at the end = 8.3 km/h
+speed peak = 8.5 km/h
+distance = 4.7 m
+brake pipe lowest = 4.780 bar
+brake pipe at the end = 4.780 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.3 km/h
+speed at the end = 8.2 km/h
+speed peak = 8.4 km/h
+distance = 4.6 m
+brake pipe lowest = 4.766 bar
+brake pipe at the end = 4.766 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.2 km/h
+speed at the end = 8.1 km/h
+speed peak = 8.2 km/h
+distance = 4.5 m
+brake pipe lowest = 4.751 bar
+brake pipe at the end = 4.751 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 8.1 km/h
+speed at the end = 7.9 km/h
+speed peak = 8.1 km/h
+distance = 4.4 m
+brake pipe lowest = 4.737 bar
+brake pipe at the end = 4.737 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.9 km/h
+speed at the end = 7.8 km/h
+speed peak = 7.9 km/h
+distance = 4.4 m
+brake pipe lowest = 4.723 bar
+brake pipe at the end = 4.723 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.8 km/h
+speed at the end = 7.6 km/h
+speed peak = 7.8 km/h
+distance = 4.3 m
+brake pipe lowest = 4.709 bar
+brake pipe at the end = 4.709 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.6 km/h
+speed at the end = 7.4 km/h
+speed peak = 7.6 km/h
+distance = 4.2 m
+brake pipe lowest = 4.695 bar
+brake pipe at the end = 4.695 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.4 km/h
+speed at the end = 7.3 km/h
+speed peak = 7.4 km/h
+distance = 4.1 m
+brake pipe lowest = 4.681 bar
+brake pipe at the end = 4.681 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.3 km/h
+speed at the end = 7.1 km/h
+speed peak = 7.3 km/h
+distance = 4.0 m
+brake pipe lowest = 4.667 bar
+brake pipe at the end = 4.667 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.1 km/h
+speed at the end = 7.0 km/h
+speed peak = 7.1 km/h
+distance = 3.9 m
+brake pipe lowest = 4.653 bar
+brake pipe at the end = 4.653 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 7.0 km/h
+speed at the end = 6.8 km/h
+speed peak = 6.9 km/h
+distance = 3.8 m
+brake pipe lowest = 4.639 bar
+brake pipe at the end = 4.639 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 6.8 km/h
+speed at the end = 6.7 km/h
+speed peak = 6.8 km/h
+distance = 3.7 m
+brake pipe lowest = 4.625 bar
+brake pipe at the end = 4.625 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 6.7 km/h
+speed at the end = 6.5 km/h
+speed peak = 6.6 km/h
+distance = 3.7 m
+brake pipe lowest = 4.611 bar
+brake pipe at the end = 4.611 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 6.5 km/h
+speed at the end = 6.4 km/h
+speed peak = 6.5 km/h
+distance = 3.6 m
+brake pipe lowest = 4.598 bar
+brake pipe at the end = 4.598 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 6.4 km/h
+speed at the end = 6.2 km/h
+speed peak = 6.4 km/h
+distance = 3.5 m
+brake pipe lowest = 4.584 bar
+brake pipe at the end = 4.584 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 6.2 km/h
+speed at the end = 6.0 km/h
+speed peak = 6.2 km/h
+distance = 3.4 m
+brake pipe lowest = 4.570 bar
+brake pipe at the end = 4.570 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 6.0 km/h
+speed at the end = 5.9 km/h
+speed peak = 6.0 km/h
+distance = 3.3 m
+brake pipe lowest = 4.556 bar
+brake pipe at the end = 4.556 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.9 km/h
+speed at the end = 5.7 km/h
+speed peak = 5.9 km/h
+distance = 3.2 m
+brake pipe lowest = 4.543 bar
+brake pipe at the end = 4.543 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.7 km/h
+speed at the end = 5.6 km/h
+speed peak = 5.8 km/h
+distance = 3.1 m
+brake pipe lowest = 4.529 bar
+brake pipe at the end = 4.529 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.6 km/h
+speed at the end = 5.4 km/h
+speed peak = 5.6 km/h
+distance = 3.1 m
+brake pipe lowest = 4.516 bar
+brake pipe at the end = 4.516 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.4 km/h
+speed at the end = 5.3 km/h
+speed peak = 5.4 km/h
+distance = 3.0 m
+brake pipe lowest = 4.502 bar
+brake pipe at the end = 4.502 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.3 km/h
+speed at the end = 5.1 km/h
+speed peak = 5.3 km/h
+distance = 2.9 m
+brake pipe lowest = 4.489 bar
+brake pipe at the end = 4.489 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.1 km/h
+speed at the end = 5.0 km/h
+speed peak = 5.1 km/h
+distance = 2.8 m
+brake pipe lowest = 4.475 bar
+brake pipe at the end = 4.475 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 5.0 km/h
+speed at the end = 4.8 km/h
+speed peak = 5.0 km/h
+distance = 2.7 m
+brake pipe lowest = 4.462 bar
+brake pipe at the end = 4.462 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 4.8 km/h
+speed at the end = 4.7 km/h
+speed peak = 4.8 km/h
+distance = 2.6 m
+brake pipe lowest = 4.449 bar
+brake pipe at the end = 4.449 bar
+tractive force peak = 0.3 kN
+[stroke]
+duration = 2.00 s
+speed at the start = 4.7 km/h
+speed at the end = 4.6 km/h
+speed peak = 4.7 km/h
+distance = 2.6 m
+brake pipe lowest = 4.435 bar
+brake pipe at the end = 4.435 bar
+tractive force peak = 0.3 kN
+[coast]
+duration = 20.00 s
+speed at the start = 4.6 km/h
+speed at the end = 3.1 km/h
+speed peak = 4.6 km/h
+distance = 21.3 m
+brake pipe lowest = 4.305 bar
+brake pipe at the end = 4.305 bar
+tractive force peak = 0.0 kN

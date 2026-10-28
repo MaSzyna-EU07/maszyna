@@ -1,10 +1,12 @@
 #pragma once
 
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
 
 #include "McZapkie/MOVER.h"
+#include "figures.h"
 #include "invariants.h"
 
 namespace test {
@@ -35,7 +37,10 @@ std::vector<channel> operator+(std::vector<channel> Left, std::vector<channel> c
 //
 // values are compared within a relative tolerance of 1e-9 (the CI builds with GCC and glibc, whose maths
 // functions can differ from MSVC's in the last bits), or exactly with EU07_UNIT_TESTS_GOLDEN_EXACT=1, which is the check to
-// run on the machine the traces got recorded on, for a change which shouldn't alter anything at all
+// run on the machine the traces got recorded on, for a change which shouldn't alter anything at all.
+//
+// besides the samples, a trace keeps the key figures of the run (figures.h) in <Name>.figures, and checks the
+// invariants (invariants.h) on every step
 //
 //   test::trace trace{"eu07 notch up", test::channels::motion() + test::channels::traction()};
 //   eu07.record(trace);
@@ -45,19 +50,23 @@ class trace {
 public:
 	// samples every Every-th step of the vehicle: 100, a second at the usual step, is plenty for a run of minutes,
 	// as a difference stays once the simulation has taken it in
-	trace(std::string Name, std::vector<channel> Channels, int Every = 10);
+	// Figures: whether to keep the key figures, which a trace sampled by hand, at times of its own, has no use for
+	trace(std::string Name, std::vector<channel> Channels, int Every = 10, bool Figures = true);
 
 	// called by the vehicle after every step
 	void sample(double Time, TMoverParameters const &Vehicle);
 	// adds an event of the test to the trace, so a difference can be told apart from the moment of the action
 	void mark(std::string const &Event);
 
-	// compares the trace with the recorded one, or records it, and reports the invariants broken
+	// compares the trace and its key figures (figures.h) with the recorded ones, or records them, and reports the
+	// invariants broken
 	void check() const;
 	// the invariants broken in the trace (see invariants.h), the first time each, excused or not
 	std::vector<std::string> const &violations() const { return m_violations; }
 
 private:
+	void check_figures(std::filesystem::path const &Path) const;
+
 	std::string m_name;
 	std::vector<channel> m_channels;
 	int m_every;
@@ -69,6 +78,8 @@ private:
 	bool m_sampled{false};
 	std::vector<std::string> m_broken; // the names of the invariants broken so far
 	std::vector<std::string> m_violations;
+	bool m_keep_figures;
+	figures m_figures;
 };
 
 } // namespace test

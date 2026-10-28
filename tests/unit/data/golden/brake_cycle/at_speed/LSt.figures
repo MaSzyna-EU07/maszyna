@@ -1,0 +1,36 @@
+[charge]
+duration = 59.99 s
+speed at the start = 160.0 km/h
+speed at the end = 125.8 km/h
+speed peak = 160.0 km/h
+distance = 2360.9 m
+brake pipe lowest = 5.000 bar
+brake pipe at the end = 5.000 bar
+brake cylinders peak = 0.000 bar
+[full service]
+duration = 10.00 s
+speed at the start = 125.8 km/h
+speed at the end = 107.5 km/h
+speed peak = 125.8 km/h
+distance = 327.4 m
+brake pipe lowest = 3.500 bar
+brake pipe at the end = 3.500 bar
+brake cylinders peak = 5.790 bar
+[anti-slip]
+duration = 5.00 s
+speed at the start = 107.5 km/h
+speed at the end = 96.8 km/h
+speed peak = 107.5 km/h
+distance = 141.9 m
+brake pipe lowest = 3.500 bar
+brake pipe at the end = 3.500 bar
+brake cylinders peak = 6.096 bar
+[releaser button]
+duration = 43.00 s
+speed at the start = 96.8 km/h
+speed at the end = 80.9 km/h
+speed peak = 96.7 km/h
+distance = 1031.7 m
+brake pipe lowest = 3.500 bar
+brake pipe at the end = 3.500 bar
+brake cylinders peak = 6.096 bar
