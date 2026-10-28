@@ -5201,15 +5201,37 @@ void TTrain::OnCommand_headlighttoggleleft(TTrain *Train, command_data const &Co
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0)
+
+		if (Train->ggLeftEndLightButton.SubModel != nullptr)
 		{
-			// turn on
-			OnCommand_headlightenableleft(Train, Command);
-		}
-		else
-		{
-			// turn off
-			OnCommand_headlightdisableleft(Train, Command);
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableleft(Train, Command);
+			}
+			else
+			{
+				// turn off
+				OnCommand_headlightdisableleft(Train, Command);
+			}
+		} else {
+			// if the light is controlled by 3-way switch, handle both headlight and redmarker
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0 &&
+				(Train->mvOccupied->iLights[vehicleend] & light::redmarker_left) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableleft(Train, Command);
+			}
+			else if (Train->mvOccupied->iLights[vehicleend] & light::headlight_left)
+			{
+				// switch to red
+				OnCommand_redmarkerenableleft(Train, Command);
+			}
+			else
+			{
+				// disable
+				OnCommand_redmarkerdisableleft(Train, Command);
+			}
 		}
 	}
 }
@@ -5284,15 +5306,37 @@ void TTrain::OnCommand_headlighttoggleright(TTrain *Train, command_data const &C
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0)
+
+		if (Train->ggRightEndLightButton.SubModel != nullptr)
 		{
-			// turn on
-			OnCommand_headlightenableright(Train, Command);
-		}
-		else
-		{
-			// turn off
-			OnCommand_headlightdisableright(Train, Command);
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableright(Train, Command);
+			}
+			else
+			{
+				// turn off
+				OnCommand_headlightdisableright(Train, Command);
+			}
+		} else {
+			// if the light is controlled by 3-way switch, handle both headlight and redmarker
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0 &&
+				(Train->mvOccupied->iLights[vehicleend] & light::redmarker_right) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableright(Train, Command);
+			}
+			else if (Train->mvOccupied->iLights[vehicleend] & light::headlight_right)
+			{
+				// switch to red
+				OnCommand_redmarkerenableright(Train, Command);
+			}
+			else
+			{
+				// disable
+				OnCommand_redmarkerdisableright(Train, Command);
+			}
 		}
 	}
 }
