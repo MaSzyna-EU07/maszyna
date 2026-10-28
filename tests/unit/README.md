@@ -10,6 +10,9 @@ The code under test is `eu07_core`, the library of the simulation parts the game
 game uses it. The python library gets linked along with the game's settings, but the tests don't
 use it and run without it.
 
+[COVERAGE.md](COVERAGE.md) says how much of the simulation core the tests reach, what's left and why, and
+what they found.
+
 ## Running
 
 - **With the build**: building the game (`WITH_TESTS`, on by default) runs them at the end, once the
