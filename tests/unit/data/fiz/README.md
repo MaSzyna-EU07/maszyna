@@ -15,6 +15,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `11xa_v2/93a.fiz` | 11XA | - | ESt4 | - | ManualBrake | Screw |
 | `14xa_v1/173a.fiz` | 14XA | - | ESt4HBG300-s216 | - | ManualBrake | Screw |
 | `168a_v1/168a.fiz` | 168A | - | ESt4HBG300 | - | ManualBrake | Screw |
+| `21xm_v1/214ma.fiz` | 214M | DieselEngine | EStED | MHZ_K5P | PneumaticBrake | Screw |
 | `3wl_v2/3wl.fiz` | 3WL | - | ESt3 | - | ManualBrake | Screw |
 | `430w_v2/430w.fiz` | 430W | - | ESt3AL2HBG300 | - | ManualBrake | Screw |
 | `4e_v1/4e.fiz` | 4E | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
@@ -34,6 +35,8 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `ep09_v2/104e.fiz` | EP09 | ElectricSeriesMotor | EStED | FV4a | PneumaticBrake | Screw |
 | `et22_v3/201e-rn.fiz` | ET22 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
 | `et22_v3/201e-w.fiz` | ET22 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
+| `et42_v2/112e-a.fiz` | ET42 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
+| `et42_v2/112e-b.fiz` | ET42 | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
 | `eu04_v1/eu04-01.fiz` | EU04 | ElectricSeriesMotor | K | Knorr | PneumaticBrake | Screw |
 | `ew58_v1/ew58-d.fiz` | EW58 | - | EP1 | - | ManualBrake | Automatic |
 | `ew58_v1/ew58-sa.fiz` | EW58 | ElectricSeriesMotor | EP1 | FVE408 | ManualBrake | Automatic |
@@ -53,4 +56,4 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `wmb10_v1/wmb10.fiz` | WMB10 | DieselEngine | LSt | FV4a | PneumaticBrake | Screw |
 | `z1_v2/152a.fiz` | Z1 | - | KE | - | ManualBrake | Screw |
 
-The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle.
+The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.
