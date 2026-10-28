@@ -36,7 +36,7 @@ bool start_up(driven Driven, track const &Track, double Seconds = 300.0, trace *
 void drive(driven Driven, track const &Track, double Seconds);
 
 // releases every brake the driver has a hand on: the train brake to running, the independent brake, the
-// hand brake and the spring brake
+// hand brake and the spring brake; and the hand and spring brakes of the vehicles coupled to the cab's
 void release_brakes(TMoverParameters &Cab);
 
 // whether the vehicle is ready to run: line breaker closed (or the engine running), air in the main reservoir

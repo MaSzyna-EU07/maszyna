@@ -67,6 +67,17 @@ void release_brakes(TMoverParameters &Cab) {
 	Cab.DecLocalBrakeLevel(LocalBrakePosNo);
 	Cab.DecManualBrakeLevel(ManualBrakePosNo);
 	Cab.SpringBrakeActivate(false);
+	// the hand and spring brakes of the rest of the train, as TController::AutoRewident() releases them
+	std::vector<TMoverParameters *> train{&Cab};
+	for (std::size_t i = 0; i < train.size(); ++i) {
+		for (auto const &coupler : train[i]->Couplers) {
+			if (coupler.Connected != nullptr && coupler.CouplingFlag != coupling::faux && std::ranges::find(train, coupler.Connected) == train.end()) {
+				coupler.Connected->DecManualBrakeLevel(ManualBrakePosNo);
+				coupler.Connected->SpringBrake.Activate = false;
+				train.push_back(coupler.Connected);
+			}
+		}
+	}
 }
 
 bool is_ready(driven const &Driven) {

@@ -23,6 +23,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `bhp_v1/bhp-b.fiz` | BHP | - | ESt3AL2 | - | ManualBrake | Articulated |
 | `br285_v1/br285.fiz` | BR285 | DieselElectric | KE | MHZ_6P | PneumaticBrake | Screw |
 | `cd/810_v2/810.fiz` | 810 | DieselEngine | ESt3_PZZ | FV4a | PneumaticBrake | Screw |
+| `cd/754_v1/754.fiz` | 754 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
 | `dr2_v1/dr2.fiz` | DR2 | WheelsDriven | - | - | ManualBrake | None |
 | `e186_v2/eu47.fiz` | E186 | ElectricInductionMotor | EStED | MHZ_6P | PneumaticBrake | Screw |
 | `e6act_v2/e6acta.fiz` | E6ACT | ElectricInductionMotor | EStED | MHZ_K5P | PneumaticBrake | Screw |
@@ -44,6 +45,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `road/man/nl293.fiz` | MAN (road) | DieselEngine | - | - | HydraulicBrake | Bare |
 | `sieciowiec_v1/a.fiz` | SIECIOWIEC | - | - | - | NoBrake | Screw |
 | `sm03_v1/sm03.fiz` | SM03 | DieselEngine | K | Knorr | PneumaticBrake | Screw |
+| `sm31_v1/411d.fiz` | SM31 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
 | `sm40_v1/sm40.fiz` | SM40 | DieselElectric | K | Knorr | PneumaticBrake | Screw |
 | `sm42_v1/6d1.fiz` | SM42 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
 | `sn61_v2/sn61.fiz` | SN61 | DieselEngine | ESt3d_PZZ | FV4a | PneumaticBrake | Screw |
@@ -51,6 +53,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `st45_v2/301dd.fiz` | ST45 | DumbDE | SW | MHZ_K8P | PneumaticBrake | Screw |
 | `static/sug/sug_kielce.fiz` | SUG | ElectricSeriesMotor | W | Knorr | PneumaticBrake | Screw |
 | `su45_v2/301d.fiz` | SU45 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
+| `su46_v2/303d.fiz` | SU46 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
 | `tem2_v2/tem2a.fiz` | TEM2 | DieselElectric | LSt | M394 | PneumaticBrake | Screw |
 | `wm15_v1/wm15.fiz` | WM15 | Dumb | LSt | FV4a | PneumaticBrake | Screw |
 | `wmb10_v1/wmb10.fiz` | WMB10 | DieselEngine | LSt | FV4a | PneumaticBrake | Screw |
