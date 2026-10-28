@@ -348,8 +348,9 @@ void vulkan14_renderer::render_cab_probe()
 	{
 		vehicle = nullptr;
 	}
-	// the cab lamp lights the probe when it's a light of the frame
-	auto const *lamp{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_lamp() : nullptr};
+	// the brightest light of the cab lights the probe when it's a light of the frame
+	auto const *principal{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_principal() : nullptr};
+	auto const *lamp{principal != nullptr ? &principal->source : nullptr};
 	if (false == probe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lamp, m_framestamp))
 	{
 		return;
@@ -360,9 +361,9 @@ void vulkan14_renderer::render_cab_probe()
 		return;
 	}
 	ctx.passes.begin_pass("cab probe");
-	// the lamp with its shadow map, when the map holds the shadows of the lamp where it is
-	auto const shadows{(lamp != nullptr) && scene.lamps.ready(vehicle) && (scene.lamps.lamp() == m_locallights.cab_lamp_local())};
-	probe.setup_drawing(scene_ubs, lamp, m_locallights.cab_lamp_local(), shadows, scene.lamps.weights());
+	// the light with its shadow map, when the map holds the shadows of the light where it is
+	auto const slot{principal != nullptr ? scene.lamps.cab_slot_of(vehicle, *principal) : -1};
+	probe.setup_drawing(scene_ubs, lamp, (principal != nullptr ? principal->local : glm::vec3{0.f}), (slot >= 0), (slot >= 0 ? scene.lamps.weights(static_cast<std::size_t>(slot)) : glm::vec4{0.f}));
 	// the sun coming in through the windows, as the shading of the last frame got it. the mask is read once it was copied
 	probe.setup_sun(scene_ubs, vehicle, -m_sunlight.direction, glm::vec3{light_data.lights[0].color} * light_data.lights[0].intensity, m_colorpass.pass_camera.position());
 	if (probe.mask_map() == nullptr)

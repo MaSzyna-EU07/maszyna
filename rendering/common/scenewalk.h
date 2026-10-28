@@ -567,6 +567,8 @@ class scene_walk
 	bool m_previewing{false};
 	// the last lighting of the pass placed the cab lamp among the lights: the cab is lit by it, not by an addition to the ambient light
 	bool m_cablamplit{false};
+	// and the number of the lights of the cab it placed, the first ones of the light buffer after the sun
+	int m_cablamps{0};
 	// the colour pass reads the probe of the cab (gfx::cab_probe): the light of the cab lamp the cab reflects lights it again from the
 	// probe, so the ambient light keeps no share of the lamp
 	bool m_cabprobelit{false};

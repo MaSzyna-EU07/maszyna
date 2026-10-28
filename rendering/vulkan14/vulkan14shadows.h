@@ -74,13 +74,13 @@ class local_shadow_maps : public gfx::local_shadows
 	}
 
   protected:
-	bool gpu_allocate(int const Size) override;
+	bool gpu_allocate(int const Count, int const Size) override;
 	void gpu_release() override;
 	bool gpu_allocate_lamps(int const Count, int const Size) override;
 	void gpu_release_lamps() override;
 	bool gpu_allocate_headlights(int const Count, int const Size) override;
 	void gpu_release_headlights() override;
-	void gpu_begin_cab() override;
+	void gpu_begin_cab(std::size_t const Slot) override;
 	void gpu_end_cab() override {}
 	void gpu_begin_lamp(int const Scenerycube, int const Workingcube, bool const Vehicles) override;
 	void gpu_end_lamp() override {}

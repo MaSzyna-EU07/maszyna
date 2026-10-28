@@ -114,12 +114,12 @@ struct inject_block
 	glm::vec3 previous_camera;
 	float pad1;
 	glm::vec4 options;
-	std::int32_t cablamp;
+	std::int32_t cablamps;
 	std::int32_t pad2;
 	glm::vec2 previous_slicing;
 	glm::vec2 jitter;
 };
-static_assert(offsetof(inject_block, cablamp) == 256, "the layout of the block of fog_inject.comp");
+static_assert(offsetof(inject_block, cablamps) == 256, "the layout of the block of fog_inject.comp");
 struct integrate_constants
 {
 	glm::ivec3 grid;
@@ -460,9 +460,9 @@ void vulkan14_renderer::update_weather()
 }
 
 // the clouds and the fog volume of the colour pass of the main view (opengl46_weather::render_view()): Projection and View
-// (rotation, world axes to the view) of its camera, Size of the target, Cablamp the light of the cab lamp or -1. the lights, the
+// (rotation, world axes to the view) of its camera, Size of the target, Cablamps the number of the lights of the cab, from the light 1 on. the lights, the
 // clusters and the block of the scene of the pass are written, the shadow map drawn. outside a rendering
-void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamp)
+void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamps)
 {
 	auto &ctx{*m_context};
 	auto &weather{ctx.scene.weather};
@@ -568,7 +568,7 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 		auto const sunshadows{Global.gfx_fog_shadows && Global.gfx_shadowmap_enabled};
 		auto const share{temporal ? std::clamp(Global.gfx_fog_temporal_share, 0.02f, 1.f) : 1.f};
 		block.options = glm::vec4{share, Global.gfx_fog_lights, sunshadows ? 1.f : 0.f, Global.gfx_fog_shadows ? 1.f : 0.f};
-		block.cablamp = Cablamp;
+		block.cablamps = Cablamps;
 		block.previous_slicing = glm::vec2{previousfog.slicing.x, previousfog.slicing.z};
 		block.jitter = glm::vec2{jitter.x, jitter.y};
 		auto const slice{ctx.ring.allocate(sizeof(block), ctx.device.caps().limits.minUniformBufferOffsetAlignment)};

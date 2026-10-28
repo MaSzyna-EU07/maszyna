@@ -110,26 +110,34 @@ void vulkan14_renderer::render_local_shadows()
 	auto &lamps{m_context->scene.lamps};
 	// only the light buffers with the lamps read the maps
 	auto const *vehicle{Global.gfx_lights_clustered ? m_locallights.cab_lamp_vehicle() : nullptr};
-	if (false == lamps.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lamp_local(), m_framestamp))
+	lamps.update_cab(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lights(), m_framestamp);
+	if (lamps.cab_draws().empty())
 	{
 		return;
 	}
 	m_context->passes.begin_pass("lamp shadows");
-	// the cab drawn by the shadow pass, with the programs of the cube map. the camera is put at the vehicle, which Render_cab()
-	// places the cab relative to, and the modelview takes the cab model to the space of the map
+	// the cab drawn by the shadow pass to the map of each light, with the programs of the cube map. the camera is put at the vehicle,
+	// which Render_cab() places the cab relative to, and the modelview takes the cab model to the space of the map
 	m_renderpass.draw_mode = rendermode::shadows;
 	m_renderpass.pass_camera.position() = vehicle->GetPosition();
-	m_renderpass.draw_stats = {};
 	OpenGLMatrices.mode(GL_MODELVIEW);
-	OpenGLMatrices.load_matrix(glm::mat4{glm::translate(glm::dmat4{1.0}, -glm::dvec3{lamps.lamp()}) * glm::inverse(vehicle->mMatrix)});
-	lamps.begin();
-	begin_local_shadow_rendering();
-	begin_local_shadow_target();
-	m_cubeshadows = true;
-	Render_cab(vehicle, 0.0f, false);
-	m_cubeshadows = false;
-	end_local_shadow_rendering();
-	lamps.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	auto const previousnear{scene_ubs.shadow_fit.y};
+	for (auto const slot : lamps.cab_draws())
+	{
+		m_renderpass.draw_stats = {};
+		OpenGLMatrices.load_matrix(glm::mat4{glm::translate(glm::dmat4{1.0}, -glm::dvec3{lamps.cab(slot).lamp}) * glm::inverse(vehicle->mMatrix)});
+		lamps.begin(slot);
+		// the near plane of the map, for shadowcube.vert, in the scene block begin_local_shadow_target() uploads
+		scene_ubs.shadow_fit.y = lamps.cab(slot).nearplane;
+		begin_local_shadow_rendering();
+		begin_local_shadow_target();
+		m_cubeshadows = true;
+		Render_cab(vehicle, 0.0f, false);
+		m_cubeshadows = false;
+		end_local_shadow_rendering();
+		lamps.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	}
+	scene_ubs.shadow_fit.y = previousnear;
 	m_renderpass = m_colorpass;
 	m_context->passes.end_pass();
 }

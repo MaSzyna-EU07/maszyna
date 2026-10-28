@@ -28,9 +28,11 @@ namespace gfx
 // the shadow maps of the lamps (Global.gfx_lights_shadows), the part shared by the renderers (stage P4 of
 // claude/vulkan14-renderer-plan.md): which lamps and headlights get maps, when they are drawn, what the shading reads; the
 // backend (opengl46_local_shadows, the vulkan renderer) keeps the maps and draws to them through the gpu_* methods.
-// - the lamp of the occupied cab, with the shadows cast by the cab (the model drawn by Render_cab()). the map is kept in the space
-//   of the cab model, centred on the lamp: it stays right while the vehicle moves and turns, and is drawn anew only every few frames
-//   (for the moving parts of the cab: levers, doors, wipers) or when the lamp, the cab or the level change;
+// - the lights of the occupied cab (gfx::local_lights::cab_lights(): its lamps, the lights of its desk), the brightest
+//   Global.gfx_lights_shadows_cab of them, with the shadows cast by the cab (the model drawn by Render_cab()). the map of a light is
+//   kept in the space of the cab model, centred on the light: it stays right while the vehicle moves and turns, and is drawn anew only
+//   every few frames (for the moving parts of the cab: levers, doors, wipers) or when the light, the cab or the level change. a light
+//   keeps its map (slot) while it's among those picked;
 // - the lamps of scenery models closest to the camera (Global.gfx_lights_shadows_lamps of them, within
 //   Global.gfx_lights_shadows_lamps_range). the map of such a lamp is kept in world axes, centred on the lamp, and has two parts:
 //   the scenery (drawn once, when the lamp gets its slot or the scene changes) and a working copy of it, with the vehicles near
@@ -51,38 +53,50 @@ class local_shadows
   public:
 	// near plane of the maps, metres. surfaces closer to the lamp (its own fitting) cast no shadow
 	static constexpr float shadow_near{0.15f};
-	// layer of the map of the cab lamp in its array
-	static constexpr int cab_slot{0};
+	// lights of the cab with shadow maps, at most
+	static constexpr int cab_slots_max{8};
 
 	local_shadows() = default;
 	virtual ~local_shadows() = default;
 	local_shadows(const local_shadows &) = delete;
 	local_shadows &operator=(const local_shadows &) = delete;
 
-	// the cab lamp
+	// the lights of the cab
 
-	// whether the map of the cab lamp is to be drawn in this frame: Vehicle and Cab the occupied vehicle and its cab model,
-	// Lamp the position of the lamp in the space of the cab model; Vehicle nullptr when the lamp is off. (re)makes the map to
-	// the size of the level when the level changed
-	bool update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Lamp, unsigned int const Framestamp);
-	// sets up the drawing to the map: the target, viewport, cleared faces, the state of the faces. the geometry is to be
-	// drawn with the programs of the cube maps and a modelview from the space of the model to the space of the map
-	void begin();
+	// a light of the cab with a slot (a cube of the array of the cab)
+	struct cab_slot
+	{
+		void const *part{nullptr}; // the light it is, see gfx::local_lights::cab_light
+		glm::vec3 lamp{0.f}; // position of the light, in the space of the cab model
+		float nearplane{shadow_near}; // near plane of the map, see lamp_slot
+		bool valid{false}; // the map holds the shadows of the light where it is
+		unsigned int drawnframe{0}; // framestamp the map was last drawn in
+		unsigned int wantedframe{~0u}; // framestamp it was last among the lights given shadows
+	};
+	// picks the lights of the cab which get shadows in this frame, and the maps to be drawn in it: Vehicle and Cab the occupied
+	// vehicle and its cab model (nullptr when the cab has no lights), Lights its lights, the brightest first. (re)makes the maps when
+	// the level, the size or the number wanted changed
+	void update_cab(TDynamicObject const *Vehicle, TModel3d const *Cab, std::vector<gfx::local_lights::cab_light> const &Lights, unsigned int const Framestamp);
+	// the slots whose maps are to be drawn in this frame
+	std::vector<std::size_t> const &cab_draws() const
+	{
+		return m_cabdraws;
+	}
+	cab_slot const &cab(std::size_t const Slot) const
+	{
+		return m_cabslots[Slot];
+	}
+	// sets up the drawing to the map of the slot: the target, viewport, cleared faces, the state of the faces, its near plane. the
+	// geometry is to be drawn with the programs of the cube maps and a modelview from the space of the model to the space of the map
+	// (the light of the slot at the origin)
+	void begin(std::size_t const Slot);
 	// ends the drawing to the map
 	void end(std::uint32_t const Drawcalls);
-	// whether the map holds the shadows of the lamp of Vehicle, the occupied vehicle
-	bool ready(TDynamicObject const *Vehicle) const
-	{
-		return m_valid && (Vehicle != nullptr) && (Vehicle == m_vehicle);
-	}
-	// position of the lamp the map was drawn for, in the space of the cab model
-	glm::vec3 const &lamp() const
-	{
-		return m_lamp;
-	}
-	// the headlight_weights of the light which reads the map: layer, near plane, size of a texel one metre from the lamp,
+	// the slot of the light of the cab of Vehicle with its shadows ready, -1 if it has none
+	int cab_slot_of(TDynamicObject const *Vehicle, gfx::local_lights::cab_light const &Light) const;
+	// the headlight_weights of the light which reads the map of the slot: layer, near plane, size of a texel one metre from the lamp,
 	// radius of the filter in texels
-	glm::vec4 weights() const;
+	glm::vec4 weights(std::size_t const Slot) const;
 
 	// lamps of scenery models
 
@@ -228,17 +242,17 @@ class local_shadows
 	};
 	static level_setup setup(int const Level);
 
-	// what the backend does with the maps: makes them (false: they can't be made) and lets them go; the cab lamp: one cube, the
-	// lamps: 2 x Count cubes (the scenery parts, then the working copies), the headlights: Count layers
-	virtual bool gpu_allocate(int const Size) = 0;
+	// what the backend does with the maps: makes them (false: they can't be made) and lets them go; the lights of the cab: Count
+	// cubes, the lamps: 2 x Count cubes (the scenery parts, then the working copies), the headlights: Count layers
+	virtual bool gpu_allocate(int const Count, int const Size) = 0;
 	virtual void gpu_release() = 0;
 	virtual bool gpu_allocate_lamps(int const Count, int const Size) = 0;
 	virtual void gpu_release_lamps() = 0;
 	virtual bool gpu_allocate_headlights(int const Count, int const Size) = 0;
 	virtual void gpu_release_headlights() = 0;
-	// the drawing to the map of the cab lamp, to a cube of the lamps (Vehicles: the working copy, from a copy of the scenery part
-	// Scenerycube; the scenery part cleared otherwise) and to a layer of the headlights
-	virtual void gpu_begin_cab() = 0;
+	// the drawing to the cube of a light of the cab (with the near plane of the slot), to a cube of the lamps (Vehicles: the working
+	// copy, from a copy of the scenery part Scenerycube; the scenery part cleared otherwise) and to a layer of the headlights
+	virtual void gpu_begin_cab(std::size_t const Slot) = 0;
 	virtual void gpu_end_cab() = 0;
 	virtual void gpu_begin_lamp(int const Scenerycube, int const Workingcube, bool const Vehicles) = 0;
 	virtual void gpu_end_lamp() = 0;
@@ -248,7 +262,7 @@ class local_shadows
 	virtual void gpu_lamps_timer(bool const Begin) = 0;
 	virtual void gpu_headlights_timer(bool const Begin) = 0;
 
-	void allocate(int const Size);
+	void allocate(int const Count, int const Size);
 	void release();
 	void allocate_lamps(int const Count, int const Size);
 	void release_lamps();
@@ -256,13 +270,14 @@ class local_shadows
 	void release_headlights();
 
 	int m_level{-1}; // level the maps were made for
-	// cab lamp
-	int m_size{0}; // of a face of the map, 0 when there is none
-	bool m_valid{false}; // the map holds the shadows of the lamp of m_vehicle
-	TDynamicObject const *m_vehicle{nullptr};
-	TModel3d const *m_cab{nullptr};
-	glm::vec3 m_lamp{0.f};
-	unsigned int m_drawnframe{0}; // framestamp the map was last drawn in
+	// lights of the cab: a cube per slot
+	int m_size{0}; // of a face of the maps, 0 when there are none
+	std::vector<cab_slot> m_cabslots;
+	std::vector<std::size_t> m_cabwanted; // slots of the lights picked in this frame
+	std::vector<std::size_t> m_cabdraws; // and of those whose maps are drawn in it
+	std::size_t m_cabdrawing{0}; // slot begin() set up the drawing to
+	TDynamicObject const *m_cabvehicle{nullptr}; // the vehicle and the cab model the maps of the slots are of
+	TModel3d const *m_cabmodel{nullptr};
 	// scenery lamps: the scenery parts of the slots first, then their working copies
 	int m_lampssize{0};
 	std::vector<lamp_slot> m_slots;
@@ -282,8 +297,9 @@ class local_shadows
 	std::vector<std::pair<float, light_array::light_record const *>> m_headlightcandidates;
 	std::vector<light_array::light_record const *> m_headlightpicked;
 	// statistics
-	std::uint32_t m_drawcalls{0}; // of the last drawing of the cab map
-	std::uint32_t m_updatecount{0}; // drawings of the cab map so far
+	std::uint32_t m_drawcalls{0}; // of the drawings of the cab maps in the last frame with any
+	std::uint32_t m_framedrawcalls{0};
+	std::uint32_t m_updatecount{0}; // drawings of the cab maps so far
 	double m_cputime{0.0}; // milliseconds, smoothed
 	std::chrono::steady_clock::time_point m_cpustart;
 	std::uint32_t m_lampsscenery{0}; // scenery parts drawn so far

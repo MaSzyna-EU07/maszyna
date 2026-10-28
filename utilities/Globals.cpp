@@ -1972,6 +1972,10 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
             ( level == "high" || level == "3" ) ? 3 :
             0; }
+    else if( Token == "gfx.lights.shadows.cab" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_cab;
+        gfx_lights_shadows_cab = std::clamp( gfx_lights_shadows_cab, 0, 8 ); }
     else if( Token == "gfx.lights.shadows.lamps" ) {
         Parser.getTokens( 1 );
         Parser >> gfx_lights_shadows_lamps;
@@ -2453,6 +2457,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.lights.shadows.cab", gfx_lights_shadows_cab );
     export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );
     export_as_text( Output, "gfx.lights.shadows.lamps.size", gfx_lights_shadows_lamps_size );
     export_as_text( Output, "gfx.lights.shadows.lamps.range", gfx_lights_shadows_lamps_range );

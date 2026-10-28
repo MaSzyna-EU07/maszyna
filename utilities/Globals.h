@@ -538,6 +538,9 @@ struct global_settings {
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab
     int gfx_lights_shadows { 2 };
+    // with gfx_lights_shadows above 0: how many lights of the occupied cab (its lamps, the lights of its desk) at most have shadows
+    // cast by the cab, the brightest ones (0-8)
+    int gfx_lights_shadows_cab { 4 };
     // shadows of the lamps of scenery models (cube maps of the scenery around them, kept; vehicles added as they pass), with
     // gfx_lights_shadows above 0: how many lamps at once, the size of a face of their maps, the distance from the camera within
     // which lamps get shadows and within which vehicles (and the cab) cast them

@@ -51,13 +51,13 @@ class opengl46_local_shadows : public gfx::local_shadows
 	std::string info_times();
 
   protected:
-	bool gpu_allocate(int const Size) override;
+	bool gpu_allocate(int const Count, int const Size) override;
 	void gpu_release() override;
 	bool gpu_allocate_lamps(int const Count, int const Size) override;
 	void gpu_release_lamps() override;
 	bool gpu_allocate_headlights(int const Count, int const Size) override;
 	void gpu_release_headlights() override;
-	void gpu_begin_cab() override;
+	void gpu_begin_cab(std::size_t const Slot) override;
 	void gpu_end_cab() override;
 	void gpu_begin_lamp(int const Scenerycube, int const Workingcube, bool const Vehicles) override;
 	void gpu_end_lamp() override;
@@ -76,7 +76,7 @@ class opengl46_local_shadows : public gfx::local_shadows
 	std::unique_ptr<gl::program> m_alpha_multidraw_program;
 	GLuint m_empty{0}; // stand-in: a cube map array of 1x1 faces with the farthest depth
 	GLuint m_emptyheadlights{0}; // the same, a 2d array of one 1x1 layer
-	// cab lamp: cube map array, one cube
+	// lights of the cab: cube map array, a cube per slot
 	GLuint m_texture{0};
 	GLuint m_framebuffer{0};
 	gl::gpu_timer m_timer;

@@ -24,8 +24,6 @@ float const SHADOW_NEAR{gfx::local_shadows::shadow_near};
 // uniform locations of shadowcube.geom
 GLint const NEAR_LOCATION{0};
 GLint const LAYER_LOCATION{1};
-// layer of the map of the cab lamp in the array
-int const CAB_SLOT{gfx::local_shadows::cab_slot};
 
 // cube map array of depth maps compared to the reference, one level, Cubes cubes of Size x Size faces
 GLuint make_cube_array(int const Size, int const Cubes)
@@ -136,7 +134,7 @@ void opengl46_local_shadows::init()
 		m_multidraw_program.reset();
 		m_alpha_multidraw_program.reset();
 	}
-	set_layer(CAB_SLOT * 6);
+	set_layer(0);
 
 	// a shadow sampler with no depth texture to read from is undefined, also where the shading doesn't read it
 	glCreateTextures(GL_TEXTURE_CUBE_MAP_ARRAY, 1, &m_empty);
@@ -173,9 +171,9 @@ void opengl46_local_shadows::set_layer(int const Layer)
 		glProgramUniform1i(*m_alpha_multidraw_program, LAYER_LOCATION, Layer);
 }
 
-bool opengl46_local_shadows::gpu_allocate(int const Size)
+bool opengl46_local_shadows::gpu_allocate(int const Count, int const Size)
 {
-	m_texture = make_cube_array(Size, CAB_SLOT + 1);
+	m_texture = make_cube_array(Size, Count);
 	m_framebuffer = make_framebuffer(m_texture);
 	return (m_framebuffer != 0);
 }
@@ -235,21 +233,25 @@ void opengl46_local_shadows::bind()
 	glBindTextureUnit(gl::HEADLIGHT_SHADOW_TEX, (m_headlightstexture != 0) ? m_headlightstexture : m_emptyheadlights);
 }
 
-void opengl46_local_shadows::gpu_begin_cab()
+void opengl46_local_shadows::gpu_begin_cab(std::size_t const Slot)
 {
-	m_timer.begin();
-	set_layer(CAB_SLOT * 6);
-	set_near(SHADOW_NEAR);
+	if (Slot == m_cabdraws.front())
+		m_timer.begin();
+	set_layer(static_cast<int>(Slot) * 6);
+	// the near plane of the light, which the shading reads the map with (weights())
+	set_near(m_cabslots[Slot].nearplane);
 	setup_drawing(m_framebuffer, m_size);
 	float const farthest{0.f};
-	glClearNamedFramebufferfv(m_framebuffer, GL_DEPTH, 0, &farthest);
+	glClearTexSubImage(m_texture, 0, 0, 0, static_cast<GLint>(Slot) * 6, m_size, m_size, 6, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 }
 
 void opengl46_local_shadows::gpu_end_cab()
 {
 	glEnable(GL_CULL_FACE);
 	gl::framebuffer::unbind();
-	m_timer.end();
+	set_layer(0);
+	if (m_cabdrawing == m_cabdraws.back())
+		m_timer.end();
 }
 
 void opengl46_local_shadows::gpu_begin_lamp(int const Scenerycube, int const Workingcube, bool const Vehicles)
@@ -274,7 +276,7 @@ void opengl46_local_shadows::gpu_end_lamp()
 {
 	glEnable(GL_CULL_FACE);
 	gl::framebuffer::unbind();
-	set_layer(CAB_SLOT * 6);
+	set_layer(0);
 }
 
 void opengl46_local_shadows::gpu_lamps_timer(bool const Begin)

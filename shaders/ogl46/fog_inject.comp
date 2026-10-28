@@ -35,8 +35,8 @@ layout(location = 5) uniform vec3 previous_camera;
 // x: share of this frame (1 without history), y: brightness of the lamps in the fog (0: none), z: 1 when the sun casts shadows
 // into the fog, w: 1 when the headlights cast shadows into it
 layout(location = 6) uniform vec4 options;
-// the light of the cab lamp, which lights no fog (the air of the cab is clear), or -1
-layout(location = 7) uniform int cablamp;
+// the number of the lights of the cab, the lights 1 to cablamps, which light no fog (the air of the cab is clear)
+layout(location = 7) uniform int cablamps;
 // x: near, y: slices / log((far + FOG_VOLUME_BIAS) / (near + FOG_VOLUME_BIAS)) of the previous frame
 layout(location = 8) uniform vec2 previous_slicing;
 // where in its cell the cell is sampled this frame across the view (0-1), as slicing.w is along the depth
@@ -290,7 +290,7 @@ void main()
 				for (uint i = 0U; i < range.count; i++)
 				{
 					uint index = cluster_light_indices[range.offset + i];
-					if (int(index) == cablamp)
+					if ((index >= 1U) && (int(index) <= cablamps))
 						continue;
 					partlamps += lamp_scattering(lights[index], partstart, raydirection, partspan, cellwidth, offset.z);
 				}

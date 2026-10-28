@@ -53,12 +53,12 @@ local_shadows::level_setup local_shadows::setup(int const Level)
 	}
 }
 
-void local_shadows::allocate(int const Size)
+void local_shadows::allocate(int const Count, int const Size)
 {
 	release();
-	if (Size <= 0)
+	if ((Count <= 0) || (Size <= 0))
 		return;
-	if (false == gpu_allocate(Size))
+	if (false == gpu_allocate(Count, Size))
 	{
 		ErrorLog("lamp shadow map framebuffer setup failed, the lamps have no shadows");
 		release();
@@ -66,14 +66,18 @@ void local_shadows::allocate(int const Size)
 		return;
 	}
 	m_size = Size;
-	WriteLog("lamp shadow maps: " + std::to_string(Size) + " x " + std::to_string(Size) + " cube");
+	m_cabslots.assign(static_cast<std::size_t>(Count), cab_slot{});
+	WriteLog("cab light shadow maps: " + std::to_string(Count) + " x " + std::to_string(Size) + " x " + std::to_string(Size) + " cube (" +
+	         std::to_string(Count * 6 * Size / 1024 * Size * 4 / 1024) + " MB)");
 }
 
 void local_shadows::release()
 {
 	gpu_release();
 	m_size = 0;
-	m_valid = false;
+	m_cabslots.clear();
+	m_cabwanted.clear();
+	m_cabdraws.clear();
 }
 
 void local_shadows::allocate_lamps(int const Count, int const Size)
@@ -129,59 +133,165 @@ void local_shadows::release_headlights()
 	m_headlightswanted.clear();
 }
 
-bool local_shadows::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Lamp, unsigned int const Framestamp)
+void local_shadows::update_cab(TDynamicObject const *Vehicle, TModel3d const *Cab, std::vector<gfx::local_lights::cab_light> const &Lights, unsigned int const Framestamp)
 {
+	m_cabwanted.clear();
+	m_cabdraws.clear();
 	auto const level{std::clamp(Global.gfx_lights_shadows, 0, 3)};
-	if (level != m_level)
+	auto const limit{level > 0 ? std::clamp(Global.gfx_lights_shadows_cab, 0, cab_slots_max) : 0};
+	if ((level != m_level) || (static_cast<std::size_t>(limit) < m_cabslots.size()))
 	{
 		m_level = level;
-		auto const size{setup(level).size};
-		if (size != m_size)
-			allocate(size);
-		m_valid = false;
+		release();
 	}
-	if ((m_size == 0) || (Vehicle == nullptr) || (Cab == nullptr))
+	auto const forget = [this]() {
+		for (auto &slot : m_cabslots)
+		{
+			slot = cab_slot{};
+		}
+	};
+	if ((limit == 0) || (Vehicle == nullptr) || (Cab == nullptr))
 	{
-		// with the lamp off nothing reads the map; once it is on again the cab may have changed
-		m_valid = false;
-		return false;
+		// with the lights off nothing reads the maps; once they are on again the cab may have changed
+		forget();
+		m_cabvehicle = nullptr;
+		m_cabmodel = nullptr;
+		return;
 	}
-	if ((false == m_valid) || (Vehicle != m_vehicle) || (Cab != m_cab) || (Lamp != m_lamp))
+	if ((Vehicle != m_cabvehicle) || (Cab != m_cabmodel))
 	{
-		m_valid = false;
+		forget();
+		m_cabvehicle = Vehicle;
+		m_cabmodel = Cab;
 	}
-	// the moving parts of the cab are followed every few frames
-	if (m_valid && (Framestamp - m_drawnframe < setup(level).interval))
+	// the brightest lights which cast shadows, as many as there may be maps
+	std::vector<gfx::local_lights::cab_light const *> picked;
+	for (auto const &light : Lights)
 	{
-		return false;
+		if (picked.size() >= static_cast<std::size_t>(limit))
+		{
+			break;
+		}
+		if (light.source.cast_shadows && (light.source.range >= LAMP_RANGE_MIN))
+		{
+			picked.emplace_back(&light);
+		}
 	}
-	m_vehicle = Vehicle;
-	m_cab = Cab;
-	m_lamp = Lamp;
-	m_drawnframe = Framestamp;
-	return true;
+	if (picked.empty())
+	{
+		return;
+	}
+	// the maps are made as they're needed, up to the limit: a cab with its lamp alone takes one
+	if (picked.size() > m_cabslots.size())
+	{
+		allocate(static_cast<int>(picked.size()), setup(level).size);
+		if (m_cabslots.empty())
+		{
+			return;
+		}
+	}
+	auto const place = [&](cab_slot &Slot, std::size_t const Index, gfx::local_lights::cab_light const &Light) {
+		auto const nearplane{lamp_near(Light.source)};
+		if ((Slot.lamp != Light.local) || (Slot.nearplane != nearplane))
+		{
+			Slot.valid = false;
+		}
+		Slot.lamp = Light.local;
+		Slot.nearplane = nearplane;
+		Slot.wantedframe = Framestamp;
+		m_cabwanted.emplace_back(Index);
+		// the moving parts of the cab are followed every few frames
+		if ((false == Slot.valid) || (Framestamp - Slot.drawnframe >= setup(level).interval))
+		{
+			Slot.drawnframe = Framestamp;
+			m_cabdraws.emplace_back(Index);
+		}
+	};
+	// lights which already have a slot keep it, the others take the slots of lights no longer picked
+	std::vector<gfx::local_lights::cab_light const *> unplaced;
+	for (auto const *light : picked)
+	{
+		auto placed{false};
+		for (std::size_t idx = 0; idx < m_cabslots.size(); ++idx)
+		{
+			auto &slot{m_cabslots[idx]};
+			if ((slot.part == light->source.part) && (slot.wantedframe != Framestamp))
+			{
+				place(slot, idx, *light);
+				placed = true;
+				break;
+			}
+		}
+		if (false == placed)
+		{
+			unplaced.emplace_back(light);
+		}
+	}
+	for (auto const *light : unplaced)
+	{
+		for (std::size_t idx = 0; idx < m_cabslots.size(); ++idx)
+		{
+			auto &slot{m_cabslots[idx]};
+			if (slot.wantedframe == Framestamp)
+			{
+				continue;
+			}
+			slot = cab_slot{};
+			slot.part = light->source.part;
+			place(slot, idx, *light);
+			break;
+		}
+	}
 }
 
-void local_shadows::begin()
+void local_shadows::begin(std::size_t const Slot)
 {
-	m_cpustart = std::chrono::steady_clock::now();
-	gpu_begin_cab();
+	if (m_cabdraws.empty() || (Slot == m_cabdraws.front()))
+	{
+		// the first map of the frame
+		m_framedrawcalls = 0;
+		m_cpustart = std::chrono::steady_clock::now();
+	}
+	m_cabdrawing = Slot;
+	gpu_begin_cab(Slot);
 }
 
 void local_shadows::end(std::uint32_t const Drawcalls)
 {
 	gpu_end_cab();
-	m_valid = true;
-	m_drawcalls = Drawcalls;
+	m_cabslots[m_cabdrawing].valid = true;
+	m_framedrawcalls += Drawcalls;
 	++m_updatecount;
-	auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m_cpustart).count()};
-	m_cputime = (m_cputime == 0.0 ? elapsed : m_cputime * 0.9 + elapsed * 0.1);
+	if (m_cabdraws.empty() || (m_cabdrawing == m_cabdraws.back()))
+	{
+		// the last map of the frame
+		m_drawcalls = m_framedrawcalls;
+		auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m_cpustart).count()};
+		m_cputime = (m_cputime == 0.0 ? elapsed : m_cputime * 0.9 + elapsed * 0.1);
+	}
 }
 
-glm::vec4 local_shadows::weights() const
+int local_shadows::cab_slot_of(TDynamicObject const *Vehicle, gfx::local_lights::cab_light const &Light) const
+{
+	if ((Vehicle == nullptr) || (Vehicle != m_cabvehicle))
+	{
+		return -1;
+	}
+	for (auto const idx : m_cabwanted)
+	{
+		auto const &slot{m_cabslots[idx]};
+		if ((slot.part == Light.source.part) && slot.valid && (slot.lamp == Light.local))
+		{
+			return static_cast<int>(idx);
+		}
+	}
+	return -1;
+}
+
+glm::vec4 local_shadows::weights(std::size_t const Slot) const
 {
 	// a face spans twice the distance from the lamp
-	return glm::vec4{static_cast<float>(cab_slot), shadow_near, 2.f / static_cast<float>(std::max(m_size, 1)), setup(m_level).radius};
+	return glm::vec4{static_cast<float>(Slot), m_cabslots[Slot].nearplane, 2.f / static_cast<float>(std::max(m_size, 1)), setup(m_level).radius};
 }
 
 void local_shadows::update_lamps(std::vector<gfx::local_lights::light> const &Lights, glm::dvec3 const &Camera, std::uint64_t const Version, unsigned int const Framestamp)
@@ -596,8 +706,8 @@ std::string local_shadows::info() const
 	std::string text;
 	if (m_size != 0)
 	{
-		text += "\nlamp shadows: " + std::to_string(m_size) + " cube, " + (m_valid ? "cab lamp" : "none") + ", " + std::to_string(m_drawcalls) + " drawcalls, cpu " + to_string(m_cputime, 2) +
-		        " ms";
+		text += "\ncab light shadows: " + std::to_string(m_cabwanted.size()) + " of " + std::to_string(m_cabslots.size()) + " " + std::to_string(m_size) + " cubes, " +
+		        std::to_string(m_drawcalls) + " drawcalls, cpu " + to_string(m_cputime, 2) + " ms";
 	}
 	if (false == m_slots.empty())
 	{
@@ -630,9 +740,11 @@ void local_shadows::draw_debug_ui()
 {
 	char const *levels[]{"no", "low (512, every 4th frame)", "medium (1024, every 2nd frame)", "high (1024, every frame, softer)"};
 	ImGui::Combo("lamp shadows (gfx.lights.shadows)", &Global.gfx_lights_shadows, levels, IM_ARRAYSIZE(levels));
+	ImGui::SliderInt("cab lights with shadows (gfx.lights.shadows.cab)", &Global.gfx_lights_shadows_cab, 0, cab_slots_max);
 	if (m_size != 0)
 	{
-		ImGui::Text("cab: cube %d x %d, %s, drawn %u times, %u drawcalls, %.2f ms (cpu)", m_size, m_size, m_valid ? "cab lamp" : "no lamp", m_updatecount, m_drawcalls, m_cputime);
+		ImGui::Text("cab: %u of %u cubes %d x %d, drawn %u times, %u drawcalls, %.2f ms (cpu)", static_cast<unsigned>(m_cabwanted.size()), static_cast<unsigned>(m_cabslots.size()), m_size,
+		            m_size, m_updatecount, m_drawcalls, m_cputime);
 	}
 	ImGui::SliderInt("scenery lamps with shadows (gfx.lights.shadows.lamps)", &Global.gfx_lights_shadows_lamps, 0, 32);
 	ImGui::SliderFloat("their reach from the camera, m (.lamps.range)", &Global.gfx_lights_shadows_lamps_range, 0.f, 500.f);

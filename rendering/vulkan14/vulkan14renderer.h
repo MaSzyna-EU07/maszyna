@@ -461,7 +461,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void make_cloud_noise();
 	void upload_weather_block();
 	void update_weather();
-	void render_weather_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamp);
+	void render_weather_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamps);
 	void render_sky_weather(glm::mat4 const &Projection, bool const Mainview);
 	// the ambient occlusion (vulkan14ao.cpp): the resources, and the occlusion of a viewport multiplied into its colour
 	bool init_ao(std::string &Reason);

@@ -280,7 +280,7 @@ void opengl46_weather::prepare_view(glm::ivec2 const &Size, quality_level const 
 	m_view_level = Level;
 }
 
-void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamp)
+void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamps)
 {
 	auto const level{gfx::weather_state::quality(Global.gfx_clouds, Global.gfx_fog_quality)};
 	prepare_view(Size, level);
@@ -353,7 +353,7 @@ void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const 
 		auto const sunshadows{Global.gfx_fog_shadows && Global.gfx_shadowmap_enabled};
 		auto const share{temporal ? std::clamp(Global.gfx_fog_temporal_share, 0.02f, 1.f) : 1.f};
 		glProgramUniform4f(*m_inject_program, 6, share, Global.gfx_fog_lights, sunshadows ? 1.f : 0.f, Global.gfx_fog_shadows ? 1.f : 0.f);
-		glProgramUniform1i(*m_inject_program, 7, Cablamp);
+		glProgramUniform1i(*m_inject_program, 7, Cablamps);
 		glProgramUniform2f(*m_inject_program, 8, previousfog.slicing.x, previousfog.slicing.z);
 		glProgramUniform2f(*m_inject_program, 9, jitter.x, jitter.y);
 		m_inject_program->dispatch(groups(m_fog_grid.x), groups(m_fog_grid.y), static_cast<GLuint>(m_fog_grid.z));

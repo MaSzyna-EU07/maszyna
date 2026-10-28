@@ -98,9 +98,9 @@ void local_shadow_maps::let_go(std::shared_ptr<image> &Map, std::vector<VkImageV
 	Map.reset();
 }
 
-bool local_shadow_maps::gpu_allocate(int const Size)
+bool local_shadow_maps::gpu_allocate(int const Count, int const Size)
 {
-	return make(m_cab, m_cabviews, Size, 6 * (cab_slot + 1), true, "lamp shadow map");
+	return make(m_cab, m_cabviews, Size, 6 * Count, true, "cab light shadow maps");
 }
 
 void local_shadow_maps::gpu_release()
@@ -129,9 +129,9 @@ void local_shadow_maps::gpu_release_headlights()
 	let_go(m_headlights, m_headlightviews);
 }
 
-void local_shadow_maps::gpu_begin_cab()
+void local_shadow_maps::gpu_begin_cab(std::size_t const Slot)
 {
-	m_target = draw_target{m_cab.get(), m_cabviews.empty() ? VK_NULL_HANDLE : m_cabviews[cab_slot], static_cast<std::uint32_t>(m_size), 0x3f, true, true};
+	m_target = draw_target{m_cab.get(), (Slot < m_cabviews.size()) ? m_cabviews[Slot] : VK_NULL_HANDLE, static_cast<std::uint32_t>(m_size), 0x3f, true, true};
 }
 
 void local_shadow_maps::gpu_begin_lamp(int const Scenerycube, int const Workingcube, bool const Vehicles)

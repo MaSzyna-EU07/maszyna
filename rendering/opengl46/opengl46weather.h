@@ -52,9 +52,9 @@ class opengl46_weather
 	// moon, Keycolor: its colour as the shading gets it, Ambient: the ambient light of the sky, Fogcolor: the old colour of the fog
 	void update(opengl46_sky const &Sky, glm::vec3 const &Keylight, glm::vec3 const &Keycolor, glm::vec3 const &Ambient, glm::vec3 const &Fogcolor, glm::dvec3 const &Camera);
 	// the clouds and the fog volume of the colour pass of the main view. Projection and View (rotation, world axes to the view)
-	// of its camera, Size of the target the scene is drawn into, Cablamp the light of the cab lamp (it lights no fog) or -1.
+	// of its camera, Size of the target the scene is drawn into, Cablamps the number of the lights of the cab (they light no fog), from the light 1 on.
 	// the light buffer, the light clusters and the shadow map of the pass are bound
-	void render_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamp);
+	void render_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamps);
 	// the fog of a pass: the volume of the main view (after render_view() in the same frame), or along the ray
 	void setup_pass(bool const Volume, glm::ivec2 const &Size);
 	// the stars, in the sky pass. View: rotation of the camera of the pass

@@ -1629,7 +1629,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		}
 		if (vp.main)
 		{
-			render_weather_view(OpenGLMatrices.data(GL_PROJECTION), glm::mat4{m_colorpass.pass_camera.modelview()}, m_colorpass.pass_camera.position(), fogtarget, (m_cablamplit && clustered) ? 1 : -1);
+			render_weather_view(OpenGLMatrices.data(GL_PROJECTION), glm::mat4{m_colorpass.pass_camera.modelview()}, m_colorpass.pass_camera.position(), fogtarget, (m_cablamplit && clustered) ? m_cablamps : 0);
 		}
 		m_weatherstate.setup_pass(vp.main, fogtarget);
 		upload_weather_block();
@@ -3789,28 +3789,35 @@ void vulkan14_renderer::update_lights(light_array &Lights, bool const Headlights
 	std::size_t light_i = 1;
 	m_lights_dropped = 0;
 
-	// the lights other than the headlights are only taken from the lists of the clusters. the lamp of the occupied cab goes first
+	// the lights other than the headlights are only taken from the lists of the clusters. the lights of the occupied cab go first
 	auto const locallights{Headlights && Clustered};
 	m_cablamplit = false;
+	m_cablamps = 0;
 	if (locallights)
 	{
-		if (auto const *lamp{m_locallights.cab_lamp()})
+		auto const *vehicle{m_locallights.cab_lamp_vehicle()};
+		auto const &lamps{m_context->scene.lamps};
+		for (auto const &cablight : m_locallights.cab_lights())
 		{
-			auto &light{light_data.lights[light_i++]};
-			write_local_light(light, *lamp, camera, mv);
-			m_cablamplit = true;
-			auto const *vehicle{m_locallights.cab_lamp_vehicle()};
-			auto const &lamps{m_context->scene.lamps};
-			if (lamps.ready(vehicle))
+			if (light_i >= gl::MAX_LIGHTS)
 			{
-				// view space to the space of the map: the space of the cab model, with the lamp at the origin. the vehicle is where it
+				break;
+			}
+			auto &light{light_data.lights[light_i++]};
+			write_local_light(light, cablight.source, camera, mv);
+			++m_cablamps;
+			if (auto const slot{lamps.cab_slot_of(vehicle, cablight)}; slot >= 0)
+			{
+				// view space to the space of the map: the space of the cab model, with the light at the origin. the vehicle is where it
 				// is now, the map stays right as it moves
 				auto const toworld{glm::dmat4{glm::transpose(glm::mat3{mv})}};
-				auto const tomap{glm::translate(glm::dmat4{1.0}, -glm::dvec3{lamps.lamp()}) * glm::inverse(vehicle->mMatrix) * glm::translate(glm::dmat4{1.0}, camera - vehicle->GetPosition()) * toworld};
+				auto const tomap{glm::translate(glm::dmat4{1.0}, -glm::dvec3{lamps.cab(static_cast<std::size_t>(slot)).lamp}) * glm::inverse(vehicle->mMatrix) *
+				                 glm::translate(glm::dmat4{1.0}, camera - vehicle->GetPosition()) * toworld};
 				light.headlight_projection = glm::mat4{tomap};
-				light.headlight_weights = lamps.weights();
+				light.headlight_weights = lamps.weights(static_cast<std::size_t>(slot));
 			}
 		}
+		m_cablamplit = (m_cablamps > 0);
 	}
 	auto const headlightsstart{light_i};
 	for (auto const &scenelight : Lights.data)

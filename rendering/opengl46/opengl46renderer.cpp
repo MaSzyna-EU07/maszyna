@@ -1826,7 +1826,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
                     setup_shadow_bind_map();
                 m_weather.render_view(
                     OpenGLMatrices.data( GL_PROJECTION ), glm::mat4{ m_colorpass.pass_camera.modelview() }, m_colorpass.pass_camera.position(), fogtarget,
-                    ( m_cablamplit && Global.gfx_lights_clustered && vp.clusters->valid() ) ? 1 : -1 );
+                    ( m_cablamplit && Global.gfx_lights_clustered && vp.clusters->valid() ) ? m_cablamps : 0 );
             }
             m_weather.setup_pass( vp.main, fogtarget );
         }
@@ -6080,29 +6080,34 @@ void opengl46_renderer::Update_Lights(light_array &Lights, bool const Headlights
     size_t light_i = 1;
     m_lights_dropped = 0;
 
-    // the lights other than the headlights are only taken from the lists of the clusters. the lamp of the occupied cab goes first:
-    // it is next to the camera, and it is not to be the one left out of a full cluster
+    // the lights other than the headlights are only taken from the lists of the clusters. the lights of the occupied cab go first:
+    // they are next to the camera, and they are not to be the ones left out of a full cluster
     auto const locallights{Headlights && Clustered};
     m_cablamplit = false;
+    m_cablamps = 0;
     if( locallights ) {
-        if( auto const *lamp{ m_locallights.cab_lamp() } ) {
+        auto const *vehicle{ m_locallights.cab_lamp_vehicle() };
+        for( auto const &cablight : m_locallights.cab_lights() ) {
+            if( light_i >= gl::MAX_LIGHTS ) {
+                break;
+            }
             auto &light{ light_data.lights[ light_i++ ] };
-            Write_Local_Light( light, *lamp, camera, mv );
-            m_cablamplit = true;
-            auto const *vehicle{ m_locallights.cab_lamp_vehicle() };
-            if( m_localshadows.ready( vehicle ) ) {
-                // view space to the space of the map: the space of the cab model, with the lamp at the origin. the vehicle is
+            Write_Local_Light( light, cablight.source, camera, mv );
+            ++m_cablamps;
+            if( auto const slot{ m_localshadows.cab_slot_of( vehicle, cablight ) }; slot >= 0 ) {
+                // view space to the space of the map: the space of the cab model, with the light at the origin. the vehicle is
                 // where it is now, the map stays right as it moves
                 auto const toworld{ glm::dmat4{ glm::transpose( glm::mat3{ mv } ) } };
                 auto const tomap{
-                    glm::translate( glm::dmat4{ 1.0 }, -glm::dvec3{ m_localshadows.lamp() } )
+                    glm::translate( glm::dmat4{ 1.0 }, -glm::dvec3{ m_localshadows.cab( static_cast<std::size_t>( slot ) ).lamp } )
                     * glm::inverse( vehicle->mMatrix )
                     * glm::translate( glm::dmat4{ 1.0 }, camera - vehicle->GetPosition() )
                     * toworld };
                 light.headlight_projection = glm::mat4{ tomap };
-                light.headlight_weights = m_localshadows.weights();
+                light.headlight_weights = m_localshadows.weights( static_cast<std::size_t>( slot ) );
             }
         }
+        m_cablamplit = ( m_cablamps > 0 );
     }
     auto const headlightsstart{light_i};
 
@@ -6274,22 +6279,26 @@ void opengl46_renderer::Render_local_shadows()
 {
 	// only the light buffers with the lamps read the maps
 	auto const *vehicle{Global.gfx_lights_clustered ? m_locallights.cab_lamp_vehicle() : nullptr};
-	if (false == m_localshadows.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lamp_local(), m_framestamp))
+	m_localshadows.update_cab(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lights(), m_framestamp);
+	if (m_localshadows.cab_draws().empty())
 		return;
 
 	glDebug("render lamp shadows");
-	// the cab drawn by the shadow pass, with the programs of the cube map. the camera is put at the vehicle, which Render_cab()
-	// places the cab relative to, and the modelview takes the cab model to the space of the map
+	// the cab drawn by the shadow pass to the map of each light, with the programs of the cube map. the camera is put at the vehicle,
+	// which Render_cab() places the cab relative to, and the modelview takes the cab model to the space of the map
 	m_renderpass.draw_mode = rendermode::shadows;
 	m_renderpass.pass_camera.position() = vehicle->GetPosition();
-	m_renderpass.draw_stats = {};
 	OpenGLMatrices.mode(GL_MODELVIEW);
-	OpenGLMatrices.load_matrix(glm::mat4{glm::translate(glm::dmat4{1.0}, -glm::dvec3{m_localshadows.lamp()}) * glm::inverse(vehicle->mMatrix)});
-	m_localshadows.begin();
-	m_cubeshadows = true;
-	Render_cab(vehicle, 0.0f, false);
-	m_cubeshadows = false;
-	m_localshadows.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	for (auto const slot : m_localshadows.cab_draws())
+	{
+		m_renderpass.draw_stats = {};
+		OpenGLMatrices.load_matrix(glm::mat4{glm::translate(glm::dmat4{1.0}, -glm::dvec3{m_localshadows.cab(slot).lamp}) * glm::inverse(vehicle->mMatrix)});
+		m_localshadows.begin(slot);
+		m_cubeshadows = true;
+		Render_cab(vehicle, 0.0f, false);
+		m_cubeshadows = false;
+		m_localshadows.end(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
+	}
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
 }
@@ -6311,15 +6320,16 @@ void opengl46_renderer::Render_cab_probe()
 	glm::vec3 extent{0.f};
 	if ((vehicle != nullptr) && (false == m_locallights.cab_bounds(vehicle->mdKabina, m_geometry, center, extent)))
 		vehicle = nullptr;
-	// the cab lamp lights the probe when it's a light of the frame
-	auto const *lamp{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_lamp() : nullptr};
+	// the brightest light of the cab lights the probe when it's a light of the frame
+	auto const *principal{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_principal() : nullptr};
+	auto const *lamp{principal != nullptr ? &principal->source : nullptr};
 	if (false == m_cabprobe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lamp, m_framestamp))
 		return;
 
 	glDebug("render cab probe");
-	// the lamp with its shadow map, when the map holds the shadows of the lamp where it is
-	auto const shadows{(lamp != nullptr) && m_localshadows.ready(vehicle) && (m_localshadows.lamp() == m_locallights.cab_lamp_local())};
-	m_cabprobe.setup_drawing(scene_ubs, lamp, m_locallights.cab_lamp_local(), shadows, m_localshadows.weights());
+	// the light with its shadow map, when the map holds the shadows of the light where it is
+	auto const slot{principal != nullptr ? m_localshadows.cab_slot_of(vehicle, *principal) : -1};
+	m_cabprobe.setup_drawing(scene_ubs, lamp, (principal != nullptr ? principal->local : glm::vec3{0.f}), (slot >= 0), (slot >= 0 ? m_localshadows.weights(static_cast<std::size_t>(slot)) : glm::vec4{0.f}));
 	// the sun coming in through the windows, as the shading of the last frame got it
 	m_cabprobe.setup_sun(scene_ubs, vehicle, -m_sunlight.direction, glm::vec3{light_data.lights[0].color} * light_data.lights[0].intensity, m_colorpass.pass_camera.position());
 	scene_ubo->update(scene_ubs);
