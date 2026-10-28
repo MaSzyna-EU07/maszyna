@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "scenario.h"
+#include "drive.h"
 
 #include "McZapkie/hamulce.h"
 
@@ -343,4 +344,66 @@ TEST_CASE("controls: a train run with five physics steps in a frame") {
 	notch_down(scenario);
 	brake_to_stop(scenario);
 	scenario.check();
+}
+
+TEST_CASE("controls: the automatic electrodynamic brake under service braking, from speed") {
+	// ep, light and full service braking of trains running at speed, whose locomotive or unit has the automatic
+	// electrodynamic brake. the E6ACT brings it in; the EP09 and the EW58 don't, in these runs: their
+	// DynamicBrakeFlag stays off and the air brakes them alone
+	struct train {
+		char const *name;
+		std::vector<char const *> cars; // the first one driven
+		double speed; // km/h at the start
+	};
+	for (auto const &[name, cars, speed] : {
+	         train{"ep09 with wagons", {"ep09_v2/104e", "bdhpumn_v3/bdhpumn", "bdhpumn_v3/bdhpumn"}, 100.0},
+	         train{"e6act with wagons", {"e6act_v2/e6acta", "bdhpumn_v3/bdhpumn", "bdhpumn_v3/bdhpumn"}, 100.0},
+	         train{"ew58", {"ew58_v1/ew58-sa", "ew58_v1/ew58-d", "ew58_v1/ew58-sb"}, 90.0},
+	     }) {
+		CAPTURE(name);
+		scenario scenario{std::string{"controls/dynamic brake from speed/"} + name, motion() + traction() + brakes()};
+		for (auto const *car : cars) {
+			scenario.add(car, car == cars.front() ? 1 : 0, test::consist::full_coupling, speed);
+		}
+		scenario.start_up();
+		auto &cab{scenario.cab()};
+		auto const brake{[&](char const *Event, double Position, double Seconds) {
+			scenario.act(Event);
+			cab.BrakeLevelSet(Position);
+			scenario.wait(Seconds);
+		}};
+		brake("ep brake", cab.Handle->GetPos(bh_EPB), 15.0);
+		brake("ep hold", cab.Handle->GetPos(bh_EPN), 5.0);
+		brake("first step", cab.Handle->GetPos(bh_MB), 20.0);
+		brake("deeper", cab.Handle->GetPos(bh_MB) + 1.0, 15.0);
+		brake("release", cab.Handle->GetPos(bh_RP), 20.0);
+		brake("full service", cab.Handle->GetPos(bh_FB), 40.0);
+		brake("release", cab.Handle->GetPos(bh_RP), 20.0);
+		scenario.check();
+	}
+}
+
+TEST_CASE("controls: a draisine pumped along by hand") {
+	// the pumping force, half a stroke forwards and half backwards, is below the resistance of a draisine
+	// standing, which stays where it is; a rolling one is kept going
+	for (auto const speed : {0.0, 10.0}) {
+		CAPTURE(speed);
+		scenario scenario{"controls/draisine/" + std::to_string(static_cast<int>(speed)), motion() + traction()};
+		scenario.add("dr2_v1/dr2", 1, test::consist::full_coupling, speed);
+		auto &cab{scenario.cab()};
+		cab.CabActivisation();
+		scenario.act("hand brake off");
+		test::release_brakes(cab);
+		for (int stroke = 0; stroke < 40; ++stroke) {
+			scenario.act("stroke");
+			cab.IncMainCtrl(1);
+			scenario.wait(0.5);
+			cab.DecMainCtrl(1);
+			scenario.wait(0.5);
+		}
+		CHECK((speed > 0.0) == (cab.Vel > 1.0));
+		scenario.act("coast");
+		scenario.wait(20.0);
+		scenario.check();
+	}
 }
