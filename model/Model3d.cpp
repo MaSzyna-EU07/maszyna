@@ -227,6 +227,7 @@ inline void readMatrix(cParser &parser, float4x4 &matrix)
 static constexpr std::uint32_t E3D_LIGHT_SHADESELF{0x1};
 static constexpr std::uint32_t E3D_LIGHT_NOSHADOWS{0x2};
 static constexpr std::uint32_t E3D_LIGHT_SOFTFALLOFF{0x4};
+static constexpr std::uint32_t E3D_LIGHT_LIGHTONLY{0x8};
 
 // a light point whose cone takes the whole sphere (FalloffAngle 360) is a point light: it shines and is seen all around
 static void point_light_cones(float &Falloff, float &Hotspot)
@@ -377,7 +378,7 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 		    >> discard >> fCosHotspotAngle; // kąt liczony dla średnicy, a nie promienia
 		// opcjonalne parametry, każdy to nazwa i wartość, w dowolnej kolejności: natężenie światła w procentach (hotspotpower:),
 		// promień kuli świecącej (radius:), cienie od własnego modelu (shadeself:), rzucanie cieni (castshadows:), spadek natężenia
-		// jak przy soft falloff blendera (softfalloff:). trzeba pobrać do kolejki 2 tokeny; jeśli to nie żaden z nich, zostają w
+		// jak przy soft falloff blendera (softfalloff:), samo oświetlenie bez punktu i poświaty (lightonly:). trzeba pobrać do kolejki 2 tokeny; jeśli to nie żaden z nich, zostają w
 		// kolejce dla odczytu zasięgu widoczności, który przywraca autoclear
 		while (true)
 		{
@@ -420,6 +421,10 @@ std::pair<int, int> TSubModel::Load(cParser &parser, bool dynamic)
 			else if (key == "softfalloff:")
 			{
 				parser >> discard >> bSoftFalloff;
+			}
+			else if (key == "lightonly:")
+			{
+				parser >> discard >> bLightOnly;
 			}
 			else
 			{
@@ -1976,7 +1981,7 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 	sn_utils::ls_float32(s, fHotspotPower);
 	// the optional parameters of light points. the zeros of the fill of older files are their defaults
 	sn_utils::ls_float32(s, fLightRadius);
-	sn_utils::ls_uint32(s, (bShadeSelf ? E3D_LIGHT_SHADESELF : 0u) | (bCastShadows ? 0u : E3D_LIGHT_NOSHADOWS) | (bSoftFalloff ? E3D_LIGHT_SOFTFALLOFF : 0u));
+	sn_utils::ls_uint32(s, (bShadeSelf ? E3D_LIGHT_SHADESELF : 0u) | (bCastShadows ? 0u : E3D_LIGHT_NOSHADOWS) | (bSoftFalloff ? E3D_LIGHT_SOFTFALLOFF : 0u) | (bLightOnly ? E3D_LIGHT_LIGHTONLY : 0u));
 
 	// fill empty space
 	size_t fill = end - s.tellp();
@@ -2164,6 +2169,7 @@ void TSubModel::deserialize(std::istream &s)
 	bShadeSelf = (lightflags & E3D_LIGHT_SHADESELF) != 0;
 	bCastShadows = (lightflags & E3D_LIGHT_NOSHADOWS) == 0;
 	bSoftFalloff = (lightflags & E3D_LIGHT_SOFTFALLOFF) != 0;
+	bLightOnly = (lightflags & E3D_LIGHT_LIGHTONLY) != 0;
 
 	// necessary rotations were already done during t3d->e3d conversion
 	m_rotation_init_done = true;

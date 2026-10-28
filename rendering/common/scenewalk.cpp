@@ -3073,8 +3073,9 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 				}
 			}
 		}
-		else if (Submodel->eType == TP_FREESPOTLIGHT)
+		else if ((Submodel->eType == TP_FREESPOTLIGHT) && (false == Submodel->bLightOnly))
 		{
+			// the point of the light and its glare; a light point marked lightonly: only lights its surroundings (gfx::local_lights)
 			// NOTE: we're forced here to redo view angle calculations etc, because this data isn't instanced but stored along with the single mesh
 			// TODO: separate instance data from reusable geometry
 			auto const &modelview = OpenGLMatrices.data(GL_MODELVIEW);

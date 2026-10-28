@@ -180,6 +180,9 @@ scales can also be changed in the **Light clusters** debug window.
   shines always). Their colour, power, cone and the optional `Radius:`/`SoftFalloff:`/`CastShadows:` are those of the light
   point (brightness `gfx.lights.freespot.intensity`, the self-illumination threshold doesn't matter), and they fade in the
   daylight as the cab lamp does. The dimming of the cab lamp applies only to the lamp under the top.
+- **`LightOnly: true`** (an optional entry of any `FreeSpotLight`, after `HotspotAngle:` with the others; in e3d the flag 0x8
+  after the radius) makes the light point only a light: it lights its surroundings, but its glowing point and its glare,
+  seen from afar, aren't drawn. For lights hidden in fittings, the backlight of a desk and the like.
 
 The lamps of models and compartments fade in from the light level at which scenery lamps switch on (`ls_Dark`) to full
 darkness; in daylight they are not gathered at all. The cab lamp and the lamps of scenery models nearest to the camera cast

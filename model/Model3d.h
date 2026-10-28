@@ -132,6 +132,7 @@ public:
 	bool bShadeSelf { false }; // cienie światła rzuca także model, do którego ono należy (shadeself:)
 	bool bCastShadows { true }; // światło rzuca cienie (castshadows:)
 	bool bSoftFalloff { false }; // natężenie maleje jak 1 / (d^2 + r^2), jak przy soft falloff blendera, zamiast świecenia z powierzchni kuli (softfalloff:)
+	bool bLightOnly { false }; // tylko oświetlenie: bez świecącego punktu i poświaty, widocznych z daleka (lightonly:)
     float fCosViewAngle { 0.0f }; // cos kata pod jakim sie teraz patrzy
 
 	bool m_rotation_init_done = false;
