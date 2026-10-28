@@ -46,21 +46,59 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
 - `definition::load("<name>")` reads `data/<name>.json`, with the sections and keys of the game's
   vehicle definitions; `set()` and `remove()` change it for the test. Table sections give their
   rows as `"rows": [[...], ...]`, keys starting with `_` are comments. A section the loader doesn't
-  know is an error (the table of them is in `vehicle.cpp`); a misspelt key isn't caught, so check
+  know is an error (the table of them is in `fiz.cpp`); a misspelt key isn't caught, so check
   in the test that the value the test is about made it to the vehicle. Keep the definitions
   physically sensible: some parts need keys others don't (the ESt brake valves need `Brake.Size`),
   and a test on a half-defined vehicle tests the definition rather than the simulation.
+- `definition::fiz("<dir>/<name>")` is one of the game's own vehicles, `data/fiz/<dir>/<name>.json`,
+  in the same form, converted from the game's `.fiz` with the files it includes (the list and how to
+  add one: `data/fiz/README.md`). The conversion keeps what the game's loader reads of the file and
+  checks it reads the same of the converted one (`fiz.h`), so the vehicle is the game's.
 - The random numbers of the simulation are reseeded before every test case, so a test gives the
-  same result alone or among the others.
+  same result alone or among the others. Loading a vehicle draws some too (the scatter of its brake
+  pipe pressure), so a test making vehicles in a loop calls `test::reseed_random()` before each.
 - Logic which lives in classes too big to set up in a test (the AI driver, the cab) goes into free
   functions on the vehicle state the class calls, and the test calls them the same way: see
   `vehicle/handover.h`, which `TController::TakeControl()` uses, and `test_handover.cpp`.
 - `vehicle` creates the vehicle the way `TDynamicObject::Init()` does and steps it the way the
-  simulation loop does, on a straight track of the given friction and gradient. Coupled vehicles
-  aren't supported yet.
+  simulation loop does, on a straight track of the given friction, gradient, catenary voltage and
+  physics iterations a frame. With a cab (`vehicle{definition, 0.0, "name", 1}`) it has a driver.
+- `consist` (`consist.h`) couples vehicles into a train and steps them together, coupler forces,
+  air, control and power passing between them. The physics reaches a neighbour through its
+  `TDynamicObject`, for its `MoverParameters` only; the tests have a stand-in of it with just that.
+- `drive.h` has the driver's part, made of the AI's steps: `start_up()` (battery, pumps,
+  pantographs, line breaker, converter, compressor), `drive()` (running, acknowledging the
+  vigilance), `release_brakes()`, `drive_cycle()` (a whole run from start-up to a stop).
+- `scenario` (`scenario.h`) puts a train, its driver and a golden trace for each vehicle together,
+  for a test of a feature: `act()` marks an event in the traces, `wait()` runs the train.
 - Check behaviour (speeds, pressures, states the player sees) rather than internal flags, and make
   the test check its own preconditions (`REQUIRE` that the braking skidded, before checking what a
   skid leads to).
+
+## Golden traces
+
+A golden trace pins down how the simulation behaves now, for changes which mustn't alter it, like
+restructuring a function: the values of some channels of a vehicle over a run, compared with the
+ones recorded from the code before, in `data/golden/<name>.csv`. A difference fails the test, naming
+the channel, the time and both rows.
+
+```cpp
+test::trace trace{"eu07/notch up", test::channels::motion() + test::channels::traction()};
+eu07.record(trace); // samples every 10th step
+eu07->MainSwitch(true);
+trace.mark("main switch"); // shows in the event column of the row
+eu07.run(30.0);
+trace.check();
+```
+
+- `EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records the traces anew, for a new test or a change which alters
+  the behaviour on purpose; the diff of the files shows what it altered, review it like code.
+- Values are compared within a relative 1e-9, as the CI builds with GCC and glibc, whose maths
+  functions can differ from MSVC's in the last bits. `EU07_UNIT_TESTS_GOLDEN_EXACT=1` compares them
+  exactly: the check for a change which shouldn't alter anything, on the machine which recorded them.
+- Keep the runs short (tens of seconds): the simulation feeds back on itself, and a last bit grows.
+- A trace with no assertion about what the behaviour should be is a characterisation, bugs included;
+  put the behaviour the test is about into `CHECK`s besides.
 
 ## Code to test, and when the tests fail to link
 

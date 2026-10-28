@@ -1,0 +1,42 @@
+{
+  "_source": "pkp/sn61_v2/sn61.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "Type": "sn61", "M": "54810", "Vmax": "100", "PWR": "368", "SandCap": "100"},
+  "Load": {"MaxLoad": "50", "LoadQ": "pieces", "LoadAccepted": "passengers", "LoadSpeed": "1", "UnLoadSpeed": "1"},
+  "Dimensions": {"L": "24.22", "H": "4.12", "W": "2.96", "Cx": "0.5"},
+  "Wheels": {"D": "0.94", "Tw": "1.435", "AIM": "300", "Axle": "B'2'", "Ad": "3.2", "Bd": "18.36", "Rmin": "100", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "ESt3d_PZZ", "Size": "150", "NBpA": "4", "MBF": "85.0", "MaxBP": "3.8", "LocMaxBP": "3.8", "BCN": "3", "BCR": "0.127", "BCD": "0.1", "BCM": "6.54", "HiPP": "5", "LoPP": "3.5", "Vv": "0.50", "MinCP": "7.0", "MaxCP": "8.0", "CompressorSpeed": "0.0208", "CompressorPower": "Main", "BCS": "1.5", "BSA": "2", "BM": "P10-Bg", "BVV": "150", "BRE": "0.85"},
+  "Doors": {"OpenCtrl": "Passenger", "CloseCtrl": "Passenger", "OpenSpeed": "110", "CloseSpeed": "400", "DoorMaxShiftL": "89", "DoorMaxShiftR": "89", "DoorOpenMethod": "Roll", "DoorClosureWarning": "No"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "39", "ControlType": "sn61"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "BCPN": "6", "BDelay1": "15", "BDelay2": "4", "BDelay3": "35", "BDelay4": "25", "ASB": "Manual", "DirChangeMaxPos": "2", "LocalBrake": "PneumaticBrake", "ManualBrake": "Yes", "MCPN": "8", "SCPN": "5", "AutoRelay": "Yes", "IniCDelay": "1.5", "SCDelay": "0.3", "BrakeDelays": "P", "BrakeHandle": "FV4a", "LocBrakeHandle": "FD1", "FuelStart": "Automatic", "WaterStart": "Battery", "OilStart": "Automatic", "ConverterStart": "Automatic", "rows": [
+    ["-1","0.6","-1","20","Pneumatic"],
+    ["0","0.5","-1","2","Pneumatic"],
+    ["1","0.46","-1","2","Pneumatic"],
+    ["2","0.42","-1","2","Pneumatic"],
+    ["3","0.38","-1","2","Pneumatic"],
+    ["4","0.34","-1","2","Pneumatic"],
+    ["5","0.29","-1","2","Pneumatic"],
+    ["6","0","-1","40","Pneumatic"]
+  ]},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "155"},
+  "Engine": {"EngineType": "DieselEngine", "Trans": "39:83", "nmin": "660", "nmax": "1350", "nmax_cutoff": "1250", "AIM": "150"},
+  "MotorParamTable": {"minVelfullengage": "7.8", "engageDia": "1", "engageMaxForce": "3800", "engagefriction": "1", "rows": [
+    ["0","0","0","-1","1"],
+    ["1","5.056","-1","20.3","1"],
+    ["2","3.325","14.7","30.8","1"],
+    ["3","2.259","25.4","45.3","1"],
+    ["4","1.486","40.9","68.9","1"],
+    ["5","1.000","62.4","200","1"]
+  ]},
+  "DList": {"Size": "8", "Mmax": "3630", "nMmax": "13.333", "Mnmax": "3100", "nmax": "21", "nominalfill": "0.9", "Mstand": "300.0", "rows": [
+    ["0","0","0"],
+    ["1","0.4","0"],
+    ["2","0.1","0"],
+    ["3","0.6","1"],
+    ["4","0.15","3"],
+    ["5","0.40","3"],
+    ["6","0.60","3"],
+    ["7","0.80","3"],
+    ["8","1.00","4"]
+  ]}
+}

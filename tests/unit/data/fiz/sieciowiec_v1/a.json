@@ -1,0 +1,13 @@
+{
+  "_source": "pkp/sieciowiec_v1/a.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "35500", "Vmax": "80", "HeatingP": "20", "LightP": "0.56"},
+  "Load": {"MaxLoad": "80", "LoadQ": "pieces", "LoadAccepted": "Passengers,Luggage", "OverLoadFactor": "2", "LoadSpeed": "1", "UnLoadSpeed": "2"},
+  "Dimensions": {"L": "21.13", "H": "4", "W": "2.9", "Cx": "0.1"},
+  "Wheels": {"D": "1.00", "Tw": "1.435", "Axle": "2'2'", "Ad": "2.83", "Bd": "13.9", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeType": "None", "NBpA": "0", "MBF": "0", "MaxBP": "0"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.11", "FmaxB": "320", "kC": "4500", "DmaxC": "0.1", "FmaxC": "850", "beta": "0.58", "AllowedFlag": "115"},
+  "Cntrl": {"MCPN": "1", "BrakeSystem": "Individual", "LocalBrake": "NoBrake", "rows": []},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "WheelsDriven", "LMaxVoltage": "24", "AlterLight": "Accu", "AlterLMaxVoltage": "24", "AlterLCap": "495", "AlterLRS": "Generator"},
+  "Clima": {"Heating": "PowerCable", "HPowerTrans": "ElectricPower", "HMaxVoltage": "3000", "AlterHeating": "PowerCable", "AlterHPowerTrans": "SteamPower", "AlterHSteamPress": "0.45"}
+}

@@ -1,0 +1,41 @@
+{
+  "_source": "cd/810_v2/810.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "Type": "dmu", "M": "20000", "Vmax": "80", "PWR": "155", "SandCap": "25"},
+  "Load": {"MaxLoad": "55", "OverLoadFactor": "2.2", "LoadQ": "pieces", "LoadAccepted": "passengers", "LoadSpeed": "0.5", "UnLoadSpeed": "0.7"},
+  "Dimensions": {"L": "13.86", "H": "2.8", "W": "3.00", "Cx": "0.38"},
+  "Wheels": {"D": "0.84", "Tw": "1.435", "AIM": "300", "Axle": "1'A'", "Bd": "8", "Rmin": "100", "BearingType": "Roll"},
+  "Brake": {"BrakeType": "Oerlikon", "BrakeValve": "ESt3_PZZ", "Size": "100", "NBpA": "4", "MBF": "45.0", "MaxBP": "3.8", "BCN": "2", "BCR": "0.127", "BCD": "0.14", "BCM": "3.25", "HiPP": "5.0", "LoPP": "3.5", "Vv": "0.257", "MinCP": "7.0", "MaxCP": "8.0", "CompressorSpeed": "0.0136", "BM": "P10-Bg", "BVV": "75", "BRE": "0.87", "AirLeakRate": "1.15", "CompressorPower": "Converter"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "3"},
+  "Doors": {"OpenCtrl": "Mixed", "CloseCtrl": "DriverCtrl", "OpenSpeed": "0.35", "CloseSpeed": "0.625", "DoorMaxShiftL": "0.9", "DoorMaxShiftR": "0.9", "DoorOpenMethod": "Plug", "DoorClosureWarning": "No", "DoorBlocked": "Yes", "DoorMaxShiftPlug": "0.02", "DoorNeedPermit": "Yes", "DoorPermitList": "1|0|2", "DoorPermitListDefault": "2", "DoorAutoCloseRemote": "No"},
+  "Cntrl": {"BrakeHandle": "FV4a", "LocBrakeHandle": "FD1", "BrakeSystem": "Pneumatic", "BCPN": "6", "BDelay1": "15", "BDelay2": "4", "BDelay3": "35", "BDelay4": "25", "ASB": "Manual", "LocalBrake": "PneumaticBrake", "MCPN": "8", "SCPN": "2", "AutoRelay": "Yes", "IniCDelay": "0.5", "SCDelay": "0.3", "ManualBrake": "Yes", "WaterStart": "Battery", "OilStart": "Automatic", "FuelStart": "Automatic", "ConverterStart": "Automatic", "ConverterStartDelay": "4", "CompartmentLightsStart": "Manual", "rows": [
+    ["-1","1.0","-1","12","Pneumatic"],
+    ["0","0.5","-1","9","Pneumatic"],
+    ["1","0.43","-1","9","Pneumatic"],
+    ["2","0.4","-1","9","Pneumatic"],
+    ["3","0.37","-1","9","Pneumatic"],
+    ["4","0.34","-1","9","Pneumatic"],
+    ["5","0.3","-1","9","Pneumatic"],
+    ["6","0","-1","16","Pneumatic"]
+  ]},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "155"},
+  "Clima": {"HMaxVoltage": "3000", "Heating": "Generator", "HGeneratorEngine": "Main", "HGeneratorMinRPM": "600", "HGeneratorMinVoltage": "2400", "HGeneratorMaxRPM": "2150", "HGeneratorMaxVoltage": "3300"},
+  "Security": {"AwareSystem": "Active", "AwareDelay": "30", "SoundSignalDelay": "0.1", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "5", "RadioStop": "No"},
+  "Engine": {"EngineType": "DieselEngine", "Trans": "13:51", "nmin": "600", "nmax": "2150", "nmax_cutoff": "2500", "AIM": "60", "EUS": "2.5", "EDS": "2.5", "IsTC": "Yes", "TC_TMMax": "2.70", "TC_CP": "0.85", "TC_LT": "850", "TC_LR": "1", "TC_ULR": "1", "TC_FRI": "1", "TC_FRD": "1", "TC_TII": "0.60", "TC_TIO": "0", "TC_TOO": "0", "TC_LS": "55", "TC_ULS": "45", "IsRetarder": "No", "WaterMaxTemperature": "105", "WaterCoolingTemperature": "90", "WaterFlowTemperature": "75", "WaterAuxCircuit": "No", "WaterCoolingFanSpeed": "-100", "NominalCoolingPower": "154"},
+  "MotorParamTable": {"minVelfullengage": "-0.1", "engageDia": "1", "engageMaxForce": "1900", "engagefriction": "1", "rows": [
+    ["0","0","0","-1","1"],
+    ["1","2.120","-1","33","1"],
+    ["2","1.000","25","200","1"]
+  ]},
+  "DList": {"Size": "8", "Mmax": "850", "nMmax": "29", "nmax": "41", "Mnmax": "750", "nominalfill": "0.9", "Mstand": "100.0", "rows": [
+    ["0","0.1","0"],
+    ["1","0.2","1"],
+    ["2","0.3","2"],
+    ["3","0.4","2"],
+    ["4","0.5","2"],
+    ["5","0.6","2"],
+    ["6","0.7","2"],
+    ["7","0.8","2"],
+    ["8","1.0","2"]
+  ]}
+}

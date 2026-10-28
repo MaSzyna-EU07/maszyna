@@ -1,0 +1,55 @@
+{
+  "_source": "pkp/st45_v2/301dd.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "97000", "Mred": "15000", "Vmax": "120", "PWR": "1330", "SandCap": "400"},
+  "Dimensions": {"L": "18.99", "H": "4.243", "W": "3.034", "Cx": "0.3"},
+  "Wheels": {"D": "1.100", "AIM": "4000", "Tw": "1.435", "Axle": "Co'Co'", "Ad": "1.950", "Bd": "10.3", "Rmin": "100"},
+  "Brake": {"BrakeValve": "LSt", "NBpA": "4", "MBF": "85.0", "MaxBP": "4.1", "MaxASBP": "1.5", "RM": "0.71", "BCN": "8", "BCR": "0.114", "RV": "50", "BCD": "0.06", "BCM": "8.1", "HiPP": "5", "LoPP": "3.5", "Vv": "0.8", "MinCP": "8.0", "MaxCP": "10.0", "CompressorSpeed": "0.0613", "CompressorPower": "Converter", "BCS": "1", "BSA": "2", "BM": "P10-Bgu", "BVV": "250", "BRE": "0.9", "UBB1": "8", "HandlePipeUnlockPos": "-0.5", "LPOn": "2.75", "LPOff": "4.5"},
+  "SpringBrake": {"Volume": "10", "MBF": "8", "MaxSP": "5.5", "ResetP": "4.0", "MinFP": "3.5", "PressOff": "4.5", "PressOn": "3.5", "ValveOnArea": "0.0002", "ValveOffArea": "0.0002", "ValvePNBArea": "0.002", "MTC": "4"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "39", "ControlType": "ST45"},
+  "Cntrl": {"BrakeHandle": "MHZ_K8P", "LocBrakeHandle": "FD1", "BrakeSystem": "Pneumatic", "BCPN": "10", "BDelay1": "15", "BDelay2": "6", "BDelay3": "36", "BDelay4": "32", "ASB": "Manual", "LocalBrake": "PneumaticBrake", "MCPN": "4", "SCPN": "3", "AutoRelay": "Yes", "IniCDelay": "0.5", "SCDelay": "0.1", "BrakeDelays": "GPR", "ConverterStart": "Automatic", "ConverterStartDelay": "5", "MotorBlowersStart": "Converter", "FuelStart": "Automatic", "OilStart": "Automatic", "WaterStart": "Battery", "EIMCtrlType": "3", "BrakeOpModes": "PN", "DirChangeMaxPos": "2", "rows": [
+    ["-1","0.7","-1","15","Pneumatic"],
+    ["0","0.5","-1","9","Pneumatic"],
+    ["1","0.46","-1","9","Pneumatic"],
+    ["2","0.42","-1","9","Pneumatic"],
+    ["3","0.38","-1","9","Pneumatic"],
+    ["4","0.34","-1","9","Pneumatic"],
+    ["5","0.29","-1","9","Pneumatic"],
+    ["6","0","-1","15","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "5", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "6", "RadioStop": "Yes"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "227.8"},
+  "Engine": {"AIM": "0.9", "EngineType": "DumbDE", "Trans": "19:64", "Ftmax": "326000", "Flat": "0", "Vhyp": "7.2", "Vadd": "5.5", "Cr": "1.0", "RelayType": "45", "WaterMinTemperature": "40", "WaterFlowTemperature": "70", "WaterCoolingTemperature": "82", "WaterMaxTemperature": "91", "WaterShutters": "Yes", "WaterAuxCircuit": "Yes", "WaterAuxCoolingTemperature": "60", "WaterAuxMaxTemperature": "74", "WaterAuxShutters": "Yes", "OilMinPressure": "0.15", "HeatKFO2": "24", "HeatingRPM": "1096", "MotorBlowersSpeed": "-10", "MotorBlowersSustainTime": "600", "MotorBlowersStartVelocity": "0.1"},
+  "SpeedControl": {"SpeedCtrl": "Yes", "SpeedButtons": "0|30|40|50|60|70|80|90|100|120", "OverrideManual": "Yes", "InitPwr": "0.3", "MaxPwrVel": "5", "StartVel": "2", "VelStep": "5", "PwrStep": "0.1", "MinPwr": "0.3", "MaxPwr": "1.0", "MinVel": "0", "MaxVel": "120", "Offset": "-0.5", "kPpos": "0.1", "kPneg": "0.4", "kIpos": "0.06", "kIneg": "0.06", "BrakeIntervention": "Yes"},
+  "MotorParamTable": {"rows": [
+    ["0","20","100","3000","20.8","1340","1713"],
+    ["1","18.5","110","2700","25","1340","1713"],
+    ["2","17.2","135","2500","30","1340","1713"],
+    ["3","14.3","170","2000","48.5","1340","1713"]
+  ]},
+  "Circuit": {"CircuitRes": "0.01", "ImaxLo": "3300", "IminLo": "2500"},
+  "WWList": {"Size": "4", "rows": [
+    ["600","0","0","0"],
+    ["1365","1131","816","3026"],
+    ["1410","1196","864","3204"],
+    ["1455","1264","912","3382"],
+    ["1500","1320","960","3560"]
+  ]},
+  "LightsList": {"Size": "8", "Wrap": "no", "Default": "4", "rows": [
+    ["38","34"],
+    ["38","0"],
+    ["34","34"],
+    ["0","0"],
+    ["21","34"],
+    ["22","34"],
+    ["01","16"],
+    ["16","01"]
+  ]},
+  "UCList": {"Size": "4", "IntegratedBrakePN": "no", "IntegratedBrake": "no", "rows": [
+    ["0","0","0","0","0","0.15","0.15","0","1","0"],
+    ["1","0","0","0","0","0.15","0.15","3","3","1"],
+    ["2","0","0","1","0","0.00","0.15","3","4","1"],
+    ["3","0","0","1","0","0.15","0.00","4","5","3"],
+    ["4","0","0","1","1","0.15","0.15","4","5","3"]
+  ]}
+}

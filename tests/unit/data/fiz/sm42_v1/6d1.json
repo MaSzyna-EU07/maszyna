@@ -1,0 +1,42 @@
+{
+  "_source": "pkp/sm42_v1/6d1.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "74000", "Mred": "10000", "Vmax": "90", "PWR": "590", "SandCap": "300"},
+  "Dimensions": {"L": "14.24", "H": "4.285", "W": "3.170", "Cx": "0.2"},
+  "Wheels": {"D": "1.100", "AIM": "4000", "Tw": "1.435", "Axle": "Bo'Bo'", "Ad": "2.6", "Bd": "7.524", "Rmin": "80"},
+  "Brake": {"BrakeValve": "LSt", "NBpA": "4", "MBF": "85.0", "MaxBP": "4.0", "MaxASBP": "1.8", "BCN": "4", "BCR": "0.1143", "BCD": "0.05", "BCM": "6.68", "HiPP": "5.0", "LoPP": "3.5", "Vv": "0.8", "MinCP": "7.0", "MaxCP": "8.0", "CompressorSpeed": "0.057", "CompressorPower": "Engine", "BVV": "200", "BRE": "0.85"},
+  "BuffCoupl": {"ControlType": "sm42", "CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "103"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "BCPN": "6", "BDelay1": "15", "BDelay2": "3", "BDelay3": "36", "BDelay4": "22", "ASB": "Manual", "LocalBrake": "PneumaticBrake", "MCPN": "11", "SCPN": "1", "AutoRelay": "No", "IniCDelay": "0.5", "SCDelay": "0.1", "BrakeDelays": "GP", "BrakeHandle": "FV4a", "LocBrakeHandle": "FD1", "ManualBrake": "Yes", "OilStart": "Mixed", "WaterStart": "Battery", "ConverterStart": "Automatic", "rows": [
+    ["-1","0.7","-1","15","Pneumatic"],
+    ["0","0.5","-1","9","Pneumatic"],
+    ["1","0.45","-1","9","Pneumatic"],
+    ["2","0.41","-1","9","Pneumatic"],
+    ["3","0.38","-1","9","Pneumatic"],
+    ["4","0.34","-1","9","Pneumatic"],
+    ["5","0.28","-1","9","Pneumatic"],
+    ["6","0","-1","15","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active", "AwareMinSpeed": "0.0", "AwareDelay": "60", "SoundSignalDelay": "2.5", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "2.5", "RadioStop": "Yes"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "91"},
+  "Engine": {"AIM": "1.6", "RPMDecRate": "4.0", "EngineType": "DumbDE", "Trans": "17:75", "Ftmax": "228000", "Vhyp": "7", "Vadd": "5.5", "Cr": "1", "ShuntMode": "1", "WaterCoolingTemperature": "81", "WaterCoolingFanSpeed": "-1200", "WaterMaxTemperature": "85", "OilMinPressure": "0.15", "OilMinTemperature": "25", "OilMaxTemperature": "90", "HeaterMinTemperature": "55", "HeaterMaxTemperature": "60", "HeatKFS": "35", "HeatKFO": "30", "HeatKFE": "7", "HeatKW": "0.011", "HeatKV": "0.3", "HeatKFO2": "100"},
+  "TurboPos": {"TurboPos": "5"},
+  "MotorParamTable": {"rows": [
+    ["0","17.567","64","1500","15","0","0"],
+    ["1","15","183.3","2000","49","0","0"]
+  ]},
+  "Circuit": {"CircuitRes": "0.1", "ImaxLo": "1900", "ImaxHi": "1900", "IminLo": "400", "IminHi": "400"},
+  "WWList": {"Size": "11", "rows": [
+    ["496","0","0","0","0","0","0"],
+    ["496","20","125","600","0","140","180"],
+    ["496","50","156","846","0","140","180"],
+    ["496","90","194","1065","0","140","180"],
+    ["496","135","240","1260","0","140","180"],
+    ["568","182","293","1428","25","150","200"],
+    ["640","234","353","1571","50","160","235"],
+    ["712","286","420","1688","80","200","270"],
+    ["784","348","494","1780","100","235","305"],
+    ["856","408","575","1845","130","300","370"],
+    ["928","474","664","1886","150","360","410"],
+    ["1000","540","760","1900","170","450","490"]
+  ]}
+}

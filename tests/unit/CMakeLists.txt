@@ -6,13 +6,18 @@
 
 set(UNIT_TESTS_NAME eu07_unit_tests)
 
-# a new test_*.cpp file or data/*.json definition is picked up on its own
+# a new test_*.cpp file or file in data/ (definitions, real vehicles, golden traces) is picked up on its own
 file(GLOB UNIT_TEST_CASES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
-file(GLOB UNIT_TEST_DATA CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/*.json")
+file(GLOB_RECURSE UNIT_TEST_DATA CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
 
 add_executable(${UNIT_TESTS_NAME}
 	main.cpp
 	vehicle.cpp
+	fiz.cpp
+	drive.cpp
+	consist.cpp
+	scenario.cpp
+	golden.cpp
 	engine_stubs.cpp
 	${UNIT_TEST_CASES})
 
