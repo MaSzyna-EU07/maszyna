@@ -243,6 +243,22 @@ trace::trace(std::string Name, std::vector<channel> Channels, int Every)
     : m_name(std::move(Name)), m_channels(std::move(Channels)), m_every(Every) {}
 
 void trace::sample(double Time, TMoverParameters const &Vehicle) {
+	// the invariants on every step, the first time each is broken
+	for (auto const &invariant : invariants()) {
+		if (std::find(m_broken.begin(), m_broken.end(), invariant.name) != m_broken.end()) {
+			continue;
+		}
+		if (false == invariant.holds(Vehicle, Time, m_sampled ? &m_before : nullptr)) {
+			m_broken.push_back(invariant.name);
+			char time[32];
+			std::snprintf(time, sizeof(time), "%.3f", Time);
+			m_violations.push_back("invariant \"" + invariant.name + "\" broken in " + m_name + " at " + time + " s" +
+			                       (m_last_event.empty() ? std::string{} : ", after \"" + m_last_event + "\"") + ": " + invariant.explain(Vehicle));
+		}
+	}
+	m_before = {Time, Vehicle.V, Vehicle.DistCounter};
+	m_sampled = true;
+
 	if (m_step++ % m_every != 0) {
 		return;
 	}
@@ -260,9 +276,16 @@ void trace::sample(double Time, TMoverParameters const &Vehicle) {
 
 void trace::mark(std::string const &Event) {
 	m_event += (m_event.empty() ? "" : " ") + Event;
+	m_last_event = Event;
 }
 
 void trace::check() const {
+	for (std::size_t i = 0; i < m_violations.size(); ++i) {
+		if (false == excused(m_name, m_broken[i])) {
+			FAIL_CHECK(m_violations[i]);
+		}
+	}
+
 	std::string header{"time"};
 	for (auto const &channel : m_channels) {
 		header += "," + channel.name;

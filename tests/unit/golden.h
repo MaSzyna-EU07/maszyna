@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "McZapkie/MOVER.h"
+#include "invariants.h"
 
 namespace test {
 
@@ -51,8 +52,10 @@ public:
 	// adds an event of the test to the trace, so a difference can be told apart from the moment of the action
 	void mark(std::string const &Event);
 
-	// compares the trace with the recorded one, or records it
+	// compares the trace with the recorded one, or records it, and reports the invariants broken
 	void check() const;
+	// the invariants broken in the trace (see invariants.h), the first time each, excused or not
+	std::vector<std::string> const &violations() const { return m_violations; }
 
 private:
 	std::string m_name;
@@ -61,6 +64,11 @@ private:
 	long m_step{0};
 	std::vector<std::string> m_rows; // formatted, as in the file
 	std::string m_event; // marked since the last row
+	std::string m_last_event; // the last one marked, for the invariants broken after it
+	snapshot m_before{};
+	bool m_sampled{false};
+	std::vector<std::string> m_broken; // the names of the invariants broken so far
+	std::vector<std::string> m_violations;
 };
 
 } // namespace test

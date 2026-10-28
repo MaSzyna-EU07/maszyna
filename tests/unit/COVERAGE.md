@@ -94,6 +94,13 @@ The tests record the behaviour as it is. The following points may deserve a look
 - **EU47:** its local brake sets the flag of the electrodynamic brake, which keeps the train brake's air out, but the motors don't brake. The local brake's air does it.
 - **EP09:** the flag of the automatic electrodynamic brake stays on at a standstill while the cylinders hold less than 2.1 bar, and it flicks on while a high application is released.
 - **Diesel engines with a second water circuit (SU45, ST44) started at 88 degrees:** they don't start until that circuit, over its limit (74 or 75 degrees), cools. Off, it cools slowly.
+- **Brake cylinders over the vehicle's highest pressure** (found by the invariants, see the README):
+  - The K valve of the SM03 and the EU04 fills the cylinders to the pressure of the auxiliary reservoir in a full service or emergency application: 4.27 bar of the SM03's MaxBP 3.5, 3.19 bar of the EU04's 2.8.
+  - The ESt3d_PZZ valve of the SN61 does so in an emergency: 4.6 bar of its MaxBP 3.8.
+  - The EU07's LSt overshoots a little, to 4.0 bar of its 3.8.
+- **Diesel engines driven over their top speed:** a lower gear taken at speed drives the engine through the wheels over its `nmax`, the SM03's by 10%, the WMB10's by 25%. The cutoff (`nmax_cutoff`) only takes the fuel off.
+- **The ELF's C car's main reservoir over its governor:** the cars share the supply pipe, the A car's governor stops at 9 bar, the C car's at 8.5, so the C car's reservoir reaches 8.64 bar.
+- **Wagons thrown about as a train starts with full physics of the couplers:** the slack taken up throws them at up to 5.7 g, and back within a step.
 - **Nothing limits the speed:** a light train at full power runs well past its Vmax (the 754 past 160 km/h, against a Vmax of 100).
 - **Vehicles that don't do what they should, as driven by the tests:**
   - An EN57 doesn't get ready (main reservoir).

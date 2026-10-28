@@ -103,6 +103,25 @@ trace.check();
 - A trace with no assertion about what the behaviour should be is a characterisation, bugs included;
   put the behaviour the test is about into `CHECK`s besides.
 
+### Invariants
+
+Every trace also checks, on every step of its vehicle and not only on the recorded ones, the rules
+which hold for any vehicle whatever a test does (`invariants.h`): no NaN, the brake cylinders under
+the vehicle's highest pressure, the pipes under the highest governor setting, no motor current with
+the line breaker open, no tractive force without power, the distance counted as the speed runs, no
+acceleration over 5 g, and a few more. They compare nothing with a recorded file, so they hold on
+any compiler, and they still check a behaviour recorded anew on purpose makes sense. A broken rule
+fails the test, naming the time, the last event and the values:
+
+```
+invariant "no motor current with the line breaker open" broken in traction/et42 fuse/0 at 63.200 s,
+after "dynamic brake": Mains=0 Im=-412.5 Itot=-412.5
+```
+
+Where a test makes a vehicle break a rule (a collision), or a game vehicle breaks one as it is, the
+list of excuses in `invariants.cpp` names the trace, the rule and the reason; the second kind goes
+into the findings of [COVERAGE.md](COVERAGE.md) too.
+
 ## Code to test, and when the tests fail to link
 
 A source joins the tested code by moving from `SOURCES` to `CORE_SOURCES` in the main
