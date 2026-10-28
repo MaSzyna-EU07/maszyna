@@ -121,3 +121,59 @@ TEST_CASE("diesel: the 214M railbus's torque converter, gears and retarder") {
 	CHECK(railbus.ScndCtrlActualPos < railbus.ScndCtrlPosNo);
 	scenario.check();
 }
+
+TEST_CASE("diesel: the 214M railbus's speed control, up to the speed of a button and braking down to a lower one") {
+	// the second controller's first position takes the speed of the moment to hold; the buttons, the steps and
+	// the power limit change it. set lower than the speed, it brakes with the retarder (and under
+	// BrakeInterventionVel with the air); with the main controller off its top positions it stands by
+	scenario scenario{"diesel/214m speed control", motion() + traction() + brakes(), test::track{}};
+	scenario.add("21xm_v1/214ma", 1);
+	REQUIRE(scenario.start_up());
+	auto &railbus{scenario.cab()};
+	REQUIRE(railbus.SpeedCtrl);
+	scenario.get_going();
+	scenario.full_power(10.0);
+	scenario.act("speed control on");
+	REQUIRE(railbus.IncScndCtrl(1));
+	CHECK(railbus.SpeedCtrlUnit.IsActive);
+	CHECK(railbus.SpeedCtrlValue == doctest::Approx(std::round(railbus.Vel)).epsilon(0.02));
+	scenario.act("button 80");
+	railbus.SpeedCtrlButton(6);
+	CHECK(railbus.SpeedCtrlValue == doctest::Approx(80.0));
+	scenario.wait(90.0);
+	CHECK(railbus.Vel == doctest::Approx(80.0).epsilon(0.02));
+	CHECK_FALSE(railbus.SpeedCtrlUnit.Standby);
+	scenario.act("step down, up, power down and up");
+	railbus.SpeedCtrlDec();
+	CHECK(railbus.SpeedCtrlValue == doctest::Approx(75.0));
+	railbus.SpeedCtrlInc();
+	railbus.SpeedCtrlInc();
+	CHECK(railbus.SpeedCtrlValue == doctest::Approx(85.0));
+	CHECK(railbus.SpeedCtrlUnit.DesiredPower == doctest::Approx(1.0));
+	CHECK(railbus.SpeedCtrlPowerDec());
+	CHECK(railbus.SpeedCtrlUnit.DesiredPower == doctest::Approx(0.9));
+	CHECK(railbus.SpeedCtrlPowerInc());
+	CHECK(railbus.SpeedCtrlUnit.DesiredPower == doctest::Approx(1.0));
+	scenario.wait(20.0);
+	scenario.act("button 40");
+	railbus.SpeedCtrlButton(2);
+	scenario.wait(5.0);
+	// the retarder does it at this speed, the air isn't needed
+	CHECK(railbus.eimic_real == doctest::Approx(-1.0));
+	CHECK(railbus.hydro_R_Fill == doctest::Approx(1.0));
+	CHECK(railbus.BrakePress < 0.1);
+	CHECK_FALSE(railbus.SpeedCtrlUnit.BrakeInterventionBraking);
+	scenario.wait(60.0);
+	CHECK(railbus.Vel == doctest::Approx(40.0).epsilon(0.05));
+	scenario.act("main controller back, standing by");
+	railbus.DecMainCtrl(1);
+	railbus.DecMainCtrl(1);
+	railbus.DecMainCtrl(1);
+	scenario.wait(5.0);
+	CHECK(railbus.SpeedCtrlUnit.Standby);
+	scenario.act("speed control off");
+	railbus.DecScndCtrl(2);
+	scenario.wait(5.0);
+	CHECK_FALSE(railbus.SpeedCtrlUnit.IsActive);
+	scenario.check();
+}
