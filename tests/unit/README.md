@@ -85,6 +85,19 @@ restructuring a function: the values of some channels of a vehicle over a run, c
 ones recorded from the code before, in `data/golden/<name>.csv`. A difference fails the test, naming
 the channel, the time and both rows.
 
+The samples aren't kept in the repository (tens of megabytes, and they only mean something against
+the code before the change): record them before the change, and compare after it.
+
+```
+git switch master
+EU07_UNIT_TESTS_UPDATE_GOLDEN=1 eu07_unit_tests     # records data/golden/**/*.csv, ignored by git
+git switch my-refactor
+EU07_UNIT_TESTS_GOLDEN_EXACT=1 eu07_unit_tests      # compares every sample, bit for bit
+```
+
+The recorded files stay through switching branches. Without them, a trace compares its key figures
+and checks the invariants, which is what the CI does.
+
 ```cpp
 test::trace trace{"eu07/notch up", test::channels::motion() + test::channels::traction()};
 eu07.record(trace); // samples every 10th step
@@ -94,11 +107,13 @@ eu07.run(30.0);
 trace.check();
 ```
 
-- `EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records the traces anew, for a new test or a change which alters
-  the behaviour on purpose; the diff of the files shows what it altered, review it like code.
-- Values are compared within a relative 1e-9, as the CI builds with GCC and glibc, whose maths
-  functions can differ from MSVC's in the last bits. `EU07_UNIT_TESTS_GOLDEN_EXACT=1` compares them
-  exactly: the check for a change which shouldn't alter anything, on the machine which recorded them.
+- `EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records the samples and the key figures, for a new test or a
+  change which alters the behaviour on purpose; the diff of the key figures shows what it altered,
+  review it like code.
+- Without `EU07_UNIT_TESTS_GOLDEN_EXACT=1`, samples recorded are compared within a relative 1e-9, as
+  GCC and glibc's maths functions can differ from MSVC's in the last bits, and a trace without them
+  passes. With it they're compared exactly, and a trace without them fails, so a run of the
+  refactoring check can't pass by having nothing to compare.
 - Keep the runs short (tens of seconds): the simulation feeds back on itself, and a last bit grows.
 - A trace with no assertion about what the behaviour should be is a characterisation, bugs included;
   put the behaviour the test is about into `CHECK`s besides.
@@ -129,7 +144,8 @@ key figures of "traction/4e_v1/4e" differ:
 
 `EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records them with the samples. After a change which alters the
 behaviour on purpose, their diff says in a few lines what the thousands of changed samples mean. A
-trace sampled by hand, at times of its own (the commands and switches tests), keeps none.
+trace sampled by hand, at times of its own (the commands and switches tests), keeps none, so without
+samples recorded it checks only the invariants and its test's own `CHECK`s.
 
 ### Invariants
 

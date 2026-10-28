@@ -31,16 +31,17 @@ std::vector<channel> operator+(std::vector<channel> Left, std::vector<channel> c
 
 // characterisation of the simulation: the values of the channels over a run of a vehicle, compared with the
 // ones the code gave when the trace got recorded, in tests/unit/data/golden/<Name>.csv (spaces as underscores). a difference fails the
-// test, naming the channel and the time it shows up first. a change which alters the behaviour on purpose
-// records the traces anew, by running the tests with EU07_UNIT_TESTS_UPDATE_GOLDEN=1, and the diff of the
-// files shows what it altered.
+// test, naming the channel and the time it shows up first. the samples are tens of megabytes and only mean
+// something against the code before a change, so they stay out of the repository: running the tests with
+// EU07_UNIT_TESTS_UPDATE_GOLDEN=1 records them on the code before the change, and after it they're compared.
+// a trace with no samples recorded compares only its key figures.
 //
 // values are compared within a relative tolerance of 1e-9 (the CI builds with GCC and glibc, whose maths
 // functions can differ from MSVC's in the last bits), or exactly with EU07_UNIT_TESTS_GOLDEN_EXACT=1, which is the check to
-// run on the machine the traces got recorded on, for a change which shouldn't alter anything at all.
+// run for a change which shouldn't alter anything at all, and which fails a trace with no samples recorded.
 //
-// besides the samples, a trace keeps the key figures of the run (figures.h) in <Name>.figures, and checks the
-// invariants (invariants.h) on every step
+// besides the samples, a trace keeps the key figures of the run (figures.h) in <Name>.figures, in the
+// repository, and checks the invariants (invariants.h) on every step
 //
 //   test::trace trace{"eu07 notch up", test::channels::motion() + test::channels::traction()};
 //   eu07.record(trace);

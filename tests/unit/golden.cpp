@@ -342,12 +342,15 @@ void trace::check() const {
 		check_figures(figurespath);
 	}
 
+	// the samples aren't kept in the repository, they're recorded on the code before a change and compared after it
+	auto const exact{environment("EU07_UNIT_TESTS_GOLDEN_EXACT")};
 	std::ifstream file(path, std::ios::binary);
 	if (false == file.is_open()) {
-		FAIL_CHECK("no golden trace " << path.string() << ", run the tests with EU07_UNIT_TESTS_UPDATE_GOLDEN=1 to record it");
+		if (exact) {
+			FAIL_CHECK("no golden trace " << path.string() << ", run the tests with EU07_UNIT_TESTS_UPDATE_GOLDEN=1 on the code before the change to record it");
+		}
 		return;
 	}
-	auto const exact{environment("EU07_UNIT_TESTS_GOLDEN_EXACT")};
 	std::string line;
 	read_line(file, line);
 	if (line != header) {
