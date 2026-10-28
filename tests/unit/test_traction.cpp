@@ -181,3 +181,103 @@ TEST_CASE("traction: the field shunting relays of the diesel-electric locomotive
 		scenario.check();
 	}
 }
+
+TEST_CASE("traction: the stages of the EW58's electrodynamic brake, set by the positions of its ep handle") {
+	// the FVE408's positions 1 to 5 give the ep brake's strength, whose whole part is the stage of the motors'
+	// brake (TUHEX): 1, 1, 2, 3, 3; over 100 km/h the motors brake at the first stage alone
+	scenario scenario{"traction/ew58 brake stages", motion() + traction() + brakes()};
+	for (auto const *car : {"ew58_v1/ew58-sa", "ew58_v1/ew58-d", "ew58_v1/ew58-sb"}) {
+		scenario.add(car, scenario.train().size() == 0 ? 1 : 0, test::consist::full_coupling, 115.0);
+	}
+	REQUIRE(scenario.start_up());
+	auto &ew58{scenario.cab()};
+	for (auto const &[position, stage] : {std::pair{1, 1}, std::pair{3, 2}, std::pair{4, 3}, std::pair{2, 1}, std::pair{5, 3}}) {
+		CAPTURE(position);
+		scenario.act("position " + std::to_string(position));
+		ew58.BrakeLevelSet(position);
+		scenario.wait(6.0);
+		CHECK(ew58.TUHEX_StageActual == stage);
+		CHECK(ew58.DynamicBrakeFlag);
+		CHECK(ew58.Im < 0.0);
+	}
+	scenario.act("release");
+	ew58.BrakeLevelSet(ew58.Handle->GetPos(bh_RP));
+	scenario.wait(10.0);
+	CHECK(ew58.TUHEX_StageActual == 0);
+	scenario.check();
+}
+
+TEST_CASE("traction: the induction motor drive's speed control, its electrodynamic brake by the local brake, and at the voltage's limit") {
+	scenario scenario{"traction/eu47 drive", motion() + traction() + brakes()};
+	scenario.add("e186_v2/eu47", 1).add("bdhpumn_v3/bdhpumn").add("bdhpumn_v3/bdhpumn");
+	REQUIRE(scenario.start_up());
+	auto &eu47{scenario.cab()};
+	scenario.get_going();
+	// the second controller of the EU47 sets the speed to hold (SpeedCtrlType=Time): position 2 keeps the speed
+	// set, 3 raises it by 10 km/h every SpeedCtrlDelay, 4 sets the top speed, 1 lowers it, 0 drops it
+	REQUIRE(eu47.ScndCtrlPosNo == 4);
+	REQUIRE(eu47.SpeedCtrlTypeTime);
+	full_power(scenario, 0.0);
+	scenario.act("speed up");
+	for (int i = 0; i < 3; ++i) {
+		eu47.IncScndCtrl(1);
+	}
+	scenario.wait(3.0);
+	scenario.act("hold");
+	eu47.DecScndCtrl(1);
+	scenario.wait(1.0);
+	CHECK(eu47.SpeedCtrlValue == doctest::Approx(60.0));
+	scenario.wait(60.0);
+	CHECK(eu47.Vel == doctest::Approx(60.0).epsilon(0.01));
+	scenario.act("slow down");
+	eu47.DecScndCtrl(1);
+	scenario.wait(1.5);
+	eu47.IncScndCtrl(1);
+	scenario.wait(1.0);
+	CHECK(eu47.SpeedCtrlValue == doctest::Approx(20.0));
+	// a lower speed set only takes the power off, the train rolls on
+	scenario.wait(40.0);
+	CHECK(eu47.Vel > 50.0);
+	scenario.act("top speed");
+	eu47.IncScndCtrl(2);
+	scenario.wait(5.0);
+	CHECK(eu47.SpeedCtrlValue == doctest::Approx(eu47.Vmax));
+	scenario.act("speed control off");
+	while (eu47.DecScndCtrl(1)) {
+	}
+	notch_back(scenario, 0);
+	scenario.wait(2.0);
+	CHECK(eu47.SpeedCtrlValue == doctest::Approx(0.0));
+	// the local brake sets the flag of the electrodynamic brake, which keeps the train brake's air out of the
+	// cylinders, but the motors' brake follows the train brake alone: the local brake's air does the braking
+	scenario.act("local brake");
+	eu47.IncLocalBrakeLevel(LocalBrakePosNo);
+	scenario.wait(5.0);
+	CHECK(eu47.DynamicBrakeFlag);
+	CHECK(eu47.Im == doctest::Approx(0.0));
+	CHECK(eu47.BrakePress > 2.0);
+	scenario.act("local brake off");
+	eu47.DecLocalBrakeLevel(LocalBrakePosNo);
+	scenario.wait(10.0);
+	// braking back into the catenary: at its usual voltage, and at its highest, over the drive's MaxV, where
+	// the drive lets less of the current go back to it (Vadd)
+	for (auto const voltage : {test::catenary_3kv, eu47.EnginePowerSource.CollectorParameters.MaxV + 100.0}) {
+		CAPTURE(voltage);
+		scenario.line().voltage = voltage;
+		scenario.act("service brake at " + std::to_string(static_cast<int>(voltage)) + " V");
+		eu47.BrakeLevelSet(eu47.Handle->GetPos(bh_FB));
+		scenario.wait(6.0);
+		CHECK(eu47.DynamicBrakeFlag);
+		CHECK(eu47.Im < -100.0);
+		CHECK((eu47.Vadd > 1.0) == (voltage > eu47.EnginePowerSource.CollectorParameters.MaxV));
+		eu47.BrakeLevelSet(eu47.Handle->GetPos(bh_RP));
+		scenario.wait(6.0);
+	}
+	scenario.line().voltage = test::catenary_3kv;
+	scenario.act("line breaker off");
+	eu47.MainSwitch(false);
+	scenario.wait(5.0);
+	CHECK(eu47.Im == doctest::Approx(0.0));
+	stop(scenario);
+	scenario.check();
+}
