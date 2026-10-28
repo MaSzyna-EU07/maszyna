@@ -13,10 +13,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <chrono>
 #include <limits>
-#include <string_view>
 
 #include "utilities/Globals.h"
 #include "rendering/common/skyocclusion.h"
@@ -42,18 +40,6 @@ float const LIGHT_DUSK_LUMINANCE{0.325f};
 float const LIGHT_DAY_LUMINANCE{1.0f};
 // lights of the occupied cab, at most
 std::size_t const CAB_LIGHTS_MAX{16};
-// kinds of the light points of a cab model, by the start of their names (any case): the lamps of the cab and the lights of the desk
-std::uint8_t const CAB_LIGHT_LAMP{0x1};
-std::uint8_t const CAB_LIGHT_DASHBOARD{0x2};
-
-std::uint8_t cab_light_kind(std::string const &Name)
-{
-	auto const starts = [&Name](std::string_view const Prefix) {
-		return (Name.size() >= Prefix.size()) &&
-		       std::equal(std::begin(Prefix), std::end(Prefix), std::begin(Name), [](char const Left, char const Right) { return Left == static_cast<char>(std::tolower(static_cast<unsigned char>(Right))); });
-	};
-	return starts("cablight") ? CAB_LIGHT_LAMP : starts("dashboardlight") ? CAB_LIGHT_DASHBOARD : 0;
-}
 
 glm::vec3 to_linear(glm::vec3 const &Color)
 {
@@ -209,7 +195,6 @@ void gfx::local_lights::reset()
 	m_cablights.clear();
 	m_cablampon = false;
 	m_modellights.clear();
-	m_cabkinds.clear();
 	m_cells.clear();
 	m_sections.clear();
 	m_models.clear();
@@ -341,25 +326,21 @@ void gfx::local_lights::gather_cab_lights(gfx::geometrybank_manager const &Geome
 	{
 		return;
 	}
-	// as bright as the ambient light the lamp used to add to the cab: lost in the daylight. the lamps of the cab at the level of
-	// their switch (off, dimmed, with or without the 110 V), the lights of the desk with the dashboard light (i-dashboardlight:)
+	// as bright as the ambient light the lamp used to add to the cab: lost in the daylight
 	auto const luminance{Global.fLuminance * gfx::vehicle_light_level(vehicle)};
 	auto const daylight{std::clamp(1.25f - static_cast<float>(luminance), 0.f, 1.f)};
-	auto const cablevel{std::max(vehicle->InteriorLightLevel, 0.f) * daylight};
-	auto const dashboardlevel{(train->btDashboardLight.GetValue() ? 1.f : 0.f) * daylight};
-	auto const kinds{cab_light_kinds(vehicle->mdKabina)};
+	auto const lightpoints{has_light_points(vehicle->mdKabina)};
 
-	if ((kinds != 0) && ((cablevel > 0.f) || (dashboardlevel > 0.f)))
+	if (lightpoints && (daylight > 0.f))
 	{
-		// the light points of the cab model, in its space, the way Render_cab() sets it up
+		// the light points of the cab model, in its space, the way Render_cab() sets it up. they are switched by the visibility of
+		// the submodels they're in (the lamp of the cab under i-cablight:, the lights of the desk under i-dashboardlight:, ...)
 		TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(vehicle);
 		TSubModel::iVariantSeed = vehicle->variant_seed();
 		TSubModel::fSquareDist = 0.f;
 		auto const count{m_lights.size()};
 		m_walkcab = true;
-		m_walkcablevel = cablevel;
-		m_walkdashboardlevel = dashboardlevel;
-		walk(vehicle->mdKabina->Root, glm::mat4{1.f}, glm::dmat4{1.0}, Global.gfx_lights_freespot_intensity);
+		walk(vehicle->mdKabina->Root, glm::mat4{1.f}, glm::dmat4{1.0}, Global.gfx_lights_freespot_intensity * daylight);
 		m_walkcab = false;
 		// within the cab: without shadows (gfx.lights.shadows) the light goes through its walls
 		auto const reach{std::max(2.f * glm::length(bounds.extent), 2.5f)};
@@ -378,8 +359,10 @@ void gfx::local_lights::gather_cab_lights(gfx::geometrybank_manager const &Geome
 		m_lights.resize(count);
 	}
 
-	// the lamp of a cab model without lamps of its own: under the ceiling, in the middle of the cab
-	if (((kinds & CAB_LIGHT_LAMP) == 0) && (cablevel > 0.f))
+	// the lamp of a cab model without light points of its own: under the ceiling, in the middle of the cab, at the level of its
+	// switch (off, dimmed, with or without the 110 V)
+	auto const cablevel{std::max(vehicle->InteriorLightLevel, 0.f) * daylight};
+	if ((false == lightpoints) && (cablevel > 0.f))
 	{
 		auto const lamp{glm::vec3{bounds.center.x, std::max(bounds.center.y, bounds.center.y + bounds.extent.y - 0.25f), bounds.center.z}};
 		cab_light cablight;
@@ -441,10 +424,8 @@ void gfx::local_lights::add_light_point(TSubModel const &Submodel, glm::mat4 con
 {
 	if (m_walkcab)
 	{
-		// the lights of the cab: with their switches, whatever the self-illumination threshold. other light points of the cab only glare
-		auto const kind{cab_light_kind(Submodel.pName)};
-		Brightness *= (kind == CAB_LIGHT_LAMP ? m_walkcablevel : kind == CAB_LIGHT_DASHBOARD ? m_walkdashboardlevel : 0.f);
-		if ((Brightness <= 0.f) || (Submodel.f4Emision.a <= 0.f) || (Submodel.fVisible <= 0.f))
+		// the lights of the cab: switched with the submodels they're in, whatever the self-illumination threshold
+		if ((Submodel.f4Emision.a <= 0.f) || (Submodel.fVisible <= 0.f))
 		{
 			return;
 		}
@@ -518,35 +499,6 @@ bool gfx::local_lights::has_light_points(TModel3d *Model)
 	}
 	m_modellights.emplace(Model, found);
 	return found;
-}
-
-std::uint8_t gfx::local_lights::cab_light_kinds(TModel3d *Model)
-{
-	auto lookup{m_cabkinds.find(Model)};
-	if (lookup != m_cabkinds.end())
-	{
-		return lookup->second;
-	}
-	std::uint8_t kinds{0};
-	std::vector<TSubModel const *> pending{Model->Root};
-	while (false == pending.empty())
-	{
-		auto const *submodel{pending.back()};
-		pending.pop_back();
-		for (; submodel != nullptr; submodel = submodel->Next)
-		{
-			if (submodel->eType == TP_FREESPOTLIGHT)
-			{
-				kinds |= cab_light_kind(submodel->pName);
-			}
-			if (submodel->Child != nullptr)
-			{
-				pending.emplace_back(submodel->Child);
-			}
-		}
-	}
-	m_cabkinds.emplace(Model, kinds);
-	return kinds;
 }
 
 gfx::local_lights::cell_data const &gfx::local_lights::cell_instances(scene::basic_cell &Cell, bool const Rebuild)
@@ -636,7 +588,7 @@ void gfx::local_lights::draw_debug_ui()
 	ImGui::TextUnformatted("local lights (need clustered lights)");
 	ImGui::Checkbox("light points of scenery models", &Global.gfx_lights_scenery);
 	ImGui::Checkbox("light points and compartments of vehicles", &Global.gfx_lights_vehicles);
-	ImGui::Checkbox("cab lamp as a light (cablight... / dashboardlight... light points of the cab)", &Global.gfx_lights_cab);
+	ImGui::Checkbox("cab lamp as a light (or the light points of the cab model)", &Global.gfx_lights_cab);
 	ImGui::SliderFloat("light point brightness", &Global.gfx_lights_freespot_intensity, 0.f, 50.f);
 	ImGui::SliderFloat("compartment brightness", &Global.gfx_lights_compartment_intensity, 0.f, 10.f);
 	ImGui::SliderFloat("cab lamp brightness", &Global.gfx_lights_cab_intensity, 0.f, 10.f);

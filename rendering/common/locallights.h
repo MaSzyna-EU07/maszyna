@@ -34,9 +34,9 @@ class TDynamicObject;
 //   light along the -z axis of its submodel, with the cone of its glare. lamps of scenery models switched with Light_On / Light_Off
 //   and the self-illumination of vehicle compartments (TDynamicObject::Sections) work through the same state
 // - the lit compartments of vehicles (low poly interior sections) without light points of their own: a point light in the middle
-// - the lights of the occupied cab, in place of the ambient light its lamp used to add: the light points of the cab model (mdKabina)
-//   named cablight... (the lamps of the cab, switched and dimmed with them) and dashboardlight... (the lights of the desk, switched
-//   with the dashboard light, i-dashboardlight:). a cab model without any cablight... gets a point light under its top instead
+// - the lights of the occupied cab, in place of the ambient light its lamp used to add: the light points of the cab model (mdKabina),
+//   any of them, switched by the visibility of the submodels they're in (children of i-cablight:, i-dashboardlight: ...). a cab
+//   model without light points gets a point light under its top instead, switched and dimmed with the lamp of the cab
 // gathered once per frame around the camera, written to the light buffers by the renderers (Update_Lights())
 namespace gfx
 {
@@ -139,8 +139,6 @@ class local_lights
 	void gather_vehicle(TDynamicObject *Vehicle, glm::dvec3 const &Camera, gfx::geometrybank_manager const &Geometry, float const Freespotbrightness, float const Compartmentbrightness);
 	void gather_cab_lights(gfx::geometrybank_manager const &Geometry);
 	bool has_light_points(TModel3d *Model);
-	// the kinds of the light points of a cab model by their names, CAB_LIGHT_LAMP | CAB_LIGHT_DASHBOARD (locallights.cpp)
-	std::uint8_t cab_light_kinds(TModel3d *Model);
 	cell_data const &cell_instances(scene::basic_cell &Cell, bool const Rebuild);
 	section_data const &section(TModel3d *Model, TSubModel *Section, gfx::geometrybank_manager const &Geometry);
 	section_data const &model_bounds(TModel3d *Model, gfx::geometrybank_manager const &Geometry);
@@ -149,13 +147,9 @@ class local_lights
 	std::vector<cab_light> m_cablights;
 	bool m_cablampon{false};
 	TDynamicObject const *m_cablampvehicle{nullptr};
-	// walk() goes through the cab model: only its light points of the cab and of the desk, at these levels (0-1) of their switches,
-	// whatever the self-illumination threshold
+	// walk() goes through the cab model: its light points shine while they're visible, whatever the self-illumination threshold
 	bool m_walkcab{false};
-	float m_walkcablevel{0.f};
-	float m_walkdashboardlevel{0.f};
 	std::unordered_map<TModel3d const *, bool> m_modellights; // whether the model has light points
-	std::unordered_map<TModel3d const *, std::uint8_t> m_cabkinds; // the kinds of light points of cab models
 	std::unordered_map<scene::basic_cell const *, cell_data> m_cells;
 	std::unordered_map<TSubModel const *, section_data> m_sections; // compartments, by their submodel
 	std::unordered_map<TModel3d const *, section_data> m_models; // bounds of cab models

@@ -173,14 +173,13 @@ scales can also be changed in the **Light clusters** debug window.
   light of the whole cab and weakened the shadows of the sun in it; now a share of that ambient light is kept for the light
   which bounces around the cab (`gfx.lights.cab.bounce`), and the sun shadows stay. With the probe of the cab (below) the
   light which bounces comes from the probe instead and nothing of the lamp is kept in the ambient light.
-- **Lights of the cab model.** Light points (`FreeSpotLight`) of the cab model whose names start with `cablight` (any case)
-  are the lamps of the cab: they shine with its lamp switch (off, dimmed, half bright without 110 V), in place of the lamp
-  under the top of the cab, which a cab model gets only when it has no `cablight` of its own. Those whose names start with
-  `dashboardlight` are the lights of the desk: they shine with the dashboard light (`i-dashboardlight:` /
-  `dashboardlight_sw:`). Their colour, power, cone and the optional `Radius:`/`SoftFalloff:`/`CastShadows:` are those of the
-  light point (brightness `gfx.lights.freespot.intensity`, the self-illumination threshold doesn't matter), and they fade
-  in the daylight as the cab lamp does. Visibility counts: a light point under a submodel that is hidden doesn't shine.
-  Other light points of the cab only glare, as before.
+- **Lights of the cab model.** Every light point (`FreeSpotLight`) of the cab model lights the cab, in place of the lamp
+  under the top of the cab, which a cab model gets only when it has no light points at all. They are switched by the
+  visibility of the submodels they are children of: under the submodel of `i-cablight:` a light point shines with the
+  lamp of the cab, under `i-dashboardlight:` with the dashboard light, and so on (one not under any switched submodel
+  shines always). Their colour, power, cone and the optional `Radius:`/`SoftFalloff:`/`CastShadows:` are those of the light
+  point (brightness `gfx.lights.freespot.intensity`, the self-illumination threshold doesn't matter), and they fade in the
+  daylight as the cab lamp does. The dimming of the cab lamp applies only to the lamp under the top.
 
 The lamps of models and compartments fade in from the light level at which scenery lamps switch on (`ls_Dark`) to full
 darkness; in daylight they are not gathered at all. The cab lamp and the lamps of scenery models nearest to the camera cast
@@ -248,7 +247,7 @@ shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on 
 | `gfx.lights.cab.bounce` | `0.3` | 0..1: share of the former ambient light of the cab lamp kept with the lamp on |
 | `gfx.lights.range` | `300` | distance from the camera the lamps of models and vehicles are gathered from, metres |
 | `gfx.lights.shadows` | `medium` | `no`/`low`/`medium`/`high` (or 0..3): shadows of the cab lamp and the scenery lamps, see above |
-| `gfx.lights.shadows.cab` | `4` | 0..8: how many lights of the cab (the brightest; the lamp, `cablight`/`dashboardlight` light points) cast the shadows of the cab, a cube map each; 0: none |
+| `gfx.lights.shadows.cab` | `4` | 0..8: how many lights of the cab (the brightest; the lamp or the light points of the cab model) cast the shadows of the cab, a cube map each; 0: none |
 | `gfx.lights.shadows.lamps` | `8` | 0..32: how many scenery lamps nearest to the camera cast shadows; 0: none |
 | `gfx.lights.shadows.lamps.size` | `512` | 128..2048: size of a face of the shadow map of a scenery lamp |
 | `gfx.lights.shadows.lamps.range` | `100` | distance from the camera within which scenery lamps cast shadows, metres |
