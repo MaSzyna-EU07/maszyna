@@ -174,7 +174,7 @@ TTrackShape shape_of(track const &Track) {
 
 TTrackParam parameters_of(track const &Track, TMoverParameters const &Mover) {
 	TTrackParam param;
-	param.Width = 1.435;
+	param.Width = Track.width;
 	param.friction = Track.friction;
 	// the vehicle's own kind of way: a road vehicle on rails derails as soon as it moves
 	param.CategoryFlag = Track.category != 0 ? Track.category : (Mover.CategoryFlag != 0 ? Mover.CategoryFlag : 1);

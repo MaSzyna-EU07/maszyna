@@ -55,7 +55,7 @@ private:
 
 // conditions the vehicle runs in: straight track of the given friction and gradient (rise/run), under a
 // catenary of the given voltage, or without one. the track is of the vehicle's own category (rail, road,
-// water), unless the test gives one. iterations is how many steps of the physics the game makes in a frame:
+// water), unless the test gives one, and of the standard gauge wide, unless the test gives a road's width. iterations is how many steps of the physics the game makes in a frame:
 // the last one moves the vehicle fully, the ones before it (FastComputeMovement) only roughly; the game
 // makes as many as it takes to keep them at 0.01 s, in fives with "full physics" set
 struct track {
@@ -64,6 +64,7 @@ struct track {
 	double voltage{0.0};
 	int category{0};
 	int iterations{1};
+	double width{1.435};
 };
 
 // the catenary of the Polish railways [V]
