@@ -57,13 +57,17 @@ vec2 sky_occlusion_world(vec3 world, vec3 worldnormal)
 	vec4 skydeep = textureGather(sky_occlusion_map, uv, 2);
 	vec4 litabove = textureGather(sky_occlusion_map, uv, 3);
 	vec4 height = vec4(point.y + sky_occlusion_origin.z);
-	vec4 cover = clamp((tops - height - SKY_OCCLUSION_COVER_START) / SKY_OCCLUSION_COVER_SPAN, 0.0, 1.0);
+	// a point is under the scenery only where a ceiling is over it (the vault of a tunnel, the deck of a bridge, a roof): under the top
+	// with nothing over it (the edge of a platform or a wall the texels are blended over, a hole cut in the terrain, a part of a
+	// model in the ground) it's taken as at the top, in the open
+	vec4 roofed = step(ceilings, vec4(5000.0)) * clamp(ceilings - height + 1.0, 0.0, 1.0);
+	vec4 cover = clamp((tops - height - SKY_OCCLUSION_COVER_START) / SKY_OCCLUSION_COVER_SPAN, 0.0, 1.0) * roofed;
 	vec4 nearheight = ceilings - SKY_OCCLUSION_BELOW_CEILING;
 	vec4 skyunder = mix(skydeep, skynear, clamp((height - deeps) / max(nearheight - deeps, vec4(1e-3)), 0.0, 1.0));
 	// no ceiling: the inside of what is solid
 	skyunder *= step(ceilings, vec4(5000.0));
 	vec4 sky = mix(skytop, skyunder, cover);
-	vec4 suntop = smoothstep(vec4(-SKY_OCCLUSION_SUN_SOFTNESS), vec4(SKY_OCCLUSION_SUN_SOFTNESS), height - (tops + litabove));
+	vec4 suntop = smoothstep(vec4(-SKY_OCCLUSION_SUN_SOFTNESS), vec4(SKY_OCCLUSION_SUN_SOFTNESS), max(height, tops - SKY_OCCLUSION_COVER_START) - (tops + litabove));
 	vec4 sununder = smoothstep(vec4(-SKY_OCCLUSION_SUN_SOFTNESS), vec4(SKY_OCCLUSION_SUN_SOFTNESS), litbelow - height);
 	vec4 sun = mix(suntop, sununder, cover);
 	return mix(vec2(dot(sky, weights), dot(sun, weights)), vec2(1.0), fade);
@@ -81,7 +85,11 @@ float sky_occlusion_cover(vec3 world)
 	if (false == sky_occlusion_texels(world.xz, uv, weights, fade))
 		return 0.0;
 	vec4 tops = textureGather(sky_occlusion_height, uv, 0);
-	vec4 cover = clamp((tops - vec4(world.y + sky_occlusion_origin.z) - SKY_OCCLUSION_COVER_START) / SKY_OCCLUSION_COVER_SPAN, 0.0, 1.0);
+	vec4 ceilings = textureGather(sky_occlusion_height, uv, 1);
+	vec4 height = vec4(world.y + sky_occlusion_origin.z);
+	// under a ceiling only, as sky_occlusion_world() takes it
+	vec4 roofed = step(ceilings, vec4(5000.0)) * clamp(ceilings - height + 1.0, 0.0, 1.0);
+	vec4 cover = clamp((tops - height - SKY_OCCLUSION_COVER_START) / SKY_OCCLUSION_COVER_SPAN, 0.0, 1.0) * roofed;
 	return dot(cover, weights) * (1.0 - fade);
 }
 

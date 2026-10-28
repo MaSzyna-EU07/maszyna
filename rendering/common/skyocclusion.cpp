@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
+#include "world/Track.h"
 
 namespace gfx
 {
@@ -60,6 +61,11 @@ float const COVER_SPAN{1.f};
 float const SUN_SOFTNESS{0.6f};
 // a key light moving more than this (the cosine of the angle) has the occlusion of the key light worked out anew
 double const KEYLIGHT_MOVED{0.99999}; // ~0.26 degree
+// with Global.gfx_skyvisibility_tunnels: the occlusion is kept whole within this distance of a track with the tunnel flag and fades
+// out by the second one, metres; the tracks are followed in steps of at most the third
+float const TUNNEL_MASK_FULL{20.f};
+float const TUNNEL_MASK_REACH{35.f};
+double const TUNNEL_MASK_STEP{2.0};
 
 sky_occlusion *g_current{nullptr};
 
@@ -117,7 +123,9 @@ glm::vec2 texel_occlusion(glm::vec4 const &Heights, glm::vec4 const &Occlusion, 
 {
 	auto const top{Heights.x};
 	auto const ceiling{Heights.y};
-	auto const cover{std::clamp((top - Height - COVER_START) / COVER_SPAN, 0.f, 1.f)};
+	// under the scenery only where a ceiling is over the point; under the top with nothing over it it's taken as at the top
+	auto const roofed{has_ceiling(ceiling) ? std::clamp(ceiling - Height + 1.f, 0.f, 1.f) : 0.f};
+	auto const cover{std::clamp((top - Height - COVER_START) / COVER_SPAN, 0.f, 1.f) * roofed};
 	auto under{0.f};
 	if (has_ceiling(ceiling))
 	{
@@ -126,7 +134,7 @@ glm::vec2 texel_occlusion(glm::vec4 const &Heights, glm::vec4 const &Occlusion, 
 		under = Occlusion.z + (Occlusion.y - Occlusion.z) * t;
 	}
 	auto const sky{Occlusion.x + (under - Occlusion.x) * cover};
-	auto const suntop{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, Height - (top + Occlusion.w))};
+	auto const suntop{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, std::max(Height, top - COVER_START) - (top + Occlusion.w))};
 	auto const sununder{smoothstep(-SUN_SOFTNESS, SUN_SOFTNESS, Heights.z - Height)};
 	return {sky, suntop + (sununder - suntop) * cover};
 }
@@ -236,6 +244,7 @@ void sky_occlusion::start(int const Level)
 	m_side = side;
 	m_level = Level;
 	m_sun = Global.gfx_skyvisibility_sun;
+	m_tunnels = Global.gfx_skyvisibility_tunnels;
 	auto const count{static_cast<std::size_t>(m_layout.tiles * m_layout.tiles)};
 	m_slots.assign(count, slot{});
 	auto const texels{static_cast<std::size_t>(side) * side};
@@ -257,6 +266,7 @@ void sky_occlusion::start(int const Level)
 	m_rawceiling.assign(texels, NONE_CEILING);
 	m_top.assign(texels, NONE_TOP);
 	m_ceiling.assign(texels, NONE_CEILING);
+	m_mask.assign(texels, m_tunnels ? 0.f : 1.f);
 	m_workertiles.assign(count, glm::ivec2{std::numeric_limits<int>::min()});
 	m_workergenerations.assign(count, 0);
 	m_workerraster.assign(count, false);
@@ -295,6 +305,7 @@ void sky_occlusion::stop()
 	m_rawceiling.clear();
 	m_top.clear();
 	m_ceiling.clear();
+	m_mask.clear();
 	m_jobs.clear();
 	m_results.clear();
 	if (g_current == this)
@@ -359,7 +370,7 @@ void sky_occlusion::apply(tile_result &Result)
 void sky_occlusion::update(scene::basic_region *Region, glm::dvec3 const &Camera, glm::vec3 const &Keylight)
 {
 	auto const level{std::clamp(Global.gfx_skyvisibility, 0, 3)};
-	if ((level != m_level) || ((m_side > 0) && (m_sun != Global.gfx_skyvisibility_sun)))
+	if ((level != m_level) || ((m_side > 0) && ((m_sun != Global.gfx_skyvisibility_sun) || (m_tunnels != Global.gfx_skyvisibility_tunnels))))
 	{
 		stop();
 		if (level > 0)
@@ -453,6 +464,8 @@ void sky_occlusion::update(scene::basic_region *Region, glm::dvec3 const &Camera
 		job.generation = target.generation;
 		target.signature = signature(Region, target.tile);
 		gather(Region, target.tile, job.triangles);
+		if (m_tunnels)
+			gather_tunnels(Region, target.tile, job.tunnels);
 		m_gathertime += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gatherstart).count();
 		m_triangles = static_cast<std::uint32_t>(job.triangles.size());
 		if (target.regather)
@@ -601,6 +614,14 @@ std::uint64_t sky_occlusion::signature(scene::basic_region *Region, glm::ivec2 c
 				continue;
 			hash = hash_mix(hash, static_cast<std::uint64_t>(cell.m_shapesopaque.size()));
 			hash = hash_mix(hash, static_cast<std::uint64_t>(cell.m_instancesopaque.size()));
+			if (m_tunnels)
+			{
+				for (auto const *path : cell.m_paths)
+				{
+					if ((path != nullptr) && (path->eEnvironment == e_tunnel))
+						hash = hash_mix(hash, static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(path)));
+				}
+			}
 			for (auto &shape : cell.m_shapesopaque)
 			{
 				auto const &data{shape.data()};
@@ -718,6 +739,46 @@ void sky_occlusion::gather(scene::basic_region *Region, glm::ivec2 const &Tile, 
 	}
 }
 
+void sky_occlusion::gather_tunnels(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec2> &Points)
+{
+	auto const tilesize{static_cast<double>(m_layout.tile)};
+	auto const reach{static_cast<double>(TUNNEL_MASK_REACH)};
+	glm::dvec2 const corner{Tile.x * tilesize, Tile.y * tilesize};
+	glm::dvec2 const low{corner - glm::dvec2{reach}};
+	glm::dvec2 const high{corner + glm::dvec2{tilesize + reach}};
+	glm::dvec3 const center{corner.x + 0.5 * tilesize, 0.0, corner.y + 0.5 * tilesize};
+	std::vector<TTrack const *> done;
+	auto const &found{Region->sections(center, static_cast<float>(tilesize * 0.75 + reach))};
+	std::vector<scene::basic_section *> const sections{found.begin(), found.end()};
+	for (auto *section : sections)
+	{
+		for (auto &cell : section->m_cells)
+		{
+			auto const &area{cell.area()};
+			auto const radius{static_cast<double>(area.radius)};
+			if ((area.center.x + radius < low.x) || (area.center.x - radius > high.x) || (area.center.z + radius < low.y) || (area.center.z - radius > high.y))
+				continue;
+			for (auto const *path : cell.m_paths)
+			{
+				if ((path == nullptr) || (path->eEnvironment != e_tunnel) || (path->CurrentSegment() == nullptr))
+					continue;
+				if (std::find(done.begin(), done.end(), path) != done.end())
+					continue;
+				done.push_back(path);
+				auto const &segment{*path->CurrentSegment()};
+				auto const steps{std::max(1, static_cast<int>(std::ceil(segment.GetLength() / TUNNEL_MASK_STEP)))};
+				for (int step = 0; step <= steps; ++step)
+				{
+					auto const point{segment.FastGetPoint(static_cast<double>(step) / steps)};
+					if ((point.x < low.x) || (point.x > high.x) || (point.z < low.y) || (point.z > high.y))
+						continue;
+					Points.emplace_back(static_cast<float>(point.x - corner.x), static_cast<float>(point.z - corner.y));
+				}
+			}
+		}
+	}
+}
+
 void sky_occlusion::gather_model(TModel3d *Model, std::uint32_t const Alpha, glm::dmat4 const &Transform, glm::dvec2 const &Corner, glm::dvec2 const &Far, std::vector<triangle> &Triangles)
 {
 	if ((Model == nullptr) || (Model->Root == nullptr))
@@ -811,6 +872,7 @@ void sky_occlusion::work()
 					std::fill_n(m_rawceiling.begin() + row, px, NONE_CEILING);
 					std::fill_n(m_top.begin() + row, px, NONE_TOP);
 					std::fill_n(m_ceiling.begin() + row, px, NONE_CEILING);
+					std::fill_n(m_mask.begin() + row, px, m_tunnels ? 0.f : 1.f);
 				}
 			}
 		}
@@ -897,6 +959,20 @@ void sky_occlusion::rasterize(raster_job &Job)
 		auto const row{static_cast<std::size_t>(z0 + z) * m_side + x0};
 		std::fill_n(m_rawtop.begin() + row, px, NONE_TOP);
 		std::fill_n(m_rawceiling.begin() + row, px, NONE_CEILING);
+		// the mask of the tunnels: by the distance of the middle of a texel from the nearest point along a track with the flag
+		for (int x = 0; x < px; ++x)
+		{
+			auto weight{1.f};
+			if (m_tunnels)
+			{
+				glm::vec2 const middle{(static_cast<float>(x) + 0.5f) * texel, (static_cast<float>(z) + 0.5f) * texel};
+				auto nearest{TUNNEL_MASK_REACH * TUNNEL_MASK_REACH};
+				for (auto const &point : Job.tunnels)
+					nearest = std::min(nearest, glm::dot(point - middle, point - middle));
+				weight = 1.f - smoothstep(TUNNEL_MASK_FULL, TUNNEL_MASK_REACH, std::sqrt(nearest));
+			}
+			m_mask[row + x] = weight;
+		}
 	}
 	for (auto const &entry : Job.triangles)
 	{
@@ -1137,7 +1213,9 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 			auto const c0{ceiling[index]};
 			auto heights{NEUTRAL_HEIGHTS};
 			auto value{NEUTRAL_OCCLUSION};
-			if (has_top(t0))
+			// away from the tunnels (Global.gfx_skyvisibility_tunnels) the texel is in the open, fading into it at the edge of the mask
+			auto const weight{m_mask[static_cast<std::size_t>(wrap(tile.y * px + z, m_side)) * m_side + wrap(tile.x * px + x, m_side)]};
+			if (has_top(t0) && (weight > 0.f))
 			{
 				heights.x = t0;
 				auto const origin{t0 + ABOVE_TOP};
@@ -1213,6 +1291,22 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 					}
 				}
 			}
+			if (weight <= 0.f)
+			{
+				heights = NEUTRAL_HEIGHTS;
+				value = NEUTRAL_OCCLUSION;
+			}
+			else if (weight < 1.f)
+			{
+				value.x = 1.f - (1.f - value.x) * weight;
+				value.y = 1.f - (1.f - value.y) * weight;
+				value.z = 1.f - (1.f - value.z) * weight;
+				if (weight < 0.5f)
+				{
+					heights.z = LIT_BELOW_ALWAYS;
+					value.w = LIT_ABOVE_ALWAYS;
+				}
+			}
 			auto const target{static_cast<std::size_t>(z) * px + x};
 			for (int c = 0; c < 4; ++c)
 			{
@@ -1253,6 +1347,7 @@ void sky_occlusion::draw_debug_ui()
 	ImGui::Combo("occlusion of the sky by the scenery (gfx.skyvisibility)", &Global.gfx_skyvisibility, levels, IM_ARRAYSIZE(levels));
 	ImGui::Checkbox("the sun held back too (gfx.skyvisibility.sun)", &Global.gfx_skyvisibility_sun);
 	ImGui::Checkbox("in the volumetric fog (gfx.skyvisibility.fog)", &Global.gfx_skyvisibility_fog);
+	ImGui::Checkbox("only around the tracks with the tunnel flag (gfx.skyvisibility.tunnels)", &Global.gfx_skyvisibility_tunnels);
 	ImGui::Checkbox("environment flags of the tracks darken as before (gfx.tunnelflags)", &Global.gfx_tunnelflags);
 	if (m_side <= 0)
 		return;

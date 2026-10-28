@@ -1889,6 +1889,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.postfx.autoexposure.key" ) { readvalue( gfx_postfx_autoexposure_key, 0.001f, 100.f ); }
     else if( Token == "gfx.postfx.autoexposure.min" ) { readvalue( gfx_postfx_autoexposure_min, -16.f, 0.f ); }
     else if( Token == "gfx.postfx.autoexposure.max" ) { readvalue( gfx_postfx_autoexposure_max, 0.f, 16.f ); }
+    else if( Token == "gfx.postfx.autoexposure.max.cab" ) { readvalue( gfx_postfx_autoexposure_max_cab, 0.f, 16.f ); }
     else if( Token == "gfx.postfx.autoexposure.speed.dark" ) { readvalue( gfx_postfx_autoexposure_speed_dark, 0.01f, 100.f ); }
     else if( Token == "gfx.postfx.autoexposure.speed.bright" ) { readvalue( gfx_postfx_autoexposure_speed_bright, 0.01f, 100.f ); }
     else if( Token == "gfx.postfx.autoexposure.compensation" ) { readvalue( gfx_postfx_autoexposure_compensation, -16.f, 16.f ); }
@@ -1953,6 +1954,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             0; }
     else if( Token == "gfx.skyvisibility.sun" ) { readswitch( gfx_skyvisibility_sun ); }
     else if( Token == "gfx.skyvisibility.fog" ) { readswitch( gfx_skyvisibility_fog ); }
+    else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
     else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
     else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
     else if( Token == "gfx.lights.shadows" ) {
@@ -2407,6 +2409,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.postfx.autoexposure.key", gfx_postfx_autoexposure_key );
     export_as_text( Output, "gfx.postfx.autoexposure.min", gfx_postfx_autoexposure_min );
     export_as_text( Output, "gfx.postfx.autoexposure.max", gfx_postfx_autoexposure_max );
+    export_as_text( Output, "gfx.postfx.autoexposure.max.cab", gfx_postfx_autoexposure_max_cab );
     export_as_text( Output, "gfx.postfx.autoexposure.speed.dark", gfx_postfx_autoexposure_speed_dark );
     export_as_text( Output, "gfx.postfx.autoexposure.speed.bright", gfx_postfx_autoexposure_speed_bright );
     export_as_text( Output, "gfx.postfx.autoexposure.compensation", gfx_postfx_autoexposure_compensation );
@@ -2440,6 +2443,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
     export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );
+    export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );

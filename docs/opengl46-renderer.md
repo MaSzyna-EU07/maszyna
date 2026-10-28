@@ -70,6 +70,7 @@ existed.
 | `gfx.postfx.autoexposure.key` | `0.3` | average luminance of the image the exposure is set for |
 | `gfx.postfx.autoexposure.min` | `-1.0` | the most the exposure darkens a bright image, EV |
 | `gfx.postfx.autoexposure.max` | `0.5` | the most the exposure brightens a dark image, EV. Kept low on purpose: tunnels and the night are not meant to be brightened much |
+| `gfx.postfx.autoexposure.max.cab` | `2.0` | the same seen from the cab by day: the eye takes to the light of the cab, which the bright windows would leave dark. It goes down to `gfx.postfx.autoexposure.max` with the daylight around the cab (the light level of the simulation, the occlusion of the sky): at night and in tunnels it's that one |
 | `gfx.postfx.autoexposure.speed.dark` | `1.0` | rate of adaptation to a darker image, 1/s |
 | `gfx.postfx.autoexposure.speed.bright` | `3.0` | rate of adaptation to a brighter image, 1/s |
 | `gfx.postfx.autoexposure.compensation` | `0.0` | fixed exposure correction, EV; applies also with the automatic exposure off |
@@ -270,6 +271,10 @@ so its probe is drawn without the sun and again with it in the next frame. The c
 before (the shadow map); the ambient light is left out of the probe, the cab gets it as before. `gfx.cabprobe no` is the old way
 (the share of the lamp in the ambient light, the sky in the reflections, `gfx.interior.bounce` for the sun).
 
+The parts of the cab of the `sunless` materials get no light of the sun; where it falls on them the ambient light is raised in the
+proportion their shadow tone gives (at most four times), and their shadow (of the walls of the cab, of the clouds) leaves the
+ambient light as it is. Before, the shadow darkened it to the shadow tone, so the whole cab went dark as in a tunnel.
+
 **The low poly interiors** of the vehicles (and the cab when it has no probe) get the sun which comes in through their windows
 and bounces around them as a share of the light of the sun outside (`gfx.interior.bounce`), held back by the scenery and the
 clouds like the sun; the interior isn't known well enough for more. Both kinds of interiors take only a share of the ambient
@@ -306,6 +311,14 @@ Things narrower than about three texels (poles, masts, fences) are left out. Fro
   and buildings towards it, under the ceiling what the rays reach under the vault from the portal (a low sun shines a little way
   into a tunnel).
 
+With `gfx.skyvisibility.tunnels yes` (the default) all this is done only around the tracks with the `tunnel` flag (see the table):
+the flag tells where a tunnel is, the geometry how dark it is and where it begins.
+
+A point is taken as under the scenery only where a ceiling is over it (a tunnel, a bridge, a roof). Under the top with no
+ceiling over it, which a surface that is seen can't really be (the edges of platforms and walls the texels are blended over,
+holes cut in the terrain, parts of models sunk in the ground), it's lit as at the top, in the open: no darkness of a tunnel
+anywhere but under something.
+
 The shading takes the ambient light, the reflection of the sky and the sun by them, wherever a surface is (the half of a train
 in the tunnel is dark, the other half in the light, with the passage over a few metres at the portal). The headlights, the lamps
 and the light of the cab are direct light and are not held back; the headlights fade in daylight by the light around the
@@ -330,6 +343,7 @@ and the scenery is lit as in the open everywhere.
 | `gfx.skyvisibility` | `medium` | `no`/`low`/`medium`/`high` (or 0..3), see above |
 | `gfx.skyvisibility.sun yes/no` | `yes` | the sun is held back too (beyond the reach of the shadow map, and in the tunnels whatever the shadow map holds); `no`: the sun only by the shadow map |
 | `gfx.skyvisibility.fog yes/no` | `yes` | the light of the volumetric fog is held back too |
+| `gfx.skyvisibility.tunnels yes/no` | `yes` | the occlusion only around the tracks with the `tunnel` flag: whole within 20 m of them, fading out by 35 m; there the geometry makes the tunnel dark (the portals, the passage at them, the half of a train in the tunnel), elsewhere the scenery is lit as in the open (no darkening between platforms, in cuttings, under shelters). `no`: everywhere, by the geometry alone |
 | `gfx.tunnelflags yes/no` | `no` | `yes`: the flags `tunnel`/`canyon` of the tracks darken the tracks and the vehicles on them, as before (on top of the occlusion) |
 
 All of them can be changed while the simulator runs, in the **Sky and exposure** debug window, which also shows views of the

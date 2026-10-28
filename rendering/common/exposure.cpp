@@ -11,7 +11,12 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/exposure.h"
 
 #include "gl/ubo.h"
+#include "rendering/common/skyocclusion.h"
+#include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Train.h"
 
 namespace
 {
@@ -28,6 +33,18 @@ float const BLOOM_KNEE{0.5f};
 float const WHITE_BALANCE_REFERENCE{6500.f};
 // distance off the daylight locus (duv, cie 1960 ucs) of the tint at its ends (-1, 1)
 float const WHITE_BALANCE_TINT_DUV{0.02f};
+
+// how much of the daylight is around the camera in the cab of its vehicle, 0..1: 0 out of the cab, at night, in a tunnel. the eye
+// seated in the cab takes to its light, which the image of the cab with the bright windows would leave dark
+float cab_daylight()
+{
+	if (FreeFlyModeFlag || (false == Global.render_cab) || (simulation::Train == nullptr))
+		return 0.f;
+	auto const *vehicle{simulation::Train->Dynamic()};
+	if ((vehicle == nullptr) || (false == vehicle->bDisplayCab) || (vehicle->mdKabina == nullptr) || (vehicle->mdKabina == vehicle->mdModel))
+		return 0.f;
+	return std::clamp(static_cast<float>(Global.fLuminance) * gfx::vehicle_light_level(vehicle), 0.f, 1.f);
+}
 
 // chromaticity (cie xy) of the cie daylight of the correlated colour temperature Kelvin; the formula holds for 4000..25000 K
 glm::dvec2 daylight_chromaticity(double const Kelvin)
@@ -94,7 +111,9 @@ glm::vec4 exposure_settings::adaptation(double const Deltatime)
 
 glm::vec2 exposure_settings::exposure_range()
 {
-	return glm::vec2{std::exp2(Global.gfx_postfx_autoexposure_min), std::exp2(Global.gfx_postfx_autoexposure_max)};
+	// seen from the cab by day the image may be brightened more (gfx.postfx.autoexposure.max.cab), by the daylight around the cab
+	auto const highest{std::max(Global.gfx_postfx_autoexposure_max, Global.gfx_postfx_autoexposure_max + (Global.gfx_postfx_autoexposure_max_cab - Global.gfx_postfx_autoexposure_max) * cab_daylight())};
+	return glm::vec2{std::exp2(Global.gfx_postfx_autoexposure_min), std::exp2(highest)};
 }
 
 std::vector<glm::ivec2> exposure_settings::bloom_sizes(int const Width, int const Height)
@@ -137,6 +156,7 @@ void exposure_settings::draw_debug_ui(float const *Readback)
 	ImGui::SliderFloat("key", &Global.gfx_postfx_autoexposure_key, 0.02f, 2.f, "%.3f", ImGuiSliderFlags_Logarithmic);
 	ImGui::SliderFloat("min EV", &Global.gfx_postfx_autoexposure_min, -4.f, 0.f);
 	ImGui::SliderFloat("max EV", &Global.gfx_postfx_autoexposure_max, 0.f, 4.f);
+	ImGui::SliderFloat("max EV in the cab by day", &Global.gfx_postfx_autoexposure_max_cab, 0.f, 4.f);
 	ImGui::SliderFloat("adaptation to dark (1/s)", &Global.gfx_postfx_autoexposure_speed_dark, 0.05f, 10.f);
 	ImGui::SliderFloat("adaptation to bright (1/s)", &Global.gfx_postfx_autoexposure_speed_bright, 0.05f, 10.f);
 	ImGui::SliderFloat("compensation EV", &Global.gfx_postfx_autoexposure_compensation, -4.f, 4.f);

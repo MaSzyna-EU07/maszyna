@@ -466,6 +466,7 @@ struct global_settings {
     float gfx_postfx_autoexposure_key { 0.3f }; // average luminance of the image the exposure is set for
     float gfx_postfx_autoexposure_min { -1.f }; // lowest exposure correction, EV (darkening of bright images)
     float gfx_postfx_autoexposure_max { 0.5f }; // highest exposure correction, EV (brightening of dark images, tunnels)
+    float gfx_postfx_autoexposure_max_cab { 2.f }; // the same seen from the cab by day: the eye takes to the light of the cab
     float gfx_postfx_autoexposure_speed_dark { 1.f }; // rate of adaptation to a darker image, 1/s
     float gfx_postfx_autoexposure_speed_bright { 3.f }; // rate of adaptation to a brighter image, 1/s
     float gfx_postfx_autoexposure_compensation { 0.f }; // fixed exposure correction, EV, applied with and without the adaptation
@@ -523,6 +524,9 @@ struct global_settings {
     int gfx_skyvisibility { 2 };
     bool gfx_skyvisibility_sun { true };
     bool gfx_skyvisibility_fog { true };
+    // the occlusion only around the tracks with the tunnel flag (the geometry there makes the tunnel dark, the portals, the passage at
+    // them); elsewhere the scenery is lit as in the open. off: everywhere
+    bool gfx_skyvisibility_tunnels { true };
     // the environment flags of the tracks (tunnel, canyon) darken the tracks and the vehicles on them, as before the track T. off: the
     // renderers leave them alone and the light comes from the geometry (gfx_skyvisibility); the flags stay in the scenery files for
     // the sound and the driver

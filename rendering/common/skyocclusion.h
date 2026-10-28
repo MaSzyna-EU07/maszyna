@@ -142,6 +142,8 @@ class sky_occlusion
 		int slot{0};
 		std::uint32_t generation{0};
 		std::vector<triangle> triangles;
+		// points along the tracks with the tunnel flag over the tile and around it, x and z relative to the corner of the tile
+		std::vector<glm::vec2> tunnels;
 	};
 	// what it gives back: the heights (four per texel) and the occlusion of the texels of a tile
 	struct tile_result
@@ -175,6 +177,8 @@ class sky_occlusion
 	void gather(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<triangle> &Triangles);
 	void gather_model(TModel3d *Model, std::uint32_t const Alpha, glm::dmat4 const &Transform, glm::dvec2 const &Corner, glm::dvec2 const &Far, std::vector<triangle> &Triangles);
 	void gather_submodel(TSubModel *Submodel, std::uint32_t const Alpha, glm::dmat4 const &Transform, glm::dvec2 const &Corner, glm::dvec2 const &Far, std::vector<triangle> &Triangles);
+	// the points along the tracks with the tunnel flag within the reach of the mask of the tunnels of a tile (gfx_skyvisibility_tunnels)
+	void gather_tunnels(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec2> &Points);
 	// what the scenery over a tile is made of, cheap to work out: a change of it means the tile is gathered again
 	std::uint64_t signature(scene::basic_region *Region, glm::ivec2 const &Tile);
 	// the values of a tile nothing is known of yet, in the textures and in the copy of the cpu
@@ -191,6 +195,8 @@ class sky_occlusion
 	layout m_layout;
 	int m_level{0};
 	bool m_sun{true};
+	// the occlusion only around the tracks with the tunnel flag, as at the start (Global.gfx_skyvisibility_tunnels)
+	bool m_tunnels{true};
 	std::vector<slot> m_slots;
 	glm::ivec2 m_cameratile{0};
 	glm::dvec3 m_camera{0.0};
@@ -220,6 +226,9 @@ class sky_occlusion
 	std::thread m_thread;
 	// the maps of the thread: the top and the ceiling as rasterized, and opened
 	std::vector<float> m_rawtop, m_rawceiling, m_top, m_ceiling;
+	// how much of the occlusion a texel keeps, 0..1, by its distance from the tracks with the tunnel flag (1 everywhere without
+	// m_tunnels)
+	std::vector<float> m_mask;
 
 	// statistics
 	std::uint32_t m_gathered{0};

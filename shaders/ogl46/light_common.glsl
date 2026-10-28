@@ -825,7 +825,7 @@ vec3 cab_probe_reflection(vec3 surroundings, vec3 fragnormal, float roughness, v
 // Texturecolor is the albedo (the base colour of a metal), Specularity the specular level of a dielectric (0.5 is the
 // reflectance of 4% at normal incidence), Reflectivity how much of the reflected surroundings is the cubemap rather than the
 // ambient light, Shadowtone the share of the sun left in its shadow (1 for the materials which take no shadows).
-// a Sunless surface (the interior of a cab) gets no light of the sun, its shadow only darkens the ambient light
+// a Sunless surface (the interior of a cab) gets no light of the sun, where the sun falls it brightens the ambient light
 vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone, bool sunless)
 {
     // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
@@ -964,10 +964,12 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     float cubemap_shadow = 1.0;
     if (sunless)
     {
-        // the sun adds no light in the cab, where it would fall its shadow darkens the ambient light
+        // the sun adds no light of its own in the cab; where it falls the ambient light is raised as much as the shadow used to lower
+        // it (the share Shadowtone, at most 4 times), so the shadows of the walls of the cab and of the clouds leave the ambient light
+        // as it is instead of darkening the cab
         float diffuseamount = sun_NdotL * lights[0].intensity;
-        float darkness = (shadowtone < 1.0 ? max(shadow, 1.0 - cloudsun) : 0.0);
-        fragcolor = mix(fragcolor, fragcolor * shadowtone, clamp(diffuseamount * darkness, 0.0, 1.0));
+        float sunlit = (shadowtone < 1.0 ? 1.0 - max(shadow, 1.0 - cloudsun) : 0.0);
+        fragcolor *= 1.0 + clamp(diffuseamount * sunlit, 0.0, 1.0) * (1.0 - shadowtone) / max(shadowtone, 0.25);
     }
     else
         cubemap_shadow = 1.0 - (1.0 - shadowtone) * shadow * 0.5;
@@ -1003,7 +1005,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     return shade_surface(fragcolor, fragnormal, texturecolor, reflectivity, specularity, shadowtone, false);
 }
 
-// the interior of a cab: no light of the sun, its shadow darkens the ambient light
+// the interior of a cab: no light of the sun, where it falls it brightens the ambient light
 vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
     return shade_surface(fragcolor, fragnormal, texturecolor, reflectivity, specularity, shadowtone, true);
