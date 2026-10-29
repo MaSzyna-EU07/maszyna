@@ -293,9 +293,10 @@ class ring_cache
 	void reset(frame_ring *Ring, VkDeviceSize Part);
 	// Size bytes aligned to Alignment (at most 256); empty when the ring is full
 	ring_slice allocate(VkDeviceSize Size, VkDeviceSize Alignment);
-	// the same, only when the slice fits in the part held and ends before Limit (an offset in the buffer); empty, with nothing taken,
-	// otherwise
-	ring_slice allocate_before(VkDeviceSize Size, VkDeviceSize Alignment, VkDeviceSize Limit);
+	// the same, only when the slice fits in the part held and lies within Base to Limit (offsets in the buffer: a window the shaders
+	// index from Base); empty, with nothing taken, otherwise. the part held may lie below Base: a large slice which got a part of its
+	// own opened the window above it
+	ring_slice allocate_before(VkDeviceSize Size, VkDeviceSize Alignment, VkDeviceSize Base, VkDeviceSize Limit);
 
   private:
 	// where the next slice aligned to Alignment would begin in the part held, as an offset in the buffer

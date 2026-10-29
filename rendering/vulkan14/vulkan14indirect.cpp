@@ -353,7 +353,7 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 		auto &draws{scene.draws};
 		auto &window{draw.draws_window};
 		auto const size{static_cast<VkDeviceSize>(Count) * draws.stride};
-		auto slice{(window.open && (size <= draws.window)) ? draw.draws_cache.allocate_before(size, draws.stride, window.base + draws.window) : vk14::ring_slice{}};
+		auto slice{(window.open && (size <= draws.window)) ? draw.draws_cache.allocate_before(size, draws.stride, window.base, window.base + draws.window) : vk14::ring_slice{}};
 		if ((false == bool(slice)) && (size <= draws.window))
 		{
 			slice = draw.draws_cache.allocate(size, draws.stride);

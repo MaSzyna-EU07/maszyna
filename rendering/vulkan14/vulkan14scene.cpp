@@ -1852,7 +1852,7 @@ std::uint32_t vulkan14_renderer::push_draw_block()
 	auto &draws{m_context->scene.draws};
 	auto &draw{*m_draw};
 	auto &window{draw.draws_window};
-	auto slice{window.open ? draw.draws_cache.allocate_before(draws.stride, draws.stride, window.base + draws.window) : vk14::ring_slice{}};
+	auto slice{window.open ? draw.draws_cache.allocate_before(draws.stride, draws.stride, window.base, window.base + draws.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
 		slice = draw.draws_cache.allocate(draws.stride, draws.stride);
@@ -1884,7 +1884,7 @@ std::uint32_t vulkan14_renderer::walk_instances(glm::mat4 const *Modelviews, std
 	auto const capacity{static_cast<std::size_t>(instances.window / instances.stride) - 1};
 	auto const count{std::min(Count, capacity)};
 	auto const size{static_cast<VkDeviceSize>(count) * instances.stride};
-	auto slice{window.open ? draw.instances_cache.allocate_before(size, instances.stride, window.base + instances.window) : vk14::ring_slice{}};
+	auto slice{window.open ? draw.instances_cache.allocate_before(size, instances.stride, window.base, window.base + instances.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
 		// a new window, which begins with the identity of the draws which aren't instanced, followed by the instances

@@ -764,14 +764,14 @@ VkDeviceSize ring_cache::next(VkDeviceSize const Alignment) const
 	return (m_part.offset + m_used + alignment - 1) / alignment * alignment;
 }
 
-ring_slice ring_cache::allocate_before(VkDeviceSize const Size, VkDeviceSize const Alignment, VkDeviceSize const Limit)
+ring_slice ring_cache::allocate_before(VkDeviceSize const Size, VkDeviceSize const Alignment, VkDeviceSize const Base, VkDeviceSize const Limit)
 {
 	if (false == bool(m_part))
 	{
 		return {};
 	}
 	auto const offset{next(Alignment)};
-	if ((offset + Size > m_part.offset + m_part.size) || (offset + Size > Limit))
+	if ((offset < Base) || (offset + Size > m_part.offset + m_part.size) || (offset + Size > Limit))
 	{
 		return {};
 	}
@@ -786,7 +786,7 @@ ring_slice ring_cache::allocate_before(VkDeviceSize const Size, VkDeviceSize con
 
 ring_slice ring_cache::allocate(VkDeviceSize const Size, VkDeviceSize const Alignment)
 {
-	if (auto const slice{allocate_before(Size, Alignment, std::numeric_limits<VkDeviceSize>::max())})
+	if (auto const slice{allocate_before(Size, Alignment, 0, std::numeric_limits<VkDeviceSize>::max())})
 	{
 		return slice;
 	}
@@ -812,7 +812,7 @@ ring_slice ring_cache::allocate(VkDeviceSize const Size, VkDeviceSize const Alig
 			return {};
 		}
 	}
-	return allocate_before(Size, Alignment, std::numeric_limits<VkDeviceSize>::max());
+	return allocate_before(Size, Alignment, 0, std::numeric_limits<VkDeviceSize>::max());
 }
 
 } // namespace vk14
