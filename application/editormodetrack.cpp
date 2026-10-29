@@ -1980,6 +1980,8 @@ std::string editor_mode::track_readout() const
 			text += "\n" + vertical;
 		if (snapped)
 			text += "\n" + format(STR_C("joins %s"), name(target.track).c_str());
+		for (auto const &warning : switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces))
+			text += "\n" + warning;
 		if (false == reason.empty())
 			text += "\n" + reason;
 		return text + "\n" + track_shaping(snapped);
@@ -2052,6 +2054,8 @@ std::string editor_mode::track_readout() const
 			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
 				text += "\n" + vertical;
 		}
+		for (auto const &warning : switch_exit_warnings(lay.start.track, lay.points.empty() ? lay.mouse : lay.points.front(), lay.mouse_snap.track, lay.mouse_snap.position, lay.preview))
+			text += "\n" + warning;
 		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
 			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());
 		if (false == lay.preview_error.empty())

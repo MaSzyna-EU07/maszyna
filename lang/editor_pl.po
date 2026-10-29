@@ -12444,3 +12444,9 @@ msgstr "Tor przecinający rozjazdu krzyżowego jest dalej połączony: rozjazd z
 
 msgid "Slip %s moved %.2f m along its track, its crossing track with it"
 msgstr "Rozjazd krzyżowy %s przesunięty o %.2f m wzdłuż toru, razem z torem przecinającym"
+
+msgid "Behind the switch the curvature changes at once by a sudden change of the cant deficiency of %.0f mm, over the %.0f mm allowed at %.0f km/h (table 9.15)"
+msgstr "Za rozjazdem krzywizna zmienia się skokowo: nagła zmiana niedomiaru przechyłki %.0f mm, ponad dopuszczalne %.0f mm przy %.0f km/h (tab. 9.15)"
+
+msgid "The curve behind the switch begins %.1f m after the end of its curve, closer than the %.1f m which take the sudden changes of the cant deficiency apart: together %.0f mm, over the %.0f mm allowed at %.0f km/h (tables 9.15, 9.16)"
+msgstr "Łuk za rozjazdem zaczyna się %.1f m za końcem jego łuku, bliżej niż %.1f m odcinka pośredniego, który rozdziela nagłe zmiany niedomiaru przechyłki: łącznie %.0f mm, ponad dopuszczalne %.0f mm przy %.0f km/h (tab. 9.15, 9.16)"

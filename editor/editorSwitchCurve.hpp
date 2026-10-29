@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -75,6 +76,21 @@ struct slip_report
 // Tracks: the two tracks through the slip, Curves: its slip curves, each from its start, the stations from 0 there; Line as for a switch,
 // From and To the stations of the ends of the first track through the slip along it
 slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std::vector<std::vector<track_point>> const &Curves, std::vector<track_point> const &Line, double const From, double const To);
+
+// a line laid on from the end of the diverging track of a switch, as ST-T1-A6 sees the sudden changes of the cant deficiency right behind
+// the switch (9.11): Curvature the switch ends with (1/m, positive to the left as the line runs on), Straight metres before its end
+// over a straight frog, then the pieces of the line, each its length and its curvature at its start and at its end. The first two
+// sudden changes nearer than the intermediate element of table 9.16 taken together, else each one alone, against table 9.15 for track
+// connections at the Speed (km/h); Gauge between the axes of the rails, mm
+struct exit_report
+{
+	double apart{-1.0}; // m, from the end of the curve of the switch to the next sudden change, -1 none
+	double change{0.0}; // mm, the largest sudden change of the cant deficiency judged
+	double allowed{0.0}; // mm, table 9.15
+	double element{0.0}; // m, the intermediate element of table 9.16
+	std::vector<std::string> warnings;
+};
+exit_report check_exit(double const Curvature, double const Straight, std::vector<std::array<double, 3>> const &Line, double const Speed, double const Gauge = 1500.0);
 
 // the start of a switch Length long, going Direction along the line, drawn to where its start or its end meets an end of a cant ramp,
 // or to where it keeps the 6 m off it, when the station pressed is within Reach of that; What receives which of them, empty for none

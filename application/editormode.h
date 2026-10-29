@@ -1792,6 +1792,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the tracks the laying under way goes on from and to
 	std::pair<TTrack const *, TTrack const *> laying_ends() const;
 	std::string design_speed_of(TTrack const *From, TTrack const *To) const;
+	// what ST-T1-A6 says of the sudden changes of the cant deficiency right behind a switch the pieces laid come out of at Start (From),
+	// or go into at End (To): of the end of its curve and the first sudden change of the pieces (9.11, tables 9.15, 9.16)
+	std::vector<std::string> switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const;
 	void give_own_speed(std::vector<TTrack *> const &Created) const;
 	std::vector<segment_data> join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
 	                                      std::string &Error) const;

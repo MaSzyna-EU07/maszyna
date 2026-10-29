@@ -612,6 +612,61 @@ std::string editor_mode::design_speed_of(TTrack const *From, TTrack const *To) c
 	return format(STR_C("design speed %.0f km/h, set for the laying"), speed);
 }
 
+std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const
+{
+	auto const *switched{From != nullptr && From->eType == tt_Switch ? From : To != nullptr && To->eType == tt_Switch ? To : nullptr};
+	if (switched == nullptr || Pieces.empty())
+		return {};
+	auto const &joint{switched == From ? Start : End};
+	// 1/m, positive to the left, as the piece runs
+	auto const curvature_at = [](segment_data const &Piece, double const T) {
+		bezier const curve{Piece};
+		auto const first{curve.first(T)};
+		auto const second{curve.second(T)};
+		auto const speed{std::hypot(first.x, first.z)};
+		return speed < 1e-9 ? 0.0 : (first.x * second.z - first.z * second.x) / (speed * speed * speed);
+	};
+	// the path of the switch ending at the joint, its pieces from the joint back into the switch, each with its curvature at its ends as
+	// the line runs on beyond the joint
+	std::vector<std::array<double, 3>> back;
+	for (auto const &path : switched->m_paths)
+		for (auto const atend : {false, true})
+		{
+			if (false == back.empty() || glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], joint) > 0.05)
+				continue;
+			std::vector<segment_data> pieces{path.pieces.empty() ? std::vector<segment_data>{path} : path.pieces};
+			if (atend)
+				std::reverse(pieces.begin(), pieces.end());
+			for (auto const &piece : pieces)
+				back.push_back({bezier{piece}.plan_length(), atend ? curvature_at(piece, 1.0) : -curvature_at(piece, 0.0), atend ? curvature_at(piece, 0.0) : -curvature_at(piece, 1.0)});
+		}
+	// the curve the switch ends with, and the straight of a straight frog after it
+	double straight{0.0};
+	std::optional<double> curvature;
+	for (auto const &[length, inner, outer] : back)
+	{
+		if (std::abs(inner) > 1e-4 || std::abs(outer) > 1e-4)
+		{
+			curvature = inner;
+			break;
+		}
+		straight += length;
+	}
+	if (false == curvature.has_value())
+		return {};
+	// the pieces laid as the line runs on from the switch
+	std::vector<std::array<double, 3>> line;
+	if (switched == From)
+		for (auto const &piece : Pieces)
+			line.push_back({bezier{piece}.plan_length(), curvature_at(piece, 0.0), curvature_at(piece, 1.0)});
+	else
+		for (auto piece{Pieces.rbegin()}; piece != Pieces.rend(); ++piece)
+			line.push_back({bezier{*piece}.plan_length(), -curvature_at(*piece, 1.0), -curvature_at(*piece, 0.0)});
+	// no faster than the diverging track of the switch lets
+	auto const speed{std::min(design_speed(From, To), editor_track::diverging_speed(1.0 / std::abs(*curvature)))};
+	return switch_curve::check_exit(*curvature, straight, line, speed, laying_norms().gauge).warnings;
+}
+
 void editor_mode::give_own_speed(std::vector<TTrack *> const &Created) const
 {
 	if (false == m_lay.own_speed || m_lay.style.velocity <= 0.0)
@@ -725,6 +780,8 @@ void editor_mode::finish_extend()
 	first_step_done(first_step::laid);
 	if (target.track != nullptr)
 		first_step_done(first_step::join);
+	if (auto const warnings{switch_exit_warnings(style, pieces.front().points[segment_data::point::start], target.track, target.position, pieces)}; false == warnings.empty())
+		ui()->set_status(lines_of(warnings), true);
 	m_node = created.back();
 	ui()->set_node(m_node);
 	nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
@@ -1610,6 +1667,8 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 				tool.status += "\n" + format(STR_C("Curve %d %s"), curve.vertex + 1, on.c_str());
 	if (eased.has_value() && false == eased->note.empty())
 		tool.status += "\n" + eased->note;
+	for (auto const &warning : switch_exit_warnings(tool.start.track, tool.points.front(), End.track, End.position, pieces))
+		tool.status += "\n" + warning;
 	{
 		std::vector<std::pair<TTrack *, bool>> run;
 		if (tool.start.track != nullptr && tool.start.track->eType == tt_Normal)

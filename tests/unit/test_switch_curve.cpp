@@ -167,3 +167,33 @@ TEST_CASE("slip bent into a curve: the cant of the side track, a track through i
 	auto const report{switch_curve::check_slip({first, arc(33.2, angle, 1.0 / 1000.0)}, {arc(21.0, 0.0, 1.0 / 190.0)}, curve, 150.0, 183.2)};
 	CHECK(says(report.warnings, "9.7 pkt 12"));
 }
+
+TEST_CASE("switch exit: a curve right behind a straight frog, its sudden changes of the cant deficiency apart or together") {
+	double const sw{1.0 / 190.0};
+	// R 190 on behind a frog straight for 6.09 m, at 40 km/h: apart, 99 mm at the end, within the 130 mm of table 9.15
+	auto const same{switch_curve::check_exit(sw, 6.092, {{40.0, sw, sw}}, 40.0)};
+	CHECK(same.apart == doctest::Approx(6.092));
+	CHECK(same.element == doctest::Approx(6.0));
+	CHECK(same.change == doctest::Approx(99.4).epsilon(0.01));
+	CHECK(same.warnings.empty());
+	// the other way behind a frog straight of 1.66 m only: together, 199 mm, over the 130 mm
+	auto const reverse{switch_curve::check_exit(sw, 1.662, {{40.0, -sw, -sw}}, 40.0)};
+	CHECK(reverse.apart == doctest::Approx(1.662));
+	CHECK(reverse.change == doctest::Approx(198.8).epsilon(0.01));
+	REQUIRE(reverse.warnings.size() == 1);
+	CHECK(says(reverse.warnings, "tables 9.15, 9.16"));
+	// the same way behind it: together the curvature hardly changes
+	CHECK(switch_curve::check_exit(sw, 1.662, {{40.0, sw, sw}}, 40.0).warnings.empty());
+	// a straight of 5 m laid on first: 6.66 m apart, the curve the other way alone, 99 mm
+	auto const later{switch_curve::check_exit(sw, 1.662, {{5.0, 0.0, 0.0}, {40.0, -sw, -sw}}, 40.0)};
+	CHECK(later.apart == doctest::Approx(6.662));
+	CHECK(later.warnings.empty());
+	// a sharp curve of R 100 alone: 189 mm
+	CHECK(says(switch_curve::check_exit(sw, 6.092, {{30.0, 0.01, 0.01}}, 40.0).warnings, "table 9.15"));
+	// a transition out of the frog straight: no sudden change behind it
+	CHECK(switch_curve::check_exit(sw, 1.662, {{20.0, 0.0, -sw}, {20.0, -sw, -sw}}, 40.0).warnings.empty());
+	// the curve of a switch with a curved frog going on: nothing of the switch to judge
+	auto const on{switch_curve::check_exit(1.0 / 300.0, 0.0, {{30.0, 1.0 / 300.0, 1.0 / 300.0}}, 50.0)};
+	CHECK(on.apart < 0.0);
+	CHECK(on.warnings.empty());
+}

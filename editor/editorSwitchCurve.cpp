@@ -254,6 +254,68 @@ slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std:
 	return report;
 }
 
+exit_report check_exit(double const Curvature, double const Straight, std::vector<std::array<double, 3>> const &Line, double const Speed, double const Gauge)
+{
+	exit_report report;
+	// table 9.15 and table 9.16, track connections
+	report.allowed = Speed <= 60.0 ? 130.0 : Speed <= 100.0 ? 100.0 : Speed <= 160.0 ? 80.0 : 60.0;
+	report.element = Speed <= 60.0 ? 6.0 : Speed <= 100.0 ? 0.15 * Speed : 0.25 * Speed;
+	// mm of the cant deficiency the change of the curvature makes at once: 11.8 V^2 / R at the standard gauge
+	auto const sudden = [&](double const Before, double const After) { return Gauge * Speed * Speed / (9.81 * 3.6 * 3.6) * std::abs(After - Before); };
+	// 1/m, a change of the curvature as large at once is a sudden one
+	constexpr double kSudden{1e-4};
+	struct change
+	{
+		double along; // from the end of the switch
+		double before;
+		double after;
+	};
+	std::vector<change> changes;
+	auto curvature{Curvature};
+	if (Straight > 0.0 && std::abs(Curvature) > kSudden)
+	{
+		changes.push_back({-Straight, Curvature, 0.0});
+		curvature = 0.0;
+	}
+	double along{0.0};
+	for (auto const &[length, start, end] : Line)
+	{
+		if (std::abs(start - curvature) > kSudden)
+			changes.push_back({along, curvature, start});
+		curvature = end;
+		along += length;
+	}
+	// the curve of the switch going on into the line: nothing of the switch to judge
+	if (changes.empty() || changes.front().along > 1e-6)
+		return report;
+	auto const &first{changes.front()};
+	auto const alone = [&](change const &Change) {
+		auto const value{sudden(Change.before, Change.after)};
+		report.change = std::max(report.change, value);
+		if (value > report.allowed)
+			report.warnings.emplace_back(format(STR_C("Behind the switch the curvature changes at once by a sudden change of the cant deficiency of %.0f mm, over the %.0f mm allowed at %.0f km/h (table 9.15)"), value, report.allowed, Speed));
+	};
+	if (changes.size() > 1)
+	{
+		auto const &next{changes[1]};
+		report.apart = next.along - first.along;
+		if (report.apart < report.element)
+		{
+			// taken together, from before the first one to after the next one (9.11 pkt 8b, 9)
+			report.change = sudden(first.before, next.after);
+			if (report.change > report.allowed)
+				report.warnings.emplace_back(format(STR_C("The curve behind the switch begins %.1f m after the end of its curve, closer than the %.1f m which take the sudden changes of the cant deficiency apart: together %.0f mm, over the %.0f mm allowed at %.0f km/h (tables 9.15, 9.16)"),
+				                                    report.apart, report.element, report.change, report.allowed, Speed));
+			return report;
+		}
+		alone(next);
+	}
+	// the end of the curve of the switch at its end, not within it over a straight frog: that one is the switch's own
+	if (first.along > -1e-6)
+		alone(first);
+	return report;
+}
+
 double snapped_start(std::vector<double> const &Ramps, double const Pressed, double const Length, int const Direction, double const Reach, std::string *What)
 {
 	auto const d{Direction < 0 ? -1.0 : 1.0};
