@@ -64,15 +64,25 @@ float scene_walk::editor_track_view_range(float const Range, bool const Apply)
 // the top view of the editor may leave the ballast of the railway out, for the ground under the tracks to show
 bool scene_walk::editor_ballast_hidden(TTrack const *Track, bool const Colour)
 {
-	return Colour && EditorModeFlag && Global.EditorOrtho && false == Global.EditorOrthoBallast && (Track->iCategoryFlag & 15) == 1;
+	return Colour && EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 0 && (Track->iCategoryFlag & 15) == 1;
 }
 
-// the top view draws the scenery as far as the tracks; its models keep their own ranges
-bool scene_walk::editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
+// ...or the sleepers and the timbers of the switches too, the rails alone as on a plan
+bool scene_walk::editor_sleepers_hidden()
 {
-	if (false == Apply || Global.EditorOrtho)
+	return EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 1;
+}
+
+// far off the camera the tracks of the editor are drawn alone, the terrain, the models and the rest only as far as the
+// scenery reaches in the game; the top view measures it off its centre on the ground, its camera being high above it
+bool scene_walk::editor_far_tracks_only(bool const Apply, scene::bounding_area const &Area, glm::dvec3 const &Camera, double const SceneryLimit)
+{
+	if (false == Apply)
 		return false;
-	double nearest = glm::length(Cell->m_area.center - Camera) - static_cast<double>(Cell->m_area.radius);
+	auto offset{Area.center - Camera};
+	if (Global.EditorOrtho)
+		offset.y = 0.0;
+	double nearest = glm::length(offset) - static_cast<double>(Area.radius);
 	if (nearest < 0.0)
 		nearest = 0.0;
 	return nearest > SceneryLimit;
@@ -355,6 +365,11 @@ void scene_walk::Render(section_sequence::iterator First, section_sequence::iter
 		break;
 	}
 
+	// the ground of the sections far off, the terrain of the editor among it, isn't drawn with the tracks reaching there
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery)};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
+
 	while (First != Last)
 	{
 
@@ -374,7 +389,7 @@ void scene_walk::Render(section_sequence::iterator First, section_sequence::iter
 		case rendermode::shadows:
         case rendermode::pickscenery:
 		{
-			if (false == section->m_shapes.empty())
+			if (false == section->m_shapes.empty() && false == editor_far_tracks_only(far_paths, section->m_area, camera, scenery_limit))
 			{
 				// since all shapes of the section share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -471,7 +486,7 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 			gfx::walk_sync::change change{cell->animation_pending(m_framestamp)};
 			cell->RaAnimate(m_framestamp);
 		}
-		bool const tracks_only{editor_far_tracks_only(far_paths, cell, camera, scenery_limit)};
+		bool const tracks_only{editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit)};
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -584,7 +599,7 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 		case rendermode::color:
         case rendermode::shadows:
         {
-			if (editor_far_tracks_only(far_paths, cell, camera, scenery_limit))
+			if (editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit))
 				break;
             // TBD, TODO: refactor in to a method to reuse in branch below?
 			// opaque parts of instanced models -- accumulate this cell's buckets
@@ -681,7 +696,7 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
         }
         case rendermode::pickscenery:
 		{
-			if (editor_far_tracks_only(far_paths, cell, camera, scenery_limit))
+			if (editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit))
 				break;
 			// opaque parts of instanced models
 			// same procedure like with regular render, but each node receives custom colour used for picking.
@@ -2456,6 +2471,7 @@ void scene_walk::Render(scene::basic_cell::path_sequence::const_iterator First, 
 	switch( m_renderpass.draw_mode ) {
 	case rendermode::color:
 	case rendermode::reflections: {
+		if( editor_sleepers_hidden() ) { break; }
 		for( auto first { First }; first != Last; ++first ) {
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }
@@ -2540,6 +2556,11 @@ void scene_walk::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequen
 {
 
 	// NOTE: this method is launched only during color pass therefore we don't bother with mode test here
+	// the cells far off with the tracks alone drawn there have nothing translucent drawn either
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
+	auto const distant = [&](scene::basic_cell const *Cell) { return editor_far_tracks_only(far_paths, Cell->m_area, camera, scenery_limit); };
 	// first pass draws elements which we know are located in section banks, to reduce vbo switching
 	{
 		auto first{First};
@@ -2548,7 +2569,7 @@ void scene_walk::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequen
 
 			auto const *cell = first->second;
 
-			if (false == cell->m_shapestranslucent.empty())
+			if (false == cell->m_shapestranslucent.empty() && false == distant(cell))
 			{
 				// since all shapes of the cell share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -2575,6 +2596,11 @@ void scene_walk::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequen
 
 			auto const *cell = first->second;
 			gfx::walk_sync::yield();
+			if (distant(cell))
+			{
+				++first;
+				continue;
+			}
 
 			// translucent parts of instanced models
 			for (auto *instance : cell->m_instancetranslucent)
@@ -2602,7 +2628,7 @@ void scene_walk::Render_Alpha(cell_sequence::reverse_iterator First, cell_sequen
 
 			auto const *cell = first->second;
 
-			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())))
+			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())) && false == distant(cell))
 			{
 				// since all shapes of the cell share center point we can optimize out a few calls here
 				::glPushMatrix();

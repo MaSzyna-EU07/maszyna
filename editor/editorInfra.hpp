@@ -117,6 +117,9 @@ struct binding
 	bool turns{false}; // the object has a rotation which follows the path
 	std::string label;
 	bool lost{false}; // none of the paths around could take the object over
+	// bound by the editor itself when its track was taken for a change, as a signal its path reads: not kept in the scenery
+	bool adopted{false};
+	glm::dvec3 measured{0.0}; // where an adopted object stood when its track was taken
 
 	bool same(binding const &Other) const
 	{

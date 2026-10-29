@@ -60,8 +60,10 @@ void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const
         p1.y += 0.18;
         p2.y += 0.18;
     }
-    if( glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 )
-     || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) {
+    // one with its radius given is a curve however gently it bends, as a short path bent with the curve it's laid into
+    if( Piece.radius == 0.f
+     && ( glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 )
+       || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) ) {
         cp1 = cp2 = glm::dvec3( 0, 0, 0 );
     }
     auto const straight { cp1 == glm::dvec3() && cp2 == glm::dvec3() };
@@ -426,6 +428,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     std::string str;
     size_t i; //,state; //Ra: teraz już nie ma początkowego stanu zwrotnicy we wpisie
     std::string token;
+    bool tributary{false};
 
     parser->getTokens();
     *parser >> str; // typ toru
@@ -467,11 +470,17 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     else if (str == "tributary")
     {
-        eType = tt_Tributary;
+        ErrorLog("Bad track: type \"tributary\" of track \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + ") isn't supported, loaded as a river with its first path");
+        eType = tt_Normal;
         iCategoryFlag = 4;
+        tributary = true;
     }
     else
-        eType = tt_Unknown;
+    {
+        ErrorLog("Bad track: unknown type \"" + str + "\" of track \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + "), loaded as a normal track");
+        eType = tt_Normal;
+        iCategoryFlag = 1;
+    }
     if (Global.iWriteLogEnabled & 4)
         WriteLog(str);
     parser->getTokens(4);
@@ -544,6 +553,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // all subtypes contain at least one path
     m_paths.emplace_back();
     m_paths.back().deserialize( *parser, pOrigin );
+    if( tributary ) {
+        segment_data ignored;
+        ignored.deserialize( *parser, pOrigin );
+    }
     switch( eType ) {
         case tt_Switch:
         case tt_Cross:
@@ -842,9 +855,12 @@ void TTrack::init_segments( bool const Initial ) {
         }
 
         // length2 is better than length for comparing because it does not require sqrt function
-        if( glm::length2((p1 + p1 + p2) / 3.0 - p1 - cp1) < sq(0.02)
-         || glm::length2((p1 + p2 + p2) / 3.0 - p2 + cp1) < sq(0.02) ) {
-            // "prostowanie" prostych z kontrolnymi, dokładność 2cm
+        // "prostowanie" prostych z kontrolnymi, dokładność 2cm: a straight only where both control vectors lie along it, or aren't
+        // given; one of them moved off it, the other one left where a straight has it, makes a curve. One with its radius given is a
+        // curve however gently it bends, as a short path bent with the curve it's laid into
+        auto const startalong { cp1 == glm::dvec3() || glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 ) };
+        auto const endalong { cp2 == glm::dvec3() || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) };
+        if( startalong && endalong && fRadius == 0 ) {
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
         }
 
@@ -936,8 +952,8 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross ) {
-            // dla skrzyżowań muszą być podane kontrolne
+        if( eType != tt_Cross && fRadiusTable[ 0 ] == 0 ) {
+            // dla skrzyżowań muszą być podane kontrolne; a path with its radius given is a curve however gently it bends
 			// length2 is better than length for comparing because it does not require sqrt function
             if( glm::length2(( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq(0.02)
              || glm::length2(( p1 + p2 + p2 ) / 3.0 - p2 + cp1 ) < sq(0.02) ) {
@@ -1001,8 +1017,8 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross ) {
-            // dla skrzyżowań muszą być podane kontrolne
+        if( eType != tt_Cross && fRadiusTable[ 1 ] == 0 ) {
+            // dla skrzyżowań muszą być podane kontrolne; a path with its radius given is a curve however gently it bends
 			// length2 is better than length for comparing because it does not require sqrt function
             if( glm::length2((p3 + p3 + p4) / 3.0 - p3 - cp3) < sq(0.02)
              || glm::length2((p3 + p4 + p4) / 3.0 - p4 + cp3) < sq(0.02) ) {
@@ -1091,6 +1107,13 @@ void TTrack::init_segments( bool const Initial ) {
                 fTexHeight1 = texheight;
                 fTexHeightOffset = texheightoffset;
                 SwitchExtension->Segments[ index ]->InitChain( std::move( chain ) );
+            }
+            // the profiles of the switch are made at the mean of the rolls of its paths; lofted, they're turned from it to the roll of
+            // each path along it, so a switch on a cant ramp follows the ramp to its ends
+            float mean1, mean2;
+            profile_rolls( mean1, mean2 );
+            for( std::size_t index = 0; index < 2; ++index ) {
+                SwitchExtension->Segments[ index ]->set_baked_roll( mean1 );
             }
         }
 
@@ -1488,12 +1511,27 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
     track_rails::forget();
+    auto const erase = [ this ]( gfx::geometry_handle const &Chunk ) {
+        if( SwitchExtension
+         && std::any_of( SwitchExtension->m_nosechunks.begin(), SwitchExtension->m_nosechunks.end(), [ & ]( auto const &Pooled ) { return Pooled.handle == Chunk; } ) ) {
+            return;
+        }
+        GfxRenderer->Erase( Chunk );
+    };
+    for( auto const *geometry : { &Geometry1, &Geometry2, &GeometryCut1, &GeometryCut2 } ) {
+        std::for_each( geometry->begin(), geometry->end(), erase );
+    }
+    for( auto const &tread : GeometryTreads ) {
+        std::for_each( tread.geometry.begin(), tread.geometry.end(), erase );
+        std::for_each( tread.cuts.begin(), tread.cuts.end(), erase );
+    }
     Geometry1.clear();
     Geometry2.clear();
     GeometryCut1.clear();
     GeometryCut2.clear();
     GeometryTreads.clear();
     if( SwitchExtension ) {
+        erase( SwitchExtension->Geometry3 );
         SwitchExtension->Geometry3 = gfx::geometry_handle{};
     }
     m_sleeper_local_transforms.clear();
@@ -1640,7 +1678,13 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                             continue;
                         }
                         vertices.clear(); // reuse the scratchpad
-                        Segment->RenderLoft( vertices, m_origin, profile, iTrapezoid > 0, texturelength );
+                        // the rail starts behind the heel of a blade running on into the track from the switch before it
+                        if( auto const runon { eType == tt_Normal && iTrapezoid == 0 ? track_rails::blade_runon( *this, side ) : 0.0 }; runon > 0.0 ) {
+                            Segment->RenderLoftSpan( vertices, m_origin, profile, { .side = side, .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = texturelength, .from = runon, .to = Segment->GetLength() } );
+                        }
+                        else {
+                            Segment->RenderLoft( vertices, m_origin, profile, iTrapezoid > 0, texturelength );
+                        }
                         if( open ) {
                             cut_faces( vertices, nnumPts, trPrev == nullptr, trNext == nullptr, GeometryCut1 );
                         }
@@ -2012,6 +2056,59 @@ bool TTrack::SetConnections(int i)
     }
     Error("Cannot set connections");
     return false;
+}
+
+void TTrack::join_switches()
+{
+    if( eType != tt_Switch || SwitchExtension == nullptr || simulation::Region == nullptr ) {
+        return;
+    }
+    // the ends of the paths as the codes of the track joined to them have them: 0 the start of a switch, where both paths begin, 1 the end of
+    // its first path, 3 the end of its second one; a vehicle going on onto a start keeps its direction, onto an end it turns
+    auto const code = []( int const Endpoint ) { return Endpoint == 3 ? 1 : Endpoint == 5 ? 3 : 0; };
+    // the paths of the switch joined to its neighbours as it's set, as Switch() takes them
+    auto const bind = []( TTrack &Switch ) {
+        auto const &extension { *Switch.SwitchExtension };
+        auto const state { extension.CurrentIndex & 1 };
+        Switch.trNext = extension.pNexts[ state ];
+        Switch.trPrev = extension.pPrevs[ state ];
+        Switch.iNextDirection = extension.iNextDirection[ state ];
+        Switch.iPrevDirection = extension.iPrevDirection[ state ];
+    };
+    auto &own { *SwitchExtension };
+    for( int path = 0; path < 2; ++path ) {
+        for( int end = 0; end < 2; ++end ) {
+            if( ( end ? own.pNexts[ path ] : own.pPrevs[ path ] ) != nullptr || own.Segments[ path ] == nullptr ) {
+                continue;
+            }
+            auto const point { end ? own.Segments[ path ]->FastGetPoint_1() : own.Segments[ path ]->FastGetPoint_0() };
+            auto const [ other, endpoint ] { simulation::Region->find_path( point, this ) };
+            if( other == nullptr || other == this || other->eType != tt_Switch || other->SwitchExtension == nullptr || endpoint < 2 || endpoint > 5 ) {
+                continue;
+            }
+            auto &theirs { *other->SwitchExtension };
+            if( end == 0 ) {
+                own.pPrevs[ 0 ] = own.pPrevs[ 1 ] = other;
+                own.iPrevDirection[ 0 ] = own.iPrevDirection[ 1 ] = code( endpoint );
+            }
+            else {
+                own.pNexts[ path ] = other;
+                own.iNextDirection[ path ] = code( endpoint );
+            }
+            auto const ours { end == 0 ? 0 : path ? 3 : 1 };
+            if( endpoint == 2 || endpoint == 4 ) {
+                theirs.pPrevs[ 0 ] = theirs.pPrevs[ 1 ] = this;
+                theirs.iPrevDirection[ 0 ] = theirs.iPrevDirection[ 1 ] = ours;
+            }
+            else {
+                auto const theirpath { endpoint == 5 ? 1 : 0 };
+                theirs.pNexts[ theirpath ] = this;
+                theirs.iNextDirection[ theirpath ] = ours;
+            }
+            bind( *other );
+        }
+    }
+    bind( *this );
 }
 
 bool TTrack::Switch(int i, float const t, float const d)
@@ -3951,6 +4048,13 @@ path_table::InitTracks() {
                     ErrorLog( "Bad track: " + ( trackname.empty() ? "unnamed track" : "\"" + trackname + "\"" ) + " can't find assigned memory cell \"" + inputcellname + "\"" );
                 }
             }
+        }
+    }
+
+    // the plain tracks are joined to the switches above, a switch right after another one only here, once they are
+    for( auto *track : m_items ) {
+        if( track->eType == tt_Switch ) {
+            track->join_switches();
         }
     }
 

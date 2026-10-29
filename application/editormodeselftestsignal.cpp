@@ -50,17 +50,10 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_signal(std::string const &command, std::istringstream &words)
 {
-	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe")
+	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")
 	{
-		std::map<std::string, std::string> values;
-		std::string pair;
-		while (words >> pair)
-		{
-			auto const equals{pair.find('=')};
-			if (equals != std::string::npos)
-				values[pair.substr(0, equals)] = pair.substr(equals + 1);
-		}
-		show_track_tab(track_tab::signals);
+		auto values{selftest_values(words)};
+		show_track_tab(track_tab::srk);
 		signal_scan();
 		signal_refresh(true);
 		auto &tool{m_signal};
@@ -103,39 +96,68 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			auto const side{values["side"] == "left" ? -1 : 1};
 			auto const facing{values["facing"] == "along" ? 1 : values["facing"] == "against" ? -1 : 0};
 			signal_spot spot;
-			if (false == spot_on(*signal_armed(), facing, side, spot))
+			if (false == spot_on(*signal_current(), facing, side, spot))
 			{
 				WriteLog("SELFTEST signal: no such track " + values["track"]);
 				return selftest_result::handled;
 			}
-			auto const placed{signal_place(spot, *signal_armed())};
+			auto const placed{signal_place(spot, *signal_current())};
 			WriteLog(format("SELFTEST signal %s: %s", placed ? "placed" : "failed", tool.status.c_str()));
 		}
 		else if (command == "signalmove")
 		{
 			auto const *standing{standing_named(values["name"])};
-			auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
-			if (item == nullptr)
+			auto *track{simulation::Paths.find(values["track"])};
+			if (standing == nullptr || track == nullptr || track->m_paths.empty())
 			{
-				WriteLog("SELFTEST signalmove: no signal " + values["name"]);
+				WriteLog("SELFTEST signalmove: no signal " + values["name"] + " or no track " + values["track"]);
 				return selftest_result::handled;
 			}
-			auto const yaw{glm::radians(standing->include.yaw + 180.0)};
-			glm::dvec2 const travel{std::sin(yaw), std::cos(yaw)};
-			signal_spot probe;
-			if (false == spot_on(*item, 1, 1, probe))
+			auto const path{std::clamp(values.count("path") ? std::stoi(values["path"]) : 0, 0, static_cast<int>(track->m_paths.size()) - 1)};
+			auto const at{values.count("at") ? std::stod(values["at"]) : 0.5};
+			geometry::bezier const curve{track->m_paths[path]};
+			auto point{curve.point(at)};
+			auto const sided{values.count("side") != 0};
+			auto side{values["side"] == "left" ? -1 : 1};
+			if (values.count("off"))
 			{
-				WriteLog("SELFTEST signalmove: no such track " + values["track"]);
-				return selftest_result::handled;
+				auto const tangent{glm::normalize(glm::dvec2{curve.first(at).x, curve.first(at).z})};
+				auto const off{std::stod(values["off"])};
+				point += glm::dvec3{-tangent.y * off, 0.0, tangent.x * off};
+				side = 0;
 			}
-			auto const facing{glm::dot(probe.travel, travel) >= 0.0 ? 1 : -1};
-			auto const sideoftravel{glm::dot(geometry::plan_of(standing->include.location) - geometry::plan_of(standing->spot.axis), glm::dvec2{-travel.y, travel.x}) >= 0.0 ? 1 : -1};
+			else if (signal_spot home; false == sided && signal_standing_spot(*standing, home))
+				side = home.side * (home.list == 2 ? 1 : -1);
 			signal_select(standing->include.instance);
 			tool.moving = true;
-			tool.moved_valid = spot_on(*item, facing, sideoftravel * facing, tool.moved);
+			tool.moved_valid = signal_drop_at(*standing, *track, path, point, side, tool.moved);
 			tool.pressed = {-1000.f, -1000.f};
 			signal_release();
 			WriteLog("SELFTEST signalmove: " + tool.status);
+		}
+		else if (command == "signalflip" || command == "signalturn")
+		{
+			auto const *standing{standing_named(values["name"])};
+			auto const done{standing != nullptr && (command == "signalflip" ? signal_flip(standing->include.instance) : signal_turn(standing->include.instance))};
+			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
+		else if (command == "signalselect" || command == "signalswap")
+		{
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			auto const instance{standing->include.instance};
+			signal_select(instance);
+			if (command == "signalswap")
+			{
+				auto const done{signal_swap(instance, values["file"])};
+				WriteLog("SELFTEST signalswap " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+			}
+			else
+				WriteLog("SELFTEST signalselect " + values["name"] + ": " + standing->include.file);
 		}
 		else if (command == "signaldelete")
 		{

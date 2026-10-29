@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorHttp.hpp"
+#include "editor/editorGeometry.hpp"
 
 #include "rendering/renderer.h"
 #include "scene/scene.h"
@@ -22,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -30,6 +32,8 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <functional>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include <sstream>
 #include <glad/glad.h>
 
@@ -40,7 +44,10 @@ namespace fs = std::filesystem;
 constexpr int standard_pixels{1024}; // ~25 cm/px for a 256 m tile, matches the standard orthophoto
 constexpr int hires_pixels{4096};    // ~6 cm/px, the WMS MaxWidth/MaxHeight of the geoportal services
 constexpr int probe_pixels{64};      // coverage test of the high-resolution product
-constexpr int worker_count{3};       // concurrent requests; the service is slow but shouldn't be hammered
+constexpr int worker_count{8};       // concurrent requests; the service is slow but shouldn't be hammered
+// of the workers at most that many on the 4K tiles around the camera, each holding an image of 64 MB decoded; the standard tiles
+// are taken by all of them, ahead of the download of the area to the disk cache
+constexpr std::size_t camera_workers{3};
 constexpr std::size_t upload_budget{16u << 20}; // bytes of texture data uploaded per frame (always at least one tile)
 constexpr std::size_t vertex_budget{60000};     // ImGui uses 16-bit indices and not every backend supports vertex offsets
 constexpr float near_w{0.5f};
@@ -122,12 +129,42 @@ std::string wms_url(tile_request const &Request, bool Hires, int Pixels, bool Pn
 	return url;
 }
 
+// among the files kept to be fetched again faster, which don't roam with the profile. The orthophoto an older editor kept with the
+// settings, the standard and the 4K imagery of each year, is moved there once, as the first tile is asked for; whatever else it
+// kept there, the base maps of old among it, is deleted, and so is the orthophoto where it can't be moved or the new place has its own
 fs::path cache_root()
 {
-	fs::path root = user_config_path(".cache");
+	fs::path root = user_cache_path("geoportal");
 	if (root.empty())
-		root = ".cache";
-	return root / "geoportal";
+		root = fs::path{".cache"} / "geoportal";
+	static std::once_flag moved;
+	std::call_once(moved, [&]() {
+		auto const old{user_config_path(".cache")};
+		std::error_code ec;
+		if (old.empty() || false == fs::exists(old, ec))
+			return;
+		std::vector<fs::path> products;
+		for (auto const &entry : fs::directory_iterator(old / "geoportal", ec))
+		{
+			auto const name{entry.path().filename().string()};
+			if (entry.is_directory(ec) && (name.rfind("sr_", 0) == 0 || name.rfind("hr_", 0) == 0))
+				products.push_back(entry.path());
+		}
+		if (false == products.empty() && false == fs::exists(root, ec))
+		{
+			fs::create_directories(root, ec);
+			std::size_t count{0};
+			for (auto const &product : products)
+			{
+				fs::rename(product, root / product.filename(), ec);
+				count += ec ? 0 : 1;
+			}
+			auto const path{root.u8string()};
+			WriteLog("Editor orthophoto: " + std::to_string(count) + " products of the orthophoto moved to " + std::string(path.begin(), path.end()));
+		}
+		fs::remove_all(old, ec);
+	});
+	return root;
 }
 
 fs::path cache_file(tile_request const &Request, bool Hires, std::string const &Suffix)
@@ -146,11 +183,17 @@ bool is_image(std::vector<std::uint8_t> const &Data)
 
 bool read_file(fs::path const &Path, std::vector<std::uint8_t> &Out)
 {
-	std::ifstream file(Path, std::ios::binary);
+	// read whole, not a character at a time: a tile of the cache is megabytes
+	std::ifstream file(Path, std::ios::binary | std::ios::ate);
 	if (!file.is_open())
 		return false;
-	Out.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-	return !Out.empty();
+	auto const size{static_cast<std::streamoff>(file.tellg())};
+	if (size <= 0)
+		return false;
+	Out.resize(static_cast<std::size_t>(size));
+	file.seekg(0);
+	file.read(reinterpret_cast<char *>(Out.data()), size);
+	return file.gcount() == size;
 }
 
 void write_file(fs::path const &Path, std::vector<std::uint8_t> const &Data)
@@ -179,14 +222,19 @@ void write_file(fs::path const &Path, std::vector<std::uint8_t> const &Data)
 		fs::remove(temporary, ec);
 }
 
-// cached file if present, otherwise downloads (with a few retries, the service drops connections and answers 404 now and then)
+// the requests made of the services, the disk cache left out
+std::atomic<int> requests_made{0};
+
+// cached file if present, otherwise downloads (with a few retries, the service drops connections and answers 404 now and then);
+// with no path nothing is read from the disk nor written to it
 bool fetch(http_client &Client, std::string const &Url, fs::path const &Path, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
 {
-	if (read_file(Path, Out) && is_image(Out))
+	if (false == Path.empty() && read_file(Path, Out) && is_image(Out))
 		return true;
 
 	for (int attempt = 0; attempt < 4; ++attempt)
 	{
+		++requests_made;
 		if (Stop())
 		{
 			Error = "cancelled";
@@ -206,7 +254,8 @@ bool fetch(http_client &Client, std::string const &Url, fs::path const &Path, st
 			Error = "unexpected response: " + std::string(Out.begin(), Out.begin() + std::min<std::size_t>(Out.size(), 200));
 			continue;
 		}
-		write_file(Path, Out);
+		if (false == Path.empty())
+			write_file(Path, Out);
 		return true;
 	}
 	return false;
@@ -258,8 +307,20 @@ bool is_blank(image const &Image)
 	return true;
 }
 
+// a file of no content standing for a place the standard imagery came blank for twice: none there, not asked for again
+fs::path blank_file(tile_request const &Request)
+{
+	return cache_file(Request, false, std::to_string(standard_pixels) + ".blank");
+}
+
 bool load_standard(http_client &Client, tile_request const &Request, image &Out, std::string &Error, stop_check const &Stop)
 {
+	std::error_code ec;
+	if (fs::exists(blank_file(Request), ec))
+	{
+		Out = image{};
+		return true;
+	}
 	std::vector<std::uint8_t> data;
 	auto const path{cache_file(Request, false, std::to_string(standard_pixels) + ".jpg")};
 	for (int attempt = 0; attempt < 2; ++attempt)
@@ -268,14 +329,42 @@ bool load_standard(http_client &Client, tile_request const &Request, image &Out,
 			return false;
 		if (!is_blank(Out))
 			return true;
-		std::error_code ec;
 		fs::remove(path, ec);
 	}
+	write_file(blank_file(Request), {});
 	return true;
 }
 
-// returns false on failure (to be retried later); Empty is set when the place has no imagery
-bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, stop_check const &Stop)
+// the files of a tile the settings ask for put into the disk cache, downloaded where missing; of the images only the probe of the
+// high-resolution product and a standard one just downloaded are decoded, to tell where there's imagery. false on failure
+bool prefetch_tile(http_client &Client, tile_request const &Request, std::string &Error, stop_check const &Stop)
+{
+	std::error_code ec;
+	if (false == fs::exists(cache_file(Request, false, std::to_string(standard_pixels) + ".jpg"), ec) && false == fs::exists(blank_file(Request), ec))
+	{
+		image standard;
+		if (!load_standard(Client, Request, standard, Error, Stop))
+			return false;
+	}
+	if (false == Request.hires)
+		return true;
+	std::vector<std::uint8_t> data;
+	image probe;
+	if (!fetch(Client, wms_url(Request, true, probe_pixels, true), cache_file(Request, true, "probe.png"), data, Error, Stop) || !decode(data, probe, Error))
+		return false;
+	std::size_t covered{0};
+	for (std::size_t i = 3; i < probe.rgba.size(); i += 4)
+		covered += (probe.rgba[i] != 0);
+	if (covered == 0)
+		return true;
+	auto const png{covered < probe.rgba.size() / 4};
+	auto const path{cache_file(Request, true, std::to_string(hires_pixels) + (png ? ".png" : ".jpg"))};
+	return fs::exists(path, ec) || fetch(Client, wms_url(Request, true, hires_pixels, png), path, data, Error, Stop);
+}
+
+// returns false on failure (to be retried later); Empty is set when the place has no imagery. Superseded: the tile wants another image
+// now, the large one downloaded isn't decoded for nothing
+bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, stop_check const &Stop, stop_check const &Superseded)
 {
 	Empty = false;
 	if (Request.hires && Request.level >= hires_pixels)
@@ -290,14 +379,20 @@ bool load_tile(http_client &Client, tile_request const &Request, image &Out, boo
 			covered += (probe.rgba[i] != 0);
 		std::size_t const total = probe.rgba.size() / 4;
 
+		auto const superseded = [&]() {
+			if (false == Superseded())
+				return false;
+			Error = "superseded";
+			return true;
+		};
 		if (covered == total)
 		{
-			return fetch(Client, wms_url(Request, true, hires_pixels, false), cache_file(Request, true, std::to_string(hires_pixels) + ".jpg"), data, Error, Stop) && decode(data, Out, Error);
+			return fetch(Client, wms_url(Request, true, hires_pixels, false), cache_file(Request, true, std::to_string(hires_pixels) + ".jpg"), data, Error, Stop) && false == superseded() && decode(data, Out, Error);
 		}
 		if (covered > 0)
 		{
 			// edge of the covered area: transparent png, holes filled from the standard imagery
-			if (!fetch(Client, wms_url(Request, true, hires_pixels, true), cache_file(Request, true, std::to_string(hires_pixels) + ".png"), data, Error, Stop) || !decode(data, Out, Error))
+			if (!fetch(Client, wms_url(Request, true, hires_pixels, true), cache_file(Request, true, std::to_string(hires_pixels) + ".png"), data, Error, Stop) || superseded() || !decode(data, Out, Error))
 				return false;
 			image standard;
 			std::string ignored;
@@ -333,6 +428,52 @@ bool load_tile(http_client &Client, tile_request const &Request, image &Out, boo
 	}
 	while (Out.width > Request.level && Out.width > 1)
 		halve(Out);
+	return true;
+}
+
+// a parameter of a request as an address carries it: the names of the layers keep their letters, digits, separators and colons
+std::string url_encoded(std::string const &Text)
+{
+	std::string out;
+	for (unsigned char const c : Text)
+	{
+		if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == ':' || c == ',')
+			out += static_cast<char>(c);
+		else
+		{
+			char hex[4];
+			std::snprintf(hex, sizeof(hex), "%%%02X", c);
+			out += hex;
+		}
+	}
+	return out;
+}
+
+// a tile of a WMS of the user's, in EPSG:2180 as the imagery: kept in memory only, never on the disk. Empty where it draws nothing
+bool load_service(http_client &Client, editor_orthophoto::config const &Source, tile_request const &Request, image &Out, bool &Empty, std::string &Error, stop_check const &Stop)
+{
+	Empty = false;
+	auto const size{static_cast<long long>(editor_orthophoto::tile_size)};
+	auto const east{Request.ix * size};
+	auto const north{Request.iy * size};
+	auto url{Source.service};
+	if (url.find('?') == std::string::npos)
+		url += '?';
+	else if (url.back() != '?' && url.back() != '&')
+		url += '&';
+	// a style for each layer, the default one
+	auto const count{static_cast<std::size_t>(std::count(Source.layers.begin(), Source.layers.end(), ',')) + 1};
+	url += "SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG:2180&FORMAT=image/png&TRANSPARENT=TRUE&LAYERS=" + url_encoded(Source.layers) + "&STYLES=" + std::string(count - 1, ',') +
+	       "&WIDTH=" + std::to_string(Request.level) + "&HEIGHT=" + std::to_string(Request.level) + "&BBOX=" + std::to_string(east) + "," + std::to_string(north) + "," + std::to_string(east + size) + "," +
+	       std::to_string(north + size);
+	std::vector<std::uint8_t> data;
+	if (!fetch(Client, url, {}, data, Error, Stop) || !decode(data, Out, Error))
+		return false;
+	for (std::size_t i = 3; i < Out.rgba.size(); i += 4)
+		if (Out.rgba[i] != 0)
+			return true;
+	Empty = true;
+	Out = image{};
 	return true;
 }
 
@@ -382,6 +523,8 @@ constexpr float no_height{-std::numeric_limits<float>::max()};
 // a bank of its own for every geometry chunk: adding a chunk to a bank makes the renderer upload the whole bank again,
 // and the tiles fitted onto a heightmap terrain carry its full grid (hundreds of thousands of vertices each)
 std::vector<std::uint32_t> scene_banks;
+// the textures made by all the layers, named apart: main thread only
+int texture_slots{0};
 
 std::string slot_name(int Index)
 {
@@ -465,6 +608,136 @@ editor_orthophoto::~editor_orthophoto()
 			worker.join();
 }
 
+namespace
+{
+
+// the text of an element of the capabilities, its entities read
+std::string xml_text(std::string const &Text)
+{
+	std::string out;
+	for (std::size_t i = 0; i < Text.size(); ++i)
+	{
+		if (Text[i] != '&')
+		{
+			out += Text[i];
+			continue;
+		}
+		auto const end{Text.find(';', i)};
+		if (end == std::string::npos)
+		{
+			out += Text[i];
+			continue;
+		}
+		auto const entity{Text.substr(i + 1, end - i - 1)};
+		if (entity == "amp")
+			out += '&';
+		else if (entity == "lt")
+			out += '<';
+		else if (entity == "gt")
+			out += '>';
+		else if (entity == "quot")
+			out += '"';
+		else if (entity == "apos")
+			out += '\'';
+		else if (false == entity.empty() && entity[0] == '#')
+		{
+			auto const code{entity.size() > 1 && (entity[1] == 'x' || entity[1] == 'X') ? std::strtoul(entity.c_str() + 2, nullptr, 16) : std::strtoul(entity.c_str() + 1, nullptr, 10)};
+			// carriage returns left out, the rest as UTF-8
+			if (code == 13)
+				;
+			else if (code < 0x80)
+				out += static_cast<char>(code);
+			else if (code < 0x800)
+			{
+				out += static_cast<char>(0xC0 | (code >> 6));
+				out += static_cast<char>(0x80 | (code & 0x3F));
+			}
+			else
+			{
+				out += static_cast<char>(0xE0 | (code >> 12));
+				out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+				out += static_cast<char>(0x80 | (code & 0x3F));
+			}
+		}
+		else
+			out += Text.substr(i, end - i + 1);
+		i = end;
+	}
+	// the blanks at the ends of the text dropped
+	auto const first{out.find_first_not_of(" \t\r\n")};
+	if (first == std::string::npos)
+		return {};
+	return out.substr(first, out.find_last_not_of(" \t\r\n") - first + 1);
+}
+
+// the text of the first element of the tag between From and To, empty where there's none
+std::string xml_element(std::string const &Xml, std::string const &Tag, std::size_t const From, std::size_t const To)
+{
+	auto const open{"<" + Tag + ">"};
+	auto const start{Xml.find(open, From)};
+	if (start == std::string::npos || start >= To)
+		return {};
+	auto const end{Xml.find("</" + Tag + ">", start)};
+	if (end == std::string::npos || end > To)
+		return {};
+	return xml_text(Xml.substr(start + open.size(), end - start - open.size()));
+}
+
+} // namespace
+
+editor_orthophoto::service_info editor_orthophoto::describe(std::string const &Service)
+{
+	service_info info;
+	auto url{Service};
+	if (url.find('?') == std::string::npos)
+		url += '?';
+	else if (url.back() != '?' && url.back() != '&')
+		url += '&';
+	url += "SERVICE=WMS&REQUEST=GetCapabilities";
+	// a few tries, the services drop connections and time out now and then
+	std::vector<std::uint8_t> data;
+	auto read{false};
+	for (int attempt = 0; attempt < 3 && false == read; ++attempt)
+		read = editor_http_get(url, data, info.error);
+	if (false == read)
+		return info;
+	info.error.clear();
+	std::string const xml(data.begin(), data.end());
+	auto const service{xml.find("<Service>")};
+	auto const capability{xml.find("<Capability>")};
+	if (service == std::string::npos || capability == std::string::npos)
+	{
+		info.error = "no WMS capabilities: " + xml.substr(0, std::min<std::size_t>(xml.size(), 200));
+		return info;
+	}
+	info.title = xml_element(xml, "Title", service, capability);
+	auto const fees{xml_element(xml, "Fees", service, capability)};
+	auto const constraints{xml_element(xml, "AccessConstraints", service, capability)};
+	for (auto const &part : {fees, constraints})
+		if (false == part.empty() && part != "none" && part != "None" && part != "NONE")
+			info.terms += (info.terms.empty() ? "" : "\n") + part;
+	info.puwg = xml.find("EPSG:2180", capability) != std::string::npos;
+	// each layer up to the next one or to its end: a name of its own makes it one to ask for
+	auto const layer_at = [&](std::size_t From) {
+		for (auto at{xml.find("<Layer", From)}; at != std::string::npos; at = xml.find("<Layer", at + 6))
+			if (at + 6 < xml.size() && (xml[at + 6] == '>' || std::isspace(static_cast<unsigned char>(xml[at + 6]))))
+				return at;
+		return std::string::npos;
+	};
+	for (auto at{layer_at(capability)}; at != std::string::npos; at = layer_at(at + 6))
+	{
+		auto const next{layer_at(at + 6)};
+		auto const close{xml.find("</Layer>", at)};
+		auto const end{std::min(next, close)};
+		auto const name{xml_element(xml, "Name", at, end)};
+		if (false == name.empty())
+			info.layers.emplace_back(name, xml_element(xml, "Title", at, end));
+	}
+	if (info.layers.empty())
+		info.error = "the service has no layer to ask for";
+	return info;
+}
+
 bool editor_orthophoto::can_download()
 {
 #if defined(_WIN32) || defined(EU07_WITH_CURL)
@@ -487,8 +760,10 @@ bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 
 std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bool const Origin)
 {
+	// how the imagery is shown is the user's, kept with the editor (EditorSettings); the scenery keeps whether it's on and where the
+	// scenery lies
 	char text[256];
-	std::snprintf(text, sizeof(text), "on %d year %d opacity %.2f radius %d height %.2f drape %d lift %.2f hires %d scene %d", Enabled ? 1 : 0, Config.year, Config.opacity, Config.radius, Config.height, Config.drape ? 1 : 0, Config.lift, Config.hires ? 1 : 0, Config.in_scene ? 1 : 0);
+	std::snprintf(text, sizeof(text), "on %d", Enabled ? 1 : 0);
 	std::string result{text};
 	if (Origin)
 	{
@@ -503,26 +778,11 @@ bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool 
 	std::istringstream words{Text};
 	std::string key;
 	auto found{false};
+	// the year, opacity, radius and the rest the lines of the older sceneries carry are passed over: the user's settings stand
 	while (words >> key)
 	{
 		if (key == "on")
 			words >> Enabled;
-		else if (key == "year")
-			words >> Config.year;
-		else if (key == "opacity")
-			words >> Config.opacity;
-		else if (key == "radius")
-			words >> Config.radius;
-		else if (key == "height")
-			words >> Config.height;
-		else if (key == "drape")
-			words >> Config.drape;
-		else if (key == "lift")
-			words >> Config.lift;
-		else if (key == "hires")
-			words >> Config.hires;
-		else if (key == "scene")
-			words >> Config.in_scene;
 		else if (key == "origin")
 			words >> Config.north >> Config.east;
 		else
@@ -531,8 +791,6 @@ bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool 
 			return found;
 		found = true;
 	}
-	Config.radius = std::clamp(Config.radius, 0, max_radius);
-	Config.opacity = std::clamp(Config.opacity, 0.0f, 1.0f);
 	return found;
 }
 
@@ -541,6 +799,7 @@ void editor_orthophoto::enabled(bool State)
 	if (State == m_enabled)
 		return;
 	m_enabled = State;
+	restart_prefetch();
 	if (m_enabled)
 	{
 		start_workers();
@@ -577,6 +836,91 @@ void editor_orthophoto::settings(config const &Config)
 		release_tile(entry.second);
 	m_tiles.clear();
 	++m_generation;
+	// the area in the cache once more, of the other product
+	restart_prefetch();
+}
+
+void editor_orthophoto::area(std::vector<glm::dvec2> Polygon)
+{
+	if (Polygon.size() < 3)
+		Polygon.clear();
+	m_area = std::move(Polygon);
+	m_area_tiles.clear();
+	for (auto const &key : geometry::squares_in(m_area, tile_size))
+		if (in_service_area(key.first, key.second))
+			m_area_tiles.insert(key);
+	if (false == m_area.empty())
+	{
+		// the jobs for the tiles outside it forgotten, the tiles shown let go by the next update
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return 0 == m_area_tiles.count(Job.key); }), m_queue.end());
+	}
+	restart_prefetch();
+}
+
+void editor_orthophoto::area_paused(bool const Paused)
+{
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_prefetch_paused = Paused;
+	}
+	m_wakeup.notify_all();
+}
+
+void editor_orthophoto::restart_prefetch()
+{
+	std::vector<tile_key> keys;
+	// a service of the user's is asked for no tile ahead
+	if (m_enabled && can_download() && m_config.service.empty())
+		keys.assign(m_area_tiles.begin(), m_area_tiles.end());
+	auto const centre{m_camera_tile};
+	auto const distance = [&](tile_key const &Key) {
+		auto const dx{static_cast<long long>(Key.first) - centre.first};
+		auto const dy{static_cast<long long>(Key.second) - centre.second};
+		return dx * dx + dy * dy;
+	};
+	std::sort(keys.begin(), keys.end(), [&](tile_key const &A, tile_key const &B) { return distance(A) < distance(B); });
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_prefetch = std::move(keys);
+		m_prefetch_next = 0;
+		m_prefetch_failed.clear();
+		m_prefetch_cached.clear();
+		m_prefetch_source = source{m_config.year, m_config.hires, m_config.service, m_config.layers};
+		++m_prefetch_generation;
+	}
+	m_wakeup.notify_all();
+}
+
+std::vector<std::string> editor_orthophoto::area_lines(std::vector<glm::dvec2> const &Polygon)
+{
+	std::vector<std::string> lines;
+	if (Polygon.size() < 3)
+		return lines;
+	lines.emplace_back("# the area the editor downloads the orthophoto and the terrain model in, PUWG 1992 easting northing");
+	for (auto const &point : Polygon)
+	{
+		char text[64];
+		std::snprintf(text, sizeof(text), "point %.2f %.2f", point.x, point.y);
+		lines.emplace_back(text);
+	}
+	return lines;
+}
+
+std::vector<glm::dvec2> editor_orthophoto::read_area(std::vector<std::string> const &Lines)
+{
+	std::vector<glm::dvec2> polygon;
+	for (auto const &line : Lines)
+	{
+		std::istringstream words{line};
+		std::string keyword;
+		glm::dvec2 point{0.0};
+		if (words >> keyword && keyword == "point" && words >> point.x >> point.y)
+			polygon.push_back(point);
+	}
+	if (polygon.size() < 3)
+		polygon.clear();
+	return polygon;
 }
 
 void editor_orthophoto::refit()
@@ -584,6 +928,27 @@ void editor_orthophoto::refit()
 	// the current shapes stay until their tile is sampled again, so nothing blinks
 	for (auto &entry : m_tiles)
 		entry.second.grounded = false;
+}
+
+void editor_orthophoto::ground_arrived()
+{
+	if (!m_height)
+		return;
+	for (auto &entry : m_tiles)
+	{
+		auto &t{entry.second};
+		if (!t.grounded || !t.guessed)
+			continue;
+		// the middle and the corners: a chunk of the terrain is much larger than a tile, it covers some of these when it comes. A tile
+		// lying flat, with nothing to go by, also goes onto the model once it's in
+		glm::dvec2 const corner = tile_corner(entry.first);
+		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
+			if (double y; m_height(corner.x - u * tile_size, corner.y - v * tile_size, y) || (t.heights.empty() && m_guess && m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y)))
+			{
+				t.grounded = false;
+				break;
+			}
+	}
 }
 
 void editor_orthophoto::detach_scene()
@@ -628,21 +993,39 @@ void editor_orthophoto::retry_failed()
 		entry.second.failures = 0;
 		entry.second.retry_at = 0.0;
 	}
+	// the tiles of the area which failed taken again
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		for (auto const &key : m_prefetch_failed)
+			m_prefetch.push_back(key);
+		m_prefetch_failed.clear();
+	}
+	m_wakeup.notify_all();
 }
 
 editor_orthophoto::statistics editor_orthophoto::stats() const
 {
 	statistics out;
-	for (auto const &entry : m_tiles)
+	out.area_tiles = static_cast<int>(m_area_tiles.size());
+	out.requests = requests_made.load();
+	out.uploads = m_uploads;
+	out.stale = m_stale;
 	{
-		tile const &t = entry.second;
+		std::lock_guard<std::mutex> lock(m_mutex);
+		out.area_cached = static_cast<int>(m_prefetch_cached.size());
+		out.area_failed = static_cast<int>(m_prefetch_failed.size());
+		out.area_paused = m_prefetch_paused;
+	}
+	auto const count = [&](tile const &t) {
 		if (t.level > 0 && !t.empty && t.slot.texture != null_handle)
 			++out.resident;
 		if (t.requested != 0)
 			++out.loading;
 		else if (t.failures > 0 && t.level == 0)
 			++out.failed;
-	}
+	};
+	for (auto const &entry : m_tiles)
+		count(entry.second);
 	return out;
 }
 
@@ -675,7 +1058,8 @@ void editor_orthophoto::start_workers()
 {
 	if (!m_workers.empty())
 		return;
-	for (int i = 0; i < worker_count; ++i)
+	// a service of the user's is asked fewer things at once than the orthophoto, which has the download of the area to do as well
+	for (int i = 0; i < (m_config.service.empty() ? worker_count : 2); ++i)
 		m_workers.emplace_back(&editor_orthophoto::worker, this);
 }
 
@@ -688,7 +1072,7 @@ editor_orthophoto::texture_slot editor_orthophoto::acquire_slot()
 		return slot;
 	}
 	texture_slot slot;
-	slot.index = m_texture_count++;
+	slot.index = texture_slots++;
 	slot.texture = GfxRenderer->Fetch_Texture(slot_name(slot.index), true);
 	return slot;
 }
@@ -711,7 +1095,7 @@ void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
-		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires}, m_generation.load()});
+		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires, m_config.service, m_config.layers}, m_generation.load()});
 	}
 	Tile.requested = Level;
 	Tile.requested_alpha = Alpha;
@@ -728,10 +1112,10 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 {
 	if (Result.generation != m_generation.load())
 		return 0;
-	auto const lookup = m_tiles.find(Result.key);
-	if (lookup == m_tiles.end())
+	auto const found{m_tiles.find(Result.key)};
+	if (found == m_tiles.end())
 		return 0; // left the area in the meantime; the imagery stays in the disk cache
-	tile &t = lookup->second;
+	tile &t = found->second;
 	bool const current = (t.requested == Result.level && t.requested_alpha == Result.alpha);
 	if (current)
 		t.requested = 0;
@@ -743,6 +1127,13 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 			++t.failures;
 			t.retry_at = (t.failures >= 5) ? std::numeric_limits<double>::max() : Now + std::min(120.0, 5.0 * std::pow(2.0, t.failures - 1));
 		}
+		return 0;
+	}
+	// an image the tile no longer wants, as a 4K one it asked for before the camera moved on, isn't sent to the graphics card: the
+	// one wanted now is on its way. A tile showing nothing yet takes it meanwhile
+	if (false == current && t.level > 0)
+	{
+		++m_stale;
 		return 0;
 	}
 
@@ -766,12 +1157,76 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 	}
 	// a shape already in the scene shows the new content right away, it refers to the same texture
 	GfxRenderer->Texture(t.slot.texture).update_from_memory(Result.width, Result.height, Result.pixels.data());
+	++m_uploads;
 	return Result.pixels.size();
+}
+
+std::pair<std::size_t, std::size_t> editor_orthophoto::grounded() const
+{
+	std::pair<std::size_t, std::size_t> result{0, 0};
+	for (auto const &entry : m_tiles)
+		if (entry.second.grounded && false == entry.second.heights.empty())
+		{
+			++result.first;
+			if (entry.second.guessed)
+				++result.second;
+		}
+	return result;
+}
+
+std::vector<std::pair<glm::dvec2, glm::dvec2>> editor_orthophoto::waiting() const
+{
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> result;
+	if (false == m_enabled)
+		return result;
+	for (auto const &entry : m_tiles)
+		if (entry.second.level == 0 && entry.second.requested > 0 && false == entry.second.empty)
+		{
+			glm::dvec2 const corner = tile_corner(entry.first);
+			result.emplace_back(corner - glm::dvec2{tile_size}, corner);
+		}
+	return result;
+}
+
+std::vector<editor_orthophoto::area_square> editor_orthophoto::area_squares() const
+{
+	std::vector<area_square> result;
+	std::lock_guard<std::mutex> lock(m_mutex);
+	for (auto const &key : m_area_tiles)
+	{
+		glm::dvec2 const corner = tile_corner(key);
+		result.push_back({corner - glm::dvec2{tile_size}, corner, m_prefetch_cached.count(key) > 0 ? 1 : m_prefetch_failed.count(key) > 0 ? 2 : 0});
+	}
+	return result;
+}
+
+bool editor_orthophoto::sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const
+{
+	auto const key{camera_tile({X, 0.0, Z})};
+	if (key == Own)
+		return false;
+	auto const found{m_tiles.find(key)};
+	if (found == m_tiles.end() || !found->second.grounded || found->second.guessed || found->second.heights.empty())
+		return false;
+	auto const &heights{found->second.heights};
+	int constexpr samples{ground_grid + 1};
+	double constexpr step{tile_size / ground_grid};
+	glm::dvec2 const corner = tile_corner(key);
+	auto const u{std::clamp((corner.x - X) / step, 0.0, static_cast<double>(ground_grid))};
+	auto const v{std::clamp((corner.y - Z) / step, 0.0, static_cast<double>(ground_grid))};
+	auto const i{std::min(static_cast<int>(u), ground_grid - 1)};
+	auto const j{std::min(static_cast<int>(v), ground_grid - 1)};
+	auto const at = [&](int const I, int const J) { return static_cast<double>(heights[static_cast<std::size_t>(J) * samples + I]); };
+	auto const fu{u - i};
+	auto const fv{v - j};
+	Height = static_cast<float>((at(i, j) * (1.0 - fu) + at(i + 1, j) * fu) * (1.0 - fv) + (at(i, j + 1) * (1.0 - fu) + at(i + 1, j + 1) * fu) * fv);
+	return true;
 }
 
 void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 {
 	Tile.grounded = true;
+	Tile.guessed = false;
 	Tile.scene_dirty = true;
 	Tile.heights.clear();
 	Tile.surface.clear();
@@ -849,7 +1304,32 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	// holes (places without ground) take the average of their neighbours, spreading inwards
 	std::size_t missing = std::count(heights.begin(), heights.end(), no_height);
 	if (missing == heights.size())
-		return; // no ground at all: the tile stays flat at the layer height
+	{
+		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
+		for (int j = 0; j < samples; ++j)
+			for (int i = 0; i < samples; ++i)
+				if (double y; m_guess && m_guess(corner.x - i * step, corner.y - j * step, y))
+					heights[static_cast<std::size_t>(j) * samples + i] = static_cast<float>(y);
+		if (std::count(heights.begin(), heights.end(), no_height) == static_cast<std::ptrdiff_t>(heights.size()))
+		{
+			double constexpr outward{0.01};
+			for (int j = 0; j < samples; ++j)
+				for (int i = 0; i < samples; ++i)
+				{
+					if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
+						continue;
+					auto const x{corner.x - i * step + (i == 0 ? outward : i == ground_grid ? -outward : 0.0)};
+					auto const z{corner.y - j * step + (j == 0 ? outward : j == ground_grid ? -outward : 0.0)};
+					if (float y; sampled_height(Key, x, z, y))
+						heights[static_cast<std::size_t>(j) * samples + i] = y;
+				}
+		}
+		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
+		Tile.guessed = true;
+		missing = std::count(heights.begin(), heights.end(), no_height);
+		if (missing == heights.size())
+			return;
+	}
 	while (missing > 0)
 	{
 		std::vector<float> next = heights;
@@ -1087,6 +1567,9 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 			std::lock_guard<std::mutex> lock(m_mutex);
 			if (m_done.empty())
 				break;
+			// a 4K tile only in a frame of its own: two in one frame would stall it twice as long
+			if (uploaded > 0 && m_done.front().pixels.size() > upload_budget)
+				break;
 			done = std::move(m_done.front());
 			m_done.pop_front();
 		}
@@ -1141,35 +1624,57 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		for (int dx = -radius; dx <= radius; ++dx)
 		{
 			tile_key const key{centre.first + dx, centre.second + dy};
+			// outside the download area: nothing asked for, nothing shown
+			if (false == m_area.empty() && 0 == m_area_tiles.count(key))
+			{
+				if (auto const found{m_tiles.find(key)}; found != m_tiles.end())
+				{
+					release_tile(found->second);
+					m_tiles.erase(found);
+				}
+				continue;
+			}
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
-			int const level = level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires);
+			int level = level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires);
+			// a tile showing nothing yet takes the standard image first, from the disk cache at once mostly: the 4K one comes from a slow
+			// service a few at a time, the tiles around the camera stayed blank meanwhile though their standard images lay on the disk
+			if (level > standard_pixels && t.level < standard_pixels)
+				level = standard_pixels;
 			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
 			schedule(key, t, level, m_alpha);
 		}
 
-	// ground fit, one tile per frame (it walks the scene geometry), nearest first
+	// ground fit, nearest first, as many tiles a frame as 4 ms let walk the scene geometry, one at least: a tile not fitted yet lies
+	// at the height of the layer, under the terrain of a scenery high above it, as if it hadn't come
 	if (m_config.drape && m_ground && simulation::Region != nullptr)
 	{
-		tile *nearest{nullptr};
-		tile_key nearestkey{0, 0};
-		int nearestdistance{INT_MAX};
-		for (auto &entry : m_tiles)
+		auto const until{now + 0.004};
+		for (;;)
 		{
-			if (entry.second.grounded || entry.second.empty)
-				continue;
-			int const d = distance(entry.first);
-			if (d < nearestdistance)
+			tile *nearest{nullptr};
+			tile_key nearestkey{0, 0};
+			int nearestdistance{INT_MAX};
+			for (auto &entry : m_tiles)
 			{
-				nearestdistance = d;
-				nearest = &entry.second;
-				nearestkey = entry.first;
+				if (entry.second.grounded || entry.second.empty)
+					continue;
+				int const d = distance(entry.first);
+				if (d < nearestdistance)
+				{
+					nearestdistance = d;
+					nearest = &entry.second;
+					nearestkey = entry.first;
+				}
 			}
-		}
-		if (nearest != nullptr)
+			if (nearest == nullptr)
+				break;
 			sample_ground(nearestkey, *nearest);
+			if (steady_seconds() >= until)
+				break;
+		}
 	}
 
 	update_scene();
@@ -1184,27 +1689,72 @@ void editor_orthophoto::worker()
 	for (;;)
 	{
 		job current;
+		// a tile of the area to put into the disk cache, where no tile around the camera waits
+		std::optional<tile_key> prefetch;
+		source prefetchsource;
+		std::uint32_t prefetchgeneration{0};
 		{
 			std::unique_lock<std::mutex> lock(m_mutex);
-			m_wakeup.wait(lock, [this]() { return m_stop.load() || !m_queue.empty(); });
+			// the nearest tile first, of the ones no other worker is on; none while enough workers are on tiles around the camera
+			auto const nearest = [&]() {
+				auto best = m_queue.end();
+				if (m_running.size() >= static_cast<std::size_t>(worker_count))
+					return best;
+				long long bestdistance = LLONG_MAX;
+				for (auto it = m_queue.begin(); it != m_queue.end(); ++it)
+				{
+					// a 4K image is 64 MB decoded: that many at most at once, the standard tiles by all the workers
+					if (m_running.count(it->key) > 0 || (it->level >= hires_pixels && m_running_hires >= camera_workers))
+						continue;
+					long long const dx = it->key.first - m_focus.first;
+					long long const dy = it->key.second - m_focus.second;
+					long long const d = dx * dx + dy * dy;
+					if (d < bestdistance)
+					{
+						bestdistance = d;
+						best = it;
+					}
+				}
+				return best;
+			};
+			auto const prefetching = [&]() { return false == m_prefetch_paused && m_prefetch_next < m_prefetch.size(); };
+			m_wakeup.wait(lock, [&]() { return m_stop.load() || nearest() != m_queue.end() || prefetching(); });
 			if (m_stop)
 				return;
-			// nearest tile first
-			auto best = m_queue.begin();
-			long long bestdistance = LLONG_MAX;
-			for (auto it = m_queue.begin(); it != m_queue.end(); ++it)
+			if (auto const best{nearest()}; best != m_queue.end())
 			{
-				long long const dx = it->key.first - m_focus.first;
-				long long const dy = it->key.second - m_focus.second;
-				long long const d = dx * dx + dy * dy;
-				if (d < bestdistance)
-				{
-					bestdistance = d;
-					best = it;
-				}
+				current = *best;
+				m_queue.erase(best);
+				m_running.insert(current.key);
+				if (current.level >= hires_pixels)
+					++m_running_hires;
 			}
-			current = *best;
-			m_queue.erase(best);
+			else
+			{
+				prefetch = m_prefetch[m_prefetch_next++];
+				prefetchsource = m_prefetch_source;
+				prefetchgeneration = m_prefetch_generation;
+			}
+		}
+
+		if (prefetch.has_value())
+		{
+			std::string error;
+			tile_request const request{prefetch->first, prefetch->second, standard_pixels, prefetchsource.year, prefetchsource.hires};
+			auto const ok{prefetch_tile(client, request, error, stopping)};
+			if (m_stop)
+				return;
+			if (!ok)
+				ErrorLog("Editor orthophoto: tile " + std::to_string(prefetch->second) + "_" + std::to_string(prefetch->first) + " of the download area failed: " + error);
+			std::lock_guard<std::mutex> lock(m_mutex);
+			if (prefetchgeneration == m_prefetch_generation)
+			{
+				if (ok)
+					m_prefetch_cached.insert(*prefetch);
+				else
+					m_prefetch_failed.insert(*prefetch);
+			}
+			continue;
 		}
 
 		result out;
@@ -1216,11 +1766,24 @@ void editor_orthophoto::worker()
 		image picture;
 		std::string error;
 		tile_request const request{current.key.first, current.key.second, current.level, current.src.year, current.src.hires};
-		out.ok = load_tile(client, request, picture, out.empty, error, stopping);
+		// a job of the same tile queued since: the tile wants another image now
+		stop_check const superseded = [&]() {
+			std::lock_guard<std::mutex> lock(m_mutex);
+			return std::any_of(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == current.key; });
+		};
+		if (current.src.service.empty())
+			out.ok = load_tile(client, request, picture, out.empty, error, stopping, superseded);
+		else
+		{
+			config service;
+			service.service = current.src.service;
+			service.layers = current.src.layers;
+			out.ok = load_service(client, service, request, picture, out.empty, error, stopping);
+		}
 		if (m_stop)
 			return;
-		if (!out.ok)
-			ErrorLog("Editor orthophoto: tile " + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
+		if (!out.ok && error != "superseded")
+			ErrorLog(std::string("Editor orthophoto: tile ") + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
 		if (out.ok && current.alpha < 255)
 			for (std::size_t i = 3; i < picture.rgba.size(); i += 4)
 				picture.rgba[i] = static_cast<std::uint8_t>((picture.rgba[i] * current.alpha + 127u) / 255u);
@@ -1228,14 +1791,23 @@ void editor_orthophoto::worker()
 		out.height = picture.height;
 		out.pixels = std::move(picture.rgba);
 
-		std::lock_guard<std::mutex> lock(m_mutex);
-		m_done.push_back(std::move(out));
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_done.push_back(std::move(out));
+			m_running.erase(current.key);
+			if (current.level >= hires_pixels)
+				--m_running_hires;
+		}
+		// a job of the same tile may have waited for this one
+		m_wakeup.notify_all();
 	}
 }
 
 void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const
 {
-	if (!m_enabled || m_config.in_scene || m_config.opacity <= 0.0f || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
+	if (!m_enabled || ScreenWidth <= 0.0f || ScreenHeight <= 0.0f)
+		return;
+	if (m_config.in_scene || m_config.opacity <= 0.0f)
 		return;
 
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());

@@ -45,7 +45,13 @@ bool g_loaded{false};
 //   ends <start direction x z> <end direction x z> <start grade> <end grade> <start R> <end R>
 //   norms <gauge> <unbalanced> <cant max> <cant rate> <ramp factor> <jerk> <straight between curves, s> <arc min> <arc min factor>
 //   pieces <pieces of a transition> <angle of an arc piece>
-//   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]...
+//   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]... [spirals 1]
+//     spirals: two transition curves with no arc between them, their lengths following from R
+//     [cants <first> <arc>...]: the cants of the radii of a compound curve set one by one, below 0 the cant in proportion to the curvature
+//     [ramps <in offset> <in length> <out offset> <out length>]: the cant ramps of the curve where they don't go along its transitions,
+//       their outer ends from the start and from the end of the curve, into it above 0; a length below 0 keeps the ramp along the transition
+//   click <x y z>: a point clicked when the line was laid, its curves fitted to them
+//   kept <from> <to>: the stretch of the line the design is kept for, chainages from its start, where tracks along it were deleted
 //   element <straight|transition|arc> <vertex> <chainage> <length> <R at the start> <R at the end> <cant> <start x> <start z> <direction x> <direction z>
 //     radii signed with the turn, 0 for no curvature
 //   end
@@ -70,13 +76,15 @@ glm::dvec2 world_direction(scene::layer_context const &Context, glm::dvec3 const
 	return glm::length(direction) > 1e-12 ? glm::normalize(direction) : Direction;
 }
 
+// the points of the line every kStep from the start of the stretch it's kept for
 void sample(record &Record)
 {
 	Record.samples.clear();
-	auto const length{Record.result.length};
-	auto const count{static_cast<std::size_t>(std::ceil(length / kStep))};
+	auto const from{std::clamp(Record.from, 0.0, Record.result.length)};
+	auto const to{std::clamp(Record.kept_to(), from, Record.result.length)};
+	auto const count{static_cast<std::size_t>(std::ceil((to - from) / kStep))};
 	for (std::size_t i = 0; i <= count; ++i)
-		Record.samples.push_back(plan_of(alignment::evaluate(Record.result, std::min(length, i * kStep)).position));
+		Record.samples.push_back(plan_of(alignment::evaluate(Record.result, std::min(to, from + i * kStep)).position));
 	Record.high = Record.samples.empty() ? glm::dvec2{0.0} : Record.samples.front();
 	Record.low = Record.high;
 	for (auto const &point : Record.samples)
@@ -125,10 +133,18 @@ void mark(scene::layer_handle const Layer)
 		lines.push_back(format("source %s origin %.4f shape %s speed %.1f", entry.source.c_str(), entry.origin, shape_name(design.shape), design.speed) + (entry.fit > 0.0 ? format(" fit %.3f", entry.fit) : std::string{}));
 		auto const startdirection{local_direction(context, design.start, design.start_direction)};
 		auto const enddirection{local_direction(context, design.end, design.end_direction)};
-		lines.push_back(format("ends %.9f %.9f %.9f %.9f %.6f %.6f %.3f %.3f", startdirection.x, startdirection.y, enddirection.x, enddirection.y, design.start_grade, design.end_grade, design.start_radius, design.end_radius));
+		auto ends{format("ends %.9f %.9f %.9f %.9f %.6f %.6f %.3f %.3f", startdirection.x, startdirection.y, enddirection.x, enddirection.y, design.start_grade, design.end_grade, design.start_radius, design.end_radius)};
+		// the sides the adjoining tracks turn to, and the curves going on from them with their cants, written since there are such
+		if (design.start_turn != 0 || design.end_turn != 0)
+			ends += format(" turns %d %d", design.start_turn, design.end_turn);
+		if (design.start_curved || design.end_curved)
+			ends += format(" curved %d %d %.1f %.1f", design.start_curved ? 1 : 0, design.end_curved ? 1 : 0, design.start_cant, design.end_cant);
+		lines.push_back(ends);
 		auto const &norms{design.norms};
 		lines.push_back(format("norms %.1f %.3f %.1f %.1f %.2f %.3f %.2f %.2f %.3f", norms.gauge, norms.unbalanced, norms.cant_max, norms.cant_rate, norms.ramp_factor, norms.jerk, norms.tangent_min_time, norms.arc_min, norms.arc_min_factor));
 		lines.push_back(format("pieces %d %.3f", design.transition_pieces, design.arc_piece_angle));
+		if (false == entry.whole())
+			lines.push_back(format("kept %.4f %.4f", entry.from, entry.kept_to()));
 		for (auto const &vertex : design.vertices)
 		{
 			auto const position{context.to_local({vertex.position.x, 0.0, vertex.position.y})};
@@ -136,8 +152,20 @@ void mark(scene::layer_handle const Layer)
 			                  vertex.share, vertex.arcs.size())};
 			for (auto const &arc : vertex.arcs)
 				text += format(" %.3f %.3f %.9f", arc.radius, arc.transition, arc.share);
+			if (vertex.spirals)
+				text += " spirals 1";
+			if (vertex.first_cant >= 0.0 || std::any_of(vertex.arcs.begin(), vertex.arcs.end(), [](alignment::compound_arc const &Arc) { return Arc.cant >= 0.0; }))
+			{
+				text += format(" cants %.1f", vertex.first_cant);
+				for (auto const &arc : vertex.arcs)
+					text += format(" %.1f", arc.cant);
+			}
+			if (vertex.own_ramps())
+				text += format(" ramps %.3f %.3f %.3f %.3f", vertex.ramp_in_offset, vertex.ramp_in_length, vertex.ramp_out_offset, vertex.ramp_out_length);
 			lines.push_back(text);
 		}
+		for (auto const &click : entry.clicks)
+			lines.push_back("click " + local(click));
 		for (auto const &e : entry.result.elements)
 		{
 			auto const station{alignment::evaluate(entry.result, e.chainage)};
@@ -155,6 +183,8 @@ void mark(scene::layer_handle const Layer)
 alignment::vertex reversed_vertex(alignment::vertex Vertex)
 {
 	std::swap(Vertex.transition_in, Vertex.transition_out);
+	std::swap(Vertex.ramp_in_offset, Vertex.ramp_out_offset);
+	std::swap(Vertex.ramp_in_length, Vertex.ramp_out_length);
 	if (Vertex.compound && false == Vertex.arcs.empty())
 	{
 		struct part
@@ -162,15 +192,17 @@ alignment::vertex reversed_vertex(alignment::vertex Vertex)
 			double radius;
 			double share;
 			double transition;
+			double cant;
 		};
-		std::vector<part> parts{{Vertex.radius, Vertex.share, 0.0}};
+		std::vector<part> parts{{Vertex.radius, Vertex.share, 0.0, Vertex.first_cant}};
 		for (auto const &arc : Vertex.arcs)
-			parts.push_back({arc.radius, arc.share, arc.transition});
+			parts.push_back({arc.radius, arc.share, arc.transition, arc.cant});
 		auto const count{parts.size()};
 		Vertex.radius = parts.back().radius;
 		Vertex.share = parts.back().share;
+		Vertex.first_cant = parts.back().cant;
 		for (std::size_t j = 1; j < count; ++j)
-			Vertex.arcs[j - 1] = {parts[count - 1 - j].radius, parts[count - j].transition, parts[count - 1 - j].share};
+			Vertex.arcs[j - 1] = {parts[count - 1 - j].radius, parts[count - j].transition, parts[count - 1 - j].share, parts[count - 1 - j].cant};
 	}
 	return Vertex;
 }
@@ -179,6 +211,14 @@ void finish(record &Record)
 {
 	Record.result = alignment::compute(Record.design);
 	sample(Record);
+}
+
+// the points clicked added to the ones there, each once
+void add_clicks(std::vector<glm::dvec3> &To, std::vector<glm::dvec3> const &From)
+{
+	for (auto const &click : From)
+		if (std::none_of(To.begin(), To.end(), [&](glm::dvec3 const &Other) { return glm::distance(Other, click) < 0.01; }))
+			To.push_back(click);
 }
 
 // the curves of a design whose vertices are vertices of a stored alignment are taken into that alignment, in place of its own
@@ -190,7 +230,7 @@ int merge(record const &Entry)
 	for (std::size_t r = 0; r < g_records.size(); ++r)
 	{
 		auto const &others{g_records[r].result.vertices};
-		if (others.size() < vertices.size())
+		if (others.size() < vertices.size() || false == g_records[r].whole())
 			continue;
 		for (auto const backwards : {false, true})
 			for (std::size_t first = 0; first + vertices.size() <= others.size(); ++first)
@@ -202,6 +242,7 @@ int merge(record const &Entry)
 				if (false == same)
 					continue;
 				auto merged{g_records[r]};
+				add_clicks(merged.clicks, Entry.clicks);
 				for (std::size_t k = 0; k < vertices.size(); ++k)
 				{
 					auto const shape{backwards ? reversed_vertex(Entry.design.vertices[k]) : Entry.design.vertices[k]};
@@ -307,6 +348,21 @@ std::optional<alignment::vertex> read_vertex(std::istringstream &Line, scene::la
 	}
 	if (Line.fail())
 		return std::nullopt;
+	// written since the bends of the straights are eased with two transition curves, the lines of before end with the arcs
+	for (std::string word; Line >> word;)
+	{
+		if (int value{0}; word == "spirals" && Line >> value)
+			vertex.spirals = (value != 0);
+		// the cants of the arcs of a compound curve, set one by one: of the first arc and of the ones after it, below 0 in proportion
+		if (word == "cants")
+		{
+			Line >> vertex.first_cant;
+			for (auto &arc : vertex.arcs)
+				Line >> arc.cant;
+		}
+		if (word == "ramps")
+			Line >> vertex.ramp_in_offset >> vertex.ramp_in_length >> vertex.ramp_out_offset >> vertex.ramp_out_length;
+	}
 	position = Context.to_world(position);
 	vertex.position = {position.x, position.z};
 	vertex.reverse_turn = (reverse != 0);
@@ -333,6 +389,16 @@ void read_part(record &Entry, std::string const &Keyword, std::istringstream &Li
 		Line >> startdirection.x >> startdirection.y >> enddirection.x >> enddirection.y >> design.start_grade >> design.end_grade >> design.start_radius >> design.end_radius;
 		design.start_direction = world_direction(Context, Context.to_local(design.start), startdirection);
 		design.end_direction = world_direction(Context, Context.to_local(design.end), enddirection);
+		for (std::string key; Line >> key;)
+		{
+			if (key == "turns")
+				Line >> design.start_turn >> design.end_turn;
+			if (int start{0}, end{0}; key == "curved" && Line >> start >> end >> design.start_cant >> design.end_cant)
+			{
+				design.start_curved = (start != 0);
+				design.end_curved = (end != 0);
+			}
+		}
 	}
 	else if (Keyword == "norms")
 	{
@@ -352,6 +418,22 @@ void read_part(record &Entry, std::string const &Keyword, std::istringstream &Li
 		Line >> e.kind >> e.vertex >> e.chainage >> e.length >> e.radius_start >> e.radius_end >> e.cant;
 		if (false == Line.fail())
 			Entry.elements.push_back(e);
+	}
+	else if (Keyword == "click")
+	{
+		glm::dvec3 point;
+		if (Line >> point.x >> point.y >> point.z)
+			Entry.clicks.push_back(Context.to_world(point));
+	}
+	else if (Keyword == "kept")
+	{
+		double from;
+		double to;
+		if (Line >> from >> to && to > from)
+		{
+			Entry.from = std::max(0.0, from);
+			Entry.to = to;
+		}
 	}
 }
 
@@ -452,8 +534,10 @@ std::optional<hit> project(record const &Entry, std::size_t const Index, glm::dv
 	if (distance > margin)
 		return std::nullopt;
 	auto const away = [&](double const S) { return glm::distance(plan_of(alignment::evaluate(entry.result, S).position), Point); };
-	auto low{std::max(0.0, nearest * kStep - kStep)};
-	auto high{std::min(entry.result.length, nearest * kStep + kStep)};
+	auto const from{entry.from};
+	auto const to{entry.kept_to()};
+	auto low{std::max(from, from + nearest * kStep - kStep)};
+	auto high{std::min(to, from + nearest * kStep + kStep)};
 	for (int i = 0; i < 60; ++i)
 	{
 		auto const a{low + (high - low) / 3.0};
@@ -467,10 +551,10 @@ std::optional<hit> project(record const &Entry, std::size_t const Index, glm::dv
 	auto const offset{away(chainage)};
 	if (offset > reach)
 		return std::nullopt;
-	if (chainage < 1e-3 || chainage > entry.result.length - 1e-3)
+	if (chainage < from + 1e-3 || chainage > to - 1e-3)
 	{
 		auto const end{alignment::evaluate(entry.result, chainage)};
-		auto const outward{glm::dot(Point - plan_of(end.position), glm::normalize(plan_of(end.direction))) * (chainage < 1e-3 ? -1.0 : 1.0)};
+		auto const outward{glm::dot(Point - plan_of(end.position), glm::normalize(plan_of(end.direction))) * (chainage < from + 1e-3 ? -1.0 : 1.0)};
 		if (outward > tolerance + entry.fit)
 			return std::nullopt;
 	}
@@ -523,15 +607,15 @@ std::vector<std::pair<double, double>> bare(std::size_t const Index)
 	}
 	std::sort(covered.begin(), covered.end());
 	std::vector<std::pair<double, double>> gaps;
-	double reached{0.0};
+	double reached{entry.from};
 	for (auto const &[from, to] : covered)
 	{
 		if (from - reached > 0.5)
 			gaps.emplace_back(reached, from);
 		reached = std::max(reached, to);
 	}
-	if (entry.result.length - reached > 0.5)
-		gaps.emplace_back(reached, entry.result.length);
+	if (entry.kept_to() - reached > 0.5)
+		gaps.emplace_back(reached, entry.kept_to());
 	return gaps;
 }
 
@@ -616,9 +700,22 @@ std::optional<designed_vertex> vertex_of(std::vector<std::pair<TTrack *, bool>> 
 		}
 		if (false == along || vertices.size() != 1 || *vertices.begin() >= static_cast<int>(entry.design.vertices.size()))
 			continue;
+		// a curve cut by the deletion of tracks along it is no designed one any more: the tracks left of it are recognized as they lie
+		if (std::any_of(entry.result.elements.begin(), entry.result.elements.end(), [&](alignment::element const &E) {
+			    return E.vertex == *vertices.begin() && E.kind != alignment::element_kind::straight && (E.chainage < entry.from - 0.01 || E.chainage + E.length > entry.kept_to() + 0.01);
+		    }))
+			continue;
 		auto const start{project(r, entering(Run.front(), false), tolerance)};
 		auto const end{project(r, entering(Run.back(), true), tolerance)};
 		if (false == start.has_value() || false == end.has_value())
+			continue;
+		// the tracks of a part of the curve only, as on either side of a switch laid into it, aren't laid by its design: it's theirs only
+		// where they reach over the whole curve, else they're recognized as they lie
+		auto const low{std::min(start->chainage, end->chainage) - 0.5};
+		auto const high{std::max(start->chainage, end->chainage) + 0.5};
+		if (std::any_of(entry.result.elements.begin(), entry.result.elements.end(), [&](alignment::element const &E) {
+			    return E.vertex == *vertices.begin() && E.kind != alignment::element_kind::straight && (E.chainage < low || E.chainage + E.length > high);
+		    }))
 			continue;
 		designed_vertex result;
 		result.record = static_cast<int>(r);
@@ -639,6 +736,8 @@ int find(glm::dvec3 const &Start, glm::dvec3 const &End, bool &Reversed)
 	for (std::size_t i = 0; i < g_records.size(); ++i)
 	{
 		auto const &design{g_records[i].design};
+		if (false == g_records[i].whole())
+			continue;
 		if (geometry::plan_distance(design.start, Start) <= 0.1 && geometry::plan_distance(design.end, End) <= 0.1)
 			return static_cast<int>(i);
 		if (geometry::plan_distance(design.start, End) <= 0.1 && geometry::plan_distance(design.end, Start) <= 0.1)
@@ -648,6 +747,73 @@ int find(glm::dvec3 const &Start, glm::dvec3 const &End, bool &Reversed)
 		}
 	}
 	return -1;
+}
+
+glm::dvec3 kept_start(record const &Record)
+{
+	return alignment::evaluate(Record.result, Record.from).position;
+}
+
+glm::dvec3 kept_end(record const &Record)
+{
+	return alignment::evaluate(Record.result, Record.kept_to()).position;
+}
+
+std::size_t trim(std::vector<TTrack *> const &Removed)
+{
+	load();
+	// the records the tracks deleted lay along, the ones they lay along before they were retired
+	std::set<std::size_t> touched;
+	for (auto const *track : Removed)
+		if (track != nullptr)
+			for (std::size_t r = 0; r < g_records.size(); ++r)
+				if (std::any_of(track->m_paths.begin(), track->m_paths.end(), [&](segment_data const &Path) { return lies_along(g_records[r], Path); }))
+					touched.insert(r);
+	std::vector<record> kept;
+	std::set<scene::layer_handle> layers;
+	std::size_t cut{0};
+	for (auto r{touched.rbegin()}; r != touched.rend(); ++r)
+	{
+		auto const gaps{bare(*r)};
+		if (gaps.empty())
+			continue;
+		auto const entry{g_records[*r]};
+		g_records.erase(g_records.begin() + static_cast<std::ptrdiff_t>(*r));
+		layers.insert(entry.layer);
+		++cut;
+		// the stretches between the gaps, with the points clicked along them; none too short for a track
+		std::vector<glm::dvec2> plan;
+		for (auto const &click : entry.clicks)
+			plan.push_back(plan_of(click));
+		auto const projections{alignment::project(entry.result, plan)};
+		auto from{entry.from};
+		auto const keep = [&](double const To) {
+			if (To - from < 1.0)
+				return;
+			auto piece{entry};
+			piece.from = from;
+			piece.to = To;
+			piece.clicks.clear();
+			for (std::size_t i = 0; i < entry.clicks.size() && i < projections.size(); ++i)
+				if (projections[i].chainage >= from - 1.0 && projections[i].chainage <= To + 1.0)
+					piece.clicks.push_back(entry.clicks[i]);
+			sample(piece);
+			kept.push_back(std::move(piece));
+		};
+		for (auto const &[start, end] : gaps)
+		{
+			keep(start);
+			from = end;
+		}
+		keep(entry.kept_to());
+	}
+	if (cut == 0)
+		return 0;
+	g_records.insert(g_records.end(), kept.begin(), kept.end());
+	g_changed = true;
+	for (auto const layer : layers)
+		mark(layer);
+	return cut;
 }
 
 int departed(std::vector<TTrack *> const &Tracks, double &Departure)
@@ -731,12 +897,34 @@ std::optional<double> chainage_on(alignment::result const &Result, glm::dvec3 co
 	return found->chainage;
 }
 
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source, double const Fit)
+std::vector<glm::dvec3> clicks_along(alignment::result const &Result, double const Reach)
+{
+	load();
+	std::vector<glm::dvec3> along;
+	if (false == Result.valid || Result.elements.empty())
+		return along;
+	std::vector<glm::dvec3> all;
+	for (auto const &entry : g_records)
+		add_clicks(all, entry.clicks);
+	if (all.empty())
+		return along;
+	std::vector<glm::dvec2> plan;
+	for (auto const &click : all)
+		plan.push_back(plan_of(click));
+	auto const projections{alignment::project(Result, plan)};
+	for (std::size_t i = 0; i < all.size() && i < projections.size(); ++i)
+		if (projections[i].chainage > 0.0 && projections[i].chainage < Result.length && std::abs(projections[i].offset) <= Reach)
+			along.push_back(all[i]);
+	return along;
+}
+
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source, double const Fit, std::vector<glm::dvec3> const &Clicks)
 {
 	load();
 	record entry;
 	entry.source = Source;
 	entry.fit = Fit;
+	entry.clicks = Clicks;
 	entry.design = Design;
 	entry.design.start_reserve = 0.0;
 	entry.design.end_reserve = 0.0;
@@ -755,6 +943,8 @@ int store(alignment::design const &Design, alignment::result const &Result, doub
 	if (index >= 0)
 	{
 		entry.layer = g_records[index].layer;
+		if (entry.clicks.empty())
+			entry.clicks = g_records[index].clicks;
 		g_records[index] = std::move(entry);
 	}
 	else if ((index = merge(entry)) >= 0)
@@ -817,6 +1007,8 @@ void transform(int const Index, glm::dvec3 const &From, glm::dvec2 const &Fromdi
 	design.end_direction = geometry::turned(design.end_direction, angle);
 	for (auto &vertex : design.vertices)
 		vertex.position = plan_of(place({vertex.position.x, 0.0, vertex.position.y}));
+	for (auto &click : entry.clicks)
+		click = place(click);
 	finish(entry);
 	entry.elements.clear();
 	for (auto const &e : entry.result.elements)
@@ -863,7 +1055,12 @@ void restore(std::vector<record> Records)
 
 scene::layer_handle layer_of(TTrack const &Track)
 {
-	auto const usable = [](scene::layer_handle const Layer) { return scene::Layers.valid(Layer) && scene::Layers.accepts(Layer) && false == scene::Layers.layer(Layer).name.ends_with(".txtf"); };
+	auto const usable = [](scene::layer_handle const Layer) {
+		if (false == scene::Layers.valid(Layer) || false == scene::Layers.accepts(Layer))
+			return false;
+		auto const &name{scene::Layers.layer(Layer).name};
+		return false == name.ends_with(".txtf") && false == name.ends_with("_ter.scm");
+	};
 	auto layer{scene::Layers.resolve(Track.layer())};
 	if (false == usable(layer))
 		layer = scene::Layers.active();

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/translation.h"
 #include "world/Track.h"
+#include "world/TrackSleepers.h"
 
 #include "imgui/imgui.h"
 #include <algorithm>
@@ -138,7 +139,11 @@ std::string template_tooltip(editor_track::switch_template const &Template)
 		text += "\n";
 		text += Template.type == "Rkp" ? STR_C("Single slip (Rkp)") : Template.type == "Rkpd" ? STR_C("Double slip (Rkpd)") : STR_C("Crossing (Skrz)");
 		text += "\n" + format(STR_C("a %.3f m from the middle of the crossing to the joint"), Template.a) + "\n";
-		text += Template.type == "Rkp" ? STR_C("Click at a crossing of two straights, on the side of the tracks to join") : STR_C("Click at a crossing of two straights");
+		if (Template.type == "Skrz")
+			text += STR_C("Drag at a crossing of two straights");
+		else
+			text += std::string{STR_C("Drag it out on one straight: its crossing track comes along at its skos, through the quarter of the cursor")} + "\n" +
+			        (Template.type == "Rkp" ? STR_C("Or drag at a crossing of two straights at its skos, on the side of the tracks to join") : STR_C("Or drag at a crossing of two straights at its skos"));
 		return text;
 	}
 	text += "\n" + format(STR_C("a %.3f m to the centre of the switch, b %.3f m on to its end"), Template.a, Template.b);
@@ -227,7 +232,7 @@ void editor_mode::render_switch_ui()
 		char const *tooltip;
 	};
 	choice const choices[] = {{switch_kind::single, "Switch", "A switch in a straight or a curve"},
-	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd at a crossing of two straights"},
+	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"},
 	                          {switch_kind::crossing, "Crossing", "A crossing of two straights"},
 	                          {switch_kind::connection, "Connection", "Crossover, double, scissors, ladder"}};
 	{
@@ -274,13 +279,15 @@ void editor_mode::render_switch_ui()
 	switch (kind)
 	{
 	case switch_kind::slip:
-	case switch_kind::crossing: how = {{"LMB on a crossing", "of two straights: it goes there"}}; break;
+		how = {{"Drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Drag at a crossing", "of two straights at the skos of the slip: it goes there"}, {"Drag on a curve", "bent into it, in a side track only (11.4 pkt 4b)"}};
+		break;
+	case switch_kind::crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
 	case switch_kind::connection:
 		how = {{"Drag", "from a straight onto the other track"}, {"Shift+wheel", "the kind"}, {"Ctrl+wheel", "R of the aligning curve"}};
 		if (tool.connection == static_cast<int>(connection::kind::double_crossover))
 			how.push_back({"Alt+wheel", "where they meet"});
 		break;
-	default: how = {{"Drag on a track", "along: the direction, sideways: the side"}}; break;
+	default: how = {{"Drag on a track", "along: the direction, sideways: the side"}, {"Drag on the ground", "a switch with no track, on from a free end near it"}}; break;
 	}
 	gesture_rows(how);
 
@@ -390,6 +397,7 @@ void editor_mode::render_switch_ui()
 			arm_switch();
 		}
 		item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
+		render_switch_timbers();
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
@@ -403,6 +411,35 @@ void editor_mode::render_switch_ui()
 	if (ImGui::Button(STR_C("Template editor...")))
 		m_switch_designer.open = true;
 	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
+}
+
+// the timbers of all the switches and crossings of the scenery at once: a button for each model of timbers of the scenery data
+void editor_mode::render_switch_timbers()
+{
+	ImGui::TextDisabled("%s", STR_C("Timbers of all the switches"));
+	auto first{true};
+	auto const button = [&](std::string const &Model, std::string const &Label) {
+		if (false == first)
+			ImGui::SameLine();
+		first = false;
+		if (ImGui::Button((Label + "##switchtimbers" + Model).c_str()))
+			m_switch.status = format(STR_C("Timbers %s set on %d tracks"), Label.c_str(), static_cast<int>(set_switch_timbers(Model)));
+		item_tooltip("Sets the model of the timbers, with the fastenings where it has them, on all the switches and crossings of the scenery, in one step of the undo");
+	};
+	for (auto const &model : track_sleepers::pack_models())
+		if (model.timber)
+			button(model.name, model.name.substr(model.name.find_last_of('/') + 1));
+	button({}, STR_C("As in eu07.ini"));
+}
+
+std::size_t editor_mode::set_switch_timbers(std::string const &Model)
+{
+	std::vector<TTrack *> tracks;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 15) == 1 && (track->eType == tt_Switch || false == track->m_crossings.empty())
+		    && track->m_timber_model_name != Model)
+			tracks.push_back(track);
+	return tracks_apply(tracks, [&](TTrack &Track) { Track.m_timber_model_name = Model; return true; }, true, "Timber model");
 }
 
 // a track with no rail profile, as the sceneries of the older editors have them: the templates of all the rails are offered.

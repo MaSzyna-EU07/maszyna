@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -38,9 +39,27 @@ inline double plan_distance(glm::dvec3 const &A, glm::dvec3 const &B)
 }
 
 // z component of the 3d cross product; for a unit Direction it's the offset of the Point to its left
+inline double heading_of(glm::dvec2 const &Direction)
+{
+	auto const degrees{glm::degrees(std::atan2(Direction.x, Direction.y))};
+	return degrees < 0.0 ? degrees + 360.0 : degrees;
+}
+
 inline double cross(glm::dvec2 const &Direction, glm::dvec2 const &Point)
 {
 	return Direction.x * Point.y - Direction.y * Point.x;
+}
+
+// where the line from A along AlongA crosses the one from B along AlongB, as the distances along each in the lengths of their
+// directions; none where they run alike
+inline bool lines_cross(glm::dvec2 const &A, glm::dvec2 const &AlongA, glm::dvec2 const &B, glm::dvec2 const &AlongB, double &First, double &Second)
+{
+	auto const determinant{cross(AlongA, AlongB)};
+	if (std::abs(determinant) < 1e-9)
+		return false;
+	First = cross(B - A, AlongB) / determinant;
+	Second = cross(B - A, AlongA) / determinant;
+	return true;
 }
 
 inline glm::dvec2 turned(glm::dvec2 const &Vector, double const Angle)
@@ -129,6 +148,14 @@ struct bezier
 	glm::dvec3 second(double const T) const
 	{
 		return 6.0 * (1.0 - T) * (p2 - 2.0 * p1 + p0) + 6.0 * T * (p3 - 2.0 * p2 + p1);
+	}
+	// the curvature in the plan at T, 1/m, positive to the left as the curve runs; none where it barely moves
+	double plan_curvature(double const T) const
+	{
+		auto const along{first(T)};
+		auto const turning{second(T)};
+		auto const speed{std::hypot(along.x, along.z)};
+		return speed < 1e-9 ? 0.0 : (along.x * turning.z - along.z * turning.x) / (speed * speed * speed);
 	}
 	double plan_length(int const Steps = 32) const
 	{
@@ -232,6 +259,69 @@ inline glm::dvec3 level(glm::dvec3 const &Vector)
 {
 	glm::dvec3 const flat{Vector.x, 0.0, Vector.z};
 	return glm::length(flat) > 1e-9 ? glm::normalize(flat) : glm::dvec3{0.0, 0.0, 1.0};
+}
+
+// a point inside the polygon, by the number of its edges a ray along +x from it crosses
+inline bool point_in_polygon(std::vector<glm::dvec2> const &Polygon, glm::dvec2 const &Point)
+{
+	bool result{false};
+	for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+	{
+		auto const &a{Polygon[i]};
+		auto const &b{Polygon[j]};
+		if ((a.y > Point.y) != (b.y > Point.y) && Point.x < a.x + (b.x - a.x) * (Point.y - a.y) / (b.y - a.y))
+			result = !result;
+	}
+	return result;
+}
+
+// the square of the side from (West, South), the axes the polygon's, touches the polygon: a corner of it inside the polygon, a
+// vertex of the polygon inside it, or an edge crossing an edge. A side of 0: the point inside the polygon
+inline bool square_touches(std::vector<glm::dvec2> const &Polygon, double const West, double const South, double const Size)
+{
+	if (Polygon.size() < 3)
+		return false;
+	glm::dvec2 const corners[]{{West, South}, {West + Size, South}, {West + Size, South + Size}, {West, South + Size}};
+	for (auto const &corner : corners)
+		if (point_in_polygon(Polygon, corner))
+			return true;
+	if (Size <= 0.0)
+		return false;
+	for (auto const &point : Polygon)
+		if (point.x >= West && point.x <= West + Size && point.y >= South && point.y <= South + Size)
+			return true;
+	// two segments crossing, by the sides each one's ends lie on of the other
+	auto const side = [](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &P) { return (B.x - A.x) * (P.y - A.y) - (B.y - A.y) * (P.x - A.x); };
+	auto const crossing = [&](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C, glm::dvec2 const &D) {
+		return ((side(A, B, C) > 0.0) != (side(A, B, D) > 0.0)) && ((side(C, D, A) > 0.0) != (side(C, D, B) > 0.0));
+	};
+	for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+		for (int k = 0; k < 4; ++k)
+			if (crossing(Polygon[j], Polygon[i], corners[k], corners[(k + 1) % 4]))
+				return true;
+	return false;
+}
+
+// the squares of a grid of the size, from 0 along both axes, the polygon touches, by their indices along the axes
+inline std::vector<std::pair<int, int>> squares_in(std::vector<glm::dvec2> const &Polygon, double const Size)
+{
+	std::vector<std::pair<int, int>> result;
+	if (Polygon.size() < 3 || Size <= 0.0)
+		return result;
+	glm::dvec2 low{Polygon.front()};
+	glm::dvec2 high{Polygon.front()};
+	for (auto const &point : Polygon)
+	{
+		low = glm::min(low, point);
+		high = glm::max(high, point);
+	}
+	auto const first{glm::ivec2{static_cast<int>(std::floor(low.x / Size)), static_cast<int>(std::floor(low.y / Size))}};
+	auto const last{glm::ivec2{static_cast<int>(std::floor(high.x / Size)), static_cast<int>(std::floor(high.y / Size))}};
+	for (int y = first.y; y <= last.y; ++y)
+		for (int x = first.x; x <= last.x; ++x)
+			if (square_touches(Polygon, x * Size, y * Size, Size))
+				result.emplace_back(x, y);
+	return result;
 }
 
 } // namespace geometry

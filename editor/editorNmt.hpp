@@ -46,12 +46,31 @@ class editor_nmt
 	bool request(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	// squares asked for and not in yet
 	std::size_t waiting() const;
-	// what the last fetch said went wrong, empty when it went right
-	std::string error() const;
+	// a square under the rectangle the service didn't give, which is asked for again after a while
+	bool retrying(glm::dvec2 const &Min, glm::dvec2 const &Max) const;
+	// the squares the service didn't give asked for again at once
+	void retry();
+	// the squares waiting aren't fetched; those in stay
+	void cancel();
+	// why squares in memory have no data, empty when all came; a place outside of the model is told first. Again: whether
+	// some of them are asked for again
+	std::string error(bool *Again = nullptr) const;
 	// the squares dropped from the memory, and those waiting; the files on the disk stay
 	void clear();
 	// whether this build can fetch from the service at all
 	static bool can_download();
+	// the squares touching the polygon of PUWG 1992 (easting, northing) put into the disk cache in the background, while no
+	// square is asked for; none of them kept in the memory. Empty: none
+	void prefetch(std::vector<glm::dvec2> const &Polygon);
+	void prefetch_paused(bool const Paused);
+	// of the squares of the polygon: in the disk cache, all of them, failed
+	struct prefetch_state
+	{
+		int cached{0};
+		int total{0};
+		int failed{0};
+	};
+	prefetch_state prefetched() const;
 
 	// side of a square of the grid, m
 	static double constexpr square_size{500.0};
@@ -67,6 +86,9 @@ class editor_nmt
 		int height{0};
 		std::vector<float> heights; // rows from the north, columns from the west
 		bool failed{false}; // the service gave nothing usable: the square has no data
+		bool outside{false}; // failed for it lies outside of the model: asked again, it gives nothing either
+		double failed_at{0.0}; // s
+		std::string error;
 	};
 
 	key key_of(double const East, double const North) const;
@@ -80,8 +102,16 @@ class editor_nmt
 	std::set<key> m_queued;
 	std::map<key, std::shared_ptr<square const>> m_squares;
 	std::string m_coverage; // the name of the model in the service, read from its capabilities once
-	std::string m_error;
 	double m_north{0.0};
 	double m_east{0.0};
 	bool m_stop{false};
+	// the squares of the download area for the disk cache
+	std::vector<key> m_prefetch;
+	std::size_t m_prefetch_next{0};
+	std::set<key> m_prefetch_cached;
+	std::set<key> m_prefetch_failed;
+	std::uint32_t m_prefetch_generation{0};
+	bool m_prefetch_paused{false};
+	void start_workers(); // under the lock
+	std::string file_of(key const &Key) const;
 };

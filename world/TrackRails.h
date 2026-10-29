@@ -33,6 +33,9 @@ double check_length( double const Slope );
 double movable_nose_length( double const Slope );
 // the rails of the track are cut where they cross other rails: plain tracks, and switches whose frog is made from the rails
 bool cut_rails( TTrack const &Track );
+// the blades of the switch are shaped from the tip to the heel: with the rails cut, or alone where only the blades are on, but for the
+// switches of a double slip, whose blades end short of crossings found only with the rails cut
+bool shaped_blades( TTrack const &Track );
 int blade_steps( TTrack const &Track, int const Path );
 double blade_length( TTrack const &Track, int const Path );
 // the plain track a path of a switch goes on into at its end, laid the same way, which the blade of the path may run on into

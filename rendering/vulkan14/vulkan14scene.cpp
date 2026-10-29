@@ -1289,6 +1289,13 @@ bool vulkan14_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
 
+void vulkan14_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	// made while no walk of the passes draws (gfx::walk_sync)
+	gfx::walk_sync::change change;
+	m_geometry.erase(Geometry);
+}
+
 gfx::index_array const &vulkan14_renderer::Indices(gfx::geometry_handle const &Geometry) const
 {
 	return m_geometry.indices(Geometry);

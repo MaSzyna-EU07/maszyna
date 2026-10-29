@@ -8,8 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "application/editormode.h"
-#include "application/editoruilayer.h"
+#include "application/editormodevehicle.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "application/application.h"
@@ -20,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/Track.h"
 
@@ -37,12 +37,6 @@ using geometry::bezier;
 
 std::size_t const kVehicleList{300};
 double const kHalfVehicle{8.0}; // m, the vehicle is placed about centred on the point
-
-std::string lower(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
-}
 
 std::string skin_name(ui::skin_set const &Skin)
 {
@@ -154,18 +148,18 @@ double distance_along(TTrack const &Track, int const Path, glm::dvec3 const &Poi
 
 } // namespace
 
-void editor_mode::vehicle_start(TTrack &Track, glm::dvec3 const &Point)
+void vehicle_tool::start(TTrack &Track, glm::dvec3 const &Point)
 {
 	m_vehicle.track = &Track;
 	m_vehicle.point = Point;
-	m_vehicle.expand = true;
+	m_tab.expand = true;
 	m_vehicle.status.clear();
 	auto const heading{heading_at(Track, Track.eType == tt_Switch ? path_under(Track, Point) : 0, Point)};
 	glm::dvec2 const away{Point.x - Global.pCamera.Pos.x, Point.z - Global.pCamera.Pos.z};
 	m_vehicle.facing = glm::dot(heading, away) >= 0.0 ? 1 : -1;
 }
 
-bool editor_mode::vehicle_place()
+bool vehicle_tool::place()
 {
 	auto &tool{m_vehicle};
 	if (tool.track == nullptr || tool.track->m_editorremoved)
@@ -192,7 +186,7 @@ bool editor_mode::vehicle_place()
 		std::string name;
 		for (int index = 1; index < 10000; ++index)
 		{
-			name = lower("editor_" + stem + "_" + std::to_string(index));
+			name = ToLower("editor_" + stem + "_" + std::to_string(index));
 			if (simulation::Vehicles.find(name) == nullptr && std::find(names.begin(), names.end(), name) == names.end())
 				break;
 		}
@@ -210,8 +204,8 @@ bool editor_mode::vehicle_place()
 		return false;
 	}
 	tool.placed = head;
-	first_step_done(first_step::drive);
-	auto const trackname{tool.track->name().empty() ? std::string{STR("(no name)")} : tool.track->name()};
+	m_guide.first_step_done(editor_first_step::drive);
+	auto const trackname{name_of(*tool.track)};
 	auto const behind{static_cast<int>(vehicles.size()) - 1};
 	tool.status = behind > 0 ? format(STR_P("%s and %d vehicle behind it stand on %s", "%s and %d vehicles behind it stand on %s", behind), head.c_str(), behind, trackname.c_str()) : format(STR_C("%s stands on %s"), head.c_str(), trackname.c_str());
 	if (tool.write && tool.track->name().empty())
@@ -220,7 +214,7 @@ bool editor_mode::vehicle_place()
 	{
 		std::string timetable{tool.timetable};
 		timetable.erase(std::remove_if(timetable.begin(), timetable.end(), [](unsigned char const Character) { return std::isspace(Character) != 0; }), timetable.end());
-		vehicle_tool::trainset entry{head, tool.track->name(), {}};
+		vehicle_state::trainset entry{head, tool.track->name(), {}};
 		entry.lines.push_back("trainset " + (timetable.empty() ? std::string{"none"} : timetable) + " " + tool.track->name() + " " + to_string(offset, 2) + " " + to_string(tool.velocity, 0));
 		if (against)
 			entry.lines.push_back("reversed");
@@ -238,14 +232,15 @@ bool editor_mode::vehicle_place()
 	return true;
 }
 
-void editor_mode::render_vehicle_ui()
+void vehicle_tool::render_options()
 {
 	auto &tool{m_vehicle};
-	auto *selected{selected_track()};
-	if (selected != nullptr && selected == tool.track && m_hover.track == selected && ImGui::IsMouseClicked(0) && false == ImGui::GetIO().WantCaptureMouse)
-		vehicle_start(*selected, m_hover.point);
+	auto *selected{m_selection.selected_track()};
+	auto const &hover{m_selection.hovered_track()};
+	if (selected != nullptr && selected == tool.track && hover.track == selected && ImGui::IsMouseClicked(0) && false == ImGui::GetIO().WantCaptureMouse)
+		start(*selected, hover.point);
 	else if (selected != nullptr && selected != tool.track)
-		vehicle_start(*selected, m_hover.track == selected ? m_hover.point : bezier{selected->m_paths.front()}.point(0.5));
+		start(*selected, hover.track == selected ? hover.point : bezier{selected->m_paths.front()}.point(0.5));
 	if (tool.track == nullptr)
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: where the vehicle stands"));
@@ -259,7 +254,7 @@ void editor_mode::render_vehicle_ui()
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##vehiclesearch", STR_C("search: name, series, skin"), tool.search, sizeof(tool.search));
 	ImGui::Checkbox(STR_C("Only the ones with a cab"), &tool.controllable_only);
-	std::string const text{lower(tool.search)};
+	std::string const text{ToLower(tool.search)};
 	std::vector<std::pair<std::shared_ptr<ui::vehicle_desc>, std::shared_ptr<ui::skin_set>>> listed;
 	std::size_t total{0};
 	for (auto const &[path, vehicle] : tool.bank->vehicles)
@@ -270,7 +265,7 @@ void editor_mode::render_vehicle_ui()
 		{
 			if (skin == nullptr)
 				continue;
-			if (false == text.empty() && lower(skin_label(*vehicle, *skin)).find(text) == std::string::npos && (skin->meta == nullptr || skin->meta->search_lowered.find(text) == std::string::npos))
+			if (false == text.empty() && ToLower(skin_label(*vehicle, *skin)).find(text) == std::string::npos && (skin->meta == nullptr || skin->meta->search_lowered.find(text) == std::string::npos))
 				continue;
 			++total;
 			if (listed.size() < kVehicleList)
@@ -426,15 +421,12 @@ void editor_mode::render_vehicle_ui()
 	if (false == tool.consist.empty() || (tool.vehicle != nullptr && tool.skin != nullptr))
 	{
 		auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
-		auto const tall{std::round(ImGui::GetFrameHeight() * 1.3f)};
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-		if (ImGui::Button(STR_C("Place"), ImVec2(half, tall)))
-			vehicle_place();
+		auto const tall{tall_button_height()};
+		if (main_button(STR_C("Place"), ImVec2(half, tall)))
+			place();
 		item_tooltip("A trainset on the track, placed where the track was clicked, or in the middle of the path");
-		ImGui::PopStyleColor(2);
 		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Place and drive"), ImVec2(-1.0f, tall)) && vehicle_place())
+		if (ImGui::Button(STR_C("Place and drive"), ImVec2(-1.0f, tall)) && place())
 		{
 			Global.editor_enter_vehicle = tool.placed;
 			tool.leave = true;
@@ -461,10 +453,10 @@ void editor_mode::render_vehicle_ui()
 		tool.trainsets.erase(tool.trainsets.begin() + static_cast<std::ptrdiff_t>(*drop));
 }
 
-void editor_mode::draw_vehicle_marker() const
+void vehicle_tool::draw_overlay() const
 {
 	auto const &tool{m_vehicle};
-	if (false == tool.open || tool.track == nullptr)
+	if (false == m_tab.open || tool.track == nullptr)
 		return;
 	screen_projection const projection;
 	ImVec2 screen;
@@ -489,4 +481,54 @@ void editor_mode::draw_vehicle_marker() const
 	ImVec2 const unit{dx / size, dy / size};
 	ImVec2 const side{-unit.y, unit.x};
 	drawlist->AddTriangleFilled(ImVec2(end.x + unit.x * 10.0f, end.y + unit.y * 10.0f), ImVec2(end.x + side.x * 7.0f, end.y + side.y * 7.0f), ImVec2(end.x - side.x * 7.0f, end.y - side.y * 7.0f), colour);
+}
+
+bool vehicle_tool::take_leave()
+{
+	return std::exchange(m_vehicle.leave, false);
+}
+
+std::size_t vehicle_tool::trainset_lines(std::vector<std::string> &Lines)
+{
+	std::erase_if(m_vehicle.trainsets, [](auto const &Trainset) {
+		auto const *track{simulation::Paths.find(Trainset.track)};
+		return track == nullptr || track->m_editorremoved;
+	});
+	for (auto const &trainset : m_vehicle.trainsets)
+		Lines.insert(Lines.end(), trainset.lines.begin(), trainset.lines.end());
+	return m_vehicle.trainsets.size();
+}
+
+void vehicle_tool::trainsets_written()
+{
+	m_vehicle.status = format(STR_C("%d trainset(s) written to the scenery"), static_cast<int>(m_vehicle.trainsets.size()));
+	m_vehicle.trainsets.clear();
+}
+
+editor_selftest_result vehicle_tool::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "trainset")
+	{
+		std::string name;
+		std::string vehicle;
+		std::string skin;
+		int facing{1};
+		Words >> name >> vehicle >> skin >> facing >> m_vehicle.velocity;
+		auto *track{simulation::Paths.find(name)};
+		if (track == nullptr)
+			return editor_selftest_result::handled;
+		auto desc{std::make_shared<ui::vehicle_desc>()};
+		desc->path = vehicle;
+		auto set{std::make_shared<ui::skin_set>()};
+		set->skin = skin;
+		m_vehicle.consist.clear();
+		m_vehicle.vehicle = desc;
+		m_vehicle.skin = set;
+		start(*track, geometry::bezier{track->m_paths.front()}.point(0.5));
+		m_vehicle.facing = facing;
+		auto const placed{place()};
+		WriteLog(format("SELFTEST trainset %s placed %d pending %d: %s", name.c_str(), placed ? 1 : 0, static_cast<int>(m_vehicle.trainsets.size()), m_vehicle.status.c_str()));
+		return editor_selftest_result::handled;
+	}
+	return editor_selftest_result::unhandled;
 }

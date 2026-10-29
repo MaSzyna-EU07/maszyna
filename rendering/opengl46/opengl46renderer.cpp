@@ -2350,6 +2350,8 @@ if (!Global.gfx_skippipeline)
 bool opengl46_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
+    // the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+    if( EditorModeFlag && Global.EditorOrtho ) { return false; }
 
     if( m_environmentupdateface >= 6 ) {
         // no update in progress, check whether it's time for another one
@@ -3130,6 +3132,12 @@ bool opengl46_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 
 	m_chunkspheres.erase(static_cast<std::uint64_t>(Geometry));
 	return m_geometry.append(Vertices, Userdata, Geometry);
+}
+
+void opengl46_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	m_chunkspheres.erase(static_cast<std::uint64_t>(Geometry));
+	m_geometry.erase(Geometry);
 }
 
 // provides direct access to index data of specfied chunk
@@ -5389,6 +5397,13 @@ void opengl46_renderer::Update_Pick_Control()
 			m_pick_fb->unbind();
 		}
 	}
+}
+
+void opengl46_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+		m_picksceneryitem = nullptr;
+	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
 }
 
 void opengl46_renderer::Update_Pick_Node()

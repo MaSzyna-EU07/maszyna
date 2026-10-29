@@ -79,6 +79,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, std::size_t const Offset = 0) override;
 	bool Replace_Indexed(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry) override;
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	void Erase(gfx::geometry_handle const &Geometry) override;
 	gfx::index_array const &Indices(gfx::geometry_handle const &Geometry) const override;
 	gfx::vertex_array const &Vertices(gfx::geometry_handle const &Geometry) const override;
 	gfx::userdata_array const &UserData(gfx::geometry_handle const &Geometry) const override;
@@ -109,6 +110,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void Pick_Node_Callback(std::function<void(scene::basic_node *)> Callback) override;
 	TSubModel const *Pick_Control() const override;
 	scene::basic_node const *Pick_Node() const override;
+	void Forget_Node(scene::basic_node const *Node) override;
 	glm::dvec3 Mouse_Position() const override;
 	bool Mouse_Hit() const override;
 	glm::mat4 Camera_View_Matrix() const override;

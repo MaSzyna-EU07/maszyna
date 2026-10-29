@@ -139,10 +139,10 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		words >> tab;
 		show_track_tab(track_tab::lineside);
 		m_sweep.expand = tab == 0;
-		m_hekto.expand = tab == 1;
-		m_fouling.expand = tab == 2;
-		m_parallel.expand = tab == 3;
-		m_vehicle.expand = tab == 4;
+		m_hekto.tab().expand = tab == 1;
+		m_fouling.tab().expand = tab == 2;
+		m_parallel.tab().expand = tab == 3;
+		m_vehicle.tab().expand = tab == 4;
 		return selftest_result::handled;
 	}
 	if (command == "curve")
@@ -233,6 +233,13 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				text += format(" [R %.3f L %.3f share %.4f]", arc.radius, arc.transition, arc.share);
 			WriteLog(text);
 		}
+		// the curves the design lays, going on from the curves of the tracks adjoining where they do, and its warnings
+		WriteLog(format("SELFTEST route ends: start R %.1f turn %d curved %d, end R %.1f turn %d curved %d", m_route.design.start_radius, m_route.design.start_turn, m_route.design.start_curved ? 1 : 0, m_route.design.end_radius, m_route.design.end_turn, m_route.design.end_curved ? 1 : 0));
+		for (auto const &curve : m_route.result.curves)
+			WriteLog(format("SELFTEST route curve %d: R %.1f, L %.1f/%.1f, from R %.1f, into R %.1f", curve.vertex, curve.radius, curve.transition_in, curve.transition_out, curve.curvature_in > 0.0 ? 1.0 / curve.curvature_in : 0.0,
+			                curve.curvature_out > 0.0 ? 1.0 / curve.curvature_out : 0.0));
+		for (auto const &warning : m_route.result.warnings)
+			WriteLog("SELFTEST route warning: " + warning);
 		return selftest_result::handled;
 	}
 	if (command == "routevertex" || command == "routearc" || command == "routeshare")
@@ -261,6 +268,94 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		for (auto const &error : m_route.result.errors)
 			errors += " " + error;
 		WriteLog(format("SELFTEST %s: valid %d, %zu elements, extension %.3f / %.3f", command.c_str(), m_route.result.valid ? 1 : 0, m_route.result.elements.size(), m_route.result.start_extension, m_route.result.end_extension) + errors);
+		return selftest_result::handled;
+	}
+	if (command == "routeplain")
+	{
+		int index{0};
+		double radius{1000.0};
+		words >> index >> radius;
+		if (index >= 0 && index < static_cast<int>(m_route.design.vertices.size()))
+		{
+			auto &vertex{m_route.design.vertices[index]};
+			vertex.radius = radius;
+			vertex.compound = false;
+			vertex.share = 1.0;
+			vertex.arcs.clear();
+			route_update();
+		}
+		WriteLog(format("SELFTEST routeplain: valid %d", m_route.result.valid ? 1 : 0));
+		return selftest_result::handled;
+	}
+	// points along the curves of the design as it is now, every Spacing metres from 20 m before the first curve to 20 m past the last,
+	// shifted across by up to Noise to and fro, as the trace takes them
+	if (command == "tracesample")
+	{
+		double spacing{20.0};
+		double noise{0.0};
+		words >> spacing >> noise;
+		route_trace_start();
+		auto const &result{m_route.result};
+		auto from{result.length};
+		auto to{0.0};
+		for (auto const &e : result.elements)
+			if (e.kind != alignment::element_kind::straight)
+			{
+				from = std::min(from, e.chainage);
+				to = std::max(to, e.chainage + e.length);
+			}
+		int count{0};
+		for (auto chainage{std::max(0.0, from - 20.0)}; chainage <= std::min(result.length, to + 20.0); chainage += spacing, ++count)
+		{
+			auto const station{alignment::evaluate(result, chainage)};
+			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
+			auto const shift{noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)};
+			m_route.trace.points.push_back(station.position + glm::normalize(across) * shift);
+		}
+		auto const &middle{m_route.trace.points.empty() ? glm::dvec3{0.0} : m_route.trace.points[m_route.trace.points.size() / 2]};
+		WriteLog(format("SELFTEST tracesample: %zu points over %.1f m, the middle one at %.3f %.3f", m_route.trace.points.size(), to - from, middle.x, middle.z));
+		return selftest_result::handled;
+	}
+	if (command == "traceradii" || command == "traceclick" || command == "traceundo")
+	{
+		auto const started{std::chrono::steady_clock::now()};
+		if (command == "traceradii")
+		{
+			words >> m_route.trace.radii;
+			route_trace_fit();
+		}
+		else if (command == "traceundo")
+		{
+			if (false == m_route.trace.points.empty())
+				m_route.trace.points.pop_back();
+			route_trace_fit();
+		}
+		else
+		{
+			track_intent intent;
+			words >> intent.position.x >> intent.position.z;
+			intent.what = track_intent::kind::route_trace;
+			intent.index = -1;
+			track_press(intent);
+		}
+		auto const took{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
+		WriteLog(format("SELFTEST %s: %zu points, departure %.3f m, at most %.3f m, valid %d, %.0f ms", command.c_str(), m_route.trace.points.size(), m_route.trace.rms, m_route.trace.worst, m_route.result.valid ? 1 : 0, took));
+		for (std::size_t i = 0; i < m_route.design.vertices.size(); ++i)
+		{
+			auto const &v{m_route.design.vertices[i]};
+			auto text{format("SELFTEST %s vertex %zu: R %.0f L %.1f / %.1f compound %d share %.3f", command.c_str(), i, v.radius, v.transition_in, v.transition_out, v.compound ? 1 : 0, v.share)};
+			for (auto const &arc : v.arcs)
+				text += format(" [R %.0f L %.1f share %.3f]", arc.radius, arc.transition, arc.share);
+			WriteLog(text);
+		}
+		return selftest_result::handled;
+	}
+	if (command == "traceend")
+	{
+		int keep{1};
+		words >> keep;
+		route_trace_end(keep != 0);
+		WriteLog(format("SELFTEST traceend: active %d, valid %d, ", m_route.trace.active ? 1 : 0, m_route.result.valid ? 1 : 0) + m_route.status + " " + m_route.error);
 		return selftest_result::handled;
 	}
 	if (command == "routekm")
@@ -303,7 +398,16 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		for (std::size_t r = 0; r < records.size(); ++r)
 		{
 			auto const &entry{records[r]};
-			WriteLog(format("SELFTEST alignment %zu in %s: km %.3f, %zu vertices, %zu elements, consistent %d, length %.3f", r, scene::Layers.layer(entry.layer).name.c_str(), entry.origin / 1000.0, entry.design.vertices.size(), entry.elements.size(), entry.consistent ? 1 : 0, entry.result.length));
+			WriteLog(format("SELFTEST alignment %zu in %s: km %.3f, %zu vertices, %zu elements, consistent %d, length %.3f, kept %.3f - %.3f, %zu clicks", r, scene::Layers.layer(entry.layer).name.c_str(), entry.origin / 1000.0, entry.design.vertices.size(), entry.elements.size(), entry.consistent ? 1 : 0, entry.result.length,
+			                entry.from, entry.kept_to(), entry.clicks.size()));
+			// the curves as the plan has them, against the elements laid
+			for (std::size_t k = 0; k < entry.design.vertices.size(); ++k)
+			{
+				auto const &vertex{entry.design.vertices[k]};
+				WriteLog(format("SELFTEST   vertex %zu designed R %.1f L %.1f / %.1f cant %.0f compound %d arcs %zu", k, vertex.radius, vertex.transition_in, vertex.transition_out, vertex.cant, vertex.compound ? 1 : 0, vertex.arcs.size()));
+			}
+			for (auto const &curve : entry.result.curves)
+				WriteLog(format("SELFTEST   planned curve %d R %.1f L %.1f / %.1f", curve.vertex, curve.radius, curve.transition_in, curve.transition_out));
 			for (auto const &e : entry.elements)
 				WriteLog(format("SELFTEST   element %s vertex %d km %.3f L %.3f R %.3f -> %.3f cant %.1f", e.kind.c_str(), e.vertex, (entry.origin + e.chainage) / 1000.0, e.length, e.radius_start, e.radius_end, e.cant));
 		}
@@ -394,6 +498,85 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		WriteLog(format("SELFTEST vprofile: %zu spans, %.3f m, km of the start %.3f", m_profile.route.spans.size(), m_profile.route.length, m_profile.origin / 1000.0));
 		for (auto const &zone : m_profile.context.switches)
 			WriteLog(format("SELFTEST vprofile zone %.3f %.3f %s", zone.from, zone.to, zone.name.c_str()));
+		return selftest_result::handled;
+	}
+	if (command == "tape")
+	{
+		// the measure between two points on the ground, as two clicks of the measuring tape take it
+		std::vector<glm::dvec3> points;
+		for (glm::dvec3 point{0.0, 5000.0, 0.0}; words >> point.x >> point.z;)
+			points.push_back(point);
+		std::vector<char> found;
+		auto const heights{ground_heights(points, true, &found)};
+		for (std::size_t i = 0; i < points.size(); ++i)
+			points[i].y = found[i] != 0 ? heights[i] : 0.0;
+		m_tape = {true, points, points.empty() ? glm::dvec3{0.0} : points.back()};
+		auto readout{tape_readout()};
+		std::replace(readout.begin(), readout.end(), '\n', '|');
+		WriteLog("SELFTEST tape: " + readout);
+		m_tape = {};
+		return selftest_result::handled;
+	}
+	if (command == "trackcolours")
+	{
+		int colouring{0};
+		words >> colouring;
+		m_track_colouring = static_cast<track_colouring>(std::clamp(colouring, 0, 3));
+		return selftest_result::handled;
+	}
+	if (command == "vprofilerun" || command == "vprofiledel" || command == "vprofileput")
+	{
+		// the grade line of the line through a track, a point of it taken out as with Del, the line applied
+		auto &state{m_profile};
+		if (command == "vprofilerun")
+		{
+			std::string name;
+			double length{std::numeric_limits<double>::infinity()};
+			words >> name >> length;
+			auto *track{simulation::Paths.find(name)};
+			if (track == nullptr)
+			{
+				WriteLog("SELFTEST vprofilerun: no track " + name);
+				return selftest_result::handled;
+			}
+			state.run_length = length;
+			profile_open_run(*track);
+		}
+		else if (command == "vprofiledel")
+		{
+			int index{-1};
+			words >> index;
+			auto &points{state.line.points};
+			if (index <= 0 || index + 1 >= static_cast<int>(points.size()) || points[index].joint)
+			{
+				WriteLog(format("SELFTEST vprofiledel: point %d can't be taken out", index));
+				return selftest_result::handled;
+			}
+			profile_remove_point(index);
+		}
+		else
+		{
+			std::string option;
+			words >> option;
+			profile_apply(option == "terrain");
+			WriteLog("SELFTEST vprofileput: " + state.status + " " + state.error);
+		}
+		std::string points;
+		for (auto const &point : state.line.points)
+			points += format(" (%.1f %.3f R%.0f%s%s)", point.chainage, point.elevation, point.radius, point.automatic ? "" : " fixed", point.joint ? " joint" : "");
+		std::string issues;
+		for (auto const &issue : state.issues)
+			issues += std::string{issue.error ? " | error: " : " | "} + issue.text;
+		double low{0.0}, high{0.0}, at_low{0.0}, at_high{0.0};
+		for (auto const &sample : state.samples)
+		{
+			auto const off{sample.position.y - profile::elevation(state.line, sample.chainage)};
+			if (off < low)
+				low = off, at_low = sample.chainage;
+			if (off > high)
+				high = off, at_high = sample.chainage;
+		}
+		WriteLog(format("SELFTEST %s: route %.1f m, %zu samples, track against the line %.3f at %.1f .. %+.3f at %.1f; points%s%s", command.c_str(), state.route.length, state.samples.size(), low, at_low, high, at_high, points.c_str(), issues.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "vprofileapply")
@@ -780,15 +963,6 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		}
 		auto const kept{nearest != nullptr && digitize_drawn({nearest}, false)};
 		WriteLog(format("SELFTEST digitize %s: %d", nearest != nullptr ? nearest->name().c_str() : "-", kept ? 1 : 0));
-		return selftest_result::handled;
-	}
-	if (command == "parallel")
-	{
-		words >> m_parallel.spacing >> m_parallel.side;
-		m_parallel.scope = 1;
-		m_parallel.built_for = nullptr;
-		parallel_build();
-		WriteLog("SELFTEST parallel: " + m_parallel.status + " " + m_parallel.error);
 		return selftest_result::handled;
 	}
 	return selftest_result::unhandled;

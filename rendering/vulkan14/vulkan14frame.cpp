@@ -2385,6 +2385,11 @@ bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
 	{
 		return false;
 	}
+	// the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+	if (EditorModeFlag && Global.EditorOrtho)
+	{
+		return false;
+	}
 	if (m_environmentupdateface >= 6)
 	{
 		// no update in progress, check whether it's time for another one
@@ -4289,6 +4294,15 @@ TSubModel const *vulkan14_renderer::Pick_Control() const
 scene::basic_node const *vulkan14_renderer::Pick_Node() const
 {
 	return m_picksceneryitem;
+}
+
+void vulkan14_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+	{
+		m_picksceneryitem = nullptr;
+	}
+	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
 }
 
 glm::dvec3 vulkan14_renderer::Mouse_Position() const

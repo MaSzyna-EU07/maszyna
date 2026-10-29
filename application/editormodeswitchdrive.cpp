@@ -193,7 +193,7 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	item.file = family.files[index];
 	if (item.file.empty())
 	{
-		tool.status = missing_drive_variant(tool.drive, spot->rightswitch, driveright);
+		tool.status = refused(missing_drive_variant(tool.drive, spot->rightswitch, driveright));
 		return false;
 	}
 	item.location = spot->location + glm::dvec3{0.0, family.heights[index], 0.0};
@@ -206,7 +206,7 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	std::string error;
 	if (place_templates({item}, error) == 0)
 	{
-		tool.status = STR_C("The drive couldn't be placed: ") + error;
+		tool.status = refused(STR_C("The drive couldn't be placed: ") + error);
 		return false;
 	}
 	tool.status = format(STR_C("Switch %s with the drive %s: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), item.file.c_str(), Switch.name().c_str(), Switch.name().c_str());
@@ -253,7 +253,7 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	auto const present{find_switch_drive(Switch)};
 	if (false == present.has_value())
 	{
-		tool.status = format(STR_C("No drive of the switch %s among the described drives"), Switch.name().c_str());
+		tool.status = refused(format(STR_C("No drive of the switch %s among the described drives"), Switch.name().c_str()));
 		return false;
 	}
 	auto const &found{present->standing};
@@ -263,7 +263,7 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	item.file = tool.drives[family].files[index];
 	if (item.file.empty())
 	{
-		tool.status = Flip ? format(STR_C("The drive %s has no variant with the drive on the other side"), tool.drives[family].name.c_str()) : missing_drive_variant(family, (index & 2) != 0, (index & 1) != 0);
+		tool.status = refused(Flip ? format(STR_C("The drive %s has no variant with the drive on the other side"), tool.drives[family].name.c_str()) : missing_drive_variant(family, (index & 2) != 0, (index & 1) != 0));
 		return false;
 	}
 	if (drive_file(item.file) == found.file)
@@ -276,7 +276,7 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	item.tilt = {angle_value(found.values, 5), angle_value(found.values, 6)};
 	if (remove_templates({found.instance}) == 0)
 	{
-		tool.status = STR_C("The drive of this switch can't be changed in its file");
+		tool.status = refused(STR_C("The drive of this switch can't be changed in its file"));
 		return false;
 	}
 	std::string error;
@@ -284,12 +284,47 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	{
 		scene::Layers.removed(found.instance, false);
 		m_history.pop_back();
-		tool.status = STR_C("The drive couldn't be placed: ") + error;
+		tool.status = refused(STR_C("The drive couldn't be placed: ") + error);
 		return false;
 	}
 	join_last_steps();
 	tool.status = format(index & 1 ? STR_C("Switch %s: the drive %s, on the right now") : STR_C("Switch %s: the drive %s, on the left now"), Switch.name().c_str(), item.file.c_str());
 	return true;
+}
+
+void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
+{
+	if (m_history.empty())
+		return;
+	for (auto const *track : Switches)
+	{
+		if (track == nullptr || track->eType != tt_Switch)
+			continue;
+		auto const found{find_switch_drive(*track)};
+		if (false == found.has_value() || false == scene::Layers.removable(found->standing.instance) || scene::Layers.instance(found->standing.instance).removed)
+			continue;
+		scene::Layers.removed(found->standing.instance, true);
+		m_history.back().instances.push_back(found->standing.instance);
+	}
+}
+
+std::size_t editor_mode::drives_to_blade_tips()
+{
+	// the drives the earlier versions of the editor set at the joint before the blades among them
+	std::vector<TTrack *> switches;
+	std::vector<std::pair<scene::instance_handle, std::string>> before;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
+			continue;
+		if (auto const found{find_switch_drive(*track)}; found.has_value() && scene::Layers.removable(found->standing.instance))
+		{
+			switches.push_back(track);
+			before.emplace_back(found->standing.instance, scene::Layers.directive(found->standing.instance));
+		}
+	}
+	switch_drives_committed(switches);
+	return static_cast<std::size_t>(std::count_if(before.begin(), before.end(), [](auto const &Before) { return scene::Layers.directive(Before.first) != Before.second; }));
 }
 
 bool editor_mode::render_switch_drive_choice()

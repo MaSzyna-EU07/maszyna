@@ -108,7 +108,8 @@ opengl46_vaogeometrybank::replace_( gfx::geometry_handle const &Geometry ) {
     auto &chunkrecord = m_chunkrecords[ Geometry.chunk - 1 ];
     chunkrecord.is_good = false;
     // if the overall length of the chunk didn't change we can get away with reusing the old buffer...
-    if( geometry_bank::chunk( Geometry ).vertices.size() != chunkrecord.vertex_count ) {
+    if( ( geometry_bank::chunk( Geometry ).vertices.size() != chunkrecord.vertex_count )
+     || ( geometry_bank::chunk( Geometry ).userdata.empty() == chunkrecord.has_userdata ) ) {
         // ...but otherwise we'll need to allocate a new one
         // TBD: we could keep and reuse the old buffer also if the new chunk is smaller than the old one,
         // but it'd require some extra tracking and work to keep all chunks up to date; also wasting vram; may be not worth it?

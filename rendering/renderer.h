@@ -96,6 +96,7 @@ public:
     virtual auto Replace_Indexed( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool { return false; }
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
+    virtual void Erase( gfx::geometry_handle const &Geometry ) {}
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
@@ -146,6 +147,7 @@ public:
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
+    virtual void Forget_Node( scene::basic_node const *Node ) {}
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
     virtual auto Mouse_Hit() const -> bool { return true; }

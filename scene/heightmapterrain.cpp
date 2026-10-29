@@ -649,7 +649,10 @@ std::optional<modifier_shape::effect> modifier_shape::evaluate(double const X, d
 				auto const &b{points[i + 1].position};
 				auto const run{b - a};
 				auto const length{glm::dot(run, run)};
-				auto const t{length > 1e-12 ? std::clamp(glm::dot(point - a, run) / length, 0.0, 1.0) : 0.0};
+				auto const along{length > 1e-12 ? glm::dot(point - a, run) / length : 0.0};
+				if ((m_modifier.open_start && i == 0 && along < 0.0) || (m_modifier.open_end && i + 2 == points.size() && along > 1.0))
+					continue;
+				auto const t{std::clamp(along, 0.0, 1.0)};
 				auto const offset{glm::length(point - (a + run * t))};
 				if (offset < distance)
 				{
@@ -756,6 +759,10 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 					item.reach = reach.as<double>();
 				if (auto const rounding{entry["rounding"]})
 					item.rounding = rounding.as<double>();
+				if (auto const open{entry["open_start"]})
+					item.open_start = open.as<bool>();
+				if (auto const open{entry["open_end"]})
+					item.open_end = open.as<bool>();
 				if (auto const points{entry["points"]}; points && points.IsSequence())
 					for (auto const &point : points)
 						if (point.IsSequence() && point.size() >= 4)
@@ -856,6 +863,10 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 			out << YAML::Key << "slope" << YAML::Value << item.slope;
 			out << YAML::Key << "reach" << YAML::Value << item.reach;
 			out << YAML::Key << "rounding" << YAML::Value << item.rounding;
+			if (item.open_start)
+				out << YAML::Key << "open_start" << YAML::Value << true;
+			if (item.open_end)
+				out << YAML::Key << "open_end" << YAML::Value << true;
 			out << YAML::Key << "points" << YAML::Value << YAML::BeginSeq;
 			for (auto const &point : item.points)
 				out << YAML::Flow << YAML::BeginSeq << point.position.x << point.position.y << point.formation << point.half_width << YAML::EndSeq;

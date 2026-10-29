@@ -990,7 +990,8 @@ GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int wi
 	if (keep_ownership)
 		m_windows.emplace_back(childwindow);
 
-	glfwFocusWindow(m_windows.front()); // restore focus to main window
+	if (glfwGetWindowAttrib(m_windows.front(), GLFW_VISIBLE))
+		glfwFocusWindow(m_windows.front()); // restore focus to main window
 
 	return childwindow;
 }
@@ -1324,7 +1325,9 @@ int eu07_application::create_main_window()
 		Global.bFullScreen = true;
 	}
 
-	auto *mainwindow = window(-1, true, Global.window_size.x, Global.window_size.y, Global.bFullScreen ? monitor : nullptr, true, false);
+	// a selftest of the editor run while the computer is in use for something else draws into a window never shown nor focused
+	bool const shown{std::getenv("EU07_EDITOR_SELFTEST_HIDDEN") == nullptr};
+	auto *mainwindow = window(-1, shown, Global.window_size.x, Global.window_size.y, Global.bFullScreen && shown ? monitor : nullptr, true, false);
 
 	if (mainwindow == nullptr)
 	{

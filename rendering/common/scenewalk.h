@@ -202,7 +202,8 @@ class scene_walk
 	// the range the top view of the editor draws the tracks to, and the parts of the scenery it leaves out
 	static float editor_track_view_range(float const Range, bool const Apply);
 	static bool editor_ballast_hidden(TTrack const *Track, bool const Colour);
-	static bool editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit);
+	static bool editor_sleepers_hidden();
+	static bool editor_far_tracks_only(bool const Apply, scene::bounding_area const &Area, glm::dvec3 const &Camera, double const SceneryLimit);
 	// material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
 	static material_handle submodel_material(TSubModel const *Submodel);
 

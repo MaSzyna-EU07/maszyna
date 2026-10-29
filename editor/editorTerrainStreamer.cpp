@@ -34,7 +34,8 @@ double constexpr upload_budget{0.004}; // seconds of a frame for taking over fin
 int constexpr materials_per_frame{6};
 double constexpr look_ahead{8.0}; // seconds; chunks are loaded around where the camera will be by then
 double constexpr look_ahead_limit{2000.0}; // metres
-double constexpr pixel_distance{1300.0}; // m; a pixel of the top view is as big as one of the 3D view this far away
+double constexpr pixel_distance{1920.0}; // m; a pixel of the top view is as big as one of the 3D view this far away: the cells
+                                         // of the grid some 16 pixels across at the usual detail, the relief a little coarser than the imagery over it
 int constexpr top_radius{200}; // chunks the top view of the tracks loads around its centre at most
 double constexpr settled_walk{1.0}; // seconds; the chunks around the camera are looked over this often when nothing is coming
 double constexpr region_half{scene::EU07_REGIONSIDESECTIONCOUNT * scene::EU07_SECTIONSIZE * 0.5 - heightmap::chunk_size};
@@ -264,6 +265,7 @@ void terrain_streamer::worker()
 		}
 		case job::kind::mesh:
 		{
+			done.cells = task.data->cells;
 			auto const &neighbours{task.neighbours};
 			heightmap::build_mesh(*task.data, task.stride, task.origin,
 			                      [&neighbours](double const X, double const Z, double &Height) {
@@ -336,7 +338,7 @@ void terrain_streamer::process(result &Result)
 			break;
 		auto &chunk{*lookup->second};
 		chunk.m_building = false;
-		if (Result.version < chunk.m_builtversion)
+		if (Result.version < chunk.m_builtversion || Result.cells != chunk.cells())
 			break;
 		upload(chunk, Result.mesh, Result.stride);
 		chunk.m_builtversion = Result.version;
@@ -393,7 +395,11 @@ void terrain_streamer::upload(editor_terrain &Chunk, heightmap::mesh &Mesh, int 
 
 	// the mesh goes to a geometry slot made for its grid; a slot of the same kind is refilled in place. the indices of a chunk
 	// with holes are its own, its slot gets them anew with the vertices
-	auto fits = [&](geometry_slot const &Slot) { return Slot.cells == cells && Slot.stride == Stride && Slot.cut == Mesh.cut; };
+	// a slot of the same grid has the same vertices; one without holes keeps its indices, they have to be as many
+	auto fits = [&](geometry_slot const &Slot) {
+		return Slot.cells == cells && Slot.stride == Stride && Slot.cut == Mesh.cut && GfxRenderer->Vertices(Slot.geometry).size() == Mesh.vertices.size() &&
+		       (Slot.cut || GfxRenderer->Indices(Slot.geometry).size() == Mesh.indices.size());
+	};
 	if (m_nocut && Mesh.cut)
 	{
 		// the backend can't change the indices of a chunk: the mesh goes whole, the material cuts the holes if it can
@@ -627,14 +633,17 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 		m_settled = false;
 	}
 
-	// the top view of the tracks wants the terrain as far as the corners of the screen, as fine as its pixels need
+	// the top view of the tracks wants the terrain as far as the corners of the screen, as fine as its pixels need, though no
+	// farther than the scenery reaches in the game: zoomed out, the tracks alone are drawn farther
 	auto const top{Global.EditorOrtho && Global.editor_tracks};
 	auto const aspect{Global.window_size.x / std::max(1.0, static_cast<double>(Global.window_size.y))};
-	auto const reach{top ? Global.EditorOrthoExtent * std::sqrt(1.0 + aspect * aspect) : 0.0};
+	auto const scenery{static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor))};
+	auto const reach{top ? std::min(Global.EditorOrthoExtent * std::sqrt(1.0 + aspect * aspect), scenery) : 0.0};
 	m_pixel = top ? 2.0 * Global.EditorOrthoExtent / std::max(1, Global.window_size.y) : 0.0;
 
-	// chunks wanted around the camera and around where it's heading
-	auto const range{std::max({m_radius * heightmap::chunk_size, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)), reach}) + heightmap::chunk_size * 0.5};
+	// chunks wanted around the camera and around where it's heading; the top view only as far as the screen reaches, not the
+	// range of the 3D view: zoomed in it would keep making anew the meshes of chunks far off the screen at each step of the zoom
+	auto const range{(top ? std::max(m_radius * heightmap::chunk_size, reach) : std::max({m_radius * heightmap::chunk_size, scenery, reach})) + heightmap::chunk_size * 0.5};
 	auto const radius{std::min(top ? top_radius : 64, static_cast<int>(std::ceil(range / heightmap::chunk_size)))};
 	if (m_ringradius < radius)
 	{
@@ -864,6 +873,25 @@ void terrain_streamer::upload_shape_material(editor_terrain &Chunk)
 }
 
 // queries
+
+std::string terrain_streamer::stats() const
+{
+	std::size_t drawn{0}, triangles{0};
+	std::map<int, std::size_t> strides;
+	for (auto const &entry : m_chunks)
+	{
+		auto const &chunk{*entry.second};
+		if (chunk.m_section == nullptr)
+			continue;
+		++drawn;
+		triangles += chunk.m_triangles;
+		++strides[chunk.m_stride];
+	}
+	auto text{"terrain: " + std::to_string(m_chunks.size()) + " chunks, " + std::to_string(drawn) + " in the scene, " + std::to_string(triangles) + " triangles; strides"};
+	for (auto const &[stride, count] : strides)
+		text += " " + std::to_string(stride) + ":" + std::to_string(count);
+	return text;
+}
 
 void terrain_streamer::collect(std::vector<editor_terrain *> &Out) const
 {

@@ -567,7 +567,7 @@ void node_layers::stat(layer_handle const Layer)
 }
 
 // creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
-layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason)
+layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate)
 {
 	Parent = resolve(Parent);
 	if (false == valid(Parent) || layer(Parent).removed || layer(Parent).binary)
@@ -648,7 +648,10 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	created.context_begin = valid(anchor) ? layer(anchor).context_end : layer(Parent).context_insert();
 	created.context_end = created.context_begin;
 
-	active(layerhandle);
+	if (Activate)
+	{
+		active(layerhandle);
+	}
 
 	return layerhandle;
 }
@@ -852,16 +855,18 @@ bool node_layers::pending() const
 namespace
 {
 // marks of the lines the editor keeps track of
-std::array<char const *, 6> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o"};
+std::array<char const *, 9> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$a"};
 
 // other tools put lines of their own after some of these marks: Rainsted its includes after //$r, the launcher the descriptions
 // of the trainsets after //$o. The editor's lines of them are told by their first word
 bool editor_line(char const *Mark, std::string const &Text)
 {
-	static std::array<std::pair<std::string_view, std::array<std::string_view, 9>>, 3> const words{{
-	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "vertex", "element", "end"}},
+	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 5> const words{{
+	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "kept", "vertex", "click", "element", "end"}},
 	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
 	    {"//$o", {"on"}},
+	    {"//$s", {"#", "station"}},
+	    {"//$k", {"#", "mark", "via"}},
 	}};
 	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())
@@ -1099,13 +1104,17 @@ std::string node_layers::directive(instance_handle const Instance) const
 }
 
 // replaces the directive of specified include, the scenery file receives it on save
-bool node_layers::modify(instance_handle const Instance, std::string const &Directive)
+bool node_layers::modify(instance_handle const Instance, std::string const &Directive, std::string const &File)
 {
 	if (false == tracked(Instance) || m_instances[Instance - 1].dead || Directive.empty())
 	{
 		return false;
 	}
 	m_instances[Instance - 1].directive = Directive;
+	if (false == File.empty())
+	{
+		m_instances[Instance - 1].file = &(*m_templates.emplace(File).first);
+	}
 	return true;
 }
 

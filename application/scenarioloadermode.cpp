@@ -49,7 +49,17 @@ bool scenarioloader_mode::update() {
         WriteLog( "\nLoading scenario \"" + Global.SceneryFile + "\"..." );
 
 		timestart = std::chrono::system_clock::now();
-		state = simulation::State.deserialize_begin(Global.SceneryFile);
+		try {
+			state = simulation::State.deserialize_begin(Global.SceneryFile);
+		}
+		catch (std::exception const &e) {
+			ErrorLog("Bad init: scenario \"" + Global.SceneryFile + "\" couldn't be opened (" + e.what() + ")");
+			state.reset();
+			Global.SceneryFile.clear();
+			Application.pop_mode();
+			Application.push_mode(eu07_application::mode::launcher);
+			return true;
+		}
 	}
 
 	try {

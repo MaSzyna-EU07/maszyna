@@ -24,6 +24,25 @@ http://mozilla.org/MPL/2.0/.
 
 float constexpr kDragPixels{5.0f};
 
+template <typename Node_> inline std::string name_of(Node_ const &Node)
+{
+	return Node.name().empty() ? std::string{STR_C("(no name)")} : Node.name();
+}
+
+inline float tall_button_height()
+{
+	return std::round(ImGui::GetFrameHeight() * 1.3f);
+}
+
+inline bool main_button(char const *Label, ImVec2 const &Size)
+{
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
+	auto const pressed{ImGui::Button(Label, Size)};
+	ImGui::PopStyleColor(2);
+	return pressed;
+}
+
 inline void item_tooltip(char const *Text)
 {
 	if (ImGui::IsItemHovered())

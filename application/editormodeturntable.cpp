@@ -77,19 +77,6 @@ double line_angle(double const Angle)
 	return result;
 }
 
-bool numeric(std::string const &Text, double &Value)
-{
-	char *end{nullptr};
-	Value = std::strtod(Text.c_str(), &end);
-	return false == Text.empty() && *end == '\0';
-}
-
-std::string normalized(std::string File)
-{
-	std::replace(File.begin(), File.end(), '\\', '/');
-	return ToLower(File);
-}
-
 std::vector<double> fixed_angles(std::string const &File)
 {
 	std::vector<double> result;
@@ -280,8 +267,8 @@ bool editor_mode::turntable_read(TTrack *Table)
 		auto const &included{scene::Layers.instance(handle)};
 		if (included.removed || included.dead || included.file == nullptr)
 			continue;
-		auto const file{normalized(*included.file)};
-		auto const kind{std::find_if(tool.templates.begin(), tool.templates.end(), [&](turntable_template const &Template) { return normalized(Template.file) == file; })};
+		auto const file{editor_includes::normalized(*included.file)};
+		auto const kind{std::find_if(tool.templates.begin(), tool.templates.end(), [&](turntable_template const &Template) { return editor_includes::normalized(Template.file) == file; })};
 		if (kind == tool.templates.end())
 			continue;
 		std::string target;
@@ -559,7 +546,7 @@ std::vector<scene::instance_handle> editor_mode::turntable_includes(TTrack const
 		auto const &included{scene::Layers.instance(handle)};
 		if (included.removed || included.dead || included.file == nullptr)
 			continue;
-		auto const kind{std::find_if(m_turntable.templates.begin(), m_turntable.templates.end(), [&](turntable_template const &Template) { return normalized(Template.file) == normalized(*included.file); })};
+		auto const kind{std::find_if(m_turntable.templates.begin(), m_turntable.templates.end(), [&](turntable_template const &Template) { return editor_includes::normalized(Template.file) == editor_includes::normalized(*included.file); })};
 		std::string target;
 		std::vector<std::string> values;
 		if (kind != m_turntable.templates.end() && editor_includes::parse_directive(scene::Layers.directive(handle), target, values) && kind->track <= static_cast<int>(values.size()) && ToLower(values[kind->track - 1]) == Table.name())
@@ -959,7 +946,7 @@ void editor_mode::render_turntable_ui()
 				else
 					ImGui::TextDisabled("  -  ");
 				ImGui::SameLine();
-				auto const name{fit.end.track->name().empty() ? std::string{STR_C("(no name)")} : fit.end.track->name()};
+				auto const name{name_of(*fit.end.track)};
 				if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(name.c_str()).x, 0.f)))
 					focus_track(*fit.end.track, fit.end.point.path, fit.end.position);
 				if (ImGui::IsItemHovered())
@@ -1158,7 +1145,7 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 			auto const &included{scene::Layers.instance(handle)};
 			if (included.removed || included.dead || included.file == nullptr)
 				continue;
-			auto const kind{std::find_if(m_turntable.templates.begin(), m_turntable.templates.end(), [&](turntable_template const &Template) { return normalized(Template.file) == normalized(*included.file); })};
+			auto const kind{std::find_if(m_turntable.templates.begin(), m_turntable.templates.end(), [&](turntable_template const &Template) { return editor_includes::normalized(Template.file) == editor_includes::normalized(*included.file); })};
 			if (kind == m_turntable.templates.end() || kind->angles == 0)
 				continue;
 			std::string target;

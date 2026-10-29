@@ -93,6 +93,57 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		WriteLog(format("SELFTEST selectat %.1f %.1f: %s", point.x, point.z, m_node != nullptr ? m_node->name().c_str() : "nothing"));
 		return selftest_result::handled;
 	}
+	if (command == "trackends")
+	{
+		// the ends of the first path of the track, against the ground under them
+		std::string name;
+		words >> name;
+		auto const *track{simulation::Paths.find(name)};
+		if (track == nullptr || track->m_paths.empty())
+		{
+			WriteLog("SELFTEST trackends " + name + ": no such track");
+			return selftest_result::handled;
+		}
+		for (auto const end : {segment_data::point::start, segment_data::point::end})
+		{
+			auto const &point{track->m_paths.front().points[end]};
+			std::vector<char> found;
+			auto const ground{ground_heights({glm::dvec3{point.x, point.y + 50.0, point.z}}, true, &found).front()};
+			WriteLog(format("SELFTEST trackends %s %s: %.2f %.3f %.2f, ground %.3f (found %d)", name.c_str(), end == segment_data::point::start ? "start" : "end", point.x, point.y, point.z, ground, found[0]));
+		}
+		return selftest_result::handled;
+	}
+	if (command == "kbreak")
+	{
+		// K on the track nearest the point: split there, the point between at the height of the ground and the ballast
+		glm::dvec3 point{0.0};
+		words >> point.x >> point.z;
+		TTrack *nearest{nullptr};
+		double distance{1e9};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && track->eType == tt_Normal)
+				if (auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+		if (nearest == nullptr || distance > 3.0)
+		{
+			WriteLog(format("SELFTEST kbreak %.1f %.1f: no track", point.x, point.z));
+			return selftest_result::handled;
+		}
+		auto const tracks{simulation::Paths.sequence().size()};
+		split_track_at(*nearest, point);
+		auto const &path{nearest->m_paths.front()};
+		auto const joint{path.points[segment_data::point::end]};
+		std::vector<char> found;
+		auto const ground{ground_heights({glm::dvec3{joint.x, joint.y + 50.0, joint.z}}, true, &found).front()};
+		geometry::bezier const curve{path};
+		auto const rise = [](glm::dvec3 const &Tangent) { return 1000.0 * Tangent.y / std::max(1e-9, glm::length(geometry::plan_of(Tangent))); };
+		WriteLog(format("SELFTEST kbreak %s: %zu tracks more, joint %.2f %.3f %.2f, ground %.3f (found %d), grade %.2f -> %.2f permille", nearest->name().c_str(), simulation::Paths.sequence().size() - tracks, joint.x, joint.y, joint.z, ground, found[0], rise(curve.first(0.0)),
+		                rise(curve.first(1.0))));
+		return selftest_result::handled;
+	}
 	if (command == "select")
 	{
 		std::string name;
@@ -113,9 +164,12 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		auto const now{std::chrono::steady_clock::now()};
 		auto const frames{editor_selftest::frames() - lastframe};
 		auto const elapsed{std::chrono::duration<double, std::milli>(now - last).count()};
-		WriteLog(format("SELFTEST perf %s: %zu frames, %.3f ms per frame | %s | %s", label.c_str(), frames, frames > 0 ? elapsed / frames : 0.0, editor_selftest::one_line(GfxRenderer->info_times()).c_str(), editor_selftest::one_line(GfxRenderer->info_stats()).c_str()));
+		WriteLog(format("SELFTEST perf %s: %zu frames, %.3f ms per frame, the longest %.1f ms, %zu over 33 ms | %s | %s", label.c_str(), frames, frames > 0 ? elapsed / frames : 0.0, editor_selftest::frame_longest(), editor_selftest::frames_slow(), editor_selftest::one_line(GfxRenderer->info_times()).c_str(), editor_selftest::one_line(GfxRenderer->info_stats()).c_str()));
+		WriteLog("SELFTEST perf " + label + " " + m_streamer.stats());
 		last = now;
 		lastframe = editor_selftest::frames();
+		editor_selftest::frame_longest() = 0.0;
+		editor_selftest::frames_slow() = 0;
 		return selftest_result::handled;
 	}
 	if (command == "rebuildall")
@@ -283,37 +337,17 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		if (extent > 0.0f)
 			Global.EditorOrthoExtent = std::clamp(extent, 5.0f, 50000.0f);
 		if (false == ballast.empty())
-			Global.EditorOrthoBallast = ballast != "noballast";
-		WriteLog(format("SELFTEST ortho extent %.0f ballast %d", Global.EditorOrthoExtent, Global.EditorOrthoBallast ? 1 : 0));
+			Global.EditorOrthoTracks = ballast == "rails" ? 2 : ballast == "noballast" ? 1 : 0;
+		WriteLog(format("SELFTEST ortho extent %.0f tracks %d", Global.EditorOrthoExtent, Global.EditorOrthoTracks));
 		return selftest_result::handled;
 	}
 	if (command == "mapstate")
 	{
 		auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")};
-		WriteLog(format("SELFTEST mapstate orthophoto %d top %d extent %.0f mark %s camera %.1f %.1f %.1f", m_orthophoto.enabled() ? 1 : 0, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent, marked.empty() ? "-" : marked.front().c_str(), Camera.Pos.x, Camera.Pos.y, Camera.Pos.z));
-		return selftest_result::handled;
-	}
-	if (command == "trainset")
-	{
-		std::string name;
-		std::string vehicle;
-		std::string skin;
-		int facing{1};
-		words >> name >> vehicle >> skin >> facing >> m_vehicle.velocity;
-		auto *track{simulation::Paths.find(name)};
-		if (track == nullptr)
-			return selftest_result::handled;
-		auto desc{std::make_shared<ui::vehicle_desc>()};
-		desc->path = vehicle;
-		auto set{std::make_shared<ui::skin_set>()};
-		set->skin = skin;
-		m_vehicle.consist.clear();
-		m_vehicle.vehicle = desc;
-		m_vehicle.skin = set;
-		vehicle_start(*track, geometry::bezier{track->m_paths.front()}.point(0.5));
-		m_vehicle.facing = facing;
-		auto const placed{vehicle_place()};
-		WriteLog(format("SELFTEST trainset %s placed %d pending %d: %s", name.c_str(), placed ? 1 : 0, static_cast<int>(m_vehicle.trainsets.size()), m_vehicle.status.c_str()));
+		WriteLog(format("SELFTEST mapstate orthophoto %d top %d extent %.0f camera %.1f %.1f %.1f", m_orthophoto.enabled() ? 1 : 0, Global.EditorOrtho ? 1 : 0, Global.EditorOrthoExtent, Camera.Pos.x, Camera.Pos.y, Camera.Pos.z));
+		WriteLog("SELFTEST mapstate mark " + (marked.empty() ? std::string{"-"} : marked.front()));
+		auto const [grounded, guessed]{m_orthophoto.grounded()};
+		WriteLog(format("SELFTEST mapstate tiles on the ground %zu, at guessed heights %zu", grounded, guessed));
 		return selftest_result::handled;
 	}
 	if (command == "selectmodel")

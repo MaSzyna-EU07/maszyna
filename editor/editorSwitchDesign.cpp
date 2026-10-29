@@ -160,10 +160,12 @@ std::string checked(std::vector<part> const &Parts)
 		return "The diverging track has no parts";
 	for (auto const &part : Parts)
 	{
-		if (part.length < 0.05)
+		if (false == (part.length >= 0.05))
 			return "A part of the diverging track is shorter than 5 cm";
+		if (part.length > 1000.0)
+			return "A part of the diverging track is longer than 1000 m";
 		for (auto const radius : {part.radius1, part.radius2})
-			if (radius != 0.0 && std::abs(radius) < kMinRadius)
+			if (std::isnan(radius) || (radius != 0.0 && std::abs(radius) < kMinRadius))
 				return "A radius of the diverging track is under 10 m";
 	}
 	return {};
@@ -362,9 +364,9 @@ shape build(design const &Design, std::string &Error)
 	bool const mirrored{Design.type == "Rps"};
 	if (Error.empty() && twofold && false == mirrored && false == Design.parts2.empty())
 		Error = checked(Design.parts2);
-	if (Error.empty() && (Design.lead < 0.0 || Design.lead > 30.0))
+	if (Error.empty() && false == (Design.lead >= 0.0 && Design.lead <= 30.0))
 		Error = "The pre-blade stretch has to be between 0 and 30 m";
-	if (Error.empty() && (Design.entry < 0.0 || Design.entry > 5.0))
+	if (Error.empty() && false == (Design.entry >= 0.0 && Design.entry <= 5.0))
 		Error = "The angle of the blade has to be between 0 and 5 degrees";
 	if (false == Error.empty())
 		return result;

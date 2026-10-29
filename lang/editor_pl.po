@@ -240,8 +240,8 @@ msgstr "zastosuj"
 msgid "release the vertex"
 msgstr "puszcza wierzchołek"
 
-msgid "split the path under the cursor"
-msgstr "podziel tor pod kursorem"
+msgid "split the path under the cursor, a break of the grade at the height of the ground"
+msgstr "podziel tor pod kursorem, załamanie niwelety na wysokości terenu"
 
 msgid "top view"
 msgstr "widok z góry"
@@ -489,9 +489,6 @@ msgstr "powrót do Wyboru"
 
 msgid "move the selected switch"
 msgstr "przesuwa zaznaczony rozjazd"
-
-msgid "modes: lay, switch, straight, curve, profile, speed, infra"
-msgstr "tryby: układanie, rozjazd, prosta, łuk, profil, prędkość, infrastruktura"
 
 msgid "Select"
 msgstr "Zaznaczanie"
@@ -954,6 +951,9 @@ msgstr "Kliknij co najmniej dwa punkty"
 
 msgid "The curvature changes abruptly where the track joins, there's no room for a transition curve"
 msgstr "Na styku z torem krzywizna zmienia się skokowo, nie ma miejsca na krzywą przejściową"
+
+msgid "At the end of the switch the line goes on with the curve of the switch, and there's no room for the transition out of it here"
+msgstr "Za końcem rozjazdu tor kontynuuje łuk rozjazdu, a nie ma tu miejsca na krzywą przejściową wychodzącą z niego"
 
 msgid "Compound curve: R %.0f m meets R %.0f m with no transition curve between them"
 msgstr "Łuk koszowy: R %.0f m styka się z R %.0f m bez krzywej przejściowej między nimi"
@@ -1743,8 +1743,8 @@ msgstr "Rozstaw torów (m)"
 msgid "Speed check of the line"
 msgstr "Sprawdź prędkość linii"
 
-msgid "Split here"
-msgstr "Podziel tutaj"
+msgid "Split here, a break of the grade"
+msgstr "Podziel tutaj, załamanie niwelety"
 
 msgid "Step (m)"
 msgstr "Uskok (m)"
@@ -1832,9 +1832,6 @@ msgstr "łączy końce, wyrównuje je"
 
 msgid "kink"
 msgstr "załamanie"
-
-msgid "modes: lay, switch, straight, curve, profile, speed, joints, infra"
-msgstr "tryby: układanie, rozjazd, prosta, łuk, profil, prędkość, styki, infrastruktura"
 
 msgid "show the place"
 msgstr "pokazuje miejsce"
@@ -2088,9 +2085,6 @@ msgstr "układa"
 msgid "the line the objects go along"
 msgstr "linia, wzdłuż której idą obiekty"
 
-msgid "modes: lay, switch, straight, curve, objects, profile, speed, joints, infra"
-msgstr "tryby: układanie, rozjazd, prosta, łuk, obiekty, profil, prędkość, styki, infrastruktura"
-
 msgid "Fouling points"
 msgstr "Ukresy W17"
 
@@ -2204,8 +2198,8 @@ msgstr "koniec się z nim łączy"
 msgid "done"
 msgstr "gotowe"
 
-msgid "moves it, an end dropped on a free end joins it"
-msgstr "przesuwa go, koniec upuszczony na wolny koniec łączy się"
+msgid "moves it, an end onto the ground (Shift: keeps its height), dropped on a free end joins it"
+msgstr "przesuwa go, koniec na teren (Shift: zostaje na swojej wysokości), upuszczony na wolny koniec łączy się"
 
 msgid "Gizmo"
 msgstr "Gizmo"
@@ -2227,9 +2221,6 @@ msgstr "odznacza"
 
 msgid "Enter"
 msgstr "Enter"
-
-msgid "lay up to the cursor"
-msgstr "układa do kursora"
 
 msgid "Shift"
 msgstr "Shift"
@@ -3570,8 +3561,8 @@ msgstr "krawędź peronu od osi toru"
 msgid "Signals"
 msgstr "Sygnalizatory"
 
-msgid "Signals by the track, from the templates of the scenery, with the event the train reads them by"
-msgstr "Sygnalizatory przy torze, z szablonów scenerii, z eventem, którym pociąg je odczytuje"
+msgid "Click: stop placing"
+msgstr "Klik: koniec stawiania"
 
 msgid "moves the signal along the track"
 msgstr "przesuwa sygnalizator wzdłuż toru"
@@ -3600,8 +3591,20 @@ msgstr "usuwa zaznaczony sygnalizator razem z jego eventem"
 msgid "Click: select the signal %s, drag: move it along the track"
 msgstr "LPM: zaznacz sygnalizator %s, przeciągnij: przesuń go wzdłuż toru"
 
-msgid "Choose the type of the signal in the Tracks window first"
-msgstr "Najpierw wybierz typ sygnalizatora w oknie Tory"
+msgid "Click: place it by a track, the signalling of the station places its signals of this kind with it too"
+msgstr "Klik: stawiaj go przy torze; SRK stacji stawia nim też swoje sygnalizatory tego rodzaju"
+
+msgid "Stop placing (Esc)"
+msgstr "Zakończ stawianie (Esc)"
+
+msgid "Place by a track"
+msgstr "Stawiaj przy torze"
+
+msgid "stops placing"
+msgstr "kończy stawianie"
+
+msgid "A click by a track places the chosen signal on that side, a press dragged along it turns it to the trains running that way. The signalling of the station places its signals of each kind with the template chosen here"
+msgstr "Klik przy torze stawia wybrany sygnalizator po tej stronie, wciśnięcie przeciągnięte wzdłuż toru obraca go do pociągów jadących w tę stronę. SRK stacji stawia swoje sygnalizatory każdego rodzaju szablonem wybranym tutaj"
 
 msgid "Semaphore"
 msgstr "Semafor"
@@ -3972,9 +3975,6 @@ msgstr "Skróty klawiszowe"
 msgid "Lay track / switch / turntable"
 msgstr "Układanie / Rozjazd / Obrotnica"
 
-msgid "Laying track: lay up to the cursor / take the last piece back"
-msgstr "Układanie toru: ułóż do kursora / cofnij ostatni odcinek"
-
 msgid "Leave the editor"
 msgstr "Wyjście z edytora"
 
@@ -4062,8 +4062,8 @@ msgstr "Zaznaczanie, Wstawianie, Pędzel, Wypełnianie obszaru, Kopiuj do banku"
 msgid "Select: add a point, or take it out"
 msgstr "Zaznaczanie: dodaj punkt do zaznaczenia albo go z niego zdejmij"
 
-msgid "Signals / objects along the track"
-msgstr "Sygnalizatory / obiekty wzdłuż toru"
+msgid "Signalling / objects along the track"
+msgstr "SRK / obiekty wzdłuż toru"
 
 msgid "Snap to the step set in the gizmo settings"
 msgstr "Przyciąganie do kroku z ustawień gizma"
@@ -4071,8 +4071,8 @@ msgstr "Przyciąganie do kroku z ustawień gizma"
 msgid "Split the road at the cursor, or make a point there"
 msgstr "Podziel drogę przy kursorze albo zrób tam punkt"
 
-msgid "Split the selected track at the cursor"
-msgstr "Podziel zaznaczony tor przy kursorze"
+msgid "Split the selected track at the cursor, a break of the grade at the height of the ground"
+msgstr "Podziel zaznaczony tor przy kursorze, załamanie niwelety na wysokości terenu"
 
 msgid "Takes the last change back"
 msgstr "Cofa ostatnią zmianę"
@@ -4106,9 +4106,6 @@ msgstr "Ta lista skrótów"
 
 msgid "Top view, orthographic"
 msgstr "Widok z góry"
-
-msgid "Translate / rotate / scale"
-msgstr "Przesuń / Obróć / Skaluj"
 
 msgid "Undo"
 msgstr "Cofnij"
@@ -4503,12 +4500,6 @@ msgstr ", ostrzej niż rozjazd (R %.0f m)"
 msgid ", the switch moved %.2f m"
 msgstr ", rozjazd przesunięty o %.2f m"
 
-msgid "take back the last piece"
-msgstr "cofa ostatni odcinek"
-
-msgid "The last piece was taken back"
-msgstr "Ostatni odcinek cofnięty"
-
 msgid "R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"
 msgstr "R %.0f m nie sięga kursora, łuk przechodzi przez niego z R %.0f m"
 
@@ -4521,23 +4512,11 @@ msgstr "Pokazuj po otwarciu edytora"
 msgid "L, LMB, LMB..."
 msgstr "L, LPM, LPM..."
 
-msgid "Lay track: each click lays a piece and goes on from its end"
-msgstr "Układanie toru: każdy klik układa odcinek i ciągnie tor dalej z jego końca"
-
 msgid "Lead a track out of it; onto another free end: join the two"
 msgstr "Wyprowadza z niego tor; na inny wolny koniec: łączy oba"
 
-msgid "Laying: radius"
-msgstr "Układanie: promień"
-
-msgid "Laying: arc then straight, straight then arc, arc, straight; at a free end: another way to join"
-msgstr "Układanie: łuk i prosta, prosta i łuk, łuk, prosta; na wolnym końcu: inny sposób połączenia"
-
 msgid "0-9 while laying"
 msgstr "0-9 w trakcie układania"
-
-msgid "Type the length (or the radius) of the next piece, Enter lays it"
-msgstr "Wpisz długość (lub promień) następnego odcinka, Enter go układa"
 
 msgid "canyon"
 msgstr "jar"
@@ -4614,17 +4593,8 @@ msgstr "Więcej"
 msgid "Less"
 msgstr "Mniej"
 
-msgid "Plain arcs with no transition curves and no cant, no warnings about the norms: the track goes where it's clicked"
-msgstr "Zwykłe łuki bez krzywych przejściowych i przechyłki, bez ostrzeżeń o normach: tor idzie tam, gdzie klikniesz"
-
-msgid "Transition curves and cant for the design speed, warnings when the radius, the cant or the transitions don't meet the norms"
-msgstr "Krzywe przejściowe i przechyłka dla prędkości projektowej; ostrzeżenia, gdy promień, przechyłka albo krzywe przejściowe nie spełniają norm"
-
 msgid "Drag to change, Ctrl+click to type the value. While laying: Ctrl+wheel"
 msgstr "Przeciągnij, by zmienić, Ctrl+LPM, by wpisać. W trakcie układania: Ctrl+kółko"
-
-msgid "Speed limit of the new paths; the speed of the track joined comes first"
-msgstr "Ograniczenie prędkości nowych torów; pierwszeństwo ma prędkość dołączanego toru"
 
 msgid "The Parallel tool (N) with it"
 msgstr "Narzędzie Równoległy (N) z tym torem"
@@ -4718,12 +4688,6 @@ msgstr "układa kształt do kursora"
 
 msgid "a parallel track (N)"
 msgstr "tor równoległy (N)"
-
-msgid "lay the shape up to here"
-msgstr "układa kształt do tego miejsca"
-
-msgid "lay the straight up to here"
-msgstr "układa prostą do tego miejsca"
 
 msgid "another shape"
 msgstr "inny kształt"
@@ -5118,6 +5082,9 @@ msgstr "Tor zwrotny nie ma części"
 msgid "A part of the diverging track is shorter than 5 cm"
 msgstr "Część toru zwrotnego jest krótsza niż 5 cm"
 
+msgid "A part of the diverging track is longer than 1000 m"
+msgstr "Część toru zwrotnego jest dłuższa niż 1000 m"
+
 msgid "A radius of the diverging track is under 10 m"
 msgstr "Promień toru zwrotnego jest mniejszy niż 10 m"
 
@@ -5346,50 +5313,20 @@ msgstr "Dział Tory"
 msgid "The lay tool"
 msgstr "Narzędzie Układanie"
 
-msgid "A click on the ground: the first point; the next click: a straight up to it"
-msgstr "Klik na ziemi: pierwszy punkt; następny klik: prosta do niego"
-
-msgid "Each next click lays a piece on from the end of the last one"
-msgstr "Każdy kolejny klik układa kawałek dalej, od końca poprzedniego"
-
-msgid "Takes the last piece back"
-msgstr "Cofa ostatni kawałek"
-
-msgid "Ends laying"
-msgstr "Kończy układanie"
-
 msgid "Open the Tracks field of work"
 msgstr "Otwórz dział Tory"
 
 msgid "Turn the lay tool on"
 msgstr "Włącz układanie"
 
-msgid "Lay a track"
-msgstr "Ułóż tor"
-
 msgid "Curves"
 msgstr "Łuki"
-
-msgid "The radius of the curve, while laying on from an end"
-msgstr "Promień łuku, gdy układasz dalej od końca toru"
-
-msgid "The shape: arc then straight, straight then arc, arc, straight"
-msgstr "Kształt: łuk i prosta, prosta i łuk, sam łuk, prosta"
 
 msgid "Held: the direction turns in steps of 15 degrees, or to 1:9, 1:6.6... to a straight track it starts by or crosses"
 msgstr "Trzymany: kierunek zmienia się co 15 stopni albo na 1:9, 1:6,6… do prostego toru, przy którym się zaczyna albo który przecina"
 
-msgid "Type the length of the next piece, Enter lays it"
-msgstr "Wpisz długość następnego kawałka, Enter go układa"
-
 msgid "Alone it zooms, as everywhere"
 msgstr "Samo kółko przybliża, jak wszędzie"
-
-msgid "Change the radius with Ctrl+wheel"
-msgstr "Zmień promień: Ctrl+kółko"
-
-msgid "Change the shape with Shift+wheel"
-msgstr "Zmień kształt: Shift+kółko"
 
 msgid "Joining tracks"
 msgstr "Łączenie torów"
@@ -5421,14 +5358,44 @@ msgstr "Zaznaczanie i poprawki"
 msgid "The select tool"
 msgstr "Narzędzie Zaznaczanie"
 
-msgid "Click a track: it is selected, with its points"
-msgstr "Kliknij tor: zostaje zaznaczony, widać jego punkty"
+msgid "Click a track: it is selected, with its ends"
+msgstr "Kliknij tor: zostaje zaznaczony, widać jego końce"
 
-msgid "Drag a point: the end or the curve follows"
-msgstr "Przeciągnij punkt: koniec albo łuk idzie za nim"
+msgid "The gizmo, to move, turn or bend the track: the next lesson"
+msgstr "Gizmo do przesuwania, obracania i wyginania toru: następna lekcja"
 
-msgid "Move, turn or scale with the gizmo"
-msgstr "Przesuwanie, obracanie, skalowanie gizmem"
+msgid "Editing with the gizmo"
+msgstr "Edycja z gizmo"
+
+msgid "The gizmo on the selected track, hidden until then: arrows which move it"
+msgstr "Gizmo na zaznaczonym torze, do tej pory ukryte: strzałki, które go przesuwają"
+
+msgid "Rings which turn it: its direction, its grade and its cant; the tracks joined to it follow"
+msgstr "Pierścienie, które go obracają: kierunek, pochylenie i przechyłka; połączone tory idą za nim"
+
+msgid "Handles which lengthen it at its free end, the curve keeping its radius"
+msgstr "Uchwyty, które wydłużają go na wolnym końcu, łuk zachowuje promień"
+
+msgid "With the gizmo out the control vectors are there too: drag one, the curve follows it"
+msgstr "Z gizmo widać też wektory sterujące: przeciągnij jeden, łuk idzie za nim"
+
+msgid "A click on a point of the track: the gizmo goes to it, that point alone is moved or turned"
+msgstr "Klik na punkcie toru: gizmo przechodzi do niego, przesuwa albo obraca tylko ten punkt"
+
+msgid "Held while dragging: the gizmo goes by its step"
+msgstr "Trzymany przy przeciąganiu: gizmo przeskakuje o swój krok"
+
+msgid "Releases the point; the arrow above the view hides the gizmo again"
+msgstr "Puszcza punkt; strzałka nad widokiem chowa gizmo z powrotem"
+
+msgid "Bring out the gizmo with Q, W or E"
+msgstr "Pokaż gizmo klawiszem Q, W albo E"
+
+msgid "Bend a track by a control vector, or move it with the gizmo"
+msgstr "Wygnij tor wektorem sterującym albo przesuń go gizmem"
+
+msgid "Drag an end: at a joint the neighbours follow, from a free end a new track goes out, with Ctrl the end moves"
+msgstr "Przeciągnij koniec: na styku sąsiednie tory idą za nim, z wolnego końca wychodzi nowy tor, z Ctrl koniec się przesuwa"
 
 msgid "A click on a track: what can be done with it"
 msgstr "Klik na torze: co można z nim zrobić"
@@ -5984,8 +5951,8 @@ msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowani
 msgid "Crossover, double, scissors, ladder"
 msgstr "Przejście rozjazdowe, podwójne przejście rozjazdowe, nożyce, ulica zwrotnicowa"
 
-msgid "Turntable, signals, objects, trainset, profile, speed, joints, gauge"
-msgstr "Obrotnica, sygnalizatory, obiekty, skład, profil, prędkość, styki, skrajnia"
+msgid "Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, SRK i sygnalizatory, kilometraż, obiekty, skład, profil, prędkość, styki, skrajnia"
 
 msgid "No switch drive models"
 msgstr "Brak modeli napędów"
@@ -6032,17 +5999,17 @@ msgstr "Tylko szablony na szynę zaznaczonego toru"
 msgid "The switch tool; at the top: what to place"
 msgstr "Narzędzie Rozjazd; na górze: co stawiasz"
 
-msgid "Click a track: the switch goes into it"
-msgstr "Kliknij tor: rozjazd wejdzie w niego"
+msgid "Click a track: the one the switch goes into"
+msgstr "Kliknij tor: ten, w który wejdzie rozjazd"
 
-msgid "Tool options, Gizmo, Off: the track won't move by chance"
-msgstr "Opcje narzędzia, Gizmo, Wył.: tor nie przesunie się przypadkiem"
+msgid "Press on it and drag: along the direction, sideways the side; let go: the switch is laid"
+msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę; puszczenie kładzie rozjazd"
 
-msgid "Press on it and drag: along the direction, sideways the side"
-msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę"
+msgid "Connection: drag from a straight onto the other track; a crossover, a double one or scissors, as chosen at the top"
+msgstr "Połączenie: przeciągnij z prostej na drugi tor; przejście rozjazdowe, podwójne albo nożyce, jak wybrano na górze"
 
-msgid "Connection: drag from a straight onto the other track"
-msgstr "Połączenie: przeciągnij z prostej na drugi tor"
+msgid "Switch ladder: drag from the straight to the side the tracks go off to; the ones missing are laid with it"
+msgstr "Ulica zwrotnicowa: przeciągnij z prostej w stronę, w którą odchodzą tory; brakujące tory układają się razem z nią"
 
 msgid "Click the green or red point in the view: that one only"
 msgstr "Kliknij zielony albo czerwony punkt w widoku: postawi albo poprawi tylko ten wskaźnik"
@@ -6099,7 +6066,7 @@ msgid "The tracks lie %+.2f m against the terrain model (%zu places, they differ
 msgstr "Tory leżą %+.2f m względem NMT (%zu miejsc, rozrzut %.2f m)"
 
 msgid "Terrain model (NMT)"
-msgstr "Numeryczny model terenu (NMT)"
+msgstr "Prawdziwy teren z map (NMT)"
 
 msgid "No tracks to fit the terrain model to: its heights are taken as they are"
 msgstr "Brak torów do dopasowania: wysokości NMT bez przesunięcia"
@@ -6149,6 +6116,12 @@ msgstr "Niweleta dziedziczona z rozjazdu %s (%s): %.2f m, %+.2f ‰"
 msgid "No tracks to put onto the terrain"
 msgstr "Brak torów do położenia na terenie"
 
+msgid "All the tracks are fitted to the terrain already"
+msgstr "Wszystkie tory są już dopasowane do terenu"
+
+msgid "All the tracks are fitted to the terrain; a track changed since goes onto it again"
+msgstr "Wszystkie tory są dopasowane do terenu; tor zmieniony od tego czasu pójdzie na niego znowu"
+
 msgid "\n%zu lines part from the terrain model by over 0.5 m: the model or the track is off there, the terrain follows the tracks (the log names them)"
 msgstr "\n%zu linii odchodzi od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log je wymienia)"
 
@@ -6158,8 +6131,8 @@ msgstr "Inne profile ustawisz we właściwościach toru"
 msgid "Rail profile %s set on %d tracks"
 msgstr "Profil szyny %s ustawiony na torach: %d"
 
-msgid "Scenery moved %+.2f m; grade lines fitted to the terrain: %zu, refused by the checks: %zu, tracks left: %zu"
-msgstr "Sceneria przesunięta o %+.2f m; niwelet dopasowanych do terenu: %zu, odrzuconych przez kontrole: %zu, zostało torów: %zu"
+msgid "Terrain model offset %+.2f m to the scenery; grade lines fitted to the terrain: %zu, refused by the checks: %zu, tracks left: %zu"
+msgstr "Model NMT przesunięty o %+.2f m do scenerii; niwelet dopasowanych do terenu: %zu, odrzuconych przez kontrole: %zu, zostało torów: %zu"
 
 msgid "Set...##railprofile"
 msgstr "Ustaw...##railprofile"
@@ -6463,8 +6436,8 @@ msgstr ", bez nazwy, pominięte %d"
 msgid "The scenery is there"
 msgstr "Ustaw położenie"
 
-msgid "The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported"
-msgstr "NMT wczytuje się wzdłuż torów, a tory idą na niego, niezależnie od tego, na jakiej wysokości zbudowano scenerię: korona podsypki na wysokości NMT, niweleta każdej linii dopasowana do terenu w granicach norm linii, rozjazdy i tory obok na jednej niwelecie, torowisko i skarpy wzdłuż nich. Gdzie NMT się myli, tory zostają na swojej linii i jest to zgłaszane"
+msgid "The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported. A turntable stays level in its pit at the height of the tracks running up to it, which reach it level. The tracks fitted already, by it or with the profile, and not changed since stay as they are, and the new lines meet them"
+msgstr "NMT wczytuje się wzdłuż torów, a tory idą na niego, niezależnie od tego, na jakiej wysokości zbudowano scenerię: korona podsypki na wysokości NMT, niweleta każdej linii dopasowana do terenu w granicach norm linii, rozjazdy i tory obok na jednej niwelecie, torowisko i skarpy wzdłuż nich. Gdzie NMT się myli, tory zostają na swojej linii i jest to zgłaszane. Obrotnica zostaje pozioma w swoim kanale na wysokości dobiegających torów, które dochodzą do niej poziomo. Tory już dopasowane, tym przyciskiem albo w profilu, i od tego czasu niezmienione zostają, jak są, a nowe niwelety się z nimi łączą"
 
 msgid "Load the terrain under the tracks, they stay"
 msgstr "Wczytaj teren pod tory (tory zostają)"
@@ -6894,6 +6867,102 @@ msgstr "Niwelety: dopasowano %zu, zostało %zu torów"
 msgid "Chunks: %zu of %zu"
 msgstr "Kafle: %zu z %zu"
 
+msgid "Terrain model loading"
+msgstr "Wczytywanie NMT"
+
+msgid "Orthophoto loading"
+msgstr "Wczytywanie ortofotomapy"
+
+msgid "No tracks to draw the terrain to"
+msgstr "Brak torów, do których można dociągnąć teren"
+
+msgid "The terrain drawn to %zu track: %zu formations led into it, Ctrl+Z takes it back"
+msgid_plural "The terrain drawn to %zu tracks: %zu formations led into it, Ctrl+Z takes it back"
+msgstr[0] "Teren dociągnięty do %zu toru: wprowadzone formacje: %zu, Ctrl+Z cofa"
+msgstr[1] "Teren dociągnięty do %zu torów: wprowadzone formacje: %zu, Ctrl+Z cofa"
+msgstr[2] "Teren dociągnięty do %zu torów: wprowadzone formacje: %zu, Ctrl+Z cofa"
+
+msgid "%zu formation taken out of the terrain, Ctrl+Z takes it back"
+msgid_plural "%zu formations taken out of the terrain, Ctrl+Z takes it back"
+msgstr[0] "%zu formacja usunięta z terenu, Ctrl+Z cofa"
+msgstr[1] "%zu formacje usunięte z terenu, Ctrl+Z cofa"
+msgstr[2] "%zu formacji usuniętych z terenu, Ctrl+Z cofa"
+
+msgid "Draw the terrain to the track"
+msgstr "Dociągnij teren do toru"
+
+msgid "The formation and the slopes of the selected tracks led into the terrain, down or up to it; elsewhere the terrain stays as it is"
+msgstr "Formacja i skarpy zaznaczonych torów wprowadzone w teren, w dół albo w górę do niego; poza nimi teren zostaje bez zmian"
+
+msgid "The whole run"
+msgstr "Cały ciąg"
+
+msgid "The tracks joined to the selected ones added to the selection, by the rules of the spread, and the terrain drawn to all of them"
+msgstr "Tory połączone z zaznaczonymi dodane do zaznaczenia według zasad rozszerzania i teren dociągnięty do nich wszystkich"
+
+msgid "The formations of the selected tracks taken out of the terrain: the ground goes back to how it was before them"
+msgstr "Formacje zaznaczonych torów usunięte z terenu: grunt wraca do stanu sprzed nich"
+
+msgid "The terrain follows the tracks edited"
+msgstr "Teren podąża za edytowanymi torami"
+
+msgid "A track with its formation moved or changed takes it along; off: the terrain stays as it is until it's drawn to the tracks again"
+msgstr "Przesunięty lub zmieniony tor z formacją pociąga ją za sobą; wyłączone: teren zostaje bez zmian, dopóki nie dociągniesz go do torów ponownie"
+
+msgid "All the tracks of the scenery"
+msgstr "Wszystkie tory scenerii"
+
+msgid "A chunk there is already is never made anew"
+msgstr "Istniejący kafel nigdy nie jest tworzony od nowa"
+
+msgid "Tracks and terrain"
+msgstr "Tory i teren"
+
+msgid "First the place of the scenery on the map: F5 Terrain, Terrain model (NMT), step 1"
+msgstr "Najpierw położenie scenerii na mapie: F5 Teren, Prawdziwy teren z map (NMT), krok 1"
+
+msgid "All the tracks go down or up onto the terrain model, which is loaded along them by itself"
+msgstr "Wszystkie tory schodzą albo wchodzą na model terenu, który wczytuje się sam wzdłuż nich"
+
+msgid "Or:"
+msgstr "Albo:"
+
+msgid "The tracks laid or changed since the last time go onto the terrain model (%zu of %zu); the ones fitted stay as they are"
+msgstr "Na NMT idą tory ułożone albo zmienione od ostatniego razu (%zu z %zu); dopasowane zostają, jak są"
+
+msgid "The tracks stay at their heights and the terrain comes up or down to them"
+msgstr "Tory zostają na swojej wysokości, a teren podnosi się albo obniża do nich"
+
+msgid "The terrain to some of the tracks only: select them (F3), Terrain in the inspector"
+msgstr "Teren tylko pod wybrane tory: zaznacz je (F3), sekcja Teren w inspektorze"
+
+msgid "Terrain of the model right away while laying"
+msgstr "Teren z NMT od razu podczas kładzenia"
+
+msgid "Where the terrain of the scenery ends, the terrain model is made under the tracks as they're laid, around the cursor from the first point placed; the chunks there are stay as they are. Off, it's made only when asked for"
+msgstr "Tam, gdzie kończy się teren scenerii, teren z NMT powstaje pod układanymi torami, wokół kursora od pierwszego postawionego punktu; istniejące kafle zostają bez zmian. Wyłączone: teren powstaje tylko na żądanie"
+
+msgid "Height offset of the model"
+msgstr "Przesunięcie wysokości modelu"
+
+msgid "Its grade line is fitted to the terrain"
+msgstr "Niweleta dopasowana do terenu"
+
+msgid "Its grade line isn't fitted to the terrain yet"
+msgstr "Niweleta jeszcze niedopasowana do terenu"
+
+msgid "Grade lines fitted to the terrain: %zu of %zu"
+msgstr "Niwelety dopasowane do terenu: %zu z %zu"
+
+msgid "A track is fitted when its grade line was fitted to the terrain model or applied with the profile, and it wasn't changed since"
+msgstr "Tor jest dopasowany, gdy jego niweletę dopasowano do NMT albo zastosowano w profilu i od tego czasu się nie zmienił"
+
+msgid "All anew, the fitted ones too"
+msgstr "Wszystkie od nowa, z dopasowanymi"
+
+msgid "All the tracks are fitted to the terrain model again, the ones fitted already too: their grade lines may change; the scenery isn't moved"
+msgstr "Wszystkie tory są dopasowywane do NMT od nowa, także te już dopasowane: ich niwelety mogą się zmienić; sceneria nie jest przesuwana"
+
 msgid "By hand: the model as it is, the tracks stay"
 msgstr "Ręcznie: NMT bez zmian, tory zostają"
 
@@ -7092,18 +7161,6 @@ msgstr "Wyposażenie"
 msgid "F1: all the shortcuts"
 msgstr "F1: wszystkie skróty"
 
-msgid "Free laying"
-msgstr "Swobodnie"
-
-msgid "Plain arcs, no transition curves nor cant"
-msgstr "Same łuki, bez krzywych przejściowych i przechyłki"
-
-msgid "To the PKP PLK norms"
-msgstr "Według norm PKP PLK"
-
-msgid "Transition curves and cant for the speed, checked against the norms"
-msgstr "Krzywe przejściowe i przechyłka dobrane do prędkości"
-
 msgid "its properties show here"
 msgstr "jego właściwości pokazują się tutaj"
 
@@ -7172,18 +7229,6 @@ msgstr "Teren z modelu terenu"
 
 msgid "The Terrain field of work: the terrain model (NMT) is in its tool options"
 msgstr "Dział Teren: numeryczny model terenu (NMT) jest w jego opcjach narzędzia"
-
-msgid "Location: where the scenery lies in PUWG 1992; a scenery begun from nothing asks for it with its first track"
-msgstr "Położenie: gdzie na mapie leży sceneria; nowa sceneria pyta o nie przy pierwszym torze"
-
-msgid "What gives way: the tracks go onto the terrain, or the terrain is drawn to the tracks"
-msgstr "Co dopasować: tory kładą się na teren albo teren dociąga się do torów"
-
-msgid "Load: the model comes from geoportal.gov.pl, the terrain is made along the tracks with the formation and the slopes"
-msgstr "Wczytaj: model przychodzi z geoportal.gov.pl, teren powstaje wzdłuż torów razem z torowiskiem i skarpami"
-
-msgid "Takes the changes of the tracks back"
-msgstr "Cofa zmiany torów"
 
 msgid "Open the Terrain field of work"
 msgstr "Otwórz dział Teren"
@@ -7287,6 +7332,12 @@ msgstr "Łuk %d: R %.0f m, przechyłka %.0f mm"
 msgid "Transition into curve %d: %.0f m"
 msgstr "Przejściowa na wejściu w łuk %d: %.0f m"
 
+msgid "Curve %d, arc R%d: %.0f m"
+msgstr "Łuk %d, promień R%d: %.0f m"
+
+msgid "Curve %d, transition between R%d and R%d: %.0f m"
+msgstr "Łuk %d, przejściowa między R%d a R%d: %.0f m"
+
 msgid "Transition out of curve %d: %.0f m"
 msgstr "Przejściowa na wyjściu z łuku %d: %.0f m"
 
@@ -7344,8 +7395,8 @@ msgstr "Poprawianie łuku"
 msgid "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"
 msgstr "Narzędzie Plan: klik na łuku pokazuje jego projekt, wierzchołek i promień do przeciągania w widoku"
 
-msgid "In the panel, the band of the curvature: drag the plateau of the arc up or down for its radius"
-msgstr "W panelu pasek krzywizny: półka łuku przeciągnięta w górę albo w dół zmienia jego promień"
+msgid "In the panel, the band of the curvature: drag the plateau of an arc up or down for its radius, each arc of a compound curve its own"
+msgstr "W panelu pasek krzywizny: półka łuku przeciągnięta w górę albo w dół zmienia jego promień, każdy łuk koszowego osobno"
 
 msgid "Drag a ramp sideways: the transition curve gets longer or shorter"
 msgstr "Rampa przeciągnięta w bok: krzywa przejściowa wydłuża się albo skraca"
@@ -7478,12 +7529,6 @@ msgstr "Sceneria nie ma jeszcze torów"
 
 msgid "the lay tool"
 msgstr "narzędzie układania"
-
-msgid "on the ground: the first point, then each next one lays a piece"
-msgstr "na terenie: pierwszy punkt, każdy następny układa kawałek"
-
-msgid "the radius of the curve while laying"
-msgstr "promień łuku przy układaniu"
 
 msgid "all the shortcuts, and the tutorial"
 msgstr "wszystkie skróty i samouczek"
@@ -7620,9 +7665,6 @@ msgstr "Stawia pociąg na torze i od razu daje kabinę"
 msgid "Tool options, Gizmo, Off"
 msgstr "Opcje narzędzia, Gizmo, Wył."
 
-msgid "Hides the gizmo, so nothing moves by chance"
-msgstr "Ukrywa gizmo, żeby nic nie przesunęło się przypadkiem"
-
 msgid "the grade line of its whole line"
 msgstr "niweleta całej jego linii"
 
@@ -7674,11 +7716,8 @@ msgstr "Postaw i jedź: pociąg staje na torze, a kabina jest twoja"
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
-msgid "Twelve short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Dwanaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, niweleta, teren, starsze scenerie, zapis i jazda"
-
-msgid "H: by the track, drag along: the way the trains run"
-msgstr "H: przy torze, przeciągnij wzdłuż: kierunek pociągów"
+msgid "Thirteen short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Trzynaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: the hectometre posts of the whole line at once"
 msgstr "B: słupki hektometrowe całej linii naraz"
@@ -7686,8 +7725,8 @@ msgstr "B: słupki hektometrowe całej linii naraz"
 msgid "Signals and posts"
 msgstr "Sygnalizatory i słupki"
 
-msgid "The signals tool: the type of the signal in the panel, from the templates of the scenery"
-msgstr "Narzędzie Sygnalizatory: typ sygnalizatora w panelu, z szablonów scenerii"
+msgid "The signalling tool: click a type of signal in its Signals, from the templates of the scenery"
+msgstr "Narzędzie SRK: kliknij typ sygnalizatora w sekcji Sygnalizatory, z szablonów scenerii"
 
 msgid "A click by a track places the signal on that side"
 msgstr "Klik przy torze stawia sygnalizator po tej stronie"
@@ -7707,8 +7746,8 @@ msgstr "Postaw sygnalizator"
 msgid "Place the hectometre posts of a line"
 msgstr "Postaw słupki hektometrowe linii"
 
-msgid "The signals tool (H)"
-msgstr "Narzędzie Sygnalizatory (H)"
+msgid "The signalling tool (I)"
+msgstr "Narzędzie SRK (I)"
 
 msgid "\nPaths off the route brought to its height:"
 msgstr "\nTory obok trasy doprowadzone do jej wysokości:"
@@ -8733,11 +8772,11 @@ msgstr[0] "Usunięty %zu tor, Ctrl+Z go przywraca"
 msgstr[1] "Usunięte %zu tory, Ctrl+Z je przywraca"
 msgstr[2] "Usuniętych %zu torów, Ctrl+Z je przywraca"
 
-msgid "Laid %zu track, %.1f m, Ctrl+Z takes it back"
-msgid_plural "Laid %zu tracks, %.1f m, Ctrl+Z takes them back"
-msgstr[0] "Ułożony %zu tor, %.1f m, Ctrl+Z cofa"
-msgstr[1] "Ułożone %zu tory, razem %.1f m, Ctrl+Z cofa"
-msgstr[2] "Ułożonych %zu torów, razem %.1f m, Ctrl+Z cofa"
+msgid "Laid %.1f m of track in %zu piece, Ctrl+Z takes it back"
+msgid_plural "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back"
+msgstr[0] "Ułożono %.1f m toru (%zu odcinek), Ctrl+Z cofa"
+msgstr[1] "Ułożono %.1f m toru (%zu odcinki), Ctrl+Z cofa"
+msgstr[2] "Ułożono %.1f m toru (%zu odcinków), Ctrl+Z cofa"
 
 msgid "The geometry allows any speed up to %.0f km/h"
 msgstr "Geometria pozwala na dowolną prędkość do %.0f km/h"
@@ -9030,6 +9069,9 @@ msgstr "Łuki pionowe punktów %zu i %zu nachodzą na siebie o %.2f m"
 msgid "Point %zu: the vertical curve lies on switch %s"
 msgstr "Punkt %zu: łuk pionowy leży na rozjeździe %s"
 
+msgid "Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"
+msgstr "Punkt %zu: wypukły łuk pionowy na rozjeździe %s jest ostrzejszy niż %.0f m"
+
 msgid "Constant grade between points %zu and %zu is %.1f m long, less than %.0f m"
 msgstr "Stałe pochylenie między punktami %zu i %zu ma %.1f m, mniej niż %.0f m"
 
@@ -9140,6 +9182,12 @@ msgstr "Serwis nie zwrócił modelu terenu"
 
 msgid "\nThe paths and the design (//$p lines) go to the scenery files on save"
 msgstr "\nTory i projekt (wiersze //$p) trafią do plików scenerii przy zapisie"
+
+msgid "\nOver a bridge or a viaduct: %zu path"
+msgid_plural "\nOver a bridge or a viaduct: %zu paths"
+msgstr[0] "\nNa moście lub wiadukcie: %zu tor"
+msgstr[1] "\nNa moście lub wiadukcie: %zu tory"
+msgstr[2] "\nNa moście lub wiadukcie: %zu torów"
 
 msgid "\nPaths off the route brought to the height of the switches:"
 msgstr "\nTory spoza trasy dociągnięte do wysokości rozjazdów:"
@@ -9273,6 +9321,12 @@ msgstr[0] "Ułożono na nowo %zu tor"
 msgstr[1] "Ułożono na nowo %zu tory"
 msgstr[2] "Ułożono na nowo %zu torów"
 
+msgid "\n%zu object by the tracks moved sideways with them"
+msgid_plural "\n%zu objects by the tracks moved sideways with them"
+msgstr[0] "\n%zu obiekt przy torach przesunął się z nimi w bok"
+msgstr[1] "\n%zu obiekty przy torach przesunęły się z nimi w bok"
+msgstr[2] "\n%zu obiektów przy torach przesunęło się z nimi w bok"
+
 msgid ", the curve took over %.2f / %.2f m of the adjoining straights"
 msgstr ", łuk zajął %.2f / %.2f m przyległych prostych"
 
@@ -9359,6 +9413,12 @@ msgid_plural "\n%zu lines part from the terrain model by over 0.5 m: the model o
 msgstr[0] "\n%zu linia odchodzi od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log ją wymienia)"
 msgstr[1] "\n%zu linie odchodzą od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log je wymienia)"
 msgstr[2] "\n%zu linii odchodzi od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log je wymienia)"
+
+msgid "\n%zu turntable set level at the height of the tracks running up to it, which reach it level"
+msgid_plural "\n%zu turntables set level at the height of the tracks running up to them, which reach them level"
+msgstr[0] "\n%zu obrotnica ustawiona poziomo na wysokości dobiegających torów, które dochodzą do niej poziomo"
+msgstr[1] "\n%zu obrotnice ustawione poziomo na wysokości dobiegających torów, które dochodzą do nich poziomo"
+msgstr[2] "\n%zu obrotnic ustawionych poziomo na wysokości dobiegających torów, które dochodzą do nich poziomo"
 
 msgid "Stopped: the grade lines split off %zu path from %zu tracks, more than they should; Ctrl+Z takes the changes back"
 msgid_plural "Stopped: the grade lines split off %zu paths from %zu tracks, more than they should; Ctrl+Z takes the changes back"
@@ -11767,3 +11827,2437 @@ msgstr "nie jest w pliku scenerii, który edytor może przepisać (szablon inclu
 
 msgid "The catenary in \"%s\" couldn't be saved: %s"
 msgstr "Nie udało się zapisać sieci trakcyjnej w \"%s\": %s"
+
+msgid "The ends have to be numbers, from 0.1 m to 100 km apart"
+msgstr "Końce muszą być liczbami, od 0,1 m do 100 km od siebie"
+
+msgid "To the other side"
+msgstr "Na drugą stronę"
+
+msgid "Takes the signal across the track, it keeps facing the same trains. Dragging it over the track does the same"
+msgstr "Przenosi sygnalizator na drugą stronę toru, dalej stoi przodem do tych samych pociągów. To samo robi przeciągnięcie go przez tor"
+
+msgid "Turns the signal to the trains of the other direction, they read it by the other event of the path"
+msgstr "Obraca sygnalizator do pociągów z przeciwnego kierunku, odczytują go przez drugi event toru"
+
+msgid "No track by the signal to take it across"
+msgstr "Przy sygnalizatorze nie ma toru, na którego drugą stronę można go przenieść"
+
+msgid "No track by the signal to turn it to"
+msgstr "Przy sygnalizatorze nie ma toru, do którego można go obrócić"
+
+msgid "Signal %s moved to the other side of the track, read by %s %s of %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s przeniesiony na drugą stronę toru, pociąg odczytuje go przez %s %s toru %s, Ctrl+Z cofa"
+
+msgid "Signal %s moved to the other side of the track, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s przeniesiony na drugą stronę toru, Ctrl+Z cofa"
+
+msgid "Signal %s turned to the trains of the other direction, read by %s %s of %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s obrócony do pociągów z przeciwnego kierunku, pociąg odczytuje go przez %s %s toru %s, Ctrl+Z cofa"
+
+msgid "Signal %s turned to the trains of the other direction, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s obrócony do pociągów z przeciwnego kierunku, Ctrl+Z cofa"
+
+msgid "Drag over the track"
+msgstr "Przeciągnij przez tor"
+
+msgid "to the other side"
+msgstr "na drugą stronę"
+
+msgid "type the radius of the curve"
+msgstr "wpisz promień łuku"
+
+msgid "Cant (mm)"
+msgstr "Przechyłka (mm)"
+
+msgid "Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path"
+msgstr "Przechyłka na początku i na końcu: o ile jedna szyna jest wyżej, + podnosi lewą szynę patrząc wzdłuż toru"
+
+msgid "The place lies outside of the terrain model of Poland: check the location of the scenery"
+msgstr "To miejsce leży poza NMT Polski: sprawdź położenie scenerii"
+
+msgid "; so do the grade lines fitted, Ctrl+Z takes them back"
+msgstr "; dopasowane niwelety też zostają, Ctrl+Z je cofa"
+
+msgid "Stop"
+msgstr "Przerwij"
+
+msgid "Stops loading: the terrain made so far stays"
+msgstr "Przerywa wczytywanie: teren zrobiony do tej pory zostaje"
+
+msgid "Loading the real terrain"
+msgstr "Wczytywanie prawdziwego terenu"
+
+msgid "Try again"
+msgstr "Spróbuj ponownie"
+
+msgid "Click the middle of the scenery on the map"
+msgstr "Kliknij na mapie środek scenerii"
+
+msgid "The point 0,0,0 of the scenery. The wheel zooms the map, a drag moves it"
+msgstr "Punkt 0,0,0 scenerii. Kółko przybliża mapę, przeciąganie ją przesuwa"
+
+msgid "or type it: 52.2297, 21.0122"
+msgstr "albo wpisz: 52.2297, 21.0122"
+
+msgid "Degrees as the online maps copy them (latitude, longitude), or the X and Y of PUWG 1992, the coordinates of the Polish maps of geoportal.gov.pl"
+msgstr "Stopnie, tak jak kopiują je mapy internetowe (szerokość, długość), albo X i Y w PUWG 1992, układzie polskich map z geoportal.gov.pl"
+
+msgid "Not a place in Poland: two numbers, degrees or the X and Y of PUWG 1992"
+msgstr "To nie jest miejsce w Polsce: wpisz dwie liczby, stopnie albo X i Y w PUWG 1992"
+
+msgid "X %.0f, Y %.0f in PUWG 1992"
+msgstr "X %.0f, Y %.0f w PUWG 1992"
+
+msgid "The terrain made already stays as it is"
+msgstr "Teren zrobiony wcześniej zostaje bez zmian"
+
+msgid "The scenery is here"
+msgstr "Sceneria jest tutaj"
+
+msgid "X %.0f, Y %.0f in PUWG 1992, the coordinates of the Polish maps; the place is shared with the orthophoto"
+msgstr "X %.0f, Y %.0f w PUWG 1992, układzie polskich map; to samo położenie ma ortofotomapa"
+
+msgid "Area"
+msgstr "Obszar"
+
+msgid "A square of 500 m around the camera"
+msgstr "Kwadrat 500 m wokół kamery"
+
+msgid "A square of 1 km around the camera"
+msgstr "Kwadrat 1 km wokół kamery"
+
+msgid "A square of 2 km around the camera"
+msgstr "Kwadrat 2 km wokół kamery"
+
+msgid "The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too"
+msgstr "Ponownie prosi serwis o brakujące fragmenty NMT; samo dzieje się to też co 15 s"
+
+msgid "Pick where the scenery lies first"
+msgstr "Najpierw wskaż, gdzie leży sceneria"
+
+msgid "The scenery has no terrain yet"
+msgstr "Sceneria nie ma jeszcze terenu"
+
+msgid "Or without the real ground:"
+msgstr "Albo bez prawdziwego terenu:"
+
+msgid "Make an empty, flat terrain"
+msgstr "Utwórz pusty, płaski teren"
+
+msgid "; %zu chunk not made, the model has no data there"
+msgid_plural "; %zu chunks not made, the model has no data there"
+msgstr[0] "; %zu kafel pominięty, NMT nie ma tam danych"
+msgstr[1] "; %zu kafle pominięte, NMT nie ma tam danych"
+msgstr[2] "; %zu kafli pominiętych, NMT nie ma tam danych"
+
+msgid "; %zu chunk not made ahead, the terrain beside isn't the real one"
+msgid_plural "; %zu chunks not made ahead, the terrain beside isn't the real one"
+msgstr[0] "; %zu kafel przed torem pominięty, teren obok nie jest z NMT"
+msgstr[1] "; %zu kafle przed torem pominięte, teren obok nie jest z NMT"
+msgstr[2] "; %zu kafli przed torem pominiętych, teren obok nie jest z NMT"
+
+msgid "Stopped: %zu chunk made stays"
+msgid_plural "Stopped: %zu chunks made stay"
+msgstr[0] "Przerwane: zrobiony %zu kafel zostaje"
+msgstr[1] "Przerwane: zrobione %zu kafle zostają"
+msgstr[2] "Przerwane: zrobionych %zu kafli zostaje"
+
+msgid "  (up to %.0f km/h)"
+msgstr "  (do %.0f km/h)"
+
+msgid "height %+.2f m   grade %+.1f per mille"
+msgstr "różnica wysokości %+.2f m   pochylenie %+.1f‰"
+
+msgid "height %+.2f m   grade %+.1f to %+.1f per mille"
+msgstr "różnica wysokości %+.2f m   pochylenie od %+.1f do %+.1f‰"
+
+msgid "grade %+.1f per mille"
+msgstr "pochylenie %+.1f‰"
+
+msgid "Switched off in this build of the simulator"
+msgstr "Wyłączone w tej wersji symulatora"
+
+msgid "Track colours"
+msgstr "Kolory torów"
+
+msgid "Plain"
+msgstr "Zwykłe"
+
+msgid "By the radius"
+msgstr "Według promienia"
+
+msgid "By the speed"
+msgstr "Według prędkości"
+
+msgid "By the grade"
+msgstr "Według pochylenia"
+
+msgid "The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"
+msgstr "Tory w dziale Tory pokolorowane według promienia, prędkości albo pochylenia, z legendą w rogu"
+
+msgid "Track labels in the top view"
+msgstr "Opisy torów w widoku z góry"
+
+msgid "Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"
+msgstr "Po przybliżeniu z góry łuki dostają promień i długość, a rozjazdy nazwę i typ, jak na planie; gdzie byłoby ich za gęsto, część się chowa"
+
+msgid "%.2f m in plan, %.2f m in space"
+msgstr "%.2f m w planie, %.2f m w przestrzeni"
+
+msgid "height %+.2f m"
+msgstr "różnica wysokości %+.2f m"
+
+msgid "azimuth %.1f deg"
+msgstr "azymut %.1f°"
+
+msgid "Click: a new measure. M or Esc: done"
+msgstr "LPM: nowy pomiar. M albo Esc: koniec"
+
+msgid "Click: the end of the measure"
+msgstr "LPM: koniec pomiaru"
+
+msgid "Click: the start of the measure. M or Esc: done"
+msgstr "LPM: początek pomiaru. M albo Esc: koniec"
+
+msgid "Measure"
+msgstr "Miarka"
+
+msgid "Trace the curve on the photo"
+msgstr "Odrysuj łuk ze zdjęcia"
+
+msgid "Click points along the middle of the track on the orthophoto: after each click the curve takes the radius, or the radii of a compound curve and their shares, which follow the points best. The straights and the transition curves stay"
+msgstr "Klikaj punkty po środku toru na ortofotomapie: po każdym kliknięciu łuk dobiera promień, albo promienie łuku koszowego i ich udziały, tak żeby szedł po punktach. Proste i krzywe przejściowe zostają"
+
+msgid "Tracing the curve"
+msgstr "Odrysowywanie łuku"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "As few radii as follow the points, up to three"
+msgstr "Najmniej promieni, przy których łuk trzyma się punktów, najwyżej trzy"
+
+msgid "One radius"
+msgstr "Jeden promień"
+
+msgid "A compound curve of two radii"
+msgstr "Łuk koszowy z dwóch promieni"
+
+msgid "A compound curve of three radii"
+msgstr "Łuk koszowy z trzech promieni"
+
+msgid "Click points along the middle of the track on the photo, spread over the whole curve; a few on the straights at its ends help too"
+msgstr "Klikaj punkty po środku toru na zdjęciu, rozłożone na cały łuk; kilka na prostych przy jego końcach też pomaga"
+
+msgid "points"
+msgstr "punktów"
+
+msgid "departure"
+msgstr "odchyłka"
+
+msgid "at most"
+msgstr "największa"
+
+msgid "Apply   Enter"
+msgstr "Zastosuj   Enter"
+
+msgid "Drop   Esc"
+msgstr "Porzuć   Esc"
+
+msgid "Take out the last point   Backspace"
+msgstr "Usuń ostatni punkt   Backspace"
+
+msgid "Click: take this point out"
+msgstr "LPM: usuń ten punkt"
+
+msgid "Click: a point in the middle of the track on the photo. Enter: apply, Esc: drop"
+msgstr "LPM: punkt na środku toru na zdjęciu. Enter: zastosuj, Esc: porzuć"
+
+msgid "Click: one more point, the curve follows. Ctrl+click: take a point out"
+msgstr "LPM: kolejny punkt, łuk idzie za nimi. Ctrl+LPM: usuń punkt"
+
+msgid "compound curve on from R %.0f m, a transition of %.0f m between the arcs"
+msgstr "łuk koszowy dalej od R %.0f m, krzywa przejściowa %.0f m między łukami"
+
+msgid "Compound curve: R %.0f m goes on into R %.0f m through a transition curve of %.0f m"
+msgstr "Łuk koszowy: R %.0f m przechodzi w R %.0f m przez krzywą przejściową %.0f m"
+
+msgid "transition curves %.0f / %.0f m"
+msgstr "krzywe przejściowe %.0f / %.0f m"
+
+msgid "No room for the transition curves of the norms, the track is laid without them"
+msgstr "Brak miejsca na krzywe przejściowe wg norm, tor ułożony bez nich"
+
+msgid "No room to ramp the cant of %.0f mm the track ends with, the track is laid without transition curves"
+msgstr "Brak miejsca, żeby zejść z przechyłką %.0f mm z końca toru, tor ułożony bez krzywych przejściowych"
+
+msgid "The transition curves are cut to %.0f%% of what the norms ask for, there's no more room"
+msgstr "Krzywe przejściowe skrócone do %.0f%% długości wg norm, nie ma na więcej miejsca"
+
+msgid "The cant is lowered to %.0f mm, what the transition curves ramp"
+msgstr "Przechyłka obniżona do %.0f mm, tyle zdążą podnieść krzywe przejściowe"
+
+msgid "design speed %.0f km/h, that of the track %s"
+msgstr "prędkość projektowa %.0f km/h, jak tor %s"
+
+msgid "design speed %.0f km/h, set for the laying"
+msgstr "prędkość projektowa %.0f km/h, ustawiona do kładzenia"
+
+msgid ", Ctrl+Shift+wheel: speed"
+msgstr ", Ctrl+Shift+kółko: prędkość"
+
+msgid "This speed also on from a track with a speed of its own"
+msgstr "Ta prędkość także przy torze z własną prędkością"
+
+msgid "Off: a track laid on from another one, or joined to it, takes the speed of that track.\nOn: the new tracks get the speed above"
+msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego bierze prędkość tamtego toru.\nWłączone: nowe tory dostają prędkość z pola powyżej"
+
+msgid "Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel"
+msgstr "Wyłączone: tor kładziony od innego toru albo dołączany do niego jest projektowany na prędkość tamtego toru i ją dostaje.\nWłączone: jest projektowany na prędkość z pola powyżej i nowe tory ją dostają.\nW trakcie kładzenia: Ctrl+Shift+kółko"
+
+# scenery editor: the signalling of a station (SRK)
+msgid "Signalling"
+msgstr "SRK"
+
+msgid "The signals and the signalling of the stations: LMB on a switch lays its station out as a schematic, the signals placed by hand from the templates in the panel"
+msgstr "Sygnalizatory i sterowanie ruchem na stacjach: LPM na rozjazd rozkłada jego stację w schemat, sygnalizatory stawia się ręcznie z szablonów w panelu"
+
+msgid "Click: the station of this switch"
+msgstr "Klik: stacja tego rozjazdu"
+
+msgid "Click: the station of the switch nearest along this track"
+msgstr "Klik: stacja najbliższego rozjazdu wzdłuż tego toru"
+
+msgid "No switch near this track: it isn't a part of a station"
+msgstr "Przy tym torze nie ma rozjazdu: nie należy do żadnej stacji"
+
+msgid "Station of %s"
+msgstr "Stacja rozjazdu %s"
+
+msgid "Find the stations of the scenery"
+msgstr "Znajdź stacje w scenerii"
+
+msgid "Each group of switches joined by tracks shorter than 1.5 km is a station"
+msgstr "Stacją jest każda grupa rozjazdów połączonych torami krótszymi niż 1.5 km"
+
+msgid "The signalling of a station: its schematic, the numbers of the switches and the tracks, the track circuits and the signals"
+msgstr "SRK stacji: jej schemat, numery rozjazdów i torów, izolacje i semafory"
+
+msgid "LMB on a switch"
+msgstr "LPM na rozjazd"
+
+msgid "opens its station"
+msgstr "otwiera jego stację"
+
+msgid "switches"
+msgstr "rozjazdy"
+
+msgid "Code"
+msgstr "Skrót"
+
+msgid "The abbreviation of the station: the names of its switches, track circuits and signals begin with it"
+msgstr "Skrót nazwy stacji: od niego zaczynają się nazwy jej rozjazdów, izolacji i semaforów"
+
+msgid "Line"
+msgstr "Linia"
+
+msgid "The number of the railway line the station lies on, as the block sections between the stations are named after it"
+msgstr "Numer linii kolejowej, na której leży stacja: od niego biorą nazwy odstępy blokady między stacjami"
+
+msgid "Type"
+msgstr "Typ"
+
+msgid "km"
+msgstr "km"
+
+msgid "Another station"
+msgstr "Inna stacja"
+
+msgid "Leaves this station; LMB on a switch opens another one"
+msgstr "Zamyka tę stację; LPM na rozjazd otwiera inną"
+
+msgid "Station schematic"
+msgstr "Schemat stacji"
+
+msgid "Shows the whole station"
+msgstr "Pokazuje całą stację"
+
+msgid "offsets x%.0f"
+msgstr "rozstawy x%.0f"
+
+msgid "How much the offsets of the tracks are stretched against the lengths, also Ctrl+wheel over the plot"
+msgstr "Ile razy rozstawy torów są rozciągnięte względem długości, także Ctrl+kółko nad schematem"
+
+msgid "Wheel: zoom, drag: move, LMB on a track: select it"
+msgstr "Kółko: przybliżenie, przeciąganie: przesunięcie, LPM na tor: zaznacza go"
+
+msgid "line out of the station"
+msgstr "szlak wychodzący ze stacji"
+
+msgid "LMB: select it"
+msgstr "LPM: zaznacza go"
+
+msgid "%zu station"
+msgid_plural "%zu stations"
+msgstr[0] "%zu stacja"
+msgstr[1] "%zu stacje"
+msgstr[2] "%zu stacji"
+
+msgid "%s: %zu switch"
+msgid_plural "%s: %zu switches"
+msgstr[0] "%s: %zu rozjazd"
+msgstr[1] "%s: %zu rozjazdy"
+msgstr[2] "%s: %zu rozjazdów"
+
+msgid "Switch numbers"
+msgstr "Numery rozjazdów"
+
+msgid "From the left"
+msgstr "Od lewej"
+
+msgid "From the right"
+msgstr "Od prawej"
+
+msgid "From the lower km, as PKP PLK numbers them"
+msgstr "Od niższego km, jak numeruje PKP PLK"
+
+msgid "From the west end of the station"
+msgstr "Od zachodniego końca stacji"
+
+msgid "From the higher km"
+msgstr "Od wyższego km"
+
+msgid "From the east end of the station"
+msgstr "Od wschodniego końca stacji"
+
+msgid "Number the switches"
+msgstr "Ponumeruj rozjazdy"
+
+msgid "Numbers the switches 1, 2, 3... along the station and names them after its code, as on the lines of PKP PLK: bpd_1, the parts of a slip bpd_15a to bpd_15d. The drives and the objects naming a switch follow it, events written by hand keep the old names. One step of undo"
+msgstr "Numeruje rozjazdy 1, 2, 3... wzdłuż stacji i nazywa je od jej skrótu, jak na liniach PKP PLK: bpd_1, części rozjazdu krzyżowego bpd_15a do bpd_15d. Napędy i obiekty z nazwą rozjazdu, jak latarnie zwrotnicowe, idą za nim, eventy pisane ręcznie zostają przy starych nazwach. Jeden krok cofania"
+
+msgid "Give the station its code first: the switches are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy rozjazdów"
+
+msgid "%s can't be renamed: %s"
+msgstr "Nie można zmienić nazwy %s: %s"
+
+msgid "%s can't be named %s: %s"
+msgstr "%s nie może dostać nazwy %s: %s"
+
+msgid "The switches have these numbers already"
+msgstr "Rozjazdy mają już te numery"
+
+msgid "%zu switch numbered"
+msgid_plural "%zu switches numbered"
+msgstr[0] "Ponumerowano %zu rozjazd"
+msgstr[1] "Ponumerowano %zu rozjazdy"
+msgstr[2] "Ponumerowano %zu rozjazdów"
+
+msgid "Set the track circuits"
+msgstr "Ustaw izolacje"
+
+msgid "Cuts the tracks of the station at the joints of the track circuits and names the circuits, as on the lines of PKP PLK: a joint 1.5 m before the start of a switch, 4.2 m beyond the fouling point of each branch, where the axes are 3.5 m apart, as Ie-4 gives it, in the middle of a link too short for both. Each switch gets bpd_iz<number>, each station track bpd_it<number>: 1 and 2 the main tracks, track 1 on the right along the km, the odd ones beyond it, the even ones on the other side. Run again after changes, it keeps the numbers the tracks have. One step of undo"
+msgstr "Tnie tory stacji na stykach izolowanych i nazywa odcinki jak na liniach PKP PLK: styk 1,5 m przed początkiem rozjazdu, 4,2 m za ukresem każdej gałęzi, tam gdzie osie są 3,5 m od siebie, jak w Ie-4, w połowie łącznika za krótkiego na oba. Każdy rozjazd dostaje bpd_iz<numer>, każdy tor stacyjny bpd_it<numer>: 1 i 2 to tory główne, tor 1 po prawej w stronę rosnącego km, nieparzyste za nim, parzyste po drugiej stronie. Kliknięte ponownie po zmianach zostawia numery, które tory już mają. Jeden krok cofania"
+
+msgid "Give the station its code first: the track circuits are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy odcinków izolowanych"
+
+msgid "%s can't be cut: %s"
+msgstr "Nie można przeciąć %s: %s"
+
+msgid "%s can't be changed: %s"
+msgstr "Nie można zmienić %s: %s"
+
+msgid "The track circuits are set already"
+msgstr "Izolacje są już ustawione"
+
+msgid "%zu track circuit"
+msgid_plural "%zu track circuits"
+msgstr[0] "%zu odcinek izolowany"
+msgstr[1] "%zu odcinki izolowane"
+msgstr[2] "%zu odcinków izolowanych"
+
+msgid "%zu cut"
+msgid_plural "%zu cuts"
+msgstr[0] "%zu cięcie"
+msgstr[1] "%zu cięcia"
+msgstr[2] "%zu cięć"
+
+msgid "track circuit %s"
+msgstr "odcinek izolowany %s"
+
+msgid "Track number"
+msgstr "Numer toru"
+
+msgid "The number of the selected station track: type another one and its track circuits are renamed, bpd_it7a, bpd_it7b. One step of undo"
+msgstr "Numer zaznaczonego toru stacyjnego: wpisz inny, a jego odcinki izolowane dostaną nowe nazwy, bpd_it7a, bpd_it7b. Jeden krok cofania"
+
+msgid "The station has a track %s already"
+msgstr "Stacja ma już tor %s"
+
+msgid "Track %s is track %s now"
+msgstr "Tor %s ma teraz numer %s"
+
+msgid "Set the signals"
+msgstr "Ustaw semafory"
+
+msgid "Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is doubled. Each kind with its template chosen in Signals below. One step of undo"
+msgstr "Stawia semafory stacji jak na liniach PKP PLK i nazywa je od jej skrótu: wjazdowy 300 m przed stacją na każdej linii, A, B... od początku km, Z, Y... od końca, a odcinek od 15 m za nim do stacji to bpd_ita; wyjazdowy 15 m przed stykiem na końcu każdego toru, z którego wyprawia się pociągi, F1, G2 w stronę początku, R1, P2 w stronę końca; tarcza manewrowa Tm1, Tm2... na końcu krótszego toru. Semafor, który już stoi w miejscu któregoś z nich, dostaje tylko jego nazwę, nic się nie dubluje. Każdy rodzaj szablonem wybranym niżej w Sygnalizatorach. Jeden krok cofania"
+
+msgid "Give the station its code first: the signals are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy semaforów"
+
+msgid "Set the track circuits first: the signals stand at their joints"
+msgstr "Najpierw ustaw izolacje: semafory stają przy stykach"
+
+msgid "The signals are set already"
+msgstr "Semafory są już ustawione"
+
+msgid "The signals couldn't be placed: %s"
+msgstr "Nie udało się postawić semaforów: %s"
+
+msgid "no template of the kind %s"
+msgstr "brak szablonu rodzaju %s"
+
+msgid "%zu signal placed"
+msgid_plural "%zu signals placed"
+msgstr[0] "Postawiono %zu semafor"
+msgstr[1] "Postawiono %zu semafory"
+msgstr[2] "Postawiono %zu semaforów"
+
+msgid "%zu renamed"
+msgid_plural "%zu renamed"
+msgstr[0] "%zu przemianowany"
+msgstr[1] "%zu przemianowane"
+msgstr[2] "%zu przemianowanych"
+
+msgid "Lines"
+msgstr "Szlaki"
+
+msgid "Set the line signals"
+msgstr "Ustaw sygnalizatory szlakowe"
+
+msgid "Places the signals of the lines out of the station, from its entry signals on, by the block chosen for each line above. The automatic block: block signals evenly to the entry signals of the next station, a section no shorter than the braking distance, numbered after the hectometre ahead of them, odd on track 1, even on track 2, and the block sections from 15 m beyond them named as on the lines of PKP PLK, 2411-2571@LK2.1. The semi-automatic block: a warning disc ToA the braking distance before the entry signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it keeps what stands. One step of undo"
+msgstr "Stawia sygnalizatory szlaków wychodzących ze stacji, od jej semaforów wjazdowych, według blokady wybranej wyżej dla każdego szlaku. Blokada samoczynna: semafory SBL rozstawione równo do semaforów wjazdowych następnej stacji, odstęp nie krótszy od drogi hamowania, numerowane według najbliższego hektometra przed nimi, nieparzyste na torze 1, parzyste na torze 2, a odstępy od 15 m za nimi nazwane jak na liniach PKP PLK, 2411-2571@LK2.1. Blokada półsamoczynna: tarcza ostrzegawcza ToA w odległości drogi hamowania przed semaforem wjazdowym. Droga hamowania według prędkości szlaku, jak w Ie-4: 400 m do 60 km/h, 700 m do 100, 1000 m do 140, 1300 m powyżej. Potrzebna linia i kilometr stacji. Uruchom to też na następnej stacji, zostawia to, co już stoi. Jeden krok cofania"
+
+msgid "Km"
+msgstr "Kilometr"
+
+msgid "The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km"
+msgstr "Kilometr środka stacji na linii, rosnący w stronę numeracji rozjazdów: według kilometra numerowane są semafory SBL na szlakach"
+
+msgid "Give the station its line and its km first: the block signals and the block sections are named after them"
+msgstr "Najpierw podaj linię i kilometr stacji: według nich nazywają się semafory SBL i odstępy"
+
+msgid "Set the signals first: the lines begin at the entry signals"
+msgstr "Najpierw ustaw semafory: szlaki zaczynają się od semaforów wjazdowych"
+
+msgid "No line leads out of the station beyond its entry signals"
+msgstr "Za semaforami wjazdowymi nie wychodzi ze stacji żaden szlak"
+
+msgid "The lines are set already"
+msgstr "Szlaki są już ustawione"
+
+msgid "%s isn't in the scenery folder: the block signals won't change their lights"
+msgstr "Brak %s w katalogu scenery: semafory SBL nie będą zmieniać świateł"
+
+msgid "%zu block signal placed"
+msgid_plural "%zu block signals placed"
+msgstr[0] "Postawiono %zu semafor SBL"
+msgstr[1] "Postawiono %zu semafory SBL"
+msgstr[2] "Postawiono %zu semaforów SBL"
+
+msgid "%zu warning disc"
+msgid_plural "%zu warning discs"
+msgstr[0] "%zu tarczę ostrzegawczą"
+msgstr[1] "%zu tarcze ostrzegawcze"
+msgstr[2] "%zu tarcz ostrzegawczych"
+
+msgid "%zu block section"
+msgid_plural "%zu block sections"
+msgstr[0] "%zu odstęp"
+msgstr[1] "%zu odstępy"
+msgstr[2] "%zu odstępów"
+
+msgid "%zu object of the scenery follows them"
+msgid_plural "%zu objects of the scenery follow them"
+msgstr[0] "%zu obiekt scenerii idzie za nimi"
+msgstr[1] "%zu obiekty scenerii idą za nimi"
+msgstr[2] "%zu obiektów scenerii idzie za nimi"
+
+# kilometrage tool
+msgid "Kilometrage"
+msgstr "Kilometraż"
+
+msgid "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too"
+msgstr "Kilometraż linii kolejowych: LPM na torze wstawia tam punkt kilometra, także uskok kilometrażu"
+
+msgid "Click: a point of the km here"
+msgstr "Klik: punkt kilometra tutaj"
+
+msgid "Id-1 § 19: the km shouldn't jump on a curve nor at a station, move the jump to a straight on the open line"
+msgstr "Id-1 § 19: uskoku kilometrażu nie daje się na łuku ani na stacji, przesuń go na prostą na szlaku"
+
+msgid "Id-1 § 19: the km shouldn't jump on a curve, move the jump to a straight"
+msgstr "Id-1 § 19: uskoku kilometrażu nie daje się na łuku, przesuń go na prostą"
+
+msgid "Id-1 § 19: the km shouldn't jump at a station, move the jump out to the open line"
+msgstr "Id-1 § 19: uskoku kilometrażu nie daje się na stacji, przesuń go na szlak"
+
+msgid "line %s: km %s"
+msgstr "linia %s: km %s"
+
+msgid "Give the number of the line first"
+msgstr "Najpierw wpisz numer linii"
+
+msgid "A jump needs another km on from the point"
+msgstr "Uskok wymaga innego kilometra za punktem"
+
+msgid "Line %s: km %s at the point"
+msgstr "Linia %s: km %s w punkcie"
+
+msgid "The point of the km removed"
+msgstr "Punkt kilometra usunięty"
+
+msgid "Click a track of the line first"
+msgstr "Najpierw kliknij tor linii"
+
+msgid "No line through this track"
+msgstr "Przez ten tor nie biegnie żadna linia"
+
+msgid "Fewer than two hectometre posts stand along the line, nothing to read"
+msgstr "Wzdłuż linii stoją mniej niż dwa słupki hektometrowe, nie ma czego odczytać"
+
+msgid "The numbers of the posts don't go by 100 m anywhere along the line, nothing read"
+msgstr "Numery słupków nigdzie wzdłuż linii nie idą co 100 m, nic nie odczytano"
+
+msgid "%zu posts read: %zu points of the km, %zu jumps"
+msgstr "Odczytane słupki: %zu, punkty kilometra: %zu, uskoki: %zu"
+
+msgid "The km of a railway line: the points where the km is known, from a post or a document, and where it jumps. The km of the rest go from them along the axis of the line: between the tracks of a double-track one, along the longer track where the tracks run on formations of their own, the shorter one getting an irregular hectometre"
+msgstr "Kilometraż linii kolejowej: punkty, w których kilometr jest znany ze słupka albo z dokumentu, i miejsca uskoków. Kilometraż reszty liczy się od nich wzdłuż osi linii: na dwutorowej po osi międzytorza, a gdzie tory biegną osobnymi torowiskami, po torze dłuższym, krótszy dostaje hektometr o nieprawidłowej długości"
+
+msgid "a point of the km there, or the one standing by it"
+msgstr "punkt kilometra w tym miejscu albo ten, który już tam jest"
+
+msgid "jumps"
+msgstr "uskoki"
+
+msgid "A point of the km"
+msgstr "Punkt kilometra"
+
+msgid "Click a track where the km is known: by a post, a station or a bridge"
+msgstr "Kliknij tor tam, gdzie znasz kilometr: przy słupku, stacji albo moście"
+
+msgid "The number of the railway line, as 91: a scenery can hold several lines, each with its own km"
+msgstr "Numer linii kolejowej, np. 91: sceneria może mieć kilka linii, każda z własnym kilometrażem"
+
+msgid "The km of the point, as PKP PLK write it: 100,234 is km 100 and 234 m. At a jump: the km the point is reached at, coming along the rising km"
+msgstr "Kilometr punktu, zapisany jak w PKP PLK: 100,234 to km 100 i 234 m. Przy uskoku: kilometr, z jakim dojeżdża się do punktu, jadąc w stronę rosnącego kilometrażu"
+
+msgid "Jump"
+msgstr "Uskok"
+
+msgid "The km jumps at the point: a line built anew, shortened or lengthened keeps the km of the rest. The irregular hectometre is marked by a black stripe under the digit of the post (Id-1 § 19)"
+msgstr "W tym punkcie kilometraż skacze: przebudowana, skrócona albo wydłużona linia zachowuje kilometraż reszty. Nieregularny hektometr oznacza się czarnym paskiem pod cyfrą słupka (Id-1 § 19)"
+
+msgid "Km on"
+msgstr "Km dalej"
+
+msgid "The km on from the point, along the rising km"
+msgstr "Kilometr za punktem, w stronę rosnącego kilometrażu"
+
+msgid "Rise this way"
+msgstr "Rośnie w tę stronę"
+
+msgid "The km rise the way the arrow at the point shows"
+msgstr "Kilometraż rośnie tam, gdzie pokazuje strzałka w punkcie"
+
+msgid "Rise the other way"
+msgstr "Rośnie w drugą stronę"
+
+msgid "The km rise against the arrow"
+msgstr "Kilometraż rośnie przeciwnie do strzałki"
+
+msgid "Change the point"
+msgstr "Zmień punkt"
+
+msgid "Put the point of the km"
+msgstr "Wstaw punkt kilometra"
+
+msgid "The point goes to the file of the scenery with the track, the simulation skips it. One step of undo"
+msgstr "Punkt trafia do pliku scenerii z tym torem, symulacja go pomija. Jeden krok cofania"
+
+msgid "Remove the point"
+msgstr "Usuń punkt"
+
+msgid "One step of undo"
+msgstr "Jeden krok cofania"
+
+msgid "From the posts"
+msgstr "Ze słupków"
+
+msgid "Read the km from the posts"
+msgstr "Odczytaj kilometraż ze słupków"
+
+msgid "Reads the hectometre posts standing along the line through the track clicked: a point of the km at the first and the last post of each run numbered by 100 m, a jump where two runs meet. The points of the line along it before give way. One step of undo"
+msgstr "Odczytuje słupki hektometrowe stojące wzdłuż linii przez kliknięty tor: punkt kilometra na pierwszym i ostatnim słupku każdego ciągu numerowanego co 100 m, uskok tam, gdzie dwa ciągi się stykają. Wcześniejsze punkty tej linii na tym odcinku ustępują nowym. Jeden krok cofania"
+
+msgid "The points of the lines"
+msgstr "Punkty linii"
+
+msgid "None yet"
+msgstr "Jeszcze żadnych"
+
+msgid "No track by the points of the line"
+msgstr "Przy punktach linii nie ma toru"
+
+msgid "%.1f km of the axis, %s"
+msgstr "%.1f km osi, %s"
+
+msgid "between the tracks"
+msgstr "w osi międzytorza"
+
+msgid "In the scenery"
+msgstr "W scenerii"
+
+msgid "By the km"
+msgstr "Wg kilometrażu"
+
+msgid "Off by"
+msgstr "Różnica"
+
+msgid "How much longer the stretch is in the scenery than by the km: the km between the points are stretched to it evenly"
+msgstr "O ile odcinek w scenerii jest dłuższy niż wg kilometrażu: kilometry między punktami rozciąga się na nim równo"
+
+msgid "The point is away from the axis of the line the other points make: the main paths of the switches don't lead to it"
+msgstr "Punkt leży z dala od osi linii wyznaczonej przez pozostałe punkty: zasadnicze tory rozjazdów do niego nie prowadzą"
+
+msgid "%zu post doesn't fit its neighbours and was left out"
+msgid_plural "%zu posts don't fit their neighbours and were left out"
+msgstr[0] "%zu słupek nie pasuje do sąsiednich i został pominięty"
+msgstr[1] "%zu słupki nie pasują do sąsiednich i zostały pominięte"
+msgstr[2] "%zu słupków nie pasuje do sąsiednich i zostało pominiętych"
+
+msgid "%zu jump lies on a curve or at a station, Id-1 § 19 wants none there"
+msgid_plural "%zu jumps lie on a curve or at a station, Id-1 § 19 wants none there"
+msgstr[0] "%zu uskok leży na łuku albo na stacji, Id-1 § 19 tego nie dopuszcza"
+msgstr[1] "%zu uskoki leżą na łuku albo na stacji, Id-1 § 19 tego nie dopuszcza"
+msgstr[2] "%zu uskoków leży na łuku albo na stacji, Id-1 § 19 tego nie dopuszcza"
+
+msgid "a point of the km there"
+msgstr "punkt kilometra w tym miejscu"
+
+msgid "Mouse over a track"
+msgstr "Mysz nad torem"
+
+msgid "its km by the cursor"
+msgstr "jego kilometr przy kursorze"
+
+msgid "%zu stretch with the tracks on formations of their own"
+msgid_plural "%zu stretches with the tracks on formations of their own"
+msgstr[0] "%zu odcinek z torami na osobnych torowiskach"
+msgstr[1] "%zu odcinki z torami na osobnych torowiskach"
+msgstr[2] "%zu odcinków z torami na osobnych torowiskach"
+
+msgid "Where the tracks part more than 15 m and come together again, the km run along the longer one, the shorter one goes by its own length and its last hectometre before they meet takes up the difference, as PKP GK-1 gives it (6.1.12)"
+msgstr "Gdzie tory rozchodzą się na więcej niż 15 m i znów schodzą, kilometraż biegnie po dłuższym, krótszy liczy się po własnej długości, a różnicę bierze jego ostatni hektometr przed zejściem, jak podaje PKP GK-1 (6.1.12)"
+
+msgid "The way through a station"
+msgstr "Przebieg przez stację"
+
+msgid "Through a station the km run along the straight paths of the switches. Click a track of the station to lead them along it instead"
+msgstr "Przez stację kilometraż biegnie po prostych torach rozjazdów. Kliknij tor stacji, żeby poprowadzić go tamtędy"
+
+msgid "Put a point of the km of the line first"
+msgstr "Najpierw wstaw punkt kilometra linii"
+
+msgid "The line doesn't run along this track: another track chosen leads it elsewhere"
+msgstr "Linia nie biegnie tym torem: inny wybrany tor prowadzi ją gdzie indziej"
+
+msgid "Line %s runs along this track, as chosen"
+msgstr "Linia %s biegnie tym torem, tak jak wybrano"
+
+msgid "Back onto the straight paths"
+msgstr "Wróć na proste tory rozjazdów"
+
+msgid "The track chosen is forgotten, the line runs along the straight paths of the switches here again. One step of undo"
+msgstr "Wybór toru znika, linia znów biegnie tu po prostych torach rozjazdów. Jeden krok cofania"
+
+msgid "Line %s runs along this track"
+msgstr "Linia %s biegnie tym torem"
+
+msgid "Line %s doesn't run along this track"
+msgstr "Linia %s nie biegnie tym torem"
+
+msgid "Lead the km along this track"
+msgstr "Prowadź kilometraż tym torem"
+
+msgid "The line runs along the track clicked, along the path of the switch clicked, and on along the straight paths of the switches until it meets its tracks again; where it doesn't, as at a junction, it goes on that way. One step of undo"
+msgstr "Linia pobiegnie klikniętym torem, przez rozjazd tą jego drogą, którą kliknięto, i dalej po prostych torach rozjazdów, aż wróci na swoje tory; gdzie nie wraca, jak na odgałęzieniu, pobiegnie dalej tamtędy. Jeden krok cofania"
+
+msgid "The line can't run along this track: no way leads from it onto the line"
+msgstr "Linia nie może biec tym torem: żadna droga nie prowadzi z niego na linię"
+
+msgid "Line %s runs along this track now"
+msgstr "Linia %s biegnie teraz tym torem"
+
+msgid "%zu point of the km is off the line now: the track leads it away from it"
+msgid_plural "%zu points of the km are off the line now: the track leads it away from them"
+msgstr[0] "%zu punkt kilometra jest teraz poza linią: ten tor wyprowadza ją od niego"
+msgstr[1] "%zu punkty kilometra są teraz poza linią: ten tor wyprowadza ją od nich"
+msgstr[2] "%zu punktów kilometra jest teraz poza linią: ten tor wyprowadza ją od nich"
+
+msgid "Line %s runs along the straight paths of the switches here again"
+msgstr "Linia %s znów biegnie tu po prostych torach rozjazdów"
+
+msgid "Along the track chosen by km %s"
+msgstr "Wybrany tor przy km %s"
+
+msgid "Along the track chosen"
+msgstr "Wybrany tor"
+
+msgid "Through the station the line runs along this track, not along the straight paths of the switches"
+msgstr "Przez stację linia biegnie tym torem, a nie po prostych torach rozjazdów"
+
+msgid "%s: this way"
+msgstr "%s: tędy"
+
+msgid "%s, of the kilometrage of line %s"
+msgstr "%s, z kilometrażu linii %s"
+
+msgid "The km of the middle of the station, as the Kilometrage tool sets them for the line, the jumps too: the block signals of the lines are numbered after them"
+msgstr "Kilometr środka stacji z kilometrażu linii ustalonego w narzędziu Kilometraż, z uskokami: według niego numeruje się semafory SBL"
+
+msgid "The km of line %s, as the Kilometrage tool sets them, its jumps too"
+msgstr "Kilometraż linii %s z narzędzia Kilometraż, razem z uskokami"
+
+msgid "km %s at the point"
+msgstr "km %s w punkcie"
+
+msgid "Give the km here instead"
+msgstr "Podaj kilometr tutaj"
+
+msgid "The posts go by the km given at the point and the way it grows, without the jumps of the line"
+msgstr "Słupki pójdą według kilometra podanego w punkcie i kierunku, w którym rośnie, bez uskoków linii"
+
+msgid "Follow the km of line %s"
+msgstr "Według kilometrażu linii %s"
+
+msgid "signal %s"
+msgstr "sygnalizatora %s"
+
+msgid "the fouling point of switch %s"
+msgstr "ukresu rozjazdu %s"
+
+msgid "the start of switch %s"
+msgstr "początku rozjazdu %s"
+
+msgid "the buffer stop"
+msgstr "kozła oporowego"
+
+msgid "the joint"
+msgstr "złącza izolowanego"
+
+msgid "the joint by switch %s"
+msgstr "złącza izolowanego przy rozjeździe %s"
+
+msgid "Track lengths"
+msgstr "Długości torów"
+
+msgid "Set the track circuits first: the station tracks are measured by their numbers, from their joints, the fouling points and the signals"
+msgstr "Najpierw ustaw izolacje: tory stacyjne mierzy się po ich numerach, od złączy izolowanych, ukresów i sygnalizatorów"
+
+msgid "To the right"
+msgstr "W prawo"
+
+msgid "To the left"
+msgstr "W lewo"
+
+msgid "Train up to"
+msgstr "Pociąg do"
+
+msgid "Track %s"
+msgstr "Tor %s"
+
+msgid "%s: %.0f m, from %s to %s"
+msgstr "%s: %.0f m, od %s do %s"
+
+msgid "Construction length %.0f m: between the switches at its ends, the switches within it left out"
+msgstr "Długość budowlana %.0f m: między rozjazdami na jego końcach, bez rozjazdów pośrednich"
+
+msgid "LMB: show it"
+msgstr "LPM: pokaż go"
+
+msgid "The useful length: where a train stands, from the signal it stops by back to the joint, the fouling point or the level crossing behind it, between those where no signal stands (dimmed). The longest train leaves 25 m of it: 10 m to stop, 10 m to see the signal, 5 m to the joint"
+msgstr "Długość użyteczna: miejsce postoju pociągu, od sygnalizatora, przy którym staje, do złącza izolowanego, ukresu albo przejazdu za nim, a gdzie sygnalizatora nie ma, między nimi (wyszarzone). Najdłuższy pociąg zostawia z niej 25 m: 10 m na zatrzymanie, 10 m na widoczność sygnału, 5 m do złącza"
+
+msgid "track %s: %.0f m"
+msgstr "tor %s: %.0f m"
+
+msgid "the level crossing"
+msgstr "przejazdu kolejowo-drogowego"
+
+msgid "Give the station its code first: its tracks are numbered and measured after it"
+msgstr "Najpierw nadaj stacji skrót: po nim numeruje się i mierzy jej tory"
+
+msgid "The station tracks have no ends to be measured between"
+msgstr "Tory stacyjne nie mają końców, między którymi dałoby się je zmierzyć"
+
+msgid "The two ways differ: their trains stop on other stretches of the track, between other switches or signals"
+msgstr "Kierunki się różnią: pociągi każdego z nich stają na innym odcinku toru, między innymi rozjazdami albo sygnalizatorami"
+
+msgid "No signal stands by the station tracks yet, the lengths run between the fouling points: set the signals for the useful ones"
+msgstr "Przy torach stacyjnych nie stoi jeszcze żaden sygnalizator, długości liczą się między ukresami: ustaw semafory, żeby wyszły użyteczne"
+
+msgid "Copy the list of tracks"
+msgstr "Kopiuj wykaz torów"
+
+msgid "The lengths of %zu track copied"
+msgid_plural "The lengths of %zu tracks copied"
+msgstr[0] "Skopiowano długości %zu toru"
+msgstr[1] "Skopiowano długości %zu torów"
+msgstr[2] "Skopiowano długości %zu torów"
+
+msgid "The lengths of the station tracks as a table to paste into a spreadsheet: the construction length and the useful one each way with its limits, as the list of the tracks of a station gives them"
+msgstr "Długości torów stacyjnych jako tabela do wklejenia w arkusz: długość budowlana i użyteczna w każdą stronę z jej granicami, tak jak podaje je wykaz torów stacji"
+
+msgid "Track\tConstruction length [m]\tUseful to the right [m]\tfrom\tto\tUseful to the left [m]\tfrom\tto"
+msgstr "Tor\tDługość budowlana [m]\tUżyteczna w prawo [m]\tod\tdo\tUżyteczna w lewo [m]\tod\tdo"
+
+msgid "Track %s, useful length %.0f m to the right, %.0f m to the left"
+msgstr "Tor %s, długość użyteczna %.0f m w prawo, %.0f m w lewo"
+
+msgid "green"
+msgstr "zielone"
+
+msgid "two orange"
+msgstr "dwa pomarańczowe"
+
+msgid "red"
+msgstr "czerwone"
+
+msgid "%s km/h"
+msgstr "%s km/h"
+
+msgid "an orange strip"
+msgstr "pomarańczowy pas świetlny"
+
+msgid "a green strip"
+msgstr "zielony pas świetlny"
+
+msgid "Signal heads"
+msgstr "Komory semaforów"
+
+msgid "Line speed"
+msgstr "Prędkość linii"
+
+msgid "%.0f km/h, the highest set on its main tracks"
+msgstr "%.0f km/h, najwyższa ustawiona na torach głównych"
+
+msgid "%.0f km/h taken: no track of the station has a speed set"
+msgstr "przyjęto %.0f km/h: żaden tor stacji nie ma ustawionej prędkości"
+
+msgid "The speed of the trains through the station, the highest one its main tracks and the lines out of it are set to in the Track tool, up to 250 km/h: the braking distance and the lights of the signals go by it. Without one 160 km/h is taken, or the speed of the braking distance set by hand"
+msgstr "Prędkość pociągów przez stację: najwyższa, jaką jej tory główne i wychodzące z niej linie mają ustawioną w narzędziu Tor, do 250 km/h. Od niej zależą droga hamowania i światła semaforów. Gdy żaden tor jej nie ma, przyjmuje się 160 km/h albo prędkość drogi hamowania ustawionej ręcznie"
+
+msgid "Braking distance"
+msgstr "Droga hamowania"
+
+msgid "%.0f m, after the speed"
+msgstr "%.0f m, według prędkości"
+
+msgid "%d m, set by hand"
+msgstr "%d m, ustawiona ręcznie"
+
+msgid "The braking distance of the trains on the line, Ie-4 § 8: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. The block sections and the warning discs stand no nearer, a signal telling of the next one standing nearer slows the trains. Set it by hand where the line has another one"
+msgstr "Droga hamowania pociągów na linii, Ie-4 § 8: 400 m do 60 km/h, 700 m do 100, 1000 m do 140, 1300 m powyżej. Odstępy blokady i tarcze ostrzegawcze nie są krótsze, a semafor zapowiadający następny, który stoi bliżej, zmniejsza prędkość pociągów. Ustaw ją ręcznie, gdy linia ma inną"
+
+msgid "Looking for the signal templates..."
+msgstr "Szukam szablonów semaforów..."
+
+msgid "No main signal stands by the station yet: its lights are checked once one does"
+msgstr "Przy stacji nie stoi jeszcze żaden semafor: światła sprawdzę, gdy jakiś stanie"
+
+msgid "Speeds"
+msgstr "Prędkości"
+
+msgid "Lights"
+msgstr "Światła"
+
+msgid "Main signal %s"
+msgstr "Semafor %s"
+
+msgid "Block signal %s"
+msgstr "Semafor SBL %s"
+
+msgid "Warning disc %s"
+msgstr "Tarcza ostrzegawcza %s"
+
+msgid "To %s: %.0f m"
+msgstr "Do %s: %.0f m"
+
+msgid "To the end of the tracks: %.0f m"
+msgstr "Do końca torów: %.0f m"
+
+msgid "No signal within %.0f m"
+msgstr "Brak semafora na %.0f m"
+
+msgid "%d km/h through the switches"
+msgstr "%d km/h przez rozjazdy"
+
+msgid "%.0f km/h"
+msgstr "%.0f km/h"
+
+msgid "off the straight at switch %s"
+msgid_plural "off the straight at switches %s"
+msgstr[0] "w bok na rozjeździe %s"
+msgstr[1] "w bok na rozjazdach %s"
+msgstr[2] "w bok na rozjazdach %s"
+
+msgid "past a warning disc"
+msgstr "za tarczą ostrzegawczą"
+
+msgid "Needs: %s"
+msgstr "Potrzebne: %s"
+
+msgid "The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"
+msgstr "Następny semafor stoi bliżej niż droga hamowania: gdy on pokazuje stój, ten zmniejsza prędkość pociągów do %d km/h, Ie-4 § 8 ust. 5"
+
+msgid "Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"
+msgstr "Dostaw mu wskaźnik W21 „14”: 140 km/h, gdy następny semafor pokazuje stój, Ie-4 § 8 ust. 5"
+
+msgid "A semaphore with arms: its lights aren't checked"
+msgstr "Semafor kształtowy: jego świateł nie sprawdzam"
+
+msgid "No template of its kind and mount has these lights"
+msgstr "Żaden szablon tego rodzaju i mocowania nie ma tych świateł"
+
+msgid "Its lights don't show all of it: %s does"
+msgstr "Brakuje mu świateł, pasuje %s"
+
+msgid "It has more lights than it needs: %s will do"
+msgstr "Ma więcej świateł, niż trzeba: wystarczy %s"
+
+msgid "LMB: fly to it"
+msgstr "LPM: pokaż go w scenerii"
+
+msgid "disc"
+msgstr "tarcza"
+
+msgid "arms"
+msgstr "ramiona"
+
+msgid "no template"
+msgstr "brak szablonu"
+
+msgid "lights missing"
+msgstr "brak świateł"
+
+msgid "more than needed"
+msgstr "za dużo"
+
+msgid "fits"
+msgstr "pasuje"
+
+msgid "too near"
+msgstr "za blisko"
+
+msgid "Fit the lights"
+msgstr "Dopasuj światła"
+
+msgid "Gives each signal marked the template of its kind and mount with the lights its routes need and the least beyond them, the name, the plate and the place kept, the trains reading it as before. One step of undo"
+msgstr "Daje każdemu zaznaczonemu semaforowi szablon tego samego rodzaju i mocowania ze światłami, jakich wymagają jego przebiegi, i jak najmniejszym nadmiarem. Nazwa, tablica i miejsce zostają, pociągi odczytują go jak dotąd. Jeden krok cofania"
+
+msgid "The lights go by the routes of the trains: 40 km/h through the switches 1:9, 60 through 1:12 and 1:14, 100 through 1:18.5, by their radii, for these a lower orange light, with an orange strip for 60, a green one for 100, Ie-1; an upper orange one where the next signal can show stop; the white one of the substitute signal. A signal telling of the next one standing nearer than the braking distance slows the trains with it at stop, Ie-4 § 8 ust. 5"
+msgstr "Światła wynikają z przebiegów pociągów: 40 km/h przez rozjazdy 1:9, 60 przez 1:12 i 1:14, 100 przez 1:18,5, liczone z ich promieni; dla nich dolne światło pomarańczowe, z pomarańczowym pasem dla 60 i zielonym dla 100, Ie-1; górne pomarańczowe, gdy następny semafor może pokazać stój; białe dla sygnału zastępczego. Semafor zapowiadający następny, który stoi bliżej niż droga hamowania, zmniejsza prędkość pociągów, gdy tamten pokazuje stój, Ie-4 § 8 ust. 5"
+
+msgid "No template has the lights %s need, they got the one chosen in Signals: see Signal heads"
+msgstr "Żaden szablon nie ma świateł potrzebnych dla %s, dostały ten wybrany w Sygnalizatorach: zobacz Komory semaforów"
+
+msgid "No main signal within %.0f m ahead of it to tell of"
+msgstr "Na %.0f m przed nią nie ma semafora do zapowiadania"
+
+msgid "It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"
+msgstr "Stoi %.0f m przed %s, mniej niż droga hamowania %.0f m: pociąg nie zdąży się zatrzymać przed semaforem"
+
+msgid "The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"
+msgstr "Odstęp do %s ma %.0f m, mniej niż droga hamowania %.0f m, Ie-4 § 8 ust. 1"
+
+msgid "No template has the lights the signals marked need"
+msgstr "Żaden szablon nie ma świateł potrzebnych zaznaczonym semaforom"
+
+msgid "The lights of the signals fit already"
+msgstr "Światła semaforów już pasują"
+
+msgid "The signals couldn't be changed: %s"
+msgstr "Nie udało się zmienić semaforów: %s"
+
+msgid "%zu signal of the lines fits, its SHP too"
+msgid_plural "%zu signals of the lines fit, their SHP too"
+msgstr[0] "%zu semafor szlaku pasuje, jego SHP też"
+msgstr[1] "%zu semafory szlaku pasują, ich SHP też"
+msgstr[2] "%zu semaforów szlaku pasuje, ich SHP też"
+
+msgid "%zu signal got the lights it needs, Ctrl+Z takes it back"
+msgid_plural "%zu signals got the lights they need, Ctrl+Z takes it back"
+msgstr[0] "%zu semafor dostał potrzebne światła, Ctrl+Z cofa"
+msgstr[1] "%zu semafory dostały potrzebne światła, Ctrl+Z cofa"
+msgstr[2] "%zu semaforów dostało potrzebne światła, Ctrl+Z cofa"
+
+msgid "Template: %s"
+msgstr "Szablon: %s"
+
+msgid "Another template of its kind and mount for the signal: the name, the plate, the place and the event the train reads it by stay. A head leaning to one side is swapped for its counterpart leaning towards the track. Ctrl+Z takes it back"
+msgstr "Inny szablon tego samego rodzaju i mocowania dla semafora: nazwa, tablica, miejsce i event, po którym pociąg go odczytuje, zostają. Głowica pochylona w bok zamienia się na odpowiednik pochylony ku torowi. Ctrl+Z cofa"
+
+msgid "Signal %s got the template %s, Ctrl+Z takes it back"
+msgstr "Semafor %s dostał szablon %s, Ctrl+Z cofa"
+
+msgid "Signal %s can't take the template %s"
+msgstr "Semafor %s nie może dostać szablonu %s"
+
+msgid "SHP"
+msgstr "SHP"
+
+msgid "Place the SHP resonators"
+msgstr "Postaw rezonatory SHP"
+
+msgid "Places the SHP track resonators the signals checked lack, rezonator.inc, as PKP PLK places them: 200 m before an entry signal, a block signal and a warning disc, at an exit signal telling of the next one, as one onto a line of the automatic block, 5 m either way. Its event goes on the track the trains run into there, at a joint of the tracks within 5 m, else the track is cut. A resonator standing is one whose event ends with _shp, put on a track the trains run into within 100 m of its place, so the ones of the old sceneries count too. One step of undo"
+msgstr "Stawia rezonatory SHP (rezonator.inc) tam, gdzie sprawdzonym semaforom ich brakuje, tak jak PKP PLK: 200 m przed semaforem wjazdowym, semaforem SBL i tarczą ostrzegawczą, a przy semaforze wyjazdowym, który zapowiada następny semafor, np. przy wyjeździe na szlak z SBL; ±5 m. Event rezonatora trafia na tor, na który pociąg tam wjeżdża: na styku torów, jeśli jakiś jest w promieniu 5 m, inaczej tor zostaje przecięty. Za stojący rezonator uznaje się każdy event kończący się na _shp na torze w promieniu 100 m od miejsca rezonatora, więc liczą się też te ze starych scenerii. Jeden krok cofania"
+
+msgid "%zu of %zu signal has its SHP resonator"
+msgid_plural "%zu of %zu signals have their SHP resonators"
+msgstr[0] "%zu z %zu semafora ma rezonator SHP"
+msgstr[1] "%zu z %zu semaforów ma rezonatory SHP"
+msgstr[2] "%zu z %zu semaforów ma rezonatory SHP"
+
+msgid "%zu farther than 5 m from its place"
+msgid_plural "%zu farther than 5 m from their places"
+msgstr[0] "%zu dalej niż 5 m od swojego miejsca"
+msgstr[1] "%zu dalej niż 5 m od swoich miejsc"
+msgstr[2] "%zu dalej niż 5 m od swoich miejsc"
+
+msgid "set by hand"
+msgstr "ustawiona ręcznie"
+
+msgid "block signals stand along it"
+msgstr "stoją na nim semafory SBL"
+
+msgid "a double-track line"
+msgstr "linia dwutorowa"
+
+msgid "a single-track line"
+msgstr "linia jednotorowa"
+
+msgid "semi-automatic"
+msgstr "półsamoczynna"
+
+msgid "To"
+msgstr "Dokąd"
+
+msgid "Block"
+msgstr "Blokada"
+
+msgid "single track"
+msgstr "jednotorowy"
+
+msgid "track %d"
+msgstr "tor %d"
+
+msgid "The line out beyond the entry signal %s"
+msgstr "Szlak za semaforem wjazdowym %s"
+
+msgid "Track %d of a double-track line"
+msgstr "Tor %d linii dwutorowej"
+
+msgid "its trains run in to the station"
+msgstr "pociągi jadą nim do stacji"
+
+msgid "its trains run out of the station"
+msgstr "pociągi jadą nim ze stacji"
+
+msgid "A single-track line"
+msgstr "Linia jednotorowa"
+
+msgid "%zu block signal stands along it"
+msgid_plural "%zu block signals stand along it"
+msgstr[0] "Stoi na nim %zu semafor SBL"
+msgstr[1] "Stoją na nim %zu semafory SBL"
+msgstr[2] "Stoi na nim %zu semaforów SBL"
+
+msgid "Block: %s, %s"
+msgstr "Blokada: %s, %s"
+
+msgid "LMB: fly to the entry signal"
+msgstr "LPM: leć do semafora wjazdowego"
+
+msgid "station"
+msgstr "stacja"
+
+msgid "track end"
+msgstr "koniec toru"
+
+msgid "To the entry signal %s of the next station"
+msgstr "Do semafora wjazdowego %s następnej stacji"
+
+msgid "To the next station, its entry signal not standing yet"
+msgstr "Do następnej stacji, jej semafor wjazdowy jeszcze nie stoi"
+
+msgid "To the end of the tracks"
+msgstr "Do końca torów"
+
+msgid "%s, auto"
+msgstr "%s, auto"
+
+msgid "Auto: %s, %s"
+msgstr "Auto: %s, %s"
+
+msgid "Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are"
+msgstr "Edytor stawia ją tylko na linii dwutorowej: na jednym torze semafory SBL musiałyby stać w obu kierunkach, takie, które już stoją, zostawia bez zmian"
+
+msgid "Semi-automatic block"
+msgstr "Blokada półsamoczynna"
+
+msgid "its SHP resonator belongs %.0f m before it"
+msgstr "rezonator SHP powinien stać %.0f m przed nim"
+
+msgid "its SHP resonator belongs at it, it tells of the next signal"
+msgstr "rezonator SHP powinien stać przy nim, bo zapowiada następny semafor"
+
+msgid "none stands"
+msgstr "nie ma go"
+
+msgid "its event %.0f m before it"
+msgstr "jego event jest %.0f m przed nim"
+
+msgid "%s isn't in the scenery folder: the SHP resonators can't be placed"
+msgstr "Brak %s w folderze scenerii: nie da się postawić rezonatorów SHP"
+
+msgid "%s stands by no track"
+msgstr "%s nie stoi przy żadnym torze"
+
+msgid "%s: the tracks before it end short of %.0f m"
+msgstr "%s: tory przed nim kończą się przed %.0f m"
+
+msgid "%s: no plain track within %.0f m of the place of its SHP resonator"
+msgstr "%s: w miejscu rezonatora SHP (±%.0f m) nie ma zwykłego toru, same rozjazdy"
+
+msgid "%s: vehicles stand on %s"
+msgstr "%s: na %s stoją pojazdy"
+
+msgid "The signals have their SHP resonators already"
+msgstr "Semafory mają już rezonatory SHP"
+
+msgid "%zu SHP resonator placed"
+msgid_plural "%zu SHP resonators placed"
+msgstr[0] "Postawiono %zu rezonator SHP"
+msgstr[1] "Postawiono %zu rezonatory SHP"
+msgstr[2] "Postawiono %zu rezonatorów SHP"
+
+msgid "%zu track cut"
+msgid_plural "%zu tracks cut"
+msgstr[0] "przecięto %zu tor"
+msgstr[1] "przecięto %zu tory"
+msgstr[2] "przecięto %zu torów"
+
+msgid "Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again"
+msgstr "Ctrl+Z cofa, rezonatory działają po zapisaniu i ponownym otwarciu scenerii"
+
+msgid "The SHP resonators couldn't be placed: %s. Ctrl+Z takes back the tracks cut"
+msgstr "Nie udało się postawić rezonatorów SHP: %s. Ctrl+Z cofa przecięcie torów"
+
+msgid "%s: the track couldn't be cut at the place of its SHP resonator"
+msgstr "%s: nie udało się przeciąć toru w miejscu rezonatora SHP"
+
+msgid "at it"
+msgstr "przy nim"
+
+msgid "the tracks before it end short of it"
+msgstr "tory przed nim kończą się wcześniej"
+
+msgid "%zu with the tracks ending short of the place of its resonator"
+msgid_plural "%zu with the tracks ending short of the places of their resonators"
+msgstr[0] "%zu ma tory kończące się przed miejscem rezonatora"
+msgstr[1] "%zu mają tory kończące się przed miejscem rezonatora"
+msgstr[2] "%zu ma tory kończące się przed miejscem rezonatora"
+
+msgid "LMB: fly to the first of them"
+msgstr "LPM: leć do pierwszego z nich"
+
+msgid "SBL, 3 aspects"
+msgstr "SBL 3-stawna"
+
+msgid "SBL, 4 aspects"
+msgstr "SBL 4-stawna"
+
+msgid "Automatic block, 3 aspects (SBL)"
+msgstr "Samoczynna blokada liniowa trzystawna (SBL)"
+
+msgid "Automatic block, 4 aspects (SBL)"
+msgstr "Samoczynna blokada liniowa czterostawna (SBL)"
+
+msgid "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance"
+msgstr "Semafor SBL zapowiada następny, Ie-1: czerwone, pomarańczowe gdy następny wskazuje Stój, zielone. Odstępy nie krótsze niż droga hamowania"
+
+msgid "A block signal tells of the next two, Ie-1: red, orange for the next at stop, green flashing for the one after it at stop, green. The block sections no shorter than half the braking distance, two of them no shorter than it"
+msgstr "Semafor SBL zapowiada dwa następne, Ie-1: czerwone, pomarańczowe gdy następny wskazuje Stój, zielone migające gdy Stój wskazuje ten za nim, zielone. Odstępy nie krótsze niż połowa drogi hamowania, dwa razem nie krótsze niż cała"
+
+msgid "No block section of the editor switches its block signals: it keeps the block of the scenery as it stands"
+msgstr "Jego semaforów SBL nie przełącza żaden odstęp edytora: zostaje blokada scenerii, tak jak stoi"
+
+msgid "of the scenery"
+msgstr "ze scenerii"
+
+msgid "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands"
+msgstr "Na szlaku stoją semafory SBL, ale żadnego nie przełącza odstęp edytora: szlak zostaje z blokadą scenerii, tak jak stoi"
+
+msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal chosen in Signals below, else the semi-automatic one"
+msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): semafory SBL z odstępami, bez tarczy ostrzegawczej, trzy- albo czterostawna; szablony stojących semaforów SBL zostają podmienione na te o właściwej liczbie stawności. Półsamoczynna: tarcza ostrzegawcza ToA w drodze hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL (stawność jak u nich) albo szlak jest dwutorowy (stawność jak u semafora SBL wybranego niżej w Sygnalizatorach), inaczej półsamoczynna"
+
+msgid "Draw the block boundaries"
+msgstr "Rysuj granice odstępów"
+
+msgid "LMB on a track of a line of the automatic block, beyond the entry signal: a block boundary there, the tracks cut across the line, block signals 15 m before the joint, numbered after the hectometre ahead of them, on a line both ways the wrong-track ones 15 m beyond it, with N, and the new block sections named; LMB on a block boundary standing takes its signals away, the sections either side joined. A line whose block signals stand keeps them: Set the line signals places them evenly only on a line without any. One step of undo each"
+msgstr "LPM na torze szlaku z SBL, za semaforem wjazdowym: granica odstępu w tym miejscu, tory przecięte w poprzek szlaku, semafory SBL 15 m przed złączem, numerowane po hektometrze przed nimi, na szlaku w obu kierunkach także semafory dla jazdy po torze lewym 15 m za złączem, z N, i nazwane nowe odstępy. LPM na istniejącej granicy zabiera jej semafory, a odstępy po obu stronach łączą się w jeden. Szlak, na którym stoją już semafory SBL, je zachowuje: Ustaw sygnalizatory szlakowe rozstawia je równo tylko na szlaku bez żadnego. Każde kliknięcie to jeden krok cofania"
+
+msgid "Wrong-track running"
+msgstr "Jazda po torze lewym"
+
+msgid "SBL both ways"
+msgstr "SBL dwukierunkowa"
+
+msgid "Mixed"
+msgstr "Mieszana"
+
+msgid "At each block boundary the block signals of both tracks either way: of the trains of the track 15 m before the joint, for the wrong-track ones 15 m beyond it, with N (523N), on the outside of the line, as on the lines of PKP PLK"
+msgstr "Na każdej granicy odstępu semafory SBL obu torów w obu kierunkach: dla jazdy po torze właściwym 15 m przed złączem, dla jazdy po torze lewym 15 m za nim, z N (523N), po zewnętrznej stronie szlaku, jak na liniach PKP PLK"
+
+msgid "The automatic block for the trains of the track, the semi-automatic one for the wrong-track ones: no N signals, a warning disc ToB the braking distance before the entry signal of the wrong-track trains, on the outside of the line. Set the line signals places it and takes the N signals away"
+msgstr "SBL dla jazdy po torze właściwym, blokada półsamoczynna dla jazdy po torze lewym: bez semaforów N, tarcza ostrzegawcza ToB w drodze hamowania przed semaforem wjazdowym z toru lewego, po zewnętrznej stronie szlaku. Ustaw sygnalizatory szlakowe ją stawia i zabiera semafory N"
+
+msgid "Each line as it stands: a choice sets all of them"
+msgstr "Każdy szlak tak, jak stoi: wybór ustawia wszystkie"
+
+msgid "Wrong-track running: SBL both ways, the block signals with N"
+msgstr "Jazda po torze lewym: SBL dwukierunkowa, semafory z N"
+
+msgid "Wrong-track running: the mixed block, a warning disc before the entry signal"
+msgstr "Jazda po torze lewym: blokada mieszana, tarcza ostrzegawcza przed semaforem wjazdowym"
+
+msgid "Shows the station with its lines out to the next stations: their block sections, the block signals with their km"
+msgstr "Pokazuje stację ze szlakami do sąsiednich stacji: ich odstępy i semafory SBL z kilometrażem"
+
+msgid "Block section %s, %.2f km"
+msgstr "Odstęp %s, %.2f km"
+
+msgid "km %.3f to %.3f"
+msgstr "km %.3f do %.3f"
+
+msgid "No track circuit here"
+msgstr "Tu nie ma odcinka izolowanego"
+
+msgid "LMB: show it in the 3d view"
+msgstr "LPM: pokaż w widoku 3d"
+
+msgid "LMB on a track of a line beyond the entry signal: a block boundary there; on one standing: taken away"
+msgstr "LPM na torze szlaku za semaforem wjazdowym: granica odstępu w tym miejscu; na istniejącej granicy: usunięcie"
+
+msgid "No block section of the editor switches the block signals beyond %s: the line keeps them as they stand"
+msgstr "Semaforów SBL za %s nie przełącza żaden odstęp edytora: szlak zostaje, tak jak stoi"
+
+msgid "The line beyond %s has the semi-automatic block: choose the automatic one for it in the table of the lines"
+msgstr "Szlak za %s ma blokadę półsamoczynną: wybierz dla niego SBL w tabeli szlaków"
+
+msgid "The line beyond %s is single-track: the editor draws the block boundaries of double-track lines only"
+msgstr "Szlak za %s jest jednotorowy: edytor rysuje granice odstępów tylko na szlakach dwutorowych"
+
+msgid "A block boundary stands %.0f m or more from the entry signals"
+msgstr "Granica odstępu musi stać co najmniej %.0f m od semaforów wjazdowych"
+
+msgid "Click: take the block signals %s away, the block sections either side joined: %.2f km"
+msgstr "Klik: usuń semafory SBL %s, odstępy po obu stronach połączone: %.2f km"
+
+msgid "Click: block signals %s here: the block sections %.2f km and %.2f km"
+msgstr "Klik: semafory SBL %s tutaj, odstępy %.2f km i %.2f km"
+
+msgid "The block section of %.2f km is shorter than half the braking distance, %.0f m, of the 4-aspect block"
+msgstr "Odstęp %.2f km jest krótszy niż połowa drogi hamowania (%.0f m) przy SBL czterostawnej"
+
+msgid "The block section of %.2f km is shorter than the braking distance, %.0f m"
+msgstr "Odstęp %.2f km jest krótszy niż droga hamowania (%.0f m)"
+
+msgid "Ctrl+Z takes back the tracks cut"
+msgstr "Ctrl+Z cofa przecięcia torów"
+
+msgid "The line drawn on isn't there any more"
+msgstr "Szlaku, na którym rysujesz, już nie ma"
+
+msgid "The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"
+msgstr "Szlak za %s nie ma SBL, którą ustawia edytor: wybierz ją w tabeli szlaków"
+
+msgid "The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"
+msgstr "Odstęp do %s ma %.0f m, mniej niż połowa drogi hamowania %.0f m, a to SBL czterostawna"
+
+msgid "Drawing the block boundaries: LMB on a track of a line out of the station, beyond its entry signal"
+msgstr "Rysowanie granic odstępów: LPM na torze szlaku wychodzącego ze stacji, za semaforem wjazdowym"
+
+msgid "%zu warning disc stands along it, of the semi-automatic block: Set the line signals takes it away"
+msgid_plural "%zu warning discs stand along it, of the semi-automatic block: Set the line signals takes them away"
+msgstr[0] "Stoi na nim %zu tarcza ostrzegawcza z blokady półsamoczynnej: Ustaw sygnalizatory szlakowe ją usunie"
+msgstr[1] "Stoją na nim %zu tarcze ostrzegawcze z blokady półsamoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+msgstr[2] "Stoi na nim %zu tarcz ostrzegawczych z blokady półsamoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+
+msgid "%zu block signal stands along it, of the automatic block: Set the line signals takes it away"
+msgid_plural "%zu block signals stand along it, of the automatic block: Set the line signals takes them away"
+msgstr[0] "Stoi na nim %zu semafor SBL z blokady samoczynnej: Ustaw sygnalizatory szlakowe go usunie"
+msgstr[1] "Stoją na nim %zu semafory SBL z blokady samoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+msgstr[2] "Stoi na nim %zu semaforów SBL z blokady samoczynnej: Ustaw sygnalizatory szlakowe je usunie"
+
+msgid "%zu signal taken away"
+msgid_plural "%zu signals taken away"
+msgstr[0] "usunięto %zu sygnalizator"
+msgstr[1] "usunięto %zu sygnalizatory"
+msgstr[2] "usunięto %zu sygnalizatorów"
+
+msgid "%zu given the template of the aspects of its line"
+msgid_plural "%zu given the templates of the aspects of their lines"
+msgstr[0] "%zu dostał szablon o stawności swojego szlaku"
+msgstr[1] "%zu dostały szablony o stawności swoich szlaków"
+msgstr[2] "%zu dostało szablony o stawności swoich szlaków"
+
+msgid "Ctrl+Z takes it back"
+msgstr "Ctrl+Z cofa"
+
+msgid "the read of signal %s"
+msgid_plural "the reads of signals %s"
+msgstr[0] "odczyt semafora %s"
+msgstr[1] "odczyty semaforów %s"
+msgstr[2] "odczyty semaforów %s"
+
+msgid "%zu event"
+msgid_plural "%zu events"
+msgstr[0] "%zu zdarzenie"
+msgstr[1] "%zu zdarzenia"
+msgstr[2] "%zu zdarzeń"
+
+msgid "the track circuit %s"
+msgid_plural "the track circuits %s"
+msgstr[0] "odcinek izolowany %s"
+msgstr[1] "odcinki izolowane %s"
+msgstr[2] "odcinki izolowane %s"
+
+msgid "Taken over from the deleted track: %s"
+msgstr "Przejęte po usuniętym torze: %s"
+
+msgid "The deleted track carried %s: a track laid in its place takes it over, Ctrl+Z brings it back"
+msgid_plural "The deleted tracks carried %s: tracks laid in their place take it over, Ctrl+Z brings them back"
+msgstr[0] "Usunięty tor niósł %s: tor ułożony w tym miejscu przejmie to sam, Ctrl+Z cofa"
+msgstr[1] "Usunięte tory niosły %s: tory ułożone w tym miejscu przejmą to same, Ctrl+Z cofa"
+msgstr[2] "Usunięte tory niosły %s: tory ułożone w tym miejscu przejmą to same, Ctrl+Z cofa"
+
+msgid "Signal %s: no track reads it"
+msgstr "Semafor %s: żaden tor go nie odczytuje"
+
+msgid "The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"
+msgstr "Szlak za semaforem %s urywa się po %.0f m, tory biegną dalej %.0f m za przerwą"
+
+msgid "The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"
+msgstr "Szlak za semaforem %s: %.0f m torów %.0f m za semaforem nie należy do żadnego odstępu"
+
+msgid "Block section %s has no track"
+msgstr "Odstęp %s nie ma już toru"
+
+msgid "To repair"
+msgstr "Do naprawy"
+
+msgid "What the station and its lines need yet: signals no track reads, lines broken off where a track is missing, tracks of a line of the automatic block in no block section, block sections whose tracks are gone. Click a row to see the place"
+msgstr "Czego stacji i jej szlakom jeszcze brakuje: semafory, których żaden tor nie odczytuje, szlaki urwane tam, gdzie brakuje toru, tory szlaku z SBL poza odstępami, odstępy, których tory zniknęły. Kliknij wiersz, żeby zobaczyć miejsce"
+
+msgid "A track missing is laid in the Track tool: laid in the place of a deleted one it takes over its events and its track circuit"
+msgstr "Brakujący tor układa się narzędziem Tor: ułożony w miejscu usuniętego przejmuje jego zdarzenia i odcinek izolowany"
+
+msgid "Repair"
+msgstr "Napraw"
+
+msgid "The signals no track reads are read by the track they stand by again, as moving them does, the lines with tracks in no block section get their line signals set again. A track missing is laid in the Track tool. A step of undo each"
+msgstr "Semafory, których żaden tor nie odczytuje, znów odczyta tor, przy którym stoją, tak jak po ich przesunięciu; szlakom z torami poza odstępami sygnalizacja zostanie ustawiona jeszcze raz. Brakujący tor układa się narzędziem Tor. Każda poprawka to jeden krok cofania"
+
+msgid "%zu of %zu signal read again"
+msgid_plural "%zu of %zu signals read again"
+msgstr[0] "Odczyt przywrócony: %zu z %zu semafora"
+msgstr[1] "Odczyt przywrócony: %zu z %zu semaforów"
+msgstr[2] "Odczyt przywrócony: %zu z %zu semaforów"
+
+msgid ": the rest stand farther than 10 m from a track, by vehicles or their events are gone"
+msgstr ": pozostałe stoją dalej niż 10 m od toru, przy torze z pojazdami albo ich zdarzenia już nie istnieją"
+
+msgid " (layer \"%s\")"
+msgstr " (warstwa \"%s\")"
+
+msgid "Tracks in the top view"
+msgstr "Tory w widoku z góry"
+
+msgid "Whole"
+msgstr "Całe"
+
+msgid "Without ballast"
+msgstr "Bez podsypki"
+
+msgid "Rails only"
+msgstr "Same szyny"
+
+msgid "The tracks as in the 3D view"
+msgstr "Tory jak w widoku 3D"
+
+msgid "The rails and the sleepers, the ground under them shows"
+msgstr "Szyny i podkłady, spod nich widać teren"
+
+msgid "The rails alone, without the sleepers and the timbers of the switches, as on a plan"
+msgstr "Same szyny, bez podkładów i podrozjazdnic, jak na planie"
+
+msgid "How the top view draws the tracks"
+msgstr "Jak widok z góry rysuje tory"
+
+msgid "The colour of the rails, to stand out on the imagery and the map"
+msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
+
+
+msgid "The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain"
+msgstr "Pochylenia całego toru kładzionego za jednym razem dopasowane do modelu terenu, tak jak w „Tory na teren”"
+
+msgid "Height of the track on the ground"
+msgstr "Wysokość toru na terenie"
+
+msgid "Fitted"
+msgstr "Wygładzona niweleta"
+
+msgid "Point to point"
+msgstr "Punkt–punkt"
+
+msgid "Flat"
+msgstr "Poziomo"
+
+msgid "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past; the terrain is left as it is. On the terrain model the whole track laid in a row is fitted again at each click"
+msgstr "Pochylenia dopasowane do terenu tak jak w „Tory na teren”: łuki pionowe według norm, drobne nierówności terenu pominięte; teren zostaje bez zmian. Na modelu terenu (NMT) cały tor kładziony za jednym razem jest dopasowywany od nowa przy każdym kliknięciu"
+
+msgid "Each point clicked at the height of the ground, an even grade between them: the grade changes only where you click"
+msgstr "Każdy kliknięty punkt na wysokości terenu, między punktami równe pochylenie: pochylenie zmienia się tylko tam, gdzie klikniesz"
+
+msgid "The track goes on at the height it's laid from, whatever the ground; the first point on the ground"
+msgstr "Tor idzie dalej na wysokości, z której go kładziesz, bez względu na teren; pierwszy punkt na terenie"
+
+msgid "Timbers of all the switches"
+msgstr "Podrozjazdnice wszystkich rozjazdów"
+
+msgid "Timbers %s set on %d tracks"
+msgstr "Podrozjazdnice %s ustawione na %d torach"
+
+msgid "As in eu07.ini"
+msgstr "Jak w eu07.ini"
+
+msgid "Sets the model of the timbers, with the fastenings where it has them, on all the switches and crossings of the scenery, in one step of the undo"
+msgstr "Ustawia model podrozjazdnic, razem z przytwierdzeniami tam, gdzie je ma, na wszystkich rozjazdach i skrzyżowaniach scenerii, jednym krokiem cofania"
+
+# scenery editor: laying by the bends of straights and by curves traced on the photo
+
+msgid "Vertex %zu: the transition curves meet at R %.0f m, with no cant at least %.0f m for %.0f km/h"
+msgstr "Wierzchołek %zu: krzywe przejściowe stykają się przy R %.0f m, bez przechyłki potrzeba co najmniej %.0f m dla %.0f km/h"
+
+msgid "Vertex %zu"
+msgstr "Wierzchołek %zu"
+
+msgid "The straight before the curve and the one after it don't meet"
+msgstr "Prosta przed łukiem i prosta za nim się nie przecinają"
+
+msgid "No curve follows the points clicked along it"
+msgstr "Żaden łuk nie przechodzi przez punkty kliknięte wzdłuż niego"
+
+msgid "Curve: click points along the middle of the track, the last two on the straight after the curve. Tab: back to the straights"
+msgstr "Łuk: klikaj punkty po środku toru, dwa ostatnie na prostej za łukiem. Tab: z powrotem proste"
+
+msgid "Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo"
+msgstr "Proste: każdy kliknięty punkt to załamanie prostych, wyokrąglone dużym łukiem. Tab: łuk odrysowany ze zdjęcia"
+
+msgid "Straights   Tab"
+msgstr "Proste   Tab"
+
+msgid "Curve   Tab"
+msgstr "Łuk   Tab"
+
+msgid "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"
+msgstr "Każdy kliknięty punkt to załamanie prostych: wyokrąglone dwiema stycznymi krzywymi przejściowymi bez przechyłki, o dużym promieniu; gdzie się nie mieszczą, łukiem z krzywymi przejściowymi i przechyłką według norm, tak dużym, jak się mieści"
+
+msgid "Click points along the middle of a curve seen on the photo, the last two on the straight after it: the curve, compound or with a straight in it, is fitted to them. It comes from the straight before it, of the points clicked before or of the free end"
+msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem"
+
+msgid "Radius of the curves at the bends"
+msgstr "Promień łuków na załamaniach"
+
+msgid "from (m)"
+msgstr "od (m)"
+
+msgid "to (m)"
+msgstr "do (m)"
+
+msgid "The radius the two transition curves of a bend meet at, at least; where they don't fit at it, an arc of the norms as large as fits"
+msgstr "Promień, przy którym stykają się dwie krzywe przejściowe załamania, co najmniej; gdzie się przy nim nie mieszczą, łuk według norm tak duży, jak się mieści"
+
+msgid "The radius tried first; a bend too slight for transitions long enough at the speed takes a larger one"
+msgstr "Promień próbowany najpierw; załamanie zbyt małe na krzywe przejściowe dość długie dla prędkości dostaje większy"
+
+msgid "Two curves with a straight between them, where the points show one"
+msgstr "Dwa łuki z prostą między nimi, gdy punkty ją pokazują"
+
+msgid "The points along the curve may make two curves, turning the same way or not, with a straight between them, where these follow the points much closer than one curve"
+msgstr "Punkty wzdłuż łuku mogą dać dwa łuki, w tę samą stronę albo przeciwne, z prostą między nimi, gdy trzymają się punktów dużo lepiej niż jeden łuk"
+
+msgid "Click points along the middle of the track on the photo, the last two on the straight after the curve"
+msgstr "Klikaj punkty po środku toru na zdjęciu, dwa ostatnie na prostej za łukiem"
+
+msgid "Curves of the track laid"
+msgstr "Łuki kładzionego toru"
+
+msgid "Meets the norms for the speed"
+msgstr "Spełnia normy dla prędkości"
+
+msgid "Dragged from a free end, or laid from a point to one"
+msgstr "Przeciąganie z wolnego końca albo kładzenie od punktu do wolnego końca"
+
+msgid "Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel"
+msgstr "Przeciągnij, aby zmienić, Ctrl+klik, aby wpisać wartość. W trakcie przeciągania: Ctrl+kółko"
+
+msgid "straight %.0f m"
+msgstr "prosta %.0f m"
+
+msgid "this curve doesn't meet the norms, it's laid all the same"
+msgstr "ten łuk nie spełnia norm, zostanie położony mimo to"
+
+msgid "%zu points, departure %.0f cm, at most %.0f cm"
+msgstr "%zu punktów, odchyłka %.0f cm, najwięcej %.0f cm"
+
+msgid "Curve traced, Tab: the bends of straights"
+msgstr "Łuk odrysowywany, Tab: załamania prostych"
+
+msgid "back to the bends of straights"
+msgstr "z powrotem załamania prostych"
+
+msgid "trace a curve on the photo"
+msgstr "odrysuj łuk ze zdjęcia"
+
+msgid "a point along the middle of the curve, the last two on the straight after it"
+msgstr "punkt po środku łuku, dwa ostatnie na prostej za nim"
+
+msgid "a bend of the straights, eased with a large curve"
+msgstr "załamanie prostych, wyokrąglone dużym łukiem"
+
+msgid "lay the points clicked"
+msgstr "kładzie kliknięte punkty"
+
+msgid "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them; a click on a free end goes on from it"
+msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym łukiem; Enter je kładzie; klik w wolny koniec prowadzi tor dalej od niego"
+
+msgid "Tab while laying"
+msgstr "Tab przy układaniu"
+
+msgid "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"
+msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim; ponownie Tab: z powrotem załamania"
+
+msgid "Type the length of the next straight, Enter puts the point"
+msgstr "Wpisz długość następnej prostej, Enter stawia punkt"
+
+msgid "Laying track: lay the points clicked / take back the last point"
+msgstr "Układanie toru: połóż kliknięte punkty / cofnij ostatni punkt"
+
+msgid "Fitting the curve to the points..."
+msgstr "Dopasowuję łuk do punktów..."
+
+msgid "Two transition curves, no arc"
+msgstr "Dwie krzywe przejściowe, bez łuku"
+
+msgid "The bend eased the way the lines are drawn: two transition curves meeting at the radius, with no arc between them and no cant; their lengths follow from the radius and the angle"
+msgstr "Załamanie wyokrąglone tak, jak projektuje się linie: dwie krzywe przejściowe stykające się przy promieniu, bez łuku między nimi i bez przechyłki; ich długości wynikają z promienia i kąta"
+
+msgid "Each bend of the straights clicked at the height of the ground, an even grade between them: the grade changes only at the bends. A curve traced, or bends clicked close along a curve, goes at an even grade from one end of it to the other"
+msgstr "Każde kliknięte załamanie prostych na wysokości terenu, między nimi równe pochylenie: pochylenie zmienia się tylko na załamaniach. Łuk odrysowany albo załamania kliknięte gęsto wzdłuż łuku idą jednym pochyleniem od jego początku do końca"
+
+msgid "Vertex %zu: the transition curve between R %.0f and R %.0f m shorter than the required %.0f m"
+msgstr "Wierzchołek %zu: krzywa przejściowa między R %.0f a R %.0f m krótsza niż wymagane %.0f m"
+
+msgid "Cant of R%d (mm)"
+msgstr "Przechyłka R%d (mm)"
+
+msgid "The cant of this arc, ramped along the transition curves to the arcs either side of it; until it's set here, the cant of the curve in proportion to the curvature of the arc"
+msgstr "Przechyłka tego łuku, zmieniana na krzywych przejściowych do łuków po obu jego stronach; dopóki nie jest tu ustawiona, przechyłka łuku koszowego proporcjonalna do krzywizny tego łuku"
+
+msgid "The cant of the arc in proportion to its curvature again"
+msgstr "Przechyłka łuku znów proporcjonalna do jego krzywizny"
+
+msgid "Height of the outer rail above the inner one on the sharpest arc; the arcs with no cant of their own get it in proportion to their curvature"
+msgstr "Wysokość szyny zewnętrznej ponad wewnętrzną na najostrzejszym łuku; łuki bez własnej przechyłki dostają ją proporcjonalnie do swojej krzywizny"
+
+msgid "Curve W%d"
+msgstr "Łuk W%d"
+
+msgid "Show in the view"
+msgstr "Pokaż w widoku"
+
+msgid "The camera flies over the curve, which is lit up in the view while the mouse is over its fields"
+msgstr "Kamera przelatuje nad łuk; łuk świeci w widoku, gdy mysz jest nad jego polami"
+
+msgid "points clicked %zu: %.0f cm on average, at most %.0f cm"
+msgstr "kliknięte punkty %zu: średnio %.0f cm, najwyżej %.0f cm"
+
+msgid "The points clicked along the curve when it was laid, kept in the scenery, and how far the curve is from them now"
+msgstr "Punkty kliknięte wzdłuż łuku przy kładzeniu, zapisane w scenerii, i jak daleko łuk jest teraz od nich"
+
+msgid "Fit to them"
+msgstr "Dopasuj do nich"
+
+msgid "The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are"
+msgstr "Promienie łuku i ich udziały dopasowane od nowa do klikniętych punktów; przejściówki i przechyłki bez zmian"
+
+msgid "Keep to the points clicked"
+msgstr "Trzymaj się kliknięć"
+
+msgid "The scenery keeps the points clicked when the line was laid: a curve whose transitions or cants are changed gets its radii fitted to them again, so it stays where it was seen on the photo"
+msgstr "Sceneria pamięta punkty kliknięte przy kładzeniu linii: łuk ze zmienioną przejściówką albo przechyłką dostaje promienie dopasowane do nich od nowa, więc zostaje tam, gdzie był widoczny na zdjęciu"
+
+msgid "Fit all to them"
+msgstr "Dopasuj wszystkie"
+
+msgid "The radii of every curve fitted again to the points clicked along it, the transitions and the cants as they are"
+msgstr "Promienie każdego łuku dopasowane od nowa do punktów klikniętych wzdłuż niego; przejściówki i przechyłki bez zmian"
+
+msgid "Transitions for these cants"
+msgstr "Przejściówki do tych przechyłek"
+
+msgid "The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones"
+msgstr "Krzywe przejściowe tak długie, jak normy wymagają przy tych promieniach i przechyłkach; przechyłki zostają. Mniejsza przechyłka wymaga dłuższych przejściówek"
+
+msgid "W%d  transition in %.0f m"
+msgstr "W%d  przejściowa wejściowa %.0f m"
+
+msgid "W%d  transition out %.0f m"
+msgstr "W%d  przejściowa wyjściowa %.0f m"
+
+msgid "W%d  transition R%d-R%d %.0f m"
+msgstr "W%d  przejściowa R%d-R%d %.0f m"
+
+msgid "W%d  R%d %.0f m  cant %.0f mm"
+msgstr "W%d  R%d %.0f m  przechyłka %.0f mm"
+
+msgid "W%d  R %.0f m  cant %.0f mm"
+msgstr "W%d  R %.0f m  przechyłka %.0f mm"
+
+
+msgid "The curvature of the diverging track turns from one side to the other within the switch (KZW II), which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zwrotnego zmienia znak w obrębie rozjazdu (KZW II), co jest niedozwolone (9.7 pkt 12)"
+
+msgid "The curvature of the main track turns from one side to the other within the switch, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zasadniczego zmienia znak w obrębie rozjazdu, co jest niedozwolone (9.7 pkt 12)"
+
+msgid "The basic switch of R %.0f m isn't in table 11.9, its limiting curvature isn't checked"
+msgstr "Rozjazdu podstawowego R %.0f m nie ma w tabeli 11.9, jego krzywizna graniczna nie jest sprawdzana"
+
+
+msgid "The curvature of the diverging track %.3f 1/km is over the limiting %.3f 1/km for the switch of R %.0f m (table 11.9)"
+msgstr "Krzywizna toru zwrotnego %.3f 1/km ponad graniczną %.3f 1/km dla rozjazdu R %.0f m (tabela 11.9)"
+
+
+msgid "The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"
+msgstr "Tor zasadniczy wygięty do R %.0f m, poniżej najmniejszego %.0f m dla rozjazdu R %.0f m (tabela 11.9)"
+
+msgid "A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"
+msgstr "Rozjazdu 1:%.3f nie łukuje się w torach szlakowych i głównych: ani 1:9,403, ani o skosie większym niż 1:9 (11.4 pkt 4)"
+
+
+msgid "A cant ramp starts or ends within the switch, %.1f m from its start: at the start or the end of the switch, or 6 m off it at least (9.6 pkt 16-17)"
+msgstr "Rampa przechyłkowa zaczyna się albo kończy w obrębie rozjazdu, %.1f m od jego początku: ma się zaczynać na początku albo końcu rozjazdu, albo co najmniej 6 m od niego (9.6 pkt 16-17)"
+
+msgid "A cant ramp starts or ends at an end of the switch"
+msgstr "Rampa przechyłkowa zaczyna się albo kończy na początku lub końcu rozjazdu"
+
+msgid "A cant ramp ends %.1f m off the switch, 6 m at least (9.6 pkt 16)"
+msgstr "Koniec rampy przechyłkowej %.1f m od rozjazdu, ma być co najmniej 6 m (9.6 pkt 16)"
+
+msgid "Cant %.0f mm in a bent switch, over 100 mm (table 9.6)"
+msgstr "Przechyłka %.0f mm w rozjeździe łukowym, ponad 100 mm (tabela 9.6)"
+
+msgid "Cant %.0f mm: over the 60 mm recommended for a bent switch, up to 100 mm (table 9.6)"
+msgstr "Przechyłka %.0f mm: ponad zalecane 60 mm dla rozjazdu łukowego, dopuszczalne do 100 mm (tabela 9.6)"
+
+msgid "Cant %.0f mm in a straight switch: none recommended, up to 100 mm (table 9.6)"
+msgstr "Przechyłka %.0f mm w rozjeździe zwyczajnym: zalecana żadna, dopuszczalne do 100 mm (tabela 9.6)"
+
+msgid "the switch starts at an end of the cant ramp"
+msgstr "początek rozjazdu na krańcu rampy przechyłkowej"
+
+msgid "the switch ends at an end of the cant ramp"
+msgstr "koniec rozjazdu na krańcu rampy przechyłkowej"
+
+msgid "the switch starts 6 m off the cant ramp"
+msgstr "początek rozjazdu 6 m od rampy przechyłkowej"
+
+msgid "the switch ends 6 m off the cant ramp"
+msgstr "koniec rozjazdu 6 m od rampy przechyłkowej"
+
+msgid "ramp"
+msgstr "rampa"
+
+msgid "main track R %s at the start, %s at the end"
+msgstr "tor zasadniczy R %s na początku, %s na końcu"
+
+msgid "diverging track R %s at the start, %s at the end"
+msgstr "tor zwrotny R %s na początku, %s na końcu"
+
+msgid "cant %.0f mm at the start, %.0f mm at the end"
+msgstr "przechyłka %.0f mm na początku, %.0f mm na końcu"
+
+msgid "The cant changes within the switch, %.0f to %.0f mm: it's to stay the same over it (11.4 pkt 7)"
+msgstr "Przechyłka zmienia się w obrębie rozjazdu, z %.0f na %.0f mm: ma być stała na całej jego długości (11.4 pkt 7)"
+
+msgid "Vertex %zu: the cant ramp in reaches back past the start of the line, cut %.1f m shorter"
+msgstr "Wierzchołek %zu: rampa wejściowa sięga przed początek linii, skrócona o %.1f m"
+
+msgid "Vertex %zu: the cant ramp in reaches back into the curve before it, cut %.1f m shorter"
+msgstr "Wierzchołek %zu: rampa wejściowa sięga w łuk przed nim, skrócona o %.1f m"
+
+msgid "Vertex %zu: the cant ramp out reaches past the end of the line, cut %.1f m shorter"
+msgstr "Wierzchołek %zu: rampa wyjściowa sięga za koniec linii, skrócona o %.1f m"
+
+msgid "Vertex %zu: the cant ramps in and out of the curve overlap by %.1f m"
+msgstr "Wierzchołek %zu: rampy wejściowa i wyjściowa łuku zachodzą na siebie o %.1f m"
+
+msgid "Vertex %zu: the cant ramp of %.1f m is shorter than the %.0f m a cant of %.0f mm asks for"
+msgstr "Wierzchołek %zu: rampa przechyłkowa %.1f m jest krótsza niż %.0f m, których wymaga przechyłka %.0f mm"
+
+msgid "Cant ramps"
+msgstr "Rampy przechyłkowe"
+
+msgid "Ramp in along the transition curve"
+msgstr "Rampa wejściowa wzdłuż krzywej przejściowej"
+
+msgid "Ramp out along the transition curve"
+msgstr "Rampa wyjściowa wzdłuż krzywej przejściowej"
+
+msgid "The norms recommend the cant ramp along the transition curve; off it, it may lie on the straight before the curve or on the arc, a switch on the transition keeping the same cant all along"
+msgstr "Normy zalecają rampę przechyłkową wzdłuż krzywej przejściowej; poza nią może leżeć na prostej przed łukiem albo na łuku, a rozjazd na przejściówce ma wtedy na całej długości tę samą przechyłkę"
+
+msgid "into the curve %.1f m"
+msgstr "w głąb łuku %.1f m"
+
+msgid "How far the outer end of the ramp lies into the curve from its end, below 0 out along the straight before it"
+msgstr "Jak daleko w głąb łuku od jego końca leży zewnętrzny koniec rampy; poniżej 0 na prostej przed łukiem"
+
+msgid "length %.1f m"
+msgstr "długość %.1f m"
+
+msgid "The length of the ramp, the cant rising evenly along it"
+msgstr "Długość rampy, przechyłka rośnie wzdłuż niej równomiernie"
+
+msgid "km %s - %s, %.2f mm/m"
+msgstr "km %s - %s, %.2f mm/m"
+
+msgid "ramp %.0f m, %.0f mm"
+msgstr "rampa %.0f m, %.0f mm"
+
+
+# scenery editor: laying and editing the track, as a beginner meets them
+
+msgid "No gizmo"
+msgstr "Bez gizma"
+
+msgid "The gizmo hidden: a track is changed by dragging its ends, and won't move nor bend by chance; its control vectors come out with the gizmo"
+msgstr "Gizmo ukryte: tor zmienia się przeciąganiem jego końców i nie przesunie się ani nie wygnie przypadkiem; wektory sterujące pojawiają się razem z gizmo"
+
+msgid "bring out the gizmo: move, turn, lengthen, bend by the control vectors"
+msgstr "pokazuje gizmo: przesuń, obróć, wydłuż, wygnij wektorami sterującymi"
+
+msgid "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"
+msgstr "styk: sąsiednie tory idą za nim; wolny koniec: wychodzi z niego nowy tor, z Ctrl się przesuwa"
+
+msgid "gizmo snaps by %.2f m"
+msgstr "gizmo przeskakuje co %.2f m"
+
+msgid "point %zu of 4: %s"
+msgstr "punkt %zu z 4: %s"
+
+msgid "start back"
+msgstr "początek powrotu"
+
+msgid "back on the axis"
+msgstr "z powrotem na osi"
+
+msgid "moves it, an end dropped on a free end joins it"
+msgstr "przesuwa go; koniec upuszczony na wolny koniec łączy się z nim"
+
+msgid "and %zu more, in the panel"
+msgid_plural "and %zu more, in the panel"
+msgstr[0] "i jeszcze %zu, w panelu"
+msgstr[1] "i jeszcze %zu, w panelu"
+msgstr[2] "i jeszcze %zu, w panelu"
+
+msgid "on the ground: the first point, then the bends of the line, the curves at them made by themselves"
+msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powstają same"
+
+msgid "lays the track clicked"
+msgstr "układa wyklikany tor"
+
+msgid "tools: lay, switch, plan, parallel, signalling, objects, profile, speed, joints"
+msgstr "narzędzia: układanie, rozjazd, plan, równoległy, SRK, obiekty, profil, prędkość, styki"
+
+msgid "Esc again drops the point not laid, Enter lays it"
+msgid_plural "Esc again drops the %zu points not laid, Enter lays them"
+msgstr[0] "Esc jeszcze raz porzuca nieułożony punkt, Enter go układa"
+msgstr[1] "Esc jeszcze raz porzuca %zu nieułożone punkty, Enter je układa"
+msgstr[2] "Esc jeszcze raz porzuca %zu nieułożonych punktów, Enter je układa"
+
+msgid "twice: drop the points not laid"
+msgstr "dwa razy: porzuca nieułożone punkty"
+
+msgid "Not laid yet: %zu point"
+msgid_plural "Not laid yet: %zu points"
+msgstr[0] "Jeszcze nieułożony: %zu punkt"
+msgstr[1] "Jeszcze nieułożone: %zu punkty"
+msgstr[2] "Jeszcze nieułożonych: %zu punktów"
+
+msgid "Lay  (Enter)"
+msgstr "Ułóż  (Enter)"
+
+msgid "Drop the points"
+msgstr "Porzuć punkty"
+
+msgid "Esc twice does the same"
+msgstr "To samo robi dwa razy Esc"
+
+msgid "A click on the ground or on a free end: where the track starts"
+msgstr "Klik na terenie albo na wolnym końcu: tu zaczyna się tor"
+
+msgid "Each next click: a bend of the line, the curve at it made by itself. The line shown isn't a track yet"
+msgstr "Każdy następny klik: załamanie linii, łuk na nim powstaje sam. Pokazana linia nie jest jeszcze torem"
+
+msgid "Lays the track clicked; to go on from its end, click the end"
+msgstr "Układa wyklikany tor; żeby iść dalej od jego końca, kliknij ten koniec"
+
+msgid "Takes the last point back"
+msgstr "Cofa ostatni punkt"
+
+msgid "Ends laying; the points not laid yet go only with the second Esc"
+msgstr "Kończy układanie; nieułożone punkty znikają dopiero po drugim Esc"
+
+msgid "Click a few points and lay them with Enter"
+msgstr "Wyklikaj kilka punktów i ułóż je Enterem"
+
+msgid "Click the bends of the line: each gets a curve as large as fits; one too sharp for the speed set in the panel has its label in orange"
+msgstr "Klikaj załamania linii: każde dostaje łuk tak duży, jak się zmieści; łuk za ostry dla prędkości ustawionej w panelu ma pomarańczowy opis"
+
+msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it; one of two or three radii comes out a compound curve"
+msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
+
+msgid "Lay a track with a bend in it"
+msgstr "Ułóż tor z załamaniem"
+
+msgid "Switch to tracing a curve with Tab"
+msgstr "Przełącz klawiszem Tab na odrysowywanie łuku"
+
+msgid "Change the radius of the joining curve with Ctrl+wheel"
+msgstr "Zmień promień łuku łączącego Ctrl+kółkiem"
+
+msgid "In a scenery begun from nothing the first L asks: the real terrain of the place, or the flat plane"
+msgstr "W scenerii zaczętej od zera pierwsze L pyta: prawdziwy teren tego miejsca czy płaska płaszczyzna"
+
+msgid "Location: where the scenery lies, a click on the map or the place typed"
+msgstr "Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
+
+msgid "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"
+msgstr "Wczytaj wzdłuż torów albo wokół kamery: model pochodzi z geoportal.gov.pl"
+
+msgid "Tracks onto the terrain: the tracks not fitted yet go onto the model, the ones fitted stay; the terrain to some tracks only: select them, Terrain in the inspector"
+msgstr "Tory na teren: tory jeszcze niedopasowane idą na model, dopasowane zostają; teren tylko pod wybrane tory: zaznacz je, sekcja Teren w inspektorze"
+
+msgid "Takes the changes back"
+msgstr "Cofa zmiany"
+
+msgid "LMB by the track, drag along: the way the trains run"
+msgstr "LPM przy torze, przeciągnij wzdłuż: kierunek jazdy pociągów"
+
+msgid "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"
+msgstr "Przesuń / obróć / skaluj; w torach pokazują ukryte gizmo"
+
+msgid "Hides the gizmo, so nothing moves by chance; in the tracks it is hidden until Q, W or E"
+msgstr "Chowa gizmo, żeby nic nie przesunęło się przypadkiem; w torach jest ukryte aż do Q, W albo E"
+
+msgid "Dragging from a free end: radius"
+msgstr "Przeciąganie z wolnego końca: promień"
+
+msgid "Dragging from a free end: arc then straight, straight then arc, arc, straight; over another free end: another way to join"
+msgstr "Przeciąganie z wolnego końca: łuk i prosta, prosta i łuk, łuk, prosta; nad innym wolnym końcem: inny sposób połączenia"
+
+msgid "Esc twice while laying"
+msgstr "Esc dwa razy przy układaniu"
+
+msgid "Drop the points clicked and not laid yet"
+msgstr "Porzuca kliknięte, jeszcze nieułożone punkty"
+
+# laying on from a curved free end: the curve next to it goes on from its curvature
+
+msgid "Vertex %zu: no curve goes on from the curve of the adjoining track (R %.0f m) to the straight after it"
+msgstr "Wierzchołek %zu: żaden łuk nie przejdzie od łuku przylegającego toru (R %.0f m) do prostej za nim"
+
+msgid "Vertex %zu: no curve goes on from the straight before it into the curve of the adjoining track (R %.0f m)"
+msgstr "Wierzchołek %zu: żaden łuk nie przejdzie od prostej przed nim w łuk przylegającego toru (R %.0f m)"
+
+msgid "Goes on from the curve of the track at the start (R %.0f m)"
+msgstr "Kontynuuje łuk toru na początku (R %.0f m)"
+
+msgid "Goes into the curve of the track at the end (R %.0f m)"
+msgstr "Przechodzi w łuk toru na końcu (R %.0f m)"
+
+msgid "The curve begins right at the end of the fragment, at the curvature of the track adjoining there, where it turns the same way; its radius is the one which begins it there, the transition at that end goes between the two curves"
+msgstr "Łuk zaczyna się dokładnie na końcu odcinka, z krzywizną przylegającego tam toru, jeśli skręca w tę samą stronę; jego promień to ten, przy którym zaczyna się właśnie tam, a krzywa przejściowa na tym końcu łączy oba łuki"
+
+msgid "goes on from R %.0f m of the track it starts at"
+msgstr "kontynuuje R %.0f m toru, od którego się zaczyna"
+
+msgid "goes on from R %.0f m of the track it starts at, a transition of %.0f m between them"
+msgstr "kontynuuje R %.0f m toru, od którego się zaczyna, z krzywą przejściową %.0f m między nimi"
+
+msgid "goes into R %.0f m of the track it ends at"
+msgstr "przechodzi w R %.0f m toru, na którym się kończy"
+
+msgid "goes into R %.0f m of the track it ends at, a transition of %.0f m between them"
+msgstr "przechodzi w R %.0f m toru, na którym się kończy, z krzywą przejściową %.0f m między nimi"
+
+msgid "Curve %d %s"
+msgstr "Łuk %d %s"
+
+msgid "Vertex %zu: the transition curve between the curve of the adjoining track and R %.0f m is shorter than the required %.0f m"
+msgstr "Wierzchołek %zu: krzywa przejściowa między łukiem przylegającego toru a R %.0f m jest krótsza niż wymagane %.0f m"
+
+
+msgid "Download area"
+msgstr "Obszar pobierania"
+
+msgid "A polygon drawn on the map: what the settings ask for inside it, the orthophoto and the terrain model,
+goes to the disk cache in the background, and nothing outside it is downloaded, also around the camera"
+msgstr "Wielokąt narysowany na mapie: to, co wybrano w ustawieniach, ortofotomapa i model terenu, pobiera się w nim w tle
+do pamięci podręcznej na dysku, a poza nim nic się nie pobiera, także wokół kamery"
+
+msgid "Click the points of the area on the map. Enter closes it, Backspace takes the last point back, Esc gives up;
+a point dragged moves, Shift+click removes it"
+msgstr "Klikaj na mapie punkty obszaru. Enter go zamyka, Backspace cofa ostatni punkt, Esc rezygnuje;
+przeciągnięty punkt się przesuwa, Shift+klik go usuwa"
+
+msgid "%zu points"
+msgstr "punktów: %zu"
+
+msgid "Draw on the map"
+msgstr "Narysuj na mapie"
+
+msgid "Draw again"
+msgstr "Narysuj od nowa"
+
+msgid "none: the tiles around the camera, wherever it is"
+msgstr "brak: kafle wokół kamery, gdziekolwiek jest"
+
+msgid "Area: %d of %d tiles in the cache, %d failed"
+msgstr "Obszar: %d z %d kafli w pamięci podręcznej, nieudanych %d"
+
+msgid "Resume"
+msgstr "Wznów"
+
+msgid "Pause"
+msgstr "Wstrzymaj"
+
+msgid "Terrain model: %d of %d squares in the cache, %d failed"
+msgstr "Model terenu: %d z %d kwadratów w pamięci podręcznej, nieudanych %d"
+
+msgid "Tab while laying: an arc, then a straight"
+msgstr "Tab przy kładzeniu: łuk, potem prosta"
+
+msgid "Ctrl+wheel: radius, Tab while laying: a straight"
+msgstr "Ctrl+kółko: promień, Tab przy kładzeniu: prosta"
+
+msgid "Lead a track out of it: a straight, an arc and a straight where a curve is traced (Tab); onto another free end: join the two"
+msgstr "Wyprowadza z niego tor: prostą, a w trybie łuku (Tab) łuk i prostą; na inny wolny koniec: łączy oba"
+
+msgid "Dragging over another free end: another way to join"
+msgstr "Przeciąganie nad innym wolnym końcem: inny sposób połączenia"
+
+msgid "The design kept for the line is cut down to the tracks left along it"
+msgid_plural "The designs kept for the lines are cut down to the tracks left along them"
+msgstr[0] "Projekt linii zapisany w scenerii przycięto do torów, które przy nim zostały"
+msgstr[1] "Projekty linii zapisane w scenerii przycięto do torów, które przy nich zostały"
+msgstr[2] "Projekty linii zapisane w scenerii przycięto do torów, które przy nich zostały"
+
+msgid "joint before the blades"
+msgstr "styk przediglicowy"
+
+msgid "tips of the blades"
+msgstr "ostrza iglic"
+
+msgid "The drive of %zu switch is moved to the tips of its blades"
+msgid_plural "The drives of %zu switches are moved to the tips of their blades"
+msgstr[0] "Napęd %zu rozjazdu przestawiony na ostrza iglic"
+msgstr[1] "Napędy %zu rozjazdów przestawione na ostrza iglic"
+msgstr[2] "Napędy %zu rozjazdów przestawione na ostrza iglic"
+
+msgid "Switch %s set to the diverging track, H throws it back"
+msgstr "Rozjazd %s ustawiony na bok, H przekłada go z powrotem"
+
+msgid "Switch %s set to the main track, H throws it over"
+msgstr "Rozjazd %s ustawiony na wprost, H przekłada go na bok"
+
+msgid "Throw (H)"
+msgstr "Przełóż (H)"
+
+msgid "Throw it over"
+msgstr "Przełóż"
+
+msgid "Set to the diverging track: throws it over to the main one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track"
+msgstr "Ustawiony na bok: przekłada go na wprost. Tylko w edytorze, żeby zobaczyć iglice i przebieg; symulacja zaczyna z rozjazdami na wprost"
+
+msgid "Set to the main track: throws it over to the diverging one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track"
+msgstr "Ustawiony na wprost: przekłada go na bok. Tylko w edytorze, żeby zobaczyć iglice i przebieg; symulacja zaczyna z rozjazdami na wprost"
+
+msgid "Throw the selected switch over to its other path, in the editor only"
+msgstr "Przekłada zaznaczony rozjazd na drugi tor, tylko w edytorze"
+
+msgid "A curve seen on the photo: click points along its middle, the curve ending at the last one; one of two or three radii comes out a compound curve"
+msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, łuk kończy się na ostatnim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
+
+msgid "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"
+msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, który kończy się na ostatnim; ponownie Tab: z powrotem załamania"
+
+msgid "Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights"
+msgstr "Łuk: klikaj punkty po środku toru, łuk kończy się na ostatnim. Tab: z powrotem proste"
+
+msgid "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"
+msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany i kończy się na ostatnim, w kierunku, w jakim tam biegną. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem, a gdy punkty skręcają w stronę łuku wolnego końca, także rozjazdu, ten łuk idzie dalej"
+
+msgid "Click points along the middle of the track on the photo; the curve ends at the last one"
+msgstr "Klikaj punkty po środku toru na zdjęciu; łuk kończy się na ostatnim"
+
+msgid "a point along the middle of the curve, which ends at the last one"
+msgstr "punkt po środku łuku, który kończy się na ostatnim"
+
+msgid "Press and drag: a switch on this track, along sets its direction, sideways its side. Click: select the track"
+msgstr "Wciśnij LPM i przeciągnij: rozjazd na tym torze, wzdłuż ustala kierunek, w bok stronę. Kliknięcie: zaznacza tor"
+
+msgid "Press+drag on a track"
+msgstr "Wciśnij i przeciągnij na torze"
+
+msgid "a switch on it: along its direction, sideways its side"
+msgstr "rozjazd na nim: wzdłuż kierunek, w bok strona"
+
+msgid "Press+drag on another track"
+msgstr "Wciśnij i przeciągnij na innym torze"
+
+msgid "a switch on it"
+msgstr "rozjazd na nim"
+
+msgid "Puts switches into a straight or a curve: press on it and drag along the way the switch goes. Edits the geometry of the selected switch"
+msgstr "Wstawia rozjazdy w prostą albo łuk: wciśnij LPM na torze i przeciągnij w stronę, w którą idzie rozjazd. Edytuje geometrię zaznaczonego rozjazdu"
+
+msgid "The diverging track of the basic switch ends with a straight of %.1f m through the frog: the switches bent in table 11.9 have their curve run through it; bent, the frog has to be made to the curve"
+msgstr "Tor zwrotny rozjazdu podstawowego kończy się prostą %.1f m przez krzyżownicę: rozjazdy łukowane z tabeli 11.9 mają łuk przechodzący przez krzyżownicę; po wygięciu krzyżownica musi być wykonana pod łuk"
+
+msgid "Bent up to the frog, as the DB bends the switches with a straight frog: both tracks keep straight over its last %.1f m, the curvature jumps there; table 11.9 lists no such bent switch"
+msgstr "Wygięty do krzyżownicy, jak DB łukuje rozjazdy z prostą krzyżownicą: oba tory zostają proste na ostatnich %.1f m, krzywizna skacze tam; tabela 11.9 nie przewiduje takiego rozjazdu łukowego"
+
+msgid "Track %s going on from the switch fitted to its end, which leaves the curve straight over the frog: %.1f cm off it, turned by %.2f deg"
+msgstr "Tor %s za rozjazdem dociągnięty do jego końca, który nad krzyżownicą schodzi prosto z łuku: %.1f cm od niego, obrót o %.2f°"
+
+msgid "The slip laid with its crossing track at 1:%.1f, the ends of that track free: lay on from them"
+msgstr "Rozjazd krzyżowy ułożony z torem przecinającym pod 1:%.1f, końce tego toru wolne: kładź od nich dalej"
+
+msgid "with nothing crossing it: the slip with its crossing track, which goes through the quarter of the cursor"
+msgstr "gdy nic jej nie przecina: rozjazd krzyżowy z torem przecinającym, który idzie przez ćwiartkę kursora"
+
+msgid "The curvature of a track through the slip turns from one side to the other within it, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru przez rozjazd krzyżowy zmienia stronę w jego obrębie, co jest niedopuszczalne (9.7 pkt 12)"
+
+msgid "A slip isn't bent in the running nor in the main tracks, a bent one goes into a side track only (11.4 pkt 4b)"
+msgstr "Rozjazdów krzyżowych nie łukuje się w torach szlakowych ani głównych, łukowany kładzie się tylko w torze bocznym (11.4 pkt 4b)"
+
+msgid "A slip curve bent to R %.0f m, below the least %.0f m of a side track (table 9.2)"
+msgstr "Łuk rozjazdu krzyżowego wygięty do R %.0f m, poniżej najmniejszego %.0f m w torze bocznym (tabela 9.2)"
+
+msgid "In a side track the layouts needing no cant are recommended (9.3 pkt 5)"
+msgstr "W torze bocznym zaleca się układy niewymagające przechyłki (9.3 pkt 5)"
+
+msgid "A crossing goes only where two straights cross"
+msgstr "Skrzyżowanie stawia się tylko na przecięciu dwóch prostych"
+
+msgid "The curve of R %.0f m is as sharp as the slip curves of R %.0f m or sharper, the slip isn't bent into it"
+msgstr "Łuk R %.0f m jest tak ostry jak łuki rozjazdu krzyżowego R %.0f m albo ostrzejszy, rozjazdu nie da się w niego wygiąć"
+
+msgid "tracks through the slip R %s and %s"
+msgstr "tory przez rozjazd R %s i %s"
+
+msgid "slip curves R %s at their sharpest"
+msgstr "łuki rozjazdu R %s w najostrzejszym miejscu"
+
+msgid "Slip bent into the curve, the ends of its crossing track free: lay on from them"
+msgstr "Rozjazd krzyżowy wygięty w łuk, końce toru przecinającego wolne: kładź od nich dalej"
+
+msgid "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"
+msgstr "tor przecinający w przód przez ćwiartkę kursora, łuk rozjazdu pojedynczego po jej stronie"
+
+msgid "Press+drag on a curve"
+msgstr "Wciśnij i przeciągnij na łuku"
+
+msgid "the slip bent into it, in a side track only (11.4 pkt 4b)"
+msgstr "rozjazd krzyżowy wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
+
+msgid "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd): przeciągnięty na jednej prostej z torem przecinającym, na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"
+
+msgid "Drag on a curve"
+msgstr "Przeciągnij na łuku"
+
+msgid "bent into it, in a side track only (11.4 pkt 4b)"
+msgstr "wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
+
+msgid "Press+drag on a straight"
+msgstr "Wciśnij i przeciągnij na prostej"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template for that: drag the slip out on one straight, its crossing track comes along at its skos"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f i żaden szablon rozjazdu krzyżowego tu nie pasuje: przeciągnij rozjazd na jednej prostej, tor przecinający przyjdzie z nim pod jego skosem"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f: %s fits that crossing"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f: do tego skrzyżowania pasuje %s"
+
+msgid "Drag on a straight"
+msgstr "Przeciągnij na prostej"
+
+msgid "the slip with its crossing track, through the quarter of the cursor"
+msgstr "rozjazd krzyżowy z torem przecinającym, przez ćwiartkę kursora"
+
+msgid "of two straights at the skos of the slip: it goes there"
+msgstr "dwóch prostych pod skosem rozjazdu: tam stanie"
+
+msgid "Drag it out on one straight: its crossing track comes along at its skos, through the quarter of the cursor"
+msgstr "Przeciągnij go na jednej prostej: tor przecinający przyjdzie z nim pod jego skosem, przez ćwiartkę kursora"
+
+msgid "Or drag at a crossing of two straights at its skos, on the side of the tracks to join"
+msgstr "Albo przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem, po stronie torów do połączenia"
+
+msgid "Or drag at a crossing of two straights at its skos"
+msgstr "Albo przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Press+drag at a crossing"
+msgstr "Wciśnij i przeciągnij na skrzyżowaniu"
+
+msgid "of two straights at the skos of the slip"
+msgstr "dwóch prostych pod skosem rozjazdu"
+
+msgid "Press and drag: a switch going on from this free end, sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd od tego wolnego końca, w bok jego strona"
+
+msgid "Press and drag: a switch with no track, along the direction of its main track, then sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd bez toru, wzdłuż kierunek toru zasadniczego, potem w bok jego strona"
+
+msgid "Drag along the main track of the switch, then sideways to the side of the diverging one"
+msgstr "Przeciągnij wzdłuż toru zasadniczego rozjazdu, potem w bok na stronę toru zwrotnego"
+
+msgid "Switch %s laid on from %s, its other ends free: lay on from them"
+msgstr "Rozjazd %s ułożony od %s, pozostałe końce wolne: kładź od nich dalej"
+
+msgid "Switch %s laid with no track, its ends free: lay on from them"
+msgstr "Rozjazd %s ułożony bez toru, końce wolne: kładź od nich dalej"
+
+msgid "Press and drag: this double slip is replaced by the one chosen"
+msgstr "Wciśnij i przeciągnij: ten rozjazd krzyżowy zostanie zastąpiony wybranym"
+
+msgid "Press and drag: it goes here"
+msgstr "Wciśnij i przeciągnij: stanie tutaj"
+
+msgid "Press and drag: the slip with its crossing track, through the quarter of the cursor"
+msgstr "Wciśnij i przeciągnij: rozjazd krzyżowy z torem przecinającym, przez ćwiartkę kursora"
+
+msgid "of two straights"
+msgstr "dwóch prostych"
+
+msgid "Press+drag on the ground"
+msgstr "Wciśnij i przeciągnij na terenie"
+
+msgid "a switch with no track, on from a free end near it"
+msgstr "rozjazd bez toru, od pobliskiego wolnego końca"
+
+msgid "the direction of the main track, held from 4 m on"
+msgstr "kierunek toru zasadniczego, od 4 m zatrzaśnięty"
+
+msgid "Back to the start"
+msgstr "Z powrotem do początku"
+
+msgid "the direction free again"
+msgstr "kierunek znów wolny"
+
+msgid "Drag at a crossing"
+msgstr "Przeciągnij na skrzyżowaniu"
+
+msgid "Drag at a crossing of two straights"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych"
+
+msgid "The slip is replaced by its two tracks crossing, Shift+Del removes all of it"
+msgstr "Rozjazd krzyżowy zastąpiony skrzyżowaniem jego dwóch torów, Shift+Del usuwa wszystko"
+
+msgid "A slip bent into a curve isn't slid along it: delete it and lay it again"
+msgstr "Rozjazdu krzyżowego wygiętego w łuk nie przesuwa się wzdłuż: usuń go i połóż od nowa"
+
+msgid "The crossing track of the slip is joined on beyond it: the slip stays where the two tracks cross"
+msgstr "Tor przecinający rozjazdu krzyżowego jest dalej połączony: rozjazd zostaje tam, gdzie tory się przecinają"
+
+msgid "Slip %s moved %.2f m along its track, its crossing track with it"
+msgstr "Rozjazd krzyżowy %s przesunięty o %.2f m wzdłuż toru, razem z torem przecinającym"
+
+msgid "Drag at a crossing of two straights, on the side of the tracks to join"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych, po stronie torów do połączenia"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template is made for that"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f i żaden szablon rozjazdu krzyżowego nie jest na taki skos"
+
+msgid "Drag at a crossing of two straights at its skos, on the side of the tracks to join"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem, po stronie torów do połączenia"
+
+msgid "Drag at a crossing of two straights at its skos"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Rkp or Rkpd at a crossing of two straights at its skos"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Rkp or Rkpd at a crossing of two straights at its skos, or bent into a curve of a side track"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"
+
+msgid "Base layers, under the scenery"
+msgstr "Podkłady, pod scenerią"
+
+msgid "Show or hide the layer"
+msgstr "Pokaż lub ukryj warstwę"
+
+msgid "Layers: %s"
+msgstr "Warstwy: %s"
+
+msgid "Terms of the service:"
+msgstr "Warunki usługi:"
+
+msgid "Down"
+msgstr "W dół"
+
+msgid "Orthophoto (geoportal.gov.pl)"
+msgstr "Ortofotomapa (geoportal.gov.pl)"
+
+msgid "Add a WMS layer"
+msgstr "Dodaj warstwę WMS"
+
+msgid "The address of a WMS service drawing in PUWG 1992 (EPSG:2180). Its tiles are kept in memory only and asked for only around the camera; what the service allows is up to you, its terms are shown below"
+msgstr "Adres usługi WMS rysującej w PUWG 1992 (EPSG:2180). Jej kafle są trzymane tylko w pamięci i pobierane tylko wokół kamery; za korzystanie zgodne z warunkami usługi odpowiadasz sam, jej warunki są pokazane niżej"
+
+msgid "Read the layers"
+msgstr "Odczytaj warstwy"
+
+msgid "Reading the capabilities of the service..."
+msgstr "Odczytywanie opisu usługi..."
+
+msgid "The service can't be read: %s"
+msgstr "Nie da się odczytać usługi: %s"
+
+msgid "The service doesn't draw in PUWG 1992 (EPSG:2180), the editor can't lay it out"
+msgstr "Usługa nie rysuje w PUWG 1992 (EPSG:2180), edytor nie umie jej rozłożyć"
+
+msgid "Filter the layers"
+msgstr "Filtruj warstwy"
+
+msgid "Behind the switch the curvature changes at once by a sudden change of the cant deficiency of %.0f mm, over the %.0f mm allowed at %.0f km/h (table 9.15)"
+msgstr "Za rozjazdem krzywizna zmienia się skokowo: nagła zmiana niedomiaru przechyłki %.0f mm, ponad dopuszczalne %.0f mm przy %.0f km/h (tab. 9.15)"
+
+msgid "The curve behind the switch begins %.1f m after the end of its curve, closer than the %.1f m which take the sudden changes of the cant deficiency apart: together %.0f mm, over the %.0f mm allowed at %.0f km/h (tables 9.15, 9.16)"
+msgstr "Łuk za rozjazdem zaczyna się %.1f m za końcem jego łuku, bliżej niż %.1f m odcinka pośredniego, który rozdziela nagłe zmiany niedomiaru przechyłki: łącznie %.0f mm, ponad dopuszczalne %.0f mm przy %.0f km/h (tab. 9.15, 9.16)"
+
+msgid "Remove the selected (Del)"
+msgstr "Usuń zaznaczone (Del)"
+
+msgid "Takes the selected chunks out of the terrain of the scenery, and out of its files on save; Ctrl+Z brings them back"
+msgstr "Usuwa zaznaczone kafle z terenu scenerii, a przy zapisie także z jego plików; Ctrl+Z je przywraca"
+
+msgid "%zu chunk removed, Ctrl+Z brings it back"
+msgid_plural "%zu chunks removed, Ctrl+Z brings them back"
+msgstr[0] "Usunięto %zu kafel, Ctrl+Z go przywraca"
+msgstr[1] "Usunięto %zu kafle, Ctrl+Z je przywraca"
+msgstr[2] "Usunięto %zu kafli, Ctrl+Z je przywraca"
+
+msgid "Drag on past its end"
+msgstr "Przeciągnij dalej za jego koniec"
+
+msgid "bends the main track toward the cursor"
+msgstr "wygina tor zasadniczy w stronę kursora"
+
+msgid "the diverging track the other way or the same way"
+msgstr "tor zwrotny w drugą stronę albo w tę samą"
+
+msgid "At a free end"
+msgstr "Na wolnym końcu"
+
+msgid "the main track leads into it, with Shift the diverging one"
+msgstr "dochodzi do niego tor zasadniczy, z Shift zwrotny"
+
+msgid "Switch %s laid on from %s bent into R %.0f m, %s"
+msgstr "Rozjazd %s ułożony od %s, wygięty w R %.0f m %s"
+
+msgid "one-sided"
+msgstr "jednostronnie"
+
+msgid "two-sided"
+msgstr "dwustronnie"
+
+msgid "one-sided: main R %.0f m, diverging R %.0f m"
+msgstr "jednostronny: zasadniczy R %.0f m, zwrotny R %.0f m"
+
+msgid "two-sided: main R %.0f m, diverging R %.0f m"
+msgstr "dwustronny: zasadniczy R %.0f m, zwrotny R %.0f m"
+
+msgid "Click: select this switch, drag: slide it along the curve"
+msgstr "LPM: zaznacz ten rozjazd, przeciągnij: przesuń go wzdłuż łuku"
+
+msgid "Click: edit this switch, drag: slide it along the curve"
+msgstr "LPM: edytuj ten rozjazd, przeciągnij: przesuń go wzdłuż łuku"
+
+msgid "Slide along the curve"
+msgstr "Przesuń wzdłuż łuku"
+
+msgid "Moves the switch along the curve it's bent into by the distance typed, + towards the frog; the tracks of the curve on both sides get shorter or longer, one taken up whole goes and the switch joins what it joined, P4 of another switch say. Dragging the switch with the mouse does the same"
+msgstr "Przesuwa rozjazd wzdłuż łuku, w który jest wygięty, o wpisaną odległość, + w stronę krzyżownicy; tory łuku po obu stronach skracają się albo wydłużają, tor zajęty w całości znika, a rozjazd łączy się z tym, z czym on był połączony, np. z P4 innego rozjazdu. To samo robi przeciągnięcie rozjazdu myszą"
+
+msgid "Room on the curve: %.2f m back, %.2f m ahead"
+msgstr "Miejsce na łuku: %.2f m do tyłu, %.2f m do przodu"
+
+msgid "Switch %s moved %.2f m along the curve"
+msgstr "Rozjazd %s przesunięty o %.2f m wzdłuż łuku"
+
+msgid "The switch goes %.2f m back and %.2f m on along the curve at most"
+msgstr "Rozjazd przesunie się wzdłuż łuku najwyżej o %.2f m do tyłu i %.2f m do przodu"
+
+msgid "Press and drag: a switch going on from this end of the switch, sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd od tego końca rozjazdu, w bok jego strona"
+
+msgid "%s taken up whole, the switch joins what it joined"
+msgstr "%s zajęty w całości, rozjazd łączy się z tym, z czym on był połączony"
+
+msgid "Camera to the plot"
+msgstr "Kamera do profilu"
+
+msgid "Moves the camera to the part of the route the plot shows"
+msgstr "Przenosi kamerę na odcinek trasy widoczny na profilu"
+
+msgid "Plot to the camera"
+msgstr "Profil do kamery"
+
+msgid "Moves the plot to the part of the route where the camera is, its zoom kept"
+msgstr "Przesuwa profil na miejsce trasy, gdzie jest kamera, bez zmiany powiększenia"
+
+msgid "The switch drawn to the joint of the tracks"
+msgstr "Rozjazd dosunięty do styku torów"

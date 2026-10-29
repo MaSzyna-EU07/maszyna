@@ -77,6 +77,9 @@ class terrain_streamer
 	// true if the geometry belongs to the terrain (or its water)
 	bool owns(gfx::geometry_handle const &Geometry) const;
 	std::size_t resident() const { return m_chunks.size(); }
+	// the chunks in memory, those in the scene, their triangles and how many of them have each step of the grid, for the
+	// measurements of the editor
+	std::string stats() const;
 	// chunks in the pack files and in memory, less the removed ones; the files known so far
 	bool exists(chunk_key const &Key) const;
 	// the chunks of all the pack files in the folder of the terrain, each with the cells along its side (0: unknown), ordered
@@ -236,6 +239,7 @@ class terrain_streamer
 		std::shared_ptr<heightmap::chunk_data> data;
 		heightmap::mesh mesh;
 		int stride{1};
+		int cells{0};
 		std::uint64_t version{0};
 		std::string error;
 	};

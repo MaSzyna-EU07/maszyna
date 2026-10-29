@@ -121,6 +121,11 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     else {
 		fLength = glm::length(Point1 - Point2);
     }
+    if( false == std::isfinite( fLength ) ) {
+
+        ErrorLog( "Bad track: spline \"" + pOwner->name() + "\" with no finite length (location: " + to_string( glm::dvec3{ Point1 } ) + ")" );
+        fLength = 0.01;
+    }
     if (fLength <= 0) {
 
         ErrorLog( "Bad track: zero length spline \"" + pOwner->name() + "\" (location: " + to_string( glm::dvec3{ Point1 } ) + ")" );
@@ -129,7 +134,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
 
     fStoop = std::atan2(Point2.y - Point1.y, fLength); // pochylenie toru prostego, żeby nie liczyć wielokrotnie
 
-    fStep = fNewStep;
+    fStep = ( fNewStep > 0.0 && std::isfinite( fNewStep ) ) ? fNewStep : fLength;
     // NOTE: optionally replace this part with the commented version, after solving geometry issues with double switches
     if( pOwner->eType == tt_Switch
      && fStep * (3.0 * Global.SplineFidelity) > fLength ) {
@@ -137,7 +142,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
         fStep = fLength / ( 3.0 * Global.SplineFidelity );
     }
 //    iSegCount = static_cast<int>( std::ceil( fLength / fStep ) ); // potrzebne do VBO
-    iSegCount = pOwner->eType == tt_Switch ? static_cast<int>(6 * Global.SplineFidelity) : static_cast<int>(std::ceil(fLength / fStep)); // potrzebne do VBO
+    iSegCount = pOwner->eType == tt_Switch ? static_cast<int>(6 * Global.SplineFidelity) : static_cast<int>(std::clamp(std::ceil(fLength / fStep), 1.0, 100000.0)); // potrzebne do VBO
 
     fStep = fLength / iSegCount; // update step to equalize size of individual pieces
 
@@ -573,6 +578,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm1 * ShapePoints[ j ].texture.x + m1 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv1 } );
+                    roll_vertex( Output.back(), pos1, parallel1, s - step );
                 }
                 // jeśli jest wskaźnik do tablicy
                 if (p && *p && !j) // to dla pierwszego punktu
@@ -591,6 +597,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm2 * ShapePoints[ j ].texture.x + m2 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv2 } );
+                    roll_vertex( Output.back(), pos2, parallel2, s );
                 }
                 // jeśli jest wskaźnik do tablicy
                 // to dla pierwszego punktu
@@ -613,6 +620,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ShapePoints[ j ].texture.x / texturescale, tv1 } );
+                    roll_vertex( Output.back(), pos1, parallel1, s - step );
 
                     pt = parallel2 * ( jmm2 * ( ShapePoints[ j ].position.x - fOffsetX.first ) + m2 * ( ShapePoints[ j ].position.x - fOffsetX.second ) ) + pos2;
                     pt.y += ShapePoints[ j ].position.y;
@@ -623,6 +631,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         pt,
                         glm::normalize( norm ),
                         glm::vec2 { ShapePoints[ j ].texture.x / texturescale, tv2 } );
+                    roll_vertex( Output.back(), pos2, parallel2, s );
                 }
             }
         }
@@ -632,6 +641,25 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
     }
     return true;
 };
+
+void TSegment::roll_vertex( gfx::basic_vertex &Vertex, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const {
+    if( false == m_baked_roll.has_value() ) {
+        return;
+    }
+    auto const delta { GetRoll( std::clamp( Distance, 0.0, fLength ) ) - *m_baked_roll };
+    if( std::abs( delta ) < 1e-6f ) {
+        return;
+    }
+    auto const c { std::cos( delta ) };
+    auto const s { std::sin( delta ) };
+    // across the path and up turned the way the profiles are turned by the roll, along the path as it was
+    auto const turn = [&]( glm::vec3 const &Vector ) {
+        auto const across { glm::dot( Vector, Parallel ) };
+        auto const along { Vector - Parallel * across - glm::vec3 { 0.f, Vector.y, 0.f } };
+        return along + Parallel * ( across * c + Vector.y * s ) + glm::vec3 { 0.f, -across * s + Vector.y * c, 0.f }; };
+    Vertex.position = Position + turn( Vertex.position - Position );
+    Vertex.normal = turn( Vertex.normal );
+}
 
 bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, double fTextureLength, int const Steps ) const
 {
@@ -670,7 +698,8 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
         point.y += rest * from.position.y + Share * to.position.y;
         auto normal { ( rest * from.normal.x + Share * to.normal.x ) * Parallel };
         normal.y += rest * from.normal.y + Share * to.normal.y;
-        Output.emplace_back( point, glm::normalize( normal ), glm::vec2 { rest * from.texture.x + Share * to.texture.x, V } ); };
+        Output.emplace_back( point, glm::normalize( normal ), glm::vec2 { rest * from.texture.x + Share * to.texture.x, V } );
+        roll_vertex( Output.back(), Position, Parallel, Share * fLength ); };
 
     glm::vec3 pos1, pos2, parallel1, parallel2;
     station( 0, pos1, parallel1 );
@@ -894,6 +923,11 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                 auto const onwall { paired ? ( false == open( partner ) && clamped( partner ) == side ) : moved == count };
                 if( onwall ) {
                     wall = ( side > 0 ? outerwall : innerwall );
+                    // a face of the profile squeezed onto the wall from the other side of the rail keeps facing that side: the thin plate a
+                    // planed blade gets to near its tip is lit from the middle of the track as its face there, not as the one against the stock rail
+                    if( static_cast<float>( Span.side * side ) * ShapePoints[ j ].normal.x < 0.f ) {
+                        wall = -wall;
+                    }
                 }
             }
             if( drop > 0.0 && shape.position.y > Span.head.x && Span.head.y > Span.head.x ) {
@@ -911,6 +945,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             }
             Ring.emplace_back( pt, glm::normalize( norm ), glm::vec2{ shape.texture.x, 0.f } );
             Wear.push_back( Span.rampwidth != 0.0 ? static_cast<float>( std::clamp( ( Span.rampwidth > 0.0 ? outside - worn : worn - outside ) / std::abs( Span.rampwidth ) + 1.0, 0.0, 1.0 ) ) : 1.f );
+        }
+        for( auto &vertex : Ring ) {
+            roll_vertex( vertex, position, parallel, Distance );
         }
     };
 

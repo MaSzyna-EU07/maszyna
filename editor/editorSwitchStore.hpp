@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -57,6 +58,8 @@ struct record
 void reset();
 void load();
 std::vector<record> const &records();
+// a record of the name is kept
+bool has(std::string const &Name);
 // the record of the switch, slip or crossing the track is a part of, while its first part keeps the shape the record says
 std::optional<record> of(TTrack const &Track);
 // the record of the track by its name alone, also when the switch lost its shape
@@ -71,7 +74,14 @@ double branch_radius(record const &Record);
 void put(record Entry, scene::layer_handle const Layer);
 void place(record &Entry, TTrack const &First);
 void classify(record &Entry, TTrack const &Switch);
+// of the first path of the switch, signed as record::main_radius: + to the right, - to the left, 0 straight
+double main_radius_of(TTrack const &Switch);
 void forget(std::string const &Name);
+// the records follow renamed switches: their parts and the records named after them; Bases renames the records of slips and
+// crossings, whose names aren't the names of their parts
+void rename(std::map<std::string, std::string> const &Parts, std::map<std::string, std::string> const &Bases);
+// the number of the switch, slip or crossing of the record of the name, as the lists of the switches give it
+void number(std::string const &Name, std::string const &Number);
 // on save: the records follow the renamed switches, the ones whose paths are gone are dropped
 void tidy();
 // "Rz 60E1-500-1:12 L", as the type is written on the lists of the switches

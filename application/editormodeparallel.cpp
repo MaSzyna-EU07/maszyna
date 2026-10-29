@@ -8,8 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "application/editormode.h"
-#include "application/editoruilayer.h"
+#include "application/editormodeparallel.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -123,11 +122,6 @@ bool side_picker(int &Side, double const Spacing)
 	return changed;
 }
 
-std::string name_of(TTrack const &Track)
-{
-	return Track.name().empty() ? STR("(no name)") : Track.name();
-}
-
 segment_data reversed(segment_data const &Path)
 {
 	segment_data result{Path};
@@ -209,21 +203,23 @@ double lateral_of(TTrack const &Src, TTrack const &Dst)
 
 } // namespace
 
-TTrack *editor_mode::parallel_source() const
+TTrack *parallel_tool::parallel_source() const
 {
-	if (m_track_set.size() >= 2)
-		return m_track_set.front();
-	return selected_track();
+	auto const &set{m_selection.track_set()};
+	if (set.size() >= 2)
+		return set.front();
+	return m_selection.selected_track();
 }
 
-TTrack *editor_mode::parallel_target() const
+TTrack *parallel_tool::parallel_target() const
 {
-	if (m_track_set.size() != 2)
+	auto const &set{m_selection.track_set()};
+	if (set.size() != 2)
 		return nullptr;
-	return m_track_set.back() != m_track_set.front() ? m_track_set.back() : nullptr;
+	return set.back() != set.front() ? set.back() : nullptr;
 }
 
-void editor_mode::parallel_update()
+void parallel_tool::parallel_update()
 {
 	auto &tool{m_parallel};
 	auto *track{parallel_source()};
@@ -244,13 +240,13 @@ void editor_mode::parallel_update()
 	else if (track != nullptr && target != nullptr)
 		tool.measured = std::abs(lateral_of(*track, *target));
 
-	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_history.size() == tool.built_history)
+	if (track == tool.built_for && tool.spacing == tool.built_spacing && tool.side == tool.built_side && tool.scope == tool.built_scope && m_history.history_revision() == tool.built_history)
 		return;
 	tool.built_for = track;
 	tool.built_spacing = tool.spacing;
 	tool.built_side = tool.side;
 	tool.built_scope = tool.scope;
-	tool.built_history = m_history.size();
+	tool.built_history = m_history.history_revision();
 	tool.pieces.clear();
 	tool.styles.clear();
 	tool.length = 0.0;
@@ -319,7 +315,7 @@ void editor_mode::parallel_update()
 	}
 }
 
-void editor_mode::parallel_build()
+void parallel_tool::parallel_build()
 {
 	auto &tool{m_parallel};
 	parallel_update();
@@ -329,8 +325,8 @@ void editor_mode::parallel_build()
 	for (std::size_t i = 0; i < tool.pieces.size(); ++i)
 		created.push_back(editor_track::create_path(*tool.styles[i], tool.pieces[i]));
 	editor_track::commit(created);
-	digitize_drawn(created);
-	push_track_snapshot({}, created);
+	m_design.digitize_drawn(created);
+	m_history.push_track_snapshot({}, created);
 	tool.status = format(STR_C("Parallel track of %zu paths, %.1f m, %.2f m away; Ctrl+Z takes it back"), created.size(), tool.length, tool.spacing);
 	if (scene::Layers.active() == null_handle)
 		tool.status += "\n" + std::string{STR_C("The scenery isn't opened for editing, the new track won't be saved")};
@@ -338,7 +334,7 @@ void editor_mode::parallel_build()
 	tool.built_for = nullptr;
 }
 
-void editor_mode::parallel_apply()
+void parallel_tool::parallel_apply()
 {
 	auto &tool{m_parallel};
 	auto *target{parallel_target()};
@@ -375,14 +371,14 @@ void editor_mode::parallel_apply()
 		if (joint.other != nullptr)
 			committed.push_back(joint.other);
 	editor_track::commit(committed);
-	push_track_snapshot(std::move(states));
+	m_history.push_track_snapshot(std::move(states));
 	tool.status = format(STR_C("%s set parallel to %s, %.2f m away; Ctrl+Z takes it back"), name_of(*target).c_str(), name_of(*parallel_source()).c_str(), tool.spacing);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.built_for = nullptr;
-	straight_refresh();
+	m_design.straight_refresh();
 }
 
-void editor_mode::render_parallel_controls(bool const Scope)
+void parallel_tool::render_parallel_controls(bool const Scope)
 {
 	auto &tool{m_parallel};
 	if (Scope)
@@ -396,7 +392,7 @@ void editor_mode::render_parallel_controls(bool const Scope)
 	value_chips("spacings", tool.spacing, {kSpacings[0], kSpacings[1], kSpacings[2], kSpacings[3], kSpacings[4], kSpacings[5]}, "%.2f");
 }
 
-void editor_mode::render_parallel_ui()
+void parallel_tool::render_options()
 {
 	auto &tool{m_parallel};
 	ImGui::PushTextWrapPos(0.0f);
@@ -415,18 +411,15 @@ void editor_mode::render_parallel_ui()
 	}
 	else if (false == tool.pieces.empty())
 	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.3f, 1.0f));
-		if (ImGui::Button(format(STR_P("Lay %zu track, %.1f m", "Lay %zu tracks, %.1f m", static_cast<long long>(tool.pieces.size())), tool.pieces.size(), tool.length).c_str(), ImVec2(-1.0f, std::round(ImGui::GetFrameHeight() * 1.3f))))
+		if (main_button(format(STR_P("Lay %zu track, %.1f m", "Lay %zu tracks, %.1f m", static_cast<long long>(tool.pieces.size())), tool.pieces.size(), tool.length).c_str(), ImVec2(-1.0f, tall_button_height())))
 			parallel_build();
-		ImGui::PopStyleColor(2);
 		item_tooltip("A new track beside the one selected, as in the preview; the selected stays as it is. Ctrl+Z takes it back");
 	}
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
 }
 
-void editor_mode::render_parallel_set_ui()
+void parallel_tool::render_set_options()
 {
 	auto &tool{m_parallel};
 	auto *source{parallel_source()};
@@ -450,16 +443,16 @@ void editor_mode::render_parallel_set_ui()
 		ImGui::TextWrapped("%s", tool.status.c_str());
 }
 
-bool editor_mode::parallel_preview_visible() const
+bool parallel_tool::parallel_preview_visible() const
 {
 	if (m_parallel.pieces.empty() || parallel_source() != m_parallel.built_for)
 		return false;
-	if (m_track_tab == track_tab::parallel)
+	if (m_view.current_track_tab() == editor_track_tab::parallel)
 		return true;
-	return m_track_tab == track_tab::path && parallel_target() != nullptr;
+	return m_view.current_track_tab() == editor_track_tab::path && parallel_target() != nullptr;
 }
 
-void editor_mode::draw_parallel_preview() const
+void parallel_tool::draw_overlay() const
 {
 	if (false == parallel_preview_visible())
 		return;
@@ -487,4 +480,18 @@ void editor_mode::draw_parallel_preview() const
 		drawlist->AddRectFilled(ImVec2(screen.x + 8.0f, screen.y - 8.0f), ImVec2(screen.x + 16.0f + size.x, screen.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
 		drawlist->AddText(ImVec2(screen.x + 12.0f, screen.y - 8.0f), IM_COL32(90, 255, 120, 255), label.c_str());
 	}
+}
+
+editor_selftest_result parallel_tool::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "parallel")
+	{
+		Words >> m_parallel.spacing >> m_parallel.side;
+		m_parallel.scope = 1;
+		m_parallel.built_for = nullptr;
+		parallel_build();
+		WriteLog("SELFTEST parallel: " + m_parallel.status + " " + m_parallel.error);
+		return editor_selftest_result::handled;
+	}
+	return editor_selftest_result::unhandled;
 }

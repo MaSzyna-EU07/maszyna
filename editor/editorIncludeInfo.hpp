@@ -68,6 +68,12 @@ bool load(std::string const &File, include_info &Info, std::string &Error);
 bool save(std::string const &File, include_info const &Info, std::string &Error);
 // highest number of (pN) placeholder used by specified template, 0 if it has none
 int parameter_count(std::string const &File);
+// the speeds the events of a signal template set it to show, by their SetVelocity: of the signal itself, km/h, -1 the highest
+// allowed, 20 the substitute signal. returns: false if the file can't be read
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
+// the aspects of a block signal of the template: 4 where its events give S3, the green light flashing with the next signal at S5,
+// the warning two signals ahead, else 3. returns: 0 if the file can't be read
+int block_aspects(std::string const &File);
 // sets roles of the parameters whose use in the template makes their meaning clear. roles already set are left alone
 void suggest(std::string const &File, include_info &Info);
 // true if value of a parameter with specified role is supplied by the editor when the template is placed
@@ -89,6 +95,7 @@ bool parse_directive(std::string const &Directive, std::string &File, std::vecto
 std::string compose_directive(std::string const &File, std::vector<std::string> const &Values);
 // text of a number passed as a parameter value
 std::string number(double Value);
+std::string normalized(std::string File);
 // number of the parameter with specified role, 0 if the description has none
 int parameter_with_role(include_info const &Info, std::string const &Role);
 

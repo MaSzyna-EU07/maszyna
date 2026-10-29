@@ -324,6 +324,9 @@ public:
     material_handle rail_material( int const Path ) const;
     glm::vec2 tread_band() const;
     bool SetConnections(int i);
+    // joins the free ends of the switch to the free ends of other switches in the same points, which the plain tracks joined to switches
+    // leave out: a switch right after another one, at the end of either path of it, two facing at their starts or meeting at their ends
+    void join_switches();
     bool Switch(int i, float const t = -1.f, float const d = -1.f);
     bool SwitchForced(int i, TDynamicObject *o);
     int CrossSegment(int from, int into);

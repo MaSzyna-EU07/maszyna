@@ -130,6 +130,7 @@ public:
     auto replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry ) -> bool;
+    void erase( gfx::geometry_handle const &Geometry );
     // draws geometry stored in specified chunk
     auto draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in specified chunk N times via glDrawElementsInstanced*, as instances BaseInstance and onwards
@@ -259,6 +260,7 @@ public:
     auto replace( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
+    void erase( gfx::geometry_handle const &Geometry );
     // draws geometry stored in specified chunk
     void draw( gfx::geometry_handle const &Geometry, unsigned int const Streams = basic_streams );
     // draws geometry stored in specified chunk InstanceCount times via GPU instancing.

@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorConnections.hpp"
@@ -328,7 +329,7 @@ void editor_mode::digitize_crossovers(digitize_report &Report, bool const Write)
 		if (spacing < kSpacingLeast || spacing > kSpacingMost)
 			continue;
 		++Report.crossovers;
-		auto const name = [](TTrack const *Track) { return Track->name().empty() ? STR("(no name)") : Track->name(); };
+		auto const name = [](TTrack const *Track) { return name_of(*Track); };
 		auto const note = [&](std::string const &Why) { Report.notes.push_back(name(first) + " + " + name(second) + ": " + Why); };
 		if (false == switch_store::connections(*first).empty())
 		{
@@ -388,9 +389,9 @@ std::string editor_mode::digitize_scenery(bool const Write)
 		m_infra.scope = 3;
 		infra_recognize();
 		report.found = static_cast<int>(m_infra.candidates.size());
-		auto const before{m_bindings.size()};
+		auto const before{infra_bound_count()};
 		infra_bind_chosen();
-		report.bound = static_cast<int>(m_bindings.size() - before);
+		report.bound = infra_bound_count() - before;
 		m_infra.scope = scope;
 	}
 	auto text{format(STR_C("Switches: %d, kept already %d, of the catalogue %d, measured %d, parts of slips %d, odd %d"), report.switches, report.known, report.designed, report.measured, report.slips, report.odd)};

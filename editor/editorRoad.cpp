@@ -2063,11 +2063,20 @@ std::vector<std::string> const &editor_road::materials()
 	{
 		if (error || false == file->is_regular_file(error))
 			continue;
-		auto extension{file->path().extension().string()};
+		std::string extension;
+		std::string name;
+		try
+		{
+			extension = file->path().extension().string();
+			name = file->path().stem().string();
+		}
+		catch (std::exception const &)
+		{
+			continue;
+		}
 		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 		if (extension != ".mat" && extension != ".dds" && extension != ".tga" && extension != ".png" && extension != ".bmp" && extension != ".jpg" && extension != ".ktx" && extension != ".tex")
 			continue;
-		auto name{file->path().stem().string()};
 		std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 		// names with spaces can't be put in a scenery file
 		if (name.empty() || name.find(' ') != std::string::npos)

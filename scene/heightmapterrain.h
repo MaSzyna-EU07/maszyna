@@ -170,6 +170,10 @@ struct modifier
 	double slope{1.5}; // horizontal run of the slopes per metre of height
 	double reach{60.0}; // from the edge of the formation, where the slopes end even if they don't get to the ground
 	double rounding{1.5}; // over which the slopes bend into the formation and into the ground
+	// the formation and its slopes end square across the first or the last point, as against the abutment of a bridge or the
+	// portal of a tunnel; otherwise they go round it
+	bool open_start{false};
+	bool open_end{false};
 	std::vector<corridor_point> points;
 
 	// rectangle (x, z) the modifier can change the ground in

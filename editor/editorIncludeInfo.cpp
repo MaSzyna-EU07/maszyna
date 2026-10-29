@@ -501,6 +501,61 @@ int parameter_count(std::string const &File)
 	return read_template(File, text, error) ? count_parameters(text) : 0;
 }
 
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
+{
+	Speeds.clear();
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	auto const tokens{tokenize(text.content)};
+	auto const speed = [](std::string const &Token, int &Speed) {
+		char *end{nullptr};
+		auto const value{std::strtod(Token.c_str(), &end)};
+		if (end == Token.c_str() || *end != '\0')
+		{
+			return false;
+		}
+		Speed = static_cast<int>(std::lround(value));
+		return true;
+	};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] != "setvelocity")
+		{
+			continue;
+		}
+		int own{0};
+		if (speed(tokens[idx + 1], own) && own != 0 && std::find(Speeds.begin(), Speeds.end(), own) == Speeds.end())
+		{
+			Speeds.push_back(own);
+		}
+	}
+	std::sort(Speeds.begin(), Speeds.end());
+	return true;
+}
+
+int block_aspects(std::string const &File)
+{
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return 0;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] == "event" && tokens[idx + 1].size() > 3 && tokens[idx + 1].ends_with("_s3"))
+		{
+			return 4;
+		}
+	}
+	return 3;
+}
+
 void suggest(std::string const &File, include_info &Info)
 {
 	template_text text;
@@ -588,6 +643,12 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 		*Issue = issue;
 	}
 	return issue.empty();
+}
+
+std::string normalized(std::string File)
+{
+	std::replace(File.begin(), File.end(), '\\', '/');
+	return ToLower(File);
 }
 
 std::string number(double const Value)

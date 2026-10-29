@@ -81,15 +81,17 @@ std::vector<segment_data> arc_then_straight(glm::dvec3 const &Point, glm::dvec2 
 			turn += 2.0 * glm::pi<double>();
 		auto const heading{turned(Direction, Side * turn)};
 		auto const remaining{glm::dot(plan_of(Target) - centre - radial, heading)};
-		if (remaining > 0.0 && (rest < 0.0 || turn < angle))
+		if (remaining > -1e-3 && (rest < 0.0 || turn < angle))
 		{
-			rest = remaining;
+			rest = std::max(0.0, remaining);
 			angle = turn;
 		}
 	}
 	if (rest < 0.0 || angle > glm::pi<double>())
 		return {};
 	auto pieces{arc_pieces(Point, Direction, Grade, Radius, angle, Side)};
+	if (rest < 0.01)
+		return pieces;
 	auto const tail{straight_piece(pieces.back().points[segment_data::point::end], turned(Direction, Side * angle), Grade, rest)};
 	pieces.insert(pieces.end(), tail.begin(), tail.end());
 	return pieces;
@@ -297,6 +299,26 @@ glm::dvec3 editor_track::control_vector(TTrack const &Track, point_ref const &Co
 	return point_position(Track, Control) - point_position(Track, end_of(Control));
 }
 
+double editor_track::blade_tip_of(segment_data const &Diverging)
+{
+	// the tip of a planed blade lies some metres from the start at most, a longer first piece is a part of the curve
+	if (Diverging.pieces.size() < 2)
+		return 0.0;
+	auto const length{bezier{Diverging.pieces.front()}.plan_length()};
+	return length < 5.0 ? length : 0.0;
+}
+
+double editor_track::blade_tip_of(TTrack const &Switch)
+{
+	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
+		return 0.0;
+	double tip{0.0};
+	for (int path = 0; path < 2; ++path)
+		if (auto const &shape{Switch.blade(path)}; shape.valid && shape.tip > 0.0)
+			tip = tip > 0.0 ? std::min(tip, shape.tip) : shape.tip;
+	return tip > 0.0 ? tip : blade_tip_of(Switch.m_paths[1]);
+}
+
 std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const &Switch)
 {
 	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
@@ -304,8 +326,10 @@ std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const
 	auto const &main{Switch.m_paths[0]};
 	auto const &diverging{Switch.m_paths[1]};
 	auto const start{main.points[segment_data::point::start]};
-	auto const &control{main.points[segment_data::point::control1]};
-	auto const along{control != glm::dvec3{} ? control : main.points[segment_data::point::end] - start};
+	// by the tips of the blades, not at the joint before them
+	bezier const curve{main};
+	auto const at{curve.parameter(blade_tip_of(Switch))};
+	auto const along{curve.first(at)};
 	auto heading{plan_of(along)};
 	if (glm::length(heading) < 1e-9)
 		return std::nullopt;
@@ -313,11 +337,11 @@ std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const
 	glm::dvec2 const right{-heading.y, heading.x};
 	drive_spot spot;
 	spot.rightswitch = glm::dot(plan_of(diverging.points[segment_data::point::end] - start), right) > 0.0;
-	spot.location = start;
+	spot.location = curve.point(at);
 	auto const yaw{glm::degrees(std::atan2(heading.x, heading.y))};
 	spot.yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
 	auto const run{glm::length(plan_of(along))};
-	auto const roll{static_cast<double>(main.rolls[0])};
+	auto const roll{glm::mix(static_cast<double>(main.rolls[0]), static_cast<double>(main.rolls[1]), at)};
 	spot.tilt = {-glm::degrees(std::atan(along.y / run)), roll};
 	if (Global.bRollFix)
 		spot.location.y += 0.75 * std::abs(std::sin(glm::radians(roll)));
@@ -638,33 +662,55 @@ std::vector<segment_data> editor_track::layout_pieces(layout const Kind, glm::dv
 	return straight_then_arc(Point, Direction, Grade, offset, radius, side);
 }
 
-editor_track::easing editor_track::ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits)
+std::optional<editor_track::bend> editor_track::bend_at(TTrack const &Neighbour, glm::dvec3 const &Joint)
 {
-	easing result;
 	for (auto const &path : Neighbour.m_paths)
 		for (auto const atend : {false, true})
 		{
 			if (glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], Joint) > 0.05)
 				continue;
+			bend result;
+			auto const sign{atend ? 1.0 : -1.0};
+			result.roll = atend ? static_cast<double>(path.rolls[1]) : -static_cast<double>(path.rolls[0]);
 			if (false == has_controls(path))
+			{
+				auto const chord{plan_of(path.points[segment_data::point::end] - path.points[segment_data::point::start])};
+				if (glm::length(chord) < 1e-9)
+					return std::nullopt;
+				result.direction = glm::normalize(chord) * sign;
 				return result;
-			bezier const curve{path};
+			}
+			// on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends, R 300.9 at
+			// the end of the diverging track of a switch of R 300
+			bezier const curve{path.pieces.empty() ? path : atend ? path.pieces.back() : path.pieces.front()};
 			auto const first{curve.first(atend ? 1.0 : 0.0)};
 			auto const second{curve.second(atend ? 1.0 : 0.0)};
 			auto const speed{std::hypot(first.x, first.z)};
 			if (speed < 1e-9)
-				return result;
-			auto const sign{atend ? 1.0 : -1.0};
-			auto const curvature{sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed)};
-			glm::dvec2 const direction{sign * first.x / speed, sign * first.z / speed};
-			auto const roll{atend ? static_cast<double>(path.rolls[1]) : -static_cast<double>(path.rolls[0])};
-			result.curvature = curvature;
-			if (std::abs(curvature) < 1e-4)
-				return result;
-			result.length = std::max(20.0, alignment::recommend(Speed, 1.0 / std::abs(curvature), Limits).transition);
-			lay_transition(result, Joint, direction, Grade, roll);
+				return std::nullopt;
+			result.curvature = sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed);
+			result.direction = {sign * first.x / speed, sign * first.z / speed};
 			return result;
 		}
+	return std::nullopt;
+}
+
+editor_track::easing editor_track::ease_out_of(TTrack const &Neighbour, glm::dvec3 const &Joint, double const Grade, double const Speed, alignment::limits const &Limits)
+{
+	easing result;
+	auto const end{bend_at(Neighbour, Joint)};
+	if (false == end.has_value())
+		return result;
+	result.curvature = end->curvature;
+	if (std::abs(end->curvature) < 1e-4)
+		return result;
+	// the diverging track of a switch has no cant: run no faster than its curve lets with the unbalanced acceleration alone, the
+	// transition out of it is the one for that speed
+	auto speed{Speed};
+	if (Neighbour.eType == tt_Switch)
+		speed = std::min(Speed, std::sqrt(12.96 * Limits.unbalanced / std::abs(end->curvature)));
+	result.length = std::max(20.0, alignment::recommend(speed, 1.0 / std::abs(end->curvature), Limits).transition);
+	lay_transition(result, Joint, end->direction, Grade, end->roll);
 	return result;
 }
 

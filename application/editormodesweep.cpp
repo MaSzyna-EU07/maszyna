@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "world/Sweep.h"
 #include "model/AnimModel.h"
 #include "world/Track.h"
@@ -126,12 +127,6 @@ bool same_piece(segment_data const &A, segment_data const &B)
 	return std::abs(A.rolls[0] - B.rolls[0]) < 1e-3f && std::abs(A.rolls[1] - B.rolls[1]) < 1e-3f;
 }
 
-std::string lower(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
-}
-
 } // namespace
 
 void editor_mode::sweep_scan_models()
@@ -144,14 +139,26 @@ void editor_mode::sweep_scan_models()
 		tool.scanned = true;
 		changed = true;
 		std::error_code error;
-		for (auto const &entry : std::filesystem::recursive_directory_iterator("models", std::filesystem::directory_options::skip_permission_denied, error))
+		for (std::filesystem::recursive_directory_iterator entry{"models", std::filesystem::directory_options::skip_permission_denied, error}, end; entry != end; entry.increment(error))
 		{
-			if (false == entry.is_regular_file(error))
+			std::error_code status;
+			if (false == entry->is_regular_file(status))
 				continue;
-			auto const extension{lower(entry.path().extension().string())};
-			if (extension != ".e3d" && extension != ".t3d")
+			std::string extension;
+			std::string name;
+			try
+			{
+				extension = ToLower(entry->path().extension().string());
+				if (extension != ".e3d" && extension != ".t3d")
+					continue;
+				name = std::filesystem::relative(entry->path(), "models", status).generic_string();
+			}
+			catch (std::exception const &)
+			{
 				continue;
-			auto name{std::filesystem::relative(entry.path(), "models", error).generic_string()};
+			}
+			if (name.size() < extension.size())
+				continue;
 			name.erase(name.size() - extension.size());
 			tool.models.push_back(name);
 		}
@@ -742,14 +749,14 @@ void editor_mode::render_sweep_ui()
 		changed = true;
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##sweepsearch", STR_C("search the models"), tool.search, sizeof(tool.search));
-	std::string const text{lower(tool.search)};
+	std::string const text{ToLower(tool.search)};
 	if (false == text.empty())
 	{
 		ImGui::BeginChild("##sweepmodels", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 7.0f + 6.0f), true);
 		std::size_t listed{0};
 		for (auto const &model : tool.models)
 		{
-			if (lower(model).find(text) == std::string::npos)
+			if (ToLower(model).find(text) == std::string::npos)
 				continue;
 			if (++listed > kSweepModelList)
 				break;
@@ -763,7 +770,7 @@ void editor_mode::render_sweep_ui()
 	}
 	// a template takes its parameters, the ones which place it are zeros: it's laid out in its own space
 	std::string const model{tool.model};
-	bool const istemplate{model.size() > 4 && lower(model.substr(model.size() - 4)) == ".inc"};
+	bool const istemplate{model.size() > 4 && ToLower(model.substr(model.size() - 4)) == ".inc"};
 	if (istemplate && model != tool.parameters_for)
 	{
 		tool.parameters_for = model;
@@ -791,7 +798,7 @@ void editor_mode::render_sweep_ui()
 				auto const id{std::atoi(word.substr(open + 2, close - open - 2).c_str())};
 				if (id < 1 || id > count || false == tool.parameter_choices[id - 1].empty())
 					continue;
-				auto const prefix{lower(word.substr(0, open))};
+				auto const prefix{ToLower(word.substr(0, open))};
 				auto suffix{word.substr(close + 1)};
 				suffix = suffix.substr(0, suffix.find(':'));
 				auto const slash{prefix.rfind('/')};
@@ -799,10 +806,18 @@ void editor_mode::render_sweep_ui()
 				auto const start{prefix.substr(slash + 1)};
 				std::set<std::string> variants;
 				std::error_code error;
-				for (auto const &entry : std::filesystem::directory_iterator(folder, error))
+				for (std::filesystem::directory_iterator entry{folder, error}, end; entry != end; entry.increment(error))
 				{
-					auto const stem{lower(entry.path().stem().string())};
-					if (stem.size() > start.size() + suffix.size() && stem.compare(0, start.size(), start) == 0 && (suffix.empty() || stem.compare(stem.size() - suffix.size(), suffix.size(), lower(suffix)) == 0))
+					std::string stem;
+					try
+					{
+						stem = ToLower(entry->path().stem().string());
+					}
+					catch (std::exception const &)
+					{
+						continue;
+					}
+					if (stem.size() > start.size() + suffix.size() && stem.compare(0, start.size(), start) == 0 && (suffix.empty() || stem.compare(stem.size() - suffix.size(), suffix.size(), ToLower(suffix)) == 0))
 						variants.insert(stem.substr(start.size(), stem.size() - start.size() - suffix.size()));
 				}
 				tool.parameter_choices[id - 1].assign(variants.begin(), variants.end());
@@ -1405,12 +1420,10 @@ void editor_mode::bend_selection()
 		snap.rotation = model->Angles();
 		snap.scale = model->Scale();
 		snap.uuid = model->uuid;
-		nullify_history_pointers(model);
-		remove_from_hierarchy(model);
 		m_node = nullptr;
 		m_dragging = false;
 		ui()->set_node(nullptr);
-		simulation::State.delete_model(model);
+		erase_model(model);
 	}
 	else
 	{
@@ -1463,9 +1476,7 @@ void editor_mode::restore_bend(EditorSnapshot &Snapshot, bool const Undo)
 	}
 	else if (auto *model{dynamic_cast<TAnimModel *>(find_node_by_any(Snapshot.node_ptr, Snapshot.uuid.to_string(), Snapshot.node_name))})
 	{
-		nullify_history_pointers(model);
-		remove_from_hierarchy(model);
-		simulation::State.delete_model(model);
+		erase_model(model);
 		Snapshot.node_ptr = nullptr;
 		m_node = nullptr;
 		ui()->set_node(nullptr);
@@ -1820,7 +1831,7 @@ void editor_mode::render_bend()
 			else
 			{
 				tool.track = std::clamp(tool.track, 0, static_cast<int>(tool.tracks.size()) - 1);
-				auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", Entry.first->name().empty() ? STR_C("(no name)") : Entry.first->name().c_str(), Entry.second); };
+				auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", name_of(*Entry.first).c_str(), Entry.second); };
 				if (begin_fields("##bendsource", 0.35f))
 				{
 					field_row("Track");
