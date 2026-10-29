@@ -300,11 +300,10 @@ GLint bc7_components( std::istream &File, std::streamoff const Start, std::size_
     }
     return GL_RGB; }
 
-// BC7 is core since GL 4.2, older contexts and GLES need the extension. requires current gl context
+// BC7 is core since GL 4.2, older contexts need the extension. requires current gl context
 bool bptc_supported() {
     static bool const supported = []() {
-        if( ( false == Global.gfx_usegles )
-         && ( ( GLVersion.major > 4 ) || ( ( GLVersion.major == 4 ) && ( GLVersion.minor >= 2 ) ) ) ) {
+        if( ( GLVersion.major > 4 ) || ( ( GLVersion.major == 4 ) && ( GLVersion.minor >= 2 ) ) ) {
             return true;
         }
         GLint count { 0 };
