@@ -35,6 +35,7 @@ struct entry
 	VkDeviceSize size{0};
 	std::string name;
 	bool image{false};
+	bool dedicated{false}; // an image in memory of its own, which has no device address: it isn't placed
 	std::chrono::steady_clock::time_point freed{};
 };
 
@@ -180,8 +181,61 @@ std::string describe(VkDeviceAddress const Lower, VkDeviceAddress const Upper)
 		{
 			note(bytes(abovestart - Upper) + " before the " + label(*above, abovestart));
 		}
+		if (freed == 0)
+		{
+			// the images in memory of their own aren't placed: those let go just before may be what the address was
+			std::string recent;
+			std::size_t count{0};
+			for (auto it = g_freed.rbegin(); it != g_freed.rend(); ++it)
+			{
+				auto const ago{std::chrono::duration<double, std::milli>(now - it->freed).count()};
+				if (ago > 5000.0)
+				{
+					break;
+				}
+				if (it->dedicated && (++count <= 8))
+				{
+					recent += (recent.empty() ? "" : ", ") + std::string("\"") + it->name + "\" (" + bytes(it->size) + ", " + std::to_string(static_cast<long long>(ago)) + " ms ago)";
+				}
+			}
+			std::size_t live{0};
+			for (auto const &[handle, item] : g_live)
+			{
+				live += (item.dedicated ? 1 : 0);
+			}
+			note(std::to_string(live) + " images in memory of their own aren't placed; let go of them in the last 5 s: " + (recent.empty() ? std::string("none") : recent));
+		}
 	}
 	return (result.empty() ? std::string("in nothing known") : result);
+}
+
+// the device address of the memory of an image in a block of the allocator: a buffer bound to the same memory tells it, and goes.
+// 0 where that can't be (the memory type or the alignment doesn't take a buffer)
+VkDeviceAddress image_address(VmaAllocator const Allocator, VkDevice const Device, VmaAllocation const Allocation, VmaAllocationInfo const &Allocated)
+{
+	VkBufferCreateInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	info.size = Allocated.size;
+	info.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VkBuffer probe{VK_NULL_HANDLE};
+	if (vkCreateBuffer(Device, &info, nullptr, &probe) != VK_SUCCESS)
+	{
+		return 0;
+	}
+	VkDeviceAddress address{0};
+	VkMemoryRequirements requirements{};
+	vkGetBufferMemoryRequirements(Device, probe, &requirements);
+	if (((requirements.memoryTypeBits & (1u << Allocated.memoryType)) != 0) && (requirements.alignment > 0) && ((Allocated.offset % requirements.alignment) == 0) && (requirements.size <= Allocated.size) &&
+	    (vmaBindBufferMemory2(Allocator, Allocation, 0, probe, nullptr) == VK_SUCCESS))
+	{
+		VkBufferDeviceAddressInfo addressinfo{};
+		addressinfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		addressinfo.buffer = probe;
+		address = vkGetBufferDeviceAddress(Device, &addressinfo);
+	}
+	vkDestroyBuffer(Device, probe, nullptr);
+	return address;
 }
 
 } // namespace address_registry
@@ -358,7 +412,7 @@ bool buffer::create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsage
 		addressinfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		addressinfo.buffer = m_buffer;
 		m_address = vkGetBufferDeviceAddress(Allocator.device_handle(), &addressinfo);
-		address_registry::add(handle_value(m_buffer), {m_address, allocated.deviceMemory, allocated.offset, info.size, Name.empty() ? std::string("unnamed") : Name, false, {}});
+		address_registry::add(handle_value(m_buffer), {m_address, allocated.deviceMemory, allocated.offset, info.size, Name.empty() ? std::string("unnamed") : Name, false, false, {}});
 	}
 	m_allocator = Allocator.handle();
 	m_size = Size;
@@ -474,7 +528,12 @@ bool image::create(allocator const &Allocator, image_desc const &Desc, std::stri
 	m_bytes = allocated.size;
 	if (address_registry::enabled())
 	{
-		address_registry::add(handle_value(m_image), {0, allocated.deviceMemory, allocated.offset, allocated.size, Name.empty() ? std::string("unnamed") : Name, true, {}});
+		// an image in a block of the allocator (the memory has device addresses there) is placed exactly; one in memory of its own isn't
+		VmaAllocationInfo2 extended{};
+		vmaGetAllocationInfo2(m_allocator, m_allocation, &extended);
+		auto const dedicated{extended.dedicatedMemory == VK_TRUE};
+		auto const address{dedicated ? VkDeviceAddress{0} : address_registry::image_address(m_allocator, m_device, m_allocation, allocated)};
+		address_registry::add(handle_value(m_image), {address, allocated.deviceMemory, allocated.offset, allocated.size, Name.empty() ? std::string("unnamed") : Name, true, dedicated, {}});
 	}
 
 	VkImageViewCreateInfo viewinfo{};
