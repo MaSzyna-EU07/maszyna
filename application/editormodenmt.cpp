@@ -1057,7 +1057,9 @@ void editor_mode::nmt_update()
 			state.status += format(STR_P("; %zu chunk not made ahead, the terrain beside isn't the real one", "; %zu chunks not made ahead, the terrain beside isn't the real one", state.foreign), state.foreign);
 		if (state.pending.empty())
 		{
-			if (state.shape && state.reshape)
+			// not after the chunks grown around the cursor: the streamer leads the formations there are into a chunk as it's made, and
+			// shaping all of them again took the whole scenery through the terrain, 12 s of a frame each time the laying went on
+			if (state.shape && state.reshape && false == state.grown)
 			{
 				nmt_shape_tracks();
 				state.status += format(STR_P("; the formation of %zu path shaped", "; the formation of %zu paths shaped", state.shaped), state.shaped);
