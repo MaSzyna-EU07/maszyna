@@ -6320,16 +6320,15 @@ void opengl46_renderer::Render_cab_probe()
 	glm::vec3 extent{0.f};
 	if ((vehicle != nullptr) && (false == m_locallights.cab_bounds(vehicle->mdKabina, m_geometry, center, extent)))
 		vehicle = nullptr;
-	// the brightest light of the cab lights the probe when it's a light of the frame
-	auto const *principal{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_principal() : nullptr};
-	auto const *lamp{principal != nullptr ? &principal->source : nullptr};
-	if (false == m_cabprobe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lamp, m_framestamp))
+	// the lights of the cab light the probe when they're lights of the frame
+	std::vector<gfx::local_lights::cab_light> const nolights;
+	auto const &lights{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_lights() : nolights};
+	if (false == m_cabprobe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lights, m_framestamp))
 		return;
 
 	glDebug("render cab probe");
-	// the light with its shadow map, when the map holds the shadows of the light where it is
-	auto const slot{principal != nullptr ? m_localshadows.cab_slot_of(vehicle, *principal) : -1};
-	m_cabprobe.setup_drawing(scene_ubs, lamp, (principal != nullptr ? principal->local : glm::vec3{0.f}), (slot >= 0), (slot >= 0 ? m_localshadows.weights(static_cast<std::size_t>(slot)) : glm::vec4{0.f}));
+	// the lights with their shadow maps, where the maps hold their shadows
+	m_cabprobe.setup_drawing(scene_ubs, lights, m_localshadows, vehicle);
 	// the sun coming in through the windows, as the shading of the last frame got it
 	m_cabprobe.setup_sun(scene_ubs, vehicle, -m_sunlight.direction, glm::vec3{light_data.lights[0].color} * light_data.lights[0].intensity, m_colorpass.pass_camera.position());
 	scene_ubo->update(scene_ubs);

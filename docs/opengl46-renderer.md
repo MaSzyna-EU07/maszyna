@@ -261,10 +261,12 @@ shadows of the sun, see `headlight shadows:` in Shift+F12); with the vehicle on 
 | `gfx.lights.shadows.headlights.range` | `250` | 10..1000: distance ahead of the vehicle within which things cast the shadows of its headlights, metres |
 
 **The probe of the cab** (`gfx.cabprobe`, OpenGL and Vulkan): two cube maps drawn from the middle of the box of the cab model,
-in the space of the cab (they stay right while the vehicle moves): the light of the cab lamp the cab reflects (with the
-shadows of the lamp) and the light of what glows in it (the lights of the desk), and the albedo of the cab. The glasses
+in the space of the cab (they stay right while the vehicle moves): the light of the lights of the cab the cab reflects (the
+lamp, or the light points of the cab model, the brightest 16 of them, each with its cone, radius and shadows) and the light
+of what glows in it, and the albedo of the cab. So a lamp aimed down lights the floor and the desk, and their light lights the
+ceiling and the rest of the cab again. The glasses
 aren't drawn, so through them the probe shows nothing. They are drawn every `gfx.cabprobe.interval` frames (for the moving
-parts and the lights of the desk) and at once when the cab or the lamp change, the six faces in one pass with the opaque
+parts and the lights of the desk) and at once when the cab or its lights change (switched, dimmed), the six faces in one pass with the opaque
 parts of the cab (as the shadow map of the lamp). The parts of the cab read them:
 - the light of the lamp the cab reflects lights the cab again (`gfx.cabprobe.bounce`, from spherical harmonics of the
   probe) in place of `gfx.lights.cab.bounce`, so the light bounces where the lamp actually lights the cab;

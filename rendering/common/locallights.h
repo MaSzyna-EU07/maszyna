@@ -87,16 +87,12 @@ class local_lights
 	{
 		light source;
 		glm::vec3 local{0.f};
+		glm::vec3 local_direction{0.f, -1.f, 0.f}; // the axis of its cone in the space of the cab model
 	};
 	// the lights of the occupied cab which are on, when the cab is drawn, the brightest first; empty otherwise
 	std::vector<cab_light> const &cab_lights() const
 	{
 		return m_cablights;
-	}
-	// the brightest light of the cab, which lights its probe; nullptr when there is none
-	cab_light const *cab_principal() const
-	{
-		return m_cablights.empty() ? nullptr : &m_cablights.front();
 	}
 	// the vehicle of the lights of the cab, when any of them is on
 	TDynamicObject const *cab_lamp_vehicle() const

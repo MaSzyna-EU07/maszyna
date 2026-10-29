@@ -350,6 +350,7 @@ void gfx::local_lights::gather_cab_lights(gfx::geometrybank_manager const &Geome
 			cab_light cablight;
 			cablight.source = m_lights[idx];
 			cablight.local = glm::vec3{m_lights[idx].position};
+			cablight.local_direction = m_lights[idx].direction;
 			cablight.source.position = vehicle->GetWorldPosition(m_lights[idx].position);
 			auto const direction{glm::vec3{rotation * glm::dvec3{m_lights[idx].direction}}};
 			cablight.source.direction = (glm::length2(direction) > 0.f ? glm::normalize(direction) : glm::vec3{0.f, -1.f, 0.f});

@@ -97,6 +97,7 @@
 #define LOCAL_SHADOW_LAMPS_TEX 14
 #define HEADLIGHT_SHADOW_TEX 15
 #define MAX_HEADLIGHT_SHADOWS 4U
+#define MAX_CAB_PROBE_LAMPS 16U
 #define FOG_VOLUME_TEX 16
 #define CLOUD_SHADOW_TEX 17
 #define CLOUD_TEX 18
@@ -343,13 +344,16 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 rain_wind;
     // the ambient occlusion in the light of the surfaces, see gl::scene_ubs
     vec4 ao_params;
-    // the probe of the occupied cab, and the lamp it's drawn with, see gl::scene_ubs
+    // the probe of the occupied cab, and the lights of the cab it's drawn with, see gl::scene_ubs
     mat4 cab_probe_view;
     vec4 cab_probe_box;
     vec4 cab_probe_params;
-    vec4 cab_probe_lamp;
-    vec4 cab_probe_lamp_color;
-    vec4 cab_probe_lamp_shadow;
+    vec4 cab_probe_lamp[MAX_CAB_PROBE_LAMPS];
+    vec4 cab_probe_lamp_color[MAX_CAB_PROBE_LAMPS];
+    vec4 cab_probe_lamp_shadow[MAX_CAB_PROBE_LAMPS];
+    vec4 cab_probe_lamp_cone[MAX_CAB_PROBE_LAMPS];
+    vec4 cab_probe_lamp_shape[MAX_CAB_PROBE_LAMPS];
+    vec4 cab_probe_lamp_map[MAX_CAB_PROBE_LAMPS];
     // the occlusion of the sky and of the sun by the scenery around the camera, see gl::scene_ubs
     vec4 sky_occlusion_origin;
     vec4 sky_occlusion_params;

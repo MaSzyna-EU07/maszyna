@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "gl/ubo.h"
 #include "rendering/common/locallights.h"
+#include "rendering/common/localshadows.h"
 
 class TDynamicObject;
 class TModel3d;
@@ -25,8 +26,8 @@ namespace gfx
 // the probe of the occupied cab (Global.gfx_cabprobe, the stage A4 of claude/renderers-plan.md), the part shared by the renderers;
 // the backend (opengl46_cab_probe, vk14::cab_probe_maps) keeps the maps and draws to them through the gpu_* methods.
 // - two cube maps drawn from the middle of the box of the cab model (mdKabina), in the space of the model, so they stay right while
-//   the vehicle moves and turns: the light of the cab lamp the cab reflects (with the shadow map of the lamp) and the light of what
-//   glows in it, and the albedo of the cab. both are cleared to nothing and premultiplied by the share of the direction the cab
+//   the vehicle moves and turns: the light of the lights of the cab (the lamp, the light points of the cab model, the brightest
+//   gl::MAX_CAB_PROBE_LAMPS of them, with their shadow maps) the cab reflects and the light of what glows in it, and the albedo of the cab. both are cleared to nothing and premultiplied by the share of the direction the cab
 //   fills, which is in their alpha (the glasses aren't drawn: through them the cab shows nothing), and have mipmaps;
 // - the six faces are drawn at once (a geometry shader with opengl, multiview with vulkan) by the programs of the probe
 //   (cabprobe.vert, cabprobe.frag), every few frames (Global.gfx_cabprobe_interval: the moving parts of the cab, the lights of the
@@ -53,12 +54,13 @@ class cab_probe
 	// size of a face of the maps of the level (Global.gfx_cabprobe), 0 for none
 	static int size_of(int const Level);
 	// whether the probe is to be drawn in this frame. Vehicle: the occupied vehicle whose cab is drawn (nullptr: none), Cab its cab
-	// model, Center and Extent the box of the model (model space); Lamp the cab lamp when it's a light of the frame (nullptr: none).
-	// (re)makes the maps when the level changed
-	bool update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Center, glm::vec3 const &Extent, gfx::local_lights::light const *Lamp, unsigned int const Framestamp);
-	// the fields of the block of the scene the drawing of the probe reads: the cab lamp (Lamp, at Lamplocal in the space of the cab
-	// model, nullptr: none) with its shadow map when Shadows (Shadowweights: the headlight_weights of the map)
-	void setup_drawing(gl::scene_ubs &Scene, gfx::local_lights::light const *Lamp, glm::vec3 const &Lamplocal, bool const Shadows, glm::vec4 const &Shadowweights) const;
+	// model, Center and Extent the box of the model (model space); Lights the lights of the cab of the frame, the brightest first
+	// (empty: none). (re)makes the maps when the level changed
+	bool update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Center, glm::vec3 const &Extent, std::vector<gfx::local_lights::cab_light> const &Lights,
+	                   unsigned int const Framestamp);
+	// the fields of the block of the scene the drawing of the probe reads: the lights of the cab of Vehicle (Lights, the brightest first)
+	// with the shadow maps Shadows holds for them
+	void setup_drawing(gl::scene_ubs &Scene, std::vector<gfx::local_lights::cab_light> const &Lights, gfx::local_shadows const &Shadows, TDynamicObject const *Vehicle) const;
 	// the fields of the block of the scene the drawing of the probe takes the sun with: Vehicle the vehicle whose cab is drawn, Tosun the
 	// direction towards the sun (the moon), world space, Sunlight its light as the shading gets it (the colour of the light buffer times
 	// its intensity), Camera the camera of the main view (world space). no sun until the mask holds the cab
@@ -123,7 +125,7 @@ class cab_probe
 	TModel3d const *m_cab{nullptr};
 	glm::vec3 m_center{0.f};
 	glm::vec3 m_extent{0.f};
-	// the light of the cab lamp the probe was drawn with, 0 without the lamp
+	// the light of the lights of the cab the probe was drawn with (their sum), 0 without them
 	glm::vec3 m_lamp{0.f};
 	unsigned int m_drawnframe{0};
 	// statistics

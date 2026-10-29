@@ -1,10 +1,10 @@
 // the shading of the probe of the occupied cab (gfx::cab_probe), for cabprobe.frag and cabprobe_alpha.frag: what the cab shows
-// towards the middle of its box lit by the cab lamp alone, with the cube shadow map of the lamp (and what glows in it, the lights
-// of the desk), and its albedo, each with 1 in the alpha: the probe is cleared to nothing, so the alpha of a direction tells how
-// much of it the cab fills, and both are premultiplied by it. the light of the cab lamp is the one the shading gives it
-// (calc_local_light() in light_common.glsl). the sun (the moon) lights the cab where it comes in through the windows
+// towards the middle of its box lit by the lights of the cab alone (its lamp or the light points of the cab model, the brightest
+// MAX_CAB_PROBE_LAMPS, each with its cube shadow map; and what glows in it), and its albedo, each with 1 in the alpha: the probe is cleared to nothing, so the alpha of a direction tells how
+// much of it the cab fills, and both are premultiplied by it. the light of a light of the cab is about the one the shading gives
+// it (calc_local_light() in light_common.glsl): its cone, its sphere or soft falloff, its shadows. the sun (the moon) lights the cab where it comes in through the windows
 // (gl::scene_ubs::cab_probe_sun), so the light which bounces around the cab holds it; the ambient light is left out, the cab gets it as
-// before. the parameters of the lamp and of the sun are in the block of the scene (gl::scene_ubs::cab_probe_lamp, cab_probe_sun), in
+// before. the parameters of the lights and of the sun are in the block of the scene (gl::scene_ubs::cab_probe_lamp, cab_probe_sun), in
 // the space of the probe. the including shader declares cab_probe_mask (CAB_PROBE_MASK_TEX) and includes weather_common.glsl
 
 layout(location = 0) out vec4 out_light;
@@ -24,11 +24,11 @@ vec3 probe_material_diffuse()
 	return (value > 0.0 ? diffusecolor * (param[1].x / value) : vec3(0.0));
 }
 
-// share of the light of the cab lamp held back before the point of the space of its cube shadow map (origin at the lamp), 0..1, as
-// local_light_shadow() of light_common.glsl takes it with a single sample
-float probe_lamp_shadow(vec3 position, vec3 normal)
+// share of the light of the light Lamp of the cab held back before the point of the space of its cube shadow map (origin at the
+// light the map was drawn for), 0..1, as local_light_shadow() of light_common.glsl takes it with a single sample
+float probe_lamp_shadow(int lamp, vec3 position, vec3 normal)
 {
-	vec4 weights = cab_probe_lamp_shadow;
+	vec4 weights = cab_probe_lamp_shadow[lamp];
 	float distance = length(position);
 	float texel = weights.z * distance;
 	vec3 tolamp = -position / max(distance, 1e-4);
@@ -63,17 +63,28 @@ void probe_shade(vec4 tex_color)
 	if (dot(normal, position) > 0.0)
 		normal = -normal;
 	vec3 light = vec3(emission);
-	if (cab_probe_lamp.w > 0.0)
+	for (int i = 0; i < int(MAX_CAB_PROBE_LAMPS); i++)
 	{
-		vec3 tolight = cab_probe_lamp.xyz - position;
+		vec4 lamp = cab_probe_lamp[i];
+		if (lamp.w <= 0.0)
+			break;
+		vec3 tolight = lamp.xyz - position;
 		float distance2 = dot(tolight, tolight);
 		vec3 light_dir = tolight * inversesqrt(max(distance2, 1e-8));
-		float edge = clamp(1.0 - distance2 * distance2 * (cab_probe_lamp.w * cab_probe_lamp.w), 0.0, 1.0);
-		float atten = edge * edge / max(distance2, PROBE_LIGHT_MIN_DISTANCE2);
+		float edge = clamp(1.0 - distance2 * distance2 * (lamp.w * lamp.w), 0.0, 1.0);
+		// as lamp_falloff() of common.glsl: the soft falloff (a negative radius), or the light of the sphere, which is the one of a
+		// point outside it
+		float radius = cab_probe_lamp_shape[i].y;
+		float falloff = (radius < 0.0) ? 1.0 / max(distance2 + radius * radius, 1e-6) : 1.0 / max(distance2, (radius > 0.0) ? radius * radius : PROBE_LIGHT_MIN_DISTANCE2);
+		float atten = edge * edge * falloff;
+		// the cone of a spot light
+		vec4 cone = cab_probe_lamp_cone[i];
+		if (cone.w > -1.0)
+			atten *= smoothstep(cone.w, cab_probe_lamp_shape[i].x, dot(-light_dir, normalize(cone.xyz)));
 		float NdotL = max(dot(normal, light_dir), 0.0);
-		if ((atten > 0.0) && (NdotL > 0.0) && (cab_probe_lamp_color.a > 0.5))
-			atten *= 1.0 - probe_lamp_shadow(-tolight, normal);
-		light += cab_probe_lamp_color.rgb * (NdotL * atten);
+		if ((atten > 0.0) && (NdotL > 0.0) && (cab_probe_lamp_color[i].a > 0.5))
+			atten *= 1.0 - probe_lamp_shadow(i, position - cab_probe_lamp_map[i].xyz, normal);
+		light += cab_probe_lamp_color[i].rgb * (NdotL * atten);
 	}
 	if (cab_probe_sun.w > 0.0)
 	{

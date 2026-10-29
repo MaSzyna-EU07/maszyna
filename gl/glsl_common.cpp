@@ -88,6 +88,7 @@ void gl::glsl_common_setup()
     "#define LOCAL_SHADOW_LAMPS_TEX " + std::to_string(LOCAL_SHADOW_LAMPS_TEX) + "\n" +
     "#define HEADLIGHT_SHADOW_TEX " + std::to_string(HEADLIGHT_SHADOW_TEX) + "\n" +
     "#define MAX_HEADLIGHT_SHADOWS " + std::to_string(MAX_HEADLIGHT_SHADOWS) + "U\n" +
+    "#define MAX_CAB_PROBE_LAMPS " + std::to_string(MAX_CAB_PROBE_LAMPS) + "U\n" +
     "#define FOG_VOLUME_TEX " + std::to_string(FOG_VOLUME_TEX) + "\n" +
     "#define CLOUD_SHADOW_TEX " + std::to_string(CLOUD_SHADOW_TEX) + "\n" +
     "#define CLOUD_TEX " + std::to_string(CLOUD_TEX) + "\n" +

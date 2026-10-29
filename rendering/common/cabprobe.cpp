@@ -73,7 +73,8 @@ void cab_probe::release()
 	m_masked = false;
 }
 
-bool cab_probe::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Center, glm::vec3 const &Extent, gfx::local_lights::light const *Lamp, unsigned int const Framestamp)
+bool cab_probe::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab, glm::vec3 const &Center, glm::vec3 const &Extent, std::vector<gfx::local_lights::cab_light> const &Lights,
+                              unsigned int const Framestamp)
 {
 	auto const level{std::clamp(Global.gfx_cabprobe, 0, 3)};
 	if (level != m_level)
@@ -92,7 +93,12 @@ bool cab_probe::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab
 		m_masked = false;
 		return false;
 	}
-	auto const lamp{Lamp != nullptr ? Lamp->color : glm::vec3{0.f}};
+	// the lights the probe is drawn with, together: one of them switched or dimmed changes it
+	glm::vec3 lamp{0.f};
+	for (std::size_t idx = 0; idx < std::min(Lights.size(), gl::MAX_CAB_PROBE_LAMPS); ++idx)
+	{
+		lamp += Lights[idx].source.color;
+	}
 	auto const lampchange{glm::length(lamp - m_lamp)};
 	auto const lampchanged{(lampchange > 0.f) && ((max_component(m_lamp) <= 0.f) || (max_component(lamp) <= 0.f) || (lampchange > LAMP_CHANGED * glm::length(m_lamp)))};
 	if ((Vehicle != m_vehicle) || (Cab != m_cab) || (Center != m_center) || (Extent != m_extent))
@@ -120,19 +126,28 @@ bool cab_probe::update_wanted(TDynamicObject const *Vehicle, TModel3d const *Cab
 	return true;
 }
 
-void cab_probe::setup_drawing(gl::scene_ubs &Scene, gfx::local_lights::light const *Lamp, glm::vec3 const &Lamplocal, bool const Shadows, glm::vec4 const &Shadowweights) const
+void cab_probe::setup_drawing(gl::scene_ubs &Scene, std::vector<gfx::local_lights::cab_light> const &Lights, gfx::local_shadows const &Shadows, TDynamicObject const *Vehicle) const
 {
-	if (Lamp == nullptr)
+	for (std::size_t idx = 0; idx < gl::MAX_CAB_PROBE_LAMPS; ++idx)
 	{
-		Scene.cab_probe_lamp = glm::vec4{0.f};
-		Scene.cab_probe_lamp_color = glm::vec4{0.f};
-		Scene.cab_probe_lamp_shadow = glm::vec4{0.f};
-		return;
+		if (idx >= Lights.size())
+		{
+			// the end of the lights
+			Scene.cab_probe_lamp[idx] = glm::vec4{0.f};
+			Scene.cab_probe_lamp_color[idx] = glm::vec4{0.f};
+			continue;
+		}
+		auto const &light{Lights[idx]};
+		// as the light buffer has it (Write_Local_Light()): the shading takes the light to end at 1 / sqrt(quadratic)
+		Scene.cab_probe_lamp[idx] = glm::vec4{light.local - m_center, 1.f / sq(std::max(light.source.range, 0.01f))};
+		Scene.cab_probe_lamp_cone[idx] = glm::vec4{light.local_direction, light.source.cos_outer};
+		Scene.cab_probe_lamp_shape[idx] = glm::vec4{light.source.cos_inner, (light.source.soft_falloff ? -light.source.radius : light.source.radius), 0.f, 0.f};
+		// with the shadow map of the light, or of the closest light with one
+		auto const slot{Shadows.cab_slot_of(Vehicle, light)};
+		Scene.cab_probe_lamp_color[idx] = glm::vec4{light.source.color, (slot >= 0 ? 1.f : 0.f)};
+		Scene.cab_probe_lamp_shadow[idx] = (slot >= 0 ? Shadows.weights(static_cast<std::size_t>(slot)) : glm::vec4{0.f});
+		Scene.cab_probe_lamp_map[idx] = glm::vec4{(slot >= 0 ? Shadows.cab(static_cast<std::size_t>(slot)).lamp : light.local) - m_center, 0.f};
 	}
-	// as the light buffer has it (Write_Local_Light()): the shading takes the light to end at 1 / sqrt(quadratic)
-	Scene.cab_probe_lamp = glm::vec4{Lamplocal - m_center, 1.f / sq(std::max(Lamp->range, 0.01f))};
-	Scene.cab_probe_lamp_color = glm::vec4{Lamp->color, Shadows ? 1.f : 0.f};
-	Scene.cab_probe_lamp_shadow = Shadowweights;
 }
 
 void cab_probe::setup_sun(gl::scene_ubs &Scene, TDynamicObject const *Vehicle, glm::vec3 const &Tosun, glm::vec3 const &Sunlight, glm::dvec3 const &Camera) const

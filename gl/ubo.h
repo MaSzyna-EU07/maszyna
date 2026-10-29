@@ -67,6 +67,8 @@ namespace gl
     // shadow maps of the headlights of vehicles (2d array, depth compared; opengl46_local_shadows), and how many of them there may be
     const size_t HEADLIGHT_SHADOW_TEX = MAX_TEXTURES + HELPER_TEXTURES + 3;
     const size_t MAX_HEADLIGHT_SHADOWS = 4;
+    // lights of the occupied cab the probe of the cab is drawn with (gfx::cab_probe, gl::scene_ubs::cab_probe_lamp), at most
+    const size_t MAX_CAB_PROBE_LAMPS = 16;
     // weather (opengl46_weather): the fog of the main view (3d, apply_fog.glsl) and the shadows the clouds cast (2d), read by the
     // shading. bound directly, like the ones above
     const size_t FOG_VOLUME_TEX = MAX_TEXTURES + HELPER_TEXTURES + 4;
@@ -161,11 +163,17 @@ namespace gl
         // x the share of the light of the lamps the cab reflects which lights it again (gfx.cabprobe.bounce), y 1 when the cab reflects
         // itself (gfx.cabprobe.reflections), z the last level of the mipmaps of the probe, w unused
         glm::vec4 cab_probe_params;
-        // the drawing of the probe (cabprobe.glsl), set for it only: xyz the cab lamp in the space of the probe, w 1 / its range
-        // squared (0: no lamp); rgb its light, a 1 with its shadow map (LOCAL_SHADOW_TEX); the headlight_weights of that map
-        glm::vec4 cab_probe_lamp;
-        glm::vec4 cab_probe_lamp_color;
-        glm::vec4 cab_probe_lamp_shadow;
+        // the drawing of the probe (cabprobe.glsl), set for it only: the lights of the cab (gfx::local_lights::cab_lights()), the
+        // brightest first, each: xyz the light in the space of the probe, w 1 / its range squared (0: no more lights); rgb its light,
+        // a 1 with a shadow map (LOCAL_SHADOW_TEX); the headlight_weights of that map; xyz the axis of its cone in the space of the
+        // probe, w the cosine of its outer half angle (-1: all around); x the cosine of the inner one, y its radius (negative: the
+        // soft falloff), zw unused; xyz the light the map was drawn for (the light itself, or the closest one with a map), w unused
+        glm::vec4 cab_probe_lamp[MAX_CAB_PROBE_LAMPS];
+        glm::vec4 cab_probe_lamp_color[MAX_CAB_PROBE_LAMPS];
+        glm::vec4 cab_probe_lamp_shadow[MAX_CAB_PROBE_LAMPS];
+        glm::vec4 cab_probe_lamp_cone[MAX_CAB_PROBE_LAMPS];
+        glm::vec4 cab_probe_lamp_shape[MAX_CAB_PROBE_LAMPS];
+        glm::vec4 cab_probe_lamp_map[MAX_CAB_PROBE_LAMPS];
         // the occlusion of the sky and of the sun by the scenery around the camera (gfx.skyvisibility, gfx::sky_occlusion), zero when
         // there are no maps: x, y the world x, z of the camera of the pass wrapped to the size of the maps (the place of the camera on
         // them), metres; z the world height of the camera; w 1 with the maps, 2 when the volumetric fog reads them too
@@ -186,7 +194,7 @@ namespace gl
         glm::vec4 cab_probe_sun_world;
     };
 
-    static_assert(sizeof(scene_ubs) == 976 + 80 * MAX_HEADLIGHT_SHADOWS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 928 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
