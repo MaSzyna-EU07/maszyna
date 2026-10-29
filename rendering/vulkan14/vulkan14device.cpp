@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "rendering/vulkan14/vulkan14instance.h"
+#include "rendering/vulkan14/vulkan14memory.h"
 #include "utilities/Globals.h"
 
 #include <cinttypes>
@@ -548,6 +549,14 @@ std::string device::fault_report() const
 		if (precision > 1)
 		{
 			report += " (" + hex(lower) + " to " + hex(lower + precision - 1) + ")";
+		}
+		// what the memory there is, for the reads and writes (not the addresses of the code of the shaders)
+		if ((address.addressType == VK_DEVICE_FAULT_ADDRESS_TYPE_READ_INVALID_EXT) || (address.addressType == VK_DEVICE_FAULT_ADDRESS_TYPE_WRITE_INVALID_EXT))
+		{
+			if (auto const holder{address_registry::describe(lower, lower + precision - 1)}; false == holder.empty())
+			{
+				report += ": " + holder;
+			}
 		}
 	}
 	for (auto const &entry : vendor)

@@ -102,6 +102,11 @@ class device
 	// what the driver tells of the fault which lost the device (VK_EXT_device_fault, where the device has it): its description, the
 	// addresses the gpu went wrong at and what the vendor adds. empty without the extension
 	std::string fault_report() const;
+	// VK_EXT_device_fault is on
+	bool fault_enabled() const
+	{
+		return m_device_fault;
+	}
 
   private:
 	static queue_families find_queue_families(VkInstance Instance, VkPhysicalDevice Physical, VkSurfaceKHR Surface, std::uint32_t &TimestampBits);

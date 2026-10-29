@@ -13,8 +13,178 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14instance.h"
 #include "rendering/vulkan14/vulkan14device.h"
 
+#include <cinttypes>
+#include <cstdio>
+
 namespace vk14
 {
+
+// address registry
+
+namespace address_registry
+{
+
+namespace
+{
+
+struct entry
+{
+	VkDeviceAddress address{0}; // of a buffer; 0 for an image, placed by its memory and offset
+	VkDeviceMemory memory{VK_NULL_HANDLE};
+	VkDeviceSize offset{0};
+	VkDeviceSize size{0};
+	std::string name;
+	bool image{false};
+	std::chrono::steady_clock::time_point freed{};
+};
+
+std::atomic<bool> g_enabled{false};
+std::mutex g_mutex;
+// by the handle of the buffer or the image
+std::unordered_map<std::uint64_t, entry> g_live;
+// the last ones let go, the oldest first
+std::deque<entry> g_freed;
+std::size_t constexpr freed_kept{16384};
+
+void add(std::uint64_t const Handle, entry &&Entry)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	g_live[Handle] = std::move(Entry);
+}
+
+void remove(std::uint64_t const Handle)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	auto const lookup{g_live.find(Handle)};
+	if (lookup == g_live.end())
+	{
+		return;
+	}
+	lookup->second.freed = std::chrono::steady_clock::now();
+	g_freed.push_back(std::move(lookup->second));
+	g_live.erase(lookup);
+	if (g_freed.size() > freed_kept)
+	{
+		g_freed.pop_front();
+	}
+}
+
+std::string hex(std::uint64_t const Value)
+{
+	char text[24];
+	std::snprintf(text, sizeof(text), "0x%" PRIx64, Value);
+	return text;
+}
+
+std::string bytes(VkDeviceSize const Size)
+{
+	return (Size >= 1024 * 1024 ? std::to_string(Size / (1024 * 1024)) + " MiB" : Size >= 1024 ? std::to_string(Size / 1024) + " KiB" : std::to_string(Size) + " B");
+}
+
+} // namespace
+
+void enable(bool const Enabled)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	g_enabled = Enabled;
+	g_live.clear();
+	g_freed.clear();
+}
+
+bool enabled()
+{
+	return g_enabled;
+}
+
+std::string describe(VkDeviceAddress const Lower, VkDeviceAddress const Upper)
+{
+	if (false == g_enabled)
+	{
+		return {};
+	}
+	std::lock_guard<std::mutex> lock(g_mutex);
+	// the addresses of the blocks of memory, from the buffers in them: an image is at the address of its block and its offset
+	std::unordered_map<VkDeviceMemory, VkDeviceAddress> blocks;
+	for (auto const &[handle, item] : g_live)
+	{
+		if ((item.address != 0) && (item.memory != VK_NULL_HANDLE) && (item.address >= item.offset))
+		{
+			blocks.emplace(item.memory, item.address - item.offset);
+		}
+	}
+	auto const placed = [&](entry const &Item) -> VkDeviceAddress {
+		if (Item.address != 0)
+		{
+			return Item.address;
+		}
+		auto const block{blocks.find(Item.memory)};
+		return (block != blocks.end() ? block->second + Item.offset : 0);
+	};
+	auto const label = [&](entry const &Item, VkDeviceAddress const Address) {
+		return std::string(Item.image ? "image" : "buffer") + " \"" + Item.name + "\" (" + hex(Address) + ", " + bytes(Item.size) + ")";
+	};
+	auto const now{std::chrono::steady_clock::now()};
+	std::string result;
+	auto const note = [&](std::string const &Text) { result += (result.empty() ? "" : ", ") + Text; };
+	// what holds the addresses
+	entry const *below{nullptr};
+	entry const *above{nullptr};
+	VkDeviceAddress belowend{0}, abovestart{0};
+	std::size_t holders{0};
+	for (auto const &[handle, item] : g_live)
+	{
+		auto const address{placed(item)};
+		if (address == 0)
+		{
+			continue;
+		}
+		auto const end{address + item.size};
+		if ((address <= Upper) && (end > Lower))
+		{
+			if (++holders <= 4)
+			{
+				note("in the " + label(item, address) + " at its byte " + std::to_string(Lower > address ? Lower - address : 0));
+			}
+			continue;
+		}
+		if ((end <= Lower) && ((below == nullptr) || (end > belowend)))
+		{
+			below = &item;
+			belowend = end;
+		}
+		if ((address > Upper) && ((above == nullptr) || (address < abovestart)))
+		{
+			above = &item;
+			abovestart = address;
+		}
+	}
+	// what was let go there not long ago, the last ones first
+	std::size_t freed{0};
+	for (auto it = g_freed.rbegin(); (it != g_freed.rend()) && (freed < 4); ++it)
+	{
+		auto const address{placed(*it)};
+		if ((address != 0) && (address <= Upper) && (address + it->size > Lower))
+		{
+			++freed;
+			auto const ago{std::chrono::duration<double, std::milli>(now - it->freed).count()};
+			note("in the " + label(*it, address) + " let go " + std::to_string(static_cast<long long>(ago)) + " ms ago");
+		}
+	}
+	if (holders == 0)
+	{
+		if (below != nullptr)
+		{
+			note(bytes(Lower - belowend) + " past the end of the " + label(*below, belowend - below->size));
+		}
+		if (above != nullptr)
+		{
+			note(bytes(abovestart - Upper) + " before the " + label(*above, abovestart));
+		}
+	}
+	return (result.empty() ? std::string("in nothing known") : result);
+}
+
+} // namespace address_registry
 
 // allocator
 
@@ -40,6 +210,8 @@ bool allocator::create(instance const &Instance, device const &Device, std::stri
 		// the acceleration structures are built from the device addresses of the buffers
 		info.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 	}
+	// the addresses of the buffers and the images for the report of a lost device, where the driver tells where the gpu went wrong
+	address_registry::enable(Device.fault_enabled() && Device.raytracing_enabled());
 	// the functions as volk loaded them
 	VmaVulkanFunctions functions{};
 	if (!VK14_VERIFY(vmaImportVulkanFunctionsFromVolk(&info, &functions)))
@@ -168,11 +340,25 @@ bool buffer::create(allocator const &Allocator, VkDeviceSize Size, VkBufferUsage
 	}
 
 	VmaAllocationInfo allocated{};
+	auto const registered{address_registry::enabled()};
+	if (registered)
+	{
+		// every buffer has its address, so the report of a lost device can tell which one the gpu went wrong in
+		info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	}
 	if (!VK14_VERIFY(vmaCreateBuffer(Allocator.handle(), &info, &allocation, &m_buffer, &m_allocation, &allocated)))
 	{
 		m_buffer = VK_NULL_HANDLE;
 		m_allocation = VK_NULL_HANDLE;
 		return false;
+	}
+	if (registered)
+	{
+		VkBufferDeviceAddressInfo addressinfo{};
+		addressinfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		addressinfo.buffer = m_buffer;
+		m_address = vkGetBufferDeviceAddress(Allocator.device_handle(), &addressinfo);
+		address_registry::add(handle_value(m_buffer), {m_address, allocated.deviceMemory, allocated.offset, info.size, Name.empty() ? std::string("unnamed") : Name, false, {}});
 	}
 	m_allocator = Allocator.handle();
 	m_size = Size;
@@ -185,6 +371,10 @@ void buffer::destroy()
 {
 	if (m_buffer != VK_NULL_HANDLE)
 	{
+		if (address_registry::enabled())
+		{
+			address_registry::remove(handle_value(m_buffer));
+		}
 		vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
 	}
 	m_buffer = VK_NULL_HANDLE;
@@ -282,6 +472,10 @@ bool image::create(allocator const &Allocator, image_desc const &Desc, std::stri
 	m_allocator = Allocator.handle();
 	m_device = Allocator.device_handle();
 	m_bytes = allocated.size;
+	if (address_registry::enabled())
+	{
+		address_registry::add(handle_value(m_image), {0, allocated.deviceMemory, allocated.offset, allocated.size, Name.empty() ? std::string("unnamed") : Name, true, {}});
+	}
 
 	VkImageViewCreateInfo viewinfo{};
 	viewinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -310,6 +504,10 @@ void image::destroy()
 	}
 	if (m_image != VK_NULL_HANDLE)
 	{
+		if (address_registry::enabled())
+		{
+			address_registry::remove(handle_value(m_image));
+		}
 		vmaDestroyImage(m_allocator, m_image, m_allocation);
 	}
 	m_view = VK_NULL_HANDLE;

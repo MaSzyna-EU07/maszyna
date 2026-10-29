@@ -62,6 +62,18 @@ class allocator
 	std::vector<bool> m_deviceheaps;
 };
 
+// what the memory of the gpu holds by its device addresses, for the report of a lost device (device::fault_report()): the buffers, all
+// made with device addresses while it's on, and the images, placed by the addresses of the buffers in the same blocks of memory (an
+// image in a block of its own isn't placed). those let go not long ago are kept too. on with the fault info of the driver and the
+// device addresses of the ray tracing
+namespace address_registry
+{
+void enable(bool Enabled);
+bool enabled();
+// what holds the addresses Lower to Upper the gpu went wrong at, or what is next to them
+std::string describe(VkDeviceAddress Lower, VkDeviceAddress Upper);
+} // namespace address_registry
+
 // where the memory of a buffer is
 enum class memory_kind
 {
