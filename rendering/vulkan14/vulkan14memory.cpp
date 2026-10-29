@@ -206,6 +206,44 @@ std::string describe(VkDeviceAddress const Lower, VkDeviceAddress const Upper)
 			note(std::to_string(live) + " images in memory of their own aren't placed; let go of them in the last 5 s: " + (recent.empty() ? std::string("none") : recent));
 		}
 	}
+	// an index below zero of a buffer read through a descriptor wraps around the 32 bits of the offset, to almost 4 GiB past its
+	// start: what is there 4 GiB lower is the buffer read
+	auto constexpr wrap{VkDeviceAddress{1} << 32};
+	if ((holders == 0) && (Lower >= wrap))
+	{
+		auto const lower{Lower - wrap};
+		auto const upper{Upper - wrap};
+		entry const *holder{nullptr};
+		entry const *next{nullptr};
+		VkDeviceAddress holderstart{0}, nextstart{0};
+		for (auto const &[handle, item] : g_live)
+		{
+			auto const address{placed(item)};
+			if (address == 0)
+			{
+				continue;
+			}
+			if ((address <= upper) && (address + item.size > lower))
+			{
+				holder = &item;
+				holderstart = address;
+				break;
+			}
+			if ((address > upper) && ((next == nullptr) || (address < nextstart)))
+			{
+				next = &item;
+				nextstart = address;
+			}
+		}
+		if (holder != nullptr)
+		{
+			note("4 GiB lower (an offset wrapped around 32 bits) in the " + label(*holder, holderstart) + " at its byte " + std::to_string(lower > holderstart ? lower - holderstart : 0));
+		}
+		else if (next != nullptr)
+		{
+			note("4 GiB lower (an index below zero wrapped around 32 bits?) " + bytes(nextstart - upper) + " before the " + label(*next, nextstart));
+		}
+	}
 	return (result.empty() ? std::string("in nothing known") : result);
 }
 
