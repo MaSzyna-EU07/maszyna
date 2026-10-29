@@ -51,9 +51,10 @@ struct switch_report
 
 // Main, Branch: the tracks of the switch from its start, the stations from 0 there; Line: the track it's laid into, From and To the
 // stations of the start and the end of the switch along it, From after To where it goes back along the line. Radius and Ratio:
-// of the diverging track of the basic switch it's bent from
+// of the diverging track of the basic switch it's bent from; Straight: how far both tracks keep straight at the end of the switch, over
+// a straight frog, the switch bent up to it as the DB bends such switches
 switch_report check(std::vector<track_point> const &Main, std::vector<track_point> const &Branch, std::vector<track_point> const &Line, double const From, double const To, double const Radius,
-                    double const Ratio);
+                    double const Ratio, double const Straight = 0.0);
 
 // a slip switch bent into a curve, as ST-T1-A6 sees it: in a side track only (11.4 pkt 4b), the curvature of each track through it of
 // one sign all along it (9.7 pkt 12), its slip curves no sharper than a side track may be (table 9.2), the cant as over a switch bent,

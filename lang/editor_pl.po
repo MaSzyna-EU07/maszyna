@@ -4500,12 +4500,6 @@ msgstr ", ostrzej niż rozjazd (R %.0f m)"
 msgid ", the switch moved %.2f m"
 msgstr ", rozjazd przesunięty o %.2f m"
 
-msgid "take back the last piece"
-msgstr "cofa ostatni odcinek"
-
-msgid "The last piece was taken back"
-msgstr "Ostatni odcinek cofnięty"
-
 msgid "R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"
 msgstr "R %.0f m nie sięga kursora, łuk przechodzi przez niego z R %.0f m"
 
@@ -6122,6 +6116,12 @@ msgstr "Niweleta dziedziczona z rozjazdu %s (%s): %.2f m, %+.2f ‰"
 msgid "No tracks to put onto the terrain"
 msgstr "Brak torów do położenia na terenie"
 
+msgid "All the tracks are fitted to the terrain already"
+msgstr "Wszystkie tory są już dopasowane do terenu"
+
+msgid "All the tracks are fitted to the terrain; a track changed since goes onto it again"
+msgstr "Wszystkie tory są dopasowane do terenu; tor zmieniony od tego czasu pójdzie na niego znowu"
+
 msgid "\n%zu lines part from the terrain model by over 0.5 m: the model or the track is off there, the terrain follows the tracks (the log names them)"
 msgstr "\n%zu linii odchodzi od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log je wymienia)"
 
@@ -6131,8 +6131,8 @@ msgstr "Inne profile ustawisz we właściwościach toru"
 msgid "Rail profile %s set on %d tracks"
 msgstr "Profil szyny %s ustawiony na torach: %d"
 
-msgid "Scenery moved %+.2f m; grade lines fitted to the terrain: %zu, refused by the checks: %zu, tracks left: %zu"
-msgstr "Sceneria przesunięta o %+.2f m; niwelet dopasowanych do terenu: %zu, odrzuconych przez kontrole: %zu, zostało torów: %zu"
+msgid "Terrain model offset %+.2f m to the scenery; grade lines fitted to the terrain: %zu, refused by the checks: %zu, tracks left: %zu"
+msgstr "Model NMT przesunięty o %+.2f m do scenerii; niwelet dopasowanych do terenu: %zu, odrzuconych przez kontrole: %zu, zostało torów: %zu"
 
 msgid "Set...##railprofile"
 msgstr "Ustaw...##railprofile"
@@ -6296,8 +6296,8 @@ msgstr ", bez nazwy, pominięte %d"
 msgid "The scenery is there"
 msgstr "Ustaw położenie"
 
-msgid "The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported"
-msgstr "NMT wczytuje się wzdłuż torów, a tory idą na niego, niezależnie od tego, na jakiej wysokości zbudowano scenerię: korona podsypki na wysokości NMT, niweleta każdej linii dopasowana do terenu w granicach norm linii, rozjazdy i tory obok na jednej niwelecie, torowisko i skarpy wzdłuż nich. Gdzie NMT się myli, tory zostają na swojej linii i jest to zgłaszane"
+msgid "The terrain model is loaded along the tracks and the tracks go onto it, wherever the scenery was built: the top of the ballast at the height of the model, the grade line of every line fitted to it within the limits of the line, switches and the tracks beside them on one grade line, the formation and the slopes made along them. Where the model is off the tracks keep their line and it's reported. A turntable stays level in its pit at the height of the tracks running up to it, which reach it level. The tracks fitted already, by it or with the profile, and not changed since stay as they are, and the new lines meet them"
+msgstr "NMT wczytuje się wzdłuż torów, a tory idą na niego, niezależnie od tego, na jakiej wysokości zbudowano scenerię: korona podsypki na wysokości NMT, niweleta każdej linii dopasowana do terenu w granicach norm linii, rozjazdy i tory obok na jednej niwelecie, torowisko i skarpy wzdłuż nich. Gdzie NMT się myli, tory zostają na swojej linii i jest to zgłaszane. Obrotnica zostaje pozioma w swoim kanale na wysokości dobiegających torów, które dochodzą do niej poziomo. Tory już dopasowane, tym przyciskiem albo w profilu, i od tego czasu niezmienione zostają, jak są, a nowe niwelety się z nimi łączą"
 
 msgid "Load the terrain under the tracks, they stay"
 msgstr "Wczytaj teren pod tory (tory zostają)"
@@ -6746,8 +6746,8 @@ msgstr "Wszystkie tory schodzą albo wchodzą na model terenu, który wczytuje s
 msgid "Or:"
 msgstr "Albo:"
 
-msgid "Only the tracks laid or changed since the last time; the ones fitted stay as they are"
-msgstr "Tylko tory ułożone albo zmienione od ostatniego razu; dopasowane zostają, jak są"
+msgid "The tracks laid or changed since the last time go onto the terrain model (%zu of %zu); the ones fitted stay as they are"
+msgstr "Na NMT idą tory ułożone albo zmienione od ostatniego razu (%zu z %zu); dopasowane zostają, jak są"
 
 msgid "The tracks stay at their heights and the terrain comes up or down to them"
 msgstr "Tory zostają na swojej wysokości, a teren podnosi się albo obniża do nich"
@@ -6755,11 +6755,11 @@ msgstr "Tory zostają na swojej wysokości, a teren podnosi się albo obniża do
 msgid "The terrain to some of the tracks only: select them (F3), Terrain in the inspector"
 msgstr "Teren tylko pod wybrane tory: zaznacz je (F3), sekcja Teren w inspektorze"
 
-msgid "Make the terrain around the camera and ahead of the laying"
-msgstr "Twórz teren wokół kamery i przed kładzionym torem"
+msgid "Terrain of the model right away while laying"
+msgstr "Teren z NMT od razu podczas kładzenia"
 
-msgid "Where the terrain of the scenery ends, the terrain model is made on around the camera, and around the cursor of a track laid past it; the chunks there are stay as they are"
-msgstr "Tam, gdzie kończy się teren scenerii, NMT jest dokładany wokół kamery i wokół kursora toru kładzionego poza nim; istniejące kafle zostają bez zmian"
+msgid "Where the terrain of the scenery ends, the terrain model is made under the tracks as they're laid, around the cursor from the first point placed; the chunks there are stay as they are. Off, it's made only when asked for"
+msgstr "Tam, gdzie kończy się teren scenerii, teren z NMT powstaje pod układanymi torami, wokół kursora od pierwszego postawionego punktu; istniejące kafle zostają bez zmian. Wyłączone: teren powstaje tylko na żądanie"
 
 msgid "Height offset of the model"
 msgstr "Przesunięcie wysokości modelu"
@@ -6776,11 +6776,11 @@ msgstr "Niwelety dopasowane do terenu: %zu z %zu"
 msgid "A track is fitted when its grade line was fitted to the terrain model or applied with the profile, and it wasn't changed since"
 msgstr "Tor jest dopasowany, gdy jego niweletę dopasowano do NMT albo zastosowano w profilu i od tego czasu się nie zmienił"
 
-msgid "Only the ones not fitted (%zu of %zu)"
-msgstr "Tylko niedopasowane (%zu z %zu)"
+msgid "All anew, the fitted ones too"
+msgstr "Wszystkie od nowa, z dopasowanymi"
 
-msgid "The same for the tracks whose grade line isn't fitted yet, or was changed since: the ones fitted stay as they are and the new lines meet them; the scenery isn't moved"
-msgstr "To samo dla torów, których niweleta nie jest jeszcze dopasowana albo zmieniła się od tego czasu: dopasowane zostają bez zmian, a nowe niwelety się z nimi łączą; sceneria nie jest przesuwana"
+msgid "All the tracks are fitted to the terrain model again, the ones fitted already too: their grade lines may change; the scenery isn't moved"
+msgstr "Wszystkie tory są dopasowywane do NMT od nowa, także te już dopasowane: ich niwelety mogą się zmienić; sceneria nie jest przesuwana"
 
 msgid "By hand: the model as it is, the tracks stay"
 msgstr "Ręcznie: NMT bez zmian, tory zostają"
@@ -9236,6 +9236,12 @@ msgstr[0] "\n%zu linia odchodzi od NMT o ponad 0.5 m: tam NMT albo tor się nie 
 msgstr[1] "\n%zu linie odchodzą od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log je wymienia)"
 msgstr[2] "\n%zu linii odchodzi od NMT o ponad 0.5 m: tam NMT albo tor się nie zgadza, teren idzie za torami (log je wymienia)"
 
+msgid "\n%zu turntable set level at the height of the tracks running up to it, which reach it level"
+msgid_plural "\n%zu turntables set level at the height of the tracks running up to them, which reach them level"
+msgstr[0] "\n%zu obrotnica ustawiona poziomo na wysokości dobiegających torów, które dochodzą do niej poziomo"
+msgstr[1] "\n%zu obrotnice ustawione poziomo na wysokości dobiegających torów, które dochodzą do nich poziomo"
+msgstr[2] "\n%zu obrotnic ustawionych poziomo na wysokości dobiegających torów, które dochodzą do nich poziomo"
+
 msgid "Stopped: the grade lines split off %zu path from %zu tracks, more than they should; Ctrl+Z takes the changes back"
 msgid_plural "Stopped: the grade lines split off %zu paths from %zu tracks, more than they should; Ctrl+Z takes the changes back"
 msgstr[0] "Zatrzymane: niwelety odcięły %zu tor z %zu, więcej niż powinny; Ctrl+Z cofa zmiany"
@@ -11512,8 +11518,6 @@ msgstr "Jak widok z góry rysuje tory"
 msgid "The colour of the rails, to stand out on the imagery and the map"
 msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
 
-msgid "(c) OpenStreetMap contributors, geoportal.gov.pl"
-msgstr "(c) współtwórcy OpenStreetMap, geoportal.gov.pl"
 
 msgid "The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain"
 msgstr "Pochylenia całego toru kładzionego za jednym razem dopasowane do modelu terenu, tak jak w „Tory na teren”"
@@ -11861,11 +11865,11 @@ msgstr "punkt po środku łuku, dwa ostatnie na prostej za nim"
 msgid "a bend of the straights, eased with a large curve"
 msgstr "załamanie prostych, wyokrąglone dużym łukiem"
 
-msgid "lay the points clicked, then go on"
-msgstr "kładzie kliknięte punkty i prowadzi dalej"
+msgid "lay the points clicked"
+msgstr "kładzie kliknięte punkty"
 
-msgid "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them and goes on from the end"
-msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym łukiem; Enter je kładzie i prowadzi tor dalej od końca"
+msgid "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them; a click on a free end goes on from it"
+msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym łukiem; Enter je kładzie; klik w wolny koniec prowadzi tor dalej od niego"
 
 msgid "Tab while laying"
 msgstr "Tab przy układaniu"
@@ -11876,8 +11880,8 @@ msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, dwa ostat
 msgid "Type the length of the next straight, Enter puts the point"
 msgstr "Wpisz długość następnej prostej, Enter stawia punkt"
 
-msgid "Laying track: lay the points clicked / take back the last point, then the last piece laid"
-msgstr "Układanie toru: połóż kliknięte punkty / cofnij ostatni punkt, potem ostatni położony odcinek"
+msgid "Laying track: lay the points clicked / take back the last point"
+msgstr "Układanie toru: połóż kliknięte punkty / cofnij ostatni punkt"
 
 msgid "Fitting the curve to the points..."
 msgstr "Dopasowuję łuk do punktów..."
@@ -12150,11 +12154,11 @@ msgstr "Klik na terenie albo na wolnym końcu: tu zaczyna się tor"
 msgid "Each next click: a bend of the line, the curve at it made by itself. The line shown isn't a track yet"
 msgstr "Każdy następny klik: załamanie linii, łuk na nim powstaje sam. Pokazana linia nie jest jeszcze torem"
 
-msgid "Lays the track clicked; the clicks after it go on from its end"
-msgstr "Układa wyklikany tor; kolejne kliki idą dalej od jego końca"
+msgid "Lays the track clicked; to go on from its end, click the end"
+msgstr "Układa wyklikany tor; żeby iść dalej od jego końca, kliknij ten koniec"
 
-msgid "Takes the last point back, then the last piece laid"
-msgstr "Cofa ostatni punkt, potem ostatni ułożony odcinek"
+msgid "Takes the last point back"
+msgstr "Cofa ostatni punkt"
 
 msgid "Ends laying; the points not laid yet go only with the second Esc"
 msgstr "Kończy układanie; nieułożone punkty znikają dopiero po drugim Esc"
@@ -12186,8 +12190,8 @@ msgstr "Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
 msgid "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"
 msgstr "Wczytaj wzdłuż torów albo wokół kamery: model pochodzi z geoportal.gov.pl"
 
-msgid "Tracks onto the terrain: all the tracks go onto the model; the terrain to some tracks only: select them, Terrain in the inspector"
-msgstr "Tory na teren: wszystkie tory idą na model; teren tylko pod wybrane tory: zaznacz je, sekcja Teren w inspektorze"
+msgid "Tracks onto the terrain: the tracks not fitted yet go onto the model, the ones fitted stay; the terrain to some tracks only: select them, Terrain in the inspector"
+msgstr "Tory na teren: tory jeszcze niedopasowane idą na model, dopasowane zostają; teren tylko pod wybrane tory: zaznacz je, sekcja Teren w inspektorze"
 
 msgid "Takes the changes back"
 msgstr "Cofa zmiany"
@@ -12316,77 +12320,77 @@ msgstr[0] "Napęd %zu rozjazdu przestawiony na ostrza iglic"
 msgstr[1] "Napędy %zu rozjazdów przestawione na ostrza iglic"
 msgstr[2] "Napędy %zu rozjazdów przestawione na ostrza iglic"
 
-msgid "Press and drag: a switch going on from this free end, sideways its side"
-msgstr "Wciśnij i przeciągnij: rozjazd od tego wolnego końca, w bok jego strona"
+msgid "Switch %s set to the diverging track, H throws it back"
+msgstr "Rozjazd %s ustawiony na bok, H przekłada go z powrotem"
 
-msgid "Press and drag: a switch with no track, along the direction of its main track, then sideways its side"
-msgstr "Wciśnij i przeciągnij: rozjazd bez toru, wzdłuż kierunek toru zasadniczego, potem w bok jego strona"
+msgid "Switch %s set to the main track, H throws it over"
+msgstr "Rozjazd %s ustawiony na wprost, H przekłada go na bok"
 
-msgid "Drag along the main track of the switch, then sideways to the side of the diverging one"
-msgstr "Przeciągnij wzdłuż toru zasadniczego rozjazdu, potem w bok na stronę toru zwrotnego"
+msgid "Throw (H)"
+msgstr "Przełóż (H)"
 
-msgid "Switch %s laid on from %s, its other ends free: lay on from them"
-msgstr "Rozjazd %s ułożony od %s, pozostałe końce wolne: kładź od nich dalej"
+msgid "Throw it over"
+msgstr "Przełóż"
 
-msgid "Switch %s laid with no track, its ends free: lay on from them"
-msgstr "Rozjazd %s ułożony bez toru, końce wolne: kładź od nich dalej"
+msgid "Set to the diverging track: throws it over to the main one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track"
+msgstr "Ustawiony na bok: przekłada go na wprost. Tylko w edytorze, żeby zobaczyć iglice i przebieg; symulacja zaczyna z rozjazdami na wprost"
 
-msgid "Press and drag: this double slip is replaced by the one chosen"
-msgstr "Wciśnij i przeciągnij: ten rozjazd krzyżowy zostanie zastąpiony wybranym"
+msgid "Set to the main track: throws it over to the diverging one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track"
+msgstr "Ustawiony na wprost: przekłada go na bok. Tylko w edytorze, żeby zobaczyć iglice i przebieg; symulacja zaczyna z rozjazdami na wprost"
 
-msgid "Press and drag: it goes here"
-msgstr "Wciśnij i przeciągnij: stanie tutaj"
+msgid "Throw the selected switch over to its other path, in the editor only"
+msgstr "Przekłada zaznaczony rozjazd na drugi tor, tylko w edytorze"
 
-msgid "Press+drag at a crossing"
-msgstr "Wciśnij i przeciągnij na skrzyżowaniu"
+msgid "A curve seen on the photo: click points along its middle, the curve ending at the last one; one of two or three radii comes out a compound curve"
+msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, łuk kończy się na ostatnim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
 
-msgid "of two straights"
-msgstr "dwóch prostych"
+msgid "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"
+msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, który kończy się na ostatnim; ponownie Tab: z powrotem załamania"
 
-msgid "Press+drag on the ground"
-msgstr "Wciśnij i przeciągnij na terenie"
+msgid "Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights"
+msgstr "Łuk: klikaj punkty po środku toru, łuk kończy się na ostatnim. Tab: z powrotem proste"
 
-msgid "a switch with no track, on from a free end near it"
-msgstr "rozjazd bez toru, od pobliskiego wolnego końca"
+msgid "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"
+msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany i kończy się na ostatnim, w kierunku, w jakim tam biegną. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem, a gdy punkty skręcają w stronę łuku wolnego końca, także rozjazdu, ten łuk idzie dalej"
 
-msgid "the direction of the main track, held from 4 m on"
-msgstr "kierunek toru zasadniczego, od 4 m zatrzaśnięty"
+msgid "Click points along the middle of the track on the photo; the curve ends at the last one"
+msgstr "Klikaj punkty po środku toru na zdjęciu; łuk kończy się na ostatnim"
 
-msgid "Back to the start"
-msgstr "Z powrotem do początku"
+msgid "a point along the middle of the curve, which ends at the last one"
+msgstr "punkt po środku łuku, który kończy się na ostatnim"
 
-msgid "the direction free again"
-msgstr "kierunek znów wolny"
+msgid "Press and drag: a switch on this track, along sets its direction, sideways its side. Click: select the track"
+msgstr "Wciśnij LPM i przeciągnij: rozjazd na tym torze, wzdłuż ustala kierunek, w bok stronę. Kliknięcie: zaznacza tor"
 
-msgid "Drag at a crossing"
-msgstr "Przeciągnij na skrzyżowaniu"
+msgid "Press+drag on a track"
+msgstr "Wciśnij i przeciągnij na torze"
 
-msgid "Drag at a crossing of two straights"
-msgstr "Przeciągnij na skrzyżowaniu dwóch prostych"
+msgid "a switch on it: along its direction, sideways its side"
+msgstr "rozjazd na nim: wzdłuż kierunek, w bok strona"
 
-msgid "Drag at a crossing of two straights, on the side of the tracks to join"
-msgstr "Przeciągnij na skrzyżowaniu dwóch prostych, po stronie torów do połączenia"
+msgid "Press+drag on another track"
+msgstr "Wciśnij i przeciągnij na innym torze"
 
-msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f: %s fits that crossing"
-msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f: do tego skrzyżowania pasuje %s"
+msgid "a switch on it"
+msgstr "rozjazd na nim"
 
-msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template is made for that"
-msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f i żaden szablon rozjazdu krzyżowego nie jest na taki skos"
+msgid "Puts switches into a straight or a curve: press on it and drag along the way the switch goes. Edits the geometry of the selected switch"
+msgstr "Wstawia rozjazdy w prostą albo łuk: wciśnij LPM na torze i przeciągnij w stronę, w którą idzie rozjazd. Edytuje geometrię zaznaczonego rozjazdu"
 
-msgid "Drag at a crossing of two straights at its skos, on the side of the tracks to join"
-msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem, po stronie torów do połączenia"
+msgid "The diverging track of the basic switch ends with a straight of %.1f m through the frog: the switches bent in table 11.9 have their curve run through it; bent, the frog has to be made to the curve"
+msgstr "Tor zwrotny rozjazdu podstawowego kończy się prostą %.1f m przez krzyżownicę: rozjazdy łukowane z tabeli 11.9 mają łuk przechodzący przez krzyżownicę; po wygięciu krzyżownica musi być wykonana pod łuk"
 
-msgid "Drag at a crossing of two straights at its skos"
-msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem"
+msgid "Bent up to the frog, as the DB bends the switches with a straight frog: both tracks keep straight over its last %.1f m, the curvature jumps there; table 11.9 lists no such bent switch"
+msgstr "Wygięty do krzyżownicy, jak DB łukuje rozjazdy z prostą krzyżownicą: oba tory zostają proste na ostatnich %.1f m, krzywizna skacze tam; tabela 11.9 nie przewiduje takiego rozjazdu łukowego"
 
-msgid "Rkp or Rkpd at a crossing of two straights at its skos"
-msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem"
+msgid "Track %s going on from the switch fitted to its end, which leaves the curve straight over the frog: %.1f cm off it, turned by %.2f deg"
+msgstr "Tor %s za rozjazdem dociągnięty do jego końca, który nad krzyżownicą schodzi prosto z łuku: %.1f cm od niego, obrót o %.2f°"
 
-msgid "of two straights at the skos of the slip: it goes there"
-msgstr "dwóch prostych pod skosem rozjazdu: tam stanie"
+msgid "The slip laid with its crossing track at 1:%.1f, the ends of that track free: lay on from them"
+msgstr "Rozjazd krzyżowy ułożony z torem przecinającym pod 1:%.1f, końce tego toru wolne: kładź od nich dalej"
 
-msgid "of two straights at the skos of the slip"
-msgstr "dwóch prostych pod skosem rozjazdu"
+msgid "with nothing crossing it: the slip with its crossing track, which goes through the quarter of the cursor"
+msgstr "gdy nic jej nie przecina: rozjazd krzyżowy z torem przecinającym, który idzie przez ćwiartkę kursora"
 
 msgid "The curvature of a track through the slip turns from one side to the other within it, which isn't allowed (9.7 pkt 12)"
 msgstr "Krzywizna toru przez rozjazd krzyżowy zmienia stronę w jego obrębie, co jest niedopuszczalne (9.7 pkt 12)"
@@ -12424,14 +12428,95 @@ msgstr "Wciśnij i przeciągnij na łuku"
 msgid "the slip bent into it, in a side track only (11.4 pkt 4b)"
 msgstr "rozjazd krzyżowy wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
 
+msgid "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd): przeciągnięty na jednej prostej z torem przecinającym, na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"
+
 msgid "Drag on a curve"
 msgstr "Przeciągnij na łuku"
 
 msgid "bent into it, in a side track only (11.4 pkt 4b)"
 msgstr "wygięty w łuk, tylko w torze bocznym (11.4 pkt 4b)"
 
-msgid "Rkp or Rkpd at a crossing of two straights at its skos, or bent into a curve of a side track"
-msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"
+msgid "Press+drag on a straight"
+msgstr "Wciśnij i przeciągnij na prostej"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template for that: drag the slip out on one straight, its crossing track comes along at its skos"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f i żaden szablon rozjazdu krzyżowego tu nie pasuje: przeciągnij rozjazd na jednej prostej, tor przecinający przyjdzie z nim pod jego skosem"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f: %s fits that crossing"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f: do tego skrzyżowania pasuje %s"
+
+msgid "Drag on a straight"
+msgstr "Przeciągnij na prostej"
+
+msgid "the slip with its crossing track, through the quarter of the cursor"
+msgstr "rozjazd krzyżowy z torem przecinającym, przez ćwiartkę kursora"
+
+msgid "of two straights at the skos of the slip: it goes there"
+msgstr "dwóch prostych pod skosem rozjazdu: tam stanie"
+
+msgid "Drag it out on one straight: its crossing track comes along at its skos, through the quarter of the cursor"
+msgstr "Przeciągnij go na jednej prostej: tor przecinający przyjdzie z nim pod jego skosem, przez ćwiartkę kursora"
+
+msgid "Or drag at a crossing of two straights at its skos, on the side of the tracks to join"
+msgstr "Albo przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem, po stronie torów do połączenia"
+
+msgid "Or drag at a crossing of two straights at its skos"
+msgstr "Albo przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Press+drag at a crossing"
+msgstr "Wciśnij i przeciągnij na skrzyżowaniu"
+
+msgid "of two straights at the skos of the slip"
+msgstr "dwóch prostych pod skosem rozjazdu"
+
+msgid "Press and drag: a switch going on from this free end, sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd od tego wolnego końca, w bok jego strona"
+
+msgid "Press and drag: a switch with no track, along the direction of its main track, then sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd bez toru, wzdłuż kierunek toru zasadniczego, potem w bok jego strona"
+
+msgid "Drag along the main track of the switch, then sideways to the side of the diverging one"
+msgstr "Przeciągnij wzdłuż toru zasadniczego rozjazdu, potem w bok na stronę toru zwrotnego"
+
+msgid "Switch %s laid on from %s, its other ends free: lay on from them"
+msgstr "Rozjazd %s ułożony od %s, pozostałe końce wolne: kładź od nich dalej"
+
+msgid "Switch %s laid with no track, its ends free: lay on from them"
+msgstr "Rozjazd %s ułożony bez toru, końce wolne: kładź od nich dalej"
+
+msgid "Press and drag: this double slip is replaced by the one chosen"
+msgstr "Wciśnij i przeciągnij: ten rozjazd krzyżowy zostanie zastąpiony wybranym"
+
+msgid "Press and drag: it goes here"
+msgstr "Wciśnij i przeciągnij: stanie tutaj"
+
+msgid "Press and drag: the slip with its crossing track, through the quarter of the cursor"
+msgstr "Wciśnij i przeciągnij: rozjazd krzyżowy z torem przecinającym, przez ćwiartkę kursora"
+
+msgid "of two straights"
+msgstr "dwóch prostych"
+
+msgid "Press+drag on the ground"
+msgstr "Wciśnij i przeciągnij na terenie"
+
+msgid "a switch with no track, on from a free end near it"
+msgstr "rozjazd bez toru, od pobliskiego wolnego końca"
+
+msgid "the direction of the main track, held from 4 m on"
+msgstr "kierunek toru zasadniczego, od 4 m zatrzaśnięty"
+
+msgid "Back to the start"
+msgstr "Z powrotem do początku"
+
+msgid "the direction free again"
+msgstr "kierunek znów wolny"
+
+msgid "Drag at a crossing"
+msgstr "Przeciągnij na skrzyżowaniu"
+
+msgid "Drag at a crossing of two straights"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych"
 
 msgid "The slip is replaced by its two tracks crossing, Shift+Del removes all of it"
 msgstr "Rozjazd krzyżowy zastąpiony skrzyżowaniem jego dwóch torów, Shift+Del usuwa wszystko"
@@ -12445,8 +12530,149 @@ msgstr "Tor przecinający rozjazdu krzyżowego jest dalej połączony: rozjazd z
 msgid "Slip %s moved %.2f m along its track, its crossing track with it"
 msgstr "Rozjazd krzyżowy %s przesunięty o %.2f m wzdłuż toru, razem z torem przecinającym"
 
+msgid "Drag at a crossing of two straights, on the side of the tracks to join"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych, po stronie torów do połączenia"
+
+msgid "The straights cross at 1:%.2f, %s is made for 1:%.2f and no slip template is made for that"
+msgstr "Proste krzyżują się pod 1:%.2f, %s jest na 1:%.2f i żaden szablon rozjazdu krzyżowego nie jest na taki skos"
+
+msgid "Drag at a crossing of two straights at its skos, on the side of the tracks to join"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem, po stronie torów do połączenia"
+
+msgid "Drag at a crossing of two straights at its skos"
+msgstr "Przeciągnij na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Rkp or Rkpd at a crossing of two straights at its skos"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem"
+
+msgid "Rkp or Rkpd at a crossing of two straights at its skos, or bent into a curve of a side track"
+msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowaniu dwóch prostych pod jego skosem albo wygięty w łuk toru bocznego"
+
+msgid "Base layers, under the scenery"
+msgstr "Podkłady, pod scenerią"
+
+msgid "Show or hide the layer"
+msgstr "Pokaż lub ukryj warstwę"
+
+msgid "Layers: %s"
+msgstr "Warstwy: %s"
+
+msgid "Terms of the service:"
+msgstr "Warunki usługi:"
+
+msgid "Down"
+msgstr "W dół"
+
+msgid "Orthophoto (geoportal.gov.pl)"
+msgstr "Ortofotomapa (geoportal.gov.pl)"
+
+msgid "Add a WMS layer"
+msgstr "Dodaj warstwę WMS"
+
+msgid "The address of a WMS service drawing in PUWG 1992 (EPSG:2180). Its tiles are kept in memory only and asked for only around the camera; what the service allows is up to you, its terms are shown below"
+msgstr "Adres usługi WMS rysującej w PUWG 1992 (EPSG:2180). Jej kafle są trzymane tylko w pamięci i pobierane tylko wokół kamery; za korzystanie zgodne z warunkami usługi odpowiadasz sam, jej warunki są pokazane niżej"
+
+msgid "Read the layers"
+msgstr "Odczytaj warstwy"
+
+msgid "Reading the capabilities of the service..."
+msgstr "Odczytywanie opisu usługi..."
+
+msgid "The service can't be read: %s"
+msgstr "Nie da się odczytać usługi: %s"
+
+msgid "The service doesn't draw in PUWG 1992 (EPSG:2180), the editor can't lay it out"
+msgstr "Usługa nie rysuje w PUWG 1992 (EPSG:2180), edytor nie umie jej rozłożyć"
+
+msgid "Filter the layers"
+msgstr "Filtruj warstwy"
+
 msgid "Behind the switch the curvature changes at once by a sudden change of the cant deficiency of %.0f mm, over the %.0f mm allowed at %.0f km/h (table 9.15)"
 msgstr "Za rozjazdem krzywizna zmienia się skokowo: nagła zmiana niedomiaru przechyłki %.0f mm, ponad dopuszczalne %.0f mm przy %.0f km/h (tab. 9.15)"
 
 msgid "The curve behind the switch begins %.1f m after the end of its curve, closer than the %.1f m which take the sudden changes of the cant deficiency apart: together %.0f mm, over the %.0f mm allowed at %.0f km/h (tables 9.15, 9.16)"
 msgstr "Łuk za rozjazdem zaczyna się %.1f m za końcem jego łuku, bliżej niż %.1f m odcinka pośredniego, który rozdziela nagłe zmiany niedomiaru przechyłki: łącznie %.0f mm, ponad dopuszczalne %.0f mm przy %.0f km/h (tab. 9.15, 9.16)"
+
+msgid "Remove the selected (Del)"
+msgstr "Usuń zaznaczone (Del)"
+
+msgid "Takes the selected chunks out of the terrain of the scenery, and out of its files on save; Ctrl+Z brings them back"
+msgstr "Usuwa zaznaczone kafle z terenu scenerii, a przy zapisie także z jego plików; Ctrl+Z je przywraca"
+
+msgid "%zu chunk removed, Ctrl+Z brings it back"
+msgid_plural "%zu chunks removed, Ctrl+Z brings them back"
+msgstr[0] "Usunięto %zu kafel, Ctrl+Z go przywraca"
+msgstr[1] "Usunięto %zu kafle, Ctrl+Z je przywraca"
+msgstr[2] "Usunięto %zu kafli, Ctrl+Z je przywraca"
+
+msgid "Drag on past its end"
+msgstr "Przeciągnij dalej za jego koniec"
+
+msgid "bends the main track toward the cursor"
+msgstr "wygina tor zasadniczy w stronę kursora"
+
+msgid "the diverging track the other way or the same way"
+msgstr "tor zwrotny w drugą stronę albo w tę samą"
+
+msgid "At a free end"
+msgstr "Na wolnym końcu"
+
+msgid "the main track leads into it, with Shift the diverging one"
+msgstr "dochodzi do niego tor zasadniczy, z Shift zwrotny"
+
+msgid "Switch %s laid on from %s bent into R %.0f m, %s"
+msgstr "Rozjazd %s ułożony od %s, wygięty w R %.0f m %s"
+
+msgid "one-sided"
+msgstr "jednostronnie"
+
+msgid "two-sided"
+msgstr "dwustronnie"
+
+msgid "one-sided: main R %.0f m, diverging R %.0f m"
+msgstr "jednostronny: zasadniczy R %.0f m, zwrotny R %.0f m"
+
+msgid "two-sided: main R %.0f m, diverging R %.0f m"
+msgstr "dwustronny: zasadniczy R %.0f m, zwrotny R %.0f m"
+
+msgid "Click: select this switch, drag: slide it along the curve"
+msgstr "LPM: zaznacz ten rozjazd, przeciągnij: przesuń go wzdłuż łuku"
+
+msgid "Click: edit this switch, drag: slide it along the curve"
+msgstr "LPM: edytuj ten rozjazd, przeciągnij: przesuń go wzdłuż łuku"
+
+msgid "Slide along the curve"
+msgstr "Przesuń wzdłuż łuku"
+
+msgid "Moves the switch along the curve it's bent into by the distance typed, + towards the frog; the tracks of the curve on both sides get shorter or longer, one taken up whole goes and the switch joins what it joined, P4 of another switch say. Dragging the switch with the mouse does the same"
+msgstr "Przesuwa rozjazd wzdłuż łuku, w który jest wygięty, o wpisaną odległość, + w stronę krzyżownicy; tory łuku po obu stronach skracają się albo wydłużają, tor zajęty w całości znika, a rozjazd łączy się z tym, z czym on był połączony, np. z P4 innego rozjazdu. To samo robi przeciągnięcie rozjazdu myszą"
+
+msgid "Room on the curve: %.2f m back, %.2f m ahead"
+msgstr "Miejsce na łuku: %.2f m do tyłu, %.2f m do przodu"
+
+msgid "Switch %s moved %.2f m along the curve"
+msgstr "Rozjazd %s przesunięty o %.2f m wzdłuż łuku"
+
+msgid "The switch goes %.2f m back and %.2f m on along the curve at most"
+msgstr "Rozjazd przesunie się wzdłuż łuku najwyżej o %.2f m do tyłu i %.2f m do przodu"
+
+msgid "Press and drag: a switch going on from this end of the switch, sideways its side"
+msgstr "Wciśnij i przeciągnij: rozjazd od tego końca rozjazdu, w bok jego strona"
+
+msgid "%s taken up whole, the switch joins what it joined"
+msgstr "%s zajęty w całości, rozjazd łączy się z tym, z czym on był połączony"
+
+msgid "Camera to the plot"
+msgstr "Kamera do profilu"
+
+msgid "Moves the camera to the part of the route the plot shows"
+msgstr "Przenosi kamerę na odcinek trasy widoczny na profilu"
+
+msgid "Plot to the camera"
+msgstr "Profil do kamery"
+
+msgid "Moves the plot to the part of the route where the camera is, its zoom kept"
+msgstr "Przesuwa profil na miejsce trasy, gdzie jest kamera, bez zmiany powiększenia"
+
+msgid "The switch drawn to the joint of the tracks"
+msgstr "Rozjazd dosunięty do styku torów"

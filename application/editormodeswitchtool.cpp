@@ -142,7 +142,8 @@ std::string template_tooltip(editor_track::switch_template const &Template)
 		if (Template.type == "Skrz")
 			text += STR_C("Drag at a crossing of two straights");
 		else
-			text += Template.type == "Rkp" ? STR_C("Drag at a crossing of two straights at its skos, on the side of the tracks to join") : STR_C("Drag at a crossing of two straights at its skos");
+			text += std::string{STR_C("Drag it out on one straight: its crossing track comes along at its skos, through the quarter of the cursor")} + "\n" +
+			        (Template.type == "Rkp" ? STR_C("Or drag at a crossing of two straights at its skos, on the side of the tracks to join") : STR_C("Or drag at a crossing of two straights at its skos"));
 		return text;
 	}
 	text += "\n" + format(STR_C("a %.3f m to the centre of the switch, b %.3f m on to its end"), Template.a, Template.b);
@@ -231,7 +232,7 @@ void editor_mode::render_switch_ui()
 		char const *tooltip;
 	};
 	choice const choices[] = {{switch_kind::single, "Switch", "A switch in a straight or a curve"},
-	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd at a crossing of two straights at its skos, or bent into a curve of a side track"},
+	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"},
 	                          {switch_kind::crossing, "Crossing", "A crossing of two straights"},
 	                          {switch_kind::connection, "Connection", "Crossover, double, scissors, ladder"}};
 	{
@@ -277,7 +278,9 @@ void editor_mode::render_switch_ui()
 	std::vector<std::pair<char const *, char const *>> how;
 	switch (kind)
 	{
-	case switch_kind::slip: how = {{"Drag at a crossing", "of two straights at the skos of the slip: it goes there"}, {"Drag on a curve", "bent into it, in a side track only (11.4 pkt 4b)"}}; break;
+	case switch_kind::slip:
+		how = {{"Drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Drag at a crossing", "of two straights at the skos of the slip: it goes there"}, {"Drag on a curve", "bent into it, in a side track only (11.4 pkt 4b)"}};
+		break;
 	case switch_kind::crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
 	case switch_kind::connection:
 		how = {{"Drag", "from a straight onto the other track"}, {"Shift+wheel", "the kind"}, {"Ctrl+wheel", "R of the aligning curve"}};

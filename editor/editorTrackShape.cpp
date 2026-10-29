@@ -680,7 +680,9 @@ std::optional<editor_track::bend> editor_track::bend_at(TTrack const &Neighbour,
 				result.direction = glm::normalize(chord) * sign;
 				return result;
 			}
-			bezier const curve{path};
+			// on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends, R 300.9 at
+			// the end of the diverging track of a switch of R 300
+			bezier const curve{path.pieces.empty() ? path : atend ? path.pieces.back() : path.pieces.front()};
 			auto const first{curve.first(atend ? 1.0 : 0.0)};
 			auto const second{curve.second(atend ? 1.0 : 0.0)};
 			auto const speed{std::hypot(first.x, first.z)};

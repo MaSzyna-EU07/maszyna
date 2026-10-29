@@ -161,6 +161,7 @@ bool editor_mode::route_from_curve(TTrack &Track)
 	if (curve.reversals == 0)
 	{
 		design.vertices = {vertex};
+		route_curved_ends();
 	}
 	else
 	{
@@ -169,10 +170,68 @@ bool editor_mode::route_from_curve(TTrack &Track)
 		vertex.compound = false;
 		vertex.reverse_turn = false;
 		design.vertices = {vertex, vertex};
+		route_update();
 	}
-	route_update();
 	m_route.status = format(STR_P("Curve of %zu path, turning %d deg", "Curve of %zu paths, turning %d deg", m_route.chain.tracks.size()), m_route.chain.tracks.size(), static_cast<int>(std::round(glm::degrees(curve.turn))));
 	return true;
+}
+
+void editor_mode::route_curved_ends()
+{
+	auto &design{m_route.design};
+	design.start_curved = false;
+	design.end_curved = false;
+	if (design.vertices.empty() || m_route.chain.tracks.empty())
+	{
+		route_update();
+		return;
+	}
+	// a curve beginning right at an end of the fragment at the curvature of the track adjoining there, turning its way, goes on from it,
+	// as a curve laid on from the diverging track of a switch does: laid so again, not from a straight there; so next to a switch laid
+	// into the curve too. A track of R 10 km or more is a straight there, as the lay tool takes it. The way the first curve and the last
+	// one turn by the legs of the polygon
+	auto const count{design.vertices.size()};
+	auto const turn_of = [&](bool const Atend) {
+		if (count == 1)
+			return cross(design.start_direction, design.end_direction) > 0.0 ? 1 : -1;
+		glm::dvec2 const in{Atend ? design.vertices[count - 1].position - design.vertices[count - 2].position : design.start_direction};
+		glm::dvec2 const out{Atend ? design.end_direction : design.vertices[1].position - design.vertices[0].position};
+		return cross(in, out) > 0.0 ? 1 : -1;
+	};
+	auto const goes_on = [&](bool const Atend) {
+		auto const radius{Atend ? design.end_radius : design.start_radius};
+		if (radius <= 0.0 || radius >= 10000.0 || (Atend ? design.end_turn : design.start_turn) != turn_of(Atend))
+			return false;
+		// within a tenth: the path of a switch bent into the curve approximates it at its ends, R 860 m at the start of one in R 800 m
+		auto const *track{Atend ? m_route.chain.tracks.back() : m_route.chain.tracks.front()};
+		auto const bend{editor_track::bend_at(*track, Atend ? m_route.chain.end : m_route.chain.start)};
+		return bend.has_value() && std::abs(std::abs(bend->curvature) - 1.0 / radius) <= 0.1 / radius;
+	};
+	design.start_curved = goes_on(false);
+	design.end_curved = (count > 1 || false == design.start_curved) && goes_on(true);
+	route_update();
+	// a curve read from its paths as going on from the curve adjoining it which the design can't lay along them so, as one whose arc
+	// going on is too short to be read as an arc: read from a straight there, whichever of the two keeps closer to its paths
+	if (design.start_curved || design.end_curved)
+	{
+		auto const departure = [&]() {
+			TTrack *worst{nullptr};
+			return m_route.result.valid ? alignment_store::deviation(m_route.result, m_route.chain.tracks, worst) : std::numeric_limits<double>::max();
+		};
+		auto const curved{departure()};
+		if (curved > 0.25)
+		{
+			auto const kept{design};
+			design.start_curved = false;
+			design.end_curved = false;
+			route_update();
+			if (departure() >= curved)
+			{
+				design = kept;
+				route_update();
+			}
+		}
+	}
 }
 
 alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve) const
@@ -591,7 +650,7 @@ bool editor_mode::route_from_line(TTrack &Track)
 			design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - plan_of(design.start), design.start_direction));
 			design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(design.end) - design.vertices.back().position, design.end_direction));
 		}
-		route_update();
+		route_curved_ends();
 	}
 	route.status = format(STR_P("Line of %zu path, %.0f m, %zu vertices", "Line of %zu paths, %.0f m, %zu vertices", route.chain.tracks.size()), route.chain.tracks.size(), route.chain.length, design.vertices.size());
 	return true;
@@ -1099,18 +1158,7 @@ std::vector<std::size_t> editor_mode::route_focused() const
 			own.push_back(i);
 	if (own.empty() || focus.what == part::whole)
 		return own;
-	// the curvature at the start and at the end of an element, the arcs of a compound curve found by their radii
-	auto const curvatures = [](alignment::element const &Element) -> std::pair<double, double> {
-		auto const own{Element.radius > 0.0 ? 1.0 / Element.radius : 0.0};
-		switch (Element.kind)
-		{
-		case alignment::element_kind::transition_in: return {0.0, own};
-		case alignment::element_kind::arc: return {own, own};
-		case alignment::element_kind::transition_out: return {own, 0.0};
-		case alignment::element_kind::spiral: return {Element.curvature_start, Element.curvature_end};
-		default: return {0.0, 0.0};
-		}
-	};
+	// the arcs of a compound curve found by the curvature at the start and at the end of each element and their radii
 	auto const same = [](double const A, double const B) { return std::abs(A - B) <= 1e-6 * std::max(std::abs(A), std::abs(B)) + 1e-12; };
 	std::vector<double> radii;
 	for (auto const &curve : result.curves)
@@ -1119,7 +1167,7 @@ std::vector<std::size_t> editor_mode::route_focused() const
 	std::vector<std::size_t> found;
 	for (auto const i : own)
 	{
-		auto const [start, end] {curvatures(result.elements[i])};
+		auto const [start, end] {alignment::end_curvatures(result.elements[i])};
 		auto const arc{static_cast<std::size_t>(focus.arc)};
 		switch (focus.what)
 		{
@@ -1396,13 +1444,9 @@ void editor_mode::draw_route_overlay() const
 void editor_mode::render_route_trace()
 {
 	auto &trace{m_route.trace};
+	// the curve is traced on the photo with the laying (Tab), the plan has no button of its own for it
 	if (false == trace.active)
-	{
-		if (ImGui::Button(STR_C("Trace the curve on the photo")))
-			route_trace_start();
-		item_tooltip("Click points along the middle of the track on the orthophoto: after each click the curve takes the radius, or the radii of a compound curve and their shares, which follow the points best. The straights and the transition curves stay");
 		return;
-	}
 	ImGui::SeparatorText(STR_C("Tracing the curve"));
 	if (segmented("traceradii", trace.radii,
 	              {{0, STR_C("Auto"), "As few radii as follow the points, up to three"}, {1, STR_C("1 R"), "One radius"}, {2, STR_C("2 R"), "A compound curve of two radii"}, {3, STR_C("3 R"), "A compound curve of three radii"}}))
@@ -1667,15 +1711,8 @@ bool editor_mode::render_route_band()
 
 	auto const ends = [](alignment::element const &Element) -> std::pair<double, double> {
 		auto const sign{static_cast<double>(Element.turn)};
-		auto const k{Element.radius > 0.0 ? sign / Element.radius : 0.0};
-		switch (Element.kind)
-		{
-		case alignment::element_kind::transition_in: return {0.0, k};
-		case alignment::element_kind::arc: return {k, k};
-		case alignment::element_kind::transition_out: return {k, 0.0};
-		case alignment::element_kind::spiral: return {sign * Element.curvature_start, sign * Element.curvature_end};
-		default: return {0.0, 0.0};
-		}
+		auto const [start, end]{alignment::end_curvatures(Element)};
+		return {sign * start, sign * end};
 	};
 	auto const colour = [](alignment::element const &Element) {
 		return Element.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : Element.kind == alignment::element_kind::arc ? overlay_color::grip : IM_COL32(255, 140, 30, 255);

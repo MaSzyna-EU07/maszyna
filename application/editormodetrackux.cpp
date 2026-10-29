@@ -204,7 +204,7 @@ void editor_mode::draw_track_lines() const
 	auto const metres{ortho_metres_per_pixel()};
 	auto const colouring{ui()->mode() == nodebank_panel::TRACK ? m_track_colouring : track_colouring::plain};
 	// the top view of the rails alone draws them in a colour of their own, as on a plan: both rails where they're apart on the screen
-	auto const rails{metres > 0.0 && (Global.EditorOrthoTracks > 1 || Global.EditorOrthoMap) && colouring == track_colouring::plain};
+	auto const rails{metres > 0.0 && Global.EditorOrthoTracks > 1 && colouring == track_colouring::plain};
 	if (metres < kLinesFrom && colouring == track_colouring::plain && false == rails)
 		return;
 	auto const &io{ImGui::GetIO()};
@@ -812,11 +812,23 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::straight_tool, m_straights.tool == 1 ? "Press: break the straight here, drag to turn the rest" : "Click: start of the shift");
 		}
 	}
+	// a switch armed, at a free end of a switch, P4 of its diverging track or the end of its main one: the switch goes on from there at
+	// once, as from the free end of a plain track
+	if (m_track_tab == track_tab::turnout && m_hover.track != nullptr && m_hover.track->eType == tt_Switch && free_switch_offered())
+		if (auto const end{free_switch_end(ground)}; end.track == m_hover.track && geometry::plan_distance(end.position, ground) <= 3.0)
+		{
+			intent.position = end.position;
+			return make(kind::switch_free, "Press and drag: a switch going on from this end of the switch, sideways its side");
+		}
 	if ((m_track_tab == track_tab::turnout || m_track_tab == track_tab::path) && m_hover.track != nullptr && switch_slides(*m_hover.track))
 	{
 		intent.track = m_hover.track;
 		intent.path = m_hover.path;
 		intent.position = m_hover.point;
+		// one bent into a curve slides along the curve
+		auto const bent{m_hover.track->eType == tt_Switch && m_hover.track->m_paths.size() == 2 && geometry::has_controls(m_hover.track->m_paths.front())};
+		if (bent)
+			return make(kind::switch_slide, m_track_tab == track_tab::path ? "Click: select this switch, drag: slide it along the curve" : "Click: edit this switch, drag: slide it along the curve");
 		return make(kind::switch_slide, m_track_tab == track_tab::path ? "Click: select this switch, drag: slide it along the straight" : "Click: edit this switch, drag: slide it along the straight");
 	}
 	if (selected != nullptr && false == selected->m_paths.empty())
@@ -828,6 +840,15 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.position = point;
 			return make(kind::switch_at, "Press and drag: a switch here, along sets its direction, sideways its side");
 		}
+	}
+	// a press on another plain track takes it for the switch at once, with no click to select it first; a click only selects it
+	if (m_track_tab == track_tab::turnout && m_switch.armed >= 0 && m_hover.track != nullptr && m_hover.track != selected && m_hover.track->eType == tt_Normal &&
+	    false == m_hover.track->m_paths.empty())
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		return make(kind::switch_at, "Press and drag: a switch on this track, along sets its direction, sideways its side. Click: select the track");
 	}
 	// a press on the ground lays a switch with no track there, going on from a free end within reach
 	if (m_hover.track == nullptr && free_switch_offered())
@@ -1032,6 +1053,9 @@ void editor_mode::track_press(track_intent const &Intent)
 		return;
 	case kind::switch_at:
 	{
+		// the press took a track not selected for the switch: let go with no drag it only selects the track
+		if (Intent.track != nullptr && Intent.track != selected_track())
+			select_track(Intent.track);
 		auto const &io{ImGui::GetIO()};
 		m_switch.pressed_at = {io.MousePos.x, io.MousePos.y};
 		start_switch_placement();
@@ -1298,6 +1322,8 @@ void editor_mode::render_track_context()
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Switch"), "T", false, normal || track->eType == tt_Switch))
 		show_track_tab(track_tab::turnout);
+	if (track->eType == tt_Switch && track->SwitchExtension != nullptr && ImGui::MenuItem(STR_C("Throw it over"), "H"))
+		throw_switch(*track);
 	if (ImGui::MenuItem(STR_C("Plan"), "G", false, normal))
 		show_track_tab(track_tab::straights);
 	if (ImGui::MenuItem(STR_C("Parallel track"), "N", false, normal))

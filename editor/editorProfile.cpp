@@ -27,6 +27,8 @@ namespace
 
 // a switch, and the timbers it shares, may lie on a vertical curve: a concave one, or a convex one no sharper than this
 double constexpr switch_crest{2000.0}; // m
+// per mille: the change of the grade on a switch taken for a break of it, 3 mm over 30 m of it; below it the switch lies in one plane
+double constexpr switch_break{0.1};
 
 double polyline(line const &Line, double const Chainage)
 {
@@ -246,7 +248,9 @@ std::vector<issue> check(line const &Line, context const &Context)
 			add(false, static_cast<int>(k), points[k].chainage, format(STR_C("Point %zu: change of grade %.2f per mille needs a vertical curve"), k + 1, change));
 		else if (radius > 0.0 && radius < required - 1e-6)
 			add(false, static_cast<int>(k), points[k].chainage, format(STR_C("Point %zu: R %.0f m is below the required %.0f m for %.0f km/h"), k + 1, radius, required, Line.speed));
-		if (radius <= 0.0 && change > 1e-3)
+		// a change as small as the grade lines laid one after another meet with, a few millimetres over the length of a switch, is no
+		// break of it: the tracks of a slip met so lie in one plane all the same (pila.scn: 0.05 per mille inside shared timbers)
+		if (radius <= 0.0 && change > switch_break)
 			for (auto const &zone : Context.switches)
 				// a break on the bound of a switch is let be, within what the chainages of routes laid over each other differ by
 				if (points[k].chainage > zone.from + 0.05 && points[k].chainage < zone.to - 0.05)

@@ -112,6 +112,13 @@ class editor_ui : public ui_layer
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
 	void set_open_scenery(std::function<void()> Open) { m_openscenery = std::move(Open); }
+	// draws the base layers under the scenery at the bottom of the layers window (they live in the editor mode)
+	void set_base_layers(std::function<void()> Renderer) { m_layerspanel.base_layers = std::move(Renderer); }
+	void show_layers()
+	{
+		m_layerspanel.is_open = true;
+		m_layerspanel.focus = true;
+	}
 	// part of the main window between the docked windows, where the 3d view is seen; for the overlays placed in it
 	static glm::vec2 view_min()
 	{

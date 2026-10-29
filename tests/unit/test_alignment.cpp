@@ -949,3 +949,198 @@ TEST_CASE("alignment: curves turning the same way with straights between them, t
 		CHECK(fit.rms < 0.02 + each.noise);
 	}
 }
+
+// the points along a line from the origin along x through the segments, every 10 m, the last one at its end
+std::vector<glm::dvec2> points_to_end(std::vector<std::array<double, 3>> const &Segments, line_end &End) {
+	auto points{walked_points(Segments, 10.0, End)};
+	points.resize(points.size() - 2);
+	End.position -= heading_of(End.heading) * 60.0;
+	if (false == points.empty() && glm::distance(points.back(), End.position) < 2.0)
+		points.pop_back();
+	points.push_back(End.position);
+	return points;
+}
+
+// the stretch from the end of the diverging track of a switch of R 300 turning to the left, at the origin along x
+alignment::design from_switch(line_end const &End, double const Speed) {
+	alignment::design base;
+	base.speed = Speed;
+	base.start = {0.0, 0.0, 0.0};
+	base.start_direction = heading(0.0);
+	base.start_radius = 300.0;
+	base.start_turn = 1;
+	base.start_curved = true;
+	base.end = {End.position.x, 0.0, End.position.y};
+	base.end_direction = heading(End.heading);
+	return base;
+}
+
+TEST_CASE("alignment: a curve traced on from the diverging track of a switch is a compound curve with it, ending at the last point") {
+	double const k{1.0 / 300.0};
+	double const m{1.0 / 150.0};
+	line_end end;
+	auto const points{points_to_end({{k, m, 20.0}, {m, m, 30.0}, {m, 0.0, 25.0}}, end)};
+	auto const base{from_switch(end, 60.0)};
+	auto const fit{alignment::fit_going_on(base, points)};
+	REQUIRE(fit.valid);
+	REQUIRE(fit.vertices.size() == 1);
+	CHECK(fit.vertices.front().radius == doctest::Approx(150.0).epsilon(0.03));
+	CHECK(fit.vertices.front().transition_in == doctest::Approx(20.0).epsilon(0.15));
+	CHECK(fit.vertices.front().transition_out == doctest::Approx(25.0).epsilon(0.15));
+	CHECK(fit.rms < 0.02);
+	// laid from the curvature of the switch, no jump at the joint; ending right at the last point, heading as the line does there
+	auto laid{base};
+	laid.vertices = fit.vertices;
+	laid.end_direction = fit.leaving;
+	auto const line{alignment::compute(laid)};
+	REQUIRE(line.valid);
+	CHECK(curvature_of(line, 0.25) == doctest::Approx(k).epsilon(0.05));
+	auto const last{alignment::evaluate(line, line.length)};
+	CHECK(glm::distance(glm::dvec2{last.position.x, last.position.z}, end.position) < 0.01);
+	CHECK(std::atan2(fit.leaving.y, fit.leaving.x) == doctest::Approx(end.heading).epsilon(0.01));
+	CHECK(curvature_of(line, line.length - 0.25) == doctest::Approx(0.0).epsilon(1e-3));
+
+	// two points only, the radius between them unknown: the transitions as long as the norms ask for, the curvature going on from the
+	// switch all the same
+	std::vector<glm::dvec2> const two{points[points.size() / 2], points.back()};
+	auto const few{alignment::fit_going_on(base, two)};
+	REQUIRE(few.valid);
+	auto shortlaid{base};
+	shortlaid.vertices = few.vertices;
+	shortlaid.end_direction = few.leaving;
+	auto const shortline{alignment::compute(shortlaid)};
+	REQUIRE(shortline.valid);
+	CHECK(curvature_of(shortline, 0.25) == doctest::Approx(k).epsilon(0.05));
+	CHECK(few.worst < 0.05);
+	CHECK(few.vertices.front().transition_in > 5.0);
+}
+
+TEST_CASE("alignment: a curve traced on from a switch turning hard at its end takes two arcs, a flatter one first") {
+	double const k{1.0 / 300.0};
+	double const m{1.0 / 400.0};
+	double const n{1.0 / 40.0};
+	line_end end;
+	auto const points{points_to_end({{k, m, 15.0}, {m, m, 40.0}, {m, n, 20.0}, {n, n, 30.0}, {n, 0.0, 20.0}}, end)};
+	auto const base{from_switch(end, 40.0)};
+	auto const fit{alignment::fit_going_on(base, points)};
+	REQUIRE(fit.valid);
+	REQUIRE(fit.vertices.size() == 1);
+	REQUIRE(fit.vertices.front().compound);
+	REQUIRE(fit.vertices.front().arcs.size() == 1);
+	CHECK(fit.vertices.front().radius > 250.0);
+	CHECK(fit.vertices.front().arcs.front().radius == doctest::Approx(40.0).epsilon(0.1));
+	CHECK(fit.rms < 0.1);
+	auto laid{base};
+	laid.vertices = fit.vertices;
+	laid.end_direction = fit.leaving;
+	auto const line{alignment::compute(laid)};
+	REQUIRE(line.valid);
+	CHECK(curvature_of(line, 0.25) == doctest::Approx(k).epsilon(0.05));
+	auto const last{alignment::evaluate(line, line.length)};
+	CHECK(glm::distance(glm::dvec2{last.position.x, last.position.z}, end.position) < 0.01);
+}
+
+TEST_CASE("alignment: a curve traced on from a switch with points clicked on the straight after it ends where the straight begins") {
+	double const k{1.0 / 300.0};
+	double const m{1.0 / 200.0};
+	line_end end;
+	auto const along{walked_points({{k, m, 20.0}, {m, m, 40.0}, {m, 0.0, 30.0}}, 10.0, end)};
+	auto const base{from_switch(end, 60.0)};
+	auto const fit{alignment::fit_going_on(base, along)};
+	REQUIRE(fit.valid);
+	CHECK(fit.vertices.front().radius == doctest::Approx(200.0).epsilon(0.03));
+	CHECK(fit.rms < 0.02);
+	CHECK(std::atan2(fit.leaving.y, fit.leaving.x) == doctest::Approx(end.heading).epsilon(0.01));
+}
+
+TEST_CASE("alignment: no curve goes on from a switch to a point on the other side of its heading") {
+	line_end end;
+	end.position = {60.0, -3.0};
+	end.heading = -0.1;
+	auto const base{from_switch(end, 60.0)};
+	CHECK_FALSE(alignment::fit_going_on(base, {{30.0, -1.0}, {60.0, -3.0}}).valid);
+}
+
+// held: the curve going on from the diverging track of a switch keeps its radius, with no transition between them
+alignment::design held_from_switch(line_end const &End, double const Speed) {
+	auto base{from_switch(End, Speed)};
+	base.start_held = true;
+	return base;
+}
+
+TEST_CASE("alignment: a curve going on from a switch at its radius begins right there by the transition out of it") {
+	double const k{1.0 / 300.0};
+	// R 300 on for 40 m, then a transition of 30 m out to the straight: the radius whatever the vertex was given, none in, the one out found
+	auto design{curved_from(300.0, {{k, k, 40.0}, {k, 0.0, 30.0}}, 40.0)};
+	design.start_held = true;
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 1000.0;
+	vertex.transition_in = 20.0;
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	REQUIRE(line.curves.size() == 1);
+	auto const &curve{line.curves.front()};
+	CHECK(curve.radius == doctest::Approx(300.0).epsilon(1e-9));
+	CHECK(curve.transition_in == doctest::Approx(0.0));
+	CHECK(curve.transition_out == doctest::Approx(30.0).epsilon(0.05));
+	CHECK(curvature_of(line, 0.25) == doctest::Approx(k).epsilon(0.01));
+	auto const start{alignment::evaluate(line, 0.0)};
+	CHECK(std::abs(start.position.x) < 1e-6);
+	CHECK(std::abs(start.position.z) < 1e-6);
+	auto const end{alignment::evaluate(line, line.length)};
+	CHECK(glm::distance(glm::dvec2{end.position.x, end.position.z}, glm::dvec2{design.end.x, design.end.z}) < 1e-3);
+
+	// a vertex nearer than the arc of the switch reaches with no transition: no such curve
+	auto nearer{curved_from(300.0, {{k, k, 40.0}, {k, 0.0, 30.0}}, 40.0)};
+	nearer.start_held = true;
+	nearer.end = {nearer.end.x, 0.0, nearer.end.z + 5.0};
+	CHECK_FALSE(alignment::compute(nearer).valid);
+}
+
+TEST_CASE("alignment: a curve traced on from a switch goes on at its radius, not through a transition into another") {
+	double const k{1.0 / 300.0};
+	line_end end;
+	auto const points{points_to_end({{k, k, 60.0}, {k, 0.0, 25.0}}, end)};
+	auto const base{held_from_switch(end, 100.0)};
+	auto const fit{alignment::fit_going_on(base, points)};
+	REQUIRE(fit.valid);
+	REQUIRE(fit.vertices.size() == 1);
+	CHECK_FALSE(fit.vertices.front().compound);
+	CHECK(fit.vertices.front().radius == doctest::Approx(300.0).epsilon(1e-9));
+	CHECK(fit.vertices.front().transition_in == doctest::Approx(0.0));
+	CHECK(fit.rms < 0.05);
+	auto laid{base};
+	laid.vertices = fit.vertices;
+	laid.end_direction = fit.leaving;
+	auto const line{alignment::compute(laid)};
+	REQUIRE(line.valid);
+	CHECK(line.curves.front().radius == doctest::Approx(300.0).epsilon(1e-6));
+	CHECK(curvature_of(line, 0.25) == doctest::Approx(k).epsilon(0.01));
+	auto const last{alignment::evaluate(line, line.length)};
+	CHECK(glm::distance(glm::dvec2{last.position.x, last.position.z}, end.position) < 0.01);
+
+	// the points along its arc alone, as they're clicked: the arc of the switch as far as abreast of the last of them, no transition out
+	line_end on;
+	auto const arc{points_to_end({{k, k, 50.0}}, on)};
+	auto const alone{alignment::fit_going_on(held_from_switch(on, 100.0), arc)};
+	REQUIRE(alone.valid);
+	REQUIRE(alone.vertices.size() == 1);
+	CHECK(alone.vertices.front().radius == doctest::Approx(300.0).epsilon(1e-9));
+	CHECK(alone.vertices.front().transition_out == doctest::Approx(0.0));
+	CHECK(alone.rms < 0.01);
+	CHECK(glm::distance(alone.ending, on.position) < 0.01);
+
+	// the points along a flatter curve after it: the arc of the switch first, then the flatter one
+	double const m{1.0 / 600.0};
+	line_end flatter;
+	auto const along{points_to_end({{k, m, 30.0}, {m, m, 60.0}, {m, 0.0, 30.0}}, flatter)};
+	auto const two{alignment::fit_going_on(held_from_switch(flatter, 60.0), along)};
+	REQUIRE(two.valid);
+	REQUIRE(two.vertices.size() == 1);
+	REQUIRE(two.vertices.front().compound);
+	REQUIRE(two.vertices.front().arcs.size() == 1);
+	CHECK(two.vertices.front().radius == doctest::Approx(300.0).epsilon(1e-9));
+	CHECK(two.vertices.front().transition_in == doctest::Approx(0.0));
+	CHECK(two.vertices.front().arcs.front().radius == doctest::Approx(600.0).epsilon(0.1));
+	CHECK(two.rms < 0.1);
+}

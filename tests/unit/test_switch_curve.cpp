@@ -100,6 +100,52 @@ TEST_CASE("switch on a curve: the ends of a cant ramp at the ends of the switch 
 	CHECK(what.empty());
 }
 
+TEST_CASE("switch on a curve: one with a straight frog bent up to the frog, both tracks straight over it") {
+	auto const track{line(0.0, 1.0, 400.0, 1500.0, 0.0)};
+	for (auto const side : {1, -1}) {
+		CAPTURE(side);
+		auto [main, branch] {laid(track, 150.0, 27.0, 190.0, side)};
+		// the last 6 m of both straight, the diverging one with no curve of its own there either: the frog of the switch
+		auto const frog{21.0};
+		auto const straighten = [&](std::vector<switch_curve::track_point> &Track) {
+			auto const at{std::find_if(Track.begin(), Track.end(), [&](auto const &Point) { return Point.station >= frog; })};
+			for (auto point{at}; point != Track.end(); ++point)
+				point->heading = at->heading;
+		};
+		straighten(main);
+		straighten(branch);
+		auto const report{switch_curve::check(main, branch, track, 150.0, 177.0, 190.0, 9.0, 27.0 - frog)};
+		CHECK(report.curved);
+		// the curvature of the bent part only: no transition curve under it, the diverging track turning one way all along
+		CHECK_FALSE(report.transition);
+		CHECK(false == says(report.warnings, "KZW II"));
+		CHECK(says(report.warnings, "Bent up to the frog"));
+	}
+}
+
+TEST_CASE("switch on a curve: none of 1:9.403 nor steeper than 1:9 bent in the running and the main tracks, 1:9 itself is") {
+	auto const track{line(0.0, 1.0, 400.0, 1500.0, 0.0)};
+	auto const [main, branch] {laid(track, 150.0, 33.0, 300.0, 1)};
+	auto const banned = [&](double const Ratio) {
+		CAPTURE(Ratio);
+		auto const report{switch_curve::check(main, branch, track, 150.0, 183.0, 300.0, Ratio)};
+		REQUIRE(report.curved);
+		return says(report.warnings, "(11.4 pkt 4)");
+	};
+	// 1:9 of the catalogue and as read off the angle of the tracks
+	CHECK_FALSE(banned(9.0));
+	CHECK_FALSE(banned(8.998));
+	CHECK_FALSE(banned(9.002));
+	CHECK(banned(9.403));
+	CHECK(banned(9.41));
+	CHECK_FALSE(banned(9.51));
+	CHECK_FALSE(banned(10.0));
+	CHECK_FALSE(banned(12.0));
+	CHECK(banned(7.5));
+	CHECK(banned(6.6));
+	CHECK(banned(4.8));
+}
+
 namespace {
 
 // a track of one curvature from its start, heading as given there, a point every half metre

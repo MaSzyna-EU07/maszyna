@@ -598,15 +598,17 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 		m_settled = false;
 	}
 
-	// the top view of the tracks wants the terrain as far as the corners of the screen, as fine as its pixels need
-	auto const top{Global.EditorOrtho && Global.editor_tracks && false == Global.EditorOrthoMap};
+	// the top view of the tracks wants the terrain as far as the corners of the screen, as fine as its pixels need, though no
+	// farther than the scenery reaches in the game: zoomed out, the tracks alone are drawn farther
+	auto const top{Global.EditorOrtho && Global.editor_tracks};
 	auto const aspect{Global.window_size.x / std::max(1.0, static_cast<double>(Global.window_size.y))};
-	auto const reach{top ? Global.EditorOrthoExtent * std::sqrt(1.0 + aspect * aspect) : 0.0};
+	auto const scenery{static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor))};
+	auto const reach{top ? std::min(Global.EditorOrthoExtent * std::sqrt(1.0 + aspect * aspect), scenery) : 0.0};
 	m_pixel = top ? 2.0 * Global.EditorOrthoExtent / std::max(1, Global.window_size.y) : 0.0;
 
 	// chunks wanted around the camera and around where it's heading; the top view only as far as the screen reaches, not the
 	// range of the 3D view: zoomed in it would keep making anew the meshes of chunks far off the screen at each step of the zoom
-	auto const range{(top ? std::max(m_radius * heightmap::chunk_size, reach) : std::max({m_radius * heightmap::chunk_size, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)), reach})) + heightmap::chunk_size * 0.5};
+	auto const range{(top ? std::max(m_radius * heightmap::chunk_size, reach) : std::max({m_radius * heightmap::chunk_size, scenery, reach})) + heightmap::chunk_size * 0.5};
 	auto const radius{std::min(top ? top_radius : 64, static_cast<int>(std::ceil(range / heightmap::chunk_size)))};
 	if (m_ringradius < radius)
 	{

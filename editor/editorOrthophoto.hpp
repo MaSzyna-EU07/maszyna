@@ -65,6 +65,10 @@ class editor_orthophoto
 		bool drape{true};       // fit the imagery onto the ground geometry instead of a flat plane
 		float lift{0.05f};      // with drape: distance above the ground (in the scene it has to clear the ground to be seen)
 		bool in_scene{false};   // render as opaque scene geometry, covered by whatever is in front of it
+		// a WMS of the user's in place of the orthophoto of geoportal.gov.pl: its address and the layers asked of it in EPSG:2180, PNG
+		// clear where it draws nothing. Its tiles are kept in memory only and asked for only around the camera, none ahead
+		std::string service;
+		std::string layers;
 	};
 
 	using world_triangle = std::array<glm::dvec3, 3>;
@@ -102,6 +106,8 @@ class editor_orthophoto
 	// disabling drops the queue and returns the gpu memory of the resident tiles
 	void enabled(bool State);
 	config const &settings() const { return m_config; }
+	// the line of the scenery (//$o): whether the imagery is on and, with Origin, where the scenery lies; the rest of the settings
+	// are the user's
 	static std::string mark(config const &Config, bool Enabled, bool Origin);
 	static bool read_mark(std::string const &Text, config &Config, bool &Enabled);
 	// changes of year / resolution invalidate resident tiles, the rest applies immediately
@@ -116,7 +122,6 @@ class editor_orthophoto
 	// tiles around the camera as before
 	void area(std::vector<glm::dvec2> Polygon);
 	std::vector<glm::dvec2> const &area() const { return m_area; }
-	bool in_area(double const East, double const North) const;
 	// the download in the background held, or going on
 	void area_paused(bool const Paused);
 	// the squares of the tiles of the area in the world (x, z): 0 waiting, 1 in the disk cache, 2 failed
@@ -146,10 +151,6 @@ class editor_orthophoto
 	// true for geometry created by the layer, so ground queries can skip it
 	static bool owns(gfx::geometry_handle const &Geometry);
 
-	// a top view of Scale metres a pixel shows the base map of OpenStreetMap in place of the imagery, as far as Reach from the
-	// camera; 0: the imagery
-	void overview(double const Scale, double const Reach);
-	bool overview() const { return m_map_level > 0; }
 	// main thread, once per frame: schedules tiles around the camera and uploads finished ones
 	void update(glm::dvec3 const &Camera);
 	// main thread, inside an ImGui frame: emits the overlay into the background draw list.
@@ -165,6 +166,17 @@ class editor_orthophoto
 	statistics stats() const;
 	// false when the build has no http client; cached tiles are still shown
 	static bool can_download();
+	// what a WMS tells of itself in its capabilities: its title, its fees and access constraints, its layers with a name and whether it
+	// draws in EPSG:2180, the one the tiles are laid out in. Blocking, for a thread of its own
+	struct service_info
+	{
+		std::string title;
+		std::string terms;
+		std::vector<std::pair<std::string, std::string>> layers; // name, title
+		bool puwg{false};
+		std::string error;
+	};
+	static service_info describe(std::string const &Service);
 	static std::string cache_directory();
 
   private:
@@ -174,12 +186,13 @@ class editor_orthophoto
 	{
 		int year{0};
 		bool hires{false};
+		std::string service;
+		std::string layers;
 	};
 
 	struct job
 	{
 		tile_key key;
-		int map{0};          // level of a tile of the map, 256 m << map a side; 0: of the imagery
 		int level{0};        // requested texture size in pixels
 		std::uint8_t alpha{255}; // baked into the texture, for translucency in the scene
 		source src;
@@ -189,7 +202,6 @@ class editor_orthophoto
 	struct result
 	{
 		tile_key key;
-		int map{0};
 		int level{0};
 		std::uint8_t alpha{255};
 		std::uint32_t generation{0};
@@ -235,7 +247,7 @@ class editor_orthophoto
 	static int level_for(int Distance, bool Hires);
 	tile_key camera_tile(glm::dvec3 const &Camera) const;
 	glm::dvec2 tile_corner(tile_key const &Key) const; // world (x,z) of the north-west corner
-	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha, int const Map = 0);
+	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha);
 	std::uint8_t texture_alpha() const; // alpha the textures should carry with the current settings
 	std::size_t apply(result &Result, double Now); // returns bytes uploaded
 	void release_tile(tile &Tile);
@@ -247,8 +259,6 @@ class editor_orthophoto
 	void remove_shape(tile &Tile);
 	void release_geometry(tile &Tile);
 	void update_scene();
-	void update_map(glm::dvec3 const &Camera, double const Now);
-	void draw_map(glm::mat4 const &ViewProjection, glm::dvec3 const &CameraPos, float ScreenWidth, float ScreenHeight) const;
 	void start_workers();
 	void worker();
 	// the tiles of the area queued for the download in the background again, nearest to the camera first
@@ -258,12 +268,7 @@ class editor_orthophoto
 	bool m_enabled{false};
 	std::map<tile_key, tile> m_tiles; // main thread only
 	tile_key m_camera_tile{0, 0};
-	using map_key = std::pair<int, tile_key>; // level, then the place on the grid of the tiles of that level
-	std::map<map_key, tile> m_maps; // main thread only
-	int m_map_level{0};      // of the map shown, 0: the imagery
-	double m_map_reach{0.0}; // m from the camera the view of the map reaches
 	std::vector<texture_slot> m_free_slots; // pool of textures, reused between tiles
-	int m_texture_count{0};
 	ground_query m_ground;
 	height_query m_height;
 	height_query m_guess;
@@ -285,7 +290,8 @@ class editor_orthophoto
 	std::deque<job> m_queue;
 	std::deque<result> m_done;
 	tile_key m_focus{0, 0}; // workers pick the queued tile closest to it
-	std::set<std::pair<int, tile_key>> m_running; // (map, tile) a worker is on: another job of it waits till that one is done
+	std::set<tile_key> m_running; // tiles a worker is on: another job of one waits till that one is done
+	std::size_t m_running_hires{0}; // of them, the ones of a 4K image
 	// the download of the area in the background: the tiles nearest to the camera first, taken when no tile around the camera waits
 	std::vector<tile_key> m_prefetch;
 	std::size_t m_prefetch_next{0};

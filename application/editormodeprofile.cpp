@@ -841,8 +841,6 @@ void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *
 		}
 	}
 	profile_fit_view();
-	// the camera stays where the route was picked, it follows the plot once that's moved
-	state.view_seen = state.view_framed = {state.view_from, state.view_to};
 }
 
 void editor_mode::profile_resample()
@@ -1466,21 +1464,32 @@ void editor_mode::profile_fit_view()
 	state.exaggeration = 0.0f;
 }
 
-void editor_mode::profile_follow_view()
+void editor_mode::profile_to_camera()
 {
 	auto &state{m_profile};
-	std::pair<double, double> const shown{state.view_from, state.view_to};
-	auto const now{ImGui::GetTime()};
-	if (shown != state.view_seen)
+	if (state.samples.empty())
+		return;
+	// where the view looks: from above the camera itself, else the middle of the view on the level of the route
+	glm::dvec3 target{Camera.Pos};
+	if (false == Global.EditorOrtho)
 	{
-		state.view_seen = shown;
-		state.view_seen_time = now;
-		return;
+		auto const low{editor_ui::view_min()};
+		auto const high{editor_ui::view_max()};
+		glm::dvec3 point;
+		if (screen_projection{}.on_level(ImVec2{(low.x + high.x) * 0.5f, (low.y + high.y) * 0.5f}, state.samples[state.samples.size() / 2].position.y, point))
+			target = point;
 	}
-	if (false == state.camera_follows || shown == state.view_framed || now - state.view_seen_time < 0.25)
-		return;
-	state.view_framed = shown;
-	profile_frame_view();
+	auto best{std::numeric_limits<double>::max()};
+	double chainage{0.0};
+	for (auto const &sample : state.samples)
+		if (auto const distance{geometry::plan_distance(sample.position, target)}; distance < best)
+		{
+			best = distance;
+			chainage = sample.chainage;
+		}
+	auto const span{state.view_to - state.view_from};
+	state.view_from = chainage - 0.5 * span;
+	state.view_to = chainage + 0.5 * span;
 }
 
 void editor_mode::profile_frame_view()
@@ -2376,10 +2385,16 @@ void editor_mode::render_profile_toolbar()
 		profile_fit_view();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Shows the whole route"));
-	next(14.0f, pill(STR_C("Camera follows")));
-	if (pill_toggle(STR_C("Camera follows"), kGradeLine, state.camera_follows) && state.camera_follows)
-		state.view_framed = {};
-	item_tooltip("The view shows the part of the route the plot shows, once the plot is zoomed or moved");
+	// the camera and the plot brought to one another only when asked: the camera doesn't turn as the plot is zoomed
+	auto const button = [](char const *Label) { return ImGui::CalcTextSize(Label).x + ImGui::GetStyle().FramePadding.x * 2.0f; };
+	next(14.0f, button(STR_C("Camera to the plot")));
+	if (ImGui::Button(STR_C("Camera to the plot")))
+		profile_frame_view();
+	item_tooltip("Moves the camera to the part of the route the plot shows");
+	next(ImGui::GetStyle().ItemSpacing.x, button(STR_C("Plot to the camera")));
+	if (ImGui::Button(STR_C("Plot to the camera")))
+		profile_to_camera();
+	item_tooltip("Moves the plot to the part of the route where the camera is, its zoom kept");
 }
 
 void editor_mode::render_profile_canvas(float const Height)
@@ -2398,7 +2413,6 @@ void editor_mode::render_profile_canvas(float const Height)
 	if (state.model_waiting && ImGui::GetTime() - state.model_polled > 0.5)
 		profile_sample_model();
 	profile_navigate(profile_view{state, corner, size}, hovered);
-	profile_follow_view();
 	profile_view const view{state, corner, size};
 	if (profile_canvas_edit(view, hovered))
 		profile_edited();

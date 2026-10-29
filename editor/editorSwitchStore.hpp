@@ -58,6 +58,8 @@ struct record
 void reset();
 void load();
 std::vector<record> const &records();
+// a record of the name is kept
+bool has(std::string const &Name);
 // the record of the switch, slip or crossing the track is a part of, while its first part keeps the shape the record says
 std::optional<record> of(TTrack const &Track);
 // the record of the track by its name alone, also when the switch lost its shape

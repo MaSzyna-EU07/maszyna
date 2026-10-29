@@ -50,6 +50,18 @@ inline double cross(glm::dvec2 const &Direction, glm::dvec2 const &Point)
 	return Direction.x * Point.y - Direction.y * Point.x;
 }
 
+// where the line from A along AlongA crosses the one from B along AlongB, as the distances along each in the lengths of their
+// directions; none where they run alike
+inline bool lines_cross(glm::dvec2 const &A, glm::dvec2 const &AlongA, glm::dvec2 const &B, glm::dvec2 const &AlongB, double &First, double &Second)
+{
+	auto const determinant{cross(AlongA, AlongB)};
+	if (std::abs(determinant) < 1e-9)
+		return false;
+	First = cross(B - A, AlongB) / determinant;
+	Second = cross(B - A, AlongA) / determinant;
+	return true;
+}
+
 inline glm::dvec2 turned(glm::dvec2 const &Vector, double const Angle)
 {
 	auto const c{std::cos(Angle)};
@@ -136,6 +148,14 @@ struct bezier
 	glm::dvec3 second(double const T) const
 	{
 		return 6.0 * (1.0 - T) * (p2 - 2.0 * p1 + p0) + 6.0 * T * (p3 - 2.0 * p2 + p1);
+	}
+	// the curvature in the plan at T, 1/m, positive to the left as the curve runs; none where it barely moves
+	double plan_curvature(double const T) const
+	{
+		auto const along{first(T)};
+		auto const turning{second(T)};
+		auto const speed{std::hypot(along.x, along.z)};
+		return speed < 1e-9 ? 0.0 : (along.x * turning.z - along.z * turning.x) / (speed * speed * speed);
 	}
 	double plan_length(int const Steps = 32) const
 	{

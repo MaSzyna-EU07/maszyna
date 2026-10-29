@@ -106,6 +106,8 @@ class editor_track
 	static void commit_parameters(TTrack &Track);
 
 	static glm::dvec3 point_position(TTrack const &Track, point_ref const &Point);
+	// the direction of the path in the plan at its end, into the path
+	static glm::dvec2 end_direction(segment_data const &Path, point_kind const Kind);
 	static void move_point(TTrack &Track, point_ref const &Point, glm::dvec3 const &Position);
 	static void translate(TTrack &Track, glm::dvec3 const &Offset);
 	static void rotate_y(TTrack &Track, glm::dvec3 const &Pivot, double const Angle);
@@ -342,6 +344,8 @@ class editor_track
 			double transition{0.0};
 		};
 		std::vector<arc_part> arcs;
+		// the arcs read from the elements of the stored designs the paths lie along, as they were laid, not approximated by the paths
+		bool laid{false};
 		// the parameters of the vertex in the alignment kept in the scenery, in the direction of the run, when the paths follow one
 		std::optional<alignment::vertex> designed;
 	};
@@ -451,6 +455,7 @@ class editor_track
 		bool own{false};
 		bool movable{false}; // the frog with a movable nose
 		double heel{0.0}; // where the moving blades end, 0: as long as the flangeway behind them needs
+		double frog_straight{0.0}; // the straight the diverging track ends with, through the frog; 0: its curve runs through the frog
 		double bladethrow{0.0}; // how far the tips of the blades move over, 0: the usual throw
 		int design{-1}; // in the list of the designs the template was built from
 		double middle{0.0}; // a double slip with the blades outside of the diamond: the radius in the middle of its slip curves, below 0 a straight there

@@ -133,7 +133,7 @@ std::vector<double> ramp_ends(std::vector<track_point> const &Track)
 }
 
 switch_report check(std::vector<track_point> const &Main, std::vector<track_point> const &Branch, std::vector<track_point> const &Line, double const From, double const To, double const Radius,
-                    double const Ratio)
+                    double const Ratio, double const Straight)
 {
 	switch_report report;
 	if (Main.size() < 2 || Branch.size() < 2 || Line.size() < 2)
@@ -149,13 +149,15 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 		double high{std::numeric_limits<double>::lowest()};
 		double sharpest{0.0};
 	};
+	// of the part bent: up to the frog of a switch bent up to it
 	auto const along = [&](std::vector<track_point> const &Track) {
 		span result;
-		auto const length{Track.back().station - Track.front().station};
+		auto const finish{Track.back().station - (Straight > 0.5 ? Straight : 0.0)};
+		auto const length{finish - Track.front().station};
 		auto const margin{std::min(1.0, length * 0.25)};
 		result.first = sign * curvature_at(Track, Track.front().station + margin);
-		result.last = sign * curvature_at(Track, Track.back().station - margin);
-		for (auto s{Track.front().station + margin}; s <= Track.back().station - margin + 1e-9; s += 0.5)
+		result.last = sign * curvature_at(Track, finish - margin);
+		for (auto s{Track.front().station + margin}; s <= finish - margin + 1e-9; s += 0.5)
 		{
 			auto const curvature{sign * curvature_at(Track, s)};
 			result.low = std::min(result.low, curvature);
@@ -190,8 +192,14 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 			if (main.sharpest > kStraight && 1.0 / main.sharpest < limit->main - 1e-6)
 				report.warnings.emplace_back(format(STR_C("The main track bent to R %.0f m, below the least %.0f m for the switch of R %.0f m (table 11.9)"), 1.0 / main.sharpest, limit->main, Radius));
 		}
-		if (Ratio > 0.0 && Ratio < 9.41)
+		// 1:9 itself is bent, as the Rz 300-1:9 of table 11.9; the ratio may come from the angle of the tracks, a bit off the catalogue,
+		// 1:9.403 told from 1:9.51 by half of what keeps them apart
+		if (Ratio > 0.0 && (Ratio < 8.95 || std::abs(Ratio - 9.403) < 0.05))
 			report.warnings.emplace_back(format(STR_C("A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)"), Ratio));
+		// the basic switches of table 11.9 have the curve of the diverging track running through the frog; one with a straight frog is
+		// bent up to the frog, the frog and both tracks over it straight, the curvature jumping there
+		if (Straight > 0.5)
+			report.warnings.emplace_back(format(STR_C("Bent up to the frog, as the DB bends the switches with a straight frog: both tracks keep straight over its last %.1f m, the curvature jumps there; table 11.9 lists no such bent switch"), Straight));
 	}
 
 	check_cant(Line, From, To, report.curved, report.cant_start, report.cant_end, report.notes, report.warnings);

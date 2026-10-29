@@ -13,7 +13,6 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeoMap.hpp"
 #include "editor/editorOrthophoto.hpp"
-#include "editor/editorSettings.hpp"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
@@ -183,18 +182,9 @@ bool ui::scenerywizard_panel::create_scenery()
 	std::snprintf(reference, sizeof(reference), "//$g PUWG1992 %.3f %.3f", m_map.point().x / 1000.0, m_map.point().y / 1000.0);
 	if (m_realistic)
 	{
-		auto const &stored{EditorSettings.orthophoto()};
-		editor_orthophoto::config map;
-		map.radius = stored.radius;
-		map.height = stored.height;
-		map.opacity = stored.opacity;
-		map.year = stored.year;
-		map.hires = stored.hires;
-		map.drape = stored.drape;
-		map.lift = stored.lift;
-		map.in_scene = stored.in_scene;
+		// the orthophoto on; it's shown as the settings of the editor have it, its origin is the one of //$g
 		output << reference << "\r\n";
-		output << "//$o " << editor_orthophoto::mark(map, true, false) << "\r\n";
+		output << "//$o " << editor_orthophoto::mark(editor_orthophoto::config{}, true, false) << "\r\n";
 	}
 	else
 		std::snprintf(reference, sizeof(reference), "fictional");

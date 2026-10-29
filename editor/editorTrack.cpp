@@ -89,11 +89,7 @@ double path_radius(segment_data const &Path, double const T)
 {
 	if (Path.points[segment_data::point::control1] == glm::dvec3{} && Path.points[segment_data::point::control2] == glm::dvec3{})
 		return 0.0;
-	bezier const curve{Path};
-	auto const first{curve.first(T)};
-	auto const second{curve.second(T)};
-	auto const speed{std::hypot(first.x, first.z)};
-	auto const curvature{std::abs(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
+	auto const curvature{std::abs(bezier{Path}.plan_curvature(T))};
 	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
 }
 
@@ -108,23 +104,116 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 			auto const &point{path.points[atend ? segment_data::point::end : segment_data::point::start]};
 			if (glm::distance(point, Joint) > kSamePoint)
 				continue;
-			auto const tangent{glm::normalize(path_tangent(path, atend))};
+			// measured on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends,
+			// R 300.9 at the end of the diverging track of a switch of R 300
+			auto const &end{path.pieces.empty() ? path : atend ? path.pieces.back() : path.pieces.front()};
+			auto const tangent{glm::normalize(path_tangent(end, atend))};
 			auto const along{Leaving != atend};
 			Direction = along ? tangent : -tangent;
-			Radius = path_radius(path, atend ? 1.0 : 0.0);
+			Radius = path_radius(end, atend ? 1.0 : 0.0);
 			// the side it turns to as the chain runs, the path gone against its points turning the other way
 			Turn = 0;
 			if (Radius > 0.0)
-			{
-				bezier const curve{path};
-				auto const first{curve.first(atend ? 1.0 : 0.0)};
-				auto const second{curve.second(atend ? 1.0 : 0.0)};
-				Turn = (first.x * second.z - first.z * second.x > 0.0) == along ? 1 : -1;
-			}
+				Turn = (bezier{end}.plan_curvature(atend ? 1.0 : 0.0) > 0.0) == along ? 1 : -1;
 			return true;
 		}
 	}
 	return false;
+}
+
+// the element of a stored design a regular track lies along from end to end: its curvature as designed rather than as the path
+// approximates it, an arc of its radius however short it is, or a transition. None where the track lies along no design, or across
+// the joint of two of its elements
+std::optional<alignment::element> designed_element(TTrack const &Track)
+{
+	if (Track.eType != tt_Normal || Track.m_paths.empty())
+		return std::nullopt;
+	auto const found{alignment_store::on_track(Track)};
+	if (false == found.has_value())
+		return std::nullopt;
+	bezier const curve{Track.m_paths.front()};
+	for (auto const t : {0.1, 0.9})
+		if (auto const at{alignment_store::on_record(found->record, curve.point(t), 0.05)}; false == at.has_value() || at->element != found->element)
+			return std::nullopt;
+	auto const &elements{alignment_store::records()[static_cast<std::size_t>(found->record)].result.elements};
+	if (found->element < 0 || found->element >= static_cast<int>(elements.size()))
+		return std::nullopt;
+	return elements[static_cast<std::size_t>(found->element)];
+}
+
+// a stretch of a curve along the run of its paths: its length, its curvature at its start and at its end, unsigned
+struct curve_piece
+{
+	double length{0.0};
+	double from{0.0};
+	double to{0.0};
+};
+
+// the curvature of an element of a design at its start and at its end, unsigned
+std::pair<double, double> element_curvatures(alignment::element const &Element)
+{
+	auto const [start, end]{alignment::end_curvatures(Element)};
+	return {std::abs(start), std::abs(end)};
+}
+
+// the pieces of a curve along the run of its paths: of the elements of the stored design a path lies along, of the path itself where
+// it lies along none, its curvature as at its middle where it barely changes along it. False where no path lies along a design
+bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vector<curve_piece> &Pieces)
+{
+	Pieces.clear();
+	auto designed{false};
+	for (auto const &[track, forward] : Run)
+	{
+		auto const &path{track->m_paths.front()};
+		auto const length{track->eType == tt_Switch ? bezier{path}.plan_length() : track->Length()};
+		auto const &begin{path.points[forward ? segment_data::point::start : segment_data::point::end]};
+		auto const &finish{path.points[forward ? segment_data::point::end : segment_data::point::start]};
+		std::optional<alignment_store::hit> first;
+		std::optional<alignment_store::hit> last;
+		if (auto const found{track->eType == tt_Normal ? alignment_store::on_track(*track) : std::nullopt})
+		{
+			first = alignment_store::on_record(found->record, begin, 0.05);
+			last = alignment_store::on_record(found->record, finish, 0.05);
+		}
+		if (false == first.has_value() || false == last.has_value() || first->record != last->record || std::abs(last->chainage - first->chainage) < 1e-3)
+		{
+			auto const curvature_at = [&](double const T) {
+				auto const radius{path_radius(path, forward ? T : 1.0 - T)};
+				return radius > 0.0 ? 1.0 / radius : 0.0;
+			};
+			auto const start{curvature_at(0.0)};
+			auto const end{curvature_at(1.0)};
+			if (std::abs(start - end) <= 0.1 * std::max(start, end))
+				Pieces.push_back({length, curvature_at(0.5), curvature_at(0.5)});
+			else
+				Pieces.push_back({length, start, end});
+			continue;
+		}
+		designed = true;
+		auto const &elements{alignment_store::records()[static_cast<std::size_t>(first->record)].result.elements};
+		auto const low{std::min(first->chainage, last->chainage)};
+		auto const high{std::max(first->chainage, last->chainage)};
+		std::vector<curve_piece> own;
+		for (auto const &element : elements)
+		{
+			auto const from{std::max(low, element.chainage)};
+			auto const to{std::min(high, element.chainage + element.length)};
+			if (to - from < 1e-6)
+				continue;
+			auto const [start, end]{element_curvatures(element)};
+			auto const at = [&](double const Chainage) { return element.length > 1e-9 ? start + (end - start) * (Chainage - element.chainage) / element.length : start; };
+			own.push_back({to - from, at(from), at(to)});
+		}
+		// the design running against the run
+		if (last->chainage < first->chainage)
+		{
+			std::reverse(own.begin(), own.end());
+			for (auto &piece : own)
+				std::swap(piece.from, piece.to);
+		}
+		Pieces.insert(Pieces.end(), own.begin(), own.end());
+	}
+	return designed;
 }
 
 }
@@ -628,20 +717,14 @@ std::vector<std::pair<TTrack *, editor_track::point_ref>> editor_track::connecte
 	return result;
 }
 
-namespace
+glm::dvec2 editor_track::end_direction(segment_data const &Path, point_kind const Kind)
 {
-
-// direction of the path at the end, into the path
-glm::dvec2 end_direction(segment_data const &Path, editor_track::point_kind const Kind)
-{
-	bool const start{Kind == editor_track::point_kind::start};
+	bool const start{Kind == point_kind::start};
 	auto const &point{Path.points[start ? segment_data::point::start : segment_data::point::end]};
 	auto const &control{Path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
 	auto const direction{plan_of(control != glm::dvec3{} ? control : Path.points[start ? segment_data::point::end : segment_data::point::start] - point)};
 	return glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
 }
-
-} // namespace
 
 std::vector<editor_track::joint> editor_track::joints(TTrack const &Track)
 {
@@ -1625,7 +1708,14 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve)
 {
 	Curve = {};
-	auto const curved = [&](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && is_supported(*Other) && false == Other->m_editorremoved && false == is_straight(*Other, Tolerance); };
+	// a track too short to tell its bend from a straight is a part of the curve where it lies along an arc or a transition of a design
+	auto const designed_bend = [](TTrack const &Other) {
+		auto const element{designed_element(Other)};
+		return element.has_value() && element->kind != alignment::element_kind::straight;
+	};
+	auto const curved = [&](TTrack const *Other) {
+		return Other != nullptr && Other->eType == tt_Normal && is_supported(*Other) && false == Other->m_editorremoved && (false == is_straight(*Other, Tolerance) || designed_bend(*Other));
+	};
 	if (false == curved(&Track))
 		return false;
 
@@ -1812,6 +1902,48 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			Curve.compound = true;
 			Curve.radius = arcs.front().radius;
 			Curve.arcs = arcs;
+		}
+	}
+	// along the stored designs the curve is read from their elements, as it was laid, the paths along none by their own curvature: the
+	// curve of two lines laid one after another made of the arcs and the transitions of both, however short they are
+	if (std::vector<curve_piece> pieces; Curve.reversals == 0 && designed_pieces(run, pieces))
+	{
+		std::vector<curve::arc_part> designedarcs;
+		double in{0.0};
+		double between{0.0};
+		auto inside{false}; // a straight between two arcs: no curve of one vertex
+		auto straight{false};
+		for (auto const &piece : pieces)
+		{
+			auto const even{std::abs(piece.from - piece.to) <= 0.02 * std::max(piece.from, piece.to)};
+			if (even && piece.from < 1e-6)
+			{
+				straight = false == designedarcs.empty();
+				continue;
+			}
+			if (false == even)
+			{
+				(designedarcs.empty() ? in : between) += piece.length;
+				continue;
+			}
+			inside = inside || straight;
+			auto const radius{2.0 / (piece.from + piece.to)};
+			if (false == designedarcs.empty() && between < 1e-6 && std::abs(designedarcs.back().radius - radius) <= 0.02 * radius)
+				designedarcs.back().turn += piece.length / radius;
+			else
+				designedarcs.push_back({radius, piece.length / radius, designedarcs.empty() ? 0.0 : between});
+			between = 0.0;
+		}
+		if (false == designedarcs.empty() && false == inside)
+		{
+			Curve.laid = true;
+			Curve.transition_in = in;
+			Curve.transition_out = between;
+			Curve.radius = designedarcs.front().radius;
+			Curve.compound = designedarcs.size() > 1;
+			Curve.arcs.clear();
+			if (Curve.compound)
+				Curve.arcs = designedarcs;
 		}
 	}
 	if (Curve.reversals == 0)
@@ -2853,6 +2985,8 @@ std::optional<editor_track::switch_template> editor_track::template_of(switch_de
 	entry.movable = Design.movable;
 	entry.heel = Design.heel;
 	entry.bladethrow = Design.bladethrow;
+	if (false == Design.parts.empty() && Design.parts.back().radius1 <= 0.0 && Design.parts.back().radius2 <= 0.0)
+		entry.frog_straight = Design.parts.back().length;
 	entry.local = {shape.paths[0], shape.paths[1]};
 	entry.local[1].radius = static_cast<float>(shape.radius);
 	if (shape.paths.size() >= 5)
@@ -3022,7 +3156,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		slip.rail = std::string{entry.name}.substr(0, std::string{entry.name}.find('-'));
 		slip.label = std::string{entry.type} + ' ' + entry.name + format("  a %.3f", entry.half) + (slip.type == "Rkp" ? " single slip" : " double slip") +
 		             (entry.middle < 0.0 ? ", the blades outside of the diamond" : "") +
-		             (slip.type == "Rkp" ? " (click at a crossing of two straights, on the side of the joined tracks)" : " (click at a crossing of two straights)");
+		             (slip.type == "Rkp" ? " (click at a crossing of two straights, on the side of the joined tracks, or drag it out on a straight)" : " (click at a crossing of two straights, or drag it out on a straight)");
 		result.push_back(slip);
 	}
 	struct crossing
@@ -3060,7 +3194,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		plain.a = entry.half;
 		plain.ratio = ratio_of(entry.name);
 		plain.rail = std::string{entry.name}.substr(0, std::string{entry.name}.find('-'));
-		plain.label = std::string{"Skrz "} + entry.name + format("  a %.3f", entry.half) + " crossing (click at a crossing of two straights)";
+		plain.label = std::string{"Skrz "} + entry.name + format("  a %.3f", entry.half) + " crossing (click at a crossing of two straights, or drag it out on a straight)";
 		result.push_back(plain);
 	}
 	return result;

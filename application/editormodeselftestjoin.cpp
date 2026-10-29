@@ -288,7 +288,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		for (std::size_t k = 0; k < plan.design.vertices.size(); ++k)
 		{
 			auto const &vertex{plan.design.vertices[k]};
-			auto text{format("SELFTEST layplan vertex %zu: %s at %.3f %.3f", k, plan.corners[k] != 0 ? "bend" : "traced", k < plan.shape.vertices.size() ? plan.shape.vertices[k].x : 0.0, k < plan.shape.vertices.size() ? plan.shape.vertices[k].y : 0.0)};
+			auto text{format("SELFTEST layplan vertex %zu: %s at %.3f %.3f, designed R %.1f L %.1f/%.1f", k, plan.corners[k] != 0 ? "bend" : "traced", k < plan.shape.vertices.size() ? plan.shape.vertices[k].x : 0.0,
+			                 k < plan.shape.vertices.size() ? plan.shape.vertices[k].y : 0.0, vertex.radius, vertex.transition_in, vertex.transition_out)};
 			for (auto const &curve : plan.shape.curves)
 				if (curve.vertex == static_cast<int>(k))
 				{
@@ -476,7 +477,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			lay_back();
 		else
 			lay_cancel();
-		WriteLog(format("SELFTEST %s: %zu points, chain %zu, history %zu, %s", command.c_str(), m_lay.points.size(), m_lay.chain.size(), m_history.size(), m_lay.status.c_str()));
+		WriteLog(format("SELFTEST %s: %zu points, history %zu, %s", command.c_str(), m_lay.points.size(), m_history.size(), m_lay.status.c_str()));
 		return selftest_result::handled;
 	}
 	// a line of known curves, turning by the deflections given (degrees, to the left positive), the points along its curves clicked as
@@ -572,7 +573,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		lay_cancel();
 		auto const report = [&](std::string const &Step) {
 			auto const *start{m_lay.start.track};
-			WriteLog(format("SELFTEST laychain %s: chain %zu, points %zu, start %s%s at %.2f %.2f, history %zu, status %s", Step.c_str(), m_lay.chain.size(), m_lay.points.size(), start != nullptr ? start->name().c_str() : "-", start != nullptr && start->m_editorremoved ? " (removed)" : "",
+			WriteLog(format("SELFTEST laychain %s: points %zu, start %s%s at %.2f %.2f, history %zu, status %s", Step.c_str(), m_lay.points.size(), start != nullptr ? start->name().c_str() : "-", start != nullptr && start->m_editorremoved ? " (removed)" : "",
 			                m_lay.points.empty() ? 0.0 : m_lay.points.front().x, m_lay.points.empty() ? 0.0 : m_lay.points.front().z, m_history.size(), m_lay.status.c_str()));
 		};
 		for (std::string word; words >> word;)

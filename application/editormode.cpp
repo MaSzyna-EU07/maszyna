@@ -80,6 +80,38 @@ namespace
     using vec3 = glm::vec3;
     using dvec2 = glm::dvec2;
 
+    // the steps of a frame of the editor timed: a frame whose update takes longer than kSlow tells in the log which of them took
+    // the time, at most twice a second
+    class frame_steps
+    {
+      public:
+        void step(char const *Name)
+        {
+            auto const now{std::chrono::steady_clock::now()};
+            m_steps.emplace_back(Name, std::chrono::duration<double, std::milli>(now - m_last).count());
+            m_last = now;
+        }
+        ~frame_steps()
+        {
+            constexpr double kSlow{50.0}; // ms
+            auto const total{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m_start).count()};
+            static auto told{std::chrono::steady_clock::time_point{}};
+            if (total < kSlow || m_start - told < std::chrono::milliseconds{500})
+                return;
+            told = m_start;
+            std::string text{"Editor: slow frame, update " + std::to_string(static_cast<int>(total)) + " ms:"};
+            for (auto const &[name, time] : m_steps)
+                if (time >= 3.0)
+                    text += " " + std::string{name} + " " + std::to_string(static_cast<int>(time));
+            WriteLog(text, logtype::generic);
+        }
+
+      private:
+        std::chrono::steady_clock::time_point const m_start{std::chrono::steady_clock::now()};
+        std::chrono::steady_clock::time_point m_last{m_start};
+        std::vector<std::pair<char const *, double>> m_steps;
+    };
+
     inline bool is_release(int state)
     {
         return state == GLFW_RELEASE;
@@ -552,14 +584,21 @@ editor_mode::editor_mode() {
 	});
 	m_roadtool.settings.normalize();
 	road_select(nullptr);
-	// the orthophoto is fitted onto the same ground as the area fill uses, terrain tile models included
+	ground_sources(m_orthophoto);
+	ui()->set_base_layers([this]() { render_base_layers(); });
+	editor_track::observe(this);
+ }
+
+void editor_mode::ground_sources(editor_orthophoto &Layer)
+{
+	// the imagery is fitted onto the same ground as the area fill uses, terrain tile models included
 	// the roads built in the editor aren't ground: the imagery goes under them
-	m_orthophoto.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Heightmap, std::vector<world_triangle> &Out) {
+	Layer.ground_source([](glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Heightmap, std::vector<world_triangle> &Out) {
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
-	m_orthophoto.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
+	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
-	m_orthophoto.guess_source([this](double const X, double const Z, double &Height) {
+	Layer.guess_source([this](double const X, double const Z, double &Height) {
 		if (nmt_ground(X, Z, Height))
 			return true;
 		// asked for, the tile goes onto it once it comes
@@ -567,8 +606,7 @@ editor_mode::editor_mode() {
 			m_nmt.request({X - 1.0, Z - 1.0}, {X + 1.0, Z + 1.0});
 		return false;
 	});
-	editor_track::observe(this);
- }
+}
 
 editor_mode::~editor_mode()
 {
@@ -657,6 +695,13 @@ bool editor_mode::init()
 {
     EditorSettings.load();
     Global.EditorOrthoTracks = EditorSettings.top_tracks();
+    // the terrain model as the user left it; the settings are read only here, after the mode was made
+    auto const &model{EditorSettings.terrain_model()};
+    m_nmt_state.grow = EditorSettings.terrain_while_laying();
+    m_nmt_state.band = std::clamp(model.band, 50.0, 3000.0);
+    m_nmt_state.shape = model.shape;
+    m_nmt_state.follow = model.follow;
+    m_terrain_add_count = std::clamp(model.around, 1, 8);
     EditorModelSets.load();
     EditorTrackPresets.load();
     Camera.Init({0, 15, 0}, {glm::radians(-30.0), glm::radians(180.0), 0}, nullptr);
@@ -1344,8 +1389,10 @@ void editor_mode::redo_one()
 
 bool editor_mode::update()
 {
+    frame_steps steps;
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
+    steps.step("selftest");
     // the drives of the switches go to the tips of their blades once, as the templates of the scenery are known
     if (false == m_drives_checked)
     {
@@ -1374,7 +1421,9 @@ bool editor_mode::update()
         return true;
     }
 
+    steps.step("start");
     Timer::UpdateTimers(true);
+    move_thrown_switches();
 
     simulation::State.update_clocks();
     simulation::Environment.update();
@@ -1389,6 +1438,9 @@ bool editor_mode::update()
     }
 
     auto const deltarealtime = Timer::GetDeltaRenderTime();
+    // the whole frame before, drawing included: one slow where its update wasn't took the time drawing
+    if (deltarealtime > 0.15 && simulation::is_ready)
+        WriteLog("Editor: slow frame before, " + std::to_string(static_cast<int>(deltarealtime * 1000.0)) + " ms in all", logtype::generic);
 
     // reconcile camera fly-mode with the real right-button state. ImGui is always fed the button
     // events (even when it captures the mouse), so io.MouseDown[1] is authoritative; if a release
@@ -1415,6 +1467,7 @@ bool editor_mode::update()
         m_input.mouse.button(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE);
     }
     terrain_history_step();
+    steps.step("simulation");
 
     // fixed step render time routines (50 Hz)
     fTime50Hz += deltarealtime; // accumulate even when paused to keep frame reads stable
@@ -1445,8 +1498,10 @@ bool editor_mode::update()
  
     }
 
+    steps.step("ui");
     // variable step routines
     update_camera(deltarealtime);
+    steps.step("camera");
 
     // drop the selection if its layer was hidden or locked in the meantime
     if (m_node != nullptr && false == scene::Layers.editable(m_node))
@@ -1483,6 +1538,7 @@ bool editor_mode::update()
     audio::renderer.update(Global.iPause ? 0.0 : deltarealtime);
 
     GfxRenderer->Update(deltarealtime);
+    steps.step("renderer");
 
     simulation::is_ready = true;
 
@@ -1498,24 +1554,26 @@ bool editor_mode::update()
         draw_terrain_overlay();
 
     // --- geoportal orthophoto: streamed around the camera, drawn beneath the other overlays ---
-    // far out the top view shows the base map in place of the imagery, and the ground isn't drawn under it
-    {
-        auto const &io{ImGui::GetIO()};
-        auto const metres{Global.EditorOrtho && io.DisplaySize.y > 0.0f ? 2.0 * static_cast<double>(Global.EditorOrthoExtent) / io.DisplaySize.y : 0.0};
-        auto const aspect{io.DisplaySize.y > 0.0f ? static_cast<double>(io.DisplaySize.x / io.DisplaySize.y) : 1.0};
-        Global.EditorOrthoMap = m_orthophoto.enabled() && metres >= (m_orthophoto.overview() ? 1.6 : 2.0);
-        m_orthophoto.overview(Global.EditorOrthoMap ? metres : 0.0, static_cast<double>(Global.EditorOrthoExtent) * std::sqrt(1.0 + aspect * aspect));
-    }
     // chunks of the terrain come from the files and from the model: the imagery lying at guessed heights goes onto them
     // and so do the squares of the model it lies on meanwhile
     auto const resident{m_streamer.resident()};
     auto const waiting{m_nmt.waiting()};
     if (resident > m_ortho_resident || waiting < m_ortho_waiting)
+    {
         m_orthophoto.ground_arrived();
+        for (auto &layer : m_wms)
+            layer->ground_arrived();
+    }
     m_ortho_resident = resident;
     m_ortho_waiting = waiting;
+    steps.step("terrain");
     m_orthophoto.update(Camera.Pos);
+    steps.step("orthophoto");
+    update_wms_layers();
+    steps.step("wms");
     nmt_update();
+    keep_nmt_settings();
+    steps.step("nmt");
     // what's drawn over the 3d view stays in it, the docks around it are see-through a little
     auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
     background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
@@ -1523,6 +1581,7 @@ bool editor_mode::update()
     draw_nmt_pending();
     area_update();
     draw_download_area();
+    steps.step("imagery");
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
@@ -1530,13 +1589,14 @@ bool editor_mode::update()
     render_viewport_overlays();
 
     render_track_inspector();
+    steps.step("inspector");
     if (ui()->mode() == nodebank_panel::TRACK)
     {
         draw_track_lines();
         draw_track_labels();
         draw_track_legend();
     }
-    else if (Global.EditorOrtho && (Global.EditorOrthoTracks > 1 || Global.EditorOrthoMap))
+    else if (Global.EditorOrtho && Global.EditorOrthoTracks > 1)
         draw_track_lines();
     if (selected_track())
         draw_track_overlay();
@@ -1544,11 +1604,13 @@ bool editor_mode::update()
         draw_route_overlay();
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
         draw_straights_overlay();
+    steps.step("track lines");
     if (ui()->mode() == nodebank_panel::TRACK)
     {
         if (m_track_box.active && false == ImGui::GetIO().MouseDown[0])
             finish_track_box();
         update_track_hover();
+        steps.step("hover");
         point_drag_update();
         switch_slide_update();
         draw_switch_slide();
@@ -1568,21 +1630,29 @@ bool editor_mode::update()
             m_vehicle.draw_overlay();
         }
         render_track_context();
+        steps.step("context");
         update_build_tools();
+        steps.step("laying");
         tape_update();
         update_track_intent();
+        steps.step("intent");
         draw_track_hover();
         draw_track_set();
         draw_track_spread();
         draw_build_overlay();
+        steps.step("laying drawn");
         draw_blade_tips();
         draw_track_intent();
         draw_tape();
+        steps.step("track drawn");
         m_speed.update();
+        steps.step("speed");
         m_joints.update();
+        steps.step("joints");
         m_srk.update();
         kilometrage::follow(m_track_edits);
         m_km.update();
+        steps.step("srk km");
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
@@ -1591,6 +1661,7 @@ bool editor_mode::update()
         m_joints.draw_overlay();
         m_srk.draw_overlay();
         m_km.draw_overlay();
+        steps.step("overlays");
     }
     else
     {
@@ -1608,6 +1679,7 @@ bool editor_mode::update()
     // the roads and the terrain are fields of work, their tools are drawn in the tool options window in place of the edit mode ones
     ui()->set_workspace(m_terrain_open ? editor_ui::workspace::terrain : m_roadtool.window ? editor_ui::workspace::roads : editor_ui::workspace::none);
 
+    steps.step("roads");
     // --- array: the one made last is kept in line with its settings ---
     update_array();
 
@@ -1623,11 +1695,11 @@ bool editor_mode::update()
     render_first_steps();
     render_nmt_prompt();
     render_nmt_banner();
-    render_orthophoto_window();
     render_switch_designer();
     render_environment_window();
     draw_selection_overlay();
     render_context_menu();
+    steps.step("windows");
 
     // --- ImGui: Editor Settings & History windows ---
     if(m_settings_open)
@@ -1796,6 +1868,10 @@ void editor_mode::render_terrain_ui()
             ImGui::SameLine();
             if (ImGui::Button(STR_C("Clear the selection")))
                 m_terrain_selection.clear();
+            if (ImGui::Button(STR_C("Remove the selected (Del)")))
+                remove_selected_chunks();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Takes the selected chunks out of the terrain of the scenery, and out of its files on save; Ctrl+Z brings them back"));
             ImGui::Checkbox(STR_C("Paint every 0.5 m with 0.5 m spacing"), &m_terrain_convert_paint);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", STR_C("Chunks converted to 0.5 m get their paint samples every 0.5 m as well (every metre otherwise),\n"
@@ -2276,6 +2352,12 @@ void editor_mode::load_orthophoto_settings()
     if (scenery == m_orthophoto_scenery)
         return;
     m_orthophoto_scenery = scenery;
+    // a scenery of its own: nobody chose for it yet, unless the user or the scenery keeps the orthophoto on or off
+    m_orthophoto_chosen = false;
+    // the height of the terrain model against the tracks of the scenery, as it was fitted or typed in last
+    m_nmt_state.offset = 0.0;
+    m_nmt_state.fitted = false;
+    std::as_const(EditorSettings).terrain_model_offset(scenery, m_nmt_state.offset, m_nmt_state.fitted);
 
     auto const &stored = EditorSettings.orthophoto();
     editor_orthophoto::config config = m_orthophoto.settings();
@@ -2302,7 +2384,16 @@ void editor_mode::load_orthophoto_settings()
     {
         m_orthophoto_mark = marked.front();
         m_orthophoto.enabled(enabled);
+        m_orthophoto_chosen = true;
         WriteLog(format("Editor: the map settings of the scenery, orthophoto %s", enabled ? "on" : "off"));
+    }
+    // the user's choice stands over the scenery's; turned on only where the scenery lies on the map, a fictional one has nothing to
+    // show, and there it's left to the terrain model once the scenery is placed
+    if (auto const on{stored.on}; on.has_value() && (false == *on || config.north != 0.0 || config.east != 0.0))
+    {
+        m_orthophoto.enabled(*on);
+        m_orthophoto_chosen = true;
+        WriteLog(format("Editor: the orthophoto %s, as the user left it", *on ? "on" : "off"));
     }
     m_orthophoto.settings(config);
     m_orthophoto_origin_edit = {config.north, config.east};
@@ -2330,6 +2421,42 @@ void editor_mode::save_orthophoto_settings()
     EditorSettings.save();
 }
 
+void editor_mode::choose_orthophoto(bool const On)
+{
+    m_orthophoto.enabled(On);
+    m_orthophoto_chosen = true;
+    EditorSettings.orthophoto().on = On;
+    EditorSettings.save();
+}
+
+void editor_mode::keep_nmt_settings()
+{
+    // not while a number is being typed in, which changes it at every key
+    if (ImGui::IsAnyItemActive())
+        return;
+    auto const &state{m_nmt_state};
+    auto &stored{EditorSettings.terrain_model()};
+    auto changed{stored.band != state.band || stored.around != m_terrain_add_count || stored.shape != state.shape || stored.follow != state.follow};
+    stored.band = state.band;
+    stored.around = m_terrain_add_count;
+    stored.shape = state.shape;
+    stored.follow = state.follow;
+    // the offset of the model is the scenery's, fitted to its tracks or typed in
+    if (false == m_orthophoto_scenery.empty())
+    {
+        double offset{0.0};
+        bool fitted{false};
+        std::as_const(EditorSettings).terrain_model_offset(m_orthophoto_scenery, offset, fitted);
+        if (offset != state.offset || fitted != state.fitted)
+        {
+            EditorSettings.terrain_model_offset(m_orthophoto_scenery, state.offset, state.fitted);
+            changed = true;
+        }
+    }
+    if (changed)
+        EditorSettings.save();
+}
+
 void editor_mode::render_orthophoto_ui()
 {
     load_orthophoto_settings();
@@ -2338,11 +2465,6 @@ void editor_mode::render_orthophoto_ui()
     bool changed = false; // apply to the layer
     bool persist = false; // and store in the editor settings
 
-    bool enabled = m_orthophoto.enabled();
-    if (ImGui::Checkbox(STR_C("Show orthophoto (geoportal.gov.pl)"), &enabled))
-        m_orthophoto.enabled(enabled);
-
-    ImGui::Separator();
     ImGui::TextUnformatted(STR_C("Scenery origin (0,0,0) in PUWG 1992 / EPSG:2180"));
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("PUWG 1992 (EPSG:2180): the coordinate system of the maps of Poland, in metres; the numbers as on geoportal.gov.pl"));
@@ -2438,6 +2560,8 @@ void editor_mode::render_orthophoto_ui()
                 ground_tiles.clear();
                 forget_ground_shapes();
                 m_orthophoto.refit();
+                for (auto &layer : m_wms)
+                    layer->refit();
             }
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(STR_C("Samples the ground again, after it was edited"));
@@ -2532,7 +2656,7 @@ void editor_mode::render_orthophoto_ui()
 
 void editor_mode::draw_orthophoto()
 {
-    if (!m_orthophoto.enabled())
+    if (false == m_orthophoto.enabled() && std::none_of(m_wms.begin(), m_wms.end(), [](auto const &Layer) { return Layer->enabled(); }))
         return;
     // the camera was just published to the renderer (update_camera), so build the view from it rather than
     // from the renderer's previous frame; camera-relative rotation, same projection as the other overlays
@@ -2541,16 +2665,11 @@ void editor_mode::draw_orthophoto()
     glm::mat4 const view = glm::mat4(glm::mat3(viewmatrix));
     ImGuiIO const &io = ImGui::GetIO();
     float const aspect = io.DisplaySize.y > 0.0f ? io.DisplaySize.x / io.DisplaySize.y : 1.0f;
-    m_orthophoto.draw(editor_mode::projection_matrix(aspect) * view, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
-    if (false == m_orthophoto.overview())
-        return;
-    char const *credit{STR_C("(c) OpenStreetMap contributors, geoportal.gov.pl")};
-    auto const size{ImGui::CalcTextSize(credit)};
-    auto const corner{editor_ui::view_max()};
-    ImVec2 const from{corner.x - size.x - 12.0f, corner.y - size.y - 44.0f};
-    auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-    drawlist->AddRectFilled(ImVec2(from.x - 4.0f, from.y - 2.0f), ImVec2(from.x + size.x + 4.0f, from.y + size.y + 2.0f), IM_COL32(255, 255, 255, 190), 3.0f);
-    drawlist->AddText(from, IM_COL32(40, 40, 40, 255), credit);
+    auto const projection{editor_mode::projection_matrix(aspect) * view};
+    m_orthophoto.draw(projection, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
+    // the WMS layers over it, the top one of the list last
+    for (auto layer{m_wms.rbegin()}; layer != m_wms.rend(); ++layer)
+        (*layer)->draw(projection, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
 }
 
 void editor_mode::draw_ortho_compass() const
@@ -2602,6 +2721,18 @@ void editor_mode::forget_ground()
 {
     ground_tiles.clear();
     forget_ground_shapes();
+}
+
+void editor_mode::forget_ground_in(glm::dvec2 const &Min, glm::dvec2 const &Max)
+{
+    for (auto tile{ground_tiles.begin()}; tile != ground_tiles.end();)
+    {
+        glm::dvec2 const low{tile->first.first * ground_tile_size, tile->first.second * ground_tile_size};
+        if (low.x <= Max.x && low.x + ground_tile_size >= Min.x && low.y <= Max.y && low.y + ground_tile_size >= Min.y)
+            tile = ground_tiles.erase(tile);
+        else
+            ++tile;
+    }
 }
 
 editor_terrain *editor_mode::terrain_at(double X, double Z)
@@ -3422,6 +3553,25 @@ void editor_mode::fill_terrain_area()
         m_paint_outline.clear();
 }
 
+void editor_mode::remove_selected_chunks()
+{
+    // one step of the history, as the terrain changed in a frame goes
+    std::size_t removed{0};
+    for (auto const &key : m_terrain_selection)
+        if (m_streamer.exists(key))
+        {
+            m_streamer.remove_chunk(key.first, key.second);
+            ++removed;
+        }
+    m_terrain_selection.clear();
+    if (removed > 0)
+    {
+        ground_tiles.clear();
+        forget_ground_shapes();
+    }
+    m_terrain_status = format(STR_P("%zu chunk removed, Ctrl+Z brings it back", "%zu chunks removed, Ctrl+Z brings them back", removed), removed);
+}
+
 void editor_mode::convert_selected_chunks()
 {
     // with 0.5 m spacing the paint can be as fine, the other spacings keep a sample per metre
@@ -3666,21 +3816,286 @@ void editor_mode::render_map_menu()
         return;
     bool enabled = m_orthophoto.enabled();
     if (ImGui::MenuItem(STR_C("Orthophoto"), nullptr, enabled))
-        m_orthophoto.enabled(false == enabled);
+        choose_orthophoto(false == enabled);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
-    ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, &m_orthophoto_window);
+    // the settings among the base layers in the layers window
+    if (ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, orthophoto_settings_open()))
+    {
+        ui()->show_layers();
+        m_orthophoto_window = true;
+    }
     ImGui::EndMenu();
 }
 
-void editor_mode::render_orthophoto_window()
+bool editor_mode::orthophoto_settings_open() const
 {
-    if (false == m_orthophoto_window)
-        return;
-    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin((std::string(STR_C("Orthophoto")) + "###orthophoto").c_str(), &m_orthophoto_window))
+    // drawn open in the layers window in this frame or in the last one
+    return ImGui::GetCurrentContext() != nullptr && ImGui::GetFrameCount() - m_orthophoto_frame <= 1;
+}
+
+void editor_mode::render_base_layers()
+{
+    auto &stored{EditorSettings.wms_layers()};
+    bool save{false};
+    // the WMS layers of the user's, the top one first, each drawn over the ones under it
+    int moved{-1};
+    int removed{-1};
+    for (int i = 0; i < static_cast<int>(stored.size()); ++i)
+    {
+        auto &entry{stored[static_cast<std::size_t>(i)]};
+        ImGui::PushID(i + 1);
+        save |= ImGui::Checkbox("##visible", &entry.visible);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Show or hide the layer"));
+        ImGui::SameLine();
+        if (ImGui::TreeNode("##wms", "%s", entry.title.empty() ? entry.layers.c_str() : entry.title.c_str()))
+        {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", entry.url.c_str());
+            ImGui::TextDisabled(STR_C("Layers: %s"), entry.layers.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::SliderFloat(STR_C("Opacity"), &entry.opacity, 0.0f, 1.0f, "%.2f");
+            save |= ImGui::IsItemDeactivatedAfterEdit();
+            if (false == entry.terms.empty())
+            {
+                ImGui::TextUnformatted(STR_C("Terms of the service:"));
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextDisabled("%s", entry.terms.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            if (i > 0)
+            {
+                if (ImGui::SmallButton(STR_C("Up")))
+                    moved = i - 1;
+                ImGui::SameLine();
+            }
+            if (i + 1 < static_cast<int>(stored.size()))
+            {
+                if (ImGui::SmallButton(STR_C("Down")))
+                    moved = i;
+                ImGui::SameLine();
+            }
+            if (ImGui::SmallButton(STR_C("Remove")))
+                removed = i;
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    // a layer swapped with the one under it, or one taken away; the ones of the view go along
+    if (moved >= 0 && moved + 1 < static_cast<int>(stored.size()))
+    {
+        std::swap(stored[static_cast<std::size_t>(moved)], stored[static_cast<std::size_t>(moved) + 1]);
+        if (moved + 1 < static_cast<int>(m_wms.size()))
+            std::swap(m_wms[static_cast<std::size_t>(moved)], m_wms[static_cast<std::size_t>(moved) + 1]);
+        save = true;
+    }
+    if (removed >= 0)
+    {
+        stored.erase(stored.begin() + removed);
+        if (removed < static_cast<int>(m_wms.size()))
+        {
+            m_wms[static_cast<std::size_t>(removed)]->enabled(false);
+            m_wms[static_cast<std::size_t>(removed)]->detach_scene();
+            m_wms.erase(m_wms.begin() + removed);
+        }
+        save = true;
+    }
+    if (save)
+        EditorSettings.save();
+
+    // the orthophoto at the bottom, its settings opened here from the map menu too
+    ImGui::PushID("orthophoto");
+    bool enabled{m_orthophoto.enabled()};
+    if (ImGui::Checkbox("##visible", &enabled))
+        choose_orthophoto(enabled);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
+    ImGui::SameLine();
+    if (m_orthophoto_window)
+    {
+        ImGui::SetNextItemOpen(true);
+        m_orthophoto_window = false;
+    }
+    if (ImGui::TreeNode("##settings", "%s", STR_C("Orthophoto (geoportal.gov.pl)")))
+    {
+        m_orthophoto_frame = ImGui::GetFrameCount();
         render_orthophoto_ui();
-    ImGui::End();
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+
+    // the terrain of the model under the tracks laid, as the terrain panel has it too
+    if (ImGui::Checkbox(STR_C("Terrain of the model right away while laying"), &m_nmt_state.grow))
+    {
+        EditorSettings.terrain_while_laying(m_nmt_state.grow);
+        EditorSettings.save();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Where the terrain of the scenery ends, the terrain model is made under the tracks as they're laid, around the cursor from the first point placed; "
+                                      "the chunks there are stay as they are. Off, it's made only when asked for"));
+
+    render_wms_adding();
+}
+
+void editor_mode::render_wms_adding()
+{
+    auto &adding{m_wms_adding};
+    ImGui::PushID("wmsadding");
+    if (false == ImGui::TreeNode("##add", "%s", STR_C("Add a WMS layer")))
+    {
+        ImGui::PopID();
+        return;
+    }
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("%s", STR_C("The address of a WMS service drawing in PUWG 1992 (EPSG:2180). Its tiles are kept in memory only and asked for only around the camera; "
+                                    "what the service allows is up to you, its terms are shown below"));
+    ImGui::PopTextWrapPos();
+    ImGui::SetNextItemWidth(-1.0f);
+    auto const entered{ImGui::InputTextWithHint("##url", "https://...", adding.url.data(), adding.url.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
+    std::string const url{adding.url.data()};
+    if ((ImGui::Button(STR_C("Read the layers")) || entered) && false == adding.reading.valid() && false == url.empty())
+    {
+        adding.info.reset();
+        adding.ticked.clear();
+        adding.service = url;
+        adding.reading = std::async(std::launch::async, [url]() { return editor_orthophoto::describe(url); });
+    }
+    if (adding.reading.valid())
+    {
+        if (adding.reading.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+        {
+            adding.info = adding.reading.get();
+            adding.ticked.assign(adding.info->layers.size(), 0);
+        }
+        else
+            ImGui::TextDisabled("%s", STR_C("Reading the capabilities of the service..."));
+    }
+    if (adding.info.has_value())
+    {
+        auto const &info{*adding.info};
+        ImGui::PushTextWrapPos(0.0f);
+        if (false == info.error.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), STR_C("The service can't be read: %s"), info.error.c_str());
+        if (false == info.title.empty())
+            ImGui::TextUnformatted(info.title.c_str());
+        if (false == info.terms.empty())
+        {
+            ImGui::TextUnformatted(STR_C("Terms of the service:"));
+            ImGui::TextDisabled("%s", info.terms.c_str());
+        }
+        if (false == info.puwg && false == info.layers.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("The service doesn't draw in PUWG 1992 (EPSG:2180), the editor can't lay it out"));
+        ImGui::PopTextWrapPos();
+        if (false == info.layers.empty())
+        {
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint("##filter", STR_C("Filter the layers"), adding.filter.data(), adding.filter.size());
+            auto const filter{ToLower(adding.filter.data())};
+            ImGui::BeginChild("##layers", ImVec2(0.0f, std::min(200.0f, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(info.layers.size()) + 4.0f)), true);
+            for (std::size_t i = 0; i < info.layers.size(); ++i)
+            {
+                auto const &[name, title]{info.layers[i]};
+                auto const label{title.empty() || title == name ? name : title + " (" + name + ")"};
+                if (false == filter.empty() && ToLower(label).find(filter) == std::string::npos)
+                    continue;
+                bool ticked{adding.ticked[i] != 0};
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Checkbox(label.c_str(), &ticked))
+                    adding.ticked[i] = ticked ? 1 : 0;
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+            std::string layers;
+            for (std::size_t i = 0; i < info.layers.size(); ++i)
+                if (adding.ticked[i] != 0)
+                    layers += (layers.empty() ? "" : ",") + info.layers[i].first;
+            auto const ready{info.puwg && false == layers.empty()};
+            if (false == ready)
+            {
+                ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+            }
+            auto const add{ImGui::Button(STR_C("Add")) && ready};
+            if (false == ready)
+            {
+                ImGui::PopStyleVar();
+                ImGui::PopItemFlag();
+            }
+            if (add)
+            {
+                editorSettings::wms_layer entry;
+                entry.url = adding.service;
+                entry.layers = layers;
+                entry.title = info.title.empty() ? layers : info.title;
+                entry.terms = info.terms;
+                // on top of the others
+                EditorSettings.wms_layers().insert(EditorSettings.wms_layers().begin(), entry);
+                EditorSettings.save();
+                adding.info.reset();
+                adding.ticked.clear();
+                adding.url.fill('\0');
+                adding.filter.fill('\0');
+            }
+        }
+    }
+    ImGui::TreePop();
+    ImGui::PopID();
+}
+
+void editor_mode::update_wms_layers()
+{
+    auto const &stored{EditorSettings.wms_layers()};
+    // a layer added or removed: the ones of the view made again, as the settings have them
+    auto same{m_wms.size() == stored.size()};
+    for (std::size_t i = 0; same && i < stored.size(); ++i)
+        same = m_wms[i]->settings().service == stored[i].url && m_wms[i]->settings().layers == stored[i].layers;
+    if (false == same)
+    {
+        for (auto &layer : m_wms)
+        {
+            layer->enabled(false);
+            layer->detach_scene();
+        }
+        m_wms.clear();
+        for (auto const &entry : stored)
+        {
+            auto layer{std::make_unique<editor_orthophoto>()};
+            auto config{layer->settings()};
+            config.service = entry.url;
+            config.layers = entry.layers;
+            config.hires = false;
+            config.year = 0;
+            config.in_scene = false;
+            layer->settings(config);
+            ground_sources(*layer);
+            m_wms.push_back(std::move(layer));
+        }
+    }
+    // laid out by the origin of the scenery and onto the ground as the orthophoto is, around the camera as far as it
+    load_orthophoto_settings();
+    auto const &base{m_orthophoto.settings()};
+    auto const placed{base.north != 0.0 || base.east != 0.0};
+    for (std::size_t i = 0; i < m_wms.size(); ++i)
+    {
+        auto &layer{*m_wms[i]};
+        auto config{layer.settings()};
+        if (config.north != base.north || config.east != base.east || config.radius != base.radius || config.drape != base.drape || config.lift != base.lift || config.height != base.height ||
+            config.opacity != stored[i].opacity)
+        {
+            config.north = base.north;
+            config.east = base.east;
+            config.radius = base.radius;
+            config.drape = base.drape;
+            config.lift = base.lift;
+            config.height = base.height;
+            config.opacity = stored[i].opacity;
+            layer.settings(config);
+        }
+        layer.enabled(stored[i].visible && placed);
+        layer.update(Camera.Pos);
+    }
 }
 
 void editor_mode::render_view_menu()
@@ -3954,7 +4369,7 @@ void editor_mode::terrain_workspace(bool const Open)
 
 void editor_mode::render_terrain_tool_options()
 {
-    // the orthophoto has a window of its own, see render_orthophoto_window()
+    // the orthophoto has its settings among the base layers in the layers window, see render_base_layers()
     render_terrain_ui();
 }
 
@@ -5182,15 +5597,15 @@ void editor_mode::render_first_steps()
 	      {"L", "The lay tool"},
 	      {"LMB", "A click on the ground or on a free end: where the track starts"},
 	      {"LMB", "Each next click: a bend of the line, the curve at it made by itself. The line shown isn't a track yet"},
-	      {"Enter", "Lays the track clicked; the clicks after it go on from its end"},
-	      {"Backspace", "Takes the last point back, then the last piece laid"},
+	      {"Enter", "Lays the track clicked; to go on from its end, click the end"},
+	      {"Backspace", "Takes the last point back"},
 	      {"Esc", "Ends laying; the points not laid yet go only with the second Esc"}},
 	     {{first_step::tracks, "Open the Tracks field of work"}, {first_step::lay, "Turn the lay tool on"}, {first_step::laid, "Click a few points and lay them with Enter"}},
 	     trial::lay},
 	    {"Curves",
 	     "curves",
 	     {{"LMB", "Click the bends of the line: each gets a curve as large as fits; one too sharp for the speed set in the panel has its label in orange"},
-	      {"Tab", "A curve seen on the photo: click points along its middle, the last two on the straight after it; one of two or three radii comes out a compound curve"},
+	      {"Tab", "A curve seen on the photo: click points along its middle, the curve ending at the last one; one of two or three radii comes out a compound curve"},
 	      {"Alt", "Held: the direction turns in steps of 15 degrees, or to 1:9, 1:6.6... to a straight track it starts by or crosses"},
 	      {"0 1 2 3", "Type the length of the next straight, Enter puts the point"},
 	      {"wheel", "Alone it zooms, as everywhere"}},
@@ -5273,7 +5688,7 @@ void editor_mode::render_first_steps()
 	      {"F5", "The Terrain field of work: the terrain model (NMT) is in its tool options"},
 	      {"1", "Location: where the scenery lies, a click on the map or the place typed"},
 	      {"2", "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"},
-	      {"3", "Tracks onto the terrain: all the tracks go onto the model; the terrain to some tracks only: select them, Terrain in the inspector"},
+	      {"3", "Tracks onto the terrain: the tracks not fitted yet go onto the model, the ones fitted stay; the terrain to some tracks only: select them, Terrain in the inspector"},
 	      {"Ctrl + Z", "Takes the changes back"}},
 	     {{first_step::terrain, "Open the Terrain field of work"}, {first_step::nmt, "Load terrain from the model"}},
 	     trial::terrain,
@@ -5537,6 +5952,7 @@ void editor_mode::render_shortcuts_window()
 	    {"Tracks",
 	     {{"Esc", "Select tool; cancels what's going on first"},
 	      {"L / T / U", "Lay track / switch / turntable"},
+	      {"H", "Throw the selected switch over to its other path, in the editor only"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
 	      {"I / B", "Signalling / objects along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
@@ -5544,8 +5960,8 @@ void editor_mode::render_shortcuts_window()
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
 	      {"RMB on a track", "What can be done with it"},
 	      {"K", "Split the selected track at the cursor, a break of the grade at the height of the ground"},
-	      {"L, LMB, LMB...", "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them and goes on from the end"},
-	      {"Tab while laying", "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"},
+	      {"L, LMB, LMB...", "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them; a click on a free end goes on from it"},
+	      {"Tab while laying", "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"},
 	      {"Drag from a free end", "Lead a track out of it: a straight, an arc and a straight where a curve is traced (Tab); onto another free end: join the two"},
 	      {"Ctrl+wheel", "Dragging from a free end: radius"},
 	      {"Shift+wheel", "Dragging over another free end: another way to join"},
@@ -5553,7 +5969,7 @@ void editor_mode::render_shortcuts_window()
 	      {"Alt held while laying", "The direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track; the first click with Alt goes onto the axis of the track"},
 	      {"N", "Parallel track: LMB on a track, then the side and the spacing"},
 	      {"Shift+LMB on a track in L", "The Parallel tool (N) with it"},
-	      {"Enter / Backspace", "Laying track: lay the points clicked / take back the last point, then the last piece laid"},
+	      {"Enter / Backspace", "Laying track: lay the points clicked / take back the last point"},
 	      {"Esc twice while laying", "Drop the points clicked and not laid yet"},
 	      {"Del", "Delete the selected tracks"}}},
 	    {"Plan of a curve",
@@ -6245,6 +6661,11 @@ void editor_mode::exit()
     m_fill_last.clear();
     m_orthophoto.cancel_pending();
     m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
+    for (auto &layer : m_wms)
+    {
+        layer->cancel_pending();
+        layer->detach_scene();
+    }
     // the download of the area held while the scenery is driven, it goes on once the editor is back
     m_orthophoto.area_paused(true);
     m_nmt.prefetch_paused(true);
@@ -6513,7 +6934,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_DELETE:
-        if (is_press(Action))
+        // the chunks of the terrain selected, where the terrain is the field of work; else what's selected in the scenery
+        if (is_press(Action) && m_terrain_open && false == m_terrain_selection.empty())
+            remove_selected_chunks();
+        else if (is_press(Action))
             delete_selected();
         break;
 
@@ -6563,6 +6987,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_TAB:
+        // a switch dragged from a free end and bent: its diverging track the other way than the main one, or the same way
+        if (is_press(Action) && false == anyModifier && m_switch.placing && m_switch.free && false == ImGui::GetIO().WantTextInput)
+        {
+            m_switch.one_sided = false == m_switch.one_sided;
+            break;
+        }
         // laying: the bends of straights or a curve traced, for the points clicked from now on
         if (is_press(Action) && false == anyModifier && ui()->mode() == nodebank_panel::TRACK && m_lay.active && false == ImGui::GetIO().WantTextInput)
             lay_switch_mode();
@@ -6866,7 +7296,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     finish_extend();
                 if (m_switch.placing)
                 {
-                    // a press let go with no drag places no switch, a click on the ground with no track there selects nothing
+                    // a press let go with no drag places no switch: the track it took is only selected, the ground with no track there
+                    // selects nothing
                     auto const &io{ImGui::GetIO()};
                     if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_switch.pressed_at) <= 10.0f)
                     {

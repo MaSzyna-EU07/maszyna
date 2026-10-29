@@ -73,6 +73,24 @@ std::filesystem::path user_config_path(const std::string &filename)
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
 
+std::filesystem::path user_cache_path(const std::string &filename)
+{
+	namespace fs = std::filesystem;
+#if defined(_WIN32)
+	if (const char *local = std::getenv("LOCALAPPDATA"))
+		return fs::path(local) / "MaSzyna" / "cache" / filename;
+#elif defined(__APPLE__)
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / "Library" / "Caches" / "MaSzyna" / filename;
+#else
+	if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache != nullptr && *cache != '\0')
+		return fs::path(cache) / "MaSzyna" / filename;
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / ".cache" / "MaSzyna" / filename;
+#endif
+	return {};
+}
+
 // zwraca różnicę czasu
 // jeśli pierwsza jest aktualna, a druga rozkładowa, to ujemna oznacza opóżnienie
 // na dłuższą metę trzeba uwzględnić datę, jakby opóżnienia miały przekraczać 12h (towarowych)

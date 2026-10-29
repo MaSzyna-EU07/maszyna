@@ -175,7 +175,6 @@ struct global_settings {
     bool EditorOrtho{ false };
     float EditorOrthoExtent{ 150.f };
     int EditorOrthoTracks{ 0 }; // the railway in the top view of the editor: 0 whole, 1 without the ballast, 2 the rails alone
-    bool EditorOrthoMap{ false }; // the top view of the editor far out shows the base map in place of the ground, which isn't drawn then
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px

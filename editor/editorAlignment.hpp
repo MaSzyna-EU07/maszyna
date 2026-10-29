@@ -105,6 +105,11 @@ struct design
 	// of the only vertex goes on from the start alone
 	bool start_curved{false};
 	bool end_curved{false};
+	// the curve going on from the adjoining track at the start, or into the one at the end, goes on from the diverging track of a switch:
+	// at its radius, with no transition between them. The arcs after the first one, or the transition out of a single one, are what
+	// makes it begin right there
+	bool start_held{false};
+	bool end_held{false};
 	// mm, the cant of the adjoining track at the start and at the end, leaning into its turn
 	double start_cant{0.0};
 	double end_cant{0.0};
@@ -164,6 +169,9 @@ struct element
 	glm::dvec2 direction{0.0, 1.0};
 	glm::dvec2 normal{0.0};
 };
+
+// the curvature of the element at its start and at its end, not signed by the side it turns to: an arc of a compound curve its own
+std::pair<double, double> end_curvatures(element const &Element);
 
 struct curve_report
 {
@@ -236,7 +244,7 @@ struct result
 
 result compute(design const &Design);
 double speed_limit(double const Radius, limits const &Limits);
-result compute_recommended(design &Design, bool const Transitions);
+result compute_recommended(design &Design);
 bool tangent_intersection(design const &Design, glm::dvec2 &Point);
 bool collinear(design const &Design);
 bool spiral_tangents(transition_shape const Shape, double const TurnIn, double const TurnOut, double &TangentIn, double &TangentOut);
@@ -312,7 +320,6 @@ struct join_request
 	join_end end;
 	double radius{0.0};
 	int variant{0};
-	bool transitions{false};
 	double speed{100.0};
 	double kink{0.1};
 	transition_shape shape{transition_shape::cubic_parabola};
@@ -405,8 +412,14 @@ struct trace_stretch
 	std::vector<double> offsets; // of the points from the line laid, positive to the left
 	double rms{0.0};
 	double worst{0.0};
+	glm::dvec2 leaving{0.0}; // the heading at the end where the fit chose it, fit_going_on
+	glm::dvec2 ending{0.0}; // where it ends there: the last point, or abreast of it on the arc of a switch going on
 };
 trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights);
+// a curve going on from the curve of the free end Base starts at (start_curved), along the points to the last of them, where it ends on a
+// straight heading as it comes out: from the curvature of that end through a transition to an arc and through another to the straight.
+// The transitions as long as the norms ask for where the points don't show them shorter. Not valid where no such curve follows them
+trace_stretch fit_going_on(design const &Base, std::vector<glm::dvec2> const &Points);
 // the fit of a stretch traced, with up to three radii and no straight in it; none while it's being fitted elsewhere
 using stretch_fit = std::function<std::optional<trace_stretch>(design const &, std::vector<glm::dvec2> const &)>;
 
@@ -417,6 +430,9 @@ using stretch_fit = std::function<std::optional<trace_stretch>(design const &, s
 // each part of the row where the whole doesn't keep to them; such a vertex is marked 0 then. Fit fits it, by fit_trace_stretch
 // where none is given
 result ease_corners(design &Design, std::vector<char> &Corners, corner_radii const &Radii, stretch_fit const &Fit = {});
+// the curves laid smaller than their vertices ask for, to fit between their straights or into their deflection, given the radii and the
+// transitions they were laid with: the design tells what's laid, and the plan lays the same curve again
+void settle_laid(std::vector<vertex> &Vertices, result const &Laid);
 
 // the stretches traced fitted on a thread of their own while the cursor moves: fitting one takes tens of milliseconds. The one asked
 // for last is fitted first, the oldest of too many waiting left out, the fits of the last ones kept
@@ -430,6 +446,7 @@ class stretch_fitter
 		std::vector<glm::dvec2> points;
 		int radii{0};
 		bool straights{true};
+		bool going{false}; // fit_going_on
 	};
 	~stretch_fitter();
 	void ask(request Request);

@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 class editorSettings
 {
@@ -23,7 +25,8 @@ public:
 	movement_scheme movement() const { return m_movement; }
 	void movement(movement_scheme scheme) { m_movement = scheme; }
 
-	// geoportal orthophoto layer (editor_orthophoto); the origin is kept per scenery
+	// geoportal orthophoto layer (editor_orthophoto), how it's shown and whether it's on; the origin is kept per scenery, and the
+	// scenery keeps it too
 	struct orthophoto_settings
 	{
 		int radius{2};
@@ -34,11 +37,25 @@ public:
 		bool drape{true};
 		float lift{0.05f};
 		bool in_scene{false};
+		// turned on or off by the user, for every scenery; none chosen yet: as the scenery keeps it, or the terrain model turns it on
+		std::optional<bool> on;
 	};
 	orthophoto_settings &orthophoto() { return m_orthophoto; }
 	// PUWG 1992 northing/easting of the scenery's (0,0,0) point; false when none was stored
 	bool orthophoto_origin(std::string const &Scenery, double &North, double &East) const;
 	void orthophoto_origin(std::string const &Scenery, double North, double East);
+	// the WMS layers the user added under the scenery, over the orthophoto, the top one first: the address of the service, the
+	// layers asked of it, its title and terms as its capabilities gave them. Kept with the editor, not with the scenery
+	struct wms_layer
+	{
+		std::string url;
+		std::string layers;
+		std::string title;
+		std::string terms;
+		float opacity{0.8f};
+		bool visible{true};
+	};
+	std::vector<wms_layer> &wms_layers() { return m_wms_layers; }
 
 	double platform_edge() const { return m_platform_edge; }
 	void platform_edge(double Distance) { m_platform_edge = Distance; }
@@ -60,6 +77,22 @@ public:
 	// a scenery begun with no terrain is offered the terrain model as the first track is laid
 	bool terrain_offer() const { return m_terrain_offer; }
 	void terrain_offer(bool Offer) { m_terrain_offer = Offer; }
+	// the terrain of the terrain model made under the tracks as they're laid, around the cursor from the first point placed
+	bool terrain_while_laying() const { return m_terrain_while_laying; }
+	void terrain_while_laying(bool const Make) { m_terrain_while_laying = Make; }
+	// the terrain model in the terrain panel: the band along the tracks it's loaded in, m; the chunks along a side of the square
+	// made around the camera; the formation and the slopes made along the tracks; the terrain following the tracks edited
+	struct terrain_model_settings
+	{
+		double band{300.0};
+		int around{4};
+		bool shape{true};
+		bool follow{true};
+	};
+	terrain_model_settings &terrain_model() { return m_terrain_model; }
+	// the height offset of the terrain model to the tracks of the scenery, and whether it was fitted to them; false when none was stored
+	bool terrain_model_offset(std::string const &Scenery, double &Offset, bool &Fitted) const;
+	void terrain_model_offset(std::string const &Scenery, double Offset, bool Fitted);
 	bool track_tools_more() const { return m_track_tools_more; }
 	void track_tools_more(bool Show) { m_track_tools_more = Show; }
 	// the ballast of the railway drawn in the top view
@@ -90,6 +123,7 @@ private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
+	std::vector<wms_layer> m_wms_layers;
 	double m_platform_edge{1.725};
 	double m_signal_offset{2.25};
 	bool m_nodebank_previews{true};
@@ -98,6 +132,9 @@ private:
 	bool m_first_steps{true};
 	bool m_terrain_offer{true};
 	bool m_track_tools_more{false};
+	bool m_terrain_while_laying{true};
+	terrain_model_settings m_terrain_model;
+	std::map<std::string, std::pair<double, bool>> m_terrain_model_offsets;
 	int m_top_tracks{0}; // the railway in the top view: whole, without the ballast, the rails alone
 	std::uint32_t m_top_rails{0xffff6e28}; // colour of the rails alone, as ImGui keeps it: ABGR
 	double m_corner_low{3000.0};

@@ -224,6 +224,12 @@ std::vector<record> const &records()
 	return g_records;
 }
 
+bool has(std::string const &Name)
+{
+	auto const &all{records()};
+	return std::any_of(all.begin(), all.end(), [&](record const &Record) { return Record.name == Name; });
+}
+
 std::optional<record> named(TTrack const &Track)
 {
 	load();

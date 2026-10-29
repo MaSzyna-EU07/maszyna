@@ -768,8 +768,7 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 				if (std::find(Slide.movers.begin(), Slide.movers.end(), other) != Slide.movers.end() || Slide.ends[end].first != nullptr)
 					continue;
 				Slide.ends[end] = {other, point};
-				straight[end] = other->eType == tt_Normal && other->m_paths.size() == 1 && false == has_controls(other->m_paths.front()) &&
-				                std::abs(geometry::cross(glm::normalize(plan_of(other->m_paths.front().points[segment_data::point::end] - other->m_paths.front().points[segment_data::point::start])), plan_of(Slide.shift))) < 1e-3;
+				straight[end] = straight_along(*other);
 				room[end] = straight[end] ? geometry::chord_length(other->m_paths.front()) - 1.0 : 0.0;
 			}
 	// back, it shortens the track before it and lengthens the one past it; on, the other way
@@ -818,6 +817,166 @@ bool editor_mode::slide_slip(slip_set const &Slip, double const Distance)
 	return true;
 }
 
+bool editor_mode::bent_switch_frame(TTrack const &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const
+{
+	Frame.clear();
+	Sides = {nullptr, nullptr};
+	if (Track.eType != tt_Switch || Track.m_paths.size() != 2 || Track.m_editorremoved || false == has_controls(Track.m_paths.front()) || slip_of(Track).has_value() || double_of(Track).has_value() ||
+	    crossover_of(Track).has_value())
+		return false;
+	// the plain tracks the main track goes on into, each run towards the end of the switch it joins: the one before into its start, the
+	// one past it out of its end
+	std::array<bool, 2> forward{true, true};
+	for (auto const &joint : editor_track::joints(Track))
+	{
+		if (joint.own.path != 0 || joint.other == nullptr || joint.other->eType != tt_Normal || joint.other->m_editorremoved || joint.other->m_paths.size() != 1)
+			continue;
+		auto const past{joint.own.kind == editor_track::point_kind::end ? 1 : 0};
+		Sides[past] = joint.other;
+		forward[past] = (joint.theirs.kind == editor_track::point_kind::end) == (past == 0);
+	}
+	if (Sides[0] == nullptr || Sides[1] == nullptr || Sides[0] == Sides[1])
+		return false;
+	editor_track::chain chain;
+	chain.tracks = {Sides[0], const_cast<TTrack *>(&Track), Sides[1]};
+	chain.forward = {forward[0], true, forward[1]};
+	Frame = sample_chain(chain);
+	Station = nearest_station(Frame, Track.m_paths.front().points[segment_data::point::start]);
+	return Frame.size() >= 2;
+}
+
+std::vector<segment_data> editor_mode::bent_switch_paths(TTrack const &Track, std::vector<curve_sample> const &Frame, double const Station, double const Distance) const
+{
+	// a path as seen from the curve where the switch starts: across it, over it, along it, as frame_path takes a path of a template
+	auto const local_end = [&](glm::dvec3 const &World, glm::dvec3 const &Control, glm::dvec3 &Point, glm::dvec3 &Localcontrol) {
+		auto const at{nearest_station(Frame, World)};
+		auto const sample{sample_at(Frame, at)};
+		glm::dvec2 const across{-sample.tangent.y, sample.tangent.x};
+		auto const lateral{glm::dot(plan_of(World) - plan_of(sample.position), across)};
+		Point = {lateral, World.y - sample.position.y + lateral * std::tan(glm::radians(static_cast<double>(sample.roll))), at - Station};
+		auto const planar{plan_of(Control)};
+		Localcontrol = glm::length(planar) > 1e-9 ? glm::dvec3{glm::dot(planar, across), Control.y, glm::dot(planar, sample.tangent)} : glm::dvec3{0.0};
+	};
+	auto const localized = [&](segment_data const &Path) {
+		auto local{Path};
+		local.pieces.clear();
+		local_end(Path.points[segment_data::point::start], Path.points[segment_data::point::control1], local.points[segment_data::point::start], local.points[segment_data::point::control1]);
+		local_end(Path.points[segment_data::point::end], Path.points[segment_data::point::control2], local.points[segment_data::point::end], local.points[segment_data::point::control2]);
+		return local;
+	};
+	std::vector<segment_data> result;
+	for (std::size_t i = 0; i < Track.m_paths.size(); ++i)
+	{
+		auto const &own{Track.m_paths[i]};
+		auto path{frame_path(localized(own), Frame, Station + Distance, 1, 1)};
+		for (auto const &piece : own.pieces)
+			path.pieces.push_back(frame_path(localized(piece), Frame, Station + Distance, 1, 1));
+		// the main track follows the curve it lies in
+		if (i == 0)
+			path.radius = own.radius;
+		result.push_back(path);
+	}
+	return result;
+}
+
+bool editor_mode::slide_bent_switch(TTrack &Track, double const Distance)
+{
+	std::vector<curve_sample> frame;
+	std::array<TTrack *, 2> sides;
+	double station;
+	if (false == bent_switch_frame(Track, frame, sides, station))
+		return false;
+	auto const &main{Track.m_paths.front()};
+	auto const length{nearest_station(frame, main.points[segment_data::point::end]) - station};
+	// as far as the far end of a track next to it, which goes then, the switch joining what it joined there: P4 of another switch, say
+	auto const back{station};
+	auto const ahead{frame.back().station - station - length};
+	if (Distance < -back - 1e-3 || Distance > ahead + 1e-3)
+	{
+		m_switch.status = format(STR_C("The switch goes %.2f m back and %.2f m on along the curve at most"), std::max(0.0, back), std::max(0.0, ahead));
+		ui()->set_status(m_switch.status, true);
+		return false;
+	}
+	// a track shorter than this left beside it goes too
+	constexpr double kRemnant{0.5};
+	auto distance{std::clamp(Distance, -back, ahead)};
+	if (back + distance < kRemnant)
+		distance = -back;
+	else if (ahead - distance < kRemnant)
+		distance = ahead;
+	auto const paths{bent_switch_paths(Track, frame, station, distance)};
+	auto const joints{editor_track::joints(Track)};
+	std::vector<bool> handled(joints.size(), false);
+	// the line leaving the end of the diverging track: the curve past it laid again up to the straight beyond it
+	std::vector<switch_branch> branches;
+	for (std::size_t i = 0; i < joints.size(); ++i)
+		if (joints[i].own.path == 1)
+			if (auto branch{take_switch_branch(Track, joints[i], i)})
+				branches.push_back(std::move(*branch));
+	editor_track::edit edit;
+	edit.capture(Track);
+	// the tracks of the curve on both sides laid along it up to the new ends of the switch
+	std::vector<std::string> gone;
+	for (int k = 0; k < 2; ++k)
+	{
+		auto &side{*sides[k]};
+		for (std::size_t i = 0; i < joints.size(); ++i)
+			if (joints[i].own.path == 0 && joints[i].other == &side)
+				handled[i] = true;
+		// taken up whole: the switch takes its place up to its far end
+		if ((k == 0 ? back + distance : ahead - distance) < 1e-3)
+		{
+			gone.push_back(side.name());
+			editor_track::retire(side);
+			edit.removed.push_back(&side);
+			continue;
+		}
+		auto const joint{main.points[k == 0 ? segment_data::point::start : segment_data::point::end]};
+		auto const &path{side.m_paths.front()};
+		auto const atend{glm::distance(path.points[segment_data::point::end], joint) < glm::distance(path.points[segment_data::point::start], joint)};
+		auto from{nearest_station(frame, path.points[segment_data::point::start])};
+		auto to{nearest_station(frame, path.points[segment_data::point::end])};
+		(atend ? to : from) = station + distance + (k == 0 ? 0.0 : length);
+		auto const a{sample_at(frame, from)};
+		auto const b{sample_at(frame, to)};
+		auto const way{to >= from ? 1.0 : -1.0};
+		auto const span{std::abs(to - from)};
+		auto const turn{std::abs(geometry::signed_angle(a.tangent, b.tangent))};
+		auto const handle{turn > 1e-6 ? 4.0 / 3.0 * std::tan(turn / 4.0) * span / turn : span / 3.0};
+		segment_data laid{path};
+		laid.pieces.clear();
+		laid.points[segment_data::point::start] = a.position;
+		laid.points[segment_data::point::end] = b.position;
+		// right at the new end of the switch
+		laid.points[atend ? segment_data::point::end : segment_data::point::start] = paths.front().points[k == 0 ? segment_data::point::start : segment_data::point::end];
+		auto const rise{laid.points[segment_data::point::end].y - laid.points[segment_data::point::start].y};
+		laid.points[segment_data::point::control1] = {a.tangent.x * way * handle, rise / 3.0, a.tangent.y * way * handle};
+		laid.points[segment_data::point::control2] = {-b.tangent.x * way * handle, -rise / 3.0, -b.tangent.y * way * handle};
+		laid.rolls = {static_cast<float>(a.roll * way), static_cast<float>(b.roll * way)};
+		edit.capture(side);
+		side.m_paths.front() = laid;
+	}
+	Track.m_paths.assign(paths.begin(), paths.begin() + 2);
+	auto const notes{plan_switch_branches(Track, joints, branches, handled)};
+	auto const loose{switch_rejoin(Track, joints, handled, edit)};
+	editor_track::commit(edit.changed);
+	for (auto const &branch : branches)
+		lay_switch_branch(branch, edit);
+	push_track_snapshot(std::move(edit.states), std::move(edit.created), std::move(edit.removed));
+	switch_store::follow();
+	records_to_history();
+	straight_refresh();
+	m_switch.status = format(STR_C("Switch %s moved %.2f m along the curve"), Track.name().c_str(), distance);
+	for (auto const &name : gone)
+		m_switch.status += "\n" + format(STR_C("%s taken up whole, the switch joins what it joined"), name.c_str());
+	if (false == loose.empty())
+		m_switch.status += "\n" + std::string{STR_C("Too far from the new ends of the switch, left unjoined: ")} + loose;
+	if (false == notes.empty())
+		m_switch.status += "\n" + notes;
+	ui()->set_status(m_switch.status, false == loose.empty());
+	return true;
+}
+
 bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 {
 	if (std::abs(Distance) < 0.005)
@@ -828,6 +987,9 @@ bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 	// a switch of a crossover along a curve takes the crossover with it
 	if (crossover_of(Track).has_value())
 		return slide_curved_connection(Track, Distance);
+	// one bent into a curve slides along the curve
+	if (Track.m_paths.size() == 2 && has_controls(Track.m_paths.front()))
+		return slide_bent_switch(Track, Distance);
 	auto const set{double_of(Track)};
 	auto &first{set.has_value() ? *set->first : Track};
 	if (first.m_paths.size() < 2)
@@ -874,7 +1036,15 @@ bool editor_mode::switch_slides(TTrack const &Track) const
 		auto const set{double_of(Track)};
 		return set.has_value() && switch_slides(*set->first) && switch_slides(*set->second);
 	}
-	return Track.eType == tt_Switch && Track.m_paths.size() == 2 && false == Track.m_editorremoved && false == has_controls(Track.m_paths.front());
+	if (Track.eType != tt_Switch || Track.m_paths.size() != 2 || Track.m_editorremoved)
+		return false;
+	if (false == has_controls(Track.m_paths.front()))
+		return true;
+	// bent into a curve: along the curve, where it goes on into plain tracks on both sides
+	std::vector<curve_sample> frame;
+	std::array<TTrack *, 2> sides;
+	double station;
+	return bent_switch_frame(Track, frame, sides, station);
 }
 
 void editor_mode::switch_slide_start(TTrack &Track)
@@ -901,6 +1071,25 @@ void editor_mode::switch_slide_start(TTrack &Track)
 		slide.length = 0.0;
 		slide.low = room.low;
 		slide.high = room.high;
+		return;
+	}
+	// bent into a curve: along it, the tracks next to it keeping a metre, the curve past its diverging track drawn as it'll be laid
+	if (std::array<TTrack *, 2> sides; bent_switch_frame(Track, slide.frame, sides, slide.station))
+	{
+		auto const &main{Track.m_paths.front()};
+		auto const &mouse{ImGui::GetIO().MousePos};
+		slide.active = true;
+		slide.track = &Track;
+		slide.pressed = {mouse.x, mouse.y};
+		slide.grip = nearest_station(slide.frame, cursor_level(main.points[segment_data::point::start].y));
+		slide.length = nearest_station(slide.frame, main.points[segment_data::point::end]) - slide.station;
+		slide.low = -slide.station;
+		slide.high = std::max(0.0, slide.frame.back().station - slide.station - slide.length);
+		auto const joints{editor_track::joints(Track)};
+		for (std::size_t i = 0; i < joints.size(); ++i)
+			if (joints[i].own.path == 1)
+				if (auto branch{take_switch_branch(Track, joints[i], i)})
+					slide.branches.push_back({joints[i], 1, std::move(*branch)});
 		return;
 	}
 	auto const set{double_of(Track)};
@@ -957,6 +1146,23 @@ void editor_mode::switch_slide_update()
 	auto &slide{m_switch.slide};
 	if (false == slide.active)
 		return;
+	// along the curve it's bent into
+	if (false == slide.frame.empty())
+	{
+		if (slide.track == nullptr || slide.track->m_editorremoved)
+		{
+			slide = {};
+			return;
+		}
+		auto const height{sample_at(slide.frame, slide.station).position.y};
+		auto distance{std::clamp(nearest_station(slide.frame, cursor_level(height)) - slide.grip, slide.low, slide.high)};
+		// drawn to the far ends of the tracks next to it, where it takes one up whole and joins what it joined
+		for (auto const end : {slide.low, slide.high})
+			if (std::abs(distance - end) < 1.0)
+				distance = end;
+		slide.distance = distance;
+		return;
+	}
 	auto const axis{slide.track != nullptr && false == slide.track->m_editorremoved && slide.track->m_paths.size() >= 2 ? editor_track::main_axis(*slide.track) : std::nullopt};
 	if (false == axis.has_value())
 	{
@@ -999,7 +1205,7 @@ void editor_mode::draw_switch_slide() const
 	auto const &mouse{ImGui::GetIO().MousePos};
 	if (glm::length(glm::vec2{mouse.x, mouse.y} - slide.pressed) <= kDragPixels)
 		return;
-	auto paths{editor_track::slid(*slide.track, slide.distance)};
+	auto paths{slide.frame.empty() ? editor_track::slid(*slide.track, slide.distance) : bent_switch_paths(*slide.track, slide.frame, slide.station, slide.distance)};
 	if (paths.empty())
 		return;
 	// a slip with all it takes along

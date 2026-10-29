@@ -391,6 +391,26 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog(text);
 		return selftest_result::handled;
 	}
+	// the key H as pressed over the view: the selected switch thrown over
+	if (command == "keyh")
+	{
+		auto const handled{track_shortcut(GLFW_KEY_H)};
+		auto const *track{selected_track()};
+		auto const switched{track != nullptr && track->eType == tt_Switch && track->SwitchExtension != nullptr};
+		WriteLog(format("SELFTEST keyh: %s, %s set to %d, blades at %.3f of %.3f", handled ? "thrown" : "not taken", track != nullptr ? track->name().c_str() : "-", switched ? track->SwitchExtension->CurrentIndex : -1, switched ? track->SwitchExtension->fOffset : 0.f,
+		                switched ? track->SwitchExtension->fDesiredOffset : 0.f));
+		return selftest_result::handled;
+	}
+	// where the blades of the switch are on their way over
+	if (command == "blades")
+	{
+		std::string name;
+		words >> name;
+		auto const *track{simulation::Paths.find(name)};
+		if (track != nullptr && track->eType == tt_Switch && track->SwitchExtension != nullptr)
+			WriteLog(format("SELFTEST blades %s: %.3f of %.3f", name.c_str(), track->SwitchExtension->fOffset, track->SwitchExtension->fDesiredOffset));
+		return selftest_result::handled;
+	}
 	if (command == "throw")
 	{
 		std::string name;
@@ -498,13 +518,21 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	if (command == "switchfree")
 	{
 		// a switch with no track: pressed at the point, the direction of its main track toward the second one (none at a free end), let
-		// go at the third one, whose side it takes
+		// go at the third one, whose side it takes; past its end from a free end it's bent, one: one-sided (Tab), shift: at a free end the
+		// diverging track leads into it
 		std::string label;
 		glm::dvec3 press{0.0};
 		glm::dvec3 heading{0.0};
 		glm::dvec3 release{0.0};
 		words >> label >> press.x >> press.z >> heading.x >> heading.z >> release.x >> release.z;
 		std::replace(label.begin(), label.end(), '_', ' ');
+		auto oneside{false};
+		auto shift{false};
+		for (std::string flag; words >> flag;)
+		{
+			oneside |= flag == "one";
+			shift |= flag == "shift";
+		}
 		auto &tool{m_switch};
 		show_track_tab(track_tab::turnout);
 		tool.templates = editor_track::standard_switch_templates();
@@ -517,7 +545,10 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				tool.armed = i;
 				break;
 			}
+		// the free end taken where it was pressed, not by the mouse on the screen
+		m_cursor_override = press;
 		start_free_switch(press);
+		m_cursor_override.reset();
 		if (false == tool.placing)
 		{
 			WriteLog("SELFTEST switchfree: not started, no template " + label);
@@ -526,15 +557,27 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		if (tool.free_end.track == nullptr)
 			tool.free_heading = glm::normalize(geometry::plan_of(heading - tool.point));
 		tool.mouse = glm::dvec3{release.x, tool.point.y, release.z};
+		tool.one_sided = oneside;
+		// the free end the cursor is at found where it was let go, not by the mouse on the screen; Shift held as it's let go
+		m_cursor_override = tool.mouse;
+		auto &io{ImGui::GetIO()};
+		auto const shifted{io.KeyShift};
+		io.KeyShift = shift;
 		tool.placing = false;
 		finish_switch_placement();
+		io.KeyShift = shifted;
+		m_cursor_override.reset();
 		WriteLog("SELFTEST switchfree" + (tool.free_end.track != nullptr ? " from " + tool.free_end.track->name() : std::string{}) + ": " + tool.status);
 		if (auto const *track{selected_track()}; track != nullptr && track->eType == tt_Switch)
 			for (std::size_t i = 0; i < track->m_paths.size(); ++i)
 			{
 				auto const &a{track->m_paths[i].points[segment_data::point::start]};
 				auto const &b{track->m_paths[i].points[segment_data::point::end]};
-				WriteLog(format("SELFTEST switchfree path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f", track->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z));
+				// the radius the path turns with from end to end, signed the way it turns
+				geometry::bezier const curve{track->m_paths[i]};
+				auto const turn{geometry::signed_angle(geometry::plan_of(curve.first(0.0)), geometry::plan_of(curve.first(1.0)))};
+				WriteLog(format("SELFTEST switchfree path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f, R %.1f, turning R %.1f", track->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, static_cast<double>(track->m_paths[i].radius),
+				                std::abs(turn) > 1e-6 ? curve.plan_length() / turn : 0.0));
 			}
 		return selftest_result::handled;
 	}
@@ -545,6 +588,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		int direction{1};
 		int side{1};
 		words >> label >> point.x >> point.z >> direction >> side;
+		// snap: the start of a switch into a curve drawn to the ends of the cant ramps and to the joints, as a drag lets it go
+		std::string snap;
+		words >> snap;
 		std::replace(label.begin(), label.end(), '_', ' ');
 		auto &tool{m_switch};
 		tool.templates = editor_track::standard_switch_templates();
@@ -590,6 +636,21 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			tool.curved = true;
 			tool.along = nearest_station(tool.frame, point);
 			tool.pressed = tool.along;
+			if (snap == "snap")
+			{
+				std::string what;
+				tool.along = curved_switch_start(direction, &what);
+				WriteLog(format("SELFTEST switchcurve start %.3f, pressed %.3f%s", tool.along, tool.pressed, what.empty() ? "" : (": " + what).c_str()));
+				// the tracks of the curve and their ends along it, where the frame has them and where they are
+				for (auto const *track : tool.frame_tracks)
+					for (auto const index : {segment_data::point::start, segment_data::point::end})
+					{
+						auto const &at{track->m_paths.front().points[index]};
+						auto const station{nearest_station(tool.frame, at)};
+						auto const framed{sample_at(tool.frame, station).position};
+						WriteLog(format("SELFTEST switchcurve frame %s.%s: station %.3f, at %.3f %.3f, frame %.3f %.3f", track->name().c_str(), index == segment_data::point::start ? "start" : "end", station, at.x, at.z, framed.x, framed.z));
+					}
+			}
 			// a slip bent into the curve with its crossing track, its paths and its record logged
 			if (tool.templates[tool.armed].double_slip)
 			{
@@ -738,8 +799,17 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		if (command == "switchslide")
 		{
+			// back, ahead: one bent into a curve as far as the far end of the track next to it
 			double distance{0.0};
-			words >> distance;
+			std::string word;
+			words >> word;
+			std::vector<curve_sample> frame;
+			std::array<TTrack *, 2> sides;
+			double station{0.0};
+			if ((word == "back" || word == "ahead") && bent_switch_frame(*track, frame, sides, station))
+				distance = word == "back" ? -station : frame.back().station - station - (nearest_station(frame, track->m_paths.front().points[segment_data::point::end]) - station);
+			else
+				distance = std::atof(word.c_str());
 			double low{0.0};
 			double high{0.0};
 			std::string reason;
@@ -748,6 +818,20 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			auto const room{set.has_value() ? double_room(*set, low, high, length, reason) : switch_room(*track, low, high, reason)};
 			auto const done{slide_switch(*track, distance)};
 			WriteLog(format("SELFTEST switchslide %s %.3f: room %d %.3f .. %.3f, done %d, %s", name.c_str(), distance, room ? 1 : 0, low, high, done ? 1 : 0, m_switch.status.c_str()));
+			// how the switch meets the tracks at its ends: the turn between them, the gap, the radius of the one next to it
+			for (auto const &joint : editor_track::joints(*track))
+			{
+				geometry::bezier const mine{track->m_paths[joint.own.path]};
+				auto const atend{joint.own.kind == editor_track::point_kind::end};
+				auto const out{geometry::plan_of(atend ? mine.first(1.0) : -mine.first(0.0))};
+				// the direction of the joint points out of the other track at its end
+				auto const kink{glm::length(out) > 1e-9 && glm::length(joint.direction) > 1e-9 ? glm::degrees(std::acos(std::clamp(-glm::dot(glm::normalize(out), glm::normalize(joint.direction)), -1.0, 1.0))) : 0.0};
+				auto const at{editor_track::point_position(*track, joint.own)};
+				geometry::bezier const theirs{joint.other->m_paths[joint.theirs.path]};
+				auto const turn{geometry::signed_angle(geometry::plan_of(theirs.first(0.0)), geometry::plan_of(theirs.first(1.0)))};
+				WriteLog(format("SELFTEST switchslide joint %d.%s %.3f %.3f - %s: kink %.4f deg, gap %.4f m, its R %.1f, L %.2f m", joint.own.path, atend ? "end" : "start", at.x, at.z, joint.other->name().c_str(), kink,
+				                glm::distance(at, editor_track::point_position(*joint.other, joint.theirs)), std::abs(turn) > 1e-6 ? theirs.plan_length() / turn : 0.0, theirs.plan_length()));
+			}
 			return selftest_result::handled;
 		}
 		std::string label;

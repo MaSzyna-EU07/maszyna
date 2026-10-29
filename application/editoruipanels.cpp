@@ -1828,6 +1828,11 @@ void layers_panel::render()
 	ImGui::SetNextWindowPos(ImVec2S(520, 60), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowSize(ImVec2S(440, 340), ImGuiCond_FirstUseEver);
 	auto const panelname{(title.empty() ? std::string{STR_C(m_name.c_str())} : title) + "###" + m_name};
+	if (focus)
+	{
+		ImGui::SetNextWindowFocus();
+		focus = false;
+	}
 	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
 		if (scene::Layers.empty())
@@ -2016,6 +2021,14 @@ void layers_panel::render_list()
 			ImGui::PopStyleVar();
 		}
 		ImGui::PopID();
+	}
+	// under the layers of the scenery what lies under it
+	if (base_layers)
+	{
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::TextDisabled("%s", STR_C("Base layers, under the scenery"));
+		base_layers();
 	}
 	ImGui::EndChild();
 }

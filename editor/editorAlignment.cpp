@@ -720,6 +720,10 @@ result fit_between(design const &Design)
 			fit.compound = true;
 			fit.curved = true;
 			fit.deflection = deflection;
+			// going on from the diverging track of a switch: at its radius, no transition between them
+			auto const held{from ? Design.start_held : Design.end_held};
+			if (held)
+				(from ? fit.transition_in : fit.transition_out) = 0.0;
 			fit.arcs = {{fit.radius, 0.0, 1.0, -1.0}};
 			if (vertex.compound && false == vertex.arcs.empty())
 			{
@@ -727,6 +731,8 @@ result fit_between(design const &Design)
 				for (auto const &arc : vertex.arcs)
 					fit.arcs.push_back({std::max(1.0, arc.radius), std::max(0.0, arc.transition), arc.share, arc.cant});
 			}
+			if (held)
+				(from ? fit.arcs.front() : fit.arcs.back()).radius = from ? Design.start_radius : Design.end_radius;
 			if (from)
 			{
 				fit.ends.from = 1.0 / Design.start_radius;
@@ -743,11 +749,24 @@ result fit_between(design const &Design)
 					fit.arcs.back().cant = fit.ends.to_cant;
 			}
 			auto const normalin{perpendicular(directionin) * static_cast<double>(side)};
-			auto const tangents_at = [&](double const Scale, double &Tangentin, double &Tangentout) {
+			// the size of the curve which begins it right at the start, or ends it at the end: the scale of its radii, the arc held at the
+			// radius of a switch kept; of a single arc held so the length of the transition on its other side
+			auto const lengthened{held && fit.arcs.size() == 1};
+			auto &beyond{from ? fit.transition_out : fit.transition_in};
+			auto const sized = [&](double const Value, std::vector<compound_arc> &Arcs) {
+				for (std::size_t i = 0; i < Arcs.size(); ++i)
+					if (false == held || i != (from ? 0 : Arcs.size() - 1))
+						Arcs[i].radius *= Value;
+			};
+			auto const tangents_at = [&](double const Value, double &Tangentin, double &Tangentout) {
 				auto arcs{fit.arcs};
-				for (auto &arc : arcs)
-					arc.radius *= Scale;
-				auto const shape{build_compound(deflection, arcs, fit.transition_in, fit.transition_out, {}, fit.ends)};
+				auto in{fit.transition_in};
+				auto out{fit.transition_out};
+				if (lengthened)
+					(from ? out : in) = Value;
+				else
+					sized(Value, arcs);
+				auto const shape{build_compound(deflection, arcs, in, out, {}, fit.ends)};
 				auto const end{directionin * shape.end.x + normalin * shape.end.y};
 				Tangentin = cross(directionout, end) / cross(directionout, directionin);
 				Tangentout = glm::dot(end - directionin * Tangentin, directionout);
@@ -761,14 +780,23 @@ result fit_between(design const &Design)
 				return (from ? in : out) - wanted;
 			};
 			// the radii grow with the tangent: from those given the way the miss says, doubled or halved until it changes its sign, then
-			// the root between, by the regula falsi of Illinois
-			auto low{1.0};
+			// the root between, by the regula falsi of Illinois. The transition out of an arc held moves it in, the tangent growing with it:
+			// from none, doubled up to one turning by nearly all the deflection
+			auto low{lengthened ? 0.0 : 1.0};
 			auto lowmiss{miss(low)};
 			auto high{low};
 			auto highmiss{lowmiss};
 			auto const smallest{5.0 / fit.radius};
 			auto const largest{1e6 / fit.radius};
-			while ((lowmiss < 0.0) == (highmiss < 0.0) && high < largest && low > smallest)
+			auto const longest{1.96 * fit.arcs.front().radius * deflection};
+			while (lengthened && (lowmiss < 0.0) == (highmiss < 0.0) && lowmiss < -1e-5 && high < longest)
+			{
+				low = high;
+				lowmiss = highmiss;
+				high = std::min(longest, std::max(1.0, 2.0 * high));
+				highmiss = miss(high);
+			}
+			while (false == lengthened && (lowmiss < 0.0) == (highmiss < 0.0) && high < largest && low > smallest)
 			{
 				if (lowmiss < 0.0)
 				{
@@ -785,14 +813,16 @@ result fit_between(design const &Design)
 					lowmiss = miss(low);
 				}
 			}
-			if ((lowmiss < 0.0) == (highmiss < 0.0))
+			// an arc held which begins right there with no transition out of it
+			auto const met{lengthened && std::abs(lowmiss) <= 1e-5};
+			if (false == met && (lowmiss < 0.0) == (highmiss < 0.0))
 			{
 				r.errors.emplace_back(from ? format(STR_C("Vertex %zu: no curve goes on from the curve of the adjoining track (R %.0f m) to the straight after it"), k + 1, Design.start_radius) :
 				                             format(STR_C("Vertex %zu: no curve goes on from the straight before it into the curve of the adjoining track (R %.0f m)"), k + 1, Design.end_radius));
 				return r;
 			}
 			auto scale{low};
-			for (int i = 0, kept = 0; i < 60; ++i)
+			for (int i = 0, kept = 0; i < 60 && false == met; ++i)
 			{
 				scale = (low * highmiss - high * lowmiss) / (highmiss - lowmiss);
 				auto const value{miss(scale)};
@@ -815,10 +845,12 @@ result fit_between(design const &Design)
 					kept = 1;
 				}
 			}
-			for (auto &arc : fit.arcs)
-				arc.radius *= scale;
+			if (lengthened)
+				beyond = scale;
+			else
+				sized(scale, fit.arcs);
 			fit.radius = fit.arcs.front().radius;
-			tangents_at(1.0, fit.tangent_in, fit.tangent_out);
+			tangents_at(lengthened ? beyond : 1.0, fit.tangent_in, fit.tangent_out);
 			continue;
 		}
 		if (vertex.compound && false == vertex.arcs.empty())
@@ -1294,15 +1326,8 @@ result fit_between(design const &Design)
 			auto const &e{r.elements[End ? r.elements.size() - 1 - n : n]};
 			if (e.length < 0.01)
 				continue;
-			auto const arc{e.radius > 0.0 ? 1.0 / e.radius : 0.0};
-			switch (e.kind)
-			{
-			case element_kind::arc: return arc * e.turn;
-			case element_kind::transition_in: return End ? arc * e.turn : 0.0;
-			case element_kind::transition_out: return End ? 0.0 : arc * e.turn;
-			case element_kind::spiral: return (End ? e.curvature_end : e.curvature_start) * e.turn;
-			default: return 0.0;
-			}
+			auto const [start, end]{end_curvatures(e)};
+			return (End ? end : start) * e.turn;
 		}
 		return 0.0;
 	};
@@ -1332,6 +1357,19 @@ glm::dvec3 along_end(glm::dvec3 const &Point, glm::dvec2 const &Direction, doubl
 }
 
 } // namespace
+
+std::pair<double, double> end_curvatures(element const &Element)
+{
+	auto const own{Element.radius > 0.0 ? 1.0 / Element.radius : 0.0};
+	switch (Element.kind)
+	{
+	case element_kind::transition_in: return {0.0, own};
+	case element_kind::arc: return {own, own};
+	case element_kind::transition_out: return {own, 0.0};
+	case element_kind::spiral: return {Element.curvature_start, Element.curvature_end};
+	default: return {0.0, 0.0};
+	}
+}
 
 result compute(design const &Design)
 {
@@ -1372,7 +1410,7 @@ double speed_limit(double const Radius, limits const &Limits)
 	return std::sqrt(Radius * (Limits.cant_max + allowance) / factor);
 }
 
-result compute_recommended(design &Design, bool const Transitions)
+result compute_recommended(design &Design)
 {
 	for (auto &vertex : Design.vertices)
 	{
@@ -1381,7 +1419,7 @@ result compute_recommended(design &Design, bool const Transitions)
 		vertex.transition_out = 0.0;
 	}
 	auto r{compute(Design)};
-	if (false == Transitions || false == r.valid)
+	if (false == r.valid)
 		return r;
 	auto const speed{Design.speed};
 	for (int i = 0; i < 3; ++i)
@@ -1540,7 +1578,7 @@ design join_design(join_frame const &Frame, join_kind const Kind)
 std::optional<join_result> fitted_join(join_frame const &Frame, join_kind const Kind)
 {
 	auto shape{join_design(Frame, Kind)};
-	auto const r{compute_recommended(shape, Frame.request.transitions)};
+	auto const r{compute_recommended(shape)};
 	auto const sharp{std::any_of(r.curves.begin(), r.curves.end(), [](curve_report const &Report) { return Report.radius < 10.0; })};
 	if (false == r.valid || sharp || turning(r) > Frame.heading + kPi + 1e-6 || r.length > 3.0 * Frame.distance + 1.0)
 		return std::nullopt;
@@ -2433,6 +2471,8 @@ constexpr double kTraceRobust{0.25};
 constexpr double kPointsWithin{0.3};
 // m, how far they may be from it, clicked by hand far out: a row of bends making a curve no closer is cut in parts
 constexpr double kPointsLoose{1.0};
+// m, the shortest arc of a compound curve fitted through points: a shorter one is a kink the points made, no arc
+constexpr double kShortestArc{10.0};
 
 // the parameters: the logarithms of the radii, then the weights of the shares of all but the first radius, as logarithms too.
 // Between: the transitions between the arcs those of the norms, else the ones of the base
@@ -2567,8 +2607,14 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 			bestcost = cost;
 			bestlog = low + spacing * i;
 		}
-	if (bestcost == std::numeric_limits<double>::max())
+	// two points for each radius; a curve going on from the one of the adjoining track has its start, its curvature there given too, and
+	// where one radius doesn't reach the end from there two are tried: a sharper one after the one it goes on from
+	auto const going{Design.start_curved || Design.end_curved};
+	auto const alone{bestcost < std::numeric_limits<double>::max()};
+	auto const most{std::clamp(Radii > 0 ? Radii : 3, 1, std::max(going && false == alone ? 2 : 1, static_cast<int>(Points.size()) / 2))};
+	if (false == alone && most < 2)
 		return best;
+	if (alone)
 	{
 		constexpr double kGolden{0.6180339887498949};
 		auto a{bestlog - spacing};
@@ -2607,7 +2653,6 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 	};
 	std::array<candidate, 4> fits;
 	fits[1] = {{bestlog}, cost_of(one, {bestlog})};
-	auto const most{std::clamp(Radii > 0 ? Radii : 3, 1, std::max(1, static_cast<int>(Points.size()) / 2))};
 	auto const shift{std::log(1.3)};
 	auto const share = [](double const Second, double const First) { return std::log(Second / First); };
 	auto const rms = [&](int const Count) { return std::sqrt(fits[Count].cost / static_cast<double>(Points.size())); };
@@ -2624,13 +2669,18 @@ trace_fit fit_trace(design const &Design, std::size_t const Vertex, std::vector<
 	if (wanted(2))
 	{
 		auto const two{residuals(2)};
-		for (auto const fraction : {0.3, 0.5, 0.7})
-			for (auto const sign : {-1.0, 1.0})
-			{
-				std::vector<double> parameters{bestlog + sign * shift, bestlog - sign * shift, share(1.0 - fraction, fraction)};
-				if (auto const cost{least_squares(parameters, two)}; cost < fits[2].cost)
-					fits[2] = {parameters, cost};
-			}
+		// radii far apart too where the curve goes on from another one
+		std::vector<double> shifts{shift};
+		if (going)
+			shifts.insert(shifts.end(), {std::log(3.0), std::log(8.0)});
+		for (auto const apart : shifts)
+			for (auto const fraction : {0.3, 0.5, 0.7})
+				for (auto const sign : {-1.0, 1.0})
+				{
+					std::vector<double> parameters{bestlog + sign * apart, bestlog - sign * apart, share(1.0 - fraction, fraction)};
+					if (auto const cost{least_squares(parameters, two)}; cost < fits[2].cost)
+						fits[2] = {parameters, cost};
+				}
 		take(2);
 	}
 	if (wanted(3))
@@ -3361,6 +3411,33 @@ double shortest_between(design const &Design)
 
 } // namespace
 
+void settle_laid(std::vector<vertex> &Vertices, result const &Laid)
+{
+	for (auto const &curve : Laid.curves)
+	{
+		// a curve going on from an adjoining one is begun by that one's radius, not made smaller
+		if (curve.vertex < 0 || curve.vertex >= static_cast<int>(Vertices.size()) || curve.curvature_in > 0.0 || curve.curvature_out > 0.0)
+			continue;
+		auto &vertex{Vertices[curve.vertex]};
+		// two transitions meeting have their lengths from the radius they meet at
+		auto const transitions{vertex.spirals || (curve.transition_in >= vertex.transition_in - 1e-6 && curve.transition_out >= vertex.transition_out - 1e-6)};
+		if (curve.radius >= vertex.radius * (1.0 - 1e-6) && transitions)
+			continue;
+		auto const scale{curve.radius / std::max(1.0, vertex.radius)};
+		vertex.radius = curve.radius;
+		for (auto &arc : vertex.arcs)
+		{
+			arc.radius *= scale;
+			arc.transition *= scale;
+		}
+		if (false == vertex.spirals)
+		{
+			vertex.transition_in = curve.transition_in;
+			vertex.transition_out = curve.transition_out;
+		}
+	}
+}
+
 result ease_corners(design &Design, std::vector<char> &Corners, corner_radii const &Radii, stretch_fit const &Fit)
 {
 	// a point following a slight bend clicked closer than the curves leave a straight of the shortest length was clicked on a curve
@@ -3483,6 +3560,8 @@ result ease_corners(design &Design, std::vector<char> &Corners, corner_radii con
 			break;
 		line = ease_bends(Design, Corners, Radii);
 	}
+	if (line.valid)
+		settle_laid(Design.vertices, line);
 	return line;
 }
 
@@ -3513,6 +3592,7 @@ std::optional<trace_stretch> stretch_of(design const &Design, std::vector<glm::d
 			for (auto &arc : vertex.arcs)
 				arc.radius *= scale;
 		}
+	settle_laid(stretch.vertices, laid);
 	double sum{0.0};
 	for (auto const &projection : project(laid, Points))
 	{
@@ -3724,6 +3804,26 @@ void fit_curved(design &Design, std::size_t const Vertex, std::vector<glm::dvec2
 			best = parameters;
 		}
 	}
+	// a curve of another radius than the adjoining one, from too few points to show the transition between them: one as long as the
+	// norms ask for at the speed the sharper of them allows, rather than the curvature jumping at the joint
+	if (best.size() == 2 && Points.size() <= 3)
+		for (int pass = 0; pass < 2; ++pass)
+		{
+			design trial;
+			shaped(best, trial);
+			trial.norms.checked = false;
+			laid_with(compute(trial));
+			auto const allowed{std::max(1.0, std::min(speed, speed_limit(std::min(radius, adjoining), Design.norms)))};
+			auto const needed{std::min(between_curves(allowed, 1.0 / adjoining, adjoiningcant, 1.0 / radius, 0.0, Design.norms), 0.9 * longest)};
+			if (length_of(best[0]) >= needed - 0.5)
+				break;
+			auto const between{parameter_of(needed)};
+			residuals_of const rest{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) { return residuals({between, Parameters[0]}, Residuals); }};
+			std::vector<double> out{best[1]};
+			if (least_squares(out, rest) == std::numeric_limits<double>::max())
+				break;
+			best = {between, out[0]};
+		}
 	if (best.empty())
 		return;
 	design fitted;
@@ -3747,38 +3847,70 @@ void fit_curve(design &Design, std::size_t const Vertex, std::vector<glm::dvec2>
 	auto const speed{std::max(1.0, Design.speed)};
 	// the transitions together turn no more than the curve: longer ones would only be cut to it
 	auto const deflection{vertex_deflection(Design, Vertex)};
+	// the transition into the curve and the one out of it each as long as the points show it, where there are points enough for both: a
+	// curve begun short after a free end and running out long into the straight after it is one curve, not a sharp arc with a flat
+	// one after it
+	auto const apart{Points.size() >= 4};
 	auto const shaped = [&](std::vector<double> const &Parameters, design &Trial) {
 		Trial = Design;
 		auto const radius{std::exp(std::clamp(Parameters[0], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax)))};
-		plain_curve(Trial.vertices[Vertex], radius, std::min({Parameters[1] * Parameters[1], radius * deflection, longest_transition(speed, radius, Trial.norms)}), speed, Trial.norms);
+		auto const longest{longest_transition(speed, radius, Trial.norms)};
+		auto in{std::min(Parameters[1] * Parameters[1], longest)};
+		auto out{std::min(Parameters.back() * Parameters.back(), longest)};
+		if (auto const room{2.0 * radius * deflection}; in + out > room)
+		{
+			auto const scale{room / (in + out)};
+			in *= scale;
+			out *= scale;
+		}
+		auto &curve{Trial.vertices[Vertex]};
+		plain_curve(curve, radius, std::min(in, out), speed, Trial.norms);
+		curve.transition_in = in;
+		curve.transition_out = out;
 	};
 	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
 		design trial;
 		shaped(Parameters, trial);
 		return stretch_residuals(trial, Points, Residuals);
 	}};
-	// from the transitions it has and from those of the norms; the square root of the length, as a length of nought would hold the
-	// step at nought
+	// from the transitions it has and from those of the norms; the square root of the length, as a length of nought would hold the step
+	// at nought
 	auto const radius{std::max(kTraceRadiusMin, Design.vertices[Vertex].radius)};
 	auto const allowed{std::max(1.0, std::min(speed, speed_limit(radius, Design.norms)))};
+	// started below the longest transition: above it the length is held, the fit no longer moving it
+	auto const started = [&](double const Length) { return std::sqrt(std::max(std::min(Length, 0.9 * std::min(radius * deflection, longest_transition(speed, radius, Design.norms))), 1.0)); };
+	auto const norm{std::max(recommend(allowed, radius, Design.norms).transition, 10.0)};
+	auto const fitted_from = [&](std::vector<std::vector<double>> const &Starts, std::vector<double> &Best) {
+		auto lowest{std::numeric_limits<double>::max()};
+		for (auto parameters : Starts)
+			if (auto const cost{least_squares(parameters, residuals)}; cost < lowest)
+			{
+				lowest = cost;
+				Best = parameters;
+			}
+		return lowest;
+	};
 	std::vector<double> best;
-	auto lowest{std::numeric_limits<double>::max()};
-	for (auto const length : {std::max(Design.vertices[Vertex].transition_in, 10.0), std::max(recommend(allowed, radius, Design.norms).transition, 10.0)})
+	auto const alike{fitted_from({{std::log(radius), started(std::max(Design.vertices[Vertex].transition_in, 10.0))}, {std::log(radius), started(norm)}}, best)};
+	// the two apart, from the ones alike and from one short and the other long: taken where they keep to the points clearly closer, not
+	// only to points clicked a little off
+	constexpr double kApart{0.8};
+	if (apart && false == best.empty())
 	{
-		// started below the longest transition: above it the length is held, the fit no longer moving it
-		std::vector<double> parameters{std::log(radius), std::sqrt(std::min(length, 0.9 * std::min(radius * deflection, longest_transition(speed, radius, Design.norms))))};
-		if (auto const cost{least_squares(parameters, residuals)}; cost < lowest)
-		{
-			lowest = cost;
-			best = parameters;
-		}
+		std::vector<double> two;
+		if (fitted_from({{best[0], best[1], best[1]}, {std::log(radius), started(10.0), started(norm)}, {std::log(radius), started(norm), started(10.0)}}, two) < kApart * alike)
+			best = two;
 	}
 	if (best.empty())
 		return;
 	design fitted;
 	shaped(best, fitted);
 	auto &curve{fitted.vertices[Vertex]};
-	plain_curve(curve, std::max(kTraceRadiusMin, std::round(curve.radius)), std::round(curve.transition_in), speed, fitted.norms);
+	auto const in{std::round(curve.transition_in)};
+	auto const out{std::round(curve.transition_out)};
+	plain_curve(curve, std::max(kTraceRadiusMin, std::round(curve.radius)), std::min(in, out), speed, fitted.norms);
+	curve.transition_in = in;
+	curve.transition_out = out;
 	Design = fitted;
 }
 
@@ -3931,7 +4063,7 @@ std::optional<trace_stretch> fit_arcs(design const &Single, std::vector<glm::dve
 		fit_compound(Shaped, 0, Points);
 		auto const laid{compute(Shaped)};
 		if (std::any_of(laid.elements.begin(), laid.elements.end(), [](element const &Element) {
-			    return Element.vertex == 0 && Element.curvature_start == Element.curvature_end && Element.curvature_start > 0.0 && Element.length < 10.0;
+			    return Element.vertex == 0 && Element.curvature_start == Element.curvature_end && Element.curvature_start > 0.0 && Element.length < kShortestArc;
 		    }))
 			return std::nullopt;
 		auto const stretch{stretch_of(Shaped, Points)};
@@ -4108,30 +4240,22 @@ std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec
 			origins.push_back(start + across * Parameters[2 * j + 1]);
 		}
 		// where two lines cross: along the first one, along the second
-		auto const crossing = [](glm::dvec2 const &A, glm::dvec2 const &Along, glm::dvec2 const &B, glm::dvec2 const &Other, double &First, double &Second) {
-			auto const determinant{cross(Along, Other)};
-			if (std::abs(determinant) < 1e-9)
-				return false;
-			First = cross(B - A, Other) / determinant;
-			Second = cross(B - A, Along) / determinant;
-			return true;
-		};
 		std::vector<glm::dvec2> vertices;
 		double first;
 		double along;
-		if (false == crossing(start, startdirection, origins.front(), directions.front(), first, along) || first <= 0.0)
+		if (false == geometry::lines_cross(start, startdirection, origins.front(), directions.front(), first, along) || first <= 0.0)
 			return false;
 		vertices.push_back(start + startdirection * first);
 		for (std::size_t j = 0; j + 1 < lines; ++j)
 		{
 			double a;
 			double b;
-			if (false == crossing(origins[j], directions[j], origins[j + 1], directions[j + 1], a, b))
+			if (false == geometry::lines_cross(origins[j], directions[j], origins[j + 1], directions[j + 1], a, b))
 				return false;
 			vertices.push_back(origins[j] + directions[j] * a);
 		}
 		double last;
-		if (false == crossing(end, -enddirection, origins.back(), directions.back(), last, along) || last <= 0.0)
+		if (false == geometry::lines_cross(end, -enddirection, origins.back(), directions.back(), last, along) || last <= 0.0)
 			return false;
 		vertices.push_back(end - enddirection * last);
 		// each vertex on from the one before along the line between them
@@ -4210,6 +4334,364 @@ std::optional<trace_stretch> fit_chain(design const &Base, std::vector<glm::dvec
 
 } // namespace
 
+trace_stretch fit_going_on(design const &Base, std::vector<glm::dvec2> const &Points)
+{
+	trace_stretch fit;
+	if (Points.empty() || false == Base.start_curved || Base.start_radius <= 0.0 || glm::length(Base.start_direction) < 1e-9)
+		return fit;
+	auto const speed{std::max(1.0, Base.speed)};
+	auto const start{plan_of(Base.start)};
+	auto const heading{glm::normalize(Base.start_direction)};
+	auto const side{Base.start_turn > 0 ? 1.0 : -1.0};
+	auto const from{1.0 / Base.start_radius};
+	auto const fromcant{std::max(0.0, Base.start_cant)};
+	// going on from the diverging track of a switch: its first arc of the radius of the switch, with no transition before it
+	auto const held{Base.start_held};
+	auto const target{Points.back()};
+	// none where the last point lies on the other side of the heading
+	auto const offset{target - start};
+	auto const lateral{glm::dot(offset, perpendicular(heading) * side)};
+	auto const chord{glm::length(offset)};
+	if (lateral < 1e-3 || chord < 1.0)
+		return fit;
+	// the shape: the transition from the curvature of the adjoining track to the first arc, the arcs with the transitions between them,
+	// the transition from the last one to the straight, which goes on to the last point where the points clicked after the curve show it
+	struct shape
+	{
+		double in{0.0};
+		std::vector<double> curvatures;
+		std::vector<double> arcs;
+		std::vector<double> between;
+		double out{0.0};
+		double straight{0.0};
+	};
+	auto const curvature_of = [](double const Logarithm) { return 1.0 / std::exp(std::clamp(Logarithm, std::log(kTraceRadiusMin), std::log(kTraceRadiusMax))); };
+	auto const segments_of = [&](shape const &Shape) {
+		std::vector<std::array<double, 3>> segments{{from, Shape.curvatures.front(), Shape.in}};
+		for (std::size_t i = 0; i < Shape.curvatures.size(); ++i)
+		{
+			if (i > 0)
+				segments.push_back({Shape.curvatures[i - 1], Shape.curvatures[i], Shape.between[i - 1]});
+			segments.push_back({Shape.curvatures[i], Shape.curvatures[i], Shape.arcs[i]});
+		}
+		segments.push_back({Shape.curvatures.back(), 0.0, Shape.out});
+		segments.push_back({0.0, 0.0, Shape.straight});
+		return segments;
+	};
+	auto const turn_of = [&](shape const &Shape) {
+		double turn{0.0};
+		for (auto const &[first, last, length] : segments_of(Shape))
+			turn += 0.5 * (first + last) * length;
+		return turn;
+	};
+	// where the shape ends, heading which way
+	auto const end_of = [&](shape const &Shape, glm::dvec2 &End, glm::dvec2 &Leaving) {
+		glm::dvec2 origin{start};
+		glm::dvec2 direction{heading};
+		for (auto const &[first, last, length] : segments_of(Shape))
+		{
+			if (length < 1e-9)
+				continue;
+			auto const local{spiral_point(first, last, length, length)};
+			origin += direction * local.x + perpendicular(direction) * side * local.y;
+			direction = turned(direction, side * local.angle);
+		}
+		End = origin;
+		Leaving = direction;
+	};
+	// the line of the shape in the plan, a point every half a metre about
+	auto const line_of = [&](shape const &Shape) {
+		plan_line line;
+		glm::dvec2 origin{start};
+		glm::dvec2 direction{heading};
+		double chainage{0.0};
+		line.points.push_back(origin);
+		line.chainages.push_back(0.0);
+		for (auto const &[first, last, length] : segments_of(Shape))
+		{
+			if (length < 1e-6)
+				continue;
+			glm::dvec2 const across{perpendicular(direction) * side};
+			int const count{std::clamp(static_cast<int>(std::ceil(length / 0.5)), 1, 400)};
+			for (int i = 1; i <= count; ++i)
+			{
+				auto const local{spiral_point(first, last, length, length * i / count)};
+				line.points.push_back(origin + direction * local.x + across * local.y);
+				line.chainages.push_back(chainage + length * i / count);
+			}
+			auto const local{spiral_point(first, last, length, length)};
+			origin += direction * local.x + across * local.y;
+			direction = turned(direction, side * local.angle);
+			chainage += length;
+		}
+		return line;
+	};
+	// the shape of the parameters: the square roots of the lengths of the transitions and of the straight, then for each arc but the
+	// last the logarithm of its radius, the square root of its length and of the transition after it; the last arc, its radius and
+	// length, Last. Held, the transition in is none and the first arc of the radius of the switch; a single arc so is given the square
+	// root of the straight after it in Last in place of its radius
+	auto const single_held = [&](std::vector<double> const &Parameters) { return held && Parameters.size() == 3; };
+	auto const shaped = [&](std::vector<double> const &Parameters, std::array<double, 2> const &Last) {
+		shape result;
+		result.in = held ? 0.0 : Parameters[0] * Parameters[0];
+		result.out = Parameters[1] * Parameters[1];
+		result.straight = Parameters[2] * Parameters[2];
+		for (std::size_t i = 3; i + 2 < Parameters.size(); i += 3)
+		{
+			result.curvatures.push_back(held && i == 3 ? from : curvature_of(Parameters[i]));
+			result.arcs.push_back(Parameters[i + 1] * Parameters[i + 1]);
+			result.between.push_back(Parameters[i + 2] * Parameters[i + 2]);
+		}
+		if (single_held(Parameters))
+		{
+			result.curvatures.push_back(from);
+			result.straight = Last[0] * Last[0];
+		}
+		else
+			result.curvatures.push_back(curvature_of(Last[0]));
+		result.arcs.push_back(Last[1] * Last[1]);
+		return result;
+	};
+	// the radius and the length of the last arc bringing the end to the last point, the rest given: by Newton from the ones found last
+	auto const reach = [&](std::vector<double> const &Parameters, std::array<double, 2> &Solution) {
+		auto const miss = [&](std::array<double, 2> const &At, glm::dvec2 &Miss) {
+			auto const trial{shaped(Parameters, At)};
+			if (turn_of(trial) > kPi - 1e-2)
+				return false;
+			glm::dvec2 end;
+			glm::dvec2 leaving;
+			end_of(trial, end, leaving);
+			Miss = end - target;
+			return true;
+		};
+		constexpr double kStep{1e-6};
+		auto at{Solution};
+		for (int i = 0; i < 40; ++i)
+		{
+			glm::dvec2 here;
+			if (false == miss(at, here))
+				return false;
+			if (glm::length(here) < 1e-5)
+			{
+				Solution = at;
+				return true;
+			}
+			glm::dvec2 radial;
+			glm::dvec2 along;
+			auto byradius{at};
+			byradius[0] += kStep;
+			auto byarc{at};
+			byarc[1] += kStep;
+			if (false == miss(byradius, radial) || false == miss(byarc, along))
+				return false;
+			radial = (radial - here) / kStep;
+			along = (along - here) / kStep;
+			auto const determinant{radial.x * along.y - radial.y * along.x};
+			if (std::abs(determinant) < 1e-12)
+				return false;
+			auto const stepradius{(along.x * here.y - here.x * along.y) / determinant};
+			auto const steparc{(here.x * radial.y - radial.x * here.y) / determinant};
+			// half a step of the logarithm of the radius at most, the curve not swinging round; of the root of the straight after an arc
+			// held two
+			auto const damped{std::min(1.0, (single_held(Parameters) ? 2.0 : 0.5) / std::max(std::abs(stepradius), 1e-12))};
+			at[0] += stepradius * damped;
+			if (single_held(Parameters))
+				at[0] = std::abs(at[0]);
+			at[1] = std::abs(at[1] + steparc * damped);
+		}
+		return false;
+	};
+	// the transitions as long as the norms ask for where the points don't show them shorter: a metre short of it weighed as a millimetre
+	// off a point, which only chooses among the shapes too few points leave open
+	constexpr double kShort{0.001};
+	std::array<double, 2> solution{};
+	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
+		auto at{solution};
+		if (false == reach(Parameters, at))
+			return false;
+		solution = at;
+		auto const trial{shaped(Parameters, at)};
+		auto const line{line_of(trial)};
+		Residuals.clear();
+		for (std::size_t i = 0; i + 1 < Points.size(); ++i)
+			Residuals.push_back(project_on(line, Points[i]).offset);
+		auto const need_between = [&](double const First, double const Second) {
+			auto const sharper{1.0 / std::max({First, Second, 1e-9})};
+			auto const allowed{std::max(1.0, std::min(speed, speed_limit(sharper, Base.norms)))};
+			return std::min(between_curves(allowed, First, 0.0, Second, 0.0, Base.norms), 0.9 * longest_transition(speed, sharper, Base.norms));
+		};
+		auto const last{1.0 / trial.curvatures.back()};
+		auto const allowed{std::max(1.0, std::min(speed, speed_limit(last, Base.norms)))};
+		Residuals.push_back(kShort * std::max(0.0, need_between(from, trial.curvatures.front()) - trial.in));
+		for (std::size_t i = 1; i < trial.curvatures.size(); ++i)
+			Residuals.push_back(kShort * std::max(0.0, need_between(trial.curvatures[i - 1], trial.curvatures[i]) - trial.between[i - 1]));
+		Residuals.push_back(kShort * std::max(0.0, std::min(transition_length(allowed, last, 0.0, Base.norms), 0.9 * longest_transition(speed, last, Base.norms)) - trial.out));
+		// the curve ending at the last point where the points don't show a straight after it
+		Residuals.push_back(kShort * trial.straight);
+		return true;
+	}};
+	std::vector<double> best;
+	std::array<double, 2> bestsolution{};
+	auto lowest{std::numeric_limits<double>::max()};
+	// the square root of the straight to start from: off nought, where the fit couldn't move it
+	constexpr double kSeed{0.5};
+	// an arc of a compound curve shorter than the shortest one, a sharp one squeezed between two long transitions to bring the curve to
+	// the points (R 21 m for a millimetre after R 229 m): no curve to lay, as the fit of the arcs through the points has it. The first arc
+	// going on from a switch at its radius may be as short as it is
+	auto const kinked = [&](shape const &Shape) {
+		if (Shape.curvatures.size() < 2)
+			return false;
+		for (std::size_t i = held ? 1 : 0; i < Shape.arcs.size(); ++i)
+			if (Shape.arcs[i] < kShortestArc)
+				return true;
+		return false;
+	};
+	// the parameters fitted: all but those of a curve going on from a switch which the shape doesn't take, the transition in and the
+	// radius of the first arc, or the straight after a single arc, which the reach finds then
+	auto const attempt = [&](std::vector<double> Parameters, std::array<double, 2> const &Start) {
+		solution = Start;
+		std::vector<std::size_t> loose;
+		for (std::size_t i = 0; i < Parameters.size(); ++i)
+			if (false == held || (i != 0 && i != (single_held(Parameters) ? 2u : 3u)))
+				loose.push_back(i);
+		auto const whole = [&](std::vector<double> const &Loose) {
+			auto result{Parameters};
+			for (std::size_t i = 0; i < loose.size(); ++i)
+				result[loose[i]] = Loose[i];
+			return result;
+		};
+		std::vector<double> fitted;
+		for (auto const i : loose)
+			fitted.push_back(Parameters[i]);
+		residuals_of const some{[&](std::vector<double> const &Loose, std::vector<double> &Residuals) { return residuals(whole(Loose), Residuals); }};
+		if (auto const cost{least_squares(fitted, some)}; cost < lowest && false == kinked(shaped(whole(fitted), solution)))
+		{
+			lowest = cost;
+			best = whole(fitted);
+			bestsolution = solution;
+		}
+	};
+	// one arc, from two guesses of how far it turns: as the points head at the end, Base ending that way, and as the circle going on
+	// from the start through the last point does; held at the radius of a switch, as far round as that, the straight after it the rest
+	// of the way
+	std::vector<double> turns;
+	if (glm::length(Base.end_direction) > 1e-9)
+	{
+		auto const ending{glm::normalize(Base.end_direction)};
+		auto turn{std::atan2(side * cross(heading, ending), glm::dot(heading, ending))};
+		if (turn < 0.0)
+			turn += 2.0 * kPi;
+		if (turn > 1e-3 && turn < kPi - 2e-2)
+			turns.push_back(turn);
+	}
+	turns.push_back(2.0 * std::asin(std::clamp(lateral / chord, 0.0, 1.0)));
+	for (auto const turn : turns)
+		for (auto const length : {10.0, 25.0})
+		{
+			if (held)
+			{
+				auto const arc{std::max(1.0, Base.start_radius * turn - 0.5 * length)};
+				attempt({0.0, std::sqrt(length), 0.0}, {std::sqrt(std::max(1.0, chord - arc)), std::sqrt(arc)});
+				continue;
+			}
+			auto const radius{std::clamp(chord / std::max(1e-3, 2.0 * std::sin(0.5 * turn)), kTraceRadiusMin, kTraceRadiusMax)};
+			attempt({std::sqrt(length), std::sqrt(length), kSeed}, {std::log(radius), std::sqrt(std::max(1.0, radius * turn - length))});
+		}
+	// Abreast: the shape ends abreast of the last point, not on it
+	auto const settle = [&](shape const &Found, bool const Abreast) -> std::optional<trace_stretch> {
+		glm::dvec2 end;
+		glm::dvec2 leaving;
+		end_of(Found, end, leaving);
+		if (false == Abreast && glm::distance(end, target) > 0.01)
+			return std::nullopt;
+		// laid as the design lays a curve going on from an adjoining one: its vertex where the straights cross, its radii scaled to make
+		// the tangent before it reach the start, which they do
+		design laid{Base};
+		laid.end = {end.x, Base.end.y, end.y};
+		laid.end_direction = leaving;
+		laid.end_curved = false;
+		laid.end_reserve = 0.0;
+		laid.vertices.assign(1, vertex{});
+		glm::dvec2 meeting;
+		if (false == tangent_intersection(laid, meeting))
+			return std::nullopt;
+		auto &curve{laid.vertices.front()};
+		curve.position = meeting;
+		curve.radius = 1.0 / Found.curvatures.front();
+		curve.transition_in = Found.in;
+		curve.transition_out = Found.out;
+		if (Found.curvatures.size() > 1)
+		{
+			// the shares of the arcs by how far they turn
+			curve.compound = true;
+			curve.share = std::max(1e-6, Found.arcs.front() * Found.curvatures.front());
+			for (std::size_t i = 1; i < Found.curvatures.size(); ++i)
+			{
+				compound_arc arc;
+				arc.radius = 1.0 / Found.curvatures[i];
+				arc.transition = Found.between[i - 1];
+				arc.share = std::max(1e-6, Found.arcs[i] * Found.curvatures[i]);
+				curve.arcs.push_back(arc);
+			}
+		}
+		curve.cant = Found.curvatures.size() > 1 ? 0.0 : curved_cant(curve.radius, Found.in, Found.out, fromcant, speed, Base.norms);
+		auto stretch{stretch_of(laid, Points)};
+		if (stretch.has_value())
+		{
+			stretch->leaving = leaving;
+			stretch->ending = end;
+		}
+		return stretch;
+	};
+	std::optional<trace_stretch> one;
+	if (false == best.empty())
+		one = settle(shaped(best, bestsolution), false);
+	// held, the arc of the switch alone, as far round as abreast of the last point seen from its centre and ending there: as the points
+	// clicked along it show it, no transition out of it bringing it to a point on it
+	if (held)
+	{
+		auto const centre{start + perpendicular(heading) * side * Base.start_radius};
+		auto const outward{target - centre};
+		auto sweep{std::fmod(side * (std::atan2(outward.y, outward.x) - std::atan2(start.y - centre.y, start.x - centre.x)), 2.0 * kPi)};
+		if (sweep < 0.0)
+			sweep += 2.0 * kPi;
+		if (glm::length(outward) > 0.5 && sweep > 1e-3 && sweep < kPi - 2e-2)
+		{
+			shape arc;
+			arc.curvatures = {from};
+			arc.arcs = {Base.start_radius * sweep};
+			if (auto const alone{settle(arc, true)}; alone.has_value() && (false == one.has_value() || alone->rms < one->rms))
+				one = alone;
+		}
+	}
+	// two arcs where one doesn't keep to the points and there are enough of them to tell: a flatter one going on from the end, even a
+	// straight about, then a sharper one, as where the line turns hard at the last points. Going on from a switch, the first one of its
+	// radius, then a flatter or a sharper one
+	if (Points.size() >= 3 && (false == one.has_value() || one->worst > kPointsWithin))
+	{
+		auto const single{best.empty() || held ? std::array<double, 2>{std::log(std::clamp(chord, kTraceRadiusMin, kTraceRadiusMax)), std::sqrt(chord)} : bestsolution};
+		auto const radius{std::exp(single[0])};
+		lowest = std::numeric_limits<double>::max();
+		best.clear();
+		std::vector<double> const firsts{held ? std::vector<double>{Base.start_radius} : std::vector<double>{Base.start_radius, 2.0 * Base.start_radius, 3000.0}};
+		std::vector<double> const seconds{held ? std::vector<double>{0.5 * Base.start_radius, 2.0 * Base.start_radius} : std::vector<double>{0.5 * radius}};
+		auto const shares{held ? std::array<double, 2>{0.15, 0.5} : std::array<double, 2>{0.4, 0.7}};
+		for (auto const first : firsts)
+			for (auto const second : seconds)
+				for (auto const share : shares)
+				{
+					auto const along{std::max(1.0, share * chord)};
+					attempt({std::sqrt(10.0), std::sqrt(10.0), kSeed, std::log(first), std::sqrt(along), std::sqrt(10.0)}, {std::log(std::max(kTraceRadiusMin, second)), std::sqrt(std::max(1.0, (1.0 - share) * chord))});
+				}
+		if (false == best.empty())
+			if (auto const two{settle(shaped(best, bestsolution), false)}; two.has_value() && (false == one.has_value() || two->rms < 0.6 * one->rms))
+				one = two;
+	}
+	if (one.has_value())
+		fit = *one;
+	return fit;
+}
+
 trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights)
 {
 	trace_stretch chosen;
@@ -4258,19 +4740,38 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 		int const side{cross(startdirection, enddirection) > 0.0 ? 1 : -1};
 		auto const fromstart{Base.start_curved && Base.start_radius > 0.0 && Base.start_turn == side};
 		auto const curved{fromstart || (Base.end_curved && Base.end_radius > 0.0 && Base.end_turn == side)};
-		if (curved)
+		// going on from the diverging track of a switch: at its radius, the transition on the other side of the arc making it begin there
+		auto const held{fromstart ? Base.start_held : Base.end_held};
+		if (curved && held)
+		{
+			curve.radius = fromstart ? Base.start_radius : Base.end_radius;
+			one = stretch_of(single, Points);
+		}
+		else if (curved)
 		{
 			curve.radius = fromstart ? Base.start_radius : Base.end_radius;
 			fit_curved(single, 0, Points, fromstart);
 			one = stretch_of(single, Points);
+			// a compound curve where one radius doesn't keep to points enough for two; where it doesn't reach the end at all, as where a
+			// curve sharper than the one it goes on from ends the stretch, of two radii from fewer points too. Its transition from the curve
+			// of the adjoining track as long as the norms ask for at least, the curvature not jumping at the joint
 			auto const loose{one.has_value() && (one->rms > kStretchClose || one->worst > kPointsWithin)};
-			if (one.has_value() && Radii != 1 && (Radii > 1 || loose))
+			auto const missing{false == one.has_value()};
+			if (Radii != 1 && (missing || ((Radii > 1 || loose) && Points.size() >= 4)))
 				if (auto const fit{fit_trace(single, 0, Points, Radii > 1 ? Radii : 2)}; fit.valid && fit.fitted.compound)
 				{
 					auto several{single};
 					several.vertices.front() = fit.fitted;
 					fit_compound(several, 0, Points);
-					if (auto const compound{stretch_of(several, Points)}; compound.has_value() && (Radii > 1 || compound->rms < 0.75 * one->rms))
+					auto &shape{several.vertices.front()};
+					auto const joining{fromstart ? shape.radius : shape.arcs.empty() ? shape.radius : shape.arcs.back().radius};
+					auto const adjoining{fromstart ? Base.start_radius : Base.end_radius};
+					auto const allowed{std::max(1.0, std::min(speed, speed_limit(std::min(joining, adjoining), Base.norms)))};
+					auto const needed{std::min(between_curves(allowed, 1.0 / adjoining, std::max(0.0, fromstart ? Base.start_cant : Base.end_cant), 1.0 / std::max(1.0, joining), 0.0, Base.norms),
+					                           0.9 * longest_transition(speed, adjoining, Base.norms))};
+					auto &between{fromstart ? shape.transition_in : shape.transition_out};
+					between = std::max(between, std::round(needed));
+					if (auto const compound{stretch_of(several, Points)}; compound.has_value() && (Radii > 1 || false == one.has_value() || compound->rms < 0.75 * one->rms))
 						one = compound;
 				}
 		}
@@ -4310,9 +4811,12 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 					fit_compound(several, 0, Points);
 					compound = stretch_of(several, Points);
 				}
-				if (auto const more{fit_arcs(single, Points, Radii > 1 ? Radii : 8)}; more.has_value() && (false == compound.has_value() || more->worst < compound->worst))
+				// no more radii than half the points: a few points clicked a little off don't show a curve of many radii
+				if (auto const more{fit_arcs(single, Points, Radii > 1 ? Radii : std::clamp(static_cast<int>(Points.size()) / 2, 2, 8))}; more.has_value() && (false == compound.has_value() || more->worst < compound->worst))
 					compound = more;
-				if (compound.has_value() && (Radii > 1 || compound->rms < 0.75 * one->rms || (one->worst > kPointsWithin && compound->worst < one->worst)))
+				// one with an arc as flat as a straight between its curves only where it keeps to all the points much closer: not to come
+				// nearer to a point clicked a little off, sharp curves either side of a straight
+				if (compound.has_value() && (Radii > 1 || compound->rms < 0.75 * one->rms || (one->worst > kPointsWithin && compound->worst < one->worst && (compound->vertices.empty() || false == flattened(compound->vertices.front())))))
 					one = compound;
 			}
 		}
@@ -4490,7 +4994,7 @@ void stretch_fitter::work()
 		m_asked.pop_back();
 		auto const asked{*m_fitting};
 		lock.unlock();
-		auto fit{fit_trace_stretch(asked.base, asked.points, asked.radii, asked.straights)};
+		auto fit{asked.going ? fit_going_on(asked.base, asked.points) : fit_trace_stretch(asked.base, asked.points, asked.radii, asked.straights)};
 		lock.lock();
 		constexpr std::size_t kKept{16};
 		m_results.insert(m_results.begin(), {asked.key, std::move(fit)});

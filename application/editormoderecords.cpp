@@ -371,21 +371,16 @@ std::optional<editor_mode::slip_set> editor_mode::slip_of(TTrack const &Track) c
 	if (slip.switches.size() < 2)
 		return std::nullopt;
 	// where the straights of its first and its last switch meet: the joints of its tracks near it are inside the slip, its ends far off
-	auto const heading = [](segment_data const &Path) {
-		auto const &control{Path.points[segment_data::point::control1]};
-		auto const direction{plan_of(control != glm::dvec3{} ? control : Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
-		return glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{0.0, 1.0};
-	};
 	auto const &first{slip.switches.front()->m_paths.front()};
 	auto const &last{slip.switches.back()->m_paths.front()};
 	auto const a{plan_of(first.points[segment_data::point::start])};
 	auto const d{plan_of(last.points[segment_data::point::start])};
-	auto const da{heading(first)};
-	auto const dd{heading(last)};
-	auto const determinant{geometry::cross(da, dd)};
-	if (std::abs(determinant) < 1e-9)
+	auto const da{editor_track::end_direction(first, editor_track::point_kind::start)};
+	auto const dd{editor_track::end_direction(last, editor_track::point_kind::start)};
+	double alongfirst, alonglast;
+	if (false == geometry::lines_cross(a, da, d, dd, alongfirst, alonglast))
 		return std::nullopt;
-	auto const crossing{a + da * (geometry::cross(d - a, dd) / determinant)};
+	auto const crossing{a + da * alongfirst};
 	auto const inside{0.5 * glm::distance(a, crossing)};
 	slip.parts = slip.switches;
 	for (std::size_t i = 0; i < slip.parts.size(); ++i)
@@ -442,7 +437,6 @@ std::optional<editor_mode::slip_set> editor_mode::slip_of(TTrack const &Track) c
 		slip.ends[i] = ends[order[i]].first;
 		slip.into[i] = ends[order[i]].second;
 	}
-	slip.crossing = (plan_of(slip.ends[0]) + plan_of(slip.ends[1]) + plan_of(slip.ends[2]) + plan_of(slip.ends[3])) * 0.25;
 	return slip;
 }
 

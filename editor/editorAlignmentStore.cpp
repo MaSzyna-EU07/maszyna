@@ -709,6 +709,14 @@ std::optional<designed_vertex> vertex_of(std::vector<std::pair<TTrack *, bool>> 
 		auto const end{project(r, entering(Run.back(), true), tolerance)};
 		if (false == start.has_value() || false == end.has_value())
 			continue;
+		// the tracks of a part of the curve only, as on either side of a switch laid into it, aren't laid by its design: it's theirs only
+		// where they reach over the whole curve, else they're recognized as they lie
+		auto const low{std::min(start->chainage, end->chainage) - 0.5};
+		auto const high{std::max(start->chainage, end->chainage) + 0.5};
+		if (std::any_of(entry.result.elements.begin(), entry.result.elements.end(), [&](alignment::element const &E) {
+			    return E.vertex == *vertices.begin() && E.kind != alignment::element_kind::straight && (E.chainage < low || E.chainage + E.length > high);
+		    }))
+			continue;
 		designed_vertex result;
 		result.record = static_cast<int>(r);
 		result.vertex = *vertices.begin();

@@ -126,6 +126,10 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
 //   orthoarea <x> <z>... | clear         the download area through the points of the world, as drawn on the map; orthoareapause 0|1
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
+//   orthosettings [on|radius|opacity|lift|height|year|hires|drape|scene <value>]...   the settings of the orthophoto changed as its
+//                                        panel and its checkbox change them, kept with the editor, and logged with the origin of the scenery
+//   nmtsettings [band|around|shape|follow|grow|offset|fitted <value>]...   the settings of the terrain model changed as the terrain
+//                                        panel changes them, and logged with the offset of the model to the scenery
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
@@ -174,6 +178,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   fittime <metres>...                  the grade line of a straight over rolling ground of each length fitted, as at a click, and the time the
 //                                        frame waits for it while the track is laid, the line fitted on the thread of the fitter
 //   nmtauto [unfitted]                   the tracks put onto the terrain model, all or the ones whose grade line isn't fitted yet
+//   turntables                           the height of each turntable and of the model in its pit, and the heights of the tracks running up
+//                                        to it out along their lines from the rim, against the model there
 //   fittedstate [reload]                 logs how many tracks have their grade line fitted, and which; reload: read again from the //$f lines
 //   trackterrain <pull|restore> <track>...   the terrain drawn to the tracks, or their formations taken out of it, as the panel of the tracks
 //   terrainhash                          a hash of the heights of the terrain chunks in memory, to compare the ground two builds made

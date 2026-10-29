@@ -56,7 +56,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		auto config{m_orthophoto.settings()};
 		if (words.str().find(" off") != std::string::npos)
 		{
-			m_orthophoto.enabled(false);
+			// as the user turns it off: the terrain model leaves it so
+			choose_orthophoto(false);
 			WriteLog("SELFTEST orthophoto off");
 			return selftest_result::handled;
 		}
@@ -102,6 +103,108 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		config.hires = hires != 0;
 		m_orthophoto.settings(config);
 		WriteLog(format("SELFTEST orthohires %d", hires));
+		return selftest_result::handled;
+	}
+	if (command == "orthosettings")
+	{
+		// as the panel of the orthophoto changes them, kept with the editor
+		auto config{m_orthophoto.settings()};
+		std::string key;
+		double value{0.0};
+		auto changed{false};
+		while (words >> key >> value)
+		{
+			changed = true;
+			if (key == "radius")
+				config.radius = std::clamp(static_cast<int>(value), 0, editor_orthophoto::max_radius);
+			else if (key == "opacity")
+				config.opacity = std::clamp(static_cast<float>(value), 0.0f, 1.0f);
+			else if (key == "lift")
+				config.lift = static_cast<float>(value);
+			else if (key == "height")
+				config.height = static_cast<float>(value);
+			else if (key == "year")
+				config.year = static_cast<int>(value);
+			else if (key == "hires")
+				config.hires = value != 0.0;
+			else if (key == "drape")
+				config.drape = value != 0.0;
+			else if (key == "scene")
+				config.in_scene = value != 0.0;
+			else if (key == "on")
+				choose_orthophoto(value != 0.0);
+		}
+		if (changed)
+		{
+			m_orthophoto.settings(config);
+			save_orthophoto_settings();
+		}
+		config = m_orthophoto.settings();
+		WriteLog(format("SELFTEST orthosettings on %d radius %d opacity %.2f lift %.2f height %.2f year %d hires %d drape %d scene %d origin %.2f %.2f", m_orthophoto.enabled() ? 1 : 0, config.radius, config.opacity, config.lift,
+		                config.height, config.year, config.hires ? 1 : 0, config.drape ? 1 : 0, config.in_scene ? 1 : 0, config.north, config.east));
+		return selftest_result::handled;
+	}
+	if (command == "nmtsettings")
+	{
+		// as the terrain panel changes them, kept with the editor the next frame (keep_nmt_settings); the terrain while laying at
+		// once, as its chip keeps it
+		auto &state{m_nmt_state};
+		std::string key;
+		double value{0.0};
+		while (words >> key >> value)
+		{
+			if (key == "band")
+				state.band = std::clamp(value, 50.0, 3000.0);
+			else if (key == "around")
+				m_terrain_add_count = std::clamp(static_cast<int>(value), 1, 8);
+			else if (key == "shape")
+				state.shape = value != 0.0;
+			else if (key == "follow")
+				state.follow = value != 0.0;
+			else if (key == "offset")
+				state.offset = value;
+			else if (key == "fitted")
+				state.fitted = value != 0.0;
+			else if (key == "grow")
+			{
+				state.grow = value != 0.0;
+				EditorSettings.terrain_while_laying(state.grow);
+				EditorSettings.save();
+			}
+		}
+		WriteLog(format("SELFTEST nmtsettings band %.0f around %d shape %d follow %d grow %d offset %+.2f fitted %d", state.band, m_terrain_add_count, state.shape ? 1 : 0, state.follow ? 1 : 0, state.grow ? 1 : 0, state.offset,
+		                state.fitted ? 1 : 0));
+		return selftest_result::handled;
+	}
+	if (command == "wmsdescribe")
+	{
+		// what a WMS tells of itself, as the layers window reads it before one is added
+		std::string url;
+		words >> url;
+		auto const info{editor_orthophoto::describe(url)};
+		WriteLog(format("SELFTEST wmsdescribe: \"%s\", %zu layers, EPSG:2180 %d%s", info.title.c_str(), info.layers.size(), info.puwg ? 1 : 0, info.error.empty() ? "" : (", error " + info.error).c_str()));
+		WriteLog("SELFTEST wmsdescribe terms: " + info.terms);
+		for (std::size_t i = 0; i < std::min<std::size_t>(info.layers.size(), 5); ++i)
+			WriteLog("SELFTEST wmsdescribe layer " + info.layers[i].first + " \"" + info.layers[i].second + "\"");
+		return selftest_result::handled;
+	}
+	if (command == "wms")
+	{
+		// a WMS layer of the user's on top of the others, as the layers window adds it: wms <address> <layers>
+		editorSettings::wms_layer entry;
+		words >> entry.url >> entry.layers;
+		entry.title = entry.layers;
+		EditorSettings.wms_layers().insert(EditorSettings.wms_layers().begin(), entry);
+		WriteLog("SELFTEST wms " + entry.url + " " + entry.layers);
+		return selftest_result::handled;
+	}
+	if (command == "wmsstats")
+	{
+		for (std::size_t i = 0; i < m_wms.size(); ++i)
+		{
+			auto const stats{m_wms[i]->stats()};
+			WriteLog(format("SELFTEST wmsstats %zu %s: enabled %d, shown %d, loading %d, failed %d", i, m_wms[i]->settings().layers.c_str(), m_wms[i]->enabled() ? 1 : 0, stats.resident, stats.loading, stats.failed));
+		}
 		return selftest_result::handled;
 	}
 	if (command == "orthostats")
@@ -203,6 +306,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		}
 		return selftest_result::handled;
 	}
+	if (command == "nmtoffset")
+	{
+		// the offset of the terrain model set, 0 as in an editor opened anew
+		words >> m_nmt_state.offset;
+		WriteLog(format("SELFTEST nmtoffset %+.2f", m_nmt_state.offset));
+		return selftest_result::handled;
+	}
 	if (command == "nmtauto")
 	{
 		// the tracks put onto the terrain model, as the button of the panel of the tracks does, all or the ones not fitted yet;
@@ -211,6 +321,61 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		words >> which;
 		nmt_auto_start(which == "unfitted");
 		WriteLog("SELFTEST nmtauto " + which + ": " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "turntables")
+	{
+		// each turntable: the height of its rails and of the model in its pit; of each track running up to it the heights out along
+		// its line from the rim, the model there under the rails beside them, and how far from the rim the line keeps level
+		for (auto const &table : nmt_turntables())
+		{
+			auto const &points{table.table->m_paths.front().points};
+			double pit{std::numeric_limits<double>::quiet_NaN()};
+			if (double height; m_nmt.height(table.centre.x, table.centre.z, height))
+				pit = height + m_nmt_state.offset;
+			std::string included;
+			for (auto const &item : standing_templates([](std::string const &) { return true; }))
+				if (false == item.values.empty() && ToLower(item.values.front()) == table.table->name())
+					included += format(" %s at %.3f %.3f %.3f", item.file.c_str(), item.location.x, item.location.y, item.location.z);
+			WriteLog(format("SELFTEST turntable %s: rails %.3f .. %.3f m, rim %.2f m, the model in the pit %.2f m, %zu tracks run up to it; its include%s", table.table->name().c_str(), points[segment_data::point::start].y,
+			                points[segment_data::point::end].y, table.rim, pit, table.ends.size(), included.empty() ? " none" : included.c_str()));
+			for (auto const &[track, path, atend] : table.ends)
+			{
+				auto route{editor_track::run_route(*track, 80.0, path)};
+				auto const samples{editor_track::sample_route(route, 1.0)};
+				if (samples.size() < 2)
+					continue;
+				auto const &rim{track->m_paths[path].points[atend ? segment_data::point::end : segment_data::point::start]};
+				auto const reversed{geometry::plan_distance(samples.back().position, rim) < geometry::plan_distance(samples.front().position, rim)};
+				auto const length{samples.back().chainage - samples.front().chainage};
+				auto const chainage_at = [&](double const Off) { return reversed ? samples.back().chainage - Off : samples.front().chainage + Off; };
+				auto const height_at = [&](double const Off) { return editor_track::sampled_elevation(samples, chainage_at(Off)); };
+				auto const rails{static_cast<double>(track->rail_height())};
+				std::string text;
+				for (auto const off : {0.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0})
+				{
+					if (off > length)
+						break;
+					text += format(" %.0f m %.3f", off, height_at(off));
+					for (auto const &sample : samples)
+						if (std::abs(sample.chainage - chainage_at(off)) < 0.51)
+						{
+							if (double model; m_nmt.height(sample.position.x, sample.position.z, model))
+								text += format(" (model %.2f)", model + m_nmt_state.offset + rails);
+							break;
+						}
+				}
+				// level off the rim within a centimetre
+				double level{0.0};
+				for (double off = 0.0; off <= length; off += 0.5)
+					if (std::abs(height_at(off) - points[segment_data::point::start].y) <= 0.01)
+						level = off;
+					else
+						break;
+				WriteLog(format("SELFTEST turntable %s track %s: at the rim %.3f m, %+.2f per mille over its first 5 m, level within 1 cm of the table for %.1f m; out along it%s", table.table->name().c_str(), track->name().c_str(), rim.y,
+				                1000.0 * (height_at(std::min(5.0, length)) - height_at(0.0)) / std::max(1e-6, std::min(5.0, length)), level, text.c_str()));
+			}
+		}
 		return selftest_result::handled;
 	}
 	if (command == "fittedstate")
@@ -313,13 +478,21 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	}
 	if (command == "nmtgrow")
 	{
-		// the cursor of a track laid at the place: the terrain grows around it
+		// the cursor of a track laid at the place, its first point placed there unless "chosen" says the tool is only chosen: the terrain
+		// grows around it once the laying begins
 		auto const active{m_lay.active};
-		words >> m_lay.mouse.x >> m_lay.mouse.z;
+		auto const points{m_lay.points};
+		std::string chosen;
+		words >> m_lay.mouse.x >> m_lay.mouse.z >> chosen;
 		m_lay.active = true;
+		if (chosen != "chosen" && m_lay.points.empty())
+			m_lay.points.push_back(m_lay.mouse);
+		else if (chosen == "chosen")
+			m_lay.points.clear();
 		m_nmt_state.grow_time = -10.0;
 		nmt_grow();
 		m_lay.active = active;
+		m_lay.points = points;
 		WriteLog(format("SELFTEST nmtgrow: %zu chunks waiting, grown %d", m_nmt_state.pending.size(), m_nmt_state.grown ? 1 : 0));
 		return selftest_result::handled;
 	}
@@ -493,6 +666,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		if (m_streamer.exists({cx, cz}))
 			m_terrain_selection.insert({cx, cz});
 		WriteLog(format("SELFTEST terrainselect: %zu selected", m_terrain_selection.size()));
+		return selftest_result::handled;
+	}
+	if (command == "terrainremove")
+	{
+		// the chunks selected taken out, as the button of the chunk panel and Del do
+		remove_selected_chunks();
+		WriteLog("SELFTEST terrainremove: " + m_terrain_status);
 		return selftest_result::handled;
 	}
 	if (command == "terrainresolution")

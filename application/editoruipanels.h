@@ -226,6 +226,11 @@ class layers_panel : public ui_panel
 
 	// saves the scenery; provided by the editor mode
 	std::function<void()> save;
+	// the base layers under the scenery, the orthophoto and the WMS layers of the user's, with their settings; provided by the
+	// editor mode
+	std::function<void()> base_layers;
+	// the window brought to the front the next time it's drawn
+	bool focus{false};
 	// outcome of the most recent operation, shown at the bottom of the window
 	std::string status;
 	bool status_error{false};

@@ -236,8 +236,8 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   choose(terrain_tool::fill)});
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
-		                   [this, orthophoto]() { m_orthophoto.enabled(false == orthophoto); }, true});
-		auto const advanced{m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::restore || m_orthophoto_window};
+		                   [this, orthophoto]() { choose_orthophoto(false == orthophoto); }, true});
+		auto const advanced{m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::restore || orthophoto_settings_open()};
 		Buttons.push_back({icon::more, terrain_tools_more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Point spacing, restoring the terrain, orthophoto settings"), terrain_tools_more,
 		                   []() { terrain_tools_more = false == terrain_tools_more; }, true});
 		if (false == terrain_tools_more && false == advanced)
@@ -246,7 +246,11 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
 		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
 		                   choose(terrain_tool::restore)});
-		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, m_orthophoto_window, [this]() { m_orthophoto_window = !m_orthophoto_window; }});
+		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
+			                   // among the base layers in the layers window
+			                   ui()->show_layers();
+			                   m_orthophoto_window = true;
+		                   }});
 		break;
 	}
 	}

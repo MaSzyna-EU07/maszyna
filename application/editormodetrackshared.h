@@ -102,6 +102,14 @@ inline std::string curve_label(alignment::curve_report const &Curve, alignment::
 	return text + speed_of(curve_sharpest(Curve), Limits);
 }
 
+inline std::string lines_of(std::vector<std::string> const &Texts)
+{
+	std::string text;
+	for (auto const &line : Texts)
+		text += (text.empty() ? "" : "\n") + line;
+	return text;
+}
+
 // how a curve laid goes on from the curve of the track it starts at, or into the one of the track it ends at; empty from a straight
 inline std::string curve_goes_on(alignment::curve_report const &Curve)
 {
@@ -112,10 +120,7 @@ inline std::string curve_goes_on(alignment::curve_report const &Curve)
 	if (Curve.curvature_out > 0.0)
 		lines.push_back(Curve.transition_out < 1.0 ? format(STR_C("goes into R %.0f m of the track it ends at"), 1.0 / Curve.curvature_out) :
 		                                             format(STR_C("goes into R %.0f m of the track it ends at, a transition of %.0f m between them"), 1.0 / Curve.curvature_out, Curve.transition_out));
-	std::string text;
-	for (auto const &line : lines)
-		text += (text.empty() ? "" : "\n") + line;
-	return text;
+	return lines_of(lines);
 }
 
 // the transition curves and the cant the norms put in a layout, a compound curve where it goes on from an arc turning the same way
@@ -161,13 +166,6 @@ inline std::string vertical_of(std::vector<segment_data> const &Pieces)
 	return format(STR_C("height %+.2f m   grade %+.1f to %+.1f per mille"), rise, low, high);
 }
 
-inline std::string lines_of(std::vector<std::string> const &Texts)
-{
-	std::string text;
-	for (auto const &line : Texts)
-		text += (text.empty() ? "" : "\n") + line;
-	return text;
-}
 
 inline std::string narrowed(editor_track::layout const Layout, double const Radius, double const Arc)
 {
@@ -324,13 +322,15 @@ inline void compound_from(editor_track::curve const &Curve, alignment::vertex &V
 {
 	if (false == Curve.compound || Curve.arcs.size() < 2)
 		return;
+	// the radii and the transitions read off the paths rounded, as they'd be designed; read from the designs they were laid by, as they are
+	auto const value = [&](double const Value) { return Curve.laid ? Value : std::round(Value); };
 	Vertex.compound = true;
-	Vertex.radius = std::round(Curve.arcs.front().radius);
+	Vertex.radius = value(Curve.arcs.front().radius);
 	Vertex.share = Curve.arcs.front().turn;
 	Vertex.first_cant = -1.0;
 	Vertex.arcs.clear();
 	for (std::size_t i = 1; i < Curve.arcs.size(); ++i)
-		Vertex.arcs.push_back({std::round(Curve.arcs[i].radius), std::round(Curve.arcs[i].transition), Curve.arcs[i].turn});
+		Vertex.arcs.push_back({value(Curve.arcs[i].radius), value(Curve.arcs[i].transition), Curve.arcs[i].turn});
 }
 
 inline char const *type_name(TTrack const &Track)

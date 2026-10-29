@@ -923,6 +923,11 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
                 auto const onwall { paired ? ( false == open( partner ) && clamped( partner ) == side ) : moved == count };
                 if( onwall ) {
                     wall = ( side > 0 ? outerwall : innerwall );
+                    // a face of the profile squeezed onto the wall from the other side of the rail keeps facing that side: the thin plate a
+                    // planed blade gets to near its tip is lit from the middle of the track as its face there, not as the one against the stock rail
+                    if( static_cast<float>( Span.side * side ) * ShapePoints[ j ].normal.x < 0.f ) {
+                        wall = -wall;
+                    }
                 }
             }
             if( drop > 0.0 && shape.position.y > Span.head.x && Span.head.y > Span.head.x ) {
