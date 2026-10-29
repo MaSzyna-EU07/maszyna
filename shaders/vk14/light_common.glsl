@@ -86,7 +86,8 @@ float contact_shadow(vec3 light_dir, float raylength, float steps)
 	vec3 normal = normalize(f_normal);
 	if (dot(normal, position) > 0.0)
 		normal = -normal;
-	if (dot(normal, light_dir) <= 0.0)
+	// (not "<= 0.0": a model with a normal of zero length gives NaN here, and the march with it would fetch far out of the depth)
+	if (!(dot(normal, light_dir) > 0.0))
 		return 0.0;
 	vec2 size = vec2(textureSize(scene_depth, 0));
 	// the projection is perspective with the depth n / w (reverse z, infinite far plane): w is the distance along the axis
@@ -109,7 +110,7 @@ float contact_shadow(vec3 light_dir, float raylength, float steps)
 		vec2 coords = (clip.xy / clip.w) * 0.5 + 0.5;
 		if (any(lessThan(coords, vec2(0.0))) || any(greaterThan(coords, vec2(1.0))))
 			break;
-		float depth = texelFetch(scene_depth, min(ivec2(coords * size), ivec2(size) - 1), 0).r;
+		float depth = texelFetch(scene_depth, clamp(ivec2(coords * size), ivec2(0), ivec2(size) - 1), 0).r;
 		// nothing drawn there (the sky)
 		if (depth <= 0.0)
 			continue;

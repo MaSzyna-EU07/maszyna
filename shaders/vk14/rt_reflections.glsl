@@ -165,6 +165,9 @@ vec4 rt_trace(vec3 position, vec3 normal, vec3 direction, float roughness)
 	if (dot(face, point) > 0.0)
 		face = -face;
 	vec3 ray = normalize(toworld * direction);
+	// a normal of zero length (a model without proper normals) gives NaN: a ray from such an origin is undefined
+	if (any(isnan(face)) || any(isnan(ray)))
+		return vec4(0.0);
 	vec3 origin = point + face * (0.02 + length(point) * 0.0005);
 
 	rayQueryEXT query;
