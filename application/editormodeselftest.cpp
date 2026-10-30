@@ -186,6 +186,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   gradelines <file>                    the grade line each track shares written to the file, for a map of them
 //   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height
 //   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back
+//   trackheights <file>                  the heights of the ends of all the paths and how each track stands to the terrain model
 //   profiledump <file>                   the route open in the profile tool to the file: its heights and the points of its grade line
 //   fittedstate [reload]                logs how many tracks have their grade line fitted, and which; reload: read again from the //$f lines
 //   trackterrain <pull|restore> <track>...   the terrain drawn to the tracks, or their formations taken out of it, as the panel of the tracks

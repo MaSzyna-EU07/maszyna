@@ -830,7 +830,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST fitreport: " + file);
 		return selftest_result::handled;
 	}
-	// the common grade line of the route open in the profile tool: lift <m>: its design up by that much and applied; off, on: the route
+	// the common grade line of the route open in the profile tool: lift <m>: its design up by that much and applied; hand: its tracks marked
+	// as edited by hand; off, on: the route
 	// taken off it and back; whole 0/1: whether the tracks beside go with it; state told in the log
 	if (command == "gradeline")
 	{
@@ -885,9 +886,31 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			grade_line_take_off(action == "off");
 		else if (action == "whole")
 			state.whole_grade_line = value != 0.0;
+		else if (action == "hand")
+		{
+			// the tracks of the route marked as edited by hand, without an edit held up by what lies on them
+			std::vector<TTrack *> tracks;
+			for (auto const &span : state.route.spans)
+				tracks.push_back(span.track);
+			fitted_set(tracks, true);
+		}
 		grade_lines_load();
 		auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(state.route.spans.front().track->name())};
 		WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size()));
+		return selftest_result::handled;
+	}
+	// the heights of the ends of the paths of all the tracks to the file, for two states of the scenery to be compared, the stay of each
+	if (command == "trackheights")
+	{
+		std::string file;
+		words >> file;
+		std::ofstream stream{file};
+		stream << std::fixed << std::setprecision(4);
+		for (auto const *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (auto const &path : track->m_paths)
+					stream << track->name() << ' ' << (grade_hand(*track) ? 'h' : grade_fitted(*track) ? 'f' : 'n') << ' ' << path.points[segment_data::point::start].y << ' ' << path.points[segment_data::point::end].y << '\n';
+		WriteLog("SELFTEST trackheights: " + file);
 		return selftest_result::handled;
 	}
 	// the route open in the profile tool, as it lies and as the grade line reads it: S chainage height grade track, P chainage height radius

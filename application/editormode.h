@@ -345,6 +345,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
 		bool reshape{false}; // the formations of the tracks laid anew once the chunks waiting are made, as the tracks are put onto the terrain
 		bool unfitted{false}; // the tracks put onto the terrain are only the ones whose grade line isn't fitted yet
+		bool redo_hand{false}; // all anew takes the grade lines edited by hand too
+		std::unordered_set<TTrack const *> stayed; // the tracks this putting onto the terrain leaves as they are
 		double grow_time{-10.0};
 		double slope{1.5};
 		double reach{60.0};
@@ -2770,12 +2772,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	{
 		scene::layer_handle layer{null_handle};
 		std::uint64_t shape{0};
+		bool hand{false};
 	};
 	std::map<std::string, fitted_mark> m_fitted;
 	bool m_fitted_loaded{false};
 	void fitted_load();
-	void fitted_set(std::vector<TTrack *> const &Tracks);
+	void fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand = false);
 	bool grade_fitted(TTrack const &Track);
+	bool grade_hand(TTrack const &Track); // its grade line was edited with the profile tool, and it wasn't changed since
+	bool nmt_stays(TTrack const &Track); // this putting of the tracks onto the terrain leaves it as it is
 	static std::uint64_t fitted_shape(TTrack const &Track);
 	int profile_find(bool &Reversed) const;
 	bool profile_restore();

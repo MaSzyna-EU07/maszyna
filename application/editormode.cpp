@@ -5788,6 +5788,7 @@ void editor_mode::render_first_steps()
 	      {"2", "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"},
 	      {"3", "Tracks onto the terrain: the tracks not fitted yet go onto the model, the ones fitted stay; the terrain to some tracks only: select them, Terrain in the inspector"},
 	      {"LMB", "A new track partly hidden in the ground: the message above the view has Fit the ground to the track, one click makes the track bed along it"},
+	      {"3", "A grade line edited by hand with the profile stays as it is, in All anew too unless you tick it"},
 	      {"3", "Nearly parallel tracks under 5.1 m apart get one grade line, the ones on common timbers one surface; a track crossing others with the ground low on both sides goes under them; a hump keeps to the model"},
 	      {"Ctrl + Z", "Takes the changes back"}},
 	     {{first_step::terrain, "Open the Terrain field of work"}, {first_step::nmt, "Load terrain from the model"}},

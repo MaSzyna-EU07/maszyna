@@ -13013,3 +13013,21 @@ msgstr "Wyklikaj szablon z widoku"
 
 msgid "Nearly parallel tracks under 5.1 m apart get one grade line, the ones on common timbers one surface; a track crossing others with the ground low on both sides goes under them; a hump keeps to the model"
 msgstr "Tory prawie równoległe bliżej niż 5,1 m dostają wspólną niweletę, te na wspólnych podrozjazdnicach jedną powierzchnię; tor przecinający inne, gdy teren po obu stronach jest nisko, idzie pod nimi; górka trzyma się modelu"
+
+msgid "%zu tracks get new grade lines; Ctrl+Z takes it back"
+msgstr "%zu torów dostanie nowe niwelety; Ctrl+Z to cofa"
+
+msgid "The %zu edited by hand too"
+msgstr "Także %zu edytowanych ręcznie"
+
+msgid "Fit them anew"
+msgstr "Dopasuj od nowa"
+
+msgid "%zu track with its grade line edited by hand stays as it is"
+msgid_plural "%zu tracks with their grade lines edited by hand stay as they are"
+msgstr[0] "%zu tor z niweletą edytowaną ręcznie zostaje bez zmian"
+msgstr[1] "%zu tory z niweletą edytowaną ręcznie zostają bez zmian"
+msgstr[2] "%zu torów z niweletą edytowaną ręcznie zostaje bez zmian"
+
+msgid "A grade line edited by hand with the profile stays as it is, in All anew too unless you tick it"
+msgstr "Niweleta edytowana ręcznie w profilu zostaje bez zmian, także przy dopasowaniu od nowa, chyba że to zaznaczysz"

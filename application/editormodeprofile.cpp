@@ -117,7 +117,10 @@ bool errors_in_change(std::vector<profile::issue> const &Issues, profile::line c
 			return true;
 		for (auto const &sample : Samples)
 			if (std::abs(sample.chainage - issue.chainage) <= kAround && std::abs(profile::elevation(Line, sample.chainage) - profile::elevation(Read, sample.chainage)) > kStale)
+			{
+				WriteLog(format("Editor: vertical profile - held up at %.1f m, the line changed by %.3f m there: %s", sample.chainage, profile::elevation(Line, sample.chainage) - profile::elevation(Read, sample.chainage), issue.text.c_str()), logtype::generic);
 				return true;
+			}
 	}
 	return false;
 }
@@ -297,7 +300,8 @@ std::uint64_t editor_mode::fitted_shape(TTrack const &Track)
 	for (auto const &path : Track.m_paths)
 		for (auto const &point : path.points)
 			for (int axis = 0; axis < 3; ++axis)
-				add(std::llround(point[axis] * 100.0));
+				// through the precision of the files first: what's read back from one has the shape it had when it was written
+				add(std::llround(std::round(point[axis] * 10000.0) / 100.0));
 	return hash;
 }
 
@@ -311,14 +315,17 @@ void editor_mode::fitted_load()
 		for (auto const &text : scene::Layers.marked(layer, kFittedMark))
 		{
 			std::istringstream line{text};
-			std::string keyword, name, shape;
+			std::string keyword, name, shape, kind;
 			line >> keyword >> name >> shape;
 			if (keyword == "fitted" && false == line.fail())
-				m_fitted[name] = {layer, std::strtoull(shape.c_str(), nullptr, 16)};
+			{
+				line >> kind;
+				m_fitted[name] = {layer, std::strtoull(shape.c_str(), nullptr, 16), kind == "hand"};
+			}
 		}
 }
 
-void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks)
+void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand)
 {
 	fitted_load();
 	std::vector<scene::layer_handle> layers;
@@ -335,7 +342,7 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks)
 		}
 		if (auto const found{m_fitted.find(track->name())}; found != m_fitted.end() && found->second.layer != layer)
 			layers.push_back(found->second.layer);
-		m_fitted[track->name()] = {layer, fitted_shape(*track)};
+		m_fitted[track->name()] = {layer, fitted_shape(*track), Hand};
 		layers.push_back(layer);
 	}
 	if (scene::Layers.empty())
@@ -357,10 +364,17 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks)
 				continue;
 			if (lines.empty())
 				lines.emplace_back("# the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines");
-			lines.push_back(format("fitted %s %016llx", name.c_str(), static_cast<unsigned long long>(mark.shape)));
+			lines.push_back(format("fitted %s %016llx%s", name.c_str(), static_cast<unsigned long long>(mark.shape), mark.hand ? " hand" : ""));
 		}
 		scene::Layers.mark(layer, kFittedMark, std::move(lines));
 	}
+}
+
+bool editor_mode::grade_hand(TTrack const &Track)
+{
+	fitted_load();
+	auto const found{m_fitted.find(Track.name())};
+	return found != m_fitted.end() && found->second.hand && found->second.shape == fitted_shape(Track);
 }
 
 bool editor_mode::grade_fitted(TTrack const &Track)
@@ -1676,7 +1690,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	{
 		auto marked{tracks};
 		marked.insert(marked.end(), created.begin(), created.end());
-		fitted_set(marked);
+		fitted_set(marked, edit_only);
 	}
 	// the stored design changes with the paths, an undo takes both back
 	profile_library_load();
@@ -1715,7 +1729,8 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	auto const followed{follow_crossovers(before)};
 	if (followed > 0)
 		state.status += format(STR_C("\nThe tracks across %zu crossover(s) followed the change"), followed);
-	if (auto const beside{grade_line_follow(before)}; beside > 0)
+	// a line fitted to the terrain model goes by itself: the ones sharing its grade line are worked out after them all
+	if (auto const beside{state.fitting ? std::size_t{0} : grade_line_follow(before)}; beside > 0)
 		state.status += format(STR_P("\nThe common grade line: %zu track beside went with the route", "\nThe common grade line: %zu tracks beside went with the route", beside), beside);
 	if (Terrain)
 		profile_follow_terrain(static_cast<std::size_t>(m_track_edits - edits));

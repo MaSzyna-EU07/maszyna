@@ -298,7 +298,7 @@ std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sampl
 	editor_track::commit(moved);
 	push_track_snapshot(std::move(edit.states), {});
 	join_last_steps();
-	fitted_set(moved);
+	fitted_set(moved, true);
 	return moved.size();
 }
 

@@ -1317,13 +1317,15 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 	auto &state{m_nmt_state};
 	auto const busy{nmt_busy()};
 	auto const placed{m_nmt.placed()};
-	std::size_t unfitted{0}, all{0};
+	std::size_t unfitted{0}, all{0}, hand{0};
 	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved && rail(*track))
 		{
 			++all;
 			if (false == grade_fitted(*track))
 				++unfitted;
+			else if (grade_hand(*track))
+				++hand;
 		}
 	auto const told{[](char const *Text) {
 		ImGui::PushTextWrapPos(0.0f);
@@ -1348,6 +1350,8 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 		told(format(STR_C("The tracks laid or changed since the last time go onto the terrain model (%zu of %zu); the ones fitted stay as they are"), unfitted, all).c_str());
 	else
 		told(STR_C("All the tracks are fitted to the terrain; a track changed since goes onto it again"));
+	if (hand > 0)
+		told(format(STR_P("%zu track with its grade line edited by hand stays as it is", "%zu tracks with their grade lines edited by hand stay as they are", hand), hand).c_str());
 	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
 	                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
 	toggle_chips("nmtcommon", {{STR_C("One grade line for nearly parallel tracks under 5.1 m apart"), &state.common,
@@ -1356,8 +1360,24 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 	ImGui::TextDisabled("%s", STR_C("Or:"));
 	ImGui::BeginDisabled(busy || false == placed || all == 0);
 	if (ImGui::Button(STR_C("All anew, the fitted ones too"), ImVec2(-FLT_MIN, 0.0f)))
-		nmt_auto_start(false);
+		ImGui::OpenPopup("##nmtallanew");
 	item_tooltip("All the tracks are fitted to the terrain model again, the ones fitted already too: their grade lines may change; the scenery isn't moved");
+	if (ImGui::BeginPopup("##nmtallanew"))
+	{
+		ImGui::TextUnformatted(format(STR_C("%zu tracks get new grade lines; Ctrl+Z takes it back"), all - (state.redo_hand ? 0 : hand)).c_str());
+		if (hand > 0)
+			ImGui::Checkbox(format(STR_C("The %zu edited by hand too"), hand).c_str(), &state.redo_hand);
+		if (ImGui::Button(STR_C("Fit them anew")))
+		{
+			nmt_auto_start(false);
+			state.redo_hand = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Cancel")))
+			ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
 	ImGui::EndDisabled();
 	ImGui::BeginDisabled(busy || false == placed || all == 0);
 	if (ImGui::Button(STR_C("Terrain under the tracks"), ImVec2(-FLT_MIN, 0.0f)))
@@ -2192,7 +2212,7 @@ std::size_t editor_mode::nmt_level_turntables()
 		for (auto const &[track, path, atend] : table.ends)
 		{
 			auto const end{end_of(*track, path, atend)};
-			if (state.unfitted && grade_fitted(*track))
+			if (nmt_stays(*track))
 				fitted.push_back(end.point.y);
 			auto const away{geometry::plan_of(end.point - table.centre) / std::max(1e-6, geometry::plan_distance(end.point, table.centre))};
 			for (auto out{kPitWall}; out <= kPitWall + 6.0; out += 1.0)
@@ -2254,6 +2274,12 @@ std::size_t editor_mode::nmt_level_turntables()
 	return changed.size();
 }
 
+bool editor_mode::nmt_stays(TTrack const &Track)
+{
+	auto const &state{m_nmt_state};
+	return (state.unfitted && grade_fitted(Track)) || (false == state.redo_hand && grade_hand(Track));
+}
+
 void editor_mode::nmt_auto_start(bool const Unfitted)
 {
 	auto &state{m_nmt_state};
@@ -2268,7 +2294,7 @@ void editor_mode::nmt_auto_start(bool const Unfitted)
 	std::vector<nmt_place> kept;
 	for (auto const &place : nmt_track_places(20.0))
 		if (place.shapes)
-			(false == Unfitted || false == grade_fitted(*place.track) ? state.probes : kept).push_back(place);
+			(nmt_stays(*place.track) ? kept : state.probes).push_back(place);
 	if (state.probes.empty())
 	{
 		state.status = Unfitted && false == kept.empty() ? STR("All the tracks are fitted to the terrain already") : STR("No tracks to put onto the terrain");
@@ -3121,7 +3147,8 @@ void editor_mode::nmt_share_grades()
 	// The tracks and switches on common timbers lie on one surface whatever else is told of them, a plane tilting along and across as the
 	// ground goes, each such group its own; on it they come to one grade line as far as tracks side by side do. A switch lies in its plane
 	auto &state{m_nmt_state};
-	if (false == state.common)
+	// nothing fitted now, nothing to share: what stays lies as it was
+	if (false == state.common || (false == state.stayed.empty() && state.lines == 0))
 		return;
 	double constexpr kApart{5.1}; // m between the axes
 	double constexpr kParallel{0.985}; // the cosine of the angle of tracks nearly parallel, 10 degrees: the links of a crossover are, a track crossing isn't
@@ -3190,6 +3217,7 @@ void editor_mode::nmt_share_grades()
 	auto const cell_of = [&](glm::dvec3 const &Point) { return key{static_cast<int>(std::floor(Point.x / kApart)), static_cast<int>(std::floor(Point.z / kApart))}; };
 	std::vector<place> all;
 	std::unordered_set<int> hump_nodes;
+	std::unordered_set<int> stayed_nodes;
 	std::map<key, std::vector<place>> timber_places; // of all the tracks, the ones held apart too
 	std::vector<place> timber_all;
 	for (auto const *track : tracks)
@@ -3217,6 +3245,14 @@ void editor_mode::nmt_share_grades()
 				fixed[a] = fixed[b] = 1;
 			if (state.on_hump.contains(track))
 				hump_nodes.insert({a, b});
+			// what stays where it is holds its ends whatever comes up to them; nothing else moves it
+			if (state.stayed.contains(track))
+			{
+				heights[a] = start.y;
+				heights[b] = end.y;
+				fixed[a] = fixed[b] = 1;
+				stayed_nodes.insert({a, b});
+			}
 			geometry::bezier const curve{path};
 			auto const count{std::max(1, static_cast<int>(length / kSpacing))};
 			for (int i = 0; i <= count; ++i)
@@ -3411,8 +3447,10 @@ void editor_mode::nmt_share_grades()
 		{
 			// a steep track holds its heights, but not against the timbers it shares; a hump gives way to them as little as they let it
 			double constexpr kHumpKeep{0.05}; // m
-			terms[here.first].weight = 1.0 / (hump_nodes.contains(here.first) ? kHumpKeep * kHumpKeep : kKeep * kKeep);
-			terms[here.second].weight = 1.0 / (hump_nodes.contains(here.second) ? kHumpKeep * kHumpKeep : kKeep * kKeep);
+			if (false == stayed_nodes.contains(here.first))
+				terms[here.first].weight = 1.0 / (hump_nodes.contains(here.first) ? kHumpKeep * kHumpKeep : kKeep * kKeep);
+			if (false == stayed_nodes.contains(here.second))
+				terms[here.second].weight = 1.0 / (hump_nodes.contains(here.second) ? kHumpKeep * kHumpKeep : kKeep * kKeep);
 			timbered_tracks.insert(here.track);
 			auto const surface{surfaces.at(timbered_root(stretch_of(here)))};
 			auto const middle{sums[surface].sum / sums[surface].count};
@@ -3531,6 +3569,8 @@ void editor_mode::nmt_share_grades()
 	std::size_t straightened{0};
 	for (auto *track : tracks)
 	{
+		if (state.stayed.contains(track))
+			continue;
 		auto changed{false};
 		for (auto const &path : track->m_paths)
 			for (auto const end : {segment_data::point::start, segment_data::point::end})
@@ -3629,17 +3669,20 @@ void editor_mode::nmt_auto_step()
 		// the longest tracks first: the main lines lead, the sidings join them
 		state.left.clear();
 		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && rail(*track) && track->eType != tt_Table && (false == state.unfitted || false == grade_fitted(*track)))
+			if (track != nullptr && rail(*track) && track->eType != tt_Table && false == nmt_stays(*track))
 				state.left.push_back(track);
 		std::sort(state.left.begin(), state.left.end(), [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });
 		state.tracks = state.left.size();
 		state.split = 0;
 		state.done.clear();
 		// the tracks fitted before are lines fitted already: the new ones run up to them and meet them as they are
-		if (state.unfitted)
-			for (auto *track : simulation::Paths.sequence())
-				if (track != nullptr && rail(*track) && grade_fitted(*track))
-					state.done.push_back(track);
+		state.stayed.clear();
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && rail(*track) && nmt_stays(*track))
+			{
+				state.done.push_back(track);
+				state.stayed.insert(track);
+			}
 		state.laid.clear();
 		state.bridged.clear();
 		state.on_hump.clear();
