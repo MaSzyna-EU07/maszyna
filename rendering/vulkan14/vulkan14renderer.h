@@ -589,6 +589,11 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	glm::ivec2 m_pickposition{0};
 	glm::vec3 m_worldmousecoordinates{0.f};
 	bool m_mousehit{false};
+	// the depths read around the cursor of the editor (walk_editor_cursor()): where they lie in the image, and whether the depth pass of
+	// the scene drew them, with its bias
+	glm::ivec2 m_cursorblockcorner{0};
+	glm::ivec2 m_cursorblocksize{1};
+	bool m_cursorbiased{false};
 	// the state of the draws of the walk being recorded
 	struct draw_state;
 	std::unique_ptr<draw_state> m_draw;
