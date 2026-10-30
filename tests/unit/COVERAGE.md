@@ -79,7 +79,7 @@ These are run by the game, by vehicles it has or by the cab, the AI or the scene
 
 The tests record the behaviour as it is. The following points may deserve a look by someone who knows how the real vehicles behave.
 
-- **`Random(10) - Random(10)` (`Mover.cpp`, the wheel flat noise):** the order the two calls are evaluated in isn't specified. MSVC Release, MSVC Debug and GCC give different traces, so the golden traces are recorded on MSVC Release.
+- **`Random(10) - Random(10)` (`Mover.cpp`, the noise of the control pipe pressure `CntrlPipePress`):** the order the two calls were evaluated in isn't specified. MSVC Release, MSVC Debug and GCC gave different traces, a control pipe pressure mirrored around 5 bar, which failed 32 tests on the Linux CI. Fixed: the draws are sequenced in the order of MSVC Release, which the golden traces were recorded with.
 - **`TCommand::Location` isn't initialised** in a new vehicle. The game always sets it through `PutCommand()`, but a test calling `RunCommand()` directly got different results run to run.
 - **`CompressorList` is `int[4][9]`** (`MOVER.h`), though its factors are fractions: 0.9 is read as 0. No game vehicle has the list yet.
 - **A train whose pipe leaks under 2.75 bar before its start-up can't be released:**

@@ -10429,7 +10429,10 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 		P2FTrans = 0;
 	}
 
-	CntrlPipePress = 5 + 0.001 * (Random(10) - Random(10)); // Ra 2014-07: trochę niedokładności
+	// Ra 2014-07: trochę niedokładności
+	// the draws are sequenced: the order of the operands of '-' is unspecified, and GCC and MSVC draw them the other way round
+	auto const firstdraw{Random(10)};
+	CntrlPipePress = 5 + 0.001 * (Random(10) - firstdraw);
 	extract_value(CntrlPipePress, "HiPP", line, "");
 	HighPipePress = CntrlPipePress;
 	LowPipePress = std::min(HighPipePress, 3.5);
