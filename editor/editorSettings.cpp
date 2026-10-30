@@ -145,6 +145,8 @@ bool editorSettings::load()
 			m_first_steps = (value == "1");
 		else if (key == "terrain_offer")
 			m_terrain_offer = (value == "1");
+		else if (key == "terrain_buried_ask")
+			m_terrain_buried_ask = (value == "1");
 		else if (key == "track_tools_all")
 			m_track_tools_more = (value == "1");
 		else if (key == "terrain_while_laying")
@@ -261,6 +263,7 @@ bool editorSettings::save()
 	stream << "colours " << m_palette << "\n";
 	stream << "first_steps " << (m_first_steps ? 1 : 0) << "\n";
 	stream << "terrain_offer " << (m_terrain_offer ? 1 : 0) << "\n";
+	stream << "terrain_buried_ask " << (m_terrain_buried_ask ? 1 : 0) << "\n";
 	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";
 	stream << "terrain_while_laying " << (m_terrain_while_laying ? 1 : 0) << "\n";
 	stream << "nmt_band " << m_terrain_model.band << "\n";

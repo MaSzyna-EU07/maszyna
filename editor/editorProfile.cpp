@@ -269,7 +269,8 @@ std::vector<issue> check(line const &Line, context const &Context)
 		for (auto const &zone : Context.switches)
 			if (overlaps(c.start, c.end, zone))
 			{
-				if (c.change < 0.0 && points[c.point].radius < switch_crest * 0.99)
+				auto const on_hump{std::any_of(Context.humps.begin(), Context.humps.end(), [&](context::zone const &Hump) { return points[c.point].chainage >= Hump.from && points[c.point].chainage <= Hump.to; })};
+				if (c.change < 0.0 && points[c.point].radius < switch_crest * 0.99 && false == on_hump)
 					add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"), c.point + 1, zone.name.c_str(), switch_crest));
 				else
 					add(false, point, points[c.point].chainage, format(STR_C("Point %zu: the vertical curve lies on switch %s"), c.point + 1, zone.name.c_str()));

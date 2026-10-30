@@ -1695,6 +1695,8 @@ bool editor_mode::update()
     render_first_steps();
     render_nmt_prompt();
     render_nmt_banner();
+    render_nmt_buried();
+    render_empty_scenery_hint();
     render_switch_designer();
     render_environment_window();
     draw_selection_overlay();
@@ -2695,7 +2697,8 @@ void editor_mode::draw_ortho_compass() const
     ImGuiIO const &io = ImGui::GetIO();
     float const radius{36.0f};
     float const margin{16.0f};
-    ImVec2 const center{io.DisplaySize.x - margin - radius, margin + radius};
+    // in the corner of the view, where the buttons of the toolbar and the hints along its bottom aren't
+    ImVec2 const center{editor_ui::view_max().x - margin - radius - 14.0f, editor_ui::view_max().y - margin - radius - 54.0f};
     auto *drawlist{ImGui::GetForegroundDrawList()};
     drawlist->AddCircleFilled(center, radius + 14.0f, IM_COL32(0, 0, 0, 180), 48);
     drawlist->AddCircle(center, radius - 6.0f, IM_COL32(255, 255, 255, 50), 48, 1.2f);
@@ -5302,6 +5305,76 @@ void tutorial_profile_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 
 // the route of the grade line picked on the map: a click lights up the whole line through the track, Shift and a box only the
 // tracks between the outermost ones in it; beside it the strip with a point of the line dragged
+// the radius of the curve at a bend: the two straights clicked stay, the curve between them grows from sharp to gentle and back
+// the points of a switch clicked one after another: its start, the ends of its two tracks, the way on, the points along the diverging track
+void tutorial_template_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	auto const at = [&](float const X, float const Y) { return ImVec2(Low.x + width * X, Low.y + height * Y); };
+	auto const curve = [&](float const Share) { return at(0.08f + 0.70f * Share, 0.72f - 0.42f * Share * Share); };
+	auto const shown{static_cast<int>(std::fmod(static_cast<float>(Time), 10.0f))};
+	std::vector<ImVec2> line;
+	for (int i = 0; i <= 24; ++i)
+		line.push_back(curve(i / 24.0f));
+	List.AddLine(at(0.08f, 0.72f), at(0.78f, 0.72f), IM_COL32(150, 150, 150, 130), 3.0f);
+	List.AddPolyline(line.data(), static_cast<int>(line.size()), IM_COL32(150, 150, 150, 130), ImDrawFlags_None, 3.0f);
+	std::array<ImVec2, 8> const points{at(0.08f, 0.72f), at(0.78f, 0.72f), curve(1.0f), at(0.94f, 0.14f), curve(0.28f), curve(0.5f), curve(0.72f), curve(0.88f)};
+	if (shown >= 1)
+		List.AddLine(points[0], points[1], IM_COL32(255, 255, 255, 230), 1.5f);
+	if (shown >= 3)
+		List.AddLine(points[2], points[3], IM_COL32(90, 200, 255, 230), 1.5f);
+	for (int i = 0; i < static_cast<int>(points.size()) && i <= shown; ++i)
+	{
+		List.AddCircleFilled(points[i], 4.0f, i < 4 ? IM_COL32(255, 225, 60, 255) : IM_COL32(120, 255, 120, 255));
+		if (i < 4)
+			List.AddText(ImVec2(points[i].x + 6.0f, points[i].y - 18.0f), IM_COL32(255, 255, 255, 255), std::to_string(i + 1).c_str());
+	}
+	if (shown >= 8)
+		List.AddPolyline(line.data(), static_cast<int>(line.size()), IM_COL32(255, 90, 200, 255), ImDrawFlags_None, 2.0f);
+}
+
+void tutorial_corner_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
+{
+	auto const width{High.x - Low.x};
+	auto const height{High.y - Low.y};
+	glm::vec2 const from{Low.x + width * 0.04f, Low.y + height * 0.80f};
+	glm::vec2 const vertex{Low.x + width * 0.50f, Low.y + height * 0.18f};
+	glm::vec2 const to{Low.x + width * 0.96f, Low.y + height * 0.80f};
+	auto const point = [](glm::vec2 const Point) { return ImVec2(Point.x, Point.y); };
+	List.AddLine(point(from), point(vertex), IM_COL32(150, 150, 150, 130), 1.0f);
+	List.AddLine(point(vertex), point(to), IM_COL32(150, 150, 150, 130), 1.0f);
+	List.AddCircleFilled(point(vertex), 4.0f, IM_COL32(255, 255, 255, 255));
+	// there and back in 8 s, a moment at each end
+	auto const cycle{std::fmod(static_cast<float>(Time), 8.0f) / 8.0f};
+	auto const swing{std::clamp(1.3f - std::abs(cycle * 2.0f - 1.0f) * 1.6f, 0.0f, 1.0f)};
+	auto const share{swing * swing * (3.0f - 2.0f * swing)};
+	auto const in{glm::normalize(from - vertex)};
+	auto const out{glm::normalize(to - vertex)};
+	auto const tangent{glm::mix(0.12f, 0.92f, share) * glm::length(from - vertex)};
+	auto const half{std::acos(glm::dot(in, out)) * 0.5f};
+	auto const centre{vertex + glm::normalize(in + out) * (tangent / std::cos(half))};
+	auto const start{vertex + in * tangent};
+	auto const end{vertex + out * tangent};
+	auto const begin{std::atan2(start.y - centre.y, start.x - centre.x)};
+	auto sweep{std::atan2(end.y - centre.y, end.x - centre.x) - begin};
+	while (sweep > glm::pi<float>())
+		sweep -= glm::two_pi<float>();
+	while (sweep < -glm::pi<float>())
+		sweep += glm::two_pi<float>();
+	auto const radius{glm::length(start - centre)};
+	std::vector<ImVec2> line{point(from)};
+	for (int i = 0; i <= 32; ++i)
+	{
+		auto const angle{begin + sweep * i / 32.0f};
+		line.push_back(ImVec2(centre.x + radius * std::cos(angle), centre.y + radius * std::sin(angle)));
+	}
+	line.push_back(point(to));
+	List.AddPolyline(line.data(), static_cast<int>(line.size()), IM_COL32(230, 190, 90, 255), ImDrawFlags_None, 3.0f);
+	auto const label{format(STR_C("R %.0f m: %s"), glm::mix(300.0, 6000.0, static_cast<double>(share)), share < 0.5f ? STR_C("a sharp curve, a slow train") : STR_C("a gentle curve, a fast train"))};
+	List.AddText(ImVec2(Low.x + (width - ImGui::CalcTextSize(label.c_str()).x) * 0.5f, High.y - ImGui::GetTextLineHeight() - 4.0f), IM_COL32(235, 235, 235, 255), label.c_str());
+}
+
 void tutorial_route_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High, double const Time)
 {
 	auto const split{std::round(Low.x + (High.x - Low.x) * 0.48f)};
@@ -5611,6 +5684,17 @@ void editor_mode::render_first_steps()
 	      {"wheel", "Alone it zooms, as everywhere"}},
 	     {{first_step::bend, "Lay a track with a bend in it"}, {first_step::trace, "Switch to tracing a curve with Tab"}},
 	     trial::lay},
+	    {"Radius of the curves at the bends",
+	     nullptr,
+	     {{"LMB", "Where you click a bend, the two straights meet at a sharp corner a train can't take: the editor rounds it off with a curve by itself"},
+	      {"R", "The radius is the size of that curve, in metres: the larger, the gentler the turn and the faster a train can take it"},
+	      {"LMB", "In the panel of the lay tool: the radius tried first is the larger one, to; the curve gets smaller only when it doesn't fit between your points, down to from"},
+	      {"LMB", "For a start take 3000-6000 on a main line, 1000-2000 by a station; the four buttons under the fields set both"},
+	      {"LMB", "Bends too close together leave no room: the curve comes out smaller and its label turns orange. Click the points further apart"},
+	      {"R L h", "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm"}},
+	     {{first_step::corners, "Choose other radii in the panel of the lay tool"}, {first_step::bend, "Lay a track with a bend and read the label of its curve"}},
+	     trial::lay,
+	     tutorial_corner_sketch},
 	    {"Correcting a curve",
 	     "plan",
 	     {{"G", "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"},
@@ -5624,6 +5708,7 @@ void editor_mode::render_first_steps()
 	     "join",
 	     {{"LMB + move", "Press on a free end (a magenta ring) and drag: a new track goes out of it"},
 	      {"LMB", "Let go on another free end: a curve joins the two tracks"},
+	      {"LMB", "The end snaps by itself: a click on a free end while laying joins the track to it, with no gap and with the cant of the track there going on smoothly"},
 	      {"Ctrl + wheel", "While over the other end: the radius of the joining curve"},
 	      {"Shift + wheel", "While over the other end: another way to join"}},
 	     {{first_step::join, "Join two free ends"}, {first_step::wheel, "Change the radius of the joining curve with Ctrl+wheel"}},
@@ -5638,6 +5723,17 @@ void editor_mode::render_first_steps()
 	      {"Esc", "Back to selecting"}},
 	     {{first_step::turnout, "Put a switch into a track"}},
 	     trial::turnout},
+	    {"Switch templates",
+	     nullptr,
+	     {{"T", "The switch tool, Template editor...: the catalogue and your own templates. A value under the mouse lights up on the drawing"},
+	      {"LMB", "Click off the view...: click the start of the switch, the end of its main track and the end of its diverging track, then a point further on that track"},
+	      {"LMB", "Then points along the diverging track, 3 at least: the shape and the radius follow them"},
+	      {"Backspace", "Takes the last point back; Esc stops clicking"},
+	      {"O", "The top view; the orthophoto is turned on in the Layers panel"},
+	      {"LMB", "Make the template: it lies over the photo where it was clicked and changes with its values"}},
+	     {{first_step::template_open, "Open the template editor"}, {first_step::template_clicked, "Make a template off the view"}},
+	     trial::turnout,
+	     tutorial_template_sketch},
 	    {"Signals and posts",
 	     nullptr,
 	     {{"I", "The signalling tool: click a type of signal in its Signals, from the templates of the scenery"},
@@ -5677,6 +5773,8 @@ void editor_mode::render_first_steps()
 	      {"LMB + move", "Drag a point of the grade line: the grades on both sides of it follow"},
 	      {"LMB LMB", "A double click on the line adds a point"},
 	      {"Del", "Removes the chosen point"},
+	      {"LMB", "Tracks on one common grade line go together: drag a point, Apply, and the tracks beside (blue) go too"},
+	      {"LMB", "Your own grade line for one route: Take off the common grade line, the tracks beside stop going with it"},
 	      {"Ctrl + wheel", "Over the plot: the heights stretched, the grades seen better"},
 	      {"RMB + move", "Over the plot: the view moves along the line"}},
 	     {{first_step::profile, "Open the grade line of a track"}, {first_step::profile_point, "Move or add a point"}, {first_step::profile_apply, "Apply it: the tracks take its heights"}},
@@ -5689,6 +5787,8 @@ void editor_mode::render_first_steps()
 	      {"1", "Location: where the scenery lies, a click on the map or the place typed"},
 	      {"2", "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"},
 	      {"3", "Tracks onto the terrain: the tracks not fitted yet go onto the model, the ones fitted stay; the terrain to some tracks only: select them, Terrain in the inspector"},
+	      {"LMB", "A new track partly hidden in the ground: the message above the view has Fit the ground to the track, one click makes the track bed along it"},
+	      {"3", "Nearly parallel tracks under 5.1 m apart get one grade line, the ones on common timbers one surface; a track crossing others with the ground low on both sides goes under them; a hump keeps to the model"},
 	      {"Ctrl + Z", "Takes the changes back"}},
 	     {{first_step::terrain, "Open the Terrain field of work"}, {first_step::nmt, "Load terrain from the model"}},
 	     trial::terrain,
@@ -5714,6 +5814,45 @@ void editor_mode::render_first_steps()
 	auto const done = [&](lesson const &Lesson) {
 		return false == Lesson.goals.empty() && std::all_of(Lesson.goals.begin(), Lesson.goals.end(), [&](goal const &Goal) { return m_first_steps_done[static_cast<std::size_t>(Goal.step)]; });
 	};
+	auto const open_lesson = [&](std::string_view const Title) {
+		for (std::size_t i = 0; i < lessons.size(); ++i)
+			if (Title == lessons[i].title)
+				m_tutorial_page = static_cast<int>(i);
+	};
+	auto const undone = [&](std::initializer_list<char const *> Titles) -> char const * {
+		for (auto const *title : Titles)
+			for (auto const &entry : lessons)
+				if (std::string_view{title} == entry.title && false == done(entry))
+					return title;
+		return "";
+	};
+	// the lesson of what's being done now, the next one once its goals are reached; opened when that changes, so a page turned by hand stays
+	char const *followed{""};
+	if (m_lay.active)
+		followed = undone({"Laying track", "Radius of the curves at the bends", "Curves", "Joining tracks"});
+	else if (current_work_area() == work_area::terrain)
+		followed = undone({"Terrain from the terrain model"});
+	else if (ui()->mode() == nodebank_panel::TRACK)
+	{
+		if (m_track_tab == track_tab::turnout)
+			followed = m_switch_designer.open ? undone({"Switch templates"}) : undone({"Switches"});
+		else if (m_track_tab == track_tab::profile)
+			followed = undone({"The grade line"});
+		else if (m_track_tab == track_tab::route || m_track_tab == track_tab::straights)
+			followed = undone({"Correcting a curve"});
+		else if (m_track_tab == track_tab::srk)
+			followed = undone({"Signals and posts"});
+	}
+	if (m_tutorial_followed != followed)
+	{
+		m_tutorial_followed = followed;
+		open_lesson(followed);
+	}
+	if (m_tutorial_goto != nullptr)
+	{
+		open_lesson(m_tutorial_goto);
+		m_tutorial_goto = nullptr;
+	}
 	m_tutorial_page = std::clamp(m_tutorial_page, 0, static_cast<int>(lessons.size()) - 1);
 	auto const &lesson{lessons[m_tutorial_page]};
 	if (lesson.clip == nullptr)
@@ -5781,7 +5920,7 @@ void editor_mode::render_first_steps()
 				ImGui::TextWrapped("%s", STR_C(entry.text));
 		}
 		if (m_tutorial_page == 1 && ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
-			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No ground under the cursor: track goes onto the level 0 plane, drawn as a grid. Terrain: F5"));
+			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No ground under the cursor: track goes onto the level 0 plane. Terrain: F5"));
 		switch (lesson.action)
 		{
 		case trial::top:
@@ -6398,6 +6537,7 @@ void editor_mode::toggle_ortho()
     {
         Camera.Angle.x = m_ortho_pitch;
         ortho_pan_stop();
+        camera_above_ground();
     }
 }
 
@@ -6945,6 +7085,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // an open list or menu takes this Esc for itself, the selection behind it stays
         if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
             break;
+        // the switch being clicked off the view given up
+        if (is_press(Action) && m_switch_designer.open && m_switch_designer.picking)
+        {
+            m_switch_designer.picking = false;
+            break;
+        }
         // the download area being drawn given up, the one before stays
         if (is_press(Action) && m_area_drawing.active)
         {
@@ -6999,6 +7145,16 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_BACKSPACE:
+        // the switch being clicked off the view: the last point taken back
+        if (m_switch_designer.open && m_switch_designer.picking)
+        {
+            if (is_press(Action) && false == m_switch_designer.clicks.empty())
+            {
+                m_switch_designer.clicks.pop_back();
+                switch_designer_measure();
+            }
+            break;
+        }
         // the download area: the last point taken back
         if (is_press(Action) && m_area_drawing.active)
         {
@@ -7083,6 +7239,16 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // UI first
     if (m_userinterface->on_mouse_button(Button, Action))
     {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // a switch being clicked off the view for the template editor takes the left button
+    if (m_switch_designer.open && m_switch_designer.picking && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        // on the terrain under the cursor, then on the level of the first point: no track or ballast in the view catches the point
+        if (is_press(Action))
+            switch_designer_click(m_switch_designer.clicks.empty() ? cursor_terrain(std::as_const(*this).cursor_ground().y) : cursor_level(m_switch_designer.clicks.front().y));
         m_input.mouse.button(Button, Action);
         return;
     }

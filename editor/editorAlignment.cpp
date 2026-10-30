@@ -988,21 +988,11 @@ result fit_between(design const &Design)
 		auto const angles = [&](double const Factor) {
 			return transition_point(Design.shape, fit.transition_in * Factor, fit.radius, 1.0).angle + transition_point(Design.shape, fit.transition_out * Factor, fit.radius, 1.0).angle;
 		};
-		auto const minimum{std::min(fit.radius * fit.deflection, std::max(Design.norms.arc_min, Design.norms.arc_min_factor * Design.speed))};
-		if (fit.radius * (fit.deflection - angles(1.0)) < minimum - 1e-6)
-		{
-			auto const target{fit.deflection - minimum / fit.radius};
-			double low{0.0};
-			double high{1.0};
-			for (int i = 0; i < 50; ++i)
-			{
-				auto const middle{(low + high) * 0.5};
-				(angles(middle) > target ? high : low) = middle;
-			}
-			fit.transition_in *= low;
-			fit.transition_out *= low;
-			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shortened to %.1f / %.1f m, the circular arc keeps %.0f m"), k + 1, fit.transition_in, fit.transition_out, minimum));
-		}
+		// the arc of the norms too short is told, with the radius all of it fits at: the transitions aren't given up for it, that would
+		// cost them their own length and the cant with it
+		auto const minimum{std::max(Design.norms.arc_min, Design.norms.arc_min_factor * Design.speed)};
+		if (auto const arc{fit.radius * (fit.deflection - angles(1.0))}; arc < minimum - 1e-6)
+			r.warnings.emplace_back(format(STR_C("Vertex %zu: the circular arc is %.0f m, the norms ask for %.0f m; all of it fits from R %.0f m"), k + 1, arc, minimum, ((vertex.transition_in + vertex.transition_out) * 0.5 + minimum) / fit.deflection));
 		if (fit.transition_in < 1.0)
 			fit.transition_in = 0.0;
 		if (fit.transition_out < 1.0)

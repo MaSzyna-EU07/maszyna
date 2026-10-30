@@ -2078,7 +2078,7 @@ std::string editor_mode::track_readout() const
 		};
 		std::string text;
 		if (lay.points.empty())
-			text = lay.mouse_snap.track != nullptr ? format(STR_C("starts at the end of %s"), name(lay.mouse_snap.track).c_str()) : std::string{STR_C("start")};
+			text = lay.mouse_snap.track != nullptr ? std::string{STR_C("goes on from this end of the track")} : std::string{STR_C("start")};
 		else if (false == lay.preview.empty() && lay.plan.shape.valid)
 		{
 			// the curve the cursor makes now: of the last bend, or the one traced
@@ -2522,27 +2522,6 @@ void editor_mode::draw_build_overlay() const
 			for (auto const *part : slip->parts)
 				for (auto const &path : part->m_paths)
 					drawpath(path, overlay_color::highlight);
-	if (false == GfxRenderer->Mouse_Hit() && false == ImGui::GetIO().WantCaptureMouse)
-	{
-		auto const centre{m_lay.active ? m_lay.mouse : cursor_ground()};
-		double const cell{10.0};
-		int const reach{10};
-		glm::dvec3 const origin{std::round(centre.x / cell) * cell, centre.y, std::round(centre.z / cell) * cell};
-		for (int i = -reach; i <= reach; ++i)
-		{
-			auto const major{std::fmod(std::abs(origin.x / cell + i), 10.0) < 0.5};
-			auto const colour{major ? IM_COL32(255, 255, 255, 70) : IM_COL32(255, 255, 255, 35)};
-			for (int j = -reach; j < reach; ++j)
-				projection.line(drawlist, origin + glm::dvec3{i * cell, 0.0, j * cell}, origin + glm::dvec3{i * cell, 0.0, (j + 1) * cell}, colour, 1.0f);
-		}
-		for (int j = -reach; j <= reach; ++j)
-		{
-			auto const major{std::fmod(std::abs(origin.z / cell + j), 10.0) < 0.5};
-			auto const colour{major ? IM_COL32(255, 255, 255, 70) : IM_COL32(255, 255, 255, 35)};
-			for (int i = -reach; i < reach; ++i)
-				projection.line(drawlist, origin + glm::dvec3{i * cell, 0.0, j * cell}, origin + glm::dvec3{(i + 1) * cell, 0.0, j * cell}, colour, 1.0f);
-		}
-	}
 	// none while a point is dragged: there is nothing to split then
 	if (m_track_tab == track_tab::path && false == m_lay.active && false == m_track_gizmo_using && false == m_point_drag.active && false == m_handle_drag.active)
 		if (auto const spot{split_spot()}; spot.track != nullptr)
@@ -2932,6 +2911,8 @@ void editor_mode::draw_build_overlay() const
 			drawlist->AddCircle(screen, 14.0f, IM_COL32(255, 60, 255, 255), 20, 3.0f);
 		if (lay.start.track != nullptr && projection.project(lay.start.position, screen))
 			drawlist->AddCircle(screen, 10.0f, IM_COL32(255, 60, 255, 255), 20, 2.0f);
+		if (lay.points.empty() && lay.mouse_snap.track == nullptr)
+			draw_cursor_ring(lay.mouse);
 		if (false == m_extend.active)
 			draw_free_ends(nullptr, kRailCategory, {});
 	}

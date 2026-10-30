@@ -223,6 +223,7 @@ set(SOURCES
 "application/editormodeswitchdrive.cpp"
 "application/editormodeswitchtool.cpp"
 "application/editormodenmt.cpp"
+"application/editormodegradeline.cpp"
 "application/editormodeswitchslide.cpp"
 "application/editormodeswitchdesign.cpp"
 "application/editormodetrackbed.cpp"

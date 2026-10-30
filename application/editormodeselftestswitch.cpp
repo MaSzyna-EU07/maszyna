@@ -122,11 +122,48 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	{
 		std::string list;
 		int index{0};
-		words >> list >> index;
 		auto &designer{m_switch_designer};
+		designer.pointed_test = -1;
+		words >> list >> index >> designer.pointed_test;
 		designer.open = list != "close";
 		designer.from_catalogue = list != "own";
 		designer.selected = index;
+		switch_designs_load();
+		auto const &list_of{designer.from_catalogue ? designer.catalogue : designer.own};
+		if (designer.open && index >= 0 && index < static_cast<int>(list_of.size()))
+		{
+			std::string problem;
+			auto const shape{switch_design::build(list_of[index], problem)};
+			auto text{format("SELFTEST designer %s: a %.3f b %.3f 1:%.3f sharpest R %.1f, %.3f m beside the main one, %.3f m long, end %.3f; parts", list_of[index].name.c_str(), shape.a, shape.b, shape.ratio, shape.radius, shape.offset, shape.length, shape.paths.size() > 1 ? shape.paths[1].points[segment_data::point::end].z : 0.0)};
+			for (auto const &part : list_of[index].parts)
+				text += format(" %.3f/R%.1f", part.length, part.radius1);
+			WriteLog(text + " " + problem);
+		}
+		return selftest_result::handled;
+	}
+	if (command == "designerpick")
+	{
+		// the points of a switch clicked off the view for the template editor, by x z; finish: the template made of them
+		auto &designer{m_switch_designer};
+		designer.open = true;
+		designer.picking = true;
+		for (glm::dvec2 point; words >> point.x >> point.y;)
+			switch_designer_click({point.x, 0.0, point.y});
+		words.clear();
+		std::string finish;
+		words >> finish;
+		if (finish == "finish")
+		{
+			switch_designer_finish();
+			WriteLog("SELFTEST designerpick: " + designer.status);
+			if (false == designer.from_catalogue && designer.selected >= 0 && designer.selected < static_cast<int>(designer.own.size()))
+			{
+				auto text{std::string{"SELFTEST designerpick parts"}};
+				for (auto const &part : designer.own[designer.selected].parts)
+					text += format(" %.3f/R%.1f..%.1f", part.length, part.radius1, part.radius2);
+				WriteLog(text + format(", lead %.3f", designer.own[designer.selected].lead));
+			}
+		}
 		return selftest_result::handled;
 	}
 	if (command == "release")

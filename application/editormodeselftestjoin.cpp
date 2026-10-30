@@ -142,6 +142,169 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		}
 		return selftest_result::handled;
 	}
+	if (command == "fitcheck")
+	{
+		// how the tracks and switches lie on the ground and on each other: steps and kinks of the grade at the joints, the two paths of a
+		// switch off one plane, the top of the rails against the ground
+		std::string label;
+		words >> label;
+		struct joint_end
+		{
+			TTrack const *track;
+			int path;
+			glm::dvec3 point;
+			double grade; // rising out of the joint
+		};
+		std::vector<joint_end> ends;
+		auto const clearance = [this](glm::dvec3 const &Point, double &Low, double &High) {
+			std::vector<char> found;
+			auto const ground{ground_heights({glm::dvec3{Point.x, 5000.0, Point.z}}, true, &found).front()};
+			if (found.front() != 0)
+			{
+				Low = std::min(Low, Point.y - ground);
+				High = std::max(High, Point.y - ground);
+			}
+		};
+		double track_low{1e9}, track_high{-1e9}, switch_low{1e9}, switch_high{-1e9};
+		int switches{0};
+		int faults{0};
+		for (auto const *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || (track->iCategoryFlag & 15) != 1)
+				continue;
+			auto const isswitch{track->eType == tt_Switch};
+			switches += isswitch ? 1 : 0;
+			for (int index = 0; index < static_cast<int>(track->m_paths.size()); ++index)
+			{
+				geometry::bezier const curve{track->m_paths[index]};
+				auto const grade_at = [&](double const T, double const Sign) {
+					auto const first{curve.first(T)};
+					return Sign * first.y / std::max(1e-6, std::hypot(first.x, first.z));
+				};
+				ends.push_back({track, index, curve.point(0.0), grade_at(0.0, 1.0)});
+				ends.push_back({track, index, curve.point(1.0), grade_at(1.0, -1.0)});
+				for (double t = 0.05; t < 1.0; t += 0.1)
+					clearance(curve.point(t), isswitch ? switch_low : track_low, isswitch ? switch_high : track_high);
+			}
+			if (isswitch && track->m_paths.size() >= 2)
+			{
+				// the far end of the second path against the plane the first path and its grade make
+				geometry::bezier const main{track->m_paths[0]};
+				geometry::bezier const branch{track->m_paths[1]};
+				auto const direction{main.first(0.0)};
+				auto const grade{direction.y / std::max(1e-6, std::hypot(direction.x, direction.z))};
+				auto const off{branch.point(1.0).y - (branch.point(0.0).y + grade * std::hypot(branch.point(1.0).x - branch.point(0.0).x, branch.point(1.0).z - branch.point(0.0).z))};
+				if (std::abs(off) > 0.03)
+				{
+					++faults;
+					WriteLog(format("SELFTEST fitcheck %s FAULT switch %s off its plane by %.3f m", label.c_str(), track->name().c_str(), off));
+				}
+			}
+		}
+		int joints{0};
+		double worst_step{0.0};
+		double worst_kink{0.0};
+		for (std::size_t a = 0; a < ends.size(); ++a)
+			for (std::size_t b = a + 1; b < ends.size(); ++b)
+				if (ends[a].track != ends[b].track && geometry::plan_distance(ends[a].point, ends[b].point) < 0.05)
+				{
+					++joints;
+					auto const step{std::abs(ends[a].point.y - ends[b].point.y)};
+					// the same grade seen from the other side has the other sign
+					auto const kink{std::abs(ends[a].grade + ends[b].grade) * 1000.0};
+					worst_step = std::max(worst_step, step);
+					worst_kink = std::max(worst_kink, kink);
+					if (step > 0.01 || kink > 3.0)
+					{
+						++faults;
+						WriteLog(format("SELFTEST fitcheck %s FAULT joint %s / %s at %.1f %.1f: step %.3f m, grade break %.1f permille", label.c_str(), ends[a].track->name().c_str(), ends[b].track->name().c_str(), ends[a].point.x, ends[a].point.z, step, kink));
+					}
+				}
+		// the tracks side by side under 5.1 m apart against one grade line, tracks over 2 m apart in height lying on another level
+		std::map<std::pair<int, int>, std::vector<std::tuple<glm::dvec3, glm::dvec2, TTrack const *>>> beside;
+		for (auto const *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && (track->iCategoryFlag & 15) == 1)
+				for (auto const &path : track->m_paths)
+				{
+					geometry::bezier const curve{path};
+					auto const places{std::max(1, static_cast<int>(geometry::chord_length(path) / 5.0))};
+					for (int i = 0; i < places; ++i)
+					{
+						auto const place{curve.point((i + 0.5) / places)};
+						beside[{static_cast<int>(std::floor(place.x / 10.0)), static_cast<int>(std::floor(place.z / 10.0))}].push_back({place, geometry::plan_of(curve.first((i + 0.5) / places)), track});
+					}
+				}
+		double beside_worst{0.0};
+		std::size_t beside_pairs{0}, beside_off{0};
+		for (auto const &[cell, places] : beside)
+			for (auto const &[place, way, track] : places)
+				for (int dx = -1; dx <= 1; ++dx)
+					for (int dz = -1; dz <= 1; ++dz)
+						if (auto const other{beside.find({cell.first + dx, cell.second + dz})}; other != beside.end())
+							for (auto const &[next_place, next_way, next_track] : other->second)
+							{
+								if (next_track == track || geometry::plan_distance(next_place, place) >= 5.1 || std::abs(glm::dot(way, next_way)) < 0.985 * glm::length(way) * glm::length(next_way))
+									continue;
+								auto const difference{std::abs(next_place.y - place.y)};
+								if (difference > 2.0)
+									continue;
+								++beside_pairs;
+								beside_off += difference > 0.05 ? 1 : 0;
+								beside_worst = std::max(beside_worst, difference);
+							}
+		WriteLog(format("SELFTEST fitcheck %s beside: %zu pairs of places under 5.1 m apart, %zu over 5 cm apart in height, worst %.3f m", label.c_str(), beside_pairs, beside_off, beside_worst));
+		WriteLog(format("SELFTEST fitcheck %s: %d switches, %d joints, %d faults, worst step %.3f m, grade break %.1f permille; rails over the ground: tracks %.2f..%.2f m, switches %.2f..%.2f m", label.c_str(), switches, joints, faults, worst_step, worst_kink, track_low, track_high, switch_low, switch_high));
+		return selftest_result::handled;
+	}
+	if (command == "cantcheck")
+	{
+		// the cant at every joint of plain tracks, in mm across the gauge, a jump logged as a fault, and the steepest ramp of a path
+		std::string label;
+		words >> label;
+		auto const gauge{m_route.design.norms.gauge};
+		auto const mm = [&](double const Roll) { return gauge * std::sin(glm::radians(Roll)); };
+		struct joint_end
+		{
+			TTrack const *track;
+			glm::dvec3 point;
+			double roll; // as the path runs out of the joint
+		};
+		std::vector<joint_end> ends;
+		auto steepest{0.0};
+		std::string steepest_name;
+		for (auto const *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+				continue;
+			auto const &path{track->m_paths.front()};
+			ends.push_back({track, path.points[segment_data::point::start], path.rolls[0]});
+			ends.push_back({track, path.points[segment_data::point::end], -path.rolls[1]});
+			auto const length{std::max(0.01, geometry::chord_length(path))};
+			if (auto const ramp{std::abs(mm(path.rolls[1]) - mm(path.rolls[0])) / length}; ramp > steepest)
+			{
+				steepest = ramp;
+				steepest_name = track->name();
+			}
+		}
+		int joints{0};
+		int faults{0};
+		for (std::size_t a = 0; a < ends.size(); ++a)
+			for (std::size_t b = a + 1; b < ends.size(); ++b)
+				if (ends[a].track != ends[b].track && geometry::plan_distance(ends[a].point, ends[b].point) < 0.05)
+				{
+					++joints;
+					// the same cant seen from the other side has the other sign
+					auto const jump{std::abs(mm(ends[a].roll) + mm(ends[b].roll))};
+					if (jump > 1.0)
+					{
+						++faults;
+						WriteLog(format("SELFTEST cantcheck %s FAULT %s / %s at %.2f %.2f: %.1f mm against %.1f mm, jump %.1f mm", label.c_str(), ends[a].track->name().c_str(), ends[b].track->name().c_str(), ends[a].point.x, ends[a].point.z, mm(ends[a].roll),
+						                -mm(ends[b].roll), jump));
+					}
+				}
+		WriteLog(format("SELFTEST cantcheck %s: %d joints, %d faults, steepest ramp %.2f mm/m on %s", label.c_str(), joints, faults, steepest, steepest_name.c_str()));
+		return selftest_result::handled;
+	}
 	if (command == "curvejoint")
 	{
 		// the paths meeting at the point: the curvature of each, signed the way the first one runs into the point, and the jumps of the

@@ -77,6 +77,9 @@ public:
 	// a scenery begun with no terrain is offered the terrain model as the first track is laid
 	bool terrain_offer() const { return m_terrain_offer; }
 	void terrain_offer(bool Offer) { m_terrain_offer = Offer; }
+	// a track laid and hidden in the ground is told of, with the way to fit the ground to it
+	bool terrain_buried_ask() const { return m_terrain_buried_ask; }
+	void terrain_buried_ask(bool Ask) { m_terrain_buried_ask = Ask; }
 	// the terrain of the terrain model made under the tracks as they're laid, around the cursor from the first point placed
 	bool terrain_while_laying() const { return m_terrain_while_laying; }
 	void terrain_while_laying(bool const Make) { m_terrain_while_laying = Make; }
@@ -131,6 +134,7 @@ private:
 	int m_palette{0};
 	bool m_first_steps{true};
 	bool m_terrain_offer{true};
+	bool m_terrain_buried_ask{true};
 	bool m_track_tools_more{false};
 	bool m_terrain_while_laying{true};
 	terrain_model_settings m_terrain_model;

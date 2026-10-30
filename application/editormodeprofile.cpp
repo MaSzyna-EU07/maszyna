@@ -54,6 +54,7 @@ double constexpr kNoBed{0.05}; // m, a trackbed shallower is none
 double constexpr kApplied{0.01};
 double constexpr kStale{0.02};
 double constexpr kStaleMargin{15.0};
+double constexpr kDesignOff{0.25}; // m, of a line put together or read that says little of the track
 ImU32 const kGrid{IM_COL32(255, 255, 255, 22)};
 ImU32 const kLabel{IM_COL32(200, 200, 200, 200)};
 ImU32 const kSwitch{IM_COL32(160, 100, 220, 45)};
@@ -100,6 +101,24 @@ bool end_locked(profile::line const &Line, profile::context const &Context, int 
 		return Line.join_start && Context.start_joined;
 	if (Index + 1 == static_cast<int>(Line.points.size()))
 		return Line.join_end && Context.end_joined;
+	return false;
+}
+
+// an error of the line where the edit changes nothing holds nothing up: a long route read from the track has some, fitted to the terrain
+// model at last, and a change elsewhere on it doesn't make them worse
+bool errors_in_change(std::vector<profile::issue> const &Issues, profile::line const &Line, profile::line const &Read, std::vector<editor_track::route_sample> const &Samples)
+{
+	double constexpr kAround{60.0}; // m on both sides of the error
+	for (auto const &issue : Issues)
+	{
+		if (false == issue.error)
+			continue;
+		if (Samples.empty())
+			return true;
+		for (auto const &sample : Samples)
+			if (std::abs(sample.chainage - issue.chainage) <= kAround && std::abs(profile::elevation(Line, sample.chainage) - profile::elevation(Read, sample.chainage)) > kStale)
+				return true;
+	}
 	return false;
 }
 
@@ -582,6 +601,12 @@ bool editor_mode::profile_restore_parts()
 	state.selected = -1;
 	state.changed = false;
 	profile_check();
+	// designs that don't come together along the track, its heights changed since by more than they tell: the track is what stands
+	if (state.departure > kDesignOff)
+	{
+		profile_recognize();
+		return true;
+	}
 	state.status = format(STR_C("Design put together from %zu designs kept for the routes along this one, largest departure from the track %.3f m"), parts, state.departure);
 	if (retaken > 0)
 		state.status += format(STR_C("; %zu stretches changed on the track since read from it again"), retaken);
@@ -1006,11 +1031,23 @@ void editor_mode::profile_recognize()
 		grades.push_back(sample.grade);
 	}
 	auto const norms{state.line.norms};
-	state.line = profile::recognize(chainages, elevations, grades, {});
-	state.line.norms = norms;
-	state.line.speed = editor_track::route_speed(state.route);
-	state.selected = -1;
-	profile_check();
+	auto const read = [&](profile::recognition const &Options) {
+		state.line = profile::recognize(chainages, elevations, grades, Options);
+		state.line.norms = norms;
+		state.line.speed = editor_track::route_speed(state.route);
+		state.selected = -1;
+		profile_check();
+	};
+	state.changed = false;
+	read({});
+	// the constant grades alone don't tell a line bent all along: its bends read as they lie
+	if (state.departure > kDesignOff)
+	{
+		profile::recognition options;
+		options.minimum_length = 5.0;
+		options.detail = kStale;
+		read(options);
+	}
 	state.status = format(STR_P("Grade line recognized from the track: %zu point, largest departure %.3f m", "Grade line recognized from the track: %zu points, largest departure %.3f m", state.line.points.size()), state.line.points.size(), state.departure);
 }
 
@@ -1425,6 +1462,9 @@ void editor_mode::profile_check()
 {
 	auto &state{m_profile};
 	auto &points{state.line.points};
+	// what the edits start from
+	if (false == state.changed)
+		state.line_read = state.line;
 	// joint points come and go, the selection follows the point it was made on
 	struct mark
 	{
@@ -1570,9 +1610,10 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	if (state.route.spans.empty() || state.line.points.size() < 2)
 		return;
 	auto const edits{m_track_edits};
-	if (has_errors(state.issues))
+	if (state.changed && false == state.fitting ? errors_in_change(state.issues, state.line, state.line_read, state.samples) : has_errors(state.issues))
 	{
 		state.error = STR_C("Correct the errors to apply the grade line");
+		state.show_remarks = true;
 		return;
 	}
 	std::vector<TTrack *> tracks;
@@ -1591,6 +1632,19 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	for (auto const &span : state.route.spans)
 		ends.insert(ends.end(), {span.from, span.to});
 	auto cuts{Fewest > 0.0 ? profile::fewest_breaks(line, ends, Fewest) : profile::breaks(line)};
+	// an edit goes onto the track as what it changed in the line: where it changed nothing the track stays as it lies, whatever the line
+	// read from it is off it by, and isn't cut
+	bool const edit_only{state.changed && false == state.fitting};
+	auto const read_line{state.line_read};
+	auto const changed_at = [&](double const Chainage) { return profile::elevation(line, Chainage) - profile::elevation(read_line, Chainage); };
+	if (edit_only)
+		std::erase_if(cuts, [&](double const Cut) {
+			double constexpr kCutNear{1.0}; // m
+			double constexpr kNoChange{0.001}; // m
+			return std::abs(changed_at(Cut - kCutNear)) < kNoChange && std::abs(changed_at(Cut + kCutNear)) < kNoChange;
+		});
+	auto const height_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage); };
+	auto const grade_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read_line, Chainage) : profile::grade(line, Chainage); };
 	// a bridge ends at a joint or a break of the line by its abutment rather than leave a sliver of a path there
 	double constexpr kBridgeSnap{1.0}; // m
 	auto joints{cuts};
@@ -1605,7 +1659,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 		cuts.insert(cuts.end(), {bridge.from, bridge.to});
 	std::sort(cuts.begin(), cuts.end());
 	auto const gaps{editor_track::apply_profile(
-	    state.route, [&](double const Chainage) { return profile::elevation(line, Chainage); }, [&](double const Chainage) { return profile::grade(line, Chainage); }, cuts, states, created)};
+	    state.route, height_at, grade_at, cuts, states, created)};
 	// the paths over a bridge sound and light as on one, and get no formation; within what a cut too near an end leaves on
 	double constexpr kBridgeEnd{0.5}; // m
 	std::size_t bridged{0};
@@ -1661,6 +1715,8 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	auto const followed{follow_crossovers(before)};
 	if (followed > 0)
 		state.status += format(STR_C("\nThe tracks across %zu crossover(s) followed the change"), followed);
+	if (auto const beside{grade_line_follow(before)}; beside > 0)
+		state.status += format(STR_P("\nThe common grade line: %zu track beside went with the route", "\nThe common grade line: %zu tracks beside went with the route", beside), beside);
 	if (Terrain)
 		profile_follow_terrain(static_cast<std::size_t>(m_track_edits - edits));
 	WriteLog("Editor: vertical profile - " + state.status, logtype::generic);
@@ -1787,6 +1843,7 @@ void editor_mode::render_profile_body()
 			ImGui::TextDisabled(STR_C("The design goes to the scenery file of the route on save"));
 	}
 
+	render_profile_grade_line();
 	step_heading(2, STR_C("Grade line"));
 	if (render_profile_parameters())
 		profile_edited();
@@ -1797,6 +1854,8 @@ void editor_mode::render_profile_body()
 void editor_mode::render_profile_strip()
 {
 	profile_follow_edits();
+	// the strip follows the selection by itself: the panel of the tool needn't be the one in front
+	profile_follow_selection();
 	auto &state{m_profile};
 	auto const &io{ImGui::GetIO()};
 	// along the bottom of the 3d view, as wide as it; each time the profile opens, wherever it was left before
@@ -2934,6 +2993,11 @@ void editor_mode::draw_profile_overlay() const
 		previous = next;
 		designedprevious = designed;
 	}
+	// the tracks sharing the grade line that go with the route
+	if (state.whole_grade_line)
+		for (auto const *track : state.beside)
+			for (auto const &path : track->m_paths)
+				projection.line(drawlist, path.points[segment_data::point::start], path.points[segment_data::point::end], IM_COL32(70, 170, 255, 200), 2.0f);
 	// the grade line told in the view: the grades of its straight stretches, the ranges of its vertical curves, its points
 	glm::dvec3 const eye{Global.pCamera.Pos};
 	double constexpr labels_range{1500.0};

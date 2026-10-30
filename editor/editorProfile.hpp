@@ -83,6 +83,8 @@ struct context
 		std::string name;
 	};
 	std::vector<zone> switches;
+	// the humps of a marshalling yard: the switches of their fans lie on curves sharper than anywhere else
+	std::vector<zone> humps;
 	// elevations which the grade line has to keep (chainage, elevation)
 	std::vector<std::pair<double, double>> fixed;
 	// adjoining track at the ends; grades rise along the route

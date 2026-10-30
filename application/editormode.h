@@ -266,6 +266,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_first_steps_open{false};
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
+	char const *m_tutorial_goto{nullptr}; // the lesson of this title opened by a button of a panel
+	std::string m_tutorial_followed; // the lesson the tool in use asked for last: it's opened when that changes
 	double m_tutorial_since{0.0};
 	editor_clips::clip m_tutorial_clip;
 	// deletes what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks (Del)
@@ -361,6 +363,26 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::size_t shaped{0};
 		std::string status;
 		std::string error;
+		bool common{true}; // the tracks nearly parallel under 5.1 m apart lie on one grade line
+		static int constexpr grade_line_own{-1};
+		static int constexpr grade_line_steep{-2};
+		static int constexpr grade_line_off{-3}; // taken off a grade line by hand, stays on its own when the lines are worked out again
+		static int constexpr grade_line_off_number{-10}; // this and below: taken off the grade line of this number less this
+		std::map<std::string, int> grade_lines; // of each track the number of the grade line it shares, or one of those above
+		bool grade_lines_loaded{false};
+		std::unordered_set<TTrack const *> on_hump; // the tracks of the humps fitted to the model: no grade line shared levels them
+		std::size_t grade_lines_changes{0};
+		struct surface_place
+		{
+			TTrack const *track;
+			int path;
+			double share;
+			int surface;
+		};
+		std::vector<surface_place> surface_places; // what lies on the surface of each group on common timbers
+		bool camera_check{false}; // chunks were made: the 3d camera may be under them now
+		std::vector<std::string> buried; // the tracks just laid, when a part of them is hidden in the ground
+		double buried_length{0.0}; // m of them hidden
 		// the tracks of a scenery built at any height put onto the terrain model: the model offset to meet the scenery, then the grade
 		// line of each line of tracks fitted to the model, the longest first, then the terrain made along them
 		enum class automatic
@@ -503,6 +525,22 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool in_download_area(glm::dvec2 const &Low, glm::dvec2 const &High) const;
 	// over the 3d view while the terrain panel isn't seen
 	void render_nmt_banner();
+	// the grade lines fitted, the tracks nearly parallel under 5.1 m apart brought onto one, a track going away from them fading back onto its own
+	void nmt_share_grades();
+	void grade_lines_load();
+	void grade_lines_store();
+	bool on_route_grade_line(TTrack const &Track);
+	std::vector<TTrack *> const &grade_line_beside();
+	std::size_t grade_line_follow(std::vector<editor_track::route_sample> const &Before);
+	void grade_line_take_off(bool const Off);
+	void render_profile_grade_line();
+	// the tracks laid since the step of the history hidden in the ground, told over the 3d view with the way to fit the ground to them
+	void nmt_check_buried(std::size_t const From);
+	void render_nmt_buried();
+	// what to do first, in the middle of the view of a scenery with no tracks nor terrain
+	void render_empty_scenery_hint();
+	// the 3d camera under the ground, as after the view from above or the terrain model made under it, lifted over it
+	void camera_above_ground();
 	bool nmt_busy() const;
 	// the terrain made so far stays, what's waiting is dropped, the grade lines not fitted yet are left
 	void nmt_stop();
@@ -1952,7 +1990,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool stretched{true};
 		double quick_radius{300.0};
 		double quick_ratio{9.0};
-		double quick_straight{0.0};
+		double quick_a{0.0};
+		double quick_b{0.0};
+		int fit_kind{3}; // of switch_design::tangent_fit
+		double quick_first{0.0}; // the radius of the first arc of an arc, a straight and an arc, 0: the R
+		bool picking{false}; // the switch clicked off the view, the orthophoto under it
+		std::vector<glm::dvec3> clicks;
+		bool on_view{true}; // the template shown in the view where its first points were clicked
+		switch_design::design measured; // what the points clicked so far make
+		bool measured_ready{false};
+		std::string measured_text;
+		int pointed{-1}; // the value under the mouse, its dimension shown on the drawing
+		int pointed_test{-1};
 		double blade_length{5.0};
 		double blade_gap{0.15};
 		std::string status;
@@ -1962,6 +2011,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the list of the switch tool built again with the own templates, keeping the armed one or arming the one whose label starts with Arm
 	void switch_templates_refresh(std::string const &Arm = {});
 	void render_switch_designer();
+	void switch_designer_click(glm::dvec3 const &Point);
+	void switch_designer_measure();
+	void switch_designer_finish();
+	void draw_switch_designer_clicks() const;
+	void draw_cursor_ring(glm::dvec3 const &Point) const;
+	static void move_path_heights(segment_data &Path, double const First, double const Second, std::function<void(segment_data &)> const &After = {});
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
 	void render_track_inspector();
@@ -2664,6 +2719,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool show_model{true};
 		bool show_track{true};
 		bool show_plan{true};
+		bool whole_grade_line{true}; // applied, the tracks sharing the grade line of the route go with it
+		profile::line line_read; // the line before it was edited
+		bool fitting{false}; // the line comes from the fit to the terrain model: any error of it refuses it
+		std::vector<TTrack *> beside; // those of them lying by it, for the route and the state of the tracks below
+		std::tuple<TTrack const *, std::size_t, std::size_t, std::size_t> beside_of{nullptr, 0, 0, 0};
 		int selected{-1};
 		int dragging{-1};
 		// where the point was grabbed: the mouse there, the point against the mouse; the point moves once the mouse does

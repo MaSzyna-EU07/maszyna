@@ -846,7 +846,7 @@ bool node_layers::pending() const
 namespace
 {
 // marks of the lines the editor keeps track of
-std::array<char const *, 9> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$a"};
+std::array<char const *, 10> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$a", "//$n"};
 
 // other tools put lines of their own after some of these marks: Rainsted its includes after //$r, the launcher the descriptions
 // of the trainsets after //$o. The editor's lines of them are told by their first word

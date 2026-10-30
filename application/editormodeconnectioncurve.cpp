@@ -910,6 +910,9 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 		if (false == crossover.has_value())
 			continue;
 		auto *other{crossover->first == span.track ? crossover->second : crossover->first};
+		// on the same grade line it goes with the route anyway, grade_line_follow sees to it
+		if (m_profile.whole_grade_line && on_route_grade_line(*other))
+			continue;
 		if (std::any_of(changedroute.spans.begin(), changedroute.spans.end(), [&](auto const &Span) { return Span.track == other; }) || std::find(done.begin(), done.end(), other) != done.end())
 			continue;
 		done.push_back(other);

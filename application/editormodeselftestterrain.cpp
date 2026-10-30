@@ -45,6 +45,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include "application/editormodeselftest.h"
@@ -159,6 +160,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				m_terrain_add_count = std::clamp(static_cast<int>(value), 1, 8);
 			else if (key == "shape")
 				state.shape = value != 0.0;
+			else if (key == "common")
+				state.common = value != 0.0;
 			else if (key == "follow")
 				state.follow = value != 0.0;
 			else if (key == "offset")
@@ -722,6 +725,223 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		m_terrain_spacing = heightmap::valid_spacing(spacing);
 		add_chunks_around(std::clamp(count, 1, 8));
 		WriteLog("SELFTEST terrainadd: " + m_terrain_status);
+		return selftest_result::handled;
+	}
+	if (command == "fitreport")
+	{
+		// after the tracks went onto the terrain, to a file: of each track how far its top of the ballast is off the terrain model (T),
+		// of each switch how far its second path is off the plane of the first (P), of each switch and track on timbers common with it,
+		// under 2.65 m apart, the most their rails differ in height (K)
+		std::string file;
+		words >> file;
+		std::ofstream stream(file);
+		double constexpr kTimbers{2.65};
+		double constexpr kStep{5.0};
+		struct place
+		{
+			glm::dvec3 position;
+			glm::dvec2 along;
+			TTrack const *track;
+		};
+		std::map<std::pair<int, int>, std::vector<place>> places;
+		auto const cell_of = [&](glm::dvec3 const &Point) { return std::pair<int, int>{static_cast<int>(std::floor(Point.x / kTimbers)), static_cast<int>(std::floor(Point.z / kTimbers))}; };
+		std::vector<place> all;
+		for (auto const *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || (track->iCategoryFlag & 15) != 1 || track->eType == tt_Table)
+				continue;
+			auto const found{m_nmt_state.grade_lines.find(track->name())};
+			auto const line{found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own};
+			double worst{0.0};
+			glm::dvec3 worst_at{0.0};
+			double sum{0.0};
+			int counted{0};
+			for (auto const &path : track->m_paths)
+			{
+				geometry::bezier const curve{path};
+				auto const places_on{std::max(1, static_cast<int>(geometry::chord_length(path) / kStep))};
+				for (int i = 0; i <= places_on; ++i)
+				{
+					auto const share{static_cast<double>(i) / places_on};
+					auto const point{curve.point(share)};
+					auto const tangent{geometry::plan_of(curve.first(share))};
+					place const here{point, glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, track};
+					all.push_back(here);
+					places[cell_of(point)].push_back(here);
+					if (double height; m_nmt.height(point.x, point.z, height))
+					{
+						auto const off{point.y - (height + m_nmt_state.offset + track->rail_height())};
+						++counted;
+						sum += off;
+						if (std::abs(off) > std::abs(worst))
+						{
+							worst = off;
+							worst_at = point;
+						}
+					}
+				}
+			}
+			if (counted > 0)
+				stream << "T " << track->name() << ' ' << (track->eType == tt_Switch ? 's' : 'n') << ' ' << line << ' ' << worst << ' ' << sum / counted << ' ' << worst_at.x << ' ' << worst_at.z << ' ' << worst_at.y << ' ' << counted << '\n';
+			if (track->eType == tt_Switch && track->m_paths.size() >= 2)
+			{
+				geometry::bezier const main{track->m_paths[0]};
+				geometry::bezier const branch{track->m_paths[1]};
+				auto const direction{main.first(0.0)};
+				auto const grade{direction.y / std::max(1e-6, std::hypot(direction.x, direction.z))};
+				auto const end{branch.point(1.0)};
+				auto const start{branch.point(0.0)};
+				stream << "P " << track->name() << ' ' << line << ' ' << end.y - (start.y + grade * std::hypot(end.x - start.x, end.z - start.z)) << ' ' << grade * 1000.0 << ' ' << start.x << ' ' << start.z << '\n';
+			}
+		}
+		struct pair_worst
+		{
+			double difference{0.0};
+			glm::dvec3 at{0.0};
+			double apart{0.0};
+		};
+		std::map<std::pair<std::string, std::string>, pair_worst> pairs;
+		for (auto const &here : all)
+		{
+			auto const cell{cell_of(here.position)};
+			for (int dx = -1; dx <= 1; ++dx)
+				for (int dz = -1; dz <= 1; ++dz)
+					if (auto const found{places.find({cell.first + dx, cell.second + dz})}; found != places.end())
+						for (auto const &other : found->second)
+						{
+							if (other.track == here.track || (here.track->eType != tt_Switch && other.track->eType != tt_Switch) || here.track->name() > other.track->name())
+								continue;
+							glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
+							if (glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, here.along)) > 0.6 * kStep || std::abs(other.position.y - here.position.y) > 2.0)
+								continue;
+							auto &worst{pairs[{here.track->name(), other.track->name()}]};
+							if (auto const difference{std::abs(other.position.y - here.position.y)}; difference >= worst.difference)
+								worst = {difference, here.position, glm::length(offset)};
+						}
+		}
+		for (auto const &[names, worst] : pairs)
+			stream << "K " << names.first << ' ' << names.second << ' ' << worst.difference << ' ' << worst.apart << ' ' << worst.at.x << ' ' << worst.at.z << '\n';
+		for (auto const &place : m_nmt_state.surface_places)
+			if (auto const *track{place.track}; false == track->m_editorremoved && place.path < static_cast<int>(track->m_paths.size()))
+			{
+				auto const point{geometry::bezier{track->m_paths[place.path]}.point(place.share)};
+				stream << "Z " << place.surface << ' ' << point.x << ' ' << point.z << ' ' << point.y << ' ' << track->name() << '\n';
+			}
+		WriteLog("SELFTEST fitreport: " + file);
+		return selftest_result::handled;
+	}
+	// the common grade line of the route open in the profile tool: lift <m>: its design up by that much and applied; off, on: the route
+	// taken off it and back; whole 0/1: whether the tracks beside go with it; state told in the log
+	if (command == "gradeline")
+	{
+		std::string action;
+		double value{0.0};
+		words >> action >> value;
+		auto &state{m_profile};
+		if (action == "part")
+		{
+			// the route cut to <value> tracks on each side of the track named
+			std::string name;
+			words >> name;
+			auto const &spans{state.route.spans};
+			auto const at{std::find_if(spans.begin(), spans.end(), [&](auto const &Span) { return Span.track->name() == name; })};
+			if (at != spans.end())
+			{
+				auto const index{std::distance(spans.begin(), at)};
+				auto *first{spans[std::max<std::ptrdiff_t>(0, index - static_cast<std::ptrdiff_t>(value))].track};
+				auto *last{spans[std::min<std::ptrdiff_t>(spans.size() - 1, index + static_cast<std::ptrdiff_t>(value))].track};
+				profile_open(first, last);
+			}
+		}
+		if (action == "bump")
+		{
+			// a point more in the middle of the route, up by that much, and applied
+			profile::pvi point;
+			double at{state.route.length * 0.5};
+			words >> at;
+			point.chainage = at;
+			point.elevation = profile::elevation(state.line, point.chainage) + value;
+			auto &points{state.line.points};
+			points.insert(std::lower_bound(points.begin(), points.end(), point.chainage, [](profile::pvi const &Point, double const Chainage) { return Point.chainage < Chainage; }), point);
+			profile_edited();
+			profile_apply(false);
+			WriteLog("SELFTEST gradeline bump: " + state.status + " " + state.error);
+			for (auto const &issue : state.issues)
+				if (issue.error)
+					WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
+		}
+		if (action == "lift")
+		{
+			for (auto &point : state.line.points)
+				point.elevation += value;
+			profile_check();
+			profile_apply(false);
+			WriteLog("SELFTEST gradeline lift: " + state.status + " " + state.error);
+			for (auto const &issue : state.issues)
+				if (issue.error)
+					WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
+		}
+		else if (action == "off" || action == "on")
+			grade_line_take_off(action == "off");
+		else if (action == "whole")
+			state.whole_grade_line = value != 0.0;
+		grade_lines_load();
+		auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(state.route.spans.front().track->name())};
+		WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size()));
+		return selftest_result::handled;
+	}
+	// the route open in the profile tool, as it lies and as the grade line reads it: S chainage height grade track, P chainage height radius
+	if (command == "profiledump")
+	{
+		std::string file;
+		words >> file;
+		std::ofstream stream{file, std::ios::app};
+		stream << std::fixed << std::setprecision(4);
+		stream << "R " << m_profile.samples.size() << ' ' << m_profile.line.points.size() << ' ' << m_profile.departure << '\n';
+		for (std::size_t i = 0; i < m_profile.samples.size(); ++i)
+		{
+			auto const &sample{m_profile.samples[i]};
+			double model{std::numeric_limits<double>::quiet_NaN()};
+			if (double height; m_nmt.height(sample.position.x, sample.position.z, height))
+				model = height + m_nmt_state.offset + (sample.span < m_profile.route.spans.size() && m_profile.route.spans[sample.span].track != nullptr ? m_profile.route.spans[sample.span].track->rail_height() : 0.0);
+			stream << "S " << sample.chainage << ' ' << sample.position.y << ' ' << sample.grade << ' ' << (sample.span < m_profile.route.spans.size() && m_profile.route.spans[sample.span].track != nullptr ? m_profile.route.spans[sample.span].track->name() : std::string{"-"}) << ' ' << model << '\n';
+		}
+		for (auto const &point : m_profile.line.points)
+			stream << "P " << point.chainage << ' ' << point.elevation << ' ' << point.radius << '\n';
+		WriteLog("SELFTEST profiledump: " + file);
+		return selftest_result::handled;
+	}
+	if (command == "gradelines")
+	{
+		// the shared grade lines to a file for the map of them: name, line, kind, points of the plan with the height
+		std::string file;
+		words >> file;
+		std::ofstream stream(file);
+		for (auto const *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || (track->iCategoryFlag & 15) != 1)
+				continue;
+			auto const found{m_nmt_state.grade_lines.find(track->name())};
+			auto const line{found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own};
+			for (auto const &path : track->m_paths)
+			{
+				geometry::bezier const curve{path};
+				stream << track->name() << ' ' << line << ' ' << (track->eType == tt_Switch ? 's' : 'n');
+				for (int i = 0; i <= 6; ++i)
+				{
+					auto const point{curve.point(i / 6.0)};
+					stream << ' ' << point.x << ' ' << point.z << ' ' << point.y;
+				}
+				stream << '\n';
+			}
+		}
+		WriteLog("SELFTEST gradelines: " + file);
+		return selftest_result::handled;
+	}
+	if (command == "nmtstate")
+	{
+		// how far the tracks going onto the terrain are
+		WriteLog(format("SELFTEST nmtstate stage %d, lines %zu, refused %zu, left %zu, squares waiting %zu: %s", static_cast<int>(m_nmt_state.stage), m_nmt_state.lines, m_nmt_state.refused, m_nmt_state.left.size(), m_nmt.waiting(), m_nmt_state.status.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "trackterrain")

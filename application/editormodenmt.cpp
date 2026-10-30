@@ -32,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <limits>
 #include <set>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 
@@ -973,7 +974,12 @@ void editor_mode::nmt_update()
 	}
 	nmt_grow();
 	if (state.pending.empty())
+	{
+		if (std::exchange(state.camera_check, false) && false == Global.EditorOrtho)
+			camera_above_ground();
 		return;
+	}
+	state.camera_check = true;
 	// a few chunks a frame, those whose model is in. the terrain made ahead of the track laid isn't a step of the history:
 	// Ctrl+Z takes back the track, not the ground under it
 	auto const unrecorded{state.grown && m_streamer.recording()};
@@ -1344,6 +1350,8 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 		told(STR_C("All the tracks are fitted to the terrain; a track changed since goes onto it again"));
 	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
 	                           "Each track gets its formation with slopes 1:1.5 down or up to the terrain, as a modifier of the terrain; bridges and tunnels keep the model under them"}});
+	toggle_chips("nmtcommon", {{STR_C("One grade line for nearly parallel tracks under 5.1 m apart"), &state.common,
+	                            "Nearly parallel tracks under 5.1 m apart lie on one grade line, so the switches and crossovers between them stay in one plane. A run of tracks from switch to switch going away from the others by more has a grade line of its own; on timbers common with a switch they always lie on one surface. A hump and tracks over 2 m apart in height keep theirs. Off: each track follows the terrain by itself"}});
 	ImGui::Spacing();
 	ImGui::TextDisabled("%s", STR_C("Or:"));
 	ImGui::BeginDisabled(busy || false == placed || all == 0);
@@ -1679,13 +1687,142 @@ void editor_mode::render_nmt_banner()
 	ImGui::End();
 }
 
+void editor_mode::nmt_check_buried(std::size_t const From)
+{
+	auto &state{m_nmt_state};
+	state.buried.clear();
+	state.buried_length = 0.0;
+	if (false == EditorSettings.terrain_buried_ask() || false == m_streamer.active())
+		return;
+	// the top of the rails this near the ground leaves the sleepers and the ballast under it
+	double constexpr clearance{0.1};
+	double constexpr step{5.0};
+	double constexpr noticed{1.0};
+	std::vector<std::string> laid;
+	std::unordered_set<TTrack const *> seen;
+	double hidden{0.0};
+	for (auto index{From}; index < m_history.size(); ++index)
+		for (auto const *track : m_history[index].created)
+		{
+			if (track == nullptr || track->m_editorremoved || false == rail(*track) || false == seen.insert(track).second)
+				continue;
+			laid.push_back(track->name());
+			auto const &path{track->m_paths.front()};
+			geometry::bezier const curve{path};
+			auto const length{geometry::chord_length(path)};
+			auto const count{std::max(1, static_cast<int>(std::ceil(length / step)))};
+			std::vector<glm::dvec3> along, probes;
+			for (int i = 0; i < count; ++i)
+			{
+				along.push_back(curve.point((i + 0.5) / count));
+				probes.emplace_back(along.back().x, 5000.0, along.back().z);
+			}
+			std::vector<char> found;
+			auto const ground{ground_heights(probes, true, &found)};
+			for (int i = 0; i < count; ++i)
+				if (found[i] != 0 && along[i].y < ground[i] + clearance)
+					hidden += length / count;
+		}
+	if (hidden < noticed)
+		return;
+	state.buried = std::move(laid);
+	state.buried_length = hidden;
+}
+
+void editor_mode::render_nmt_buried()
+{
+	auto &state{m_nmt_state};
+	if (state.buried.empty())
+		return;
+	// gone on to other work the message would only be in the way: the same is done by Terrain in the inspector
+	if (current_work_area() == work_area::terrain || (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::lay && m_track_tab != track_tab::path))
+	{
+		state.buried.clear();
+		return;
+	}
+	// taken back with Ctrl+Z there's nothing to tell of
+	std::vector<TTrack *> tracks;
+	for (auto const &name : state.buried)
+		if (auto *track{simulation::Paths.find(name)}; track != nullptr && false == track->m_editorremoved)
+			tracks.push_back(track);
+	if (tracks.empty())
+	{
+		state.buried.clear();
+		return;
+	}
+	auto const low{editor_ui::view_min()};
+	auto const high{editor_ui::view_max()};
+	ImGui::SetNextWindowPos(ImVec2((low.x + high.x) * 0.5f, low.y + std::round(ImGui::GetFontSize() * (nmt_busy() ? 7.0f : 3.6f))), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+	ImGui::SetNextWindowViewport(ImGui::GetMainViewport()->ID);
+	ImGui::SetNextWindowBgAlpha(0.94f);
+	if (ImGui::Begin("##nmtburied", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking))
+	{
+		ImGui::Text(STR_C("%.0f m of the new track is hidden in the ground, you can't see it there"), state.buried_length);
+		ImGui::TextDisabled("%s", STR_C("Only the ground along the track changes; Ctrl+Z takes it back"));
+		ImGui::BeginDisabled(nmt_busy());
+		if (main_button(STR_C("Fit the ground to the track"), ImVec2(0.0f, tall_button_height())))
+		{
+			nmt_pull_terrain(tracks);
+			ui()->set_status(state.status, false);
+			state.buried.clear();
+		}
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Leave it"), ImVec2(0.0f, tall_button_height())))
+			state.buried.clear();
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		bool ask{EditorSettings.terrain_buried_ask()};
+		if (ImGui::Checkbox(STR_C("Tell me each time"), &ask))
+		{
+			EditorSettings.terrain_buried_ask(ask);
+			EditorSettings.save();
+		}
+	}
+	ImGui::End();
+}
+
+void editor_mode::render_empty_scenery_hint()
+{
+	if (m_lay.active || m_terrain_open || m_nmt_state.prompt || m_streamer.resident() > 0 || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+		return;
+	auto const &tracks{simulation::Paths.sequence()};
+	if (std::any_of(tracks.begin(), tracks.end(), [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved && rail(*Track); }))
+		return;
+	auto const low{editor_ui::view_min()};
+	auto const high{editor_ui::view_max()};
+	auto *list{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	auto const line = [&](char const *Text, float const Size, float const Y, ImU32 const Color) {
+		auto const width{ImGui::GetFont()->CalcTextSizeA(Size, FLT_MAX, 0.0f, Text).x};
+		list->AddText(ImGui::GetFont(), Size, ImVec2(std::round((low.x + high.x - width) * 0.5f), Y), Color, Text);
+	};
+	auto const font{ImGui::GetFontSize()};
+	auto const middle{(low.y + high.y) * 0.5f};
+	line(STR_C("This scenery is still empty"), font * 1.6f, middle - font * 2.2f, IM_COL32(255, 255, 255, 255));
+	line(STR_C("Click Laying on the toolbar or press L, then click the points of the track"), font, middle, IM_COL32(210, 215, 225, 255));
+}
+
+void editor_mode::camera_above_ground()
+{
+	std::vector<char> found;
+	auto const ground{ground_heights({glm::dvec3{Camera.Pos.x, 5000.0, Camera.Pos.z}}, true, &found).front()};
+	if (found.front() == 0 || Camera.Pos.y > ground + 2.0)
+		return;
+	Camera.Pos.y = ground + 40.0;
+	// looking down, to see what the view from above showed around it
+	Camera.Angle.x = -0.9;
+	Camera.Velocity = {};
+	m_focus_active = false;
+	Global.pCamera = Camera;
+}
+
 bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 {
 	auto &state{m_nmt_state};
 	auto &map{m_nmt_map};
 	auto const width{ImGui::GetContentRegionAvail().x};
 	auto const height{std::round(std::min(width * 0.65f, ImGui::GetFontSize() * 16.0f))};
-	ImGui::TextUnformatted(STR_C("Click the middle of the scenery on the map"));
+	ImGui::TextWrapped("%s", STR_C("Click the middle of the scenery on the map"));
 	item_tooltip("The point 0,0,0 of the scenery. The wheel zooms the map, a drag moves it");
 	ImGui::BeginChild("##nmtmap", ImVec2(width, height), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 	if (map.render({width, height}))
@@ -2282,10 +2419,10 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			options.bounds.push_back({at, height - kJoin, height + kJoin, false});
 		WriteLog(format("Editor: NMT line %s runs up to turntable %s level at %.2f m over %.1f m", Track.name().c_str(), table->table->name().c_str(), height, level), logtype::generic);
 	}
-	auto const in_pit = [&](glm::dvec3 const &Point) {
+	auto const in_pit =[&](glm::dvec3 const &Point) {
 		return std::any_of(m_nmt_state.turntables.begin(), m_nmt_state.turntables.end(), [&](nmt_state::turntable const &Table) { return geometry::plan_distance(Point, Table.centre) < Table.rim + kPitWall; });
 	};
-	auto const length_of = [](TTrack const &Track, int const Path) { return Track.eType == tt_Switch ? Track.SwitchExtension->Segments[Path]->GetLength() : Track.Segment->GetLength(); };
+	auto const length_of =[](TTrack const &Track, int const Path) { return Track.eType == tt_Switch ? Track.SwitchExtension->Segments[Path]->GetLength() : Track.Segment->GetLength(); };
 	std::vector<editor_track::route_span> exits;
 	exits.push_back({profile.route.spans.front().track, profile.route.spans.front().path, false == profile.route.spans.front().forward});
 	exits.push_back({profile.route.spans.back().track, profile.route.spans.back().path, profile.route.spans.back().forward});
@@ -2393,13 +2530,41 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	std::vector<double> sampled(count), model(count, std::numeric_limits<double>::quiet_NaN());
 	std::vector<glm::dvec2> plan(count);
 	std::vector<double> chainages, ground, tolerances, reaches;
+	// where the line crosses another track at an angle, with no joint with it, the model shows the formation of the one on top and tells
+	// nothing of the other: there it's no ground of the line, the height comes from the terrain on both sides, a line low there going under
+	double constexpr kCrossedNear{2.0}; // m
+	double constexpr kCrossedSine{0.5}; // 30 degrees
+	double constexpr kCrossedReach{20.0}; // m along the line on both sides, about what the formation with its slopes takes
+	std::vector<char> crossed(count, 0);
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		auto const &sample{profile.samples[i]};
+		auto const along{glm::normalize(sample.direction)};
+		auto const cx{static_cast<int>(std::floor(sample.position.x / kPlanCell))};
+		auto const cz{static_cast<int>(std::floor(sample.position.z / kPlanCell))};
+		for (int dx = -1; dx <= 1 && crossed[i] == 0; ++dx)
+			for (int dz = -1; dz <= 1 && crossed[i] == 0; ++dz)
+				if (auto const cell{m_nmt_state.paths.find({cx + dx, cz + dz})}; cell != m_nmt_state.paths.end())
+					for (auto const &point : cell->second)
+						if (false == on_route(point.track) && glm::length(glm::dvec2{point.position.x - sample.position.x, point.position.z - sample.position.z}) < kCrossedNear && std::abs(along.x * glm::normalize(point.direction).y - along.y * glm::normalize(point.direction).x) > kCrossedSine)
+						{
+							crossed[i] = 1;
+							break;
+						}
+	}
+	std::vector<char> no_ground(count, 0);
+	for (std::size_t i = 0; i < count; ++i)
+		if (crossed[i] != 0)
+			for (std::size_t j = 0; j < count; ++j)
+				if (std::abs(profile.samples[j].chainage - profile.samples[i].chainage) <= kCrossedReach)
+					no_ground[j] = 1;
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		auto const &sample{profile.samples[i]};
 		auto const *track{sample.span < profile.route.spans.size() ? profile.route.spans[sample.span].track : nullptr};
 		sampled[i] = sample.chainage;
 		plan[i] = {sample.position.x, sample.position.z};
-		if (double height; track != nullptr && shapes_ground(*track) && false == in_pit(sample.position) && m_nmt.height(sample.position.x, sample.position.z, height))
+		if (double height; no_ground[i] == 0 && track != nullptr && shapes_ground(*track) && false == in_pit(sample.position) && m_nmt.height(sample.position.x, sample.position.z, height))
 			model[i] = height + m_nmt_state.offset + track->rail_height();
 		chainages.push_back(sample.chainage);
 		ground.push_back(model[i]);
@@ -2407,14 +2572,14 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		reaches.push_back(kModel);
 		double distance;
 		auto const beside{nearest(sample.position, distance)};
-		if (distance < kReach && (false == std::isfinite(model[i]) || std::abs(beside - model[i]) <= kLevel))
+		if (no_ground[i] == 0 && distance < kReach && (false == std::isfinite(model[i]) || std::abs(beside - model[i]) <= kLevel))
 		{
 			chainages.push_back(sample.chainage);
 			ground.push_back(beside);
 			tolerances.push_back(std::max(kRail, kSpread * distance));
 			reaches.push_back(kLevel);
 		}
-		if (track != nullptr)
+		if (track != nullptr && no_ground[i] == 0)
 			for (auto const &[apart, point] : alongside(sample))
 				if (point != nullptr)
 				{
@@ -2423,6 +2588,35 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 					tolerances.push_back(apart < kTimbers ? kTimbered : std::max(kRail, kSpread * apart));
 					reaches.push_back(kHeld);
 				}
+		// a line fitted already crossing it or beside it on another level, one track going under the other, as authored: the difference
+		// stays, whatever the model has there, which knows nothing of the cutting or of the bridge
+		double constexpr kOtherLevel{2.5}; // m in the plan
+		double constexpr kOtherFarthest{25.0}; // m in height, more isn't a track it has anything to do with
+		double constexpr kOtherReach{30.0}; // m, the ground the line lets go of for it
+		auto closest{kOtherLevel};
+		nmt_state::laid_point const *other{nullptr};
+		auto const cx{static_cast<int>(std::floor(sample.position.x / kPlanCell))};
+		auto const cz{static_cast<int>(std::floor(sample.position.z / kPlanCell))};
+		for (int dx = -1; dx <= 1; ++dx)
+			for (int dz = -1; dz <= 1; ++dz)
+				if (auto const cell{m_nmt_state.laid.find({cx + dx, cz + dz})}; cell != m_nmt_state.laid.end())
+					for (auto const &point : cell->second)
+					{
+						auto const levels{std::abs(point.was - sample.position.y)};
+						auto const distance{glm::length(glm::dvec2{point.position.x - sample.position.x, point.position.z - sample.position.z})};
+						if (point.track != track && levels > kSameLevel && levels <= kOtherFarthest && distance < closest)
+						{
+							closest = distance;
+							other = &point;
+						}
+					}
+		if (other != nullptr)
+		{
+			chainages.push_back(sample.chainage);
+			ground.push_back(other->position.y + (sample.position.y - other->was));
+			tolerances.push_back(kRail);
+			reaches.push_back(kOtherReach);
+		}
 	}
 	if (std::none_of(ground.begin(), ground.end(), [](double const Height) { return std::isfinite(Height); }))
 		return false;
@@ -2507,6 +2701,32 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	double constexpr kCrossingHeight{0.005}; // m
 	for (auto const &found : crossings_of(m_nmt_state.laid))
 	{
+		// the ground on both sides well below the track crossed, or well above it: one goes under the other, however the file has them,
+		// which often lays both at one height
+		double constexpr kOtherSide{2.0}; // m
+		auto const terrain_towards = [&](int const Way) {
+			auto const from{static_cast<std::ptrdiff_t>(std::distance(sampled.begin(), std::lower_bound(sampled.begin(), sampled.end(), found.chainage)))};
+			for (auto at{from}; at >= 0 && at < static_cast<std::ptrdiff_t>(count); at += Way)
+				if (std::isfinite(model[at]))
+					return model[at];
+			return std::numeric_limits<double>::quiet_NaN();
+		};
+		auto const before{terrain_towards(-1)};
+		auto const after{terrain_towards(1)};
+		if (std::isfinite(before) && std::isfinite(after) && before > found.height + kOtherSide && after > found.height + kOtherSide)
+			continue;
+		if (std::isfinite(before) && std::isfinite(after) && before < found.height - kOtherSide && after < found.height - kOtherSide)
+		{
+			// under it far enough for a train and what carries the track above
+			double constexpr kUnder{6.0}; // m, rail to rail
+			double constexpr kUnderReach{30.0}; // m, the ground the line lets go of for it
+			auto const at{static_cast<std::size_t>(std::distance(chainages.begin(), std::upper_bound(chainages.begin(), chainages.end(), found.chainage)))};
+			chainages.insert(chainages.begin() + at, found.chainage);
+			ground.insert(ground.begin() + at, std::min(found.height - kUnder, std::max(before, after)));
+			tolerances.insert(tolerances.begin() + at, kRail);
+			reaches.insert(reaches.begin() + at, kUnderReach);
+			continue;
+		}
 		auto const at{static_cast<std::size_t>(std::distance(chainages.begin(), std::upper_bound(chainages.begin(), chainages.end(), found.chainage)))};
 		chainages.insert(chainages.begin() + at, found.chainage);
 		ground.insert(ground.begin() + at, found.height);
@@ -2559,6 +2779,8 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	options.follow_tolerance = 0.05;
 	options.humps = profile::humps(chainages, ground, profile.context, kModel, tolerances);
 	options.hump_radius = 300.0;
+	for (auto const &hump : options.humps)
+		profile.context.humps.push_back({hump.from, hump.to, {}});
 	auto line{profile::fit_ground(chainages, ground, profile.context, settings, options, tolerances, reaches)};
 	if (line.points.size() < 2)
 		return false;
@@ -2588,7 +2810,9 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		else
 			bridges.push_back(stretch);
 	bridges.erase(std::remove_if(bridges.begin(), bridges.end(), [&](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; }), bridges.end());
+	profile.fitting = true;
 	profile_apply(false, bridges, Laid ? kFewest : 0.0);
+	profile.fitting = false;
 	auto const applied{profile.error.empty()};
 	// where the line parts from the model: under it a gap, a bridge or a viaduct, over it a wall or a structure above the track
 	auto const parted{profile::departures(fitted_line, sampled, model, 2.0 * kModel)};
@@ -2637,6 +2861,11 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		auto const *track{profile.route.spans[sample.span].track};
 		WriteLog(format("Editor: NMT line %s: the path %s (%s, %.0f m) is off the line by %.3f m at %.0f m", Track.name().c_str(), track->name().c_str(), track->eType == tt_Switch ? "switch" : "track", track->Length(), off, sample.chainage), logtype::generic);
 	}
+	if (applied)
+		for (auto const &hump : options.humps)
+			for (auto const &span : profile.route.spans)
+				if (span.from < hump.to && span.to > hump.from)
+					m_nmt_state.on_hump.insert(span.track);
 	if (applied)
 		for (auto const &sample : profile.samples)
 		{
@@ -2882,6 +3111,473 @@ bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
 	return applied;
 }
 
+void editor_mode::nmt_share_grades()
+{
+	// one grade line for the tracks side by side: over the grade lines fitted one by one, what each joint moves by is worked out for all
+	// of them at once. Tracks nearly parallel under 5.1 m apart come to one height, the moves change evenly along a line, so what was fitted stays
+	// smooth, and each joint keeps to where it was as far as these let it: a track going away from the others is on its own again.
+	// Tracks over 2 m apart in height lie on another level; a long steep one, a hump, stays as it is and tells nothing to those beside it.
+	// It's told for a whole run of tracks from switch to switch: one going away from the rest anywhere along it has a grade line of its own.
+	// The tracks and switches on common timbers lie on one surface whatever else is told of them, a plane tilting along and across as the
+	// ground goes, each such group its own; on it they come to one grade line as far as tracks side by side do. A switch lies in its plane
+	auto &state{m_nmt_state};
+	if (false == state.common)
+		return;
+	double constexpr kApart{5.1}; // m between the axes
+	double constexpr kParallel{0.985}; // the cosine of the angle of tracks nearly parallel, 10 degrees: the links of a crossover are, a track crossing isn't
+	double constexpr kLevel{1.0}; // m, as the lines keep to tracks on another level
+	double constexpr kSteep{0.025};
+	double constexpr kSteepLength{15.0}; // m, shorter ones are the links of a crossover between tracks at two heights
+	double constexpr kSpacing{5.0}; // m between the places looked at on a track
+	double constexpr kMoved{0.002}; // m
+	// how closely each is kept to, the weights being one over the square
+	double constexpr kKeep{0.5}; // m, a joint to where it was
+	double constexpr kBeside{0.01}; // m, tracks side by side
+	double constexpr kEven{0.0005}; // the change of grade the moves make at a joint
+	double constexpr kTimbers{2.65}; // m between the axes, about the length of a sleeper
+	double constexpr kOnTimbers{0.001}; // m, how closely tracks on common timbers keep to the surface of their group
+	double constexpr kPlane{0.005}; // m, how closely the second path of a switch keeps to the plane of the first
+	double constexpr kAway{15.0}; // m of a run with no track beside it, as much as its ends at the switches may part from the others
+	double constexpr kBroken{0.015}; // a grade breaking more than this at a joint is to go, a smaller one is the vertical curve fitted
+	using key = std::pair<int, int>;
+	auto const key_of = [](glm::dvec3 const &Point) { return key{static_cast<int>(std::round(Point.x * 20.0)), static_cast<int>(std::round(Point.z * 20.0))}; };
+	std::vector<TTrack *> tracks;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && rail(*track) && track->eType != tt_Table)
+			tracks.push_back(track);
+	auto const steep = [&](TTrack const &Track) {
+		if (state.on_hump.contains(&Track))
+			return true;
+		return std::any_of(Track.m_paths.begin(), Track.m_paths.end(), [&](segment_data const &Path) {
+			auto const &start{Path.points[segment_data::point::start]};
+			auto const &end{Path.points[segment_data::point::end]};
+			auto const length{geometry::plan_distance(start, end)};
+			return length >= kSteepLength && std::abs(end.y - start.y) > kSteep * length;
+		});
+	};
+	struct link
+	{
+		int to;
+		double length;
+		glm::dvec2 out;
+	};
+	std::map<key, int> indices;
+	std::vector<std::vector<link>> links;
+	std::vector<char> fixed;
+	std::vector<double> heights;
+	auto const index_of = [&](glm::dvec3 const &Point) {
+		auto const [found, added]{indices.try_emplace(key_of(Point), static_cast<int>(links.size()))};
+		if (added)
+		{
+			links.emplace_back();
+			fixed.push_back(0);
+			heights.push_back(Point.y);
+		}
+		return found->second;
+	};
+	struct place
+	{
+		glm::dvec3 position;
+		glm::dvec2 along;
+		double share;
+		int first;
+		int second;
+		TTrack const *track;
+		int path{0};
+		std::size_t index{0};
+	};
+	std::map<key, std::vector<place>> places;
+	auto const cell_of = [&](glm::dvec3 const &Point) { return key{static_cast<int>(std::floor(Point.x / kApart)), static_cast<int>(std::floor(Point.z / kApart))}; };
+	std::vector<place> all;
+	std::unordered_set<int> hump_nodes;
+	std::map<key, std::vector<place>> timber_places; // of all the tracks, the ones held apart too
+	std::vector<place> timber_all;
+	for (auto const *track : tracks)
+	{
+		auto const held{steep(*track)};
+		for (auto const &path : track->m_paths)
+		{
+			auto const &start{path.points[segment_data::point::start]};
+			auto const &end{path.points[segment_data::point::end]};
+			auto const a{index_of(start)};
+			auto const b{index_of(end)};
+			auto const chord{geometry::plan_of(end - start)};
+			auto const length{glm::length(chord)};
+			if (a == b || length < 1e-3)
+				continue;
+			links[a].push_back({b, length, chord / length});
+			links[b].push_back({a, length, -chord / length});
+			// the joints of a switch keep its heights: a track ending there meets it
+			if (track->eType == tt_Switch)
+			{
+				heights[a] = start.y;
+				heights[b] = end.y;
+			}
+			if (held)
+				fixed[a] = fixed[b] = 1;
+			if (state.on_hump.contains(track))
+				hump_nodes.insert({a, b});
+			geometry::bezier const curve{path};
+			auto const count{std::max(1, static_cast<int>(length / kSpacing))};
+			for (int i = 0; i <= count; ++i)
+			{
+				auto const share{static_cast<double>(i) / count};
+				auto const tangent{geometry::plan_of(curve.first(share))};
+				place const here{curve.point(share), glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : chord / length, share, a, b, track, static_cast<int>(&path - track->m_paths.data()), timber_all.size()};
+				timber_all.push_back(here);
+				timber_places[cell_of(here.position)].push_back(here);
+				if (held)
+					continue;
+				all.push_back(here);
+				places[cell_of(here.position)].push_back(here);
+			}
+		}
+	}
+	struct term
+	{
+		std::array<int, 5> at;
+		std::array<double, 5> by;
+		double value;
+		double weight;
+	};
+	std::vector<term> terms;
+	auto const nodes{static_cast<int>(links.size())};
+	for (int i = 0; i < nodes; ++i)
+		terms.push_back({{i, -1, -1, -1}, {1.0, 0.0, 0.0, 0.0}, 0.0, fixed[i] != 0 ? 1e8 : 1.0 / (kKeep * kKeep)});
+	for (int i = 0; i < nodes; ++i)
+		for (std::size_t a = 0; a < links[i].size(); ++a)
+			for (std::size_t b = a + 1; b < links[i].size(); ++b)
+				if (glm::dot(links[i][a].out, links[i][b].out) < -0.7)
+				{
+					auto const in{1.0 / std::max(0.5, links[i][a].length)};
+					auto const on{1.0 / std::max(0.5, links[i][b].length)};
+					auto const change{on * (heights[links[i][b].to] - heights[i]) - in * (heights[i] - heights[links[i][a].to])};
+					terms.push_back({{links[i][b].to, i, links[i][a].to, -1}, {on, -(on + in), in, 0.0}, std::abs(change) > kBroken ? -change : 0.0, 1.0 / (kEven * kEven)});
+				}
+	// the runs from switch to switch: plain tracks meeting at a joint nothing else meets at
+	std::vector<std::vector<TTrack const *>> at_node(nodes);
+	for (auto const *track : tracks)
+		for (auto const &path : track->m_paths)
+			for (auto const end : {segment_data::point::start, segment_data::point::end})
+				at_node[indices.at(key_of(path.points[end]))].push_back(track);
+	std::unordered_map<TTrack const *, TTrack const *> runs;
+	auto const run_of = [&](TTrack const *Track) {
+		auto *root{Track};
+		for (auto found{runs.find(root)}; found != runs.end() && found->second != root; found = runs.find(root))
+			root = found->second;
+		return root;
+	};
+	for (auto const &meeting : at_node)
+		if (meeting.size() == 2 && meeting[0] != meeting[1] && meeting[0]->eType == tt_Normal && meeting[1]->eType == tt_Normal)
+			if (auto const *a{run_of(meeting[0])}, *b{run_of(meeting[1])}; a != b)
+				runs[a] = b;
+	std::unordered_set<TTrack const *> apart;
+	auto const nearest_sides = [&](place const &Here) {
+		// the nearest track on each side
+		std::array<std::pair<double, place const *>, 2> sides{std::pair{kApart, nullptr}, std::pair{kApart, nullptr}};
+		auto const &here{Here};
+		auto const cell{cell_of(here.position)};
+		for (int dx = -1; dx <= 1; ++dx)
+			for (int dz = -1; dz <= 1; ++dz)
+			{
+				auto const found{places.find({cell.first + dx, cell.second + dz})};
+				if (found == places.end())
+					continue;
+				for (auto const &other : found->second)
+				{
+					if (other.track == here.track || other.first == here.first || other.first == here.second || other.second == here.first || other.second == here.second || apart.contains(run_of(other.track)))
+						continue;
+					glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
+					// across the track, not past its end: the next piece of a line isn't beside it
+					if (std::abs(glm::dot(offset, here.along)) > 0.6 * kSpacing || std::abs(other.position.y - here.position.y) > kLevel || std::abs(glm::dot(here.along, other.along)) < kParallel)
+						continue;
+					auto const across{here.along.x * offset.y - here.along.y * offset.x};
+					auto &side{sides[across > 0.0 ? 0 : 1]};
+					if (std::abs(across) < side.first)
+						side = {std::abs(across), &other};
+				}
+			}
+		return sides;
+	};
+	{
+		std::unordered_map<TTrack const *, double> alone;
+		for (auto const &here : all)
+			if (here.track->eType == tt_Normal)
+				if (auto const sides{nearest_sides(here)}; sides[0].second == nullptr && sides[1].second == nullptr)
+					alone[run_of(here.track)] += kSpacing;
+		for (auto const &[run, length] : alone)
+			if (length > kAway)
+				apart.insert(run);
+	}
+	// who was taken off a grade line by hand stays off them
+	grade_lines_load();
+	auto const taken_off = [&](TTrack const &Track) {
+		auto const found{state.grade_lines.find(Track.name())};
+		return found != state.grade_lines.end() && (found->second == nmt_state::grade_line_off || found->second <= nmt_state::grade_line_off_number);
+	};
+	std::unordered_set<TTrack const *> off;
+	for (auto const *track : tracks)
+		if (taken_off(*track))
+		{
+			off.insert(track);
+			apart.insert(run_of(track));
+		}
+	std::size_t pairs{0};
+	// the tracks on one grade line together, as they're tied side by side and along the runs
+	std::unordered_map<TTrack const *, TTrack const *> tied;
+	auto const tied_root = [&](TTrack const *Track) {
+		auto *root{Track};
+		for (auto found{tied.find(root)}; found != tied.end() && found->second != root; found = tied.find(root))
+			root = found->second;
+		return root;
+	};
+	for (auto const &here : all)
+	{
+		if (apart.contains(run_of(here.track)))
+			continue;
+		for (auto const &[distance, other] : nearest_sides(here))
+			if (other != nullptr)
+			{
+				++pairs;
+				if (auto const *a{tied_root(here.track)}, *b{tied_root(other->track)}; a != b)
+					tied[a] = b;
+				if (auto const *a{tied_root(here.track)}, *b{tied_root(run_of(here.track))}; a != b)
+					tied[a] = b;
+				terms.push_back({{here.first, here.second, other->first, other->second}, {1.0 - here.share, here.share, -(1.0 - other->share), -other->share}, other->position.y - here.position.y, 1.0 / (kBeside * kBeside)});
+			}
+	}
+	// the groups on common timbers: tracks and switches tied by the places under a sleeper's length apart, each group on a plane of its
+	// own, whose three numbers are worked out with the moves
+	std::size_t on_timbers{0};
+	// of a plain track only the stretch under the timbers counts: a long one with switches at both ends doesn't make one group of them
+	double constexpr kStretch{40.0}; // m
+	using stretch = std::tuple<TTrack const *, int, int>;
+	auto const stretch_of = [&](place const &Here) {
+		auto const &points{Here.track->m_paths[Here.path].points};
+		auto const along{Here.share * geometry::plan_distance(points[segment_data::point::start], points[segment_data::point::end])};
+		return stretch{Here.track, Here.track->eType == tt_Switch ? 0 : Here.path, Here.track->eType == tt_Switch ? 0 : static_cast<int>(along / kStretch)};
+	};
+	std::map<stretch, stretch> timbered;
+	auto const timbered_root = [&](stretch Root) {
+		for (auto found{timbered.find(Root)}; found != timbered.end() && found->second != Root; found = timbered.find(Root))
+			Root = found->second;
+		return Root;
+	};
+	std::vector<char> on_surface(timber_all.size(), 0);
+	for (auto const &here : timber_all)
+	{
+		auto const cell{cell_of(here.position)};
+		for (int dx = -1; dx <= 1; ++dx)
+			for (int dz = -1; dz <= 1; ++dz)
+			{
+				auto const found{timber_places.find({cell.first + dx, cell.second + dz})};
+				if (found == timber_places.end())
+					continue;
+				for (auto const &other : found->second)
+				{
+					if (other.track <= here.track || (here.track->eType != tt_Switch && other.track->eType != tt_Switch))
+						continue;
+					glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
+					if (glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, here.along)) > 0.6 * kSpacing || std::abs(other.position.y - here.position.y) > kLevel)
+						continue;
+					++on_timbers;
+					on_surface[here.index] = on_surface[other.index] = 1;
+					if (auto const a{timbered_root(stretch_of(here))}, b{timbered_root(stretch_of(other))}; a != b)
+						timbered[a] = b;
+				}
+			}
+	}
+	state.surface_places.clear();
+	std::map<stretch, int> surfaces;
+	struct surface_sum
+	{
+		double count{0.0};
+		glm::dvec3 sum{0.0};
+	};
+	std::vector<surface_sum> sums;
+	for (auto const &here : timber_all)
+		if (on_surface[here.index] != 0)
+		{
+			auto const [found, added]{surfaces.try_emplace(timbered_root(stretch_of(here)), static_cast<int>(sums.size()))};
+			if (added)
+				sums.emplace_back();
+			sums[found->second].count += 1.0;
+			sums[found->second].sum += here.position;
+		}
+	double constexpr kSurfaceScale{100.0}; // m, of the tilts worked out, for numbers of a size with the others
+	std::unordered_set<TTrack const *> timbered_tracks;
+	for (auto const &here : timber_all)
+		if (on_surface[here.index] != 0)
+		{
+			// a steep track holds its heights, but not against the timbers it shares; a hump gives way to them as little as they let it
+			double constexpr kHumpKeep{0.05}; // m
+			terms[here.first].weight = 1.0 / (hump_nodes.contains(here.first) ? kHumpKeep * kHumpKeep : kKeep * kKeep);
+			terms[here.second].weight = 1.0 / (hump_nodes.contains(here.second) ? kHumpKeep * kHumpKeep : kKeep * kKeep);
+			timbered_tracks.insert(here.track);
+			auto const surface{surfaces.at(timbered_root(stretch_of(here)))};
+			auto const middle{sums[surface].sum / sums[surface].count};
+			auto const level{nodes + 3 * surface};
+			terms.push_back({{here.first, here.second, level, level + 1, level + 2}, {1.0 - here.share, here.share, -1.0, -(here.position.x - middle.x) / kSurfaceScale, -(here.position.z - middle.z) / kSurfaceScale}, middle.y - here.position.y, 1.0 / (kOnTimbers * kOnTimbers)});
+			state.surface_places.push_back({here.track, here.path, here.share, surface});
+		}
+	for (std::size_t surface = 0; surface < sums.size(); ++surface)
+		for (int k = 0; k < 3; ++k)
+			terms.push_back({{nodes + 3 * static_cast<int>(surface) + k, -1, -1, -1, -1}, {1.0, 0.0, 0.0, 0.0, 0.0}, 0.0, 1.0});
+	auto const unknowns{nodes + 3 * static_cast<int>(sums.size())};
+	// the end of the second path of a switch on the plane of the first
+	for (auto const *track : tracks)
+	{
+		if (track->eType != tt_Switch || track->m_paths.size() < 2)
+			continue;
+		auto const &main{track->m_paths[0].points};
+		auto const &branch{track->m_paths[1].points};
+		auto const start{indices.at(key_of(main[segment_data::point::start]))};
+		auto const finish{indices.at(key_of(main[segment_data::point::end]))};
+		auto const tip{indices.at(key_of(branch[segment_data::point::end]))};
+		auto const chord{geometry::plan_of(main[segment_data::point::end] - main[segment_data::point::start])};
+		auto const square{glm::dot(chord, chord)};
+		if (start == tip || finish == tip || start != indices.at(key_of(branch[segment_data::point::start])) || square < 1e-6)
+			continue;
+		auto const share{glm::dot(geometry::plan_of(branch[segment_data::point::end] - main[segment_data::point::start]), chord) / square};
+		auto const off{heights[tip] - (heights[start] + share * (heights[finish] - heights[start]))};
+		terms.push_back({{tip, start, finish, -1}, {1.0, -(1.0 - share), -share, 0.0}, -off, 1.0 / (kPlane * kPlane)});
+	}
+	// who lies on which, for the map of them: a number of each grade line shared, those on their own and the ones held apart
+	state.grade_lines.clear();
+	{
+		std::unordered_map<TTrack const *, int> numbers;
+		std::unordered_map<TTrack const *, std::size_t> sizes;
+		for (auto const &here : all)
+			if (false == apart.contains(run_of(here.track)))
+				if (auto const found{tied.find(here.track)}; found != tied.end() || tied.end() != std::find_if(tied.begin(), tied.end(), [&](auto const &Tie) { return Tie.second == here.track; }))
+					++sizes[tied_root(here.track)];
+		for (auto const *track : tracks)
+		{
+			auto line{nmt_state::grade_line_own};
+			if (off.contains(track))
+				line = nmt_state::grade_line_off;
+			else if (steep(*track))
+				line = nmt_state::grade_line_steep;
+			else if (false == apart.contains(run_of(track)))
+				if (auto const root{tied_root(track)}; sizes.contains(root))
+					line = numbers.try_emplace(root, static_cast<int>(numbers.size())).first->second;
+			state.grade_lines[track->name()] = line;
+		}
+		WriteLog(format("Editor: NMT - %zu grade lines shared", numbers.size()), logtype::generic);
+		++state.grade_lines_changes;
+		grade_lines_store();
+	}
+	// the least squares of all of it, by conjugate gradients on the normal equations
+	auto const multiply = [&](std::vector<double> const &In, std::vector<double> &Out) {
+		std::fill(Out.begin(), Out.end(), 0.0);
+		for (auto const &one : terms)
+		{
+			auto sum{0.0};
+			for (int k = 0; k < 5 && one.at[k] >= 0; ++k)
+				sum += one.by[k] * In[one.at[k]];
+			sum *= one.weight;
+			for (int k = 0; k < 5 && one.at[k] >= 0; ++k)
+				Out[one.at[k]] += one.by[k] * sum;
+		}
+	};
+	std::vector<double> moves(unknowns, 0.0), residual(unknowns, 0.0), diagonal(unknowns, 0.0);
+	for (auto const &one : terms)
+		for (int k = 0; k < 5 && one.at[k] >= 0; ++k)
+		{
+			residual[one.at[k]] += one.weight * one.by[k] * one.value;
+			diagonal[one.at[k]] += one.weight * one.by[k] * one.by[k];
+		}
+	std::vector<double> direction(unknowns), product(unknowns);
+	auto rho{0.0};
+	for (int i = 0; i < unknowns; ++i)
+	{
+		direction[i] = residual[i] / diagonal[i];
+		rho += residual[i] * direction[i];
+	}
+	auto const first_rho{std::max(rho, 1e-30)};
+	int iterations{0};
+	for (; iterations < 30000 && rho > 1e-14 * first_rho; ++iterations)
+	{
+		multiply(direction, product);
+		auto bottom{0.0};
+		for (int i = 0; i < unknowns; ++i)
+			bottom += direction[i] * product[i];
+		if (bottom <= 0.0)
+			break;
+		auto const step{rho / bottom};
+		auto next{0.0};
+		for (int i = 0; i < unknowns; ++i)
+		{
+			moves[i] += step * direction[i];
+			residual[i] -= step * product[i];
+			next += residual[i] * residual[i] / diagonal[i];
+		}
+		auto const beta{next / rho};
+		rho = next;
+		for (int i = 0; i < unknowns; ++i)
+			direction[i] = residual[i] / diagonal[i] + beta * direction[i];
+	}
+	// what the end moves by, with what it's off the others at its joint, the switch there first
+	auto const move_of = [&](glm::dvec3 const &Point) {
+		auto const at{indices.at(key_of(Point))};
+		auto const off{heights[at] - Point.y};
+		return moves[at] + (std::abs(off) <= 1.0 ? off : 0.0);
+	};
+	editor_track::edit edit;
+	std::vector<TTrack *> moved;
+	auto largest{0.0};
+	double constexpr kTilted{0.005}; // how far the mean grade at the ends of a path may be from its grade from end to end
+	double constexpr kTiltedShortest{5.0}; // m, a shorter one tells little by the grades at its ends
+	std::size_t straightened{0};
+	for (auto *track : tracks)
+	{
+		auto changed{false};
+		for (auto const &path : track->m_paths)
+			for (auto const end : {segment_data::point::start, segment_data::point::end})
+			{
+				largest = std::max(largest, std::abs(move_of(path.points[end])));
+				changed = changed || std::abs(move_of(path.points[end])) >= kMoved;
+			}
+		if (false == changed)
+			continue;
+		edit.capture(*track);
+		moved.push_back(track);
+		// a switch on common timbers lies straight between its ends, no vertical curve taking it off their surface; the other paths where
+		// the grades at their ends, which average to the grade from end to end on a vertical curve, are far from it: the ends were brought
+		// to the tracks adjoining with the grades left as they were, and the path waves between them
+		auto const settle = [&](segment_data &Part) {
+			auto &points{Part.points};
+			if (points[segment_data::point::control1] == glm::dvec3{} && points[segment_data::point::control2] == glm::dvec3{})
+				return;
+			auto const span{geometry::plan_of(points[segment_data::point::end] - points[segment_data::point::start])};
+			auto const rise{points[segment_data::point::end].y - points[segment_data::point::start].y};
+			auto const tilted = [&] {
+				auto const length{glm::length(span)};
+				auto const before{glm::length(geometry::plan_of(points[segment_data::point::control1]))};
+				auto const after{glm::length(geometry::plan_of(points[segment_data::point::control2]))};
+				if (length < kTiltedShortest || before < 1e-3 || after < 1e-3)
+					return false;
+				return std::abs((points[segment_data::point::control1].y / before - points[segment_data::point::control2].y / after) * 0.5 - rise / length) > kTilted;
+			};
+			if (track->eType == tt_Switch ? timbered_tracks.contains(track) : tilted())
+			{
+				auto const grade{rise / std::max(1e-9, glm::dot(span, span))};
+				points[segment_data::point::control1].y = grade * glm::dot(geometry::plan_of(points[segment_data::point::control1]), span);
+				points[segment_data::point::control2].y = grade * glm::dot(geometry::plan_of(points[segment_data::point::control2]), span);
+				straightened += track->eType == tt_Switch ? 0 : 1;
+			}
+		};
+		for (auto &path : track->m_paths)
+			move_path_heights(path, move_of(path.points[segment_data::point::start]), move_of(path.points[segment_data::point::end]), settle);
+	}
+	WriteLog(format("Editor: NMT - one grade line for tracks under %.1f m apart: %zu runs of tracks on their own, %zu places side by side, %zu on common timbers in %zu groups, %d joints, %d iterations, %zu tracks moved, by %.2f m at most, %zu paths straightened", kApart, apart.size(), pairs, on_timbers, sums.size(), nodes, iterations, moved.size(), largest, straightened), logtype::generic);
+	if (moved.empty())
+		return;
+	editor_track::commit(moved);
+	push_track_snapshot(std::move(edit.states), {});
+	fitted_set(moved);
+}
+
 void editor_mode::nmt_auto_step()
 {
 	auto &state{m_nmt_state};
@@ -2946,6 +3642,7 @@ void editor_mode::nmt_auto_step()
 					state.done.push_back(track);
 		state.laid.clear();
 		state.bridged.clear();
+		state.on_hump.clear();
 		// every path sampled as laid, for the crossings of the lines
 		state.paths.clear();
 		for (auto *track : simulation::Paths.sequence())
@@ -3018,7 +3715,12 @@ void editor_mode::nmt_auto_step()
 		state.status += format(STR_P("\n%zu turntable set level at the height of the tracks running up to it, which reach it level", "\n%zu turntables set level at the height of the tracks running up to them, which reach them level", state.levelled), state.levelled);
 	if (false == state.left.empty())
 		return;
+	// the last line fitted isn't left in the profile, its tracks may be gone: the profile opens on what's selected
 	m_profile.open = false;
+	m_profile.route = {};
+	m_profile.samples.clear();
+	m_profile.followed.clear();
+	nmt_share_grades();
 	state.done.clear();
 	state.laid.clear();
 	state.paths.clear();

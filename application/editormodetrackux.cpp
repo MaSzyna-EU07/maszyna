@@ -593,7 +593,8 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 {
 	using kind = track_intent::kind;
 	track_intent intent;
-	if (ImGui::GetIO().WantCaptureMouse)
+	// a switch being clicked off the view for the template editor takes the mouse: no tool offers anything meanwhile
+	if (ImGui::GetIO().WantCaptureMouse || (m_switch_designer.open && m_switch_designer.picking))
 		return intent;
 	glm::dvec3 const ground{cursor_ground()};
 	intent.position = ground;

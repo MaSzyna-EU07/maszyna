@@ -128,7 +128,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
 //   orthosettings [on|radius|opacity|lift|height|year|hires|drape|scene <value>]...   the settings of the orthophoto changed as its
 //                                        panel and its checkbox change them, kept with the editor, and logged with the origin of the scenery
-//   nmtsettings [band|around|shape|follow|grow|offset|fitted <value>]...   the settings of the terrain model changed as the terrain
+//   nmtsettings [band|around|shape|common|follow|grow|offset|fitted <value>]...   the settings of the terrain model changed as the terrain
 //                                        panel changes them, and logged with the offset of the model to the scenery
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
@@ -137,6 +137,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   laymode <straights|curve>, layradius <R from> <R to>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
 //   endcurves                            logs every free end of the rails: where, the way out and the curvature its track goes on with
 //   curvejoint <x> <z>                   logs the paths meeting at the end nearest the point, the curvature of each and its jump from the ones before to the ones after
+//   cantcheck <label>                    logs each jump of the cant at a joint of plain tracks, and the steepest ramp of the cant on a path
+//   fitcheck <label>                     logs the steps and grade breaks at the joints, the switches off their plane, the rails against the ground
 //   laywalk <from|into> <x> <z> <spacing> <noise> <k0> <k1> <L>...   a line of known curves on from the free end nearest the point,
 //                                        the points along it clicked in the mode of a curve, from the end or towards it (see the command)
 //   laybends <x> <z> <distance> <degrees> ... <distance>   the bends of straights clicked from the free end nearest the point
@@ -180,7 +182,12 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   nmtauto [unfitted]                   the tracks put onto the terrain model, all or the ones whose grade line isn't fitted yet
 //   turntables                           the height of each turntable and of the model in its pit, and the heights of the tracks running up
 //                                        to it out along their lines from the rim, against the model there
-//   fittedstate [reload]                 logs how many tracks have their grade line fitted, and which; reload: read again from the //$f lines
+//   nmtstate                             logs how far the tracks going onto the terrain model are
+//   gradelines <file>                    the grade line each track shares written to the file, for a map of them
+//   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height
+//   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back
+//   profiledump <file>                   the route open in the profile tool to the file: its heights and the points of its grade line
+//   fittedstate [reload]                logs how many tracks have their grade line fitted, and which; reload: read again from the //$f lines
 //   trackterrain <pull|restore> <track>...   the terrain drawn to the tracks, or their formations taken out of it, as the panel of the tracks
 //   terrainhash                          a hash of the heights of the terrain chunks in memory, to compare the ground two builds made
 //   rebuildall                           the geometry of every path in the sections made already laid anew, the time it took logged,

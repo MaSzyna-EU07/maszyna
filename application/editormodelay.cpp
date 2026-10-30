@@ -365,6 +365,26 @@ std::vector<glm::dvec3> const &editor_mode::free_end_points(glm::dvec3 const &Ce
 	return cache.points;
 }
 
+// the cursor as a ring on the ground, of about the width of the track, to be laid over it on the photo
+void editor_mode::draw_cursor_ring(glm::dvec3 const &Point) const
+{
+	screen_projection const projection;
+	ImVec2 centre;
+	if (ImGui::GetIO().WantCaptureMouse || false == projection.project(Point, centre))
+		return;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	double constexpr kCursorRadius{0.75}; // m
+	int constexpr kCursorSteps{36};
+	auto const on_ring = [&](int const Step) {
+		auto const angle{2.0 * glm::pi<double>() * Step / kCursorSteps};
+		return Point + glm::dvec3{std::cos(angle) * kCursorRadius, 0.0, std::sin(angle) * kCursorRadius};
+	};
+	for (int i = 0; i < kCursorSteps; ++i)
+		projection.line(drawlist, on_ring(i), on_ring(i + 1), IM_COL32(255, 255, 255, 240), 1.5f);
+	drawlist->AddCircleFilled(centre, 1.5f, IM_COL32(255, 255, 255, 240));
+	ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+}
+
 void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
 {
 	screen_projection const projection;
@@ -589,6 +609,43 @@ std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *Fro
 	return m_eased_last;
 }
 
+namespace
+{
+
+// the cant of a track joined goes on into the track laid, whatever shape that one has: its difference fades along the pieces from the
+// joint, over as many of them as the cant takes at the ramp a transition curve has at the least, or over all of them where they're shorter
+void lead_cant(std::vector<segment_data> &Pieces, double const Roll, double const Gauge, bool const From_start)
+{
+	double constexpr ramp_slope{1.5}; // mm of the cant to a metre
+	if (Pieces.empty())
+		return;
+	auto const here{From_start ? Pieces.front().rolls[0] : Pieces.back().rolls[1]};
+	auto const difference{Roll - static_cast<double>(here)};
+	if (std::abs(difference) < 1e-3)
+		return;
+	auto const wanted{Gauge * std::abs(std::sin(glm::radians(difference))) / ramp_slope};
+	std::vector<double> lengths;
+	auto reach{0.0};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		lengths.push_back(geometry::bezier{Pieces[From_start ? i : Pieces.size() - 1 - i]}.plan_length());
+		if (reach < wanted)
+			reach += lengths.back();
+	}
+	auto along{0.0};
+	for (std::size_t i = 0; i < Pieces.size() && along < reach; ++i)
+	{
+		auto &piece{Pieces[From_start ? i : Pieces.size() - 1 - i]};
+		auto const nearer{difference * (1.0 - along / reach)};
+		along += lengths[i];
+		auto const further{difference * (1.0 - std::min(along / reach, 1.0))};
+		piece.rolls[From_start ? 0 : 1] += static_cast<float>(nearer);
+		piece.rolls[From_start ? 1 : 0] += static_cast<float>(further);
+	}
+}
+
+} // namespace
+
 std::vector<segment_data> editor_mode::extend_pieces() const
 {
 	m_eased_last.reset();
@@ -637,6 +694,8 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto const eased{eased_layout(tool.track, tool.point, tool.direction, tool.mouse, radius)};
 	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
 	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
+	if (tool.track != nullptr)
+		lead_cant(pieces, -editor_track::joint_roll(*tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}), laying_norms().gauge, true);
 	return pieces;
 }
 
@@ -1080,6 +1139,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			Length += bezier{piece}.plan_length();
 		if (pieces.empty())
 			Error = STR_C("The track can't be laid through these points");
+		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), laying_norms().gauge, false);
 		return pieces;
 	}
 	m_join_last = {};
@@ -1174,6 +1234,10 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		follow_ground(pieces, Points.front().y, grade0, Points.back().y, grade1, style);
 	else
 		ground_follow::follow_points(pieces, plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
+	if (tool.start.track != nullptr)
+		lead_cant(pieces, -editor_track::joint_roll(*tool.start.track, tool.start.point), design.norms.gauge, true);
+	if (End.track != nullptr)
+		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), design.norms.gauge, false);
 	if (Plan != nullptr)
 		*Plan = std::move(plan);
 	return pieces;
@@ -1969,6 +2033,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
+	nmt_check_buried(tool.history);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.modes.clear();
@@ -2198,6 +2263,16 @@ void editor_mode::render_lay_ui()
 		double low{EditorSettings.corner_low()};
 		double high{EditorSettings.corner_high()};
 		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
+		ImGui::SameLine();
+		if (ImGui::SmallButton("?##corners"))
+		{
+			m_first_steps_open = true;
+			m_tutorial_goto = "Radius of the curves at the bends";
+		}
+		item_tooltip("What it is: the lesson of the tutorial");
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("The larger the radius, the gentler the turn: the largest that fits between your points is taken"));
+		ImGui::PopTextWrapPos();
 		auto changed{ImGui::DragScalar(STR_C("from (m)"), ImGuiDataType_Double, &low, 10.0f, nullptr, nullptr, "%.0f")};
 		// the settings file written when a drag ends, not at each frame of it
 		auto release{ImGui::IsItemDeactivatedAfterEdit()};
@@ -2230,6 +2305,7 @@ void editor_mode::render_lay_ui()
 		{
 			low = std::max(10.0, low);
 			EditorSettings.corners(low, std::max(low, high));
+			first_step_done(first_step::corners);
 		}
 		if (release)
 			EditorSettings.save();
@@ -2280,6 +2356,7 @@ void editor_mode::render_lay_ui()
 	if (auto const &plan{tool.plan}; tool.active && plan.shape.valid && false == plan.shape.curves.empty())
 	{
 		ImGui::SeparatorText(STR_C("Curves of the track laid"));
+		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
 		for (auto const &curve : plan.shape.curves)
 		{
 			auto const meets{alignment::meets_norms(curve, plan.design)};

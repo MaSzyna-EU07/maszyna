@@ -524,6 +524,38 @@ void editor_mode::join_last_steps()
 	previous.instances.insert(previous.instances.end(), instances.begin(), instances.end());
 }
 
+namespace
+{
+
+// the height of the track at the distance along the straight: a straight in the plan need not be one in height, a fitted grade line
+// has its vertical curves on it, and a joint laid by the average grade of the whole straight would part from its neighbours
+double straight_height(editor_track::straight const &Line, double const Distance)
+{
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		auto const a{Line.along(path.points[segment_data::point::start])};
+		auto const b{Line.along(path.points[segment_data::point::end])};
+		if (Distance < std::min(a, b) - 1e-3 || Distance > std::max(a, b) + 1e-3)
+			continue;
+		bezier const curve{path};
+		auto low{0.0};
+		auto high{1.0};
+		for (int step = 0; step < 24; ++step)
+		{
+			auto const middle{0.5 * (low + high)};
+			if ((Line.along(curve.point(middle)) < Distance) == (a < b))
+				low = middle;
+			else
+				high = middle;
+		}
+		return curve.point(0.5 * (low + high)).y;
+	}
+	return Line.start.y + Line.grade * Distance;
+}
+
+} // namespace
+
 bool editor_mode::cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style)
 {
 	auto const from{From};
@@ -579,7 +611,11 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	auto const after{std::max(0.0, spans[last].to - to)};
 	bool const hasbefore{before > 0.01};
 	bool const hasafter{after > 0.01};
-	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	auto const point = [&](double const Distance) {
+		auto result{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * Distance};
+		result.y = straight_height(Line, Distance);
+		return result;
+	};
 	if (false == hasbefore && false == hasafter)
 	{
 		for (auto *track : chain.tracks)
@@ -625,15 +661,19 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const from{switch_from(Line, shape.length, Along, Direction, Snap)};
 	auto const to{from + shape.length};
 	auto const origin{Direction > 0 ? from : to};
+	// from the track as it lies there, before it's cut: the switch in its plane between the heights of the two ends
+	auto const height_from{straight_height(Line, from)};
+	auto const height_to{straight_height(Line, to)};
 	TTrack *first{nullptr};
 	if (false == cut_straight(Line, from, to, States, Created, Removed, &first))
 	{
 		m_switch.status = refused(STR_C("The switch would overlap another switch, move it onto plain track"));
 		return false;
 	}
-	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	auto start{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * origin};
+	start.y = Direction > 0 ? height_from : height_to;
 	glm::dvec2 const direction{Line.direction * static_cast<double>(Direction)};
-	auto const paths{editor_track::place_switch(shape, point(origin), direction, Side, Line.grade * Direction)};
+	auto const paths{editor_track::place_switch(shape, start, direction, Side, (height_to - height_from) / shape.length * Direction)};
 	auto const made{create_switch_set(shape, paths, Style != nullptr ? *Style : *first, Name)};
 	Created.insert(Created.end(), made.begin(), made.end());
 	return true;

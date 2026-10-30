@@ -1825,7 +1825,7 @@ msgid "gap"
 msgstr "szczelina"
 
 msgid "grade break"
-msgstr "załamanie pochylenia"
+msgstr "zmiana nachylenia"
 
 msgid "joins the ends, aligns them"
 msgstr "łączy końce, wyrównuje je"
@@ -5436,8 +5436,6 @@ msgstr "żaden tor nie pasuje do końca %s"
 msgid "joins %s"
 msgstr "łączy z %s"
 
-msgid "starts at the end of %s"
-msgstr "zaczyna od końca %s"
 
 msgid "moved %.3f m"
 msgstr "przesunięto o %.3f m"
@@ -6060,7 +6058,7 @@ msgid "Height offset (m)"
 msgstr "Przesunięcie wysokości (m)"
 
 msgid "Terrain model: GUGiK, geoportal.gov.pl"
-msgstr "NMT: GUGiK, geoportal.gov.pl"
+msgstr "Dane terenu: GUGiK, geoportal.gov.pl"
 
 msgid "The tracks lie %+.2f m against the terrain model (%zu places, they differ by %.2f m around it)"
 msgstr "Tory leżą %+.2f m względem NMT (%zu miejsc, rozrzut %.2f m)"
@@ -6687,7 +6685,7 @@ msgid "Terrain model loading"
 msgstr "Wczytywanie NMT"
 
 msgid "Orthophoto loading"
-msgstr "Wczytywanie ortofotomapy"
+msgstr "Wczytywanie zdjęć lotniczych"
 
 msgid "No tracks to draw the terrain to"
 msgstr "Brak torów, do których można dociągnąć teren"
@@ -6732,7 +6730,7 @@ msgid "All the tracks of the scenery"
 msgstr "Wszystkie tory scenerii"
 
 msgid "A chunk there is already is never made anew"
-msgstr "Istniejący kafel nigdy nie jest tworzony od nowa"
+msgstr "Teren już wczytany zostaje bez zmian"
 
 msgid "Tracks and terrain"
 msgstr "Tory i teren"
@@ -6741,7 +6739,7 @@ msgid "First the place of the scenery on the map: F5 Terrain, Terrain model (NMT
 msgstr "Najpierw położenie scenerii na mapie: F5 Teren, Prawdziwy teren z map (NMT), krok 1"
 
 msgid "All the tracks go down or up onto the terrain model, which is loaded along them by itself"
-msgstr "Wszystkie tory schodzą albo wchodzą na model terenu, który wczytuje się sam wzdłuż nich"
+msgstr "Wszystkie tory układają się na prawdziwym terenie, który wczyta się sam wzdłuż nich"
 
 msgid "Or:"
 msgstr "Albo:"
@@ -6756,13 +6754,13 @@ msgid "The terrain to some of the tracks only: select them (F3), Terrain in the 
 msgstr "Teren tylko pod wybrane tory: zaznacz je (F3), sekcja Teren w inspektorze"
 
 msgid "Terrain of the model right away while laying"
-msgstr "Teren z NMT od razu podczas kładzenia"
+msgstr "Wczytuj teren na bieżąco podczas układania"
 
 msgid "Where the terrain of the scenery ends, the terrain model is made under the tracks as they're laid, around the cursor from the first point placed; the chunks there are stay as they are. Off, it's made only when asked for"
 msgstr "Tam, gdzie kończy się teren scenerii, teren z NMT powstaje pod układanymi torami, wokół kursora od pierwszego postawionego punktu; istniejące kafle zostają bez zmian. Wyłączone: teren powstaje tylko na żądanie"
 
 msgid "Height offset of the model"
-msgstr "Przesunięcie wysokości modelu"
+msgstr "Przesuń cały teren w górę lub w dół"
 
 msgid "Its grade line is fitted to the terrain"
 msgstr "Niweleta dopasowana do terenu"
@@ -6777,7 +6775,7 @@ msgid "A track is fitted when its grade line was fitted to the terrain model or 
 msgstr "Tor jest dopasowany, gdy jego niweletę dopasowano do NMT albo zastosowano w profilu i od tego czasu się nie zmienił"
 
 msgid "All anew, the fitted ones too"
-msgstr "Wszystkie od nowa, z dopasowanymi"
+msgstr "Wszystkie od nowa, także dopasowane"
 
 msgid "All the tracks are fitted to the terrain model again, the ones fitted already too: their grade lines may change; the scenery isn't moved"
 msgstr "Wszystkie tory są dopasowywane do NMT od nowa, także te już dopasowane: ich niwelety mogą się zmienić; sceneria nie jest przesuwana"
@@ -10083,7 +10081,7 @@ msgid "Try again"
 msgstr "Spróbuj ponownie"
 
 msgid "Click the middle of the scenery on the map"
-msgstr "Kliknij na mapie środek scenerii"
+msgstr "Kliknij na mapie środek scenerii (kółko myszy przybliża, przeciąganie przesuwa mapę)"
 
 msgid "The point 0,0,0 of the scenery. The wheel zooms the map, a drag moves it"
 msgstr "Punkt 0,0,0 scenerii. Kółko przybliża mapę, przeciąganie ją przesuwa"
@@ -11520,16 +11518,16 @@ msgstr "Kolor szyn, żeby odcinały się od ortofotomapy i mapy"
 
 
 msgid "The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain"
-msgstr "Pochylenia całego toru kładzionego za jednym razem dopasowane do modelu terenu, tak jak w „Tory na teren”"
+msgstr "Wysokość całego układanego toru dopasowana do terenu"
 
 msgid "Height of the track on the ground"
 msgstr "Wysokość toru na terenie"
 
 msgid "Fitted"
-msgstr "Wygładzona niweleta"
+msgstr "Łagodnie po terenie"
 
 msgid "Point to point"
-msgstr "Punkt–punkt"
+msgstr "Przez klikane punkty"
 
 msgid "Flat"
 msgstr "Poziomo"
@@ -12111,9 +12109,9 @@ msgstr "przesuwa go; koniec upuszczony na wolny koniec łączy się z nim"
 
 msgid "and %zu more, in the panel"
 msgid_plural "and %zu more, in the panel"
-msgstr[0] "i jeszcze %zu, w panelu"
-msgstr[1] "i jeszcze %zu, w panelu"
-msgstr[2] "i jeszcze %zu, w panelu"
+msgstr[0] "i jeszcze %zu, lista w panelu po prawej"
+msgstr[1] "i jeszcze %zu, lista w panelu po prawej"
+msgstr[2] "i jeszcze %zu, lista w panelu po prawej"
 
 msgid "on the ground: the first point, then the bends of the line, the curves at them made by themselves"
 msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powstają same"
@@ -12564,7 +12562,7 @@ msgid "Down"
 msgstr "W dół"
 
 msgid "Orthophoto (geoportal.gov.pl)"
-msgstr "Ortofotomapa (geoportal.gov.pl)"
+msgstr "Zdjęcia lotnicze (geoportal.gov.pl)"
 
 msgid "Add a WMS layer"
 msgstr "Dodaj warstwę WMS"
@@ -12676,3 +12674,342 @@ msgstr "Przesuwa profil na miejsce trasy, gdzie jest kamera, bez zmiany powięks
 
 msgid "The switch drawn to the joint of the tracks"
 msgstr "Rozjazd dosunięty do styku torów"
+
+r
+# for those laying their first track: what's hidden in the ground, what to do in an empty scenery
+msgid "goes on from this end of the track"
+msgstr "przedłuża tor od tego końca"
+
+msgid "R: radius, L: transition curve (m), h: cant (mm)"
+msgstr "R: promień łuku, L: krzywa przejściowa (m), h: przechyłka (mm)"
+
+msgid "%.0f m of the new track is hidden in the ground, you can't see it there"
+msgstr "%.0f m nowego toru chowa się w ziemi i w tych miejscach go nie widać"
+
+msgid "Only the ground along the track changes; Ctrl+Z takes it back"
+msgstr "Zmieni się tylko grunt wzdłuż toru, a Ctrl+Z to cofa"
+
+msgid "Fit the ground to the track"
+msgstr "Dopasuj teren do toru"
+
+msgid "Leave it"
+msgstr "Zostaw"
+
+msgid "Tell me each time"
+msgstr "Mów mi o tym za każdym razem"
+
+msgid "This scenery is still empty"
+msgstr "Ta sceneria jest jeszcze pusta"
+
+msgid "Click Laying on the toolbar or press L, then click the points of the track"
+msgstr "Kliknij Układanie na pasku narzędzi albo naciśnij L, a potem klikaj punkty toru"
+
+# the lesson of the radius of the curves at the bends
+msgid "No ground under the cursor: track goes onto the level 0 plane. Terrain: F5"
+msgstr "Pod kursorem nie ma terenu: tor trafia na płaszczyznę na wysokości 0. Teren: F5"
+
+msgid "R %.0f m: %s"
+msgstr "R %.0f m: %s"
+
+msgid "a sharp curve, a slow train"
+msgstr "ciasny łuk, pociąg musi zwolnić"
+
+msgid "a gentle curve, a fast train"
+msgstr "łagodny łuk, pociąg jedzie szybko"
+
+msgid "Where you click a bend, the two straights meet at a sharp corner a train can't take: the editor rounds it off with a curve by itself"
+msgstr "W klikniętym załamaniu dwie proste spotykają się pod ostrym kątem, którego pociąg by nie pokonał, więc edytor sam zaokrągla je łukiem"
+
+msgid "The radius is the size of that curve, in metres: the larger, the gentler the turn and the faster a train can take it"
+msgstr "Promień to wielkość tego łuku w metrach: im większy, tym łagodniejszy zakręt i tym szybciej może nim jechać pociąg"
+
+msgid "In the panel of the lay tool: the radius tried first is the larger one, to; the curve gets smaller only when it doesn't fit between your points, down to from"
+msgstr "W panelu Układania: najpierw próbowany jest większy promień (do); łuk maleje tylko wtedy, gdy nie mieści się między Twoimi punktami, najwyżej do wartości od"
+
+msgid "For a start take 3000-6000 on a main line, 1000-2000 by a station; the four buttons under the fields set both"
+msgstr "Na początek: 3000-6000 na szlaku, 1000-2000 przy stacji; cztery przyciski pod polami ustawiają obie wartości naraz"
+
+msgid "Bends too close together leave no room: the curve comes out smaller and its label turns orange. Click the points further apart"
+msgstr "Załamania zbyt blisko siebie nie zostawiają miejsca: łuk wychodzi mniejszy, a jego opis robi się pomarańczowy. Klikaj punkty dalej od siebie"
+
+msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm"
+msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm)"
+
+msgid "Choose other radii in the panel of the lay tool"
+msgstr "Wybierz inne promienie w panelu Układania"
+
+msgid "Lay a track with a bend and read the label of its curve"
+msgstr "Ułóż tor z załamaniem i odczytaj opis jego łuku"
+
+msgid "from - to"
+msgstr "od - do"
+
+msgid "R L h"
+msgstr "R L h"
+
+msgid "What it is: the lesson of the tutorial"
+msgstr "Co to jest: lekcja w samouczku"
+
+msgid "The larger the radius, the gentler the turn: the largest that fits between your points is taken"
+msgstr "Im większy promień, tym łagodniejszy zakręt; edytor bierze największy, który mieści się między Twoimi punktami"
+
+msgid "The end snaps by itself: a click on a free end while laying joins the track to it, with no gap and with the cant of the track there going on smoothly"
+msgstr "Koniec przyciąga się sam: kliknięcie wolnego końca podczas układania łączy z nim tor bez przerwy, a przechyłka tamtego toru przechodzi płynnie w nowy"
+
+msgid "A new track partly hidden in the ground: the message above the view has Fit the ground to the track, one click makes the track bed along it"
+msgstr "Nowy tor częściowo schowany w ziemi: komunikat nad widokiem ma przycisk Dopasuj teren do toru, a jedno kliknięcie robi wzdłuż niego torowisko"
+
+msgid "One grade line for nearly parallel tracks under 5.1 m apart"
+msgstr "Wspólna niweleta dla torów równoległych bliżej niż 5,1 m"
+
+msgid "Nearly parallel tracks under 5.1 m apart lie on one grade line, so the switches and crossovers between them stay in one plane. A run of tracks from switch to switch going away from the others by more has a grade line of its own; on timbers common with a switch they always lie on one surface. A hump and tracks over 2 m apart in height keep theirs. Off: each track follows the terrain by itself"
+msgstr "Tory biegnące prawie równolegle, bliżej niż 5,1 m, leżą na jednej niwelecie, więc rozjazdy i przejścia między nimi zostają w jednej płaszczyźnie. Ciąg torów od rozjazdu do rozjazdu, który odchodzi od reszty dalej, ma własną niweletę; tory i rozjazdy na wspólnych podrozjazdnicach leżą zawsze na jednej płaszczyźnie. Górka rozrządowa i tory różniące się wysokością o ponad 2 m zachowują swoją. Wyłączone: każdy tor idzie za terenem osobno"
+
+msgid "Move the whole common grade line"
+msgstr "Przesuwaj całą wspólną niweletę"
+
+msgid "Applied, the tracks and switches lying on one grade line with this route go up and down with it, the ones on common timbers staying on one surface.\nUnticked, only the route changes"
+msgstr "Po zastosowaniu tory i rozjazdy na wspólnej niwelecie z tą trasą idą razem z nią w górę i w dół, a te na wspólnych podrozjazdnicach zostają na jednej powierzchni.\nOdznaczone: zmienia się tylko trasa"
+
+msgid "Take off the common grade line"
+msgstr "Odłącz od wspólnej niwelety"
+
+msgid "This route gets a grade line of its own: the tracks beside no longer go with it, and it doesn't go with them, also when the lines are worked out again"
+msgstr "Ta trasa dostaje własną niweletę: tory obok nie idą już za nią, a ona za nimi, także przy ponownym dopasowaniu"
+
+msgid "Back on the common grade line"
+msgstr "Przyłącz do wspólnej niwelety"
+
+msgid "The route lies on the common grade line again. Its height doesn't change by this; if it's off the tracks beside, fit it to them with the grade line or by working out the lines anew"
+msgstr "Trasa znów należy do wspólnej niwelety. Jej wysokość przez to się nie zmienia; jeśli odstaje od torów obok, popraw ją niweletą albo dopasuj tory od nowa"
+
+msgid "Your own grade line for one route: Take off the common grade line, the tracks beside stop going with it"
+msgstr "Własna niweleta dla jednej trasy: Odłącz od wspólnej niwelety, tory obok przestają iść za nią"
+
+msgid "Tracks on one common grade line go together: drag a point, Apply, and the tracks beside (blue) go too"
+msgstr "Tory na wspólnej niwelecie idą razem: przeciągnij punkt, Zastosuj, a tory obok (niebieskie) pójdą też"
+
+msgid "%zu track beside goes with the route (blue in the view)"
+msgid_plural "%zu tracks beside go with the route (blue in the view)"
+msgstr[0] "%zu tor obok idzie z trasą (niebieski w widoku)"
+msgstr[1] "%zu tory obok idą z trasą (niebieskie w widoku)"
+msgstr[2] "%zu torów obok idzie z trasą (niebieskie w widoku)"
+
+msgid "%zu track taken off the common grade line, it goes on its own now"
+msgid_plural "%zu tracks taken off the common grade line, they go on their own now"
+msgstr[0] "%zu tor odłączony od wspólnej niwelety, idzie teraz sam"
+msgstr[1] "%zu tory odłączone od wspólnej niwelety, idą teraz same"
+msgstr[2] "%zu torów odłączonych od wspólnej niwelety, idą teraz same"
+
+msgid "%zu track back on the common grade line"
+msgid_plural "%zu tracks back on the common grade line"
+msgstr[0] "%zu tor z powrotem na wspólnej niwelecie"
+msgstr[1] "%zu tory z powrotem na wspólnej niwelecie"
+msgstr[2] "%zu torów z powrotem na wspólnej niwelecie"
+
+msgid "\nThe common grade line: %zu track beside went with the route"
+msgid_plural "\nThe common grade line: %zu tracks beside went with the route"
+msgstr[0] "\nWspólna niweleta: %zu tor obok poszedł z trasą"
+msgstr[1] "\nWspólna niweleta: %zu tory obok poszły z trasą"
+msgstr[2] "\nWspólna niweleta: %zu torów obok poszło z trasą"
+
+msgid "Vertex %zu: the circular arc is %.0f m, the norms ask for %.0f m; all of it fits from R %.0f m"
+msgstr "Wierzchołek %zu: łuk kołowy ma %.0f m, normy chcą %.0f m; całość zmieści się od R %.0f m"
+
+msgid "a, m##quicka"
+msgstr "a (m)##quicka"
+
+msgid "b, m##quickb"
+msgstr "b (m)##quickb"
+
+msgid "From the start to the point where the tangents of both tracks meet; with a b differing the curve is made of two arcs; shorter than the tangent of the arc: the blade meets the stock rail at an angle. 0: the tangent of the arc"
+msgstr "Od początku rozjazdu do punktu, w którym spotykają się styczne obu torów. Gdy b jest inne, krzywa składa się z dwóch łuków; krótsze od stycznej łuku: iglica spotyka opornicę pod kątem. 0: styczna łuku"
+
+msgid "From the point where the tangents meet to the end of the switch. 0: the tangent of the arc"
+msgstr "Od punktu, w którym spotykają się styczne, do końca rozjazdu. 0: styczna łuku"
+
+msgid "b can't be shorter than the end of the arc, %.3f m"
+msgstr "b nie może być krótsze niż koniec łuku, %.3f m"
+
+msgid "Replaces the parts with the curve from the start of the switch up to the angle 1:n fitted to a and b, R the sharpest of it: two arcs where a and b differ, else one arc with the straights they ask for"
+msgstr "Zastępuje części krzywą od początku rozjazdu do skosu 1:n dopasowaną do a i b, R to jej najostrzejszy promień: dwa łuki, gdy a i b się różnią, inaczej jeden łuk z prostymi, jakich wymagają"
+
+msgid "The tangent of the arc alone is %.3f m"
+msgstr "Sama styczna łuku ma %.3f m"
+
+msgid "pre-blade %.3f"
+msgstr "przediglicowy %.3f"
+
+msgid "blade tip %.3f"
+msgstr "ostrze iglicy %.3f"
+
+msgid "blade angle %.3f deg"
+msgstr "kąt iglicy %.3f°"
+
+msgid "blade throw %.3f"
+msgstr "skok iglicy %.3f"
+
+msgid "blade heel %.3f"
+msgstr "piętka iglicy %.3f"
+
+msgid "second switch %.3f"
+msgstr "drugi rozjazd %.3f"
+
+msgid "main track %.3f"
+msgstr "tor zasadniczy %.3f"
+
+msgid "The radius or the angle makes no switch"
+msgstr "Ten promień albo skos nie dają rozjazdu"
+
+msgid "Rest of the tangents##quickkind"
+msgstr "Reszta stycznych##quickkind"
+
+msgid "straights"
+msgstr "proste odcinki"
+
+msgid "transition curve"
+msgstr "krzywa przejściowa"
+
+msgid "two arcs"
+msgstr "dwa łuki"
+
+msgid "What makes up where a or b is longer than the tangent of the arc"
+msgstr "Co wypełnia miejsce, gdzie a lub b jest dłuższe od stycznej łuku"
+
+msgid "Stop clicking"
+msgstr "Przerwij klikanie"
+
+msgid "Click off the view..."
+msgstr "Wyklikaj z widoku..."
+
+msgid "Measures a switch off the orthophoto: click its points in the view, in the top view (O) they're best seen. The orthophoto is turned on in the layers"
+msgstr "Mierzy rozjazd z ortofoto: klikaj jego punkty w widoku, najlepiej widać z góry (O). Ortofoto włączasz w warstwach"
+
+msgid "1. The start of the switch"
+msgstr "1. Początek rozjazdu"
+
+msgid "2. A point further on the main track"
+msgstr "2. Punkt dalej na torze zasadniczym"
+
+msgid "3. The end of the diverging track"
+msgstr "3. Koniec toru zwrotnego"
+
+msgid "4. A point further on the diverging track"
+msgstr "4. Punkt dalej na torze zwrotnym"
+
+msgid "5. Points on the arc, 3 at least (optional)"
+msgstr "5. Punkty na łuku, co najmniej 3 (opcjonalnie)"
+
+msgid "On the arc: %zu"
+msgstr "Na łuku: %zu"
+
+msgid "Make the template"
+msgstr "Utwórz szablon"
+
+msgid "Measured a %.2f m, b %.2f m, 1:%.2f, R %.0f m"
+msgstr "Zmierzono a %.2f m, b %.2f m, 1:%.2f, R %.0f m"
+
+msgid "Measured a %.2f m, b %.2f m, 1:%.2f, R %.0f m: %s"
+msgstr "Zmierzono a %.2f m, b %.2f m, 1:%.2f, R %.0f m: %s"
+
+msgid "Too few points"
+msgstr "Za mało punktów"
+
+msgid "The tracks clicked don't part as a switch's do"
+msgstr "Kliknięte tory nie rozchodzą się jak w rozjeździe"
+
+msgid "The end clicked doesn't lie past the start on the way of the track"
+msgstr "Kliknięty koniec nie leży za początkiem w kierunku toru"
+
+msgid "A transition curve at R %.0f doesn't reach the tangent of %.3f m"
+msgstr "Krzywa przejściowa przy R %.0f nie sięga stycznej %.3f m"
+
+msgid "The shorter tangent can't be less than %.3f m with this transition curve"
+msgstr "Krótsza styczna nie może mieć mniej niż %.3f m przy tej krzywej przejściowej"
+
+msgid "Show on the view"
+msgstr "Pokaż na widoku"
+
+msgid "The chosen template drawn in the view where the switch was clicked, as it changes: to be compared with the orthophoto under it"
+msgstr "Wybrany szablon rysowany w widoku w miejscu wyklikanego rozjazdu, na bieżąco ze zmianami: do porównania z ortofoto pod nim"
+
+msgid "length %.2f m"
+msgstr "długość %.2f m"
+
+msgid "arc, straight, arc"
+msgstr "łuk, prosta, łuk"
+
+msgid "R of the first arc##quickfirst"
+msgstr "R pierwszego łuku##quickfirst"
+
+msgid "The radius of the arc before the straight, when it isn't the one after it; 0: the R"
+msgstr "Promień łuku przed prostą, jeśli jest inny niż za nią; 0: R"
+
+msgid "a and b too short for an arc, a straight and an arc at R %.0f m: the tangent of the arc alone is %.3f m"
+msgstr "a i b za krótkie na łuk, prostą i łuk przy R %.0f m: sama styczna łuku ma %.3f m"
+
+msgid "Along the points clicked: %s, R %.0f m, off them %.2f m at most"
+msgstr "Wzdłuż klikniętych punktów: %s, R %.0f m, najdalej %.2f m od nich"
+
+msgid "Measured a %.2f m, b %.2f m, 1:%.2f: %s"
+msgstr "Zmierzono a %.2f m, b %.2f m, 1:%.2f: %s"
+
+msgid "Measured a %.2f m, b %.2f m, 1:%.2f"
+msgstr "Zmierzono a %.2f m, b %.2f m, 1:%.2f"
+
+msgid "5. Points along the diverging track, 3 at least, as laying a curve from clicks (optional)"
+msgstr "5. Punkty wzdłuż toru zwrotnego, co najmniej 3, jak przy stawianiu łuków z kliknięć (opcjonalnie)"
+
+msgid "No shape fits these tangents"
+msgstr "Żaden kształt nie pasuje do tych stycznych"
+
+msgid "2. The end of the switch on the main track"
+msgstr "2. Koniec rozjazdu na torze zasadniczym"
+
+msgid "3. The end of the switch on the diverging track"
+msgstr "3. Koniec rozjazdu na torze zwrotnym"
+
+msgid "4. A point further on the diverging track, for its way"
+msgstr "4. Punkt dalej na torze zwrotnym, dla jego kierunku"
+
+msgid "The end of the main track clicked lies before the point where the tangents meet"
+msgstr "Kliknięty koniec toru zasadniczego leży przed punktem przecięcia stycznych"
+
+msgid "The end of the diverging track lies %+.2f m along the main track from its end: check points 2 and 3"
+msgstr "Koniec toru zwrotnego leży %+.2f m wzdłuż toru zasadniczego od jego końca: sprawdź punkty 2 i 3"
+
+msgid "Backspace: back, Esc: stop"
+msgstr "Backspace: cofnij, Esc: przerwij"
+
+msgid "Orthophoto..."
+msgstr "Ortofoto..."
+
+msgid "The photo to click the switch off isn't turned on"
+msgstr "Zdjęcie, z którego wyklikujesz rozjazd, nie jest włączone"
+
+msgid "The switch tool, Template editor...: the catalogue and your own templates. A value under the mouse lights up on the drawing"
+msgstr "Narzędzie Rozjazd, Edytor szablonów...: katalog i własne szablony. Wartość pod kursorem świeci się na rysunku"
+
+msgid "Click off the view...: click the start of the switch, the end of its main track and the end of its diverging track, then a point further on that track"
+msgstr "Wyklikaj z widoku...: kliknij początek rozjazdu, koniec toru zasadniczego i koniec toru zwrotnego, potem punkt dalej na tym torze"
+
+msgid "Then points along the diverging track, 3 at least: the shape and the radius follow them"
+msgstr "Potem punkty wzdłuż toru zwrotnego, co najmniej 3: kształt i promień idą za nimi"
+
+msgid "Takes the last point back; Esc stops clicking"
+msgstr "Cofa ostatni punkt; Esc przerywa klikanie"
+
+msgid "The top view; the orthophoto is turned on in the Layers panel"
+msgstr "Widok z góry; ortofoto włączasz w panelu Warstwy"
+
+msgid "Make the template: it lies over the photo where it was clicked and changes with its values"
+msgstr "Utwórz szablon: leży na zdjęciu tam, gdzie go wyklikano, i zmienia się razem z wartościami"
+
+msgid "Open the template editor"
+msgstr "Otwórz edytor szablonów"
+
+msgid "Make a template off the view"
+msgstr "Wyklikaj szablon z widoku"
+
+msgid "Nearly parallel tracks under 5.1 m apart get one grade line, the ones on common timbers one surface; a track crossing others with the ground low on both sides goes under them; a hump keeps to the model"
+msgstr "Tory prawie równoległe bliżej niż 5,1 m dostają wspólną niweletę, te na wspólnych podrozjazdnicach jedną powierzchnię; tor przecinający inne, gdy teren po obu stronach jest nisko, idzie pod nimi; górka trzyma się modelu"

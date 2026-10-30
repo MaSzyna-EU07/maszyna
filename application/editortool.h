@@ -34,7 +34,7 @@ enum class editor_selftest_result
 	again
 };
 
-enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, count };
+enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, corners, template_open, template_clicked, count };
 
 enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, srk, kilometrage };
 

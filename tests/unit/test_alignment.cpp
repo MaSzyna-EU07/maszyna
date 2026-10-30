@@ -211,6 +211,24 @@ TEST_CASE("alignment: a curve going on at the radius of the curved track before 
 	CHECK(adjoining(alignment::compute(later)));
 }
 
+TEST_CASE("alignment: a circular arc under the least of the norms is told, the transitions and the cant stay") {
+	auto const says = [](alignment::result const &Line, std::string const &Text) {
+		return std::any_of(Line.warnings.begin(), Line.warnings.end(), [&](std::string const &Warning) { return Warning.find(Text) != std::string::npos; });
+	};
+	// R 500, 30 m of transitions on both sides in 6 degrees leave an arc of 22 m, the norms ask for 0.4 V = 32 m
+	auto design{straights({500.0, 500.0}, {6.0 * pi / 180.0}, 80.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 500.0;
+	vertex.transition_in = 30.0;
+	vertex.transition_out = 30.0;
+	vertex.cant = 40.0;
+	auto const line{alignment::compute(design)};
+	REQUIRE(line.valid);
+	CHECK(says(line, "the circular arc is 22 m, the norms ask for 32 m; all of it fits from R 592 m"));
+	CHECK_FALSE(says(line, "transition curves shortened"));
+	CHECK_FALSE(says(line, "cant lowered"));
+}
+
 TEST_CASE("alignment: two bends share the straight between them") {
 	auto design{straights({600.0, 250.0, 600.0}, {4.0 * pi / 180.0, -5.0 * pi / 180.0}, 120.0)};
 	std::vector<char> corners{1, 1};
