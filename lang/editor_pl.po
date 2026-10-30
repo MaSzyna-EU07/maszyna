@@ -13031,3 +13031,9 @@ msgstr[2] "%zu torów z niweletą edytowaną ręcznie zostaje bez zmian"
 
 msgid "A grade line edited by hand with the profile stays as it is, in All anew too unless you tick it"
 msgstr "Niweleta edytowana ręcznie w profilu zostaje bez zmian, także przy dopasowaniu od nowa, chyba że to zaznaczysz"
+
+msgid "%zu track name is used more than once in the scenery"
+msgid_plural "%zu track names are used more than once in the scenery"
+msgstr[0] "%zu nazwa toru powtarza się w scenerii"
+msgstr[1] "%zu nazwy torów powtarzają się w scenerii"
+msgstr[2] "%zu nazw torów powtarza się w scenerii"

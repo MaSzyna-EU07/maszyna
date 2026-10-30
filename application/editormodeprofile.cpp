@@ -320,7 +320,8 @@ void editor_mode::fitted_load()
 			if (keyword == "fitted" && false == line.fail())
 			{
 				line >> kind;
-				m_fitted[name] = {layer, std::strtoull(shape.c_str(), nullptr, 16), kind == "hand"};
+				auto const value{std::strtoull(shape.c_str(), nullptr, 16)};
+				m_fitted[{name, value}] = {layer, value, kind == "hand"};
 			}
 		}
 }
@@ -340,31 +341,35 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Han
 			if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
 				layer = scene::Layers.active();
 		}
-		if (auto const found{m_fitted.find(track->name())}; found != m_fitted.end() && found->second.layer != layer)
-			layers.push_back(found->second.layer);
-		m_fitted[track->name()] = {layer, fitted_shape(*track), Hand};
+		// a mark of the name in another layer leaves it when it's written again
+		for (auto found{m_fitted.lower_bound({track->name(), 0})}; found != m_fitted.end() && found->first.first == track->name(); ++found)
+			if (found->second.layer != layer)
+				layers.push_back(found->second.layer);
+		auto const shape{fitted_shape(*track)};
+		m_fitted[{track->name(), shape}] = {layer, shape, Hand};
 		layers.push_back(layer);
 	}
 	if (scene::Layers.empty())
 		return;
 	std::sort(layers.begin(), layers.end());
 	layers.erase(std::unique(layers.begin(), layers.end()), layers.end());
+	// the marks of the tracks there are no more, or changed since, aren't written again
+	std::set<std::pair<std::string, std::uint64_t>> standing;
+	for (auto const *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && false == track->name().empty())
+			standing.emplace(track->name(), fitted_shape(*track));
 	for (auto const layer : layers)
 	{
 		if (false == scene::Layers.valid(layer))
 			continue;
-		// the marks of the tracks there are no more, or changed since, aren't written again
 		std::vector<std::string> lines;
-		for (auto const &[name, mark] : m_fitted)
+		for (auto const &[key, mark] : m_fitted)
 		{
-			if (mark.layer != layer)
-				continue;
-			auto const *track{simulation::Paths.find(name)};
-			if (track == nullptr || track->m_editorremoved || fitted_shape(*track) != mark.shape)
+			if (mark.layer != layer || false == standing.contains(key))
 				continue;
 			if (lines.empty())
 				lines.emplace_back("# the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines");
-			lines.push_back(format("fitted %s %016llx%s", name.c_str(), static_cast<unsigned long long>(mark.shape), mark.hand ? " hand" : ""));
+			lines.push_back(format("fitted %s %016llx%s", key.first.c_str(), static_cast<unsigned long long>(mark.shape), mark.hand ? " hand" : ""));
 		}
 		scene::Layers.mark(layer, kFittedMark, std::move(lines));
 	}
@@ -373,15 +378,14 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Han
 bool editor_mode::grade_hand(TTrack const &Track)
 {
 	fitted_load();
-	auto const found{m_fitted.find(Track.name())};
-	return found != m_fitted.end() && found->second.hand && found->second.shape == fitted_shape(Track);
+	auto const found{m_fitted.find({Track.name(), fitted_shape(Track)})};
+	return found != m_fitted.end() && found->second.hand;
 }
 
 bool editor_mode::grade_fitted(TTrack const &Track)
 {
 	fitted_load();
-	auto const found{m_fitted.find(Track.name())};
-	return found != m_fitted.end() && found->second.shape == fitted_shape(Track);
+	return m_fitted.contains({Track.name(), fitted_shape(Track)});
 }
 
 int editor_mode::profile_find(bool &Reversed) const

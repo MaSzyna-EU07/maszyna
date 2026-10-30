@@ -59,7 +59,17 @@ void editor_mode::move_path_heights(segment_data &Path, double const First, doub
 	lay(Path);
 }
 
-// the grade lines shared go to the scenery files as "//$n" comment lines, by the names of the tracks
+// a track on a grade line is told by its name and where it starts in the plan: scenery files have names used twice, and the height of a
+// track on the line changes with it
+std::string editor_mode::grade_line_key(TTrack const &Track)
+{
+	if (Track.m_paths.empty())
+		return Track.name();
+	auto const &start{Track.m_paths.front().points[segment_data::point::start]};
+	return format("%s@%lld,%lld", Track.name().c_str(), static_cast<long long>(std::llround(start.x)), static_cast<long long>(std::llround(start.z)));
+}
+
+// the grade lines shared go to the scenery files as "//$n" comment lines, by those keys
 void editor_mode::grade_lines_load()
 {
 	auto &state{m_nmt_state};
@@ -85,10 +95,13 @@ void editor_mode::grade_lines_store()
 	std::map<scene::layer_handle, std::vector<std::string>> lines;
 	for (auto const layer : scene::Layers.marked_layers(kGradeLineMark))
 		lines[layer];
-	for (auto const &[name, number] : m_nmt_state.grade_lines)
+	for (auto const *track : simulation::Paths.sequence())
 	{
-		auto const *track{simulation::Paths.find(name)};
-		if (track == nullptr || track->m_editorremoved || number == nmt_state::grade_line_own || number == nmt_state::grade_line_steep)
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		auto const key{grade_line_key(*track)};
+		auto const found{m_nmt_state.grade_lines.find(key)};
+		if (found == m_nmt_state.grade_lines.end() || found->second == nmt_state::grade_line_own || found->second == nmt_state::grade_line_steep)
 			continue;
 		auto layer{scene::Layers.resolve(track->layer())};
 		if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
@@ -96,7 +109,7 @@ void editor_mode::grade_lines_store()
 		auto &those{lines[layer]};
 		if (those.empty())
 			those.emplace_back("# the tracks sharing a grade line, each with the number of it; the simulation skips these lines");
-		those.push_back(format("gradeline %s %d", name.c_str(), number));
+		those.push_back(format("gradeline %s %d", key.c_str(), found->second));
 	}
 	for (auto &[layer, those] : lines)
 		if (scene::Layers.valid(layer))
@@ -107,11 +120,11 @@ bool editor_mode::on_route_grade_line(TTrack const &Track)
 {
 	grade_lines_load();
 	auto const &lines{m_nmt_state.grade_lines};
-	auto const found{lines.find(Track.name())};
+	auto const found{lines.find(grade_line_key(Track))};
 	if (found == lines.end() || found->second < 0)
 		return false;
 	return std::any_of(m_profile.route.spans.begin(), m_profile.route.spans.end(), [&](auto const &Span) {
-		auto const own{lines.find(Span.track->name())};
+		auto const own{lines.find(grade_line_key(*Span.track))};
 		return own != lines.end() && own->second == found->second;
 	});
 }
@@ -131,7 +144,7 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 	for (auto const &span : state.route.spans)
 	{
 		route.insert(span.track);
-		if (auto const found{m_nmt_state.grade_lines.find(span.track->name())}; found != m_nmt_state.grade_lines.end() && found->second >= 0)
+		if (auto const found{m_nmt_state.grade_lines.find(grade_line_key(*span.track))}; found != m_nmt_state.grade_lines.end() && found->second >= 0)
 			numbers.insert(found->second);
 	}
 	if (numbers.empty() || state.samples.size() < 2)
@@ -146,7 +159,7 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 	{
 		if (track == nullptr || track->m_editorremoved || route.contains(track) || track->m_paths.empty())
 			continue;
-		auto const found{m_nmt_state.grade_lines.find(track->name())};
+		auto const found{m_nmt_state.grade_lines.find(grade_line_key(*track))};
 		if (found != m_nmt_state.grade_lines.end() && numbers.contains(found->second) && (lying_by(track->m_paths.front().points[segment_data::point::start]) || lying_by(track->m_paths.front().points[segment_data::point::end])))
 			state.beside.push_back(track);
 	}
@@ -309,7 +322,7 @@ void editor_mode::grade_line_take_off(bool const Off)
 	grade_lines_load();
 	for (auto const &span : m_profile.route.spans)
 	{
-		auto const found{lines.find(span.track->name())};
+		auto const found{lines.find(grade_line_key(*span.track))};
 		if (found == lines.end())
 			continue;
 		auto &line{found->second};
@@ -335,7 +348,7 @@ void editor_mode::render_profile_grade_line()
 	auto const &lines{m_nmt_state.grade_lines};
 	std::size_t shared{0}, off{0};
 	for (auto const &span : state.route.spans)
-		if (auto const found{lines.find(span.track->name())}; found != lines.end())
+		if (auto const found{lines.find(grade_line_key(*span.track))}; found != lines.end())
 		{
 			shared += found->second >= 0 ? 1 : 0;
 			off += found->second == nmt_state::grade_line_off || found->second <= nmt_state::grade_line_off_number ? 1 : 0;

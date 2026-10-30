@@ -2018,6 +2018,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void switch_designer_finish();
 	void draw_switch_designer_clicks() const;
 	void draw_cursor_ring(glm::dvec3 const &Point) const;
+	static std::string grade_line_key(TTrack const &Track);
 	static void move_path_heights(segment_data &Path, double const First, double const Second, std::function<void(segment_data &)> const &After = {});
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
@@ -2774,7 +2775,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::uint64_t shape{0};
 		bool hand{false};
 	};
-	std::map<std::string, fitted_mark> m_fitted;
+	std::map<std::pair<std::string, std::uint64_t>, fitted_mark> m_fitted; // by the name and the shape: scenery files have names used twice
 	bool m_fitted_loaded{false};
 	void fitted_load();
 	void fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand = false);

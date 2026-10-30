@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <set>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -1318,10 +1319,12 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 	auto const busy{nmt_busy()};
 	auto const placed{m_nmt.placed()};
 	std::size_t unfitted{0}, all{0}, hand{0};
+	std::unordered_map<std::string, int> named;
 	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved && rail(*track))
 		{
 			++all;
+			++named[track->name()];
 			if (false == grade_fitted(*track))
 				++unfitted;
 			else if (grade_hand(*track))
@@ -1350,6 +1353,20 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 		told(format(STR_C("The tracks laid or changed since the last time go onto the terrain model (%zu of %zu); the ones fitted stay as they are"), unfitted, all).c_str());
 	else
 		told(STR_C("All the tracks are fitted to the terrain; a track changed since goes onto it again"));
+	std::string twice;
+	std::size_t repeated{0};
+	for (auto const &[name, count] : named)
+		if (count > 1 && false == name.empty() && name != "none")
+		{
+			if (++repeated <= 12)
+				twice += (twice.empty() ? "" : ", ") + name;
+		}
+	if (repeated > 0)
+	{
+		told(format(STR_P("%zu track name is used more than once in the scenery", "%zu track names are used more than once in the scenery", repeated), repeated).c_str());
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s%s", twice.c_str(), repeated > 12 ? ", ..." : "");
+	}
 	if (hand > 0)
 		told(format(STR_P("%zu track with its grade line edited by hand stays as it is", "%zu tracks with their grade lines edited by hand stay as they are", hand), hand).c_str());
 	toggle_chips("nmtshape", {{STR_C("Formation and slopes along the tracks"), &state.shape,
@@ -3348,7 +3365,7 @@ void editor_mode::nmt_share_grades()
 	// who was taken off a grade line by hand stays off them
 	grade_lines_load();
 	auto const taken_off = [&](TTrack const &Track) {
-		auto const found{state.grade_lines.find(Track.name())};
+		auto const found{state.grade_lines.find(grade_line_key(Track))};
 		return found != state.grade_lines.end() && (found->second == nmt_state::grade_line_off || found->second <= nmt_state::grade_line_off_number);
 	};
 	std::unordered_set<TTrack const *> off;
@@ -3499,7 +3516,7 @@ void editor_mode::nmt_share_grades()
 			else if (false == apart.contains(run_of(track)))
 				if (auto const root{tied_root(track)}; sizes.contains(root))
 					line = numbers.try_emplace(root, static_cast<int>(numbers.size())).first->second;
-			state.grade_lines[track->name()] = line;
+			state.grade_lines[grade_line_key(*track)] = line;
 		}
 		WriteLog(format("Editor: NMT - %zu grade lines shared", numbers.size()), logtype::generic);
 		++state.grade_lines_changes;

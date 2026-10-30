@@ -750,7 +750,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		{
 			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || (track->iCategoryFlag & 15) != 1 || track->eType == tt_Table)
 				continue;
-			auto const found{m_nmt_state.grade_lines.find(track->name())};
+			auto const found{m_nmt_state.grade_lines.find(grade_line_key(*track))};
 			auto const line{found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own};
 			double worst{0.0};
 			glm::dvec3 worst_at{0.0};
@@ -895,7 +895,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			fitted_set(tracks, true);
 		}
 		grade_lines_load();
-		auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(state.route.spans.front().track->name())};
+		auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(grade_line_key(*state.route.spans.front().track))};
 		WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size()));
 		return selftest_result::handled;
 	}
@@ -944,7 +944,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		{
 			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || (track->iCategoryFlag & 15) != 1)
 				continue;
-			auto const found{m_nmt_state.grade_lines.find(track->name())};
+			auto const found{m_nmt_state.grade_lines.find(grade_line_key(*track))};
 			auto const line{found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own};
 			for (auto const &path : track->m_paths)
 			{
