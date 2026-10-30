@@ -1,0 +1,55 @@
+[start up]
+duration = 299.99 s
+brake pipe lowest = 2.669 bar
+brake pipe at the end = 2.669 bar
+brake cylinders peak = 3.997 bar
+[release brakes]
+duration = 30.00 s
+brake pipe lowest = 2.605 bar
+brake pipe at the end = 2.605 bar
+brake cylinders peak = 3.997 bar
+[forward]
+duration = 2.00 s
+brake pipe lowest = 2.601 bar
+brake pipe at the end = 2.601 bar
+brake cylinders peak = 3.997 bar
+[notch up]
+duration = 76.00 s
+brake pipe lowest = 2.445 bar
+brake pipe at the end = 2.445 bar
+brake cylinders peak = 3.997 bar
+[full power]
+duration = 30.00 s
+brake pipe lowest = 2.387 bar
+brake pipe at the end = 2.387 bar
+brake cylinders peak = 3.997 bar
+[second controller up]
+duration = 30.00 s
+brake pipe lowest = 2.329 bar
+brake pipe at the end = 2.329 bar
+brake cylinders peak = 3.997 bar
+[second controller down]
+duration = 5.00 s
+brake pipe lowest = 2.320 bar
+brake pipe at the end = 2.320 bar
+brake cylinders peak = 3.997 bar
+[notch down]
+duration = 38.00 s
+brake pipe lowest = 2.250 bar
+brake pipe at the end = 2.250 bar
+brake cylinders peak = 3.997 bar
+[coast]
+duration = 10.00 s
+brake pipe lowest = 2.232 bar
+brake pipe at the end = 2.232 bar
+brake cylinders peak = 3.997 bar
+[brake]
+duration = 60.00 s
+brake pipe lowest = 2.126 bar
+brake pipe at the end = 2.126 bar
+brake cylinders peak = 3.997 bar
+[release]
+duration = 20.00 s
+brake pipe lowest = 2.092 bar
+brake pipe at the end = 2.092 bar
+brake cylinders peak = 3.997 bar

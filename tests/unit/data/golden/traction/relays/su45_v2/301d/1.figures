@@ -1,0 +1,65 @@
+[start]
+duration = 27.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.363 bar
+brake pipe at the end = 3.363 bar
+brake cylinders peak = 2.296 bar
+[get going]
+duration = 154.00 s
+speed at the start = 0.0 km/h
+speed at the end = 127.7 km/h
+speed peak = 127.7 km/h
+distance = 3081.5 m
+brake pipe lowest = 3.367 bar
+brake pipe at the end = 4.999 bar
+brake pipe back at 4.9 bar after = 17.13 s
+brake cylinders peak = 2.296 bar
+[notch back to 11]
+duration = 18.00 s
+speed at the start = 127.7 km/h
+speed at the end = 130.6 km/h
+speed peak = 130.6 km/h
+distance = 646.6 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.001 bar
+[notch back to 10]
+duration = 16.00 s
+speed at the start = 130.6 km/h
+speed at the end = 131.9 km/h
+speed peak = 131.9 km/h
+distance = 583.5 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.001 bar
+[notch back to 7]
+duration = 18.00 s
+speed at the start = 131.9 km/h
+speed at the end = 130.4 km/h
+speed peak = 131.9 km/h
+distance = 656.0 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.001 bar
+[notch back to 3]
+duration = 22.00 s
+speed at the start = 130.4 km/h
+speed at the end = 124.0 km/h
+speed peak = 130.4 km/h
+distance = 778.6 m
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.001 bar
+[brake]
+duration = 60.00 s
+speed at the start = 124.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 124.0 km/h
+distance = 800.2 m
+stopped after = 38.17 s
+brake pipe lowest = 3.400 bar
+brake pipe at the end = 3.400 bar
+brake cylinders peak = 2.302 bar

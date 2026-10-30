@@ -1,0 +1,12 @@
+[start]
+duration = 227.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 45.9 km/h
+distance = 758.3 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 4.994 bar
+brake pipe back at 4.9 bar after = 220.59 s
+brake cylinders peak = 2.793 bar
+motor current peak = 160 A
+tractive force peak = 69.3 kN

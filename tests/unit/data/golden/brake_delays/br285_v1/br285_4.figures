@@ -1,0 +1,15 @@
+[charge]
+duration = 89.99 s
+brake pipe lowest = 4.990 bar
+brake pipe at the end = 5.000 bar
+brake cylinders peak = 1.816 bar
+[full service]
+duration = 30.00 s
+brake pipe lowest = 3.498 bar
+brake pipe at the end = 3.500 bar
+brake cylinders peak = 3.781 bar
+[release]
+duration = 60.00 s
+brake pipe lowest = 4.993 bar
+brake pipe at the end = 5.000 bar
+brake cylinders peak = 3.781 bar

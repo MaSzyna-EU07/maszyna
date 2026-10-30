@@ -1,0 +1,14 @@
+{
+  "_source": "pkp/z1_v2/152a.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "48000", "Vmax": "200", "HeatingP": "54", "LightP": "0.56"},
+  "Load": {"MaxLoad": "80", "LoadQ": "pieces", "LoadAccepted": "Passengers,Luggage", "OverLoadFactor": "1.5", "LoadSpeed": "1", "UnLoadSpeed": "2"},
+  "Dimensions": {"L": "26.4", "H": "4", "W": "2.9", "Cx": "0.01"},
+  "Wheels": {"D": "0.92", "Tw": "1.435", "Axle": "2'2'", "Ad": "2.70", "Bd": "19", "Rmin": "100", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "KE", "MBF": "11", "MaxBP": "3.8", "BCN": "12", "BCR": "0.127", "BCD": "0.05", "BCM": "1.42", "NBpA": "6", "RM": "1.4", "BM": "Disk1+Mg", "BCS": "1.2", "BSA": "0", "BVV": "130", "TBF": "32"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.11", "FmaxB": "320", "kC": "4500", "DmaxC": "0.1", "FmaxC": "850", "beta": "0.58", "AllowedFlag": "115"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "LocalBrake": "ManualBrake", "BrakeDelays": "PR+Mg", "ASB": "Yes", "rows": []},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "WheelsDriven", "LMaxVoltage": "24", "AlterLight": "Accu", "AlterLMaxVoltage": "24", "AlterLCap": "495", "AlterLRS": "Generator"},
+  "Clima": {"Heating": "PowerCable", "HPowerTrans": "ElectricPower", "HMaxVoltage": "3000"},
+  "Doors": {"OpenCtrl": "Passenger", "CloseCtrl": "AutomaticCtrl", "OpenSpeed": "0.5", "CloseSpeed": "0.20", "DoorMaxShiftL": "0.9", "DoorMaxShiftR": "0.9", "DoorOpenMethod": "Plug", "DoorClosureWarning": "yes", "DoorBlocked": "Yes", "DoorMaxShiftPlug": "0.043"}
+}

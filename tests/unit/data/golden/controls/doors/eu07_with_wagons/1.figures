@@ -1,0 +1,40 @@
+[start]
+duration = 9.99 s
+brake pipe lowest = 3.385 bar
+brake pipe at the end = 3.385 bar
+brake cylinders peak = 2.242 bar
+[open right 2]
+duration = 10.00 s
+brake pipe lowest = 3.358 bar
+brake pipe at the end = 3.358 bar
+brake cylinders peak = 2.295 bar
+[close right]
+duration = 10.00 s
+brake pipe lowest = 3.331 bar
+brake pipe at the end = 3.331 bar
+brake cylinders peak = 2.295 bar
+[open right 1]
+duration = 10.00 s
+brake pipe lowest = 3.304 bar
+brake pipe at the end = 3.304 bar
+brake cylinders peak = 2.295 bar
+[close right]
+duration = 10.00 s
+brake pipe lowest = 3.277 bar
+brake pipe at the end = 3.277 bar
+brake cylinders peak = 2.295 bar
+[open right 0]
+duration = 10.00 s
+brake pipe lowest = 3.251 bar
+brake pipe at the end = 3.251 bar
+brake cylinders peak = 2.295 bar
+[close right]
+duration = 10.00 s
+brake pipe lowest = 3.225 bar
+brake pipe at the end = 3.225 bar
+brake cylinders peak = 2.295 bar
+[wagon opens its own]
+duration = 20.00 s
+brake pipe lowest = 3.173 bar
+brake pipe at the end = 3.173 bar
+brake cylinders peak = 2.295 bar

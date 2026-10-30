@@ -1,0 +1,9 @@
+[start]
+duration = 9.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.1 km/h
+speed peak = 1.5 km/h
+distance = 0.3 m
+brake pipe lowest = 3.468 bar
+brake pipe at the end = 3.468 bar
+brake cylinders peak = 2.484 bar

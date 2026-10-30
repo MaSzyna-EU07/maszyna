@@ -1,0 +1,165 @@
+[running]
+duration = 89.99 s
+brake pipe lowest = 3.295 bar
+brake pipe at the end = 3.295 bar
+brake cylinders peak = 4.096 bar
+[position -1]
+duration = 15.00 s
+brake pipe lowest = 3.262 bar
+brake pipe at the end = 3.262 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 3.197 bar
+brake pipe at the end = 3.197 bar
+brake cylinders peak = 4.096 bar
+[position 0]
+duration = 15.00 s
+brake pipe lowest = 3.165 bar
+brake pipe at the end = 3.165 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 3.102 bar
+brake pipe at the end = 3.102 bar
+brake cylinders peak = 4.096 bar
+[position 1]
+duration = 15.00 s
+brake pipe lowest = 3.071 bar
+brake pipe at the end = 3.071 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 3.010 bar
+brake pipe at the end = 3.010 bar
+brake cylinders peak = 4.096 bar
+[position 2]
+duration = 15.00 s
+brake pipe lowest = 2.980 bar
+brake pipe at the end = 2.980 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.920 bar
+brake pipe at the end = 2.920 bar
+brake cylinders peak = 4.096 bar
+[position 3]
+duration = 15.00 s
+brake pipe lowest = 2.891 bar
+brake pipe at the end = 2.891 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.833 bar
+brake pipe at the end = 2.833 bar
+brake cylinders peak = 4.096 bar
+[position 4]
+duration = 15.00 s
+brake pipe lowest = 2.805 bar
+brake pipe at the end = 2.805 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.749 bar
+brake pipe at the end = 2.749 bar
+brake cylinders peak = 4.096 bar
+[position 5]
+duration = 15.00 s
+brake pipe lowest = 2.722 bar
+brake pipe at the end = 2.722 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.667 bar
+brake pipe at the end = 2.667 bar
+brake cylinders peak = 4.096 bar
+[position 6]
+duration = 15.00 s
+brake pipe lowest = 2.641 bar
+brake pipe at the end = 2.641 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.588 bar
+brake pipe at the end = 2.588 bar
+brake cylinders peak = 4.096 bar
+[position 7]
+duration = 15.00 s
+brake pipe lowest = 2.562 bar
+brake pipe at the end = 2.562 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.511 bar
+brake pipe at the end = 2.511 bar
+brake cylinders peak = 4.096 bar
+[position 8]
+duration = 15.00 s
+brake pipe lowest = 2.486 bar
+brake pipe at the end = 2.486 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.436 bar
+brake pipe at the end = 2.436 bar
+brake cylinders peak = 4.096 bar
+[position 9]
+duration = 15.00 s
+brake pipe lowest = 2.412 bar
+brake pipe at the end = 2.412 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 2.364 bar
+brake pipe at the end = 2.364 bar
+brake cylinders peak = 4.096 bar
+[position 10]
+duration = 15.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 30.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[filling stroke]
+duration = 10.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[neutral]
+duration = 20.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[first step]
+duration = 20.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[full service]
+duration = 20.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[ep release]
+duration = 10.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[ep hold]
+duration = 10.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[ep brake]
+duration = 10.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar
+[running]
+duration = 60.00 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 4.096 bar

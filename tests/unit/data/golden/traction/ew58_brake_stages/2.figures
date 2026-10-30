@@ -1,0 +1,77 @@
+[start]
+duration = 2.99 s
+speed at the start = 115.0 km/h
+speed at the end = 114.3 km/h
+speed peak = 115.0 km/h
+distance = 95.2 m
+brake pipe lowest = 4.912 bar
+brake pipe at the end = 4.990 bar
+brake cylinders peak = 0.000 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[position 1]
+duration = 6.00 s
+speed at the start = 114.3 km/h
+speed at the end = 108.4 km/h
+speed peak = 114.3 km/h
+distance = 185.6 m
+brake pipe lowest = 0.001 bar
+brake pipe at the end = 0.001 bar
+brake cylinders peak = 0.951 bar
+motor current peak = 295 A
+tractive force peak = 21.5 kN
+[position 3]
+duration = 6.00 s
+speed at the start = 108.4 km/h
+speed at the end = 96.8 km/h
+speed peak = 108.4 km/h
+distance = 171.8 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[position 4]
+duration = 6.00 s
+speed at the start = 96.8 km/h
+speed at the end = 83.7 km/h
+speed peak = 96.8 km/h
+distance = 150.5 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[position 2]
+duration = 6.00 s
+speed at the start = 83.7 km/h
+speed at the end = 70.1 km/h
+speed peak = 83.7 km/h
+distance = 128.3 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[position 5]
+duration = 6.00 s
+speed at the start = 70.1 km/h
+speed at the end = 55.2 km/h
+speed peak = 70.1 km/h
+distance = 104.6 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN
+[release]
+duration = 10.00 s
+speed at the start = 55.2 km/h
+speed at the end = 22.5 km/h
+speed peak = 55.2 km/h
+distance = 111.7 m
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.487 bar
+motor current peak = 0 A
+tractive force peak = 0.0 kN

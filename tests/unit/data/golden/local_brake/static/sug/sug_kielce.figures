@@ -1,0 +1,31 @@
+[charge]
+duration = 59.99 s
+brake pipe lowest = 3.514 bar
+brake pipe at the end = 4.998 bar
+brake pipe back at 4.9 bar after = 0.30 s
+brake cylinders peak = 1.245 bar
+[local 0.250000]
+duration = 15.00 s
+brake pipe lowest = 4.998 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.000 bar
+[local 0.500000]
+duration = 15.00 s
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 0.000 bar
+[local 1.000000]
+duration = 15.00 s
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 4.999 bar
+brake cylinders peak = 4.099 bar
+[local 0.500000]
+duration = 15.00 s
+brake pipe lowest = 4.999 bar
+brake pipe at the end = 5.000 bar
+brake cylinders peak = 4.099 bar
+[local 0.000000]
+duration = 15.00 s
+brake pipe lowest = 5.000 bar
+brake pipe at the end = 5.000 bar
+brake cylinders peak = 4.099 bar

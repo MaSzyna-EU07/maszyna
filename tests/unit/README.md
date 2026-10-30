@@ -10,6 +10,9 @@ The code under test is `eu07_core`, the library of the simulation parts the game
 game uses it. The python library gets linked along with the game's settings, but the tests don't
 use it and run without it.
 
+[COVERAGE.md](COVERAGE.md) says how much of the simulation core the tests reach, what's left and why, and
+what they found.
+
 ## Running
 
 - **With the build**: building the game (`WITH_TESTS`, on by default) runs them at the end, once the
@@ -46,21 +49,122 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
 - `definition::load("<name>")` reads `data/<name>.json`, with the sections and keys of the game's
   vehicle definitions; `set()` and `remove()` change it for the test. Table sections give their
   rows as `"rows": [[...], ...]`, keys starting with `_` are comments. A section the loader doesn't
-  know is an error (the table of them is in `vehicle.cpp`); a misspelt key isn't caught, so check
+  know is an error (the table of them is in `fiz.cpp`); a misspelt key isn't caught, so check
   in the test that the value the test is about made it to the vehicle. Keep the definitions
   physically sensible: some parts need keys others don't (the ESt brake valves need `Brake.Size`),
   and a test on a half-defined vehicle tests the definition rather than the simulation.
+- `definition::fiz("<dir>/<name>")` is one of the game's own vehicles, `data/fiz/<dir>/<name>.json`,
+  in the same form, converted from the game's `.fiz` with the files it includes (the list and how to
+  add one: `data/fiz/README.md`). The conversion keeps what the game's loader reads of the file and
+  checks it reads the same of the converted one (`fiz.h`), so the vehicle is the game's.
 - The random numbers of the simulation are reseeded before every test case, so a test gives the
-  same result alone or among the others.
+  same result alone or among the others. Loading a vehicle draws some too (the scatter of its brake
+  pipe pressure), so a test making vehicles in a loop calls `test::reseed_random()` before each.
 - Logic which lives in classes too big to set up in a test (the AI driver, the cab) goes into free
   functions on the vehicle state the class calls, and the test calls them the same way: see
   `vehicle/handover.h`, which `TController::TakeControl()` uses, and `test_handover.cpp`.
 - `vehicle` creates the vehicle the way `TDynamicObject::Init()` does and steps it the way the
-  simulation loop does, on a straight track of the given friction and gradient. Coupled vehicles
-  aren't supported yet.
+  simulation loop does, on a straight track of the given friction, gradient, catenary voltage and
+  physics iterations a frame. With a cab (`vehicle{definition, 0.0, "name", 1}`) it has a driver.
+- `consist` (`consist.h`) couples vehicles into a train and steps them together, coupler forces,
+  air, control and power passing between them. The physics reaches a neighbour through its
+  `TDynamicObject`, for its `MoverParameters` only; the tests have a stand-in of it with just that.
+- `drive.h` has the driver's part, made of the AI's steps: `start_up()` (battery, pumps,
+  pantographs, line breaker, converter, compressor), `drive()` (running, acknowledging the
+  vigilance), `release_brakes()`, `drive_cycle()` (a whole run from start-up to a stop).
+- `scenario` (`scenario.h`) puts a train, its driver and a golden trace for each vehicle together,
+  for a test of a feature: `act()` marks an event in the traces, `wait()` runs the train.
 - Check behaviour (speeds, pressures, states the player sees) rather than internal flags, and make
   the test check its own preconditions (`REQUIRE` that the braking skidded, before checking what a
   skid leads to).
+
+## Golden traces
+
+A golden trace pins down how the simulation behaves now, for changes which mustn't alter it, like
+restructuring a function: the values of some channels of a vehicle over a run, compared with the
+ones recorded from the code before, in `data/golden/<name>.csv`. A difference fails the test, naming
+the channel, the time and both rows.
+
+The samples aren't kept in the repository (tens of megabytes, and they only mean something against
+the code before the change): record them before the change, and compare after it.
+
+```
+git switch master
+EU07_UNIT_TESTS_UPDATE_GOLDEN=1 eu07_unit_tests     # records data/golden/**/*.csv, ignored by git
+git switch my-refactor
+EU07_UNIT_TESTS_GOLDEN_EXACT=1 eu07_unit_tests      # compares every sample, bit for bit
+```
+
+The recorded files stay through switching branches. Without them, a trace compares its key figures
+and checks the invariants, which is what the CI does.
+
+```cpp
+test::trace trace{"eu07/notch up", test::channels::motion() + test::channels::traction()};
+eu07.record(trace); // samples every 10th step
+eu07->MainSwitch(true);
+trace.mark("main switch"); // shows in the event column of the row
+eu07.run(30.0);
+trace.check();
+```
+
+- `EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records the samples and the key figures, for a new test or a
+  change which alters the behaviour on purpose; the diff of the key figures shows what it altered,
+  review it like code.
+- Without `EU07_UNIT_TESTS_GOLDEN_EXACT=1`, samples recorded are compared within a relative 1e-9, as
+  GCC and glibc's maths functions can differ from MSVC's in the last bits, and a trace without them
+  passes. With it they're compared exactly, and a trace without them fails, so a run of the
+  refactoring check can't pass by having nothing to compare.
+- Keep the runs short (tens of seconds): the simulation feeds back on itself, and a last bit grows.
+- A trace with no assertion about what the behaviour should be is a characterisation, bugs included;
+  put the behaviour the test is about into `CHECK`s besides.
+
+### Key figures
+
+Next to its samples, every trace keeps the figures a person reviews (`figures.h`), for each part of
+the run between two events, in `data/golden/<name>.figures`: the duration, the speeds, the distance,
+the time to stop, the brake pipe's lowest pressure and the time to get back to 4.9 bar, the peaks of
+the brake cylinders, the motor current and the tractive force.
+
+```
+[brake]
+duration = 60.00 s
+speed at the start = 118.5 km/h
+distance = 944.3 m
+stopped after = 45.97 s
+brake cylinders peak = 3.997 bar
+```
+
+They're compared within 0.5% or the last decimal written, loose enough for any compiler, and the
+differences are told by part and figure:
+
+```
+key figures of "traction/4e_v1/4e" differ:
+  [brake] distance: 944.3 m now, 980.0 m recorded
+```
+
+`EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records them with the samples. After a change which alters the
+behaviour on purpose, their diff says in a few lines what the thousands of changed samples mean. A
+trace sampled by hand, at times of its own (the commands and switches tests), keeps none, so without
+samples recorded it checks only the invariants and its test's own `CHECK`s.
+
+### Invariants
+
+Every trace also checks, on every step of its vehicle and not only on the recorded ones, the rules
+which hold for any vehicle whatever a test does (`invariants.h`): no NaN, the brake cylinders under
+the vehicle's highest pressure, the pipes under the highest governor setting, no motor current with
+the line breaker open, no tractive force without power, the distance counted as the speed runs, no
+acceleration over 5 g, and a few more. They compare nothing with a recorded file, so they hold on
+any compiler, and they still check a behaviour recorded anew on purpose makes sense. A broken rule
+fails the test, naming the time, the last event and the values:
+
+```
+invariant "no motor current with the line breaker open" broken in traction/et42 fuse/0 at 63.200 s,
+after "dynamic brake": Mains=0 Im=-412.5 Itot=-412.5
+```
+
+Where a test makes a vehicle break a rule (a collision), or a game vehicle breaks one as it is, the
+list of excuses in `invariants.cpp` names the trace, the rule and the reason; the second kind goes
+into the findings of [COVERAGE.md](COVERAGE.md) too.
 
 ## Code to test, and when the tests fail to link
 

@@ -1,0 +1,93 @@
+[start up]
+duration = 46.99 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.246 bar
+brake pipe at the end = 3.250 bar
+brake cylinders peak = 2.484 bar
+[ready, release brakes]
+duration = 30.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 3.262 bar
+brake pipe at the end = 4.995 bar
+brake pipe back at 4.9 bar after = 19.29 s
+brake cylinders peak = 2.489 bar
+[forward]
+duration = 2.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 4.995 bar
+brake pipe at the end = 4.995 bar
+brake cylinders peak = 0.058 bar
+[notch up]
+duration = 6.00 s
+speed at the start = 0.0 km/h
+speed at the end = 13.1 km/h
+speed peak = 13.1 km/h
+distance = 10.9 m
+brake pipe lowest = 4.995 bar
+brake pipe at the end = 4.995 bar
+brake cylinders peak = 0.054 bar
+[full power]
+duration = 30.00 s
+speed at the start = 13.1 km/h
+speed at the end = 40.1 km/h
+speed peak = 40.1 km/h
+distance = 262.5 m
+brake pipe lowest = 4.994 bar
+brake pipe at the end = 4.994 bar
+brake cylinders peak = 0.000 bar
+[second controller up]
+duration = 20.00 s
+speed at the start = 40.1 km/h
+speed at the end = 45.5 km/h
+speed peak = 45.5 km/h
+distance = 238.9 m
+brake pipe lowest = 4.994 bar
+brake pipe at the end = 4.994 bar
+brake cylinders peak = 0.000 bar
+[second controller down, notch down]
+duration = 3.00 s
+speed at the start = 45.5 km/h
+speed at the end = 45.8 km/h
+speed peak = 45.9 km/h
+distance = 38.1 m
+brake pipe lowest = 4.994 bar
+brake pipe at the end = 4.994 bar
+brake cylinders peak = 0.000 bar
+[coast]
+duration = 10.00 s
+speed at the start = 45.8 km/h
+speed at the end = 44.9 km/h
+speed peak = 45.8 km/h
+distance = 125.9 m
+brake pipe lowest = 4.994 bar
+brake pipe at the end = 4.994 bar
+brake cylinders peak = 0.000 bar
+[brake]
+duration = 60.00 s
+speed at the start = 44.9 km/h
+speed at the end = 0.0 km/h
+speed peak = 44.9 km/h
+distance = 82.0 m
+stopped after = 9.97 s
+brake pipe lowest = 0.000 bar
+brake pipe at the end = 0.000 bar
+brake cylinders peak = 2.489 bar
+[release]
+duration = 20.00 s
+speed at the start = 0.0 km/h
+speed at the end = 0.0 km/h
+speed peak = 0.0 km/h
+distance = 0.0 m
+brake pipe lowest = 0.020 bar
+brake pipe at the end = 4.994 bar
+brake pipe back at 4.9 bar after = 12.51 s
+brake cylinders peak = 2.495 bar

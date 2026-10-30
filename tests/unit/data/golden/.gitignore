@@ -1,0 +1,2 @@
+# the samples of the golden traces are recorded on the code before a change, not kept (see tests/unit/README.md)
+*.csv
