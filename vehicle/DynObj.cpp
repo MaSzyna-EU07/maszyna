@@ -3665,16 +3665,19 @@ bool TDynamicObject::Update(double dt, double dt1)
                         auto const railphase { Axle0.RailPhase( axle.offset - 0.5 * fAxleDist ) };
                         auto crossed { false };
                         if( railphase >= 0.0 ) {
-                            crossed = axle.atjoints && std::abs( railphase - axle.distance ) > 0.5 * dRailLength;
+                            // the rails under the axle, which aren't always those under the track the vehicle is on
+                            crossed = axle.atjoints && std::abs( railphase - axle.distance ) > 0.5 * Axle0.GetTrack()->fSoundDistance;
                             axle.distance = railphase;
                         }
                         else {
                             axle.distance += dDOMoveLen * directioninconsist;
                             crossed = axle.distance < 0 || axle.distance > dRailLength;
+                            if( crossed ) {
+                                axle.distance = clamp_circular( axle.distance, dRailLength );
+                            }
                         }
                         axle.atjoints = ( railphase >= 0.0 );
                         if( crossed ) {
-                            axle.distance = clamp_circular( axle.distance, dRailLength );
                             if( MoverParameters->Vel > 0.1 ) {
                                 // NOTE: for combined clatter sound we supply 1/100th of actual value, as the sound module converts does the opposite, converting received (typically) 0-1 values to 0-100 range
                                 auto const frequency = true == axle.clatter.is_combined() ? MoverParameters->Vel * 0.01 : 1.0;
