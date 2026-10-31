@@ -58,7 +58,7 @@ Każda składowa łączy się osobno:
 - **Tor z torem:** na styku obowiązuje mniejsza z dwóch wartości, a każdy tor dochodzi do niej płynnie na 20 m. Wolny koniec toru leży w projekcie.
 - **Rozjazd:** wszystkie jego drogi mają jedną wartość. Rozjazdy złączone bezpośrednio przyjmują najmniejszą ze swoich. Dołączony tor dochodzi do wartości rozjazdu, także większej od własnej. Tor bez danej składowej trzyma w niej cały rozjazd w projekcie.
 - **Styki:** zapadnięcia są co `fSoundDistance`, na długości 6 m, i biegną dalej przez kolejne tory o tym samym odstępie. Stukot osi wypada w miejscu zapadnięcia. Przy odstępie 6 m lub mniejszym oraz na rozjazdach zapadnięć nie ma.
-- **Przechyłka:** dolicza się do projektowej. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
+- **Przechyłka:** dolicza się do projektowej. Jest pochyleniem w planie mapy, więc tory wpisane ku sobie spotykają się na tej samej przechyłce. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
 
 Za nierównością idą szyny, podsypka, `sleepermodel`, osie, przechył pudła i bujanie kabiny.
 

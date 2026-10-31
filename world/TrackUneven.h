@@ -22,7 +22,7 @@ namespace track_uneven {
 
 inline constexpr float most { 100.f }; // largest value of the attributes, mm
 inline constexpr double stray_per_mm { 0.00145 }; // field amplitude per mm of "uneven", m
-inline constexpr double cross_share { 0.6 }; // share of the field amplitude the rails settle apart by
+inline constexpr double cross_share { 0.53 }; // share of the field amplitude the rails settle apart by
 inline constexpr double fade { 20.0 }; // length over which a track goes from the value at its end to its own, m
 inline constexpr double dip_share { 0.4 }; // joint dip depth per mm of "uneven", mm
 inline constexpr double dip_reach { 3.0 }; // reach of the dip on each side of a joint, m
@@ -64,8 +64,9 @@ inline constexpr std::array<double, 8> wave_shares { 0.0721, 0.0997, 0.1344, 0.1
 inline wave_set<8> const up_waves { make_waves( 0.0, wave_lengths, wave_shares ) };
 inline wave_set<8> const x_waves { make_waves( 1.1, wave_lengths, wave_shares ) };
 inline wave_set<8> const z_waves { make_waves( 2.3, wave_lengths, wave_shares ) };
-// long waves only: with the short ones the cross level reaching its limit would break the limit of twist
-inline wave_set<3> const cross_waves { make_waves<3>( 0.7, { 23.9, 31.7, 41.9 }, { 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 } ) };
+// the tilt along each axis of the plan. Long waves only: with the short ones the cross level reaching its limit would break the limit of twist
+inline wave_set<3> const tilt_x_waves { make_waves<3>( 0.7, { 23.9, 31.7, 41.9 }, { 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 } ) };
+inline wave_set<3> const tilt_z_waves { make_waves<3>( 2.9, { 23.9, 31.7, 41.9 }, { 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 } ) };
 
 template <std::size_t Count>
 double sum( wave_set<Count> const &Waves, glm::dvec3 const &Point ) {
@@ -83,10 +84,11 @@ inline glm::dvec3 field( glm::dvec3 const &Point ) {
     return { sum( x_waves, Point ), sum( up_waves, Point ), sum( z_waves, Point ) };
 }
 
-// how much lower the right rail lies by settling apart, for an amplitude of 1. Follows the middle of a path, so plain tracks only
-inline double level( glm::dvec3 const &Point ) {
+// how much lower the rail towards Across lies by settling apart, for an amplitude of 1. A tilt of the plan, so tracks laid towards each
+// other meet at one cant. Follows the middle of a path, so plain tracks only
+inline double level( glm::dvec3 const &Point, glm::dvec3 const &Across ) {
 
-    return cross_share * sum( cross_waves, Point );
+    return cross_share * ( Across.x * sum( tilt_x_waves, Point ) + Across.z * sum( tilt_z_waves, Point ) );
 }
 
 // roll made by the field for an amplitude of 1; positive lowers the rail towards Across, as the roll of a path

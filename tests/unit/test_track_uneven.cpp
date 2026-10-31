@@ -59,7 +59,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 			{
 				auto const sign{rail == 0 ? 1.0 : -1.0};
 				auto const stray{track_uneven::field(point + across * (sign * 0.5 * gauge))};
-				up[rail].push_back((stray.y - sign * 0.5 * track_uneven::level(point)) * amplitude);
+				up[rail].push_back((stray.y - sign * 0.5 * track_uneven::level(point, across)) * amplitude);
 				side[rail].push_back(glm::dot(stray, across) * amplitude);
 			}
 			middle.push_back(track_uneven::field(point).y * amplitude);
@@ -102,7 +102,26 @@ TEST_CASE("uneven track: a place strays the same every time")
 	CHECK(stray.x == doctest::Approx(0.309777548158).epsilon(1e-9));
 	CHECK(stray.y == doctest::Approx(-0.295557487607).epsilon(1e-9));
 	CHECK(stray.z == doctest::Approx(-0.328429734019).epsilon(1e-9));
-	CHECK(track_uneven::level(place) == doctest::Approx(0.6 * -0.178598957983).epsilon(1e-9));
+	CHECK(track_uneven::level(place, {1.0, 0.0, 0.0}) == doctest::Approx(0.53 * -0.178598957983).epsilon(1e-9));
+	CHECK(track_uneven::level(place, {0.0, 0.0, 1.0}) == doctest::Approx(0.53 * -0.868291889902).epsilon(1e-9));
+}
+
+TEST_CASE("uneven track: tracks laid towards each other meet at one cant")
+{
+	// the same rail stays lower seen from either of them, and a path taken the other way sees the roll turned over
+	glm::dvec3 const place{812.25, 0.0, 3071.5};
+	glm::dvec3 const across{0.6, 0.0, -0.8};
+	CHECK(track_uneven::level(place, -across) == doctest::Approx(-track_uneven::level(place, across)));
+	CHECK(track_uneven::roll(place, -across, 1.435) == doctest::Approx(-track_uneven::roll(place, across, 1.435)));
+	// and there's no step along a curve turning through the headings
+	auto last{track_uneven::level(place, {1.0, 0.0, 0.0})};
+	for (int step = 1; step <= 3600; ++step)
+	{
+		auto const heading{glm::two_pi<double>() * step / 3600.0};
+		auto const value{track_uneven::level(place, {std::cos(heading), 0.0, std::sin(heading)})};
+		REQUIRE(std::abs(value - last) < 0.002);
+		last = value;
+	}
 }
 
 TEST_CASE("uneven track: the field stays within its bound")

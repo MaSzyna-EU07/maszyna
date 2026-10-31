@@ -380,7 +380,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
     auto const amount { pOwner->uneven_at( fDistance ) };
     rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
         amount.up * track_uneven::roll( position, across, gauge )
-      + amount.cross * track_uneven::level( position ) / gauge ) );
+      + amount.cross * track_uneven::level( position, across ) / gauge ) );
     position += stray( position, fDistance );
 }
 
@@ -411,7 +411,7 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
     // the rails settling apart turn about the middle of the track, what's outside them follows the rail
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     auto const across { std::clamp( glm::dot( Vertex.position - Position, Parallel ), -0.5f * gauge, 0.5f * gauge ) };
-    Vertex.position.y -= static_cast<float>( track_uneven::stray_per_mm * pOwner->uneven_at( Distance ).cross * track_uneven::level( Origin + glm::dvec3 { Position } ) * across / gauge );
+    Vertex.position.y -= static_cast<float>( track_uneven::stray_per_mm * pOwner->uneven_at( Distance ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
     Vertex.position += glm::vec3 { stray( Origin + glm::dvec3 { Vertex.position }, Distance ) };
 }
 
