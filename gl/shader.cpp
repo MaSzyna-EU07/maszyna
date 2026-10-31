@@ -1,366 +1,232 @@
 #include "stdafx.h"
 
-#include <fstream>
-#include <sstream>
-#include <cstring>
 #include "shader.h"
 #include "glsl_common.h"
 #include "utilities/Logs.h"
 
-inline bool strcend(std::string_view value, std::string_view ending)
+#include <cstring>
+
+// the values of the components are those of opengl (material textures take them as the hint of their format)
+static_assert(static_cast<GLint>(gfx::shader_components::R) == GL_RED);
+static_assert(static_cast<GLint>(gfx::shader_components::RG) == GL_RG);
+static_assert(static_cast<GLint>(gfx::shader_components::RGB) == GL_RGB);
+static_assert(static_cast<GLint>(gfx::shader_components::RGBA) == GL_RGBA);
+static_assert(static_cast<GLint>(gfx::shader_components::sRGB) == GL_SRGB);
+static_assert(static_cast<GLint>(gfx::shader_components::sRGB_A) == GL_SRGB_ALPHA);
+static_assert(gfx::MAX_SHADER_TEXTURES == gl::MAX_TEXTURES);
+static_assert(gfx::MAX_SHADER_PARAMS == gl::MAX_PARAMS);
+
+namespace
 {
-    if (ending.size() > value.size())
+
+GLenum shader_type(gfx::shader_stage const Stage)
+{
+    switch (Stage)
+    {
+    case gfx::shader_stage::vertex:
+        return GL_VERTEX_SHADER;
+    case gfx::shader_stage::fragment:
+        return GL_FRAGMENT_SHADER;
+    case gfx::shader_stage::geometry:
+        return GL_GEOMETRY_SHADER;
+    case gfx::shader_stage::compute:
+        return GL_COMPUTE_SHADER;
+    }
+    return GL_VERTEX_SHADER;
+}
+
+gfx::shader_source preprocess(std::string const &Name, std::string const &Defines, bool const Allowmissing)
+{
+    return gfx::preprocess_shader(gfx::shader_api::opengl46, Name, Defines, gl::glsl_common + gl::glsl_settings_defines(), Allowmissing);
+}
+
+// the files of the sources named by their numbers, for the messages of the compiler (#line <line> <number>)
+std::string files_of(gfx::shader_source const &Source)
+{
+    std::string result;
+    for (std::size_t i = 0; i < Source.files.size(); ++i)
+        result += (i > 0 ? ", " : "") + std::to_string(i) + ": " + Source.files[i];
+    return result;
+}
+
+std::string shader_log(GLuint const Shader)
+{
+    GLint length{0};
+    glGetShaderiv(Shader, GL_INFO_LOG_LENGTH, &length);
+    std::string info(static_cast<std::size_t>(std::max(length, 1)), '\0');
+    glGetShaderInfoLog(Shader, static_cast<GLsizei>(info.size()), nullptr, info.data());
+    info.resize(std::strlen(info.c_str()));
+    return info;
+}
+
+std::string program_log(GLuint const Program)
+{
+    GLint length{0};
+    glGetProgramiv(Program, GL_INFO_LOG_LENGTH, &length);
+    std::string info(static_cast<std::size_t>(std::max(length, 1)), '\0');
+    glGetProgramInfoLog(Program, static_cast<GLsizei>(info.size()), nullptr, info.data());
+    info.resize(std::strlen(info.c_str()));
+    return info;
+}
+
+} // namespace
+
+bool gl::shader_binaries_enabled()
+{
+    // decided once, at the first shader: the settings and the driver don't change while the renderer runs
+    static bool const enabled{[]() {
+        if (false == Global.gfx_shader_binaries)
+        {
+            WriteLog("shaders: compiled from the sources (gfx.shaders.binaries no)", logtype::shader);
+            return false;
+        }
+        if ((false == GLAD_GL_VERSION_4_6) || (glSpecializeShader == nullptr))
+        {
+            WriteLog("shaders: the driver can't load SPIR-V, compiled from the sources", logtype::shader);
+            return false;
+        }
+        std::vector<std::string> differences;
+        if (false == glsl_common_matches({}, differences))
+        {
+            std::string text;
+            for (auto const &difference : differences)
+                text += "\n  " + difference;
+            ErrorLog("shaders: the constants in " + gfx::shader_source_dir(gfx::shader_api::opengl46) + "common.glsl aren't those of the game, so the SPIR-V binaries of " +
+                         gfx::shader_binary_dir(gfx::shader_api::opengl46) + " can't be used; the shaders are compiled from the sources:" + text,
+                     logtype::shader);
+            return false;
+        }
+        WriteLog("shaders: the SPIR-V binaries of " + gfx::shader_binary_dir(gfx::shader_api::opengl46) + " are loaded where there are up to date ones", logtype::shader);
+        return true;
+    }()};
+    return enabled;
+}
+
+gl::shader::shader(const std::string &filename, const std::string &defines) : name(filename), m_defines(defines)
+{
+    auto const source{preprocess(filename, defines, true)};
+    texture_conf = source.texture_conf;
+    param_conf = source.param_conf;
+    m_type = shader_type(source.stage);
+
+    if (shader_binaries_enabled() && load_binary(source))
+    {
+        if (false == source.has_source)
+            ErrorLog("shader " + filename + ": the SPIR-V binary is used without its source, so the textures and the parameters of the materials (#pragma texture, #pragma param) aren't known", logtype::shader);
+        return;
+    }
+
+    if (false == source.has_source)
+        throw shader_exception("cannot read shader: " + gfx::shader_source_dir(gfx::shader_api::opengl46) + filename);
+    **this = compile_source(source);
+}
+
+bool gl::shader::load_binary(gfx::shader_source const &Source)
+{
+    std::string reason;
+    auto const words{gfx::load_shader_binary(Source, reason)};
+    if (false == reason.empty())
+        WriteLog("shader " + name + (Source.variant.empty() ? "" : " (" + Source.variant + ")") + ": " + reason + ", compiled from the source", logtype::shader);
+    if (words.empty())
         return false;
-    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
-}
 
-namespace {
+    auto const id{glCreateShader(m_type)};
+    glShaderBinary(1, &id, GL_SHADER_BINARY_FORMAT_SPIR_V, words.data(), static_cast<GLsizei>(words.size() * sizeof(std::uint32_t)));
+    // the settings the module has, the others aren't given
+    auto const values{glsl_settings_values()};
+    std::vector<GLuint> indices;
+    std::vector<GLuint> settings;
+    for (auto const id : gfx::spirv_specialization_ids(words))
+    {
+        if (id < values.size())
+        {
+            indices.push_back(id);
+            settings.push_back(values[id]);
+        }
+    }
+    glSpecializeShader(id, "main", static_cast<GLuint>(indices.size()), indices.data(), settings.data());
 
-// The project's glad config only generates GLAD_GL_ARB_texture_filter_anisotropic
-// among the ARB/EXT extension flags -- GL_ARB_texture_gather (desktop) and
-// GL_EXT_gpu_shader5 (GLES 3.1) aren't compiled in, so we can't gate the
-// shadow textureGather() optimisation on a GLAD constant. Query the live
-// extension string instead. The first call walks the extension list once
-// (no extension count in the dozens is large enough to matter here) and
-// the result is cached in the static bool inside has_gl_extension(), so
-// every subsequent shader compile is a plain bool read.
-//
-// SHADERVALIDATOR_STANDALONE gates out the GL queries because the offline
-// shader validator tool links glad.c but never calls gladLoadGL(); the
-// function pointers stay null and a real call would crash. Returning
-// false there means the standalone validator simply compiles the original
-// 16-tap PCF fallback path in light_common.glsl, which is what we want.
-bool has_gl_extension(char const *name) {
-#ifdef SHADERVALIDATOR_STANDALONE
-    (void)name;
-    return false;
-#else
-    if (!glGetIntegerv || !glGetStringi) {
+    GLint status{GL_FALSE};
+    glGetShaderiv(id, GL_COMPILE_STATUS, &status);
+    if (status == GL_FALSE)
+    {
+        WriteLog("shader " + name + ": the SPIR-V binary can't be loaded (" + shader_log(id) + "), compiled from the source", logtype::shader);
+        glDeleteShader(id);
         return false;
     }
-    GLint count = 0;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &count);
-    for (GLint i = 0; i < count; ++i) {
-        auto ext = reinterpret_cast<char const *>(glGetStringi(GL_EXTENSIONS, i));
-        if (ext != nullptr && std::strcmp(ext, name) == 0) {
-            return true;
-        }
-    }
-    return false;
-#endif
+    **this = id;
+    m_binary = true;
+    return true;
 }
 
-} // anonymous namespace
-
-std::string gl::shader::read_file(const std::string &filename) const
+GLuint gl::shader::compile_source(gfx::shader_source const &Source) const
 {
-    std::stringstream stream;
-    std::ifstream f;
+    const GLchar *cstr = Source.text.c_str();
 
-    f.open(filename);
-    stream << f.rdbuf();
-    f.close();
-
-    std::string str = stream.str();
-    if (str.empty())
-        throw shader_exception("cannot read shader: " + filename);
-
-    return str;
-}
-
-void gl::shader::expand_includes(std::string &str, const std::string &basedir)
-{
-    size_t start_pos = 0;
-
-    std::string magic = "#include";
-    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
-    {
-        size_t fp = str.find('<', start_pos);
-        size_t fe = str.find('>', start_pos);
-        if (fp == std::string::npos || fe == std::string::npos)
-            return;
-
-        std::string filename = str.substr(fp + 1, fe - fp - 1);
-        std::string content;
-        if (filename != "common")
-            content = read_file(basedir + filename);
-        else
-            content = glsl_common;
-
-        str.replace(start_pos, fe - start_pos + 1, content);
-    }
-}
-
-std::unordered_map<std::string, gl::shader::components_e> gl::shader::components_mapping =
-{
-    { "R", components_e::R },
-    { "RG", components_e::RG },
-    { "RGB", components_e::RGB },
-    { "RGBA", components_e::RGBA },
-    { "sRGB", components_e::sRGB },
-    { "sRGB_A", components_e::sRGB_A }
-};
-
-std::unordered_map<std::string, gl::shader::defaultparam_e> gl::shader::defaultparams_mapping =
-{
-    { "required", defaultparam_e::required },
-    { "nan", defaultparam_e::nan },
-    { "zero", defaultparam_e::zero },
-    { "one", defaultparam_e::one },
-    { "ambient", defaultparam_e::ambient },
-    { "diffuse", defaultparam_e::diffuse },
-    { "specular", defaultparam_e::specular },
-    { "glossiness", defaultparam_e::glossiness }
-};
-
-std::pair<GLuint, std::string> gl::shader::process_source(const std::string &filename, const std::string &basedir)
-{
-    std::string str;
-
-    GLuint type;
-    if (strcend(filename, ".vert"))
-        type = GL_VERTEX_SHADER;
-    else if (strcend(filename, ".frag"))
-        type = GL_FRAGMENT_SHADER;
-    else if (strcend(filename, ".geom"))
-        type = GL_GEOMETRY_SHADER;
-    else
-        throw shader_exception("unknown shader " + filename);
-
-    if (!Global.gfx_usegles)
-    {
-        str += "#version 330 core\n";
-        // textureGather() on sampler2DArrayShadow is core in GLSL 4.0. On 3.30
-        // desktop it requires GL_ARB_gpu_shader5 -- the older
-        // GL_ARB_texture_gather (2010) only adds the non-shadow and the plain
-        // sampler2DShadow overloads, NOT the sampler2DArrayShadow one we need
-        // for cascaded shadow PCF. Some drivers advertise texture_gather but
-        // reject the shadow-array overload because the spec for it lives in
-        // gpu_shader5; so emit only when gpu_shader5 is advertised. When the
-        // extension is missing, calc_shadow() in light_common.glsl falls back
-        // to the original 16-tap hardware-PCF loop via #ifndef.
-        // (Project's glad config doesn't generate GLAD_GL_ARB_gpu_shader5,
-        //  so we query the live extension list -- see has_gl_extension above.)
-        static bool const have_gpu_shader5 = has_gl_extension("GL_ARB_gpu_shader5");
-        if (have_gpu_shader5)
-            str += "#extension GL_ARB_gpu_shader5 : enable\n";
-    }
-    else
-    {
-        if (GLAD_GL_ES_VERSION_3_1) {
-            str += "#version 310 es\n";
-            // GLES 3.1 lacks textureGather on shadow samplers in core; the
-            // EXT_gpu_shader5 extension adds it. Only emit the directive when
-            // the driver advertises support (see desktop comment above).
-            // (Glad config doesn't generate GLAD_GL_EXT_gpu_shader5 -- query
-            //  the live extension string the same way.)
-            if (static bool const have_gpu_shader5 = has_gl_extension("GL_EXT_gpu_shader5"); have_gpu_shader5)
-                str += "#extension GL_EXT_gpu_shader5 : enable\n";
-            if (type == GL_GEOMETRY_SHADER)
-                str += "#extension GL_EXT_geometry_shader : require\n";
-        } else {
-            str += "#version 300 es\n";
-        }
-        str += "precision highp float;\n";
-        str += "precision highp int;\n";
-        str += "precision highp sampler2DShadow;\n";
-        str += "precision highp sampler2DArrayShadow;\n";
-    }
-    // expose the shader stage to glsl_common so vertex-only built-ins
-    // (gl_InstanceID, effective_modelview, etc.) can be guarded out of
-    // fragment/geometry compilations.
-    if (type == GL_VERTEX_SHADER)        str += "#define STAGE_VERTEX 1\n";
-    else if (type == GL_FRAGMENT_SHADER) str += "#define STAGE_FRAGMENT 1\n";
-    else if (type == GL_GEOMETRY_SHADER) str += "#define STAGE_GEOMETRY 1\n";
-    str += "vec4 FBOUT(vec4 x) { return " + (Global.gfx_shadergamma ? std::string("vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a)") : std::string("x")) + "; }\n";
-
-    str += read_file(basedir + filename);
-
-    expand_includes(str, basedir);
-    parse_texture_entries(str);
-    parse_param_entries(str);
-
-    return std::make_pair(type, str);
-}
-
-void gl::shader::parse_texture_entries(std::string &str)
-{
-    size_t start_pos = 0;
-
-    std::string magic = "#texture";
-    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
-    {
-        size_t fp = str.find('(', start_pos);
-        size_t fe = str.find(')', start_pos);
-        if (fp == std::string::npos || fe == std::string::npos)
-            return;
-
-        std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
-        std::string token;
-
-        std::string uniformname;
-        texture_entry conf;
-
-        size_t arg = 0;
-        while (std::getline(ss, token, ','))
-        {
-            std::istringstream token_ss(token);
-            if (arg == 0)
-                token_ss >> uniformname;
-            else if (arg == 1)
-                token_ss >> conf.id;
-            else if (arg == 2)
-            {
-                std::string comp;
-                token_ss >> comp;
-                if (!components_mapping.contains(comp))
-                    log_error("unknown components: " + comp);
-                else
-                    conf.components = components_mapping[comp];
-            }
-            arg++;
-        }
-
-        if (arg == 3)
-        {
-            if (uniformname.empty())
-                log_error("empty name");
-            else if (conf.id >= gl::MAX_TEXTURES)
-                log_error("invalid texture binding: " + std::to_string(conf.id));
-            else
-                texture_conf.try_emplace(uniformname, conf);
-        }
-        else
-            log_error("invalid argument count to #texture");
-
-        str.erase(start_pos, fe - start_pos + 1);
-    }
-}
-
-void gl::shader::parse_param_entries(std::string &str)
-{
-    size_t start_pos = 0;
-
-    std::string magic = "#param";
-    while ((start_pos = str.find(magic, start_pos)) != std::string::npos)
-    {
-        size_t fp = str.find('(', start_pos);
-        size_t fe = str.find(')', start_pos);
-        if (fp == std::string::npos || fe == std::string::npos)
-            return;
-
-        std::istringstream ss(str.substr(fp + 1, fe - fp - 1));
-        std::string token;
-
-        std::string uniformname;
-        param_entry conf;
-
-        size_t arg = 0;
-        while (std::getline(ss, token, ','))
-        {
-            std::istringstream token_ss(token);
-            if (arg == 0)
-                token_ss >> uniformname;
-            else if (arg == 1)
-                token_ss >> conf.location;
-            else if (arg == 2)
-                token_ss >> conf.offset;
-            else if (arg == 3)
-                token_ss >> conf.size;
-            else if (arg == 4)
-            {
-                std::string tok;
-                token_ss >> tok;
-                if (!defaultparams_mapping.contains(tok))
-                    log_error("unknown param default: " + tok);
-                conf.defaultparam = defaultparams_mapping[tok];
-            }
-            arg++;
-        }
-
-        if (arg == 5)
-        {
-            if (uniformname.empty())
-                log_error("empty name");
-            else if (conf.location >= gl::MAX_PARAMS)
-                log_error("invalid param binding: " + std::to_string(conf.location));
-            else if (conf.offset > 3)
-                log_error("invalid offset: " + std::to_string(conf.offset));
-            else if (conf.offset + conf.size > 4)
-                log_error("invalid size: " + std::to_string(conf.size));
-            else
-                param_conf.try_emplace(uniformname, conf);
-        }
-        else
-            log_error("invalid argument count to #param");
-
-        str.erase(start_pos, fe - start_pos + 1);
-    }
-}
-
-void gl::shader::log_error(const std::string &str) const
-{
-    ErrorLog("bad shader: " + name + ": " + str, logtype::shader);
-}
-
-gl::shader::shader(const std::string &filename) : name(filename)
-{
-
-    auto [shadertype, shadersource] = process_source(filename, "shaders/");
-
-    const GLchar *cstr = shadersource.c_str();
-
-    **this = glCreateShader(shadertype);
-    glShaderSource(*this, 1, &cstr, nullptr);
-    glCompileShader(*this);
+    auto const id{glCreateShader(m_type)};
+    glShaderSource(id, 1, &cstr, nullptr);
+    glCompileShader(id);
 
     GLint status;
-    glGetShaderiv(*this, GL_COMPILE_STATUS, &status);
+    glGetShaderiv(id, GL_COMPILE_STATUS, &status);
     if (!status)
     {
-        std::array<GLchar, 512> info{};
-        glGetShaderInfoLog(*this, static_cast<GLsizei>(info.size()), nullptr, info.data());
-        log_error(std::string(info.data()));
-
-        throw shader_exception("failed to compile " + filename + ": " + std::string(info.data()));
+        auto const info{shader_log(id)};
+        glDeleteShader(id);
+        ErrorLog("bad shader: " + name + ": " + info + "(source strings: " + files_of(Source) + ")", logtype::shader);
+        throw shader_exception("failed to compile " + name + ": " + info);
     }
+    return id;
+}
+
+GLuint gl::shader::source_object() const
+{
+    if (false == m_binary)
+        return *this;
+    if (m_source_object == 0)
+        m_source_object = compile_source(preprocess(name, m_defines, false));
+    return m_source_object;
 }
 
 gl::shader::~shader()
 {
-#ifndef SHADERVALIDATOR_STANDALONE
+    if (m_source_object != 0)
+        glDeleteShader(m_source_object);
     glDeleteShader(*this);
-#endif
 }
 
 void gl::program::init()
 {
     bind();
 
+    // the samplers and the blocks have their bindings in the shaders; the sources which don't say them (older ones) are given
+    // them here. a program linked from SPIR-V doesn't know the names, nothing is found then
     for (auto const &[texturename, textureentry] : texture_conf)
     {
-        shader::texture_entry const &e = textureentry;
-        GLuint loc = glGetUniformLocation(*this, texturename.c_str());
-        glUniform1i(loc, static_cast<GLint>(e.id));
+        GLint loc = glGetUniformLocation(*this, texturename.c_str());
+        if (loc >= 0)
+            glUniform1i(loc, static_cast<GLint>(textureentry.id));
     }
 
-    glUniform1i(glGetUniformLocation(*this, "shadowmap"), gl::SHADOW_TEX);
-    glUniform1i(glGetUniformLocation(*this, "envmap"), gl::ENV_TEX);
-    glUniform1i(glGetUniformLocation(*this, "headlightmap"), gl::HEADLIGHT_TEX);
+    auto const unit = [this](char const *Name, std::size_t const Unit) {
+        GLint loc = glGetUniformLocation(*this, Name);
+        if (loc >= 0)
+            glUniform1i(loc, static_cast<GLint>(Unit));
+    };
+    unit("shadowmap", gl::SHADOW_TEX);
+    unit("envmap", gl::ENV_TEX);
+    unit("headlightmap", gl::HEADLIGHT_TEX);
+    // the prefiltered environment map (envmapping.glsl); without a unit of its own the cube sampler would share unit 0 with
+    // the 2d diffuse texture of the materials, which makes their draws fail (GL_INVALID_OPERATION)
+    unit("envmap_ggx", gl::ENV_GGX_TEX);
 
 	GLuint index;
 
 	if ((index = glGetUniformBlockIndex(*this, "scene_ubo")) != GL_INVALID_INDEX)
-		glUniformBlockBinding(*this, index, 0);
+		glUniformBlockBinding(*this, index, gl::SCENE_UBO_BINDING);
 
 	if ((index = glGetUniformBlockIndex(*this, "model_ubo")) != GL_INVALID_INDEX)
-		glUniformBlockBinding(*this, index, 1);
-
-	if ((index = glGetUniformBlockIndex(*this, "light_ubo")) != GL_INVALID_INDEX)
-		glUniformBlockBinding(*this, index, 2);
-
-	if ((index = glGetUniformBlockIndex(*this, "instance_ubo")) != GL_INVALID_INDEX)
-		glUniformBlockBinding(*this, index, 3);
+		glUniformBlockBinding(*this, index, gl::MODEL_UBO_BINDING);
 }
 
 gl::program::program()
@@ -381,21 +247,51 @@ void gl::program::attach(const gl::shader &s)
         texture_conf.try_emplace(texturename, std::move(textureentry));
     for (auto [paramname, paramentry] : s.param_conf)
         param_conf.try_emplace(paramname, std::move(paramentry));
-    glAttachShader(*this, *s);
+    m_attached.push_back(&s);
 }
 
 void gl::program::link()
 {
-    glLinkProgram(*this);
-
-    GLint status;
-    glGetProgramiv(*this, GL_LINK_STATUS, &status);
-    if (!status)
+    // a program is linked either from SPIR-V binaries or from sources only: when one of the shaders has no binary, the others are
+    // compiled from the source too
+    auto const allbinary{std::all_of(m_attached.begin(), m_attached.end(), [](shader const *Shader) { return Shader->is_binary(); })};
+    GLint status{GL_FALSE};
+    if (allbinary && (false == m_attached.empty()))
     {
-        std::array<GLchar, 512> info{};
-        glGetProgramInfoLog(*this, static_cast<GLsizei>(info.size()), nullptr, info.data());
-        throw shader_exception("failed to link program: " + std::string(info.data()));
+        for (auto const *s : m_attached)
+            glAttachShader(*this, *s);
+        glLinkProgram(*this);
+        glGetProgramiv(*this, GL_LINK_STATUS, &status);
+        for (auto const *s : m_attached)
+            glDetachShader(*this, *s);
+        if (status == GL_TRUE)
+        {
+            m_binary = true;
+        }
+        else
+        {
+            std::string names;
+            for (auto const *s : m_attached)
+                names += (names.empty() ? "" : ", ") + s->name;
+            WriteLog("program of " + names + ": the SPIR-V binaries can't be linked (" + program_log(*this) + "), compiled from the sources", logtype::shader);
+        }
     }
+    if (status == GL_FALSE)
+    {
+        std::vector<GLuint> objects;
+        for (auto const *s : m_attached)
+            objects.push_back(s->source_object());
+        for (auto const object : objects)
+            glAttachShader(*this, object);
+        glLinkProgram(*this);
+        glGetProgramiv(*this, GL_LINK_STATUS, &status);
+        for (auto const object : objects)
+            glDetachShader(*this, object);
+        m_binary = false;
+    }
+    m_attached.clear();
+    if (status == GL_FALSE)
+        throw shader_exception("failed to link program: " + program_log(*this));
 
     init();
 }
@@ -408,4 +304,10 @@ gl::program::~program()
 void gl::program::bind(GLuint i)
 {
     glUseProgram(i);
+}
+
+void gl::program::dispatch(GLuint groups_x, GLuint groups_y, GLuint groups_z)
+{
+    bind();
+    glDispatchCompute(groups_x, groups_y, groups_z);
 }

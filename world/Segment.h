@@ -12,12 +12,55 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
 #include <glm/glm.hpp>
+#include <memory>
+#include <vector>
+#include <optional>
+#include "world/Knots.h"
 
 struct map_colored_paths {
 	std::vector<gfx::geometrybank_handle> switches;
 	std::vector<gfx::geometrybank_handle> occupied;
 	std::vector<gfx::geometrybank_handle> future;
     std::vector<gfx::geometrybank_handle> highlighted;
+};
+
+struct loft_end {
+    double bend { 0.0 };
+};
+
+// a rail profile made over below its head into a lower section, as the wing rails of a frog of the section of the blades: its web, its
+// foot inwards and outwards as many times as thick and wide, the top of the edges of its foot and the root of its web as many times as high
+struct loft_low {
+    double web { 1.0 };
+    double inward { 1.0 };
+    double outward { 1.0 };
+    double edge { 1.0 };
+    double root { 1.0 };
+};
+
+struct loft_span {
+    int side { 1 };
+    float halfwidth { 0.f };
+    double texturelength { 1.0 };
+    double from { 0.0 };
+    double to { 0.0 };
+    knots::line offsets;
+    knots::line extents;
+    knots::line inner;
+    float lift { 0.f };
+    gfx::userdata_array *userdata { nullptr };
+    knots::line ramp;
+    double rampwidth { 0.0 };
+    bool walls { false };
+    float wallu { -1.f };
+    loft_end fromend;
+    loft_end toend;
+    knots::line drops;
+    glm::dvec2 head { 0.0 };
+    double rise { 0.0 }; // how far the foot of the profile is raised, the web below the head (head.x) shortened by as much
+    knots::line rises; // along the span, in place of rise where given
+    knots::line lows; // along the span, how much of the low section the profile is made over into below its head, 0 to 1
+    loft_low low; // what the profile is made over into along lows
 };
 
 struct segment_data {
@@ -32,10 +75,21 @@ struct segment_data {
     std::array<glm::dvec3, 4> points {};
     std::array<float, 2> rolls {};
     float radius {};
+    std::vector<segment_data> pieces; // consecutive parts of the path, which then is their approximation for older versions
 // constructors
     segment_data() = default;
 // methods
     void deserialize( cParser &Input, glm::dvec3 const &Offset );
+    void translate( glm::dvec3 const &Offset );
+    // maps the ends of the path and of its pieces with Point and their control vectors with Vector
+    template <typename Pointmap, typename Vectormap>
+    void transform( Pointmap const &Point, Vectormap const &Vector ) {
+        for( auto const index : { point::start, point::end } ) {
+            points[ index ] = Point( points[ index ] ); }
+        for( auto const index : { point::control1, point::control2 } ) {
+            points[ index ] = Vector( points[ index ] ); }
+        for( auto &piece : pieces ) {
+            piece.transform( Point, Vector ); } }
 };
 
 class TSegment
@@ -58,6 +112,13 @@ class TSegment
 	glm::dvec3 vB;
 	glm::dvec3 vC; // współczynniki wielomianów trzeciego stopnia vD==Point1
     TTrack *pOwner = nullptr; // wskaźnik na właściciela
+    std::vector<std::shared_ptr<TSegment>> m_pieces; // parts of a path made of several curves, parametrized by distance
+    std::vector<double> m_starts; // distance from Point1 to the start of each part
+    std::optional<std::pair<glm::dvec3, glm::dvec3>> m_joints[ 2 ];
+    double m_dense { 0.0 };
+    // a switch makes the profiles of its rails and its bed at the mean of the rolls of its paths: lofted along a path, they're turned
+    // from it to the roll of the path there, so a switch on a cant ramp follows it; none for the other paths
+    std::optional<float> m_baked_roll;
 
     glm::dvec3 GetFirstDerivative(double const fTime) const;
 	double RombergIntegral(double const fA, double const fB) const;
@@ -66,6 +127,9 @@ class TSegment
 	double FastGetTFromS(double const s) const;
 	glm::dvec3 RaInterpolate(double const t) const;
 	glm::dvec3 RaInterpolate0(double const t) const;
+    std::size_t piece_at(double const s) const;
+    // the vertex of a profile lofted at the point and across the path there, turned from the baked roll to the one of the path at the distance
+    void roll_vertex( gfx::basic_vertex &Vertex, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const;
 
 public:
     bool bCurve = false;
@@ -73,6 +137,15 @@ public:
     explicit TSegment(TTrack *owner);
     bool Init(glm::dvec3 NewPoint1, glm::dvec3 NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0);
 	bool Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 NewCPointIn, glm::dvec3 &NewPoint2, double fNewStep, double fNewRoll1 = 0, double fNewRoll2 = 0, bool bIsCurve = true);
+    bool InitChain(std::vector<std::shared_ptr<TSegment>> Pieces);
+    inline
+    std::size_t
+        PieceCount() const {
+            return m_pieces.size(); };
+    inline
+    double
+        PieceStart( std::size_t const Piece ) const {
+            return m_starts[ Piece ]; };
     double
         ComputeLength() const; // McZapkie-150503
     // finds point on segment closest to specified point in 3d space. returns: point on segment as value in range 0-1
@@ -118,6 +191,9 @@ public:
     inline
     float
         GetRoll(double const Distance) const {
+            if( false == m_pieces.empty() ) {
+                auto const piece { piece_at( Distance ) };
+                return m_pieces[ piece ]->GetRoll( Distance - m_starts[ piece ] ); }
             return std::lerp( fRoll1, fRoll2, static_cast<float>(Distance / fLength) ); }
     inline
     void
@@ -128,6 +204,24 @@ public:
 
     bool
         RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, bool const Transition, double fTextureLength, double Texturescale = 1.0, int iSkip = 0, int iEnd = 0, std::pair<float, float> fOffsetX = {0.f, 0.f}, glm::vec3 **p = nullptr, bool bRender = true );
+    // a transition profile lofted in Steps pieces of equal length, so two paths of different make-up line up piece by piece
+    bool
+        RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, double fTextureLength, int const Steps ) const;
+    // the profile lofted from distance From to To, moved outwards by Offsets and cut on its outer side to Extents beyond the gauge line, both as (distance, value) knots
+    bool
+        RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const;
+    // point of the path and the unit vector across it towards the right rail profile, at a distance from Point1
+    void
+        plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
+    void
+        set_joint( int const End, std::optional<std::pair<glm::dvec3, glm::dvec3>> const &Joint ) {
+            m_joints[ End ] = Joint; }
+    void
+        set_dense( double const Distance ) {
+            m_dense = Distance; }
+    void
+        set_baked_roll( std::optional<float> const Roll ) {
+            m_baked_roll = Roll; }
 /*
     void
         Render();

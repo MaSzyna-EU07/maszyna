@@ -9,6 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
+#include <cstdint>
+
 #include "rendering/geometrybank.h"
 #include "interfaces/IMaterial.h"
 #include "interfaces/ITexture.h"
@@ -16,9 +19,9 @@ http://mozilla.org/MPL/2.0/.
 
 struct lighting_data;
 
-namespace gl
+namespace gfx
 {
-class program;
+class shader_program;
 }
 
 namespace gfx
@@ -29,6 +32,37 @@ struct terrain_layer
 	material_handle material{null_handle};
 	float size{0.f};
 	float rotation{0.f}; // degrees the textures are turned by
+};
+
+// kind of grass grown over the heightmap terrain (heightmap::grass_def), colours in linear rgb
+struct grass_kind
+{
+	glm::vec3 base{0.f}; // at the root of the blades
+	glm::vec3 tip{0.f};
+	float height{0.3f}; // metres
+	float variation{0.4f}; // share of the height the blades differ by, either way
+	float width{0.012f}; // metres, at the root
+	float density{60.f}; // blades per square metre where painted fully
+	float bend{0.3f}; // share of the height the tips lean over by
+	glm::vec3 dry{0.f}; // the tips dried out, in autumn and winter
+	float seasonal{1.f}; // how much the kind follows the seasons, 0..1
+};
+
+// a chunk of the heightmap terrain the grass grows on, see gfx_renderer::Terrain_Grass()
+struct grass_chunk
+{
+	std::uint64_t id{0}; // the same for the same chunk, as long as it's in memory
+	std::uint64_t version{0}; // changes with every change of what the grass is made of
+	glm::dvec2 corner{0.0}; // x, z
+	float size{0.f}; // metres along a side
+	float low{0.f}, high{0.f}; // the lowest and the highest point
+	int cells{0}; // quads of the grid along a side
+	float const *heights{nullptr}; // (cells + 1)^2, rows of growing z
+	int samples{0}; // grass samples along a side less one
+	std::uint8_t const *density{nullptr}; // (samples + 1)^2 per kind, planar
+	std::array<int, 4> kinds{-1, -1, -1, -1}; // indices of the kinds of the samples, -1 unused
+	int holes{0}; // hole samples along a side less one, 0: none
+	std::uint8_t const *hole_mask{nullptr}; // (holes + 1)^2, 255: cut
 };
 } // namespace gfx
 
@@ -57,28 +91,51 @@ public:
     virtual auto Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Geometry, int const Type) -> gfx::geometry_handle = 0;
     // replaces data of specified chunk with the supplied vertex data, starting from specified offset
     virtual auto Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) -> bool = 0;
+    // replaces the index and the vertex data of specified indexed chunk with the supplied data of the same counts.
+    // returns: false if it wasn't replaced (the counts differ, or the backend can't)
+    virtual auto Replace_Indexed( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool { return false; }
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
+    virtual void Erase( gfx::geometry_handle const &Geometry ) {}
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
 	virtual auto Vertices( gfx::geometry_handle const &Geometry ) const ->gfx::vertex_array const & = 0;
 	// provides direct access to vertex user data of specfied chunk
 	virtual auto UserData( gfx::geometry_handle const &Geometry ) const ->gfx::userdata_array const & = 0;
+	// kind of geometry of specified chunk, -1 when the renderer doesn't tell
+	virtual auto Primitive( gfx::geometry_handle const &Geometry ) const -> int { return -1; }
     // material methods
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
+    // the same material with its highlights damped, for faces which aren't polished like the surfaces they are cut from. backends which can't make one give back the material itself
+    virtual auto Matte_Material( material_handle const Material ) -> material_handle { return Material; }
+    virtual auto Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) -> material_handle { return Material; }
+    // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of the user data
+    // of the vertices (world/TrackBlend.h). backends which can't make one give back the material itself
+    virtual auto Blend_Material( material_handle const Material, std::array<material_handle, 3> const &Others ) -> material_handle { return Material; }
+    // whether a material can be blended so
+    virtual auto Blendable_Material( material_handle const Material ) -> bool { return false; }
     // heightmap terrain: material of a chunk blending the materials of up to 8 layers by their weights.
     // Weights: (Samples + 1)^2 values per layer, planar, rows of growing z, the weights of a sample adding up to 255; null with a single layer.
     // Placement: corner of the chunk (x, z) in the texture coordinates of its mesh, and the size of the chunk.
     // Reuse: a material made by this call before, to be filled anew, or null_handle.
+    // Holes: (HoleSamples + 1)^2 values (255: the ground is cut there), rows like the weights; null without holes. the cells
+    // cut out entirely are left out of the geometry, the material cuts the rest of the openings.
     // returns: the material. backends which can't blend give back the material of the layer covering the most
-    virtual auto Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement ) -> material_handle;
+    virtual auto Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement,
+                                   int const HoleSamples = 0, std::uint8_t const *Holes = nullptr ) -> material_handle;
     // gives back a material made by Terrain_Material, once its chunk is gone
     virtual void Terrain_Release( material_handle const Material ) {}
+    // heightmap terrain: the grass to draw, the kinds of the grass palette and the chunks near the camera which have grass.
+    // the data of the chunks is read during the call only; a chunk the renderer has with the same id and version isn't read
+    // again. chunks left out are dropped. backends which can't draw grass ignore it
+    virtual void Terrain_Grass( std::vector<gfx::grass_kind> const &Kinds, std::vector<gfx::grass_chunk> const &Chunks ) {}
     // shader methods
-    virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> = 0;
+    virtual auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gfx::shader_program> = 0;
+    // the name the program was fetched by, empty where it wasn't fetched by Fetch_Shader()
+    virtual auto Shader_Name( std::shared_ptr<gfx::shader_program> const &Program ) const -> std::string { return {}; }
     // texture methods
     virtual auto Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) -> texture_handle = 0;
     virtual void Bind_Texture( texture_handle const Texture ) = 0;
@@ -90,6 +147,7 @@ public:
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
+    virtual void Forget_Node( scene::basic_node const *Node ) {}
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
     virtual auto Mouse_Hit() const -> bool { return true; }
@@ -102,6 +160,8 @@ public:
     virtual auto Camera_Position() const -> glm::dvec3 { return glm::dvec3( 0.0 ); }
     // maintenance methods
     virtual void Update( double const Deltatime ) = 0;
+    // the main loop begins a frame, before it reads the input: a renderer keeping the latency low waits here (reflex of vulkan)
+    virtual void Frame_Start() {}
     virtual void Update_Pick_Control() = 0;
     virtual void Update_Pick_Node() = 0;
     virtual auto Update_Mouse_Position() -> glm::dvec3 = 0;
@@ -109,6 +169,16 @@ public:
     // debug methods
     virtual auto info_times() const -> std::string const & = 0;
     virtual auto info_stats() const -> std::string const & = 0;
+    // the same data in sections, for the debug panel to show each under a header of its own, the ones marked open unfolded at
+    // first. none: the panel shows info_times() and info_stats() as they are
+    struct info_section {
+        std::string title;
+        std::string text;
+        bool open { false };
+    };
+    virtual auto info_sections() const -> std::vector<info_section> const & {
+        static std::vector<info_section> const none;
+        return none; }
     // imgui renderer
 	  virtual class imgui_renderer *GetImguiRenderer() = 0;
 	  virtual void MakeScreenshot() = 0;
@@ -118,33 +188,77 @@ public:
     virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
 };
 
+// what the application has to know about a backend before its renderer exists: whether it can run here at all, and how its
+// windows are made. a window made for opengl can't be drawn to with vulkan and the other way round, so the application asks
+// the backend picked by gfxrenderer before the main window is made, and falls back to opengl when it can't run
+struct gfx_backend_desc
+{
+    using create_method = std::unique_ptr<gfx_renderer>(*)();
+
+    std::string name; // for the log
+    create_method create { nullptr };
+    // whether the backend can run on this machine. false: Reason tells why. null: it always can
+    bool (*probe)( std::string &Reason ) { nullptr };
+    // glfw hints of the windows of the backend, set over the defaults before the main window is made. they stay in effect for
+    // the windows made after it
+    void (*window_hints)() { nullptr };
+    // after the main window was made, before the renderer is. false: the backend can't use the window
+    bool (*after_window)( GLFWwindow *Window ) { nullptr };
+    // the main window couldn't be made; Reason is the error of glfw. tells the user what is missing
+    void (*window_failed)( std::string const &Reason ) { nullptr };
+    // the windows have an opengl context, which the windows made later can share
+    bool gl_context { true };
+};
+
 class gfx_renderer_factory
 {
 public:
-    using create_method = std::unique_ptr<gfx_renderer>(*)();
+    using create_method = gfx_backend_desc::create_method;
 
+    // a backend with no window of its own to care about (e.g. "null")
     bool register_backend(const std::string &backend, create_method func);
+    bool register_backend(const std::string &backend, gfx_backend_desc const &desc);
+    // the description of the backend registered by the name, null if there's none (e.g. not built in)
+    gfx_backend_desc const *backend(const std::string &name) const;
     std::unique_ptr<gfx_renderer> create(const std::string &name);
 
     static gfx_renderer_factory* get_instance();
 
 private:
-    std::unordered_map<std::string, create_method> backends;
+    std::unordered_map<std::string, gfx_backend_desc> backends;
     static gfx_renderer_factory *instance;
 };
 
 class imgui_renderer
 {
   public:
+	// how an image of the user interface is sampled
+	struct image_options
+	{
+		bool srgb{true}; // the colours are srgb, made linear by the sampling; plain values otherwise
+		bool nearest{false}; // the nearest texel instead of the linear filtering
+		bool mipmaps{false}; // mipmaps made of the image, for an image drawn smaller than it is
+	};
+
 	virtual bool Init() = 0;
 	virtual void Shutdown() = 0;
 	virtual void BeginFrame() = 0;
 	virtual void Render() = 0;
 	// images of the user interface itself (e.g. the previews of the node bank), apart from the textures of the scene: rgba, rows
-	// from the top, in srgb. returns: id for ImGui::Image, 0 if the renderer can't make them
-	virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+	// from the top. returns: id for ImGui::Image, 0 if the renderer can't make them
+	virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options)
 	{
 		return 0;
+	}
+	std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+	{
+		return Create_Image(Rgba, Width, Height, image_options{});
+	}
+	// the image given other content, of the same or another size (Image 0: a new one). returns: its id, which can be a new one
+	virtual std::uint64_t Update_Image(std::uint64_t const Image, std::uint8_t const *Rgba, int const Width, int const Height, image_options const &Options)
+	{
+		Release_Image(Image);
+		return Create_Image(Rgba, Width, Height, Options);
 	}
 	virtual void Release_Image(std::uint64_t const Image) {}
 };

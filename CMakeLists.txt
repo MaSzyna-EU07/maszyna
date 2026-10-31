@@ -49,6 +49,9 @@ file(GLOB HEADERS "*.h"
 "simulation/*.h"
 "scene/*.h"
 "rendering/*.h"
+"rendering/common/*.h"
+"rendering/opengl46/*.h"
+"rendering/vulkan14/*.h"
 "audio/*.h"
 "environment/*.h"
 "application/*.h"
@@ -68,7 +71,8 @@ if (APPLE)
 endif()
 
 option(WITH_OPENGL_MODERN "Compile with OpenGL modern renderer" ON)
-option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
+option(WITH_VULKAN "Compile with the Vulkan 1.4 renderer (gfxrenderer vulkan); needs the submodules ref/volk and ref/Vulkan-Headers" ON)
+option(WITH_DLSS "Compile the Vulkan renderer with NVIDIA DLSS (gfx.antialiasing dlss); needs the DLSS SDK in DLSS_SDK_ROOT, cmake -P tools/fetch_dlss_sdk.cmake" OFF)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
@@ -78,7 +82,6 @@ option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
 option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
-option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
@@ -95,11 +98,39 @@ list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_PATH}/share")
 set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
+"utilities/workerpool.cpp"
+"utilities/memorystats.cpp"
 "world/Track.cpp"
+"world/TrackSleepers.cpp"
+"world/TrackBlend.cpp"
+"world/SleeperPaths.cpp"
+"world/SleeperFeatures.cpp"
+"world/SleeperLines.cpp"
+"world/SleeperFastenings.cpp"
+"world/SleeperLayout.cpp"
+"world/SleeperModels.cpp"
+"world/SleeperWorker.cpp"
+"world/GaugeLine.cpp"
+"world/RailCrossings.cpp"
+"world/RailMaterials.cpp"
+"world/RailProfile.cpp"
+"world/RailPlan.cpp"
+"world/RailCarve.cpp"
+"world/RailLayer.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
 "world/Traction.cpp"
+"world/catenary_solver.cpp"
+"world/catenary_network.cpp"
+"world/catenary_span.cpp"
+"world/catenary_tensioner.cpp"
+"world/catenary_suspension.cpp"
+"world/catenary_scene.cpp"
+"world/catenary_cantilever.cpp"
+"world/catenary_layout.cpp"
+"world/catenary_catalog.cpp"
+"world/catenary_scene_objects.cpp"
 "world/TractionPower.cpp"
 "vehicle/Train.cpp"
 "world/TrkFoll.cpp"
@@ -132,6 +163,8 @@ set(SOURCES
 "environment/sky.cpp"
 "environment/sun.cpp"
 "environment/stars.cpp"
+"environment/starcatalog.cpp"
+"environment/weather.cpp"
 "rendering/lightarray.cpp"
 "environment/skydome.cpp"
 "audio/sound.cpp"
@@ -154,6 +187,8 @@ set(SOURCES
 "model/vertex.cpp"
 "audio/audio.cpp"
 "audio/audiorenderer.cpp"
+"audio/radiostream.cpp"
+"audio/fmradio.cpp"
 "utilities/motiontelemetry.cpp"
 "application/uitranscripts.cpp"
 "world/station.cpp"
@@ -168,38 +203,83 @@ set(SOURCES
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorModelSets.cpp"
+"editor/editorTrackPresets.cpp"
 "editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
+"editor/editorTrackShape.cpp"
+"editor/editorGroundFollow.cpp"
+"editor/editorAlignmentStore.cpp"
+"editor/editorSwitchStore.cpp"
+"editor/editorSwitchCurve.cpp"
+"editor/editorKilometrage.cpp"
+"editor/editorStation.cpp"
+"editor/editorSwitchDesign.cpp"
+"editor/editorConnections.cpp"
+"application/editormodeconnection.cpp"
+"application/editormodeconnectioncurve.cpp"
+"application/editormodedigitize.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorHttp.cpp"
+"editor/editorNmt.cpp"
+"editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
+"editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
+"application/editormoderoute.cpp"
+"application/editormodestraights.cpp"
+"application/editormodelay.cpp"
+"application/editormodeswitchplace.cpp"
+"application/editormodetrackgizmo.cpp"
+"application/editormoderecords.cpp"
+"application/editormodeswitchdrive.cpp"
+"application/editormodeswitchtool.cpp"
+"application/editormodenmt.cpp"
+"application/editormodeswitchslide.cpp"
+"application/editormodeswitchdesign.cpp"
+"application/editormodetrackbed.cpp"
 "application/editormodetrackux.cpp"
+"application/editormodetrackprops.cpp"
 "application/editormoderoad.cpp"
 "application/editormodeprofile.cpp"
 "application/editormodetextures.cpp"
 "application/editormodegauge.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
+"application/editormodesrk.cpp"
+"application/editormodekm.cpp"
 "application/editormodejoints.cpp"
 "application/editormodeparallel.cpp"
 "application/editormodelineside.cpp"
 "application/editormodevehicle.cpp"
 "application/editormodeselection.cpp"
 "application/editormodeviewport.cpp"
+"application/editormodeterrainchunks.cpp"
 "application/editormodesignal.cpp"
+"application/editormodecatenary.cpp"
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"
+"application/editormodeselftestscene.cpp"
+"application/editormodeselftestsleepers.cpp"
+"application/editormodeselftestsweep.cpp"
+"application/editormodeselftesttrack.cpp"
+"application/editormodeselftestswitch.cpp"
+"application/editormodeselftestjoin.cpp"
+"application/editormodeselftestsignal.cpp"
+"application/editormodeselftestterrain.cpp"
+"application/editormodeselftestrails.cpp"
+"application/editormodeselftestmonkey.cpp"
+"application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"
@@ -219,7 +299,6 @@ set(SOURCES
 "rendering/particles.cpp"
 "utilities/headtrack.cpp"
 "rendering/geometrybank.cpp"
-"rendering/openglcolor.cpp"
 "simulation/simulationsounds.cpp"
 "rendering/openglcamera.cpp"
 
@@ -233,6 +312,7 @@ set(SOURCES
 "widgets/map_objects.cpp"
 "widgets/popup.cpp"
 "widgets/time.cpp"
+"widgets/weatherpanel.cpp"
 "widgets/vehicleparams.cpp"
 "widgets/trainingcard.cpp"
 "widgets/perfgraphs.cpp"
@@ -249,10 +329,33 @@ set(SOURCES
 "gl/postfx.cpp"
 "gl/cubemap.cpp"
 "gl/glsl_common.cpp"
+"rendering/common/shadersource.cpp"
+"rendering/common/scenewalk.cpp"
+"rendering/common/scenewalkindirect.cpp"
+"rendering/common/walksync.cpp"
+"rendering/common/instancecull.cpp"
+"rendering/common/shadowfit.cpp"
+"rendering/common/localshadows.cpp"
+"rendering/common/cabprobe.cpp"
+"rendering/common/skyocclusion.cpp"
+"rendering/common/terrainmaterials.cpp"
+"rendering/common/grassfield.cpp"
+"rendering/common/gpuparticles.cpp"
+"rendering/common/windscreenwater.cpp"
+"rendering/common/locallights.cpp"
+"rendering/common/skylight.cpp"
+"rendering/common/weatherstate.cpp"
+"rendering/common/exposure.cpp"
+"rendering/common/temporalaa.cpp"
+"rendering/common/screenreflections.cpp"
 "gl/buffer.cpp"
 "gl/fence.cpp"
 "gl/pbo.cpp"
 "gl/query.cpp"
+"gl/ssbo.cpp"
+"gl/streambuffer.cpp"
+"gl/cluster_grid.cpp"
+"gl/readback.cpp"
 
 "imgui/imgui.cpp"
 "imgui/imgui_demo.cpp"
@@ -278,9 +381,7 @@ set(SOURCES
 
 set(DEFINITIONS)
 set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl3.cpp")
-set(SOURCES ${SOURCES} "imgui/imgui_impl_opengl2.cpp")
 set_source_files_properties("imgui/imgui_impl_opengl3.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
-set_source_files_properties("imgui/imgui_impl_opengl2.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
 
 if (WITH_CRASHPAD)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_CRASHPAD")
@@ -325,25 +426,145 @@ endif()
 
 if (WITH_OPENGL_MODERN)
         set(SOURCES ${SOURCES}
-            "rendering/opengl33geometrybank.cpp"
-            "rendering/opengl33light.cpp"
-            "rendering/opengl33skydome.cpp"
-            "rendering/opengl33precipitation.cpp"
-            "rendering/opengl33particles.cpp"
-            "rendering/opengl33terrain.cpp"
-            "rendering/opengl33renderer.cpp")
+            "rendering/opengl46/opengl46geometrybank.cpp"
+            "rendering/opengl46/opengl46light.cpp"
+            "rendering/opengl46/opengl46skydome.cpp"
+            "rendering/opengl46/opengl46sky.cpp"
+            "rendering/opengl46/opengl46weather.cpp"
+            "rendering/opengl46/opengl46exposure.cpp"
+            "rendering/opengl46/opengl46ao.cpp"
+            "rendering/opengl46/opengl46localshadows.cpp"
+            "rendering/opengl46/opengl46cabprobe.cpp"
+            "rendering/opengl46/opengl46skyocclusion.cpp"
+            "rendering/opengl46/opengl46instancecull.cpp"
+            "rendering/opengl46/opengl46hiz.cpp"
+            "rendering/opengl46/opengl46timbers.cpp"
+            "rendering/opengl46/opengl46shadowfit.cpp"
+            "rendering/opengl46/opengl46precipitation.cpp"
+            "rendering/opengl46/opengl46particles.cpp"
+            "rendering/opengl46/opengl46gpuparticles.cpp"
+            "rendering/opengl46/opengl46water.cpp"
+            "rendering/opengl46/opengl46terrain.cpp"
+            "rendering/opengl46/opengl46grass.cpp"
+            "rendering/opengl46/opengl46backend.cpp"
+            "rendering/opengl46/opengl46renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
 endif()
 
-if (WITH_OPENGL_LEGACY)
-        set(SOURCES ${SOURCES}
-            "rendering/openglgeometrybank.cpp"
-            "rendering/opengllight.cpp"
-            "rendering/openglskydome.cpp"
-            "rendering/openglprecipitation.cpp"
-            "rendering/openglparticles.cpp"
-            "rendering/openglrenderer.cpp")
-		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_LEGACY")
+if (WITH_VULKAN)
+	# the vulkan loader is loaded by volk when the program runs, so the program starts without it (and runs with opengl)
+	set(VULKAN_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/Vulkan-Headers/include")
+	set(VOLK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/volk")
+	# the memory allocator (header only) and the shader compiler of the renderer
+	set(VMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/VulkanMemoryAllocator/include")
+	set(GLSLANG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ref/glslang")
+	if (NOT EXISTS "${VOLK_DIR}/volk.h" OR NOT EXISTS "${VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h" OR NOT EXISTS "${VMA_DIR}/vk_mem_alloc.h" OR NOT EXISTS "${GLSLANG_DIR}/CMakeLists.txt")
+		message(FATAL_ERROR "WITH_VULKAN=ON needs the submodules ref/volk, ref/Vulkan-Headers, ref/VulkanMemoryAllocator and ref/glslang: git submodule update --init ref/volk ref/Vulkan-Headers ref/VulkanMemoryAllocator ref/glslang")
+	endif()
+	set(SOURCES ${SOURCES}
+		"rendering/vulkan14/vulkan14common.cpp"
+		"rendering/vulkan14/vulkan14capabilities.cpp"
+		"rendering/vulkan14/vulkan14instance.cpp"
+		"rendering/vulkan14/vulkan14device.cpp"
+		"rendering/vulkan14/vulkan14swapchain.cpp"
+		"rendering/vulkan14/vulkan14memory.cpp"
+		"rendering/vulkan14/vulkan14vma.cpp"
+		"rendering/vulkan14/vulkan14shaders.cpp"
+		"rendering/vulkan14/vulkan14descriptors.cpp"
+		"rendering/vulkan14/vulkan14compute.cpp"
+		"rendering/vulkan14/vulkan14passes.cpp"
+		"rendering/vulkan14/vulkan14texture.cpp"
+		"rendering/vulkan14/vulkan14imgui.cpp"
+		"rendering/vulkan14/vulkan14renderer.cpp"
+		"rendering/vulkan14/vulkan14geometry.cpp"
+		"rendering/vulkan14/vulkan14scene.cpp"
+		"rendering/vulkan14/vulkan14frame.cpp"
+		"rendering/vulkan14/vulkan14sky.cpp"
+		"rendering/vulkan14/vulkan14weather.cpp"
+		"rendering/vulkan14/vulkan14ao.cpp"
+		"rendering/vulkan14/vulkan14cull.cpp"
+		"rendering/vulkan14/vulkan14indirect.cpp"
+		"rendering/vulkan14/vulkan14shadows.cpp"
+		"rendering/vulkan14/vulkan14lamps.cpp"
+		"rendering/vulkan14/vulkan14cabprobe.cpp"
+		"rendering/vulkan14/vulkan14skyocclusion.cpp"
+		"rendering/vulkan14/vulkan14terrain.cpp"
+		"rendering/vulkan14/vulkan14grass.cpp"
+		"rendering/vulkan14/vulkan14particles.cpp"
+		"rendering/vulkan14/vulkan14water.cpp"
+		"rendering/vulkan14/vulkan14debug.cpp"
+		"rendering/vulkan14/vulkan14commands.cpp"
+		"rendering/vulkan14/vulkan14raytracing.cpp"
+		"rendering/vulkan14/vulkan14dlss.cpp"
+		"rendering/vulkan14/vulkan14tasks.cpp"
+		"rendering/vulkan14/vulkan14walkers.cpp"
+		"ref/volk/volk.c")
+	set(DEFINITIONS ${DEFINITIONS} "WITH_VULKAN")
+
+	# nvidia dlss of the vulkan renderer, from the dlss sdk (github.com/NVIDIA/DLSS) outside the repository: the headers and the
+	# static library of ngx to build with, the dlss library next to the program to run with (rendering/vulkan14/vulkan14dlss.h), and the
+	# one of its frame generation (gfx.framegeneration) where the sdk has it
+	if (WITH_DLSS)
+		set(DLSS_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/ref/DLSS" CACHE PATH "The NVIDIA DLSS SDK, with include/ and lib/ (cmake -P tools/fetch_dlss_sdk.cmake)")
+		if (NOT EXISTS "${DLSS_SDK_ROOT}/include/nvsdk_ngx_helpers_vk.h")
+			message(FATAL_ERROR "WITH_DLSS=ON needs the DLSS SDK in DLSS_SDK_ROOT (${DLSS_SDK_ROOT}): cmake -P tools/fetch_dlss_sdk.cmake")
+		endif()
+		if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+			set(DLSS_ARCH "aarch64")
+		else()
+			set(DLSS_ARCH "x86_64")
+		endif()
+		if (WIN32)
+			# the variants of the dynamic c runtime (/MD, /MDd in debug)
+			# the static libraries of x86_64 are in x64/ (the others of older visual studios beside it), those of arm64 at the top
+			if (DLSS_ARCH STREQUAL "x86_64")
+				set(DLSS_NGX_DIR "${DLSS_SDK_ROOT}/lib/Windows_x86_64/x64")
+			else()
+				set(DLSS_NGX_DIR "${DLSS_SDK_ROOT}/lib/Windows_${DLSS_ARCH}")
+			endif()
+			set(DLSS_NGX_LIBRARY "$<IF:$<CONFIG:Debug>,${DLSS_NGX_DIR}/nvsdk_ngx_d_dbg.lib,${DLSS_NGX_DIR}/nvsdk_ngx_d.lib>")
+			set(DLSS_NGX_CHECK "${DLSS_NGX_DIR}/nvsdk_ngx_d.lib")
+			set(DLSS_RUNTIME_PATTERN "nvngx_dlss.dll")
+			set(DLSSG_RUNTIME_PATTERN "nvngx_dlssg.dll")
+			set(DLSS_RUNTIME_DIR "${DLSS_SDK_ROOT}/lib/Windows_${DLSS_ARCH}")
+		elseif (UNIX AND NOT APPLE)
+			set(DLSS_NGX_LIBRARY "${DLSS_SDK_ROOT}/lib/Linux_${DLSS_ARCH}/libnvsdk_ngx.a")
+			set(DLSS_NGX_CHECK "${DLSS_NGX_LIBRARY}")
+			set(DLSS_RUNTIME_PATTERN "libnvidia-ngx-dlss.so.*")
+			set(DLSSG_RUNTIME_PATTERN "libnvidia-ngx-dlssg.so.*")
+			set(DLSS_RUNTIME_DIR "${DLSS_SDK_ROOT}/lib/Linux_${DLSS_ARCH}")
+		else()
+			message(FATAL_ERROR "WITH_DLSS=ON: the DLSS SDK has no libraries for this platform")
+		endif()
+		if (NOT EXISTS "${DLSS_NGX_CHECK}")
+			message(FATAL_ERROR "WITH_DLSS=ON: ${DLSS_NGX_CHECK} isn't in the DLSS SDK, fetch the libraries of this platform: cmake -P tools/fetch_dlss_sdk.cmake")
+		endif()
+		file(GLOB DLSS_RUNTIME_RELEASE "${DLSS_RUNTIME_DIR}/rel/${DLSS_RUNTIME_PATTERN}")
+		file(GLOB DLSS_RUNTIME_DEVELOPMENT "${DLSS_RUNTIME_DIR}/dev/${DLSS_RUNTIME_PATTERN}")
+		if (NOT DLSS_RUNTIME_RELEASE)
+			message(WARNING "WITH_DLSS=ON: no ${DLSS_RUNTIME_PATTERN} in ${DLSS_RUNTIME_DIR}/rel, it has to be put next to the program by hand")
+		endif()
+		file(GLOB DLSSG_RUNTIME_RELEASE "${DLSS_RUNTIME_DIR}/rel/${DLSSG_RUNTIME_PATTERN}")
+		file(GLOB DLSSG_RUNTIME_DEVELOPMENT "${DLSS_RUNTIME_DIR}/dev/${DLSSG_RUNTIME_PATTERN}")
+		if (DLSSG_RUNTIME_RELEASE)
+			list(APPEND DLSS_RUNTIME_RELEASE ${DLSSG_RUNTIME_RELEASE})
+		else()
+			message(STATUS "WITH_DLSS=ON: no ${DLSSG_RUNTIME_PATTERN} in ${DLSS_RUNTIME_DIR}/rel, the frame generation (gfx.framegeneration) needs it next to the program")
+		endif()
+		list(APPEND DLSS_RUNTIME_DEVELOPMENT ${DLSSG_RUNTIME_DEVELOPMENT})
+		# the sdk is seen by vulkan14dlss.cpp only; the rest of the renderer asks vk14::dlss::compiled()
+		set_source_files_properties("rendering/vulkan14/vulkan14dlss.cpp" PROPERTIES COMPILE_DEFINITIONS "WITH_DLSS" SKIP_PRECOMPILE_HEADERS ON)
+	endif()
+
+	# glslang compiles the shaders of shaders/vk14 when the program runs (no spirv-tools, no hlsl, no programs of its own)
+	set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
+	set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+	set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+	set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_SPVREMAPPER OFF CACHE BOOL "" FORCE)
+	set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
+	add_subdirectory("${GLSLANG_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/glslang" EXCLUDE_FROM_ALL)
 endif()
 
 add_subdirectory("${DEPS_DIR}/glfw/" EXCLUDE_FROM_ALL)
@@ -471,6 +692,25 @@ set_target_properties(eu07_core PROPERTIES
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 target_link_libraries(${PROJECT_NAME} eu07_core)
+if (WITH_VULKAN)
+	# the vulkan headers are seen by the files of rendering/vulkan14 only, they include them
+	target_include_directories(${PROJECT_NAME} PRIVATE "${VULKAN_HEADERS_DIR}" "${VOLK_DIR}" "${VMA_DIR}")
+	target_link_libraries(${PROJECT_NAME} ${CMAKE_DL_LIBS} glslang glslang-default-resource-limits)
+	if (WITH_DLSS)
+		target_include_directories(${PROJECT_NAME} PRIVATE "${DLSS_SDK_ROOT}/include")
+		target_link_libraries(${PROJECT_NAME} "${DLSS_NGX_LIBRARY}" ${CMAKE_DL_LIBS})
+		# the dlss library next to the program, the development one (gfx.dlss.developer) in ngx_dev/
+		if (DLSS_RUNTIME_RELEASE)
+			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+				COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DLSS_RUNTIME_RELEASE} "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+		endif()
+		if (DLSS_RUNTIME_DEVELOPMENT)
+			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+				COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PROJECT_NAME}>/ngx_dev"
+				COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DLSS_RUNTIME_DEVELOPMENT} "$<TARGET_FILE_DIR:${PROJECT_NAME}>/ngx_dev")
+		endif()
+	endif()
+endif()
 
 target_compile_definitions(eu07_settings INTERFACE ${DEFINITIONS})
 
@@ -665,22 +905,14 @@ if(WIN32 AND WITH_PYTHON)
 		TARGET ${PROJECT_NAME} POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
+		# Lib with its site-packages is huge, the script copies it only when the Python install has changed
+		COMMAND ${CMAKE_COMMAND} "-DPY_LIBDIR=${EU07_PY_LIBDIR}" "-DPY_DLLSDIR=${EU07_PY_DLLSDIR}" "-DDEST_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/CMake_modules/CopyPythonRuntime.cmake"
 	)
 endif()
 
-if (WITH_BETTER_RENDERER)
-    add_subdirectory("betterRenderer")
-	set_target_properties(betterRenderer betterRenderer_fsr2 betterRenderer_shaders PROPERTIES FOLDER "renderers")
-	target_link_libraries(${PROJECT_NAME} "betterRenderer")
-endif ()
-
-# yaml-cpp, for the descriptions of scenery templates edited in the scenery editor.
-# the experimental renderer brings in the same copy on its own, when enabled
-if (NOT TARGET yaml-cpp)
-	add_subdirectory("betterRenderer/thirdparty/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
-endif ()
+# yaml-cpp, for the descriptions of scenery templates edited in the scenery editor and for the heightmap terrain
+add_subdirectory("ref/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
 target_link_libraries(eu07_settings INTERFACE yaml-cpp)
 
 
@@ -735,4 +967,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()

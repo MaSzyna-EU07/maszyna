@@ -8,7 +8,8 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "application/editormode.h"
+#include "application/editormodegauge.h"
+#include "editor/editorTrack.hpp"
 #include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGauge.hpp"
@@ -326,7 +327,7 @@ template <typename Visitor> void visit_triangles(TSubModel *Submodel, glm::dmat4
 }
 
 // the triangle enters the gauge when any point of a grid spread over it does; the deepest such point goes to the hit
-void scan_triangle(corridor const &Space, glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, editor_mode::gauge_hit &Hit)
+void scan_triangle(corridor const &Space, glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, gauge_tool::gauge_hit &Hit)
 {
 	auto const middle{(A + B + C) / 3.0};
 	if (false == Space.close(middle, std::max({glm::distance(middle, A), glm::distance(middle, B), glm::distance(middle, C)})))
@@ -353,24 +354,24 @@ void scan_triangle(corridor const &Space, glm::dvec3 const &A, glm::dvec3 const 
 }
 
 // the deepest place of the model in the gauge, added to the hits when it enters it
-void scan_model(corridor const &Space, TAnimModel &Instance, std::vector<editor_mode::gauge_hit> &Hits)
+void scan_model(corridor const &Space, TAnimModel &Instance, std::vector<gauge_tool::gauge_hit> &Hits)
 {
 	if (false == Instance.visible() || Instance.Model() == nullptr || Instance.Model()->GetSMRoot() == nullptr)
 		return;
 	if (false == Space.nearby(Instance.location(), Instance.radius()))
 		return;
-	editor_mode::gauge_hit hit{Instance.name(), Instance.location()};
+	gauge_tool::gauge_hit hit{Instance.name(), Instance.location()};
 	visit_triangles(Instance.Model()->GetSMRoot(), placement(Instance), [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) { scan_triangle(Space, A, B, C, hit); });
 	if (hit.depth > 0.0)
 		Hits.push_back(std::move(hit));
 }
 
 // the same for the copies of a model laid along a curve
-void scan_sweep(corridor const &Space, sweep_node &Sweep, std::vector<editor_mode::gauge_hit> &Hits)
+void scan_sweep(corridor const &Space, sweep_node &Sweep, std::vector<gauge_tool::gauge_hit> &Hits)
 {
 	if (Sweep.m_editorremoved || false == Space.nearby(Sweep.location(), Sweep.radius()))
 		return;
-	editor_mode::gauge_hit hit{Sweep.name(), Sweep.location()};
+	gauge_tool::gauge_hit hit{Sweep.name(), Sweep.location()};
 	for (auto const &shape : Sweep.create_shapes())
 	{
 		auto const &vertices{shape.data().vertices};
@@ -381,13 +382,13 @@ void scan_sweep(corridor const &Space, sweep_node &Sweep, std::vector<editor_mod
 		Hits.push_back(std::move(hit));
 }
 
-void sort_hits(std::vector<editor_mode::gauge_hit> &Hits)
+void sort_hits(std::vector<gauge_tool::gauge_hit> &Hits)
 {
 	std::sort(Hits.begin(), Hits.end(), [](auto const &Left, auto const &Right) { return Left.depth > Right.depth; });
 }
 
 // the models entering the gauge, the deepest first
-void scan_models(corridor const &Space, std::vector<editor_mode::gauge_hit> &Hits)
+void scan_models(corridor const &Space, std::vector<gauge_tool::gauge_hit> &Hits)
 {
 	for (auto *instance : simulation::Instances.sequence())
 		if (instance != nullptr)
@@ -438,7 +439,7 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 	bool edited{false};
 	bool inserted{false};
 	int remove{-1};
-	ImGui::Columns(3, STR_C("gaugeoutline"), false);
+	ImGui::Columns(3, "gaugeoutline", false);
 	ImGui::SetColumnWidth(0, 110.0f);
 	ImGui::SetColumnWidth(1, 110.0f);
 	ImGui::TextDisabled(STR_C("Half-width"));
@@ -483,6 +484,60 @@ bool edit_points(std::vector<gauge::profile::point> &Points)
 	return edited;
 }
 
+// the railway outline drawn across the track at the size of the panel, so the name in the list has a shape
+void gauge_sketch(gauge::profile const &Profile)
+{
+	auto const width{ImGui::GetContentRegionAvail().x};
+	auto const height{std::round(ImGui::GetFontSize() * 9.0f)};
+	auto const low{ImGui::GetCursorScreenPos()};
+	ImGui::Dummy(ImVec2(width, height));
+	if (Profile.outline.size() < 2)
+		return;
+	double top{0.0};
+	double half{0.0};
+	for (auto const &point : Profile.outline)
+	{
+		top = std::max(top, point.height);
+		half = std::max(half, point.half_width);
+	}
+	if (top <= 0.0 || half <= 0.0)
+		return;
+	auto const pad{ImGui::GetFontSize() * 1.2f};
+	auto const scale{static_cast<float>(std::min((height - pad * 2.0f) / top, (width - pad * 2.0f) / (half * 2.0)))};
+	ImVec2 const base{std::round(low.x + width * 0.5f), std::round(low.y + height - pad)};
+	auto const at = [&](double const X, double const Y) { return ImVec2(base.x + static_cast<float>(X) * scale, base.y - static_cast<float>(Y) * scale); };
+	auto *draw{ImGui::GetWindowDrawList()};
+	draw->AddRectFilled(low, ImVec2(low.x + width, low.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+	// ballast, a sleeper and the two rails
+	ImVec2 const ballast[]{at(-2.1, -0.6), at(2.1, -0.6), at(1.55, -0.2), at(-1.55, -0.2)};
+	draw->AddConvexPolyFilled(ballast, 4, IM_COL32(110, 100, 90, 255));
+	draw->AddRectFilled(at(-1.3, -0.2), at(1.3, -0.13), IM_COL32(150, 150, 150, 255));
+	for (double const side : {-0.7175, 0.7175})
+		draw->AddRectFilled(at(side - 0.04, -0.13), at(side + 0.04, 0.0), IM_COL32(210, 210, 215, 255));
+	// the outline, the right half from the bottom up and its mirror back down
+	std::vector<ImVec2> points;
+	for (auto const &point : Profile.outline)
+		points.push_back(at(point.half_width, point.height));
+	for (auto point{Profile.outline.rbegin()}; point != Profile.outline.rend(); ++point)
+		points.push_back(at(-point->half_width, point->height));
+	auto const accent{IM_COL32(120, 200, 255, 255)};
+	auto const flags{draw->Flags};
+	draw->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+	draw->AddConcavePolyFilled(points.data(), static_cast<int>(points.size()), IM_COL32(120, 200, 255, 40));
+	draw->Flags = flags;
+	draw->AddPolyline(points.data(), static_cast<int>(points.size()), accent, ImDrawFlags_Closed, 2.0f);
+	// the height over the top and the widest half at its height
+	auto const widest{std::max_element(Profile.outline.begin(), Profile.outline.end(), [](auto const &A, auto const &B) { return A.half_width < B.half_width; })};
+	auto const tall{format("%.2f m", top)};
+	auto const size{ImGui::CalcTextSize(tall.c_str())};
+	draw->AddText(ImVec2(std::round(base.x - size.x * 0.5f), std::round(at(0.0, top).y - size.y - 2.0f)), accent, tall.c_str());
+	auto const wide{format("%.2f m", widest->half_width * 2.0)};
+	auto const y{at(0.0, widest->height).y};
+	draw->AddLine(ImVec2(at(-widest->half_width, 0.0).x, y), ImVec2(at(widest->half_width, 0.0).x, y), IM_COL32(255, 220, 120, 160), 1.0f);
+	auto const wsize{ImGui::CalcTextSize(wide.c_str())};
+	draw->AddText(ImVec2(std::round(base.x - wsize.x * 0.5f), std::round(y - wsize.y - 1.0f)), IM_COL32(255, 220, 120, 255), wide.c_str());
+}
+
 } // namespace
 
 struct gauge_scan
@@ -496,7 +551,7 @@ struct gauge_scan
 	std::chrono::steady_clock::time_point started;
 };
 
-void editor_mode::gauge_load()
+void gauge_tool::gauge_load()
 {
 	if (m_gauge.profiles.empty())
 		m_gauge.profiles = gauge::load_profiles(gauge_file);
@@ -514,18 +569,18 @@ void editor_mode::gauge_load()
 		}
 }
 
-gauge::choice editor_mode::gauge_choice() const
+gauge::choice gauge_tool::gauge_choice() const
 {
 	auto const pick{[&](int const Index) { return Index >= 0 ? &m_gauge.profiles[Index] : nullptr; }};
 	return {pick(m_gauge.profile), pick(m_gauge.road)};
 }
 
-std::vector<editor_mode::gauge_hit> const &editor_mode::gauge_hits() const
+std::vector<gauge_tool::gauge_hit> const &gauge_tool::gauge_hits() const
 {
 	return m_gauge.map.scanned ? m_gauge.map.hits : m_gauge.line.hits;
 }
 
-void editor_mode::update_gauge()
+void gauge_tool::update()
 {
 	if (m_gauge.scan)
 		step_gauge_map();
@@ -536,9 +591,9 @@ void editor_mode::update_gauge()
 		m_gauge.published = false;
 		return;
 	}
-	auto *track{m_gauge.enabled ? selected_track() : nullptr};
+	auto *track{m_gauge.enabled ? m_selection.selected_track() : nullptr};
 	// the geometry is rescanned once the edit ends
-	if (ImGui::IsMouseDown(0) || m_track_gizmo_using || m_dragging)
+	if (ImGui::IsMouseDown(0) || m_design.track_editing())
 		m_gauge.pending = true;
 	else if (track == nullptr)
 	{
@@ -549,19 +604,19 @@ void editor_mode::update_gauge()
 			m_gauge.published = false;
 		}
 	}
-	else if (track != m_gauge.track || m_history.size() != m_gauge.history || m_gauge.pending)
+	else if (track != m_gauge.track || m_history.history_revision() != m_gauge.history || m_gauge.pending)
 	{
 		m_gauge.track = track;
-		m_gauge.history = m_history.size();
+		m_gauge.history = m_history.history_revision();
 		m_gauge.pending = false;
 		scan_gauge(*track);
 		m_gauge.published = false;
 	}
-	if (false == m_gauge.published || glm::distance(Camera.Pos, EditorOverlay.origin) > gauge_origin_range)
+	if (false == m_gauge.published || glm::distance(m_view.camera_position(), EditorOverlay.origin) > gauge_origin_range)
 		gauge_publish();
 }
 
-void editor_mode::scan_gauge(TTrack &Track)
+void gauge_tool::scan_gauge(TTrack &Track)
 {
 	gauge_load();
 	m_gauge.line = {};
@@ -577,7 +632,7 @@ void editor_mode::scan_gauge(TTrack &Track)
 		m_gauge.current = -1;
 }
 
-void editor_mode::scan_gauge_map()
+void gauge_tool::scan_gauge_map()
 {
 	gauge_load();
 	auto scan{std::make_shared<gauge_scan>()};
@@ -590,7 +645,7 @@ void editor_mode::scan_gauge_map()
 	scan->space.emplace(scan->lines);
 	m_gauge.map = {};
 	m_gauge.map.scanned = true;
-	m_gauge.map.history = m_history.size();
+	m_gauge.map.history = m_history.history_revision();
 	auto const name{[](gauge::profile const *Profile) { return Profile != nullptr ? Profile->name : std::string{"-"}; }};
 	m_gauge.map.profile = name(chosen.railway) + ", " + name(chosen.road);
 	m_gauge.current = -1;
@@ -598,7 +653,7 @@ void editor_mode::scan_gauge_map()
 	m_gauge.scan = std::move(scan);
 }
 
-void editor_mode::step_gauge_map()
+void gauge_tool::step_gauge_map()
 {
 	auto &scan{*m_gauge.scan};
 	auto const &instances{simulation::Instances.sequence()};
@@ -621,7 +676,7 @@ void editor_mode::step_gauge_map()
 		finish_gauge_map();
 }
 
-void editor_mode::finish_gauge_map()
+void gauge_tool::finish_gauge_map()
 {
 	auto const scan{std::move(m_gauge.scan)};
 	auto &hits{m_gauge.map.hits};
@@ -636,11 +691,11 @@ void editor_mode::finish_gauge_map()
 		gauge_focus(0);
 }
 
-void editor_mode::gauge_publish()
+void gauge_tool::gauge_publish()
 {
 	m_gauge.published = true;
 	EditorOverlay.clear();
-	EditorOverlay.origin = Camera.Pos;
+	EditorOverlay.origin = m_view.camera_position();
 	auto const batch{[](glm::vec4 const &Color, unsigned int const Type, std::vector<glm::dvec3> const &Points) {
 		gfx::editor_overlay::batch result{Color, Type};
 		result.points.reserve(Points.size());
@@ -663,7 +718,7 @@ void editor_mode::gauge_publish()
 	                         batch({0.2f, 1.0f, 0.3f, 0.5f}, GL_LINES, m_gauge.spot.edges)};
 }
 
-void editor_mode::gauge_focus(int const Index)
+void gauge_tool::gauge_focus(int const Index)
 {
 	auto const &hits{gauge_hits()};
 	if (hits.empty())
@@ -675,18 +730,12 @@ void editor_mode::gauge_focus(int const Index)
 	// along the track, tangent to the gauge at the height of the place, from the end nearer to the camera
 	glm::dvec3 look{hit.direction.x, 0.0, hit.direction.y};
 	look = glm::length(look) > 1e-6 ? glm::normalize(look) : glm::dvec3(0.0, 0.0, 1.0);
-	if (glm::dot(Camera.Pos - hit.point, look) > 0.0)
+	if (glm::dot(m_view.camera_position() - hit.point, look) > 0.0)
 		look = -look;
-	m_focus_start_pos = Camera.Pos;
-	m_focus_start_angle = Camera.Angle;
-	m_focus_target_pos = hit.point - look * gauge_view_distance;
-	m_focus_target_angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
-	m_focus_active = true;
-	m_focus_time = 0.0;
-	m_focus_duration = 0.6;
+	m_view.fly_to(hit.point, look, gauge_view_distance);
 }
 
-void editor_mode::gauge_spot(gauge_hit const &Hit)
+void gauge_tool::gauge_spot(gauge_hit const &Hit)
 {
 	m_gauge.spot = {};
 	auto const &paths{simulation::Paths.sequence()};
@@ -703,7 +752,7 @@ void editor_mode::gauge_spot(gauge_hit const &Hit)
 		build_tunnel(*line, m_gauge.spot.surface, m_gauge.spot.edges);
 }
 
-void editor_mode::render_gauge_window()
+void gauge_tool::render_windows()
 {
 	if (false == m_gauge.open)
 		return;
@@ -721,13 +770,15 @@ void editor_mode::render_gauge_window()
 	bool changed{render_gauge_choice("Railway", m_gauge.profile, false)};
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("GPL: unified structure gauge, widened only in the curves under 250 m.\nG1, G2, GA, GB, GC: limit (GSZ) and nominal (NSZ) installation gauges, widened by 3750/R in all curves."));
+	if (m_gauge.profile >= 0)
+		gauge_sketch(m_gauge.profiles[m_gauge.profile]);
 	changed |= render_gauge_choice("Road", m_gauge.road, true);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Clearance over the roads, from 0.5 m beyond the edges of the carriageway"));
 
 	if (m_gauge.scan)
 	{
-		auto const label{format("Scanning the map %.0f%%, %zu found", m_gauge.scan->progress * 100.f, m_gauge.map.hits.size())};
+		auto const label{format(STR_C("Scanning the scenery %.0f%%, %zu found"), m_gauge.scan->progress * 100.f, m_gauge.map.hits.size())};
 		ImGui::ProgressBar(m_gauge.scan->progress, ImVec2(-70.0f, 0.0f), label.c_str());
 		ImGui::SameLine();
 		if (ImGui::SmallButton(STR_C("Cancel")))
@@ -735,7 +786,7 @@ void editor_mode::render_gauge_window()
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip(STR_C("Stops the scan and keeps the models found so far"));
 	}
-	else if (ImGui::Button(STR_C("Find the violations on the whole map")))
+	else if (ImGui::Button(STR_C("Find the violations in the whole scenery")))
 		scan_gauge_map();
 	else if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Checks the models along all tracks of the scenery against the chosen gauge\nand lists them, the deepest first.\nRuns in the background, the list fills up as it goes"));
@@ -748,7 +799,7 @@ void editor_mode::render_gauge_window()
 			m_gauge.current = -1;
 			m_gauge.published = false;
 		}
-		else if (m_gauge.map.history != m_history.size())
+		else if (m_gauge.map.history != m_history.history_revision())
 			ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_C("The scenery changed since the scan (%s)"), m_gauge.map.profile.c_str());
 	}
 	render_gauge_hits();
@@ -759,17 +810,17 @@ void editor_mode::render_gauge_window()
 	ImGui::End();
 }
 
-void editor_mode::render_gauge_hits()
+void gauge_tool::render_gauge_hits()
 {
 	auto const &hits{gauge_hits()};
 	if (false == m_gauge.map.scanned && (false == m_gauge.enabled || m_gauge.track == nullptr))
 		return;
 	if (hits.empty())
 	{
-		ImGui::TextDisabled(m_gauge.map.scanned ? STR_C("No model enters the gauge on the map") : STR_C("The gauge is clear along this line"));
+		ImGui::TextDisabled("%s", m_gauge.map.scanned ? STR_C("No model in the scenery enters the gauge") : STR_C("The gauge is clear along this line"));
 		return;
 	}
-	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), STR_C("%zu models enter the gauge%s"), hits.size(), m_gauge.map.scanned ? STR_C(" on the map") : "");
+	ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), STR_C("%zu models enter the gauge%s"), hits.size(), m_gauge.map.scanned ? STR_C(" in the whole scenery") : "");
 	if (ImGui::ArrowButton("##gaugeprevious", ImGuiDir_Left))
 		gauge_focus(m_gauge.current - 1);
 	ImGui::SameLine();
@@ -784,18 +835,22 @@ void editor_mode::render_gauge_hits()
 		for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
 		{
 			auto const &hit{hits[i]};
-			auto const label{(hit.model.empty() ? std::string{"(unnamed)"} : hit.model) + "  " + std::to_string(static_cast<int>(std::lround(hit.depth * 100.0))) + " cm##" + std::to_string(i)};
+			auto const label{(hit.model.empty() ? STR("(no name)") : hit.model) + "  " + std::to_string(static_cast<int>(std::lround(hit.depth * 100.0))) + " cm##" + std::to_string(i)};
 			if (ImGui::Selectable(label.c_str(), m_gauge.current == i))
 				gauge_focus(i);
 		}
 	ImGui::EndChild();
 }
 
-bool editor_mode::render_gauge_choice(char const *Label, int &Index, bool const Road)
+bool gauge_tool::render_gauge_choice(char const *Label, int &Index, bool const Road)
 {
 	bool changed{false};
-	ImGui::SetNextItemWidth(-60.0f);
-	if (ImGui::BeginCombo(Label, Index >= 0 ? m_gauge.profiles[Index].name.c_str() : STR_C("none")))
+	ImGui::PushID(Label);
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(STR_C(Label));
+	ImGui::SameLine(std::round(ImGui::GetCursorStartPos().x + std::max(ImGui::CalcTextSize(STR_C("Railway")).x, ImGui::CalcTextSize(STR_C("Road")).x) + ImGui::GetStyle().ItemSpacing.x));
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	if (ImGui::BeginCombo("##profile", Index >= 0 ? m_gauge.profiles[Index].name.c_str() : STR_C("(none)")))
 	{
 		for (int i = 0; i < static_cast<int>(m_gauge.profiles.size()); ++i)
 			if ((m_gauge.profiles[i].kind == gauge::kind::road) == Road && ImGui::Selectable(m_gauge.profiles[i].name.c_str(), i == Index))
@@ -805,10 +860,11 @@ bool editor_mode::render_gauge_choice(char const *Label, int &Index, bool const 
 			}
 		ImGui::EndCombo();
 	}
+	ImGui::PopID();
 	return changed;
 }
 
-bool editor_mode::render_gauge_outline(int const Index)
+bool gauge_tool::render_gauge_outline(int const Index)
 {
 	if (Index < 0)
 		return false;
@@ -816,7 +872,7 @@ bool editor_mode::render_gauge_outline(int const Index)
 	if (false == ImGui::TreeNode(&profile, STR_C("Outline of %s (right half)"), profile.name.c_str()))
 		return false;
 	ImGui::TextDisabled(profile.kind == gauge::kind::road ? STR_C("Metres from the edge of the carriageway and above the road, bottom up.")
-	                                                      : "PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up.");
+	                                                      : STR_C("PKP PLK standard, volume II; below 1170 mm the limit installation gauge.\nMetres from the track axis and above the rail top, bottom up."));
 	bool edited{edit_points(profile.outline)};
 	if (ImGui::SmallButton(STR_C("Restore the starting outlines")))
 	{
@@ -828,4 +884,24 @@ bool editor_mode::render_gauge_outline(int const Index)
 		gauge::save_profiles(gauge_file, m_gauge.profiles);
 	ImGui::TreePop();
 	return edited;
+}
+
+editor_selftest_result gauge_tool::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "gauge")
+	{
+		std::string name;
+		Words >> name;
+		if (auto *track{simulation::Paths.find(name)})
+		{
+			scan_gauge(*track);
+			WriteLog(format("SELFTEST gauge %s: %d hits", name.c_str(), static_cast<int>(m_gauge.line.hits.size())));
+			for (auto const &hit : m_gauge.line.hits)
+				WriteLog(format("SELFTEST gauge hit %s depth %.3f at %.2f %.2f %.2f", hit.model.c_str(), hit.depth, hit.point.x, hit.point.y, hit.point.z));
+		}
+		else
+			WriteLog("SELFTEST gauge " + name + ": no such track");
+		return editor_selftest_result::handled;
+	}
+	return editor_selftest_result::unhandled;
 }

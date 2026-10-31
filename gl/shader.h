@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 #include <functional>
@@ -7,81 +8,63 @@
 
 #include "object.h"
 #include "bindable.h"
+#include "rendering/common/shadersource.h"
 
 namespace gl
 {
-    class shader_exception : public std::runtime_error
+    using shader_exception = gfx::shader_exception;
+
+    // the settings of the game the shaders take (shaders/ogl46/settings.glsl): the ids of the specialization constants of the
+    // SPIR-V binaries; compiled from the source, the shaders get them as constants (gl::glsl_settings_defines())
+    enum class shader_setting : GLuint
     {
-        using runtime_error::runtime_error;
+        shadowmap = 0,
+        envmap = 1,
+        motionblur = 2,
+        postfx = 3,
+        extraeffects = 4,
+        output_gamma = 5,
+        count = 6
     };
 
+    // a shader of shaders/ogl46/: the SPIR-V binary of shaders/ogl46bin/ when there's an up to date one (gfx.shaders.binaries),
+    // compiled from the source otherwise
     class shader : public object
     {
     public:
-#ifdef SHADERVALIDATOR_STANDALONE
-        shader() = default;
-#endif
-        explicit shader(const std::string &filename);
+        // Defines: lines put before the source (after the version), e.g. "#define MODEL_DRAWS 1\n" for a variant of the shader
+        explicit shader(const std::string &filename, const std::string &defines = {});
         ~shader();
 
-        enum class components_e
-        {
-            R = GL_RED,
-            RG = GL_RG,
-            RGB = GL_RGB,
-            RGBA = GL_RGBA,
-            sRGB = GL_SRGB,
-            sRGB_A = GL_SRGB_ALPHA
-        };
+        using components_e = gfx::shader_components;
+        using texture_entry = gfx::shader_texture_entry;
+        using defaultparam_e = gfx::shader_param_default;
+        using param_entry = gfx::shader_param_entry;
 
-        struct texture_entry
-        {
-            size_t id;
-            components_e components;
-        };
-
-        enum class defaultparam_e
-        {
-            required,
-            nan,
-            zero,
-            one,
-            ambient,
-            diffuse,
-            specular,
-            glossiness
-        };
-
-        struct param_entry
-        {
-            size_t location;
-            size_t offset;
-            size_t size;
-            defaultparam_e defaultparam;
-        };
-
-        std::unordered_map<std::string, texture_entry> texture_conf;
-        std::unordered_map<std::string, param_entry> param_conf;
+        gfx::shader_texture_conf texture_conf;
+        gfx::shader_param_conf param_conf;
         std::string name;
 
-#ifndef SHADERVALIDATOR_STANDALONE
+        // whether the shader was loaded from a SPIR-V binary
+        bool is_binary() const
+        {
+            return m_binary;
+        }
+        // the shader compiled from the source: the shader itself, or for a binary one the same shader compiled from the source
+        // (a program can't be linked from binaries and sources together). throws shader_exception
+        GLuint source_object() const;
+
     private:
-#endif
-        std::pair<GLuint, std::string> process_source(const std::string &filename, const std::string &basedir);
+        bool load_binary(gfx::shader_source const &Source);
+        GLuint compile_source(gfx::shader_source const &Source) const;
 
-        void expand_includes(std::string &str, const std::string &basedir);
-        void parse_texture_entries(std::string &str);
-        void parse_param_entries(std::string &str);
-
-        std::string read_file(const std::string &filename) const;
-
-        static std::unordered_map<std::string, components_e> components_mapping;
-        static std::unordered_map<std::string, defaultparam_e> defaultparams_mapping;
-
-        void log_error(const std::string &str) const;
+        GLenum m_type{0};
+        std::string m_defines;
+        bool m_binary{false};
+        mutable GLuint m_source_object{0};
     };
 
-    class program : public object, public bindable<program>
+    class program : public gfx::shader_program, public object, public bindable<program>
     {
     public:
         program();
@@ -91,13 +74,27 @@ namespace gl
         using bindable::bind;
         static void bind(GLuint i);
 
+        // the shaders are linked by link(), which has to come while they are there
         void attach(const shader &);
         void link();
 
-        std::unordered_map<std::string, shader::texture_entry> texture_conf;
-        std::unordered_map<std::string, shader::param_entry> param_conf;
+        // for a program linked from a compute shader only: binds it and runs the given number of work groups
+        void dispatch(GLuint groups_x, GLuint groups_y = 1, GLuint groups_z = 1);
+
+        // whether the program was linked from SPIR-V binaries
+        bool is_binary() const
+        {
+            return m_binary;
+        }
 
 	private:
         void init();
+
+        std::vector<shader const *> m_attached;
+        bool m_binary{false};
 	};
+
+    // whether the shaders are loaded from the SPIR-V binaries where there are some: gfx.shaders.binaries, an opengl 4.6 driver,
+    // and the constants of the game the same as those the binaries were compiled with (gl::glsl_common_matches())
+    bool shader_binaries_enabled();
 }

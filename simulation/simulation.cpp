@@ -30,8 +30,11 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "vehicle/Train.h"
 #include "application/application.h"
+#include "rendering/renderer.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "vehicle/Driver.h"
+#include "world/catenary_scene.h"
 
 namespace simulation {
 
@@ -108,6 +111,16 @@ state_manager::init_scripting_interface() {
         simulation::Memory.insert( memorycell );
         simulation::Region->insert( memorycell );
     }
+    {
+        // the weather as a report: text a weather report (METAR) or entries of the weather section, value1 the time of the
+        // change in seconds. holds the report of the weather it goes to
+        auto *memorycell = new TMemCell( {
+            0, -1,
+            "__simulation.metar",
+            "memcell" } );
+        simulation::Memory.insert( memorycell );
+        simulation::Region->insert( memorycell );
+    }
 }
 
 // legacy method, calculates changes in simulation state over specified time
@@ -118,12 +131,18 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
 
     auto const totaltime { Deltatime * Iterationcount };
     // NOTE: we perform animations first, as they can determine factors like contact with powergrid
+    Timer::subsystem.sim_animations.start();
     TAnimModel::AnimUpdate( totaltime ); // wykonanie zakolejkowanych animacji
+    Timer::subsystem.sim_animations.stop();
 
+    Timer::subsystem.sim_powergrid.start();
     simulation::Powergrid.update( totaltime );
+    Timer::subsystem.sim_powergrid.stop();
     // road junctions, level crossings and the points road vehicles appear at; ahead of the vehicles, so the drivers act on what these decide
+    Timer::subsystem.sim_roads.start();
     simulation::Junctions.update( totaltime );
     simulation::Roadpoints.update( totaltime );
+    Timer::subsystem.sim_roads.stop();
     simulation::Vehicles.update( Deltatime, Iterationcount );
 }
 
@@ -147,6 +166,7 @@ state_manager::update_scripting_interface() {
     auto *weather{ Memory.find( "__simulation.weather" ) };
     auto *time{ Memory.find( "__simulation.time" ) };
     auto *date{ Memory.find( "__simulation.date" ) };
+    auto *metar{ Memory.find( "__simulation.metar" ) };
 
     if( weather == nullptr || time == nullptr || date == nullptr ) {
         // scripting interface cells weren't created, nothing to synchronize
@@ -167,6 +187,20 @@ state_manager::update_scripting_interface() {
         m_scriptinginterface.weather = std::make_shared<TMemCell>( scene::node_data() );
         m_scriptinginterface.date = std::make_shared<TMemCell>( scene::node_data() );
         m_scriptinginterface.time = std::make_shared<TMemCell>( scene::node_data() );
+        m_scriptinginterface.metar.clear();
+    }
+
+    if( metar != nullptr ) {
+        if( ( true == simulation::is_ready )
+         && ( metar->Text() != m_scriptinginterface.metar ) ) {
+            // a script or an event put a report or weather entries in, the change takes value1 seconds
+            simulation::Environment.weather().apply_text( metar->Text(), static_cast<float>( metar->Value1() ) );
+        }
+        auto const report { to_metar( simulation::Environment.weather().target() ) };
+        if( report != metar->Text() ) {
+            metar->UpdateValues( report, 0, 0, basic_event::flags::text );
+        }
+        m_scriptinginterface.metar = report;
     }
 
     // update scripting interface
@@ -357,6 +391,7 @@ void state_manager::process_commands() {
 			Global.AirTemperature = commanddata.param1;
 			Global.Overcast = commanddata.param2;
 			simulation::Environment.compute_weather();
+			catenary_scene_temperature(); // ciężary kotwień idą za temperaturą
 		}
 
 		if (commanddata.command == user_command::insertmodel) {
@@ -561,6 +596,9 @@ std::pair<int, int> state_manager::rebuild_include(scene::instance_handle const 
 }
 
 void state_manager::delete_model(TAnimModel *model) {
+	if (GfxRenderer) {
+		GfxRenderer->Forget_Node(model);
+	}
 	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
 	scene::Layers.forget(model);
 	Region->erase(model);

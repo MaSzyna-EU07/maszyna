@@ -816,6 +816,15 @@ drivermouse_input::default_bindings() {
 		{ "radiovolumenext_sw:",{
 			radiovolumeincrease,
 			none } },
+		{ "fmradio_sw:",{
+			fmradiotoggle,
+			none } },
+		{ "fmradiovolume_sw:",{
+			fmradiovolumeincrease,
+			fmradiovolumedecrease } },
+		{ "fmradiotune_sw:",{
+			fmradiotuneincrease,
+			fmradiotunedecrease } },
         { "pantfront_sw:", {
             pantographtogglefront,
             none } },

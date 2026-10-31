@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "world/catenary_span.h"
 #include "Console.h"
 #include "scripting/PyInt.h"
 #include "utilities/Timer.h"
@@ -75,6 +76,12 @@ void global_settings::FinalizeConfig()
 #ifdef _WIN32
     Console::ModeSet(iFeedbackMode, iFeedbackPort);
 #endif
+}
+
+glm::ivec2 global_settings::gfx_buffer_size(float const Scale) const
+{
+    auto const scale{Scale > 0.f ? Scale : gfx_buffer_scale};
+    return glm::max(glm::ivec2(glm::round(glm::vec2(fb_size) * scale)), glm::ivec2(1));
 }
 
 bool global_settings::ConfigParseGeneral(cParser& Parser, const std::string& token)
@@ -193,6 +200,24 @@ bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "fmradio.enabled")
+    {
+        ParseOne(Parser, fmradio_enabled);
+        return true;
+    }
+
+    if (token == "fmradio.cleansound")
+    {
+        ParseOne(Parser, fmradio_cleansound);
+        return true;
+    }
+
+    if (token == "fmradio.stations")
+    {
+        fmradio_stations = Parser.getToken<std::string>(false);
+        return true;
+    }
+
     if (token == "sound.volume.vehicle")
     {
         ParseOneClamped(Parser, VehicleVolume, 0.f, 1.f);
@@ -283,7 +308,10 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
 
     if (token == "usevbo")
     {
-        ParseOne(Parser, bUseVBO);
+        // only the removed legacy renderer had a non-VBO path; read and ignore so old eu07.ini files still load
+        bool usevbo{true};
+        ParseOne(Parser, usevbo);
+        WriteLog("eu07.ini: \"usevbo\" is no longer supported and was ignored");
         return true;
     }
 
@@ -314,17 +342,18 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     {
         ParseOne(Parser, GfxRenderer);
 
-        if (GfxRenderer == "full")
+        // "default": the opengl 4.6 renderer, "vulkan": the vulkan 1.4 one (opengl when it can't run on the machine)
+        if ((GfxRenderer == "full") || (GfxRenderer == "opengl") || (GfxRenderer == "gl46"))
             GfxRenderer = "default";
+        else if (GfxRenderer == "vulkan14")
+            GfxRenderer = "vulkan";
 
-        if (GfxRenderer == "experimental")
+        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan"))
         {
-            NvRenderer = true;
-            GfxRenderer = "experimental";
+            // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) and the NVRHI renderer ("experimental") were removed
+            WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");
+            GfxRenderer = "default";
         }
-
-        BasicRenderer = GfxRenderer == "simple";
-        LegacyRenderer = !NvRenderer && GfxRenderer != "default";
         return true;
     }
 
@@ -364,20 +393,23 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     {
         ParseOne(Parser, iMultisampling, 1, false);
         iMultisampling = std::clamp(iMultisampling, 0, 4);
+        gfx_antialiasing = (iMultisampling > 0 ? antialiasing_mode::msaa : antialiasing_mode::off);
         return true;
     }
 
     if (token == "compresstex")
     {
         Parser.getTokens(1);
-        if (!gfx_usegles)
-            Parser >> compress_tex;
+        Parser >> compress_tex;
         return true;
     }
 
     if (token == "gfx.angleplatform")
     {
-        ParseOne(Parser, gfx_angleplatform, 1);
+        // the OpenGL ES / ANGLE path was removed; read and ignore so old eu07.ini files still load
+        std::string angleplatform;
+        ParseOne(Parser, angleplatform, 1);
+        WriteLog("eu07.ini: \"gfx.angleplatform\" is no longer supported and was ignored");
         return true;
     }
 
@@ -473,6 +505,30 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     if (token == "fullphysics")
     {
         ParseOne(Parser, FullPhysics);
+        return true;
+    }
+
+    if (token == "physics.sleepheld")
+    {
+        ParseOne(Parser, physics_sleepheld);
+        return true;
+    }
+
+    if (token == "physics.roadlod")
+    {
+        ParseOne(Parser, physics_roadlod);
+        return true;
+    }
+
+    if (token == "physics.pipewake")
+    {
+        ParseOne(Parser, physics_pipewake);
+        return true;
+    }
+
+    if (token == "performance.multithreading")
+    {
+        ParseOne(Parser, performance_multithreading);
         return true;
     }
 
@@ -572,6 +628,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "catenary.procedural")
+    {
+        ParseOne(Parser, CatenaryProcedural);
+        return true;
+    }
+
+    if (token == "catenary.solidrange")
+    {
+        // zasięg rysowania przewodów sieci trakcyjnej jako brył [m]; 0 wyłącza
+        ParseOne(Parser, CatenarySettings.solid_range);
+        CatenarySettings.solid_range = std::clamp(CatenarySettings.solid_range, 0.f, 2000.f);
+        return true;
+    }
+
     if (token == "splinefidelity")
     {
         float splinefidelity = 0.f;
@@ -586,6 +656,40 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         ParseOne(Parser, sleeperdistance);
         // negative values disable the cap; we clamp at 0 so 0 means "do not render sleepers"
         SleeperDistance = std::max(0.f, sleeperdistance);
+        return true;
+    }
+
+    if (token == "sleepers3d")
+    {
+        // model of the sleepers and switch timbers, put together from its submodels begin, main and end; none: no such sleepers
+        ParseOne(Parser, Sleepers3D);
+        if (Sleepers3D == "none")
+        {
+            Sleepers3D.clear();
+        }
+        return true;
+    }
+
+    if (token == "sleepers3dbed")
+    {
+        // the ballast under the tracks with 3D sleepers; no: the sleepers are laid on the ground alone
+        ParseOne(Parser, Sleepers3DBed);
+        return true;
+    }
+
+    if (token == "sleepers3dplain")
+    {
+        // model, skin and the height of the rail seat of the sleepers of a track running alone, square to it; none: the timbers of sleepers3d there too
+        Parser.getTokens(3, false);
+        Parser >> Sleepers3DPlain >> Sleepers3DPlainSkin >> Sleepers3DPlainSeat;
+        if (Sleepers3DPlain == "none")
+        {
+            Sleepers3DPlain.clear();
+        }
+        if (Sleepers3DPlainSkin == "none")
+        {
+            Sleepers3DPlainSkin.clear();
+        }
         return true;
     }
 
@@ -1089,6 +1193,12 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "debug.memorystats")
+    {
+        ParseOne(Parser, debug_memorystats);
+        return true;
+    }
+
     if (token == "debuglog")
     {
         std::string value;
@@ -1392,15 +1502,24 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser.getTokens(1, false);
         Parser >> reflectiontune.range_vehicles;
     }
-    else if (Token == "gfx.framebuffer.width")
+    else if ((Token == "gfx.framebuffer.width") || (Token == "gfx.framebuffer.height"))
     {
+        // the size of the image is a part of the size of the window now (gfx.buffer.percent)
         Parser.getTokens(1, false);
-        Parser >> gfx_framebuffer_width;
+        int ignored{0};
+        Parser >> ignored;
+        WriteLog("eu07.ini: \"" + std::string(Token) + "\" is no longer supported and was ignored, use gfx.buffer.percent");
     }
-    else if (Token == "gfx.framebuffer.height")
+    else if (Token == "gfx.buffer.percent")
     {
+        // a part of the window: 0.5 is half its width and half its height. a value over 4 is taken as percents (50: 0.5)
         Parser.getTokens(1, false);
-        Parser >> gfx_framebuffer_height;
+        Parser >> gfx_buffer_scale;
+        if (gfx_buffer_scale > 4.f)
+        {
+            gfx_buffer_scale *= 0.01f;
+        }
+        gfx_buffer_scale = std::clamp(gfx_buffer_scale, 0.25f, 2.f);
     }
     else if (Token == "gfx.shadowmap.enabled")
     {
@@ -1411,6 +1530,154 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
     {
         Parser.getTokens(1);
         Parser >> gfx_envmap_enabled;
+    }
+    else if (Token == "gfx.lights.clustered")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_lights_clustered;
+    }
+    else if (Token == "gfx.gpucull")
+    {
+        // yes: culled and drawn from the gpu, compare: culled on both, drawn by the cpu, anything else: cpu
+        Parser.getTokens(1);
+        std::string mode;
+        Parser >> mode;
+        gfx_gpucull = (mode == "yes" || mode == "true" || mode == "1") ? 1 : (mode == "compare" || mode == "2") ? 2 : 0;
+    }
+    else if (Token == "gfx.gpucull.occlusion")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_occlusion;
+    }
+    else if (Token == "gfx.gpucull.occlusion.instances")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_occlusion_instances;
+    }
+    else if (Token == "gfx.depthprepass")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_depthprepass;
+    }
+    else if (Token == "gfx.gpucull.multidraw")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_multidraw;
+    }
+    else if (Token == "gfx.gpucull.shadows")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_shadows;
+    }
+    else if (Token == "gfx.gpucull.reflections")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_reflections;
+    }
+    else if (Token == "gfx.gpucull.shadows.headlights")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_shadows_headlights;
+    }
+    else if (Token == "gfx.gpucull.shadows.lamps")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_shadows_lamps;
+    }
+    else if (Token == "gfx.gpucull.sleepers")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_sleepers;
+    }
+    else if (Token == "gfx.gpucull.models")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_models;
+    }
+    else if (Token == "gfx.gpucull.bucketrange")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_bucketrange;
+    }
+    else if (Token == "gfx.gpucull.walkcache")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_gpucull_walkcache;
+    }
+    else if (Token == "gfx.geometry.shared")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_geometry_shared;
+    }
+    else if (Token == "gfx.depthprepass.scene")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_depthprepass_scene;
+    }
+    else if (Token == "gfx.depthprepass.replay")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_depthprepass_replay;
+    }
+    else if (Token == "gfx.grass")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass;
+    }
+    else if (Token == "gfx.grass.distance")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass_distance;
+        gfx_grass_distance = std::clamp(gfx_grass_distance, 5.f, 500.f);
+    }
+    else if (Token == "gfx.grass.fadedistance")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass_fadedistance;
+        gfx_grass_fadedistance = std::clamp(gfx_grass_fadedistance, 5.f, 600.f);
+    }
+    else if (Token == "gfx.grass.density")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_grass_density;
+        gfx_grass_density = std::clamp(gfx_grass_density, 0.f, 4.f);
+    }
+    else if (Token == "gfx.smoke.gpu")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_smoke_gpu;
+    }
+    else if (Token == "gfx.smoke.lighting")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_smoke_lighting;
+    }
+    else if (Token == "gfx.particles.soft")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_particles_soft;
+        gfx_particles_soft = std::clamp(gfx_particles_soft, 0.f, 4.f);
+    }
+    else if (Token == "gfx.precipitation.gpu")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_precipitation_gpu;
+    }
+    else if (Token == "gfx.precipitation.particles")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_precipitation_particles;
+        gfx_precipitation_particles = std::clamp(gfx_precipitation_particles, 0, 1 << 20);
+    }
+    else if (Token == "gfx.bufferstreaming")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_bufferstreaming;
+    }
+    else if (Token == "gfx.lights.clusterheatmap")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_lights_clusterheatmap;
     }
     else if (Token == "gfx.postfx.motionblur.enabled")
     {
@@ -1482,13 +1749,21 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
     }
     else if (Token == "gfx.usegles")
     {
+        // the OpenGL ES / ANGLE path was removed; read and ignore so old eu07.ini files still load
+        bool usegles{false};
         Parser.getTokens(1);
-        Parser >> gfx_usegles;
+        Parser >> usegles;
+        WriteLog("eu07.ini: \"gfx.usegles\" is no longer supported and was ignored");
     }
     else if (Token == "gfx.shadergamma")
     {
         Parser.getTokens(1);
         Parser >> gfx_shadergamma;
+    }
+    else if (Token == "gfx.shaders.binaries")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_shader_binaries;
     }
     else if (Token == "gfx.drawrange.factor.max")
     {
@@ -1512,12 +1787,328 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_shadow_rank_cutoff;
         gfx_shadow_rank_cutoff = std::clamp(gfx_shadow_rank_cutoff, 1, 3);
     }
+    else if (Token == "gfx.shadow.sdsm")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_shadow_sdsm;
+    }
+    else if (Token == "gfx.shadow.sdsm.split")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_shadow_sdsm_split;
+        gfx_shadow_sdsm_split = std::clamp(gfx_shadow_sdsm_split, 0.f, 1.f);
+    }
+    else if (Token == "gfx.vulkan.device")
+    {
+        // index of the gpu in the list of the log, or a part of its name
+        Parser.getTokens(1, false);
+        Parser >> gfx_vulkan_device;
+    }
+    else if (Token == "gfx.vulkan.validation")
+    {
+        // no/yes, 2: also gpu-assisted
+        std::string value;
+        Parser.getTokens(1);
+        Parser >> value;
+        gfx_vulkan_validation = (value == "2" ? 2 : (value == "yes" || value == "true" || value == "1") ? 1 : 0);
+    }
+    else if (Token == "gfx.vulkan.framesinflight")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_framesinflight;
+        gfx_vulkan_framesinflight = std::clamp(gfx_vulkan_framesinflight, 2, 3);
+    }
+    else if (Token == "gfx.vulkan.renderthread")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_renderthread;
+    }
+    else if (Token == "gfx.threads")
+    {
+        // 0: the cores less two
+        Parser.getTokens(1);
+        Parser >> gfx_threads;
+        gfx_threads = std::clamp(gfx_threads, 0, 64);
+    }
+    else if (Token == "gfx.vulkan.asyncresources")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_asyncresources;
+    }
+    else if (Token == "gfx.vulkan.parallelpasses")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_parallelpasses;
+    }
+    else if (Token == "gfx.vulkan.parallelmodels")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_parallelmodels;
+    }
+    else if (Token == "gfx.vulkan.asynccompute")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_asynccompute;
+    }
+    else if (Token == "gfx.vulkan.checkpoints")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_vulkan_checkpoints;
+    }
+
+    else if (ConfigParse_gfx_sky(Parser, Token))
+    {
+        // parsed
+    }
     else
     {
         tokenparsed = false;
     }
 
     return tokenparsed;
+}
+
+bool
+global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const Token ) {
+
+    // switches take yes/no (or true/false, 1/0), scales take a number. a missing entry keeps the default
+    auto const readswitch = [&]( bool &Value ) {
+        Parser.getTokens( 1 );
+        Parser >> Value; };
+    auto const readvalue = [&]( float &Value, float const Min, float const Max ) {
+        Parser.getTokens( 1 );
+        Parser >> Value;
+        Value = std::clamp( Value, Min, Max ); };
+
+    if( Token == "gfx.ambient.sh" ) { readswitch( gfx_ambient_sh ); }
+    else if( Token == "gfx.ambient.sh.strength" ) { readvalue( gfx_ambient_sh_strength, 0.f, 2.f ); }
+    else if( Token == "gfx.ambient.groundalbedo" ) { readvalue( gfx_ambient_groundalbedo, 0.f, 1.f ); }
+    else if( Token == "gfx.envmap.ggx" ) { readswitch( gfx_envmap_ggx ); }
+    else if( Token == "gfx.atmosphere" ) { readswitch( gfx_atmosphere ); }
+    else if( Token == "gfx.atmosphere.sky" ) { readvalue( gfx_atmosphere_sky, 0.f, 16.f ); }
+    else if( Token == "gfx.atmosphere.ambient" ) { readvalue( gfx_atmosphere_ambient, 0.f, 16.f ); }
+    else if( Token == "gfx.atmosphere.sun" ) { readvalue( gfx_atmosphere_sun, 0.f, 16.f ); }
+    else if( Token == "gfx.atmosphere.haze" ) { readvalue( gfx_atmosphere_haze, 0.f, 32.f ); }
+    else if( Token == "gfx.atmosphere.altitude" ) { readvalue( gfx_atmosphere_altitude, 0.f, 9000.f ); }
+    else if( Token == "gfx.postfx.autoexposure" ) { readswitch( gfx_postfx_autoexposure ); }
+    else if( Token == "gfx.postfx.autoexposure.key" ) { readvalue( gfx_postfx_autoexposure_key, 0.001f, 100.f ); }
+    else if( Token == "gfx.postfx.autoexposure.min" ) { readvalue( gfx_postfx_autoexposure_min, -16.f, 0.f ); }
+    else if( Token == "gfx.postfx.autoexposure.max" ) { readvalue( gfx_postfx_autoexposure_max, 0.f, 16.f ); }
+    else if( Token == "gfx.postfx.autoexposure.max.cab" ) { readvalue( gfx_postfx_autoexposure_max_cab, 0.f, 16.f ); }
+    else if( Token == "gfx.postfx.autoexposure.speed.dark" ) { readvalue( gfx_postfx_autoexposure_speed_dark, 0.01f, 100.f ); }
+    else if( Token == "gfx.postfx.autoexposure.speed.bright" ) { readvalue( gfx_postfx_autoexposure_speed_bright, 0.01f, 100.f ); }
+    else if( Token == "gfx.postfx.autoexposure.compensation" ) { readvalue( gfx_postfx_autoexposure_compensation, -16.f, 16.f ); }
+    else if( Token == "gfx.postfx.bloom" ) { readswitch( gfx_postfx_bloom ); }
+    else if( Token == "gfx.postfx.bloom.intensity" ) { readvalue( gfx_postfx_bloom_intensity, 0.f, 1.f ); }
+    else if( Token == "gfx.postfx.bloom.threshold" ) { readvalue( gfx_postfx_bloom_threshold, 0.f, 1000.f ); }
+    else if( Token == "gfx.postfx.whitebalance" ) { readswitch( gfx_postfx_whitebalance ); }
+    else if( Token == "gfx.postfx.whitebalance.temperature" ) { readvalue( gfx_postfx_whitebalance_temperature, 4000.f, 25000.f ); }
+    else if( Token == "gfx.postfx.whitebalance.tint" ) { readvalue( gfx_postfx_whitebalance_tint, -1.f, 1.f ); }
+    else if( Token == "gfx.postfx.ao" ) {
+        // yes/gtao: ground truth ambient occlusion, ssao: the older one, anything else: off
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        gfx_postfx_ao = ( mode == "yes" || mode == "true" || mode == "1" || mode == "gtao" ) ? 2 : ( mode == "ssao" ) ? 1 : 0; }
+    else if( Token == "gfx.postfx.ao.radius" ) { readvalue( gfx_postfx_ao_radius, 0.1f, 10.f ); }
+    else if( Token == "gfx.postfx.ao.strength" ) { readvalue( gfx_postfx_ao_strength, 0.f, 4.f ); }
+    else if( Token == "gfx.postfx.ao.bounce" ) { readvalue( gfx_postfx_ao_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.postfx.ao.cab" ) { readvalue( gfx_postfx_ao_cab, 0.f, 1.f ); }
+    else if( Token == "gfx.postfx.ao.quality" ) {
+        // slices and steps per side
+        Parser.getTokens( 2, false );
+        Parser >> gfx_postfx_ao_slices >> gfx_postfx_ao_steps;
+        gfx_postfx_ao_slices = std::clamp( gfx_postfx_ao_slices, 1, 8 );
+        gfx_postfx_ao_steps = std::clamp( gfx_postfx_ao_steps, 1, 16 ); }
+    else if( Token == "gfx.postfx.ao.lighting" ) { readswitch( gfx_postfx_ao_lighting ); }
+    else if( Token == "gfx.lights.scenery" ) { readswitch( gfx_lights_scenery ); }
+    else if( Token == "gfx.lights.vehicles" ) { readswitch( gfx_lights_vehicles ); }
+    else if( Token == "gfx.lights.headlights" ) { readswitch( gfx_lights_headlights ); }
+    else if( Token == "gfx.lights.cab" ) { readswitch( gfx_lights_cab ); }
+    else if( Token == "gfx.lights.freespot.intensity" ) { readvalue( gfx_lights_freespot_intensity, 0.f, 1000.f ); }
+    else if( Token == "gfx.lights.compartment.intensity" ) { readvalue( gfx_lights_compartment_intensity, 0.f, 100.f ); }
+    else if( Token == "gfx.lights.cab.intensity" ) { readvalue( gfx_lights_cab_intensity, 0.f, 100.f ); }
+    else if( Token == "gfx.lights.cab.bounce" ) { readvalue( gfx_lights_cab_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.cabprobe" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_cabprobe =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.cabprobe.interval" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_cabprobe_interval;
+        gfx_cabprobe_interval = std::clamp( gfx_cabprobe_interval, 1, 120 ); }
+    else if( Token == "gfx.cabprobe.bounce" ) { readvalue( gfx_cabprobe_bounce, 0.f, 4.f ); }
+    else if( Token == "gfx.cabprobe.reflections" ) { readswitch( gfx_cabprobe_reflections ); }
+    else if( Token == "gfx.cabprobe.sun" ) { readvalue( gfx_cabprobe_sun, 0.f, 4.f ); }
+    else if( Token == "gfx.interior.bounce" ) { readvalue( gfx_interior_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.skyvisibility" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_skyvisibility =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.skyvisibility.sun" ) { readswitch( gfx_skyvisibility_sun ); }
+    else if( Token == "gfx.skyvisibility.fog" ) { readswitch( gfx_skyvisibility_fog ); }
+    else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
+    else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
+    else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
+    else if( Token == "gfx.lights.shadows" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_lights_shadows =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.lights.shadows.cab" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_cab;
+        gfx_lights_shadows_cab = std::clamp( gfx_lights_shadows_cab, 0, 16 ); }
+    else if( Token == "gfx.lights.shadows.lamps" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_lamps;
+        gfx_lights_shadows_lamps = std::clamp( gfx_lights_shadows_lamps, 0, 32 ); }
+    else if( Token == "gfx.lights.shadows.lamps.size" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_lamps_size;
+        gfx_lights_shadows_lamps_size = std::clamp( gfx_lights_shadows_lamps_size, 128, 2048 ); }
+    else if( Token == "gfx.lights.shadows.lamps.range" ) { readvalue( gfx_lights_shadows_lamps_range, 0.f, 1000.f ); }
+    else if( Token == "gfx.lights.shadows.vehicles.range" ) { readvalue( gfx_lights_shadows_vehicles_range, 0.f, 1000.f ); }
+    else if( Token == "gfx.lights.shadows.headlights" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_shadows_headlights;
+        gfx_lights_shadows_headlights = std::clamp( gfx_lights_shadows_headlights, 0, 4 ); }
+    else if( Token == "gfx.lights.shadows.headlights.range" ) { readvalue( gfx_lights_shadows_headlights_range, 10.f, 1000.f ); }
+    else if( Token == "gfx.contactshadows" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_contactshadows =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.contactshadows.length" ) { readvalue( gfx_contactshadows_length, 0.05f, 5.f ); }
+    else if( Token == "gfx.contactshadows.range" ) { readvalue( gfx_contactshadows_range, 1.f, 1000.f ); }
+    else if( Token == "gfx.ssr" ) {
+        // no/low/medium/high, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_ssr =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            0; }
+    else if( Token == "gfx.ssr.range" ) { readvalue( gfx_ssr_range, 10.f, 2000.f ); }
+    else if( Token == "gfx.ssr.roughness" ) { readvalue( gfx_ssr_roughness, 0.f, 1.f ); }
+    else if( Token == "gfx.raytracing" ) { readswitch( gfx_raytracing ); }
+    else if( Token == "gfx.raytracing.range" ) { readvalue( gfx_raytracing_range, 10.f, 5000.f ); }
+    else if( Token == "gfx.fog" ) {
+        // volumetric (yes) or analytic (no, old): the same weather either way
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        gfx_fog = ( mode == "analytic" || mode == "old" || mode == "no" || mode == "false" || mode == "0" ) ? 0 : 1; }
+    else if( Token == "gfx.fog.quality" ) {
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_fog_quality = ( level == "low" || level == "1" ) ? 1 : ( level == "high" || level == "3" ) ? 3 : ( level == "ultra" || level == "4" ) ? 4 : 2; }
+    else if( Token == "gfx.antialiasing" ) {
+        // off, msaax2, msaax4, msaax8, taa, dlss or dlaa; it sets the multisampling too, the key which used to say it
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_dlss_native = false;
+        if( mode == "taa" ) {
+            gfx_antialiasing = antialiasing_mode::taa;
+            iMultisampling = 0; }
+        else if( mode == "dlss" || mode == "dlaa" ) {
+            gfx_antialiasing = antialiasing_mode::dlss;
+            gfx_dlss_native = ( mode == "dlaa" );
+            iMultisampling = 0; }
+        else if( mode == "msaax2" || mode == "msaax4" || mode == "msaax8" || mode == "msaax16" ) {
+            gfx_antialiasing = antialiasing_mode::msaa;
+            iMultisampling = ( mode == "msaax2" ) ? 1 : ( mode == "msaax4" ) ? 2 : ( mode == "msaax8" ) ? 3 : 4; }
+        else if( mode == "off" || mode == "no" || mode == "none" || mode == "0" ) {
+            gfx_antialiasing = antialiasing_mode::off;
+            iMultisampling = 0; }
+        else {
+            ErrorLog( "Bad config: unknown gfx.antialiasing \"" + mode + "\", expected off, msaax2, msaax4, msaax8, taa, dlss or dlaa" ); } }
+    else if( Token == "gfx.dlss.preset" ) {
+        // the presets of the dlss sdk 310 (the others are gone, deprecated or reserved)
+        Parser.getTokens( 1 );
+        std::string preset;
+        Parser >> preset;
+        std::transform( preset.begin(), preset.end(), preset.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_dlss_preset = ( preset == "j" ) ? 10 : ( preset == "k" ) ? 11 : ( preset == "l" ) ? 12 : ( preset == "m" ) ? 13 : 0;
+        if( ( gfx_dlss_preset == 0 ) && ( preset != "default" ) ) {
+            ErrorLog( "Bad config: unknown gfx.dlss.preset \"" + preset + "\", expected default, j, k, l or m" ); } }
+    else if( Token == "gfx.dlss.autoexposure" ) { readswitch( gfx_dlss_autoexposure ); }
+    else if( Token == "gfx.dlss.lodbias" ) { readvalue( gfx_dlss_lodbias, -2.f, 2.f ); }
+    else if( Token == "gfx.dlss.developer" ) { readswitch( gfx_dlss_developer ); }
+    else if( Token == "gfx.framegeneration" ) {
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_framegeneration = ( mode == "x2" || mode == "on" || mode == "yes" || mode == "2" ) ? 2 : ( mode == "x3" || mode == "3" ) ? 3 : ( mode == "x4" || mode == "4" ) ? 4 : 1;
+        if( ( gfx_framegeneration == 1 ) && ( mode != "off" ) && ( mode != "no" ) && ( mode != "1" ) ) {
+            ErrorLog( "Bad config: unknown gfx.framegeneration \"" + mode + "\", expected off, x2, x3 or x4" ); } }
+    else if( Token == "gfx.reflex" ) {
+        Parser.getTokens( 1 );
+        std::string mode;
+        Parser >> mode;
+        std::transform( mode.begin(), mode.end(), mode.begin(), []( unsigned char c ) { return static_cast<char>( std::tolower( c ) ); } );
+        gfx_reflex = ( mode == "on" || mode == "yes" || mode == "1" ) ? 1 : ( mode == "boost" || mode == "2" ) ? 2 : 0;
+        if( ( gfx_reflex == 0 ) && ( mode != "off" ) && ( mode != "no" ) && ( mode != "0" ) ) {
+            ErrorLog( "Bad config: unknown gfx.reflex \"" + mode + "\", expected off, on or boost" ); } }
+    else if( Token == "gfx.fog.range" ) { readvalue( gfx_fog_range, 100.f, 10000.f ); }
+    else if( Token == "gfx.fog.lights" ) { readvalue( gfx_fog_lights, 0.f, 10.f ); }
+    else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
+    else if( Token == "gfx.fog.temporal" ) { readswitch( gfx_fog_temporal ); }
+    else if( Token == "gfx.fog.temporal.share" ) { readvalue( gfx_fog_temporal_share, 0.02f, 1.f ); }
+    else if( Token == "gfx.clouds" ) {
+        // no, or the quality: low, medium (yes), high, ultra
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        gfx_clouds =
+            ( level == "low" || level == "1" ) ? 1 :
+            ( level == "medium" || level == "yes" || level == "true" || level == "2" ) ? 2 :
+            ( level == "high" || level == "3" ) ? 3 :
+            ( level == "ultra" || level == "4" ) ? 4 :
+            0; }
+    else if( Token == "gfx.clouds.distance" ) { readvalue( gfx_clouds_distance, 5000.f, 200000.f ); }
+    else if( Token == "gfx.clouds.shadows" ) { readswitch( gfx_clouds_shadows ); }
+    else if( Token == "gfx.clouds.shadows.size" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_clouds_shadows_size;
+        gfx_clouds_shadows_size = std::clamp( gfx_clouds_shadows_size, 64, 2048 ); }
+    else if( Token == "gfx.clouds.shadows.range" ) { readvalue( gfx_clouds_shadows_range, 1000.f, 100000.f ); }
+    else if( Token == "gfx.stars" ) { readswitch( gfx_stars ); }
+    else if( Token == "gfx.stars.brightness" ) { readvalue( gfx_stars_brightness, 0.f, 16.f ); }
+    else if( Token == "gfx.sun.disc" ) { readvalue( gfx_sun_disc, 0.f, 4.f ); }
+    else if( Token == "gfx.moon.disc" ) { readvalue( gfx_moon_disc, 0.f, 16.f ); }
+    else if( Token == "gfx.moonlight" ) { readvalue( gfx_moonlight, 0.f, 10.f ); }
+    else { return false; }
+
+    return true;
 }
 
 void
@@ -1555,8 +2146,16 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.positional", EnvironmentPositionalVolume );
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
+    export_as_text( Output, "fmradio.enabled", fmradio_enabled );
+    export_as_text( Output, "fmradio.cleansound", fmradio_cleansound );
+    export_as_text( Output, "fmradio.stations", fmradio_stations );
     export_as_text( Output, "physicslog", WriteLogFlag );
     export_as_text( Output, "fullphysics", FullPhysics );
+    export_as_text( Output, "physics.sleepheld", physics_sleepheld );
+    export_as_text( Output, "physics.roadlod", physics_roadlod );
+    export_as_text( Output, "physics.pipewake", physics_pipewake );
+    export_as_text( Output, "performance.multithreading", performance_multithreading );
+    export_as_text( Output, "debug.memorystats", debug_memorystats );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );
     export_as_text( Output, "showsystemconsole", ShowSystemConsole );
@@ -1574,7 +2173,6 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "defaultext", szDefaultExt );
     export_as_text( Output, "newaircouplers", bnewAirCouplers );
     export_as_text( Output, "anisotropicfiltering", AnisotropicFiltering );
-    export_as_text( Output, "usevbo", bUseVBO );
     export_as_text( Output, "feedbackmode", iFeedbackMode );
     export_as_text( Output, "feedbackport", iFeedbackPort );
     export_as_text( Output, "multiplayer", iMultiplayer );
@@ -1603,8 +2201,13 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.smoke", Smoke );
     export_as_text( Output, "gfx.smoke.fidelity", SmokeFidelity );
     export_as_text( Output, "smoothtraction", bSmoothTraction );
+    export_as_text( Output, "catenary.procedural", CatenaryProcedural );
+    export_as_text( Output, "catenary.solidrange", CatenarySettings.solid_range );
     export_as_text( Output, "splinefidelity", SplineFidelity );
     export_as_text( Output, "sleeperdistance", SleeperDistance );
+    export_as_text( Output, "sleepers3d", ( Sleepers3D.empty() ? std::string{ "none" } : Sleepers3D ) );
+    export_as_text( Output, "sleepers3dbed", Sleepers3DBed );
+    Output << "sleepers3dplain " << ( Sleepers3DPlain.empty() ? std::string{ "none" } : Sleepers3DPlain ) << ' ' << ( Sleepers3DPlainSkin.empty() ? std::string{ "none" } : Sleepers3DPlainSkin ) << ' ' << Sleepers3DPlainSeat << '\n';
     export_as_text( Output, "rendercab", render_cab );
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );
@@ -1615,6 +2218,14 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.reflections.fidelity", reflectiontune.fidelity );
     export_as_text( Output, "timespeed", fTimeSpeed );
     export_as_text( Output, "multisampling", iMultisampling );
+    export_as_text( Output, "gfx.antialiasing", std::string{ gfx_antialiasing == antialiasing_mode::taa ? "taa" : gfx_antialiasing == antialiasing_mode::dlss ? ( gfx_dlss_native ? "dlaa" : "dlss" ) : ( gfx_antialiasing == antialiasing_mode::off || iMultisampling == 0 ) ? "off" : "msaax" + std::to_string( 1 << iMultisampling ) } );
+    export_as_text( Output, "gfx.buffer.percent", gfx_buffer_scale );
+    export_as_text( Output, "gfx.dlss.preset", std::string{ gfx_dlss_preset == 10 ? "j" : gfx_dlss_preset == 11 ? "k" : gfx_dlss_preset == 12 ? "l" : gfx_dlss_preset == 13 ? "m" : "default" } );
+    export_as_text( Output, "gfx.dlss.autoexposure", gfx_dlss_autoexposure );
+    export_as_text( Output, "gfx.dlss.lodbias", gfx_dlss_lodbias );
+    export_as_text( Output, "gfx.dlss.developer", gfx_dlss_developer );
+    export_as_text( Output, "gfx.framegeneration", std::string{ gfx_framegeneration > 1 ? "x" + std::to_string( gfx_framegeneration ) : "off" } );
+    export_as_text( Output, "gfx.reflex", std::string{ gfx_reflex == 2 ? "boost" : gfx_reflex == 1 ? "on" : "off" } );
     export_as_text( Output, "latitude", fLatitudeDeg );
     export_as_text( Output, "convertmodels", iConvertModels );
     export_as_text( Output, "file.binary.terrain", file_binary_terrain );
@@ -1737,12 +2348,38 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << extcam_res.y << "\n";
 
     export_as_text( Output, "compresstex", compress_tex );
-    export_as_text( Output, "gfx.framebuffer.width", gfx_framebuffer_width );
-    export_as_text( Output, "gfx.framebuffer.height", gfx_framebuffer_height );
     export_as_text( Output, "gfx.shadowmap.enabled", gfx_shadowmap_enabled );
     // TODO: export fpslimit
     export_as_text( Output, "randomseed", Global.random_seed );
     export_as_text( Output, "gfx.envmap.enabled", gfx_envmap_enabled );
+    export_as_text( Output, "gfx.lights.clustered", gfx_lights_clustered );
+    export_as_text( Output, "gfx.lights.clusterheatmap", gfx_lights_clusterheatmap );
+    export_as_text( Output, "gfx.gpucull", std::string{ gfx_gpucull == 1 ? "yes" : gfx_gpucull == 2 ? "compare" : "no" } );
+    export_as_text( Output, "gfx.gpucull.occlusion", gfx_gpucull_occlusion );
+    export_as_text( Output, "gfx.gpucull.occlusion.instances", gfx_gpucull_occlusion_instances );
+    export_as_text( Output, "gfx.depthprepass", gfx_depthprepass );
+    export_as_text( Output, "gfx.gpucull.multidraw", gfx_gpucull_multidraw );
+    export_as_text( Output, "gfx.gpucull.shadows", gfx_gpucull_shadows );
+    export_as_text( Output, "gfx.gpucull.reflections", gfx_gpucull_reflections );
+    export_as_text( Output, "gfx.gpucull.shadows.headlights", gfx_gpucull_shadows_headlights );
+    export_as_text( Output, "gfx.gpucull.shadows.lamps", gfx_gpucull_shadows_lamps );
+    export_as_text( Output, "gfx.gpucull.sleepers", gfx_gpucull_sleepers );
+    export_as_text( Output, "gfx.gpucull.models", gfx_gpucull_models );
+    export_as_text( Output, "gfx.gpucull.bucketrange", gfx_gpucull_bucketrange );
+    export_as_text( Output, "gfx.gpucull.walkcache", gfx_gpucull_walkcache );
+    export_as_text( Output, "gfx.geometry.shared", gfx_geometry_shared );
+    export_as_text( Output, "gfx.depthprepass.scene", gfx_depthprepass_scene );
+    export_as_text( Output, "gfx.depthprepass.replay", gfx_depthprepass_replay );
+    export_as_text( Output, "gfx.grass", gfx_grass );
+    export_as_text( Output, "gfx.grass.distance", gfx_grass_distance );
+    export_as_text( Output, "gfx.grass.fadedistance", gfx_grass_fadedistance );
+    export_as_text( Output, "gfx.grass.density", gfx_grass_density );
+    export_as_text( Output, "gfx.smoke.gpu", gfx_smoke_gpu );
+    export_as_text( Output, "gfx.smoke.lighting", gfx_smoke_lighting );
+    export_as_text( Output, "gfx.particles.soft", gfx_particles_soft );
+    export_as_text( Output, "gfx.precipitation.gpu", gfx_precipitation_gpu );
+    export_as_text( Output, "gfx.precipitation.particles", gfx_precipitation_particles );
+    export_as_text( Output, "gfx.bufferstreaming", gfx_bufferstreaming );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );
     // TODO: export gfx_postfx_motionblur_format
@@ -1753,8 +2390,105 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.skippipeline", gfx_skippipeline );
     export_as_text( Output, "gfx.extraeffects", gfx_extraeffects );
     export_as_text( Output, "gfx.shadergamma", gfx_shadergamma );
+    export_as_text( Output, "gfx.shaders.binaries", gfx_shader_binaries );
+    export_as_text( Output, "gfx.vulkan.device", gfx_vulkan_device );
+    export_as_text( Output, "gfx.vulkan.validation", gfx_vulkan_validation );
+    export_as_text( Output, "gfx.vulkan.framesinflight", gfx_vulkan_framesinflight );
+    export_as_text( Output, "gfx.vulkan.renderthread", gfx_vulkan_renderthread );
+    export_as_text( Output, "gfx.threads", gfx_threads );
+    export_as_text( Output, "gfx.vulkan.asyncresources", gfx_vulkan_asyncresources );
+    export_as_text( Output, "gfx.vulkan.parallelpasses", gfx_vulkan_parallelpasses );
+    export_as_text( Output, "gfx.vulkan.parallelmodels", gfx_vulkan_parallelmodels );
+    export_as_text( Output, "gfx.vulkan.asynccompute", gfx_vulkan_asynccompute );
+    export_as_text( Output, "gfx.vulkan.checkpoints", gfx_vulkan_checkpoints );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
+    export_as_text( Output, "gfx.shadow.sdsm", gfx_shadow_sdsm );
+    export_as_text( Output, "gfx.shadow.sdsm.split", gfx_shadow_sdsm_split );
+    export_as_text( Output, "gfx.ambient.sh", gfx_ambient_sh );
+    export_as_text( Output, "gfx.ambient.sh.strength", gfx_ambient_sh_strength );
+    export_as_text( Output, "gfx.ambient.groundalbedo", gfx_ambient_groundalbedo );
+    export_as_text( Output, "gfx.envmap.ggx", gfx_envmap_ggx );
+    export_as_text( Output, "gfx.atmosphere", gfx_atmosphere );
+    export_as_text( Output, "gfx.atmosphere.sky", gfx_atmosphere_sky );
+    export_as_text( Output, "gfx.atmosphere.ambient", gfx_atmosphere_ambient );
+    export_as_text( Output, "gfx.atmosphere.sun", gfx_atmosphere_sun );
+    export_as_text( Output, "gfx.atmosphere.haze", gfx_atmosphere_haze );
+    export_as_text( Output, "gfx.atmosphere.altitude", gfx_atmosphere_altitude );
+    export_as_text( Output, "gfx.postfx.autoexposure", gfx_postfx_autoexposure );
+    export_as_text( Output, "gfx.postfx.autoexposure.key", gfx_postfx_autoexposure_key );
+    export_as_text( Output, "gfx.postfx.autoexposure.min", gfx_postfx_autoexposure_min );
+    export_as_text( Output, "gfx.postfx.autoexposure.max", gfx_postfx_autoexposure_max );
+    export_as_text( Output, "gfx.postfx.autoexposure.max.cab", gfx_postfx_autoexposure_max_cab );
+    export_as_text( Output, "gfx.postfx.autoexposure.speed.dark", gfx_postfx_autoexposure_speed_dark );
+    export_as_text( Output, "gfx.postfx.autoexposure.speed.bright", gfx_postfx_autoexposure_speed_bright );
+    export_as_text( Output, "gfx.postfx.autoexposure.compensation", gfx_postfx_autoexposure_compensation );
+    export_as_text( Output, "gfx.postfx.bloom", gfx_postfx_bloom );
+    export_as_text( Output, "gfx.postfx.bloom.intensity", gfx_postfx_bloom_intensity );
+    export_as_text( Output, "gfx.postfx.bloom.threshold", gfx_postfx_bloom_threshold );
+    export_as_text( Output, "gfx.postfx.whitebalance", gfx_postfx_whitebalance );
+    export_as_text( Output, "gfx.postfx.whitebalance.temperature", gfx_postfx_whitebalance_temperature );
+    export_as_text( Output, "gfx.postfx.whitebalance.tint", gfx_postfx_whitebalance_tint );
+    export_as_text( Output, "gfx.postfx.ao", std::string{ gfx_postfx_ao == 2 ? "gtao" : gfx_postfx_ao == 1 ? "ssao" : "no" } );
+    export_as_text( Output, "gfx.postfx.ao.radius", gfx_postfx_ao_radius );
+    export_as_text( Output, "gfx.postfx.ao.strength", gfx_postfx_ao_strength );
+    export_as_text( Output, "gfx.postfx.ao.bounce", gfx_postfx_ao_bounce );
+    export_as_text( Output, "gfx.postfx.ao.cab", gfx_postfx_ao_cab );
+    Output << "gfx.postfx.ao.quality " << gfx_postfx_ao_slices << " " << gfx_postfx_ao_steps << "\n";
+    export_as_text( Output, "gfx.postfx.ao.lighting", gfx_postfx_ao_lighting );
+    export_as_text( Output, "gfx.lights.scenery", gfx_lights_scenery );
+    export_as_text( Output, "gfx.lights.vehicles", gfx_lights_vehicles );
+    export_as_text( Output, "gfx.lights.headlights", gfx_lights_headlights );
+    export_as_text( Output, "gfx.lights.cab", gfx_lights_cab );
+    export_as_text( Output, "gfx.lights.freespot.intensity", gfx_lights_freespot_intensity );
+    export_as_text( Output, "gfx.lights.compartment.intensity", gfx_lights_compartment_intensity );
+    export_as_text( Output, "gfx.lights.cab.intensity", gfx_lights_cab_intensity );
+    export_as_text( Output, "gfx.lights.cab.bounce", gfx_lights_cab_bounce );
+    export_as_text( Output, "gfx.cabprobe", std::string{ gfx_cabprobe == 3 ? "high" : gfx_cabprobe == 2 ? "medium" : gfx_cabprobe == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.cabprobe.interval", gfx_cabprobe_interval );
+    export_as_text( Output, "gfx.cabprobe.bounce", gfx_cabprobe_bounce );
+    export_as_text( Output, "gfx.cabprobe.reflections", gfx_cabprobe_reflections );
+    export_as_text( Output, "gfx.cabprobe.sun", gfx_cabprobe_sun );
+    export_as_text( Output, "gfx.interior.bounce", gfx_interior_bounce );
+    export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
+    export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );
+    export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
+    export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );
+    export_as_text( Output, "gfx.lights.range", gfx_lights_range );
+    export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.lights.shadows.cab", gfx_lights_shadows_cab );
+    export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );
+    export_as_text( Output, "gfx.lights.shadows.lamps.size", gfx_lights_shadows_lamps_size );
+    export_as_text( Output, "gfx.lights.shadows.lamps.range", gfx_lights_shadows_lamps_range );
+    export_as_text( Output, "gfx.lights.shadows.vehicles.range", gfx_lights_shadows_vehicles_range );
+    export_as_text( Output, "gfx.lights.shadows.headlights", gfx_lights_shadows_headlights );
+    export_as_text( Output, "gfx.lights.shadows.headlights.range", gfx_lights_shadows_headlights_range );
+    export_as_text( Output, "gfx.contactshadows", std::string{ gfx_contactshadows == 3 ? "high" : gfx_contactshadows == 2 ? "medium" : gfx_contactshadows == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.contactshadows.length", gfx_contactshadows_length );
+    export_as_text( Output, "gfx.contactshadows.range", gfx_contactshadows_range );
+    export_as_text( Output, "gfx.ssr", std::string{ gfx_ssr == 3 ? "high" : gfx_ssr == 2 ? "medium" : gfx_ssr == 1 ? "low" : "no" } );
+    export_as_text( Output, "gfx.ssr.range", gfx_ssr_range );
+    export_as_text( Output, "gfx.ssr.roughness", gfx_ssr_roughness );
+    export_as_text( Output, "gfx.raytracing", gfx_raytracing );
+    export_as_text( Output, "gfx.raytracing.range", gfx_raytracing_range );
+    export_as_text( Output, "gfx.fog", std::string{ gfx_fog == 1 ? "volumetric" : "analytic" } );
+    export_as_text( Output, "gfx.fog.quality", std::string{ gfx_fog_quality == 1 ? "low" : gfx_fog_quality == 3 ? "high" : gfx_fog_quality == 4 ? "ultra" : "medium" } );
+    export_as_text( Output, "gfx.fog.range", gfx_fog_range );
+    export_as_text( Output, "gfx.fog.lights", gfx_fog_lights );
+    export_as_text( Output, "gfx.fog.shadows", gfx_fog_shadows );
+    export_as_text( Output, "gfx.fog.temporal", gfx_fog_temporal );
+    export_as_text( Output, "gfx.fog.temporal.share", gfx_fog_temporal_share );
+    export_as_text( Output, "gfx.clouds", std::string{ gfx_clouds == 1 ? "low" : gfx_clouds == 2 ? "medium" : gfx_clouds == 3 ? "high" : gfx_clouds == 4 ? "ultra" : "no" } );
+    export_as_text( Output, "gfx.clouds.distance", gfx_clouds_distance );
+    export_as_text( Output, "gfx.clouds.shadows", gfx_clouds_shadows );
+    export_as_text( Output, "gfx.clouds.shadows.size", gfx_clouds_shadows_size );
+    export_as_text( Output, "gfx.clouds.shadows.range", gfx_clouds_shadows_range );
+    export_as_text( Output, "gfx.stars", gfx_stars );
+    export_as_text( Output, "gfx.stars.brightness", gfx_stars_brightness );
+    export_as_text( Output, "gfx.sun.disc", gfx_sun_disc );
+    export_as_text( Output, "gfx.moon.disc", gfx_moon_disc );
+    export_as_text( Output, "gfx.moonlight", gfx_moonlight );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );

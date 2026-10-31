@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
+struct gfx_backend_desc;
+
 class eu07_application {
     const int MAX_NETWORK_PER_FRAME = 1000;
 
@@ -99,15 +101,18 @@ private:
     using modeptr_array = std::array<std::shared_ptr<application_mode>, static_cast<std::size_t>( mode::count_ )>;
     using mode_stack = std::stack<mode>;
 // methods
-	  bool needs_ogl() const;
     void init_debug();
     void init_console();
     void init_files();
     int  init_settings( int Argc, char *Argv[] );
     int  init_locale();
     int  init_glfw();
+    // the backend of the renderer picked by gfxrenderer, opengl if it can't run here
+    void select_gfx_backend();
+    int  create_main_window();
+    // the backend picked can't run after all: the main window is made anew for opengl
+    int  fallback_to_opengl( std::string const &Reason );
     void init_callbacks();
-    int  init_ogl();
     int  init_ui();
     int  init_gfx();
     int  init_audio();
@@ -118,12 +123,14 @@ private:
 // members
 
     bool m_screenshot_queued = false;
+    // the ui of the crash gui, drawn in the frames of the renderer instead of the ui of the modes while it's there
+    std::function<void()> m_crashui;
 
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode
     python_taskqueue m_taskqueue;
     std::vector<GLFWwindow *> m_windows;
-    int m_glfwversion;
+    gfx_backend_desc const *m_gfxbackend { nullptr }; // owned by gfx_renderer_factory
 
 	std::optional<network::manager> m_network;
     std::optional<headtrack> m_headtrack;

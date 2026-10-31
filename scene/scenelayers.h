@@ -144,6 +144,14 @@ struct shape_source
 	bool erased{false}; // the definition goes from the file on save
 };
 
+// node definitions the editor writes all at once for a layer (the catenary): on save the definitions "node ... <kind> ... end<kind>"
+// of these kinds are taken out of the files of the given layers and the given lines go into them instead, like the new definitions
+struct node_blocks
+{
+	std::set<std::string> kinds; // node types, lower case
+	std::map<layer_handle, std::vector<std::string>> lines;
+};
+
 struct save_result
 {
 	bool success{false};
@@ -294,8 +302,8 @@ class node_layers
 	void mark(layer_handle Layer, std::string const &Mark, std::vector<std::string> Lines);
 
 	// layer management. changes are applied to the scenery files by save()
-	// creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
-	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason);
+	// creates empty layer, included from specified one, made active unless told otherwise. returns: handle to the new layer, or null_handle with the explanation in Reason
+	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate = true);
 	bool can_remove(layer_handle Layer, std::string &Reason) const;
 	// marks specified layer and the layers it includes as dropped from the scenery. their files are left on the disk
 	bool remove(layer_handle Layer);
@@ -335,7 +343,7 @@ class node_layers
 	// returns: empty text if the directive can't be read
 	std::string directive(instance_handle Instance) const;
 	// replaces the directive of specified include, the scenery file receives it on save. NOTE: the nodes aren't touched
-	bool modify(instance_handle Instance, std::string const &Directive);
+	bool modify(instance_handle Instance, std::string const &Directive, std::string const &File = {});
 	// takes the models specified include was loaded with out of the scene, once the editor shows its own in their place
 	void rebuilt(instance_handle Instance);
 	// true if specified node was replaced by the editor with a node showing the current state of its include
@@ -349,7 +357,9 @@ class node_layers
 	// writes changes made in the editor to the scenery files: changed, created and deleted model instances and
 	// memory cells, and layer changes. the files are left intact unless the whole operation can be performed.
 	// Rootstatements: additional statements to place at the end of the scenario file
-	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {});
+	// Layerstatements: additional statements to place in the files of specified layers, the same way
+	// Blocks: node definitions written anew as a whole, see node_blocks
+	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {}, std::map<layer_handle, std::vector<std::string>> const &Layerstatements = {}, node_blocks const *Blocks = nullptr);
 	std::string check_sources() const;
 
   private:

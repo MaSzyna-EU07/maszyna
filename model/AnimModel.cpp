@@ -511,6 +511,16 @@ bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
     return false;
 }
+
+// returns true if any submodel of the tree turns to the camera: a billboard is placed from the modelview of the drawn
+// instance, which a walk started from the origin of the instance doesn't have
+bool submodel_tree_faces_camera( TSubModel const *Sub ) {
+    if( Sub == nullptr ) { return false; }
+    if( ( Sub->b_Anim == TAnimType::at_Billboard ) || ( Sub->b_aAnim == TAnimType::at_Billboard ) ) { return true; }
+    if( submodel_tree_faces_camera( Sub->Child ) ) { return true; }
+    if( submodel_tree_faces_camera( Sub->Next ) ) { return true; }
+    return false;
+}
 } // anonymous namespace
 
 int TAnimModel::s_instanceable_total = 0;
@@ -530,6 +540,7 @@ void TAnimModel::update_instanceable_flag() {
     // refs are intentionally allowed — they're either passed per-instance via
     // Material() or share global state (season) across all instances.
     m_instanceable = false;
+    m_cameraindependent = ( pModel != nullptr ) && ( false == submodel_tree_faces_camera( pModel->Root ) );
     ++s_classified_total;
     if( pModel == nullptr ) { ++s_rejected_no_pmodel; return; }
     if( iNumLights != 0 ) { ++s_rejected_lights; return; }
@@ -552,6 +563,7 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		// containers are added by events after the instance was loaded and bucketed;
 		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
 		m_instanceable = false;
+		++scene::node_state_version;
 		return tmp;
     }
 	return nullptr;
@@ -646,6 +658,11 @@ void TAnimModel::on_season_update() {
 
 void TAnimModel::RaPrepare()
 { // ustawia światła i animacje we wzorcu modelu przed renderowaniem egzemplarza
+	if ((pModel != nullptr) && ((iNumLights > 0) || (false == m_animlist.empty())))
+	{
+		// the lights and animations of this instance are set in the submodels the other instances share
+		pModel->state_changed();
+	}
 	if (Global.UpdateMaterials)
 	    on_season_update();
     for (int i = 0; i < iNumLights; ++i)
@@ -781,6 +798,7 @@ void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
     m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
     // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
     m_instanceable = false;
+    ++scene::node_state_version;
 }
 
 void TAnimModel::AnimUpdate(double dt)

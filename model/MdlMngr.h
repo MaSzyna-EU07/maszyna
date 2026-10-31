@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "utilities/Classes.h"
+#include "utilities/memorystats.h"
 
 class TMdlContainer {
     friend class TModelsManager;
@@ -22,6 +23,13 @@ class TModelsManager {
 public:
     // McZapkie: dodalem sciezke, notabene Path!=Patch :)
 	static TModel3d *GetModel(std::string const &Name, bool const dynamic = false, bool const Logerrors = true , int uid = 0);
+    // what the loaded models keep in memory, for the debug panel: models, submodels with the bytes of their own copies of the
+    // geometry (vertices, user data, indices; the gpu gets theirs from the geometry banks)
+    struct memory_data {
+        std::uint64_t models { 0 };
+        memory_count submodels;
+    };
+    static memory_data memory();
 
 private:
 // types:

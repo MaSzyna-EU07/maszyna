@@ -14,6 +14,14 @@ add_executable(${UNIT_TESTS_NAME}
 	main.cpp
 	vehicle.cpp
 	engine_stubs.cpp
+	editor_stubs.cpp
+	# the geometry of the lines the track editor designs, standing on its own
+	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
+	# and the heights of the tracks laid
+	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
+	# and the switches laid into the curves
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

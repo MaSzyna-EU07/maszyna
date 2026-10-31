@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
+#include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
@@ -21,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "world/Event.h"
 #include "world/Track.h"
 
 #include "imgui/imgui.h"
@@ -30,11 +32,13 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
 
 using geometry::bezier;
+using geometry::heading_of;
 using geometry::plan_of;
 
 double const kRailTop{0.18};
@@ -44,6 +48,10 @@ float const kSignalPick{12.0f};
 float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
+double const kSignalReach{10.0};
+// a track laid in the place of a deleted one runs within it of its axis
+double const kOrphanReach{1.0};
+std::size_t const kOrphanRecords{64};
 
 char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
 char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater"};
@@ -55,12 +63,6 @@ int kind_index(std::string const &Kind)
 		if (Kind == kKinds[i])
 			return i;
 	return -1;
-}
-
-std::string lower(std::string Text)
-{
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
 }
 
 double nearest_on(TTrack const &Track, int const Path, glm::dvec3 const &Point)
@@ -92,10 +94,15 @@ glm::dvec2 right_of(glm::dvec2 const &Direction)
 	return {-Direction.y, Direction.x};
 }
 
-double heading_of(glm::dvec2 const &Direction)
+glm::dvec2 travel_of(double const Yaw)
 {
-	auto const degrees{glm::degrees(std::atan2(Direction.x, Direction.y))};
-	return degrees < 0.0 ? degrees + 360.0 : degrees;
+	auto const yaw{glm::radians(Yaw + 180.0)};
+	return {std::sin(yaw), std::cos(yaw)};
+}
+
+int travel_side(int const Side, int const List)
+{
+	return Side * (List == 2 ? 1 : -1);
 }
 
 int lean_wanted(int const Side)
@@ -155,7 +162,15 @@ std::vector<std::string> const &plate_textures()
 	std::error_code error;
 	for (std::filesystem::directory_iterator file{"textures/tabl", error}, end; file != end; file.increment(error))
 	{
-		auto const stem{lower(file->path().stem().string())};
+		std::string stem;
+		try
+		{
+			stem = ToLower(file->path().stem().string());
+		}
+		catch (std::exception const &)
+		{
+			continue;
+		}
 		if (std::find(plates.begin(), plates.end(), stem) == plates.end())
 			plates.push_back(stem);
 	}
@@ -168,7 +183,7 @@ std::string plate_for(std::string const &Plate, std::string const &Name)
 	if (false == Plate.empty())
 		return Plate;
 	auto const &plates{plate_textures()};
-	auto const name{lower(Name)};
+	auto const name{ToLower(Name)};
 	return std::binary_search(plates.begin(), plates.end(), name) ? name : std::string{"0_nothing"};
 }
 
@@ -211,15 +226,65 @@ void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, 
 		Draw->AddCircleFilled(ImVec2(centre, headtop + 2.0f + lamp * 1.1f + i * lamp * 2.2f), lamp, lamp_colour(Lamps[i]));
 }
 
+
+// the point of an axis of the track nearest in the plan to the one given: how far, on which path, where on it
+double plan_gap(TTrack const &Track, glm::dvec3 const &Point, int &Path, double &Parameter)
+{
+	auto best{std::numeric_limits<double>::max()};
+	for (int path = 0; path < static_cast<int>(Track.m_paths.size()); ++path)
+	{
+		auto const parameter{nearest_on(Track, path, Point)};
+		auto const distance{geometry::plan_distance(bezier{Track.m_paths[path]}.point(parameter), Point)};
+		if (distance < best)
+		{
+			best = distance;
+			Path = path;
+			Parameter = parameter;
+		}
+	}
+	return best;
+}
+
+bool plan_overlaps(TTrack const &A, TTrack const &B, double const Margin)
+{
+	auto const box = [](TTrack const &Track, glm::dvec2 &Low, glm::dvec2 &High) {
+		Low = glm::dvec2{std::numeric_limits<double>::max()};
+		High = -Low;
+		for (auto const &path : Track.m_paths)
+		{
+			bezier const curve{path};
+			for (auto const &point : {curve.p0, curve.p1, curve.p2, curve.p3})
+			{
+				Low = glm::min(Low, plan_of(point));
+				High = glm::max(High, plan_of(point));
+			}
+		}
+	};
+	glm::dvec2 low_a, high_a, low_b, high_b;
+	box(A, low_a, high_a);
+	box(B, low_b, high_b);
+	return low_a.x - Margin <= high_b.x && low_b.x - Margin <= high_a.x && low_a.y - Margin <= high_b.y && low_b.y - Margin <= high_a.y;
+}
+
+std::string listed(std::vector<std::string> const &Names)
+{
+	std::string text;
+	for (auto const &name : Names)
+		text += (text.empty() ? "" : ", ") + name;
+	return text;
+}
+
 } // namespace
 
-void editor_mode::signal_scan()
+bool editor_mode::signal_scan(bool const Wait)
 {
 	auto &tool{m_signal};
-	if (false == EditorIncludes.scanned())
-		EditorIncludes.scan();
-	if (tool.revision == EditorIncludes.revision())
-		return;
+	if (Wait)
+		EditorIncludes.wait();
+	else
+		EditorIncludes.start();
+	if (false == EditorIncludes.scanned() || tool.revision == EditorIncludes.revision())
+		return false;
 	tool.revision = EditorIncludes.revision();
 	std::string chosen[kKindCount];
 	for (int i = 0; i < kKindCount; ++i)
@@ -251,6 +316,9 @@ void editor_mode::signal_scan()
 			if (parameter.id == 7)
 				item.linked = true;
 		}
+		editor_includes::signal_speeds(entry.file, item.speeds);
+		if (item.kind == "block")
+			item.aspects = editor_includes::block_aspects(entry.file);
 		tool.templates.push_back(std::move(item));
 	}
 	std::sort(tool.templates.begin(), tool.templates.end(), [](signal_template const &A, signal_template const &B) {
@@ -279,9 +347,10 @@ void editor_mode::signal_scan()
 		}
 		tool.chosen[i] = best;
 	}
+	return true;
 }
 
-editor_mode::signal_template const *editor_mode::signal_armed() const
+editor_mode::signal_template const *editor_mode::signal_current() const
 {
 	auto const &tool{m_signal};
 	if (tool.kind < 0 || tool.kind >= kKindCount)
@@ -290,9 +359,14 @@ editor_mode::signal_template const *editor_mode::signal_armed() const
 	return index >= 0 && index < static_cast<int>(tool.templates.size()) ? &tool.templates[index] : nullptr;
 }
 
+editor_mode::signal_template const *editor_mode::signal_armed() const
+{
+	return m_signal.armed ? signal_current() : nullptr;
+}
+
 editor_mode::signal_template const *editor_mode::signal_template_of(std::string const &File) const
 {
-	auto const file{lower(File)};
+	auto const file{ToLower(File)};
 	for (auto const &item : m_signal.templates)
 		if (item.file == file)
 			return &item;
@@ -338,52 +412,21 @@ std::string editor_mode::signal_intent_label(signal_template const &Template, si
 	if (Template.read.empty())
 		return format(STR_C("Click: %s %s (%s)%s, the train doesn't read it"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
 	auto const event{editor_includes::substitute(Template.read, {name})};
-	auto const path{Spot.track->name().empty() ? std::string{"(noname)"} : Spot.track->name()};
+	auto const path{name_of(*Spot.track)};
 	return format(STR_C("Click: %s %s (%s)%s, read by %s %s of %s"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str(), editor_track::event_keyword(Spot.list), event.c_str(), path.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
 }
 
 void editor_mode::signal_refresh(bool const Force)
 {
 	auto &tool{m_signal};
-	signal_scan();
+	auto const scanned{signal_scan(false)};
 	auto const now{ImGui::GetTime()};
-	if (false == Force && tool.standing_history == m_history.size() && tool.standing_redo == g_redo.size() && now - tool.standing_time < kRefreshPeriod)
+	if (false == Force && false == scanned && tool.standing_history == m_history.size() && tool.standing_redo == g_redo.size() && now - tool.standing_time < kRefreshPeriod)
 		return;
 	tool.standing_history = m_history.size();
 	tool.standing_redo = g_redo.size();
 	tool.standing_time = now;
-	tool.standing.clear();
-	if (scene::Layers.empty())
-		return;
-	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
-	std::unordered_map<std::string, std::pair<TTrack *, int>> readers;
-	for (auto *track : simulation::Paths.sequence())
-	{
-		if (track == nullptr || track->m_editorremoved)
-			continue;
-		for (int list = 0; list < 6; ++list)
-			for (auto const &event : editor_track::events(*track, list))
-				if (false == event.first.empty())
-					readers.emplace(lower(event.first), std::make_pair(track, list));
-	}
-	for (auto const &include : found)
-	{
-		auto const *item{signal_template_of(include.file)};
-		signal_standing standing;
-		standing.include = include;
-		standing.kind = kind_index(item->kind);
-		standing.name = include.values.empty() ? std::string{} : include.values.front();
-		if (false == item->read.empty())
-		{
-			standing.read = editor_includes::substitute(item->read, include.values);
-			if (auto const reader{readers.find(lower(standing.read))}; reader != readers.end())
-			{
-				standing.track = reader->second.first;
-				standing.list = reader->second.second;
-			}
-		}
-		tool.standing.push_back(std::move(standing));
-	}
+	tool.standing = signal_standing_now();
 	if (tool.selected != 0 && std::none_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; }))
 		tool.selected = 0;
 }
@@ -429,9 +472,12 @@ void editor_mode::signal_press(track_intent const &Intent)
 	{
 		if (Intent.index < 0 || Intent.index >= static_cast<int>(tool.standing.size()))
 			return;
-		signal_select(tool.standing[Intent.index].include.instance);
+		auto const &standing{tool.standing[Intent.index]};
+		tool.grab = plan_of(standing.include.location) - plan_of(cursor_level(standing.include.location.y));
+		tool.home_valid = signal_standing_spot(standing, tool.home);
 		tool.moving = true;
 		tool.moved_valid = false;
+		signal_select(standing.include.instance);
 		return;
 	}
 	auto const *armed{signal_armed()};
@@ -472,22 +518,123 @@ void editor_mode::signal_move_update()
 		return;
 	if (false == dragged)
 		return;
-	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end() || m_hover.track == nullptr)
+	auto const *found{signal_standing_of(tool.selected)};
+	if (found == nullptr)
 	{
 		tool.moved_valid = false;
 		return;
 	}
-	auto const *item{signal_template_of(found->include.file)};
-	if (item == nullptr)
-		return;
-	auto const yaw{glm::radians(found->include.yaw + 180.0)};
-	glm::dvec2 const travel{std::sin(yaw), std::cos(yaw)};
-	auto const parameter{nearest_on(*m_hover.track, std::clamp(m_hover.path, 0, static_cast<int>(m_hover.track->m_paths.size()) - 1), m_hover.point)};
-	auto const forward{forward_at(*m_hover.track, std::clamp(m_hover.path, 0, static_cast<int>(m_hover.track->m_paths.size()) - 1), parameter)};
-	auto const facing{glm::dot(forward, travel) >= 0.0 ? 1 : -1};
-	auto const sideoftravel{glm::dot(plan_of(found->include.location) - plan_of(m_hover.point), right_of(travel)) >= 0.0 ? 1 : -1};
-	tool.moved_valid = signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, m_hover.point, facing, sideoftravel * facing, *item, tool.moved);
+	auto const &location{found->include.location};
+	auto const cursor{cursor_level(location.y)};
+	glm::dvec3 const held{cursor.x + tool.grab.x, location.y, cursor.z + tool.grab.y};
+	// the track under the cursor; off every track, as it is when the signal is dragged beside its track, the track the
+	// signal stands by
+	auto *track{m_hover.track};
+	auto path{m_hover.path};
+	if (track == nullptr && tool.home_valid)
+	{
+		track = tool.home.track;
+		path = tool.home.path;
+	}
+	tool.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.moved);
+}
+
+std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() const
+{
+	std::vector<signal_standing> standing;
+	if (scene::Layers.empty() || m_signal.templates.empty())
+		return standing;
+	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
+	std::unordered_map<std::string, std::pair<TTrack *, int>> readers;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		for (int list = 0; list < 6; ++list)
+			for (auto const &event : editor_track::events(*track, list))
+				if (false == event.first.empty())
+					readers.emplace(ToLower(event.first), std::make_pair(track, list));
+	}
+	for (auto const &include : found)
+	{
+		auto const *item{signal_template_of(include.file)};
+		if (item == nullptr)
+			continue;
+		signal_standing signal;
+		signal.include = include;
+		signal.kind = kind_index(item->kind);
+		signal.name = include.values.empty() ? std::string{} : include.values.front();
+		if (false == item->read.empty())
+		{
+			signal.read = editor_includes::substitute(item->read, include.values);
+			if (auto const reader{readers.find(ToLower(signal.read))}; reader != readers.end())
+			{
+				signal.track = reader->second.first;
+				signal.list = reader->second.second;
+			}
+		}
+		standing.push_back(std::move(signal));
+	}
+	return standing;
+}
+
+editor_mode::signal_standing const *editor_mode::signal_standing_of(scene::instance_handle const Instance) const
+{
+	auto const &standing{m_signal.standing};
+	auto const found{std::find_if(standing.begin(), standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == Instance; })};
+	return found != standing.end() ? &*found : nullptr;
+}
+
+bool editor_mode::signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const
+{
+	auto const *item{signal_template_of(Standing.include.file)};
+	if (item == nullptr || Track.m_paths.empty() || Track.m_editorremoved)
+		return false;
+	auto const path{std::clamp(Path, 0, static_cast<int>(Track.m_paths.size()) - 1)};
+	auto const forward{forward_at(Track, path, nearest_on(Track, path, Point))};
+	auto const facing{glm::dot(forward, travel_of(Standing.include.yaw)) >= 0.0 ? 1 : -1};
+	return signal_spot_at(Track, path, Point, Point, facing, Side * facing, *item, Spot);
+}
+
+bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const
+{
+	auto const &location{Standing.include.location};
+	TTrack *track{nullptr};
+	int path{0};
+	auto best{kSignalReach};
+	auto const consider = [&](TTrack *Track) {
+		if (Track == nullptr || Track->m_editorremoved)
+			return;
+		for (int p = 0; p < static_cast<int>(Track->m_paths.size()); ++p)
+		{
+			bezier const curve{Track->m_paths[p]};
+			auto const low{glm::min(glm::min(plan_of(curve.p0), plan_of(curve.p1)), glm::min(plan_of(curve.p2), plan_of(curve.p3)))};
+			auto const high{glm::max(glm::max(plan_of(curve.p0), plan_of(curve.p1)), glm::max(plan_of(curve.p2), plan_of(curve.p3)))};
+			if (glm::length(glm::max(glm::max(low - plan_of(location), plan_of(location) - high), glm::dvec2{0.0})) >= best)
+				continue;
+			auto const distance{geometry::plan_distance(curve.point(nearest_on(*Track, p, location)), location)};
+			if (distance < best)
+			{
+				best = distance;
+				track = Track;
+				path = p;
+			}
+		}
+	};
+	consider(Standing.track);
+	if (track == nullptr)
+		for (auto *candidate : simulation::Paths.sequence())
+			consider(candidate);
+	if (track == nullptr)
+		return false;
+	auto const axis{bezier{track->m_paths[path]}.point(nearest_on(*track, path, location))};
+	auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(Standing.include.yaw))) >= 0.0 ? 1 : -1};
+	if (false == signal_drop_at(Standing, *track, path, location, side, Spot))
+		return false;
+	Spot.offset = geometry::plan_distance(location, axis);
+	Spot.position = location;
+	Spot.yaw = Standing.include.yaw;
+	return true;
 }
 
 void editor_mode::signal_release()
@@ -504,38 +651,61 @@ void editor_mode::signal_release()
 		return;
 	tool.moving = false;
 	auto const &mouse{ImGui::GetIO().MousePos};
-	if (false == tool.moved_valid || glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
+	if (glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
 		return;
+	if (false == tool.moved_valid)
+	{
+		tool.status = refused(STR_C("Drop the signal by a track"));
+		return;
+	}
 	tool.moved_valid = false;
-	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end() || false == scene::Layers.tracked(found->include.instance) || false == scene::Layers.removable(found->include.instance))
-		return;
-	auto const &spot{tool.moved};
-	auto const &included{scene::Layers.instance(found->include.instance)};
-	auto values{found->include.values};
-	auto const local{spot.position - included.context.offset};
+	if (auto const *found{signal_standing_of(tool.selected)})
+		signal_move_to(*found, tool.moved, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"));
+}
+
+bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread)
+{
+	auto &tool{m_signal};
+	auto const instance{Standing.include.instance};
+	if (false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance))
+	{
+		tool.status = refused(STR_C("This signal is in a file the editor doesn't change, it can't be moved"));
+		return false;
+	}
+	auto const &included{scene::Layers.instance(instance)};
+	auto file{*included.file};
+	signal_spot before;
+	auto const *item{signal_template_of(Standing.include.file)};
+	if (item != nullptr && signal_standing_spot(Standing, before) && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
+		file = signal_variant(*item, Spot);
+	auto values{Standing.include.values};
+	auto const local{Spot.position - included.context.offset};
 	values[1] = editor_includes::number(local.x);
 	values[2] = editor_includes::number(local.y);
 	values[3] = editor_includes::number(local.z);
-	values[4] = editor_includes::number(spot.yaw);
-	auto before{scene::Layers.directive(found->include.instance)};
+	values[4] = editor_includes::number(Spot.yaw);
+	auto const *next{signal_template_of(file)};
+	auto const read{next != nullptr && false == next->read.empty() ? editor_includes::substitute(next->read, values) : Standing.read};
+	auto directive{scene::Layers.directive(instance)};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
-	if (false == found->read.empty() && spot.track->Dynamics.empty())
+	if (false == Standing.read.empty() && Spot.track->Dynamics.empty())
 	{
-		signal_detach_events(found->read, states);
-		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.track; }))
-			states.emplace_back(spot.track, editor_track::capture(*spot.track));
-		editor_track::events(*spot.track, spot.list).emplace_back(lower(found->read), nullptr);
+		signal_detach_events(Standing.read, states);
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == Spot.track; }))
+			states.emplace_back(Spot.track, editor_track::capture(*Spot.track));
+		editor_track::events(*Spot.track, Spot.list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
-		editor_track::bind_events(*spot.track, missing);
-		spot.track->mark_dirty();
+		editor_track::bind_events(*Spot.track, missing);
+		Spot.track->mark_dirty();
 	}
-	set_include_directive(found->include.instance, editor_includes::compose_directive(*included.file, values));
+	auto const name{Standing.name};
+	auto const node{Standing.include.file};
+	set_include_directive(instance, editor_includes::compose_directive(file, values));
 	if (states.empty())
 	{
 		EditorSnapshot snap;
-		snap.directives.emplace_back(found->include.instance, std::move(before));
-		snap.node_name = found->include.file;
+		snap.directives.emplace_back(instance, std::move(directive));
+		snap.node_name = node;
 		trim_history();
 		m_history.push_back(std::move(snap));
 		g_redo.clear();
@@ -543,11 +713,71 @@ void editor_mode::signal_release()
 	else
 	{
 		push_track_snapshot(std::move(states));
-		m_history.back().directives.emplace_back(found->include.instance, std::move(before));
+		m_history.back().directives.emplace_back(instance, std::move(directive));
 	}
-	tool.status = found->read.empty() ? format(STR_C("Signal %s moved"), found->name.c_str()) : format(STR_C("Signal %s moved, read by %s %s of %s"), found->name.c_str(), editor_track::event_keyword(spot.list), found->read.c_str(), spot.track->name().empty() ? "(noname)" : spot.track->name().c_str());
 	signal_refresh(true);
-	signal_select(found->include.instance);
+	signal_select(instance);
+	auto const *moved{signal_standing_of(instance)};
+	tool.status = moved != nullptr && moved->track != nullptr ? format(Read, name.c_str(), editor_track::event_keyword(moved->list), moved->read.c_str(), name_of(*moved->track).c_str()) : format(Unread, name.c_str());
+	return true;
+}
+
+bool editor_mode::signal_flip(scene::instance_handle const Instance)
+{
+	auto const *standing{signal_standing_of(Instance)};
+	signal_spot spot;
+	if (standing == nullptr || false == signal_standing_spot(*standing, spot))
+	{
+		m_signal.status = refused(STR_C("No track by the signal to take it across"));
+		return false;
+	}
+	auto const across{plan_of(spot.position) - plan_of(spot.axis)};
+	auto const mirrored{plan_of(spot.axis) + spot.travel * glm::dot(across, spot.travel) - right_of(spot.travel) * glm::dot(across, right_of(spot.travel))};
+	spot.side = -spot.side;
+	spot.position = {mirrored.x, spot.position.y, mirrored.y};
+	return signal_move_to(*standing, spot, STR_C("Signal %s moved to the other side of the track, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved to the other side of the track, Ctrl+Z takes it back"));
+}
+
+bool editor_mode::signal_turn(scene::instance_handle const Instance)
+{
+	auto const *standing{signal_standing_of(Instance)};
+	signal_spot spot;
+	if (standing == nullptr || false == signal_standing_spot(*standing, spot))
+	{
+		m_signal.status = refused(STR_C("No track by the signal to turn it to"));
+		return false;
+	}
+	auto const *item{signal_template_of(standing->include.file)};
+	auto const position{spot.position};
+	if (item == nullptr || false == signal_spot_at(*spot.track, spot.path, spot.axis, spot.axis, spot.list == 2 ? -1 : 1, spot.side, *item, spot))
+		return false;
+	spot.position = position;
+	spot.yaw = std::fmod(standing->include.yaw + 180.0, 360.0);
+	return signal_move_to(*standing, spot, STR_C("Signal %s turned to the trains of the other direction, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s turned to the trains of the other direction, Ctrl+Z takes it back"));
+}
+
+bool editor_mode::signal_swap(scene::instance_handle const Instance, std::string const &File)
+{
+	auto &tool{m_signal};
+	auto const *standing{signal_standing_of(Instance)};
+	if (standing == nullptr)
+		return false;
+	auto const name{standing->name};
+	auto const before{standing->include.file};
+	signal_changes changes;
+	changes.files.emplace_back(Instance, File);
+	std::string error;
+	signal_batch(changes, {}, {}, error);
+	signal_refresh(true);
+	auto const *swapped{signal_standing_of(Instance)};
+	if (false == error.empty() || swapped == nullptr || swapped->include.file == before)
+	{
+		tool.status = error.empty() ? format(STR_C("Signal %s can't take the template %s"), name.c_str(), File.c_str()) : error;
+		return false;
+	}
+	signal_select(Instance);
+	tool.status = format(STR_C("Signal %s got the template %s, Ctrl+Z takes it back"), name.c_str(), swapped->include.file.c_str());
+	return true;
 }
 
 std::string editor_mode::signal_variant(signal_template const &Template, signal_spot const &Spot) const
@@ -560,7 +790,7 @@ std::string editor_mode::signal_variant(signal_template const &Template, signal_
 	auto best{std::numeric_limits<std::size_t>::max()};
 	for (auto const &other : m_signal.templates)
 	{
-		if (other.kind != Template.kind || group_of(other.mount, other.lamps) != group || lean_of(other.lean) != wanted)
+		if (other.kind != Template.kind || group_of(other.mount, other.lamps) != group || lean_of(other.lean) != wanted || other.speeds != Template.speeds)
 			continue;
 		auto const distance{edit_distance(other.name, Template.name)};
 		if (distance < best)
@@ -593,12 +823,12 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	std::string name{tool.name};
 	if (name.empty() || name.find_first_of(" \t\";") != std::string::npos)
 	{
-		tool.status = STR_C("Give the signal a name without spaces first");
+		tool.status = refused(STR_C("Give the signal a name without spaces first"));
 		return false;
 	}
 	signal_refresh(true);
 	auto const taken = [&](std::string const &Name) {
-		return std::any_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return lower(Standing.name) == lower(Name); });
+		return std::any_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return ToLower(Standing.name) == ToLower(Name); });
 	};
 	for (int guard = 0; taken(name) && guard < 1000; ++guard)
 		name = signal_next_name(name);
@@ -614,44 +844,45 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
 	std::string error;
-	if (place_templates({item}, error) == 0)
+	if (place_templates({item}, error, output_layer("srk")) == 0)
 	{
-		tool.status = STR_C("The signal couldn't be placed: ") + error;
+		tool.status = refused(STR_C("The signal couldn't be placed: ") + error);
 		return false;
 	}
 	auto const instance{m_history.back().instances.front()};
 	auto const *placed{signal_template_of(file)};
 	auto const read{placed != nullptr && false == placed->read.empty() ? editor_includes::substitute(placed->read, {name}) : std::string{}};
-	auto const path{Spot.track->name().empty() ? std::string{"(noname)"} : Spot.track->name()};
+	auto const path{name_of(*Spot.track)};
 	std::string reason;
 	if (read.empty())
-		tool.status = format(STR_C("Signal %s placed (%s), the train doesn't read it"), name.c_str(), file.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), the train doesn't read it, Ctrl+Z takes it back"), name.c_str(), file.c_str());
 	else if (false == Spot.track->Dynamics.empty())
-		tool.status = format(STR_C("Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand"), name.c_str(), file.c_str(), read.c_str(), editor_track::event_keyword(Spot.list));
+		tool.status = format(STR_C("Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand, Ctrl+Z takes it back"), name.c_str(), file.c_str(), read.c_str(), editor_track::event_keyword(Spot.list));
 	else if (false == scene::Layers.editable(Spot.track, &reason))
-		tool.status = format(STR_C("Signal %s placed (%s), but the path can't take its event: %s"), name.c_str(), file.c_str(), reason.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), but the path can't take its event: %s, Ctrl+Z takes it back"), name.c_str(), file.c_str(), reason.c_str());
 	else
 	{
 		auto snap{std::move(m_history.back())};
 		m_history.pop_back();
 		auto const before{editor_track::capture(*Spot.track)};
-		editor_track::events(*Spot.track, Spot.list).emplace_back(lower(read), nullptr);
+		editor_track::events(*Spot.track, Spot.list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
 		editor_track::bind_events(*Spot.track, missing);
 		Spot.track->mark_dirty();
 		push_track_snapshot({{Spot.track, before}});
 		m_history.back().instances = std::move(snap.instances);
-		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.list), read.c_str(), path.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s, Ctrl+Z takes it back. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.list), read.c_str(), path.c_str());
 	}
 	std::snprintf(tool.name, sizeof(tool.name), "%s", signal_next_name(name).c_str());
 	signal_refresh(true);
 	signal_select(instance);
+	first_step_done(first_step::signal);
 	return true;
 }
 
 void editor_mode::signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States)
 {
-	auto const name{lower(Read)};
+	auto const name{ToLower(Read)};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || track->m_editorremoved)
@@ -659,7 +890,7 @@ void editor_mode::signal_detach_events(std::string const &Read, std::vector<std:
 		bool carries{false};
 		for (int list = 0; list < 6 && false == carries; ++list)
 			for (auto const &event : editor_track::events(*track, list))
-				carries = carries || lower(event.first) == name;
+				carries = carries || ToLower(event.first) == name;
 		if (false == carries)
 			continue;
 		if (std::none_of(States.begin(), States.end(), [&](auto const &State) { return State.first == track; }))
@@ -667,12 +898,293 @@ void editor_mode::signal_detach_events(std::string const &Read, std::vector<std:
 		for (int list = 0; list < 6; ++list)
 		{
 			auto &events{editor_track::events(*track, list)};
-			events.erase(std::remove_if(events.begin(), events.end(), [&](auto const &Event) { return lower(Event.first) == name; }), events.end());
+			events.erase(std::remove_if(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == name; }), events.end());
 		}
 		std::string missing;
 		editor_track::bind_events(*track, missing);
 		track->mark_dirty();
 	}
+}
+
+void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept)
+{
+	auto const carries = [](TTrack &Track) {
+		for (int list = 0; list < 6; ++list)
+			for (auto const &event : editor_track::events(Track, list))
+				if (false == event.first.empty())
+					return true;
+		return false == Track.Isolated.empty();
+	};
+	// a record of a track removed again, after an undo brought it back, is the step's to make anew
+	m_orphans.erase(std::remove_if(m_orphans.begin(), m_orphans.end(), [&](orphan_record const &Record) { return std::find(Removed.begin(), Removed.end(), Record.track) != Removed.end(); }), m_orphans.end());
+	// a track which took the circuits over, removed by the step, leaves them to what the step made
+	for (auto &record : m_orphans)
+		if (std::any_of(record.given.begin(), record.given.end(), [&](TTrack const *Track) { return std::find(Removed.begin(), Removed.end(), Track) != Removed.end(); }))
+		{
+			record.circuits.clear();
+			record.given.clear();
+		}
+	std::vector<TTrack *> gone;
+	for (auto *track : Removed)
+		if (track != nullptr && track->m_editorremoved && false == track->m_paths.empty() && carries(*track))
+			gone.push_back(track);
+	if (gone.empty())
+		return;
+	// what the step moved onto the tracks left isn't lost
+	std::unordered_set<std::string> carried;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (int list = 0; list < 6; ++list)
+				for (auto const &event : editor_track::events(*track, list))
+					carried.insert(ToLower(event.first));
+	std::unordered_set<std::string> circuits;
+	for (auto *track : Kept)
+		if (track != nullptr && false == track->m_editorremoved)
+			for (auto const *isolated : track->Isolated)
+				if (isolated != nullptr)
+					circuits.insert(ToLower(isolated->asName));
+	for (auto *track : gone)
+	{
+		orphan_record record;
+		record.track = track;
+		record.fresh = true;
+		for (int list = 0; list < 6; ++list)
+			for (auto const &event : editor_track::events(*track, list))
+			{
+				auto const name{ToLower(event.first)};
+				if (false == name.empty() && carried.count(name) == 0 && std::none_of(record.events.begin(), record.events.end(), [&](auto const &Event) { return Event.first == name; }))
+					record.events.emplace_back(name, list);
+			}
+		for (auto const *isolated : track->Isolated)
+			if (isolated != nullptr && circuits.count(ToLower(isolated->asName)) == 0)
+				record.circuits.push_back(isolated->asName);
+		if (record.events.empty() && record.circuits.empty())
+			continue;
+		m_orphans.push_back(std::move(record));
+	}
+	if (m_orphans.size() > kOrphanRecords)
+		m_orphans.erase(m_orphans.begin(), m_orphans.begin() + static_cast<std::ptrdiff_t>(m_orphans.size() - kOrphanRecords));
+}
+
+void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed)
+{
+	// a record waits while its track stays deleted, so the step laying another one in its place, undone and laid again, gets it again
+	if (std::none_of(m_orphans.begin(), m_orphans.end(), [](orphan_record const &Record) { return Record.track->m_editorremoved; }))
+		return;
+	std::vector<TTrack *> candidates;
+	for (auto const *tracks : {&Created, &Changed})
+		for (auto *track : *tracks)
+			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && track->Dynamics.empty() && editor_track::is_supported(*track) &&
+			    std::find(candidates.begin(), candidates.end(), track) == candidates.end())
+				candidates.push_back(track);
+	if (candidates.empty() && std::none_of(m_orphans.begin(), m_orphans.end(), [](orphan_record const &Record) { return Record.fresh; }))
+		return;
+	std::unordered_set<std::string> carried;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (int list = 0; list < 6; ++list)
+				for (auto const &event : editor_track::events(*track, list))
+					carried.insert(ToLower(event.first));
+	// not the signals standing as last listed, nor the templates once found: the step taken may hold one of them; looked for once an event
+	// waits
+	std::vector<signal_standing> signals;
+	std::unordered_map<std::string, signal_standing const *> readers;
+	auto known{false};
+	auto const reader_of = [&](std::string const &Name) -> signal_standing const * {
+		if (false == known)
+		{
+			known = true;
+			if (m_signal.templates.empty())
+				signal_scan(false);
+			signals = signal_standing_now();
+			for (auto const &standing : signals)
+				if (false == standing.read.empty())
+					readers.emplace(ToLower(standing.read), &standing);
+		}
+		auto const found{readers.find(Name)};
+		return found != readers.end() ? found->second : nullptr;
+	};
+	std::vector<std::string> taken;
+	std::vector<std::string> left;
+	std::size_t taken_events{0};
+	std::size_t left_events{0};
+	std::vector<std::string> taken_circuits;
+	std::vector<std::string> left_circuits;
+	std::size_t deleted{0};
+	for (auto &record : m_orphans)
+	{
+		if (false == record.track->m_editorremoved)
+		{
+			record.fresh = false;
+			continue;
+		}
+		if (candidates.empty() && false == record.fresh)
+			continue;
+		auto const &old{*record.track};
+		deleted += record.fresh ? 1 : 0;
+		for (auto const &[name, list] : record.events)
+		{
+			if (carried.count(name) > 0)
+				continue;
+			auto const *standing{reader_of(name)};
+			auto got{false};
+			// an event no longer there, of a signal taken away, stays off the tracks
+			if (false == candidates.empty() && simulation::Events.FindEvent(name) != nullptr)
+			{
+				// the place on the old axis: by the signal reading it, else the middle of the track
+				int old_path{0};
+				double old_parameter{0.5};
+				auto const by_signal{standing != nullptr && plan_gap(old, standing->include.location, old_path, old_parameter) <= kSignalReach};
+				if (false == by_signal)
+				{
+					old_path = 0;
+					old_parameter = 0.5;
+				}
+				auto const anchor{bezier{old.m_paths[old_path]}.point(old_parameter)};
+				auto const old_forward{forward_at(old, old_path, old_parameter)};
+				TTrack *best{nullptr};
+				int best_path{0};
+				double best_parameter{0.0};
+				auto nearest{kOrphanReach};
+				for (auto *track : candidates)
+				{
+					int path{0};
+					double parameter{0.0};
+					auto const gap{plan_gap(*track, anchor, path, parameter)};
+					if (gap <= nearest && std::abs(glm::dot(forward_at(*track, path, parameter), old_forward)) > 0.9)
+					{
+						nearest = gap;
+						best = track;
+						best_path = path;
+						best_parameter = parameter;
+					}
+				}
+				if (best != nullptr)
+				{
+					// laid the other way round, the trains running towards its end read it at its start
+					auto const reversed{glm::dot(forward_at(*best, best_path, best_parameter), old_forward) < 0.0};
+					auto target{reversed && list % 3 != 0 ? list + (list % 3 == 1 ? 1 : -1) : list};
+					if (by_signal)
+					{
+						auto const &location{standing->include.location};
+						auto const axis{bezier{best->m_paths[best_path]}.point(nearest_on(*best, best_path, location))};
+						auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(standing->include.yaw))) >= 0.0 ? 1 : -1};
+						signal_spot spot;
+						if (signal_drop_at(*standing, *best, best_path, location, side, spot))
+							target = spot.list + (list >= 3 ? 3 : 0);
+					}
+					editor_track::events(*best, target).emplace_back(name, nullptr);
+					std::string missing;
+					editor_track::bind_events(*best, missing);
+					best->mark_dirty();
+					carried.insert(name);
+					got = true;
+				}
+			}
+			if (got)
+			{
+				if (standing != nullptr)
+					taken.push_back(standing->name);
+				else
+					++taken_events;
+			}
+			else if (record.fresh)
+			{
+				if (standing != nullptr)
+					left.push_back(standing->name);
+				else
+					++left_events;
+			}
+		}
+		if (false == record.circuits.empty() && std::all_of(record.given.begin(), record.given.end(), [](TTrack const *Track) { return Track->m_editorremoved; }))
+		{
+			auto got{false};
+			// a track lying in the place of the old one for the most part: a new one, in the circuit of the track it was made from,
+			// or one without a circuit
+			for (auto *track : candidates)
+			{
+				auto const made{std::find(Created.begin(), Created.end(), track) != Created.end()};
+				if ((false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, old, 2.0))
+					continue;
+				auto const same{track->Isolated.size() == record.circuits.size() && std::equal(record.circuits.begin(), record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })};
+				if (same)
+					continue;
+				std::size_t on{0};
+				std::size_t all{0};
+				for (auto const &path : track->m_paths)
+				{
+					bezier const curve{path};
+					for (int k = 0; k <= 32; ++k)
+					{
+						int old_path{0};
+						double old_parameter{0.0};
+						++all;
+						if (plan_gap(old, curve.point(k / 32.0), old_path, old_parameter) <= kOrphanReach)
+							++on;
+					}
+				}
+				if (all == 0 || on * 2 < all)
+					continue;
+				editor_track::isolated(*track, record.circuits);
+				if (std::find(record.given.begin(), record.given.end(), track) == record.given.end())
+					record.given.push_back(track);
+				got = true;
+			}
+			if (got)
+				taken_circuits.insert(taken_circuits.end(), record.circuits.begin(), record.circuits.end());
+			else if (record.fresh)
+				left_circuits.insert(left_circuits.end(), record.circuits.begin(), record.circuits.end());
+		}
+		record.fresh = false;
+	}
+	auto const parts = [](std::vector<std::string> const &Signals, std::size_t const Events, std::vector<std::string> const &Circuits) {
+		std::vector<std::string> part;
+		if (false == Signals.empty())
+			part.push_back(format(STR_P("the read of signal %s", "the reads of signals %s", static_cast<long long>(Signals.size())), listed(Signals).c_str()));
+		if (Events > 0)
+			part.push_back(format(STR_P("%zu event", "%zu events", static_cast<long long>(Events)), Events));
+		if (false == Circuits.empty())
+			part.push_back(format(STR_P("the track circuit %s", "the track circuits %s", static_cast<long long>(Circuits.size())), listed(Circuits).c_str()));
+		return listed(part);
+	};
+	std::string note;
+	if (auto const got{parts(taken, taken_events, taken_circuits)}; false == got.empty())
+		note = format(STR_C("Taken over from the deleted track: %s"), got.c_str());
+	if (auto const lost{parts(left, left_events, left_circuits)}; false == lost.empty())
+		note += (note.empty() ? "" : "\n") +
+		        format(STR_P("The deleted track carried %s: a track laid in its place takes it over, Ctrl+Z brings it back", "The deleted tracks carried %s: tracks laid in their place take it over, Ctrl+Z brings them back", static_cast<long long>(std::max<std::size_t>(deleted, 1))), lost.c_str());
+	if (false == note.empty())
+		m_orphan_note += (m_orphan_note.empty() ? "" : "\n") + note;
+}
+
+std::size_t editor_mode::signal_reattach(std::vector<scene::instance_handle> const &Instances)
+{
+	signal_refresh(true);
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::size_t attached{0};
+	for (auto const instance : Instances)
+	{
+		auto const *standing{signal_standing_of(instance)};
+		if (standing == nullptr || standing->read.empty() || standing->track != nullptr || simulation::Events.FindEvent(ToLower(standing->read)) == nullptr)
+			continue;
+		signal_spot spot;
+		if (false == signal_standing_spot(*standing, spot) || spot.track == nullptr || false == spot.track->Dynamics.empty())
+			continue;
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.track; }))
+			states.emplace_back(spot.track, editor_track::capture(*spot.track));
+		auto &events{editor_track::events(*spot.track, spot.list)};
+		if (std::none_of(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == ToLower(standing->read); }))
+			events.emplace_back(ToLower(standing->read), nullptr);
+		std::string missing;
+		editor_track::bind_events(*spot.track, missing);
+		spot.track->mark_dirty();
+		++attached;
+	}
+	if (states.empty())
+		return 0;
+	push_track_snapshot(std::move(states));
+	signal_refresh(true);
+	return attached;
 }
 
 bool editor_mode::signal_delete(scene::instance_handle const Instance)
@@ -705,7 +1217,7 @@ bool editor_mode::signal_delete(scene::instance_handle const Instance)
 
 void editor_mode::signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot)
 {
-	auto const name{lower(Before)};
+	auto const name{ToLower(Before)};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || track->m_editorremoved)
@@ -713,15 +1225,15 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 		bool carries{false};
 		for (int list = 0; list < 6 && false == carries; ++list)
 			for (auto const &event : editor_track::events(*track, list))
-				carries = carries || lower(event.first) == name;
+				carries = carries || ToLower(event.first) == name;
 		if (false == carries)
 			continue;
 		if (std::none_of(Snapshot.tracks.begin(), Snapshot.tracks.end(), [&](auto const &State) { return State.first == track; }))
 			Snapshot.tracks.emplace_back(track, editor_track::capture(*track));
 		for (int list = 0; list < 6; ++list)
 			for (auto &event : editor_track::events(*track, list))
-				if (lower(event.first) == name)
-					event = {lower(After), nullptr};
+				if (ToLower(event.first) == name)
+					event = {ToLower(After), nullptr};
 		std::string missing;
 		editor_track::bind_events(*track, missing);
 		track->mark_dirty();
@@ -736,6 +1248,254 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 	Snapshot.node_name = Snapshot.tracks.front().first->name();
 }
 
+bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool const Wait)
+{
+	Signals.clear();
+	signal_scan(Wait);
+	if (m_signal.templates.empty())
+		return false;
+	signal_refresh(true);
+	for (auto const &standing : m_signal.standing)
+	{
+		if (standing.kind < 0)
+			continue;
+		std::string file;
+		std::vector<std::string> values;
+		auto const *item{signal_template_of(standing.include.file)};
+		auto const linked{item != nullptr && item->linked && editor_includes::parse_directive(scene::Layers.directive(standing.include.instance), file, values) && values.size() > 6};
+		Signals.push_back({standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw, linked ? values[6] : std::string{}});
+		auto &signal{Signals.back()};
+		signal.file = standing.include.file;
+		signal.track = standing.track;
+		signal.facing = standing.track == nullptr ? 0 : standing.list % 3 == 2 ? 1 : standing.list % 3 == 1 ? -1 : 0;
+		signal.read = standing.read;
+	}
+	return true;
+}
+
+bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
+{
+	Heads.clear();
+	signal_scan(Wait);
+	if (m_signal.templates.empty())
+		return false;
+	for (int index = 0; index < static_cast<int>(m_signal.templates.size()); ++index)
+	{
+		auto const &item{m_signal.templates[index]};
+		if (item.lamps.empty())
+			continue;
+		auto const kind{kind_index(item.kind)};
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects, item.lean});
+	}
+	return true;
+}
+
+std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error)
+{
+	auto &tool{m_signal};
+	signal_scan();
+	signal_refresh(true);
+	std::vector<template_item> items;
+	std::vector<std::pair<signal_spot, std::string>> reads;
+	for (auto const &order : Changes.placed)
+	{
+		auto const kind{kind_index(order.kind)};
+		auto const *item{kind >= 0 && tool.chosen[kind] >= 0 && tool.chosen[kind] < static_cast<int>(tool.templates.size()) ? &tool.templates[tool.chosen[kind]] : nullptr};
+		if (auto const *wanted{order.file.empty() ? nullptr : signal_template_of(order.file)}; wanted != nullptr && wanted->kind == order.kind)
+			item = wanted;
+		if (item == nullptr)
+		{
+			Error = format(STR_C("no template of the kind %s"), STR(kKindLabels[std::max(0, kind)]).c_str());
+			break;
+		}
+		signal_spot spot;
+		if (order.track == nullptr || false == signal_spot_at(*order.track, order.path, order.point, order.point, order.facing, order.side, *item, spot))
+			continue;
+		template_item placing;
+		placing.file = signal_variant(*item, spot);
+		placing.location = spot.position;
+		placing.yaw = spot.yaw;
+		placing.described = true;
+		placing.values["name"] = order.name;
+		auto const *variant{signal_template_of(placing.file)};
+		if (variant == nullptr)
+			variant = item;
+		if (variant->plate)
+			placing.values["#6"] = plate_for(std::string{}, order.plate);
+		if (variant->linked)
+			placing.values["#7"] = order.linked.empty() ? std::string{"none"} : order.linked;
+		items.push_back(std::move(placing));
+		reads.emplace_back(spot, variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, {order.name}));
+	}
+	if (false == Error.empty())
+	{
+		// nothing changed but the tracks cut for them, a step of undo
+		if (false == States.empty() || false == Created.empty())
+			push_track_snapshot(std::move(States), std::move(Created));
+		return 0;
+	}
+	// the names passed round among the signals go through ones of their own first, or a read event renamed would be renamed again
+	items.insert(items.end(), Changes.others.begin(), Changes.others.end());
+	EditorSnapshot step;
+	step.tracks = std::move(States);
+	std::vector<std::pair<scene::instance_handle, std::string>> directives;
+	std::unordered_set<scene::instance_handle> changed;
+	auto const record = [&](scene::instance_handle const Instance, std::string const &Before) {
+		if (changed.insert(Instance).second)
+			directives.emplace_back(Instance, Before);
+	};
+	for (auto const temporary : {true, false})
+		for (auto const &rename : Changes.renamed)
+		{
+			auto const *standing{signal_standing_of(rename.instance)};
+			auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
+			auto const before{scene::Layers.directive(rename.instance)};
+			std::string file;
+			std::vector<std::string> values;
+			if (item == nullptr || false == editor_includes::parse_directive(before, file, values) || values.empty())
+				continue;
+			if (temporary && ToLower(values[0]) == ToLower(rename.name))
+				continue;
+			auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+			values[0] = rename.name + (temporary ? "~" : "");
+			if (item->plate && values.size() > 5 && false == rename.plate.empty())
+				values[5] = plate_for(std::string{}, rename.plate);
+			if (item->linked && values.size() > 6 && false == rename.linked.empty())
+				values[6] = rename.linked;
+			auto const read_after{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+			auto const directive{editor_includes::compose_directive(file, values)};
+			if (directive == before)
+				continue;
+			record(rename.instance, before);
+			set_include_directive(rename.instance, directive);
+			if (read_before != read_after)
+				signal_renamed(read_before, read_after, step);
+		}
+	for (auto const &[instance, values] : Changes.values)
+	{
+		auto const before{scene::Layers.directive(instance)};
+		std::string file;
+		std::vector<std::string> standing;
+		if (false == editor_includes::parse_directive(before, file, standing))
+			continue;
+		if (auto const directive{editor_includes::compose_directive(file, values)}; directive != before)
+		{
+			record(instance, before);
+			set_include_directive(instance, directive);
+		}
+	}
+	for (auto const &[instance, wanted] : Changes.files)
+	{
+		auto const *standing{signal_standing_of(instance)};
+		auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
+		auto const *chosen{signal_template_of(wanted)};
+		auto const before{scene::Layers.directive(instance)};
+		std::string file;
+		std::vector<std::string> values;
+		if (item == nullptr || chosen == nullptr || chosen->kind != item->kind || false == editor_includes::parse_directive(before, file, values) || values.empty())
+			continue;
+		signal_spot spot;
+		auto const *variant{signal_standing_spot(*standing, spot) ? signal_template_of(signal_variant(*chosen, spot)) : chosen};
+		if (variant == nullptr)
+			variant = chosen;
+		if (variant->file == item->file)
+			continue;
+		include_info had;
+		include_info info;
+		std::string missing;
+		editor_includes::load(item->file, had, missing);
+		editor_includes::load(variant->file, info, missing);
+		auto const role_of = [](include_info &Info, int const Id) { return Info.parameter(Id).role; };
+		std::vector<std::string> after(std::max(variant->parameters, 1));
+		for (int id = 1; id <= static_cast<int>(after.size()); ++id)
+		{
+			auto &value{after[id - 1]};
+			auto const role{role_of(info, id)};
+			for (int old = 1; old <= static_cast<int>(values.size()) && value.empty(); ++old)
+				if (role != "free" && role != "text" && role_of(had, old) == role)
+					value = values[old - 1];
+			if (id == 7 && variant->linked)
+				value = item->linked && values.size() > 6 ? values[6] : std::string{"none"};
+			if (value.empty() && id == 6 && variant->plate)
+				value = plate_for(std::string{}, values[0].substr(values[0].rfind('_') + 1));
+			if (value.empty())
+				value = info.parameter(id).value.empty() ? std::string{"none"} : info.parameter(id).value;
+		}
+		auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+		auto const read_after{variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, after)};
+		record(instance, before);
+		set_include_directive(instance, editor_includes::compose_directive(variant->file, after));
+		if (false == read_before.empty() && false == read_after.empty() && ToLower(read_before) != ToLower(read_after))
+			signal_renamed(read_before, read_after, step);
+	}
+	std::unordered_set<TTrack const *> const created(Created.begin(), Created.end());
+	std::vector<scene::instance_handle> removed;
+	for (auto const instance : Changes.removed)
+	{
+		if (false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance) || scene::Layers.instance(instance).removed)
+			continue;
+		auto const *standing{signal_standing_of(instance)};
+		auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
+		std::string file;
+		std::vector<std::string> values;
+		if (item != nullptr && false == item->read.empty() && editor_includes::parse_directive(scene::Layers.directive(instance), file, values))
+		{
+			std::vector<std::pair<TTrack *, editor_track::state>> states;
+			signal_detach_events(editor_includes::substitute(item->read, values), states);
+			for (auto &state : states)
+				if (created.count(state.first) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &Taken) { return Taken.first == state.first; }))
+					step.tracks.push_back(std::move(state));
+		}
+		scene::Layers.removed(instance, true);
+		removed.push_back(instance);
+	}
+	std::vector<scene::instance_handle> instances;
+	if (Error.empty() && false == items.empty())
+	{
+		if (place_templates(items, Error, output_layer("srk")) == 0)
+			reads.clear();
+		else
+		{
+			auto placed{std::move(m_history.back())};
+			m_history.pop_back();
+			instances = std::move(placed.instances);
+		}
+	}
+	else
+		reads.clear();
+	for (auto const &[spot, read] : reads)
+	{
+		if (read.empty() || false == spot.track->Dynamics.empty() || false == scene::Layers.editable(spot.track))
+			continue;
+		if (created.count(spot.track) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &State) { return State.first == spot.track; }))
+			step.tracks.emplace_back(spot.track, editor_track::capture(*spot.track));
+		editor_track::events(*spot.track, spot.list).emplace_back(ToLower(read), nullptr);
+		std::string missing;
+		editor_track::bind_events(*spot.track, missing);
+		spot.track->mark_dirty();
+	}
+	auto const count{instances.size()};
+	instances.insert(instances.end(), removed.begin(), removed.end());
+	if (step.tracks.empty() && Created.empty() && instances.empty() && directives.empty())
+		return 0;
+	if (step.tracks.empty() && Created.empty())
+	{
+		EditorSnapshot only;
+		auto const *file{scene::Layers.instance(directives.empty() ? instances.front() : directives.front().first).file};
+		only.node_name = file != nullptr ? *file : std::string{};
+		trim_history();
+		m_history.push_back(std::move(only));
+		g_redo.clear();
+	}
+	else
+		push_track_snapshot(std::move(step.tracks), std::move(Created));
+	auto &pushed{m_history.back()};
+	pushed.instances = std::move(instances);
+	pushed.directives.insert(pushed.directives.end(), directives.begin(), directives.end());
+	signal_refresh(true);
+	return count;
+}
+
 void editor_mode::signal_select(scene::instance_handle const Instance)
 {
 	m_signal.selected = Instance;
@@ -748,8 +1508,8 @@ void editor_mode::render_signal_palette()
 	auto &tool{m_signal};
 	ImGui::SetNextItemWidth(-1.0f);
 	ImGui::InputTextWithHint("##signalfilter", STR_C("filter: name, w24, sbl..."), tool.filter, sizeof(tool.filter));
-	auto const filter{lower(tool.filter)};
-	auto const *armed{signal_armed()};
+	auto const filter{ToLower(tool.filter)};
+	auto const *current{signal_current()};
 	std::vector<std::vector<int>> groups;
 	std::vector<std::string> keys;
 	for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
@@ -757,7 +1517,7 @@ void editor_mode::render_signal_palette()
 		auto const &item{tool.templates[i]};
 		if (item.kind != kKinds[tool.kind])
 			continue;
-		if (false == filter.empty() && item.name.find(filter) == std::string::npos && lower(item.description).find(filter) == std::string::npos)
+		if (false == filter.empty() && item.name.find(filter) == std::string::npos && ToLower(item.description).find(filter) == std::string::npos)
 			continue;
 		auto const key{group_of(item.mount, item.lamps)};
 		auto const found{std::find(keys.begin(), keys.end(), key)};
@@ -783,20 +1543,24 @@ void editor_mode::render_signal_palette()
 	{
 		auto const &group{groups[g]};
 		auto const &first{tool.templates[group.front()]};
-		auto const chosen{armed != nullptr && group_of(armed->mount, armed->lamps) == keys[g] && armed->kind == first.kind};
+		auto const chosen{current != nullptr && group_of(current->mount, current->lamps) == keys[g] && current->kind == first.kind};
 		if (g % columns != 0)
 			ImGui::SameLine();
 		ImGui::PushID(g);
 		auto const origin{ImGui::GetCursorScreenPos()};
 		if (ImGui::InvisibleButton("##tile", tile))
 		{
-			auto pick{group.front()};
-			if (armed != nullptr && chosen)
-				pick = tool.chosen[tool.kind];
-			tool.chosen[tool.kind] = pick;
+			if (chosen && tool.armed)
+				tool.armed = false;
+			else
+			{
+				tool.chosen[tool.kind] = chosen ? tool.chosen[tool.kind] : group.front();
+				tool.armed = true;
+			}
 		}
 		auto const hovered{ImGui::IsItemHovered()};
-		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), chosen ? IM_COL32(60, 90, 140, 255) : hovered ? IM_COL32(60, 60, 60, 255) : IM_COL32(40, 40, 40, 255), 4.0f);
+		auto const armed{chosen && tool.armed};
+		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), armed ? IM_COL32(45, 110, 60, 255) : chosen ? IM_COL32(60, 90, 140, 255) : hovered ? IM_COL32(60, 60, 60, 255) : IM_COL32(40, 40, 40, 255), 4.0f);
 		draw_signal_icon(draw, origin, ImVec2(tile.x, tile.y - 14.0f), first.mount, first.lamps, chosen ? overlay_color::selected : IM_COL32(120, 120, 120, 255));
 		auto const caption{first.lamps.empty() ? first.name : first.lamps};
 		auto const captionsize{ImGui::CalcTextSize(caption.c_str())};
@@ -809,24 +1573,25 @@ void editor_mode::render_signal_palette()
 			ImGui::TextUnformatted(first.description.empty() ? first.name.c_str() : first.description.c_str());
 			ImGui::TextDisabled(STR_C("%zu variants, e.g. %s"), group.size(), first.file.c_str());
 			ImGui::TextDisabled("%s", first.read.empty() ? STR_C("The train doesn't read it") : STR_C("The train reads it by an event of the path"));
+			ImGui::TextDisabled("%s", armed ? STR_C("Click: stop placing") : STR_C("Click: place it by a track, the signalling of the station places its signals of this kind with it too"));
 			ImGui::EndTooltip();
 		}
 		ImGui::PopID();
 	}
 	ImGui::EndChild();
-	if (armed == nullptr)
+	if (current == nullptr)
 		return;
-	auto const key{group_of(armed->mount, armed->lamps)};
+	auto const key{group_of(current->mount, current->lamps)};
 	ImGui::SetNextItemWidth(-1.0f);
-	if (ImGui::BeginCombo("##signalvariant", armed->name.c_str()))
+	if (ImGui::BeginCombo("##signalvariant", current->name.c_str()))
 	{
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{
 			auto const &item{tool.templates[i]};
-			if (item.kind != armed->kind || group_of(item.mount, item.lamps) != key)
+			if (item.kind != current->kind || group_of(item.mount, item.lamps) != key)
 				continue;
 			auto const label{item.name + (item.lean == "left" ? std::string{"  \xE2\x86\x96"} : item.lean == "right" ? std::string{"  \xE2\x86\x97"} : std::string{}) + "##" + item.file};
-			if (ImGui::Selectable(label.c_str(), &item == armed))
+			if (ImGui::Selectable(label.c_str(), &item == current))
 				tool.chosen[tool.kind] = i;
 			if (ImGui::IsItemHovered() && false == item.description.empty())
 				ImGui::SetTooltip("%s\n%s", item.description.c_str(), item.file.c_str());
@@ -834,75 +1599,167 @@ void editor_mode::render_signal_palette()
 		ImGui::EndCombo();
 	}
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"));
-	if (false == armed->description.empty())
-		ImGui::TextWrapped("%s", armed->description.c_str());
-	ImGui::TextDisabled("%s", armed->read.empty() ? (armed->kind == "warning" || armed->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")) : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(armed->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str()).c_str());
+	{
+		auto const read{current->read.empty() ? std::string{current->kind == "warning" || current->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")}
+		                                      : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(current->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str())};
+		ImGui::SetTooltip("%s\n%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"), read.c_str());
+	}
+	if (false == current->description.empty())
+		ImGui::TextWrapped("%s", current->description.c_str());
+	if (tool.armed)
+	{
+		if (ImGui::Button(STR_C("Stop placing (Esc)"), ImVec2(-1.0f, 0.0f)))
+			tool.armed = false;
+	}
+	else if (main_button(STR_C("Place by a track"), ImVec2(-1.0f, 0.0f)))
+		tool.armed = true;
+	item_tooltip("A click by a track places the chosen signal on that side, a press dragged along it turns it to the trains running that way. The signalling of the station places its signals of each kind with the template chosen here");
 }
 
 void editor_mode::render_signal_selected()
 {
-	auto &tool{m_signal};
-	auto const found{std::find_if(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; })};
-	if (found == tool.standing.end())
+	auto const *found{m_signal.selected == m_instance ? signal_standing_of(m_signal.selected) : nullptr};
+	if (found == nullptr)
 		return;
-	ImGui::Separator();
 	ImGui::TextUnformatted(format(STR_C("Selected: %s (%s)"), found->name.c_str(), found->include.file.c_str()).c_str());
+	item_tooltip("Name, plate and the linked signal: in the node properties. Del removes it with its event");
 	if (found->read.empty())
 		ImGui::TextDisabled("%s", STR_C("The train doesn't read it"));
 	else if (found->track != nullptr)
-		ImGui::TextDisabled(STR_C("Read by %s %s of %s"), editor_track::event_keyword(found->list), found->read.c_str(), found->track->name().empty() ? "(noname)" : found->track->name().c_str());
+		ImGui::TextDisabled(STR_C("Read by %s %s of %s"), editor_track::event_keyword(found->list), found->read.c_str(), name_of(*found->track).c_str());
 	else
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No path has %s among its events: the train doesn't see it"), found->read.c_str());
-	ImGui::TextDisabled("%s", STR_C("Name, plate and the linked signal: in the node properties. Del removes it with its event"));
+	auto const instance{found->include.instance};
+	if (auto const *item{signal_template_of(found->include.file)}; item != nullptr)
+	{
+		auto const shown = [](signal_template const &Template) { return Template.lamps.empty() ? Template.name : Template.name + "  " + Template.lamps; };
+		std::string swap;
+		ImGui::SetNextItemWidth(-1.0f);
+		if (ImGui::BeginCombo("##signalswap", format(STR_C("Template: %s"), shown(*item).c_str()).c_str(), ImGuiComboFlags_HeightLarge))
+		{
+			for (auto const &other : m_signal.templates)
+				if (other.kind == item->kind && other.mount == item->mount && ImGui::Selectable((shown(other) + "##" + other.file).c_str(), other.file == item->file) && other.file != item->file)
+					swap = other.file;
+			ImGui::EndCombo();
+		}
+		item_tooltip("Another template of its kind and mount for the signal: the name, the plate, the place and the event the train reads it by stay. A head leaning to one side is swapped for its counterpart leaning towards the track. Ctrl+Z takes it back");
+		if (false == swap.empty())
+		{
+			signal_swap(instance, swap);
+			return;
+		}
+	}
+	auto const width{(ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f};
+	if (ImGui::Button(STR_C("To the other side"), ImVec2(width, 0.0f)))
+		signal_flip(instance);
+	item_tooltip("Takes the signal across the track, it keeps facing the same trains. Dragging it over the track does the same");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Turn around"), ImVec2(width, 0.0f)))
+		signal_turn(instance);
+	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
+	ImGui::Separator();
+}
+
+void editor_mode::select_signal(scene::instance_handle const Instance)
+{
+	signal_refresh(true);
+	signal_select(Instance);
+}
+
+void editor_mode::render_signal_templates()
+{
+	ImGui::Spacing();
+	if (ImGui::CollapsingHeader(format("%s###srksignals", STR_C("Signals")).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		render_signal_ui();
+	else
+		m_signal.armed = false;
 }
 
 void editor_mode::render_signal_ui()
 {
 	auto &tool{m_signal};
-	signal_scan();
+	signal_scan(false);
+	if (tool.templates.empty() && EditorIncludes.searching())
+	{
+		ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+		return;
+	}
 	if (tool.templates.empty())
 	{
 		ImGui::TextWrapped("%s", STR_C("No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."));
 		return;
 	}
-	if (ImGui::BeginTabBar("##signalkinds"))
-	{
-		for (int k = 0; k < kKindCount; ++k)
+	std::vector<std::string> labels;
+	labels.reserve(kKindCount);
+	std::vector<segment_option> kinds;
+	for (int k = 0; k < kKindCount; ++k)
+		if (std::any_of(tool.templates.begin(), tool.templates.end(), [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
 		{
-			if (std::none_of(tool.templates.begin(), tool.templates.end(), [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
-				continue;
-			if (ImGui::BeginTabItem(STR(kKindLabels[k]).c_str()))
-			{
-				tool.kind = k;
-				ImGui::EndTabItem();
-			}
+			labels.push_back(STR(kKindLabels[k]));
+			kinds.push_back({k, labels.back().c_str()});
 		}
-		ImGui::EndTabBar();
-	}
+	if (false == kinds.empty() && std::none_of(kinds.begin(), kinds.end(), [&](segment_option const &Option) { return Option.value == tool.kind; }))
+		tool.kind = kinds.front().value;
+	choice_chips("signalkinds", tool.kind, kinds);
 	render_signal_palette();
-	auto const *armed{signal_armed()};
-	ImGui::Separator();
-	ImGui::PushItemWidth(140.0f);
-	ImGui::InputText(STR_C("Name"), tool.name, sizeof(tool.name));
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
-	if (armed != nullptr && armed->plate)
+	auto const *armed{signal_current()};
+	if (begin_fields("##signalnames", 0.3f))
 	{
-		auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
-		ImGui::InputTextWithHint(STR_C("Plate"), automatic.c_str(), tool.plate, sizeof(tool.plate));
+		field_row("Name");
+		ImGui::InputText("##signalname", tool.name, sizeof(tool.name));
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
-		auto const &plates{plate_textures()};
-		auto const typed{lower(tool.plate)};
-		auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
-		if (false == exists)
+			ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
+		ImGui::EndTable();
+	}
+	ImGui::PushID("signalmore");
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		bool missing{false};
+		if (begin_fields("##signalplace", 0.45f))
 		{
-			ImGui::SameLine();
-			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
+			if (armed != nullptr && armed->plate)
+			{
+				auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
+				field_row("Plate");
+				ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
+				auto const typing{ImGui::IsItemActive()};
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
+				auto const &plates{plate_textures()};
+				auto const typed{ToLower(tool.plate)};
+				auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
+				if (false == exists)
+					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
+				missing = typing || (false == exists && false == typed.empty());
+			}
+			if (armed != nullptr && armed->linked)
+			{
+				field_row("Linked signal");
+				ImGui::InputText("##linked", tool.linked, sizeof(tool.linked));
+				item_tooltip("(p7) of the template: the warning signal a semaphore drives, the previous block signal, \"none\" for no link");
+			}
+			auto offset{static_cast<float>(EditorSettings.signal_offset())};
+			field_row("From the axis (m)");
+			if (ImGui::InputFloat("##signaloffset", &offset, 0.05f, 0.25f, "%.2f"))
+			{
+				EditorSettings.signal_offset(std::clamp(static_cast<double>(offset), 0.0, 10.0));
+				EditorSettings.save();
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("Distance of the mast from the axis of the track. 2.25 m is what the signals of the sceneries stand at"));
+			if (armed != nullptr && armed->mount == "gantry")
+			{
+				field_row("Over the rails (m)");
+				ImGui::InputFloat("##signalheight", &tool.height, 0.1f, 0.5f, "%.2f");
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s", STR_C("A head for a gantry hangs over the axis of the track this high over the rail heads"));
+			}
+			ImGui::EndTable();
 		}
-		if (ImGui::IsItemActive() || (false == exists && false == typed.empty()))
+		if (missing)
 		{
+			auto const &plates{plate_textures()};
+			auto const typed{ToLower(tool.plate)};
 			int shown{0};
 			for (auto const &plate : plates)
 			{
@@ -916,31 +1773,11 @@ void editor_mode::render_signal_ui()
 					break;
 			}
 		}
-	}
-	if (armed != nullptr && armed->linked && ImGui::TreeNode(STR_C("Linked signal")))
-	{
-		ImGui::InputText("##linked", tool.linked, sizeof(tool.linked));
-		ImGui::TextDisabled("%s", STR_C("(p7) of the template: the warning signal a semaphore drives, the previous block signal, \"none\" for no link"));
 		ImGui::TreePop();
 	}
-	auto offset{static_cast<float>(EditorSettings.signal_offset())};
-	if (ImGui::InputFloat(STR_C("From the axis (m)"), &offset, 0.05f, 0.25f, "%.2f"))
-	{
-		EditorSettings.signal_offset(std::clamp(static_cast<double>(offset), 0.0, 10.0));
-		EditorSettings.save();
-	}
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Distance of the mast from the axis of the track. 2.25 m is what the signals of the sceneries stand at"));
-	if (armed != nullptr && armed->mount == "gantry")
-	{
-		ImGui::InputFloat(STR_C("Over the rails (m)"), &tool.height, 0.1f, 0.5f, "%.2f");
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("A head for a gantry hangs over the axis of the track this high over the rail heads"));
-	}
-	ImGui::PopItemWidth();
+	ImGui::PopID();
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
-	render_signal_selected();
 }
 
 void editor_mode::draw_signal_overlay() const
@@ -983,10 +1820,7 @@ void editor_mode::draw_signal_overlay() const
 			drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), colour, label.c_str());
 		}
 		if (selected || hovered)
-		{
-			auto const yaw{glm::radians(standing.include.yaw + 180.0)};
-			arrow(location, glm::dvec2{std::sin(yaw), std::cos(yaw)}, colour);
-		}
+			arrow(location, travel_of(standing.include.yaw), colour);
 	}
 	auto const preview = [&](signal_spot const &Spot, ImU32 const Colour) {
 		projection.line(drawlist, Spot.axis + glm::dvec3{0.0, kRailTop, 0.0}, Spot.position, Colour, 2.0f);

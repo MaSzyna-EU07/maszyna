@@ -41,11 +41,25 @@ bool scenarioloader_mode::update() {
 		WriteLog("using simulation seed: " + std::to_string(Global.random_seed), logtype::generic);
         WriteLog("using simulation starting timestamp: " + std::to_string(Global.starting_timestamp), logtype::generic);
 
+		// the command line gives the name lowercased, the file may be named in another case, as a scenery made on Windows;
+		// the scenery is saved back to its own file then
+		if (auto const cased{FileCased(Global.asCurrentSceneryPath + Global.SceneryFile)}; cased.size() > Global.asCurrentSceneryPath.size())
+			Global.SceneryFile = cased.substr(Global.asCurrentSceneryPath.size());
         Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
         WriteLog( "\nLoading scenario \"" + Global.SceneryFile + "\"..." );
 
 		timestart = std::chrono::system_clock::now();
-		state = simulation::State.deserialize_begin(Global.SceneryFile);
+		try {
+			state = simulation::State.deserialize_begin(Global.SceneryFile);
+		}
+		catch (std::exception const &e) {
+			ErrorLog("Bad init: scenario \"" + Global.SceneryFile + "\" couldn't be opened (" + e.what() + ")");
+			state.reset();
+			Global.SceneryFile.clear();
+			Application.pop_mode();
+			Application.push_mode(eu07_application::mode::launcher);
+			return true;
+		}
 	}
 
 	try {

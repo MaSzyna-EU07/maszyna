@@ -115,6 +115,19 @@ smoke_source::deserialize_mapping( cParser &Input ) {
     else if( key == "opacity_change:" ) {
         m_opacitymodifier.deserialize( Input );
     }
+    else if( key == "terminal_velocity:" ) {
+        m_settles = true;
+        m_settling = Input.getToken<float>( true, "\n\r\t  ,;[]" );
+    }
+    else if( key == "drag:" ) {
+        m_drag = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
+    }
+    else if( key == "spread:" ) {
+        m_spread = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
+    }
+    else if( key == "fade_in:" ) {
+        m_fadein = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
+    }
 
     return true; // return value marks a [ key: value ] pair was extracted, nothing about whether it's recognized
 }
@@ -152,15 +165,9 @@ smoke_source::bind( TAnimModel const *Node ) {
             owner_type::none );
 }
 
-// updates state of owned particles
+// adds the particles to spawn in an update of Timedelta to m_spawncount
 void
-smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
-
-    // prepare bounding box for new pass
-    // TODO: include bounding box in the bounding_area class
-    bounding_box boundingbox {
-        glm::dvec3{ std::numeric_limits<double>::max() },
-        glm::dvec3{ std::numeric_limits<double>::lowest() } };
+smoke_source::accumulate_spawns( double const Timedelta, bool const Onlydespawn ) {
 
     m_spawncount = (
         ( ( false == Global.Smoke ) || ( true == Onlydespawn ) ) ?
@@ -209,6 +216,19 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
 			}
 		}
 	}
+}
+
+// updates state of owned particles
+void
+smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
+
+    // prepare bounding box for new pass
+    // TODO: include bounding box in the bounding_area class
+    bounding_box boundingbox {
+        glm::dvec3{ std::numeric_limits<double>::max() },
+        glm::dvec3{ std::numeric_limits<double>::lowest() } };
+
+    accumulate_spawns( Timedelta, Onlydespawn );
     
     // update spawned particles
     for( auto particleiterator { std::begin( m_particles ) }; particleiterator != std::end( m_particles ); ++particleiterator ) {
@@ -329,23 +349,37 @@ smoke_source::initialize( smoke_particle &Particle ) {
     Particle.position = location();
 
     if( m_ownertype == owner_type::vehicle ) {
-        Particle.opacity *= static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
+        float velocityscale, opacityscale;
+        launch_scales( velocityscale, opacityscale );
+        Particle.opacity *= opacityscale;
+        Particle.velocity *= velocityscale;
+    }
+}
+
+// shares of the launch velocity and of the opacity of a particle born now, which the owner gives
+void
+smoke_source::launch_scales( float &Velocity, float &Opacity ) const {
+
+    Velocity = 1.f;
+    Opacity = 1.f;
+    if( m_ownertype != owner_type::vehicle ) { return; }
+
+    Opacity = static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
         if (m_owner.vehicle->MoverParameters->EngineType == TEngineType::DieselElectric)
         {
                 if (m_owner.vehicle->MoverParameters->dizel_spinup == true)
                 {
-                Particle.velocity *= 0.38*(((m_owner.vehicle->MoverParameters->enrot)/2)*0.5);  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
+                Velocity = static_cast<float>(0.38*(((m_owner.vehicle->MoverParameters->enrot)/2)*0.5));  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
                 
                 }
                 else 
                 {
               
-                Particle.velocity *= ((((m_owner.vehicle->MoverParameters->enrot)/60)*0.6) * (m_owner.vehicle->MoverParameters->EnginePower *0.03));  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
+                Velocity = static_cast<float>((((m_owner.vehicle->MoverParameters->enrot)/60)*0.6) * (m_owner.vehicle->MoverParameters->EnginePower *0.03));  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
                 //Particle.velocity *= m_owner.vehicle->GetVelocity();  // / m_owner.vehicle->MoverParameters->dizel_fill *0.01)) ; 
                 }
 
         }
-    }
 }
 
 // updates state of provided particle and bounding box. returns: true if particle is still alive afterwards, false otherwise
@@ -357,10 +391,19 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
     if( Particle.opacity <= 0.f ) { return false; }
     // ... otherwise proceed with full update
     m_sizemodifier.update( Particle.size, Timedelta );
+    if( m_spread > 0.f ) {
+        // the jet widens with the way it goes
+        Particle.size = std::min( Particle.size + m_spread * glm::length( Particle.velocity ) * static_cast<float>( Timedelta ), m_sizemodifier.limit( value_limit::max ) );
+    }
 
+    if( m_settles ) {
+        // the drag of the air takes the particle towards the velocity it settles at
+        auto const share { static_cast<float>( 1.0 - std::exp( -m_drag * Timedelta ) ) };
+        Particle.velocity += ( glm::vec3{ 0.f, m_settling, 0.f } - Particle.velocity ) * share;
+    }
     // crude smoke dispersion simulation
     // http://www.auburn.edu/academic/forestry_wildlife/fire/smoke_guide/smoke_dispersion.htm
-	if (m_ownertype == owner_type::vehicle)
+	else if (m_ownertype == owner_type::vehicle)
 	{
     Particle.velocity.y += static_cast<float>(( 0.025 * Particle.velocity.y ) * std::min( 0.f, Global.AirTemperature - 90 ) * Timedelta); // decelerate faster in cold weather
 	Particle.velocity.y -= static_cast<float>(( (0.05 * (pow(m_owner.vehicle->GetVelocity()*1,0.4))) * Particle.velocity.y ) * Global.Overcast * Timedelta); // decelerate faster with high air humidity and/or precipitation
@@ -383,6 +426,63 @@ smoke_source::update( smoke_particle &Particle, bounding_box &Boundingbox, doubl
     Boundingbox[ value_limit::max ] = glm::max( Boundingbox[ value_limit::max ], Particle.position + glm::dvec3{ Particle.size } );
 
     return true;
+}
+
+// the same as update() for the particles simulated on the gpu: the births of the update and what the particles start from and
+// change by, worked out as the cpu does it in update(), initialize() and update( Particle ). the particles of the cpu are dropped
+void
+smoke_source::update_gpu( double const Timedelta, bool const Onlydespawn ) {
+
+    m_particles.clear();
+
+    accumulate_spawns( Timedelta, Onlydespawn );
+    // the cpu fills the free places, then replaces the oldest; a full source can't take more than its size in an update and
+    // drops the rest of whole particles, as the cpu does
+    auto const spawns { std::min( std::floor( m_spawncount ), static_cast<float>( m_max_particles ) ) };
+    m_spawncount -= spawns;
+    m_spawncount -= std::floor( m_spawncount );
+    m_gpu.spawns = static_cast<std::uint32_t>( std::max( spawns, 0.f ) );
+
+    auto const here { location() };
+    m_gpu.previous = ( m_gpu.started ? m_gpu.location : here );
+    m_gpu.location = here;
+    m_gpu.started = true;
+
+    float velocityscale, opacityscale;
+    launch_scales( velocityscale, opacityscale );
+    for( int limit = value_limit::min; limit <= value_limit::max; ++limit ) {
+        m_gpu.inclination[ limit ] = glm::radians( m_emitter.inclination[ limit ] );
+        m_gpu.velocity[ limit ] = m_emitter.velocity[ limit ] * velocityscale;
+        m_gpu.size[ limit ] = m_emitter.size[ limit ];
+        m_gpu.opacity[ limit ] = m_emitter.opacity[ limit ] / Global.SmokeFidelity * opacityscale;
+    }
+    m_gpu.sizechange[ 0 ] = m_sizemodifier.value_change();
+    m_gpu.sizechange[ 1 ] = m_sizemodifier.limit( value_limit::min );
+    m_gpu.sizechange[ 2 ] = m_sizemodifier.limit( value_limit::max );
+    m_gpu.opacitychange[ 0 ] = m_opacitymodifier.value_change();
+    m_gpu.opacitychange[ 1 ] = m_opacitymodifier.limit( value_limit::min );
+    m_gpu.opacitychange[ 2 ] = m_opacitymodifier.limit( value_limit::max );
+    // crude smoke dispersion simulation, as in update( Particle )
+    if( m_ownertype == owner_type::vehicle ) {
+        m_gpu.rise = static_cast<float>( 0.025 * std::min( 0.f, Global.AirTemperature - 90 ) );
+        m_gpu.damping = static_cast<float>( 0.05 * pow( m_owner.vehicle->GetVelocity() * 1, 0.4 ) * Global.Overcast );
+        m_gpu.risemin = std::numeric_limits<float>::lowest();
+    }
+    else {
+        m_gpu.rise = static_cast<float>( 0.005 * std::min( 0.f, Global.AirTemperature - 10 ) );
+        m_gpu.damping = static_cast<float>( 0.050 * Global.Overcast );
+        m_gpu.risemin = static_cast<float>( 0.25 * ( 2.f - Global.Overcast ) );
+    }
+    m_gpu.spread = m_spread;
+    m_gpu.fadein = m_fadein;
+    m_gpu.settles = m_settles;
+    m_gpu.settling = m_settling;
+    m_gpu.drag = m_drag;
+    m_gpu.color = m_emitter.color;
+
+    // the renderer culls the particles one by one; the area is where they come from, for the distance of the source
+    m_area.center = here;
+    m_area.radius = 0;
 }
 
 
@@ -437,13 +537,33 @@ particle_manager::update() {
 
     if( timedelta == 0.0 ) { return; }
 
+    ++m_updates;
+    m_timedelta = timedelta;
+
     auto const distancethreshold { 2 * Global.BaseDrawRange * Global.fDistanceFactor }; // to reduce workload distant enough sources won't spawn new particles
 
     for( auto &source : m_sources ) {
 
         auto const viewerdistance { glm::length( source.area().center - glm::dvec3{ Global.pCamera.Pos } ) - source.area().radius };
 
-        source.update( timedelta, viewerdistance > distancethreshold );
+        if( m_gpu ) {
+            source.update_gpu( timedelta, viewerdistance > distancethreshold );
+        }
+        else {
+            source.update( timedelta, viewerdistance > distancethreshold );
+        }
+    }
+}
+
+void
+particle_manager::gpu( bool const Gpu ) {
+
+    if( Gpu == m_gpu ) { return; }
+    m_gpu = Gpu;
+    for( auto &source : m_sources ) {
+        source.m_particles.clear();
+        source.m_gpu.started = false;
+        source.m_gpu.spawns = 0;
     }
 }
 

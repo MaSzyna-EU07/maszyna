@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -64,6 +65,10 @@ class editor_orthophoto
 		bool drape{true};       // fit the imagery onto the ground geometry instead of a flat plane
 		float lift{0.05f};      // with drape: distance above the ground (in the scene it has to clear the ground to be seen)
 		bool in_scene{false};   // render as opaque scene geometry, covered by whatever is in front of it
+		// a WMS of the user's in place of the orthophoto of geoportal.gov.pl: its address and the layers asked of it in EPSG:2180, PNG
+		// clear where it draws nothing. Its tiles are kept in memory only and asked for only around the camera, none ahead
+		std::string service;
+		std::string layers;
 	};
 
 	using world_triangle = std::array<glm::dvec3, 3>;
@@ -78,6 +83,14 @@ class editor_orthophoto
 		int resident{0}; // tiles with imagery on screen
 		int loading{0};  // tiles waiting for or being processed by a worker
 		int failed{0};   // tiles whose last attempt failed
+		// the download area: its tiles, the ones in the disk cache in every product the settings ask for, the ones which failed
+		int area_tiles{0};
+		int area_cached{0};
+		int area_failed{0};
+		bool area_paused{false};
+		int requests{0}; // asked of the services since the start, the disk cache left out
+		int uploads{0};  // images of tiles sent to the graphics card
+		int stale{0};    // images which came when the tile no longer wanted them, dropped
 	};
 
 	static constexpr double tile_size{256.0}; // metres per tile side
@@ -93,12 +106,46 @@ class editor_orthophoto
 	// disabling drops the queue and returns the gpu memory of the resident tiles
 	void enabled(bool State);
 	config const &settings() const { return m_config; }
+	// the line of the scenery (//$o): whether the imagery is on and, with Origin, where the scenery lies; the rest of the settings
+	// are the user's
+	static std::string mark(config const &Config, bool Enabled, bool Origin);
+	static bool read_mark(std::string const &Text, config &Config, bool &Enabled);
 	// changes of year / resolution invalidate resident tiles, the rest applies immediately
 	void settings(config const &Config);
 	void ground_source(ground_query Query) { m_ground = std::move(Query); }
 	void height_source(height_query Query) { m_height = std::move(Query); }
+	// the heights the ground will have where there's none yet, as of the terrain model on its way: a tile laid out before its
+	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above
+	void guess_source(height_query Query) { m_guess = std::move(Query); }
+	// the area the imagery is downloaded in, a polygon of PUWG 1992 (easting, northing): its tiles go to the disk cache in the
+	// background, the products the settings ask for, and no tile outside it is asked for around the camera. Empty: no area, the
+	// tiles around the camera as before
+	void area(std::vector<glm::dvec2> Polygon);
+	std::vector<glm::dvec2> const &area() const { return m_area; }
+	// the download in the background held, or going on
+	void area_paused(bool const Paused);
+	// the squares of the tiles of the area in the world (x, z): 0 waiting, 1 in the disk cache, 2 failed
+	struct area_square
+	{
+		glm::dvec2 low{0.0};
+		glm::dvec2 high{0.0};
+		int state{0};
+	};
+	std::vector<area_square> area_squares() const;
+	// world (x, z) and PUWG 1992 (easting, northing), by the origin of the scenery
+	glm::dvec2 to_puwg(glm::dvec2 const &World) const { return {m_config.east - World.x, m_config.north + World.y}; }
+	glm::dvec2 to_world(glm::dvec2 const &Puwg) const { return {m_config.east - Puwg.x, Puwg.y - m_config.north}; }
+	// the area kept in the scenery, as the lines after its mark
+	static std::vector<std::string> area_lines(std::vector<glm::dvec2> const &Polygon);
+	static std::vector<glm::dvec2> read_area(std::vector<std::string> const &Lines);
 	// samples the ground again (after it was edited); tiles are refitted progressively
 	void refit();
+	// the tiles lying at guessed heights sampled again where the ground has come under them
+	void ground_arrived();
+	// the tiles with the ground sampled under them, and of these the ones at guessed heights
+	std::pair<std::size_t, std::size_t> grounded() const;
+	// the rectangles (x, z) of the tiles of the imagery asked for and not shown yet
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> waiting() const;
 	// takes the scene geometry out of the region (e.g. when the editor is left); it's re-created on the next update
 	void detach_scene();
 	// true for geometry created by the layer, so ground queries can skip it
@@ -119,6 +166,17 @@ class editor_orthophoto
 	statistics stats() const;
 	// false when the build has no http client; cached tiles are still shown
 	static bool can_download();
+	// what a WMS tells of itself in its capabilities: its title, its fees and access constraints, its layers with a name and whether it
+	// draws in EPSG:2180, the one the tiles are laid out in. Blocking, for a thread of its own
+	struct service_info
+	{
+		std::string title;
+		std::string terms;
+		std::vector<std::pair<std::string, std::string>> layers; // name, title
+		bool puwg{false};
+		std::string error;
+	};
+	static service_info describe(std::string const &Service);
 	static std::string cache_directory();
 
   private:
@@ -128,6 +186,8 @@ class editor_orthophoto
 	{
 		int year{0};
 		bool hires{false};
+		std::string service;
+		std::string layers;
 	};
 
 	struct job
@@ -175,6 +235,7 @@ class editor_orthophoto
 		float height_min{0.0f};
 		float height_max{0.0f};
 		std::vector<glm::dvec3> surface;  // upward facing ground triangles clipped to the tile (3 vertices each)
+		bool guessed{false};              // no ground under it when sampled: the heights guessed, from the terrain model or the tiles beside
 		// scene geometry
 		scene::basic_section *section{nullptr}; // section holding the shape (nullptr = not in the scene)
 		scene::basic_cell *cell{nullptr};       // set instead of the section's shape list when the shape is translucent
@@ -192,21 +253,25 @@ class editor_orthophoto
 	void release_tile(tile &Tile);
 	texture_slot acquire_slot();
 	void sample_ground(tile_key const &Key, tile &Tile);
+	// the height of the ground sampled under a tile beside Own at the point, the tiles with guessed heights left out
+	bool sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const;
 	void build_shape(tile_key const &Key, tile &Tile);
 	void remove_shape(tile &Tile);
 	void release_geometry(tile &Tile);
 	void update_scene();
 	void start_workers();
 	void worker();
+	// the tiles of the area queued for the download in the background again, nearest to the camera first
+	void restart_prefetch();
 
 	config m_config;
 	bool m_enabled{false};
 	std::map<tile_key, tile> m_tiles; // main thread only
 	tile_key m_camera_tile{0, 0};
 	std::vector<texture_slot> m_free_slots; // pool of textures, reused between tiles
-	int m_texture_count{0};
 	ground_query m_ground;
 	height_query m_height;
+	height_query m_guess;
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles
@@ -214,12 +279,27 @@ class editor_orthophoto
 	std::uint8_t m_alpha_pending{255}; // latest requested
 	double m_alpha_changed{0.0};       // when the requested value last changed
 
+	std::vector<glm::dvec2> m_area;  // PUWG, empty: no area
+	std::set<tile_key> m_area_tiles; // the tiles it touches
+	int m_uploads{0};
+	int m_stale{0};
+
 	// shared with the workers, guarded by m_mutex
 	mutable std::mutex m_mutex;
 	std::condition_variable m_wakeup;
 	std::deque<job> m_queue;
 	std::deque<result> m_done;
 	tile_key m_focus{0, 0}; // workers pick the queued tile closest to it
+	std::set<tile_key> m_running; // tiles a worker is on: another job of one waits till that one is done
+	std::size_t m_running_hires{0}; // of them, the ones of a 4K image
+	// the download of the area in the background: the tiles nearest to the camera first, taken when no tile around the camera waits
+	std::vector<tile_key> m_prefetch;
+	std::size_t m_prefetch_next{0};
+	std::set<tile_key> m_prefetch_failed;
+	std::set<tile_key> m_prefetch_cached;
+	bool m_prefetch_paused{false};
+	source m_prefetch_source;
+	std::uint32_t m_prefetch_generation{0};
 
 	std::atomic<bool> m_stop{false};
 	std::atomic<std::uint32_t> m_generation{1};

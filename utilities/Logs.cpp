@@ -77,8 +77,11 @@ std::mutex logMutex;
 
 void LogService()
 {
-	while (!Global.applicationQuitOrder)
+	bool quitting{false};
+	while (!quitting)
 	{
+		// read before the stacks are drained, so everything logged before the quit order still gets written
+		quitting = Global.applicationQuitOrder;
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
@@ -144,7 +147,8 @@ void LogService()
 			}
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		if (!quitting)
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 }
 

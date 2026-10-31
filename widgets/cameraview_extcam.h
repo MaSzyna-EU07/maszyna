@@ -34,7 +34,9 @@ private:
 
 	bool recording = false;
 
-	std::optional<opengl_texture> texture;
+	// the image shown, made by the renderer of the user interface (imgui_renderer), and the frame turned to rgba for it
+	std::uint64_t m_image{0};
+	std::vector<std::uint8_t> m_rgba;
 
 	void capture_func();
 	void record_func();

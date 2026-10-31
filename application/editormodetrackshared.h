@@ -1,0 +1,349 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+// what the files of the track mode of the editor share: the sizes of the handles and reaches, and small helpers
+
+#include "editor/editorAlignment.hpp"
+#include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
+#include "editor/editorTrack.hpp"
+#include "utilities/translation.h"
+#include "world/Track.h"
+
+#include "imgui/imgui.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace track_mode
+{
+
+using geometry::bezier;
+using geometry::cross;
+using geometry::grade_of;
+using geometry::plan_distance;
+using geometry::plan_of;
+using geometry::signed_angle;
+using geometry::turned;
+using geometry::arc_pieces;
+using geometry::arc_through;
+using geometry::has_controls;
+using geometry::level;
+using geometry::reversed;
+using geometry::straight_piece;
+
+double constexpr kParallelFindAngle{15.0}; // deg, neighbours counted as beside the straight
+double constexpr kParallelSnapAngle{5.0}; // deg, close enough to snap parallel
+double constexpr kParallelSnapWindow{0.45}; // m from 4.00 / 4.50 / 4.75 m
+double constexpr kParallelHintWindow{1.25}; // m, hint before the snap takes
+
+inline double piece_plan_radius(segment_data const &Path)
+{
+	if (std::abs(Path.radius) > 0.5f)
+		return std::abs(Path.radius);
+	bezier const curve{Path};
+	auto const begin{plan_of(curve.first(0.0))};
+	auto const finish{plan_of(curve.first(1.0))};
+	if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+		return 0.0;
+	auto const turn{std::abs(signed_angle(begin, finish))};
+	if (turn < 1e-4)
+		return 0.0;
+	return curve.plan_length() / turn;
+}
+
+// the speed an arc of the radius lets the trains through at, within the cant and the unbalanced acceleration of the limits
+inline std::string speed_of(double const Radius, alignment::limits const &Limits)
+{
+	auto const speed{std::floor(alignment::speed_limit(Radius, Limits) / 5.0) * 5.0};
+	return speed > 0.0 ? format(STR_C("  (up to %.0f km/h)"), speed) : std::string{};
+}
+
+// the sharpest arc of a curve, of a compound one too
+inline double curve_sharpest(alignment::curve_report const &Curve)
+{
+	auto sharpest{Curve.radius};
+	for (auto const radius : Curve.radii)
+		sharpest = std::min(sharpest, radius);
+	return sharpest;
+}
+
+// a curve of the line laid in short: two transition curves meeting at the radius, or the radii with the transitions and the cant, the
+// speed the sharpest arc lets the trains through at
+inline std::string curve_label(alignment::curve_report const &Curve, alignment::limits const &Limits)
+{
+	if (Curve.spirals)
+		return format("2xL %.0f m  R %.0f", Curve.transition_in, Curve.radius) + speed_of(Curve.radius, Limits);
+	std::string text{"R "};
+	if (Curve.radii.empty())
+		text += format("%.0f", Curve.radius);
+	for (std::size_t i = 0; i < Curve.radii.size(); ++i)
+		text += format(i == 0 ? "%.0f" : "/%.0f", Curve.radii[i]);
+	if (Curve.transition_in > 0.0 || Curve.transition_out > 0.0)
+		text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
+	// a compound curve shows the cant of each arc where they aren't all the same
+	auto const varied{std::any_of(Curve.cants.begin(), Curve.cants.end(), [&](double const Cant) { return std::abs(Cant - Curve.cants.front()) >= 0.5; })};
+	if (varied)
+		for (std::size_t i = 0; i < Curve.cants.size(); ++i)
+			text += format(i == 0 ? "  h %.0f" : "/%.0f", Curve.cants[i]);
+	else if (Curve.cant > 0.0)
+		text += format("  h %.0f", Curve.cant);
+	return text + speed_of(curve_sharpest(Curve), Limits);
+}
+
+inline std::string lines_of(std::vector<std::string> const &Texts)
+{
+	std::string text;
+	for (auto const &line : Texts)
+		text += (text.empty() ? "" : "\n") + line;
+	return text;
+}
+
+// how a curve laid goes on from the curve of the track it starts at, or into the one of the track it ends at; empty from a straight
+inline std::string curve_goes_on(alignment::curve_report const &Curve)
+{
+	std::vector<std::string> lines;
+	if (Curve.curvature_in > 0.0)
+		lines.push_back(Curve.transition_in < 1.0 ? format(STR_C("goes on from R %.0f m of the track it starts at"), 1.0 / Curve.curvature_in) :
+		                                            format(STR_C("goes on from R %.0f m of the track it starts at, a transition of %.0f m between them"), 1.0 / Curve.curvature_in, Curve.transition_in));
+	if (Curve.curvature_out > 0.0)
+		lines.push_back(Curve.transition_out < 1.0 ? format(STR_C("goes into R %.0f m of the track it ends at"), 1.0 / Curve.curvature_out) :
+		                                             format(STR_C("goes into R %.0f m of the track it ends at, a transition of %.0f m between them"), 1.0 / Curve.curvature_out, Curve.transition_out));
+	return lines_of(lines);
+}
+
+// the transition curves and the cant the norms put in a layout, a compound curve where it goes on from an arc turning the same way
+inline std::string eased_of(std::optional<alignment::lay_result> const &Eased)
+{
+	if (false == Eased.has_value())
+		return {};
+	if (Eased->pieces.empty() || (Eased->entry <= 0.0 && Eased->exit <= 0.0))
+		return Eased->note;
+	auto text{Eased->compound ? format(STR_C("compound curve on from R %.0f m, a transition of %.0f m between the arcs"), Eased->from_radius, Eased->entry) : format(STR_C("transition curves %.0f / %.0f m"), Eased->entry, Eased->exit)};
+	if (Eased->cant > 0.0)
+		text += format(STR_C("   cant %.0f mm"), Eased->cant);
+	if (false == Eased->note.empty())
+		text += "\n" + Eased->note;
+	return text;
+}
+
+// the rise of the track from its start to its end, and the grades along it
+inline std::string vertical_of(std::vector<segment_data> const &Pieces)
+{
+	double low{std::numeric_limits<double>::max()};
+	double high{std::numeric_limits<double>::lowest()};
+	for (auto const &piece : Pieces)
+	{
+		bezier const curve{piece};
+		auto previous{curve.point(0.0)};
+		for (int k = 1; k <= 8; ++k)
+		{
+			auto const next{curve.point(k / 8.0)};
+			if (auto const run{plan_distance(previous, next)}; run > 1e-3)
+			{
+				low = std::min(low, (next.y - previous.y) / run * 1000.0);
+				high = std::max(high, (next.y - previous.y) / run * 1000.0);
+			}
+			previous = next;
+		}
+	}
+	if (low > high)
+		return {};
+	auto const rise{bezier{Pieces.back()}.point(1.0).y - bezier{Pieces.front()}.point(0.0).y};
+	if (high - low < 0.1)
+		return format(STR_C("height %+.2f m   grade %+.1f per mille"), rise, (low + high) * 0.5);
+	return format(STR_C("height %+.2f m   grade %+.1f to %+.1f per mille"), rise, low, high);
+}
+
+
+inline std::string narrowed(editor_track::layout const Layout, double const Radius, double const Arc)
+{
+	if ((Layout != editor_track::layout::arc_straight && Layout != editor_track::layout::straight_arc) || Arc == 0.0 || std::abs(Arc - Radius) < Radius * 0.01)
+		return {};
+	return format(STR_C("R %.0f m doesn't reach the cursor, the arc goes through it with R %.0f m"), Radius, Arc);
+}
+
+inline std::string narrowed(std::vector<segment_data> const &Pieces, editor_track::layout const Layout, double const Radius)
+{
+	double sharpest{0.0};
+	for (auto const &piece : Pieces)
+		if (auto const radius{piece_plan_radius(piece)}; radius >= 0.5 && (sharpest == 0.0 || radius < sharpest))
+			sharpest = radius;
+	return narrowed(Layout, Radius, sharpest > Radius ? 0.0 : sharpest);
+}
+
+inline std::string describe(editor_track::straight const &Line)
+{
+	return format(STR_C("L %.2f m  azimuth %.4f deg  grade %.2f per mille  %zu paths"), Line.length, Line.azimuth, Line.grade * 1000.0, Line.tracks.size());
+}
+
+inline char const *point_label(editor_track::point_kind const Kind)
+{
+	switch (Kind)
+	{
+	case editor_track::point_kind::start: return STR_C("Start");
+	case editor_track::point_kind::control1: return STR_C("Control 1");
+	case editor_track::point_kind::control2: return STR_C("Control 2");
+	default: return STR_C("End");
+	}
+}
+
+editor_track::point_kind const kPointKinds[] = {editor_track::point_kind::start, editor_track::point_kind::control1, editor_track::point_kind::control2, editor_track::point_kind::end};
+
+float const kHandleRadius{10.0f};
+double const kLaySnapRadius{5.0};
+float const kSnapPixels{16.0f};
+double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
+double const kFreeSwitchLock{4.0}; // m of the drag a switch with no track takes the direction of its main track from
+double const kFreeSwitchRelease{2.0}; // m from its start the drag of a switch with no track lets the direction go again
+double const kSlipReach{12.0}; // m; a slip goes to the crossing nearest the cursor, if it's this close
+// m, of the straights past the ends of a curve a crossover laid along it reaches onto: from a transition it goes on onto the
+// straight after it
+double constexpr kCrossoverStraights{250.0};
+double const kSkewSeat{2.0}; // m; the first point laid with Alt this close to a straight track goes onto its axis
+double const kSkewReach{30.0}; // m; Alt while laying turns the straight to a straight track this close to its start, or one it crosses
+double const kSkewRatios[]{4.8, 6.6, 7.5, 9.0, 12.0, 14.0, 18.5, 26.5};
+double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
+double const kDigitizeFit{0.5};
+double const kDrawnReach{100000.0};
+double const kJointRange{400.0}; // the ends of the paths are drawn for the tracks this close to the camera
+double const kDotsRange{500.0}; // m, the dots of the ends of the tracks are drawn this close to the camera in the 3D view
+ImU32 const kJointColor{IM_COL32(255, 255, 255, 200)};
+ImU32 const kFreeEndColor{IM_COL32(240, 60, 60, 235)};
+int const kRailCategory{1};
+
+inline editor_track::branch_end branch_start(segment_data const &Diverging)
+{
+	auto const tangent{bezier{Diverging}.first(1.0)};
+	return {Diverging.points[segment_data::point::end], plan_of(tangent), grade_of(tangent), static_cast<double>(Diverging.rolls[1])};
+}
+
+inline editor_track::branch_end branch_target(editor_track::snap_target const &Target)
+{
+	return {Target.position, plan_of(Target.direction), grade_of(Target.direction), Target.track != nullptr ? editor_track::joint_roll(*Target.track, Target.point) : 0.0};
+}
+
+inline double switch_from(editor_track::straight const &Line, double const Length, double const Along, int const Direction, bool const Snap)
+{
+	auto from{std::clamp(Direction > 0 ? Along : Along - Length, 0.0, Line.length - Length)};
+	if (false == Snap)
+		return from;
+	std::vector<double> joints{0.0, Line.length};
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			joints.push_back(Line.along(path.points[index]));
+	}
+	auto const nearest = [&](double const Value) {
+		double best{Value};
+		for (auto const joint : joints)
+			if (std::abs(joint - Value) < std::abs(best - Value) || best == Value)
+				best = std::abs(joint - Value) < 1.0 ? joint : best;
+		return best;
+	};
+	auto const snappedstart{nearest(from)};
+	auto const snappedend{nearest(from + Length)};
+	if (snappedstart != from)
+		from = snappedstart;
+	else if (snappedend != from + Length)
+		from = snappedend - Length;
+	return std::clamp(from, 0.0, Line.length - Length);
+}
+
+inline std::string link_summary(editor_track::snap_target const &Target, editor_track::branch_link const &Link, double const Switchradius)
+{
+	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{STR_C("(no name)")}};
+	auto text{Link.reverse ? format(STR_C("The branch leads into %s with reverse curves R %.0f m"), name.c_str(), Link.radius) :
+	          Link.radius > 0.0 ? format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius) : format(STR_C("The branch leads straight into %s"), name.c_str())};
+	if (Link.insert > 0.0)
+		text += format(STR_C(", a straight of %.1f m between them"), Link.insert);
+	if (Link.reverse && Link.radius < Switchradius - 0.5)
+		text += format(STR_C(", sharper than the switch (R %.0f m)"), Switchradius);
+	if (Link.trim > 0.0)
+		text += format(STR_C(", %s shortened %.2f m"), name.c_str(), Link.trim);
+	else if (Link.trim < 0.0)
+		text += format(STR_C(", %s lengthened %.2f m"), name.c_str(), -Link.trim);
+	return text;
+}
+
+inline std::optional<alignment::join_result> eased_join(alignment::join_request const &Request, editor_track::easing const &In, editor_track::easing const &Out)
+{
+	if (In.pieces.empty() && Out.pieces.empty())
+		return std::nullopt;
+	auto middle{Request};
+	if (false == In.pieces.empty())
+	{
+		middle.start.position = In.end;
+		middle.start.direction = In.direction;
+		middle.start.roll = In.pieces.back().rolls[1];
+	}
+	if (false == Out.pieces.empty())
+	{
+		middle.end.position = Out.end;
+		middle.end.direction = -Out.direction;
+		middle.end.roll = -Out.pieces.back().rolls[1];
+	}
+	if (false == editor_track::eases_room(In, Out, Request.start.position, Request.start.direction, Request.end.position, Request.end.direction))
+		return std::nullopt;
+	auto eased{alignment::join(middle)};
+	if (eased.kind == alignment::join_kind::none || eased.kind == alignment::join_kind::bezier)
+		return std::nullopt;
+	eased.length = editor_track::eased_length(In, eased.length, Out);
+	eased.pieces = editor_track::eased_pieces(In, eased.pieces, Out);
+	return eased;
+}
+
+// curvature of the shape at Chainage, positive turning from x towards z
+inline double curvature_at(alignment::result const &Shape, double const Chainage)
+{
+	auto const a{std::clamp(Chainage - 0.5, 0.0, Shape.length)};
+	auto const b{std::clamp(Chainage + 0.5, 0.0, Shape.length)};
+	if (b - a < 1e-3)
+		return 0.0;
+	auto const from{plan_of(alignment::evaluate(Shape, a).direction)};
+	auto const to{plan_of(alignment::evaluate(Shape, b).direction)};
+	return signed_angle(glm::normalize(from), glm::normalize(to)) / (b - a);
+}
+
+// circular curve from a point along a direction, cut into pieces of 90 degrees at most. Side: 1 to the left, -1 to the right
+inline void compound_from(editor_track::curve const &Curve, alignment::vertex &Vertex)
+{
+	if (false == Curve.compound || Curve.arcs.size() < 2)
+		return;
+	// the radii and the transitions read off the paths rounded, as they'd be designed; read from the designs they were laid by, as they are
+	auto const value = [&](double const Value) { return Curve.laid ? Value : std::round(Value); };
+	Vertex.compound = true;
+	Vertex.radius = value(Curve.arcs.front().radius);
+	Vertex.share = Curve.arcs.front().turn;
+	Vertex.first_cant = -1.0;
+	Vertex.arcs.clear();
+	for (std::size_t i = 1; i < Curve.arcs.size(); ++i)
+		Vertex.arcs.push_back({value(Curve.arcs[i].radius), value(Curve.arcs[i].transition), Curve.arcs[i].turn});
+}
+
+inline char const *type_name(TTrack const &Track)
+{
+	switch (Track.eType)
+	{
+	case tt_Normal: return "normal";
+	case tt_Switch: return "switch";
+	case tt_Cross: return "cross";
+	case tt_Table: return "turntable";
+	case tt_Tributary: return "tributary";
+	default: return "unknown type";
+	}
+}
+
+} // namespace track_mode

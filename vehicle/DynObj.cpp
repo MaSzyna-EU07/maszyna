@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
+#include "utilities/workerpool.h"
 #include "utilities/Logs.h"
 #include "utilities/glmHelpers.h"
 #include "Console.h"
@@ -822,6 +823,18 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
     // ktorych i tak nie widac
     // NBMX wrzesien, MC listopad: zuniwersalnione
     btnOn = false; // czy przywrócić stan domyślny po renderowaniu
+
+    // the submodels set below are shared with whatever else is drawn with the same models
+    for( auto *model : { mdModel, mdLoad, mdLowPolyInt, mdKabina } ) {
+        if( model != nullptr ) {
+            model->state_changed();
+        }
+    }
+    for( auto *model : mdAttachments ) {
+        if( model != nullptr ) {
+            model->state_changed();
+        }
+    }
 
     if (mdLoad) // tymczasowo ładunek na poziom podłogi
         if (vFloor.z > 0.0)
@@ -3556,7 +3569,9 @@ bool TDynamicObject::Update(double dt, double dt1)
 			MED_oldFED = FzadED;
         }
 
+        Timer::subsystem.vehicles_ai.start();
         Mechanik->Update(dt1); // przebłyski świadomości AI
+        Timer::subsystem.vehicles_ai.stop();
     }
 
     // fragment "z EXE Kursa"
@@ -8606,6 +8621,66 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     //    na którą by się zapisywały wszystkie pojazdy będące w ruchu
     //    pojazdy stojące nie potrzebują aktualizacji, chyba że np. ktoś im zmieni nastawę hamulca
     //    oddzielną listę można by zrobić na pojazdy z napędem, najlepiej posortowaną wg typu napędu
+    // what the update goes through, for the debug panel. the counts are of the last call in the frame
+    auto &counts { Timer::subsystem.vehicles };
+    counts.all = static_cast<unsigned int>( m_items.size() );
+    counts.enabled = counts.road = counts.ai = counts.active = 0;
+    counts.kind = {};
+    counts.standing = {};
+    counts.awake = {};
+    counts.steps += static_cast<unsigned int>( std::max( Iterationcount, 1 ) );
+    // the kind of each vehicle: rail or road, near the camera or farther. the time of each vehicle in the loops below goes to its
+    // kind, measured from the end of the one before it
+    static std::vector<std::uint8_t> kinds;
+    kinds.resize( m_items.size() );
+    // road vehicles far from the camera with nobody inside go by one step of the physics in the frame, as long as all the steps
+    // together (Global.physics_roadlod): their movement goes on, in coarser steps nobody is close enough to tell
+    static std::vector<std::uint8_t> coarse;
+    coarse.assign( m_items.size(), 0 );
+    auto const camera { Global.pCamera.Pos };
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        auto const *vehicle { m_items[ index ] };
+        auto const road { ( vehicle->MoverParameters->CategoryFlag & 2 ) != 0 };
+        auto const distant { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
+        kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( distant ? 1 : 0 ) );
+        coarse[ index ] = static_cast<std::uint8_t>( Global.physics_roadlod && road && distant && ( false == vehicle->MechInside ) && ( Iterationcount > 1 ) );
+        if( false == vehicle->bEnabled ) { continue; }
+        ++counts.kind[ kinds[ index ] ];
+        auto const *mover { vehicle->MoverParameters };
+        if( mover->Vel < 0.01 ) {
+            ++counts.standing[ kinds[ index ] ];
+            if( ( false == road ) && mover->PhysicActivation ) {
+                // the test of TMoverParameters::ComputeTotalForce(), part by part
+                auto const moving = []( neighbour_data const &Neighbour ) {
+                    return ( Neighbour.vehicle != nullptr )
+                        && ( ( Neighbour.vehicle->MoverParameters->Vel > 0.0001 ) || Neighbour.vehicle->MoverParameters->accelerating() ); };
+                auto &awake { counts.awake };
+                ++awake.vehicles;
+                if( mover->CabActive != 0 ) { ++awake.cab; }
+                if( mover->Vel > 0.0001 ) { ++awake.speed; }
+                if( mover->accelerating() ) { ++awake.acceleration; }
+                if( mover->LastSwitchingTime < 5 ) { ++awake.switching; }
+                if( ( mover->TrainType == dt_EZT ) || ( mover->TrainType == dt_DMU ) ) { ++awake.multipleunit; }
+                if( moving( mover->Neighbours[ end::front ] ) || moving( mover->Neighbours[ end::rear ] ) ) { ++awake.neighbour; }
+            }
+        }
+    }
+    auto const lap = [ & ]( std::size_t const Index, std::array<Timer::frame_stopwatch, 4> &Times, std::chrono::steady_clock::time_point &Mark ) {
+        auto const now { std::chrono::steady_clock::now() };
+        if( Index < kinds.size() ) {
+            Times[ kinds[ Index ] ].add( std::chrono::duration<float, std::milli>( now - Mark ).count() );
+        }
+        Mark = now;
+    };
+    for( auto const *vehicle : m_items ) {
+        if( false == vehicle->bEnabled ) { continue; }
+        ++counts.enabled;
+        if( vehicle->MoverParameters->CategoryFlag & 2 ) { ++counts.road; }
+        if( ( vehicle->Mechanik != nullptr ) && vehicle->Mechanik->AIControllFlag ) { ++counts.ai; }
+        if( vehicle->MoverParameters->PhysicActivation || vehicle->MechInside ) { ++counts.active; }
+    }
+
+    Timer::subsystem.vehicles_prepare.start();
     for( auto *vehicle : m_items ) {
         if( false == vehicle->bEnabled ) { continue; }
         // Ra: zmienić warunek na sprawdzanie pantografów w jednej zmiennej: czy pantografy i czy podniesione
@@ -8615,30 +8690,199 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         vehicle->MoverParameters->ComputeConstans();
         vehicle->update_neighbours();
     }
+    Timer::subsystem.vehicles_prepare.stop();
+    Timer::subsystem.vehicles_forces.start();
+    auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
+    // the steps of the physics on many threads (Global.performance_multithreading), as many as the work is worth: a thread for each
+    // STEPS_PER_THREAD steps of vehicles with the physics on, up to all the cores. not in a network session (network.server,
+    // .client), which keeps the draws of Random() in step across the machines: the threads have engines of their own. the messages
+    // to external programs (Global.iMultiplayer) don't mind
+    auto constexpr STEPS_PER_THREAD { 128 };
+    std::size_t work { 0 };
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        auto const *vehicle { m_items[ index ] };
+        if( vehicle->MoverParameters->PhysicActivation || vehicle->MechInside ) {
+            work += ( coarse[ index ] != 0 ? 1 : static_cast<std::size_t>( std::max( Iterationcount, 1 ) ) );
+        }
+    }
+    auto const network { ( false == Global.network_servers.empty() ) || Global.network_client.has_value() };
+    auto const threads { (
+        network ?
+            1 :
+            std::min( worker_pool::capacity(), std::max<std::size_t>( 1, ( work + STEPS_PER_THREAD / 2 ) / STEPS_PER_THREAD ) ) ) };
+    // what keeps them in one thread, for the debug panel
+    counts.capacity = static_cast<unsigned int>( worker_pool::capacity() );
+    counts.singlethread = (
+        false == Global.performance_multithreading ? std::string{ "performance.multithreading off" } :
+        network ? std::string{ "network session" } :
+        threads <= 1 ? std::string{ "too little work" } :
+        std::string{} );
+    counts.threads = 1;
+    auto const parallel { ( threads > 1 ) && update_steps_parallel( Deltatime, Iterationcount, coarse, threads ) };
+    if( parallel ) {
+        counts.threads = static_cast<unsigned int>( threads );
+    }
+    else {
+    if( threads > 1 ) {
+        counts.singlethread = "a vehicle coupled with one it doesn't see";
+    }
+    auto mark { std::chrono::steady_clock::now() };
     if( Iterationcount > 1 ) {
         // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
+            std::size_t index { 0 };
             for( auto *vehicle : m_items ) {
-                vehicle->UpdateForce( Deltatime );
+                if( ( index >= coarse.size() ) || ( coarse[ index ] == 0 ) ) {
+                    vehicle->UpdateForce( Deltatime );
+                }
+                lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
+            index = 0;
             for( auto *vehicle : m_items ) {
-                vehicle->FastUpdate( Deltatime );
+                if( ( index >= coarse.size() ) || ( coarse[ index ] == 0 ) ) {
+                    vehicle->FastUpdate( Deltatime );
+                }
+                lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
             }
         }
     }
-    for( auto *vehicle : m_items ) {
-        vehicle->UpdateForce( Deltatime );
+    {
+        std::size_t index { 0 };
+        for( auto *vehicle : m_items ) {
+            // the vehicles going by one step take it with the time of all of them
+            auto const coarsestep { ( index < coarse.size() ) && ( coarse[ index ] != 0 ) };
+            vehicle->UpdateForce( coarsestep ? totaltime : Deltatime );
+            lap( index++, Timer::subsystem.vehicles_forces_kind, mark );
+        }
     }
-
-    auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
-
-    for( auto *vehicle : m_items ) {
-        // Ra 2015-01: tylko tu przelicza sieć trakcyjną
-        vehicle->Update( Deltatime, totaltime );
     }
+    Timer::subsystem.vehicles_forces.stop();
+
+    Timer::subsystem.vehicles_update.start();
+    {
+        std::size_t index { 0 };
+        auto mark { std::chrono::steady_clock::now() };
+        for( auto *vehicle : m_items ) {
+            auto const coarsestep { ( index < coarse.size() ) && ( coarse[ index ] != 0 ) };
+            // Ra 2015-01: tylko tu przelicza sieć trakcyjną
+            vehicle->Update( coarsestep ? totaltime : Deltatime, totaltime );
+            lap( index++, Timer::subsystem.vehicles_update_kind, mark );
+        }
+    }
+    Timer::subsystem.vehicles_update.stop();
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();
+}
+
+// the steps of the physics of vehicle_table::update() (UpdateForce() and FastUpdate() of each vehicle, Iterationcount times) on up
+// to Threads threads of worker_pool. a step acts on the vehicle itself, on the ones coupled with it, and on the ones seen ahead or
+// behind it (CollisionDetect() changes the speed of the other one); the movement along the tracks, the events and the sounds wait
+// for Update(). so the vehicles are put in groups which act on nothing outside them, and each group goes through all its steps in
+// one thread, its vehicles in their order, the groups at once: what doing them one by one gives. the groups of vehicles exchanging
+// their load, which can load the models of it, are done in the main thread. Coarse: as in update(). returns false, having done
+// nothing, when a vehicle is coupled with one it doesn't see next to it, which the groups don't account for
+bool
+vehicle_table::update_steps_parallel( double const Deltatime, int const Iterationcount, std::vector<std::uint8_t> const &Coarse, std::size_t const Threads ) {
+
+    auto const itemcount { m_items.size() };
+    for( std::size_t index = 0; index < itemcount; ++index ) {
+        m_items[ index ]->m_tableindex = static_cast<std::uint32_t>( index );
+    }
+    // the groups, by joining the vehicles with the ones they act on. the coupled ones are those next to them
+    m_groupparent.resize( itemcount );
+    std::iota( std::begin( m_groupparent ), std::end( m_groupparent ), 0u );
+    auto const root = [ this ]( std::uint32_t Index ) {
+        while( m_groupparent[ Index ] != Index ) {
+            m_groupparent[ Index ] = m_groupparent[ m_groupparent[ Index ] ];
+            Index = m_groupparent[ Index ];
+        }
+        return Index; };
+    for( std::size_t index = 0; index < itemcount; ++index ) {
+        auto const *mover { m_items[ index ]->MoverParameters };
+        for( auto const end : { end::front, end::rear } ) {
+            auto const *neighbour { mover->Neighbours[ end ].vehicle };
+            if( ( mover->Couplers[ end ].Connected != nullptr )
+             && ( ( neighbour == nullptr ) || ( neighbour->MoverParameters != mover->Couplers[ end ].Connected ) ) ) {
+                return false;
+            }
+            if( neighbour == nullptr ) { continue; }
+            auto const other { neighbour->m_tableindex };
+            if( ( other >= itemcount ) || ( m_items[ other ] != neighbour ) ) {
+                // not in the table, shouldn't happen
+                return false;
+            }
+            auto const left { root( static_cast<std::uint32_t>( index ) ) };
+            auto const right { root( other ) };
+            if( left != right ) {
+                m_groupparent[ std::max( left, right ) ] = std::min( left, right );
+            }
+        }
+    }
+    auto constexpr none { std::numeric_limits<std::uint32_t>::max() };
+    m_groupof.assign( itemcount, none );
+    std::size_t groupcount { 0 };
+    for( std::size_t index = 0; index < itemcount; ++index ) {
+        auto &group { m_groupof[ root( static_cast<std::uint32_t>( index ) ) ] };
+        if( group == none ) {
+            group = static_cast<std::uint32_t>( groupcount++ );
+            if( m_groups.size() < groupcount ) { m_groups.emplace_back(); }
+            m_groups[ group ].clear();
+        }
+        m_groups[ group ].push_back( static_cast<std::uint32_t>( index ) );
+    }
+    // the groups done in the main thread, and the others largest first, for the threads to end close to one another
+    m_threadgroups.clear();
+    m_maingroups.clear();
+    std::size_t largest { 0 };
+    for( std::size_t group = 0; group < groupcount; ++group ) {
+        largest = std::max( largest, m_groups[ group ].size() );
+        auto const loading { std::any_of(
+            std::begin( m_groups[ group ] ), std::end( m_groups[ group ] ),
+            [ this ]( std::uint32_t const Index ) {
+                auto const *vehicle { m_items[ Index ] };
+                return ( vehicle->MoverParameters->LoadStatus != 0 ) || ( vehicle->LoadExchangeTime() > 0.f ); } ) };
+        ( loading ? m_maingroups : m_threadgroups ).push_back( static_cast<std::uint32_t>( group ) );
+    }
+    std::sort(
+        std::begin( m_threadgroups ), std::end( m_threadgroups ),
+        [ this ]( std::uint32_t const Left, std::uint32_t const Right ) {
+            return m_groups[ Left ].size() > m_groups[ Right ].size(); } );
+    auto &counts { Timer::subsystem.vehicles };
+    counts.groups = static_cast<unsigned int>( groupcount );
+    counts.largestgroup = static_cast<unsigned int>( largest );
+    counts.maingroups = static_cast<unsigned int>( m_maingroups.size() );
+
+    // all the steps of a group, in the order update() makes them
+    auto const totaltime { Deltatime * Iterationcount };
+    auto const coarse = [ & ]( std::uint32_t const Index ) {
+        return ( Index < Coarse.size() ) && ( Coarse[ Index ] != 0 ); };
+    auto const steps = [ & ]( std::uint32_t const Group ) {
+        auto const &members { m_groups[ Group ] };
+        if( Iterationcount > 1 ) {
+            // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
+            for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
+                for( auto const index : members ) {
+                    if( false == coarse( index ) ) { m_items[ index ]->UpdateForce( Deltatime ); }
+                }
+                for( auto const index : members ) {
+                    if( false == coarse( index ) ) { m_items[ index ]->FastUpdate( Deltatime ); }
+                }
+            }
+        }
+        for( auto const index : members ) {
+            // the vehicles going by one step take it with the time of all of them
+            m_items[ index ]->UpdateForce( coarse( index ) ? totaltime : Deltatime );
+        } };
+
+    Workers().run(
+        m_threadgroups.size(), Threads,
+        [ & ]( std::size_t const Group ) {
+            steps( m_threadgroups[ Group ] ); } );
+    for( auto const group : m_maingroups ) {
+        steps( group );
+    }
+    return true;
 }
 
 // legacy method, checks for presence and height of traction wire for specified vehicle

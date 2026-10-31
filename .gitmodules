@@ -1,18 +1,9 @@
 [submodule "ref/glm"]
 	path = ref/glm
 	url = https://github.com/g-truc/glm.git
-[submodule "betterRenderer/thirdparty/nvrhi"]
-	path = betterRenderer/thirdparty/nvrhi
-	url = https://github.com/Unofficial-MaSzyna-Developement/nvrhi.git
-[submodule "betterRenderer/thirdparty/yaml-cpp"]
-	path = betterRenderer/thirdparty/yaml-cpp
+[submodule "ref/yaml-cpp"]
+	path = ref/yaml-cpp
 	url = https://github.com/jbeder/yaml-cpp.git
-[submodule "betterRenderer/thirdparty/fmt"]
-	path = betterRenderer/thirdparty/fmt
-	url = https://github.com/fmtlib/fmt.git
-[submodule "betterRenderer/thirdparty/entt"]
-	path = betterRenderer/thirdparty/entt
-	url = https://github.com/skypjack/entt.git
 [submodule "ref/glfw"]
 	path = ref/glfw
 	url = https://github.com/glfw/glfw
@@ -29,6 +20,15 @@
 [submodule "ref/json"]
 	path = ref/json
 	url = https://github.com/nlohmann/json
-[submodule "betterRenderer/thirdparty/bvh"]
-	path = betterRenderer/thirdparty/bvh
-	url = https://github.com/madmann91/bvh.git
+[submodule "ref/volk"]
+	path = ref/volk
+	url = https://github.com/zeux/volk.git
+[submodule "ref/Vulkan-Headers"]
+	path = ref/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "ref/VulkanMemoryAllocator"]
+	path = ref/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "ref/glslang"]
+	path = ref/glslang
+	url = https://github.com/KhronosGroup/glslang.git
