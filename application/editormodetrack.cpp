@@ -1166,26 +1166,23 @@ void editor_mode::render_path_parameters(TTrack &Track)
 				track->m_uneven.value = std::clamp(track->m_uneven.value, 0.f, track_uneven::most);
 			item_tooltip("Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values");
 			finish_edit(rebuild::parameters);
-			struct component
-			{
-				char const *label;
-				float *value;
-				bool shown;
-			};
-			auto const plain{track->eType == tt_Normal};
-			for (auto const &part : {component{"Up and down (mm)", &track->m_uneven.up, true},
-			                         component{"Sideways (mm)", &track->m_uneven.side, true},
-			                         component{"Cross level (mm)", &track->m_uneven.cross, plain},
-			                         component{"Diverging path (mm)", &track->m_uneven.branch, !plain},
-			                         component{"Diverging, up and down (mm)", &track->m_uneven.branchup, !plain},
-			                         component{"Diverging, sideways (mm)", &track->m_uneven.branchside, !plain}})
-			{
-				if (false == part.shown)
-					continue;
-				if (ImGui::InputFloat(STR_C(part.label), part.value, 0.0f, 0.0f, "%.1f"))
-					*part.value = *part.value < 0.f ? -1.f : std::min(*part.value, track_uneven::most);
+			auto const component = [&](char const *Label, float &Value) {
+				if (ImGui::InputFloat(STR_C(Label), &Value, 0.0f, 0.0f, "%.1f"))
+					Value = Value < 0.f ? -1.f : std::min(Value, track_uneven::most);
 				item_tooltip("Set apart from the unevenness, mm. Negative: the unevenness");
 				finish_edit(rebuild::parameters);
+			};
+			component("Up and down (mm)", track->m_uneven.up);
+			component("Sideways (mm)", track->m_uneven.side);
+			if (track->eType == tt_Normal)
+			{
+				component("Cross level (mm)", track->m_uneven.cross);
+			}
+			else
+			{
+				component("Diverging path (mm)", track->m_uneven.branch);
+				component("Diverging, up and down (mm)", track->m_uneven.branchup);
+				component("Diverging, sideways (mm)", track->m_uneven.branchside);
 			}
 		}
 		if (track->eType == tt_Normal && (track->iCategoryFlag & 15) == 1)

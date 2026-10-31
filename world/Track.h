@@ -349,15 +349,15 @@ public:
     track_uneven::amounts uneven_declared( int const Path = 0 ) const;
     bool is_uneven() const;
     // the unevenness at a distance along a path, meeting the tracks joined at its ends
-    track_uneven::amounts uneven_at( double const Distance, int const Path = 0 ) const;
+    track_uneven::amounts uneven_at( double const Distance, int const Path = 0 );
     // how much of the displacement a point of the profile at the depth takes
     double uneven_bed_share( double const Depth ) const;
     // closes the gaps and steps of cant between the ends of joined paths
     void share_joints();
     double joint_depth() const; // mm
-    double joint_dip( double const Distance ) const; // m
+    double joint_dip( double const Distance ); // m
     // distance from the rail joint behind; negative: the track has no joints that dip
-    double rail_phase( double const Distance ) const;
+    double rail_phase( double const Distance );
     void ConnectionsLog();
     bool DoubleSlip() const;
     static void fetch_default_profiles();
@@ -395,8 +395,8 @@ private:
         double way { 1.0 }; // direction of the path along the run
         int stamp { -1 };
     };
-    void settle_rail_run() const;
-    mutable rail_run m_railrun;
+    void settle_rail_run();
+    rail_run m_railrun;
     // the value along each path of a switch: the lowest of that path in the switches joined, 0 next to a track with none.
     // And at the ends of the paths, by what meets there: the other path at the common end, the path of a switch joined
     struct switch_stray {
@@ -404,15 +404,16 @@ private:
         std::array<std::array<track_uneven::amounts, 2>, 2> ends;
         int stamp { -1 };
     };
-    mutable switch_stray m_switchstray;
-    switch_stray const &switch_uneven() const;
-    void settle_switch_stray() const;
+    switch_stray m_switchstray;
+    switch_stray const &switch_uneven();
+    void settle_switch_stray();
+    void settle_switch_ends();
     // the lowest value of the paths ending at the point
     track_uneven::amounts switch_paths_at( glm::dvec3 const &Point ) const;
     // what a plain track comes to at its end, where it meets the other one
-    track_uneven::amounts uneven_met( TTrack const *Other, glm::dvec3 const &Point ) const;
+    track_uneven::amounts uneven_met( TTrack *Other, glm::dvec3 const &Point );
     // the value of a switch where a track joined to it meets it
-    track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point ) const;
+    track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point );
     static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
