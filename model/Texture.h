@@ -20,6 +20,15 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 #include "interfaces/ITexture.h"
 
+// BC7, core since GL 4.2 (ARB_texture_compression_bptc), the bundled glad is generated for 3.3. data_format of BC7 dds files,
+// which the vulkan renderer maps too
+#ifndef GL_COMPRESSED_RGBA_BPTC_UNORM
+#define GL_COMPRESSED_RGBA_BPTC_UNORM 0x8E8C
+#endif
+#ifndef GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM
+#define GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM 0x8E8D
+#endif
+
 struct texture_request; // texture data read by a worker thread, with gfx.textures.streaming
 
 // a texture as its file gives it, whichever api draws it: read and decoded (dds, tga, png, bmp, jpg, ktx, tex), with the mipmaps

@@ -33,13 +33,6 @@ http://mozilla.org/MPL/2.0/.
 #ifndef FOURCC_DX10
 #define FOURCC_DX10 (MAKEFOURCC('D','X','1','0'))
 #endif
-// BC7, core since GL 4.2 (ARB_texture_compression_bptc), the bundled glad is generated for 3.3
-#ifndef GL_COMPRESSED_RGBA_BPTC_UNORM
-#define GL_COMPRESSED_RGBA_BPTC_UNORM 0x8E8C
-#endif
-#ifndef GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM
-#define GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM 0x8E8D
-#endif
 
 // texture data read by a worker thread. the texture itself is only touched by the main thread,
 // which takes the data over when the texture is created on the gl side

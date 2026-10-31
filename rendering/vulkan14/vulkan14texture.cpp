@@ -440,6 +440,13 @@ texture_format texture_format_of(GLint Format, GLint Hint)
 		result.compressed = true;
 		result.block_bytes = 16;
 		return result;
+	case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:
+	case GL_COMPRESSED_RGBA_BPTC_UNORM:
+		// bc7 dds files, sampled as they are: part of textureCompressionBC, which the device requires
+		result.format = ((srgb || (Format == GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM)) ? VK_FORMAT_BC7_SRGB_BLOCK : VK_FORMAT_BC7_UNORM_BLOCK);
+		result.compressed = true;
+		result.block_bytes = 16;
+		return result;
 	case GL_RGBA:
 	case GL_BGRA:
 	case GL_RGB:
