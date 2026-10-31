@@ -629,7 +629,7 @@ TTrack::rail_layer::rail_layer( TTrack &Track, rail_layout const &Layout, rail_d
     m_openend { Openend },
     m_geometry { Geometry },
     m_cuts { Cuts },
-    m_segment { path_segment( Track, Path ) },
+    m_segment { track_rails::path_segment( Track, Path ) },
     m_length { m_segment.GetLength() },
     m_guardoffset { -( flangeway + Drawing.size.head ) },
     m_rise { track_sleepers::wing_rise( Track ) },
