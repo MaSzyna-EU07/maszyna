@@ -114,10 +114,10 @@ class Scenery:
 
     def include(self, name, params, origin):
         path = self.root / name.replace("\\", "/")
-        if GRASS.search(name.lower()):
-            numbers = [float(w) for w in params if NUMBER.match(w)]
-            if len(numbers) >= 3:
-                self.plant(numbers[0] + origin[0], numbers[2] + origin[2])
+        # a plant takes its place in the parameters; a file with grass in its name and none of them just lists plants
+        numbers = [float(w) for w in params if NUMBER.match(w)]
+        if GRASS.search(name.lower()) and len(numbers) >= 3:
+            self.plant(numbers[0] + origin[0], numbers[2] + origin[2])
             return
         if not path.is_file():
             self.notes["brak pliku " + name] += 1
@@ -355,47 +355,58 @@ def ceiling(t, product):
     return product / t["speed"] * (0.7 + 0.3 * min(1.0, max(0.0, (t["state"] - 0.5) / 0.7)))
 
 
-def grade(scenery, options):
-    tracks = scenery.tracks
-    joints = Joints(tracks)
-    for t in tracks:
-        if t["kind"] == "switch":
-            radii = [min(plan_radius(p["line"]), p["radius"] if p["radius"] > 0 else math.inf) for p in t["paths"]]
-            t["bent"] = 1 if len(radii) < 2 or radii[1] <= radii[0] else 0
-    settle_speeds(tracks, joints)
-    route = None
-    if options.route:
-        first, last = options.route
-        from_first, from_last = distances(tracks, joints, first), distances(tracks, joints, last)
-        ends = [from_last[n] for n in from_last if math.dist(n, first) < 300]
-        route = (from_first, from_last, min(ends) if ends else math.dist(first, last))
+def path_radius(part):
+    return min(plan_radius(part["line"]), part["radius"] if part["radius"] > 0 else math.inf)
+
+
+def mark_diverging_paths(switches):
+    # the path that bends more
+    for t in switches:
+        radii = [path_radius(p) for p in t["paths"]]
+        t["bent"] = 1 if len(radii) < 2 or radii[1] <= radii[0] else 0
+
+
+class Route:
+    """How far along from the first point to the second a place lies, measured along the tracks."""
+
+    def __init__(self, tracks, joints, first, last):
+        self.first, self.last = first, last
+        self.from_first, self.from_last = distances(tracks, joints, first), distances(tracks, joints, last)
+        ends = [self.from_last[n] for n in self.from_last if math.dist(n, first) < 300]
+        self.length = min(ends) if ends else math.dist(first, last)
         if not ends:
             print("uwaga: po torach nie ma polaczenia miedzy punktami --route, licze w linii prostej")
+
+    def share(self, part):
+        shares = []
+        for key in ("p1", "p2"):
+            place = (part[key][0], part[key][2])
+            node = (round(place[0], 1), round(place[1], 1))
+            a, b = self.from_first.get(node), self.from_last.get(node)
+            if a is None or b is None:
+                a, b = math.dist(place, self.first), math.dist(place, self.last)
+            shares.append(min(1.0, max(0.0, (a - b + self.length) / (2 * self.length))))
+        return 0.5 * sum(shares)
+
+
+def grade_states(scenery, route, gain):
     cells = road_cells(scenery.roads)
-    normal = [t for t in tracks if t["kind"] == "normal"]
-    for t in tracks:
+    for t in scenery.tracks:
         part = t["paths"][0]
-        radius = min(plan_radius(part["line"]), part["radius"] if part["radius"] > 0 else math.inf)
+        radius = path_radius(part)
         curve = 0.0 if radius >= 6000 else min(1.0, max(0.0, (1200 - radius) / 950))
-        density = grass_on(part, scenery.plants) if t["kind"] == "normal" else 0.0
-        crossing = t["kind"] == "normal" and hits_road(part, cells)
-        progress = 0.5
-        if route:
-            shares = []
-            for key in ("p1", "p2"):
-                node = (round(part[key][0], 1), round(part[key][2], 1))
-                a, b = route[0].get(node), route[1].get(node)
-                if a is None or b is None:
-                    a, b = math.dist((part[key][0], part[key][2]), options.route[0]), math.dist((part[key][0], part[key][2]), options.route[1])
-                shares.append(min(1.0, max(0.0, (a - b + route[2]) / (2 * route[2]))))
-            progress = 0.5 * sum(shares)
+        plain = t["kind"] == "normal"
+        density = grass_on(part, scenery.plants) if plain else 0.0
+        crossing = plain and hits_road(part, cells)
+        progress = route.share(part) if route else 0.5
         state = 0.50 + 0.20 * wear(t["ballast"], BALLAST_WEAR) + 0.10 * wear(t["rail"], RAIL_WEAR) + 0.12 * min(1.0, density / GRASS_FULL) + 0.06 * curve + 0.22 * progress + 0.18 * crossing + 0.06 * (hashed(b"", t["name"]) - 0.5)
-        t.update(state=min(state, 1.2) * options.gain, curve=curve, crossing=crossing, grass=density)
-        if t["kind"] == "normal":
+        t.update(state=min(state, 1.2) * gain, curve=curve, crossing=crossing, grass=density)
+        if plain:
             value = min(limit(t["speed"]) * t["state"], MOST)
             t.update(value=value, up=min(value * 1.25, MOST_UP), side=min(value * (0.9 + 0.4 * curve), MOST))
-    for t in normal:
-        t["heights"] = heights_per_mm(t)
+
+
+def fit_under_pantograph(normal):
     # the largest product of the vertical part and the speed with the gap small on every track
     low, high = 100, 4000
     while high - low > 25:
@@ -404,43 +415,51 @@ def grade(scenery, options):
             low = middle
         else:
             high = middle
-    product = low
     for t in normal:
-        up = ceiling(t, product)
+        up = ceiling(t, low)
         if up < t["up"]:
             ratio = up / t["up"]
             t["up"], t["value"], t["side"] = up, t["value"] * ratio, t["side"] * ratio
+    return low
+
+
+def curve_changes(t, joints):
+    part = t["paths"][0]
+    if abs(end_curve(part, "p1") - end_curve(part, "p2")) > CURVE_STEP:
+        return True
+    for key in ("p1", "p2"):
+        for other, theirs, side in joints.at(part[key]):
+            if other is not t and other["kind"] == "normal":
+                their = end_curve(theirs, side)
+                if abs(end_curve(part, key) - (-their if side == key else their)) > CURVE_STEP:
+                    return True
+    return False
+
+
+def move_near_limit(normal, joints, share):
     # on wooden sleepers and where the curve changes, a share of the tracks goes nearer the limit, chosen for good by the place
     chosen = 0
     for t in normal:
-        part = t["paths"][0]
-        change = abs(end_curve(part, "p1") - end_curve(part, "p2")) > CURVE_STEP
-        for key in ("p1", "p2"):
-            for other, theirs, side in joints.at(part[key]):
-                if other is not t and other["kind"] == "normal":
-                    their = end_curve(theirs, side)
-                    if abs(end_curve(part, key) - (-their if side == key else their)) > CURVE_STEP:
-                        change = True
-        if not (change or WOOD.search(t["ballast"] or "")):
+        if not (WOOD.search(t["ballast"] or "") or curve_changes(t, joints)):
             continue
+        part = t["paths"][0]
         name = f"{t['name']}:{part['p1'][0]:.0f}:{part['p1'][2]:.0f}"
-        if hashed(b"near", name) >= options.near:
+        if hashed(b"near", name) >= share:
             continue
         value = t["value"] + (limit(t["speed"]) - t["value"]) * (NEAR_LEAST + (NEAR_MOST - NEAR_LEAST) * hashed(b"how", name))
         if value <= t["value"]:
             continue
+        # sideways and the cross level don't move a pantograph, up and down only as far as it keeps to the wire on this track
         up = value
         while up > t["up"] and largest_gap(t["heights"], up) > GAP_MOST:
             up -= 0.5
         t["value"], t["up"], t["side"] = value, max(up, t["up"]), min(value * (0.9 + 0.4 * t["curve"]), MOST)
         chosen += 1
-    worst = max((largest_gap(t["heights"], t["up"]) for t in normal), default=0.0)
-    for t in normal:
-        del t["heights"]
-        if t["name"].lower() in options.straight:
-            t["value"] = t["up"] = t["side"] = 0.0
-    # each path of a switch by the plain tracks it leads to, the worst of them; those only among switches from their neighbours
-    switches = [t for t in tracks if t["kind"] == "switch"]
+    return chosen
+
+
+def grade_switches(switches, joints, product):
+    # each path by the plain tracks it leads to, the worst of them; those only among switches from their neighbours
     for t in switches:
         t["values"] = [None] * len(t["paths"])
         for index, part in enumerate(t["paths"]):
@@ -459,6 +478,26 @@ def grade(scenery, options):
                         t["values"][index] = max(found)
     for t in switches:
         t["values"] = [min(SWITCH_MOST, product / NO_SPEED) if v is None else v for v in t["values"]]
+
+
+def grade(scenery, options):
+    tracks = scenery.tracks
+    normal = [t for t in tracks if t["kind"] == "normal"]
+    switches = [t for t in tracks if t["kind"] == "switch"]
+    joints = Joints(tracks)
+    mark_diverging_paths(switches)
+    settle_speeds(tracks, joints)
+    grade_states(scenery, Route(tracks, joints, *options.route) if options.route else None, options.gain)
+    for t in normal:
+        t["heights"] = heights_per_mm(t)
+    product = fit_under_pantograph(normal)
+    chosen = move_near_limit(normal, joints, options.near)
+    worst = max((largest_gap(t["heights"], t["up"]) for t in normal), default=0.0)
+    for t in normal:
+        del t["heights"]
+        if t["name"].lower() in options.straight:
+            t["value"] = t["up"] = t["side"] = 0.0
+    grade_switches(switches, joints, product)
     return product, chosen, worst
 
 
