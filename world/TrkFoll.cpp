@@ -267,6 +267,11 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
     }
 };
 
+double TTrackFollower::RailPhase( double const Offset ) const {
+
+    return pCurrentTrack != nullptr ? pCurrentTrack->rail_phase( fCurrentDistance + fDirection * Offset ) : -1.0;
+}
+
 bool TTrackFollower::ComputatePosition()
 { // ustalenie współrzędnych XYZ
     if (pCurrentSegment) // o ile jest tor

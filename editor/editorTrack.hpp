@@ -55,6 +55,11 @@ class editor_track
 		float texslope{0.9f};
 		std::vector<std::string> isolated;
 		float overhead{-1.f};
+		float uneven{0.f};
+		float unevenup{-1.f};
+		float unevenside{-1.f};
+		float unevencross{-1.f};
+		float jointdip{-1.f};
 		bool sleepers{false};
 		float sleeper_frequency{0.6f};
 		std::string sleeper_model;

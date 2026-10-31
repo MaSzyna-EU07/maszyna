@@ -152,6 +152,11 @@ editor_track::state editor_track::capture(TTrack const &Track)
 	for (auto const *isolated : Track.Isolated)
 		result.isolated.push_back(isolated->asName);
 	result.overhead = Track.fOverhead;
+	result.uneven = Track.m_uneven;
+	result.unevenup = Track.m_unevenup;
+	result.unevenside = Track.m_unevenside;
+	result.unevencross = Track.m_unevencross;
+	result.jointdip = Track.m_jointdip;
 	result.sleepers = Track.m_sleeper_enabled;
 	result.sleeper_frequency = Track.m_sleeper_frequency;
 	result.sleeper_model = Track.m_sleeper_model_name;
@@ -250,6 +255,11 @@ void editor_track::apply(TTrack &Track, state const &State)
 	Track.fTexSlope = State.texslope;
 	isolated(Track, State.isolated);
 	overhead(Track, State.overhead);
+	Track.m_uneven = State.uneven;
+	Track.m_unevenup = State.unevenup;
+	Track.m_unevenside = State.unevenside;
+	Track.m_unevencross = State.unevencross;
+	Track.m_jointdip = State.jointdip;
 	Track.m_sleeper_enabled = State.sleepers;
 	Track.m_sleeper_frequency = State.sleeper_frequency;
 	Track.m_sleeper_model_name = State.sleeper_model;
@@ -2350,6 +2360,16 @@ void write_ending(std::ostream &Text, TTrack const &Style)
 {
 	if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
 		Text << "railprofile " << Style.m_profile1.first << ' ';
+	if (Style.m_uneven > 0.f)
+		Text << "uneven " << Style.m_uneven << ' ';
+	if (Style.m_unevenup >= 0.f)
+		Text << "unevenup " << Style.m_unevenup << ' ';
+	if (Style.m_unevenside >= 0.f)
+		Text << "unevenside " << Style.m_unevenside << ' ';
+	if (Style.m_unevencross >= 0.f)
+		Text << "unevencross " << Style.m_unevencross << ' ';
+	if (Style.m_jointdip >= 0.f)
+		Text << "jointdip " << Style.m_jointdip << ' ';
 	// a piece of the track made from another one stays in its track circuit and under the same overhead line
 	for (auto const *isolated : Style.Isolated)
 		Text << "isolated " << isolated->asName << ' ';

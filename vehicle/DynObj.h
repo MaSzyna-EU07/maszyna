@@ -402,6 +402,7 @@ private:
         double distance; // distance to rail joint
         double offset; // axle offset from centre of the vehicle
         sound_source clatter; // clatter emitter
+        bool atjoints { false }; // distance comes from TTrack::rail_phase
     };
 
     struct powertrain_sounds {

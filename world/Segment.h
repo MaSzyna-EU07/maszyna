@@ -47,6 +47,7 @@ class TSegment
     glm::dvec3 Point2;
     float fRoll1 { 0.f };
     float fRoll2 { 0.f }; // przechyłka na końcach
+    bool m_uneven { false }; // see TrackUneven.h
     double fLength { -1.0 }; // długość policzona
     std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
     std::vector<double> fTsSlope; // nachylenie dt/du (= dt/ds * fStep) w tych samych punktach
@@ -66,6 +67,12 @@ class TSegment
 	double FastGetTFromS(double const s) const;
 	glm::dvec3 RaInterpolate(double const t) const;
 	glm::dvec3 RaInterpolate0(double const t) const;
+
+    // moves a lofted vertex with the unevenness of the track
+    void settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const;
+    // displacement of a point by the unevenness, at a distance along the path
+    glm::dvec3 stray( glm::dvec3 const &Point, double const Distance ) const;
+    void design_position( double const fDistance, glm::dvec3 &position, glm::vec3 &rotation ) const;
 
 public:
     bool bCurve = false;
@@ -106,6 +113,13 @@ public:
 	/// <param name="position">Calculated position</param>
 	/// <param name="rotation">Calculated rotation</param>
 	void RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const;
+    // call before Init, it sets the density of the geometry
+    void
+        set_uneven( bool const Uneven ) {
+            m_uneven = Uneven; }
+    // second derivative of the displacement along the path; times speed squared: acceleration of an axle
+    glm::dvec3
+        uneven_bend( double const Distance ) const;
 	glm::dvec3 FastGetPoint(double const t) const;
     inline
     glm::dvec3

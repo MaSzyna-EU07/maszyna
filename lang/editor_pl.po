@@ -861,6 +861,30 @@ msgstr "Odstęp stuków"
 msgid "Quality"
 msgstr "Jakość"
 
+msgid "Unevenness (mm)"
+msgstr "Nierówności toru (mm)"
+
+msgid "Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values"
+msgstr "Największa odchyłka toku szynowego na cięciwie 10 m. Limity Id-14: 6 mm przy 160 km/h, 10 przy 120, 18 przy 80, 35 przy 40.\nPrzy podanym odstępie styków szyny zapadają się też na stykach. Połączone rozjazdy mają najmniejszą ze swoich wartości"
+
+msgid "Up and down (mm)"
+msgstr "W pionie (mm)"
+
+msgid "Sideways (mm)"
+msgstr "W poziomie (mm)"
+
+msgid "Cross level (mm)"
+msgstr "Przechyłka (mm)"
+
+msgid "Set apart from the unevenness, mm. Negative: the unevenness"
+msgstr "Osobno od nierówności, mm. Ujemna: wartość nierówności"
+
+msgid "Dip at rail joints (mm)"
+msgstr "Zapadnięcie na stykach szyn (mm)"
+
+msgid "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Negative: 0.4 of the unevenness"
+msgstr "Głębokość zapadnięcia na każdym styku szyn, co odstęp styków. Działa też przy nierównościach 0. Ujemna: 0,4 nierówności"
+
 msgid "Damage flags"
 msgstr "Flagi uszkodzeń"
 

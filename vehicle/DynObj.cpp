@@ -3627,6 +3627,7 @@ bool TDynamicObject::Update(double dt, double dt1)
             if( dRailLength > 0.0 ) {
                 for( auto &axle : m_axlesounds ) {
                     axle.distance = axle.offset;
+                    axle.atjoints = false;
                 }
             }
             dRailLength = MyTrack->fSoundDistance;
@@ -3660,9 +3661,19 @@ bool TDynamicObject::Update(double dt, double dt1)
                             1 :
                             ctOwner->Vehicle()->DirectionGet() == DirectionGet() ? 1 : -1 ) };
                     for( auto &axle : m_axlesounds ) {
-                        axle.distance += dDOMoveLen * directioninconsist;
-                        if( axle.distance < 0
-                         || axle.distance > dRailLength ) {
+                        // on a track with dipping joints the clatter comes from them, elsewhere the axle counts a rail off itself
+                        auto const railphase { Axle0.RailPhase( axle.offset - 0.5 * fAxleDist ) };
+                        auto crossed { false };
+                        if( railphase >= 0.0 ) {
+                            crossed = axle.atjoints && std::abs( railphase - axle.distance ) > 0.5 * dRailLength;
+                            axle.distance = railphase;
+                        }
+                        else {
+                            axle.distance += dDOMoveLen * directioninconsist;
+                            crossed = axle.distance < 0 || axle.distance > dRailLength;
+                        }
+                        axle.atjoints = ( railphase >= 0.0 );
+                        if( crossed ) {
                             axle.distance = clamp_circular( axle.distance, dRailLength );
                             if( MoverParameters->Vel > 0.1 ) {
                                 // NOTE: for combined clatter sound we supply 1/100th of actual value, as the sound module converts does the opposite, converting received (typically) 0-1 values to 0-100 range
@@ -8035,6 +8046,12 @@ TDynamicObject::update_shake( double const Timedelta ) {
                 -MoverParameters->AccN * Timedelta * 5.0 * Global.ShakingMultiplierRL, // highlight side sway
                 -MoverParameters->AccVert * Timedelta * Global.ShakingMultiplierUD,
                 -MoverParameters->AccSVBased * Timedelta * 1.5 * Global.ShakingMultiplierBF); // accent acceleration/deceleration
+            // unevenness of the track under the outer axles
+            auto const ride { 0.5 * ( Axle0.UnevenBend() + Axle1.UnevenBend() ) * ( MoverParameters->V * MoverParameters->V ) };
+            shakevector += glm::dvec3(
+                -glm::dot( ride, vLeft ) * Timedelta * 5.0 * Global.ShakingMultiplierRL,
+                -ride.y * Timedelta * Global.ShakingMultiplierUD,
+                0.0 );
         }
 
         auto shake { 1.25 * ShakeSpring.ComputateForces( shakevector, ShakeState.offset ) };

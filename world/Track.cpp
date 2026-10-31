@@ -47,6 +47,7 @@ TIsolated *TIsolated::pRoot = nullptr;
 
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
+int TTrack::s_layoutstamp { 0 };
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
@@ -325,6 +326,7 @@ void TTrack::ConnectPrevPrev(TTrack *pTrack, int typ)
 { //łączenie torów - Point1 własny do Point1 cudzego
     if (pTrack)
     { //(pTrack) może być zwrotnicą, a (this) tylko zwykłym odcinkiem
+        ++s_layoutstamp;
         trPrev = pTrack;
         iPrevDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
@@ -335,6 +337,7 @@ void TTrack::ConnectPrevNext(TTrack *pTrack, int typ)
 { //łaczenie torów - Point1 własny do Point2 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trPrev = pTrack;
         iPrevDirection = typ | 1; // 1:zwykły lub pierwszy zwrotnicy, 3:drugi zwrotnicy
         pTrack->trNext = this;
@@ -354,6 +357,7 @@ void TTrack::ConnectNextPrev(TTrack *pTrack, int typ)
 { //łaczenie torów - Point2 własny do Point1 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trNext = pTrack;
         iNextDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
@@ -373,6 +377,7 @@ void TTrack::ConnectNextNext(TTrack *pTrack, int typ)
 { //łaczenie torów - Point2 własny do Point2 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trNext = pTrack;
         iNextDirection = typ | 1; // 1:zwykły lub pierwszy zwrotnicy, 3:drugi zwrotnicy
         pTrack->trNext = this;
@@ -633,6 +638,27 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 m_profile1 = fetch_track_rail_profile( railprofile );
             }
         }
+        else if( str == "uneven" ) {
+            // uneven <mm>: see TrackUneven.h
+            auto const uneven { parser->getToken<float>() };
+            if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
+                m_uneven = std::clamp( uneven, 0.f, track_uneven::most );
+            }
+        }
+        else if( str == "unevenup" || str == "unevenside" || str == "unevencross" ) {
+            // the components of uneven set apart, mm
+            auto const value { parser->getToken<float>() };
+            if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
+                ( str == "unevenup" ? m_unevenup : str == "unevenside" ? m_unevenside : m_unevencross ) = std::clamp( value, 0.f, track_uneven::most );
+            }
+        }
+        else if( str == "jointdip" ) {
+            // jointdip <mm>: depth of the dip at rail joints, with or without uneven
+            auto const jointdip { parser->getToken<float>() };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_jointdip = std::clamp( jointdip, 0.f, track_uneven::most );
+            }
+        }
         else if( str == "friction" ) {
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
@@ -674,6 +700,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         *parser >> token;
 		str = token;
     }
+    // the segments were made before the attributes were read, and unevenness changes them
+    if( is_uneven() ) {
+        init_segments( false );
+    }
     // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
     if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
     {
@@ -685,6 +715,159 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // sleeper transforms are baked later in create_geometry(), once the owning cell has
     // assigned this track its m_origin (otherwise the local-space matrices would be relative
     // to a stale origin and the renderer would draw sleepers in the wrong place).
+}
+
+track_uneven::amounts TTrack::uneven_declared() const {
+
+    return {
+        m_unevenup >= 0.f ? m_unevenup : m_uneven,
+        m_unevenside >= 0.f ? m_unevenside : m_uneven,
+        eType != tt_Normal ? 0.f : m_unevencross >= 0.f ? m_unevencross : m_uneven };
+}
+
+bool TTrack::is_uneven() const {
+
+    auto const declared { uneven_declared() };
+    return declared.up > 0.0 || declared.side > 0.0 || declared.cross > 0.0 || joint_depth() > 0.0;
+}
+
+track_uneven::amounts TTrack::uneven_at( double const Distance ) const {
+
+    if( eType == tt_Switch ) {
+        return switch_uneven();
+    }
+    auto const own { uneven_declared() };
+    auto const atend = [&]( TTrack const *Other ) -> track_uneven::amounts {
+        if( Other == nullptr ) {
+            return {};
+        }
+        if( Other->eType == tt_Switch ) {
+            return Other->switch_uneven();
+        }
+        auto const theirs { Other->uneven_declared() };
+        return { std::min( own.up, theirs.up ), std::min( own.side, theirs.side ), std::min( own.cross, theirs.cross ) }; };
+    auto const start { atend( trPrev ) };
+    auto const end { atend( trNext ) };
+    return {
+        track_uneven::along( own.up, start.up, end.up, Distance, Length() ),
+        track_uneven::along( own.side, start.side, end.side, Distance, Length() ),
+        track_uneven::along( own.cross, start.cross, end.cross, Distance, Length() ) };
+}
+
+track_uneven::amounts TTrack::switch_uneven() const {
+
+    if( m_switchstray.stamp == s_layoutstamp ) {
+        return m_switchstray.value;
+    }
+    std::vector<TTrack const *> group { this };
+    auto least { uneven_declared() };
+    for( std::size_t index = 0; index < group.size(); ++index ) {
+        auto const &extension { *group[ index ]->SwitchExtension };
+        for( auto const *other : { extension.pPrevs[ 0 ], extension.pPrevs[ 1 ], extension.pNexts[ 0 ], extension.pNexts[ 1 ] } ) {
+            if( other == nullptr ) {
+                continue;
+            }
+            auto const theirs { other->uneven_declared() };
+            if( other->eType == tt_Switch && other->SwitchExtension ) {
+                least.up = std::min( least.up, theirs.up );
+                least.side = std::min( least.side, theirs.side );
+                if( std::find( group.begin(), group.end(), other ) == group.end() ) {
+                    group.push_back( other );
+                }
+            }
+            else {
+                // a track with none of a component keeps to its design in it, any other comes to the value of the switch
+                if( theirs.up <= 0.0 ) { least.up = 0.0; }
+                if( theirs.side <= 0.0 ) { least.side = 0.0; }
+            }
+        }
+    }
+    for( auto const *track : group ) {
+        track->m_switchstray = { least, s_layoutstamp };
+    }
+    return least;
+}
+
+double TTrack::joint_depth() const {
+
+    if( eType != tt_Normal ) {
+        return 0.0;
+    }
+    return ( m_jointdip >= 0.f ? m_jointdip : track_uneven::dip_share * uneven_declared().up );
+}
+
+double TTrack::joint_dip( double const Distance ) const {
+
+    auto const phase { rail_phase( Distance ) };
+    if( phase < 0.0 ) {
+        return 0.0;
+    }
+    auto const fromjoint { std::min( phase, fSoundDistance - phase ) };
+    if( fromjoint >= track_uneven::dip_reach ) {
+        return 0.0;
+    }
+    auto const depth { joint_depth() };
+    auto const atend = [&]( TTrack const *Other ) {
+        return ( Other == nullptr || Other->fSoundDistance != fSoundDistance ? 0.0 : std::min( depth, Other->joint_depth() ) ); };
+    return 0.001 * track_uneven::dip( fromjoint ) * track_uneven::along( depth, atend( trPrev ), atend( trNext ), Distance, Length() );
+}
+
+double TTrack::rail_phase( double const Distance ) const {
+
+    if( joint_depth() <= 0.0 || fSoundDistance <= 2.0 * track_uneven::dip_reach ) {
+        return -1.0;
+    }
+    if( m_railrun.stamp != s_layoutstamp ) {
+        settle_rail_run();
+    }
+    return track_uneven::rail_phase( m_railrun.origin + m_railrun.way * Distance, fSoundDistance );
+}
+
+void TTrack::settle_rail_run() const {
+
+    // the next track of the run past an end of a track, and which of its ends is joined there
+    auto const onward = []( TTrack const &Track, int const End, int &Joined ) -> TTrack const * {
+        auto const *other { End == 0 ? Track.trPrev : Track.trNext };
+        if( other == nullptr || other == &Track || other->joint_depth() <= 0.0 || other->fSoundDistance != Track.fSoundDistance ) {
+            return nullptr;
+        }
+        Joined = ( End == 0 ? Track.iPrevDirection : Track.iNextDirection ) & 1;
+        return other; };
+    // walks from this track to an end of the run
+    auto const walk = [&]( int &End ) {
+        auto const *track { this };
+        int joined { 0 };
+        for( int step = 0; step < 1000000; ++step ) {
+            auto const *next { onward( *track, End, joined ) };
+            if( next == nullptr || next == this ) {
+                break;
+            }
+            track = next;
+            End = 1 - joined;
+        }
+        return track; };
+    auto const place = []( TTrack const &Track, int const End ) {
+        auto const point { End == 0 ? Track.Segment->FastGetPoint_0() : Track.Segment->FastGetPoint_1() };
+        return std::make_pair( point.x, point.z ); };
+
+    // start at the end with the lesser coordinates, to get the same joints from any track of the run
+    int end { 0 };
+    int otherend { 1 };
+    auto const *track { walk( end ) };
+    auto const *other { walk( otherend ) };
+    if( place( *other, otherend ) < place( *track, end ) ) {
+        track = other;
+        end = otherend;
+    }
+    auto along { 0.0 };
+    while( track != nullptr && track->m_railrun.stamp != s_layoutstamp ) {
+        auto const length { track->Length() };
+        track->m_railrun = { end == 0 ? along : along + length, end == 0 ? 1.0 : -1.0, s_layoutstamp };
+        along += length;
+        int joined { 0 };
+        track = onward( *track, 1 - end, joined );
+        end = joined;
+    }
 }
 
 void TTrack::update_location() {
@@ -705,6 +888,14 @@ void TTrack::init_segments( bool const Initial ) {
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
     iTrapezoid = 0;
+    ++s_layoutstamp;
+    if( eType == tt_Switch && SwitchExtension ) {
+        SwitchExtension->Segments[ 0 ]->set_uneven( is_uneven() );
+        SwitchExtension->Segments[ 1 ]->set_uneven( is_uneven() );
+    }
+    else if( Segment ) {
+        Segment->set_uneven( is_uneven() );
+    }
 
     switch (eType) {
         // Ra: łuki segmentowane co 5m albo 314-kątem foremnym
@@ -1350,6 +1541,8 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
+
+    ++s_layoutstamp;
 
     Geometry1.clear();
     Geometry2.clear();
@@ -2444,6 +2637,21 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     if( iCategoryFlag == 1
      && false == m_profile1.first.empty() ) {
         Output << "railprofile " << m_profile1.first << ' ';
+    }
+    if( m_uneven > 0.f ) {
+        Output << "uneven " << m_uneven << ' ';
+    }
+    if( m_unevenup >= 0.f ) {
+        Output << "unevenup " << m_unevenup << ' ';
+    }
+    if( m_unevenside >= 0.f ) {
+        Output << "unevenside " << m_unevenside << ' ';
+    }
+    if( m_unevencross >= 0.f ) {
+        Output << "unevencross " << m_unevencross << ' ';
+    }
+    if( m_jointdip >= 0.f ) {
+        Output << "jointdip " << m_jointdip << ' ';
     }
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';

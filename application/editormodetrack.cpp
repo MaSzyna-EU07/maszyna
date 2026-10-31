@@ -1159,7 +1159,35 @@ void editor_mode::render_path_parameters(TTrack &Track)
 		finish_edit(rebuild::none);
 		ImGui::InputFloat(STR_C("Sound distance"), &track->fSoundDistance, 0.0f, 0.0f, "%.1f");
 		item_tooltip("Distance between the rail joints in metres, sets the rhythm of the wheel clatter; -1: the default");
-		finish_edit(rebuild::none);
+		finish_edit(rebuild::parameters);
+		if ((track->eType == tt_Normal || track->eType == tt_Switch) && (track->iCategoryFlag & 15) == 1)
+		{
+			if (ImGui::InputFloat(STR_C("Unevenness (mm)"), &track->m_uneven, 0.0f, 0.0f, "%.1f"))
+				track->m_uneven = std::clamp(track->m_uneven, 0.f, track_uneven::most);
+			item_tooltip("Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values");
+			finish_edit(rebuild::parameters);
+			struct component
+			{
+				char const *label;
+				float *value;
+			};
+			for (auto const &part : {component{"Up and down (mm)", &track->m_unevenup}, component{"Sideways (mm)", &track->m_unevenside}, component{"Cross level (mm)", &track->m_unevencross}})
+			{
+				if (part.value == &track->m_unevencross && track->eType != tt_Normal)
+					continue;
+				if (ImGui::InputFloat(STR_C(part.label), part.value, 0.0f, 0.0f, "%.1f"))
+					*part.value = *part.value < 0.f ? -1.f : std::min(*part.value, track_uneven::most);
+				item_tooltip("Set apart from the unevenness, mm. Negative: the unevenness");
+				finish_edit(rebuild::parameters);
+			}
+		}
+		if (track->eType == tt_Normal && (track->iCategoryFlag & 15) == 1)
+		{
+			if (ImGui::InputFloat(STR_C("Dip at rail joints (mm)"), &track->m_jointdip, 0.0f, 0.0f, "%.1f"))
+				track->m_jointdip = track->m_jointdip < 0.f ? -1.f : std::min(track->m_jointdip, track_uneven::most);
+			item_tooltip("Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Negative: 0.4 of the unevenness");
+			finish_edit(rebuild::parameters);
+		}
 		ImGui::InputInt(STR_C("Quality"), &track->iQualityFlag, 0);
 		item_tooltip("Quality of the track, 20 is the nominal one; lower values give a rougher ride");
 		finish_edit(rebuild::none);

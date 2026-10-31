@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "world/Segment.h"
+#include "world/TrackUneven.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
 #include "utilities/Names.h"
@@ -238,6 +239,12 @@ public:
     TEnvironmentType eEnvironment = e_flat; // dźwięk i oświetlenie
     int iAction = 0; // czy modyfikowany eventami (specjalna obsługa przy skanowaniu)
     float fOverhead = -1.0; // można normalnie pobierać prąd (0 dla jazdy bezprądowej po danym odcinku, >0-z opuszczonym i ograniczeniem prędkości)
+    float m_uneven { 0.f }; // mm, see TrackUneven.h; plain tracks and switches
+    // the components set apart from m_uneven, mm; negative: m_uneven. Cross level on plain tracks only
+    float m_unevenup { -1.f };
+    float m_unevenside { -1.f };
+    float m_unevencross { -1.f };
+    float m_jointdip { -1.f }; // depth of the dip at rail joints, mm; negative: from m_uneven; plain tracks only
 private:
     double fVelocity = -1.0; // ograniczenie prędkości // prędkość dla AI (powyżej rośnie prawdopowobieństwo wykolejenia)
 public:
@@ -339,6 +346,15 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
+    // the unevenness the track declares
+    track_uneven::amounts uneven_declared() const;
+    bool is_uneven() const;
+    // the unevenness at a distance along the track, meeting the tracks joined at its ends
+    track_uneven::amounts uneven_at( double const Distance ) const;
+    double joint_depth() const; // mm
+    double joint_dip( double const Distance ) const; // m
+    // distance from the rail joint behind; negative: the track has no joints that dip
+    double rail_phase( double const Distance ) const;
     void ConnectionsLog();
     bool DoubleSlip() const;
     static void fetch_default_profiles();
@@ -370,6 +386,22 @@ private:
     void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
+    // rail joints run on across joined tracks, however the line is cut into them, so the clatter keeps its rhythm
+    struct rail_run {
+        double origin { 0.0 }; // position along the run of Point1
+        double way { 1.0 }; // direction of the path along the run
+        int stamp { -1 };
+    };
+    void settle_rail_run() const;
+    mutable rail_run m_railrun;
+    // one value along all paths of a switch: the lowest of the switches joined, 0 next to a track with none
+    track_uneven::amounts switch_uneven() const;
+    struct switch_stray {
+        track_uneven::amounts value;
+        int stamp { -1 };
+    };
+    mutable switch_stray m_switchstray;
+    static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
     /// <summary>
