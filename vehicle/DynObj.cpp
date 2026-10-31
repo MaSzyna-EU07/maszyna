@@ -8043,10 +8043,12 @@ TDynamicObject::update_shake( double const Timedelta ) {
             shakevector *= 0;
 
         auto const iVel { std::min( GetVelocity(), 150.0 ) };
+        // an uneven track shakes the cab by itself, in place of the sway drawn from the curve and the jolts drawn at random
+        auto const uneven { MyTrack != nullptr && MyTrack->is_uneven() };
         if( iVel > 0.5 ) {
             // acceleration-driven base shake
 			shakevector += glm::dvec3(
-                -MoverParameters->AccN * Timedelta * 5.0 * Global.ShakingMultiplierRL, // highlight side sway
+                uneven ? 0.0 : -MoverParameters->AccN * Timedelta * 5.0 * Global.ShakingMultiplierRL, // highlight side sway
                 -MoverParameters->AccVert * Timedelta * Global.ShakingMultiplierUD,
                 -MoverParameters->AccSVBased * Timedelta * 1.5 * Global.ShakingMultiplierBF); // accent acceleration/deceleration
             // unevenness of the track under the outer axles
@@ -8059,7 +8061,7 @@ TDynamicObject::update_shake( double const Timedelta ) {
 
         auto shake { 1.25 * ShakeSpring.ComputateForces( shakevector, ShakeState.offset ) };
 
-        if( LocalRandom( iVel ) > 25.0 ) {
+        if( false == uneven && LocalRandom( iVel ) > 25.0 ) {
             // extra shake at increased velocity
             shake += ShakeSpring.ComputateForces(
                 glm::dvec3(

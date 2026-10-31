@@ -64,6 +64,8 @@ Za nierównością idą szyny, wierzch podsypki, `sleepermodel`, osie, przechył
 
 Nie idą za nią modele z includów (np. napędy i podkłady rozjazdów), teren ani sieć trakcyjna, więc przy dużych wartościach szyna rozjeżdża się z takim modelem o kilka centymetrów.
 
+Na torze z nierównością kabinę buja sam tor. Odpada kołysanie wyliczane z przyspieszenia poprzecznego, czyli z promienia łuku, oraz losowe szarpnięcia przy większej prędkości. Na torach bez nierówności działają jak dotąd.
+
 Pantograf podnosi się z szybkością ciśnienia, ok. 0,14 m/s, a szczelina do drutu większa niż 1 cm odcina napięcie i wybija wyłącznik szybki. Nierówność dokłada się do tego przy dużej prędkości. Na torach Bałtyku symulacja daje szczelinę 0,6 cm, gdy składowa w pionie razy prędkość w km/h wynosi 925, czyli np. 8 mm przy 120 km/h, 13 mm przy 70 km/h i 23 mm przy 40 km/h. Wartości z tabeli Id-14 są od tego większe. Sam drut też to potrafi: na Bałtyku przy `tor0290` wznosi się o ok. 1%, więc pantograf nadąża tam do ok. 46 km/h, a powyżej wyłącznik wybija także na prostym torze.
 
 Fizyka bierze promień łuku i pochylenie z projektu, więc nierówności nie zmieniają tych wartości, a do wykolejeń dokładają tylko przechyłkę, ok. 0,06 m/s² przy `uneven 18` wobec progu ok. 3,2 m/s².
