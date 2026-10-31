@@ -1,6 +1,6 @@
-# Nierówności toru
+# Track unevenness
 
-Opcjonalny atrybut wpisu toru, przed `endtrack`:
+An optional attribute of a track entry, before `endtrack`:
 
 ```
 node -1 0 tor1 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
@@ -14,92 +14,94 @@ uneven 18;;;25;6
 endtrack
 ```
 
-Liczby w mm, 0-100, rozdzielone średnikiem, bez spacji:
+The numbers are in mm, 0-100, separated by semicolons with no spaces:
 
-| pozycja | tor `normal`                                     | rozjazd `switch`            |
-|---------|--------------------------------------------------|-----------------------------|
-| 1       | największa odchyłka toku na cięciwie 10 m        | to samo, droga p1-p2        |
-| 2       | w pionie                                         | droga p3-p4                 |
-| 3       | w poziomie                                       | droga p1-p2, w pionie       |
-| 4       | przechyłka                                       | droga p1-p2, w poziomie     |
-| 5       | zapadnięcie na styku, domyślnie 0,4 pionu        | droga p3-p4, w pionie       |
-| 6       |                                                  | droga p3-p4, w poziomie     |
+| position | `normal` track                                | `switch`                 |
+|----------|-----------------------------------------------|--------------------------|
+| 1        | peak deviation of a rail on a 10 m chord      | the same, path p1-p2     |
+| 2        | vertical                                      | path p3-p4               |
+| 3        | sideways                                      | path p1-p2, vertical     |
+| 4        | cross level                                   | path p1-p2, sideways     |
+| 5        | dip at rail joints, by default 0.4 of vertical | path p3-p4, vertical     |
+| 6        |                                               | path p3-p4, sideways     |
 
-Pozycję pominiętą zastępuje pierwsza liczba, a zapadnięcie liczy się z pionu. Końcowe można opuścić. Sam bok to `uneven 0;;30`, a same zapadnięcia na stykach to `uneven 0;;;;6`. Rozjazd bez składowych na drodze p3-p4 przyjmuje wartości z drogi p1-p2. Rozjazd na 100 km/h na wprost i 40 km/h na bok to na przykład `uneven 14;35`.
+A position left out takes the first number, and the dip follows the vertical value. Positions at the end can be dropped. Sideways alone is `uneven 0;;30`, and dips at the joints alone are `uneven 0;;;;6`. A switch with no components of its own on path p3-p4 takes the values of path p1-p2. A switch for 100 km/h on the straight path and 40 km/h on the diverging one is, for example, `uneven 14;35`.
 
-Wszystkie są też w edytorze, w panelu toru, w sekcji „Ride and sound”. Na drogach, rzekach i obrotnicach są ignorowane.
+All of them are also in the editor, in the track panel, section "Ride and sound". On roads, rivers and turntables they are ignored.
 
-## Jaką wartość wybrać
+## Choosing a value
 
-`uneven` odpowiada kolumnie „nierówności pionowe” z instrukcji PLK Id-14, załącznik 1 (klasa C):
+`uneven` corresponds to the "vertical irregularities" column of the PLK Id-14 instruction, appendix 1 (class C):
 
-| prędkość [km/h] | 20 | 40 | 60 | 80 | 100 | 120 | 160 |
-|-----------------|----|----|----|----|-----|-----|-----|
-| `uneven` [mm]   | 50 | 35 | 25 | 18 | 14  | 10  | 6   |
+| speed [km/h]  | 20 | 40 | 60 | 80 | 100 | 120 | 160 |
+|---------------|----|----|----|----|-----|-----|-----|
+| `uneven` [mm] | 50 | 35 | 25 | 18 | 14  | 10  | 6   |
 
-Tor w dobrym stanie to według instrukcji połowa tej wartości (klasa A), w dostatecznym 3/4 (klasa B).
+According to the instruction, a track in good condition is half of this value (class A), and one in fair condition 3/4 (class B).
 
-Tor z `uneven 18` mierzy się tak (`tests/unit/test_track_uneven.cpp`), w nawiasie limit Id-14 dla 80 km/h:
+At these limits a pantograph may not keep up at speed, which trips the main breaker: see the end of "How it works". `tools/track_uneven_grade.py` keeps the values below that.
 
-| parametr                  | wynik   | Id-14   |
-|---------------------------|---------|---------|
-| nierówności pionowe       | 18 mm   | 18 mm   |
-| nierówności poziome       | 19 mm   | 17 mm   |
-| wichrowatość na bazie 5 m | 15 mm   | 16 mm   |
-| szerokość toru            | ±10 mm  | +10/-8 mm |
-| przechyłka                | 20 mm   | 20 mm   |
-| wskaźnik J                | 6,1     | 5,3     |
+A track with `uneven 18` measures as follows (`tests/unit/test_track_uneven.cpp`), against the Id-14 limit for 80 km/h:
 
-## Jak to działa
+| parameter                | result | Id-14     |
+|--------------------------|--------|-----------|
+| vertical irregularities  | 18 mm  | 18 mm     |
+| horizontal irregularities | 19 mm | 17 mm     |
+| twist on a 5 m base      | 15 mm  | 16 mm     |
+| gauge                    | ±10 mm | +10/-8 mm |
+| cross level              | 20 mm  | 20 mm     |
+| J index                  | 6.1    | 5.3       |
 
-Nierówność to pole przesunięć zależne od położenia na mapie, złożone z fal o długości 5-42 m. W pionie krótkich fal jest mniej, żeby częściej dochodziły blisko wartości szczytowej, a do tego są fale 47-83 m: na cięciwie 10 m prawie się nie liczą, pudło unosi się na nich i opada, a pantograf za nimi nadąża. Nie ma w nim losowania: to samo miejsce wygina się tak samo przy każdym uruchomieniu. Przesunięty tor dostaje fale z nowego miejsca.
+## How it works
 
-Każda składowa łączy się osobno:
+Unevenness is a displacement field that depends on the position on the map, made of waves 5-42 m long. Vertically there are fewer short waves, so the rails come near the peak value more often, and there are also waves of 47-83 m: they hardly count on the 10 m chord, the body rises and falls on them, and a pantograph keeps up with them. Nothing in it is random: one place bends the same way on every run. A track that is moved gets the waves of its new place.
 
-- **Tor z torem:** na styku obowiązuje mniejsza z dwóch wartości, a każdy tor dochodzi do niej płynnie na 20 m. Wolny koniec toru leży w projekcie.
-- **Rozjazd:** każda droga ma swoją wartość, a na wspólnym końcu obu obowiązuje mniejsza z nich. Rozjazdy złączone bezpośrednio przyjmują najmniejszą z tej samej drogi, a na styku dwóch dróg mniejszą z obu. Dołączony tor dochodzi do wartości rozjazdu na końcu, do którego dochodzi, także większej od własnej. Tor bez danej składowej trzyma w niej cały rozjazd w projekcie.
-- **Styki:** zapadnięcia są co `fSoundDistance`, na długości 6 m, i biegną dalej przez kolejne tory o tym samym odstępie. Stukot osi wypada w miejscu zapadnięcia. Przy odstępie 6 m lub mniejszym oraz na rozjazdach zapadnięć nie ma.
-- **Przechyłka:** dolicza się do projektowej. Jest pochyleniem w planie mapy, więc tory wpisane ku sobie spotykają się na tej samej przechyłce. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
+Each component joins separately:
 
-Końce złączonych dróg spotykają się w środku między sobą, z jednym kierunkiem poprzecznym, jeśli są bliżej niż 20 cm, co zamyka pęknięcia z niezgodnych współrzędnych w danych, także na torach bez nierówności. Przechyłkę na takim styku rozjazd bierze od zwykłego toru, a dwa tory albo dwa rozjazdy spotykają się w połowie. To dotyczy też fizyki.
+- **Track to track:** the lower of the two values applies at the joint, and each track comes to it smoothly over 20 m. A free end of a track stays as designed.
+- **Switch:** each path has its own value, and the lower of the two applies at their common end. Directly joined switches take the lowest value of the same path, and where two paths meet, the lower of the two. A joined track comes to the value of the switch at the end it meets, even if that is higher than its own. A track with none of a component keeps the whole switch as designed in it.
+- **Joints:** the dips come every `fSoundDistance`, over 6 m, and run on through following tracks with the same spacing. The wheel clatter falls where the dip is. With a spacing of 6 m or less, and on switches, there are no dips.
+- **Cross level:** adds to the designed cant. It is a tilt of the map plan, so tracks laid towards each other meet at the same cant. On switches there is only the part coming from the waves, with no separate settling of the rails.
 
-Za nierównością idą szyny, wierzch podsypki, `sleepermodel`, osie, przechył pudła i bujanie kabiny. Skarpa podsypki przejmuje różnicę, a jej spód zostaje w projekcie, na terenie.
+The ends of joined paths meet in the middle between them, with one vector across, if they are less than 20 cm apart. This closes the cracks from coordinates that don't match in the data, on tracks with no unevenness as well. At such a joint a switch takes the cant of the plain track, and two tracks or two switches meet halfway. This applies to the physics too.
 
-Nie idą za nią modele z includów (np. napędy i podkłady rozjazdów), teren ani sieć trakcyjna, więc przy dużych wartościach szyna rozjeżdża się z takim modelem o kilka centymetrów.
+The rails, the top of the ballast, `sleepermodel`, the axles, the roll of the body and the cab shake follow the unevenness. The slope of the ballast takes up the difference, and its foot stays as designed, on the ground.
 
-Na torze z nierównością kabinę buja sam tor. Odpada kołysanie wyliczane z przyspieszenia poprzecznego, czyli z promienia łuku, oraz losowe szarpnięcia przy większej prędkości. Na torach bez nierówności działają jak dotąd.
+Models from includes (e.g. switch drives and timbers), the terrain and the catenary don't follow it, so at large values a rail shifts away from such a model by a few centimetres.
 
-Pantograf podnosi się z szybkością ciśnienia, ok. 0,14 m/s, a szczelina do drutu większa niż 1 cm odcina napięcie i wybija wyłącznik szybki. Nierówność dokłada się do tego przy dużej prędkości. Na torach Bałtyku symulacja daje szczelinę 0,6 cm, gdy składowa w pionie razy prędkość w km/h wynosi 925, czyli np. 8 mm przy 120 km/h, 13 mm przy 70 km/h i 23 mm przy 40 km/h. Wartości z tabeli Id-14 są od tego większe. Sam drut też to potrafi: na Bałtyku przy `tor0290` wznosi się o ok. 1%, więc pantograf nadąża tam do ok. 46 km/h, a powyżej wyłącznik wybija także na prostym torze.
+On a track with unevenness the track itself shakes the cab. The sway calculated from the lateral acceleration, that is from the curve radius, and the random jolts at higher speed are off. On tracks with no unevenness they work as before.
 
-Fizyka bierze promień łuku i pochylenie z projektu, więc nierówności nie zmieniają tych wartości, a do wykolejeń dokładają tylko przechyłkę, ok. 0,06 m/s² przy `uneven 18` wobec progu ok. 3,2 m/s².
+A pantograph rises at the rate set by the pressure, about 0.14 m/s, and a gap to the wire over 1 cm cuts the voltage and trips the main breaker. Unevenness adds to this at high speed. On the tracks of Bałtyk a simulation gives a gap of 0.6 cm when the vertical value times the speed in km/h is 925, for example 8 mm at 120 km/h, 13 mm at 70 km/h and 23 mm at 40 km/h. The values in the Id-14 table are higher than that. The wire alone can do it too: at `tor0290` on Bałtyk it rises by about 1%, so a pantograph keeps up to about 46 km/h there, and above that the breaker trips on a straight track as well.
 
-## Ocena torów dowolnej scenerii
+The physics takes the curve radius and the grade from the design, so unevenness doesn't change them. It adds only the cross level towards derailment, about 0.06 m/s² at `uneven 18` against a threshold of about 3.2 m/s².
 
-`tools/track_uneven_grade.py` wylicza wartości z tego, co widać w scenerii: z tekstur podsypki i szyn, trawy na torze, łuków, prędkości i przejazdów drogowych. Czyta plik `.scn`, `.scm` albo `.inc` razem z jego includami, oryginałów nie zmienia, a kopie plików z torami zapisuje do `--out`. Bez `--out` tylko wypisuje raport.
+## Grading the tracks of any scenery
+
+`tools/track_uneven_grade.py` works out the values from what the scenery shows: ballast and rail textures, grass on the track, curves, speed and road crossings. It reads a `.scn`, `.scm` or `.inc` file with its includes and leaves the originals as they are, writing copies of the files with tracks to `--out`. With no `--out` it only prints a report.
 
 ```
 python tools/track_uneven_grade.py scenery/lk357.scn --out graded
 python tools/track_uneven_grade.py scenery/baltyk_skm1.scn --out graded --route -107,2300 -4120,2491
 ```
 
-- `--route X,Z X,Z`: tory pogarszają się od pierwszego punktu do drugiego, licząc po torach.
-- `--gain`: mnożnik stanu torów, domyślnie 1.
-- `--near`: jaka część torów na drewnie i przy zmianach krzywizny idzie bliżej granicy Id-14, domyślnie 0,6. Wybór jest stały.
-- `--straight`: nazwy torów bez nierówności, po przecinku.
-- `--root`: folder `scenery`, gdy podany plik leży głębiej.
+- `--route X,Z X,Z`: tracks get worse from the first point to the second, measured along the tracks.
+- `--gain`: multiplier of the state of the tracks, 1 by default.
+- `--near`: the share of tracks on wooden sleepers and at changes of curve that go nearer the Id-14 limit, 0.6 by default. The choice is fixed.
+- `--straight`: names of tracks with no unevenness, separated by commas.
+- `--root`: the `scenery` folder, when the given file lies deeper.
 
-Wartości trzymają się pod sufitem pantografu, liczonym symulacją na tych torach, ale bez wznosu samego drutu. Zużycie tekstur odczytywane jest z ich nazw, według tabel na początku skryptu, a nieznana nazwa dostaje 0,5. Tory z plików `.inc` z parametrami są pomijane, a bloki `rotate` nieuwzględniane. W obu przypadkach raport wypisuje uwagę. Tor, który ma już nierówność, zostaje bez zmian.
+The values stay under what a pantograph can follow, by a simulation over those tracks, but the rise of the wire itself isn't counted. Texture wear is read from the names, by the tables at the top of the script, and an unknown name gets 0.5. Tracks in `.inc` files taking parameters are skipped and `rotate` blocks aren't applied; the report says so in both cases. A track that already has unevenness stays as it is.
 
-## Wydajność
+## Performance
 
-Tor z nierównością ma geometrię co 2 m zamiast co 10 m na prostych. Rozjazdy zachowują swój podział.
+A track with unevenness has geometry every 2 m instead of every 10 m on straights. Switches keep their division.
 
-Zmierzone (kamera w ruchu lub kabina, 1920×1080):
+Measured (camera moving or in the cab, 1920×1080):
 
-| scena                                 | bez flag           | z flagami 18/35    |
-|---------------------------------------|--------------------|--------------------|
-| Bałtyk, 56 km torów: wierzchołki      | 0,56 mln (ok. 27 MB) | 2,17 mln (ok. 104 MB) |
-| Bałtyk: najdłuższa klatka w przelocie | 31,5 ms            | 64 ms              |
-| `td.scn`, jazda 120 km/h: klatka      | 2,73 ms            | 2,93 ms            |
+| scene                               | no flags              | flags 18/35            |
+|-------------------------------------|-----------------------|------------------------|
+| Bałtyk, 56 km of tracks: vertices   | 0.56 M (about 27 MB)  | 2.17 M (about 104 MB)  |
+| Bałtyk: longest frame in a fly-through | 31.5 ms            | 64 ms                  |
+| `td.scn`, driving at 120 km/h: frame | 2.73 ms              | 2.93 ms                |
 
-Koszt rośnie z liczbą oflagowanych torów, a najdłuższe klatki pojawiają się przy budowaniu geometrii kolejnych sekcji. Sama jazda po takim torze praktycznie nie kosztuje: ok. 0,3 µs na oś w kroku fizyki.
+The cost grows with the number of flagged tracks, and the longest frames occur when the geometry of further sections is built. Driving on such a track costs practically nothing: about 0.3 µs per axle in a physics step.
