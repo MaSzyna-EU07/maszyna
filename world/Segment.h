@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <optional>
+
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
 #include <glm/glm.hpp>
@@ -47,6 +49,9 @@ class TSegment
     glm::dvec3 Point2;
     float fRoll1 { 0.f };
     float fRoll2 { 0.f }; // przechyłka na końcach
+    float m_designrolls[ 2 ] { 0.f, 0.f }; // as entered; the two above can differ at a joint
+    // where the path meets the next one: the middle of their ends and their common vector across
+    std::optional<std::pair<glm::dvec3, glm::dvec3>> m_joints[ 2 ];
     bool m_uneven { false }; // see TrackUneven.h
     double fLength { -1.0 }; // długość policzona
     std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
@@ -117,6 +122,16 @@ public:
     void
         set_uneven( bool const Uneven ) {
             m_uneven = Uneven; }
+    // a point of the path and the unit vector across it in the plan
+    void
+        plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
+    float
+        design_roll( int const End ) const {
+            return m_designrolls[ End ]; }
+    void
+        set_joint( int const End, std::optional<std::pair<glm::dvec3, glm::dvec3>> const &Joint, float const Roll ) {
+            m_joints[ End ] = Joint;
+            ( End == 0 ? fRoll1 : fRoll2 ) = Roll; }
     // second derivative of the displacement along the path; times speed squared: acceleration of an axle
     glm::dvec3
         uneven_bend( double const Distance ) const;

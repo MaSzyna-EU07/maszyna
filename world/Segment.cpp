@@ -69,6 +69,10 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     // poprawienie przechyłki
     fRoll1 = static_cast<float>(glm::radians(fNewRoll1)); // Ra: przeliczone jest bardziej przydatne do obliczeń
     fRoll2 = static_cast<float>(glm::radians(fNewRoll2));
+    m_designrolls[ 0 ] = fRoll1;
+    m_designrolls[ 1 ] = fRoll2;
+    m_joints[ 0 ].reset();
+    m_joints[ 1 ].reset();
     bCurve = bIsCurve;
     if (Global.bRollFix)
     { // Ra: poprawianie przechyłki
@@ -441,6 +445,18 @@ void TSegment::design_position(double const fDistance, glm::dvec3 &position, glm
     }
 };
 
+void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const {
+    auto const t { FastGetTFromS( std::clamp( Distance, 0.0, fLength ) ) };
+    Point = FastGetPoint( t );
+    auto const dir { FastGetDirection( t, 0.1 / fLength ) };
+    Across = glm::dvec3{ -dir.z, 0.0, dir.x };
+    if( glm::length2( Across ) == 0.0 ) {
+        auto const chord { FastGetPoint_1() - FastGetPoint_0() };
+        Across = glm::dvec3{ -chord.z, 0.0, chord.x };
+    }
+    Across = glm::normalize( Across );
+}
+
 glm::dvec3 TSegment::FastGetPoint(double const t) const
 {
     // return (bCurve?std::lerp(t,Point1,CPointOut,CPointIn,Point2):((1.0-t)*Point1+(t)*Point2));
@@ -492,6 +508,10 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
         parallel1 = glm::vec3{ glm::dvec3{ FastGetPoint_1() - FastGetPoint_0() } };
     }
     parallel1 = glm::normalize( parallel1 );
+    if( iSkip == 0 && m_joints[ 0 ] ) {
+        pos1 = glm::vec3{ m_joints[ 0 ]->first - Origin };
+        parallel1 = glm::vec3{ m_joints[ 0 ]->second };
+    }
     if( iEnd == 0 )
         iEnd = iSegCount;
     fEnd = static_cast<float>(fLength * double( iEnd ) / double( iSegCount ));
@@ -537,6 +557,10 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
             parallel2 = glm::vec3{ glm::dvec3{ FastGetPoint_1() - FastGetPoint_0() } };
         }
         parallel2 = glm::normalize( parallel2 );
+        if( i == iSegCount && m_joints[ 1 ] ) {
+            pos2 = glm::vec3{ m_joints[ 1 ]->first - Origin };
+            parallel2 = glm::vec3{ m_joints[ 1 ]->second };
+        }
 
         // TODO: refactor the loop, there's no need to calculate starting points for each segment when we can copy the end points of the previous one
         if( Transition ) {

@@ -60,6 +60,8 @@ Każda składowa łączy się osobno:
 - **Styki:** zapadnięcia są co `fSoundDistance`, na długości 6 m, i biegną dalej przez kolejne tory o tym samym odstępie. Stukot osi wypada w miejscu zapadnięcia. Przy odstępie 6 m lub mniejszym oraz na rozjazdach zapadnięć nie ma.
 - **Przechyłka:** dolicza się do projektowej. Jest pochyleniem w planie mapy, więc tory wpisane ku sobie spotykają się na tej samej przechyłce. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
 
+Końce złączonych dróg spotykają się w środku między sobą, z jednym kierunkiem poprzecznym, jeśli są bliżej niż 20 cm, co zamyka pęknięcia z niezgodnych współrzędnych w danych, także na torach bez nierówności. Przechyłkę na takim styku rozjazd bierze od zwykłego toru, a dwa tory albo dwa rozjazdy spotykają się w połowie. To dotyczy też fizyki.
+
 Za nierównością idą szyny, wierzch podsypki, `sleepermodel`, osie, przechył pudła i bujanie kabiny. Skarpa podsypki przejmuje różnicę, a jej spód zostaje w projekcie, na terenie.
 
 Nie idą za nią modele z includów (np. napędy i podkłady rozjazdów), teren ani sieć trakcyjna, więc przy dużych wartościach szyna rozjeżdża się z takim modelem o kilka centymetrów.

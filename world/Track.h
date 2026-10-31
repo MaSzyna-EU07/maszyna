@@ -353,6 +353,8 @@ public:
     track_uneven::amounts uneven_at( double const Distance ) const;
     // how much of the displacement a point of the profile at the depth takes
     double uneven_bed_share( double const Depth ) const;
+    // closes the gaps and steps of cant between the ends of joined paths
+    void share_joints();
     double joint_depth() const; // mm
     double joint_dip( double const Distance ) const; // m
     // distance from the rail joint behind; negative: the track has no joints that dip

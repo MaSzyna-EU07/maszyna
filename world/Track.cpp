@@ -1561,8 +1561,72 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
     create_geometry( Bank );
 }
 
+void TTrack::share_joints() {
+
+    int const paths { eType == tt_Switch ? 2 : 1 };
+    auto const segment_of = []( TTrack const &Track, int const Path ) -> TSegment * {
+        return ( Track.eType == tt_Switch ? Track.SwitchExtension->Segments[ Path ].get() : Track.Segment.get() ); };
+    for( int path = 0; path < paths; ++path ) {
+        auto *segment { segment_of( *this, path ) };
+        if( segment == nullptr ) {
+            continue;
+        }
+        for( int end = 0; end < 2; ++end ) {
+            std::optional<std::pair<glm::dvec3, glm::dvec3>> joint;
+            auto roll { segment->design_roll( end ) };
+            auto const *neighbour { eType == tt_Switch ?
+                ( end ? SwitchExtension->pNexts[ path ] : SwitchExtension->pPrevs[ path ] ) :
+                ( end ? trNext : trPrev ) };
+            if( neighbour != nullptr && neighbour != this && ( neighbour->iCategoryFlag & 15 ) == ( iCategoryFlag & 15 ) ) {
+                glm::dvec3 point;
+                glm::dvec3 across;
+                segment->plan_frame( end ? segment->GetLength() : 0.0, point, across );
+                auto closest { 0.2 };
+                for( int theirpath = 0; theirpath < ( neighbour->eType == tt_Switch ? 2 : 1 ); ++theirpath ) {
+                    auto const *theirs { segment_of( *neighbour, theirpath ) };
+                    if( theirs == nullptr ) {
+                        continue;
+                    }
+                    for( int theirend = 0; theirend < 2; ++theirend ) {
+                        glm::dvec3 theirpoint;
+                        glm::dvec3 theiracross;
+                        theirs->plan_frame( theirend ? theirs->GetLength() : 0.0, theirpoint, theiracross );
+                        if( theirend == end ) {
+                            theiracross = -theiracross;
+                        }
+                        auto const gap { glm::length( theirpoint - point ) };
+                        if( gap >= closest || glm::dot( across, theiracross ) < 0.9 ) {
+                            continue;
+                        }
+                        closest = gap;
+                        joint.emplace( 0.5 * ( point + theirpoint ), glm::normalize( across + theiracross ) );
+                        if( iCategoryFlag & 1 ) {
+                            // the cant of a plain track is what was designed, a switch takes it; alike ones meet halfway
+                            auto const own { segment->design_roll( end ) };
+                            auto const their { theirend == end ? -theirs->design_roll( theirend ) : theirs->design_roll( theirend ) };
+                            roll = (
+                                ( eType == tt_Switch ) == ( neighbour->eType == tt_Switch ) ? 0.5f * ( own + their ) :
+                                eType == tt_Switch ? their :
+                                own );
+                        }
+                    }
+                }
+            }
+            segment->set_joint( end, joint, roll );
+        }
+    }
+    if( eType != tt_Switch && Segment && ( iCategoryFlag & 1 ) ) {
+        float roll1, roll2;
+        Segment->GetRolls( roll1, roll2 );
+        if( roll1 != 0.f || roll2 != 0.f ) {
+            iTrapezoid |= 1;
+        }
+    }
+}
+
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
+    share_joints();
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
     if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
@@ -3843,6 +3907,11 @@ path_table::InitTracks() {
         isolated->pMemCell = memorycell;
 
         isolated = isolated->Next();
+    }
+
+    // the physics goes by the cant at the joints too, and comes before any geometry is made
+    for( auto *track : m_items ) {
+        track->share_joints();
     }
 
     TTrack::fetch_default_profiles();
