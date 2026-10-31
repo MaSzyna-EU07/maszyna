@@ -135,6 +135,10 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     fStoop = std::atan2(Point2.y - Point1.y, fLength); // pochylenie toru prostego, żeby nie liczyć wielokrotnie
 
     fStep = ( fNewStep > 0.0 && std::isfinite( fNewStep ) ) ? fNewStep : fLength;
+    if( m_uneven && pOwner->eType != tt_Switch ) {
+        // dense enough for the waves; a switch keeps its division, the blades depend on it
+        fStep = std::min( fStep, 2.0 );
+    }
     // NOTE: optionally replace this part with the commented version, after solving geometry issues with double switches
     if( pOwner->eType == tt_Switch
      && fStep * (3.0 * Global.SplineFidelity) > fLength ) {
@@ -426,7 +430,54 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 */
 
 void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
+    design_position( fDistance, position, rotation );
+    if( false == m_uneven ) {
+        return;
+    }
+    // direction and slope stay as designed: the physics takes the curve radius and the grade from them
+    auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
+    glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
+    auto const amount { pOwner->uneven_at( fDistance ) };
+    rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
+        amount.up * track_uneven::roll( position, across, gauge )
+      + amount.cross * track_uneven::level( position, across ) / gauge ) );
+    position += stray( position, fDistance );
+}
+
+glm::dvec3 TSegment::stray( glm::dvec3 const &Point, double const Distance ) const {
+    auto const amount { pOwner->uneven_at( Distance ) };
+    auto const field { track_uneven::field( Point ) };
+    glm::dvec3 result { field.x * amount.side, field.y * amount.up, field.z * amount.side };
+    result *= track_uneven::stray_per_mm;
+    result.y -= pOwner->joint_dip( Distance );
+    return result;
+}
+
+glm::dvec3 TSegment::uneven_bend( double const Distance ) const {
+    if( false == m_uneven ) {
+        return glm::dvec3 { 0.0 };
+    }
+    // over about a bogie; FastGetTFromS extrapolates past the ends of the path
+    auto const reach { 1.5 };
+    auto const strayed = [&]( double const At ) {
+        return stray( FastGetPoint( FastGetTFromS( At ) ), At ); };
+    return ( strayed( Distance + reach ) - 2.0 * strayed( Distance ) + strayed( Distance - reach ) ) / ( reach * reach );
+}
+
+void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const {
+    if( false == m_uneven ) {
+        return;
+    }
+    // the rails settling apart turn about the middle of the track, what's outside them follows the rail
+    auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
+    auto const across { std::clamp( glm::dot( Vertex.position - Position, Parallel ), -0.5f * gauge, 0.5f * gauge ) };
+    Vertex.position.y -= static_cast<float>( track_uneven::stray_per_mm * pOwner->uneven_at( Distance ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
+    Vertex.position += glm::vec3 { stray( Origin + glm::dvec3 { Vertex.position }, Distance ) };
+}
+
+void TSegment::design_position(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
     if( false == m_pieces.empty() ) {
+        // the pieces keep to their design, the unevenness is the one of the whole path
         auto const piece { piece_at( fDistance ) };
         m_pieces[ piece ]->RaPositionGet( fDistance - m_starts[ piece ], position, rotation );
     }
@@ -579,6 +630,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm1 * ShapePoints[ j ].texture.x + m1 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv1 } );
                     roll_vertex( Output.back(), pos1, parallel1, s - step );
+                    settle_vertex( Output.back(), Origin, pos1, parallel1, s - step );
                 }
                 // jeśli jest wskaźnik do tablicy
                 if (p && *p && !j) // to dla pierwszego punktu
@@ -598,6 +650,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ( jmm2 * ShapePoints[ j ].texture.x + m2 * ShapePoints[ j + iNumShapePoints ].texture.x ) / texturescale, tv2 } );
                     roll_vertex( Output.back(), pos2, parallel2, s );
+                    settle_vertex( Output.back(), Origin, pos2, parallel2, s );
                 }
                 // jeśli jest wskaźnik do tablicy
                 // to dla pierwszego punktu
@@ -621,6 +674,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ShapePoints[ j ].texture.x / texturescale, tv1 } );
                     roll_vertex( Output.back(), pos1, parallel1, s - step );
+                    settle_vertex( Output.back(), Origin, pos1, parallel1, s - step );
 
                     pt = parallel2 * ( jmm2 * ( ShapePoints[ j ].position.x - fOffsetX.first ) + m2 * ( ShapePoints[ j ].position.x - fOffsetX.second ) ) + pos2;
                     pt.y += ShapePoints[ j ].position.y;
@@ -632,6 +686,7 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
                         glm::normalize( norm ),
                         glm::vec2 { ShapePoints[ j ].texture.x / texturescale, tv2 } );
                     roll_vertex( Output.back(), pos2, parallel2, s );
+                    settle_vertex( Output.back(), Origin, pos2, parallel2, s );
                 }
             }
         }
@@ -699,7 +754,8 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
         auto normal { ( rest * from.normal.x + Share * to.normal.x ) * Parallel };
         normal.y += rest * from.normal.y + Share * to.normal.y;
         Output.emplace_back( point, glm::normalize( normal ), glm::vec2 { rest * from.texture.x + Share * to.texture.x, V } );
-        roll_vertex( Output.back(), Position, Parallel, Share * fLength ); };
+        roll_vertex( Output.back(), Position, Parallel, Share * fLength );
+        settle_vertex( Output.back(), Origin, Position, Parallel, Share * fLength ); };
 
     glm::vec3 pos1, pos2, parallel1, parallel2;
     station( 0, pos1, parallel1 );
@@ -1044,6 +1100,7 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         }
         for( auto &vertex : Ring ) {
             roll_vertex( vertex, position, parallel, Distance );
+            settle_vertex( vertex, Origin, position, parallel, Distance );
         }
     };
 

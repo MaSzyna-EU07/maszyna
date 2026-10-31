@@ -703,8 +703,36 @@ std::vector<track_property> make_properties()
 	// ride and sound
 	add_float(list, "friction", section::ride, group::ride_sound, "Friction", "Friction coefficient of the rails, 0.15 for the dry rails; lower values make the wheels slip", &TTrack::fFriction, 3, 0.f, false);
 	list.back().applies = any;
-	add_float(list, "sounddistance", section::ride, group::ride_sound, "Sound distance (m)", "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default", &TTrack::fSoundDistance, 1, -1.f, false);
+	// the dips at the rail joints of an uneven track go with it
+	add_float(list, "sounddistance", section::ride, group::ride_sound, "Sound distance (m)", "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default", &TTrack::fSoundDistance, 1, -1.f, true);
 	list.back().applies = any;
+	{
+		// the unevenness of the rails (world/TrackUneven.h), mm up to track_uneven::most; with Unset a negative value is -1, the
+		// component taken from the unevenness
+		auto const uneven = [&](char const *Key, char const *Label, char const *Tooltip, float TTrack::*Member, bool const Unset, bool const Switches) {
+			auto &property{add(list, Key, field::number, section::ride, group::ride_sound, Label, Tooltip)};
+			property.rebuild = true;
+			property.applies = [Switches](TTrack const &Track) {
+				return Track.m_visible && (Track.iCategoryFlag & 15) == kRailCategory && (Track.eType == tt_Normal || (Switches && Track.eType == tt_Switch));
+			};
+			property.get = [Member](TTrack const &Track) { return decimal(Track.*Member, 1); };
+			property.set = [Member, Unset](TTrack &Track, std::string const &Text) {
+				double value;
+				if (false == parse_number(Text, value))
+					return false;
+				auto const clamped{(Unset && value < 0.0) ? -1.f : std::clamp(static_cast<float>(value), 0.f, track_uneven::most)};
+				if (decimal(clamped, 1) == decimal(Track.*Member, 1))
+					return false;
+				Track.*Member = clamped;
+				return true;
+			};
+		};
+		uneven("uneven", "Unevenness (mm)", "Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values", &TTrack::m_uneven, false, true);
+		uneven("unevenup", "Up and down (mm)", "Set apart from the unevenness, mm. Negative: the unevenness", &TTrack::m_unevenup, true, true);
+		uneven("unevenside", "Sideways (mm)", "Set apart from the unevenness, mm. Negative: the unevenness", &TTrack::m_unevenside, true, true);
+		uneven("unevencross", "Cross level (mm)", "Set apart from the unevenness, mm. Negative: the unevenness", &TTrack::m_unevencross, true, false);
+		uneven("jointdip", "Dip at rail joints (mm)", "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Negative: 0.4 of the unevenness", &TTrack::m_jointdip, true, false);
+	}
 	{
 		auto &property{add(list, "quality", field::number, section::ride, group::ride_sound, "Quality", "Quality of the track, 20 is the nominal one; lower values give a rougher ride")};
 		property.applies = any;
