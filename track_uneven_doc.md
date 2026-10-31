@@ -44,14 +44,14 @@ Tor z `uneven 18` mierzy się tak (`tests/unit/test_track_uneven.cpp`), w nawias
 |---------------------------|---------|---------|
 | nierówności pionowe       | 18 mm   | 18 mm   |
 | nierówności poziome       | 19 mm   | 17 mm   |
-| wichrowatość na bazie 5 m | 17 mm   | 16 mm   |
+| wichrowatość na bazie 5 m | 15 mm   | 16 mm   |
 | szerokość toru            | ±10 mm  | +10/-8 mm |
 | przechyłka                | 20 mm   | 20 mm   |
 | wskaźnik J                | 6,1     | 5,3     |
 
 ## Jak to działa
 
-Nierówność to pole przesunięć zależne od położenia na mapie, złożone z fal o długości 5-42 m. Nie ma w nim losowania: to samo miejsce wygina się tak samo przy każdym uruchomieniu. Przesunięty tor dostaje fale z nowego miejsca.
+Nierówność to pole przesunięć zależne od położenia na mapie, złożone z fal o długości 5-42 m. W pionie krótkich fal jest mniej, żeby częściej dochodziły blisko wartości szczytowej, a do tego są fale 47-83 m: na cięciwie 10 m prawie się nie liczą, pudło unosi się na nich i opada, a pantograf za nimi nadąża. Nie ma w nim losowania: to samo miejsce wygina się tak samo przy każdym uruchomieniu. Przesunięty tor dostaje fale z nowego miejsca.
 
 Każda składowa łączy się osobno:
 
@@ -63,6 +63,8 @@ Każda składowa łączy się osobno:
 Za nierównością idą szyny, podsypka, `sleepermodel`, osie, przechył pudła i bujanie kabiny.
 
 Nie idą za nią modele z includów (np. napędy i podkłady rozjazdów), teren ani sieć trakcyjna, więc przy dużych wartościach szyna rozjeżdża się z takim modelem o kilka centymetrów.
+
+Pantograf podnosi się z szybkością ciśnienia, ok. 0,14 m/s, a szczelina do drutu większa niż 1 cm odcina napięcie i wybija wyłącznik szybki. Nierówność dokłada się do tego przy dużej prędkości. Na torach Bałtyku symulacja daje szczelinę 0,6 cm, gdy składowa w pionie razy prędkość w km/h wynosi 925, czyli np. 8 mm przy 120 km/h, 13 mm przy 70 km/h i 23 mm przy 40 km/h. Wartości z tabeli Id-14 są od tego większe. Sam drut też to potrafi: na Bałtyku przy `tor0290` wznosi się o ok. 1%, więc pantograf nadąża tam do ok. 46 km/h, a powyżej wyłącznik wybija także na prostym torze.
 
 Fizyka bierze promień łuku i pochylenie z projektu, więc nierówności nie zmieniają tych wartości, a do wykolejeń dokładają tylko przechyłkę, ok. 0,06 m/s² przy `uneven 18` wobec progu ok. 3,2 m/s².
 

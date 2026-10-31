@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/constants.hpp>
 
 // Track unevenness: a displacement field over the plan of the scenery, so everything at one place moves together: joined tracks, the
-// paths of a switch, sleepers, axles. Waves 5-42 m long, shares after the German track spectrum with the long waves cut down.
+// paths of a switch, sleepers, axles. Waves 5-42 m long, shares after the German track spectrum with the long waves cut down; up and down to 83 m.
 // The "uneven" value is the peak deviation of a rail on a 10 m chord, as in PLK Id-14 appendix 1; see test_track_uneven.cpp.
 namespace track_uneven {
 
@@ -61,7 +61,9 @@ wave_set<Count> make_waves( double const Turn, std::array<double, Count> const &
 inline constexpr std::array<double, 8> wave_lengths { 5.3, 7.1, 9.7, 13.1, 17.9, 23.9, 31.7, 41.9 };
 inline constexpr std::array<double, 8> wave_shares { 0.0721, 0.0997, 0.1344, 0.1703, 0.1549, 0.1386, 0.1226, 0.1074 };
 
-inline wave_set<8> const up_waves { make_waves( 0.0, wave_lengths, wave_shares ) };
+// fewer short ones than sideways: the rails come near the limit in the vertical more often, with the peak still at it.
+// The long ones hardly count on the 10 m chord: the body rises and falls on them, slowly enough for a pantograph to keep up
+inline wave_set<8> const up_waves { make_waves<8>( 0.0, { 8.3, 11.9, 16.7, 23.9, 37.1, 47.3, 61.9, 83.3 }, { 0.14, 0.19, 0.22, 0.22, 0.23, 0.23, 0.23, 0.23 } ) };
 inline wave_set<8> const x_waves { make_waves( 1.1, wave_lengths, wave_shares ) };
 inline wave_set<8> const z_waves { make_waves( 2.3, wave_lengths, wave_shares ) };
 // the tilt along each axis of the plan. Long waves only: with the short ones the cross level reaching its limit would break the limit of twist
@@ -78,7 +80,7 @@ double sum( wave_set<Count> const &Waves, glm::dvec3 const &Point ) {
     return total;
 }
 
-// displacement at the point for an amplitude of 1, each axis within +-1
+// displacement at the point for an amplitude of 1, sideways within +-1, up and down within +-1.69
 inline glm::dvec3 field( glm::dvec3 const &Point ) {
 
     return { sum( x_waves, Point ), sum( up_waves, Point ), sum( z_waves, Point ) };
