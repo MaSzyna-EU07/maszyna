@@ -127,6 +127,9 @@ public:
         set_uneven( bool const Uneven, int const Path = 0 ) {
             m_uneven = Uneven;
             m_path = Path; }
+    glm::dvec3
+        end_point( int const End ) const {
+            return End == 0 ? Point1 : Point2; }
     // a point of the path and the unit vector across it in the plan
     void
         plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;

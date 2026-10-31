@@ -404,6 +404,8 @@ private:
         sound_source clatter; // clatter emitter
         bool atjoints { false }; // distance comes from TTrack::rail_phase
     };
+    // whether the axle has just passed a rail joint. On a track with dipping joints it goes by them, elsewhere the axle counts a rail off itself
+    bool axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction );
 
     struct powertrain_sounds {
         sound_source inverter { sound_placement::engine };

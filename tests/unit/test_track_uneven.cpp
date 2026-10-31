@@ -194,6 +194,19 @@ TEST_CASE("uneven track: the attribute goes by the entry it's written into")
 	CHECK(track_uneven::write_attribute(track_uneven::read_attribute("0;;;;6", false), false) == "uneven 0;;;;6 ");
 }
 
+TEST_CASE("uneven track: each component comes to its neighbours along a track")
+{
+	double const length{500.0};
+	auto const atstart{track_uneven::along(track_uneven::amounts{18.0, 16.0, 14.0}, {5.0, 4.0, 3.0}, {7.0, 8.0, 9.0}, 0.0, length)};
+	CHECK(atstart.up == doctest::Approx(5.0));
+	CHECK(atstart.side == doctest::Approx(4.0));
+	CHECK(atstart.cross == doctest::Approx(3.0));
+	auto const inside{track_uneven::along(track_uneven::amounts{18.0, 16.0, 14.0}, {5.0, 4.0, 3.0}, {7.0, 8.0, 9.0}, 0.5 * length, length)};
+	CHECK(inside.up == doctest::Approx(18.0));
+	CHECK(inside.side == doctest::Approx(16.0));
+	CHECK(inside.cross == doctest::Approx(14.0));
+}
+
 TEST_CASE("uneven track: axles don't stray along the track")
 {
 	glm::dvec3 const across{0.6, 0.0, -0.8};

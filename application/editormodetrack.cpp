@@ -1170,12 +1170,17 @@ void editor_mode::render_path_parameters(TTrack &Track)
 			{
 				char const *label;
 				float *value;
+				bool shown;
 			};
-			for (auto const &part : {component{"Up and down (mm)", &track->m_uneven.up}, component{"Sideways (mm)", &track->m_uneven.side}, component{"Cross level (mm)", &track->m_uneven.cross}, component{"Diverging path (mm)", &track->m_uneven.branch}, component{"Diverging, up and down (mm)", &track->m_uneven.branchup}, component{"Diverging, sideways (mm)", &track->m_uneven.branchside}})
+			auto const plain{track->eType == tt_Normal};
+			for (auto const &part : {component{"Up and down (mm)", &track->m_uneven.up, true},
+			                         component{"Sideways (mm)", &track->m_uneven.side, true},
+			                         component{"Cross level (mm)", &track->m_uneven.cross, plain},
+			                         component{"Diverging path (mm)", &track->m_uneven.branch, !plain},
+			                         component{"Diverging, up and down (mm)", &track->m_uneven.branchup, !plain},
+			                         component{"Diverging, sideways (mm)", &track->m_uneven.branchside, !plain}})
 			{
-				if (part.value == &track->m_uneven.cross && track->eType != tt_Normal)
-					continue;
-				if ((part.value == &track->m_uneven.branch || part.value == &track->m_uneven.branchup || part.value == &track->m_uneven.branchside) && track->eType != tt_Switch)
+				if (false == part.shown)
 					continue;
 				if (ImGui::InputFloat(STR_C(part.label), part.value, 0.0f, 0.0f, "%.1f"))
 					*part.value = *part.value < 0.f ? -1.f : std::min(*part.value, track_uneven::most);

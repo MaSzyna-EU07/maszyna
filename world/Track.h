@@ -341,6 +341,10 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
+    // a switch has two paths, any other track the one
+    int path_count() const;
+    TSegment *path_segment( int const Path ) const;
+    TTrack *path_neighbour( int const Path, int const End ) const;
     // the unevenness the track declares, on a path of a switch
     track_uneven::amounts uneven_declared( int const Path = 0 ) const;
     bool is_uneven() const;
@@ -402,6 +406,11 @@ private:
     };
     mutable switch_stray m_switchstray;
     switch_stray const &switch_uneven() const;
+    void settle_switch_stray() const;
+    // the lowest value of the paths ending at the point
+    track_uneven::amounts switch_paths_at( glm::dvec3 const &Point ) const;
+    // what a plain track comes to at its end, where it meets the other one
+    track_uneven::amounts uneven_met( TTrack const *Other, glm::dvec3 const &Point ) const;
     // the value of a switch where a track joined to it meets it
     track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point ) const;
     static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above

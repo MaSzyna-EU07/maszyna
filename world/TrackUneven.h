@@ -249,6 +249,15 @@ inline float joint_roll( float const Own, float const Their, bool const Switch, 
     return Switch == Theirswitch ? 0.5f * ( Own + Their ) : Switch ? Their : Own;
 }
 
+// each component the same way
+inline amounts along( amounts const &Full, amounts const &Atstart, amounts const &Atend, double const Distance, double const Length ) {
+
+    return {
+        along( Full.up, Atstart.up, Atend.up, Distance, Length ),
+        along( Full.side, Atstart.side, Atend.side, Distance, Length ),
+        along( Full.cross, Atstart.cross, Atend.cross, Distance, Length ) };
+}
+
 // distance from the joint behind the point
 inline double rail_phase( double const Along, double const Rail ) {
 

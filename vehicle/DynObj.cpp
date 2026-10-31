@@ -3661,25 +3661,7 @@ bool TDynamicObject::Update(double dt, double dt1)
                             1 :
                             ctOwner->Vehicle()->DirectionGet() == DirectionGet() ? 1 : -1 ) };
                     for( auto &axle : m_axlesounds ) {
-                        // on a track with dipping joints the clatter comes from them, elsewhere the axle counts a rail off itself
-                        // by the outer axle on its side of the vehicle: the two can be on different tracks
-                        auto const &outer { axle.offset >= 0.0 ? Axle0 : Axle1 };
-                        auto const railphase { outer.RailPhase( axle.offset - std::copysign( 0.5 * fAxleDist, axle.offset ) ) };
-                        auto crossed { false };
-                        if( railphase >= 0.0 ) {
-                            // the rails under the axle, which aren't always those under the track the vehicle is on
-                            crossed = axle.atjoints && std::abs( railphase - axle.distance ) > 0.5 * outer.GetTrack()->fSoundDistance;
-                            axle.distance = railphase;
-                        }
-                        else {
-                            axle.distance += dDOMoveLen * directioninconsist;
-                            crossed = axle.distance < 0 || axle.distance > dRailLength;
-                            if( crossed ) {
-                                axle.distance = clamp_circular( axle.distance, dRailLength );
-                            }
-                        }
-                        axle.atjoints = ( railphase >= 0.0 );
-                        if( crossed ) {
+                        if( axle_passed_joint( axle, dDOMoveLen, directioninconsist ) ) {
                             if( MoverParameters->Vel > 0.1 ) {
                                 // NOTE: for combined clatter sound we supply 1/100th of actual value, as the sound module converts does the opposite, converting received (typically) 0-1 values to 0-100 range
                                 auto const frequency = true == axle.clatter.is_combined() ? MoverParameters->Vel * 0.01 : 1.0;
@@ -8087,6 +8069,28 @@ TDynamicObject::update_shake( double const Timedelta ) {
     else { // hamowanie rzucania przy spadku FPS
         ShakeState.offset -= ShakeState.offset * std::min( Timedelta, 1.0 ); // po tym chyba potrafią zostać jakieś ułamki, które powodują zjazd
     }
+}
+
+bool
+TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction ) {
+
+    // by the outer axle on its side of the vehicle: the two can be on different tracks
+    auto const &outer { Axle.offset >= 0.0 ? Axle0 : Axle1 };
+    auto const railphase { outer.RailPhase( Axle.offset - std::copysign( 0.5 * fAxleDist, Axle.offset ) ) };
+    if( railphase >= 0.0 ) {
+        // the rails under the axle, which aren't always those under the track the vehicle is on
+        auto const passed { Axle.atjoints && std::abs( railphase - Axle.distance ) > 0.5 * outer.GetTrack()->fSoundDistance };
+        Axle.distance = railphase;
+        Axle.atjoints = true;
+        return passed;
+    }
+    Axle.atjoints = false;
+    Axle.distance += Move * Direction;
+    if( Axle.distance >= 0 && Axle.distance <= dRailLength ) {
+        return false;
+    }
+    Axle.distance = clamp_circular( Axle.distance, dRailLength );
+    return true;
 }
 
 std::pair<double, double>
