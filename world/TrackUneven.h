@@ -109,6 +109,13 @@ inline double along( double const Full, double const Atstart, double const Atend
     return ends + ( Full - ends ) * std::min( smooth( Distance / fade ), smooth( ( Length - Distance ) / fade ) );
 }
 
+// how much of the displacement a point of the profile takes, by its depth under the rail top: all of it down to the foot of the rail,
+// none at the foot of the ballast, which stays on the ground as designed
+inline double bed_share( double const Depth, double const Rail, double const Height ) {
+
+    return Height > 0.0 ? std::clamp( 1.0 - ( Depth - Rail ) / Height, 0.0, 1.0 ) : 1.0;
+}
+
 // distance from the joint behind the point
 inline double rail_phase( double const Along, double const Rail ) {
 

@@ -731,6 +731,11 @@ bool TTrack::is_uneven() const {
     return declared.up > 0.0 || declared.side > 0.0 || declared.cross > 0.0 || joint_depth() > 0.0;
 }
 
+double TTrack::uneven_bed_share( double const Depth ) const {
+
+    return track_uneven::bed_share( Depth, std::abs( track_rail_profile( m_profile1.second ).front().position.y ), fTexHeight1 );
+}
+
 track_uneven::amounts TTrack::uneven_at( double const Distance ) const {
 
     if( eType == tt_Switch ) {

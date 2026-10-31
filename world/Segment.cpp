@@ -408,11 +408,12 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
     if( false == m_uneven ) {
         return;
     }
-    // the rails settling apart turn about the middle of the track, what's outside them follows the rail
+    // the rails settling apart turn about the middle of the track, what's outside them follows the rail; the foot of the ballast stays
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     auto const across { std::clamp( glm::dot( Vertex.position - Position, Parallel ), -0.5f * gauge, 0.5f * gauge ) };
-    Vertex.position.y -= static_cast<float>( track_uneven::stray_per_mm * pOwner->uneven_at( Distance ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
-    Vertex.position += glm::vec3 { stray( Origin + glm::dvec3 { Vertex.position }, Distance ) };
+    auto const share { pOwner->uneven_bed_share( Position.y - Vertex.position.y ) };
+    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * pOwner->uneven_at( Distance ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
+    Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, Distance ) };
 }
 
 void TSegment::design_position(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {

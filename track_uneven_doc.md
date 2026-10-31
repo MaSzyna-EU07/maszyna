@@ -60,7 +60,7 @@ Każda składowa łączy się osobno:
 - **Styki:** zapadnięcia są co `fSoundDistance`, na długości 6 m, i biegną dalej przez kolejne tory o tym samym odstępie. Stukot osi wypada w miejscu zapadnięcia. Przy odstępie 6 m lub mniejszym oraz na rozjazdach zapadnięć nie ma.
 - **Przechyłka:** dolicza się do projektowej. Jest pochyleniem w planie mapy, więc tory wpisane ku sobie spotykają się na tej samej przechyłce. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
 
-Za nierównością idą szyny, podsypka, `sleepermodel`, osie, przechył pudła i bujanie kabiny.
+Za nierównością idą szyny, wierzch podsypki, `sleepermodel`, osie, przechył pudła i bujanie kabiny. Skarpa podsypki przejmuje różnicę, a jej spód zostaje w projekcie, na terenie.
 
 Nie idą za nią modele z includów (np. napędy i podkłady rozjazdów), teren ani sieć trakcyjna, więc przy dużych wartościach szyna rozjeżdża się z takim modelem o kilka centymetrów.
 

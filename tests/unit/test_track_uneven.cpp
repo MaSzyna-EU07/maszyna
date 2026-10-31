@@ -165,6 +165,18 @@ TEST_CASE("uneven track: the value along a track meets its neighbours exactly")
 	}
 }
 
+TEST_CASE("uneven track: the foot of the ballast stays where it was")
+{
+	double const rail{0.18};
+	double const height{0.38};
+	CHECK(track_uneven::bed_share(0.0, rail, height) == doctest::Approx(1.0)); // rail top
+	CHECK(track_uneven::bed_share(rail, rail, height) == doctest::Approx(1.0)); // top of the ballast
+	CHECK(track_uneven::bed_share(rail + 0.5 * height, rail, height) == doctest::Approx(0.5));
+	CHECK(track_uneven::bed_share(rail + height, rail, height) == doctest::Approx(0.0)); // its foot
+	CHECK(track_uneven::bed_share(rail + 2.0 * height, rail, height) == doctest::Approx(0.0));
+	CHECK(track_uneven::bed_share(rail + 1.0, rail, 0.0) == doctest::Approx(1.0)); // no ballast
+}
+
 TEST_CASE("uneven track: the rails dip around a joint")
 {
 	CHECK(track_uneven::dip(0.0) == doctest::Approx(1.0));
