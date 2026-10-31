@@ -1162,8 +1162,8 @@ void editor_mode::render_path_parameters(TTrack &Track)
 		finish_edit(rebuild::parameters);
 		if ((track->eType == tt_Normal || track->eType == tt_Switch) && (track->iCategoryFlag & 15) == 1)
 		{
-			if (ImGui::InputFloat(STR_C("Unevenness (mm)"), &track->m_uneven, 0.0f, 0.0f, "%.1f"))
-				track->m_uneven = std::clamp(track->m_uneven, 0.f, track_uneven::most);
+			if (ImGui::InputFloat(STR_C("Unevenness (mm)"), &track->m_uneven.value, 0.0f, 0.0f, "%.1f"))
+				track->m_uneven.value = std::clamp(track->m_uneven.value, 0.f, track_uneven::most);
 			item_tooltip("Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values");
 			finish_edit(rebuild::parameters);
 			struct component
@@ -1171,11 +1171,11 @@ void editor_mode::render_path_parameters(TTrack &Track)
 				char const *label;
 				float *value;
 			};
-			for (auto const &part : {component{"Up and down (mm)", &track->m_unevenup}, component{"Sideways (mm)", &track->m_unevenside}, component{"Cross level (mm)", &track->m_unevencross}, component{"Diverging path (mm)", &track->m_unevenbranch}, component{"Diverging, up and down (mm)", &track->m_unevenbranchup}, component{"Diverging, sideways (mm)", &track->m_unevenbranchside}})
+			for (auto const &part : {component{"Up and down (mm)", &track->m_uneven.up}, component{"Sideways (mm)", &track->m_uneven.side}, component{"Cross level (mm)", &track->m_uneven.cross}, component{"Diverging path (mm)", &track->m_uneven.branch}, component{"Diverging, up and down (mm)", &track->m_uneven.branchup}, component{"Diverging, sideways (mm)", &track->m_uneven.branchside}})
 			{
-				if (part.value == &track->m_unevencross && track->eType != tt_Normal)
+				if (part.value == &track->m_uneven.cross && track->eType != tt_Normal)
 					continue;
-				if ((part.value == &track->m_unevenbranch || part.value == &track->m_unevenbranchup || part.value == &track->m_unevenbranchside) && track->eType != tt_Switch)
+				if ((part.value == &track->m_uneven.branch || part.value == &track->m_uneven.branchup || part.value == &track->m_uneven.branchside) && track->eType != tt_Switch)
 					continue;
 				if (ImGui::InputFloat(STR_C(part.label), part.value, 0.0f, 0.0f, "%.1f"))
 					*part.value = *part.value < 0.f ? -1.f : std::min(*part.value, track_uneven::most);
@@ -1185,8 +1185,8 @@ void editor_mode::render_path_parameters(TTrack &Track)
 		}
 		if (track->eType == tt_Normal && (track->iCategoryFlag & 15) == 1)
 		{
-			if (ImGui::InputFloat(STR_C("Dip at rail joints (mm)"), &track->m_jointdip, 0.0f, 0.0f, "%.1f"))
-				track->m_jointdip = track->m_jointdip < 0.f ? -1.f : std::min(track->m_jointdip, track_uneven::most);
+			if (ImGui::InputFloat(STR_C("Dip at rail joints (mm)"), &track->m_uneven.dip, 0.0f, 0.0f, "%.1f"))
+				track->m_uneven.dip = track->m_uneven.dip < 0.f ? -1.f : std::min(track->m_uneven.dip, track_uneven::most);
 			item_tooltip("Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Negative: 0.4 of the unevenness");
 			finish_edit(rebuild::parameters);
 		}

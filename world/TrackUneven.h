@@ -87,6 +87,68 @@ std::string write_fields( std::array<float, Count> const &Fields ) {
     return text.str();
 }
 
+// the values of the attribute, mm, negative where not given. Cross level and the dip at joints for plain tracks, the path p3-p4 for switches
+struct attribute {
+    float value { 0.f };
+    float up { -1.f };
+    float side { -1.f };
+    float cross { -1.f };
+    float dip { -1.f };
+    float branch { -1.f };
+    float branchup { -1.f };
+    float branchside { -1.f };
+};
+
+// a plain track: value;up;side;cross;dip. A switch: p1-p2;p3-p4;up of p1-p2;side of p1-p2;up of p3-p4;side of p3-p4
+inline attribute read_attribute( std::string const &Text, bool const Switch ) {
+
+    auto const fields { read_fields<6>( Text ) };
+    attribute result;
+    result.value = std::max( fields[ 0 ], 0.f );
+    if( Switch ) {
+        result.branch = fields[ 1 ];
+        result.up = fields[ 2 ];
+        result.side = fields[ 3 ];
+        result.branchup = fields[ 4 ];
+        result.branchside = fields[ 5 ];
+    }
+    else {
+        result.up = fields[ 1 ];
+        result.side = fields[ 2 ];
+        result.cross = fields[ 3 ];
+        result.dip = fields[ 4 ];
+    }
+    return result;
+}
+
+// in the layout of the entry it goes into, which can be of another type than the track the values come from
+inline std::string write_attribute( attribute const &Values, bool const Switch ) {
+
+    auto const fields { Switch ?
+        std::array<float, 6> { Values.value, Values.branch, Values.up, Values.side, Values.branchup, Values.branchside } :
+        std::array<float, 6> { Values.value, Values.up, Values.side, Values.cross, Values.dip, -1.f } };
+    if( Values.value <= 0.f && std::all_of( fields.begin() + 1, fields.end(), []( float const Field ) { return Field < 0.f; } ) ) {
+        return {};
+    }
+    return "uneven " + write_fields( fields ) + ' ';
+}
+
+// what a path comes to from the values: what's not given takes the first value, p3-p4 those of p1-p2. Cross level on plain tracks only
+inline amounts declared( attribute const &Values, bool const Plain, int const Path ) {
+
+    amounts result {
+        Values.up >= 0.f ? Values.up : Values.value,
+        Values.side >= 0.f ? Values.side : Values.value,
+        false == Plain ? 0.f : Values.cross >= 0.f ? Values.cross : Values.value };
+    if( Path == 1 ) {
+        auto const branch = [ &Values ]( float const Part, double const Straight ) -> double {
+            return Part >= 0.f ? Part : Values.branch >= 0.f ? Values.branch : Straight; };
+        result.up = branch( Values.branchup, result.up );
+        result.side = branch( Values.branchside, result.side );
+    }
+    return result;
+}
+
 template <std::size_t Count>
 using wave_set = std::array<wave, Count>;
 

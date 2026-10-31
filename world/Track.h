@@ -239,16 +239,7 @@ public:
     TEnvironmentType eEnvironment = e_flat; // dźwięk i oświetlenie
     int iAction = 0; // czy modyfikowany eventami (specjalna obsługa przy skanowaniu)
     float fOverhead = -1.0; // można normalnie pobierać prąd (0 dla jazdy bezprądowej po danym odcinku, >0-z opuszczonym i ograniczeniem prędkości)
-    float m_uneven { 0.f }; // mm, see TrackUneven.h; plain tracks and switches
-    // the components set apart from m_uneven, mm; negative: m_uneven. Cross level on plain tracks only
-    float m_unevenup { -1.f };
-    float m_unevenside { -1.f };
-    float m_unevencross { -1.f };
-    // the diverging path of a switch, mm; negative: as the straight one
-    float m_unevenbranch { -1.f };
-    float m_unevenbranchup { -1.f };
-    float m_unevenbranchside { -1.f };
-    float m_jointdip { -1.f }; // depth of the dip at rail joints, mm; negative: from m_uneven; plain tracks only
+    track_uneven::attribute m_uneven; // plain tracks and switches
 private:
     double fVelocity = -1.0; // ograniczenie prędkości // prędkość dla AI (powyżej rośnie prawdopowobieństwo wykolejenia)
 public:
@@ -350,10 +341,6 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
-    // the attribute of the entry. A plain track: the value;up and down;sideways;cross level;dip at the joints.
-    // A switch: path p1-p2;path p3-p4;up and down of the first;sideways of the first;up and down of the second;sideways of the second
-    void read_uneven( std::string const &Text );
-    std::string uneven_text() const;
     // the unevenness the track declares, on a path of a switch
     track_uneven::amounts uneven_declared( int const Path = 0 ) const;
     bool is_uneven() const;

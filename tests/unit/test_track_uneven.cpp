@@ -165,6 +165,35 @@ TEST_CASE("uneven track: all the values in one attribute")
 	CHECK(track_uneven::write_fields<6>({18.f, -1.f, -1.f, -1.f, -1.f, -1.f}) == "18");
 }
 
+TEST_CASE("uneven track: the attribute goes by the entry it's written into")
+{
+	auto const plain{track_uneven::read_attribute("18;22;19;25;6", false)};
+	CHECK(track_uneven::write_attribute(plain, false) == "uneven 18;22;19;25;6 ");
+	// a switch made in the style of a plain track: no path p3-p4 of its own, the components in their places
+	CHECK(track_uneven::write_attribute(plain, true) == "uneven 18;;22;19 ");
+	auto const made{track_uneven::read_attribute("18;;22;19", true)};
+	CHECK(track_uneven::declared(made, false, 0).up == doctest::Approx(22.0));
+	CHECK(track_uneven::declared(made, false, 0).side == doctest::Approx(19.0));
+	CHECK(track_uneven::declared(made, false, 1).up == doctest::Approx(22.0));
+	CHECK(track_uneven::declared(made, false, 0).cross == doctest::Approx(0.0));
+	// a switch with its own values, and a plain track in its style
+	auto const points{track_uneven::read_attribute("14;35;16;17", true)};
+	CHECK(track_uneven::write_attribute(points, true) == "uneven 14;35;16;17 ");
+	CHECK(track_uneven::declared(points, false, 1).up == doctest::Approx(35.0));
+	CHECK(track_uneven::declared(points, false, 1).side == doctest::Approx(35.0));
+	CHECK(track_uneven::write_attribute(points, false) == "uneven 14;16;17 ");
+	// a plain track: the value stands in for what's left out, only there is the cross level
+	auto const track{track_uneven::read_attribute("18;;30", false)};
+	CHECK(track_uneven::declared(track, true, 0).up == doctest::Approx(18.0));
+	CHECK(track_uneven::declared(track, true, 0).side == doctest::Approx(30.0));
+	CHECK(track_uneven::declared(track, true, 0).cross == doctest::Approx(18.0));
+	// nothing given, nothing written
+	CHECK(track_uneven::write_attribute({}, false).empty());
+	CHECK(track_uneven::write_attribute({}, true).empty());
+	// a value of 0 stays when there's more after it
+	CHECK(track_uneven::write_attribute(track_uneven::read_attribute("0;;;;6", false), false) == "uneven 0;;;;6 ");
+}
+
 TEST_CASE("uneven track: amounts take the lowest of each component")
 {
 	auto const least{track_uneven::least({14.0, 9.0, 0.0}, {7.0, 35.0, 3.0})};

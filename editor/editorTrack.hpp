@@ -17,6 +17,7 @@ http:
 #include <glm/glm.hpp>
 
 #include "world/Segment.h"
+#include "world/TrackUneven.h"
 #include "utilities/Classes.h"
 
 class TTrack;
@@ -55,14 +56,7 @@ class editor_track
 		float texslope{0.9f};
 		std::vector<std::string> isolated;
 		float overhead{-1.f};
-		float uneven{0.f};
-		float unevenup{-1.f};
-		float unevenside{-1.f};
-		float unevencross{-1.f};
-		float unevenbranch{-1.f};
-		float unevenbranchup{-1.f};
-		float unevenbranchside{-1.f};
-		float jointdip{-1.f};
+		track_uneven::attribute uneven;
 		bool sleepers{false};
 		float sleeper_frequency{0.6f};
 		std::string sleeper_model;

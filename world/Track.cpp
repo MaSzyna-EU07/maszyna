@@ -642,10 +642,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             }
         }
         else if( str == "uneven" ) {
-            // uneven <mm>[;<mm>...]: see read_uneven and TrackUneven.h. The semicolons stay in the token
+            // uneven <mm>[;<mm>...]: see TrackUneven.h. The semicolons stay in the token
             auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
             if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
-                read_uneven( values );
+                m_uneven = track_uneven::read_attribute( values, eType == tt_Switch );
             }
         }
         else if( str == "friction" ) {
@@ -706,49 +706,9 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // to a stale origin and the renderer would draw sleepers in the wrong place).
 }
 
-void TTrack::read_uneven( std::string const &Text ) {
-
-    auto const fields { track_uneven::read_fields<6>( Text ) };
-    m_uneven = std::max( fields[ 0 ], 0.f );
-    if( eType == tt_Switch ) {
-        m_unevenbranch = fields[ 1 ];
-        m_unevenup = fields[ 2 ];
-        m_unevenside = fields[ 3 ];
-        m_unevenbranchup = fields[ 4 ];
-        m_unevenbranchside = fields[ 5 ];
-    }
-    else {
-        m_unevenup = fields[ 1 ];
-        m_unevenside = fields[ 2 ];
-        m_unevencross = fields[ 3 ];
-        m_jointdip = fields[ 4 ];
-    }
-}
-
-std::string TTrack::uneven_text() const {
-
-    auto const fields { eType == tt_Switch ?
-        std::array<float, 6> { m_uneven, m_unevenbranch, m_unevenup, m_unevenside, m_unevenbranchup, m_unevenbranchside } :
-        std::array<float, 6> { m_uneven, m_unevenup, m_unevenside, m_unevencross, m_jointdip, -1.f } };
-    if( m_uneven <= 0.f && std::all_of( fields.begin() + 1, fields.end(), []( float const Field ) { return Field < 0.f; } ) ) {
-        return {};
-    }
-    return "uneven " + track_uneven::write_fields( fields ) + ' ';
-}
-
 track_uneven::amounts TTrack::uneven_declared( int const Path ) const {
 
-    track_uneven::amounts result {
-        m_unevenup >= 0.f ? m_unevenup : m_uneven,
-        m_unevenside >= 0.f ? m_unevenside : m_uneven,
-        eType != tt_Normal ? 0.f : m_unevencross >= 0.f ? m_unevencross : m_uneven };
-    if( Path == 1 ) {
-        auto const branch = [ this ]( float const Part, double const Straight ) -> double {
-            return Part >= 0.f ? Part : m_unevenbranch >= 0.f ? m_unevenbranch : Straight; };
-        result.up = branch( m_unevenbranchup, result.up );
-        result.side = branch( m_unevenbranchside, result.side );
-    }
-    return result;
+    return track_uneven::declared( m_uneven, eType == tt_Normal, Path );
 }
 
 bool TTrack::is_uneven() const {
@@ -873,7 +833,7 @@ double TTrack::joint_depth() const {
     if( eType != tt_Normal ) {
         return 0.0;
     }
-    return ( m_jointdip >= 0.f ? m_jointdip : track_uneven::dip_share * uneven_declared().up );
+    return ( m_uneven.dip >= 0.f ? m_uneven.dip : track_uneven::dip_share * uneven_declared().up );
 }
 
 double TTrack::joint_dip( double const Distance ) const {
@@ -2782,7 +2742,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
      && false == m_profile1.first.empty() ) {
         Output << "railprofile " << m_profile1.first << ' ';
     }
-    Output << uneven_text();
+    Output << track_uneven::write_attribute( m_uneven, eType == tt_Switch );
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
