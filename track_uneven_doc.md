@@ -73,6 +73,23 @@ Pantograf podnosi się z szybkością ciśnienia, ok. 0,14 m/s, a szczelina do d
 
 Fizyka bierze promień łuku i pochylenie z projektu, więc nierówności nie zmieniają tych wartości, a do wykolejeń dokładają tylko przechyłkę, ok. 0,06 m/s² przy `uneven 18` wobec progu ok. 3,2 m/s².
 
+## Ocena torów dowolnej scenerii
+
+`tools/track_uneven_grade.py` wylicza wartości z tego, co widać w scenerii: z tekstur podsypki i szyn, trawy na torze, łuków, prędkości i przejazdów drogowych. Czyta plik `.scn`, `.scm` albo `.inc` razem z jego includami, oryginałów nie zmienia, a kopie plików z torami zapisuje do `--out`. Bez `--out` tylko wypisuje raport.
+
+```
+python tools/track_uneven_grade.py scenery/lk357.scn --out graded
+python tools/track_uneven_grade.py scenery/baltyk_skm1.scn --out graded --route -107,2300 -4120,2491
+```
+
+- `--route X,Z X,Z`: tory pogarszają się od pierwszego punktu do drugiego, licząc po torach.
+- `--gain`: mnożnik stanu torów, domyślnie 1.
+- `--near`: jaka część torów na drewnie i przy zmianach krzywizny idzie bliżej granicy Id-14, domyślnie 0,6. Wybór jest stały.
+- `--straight`: nazwy torów bez nierówności, po przecinku.
+- `--root`: folder `scenery`, gdy podany plik leży głębiej.
+
+Wartości trzymają się pod sufitem pantografu, liczonym symulacją na tych torach, ale bez wznosu samego drutu. Zużycie tekstur odczytywane jest z ich nazw, według tabel na początku skryptu, a nieznana nazwa dostaje 0,5. Tory z plików `.inc` z parametrami są pomijane, a bloki `rotate` nieuwzględniane. W obu przypadkach raport wypisuje uwagę. Tor, który ma już nierówność, zostaje bez zmian.
+
 ## Wydajność
 
 Tor z nierównością ma geometrię co 2 m zamiast co 10 m na prostych. Rozjazdy zachowują swój podział.
