@@ -69,7 +69,19 @@ The rails, the top of the ballast, `sleepermodel`, the axles, the roll of the bo
 
 Models from includes (e.g. switch drives and timbers), the terrain and the catenary don't follow it, so at large values a rail shifts away from such a model by a few centimetres.
 
-On a track with unevenness the track itself shakes the cab. The sway calculated from the lateral acceleration, that is from the curve radius, and the random jolts at higher speed are off. On tracks with no unevenness they work as before.
+On a track with unevenness the track itself shakes the cab, in place of two of the sources of shake that were there before. It goes by the track under the vehicle, and a track with only dips at its joints counts too. On tracks with no unevenness everything works as before.
+
+| source of the cab shake                                            | on a track with unevenness |
+|--------------------------------------------------------------------|----------------------------|
+| side sway from the lateral acceleration: curve radius and cant, jolts sideways on a damaged switch | off |
+| random jolts over 25 km/h                                          | off                        |
+| the track itself, from the bend under the axles                    | added                      |
+| vertical jolts at the joints of a damaged track                    | stays                      |
+| fore and aft, when accelerating and braking                        | stays                      |
+| diesel engine vibration                                            | stays                      |
+| hunting (`huntingspring`), set by the vehicle                      | stays                      |
+
+This is about the cab only. The physics, derailment included, and the noise of the wheels still use the lateral acceleration.
 
 A pantograph rises at the rate set by the pressure, about 0.14 m/s, and a gap to the wire over 1 cm cuts the voltage and trips the main breaker. Unevenness adds to this at high speed. On the tracks of Bałtyk a simulation gives a gap of 0.6 cm when the vertical value times the speed in km/h is 925, for example 8 mm at 120 km/h, 13 mm at 70 km/h and 23 mm at 40 km/h. The values in the Id-14 table are higher than that. The wire alone can do it too: at `tor0290` on Bałtyk it rises by about 1%, so a pantograph keeps up to about 46 km/h there, and above that the breaker trips on a straight track as well.
 
