@@ -1,6 +1,6 @@
 # Nierówności toru
 
-Opcjonalne atrybuty wpisu toru, przed `endtrack`:
+Opcjonalny atrybut wpisu toru, przed `endtrack`:
 
 ```
 node -1 0 tor1 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
@@ -10,21 +10,22 @@ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
 0.0 0.0 0.0
 0.0 0.2 100.0 0.0
 0.0
-uneven 18
-unevencross 25
-jointdip 6
+uneven 18;;;25;6
 endtrack
 ```
 
-| atrybut           | dotyczy               | opis                                                                                  |
-|-------------------|-----------------------|---------------------------------------------------------------------------------------|
-| `uneven <mm>`     | `normal`, `switch`    | największa odchyłka toku szynowego na cięciwie 10 m; 0-100, domyślnie 0               |
-| `unevenup <mm>`   | `normal`, `switch`    | składowa w pionie, osobno od `uneven`                                                 |
-| `unevenside <mm>` | `normal`, `switch`    | składowa w poziomie, osobno od `uneven`                                               |
-| `unevencross <mm>`| `normal`              | składowa przechyłki, osobno od `uneven`; rozjazd jej nie ma                           |
-| `jointdip <mm>`   | `normal`              | głębokość zapadnięcia na styku szyn; 0-100, domyślnie 0,4 składowej w pionie          |
+Liczby w mm, 0-100, rozdzielone średnikiem, bez spacji:
 
-Składowa niepodana przyjmuje wartość `uneven`. Na przykład sam bok to `unevenside 30`, a same zapadnięcia na stykach to `jointdip 6`.
+| pozycja | tor `normal`                                     | rozjazd `switch`            |
+|---------|--------------------------------------------------|-----------------------------|
+| 1       | największa odchyłka toku na cięciwie 10 m        | to samo, droga p1-p2        |
+| 2       | w pionie                                         | droga p3-p4                 |
+| 3       | w poziomie                                       | droga p1-p2, w pionie       |
+| 4       | przechyłka                                       | droga p1-p2, w poziomie     |
+| 5       | zapadnięcie na styku, domyślnie 0,4 pionu        | droga p3-p4, w pionie       |
+| 6       |                                                  | droga p3-p4, w poziomie     |
+
+Pozycję pominiętą zastępuje pierwsza liczba, a zapadnięcie liczy się z pionu. Końcowe można opuścić. Sam bok to `uneven 0;;30`, a same zapadnięcia na stykach to `uneven 0;;;;6`. Rozjazd bez składowych na drodze p3-p4 przyjmuje wartości z drogi p1-p2. Rozjazd na 100 km/h na wprost i 40 km/h na bok to na przykład `uneven 14;35`.
 
 Wszystkie są też w edytorze, w panelu toru, w sekcji „Ride and sound”. Na drogach, rzekach i obrotnicach są ignorowane.
 
@@ -56,7 +57,7 @@ Nierówność to pole przesunięć zależne od położenia na mapie, złożone z
 Każda składowa łączy się osobno:
 
 - **Tor z torem:** na styku obowiązuje mniejsza z dwóch wartości, a każdy tor dochodzi do niej płynnie na 20 m. Wolny koniec toru leży w projekcie.
-- **Rozjazd:** wszystkie jego drogi mają jedną wartość. Rozjazdy złączone bezpośrednio przyjmują najmniejszą ze swoich. Dołączony tor dochodzi do wartości rozjazdu, także większej od własnej. Tor bez danej składowej trzyma w niej cały rozjazd w projekcie.
+- **Rozjazd:** każda droga ma swoją wartość, a na wspólnym końcu obu obowiązuje mniejsza z nich. Rozjazdy złączone bezpośrednio przyjmują najmniejszą z tej samej drogi, a na styku dwóch dróg mniejszą z obu. Dołączony tor dochodzi do wartości rozjazdu na końcu, do którego dochodzi, także większej od własnej. Tor bez danej składowej trzyma w niej cały rozjazd w projekcie.
 - **Styki:** zapadnięcia są co `fSoundDistance`, na długości 6 m, i biegną dalej przez kolejne tory o tym samym odstępie. Stukot osi wypada w miejscu zapadnięcia. Przy odstępie 6 m lub mniejszym oraz na rozjazdach zapadnięć nie ma.
 - **Przechyłka:** dolicza się do projektowej. Jest pochyleniem w planie mapy, więc tory wpisane ku sobie spotykają się na tej samej przechyłce. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
 

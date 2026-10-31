@@ -11,7 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
+#include <sstream>
+#include <string>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -34,12 +37,55 @@ struct amounts {
     double cross { 0.0 };
 };
 
+inline amounts least( amounts const &Left, amounts const &Right ) {
+
+    return { std::min( Left.up, Right.up ), std::min( Left.side, Right.side ), std::min( Left.cross, Right.cross ) };
+}
+
 struct wave {
     double x;
     double z;
     double phase;
     double share;
 };
+
+// the numbers of an entry like "uneven 14;35", negative where left out
+template <std::size_t Count>
+std::array<float, Count> read_fields( std::string const &Text ) {
+
+    std::array<float, Count> result;
+    result.fill( -1.f );
+    std::size_t start { 0 };
+    for( std::size_t index = 0; index < Count && start < Text.size(); ++index ) {
+        auto const end { std::min( Text.find( ';', start ), Text.size() ) };
+        auto value { 0.f };
+        if( end > start && std::from_chars( Text.data() + start, Text.data() + end, value ).ec == std::errc {} ) {
+            result[ index ] = std::clamp( value, 0.f, most );
+        }
+        start = end + 1;
+    }
+    return result;
+}
+
+// and back, with the ones left out at the end dropped
+template <std::size_t Count>
+std::string write_fields( std::array<float, Count> const &Fields ) {
+
+    auto count { Count };
+    while( count > 1 && Fields[ count - 1 ] < 0.f ) {
+        --count;
+    }
+    std::ostringstream text;
+    for( std::size_t index = 0; index < count; ++index ) {
+        if( index > 0 ) {
+            text << ';';
+        }
+        if( Fields[ index ] >= 0.f ) {
+            text << Fields[ index ];
+        }
+    }
+    return text.str();
+}
 
 template <std::size_t Count>
 using wave_set = std::array<wave, Count>;

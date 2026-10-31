@@ -50,9 +50,10 @@ class TSegment
     float fRoll1 { 0.f };
     float fRoll2 { 0.f }; // przechyłka na końcach
     float m_designrolls[ 2 ] { 0.f, 0.f }; // as entered; the two above can differ at a joint
+    bool m_uneven { false }; // see TrackUneven.h
+    int m_path { 0 }; // which path of a switch
     // where the path meets the next one: the middle of their ends and their common vector across
     std::optional<std::pair<glm::dvec3, glm::dvec3>> m_joints[ 2 ];
-    bool m_uneven { false }; // see TrackUneven.h
     double fLength { -1.0 }; // długość policzona
     std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
     std::vector<double> fTsSlope; // nachylenie dt/du (= dt/ds * fStep) w tych samych punktach
@@ -120,8 +121,9 @@ public:
 	void RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const;
     // call before Init, it sets the density of the geometry
     void
-        set_uneven( bool const Uneven ) {
-            m_uneven = Uneven; }
+        set_uneven( bool const Uneven, int const Path = 0 ) {
+            m_uneven = Uneven;
+            m_path = Path; }
     // a point of the path and the unit vector across it in the plan
     void
         plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;

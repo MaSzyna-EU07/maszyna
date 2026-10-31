@@ -244,6 +244,10 @@ public:
     float m_unevenup { -1.f };
     float m_unevenside { -1.f };
     float m_unevencross { -1.f };
+    // the diverging path of a switch, mm; negative: as the straight one
+    float m_unevenbranch { -1.f };
+    float m_unevenbranchup { -1.f };
+    float m_unevenbranchside { -1.f };
     float m_jointdip { -1.f }; // depth of the dip at rail joints, mm; negative: from m_uneven; plain tracks only
 private:
     double fVelocity = -1.0; // ograniczenie prędkości // prędkość dla AI (powyżej rośnie prawdopowobieństwo wykolejenia)
@@ -346,11 +350,15 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
-    // the unevenness the track declares
-    track_uneven::amounts uneven_declared() const;
+    // the attribute of the entry. A plain track: the value;up and down;sideways;cross level;dip at the joints.
+    // A switch: path p1-p2;path p3-p4;up and down of the first;sideways of the first;up and down of the second;sideways of the second
+    void read_uneven( std::string const &Text );
+    std::string uneven_text() const;
+    // the unevenness the track declares, on a path of a switch
+    track_uneven::amounts uneven_declared( int const Path = 0 ) const;
     bool is_uneven() const;
-    // the unevenness at a distance along the track, meeting the tracks joined at its ends
-    track_uneven::amounts uneven_at( double const Distance ) const;
+    // the unevenness at a distance along a path, meeting the tracks joined at its ends
+    track_uneven::amounts uneven_at( double const Distance, int const Path = 0 ) const;
     // how much of the displacement a point of the profile at the depth takes
     double uneven_bed_share( double const Depth ) const;
     // closes the gaps and steps of cant between the ends of joined paths
@@ -398,13 +406,17 @@ private:
     };
     void settle_rail_run() const;
     mutable rail_run m_railrun;
-    // one value along all paths of a switch: the lowest of the switches joined, 0 next to a track with none
-    track_uneven::amounts switch_uneven() const;
+    // the value along each path of a switch: the lowest of that path in the switches joined, 0 next to a track with none.
+    // And at the ends of the paths, by what meets there: the other path at the common end, the path of a switch joined
     struct switch_stray {
-        track_uneven::amounts value;
+        std::array<track_uneven::amounts, 2> paths;
+        std::array<std::array<track_uneven::amounts, 2>, 2> ends;
         int stamp { -1 };
     };
     mutable switch_stray m_switchstray;
+    switch_stray const &switch_uneven() const;
+    // the value of a switch where a track joined to it meets it
+    track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point ) const;
     static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );

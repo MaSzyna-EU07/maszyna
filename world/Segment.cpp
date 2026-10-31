@@ -381,7 +381,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
     // direction and slope stay as designed: the physics takes the curve radius and the grade from them
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
-    auto const amount { pOwner->uneven_at( fDistance ) };
+    auto const amount { pOwner->uneven_at( fDistance, m_path ) };
     rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
         amount.up * track_uneven::roll( position, across, gauge )
       + amount.cross * track_uneven::level( position, across ) / gauge ) );
@@ -389,7 +389,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
 }
 
 glm::dvec3 TSegment::stray( glm::dvec3 const &Point, double const Distance ) const {
-    auto const amount { pOwner->uneven_at( Distance ) };
+    auto const amount { pOwner->uneven_at( Distance, m_path ) };
     auto const field { track_uneven::field( Point ) };
     glm::dvec3 result { field.x * amount.side, field.y * amount.up, field.z * amount.side };
     result *= track_uneven::stray_per_mm;
@@ -416,7 +416,7 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     auto const across { std::clamp( glm::dot( Vertex.position - Position, Parallel ), -0.5f * gauge, 0.5f * gauge ) };
     auto const share { pOwner->uneven_bed_share( Position.y - Vertex.position.y ) };
-    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * pOwner->uneven_at( Distance ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
+    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * pOwner->uneven_at( Distance, m_path ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
     Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, Distance ) };
 }
 

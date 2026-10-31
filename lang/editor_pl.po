@@ -876,6 +876,15 @@ msgstr "W poziomie (mm)"
 msgid "Cross level (mm)"
 msgstr "Przechyłka (mm)"
 
+msgid "Diverging path (mm)"
+msgstr "Tor na bok (mm)"
+
+msgid "Diverging, up and down (mm)"
+msgstr "Na bok, w pionie (mm)"
+
+msgid "Diverging, sideways (mm)"
+msgstr "Na bok, w poziomie (mm)"
+
 msgid "Set apart from the unevenness, mm. Negative: the unevenness"
 msgstr "Osobno od nierówności, mm. Ujemna: wartość nierówności"
 

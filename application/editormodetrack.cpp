@@ -1171,9 +1171,11 @@ void editor_mode::render_path_parameters(TTrack &Track)
 				char const *label;
 				float *value;
 			};
-			for (auto const &part : {component{"Up and down (mm)", &track->m_unevenup}, component{"Sideways (mm)", &track->m_unevenside}, component{"Cross level (mm)", &track->m_unevencross}})
+			for (auto const &part : {component{"Up and down (mm)", &track->m_unevenup}, component{"Sideways (mm)", &track->m_unevenside}, component{"Cross level (mm)", &track->m_unevencross}, component{"Diverging path (mm)", &track->m_unevenbranch}, component{"Diverging, up and down (mm)", &track->m_unevenbranchup}, component{"Diverging, sideways (mm)", &track->m_unevenbranchside}})
 			{
 				if (part.value == &track->m_unevencross && track->eType != tt_Normal)
+					continue;
+				if ((part.value == &track->m_unevenbranch || part.value == &track->m_unevenbranchup || part.value == &track->m_unevenbranchside) && track->eType != tt_Switch)
 					continue;
 				if (ImGui::InputFloat(STR_C(part.label), part.value, 0.0f, 0.0f, "%.1f"))
 					*part.value = *part.value < 0.f ? -1.f : std::min(*part.value, track_uneven::most);
