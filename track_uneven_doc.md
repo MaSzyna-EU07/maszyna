@@ -1,6 +1,6 @@
 # Nierówności toru
 
-Opcjonalne atrybuty wpisu toru, przed `endtrack`:
+Opcjonalny atrybut wpisu toru, przed `endtrack`:
 
 ```
 node -1 0 tor1 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
@@ -10,21 +10,22 @@ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
 0.0 0.0 0.0
 0.0 0.2 100.0 0.0
 0.0
-uneven 18
-unevencross 25
-jointdip 6
+uneven 18;;;25;6
 endtrack
 ```
 
-| atrybut           | dotyczy               | opis                                                                                  |
-|-------------------|-----------------------|---------------------------------------------------------------------------------------|
-| `uneven <mm>`     | `normal`, `switch`    | największa odchyłka toku szynowego na cięciwie 10 m; 0-100, domyślnie 0               |
-| `unevenup <mm>`   | `normal`, `switch`    | składowa w pionie, osobno od `uneven`                                                 |
-| `unevenside <mm>` | `normal`, `switch`    | składowa w poziomie, osobno od `uneven`                                               |
-| `unevencross <mm>`| `normal`              | składowa przechyłki, osobno od `uneven`; rozjazd jej nie ma                           |
-| `jointdip <mm>`   | `normal`              | głębokość zapadnięcia na styku szyn; 0-100, domyślnie 0,4 składowej w pionie          |
+Liczby w mm, 0-100, rozdzielone średnikiem, bez spacji:
 
-Składowa niepodana przyjmuje wartość `uneven`. Na przykład sam bok to `unevenside 30`, a same zapadnięcia na stykach to `jointdip 6`.
+| pozycja | tor `normal`                                     | rozjazd `switch`            |
+|---------|--------------------------------------------------|-----------------------------|
+| 1       | największa odchyłka toku na cięciwie 10 m        | to samo, droga p1-p2        |
+| 2       | w pionie                                         | droga p3-p4                 |
+| 3       | w poziomie                                       | droga p1-p2, w pionie       |
+| 4       | przechyłka                                       | droga p1-p2, w poziomie     |
+| 5       | zapadnięcie na styku, domyślnie 0,4 pionu        | droga p3-p4, w pionie       |
+| 6       |                                                  | droga p3-p4, w poziomie     |
+
+Pozycję pominiętą zastępuje pierwsza liczba, a zapadnięcie liczy się z pionu. Końcowe można opuścić. Sam bok to `uneven 0;;30`, a same zapadnięcia na stykach to `uneven 0;;;;6`. Rozjazd bez składowych na drodze p3-p4 przyjmuje wartości z drogi p1-p2. Rozjazd na 100 km/h na wprost i 40 km/h na bok to na przykład `uneven 14;35`.
 
 Wszystkie są też w edytorze, w panelu toru, w sekcji „Ride and sound”. Na drogach, rzekach i obrotnicach są ignorowane.
 
@@ -56,17 +57,38 @@ Nierówność to pole przesunięć zależne od położenia na mapie, złożone z
 Każda składowa łączy się osobno:
 
 - **Tor z torem:** na styku obowiązuje mniejsza z dwóch wartości, a każdy tor dochodzi do niej płynnie na 20 m. Wolny koniec toru leży w projekcie.
-- **Rozjazd:** wszystkie jego drogi mają jedną wartość. Rozjazdy złączone bezpośrednio przyjmują najmniejszą ze swoich. Dołączony tor dochodzi do wartości rozjazdu, także większej od własnej. Tor bez danej składowej trzyma w niej cały rozjazd w projekcie.
+- **Rozjazd:** każda droga ma swoją wartość, a na wspólnym końcu obu obowiązuje mniejsza z nich. Rozjazdy złączone bezpośrednio przyjmują najmniejszą z tej samej drogi, a na styku dwóch dróg mniejszą z obu. Dołączony tor dochodzi do wartości rozjazdu na końcu, do którego dochodzi, także większej od własnej. Tor bez danej składowej trzyma w niej cały rozjazd w projekcie.
 - **Styki:** zapadnięcia są co `fSoundDistance`, na długości 6 m, i biegną dalej przez kolejne tory o tym samym odstępie. Stukot osi wypada w miejscu zapadnięcia. Przy odstępie 6 m lub mniejszym oraz na rozjazdach zapadnięć nie ma.
 - **Przechyłka:** dolicza się do projektowej. Jest pochyleniem w planie mapy, więc tory wpisane ku sobie spotykają się na tej samej przechyłce. Na rozjazdach tylko ta wynikająca z fal, bez osobnego siadania toków.
 
-Za nierównością idą szyny, podsypka, `sleepermodel`, osie, przechył pudła i bujanie kabiny.
+Końce złączonych dróg spotykają się w środku między sobą, z jednym kierunkiem poprzecznym, jeśli są bliżej niż 20 cm, co zamyka pęknięcia z niezgodnych współrzędnych w danych, także na torach bez nierówności. Przechyłkę na takim styku rozjazd bierze od zwykłego toru, a dwa tory albo dwa rozjazdy spotykają się w połowie. To dotyczy też fizyki.
+
+Za nierównością idą szyny, wierzch podsypki, `sleepermodel`, osie, przechył pudła i bujanie kabiny. Skarpa podsypki przejmuje różnicę, a jej spód zostaje w projekcie, na terenie.
 
 Nie idą za nią modele z includów (np. napędy i podkłady rozjazdów), teren ani sieć trakcyjna, więc przy dużych wartościach szyna rozjeżdża się z takim modelem o kilka centymetrów.
+
+Na torze z nierównością kabinę buja sam tor. Odpada kołysanie wyliczane z przyspieszenia poprzecznego, czyli z promienia łuku, oraz losowe szarpnięcia przy większej prędkości. Na torach bez nierówności działają jak dotąd.
 
 Pantograf podnosi się z szybkością ciśnienia, ok. 0,14 m/s, a szczelina do drutu większa niż 1 cm odcina napięcie i wybija wyłącznik szybki. Nierówność dokłada się do tego przy dużej prędkości. Na torach Bałtyku symulacja daje szczelinę 0,6 cm, gdy składowa w pionie razy prędkość w km/h wynosi 925, czyli np. 8 mm przy 120 km/h, 13 mm przy 70 km/h i 23 mm przy 40 km/h. Wartości z tabeli Id-14 są od tego większe. Sam drut też to potrafi: na Bałtyku przy `tor0290` wznosi się o ok. 1%, więc pantograf nadąża tam do ok. 46 km/h, a powyżej wyłącznik wybija także na prostym torze.
 
 Fizyka bierze promień łuku i pochylenie z projektu, więc nierówności nie zmieniają tych wartości, a do wykolejeń dokładają tylko przechyłkę, ok. 0,06 m/s² przy `uneven 18` wobec progu ok. 3,2 m/s².
+
+## Ocena torów dowolnej scenerii
+
+`tools/track_uneven_grade.py` wylicza wartości z tego, co widać w scenerii: z tekstur podsypki i szyn, trawy na torze, łuków, prędkości i przejazdów drogowych. Czyta plik `.scn`, `.scm` albo `.inc` razem z jego includami, oryginałów nie zmienia, a kopie plików z torami zapisuje do `--out`. Bez `--out` tylko wypisuje raport.
+
+```
+python tools/track_uneven_grade.py scenery/lk357.scn --out graded
+python tools/track_uneven_grade.py scenery/baltyk_skm1.scn --out graded --route -107,2300 -4120,2491
+```
+
+- `--route X,Z X,Z`: tory pogarszają się od pierwszego punktu do drugiego, licząc po torach.
+- `--gain`: mnożnik stanu torów, domyślnie 1.
+- `--near`: jaka część torów na drewnie i przy zmianach krzywizny idzie bliżej granicy Id-14, domyślnie 0,6. Wybór jest stały.
+- `--straight`: nazwy torów bez nierówności, po przecinku.
+- `--root`: folder `scenery`, gdy podany plik leży głębiej.
+
+Wartości trzymają się pod sufitem pantografu, liczonym symulacją na tych torach, ale bez wznosu samego drutu. Zużycie tekstur odczytywane jest z ich nazw, według tabel na początku skryptu, a nieznana nazwa dostaje 0,5. Tory z plików `.inc` z parametrami są pomijane, a bloki `rotate` nieuwzględniane. W obu przypadkach raport wypisuje uwagę. Tor, który ma już nierówność, zostaje bez zmian.
 
 ## Wydajność
 

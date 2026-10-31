@@ -67,6 +67,9 @@ class editor_track
 		float unevenup{-1.f};
 		float unevenside{-1.f};
 		float unevencross{-1.f};
+		float unevenbranch{-1.f};
+		float unevenbranchup{-1.f};
+		float unevenbranchside{-1.f};
 		float jointdip{-1.f};
 		bool sleepers{false};
 		float sleeper_frequency{0.6f};

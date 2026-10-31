@@ -87,6 +87,9 @@ TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
 int TTrack::s_layoutstamp { 0 };
 
+// how near an end of a path counts as being at a point, m
+static double const switch_end_reach { 0.3 };
+
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
     pNexts[0] = nullptr; // wskaźniki do kolejnych odcinków ruchu
@@ -737,24 +740,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             }
         }
         else if( str == "uneven" ) {
-            // uneven <mm>: see TrackUneven.h
-            auto const uneven { parser->getToken<float>() };
+            // uneven <mm>[;<mm>...]: see read_uneven and TrackUneven.h. The semicolons stay in the token
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
             if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
-                m_uneven = std::clamp( uneven, 0.f, track_uneven::most );
-            }
-        }
-        else if( str == "unevenup" || str == "unevenside" || str == "unevencross" ) {
-            // the components of uneven set apart, mm
-            auto const value { parser->getToken<float>() };
-            if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
-                ( str == "unevenup" ? m_unevenup : str == "unevenside" ? m_unevenside : m_unevencross ) = std::clamp( value, 0.f, track_uneven::most );
-            }
-        }
-        else if( str == "jointdip" ) {
-            // jointdip <mm>: depth of the dip at rail joints, with or without uneven
-            auto const jointdip { parser->getToken<float>() };
-            if( eType == tt_Normal && iCategoryFlag == 1 ) {
-                m_jointdip = std::clamp( jointdip, 0.f, track_uneven::most );
+                read_uneven( values );
             }
         }
         else if( str == "friction" ) {
@@ -833,75 +822,166 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // to a stale origin and the renderer would draw sleepers in the wrong place).
 }
 
-track_uneven::amounts TTrack::uneven_declared() const {
+void TTrack::read_uneven( std::string const &Text ) {
 
-    return {
+    auto const fields { track_uneven::read_fields<6>( Text ) };
+    m_uneven = std::max( fields[ 0 ], 0.f );
+    if( eType == tt_Switch ) {
+        m_unevenbranch = fields[ 1 ];
+        m_unevenup = fields[ 2 ];
+        m_unevenside = fields[ 3 ];
+        m_unevenbranchup = fields[ 4 ];
+        m_unevenbranchside = fields[ 5 ];
+    }
+    else {
+        m_unevenup = fields[ 1 ];
+        m_unevenside = fields[ 2 ];
+        m_unevencross = fields[ 3 ];
+        m_jointdip = fields[ 4 ];
+    }
+}
+
+std::string TTrack::uneven_text() const {
+
+    auto const fields { eType == tt_Switch ?
+        std::array<float, 6> { m_uneven, m_unevenbranch, m_unevenup, m_unevenside, m_unevenbranchup, m_unevenbranchside } :
+        std::array<float, 6> { m_uneven, m_unevenup, m_unevenside, m_unevencross, m_jointdip, -1.f } };
+    if( m_uneven <= 0.f && std::all_of( fields.begin() + 1, fields.end(), []( float const Field ) { return Field < 0.f; } ) ) {
+        return {};
+    }
+    return "uneven " + track_uneven::write_fields( fields ) + ' ';
+}
+
+track_uneven::amounts TTrack::uneven_declared( int const Path ) const {
+
+    track_uneven::amounts result {
         m_unevenup >= 0.f ? m_unevenup : m_uneven,
         m_unevenside >= 0.f ? m_unevenside : m_uneven,
         eType != tt_Normal ? 0.f : m_unevencross >= 0.f ? m_unevencross : m_uneven };
+    if( Path == 1 ) {
+        auto const branch = [ this ]( float const Part, double const Straight ) -> double {
+            return Part >= 0.f ? Part : m_unevenbranch >= 0.f ? m_unevenbranch : Straight; };
+        result.up = branch( m_unevenbranchup, result.up );
+        result.side = branch( m_unevenbranchside, result.side );
+    }
+    return result;
 }
 
 bool TTrack::is_uneven() const {
 
-    auto const declared { uneven_declared() };
-    return declared.up > 0.0 || declared.side > 0.0 || declared.cross > 0.0 || joint_depth() > 0.0;
+    auto const any = []( track_uneven::amounts const &Amount ) {
+        return Amount.up > 0.0 || Amount.side > 0.0 || Amount.cross > 0.0; };
+    return any( uneven_declared( 0 ) ) || any( uneven_declared( 1 ) ) || joint_depth() > 0.0;
 }
 
-track_uneven::amounts TTrack::uneven_at( double const Distance ) const {
+double TTrack::uneven_bed_share( double const Depth ) const {
 
+    return track_uneven::bed_share( Depth, std::abs( track_rail_profile( m_profile1.second ).front().position.y ), fTexHeight1 );
+}
+
+track_uneven::amounts TTrack::uneven_at( double const Distance, int const Path ) const {
+
+    auto const along = [ Distance ]( track_uneven::amounts const &Own, track_uneven::amounts const &Start, track_uneven::amounts const &End, double const Length ) -> track_uneven::amounts {
+        return {
+            track_uneven::along( Own.up, Start.up, End.up, Distance, Length ),
+            track_uneven::along( Own.side, Start.side, End.side, Distance, Length ),
+            track_uneven::along( Own.cross, Start.cross, End.cross, Distance, Length ) }; };
     if( eType == tt_Switch ) {
-        return switch_uneven();
+        auto const &stray { switch_uneven() };
+        return along( stray.paths[ Path ], stray.ends[ Path ][ 0 ], stray.ends[ Path ][ 1 ], SwitchExtension->Segments[ Path ]->GetLength() );
     }
     auto const own { uneven_declared() };
-    auto const atend = [&]( TTrack const *Other ) -> track_uneven::amounts {
+    auto const atend = [&]( TTrack const *Other, glm::dvec3 const &Point ) -> track_uneven::amounts {
         if( Other == nullptr ) {
             return {};
         }
         if( Other->eType == tt_Switch ) {
-            return Other->switch_uneven();
+            return Other->switch_uneven_at( Point );
         }
-        auto const theirs { Other->uneven_declared() };
-        return { std::min( own.up, theirs.up ), std::min( own.side, theirs.side ), std::min( own.cross, theirs.cross ) }; };
-    auto const start { atend( trPrev ) };
-    auto const end { atend( trNext ) };
-    return {
-        track_uneven::along( own.up, start.up, end.up, Distance, Length() ),
-        track_uneven::along( own.side, start.side, end.side, Distance, Length() ),
-        track_uneven::along( own.cross, start.cross, end.cross, Distance, Length() ) };
+        return track_uneven::least( own, Other->uneven_declared() ); };
+    return along( own, atend( trPrev, Segment->FastGetPoint_0() ), atend( trNext, Segment->FastGetPoint_1() ), Length() );
 }
 
-track_uneven::amounts TTrack::switch_uneven() const {
+TTrack::switch_stray const &TTrack::switch_uneven() const {
 
     if( m_switchstray.stamp == s_layoutstamp ) {
-        return m_switchstray.value;
+        return m_switchstray;
     }
     std::vector<TTrack const *> group { this };
-    auto least { uneven_declared() };
+    std::array<track_uneven::amounts, 2> least { uneven_declared( 0 ), uneven_declared( 1 ) };
     for( std::size_t index = 0; index < group.size(); ++index ) {
         auto const &extension { *group[ index ]->SwitchExtension };
         for( auto const *other : { extension.pPrevs[ 0 ], extension.pPrevs[ 1 ], extension.pNexts[ 0 ], extension.pNexts[ 1 ] } ) {
             if( other == nullptr ) {
                 continue;
             }
-            auto const theirs { other->uneven_declared() };
             if( other->eType == tt_Switch && other->SwitchExtension ) {
-                least.up = std::min( least.up, theirs.up );
-                least.side = std::min( least.side, theirs.side );
+                least[ 0 ] = track_uneven::least( least[ 0 ], other->uneven_declared( 0 ) );
+                least[ 1 ] = track_uneven::least( least[ 1 ], other->uneven_declared( 1 ) );
                 if( std::find( group.begin(), group.end(), other ) == group.end() ) {
                     group.push_back( other );
                 }
             }
             else {
                 // a track with none of a component keeps to its design in it, any other comes to the value of the switch
-                if( theirs.up <= 0.0 ) { least.up = 0.0; }
-                if( theirs.side <= 0.0 ) { least.side = 0.0; }
+                auto const theirs { other->uneven_declared() };
+                for( auto &path : least ) {
+                    if( theirs.up <= 0.0 ) { path.up = 0.0; }
+                    if( theirs.side <= 0.0 ) { path.side = 0.0; }
+                }
             }
         }
     }
     for( auto const *track : group ) {
-        track->m_switchstray = { least, s_layoutstamp };
+        track->m_switchstray.paths = least;
+        track->m_switchstray.stamp = s_layoutstamp;
     }
-    return least;
+    // the lowest of the paths of a switch ending at a point
+    auto const paths_at = []( TTrack const &Track, glm::dvec3 const &Point ) {
+        auto result { track_uneven::least( Track.m_switchstray.paths[ 0 ], Track.m_switchstray.paths[ 1 ] ) };
+        auto found { false };
+        track_uneven::amounts ending { track_uneven::most, track_uneven::most, track_uneven::most };
+        for( int path = 0; path < 2; ++path ) {
+            auto const &segment { *Track.SwitchExtension->Segments[ path ] };
+            if( glm::length( segment.FastGetPoint_0() - Point ) < switch_end_reach || glm::length( segment.FastGetPoint_1() - Point ) < switch_end_reach ) {
+                ending = track_uneven::least( ending, Track.m_switchstray.paths[ path ] );
+                found = true;
+            }
+        }
+        return found ? ending : result; };
+    for( auto const *track : group ) {
+        auto const &extension { *track->SwitchExtension };
+        for( int path = 0; path < 2; ++path ) {
+            auto const &segment { *extension.Segments[ path ] };
+            for( int end = 0; end < 2; ++end ) {
+                auto const point { end == 0 ? segment.FastGetPoint_0() : segment.FastGetPoint_1() };
+                auto value { paths_at( *track, point ) };
+                auto const *other { end == 0 ? extension.pPrevs[ path ] : extension.pNexts[ path ] };
+                if( other != nullptr && other->eType == tt_Switch && other->SwitchExtension ) {
+                    value = track_uneven::least( value, paths_at( *other, point ) );
+                }
+                track->m_switchstray.ends[ path ][ end ] = value;
+            }
+        }
+    }
+    return m_switchstray;
+}
+
+track_uneven::amounts TTrack::switch_uneven_at( glm::dvec3 const &Point ) const {
+
+    auto const &stray { switch_uneven() };
+    auto found { false };
+    track_uneven::amounts result { track_uneven::most, track_uneven::most, track_uneven::most };
+    for( int path = 0; path < 2; ++path ) {
+        auto const &segment { *SwitchExtension->Segments[ path ] };
+        for( int end = 0; end < 2; ++end ) {
+            if( glm::length( ( end == 0 ? segment.FastGetPoint_0() : segment.FastGetPoint_1() ) - Point ) < switch_end_reach ) {
+                result = track_uneven::least( result, stray.ends[ path ][ end ] );
+                found = true;
+            }
+        }
+    }
+    return found ? result : track_uneven::least( stray.paths[ 0 ], stray.paths[ 1 ] );
 }
 
 double TTrack::joint_depth() const {
@@ -1007,7 +1087,7 @@ void TTrack::init_segments( bool const Initial ) {
     ++s_layoutstamp;
     if( eType == tt_Switch && SwitchExtension ) {
         SwitchExtension->Segments[ 0 ]->set_uneven( is_uneven() );
-        SwitchExtension->Segments[ 1 ]->set_uneven( is_uneven() );
+        SwitchExtension->Segments[ 1 ]->set_uneven( is_uneven(), 1 );
     }
     else if( Segment ) {
         Segment->set_uneven( is_uneven() );
@@ -1742,6 +1822,7 @@ void TTrack::share_joints() {
         }
         for( int end = 0; end < 2; ++end ) {
             std::optional<std::pair<glm::dvec3, glm::dvec3>> joint;
+            auto roll { segment->design_roll( end ) };
             auto *neighbour { track_rails::path_neighbour( *this, path, end ) };
             if( neighbour != nullptr && neighbour != this && ( neighbour->iCategoryFlag & 15 ) == ( iCategoryFlag & 15 ) ) {
                 glm::dvec3 point;
@@ -1766,10 +1847,35 @@ void TTrack::share_joints() {
                         }
                         closest = gap;
                         joint.emplace( 0.5 * ( point + theirpoint ), glm::normalize( across + theiracross ) );
+                        if( iCategoryFlag & 1 ) {
+                            // the cant of a plain track is what was designed, a switch takes it; alike ones meet halfway
+                            auto const own { segment->design_roll( end ) };
+                            auto const their { theirend == end ? -theirs->design_roll( theirend ) : theirs->design_roll( theirend ) };
+                            roll = (
+                                ( eType == tt_Switch ) == ( neighbour->eType == tt_Switch ) ? 0.5f * ( own + their ) :
+                                eType == tt_Switch ? their :
+                                own );
+                        }
                     }
                 }
             }
-            segment->set_joint( end, joint );
+            segment->set_joint( end, joint, roll );
+        }
+    }
+    if( eType != tt_Switch && Segment && ( iCategoryFlag & 1 ) ) {
+        float roll1, roll2;
+        Segment->GetRolls( roll1, roll2 );
+        if( roll1 != 0.f || roll2 != 0.f ) {
+            iTrapezoid |= 1;
+        }
+    }
+    if( eType == tt_Switch && SwitchExtension ) {
+        // the profiles of the switch are made at the mean of the rolls of its paths as they meet the tracks joined, and turned from it
+        // along each path (init_segments() bakes the mean of the rolls as designed)
+        float mean1, mean2;
+        profile_rolls( mean1, mean2 );
+        for( int path = 0; path < 2; ++path ) {
+            SwitchExtension->Segments[ path ]->set_baked_roll( mean1 );
         }
     }
 }
@@ -3030,21 +3136,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
      && false == m_profile1.first.empty() ) {
         Output << "railprofile " << m_profile1.first << ' ';
     }
-    if( m_uneven > 0.f ) {
-        Output << "uneven " << m_uneven << ' ';
-    }
-    if( m_unevenup >= 0.f ) {
-        Output << "unevenup " << m_unevenup << ' ';
-    }
-    if( m_unevenside >= 0.f ) {
-        Output << "unevenside " << m_unevenside << ' ';
-    }
-    if( m_unevencross >= 0.f ) {
-        Output << "unevencross " << m_unevencross << ' ';
-    }
-    if( m_jointdip >= 0.f ) {
-        Output << "jointdip " << m_jointdip << ' ';
-    }
+    Output << uneven_text();
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
@@ -4312,6 +4404,11 @@ path_table::InitTracks() {
         isolated->pMemCell = memorycell;
 
         isolated = isolated->Next();
+    }
+
+    // the physics goes by the cant at the joints too, and comes before any geometry is made
+    for( auto *track : m_items ) {
+        track->share_joints();
     }
 
     TTrack::fetch_default_profiles();

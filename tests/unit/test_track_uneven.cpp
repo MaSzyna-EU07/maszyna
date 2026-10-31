@@ -140,6 +140,43 @@ TEST_CASE("uneven track: the field stays within its bound")
 	CHECK(highest > 0.5);
 }
 
+TEST_CASE("uneven track: all the values in one attribute")
+{
+	auto const one{track_uneven::read_fields<6>("18")};
+	CHECK(one[0] == doctest::Approx(18.f));
+	CHECK(one[1] < 0.f);
+	auto const both{track_uneven::read_fields<6>("14;35")};
+	CHECK(both[0] == doctest::Approx(14.f));
+	CHECK(both[1] == doctest::Approx(35.f));
+	CHECK(both[2] < 0.f);
+	auto const gaps{track_uneven::read_fields<6>("18.5;;;25;6")};
+	CHECK(gaps[0] == doctest::Approx(18.5f));
+	CHECK(gaps[1] < 0.f);
+	CHECK(gaps[2] < 0.f);
+	CHECK(gaps[3] == doctest::Approx(25.f));
+	CHECK(gaps[4] == doctest::Approx(6.f));
+	auto const bounds{track_uneven::read_fields<6>("500;-3;x")};
+	CHECK(bounds[0] == doctest::Approx(track_uneven::most));
+	CHECK(bounds[1] == doctest::Approx(0.f));
+	CHECK(bounds[2] < 0.f);
+	CHECK(track_uneven::write_fields<6>({14.f, 35.f, -1.f, -1.f, -1.f, -1.f}) == "14;35");
+	CHECK(track_uneven::write_fields<6>({18.5f, -1.f, -1.f, 25.f, 6.f, -1.f}) == "18.5;;;25;6");
+	CHECK(track_uneven::write_fields<6>({0.f, -1.f, 30.f, -1.f, -1.f, -1.f}) == "0;;30");
+	CHECK(track_uneven::write_fields<6>({18.f, -1.f, -1.f, -1.f, -1.f, -1.f}) == "18");
+}
+
+TEST_CASE("uneven track: amounts take the lowest of each component")
+{
+	auto const least{track_uneven::least({14.0, 9.0, 0.0}, {7.0, 35.0, 3.0})};
+	CHECK(least.up == doctest::Approx(7.0));
+	CHECK(least.side == doctest::Approx(9.0));
+	CHECK(least.cross == doctest::Approx(0.0));
+	// the diverging path of a switch: from the common end at the lowest to its own value at the far end
+	double const length{30.0};
+	CHECK(track_uneven::along(35.0, 7.0, 35.0, 0.0, length) == doctest::Approx(7.0));
+	CHECK(track_uneven::along(35.0, 7.0, 35.0, length, length) == doctest::Approx(35.0));
+}
+
 TEST_CASE("uneven track: the value along a track meets its neighbours exactly")
 {
 	double const length{500.0};
@@ -163,6 +200,18 @@ TEST_CASE("uneven track: the value along a track meets its neighbours exactly")
 		REQUIRE(std::abs(value - last) < 0.5);
 		last = value;
 	}
+}
+
+TEST_CASE("uneven track: the foot of the ballast stays where it was")
+{
+	double const rail{0.18};
+	double const height{0.38};
+	CHECK(track_uneven::bed_share(0.0, rail, height) == doctest::Approx(1.0)); // rail top
+	CHECK(track_uneven::bed_share(rail, rail, height) == doctest::Approx(1.0)); // top of the ballast
+	CHECK(track_uneven::bed_share(rail + 0.5 * height, rail, height) == doctest::Approx(0.5));
+	CHECK(track_uneven::bed_share(rail + height, rail, height) == doctest::Approx(0.0)); // its foot
+	CHECK(track_uneven::bed_share(rail + 2.0 * height, rail, height) == doctest::Approx(0.0));
+	CHECK(track_uneven::bed_share(rail + 1.0, rail, 0.0) == doctest::Approx(1.0)); // no ballast
 }
 
 TEST_CASE("uneven track: the rails dip around a joint")
