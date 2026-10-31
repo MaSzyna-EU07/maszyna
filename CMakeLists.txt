@@ -117,6 +117,7 @@ set(SOURCES
 "world/RailPlan.cpp"
 "world/RailCarve.cpp"
 "world/RailLayer.cpp"
+"world/TrackUneven.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"

@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
+#include "world/TrackUneven.h"
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
@@ -139,7 +140,9 @@ class TSegment
     // moves a lofted vertex with the unevenness of the track
     void settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const;
     // displacement of a point by the unevenness, at a distance along the path
-    glm::dvec3 stray( glm::dvec3 const &Point, double const Distance ) const;
+    glm::dvec3 stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const;
+    // a point of the path at a distance, past its ends straight on: the polynomial would run off on a short curved path
+    glm::dvec3 point_extended( double const Distance ) const;
     void design_position( double const fDistance, glm::dvec3 &position, glm::vec3 &rotation ) const;
 
 public:
@@ -195,6 +198,9 @@ public:
         set_uneven( bool const Uneven, int const Path = 0 ) {
             m_uneven = Uneven;
             m_path = Path; }
+    glm::dvec3
+        end_point( int const End ) const {
+            return End == 0 ? Point1 : Point2; }
     float
         design_roll( int const End ) const {
             return m_designrolls[ End ]; }

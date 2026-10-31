@@ -447,13 +447,12 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
     rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
         amount.up * track_uneven::roll( position, across, gauge )
       + amount.cross * track_uneven::level( position, across ) / gauge ) );
-    position += stray( position, fDistance );
+    position += track_uneven::across_only( stray( position, amount, fDistance ), across );
 }
 
-glm::dvec3 TSegment::stray( glm::dvec3 const &Point, double const Distance ) const {
-    auto const amount { pOwner->uneven_at( Distance, m_path ) };
+glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const {
     auto const field { track_uneven::field( Point ) };
-    glm::dvec3 result { field.x * amount.side, field.y * amount.up, field.z * amount.side };
+    glm::dvec3 result { field.x * Amount.side, field.y * Amount.up, field.z * Amount.side };
     result *= track_uneven::stray_per_mm;
     result.y -= pOwner->joint_dip( Distance );
     return result;
@@ -463,11 +462,23 @@ glm::dvec3 TSegment::uneven_bend( double const Distance ) const {
     if( false == m_uneven ) {
         return glm::dvec3 { 0.0 };
     }
-    // over about a bogie; FastGetTFromS extrapolates past the ends of the path
+    // over about a bogie
     auto const reach { 1.5 };
     auto const strayed = [&]( double const At ) {
-        return stray( FastGetPoint( FastGetTFromS( At ) ), At ); };
+        return stray( point_extended( At ), pOwner->uneven_at( At, m_path ), At ); };
     return ( strayed( Distance + reach ) - 2.0 * strayed( Distance ) + strayed( Distance - reach ) ) / ( reach * reach );
+}
+
+glm::dvec3 TSegment::point_extended( double const Distance ) const {
+    auto const on { std::clamp( Distance, 0.0, fLength ) };
+    auto const t { FastGetTFromS( on ) };
+    auto const point { FastGetPoint( t ) };
+    if( on == Distance ) {
+        return point;
+    }
+    auto const direction { FastGetDirection( t, 0.1 / fLength ) };
+    auto const size { glm::length( direction ) };
+    return size > 0.0 ? point + direction * ( ( Distance - on ) / size ) : point;
 }
 
 void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const {
@@ -478,8 +489,12 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     auto const across { std::clamp( glm::dot( Vertex.position - Position, Parallel ), -0.5f * gauge, 0.5f * gauge ) };
     auto const share { pOwner->uneven_bed_share( Position.y - Vertex.position.y ) };
-    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * pOwner->uneven_at( Distance, m_path ).cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
-    Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, Distance ) };
+    if( share <= 0.0 ) {
+        return;
+    }
+    auto const amount { pOwner->uneven_at( Distance, m_path ) };
+    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
+    Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, amount, Distance ) };
 }
 
 void TSegment::design_position(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
@@ -785,15 +800,15 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
 }
 
 void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const {
+    if( fTsBuffer.empty() ) {
+        // never made into a path: tt_Cross and the like
+        Point = Point1;
+        Across = glm::dvec3 { 0.0 };
+        return;
+    }
     auto const t { FastGetTFromS( std::clamp( Distance, 0.0, fLength ) ) };
     Point = FastGetPoint( t );
-    auto const dir { FastGetDirection( t, 0.1 / fLength ) };
-    Across = glm::dvec3{ -dir.z, 0.0, dir.x };
-    if( glm::length2( Across ) == 0.0 ) {
-        auto const chord { FastGetPoint_1() - FastGetPoint_0() };
-        Across = glm::dvec3{ -chord.z, 0.0, chord.x };
-    }
-    Across = glm::normalize( Across );
+    Across = track_uneven::across_of( FastGetDirection( t, 0.1 / fLength ), FastGetPoint_1() - FastGetPoint_0() );
 }
 
 bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const {

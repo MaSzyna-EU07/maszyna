@@ -165,6 +165,81 @@ TEST_CASE("uneven track: all the values in one attribute")
 	CHECK(track_uneven::write_fields<6>({18.f, -1.f, -1.f, -1.f, -1.f, -1.f}) == "18");
 }
 
+TEST_CASE("uneven track: the attribute goes by the entry it's written into")
+{
+	auto const plain{track_uneven::read_attribute("18;22;19;25;6", false)};
+	CHECK(track_uneven::write_attribute(plain, false) == "uneven 18;22;19;25;6 ");
+	// a switch made in the style of a plain track: no path p3-p4 of its own, the components in their places
+	CHECK(track_uneven::write_attribute(plain, true) == "uneven 18;;22;19 ");
+	auto const made{track_uneven::read_attribute("18;;22;19", true)};
+	CHECK(track_uneven::declared(made, false, 0).up == doctest::Approx(22.0));
+	CHECK(track_uneven::declared(made, false, 0).side == doctest::Approx(19.0));
+	CHECK(track_uneven::declared(made, false, 1).up == doctest::Approx(22.0));
+	CHECK(track_uneven::declared(made, false, 0).cross == doctest::Approx(0.0));
+	// a switch with its own values, and a plain track in its style
+	auto const points{track_uneven::read_attribute("14;35;16;17", true)};
+	CHECK(track_uneven::write_attribute(points, true) == "uneven 14;35;16;17 ");
+	CHECK(track_uneven::declared(points, false, 1).up == doctest::Approx(35.0));
+	CHECK(track_uneven::declared(points, false, 1).side == doctest::Approx(35.0));
+	CHECK(track_uneven::write_attribute(points, false) == "uneven 14;16;17 ");
+	// a plain track: the value stands in for what's left out, only there is the cross level
+	auto const track{track_uneven::read_attribute("18;;30", false)};
+	CHECK(track_uneven::declared(track, true, 0).up == doctest::Approx(18.0));
+	CHECK(track_uneven::declared(track, true, 0).side == doctest::Approx(30.0));
+	CHECK(track_uneven::declared(track, true, 0).cross == doctest::Approx(18.0));
+	// nothing given, nothing written
+	CHECK(track_uneven::write_attribute({}, false).empty());
+	CHECK(track_uneven::write_attribute({}, true).empty());
+	// a value of 0 stays when there's more after it
+	CHECK(track_uneven::write_attribute(track_uneven::read_attribute("0;;;;6", false), false) == "uneven 0;;;;6 ");
+}
+
+TEST_CASE("uneven track: each component comes to its neighbours along a track")
+{
+	double const length{500.0};
+	auto const atstart{track_uneven::along(track_uneven::amounts{18.0, 16.0, 14.0}, {5.0, 4.0, 3.0}, {7.0, 8.0, 9.0}, 0.0, length)};
+	CHECK(atstart.up == doctest::Approx(5.0));
+	CHECK(atstart.side == doctest::Approx(4.0));
+	CHECK(atstart.cross == doctest::Approx(3.0));
+	auto const inside{track_uneven::along(track_uneven::amounts{18.0, 16.0, 14.0}, {5.0, 4.0, 3.0}, {7.0, 8.0, 9.0}, 0.5 * length, length)};
+	CHECK(inside.up == doctest::Approx(18.0));
+	CHECK(inside.side == doctest::Approx(16.0));
+	CHECK(inside.cross == doctest::Approx(14.0));
+}
+
+TEST_CASE("uneven track: axles don't stray along the track")
+{
+	glm::dvec3 const across{0.6, 0.0, -0.8};
+	glm::dvec3 const along{0.8, 0.0, 0.6};
+	auto const moved{track_uneven::across_only(across * 0.03 + along * 0.05 + glm::dvec3{0.0, 0.02, 0.0}, across)};
+	CHECK(glm::dot(moved, along) == doctest::Approx(0.0));
+	CHECK(glm::dot(moved, across) == doctest::Approx(0.03));
+	CHECK(moved.y == doctest::Approx(0.02));
+}
+
+TEST_CASE("uneven track: a path of no length gives no vector across")
+{
+	glm::dvec3 const none{0.0};
+	CHECK(track_uneven::across_of(none, none) == none);
+	CHECK(glm::length(track_uneven::across_of({3.0, 0.0, 4.0}, none)) == doctest::Approx(1.0));
+	// it can't pass for a joint: the check of the two vectors being alike fails
+	CHECK(glm::dot(track_uneven::across_of(none, none), glm::dvec3{1.0, 0.0, 0.0}) < 0.9);
+	// falls back on the chord
+	auto const chord{track_uneven::across_of(none, {0.0, 0.0, 10.0})};
+	CHECK(chord.x == doctest::Approx(-1.0));
+	CHECK(chord.z == doctest::Approx(0.0));
+	// straight up has no direction in the plan
+	CHECK(glm::length(track_uneven::across_of({0.0, 5.0, 0.0}, {0.0, 0.0, 10.0})) == doctest::Approx(1.0));
+}
+
+TEST_CASE("uneven track: the cant at a joint")
+{
+	CHECK(track_uneven::joint_roll(0.1f, -0.1f, true, true) == doctest::Approx(0.f));
+	CHECK(track_uneven::joint_roll(0.2f, 0.4f, false, false) == doctest::Approx(0.3f));
+	CHECK(track_uneven::joint_roll(0.1f, 0.0f, true, false) == doctest::Approx(0.f));
+	CHECK(track_uneven::joint_roll(0.0f, 0.1f, false, true) == doctest::Approx(0.f));
+}
+
 TEST_CASE("uneven track: amounts take the lowest of each component")
 {
 	auto const least{track_uneven::least({14.0, 9.0, 0.0}, {7.0, 35.0, 3.0})};

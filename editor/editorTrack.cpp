@@ -249,13 +249,6 @@ editor_track::state editor_track::capture(TTrack const &Track)
 		result.isolated.push_back(isolated->asName);
 	result.overhead = Track.fOverhead;
 	result.uneven = Track.m_uneven;
-	result.unevenup = Track.m_unevenup;
-	result.unevenside = Track.m_unevenside;
-	result.unevencross = Track.m_unevencross;
-	result.unevenbranch = Track.m_unevenbranch;
-	result.unevenbranchup = Track.m_unevenbranchup;
-	result.unevenbranchside = Track.m_unevenbranchside;
-	result.jointdip = Track.m_jointdip;
 	result.sleepers = Track.m_sleeper_enabled;
 	result.sleeper_frequency = Track.m_sleeper_frequency;
 	result.sleeper_model = Track.m_sleeper_model_name;
@@ -364,13 +357,6 @@ void editor_track::apply(TTrack &Track, state const &State)
 	isolated(Track, State.isolated);
 	overhead(Track, State.overhead);
 	Track.m_uneven = State.uneven;
-	Track.m_unevenup = State.unevenup;
-	Track.m_unevenside = State.unevenside;
-	Track.m_unevencross = State.unevencross;
-	Track.m_unevenbranch = State.unevenbranch;
-	Track.m_unevenbranchup = State.unevenbranchup;
-	Track.m_unevenbranchside = State.unevenbranchside;
-	Track.m_jointdip = State.jointdip;
 	Track.m_sleeper_enabled = State.sleepers;
 	Track.m_sleeper_frequency = State.sleeper_frequency;
 	Track.m_sleeper_model_name = State.sleeper_model;
@@ -3237,11 +3223,11 @@ void write_points(std::ostream &Text, segment_data const &Path)
 	Text << start.x << ' ' << start.y << ' ' << start.z << ' ' << Path.rolls[0] << ' ' << control1.x << ' ' << control1.y << ' ' << control1.z << ' ' << control2.x << ' ' << control2.y << ' ' << control2.z << ' ' << end.x << ' ' << end.y << ' ' << end.z << ' ' << Path.rolls[1] << ' ' << Path.radius << ' ';
 }
 
-void write_ending(std::ostream &Text, TTrack const &Style)
+void write_ending(std::ostream &Text, TTrack const &Style, bool const Switch)
 {
 	if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
 		Text << "railprofile " << Style.m_profile1.first << ' ';
-	Text << Style.uneven_text();
+	Text << track_uneven::write_attribute(Style.m_uneven, Switch);
 	// a piece of the track made from another one stays in its track circuit and under the same overhead line
 	for (auto const *isolated : Style.Isolated)
 		Text << "isolated " << isolated->asName << ' ';
@@ -3303,7 +3289,7 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 		write_points(text, Paths[1]);
 		if (auto const trackbed{ballast_of(Style)}; trackbed != null_handle)
 			text << "trackbed " << material_name(trackbed) << ' ';
-		write_ending(text, Style);
+		write_ending(text, Style, true);
 		track = load_path(text.str(), Style, Name);
 	}
 	track->SwitchExtension->m_frogs = true;
@@ -3615,7 +3601,7 @@ TTrack *editor_track::create_path(TTrack const &Style, segment_data const &Path,
 	write_points(text, Path);
 	if (auto const speed{velocity(Style)}; speed > 0.0)
 		text << "velocity " << speed << ' ';
-	write_ending(text, Style);
+	write_ending(text, Style, false);
 	auto *track{load_path(text.str(), Style, Name)};
 	track->m_paths = {Path};
 	return track;
