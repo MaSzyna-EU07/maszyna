@@ -1294,6 +1294,7 @@ static void             WindowSelectViewport(ImGuiWindow* window);
 static void             WindowSyncOwnedViewport(ImGuiWindow* window, ImGuiWindow* parent_window_in_stack);
 static bool             UpdateTryMergeWindowIntoHostViewport(ImGuiWindow* window, ImGuiViewportP* host_viewport);
 static bool             UpdateTryMergeWindowIntoHostViewports(ImGuiWindow* window);
+static bool             WindowStaysInHostViewport(ImGuiWindow* window, ImGuiViewportP* viewport); // MaSzyna addition
 static bool             GetWindowAlwaysWantOwnViewport(ImGuiWindow* window);
 static int              FindPlatformMonitorForPos(const ImVec2& pos);
 static int              FindPlatformMonitorForRect(const ImRect& r);
@@ -1489,6 +1490,7 @@ ImGuiIO::ImGuiIO()
     ConfigViewportsNoTaskBarIcon = false;
     ConfigViewportsNoDecoration = true;
     ConfigViewportsNoDefaultParent = false;
+    ConfigViewportsNoAutoDetach = false;
 
     // Miscellaneous options
     MouseDrawCursor = false;
@@ -6845,6 +6847,11 @@ static int ImGui::UpdateWindowManualResize(ImGuiWindow* window, const ImVec2& si
     ImVec2 pos_target(FLT_MAX, FLT_MAX);
     ImVec2 size_target(FLT_MAX, FLT_MAX);
 
+    // MaSzyna addition: a resize stops at the edge of the host viewport, so the grips and borders can still be reached
+    ImRect resize_limit_rect(-FLT_MAX, -FLT_MAX, +FLT_MAX, +FLT_MAX);
+    if (!window->ViewportOwned && WindowStaysInHostViewport(window, window->Viewport))
+        resize_limit_rect = window->Viewport->GetWorkRect();
+
     // Clip mouse interaction rectangles within the viewport rectangle (in practice the narrowing is going to happen most of the time).
     // - Not narrowing would mostly benefit the situation where OS windows _without_ decoration have a threshold for hovering when outside their limits.
     //   This is however not the case with current backends under Win32, but a custom borderless window implementation would benefit from it.
@@ -6892,6 +6899,7 @@ static int ImGui::UpdateWindowManualResize(ImGuiWindow* window, const ImVec2& si
             ImVec2 clamp_max = ImVec2(def.CornerPosN.x == 0.0f ? clamp_rect.Max.x : +FLT_MAX, def.CornerPosN.y == 0.0f ? clamp_rect.Max.y : +FLT_MAX);
             ImVec2 corner_target = g.IO.MousePos - g.ActiveIdClickOffset + ImLerp(def.InnerDir * grip_hover_outer_size, def.InnerDir * -grip_hover_inner_size, def.CornerPosN); // Corner of the window corresponding to our corner grip
             corner_target = ImClamp(corner_target, clamp_min, clamp_max);
+            corner_target = ImClamp(corner_target, resize_limit_rect.Min, resize_limit_rect.Max);
             CalcResizePosSizeFromAnyCorner(window, corner_target, def.CornerPosN, &pos_target, &size_target);
         }
 
@@ -6971,6 +6979,7 @@ static int ImGui::UpdateWindowManualResize(ImGuiWindow* window, const ImVec2& si
             ImVec2 clamp_min(border_n == ImGuiDir_Right ? clamp_rect.Min.x : -FLT_MAX, border_n == ImGuiDir_Down || (border_n == ImGuiDir_Up && window_move_from_title_bar) ? clamp_rect.Min.y : -FLT_MAX);
             ImVec2 clamp_max(border_n == ImGuiDir_Left ? clamp_rect.Max.x : +FLT_MAX, border_n == ImGuiDir_Up ? clamp_rect.Max.y : +FLT_MAX);
             border_target = ImClamp(border_target, clamp_min, clamp_max);
+            border_target[axis] = ImClamp(border_target[axis], resize_limit_rect.Min[axis], resize_limit_rect.Max[axis]);
             if (flags & ImGuiWindowFlags_ChildWindow) // Clamp resizing of childs within parent
             {
                 ImGuiWindow* parent_window = window->ParentWindow;
@@ -7054,6 +7063,30 @@ static inline void ClampWindowPos(ImGuiWindow* window, const ImRect& visibility_
     else if (g.IO.ConfigWindowsMoveFromTitleBarOnly && !(window->Flags & ImGuiWindowFlags_NoTitleBar))
         size_for_clamping.y = window->TitleBarHeight;
     window->Pos = ImClamp(window->Pos, visibility_rect.Min - size_for_clamping, visibility_rect.Max);
+}
+
+// MaSzyna addition: see io.ConfigViewportsNoAutoDetach
+static inline bool IsWindowBeingMoved(ImGuiWindow* window)
+{
+    ImGuiContext& g = *GImGui;
+    return g.MovingWindow != NULL && g.MovingWindow->RootWindowDockTree == window->RootWindowDockTree;
+}
+
+// MaSzyna addition: a window left past the edge of its host viewport would have its grips and borders out of reach
+static inline void KeepWindowInsideRect(ImGuiWindow* window, const ImRect& rect)
+{
+    if (rect.GetWidth() <= 0.0f || rect.GetHeight() <= 0.0f)
+        return;
+
+    if (!(window->Flags & (ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)))
+    {
+        const ImVec2 size_full = ImMin(window->SizeFull, rect.GetSize());
+        if (size_full.x != window->SizeFull.x || size_full.y != window->SizeFull.y)
+            ImGui::MarkIniSettingsDirty(window);
+        window->SizeFull = size_full;
+        window->Size = ImMin(window->Size, rect.GetSize());
+    }
+    window->Pos = ImMax(ImMin(window->Pos, rect.Max - window->Size), rect.Min);
 }
 
 static void RenderWindowOuterSingleBorder(ImGuiWindow* window, int border_n, ImU32 border_col, float border_size)
@@ -7828,7 +7861,7 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         // Late create viewport if we don't fit within our current host viewport.
         if (window->ViewportAllowPlatformMonitorExtend >= 0 && !window->ViewportOwned && !(window->Viewport->Flags & ImGuiViewportFlags_IsMinimized))
-            if (!window->Viewport->GetMainRect().Contains(window->Rect()))
+            if (!window->Viewport->GetMainRect().Contains(window->Rect()) && !WindowStaysInHostViewport(window, window->Viewport))
             {
                 // This is based on the assumption that the DPI will be known ahead (same as the DPI of the selection done in UpdateSelectWindowViewport)
                 //ImGuiViewport* old_viewport = window->Viewport;
@@ -7878,6 +7911,11 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
                 ClampWindowPos(window, visibility_rect);
             }
         }
+
+        // MaSzyna addition: the host window of a floating dock node has its position set through the api, it's free to move all the same
+        if (!window->ViewportOwned && !IsWindowBeingMoved(window) && (!window_pos_set_by_api || (flags & ImGuiWindowFlags_DockNodeHost)) && WindowStaysInHostViewport(window, window->Viewport))
+            KeepWindowInsideRect(window, viewport_work_rect);
+
         window->Pos = ImTrunc(window->Pos);
 
         // Lock window rounding for the frame (so that altering them doesn't cause inconsistencies)
@@ -15780,6 +15818,22 @@ static bool ImGui::GetWindowAlwaysWantOwnViewport(ImGuiWindow* window)
     return false;
 }
 
+// MaSzyna addition: see io.ConfigViewportsNoAutoDetach
+static bool ImGui::WindowStaysInHostViewport(ImGuiWindow* window, ImGuiViewportP* viewport)
+{
+    ImGuiContext& g = *GImGui;
+    if (!g.IO.ConfigViewportsNoAutoDetach)
+        return false;
+
+    const ImGuiWindowFlags not_affected_flags = ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip;
+    if (window->Flags & not_affected_flags)
+        return false;
+
+    if (!IsWindowBeingMoved(window) || !IsMousePosValid())
+        return true;
+    return viewport->GetMainRect().Contains(g.IO.MousePos);
+}
+
 static bool ImGui::UpdateTryMergeWindowIntoHostViewport(ImGuiWindow* window, ImGuiViewportP* viewport)
 {
     ImGuiContext& g = *GImGui;
@@ -16323,7 +16377,7 @@ static void ImGui::WindowSelectViewport(ImGuiWindow* window)
     // Fallback: merge in default viewport if z-order matches, otherwise create a new viewport
     if (window->Viewport == NULL)
         if (!UpdateTryMergeWindowIntoHostViewport(window, main_viewport))
-            window->Viewport = AddUpdateViewport(window, window->ID, window->Pos, window->Size, ImGuiViewportFlags_None);
+            window->Viewport = WindowStaysInHostViewport(window, main_viewport) ? main_viewport : AddUpdateViewport(window, window->ID, window->Pos, window->Size, ImGuiViewportFlags_None);
 
     // Mark window as allowed to protrude outside of its viewport and into the current monitor
     if (!lock_viewport)
