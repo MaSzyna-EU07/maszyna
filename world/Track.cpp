@@ -908,6 +908,10 @@ void TTrack::settle_rail_run() const {
         track = onward( *track, 1 - end, joined );
         end = joined;
     }
+    // tracks joined one way only can leave this one out of the run: it stands on its own then, not to walk all of it again on every call
+    if( m_railrun.stamp != s_layoutstamp ) {
+        m_railrun = { 0.0, 1.0, s_layoutstamp };
+    }
 }
 
 void TTrack::update_location() {
@@ -1636,13 +1640,11 @@ void TTrack::share_joints() {
                         closest = gap;
                         joint.emplace( 0.5 * ( point + theirpoint ), glm::normalize( across + theiracross ) );
                         if( iCategoryFlag & 1 ) {
-                            // the cant of a plain track is what was designed, a switch takes it; alike ones meet halfway
-                            auto const own { segment->design_roll( end ) };
-                            auto const their { theirend == end ? -theirs->design_roll( theirend ) : theirs->design_roll( theirend ) };
-                            roll = (
-                                ( eType == tt_Switch ) == ( neighbour->eType == tt_Switch ) ? 0.5f * ( own + their ) :
-                                eType == tt_Switch ? their :
-                                own );
+                            roll = track_uneven::joint_roll(
+                                segment->design_roll( end ),
+                                theirend == end ? -theirs->design_roll( theirend ) : theirs->design_roll( theirend ),
+                                eType == tt_Switch,
+                                neighbour->eType == tt_Switch );
                         }
                     }
                 }

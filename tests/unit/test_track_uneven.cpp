@@ -194,6 +194,39 @@ TEST_CASE("uneven track: the attribute goes by the entry it's written into")
 	CHECK(track_uneven::write_attribute(track_uneven::read_attribute("0;;;;6", false), false) == "uneven 0;;;;6 ");
 }
 
+TEST_CASE("uneven track: axles don't stray along the track")
+{
+	glm::dvec3 const across{0.6, 0.0, -0.8};
+	glm::dvec3 const along{0.8, 0.0, 0.6};
+	auto const moved{track_uneven::across_only(across * 0.03 + along * 0.05 + glm::dvec3{0.0, 0.02, 0.0}, across)};
+	CHECK(glm::dot(moved, along) == doctest::Approx(0.0));
+	CHECK(glm::dot(moved, across) == doctest::Approx(0.03));
+	CHECK(moved.y == doctest::Approx(0.02));
+}
+
+TEST_CASE("uneven track: a path of no length gives no vector across")
+{
+	glm::dvec3 const none{0.0};
+	CHECK(track_uneven::across_of(none, none) == none);
+	CHECK(glm::length(track_uneven::across_of({3.0, 0.0, 4.0}, none)) == doctest::Approx(1.0));
+	// it can't pass for a joint: the check of the two vectors being alike fails
+	CHECK(glm::dot(track_uneven::across_of(none, none), glm::dvec3{1.0, 0.0, 0.0}) < 0.9);
+	// falls back on the chord
+	auto const chord{track_uneven::across_of(none, {0.0, 0.0, 10.0})};
+	CHECK(chord.x == doctest::Approx(-1.0));
+	CHECK(chord.z == doctest::Approx(0.0));
+	// straight up has no direction in the plan
+	CHECK(glm::length(track_uneven::across_of({0.0, 5.0, 0.0}, {0.0, 0.0, 10.0})) == doctest::Approx(1.0));
+}
+
+TEST_CASE("uneven track: the cant at a joint")
+{
+	CHECK(track_uneven::joint_roll(0.1f, -0.1f, true, true) == doctest::Approx(0.f));
+	CHECK(track_uneven::joint_roll(0.2f, 0.4f, false, false) == doctest::Approx(0.3f));
+	CHECK(track_uneven::joint_roll(0.1f, 0.0f, true, false) == doctest::Approx(0.f));
+	CHECK(track_uneven::joint_roll(0.0f, 0.1f, false, true) == doctest::Approx(0.f));
+}
+
 TEST_CASE("uneven track: amounts take the lowest of each component")
 {
 	auto const least{track_uneven::least({14.0, 9.0, 0.0}, {7.0, 35.0, 3.0})};

@@ -3662,11 +3662,13 @@ bool TDynamicObject::Update(double dt, double dt1)
                             ctOwner->Vehicle()->DirectionGet() == DirectionGet() ? 1 : -1 ) };
                     for( auto &axle : m_axlesounds ) {
                         // on a track with dipping joints the clatter comes from them, elsewhere the axle counts a rail off itself
-                        auto const railphase { Axle0.RailPhase( axle.offset - 0.5 * fAxleDist ) };
+                        // by the outer axle on its side of the vehicle: the two can be on different tracks
+                        auto const &outer { axle.offset >= 0.0 ? Axle0 : Axle1 };
+                        auto const railphase { outer.RailPhase( axle.offset - std::copysign( 0.5 * fAxleDist, axle.offset ) ) };
                         auto crossed { false };
                         if( railphase >= 0.0 ) {
                             // the rails under the axle, which aren't always those under the track the vehicle is on
-                            crossed = axle.atjoints && std::abs( railphase - axle.distance ) > 0.5 * Axle0.GetTrack()->fSoundDistance;
+                            crossed = axle.atjoints && std::abs( railphase - axle.distance ) > 0.5 * outer.GetTrack()->fSoundDistance;
                             axle.distance = railphase;
                         }
                         else {

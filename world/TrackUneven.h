@@ -224,6 +224,31 @@ inline double bed_share( double const Depth, double const Rail, double const Hei
     return Height > 0.0 ? std::clamp( 1.0 - ( Depth - Rail ) / Height, 0.0, 1.0 ) : 1.0;
 }
 
+// a displacement with the part along the track taken out, Across being a unit vector in the plan. Along the track
+// it would only change the distance between coupled vehicles, and with it the forces between them
+inline glm::dvec3 across_only( glm::dvec3 const &Offset, glm::dvec3 const &Across ) {
+
+    return Across * glm::dot( Offset, Across ) + glm::dvec3 { 0.0, Offset.y, 0.0 };
+}
+
+// the unit vector across a direction in the plan, or across the chord if it has none; zero for a path of no length, which has neither
+inline glm::dvec3 across_of( glm::dvec3 const &Direction, glm::dvec3 const &Chord ) {
+
+    for( auto const &along : { Direction, Chord } ) {
+        glm::dvec3 const across { -along.z, 0.0, along.x };
+        if( glm::dot( across, across ) > 0.0 ) {
+            return glm::normalize( across );
+        }
+    }
+    return glm::dvec3 { 0.0 };
+}
+
+// the cant where two paths meet, theirs turned to the way of this one: a switch takes that of a plain track, alike ones meet halfway
+inline float joint_roll( float const Own, float const Their, bool const Switch, bool const Theirswitch ) {
+
+    return Switch == Theirswitch ? 0.5f * ( Own + Their ) : Switch ? Their : Own;
+}
+
 // distance from the joint behind the point
 inline double rail_phase( double const Along, double const Rail ) {
 
