@@ -34,6 +34,8 @@ namespace gl
 		// bigger one (generation() changes, buffer() tells which to bind); the old one stays until the frame is done with, so
 		// what was written to it can still be bound and drawn from later in the frame
 		GLintptr push(void const *Data, GLsizeiptr Size);
+		// the room for Size bytes in the buffer of the frame, as push() makes it, left for the gpu to write (a compute pass)
+		GLintptr reserve(GLsizeiptr Size);
 
 		GLuint buffer() const
 		{

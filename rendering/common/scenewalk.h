@@ -168,9 +168,11 @@ class scene_walk
 	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
 	// Global.SleeperDistance from the track origin.
 	void Render_Sleepers(TTrack *Track);
-	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
-	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
+	// gathers the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of
+	// date. the parts of the model are drawn in instanced batches for all the cells of the pass, the runs of beams out of sight left out
 	void Render_Timbers(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
+	// draws what Render_Timbers() gathered in the pass since the last time
+	void Flush_Timbers();
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
 	bool Render_interior(bool const Alpha = false);
 	bool Render_lowpoly(TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false);
@@ -234,6 +236,32 @@ class scene_walk
 	virtual void walk_draw(std::vector<gfx::geometrybank_handle>::iterator First, std::vector<gfx::geometrybank_handle>::iterator Last) = 0;
 	// places the modelview matrices of instances in the instance buffer of the frame. returns: base instance of the first of them
 	virtual std::uint32_t walk_instances(glm::mat4 const *Modelviews, std::size_t const Count) = 0;
+	// the instances of the sleepers and timbers of the tracks kept by the backend on the gpu, and the runs of them drawn made into the
+	// modelviews of the instance buffer of the frame there (the opengl renderer, opengl46_timbers); by default the walk turns them on
+	// the cpu and places them with walk_instances()
+	virtual bool walk_timbers_gpu() const
+	{
+		return false;
+	}
+	// the instances of the tracks placed on the gpu; false when they don't fit and Restart is false: the runs gathered before are to
+	// be drawn first
+	virtual bool walk_timbers_place(std::vector<TTrack *> const &Tracks, bool const Restart)
+	{
+		return true;
+	}
+	// where the instances of a placed track lie on the gpu: the first of the parts in turn, then of the whole timbers, then of the
+	// plain sleepers
+	virtual std::uint32_t walk_timbers_first(TTrack const &Track) const
+	{
+		return 0;
+	}
+	// the room for Count modelviews in the instance buffer of the frame, for the gpu to write. returns: base instance of the first
+	virtual std::uint32_t walk_instances_reserve(std::size_t const Count)
+	{
+		return 0;
+	}
+	// the runs written to the instance buffer of the frame, each as the modelview of its origin times its transforms
+	virtual void walk_timbers_expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges) {}
 	virtual void walk_cull_face(bool const Enabled) = 0;
 	// the glare of a lamp: drawn without the depth test, added to what is there; drawn only where the point of the light was
 	// seen (walk_light_query() of the last frame, when the backend has it)
@@ -343,21 +371,29 @@ class scene_walk
 	gl::model_ubs model_ubs;
 	unsigned int m_framestamp{0}; // id of currently rendered gfx frame
 	unsigned int m_timbersweepframe{0}; // the frame the beams of the tracks far away were last let go in
+	unsigned int m_timberlayframe{0}; // the frame the time spent laying the beams is counted for
+	double m_timberlaying{0.0}; // in ms
 	float m_fogrange{2000.0f};
 	// when > 0, the walk is inside a Render_Instanced() call: the draws are made for this many instances from
 	// m_current_instance_base onwards. The vertex shader reads per-instance modelview from the instance buffer
 	std::size_t m_current_instance_count{0};
 	std::uint32_t m_current_instance_base{0};
-	// camera-space transforms of the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of
-	// detail; kept from frame to frame to reuse their allocations
+	// the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of detail: their camera-space
+	// transforms, or with walk_timbers_gpu() the runs of their instances on the gpu; kept from frame to frame to reuse their allocations
 	struct timber_bucket
 	{
 		track_sleepers::beam_model const *model{nullptr};
 		int part{-1}; // of a model put together from parts; -1: the whole model
 		float band{0.f}; // the squared distance the level of detail of the whole model is seen from
 		std::vector<glm::mat4> instances;
+		std::vector<gl::timber_range> runs;
+		std::uint32_t count{0}; // instances of the runs
+		std::uint32_t first{0}; // base instance of their modelviews in the instance buffer of the frame
 	};
 	std::vector<timber_bucket> m_timberbuckets;
+	std::vector<TTrack *> m_timbertracks; // the tracks of a cell with beams to draw
+	std::vector<gl::timber_range> m_timberranges; // the runs of all the buckets, as they're expanded
+	std::vector<glm::mat4> m_timberorigins; // the modelviews of the cells of the runs
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance
 	// camera-space root modelview matrices for the batch currently being built.
 	// Kept as a member rather than a function-local so its heap allocation is

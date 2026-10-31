@@ -213,6 +213,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		for (auto &shadowcull : m_shadowcull)
 			shadowcull.init(&m_instancecull);
 		m_hiz.init();
+		m_timbers.init();
 		m_shadowfit.init();
 		m_exposure.init();
 		m_ao.init();
@@ -718,6 +719,7 @@ bool opengl46_renderer::Render()
 	// the same for the model blocks of the draws
 	m_instancestream->next_frame();
 	Bind_Instance_Stream();
+	m_timbers.next_frame();
 	model_ubo->next_frame();
 	if (m_drawblockstream)
 		m_drawblockstream->next_frame();
@@ -3604,6 +3606,16 @@ std::uint32_t opengl46_renderer::Upload_Instance_Modelviews( glm::mat4 const *Mo
 	return static_cast<std::uint32_t>( offset / static_cast<GLintptr>( sizeof( glm::mat4 ) ) );
 }
 
+std::uint32_t opengl46_renderer::Reserve_Instance_Modelviews( std::size_t const Count )
+{
+	auto const generation { m_instancestream->generation() };
+	auto const offset { m_instancestream->reserve( static_cast<GLsizeiptr>( Count * sizeof( glm::mat4 ) ) ) };
+	if( m_instancestream->generation() != generation ) {
+		Bind_Instance_Stream();
+	}
+	return static_cast<std::uint32_t>( offset / static_cast<GLintptr>( sizeof( glm::mat4 ) ) );
+}
+
 void opengl46_renderer::Bind_Instance_Stream() const
 {
 	GLuint const buffer { m_instancestream->buffer() };
@@ -4993,6 +5005,31 @@ void opengl46_renderer::walk_draw(std::vector<gfx::geometrybank_handle>::iterato
 std::uint32_t opengl46_renderer::walk_instances(glm::mat4 const *Modelviews, std::size_t const Count)
 {
 	return Upload_Instance_Modelviews(Modelviews, Count);
+}
+
+bool opengl46_renderer::walk_timbers_gpu() const
+{
+	return true;
+}
+
+bool opengl46_renderer::walk_timbers_place(std::vector<TTrack *> const &Tracks, bool const Restart)
+{
+	return m_timbers.place(Tracks, Restart);
+}
+
+std::uint32_t opengl46_renderer::walk_timbers_first(TTrack const &Track) const
+{
+	return m_timbers.first(Track);
+}
+
+std::uint32_t opengl46_renderer::walk_instances_reserve(std::size_t const Count)
+{
+	return Reserve_Instance_Modelviews(Count);
+}
+
+void opengl46_renderer::walk_timbers_expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges)
+{
+	m_timbers.expand(Origins, Ranges, m_instancestream->buffer());
 }
 
 void opengl46_renderer::walk_cull_face(bool const Enabled)

@@ -47,6 +47,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46skyocclusion.h"
 #include "rendering/opengl46/opengl46instancecull.h"
 #include "rendering/opengl46/opengl46hiz.h"
+#include "rendering/opengl46/opengl46timbers.h"
 #include "rendering/opengl46/opengl46shadowfit.h"
 #include "rendering/common/scenewalk.h"
 #include "rendering/common/temporalaa.h"
@@ -217,6 +218,12 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	void walk_draw(gfx::geometry_handle const &Geometry) override;
 	void walk_draw(std::vector<gfx::geometrybank_handle>::iterator First, std::vector<gfx::geometrybank_handle>::iterator Last) override;
 	std::uint32_t walk_instances(glm::mat4 const *Modelviews, std::size_t const Count) override;
+	// the instances of the sleepers and timbers of the tracks on the gpu (m_timbers)
+	bool walk_timbers_gpu() const override;
+	bool walk_timbers_place(std::vector<TTrack *> const &Tracks, bool const Restart) override;
+	std::uint32_t walk_timbers_first(TTrack const &Track) const override;
+	std::uint32_t walk_instances_reserve(std::size_t const Count) override;
+	void walk_timbers_expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges) override;
 	void walk_cull_face(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
@@ -348,6 +355,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	bool Render(world_environment *Environment);
 	// places supplied modelview matrices in the instance buffer of the frame. returns: base instance of the first of them
 	std::uint32_t Upload_Instance_Modelviews( glm::mat4 const *Modelviews, std::size_t const Count );
+	// the room for Count modelviews in the instance buffer of the frame, for the gpu to write. returns: base instance of the first
+	std::uint32_t Reserve_Instance_Modelviews( std::size_t const Count );
 	// binds the instance buffer of the frame for the vertex shaders (INSTANCE_SSBO_BINDING)
 	void Bind_Instance_Stream() const;
 	// draws the instances queued in the pass from the result of the gpu culling (Global.gfx_gpucull 1): makes the depth
@@ -600,6 +609,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	int m_shadowcascade { -1 }; // the region is drawn for this cascade of the sun shadows
 	// depth pyramid for the occlusion test of the gpu culling
 	opengl46_hiz m_hiz;
+	opengl46_timbers m_timbers; // the instances of the sleepers and timbers of the tracks on the gpu
 	// the cascades of the sun shadows fitted to the depth of the main view (Global.gfx_shadow_sdsm)
 	opengl46_shadow_fit m_shadowfit;
 	// with a cascade fitted: the corners of the area its map is to cover, for setup_pass()

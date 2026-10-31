@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 
 namespace track_sleepers {
 
@@ -48,6 +49,40 @@ void vertices_of( TSubModel *Submodel, Visit Visitor ) {
     for( auto const &vertex : vertices ) {
         Visitor( glm::vec3 { transform * glm::vec4 { vertex.position, 1.f } } );
     }
+}
+
+// the highest the faces of the submodel reach over the point of the plan of the model, in the space of the model; none where
+// no face lies over it
+std::optional<float> surface_at( TSubModel *Submodel, float const X, float const Z ) {
+
+    glm::mat4 transform { 1.f };
+    if( ( Submodel->iFlags & 0xC000 ) && ( Submodel->GetMatrix() != nullptr ) ) {
+        transform = glm::make_mat4( Submodel->GetMatrix()->readArray() );
+    }
+    auto const indexed { Submodel->m_geometry.handle != null_handle };
+    auto const &vertices { indexed ? GfxRenderer->Vertices( Submodel->m_geometry.handle ) : Submodel->Vertices };
+    auto const &indices { indexed ? GfxRenderer->Indices( Submodel->m_geometry.handle ) : Submodel->Indices };
+    auto const count { indices.empty() ? vertices.size() : indices.size() };
+    auto const corner = [&]( std::size_t const Index ) {
+        return glm::vec3 { transform * glm::vec4 { vertices[ indices.empty() ? Index : indices[ Index ] ].position, 1.f } }; };
+    std::optional<float> result;
+    for( std::size_t index = 0; index + 2 < count; index += 3 ) {
+        auto const a { corner( index ) };
+        auto const b { corner( index + 1 ) };
+        auto const c { corner( index + 2 ) };
+        auto const area { ( b.x - a.x ) * ( c.z - a.z ) - ( c.x - a.x ) * ( b.z - a.z ) };
+        if( std::abs( area ) < 1e-9f ) {
+            continue;
+        }
+        auto const u { ( ( X - a.x ) * ( c.z - a.z ) - ( c.x - a.x ) * ( Z - a.z ) ) / area };
+        auto const v { ( ( b.x - a.x ) * ( Z - a.z ) - ( X - a.x ) * ( b.z - a.z ) ) / area };
+        if( u < -1e-5f || v < -1e-5f || u + v > 1.f + 1e-5f ) {
+            continue;
+        }
+        auto const height { a.y + u * ( b.y - a.y ) + v * ( c.y - a.y ) };
+        result = ( result ? std::max( *result, height ) : height );
+    }
+    return result;
 }
 
 // the model of the beams of the name and skin, loaded and measured on the first use; null when it can't be loaded. the feet of
@@ -74,22 +109,32 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
             model.skin = GfxRenderer->Fetch_Material( Skin );
         }
         // a timber put together from its parts, with a part between the ends stretched and repeated to the length
-        std::array<char const *, part_count> const names { "begin", "main", "end" };
         model.stretchable = true;
         for( int part = 0; part < part_count; ++part ) {
-            model.parts[ part ] = model.model->GetFromName( names[ part ] );
-            model.stretchable = model.stretchable && model.parts[ part ] != nullptr;
+            model.parts[ part ] = model.model->GetFromName( part_names[ part ] );
+            model.stretchable = model.stretchable && ( part >= timber_parts || model.parts[ part ] != nullptr );
         }
         auto top { std::numeric_limits<float>::lowest() };
         model.span = { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
         if( model.stretchable ) {
             for( int part = 0; part < part_count; ++part ) {
+                if( model.parts[ part ] == nullptr ) {
+                    continue;
+                }
                 glm::vec2 span { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
+                glm::vec2 heights { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
+                auto const timber { part < timber_parts };
                 vertices_of( model.parts[ part ], [&]( glm::vec3 const &Position ) {
                     span = { std::min( span.x, Position.x ), std::max( span.y, Position.x ) };
-                    top = std::max( top, Position.y ); } );
+                    heights = { std::min( heights.x, Position.y ), std::max( heights.y, Position.y ) };
+                    if( timber ) {
+                        top = std::max( top, Position.y );
+                    } } );
                 model.spans[ part ] = span;
-                model.span = { std::min( model.span.x, span.x ), std::max( model.span.y, span.y ) };
+                model.heights[ part ] = heights;
+                if( timber ) {
+                    model.span = { std::min( model.span.x, span.x ), std::max( model.span.y, span.y ) };
+                }
             }
             model.stretchable = model.spans[ part_main ].y > model.spans[ part_main ].x;
         }
@@ -112,8 +157,19 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
             }
         }
         std::sort( model.bands.begin(), model.bands.end() );
-        // the rails sit on the seat of the sleeper, below the fastenings sticking up over it
+        // the rails sit on the seat of the sleeper, below the fastenings sticking up over it, or on the plate of the fastening
+        model.bed = top;
         model.seat = ( Seat >= 0.f ? Seat : top );
+        if( Seat < 0.f && model.fastened() ) {
+            model.seat = std::max( top, surface_at( model.parts[ part_plate ], 0.f, 0.f ).value_or( top ) );
+        }
+        if( model.fastened() ) {
+            for( auto const part : { part_chair, part_slide } ) {
+                if( model.parts[ part ] != nullptr ) {
+                    model.slide = std::max( model.slide, surface_at( model.parts[ part ], static_cast<float>( -slide_probe ), 0.f ).value_or( model.seat ) - model.seat );
+                }
+            }
+        }
         if( model.length() < 0.5f ) {
             ErrorLog( "Bad sleepers3d: model \"" + Name + "\" has no beam along x" );
             model.model = nullptr;
@@ -125,7 +181,11 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
             + ( model.stretchable ?
                 ", main " + to_string( model.spans[ part_main ].x, 3 ) + ".." + to_string( model.spans[ part_main ].y, 3 ) :
                 std::string {} )
-            + ", seat " + to_string( model.seat, 3 ) );
+            + ( model.fastened() ?
+                std::string { ", fastenings plate" } + ( model.parts[ part_chair ] != nullptr ? " chair" : "" ) + ( model.parts[ part_check ] != nullptr ? " check" : "" ) + ( model.parts[ part_slide ] != nullptr ? " slide" : "" ) :
+                std::string {} )
+            + ", seat " + to_string( model.seat, 3 )
+            + ( model.slide > 0.f ? ", slide " + to_string( model.slide, 3 ) : std::string {} ) );
         return &model;
     }
     return ( found->second.model != nullptr ? &found->second : nullptr );
@@ -154,6 +214,27 @@ beam_model const *timber_model( TTrack const &Track ) {
         }
     }
     return timber_model();
+}
+
+beam_model const *timber_model( TTrack const &Track, std::vector<beam> const &Beams ) {
+
+    if( false == Track.m_timber_model_name.empty() ) {
+        return timber_model( Track );
+    }
+    std::vector<std::pair<TTrack const *, std::size_t>> panels;
+    for( auto const &beam : Beams ) {
+        if( beam.plain || beam.panel == nullptr ) {
+            continue;
+        }
+        auto found { std::find_if( panels.begin(), panels.end(), [&]( auto const &Panel ) { return Panel.first == beam.panel; } ) };
+        if( found == panels.end() ) {
+            panels.emplace_back( beam.panel, 0 );
+            found = std::prev( panels.end() );
+        }
+        ++found->second;
+    }
+    auto const most { std::max_element( panels.begin(), panels.end(), []( auto const &Left, auto const &Right ) { return Left.second < Right.second; } ) };
+    return ( most != panels.end() ? timber_model( *most->first ) : timber_model( Track ) );
 }
 
 beam_model const *plain_model( TTrack const &Track ) {
