@@ -1761,14 +1761,16 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if (vp.main && !vp.custom_backbuffer) // TODO: update window sizes also for extra viewports
             target_size = Global.fb_size;
 
-		// the motion blur only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last frame.
-		// with nothing moving the velocity is zero everywhere, the blur takes a single sample of each pixel and gives back the
-		// image it was given, so the velocity target, its resolve and the blur are left out and the picture stays the same.
-		// a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel
-		auto const motionblur{
+		// the motion is blurred only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last
+		// frame (a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel). the pass
+		// itself runs in every frame: the windscreens (mat_rain_windscreen, mat_bugs_windscreen) ask it in the velocity target for
+		// the picture in their drops and the haze, also standing still, with the motion blur off and with any anti-aliasing (the
+		// motion is then blurred by 0)
+		auto const moving{
 		    Global.gfx_postfx_motionblur_enabled
 		    && (m_vehiclesmoved
 		        || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
+		auto const motionblur{Global.gfx_motion_vectors() && (vp.main_texv != nullptr)};
 
 		if (!Global.gfx_skippipeline)
 		{
@@ -2073,7 +2075,7 @@ if (!Global.gfx_skippipeline)
 				{
 					if (taa)
 						gpupart("motion blur");
-					model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
+					model_ubs.param[0].x = moving ? m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter) : 0.0;
 					model_ubo->update(model_ubs);
 					m_pfx_motionblur->apply({image, vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
 				}

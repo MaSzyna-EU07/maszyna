@@ -403,7 +403,9 @@ struct global_settings {
     bool gfx_bufferstreaming = true;
     bool gfx_postfx_motionblur_enabled = true;
     // the colour pass writes the velocities of the pixels: for the motion blur, the temporal anti-aliasing or dlss
-    bool gfx_motion_vectors() const { return gfx_postfx_motionblur_enabled || gfx_taa() || gfx_dlss(); }
+    // the velocity target is always drawn: the windscreens (mat_rain_windscreen, mat_bugs_windscreen) send the post-processing their
+    // drops and haze through it, whatever the motion blur and the anti-aliasing (not without the pipeline: no post-processing there)
+    bool gfx_motion_vectors() const { return ( false == gfx_skippipeline ) || gfx_postfx_motionblur_enabled; }
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;
     GLenum gfx_format_color = GL_RGB16F;
