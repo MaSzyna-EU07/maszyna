@@ -2479,6 +2479,8 @@ class TMoverParameters
 	// the parts of UpdatePipePressure()
 	void UpdateLocalBrakeValve(double dt);
 	void UpdateMainValve(double dt);
+	double MainValveSupply();
+	double MainValveHandlePosition() const;
 	void UpdateEmergencyValve(double dt);
 	void UpdateDistributorSettings();
 	void UpdateEPBrake();
@@ -2639,6 +2641,7 @@ class TMoverParameters
 	bool AutoRelayMainDown();
 	bool AutoRelayLineContactorsStep(bool motorconnectorsoff);
 	bool CamshaftRunDown();
+	bool CamshaftRunDownEMU();
 	bool MotorConnectorsCheck();
 	bool ResistorsFlagCheck(void) const; // sprawdzenie kontrolki oporow rozruchowych NBMX
 
@@ -2652,6 +2655,7 @@ class TMoverParameters
 	void EIMICFromSteps(double dt);
 	void EIMICFromFourPositions(double dt);
 	void EIMICFromUniversalController(double dt, double brakeDemand);
+	void UniversalControllerTrainBrake();
 	void EIMICTraxxLocalBrake(double dt);
 	void EIMICLimit();
 	void CheckSpeedCtrl(double dt);
@@ -2668,6 +2672,8 @@ class TMoverParameters
 	bool dizel_AutoGearCheck(void);
 	bool dizel_GearShiftCheck(double VelUp, double VelDown);
 	void dizel_ClutchCheck();
+	void dizel_ClutchByController();
+	void dizel_ClutchByIntegratedController();
 	double dizel_fillcheck(int mcp, double dt);
 	double dizel_DigitalFill(double dt);
 	double dizel_GovernorFill(int mcp, double realfill) const;

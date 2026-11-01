@@ -4678,20 +4678,7 @@ void TMoverParameters::UpdateLocalBrakeValve(double dt)
 // the lock of the brake pipe and the flow of the driver's handle, from the main reservoir or into the air
 void TMoverParameters::UpdateMainValve(double dt)
 {
-	double temp;
-	LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
-	bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
-	bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
-	                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != dt_EZT && !UnlockPipe;
-
-	if (lock_old || lock_new)
-	{
-		temp = PipePress + 0.00001;
-	}
-	else
-	{
-		temp = ScndPipePress;
-	}
+	auto const temp{MainValveSupply()};
 	Handle->SetReductor(BrakeCtrlPos2);
 
 	if ((BrakeOpModes & bom_PS) == 0 || (CabOccupied != 0 && BrakeOpModeFlag != bom_PS))
@@ -4699,16 +4686,7 @@ void TMoverParameters::UpdateMainValve(double dt)
 
 		if (BrakeOpModeFlag < bom_EP || Handle->GetPos(bh_EB) - 0.5 < BrakeCtrlPosR || (BrakeHandle != TBrakeHandle::MHZ_EN57 && BrakeHandle != TBrakeHandle::MHZ_K8P))
 		{
-			double pos = BrakeCtrlPosR;
-			if (SpeedCtrlUnit.IsActive && SpeedCtrlUnit.BrakeIntervention && !SpeedCtrlUnit.Standby && BrakeCtrlPos != Handle->GetPos(bh_EB))
-			{
-				pos = Handle->GetPos(bh_NP);
-				if (SpeedCtrlUnit.BrakeInterventionBraking)
-					pos = Handle->GetPos(bh_FB);
-				if (SpeedCtrlUnit.BrakeInterventionUnbraking)
-					pos = Handle->GetPos(bh_RP);
-			}
-			dpMainValve = Handle->GetPF(pos, PipePress, temp, dt, EqvtPipePress);
+			dpMainValve = Handle->GetPF(MainValveHandlePosition(), PipePress, temp, dt, EqvtPipePress);
 		}
 		else
 		{
@@ -4730,6 +4708,36 @@ void TMoverParameters::UpdateMainValve(double dt)
 		else
 			Pipe2->Flow(dpMainValve);
 	}
+}
+
+// the pressure the driver's handle is fed from: the main pipe's, or the brake pipe's own with the pipe locked
+double TMoverParameters::MainValveSupply()
+{
+	LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
+	bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
+	bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
+	                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != dt_EZT && !UnlockPipe;
+
+	if (lock_old || lock_new)
+	{
+		return PipePress + 0.00001;
+	}
+	return ScndPipePress;
+}
+
+// the position the driver's handle works at: its own, or the one the speed control's brake intervention sets
+double TMoverParameters::MainValveHandlePosition() const
+{
+	double pos = BrakeCtrlPosR;
+	if (SpeedCtrlUnit.IsActive && SpeedCtrlUnit.BrakeIntervention && !SpeedCtrlUnit.Standby && BrakeCtrlPos != Handle->GetPos(bh_EB))
+	{
+		pos = Handle->GetPos(bh_NP);
+		if (SpeedCtrlUnit.BrakeInterventionBraking)
+			pos = Handle->GetPos(bh_FB);
+		if (SpeedCtrlUnit.BrakeInterventionUnbraking)
+			pos = Handle->GetPos(bh_RP);
+	}
+	return pos;
 }
 
 void TMoverParameters::UpdateEmergencyValve(double dt)
@@ -7375,39 +7383,7 @@ bool TMoverParameters::CamshaftRunDown()
 
 		if (TrainType == dt_EZT)
 		{
-			// EN57 wal jednokierunkowy calosciowy
-			if (MainCtrlActualPos == 1)
-			{
-
-				MainCtrlActualPos = 0;
-				OK = true;
-			}
-			else
-			{
-
-				if (LastRelayTime > CtrlDownDelay)
-				{
-
-					if (MainCtrlActualPos < RlistSize)
-					{
-						// dojdz do konca
-						++MainCtrlActualPos;
-					}
-					else if (ScndCtrlActualPos < ScndCtrlPosNo)
-					{
-						// potem boki
-						++ScndCtrlActualPos;
-						SetFlag(SoundFlag, sound::shuntfield);
-					}
-					else
-					{
-						// i sie przewroc na koniec
-						MainCtrlActualPos = 0;
-						ScndCtrlActualPos = 0;
-					}
-					OK = true;
-				}
-			}
+			OK = CamshaftRunDownEMU();
 		}
 		else
 		{
@@ -7445,6 +7421,46 @@ bool TMoverParameters::CamshaftRunDown()
 		MainCtrlActualPos = 0;
 		ScndCtrlActualPos = 0;
 		OK = true;
+	}
+	return OK;
+}
+
+// the one way camshaft of the EN57 run on to its end and round to zero; returns whether it moved
+bool TMoverParameters::CamshaftRunDownEMU()
+{
+	bool OK = false;
+	// EN57 wal jednokierunkowy calosciowy
+	if (MainCtrlActualPos == 1)
+	{
+
+		MainCtrlActualPos = 0;
+		OK = true;
+	}
+	else
+	{
+
+		if (LastRelayTime > CtrlDownDelay)
+		{
+
+			if (MainCtrlActualPos < RlistSize)
+			{
+				// dojdz do konca
+				++MainCtrlActualPos;
+			}
+			else if (ScndCtrlActualPos < ScndCtrlPosNo)
+			{
+				// potem boki
+				++ScndCtrlActualPos;
+				SetFlag(SoundFlag, sound::shuntfield);
+			}
+			else
+			{
+				// i sie przewroc na koniec
+				MainCtrlActualPos = 0;
+				ScndCtrlActualPos = 0;
+			}
+			OK = true;
+		}
 	}
 	return OK;
 }
@@ -7740,22 +7756,7 @@ void TMoverParameters::EIMICFromUniversalController(double dt, double const brak
 {
 	if (UniCtrlIntegratedBrakePNCtrl)
 	{
-		if (UniCtrlList[MainCtrlPos].mode != BrakeCtrlPos && MainCtrlActualPos == MainCtrlPos) // there was no move of controller, but brake only
-		{
-			if (BrakeCtrlPos < UniCtrlList[MainCtrlPosNo].mode)
-				BrakeLevelSet(UniCtrlList[MainCtrlPosNo].mode); // bottom clamping
-			if (BrakeCtrlPos > UniCtrlList[0].mode)
-				BrakeLevelSet(UniCtrlList[0].mode); // top clamping
-			if (IsCabMaster())
-			{
-				while (BrakeCtrlPos > UniCtrlList[MainCtrlPos].mode)
-					DecMainCtrl(1); // find nearest position
-				while (BrakeCtrlPos < UniCtrlList[MainCtrlPos].mode)
-					IncMainCtrl(1); // find nearest position
-			}
-		}
-		else // controller was moved
-			BrakeLevelSet(UniCtrlList[MainCtrlPos].mode);
+		UniversalControllerTrainBrake();
 	}
 
 	if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
@@ -7781,6 +7782,28 @@ void TMoverParameters::EIMICFromUniversalController(double dt, double const brak
 		// LocalBrake operuje wylacznie pneumatycznym hamulcem lokomotywy
 		eimic = brakeDemand > 0.01 ? -brakeDemand : eimic;
 	}
+}
+
+// the train brake built into the universal controller: the handle set to the controller's position, or the
+// controller, at a brake handle moved alone, to the nearest position of the handle's
+void TMoverParameters::UniversalControllerTrainBrake()
+{
+	if (UniCtrlList[MainCtrlPos].mode != BrakeCtrlPos && MainCtrlActualPos == MainCtrlPos) // there was no move of controller, but brake only
+	{
+		if (BrakeCtrlPos < UniCtrlList[MainCtrlPosNo].mode)
+			BrakeLevelSet(UniCtrlList[MainCtrlPosNo].mode); // bottom clamping
+		if (BrakeCtrlPos > UniCtrlList[0].mode)
+			BrakeLevelSet(UniCtrlList[0].mode); // top clamping
+		if (IsCabMaster())
+		{
+			while (BrakeCtrlPos > UniCtrlList[MainCtrlPos].mode)
+				DecMainCtrl(1); // find nearest position
+			while (BrakeCtrlPos < UniCtrlList[MainCtrlPos].mode)
+				IncMainCtrl(1); // find nearest position
+		}
+	}
+	else // controller was moved
+		BrakeLevelSet(UniCtrlList[MainCtrlPos].mode);
 }
 
 // the local brake of the TRAXX locomotives, by time: released, held or applied, which cuts the drive off
@@ -8114,57 +8137,69 @@ void TMoverParameters::dizel_ClutchCheck()
 {
 	if (EIMCtrlType > 0) // sterowanie komputerowe
 	{
-		if (dizel_automaticgearstatus == 0)
-		{
-			if ((hydro_TC && hydro_TC_Fill > 0.01) || eimic_real > 0.005)
-				dizel_EngageSwitch(1.0);
-			else if (Vel > hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
-				dizel_EngageSwitch(0.5);
-			else
-				dizel_EngageSwitch(0.0);
-		}
-		else
-			dizel_EngageSwitch(0.0);
+		dizel_ClutchByIntegratedController();
 	}
 	else if (dizel_automaticgearstatus == 0) // ustaw cisnienie w silowniku sprzegla}
-		switch (RList[MainCtrlPos].Mn)
-		{
-		case 1:
-			dizel_EngageSwitch(0.5);
-			break;
-		case 2:
-			dizel_EngageSwitch(1.0);
-			break;
-		case 3:
-			if (Vel > dizel_minVelfullengage)
-				dizel_EngageSwitch(1.0);
-			else
-				dizel_EngageSwitch(0.5);
-			break;
-		case 4:
-			if (Vel > dizel_minVelfullengage)
-				dizel_EngageSwitch(1.0);
-			else
-				dizel_EngageSwitch(0.66);
-			break;
-		case 5:
-			if (Vel > dizel_minVelfullengage)
-				dizel_EngageSwitch(1.0);
-			else
-				dizel_EngageSwitch(0.35 * (1 + RList[MainCtrlPos].R) * RList[MainCtrlPos].R);
-			break;
-		default:
-			if (hydro_TC && hydro_TC_Fill > 0.01)
-				dizel_EngageSwitch(1.0);
-			else
-				dizel_EngageSwitch(0.0);
-		}
+		dizel_ClutchByController();
 	else
 		dizel_EngageSwitch(0.0);
 	if (!(motor_param(ScndCtrlActualPos).mIsat > 0))
 		dizel_EngageSwitch(0.0); // wylacz sprzeglo na pozycjach neutralnych
 	if (!AutoRelayFlag)
 		ScndCtrlActualPos = ScndCtrlPos;
+}
+
+// the clutch by the controller's position: half or fully in, fully over the speed of the full engagement
+void TMoverParameters::dizel_ClutchByController()
+{
+	switch (RList[MainCtrlPos].Mn)
+	{
+	case 1:
+		dizel_EngageSwitch(0.5);
+		break;
+	case 2:
+		dizel_EngageSwitch(1.0);
+		break;
+	case 3:
+		if (Vel > dizel_minVelfullengage)
+			dizel_EngageSwitch(1.0);
+		else
+			dizel_EngageSwitch(0.5);
+		break;
+	case 4:
+		if (Vel > dizel_minVelfullengage)
+			dizel_EngageSwitch(1.0);
+		else
+			dizel_EngageSwitch(0.66);
+		break;
+	case 5:
+		if (Vel > dizel_minVelfullengage)
+			dizel_EngageSwitch(1.0);
+		else
+			dizel_EngageSwitch(0.35 * (1 + RList[MainCtrlPos].R) * RList[MainCtrlPos].R);
+		break;
+	default:
+		if (hydro_TC && hydro_TC_Fill > 0.01)
+			dizel_EngageSwitch(1.0);
+		else
+			dizel_EngageSwitch(0.0);
+	}
+}
+
+// the clutch of the integrated controller: in with the converter filled or the power asked, half in for the retarder
+void TMoverParameters::dizel_ClutchByIntegratedController()
+{
+	if (dizel_automaticgearstatus == 0)
+	{
+		if ((hydro_TC && hydro_TC_Fill > 0.01) || eimic_real > 0.005)
+			dizel_EngageSwitch(1.0);
+		else if (Vel > hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
+			dizel_EngageSwitch(0.5);
+		else
+			dizel_EngageSwitch(0.0);
+	}
+	else
+		dizel_EngageSwitch(0.0);
 }
 
 // performs diesel engine startup procedure; potentially clears startup switch; returns: true if the engine can be started, false otherwise
