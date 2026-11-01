@@ -7411,151 +7411,188 @@ void TMoverParameters::CheckEIMIC(double dt)
 	switch (EIMCtrlType)
 	{
 	case 0:
-		eimic = brakeDemand > 0.01 ? -brakeDemand : eimic_analog > 0.01 ? eimic_analog : (double)MainCtrlPos / (double)MainCtrlPosNo;
-		if (EIMCtrlAdditionalZeros || EIMCtrlEmergency)
-		{
-			if (eimic > 0.001)
-				eimic = std::max(0.002, eimic * (double)MainCtrlPosNo / ((double)MainCtrlPosNo - offset) - offset / ((double)MainCtrlPosNo - offset));
-			if (eimic < -0.001 && BrakeHandle != TBrakeHandle::MHZ_EN57)
-				eimic = std::min(-0.002, eimic * (double)LocalBrakePosNo / ((double)LocalBrakePosNo - multiplier) + offset / ((double)LocalBrakePosNo - multiplier));
-		}
-		if (eimic > 0.001 && SpeedCtrlUnit.IsActive)
-			eimic = std::max(eimic, SpeedCtrlUnit.MinPower);
+		EIMICFromController(brakeDemand, offset, multiplier);
 		break;
 	case 1:
+		EIMICFromSteps(dt);
+		break;
+	case 2:
+		EIMICFromFourPositions(dt);
+		break;
+	case 3:
+		EIMICFromUniversalController(dt, brakeDemand);
+		break;
+	}
+	if (LocHandleTimeTraxx)
+	{
+		EIMICTraxxLocalBrake(dt);
+	}
+
+	EIMICLimit();
+}
+
+// the controller (EIMCtrlType 0): the position of the main controller, or the analog one, or the brake asked
+void TMoverParameters::EIMICFromController(double const brakeDemand, double const offset, double const multiplier)
+{
+	eimic = brakeDemand > 0.01 ? -brakeDemand : eimic_analog > 0.01 ? eimic_analog : (double)MainCtrlPos / (double)MainCtrlPosNo;
+	if (EIMCtrlAdditionalZeros || EIMCtrlEmergency)
+	{
+		if (eimic > 0.001)
+			eimic = std::max(0.002, eimic * (double)MainCtrlPosNo / ((double)MainCtrlPosNo - offset) - offset / ((double)MainCtrlPosNo - offset));
+		if (eimic < -0.001 && BrakeHandle != TBrakeHandle::MHZ_EN57)
+			eimic = std::min(-0.002, eimic * (double)LocalBrakePosNo / ((double)LocalBrakePosNo - multiplier) + offset / ((double)LocalBrakePosNo - multiplier));
+	}
+	if (eimic > 0.001 && SpeedCtrlUnit.IsActive)
+		eimic = std::max(eimic, SpeedCtrlUnit.MinPower);
+}
+
+// EIMCtrlType 1: the positions B+ to TMax move the value at a steady pace
+void TMoverParameters::EIMICFromSteps(double dt)
+{
+	switch (MainCtrlPos)
+	{
+	case 0: // B+
+		eimic -= std::clamp(1.0 + eimic, 0.0, dt * 0.14); // odejmuj do -1
+		break;
+	case 1: // B
+		eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+		break;
+	case 2: // B-
+	case 3: // 0
+	case 4: // T-
+		eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+		eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+		break;
+	case 5: // T
+		eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+		break;
+	case 6: // T+
+		eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1
+		break;
+	case 7: // TMax
+		eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
+		break;
+	default:
+		break;
+	}
+	if (MainCtrlPos >= 3 && eimic < 0)
+		eimic = 0;
+	if (MainCtrlPos <= 3 && eimic > 0)
+		eimic = 0;
+}
+
+// EIMCtrlType 2: the positions 0 to 4 move the value towards -1, 0 or 1, from the controller's delay on
+void TMoverParameters::EIMICFromFourPositions(double dt)
+{
+	if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
+	{
+		double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
 		switch (MainCtrlPos)
 		{
-		case 0: // B+
-			eimic -= std::clamp(1.0 + eimic, 0.0, dt * 0.14); // odejmuj do -1
+		case 0:
+		case 1:
+			eimic -= std::clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
+			if (eimic > 0)
+				eimic = 0;
 			break;
-		case 1: // B
-			eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
+		case 2:
+			eimic -= std::clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
 			break;
-		case 2: // B-
-		case 3: // 0
-		case 4: // T-
-			eimic -= std::clamp(0.0 + eimic, 0.0, dt * 0.14); // odejmuj do 0
-			eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
+		case 3:
+			eimic += std::clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
 			break;
-		case 5: // T
-			eimic += std::clamp(0.0 - eimic, 0.0, dt * 0.14); // dodawaj do 0
-			break;
-		case 6: // T+
-			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1
-			break;
-		case 7: // TMax
-			eimic += std::clamp(1.0 - eimic, 0.0, dt * 0.14); // dodawaj do 1, max
+		case 4:
+			eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
+			if (eimic < 0)
+				eimic = 0;
 			break;
 		default:
 			break;
 		}
-		if (MainCtrlPos >= 3 && eimic < 0)
-			eimic = 0;
-		if (MainCtrlPos <= 3 && eimic > 0)
-			eimic = 0;
-		break;
-	case 2:
-		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
-		{
-			double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
-			switch (MainCtrlPos)
-			{
-			case 0:
-			case 1:
-				eimic -= std::clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
-				if (eimic > 0)
-					eimic = 0;
-				break;
-			case 2:
-				eimic -= std::clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
-				break;
-			case 3:
-				eimic += std::clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
-				break;
-			case 4:
-				eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
-				if (eimic < 0)
-					eimic = 0;
-				break;
-			default:
-				break;
-			}
-		}
-		if (MainCtrlActualPos == MainCtrlPos)
-			LastRelayTime += dt;
-		else
-		{
-			LastRelayTime = 0;
-			MainCtrlActualPos = MainCtrlPos;
-		}
-		break;
-	case 3:
-		if (UniCtrlIntegratedBrakePNCtrl)
-		{
-			if (UniCtrlList[MainCtrlPos].mode != BrakeCtrlPos && MainCtrlActualPos == MainCtrlPos) // there was no move of controller, but brake only
-			{
-				if (BrakeCtrlPos < UniCtrlList[MainCtrlPosNo].mode)
-					BrakeLevelSet(UniCtrlList[MainCtrlPosNo].mode); // bottom clamping
-				if (BrakeCtrlPos > UniCtrlList[0].mode)
-					BrakeLevelSet(UniCtrlList[0].mode); // top clamping
-				if (IsCabMaster())
-				{
-					while (BrakeCtrlPos > UniCtrlList[MainCtrlPos].mode)
-						DecMainCtrl(1); // find nearest position
-					while (BrakeCtrlPos < UniCtrlList[MainCtrlPos].mode)
-						IncMainCtrl(1); // find nearest position
-				}
-			}
-			else // controller was moved
-				BrakeLevelSet(UniCtrlList[MainCtrlPos].mode);
-		}
-
-		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
-		{
-			eimic -= safe_clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
-			               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedDown : sign(UniCtrlList[MainCtrlPos].SpeedDown) * 0.01); // odejmuj do X
-			eimic += safe_clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
-			               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedUp : sign(UniCtrlList[MainCtrlPos].SpeedUp) * 0.01); // dodawaj do X
-			eimic = safe_clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
-		}
-		if (MainCtrlActualPos == MainCtrlPos)
-			LastRelayTime += dt;
-		else
-		{
-			LastRelayTime = 0;
-			MainCtrlActualPos = MainCtrlPos;
-		}
-		if (Hamulec->GetEDBCP() > 0.3 && eimic < 0 && !UniCtrlIntegratedLocalBrakeCtrl) // when braking with pneumatic brake
-			eimic = 0; // shut off retarder
-		if (UniCtrlIntegratedBrakeCtrl == false && UniCtrlIntegratedLocalBrakeCtrl == false)
-		{
-			// w trybie SplitEDPneumaticBrake hamowanie ED przychodzi z osobnego nastawnika,
-			// LocalBrake operuje wylacznie pneumatycznym hamulcem lokomotywy
-			eimic = brakeDemand > 0.01 ? -brakeDemand : eimic;
-		}
 	}
-	if (LocHandleTimeTraxx)
+	if (MainCtrlActualPos == MainCtrlPos)
+		LastRelayTime += dt;
+	else
 	{
-		if (LocalBrakeRatio() < 0.4) // pozycja 0, odhamowywanie
-		{
-			eim_localbrake -= dt * 0.17;
-		}
+		LastRelayTime = 0;
+		MainCtrlActualPos = MainCtrlPos;
+	}
+}
 
-		if (LocalBrakeRatio() > 0.6) // pozycja 2, zahamowywanie
+// EIMCtrlType 3: the universal controller of UniCtrlList, with the train brake built in or not
+void TMoverParameters::EIMICFromUniversalController(double dt, double const brakeDemand)
+{
+	if (UniCtrlIntegratedBrakePNCtrl)
+	{
+		if (UniCtrlList[MainCtrlPos].mode != BrakeCtrlPos && MainCtrlActualPos == MainCtrlPos) // there was no move of controller, but brake only
 		{
-			eim_localbrake += dt * 0.17;
-			eim_localbrake = std::max(eim_localbrake, BrakePress / MaxBrakePress[0]);
+			if (BrakeCtrlPos < UniCtrlList[MainCtrlPosNo].mode)
+				BrakeLevelSet(UniCtrlList[MainCtrlPosNo].mode); // bottom clamping
+			if (BrakeCtrlPos > UniCtrlList[0].mode)
+				BrakeLevelSet(UniCtrlList[0].mode); // top clamping
+			if (IsCabMaster())
+			{
+				while (BrakeCtrlPos > UniCtrlList[MainCtrlPos].mode)
+					DecMainCtrl(1); // find nearest position
+				while (BrakeCtrlPos < UniCtrlList[MainCtrlPos].mode)
+					IncMainCtrl(1); // find nearest position
+			}
 		}
-		else // pozycja 1, utrzymanie cisnienia
-		{
-			if (eim_localbrake < Hamulec->GetEDBCP() / MaxBrakePress[0])
-				eim_localbrake = 0;
-		}
-		eim_localbrake = std::clamp(eim_localbrake, 0.0, 1.0);
-		if (eim_localbrake > 0.04 && eimic > 0)
-			eimic = 0;
+		else // controller was moved
+			BrakeLevelSet(UniCtrlList[MainCtrlPos].mode);
 	}
 
+	if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
+	{
+		eimic -= safe_clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
+		               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedDown : sign(UniCtrlList[MainCtrlPos].SpeedDown) * 0.01); // odejmuj do X
+		eimic += safe_clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
+		               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedUp : sign(UniCtrlList[MainCtrlPos].SpeedUp) * 0.01); // dodawaj do X
+		eimic = safe_clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
+	}
+	if (MainCtrlActualPos == MainCtrlPos)
+		LastRelayTime += dt;
+	else
+	{
+		LastRelayTime = 0;
+		MainCtrlActualPos = MainCtrlPos;
+	}
+	if (Hamulec->GetEDBCP() > 0.3 && eimic < 0 && !UniCtrlIntegratedLocalBrakeCtrl) // when braking with pneumatic brake
+		eimic = 0; // shut off retarder
+	if (UniCtrlIntegratedBrakeCtrl == false && UniCtrlIntegratedLocalBrakeCtrl == false)
+	{
+		// w trybie SplitEDPneumaticBrake hamowanie ED przychodzi z osobnego nastawnika,
+		// LocalBrake operuje wylacznie pneumatycznym hamulcem lokomotywy
+		eimic = brakeDemand > 0.01 ? -brakeDemand : eimic;
+	}
+}
+
+// the local brake of the TRAXX locomotives, by time: released, held or applied, which cuts the drive off
+void TMoverParameters::EIMICTraxxLocalBrake(double dt)
+{
+	if (LocalBrakeRatio() < 0.4) // pozycja 0, odhamowywanie
+	{
+		eim_localbrake -= dt * 0.17;
+	}
+
+	if (LocalBrakeRatio() > 0.6) // pozycja 2, zahamowywanie
+	{
+		eim_localbrake += dt * 0.17;
+		eim_localbrake = std::max(eim_localbrake, BrakePress / MaxBrakePress[0]);
+	}
+	else // pozycja 1, utrzymanie cisnienia
+	{
+		if (eim_localbrake < Hamulec->GetEDBCP() / MaxBrakePress[0])
+			eim_localbrake = 0;
+	}
+	eim_localbrake = std::clamp(eim_localbrake, 0.0, 1.0);
+	if (eim_localbrake > 0.04 && eimic > 0)
+		eimic = 0;
+}
+
+// the value limited by the power, the spring brake, the pipe lock, the direction and the doors' permits
+void TMoverParameters::EIMICLimit()
+{
 	auto const eimicpowerenabled{(true == Mains || Power == 0.0) && (!SpringBrake.IsActive || !SpringBrakeCutsOffDrive) && !LockPipe && DirAbsolute != 0};
 	auto const eimicdoorenabled{(SpringBrake.IsActive && ReleaseParkingBySpringBrakeWhenDoorIsOpen)};
 	double eimic_max = 0.0;

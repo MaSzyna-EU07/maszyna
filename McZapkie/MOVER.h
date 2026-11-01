@@ -2576,6 +2576,13 @@ class TMoverParameters
 	bool DropAllPantographs(bool const State, range_t const Notify = range_t::consist);
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
+	// the parts of CheckEIMIC(), by the kind of the controller
+	void EIMICFromController(double brakeDemand, double offset, double multiplier);
+	void EIMICFromSteps(double dt);
+	void EIMICFromFourPositions(double dt);
+	void EIMICFromUniversalController(double dt, double brakeDemand);
+	void EIMICTraxxLocalBrake(double dt);
+	void EIMICLimit();
 	void CheckSpeedCtrl(double dt);
 	void SpeedCtrlButton(int button);
 	void SpeedCtrlInc();
