@@ -2614,6 +2614,10 @@ class TMoverParameters
 	bool LockDoors(bool const State, range_t const Notify = range_t::consist);
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
+	// the parts of update_doors()
+	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol);
+	void move_door(basic_door &door, double Deltatime);
+	void update_door_timers(double Deltatime);
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);

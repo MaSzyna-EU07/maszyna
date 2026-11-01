@@ -8852,89 +8852,8 @@ void TMoverParameters::update_doors(double const Deltatime)
 
 	for (auto &door : Doors.instances)
 	{
-		// revoke permit if...
-		door.open_permit = true == door.open_permit // ...we already have one...
-		                   && (false == Doors.permit_presets.empty() // ...there's no preset switch controlling permit state...
-		                       || (false == Doors.is_locked // ...and the door lock is engaged...
-		                           && false == door.remote_close)); // ...or the door is about to be closed
-
-		door.is_open = door.position >= Doors.range && (false == Doors.step_enabled || door.step_position >= (Doors.step_range != 0.f ? 1.f : 0.f));
-		door.is_closed = door.position <= 0.f && door.step_position <= 0.f;
-		door.is_door_closed = door.position <= 0.f;
-
-		door.local_open = door.local_open && false == door.is_open && (false == Doors.permit_needed || door.open_permit);
-		door.remote_open = (door.remote_open || Doors.remote_only) && false == door.is_open && (false == Doors.permit_needed || door.open_permit);
-		door.local_close = door.local_close && false == door.is_closed && (false == remoteopencontrol || false == door.remote_open);
-		door.remote_close = door.remote_close && false == door.is_closed && (false == localopencontrol || false == door.local_open);
-
-		auto const autoopenrequest{Doors.open_control == control_t::autonomous && (false == Doors.permit_needed || door.open_permit)};
-		auto const openrequest{(localopencontrol && door.local_open) || (remoteopencontrol && door.remote_open) || (autoopenrequest && false == door.is_open)};
-
-		auto const autocloserequest{(Doors.auto_velocity != -1.f && Vel > Doors.auto_velocity) || (door.auto_timer != -1.f && door.auto_timer <= 0.f) ||
-		                            (Doors.permit_needed && false == door.open_permit)};
-		auto const closerequest{(door.remote_close && remoteclosecontrol) || (door.local_close && localclosecontrol) || (autocloserequest && door.is_open)};
-
-		auto const ispowered{(Doors.voltage == 0 ? true : Doors.voltage == 24 ? Power24vIsAvailable || Power110vIsAvailable : Doors.voltage == 110 ? Power110vIsAvailable : false)};
-
-		door.is_opening = false == door.is_open && true == ispowered && false == closerequest && (true == door.is_opening || (true == openrequest && false == Doors.is_locked));
-		door.is_closing = false == door.is_closed && true == ispowered && false == openrequest && (door.is_closing || closerequest);
-		door.step_unfolding = Doors.step_range != 0.f && Doors.step_enabled && false == Doors.is_locked && door.step_position < 1.f && door.is_opening;
-		door.step_folding = door.step_position > 0.f // is unfolded
-		                    && (false == Doors.step_enabled // we lost permission to stay open or our door is calling the shots
-		                        || (Doors.permit_needed ? false == door.open_permit : door.is_closing)) &&
-		                    (door.close_delay > Doors.close_delay || door.position <= 0.f); // door is about to close, or already done
-
-		if (true == door.is_opening)
-		{
-			door.auto_timer = localopencontrol && door.local_open ? Doors.auto_duration : remoteopencontrol && door.remote_open && Doors.auto_include_remote ? Doors.auto_duration : -1.f;
-		}
-		// doors
-		if (true == door.is_opening)
-		{
-			// open door
-			if (false == door.step_unfolding // no wait if no doorstep
-			    || Doors.step_type == 2)
-			{ // no wait for rotating doorstep
-				door.open_delay += static_cast<float>(Deltatime);
-				if (door.open_delay > Doors.open_delay)
-				{
-					door.position = std::min<float>(Doors.range, static_cast<float>(door.position + Doors.open_rate * Deltatime));
-				}
-			}
-			door.close_delay = 0.f;
-		}
-		if (true == door.is_closing)
-		{
-			// close door
-			door.close_delay += static_cast<float>(Deltatime);
-			if (door.close_delay > Doors.close_delay)
-			{
-				door.position = std::max<float>(0.f, static_cast<float>(door.position - Doors.close_rate * Deltatime));
-			}
-			door.open_delay = 0.f;
-		}
-		// doorsteps
-		if (door.step_unfolding)
-		{
-			// unfold left doorstep
-			door.step_position = std::min<float>(1.f, static_cast<float>(door.step_position + Doors.step_rate * Deltatime));
-		}
-		if (door.step_folding)
-		{
-			// fold left doorstep
-			if (TrainType == dt_EZT || TrainType == dt_DMU)
-			{
-				// multi-unit vehicles typically fold the doorstep only after closing the door
-				if (door.position <= 0.f)
-				{
-					door.step_position = std::max<float>(0.f, static_cast<float>(door.step_position - Doors.step_rate * Deltatime));
-				}
-			}
-			else
-			{
-				door.step_position = std::max<float>(0.f, static_cast<float>(door.step_position - Doors.step_rate * Deltatime));
-			}
-		}
+		update_door_requests(door, localopencontrol, remoteopencontrol, localclosecontrol, remoteclosecontrol);
+		move_door(door, Deltatime);
 	}
 
 	if (false == Doors.instances[side::right].is_open && false == Doors.instances[side::left].is_open)
@@ -8944,25 +8863,7 @@ void TMoverParameters::update_doors(double const Deltatime)
 
 	if (Doors.auto_duration > 0.f)
 	{
-		// update door timers if the door close after defined time
-		for (auto &door : Doors.instances)
-		{
-
-			if (false == door.is_open)
-			{
-				continue;
-			}
-
-			if (door.auto_timer > 0.f)
-			{
-				door.auto_timer -= static_cast<float>(Deltatime);
-			}
-			// if there's load exchange in progress, reset the timer(s) for already open doors
-			if (door.auto_timer != -1.f && (LoadStatus & (2 | 1)) != 0)
-			{
-				door.auto_timer = Doors.auto_duration;
-			}
-		}
+		update_door_timers(Deltatime);
 	}
 	/*
 	    // the door are closed if their timer goes below 0, or if the vehicle is moving faster than defined threshold
@@ -8978,6 +8879,123 @@ void TMoverParameters::update_doors(double const Deltatime)
 	        }
 	    }
 	*/
+}
+
+// the permit, the state and the requests of a door, and whether it and its step open or close
+void TMoverParameters::update_door_requests(basic_door &door, bool const localopencontrol, bool const remoteopencontrol, bool const localclosecontrol, bool const remoteclosecontrol)
+{
+	// revoke permit if...
+	door.open_permit = true == door.open_permit // ...we already have one...
+	                   && (false == Doors.permit_presets.empty() // ...there's no preset switch controlling permit state...
+	                       || (false == Doors.is_locked // ...and the door lock is engaged...
+	                           && false == door.remote_close)); // ...or the door is about to be closed
+
+	door.is_open = door.position >= Doors.range && (false == Doors.step_enabled || door.step_position >= (Doors.step_range != 0.f ? 1.f : 0.f));
+	door.is_closed = door.position <= 0.f && door.step_position <= 0.f;
+	door.is_door_closed = door.position <= 0.f;
+
+	door.local_open = door.local_open && false == door.is_open && (false == Doors.permit_needed || door.open_permit);
+	door.remote_open = (door.remote_open || Doors.remote_only) && false == door.is_open && (false == Doors.permit_needed || door.open_permit);
+	door.local_close = door.local_close && false == door.is_closed && (false == remoteopencontrol || false == door.remote_open);
+	door.remote_close = door.remote_close && false == door.is_closed && (false == localopencontrol || false == door.local_open);
+
+	auto const autoopenrequest{Doors.open_control == control_t::autonomous && (false == Doors.permit_needed || door.open_permit)};
+	auto const openrequest{(localopencontrol && door.local_open) || (remoteopencontrol && door.remote_open) || (autoopenrequest && false == door.is_open)};
+
+	auto const autocloserequest{(Doors.auto_velocity != -1.f && Vel > Doors.auto_velocity) || (door.auto_timer != -1.f && door.auto_timer <= 0.f) ||
+	                            (Doors.permit_needed && false == door.open_permit)};
+	auto const closerequest{(door.remote_close && remoteclosecontrol) || (door.local_close && localclosecontrol) || (autocloserequest && door.is_open)};
+
+	auto const ispowered{(Doors.voltage == 0 ? true : Doors.voltage == 24 ? Power24vIsAvailable || Power110vIsAvailable : Doors.voltage == 110 ? Power110vIsAvailable : false)};
+
+	door.is_opening = false == door.is_open && true == ispowered && false == closerequest && (true == door.is_opening || (true == openrequest && false == Doors.is_locked));
+	door.is_closing = false == door.is_closed && true == ispowered && false == openrequest && (door.is_closing || closerequest);
+	door.step_unfolding = Doors.step_range != 0.f && Doors.step_enabled && false == Doors.is_locked && door.step_position < 1.f && door.is_opening;
+	door.step_folding = door.step_position > 0.f // is unfolded
+	                    && (false == Doors.step_enabled // we lost permission to stay open or our door is calling the shots
+	                        || (Doors.permit_needed ? false == door.open_permit : door.is_closing)) &&
+	                    (door.close_delay > Doors.close_delay || door.position <= 0.f); // door is about to close, or already done
+
+	if (true == door.is_opening)
+	{
+		door.auto_timer = localopencontrol && door.local_open ? Doors.auto_duration : remoteopencontrol && door.remote_open && Doors.auto_include_remote ? Doors.auto_duration : -1.f;
+	}
+}
+
+// a door and its step moved as they open or close
+void TMoverParameters::move_door(basic_door &door, double const Deltatime)
+{
+	// doors
+	if (true == door.is_opening)
+	{
+		// open door
+		if (false == door.step_unfolding // no wait if no doorstep
+		    || Doors.step_type == 2)
+		{ // no wait for rotating doorstep
+			door.open_delay += static_cast<float>(Deltatime);
+			if (door.open_delay > Doors.open_delay)
+			{
+				door.position = std::min<float>(Doors.range, static_cast<float>(door.position + Doors.open_rate * Deltatime));
+			}
+		}
+		door.close_delay = 0.f;
+	}
+	if (true == door.is_closing)
+	{
+		// close door
+		door.close_delay += static_cast<float>(Deltatime);
+		if (door.close_delay > Doors.close_delay)
+		{
+			door.position = std::max<float>(0.f, static_cast<float>(door.position - Doors.close_rate * Deltatime));
+		}
+		door.open_delay = 0.f;
+	}
+	// doorsteps
+	if (door.step_unfolding)
+	{
+		// unfold left doorstep
+		door.step_position = std::min<float>(1.f, static_cast<float>(door.step_position + Doors.step_rate * Deltatime));
+	}
+	if (door.step_folding)
+	{
+		// fold left doorstep
+		if (TrainType == dt_EZT || TrainType == dt_DMU)
+		{
+			// multi-unit vehicles typically fold the doorstep only after closing the door
+			if (door.position <= 0.f)
+			{
+				door.step_position = std::max<float>(0.f, static_cast<float>(door.step_position - Doors.step_rate * Deltatime));
+			}
+		}
+		else
+		{
+			door.step_position = std::max<float>(0.f, static_cast<float>(door.step_position - Doors.step_rate * Deltatime));
+		}
+	}
+}
+
+// the timers of the open doors which close after a while, kept running while the load is exchanged
+void TMoverParameters::update_door_timers(double const Deltatime)
+{
+	// update door timers if the door close after defined time
+	for (auto &door : Doors.instances)
+	{
+
+		if (false == door.is_open)
+		{
+			continue;
+		}
+
+		if (door.auto_timer > 0.f)
+		{
+			door.auto_timer -= static_cast<float>(Deltatime);
+		}
+		// if there's load exchange in progress, reset the timer(s) for already open doors
+		if (door.auto_timer != -1.f && (LoadStatus & (2 | 1)) != 0)
+		{
+			door.auto_timer = Doors.auto_duration;
+		}
+	}
 }
 
 // *************************************************************************************************
