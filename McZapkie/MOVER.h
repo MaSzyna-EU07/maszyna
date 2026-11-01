@@ -2436,6 +2436,23 @@ class TMoverParameters
 	void ComputeTotalForce(double dt);
 	double Adhesive(double staticfriction) const;
 	double TractionForce(double dt);
+	// the parts of TractionForce(), in the order it makes them
+	double UpdateEngineRevolutions(double dt, double &dtrans, double &dmoment);
+	void UpdateVentilators(double dt);
+	double UpdateEnginePower();
+	void VoltageRelaysCheck();
+	void DumbTractionForce(double PosRatio);
+	void WheelsDrivenTractionForce(double dt);
+	void SeriesMotorTractionForce(double dt);
+	void SeriesMotorDynamicBrake(double dt);
+	void DieselEngineTractionForce(double dt, double dmoment, double dtrans);
+	void DieselElectricTractionForce(double tmp);
+	void ShuntFieldRelaysCheck(double tmpV, double PosRatio, double tmp);
+	void InductionMotorTractionForce(double dt);
+	void InductionMotorSpeedControl(double dt);
+	void InductionMotorBrakeBlending(double ActiveInverters, double &PosRatio, double &tmp);
+	void InductionMotorDrive(double dt);
+	void InductionMotorOff();
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity);
 	double BrakeForceP(double press, double velocity) const;

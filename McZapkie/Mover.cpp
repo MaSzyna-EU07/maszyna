@@ -5477,14 +5477,80 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 // *************************************************************************************************
 double TMoverParameters::TractionForce(double dt)
 {
-	double PosRatio;
-	double dmoment;
-	double dtrans;
-	double tmp;
-
 	Ft = 0;
-	dtrans = 0;
-	dmoment = 0;
+	double dtrans{0.0};
+	double dmoment{0.0};
+	auto const revolutions{UpdateEngineRevolutions(dt, dtrans, dmoment)};
+
+	eAngle += enrot * dt;
+	if (eAngle > M_PI * 2.0)
+		eAngle = std::fmod(eAngle, M_PI * 2.0);
+	/*
+	    while (eAngle > M_PI * 2.0)
+	        // eAngle = Pirazy2 - eAngle; <- ABu: a nie czasem tak, jak nizej?
+	        eAngle -= M_PI * 2.0;
+	*/
+	// hunter-091012: przeniesione z if DirActive<>0 (zeby po zejsciu z kierunku dalej spadala predkosc wentylatorow)
+	// wentylatory rozruchowe
+	// TBD, TODO: move this to update, it doesn't exactly have much to do with traction
+	UpdateVentilators(dt);
+	auto const PosRatio{UpdateEnginePower()};
+	VoltageRelaysCheck();
+
+	if (DirActive != 0)
+		switch (EngineType)
+		{
+		case TEngineType::Dumb:
+		{
+			DumbTractionForce(PosRatio);
+			break;
+		}
+		case TEngineType::WheelsDriven:
+		{
+			WheelsDrivenTractionForce(dt);
+			break;
+		}
+		case TEngineType::ElectricSeriesMotor:
+		{
+			SeriesMotorTractionForce(dt);
+			break;
+		}
+		case TEngineType::DieselEngine:
+		{
+			DieselEngineTractionForce(dt, dmoment, dtrans);
+			break;
+		}
+		case TEngineType::DieselElectric: // youBy
+		{
+			DieselElectricTractionForce(revolutions);
+			break;
+		}
+		case TEngineType::ElectricInductionMotor:
+		{
+			InductionMotorTractionForce(dt);
+			break;
+		}
+		case TEngineType::None:
+		default:
+		{
+			break;
+		}
+		} // case EngineType
+
+	if (EngineType == TEngineType::DieselElectric)
+	{
+		// rough approximation of extra effort to overcome friction etc
+		EnginePower += EngineRPMRatio() * 0.15 * DElist[MainCtrlPosNo].GenPower;
+	}
+
+	return Ft;
+}
+
+// the revolutions of the engine; returns those a diesel-electric engine aims at [1/s], 0 for the others.
+// for a diesel engine, the ratio of the transmission and the engine's moment
+double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, double &dmoment)
+{
+	double tmp{0.0};
 	// youBy
 	switch (EngineType)
 	{
@@ -5540,17 +5606,12 @@ double TMoverParameters::TractionForce(double dt)
 	}
 	}
 
-	eAngle += enrot * dt;
-	if (eAngle > M_PI * 2.0)
-		eAngle = std::fmod(eAngle, M_PI * 2.0);
-	/*
-	    while (eAngle > M_PI * 2.0)
-	        // eAngle = Pirazy2 - eAngle; <- ABu: a nie czasem tak, jak nizej?
-	        eAngle -= M_PI * 2.0;
-	*/
-	// hunter-091012: przeniesione z if DirActive<>0 (zeby po zejsciu z kierunku dalej spadala predkosc wentylatorow)
-	// wentylatory rozruchowe
-	// TBD, TODO: move this to update, it doesn't exactly have much to do with traction
+	return tmp;
+}
+
+// the starting resistors' blowers, and the diesels' radiator fans
+void TMoverParameters::UpdateVentilators(double dt)
+{
 	switch (EngineType)
 	{
 
@@ -5650,7 +5711,12 @@ double TMoverParameters::TractionForce(double dt)
 		break;
 	}
 	}
+}
 
+// the power of a dumb or diesel engine; returns the ratio of the power a dumb engine is set to
+double TMoverParameters::UpdateEnginePower()
+{
+	double PosRatio{0.0};
 	switch (EngineType)
 	{
 	case TEngineType::Dumb:
@@ -5681,6 +5747,12 @@ double TMoverParameters::TractionForce(double dt)
 	}
 	}
 
+	return PosRatio;
+}
+
+// the line breaker opened by a voltage out of the motors' range, and the line contactors of a diesel-electric
+void TMoverParameters::VoltageRelaysCheck()
+{
 	switch (EngineType)
 	{
 
@@ -5724,826 +5796,844 @@ double TMoverParameters::TractionForce(double dt)
 		break;
 	}
 	}
+}
 
-	if (DirActive != 0)
-		switch (EngineType)
-		{
-		case TEngineType::Dumb:
-		{
-			if (Mains && CabActive != 0)
-			{
-				if (Vel > 0.1)
-				{
-					Ft = std::min(1000.0 * Power / std::abs(V), Ftmax) * PosRatio;
-				}
-				else
-				{
-					Ft = Ftmax * PosRatio;
-				}
-				Ft = Ft * DirAbsolute; // DirActive*CabActive;
-			}
-			else
-			{
-				Ft = 0;
-			}
-			break;
-		} // Dumb
-
-		case TEngineType::WheelsDriven:
-		{
-			if (EnginePowerSource.SourceType == TPowerSource::InternalSource && EnginePowerSource.PowerType == TPowerType::BioPower)
-				Ft = Sign(sin(eAngle)) * PulseForce * Transmision.Ratio;
-			PulseForceTimer = PulseForceTimer + dt;
-			if (PulseForceTimer > CtrlDelay)
-			{
-				PulseForce = 0;
-				if (PulseForceCount > 0)
-					PulseForceCount--;
-			}
-			EnginePower = Ft * (1.0 + Vel);
-			break;
-		} // WheelsDriven
-
-		case TEngineType::ElectricSeriesMotor:
-		{
-			//        enrot:=Transmision.Ratio*nrot;
-			// yB: szereg dwoch sekcji w ET42
-			if (TrainType == dt_ET42 && Imax == ImaxHi)
-				EngineVoltage = EngineVoltage / 2.0;
-			Mm = Momentum(Current(enrot, EngineVoltage)); // oblicza tez prad p/slinik
-
-			if (TrainType == dt_ET42)
-			{
-				if (Imax == ImaxHi)
-					EngineVoltage = EngineVoltage * 2;
-				if (DynamicBrakeFlag && abs(Im) > 300) // przeiesione do mover.cpp
-					FuseOff();
-			}
-			if (DynamicBrakeType == dbrake_automatic && DynamicBrakeFlag)
-			{
-				if (TUHEX_Stages > 0) // hamowanie wielostopniowe, nadpisuje wartości domyślne
-				{
-					if (Vel > 100)
-						TUHEX_StageActual = std::min(TUHEX_StageActual, 1);
-					switch (TUHEX_StageActual)
-					{
-					case 1:
-						TUHEX_Sum = TUHEX_Sum1;
-						DynamicBrakeRes = DynamicBrakeRes1;
-						break;
-					case 2:
-						TUHEX_Sum = TUHEX_Sum2;
-						DynamicBrakeRes = DynamicBrakeRes1;
-						break;
-					case 3:
-						TUHEX_Sum = TUHEX_Sum3;
-						if (Vadd > 0.99 * TUHEX_MaxIw && DynamicBrakeRes == DynamicBrakeRes1)
-							TUHEX_ResChange = true;
-						if (TUHEX_ResChange && Vadd < 0.5 * TUHEX_MaxIw)
-						{
-							TUHEX_ResChange = false;
-							DynamicBrakeRes = DynamicBrakeRes2;
-						}
-						break;
-					default:
-						DynamicBrakeRes = DynamicBrakeRes1;
-						TUHEX_Sum = 0;
-						break;
-					}
-				}
-				if (Vadd + abs(Im) > TUHEX_Sum + TUHEX_Diff || Hamulec->GetEDBCP() < 0.25 || TUHEX_ResChange || (TUHEX_StageActual == 0 && TUHEX_Stages > 0))
-				{
-					Vadd -= 500.0 * dt;
-					if (Vadd < TUHEX_MinIw)
-					{
-						Vadd = 0;
-						DynamicBrakeFlag = false;
-					}
-				}
-				else if (DynamicBrakeFlag && Vadd + abs(Im) < TUHEX_Sum - TUHEX_Diff)
-				{
-					Vadd += 70.0 * dt;
-					Vadd = std::min(std::max(Vadd, TUHEX_MinIw), TUHEX_MaxIw);
-				}
-				if (Vadd > 0)
-					Mm = MomentumF(Im, Vadd, 0);
-			}
-
-			if (TrainType == dt_ET22 && DelayCtrlFlag) // szarpanie przy zmianie układu w byku
-				Mm = Mm * RList[MainCtrlActualPos].Bn / (RList[MainCtrlActualPos].Bn + 1); // zrobione w momencie, żeby nie dawac elektryki w przeliczaniu sił
-
-			if (abs(Im) > Imax)
-				Vhyp += dt; //*(abs(Im) / Imax - 0.9) * 10; // zwieksz czas oddzialywania na PN
-			else
-				Vhyp = 0;
-			if (Vhyp > CtrlDelay / 2) // jesli czas oddzialywania przekroczony
-				FuseOff(); // wywalanie bezpiecznika z powodu przetezenia silnikow
-
-			if ((DynamicBrakeType == dbrake_automatic || DynamicBrakeType == dbrake_switch) && DynamicBrakeFlag)
-				Itot = Im * 2; // 2x2 silniki w EP09
-			else if (TrainType == dt_EZT && Imin == IminLo && ScndS) // yBARC - boczniki na szeregu poprawnie
-				Itot = Im;
-			else
-				Itot = Im * RList[MainCtrlActualPos].Bn; // prad silnika * ilosc galezi
-			Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
-			Fw = Mw * 2.0 / WheelDiameter;
-			Ft = Fw * NPoweredAxles; // sila trakcyjna
-			break;
-		}
-
-		case TEngineType::DieselEngine:
-		{
-			Mw = dmoment * dtrans * Transmision.Efficiency; // dmoment i dtrans policzone przy okazji enginerotation
-			if (hydro_R && hydro_R_Placement == 0)
-				Mw -= dizel_MomentumRetarder(nrot * Transmision.Ratio, dt) * Transmision.Ratio * Transmision.Efficiency;
-			Fw = Mw * 2.0 / WheelDiameter / NPoweredAxles;
-			Ft = Fw * NPoweredAxles; // sila trakcyjna
-			Ft = Ft * DirAbsolute; // DirActive*CabActive;
-			break;
-		}
-
-		case TEngineType::DieselElectric: // youBy
-		{
-			//       tmpV:=V*CabActive*DirActive;
-			auto const tmpV{nrot * Pirazy2 * 0.5 * WheelDiameter * DirAbsolute}; //*CabActive*DirActive;
-			auto tempUmax = 0.0;
-			auto tempImax = 0.0;
-			auto tempPmax = 0.0;
-			// jazda manewrowa
-			if (EIMCtrlType > 0) // sterowanie cyfrowe
-			{
-				auto eimic_positive = std::max(0.0, eimic_real);
-				auto const rpmratio{EngineRPMRatio()};
-				tempImax = DElist[MainCtrlPosNo].Imax * eimic_positive;
-				tempUmax = DElist[MainCtrlPosNo].Umax * std::min(eimic_positive, rpmratio);
-				tempPmax = DElist[MainCtrlPosNo].GenPower * std::min(eimic_positive, rpmratio);
-				tmp = tempPmax;
-				if (true == StLinFlag)
-				{
-
-					if (tmpV < Vhyp * tempPmax / DElist[MainCtrlPosNo].GenPower)
-					{
-						// czy na czesci prostej, czy na hiperboli
-						Ft =
-						    (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * eimic_positive; // posratio - bo sila jakos tam sie rozklada
-					}
-					else
-					{
-						// na hiperboli
-						// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
-						Ft = 1000.0 * tempPmax / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
-					}
-				}
-				else
-					Ft = 0; // jak nastawnik na zero, to sila tez zero
-
-				PosRatio = tempPmax / DElist[MainCtrlPosNo].GenPower;
-			}
-			else if (true == ShuntMode)
-			{
-				if (true == StLinFlag)
-				{
-					EngineVoltage = SST[MainCtrlPos].Umax * AnPos + SST[MainCtrlPos].Umin * (1.0 - AnPos);
-					// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
-					// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
-					tmp = EngineRPMRatio() * (SST[MainCtrlPos].Pmax * AnPos) + SST[MainCtrlPos].Pmin * (1.0 - AnPos);
-					Ft = tmp * 1000.0 / (abs(tmpV) + 1.6);
-				}
-				else
-				{
-					EngineVoltage = 0;
-					Ft = 0;
-				}
-				PosRatio = 1;
-			}
-			else // jazda ciapongowa
-			{
-				auto power = Power;
-				tempImax = DElist[MainCtrlPos].Imax;
-				tempUmax = DElist[MainCtrlPos].Umax;
-				if (true == Heating)
-				{
-					power -= HeatingPower;
-				}
-				if (power < 0.0)
-				{
-					power = 0.0;
-				}
-				// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
-				// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
-				auto const currentgenpower{(DElist[MainCtrlPos].RPM > 0 ? DElist[MainCtrlPos].GenPower * (60.0 * enrot / DElist[MainCtrlPos].RPM) : 0.0)};
-
-				tmp = std::min(power, currentgenpower);
-
-				PosRatio = currentgenpower / DElist[MainCtrlPosNo].GenPower;
-				// stosunek mocy teraz do mocy max
-				// NOTE: Mains in this context is working diesel engine
-				if (true == StLinFlag)
-				{
-
-					if (tmpV < Vhyp * power / DElist[MainCtrlPosNo].GenPower)
-					{
-						// czy na czesci prostej, czy na hiperboli
-						Ft = (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * PosRatio; // posratio - bo sila jakos tam sie rozklada
-					}
-					else
-					{
-						// na hiperboli
-						// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
-						Ft = 1000.0 * tmp / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
-					}
-				}
-				else
-					Ft = 0; // jak nastawnik na zero, to sila tez zero
-
-				PosRatio = tmp / DElist[MainCtrlPosNo].GenPower;
-			}
-
-			if (FuseFlag)
-				Ft = 0;
-			else
-				Ft = Ft * DirAbsolute; // DirActive * CabActive; //zwrot sily i jej wartosc
-			Fw = Ft / NPoweredAxles; // sila na obwodzie kola
-			Mw = Fw * WheelDiameter / 2.0; // moment na osi kola
-			Mm = Mw / Transmision.Ratio; // moment silnika trakcyjnego
-
-			// with MotorParam[ScndCtrlPos] do
-			if (abs(Mm) > motor_param(ScndCtrlPos).fi)
-				Im = NPoweredAxles * abs(abs(Mm) / motor_param(ScndCtrlPos).mfi + motor_param(ScndCtrlPos).mIsat);
-			else
-				Im = NPoweredAxles * sqrt(abs(Mm * motor_param(ScndCtrlPos).Isat));
-
-			if (ShuntMode)
-			{
-				EnginePower = EngineVoltage * Im / 1000.0;
-				if (EnginePower > tmp)
-				{
-					EnginePower = tmp;
-					EngineVoltage = EnginePower * 1000.0 / Im;
-				}
-				if (EnginePower < tmp)
-				{
-					Ft *= EnginePower / tmp;
-				}
-			}
-			else
-			{
-				if (abs(Im) > tempImax)
-				{ // nie ma nadmiarowego, tylko Imax i zwarcie na pradnicy
-					Ft = Ft / Im * tempImax;
-					Im = tempImax;
-				}
-
-				if (Im > 0)
-				{
-					// jak pod obciazeniem
-					if (true == Flat)
-					{
-						// ograniczenie napiecia w pradnicy - plaszczak u gory
-						EngineVoltage = 1000.0 * tmp / std::abs(Im);
-					}
-					else
-					{
-						auto tempMCP = EIMCtrlType > 0 ? 1 + 99 * std::max(1.0, eimic_real) : MainCtrlPos;
-						auto tempMCPN = EIMCtrlType > 0 ? 100 : MainCtrlPosNo;
-						// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
-						EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
-						EngineVoltage /= tempMCPN - 1;
-						EngineVoltage = safe_clamp(EngineVoltage, Im * 0.05, 1000.0 * tmp / std::abs(Im));
-					}
-				}
-
-				if (EngineVoltage > tempUmax || Im == 0)
-				{
-					// gdy wychodzi za duze napiecie albo przy biegu jalowym (jest cos takiego?)
-					EngineVoltage = tempUmax * (ConverterFlag ? 1 : 0);
-				}
-
-				EnginePower = EngineVoltage * Im / 1000.0;
-				/*
-				                // power curve drop
-				                // NOTE: disabled for the time being due to side-effects
-				                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
-				                    Ft = std::lerp(
-				                        Ft, EnginePower / tmp,
-				                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
-				                }
-				*/
-			}
-
-			if (Imax > 1 && Im > Imax)
-				FuseOff();
-			if (FuseFlag)
-				EngineVoltage = 0;
-
-			// przekazniki bocznikowania, kazdy inny dla kazdej pozycji
-			if (false == StLinFlag || ShuntMode)
-			{
-				ScndCtrlPos = 0;
-			}
-			else
-			{
-				if (AutoRelayFlag)
-				{
-
-					auto const shuntfieldstate{ScndCtrlPos};
-
-					switch (RelayType)
-					{
-
-					case 0:
-					{
-
-						if (ScndCtrlPos < ScndCtrlPosNo && Im <= MPTRelay[ScndCtrlPos].Iup * PosRatio)
-						{
-							++ScndCtrlPos;
-						}
-						if (ScndCtrlPos > 0 && Im >= MPTRelay[ScndCtrlPos].Idown * PosRatio)
-						{
-							--ScndCtrlPos;
-						}
-						break;
-					}
-					case 1:
-					{
-
-						if (ScndCtrlPos < ScndCtrlPosNo && MPTRelay[ScndCtrlPos].Iup < Vel)
-						{
-							++ScndCtrlPos;
-						}
-						if (ScndCtrlPos > 0 && MPTRelay[ScndCtrlPos].Idown > Vel)
-						{
-							--ScndCtrlPos;
-						}
-						break;
-					}
-					case 2:
-					{
-
-						if (ScndCtrlPos < ScndCtrlPosNo && MPTRelay[ScndCtrlPos].Iup < Vel && EnginePower < tmp * 0.99)
-						{
-							++ScndCtrlPos;
-						}
-						if (ScndCtrlPos > 0 && MPTRelay[ScndCtrlPos].Idown < Im)
-						{
-							--ScndCtrlPos;
-						}
-						break;
-					}
-					case 41:
-					{
-						if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos == MainCtrlPosNo && tmpV * 3.6 > MPTRelay[ScndCtrlPos].Iup)
-						{
-							++ScndCtrlPos;
-							enrot = enrot * 0.73;
-						}
-						if (ScndCtrlPos > 0 && Im > MPTRelay[ScndCtrlPos].Idown)
-						{
-							--ScndCtrlPos;
-						}
-						break;
-					}
-					case 45:
-					{
-						if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos >= 11)
-						{
-
-							if (Im < MPTRelay[ScndCtrlPos].Iup)
-							{
-								++ScndCtrlPos;
-							}
-							// check for cases where the speed drops below threshold for level 2 or 3
-							if (ScndCtrlPos > 1 && Vel < MPTRelay[ScndCtrlPos - 1].Idown)
-							{
-								--ScndCtrlPos;
-							}
-						}
-						// malenie
-						if (ScndCtrlPos > 0 && MainCtrlPos < 11)
-						{
-
-							if (ScndCtrlPos == 1)
-							{
-								if (Im > MPTRelay[ScndCtrlPos - 1].Idown)
-								{
-									--ScndCtrlPos;
-								}
-							}
-							else
-							{
-								if (Vel < MPTRelay[ScndCtrlPos].Idown)
-								{
-									--ScndCtrlPos;
-								}
-							}
-						}
-						// 3rd level drops with master controller at position lower than 10...
-						if (MainCtrlPos < 11)
-						{
-							ScndCtrlPos = std::min(2, ScndCtrlPos);
-						}
-						// ...and below position 7 field shunt drops altogether
-						if (MainCtrlPos < 8)
-						{
-							ScndCtrlPos = 0;
-						}
-						/*
-						                            // crude woodward approximation; difference between rpm for consecutive positions is ~5%
-						                            // so we get full throttle until ~half way between desired and previous position, or zero on rpm reduction
-						                            auto const woodward { std::clamp(
-						                                ( DElist[ MainCtrlPos ].RPM / ( enrot * 60.0 ) - 1.0 ) * 50.0,
-						                                0.0, 1.0 ) };
-						*/
-						break;
-					}
-					case 46:
-					{
-						// wzrastanie
-						if (MainCtrlPos >= 12 && ScndCtrlPos < ScndCtrlPosNo)
-						{
-							if (ScndCtrlPos % 2 == 0)
-							{
-								if (MPTRelay[ScndCtrlPos].Iup > Im)
-								{
-									++ScndCtrlPos;
-								}
-							}
-							else
-							{
-								if (MPTRelay[ScndCtrlPos - 1].Iup > Im && MPTRelay[ScndCtrlPos].Iup < Vel)
-								{
-									++ScndCtrlPos;
-								}
-							}
-						}
-						// malenie
-						if (MainCtrlPos < 12 && ScndCtrlPos > 0 && Vel < 50.0)
-						{
-							// above 50 km/h already active shunt field can be maintained until lower controller setting
-							if (ScndCtrlPos % 2 == 0)
-							{
-								if (MPTRelay[ScndCtrlPos].Idown < Im)
-								{
-									--ScndCtrlPos;
-								}
-							}
-							else
-							{
-								if (MPTRelay[ScndCtrlPos + 1].Idown < Im && MPTRelay[ScndCtrlPos].Idown > Vel)
-								{
-									--ScndCtrlPos;
-								}
-							}
-						}
-						if (MainCtrlPos < 11)
-						{
-							ScndCtrlPos = std::min(2, ScndCtrlPos);
-						}
-						if (MainCtrlPos < 8)
-						{
-							ScndCtrlPos = 0;
-						}
-						break;
-					}
-					default:
-					{
-						break;
-					}
-					} // switch RelayType
-
-					if (ScndCtrlPos != shuntfieldstate)
-					{
-						SetFlag(SoundFlag, sound::relay | sound::shuntfield);
-					}
-				}
-			}
-			break;
-		} // DieselElectric
-
-		case TEngineType::ElectricInductionMotor:
-		{
-			if (true == Mains && !SecuritySystem.is_engine_blocked())
-			{
-				double ActiveInverters = 0.0;
-				for (auto const &inv : Inverters)
-				{
-					if (inv.IsActive)
-						ActiveInverters += 1.0;
-				}
-				InvertersRatio = ActiveInverters / (double)InvertersNo;
-				if (EIM_Pmax_Table.size() > 1)
-				{
-					eimc[eimc_p_Pmax] = TableInterpolation(EIM_Pmax_Table, Vel);
-				}
-				// tempomat
-				if (ScndCtrlPosNo == 4 && SpeedCtrlTypeTime)
-				{
-					SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
-					switch (ScndCtrlPos)
-					{
-					case 0:
-						NewSpeed = 0;
-						SpeedCtrlValue = 0;
-						SpeedCtrlTimer = 10;
-						break;
-					case 1:
-						if (SpeedCtrlTimer > SpeedCtrlDelay)
-						{
-							SpeedCtrlTimer = 0;
-							NewSpeed -= 10;
-							if (NewSpeed < 0)
-								NewSpeed = 0;
-						}
-						else
-							SpeedCtrlTimer += dt;
-						break;
-					case 2:
-						SpeedCtrlTimer = 10;
-						SpeedCtrlValue = NewSpeed;
-						break;
-					case 3:
-						if (SpeedCtrlTimer > SpeedCtrlDelay)
-						{
-							SpeedCtrlTimer = 0;
-							NewSpeed += 10;
-							if (NewSpeed > Vmax)
-								NewSpeed = Vmax;
-						}
-						else
-							SpeedCtrlTimer += dt;
-						break;
-					case 4:
-						NewSpeed = Vmax;
-						SpeedCtrlValue = Vmax;
-						SpeedCtrlTimer = 10;
-						break;
-					default:
-						break;
-					}
-				}
-				else if (ScndCtrlPosNo > 1)
-				{
-					if (ScndCtrlPos != NewSpeed)
-					{
-
-						SpeedCtrlTimer = 0;
-						NewSpeed = ScndCtrlPos;
-					}
-					else
-					{
-						SpeedCtrlTimer += dt;
-						if (SpeedCtrlTimer > SpeedCtrlDelay)
-						{
-							auto NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
-							if (NewSCAP != SpeedCtrlValue)
-							{
-								SpeedCtrlValue = NewSCAP;
-								//								SendCtrlToNext("SpeedCntrl", SpeedCtrlValue, CabActive);
-							}
-						}
-					}
-					SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
-				}
-				double edBCP = Hamulec->GetEDBCP();
-				auto const localbrakeactive{CabOccupied != 0 && LocHandle->GetCP() > 0.25};
-				// gdy SplitEDPneumaticBrake jest aktywne, hamulec pomocniczy (LocalBrake) NIE wymusza
-				// zalaczenia hamulca elektrodynamicznego - ED jest sterowany wlasnym nastawnikiem
-				auto const dynbrakectrlactive{SplitEDPneumaticBrake && DynamicBrakeRatio() > 0.01 && DynamicBrakeAvailable()};
-				auto const localbrakeforED{SplitEDPneumaticBrake ? false : localbrakeactive};
-				if (false == Doors.instances[side::left].is_closed || false == Doors.instances[side::right].is_closed ||
-				    (Doors.permit_needed && (Doors.instances[side::left].open_permit || Doors.instances[side::right].open_permit)))
-				{
-					DynamicBrakeFlag = true;
-				}
-				else if ((edBCP < 0.25 && false == localbrakeforED && false == dynbrakectrlactive && AnPos < 0.01) ||
-				         (edBCP < 0.25 && ShuntModeAllow && false == dynbrakectrlactive && LocalBrakePosA < 0.01))
-					DynamicBrakeFlag = false;
-				else if (BrakePress > 0.25 && edBCP > 0.25 || localbrakeforED || AnPos > 0.02 || dynbrakectrlactive)
-					DynamicBrakeFlag = true;
-				edBCP = Hamulec->GetEDBCP() * eimc[eimc_p_abed]; // stala napedu
-				if (DynamicBrakeFlag)
-				{
-					// ustalanie współczynnika blendingu do luzowania hamulca PN
-					if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
-					{
-						PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
-						PosRatio = std::clamp(PosRatio, 0.0, 1.0);
-					}
-					else
-					{
-						PosRatio = 0;
-					}
-					PosRatio = static_cast<double>(Round(20.0 * PosRatio)) / 20.0; // stopniowanie PN/ED
-					if (PosRatio < 19.5 / 20.0)
-						PosRatio *= 0.9;
-					Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
-					// ustalanie siły hamowania ED
-					if (Hamulec->GetEDBCP() > 0.25 && eimc[eimc_p_abed] < 0.001 || ActiveInverters < InvertersNo) // jeśli PN wyłącza ED
-					{
-						PosRatio = 0;
-						eimv[eimv_Fzad] = 0;
-					}
-					else
-					{
-						// strefa wylaczenia ED (Vh0..Vh1) - mnoznik 0..1 zaleznie od predkosci
-						double const vhRamp = std::max(0.0, std::min(1.0, (Vel - eimc[eimc_p_Vh0]) / (eimc[eimc_p_Vh1] - eimc[eimc_p_Vh0])));
-						if (SplitEDPneumaticBrake)
-						{
-							// w trybie split LocalBrake nie zaleca ED; uzywany jest DynamicBrakeCtrl
-							// oraz zwykle zapotrzebowanie z hamulca zespolonego (edBCP)
-							double const edLeverDemand = DynamicBrakeRatio();
-							PosRatio = -std::max(std::max(edLeverDemand, std::min(edBCP / MaxBrakePress[0], 1.0)), AnPos) * vhRamp;
-							eimv[eimv_Fzad] = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
-						}
-						else
-						{
-							PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * vhRamp;
-							eimv[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
-						}
-					}
-					tmp = 5;
-				}
-				else
-				{
-					PosRatio = std::max(eimic_real, 0.);
-					eimv[eimv_Fzad] = PosRatio;
-					if (Flat && eimc[eimc_p_F0] * eimv[eimv_Fful] > 0)
-						PosRatio = std::min(PosRatio * eimc[eimc_p_F0] / eimv[eimv_Fful], 1.);
-					/*                    if (ScndCtrlActualPos > 0) //speed control
-					                        if (Vmax < 250)
-					                            PosRatio = std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos - Vel)));
-					                        else
-					                            PosRatio =
-					                                std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos * 2 - Vel))); */
-					// PosRatio = 1.0 * (PosRatio * 0 + 1) * PosRatio; // 1 * 1 * PosRatio = PosRatio
-					Hamulec->SetED(0);
-					//           (Hamulec as TLSt).SetLBP(LocBrakePress);
-					tmp = 4; // szybkie malenie, powolne wzrastanie
-				}
-				// NOTE: the commands to operate the sandbox are likely to conflict with other similar ai decisions
-				// TODO: gather these in single place so they can be resolved together
-				if (SlippingWheels)
-				{
-					PosRatio = 0;
-					tmp = 10;
-					SandboxAuto(true, range_t::unit);
-				} // przeciwposlizg
-				else
-				{
-					// switch sandbox off
-					SandboxAuto(false, range_t::unit);
-				}
-				if (ActiveInverters == 0.0)
-				{
-					PosRatio = 0;
-					eimv_pr = 0;
-				}
-
-				eimv_pr += std::max(std::min(PosRatio - eimv_pr, 0.02), -0.02) * 12 * tmp /*2{+4*byte(PosRatio<eimv_pr)*/ * dt; // wartość zadana/procent czegoś
-
-				if (DynamicBrakeFlag)
-					tmp = eimc[eimc_f_Uzh];
-				else
-					tmp = eimc[eimc_f_Uzmax];
-
-				auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
-
-				eimv[eimv_Uzsmax] = std::min(EngineVoltage - eimc[eimc_f_DU], tmp);
-				eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
-				if (eimv_pr < 0)
-				{
-					eimv[eimv_Pmax] = eimc[eimc_p_Ph];
-				}
-				else
-				{
-					eimv[eimv_Pmax] = std::min(eimc[eimc_p_Pmax], 0.001 * EngineVoltage * (eimc[eimc_p_Imax] - eimc[eimc_f_I0]) * Pirazy2 * eimc[eimc_s_cim] / eimc[eimc_s_p] / eimc[eimc_s_cfu]);
-				}
-				eimv[eimv_FMAXMAX] = 0.001 *
-				                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
-				                     (eimc[eimc_s_dfmax] * eimc[eimc_s_dfic] * eimc[eimc_s_cim]) * Transmision.Ratio * NPoweredAxles * 2.0 / WheelDiameter;
-				if (eimv_pr < 0)
-				{
-					eimv[eimv_Fful] = std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(eimc[eimc_p_Fh], eimv[eimv_FMAXMAX]));
-					eimv[eimv_Fmax] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * eimv_pr, eimv[eimv_FMAXMAX]));
-					double pr = eimv_pr;
-					if (EIMCLogForce)
-						pr = -log(1 - 4 * pr) / log(5);
-					eimv[eimv_Fr] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
-					if (InvertersRatio < 1.0)
-						eimv[eimv_Fful] = 0;
-					//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
-				}
-				else
-				{
-					eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
-					//           if(not Flat)then
-					eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
-					//           else
-					//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
-					double pr = eimv_pr;
-					if (EIMCLogForce)
-						pr = log(1 + 4 * pr) / log(5);
-					eimv[eimv_Fr] = eimv[eimv_Fful] * pr;
-				}
-				for (auto &inv : Inverters)
-				{
-					inv.Request = inv.IsActive ? eimv_pr : 0.0;
-					inv.Error = inv.Failure_Const || (inv.Failure_Drive && inv.Request != 0);
-					inv.IsActive = inv.Activate && !inv.Error;
-				}
-				eimv[eimv_ks] = eimv[eimv_Fr] / eimv[eimv_FMAXMAX];
-				eimv[eimv_df] = eimv[eimv_ks] * eimc[eimc_s_dfmax];
-				eimv[eimv_fp] = DirAbsolute * enrot * eimc[eimc_s_p] + eimv[eimv_df]; // do przemyslenia dzialanie pp z tmpV
-				//         eimv[eimv_U]:=std::max(eimv[eimv_Uzsmax],std::min(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
-				//         eimv[eimv_pole]:=eimv[eimv_U]/(eimv[eimv_fp]*eimc[eimc_s_cfu]);
-				if (abs(eimv[eimv_fp]) <= eimv[eimv_fkr])
-					eimv[eimv_pole] = f_cfu / eimc[eimc_s_cfu];
-				else
-					eimv[eimv_pole] = eimv[eimv_Uzsmax] / eimc[eimc_s_cfu] / abs(eimv[eimv_fp]);
-				eimv[eimv_U] = eimv[eimv_pole] * eimv[eimv_fp] * eimc[eimc_s_cfu];
-				eimv[eimv_Ic] = (eimv[eimv_fp] - DirAbsolute * enrot * eimc[eimc_s_p]) * eimc[eimc_s_dfic] * eimv[eimv_pole];
-				eimv[eimv_If] = eimv[eimv_Ic] * eimc[eimc_s_icif];
-				eimv[eimv_M] = eimv[eimv_pole] * eimv[eimv_Ic] * eimc[eimc_s_cim];
-				eimv[eimv_Ipoj] = eimv[eimv_Ic] * NPoweredAxles * InvertersRatio * eimv[eimv_U] / (EngineVoltage - eimc[eimc_f_DU]) + eimc[eimc_f_I0];
-				eimv[eimv_Pm] = DirActive * eimv[eimv_M] * NPoweredAxles * InvertersRatio * enrot * Pirazy2 / 1000;
-				eimv[eimv_Pe] = eimv[eimv_Ipoj] * EngineVoltage / 1000;
-				eimv[eimv_eta] = eimv[eimv_Pm] / eimv[eimv_Pe];
-
-				Im = eimv[eimv_If];
-				if (eimv[eimv_Ipoj] >= 0)
-					Vadd *= 1.0 - 2.0 * dt;
-				else if (std::abs(EngineVoltage) < EnginePowerSource.CollectorParameters.MaxV)
-					Vadd *= 1.0 - dt;
-				else
-					Vadd = std::max(Vadd * (1.0 - 0.2 * dt), 0.007 * (std::abs(EngineVoltage) - (EnginePowerSource.CollectorParameters.MaxV - 100)));
-				Itot = eimv[eimv_Ipoj] * (0.01 + std::min(0.99, 0.99 - Vadd));
-
-				EnginePower = abs(eimv[eimv_Ic] * eimv[eimv_U] * NPoweredAxles) / 1000;
-				// power inverters
-				auto const tmpV{std::abs(eimv[eimv_fp])};
-				auto const useFFEDList = FFEDListSize > 0 && DynamicBrakeFlag;
-				auto const list = useFFEDList ? FFEDlist : FFlist;
-
-				if (auto const listSize = useFFEDList ? FFEDListSize : FFListSize; listSize > 0 && std::abs(eimv[eimv_If]) > 1.0 && tmpV > 0.0001)
-				{
-
-					int i = 0;
-					while (i < listSize - 1 && list[i + 1].v < tmpV)
-					{
-						++i;
-					}
-					InverterFrequency = (tmpV - list[i].v) / std::max(1.0, list[i + 1].v - list[i].v) * (list[i + 1].freq - list[i].freq) + list[i].freq;
-				}
-				else
-				{
-					InverterFrequency = 0.0;
-				}
-
-				Mm = eimv[eimv_M] * DirAbsolute;
-				Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
-				Fw = Mw * 2.0 / WheelDiameter;
-				Ft = Fw * NPoweredAxles * InvertersRatio;
-				eimv[eimv_Fr] = DirAbsolute * Ft / 1000;
-			} // mains
-			else
-			{
-				for (auto &inv : Inverters)
-				{
-					inv.Freal = 0.0;
-					inv.IsActive = false;
-				}
-				Im = 0.0;
-				Mm = 0.0;
-				Mw = 0.0;
-				Fw = 0.0;
-				Ft = 0.0;
-				Itot = 0.0;
-				eimv_pr = 0.0;
-				EnginePower = 0.0;
-				{
-					for (auto &eimvvalue : eimv)
-						eimvvalue = 0.0;
-				}
-				Hamulec->SetED(0.0);
-				InverterFrequency = 0.0; //(Hamulec as TLSt).SetLBP(LocBrakePress);
-			}
-			break;
-		} // ElectricInductionMotor
-
-		case TEngineType::None:
-		default:
-		{
-			break;
-		}
-		} // case EngineType
-
-	if (EngineType == TEngineType::DieselElectric)
+void TMoverParameters::DumbTractionForce(double const PosRatio)
+{
+	if (Mains && CabActive != 0)
 	{
-		// rough approximation of extra effort to overcome friction etc
-		EnginePower += EngineRPMRatio() * 0.15 * DElist[MainCtrlPosNo].GenPower;
+		if (Vel > 0.1)
+		{
+			Ft = std::min(1000.0 * Power / std::abs(V), Ftmax) * PosRatio;
+		}
+		else
+		{
+			Ft = Ftmax * PosRatio;
+		}
+		Ft = Ft * DirAbsolute; // DirActive*CabActive;
+	}
+	else
+	{
+		Ft = 0;
+	}
+}
+
+void TMoverParameters::WheelsDrivenTractionForce(double dt)
+{
+	if (EnginePowerSource.SourceType == TPowerSource::InternalSource && EnginePowerSource.PowerType == TPowerType::BioPower)
+		Ft = Sign(sin(eAngle)) * PulseForce * Transmision.Ratio;
+	PulseForceTimer = PulseForceTimer + dt;
+	if (PulseForceTimer > CtrlDelay)
+	{
+		PulseForce = 0;
+		if (PulseForceCount > 0)
+			PulseForceCount--;
+	}
+	EnginePower = Ft * (1.0 + Vel);
+}
+
+void TMoverParameters::SeriesMotorTractionForce(double dt)
+{
+	//        enrot:=Transmision.Ratio*nrot;
+	// yB: szereg dwoch sekcji w ET42
+	if (TrainType == dt_ET42 && Imax == ImaxHi)
+		EngineVoltage = EngineVoltage / 2.0;
+	Mm = Momentum(Current(enrot, EngineVoltage)); // oblicza tez prad p/slinik
+
+	if (TrainType == dt_ET42)
+	{
+		if (Imax == ImaxHi)
+			EngineVoltage = EngineVoltage * 2;
+		if (DynamicBrakeFlag && abs(Im) > 300) // przeiesione do mover.cpp
+			FuseOff();
+	}
+	if (DynamicBrakeType == dbrake_automatic && DynamicBrakeFlag)
+	{
+		SeriesMotorDynamicBrake(dt);
 	}
 
-	return Ft;
+	if (TrainType == dt_ET22 && DelayCtrlFlag) // szarpanie przy zmianie układu w byku
+		Mm = Mm * RList[MainCtrlActualPos].Bn / (RList[MainCtrlActualPos].Bn + 1); // zrobione w momencie, żeby nie dawac elektryki w przeliczaniu sił
+
+	if (abs(Im) > Imax)
+		Vhyp += dt; //*(abs(Im) / Imax - 0.9) * 10; // zwieksz czas oddzialywania na PN
+	else
+		Vhyp = 0;
+	if (Vhyp > CtrlDelay / 2) // jesli czas oddzialywania przekroczony
+		FuseOff(); // wywalanie bezpiecznika z powodu przetezenia silnikow
+
+	if ((DynamicBrakeType == dbrake_automatic || DynamicBrakeType == dbrake_switch) && DynamicBrakeFlag)
+		Itot = Im * 2; // 2x2 silniki w EP09
+	else if (TrainType == dt_EZT && Imin == IminLo && ScndS) // yBARC - boczniki na szeregu poprawnie
+		Itot = Im;
+	else
+		Itot = Im * RList[MainCtrlActualPos].Bn; // prad silnika * ilosc galezi
+	Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
+	Fw = Mw * 2.0 / WheelDiameter;
+	Ft = Fw * NPoweredAxles; // sila trakcyjna
+}
+
+// the automatic dynamic brake of the series motors: the excitation current, by the stages of the ep brake (TUHEX)
+void TMoverParameters::SeriesMotorDynamicBrake(double dt)
+{
+	if (TUHEX_Stages > 0) // hamowanie wielostopniowe, nadpisuje wartości domyślne
+	{
+		if (Vel > 100)
+			TUHEX_StageActual = std::min(TUHEX_StageActual, 1);
+		switch (TUHEX_StageActual)
+		{
+		case 1:
+			TUHEX_Sum = TUHEX_Sum1;
+			DynamicBrakeRes = DynamicBrakeRes1;
+			break;
+		case 2:
+			TUHEX_Sum = TUHEX_Sum2;
+			DynamicBrakeRes = DynamicBrakeRes1;
+			break;
+		case 3:
+			TUHEX_Sum = TUHEX_Sum3;
+			if (Vadd > 0.99 * TUHEX_MaxIw && DynamicBrakeRes == DynamicBrakeRes1)
+				TUHEX_ResChange = true;
+			if (TUHEX_ResChange && Vadd < 0.5 * TUHEX_MaxIw)
+			{
+				TUHEX_ResChange = false;
+				DynamicBrakeRes = DynamicBrakeRes2;
+			}
+			break;
+		default:
+			DynamicBrakeRes = DynamicBrakeRes1;
+			TUHEX_Sum = 0;
+			break;
+		}
+	}
+	if (Vadd + abs(Im) > TUHEX_Sum + TUHEX_Diff || Hamulec->GetEDBCP() < 0.25 || TUHEX_ResChange || (TUHEX_StageActual == 0 && TUHEX_Stages > 0))
+	{
+		Vadd -= 500.0 * dt;
+		if (Vadd < TUHEX_MinIw)
+		{
+			Vadd = 0;
+			DynamicBrakeFlag = false;
+		}
+	}
+	else if (DynamicBrakeFlag && Vadd + abs(Im) < TUHEX_Sum - TUHEX_Diff)
+	{
+		Vadd += 70.0 * dt;
+		Vadd = std::min(std::max(Vadd, TUHEX_MinIw), TUHEX_MaxIw);
+	}
+	if (Vadd > 0)
+		Mm = MomentumF(Im, Vadd, 0);
+}
+
+void TMoverParameters::DieselEngineTractionForce(double dt, double const dmoment, double const dtrans)
+{
+	Mw = dmoment * dtrans * Transmision.Efficiency; // dmoment i dtrans policzone przy okazji enginerotation
+	if (hydro_R && hydro_R_Placement == 0)
+		Mw -= dizel_MomentumRetarder(nrot * Transmision.Ratio, dt) * Transmision.Ratio * Transmision.Efficiency;
+	Fw = Mw * 2.0 / WheelDiameter / NPoweredAxles;
+	Ft = Fw * NPoweredAxles; // sila trakcyjna
+	Ft = Ft * DirAbsolute; // DirActive*CabActive;
+}
+
+// tmp: the revolutions the engine aims at [1/s], see UpdateEngineRevolutions()
+void TMoverParameters::DieselElectricTractionForce(double tmp)
+{
+	double PosRatio;
+	//       tmpV:=V*CabActive*DirActive;
+	auto const tmpV{nrot * Pirazy2 * 0.5 * WheelDiameter * DirAbsolute}; //*CabActive*DirActive;
+	auto tempUmax = 0.0;
+	auto tempImax = 0.0;
+	auto tempPmax = 0.0;
+	// jazda manewrowa
+	if (EIMCtrlType > 0) // sterowanie cyfrowe
+	{
+		auto eimic_positive = std::max(0.0, eimic_real);
+		auto const rpmratio{EngineRPMRatio()};
+		tempImax = DElist[MainCtrlPosNo].Imax * eimic_positive;
+		tempUmax = DElist[MainCtrlPosNo].Umax * std::min(eimic_positive, rpmratio);
+		tempPmax = DElist[MainCtrlPosNo].GenPower * std::min(eimic_positive, rpmratio);
+		tmp = tempPmax;
+		if (true == StLinFlag)
+		{
+
+			if (tmpV < Vhyp * tempPmax / DElist[MainCtrlPosNo].GenPower)
+			{
+				// czy na czesci prostej, czy na hiperboli
+				Ft =
+				    (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * eimic_positive; // posratio - bo sila jakos tam sie rozklada
+			}
+			else
+			{
+				// na hiperboli
+				// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
+				Ft = 1000.0 * tempPmax / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
+			}
+		}
+		else
+			Ft = 0; // jak nastawnik na zero, to sila tez zero
+
+		PosRatio = tempPmax / DElist[MainCtrlPosNo].GenPower;
+	}
+	else if (true == ShuntMode)
+	{
+		if (true == StLinFlag)
+		{
+			EngineVoltage = SST[MainCtrlPos].Umax * AnPos + SST[MainCtrlPos].Umin * (1.0 - AnPos);
+			// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
+			// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
+			tmp = EngineRPMRatio() * (SST[MainCtrlPos].Pmax * AnPos) + SST[MainCtrlPos].Pmin * (1.0 - AnPos);
+			Ft = tmp * 1000.0 / (abs(tmpV) + 1.6);
+		}
+		else
+		{
+			EngineVoltage = 0;
+			Ft = 0;
+		}
+		PosRatio = 1;
+	}
+	else // jazda ciapongowa
+	{
+		auto power = Power;
+		tempImax = DElist[MainCtrlPos].Imax;
+		tempUmax = DElist[MainCtrlPos].Umax;
+		if (true == Heating)
+		{
+			power -= HeatingPower;
+		}
+		if (power < 0.0)
+		{
+			power = 0.0;
+		}
+		// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
+		// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
+		auto const currentgenpower{(DElist[MainCtrlPos].RPM > 0 ? DElist[MainCtrlPos].GenPower * (60.0 * enrot / DElist[MainCtrlPos].RPM) : 0.0)};
+
+		tmp = std::min(power, currentgenpower);
+
+		PosRatio = currentgenpower / DElist[MainCtrlPosNo].GenPower;
+		// stosunek mocy teraz do mocy max
+		// NOTE: Mains in this context is working diesel engine
+		if (true == StLinFlag)
+		{
+
+			if (tmpV < Vhyp * power / DElist[MainCtrlPosNo].GenPower)
+			{
+				// czy na czesci prostej, czy na hiperboli
+				Ft = (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * PosRatio; // posratio - bo sila jakos tam sie rozklada
+			}
+			else
+			{
+				// na hiperboli
+				// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
+				Ft = 1000.0 * tmp / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
+			}
+		}
+		else
+			Ft = 0; // jak nastawnik na zero, to sila tez zero
+
+		PosRatio = tmp / DElist[MainCtrlPosNo].GenPower;
+	}
+
+	if (FuseFlag)
+		Ft = 0;
+	else
+		Ft = Ft * DirAbsolute; // DirActive * CabActive; //zwrot sily i jej wartosc
+	Fw = Ft / NPoweredAxles; // sila na obwodzie kola
+	Mw = Fw * WheelDiameter / 2.0; // moment na osi kola
+	Mm = Mw / Transmision.Ratio; // moment silnika trakcyjnego
+
+	// with MotorParam[ScndCtrlPos] do
+	if (abs(Mm) > motor_param(ScndCtrlPos).fi)
+		Im = NPoweredAxles * abs(abs(Mm) / motor_param(ScndCtrlPos).mfi + motor_param(ScndCtrlPos).mIsat);
+	else
+		Im = NPoweredAxles * sqrt(abs(Mm * motor_param(ScndCtrlPos).Isat));
+
+	if (ShuntMode)
+	{
+		EnginePower = EngineVoltage * Im / 1000.0;
+		if (EnginePower > tmp)
+		{
+			EnginePower = tmp;
+			EngineVoltage = EnginePower * 1000.0 / Im;
+		}
+		if (EnginePower < tmp)
+		{
+			Ft *= EnginePower / tmp;
+		}
+	}
+	else
+	{
+		if (abs(Im) > tempImax)
+		{ // nie ma nadmiarowego, tylko Imax i zwarcie na pradnicy
+			Ft = Ft / Im * tempImax;
+			Im = tempImax;
+		}
+
+		if (Im > 0)
+		{
+			// jak pod obciazeniem
+			if (true == Flat)
+			{
+				// ograniczenie napiecia w pradnicy - plaszczak u gory
+				EngineVoltage = 1000.0 * tmp / std::abs(Im);
+			}
+			else
+			{
+				auto tempMCP = EIMCtrlType > 0 ? 1 + 99 * std::max(1.0, eimic_real) : MainCtrlPos;
+				auto tempMCPN = EIMCtrlType > 0 ? 100 : MainCtrlPosNo;
+				// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
+				EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
+				EngineVoltage /= tempMCPN - 1;
+				EngineVoltage = safe_clamp(EngineVoltage, Im * 0.05, 1000.0 * tmp / std::abs(Im));
+			}
+		}
+
+		if (EngineVoltage > tempUmax || Im == 0)
+		{
+			// gdy wychodzi za duze napiecie albo przy biegu jalowym (jest cos takiego?)
+			EngineVoltage = tempUmax * (ConverterFlag ? 1 : 0);
+		}
+
+		EnginePower = EngineVoltage * Im / 1000.0;
+		/*
+		                // power curve drop
+		                // NOTE: disabled for the time being due to side-effects
+		                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
+		                    Ft = std::lerp(
+		                        Ft, EnginePower / tmp,
+		                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
+		                }
+		*/
+	}
+
+	if (Imax > 1 && Im > Imax)
+		FuseOff();
+	if (FuseFlag)
+		EngineVoltage = 0;
+
+	// przekazniki bocznikowania, kazdy inny dla kazdej pozycji
+	if (false == StLinFlag || ShuntMode)
+	{
+		ScndCtrlPos = 0;
+	}
+	else
+	{
+		if (AutoRelayFlag)
+		{
+			ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
+		}
+	}
+}
+
+// the shunt field relays of a diesel-electric, each kind its own conditions on the current, the speed or the
+// power (tmp, the power the engine gives)
+void TMoverParameters::ShuntFieldRelaysCheck(double const tmpV, double const PosRatio, double const tmp)
+{
+	auto const shuntfieldstate{ScndCtrlPos};
+
+	switch (RelayType)
+	{
+
+	case 0:
+	{
+
+		if (ScndCtrlPos < ScndCtrlPosNo && Im <= MPTRelay[ScndCtrlPos].Iup * PosRatio)
+		{
+			++ScndCtrlPos;
+		}
+		if (ScndCtrlPos > 0 && Im >= MPTRelay[ScndCtrlPos].Idown * PosRatio)
+		{
+			--ScndCtrlPos;
+		}
+		break;
+	}
+	case 1:
+	{
+
+		if (ScndCtrlPos < ScndCtrlPosNo && MPTRelay[ScndCtrlPos].Iup < Vel)
+		{
+			++ScndCtrlPos;
+		}
+		if (ScndCtrlPos > 0 && MPTRelay[ScndCtrlPos].Idown > Vel)
+		{
+			--ScndCtrlPos;
+		}
+		break;
+	}
+	case 2:
+	{
+
+		if (ScndCtrlPos < ScndCtrlPosNo && MPTRelay[ScndCtrlPos].Iup < Vel && EnginePower < tmp * 0.99)
+		{
+			++ScndCtrlPos;
+		}
+		if (ScndCtrlPos > 0 && MPTRelay[ScndCtrlPos].Idown < Im)
+		{
+			--ScndCtrlPos;
+		}
+		break;
+	}
+	case 41:
+	{
+		if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos == MainCtrlPosNo && tmpV * 3.6 > MPTRelay[ScndCtrlPos].Iup)
+		{
+			++ScndCtrlPos;
+			enrot = enrot * 0.73;
+		}
+		if (ScndCtrlPos > 0 && Im > MPTRelay[ScndCtrlPos].Idown)
+		{
+			--ScndCtrlPos;
+		}
+		break;
+	}
+	case 45:
+	{
+		if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos >= 11)
+		{
+
+			if (Im < MPTRelay[ScndCtrlPos].Iup)
+			{
+				++ScndCtrlPos;
+			}
+			// check for cases where the speed drops below threshold for level 2 or 3
+			if (ScndCtrlPos > 1 && Vel < MPTRelay[ScndCtrlPos - 1].Idown)
+			{
+				--ScndCtrlPos;
+			}
+		}
+		// malenie
+		if (ScndCtrlPos > 0 && MainCtrlPos < 11)
+		{
+
+			if (ScndCtrlPos == 1)
+			{
+				if (Im > MPTRelay[ScndCtrlPos - 1].Idown)
+				{
+					--ScndCtrlPos;
+				}
+			}
+			else
+			{
+				if (Vel < MPTRelay[ScndCtrlPos].Idown)
+				{
+					--ScndCtrlPos;
+				}
+			}
+		}
+		// 3rd level drops with master controller at position lower than 10...
+		if (MainCtrlPos < 11)
+		{
+			ScndCtrlPos = std::min(2, ScndCtrlPos);
+		}
+		// ...and below position 7 field shunt drops altogether
+		if (MainCtrlPos < 8)
+		{
+			ScndCtrlPos = 0;
+		}
+		/*
+		                            // crude woodward approximation; difference between rpm for consecutive positions is ~5%
+		                            // so we get full throttle until ~half way between desired and previous position, or zero on rpm reduction
+		                            auto const woodward { std::clamp(
+		                                ( DElist[ MainCtrlPos ].RPM / ( enrot * 60.0 ) - 1.0 ) * 50.0,
+		                                0.0, 1.0 ) };
+		*/
+		break;
+	}
+	case 46:
+	{
+		// wzrastanie
+		if (MainCtrlPos >= 12 && ScndCtrlPos < ScndCtrlPosNo)
+		{
+			if (ScndCtrlPos % 2 == 0)
+			{
+				if (MPTRelay[ScndCtrlPos].Iup > Im)
+				{
+					++ScndCtrlPos;
+				}
+			}
+			else
+			{
+				if (MPTRelay[ScndCtrlPos - 1].Iup > Im && MPTRelay[ScndCtrlPos].Iup < Vel)
+				{
+					++ScndCtrlPos;
+				}
+			}
+		}
+		// malenie
+		if (MainCtrlPos < 12 && ScndCtrlPos > 0 && Vel < 50.0)
+		{
+			// above 50 km/h already active shunt field can be maintained until lower controller setting
+			if (ScndCtrlPos % 2 == 0)
+			{
+				if (MPTRelay[ScndCtrlPos].Idown < Im)
+				{
+					--ScndCtrlPos;
+				}
+			}
+			else
+			{
+				if (MPTRelay[ScndCtrlPos + 1].Idown < Im && MPTRelay[ScndCtrlPos].Idown > Vel)
+				{
+					--ScndCtrlPos;
+				}
+			}
+		}
+		if (MainCtrlPos < 11)
+		{
+			ScndCtrlPos = std::min(2, ScndCtrlPos);
+		}
+		if (MainCtrlPos < 8)
+		{
+			ScndCtrlPos = 0;
+		}
+		break;
+	}
+	default:
+	{
+		break;
+	}
+	} // switch RelayType
+
+	if (ScndCtrlPos != shuntfieldstate)
+	{
+		SetFlag(SoundFlag, sound::relay | sound::shuntfield);
+	}
+}
+
+void TMoverParameters::InductionMotorTractionForce(double dt)
+{
+	if (true == Mains && !SecuritySystem.is_engine_blocked())
+	{
+		double PosRatio;
+		double tmp;
+		double ActiveInverters = 0.0;
+		for (auto const &inv : Inverters)
+		{
+			if (inv.IsActive)
+				ActiveInverters += 1.0;
+		}
+		InvertersRatio = ActiveInverters / (double)InvertersNo;
+		if (EIM_Pmax_Table.size() > 1)
+		{
+			eimc[eimc_p_Pmax] = TableInterpolation(EIM_Pmax_Table, Vel);
+		}
+		InductionMotorSpeedControl(dt);
+		InductionMotorBrakeBlending(ActiveInverters, PosRatio, tmp);
+		// NOTE: the commands to operate the sandbox are likely to conflict with other similar ai decisions
+		// TODO: gather these in single place so they can be resolved together
+		if (SlippingWheels)
+		{
+			PosRatio = 0;
+			tmp = 10;
+			SandboxAuto(true, range_t::unit);
+		} // przeciwposlizg
+		else
+		{
+			// switch sandbox off
+			SandboxAuto(false, range_t::unit);
+		}
+		if (ActiveInverters == 0.0)
+		{
+			PosRatio = 0;
+			eimv_pr = 0;
+		}
+
+		eimv_pr += std::max(std::min(PosRatio - eimv_pr, 0.02), -0.02) * 12 * tmp /*2{+4*byte(PosRatio<eimv_pr)*/ * dt; // wartość zadana/procent czegoś
+
+		InductionMotorDrive(dt);
+	} // mains
+	else
+	{
+		InductionMotorOff();
+	}
+}
+
+// the speed control (tempomat) of an induction motor drive, set by its second controller
+void TMoverParameters::InductionMotorSpeedControl(double dt)
+{
+	// tempomat
+	if (ScndCtrlPosNo == 4 && SpeedCtrlTypeTime)
+	{
+		SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
+		switch (ScndCtrlPos)
+		{
+		case 0:
+			NewSpeed = 0;
+			SpeedCtrlValue = 0;
+			SpeedCtrlTimer = 10;
+			break;
+		case 1:
+			if (SpeedCtrlTimer > SpeedCtrlDelay)
+			{
+				SpeedCtrlTimer = 0;
+				NewSpeed -= 10;
+				if (NewSpeed < 0)
+					NewSpeed = 0;
+			}
+			else
+				SpeedCtrlTimer += dt;
+			break;
+		case 2:
+			SpeedCtrlTimer = 10;
+			SpeedCtrlValue = NewSpeed;
+			break;
+		case 3:
+			if (SpeedCtrlTimer > SpeedCtrlDelay)
+			{
+				SpeedCtrlTimer = 0;
+				NewSpeed += 10;
+				if (NewSpeed > Vmax)
+					NewSpeed = Vmax;
+			}
+			else
+				SpeedCtrlTimer += dt;
+			break;
+		case 4:
+			NewSpeed = Vmax;
+			SpeedCtrlValue = Vmax;
+			SpeedCtrlTimer = 10;
+			break;
+		default:
+			break;
+		}
+	}
+	else if (ScndCtrlPosNo > 1)
+	{
+		if (ScndCtrlPos != NewSpeed)
+		{
+
+			SpeedCtrlTimer = 0;
+			NewSpeed = ScndCtrlPos;
+		}
+		else
+		{
+			SpeedCtrlTimer += dt;
+			if (SpeedCtrlTimer > SpeedCtrlDelay)
+			{
+				auto NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
+				if (NewSCAP != SpeedCtrlValue)
+				{
+					SpeedCtrlValue = NewSCAP;
+					//								SendCtrlToNext("SpeedCntrl", SpeedCtrlValue, CabActive);
+				}
+			}
+		}
+		SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
+	}
+}
+
+// whether the induction motors brake, and the share of the electrodynamic and the pneumatic brake; sets the
+// force asked of the motors (PosRatio) and how fast the drive follows it (tmp)
+void TMoverParameters::InductionMotorBrakeBlending(double const ActiveInverters, double &PosRatio, double &tmp)
+{
+	double edBCP = Hamulec->GetEDBCP();
+	auto const localbrakeactive{CabOccupied != 0 && LocHandle->GetCP() > 0.25};
+	// gdy SplitEDPneumaticBrake jest aktywne, hamulec pomocniczy (LocalBrake) NIE wymusza
+	// zalaczenia hamulca elektrodynamicznego - ED jest sterowany wlasnym nastawnikiem
+	auto const dynbrakectrlactive{SplitEDPneumaticBrake && DynamicBrakeRatio() > 0.01 && DynamicBrakeAvailable()};
+	auto const localbrakeforED{SplitEDPneumaticBrake ? false : localbrakeactive};
+	if (false == Doors.instances[side::left].is_closed || false == Doors.instances[side::right].is_closed ||
+	    (Doors.permit_needed && (Doors.instances[side::left].open_permit || Doors.instances[side::right].open_permit)))
+	{
+		DynamicBrakeFlag = true;
+	}
+	else if ((edBCP < 0.25 && false == localbrakeforED && false == dynbrakectrlactive && AnPos < 0.01) ||
+	         (edBCP < 0.25 && ShuntModeAllow && false == dynbrakectrlactive && LocalBrakePosA < 0.01))
+		DynamicBrakeFlag = false;
+	else if (BrakePress > 0.25 && edBCP > 0.25 || localbrakeforED || AnPos > 0.02 || dynbrakectrlactive)
+		DynamicBrakeFlag = true;
+	edBCP = Hamulec->GetEDBCP() * eimc[eimc_p_abed]; // stala napedu
+	if (DynamicBrakeFlag)
+	{
+		// ustalanie współczynnika blendingu do luzowania hamulca PN
+		if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
+		{
+			PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
+			PosRatio = std::clamp(PosRatio, 0.0, 1.0);
+		}
+		else
+		{
+			PosRatio = 0;
+		}
+		PosRatio = static_cast<double>(Round(20.0 * PosRatio)) / 20.0; // stopniowanie PN/ED
+		if (PosRatio < 19.5 / 20.0)
+			PosRatio *= 0.9;
+		Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
+		// ustalanie siły hamowania ED
+		if (Hamulec->GetEDBCP() > 0.25 && eimc[eimc_p_abed] < 0.001 || ActiveInverters < InvertersNo) // jeśli PN wyłącza ED
+		{
+			PosRatio = 0;
+			eimv[eimv_Fzad] = 0;
+		}
+		else
+		{
+			// strefa wylaczenia ED (Vh0..Vh1) - mnoznik 0..1 zaleznie od predkosci
+			double const vhRamp = std::max(0.0, std::min(1.0, (Vel - eimc[eimc_p_Vh0]) / (eimc[eimc_p_Vh1] - eimc[eimc_p_Vh0])));
+			if (SplitEDPneumaticBrake)
+			{
+				// w trybie split LocalBrake nie zaleca ED; uzywany jest DynamicBrakeCtrl
+				// oraz zwykle zapotrzebowanie z hamulca zespolonego (edBCP)
+				double const edLeverDemand = DynamicBrakeRatio();
+				PosRatio = -std::max(std::max(edLeverDemand, std::min(edBCP / MaxBrakePress[0], 1.0)), AnPos) * vhRamp;
+				eimv[eimv_Fzad] = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
+			}
+			else
+			{
+				PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * vhRamp;
+				eimv[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
+			}
+		}
+		tmp = 5;
+	}
+	else
+	{
+		PosRatio = std::max(eimic_real, 0.);
+		eimv[eimv_Fzad] = PosRatio;
+		if (Flat && eimc[eimc_p_F0] * eimv[eimv_Fful] > 0)
+			PosRatio = std::min(PosRatio * eimc[eimc_p_F0] / eimv[eimv_Fful], 1.);
+		/*                    if (ScndCtrlActualPos > 0) //speed control
+		                        if (Vmax < 250)
+		                            PosRatio = std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos - Vel)));
+		                        else
+		                            PosRatio =
+		                                std::min(PosRatio, std::max(-1, 0.5 * (ScndCtrlActualPos * 2 - Vel))); */
+		// PosRatio = 1.0 * (PosRatio * 0 + 1) * PosRatio; // 1 * 1 * PosRatio = PosRatio
+		Hamulec->SetED(0);
+		//           (Hamulec as TLSt).SetLBP(LocBrakePress);
+		tmp = 4; // szybkie malenie, powolne wzrastanie
+	}
+}
+
+// the model of the induction motors and their inverters: voltage, frequency, currents, moment and force
+void TMoverParameters::InductionMotorDrive(double dt)
+{
+	double tmp;
+	if (DynamicBrakeFlag)
+		tmp = eimc[eimc_f_Uzh];
+	else
+		tmp = eimc[eimc_f_Uzmax];
+
+	auto f_cfu{DynamicBrakeFlag ? eimc[eimc_f_cfuH] : eimc[eimc_f_cfu]};
+
+	eimv[eimv_Uzsmax] = std::min(EngineVoltage - eimc[eimc_f_DU], tmp);
+	eimv[eimv_fkr] = eimv[eimv_Uzsmax] / f_cfu;
+	if (eimv_pr < 0)
+	{
+		eimv[eimv_Pmax] = eimc[eimc_p_Ph];
+	}
+	else
+	{
+		eimv[eimv_Pmax] = std::min(eimc[eimc_p_Pmax], 0.001 * EngineVoltage * (eimc[eimc_p_Imax] - eimc[eimc_f_I0]) * Pirazy2 * eimc[eimc_s_cim] / eimc[eimc_s_p] / eimc[eimc_s_cfu]);
+	}
+	eimv[eimv_FMAXMAX] = 0.001 *
+	                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
+	                     (eimc[eimc_s_dfmax] * eimc[eimc_s_dfic] * eimc[eimc_s_cim]) * Transmision.Ratio * NPoweredAxles * 2.0 / WheelDiameter;
+	if (eimv_pr < 0)
+	{
+		eimv[eimv_Fful] = std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(eimc[eimc_p_Fh], eimv[eimv_FMAXMAX]));
+		eimv[eimv_Fmax] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * eimv_pr, eimv[eimv_FMAXMAX]));
+		double pr = eimv_pr;
+		if (EIMCLogForce)
+			pr = -log(1 - 4 * pr) / log(5);
+		eimv[eimv_Fr] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
+		if (InvertersRatio < 1.0)
+			eimv[eimv_Fful] = 0;
+		//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
+	}
+	else
+	{
+		eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
+		//           if(not Flat)then
+		eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
+		//           else
+		//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
+		double pr = eimv_pr;
+		if (EIMCLogForce)
+			pr = log(1 + 4 * pr) / log(5);
+		eimv[eimv_Fr] = eimv[eimv_Fful] * pr;
+	}
+	for (auto &inv : Inverters)
+	{
+		inv.Request = inv.IsActive ? eimv_pr : 0.0;
+		inv.Error = inv.Failure_Const || (inv.Failure_Drive && inv.Request != 0);
+		inv.IsActive = inv.Activate && !inv.Error;
+	}
+	eimv[eimv_ks] = eimv[eimv_Fr] / eimv[eimv_FMAXMAX];
+	eimv[eimv_df] = eimv[eimv_ks] * eimc[eimc_s_dfmax];
+	eimv[eimv_fp] = DirAbsolute * enrot * eimc[eimc_s_p] + eimv[eimv_df]; // do przemyslenia dzialanie pp z tmpV
+	//         eimv[eimv_U]:=std::max(eimv[eimv_Uzsmax],std::min(eimc[eimc_f_cfu]*eimv[eimv_fp],eimv[eimv_Uzsmax]));
+	//         eimv[eimv_pole]:=eimv[eimv_U]/(eimv[eimv_fp]*eimc[eimc_s_cfu]);
+	if (abs(eimv[eimv_fp]) <= eimv[eimv_fkr])
+		eimv[eimv_pole] = f_cfu / eimc[eimc_s_cfu];
+	else
+		eimv[eimv_pole] = eimv[eimv_Uzsmax] / eimc[eimc_s_cfu] / abs(eimv[eimv_fp]);
+	eimv[eimv_U] = eimv[eimv_pole] * eimv[eimv_fp] * eimc[eimc_s_cfu];
+	eimv[eimv_Ic] = (eimv[eimv_fp] - DirAbsolute * enrot * eimc[eimc_s_p]) * eimc[eimc_s_dfic] * eimv[eimv_pole];
+	eimv[eimv_If] = eimv[eimv_Ic] * eimc[eimc_s_icif];
+	eimv[eimv_M] = eimv[eimv_pole] * eimv[eimv_Ic] * eimc[eimc_s_cim];
+	eimv[eimv_Ipoj] = eimv[eimv_Ic] * NPoweredAxles * InvertersRatio * eimv[eimv_U] / (EngineVoltage - eimc[eimc_f_DU]) + eimc[eimc_f_I0];
+	eimv[eimv_Pm] = DirActive * eimv[eimv_M] * NPoweredAxles * InvertersRatio * enrot * Pirazy2 / 1000;
+	eimv[eimv_Pe] = eimv[eimv_Ipoj] * EngineVoltage / 1000;
+	eimv[eimv_eta] = eimv[eimv_Pm] / eimv[eimv_Pe];
+
+	Im = eimv[eimv_If];
+	if (eimv[eimv_Ipoj] >= 0)
+		Vadd *= 1.0 - 2.0 * dt;
+	else if (std::abs(EngineVoltage) < EnginePowerSource.CollectorParameters.MaxV)
+		Vadd *= 1.0 - dt;
+	else
+		Vadd = std::max(Vadd * (1.0 - 0.2 * dt), 0.007 * (std::abs(EngineVoltage) - (EnginePowerSource.CollectorParameters.MaxV - 100)));
+	Itot = eimv[eimv_Ipoj] * (0.01 + std::min(0.99, 0.99 - Vadd));
+
+	EnginePower = abs(eimv[eimv_Ic] * eimv[eimv_U] * NPoweredAxles) / 1000;
+	// power inverters
+	auto const tmpV{std::abs(eimv[eimv_fp])};
+	auto const useFFEDList = FFEDListSize > 0 && DynamicBrakeFlag;
+	auto const list = useFFEDList ? FFEDlist : FFlist;
+
+	if (auto const listSize = useFFEDList ? FFEDListSize : FFListSize; listSize > 0 && std::abs(eimv[eimv_If]) > 1.0 && tmpV > 0.0001)
+	{
+
+		int i = 0;
+		while (i < listSize - 1 && list[i + 1].v < tmpV)
+		{
+			++i;
+		}
+		InverterFrequency = (tmpV - list[i].v) / std::max(1.0, list[i + 1].v - list[i].v) * (list[i + 1].freq - list[i].freq) + list[i].freq;
+	}
+	else
+	{
+		InverterFrequency = 0.0;
+	}
+
+	Mm = eimv[eimv_M] * DirAbsolute;
+	Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
+	Fw = Mw * 2.0 / WheelDiameter;
+	Ft = Fw * NPoweredAxles * InvertersRatio;
+	eimv[eimv_Fr] = DirAbsolute * Ft / 1000;
+}
+
+// the induction motor drive without power, or blocked by the security system
+void TMoverParameters::InductionMotorOff()
+{
+	for (auto &inv : Inverters)
+	{
+		inv.Freal = 0.0;
+		inv.IsActive = false;
+	}
+	Im = 0.0;
+	Mm = 0.0;
+	Mw = 0.0;
+	Fw = 0.0;
+	Ft = 0.0;
+	Itot = 0.0;
+	eimv_pr = 0.0;
+	EnginePower = 0.0;
+	{
+		for (auto &eimvvalue : eimv)
+			eimvvalue = 0.0;
+	}
+	Hamulec->SetED(0.0);
+	InverterFrequency = 0.0; //(Hamulec as TLSt).SetLBP(LocBrakePress);
 }
 
 // *************************************************************************************************
