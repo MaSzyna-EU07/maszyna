@@ -898,61 +898,68 @@ void TMoverParameters::UpdatePantVolume(double dt)
 		if (!PantCompFlag && PantVolume > 0.1)
 			PantVolume -= dt * 0.0003 * std::max(1.0, PantPress * 0.5); // nieszczelności: 0.0003=0.3l/s
 
-		if (PantPress < EnginePowerSource.CollectorParameters.MinPress)
-		{
-			// 3.5 wg http://www.transportszynowy.pl/eu06-07pneumat.php
-			if (true == PantPressSwitchActive)
-			{
-				// opuszczenie pantografów przy niskim ciśnieniu
-				if (TrainType != dt_EZT)
-				{
-					// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
-					if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV)
-					{
-						// TODO: check whether line breaker should be open EMU-wide
-						MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
-					}
-				}
-				else
-				{
-					// specialized variant for EMU -- pwr system disables converter and heating,
-					// and prevents their activation until pressure switch is set again
-					PantPressLockActive = true;
-					// TODO: separate 'heating allowed' from actual heating flag, so we can disable it here without messing up heating toggle
-					ConverterSwitch(false, range_t::unit);
-				}
-				// mark the pressure switch as spent
-				PantPressSwitchActive = false;
-			}
-		}
-		else
-		{
-			if (PantPress >= 4.6)
-			{
-				// NOTE: we require active low power source to prime the pressure switch
-				// this is a work-around for potential isssues caused by the switch activating on otherwise idle vehicles, but should check whether it's accurate
-				if (true == Power24vIsAvailable || true == Power110vIsAvailable)
-				{
-					// prime the pressure switch
-					PantPressSwitchActive = true;
-					// turn off the subsystems lock
-					PantPressLockActive = false;
-				}
-
-				if (PantPress >= 4.8)
-				{
-					// Winger - automatyczne wylaczanie malej sprezarki
-					// TODO: governor lock, disables usage until pressure drop below 3.8 (should really make compressor object we could reuse)
-					PantCompFlag = false;
-				}
-			}
-		}
+		PantPressureSwitchCheck();
 	}
 	else
 	{ // a tu coś dla SM42 i SM31, aby pokazywać na manometrze
 		PantPress = CntrlPipePress;
 	}
 };
+
+// the pantographs' pressure switch: low, it opens the line breaker (or locks the converter of a unit) once;
+// primed again over 4.6 bar, where the pantographs' compressor stops at 4.8
+void TMoverParameters::PantPressureSwitchCheck()
+{
+	if (PantPress < EnginePowerSource.CollectorParameters.MinPress)
+	{
+		// 3.5 wg http://www.transportszynowy.pl/eu06-07pneumat.php
+		if (true == PantPressSwitchActive)
+		{
+			// opuszczenie pantografów przy niskim ciśnieniu
+			if (TrainType != dt_EZT)
+			{
+				// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
+				if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV)
+				{
+					// TODO: check whether line breaker should be open EMU-wide
+					MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
+				}
+			}
+			else
+			{
+				// specialized variant for EMU -- pwr system disables converter and heating,
+				// and prevents their activation until pressure switch is set again
+				PantPressLockActive = true;
+				// TODO: separate 'heating allowed' from actual heating flag, so we can disable it here without messing up heating toggle
+				ConverterSwitch(false, range_t::unit);
+			}
+			// mark the pressure switch as spent
+			PantPressSwitchActive = false;
+		}
+	}
+	else
+	{
+		if (PantPress >= 4.6)
+		{
+			// NOTE: we require active low power source to prime the pressure switch
+			// this is a work-around for potential isssues caused by the switch activating on otherwise idle vehicles, but should check whether it's accurate
+			if (true == Power24vIsAvailable || true == Power110vIsAvailable)
+			{
+				// prime the pressure switch
+				PantPressSwitchActive = true;
+				// turn off the subsystems lock
+				PantPressLockActive = false;
+			}
+
+			if (PantPress >= 4.8)
+			{
+				// Winger - automatyczne wylaczanie malej sprezarki
+				// TODO: governor lock, disables usage until pressure drop below 3.8 (should really make compressor object we could reuse)
+				PantCompFlag = false;
+			}
+		}
+	}
+}
 
 void TMoverParameters::UpdateBatteryVoltage(double dt)
 { // przeliczenie obciążenia baterii
@@ -8345,38 +8352,7 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 
 	dizel_Torque = Moment;
 
-	if (hydro_TC) // jesli przetwornik momentu
-	{
-		// napelnianie przetwornika
-		bool IsPower = EIMCtrlType > 0 ? eimic_real > 0.005 : MainCtrlPowerPos() > 0;
-		if (IsPower && Mains && enrot > dizel_nmin * 0.9)
-			hydro_TC_Fill += hydro_TC_FillRateInc * dt;
-		// oproznianie przetwornika
-		if ((!IsPower && Vel < dizel_maxVelANS) || !Mains || enrot < dizel_nmin * 0.8)
-			hydro_TC_Fill -= hydro_TC_FillRateDec * dt;
-		// obcinanie zakresu
-		hydro_TC_Fill = std::clamp(hydro_TC_Fill, 0.0, 1.0);
-
-		// blokowanie sprzegla blokującego
-		if (Vel > hydro_TC_LockupSpeed && Mains && enrot > 0.9 * dizel_nmin && IsPower)
-		{
-			hydro_TC_Lockup = true;
-			hydro_TC_LockupRate += hydro_TC_FillRateInc * dt;
-		}
-		// luzowanie sprzegla blokujacego
-		if (Vel < (IsPower ? hydro_TC_LockupSpeed : hydro_TC_UnlockSpeed) || !Mains || enrot < 0.8 * dizel_nmin)
-		{
-			hydro_TC_Lockup = false;
-			hydro_TC_LockupRate -= hydro_TC_FillRateDec * dt;
-		}
-		// obcinanie zakresu
-		hydro_TC_LockupRate = std::clamp(hydro_TC_LockupRate, 0.0, 1.0);
-	}
-	else
-	{
-		hydro_TC_Fill = 0.0;
-		hydro_TC_LockupRate = 0.0;
-	}
+	hydro_TCFillCheck(dt);
 
 	// obliczanie momentow poszczegolnych sprzegiel
 	// sprzeglo glowne (skrzynia biegow)
@@ -8384,32 +8360,7 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 
 	if (hydro_TC) // jesli hydro
 	{
-		double HydroTorque = 0;
-		HydroTorque += hydro_TC_nIn * hydro_TC_nIn * hydro_TC_TorqueInIn;
-		HydroTorque += (hydro_TC_nIn - hydro_TC_nOut) * hydro_TC_TorqueInOut;
-		HydroTorque += hydro_TC_nOut * hydro_TC_nOut * hydro_TC_TorqueOutOut;
-		double nOut2In = hydro_TC_nOut / std::max(0.01, hydro_TC_nIn);
-		if (hydro_TC_Table.size() > 1)
-		{
-			hydro_TC_TMRatio = TableInterpolation(hydro_TC_Table, nOut2In);
-			hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
-			hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill * std::min(1.0, hydro_TC_TMRatio);
-		}
-		else
-		{
-			if (nOut2In < hydro_TC_CouplingPoint)
-			{
-				hydro_TC_TMRatio = 1 + (hydro_TC_TMMax - 1) * square(1 - nOut2In / hydro_TC_CouplingPoint);
-				hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill;
-				hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
-			}
-			else
-			{
-				hydro_TC_TMRatio = (1 - nOut2In) / (1 - hydro_TC_CouplingPoint);
-				hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
-				hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
-			}
-		}
+		hydro_TCTorque();
 		TorqueH = hydro_TC_TorqueOut;
 		TorqueL = hydro_TC_LockupTorque * hydro_TC_LockupRate;
 	}
@@ -8473,6 +8424,74 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 	dizel_n_old = n; // obecna predkosc katowa na potrzeby kolejnej klatki
 
 	return gearMoment;
+}
+
+// the torque converter filled and emptied, and its lockup clutch engaged and released, by the power and the speed
+void TMoverParameters::hydro_TCFillCheck(double dt)
+{
+	if (hydro_TC) // jesli przetwornik momentu
+	{
+		// napelnianie przetwornika
+		bool IsPower = EIMCtrlType > 0 ? eimic_real > 0.005 : MainCtrlPowerPos() > 0;
+		if (IsPower && Mains && enrot > dizel_nmin * 0.9)
+			hydro_TC_Fill += hydro_TC_FillRateInc * dt;
+		// oproznianie przetwornika
+		if ((!IsPower && Vel < dizel_maxVelANS) || !Mains || enrot < dizel_nmin * 0.8)
+			hydro_TC_Fill -= hydro_TC_FillRateDec * dt;
+		// obcinanie zakresu
+		hydro_TC_Fill = std::clamp(hydro_TC_Fill, 0.0, 1.0);
+
+		// blokowanie sprzegla blokującego
+		if (Vel > hydro_TC_LockupSpeed && Mains && enrot > 0.9 * dizel_nmin && IsPower)
+		{
+			hydro_TC_Lockup = true;
+			hydro_TC_LockupRate += hydro_TC_FillRateInc * dt;
+		}
+		// luzowanie sprzegla blokujacego
+		if (Vel < (IsPower ? hydro_TC_LockupSpeed : hydro_TC_UnlockSpeed) || !Mains || enrot < 0.8 * dizel_nmin)
+		{
+			hydro_TC_Lockup = false;
+			hydro_TC_LockupRate -= hydro_TC_FillRateDec * dt;
+		}
+		// obcinanie zakresu
+		hydro_TC_LockupRate = std::clamp(hydro_TC_LockupRate, 0.0, 1.0);
+	}
+	else
+	{
+		hydro_TC_Fill = 0.0;
+		hydro_TC_LockupRate = 0.0;
+	}
+}
+
+// the torque converter's moments on its input and output shafts, by their revolutions and its fill
+void TMoverParameters::hydro_TCTorque()
+{
+	double HydroTorque = 0;
+	HydroTorque += hydro_TC_nIn * hydro_TC_nIn * hydro_TC_TorqueInIn;
+	HydroTorque += (hydro_TC_nIn - hydro_TC_nOut) * hydro_TC_TorqueInOut;
+	HydroTorque += hydro_TC_nOut * hydro_TC_nOut * hydro_TC_TorqueOutOut;
+	double nOut2In = hydro_TC_nOut / std::max(0.01, hydro_TC_nIn);
+	if (hydro_TC_Table.size() > 1)
+	{
+		hydro_TC_TMRatio = TableInterpolation(hydro_TC_Table, nOut2In);
+		hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
+		hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill * std::min(1.0, hydro_TC_TMRatio);
+	}
+	else
+	{
+		if (nOut2In < hydro_TC_CouplingPoint)
+		{
+			hydro_TC_TMRatio = 1 + (hydro_TC_TMMax - 1) * square(1 - nOut2In / hydro_TC_CouplingPoint);
+			hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill;
+			hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
+		}
+		else
+		{
+			hydro_TC_TMRatio = (1 - nOut2In) / (1 - hydro_TC_CouplingPoint);
+			hydro_TC_TorqueIn = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
+			hydro_TC_TorqueOut = HydroTorque * hydro_TC_Fill * hydro_TC_TMRatio;
+		}
+	}
 }
 
 double TMoverParameters::dizel_MomentumRetarder(double n, double dt)

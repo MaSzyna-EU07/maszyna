@@ -2473,6 +2473,7 @@ class TMoverParameters
 	void UpdateEPBrake();
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
 	void UpdatePantVolume(double dt); // Ra
+	void PantPressureSwitchCheck();
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);
 	double GetDVc(double dt);
@@ -2657,6 +2658,8 @@ class TMoverParameters
 	double dizel_DigitalFill(double dt);
 	double dizel_GovernorFill(int mcp, double realfill);
 	double dizel_Momentum(double dizel_fill, double n, double dt);
+	void hydro_TCFillCheck(double dt);
+	void hydro_TCTorque();
 	double dizel_MomentumRetarder(double n, double dt); // moment hamowania retardera
 	void dizel_HeatSet(float const Value);
 	void dizel_Heat(double const dt);
