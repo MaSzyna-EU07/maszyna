@@ -594,6 +594,8 @@ class TESt : public TBrake
 	/// <param name="BCP">Brake cylinder (or impulse) pressure.</param>
 	/// <param name="dV1">In/out accumulator for the brake pipe flow correction.</param>
 	void CheckState(double BCP, double &dV1); // glowny przyrzad rozrzadczy
+	/// <summary>The state of a valve holding: braking on in steps, the filling stopped, or released.</summary>
+	void CheckStateHeld(double BCP, double VVP, double CVP);
 	/// <summary>Drives the releaser logic — bleeds the control reservoir while the releaser is engaged.</summary>
 	/// <param name="dt">Time step [s].</param>
 	void CheckReleaser(double dt); // odluzniacz
@@ -821,6 +823,10 @@ class TEStEP2 : public TLSt
 	double LoadC = 0.0;
 	/// <summary>EP intensity (-1..1).</summary>
 	double EPS = 0.0;
+
+  private:
+	// the part of GetPF()
+	void UpdateStatusEP2(double BCP, double VVP, double CVP);
 
   public:
 	/// <summary>Initialises the EP2-equipped distributor (impulse chamber, P delay).</summary>

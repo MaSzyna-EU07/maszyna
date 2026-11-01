@@ -855,25 +855,7 @@ void TESt::CheckState(double const BCP, double & /*dV1*/)
 
 		if ((BrakeStatus & b_hld) == b_hld)
 		{
-
-			if (VVP + 0.003 + BCP / BVM < CVP)
-			{
-				// hamowanie stopniowe
-				BrakeStatus |= b_on;
-			}
-			else
-			{
-				if (VVP + BCP / BVM > CVP)
-				{
-					// zatrzymanie napelaniania
-					BrakeStatus &= ~b_on;
-				}
-				if (VVP - 0.003 + (BCP - 0.1) / BVM > CVP)
-				{
-					// luzowanie
-					BrakeStatus &= ~(b_on | b_hld);
-				}
-			}
+			CheckStateHeld(BCP, VVP, CVP);
 		}
 		else
 		{
@@ -905,6 +887,29 @@ void TESt::CheckState(double const BCP, double & /*dV1*/)
 	if ((BrakeStatus & b_hld) == 0)
 	{
 		SoundFlag |= sf_CylU;
+	}
+}
+
+// the state of a valve holding: braking on in steps, the filling stopped, or released
+void TESt::CheckStateHeld(double const BCP, double const VVP, double const CVP)
+{
+	if (VVP + 0.003 + BCP / BVM < CVP)
+	{
+		// hamowanie stopniowe
+		BrakeStatus |= b_on;
+	}
+	else
+	{
+		if (VVP + BCP / BVM > CVP)
+		{
+			// zatrzymanie napelaniania
+			BrakeStatus &= ~b_on;
+		}
+		if (VVP - 0.003 + (BCP - 0.1) / BVM > CVP)
+		{
+			// luzowanie
+			BrakeStatus &= ~(b_on | b_hld);
+		}
 	}
 }
 
@@ -1150,33 +1155,7 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 	// odluzniacz
 	CheckReleaser(dt);
 
-	// sprawdzanie stanu
-	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
-	{
-		if (VVP + 0.003 + BCP / BVM < CVP - 0.12)
-			BrakeStatus |= b_on; // hamowanie stopniowe;
-		else if (VVP - 0.003 + BCP / BVM > CVP - 0.12)
-			BrakeStatus &= ~(b_on | b_hld); // luzowanie;
-		else if (VVP + BCP / BVM > CVP - 0.12)
-			BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-	}
-	else if (VVP + 0.10 < CVP - 0.12 && BCP < 0.25) // poczatek hamowania
-	{
-		// if ((BrakeStatus & 1) == 0)
-		//{
-		//    //       ValveRes.CreatePress(0.5*VVP);  //110115 - konsultacje warszawa1
-		//    //       SoundFlag:=SoundFlag or sf_Acc;
-		//    //       ValveRes.Act;
-		//}
-		BrakeStatus |= b_on | b_hld;
-	}
-	else if (VVP + BCP / BVM < CVP - 0.12 && BCP > 0.25) // zatrzymanie luzowanie
-		BrakeStatus |= b_hld;
-
-	if ((BrakeStatus & b_hld) == 0)
-	{
-		SoundFlag |= sf_CylU;
-	}
+	UpdateStatusEP2(BCP, VVP, CVP);
 
 	// przeplyw ZS <-> PG
 	if (BVP < CVP - 0.2 || BrakeStatus != b_off || BCP > 0.25)
@@ -1238,6 +1217,38 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 	BrakeRes->Act();
 	CntrlRes->Act();
 	return result;
+}
+
+// the state of the valve: braking in steps, holding or releasing, the start of braking
+void TEStEP2::UpdateStatusEP2(double const BCP, double const VVP, double const CVP)
+{
+	// sprawdzanie stanu
+	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
+	{
+		if (VVP + 0.003 + BCP / BVM < CVP - 0.12)
+			BrakeStatus |= b_on; // hamowanie stopniowe;
+		else if (VVP - 0.003 + BCP / BVM > CVP - 0.12)
+			BrakeStatus &= ~(b_on | b_hld); // luzowanie;
+		else if (VVP + BCP / BVM > CVP - 0.12)
+			BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
+	}
+	else if (VVP + 0.10 < CVP - 0.12 && BCP < 0.25) // poczatek hamowania
+	{
+		// if ((BrakeStatus & 1) == 0)
+		//{
+		//    //       ValveRes.CreatePress(0.5*VVP);  //110115 - konsultacje warszawa1
+		//    //       SoundFlag:=SoundFlag or sf_Acc;
+		//    //       ValveRes.Act;
+		//}
+		BrakeStatus |= b_on | b_hld;
+	}
+	else if (VVP + BCP / BVM < CVP - 0.12 && BCP > 0.25) // zatrzymanie luzowanie
+		BrakeStatus |= b_hld;
+
+	if ((BrakeStatus & b_hld) == 0)
+	{
+		SoundFlag |= sf_CylU;
+	}
 }
 
 /// <summary>
