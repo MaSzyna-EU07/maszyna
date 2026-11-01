@@ -3321,7 +3321,6 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 	double dpPipe;
 	double dpMainValve;
 	double ActFlowSpeed;
-	double DP;
 	double pom;
 
 	for (auto &soundvalue : Sounds)
@@ -3332,30 +3331,12 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 	i_bcp = std::clamp(i_bcp, -0.999, 9.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
-	if (TP > 0 && CP > 4.9)
-	{
-		DP = OverloadPressureDecrease;
-		if (EQ(i_bcp, 0))
-			TP = TP - DP * dt;
-		Sounds[s_fv4a_t] = DP;
-	}
-	else
-	{
-		TP = 0;
-	}
+	DischargeTimedReservoir(i_bcp, dt);
 
 	LimPP = std::min(LPP_RP(i_bcp) + TP * 0.08 + RedAdj, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
-	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
-	ManualOvrldActive = UniversalFlag & TUniversalBrake::ub_HighPressure; // button is pressed
-	if (ManualOvrld && !ManualOvrldActive) // no overpressure for not pressed button if it does not exists
-		uop = 0;
-
-	if (EQ(i_bcp, -1) && uop > 0)
-		pom = std::min(HP, 5.4 + RedAdj + uop);
-	else
-		pom = std::min(CP, HP);
+	pom = SupplyPressure(i_bcp, HP);
 
 	if (LimPP > CP) // podwyzszanie szybkie
 		CP = CP + 60 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy;
@@ -3375,15 +3356,12 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 	if ((EQ(i_bcp, -1) && AutoOvrld) || (i_bcp < 0.5 && UniversalFlag & TUniversalBrake::ub_Overload))
 	{
-		if (TP < 5)
-			TP = TP + dt; // 5/10
-		if (TP < OverloadMaxPressure)
-			TP = TP - 0.5 * dt; // 5/10
+		ChargeTimedReservoir(dt);
 	}
 
 	if (EQ(i_bcp, 10) || EQ(i_bcp, -2))
 	{
-		DP = PF(0, PP, 2 * ActFlowSpeed / LBDelay);
+		auto const DP{PF(0, PP, 2 * ActFlowSpeed / LBDelay)};
 		dpMainValve = DP;
 		Sounds[s_fv4a_e] = DP;
 		Sounds[s_fv4a_u] = 0;
@@ -3404,6 +3382,45 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 		RP = std::min(1., 0.125 * i_bcp - 0.125);
 
 	return dpMainValve * dt;
+}
+
+// the time reservoir let out of the overload, at the running position, while the control reservoir is charged
+void TMHZ_EN57::DischargeTimedReservoir(double const i_bcp, double const dt)
+{
+	if (TP > 0 && CP > 4.9)
+	{
+		auto const DP{OverloadPressureDecrease};
+		if (EQ(i_bcp, 0))
+			TP = TP - DP * dt;
+		Sounds[s_fv4a_t] = DP;
+	}
+	else
+	{
+		TP = 0;
+	}
+}
+
+// the time reservoir charged by the overload, up to its highest pressure
+void TMHZ_EN57::ChargeTimedReservoir(double const dt)
+{
+	if (TP < 5)
+		TP = TP + dt; // 5/10
+	if (TP < OverloadMaxPressure)
+		TP = TP - 0.5 * dt; // 5/10
+}
+
+// the pressure the handle feeds the pipe from: the supply's over the running pressure at the filling stroke, where the
+// handle has the overpressure (with its button pressed, for a button worked one), the control reservoir's otherwise
+double TMHZ_EN57::SupplyPressure(double const i_bcp, double const HP)
+{
+	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
+	ManualOvrldActive = UniversalFlag & TUniversalBrake::ub_HighPressure; // button is pressed
+	if (ManualOvrld && !ManualOvrldActive) // no overpressure for not pressed button if it does not exists
+		uop = 0;
+
+	if (EQ(i_bcp, -1) && uop > 0)
+		return std::min(HP, 5.4 + RedAdj + uop);
+	return std::min(CP, HP);
 }
 
 /// <summary>Initialises CP to the supplied pressure.</summary>

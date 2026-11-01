@@ -1215,6 +1215,10 @@ class TMHZ_EN57 : public TDriverHandle
 	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
 	bool EQ(double pos, double i_pos) const;
+	// the parts of GetPF()
+	void DischargeTimedReservoir(double i_bcp, double dt);
+	void ChargeTimedReservoir(double dt);
+	double SupplyPressure(double i_bcp, double HP);
 
   public:
 	/// <summary>Computes brake pipe flow for MHZ_EN57 (covers handle positions -1..10 with EP/pneumatic mix).</summary>
