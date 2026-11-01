@@ -989,68 +989,99 @@ void TMoverParameters::UpdateBatteryVoltage(double dt)
 // the drop of the battery's voltage in dt, by what draws from it, or its rise by the converter charging it
 double TMoverParameters::BatteryDrain(double dt, bool const converteractive) const
 {
-	double sn1 = 0.0;
-	double sn2 = 0.0;
-	double sn3 = 0.0;
-	double sn4 = 0.0;
-	double sn5 = 0.0; // Ra: zrobić z tego amperomierz NN
 	if (NominalBatteryVoltage / BatteryVoltage < 1.22 && Battery)
 	{ // 110V
-		if (!converteractive)
-			sn1 = dt * 2.0; // szybki spadek do ok 90V
-		else
-			sn1 = 0;
-		if (converteractive)
-			sn2 = -(dt * 2.0); // szybki wzrost do 110V
-		else
-			sn2 = 0;
-		if (Mains)
-			sn3 = dt * 0.05;
-		else
-			sn3 = 0;
-		if (iLights[0] & 63) // 64=blachy, nie ciągną prądu //rozpisać na poszczególne żarówki...
-			sn4 = dt * 0.003;
-		else
-			sn4 = 0;
-		if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
-			sn5 = dt * 0.001;
-		else
-			sn5 = 0;
+		return BatteryDrainCharged(dt, converteractive);
 	}
 	if (NominalBatteryVoltage / BatteryVoltage >= 1.22 && Battery)
 	{ // 90V
-		if (PantCompFlag)
-			sn1 = dt * 0.0046;
-		else
-			sn1 = 0;
-		if (converteractive)
-			sn2 = -(dt * 50); // szybki wzrost do 110V
-		else
-			sn2 = 0;
-		if (Mains)
-			sn3 = dt * 0.001;
-		else
-			sn3 = 0;
-		if (iLights[0] & 63) // 64=blachy, nie ciągną prądu
-			sn4 = dt * 0.0030;
-		else
-			sn4 = 0;
-		if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
-			sn5 = dt * 0.0010;
-		else
-			sn5 = 0;
+		return BatteryDrainLow(dt, converteractive);
 	}
 	if (!Battery)
 	{
-		if (NominalBatteryVoltage / BatteryVoltage < 1.22)
-			sn1 = dt * 50;
-		else
-			sn1 = 0;
-		sn2 = dt * 0.000001;
-		sn3 = dt * 0.000001;
-		sn4 = dt * 0.000001;
-		sn5 = dt * 0.000001; // bardzo powolny spadek przy wyłączonych bateriach
+		return BatteryDrainSwitchedOff(dt);
 	}
+	return 0.0;
+}
+
+// the drain of a battery at its voltage, the converter charging it
+double TMoverParameters::BatteryDrainCharged(double dt, bool const converteractive) const
+{
+	double sn1;
+	double sn2;
+	double sn3;
+	double sn4;
+	double sn5;
+	if (!converteractive)
+		sn1 = dt * 2.0; // szybki spadek do ok 90V
+	else
+		sn1 = 0;
+	if (converteractive)
+		sn2 = -(dt * 2.0); // szybki wzrost do 110V
+	else
+		sn2 = 0;
+	if (Mains)
+		sn3 = dt * 0.05;
+	else
+		sn3 = 0;
+	if (iLights[0] & 63) // 64=blachy, nie ciągną prądu //rozpisać na poszczególne żarówki...
+		sn4 = dt * 0.003;
+	else
+		sn4 = 0;
+	if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
+		sn5 = dt * 0.001;
+	else
+		sn5 = 0;
+	return sn1 + sn2 + sn3 + sn4 + sn5;
+}
+
+// the drain of a battery run down to 90 V, the converter charging it
+double TMoverParameters::BatteryDrainLow(double dt, bool const converteractive) const
+{
+	double sn1;
+	double sn2;
+	double sn3;
+	double sn4;
+	double sn5;
+	if (PantCompFlag)
+		sn1 = dt * 0.0046;
+	else
+		sn1 = 0;
+	if (converteractive)
+		sn2 = -(dt * 50); // szybki wzrost do 110V
+	else
+		sn2 = 0;
+	if (Mains)
+		sn3 = dt * 0.001;
+	else
+		sn3 = 0;
+	if (iLights[0] & 63) // 64=blachy, nie ciągną prądu
+		sn4 = dt * 0.0030;
+	else
+		sn4 = 0;
+	if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
+		sn5 = dt * 0.0010;
+	else
+		sn5 = 0;
+	return sn1 + sn2 + sn3 + sn4 + sn5;
+}
+
+// the drain of a battery switched off, very slow
+double TMoverParameters::BatteryDrainSwitchedOff(double dt) const
+{
+	double sn1;
+	double sn2;
+	double sn3;
+	double sn4;
+	double sn5;
+	if (NominalBatteryVoltage / BatteryVoltage < 1.22)
+		sn1 = dt * 50;
+	else
+		sn1 = 0;
+	sn2 = dt * 0.000001;
+	sn3 = dt * 0.000001;
+	sn4 = dt * 0.000001;
+	sn5 = dt * 0.000001; // bardzo powolny spadek przy wyłączonych bateriach
 	return sn1 + sn2 + sn3 + sn4 + sn5;
 }
 
@@ -2513,61 +2544,7 @@ bool TMoverParameters::IncMainCtrlByEngine(int const CtrlSpeed)
 
 	case TEngineType::ElectricSeriesMotor:
 	{
-		if (DirActive == 0)
-		{
-			return false;
-		}
-
-		if (CtrlSpeed > 1)
-		{
-			// szybkie przejœcie na bezoporow¹
-			if (TrainType == dt_ET40)
-			{
-				break; // this means ET40 won't react at all to fast acceleration command. should it issue just IncMainCtrl(1) instead?
-			}
-			while (RList[MainCtrlPos].R > 0.0 && IncMainCtrl(1))
-			{
-				// all work is done in the loop header
-			}
-			OK = false; // shouldn't this be part of the loop above?
-			// if (TrainType=dt_ET40)  then
-			// while Abs (Im)>IminHi do
-			//   dec(MainCtrlPos);
-			//  OK:=false ;
-		}
-		else
-		{ // CtrlSpeed == 1
-			++MainCtrlPos;
-			OK = true;
-			if (Imax == ImaxHi && RList[MainCtrlPos].Bn > 1)
-			{
-				/* NOTE: disabled, relay configuration was moved to compute_movement_
-				                            if( true == MaxCurrentSwitch( false )) {
-				                                // wylaczanie wysokiego rozruchu
-				                                SetFlag( SoundFlag, sound::relay );
-				                            }
-				*/
-				if (TrainType == dt_ET42)
-				{
-					--MainCtrlPos;
-					OK = false;
-				}
-			}
-			//
-			// if (TrainType == "et40")
-			//  if (Abs(Im) > IminHi)
-			//   {
-			//    MainCtrlPos--; //Blokada nastawnika po przekroczeniu minimalnego pradu
-			//    OK = false;
-			//   }
-			//}
-		}
-
-		if (TrainType == dt_ET42 && true == DynamicBrakeFlag && MainCtrlPos > 20)
-		{
-			MainCtrlPos = 20;
-			OK = false;
-		}
+		OK = IncMainCtrlSeriesMotor(CtrlSpeed);
 		break;
 	}
 
@@ -2597,6 +2574,69 @@ bool TMoverParameters::IncMainCtrlByEngine(int const CtrlSpeed)
 	default:
 		break;
 	} // switch EngineType of
+	return OK;
+}
+
+// a notch up of the series motors' controller: CtrlSpeed over 1 runs it to the first position without resistors;
+// returns whether it moved as asked
+bool TMoverParameters::IncMainCtrlSeriesMotor(int const CtrlSpeed)
+{
+	bool OK = false;
+	if (DirActive == 0)
+	{
+		return false;
+	}
+
+	if (CtrlSpeed > 1)
+	{
+		// szybkie przejœcie na bezoporow¹
+		if (TrainType == dt_ET40)
+		{
+			return false; // this means ET40 won't react at all to fast acceleration command. should it issue just IncMainCtrl(1) instead?
+		}
+		while (RList[MainCtrlPos].R > 0.0 && IncMainCtrl(1))
+		{
+			// all work is done in the loop header
+		}
+		OK = false; // shouldn't this be part of the loop above?
+		// if (TrainType=dt_ET40)  then
+		// while Abs (Im)>IminHi do
+		//   dec(MainCtrlPos);
+		//  OK:=false ;
+	}
+	else
+	{ // CtrlSpeed == 1
+		++MainCtrlPos;
+		OK = true;
+		if (Imax == ImaxHi && RList[MainCtrlPos].Bn > 1)
+		{
+			/* NOTE: disabled, relay configuration was moved to compute_movement_
+			                            if( true == MaxCurrentSwitch( false )) {
+			                                // wylaczanie wysokiego rozruchu
+			                                SetFlag( SoundFlag, sound::relay );
+			                            }
+			*/
+			if (TrainType == dt_ET42)
+			{
+				--MainCtrlPos;
+				OK = false;
+			}
+		}
+		//
+		// if (TrainType == "et40")
+		//  if (Abs(Im) > IminHi)
+		//   {
+		//    MainCtrlPos--; //Blokada nastawnika po przekroczeniu minimalnego pradu
+		//    OK = false;
+		//   }
+		//}
+	}
+
+	if (TrainType == dt_ET42 && true == DynamicBrakeFlag && MainCtrlPos > 20)
+	{
+		MainCtrlPos = 20;
+		OK = false;
+	}
 	return OK;
 }
 
@@ -2670,7 +2710,7 @@ bool TMoverParameters::DecMainCtrlByEngine(int const CtrlSpeed)
 	case TEngineType::DieselElectric:
 	case TEngineType::ElectricInductionMotor:
 	{
-		if ((CtrlSpeed == 1 && EngineType != TEngineType::DieselElectric) || (CtrlSpeed == 1 && EngineType == TEngineType::DieselElectric))
+		if (CtrlSpeed == 1)
 		{
 			MainCtrlPos--;
 			OK = true;
@@ -2687,25 +2727,7 @@ bool TMoverParameters::DecMainCtrlByEngine(int const CtrlSpeed)
 
 	case TEngineType::ElectricSeriesMotor:
 	{
-		if (CtrlSpeed == 1) /*and (ScndCtrlPos=0)*/
-		{
-			MainCtrlPos--;
-			//                if (MainCtrlPos=0) and (ScndCtrlPos=0) and
-			//                (TrainType<>dt_ET40)and(TrainType<>dt_EP05) then
-			//                 StLinFlag:=false;
-			//                if (MainCtrlPos=0) and (TrainType<>dt_ET40) and
-			//                (TrainType<>dt_EP05) then
-			//                 MainCtrlActualPos:=0; //yBARC: co to tutaj robi? ;)
-			OK = true;
-		}
-		else if (CtrlSpeed > 1) /*and (ScndCtrlPos=0)*/
-		{
-			OK = true;
-			if (RList[MainCtrlPos].R == 0) // Q: tu zrobilem = ;]
-				DecMainCtrl(1);
-			while (RList[MainCtrlPos].R > 0 && DecMainCtrl(1))
-				; // takie chamskie, potem poprawie}
-		}
+		OK = DecMainCtrlSeriesMotor(CtrlSpeed);
 		break;
 	}
 
@@ -2727,6 +2749,32 @@ bool TMoverParameters::DecMainCtrlByEngine(int const CtrlSpeed)
 	default:
 		break;
 	} // switch EngineType
+	return OK;
+}
+
+// a notch down of the series motors' controller: CtrlSpeed over 1 runs it down to the first position without resistors
+bool TMoverParameters::DecMainCtrlSeriesMotor(int const CtrlSpeed)
+{
+	bool OK = false;
+	if (CtrlSpeed == 1) /*and (ScndCtrlPos=0)*/
+	{
+		MainCtrlPos--;
+		//                if (MainCtrlPos=0) and (ScndCtrlPos=0) and
+		//                (TrainType<>dt_ET40)and(TrainType<>dt_EP05) then
+		//                 StLinFlag:=false;
+		//                if (MainCtrlPos=0) and (TrainType<>dt_ET40) and
+		//                (TrainType<>dt_EP05) then
+		//                 MainCtrlActualPos:=0; //yBARC: co to tutaj robi? ;)
+		OK = true;
+	}
+	else if (CtrlSpeed > 1) /*and (ScndCtrlPos=0)*/
+	{
+		OK = true;
+		if (RList[MainCtrlPos].R == 0) // Q: tu zrobilem = ;]
+			DecMainCtrl(1);
+		while (RList[MainCtrlPos].R > 0 && DecMainCtrl(1))
+			; // takie chamskie, potem poprawie}
+	}
 	return OK;
 }
 

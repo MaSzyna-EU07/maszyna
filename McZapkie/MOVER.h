@@ -2358,6 +2358,9 @@ class TMoverParameters
 	bool IsMotorOverloadRelayHighThresholdOn() const;
 	void UpdateBatteryVoltage(double dt);
 	double BatteryDrain(double dt, bool converteractive) const;
+	double BatteryDrainCharged(double dt, bool converteractive) const;
+	double BatteryDrainLow(double dt, bool converteractive) const;
+	double BatteryDrainSwitchedOff(double dt) const;
 	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc,
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
@@ -2408,7 +2411,9 @@ class TMoverParameters
 	bool DecMainCtrl(int CtrlSpeed);
 	// the parts of IncMainCtrl() and DecMainCtrl() which depend on the kind of the engine
 	bool IncMainCtrlByEngine(int CtrlSpeed);
+	bool IncMainCtrlSeriesMotor(int CtrlSpeed);
 	bool DecMainCtrlByEngine(int CtrlSpeed);
+	bool DecMainCtrlSeriesMotor(int CtrlSpeed);
 	bool IsMainCtrlActualNoPowerPos() const; // whether the master controller is actually set to position which won't generate any extra power
 	bool IsMainCtrlNoPowerPos() const; // whether the master controller is set to position which won't generate any extra power
 	bool IsMainCtrlMaxPowerPos() const;
