@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "winheaders.h"
 #include "utilities/utilities.h"
 #include "application/uilayer.h"
+#include "utilities/crashdump.h"
 #include <deque>
 
 std::ofstream output; // standardowy "log.txt", można go wyłączyć
@@ -102,6 +103,7 @@ void LogService()
 					{
 						std::string filename = Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt";
 						output.open(filename, std::ios::trunc);
+						crashdump_set_log_file(crashdump_log_file::log, filename);
 					}
 					output << msg << "\n";
 					output.flush();
@@ -139,6 +141,7 @@ void LogService()
 				{
 					std::string filename = Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt";
 					errors.open(filename, std::ios::trunc);
+					crashdump_set_log_file(crashdump_log_file::errors, filename);
 					errors << "EU07.EXE " + Global.asVersion << "\n";
 				}
 
@@ -176,6 +179,8 @@ void WriteLog(std::string_view str, logtype type, bool isError)
 	const auto message = FormatLogMessage(str);
 
 	std::scoped_lock lock(logMutex);
+	// at once rather than by the log service, which may not get to it before a crash
+	crashdump_note_log(message.data(), message.size());
 	InfoStack.emplace_back(message, isError);
 }
 

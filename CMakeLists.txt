@@ -86,6 +86,7 @@ option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
 option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
+option(BUNDLE_VC_RUNTIME "Copy the Visual C++ runtime libraries next to the executable (MSVC), so it does not depend on the installed redistributable" ON)
 option(ADD_VERSION_SUFFIX "Add date and commit hash to the executable name" ON)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
@@ -152,6 +153,8 @@ set(SOURCES
 "vehicle/Gauge.cpp"
 "utilities/Globals.cpp"
 "utilities/Logs.cpp"
+"utilities/crashdump.cpp"
+"utilities/crashdump_writer.cpp"
 "model/MdlMngr.cpp"
 "world/MemCell.cpp"
 "model/Model3d.cpp"
@@ -912,6 +915,20 @@ if(WIN32 AND WITH_PYTHON)
 	)
 endif()
 
+# the Visual C++ runtime the simulator is built with, next to it: older runtimes installed in the system crash the programs of newer
+# compilers (std::mutex of Visual Studio 2022 17.10 and newer with a runtime older than 14.40), missing ones keep them from starting
+if (MSVC AND BUNDLE_VC_RUNTIME)
+	set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+	set(CMAKE_INSTALL_UCRT_LIBRARIES FALSE)
+	include(InstallRequiredSystemLibraries)
+	if (CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+	else()
+		message(WARNING "BUNDLE_VC_RUNTIME: the Visual C++ runtime libraries were not found, they are not copied")
+	endif()
+endif()
+
 # yaml-cpp, for the descriptions of scenery templates edited in the scenery editor and for the heightmap terrain
 add_subdirectory("ref/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
 target_link_libraries(eu07_settings INTERFACE yaml-cpp)
@@ -942,13 +959,64 @@ if(ENABLE_MCC AND MSVC)
 	add_compile_options(/MP)
 endif()
 
+set(EU07_AVX2_TARGET OFF)
 if(ENABLE_AVX2)
+	# AVX2 belongs to the x86-64 processors: the builds for ARM (Apple silicon, Linux aarch64, Windows on ARM) and the universal macOS ones go without it
+	if (MSVC)
+		if ("${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" STREQUAL "x64")
+			set(EU07_AVX2_TARGET ON)
+		endif()
+	elseif (APPLE AND CMAKE_OSX_ARCHITECTURES)
+		if ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+			set(EU07_AVX2_TARGET ON)
+		endif()
+	elseif ("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "^(x86_64|AMD64|amd64|x64)$")
+		set(EU07_AVX2_TARGET ON)
+	endif()
+	if (NOT EU07_AVX2_TARGET)
+		message(STATUS "AVX2 instruction set not available for the target processor, disabled.")
+	endif()
+endif()
+
+if(EU07_AVX2_TARGET)
     message(STATUS "Enabling AVX2 instruction set.")
     if (MSVC)
         target_compile_options(eu07_settings INTERFACE /arch:AVX2)
     else()
         target_compile_options(eu07_settings INTERFACE -mavx2)
     endif()
+
+	# the check of the processor before any code built with AVX2 runs, built without it (it does not use eu07_settings)
+	add_library(eu07_preflight OBJECT "utilities/cpu_preflight.cpp")
+	target_include_directories(eu07_preflight PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+	set_target_properties(eu07_preflight PROPERTIES FOLDER "libraries" INTERPROCEDURAL_OPTIMIZATION OFF)
+	if (MSVC)
+		# it runs before the C runtime starts, the buffer security checks need the runtime
+		target_compile_options(eu07_preflight PRIVATE /GS-)
+	endif()
+	target_link_libraries(${PROJECT_NAME} eu07_preflight)
+	target_compile_definitions(${PROJECT_NAME} PRIVATE EU07_CPU_PREFLIGHT)
+endif()
+
+# eu07_starter, the starter of the simulator: checks the processor and the libraries before the start, explains the failures
+# of the start the system reports with a bare error code, and writes the crash dumps of the simulator from outside of it
+if (MSVC)
+	file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/eu07_starter.rc" CONTENT "IDI_ICON1 ICON \"${CMAKE_CURRENT_SOURCE_DIR}/eu07.ico\"\n" @ONLY)
+	add_executable(eu07_starter WIN32 "starter/eu07_starter.cpp" "utilities/crashdump_writer.cpp" "${CMAKE_BINARY_DIR}/eu07_starter.rc")
+	target_include_directories(eu07_starter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+	target_compile_definitions(eu07_starter PRIVATE UNICODE _UNICODE "EU07_SIMULATOR_EXE=\"$<TARGET_FILE_NAME:${PROJECT_NAME}>\"")
+	if (EU07_AVX2_TARGET)
+		target_compile_definitions(eu07_starter PRIVATE EU07_REQUIRES_AVX2)
+	endif()
+	# the static C runtime: the starter runs where the Visual C++ runtime is missing, to say so
+	set_target_properties(eu07_starter PROPERTIES
+		MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+		PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pdb"
+		FOLDER "tools")
+	target_compile_options(eu07_starter PRIVATE $<IF:$<CONFIG:Debug>,/MTd,/MT>)
+	target_link_libraries(eu07_starter PRIVATE dbghelp version shell32 user32)
+	add_dependencies(${PROJECT_NAME} eu07_starter)
 endif()
 
 if(WITH_TESTS)

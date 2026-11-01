@@ -20,66 +20,24 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 
 #include "application/application.h"
 #include "utilities/Logs.h"
+#include "utilities/crashdump.h"
 #include <cstdlib>
-#ifdef WITHDUMPGEN
-#ifdef _WIN32
-#include <Windows.h>
-#include <DbgHelp.h>
-#endif
-#endif
 
 #ifdef _MSC_VER
+#ifdef EU07_CPU_PREFLIGHT
+// checks the processor before the C runtime starts, see utilities/cpu_preflight.cpp
+#pragma comment(linker, "/subsystem:windows /ENTRY:eu07_preflight_entry")
+#else
 #pragma comment(linker, "/subsystem:windows /ENTRY:mainCRTStartup")
+#endif
 #endif
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 int export_btf_standalone(std::string in, std::string out);
 int generate_nodebank_previews(int Argc, char *Argv[]);
 
-#include <ctime>
 #include <string>
-#include <sstream>
-#include <iomanip>
 #include <utilities/Globals.h>
-
-#ifdef _WIN32
-#pragma comment(lib, "Dbghelp.lib")
-
-LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
-{
-	// Get current local time
-	SYSTEMTIME st;
-	GetLocalTime(&st);
-
-	// Format: crash_YYYY-MM-DD_HH-MM-SS.dmp
-	std::ostringstream oss;
-	oss << "crash_" << std::setw(4) << std::setfill('0') << st.wYear << "-" << std::setw(2) << std::setfill('0') << st.wMonth << "-" << std::setw(2) << std::setfill('0') << st.wDay << "_"
-	    << std::setw(2) << std::setfill('0') << st.wHour << "-" << std::setw(2) << std::setfill('0') << st.wMinute << "-" << std::setw(2) << std::setfill('0') << st.wSecond << ".dmp";
-
-	std::string filename = oss.str();
-
-	HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (hFile != INVALID_HANDLE_VALUE)
-	{
-		MINIDUMP_EXCEPTION_INFORMATION dumpInfo;
-		dumpInfo.ThreadId = GetCurrentThreadId();
-		dumpInfo.ExceptionPointers = ExceptionInfo;
-		dumpInfo.ClientPointers = FALSE;
-
-		// Wybrana kombinacja flag
-		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
-		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
-
-		MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
-		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType, &dumpInfo, nullptr, nullptr);
-
-		CloseHandle(hFile);
-	}
-
-	return EXCEPTION_EXECUTE_HANDLER;
-}
-
-#endif
 
 // lets the log service write what is still queued and stops it; does nothing once Application.exit() has done that
 static void stop_log_service()
@@ -92,11 +50,7 @@ static void stop_log_service()
 
 int main(int argc, char *argv[])
 {
-#ifdef WITHDUMPGEN
-#ifdef _WIN32
-	SetUnhandledExceptionFilter(CrashHandler);
-#endif
-#endif
+	crashdump_install();
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
 
