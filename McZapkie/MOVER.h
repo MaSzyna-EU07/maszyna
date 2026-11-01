@@ -2487,6 +2487,7 @@ class TMoverParameters
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
 	void UpdatePantVolume(double dt); // Ra
 	void PantPressureSwitchCheck();
+	void PantPressureSwitchTrip();
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);
 	double GetDVc(double dt);
@@ -2514,8 +2515,12 @@ class TMoverParameters
 	void DieselElectricShuntPower(double tmp);
 	void DieselElectricGenerator(double tmp, double tempUmax, double tempImax);
 	void ShuntFieldRelaysCheck(double tmpV, double PosRatio, double tmp);
+	void ShuntFieldRelaysType2(double tmp);
+	void ShuntFieldRelaysType41(double tmpV);
 	void ShuntFieldRelaysType45();
 	void ShuntFieldRelaysType46();
+	void ShuntFieldRelaysType46Up();
+	void ShuntFieldRelaysType46Down();
 	void InductionMotorTractionForce(double dt);
 	void InductionMotorSpeedControl(double dt);
 	void SpeedControlByTime(double dt);
@@ -2607,6 +2612,7 @@ class TMoverParameters
 	double LocalPowerVoltage(coupling Coupling);
 	void PowerCouplersVoltage(coupling Coupling, double abslocalvoltage, bool localpowersource);
 	void PowerCouplersCurrent(coupling Coupling, bool localpowersource);
+	double *PowerCircuitCurrent(coupling Coupling);
 	void ConverterCheck(double const Timestep); // przetwornica
 	void HeatingCheck(double const Timestep);
 	void WaterPumpCheck(double const Timestep);
@@ -2632,6 +2638,7 @@ class TMoverParameters
 	// the parts of Current()
 	void UpdateSeriesMotorDynamicBrakeFlag();
 	double SeriesMotorCurrent(double n, double U, double R, double Mn) const;
+	double SeriesMotorDrivingCurrent(double n, double U, double Rz, double Mn, int SP) const;
 	void MotorFailuresCheck(double n);
 	double Momentum(double I) const;
 	double MomentumF(double I, double Iw, int SCP) const;
@@ -2752,6 +2759,8 @@ class TMoverParameters
 	void LoadFIZ_TurboPos(std::string const &line);
 	void LoadFIZ_Cntrl(std::string const &line);
 	void LoadFIZ_CntrlBrakes(std::string const &line);
+	void LoadFIZ_CntrlTrainBrake(std::string const &line);
+	void LoadFIZ_CntrlAntiSlipBrake(std::string const &asb);
 	void LoadFIZ_CntrlControllers(std::string const &line);
 	void LoadFIZ_CntrlStarts(std::string const &line);
 	void LoadFIZ_Blending(std::string const &line);

@@ -394,9 +394,6 @@ double TMoverParameters::SeriesMotorCurrent(double const n, double const U, doub
 {
 	double MotorCurrent{0.0};
 	double Rz;
-	double Delta;
-	double Isf;
-	double U1; // napiecie z korekta
 	int SP = ScndCtrlActualPos;
 
 	if (ScndCtrlActualPos < 255) // tak smiesznie bede wylaczal
@@ -431,29 +428,41 @@ double TMoverParameters::SeriesMotorCurrent(double const n, double const U, doub
 		}
 		else
 		{
-			U1 = U + Mn * n * motor_param(SP).fi0 * motor_param(SP).fi;
-			//          writepaslog("U1             ", FloatToStr(U1));
-			//          writepaslog("Isat           ", FloatToStr(MotorParam[SP].Isat));
-			//          writepaslog("fi             ", FloatToStr(MotorParam[SP].fi));
-			Isf = Sign(U1) * motor_param(SP).Isat;
-			//          writepaslog("Isf            ", FloatToStr(Isf));
-			Delta = square(Isf * Rz + Mn * motor_param(SP).fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
-			//          DeltaQ = Isf * Rz + Mn * MotorParam[SP].fi * n - U1 + 4 * U1 * Isf * Rz;
-			//          writepaslog("Delta          ", FloatToStr(Delta));
-			//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
-			//          writepaslog("U              ", FloatToStr(U));
-			if (Mains)
-			{
-				if (U > 0)
-					MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
-				else
-					MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n - std::sqrt(Delta)) / (2.0 * Rz);
-			}
-			else
-				MotorCurrent = 0;
+			MotorCurrent = SeriesMotorDrivingCurrent(n, U, Rz, Mn, SP);
 		} // else DBF
 
 	} // 255
+	else
+		MotorCurrent = 0;
+	return MotorCurrent;
+}
+
+// the current of the series motors driving, at the revolutions n, the voltage U and the resistance Rz of Mn motors in
+// series, by the motor parameters of the shunt field SP
+double TMoverParameters::SeriesMotorDrivingCurrent(double const n, double const U, double const Rz, double const Mn, int const SP) const
+{
+	double MotorCurrent;
+	double Delta;
+	double Isf;
+	double U1; // napiecie z korekta
+	U1 = U + Mn * n * motor_param(SP).fi0 * motor_param(SP).fi;
+	//          writepaslog("U1             ", FloatToStr(U1));
+	//          writepaslog("Isat           ", FloatToStr(MotorParam[SP].Isat));
+	//          writepaslog("fi             ", FloatToStr(MotorParam[SP].fi));
+	Isf = Sign(U1) * motor_param(SP).Isat;
+	//          writepaslog("Isf            ", FloatToStr(Isf));
+	Delta = square(Isf * Rz + Mn * motor_param(SP).fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
+	//          DeltaQ = Isf * Rz + Mn * MotorParam[SP].fi * n - U1 + 4 * U1 * Isf * Rz;
+	//          writepaslog("Delta          ", FloatToStr(Delta));
+	//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
+	//          writepaslog("U              ", FloatToStr(U));
+	if (Mains)
+	{
+		if (U > 0)
+			MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
+		else
+			MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n - std::sqrt(Delta)) / (2.0 * Rz);
+	}
 	else
 		MotorCurrent = 0;
 	return MotorCurrent;
@@ -914,26 +923,7 @@ void TMoverParameters::PantPressureSwitchCheck()
 		// 3.5 wg http://www.transportszynowy.pl/eu06-07pneumat.php
 		if (true == PantPressSwitchActive)
 		{
-			// opuszczenie pantografów przy niskim ciśnieniu
-			if (TrainType != dt_EZT)
-			{
-				// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
-				if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV)
-				{
-					// TODO: check whether line breaker should be open EMU-wide
-					MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
-				}
-			}
-			else
-			{
-				// specialized variant for EMU -- pwr system disables converter and heating,
-				// and prevents their activation until pressure switch is set again
-				PantPressLockActive = true;
-				// TODO: separate 'heating allowed' from actual heating flag, so we can disable it here without messing up heating toggle
-				ConverterSwitch(false, range_t::unit);
-			}
-			// mark the pressure switch as spent
-			PantPressSwitchActive = false;
+			PantPressureSwitchTrip();
 		}
 	}
 	else
@@ -958,6 +948,32 @@ void TMoverParameters::PantPressureSwitchCheck()
 			}
 		}
 	}
+}
+
+// the pantographs' pressure switch tripped by the low pressure: the line breaker opened, unless the voltage comes from
+// elsewhere, or the converter of a unit locked; spent until primed again
+void TMoverParameters::PantPressureSwitchTrip()
+{
+	// opuszczenie pantografów przy niskim ciśnieniu
+	if (TrainType != dt_EZT)
+	{
+		// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
+		if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV)
+		{
+			// TODO: check whether line breaker should be open EMU-wide
+			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
+		}
+	}
+	else
+	{
+		// specialized variant for EMU -- pwr system disables converter and heating,
+		// and prevents their activation until pressure switch is set again
+		PantPressLockActive = true;
+		// TODO: separate 'heating allowed' from actual heating flag, so we can disable it here without messing up heating toggle
+		ConverterSwitch(false, range_t::unit);
+	}
+	// mark the pressure switch as spent
+	PantPressSwitchActive = false;
 }
 
 void TMoverParameters::UpdateBatteryVoltage(double dt)
@@ -1858,6 +1874,22 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	PowerCouplersCurrent(Coupling, localpowersource);
 }
 
+// the current the vehicle draws from the circuit of the power coupling given
+double *TMoverParameters::PowerCircuitCurrent(coupling const Coupling)
+{
+	switch (Coupling)
+	{
+	case coupling::highvoltage:
+		return &TotalCurrent;
+	case coupling::power110v:
+		return &PowerCircuits[1].second;
+	case coupling::power24v:
+		return &PowerCircuits[0].second;
+	default:
+		return nullptr;
+	}
+}
+
 // the voltage of the vehicle's own source for the coupling given; notes the low voltage circuits' too
 double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 {
@@ -2010,34 +2042,9 @@ void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double cons
 // the current drawn through the couplers, shared by their voltages, or added to the vehicle's own
 void TMoverParameters::PowerCouplersCurrent(coupling const Coupling, bool const localpowersource)
 {
-	auto couplervoltage{0};
-	switch (Coupling)
-	{
-	case coupling::highvoltage:
-	{
-		couplervoltage = static_cast<int>(Couplers[end::front].power_high.voltage + Couplers[end::rear].power_high.voltage);
-		break;
-	}
-	case coupling::power110v:
-	{
-		couplervoltage = static_cast<int>(Couplers[end::front].power_110v.voltage + Couplers[end::rear].power_110v.voltage);
-		break;
-	}
-	case coupling::power24v:
-	{
-		couplervoltage = static_cast<int>(Couplers[end::front].power_24v.voltage + Couplers[end::rear].power_24v.voltage);
-		break;
-	}
-	default:
-	{
-		break;
-	}
-	}
-
-	auto *totalcurrent = Coupling == coupling::highvoltage ? &TotalCurrent :
-	                     Coupling == coupling::power110v   ? &PowerCircuits[1].second :
-	                     Coupling == coupling::power24v    ? &PowerCircuits[0].second :
-	                                                         nullptr;
+	// a power coupling, PowerCouplersCheck() takes no other
+	auto const couplervoltage{static_cast<int>(Couplers[end::front].power(Coupling)->voltage + Couplers[end::rear].power(Coupling)->voltage)};
+	auto *totalcurrent{PowerCircuitCurrent(Coupling)};
 
 	for (auto &thiscoupler : Couplers)
 	{
@@ -6331,27 +6338,12 @@ void TMoverParameters::ShuntFieldRelaysCheck(double const tmpV, double const Pos
 	case 2:
 	{
 
-		if (ScndCtrlPos < ScndCtrlPosNo && MPTRelay[ScndCtrlPos].Iup < Vel && EnginePower < tmp * 0.99)
-		{
-			++ScndCtrlPos;
-		}
-		if (ScndCtrlPos > 0 && MPTRelay[ScndCtrlPos].Idown < Im)
-		{
-			--ScndCtrlPos;
-		}
+		ShuntFieldRelaysType2(tmp);
 		break;
 	}
 	case 41:
 	{
-		if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos == MainCtrlPosNo && tmpV * 3.6 > MPTRelay[ScndCtrlPos].Iup)
-		{
-			++ScndCtrlPos;
-			enrot = enrot * 0.73;
-		}
-		if (ScndCtrlPos > 0 && Im > MPTRelay[ScndCtrlPos].Idown)
-		{
-			--ScndCtrlPos;
-		}
+		ShuntFieldRelaysType41(tmpV);
 		break;
 	}
 	case 45:
@@ -6373,6 +6365,33 @@ void TMoverParameters::ShuntFieldRelaysCheck(double const tmpV, double const Pos
 	if (ScndCtrlPos != shuntfieldstate)
 	{
 		SetFlag(SoundFlag, sound::relay | sound::shuntfield);
+	}
+}
+
+// the relays of type 2: up by the speed while the engine has power to spare (tmp, the power it gives), down by the current
+void TMoverParameters::ShuntFieldRelaysType2(double const tmp)
+{
+	if (ScndCtrlPos < ScndCtrlPosNo && MPTRelay[ScndCtrlPos].Iup < Vel && EnginePower < tmp * 0.99)
+	{
+		++ScndCtrlPos;
+	}
+	if (ScndCtrlPos > 0 && MPTRelay[ScndCtrlPos].Idown < Im)
+	{
+		--ScndCtrlPos;
+	}
+}
+
+// the relays of type 41: up by the speed tmpV at full power, the engine slowed down, down by the current
+void TMoverParameters::ShuntFieldRelaysType41(double const tmpV)
+{
+	if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos == MainCtrlPosNo && tmpV * 3.6 > MPTRelay[ScndCtrlPos].Iup)
+	{
+		++ScndCtrlPos;
+		enrot = enrot * 0.73;
+	}
+	if (ScndCtrlPos > 0 && Im > MPTRelay[ScndCtrlPos].Idown)
+	{
+		--ScndCtrlPos;
 	}
 }
 
@@ -6437,39 +6456,12 @@ void TMoverParameters::ShuntFieldRelaysType46()
 	// wzrastanie
 	if (MainCtrlPos >= 12 && ScndCtrlPos < ScndCtrlPosNo)
 	{
-		if (ScndCtrlPos % 2 == 0)
-		{
-			if (MPTRelay[ScndCtrlPos].Iup > Im)
-			{
-				++ScndCtrlPos;
-			}
-		}
-		else
-		{
-			if (MPTRelay[ScndCtrlPos - 1].Iup > Im && MPTRelay[ScndCtrlPos].Iup < Vel)
-			{
-				++ScndCtrlPos;
-			}
-		}
+		ShuntFieldRelaysType46Up();
 	}
 	// malenie
 	if (MainCtrlPos < 12 && ScndCtrlPos > 0 && Vel < 50.0)
 	{
-		// above 50 km/h already active shunt field can be maintained until lower controller setting
-		if (ScndCtrlPos % 2 == 0)
-		{
-			if (MPTRelay[ScndCtrlPos].Idown < Im)
-			{
-				--ScndCtrlPos;
-			}
-		}
-		else
-		{
-			if (MPTRelay[ScndCtrlPos + 1].Idown < Im && MPTRelay[ScndCtrlPos].Idown > Vel)
-			{
-				--ScndCtrlPos;
-			}
-		}
+		ShuntFieldRelaysType46Down();
 	}
 	if (MainCtrlPos < 11)
 	{
@@ -6478,6 +6470,45 @@ void TMoverParameters::ShuntFieldRelaysType46()
 	if (MainCtrlPos < 8)
 	{
 		ScndCtrlPos = 0;
+	}
+}
+
+// a relay of type 46 down: an even one by the current, an odd one by the current and the speed
+void TMoverParameters::ShuntFieldRelaysType46Down()
+{
+	// above 50 km/h already active shunt field can be maintained until lower controller setting
+	if (ScndCtrlPos % 2 == 0)
+	{
+		if (MPTRelay[ScndCtrlPos].Idown < Im)
+		{
+			--ScndCtrlPos;
+		}
+	}
+	else
+	{
+		if (MPTRelay[ScndCtrlPos + 1].Idown < Im && MPTRelay[ScndCtrlPos].Idown > Vel)
+		{
+			--ScndCtrlPos;
+		}
+	}
+}
+
+// a relay of type 46 up: an even one by the current, an odd one by the current and the speed
+void TMoverParameters::ShuntFieldRelaysType46Up()
+{
+	if (ScndCtrlPos % 2 == 0)
+	{
+		if (MPTRelay[ScndCtrlPos].Iup > Im)
+		{
+			++ScndCtrlPos;
+		}
+	}
+	else
+	{
+		if (MPTRelay[ScndCtrlPos - 1].Iup > Im && MPTRelay[ScndCtrlPos].Iup < Vel)
+		{
+			++ScndCtrlPos;
+		}
 	}
 }
 
@@ -11328,93 +11359,7 @@ void TMoverParameters::LoadFIZ_CntrlBrakes(std::string const &line)
 	}
 	if (BrakeSystem != TBrakeSystem::Individual)
 	{
-		using enum TBrakeHandle;
-
-		extract_value(BrakeCtrlPosNo, "BCPN", line, "");
-		for (int idx = 0; idx < 4; ++idx)
-		{
-
-			extract_value(BrakeDelay[idx], std::format("BDelay{}", idx + 1), line, "");
-		}
-		// brakedelays, brakedelayflag
-		{
-			std::map<std::string, int, std::less<>> brakedelays{{"GPR", bdelay_G + bdelay_P + bdelay_R},
-			                                       {"PR", bdelay_P + bdelay_R},
-			                                       {"GP", bdelay_G + bdelay_P},
-			                                       {"R", bdelay_R},
-			                                       {"P", bdelay_P},
-			                                       {"G", bdelay_G},
-			                                       {"GPR+Mg", bdelay_G + bdelay_P + bdelay_R + bdelay_M},
-			                                       {"PR+Mg", bdelay_P + bdelay_R + bdelay_M}};
-			std::map<std::string, int, std::less<>> brakedelayflags{{"R", bdelay_R}, {"P", bdelay_P}, {"G", bdelay_G}};
-			std::string brakedelay;
-			extract_value(brakedelay, "BrakeDelays", line, "");
-			auto lookup = brakedelays.find(brakedelay);
-			BrakeDelays = lookup != brakedelays.end() ? lookup->second : 0;
-			lookup = brakedelayflags.find(brakedelay);
-			BrakeDelayFlag = lookup != brakedelayflags.end() ? lookup->second : 0;
-		}
-		// brakeopmode
-		{
-			std::map<std::string, int, std::less<>> brakeopmodes{{"PN", bom_PS + bom_PN}, {"PNEP", bom_PS + bom_PN + bom_EP}, {"PNEPMED", bom_PS + bom_PN + bom_EP + bom_MED}};
-			auto lookup = brakeopmodes.find(extract_value("BrakeOpModes", line));
-			BrakeOpModes = lookup != brakeopmodes.end() ? lookup->second : 0;
-		}
-		// brakehandle
-		{
-			std::map<std::string, TBrakeHandle, std::less<>> brakehandles{
-			    {"FV4a", FV4a},       {"test", testH},    {"D2", D2},      {"MHZ_EN57", MHZ_EN57}, {"MHZ_K5P", MHZ_K5P},
-			    {"MHZ_K8P", MHZ_K8P}, {"MHZ_6P", MHZ_6P}, {"M394", M394},  {"Knorr", Knorr},       {"Westinghouse", West},
-			    {"FVel6", FVel6},     {"FVE408", FVE408}, {"St113", St113}};
-			auto lookup = brakehandles.find(extract_value("BrakeHandle", line));
-			BrakeHandle = lookup != brakehandles.end() ? lookup->second : NoHandle;
-		}
-		extract_value(Handle_AutomaticOverload, "HAO", line, "");
-		extract_value(Handle_ManualOverload, "HMO", line, "");
-		extract_value(Handle_GenericDoubleParameter1, "HGDP1", line, "");
-		extract_value(Handle_GenericDoubleParameter2, "HGDP2", line, "");
-		extract_value(Handle_OverloadMaxPressure, "OMP", line, "");
-		extract_value(Handle_OverloadPressureDecrease, "OPD", line, "");
-		// brakelochandle
-		{
-			std::map<std::string, TBrakeHandle, std::less<>> locbrakehandles{{"FD1", FD1}, {"Knorr", Knorr}, {"Westinghouse", West}};
-			auto lookup = locbrakehandles.find(extract_value("LocBrakeHandle", line));
-			BrakeLocHandle = lookup != locbrakehandles.end() ? lookup->second : NoHandle;
-		}
-
-		// mbpm
-		if (true == extract_value(MBPM, "MaxBPMass", line, ""))
-		{
-			// NOTE: only convert the value from tons to kilograms if the entry is present in the config file
-			MBPM *= 1000.0;
-		}
-
-		// asbtype
-		std::string const asb{ToLower(extract_value("ASB", line))};
-		if (BrakeCtrlPosNo > 0)
-		{
-
-			if (asb == "manual")
-			{
-				ASBType = 1;
-			}
-			else if (asb == "automatic")
-			{
-				ASBType = 2;
-			}
-			else if (asb == "yes")
-			{
-				ASBType = 128;
-			}
-		}
-		else
-		{
-
-			if (asb == "yes")
-			{
-				ASBType = 128;
-			}
-		}
+		LoadFIZ_CntrlTrainBrake(line);
 	} // brakesystem != individual
 
 	// localbrake
@@ -11426,6 +11371,91 @@ void TMoverParameters::LoadFIZ_CntrlBrakes(std::string const &line)
 	}
 	// mbrake
 	extract_value(MBrake, "ManualBrake", line, "");
+}
+
+// Cntrl.: of a vehicle with a train brake, its positions, delays, modes, handles, load weighing and anti-slip brake
+void TMoverParameters::LoadFIZ_CntrlTrainBrake(std::string const &line)
+{
+	using enum TBrakeHandle;
+
+	extract_value(BrakeCtrlPosNo, "BCPN", line, "");
+	for (int idx = 0; idx < 4; ++idx)
+	{
+
+		extract_value(BrakeDelay[idx], std::format("BDelay{}", idx + 1), line, "");
+	}
+	// brakedelays, brakedelayflag
+	{
+		std::map<std::string, int, std::less<>> brakedelays{{"GPR", bdelay_G + bdelay_P + bdelay_R},
+		                                       {"PR", bdelay_P + bdelay_R},
+		                                       {"GP", bdelay_G + bdelay_P},
+		                                       {"R", bdelay_R},
+		                                       {"P", bdelay_P},
+		                                       {"G", bdelay_G},
+		                                       {"GPR+Mg", bdelay_G + bdelay_P + bdelay_R + bdelay_M},
+		                                       {"PR+Mg", bdelay_P + bdelay_R + bdelay_M}};
+		std::map<std::string, int, std::less<>> brakedelayflags{{"R", bdelay_R}, {"P", bdelay_P}, {"G", bdelay_G}};
+		std::string brakedelay;
+		extract_value(brakedelay, "BrakeDelays", line, "");
+		auto lookup = brakedelays.find(brakedelay);
+		BrakeDelays = lookup != brakedelays.end() ? lookup->second : 0;
+		lookup = brakedelayflags.find(brakedelay);
+		BrakeDelayFlag = lookup != brakedelayflags.end() ? lookup->second : 0;
+	}
+	// brakeopmode
+	{
+		std::map<std::string, int, std::less<>> brakeopmodes{{"PN", bom_PS + bom_PN}, {"PNEP", bom_PS + bom_PN + bom_EP}, {"PNEPMED", bom_PS + bom_PN + bom_EP + bom_MED}};
+		auto lookup = brakeopmodes.find(extract_value("BrakeOpModes", line));
+		BrakeOpModes = lookup != brakeopmodes.end() ? lookup->second : 0;
+	}
+	// brakehandle
+	{
+		std::map<std::string, TBrakeHandle, std::less<>> brakehandles{
+		    {"FV4a", FV4a},       {"test", testH},    {"D2", D2},      {"MHZ_EN57", MHZ_EN57}, {"MHZ_K5P", MHZ_K5P},
+		    {"MHZ_K8P", MHZ_K8P}, {"MHZ_6P", MHZ_6P}, {"M394", M394},  {"Knorr", Knorr},       {"Westinghouse", West},
+		    {"FVel6", FVel6},     {"FVE408", FVE408}, {"St113", St113}};
+		auto lookup = brakehandles.find(extract_value("BrakeHandle", line));
+		BrakeHandle = lookup != brakehandles.end() ? lookup->second : NoHandle;
+	}
+	extract_value(Handle_AutomaticOverload, "HAO", line, "");
+	extract_value(Handle_ManualOverload, "HMO", line, "");
+	extract_value(Handle_GenericDoubleParameter1, "HGDP1", line, "");
+	extract_value(Handle_GenericDoubleParameter2, "HGDP2", line, "");
+	extract_value(Handle_OverloadMaxPressure, "OMP", line, "");
+	extract_value(Handle_OverloadPressureDecrease, "OPD", line, "");
+	// brakelochandle
+	{
+		std::map<std::string, TBrakeHandle, std::less<>> locbrakehandles{{"FD1", FD1}, {"Knorr", Knorr}, {"Westinghouse", West}};
+		auto lookup = locbrakehandles.find(extract_value("LocBrakeHandle", line));
+		BrakeLocHandle = lookup != locbrakehandles.end() ? lookup->second : NoHandle;
+	}
+
+	// mbpm
+	if (true == extract_value(MBPM, "MaxBPMass", line, ""))
+	{
+		// NOTE: only convert the value from tons to kilograms if the entry is present in the config file
+		MBPM *= 1000.0;
+	}
+
+	// asbtype
+	LoadFIZ_CntrlAntiSlipBrake(ToLower(extract_value("ASB", line)));
+}
+
+// Cntrl.: the kind of the anti-slip brake, by hand or automatic only for a vehicle with a brake handle
+void TMoverParameters::LoadFIZ_CntrlAntiSlipBrake(std::string const &asb)
+{
+	if (asb == "yes")
+	{
+		ASBType = 128;
+	}
+	else if (BrakeCtrlPosNo > 0 && asb == "manual")
+	{
+		ASBType = 1;
+	}
+	else if (BrakeCtrlPosNo > 0 && asb == "automatic")
+	{
+		ASBType = 2;
+	}
 }
 
 // Cntrl.: the controllers, their delays, the cab and the switches of the driver's desk
