@@ -1228,6 +1228,35 @@ struct TCoupling
 	power_coupling power_high;
 	power_coupling power_110v;
 	power_coupling power_24v;
+	// the circuit of the power coupling given, nullptr for a coupling which isn't one
+	power_coupling *power(coupling const Coupling)
+	{
+		switch (Coupling)
+		{
+		case coupling::highvoltage:
+			return &power_high;
+		case coupling::power110v:
+			return &power_110v;
+		case coupling::power24v:
+			return &power_24v;
+		default:
+			return nullptr;
+		}
+	}
+	power_coupling const *power(coupling const Coupling) const
+	{
+		switch (Coupling)
+		{
+		case coupling::highvoltage:
+			return &power_high;
+		case coupling::power110v:
+			return &power_110v;
+		case coupling::power24v:
+			return &power_24v;
+		default:
+			return nullptr;
+		}
+	}
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
@@ -2543,6 +2572,10 @@ class TMoverParameters
 	void LowVoltagePowerCheck(double const Deltatime);
 	void MainsCheck(double const Deltatime);
 	void PowerCouplersCheck(double const Deltatime, coupling const Coupling);
+	// the parts of PowerCouplersCheck()
+	double LocalPowerVoltage(coupling Coupling);
+	void PowerCouplersVoltage(coupling Coupling, double abslocalvoltage, bool localpowersource);
+	void PowerCouplersCurrent(coupling Coupling, bool localpowersource);
 	void ConverterCheck(double const Timestep); // przetwornica
 	void HeatingCheck(double const Timestep);
 	void WaterPumpCheck(double const Timestep);

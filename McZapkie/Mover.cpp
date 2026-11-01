@@ -1781,10 +1781,25 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 		return;
 	}
 
+	auto const localvoltage{LocalPowerVoltage(Coupling)};
+
+	auto const abslocalvoltage{std::abs(localvoltage)};
+	auto const localpowersource{(abslocalvoltage > 1.0)};
+
+	// przekazywanie napiec
+	PowerCouplersVoltage(Coupling, abslocalvoltage, localpowersource);
+
+	// przekazywanie pradow
+	PowerCouplersCurrent(Coupling, localpowersource);
+}
+
+// the voltage of the vehicle's own source for the coupling given; notes the low voltage circuits' too
+double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
+{
 	auto localvoltage{0.0};
 
 	// local power sources
-	// TODO: make local voltage calculations a separate method, store results in PowerCircuit fields
+	// TODO: store the results in PowerCircuit fields
 	switch (Coupling)
 	{
 
@@ -1853,10 +1868,12 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 	}
 	}
 
-	auto const abslocalvoltage{std::abs(localvoltage)};
-	auto const localpowersource{(abslocalvoltage > 1.0)};
+	return localvoltage;
+}
 
-	// przekazywanie napiec
+// the voltage passed through the vehicle to the coupler at its other end, from the coupled vehicle or its own source
+void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double const abslocalvoltage, bool const localpowersource)
+{
 	for (auto side = 0; side < 2; ++side)
 	{
 
@@ -1900,14 +1917,8 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 		}
 		}
 
-		auto const *coupling = Coupling == coupling::highvoltage ? &thiscoupler.power_high :
-		                       Coupling == coupling::power110v   ? &thiscoupler.power_110v :
-		                       Coupling == coupling::power24v    ? &thiscoupler.power_24v :
-		                                                           nullptr;
-		auto *oppositecoupling = Coupling == coupling::highvoltage ? &oppositecoupler.power_high :
-		                         Coupling == coupling::power110v   ? &oppositecoupler.power_110v :
-		                         Coupling == coupling::power24v    ? &oppositecoupler.power_24v :
-		                                                             nullptr;
+		auto const *coupling = thiscoupler.power(Coupling);
+		auto *oppositecoupling = oppositecoupler.power(Coupling);
 
 		// start with base voltage
 		oppositecoupling->voltage = abslocalvoltage;
@@ -1917,10 +1928,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 		if (thiscoupler.Connected != nullptr)
 		{
 			auto const &connectedcoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr]};
-			auto const *connectedcoupling = Coupling == coupling::highvoltage ? &connectedcoupler.power_high :
-			                                Coupling == coupling::power110v   ? &connectedcoupler.power_110v :
-			                                Coupling == coupling::power24v    ? &connectedcoupler.power_24v :
-			                                                                    nullptr;
+			auto const *connectedcoupling = connectedcoupler.power(Coupling);
 			auto const connectedvoltage{(connectedcoupling->is_live ? connectedcoupling->voltage : 0.0)};
 			oppositecoupling->voltage = std::max(oppositecoupling->voltage, connectedvoltage - coupling->current * 0.02);
 			oppositecoupling->is_live = connectedvoltage > 0.1 && oppositecouplingispresent;
@@ -1932,8 +1940,11 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 			oppositecoupling->is_live |= abslocalvoltage > 0.1 && localpowerexportisenabled;
 		}
 	}
+}
 
-	// przekazywanie pradow
+// the current drawn through the couplers, shared by their voltages, or added to the vehicle's own
+void TMoverParameters::PowerCouplersCurrent(coupling const Coupling, bool const localpowersource)
+{
 	auto couplervoltage{0};
 	switch (Coupling)
 	{
@@ -1965,10 +1976,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 
 	for (auto &thiscoupler : Couplers)
 	{
-		auto *coupling = Coupling == coupling::highvoltage ? &thiscoupler.power_high :
-		                 Coupling == coupling::power110v   ? &thiscoupler.power_110v :
-		                 Coupling == coupling::power24v    ? &thiscoupler.power_24v :
-		                                                     nullptr;
+		auto *coupling = thiscoupler.power(Coupling);
 
 		coupling->current = 0.0;
 
@@ -1978,10 +1986,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 		}
 
 		auto const &connectedothercoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr == end::front ? end::rear : end::front]};
-		auto const *connectedothercoupling = Coupling == coupling::highvoltage ? &connectedothercoupler.power_high :
-		                                     Coupling == coupling::power110v   ? &connectedothercoupler.power_110v :
-		                                     Coupling == coupling::power24v    ? &connectedothercoupler.power_24v :
-		                                                                         nullptr;
+		auto const *connectedothercoupling = connectedothercoupler.power(Coupling);
 		auto const extracurrent = Coupling == coupling::highvoltage ? std::abs(Itot) * IsVehicleEIMBrakingFactor() : 0.0;
 
 		if (false == localpowersource)
