@@ -2399,6 +2399,9 @@ class TMoverParameters
 	/*! glowny nastawnik:*/
 	bool IncMainCtrl(int CtrlSpeed);
 	bool DecMainCtrl(int CtrlSpeed);
+	// the parts of IncMainCtrl() and DecMainCtrl() which depend on the kind of the engine
+	bool IncMainCtrlByEngine(int CtrlSpeed);
+	bool DecMainCtrlByEngine(int CtrlSpeed);
 	bool IsMainCtrlActualNoPowerPos() const; // whether the master controller is actually set to position which won't generate any extra power
 	bool IsMainCtrlNoPowerPos() const; // whether the master controller is set to position which won't generate any extra power
 	bool IsMainCtrlMaxPowerPos() const;

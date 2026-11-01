@@ -2408,114 +2408,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 	bool OK = false;
 	if (MainCtrlPos < MainCtrlPosNo)
 	{
-		switch (EngineType)
-		{
-		case TEngineType::None:
-		case TEngineType::Dumb:
-		case TEngineType::DieselElectric:
-		case TEngineType::ElectricInductionMotor:
-		{
-			if (CtrlSpeed > 1)
-			{
-				OK = IncMainCtrl(1) && IncMainCtrl(CtrlSpeed - 1); // a fail will propagate up the recursion chain. should this be || instead?
-				break;
-			}
-			++MainCtrlPos;
-			OK = true;
-			if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
-			{
-				DecScndCtrl(2);
-				SpeedCtrlUnit.IsActive = false;
-			}
-			break;
-		}
-
-		case TEngineType::ElectricSeriesMotor:
-		{
-			if (DirActive == 0)
-			{
-				return false;
-			}
-
-			if (CtrlSpeed > 1)
-			{
-				// szybkie przejœcie na bezoporow¹
-				if (TrainType == dt_ET40)
-				{
-					break; // this means ET40 won't react at all to fast acceleration command. should it issue just IncMainCtrl(1) instead?
-				}
-				while (RList[MainCtrlPos].R > 0.0 && IncMainCtrl(1))
-				{
-					// all work is done in the loop header
-				}
-				OK = false; // shouldn't this be part of the loop above?
-				// if (TrainType=dt_ET40)  then
-				// while Abs (Im)>IminHi do
-				//   dec(MainCtrlPos);
-				//  OK:=false ;
-			}
-			else
-			{ // CtrlSpeed == 1
-				++MainCtrlPos;
-				OK = true;
-				if (Imax == ImaxHi && RList[MainCtrlPos].Bn > 1)
-				{
-					/* NOTE: disabled, relay configuration was moved to compute_movement_
-					                            if( true == MaxCurrentSwitch( false )) {
-					                                // wylaczanie wysokiego rozruchu
-					                                SetFlag( SoundFlag, sound::relay );
-					                            }
-					*/
-					if (TrainType == dt_ET42)
-					{
-						--MainCtrlPos;
-						OK = false;
-					}
-				}
-				//
-				// if (TrainType == "et40")
-				//  if (Abs(Im) > IminHi)
-				//   {
-				//    MainCtrlPos--; //Blokada nastawnika po przekroczeniu minimalnego pradu
-				//    OK = false;
-				//   }
-				//}
-			}
-
-			if (TrainType == dt_ET42 && true == DynamicBrakeFlag && MainCtrlPos > 20)
-			{
-				MainCtrlPos = 20;
-				OK = false;
-			}
-			break;
-		}
-
-		case TEngineType::DieselEngine:
-		{
-			if (CtrlSpeed > 1)
-			{
-				while (MainCtrlPos < MainCtrlPosNo && IncMainCtrl(1))
-				{
-					// all work is done in the loop header
-				}
-			}
-			else
-			{
-				++MainCtrlPos;
-			}
-			CompressorAllow = MainCtrlPowerPos() > 0;
-			OK = true;
-			break;
-		}
-
-		case TEngineType::WheelsDriven:
-		{
-			OK = AddPulseForce(CtrlSpeed);
-			break;
-		}
-		default:
-			break;
-		} // switch EngineType of
+		OK = IncMainCtrlByEngine(CtrlSpeed);
 	}
 	else
 	{ // MainCtrlPos>=MainCtrlPosNo
@@ -2558,6 +2451,121 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 	return OK;
 }
 
+// a notch up, as the kind of the engine takes it; returns whether the controller moved
+bool TMoverParameters::IncMainCtrlByEngine(int const CtrlSpeed)
+{
+	bool OK = false;
+	switch (EngineType)
+	{
+	case TEngineType::None:
+	case TEngineType::Dumb:
+	case TEngineType::DieselElectric:
+	case TEngineType::ElectricInductionMotor:
+	{
+		if (CtrlSpeed > 1)
+		{
+			OK = IncMainCtrl(1) && IncMainCtrl(CtrlSpeed - 1); // a fail will propagate up the recursion chain. should this be || instead?
+			break;
+		}
+		++MainCtrlPos;
+		OK = true;
+		if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
+		{
+			DecScndCtrl(2);
+			SpeedCtrlUnit.IsActive = false;
+		}
+		break;
+	}
+
+	case TEngineType::ElectricSeriesMotor:
+	{
+		if (DirActive == 0)
+		{
+			return false;
+		}
+
+		if (CtrlSpeed > 1)
+		{
+			// szybkie przejœcie na bezoporow¹
+			if (TrainType == dt_ET40)
+			{
+				break; // this means ET40 won't react at all to fast acceleration command. should it issue just IncMainCtrl(1) instead?
+			}
+			while (RList[MainCtrlPos].R > 0.0 && IncMainCtrl(1))
+			{
+				// all work is done in the loop header
+			}
+			OK = false; // shouldn't this be part of the loop above?
+			// if (TrainType=dt_ET40)  then
+			// while Abs (Im)>IminHi do
+			//   dec(MainCtrlPos);
+			//  OK:=false ;
+		}
+		else
+		{ // CtrlSpeed == 1
+			++MainCtrlPos;
+			OK = true;
+			if (Imax == ImaxHi && RList[MainCtrlPos].Bn > 1)
+			{
+				/* NOTE: disabled, relay configuration was moved to compute_movement_
+				                            if( true == MaxCurrentSwitch( false )) {
+				                                // wylaczanie wysokiego rozruchu
+				                                SetFlag( SoundFlag, sound::relay );
+				                            }
+				*/
+				if (TrainType == dt_ET42)
+				{
+					--MainCtrlPos;
+					OK = false;
+				}
+			}
+			//
+			// if (TrainType == "et40")
+			//  if (Abs(Im) > IminHi)
+			//   {
+			//    MainCtrlPos--; //Blokada nastawnika po przekroczeniu minimalnego pradu
+			//    OK = false;
+			//   }
+			//}
+		}
+
+		if (TrainType == dt_ET42 && true == DynamicBrakeFlag && MainCtrlPos > 20)
+		{
+			MainCtrlPos = 20;
+			OK = false;
+		}
+		break;
+	}
+
+	case TEngineType::DieselEngine:
+	{
+		if (CtrlSpeed > 1)
+		{
+			while (MainCtrlPos < MainCtrlPosNo && IncMainCtrl(1))
+			{
+				// all work is done in the loop header
+			}
+		}
+		else
+		{
+			++MainCtrlPos;
+		}
+		CompressorAllow = MainCtrlPowerPos() > 0;
+		OK = true;
+		break;
+	}
+
+	case TEngineType::WheelsDriven:
+	{
+		OK = AddPulseForce(CtrlSpeed);
+		break;
+	}
+	default:
+		break;
+	} // switch EngineType of
+	return OK;
+}
+
 // *****************************************************************************
 // Q: 20160710
 // zmniejszenie nastawnika
@@ -2588,70 +2596,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 					OK = true;
 				}
 				else
-					switch (EngineType)
-					{
-					case TEngineType::None:
-					case TEngineType::Dumb:
-					case TEngineType::DieselElectric:
-					case TEngineType::ElectricInductionMotor:
-					{
-						if ((CtrlSpeed == 1 && EngineType != TEngineType::DieselElectric) || (CtrlSpeed == 1 && EngineType == TEngineType::DieselElectric))
-						{
-							MainCtrlPos--;
-							OK = true;
-							if (EIMCtrlType == 0 && (SpeedCtrlAutoTurnOffFlag & 1) == 1 && MainCtrlActualPos != MainCtrlPos)
-							{
-								DecScndCtrl(2);
-								SpeedCtrlUnit.IsActive = false;
-							}
-						}
-						else if (CtrlSpeed > 1)
-							OK = DecMainCtrl(1) && DecMainCtrl(CtrlSpeed - 1); // CtrlSpeed-1);
-						break;
-					}
-
-					case TEngineType::ElectricSeriesMotor:
-					{
-						if (CtrlSpeed == 1) /*and (ScndCtrlPos=0)*/
-						{
-							MainCtrlPos--;
-							//                if (MainCtrlPos=0) and (ScndCtrlPos=0) and
-							//                (TrainType<>dt_ET40)and(TrainType<>dt_EP05) then
-							//                 StLinFlag:=false;
-							//                if (MainCtrlPos=0) and (TrainType<>dt_ET40) and
-							//                (TrainType<>dt_EP05) then
-							//                 MainCtrlActualPos:=0; //yBARC: co to tutaj robi? ;)
-							OK = true;
-						}
-						else if (CtrlSpeed > 1) /*and (ScndCtrlPos=0)*/
-						{
-							OK = true;
-							if (RList[MainCtrlPos].R == 0) // Q: tu zrobilem = ;]
-								DecMainCtrl(1);
-							while (RList[MainCtrlPos].R > 0 && DecMainCtrl(1))
-								; // takie chamskie, potem poprawie}
-						}
-						break;
-					}
-
-					case TEngineType::DieselEngine:
-					{
-						if (CtrlSpeed == 1)
-						{
-							MainCtrlPos--;
-							OK = true;
-						}
-						else if (CtrlSpeed > 1)
-						{
-							while (MainCtrlPos > 0 || RList[MainCtrlPos].Mn > 0)
-								DecMainCtrl(1);
-							OK = true;
-						}
-						break;
-					}
-					default:
-						break;
-					} // switch EngineType
+					OK = DecMainCtrlByEngine(CtrlSpeed);
 			}
 		}
 		else if (EngineType == TEngineType::WheelsDriven)
@@ -2677,6 +2622,77 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 		else if (LastRelayTime > CtrlDownDelay)
 			LastRelayTime = 0;
 	}
+	return OK;
+}
+
+// a notch down, as the kind of the engine takes it; returns whether the controller moved
+bool TMoverParameters::DecMainCtrlByEngine(int const CtrlSpeed)
+{
+	bool OK = false;
+	switch (EngineType)
+	{
+	case TEngineType::None:
+	case TEngineType::Dumb:
+	case TEngineType::DieselElectric:
+	case TEngineType::ElectricInductionMotor:
+	{
+		if ((CtrlSpeed == 1 && EngineType != TEngineType::DieselElectric) || (CtrlSpeed == 1 && EngineType == TEngineType::DieselElectric))
+		{
+			MainCtrlPos--;
+			OK = true;
+			if (EIMCtrlType == 0 && (SpeedCtrlAutoTurnOffFlag & 1) == 1 && MainCtrlActualPos != MainCtrlPos)
+			{
+				DecScndCtrl(2);
+				SpeedCtrlUnit.IsActive = false;
+			}
+		}
+		else if (CtrlSpeed > 1)
+			OK = DecMainCtrl(1) && DecMainCtrl(CtrlSpeed - 1); // CtrlSpeed-1);
+		break;
+	}
+
+	case TEngineType::ElectricSeriesMotor:
+	{
+		if (CtrlSpeed == 1) /*and (ScndCtrlPos=0)*/
+		{
+			MainCtrlPos--;
+			//                if (MainCtrlPos=0) and (ScndCtrlPos=0) and
+			//                (TrainType<>dt_ET40)and(TrainType<>dt_EP05) then
+			//                 StLinFlag:=false;
+			//                if (MainCtrlPos=0) and (TrainType<>dt_ET40) and
+			//                (TrainType<>dt_EP05) then
+			//                 MainCtrlActualPos:=0; //yBARC: co to tutaj robi? ;)
+			OK = true;
+		}
+		else if (CtrlSpeed > 1) /*and (ScndCtrlPos=0)*/
+		{
+			OK = true;
+			if (RList[MainCtrlPos].R == 0) // Q: tu zrobilem = ;]
+				DecMainCtrl(1);
+			while (RList[MainCtrlPos].R > 0 && DecMainCtrl(1))
+				; // takie chamskie, potem poprawie}
+		}
+		break;
+	}
+
+	case TEngineType::DieselEngine:
+	{
+		if (CtrlSpeed == 1)
+		{
+			MainCtrlPos--;
+			OK = true;
+		}
+		else if (CtrlSpeed > 1)
+		{
+			while (MainCtrlPos > 0 || RList[MainCtrlPos].Mn > 0)
+				DecMainCtrl(1);
+			OK = true;
+		}
+		break;
+	}
+	default:
+		break;
+	} // switch EngineType
 	return OK;
 }
 
