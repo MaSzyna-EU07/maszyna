@@ -2432,6 +2432,12 @@ class TMoverParameters
 	/*pomocnicze funkcje dla ukladow pneumatycznych*/
 	void UpdateBrakePressure(double dt);
 	void UpdatePipePressure(double dt);
+	// the parts of UpdatePipePressure()
+	void UpdateLocalBrakeValve(double dt);
+	void UpdateMainValve(double dt);
+	void UpdateEmergencyValve(double dt);
+	void UpdateDistributorSettings();
+	void UpdateEPBrake();
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
 	void UpdatePantVolume(double dt); // Ra
 	void UpdateScndPipePressure(double dt);

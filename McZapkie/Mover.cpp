@@ -4477,107 +4477,11 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	if (BrakeCtrlPosNo > 1)
 	{
 
-		if (EngineType != TEngineType::ElectricInductionMotor)
-		{
-			double lbpa = LocHandleTimeTraxx ? eim_localbrake : LocalBrakePosA;
-			if (EIMCtrlType > 0 && UniCtrlIntegratedLocalBrakeCtrl)
-			{
-				lbpa = std::max(0.0, -eimic_real);
-			}
-			if (SpeedCtrlUnit.Parking)
-			{
-				lbpa = std::max(lbpa, StopBrakeDecc);
-			}
-			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
-		}
-		else
-		{
-			// in EIM stock the pneumatic local brake is normally driven only by the MED algorithm
-			// (LocalBrakePosAEIM). When SplitEDPneumaticBrake is active the dedicated LocalBrake
-			// lever should apply pneumatic pressure on the locomotive directly, bypassing MED.
-			// LocHandleTimeTraxx also bypasses MED, but has 3 positions (brake-hold-unbrake).
-			double lbpa;
-			if (LocHandleTimeTraxx)
-			{
-				lbpa = eim_localbrake;
-			}
-			else if (SplitEDPneumaticBrake) // When LocHandleTimeTraxx and SplitEDPneumaticBrake are both active, lbpa is taken from LocHandleTimeTraxx, which is the desired behavior.
-			{
-				lbpa = LocalBrakePosA;
-			}
-			else
-			{
-				lbpa = 0.0;
-			}
-			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
-		}
-
-		LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
-		bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
-		bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
-		                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != dt_EZT && !UnlockPipe;
-
-		if (lock_old || lock_new)
-		{
-			temp = PipePress + 0.00001;
-		}
-		else
-		{
-			temp = ScndPipePress;
-		}
-		Handle->SetReductor(BrakeCtrlPos2);
-
-		if ((BrakeOpModes & bom_PS) == 0 || (CabOccupied != 0 && BrakeOpModeFlag != bom_PS))
-		{
-
-			if (BrakeOpModeFlag < bom_EP || Handle->GetPos(bh_EB) - 0.5 < BrakeCtrlPosR || (BrakeHandle != TBrakeHandle::MHZ_EN57 && BrakeHandle != TBrakeHandle::MHZ_K8P))
-			{
-				double pos = BrakeCtrlPosR;
-				if (SpeedCtrlUnit.IsActive && SpeedCtrlUnit.BrakeIntervention && !SpeedCtrlUnit.Standby && BrakeCtrlPos != Handle->GetPos(bh_EB))
-				{
-					pos = Handle->GetPos(bh_NP);
-					if (SpeedCtrlUnit.BrakeInterventionBraking)
-						pos = Handle->GetPos(bh_FB);
-					if (SpeedCtrlUnit.BrakeInterventionUnbraking)
-						pos = Handle->GetPos(bh_RP);
-				}
-				dpMainValve = Handle->GetPF(pos, PipePress, temp, dt, EqvtPipePress);
-			}
-			else
-			{
-				dpMainValve = Handle->GetPF(0, PipePress, temp, dt, EqvtPipePress);
-			}
-		}
-		else if (BrakeCtrlPos == Handle->GetPos(bh_EB))
-		{
-			dpMainValve = Handle->GetPF(BrakeCtrlPosR, PipePress, temp, dt, EqvtPipePress);
-		}
-
-		if (dpMainValve < 0) // && (PipePressureVal > 0.01)           //50
-		{
-			if (Compressor > ScndPipePress)
-			{
-				CompressedVolume = CompressedVolume + dpMainValve / 1500.0;
-				Pipe2->Flow(dpMainValve / 3.0);
-			}
-			else
-				Pipe2->Flow(dpMainValve);
-		}
+		UpdateLocalBrakeValve(dt);
+		UpdateMainValve(dt);
 	}
 
-	// ulepszony hamulec bezp.
-	EmergencyValveFlow = 0.0;
-
-
-	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
-	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
-	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || SecuritySystem.is_braking() ||
-		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
-		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
-	{
-		EmergencyValveFlow = PF(0, PipePress, 0.15) * dt;
-	}
-	dpMainValve += EmergencyValveFlow;
+	UpdateEmergencyValve(dt);
 
 	// 0.2*Spg
 	Pipe->Flow(-dpMainValve);
@@ -4592,6 +4496,159 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	//      if (Hamulec is typeid(TWest)) return 0;
 
+	UpdateDistributorSettings();
+
+	if ((BrakeHandle == TBrakeHandle::FVel6 || BrakeHandle == TBrakeHandle::FVE408) && CabOccupied != 0)
+	{
+		UpdateEPBrake();
+	}
+
+	Pipe->Act();
+	PipePress = Pipe->P();
+	if ((Hamulec->GetBrakeStatus() & b_dmg) == b_dmg) // jesli hamulec wyłączony
+		temp = 0.0; // odetnij
+	else
+		temp = 1.0; // połącz
+	Pipe->Flow(temp * Hamulec->GetPF(temp * PipePress, dt, Vel) + GetDVc(dt));
+
+	if (ASBType == 128)
+		Hamulec->ASB(int(SlippingWheels && Vel > 1) * (1 + 2 * int(nrot_eps < -0.01)));
+
+	dpPipe = 0;
+
+	// yB: jednokrokowe liczenie tego wszystkiego
+	Pipe->Act();
+	PipePress = Pipe->P();
+
+	dpMainValve = dpMainValve / (100.0 * dt); // normalizacja po czasie do syczenia;
+
+	if (PipePress < -1.0)
+	{
+		PipePress = -1.0;
+		Pipe->CreatePress(-1.0);
+		Pipe->Act();
+	}
+
+	if (CompressedVolume < 0.0)
+		CompressedVolume = 0.0;
+}
+
+// the flow of the local brake valve, by the handle, the TRAXX's timed one, the integrated controller or the parking
+void TMoverParameters::UpdateLocalBrakeValve(double dt)
+{
+	if (EngineType != TEngineType::ElectricInductionMotor)
+	{
+		double lbpa = LocHandleTimeTraxx ? eim_localbrake : LocalBrakePosA;
+		if (EIMCtrlType > 0 && UniCtrlIntegratedLocalBrakeCtrl)
+		{
+			lbpa = std::max(0.0, -eimic_real);
+		}
+		if (SpeedCtrlUnit.Parking)
+		{
+			lbpa = std::max(lbpa, StopBrakeDecc);
+		}
+		dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
+	}
+	else
+	{
+		// in EIM stock the pneumatic local brake is normally driven only by the MED algorithm
+		// (LocalBrakePosAEIM). When SplitEDPneumaticBrake is active the dedicated LocalBrake
+		// lever should apply pneumatic pressure on the locomotive directly, bypassing MED.
+		// LocHandleTimeTraxx also bypasses MED, but has 3 positions (brake-hold-unbrake).
+		double lbpa;
+		if (LocHandleTimeTraxx)
+		{
+			lbpa = eim_localbrake;
+		}
+		else if (SplitEDPneumaticBrake) // When LocHandleTimeTraxx and SplitEDPneumaticBrake are both active, lbpa is taken from LocHandleTimeTraxx, which is the desired behavior.
+		{
+			lbpa = LocalBrakePosA;
+		}
+		else
+		{
+			lbpa = 0.0;
+		}
+		dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
+	}
+}
+
+// the lock of the brake pipe and the flow of the driver's handle, from the main reservoir or into the air
+void TMoverParameters::UpdateMainValve(double dt)
+{
+	double temp;
+	LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
+	bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
+	bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
+	                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != dt_EZT && !UnlockPipe;
+
+	if (lock_old || lock_new)
+	{
+		temp = PipePress + 0.00001;
+	}
+	else
+	{
+		temp = ScndPipePress;
+	}
+	Handle->SetReductor(BrakeCtrlPos2);
+
+	if ((BrakeOpModes & bom_PS) == 0 || (CabOccupied != 0 && BrakeOpModeFlag != bom_PS))
+	{
+
+		if (BrakeOpModeFlag < bom_EP || Handle->GetPos(bh_EB) - 0.5 < BrakeCtrlPosR || (BrakeHandle != TBrakeHandle::MHZ_EN57 && BrakeHandle != TBrakeHandle::MHZ_K8P))
+		{
+			double pos = BrakeCtrlPosR;
+			if (SpeedCtrlUnit.IsActive && SpeedCtrlUnit.BrakeIntervention && !SpeedCtrlUnit.Standby && BrakeCtrlPos != Handle->GetPos(bh_EB))
+			{
+				pos = Handle->GetPos(bh_NP);
+				if (SpeedCtrlUnit.BrakeInterventionBraking)
+					pos = Handle->GetPos(bh_FB);
+				if (SpeedCtrlUnit.BrakeInterventionUnbraking)
+					pos = Handle->GetPos(bh_RP);
+			}
+			dpMainValve = Handle->GetPF(pos, PipePress, temp, dt, EqvtPipePress);
+		}
+		else
+		{
+			dpMainValve = Handle->GetPF(0, PipePress, temp, dt, EqvtPipePress);
+		}
+	}
+	else if (BrakeCtrlPos == Handle->GetPos(bh_EB))
+	{
+		dpMainValve = Handle->GetPF(BrakeCtrlPosR, PipePress, temp, dt, EqvtPipePress);
+	}
+
+	if (dpMainValve < 0) // && (PipePressureVal > 0.01)           //50
+	{
+		if (Compressor > ScndPipePress)
+		{
+			CompressedVolume = CompressedVolume + dpMainValve / 1500.0;
+			Pipe2->Flow(dpMainValve / 3.0);
+		}
+		else
+			Pipe2->Flow(dpMainValve);
+	}
+}
+
+void TMoverParameters::UpdateEmergencyValve(double dt)
+{
+	// ulepszony hamulec bezp.
+	EmergencyValveFlow = 0.0;
+
+
+	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
+	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
+	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || SecuritySystem.is_braking() ||
+		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
+		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
+	{
+		EmergencyValveFlow = PF(0, PipePress, 0.15) * dt;
+	}
+	dpMainValve += EmergencyValveFlow;
+}
+
+// what the distributor valve gets of the local brake and the load, by its kind
+void TMoverParameters::UpdateDistributorSettings()
+{
 	switch (BrakeValve)
 	{
 
@@ -4697,57 +4754,29 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		break;
 	}
 	} // switch
+}
 
-	if ((BrakeHandle == TBrakeHandle::FVel6 || BrakeHandle == TBrakeHandle::FVE408) && CabOccupied != 0)
-	{
-		if (Power24vIsAvailable && DirActive != 0 && EpFuse) // tu powinien byc jeszcze bezpiecznik EP i baterie -
-			// temp = (Handle as TFVel6).GetCP
-			EpForce = Handle->GetEP();
-		else
-			EpForce = 0.0;
-
-		DynamicBrakeEMUStatus = EpForce > 0.001 ? Power110vIsAvailable : true;
-
-		double temp1 = EpForce;
-		if (DCEMUED_EP_max_Vel > 0.001 && Vel > DCEMUED_EP_max_Vel && DynamicBrakeEMUStatus)
-			temp1 = 0;
-		if (DCEMUED_EP_min_Im > 0.001 && abs(Im) > DCEMUED_EP_min_Im && DynamicBrakeEMUStatus)
-			temp1 = 0;
-		Hamulec->SetEPS(temp1);
-		TUHEX_StageActual = static_cast<int>(EpForce);
-		TUHEX_Active = TUHEX_StageActual > 0;
-		// Ra 2014-11: na tym się wysypuje, ale nie wiem, w jakich warunkach
-		SendCtrlToNext("Brake", EpForce, CabActive);
-	}
-
-	Pipe->Act();
-	PipePress = Pipe->P();
-	if ((Hamulec->GetBrakeStatus() & b_dmg) == b_dmg) // jesli hamulec wyłączony
-		temp = 0.0; // odetnij
+// the ep brake of the FVel6 and FVE408 handles, passed along the unit
+void TMoverParameters::UpdateEPBrake()
+{
+	if (Power24vIsAvailable && DirActive != 0 && EpFuse) // tu powinien byc jeszcze bezpiecznik EP i baterie -
+		// temp = (Handle as TFVel6).GetCP
+		EpForce = Handle->GetEP();
 	else
-		temp = 1.0; // połącz
-	Pipe->Flow(temp * Hamulec->GetPF(temp * PipePress, dt, Vel) + GetDVc(dt));
+		EpForce = 0.0;
 
-	if (ASBType == 128)
-		Hamulec->ASB(int(SlippingWheels && Vel > 1) * (1 + 2 * int(nrot_eps < -0.01)));
+	DynamicBrakeEMUStatus = EpForce > 0.001 ? Power110vIsAvailable : true;
 
-	dpPipe = 0;
-
-	// yB: jednokrokowe liczenie tego wszystkiego
-	Pipe->Act();
-	PipePress = Pipe->P();
-
-	dpMainValve = dpMainValve / (100.0 * dt); // normalizacja po czasie do syczenia;
-
-	if (PipePress < -1.0)
-	{
-		PipePress = -1.0;
-		Pipe->CreatePress(-1.0);
-		Pipe->Act();
-	}
-
-	if (CompressedVolume < 0.0)
-		CompressedVolume = 0.0;
+	double temp1 = EpForce;
+	if (DCEMUED_EP_max_Vel > 0.001 && Vel > DCEMUED_EP_max_Vel && DynamicBrakeEMUStatus)
+		temp1 = 0;
+	if (DCEMUED_EP_min_Im > 0.001 && abs(Im) > DCEMUED_EP_min_Im && DynamicBrakeEMUStatus)
+		temp1 = 0;
+	Hamulec->SetEPS(temp1);
+	TUHEX_StageActual = static_cast<int>(EpForce);
+	TUHEX_Active = TUHEX_StageActual > 0;
+	// Ra 2014-11: na tym się wysypuje, ale nie wiem, w jakich warunkach
+	SendCtrlToNext("Brake", EpForce, CabActive);
 }
 
 // *************************************************************************************************
