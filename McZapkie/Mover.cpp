@@ -956,11 +956,6 @@ void TMoverParameters::UpdatePantVolume(double dt)
 
 void TMoverParameters::UpdateBatteryVoltage(double dt)
 { // przeliczenie obciążenia baterii
-	double sn1 = 0.0;
-	double sn2 = 0.0;
-	double sn3 = 0.0;
-	double sn4 = 0.0;
-	double sn5 = 0.0; // Ra: zrobić z tego amperomierz NN
 	if (BatteryVoltage > 0 && EngineType != TEngineType::DieselEngine && EngineType != TEngineType::WheelsDriven && NominalBatteryVoltage > 0)
 	{
 
@@ -969,64 +964,7 @@ void TMoverParameters::UpdateBatteryVoltage(double dt)
 		// HACK: emulate low voltage generator powered directly by the diesel engine
 		auto const converteractive{Power110vIsAvailable || (EngineType == TEngineType::DieselElectric && true == Mains) || (EngineType == TEngineType::DieselEngine && true == Mains)};
 
-		if (NominalBatteryVoltage / BatteryVoltage < 1.22 && Battery)
-		{ // 110V
-			if (!converteractive)
-				sn1 = dt * 2.0; // szybki spadek do ok 90V
-			else
-				sn1 = 0;
-			if (converteractive)
-				sn2 = -(dt * 2.0); // szybki wzrost do 110V
-			else
-				sn2 = 0;
-			if (Mains)
-				sn3 = dt * 0.05;
-			else
-				sn3 = 0;
-			if (iLights[0] & 63) // 64=blachy, nie ciągną prądu //rozpisać na poszczególne żarówki...
-				sn4 = dt * 0.003;
-			else
-				sn4 = 0;
-			if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
-				sn5 = dt * 0.001;
-			else
-				sn5 = 0;
-		}
-		if (NominalBatteryVoltage / BatteryVoltage >= 1.22 && Battery)
-		{ // 90V
-			if (PantCompFlag)
-				sn1 = dt * 0.0046;
-			else
-				sn1 = 0;
-			if (converteractive)
-				sn2 = -(dt * 50); // szybki wzrost do 110V
-			else
-				sn2 = 0;
-			if (Mains)
-				sn3 = dt * 0.001;
-			else
-				sn3 = 0;
-			if (iLights[0] & 63) // 64=blachy, nie ciągną prądu
-				sn4 = dt * 0.0030;
-			else
-				sn4 = 0;
-			if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
-				sn5 = dt * 0.0010;
-			else
-				sn5 = 0;
-		}
-		if (!Battery)
-		{
-			if (NominalBatteryVoltage / BatteryVoltage < 1.22)
-				sn1 = dt * 50;
-			else
-				sn1 = 0;
-			sn2 = dt * 0.000001;
-			sn3 = dt * 0.000001;
-			sn4 = dt * 0.000001;
-			sn5 = dt * 0.000001; // bardzo powolny spadek przy wyłączonych bateriach
-		}
-		BatteryVoltage -= sn1 + sn2 + sn3 + sn4 + sn5;
+		BatteryVoltage -= BatteryDrain(dt, converteractive);
 		if (NominalBatteryVoltage / BatteryVoltage > 1.57 && MainSwitch(false) && EngineType != TEngineType::DieselEngine && EngineType != TEngineType::WheelsDriven)
 			EventFlag = true; // wywalanie szybkiego z powodu zbyt niskiego napiecia
 		if (BatteryVoltage > NominalBatteryVoltage)
@@ -1040,6 +978,74 @@ void TMoverParameters::UpdateBatteryVoltage(double dt)
 		BatteryVoltage = NominalBatteryVoltage;
 	}
 };
+
+// the drop of the battery's voltage in dt, by what draws from it, or its rise by the converter charging it
+double TMoverParameters::BatteryDrain(double dt, bool const converteractive) const
+{
+	double sn1 = 0.0;
+	double sn2 = 0.0;
+	double sn3 = 0.0;
+	double sn4 = 0.0;
+	double sn5 = 0.0; // Ra: zrobić z tego amperomierz NN
+	if (NominalBatteryVoltage / BatteryVoltage < 1.22 && Battery)
+	{ // 110V
+		if (!converteractive)
+			sn1 = dt * 2.0; // szybki spadek do ok 90V
+		else
+			sn1 = 0;
+		if (converteractive)
+			sn2 = -(dt * 2.0); // szybki wzrost do 110V
+		else
+			sn2 = 0;
+		if (Mains)
+			sn3 = dt * 0.05;
+		else
+			sn3 = 0;
+		if (iLights[0] & 63) // 64=blachy, nie ciągną prądu //rozpisać na poszczególne żarówki...
+			sn4 = dt * 0.003;
+		else
+			sn4 = 0;
+		if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
+			sn5 = dt * 0.001;
+		else
+			sn5 = 0;
+	}
+	if (NominalBatteryVoltage / BatteryVoltage >= 1.22 && Battery)
+	{ // 90V
+		if (PantCompFlag)
+			sn1 = dt * 0.0046;
+		else
+			sn1 = 0;
+		if (converteractive)
+			sn2 = -(dt * 50); // szybki wzrost do 110V
+		else
+			sn2 = 0;
+		if (Mains)
+			sn3 = dt * 0.001;
+		else
+			sn3 = 0;
+		if (iLights[0] & 63) // 64=blachy, nie ciągną prądu
+			sn4 = dt * 0.0030;
+		else
+			sn4 = 0;
+		if (iLights[1] & 63) // 64=blachy, nie ciągną prądu
+			sn5 = dt * 0.0010;
+		else
+			sn5 = 0;
+	}
+	if (!Battery)
+	{
+		if (NominalBatteryVoltage / BatteryVoltage < 1.22)
+			sn1 = dt * 50;
+		else
+			sn1 = 0;
+		sn2 = dt * 0.000001;
+		sn3 = dt * 0.000001;
+		sn4 = dt * 0.000001;
+		sn5 = dt * 0.000001; // bardzo powolny spadek przy wyłączonych bateriach
+	}
+	return sn1 + sn2 + sn3 + sn4 + sn5;
+}
 
 /* Ukrotnienie EN57:
 1 //układ szeregowy
