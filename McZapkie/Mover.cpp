@@ -293,44 +293,11 @@ double TMoverParameters::Current(double n, double U)
 
 	double R;
 	double MotorCurrent;
-	double Rz;
-	double Delta;
-	double Isf;
 	double Mn; // przujmuje int, ale dla poprawnosci obliczeń
 	double Bn;
-	int SP = 0;
-	double U1; // napiecie z korekta
 
 	MotorCurrent = 0;
-	// i dzialanie hamulca ED w EP09
-	if (DynamicBrakeType == dbrake_automatic && TrainType != dt_EZT)
-	{
-		if ((Hamulec->GetEDBCP() < 0.25 && Vadd < 1) || BrakePress > 2.1)
-			DynamicBrakeFlag = false;
-		else if (BrakePress > 0.25 && Hamulec->GetEDBCP() > 0.25)
-			DynamicBrakeFlag = true;
-		DynamicBrakeFlag = DynamicBrakeFlag && Power110vIsAvailable;
-	}
-	if (DynamicBrakeType == dbrake_automatic && TrainType == dt_EZT)
-	{
-		DynamicBrakeFlag = Power110vIsAvailable && (TUHEX_Active || Vadd > TUHEX_MinIw) && DynamicBrakeEMUStatus;
-	}
-
-	// wylacznik cisnieniowy yBARC - to jest chyba niepotrzebne tutaj   Q: no to usuwam...
-
-	// BrakeSubsystem = ss_LSt;
-	// if (BrakeSubsystem == ss_LSt) WriteLog("LSt");
-	// if (BrakeSubsystem == ss_LSt) // zrobiona funkcja virtualna
-	if (DynamicBrakeFlag)
-	{
-		Hamulec->SetED(abs(Im / 350)); // hamulec ED na EP09 dziala az do zatrzymania lokomotywy
-		//-     WriteLog("A");
-	}
-	else
-	{
-		Hamulec->SetED(0);
-		//-     WriteLog("B");
-	}
+	UpdateSeriesMotorDynamicBrakeFlag();
 
 	ResistorsFlag = RList[MainCtrlActualPos].R > 0.01; // and (!DelayCtrlFlag)
 	ResistorsFlag = ResistorsFlag || (DynamicBrakeFlag == true && DynamicBrakeType == dbrake_automatic);
@@ -368,65 +335,7 @@ double TMoverParameters::Current(double n, double U)
 	}
 	else
 	{ // wlaczone...
-		SP = ScndCtrlActualPos;
-
-		if (ScndCtrlActualPos < 255) // tak smiesznie bede wylaczal
-		{
-			if (ScndInMain && RList[MainCtrlActualPos].ScndAct != 255)
-			{
-				SP = RList[MainCtrlActualPos].ScndAct;
-			}
-
-			Rz = Mn * WindingRes + R;
-
-			if (DynamicBrakeFlag) // hamowanie
-			{
-				if (DynamicBrakeType > 1)
-				{
-					// if DynamicBrakeType<>dbrake_automatic then
-					// MotorCurrent:=-fi*n/Rz  {hamowanie silnikiem na oporach rozruchowych}
-					/*               begin
-					U:=0;
-					Isf:=Isat;
-					Delta:=SQR(Isf*Rz+Mn*fi*n-U)+4*U*Isf*Rz;
-					MotorCurrent:=(U-Isf*Rz-Mn*fi*n+SQRT(Delta))/(2*Rz)
-					end*/
-					if (DynamicBrakeType == dbrake_switch && TrainType == dt_ET42)
-					{ // z Megapacka
-						Rz = WindingRes + R;
-						MotorCurrent = -motor_param(SP).fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
-					}
-				}
-				else
-					MotorCurrent = 0; // odciecie pradu od silnika
-			}
-			else
-			{
-				U1 = U + Mn * n * motor_param(SP).fi0 * motor_param(SP).fi;
-				//          writepaslog("U1             ", FloatToStr(U1));
-				//          writepaslog("Isat           ", FloatToStr(MotorParam[SP].Isat));
-				//          writepaslog("fi             ", FloatToStr(MotorParam[SP].fi));
-				Isf = Sign(U1) * motor_param(SP).Isat;
-				//          writepaslog("Isf            ", FloatToStr(Isf));
-				Delta = square(Isf * Rz + Mn * motor_param(SP).fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
-				//          DeltaQ = Isf * Rz + Mn * MotorParam[SP].fi * n - U1 + 4 * U1 * Isf * Rz;
-				//          writepaslog("Delta          ", FloatToStr(Delta));
-				//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
-				//          writepaslog("U              ", FloatToStr(U));
-				if (Mains)
-				{
-					if (U > 0)
-						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
-					else
-						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n - std::sqrt(Delta)) / (2.0 * Rz);
-				}
-				else
-					MotorCurrent = 0;
-			} // else DBF
-
-		} // 255
-		else
-			MotorCurrent = 0;
+		MotorCurrent = SeriesMotorCurrent(n, U, R, Mn);
 	}
 	//  writepaslog("MotorCurrent   ", FloatToStr(MotorCurrent));
 
@@ -441,6 +350,120 @@ double TMoverParameters::Current(double n, double U)
 
 	EnginePower = abs(Itot) * (1 + RList[MainCtrlActualPos].Mn) * abs(U) / 1000.0;
 
+	MotorFailuresCheck(n);
+
+	return Im;
+}
+
+// the automatic dynamic brake of the series motors (EP09, the units) on or off, and the distributor told of it
+void TMoverParameters::UpdateSeriesMotorDynamicBrakeFlag()
+{
+	// i dzialanie hamulca ED w EP09
+	if (DynamicBrakeType == dbrake_automatic && TrainType != dt_EZT)
+	{
+		if ((Hamulec->GetEDBCP() < 0.25 && Vadd < 1) || BrakePress > 2.1)
+			DynamicBrakeFlag = false;
+		else if (BrakePress > 0.25 && Hamulec->GetEDBCP() > 0.25)
+			DynamicBrakeFlag = true;
+		DynamicBrakeFlag = DynamicBrakeFlag && Power110vIsAvailable;
+	}
+	if (DynamicBrakeType == dbrake_automatic && TrainType == dt_EZT)
+	{
+		DynamicBrakeFlag = Power110vIsAvailable && (TUHEX_Active || Vadd > TUHEX_MinIw) && DynamicBrakeEMUStatus;
+	}
+
+	// wylacznik cisnieniowy yBARC - to jest chyba niepotrzebne tutaj   Q: no to usuwam...
+
+	// BrakeSubsystem = ss_LSt;
+	// if (BrakeSubsystem == ss_LSt) WriteLog("LSt");
+	// if (BrakeSubsystem == ss_LSt) // zrobiona funkcja virtualna
+	if (DynamicBrakeFlag)
+	{
+		Hamulec->SetED(abs(Im / 350)); // hamulec ED na EP09 dziala az do zatrzymania lokomotywy
+		//-     WriteLog("A");
+	}
+	else
+	{
+		Hamulec->SetED(0);
+		//-     WriteLog("B");
+	}
+}
+
+// the current of the series motors connected, at the revolutions n and the voltage U, through the resistance R of
+// Mn motors in series
+double TMoverParameters::SeriesMotorCurrent(double const n, double const U, double const R, double const Mn)
+{
+	double MotorCurrent{0.0};
+	double Rz;
+	double Delta;
+	double Isf;
+	double U1; // napiecie z korekta
+	int SP = ScndCtrlActualPos;
+
+	if (ScndCtrlActualPos < 255) // tak smiesznie bede wylaczal
+	{
+		if (ScndInMain && RList[MainCtrlActualPos].ScndAct != 255)
+		{
+			SP = RList[MainCtrlActualPos].ScndAct;
+		}
+
+		Rz = Mn * WindingRes + R;
+
+		if (DynamicBrakeFlag) // hamowanie
+		{
+			if (DynamicBrakeType > 1)
+			{
+				// if DynamicBrakeType<>dbrake_automatic then
+				// MotorCurrent:=-fi*n/Rz  {hamowanie silnikiem na oporach rozruchowych}
+				/*               begin
+				U:=0;
+				Isf:=Isat;
+				Delta:=SQR(Isf*Rz+Mn*fi*n-U)+4*U*Isf*Rz;
+				MotorCurrent:=(U-Isf*Rz-Mn*fi*n+SQRT(Delta))/(2*Rz)
+				end*/
+				if (DynamicBrakeType == dbrake_switch && TrainType == dt_ET42)
+				{ // z Megapacka
+					Rz = WindingRes + R;
+					MotorCurrent = -motor_param(SP).fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
+				}
+			}
+			else
+				MotorCurrent = 0; // odciecie pradu od silnika
+		}
+		else
+		{
+			U1 = U + Mn * n * motor_param(SP).fi0 * motor_param(SP).fi;
+			//          writepaslog("U1             ", FloatToStr(U1));
+			//          writepaslog("Isat           ", FloatToStr(MotorParam[SP].Isat));
+			//          writepaslog("fi             ", FloatToStr(MotorParam[SP].fi));
+			Isf = Sign(U1) * motor_param(SP).Isat;
+			//          writepaslog("Isf            ", FloatToStr(Isf));
+			Delta = square(Isf * Rz + Mn * motor_param(SP).fi * n - U1) + 4.0 * U1 * Isf * Rz; // 105 * 1.67 + Mn * 140.9 * 20.532 - U1
+			//          DeltaQ = Isf * Rz + Mn * MotorParam[SP].fi * n - U1 + 4 * U1 * Isf * Rz;
+			//          writepaslog("Delta          ", FloatToStr(Delta));
+			//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
+			//          writepaslog("U              ", FloatToStr(U));
+			if (Mains)
+			{
+				if (U > 0)
+					MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
+				else
+					MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n - std::sqrt(Delta)) / (2.0 * Rz);
+			}
+			else
+				MotorCurrent = 0;
+		} // else DBF
+
+	} // 255
+	else
+		MotorCurrent = 0;
+	return MotorCurrent;
+}
+
+// the line breaker opened, and the motors damaged, by too high revolutions or current
+void TMoverParameters::MotorFailuresCheck(double const n)
+{
+	double MotorCurrent;
 	// awarie
 	MotorCurrent = abs(Im); // zmienna pomocnicza
 
@@ -455,8 +478,6 @@ double TMoverParameters::Current(double n, double U)
 			EventFlag = true;
 		/*! dorobic grzanie oporow rozruchowych i silnika*/
 	}
-
-	return Im;
 }
 
 // *************************************************************************************************
@@ -7901,106 +7922,120 @@ bool TMoverParameters::dizel_AutoGearCheck(void)
 
 	if (motor_param(ScndCtrlActualPos).AutoSwitch && Mains)
 	{
-		if (RList[MainCtrlPos].Mn == 0 && !hydro_TC)
-		{
-			if (dizel_engagestate > 0)
-				dizel_EngageSwitch(0);
-			if (IsMainCtrlNoPowerPos() && ScndCtrlActualPos > 0)
-				dizel_automaticgearstatus = -1;
-		}
-		else
-		{
-			if (motor_param(ScndCtrlActualPos).AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
-			{
-				if (Vel > VelUp)
-				{
-					// shift up
-					if (ScndCtrlActualPos < ScndCtrlPosNo)
-					{
-						dizel_automaticgearstatus = 1;
-						OK = true;
-					}
-				}
-				else if (Vel < VelDown)
-				{
-					// shift down
-					if (ScndCtrlActualPos > 0)
-					{
-						dizel_automaticgearstatus = -1;
-						OK = true;
-					}
-				}
-			}
-		}
-		if (dizel_engage < 0.1 && dizel_automaticgearstatus != 0)
-		{
-			if (dizel_automaticgearstatus == 1)
-				ScndCtrlActualPos++;
-			else
-				ScndCtrlActualPos--;
-			dizel_automaticgearstatus = 0;
-			dizel_EngageSwitch(1.0);
-			OK = true;
-		}
+		OK = dizel_GearShiftCheck(VelUp, VelDown);
 	}
 
 	if (Mains)
 	{
-		if (EIMCtrlType > 0) // sterowanie komputerowe
+		dizel_ClutchCheck();
+	}
+	return OK;
+}
+
+// the automatic gearbox: a gear up over VelUp, down under VelDown, changed once the clutch is out; returns whether it acted
+bool TMoverParameters::dizel_GearShiftCheck(double const VelUp, double const VelDown)
+{
+	auto OK{false};
+	if (RList[MainCtrlPos].Mn == 0 && !hydro_TC)
+	{
+		if (dizel_engagestate > 0)
+			dizel_EngageSwitch(0);
+		if (IsMainCtrlNoPowerPos() && ScndCtrlActualPos > 0)
+			dizel_automaticgearstatus = -1;
+	}
+	else
+	{
+		if (motor_param(ScndCtrlActualPos).AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
 		{
-			if (dizel_automaticgearstatus == 0)
+			if (Vel > VelUp)
 			{
-				if ((hydro_TC && hydro_TC_Fill > 0.01) || eimic_real > 0.005)
-					dizel_EngageSwitch(1.0);
-				else if (Vel > hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
-					dizel_EngageSwitch(0.5);
-				else
-					dizel_EngageSwitch(0.0);
+				// shift up
+				if (ScndCtrlActualPos < ScndCtrlPosNo)
+				{
+					dizel_automaticgearstatus = 1;
+					OK = true;
+				}
 			}
+			else if (Vel < VelDown)
+			{
+				// shift down
+				if (ScndCtrlActualPos > 0)
+				{
+					dizel_automaticgearstatus = -1;
+					OK = true;
+				}
+			}
+		}
+	}
+	if (dizel_engage < 0.1 && dizel_automaticgearstatus != 0)
+	{
+		if (dizel_automaticgearstatus == 1)
+			ScndCtrlActualPos++;
+		else
+			ScndCtrlActualPos--;
+		dizel_automaticgearstatus = 0;
+		dizel_EngageSwitch(1.0);
+		OK = true;
+	}
+	return OK;
+}
+
+// the pressure in the clutch's cylinder, by the controller's position or the integrated controller
+void TMoverParameters::dizel_ClutchCheck()
+{
+	if (EIMCtrlType > 0) // sterowanie komputerowe
+	{
+		if (dizel_automaticgearstatus == 0)
+		{
+			if ((hydro_TC && hydro_TC_Fill > 0.01) || eimic_real > 0.005)
+				dizel_EngageSwitch(1.0);
+			else if (Vel > hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
+				dizel_EngageSwitch(0.5);
 			else
 				dizel_EngageSwitch(0.0);
 		}
-		else if (dizel_automaticgearstatus == 0) // ustaw cisnienie w silowniku sprzegla}
-			switch (RList[MainCtrlPos].Mn)
-			{
-			case 1:
-				dizel_EngageSwitch(0.5);
-				break;
-			case 2:
-				dizel_EngageSwitch(1.0);
-				break;
-			case 3:
-				if (Vel > dizel_minVelfullengage)
-					dizel_EngageSwitch(1.0);
-				else
-					dizel_EngageSwitch(0.5);
-				break;
-			case 4:
-				if (Vel > dizel_minVelfullengage)
-					dizel_EngageSwitch(1.0);
-				else
-					dizel_EngageSwitch(0.66);
-				break;
-			case 5:
-				if (Vel > dizel_minVelfullengage)
-					dizel_EngageSwitch(1.0);
-				else
-					dizel_EngageSwitch(0.35 * (1 + RList[MainCtrlPos].R) * RList[MainCtrlPos].R);
-				break;
-			default:
-				if (hydro_TC && hydro_TC_Fill > 0.01)
-					dizel_EngageSwitch(1.0);
-				else
-					dizel_EngageSwitch(0.0);
-			}
 		else
 			dizel_EngageSwitch(0.0);
-		if (!(motor_param(ScndCtrlActualPos).mIsat > 0))
-			dizel_EngageSwitch(0.0); // wylacz sprzeglo na pozycjach neutralnych
-		if (!AutoRelayFlag)
-			ScndCtrlActualPos = ScndCtrlPos;
 	}
-	return OK;
+	else if (dizel_automaticgearstatus == 0) // ustaw cisnienie w silowniku sprzegla}
+		switch (RList[MainCtrlPos].Mn)
+		{
+		case 1:
+			dizel_EngageSwitch(0.5);
+			break;
+		case 2:
+			dizel_EngageSwitch(1.0);
+			break;
+		case 3:
+			if (Vel > dizel_minVelfullengage)
+				dizel_EngageSwitch(1.0);
+			else
+				dizel_EngageSwitch(0.5);
+			break;
+		case 4:
+			if (Vel > dizel_minVelfullengage)
+				dizel_EngageSwitch(1.0);
+			else
+				dizel_EngageSwitch(0.66);
+			break;
+		case 5:
+			if (Vel > dizel_minVelfullengage)
+				dizel_EngageSwitch(1.0);
+			else
+				dizel_EngageSwitch(0.35 * (1 + RList[MainCtrlPos].R) * RList[MainCtrlPos].R);
+			break;
+		default:
+			if (hydro_TC && hydro_TC_Fill > 0.01)
+				dizel_EngageSwitch(1.0);
+			else
+				dizel_EngageSwitch(0.0);
+		}
+	else
+		dizel_EngageSwitch(0.0);
+	if (!(motor_param(ScndCtrlActualPos).mIsat > 0))
+		dizel_EngageSwitch(0.0); // wylacz sprzeglo na pozycjach neutralnych
+	if (!AutoRelayFlag)
+		ScndCtrlActualPos = ScndCtrlPos;
 }
 
 // performs diesel engine startup procedure; potentially clears startup switch; returns: true if the engine can be started, false otherwise

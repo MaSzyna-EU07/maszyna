@@ -2601,6 +2601,10 @@ class TMoverParameters
 	/*funkcje uzalezniajace sile pociagowa od predkosci: v2n, n2r, current, momentum*/
 	double v2n(void);
 	double Current(double n, double U);
+	// the parts of Current()
+	void UpdateSeriesMotorDynamicBrakeFlag();
+	double SeriesMotorCurrent(double n, double U, double R, double Mn);
+	void MotorFailuresCheck(double n);
 	double Momentum(double I) const;
 	double MomentumF(double I, double Iw, int SCP) const;
 
@@ -2640,6 +2644,8 @@ class TMoverParameters
 	bool dizel_EngageSwitch(double state);
 	bool dizel_EngageChange(double dt);
 	bool dizel_AutoGearCheck(void);
+	bool dizel_GearShiftCheck(double VelUp, double VelDown);
+	void dizel_ClutchCheck();
 	double dizel_fillcheck(int mcp, double dt);
 	double dizel_Momentum(double dizel_fill, double n, double dt);
 	double dizel_MomentumRetarder(double n, double dt); // moment hamowania retardera
