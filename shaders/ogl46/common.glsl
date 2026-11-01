@@ -368,6 +368,9 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 cab_probe_sun_color;
     vec4 cab_probe_sun_box;
     vec4 cab_probe_sun_world;
+    // the insects met when the blades were at the ends of their sweep (mat_bugs_windscreen), see gl::scene_ubs
+    vec4 wiper_bugs_out;
+    vec4 wiper_bugs_return;
 };
 
 #ifdef STAGE_VERTEX

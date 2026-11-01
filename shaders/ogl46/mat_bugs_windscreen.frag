@@ -12,8 +12,10 @@
 //       now and then a really big bug and rarely a huge one (own coarse grids, never cut off by the 3x3 search);
 //       smaller blur ring, scaled by the size of the bug on screen.
 //
-// Insects splat on the glass one by one and the glass gets dirtier until it is
-// fully dirty after `bugs_fill_time` seconds of simulation time (default 3600 = 1 h).
+// Insects splat on the glass one by one, only while the vehicle goes faster than 20 km/h and the more the faster, and the glass
+// gets dirtier until it is fully dirty after `bugs_fill_time` seconds of driving at 100 km/h (default 3600 = 1 h; at 160 km/h
+// about 35 minutes, at 50 km/h 2.7 hours). The engine counts the insects met (rain_wind.w) and keeps the count of the moments
+// the blades were at the ends of their sweep (wiper_bugs_out / wiper_bugs_return), next to their times.
 // No sliding, no rain: every bug is placed once (hash of its grid cell) and just
 // appears at its own random moment. Wipers (wipermask) wipe the bugs off in the area they
 // sweep; the glass there then gets dirty again, with new bugs, over the next bugs_fill_time.
@@ -90,7 +92,7 @@ layout(binding = 2) uniform sampler2D wipermask;
 layout(binding = 3) uniform sampler2D normalmap;
 
 // --- Tuning -----------------------------------------------------------------
-const float bugs_fill_time = 3600.0; // seconds of simulation time until the glass is fully dirty
+const float bugs_fill_time = 3600.0; // seconds of driving at 100 km/h until the glass is fully dirty (none below 20 km/h)
 const float bugs_start_time = 0.0;    // simulation time at which the glass was clean
 const float bugs_density = 0.15;   // fraction of grid cells that end up with a big bug (0..1)
 const float specks_density = 0.12;   // same for the layer of tiny specks (0 = off)
@@ -147,10 +149,11 @@ vec2 tileOffset(float choice)
 const float WIPER_NONE    = -1.0e9;
 const float WIPER_UNKNOWN = -2.0e9;
 
-float lastCleanTime(vec2 co)
+float lastCleanTime(vec2 co, out float bugsAt)
 {
     vec4  m       = textureLod(wipermask, co, 0.0);
     float best    = WIPER_NONE;
+    bugsAt        = 0.0;
     bool  unknown = false;
     for (int i = 0; i < 4; ++i)
     {
@@ -165,12 +168,17 @@ float lastCleanTime(vec2 co)
         float t       = mix(wiper_timer_out[i], wiper_timer_return[i], sideV);
         if (!(t <= time))                                        // garbage or NaN: ignore
             continue;
-        if (t < -500.0)                                          // the -1000 "memory lost" marker
+        float b       = mix(wiper_bugs_out[i], wiper_bugs_return[i], sideV);   // the insects met at that moment
+        if ((t < -500.0) || (b < 0.0))                           // the -1000 "memory lost" marker
         {
             unknown = true;
             continue;
         }
-        best = max(best, t);
+        if (t > best)
+        {
+            best   = t;
+            bugsAt = b;
+        }
     }
     if (best > WIPER_NONE)
         return best;
@@ -180,21 +188,27 @@ float lastCleanTime(vec2 co)
 // Fine specks: tiny dried drops of bug juice. Procedural (a soft irregular blob with a darker rim),
 // one per speck cell and always inside it, so only the pixel's own cell is checked: no texture reads
 // apart from the wiper state of this pixel, which main() passes in.
-void speckLayer(float gridSize, float density, float tcPix, vec2 aspect, float pixelUV,
+void speckLayer(float gridSize, float density, float tcPix, float bugsPix, vec2 aspect, float pixelUV,
                 inout vec3 accRGB, inout float accA, inout vec3 accN, inout float accNA)
 {
     vec2  g    = f_coord * gridSize;
     vec2  cell = floor(g);
     float tBase, prog;
+    float met = max(rain_wind.w, 0.0);                     // the insects met so far
     if (tcPix < -1.5e9)
     {
         tBase = -1000.0;
-        prog  = min(max(time - bugs_start_time, 0.0) / max(bugs_fill_time, 1.0), bugs_unknown_level);
+        prog  = min(met / max(bugs_fill_time, 1.0), bugs_unknown_level);
+    }
+    else if (tcPix < -0.5e9)
+    {
+        tBase = bugs_start_time;
+        prog  = met / max(bugs_fill_time, 1.0);
     }
     else
     {
-        tBase = max(bugs_start_time, tcPix);
-        prog  = max(time - tBase, 0.0) / max(bugs_fill_time, 1.0);
+        tBase = tcPix;
+        prog  = max(met - bugsPix, 0.0) / max(bugs_fill_time, 1.0);
     }
     if (prog <= 0.0)
         return;
@@ -261,22 +275,30 @@ void bugLayer(float gridSize, float density, uint layerSeed,
             // When the wipers last swept over this cell. Whatever hit the glass before that
             // moment is gone; the cell then gets a brand new set of bugs (the seed depends on
             // that moment) that again take bugs_fill_time to build up.
-            float tc = (bugs_wiper_clean > 0.5) ? lastCleanTime((ncell + 0.5) / gridSize) : WIPER_NONE;
+            float bugsAt = 0.0;
+            float tc = (bugs_wiper_clean > 0.5) ? lastCleanTime((ncell + 0.5) / gridSize, bugsAt) : WIPER_NONE;
 
+            // the insects met since the glass here was clean (they come only above 20 km/h, see the head of the file)
+            float met = max(rain_wind.w, 0.0);
             float tBase;
             float prog;
             if (tc < -1.5e9)
             {
-                // The engine forgot when the wipers last swept here (the camera was outside the
-                // cab). We cannot know how dirty the glass was, so show a fixed, non-growing level
-                // until a blade passes and gives us a real clean time again.
+                // The engine forgot when the wipers last swept here (another vehicle). We cannot know how dirty the glass was,
+                // so show the level of the glass never wiped, at most bugs_unknown_level, until a blade passes.
                 tBase = -1000.0;
-                prog  = min(max(time - bugs_start_time, 0.0) / max(bugs_fill_time, 1.0), bugs_unknown_level);
+                prog  = min(met / max(bugs_fill_time, 1.0), bugs_unknown_level);
+            }
+            else if (tc < -0.5e9)
+            {
+                // no blade reaches here: everything met so far
+                tBase = bugs_start_time;
+                prog  = met / max(bugs_fill_time, 1.0);
             }
             else
             {
-                tBase = max(bugs_start_time, tc);
-                prog  = max(time - tBase, 0.0) / max(bugs_fill_time, 1.0);
+                tBase = tc;
+                prog  = max(met - bugsAt, 0.0) / max(bugs_fill_time, 1.0);
             }
             if (prog <= 0.0)
                 continue;
@@ -376,7 +398,7 @@ void main()
     vec2  aspect   = (bugs_uv_aspect >= 1.0) ? vec2(bugs_uv_aspect, 1.0) : vec2(1.0, 1.0 / max(bugs_uv_aspect, 0.01));
 
     // 0 = never dirty yet; the real per-cell progress is computed in bugLayer (wipers reset it)
-    float progress = clamp((time - bugs_start_time) / max(bugs_fill_time, 1.0), 0.0, 1.0);
+    float progress = clamp(max(rain_wind.w, 0.0) / max(bugs_fill_time, 1.0), 0.0, 1.0);
 
     vec3  bugRGB = vec3(0.0);    // premultiplied
     float bugA   = 0.0;
@@ -388,8 +410,9 @@ void main()
         // fine specks underneath (procedural, one wiper read for the pixel), big bugs on top
         if (specks_density > 0.0)
         {
-            float tcPix = (bugs_wiper_clean > 0.5) ? lastCleanTime(f_coord) : WIPER_NONE;
-            speckLayer(gridSize * SPECK_SCALE, specks_density, tcPix, aspect, pixelUV, bugRGB, bugA, bugN, bugNA);
+            float bugsPix = 0.0;
+            float tcPix = (bugs_wiper_clean > 0.5) ? lastCleanTime(f_coord, bugsPix) : WIPER_NONE;
+            speckLayer(gridSize * SPECK_SCALE, specks_density, tcPix, bugsPix, aspect, pixelUV, bugRGB, bugA, bugN, bugNA);
         }
         bugLayer(gridSize, bugs_density, 3u, pixelUV, aspect, 1.0, 1.0, 0.0, bugRGB, bugA, smear, bugN, bugNA);
         // now and then a really big one, on top (its own coarse grid: same 3x3 search, bigger cells)

@@ -532,6 +532,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	gl::scene_ubs scene_ubs{};
 	// the vehicle whose wipers the timers of the blades in scene_ubs (wiper_timer_out / wiper_timer_return) follow
 	TDynamicObject const *m_wipervehicle{nullptr};
+	// the insects that vehicle met so far: seconds of driving at 100 km/h (scene_ubs.rain_wind.w)
+	double m_wiperbugs{0.0};
 	gl::light_data light_data{};
 	std::uint32_t m_lightcount{1}; // lights written to light_data
 	// the copies of the light buffer in the ring of the frame since the lights were last written, by the header and the sun

@@ -1500,7 +1500,15 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 			m_wipervehicle = owner;
 			scene_ubs.wiper_timer_out = glm::vec4{-1000.};
 			scene_ubs.wiper_timer_return = glm::vec4{-1000.};
+			scene_ubs.wiper_bugs_out = glm::vec4{-1.};
+			scene_ubs.wiper_bugs_return = glm::vec4{-1.};
+			m_wiperbugs = 0.0;
 		}
+		// the insects the vehicle meets (mat_bugs_windscreen): none below 20 km/h, above it the more the faster, counted in seconds of
+		// driving at 100 km/h
+		if (owner != nullptr)
+			m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
+		scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
 		if (owner != nullptr)
 		{
 			auto const cabactive{owner->MoverParameters->CabActive != 0 ? owner->MoverParameters->CabActive : 1};
@@ -1517,10 +1525,12 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 					if (owner->dWiperPos[index] < .025)
 					{
 						scene_ubs.wiper_timer_out[i] = scene_ubs.time;
+						scene_ubs.wiper_bugs_out[i] = static_cast<float>(m_wiperbugs);
 					}
 					if (owner->dWiperPos[index] > .975)
 					{
 						scene_ubs.wiper_timer_return[i] = scene_ubs.time;
+						scene_ubs.wiper_bugs_return[i] = static_cast<float>(m_wiperbugs);
 					}
 				}
 				else
@@ -1528,6 +1538,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 					scene_ubs.wiper_pos[i] = 0.;
 					scene_ubs.wiper_timer_out[i] = -1000.;
 					scene_ubs.wiper_timer_return[i] = -1000.;
+					scene_ubs.wiper_bugs_out[i] = -1.;
+					scene_ubs.wiper_bugs_return[i] = -1.;
 				}
 			}
 		}

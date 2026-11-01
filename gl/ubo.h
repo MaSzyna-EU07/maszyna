@@ -149,7 +149,8 @@ namespace gl
         // which comes in through their windows and bounces around them (gfx.interior.bounce), w unused
         glm::vec4 env_params;
         // the water on the windscreens (mat_rain_windscreen): xyz the velocity of the air against the vehicle of the camera (the
-        // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w unused
+        // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w the insects
+        // the vehicle met so far (mat_bugs_windscreen): seconds of driving at 100 km/h, none below 20 km/h, more the faster
         glm::vec4 rain_wind;
         // the ambient occlusion in the light of the surfaces (gfx.postfx.ao.lighting), set only for the colour pass of the main view,
         // zero elsewhere: x 1 when SCENE_AO_TEX holds the occlusion of the depth in SCENE_DEPTH_TEX, y the power it's raised to
@@ -192,9 +193,13 @@ namespace gl
         glm::vec4 cab_probe_sun_color;
         glm::vec4 cab_probe_sun_box;
         glm::vec4 cab_probe_sun_world;
+        // the insects the vehicle had met (rain_wind.w) when the blades were at the ends of their sweep, as wiper_timer_out and
+        // wiper_timer_return (mat_bugs_windscreen: what hit the glass since a blade went over it); -1 not known
+        glm::vec4 wiper_bugs_out;
+        glm::vec4 wiper_bugs_return;
     };
 
-    static_assert(sizeof(scene_ubs) == 928 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 960 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
