@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 //---------------------------------------------------------------------------
 // Q: 20160805 - odlaczenie pliku fizyki .pas od kompilacji
 #include <map>
+#include <unordered_map>
 #include "hamulce.h"
 #include "scripting/ladderlogic.h"
 
@@ -2618,6 +2619,10 @@ class TMoverParameters
 
   private:
 	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above
+	// the parts of LoadFIZ_Parse(), for a line of the definition
+	bool LoadFIZ_TableEnd(std::string const &inputline);
+	bool LoadFIZ_Section(std::string const &inputline, std::unordered_map<std::string, std::string> &fizlines);
+	void LoadFIZ_TableRow(std::string const &inputline);
 	void LoadFIZ_Param(std::string const &line);
 	void LoadFIZ_Load(std::string const &line);
 	void LoadFIZ_Dimensions(std::string const &line);

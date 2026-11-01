@@ -9739,7 +9739,7 @@ bool TMoverParameters::LoadFIZ_Text(std::string const &Text)
 	return LoadFIZ_Parse(fizparser);
 }
 
-bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former body of LoadFIZ(), moved as it was; splitting it up is a change of its own
+bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser)
 {
 	LISTLINE = 0;
 	startBPT = false;
@@ -9796,542 +9796,11 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former b
 			continue;
 		}
 
-		// checking if table parsing should be switched off goes first...
-		if (issection("END-MPT", inputline))
+		if (LoadFIZ_TableEnd(inputline) || LoadFIZ_Section(inputline, fizlines))
 		{
-			startBPT = false;
-			startMPT = false;
-			startMPT0 = false;
 			continue;
 		}
-		if (issection("END-RL", inputline))
-		{
-			startBPT = false;
-			startRLIST = false;
-			continue;
-		}
-		if (issection("END-UCL", inputline))
-		{
-			startBPT = false;
-			startUCLIST = false;
-			continue;
-		}
-		if (issection("END-DL", inputline))
-		{
-			startBPT = false;
-			startDLIST = false;
-			continue;
-		}
-		if (issection("END-DML", inputline))
-		{
-			startBPT = false;
-			startDIZELMOMENTUMLIST = false;
-			continue;
-		}
-		if (issection("END-V2NL", inputline))
-		{
-			startBPT = false;
-			startDIZELV2NMAXLIST = false;
-			continue;
-		}
-		if (issection("END-HTCL", inputline))
-		{
-			startBPT = false;
-			startHYDROTCLIST = false;
-			continue;
-		}
-		if (issection("END-PML", inputline))
-		{
-			startBPT = false;
-			startPMAXLIST = false;
-			continue;
-		}
-		if (issection("endff", inputline))
-		{
-			startBPT = false;
-			startFFLIST = false;
-			startFFEDLIST = false;
-			continue;
-		}
-		if (issection("endwl", inputline))
-		{
-			// skonczylismy czytac liste konfiguracji wycieraczek
-			startBPT = false;
-			startWiperList = false;
-			continue;
-		}
-		if (issection("endDimmerList", inputline))
-		{
-			// skonczylismy czytac liste konfiguracji pstryka od przyciemnienia
-			startBPT = false;
-			startDimmerList = false;
-			continue;
-		}
-		if (issection("END-WWL", inputline))
-		{
-			startBPT = false;
-			startWWLIST = false;
-			continue;
-		}
-		if (issection("endL", inputline))
-		{
-			startBPT = false;
-			startLIGHTSLIST = false;
-			continue;
-		}
-		if (issection("endCL", inputline))
-		{
-			startBPT = false;
-			startCOMPRESSORLIST = false;
-			continue;
-		}
-		// ...then all recognized sections...
-		if (issection("Param.", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Param", inputline);
-			LoadFIZ_Param(inputline);
-			continue;
-		}
-
-		if (issection("Load:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Load", inputline);
-			LoadFIZ_Load(inputline);
-			continue;
-		}
-
-		if (issection("Dimensions:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Dimensions", inputline);
-			LoadFIZ_Dimensions(inputline);
-			continue;
-		}
-
-		if (issection("Wheels:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Wheels", inputline);
-			LoadFIZ_Wheels(inputline);
-			continue;
-		}
-
-		if (issection("Brake:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Brake", inputline);
-			LoadFIZ_Brake(inputline);
-			continue;
-		}
-
-		if (issection("Doors:", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("Doors", inputline);
-			LoadFIZ_Doors(inputline);
-			continue;
-		}
-
-		if (issection("BuffCoupl.", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("BuffCoupl", inputline);
-			LoadFIZ_BuffCoupl(inputline, 0);
-			continue;
-		}
-
-		else if (issection("BuffCoupl1.", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("BuffCoupl1", inputline);
-			LoadFIZ_BuffCoupl(inputline, 1);
-			continue;
-		}
-
-		else if (issection("BuffCoupl2.", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("BuffCoupl2", inputline);
-			LoadFIZ_BuffCoupl(inputline, 2);
-			continue;
-		}
-
-		if (issection("TurboPos:", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("TurboPos", inputline);
-			LoadFIZ_TurboPos(inputline);
-			continue;
-		}
-
-		if (issection("Cntrl.", inputline))
-		{
-
-			startBPT = true;
-			LISTLINE = 0;
-			fizlines.try_emplace("Cntrl", inputline);
-			LoadFIZ_Cntrl(inputline);
-			continue;
-		}
-
-		if (issection("Headlights:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Headlights", inputline);
-			LoadFIZ_Headlights(inputline);
-			continue;
-		}
-
-		if (issection("Blending:", inputline))
-		{
-
-			startBPT = false;
-			LISTLINE = 0;
-			fizlines.try_emplace("Blending", inputline);
-			LoadFIZ_Blending(inputline);
-			continue;
-		}
-
-		if (issection("DCEMUED:", inputline))
-		{
-
-			startBPT = false;
-			LISTLINE = 0;
-			fizlines.try_emplace("DCEMUED", inputline);
-			LoadFIZ_DCEMUED(inputline);
-			continue;
-		}
-
-		if (issection("SpringBrake:", inputline))
-		{
-
-			startBPT = false;
-			LISTLINE = 0;
-			fizlines.try_emplace("SpringBrake", inputline);
-			LoadFIZ_SpringBrake(inputline);
-			continue;
-		}
-
-		if (issection("Light:", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("Light", inputline);
-			LoadFIZ_Light(inputline);
-			continue;
-		}
-
-		if (issection("Security:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Security", inputline);
-			SecuritySystem.load(inputline, Vmax);
-			extract_value(EmergencyBrakeWarningSignal, "EmergencyBrakeWarningSignal", inputline, "");
-			continue;
-		}
-
-		if (issection("Clima:", inputline))
-		{
-
-			startBPT = false;
-			fizlines.try_emplace("Clima", inputline);
-			LoadFIZ_Clima(inputline);
-			continue;
-		}
-
-		if (issection("Power:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Power", inputline);
-			LoadFIZ_Power(inputline);
-			continue;
-		}
-
-		if (issection("SpeedControl:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("SpeedControl", inputline);
-			LoadFIZ_SpeedControl(inputline);
-			continue;
-		}
-
-		if (issection("Engine:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Engine", inputline);
-			LoadFIZ_Engine(inputline);
-			continue;
-		}
-
-		if (issection("Switches:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Switches", inputline);
-			LoadFIZ_Switches(inputline);
-			continue;
-		}
-
-		if (issection("MotorParamTable:", inputline))
-		{
-			startBPT = false;
-			startMPT = true;
-			LISTLINE = 0;
-			fizlines.try_emplace("MotorParamTable", inputline);
-			LoadFIZ_MotorParamTable(inputline);
-			continue;
-		}
-
-		if (issection("MotorParamTable0:", inputline))
-		{
-			startBPT = false;
-			startMPT0 = true;
-			LISTLINE = 0;
-			continue;
-		}
-
-		if (issection("Circuit:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("Circuit", inputline);
-			LoadFIZ_Circuit(inputline);
-			continue;
-		}
-
-		if (issection("AI:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("AI", inputline);
-			LoadFIZ_AI(inputline);
-			continue;
-		}
-
-		if (issection("RList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("RList", inputline);
-			startRLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_RList(inputline);
-			continue;
-		}
-
-		if (issection("UCList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("UCList", inputline);
-			startUCLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_UCList(inputline);
-			continue;
-		}
-
-		if (issection("DList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("DList", inputline);
-			startDLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_DList(inputline);
-			continue;
-		}
-
-		if (issection("DMList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("DMList", inputline);
-			startDIZELMOMENTUMLIST = true;
-			LISTLINE = 0;
-			continue;
-		}
-
-		if (issection("HTCList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("HTCList", inputline);
-			startHYDROTCLIST = true;
-			LISTLINE = 0;
-			continue;
-		}
-
-		if (issection("PmaxList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("PmaxList", inputline);
-			startPMAXLIST = true;
-			LISTLINE = 0;
-			continue;
-		}
-
-		if (issection("V2NList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("V2NList", inputline);
-			startDIZELV2NMAXLIST = true;
-			LISTLINE = 0;
-			continue;
-		}
-
-		if (issection("ffList:", inputline))
-		{
-			startBPT = false;
-			startFFLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_FFList(inputline);
-			continue;
-		}
-
-		if (issection("ffBrakeList:", inputline))
-		{
-			startBPT = false;
-			startFFEDLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_FFEDList(inputline);
-			continue;
-		}
-
-		if (issection("WWList:", inputline))
-		{
-			startBPT = false;
-			startWWLIST = true;
-			LISTLINE = 0;
-
-			continue;
-		}
-
-		if (issection("WiperList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("WiperList", inputline);
-			startWiperList = true;
-			LISTLINE = 0;
-			LoadFIZ_WiperList(inputline);
-
-			continue;
-		}
-
-		if (issection("DimmerList:", inputline))
-		{
-			dimPositions.clear(); // uzywamy customowej listy
-			startBPT = false;
-			startDimmerList = true;
-			fizlines.try_emplace("DimmerList", inputline);
-			LoadFIZ_DimmerList(inputline);
-			continue;
-		}
-
-		if (issection("LightsList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("LightsList", inputline);
-			startLIGHTSLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_LightsList(inputline);
-			continue;
-		}
-
-		if (issection("CompressorList:", inputline))
-		{
-			startBPT = false;
-			fizlines.try_emplace("CompressorList", inputline);
-			startCOMPRESSORLIST = true;
-			LISTLINE = 0;
-			LoadFIZ_CompressorList(inputline);
-			continue;
-		}
-
-		// ...and finally, table parsers.
-		// NOTE: once table parsing is enabled it lasts until switched off, when another section is recognized
-		if (true == startBPT)
-		{
-			readBPT(inputline);
-			continue;
-		}
-		if (true == startMPT)
-		{
-			readMPT(inputline);
-			continue;
-		}
-		if (true == startMPT0)
-		{
-			readMPT0(inputline);
-			continue;
-		}
-		if (true == startRLIST)
-		{
-			readRList(inputline);
-			continue;
-		}
-		if (true == startUCLIST)
-		{
-			readUCList(inputline);
-			continue;
-		}
-		if (true == startDLIST)
-		{
-			readDList(inputline);
-			continue;
-		}
-		if (true == startDIZELMOMENTUMLIST)
-		{
-			readDMList(inputline);
-			continue;
-		}
-		if (true == startDIZELV2NMAXLIST)
-		{
-			readV2NMAXList(inputline);
-			continue;
-		}
-		if (true == startHYDROTCLIST)
-		{
-			readHTCList(inputline);
-			continue;
-		}
-		if (true == startPMAXLIST)
-		{
-			readPmaxList(inputline);
-			continue;
-		}
-		if (true == startFFLIST)
-		{
-			readFFList(inputline);
-			continue;
-		}
-		if (true == startFFEDLIST)
-		{
-			readFFEDList(inputline);
-			continue;
-		}
-		if (true == startWWLIST)
-		{
-			readWWList(inputline);
-			continue;
-		}
-		if (true == startWiperList)
-		{
-			readWiperList(inputline);
-			continue;
-		}
-		if (true == startDimmerList)
-		{
-			readDimmerList(inputline);
-		}
-		if (true == startLIGHTSLIST)
-		{
-			readLightsList(inputline);
-			continue;
-		}
-		if (true == startCOMPRESSORLIST)
-		{
-			readCompressorList(inputline);
-			continue;
-		}
+		LoadFIZ_TableRow(inputline);
 	} // while line
 	/*
 	    in.close();
@@ -10353,6 +9822,558 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former b
 
 	WriteLog("CERROR: " + std::to_string(ConversionError) + ", SUCCES: " + std::to_string(result));
 	return result;
+}
+
+// the end of the table being read; returns whether the line is one
+bool TMoverParameters::LoadFIZ_TableEnd(std::string const &inputline)
+{
+	// checking if table parsing should be switched off goes first...
+	if (issection("END-MPT", inputline))
+	{
+		startBPT = false;
+		startMPT = false;
+		startMPT0 = false;
+		return true;
+	}
+	if (issection("END-RL", inputline))
+	{
+		startBPT = false;
+		startRLIST = false;
+		return true;
+	}
+	if (issection("END-UCL", inputline))
+	{
+		startBPT = false;
+		startUCLIST = false;
+		return true;
+	}
+	if (issection("END-DL", inputline))
+	{
+		startBPT = false;
+		startDLIST = false;
+		return true;
+	}
+	if (issection("END-DML", inputline))
+	{
+		startBPT = false;
+		startDIZELMOMENTUMLIST = false;
+		return true;
+	}
+	if (issection("END-V2NL", inputline))
+	{
+		startBPT = false;
+		startDIZELV2NMAXLIST = false;
+		return true;
+	}
+	if (issection("END-HTCL", inputline))
+	{
+		startBPT = false;
+		startHYDROTCLIST = false;
+		return true;
+	}
+	if (issection("END-PML", inputline))
+	{
+		startBPT = false;
+		startPMAXLIST = false;
+		return true;
+	}
+	if (issection("endff", inputline))
+	{
+		startBPT = false;
+		startFFLIST = false;
+		startFFEDLIST = false;
+		return true;
+	}
+	if (issection("endwl", inputline))
+	{
+		// skonczylismy czytac liste konfiguracji wycieraczek
+		startBPT = false;
+		startWiperList = false;
+		return true;
+	}
+	if (issection("endDimmerList", inputline))
+	{
+		// skonczylismy czytac liste konfiguracji pstryka od przyciemnienia
+		startBPT = false;
+		startDimmerList = false;
+		return true;
+	}
+	if (issection("END-WWL", inputline))
+	{
+		startBPT = false;
+		startWWLIST = false;
+		return true;
+	}
+	if (issection("endL", inputline))
+	{
+		startBPT = false;
+		startLIGHTSLIST = false;
+		return true;
+	}
+	if (issection("endCL", inputline))
+	{
+		startBPT = false;
+		startCOMPRESSORLIST = false;
+		return true;
+	}
+	return false;
+}
+
+// a section of the definition, kept in fizlines by its name; returns whether the line is one
+bool TMoverParameters::LoadFIZ_Section(std::string const &inputline, std::unordered_map<std::string, std::string> &fizlines)
+{
+	// ...then all recognized sections...
+	if (issection("Param.", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Param", inputline);
+		LoadFIZ_Param(inputline);
+		return true;
+	}
+
+	if (issection("Load:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Load", inputline);
+		LoadFIZ_Load(inputline);
+		return true;
+	}
+
+	if (issection("Dimensions:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Dimensions", inputline);
+		LoadFIZ_Dimensions(inputline);
+		return true;
+	}
+
+	if (issection("Wheels:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Wheels", inputline);
+		LoadFIZ_Wheels(inputline);
+		return true;
+	}
+
+	if (issection("Brake:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Brake", inputline);
+		LoadFIZ_Brake(inputline);
+		return true;
+	}
+
+	if (issection("Doors:", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("Doors", inputline);
+		LoadFIZ_Doors(inputline);
+		return true;
+	}
+
+	if (issection("BuffCoupl.", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("BuffCoupl", inputline);
+		LoadFIZ_BuffCoupl(inputline, 0);
+		return true;
+	}
+
+	else if (issection("BuffCoupl1.", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("BuffCoupl1", inputline);
+		LoadFIZ_BuffCoupl(inputline, 1);
+		return true;
+	}
+
+	else if (issection("BuffCoupl2.", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("BuffCoupl2", inputline);
+		LoadFIZ_BuffCoupl(inputline, 2);
+		return true;
+	}
+
+	if (issection("TurboPos:", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("TurboPos", inputline);
+		LoadFIZ_TurboPos(inputline);
+		return true;
+	}
+
+	if (issection("Cntrl.", inputline))
+	{
+
+		startBPT = true;
+		LISTLINE = 0;
+		fizlines.try_emplace("Cntrl", inputline);
+		LoadFIZ_Cntrl(inputline);
+		return true;
+	}
+
+	if (issection("Headlights:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Headlights", inputline);
+		LoadFIZ_Headlights(inputline);
+		return true;
+	}
+
+	if (issection("Blending:", inputline))
+	{
+
+		startBPT = false;
+		LISTLINE = 0;
+		fizlines.try_emplace("Blending", inputline);
+		LoadFIZ_Blending(inputline);
+		return true;
+	}
+
+	if (issection("DCEMUED:", inputline))
+	{
+
+		startBPT = false;
+		LISTLINE = 0;
+		fizlines.try_emplace("DCEMUED", inputline);
+		LoadFIZ_DCEMUED(inputline);
+		return true;
+	}
+
+	if (issection("SpringBrake:", inputline))
+	{
+
+		startBPT = false;
+		LISTLINE = 0;
+		fizlines.try_emplace("SpringBrake", inputline);
+		LoadFIZ_SpringBrake(inputline);
+		return true;
+	}
+
+	if (issection("Light:", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("Light", inputline);
+		LoadFIZ_Light(inputline);
+		return true;
+	}
+
+	if (issection("Security:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Security", inputline);
+		SecuritySystem.load(inputline, Vmax);
+		extract_value(EmergencyBrakeWarningSignal, "EmergencyBrakeWarningSignal", inputline, "");
+		return true;
+	}
+
+	if (issection("Clima:", inputline))
+	{
+
+		startBPT = false;
+		fizlines.try_emplace("Clima", inputline);
+		LoadFIZ_Clima(inputline);
+		return true;
+	}
+
+	if (issection("Power:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Power", inputline);
+		LoadFIZ_Power(inputline);
+		return true;
+	}
+
+	if (issection("SpeedControl:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("SpeedControl", inputline);
+		LoadFIZ_SpeedControl(inputline);
+		return true;
+	}
+
+	if (issection("Engine:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Engine", inputline);
+		LoadFIZ_Engine(inputline);
+		return true;
+	}
+
+	if (issection("Switches:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Switches", inputline);
+		LoadFIZ_Switches(inputline);
+		return true;
+	}
+
+	if (issection("MotorParamTable:", inputline))
+	{
+		startBPT = false;
+		startMPT = true;
+		LISTLINE = 0;
+		fizlines.try_emplace("MotorParamTable", inputline);
+		LoadFIZ_MotorParamTable(inputline);
+		return true;
+	}
+
+	if (issection("MotorParamTable0:", inputline))
+	{
+		startBPT = false;
+		startMPT0 = true;
+		LISTLINE = 0;
+		return true;
+	}
+
+	if (issection("Circuit:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Circuit", inputline);
+		LoadFIZ_Circuit(inputline);
+		return true;
+	}
+
+	if (issection("AI:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("AI", inputline);
+		LoadFIZ_AI(inputline);
+		return true;
+	}
+
+	if (issection("RList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("RList", inputline);
+		startRLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_RList(inputline);
+		return true;
+	}
+
+	if (issection("UCList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("UCList", inputline);
+		startUCLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_UCList(inputline);
+		return true;
+	}
+
+	if (issection("DList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("DList", inputline);
+		startDLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_DList(inputline);
+		return true;
+	}
+
+	if (issection("DMList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("DMList", inputline);
+		startDIZELMOMENTUMLIST = true;
+		LISTLINE = 0;
+		return true;
+	}
+
+	if (issection("HTCList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("HTCList", inputline);
+		startHYDROTCLIST = true;
+		LISTLINE = 0;
+		return true;
+	}
+
+	if (issection("PmaxList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("PmaxList", inputline);
+		startPMAXLIST = true;
+		LISTLINE = 0;
+		return true;
+	}
+
+	if (issection("V2NList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("V2NList", inputline);
+		startDIZELV2NMAXLIST = true;
+		LISTLINE = 0;
+		return true;
+	}
+
+	if (issection("ffList:", inputline))
+	{
+		startBPT = false;
+		startFFLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_FFList(inputline);
+		return true;
+	}
+
+	if (issection("ffBrakeList:", inputline))
+	{
+		startBPT = false;
+		startFFEDLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_FFEDList(inputline);
+		return true;
+	}
+
+	if (issection("WWList:", inputline))
+	{
+		startBPT = false;
+		startWWLIST = true;
+		LISTLINE = 0;
+
+		return true;
+	}
+
+	if (issection("WiperList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("WiperList", inputline);
+		startWiperList = true;
+		LISTLINE = 0;
+		LoadFIZ_WiperList(inputline);
+
+		return true;
+	}
+
+	if (issection("DimmerList:", inputline))
+	{
+		dimPositions.clear(); // uzywamy customowej listy
+		startBPT = false;
+		startDimmerList = true;
+		fizlines.try_emplace("DimmerList", inputline);
+		LoadFIZ_DimmerList(inputline);
+		return true;
+	}
+
+	if (issection("LightsList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("LightsList", inputline);
+		startLIGHTSLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_LightsList(inputline);
+		return true;
+	}
+
+	if (issection("CompressorList:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("CompressorList", inputline);
+		startCOMPRESSORLIST = true;
+		LISTLINE = 0;
+		LoadFIZ_CompressorList(inputline);
+		return true;
+	}
+	return false;
+}
+
+// a row of the table being read
+void TMoverParameters::LoadFIZ_TableRow(std::string const &inputline)
+{
+	// ...and finally, table parsers.
+	// NOTE: once table parsing is enabled it lasts until switched off, when another section is recognized
+	if (true == startBPT)
+	{
+		readBPT(inputline);
+		return;
+	}
+	if (true == startMPT)
+	{
+		readMPT(inputline);
+		return;
+	}
+	if (true == startMPT0)
+	{
+		readMPT0(inputline);
+		return;
+	}
+	if (true == startRLIST)
+	{
+		readRList(inputline);
+		return;
+	}
+	if (true == startUCLIST)
+	{
+		readUCList(inputline);
+		return;
+	}
+	if (true == startDLIST)
+	{
+		readDList(inputline);
+		return;
+	}
+	if (true == startDIZELMOMENTUMLIST)
+	{
+		readDMList(inputline);
+		return;
+	}
+	if (true == startDIZELV2NMAXLIST)
+	{
+		readV2NMAXList(inputline);
+		return;
+	}
+	if (true == startHYDROTCLIST)
+	{
+		readHTCList(inputline);
+		return;
+	}
+	if (true == startPMAXLIST)
+	{
+		readPmaxList(inputline);
+		return;
+	}
+	if (true == startFFLIST)
+	{
+		readFFList(inputline);
+		return;
+	}
+	if (true == startFFEDLIST)
+	{
+		readFFEDList(inputline);
+		return;
+	}
+	if (true == startWWLIST)
+	{
+		readWWList(inputline);
+		return;
+	}
+	if (true == startWiperList)
+	{
+		readWiperList(inputline);
+		return;
+	}
+	if (true == startDimmerList)
+	{
+		readDimmerList(inputline);
+	}
+	if (true == startLIGHTSLIST)
+	{
+		readLightsList(inputline);
+		return;
+	}
+	if (true == startCOMPRESSORLIST)
+	{
+		readCompressorList(inputline);
+		return;
+	}
 }
 
 void TMoverParameters::LoadFIZ_Param(std::string const &line)
