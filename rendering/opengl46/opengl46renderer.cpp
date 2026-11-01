@@ -1625,13 +1625,26 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 					air -= owner->VectorFront() * owner->MoverParameters->V;
 				scene_ubs.rain_wind = glm::vec4{glm::vec3{air}, 0.f};
 			}
-			if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
+			// the wipers of the vehicle the camera is in, or of the train driven when the camera is outside it: the moments the blades
+			// were at the ends of their sweep (the drops on the glass come back from then) are kept while the camera is away, so the glass
+			// looks as the blades left it when it's back in the cab. they're forgotten only for another vehicle
+			TDynamicObject const *owner = Global.pCamera.m_owner;
+			if ((owner == nullptr) || (owner->MoverParameters->CabActive == 0))
+				owner = (simulation::Train != nullptr) ? simulation::Train->Dynamic() : nullptr;
+			if (owner != m_wipervehicle)
 			{
+				m_wipervehicle = owner;
+				scene_ubs.wiper_timer_out = glm::vec4{-1000.};
+				scene_ubs.wiper_timer_return = glm::vec4{-1000.};
+			}
+			if (owner != nullptr)
+			{
+				auto const cabactive{owner->MoverParameters->CabActive != 0 ? owner->MoverParameters->CabActive : 1};
 				for (int i = 0; i < 4; ++i)
 				{
 					if (i < owner->dWiperPos.size())
 					{
-						int index = owner->MoverParameters->CabActive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+						int index = cabactive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
 						scene_ubs.wiper_pos[i] = owner->dWiperPos[index];
 						if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index])
 						{
@@ -1657,8 +1670,6 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			else
 			{
 				scene_ubs.wiper_pos = glm::vec4{0.};
-				scene_ubs.wiper_timer_out = glm::vec4{-1000.};
-				scene_ubs.wiper_timer_return = glm::vec4{-1000.};
 			}
 		}
 		// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour

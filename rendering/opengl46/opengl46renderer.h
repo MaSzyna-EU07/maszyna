@@ -826,6 +826,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// persistently mapped with Global.gfx_bufferstreaming
 	std::unique_ptr<gl::frame_stream> m_instancestream;
 	gl::scene_ubs scene_ubs;
+	// the vehicle whose wipers the timers of the blades in scene_ubs (wiper_timer_out / wiper_timer_return) follow
+	TDynamicObject const *m_wipervehicle{nullptr};
 	gl::light_data light_data;
 
 	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;

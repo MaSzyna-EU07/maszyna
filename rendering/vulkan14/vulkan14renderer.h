@@ -530,6 +530,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	glm::vec3 m_fogcolor{0.f};
 	glm::vec4 m_shadowcolor{colors::shadow};
 	gl::scene_ubs scene_ubs{};
+	// the vehicle whose wipers the timers of the blades in scene_ubs (wiper_timer_out / wiper_timer_return) follow
+	TDynamicObject const *m_wipervehicle{nullptr};
 	gl::light_data light_data{};
 	std::uint32_t m_lightcount{1}; // lights written to light_data
 	// the copies of the light buffer in the ring of the frame since the lights were last written, by the header and the sun
