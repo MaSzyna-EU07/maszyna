@@ -8152,26 +8152,7 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 			// napelnienie zalezne od MainCtrlPos
 			if (EIMCtrlType > 0)
 			{
-				realfill = std::max(0.0, std::min(eimic_real, 1 - motor_param(ScndCtrlActualPos).Isat));
-				if (eimic_real > 0.005 && !hydro_TC_Lockup)
-				{
-					dizel_nreg_min = std::min(dizel_nreg_min + 2.5 * dt, dizel_nmin_hdrive + eimic_real * dizel_nmin_hdrive_factor);
-				}
-				else
-				{
-					if (Vel < hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
-						dizel_nreg_min = std::min(dizel_nreg_min + 5.0 * dt, dizel_nmin_retarder);
-					else
-						dizel_nreg_min = dizel_nmin;
-				}
-				if (!dizel_vel2nmax_Table.empty() && !hydro_TC_Lockup)
-				{
-					dizel_nreg_max = std::min(std::min(dizel_nreg_max, enrot) + dizel_nreg_acc * dt, TableInterpolation(dizel_vel2nmax_Table, Vel));
-				}
-				else
-				{
-					dizel_nreg_max = dizel_nmax;
-				}
+				realfill = dizel_DigitalFill(dt);
 			}
 			else
 			{
@@ -8181,52 +8162,86 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 		}
 		if (dizel_nmax_cutoff > 0)
 		{
-			auto nreg{0.0};
-			if (EIMCtrlType > 0)
-				nreg = eimic_real > 0.005 ? dizel_nreg_max : dizel_nmin;
-			else
-				switch (RList[MainCtrlPos].Mn)
-				{
-				case 0:
-				case 1:
-					nreg = dizel_nmin;
-					break;
-				case 2:
-					if (dizel_automaticgearstatus == 0 && true /*(!hydro_TC) || (dizel_engage>dizel_fill)*/)
-						nreg = dizel_nreg_max;
-					else
-						nreg = dizel_nmin;
-					break;
-				case 3:
-					if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
-						nreg = dizel_nreg_max;
-					else
-						nreg = dizel_nmin;
-					break;
-				case 4:
-					if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
-						nreg = dizel_nmax;
-					else
-						nreg = dizel_nmin * 0.75 + dizel_nreg_max * 0.25;
-					break;
-				case 5:
-					if (Vel > dizel_minVelfullengage)
-						nreg = dizel_nreg_max;
-					else
-						nreg = dizel_nmin + 0.8 * (dizel_nreg_max - dizel_nmin) * RList[mcp].R;
-					break;
-				default:
-					realfill = 0; // sluczaj
-					break;
-				}
-			if (enrot > nreg) // nad predkoscia regulatora zeruj dawke
-				realfill = 0;
-			if (enrot < dizel_nreg_min && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
-				realfill = 1;
+			realfill = dizel_GovernorFill(mcp, realfill);
 		}
 	}
 
 	return std::clamp(realfill, 0.0, 1.0);
+}
+
+// the fill set by the integrated controller, and the idle and top revolutions the governor keeps to
+double TMoverParameters::dizel_DigitalFill(double dt)
+{
+	double realfill;
+		realfill = std::max(0.0, std::min(eimic_real, 1 - motor_param(ScndCtrlActualPos).Isat));
+		if (eimic_real > 0.005 && !hydro_TC_Lockup)
+		{
+			dizel_nreg_min = std::min(dizel_nreg_min + 2.5 * dt, dizel_nmin_hdrive + eimic_real * dizel_nmin_hdrive_factor);
+		}
+		else
+		{
+			if (Vel < hydro_R_EngageVel && hydro_R && hydro_R_Fill > 0.01)
+				dizel_nreg_min = std::min(dizel_nreg_min + 5.0 * dt, dizel_nmin_retarder);
+			else
+				dizel_nreg_min = dizel_nmin;
+		}
+		if (!dizel_vel2nmax_Table.empty() && !hydro_TC_Lockup)
+		{
+			dizel_nreg_max = std::min(std::min(dizel_nreg_max, enrot) + dizel_nreg_acc * dt, TableInterpolation(dizel_vel2nmax_Table, Vel));
+		}
+		else
+		{
+			dizel_nreg_max = dizel_nmax;
+		}
+	return realfill;
+}
+
+// the fill cut off over the revolutions the governor allows at the controller's position, or full under the idle ones
+double TMoverParameters::dizel_GovernorFill(int const mcp, double realfill)
+{
+		auto nreg{0.0};
+		if (EIMCtrlType > 0)
+			nreg = eimic_real > 0.005 ? dizel_nreg_max : dizel_nmin;
+		else
+			switch (RList[MainCtrlPos].Mn)
+			{
+			case 0:
+			case 1:
+				nreg = dizel_nmin;
+				break;
+			case 2:
+				if (dizel_automaticgearstatus == 0 && true /*(!hydro_TC) || (dizel_engage>dizel_fill)*/)
+					nreg = dizel_nreg_max;
+				else
+					nreg = dizel_nmin;
+				break;
+			case 3:
+				if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
+					nreg = dizel_nreg_max;
+				else
+					nreg = dizel_nmin;
+				break;
+			case 4:
+				if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
+					nreg = dizel_nmax;
+				else
+					nreg = dizel_nmin * 0.75 + dizel_nreg_max * 0.25;
+				break;
+			case 5:
+				if (Vel > dizel_minVelfullengage)
+					nreg = dizel_nreg_max;
+				else
+					nreg = dizel_nmin + 0.8 * (dizel_nreg_max - dizel_nmin) * RList[mcp].R;
+				break;
+			default:
+				realfill = 0; // sluczaj
+				break;
+			}
+		if (enrot > nreg) // nad predkoscia regulatora zeruj dawke
+			realfill = 0;
+		if (enrot < dizel_nreg_min && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
+			realfill = 1;
+	return realfill;
 }
 
 // *************************************************************************************************

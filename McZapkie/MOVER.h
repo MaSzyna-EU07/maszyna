@@ -2647,6 +2647,8 @@ class TMoverParameters
 	bool dizel_GearShiftCheck(double VelUp, double VelDown);
 	void dizel_ClutchCheck();
 	double dizel_fillcheck(int mcp, double dt);
+	double dizel_DigitalFill(double dt);
+	double dizel_GovernorFill(int mcp, double realfill);
 	double dizel_Momentum(double dizel_fill, double n, double dt);
 	double dizel_MomentumRetarder(double n, double dt); // moment hamowania retardera
 	void dizel_HeatSet(float const Value);
