@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "scene/scenelayers.h"
 
-// areas filled with models in the editor, kept in the scenery files as "//$f" comment lines: the outline, the models and the
+// areas filled with models in the editor, kept in the scenery files as "//$w" comment lines: the outline, the models and the
 // settings of the fill and the seed of its random numbers, so the area can be picked up again, changed and filled anew. the
 // models of an area are named after it, <id>_<number>, which is how they're found again in a scenery loaded later
 namespace fill_store
