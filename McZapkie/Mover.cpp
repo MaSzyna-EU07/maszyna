@@ -7011,260 +7011,283 @@ bool TMoverParameters::AutoRelayCheck(void)
 		{
 			if (RList[MainCtrlActualPos].R == 0 && (ScndCtrlActualPos > 0 || ScndCtrlPos > 0) && (!CoupledCtrl || RList[MainCtrlActualPos].Relay == MainCtrlPos))
 			{ // zmieniaj scndctrlactualpos
-				// scnd bez samoczynnego rozruchu
-				if (ScndCtrlActualPos < ScndCtrlPos)
-				{
-					if (LastRelayTime > CtrlDelay && ARFASI2)
-					{
-						++ScndCtrlActualPos;
-						SetFlag(SoundFlag, sound::shuntfield);
-						OK = true;
-					}
-				}
-				else if (ScndCtrlActualPos > ScndCtrlPos)
-				{
-					if (LastRelayTime > CtrlDownDelay && TrainType != dt_EZT)
-					{
-						--ScndCtrlActualPos;
-						SetFlag(SoundFlag, sound::shuntfield);
-						OK = true;
-					}
-				}
-				else
-					OK = false;
+				OK = AutoRelayShuntStep(ARFASI2);
 			}
 			else
 			{ // zmieniaj mainctrlactualpos
-				if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
-				{
-					return false; // nie poprawiamy przy konwersji
-					// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
-				}
-				// main bez samoczynnego rozruchu
-				if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
-				    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
-				        (TrainType == dt_ET22 && DelayCtrlFlag)))
-				{
-
-					// prevent switch to parallel mode if motor overload relay is set to high threshold mode
-					if (IsMotorOverloadRelayHighThresholdOn() && RList[MainCtrlActualPos + 1].Bn > 1)
-					{
-						return false;
-					}
-
-					if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && MainCtrlPos != MainCtrlPosNo && FastSerialCircuit == 1)
-					{
-						// szybkie wchodzenie na bezoporowa (303E)
-						// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
-						++MainCtrlActualPos;
-						if (MainCtrlPos - MainCtrlActualPos == 1)
-						{
-							// HACK: ensure we play only single sound of basic relays for entire trasition; return false
-							// for all but last step despite configuration change, to prevent playback of the basic relay sound
-							// TBD, TODO: move the basic sound event here and enable it with call parameter
-							OK = true;
-						}
-						if (RList[MainCtrlActualPos].R == 0)
-						{
-							SetFlag(SoundFlag, sound::parallel | sound::loud);
-							OK = true;
-						}
-					}
-					else if (LastRelayTime > CtrlDelay && ARFASI)
-					{
-						// WriteLog("LRT = " + FloatToStr(LastRelayTime) + ", " +
-						// FloatToStr(CtrlDelay));
-						if (TrainType == dt_ET22 && MainCtrlPos > 1 && (RList[MainCtrlActualPos].Bn < RList[MainCtrlActualPos + 1].Bn || DelayCtrlFlag))
-						{
-							// et22 z walem grupowym
-							if (!DelayCtrlFlag) // najpierw przejscie
-							{
-								++MainCtrlActualPos;
-								DelayCtrlFlag = true; // tryb przejscia
-								OK = true;
-							}
-							else if (LastRelayTime > 4 * CtrlDelay) // przejscie
-							{
-
-								DelayCtrlFlag = false;
-								OK = true;
-							}
-							/*
-							                            else
-							                                ;
-							*/
-						}
-						else // nie ET22 z wałem grupowym
-						{
-							++MainCtrlActualPos;
-							OK = true;
-						}
-						//---------
-						// hunter-111211: poprawki
-						if (MainCtrlActualPos > 0)
-						{
-							if (RList[MainCtrlActualPos].R == 0 && MainCtrlActualPos != MainCtrlPosNo)
-							{
-								// wejscie na bezoporowa
-								SetFlag(SoundFlag, sound::parallel | sound::loud);
-							}
-							else if (RList[MainCtrlActualPos].R > 0 && RList[MainCtrlActualPos - 1].R == 0)
-							{
-								// wejscie na drugi uklad
-								SetFlag(SoundFlag, sound::parallel);
-							}
-						}
-					}
-				}
-				else if (RList[MainCtrlActualPos].Relay > MainCtrlPos)
-				{
-					if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && !(MainCtrlPos == MainCtrlPosNo) && FastSerialCircuit == 1)
-					{
-						// szybkie wchodzenie na bezoporowa (303E)
-						// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
-						--MainCtrlActualPos;
-						OK = true;
-						if (RList[MainCtrlActualPos].R == 0)
-						{
-							SetFlag(SoundFlag, sound::parallel);
-						}
-					}
-					else if (LastRelayTime > CtrlDownDelay)
-					{
-						if (TrainType != dt_EZT) // tutaj powinien być tryb sterowania wałem
-						{
-							--MainCtrlActualPos;
-							OK = true;
-						}
-						// hunter-111211: poprawki
-						if (MainCtrlActualPos > 0 && RList[MainCtrlActualPos].R == 0)
-						{
-							// dzwieki schodzenia z bezoporowej}
-							SetFlag(SoundFlag, sound::parallel);
-						}
-					}
-				}
-				else if (RList[MainCtrlActualPos].R > 0 && ScndCtrlActualPos > 0)
-				{
-					if (LastRelayTime > CtrlDownDelay)
-					{
-						--ScndCtrlActualPos; // boczniki nie dzialaja na poz. oporowych
-						SetFlag(SoundFlag, sound::shuntfield);
-						OK = true;
-					}
-				}
-				else
-					OK = false;
+				OK = AutoRelayMainStep(ARFASI);
 			}
 		}
 		else // not StLinFlag
 		{
-			OK = false;
-			// ybARC - zalaczenie stycznikow liniowych
-			if (false == motorconnectorsoff && MainCtrlActualPos == 0 && (TrainType == dt_EZT || HasCamshaft ? MainCtrlPowerPos() > 0 : MainCtrlPowerPos() == 1))
-			{
-
-				DelayCtrlFlag = true;
-				if (LastRelayTime >= InitialCtrlDelay)
-				{
-					StLinFlag = true;
-					MainCtrlActualPos = 1;
-					DelayCtrlFlag = false;
-					SetFlag(SoundFlag, sound::relay | sound::loud);
-					OK = true;
-				}
-			}
-			else
-			{
-				DelayCtrlFlag = false;
-			}
-
-			if (false == StLinFlag && (MainCtrlActualPos > 0 || ScndCtrlActualPos > 0))
-			{
-
-				if (CoupledCtrl)
-				{
-
-					if (TrainType == dt_EZT)
-					{
-						// EN57 wal jednokierunkowy calosciowy
-						if (MainCtrlActualPos == 1)
-						{
-
-							MainCtrlActualPos = 0;
-							OK = true;
-						}
-						else
-						{
-
-							if (LastRelayTime > CtrlDownDelay)
-							{
-
-								if (MainCtrlActualPos < RlistSize)
-								{
-									// dojdz do konca
-									++MainCtrlActualPos;
-								}
-								else if (ScndCtrlActualPos < ScndCtrlPosNo)
-								{
-									// potem boki
-									++ScndCtrlActualPos;
-									SetFlag(SoundFlag, sound::shuntfield);
-								}
-								else
-								{
-									// i sie przewroc na koniec
-									MainCtrlActualPos = 0;
-									ScndCtrlActualPos = 0;
-								}
-								OK = true;
-							}
-						}
-					}
-					else
-					{
-						// wal kulakowy dwukierunkowy
-						if (LastRelayTime > CtrlDownDelay)
-						{
-							if (ScndCtrlActualPos > 0)
-							{
-								--ScndCtrlActualPos;
-								SetFlag(SoundFlag, sound::shuntfield);
-							}
-							else
-							{
-								--MainCtrlActualPos;
-							}
-							OK = true;
-						}
-					}
-				}
-				else if (HasCamshaft)
-				{
-					// wal kulakowy dwukierunkowy
-					if (LastRelayTime > CtrlDownDelay)
-					{
-						if (MainCtrlActualPos > 0)
-						{
-							--MainCtrlActualPos;
-						}
-						ScndCtrlActualPos = 0;
-						OK = true;
-					}
-				}
-				else
-				{
-					MainCtrlActualPos = 0;
-					ScndCtrlActualPos = 0;
-					OK = true;
-				}
-			}
+			OK = AutoRelayLineContactorsStep(motorconnectorsoff);
 		}
 		if (OK)
 			LastRelayTime = 0;
 
 		return OK;
 	}
+}
+
+// a step of the shunt field on a position without resistors, up or down to the second controller
+bool TMoverParameters::AutoRelayShuntStep(bool const ARFASI2)
+{
+	bool OK = false;
+		// scnd bez samoczynnego rozruchu
+		if (ScndCtrlActualPos < ScndCtrlPos)
+		{
+			if (LastRelayTime > CtrlDelay && ARFASI2)
+			{
+				++ScndCtrlActualPos;
+				SetFlag(SoundFlag, sound::shuntfield);
+				OK = true;
+			}
+		}
+		else if (ScndCtrlActualPos > ScndCtrlPos)
+		{
+			if (LastRelayTime > CtrlDownDelay && TrainType != dt_EZT)
+			{
+				--ScndCtrlActualPos;
+				SetFlag(SoundFlag, sound::shuntfield);
+				OK = true;
+			}
+		}
+		else
+			OK = false;
+	return OK;
+}
+
+// a step of the main controller's relays, up or down to its position, or the shunt field off on the resistors
+bool TMoverParameters::AutoRelayMainStep(bool const ARFASI)
+{
+	bool OK = false;
+		if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
+		{
+			return false; // nie poprawiamy przy konwersji
+			// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
+		}
+		// main bez samoczynnego rozruchu
+		if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
+		    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
+		        (TrainType == dt_ET22 && DelayCtrlFlag)))
+		{
+
+			// prevent switch to parallel mode if motor overload relay is set to high threshold mode
+			if (IsMotorOverloadRelayHighThresholdOn() && RList[MainCtrlActualPos + 1].Bn > 1)
+			{
+				return false;
+			}
+
+			if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && MainCtrlPos != MainCtrlPosNo && FastSerialCircuit == 1)
+			{
+				// szybkie wchodzenie na bezoporowa (303E)
+				// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
+				++MainCtrlActualPos;
+				if (MainCtrlPos - MainCtrlActualPos == 1)
+				{
+					// HACK: ensure we play only single sound of basic relays for entire trasition; return false
+					// for all but last step despite configuration change, to prevent playback of the basic relay sound
+					// TBD, TODO: move the basic sound event here and enable it with call parameter
+					OK = true;
+				}
+				if (RList[MainCtrlActualPos].R == 0)
+				{
+					SetFlag(SoundFlag, sound::parallel | sound::loud);
+					OK = true;
+				}
+			}
+			else if (LastRelayTime > CtrlDelay && ARFASI)
+			{
+				// WriteLog("LRT = " + FloatToStr(LastRelayTime) + ", " +
+				// FloatToStr(CtrlDelay));
+				if (TrainType == dt_ET22 && MainCtrlPos > 1 && (RList[MainCtrlActualPos].Bn < RList[MainCtrlActualPos + 1].Bn || DelayCtrlFlag))
+				{
+					// et22 z walem grupowym
+					if (!DelayCtrlFlag) // najpierw przejscie
+					{
+						++MainCtrlActualPos;
+						DelayCtrlFlag = true; // tryb przejscia
+						OK = true;
+					}
+					else if (LastRelayTime > 4 * CtrlDelay) // przejscie
+					{
+
+						DelayCtrlFlag = false;
+						OK = true;
+					}
+					/*
+					                            else
+					                                ;
+					*/
+				}
+				else // nie ET22 z wałem grupowym
+				{
+					++MainCtrlActualPos;
+					OK = true;
+				}
+				//---------
+				// hunter-111211: poprawki
+				if (MainCtrlActualPos > 0)
+				{
+					if (RList[MainCtrlActualPos].R == 0 && MainCtrlActualPos != MainCtrlPosNo)
+					{
+						// wejscie na bezoporowa
+						SetFlag(SoundFlag, sound::parallel | sound::loud);
+					}
+					else if (RList[MainCtrlActualPos].R > 0 && RList[MainCtrlActualPos - 1].R == 0)
+					{
+						// wejscie na drugi uklad
+						SetFlag(SoundFlag, sound::parallel);
+					}
+				}
+			}
+		}
+		else if (RList[MainCtrlActualPos].Relay > MainCtrlPos)
+		{
+			if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && !(MainCtrlPos == MainCtrlPosNo) && FastSerialCircuit == 1)
+			{
+				// szybkie wchodzenie na bezoporowa (303E)
+				// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
+				--MainCtrlActualPos;
+				OK = true;
+				if (RList[MainCtrlActualPos].R == 0)
+				{
+					SetFlag(SoundFlag, sound::parallel);
+				}
+			}
+			else if (LastRelayTime > CtrlDownDelay)
+			{
+				if (TrainType != dt_EZT) // tutaj powinien być tryb sterowania wałem
+				{
+					--MainCtrlActualPos;
+					OK = true;
+				}
+				// hunter-111211: poprawki
+				if (MainCtrlActualPos > 0 && RList[MainCtrlActualPos].R == 0)
+				{
+					// dzwieki schodzenia z bezoporowej}
+					SetFlag(SoundFlag, sound::parallel);
+				}
+			}
+		}
+		else if (RList[MainCtrlActualPos].R > 0 && ScndCtrlActualPos > 0)
+		{
+			if (LastRelayTime > CtrlDownDelay)
+			{
+				--ScndCtrlActualPos; // boczniki nie dzialaja na poz. oporowych
+				SetFlag(SoundFlag, sound::shuntfield);
+				OK = true;
+			}
+		}
+		else
+			OK = false;
+	return OK;
+}
+
+// the line contactors closed at the first position, or, open, the camshaft run back to zero
+bool TMoverParameters::AutoRelayLineContactorsStep(bool const motorconnectorsoff)
+{
+	bool OK = false;
+	// ybARC - zalaczenie stycznikow liniowych
+	if (false == motorconnectorsoff && MainCtrlActualPos == 0 && (TrainType == dt_EZT || HasCamshaft ? MainCtrlPowerPos() > 0 : MainCtrlPowerPos() == 1))
+	{
+
+		DelayCtrlFlag = true;
+		if (LastRelayTime >= InitialCtrlDelay)
+		{
+			StLinFlag = true;
+			MainCtrlActualPos = 1;
+			DelayCtrlFlag = false;
+			SetFlag(SoundFlag, sound::relay | sound::loud);
+			OK = true;
+		}
+	}
+	else
+	{
+		DelayCtrlFlag = false;
+	}
+
+	if (false == StLinFlag && (MainCtrlActualPos > 0 || ScndCtrlActualPos > 0))
+	{
+
+		if (CoupledCtrl)
+		{
+
+			if (TrainType == dt_EZT)
+			{
+				// EN57 wal jednokierunkowy calosciowy
+				if (MainCtrlActualPos == 1)
+				{
+
+					MainCtrlActualPos = 0;
+					OK = true;
+				}
+				else
+				{
+
+					if (LastRelayTime > CtrlDownDelay)
+					{
+
+						if (MainCtrlActualPos < RlistSize)
+						{
+							// dojdz do konca
+							++MainCtrlActualPos;
+						}
+						else if (ScndCtrlActualPos < ScndCtrlPosNo)
+						{
+							// potem boki
+							++ScndCtrlActualPos;
+							SetFlag(SoundFlag, sound::shuntfield);
+						}
+						else
+						{
+							// i sie przewroc na koniec
+							MainCtrlActualPos = 0;
+							ScndCtrlActualPos = 0;
+						}
+						OK = true;
+					}
+				}
+			}
+			else
+			{
+				// wal kulakowy dwukierunkowy
+				if (LastRelayTime > CtrlDownDelay)
+				{
+					if (ScndCtrlActualPos > 0)
+					{
+						--ScndCtrlActualPos;
+						SetFlag(SoundFlag, sound::shuntfield);
+					}
+					else
+					{
+						--MainCtrlActualPos;
+					}
+					OK = true;
+				}
+			}
+		}
+		else if (HasCamshaft)
+		{
+			// wal kulakowy dwukierunkowy
+			if (LastRelayTime > CtrlDownDelay)
+			{
+				if (MainCtrlActualPos > 0)
+				{
+					--MainCtrlActualPos;
+				}
+				ScndCtrlActualPos = 0;
+				OK = true;
+			}
+		}
+		else
+		{
+			MainCtrlActualPos = 0;
+			ScndCtrlActualPos = 0;
+			OK = true;
+		}
+	}
+	return OK;
 }
 
 bool TMoverParameters::MotorConnectorsCheck()

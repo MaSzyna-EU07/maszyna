@@ -2607,6 +2607,10 @@ class TMoverParameters
 	bool MinCurrentSwitch(bool State); // przelacznik pradu automatycznego rozruchu
 	bool AutoRelaySwitch(bool State); // przelacznik automatycznego rozruchu
 	bool AutoRelayCheck(); // symulacja automatycznego rozruchu
+	// the parts of AutoRelayCheck()
+	bool AutoRelayShuntStep(bool ARFASI2);
+	bool AutoRelayMainStep(bool ARFASI);
+	bool AutoRelayLineContactorsStep(bool motorconnectorsoff);
 	bool MotorConnectorsCheck();
 	bool ResistorsFlagCheck(void) const; // sprawdzenie kontrolki oporow rozruchowych NBMX
 
