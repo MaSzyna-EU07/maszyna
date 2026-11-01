@@ -37,7 +37,7 @@ std::vector<test::channel> car_channels() {
 std::vector<std::unique_ptr<test::trace>> record(consist &Train, std::string const &Name) {
 	std::vector<std::unique_ptr<test::trace>> traces;
 	for (std::size_t i = 0; i < Train.size(); ++i) {
-		traces.push_back(std::make_unique<test::trace>("consist/" + Name + "/" + std::to_string(i), car_channels(), 100));
+		traces.push_back(std::make_unique<test::trace>(std::format("consist/{}/{}", Name, i), car_channels(), 100));
 		Train[i].record(*traces.back());
 	}
 	return traces;
@@ -46,8 +46,8 @@ std::vector<std::unique_ptr<test::trace>> record(consist &Train, std::string con
 // the events go to every trace
 struct all_traces {
 	std::vector<std::unique_ptr<test::trace>> &traces;
-	void mark(std::string const &Event) {
-		for (auto &trace : traces) {
+	void mark(std::string const &Event) const {
+		for (auto const &trace : traces) {
 			trace->mark(Event);
 		}
 	}
@@ -67,10 +67,10 @@ TEST_CASE("consist: every real electric unit driven whole from its front cab") {
 		// the drive cycle marks the events in the trace it gets; the first car's carries them
 		test::drive_cycle(test::driving(train), test::track{0.15, 0.0, test::catenary_3kv}, *traces.front());
 		// every unit runs off and is braked to a stop, but the EN57, which doesn't get ready (COVERAGE.md)
-		auto const &front{train[0].mover()};
-		CHECK((front.DistCounter > 0.2 /* km */) != (std::string{unit.name} == "en57"));
-		CHECK(front.Vel < 0.5);
-		for (auto &trace : traces) {
+		auto const &leading{train[0].mover()};
+		CHECK((leading.DistCounter > 0.2 /* km */) != (std::string{unit.name} == "en57"));
+		CHECK(leading.Vel < 0.5);
+		for (auto const &trace : traces) {
 			trace->check();
 		}
 	}
@@ -85,7 +85,7 @@ TEST_CASE("consist: a locomotive with wagons, driven, braked by its handle and p
 	}
 	auto traces{record(train, "eu07 with wagons")};
 	test::drive_cycle(test::driving(train), test::track{0.15, 0.0, test::catenary_3kv}, *traces.front());
-	for (auto &trace : traces) {
+	for (auto const &trace : traces) {
 		trace->check();
 	}
 	// the couplers kept the train together
@@ -98,15 +98,15 @@ TEST_CASE("consist: a locomotive with wagons, driven, braked by its handle and p
 namespace {
 
 // what the cab's ammeters show (Train.cpp, the driver's panel) and the brake force the AI expects of the
-// vehicle (Driver.cpp), read of the driven vehicle. BrakeForceR() changes nothing, though it isn't const
+// vehicle (Driver.cpp), read of the driven vehicle
 std::vector<test::channel> gauges() {
 	std::vector<test::channel> result;
 	for (int ammeter = 0; ammeter < 4; ++ammeter) {
-		result.push_back({"ShowCurrent" + std::to_string(ammeter), [ammeter](auto const &M) { return M.ShowCurrent(ammeter); }});
+		result.emplace_back(std::format("ShowCurrent{}", ammeter), [ammeter](auto const &M) { return M.ShowCurrent(ammeter); });
 	}
-	result.push_back({"BrakeForceR0.25", [](auto const &M) { return const_cast<TMoverParameters &>(M).BrakeForceR(0.25, M.Vel); }});
-	result.push_back({"BrakeForceR1", [](auto const &M) { return const_cast<TMoverParameters &>(M).BrakeForceR(1.0, M.Vel); }});
-	result.push_back({"BrakeForceR1at20", [](auto const &M) { return const_cast<TMoverParameters &>(M).BrakeForceR(1.0, 20.0); }});
+	result.emplace_back("BrakeForceR0.25", [](auto const &M) { return M.BrakeForceR(0.25, M.Vel); });
+	result.emplace_back("BrakeForceR1", [](auto const &M) { return M.BrakeForceR(1.0, M.Vel); });
+	result.emplace_back("BrakeForceR1at20", [](auto const &M) { return M.BrakeForceR(1.0, 20.0); });
 	using test::channels::operator+;
 	return result + test::channels::traction();
 }

@@ -14,11 +14,10 @@ void mark(trace *Trace, std::string const &Event) {
 	}
 }
 
-bool is_powered(TMoverParameters &Vehicle) {
+bool is_powered(TMoverParameters const &Vehicle) {
+	using enum TEngineType;
 	auto const type{Vehicle.EngineType};
-	return Vehicle.Power > 1.0 &&
-	       (type == TEngineType::ElectricSeriesMotor || type == TEngineType::ElectricInductionMotor || type == TEngineType::DieselEngine ||
-	        type == TEngineType::DieselElectric);
+	return Vehicle.Power > 1.0 && (type == ElectricSeriesMotor || type == ElectricInductionMotor || type == DieselEngine || type == DieselElectric);
 }
 
 driven driving(vehicle &Vehicle) {
@@ -68,13 +67,17 @@ void release_brakes(TMoverParameters &Cab) {
 	Cab.DecManualBrakeLevel(ManualBrakePosNo);
 	Cab.SpringBrakeActivate(false);
 	// the hand and spring brakes of the rest of the train, as TController::AutoRewident() releases them
-	std::vector<TMoverParameters *> train{&Cab};
-	for (std::size_t i = 0; i < train.size(); ++i) {
-		for (auto const &coupler : train[i]->Couplers) {
-			if (coupler.Connected != nullptr && coupler.CouplingFlag != coupling::faux && std::ranges::find(train, coupler.Connected) == train.end()) {
-				coupler.Connected->DecManualBrakeLevel(ManualBrakePosNo);
-				coupler.Connected->SpringBrake.Activate = false;
-				train.push_back(coupler.Connected);
+	std::vector train{&Cab};
+	std::vector pending{&Cab};
+	while (false == pending.empty()) {
+		auto const *vehicle{pending.back()};
+		pending.pop_back();
+		for (auto const &thiscoupler : vehicle->Couplers) {
+			if (thiscoupler.Connected != nullptr && thiscoupler.CouplingFlag != coupling::faux && std::ranges::find(train, thiscoupler.Connected) == train.end()) {
+				thiscoupler.Connected->DecManualBrakeLevel(ManualBrakePosNo);
+				thiscoupler.Connected->SpringBrake.Activate = false;
+				train.push_back(thiscoupler.Connected);
+				pending.push_back(thiscoupler.Connected);
 			}
 		}
 	}
@@ -89,10 +92,69 @@ bool is_ready(driven const &Driven) {
 	return mover.Mains && air && converter;
 }
 
+namespace {
+
+// the pumps and the heater of a diesel's water, and the fuel pump
+void prepare_diesel(driven const &Driven) {
+	Driven.cab.OilPumpSwitch(true);
+	Driven.controlling.WaterPumpBreakerSwitch(true);
+	Driven.controlling.WaterPumpSwitch(true);
+	Driven.controlling.WaterHeaterBreakerSwitch(true);
+	Driven.controlling.WaterHeaterSwitch(true);
+	Driven.cab.FuelPumpSwitch(true);
+}
+
+// the pantographs' own air topped up by their compressor, and the pantographs raised
+void raise_pantographs(driven const &Driven) {
+	auto &pantographs{Driven.pantographs};
+	if (auto const enough{(pantographs.TrainType == dt_EZT ? 2.5 : 3.5) + 0.1}; pantographs.PantPress < enough) {
+		if (false == pantographs.PantAutoValve) {
+			pantographs.bPantKurek3 = false; // the pantographs on their own air
+		}
+		pantographs.PantCompFlag = true;
+	}
+	else if (false == pantographs.bPantKurek3 || pantographs.PantPress <= pantographs.ScndPipePress) {
+		pantographs.PantCompFlag = false;
+	}
+	Driven.cab.OperatePantographsValve(operation_t::enable);
+	Driven.cab.OperatePantographValve(end::rear, operation_t::enable);
+}
+
+// the line breaker closed, which it does only with the controller at zero, and after the relays are reset
+void close_line_breaker(driven const &Driven) {
+	auto &controlling{Driven.controlling};
+	while (controlling.DecMainCtrl(2)) {
+		// down to zero
+	}
+	controlling.DecScndCtrl(2);
+	Driven.cab.RelayReset(relay_t::maincircuitground | relay_t::tractionnmotoroverload | relay_t::primaryconverteroverload);
+	if (controlling.EngineType == TEngineType::DieselEngine) {
+		// a mechanical diesel starts at idle, the first position giving the engine fuel
+		while (controlling.RList[controlling.MainCtrlPos].Mn == 0 && controlling.IncMainCtrl(1)) {
+			// up to the first position with fuel
+		}
+	}
+	Driven.cab.MainSwitch(true);
+}
+
+// the converter, the compressor and the motor blowers, once the line breaker is closed
+void switch_auxiliaries_on(TMoverParameters &Cab) {
+	Cab.ConverterSwitch(true);
+	Cab.CompressorSwitch(true);
+	for (auto const side : {end::front, end::rear}) {
+		if (Cab.MotorBlowers[side].speed != 0) {
+			Cab.MotorBlowersSwitchOff(false, side);
+			Cab.MotorBlowersSwitch(true, side);
+		}
+	}
+}
+
+} // namespace
+
 bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 	auto &cab{Driven.cab};
-	auto &controlling{Driven.controlling};
-	auto &pantographs{Driven.pantographs};
+	auto const &controlling{Driven.controlling};
+	auto const &pantographs{Driven.pantographs};
 	mark(Trace, "start up");
 	auto const diesel{controlling.EngineType == TEngineType::DieselEngine || controlling.EngineType == TEngineType::DieselElectric};
 	auto const collector{pantographs.EnginePowerSource.SourceType == TPowerSource::CurrentCollector &&
@@ -105,59 +167,22 @@ bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 		cab.BatterySwitch(true);
 		cab.CabActivisation();
 		if (diesel) {
-			cab.OilPumpSwitch(true);
-			controlling.WaterPumpBreakerSwitch(true);
-			controlling.WaterPumpSwitch(true);
-			controlling.WaterHeaterBreakerSwitch(true);
-			controlling.WaterHeaterSwitch(true);
-			cab.FuelPumpSwitch(true);
+			prepare_diesel(Driven);
 		}
 		if (collector) {
-			auto const enough{(pantographs.TrainType == dt_EZT ? 2.5 : 3.5) + 0.1};
-			if (pantographs.PantPress < enough) {
-				if (false == pantographs.PantAutoValve) {
-					pantographs.bPantKurek3 = false; // the pantographs on their own air
-				}
-				pantographs.PantCompFlag = true;
-			}
-			else if (false == pantographs.bPantKurek3 || pantographs.PantPress <= pantographs.ScndPipePress) {
-				pantographs.PantCompFlag = false;
-			}
-			cab.OperatePantographsValve(operation_t::enable);
-			cab.OperatePantographValve(end::rear, operation_t::enable);
+			raise_pantographs(Driven);
 		}
-		auto const power{false == collector ||
-		                 std::max(controlling.GetTrainsetHighVoltage(), controlling.PantographVoltage) > controlling.EnginePowerSource.CollectorParameters.MinV};
-		if (power) {
+		if (false == collector || std::max(controlling.GetTrainsetHighVoltage(), controlling.PantographVoltage) > controlling.EnginePowerSource.CollectorParameters.MinV) {
 			// a direction first, as in TController::PrepareDirection(): the relays reset only with one set
 			for (int i = 0; i < 3 && cab.DirActive <= 0; ++i) {
 				cab.DirectionForward();
 			}
 			if (false == controlling.Mains) {
-				// the line breaker closes only with the controller at zero, and after the relays are reset
-				while (controlling.DecMainCtrl(2)) {
-				}
-				controlling.DecScndCtrl(2);
-				cab.RelayReset(relay_t::maincircuitground | relay_t::tractionnmotoroverload | relay_t::primaryconverteroverload);
-				if (controlling.EngineType == TEngineType::DieselEngine) {
-					// a mechanical diesel starts at idle, the first position giving the engine fuel
-					while (controlling.RList[controlling.MainCtrlPos].Mn == 0 && controlling.IncMainCtrl(1)) {
-					}
-				}
-				cab.MainSwitch(true);
+				close_line_breaker(Driven);
 			}
 			else {
-				cab.ConverterSwitch(true);
-				cab.CompressorSwitch(true);
+				switch_auxiliaries_on(cab);
 				auxiliaries = true;
-				if (cab.MotorBlowers[end::front].speed != 0) {
-					cab.MotorBlowersSwitchOff(false, end::front);
-					cab.MotorBlowersSwitch(true, end::front);
-				}
-				if (cab.MotorBlowers[end::rear].speed != 0) {
-					cab.MotorBlowersSwitchOff(false, end::rear);
-					cab.MotorBlowersSwitch(true, end::rear);
-				}
 			}
 		}
 		drive(Driven, Track, 1.0);

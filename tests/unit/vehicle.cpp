@@ -178,7 +178,12 @@ TTrackParam parameters_of(track const &Track, TMoverParameters const &Mover) {
 	param.Width = Track.width;
 	param.friction = Track.friction;
 	// the vehicle's own kind of way: a road vehicle on rails derails as soon as it moves
-	param.CategoryFlag = Track.category != 0 ? Track.category : (Mover.CategoryFlag != 0 ? Mover.CategoryFlag : 1);
+	if (Track.category != 0) {
+		param.CategoryFlag = Track.category;
+	}
+	else {
+		param.CategoryFlag = Mover.CategoryFlag != 0 ? Mover.CategoryFlag : 1;
+	}
 	return param;
 }
 
@@ -225,17 +230,17 @@ double vehicle::move(track const &Track, double Dt, TLocation const &Location, d
 	traction.TractionResistivity = 0.3;
 	mover.PantographVoltage = traction.TractionVoltage;
 	if (m_cab != 0) {
+		using enum TEngineType;
 		// the driver's own vehicle, which gets the average pressure of the train's brake pipe
 		mover.EqvtPipePress = Trainpipe;
-		auto const diesel{mover.EngineType == TEngineType::DieselEngine || mover.EngineType == TEngineType::DieselElectric};
-		if (diesel && mover.EIMCtrlType > 0) {
+		if (auto const diesel{mover.EngineType == DieselEngine || mover.EngineType == DieselElectric}; diesel && mover.EIMCtrlType > 0) {
 			mover.CheckEIMIC(Dt);
 			if (mover.SpeedCtrl) {
 				mover.CheckSpeedCtrl(Dt);
 			}
 			mover.eimic_real = std::min(mover.eimic, mover.eimicSpeedCtrl);
 		}
-		if (mover.EngineType == TEngineType::ElectricInductionMotor) {
+		if (mover.EngineType == ElectricInductionMotor) {
 			// the share of the electric and pneumatic brake over the train (TDynamicObject's MED) isn't here
 			mover.CheckEIMIC(Dt);
 			mover.CheckSpeedCtrl(Dt);
@@ -324,7 +329,7 @@ void pair::step(track const &Track, double Dt) {
 		placed.owner->forces(Dt);
 	}
 	for (auto &placed : m_vehicles) {
-		auto &mover{placed.owner->mover()};
+		auto const &mover{placed.owner->mover()};
 		placed.position += placed.heading * placed.owner->move(Track, Dt, TLocation{placed.position, 0.0, 0.0}, mover.PipePress);
 	}
 }
@@ -361,7 +366,7 @@ std::vector<std::string> const &real_vehicles() {
 				result.push_back(std::filesystem::relative(entry.path(), root).replace_extension().generic_string());
 			}
 		}
-		std::sort(result.begin(), result.end());
+		std::ranges::sort(result);
 		return result;
 	}()};
 	return paths;

@@ -43,7 +43,7 @@ void release_brakes(TMoverParameters &Cab);
 bool is_ready(driven const &Driven);
 
 // whether the vehicle drives itself
-bool is_powered(TMoverParameters &Vehicle);
+bool is_powered(TMoverParameters const &Vehicle);
 
 // a trace mark, when there's a trace
 void mark(trace *Trace, std::string const &Event);

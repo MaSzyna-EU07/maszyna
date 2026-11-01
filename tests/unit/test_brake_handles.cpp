@@ -43,7 +43,7 @@ void every_position(vehicle &Vehicle, test::trace &Trace) {
 	auto const lowest{static_cast<int>(std::ceil(handle.GetPos(bh_MIN)))};
 	auto const highest{static_cast<int>(std::floor(handle.GetPos(bh_MAX)))};
 	for (auto position = lowest; position <= highest; ++position) {
-		hold(Vehicle, Trace, "position " + std::to_string(position), position, 15.0);
+		hold(Vehicle, Trace, std::format("position {}", position), position, 15.0);
 		hold(Vehicle, Trace, "running", handle.GetPos(bh_RP), 30.0);
 	}
 	// filling stroke, neutral and the positions of the ep brake, where the handle has them
@@ -100,7 +100,7 @@ TEST_CASE("brake handles: the local brake handle of every real vehicle") {
 		trace.mark("charge");
 		real.run(60.0);
 		for (auto const position : {0.25, 0.5, 1.0, 0.5, 0.0}) {
-			trace.mark("local " + std::to_string(position));
+			trace.mark(std::format("local {:f}", position));
 			real->LocalBrakePosA = position;
 			real.run(15.0);
 		}
@@ -127,7 +127,7 @@ TEST_CASE("brake handles: the overload and the high pressure buttons of the MHZ 
 		test::trace trace{"brake handles/buttons/" + name, handle_channels(), 100};
 		real.record(trace);
 		auto &handle{*real->Handle};
-		auto const at{[&](std::string const &Event, double Position, double Seconds) {
+		auto const at{[&trace, &real](std::string const &Event, double Position, double Seconds) {
 			trace.mark(Event);
 			real->BrakeLevelSet(Position);
 			test::drive(test::driving(real), {}, Seconds);

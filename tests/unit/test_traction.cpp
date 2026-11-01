@@ -113,6 +113,7 @@ TEST_CASE("traction: the ET42 at the high current setting, its halves in series,
 		CHECK(et42.Vel < (high ? 50.0 : 110.0));
 		scenario.act("controller to zero");
 		while (et42.DecMainCtrl(2)) {
+			// down to zero
 		}
 		scenario.wait(2.0);
 		scenario.act("dynamic brake");
@@ -139,10 +140,10 @@ TEST_CASE("traction: the field shunting relays of the diesel-electric locomotive
 	// the current at the full position only (41), by the position and the speed (45, 46)
 	struct locomotive {
 		char const *path;
-		int relay;
+		int relaytype;
 		std::array<int, 4> shunting; // after notching back to 11, 10, 7 and 3
 	};
-	for (auto const &[path, relay, shunting] : {locomotive{"cd/754_v1/754", 0, {3, 3, 3, 0}}, locomotive{"sm31_v1/411d", 1, {2, 2, 2, 2}},
+	for (auto const &[path, relaytype, shunting] : {locomotive{"cd/754_v1/754", 0, {3, 3, 3, 0}}, locomotive{"sm31_v1/411d", 1, {2, 2, 2, 2}},
 	                                            locomotive{"sm40_v1/sm40", 41, {1, 1, 1, 1}}, locomotive{"su45_v2/301d", 45, {3, 2, 0, 0}},
 	                                            locomotive{"su46_v2/303d", 46, {4, 2, 0, 0}}}) {
 		CAPTURE(path);
@@ -150,14 +151,14 @@ TEST_CASE("traction: the field shunting relays of the diesel-electric locomotive
 		scenario.add(path, 1).add("bdhpumn_v3/bdhpumn");
 		REQUIRE(scenario.start_up());
 		auto &controlling{scenario.driver().controlling};
-		CHECK(controlling.RelayType == relay);
+		CHECK(controlling.RelayType == relaytype);
 		scenario.get_going();
 		scenario.full_power(120.0);
 		CHECK(controlling.ScndCtrlPos == controlling.ScndCtrlPosNo);
 		auto expected{shunting.begin()};
 		for (auto const position : {11, 10, 7, 3}) {
 			CAPTURE(position);
-			scenario.act("notch back to " + std::to_string(position));
+			scenario.act(std::format("notch back to {}", position));
 			scenario.notch_back(position);
 			scenario.wait(15.0);
 			CHECK(controlling.ScndCtrlPos == *expected++);
@@ -178,7 +179,7 @@ TEST_CASE("traction: the stages of the EW58's electrodynamic brake, set by the p
 	auto &ew58{scenario.cab()};
 	for (auto const &[position, stage] : {std::pair{1, 1}, std::pair{3, 2}, std::pair{4, 3}, std::pair{2, 1}, std::pair{5, 3}}) {
 		CAPTURE(position);
-		scenario.act("position " + std::to_string(position));
+		scenario.act(std::format("position {}", position));
 		ew58.BrakeLevelSet(position);
 		scenario.wait(6.0);
 		CHECK(ew58.TUHEX_StageActual == stage);
@@ -229,6 +230,7 @@ TEST_CASE("traction: the induction motor drive's speed control, its electrodynam
 	CHECK(eu47.SpeedCtrlValue == doctest::Approx(eu47.Vmax));
 	scenario.act("speed control off");
 	while (eu47.DecScndCtrl(1)) {
+		// down to zero
 	}
 	scenario.notch_back(0);
 	scenario.wait(2.0);
@@ -249,7 +251,7 @@ TEST_CASE("traction: the induction motor drive's speed control, its electrodynam
 	for (auto const voltage : {test::catenary_3kv, eu47.EnginePowerSource.CollectorParameters.MaxV + 100.0}) {
 		CAPTURE(voltage);
 		scenario.line().voltage = voltage;
-		scenario.act("service brake at " + std::to_string(static_cast<int>(voltage)) + " V");
+		scenario.act(std::format("service brake at {} V", static_cast<int>(voltage)));
 		eu47.BrakeLevelSet(eu47.Handle->GetPos(bh_FB));
 		scenario.wait(6.0);
 		CHECK(eu47.DynamicBrakeFlag);

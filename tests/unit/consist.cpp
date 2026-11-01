@@ -9,11 +9,11 @@ consist::consist() = default;
 consist::~consist() = default;
 
 vehicle &consist::add(definition const &Definition, int Cab, int Coupling, double Velocity, double Gap) {
-	auto added{std::make_unique<vehicle>(Definition, Velocity, "test" + std::to_string(m_vehicles.size()), Cab)};
+	auto added{std::make_unique<vehicle>(Definition, Velocity, std::format("test{}", m_vehicles.size()), Cab)};
 	auto &mover{added->mover()};
 
-	auto object{std::make_unique<std::byte[]>(sizeof(TDynamicObject))};
-	reinterpret_cast<TDynamicObject *>(object.get())->MoverParameters = &mover; // NOSONAR see m_objects
+	std::vector<std::byte> object(sizeof(TDynamicObject));
+	reinterpret_cast<TDynamicObject *>(object.data())->MoverParameters = &mover; // NOSONAR see m_objects
 
 	auto position{0.0};
 	if (false == m_vehicles.empty()) {
@@ -46,7 +46,7 @@ void consist::update_neighbours() {
 				neighbour = neighbour_data();
 				continue;
 			}
-			auto &othermover{m_vehicles[other]->mover()};
+			auto const &othermover{m_vehicles[other]->mover()};
 			auto const otherend{end == end::front ? end::rear : end::front};
 			auto const distance{TMoverParameters::CouplerDist(&mover, &othermover) - mover.Couplers[end].adapter_length -
 			                    othermover.Couplers[otherend].adapter_length};
@@ -55,7 +55,7 @@ void consist::update_neighbours() {
 				neighbour = neighbour_data();
 				continue;
 			}
-			neighbour.vehicle = reinterpret_cast<TDynamicObject *>(m_objects[other].get()); // NOSONAR see m_objects
+			neighbour.vehicle = reinterpret_cast<TDynamicObject *>(m_objects[other].data()); // NOSONAR see m_objects
 			neighbour.vehicle_end = otherend;
 			neighbour.distance = static_cast<float>(distance);
 		}
@@ -63,26 +63,26 @@ void consist::update_neighbours() {
 }
 
 void consist::step(track const &Track, double Dt) {
-	for (auto &vehicle : m_vehicles) {
+	for (auto const &vehicle : m_vehicles) {
 		vehicle->begin_step();
 	}
 	update_neighbours();
 	for (int iteration = 1; iteration < Track.iterations; ++iteration) {
-		for (auto &vehicle : m_vehicles) {
+		for (auto const &vehicle : m_vehicles) {
 			vehicle->forces(Dt);
 		}
 		for (std::size_t i = 0; i < m_vehicles.size(); ++i) {
 			m_positions[i] += m_vehicles[i]->fast_move(Track, Dt, TLocation{m_positions[i], 0.0, 0.0});
 		}
 	}
-	for (auto &vehicle : m_vehicles) {
+	for (auto const &vehicle : m_vehicles) {
 		vehicle->forces(Dt);
 	}
 	// the average pressure in the train's brake pipe weighed by the vehicles' lengths, TDynamicObject::GetEPP(),
 	// over the whole train (the game's stops at a vehicle without the brake hose coupled)
 	auto pipe{0.0};
 	auto length{0.0};
-	for (auto &vehicle : m_vehicles) {
+	for (auto const &vehicle : m_vehicles) {
 		pipe += vehicle->mover().PipePress * vehicle->mover().Dim.L;
 		length += vehicle->mover().Dim.L;
 	}

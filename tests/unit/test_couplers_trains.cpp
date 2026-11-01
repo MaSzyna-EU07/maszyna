@@ -138,11 +138,11 @@ TEST_CASE("couplers: a coupler broken, with its brake hose torn off") {
 	CHECK_FALSE(wagon.AlarmChainFlag);
 	// articulated couplers don't break
 	consist articulated;
-	auto &front{articulated.add(definition::fiz("impuls_v1/31we-a_pr")).mover()};
+	auto &unit{articulated.add(definition::fiz("impuls_v1/31we-a_pr")).mover()};
 	articulated.add(definition::fiz("impuls_v1/31we-b_pr"));
-	front.damage_coupler(end::rear);
-	CHECK_FALSE(TestFlag(front.DamageFlag, dtrain_coupling));
-	CHECK(front.Couplers[end::rear].CouplingFlag != coupling::faux);
+	unit.damage_coupler(end::rear);
+	CHECK_FALSE(TestFlag(unit.DamageFlag, dtrain_coupling));
+	CHECK(unit.Couplers[end::rear].CouplingFlag != coupling::faux);
 }
 
 TEST_CASE("couplers: collisions fast enough to derail") {
@@ -150,21 +150,21 @@ TEST_CASE("couplers: collisions fast enough to derail") {
 	// locomotive; over 15 km/h, weighed by the ratio of the masses, the vehicles derail
 	struct collision {
 		char const *name;
-		char const *front;
+		char const *frontpath;
 		double frontspeed;
 		char const *back;
 		double backspeed;
 		bool frontout;
 		bool backout;
 	};
-	for (auto const &[name, front, frontspeed, back, backspeed, frontout, backout] : {
+	for (auto const &[name, frontpath, frontspeed, back, backspeed, frontout, backout] : {
 	         collision{"locomotive into a wagon at 60", "3wl_v2/3wl", 0.0, "4e_v1/4e", 60.0, true, false},
 	         collision{"wagon backwards into a locomotive at 60", "3wl_v2/3wl", -60.0, "4e_v1/4e", 0.0, true, false},
 	         collision{"locomotive into a locomotive at 25", "4e_v1/4e", 0.0, "4e_v1/4e", 25.0, true, true},
 	     }) {
 		CAPTURE(name);
 		scenario scenario{std::string{"couplers/collision/"} + name, motion(), test::track{}};
-		scenario.add(front, 0, consist::full_coupling, frontspeed);
+		scenario.add(frontpath, 0, consist::full_coupling, frontspeed);
 		scenario.add(back, 0, coupling::faux, backspeed, 20.0);
 		scenario.wait(10.0);
 		CHECK(TestFlag(scenario.vehicle(0).DamageFlag, dtrain_out) == frontout);

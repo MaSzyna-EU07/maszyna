@@ -5138,7 +5138,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	FTotal = FTrain - Sign(V) * FStand;
 }
 
-double TMoverParameters::BrakeForceR(double ratio, double velocity)
+double TMoverParameters::BrakeForceR(double ratio, double velocity) const
 {
 	double press = 0;
 	if (MBPM > 2)

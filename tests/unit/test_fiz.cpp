@@ -56,18 +56,30 @@ struct converted_section {
 
 // the sections of the lines of the game's definition: the values of each section line, and the rows of a
 // list until the line closing it. lines the loader skips, and the lines closing the lists, are left out
+converted_section convert_section(test::fiz::section const &Section, std::string const &Line) {
+	converted_section converted{std::string{Section.name}};
+	for (auto const &key : test::fiz::keys(Line)) {
+		if (auto const value{test::fiz::value(key, Line)}; false == value.empty()) {
+			converted.keys[key] = value;
+		}
+	}
+	return converted;
+}
+
+nlohmann::ordered_json convert_row(std::string const &Line) {
+	auto row = nlohmann::ordered_json::array();
+	for (auto const &word : test::fiz::words(Line)) {
+		row.push_back(word);
+	}
+	return row;
+}
+
 std::vector<converted_section> convert(std::vector<std::string> const &Lines) {
 	std::vector<converted_section> result;
 	auto reading_rows{false};
 	for (auto const &line : Lines) {
 		if (auto const section{test::fiz::opened_by(line)}; section != nullptr) {
-			converted_section converted{std::string{section->name}};
-			for (auto const &key : test::fiz::keys(line)) {
-				if (auto const value{test::fiz::value(key, line)}; false == value.empty()) {
-					converted.keys[key] = value;
-				}
-			}
-			result.push_back(std::move(converted));
+			result.push_back(convert_section(*section, line));
 			reading_rows = section->list != 0;
 			continue;
 		}
@@ -81,11 +93,7 @@ std::vector<converted_section> convert(std::vector<std::string> const &Lines) {
 			continue;
 		}
 		if (reading_rows && false == line.empty()) {
-			auto row = nlohmann::ordered_json::array();
-			for (auto const &word : test::fiz::words(line)) {
-				row.push_back(word);
-			}
-			result.back().rows.push_back(std::move(row));
+			result.back().rows.push_back(convert_row(line));
 		}
 	}
 	return result;
@@ -94,7 +102,7 @@ std::vector<converted_section> convert(std::vector<std::string> const &Lines) {
 // the JSON of data/fiz: a section a line, a row of a list a line
 std::string json_text(std::string const &Source, std::vector<converted_section> const &Sections) {
 	std::string text{"{\n  \"_source\": " + nlohmann::ordered_json(Source).dump() + ",\n"};
-	text += "  \"_comment\": \"converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads\"";
+	text += R"(  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads")";
 	for (auto const &section : Sections) {
 		text += ",\n  " + nlohmann::ordered_json(section.name).dump() + ": {";
 		auto first{true};
@@ -114,13 +122,13 @@ std::string json_text(std::string const &Source, std::vector<converted_section> 
 	return text + "\n}\n";
 }
 
-std::vector<std::string> split(std::string const &List) {
+std::vector<std::string> split(std::string_view const List) {
 	std::vector<std::string> result;
 	std::size_t start{0};
 	while (start < List.size()) {
 		auto const end{std::min(List.find(',', start), List.size())};
 		if (end > start) {
-			result.push_back(List.substr(start, end - start));
+			result.emplace_back(List.substr(start, end - start));
 		}
 		start = end + 1;
 	}

@@ -12,25 +12,23 @@ namespace test::fiz {
 namespace {
 
 // the lists of LoadFIZ_Parse(), as bits of the set of the ones reading a row
-enum list : unsigned {
-	brake_table = 1 << 0, // startBPT
-	motor_table = 1 << 1, // startMPT
-	motor_table0 = 1 << 2, // startMPT0
-	resistors = 1 << 3, // startRLIST
-	universal = 1 << 4, // startUCLIST
-	diesel = 1 << 5, // startDLIST
-	diesel_momentum = 1 << 6, // startDIZELMOMENTUMLIST
-	diesel_v2n = 1 << 7, // startDIZELV2NMAXLIST
-	hydro = 1 << 8, // startHYDROTCLIST
-	diesel_pmax = 1 << 9, // startPMAXLIST
-	field = 1 << 10, // startFFLIST
-	field_brake = 1 << 11, // startFFEDLIST
-	generator = 1 << 12, // startWWLIST
-	wipers = 1 << 13, // startWiperList
-	dimmer = 1 << 14, // startDimmerList
-	lights = 1 << 15, // startLIGHTSLIST
-	compressors = 1 << 16, // startCOMPRESSORLIST
-};
+constexpr unsigned brake_table{1 << 0}; // startBPT
+constexpr unsigned motor_table{1 << 1}; // startMPT
+constexpr unsigned motor_table0{1 << 2}; // startMPT0
+constexpr unsigned resistors{1 << 3}; // startRLIST
+constexpr unsigned universal{1 << 4}; // startUCLIST
+constexpr unsigned diesel{1 << 5}; // startDLIST
+constexpr unsigned diesel_momentum{1 << 6}; // startDIZELMOMENTUMLIST
+constexpr unsigned diesel_v2n{1 << 7}; // startDIZELV2NMAXLIST
+constexpr unsigned hydro{1 << 8}; // startHYDROTCLIST
+constexpr unsigned diesel_pmax{1 << 9}; // startPMAXLIST
+constexpr unsigned field{1 << 10}; // startFFLIST
+constexpr unsigned field_brake{1 << 11}; // startFFEDLIST
+constexpr unsigned generator{1 << 12}; // startWWLIST
+constexpr unsigned wipers{1 << 13}; // startWiperList
+constexpr unsigned dimmer{1 << 14}; // startDimmerList
+constexpr unsigned lights{1 << 15}; // startLIGHTSLIST
+constexpr unsigned compressors{1 << 16}; // startCOMPRESSORLIST
 
 // the issection() calls of LoadFIZ_Parse()
 std::array const sections{
@@ -114,12 +112,12 @@ std::string value(std::string const &Key, std::string const &Line) {
 	return input.substr(start, end == std::string::npos ? std::string::npos : end - start);
 }
 
-std::vector<std::string> words(std::string const &Line) {
+std::vector<std::string> words(std::string_view const Line) {
 	std::vector<std::string> result;
 	std::size_t start{0};
-	while ((start = Line.find_first_not_of(" \t;", start)) != std::string::npos) {
+	while ((start = Line.find_first_not_of(" \t;", start)) != std::string_view::npos) {
 		auto const end{Line.find_first_of(" \t;", start)};
-		result.push_back(Line.substr(start, end == std::string::npos ? std::string::npos : end - start));
+		result.emplace_back(Line.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start));
 		start = end;
 	}
 	return result;
@@ -127,12 +125,12 @@ std::vector<std::string> words(std::string const &Line) {
 
 section const *named(std::string_view Name) {
 	auto const lookup{std::ranges::find(sections, Name, &section::name)};
-	return lookup == sections.end() ? nullptr : &*lookup;
+	return lookup == sections.end() ? nullptr : std::to_address(lookup);
 }
 
 section const *opened_by(std::string_view Line) {
 	auto const lookup{std::ranges::find_if(sections, [&](section const &Section) { return Line.starts_with(Section.name) && Line.size() > Section.name.size() && Line[Section.name.size()] == Section.separator; })};
-	return lookup == sections.end() ? nullptr : &*lookup;
+	return lookup == sections.end() ? nullptr : std::to_address(lookup);
 }
 
 std::vector<std::string> lines(cParser &Parser) {
@@ -165,6 +163,34 @@ std::vector<std::string> keys(std::string const &Line) {
 	return result;
 }
 
+// the values the section gives, as the loader asks for them by their keys
+std::string section_values(section const &Section, std::string const &Line) {
+	auto keys{fiz::keys(Line)};
+	std::ranges::sort(keys);
+	std::string values{Section.name};
+	for (auto const &key : keys) {
+		if (auto const value{fiz::value(key, Line)}; false == value.empty()) {
+			values += " " + key + "=" + value;
+		}
+	}
+	return values;
+}
+
+// the lists reading a row: the first one open, in the order of the loader's checks, which carries on past the dimmer list
+unsigned row_readers(unsigned const Active) {
+	unsigned readers{0};
+	for (unsigned list = brake_table; list <= compressors; list <<= 1) {
+		if ((Active & list) == 0) {
+			continue;
+		}
+		readers |= list;
+		if (list != dimmer) {
+			break;
+		}
+	}
+	return readers;
+}
+
 std::vector<std::string> reading(std::vector<std::string> const &Lines) {
 	std::vector<std::string> result;
 	unsigned active{0};
@@ -179,29 +205,10 @@ std::vector<std::string> reading(std::vector<std::string> const &Lines) {
 		}
 		if (auto const opened{opened_by(line)}; opened != nullptr) {
 			active = (active & ~brake_table) | opened->list;
-			// the values the section gives, as the loader asks for them by their keys
-			auto keys{fiz::keys(line)};
-			std::ranges::sort(keys);
-			std::string values{opened->name};
-			for (auto const &key : keys) {
-				if (auto const value{fiz::value(key, line)}; false == value.empty()) {
-					values += " " + key + "=" + value;
-				}
-			}
-			result.push_back(std::move(values));
+			result.push_back(section_values(*opened, line));
 			continue;
 		}
-		// the first open list reads the row, in the order of the loader's checks, which carries on past the dimmer list
-		unsigned readers{0};
-		for (unsigned list = brake_table; list <= compressors; list <<= 1) {
-			if ((active & list) != 0) {
-				readers |= list;
-				if (list != dimmer) {
-					break;
-				}
-			}
-		}
-		if (readers != 0) {
+		if (auto const readers{row_readers(active)}; readers != 0) {
 			std::string row{std::format("row of {:x}:", readers)};
 			for (auto const &word : words(line)) {
 				row += " " + word;

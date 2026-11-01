@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "McZapkie/MOVER.h"
@@ -30,6 +31,6 @@ struct invariant {
 std::vector<invariant> const &invariants();
 
 // the traces where the game breaks a rule, as it is, with the reason (see COVERAGE.md, what the tests found)
-bool excused(std::string const &Trace, std::string const &Invariant);
+bool excused(std::string_view Trace, std::string_view Invariant);
 
 } // namespace test
