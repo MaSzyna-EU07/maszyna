@@ -29,12 +29,16 @@ stage const cycle[]{
     {"recharge", 5.0, 90.0},
 };
 
-void run_cycle(vehicle &Vehicle, test::trace &Trace) {
+// returns the pressure in the cylinders at the end of each stage, by the name of the stage
+std::map<std::string, double> run_cycle(vehicle &Vehicle, test::trace &Trace) {
+	std::map<std::string, double> cylinders;
 	for (auto const &stage : cycle) {
 		Trace.mark(stage.name);
 		Vehicle.hold_brake_pipe(stage.pipe);
 		Vehicle.run(stage.seconds);
+		cylinders[stage.name] = Vehicle->BrakePress;
 	}
+	return cylinders;
 }
 
 } // namespace
@@ -46,7 +50,21 @@ TEST_CASE("brake cycle: every real vehicle through charge, service steps, releas
 		vehicle real{definition::fiz(path)};
 		test::trace trace{"brake cycle/" + path, test::channels::brakes(), 100};
 		real.record(trace);
-		run_cycle(real, trace);
+		auto cylinders{run_cycle(real, trace)};
+		// a vehicle braked by the pipe: released once charged, braking harder by every step of the service
+		// application, and by the emergency one. the release isn't checked: some vehicles don't release within
+		// its 40 s, others keep a little air after the overcharge
+		if (cylinders["full service"] > 0.0) {
+			CHECK(cylinders["charge"] < 0.1);
+			CHECK(cylinders["light"] <= cylinders["medium"]);
+			CHECK(cylinders["medium"] <= cylinders["full service"] + 0.01);
+			CHECK(cylinders["full service"] > 1.0);
+			CHECK(cylinders["emergency"] > 0.5);
+		}
+		else {
+			// the draisine, the road vehicle and the catenary car, which have no brake worked by the pipe
+			CHECK(cylinders["emergency"] == 0.0);
+		}
 		trace.check();
 	}
 }
@@ -68,11 +86,16 @@ TEST_CASE("brake cycle: every brake delay setting of the real vehicles") {
 			REQUIRE(real->BrakeDelaySwitch(delay));
 			test::trace trace{"brake delays/" + path + " " + std::to_string(delay), test::channels::brakes(), 100};
 			real.record(trace);
+			std::map<std::string, double> cylinders;
 			for (auto const &stage : {stage{"charge", 5.0, 90.0}, stage{"full service", 3.5, 30.0}, stage{"release", 5.0, 60.0}}) {
 				trace.mark(stage.name);
 				real.hold_brake_pipe(stage.pipe);
 				real.run(stage.seconds);
+				cylinders[stage.name] = real->BrakePress;
 			}
+			// every setting brakes in half a minute and releases in a minute
+			CHECK(cylinders["full service"] > 1.0);
+			CHECK(cylinders["release"] < 0.3);
 			trace.check();
 		}
 	}

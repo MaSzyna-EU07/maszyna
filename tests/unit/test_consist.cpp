@@ -66,6 +66,10 @@ TEST_CASE("consist: every real electric unit driven whole from its front cab") {
 		auto traces{record(train, unit.name)};
 		// the drive cycle marks the events in the trace it gets; the first car's carries them
 		test::drive_cycle(test::driving(train), test::track{0.15, 0.0, test::catenary_3kv}, *traces.front());
+		// every unit runs off and is braked to a stop, but the EN57, which doesn't get ready (COVERAGE.md)
+		auto const &front{train[0].mover()};
+		CHECK((front.DistCounter > 0.2 /* km */) != (std::string{unit.name} == "en57"));
+		CHECK(front.Vel < 0.5);
 		for (auto &trace : traces) {
 			trace->check();
 		}

@@ -4,6 +4,7 @@
 #include "drive.h"
 
 #include "McZapkie/hamulce.h"
+#include "utilities/utilities.h"
 
 // characterisation of the controls a driver and a crew use besides driving and braking: doors, direction and
 // cab change, sanding against slip, the emergency brake, releasers, the ep and the dynamic brake, heating,
@@ -37,6 +38,49 @@ void brake_to_stop(scenario &Scenario, double Seconds = 60.0) {
 	Scenario.wait(20.0);
 }
 
+// the pipe charged again after an emergency stop: the releaser held with the handle at running, then let go
+void recharge(scenario &Scenario) {
+	auto &cab{Scenario.cab()};
+	Scenario.act("releaser held, the pipe charged");
+	cab.BrakeLevelSet(cab.Handle->GetPos(bh_RP));
+	cab.BrakeReleaser(1);
+	Scenario.wait(30.0);
+	cab.BrakeReleaser(0);
+	Scenario.wait(30.0);
+}
+
+bool stopped(scenario &Scenario) {
+	for (std::size_t i = 0; i < Scenario.train().size(); ++i) {
+		if (Scenario.vehicle(i).Vel > 0.1) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// the brake cylinders of every vehicle of the train under the pressure given
+bool released(scenario &Scenario, double Pressure = 0.1) {
+	for (std::size_t i = 0; i < Scenario.train().size(); ++i) {
+		if (Scenario.vehicle(i).BrakePress > Pressure) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool open(TMoverParameters const &Vehicle, int Side) {
+	return Vehicle.Doors.instances[Side].is_open;
+}
+
+// the leaf shut, whatever the step does (closed, is_closed, wants the step folded too)
+bool shut(TMoverParameters const &Vehicle, int Side) {
+	return Vehicle.Doors.instances[Side].position <= 0.f;
+}
+
+bool closed(TMoverParameters const &Vehicle, int Side) {
+	return Vehicle.Doors.instances[Side].is_closed;
+}
+
 } // namespace
 
 TEST_CASE("controls: the doors of an electric unit, opened, locked, permitted and closed by driving off") {
@@ -49,24 +93,36 @@ TEST_CASE("controls: the doors of an electric unit, opened, locked, permitted an
 		for (auto const *car : cars) {
 			scenario.add(car, scenario.train().size() == 0 ? 1 : 0);
 		}
-		scenario.start_up();
+		// the EN57 doesn't get ready (COVERAGE.md), its doors work all the same
+		auto const ready{scenario.start_up()};
+		CHECK(ready == (name != "en57"));
 		auto &cab{scenario.cab()};
+		auto &last{scenario.vehicle(scenario.train().size() - 1)};
 		scenario.act("permit left");
 		cab.PermitDoors(side::left, true);
 		scenario.wait(2.0);
 		scenario.act("open left");
 		cab.OperateDoors(side::left, true);
 		scenario.wait(10.0);
+		CHECK(open(cab, side::left));
+		CHECK(open(last, side::left));
+		CHECK(closed(cab, side::right));
 		scenario.act("close left");
 		cab.OperateDoors(side::left, false);
 		scenario.wait(10.0);
+		CHECK(shut(cab, side::left));
+		CHECK(shut(last, side::left));
 		scenario.act("open right without permit");
 		cab.OperateDoors(side::right, true);
 		scenario.wait(5.0);
+		// the EN57 needs no permit
+		CHECK(shut(cab, side::right) == cab.Doors.permit_needed);
 		scenario.act("permit right, open");
 		cab.PermitDoors(side::right, true);
 		cab.OperateDoors(side::right, true);
 		scenario.wait(10.0);
+		CHECK(open(cab, side::right));
+		CHECK(open(last, side::right));
 		scenario.act("lock");
 		cab.LockDoors(true);
 		scenario.wait(5.0);
@@ -83,15 +139,25 @@ TEST_CASE("controls: the doors of an electric unit, opened, locked, permitted an
 		cab.OperateDoors(side::left, false);
 		cab.LockDoors(false);
 		scenario.wait(10.0);
+		CHECK(shut(cab, side::left));
+		CHECK(shut(cab, side::right));
 		scenario.act("open both and drive off");
 		cab.PermitDoors(side::left, true);
 		cab.PermitDoors(side::right, true);
 		cab.OperateDoors(side::left, true);
 		cab.OperateDoors(side::right, true);
 		scenario.wait(5.0);
+		CHECK_FALSE(shut(cab, side::left));
+		CHECK_FALSE(shut(cab, side::right));
 		scenario.get_going();
 		notch_up(scenario, 4, 2.0);
 		scenario.wait(20.0);
+		// the doors of a train ready to run close as the driver starts off. no CHECK of the speed: the Elf and
+		// the Impuls keep their steps out under the permit, which keeps them from moving (COVERAGE.md)
+		CHECK(shut(cab, side::left) == ready);
+		CHECK(shut(cab, side::right) == ready);
+		CHECK(shut(last, side::left) == ready);
+		CHECK(shut(last, side::right) == ready);
 		notch_down(scenario);
 		brake_to_stop(scenario);
 		scenario.check();
@@ -103,20 +169,35 @@ TEST_CASE("controls: the doors of wagons, worked from the locomotive") {
 	scenario.add("4e_v1/4e", 1).add("bdhpumn_v3/bdhpumn").add("11xa_v2/93a");
 	scenario.start_up();
 	auto &cab{scenario.cab()};
+	auto &coach{scenario.vehicle(1)};
+	auto &freight{scenario.vehicle(2)};
+	// the locomotive works the coach's doors for the consist and for the unit, not with its local controls; the
+	// freight wagon's doors don't move from the locomotive
 	for (auto const range : {range_t::consist, range_t::unit, range_t::local}) {
+		CAPTURE(static_cast<int>(range));
 		scenario.act("open right " + std::to_string(static_cast<int>(range)));
 		cab.PermitDoors(side::right, true, range);
 		cab.OperateDoors(side::right, true, range);
 		scenario.wait(10.0);
+		CHECK(open(coach, side::right) == (range != range_t::local));
+		CHECK(shut(coach, side::left));
+		CHECK(shut(freight, side::right));
 		scenario.act("close right");
 		cab.OperateDoors(side::right, false, range);
 		scenario.wait(10.0);
+		CHECK(shut(coach, side::right));
 	}
 	scenario.act("wagon opens its own");
-	scenario.vehicle(1).OperateDoors(side::left, true, range_t::local);
+	coach.OperateDoors(side::left, true, range_t::local);
+	// a second at a time, the same run as one wait. the coach's doors close by themselves 5 s after they
+	// opened (DoorStayOpen)
+	scenario.wait(1.0);
+	CHECK_FALSE(shut(coach, side::left));
+	scenario.wait(9.0);
+	CHECK(shut(coach, side::left));
+	coach.OperateDoors(side::left, false, range_t::local);
 	scenario.wait(10.0);
-	scenario.vehicle(1).OperateDoors(side::left, false, range_t::local);
-	scenario.wait(10.0);
+	CHECK(shut(coach, side::left));
 	scenario.check();
 }
 
@@ -125,32 +206,44 @@ TEST_CASE("controls: reversing and changing the cab of a locomotive") {
 	scenario.add("4e_v1/4e", 1);
 	scenario.start_up();
 	scenario.get_going();
+	auto &cab{scenario.cab()};
+	// the speed along the vehicle, its front ahead
 	notch_up(scenario, 10, 1.5);
 	scenario.wait(10.0);
+	CHECK(cab.V > 3.0);
 	notch_down(scenario);
 	brake_to_stop(scenario);
-	auto &cab{scenario.cab()};
+	CHECK(stopped(scenario));
 	scenario.act("backward");
 	cab.DirectionBackward();
 	cab.DirectionBackward();
 	scenario.wait(2.0);
+	CHECK(cab.DirActive < 0);
 	notch_up(scenario, 10, 1.5);
 	scenario.wait(10.0);
+	CHECK(cab.V < -3.0);
 	notch_down(scenario);
 	brake_to_stop(scenario);
+	CHECK(stopped(scenario));
 	scenario.act("neutral, change cab");
 	cab.DirectionForward();
 	scenario.wait(1.0);
 	cab.CabDeactivisation();
+	// through the engine room (cab 0) to the rear cab, as the player walks there
+	cab.ChangeCab(-1);
 	cab.ChangeCab(-1);
 	cab.CabActivisation();
 	scenario.wait(5.0);
+	CHECK(cab.CabActive < 0);
 	scenario.act("drive from the rear cab");
 	scenario.get_going();
 	notch_up(scenario, 10, 1.5);
 	scenario.wait(10.0);
+	// forward from the rear cab is the vehicle's backward
+	CHECK(cab.V < -3.0);
 	notch_down(scenario);
 	brake_to_stop(scenario);
+	CHECK(stopped(scenario));
 	scenario.check();
 }
 
@@ -161,24 +254,33 @@ TEST_CASE("controls: wheel slip on a slippery track, sand and the anti-slip brak
 		scenario.add(path, 1);
 		scenario.start_up();
 		scenario.get_going();
-		scenario.act("full power at once");
-		while (scenario.driver().controlling.IncMainCtrl(1)) {
+		auto &cab{scenario.cab()};
+		// a notch a second: the controller put to full power at once never gets the line contactors closed
+		scenario.act("full power");
+		scenario.full_power(0.0);
+		auto slipped{cab.SlippingWheels};
+		for (int i = 0; i < 10; ++i) {
+			scenario.wait(1.0);
+			slipped = slipped || cab.SlippingWheels;
 		}
-		scenario.wait(10.0);
+		// the electric locomotives slip at full power, the SM42, of less power for its weight, doesn't
+		CHECK(slipped == (std::string{path} != "sm42_v1/6d1"));
 		scenario.act("sand");
-		scenario.cab().Sandbox(true);
+		cab.Sandbox(true);
 		scenario.wait(10.0);
-		scenario.cab().Sandbox(false);
+		cab.Sandbox(false);
 		scenario.act("manual sand");
-		scenario.cab().SandboxManual(true);
+		cab.SandboxManual(true);
 		scenario.wait(5.0);
-		scenario.cab().SandboxManual(false);
+		cab.SandboxManual(false);
 		scenario.act("anti-slip brake");
-		scenario.cab().AntiSlippingButton();
-		scenario.cab().AntiSlippingBrake();
+		cab.AntiSlippingButton();
+		cab.AntiSlippingBrake();
 		scenario.wait(10.0);
+		CHECK(cab.Vel > 5.0);
 		notch_down(scenario);
 		brake_to_stop(scenario);
+		CHECK(stopped(scenario));
 		scenario.check();
 	}
 }
@@ -191,22 +293,38 @@ TEST_CASE("controls: emergency stops by the alarm chain and the radio-stop") {
 	notch_up(scenario, 20, 1.0);
 	scenario.wait(20.0);
 	notch_down(scenario);
+	auto &cab{scenario.cab()};
+	CHECK(cab.Vel > 30.0);
 	scenario.act("alarm chain in the wagon");
 	scenario.vehicle(1).AlarmChainSwitch(true);
 	scenario.wait(40.0);
+	// the pipe emptied, the whole train braked to a stop
+	CHECK(stopped(scenario));
+	CHECK(cab.PipePress < 0.5);
+	CHECK(scenario.vehicle(2).BrakePress > 1.0);
 	scenario.act("alarm chain reset");
 	scenario.vehicle(1).AlarmChainSwitch(false);
-	scenario.wait(60.0);
+	scenario.wait(10.0);
+	// the FV4a handle stays cut off the emptied pipe of an LSt locomotive (lock_old in UpdatePipePressure)
+	// until the releaser is held
+	CHECK(cab.PipePress < 0.5);
+	recharge(scenario);
+	CHECK(cab.PipePress > 4.5);
 	scenario.get_going();
 	notch_up(scenario, 20, 1.0);
 	scenario.wait(20.0);
 	notch_down(scenario);
+	CHECK(cab.Vel > 30.0);
 	scenario.act("radio-stop");
-	scenario.cab().RadiostopSwitch(true);
+	cab.RadiostopSwitch(true);
 	scenario.wait(40.0);
+	CHECK(stopped(scenario));
+	CHECK(cab.PipePress < 0.5);
 	scenario.act("radio-stop reset");
-	scenario.cab().RadiostopSwitch(false);
-	scenario.wait(60.0);
+	cab.RadiostopSwitch(false);
+	scenario.wait(10.0);
+	recharge(scenario);
+	CHECK(cab.PipePress > 4.5);
 	scenario.check();
 }
 
@@ -216,18 +334,32 @@ TEST_CASE("controls: releasers and the universal brake buttons") {
 	scenario.start_up();
 	scenario.get_going();
 	auto &cab{scenario.cab()};
+	auto &wagon{scenario.vehicle(2)};
 	scenario.act("service brake");
 	cab.BrakeLevelSet(cab.Handle->GetPos(bh_FB));
 	scenario.wait(20.0);
+	CHECK(cab.BrakePress > 1.0);
+	CHECK(wagon.BrakePress > 1.0);
 	cab.BrakeLevelSet(cab.Handle->GetPos(bh_NP));
+	auto &coach{scenario.vehicle(1)};
+	// the releaser of the cab is passed along the whole train, a wagon's works on the wagon alone
+	auto coachbraked{coach.BrakePress};
+	auto wagonbraked{wagon.BrakePress};
 	scenario.act("releaser of the locomotive");
 	cab.BrakeReleaser(1);
 	scenario.wait(10.0);
 	cab.BrakeReleaser(0);
+	CHECK(cab.BrakePress < 0.5);
+	CHECK(coach.BrakePress < coachbraked - 1.0);
+	CHECK(wagon.BrakePress < wagonbraked - 0.5);
+	CHECK(cab.PipePress < 4.0); // the pipe stays where the service application left it
+	coachbraked = coach.BrakePress;
+	wagonbraked = wagon.BrakePress;
 	scenario.act("releaser of the wagon");
-	scenario.vehicle(2).BrakeReleaser(1);
+	wagon.BrakeReleaser(1);
 	scenario.wait(10.0);
-	scenario.vehicle(2).BrakeReleaser(0);
+	wagon.BrakeReleaser(0);
+	CHECK(wagon.BrakePress < wagonbraked - 0.5);
 	for (int button = 0; button < 3; ++button) {
 		scenario.act("universal button " + std::to_string(button));
 		cab.UniversalBrakeButton(button, 1);
@@ -238,6 +370,8 @@ TEST_CASE("controls: releasers and the universal brake buttons") {
 	scenario.act("running");
 	cab.BrakeLevelSet(cab.Handle->GetPos(bh_RP));
 	scenario.wait(60.0);
+	CHECK(cab.PipePress > 4.8);
+	CHECK(released(scenario));
 	scenario.check();
 }
 
@@ -256,14 +390,32 @@ TEST_CASE("controls: the ep brake of electric units") {
 		scenario.act("ep on");
 		cab.SwitchEPBrake(1);
 		scenario.wait(5.0);
-		for (auto const position : {bh_EPB, bh_EPN, bh_EPR, bh_EPB, bh_RP}) {
-			scenario.act("handle " + std::to_string(position));
-			cab.BrakeLevelSet(cab.Handle->GetPos(position));
+		auto &last{scenario.vehicle(scenario.train().size() - 1)};
+		auto const positions{std::vector{bh_EPB, bh_EPN, bh_EPR, bh_EPB, bh_RP}};
+		for (std::size_t i = 0; i < positions.size(); ++i) {
+			CAPTURE(positions[i]);
+			scenario.act("handle " + std::to_string(positions[i]));
+			cab.BrakeLevelSet(cab.Handle->GetPos(positions[i]));
 			scenario.wait(15.0);
+			if (i == 2) {
+				CHECK(released(scenario));
+			}
+			if (i == 3) {
+				// the ep brake works the cylinders of every car by wire, the pipe stays charged (by the first
+				// application the EW58's pipe is still charging after the start-up)
+				CHECK(cab.PipePress > 4.8);
+				CHECK(cab.BrakePress > 1.0);
+				CHECK(last.BrakePress > 1.0);
+			}
 		}
+		// the EW58 releases at the running position, the ED72 holds the ep application there, and with the ep
+		// brake switched off as well: only the ep release position lets it off
+		auto const ed72{name == "ed72"};
+		CHECK(released(scenario) != ed72);
 		scenario.act("ep off");
 		cab.SwitchEPBrake(0);
 		scenario.wait(30.0);
+		CHECK(released(scenario) != ed72);
 		scenario.check();
 	}
 }
@@ -279,15 +431,19 @@ TEST_CASE("controls: the electrodynamic brake of locomotives having one") {
 		scenario.wait(30.0);
 		notch_down(scenario);
 		auto &cab{scenario.cab()};
+		CHECK(cab.Vel > 40.0);
+		auto const speed{cab.Vel};
 		scenario.act("dynamic brake on");
 		cab.DynamicBrakeSwitch(true);
 		scenario.wait(5.0);
 		scenario.act("brake");
 		cab.BrakeLevelSet(cab.Handle->GetPos(bh_FB));
 		scenario.wait(40.0);
+		CHECK(cab.Vel < speed);
 		scenario.act("dynamic brake off");
 		cab.DynamicBrakeSwitch(false);
 		brake_to_stop(scenario, 30.0);
+		CHECK(stopped(scenario));
 		scenario.check();
 	}
 }
@@ -296,28 +452,45 @@ TEST_CASE("controls: train heating from the locomotive") {
 	scenario scenario{"controls/heating/eu07 with wagons", traction() + air()};
 	scenario.add("4e_v1/4e", 1).add("bdhpumn_v3/bdhpumn").add("bdhpumn_v3/bdhpumn");
 	scenario.start_up();
+	auto &cab{scenario.cab()};
 	scenario.act("heating on");
-	scenario.cab().HeatingSwitch(true);
+	cab.HeatingSwitch(true);
 	scenario.wait(30.0);
+	CHECK(cab.Heating);
+	CHECK(scenario.vehicle(2).Heating);
 	scenario.act("heating off");
-	scenario.cab().HeatingSwitch(false);
+	cab.HeatingSwitch(false);
 	scenario.wait(10.0);
+	CHECK_FALSE(cab.Heating);
+	CHECK_FALSE(scenario.vehicle(2).Heating);
 	scenario.check();
 }
 
 TEST_CASE("controls: a freight wagon loaded and braked") {
+	auto emptymass{0.0};
 	for (auto const *load : {"", "coal", "ruda", "unknown"}) {
 		CAPTURE(load);
 		scenario scenario{std::string{"controls/load/3wl "} + (*load ? load : "empty"), motion() + brakes()};
 		scenario.add("4e_v1/4e", 1).add("3wl_v2/3wl");
-		CHECK(scenario.vehicle(1).AssignLoad(load, 30.f) == (std::string{load} == "coal" || std::string{load} == "ruda" || std::string{load}.empty()));
-		scenario.vehicle(1).ComputeMass();
+		auto &wagon{scenario.vehicle(1)};
+		auto const known{std::string{load} == "coal" || std::string{load} == "ruda"};
+		CHECK(wagon.AssignLoad(load, 30.f) == (known || std::string{load}.empty()));
+		wagon.ComputeMass();
+		if (*load == '\0') {
+			emptymass = wagon.TotalMass;
+		}
+		else {
+			// 30 t of a load the wagon takes, none of one it doesn't
+			CHECK(wagon.TotalMass == doctest::Approx(emptymass + (known ? 30000.0 : 0.0)).epsilon(0.01));
+		}
 		scenario.start_up();
 		scenario.get_going();
 		notch_up(scenario, 20, 1.0);
 		scenario.wait(20.0);
 		notch_down(scenario);
+		CHECK(scenario.cab().Vel > 20.0);
 		brake_to_stop(scenario);
+		CHECK(stopped(scenario));
 		scenario.check();
 	}
 }
@@ -328,7 +501,14 @@ TEST_CASE("controls: a locomotive running into a standing wagon") {
 		scenario scenario{"controls/collision/" + std::to_string(static_cast<int>(speed)) + " kmh", motion()};
 		// the wagon stands in front, the locomotive comes from behind it
 		scenario.add("bdhpumn_v3/bdhpumn").add("4e_v1/4e", 0, coupling::faux, speed, 30.0);
+		auto &wagon{scenario.vehicle(0)};
 		scenario.wait(30.0);
+		// slow, the locomotive pushes the wagon off, the buffers only touching, and both roll to a stop; fast,
+		// the wagon derails where it stands
+		auto const derailed{speed > 30.0};
+		CHECK(TestFlag(wagon.DamageFlag, dtrain_out) == derailed);
+		CHECK((std::abs(wagon.DistCounter) > 0.0001) != derailed);
+		CHECK(stopped(scenario));
 		scenario.check();
 	}
 }
@@ -342,6 +522,8 @@ TEST_CASE("controls: a train run with five physics steps in a frame") {
 	notch_up(scenario, 25, 1.0);
 	scenario.wait(30.0);
 	notch_down(scenario);
+	// no CHECKs of the run: with five steps a frame the motors take no current and the train rolls at a few
+	// km/h, which is a finding (COVERAGE.md), not the behaviour to keep
 	brake_to_stop(scenario);
 	scenario.check();
 }

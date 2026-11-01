@@ -85,8 +85,8 @@ restructuring a function: the values of some channels of a vehicle over a run, c
 ones recorded from the code before, in `data/golden/<name>.csv`. A difference fails the test, naming
 the channel, the time and both rows.
 
-The samples aren't kept in the repository (tens of megabytes, and they only mean something against
-the code before the change): record them before the change, and compare after it.
+The samples and their key figures aren't kept in the repository (tens of megabytes, and they only mean
+something against the code before the change): record them before the change, and compare after it.
 
 ```
 git switch master
@@ -95,8 +95,10 @@ git switch my-refactor
 EU07_UNIT_TESTS_GOLDEN_EXACT=1 eu07_unit_tests      # compares every sample, bit for bit
 ```
 
-The recorded files stay through switching branches. Without them, a trace compares its key figures
-and checks the invariants, which is what the CI does.
+The recorded files stay through switching branches. Without them, a trace checks the invariants and
+its test's own `CHECK`s, which is what the CI does: every test states the behaviour it's about in
+`CHECK`s, a scenario of a feature what the feature does (the doors open, the train stops), a run of
+every real vehicle what holds for each of them (it brakes harder by every step, it runs off and stops).
 
 ```cpp
 test::trace trace{"eu07/notch up", test::channels::motion() + test::channels::traction()};
@@ -112,15 +114,15 @@ trace.check();
   review it like code.
 - Without `EU07_UNIT_TESTS_GOLDEN_EXACT=1`, samples recorded are compared within a relative 1e-9, as
   GCC and glibc's maths functions can differ from MSVC's in the last bits, and a trace without them
-  passes. With it they're compared exactly, and a trace without them fails, so a run of the
-  refactoring check can't pass by having nothing to compare.
+  passes. With it they're compared exactly, and a trace without them or its key figures fails, so a
+  run of the refactoring check can't pass by having nothing to compare.
 - Keep the runs short (tens of seconds): the simulation feeds back on itself, and a last bit grows.
 - A trace with no assertion about what the behaviour should be is a characterisation, bugs included;
   put the behaviour the test is about into `CHECK`s besides.
 
 ### Key figures
 
-Next to its samples, every trace keeps the figures a person reviews (`figures.h`), for each part of
+Next to its samples, every trace records the figures a person reads (`figures.h`), for each part of
 the run between two events, in `data/golden/<name>.figures`: the duration, the speeds, the distance,
 the time to stop, the brake pipe's lowest pressure and the time to get back to 4.9 bar, the peaks of
 the brake cylinders, the motor current and the tractive force.
@@ -143,9 +145,8 @@ key figures of "traction/4e_v1/4e" differ:
 ```
 
 `EU07_UNIT_TESTS_UPDATE_GOLDEN=1` records them with the samples. After a change which alters the
-behaviour on purpose, their diff says in a few lines what the thousands of changed samples mean. A
-trace sampled by hand, at times of its own (the commands and switches tests), keeps none, so without
-samples recorded it checks only the invariants and its test's own `CHECK`s.
+behaviour, their comparison says in a few lines what the thousands of changed samples mean. A trace
+sampled by hand, at times of its own (the commands and switches tests), records none.
 
 ### Invariants
 

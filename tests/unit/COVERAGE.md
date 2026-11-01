@@ -85,6 +85,7 @@ The tests record the behaviour as it is. The following points may deserve a look
 - **A train whose pipe leaks under 2.75 bar before its start-up can't be released:**
   - Where this happens: an FV4a handle and an LSt valve, for example 4 minutes standing with wagons, waiting for a hot engine.
   - The cause: the pipe gets cut off the main reservoir (`lock_old` in `UpdatePipePressure`). The AI presses its unlock button only for the lock set by `LPOn` and `LPOff` (`control_main_pipe`).
+  - The same after every emergency stop of such a train, by the alarm chain or the radio-stop: reset, it stays with its pipe empty until the releaser is held (`b_rls`), which the test of the emergency stops does.
 - **EW58:**
   - Its electrodynamic brake comes in only by the stages of the ep brake (TUHEX), never by the brake pipe alone.
   - It needs 110 V, from the converter of the middle car only.
@@ -105,8 +106,12 @@ The tests record the behaviour as it is. The following points may deserve a look
 - **Vehicles that don't do what they should, as driven by the tests:**
   - An EN57 doesn't get ready (main reservoir).
   - An EN57AKL alone doesn't charge its pipe.
-  - The TEM2 barely moves.
+  - The TEM2 barely moves, and the SM31 crawls at 0.3 km/h at full power, its motors taking 444 A.
   - The draisine can't start from rest (the pump's force is under the resistance of a standing draisine).
+  - The Elf and the Impuls, their doors opened with the steps permitted, close the doors as they start off but keep the steps out, which keeps them from moving.
+  - The ED72 holds an ep application with its handle at running, and with the ep brake switched off too; only the ep release position lets it off. The EW58 releases at running.
+  - The road vehicle (MAN) is only slowed down by a minute of full service.
+- **A train run with five physics steps in a frame:** an EU07 with wagons takes no current, its controller at full power, and rolls at a few km/h. The test steps the vehicles the way `TDynamicObject` does (`FastComputeMovement` for the steps before the last one), so the game may do the same.
 - **Game data:**
   - The 214M's file has `TurboPos` and `MotorParamTable` twice, and the EN57AL's `Engine` twice. The loader reads each in turn, so the later one overrides what both set.
   - A wagon set up braked keeps its hand brake on until someone releases it. The AI does that for the whole train (`AutoRewident`), so a test has to as well.

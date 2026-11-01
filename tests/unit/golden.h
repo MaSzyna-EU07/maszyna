@@ -34,14 +34,14 @@ std::vector<channel> operator+(std::vector<channel> Left, std::vector<channel> c
 // test, naming the channel and the time it shows up first. the samples are tens of megabytes and only mean
 // something against the code before a change, so they stay out of the repository: running the tests with
 // EU07_UNIT_TESTS_UPDATE_GOLDEN=1 records them on the code before the change, and after it they're compared.
-// a trace with no samples recorded compares only its key figures.
+// a trace with nothing recorded checks only the invariants and its test's own CHECKs, as the CI does.
 //
 // values are compared within a relative tolerance of 1e-9 (the CI builds with GCC and glibc, whose maths
 // functions can differ from MSVC's in the last bits), or exactly with EU07_UNIT_TESTS_GOLDEN_EXACT=1, which is the check to
-// run for a change which shouldn't alter anything at all, and which fails a trace with no samples recorded.
+// run for a change which shouldn't alter anything at all, and which fails a trace with nothing recorded.
 //
-// besides the samples, a trace keeps the key figures of the run (figures.h) in <Name>.figures, in the
-// repository, and checks the invariants (invariants.h) on every step
+// besides the samples, a trace records the key figures of the run (figures.h) in <Name>.figures, the few
+// lines a person reads of what a change altered, and checks the invariants (invariants.h) on every step
 //
 //   test::trace trace{"eu07 notch up", test::channels::motion() + test::channels::traction()};
 //   eu07.record(trace);
@@ -66,7 +66,7 @@ public:
 	std::vector<std::string> const &violations() const { return m_violations; }
 
 private:
-	void check_figures(std::filesystem::path const &Path) const;
+	void check_figures(std::filesystem::path const &Path, bool Exact) const;
 
 	std::string m_name;
 	std::vector<channel> m_channels;

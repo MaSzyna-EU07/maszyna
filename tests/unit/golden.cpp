@@ -281,10 +281,13 @@ void trace::mark(std::string const &Event) {
 	m_figures.mark(Event);
 }
 
-void trace::check_figures(std::filesystem::path const &Path) const {
+void trace::check_figures(std::filesystem::path const &Path, bool const Exact) const {
+	// like the samples, the key figures are recorded on the code before a change and compared after it
 	std::ifstream file(Path, std::ios::binary);
 	if (false == file.is_open()) {
-		FAIL_CHECK("no key figures " << Path.string() << ", run the tests with EU07_UNIT_TESTS_UPDATE_GOLDEN=1 to record them");
+		if (Exact) {
+			FAIL_CHECK("no key figures " << Path.string() << ", run the tests with EU07_UNIT_TESTS_UPDATE_GOLDEN=1 on the code before the change to record them");
+		}
 		return;
 	}
 	std::vector<std::string> recorded;
@@ -338,12 +341,12 @@ void trace::check() const {
 		return;
 	}
 
-	if (m_keep_figures) {
-		check_figures(figurespath);
-	}
-
 	// the samples aren't kept in the repository, they're recorded on the code before a change and compared after it
 	auto const exact{environment("EU07_UNIT_TESTS_GOLDEN_EXACT")};
+	if (m_keep_figures) {
+		check_figures(figurespath, exact);
+	}
+
 	std::ifstream file(path, std::ios::binary);
 	if (false == file.is_open()) {
 		if (exact) {

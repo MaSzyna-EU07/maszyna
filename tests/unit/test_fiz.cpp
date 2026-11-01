@@ -24,6 +24,13 @@ TEST_CASE("fiz: every real vehicle loads and keeps its parameters") {
 		vehicle real{definition::fiz(path)};
 		test::trace trace{"fiz/" + path, test::channels::parameters(), 1};
 		trace.sample(0.0, real.mover());
+		// what every vehicle has, the rest of its parameters are in the golden trace
+		CHECK(real->Mass > 0.0);
+		CHECK(real->TotalMass >= real->Mass);
+		CHECK(real->Vmax > 0.0);
+		CHECK(real->NAxles > 0);
+		CHECK(real->WheelDiameter > 0.0);
+		CHECK(real->NPoweredAxles <= real->NAxles);
 		trace.check();
 	}
 }

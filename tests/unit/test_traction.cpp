@@ -31,6 +31,14 @@ TEST_CASE("traction: every real powered vehicle started up, driven to full power
 		test::trace trace{"traction/" + path, motion() + traction() + air() + brakes(), 100};
 		real.record(trace);
 		test::drive_cycle(test::driving(real), test::track{0.15, 0.0, test::catenary_3kv}, trace);
+		// every vehicle getting its line breaker closed runs off and is braked to a stop. the SM31 and the TEM2
+		// barely move (COVERAGE.md); the cars of a unit taking their power from another car don't start alone
+		if (real->Mains) {
+			auto const crawls{path == "sm31_v1/411d" || path == "tem2_v2/tem2a"};
+			CHECK((real->DistCounter > 0.2 /* km */) != crawls);
+			// but the road vehicle, which a minute of full service only slows down
+			CHECK((real->Vel < 0.5) != (path == "road/man/nl293"));
+		}
 		trace.check();
 	}
 }
