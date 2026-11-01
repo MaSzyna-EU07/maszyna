@@ -6187,104 +6187,12 @@ void TMoverParameters::ShuntFieldRelaysCheck(double const tmpV, double const Pos
 	}
 	case 45:
 	{
-		if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos >= 11)
-		{
-
-			if (Im < MPTRelay[ScndCtrlPos].Iup)
-			{
-				++ScndCtrlPos;
-			}
-			// check for cases where the speed drops below threshold for level 2 or 3
-			if (ScndCtrlPos > 1 && Vel < MPTRelay[ScndCtrlPos - 1].Idown)
-			{
-				--ScndCtrlPos;
-			}
-		}
-		// malenie
-		if (ScndCtrlPos > 0 && MainCtrlPos < 11)
-		{
-
-			if (ScndCtrlPos == 1)
-			{
-				if (Im > MPTRelay[ScndCtrlPos - 1].Idown)
-				{
-					--ScndCtrlPos;
-				}
-			}
-			else
-			{
-				if (Vel < MPTRelay[ScndCtrlPos].Idown)
-				{
-					--ScndCtrlPos;
-				}
-			}
-		}
-		// 3rd level drops with master controller at position lower than 10...
-		if (MainCtrlPos < 11)
-		{
-			ScndCtrlPos = std::min(2, ScndCtrlPos);
-		}
-		// ...and below position 7 field shunt drops altogether
-		if (MainCtrlPos < 8)
-		{
-			ScndCtrlPos = 0;
-		}
-		/*
-		                            // crude woodward approximation; difference between rpm for consecutive positions is ~5%
-		                            // so we get full throttle until ~half way between desired and previous position, or zero on rpm reduction
-		                            auto const woodward { std::clamp(
-		                                ( DElist[ MainCtrlPos ].RPM / ( enrot * 60.0 ) - 1.0 ) * 50.0,
-		                                0.0, 1.0 ) };
-		*/
+		ShuntFieldRelaysType45();
 		break;
 	}
 	case 46:
 	{
-		// wzrastanie
-		if (MainCtrlPos >= 12 && ScndCtrlPos < ScndCtrlPosNo)
-		{
-			if (ScndCtrlPos % 2 == 0)
-			{
-				if (MPTRelay[ScndCtrlPos].Iup > Im)
-				{
-					++ScndCtrlPos;
-				}
-			}
-			else
-			{
-				if (MPTRelay[ScndCtrlPos - 1].Iup > Im && MPTRelay[ScndCtrlPos].Iup < Vel)
-				{
-					++ScndCtrlPos;
-				}
-			}
-		}
-		// malenie
-		if (MainCtrlPos < 12 && ScndCtrlPos > 0 && Vel < 50.0)
-		{
-			// above 50 km/h already active shunt field can be maintained until lower controller setting
-			if (ScndCtrlPos % 2 == 0)
-			{
-				if (MPTRelay[ScndCtrlPos].Idown < Im)
-				{
-					--ScndCtrlPos;
-				}
-			}
-			else
-			{
-				if (MPTRelay[ScndCtrlPos + 1].Idown < Im && MPTRelay[ScndCtrlPos].Idown > Vel)
-				{
-					--ScndCtrlPos;
-				}
-			}
-		}
-		if (MainCtrlPos < 11)
-		{
-			ScndCtrlPos = std::min(2, ScndCtrlPos);
-		}
-		if (MainCtrlPos < 8)
-		{
-			ScndCtrlPos = 0;
-		}
+		ShuntFieldRelaysType46();
 		break;
 	}
 	default:
@@ -6296,6 +6204,111 @@ void TMoverParameters::ShuntFieldRelaysCheck(double const tmpV, double const Pos
 	if (ScndCtrlPos != shuntfieldstate)
 	{
 		SetFlag(SoundFlag, sound::relay | sound::shuntfield);
+	}
+}
+
+// the relays of type 45, by the current and the speed: up from the 11th position, at most two under it, none under the 8th
+void TMoverParameters::ShuntFieldRelaysType45()
+{
+	if (ScndCtrlPos < ScndCtrlPosNo && MainCtrlPos >= 11)
+	{
+
+		if (Im < MPTRelay[ScndCtrlPos].Iup)
+		{
+			++ScndCtrlPos;
+		}
+		// check for cases where the speed drops below threshold for level 2 or 3
+		if (ScndCtrlPos > 1 && Vel < MPTRelay[ScndCtrlPos - 1].Idown)
+		{
+			--ScndCtrlPos;
+		}
+	}
+	// malenie
+	if (ScndCtrlPos > 0 && MainCtrlPos < 11)
+	{
+
+		if (ScndCtrlPos == 1)
+		{
+			if (Im > MPTRelay[ScndCtrlPos - 1].Idown)
+			{
+				--ScndCtrlPos;
+			}
+		}
+		else
+		{
+			if (Vel < MPTRelay[ScndCtrlPos].Idown)
+			{
+				--ScndCtrlPos;
+			}
+		}
+	}
+	// 3rd level drops with master controller at position lower than 10...
+	if (MainCtrlPos < 11)
+	{
+		ScndCtrlPos = std::min(2, ScndCtrlPos);
+	}
+	// ...and below position 7 field shunt drops altogether
+	if (MainCtrlPos < 8)
+	{
+		ScndCtrlPos = 0;
+	}
+	/*
+	                            // crude woodward approximation; difference between rpm for consecutive positions is ~5%
+	                            // so we get full throttle until ~half way between desired and previous position, or zero on rpm reduction
+	                            auto const woodward { std::clamp(
+	                                ( DElist[ MainCtrlPos ].RPM / ( enrot * 60.0 ) - 1.0 ) * 50.0,
+	                                0.0, 1.0 ) };
+	*/
+}
+
+// the relays of type 46, by the current and the speed: up from the 12th position, down under it below 50 km/h, at most two
+// under the 11th, none under the 8th
+void TMoverParameters::ShuntFieldRelaysType46()
+{
+	// wzrastanie
+	if (MainCtrlPos >= 12 && ScndCtrlPos < ScndCtrlPosNo)
+	{
+		if (ScndCtrlPos % 2 == 0)
+		{
+			if (MPTRelay[ScndCtrlPos].Iup > Im)
+			{
+				++ScndCtrlPos;
+			}
+		}
+		else
+		{
+			if (MPTRelay[ScndCtrlPos - 1].Iup > Im && MPTRelay[ScndCtrlPos].Iup < Vel)
+			{
+				++ScndCtrlPos;
+			}
+		}
+	}
+	// malenie
+	if (MainCtrlPos < 12 && ScndCtrlPos > 0 && Vel < 50.0)
+	{
+		// above 50 km/h already active shunt field can be maintained until lower controller setting
+		if (ScndCtrlPos % 2 == 0)
+		{
+			if (MPTRelay[ScndCtrlPos].Idown < Im)
+			{
+				--ScndCtrlPos;
+			}
+		}
+		else
+		{
+			if (MPTRelay[ScndCtrlPos + 1].Idown < Im && MPTRelay[ScndCtrlPos].Idown > Vel)
+			{
+				--ScndCtrlPos;
+			}
+		}
+	}
+	if (MainCtrlPos < 11)
+	{
+		ScndCtrlPos = std::min(2, ScndCtrlPos);
+	}
+	if (MainCtrlPos < 8)
+	{
+		ScndCtrlPos = 0;
 	}
 }
 

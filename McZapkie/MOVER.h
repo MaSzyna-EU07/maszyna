@@ -2448,6 +2448,8 @@ class TMoverParameters
 	void DieselEngineTractionForce(double dt, double dmoment, double dtrans);
 	void DieselElectricTractionForce(double tmp);
 	void ShuntFieldRelaysCheck(double tmpV, double PosRatio, double tmp);
+	void ShuntFieldRelaysType45();
+	void ShuntFieldRelaysType46();
 	void InductionMotorTractionForce(double dt);
 	void InductionMotorSpeedControl(double dt);
 	void InductionMotorBrakeBlending(double ActiveInverters, double &PosRatio, double &tmp);
