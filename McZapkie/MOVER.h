@@ -2493,6 +2493,8 @@ class TMoverParameters
 	void SeriesMotorDynamicBrake(double dt);
 	void DieselEngineTractionForce(double dt, double dmoment, double dtrans);
 	void DieselElectricTractionForce(double tmp);
+	void DieselElectricShuntPower(double tmp);
+	void DieselElectricGenerator(double tmp, double tempUmax, double tempImax);
 	void ShuntFieldRelaysCheck(double tmpV, double PosRatio, double tmp);
 	void ShuntFieldRelaysType45();
 	void ShuntFieldRelaysType46();
@@ -2618,6 +2620,7 @@ class TMoverParameters
 	bool AutoRelayShuntStep(bool ARFASI2);
 	bool AutoRelayMainStep(bool ARFASI);
 	bool AutoRelayLineContactorsStep(bool motorconnectorsoff);
+	bool CamshaftRunDown();
 	bool MotorConnectorsCheck();
 	bool ResistorsFlagCheck(void) const; // sprawdzenie kontrolki oporow rozruchowych NBMX
 

@@ -6120,60 +6120,11 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 
 	if (ShuntMode)
 	{
-		EnginePower = EngineVoltage * Im / 1000.0;
-		if (EnginePower > tmp)
-		{
-			EnginePower = tmp;
-			EngineVoltage = EnginePower * 1000.0 / Im;
-		}
-		if (EnginePower < tmp)
-		{
-			Ft *= EnginePower / tmp;
-		}
+		DieselElectricShuntPower(tmp);
 	}
 	else
 	{
-		if (abs(Im) > tempImax)
-		{ // nie ma nadmiarowego, tylko Imax i zwarcie na pradnicy
-			Ft = Ft / Im * tempImax;
-			Im = tempImax;
-		}
-
-		if (Im > 0)
-		{
-			// jak pod obciazeniem
-			if (true == Flat)
-			{
-				// ograniczenie napiecia w pradnicy - plaszczak u gory
-				EngineVoltage = 1000.0 * tmp / std::abs(Im);
-			}
-			else
-			{
-				auto tempMCP = EIMCtrlType > 0 ? 1 + 99 * std::max(1.0, eimic_real) : MainCtrlPos;
-				auto tempMCPN = EIMCtrlType > 0 ? 100 : MainCtrlPosNo;
-				// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
-				EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
-				EngineVoltage /= tempMCPN - 1;
-				EngineVoltage = safe_clamp(EngineVoltage, Im * 0.05, 1000.0 * tmp / std::abs(Im));
-			}
-		}
-
-		if (EngineVoltage > tempUmax || Im == 0)
-		{
-			// gdy wychodzi za duze napiecie albo przy biegu jalowym (jest cos takiego?)
-			EngineVoltage = tempUmax * (ConverterFlag ? 1 : 0);
-		}
-
-		EnginePower = EngineVoltage * Im / 1000.0;
-		/*
-		                // power curve drop
-		                // NOTE: disabled for the time being due to side-effects
-		                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
-		                    Ft = std::lerp(
-		                        Ft, EnginePower / tmp,
-		                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
-		                }
-		*/
+		DieselElectricGenerator(tmp, tempUmax, tempImax);
 	}
 
 	if (Imax > 1 && Im > Imax)
@@ -6193,6 +6144,67 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 			ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
 		}
 	}
+}
+
+// in the shunting mode, the generator's power limited to tmp, the power the engine gives
+void TMoverParameters::DieselElectricShuntPower(double const tmp)
+{
+	EnginePower = EngineVoltage * Im / 1000.0;
+	if (EnginePower > tmp)
+	{
+		EnginePower = tmp;
+		EngineVoltage = EnginePower * 1000.0 / Im;
+	}
+	if (EnginePower < tmp)
+	{
+		Ft *= EnginePower / tmp;
+	}
+}
+
+// the generator's current limited to tempImax and its voltage by its characteristic, under tempUmax and the power tmp
+void TMoverParameters::DieselElectricGenerator(double const tmp, double const tempUmax, double const tempImax)
+{
+	if (abs(Im) > tempImax)
+	{ // nie ma nadmiarowego, tylko Imax i zwarcie na pradnicy
+		Ft = Ft / Im * tempImax;
+		Im = tempImax;
+	}
+
+	if (Im > 0)
+	{
+		// jak pod obciazeniem
+		if (true == Flat)
+		{
+			// ograniczenie napiecia w pradnicy - plaszczak u gory
+			EngineVoltage = 1000.0 * tmp / std::abs(Im);
+		}
+		else
+		{
+			auto tempMCP = EIMCtrlType > 0 ? 1 + 99 * std::max(1.0, eimic_real) : MainCtrlPos;
+			auto tempMCPN = EIMCtrlType > 0 ? 100 : MainCtrlPosNo;
+			// charakterystyka pradnicy obcowzbudnej (elipsa) - twierdzenie Pitagorasa
+			EngineVoltage = std::sqrt(std::abs(square(tempUmax) - square(tempUmax * Im / tempImax))) * (tempMCP - 1) + (1.0 - Im / tempImax) * tempUmax * (tempMCPN - tempMCP);
+			EngineVoltage /= tempMCPN - 1;
+			EngineVoltage = safe_clamp(EngineVoltage, Im * 0.05, 1000.0 * tmp / std::abs(Im));
+		}
+	}
+
+	if (EngineVoltage > tempUmax || Im == 0)
+	{
+		// gdy wychodzi za duze napiecie albo przy biegu jalowym (jest cos takiego?)
+		EngineVoltage = tempUmax * (ConverterFlag ? 1 : 0);
+	}
+
+	EnginePower = EngineVoltage * Im / 1000.0;
+	/*
+	                // power curve drop
+	                // NOTE: disabled for the time being due to side-effects
+	                if( ( tmpV > 1 ) && ( EnginePower < tmp ) ) {
+	                    Ft = std::lerp(
+	                        Ft, EnginePower / tmp,
+	                        std::clamp( tmpV - 1.0, 0.0, 1.0 ) );
+	                }
+	*/
 }
 
 // the shunt field relays of a diesel-electric, each kind its own conditions on the current, the speed or the
@@ -7246,83 +7258,92 @@ bool TMoverParameters::AutoRelayLineContactorsStep(bool const motorconnectorsoff
 
 	if (false == StLinFlag && (MainCtrlActualPos > 0 || ScndCtrlActualPos > 0))
 	{
+		OK |= CamshaftRunDown();
+	}
+	return OK;
+}
 
-		if (CoupledCtrl)
+// the camshaft, the line contactors open, run back to its zero position a step at a time, or at once without one;
+// returns whether it moved
+bool TMoverParameters::CamshaftRunDown()
+{
+	bool OK = false;
+
+	if (CoupledCtrl)
+	{
+
+		if (TrainType == dt_EZT)
 		{
-
-			if (TrainType == dt_EZT)
+			// EN57 wal jednokierunkowy calosciowy
+			if (MainCtrlActualPos == 1)
 			{
-				// EN57 wal jednokierunkowy calosciowy
-				if (MainCtrlActualPos == 1)
-				{
 
-					MainCtrlActualPos = 0;
-					OK = true;
-				}
-				else
-				{
-
-					if (LastRelayTime > CtrlDownDelay)
-					{
-
-						if (MainCtrlActualPos < RlistSize)
-						{
-							// dojdz do konca
-							++MainCtrlActualPos;
-						}
-						else if (ScndCtrlActualPos < ScndCtrlPosNo)
-						{
-							// potem boki
-							++ScndCtrlActualPos;
-							SetFlag(SoundFlag, sound::shuntfield);
-						}
-						else
-						{
-							// i sie przewroc na koniec
-							MainCtrlActualPos = 0;
-							ScndCtrlActualPos = 0;
-						}
-						OK = true;
-					}
-				}
+				MainCtrlActualPos = 0;
+				OK = true;
 			}
 			else
 			{
-				// wal kulakowy dwukierunkowy
+
 				if (LastRelayTime > CtrlDownDelay)
 				{
-					if (ScndCtrlActualPos > 0)
+
+					if (MainCtrlActualPos < RlistSize)
 					{
-						--ScndCtrlActualPos;
+						// dojdz do konca
+						++MainCtrlActualPos;
+					}
+					else if (ScndCtrlActualPos < ScndCtrlPosNo)
+					{
+						// potem boki
+						++ScndCtrlActualPos;
 						SetFlag(SoundFlag, sound::shuntfield);
 					}
 					else
 					{
-						--MainCtrlActualPos;
+						// i sie przewroc na koniec
+						MainCtrlActualPos = 0;
+						ScndCtrlActualPos = 0;
 					}
 					OK = true;
 				}
 			}
 		}
-		else if (HasCamshaft)
+		else
 		{
 			// wal kulakowy dwukierunkowy
 			if (LastRelayTime > CtrlDownDelay)
 			{
-				if (MainCtrlActualPos > 0)
+				if (ScndCtrlActualPos > 0)
+				{
+					--ScndCtrlActualPos;
+					SetFlag(SoundFlag, sound::shuntfield);
+				}
+				else
 				{
 					--MainCtrlActualPos;
 				}
-				ScndCtrlActualPos = 0;
 				OK = true;
 			}
 		}
-		else
+	}
+	else if (HasCamshaft)
+	{
+		// wal kulakowy dwukierunkowy
+		if (LastRelayTime > CtrlDownDelay)
 		{
-			MainCtrlActualPos = 0;
+			if (MainCtrlActualPos > 0)
+			{
+				--MainCtrlActualPos;
+			}
 			ScndCtrlActualPos = 0;
 			OK = true;
 		}
+	}
+	else
+	{
+		MainCtrlActualPos = 0;
+		ScndCtrlActualPos = 0;
+		OK = true;
 	}
 	return OK;
 }
