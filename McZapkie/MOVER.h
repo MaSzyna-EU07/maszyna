@@ -2609,7 +2609,7 @@ class TMoverParameters
 	double Current(double n, double U);
 	// the parts of Current()
 	void UpdateSeriesMotorDynamicBrakeFlag();
-	double SeriesMotorCurrent(double n, double U, double R, double Mn);
+	double SeriesMotorCurrent(double n, double U, double R, double Mn) const;
 	void MotorFailuresCheck(double n);
 	double Momentum(double I) const;
 	double MomentumF(double I, double Iw, int SCP) const;
@@ -2656,7 +2656,7 @@ class TMoverParameters
 	void dizel_ClutchCheck();
 	double dizel_fillcheck(int mcp, double dt);
 	double dizel_DigitalFill(double dt);
-	double dizel_GovernorFill(int mcp, double realfill);
+	double dizel_GovernorFill(int mcp, double realfill) const;
 	double dizel_Momentum(double dizel_fill, double n, double dt);
 	void hydro_TCFillCheck(double dt);
 	void hydro_TCTorque();
@@ -2679,8 +2679,8 @@ class TMoverParameters
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
 	// the parts of update_doors()
-	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol);
-	void move_door(basic_door &door, double Deltatime);
+	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol) const;
+	void move_door(basic_door &door, double Deltatime) const;
 	void update_door_timers(double Deltatime);
 
 	/* funkcje dla samochodow*/
@@ -2702,8 +2702,8 @@ class TMoverParameters
   private:
 	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above
 	// the parts of LoadFIZ_Parse(), for a line of the definition
-	bool LoadFIZ_TableEnd(std::string const &inputline);
-	bool LoadFIZ_Section(std::string const &inputline, std::unordered_map<std::string, std::string> &fizlines);
+	bool LoadFIZ_TableEnd(std::string const &inputline) const;
+	bool LoadFIZ_Section(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines);
 	void LoadFIZ_TableRow(std::string const &inputline);
 	void LoadFIZ_Param(std::string const &line);
 	void LoadFIZ_Load(std::string const &line);

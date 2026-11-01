@@ -296,7 +296,6 @@ double TMoverParameters::Current(double n, double U)
 	double Mn; // przujmuje int, ale dla poprawnosci obliczeń
 	double Bn;
 
-	MotorCurrent = 0;
 	UpdateSeriesMotorDynamicBrakeFlag();
 
 	ResistorsFlag = RList[MainCtrlActualPos].R > 0.01; // and (!DelayCtrlFlag)
@@ -391,7 +390,7 @@ void TMoverParameters::UpdateSeriesMotorDynamicBrakeFlag()
 
 // the current of the series motors connected, at the revolutions n and the voltage U, through the resistance R of
 // Mn motors in series
-double TMoverParameters::SeriesMotorCurrent(double const n, double const U, double const R, double const Mn)
+double TMoverParameters::SeriesMotorCurrent(double const n, double const U, double const R, double const Mn) const
 {
 	double MotorCurrent{0.0};
 	double Rz;
@@ -963,16 +962,17 @@ void TMoverParameters::PantPressureSwitchCheck()
 
 void TMoverParameters::UpdateBatteryVoltage(double dt)
 { // przeliczenie obciążenia baterii
-	if (BatteryVoltage > 0 && EngineType != TEngineType::DieselEngine && EngineType != TEngineType::WheelsDriven && NominalBatteryVoltage > 0)
+	using enum TEngineType;
+	if (BatteryVoltage > 0 && EngineType != DieselEngine && EngineType != WheelsDriven && NominalBatteryVoltage > 0)
 	{
 
 		// HACK: allow to draw power also from adjacent converter, applicable for EMUs
 		// TODO: expand power cables system to include low voltage power transfers
 		// HACK: emulate low voltage generator powered directly by the diesel engine
-		auto const converteractive{Power110vIsAvailable || (EngineType == TEngineType::DieselElectric && true == Mains) || (EngineType == TEngineType::DieselEngine && true == Mains)};
+		auto const converteractive{Power110vIsAvailable || (EngineType == DieselElectric && true == Mains) || (EngineType == DieselEngine && true == Mains)};
 
 		BatteryVoltage -= BatteryDrain(dt, converteractive);
-		if (NominalBatteryVoltage / BatteryVoltage > 1.57 && MainSwitch(false) && EngineType != TEngineType::DieselEngine && EngineType != TEngineType::WheelsDriven)
+		if (NominalBatteryVoltage / BatteryVoltage > 1.57 && MainSwitch(false) && EngineType != DieselEngine && EngineType != WheelsDriven)
 			EventFlag = true; // wywalanie szybkiego z powodu zbyt niskiego napiecia
 		if (BatteryVoltage > NominalBatteryVoltage)
 			BatteryVoltage = NominalBatteryVoltage; // wstrzymanie ładowania pow. 110V
@@ -1833,7 +1833,7 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 	auto localvoltage{0.0};
 
 	// local power sources
-	// TODO: store the results in PowerCircuit fields
+	// the results could be kept in the PowerCircuit fields
 	switch (Coupling)
 	{
 
@@ -5412,7 +5412,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	auto &thiscoupler{Couplers[End]};
 	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
 	auto const otherend{Neighbours[End].vehicle_end};
-	auto &othercoupler{othervehicle->Couplers[otherend]};
+	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
 	auto const othervehiclemove{(othervehicle->dMoveLen * DirPatch(End, otherend))};
 	auto const initialdistance{Neighbours[End].distance}; // odległość od sprzęgu sąsiada
@@ -5576,6 +5576,7 @@ void TMoverParameters::AutomaticCouplingCheck(int const End, TMoverParameters *o
 // *************************************************************************************************
 double TMoverParameters::TractionForce(double dt)
 {
+	using enum TEngineType;
 	Ft = 0;
 	double dtrans{0.0};
 	double dmoment{0.0};
@@ -5599,44 +5600,44 @@ double TMoverParameters::TractionForce(double dt)
 	if (DirActive != 0)
 		switch (EngineType)
 		{
-		case TEngineType::Dumb:
+		case Dumb:
 		{
 			DumbTractionForce(PosRatio);
 			break;
 		}
-		case TEngineType::WheelsDriven:
+		case WheelsDriven:
 		{
 			WheelsDrivenTractionForce(dt);
 			break;
 		}
-		case TEngineType::ElectricSeriesMotor:
+		case ElectricSeriesMotor:
 		{
 			SeriesMotorTractionForce(dt);
 			break;
 		}
-		case TEngineType::DieselEngine:
+		case DieselEngine:
 		{
 			DieselEngineTractionForce(dt, dmoment, dtrans);
 			break;
 		}
-		case TEngineType::DieselElectric: // youBy
+		case DieselElectric: // youBy
 		{
 			DieselElectricTractionForce(revolutions);
 			break;
 		}
-		case TEngineType::ElectricInductionMotor:
+		case ElectricInductionMotor:
 		{
 			InductionMotorTractionForce(dt);
 			break;
 		}
-		case TEngineType::None:
+		case None:
 		default:
 		{
 			break;
 		}
 		} // case EngineType
 
-	if (EngineType == TEngineType::DieselElectric)
+	if (EngineType == DieselElectric)
 	{
 		// rough approximation of extra effort to overcome friction etc
 		EnginePower += EngineRPMRatio() * 0.15 * DElist[MainCtrlPosNo].GenPower;
@@ -7064,7 +7065,6 @@ bool TMoverParameters::AutoRelayCheck(void)
 	if (motorconnectorsoff || (HasCamshaft ? IsMainCtrlActualNoPowerPos() : IsMainCtrlNoPowerPos()))
 	{
 		StLinFlag = false;
-		OK = false;
 		if (false == DynamicBrakeFlag)
 		{
 			Im = 0;
@@ -8253,7 +8253,7 @@ double TMoverParameters::dizel_DigitalFill(double dt)
 }
 
 // the fill cut off over the revolutions the governor allows at the controller's position, or full under the idle ones
-double TMoverParameters::dizel_GovernorFill(int const mcp, double realfill)
+double TMoverParameters::dizel_GovernorFill(int const mcp, double realfill) const
 {
 		auto nreg{0.0};
 		if (EIMCtrlType > 0)
@@ -9073,7 +9073,7 @@ void TMoverParameters::update_doors(double const Deltatime)
 }
 
 // the permit, the state and the requests of a door, and whether it and its step open or close
-void TMoverParameters::update_door_requests(basic_door &door, bool const localopencontrol, bool const remoteopencontrol, bool const localclosecontrol, bool const remoteclosecontrol)
+void TMoverParameters::update_door_requests(basic_door &door, bool const localopencontrol, bool const remoteopencontrol, bool const localclosecontrol, bool const remoteclosecontrol) const
 {
 	// revoke permit if...
 	door.open_permit = true == door.open_permit // ...we already have one...
@@ -9114,7 +9114,7 @@ void TMoverParameters::update_door_requests(basic_door &door, bool const localop
 }
 
 // a door and its step moved as they open or close
-void TMoverParameters::move_door(basic_door &door, double const Deltatime)
+void TMoverParameters::move_door(basic_door &door, double const Deltatime) const
 {
 	// doors
 	if (true == door.is_opening)
@@ -10010,7 +10010,7 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser)
 
 	// Zbieranie danych zawartych w pliku FIZ
 	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-	std::unordered_map<std::string, std::string> fizlines;
+	std::map<std::string, std::string, std::less<>> fizlines;
 	std::string inputline;
 	/*
 	    while (std::getline(in, inputline))
@@ -10071,7 +10071,7 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser)
 }
 
 // the end of the table being read; returns whether the line is one
-bool TMoverParameters::LoadFIZ_TableEnd(std::string const &inputline)
+bool TMoverParameters::LoadFIZ_TableEnd(std::string const &inputline) const
 {
 	// checking if table parsing should be switched off goes first...
 	if (issection("END-MPT", inputline))
@@ -10166,7 +10166,7 @@ bool TMoverParameters::LoadFIZ_TableEnd(std::string const &inputline)
 }
 
 // a section of the definition, kept in fizlines by its name; returns whether the line is one
-bool TMoverParameters::LoadFIZ_Section(std::string const &inputline, std::unordered_map<std::string, std::string> &fizlines)
+bool TMoverParameters::LoadFIZ_Section(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines)
 {
 	// ...then all recognized sections...
 	if (issection("Param.", inputline))
@@ -11303,36 +11303,37 @@ void TMoverParameters::LoadFIZ_CntrlControllers(std::string const &line)
 // Cntrl.: how the devices start (MainStart, BatteryStart, ...) and their relays
 void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 {
-	std::map<std::string, start_t, std::less<>> starts{{"Disabled", start_t::disabled}, {"Manual", start_t::manual},       {"Automatic", start_t::automatic}, {"Mixed", start_t::manualwithautofallback},
-	                                      {"Battery", start_t::battery},   {"Converter", start_t::converter}, {"Direction", start_t::direction}};
+	using enum start_t;
+	std::map<std::string, start_t, std::less<>> starts{{"Disabled", disabled}, {"Manual", manual},       {"Automatic", automatic}, {"Mixed", manualwithautofallback},
+	                                      {"Battery", battery},   {"Converter", converter}, {"Direction", direction}};
 
 	// main circuit
 	extract_value(MainsInitTime, "MainInitTime", line, "");
 	{
 		auto lookup = starts.find(extract_value("MainStart", line));
-		MainsStart = lookup != starts.end() ? lookup->second : start_t::manual;
+		MainsStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	// battery
 	{
 		auto lookup = starts.find(extract_value("BatteryStart", line));
-		BatteryStart = lookup != starts.end() ? lookup->second : start_t::manual;
+		BatteryStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	// converter
 	{
 		auto lookup = starts.find(extract_value("ConverterStart", line));
-		ConverterStart = lookup != starts.end() ? lookup->second : start_t::manual;
+		ConverterStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	extract_value(ConverterStartDelay, "ConverterStartDelay", line, "");
 	extract_value(ConverterOverloadRelayOffWhenMainIsOff, "ConverterOverloadWhenMainIsOff", line, TrainType == dt_EZT ? "yes" : "no");
 	// compressor
 	{
 		auto lookup = starts.find(extract_value("CompressorStart", line));
-		CompressorStart = lookup != starts.end() ? lookup->second : start_t::manual;
+		CompressorStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	// pantograph compressor
 	{
 		auto lookup = starts.find(extract_value("PantCompressorStart", line));
-		PantographCompressorStart = lookup != starts.end() ? lookup->second : start_t::manual;
+		PantographCompressorStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	// pantograph compressor valve
 	PantAutoValve = TrainType == dt_EZT; // legacy code behaviour, automatic valve was initially installed in all EMUs
@@ -11340,13 +11341,13 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 	// pantographs valve
 	{
 		auto lookup = starts.find(extract_value("PantEPValveStart", line));
-		PantsValve.start_type = lookup != starts.end() ? lookup->second : start_t::automatic; // legacy code behaviour, there was no pantographs valve
+		PantsValve.start_type = lookup != starts.end() ? lookup->second : automatic; // legacy code behaviour, there was no pantographs valve
 		extract_value(PantsValve.spring, "PantEPValveSpring", line, "");
 	}
 	// pantograph valve configuration
 	{
 		auto lookup = starts.find(extract_value("PantValveStart", line));
-		auto valvestarttype = lookup != starts.end() ? lookup->second : start_t::manual;
+		auto valvestarttype = lookup != starts.end() ? lookup->second : manual;
 		auto valvespring{true};
 		extract_value(valvespring, "PantValveSpring", line, "");
 		auto valvesolenoid{true};
@@ -11361,40 +11362,40 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 	// fuel pump
 	{
 		auto lookup = starts.find(extract_value("FuelStart", line));
-		FuelPump.start_type = lookup != starts.end() ? lookup->second : start_t::manual;
+		FuelPump.start_type = lookup != starts.end() ? lookup->second : manual;
 	}
 	// oil pump
 	{
 		auto lookup = starts.find(extract_value("OilStart", line));
-		OilPump.start_type = lookup != starts.end() ? lookup->second : start_t::manual;
+		OilPump.start_type = lookup != starts.end() ? lookup->second : manual;
 	}
 	// water pump
 	{
 		auto lookup = starts.find(extract_value("WaterStart", line));
-		WaterPump.start_type = lookup != starts.end() ? lookup->second : start_t::manual;
+		WaterPump.start_type = lookup != starts.end() ? lookup->second : manual;
 	}
 	// traction motor fans
 	{
 		auto lookup = starts.find(extract_value("MotorBlowersStart", line));
-		MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : start_t::manual;
+		MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : manual;
 		MotorBlowers[end::front].start_type = MotorBlowers[end::rear].start_type;
 	}
 	// compartment lights
 	{
 		auto lookup = starts.find(extract_value("CompartmentLightsStart", line));
-		CompartmentLights.start_type = lookup != starts.end() ? lookup->second : start_t::automatic; // legacy behaviour
+		CompartmentLights.start_type = lookup != starts.end() ? lookup->second : automatic; // legacy behaviour
 	}
 	// ground relay
 	{
 		auto lookup = starts.find(extract_value("GroundRelayStart", line));
-		auto const defaultstart{TrainType == dt_EZT ? start_t::automatic : start_t::manual};
+		auto const defaultstart{TrainType == dt_EZT ? automatic : manual};
 		GroundRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 	// converter overload relay
 	{
 		auto lookup = starts.find(extract_value("ConverterOverloadRelayStart", line));
 		// the relay of a multiple unit activates when the converter is switched off
-		auto const defaultstart{TrainType == dt_EZT ? start_t::converter : start_t::manual};
+		auto const defaultstart{TrainType == dt_EZT ? converter : manual};
 		ConverterOverloadRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 }
@@ -11801,7 +11802,7 @@ void TMoverParameters::LoadFIZ_EngineDieselShared(std::string const &Input)
 	// water heater
 	extract_value(WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "");
 	extract_value(WaterHeater.config.temp_max, "HeaterMaxTemperature", Input, "");
-	float pf;
+	float pf{1235.f};
 	extract_value(pf, "NominalCoolingPower", Input, "1235");
 	dizel_heat.powerfactor = 1235 / pf;
 }
@@ -12668,10 +12669,8 @@ bool TMoverParameters::SendCtrlToNext(std::string const &CtrlCommand, double con
 // jakiejś zmiany (np. IncMainCtrl) lepiej wywołać funkcję, czy od razu wysłać komendę.
 bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype)
 {
-	bool OK{false};
-
 	// the group of the command sets OK; a command none of them knows isn't done
-	if (RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) || RunBrakeCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	if (bool OK{false}; RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) || RunBrakeCommand(Command, CValue1, CValue2, Couplertype, OK) ||
 	    RunAuxiliariesCommand(Command, CValue1, CValue2, Couplertype, OK) || RunPowerCommand(Command, CValue1, CValue2, Couplertype, OK) ||
 	    RunDoorsCommand(Command, CValue1, CValue2, Couplertype, OK) || RunLoadCommand(Command, CValue1, CValue2, Couplertype, OK))
 	{
@@ -13202,7 +13201,7 @@ bool TMoverParameters::RunDoorsCommand(std::string const &Command, double CValue
 }
 
 // RunCommand() for the load and the damage; returns whether the command is one of them
-bool TMoverParameters::RunLoadCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+bool TMoverParameters::RunLoadCommand(std::string const &Command, double CValue1, double CValue2, int const /*Couplertype*/, bool &OK)
 {
 	if (issection("Load=", Command))
 	{
