@@ -2537,25 +2537,7 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 
 		if ((BrakeStatus & b_hld) == b_hld)
 		{
-
-			if (VVP + 0.003 + BCP / BVM < CVP)
-			{
-				// hamowanie stopniowe;
-				BrakeStatus |= b_on;
-			}
-			else
-			{
-				if (VVP + BCP / BVM > CVP)
-				{
-					// zatrzymanie napelaniania;
-					BrakeStatus &= ~b_on;
-				}
-				if (VVP - 0.003 + BCP / BVM > CVP)
-				{
-					// luzowanie;
-					BrakeStatus &= ~(b_on | b_hld);
-				}
-			}
+			CheckStateHeld(BCP, VVP, CVP);
 		}
 		else
 		{
@@ -2587,6 +2569,29 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 	if ((BrakeStatus & b_hld) == 0)
 	{
 		SoundFlag |= sf_CylU;
+	}
+}
+
+// the state of a valve holding: braking on in steps, the filling stopped, or released
+void TKE::CheckStateHeld(double const BCP, double const VVP, double const CVP)
+{
+	if (VVP + 0.003 + BCP / BVM < CVP)
+	{
+		// hamowanie stopniowe;
+		BrakeStatus |= b_on;
+	}
+	else
+	{
+		if (VVP + BCP / BVM > CVP)
+		{
+			// zatrzymanie napelaniania;
+			BrakeStatus &= ~b_on;
+		}
+		if (VVP - 0.003 + BCP / BVM > CVP)
+		{
+			// luzowanie;
+			BrakeStatus &= ~(b_on | b_hld);
+		}
 	}
 }
 
@@ -2709,6 +2714,36 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 	BrakeRes->Flow(dv);
 	ImplsRes->Flow(-dv);
 
+	IMP = CylinderFlowKE(IMP, BCP, BVP, Vel, dt);
+
+	// przeplyw ZP <-> rozdzielacz
+	temp = BVs(IMP);
+	//  if(BrakeStatus and b_hld)=b_off then
+	if (IMP < 0.25 || VVP + 0.05 > BVP)
+		dv = PF(BVP, VVP, 0.02 * SizeBR * temp / 1.87) * dt;
+	else
+		dv = 0;
+	BrakeRes->Flow(dv);
+	dV1 = dV1 + dv * 0.96;
+	ValveRes->Flow(-0.04 * dv);
+	// przeplyw PG <-> rozdzielacz
+	dv = PF(PP, VVP, 0.01) * dt;
+	ValveRes->Flow(-dv);
+
+	ValveRes->Act();
+	BrakeCyl->Act();
+	BrakeRes->Act();
+	CntrlRes->Act();
+	ImplsRes->Act();
+	return dv - dV1;
+}
+
+// the cylinders filled from the auxiliary reservoir or let out to the pressure of the impulse chamber IMP, by the load
+// and the rapid setting, at least the local brake's and the anti-slip brake's; returns that pressure
+double TKE::CylinderFlowKE(double IMP, double const BCP, double const BVP, double const Vel, double const dt)
+{
+	double dv;
+	double temp;
 	// rapid
 	auto const &frictionmaterial{*FM};
 	if (auto const &frictionmaterialtype{typeid(frictionmaterial)}; !(frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2))) // jesli zeliwo to schodz
@@ -2743,27 +2778,7 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 		dv = 0;
 	BrakeRes->Flow(-dv);
 	BrakeCyl->Flow(+dv);
-
-	// przeplyw ZP <-> rozdzielacz
-	temp = BVs(IMP);
-	//  if(BrakeStatus and b_hld)=b_off then
-	if (IMP < 0.25 || VVP + 0.05 > BVP)
-		dv = PF(BVP, VVP, 0.02 * SizeBR * temp / 1.87) * dt;
-	else
-		dv = 0;
-	BrakeRes->Flow(dv);
-	dV1 = dV1 + dv * 0.96;
-	ValveRes->Flow(-0.04 * dv);
-	// przeplyw PG <-> rozdzielacz
-	dv = PF(PP, VVP, 0.01) * dt;
-	ValveRes->Flow(-dv);
-
-	ValveRes->Act();
-	BrakeCyl->Act();
-	BrakeRes->Act();
-	CntrlRes->Act();
-	ImplsRes->Act();
-	return dv - dV1;
+	return IMP;
 }
 
 /// <summary>

@@ -979,6 +979,10 @@ class TKE : public TBrake
 	/// <summary>Auxiliary (local) brake pressure feeding the DCV.</summary>
 	double LBP = 0.0; // cisnienie hamulca pomocniczego
 
+	// the parts of GetPF() and CheckState()
+	double CylinderFlowKE(double IMP, double BCP, double BVP, double Vel, double dt);
+	void CheckStateHeld(double BCP, double VVP, double CVP);
+
   public:
 	/// <summary>Initialises the KE distributor (control / impulse / auxiliary reservoirs and BVM).</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
