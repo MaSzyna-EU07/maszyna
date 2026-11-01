@@ -2515,8 +2515,14 @@ class TMoverParameters
 	void ShuntFieldRelaysType46();
 	void InductionMotorTractionForce(double dt);
 	void InductionMotorSpeedControl(double dt);
+	void SpeedControlByTime(double dt);
+	void SpeedControlByPosition(double dt);
 	void InductionMotorBrakeBlending(double ActiveInverters, double &PosRatio, double &tmp);
+	void InductionMotorDynamicBrakeFlag();
+	double InductionMotorBrakeRatio(double ActiveInverters, double edBCP);
 	void InductionMotorDrive(double dt);
+	void InductionMotorForceLimits();
+	void UpdateInverterFrequency();
 	void InductionMotorOff();
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity) const;

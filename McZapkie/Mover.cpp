@@ -6534,71 +6534,84 @@ void TMoverParameters::InductionMotorSpeedControl(double dt)
 	// tempomat
 	if (ScndCtrlPosNo == 4 && SpeedCtrlTypeTime)
 	{
-		SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
-		switch (ScndCtrlPos)
-		{
-		case 0:
-			NewSpeed = 0;
-			SpeedCtrlValue = 0;
-			SpeedCtrlTimer = 10;
-			break;
-		case 1:
-			if (SpeedCtrlTimer > SpeedCtrlDelay)
-			{
-				SpeedCtrlTimer = 0;
-				NewSpeed -= 10;
-				if (NewSpeed < 0)
-					NewSpeed = 0;
-			}
-			else
-				SpeedCtrlTimer += dt;
-			break;
-		case 2:
-			SpeedCtrlTimer = 10;
-			SpeedCtrlValue = NewSpeed;
-			break;
-		case 3:
-			if (SpeedCtrlTimer > SpeedCtrlDelay)
-			{
-				SpeedCtrlTimer = 0;
-				NewSpeed += 10;
-				if (NewSpeed > Vmax)
-					NewSpeed = Vmax;
-			}
-			else
-				SpeedCtrlTimer += dt;
-			break;
-		case 4:
-			NewSpeed = Vmax;
-			SpeedCtrlValue = Vmax;
-			SpeedCtrlTimer = 10;
-			break;
-		default:
-			break;
-		}
+		SpeedControlByTime(dt);
 	}
 	else if (ScndCtrlPosNo > 1)
 	{
-		if (ScndCtrlPos != NewSpeed)
-		{
+		SpeedControlByPosition(dt);
+	}
+}
 
-			SpeedCtrlTimer = 0;
-			NewSpeed = ScndCtrlPos;
-		}
-		else
+// the speed control set by the position of the second controller, after it's been held for its delay
+void TMoverParameters::SpeedControlByPosition(double dt)
+{
+	if (ScndCtrlPos != NewSpeed)
+	{
+
+		SpeedCtrlTimer = 0;
+		NewSpeed = ScndCtrlPos;
+	}
+	else
+	{
+		SpeedCtrlTimer += dt;
+		if (SpeedCtrlTimer > SpeedCtrlDelay)
 		{
-			SpeedCtrlTimer += dt;
-			if (SpeedCtrlTimer > SpeedCtrlDelay)
+			auto NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
+			if (NewSCAP != SpeedCtrlValue)
 			{
-				auto NewSCAP = static_cast<int>((float)ScndCtrlPos / (float)ScndCtrlPosNo * Vmax);
-				if (NewSCAP != SpeedCtrlValue)
-				{
-					SpeedCtrlValue = NewSCAP;
-					//								SendCtrlToNext("SpeedCntrl", SpeedCtrlValue, CabActive);
-				}
+				SpeedCtrlValue = NewSCAP;
+				//								SendCtrlToNext("SpeedCntrl", SpeedCtrlValue, CabActive);
 			}
 		}
-		SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
+	}
+	SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
+}
+
+// the speed control of a four position second controller, by time: the speed set down or up by 10 km/h a step, held,
+// or off and at the top
+void TMoverParameters::SpeedControlByTime(double dt)
+{
+	SpeedCtrlUnit.IsActive = SpeedCtrlValue > 0;
+	switch (ScndCtrlPos)
+	{
+	case 0:
+		NewSpeed = 0;
+		SpeedCtrlValue = 0;
+		SpeedCtrlTimer = 10;
+		break;
+	case 1:
+		if (SpeedCtrlTimer > SpeedCtrlDelay)
+		{
+			SpeedCtrlTimer = 0;
+			NewSpeed -= 10;
+			if (NewSpeed < 0)
+				NewSpeed = 0;
+		}
+		else
+			SpeedCtrlTimer += dt;
+		break;
+	case 2:
+		SpeedCtrlTimer = 10;
+		SpeedCtrlValue = NewSpeed;
+		break;
+	case 3:
+		if (SpeedCtrlTimer > SpeedCtrlDelay)
+		{
+			SpeedCtrlTimer = 0;
+			NewSpeed += 10;
+			if (NewSpeed > Vmax)
+				NewSpeed = Vmax;
+		}
+		else
+			SpeedCtrlTimer += dt;
+		break;
+	case 4:
+		NewSpeed = Vmax;
+		SpeedCtrlValue = Vmax;
+		SpeedCtrlTimer = 10;
+		break;
+	default:
+		break;
 	}
 }
 
@@ -6606,63 +6619,11 @@ void TMoverParameters::InductionMotorSpeedControl(double dt)
 // force asked of the motors (PosRatio) and how fast the drive follows it (tmp)
 void TMoverParameters::InductionMotorBrakeBlending(double const ActiveInverters, double &PosRatio, double &tmp)
 {
-	double edBCP = Hamulec->GetEDBCP();
-	auto const localbrakeactive{CabOccupied != 0 && LocHandle->GetCP() > 0.25};
-	// gdy SplitEDPneumaticBrake jest aktywne, hamulec pomocniczy (LocalBrake) NIE wymusza
-	// zalaczenia hamulca elektrodynamicznego - ED jest sterowany wlasnym nastawnikiem
-	auto const dynbrakectrlactive{SplitEDPneumaticBrake && DynamicBrakeRatio() > 0.01 && DynamicBrakeAvailable()};
-	auto const localbrakeforED{SplitEDPneumaticBrake ? false : localbrakeactive};
-	if (false == Doors.instances[side::left].is_closed || false == Doors.instances[side::right].is_closed ||
-	    (Doors.permit_needed && (Doors.instances[side::left].open_permit || Doors.instances[side::right].open_permit)))
-	{
-		DynamicBrakeFlag = true;
-	}
-	else if ((edBCP < 0.25 && false == localbrakeforED && false == dynbrakectrlactive && AnPos < 0.01) ||
-	         (edBCP < 0.25 && ShuntModeAllow && false == dynbrakectrlactive && LocalBrakePosA < 0.01))
-		DynamicBrakeFlag = false;
-	else if (BrakePress > 0.25 && edBCP > 0.25 || localbrakeforED || AnPos > 0.02 || dynbrakectrlactive)
-		DynamicBrakeFlag = true;
-	edBCP = Hamulec->GetEDBCP() * eimc[eimc_p_abed]; // stala napedu
+	InductionMotorDynamicBrakeFlag();
+	auto const edBCP{Hamulec->GetEDBCP() * eimc[eimc_p_abed]}; // stala napedu
 	if (DynamicBrakeFlag)
 	{
-		// ustalanie współczynnika blendingu do luzowania hamulca PN
-		if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
-		{
-			PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
-			PosRatio = std::clamp(PosRatio, 0.0, 1.0);
-		}
-		else
-		{
-			PosRatio = 0;
-		}
-		PosRatio = static_cast<double>(Round(20.0 * PosRatio)) / 20.0; // stopniowanie PN/ED
-		if (PosRatio < 19.5 / 20.0)
-			PosRatio *= 0.9;
-		Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
-		// ustalanie siły hamowania ED
-		if (Hamulec->GetEDBCP() > 0.25 && eimc[eimc_p_abed] < 0.001 || ActiveInverters < InvertersNo) // jeśli PN wyłącza ED
-		{
-			PosRatio = 0;
-			eimv[eimv_Fzad] = 0;
-		}
-		else
-		{
-			// strefa wylaczenia ED (Vh0..Vh1) - mnoznik 0..1 zaleznie od predkosci
-			double const vhRamp = std::max(0.0, std::min(1.0, (Vel - eimc[eimc_p_Vh0]) / (eimc[eimc_p_Vh1] - eimc[eimc_p_Vh0])));
-			if (SplitEDPneumaticBrake)
-			{
-				// w trybie split LocalBrake nie zaleca ED; uzywany jest DynamicBrakeCtrl
-				// oraz zwykle zapotrzebowanie z hamulca zespolonego (edBCP)
-				double const edLeverDemand = DynamicBrakeRatio();
-				PosRatio = -std::max(std::max(edLeverDemand, std::min(edBCP / MaxBrakePress[0], 1.0)), AnPos) * vhRamp;
-				eimv[eimv_Fzad] = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
-			}
-			else
-			{
-				PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * vhRamp;
-				eimv[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
-			}
-		}
+		PosRatio = InductionMotorBrakeRatio(ActiveInverters, edBCP);
 		tmp = 5;
 	}
 	else
@@ -6682,6 +6643,74 @@ void TMoverParameters::InductionMotorBrakeBlending(double const ActiveInverters,
 		//           (Hamulec as TLSt).SetLBP(LocBrakePress);
 		tmp = 4; // szybkie malenie, powolne wzrastanie
 	}
+}
+
+// the electrodynamic brake of the induction motors on: with the doors open or permitted, by the train brake, the local
+// brake or its own controller; off without them
+void TMoverParameters::InductionMotorDynamicBrakeFlag()
+{
+	double const edBCP = Hamulec->GetEDBCP();
+	auto const localbrakeactive{CabOccupied != 0 && LocHandle->GetCP() > 0.25};
+	// gdy SplitEDPneumaticBrake jest aktywne, hamulec pomocniczy (LocalBrake) NIE wymusza
+	// zalaczenia hamulca elektrodynamicznego - ED jest sterowany wlasnym nastawnikiem
+	auto const dynbrakectrlactive{SplitEDPneumaticBrake && DynamicBrakeRatio() > 0.01 && DynamicBrakeAvailable()};
+	auto const localbrakeforED{SplitEDPneumaticBrake ? false : localbrakeactive};
+	if (false == Doors.instances[side::left].is_closed || false == Doors.instances[side::right].is_closed ||
+	    (Doors.permit_needed && (Doors.instances[side::left].open_permit || Doors.instances[side::right].open_permit)))
+	{
+		DynamicBrakeFlag = true;
+	}
+	else if ((edBCP < 0.25 && false == localbrakeforED && false == dynbrakectrlactive && AnPos < 0.01) ||
+	         (edBCP < 0.25 && ShuntModeAllow && false == dynbrakectrlactive && LocalBrakePosA < 0.01))
+		DynamicBrakeFlag = false;
+	else if (BrakePress > 0.25 && edBCP > 0.25 || localbrakeforED || AnPos > 0.02 || dynbrakectrlactive)
+		DynamicBrakeFlag = true;
+}
+
+// the share of the electrodynamic brake (negative), and the distributor told how much of the air to let out; none
+// when the air brake cuts the electrodynamic one off, or an inverter is out
+double TMoverParameters::InductionMotorBrakeRatio(double const ActiveInverters, double const edBCP)
+{
+	double PosRatio;
+	// ustalanie współczynnika blendingu do luzowania hamulca PN
+	if (eimv[eimv_Fmax] * Sign(V) * DirAbsolute < -1)
+	{
+		PosRatio = -Sign(V) * DirAbsolute * eimv[eimv_Fr] / (eimc[eimc_p_Fh] * std::max(edBCP, std::max(0.01, Hamulec->GetEDBCP())) / MaxBrakePress[0]);
+		PosRatio = std::clamp(PosRatio, 0.0, 1.0);
+	}
+	else
+	{
+		PosRatio = 0;
+	}
+	PosRatio = static_cast<double>(Round(20.0 * PosRatio)) / 20.0; // stopniowanie PN/ED
+	if (PosRatio < 19.5 / 20.0)
+		PosRatio *= 0.9;
+	Hamulec->SetED(std::max(0.0, std::min(PosRatio, 1.0))); // ustalenie stopnia zmniejszenia ciśnienia
+	// ustalanie siły hamowania ED
+	if (Hamulec->GetEDBCP() > 0.25 && eimc[eimc_p_abed] < 0.001 || ActiveInverters < InvertersNo) // jeśli PN wyłącza ED
+	{
+		PosRatio = 0;
+		eimv[eimv_Fzad] = 0;
+	}
+	else
+	{
+		// strefa wylaczenia ED (Vh0..Vh1) - mnoznik 0..1 zaleznie od predkosci
+		double const vhRamp = std::max(0.0, std::min(1.0, (Vel - eimc[eimc_p_Vh0]) / (eimc[eimc_p_Vh1] - eimc[eimc_p_Vh0])));
+		if (SplitEDPneumaticBrake)
+		{
+			// w trybie split LocalBrake nie zaleca ED; uzywany jest DynamicBrakeCtrl
+			// oraz zwykle zapotrzebowanie z hamulca zespolonego (edBCP)
+			double const edLeverDemand = DynamicBrakeRatio();
+			PosRatio = -std::max(std::max(edLeverDemand, std::min(edBCP / MaxBrakePress[0], 1.0)), AnPos) * vhRamp;
+			eimv[eimv_Fzad] = -std::min(1.0, std::max(edLeverDemand, edBCP / MaxBrakePress[0]));
+		}
+		else
+		{
+			PosRatio = -std::max(std::min(edBCP * 1.0 / MaxBrakePress[0], 1.0), AnPos) * vhRamp;
+			eimv[eimv_Fzad] = -std::min(1.0, std::max(LocalBrakeRatio(), edBCP / MaxBrakePress[0]));
+		}
+	}
+	return PosRatio;
 }
 
 // the model of the induction motors and their inverters: voltage, frequency, currents, moment and force
@@ -6708,30 +6737,7 @@ void TMoverParameters::InductionMotorDrive(double dt)
 	eimv[eimv_FMAXMAX] = 0.001 *
 	                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
 	                     (eimc[eimc_s_dfmax] * eimc[eimc_s_dfic] * eimc[eimc_s_cim]) * Transmision.Ratio * NPoweredAxles * 2.0 / WheelDiameter;
-	if (eimv_pr < 0)
-	{
-		eimv[eimv_Fful] = std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(eimc[eimc_p_Fh], eimv[eimv_FMAXMAX]));
-		eimv[eimv_Fmax] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * eimv_pr, eimv[eimv_FMAXMAX]));
-		double pr = eimv_pr;
-		if (EIMCLogForce)
-			pr = -log(1 - 4 * pr) / log(5);
-		eimv[eimv_Fr] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
-		if (InvertersRatio < 1.0)
-			eimv[eimv_Fful] = 0;
-		//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
-	}
-	else
-	{
-		eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
-		//           if(not Flat)then
-		eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
-		//           else
-		//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
-		double pr = eimv_pr;
-		if (EIMCLogForce)
-			pr = log(1 + 4 * pr) / log(5);
-		eimv[eimv_Fr] = eimv[eimv_Fful] * pr;
-	}
+	InductionMotorForceLimits();
 	for (auto &inv : Inverters)
 	{
 		inv.Request = inv.IsActive ? eimv_pr : 0.0;
@@ -6767,6 +6773,48 @@ void TMoverParameters::InductionMotorDrive(double dt)
 
 	EnginePower = abs(eimv[eimv_Ic] * eimv[eimv_U] * NPoweredAxles) / 1000;
 	// power inverters
+	UpdateInverterFrequency();
+
+	Mm = eimv[eimv_M] * DirAbsolute;
+	Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
+	Fw = Mw * 2.0 / WheelDiameter;
+	Ft = Fw * NPoweredAxles * InvertersRatio;
+	eimv[eimv_Fr] = DirAbsolute * Ft / 1000;
+}
+
+// the force the motors give at full and at the setting (eimv_pr), braking within the power and the force of the
+// electrodynamic brake, driving within the power and the starting force
+void TMoverParameters::InductionMotorForceLimits()
+{
+	if (eimv_pr < 0)
+	{
+		eimv[eimv_Fful] = std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(eimc[eimc_p_Fh], eimv[eimv_FMAXMAX]));
+		eimv[eimv_Fmax] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * eimv_pr, eimv[eimv_FMAXMAX]));
+		double pr = eimv_pr;
+		if (EIMCLogForce)
+			pr = -log(1 - 4 * pr) / log(5);
+		eimv[eimv_Fr] = -Sign(V) * DirAbsolute*std::min(eimc[eimc_p_Ph] * 3.6 / (Vel != 0.0 ? Vel : 0.001), std::min(-eimc[eimc_p_Fh] * pr, eimv[eimv_FMAXMAX]));
+		if (InvertersRatio < 1.0)
+			eimv[eimv_Fful] = 0;
+		//*std::min(1,(Vel-eimc[eimc_p_Vh0])/(eimc[eimc_p_Vh1]-eimc[eimc_p_Vh0]))
+	}
+	else
+	{
+		eimv[eimv_Fful] = std::min(std::min(3.6 * eimv[eimv_Pmax] / std::max(Vel, 1.), eimc[eimc_p_F0] - Vel * eimc[eimc_p_a1]), eimv[eimv_FMAXMAX]);
+		//           if(not Flat)then
+		eimv[eimv_Fmax] = eimv[eimv_Fful] * eimv_pr;
+		//           else
+		//             eimv[eimv_Fmax]:=std::min(eimc[eimc_p_F0]*eimv_pr,eimv[eimv_Fful]);
+		double pr = eimv_pr;
+		if (EIMCLogForce)
+			pr = log(1 + 4 * pr) / log(5);
+		eimv[eimv_Fr] = eimv[eimv_Fful] * pr;
+	}
+}
+
+// the frequency of the inverters at the motors' slip frequency, from the list of the drive or of its brake
+void TMoverParameters::UpdateInverterFrequency()
+{
 	auto const tmpV{std::abs(eimv[eimv_fp])};
 	auto const useFFEDList = FFEDListSize > 0 && DynamicBrakeFlag;
 	auto const list = useFFEDList ? FFEDlist : FFlist;
@@ -6785,12 +6833,6 @@ void TMoverParameters::InductionMotorDrive(double dt)
 	{
 		InverterFrequency = 0.0;
 	}
-
-	Mm = eimv[eimv_M] * DirAbsolute;
-	Mw = Mm * Transmision.Ratio * Transmision.Efficiency;
-	Fw = Mw * 2.0 / WheelDiameter;
-	Ft = Fw * NPoweredAxles * InvertersRatio;
-	eimv[eimv_Fr] = DirAbsolute * Ft / 1000;
 }
 
 // the induction motor drive without power, or blocked by the security system
