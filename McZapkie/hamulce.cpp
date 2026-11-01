@@ -3077,32 +3077,7 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	// na wszelki wypadek, zeby nie wyszlo poza zakres
 	i_bcp = std::clamp(i_bcp, -1.999, 5.999);
 
-	double DP{0.0};
-	if (TP > 0.0)
-	{
-		// jesli czasowy jest niepusty
-		DP = 0.045; // 2.5 w 55 sekund (5,35->5,15 w PG)
-		TP -= DP * dt;
-		Sounds[s_fv4a_t] = DP;
-	}
-	else
-	{
-		//.08
-		TP = 0.0;
-	}
-
-	if (XP > 0)
-	{
-		// jesli komora pod niepusta jest niepusty
-		DP = 2.5;
-		Sounds[s_fv4a_x] = DP * XP;
-		XP -= dt * DP * 2.0; // od cisnienia 5 do 0 w 10 sekund ((5-0)*dt/10)
-	}
-	else
-	{
-		// jak pusty, to pusty
-		XP = 0.0;
-	}
+	DischargeChambers(dt);
 
 	double pom;
 	if (EQ(i_bcp, -1.0))
@@ -3114,21 +3089,7 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		pom = std::min(CP, HP);
 	}
 
-	if (pom > RP + 0.25)
-	{
-		Fala = true;
-	}
-	if (Fala)
-	{
-		if (pom > RP + 0.3)
-		{
-			XP = XP - 20.0 * PR(pom, XP) * dt;
-		}
-		else
-		{
-			Fala = false;
-		}
-	}
+	UpdateWave(pom, dt);
 
 	double LimPP = std::min(LPP_RP(i_bcp) + TP * 0.08 + RedAdj,
 	                        HP); // pozycja + czasowy lub zasilanie
@@ -3170,28 +3131,12 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	}
 
 	ep = dpPipe;
-	if (EQ(i_bcp, 0) || RP > ep)
-	{
-		// powolne wzrastanie, ale szybsze na jezdzie;
-		RP += PF(RP, ep, 0.0007) * dt;
-	}
-	else
-	{
-		// powolne wzrastanie i to bardzo
-		RP += PF(RP, ep, 0.000093 / 2 * 2) * dt;
-	}
-	// jednak trzeba wydluzyc, bo obecnie zle dziala
-	if (RP < ep && RP < BPT[std::lround(i_bcpno) + 2][1])
-	{
-		// jesli jestesmy ponizej cisnienia w sterujacym (2.9 bar)
-		// przypisz cisnienie w PG - wydluzanie napelniania o czas potrzebny do napelnienia PG
-		RP += PF(RP, CP, 0.005) * dt;
-	}
+	UpdateReductor(i_bcp, ep, dt);
 
 	if (EQ(i_bcp, i_bcpno) || EQ(i_bcp, -2))
 	{
 
-		DP = PF(0.0, PP, ActFlowSpeed / LBDelay);
+		auto const DP{PF(0.0, PP, ActFlowSpeed / LBDelay)};
 		dpMainValve = DP;
 		Sounds[s_fv4a_e] = DP;
 		Sounds[s_fv4a_u] = 0.0;
@@ -3212,6 +3157,80 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	}
 
 	return dpMainValve * dt;
+}
+
+// the time reservoir and the reductor's air chamber let out, and their sounds
+void TFV4aM::DischargeChambers(double const dt)
+{
+	double DP{0.0};
+	if (TP > 0.0)
+	{
+		// jesli czasowy jest niepusty
+		DP = 0.045; // 2.5 w 55 sekund (5,35->5,15 w PG)
+		TP -= DP * dt;
+		Sounds[s_fv4a_t] = DP;
+	}
+	else
+	{
+		//.08
+		TP = 0.0;
+	}
+
+	if (XP > 0)
+	{
+		// jesli komora pod niepusta jest niepusty
+		DP = 2.5;
+		Sounds[s_fv4a_x] = DP * XP;
+		XP -= dt * DP * 2.0; // od cisnienia 5 do 0 w 10 sekund ((5-0)*dt/10)
+	}
+	else
+	{
+		// jak pusty, to pusty
+		XP = 0.0;
+	}
+}
+
+// the release pressure wave: on while the supply is well over the reductor's pressure, its chamber filled meanwhile
+void TFV4aM::UpdateWave(double const pom, double const dt)
+{
+	if (pom > RP + 0.25)
+	{
+		Fala = true;
+	}
+	if (Fala)
+	{
+		if (pom > RP + 0.3)
+		{
+			XP = XP - 20.0 * PR(pom, XP) * dt;
+		}
+		else
+		{
+			Fala = false;
+		}
+	}
+}
+
+// the reductor reservoir following the pressure ep the pipe is driven to, slowly, faster at running, and filled from
+// the control reservoir under the lowest pressure of the handle
+void TFV4aM::UpdateReductor(double const i_bcp, double const ep, double const dt)
+{
+	if (EQ(i_bcp, 0) || RP > ep)
+	{
+		// powolne wzrastanie, ale szybsze na jezdzie;
+		RP += PF(RP, ep, 0.0007) * dt;
+	}
+	else
+	{
+		// powolne wzrastanie i to bardzo
+		RP += PF(RP, ep, 0.000093 / 2 * 2) * dt;
+	}
+	// jednak trzeba wydluzyc, bo obecnie zle dziala
+	if (RP < ep && RP < BPT[std::lround(i_bcpno) + 2][1])
+	{
+		// jesli jestesmy ponizej cisnienia w sterujacym (2.9 bar)
+		// przypisz cisnienie w PG - wydluzanie napelniania o czas potrzebny do napelnienia PG
+		RP += PF(RP, CP, 0.005) * dt;
+	}
 }
 
 /// <summary>Initialises CP and RP to the supplied pressure.</summary>

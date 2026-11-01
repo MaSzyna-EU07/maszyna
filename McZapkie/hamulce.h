@@ -1161,6 +1161,10 @@ class TFV4aM : public TDriverHandle
 	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos (detent comparison).</summary>
 	bool EQ(double pos, double i_pos) const;
+	// the parts of GetPF()
+	void DischargeChambers(double dt);
+	void UpdateWave(double pom, double dt);
+	void UpdateReductor(double i_bcp, double ep, double dt);
 
   public:
 	/// <summary>Computes brake pipe flow for the FV4a/M handle (interpolated BPT, wave modelling, accelerator).</summary>
