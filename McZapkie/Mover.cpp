@@ -11999,6 +11999,136 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	}
 	// WriteLog("BVV = "  + FloatToStr(BrakeVVolume));
 
+	CreateBrakeValve();
+
+	CreateBrakeHandles();
+
+	CreateBrakePipes();
+
+	if (LightsPosNo > 0)
+		LightsPos = LightsDefPos;
+
+	// set default wiper switch position
+	wiperSwitchPos = WiperDefaultPos;
+
+	if (CompressorListPosNo > 0)
+		CompressorListPos = CompressorListDefPos;
+
+	// NOTE: legacy compatibility behaviour for vehicles without defined heating power source
+	if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector && HeatingPowerSource.SourceType == TPowerSource::NotDefined)
+	{
+		HeatingPowerSource.SourceType = TPowerSource::Main;
+	}
+	if (HeatingPowerSource.SourceType == TPowerSource::NotDefined && HeatingPower > 0)
+	{
+		HeatingPowerSource.SourceType = TPowerSource::PowerCable;
+		HeatingPowerSource.PowerType = TPowerType::ElectricPower;
+	}
+
+	// checking ready flag
+	// to dac potem do init
+	if (ReadyFlag) // gotowy do drogi
+	{
+		SetReadyToDepart();
+	}
+	else
+	{ // zahamowany}
+		SetBraked();
+	}
+
+	ActFlowSpeed = 0.0;
+	BrakeCtrlPosR = BrakeCtrlPos;
+
+	if (BrakeLocHandle == TBrakeHandle::Knorr)
+		LocalBrakePosA = 0.5;
+
+	Pipe->CreatePress(PipePress);
+	Pipe2->CreatePress(ScndPipePress);
+	Pipe->Act();
+	Pipe2->Act();
+
+	EqvtPipePress = PipePress;
+
+	Handle->Init(PipePress);
+
+	ComputeConstans();
+
+	if (LoadFlag > 0)
+	{
+
+		if (LoadAmount < MaxLoad * 0.45)
+		{
+			IncBrakeMult();
+			IncBrakeMult();
+			DecBrakeMult(); // TODO: przeinesiono do mover.cpp
+			if (LoadAmount < MaxLoad * 0.35)
+				DecBrakeMult();
+		}
+		else
+		{
+			IncBrakeMult(); // TODO: przeinesiono do mover.cpp
+			if (LoadAmount >= MaxLoad * 0.55)
+				IncBrakeMult();
+		}
+	}
+
+	// taki mini automat - powinno byc ladnie dobrze :)
+	BrakeDelayFlag = bdelay_P;
+	if (TestFlag(BrakeDelays, bdelay_G) && !TestFlag(BrakeDelays, bdelay_R))
+		BrakeDelayFlag = bdelay_G;
+	if (TestFlag(BrakeDelays, bdelay_R) && !TestFlag(BrakeDelays, bdelay_G))
+		BrakeDelayFlag = bdelay_R;
+	/*
+	// disabled, as test mode is used in specific situations and not really a default
+	    if (BrakeOpModes & bom_PS)
+	        BrakeOpModeFlag = bom_PS;
+	    else
+	*/
+	BrakeOpModeFlag = bom_PN;
+
+	// yB: jesli pojazdy nie maja zadeklarowanych czasow, to wsadz z przepisow +-16,(6)%
+	std::array<int, 8> const DefBrakeTable{15, 4, 25, 25, 13, 3, 12, 2};
+
+	for (int b = 1; b < 4; b++)
+	{
+		if (BrakeDelay[b] == 0)
+			BrakeDelay[b] = DefBrakeTable[b];
+		BrakeDelay[b] = BrakeDelay[b] * (2.5 + Random(0.0, 0.2)) / 3.0;
+	}
+
+	Hamulec->Init(PipePress, HighPipePress, LowPipePress, BrakePress, BrakeDelayFlag);
+	/*
+	    ScndPipePress = Compressor;
+	*/
+	// WriteLogSS("OK=", BoolTo10(OK));
+	// WriteLog("");
+
+	if (EIMCtrlType == 3)
+	{
+		for (auto idx = 0; idx < MainCtrlPosNo; ++idx)
+		{
+			if (UniCtrlList[idx].MaxCtrlVal > 0.0)
+			{
+				UniCtrlNoPowerPos = std::max(0, idx - 1);
+				break;
+			}
+		}
+	}
+
+	// security system
+	// by default place the magnet in the vehicle centre
+	if (SecuritySystem.MagnetLocation == 0)
+	{
+		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
+	}
+	SecuritySystem.MagnetLocation = std::clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
+
+	return OK;
+}
+
+// the distributor valve of the vehicle's kind
+void TMoverParameters::CreateBrakeValve()
+{
 	switch (BrakeValve)
 	{
 	case TBrakeValve::W:
@@ -12093,7 +12223,11 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 
 	Hamulec->SetASBP(MaxBrakePress[4]);
 	Hamulec->SetRV(RapidVel);
+}
 
+// the driver's handle and the local brake handle of the vehicle's kinds
+void TMoverParameters::CreateBrakeHandles()
+{
 	switch (BrakeHandle)
 	{
 	using enum TBrakeHandle;
@@ -12155,7 +12289,11 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	default:
 		LocHandle = std::make_shared<TDriverHandle>();
 	}
+}
 
+// the brake pipe, the main pipe and the spring brake's cylinder
+void TMoverParameters::CreateBrakePipes()
+{
 	if (true == TestFlag(BrakeDelays, bdelay_G) && (false == TestFlag(BrakeDelays, bdelay_R) || Power > 1.0)) // ustalanie srednicy przewodu glownego (lokomotywa lub napędowy
 		Spg = 0.792;
 	else
@@ -12171,173 +12309,73 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 		SpringBrake.Cylinder = std::make_shared<TReservoir>();
 		SpringBrake.Cylinder->CreateCap(1);
 	}
+}
 
-	if (LightsPosNo > 0)
-		LightsPos = LightsDefPos;
-
-	// set default wiper switch position
-	wiperSwitchPos = WiperDefaultPos;
-
-	if (CompressorListPosNo > 0)
-		CompressorListPos = CompressorListDefPos;
-
-	// NOTE: legacy compatibility behaviour for vehicles without defined heating power source
-	if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector && HeatingPowerSource.SourceType == TPowerSource::NotDefined)
+// the pressure of the main pipe at the start: the main reservoir's, or HosePressure fed through a main hose, or none
+double TMoverParameters::InitialScndPipePress(double const HosePressure) const
+{
+	if (VeselVolume > 0.0)
 	{
-		HeatingPowerSource.SourceType = TPowerSource::Main;
+		return CompressedVolume / VeselVolume;
 	}
-	if (HeatingPowerSource.SourceType == TPowerSource::NotDefined && HeatingPower > 0)
+	if ((Couplers[end::front].AllowedFlag & coupling::mainhose) != 0 || (Couplers[end::rear].AllowedFlag & coupling::mainhose) != 0)
 	{
-		HeatingPowerSource.SourceType = TPowerSource::PowerCable;
-		HeatingPowerSource.PowerType = TPowerType::ElectricPower;
+		return HosePressure;
 	}
+	return 0.0;
+}
 
-	// checking ready flag
-	// to dac potem do init
-	if (ReadyFlag) // gotowy do drogi
-	{
-		WriteLog("Ready to depart");
-		CompressedVolume = VeselVolume * MinCompressor * 9.8 / 10.0;
-		ScndPipePress = VeselVolume > 0.0                                            ? CompressedVolume / VeselVolume :
-		                (Couplers[end::front].AllowedFlag & coupling::mainhose) != 0 ? 5.0 :
-		                (Couplers[end::rear].AllowedFlag & coupling::mainhose) != 0  ? 5.0 :
-		                                                                               0.0;
-		PipePress = CntrlPipePress;
-		BrakePress = 0.0;
-		LocalBrakePosA = 0.0;
-		if (CabActive == 0)
-			BrakeCtrlPos = static_cast<int>(Handle->GetPos(bh_NP));
-		else
-			BrakeCtrlPos = static_cast<int>(Handle->GetPos(bh_RP));
-		/*
-		        // NOTE: disabled and left up to the driver, if there's any
-		        MainSwitch( false );
-		        PantFront( true );
-		        PantRear( true );
-		        MainSwitch( true );
-		*/
-		DirActive = 0; // Dir; //nastawnik kierunkowy - musi być ustawiane osobno!
-		DirAbsolute = DirActive * CabActive; // kierunek jazdy względem sprzęgów
-		LimPipePress = CntrlPipePress;
-
-		Battery = BatteryStart != start_t::disabled;
-	}
-	else
-	{ // zahamowany}
-		WriteLog("Braked");
-		Volume = BrakeVVolume * MaxBrakePress[3];
-		CompressedVolume = VeselVolume * MinCompressor * 0.55;
-		/*
-		        ScndPipePress = 5.1;
-		*/
-		ScndPipePress = VeselVolume > 0.0                                            ? CompressedVolume / VeselVolume :
-		                (Couplers[end::front].AllowedFlag & coupling::mainhose) != 0 ? 5.1 :
-		                (Couplers[end::rear].AllowedFlag & coupling::mainhose) != 0  ? 5.1 :
-		                                                                               0.0;
-		PipePress = LowPipePress;
-		PipeBrakePress = MaxBrakePress[3] * 0.5;
-		BrakePress = MaxBrakePress[3] * 0.5;
-		LocalBrakePosA = 0.0;
+// the air and the controls of a vehicle ready to depart
+void TMoverParameters::SetReadyToDepart()
+{
+	WriteLog("Ready to depart");
+	CompressedVolume = VeselVolume * MinCompressor * 9.8 / 10.0;
+	ScndPipePress = InitialScndPipePress(5.0);
+	PipePress = CntrlPipePress;
+	BrakePress = 0.0;
+	LocalBrakePosA = 0.0;
+	if (CabActive == 0)
 		BrakeCtrlPos = static_cast<int>(Handle->GetPos(bh_NP));
-		LimPipePress = LowPipePress;
-		if (LocalBrake == TLocalBrake::ManualBrake || MBrake == true)
-		{
-			IncManualBrakeLevel(ManualBrakePosNo);
-		}
-		if (SpringBrake.MaxBrakeForce > 0.0)
-		{
-			SpringBrake.Activate = true;
-		}
-	}
-
-	ActFlowSpeed = 0.0;
-	BrakeCtrlPosR = BrakeCtrlPos;
-
-	if (BrakeLocHandle == TBrakeHandle::Knorr)
-		LocalBrakePosA = 0.5;
-
-	Pipe->CreatePress(PipePress);
-	Pipe2->CreatePress(ScndPipePress);
-	Pipe->Act();
-	Pipe2->Act();
-
-	EqvtPipePress = PipePress;
-
-	Handle->Init(PipePress);
-
-	ComputeConstans();
-
-	if (LoadFlag > 0)
-	{
-
-		if (LoadAmount < MaxLoad * 0.45)
-		{
-			IncBrakeMult();
-			IncBrakeMult();
-			DecBrakeMult(); // TODO: przeinesiono do mover.cpp
-			if (LoadAmount < MaxLoad * 0.35)
-				DecBrakeMult();
-		}
-		else
-		{
-			IncBrakeMult(); // TODO: przeinesiono do mover.cpp
-			if (LoadAmount >= MaxLoad * 0.55)
-				IncBrakeMult();
-		}
-	}
-
-	// taki mini automat - powinno byc ladnie dobrze :)
-	BrakeDelayFlag = bdelay_P;
-	if (TestFlag(BrakeDelays, bdelay_G) && !TestFlag(BrakeDelays, bdelay_R))
-		BrakeDelayFlag = bdelay_G;
-	if (TestFlag(BrakeDelays, bdelay_R) && !TestFlag(BrakeDelays, bdelay_G))
-		BrakeDelayFlag = bdelay_R;
+	else
+		BrakeCtrlPos = static_cast<int>(Handle->GetPos(bh_RP));
 	/*
-	// disabled, as test mode is used in specific situations and not really a default
-	    if (BrakeOpModes & bom_PS)
-	        BrakeOpModeFlag = bom_PS;
-	    else
+	        // NOTE: disabled and left up to the driver, if there's any
+	        MainSwitch( false );
+	        PantFront( true );
+	        PantRear( true );
+	        MainSwitch( true );
 	*/
-	BrakeOpModeFlag = bom_PN;
+	DirActive = 0; // Dir; //nastawnik kierunkowy - musi być ustawiane osobno!
+	DirAbsolute = DirActive * CabActive; // kierunek jazdy względem sprzęgów
+	LimPipePress = CntrlPipePress;
 
-	// yB: jesli pojazdy nie maja zadeklarowanych czasow, to wsadz z przepisow +-16,(6)%
-	std::array<int, 8> const DefBrakeTable{15, 4, 25, 25, 13, 3, 12, 2};
+	Battery = BatteryStart != start_t::disabled;
+}
 
-	for (int b = 1; b < 4; b++)
-	{
-		if (BrakeDelay[b] == 0)
-			BrakeDelay[b] = DefBrakeTable[b];
-		BrakeDelay[b] = BrakeDelay[b] * (2.5 + Random(0.0, 0.2)) / 3.0;
-	}
-
-	Hamulec->Init(PipePress, HighPipePress, LowPipePress, BrakePress, BrakeDelayFlag);
+// the air and the brakes of a vehicle standing braked
+void TMoverParameters::SetBraked()
+{
+	WriteLog("Braked");
+	Volume = BrakeVVolume * MaxBrakePress[3];
+	CompressedVolume = VeselVolume * MinCompressor * 0.55;
 	/*
-	    ScndPipePress = Compressor;
+	        ScndPipePress = 5.1;
 	*/
-	// WriteLogSS("OK=", BoolTo10(OK));
-	// WriteLog("");
-
-	if (EIMCtrlType == 3)
+	ScndPipePress = InitialScndPipePress(5.1);
+	PipePress = LowPipePress;
+	PipeBrakePress = MaxBrakePress[3] * 0.5;
+	BrakePress = MaxBrakePress[3] * 0.5;
+	LocalBrakePosA = 0.0;
+	BrakeCtrlPos = static_cast<int>(Handle->GetPos(bh_NP));
+	LimPipePress = LowPipePress;
+	if (LocalBrake == TLocalBrake::ManualBrake || MBrake == true)
 	{
-		for (auto idx = 0; idx < MainCtrlPosNo; ++idx)
-		{
-			if (UniCtrlList[idx].MaxCtrlVal > 0.0)
-			{
-				UniCtrlNoPowerPos = std::max(0, idx - 1);
-				break;
-			}
-		}
+		IncManualBrakeLevel(ManualBrakePosNo);
 	}
-
-	// security system
-	// by default place the magnet in the vehicle centre
-	if (SecuritySystem.MagnetLocation == 0)
+	if (SpringBrake.MaxBrakeForce > 0.0)
 	{
-		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
+		SpringBrake.Activate = true;
 	}
-	SecuritySystem.MagnetLocation = std::clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
-
-	return OK;
 }
 
 // *************************************************************************************************

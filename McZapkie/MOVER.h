@@ -2665,6 +2665,13 @@ class TMoverParameters
 	bool LoadFIZ(std::string const &chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
 	bool LoadFIZ_Text(std::string const &Text); // the same, from text in the .fiz format
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
+	// the parts of CheckLocomotiveParameters()
+	void CreateBrakeValve();
+	void CreateBrakeHandles();
+	void CreateBrakePipes();
+	double InitialScndPipePress(double HosePressure) const;
+	void SetReadyToDepart();
+	void SetBraked();
 	std::string EngineDescription(int what) const;
 
   private:
