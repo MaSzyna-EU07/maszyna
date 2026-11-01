@@ -56,8 +56,10 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
   functions on the vehicle state the class calls, and the test calls them the same way: see
   `vehicle/handover.h`, which `TController::TakeControl()` uses, and `test_handover.cpp`.
 - `vehicle` creates the vehicle the way `TDynamicObject::Init()` does and steps it the way the
-  simulation loop does, on a straight track of the given friction and gradient. Coupled vehicles
-  aren't supported yet.
+  simulation loop does, on a straight track of the given friction and gradient. `pair` puts two of
+  them on that track facing each other with the given ends and runs them together, as the
+  simulation runs the vehicles of a scene: the coupler and buffer forces, collisions and automatic
+  coupling come from the physics (`test_couplers.cpp`). Longer consists aren't supported yet.
 - Check behaviour (speeds, pressures, states the player sees) rather than internal flags, and make
   the test check its own preconditions (`REQUIRE` that the braking skidded, before checking what a
   skid leads to).

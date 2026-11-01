@@ -576,6 +576,9 @@ drivermouse_input::default_bindings() {
         { "oilpump_sw:", {
             oilpumptoggle,
             none } },
+        { "oilfuelpump_sw:", {
+            oilfuelpumptoggle,
+            none } },
         { "motorblowersfront_sw:", {
             motorblowerstogglefront,
             none } },
