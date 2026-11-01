@@ -101,7 +101,7 @@ bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 	// they are; a train already charged with air isn't ready before that
 	auto auxiliaries{false};
 	// one round of the driver's actions a second, as the AI reacts
-	for (auto second = 0.0; second < Seconds; second += 1.0) {
+	for (auto second = 0; second < Seconds; ++second) {
 		cab.BatterySwitch(true);
 		cab.CabActivisation();
 		if (diesel) {
