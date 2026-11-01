@@ -743,6 +743,12 @@ class TLSt : public TESt4R
 
 	/// <summary>Constructs the LSt distributor.</summary>
 	using TESt4R::TESt4R;
+
+  private:
+	// the parts of GetPF()
+	void UpdateStatusLSt(double BCP, double VVP, double CVP);
+	void ReleaserLSt(double BCP, double CVP, double dt);
+	void CylinderFlowLSt(double BCP, double BVP, double CVP, double dt, double Vel);
 };
 
 /// <summary>
@@ -783,6 +789,13 @@ class TEStED : public TLSt
 	/// <summary>Stores the load-weighing parameters.</summary>
 	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 
+  private:
+	// the parts of GetPF()
+	void UpdateStatus(double BCP, double VVP, double CVP, double MPP);
+	void IntermediateFlow(double BCP, double VVP, double CVP, double MPP, double BVP, double nastG, double dt);
+	void CylinderFlow(double BCP, double BVP, double dt, double Vel);
+
+  public:
 	/// <summary>Constructs the distributor and creates the intermediate reservoir.</summary>
 	inline TEStED(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
