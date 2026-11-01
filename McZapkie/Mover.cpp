@@ -5714,19 +5714,7 @@ double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, doub
 	{
 		if (true == Mains && true == FuelPump.is_active)
 		{
-
-			if (EIMCtrlType > 0) // sterowanie cyfrowe
-				tmp = (DElist[0].RPM + (DElist[MainCtrlPosNo].RPM - DElist[0].RPM) * std::max(0.0, eimic_real)) / 60.0;
-			else
-				tmp = DElist[ControlPressureSwitch ? MainCtrlNoPowerPos() : MainCtrlPos].RPM / 60.0;
-
-			if (true == HeatingAllow && HeatingPower > 0 && EngineHeatingRPM > 0)
-			{
-				// bump engine revolutions up if needed, when heating is on
-				tmp = std::max(tmp, std::min(EngineMaxRPM(), EngineHeatingRPM) / 60.0);
-			}
-			// NOTE: fake dizel_fill calculation for the sake of smoke emitter which uses this parameter to determine smoke opacity
-			dizel_fill = std::clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
+			tmp = DieselElectricTargetRevolutions();
 		}
 		else
 		{
@@ -5765,6 +5753,26 @@ double TMoverParameters::UpdateEngineRevolutions(double dt, double &dtrans, doub
 	return tmp;
 }
 
+// the revolutions a diesel-electric's engine aims at [1/s], by the controller and the heating; the fill shown by the smoke
+double TMoverParameters::DieselElectricTargetRevolutions()
+{
+	double tmp;
+
+	if (EIMCtrlType > 0) // sterowanie cyfrowe
+		tmp = (DElist[0].RPM + (DElist[MainCtrlPosNo].RPM - DElist[0].RPM) * std::max(0.0, eimic_real)) / 60.0;
+	else
+		tmp = DElist[ControlPressureSwitch ? MainCtrlNoPowerPos() : MainCtrlPos].RPM / 60.0;
+
+	if (true == HeatingAllow && HeatingPower > 0 && EngineHeatingRPM > 0)
+	{
+		// bump engine revolutions up if needed, when heating is on
+		tmp = std::max(tmp, std::min(EngineMaxRPM(), EngineHeatingRPM) / 60.0);
+	}
+	// NOTE: fake dizel_fill calculation for the sake of smoke emitter which uses this parameter to determine smoke opacity
+	dizel_fill = std::clamp(0.2 + 0.35 * (tmp - enrot) + 0.5 * (std::abs(Im) / DElist[MainCtrlPosNo].Imax), 0.05, 1.0);
+	return tmp;
+}
+
 // the starting resistors' blowers, and the diesels' radiator fans
 void TMoverParameters::UpdateVentilators(double dt)
 {
@@ -5775,50 +5783,7 @@ void TMoverParameters::UpdateVentilators(double dt)
 	{
 		if (true == Mains)
 		{
-			switch (RVentType)
-			{
-
-			case 1:
-			{ // manual
-				if (true == RVentForceOn || (DirActive != 0 && RList[MainCtrlActualPos].R > RVentCutOff))
-				{
-					RventRot += (RVentnmax - RventRot) * RVentSpeed * dt;
-				}
-				else
-				{
-					RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
-				}
-				break;
-			}
-
-			case 2:
-			{ // automatic
-				auto const motorcurrent{std::min<double>(ImaxHi, std::abs(Im))};
-				if (std::abs(Itot) > RVentMinI && RList[MainCtrlActualPos].R > RVentCutOff)
-				{
-
-					RventRot += (RVentnmax * std::min(1.0, motorcurrent / NPoweredAxles / RVentMinI) * motorcurrent / ImaxLo - RventRot) * RVentSpeed * dt;
-				}
-				else if (DynamicBrakeType == dbrake_automatic && true == DynamicBrakeFlag)
-				{
-					RventRot += (RVentnmax * motorcurrent / ImaxLo - RventRot) * RVentSpeed * dt;
-				}
-				else if (RVentForceOn)
-				{
-					RventRot += (RVentnmax - RventRot) * RVentSpeed * dt;
-				}
-				else
-				{
-					RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
-				}
-				break;
-			}
-
-			default:
-			{
-				break;
-			}
-			} // rventtype
+			UpdateResistorBlowers(dt);
 		} // mains
 		else
 		{
@@ -5867,6 +5832,55 @@ void TMoverParameters::UpdateVentilators(double dt)
 		break;
 	}
 	}
+}
+
+// the starting resistors' blowers of the series motors with the line breaker closed, worked by hand or by the current
+void TMoverParameters::UpdateResistorBlowers(double dt)
+{
+	switch (RVentType)
+	{
+
+	case 1:
+	{ // manual
+		if (true == RVentForceOn || (DirActive != 0 && RList[MainCtrlActualPos].R > RVentCutOff))
+		{
+			RventRot += (RVentnmax - RventRot) * RVentSpeed * dt;
+		}
+		else
+		{
+			RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
+		}
+		break;
+	}
+
+	case 2:
+	{ // automatic
+		auto const motorcurrent{std::min<double>(ImaxHi, std::abs(Im))};
+		if (std::abs(Itot) > RVentMinI && RList[MainCtrlActualPos].R > RVentCutOff)
+		{
+
+			RventRot += (RVentnmax * std::min(1.0, motorcurrent / NPoweredAxles / RVentMinI) * motorcurrent / ImaxLo - RventRot) * RVentSpeed * dt;
+		}
+		else if (DynamicBrakeType == dbrake_automatic && true == DynamicBrakeFlag)
+		{
+			RventRot += (RVentnmax * motorcurrent / ImaxLo - RventRot) * RVentSpeed * dt;
+		}
+		else if (RVentForceOn)
+		{
+			RventRot += (RVentnmax - RventRot) * RVentSpeed * dt;
+		}
+		else
+		{
+			RventRot *= std::max(0.0, 1.0 - RVentSpeed * dt);
+		}
+		break;
+	}
+
+	default:
+	{
+		break;
+	}
+	} // rventtype
 }
 
 // the power of a dumb or diesel engine; returns the ratio of the power a dumb engine is set to
@@ -8126,27 +8140,7 @@ bool TMoverParameters::dizel_GearShiftCheck(double const VelUp, double const Vel
 	}
 	else
 	{
-		if (motor_param(ScndCtrlActualPos).AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
-		{
-			if (Vel > VelUp)
-			{
-				// shift up
-				if (ScndCtrlActualPos < ScndCtrlPosNo)
-				{
-					dizel_automaticgearstatus = 1;
-					OK = true;
-				}
-			}
-			else if (Vel < VelDown)
-			{
-				// shift down
-				if (ScndCtrlActualPos > 0)
-				{
-					dizel_automaticgearstatus = -1;
-					OK = true;
-				}
-			}
-		}
+		OK = dizel_GearShiftRequest(VelUp, VelDown);
 	}
 	if (dizel_engage < 0.1 && dizel_automaticgearstatus != 0)
 	{
@@ -8157,6 +8151,34 @@ bool TMoverParameters::dizel_GearShiftCheck(double const VelUp, double const Vel
 		dizel_automaticgearstatus = 0;
 		dizel_EngageSwitch(1.0);
 		OK = true;
+	}
+	return OK;
+}
+
+// a gear up asked over VelUp, down under VelDown, where the gearbox shifts by itself; returns whether one is
+bool TMoverParameters::dizel_GearShiftRequest(double const VelUp, double const VelDown)
+{
+	auto OK{false};
+	if (motor_param(ScndCtrlActualPos).AutoSwitch && dizel_automaticgearstatus == 0) // sprawdz czy zmienic biegi
+	{
+		if (Vel > VelUp)
+		{
+			// shift up
+			if (ScndCtrlActualPos < ScndCtrlPosNo)
+			{
+				dizel_automaticgearstatus = 1;
+				OK = true;
+			}
+		}
+		else if (Vel < VelDown)
+		{
+			// shift down
+			if (ScndCtrlActualPos > 0)
+			{
+				dizel_automaticgearstatus = -1;
+				OK = true;
+			}
+		}
 	}
 	return OK;
 }
@@ -8392,49 +8414,58 @@ double TMoverParameters::dizel_DigitalFill(double dt)
 // the fill cut off over the revolutions the governor allows at the controller's position, or full under the idle ones
 double TMoverParameters::dizel_GovernorFill(int const mcp, double realfill) const
 {
-		auto nreg{0.0};
-		if (EIMCtrlType > 0)
-			nreg = eimic_real > 0.005 ? dizel_nreg_max : dizel_nmin;
-		else
-			switch (RList[MainCtrlPos].Mn)
-			{
-			case 0:
-			case 1:
-				nreg = dizel_nmin;
-				break;
-			case 2:
-				if (dizel_automaticgearstatus == 0 && true /*(!hydro_TC) || (dizel_engage>dizel_fill)*/)
-					nreg = dizel_nreg_max;
-				else
-					nreg = dizel_nmin;
-				break;
-			case 3:
-				if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
-					nreg = dizel_nreg_max;
-				else
-					nreg = dizel_nmin;
-				break;
-			case 4:
-				if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
-					nreg = dizel_nmax;
-				else
-					nreg = dizel_nmin * 0.75 + dizel_nreg_max * 0.25;
-				break;
-			case 5:
-				if (Vel > dizel_minVelfullengage)
-					nreg = dizel_nreg_max;
-				else
-					nreg = dizel_nmin + 0.8 * (dizel_nreg_max - dizel_nmin) * RList[mcp].R;
-				break;
-			default:
-				realfill = 0; // sluczaj
-				break;
-			}
-		if (enrot > nreg) // nad predkoscia regulatora zeruj dawke
-			realfill = 0;
-		if (enrot < dizel_nreg_min && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
-			realfill = 1;
+	auto nreg{0.0};
+	if (EIMCtrlType > 0)
+		nreg = eimic_real > 0.005 ? dizel_nreg_max : dizel_nmin;
+	else
+		nreg = dizel_GovernorRevolutions(mcp, realfill);
+	if (enrot > nreg) // nad predkoscia regulatora zeruj dawke
+		realfill = 0;
+	if (enrot < dizel_nreg_min && RList[mcp].R > 0.001) // jesli ponizej biegu jalowego i niezerowa dawka, to dawaj pelna
+		realfill = 1;
 	return realfill;
+}
+
+// the revolutions the governor allows at the controller's position, the gearbox and the speed; the fill cut off at
+// a position the governor doesn't know
+double TMoverParameters::dizel_GovernorRevolutions(int const mcp, double &realfill) const
+{
+	auto nreg{0.0};
+	switch (RList[MainCtrlPos].Mn)
+	{
+	case 0:
+	case 1:
+		nreg = dizel_nmin;
+		break;
+	case 2:
+		if (dizel_automaticgearstatus == 0 && true /*(!hydro_TC) || (dizel_engage>dizel_fill)*/)
+			nreg = dizel_nreg_max;
+		else
+			nreg = dizel_nmin;
+		break;
+	case 3:
+		if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
+			nreg = dizel_nreg_max;
+		else
+			nreg = dizel_nmin;
+		break;
+	case 4:
+		if (dizel_automaticgearstatus == 0 && Vel > dizel_minVelfullengage)
+			nreg = dizel_nmax;
+		else
+			nreg = dizel_nmin * 0.75 + dizel_nreg_max * 0.25;
+		break;
+	case 5:
+		if (Vel > dizel_minVelfullengage)
+			nreg = dizel_nreg_max;
+		else
+			nreg = dizel_nmin + 0.8 * (dizel_nreg_max - dizel_nmin) * RList[mcp].R;
+		break;
+	default:
+		realfill = 0; // sluczaj
+		break;
+	}
+	return nreg;
 }
 
 // *************************************************************************************************

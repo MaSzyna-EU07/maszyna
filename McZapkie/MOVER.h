@@ -2499,7 +2499,9 @@ class TMoverParameters
 	double TractionForce(double dt);
 	// the parts of TractionForce(), in the order it makes them
 	double UpdateEngineRevolutions(double dt, double &dtrans, double &dmoment);
+	double DieselElectricTargetRevolutions();
 	void UpdateVentilators(double dt);
+	void UpdateResistorBlowers(double dt);
 	double UpdateEnginePower();
 	void VoltageRelaysCheck();
 	void DumbTractionForce(double PosRatio);
@@ -2678,12 +2680,14 @@ class TMoverParameters
 	bool dizel_EngageChange(double dt);
 	bool dizel_AutoGearCheck(void);
 	bool dizel_GearShiftCheck(double VelUp, double VelDown);
+	bool dizel_GearShiftRequest(double VelUp, double VelDown);
 	void dizel_ClutchCheck();
 	void dizel_ClutchByController();
 	void dizel_ClutchByIntegratedController();
 	double dizel_fillcheck(int mcp, double dt);
 	double dizel_DigitalFill(double dt);
 	double dizel_GovernorFill(int mcp, double realfill) const;
+	double dizel_GovernorRevolutions(int mcp, double &realfill) const;
 	double dizel_Momentum(double dizel_fill, double n, double dt);
 	void hydro_TCFillCheck(double dt);
 	void hydro_TCTorque();
