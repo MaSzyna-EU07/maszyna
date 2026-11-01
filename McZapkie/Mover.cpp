@@ -407,24 +407,20 @@ double TMoverParameters::SeriesMotorCurrent(double const n, double const U, doub
 
 		if (DynamicBrakeFlag) // hamowanie
 		{
-			if (DynamicBrakeType > 1)
-			{
-				// if DynamicBrakeType<>dbrake_automatic then
-				// MotorCurrent:=-fi*n/Rz  {hamowanie silnikiem na oporach rozruchowych}
-				/*               begin
-				U:=0;
-				Isf:=Isat;
-				Delta:=SQR(Isf*Rz+Mn*fi*n-U)+4*U*Isf*Rz;
-				MotorCurrent:=(U-Isf*Rz-Mn*fi*n+SQRT(Delta))/(2*Rz)
-				end*/
-				if (DynamicBrakeType == dbrake_switch && TrainType == dt_ET42)
-				{ // z Megapacka
-					Rz = WindingRes + R;
-					MotorCurrent = -motor_param(SP).fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
-				}
+			// if DynamicBrakeType<>dbrake_automatic then
+			// MotorCurrent:=-fi*n/Rz  {hamowanie silnikiem na oporach rozruchowych}
+			/*               begin
+			U:=0;
+			Isf:=Isat;
+			Delta:=SQR(Isf*Rz+Mn*fi*n-U)+4*U*Isf*Rz;
+			MotorCurrent:=(U-Isf*Rz-Mn*fi*n+SQRT(Delta))/(2*Rz)
+			end*/
+			// only the ET42's switched brake brakes on the starting resistors, otherwise the current is cut off (0)
+			if (DynamicBrakeType == dbrake_switch && TrainType == dt_ET42)
+			{ // z Megapacka
+				Rz = WindingRes + R;
+				MotorCurrent = -motor_param(SP).fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
 			}
-			else
-				MotorCurrent = 0; // odciecie pradu od silnika
 		}
 		else
 		{
@@ -926,26 +922,23 @@ void TMoverParameters::PantPressureSwitchCheck()
 			PantPressureSwitchTrip();
 		}
 	}
-	else
+	else if (PantPress >= 4.6)
 	{
-		if (PantPress >= 4.6)
+		// NOTE: we require active low power source to prime the pressure switch
+		// this is a work-around for potential isssues caused by the switch activating on otherwise idle vehicles, but should check whether it's accurate
+		if (true == Power24vIsAvailable || true == Power110vIsAvailable)
 		{
-			// NOTE: we require active low power source to prime the pressure switch
-			// this is a work-around for potential isssues caused by the switch activating on otherwise idle vehicles, but should check whether it's accurate
-			if (true == Power24vIsAvailable || true == Power110vIsAvailable)
-			{
-				// prime the pressure switch
-				PantPressSwitchActive = true;
-				// turn off the subsystems lock
-				PantPressLockActive = false;
-			}
+			// prime the pressure switch
+			PantPressSwitchActive = true;
+			// turn off the subsystems lock
+			PantPressLockActive = false;
+		}
 
-			if (PantPress >= 4.8)
-			{
-				// Winger - automatyczne wylaczanie malej sprezarki
-				// TODO: governor lock, disables usage until pressure drop below 3.8 (should really make compressor object we could reuse)
-				PantCompFlag = false;
-			}
+		if (PantPress >= 4.8)
+		{
+			// Winger - automatyczne wylaczanie malej sprezarki
+			// TODO: governor lock, disables usage until pressure drop below 3.8 (should really make compressor object we could reuse)
+			PantCompFlag = false;
 		}
 	}
 }
@@ -6119,22 +6112,11 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 	auto const tmpV{nrot * Pirazy2 * 0.5 * WheelDiameter * DirAbsolute}; //*CabActive*DirActive;
 	auto tempUmax = 0.0;
 	auto tempImax = 0.0;
-	auto tempPmax = 0.0;
 	// jazda manewrowa
 	if (EIMCtrlType > 0) // sterowanie cyfrowe
 	{
-		auto eimic_positive = std::max(0.0, eimic_real);
-		auto const rpmratio{EngineRPMRatio()};
-		tempImax = DElist[MainCtrlPosNo].Imax * eimic_positive;
-		tempUmax = DElist[MainCtrlPosNo].Umax * std::min(eimic_positive, rpmratio);
-		tempPmax = DElist[MainCtrlPosNo].GenPower * std::min(eimic_positive, rpmratio);
-		tmp = tempPmax;
-		if (true == StLinFlag)
-			Ft = DieselElectricForce(tmpV, tempPmax, eimic_positive, tempPmax);
-		else
-			Ft = 0; // jak nastawnik na zero, to sila tez zero
-
-		PosRatio = tempPmax / DElist[MainCtrlPosNo].GenPower;
+		tmp = DieselElectricDigitalForce(tmpV, tempUmax, tempImax);
+		PosRatio = tmp / DElist[MainCtrlPosNo].GenPower;
 	}
 	else if (true == ShuntMode)
 	{
@@ -6223,6 +6205,22 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 			ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
 		}
 	}
+}
+
+// the tractive force of a diesel-electric set by the integrated controller, at the speed tmpV; the generator's
+// voltage and current limits too. returns the power the generator gives
+double TMoverParameters::DieselElectricDigitalForce(double const tmpV, double &tempUmax, double &tempImax)
+{
+	auto eimic_positive = std::max(0.0, eimic_real);
+	auto const rpmratio{EngineRPMRatio()};
+	tempImax = DElist[MainCtrlPosNo].Imax * eimic_positive;
+	tempUmax = DElist[MainCtrlPosNo].Umax * std::min(eimic_positive, rpmratio);
+	auto const tempPmax = DElist[MainCtrlPosNo].GenPower * std::min(eimic_positive, rpmratio);
+	if (true == StLinFlag)
+		Ft = DieselElectricForce(tmpV, tempPmax, eimic_positive, tempPmax);
+	else
+		Ft = 0; // jak nastawnik na zero, to sila tez zero
+	return tempPmax;
 }
 
 // the tractive force of a diesel-electric at the speed tmpV: on the straight part of its characteristic under the speed
