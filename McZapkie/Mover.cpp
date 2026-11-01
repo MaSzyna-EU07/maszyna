@@ -12325,6 +12325,19 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 {
 	bool OK{false};
 
+	// the group of the command sets OK; a command none of them knows isn't done
+	if (RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) || RunBrakeCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	    RunAuxiliariesCommand(Command, CValue1, CValue2, Couplertype, OK) || RunPowerCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	    RunDoorsCommand(Command, CValue1, CValue2, Couplertype, OK) || RunLoadCommand(Command, CValue1, CValue2, Couplertype, OK))
+	{
+		return OK; // dla true komenda będzie usunięta, dla false wykonana ponownie
+	}
+	return false;
+}
+
+// RunCommand() for the controllers, the direction and the cab; returns whether the command is one of them
+bool TMoverParameters::RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
 	if (Command == "MainCtrl")
 	{
 		if (MainCtrlPosNo >= floor(CValue1))
@@ -12363,7 +12376,77 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		eimic_real = CValue1;
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "Brake") // youBy - jak sie EP hamuje, to trza sygnal wyslac...
+	else if (Command == "Direction")
+	{
+		DirActive = static_cast<int>(floor(CValue1));
+		DirAbsolute = DirActive * CabActive;
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "CabActivisation")
+	{
+		//  OK:=Power>0.01;
+		switch (static_cast<int>(CValue1 * CValue2))
+		{ // CValue2 ma zmieniany znak przy niezgodności sprzęgów
+		case 1:
+		{
+			CabActive = 1;
+			break;
+		}
+		case -1:
+		{
+			CabActive = -1;
+			break;
+		}
+		default:
+		{
+			CabActive = 0; // gdy CValue1==0
+			break;
+		}
+		}
+		DirAbsolute = DirActive * CabActive;
+		CabMaster = false;
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "AutoRelaySwitch")
+	{
+		if (CValue1 == 1 && AutoRelayType == 2)
+			AutoRelayFlag = true;
+		else
+			AutoRelayFlag = false;
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "MaxCurrentSwitch")
+	{
+		MaxCurrentSwitch(CValue1 == 1, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "MinCurrentSwitch")
+	{
+		OK = MinCurrentSwitch(CValue1 == 1);
+	}
+	/*test komend oddzialywujacych na tabor*/
+	else if (Command == "SpeedCntrl")
+	{
+		if (EngineType == TEngineType::ElectricInductionMotor || SpeedCtrl)
+			SpeedCtrlValue = static_cast<int>(round(CValue1));
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "SpeedCtrlUnit.Parking")
+	{
+		SpeedCtrlUnit.Parking = static_cast<bool>(CValue1);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the brakes, the sand and the cab signalling; returns whether the command is one of them
+bool TMoverParameters::RunBrakeCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "Brake") // youBy - jak sie EP hamuje, to trza sygnal wyslac...
 	{
 		if (CValue1 < 0.001)
 			DynamicBrakeEMUStatus = true;
@@ -12386,7 +12469,61 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		OK = BrakeReleaser(static_cast<int>(Round(CValue1))); // samo się przesyła dalej
 		                                    // OK:=SendCtrlToNext(command,CValue1,CValue2); //to robiło kaskadę 2^n
 	}
-	else if (Command == "WaterPumpBreakerSwitch")
+	else if (Command == "Emergency_brake")
+	{
+		if (RadiostopSwitch(floor(CValue1) == 1)) // YB: czy to jest potrzebne?
+			OK = true;
+		else
+			OK = false;
+	}
+	else if (Command == "BrakeDelay")
+	{
+		if (auto const brakesetting = static_cast<int>(std::floor(CValue1)); true == Hamulec->SetBDF(brakesetting))
+		{
+			BrakeDelayFlag = brakesetting;
+			OK = true;
+		}
+		else
+		{
+			OK = false;
+		}
+		SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "SpringBrakeActivate")
+	{
+		if (Power24vIsAvailable || Power110vIsAvailable)
+		{
+			SpringBrake.Activate = CValue1 > 0;
+			OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+		}
+		else
+			OK = true;
+	}
+
+	else if (Command == "Sandbox")
+	{
+		OK = Sandbox(CValue1 == 1, range_t::local);
+	}
+	else if (Command == "CabSignal") /*SHP,Indusi*/
+	{ // Ra: to powinno działać tylko w członie obsadzonym
+		SecuritySystem.set_cabsignal();
+		// else OK:=false;
+		OK = true; // true, gdy można usunąć komendę
+	}
+	/*naladunek/rozladunek*/
+	// TODO: have these commands leverage load exchange system instead
+	// TODO: CValue1 defines amount to load/unload
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the pumps, the blowers, the lights, the heating, the converter, the battery and the compressor; returns whether the command is one of them
+bool TMoverParameters::RunAuxiliariesCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "WaterPumpBreakerSwitch")
 	{
 		/*
 		        if( FuelPump.start_type != start::automatic ) {
@@ -12543,58 +12680,9 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		}
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "MainSwitch")
-	{
-		MainSwitch_(CValue1 > 0.0);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
 	else if (Command == "HeatingSwitch")
 	{
 		HeatingSwitch_(CValue1 > 0.0);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "Direction")
-	{
-		DirActive = static_cast<int>(floor(CValue1));
-		DirAbsolute = DirActive * CabActive;
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "CabActivisation")
-	{
-		//  OK:=Power>0.01;
-		switch (static_cast<int>(CValue1 * CValue2))
-		{ // CValue2 ma zmieniany znak przy niezgodności sprzęgów
-		case 1:
-		{
-			CabActive = 1;
-			break;
-		}
-		case -1:
-		{
-			CabActive = -1;
-			break;
-		}
-		default:
-		{
-			CabActive = 0; // gdy CValue1==0
-			break;
-		}
-		}
-		DirAbsolute = DirActive * CabActive;
-		CabMaster = false;
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "AutoRelaySwitch")
-	{
-		if (CValue1 == 1 && AutoRelayType == 2)
-			AutoRelayFlag = true;
-		else
-			AutoRelayFlag = false;
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "RelayReset")
-	{
-		RelayReset(static_cast<int>(CValue1), range_t::local);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else if (Command == "ConverterSwitch") /*NBMX*/
@@ -12629,7 +12717,61 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "DoorPermit")
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the line breaker, the relays and the pantographs; returns whether the command is one of them
+bool TMoverParameters::RunPowerCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "MainSwitch")
+	{
+		MainSwitch_(CValue1 > 0.0);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "RelayReset")
+	{
+		RelayReset(static_cast<int>(CValue1), range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "PantValve") // Winger 160204
+	{ // Ra: uwzględnić trzeba jeszcze zgodność sprzęgów
+		auto const inputend{(static_cast<int>(CValue1) & 0x80) != 0 ? 1 : 0};
+		auto const inputcab{(static_cast<int>(CValue1) & 0x40) != 0 ? 1 : 0};
+		auto const inputoperation{static_cast<int>(CValue1) & ~(0x80 | 0x40)};
+		auto const noswap{TrainType == dt_EZT || TrainType == dt_ET41};
+		auto swap{false == noswap && TestFlag(Couplers[CValue2 == -1 ? end::rear : end::front].CouplingFlag, coupling::control)};
+		if (auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)}; reversed)
+		{
+			swap = !swap;
+		} // TODO: check whether this part has RL equivalent
+		OperatePantographValve(static_cast<end>(swap ? 1 - inputend : inputend), static_cast<operation_t>(inputoperation), range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "PantsValve")
+	{
+		OperatePantographsValve(static_cast<operation_t>(static_cast<int>(CValue1)), range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "PantAllDown")
+	{
+		DropAllPantographs(CValue1 == 1, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the doors and the departure signal; returns whether the command is one of them
+bool TMoverParameters::RunDoorsCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "DoorPermit")
 	{
 
 		auto const leftside{CValue2 > 0 ? 1 : 2};
@@ -12707,81 +12849,17 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		DepartureSignal = CValue1 == 1 ? true : false;
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "PantValve") // Winger 160204
-	{ // Ra: uwzględnić trzeba jeszcze zgodność sprzęgów
-		auto const inputend{(static_cast<int>(CValue1) & 0x80) != 0 ? 1 : 0};
-		auto const inputcab{(static_cast<int>(CValue1) & 0x40) != 0 ? 1 : 0};
-		auto const inputoperation{static_cast<int>(CValue1) & ~(0x80 | 0x40)};
-		auto const noswap{TrainType == dt_EZT || TrainType == dt_ET41};
-		auto swap{false == noswap && TestFlag(Couplers[CValue2 == -1 ? end::rear : end::front].CouplingFlag, coupling::control)};
-		if (auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)}; reversed)
-		{
-			swap = !swap;
-		} // TODO: check whether this part has RL equivalent
-		OperatePantographValve(static_cast<end>(swap ? 1 - inputend : inputend), static_cast<operation_t>(inputoperation), range_t::local);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "PantsValve")
+	else
 	{
-		OperatePantographsValve(static_cast<operation_t>(static_cast<int>(CValue1)), range_t::local);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+		return false;
 	}
-	else if (Command == "PantAllDown")
-	{
-		DropAllPantographs(CValue1 == 1, range_t::local);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "MaxCurrentSwitch")
-	{
-		MaxCurrentSwitch(CValue1 == 1, range_t::local);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "MinCurrentSwitch")
-	{
-		OK = MinCurrentSwitch(CValue1 == 1);
-	}
-	/*test komend oddzialywujacych na tabor*/
-	else if (Command == "SetDamage")
-	{
-		if (CValue2 == 1)
-			OK = SetFlag(DamageFlag, static_cast<int>(floor(CValue1)));
-		if (CValue2 == -1)
-			OK = SetFlag(DamageFlag, static_cast<int>(-floor(CValue1)));
-	}
-	else if (Command == "Emergency_brake")
-	{
-		if (RadiostopSwitch(floor(CValue1) == 1)) // YB: czy to jest potrzebne?
-			OK = true;
-		else
-			OK = false;
-	}
-	else if (Command == "BrakeDelay")
-	{
-		if (auto const brakesetting = static_cast<int>(std::floor(CValue1)); true == Hamulec->SetBDF(brakesetting))
-		{
-			BrakeDelayFlag = brakesetting;
-			OK = true;
-		}
-		else
-		{
-			OK = false;
-		}
-		SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "Sandbox")
-	{
-		OK = Sandbox(CValue1 == 1, range_t::local);
-	}
-	else if (Command == "CabSignal") /*SHP,Indusi*/
-	{ // Ra: to powinno działać tylko w członie obsadzonym
-		SecuritySystem.set_cabsignal();
-		// else OK:=false;
-		OK = true; // true, gdy można usunąć komendę
-	}
-	/*naladunek/rozladunek*/
-	// TODO: have these commands leverage load exchange system instead
-	// TODO: CValue1 defines amount to load/unload
-	else if (issection("Load=", Command))
+	return true;
+}
+
+// RunCommand() for the load and the damage; returns whether the command is one of them
+bool TMoverParameters::RunLoadCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (issection("Load=", Command))
 	{
 		OK = false; // będzie powtarzane aż się załaduje
 		if (Vel < 0.1 // tolerance margin for small vehicle movements in the consist
@@ -12818,29 +12896,18 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 			LastLoadChangeTime = 0.0;
 		}
 	}
-	else if (Command == "SpeedCntrl")
+	else if (Command == "SetDamage")
 	{
-		if (EngineType == TEngineType::ElectricInductionMotor || SpeedCtrl)
-			SpeedCtrlValue = static_cast<int>(round(CValue1));
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+		if (CValue2 == 1)
+			OK = SetFlag(DamageFlag, static_cast<int>(floor(CValue1)));
+		if (CValue2 == -1)
+			OK = SetFlag(DamageFlag, static_cast<int>(-floor(CValue1)));
 	}
-	else if (Command == "SpeedCtrlUnit.Parking")
+	else
 	{
-		SpeedCtrlUnit.Parking = static_cast<bool>(CValue1);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+		return false;
 	}
-	else if (Command == "SpringBrakeActivate")
-	{
-		if (Power24vIsAvailable || Power110vIsAvailable)
-		{
-			SpringBrake.Activate = CValue1 > 0;
-			OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-		}
-		else
-			OK = true;
-	}
-
-	return OK; // dla true komenda będzie usunięta, dla false wykonana ponownie
+	return true;
 }
 
 // *************************************************************************************************
