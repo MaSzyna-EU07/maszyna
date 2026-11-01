@@ -2,6 +2,7 @@
 #include "golden.h"
 #include "doctest.h"
 
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
@@ -79,7 +80,7 @@ std::vector<channel> handles() {
 	    {"dpLocalValve", [](auto const &M) { return M.dpLocalValve; }},
 	};
 	for (int i = 0; i < 5; ++i) {
-		result.push_back({"HandleSound" + std::to_string(i), [i](auto const &M) { return M.Handle->GetSound(i); }});
+		result.emplace_back(std::format("HandleSound{}", i), [i](auto const &M) { return M.Handle->GetSound(i); });
 	}
 	return result;
 }
@@ -90,11 +91,11 @@ std::vector<channel> doors() {
 	};
 	for (int side : {side::right, side::left}) {
 		auto const name{std::string{side == side::right ? "Right" : "Left"}};
-		result.push_back({name + "Position", [side](auto const &M) { return M.Doors.instances[side].position; }});
-		result.push_back({name + "Step", [side](auto const &M) { return M.Doors.instances[side].step_position; }});
-		result.push_back({name + "Open", [side](auto const &M) { return M.Doors.instances[side].is_open ? 1.0 : 0.0; }});
-		result.push_back({name + "Closed", [side](auto const &M) { return M.Doors.instances[side].is_closed ? 1.0 : 0.0; }});
-		result.push_back({name + "Permit", [side](auto const &M) { return M.Doors.instances[side].open_permit ? 1.0 : 0.0; }});
+		result.emplace_back(name + "Position", [side](auto const &M) { return M.Doors.instances[side].position; });
+		result.emplace_back(name + "Step", [side](auto const &M) { return M.Doors.instances[side].step_position; });
+		result.emplace_back(name + "Open", [side](auto const &M) { return M.Doors.instances[side].is_open ? 1.0 : 0.0; });
+		result.emplace_back(name + "Closed", [side](auto const &M) { return M.Doors.instances[side].is_closed ? 1.0 : 0.0; });
+		result.emplace_back(name + "Permit", [side](auto const &M) { return M.Doors.instances[side].open_permit ? 1.0 : 0.0; });
 	}
 	return result;
 }
@@ -168,10 +169,10 @@ std::vector<channel> parameters() {
 	    {"PantVolume", [](auto const &M) { return M.PantVolume; }},
 	};
 	for (int i = 0; i < 5; ++i) {
-		result.push_back({"MaxBrakePress" + std::to_string(i), [i](auto const &M) { return M.MaxBrakePress[i]; }});
+		result.emplace_back(std::format("MaxBrakePress{}", i), [i](auto const &M) { return M.MaxBrakePress[i]; });
 	}
 	for (int i = 0; i < 3; ++i) {
-		result.push_back({"BrakeCylMult" + std::to_string(i), [i](auto const &M) { return M.BrakeCylMult[i]; }});
+		result.emplace_back(std::format("BrakeCylMult{}", i), [i](auto const &M) { return M.BrakeCylMult[i]; });
 	}
 	return result;
 }
@@ -192,9 +193,9 @@ bool environment(char const *Name) {
 
 std::string number(double Value) {
 	// the shortest text which reads back as the same double
-	char text[32];
-	auto const result{std::to_chars(std::begin(text), std::end(text), Value)};
-	return {text, result.ptr};
+	std::array<char, 32> text{};
+	auto const result{std::to_chars(text.data(), text.data() + text.size(), Value)};
+	return {text.data(), result.ptr};
 }
 
 // a line of the file, whichever line ends the checkout gave it
@@ -245,15 +246,13 @@ trace::trace(std::string Name, std::vector<channel> Channels, int Every, bool Fi
 void trace::sample(double Time, TMoverParameters const &Vehicle) {
 	// the invariants on every step, the first time each is broken
 	for (auto const &invariant : invariants()) {
-		if (std::find(m_broken.begin(), m_broken.end(), invariant.name) != m_broken.end()) {
+		if (std::ranges::find(m_broken, invariant.name) != m_broken.end()) {
 			continue;
 		}
 		if (false == invariant.holds(Vehicle, Time, m_sampled ? &m_before : nullptr)) {
 			m_broken.push_back(invariant.name);
-			char time[32];
-			std::snprintf(time, sizeof(time), "%.3f", Time);
-			m_violations.push_back("invariant \"" + invariant.name + "\" broken in " + m_name + " at " + time + " s" +
-			                       (m_last_event.empty() ? std::string{} : ", after \"" + m_last_event + "\"") + ": " + invariant.explain(Vehicle));
+			m_violations.push_back(std::format("invariant \"{}\" broken in {} at {:.3f} s{}: {}", invariant.name, m_name, Time,
+			                                   m_last_event.empty() ? std::string{} : std::format(", after \"{}\"", m_last_event), invariant.explain(Vehicle)));
 		}
 	}
 	m_before = {Time, Vehicle.V, Vehicle.DistCounter};
@@ -264,9 +263,7 @@ void trace::sample(double Time, TMoverParameters const &Vehicle) {
 		return;
 	}
 	// the time is a label, summed up from the steps: milliseconds are all it needs
-	char time[32];
-	std::snprintf(time, sizeof(time), "%.3f", Time);
-	std::string row{time};
+	auto row{std::format("{:.3f}", Time)};
 	for (auto const &channel : m_channels) {
 		row += "," + number(channel.value(Vehicle));
 	}
@@ -319,25 +316,14 @@ void trace::check() const {
 	header += ",event";
 
 	// no spaces in the file names: the build depends on the files, and make doesn't take to them
-	auto filename{m_name + ".csv"};
-	std::replace(filename.begin(), filename.end(), ' ', '_');
+	auto name{m_name};
+	std::ranges::replace(name, ' ', '_');
+	std::filesystem::path const filename{name + ".csv"};
 	auto const path{std::filesystem::path{EU07_UNIT_TESTS_DATA} / "golden" / filename};
 	auto figurespath{path};
 	figurespath.replace_extension(".figures");
 	if (environment("EU07_UNIT_TESTS_UPDATE_GOLDEN")) {
-		std::filesystem::create_directories(path.parent_path());
-		std::ofstream file(path, std::ios::binary);
-		file << header << "\n";
-		for (auto const &row : m_rows) {
-			file << row << "\n";
-		}
-		if (m_keep_figures) {
-			std::ofstream figuresfile(figurespath, std::ios::binary);
-			for (auto const &line : m_figures.lines()) {
-				figuresfile << line << "\n";
-			}
-		}
-		MESSAGE("recorded the golden trace " << path.string());
+		record(path, figurespath, header);
 		return;
 	}
 
@@ -346,7 +332,26 @@ void trace::check() const {
 	if (m_keep_figures) {
 		check_figures(figurespath, exact);
 	}
+	check_samples(path, header, exact);
+}
 
+void trace::record(std::filesystem::path const &Path, std::filesystem::path const &FiguresPath, std::string const &Header) const {
+	std::filesystem::create_directories(Path.parent_path());
+	std::ofstream file(Path, std::ios::binary);
+	file << Header << "\n";
+	for (auto const &row : m_rows) {
+		file << row << "\n";
+	}
+	if (m_keep_figures) {
+		std::ofstream figuresfile(FiguresPath, std::ios::binary);
+		for (auto const &line : m_figures.lines()) {
+			figuresfile << line << "\n";
+		}
+	}
+	MESSAGE("recorded the golden trace " << Path.string());
+}
+
+void trace::check_samples(std::filesystem::path const &path, std::string const &header, bool const exact) const {
 	std::ifstream file(path, std::ios::binary);
 	if (false == file.is_open()) {
 		if (exact) {

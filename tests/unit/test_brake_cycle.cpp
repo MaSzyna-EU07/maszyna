@@ -6,6 +6,9 @@
 
 #include "McZapkie/hamulce.h"
 
+#include <array>
+#include <map>
+
 using test::definition;
 using test::vehicle;
 
@@ -23,15 +26,15 @@ struct stage {
 
 // charging, the service application in steps, release, the overcharge used to speed the release up and its
 // drop back, the emergency application and recharging after it
-stage const cycle[]{
+std::array<stage, 9> const cycle{{
     {"charge", 5.0, 90.0},   {"light", 4.6, 20.0},         {"medium", 4.2, 20.0},      {"full service", 3.5, 20.0},
     {"release", 5.0, 40.0},  {"overcharge", 5.4, 15.0},    {"back to 5", 5.0, 45.0},   {"emergency", 0.0, 15.0},
     {"recharge", 5.0, 90.0},
-};
+}};
 
 // returns the pressure in the cylinders at the end of each stage, by the name of the stage
-std::map<std::string, double> run_cycle(vehicle &Vehicle, test::trace &Trace) {
-	std::map<std::string, double> cylinders;
+std::map<std::string, double, std::less<>> run_cycle(vehicle &Vehicle, test::trace &Trace) {
+	std::map<std::string, double, std::less<>> cylinders;
 	for (auto const &stage : cycle) {
 		Trace.mark(stage.name);
 		Vehicle.hold_brake_pipe(stage.pipe);
@@ -50,11 +53,10 @@ TEST_CASE("brake cycle: every real vehicle through charge, service steps, releas
 		vehicle real{definition::fiz(path)};
 		test::trace trace{"brake cycle/" + path, test::channels::brakes(), 100};
 		real.record(trace);
-		auto cylinders{run_cycle(real, trace)};
 		// a vehicle braked by the pipe: released once charged, braking harder by every step of the service
 		// application, and by the emergency one. the release isn't checked: some vehicles don't release within
 		// its 40 s, others keep a little air after the overcharge
-		if (cylinders["full service"] > 0.0) {
+		if (auto cylinders{run_cycle(real, trace)}; cylinders["full service"] > 0.0) {
 			CHECK(cylinders["charge"] < 0.1);
 			CHECK(cylinders["light"] <= cylinders["medium"]);
 			CHECK(cylinders["medium"] <= cylinders["full service"] + 0.01);
@@ -84,9 +86,9 @@ TEST_CASE("brake cycle: every brake delay setting of the real vehicles") {
 			test::reseed_random();
 			vehicle real{definition::fiz(path)};
 			REQUIRE(real->BrakeDelaySwitch(delay));
-			test::trace trace{"brake delays/" + path + " " + std::to_string(delay), test::channels::brakes(), 100};
+			test::trace trace{std::format("brake delays/{} {}", path, delay), test::channels::brakes(), 100};
 			real.record(trace);
-			std::map<std::string, double> cylinders;
+			std::map<std::string, double, std::less<>> cylinders;
 			for (auto const &stage : {stage{"charge", 5.0, 90.0}, stage{"full service", 3.5, 30.0}, stage{"release", 5.0, 60.0}}) {
 				trace.mark(stage.name);
 				real.hold_brake_pipe(stage.pipe);

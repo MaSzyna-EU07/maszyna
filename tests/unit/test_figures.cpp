@@ -35,7 +35,7 @@ TEST_CASE("figures: a run split into parts by the events, each from the last ste
 	figures.sample(12.0, mover);
 
 	auto const lines{figures.lines()};
-	auto const has{[&lines](std::string const &Line) { return std::find(lines.begin(), lines.end(), Line) != lines.end(); }};
+	auto const has{[&lines](std::string const &Line) { return std::ranges::find(lines, Line) != lines.end(); }};
 	CHECK(lines.front() == "[start]");
 	// two events with nothing run between them make one part
 	CHECK(has("[brake, hard]"));

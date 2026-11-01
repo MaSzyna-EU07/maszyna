@@ -5,7 +5,7 @@
 
 namespace test {
 
-scenario::scenario(std::string Name, std::vector<channel> Channels, track Track) : m_name(std::move(Name)), m_channels(std::move(Channels)), m_track(Track) {
+scenario::scenario(std::string Name, std::vector<channel> Channels, track const &Track) : m_name(std::move(Name)), m_channels(std::move(Channels)), m_track(Track) {
 	reseed_random();
 }
 
@@ -20,14 +20,14 @@ void scenario::record() {
 		return;
 	}
 	for (std::size_t i = 0; i < m_train.size(); ++i) {
-		m_traces.push_back(std::make_unique<trace>(m_name + "/" + std::to_string(i), m_channels, 100));
+		m_traces.push_back(std::make_unique<trace>(std::format("{}/{}", m_name, i), m_channels, 100));
 		m_train[i].record(*m_traces.back());
 	}
 }
 
 void scenario::act(std::string const &Event) {
 	record();
-	for (auto &trace : m_traces) {
+	for (auto const &trace : m_traces) {
 		trace->mark(Event);
 	}
 }
@@ -71,8 +71,8 @@ void scenario::notch_back(int Position) {
 	}
 }
 
-void scenario::check() {
-	for (auto &trace : m_traces) {
+void scenario::check() const {
+	for (auto const &trace : m_traces) {
 		trace->check();
 	}
 }

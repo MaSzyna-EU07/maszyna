@@ -97,7 +97,7 @@ TEST_CASE("controls: the doors of an electric unit, opened, locked, permitted an
 		auto const ready{scenario.start_up()};
 		CHECK(ready == (name != "en57"));
 		auto &cab{scenario.cab()};
-		auto &last{scenario.vehicle(scenario.train().size() - 1)};
+		auto const &last{scenario.vehicle(scenario.train().size() - 1)};
 		scenario.act("permit left");
 		cab.PermitDoors(side::left, true);
 		scenario.wait(2.0);
@@ -170,12 +170,12 @@ TEST_CASE("controls: the doors of wagons, worked from the locomotive") {
 	scenario.start_up();
 	auto &cab{scenario.cab()};
 	auto &coach{scenario.vehicle(1)};
-	auto &freight{scenario.vehicle(2)};
+	auto const &freight{scenario.vehicle(2)};
 	// the locomotive works the coach's doors for the consist and for the unit, not with its local controls; the
 	// freight wagon's doors don't move from the locomotive
 	for (auto const range : {range_t::consist, range_t::unit, range_t::local}) {
 		CAPTURE(static_cast<int>(range));
-		scenario.act("open right " + std::to_string(static_cast<int>(range)));
+		scenario.act(std::format("open right {}", static_cast<int>(range)));
 		cab.PermitDoors(side::right, true, range);
 		cab.OperateDoors(side::right, true, range);
 		scenario.wait(10.0);
@@ -343,7 +343,7 @@ TEST_CASE("controls: releasers and the universal brake buttons") {
 	cab.BrakeLevelSet(cab.Handle->GetPos(bh_NP));
 	auto &coach{scenario.vehicle(1)};
 	// the releaser of the cab is passed along the whole train, a wagon's works on the wagon alone
-	auto coachbraked{coach.BrakePress};
+	auto const coachbraked{coach.BrakePress};
 	auto wagonbraked{wagon.BrakePress};
 	scenario.act("releaser of the locomotive");
 	cab.BrakeReleaser(1);
@@ -353,7 +353,6 @@ TEST_CASE("controls: releasers and the universal brake buttons") {
 	CHECK(coach.BrakePress < coachbraked - 1.0);
 	CHECK(wagon.BrakePress < wagonbraked - 0.5);
 	CHECK(cab.PipePress < 4.0); // the pipe stays where the service application left it
-	coachbraked = coach.BrakePress;
 	wagonbraked = wagon.BrakePress;
 	scenario.act("releaser of the wagon");
 	wagon.BrakeReleaser(1);
@@ -361,7 +360,7 @@ TEST_CASE("controls: releasers and the universal brake buttons") {
 	wagon.BrakeReleaser(0);
 	CHECK(wagon.BrakePress < wagonbraked - 0.5);
 	for (int button = 0; button < 3; ++button) {
-		scenario.act("universal button " + std::to_string(button));
+		scenario.act(std::format("universal button {}", button));
 		cab.UniversalBrakeButton(button, 1);
 		scenario.wait(5.0);
 		cab.UniversalBrakeButton(button, 0);
@@ -390,11 +389,11 @@ TEST_CASE("controls: the ep brake of electric units") {
 		scenario.act("ep on");
 		cab.SwitchEPBrake(1);
 		scenario.wait(5.0);
-		auto &last{scenario.vehicle(scenario.train().size() - 1)};
+		auto const &last{scenario.vehicle(scenario.train().size() - 1)};
 		auto const positions{std::vector{bh_EPB, bh_EPN, bh_EPR, bh_EPB, bh_RP}};
 		for (std::size_t i = 0; i < positions.size(); ++i) {
 			CAPTURE(positions[i]);
-			scenario.act("handle " + std::to_string(positions[i]));
+			scenario.act(std::format("handle {}", positions[i]));
 			cab.BrakeLevelSet(cab.Handle->GetPos(positions[i]));
 			scenario.wait(15.0);
 			if (i == 2) {
@@ -498,10 +497,10 @@ TEST_CASE("controls: a freight wagon loaded and braked") {
 TEST_CASE("controls: a locomotive running into a standing wagon") {
 	for (auto const speed : {5.0, 15.0, 40.0}) {
 		CAPTURE(speed);
-		scenario scenario{"controls/collision/" + std::to_string(static_cast<int>(speed)) + " kmh", motion()};
+		scenario scenario{std::format("controls/collision/{} kmh", static_cast<int>(speed)), motion()};
 		// the wagon stands in front, the locomotive comes from behind it
 		scenario.add("bdhpumn_v3/bdhpumn").add("4e_v1/4e", 0, coupling::faux, speed, 30.0);
-		auto &wagon{scenario.vehicle(0)};
+		auto const &wagon{scenario.vehicle(0)};
 		scenario.wait(30.0);
 		// slow, the locomotive pushes the wagon off, the buffers only touching, and both roll to a stop; fast,
 		// the wagon derails where it stands
@@ -587,7 +586,7 @@ TEST_CASE("controls: the automatic electrodynamic brake under ep and service bra
 		}
 		scenario.start_up();
 		auto &cab{scenario.cab()};
-		auto const brake{[&](char const *Event, double Position, double Seconds) {
+		auto const brake{[&scenario, &cab](char const *Event, double Position, double Seconds) {
 			scenario.act(Event);
 			cab.BrakeLevelSet(Position);
 			scenario.wait(Seconds);
@@ -612,7 +611,7 @@ TEST_CASE("controls: a draisine pumped along by hand") {
 	// standing, which stays where it is; a rolling one is kept going
 	for (auto const speed : {0.0, 10.0}) {
 		CAPTURE(speed);
-		scenario scenario{"controls/draisine/" + std::to_string(static_cast<int>(speed)), motion() + traction()};
+		scenario scenario{std::format("controls/draisine/{}", static_cast<int>(speed)), motion() + traction()};
 		scenario.add("dr2_v1/dr2", 1, test::consist::full_coupling, speed);
 		auto &cab{scenario.cab()};
 		cab.CabActivisation();

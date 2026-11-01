@@ -51,7 +51,7 @@ private:
 	// the physics reaches a neighbouring vehicle through its TDynamicObject, for its MoverParameters alone.
 	// the game's object can't be made without the rest of the game, so it's a stand-in: storage of its size
 	// with that one member set, never constructed, which only the physics ever looks into
-	std::vector<std::unique_ptr<std::byte[]>> m_objects;
+	std::vector<std::vector<std::byte>> m_objects;
 };
 
 } // namespace test

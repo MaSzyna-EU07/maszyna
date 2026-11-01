@@ -105,7 +105,7 @@ TEST_CASE("diesel: the 214M railbus's torque converter, gears and retarder") {
 	for (auto const &[eimic, retarder, air] : {position{1.0, false, false}, position{0.0, false, false}, position{-1.0, true, false}, position{0.0, false, true}}) {
 		--number;
 		CAPTURE(number);
-		scenario.act("position " + std::to_string(number));
+		scenario.act(std::format("position {}", number));
 		railbus.DecMainCtrl(1);
 		scenario.wait(8.0);
 		CHECK(railbus.eimic_real == doctest::Approx(eimic));

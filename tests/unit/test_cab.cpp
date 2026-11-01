@@ -37,7 +37,7 @@ TEST_CASE("cab: the engine rotation of up to three vehicles in multiple, on the 
 	CHECK(third.ShowEngineRotation(3) == doctest::Approx(10.0));
 	// no control cable, no reading
 	consist apart;
-	auto &alone{apart.add(definition::fiz("sn61_v2/sn61"), 1).mover()};
+	auto const &alone{apart.add(definition::fiz("sn61_v2/sn61"), 1).mover()};
 	apart.add(definition::fiz("sn61_v2/sn61"), 0, coupling::coupler | coupling::brakehose);
 	CHECK(alone.ShowEngineRotation(2) == doctest::Approx(0.0));
 }
@@ -111,6 +111,7 @@ TEST_CASE("cab: the controller of the electrodynamic brake apart from the local 
 	scenario.wait(10.0);
 	scenario.act("dynamic brake off");
 	for (int i = 0; i < 20 && eu47.DecDynamicBrakeLevel(1.f); ++i) {
+		// down a notch at a time
 	}
 	CHECK(eu47.DynamicBrakeRatio() == doctest::Approx(0.0));
 	// the local brake no longer brings the motors in
@@ -208,7 +209,7 @@ TEST_CASE("cab: the lamps and the buzzer of the security system left unattended"
 	auto &eu07{scenario.cab()};
 	scenario.get_going();
 	scenario.full_power(10.0);
-	auto &security{eu07.SecuritySystem};
+	auto const &security{eu07.SecuritySystem};
 	CHECK_FALSE(security.is_beeping());
 	scenario.act("unattended");
 	// the train runs with nobody acknowledging the vigilance

@@ -14,17 +14,17 @@ TEST_CASE("loads: the pantographs of an electric vehicle set up by the amount of
 	// (DoubleTr), so the bits name the pantographs the other way round
 	struct setup {
 		int amount;
-		bool front;
-		bool rear;
+		bool frontraised;
+		bool rearraised;
 	};
-	for (auto const &[amount, front, rear] : {setup{0, false, false}, setup{1, true, false}, setup{2, false, true}, setup{3, true, true}, setup{5, false, true},
+	for (auto const &[amount, frontraised, rearraised] : {setup{0, false, false}, setup{1, true, false}, setup{2, false, true}, setup{3, true, true}, setup{5, false, true},
 	                                          setup{6, true, false}}) {
 		CAPTURE(amount);
 		vehicle et42{definition::fiz("et42_v2/112e-a")};
 		CHECK(et42->AssignLoad("pantstate", static_cast<float>(amount)));
 		CHECK(et42->DoubleTr == ((amount & 4) != 0 ? -1 : 1));
-		CHECK(et42->Pantographs[end::front].valve.is_enabled == front);
-		CHECK(et42->Pantographs[end::rear].valve.is_enabled == rear);
+		CHECK(et42->Pantographs[end::front].valve.is_enabled == frontraised);
+		CHECK(et42->Pantographs[end::rear].valve.is_enabled == rearraised);
 		// the load itself stays as it was
 		CHECK(et42->LoadAmount == doctest::Approx(0.0));
 	}

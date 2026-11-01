@@ -35,7 +35,7 @@ std::vector<std::string> keys(std::string const &Line);
 // the value of the key in the line, as extract_value() gives it, empty for none (where it would throw too)
 std::string value(std::string const &Key, std::string const &Line);
 // the words of a row, as the readers of the lists get them from cParser
-std::vector<std::string> words(std::string const &Line);
+std::vector<std::string> words(std::string_view Line);
 
 // what the loader reads from the lines, in order: every section line with the values it gives, every row
 // with the lists reading it. two definitions reading the same load the same vehicle

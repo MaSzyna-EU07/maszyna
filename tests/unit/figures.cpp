@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "figures.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -21,22 +22,20 @@ unit const metres{"m", 1};
 unit const bar{"bar", 3};
 unit const amperes{"A", 0};
 unit const kilonewtons{"kN", 1};
-unit const units[]{seconds, kmh, metres, bar, amperes, kilonewtons};
+std::array const units{seconds, kmh, metres, bar, amperes, kilonewtons};
 
 std::string line(char const *Name, double Value, unit const &Unit) {
-	char text[128];
-	std::snprintf(text, sizeof(text), "%s = %.*f %s", Name, Unit.decimals, Value, Unit.name);
-	return text;
+	return std::format("{} = {:.{}f} {}", Name, Value, Unit.decimals, Unit.name);
 }
 
 // the name, the value and the unit of a line of a figure, or false for the header of a part
-bool parse(std::string const &Line, std::string &Name, double &Value, std::string &Unit) {
+bool parse(std::string_view const Line, std::string &Name, double &Value, std::string &Unit) {
 	auto const equals{Line.find(" = ")};
-	if (equals == std::string::npos) {
+	if (equals == std::string_view::npos) {
 		return false;
 	}
 	Name = Line.substr(0, equals);
-	auto const value{Line.substr(equals + 3)};
+	std::string const value{Line.substr(equals + 3)};
 	auto const space{value.find(' ')};
 	Value = std::strtod(value.substr(0, space).c_str(), nullptr);
 	Unit = space == std::string::npos ? std::string{} : value.substr(space + 1);
@@ -44,7 +43,7 @@ bool parse(std::string const &Line, std::string &Name, double &Value, std::strin
 }
 
 // a difference of 0.5%, or of the last decimal written
-bool close(double Recorded, double Now, std::string const &Unit) {
+bool close(double Recorded, double Now, std::string_view const Unit) {
 	auto step{0.0};
 	for (auto const &unit : units) {
 		if (Unit == unit.name) {
@@ -103,13 +102,12 @@ void figures::sample(double Time, TMoverParameters const &Vehicle) {
 }
 
 void figures::mark(std::string const &Event) {
-	auto &part{m_parts.back()};
-	if (false == part.sampled) {
+	if (auto &part{m_parts.back()}; false == part.sampled) {
 		// nothing ran since the last event: a part of both
 		part.event = part.event == "start" ? Event : part.event + ", " + Event;
 		return;
 	}
-	m_parts.push_back(figures::part{Event});
+	m_parts.emplace_back(Event);
 }
 
 std::vector<std::string> figures::lines() const {
@@ -168,7 +166,7 @@ std::vector<recorded_part> parts_of(std::vector<std::string> const &Lines) {
 	for (auto const &line : Lines) {
 		figure figure;
 		if (false == parse(line, figure.name, figure.value, figure.unit)) {
-			parts.push_back({line, {}});
+			parts.emplace_back(line);
 			continue;
 		}
 		if (parts.empty()) {
@@ -180,7 +178,7 @@ std::vector<recorded_part> parts_of(std::vector<std::string> const &Lines) {
 	return parts;
 }
 
-figure const *find(std::vector<figure> const &Figures, std::string const &Name) {
+figure const *find(std::vector<figure> const &Figures, std::string_view const Name) {
 	for (auto const &figure : Figures) {
 		if (figure.name == Name) {
 			return &figure;
@@ -198,8 +196,8 @@ std::vector<std::string> figures::compare(std::vector<std::string> const &Record
 	for (std::size_t i = 0; i < std::max(recorded.size(), now.size()); ++i) {
 		if (i >= recorded.size() || i >= now.size() || recorded[i].header != now[i].header) {
 			// the parts can't be paired up from here on
-			differences.push_back("the parts differ from part " + std::to_string(i + 1) + ": " + (i < now.size() ? now[i].header : "none") + " now, " +
-			                      (i < recorded.size() ? recorded[i].header : "none") + " recorded");
+			differences.push_back(std::format("the parts differ from part {}: {} now, {} recorded", i + 1, i < now.size() ? now[i].header : std::string{"none"},
+			                                  i < recorded.size() ? recorded[i].header : std::string{"none"}));
 			break;
 		}
 		auto const &header{now[i].header};

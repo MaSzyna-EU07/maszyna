@@ -13,9 +13,7 @@ namespace {
 std::string values(std::initializer_list<std::pair<char const *, double>> Values) {
 	std::string result;
 	for (auto const &[name, value] : Values) {
-		char text[64];
-		std::snprintf(text, sizeof(text), "%s%s=%.6g", result.empty() ? "" : " ", name, value);
-		result += text;
+		result += std::format("{}{}={:.6g}", result.empty() ? "" : " ", name, value);
 	}
 	return result;
 }
@@ -43,13 +41,9 @@ std::vector<invariant> const &invariants() {
 	static std::vector<invariant> const rules{
 	    {"every value a number",
 	     [](auto const &M, double, auto const *) {
-		     for (auto const value : {M.V, M.AccS, M.Ft, M.Fb, M.Im, M.Itot, M.EngineVoltage, M.enrot, M.PipePress, M.BrakePress, M.LocBrakePress,
-		                              M.ScndPipePress, M.Compressor, M.BatteryVoltage}) {
-			     if (false == std::isfinite(value)) {
-				     return false;
-			     }
-		     }
-		     return true;
+		     std::initializer_list<double> const values{M.V,          M.AccS,          M.Ft,         M.Fb,         M.Im,          M.Itot,      M.EngineVoltage,
+		                                                M.enrot,      M.PipePress,     M.BrakePress, M.LocBrakePress, M.ScndPipePress, M.Compressor, M.BatteryVoltage};
+		     return std::ranges::all_of(values, [](double const Value) { return std::isfinite(Value); });
 	     },
 	     [](auto const &M) {
 		     return values({{"V", M.V}, {"AccS", M.AccS}, {"Ft", M.Ft}, {"Fb", M.Fb}, {"Im", M.Im}, {"Itot", M.Itot}, {"EngineVoltage", M.EngineVoltage},
@@ -68,12 +62,8 @@ std::vector<invariant> const &invariants() {
 		     // all the air comes from the main reservoirs, which the game sets up to 10 bar, some (the Impuls) to 12;
 		     // the driver's valve in its filling position joins the brake pipe to them
 		     auto const highest{1.01 * std::max(10.0, M.MaxCompressor) + pressure_margin};
-		     for (auto const press : {M.PipePress, M.ScndPipePress, M.Compressor}) {
-			     if (press < -pressure_margin || press > highest) {
-				     return false;
-			     }
-		     }
-		     return true;
+		     std::initializer_list<double> const pressures{M.PipePress, M.ScndPipePress, M.Compressor};
+		     return std::ranges::all_of(pressures, [highest](double const Press) { return Press >= -pressure_margin && Press <= highest; });
 	     },
 	     [](auto const &M) { return values({{"PipePress", M.PipePress}, {"ScndPipePress", M.ScndPipePress}, {"Compressor", M.Compressor}}); }},
 	    {"main reservoir no higher than the compressor's governor",
@@ -139,7 +129,7 @@ struct excuse {
 	char const *reason;
 };
 
-excuse const excuses[]{
+std::vector<excuse> const excuses{
     // what the tests do
     {"couplers/collision/", "no acceleration over 5 g", "vehicles run into each other"},
     {"controls/collision/", "no acceleration over 5 g", "vehicles run into each other"},
@@ -166,13 +156,8 @@ excuse const excuses[]{
 
 } // namespace
 
-bool excused(std::string const &Trace, std::string const &Invariant) {
-	for (auto const &excuse : excuses) {
-		if (excuse.invariant == Invariant && Trace.find(excuse.trace) != std::string::npos) {
-			return true;
-		}
-	}
-	return false;
+bool excused(std::string_view const Trace, std::string_view const Invariant) {
+	return std::ranges::any_of(excuses, [&](excuse const &Excuse) { return Excuse.invariant == Invariant && Trace.find(Excuse.trace) != std::string_view::npos; });
 }
 
 } // namespace test

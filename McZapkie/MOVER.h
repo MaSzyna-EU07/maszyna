@@ -2506,7 +2506,7 @@ class TMoverParameters
 	void InductionMotorDrive(double dt);
 	void InductionMotorOff();
 	double FrictionForce() const;
-	double BrakeForceR(double ratio, double velocity);
+	double BrakeForceR(double ratio, double velocity) const;
 	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);

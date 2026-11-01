@@ -77,15 +77,15 @@ std::vector<test::channel> state() {
 	};
 	for (int end : {end::front, end::rear}) {
 		auto const name{std::string{end == end::front ? "Front" : "Rear"}};
-		result.push_back({"MotorBlowers" + name + "Enabled", [end](auto const &M) { return flag(M.MotorBlowers[end].is_enabled); }});
-		result.push_back({"MotorBlowers" + name + "Disabled", [end](auto const &M) { return flag(M.MotorBlowers[end].is_disabled); }});
-		result.push_back({"Pant" + name + "Valve", [end](auto const &M) { return flag(M.Pantographs[end].valve.is_enabled) + 2 * flag(M.Pantographs[end].valve.is_disabled); }});
+		result.emplace_back("MotorBlowers" + name + "Enabled", [end](auto const &M) { return flag(M.MotorBlowers[end].is_enabled); });
+		result.emplace_back("MotorBlowers" + name + "Disabled", [end](auto const &M) { return flag(M.MotorBlowers[end].is_disabled); });
+		result.emplace_back("Pant" + name + "Valve", [end](auto const &M) { return flag(M.Pantographs[end].valve.is_enabled) + 2 * flag(M.Pantographs[end].valve.is_disabled); });
 	}
 	for (int side : {side::right, side::left}) {
 		auto const name{std::string{side == side::right ? "Right" : "Left"}};
-		result.push_back({name + "DoorPermit", [side](auto const &M) { return flag(M.Doors.instances[side].open_permit); }});
-		result.push_back({name + "DoorRemoteOpen", [side](auto const &M) { return flag(M.Doors.instances[side].remote_open); }});
-		result.push_back({name + "DoorRemoteClose", [side](auto const &M) { return flag(M.Doors.instances[side].remote_close); }});
+		result.emplace_back(name + "DoorPermit", [side](auto const &M) { return flag(M.Doors.instances[side].open_permit); });
+		result.emplace_back(name + "DoorRemoteOpen", [side](auto const &M) { return flag(M.Doors.instances[side].remote_open); });
+		result.emplace_back(name + "DoorRemoteClose", [side](auto const &M) { return flag(M.Doors.instances[side].remote_close); });
 	}
 	return result;
 }
@@ -242,7 +242,7 @@ TEST_CASE("commands: every command run on every real vehicle") {
 		real->CommandIn.Location = real->Loc;
 		auto done{false};
 		auto channels{state()};
-		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
+		channels.emplace_back("Done", [&done](auto const &) { return flag(done); });
 		test::trace trace{"commands/" + path, channels, 1, false};
 		trace.sample(0.0, real.mover());
 		for (std::size_t i = 0; i < commands.size(); ++i) {
@@ -381,9 +381,9 @@ TEST_CASE("commands: every switch of the cab, sent to the next vehicle") {
 		auto done{false};
 		auto channels{state()};
 		for (auto const &channel : state()) {
-			channels.push_back({"next." + channel.name, [&next, value = channel.value](auto const &) { return value(next.mover()); }});
+			channels.emplace_back("next." + channel.name, [&next, value = channel.value](auto const &) { return value(next.mover()); });
 		}
-		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
+		channels.emplace_back("Done", [&done](auto const &) { return flag(done); });
 		test::trace trace{"switches/" + path, channels, 1, false};
 		trace.sample(0.0, driven.mover());
 		for (std::size_t i = 0; i < actions.size(); ++i) {
@@ -421,9 +421,9 @@ TEST_CASE("commands: every switch of the cab, worked on a pair standing under th
 		                                });
 		auto const own{channels.size()};
 		for (std::size_t i = 0; i < own; ++i) {
-			channels.push_back({"next." + channels[i].name, [&pair, value = channels[i].value](auto const &) { return value(pair[1].mover()); }});
+			channels.emplace_back("next." + channels[i].name, [&pair, value = channels[i].value](auto const &) { return value(pair[1].mover()); });
 		}
-		channels.push_back({"Done", [&done](auto const &) { return flag(done); }});
+		channels.emplace_back("Done", [&done](auto const &) { return flag(done); });
 		test::trace trace{"switches_live/" + path, channels, 1, false};
 		trace.sample(0.0, pair[0].mover());
 		test::track const catenary{.voltage = test::catenary_3kv};
@@ -443,12 +443,12 @@ namespace {
 // whatever came to hand: the commands of the front one go to the rear coupler of the middle one and from its
 // front coupler to the front one of the last, which faces backwards from the middle one, so forwards
 struct train {
-	vehicle front{definition::fiz("4e_v1/4e"), 0.0, "front", 1};
+	vehicle head{definition::fiz("4e_v1/4e"), 0.0, "front", 1};
 	vehicle middle{definition::fiz("4e_v1/4e"), 0.0, "middle"};
 	vehicle last{definition::fiz("4e_v1/4e"), 0.0, "last"};
 
 	explicit train(int Coupling) {
-		front->Attach(end::rear, end::rear, &middle.mover(), Coupling, true, false);
+		head->Attach(end::rear, end::rear, &middle.mover(), Coupling, true, false);
 		middle->Attach(end::front, end::front, &last.mover(), Coupling, true, false);
 	}
 };
@@ -458,8 +458,8 @@ struct train {
 TEST_CASE("commands: travel along the train, turned round for a vehicle facing backwards") {
 	train consist{test::consist::full_coupling};
 	// the driver takes the front cab, which the others follow
-	REQUIRE(consist.front->CabActivisation());
-	CHECK(consist.front->CabActive == 1);
+	REQUIRE(consist.head->CabActivisation());
+	CHECK(consist.head->CabActive == 1);
 	CHECK(consist.middle->CabActive == -1);
 	CHECK(consist.last->CabActive == 1);
 	// the command is done in each vehicle and cleared
@@ -467,41 +467,41 @@ TEST_CASE("commands: travel along the train, turned round for a vehicle facing b
 	CHECK(consist.last->CommandIn.Command.empty());
 
 	SUBCASE("door permits: the right side of the sender is the left one of a vehicle facing backwards") {
-		consist.front->PermitDoors(side::right, true, range_t::consist);
-		CHECK(consist.front->Doors.instances[side::right].open_permit);
+		consist.head->PermitDoors(side::right, true, range_t::consist);
+		CHECK(consist.head->Doors.instances[side::right].open_permit);
 		CHECK(consist.middle->Doors.instances[side::left].open_permit);
 		CHECK_FALSE(consist.middle->Doors.instances[side::right].open_permit);
 		CHECK(consist.last->Doors.instances[side::right].open_permit);
 		// and revoked the same way
-		consist.front->PermitDoors(side::right, false, range_t::consist);
+		consist.head->PermitDoors(side::right, false, range_t::consist);
 		CHECK_FALSE(consist.middle->Doors.instances[side::left].open_permit);
 		CHECK_FALSE(consist.last->Doors.instances[side::right].open_permit);
 	}
 	SUBCASE("a pantograph valve: the vehicles past one coupled by its control cable take the other pantograph") {
-		consist.front->OperatePantographValve(end::front, operation_t::enable, range_t::consist);
-		CHECK(consist.front->Pantographs[end::front].valve.is_enabled);
+		consist.head->OperatePantographValve(end::front, operation_t::enable, range_t::consist);
+		CHECK(consist.head->Pantographs[end::front].valve.is_enabled);
 		CHECK(consist.middle->Pantographs[end::front].valve.is_enabled);
 		CHECK(consist.last->Pantographs[end::rear].valve.is_enabled);
 	}
 	SUBCASE("sent backwards, it goes no further than the sender: nothing is coupled at its front") {
-		consist.front->RunCommand("DoorLock", 0, -1, coupling::control);
-		CHECK_FALSE(consist.front->Doors.lock_enabled);
+		consist.head->RunCommand("DoorLock", 0, -1, coupling::control);
+		CHECK_FALSE(consist.head->Doors.lock_enabled);
 		CHECK(consist.middle->Doors.lock_enabled);
 	}
 	SUBCASE("the same command again isn't taken by the next vehicle a second time") {
 		CHECK(consist.middle->SetInternalCommand("DoorStep", 0, 1, coupling::control));
 		CHECK_FALSE(consist.middle->SetInternalCommand("DoorStep", 0, 1, coupling::control));
-		CHECK_FALSE(consist.front->RunInternalCommand()); // nothing to run
+		CHECK_FALSE(consist.head->RunInternalCommand()); // nothing to run
 	}
 }
 
 TEST_CASE("commands: don't pass a coupling without the control cable") {
 	train consist{coupling::coupler | coupling::brakehose};
-	consist.front->RunCommand("DoorLock", 0, 1, coupling::control);
-	CHECK_FALSE(consist.front->Doors.lock_enabled);
+	consist.head->RunCommand("DoorLock", 0, 1, coupling::control);
+	CHECK_FALSE(consist.head->Doors.lock_enabled);
 	CHECK(consist.middle->Doors.lock_enabled);
 	// a command of another coupling goes through it
-	consist.front->RunCommand("DoorStep", 0, 1, coupling::brakehose);
+	consist.head->RunCommand("DoorStep", 0, 1, coupling::brakehose);
 	CHECK_FALSE(consist.middle->Doors.step_enabled);
 }
 

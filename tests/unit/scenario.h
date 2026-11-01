@@ -22,7 +22,7 @@ namespace test {
 //   scenario.check();
 class scenario {
 public:
-	scenario(std::string Name, std::vector<channel> Channels, track Track = {0.15, 0.0, catenary_3kv});
+	scenario(std::string Name, std::vector<channel> Channels, track const &Track = {0.15, 0.0, catenary_3kv});
 
 	// adds a real vehicle at the back, see consist::add()
 	scenario &add(std::string const &Path, int Cab = 0, int Coupling = consist::full_coupling, double Velocity = 0.0, double Gap = 0.0);
@@ -48,7 +48,7 @@ public:
 	// the main controller back to the given position, a notch a second
 	void notch_back(int Position);
 	// checks the traces
-	void check();
+	void check() const;
 
 private:
 	void record();

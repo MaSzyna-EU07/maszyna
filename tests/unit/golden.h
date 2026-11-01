@@ -67,6 +67,10 @@ public:
 
 private:
 	void check_figures(std::filesystem::path const &Path, bool Exact) const;
+	// writes the samples and the key figures, as recorded on the code before a change
+	void record(std::filesystem::path const &Path, std::filesystem::path const &FiguresPath, std::string const &Header) const;
+	// compares the samples with the recorded ones
+	void check_samples(std::filesystem::path const &path, std::string const &header, bool exact) const;
 
 	std::string m_name;
 	std::vector<channel> m_channels;
