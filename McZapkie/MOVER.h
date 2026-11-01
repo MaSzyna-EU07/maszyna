@@ -2629,6 +2629,9 @@ class TMoverParameters
 	// the parts of AutoRelayCheck()
 	bool AutoRelayShuntStep(bool ARFASI2);
 	bool AutoRelayMainStep(bool ARFASI);
+	bool AutoRelayMainUp(bool ARFASI);
+	bool AutoRelayMainNotchUp();
+	bool AutoRelayMainDown();
 	bool AutoRelayLineContactorsStep(bool motorconnectorsoff);
 	bool CamshaftRunDown();
 	bool MotorConnectorsCheck();
@@ -2687,6 +2690,11 @@ class TMoverParameters
 	// the parts of update_doors()
 	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol) const;
 	void move_door(basic_door &door, double Deltatime) const;
+	bool door_open_request(basic_door const &door, bool localopencontrol, bool remoteopencontrol) const;
+	bool door_close_request(basic_door const &door, bool localclosecontrol, bool remoteclosecontrol) const;
+	bool doors_powered() const;
+	bool door_step_folding(basic_door const &door) const;
+	float door_open_duration(basic_door const &door, bool localopencontrol, bool remoteopencontrol) const;
 	void update_door_timers(double Deltatime);
 
 	/* funkcje dla samochodow*/

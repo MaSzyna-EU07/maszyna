@@ -7138,126 +7138,151 @@ bool TMoverParameters::AutoRelayShuntStep(bool const ARFASI2)
 bool TMoverParameters::AutoRelayMainStep(bool const ARFASI)
 {
 	bool OK = false;
-		if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
+	if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
+	{
+		return false; // nie poprawiamy przy konwersji
+		// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
+	}
+	// main bez samoczynnego rozruchu
+	if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
+	    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
+	        (TrainType == dt_ET22 && DelayCtrlFlag)))
+	{
+		OK = AutoRelayMainUp(ARFASI);
+	}
+	else if (RList[MainCtrlActualPos].Relay > MainCtrlPos)
+	{
+		OK = AutoRelayMainDown();
+	}
+	else if (RList[MainCtrlActualPos].R > 0 && ScndCtrlActualPos > 0)
+	{
+		if (LastRelayTime > CtrlDownDelay)
 		{
-			return false; // nie poprawiamy przy konwersji
-			// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
+			--ScndCtrlActualPos; // boczniki nie dzialaja na poz. oporowych
+			SetFlag(SoundFlag, sound::shuntfield);
+			OK = true;
 		}
-		// main bez samoczynnego rozruchu
-		if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
-		    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
-		        (TrainType == dt_ET22 && DelayCtrlFlag)))
+	}
+	else
+		OK = false;
+	return OK;
+}
+
+// a step of the main relays up to the controller's position, at once to the parallel position without resistors
+// on a fast serial circuit (303E); returns whether the relays moved, never into parallel with the overload relay high
+bool TMoverParameters::AutoRelayMainUp(bool const ARFASI)
+{
+	bool OK = false;
+	// prevent switch to parallel mode if motor overload relay is set to high threshold mode
+	if (IsMotorOverloadRelayHighThresholdOn() && RList[MainCtrlActualPos + 1].Bn > 1)
+	{
+		return false;
+	}
+
+	if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && MainCtrlPos != MainCtrlPosNo && FastSerialCircuit == 1)
+	{
+		// szybkie wchodzenie na bezoporowa (303E)
+		// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
+		++MainCtrlActualPos;
+		if (MainCtrlPos - MainCtrlActualPos == 1)
+		{
+			// HACK: ensure we play only single sound of basic relays for entire trasition; return false
+			// for all but last step despite configuration change, to prevent playback of the basic relay sound
+			// TBD, TODO: move the basic sound event here and enable it with call parameter
+			OK = true;
+		}
+		if (RList[MainCtrlActualPos].R == 0)
+		{
+			SetFlag(SoundFlag, sound::parallel | sound::loud);
+			OK = true;
+		}
+	}
+	else if (LastRelayTime > CtrlDelay && ARFASI)
+	{
+		OK = AutoRelayMainNotchUp();
+	}
+	return OK;
+}
+
+// a notch up of the main relays after their delay, through the group switch of the ET22, and the sounds of the
+// parallel positions; returns whether they moved
+bool TMoverParameters::AutoRelayMainNotchUp()
+{
+	bool OK = false;
+	// WriteLog("LRT = " + FloatToStr(LastRelayTime) + ", " +
+	// FloatToStr(CtrlDelay));
+	if (TrainType == dt_ET22 && MainCtrlPos > 1 && (RList[MainCtrlActualPos].Bn < RList[MainCtrlActualPos + 1].Bn || DelayCtrlFlag))
+	{
+		// et22 z walem grupowym
+		if (!DelayCtrlFlag) // najpierw przejscie
+		{
+			++MainCtrlActualPos;
+			DelayCtrlFlag = true; // tryb przejscia
+			OK = true;
+		}
+		else if (LastRelayTime > 4 * CtrlDelay) // przejscie
 		{
 
-			// prevent switch to parallel mode if motor overload relay is set to high threshold mode
-			if (IsMotorOverloadRelayHighThresholdOn() && RList[MainCtrlActualPos + 1].Bn > 1)
-			{
-				return false;
-			}
-
-			if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && MainCtrlPos != MainCtrlPosNo && FastSerialCircuit == 1)
-			{
-				// szybkie wchodzenie na bezoporowa (303E)
-				// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
-				++MainCtrlActualPos;
-				if (MainCtrlPos - MainCtrlActualPos == 1)
-				{
-					// HACK: ensure we play only single sound of basic relays for entire trasition; return false
-					// for all but last step despite configuration change, to prevent playback of the basic relay sound
-					// TBD, TODO: move the basic sound event here and enable it with call parameter
-					OK = true;
-				}
-				if (RList[MainCtrlActualPos].R == 0)
-				{
-					SetFlag(SoundFlag, sound::parallel | sound::loud);
-					OK = true;
-				}
-			}
-			else if (LastRelayTime > CtrlDelay && ARFASI)
-			{
-				// WriteLog("LRT = " + FloatToStr(LastRelayTime) + ", " +
-				// FloatToStr(CtrlDelay));
-				if (TrainType == dt_ET22 && MainCtrlPos > 1 && (RList[MainCtrlActualPos].Bn < RList[MainCtrlActualPos + 1].Bn || DelayCtrlFlag))
-				{
-					// et22 z walem grupowym
-					if (!DelayCtrlFlag) // najpierw przejscie
-					{
-						++MainCtrlActualPos;
-						DelayCtrlFlag = true; // tryb przejscia
-						OK = true;
-					}
-					else if (LastRelayTime > 4 * CtrlDelay) // przejscie
-					{
-
-						DelayCtrlFlag = false;
-						OK = true;
-					}
-					/*
-					                            else
-					                                ;
-					*/
-				}
-				else // nie ET22 z wałem grupowym
-				{
-					++MainCtrlActualPos;
-					OK = true;
-				}
-				//---------
-				// hunter-111211: poprawki
-				if (MainCtrlActualPos > 0)
-				{
-					if (RList[MainCtrlActualPos].R == 0 && MainCtrlActualPos != MainCtrlPosNo)
-					{
-						// wejscie na bezoporowa
-						SetFlag(SoundFlag, sound::parallel | sound::loud);
-					}
-					else if (RList[MainCtrlActualPos].R > 0 && RList[MainCtrlActualPos - 1].R == 0)
-					{
-						// wejscie na drugi uklad
-						SetFlag(SoundFlag, sound::parallel);
-					}
-				}
-			}
+			DelayCtrlFlag = false;
+			OK = true;
 		}
-		else if (RList[MainCtrlActualPos].Relay > MainCtrlPos)
+		/*
+		                            else
+		                                ;
+		*/
+	}
+	else // nie ET22 z wałem grupowym
+	{
+		++MainCtrlActualPos;
+		OK = true;
+	}
+	//---------
+	// hunter-111211: poprawki
+	if (MainCtrlActualPos > 0)
+	{
+		if (RList[MainCtrlActualPos].R == 0 && MainCtrlActualPos != MainCtrlPosNo)
 		{
-			if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && !(MainCtrlPos == MainCtrlPosNo) && FastSerialCircuit == 1)
-			{
-				// szybkie wchodzenie na bezoporowa (303E)
-				// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
-				--MainCtrlActualPos;
-				OK = true;
-				if (RList[MainCtrlActualPos].R == 0)
-				{
-					SetFlag(SoundFlag, sound::parallel);
-				}
-			}
-			else if (LastRelayTime > CtrlDownDelay)
-			{
-				if (TrainType != dt_EZT) // tutaj powinien być tryb sterowania wałem
-				{
-					--MainCtrlActualPos;
-					OK = true;
-				}
-				// hunter-111211: poprawki
-				if (MainCtrlActualPos > 0 && RList[MainCtrlActualPos].R == 0)
-				{
-					// dzwieki schodzenia z bezoporowej}
-					SetFlag(SoundFlag, sound::parallel);
-				}
-			}
+			// wejscie na bezoporowa
+			SetFlag(SoundFlag, sound::parallel | sound::loud);
 		}
-		else if (RList[MainCtrlActualPos].R > 0 && ScndCtrlActualPos > 0)
+		else if (RList[MainCtrlActualPos].R > 0 && RList[MainCtrlActualPos - 1].R == 0)
 		{
-			if (LastRelayTime > CtrlDownDelay)
-			{
-				--ScndCtrlActualPos; // boczniki nie dzialaja na poz. oporowych
-				SetFlag(SoundFlag, sound::shuntfield);
-				OK = true;
-			}
+			// wejscie na drugi uklad
+			SetFlag(SoundFlag, sound::parallel);
 		}
-		else
-			OK = false;
+	}
+	return OK;
+}
+
+// a step of the main relays down to the controller's position; returns whether they moved
+bool TMoverParameters::AutoRelayMainDown()
+{
+	bool OK = false;
+	if (RList[MainCtrlPos].R == 0 && MainCtrlPos > 0 && !(MainCtrlPos == MainCtrlPosNo) && FastSerialCircuit == 1)
+	{
+		// szybkie wchodzenie na bezoporowa (303E)
+		// MainCtrlActualPos:=MainCtrlPos; //hunter-111012:
+		--MainCtrlActualPos;
+		OK = true;
+		if (RList[MainCtrlActualPos].R == 0)
+		{
+			SetFlag(SoundFlag, sound::parallel);
+		}
+	}
+	else if (LastRelayTime > CtrlDownDelay)
+	{
+		if (TrainType != dt_EZT) // tutaj powinien być tryb sterowania wałem
+		{
+			--MainCtrlActualPos;
+			OK = true;
+		}
+		// hunter-111211: poprawki
+		if (MainCtrlActualPos > 0 && RList[MainCtrlActualPos].R == 0)
+		{
+			// dzwieki schodzenia z bezoporowej}
+			SetFlag(SoundFlag, sound::parallel);
+		}
+	}
 	return OK;
 }
 
@@ -9090,27 +9115,73 @@ void TMoverParameters::update_door_requests(basic_door &door, bool const localop
 	door.local_close = door.local_close && false == door.is_closed && (false == remoteopencontrol || false == door.remote_open);
 	door.remote_close = door.remote_close && false == door.is_closed && (false == localopencontrol || false == door.local_open);
 
-	auto const autoopenrequest{Doors.open_control == control_t::autonomous && (false == Doors.permit_needed || door.open_permit)};
-	auto const openrequest{(localopencontrol && door.local_open) || (remoteopencontrol && door.remote_open) || (autoopenrequest && false == door.is_open)};
-
-	auto const autocloserequest{(Doors.auto_velocity != -1.f && Vel > Doors.auto_velocity) || (door.auto_timer != -1.f && door.auto_timer <= 0.f) ||
-	                            (Doors.permit_needed && false == door.open_permit)};
-	auto const closerequest{(door.remote_close && remoteclosecontrol) || (door.local_close && localclosecontrol) || (autocloserequest && door.is_open)};
-
-	auto const ispowered{(Doors.voltage == 0 ? true : Doors.voltage == 24 ? Power24vIsAvailable || Power110vIsAvailable : Doors.voltage == 110 ? Power110vIsAvailable : false)};
+	auto const openrequest{door_open_request(door, localopencontrol, remoteopencontrol)};
+	auto const closerequest{door_close_request(door, localclosecontrol, remoteclosecontrol)};
+	auto const ispowered{doors_powered()};
 
 	door.is_opening = false == door.is_open && true == ispowered && false == closerequest && (true == door.is_opening || (true == openrequest && false == Doors.is_locked));
 	door.is_closing = false == door.is_closed && true == ispowered && false == openrequest && (door.is_closing || closerequest);
 	door.step_unfolding = Doors.step_range != 0.f && Doors.step_enabled && false == Doors.is_locked && door.step_position < 1.f && door.is_opening;
-	door.step_folding = door.step_position > 0.f // is unfolded
-	                    && (false == Doors.step_enabled // we lost permission to stay open or our door is calling the shots
-	                        || (Doors.permit_needed ? false == door.open_permit : door.is_closing)) &&
-	                    (door.close_delay > Doors.close_delay || door.position <= 0.f); // door is about to close, or already done
+	door.step_folding = door_step_folding(door);
 
 	if (true == door.is_opening)
 	{
-		door.auto_timer = localopencontrol && door.local_open ? Doors.auto_duration : remoteopencontrol && door.remote_open && Doors.auto_include_remote ? Doors.auto_duration : -1.f;
+		door.auto_timer = door_open_duration(door, localopencontrol, remoteopencontrol);
 	}
+}
+
+// whether the door is asked to open, by the passengers, from afar or by itself
+bool TMoverParameters::door_open_request(basic_door const &door, bool const localopencontrol, bool const remoteopencontrol) const
+{
+	auto const autoopenrequest{Doors.open_control == control_t::autonomous && (false == Doors.permit_needed || door.open_permit)};
+	return (localopencontrol && door.local_open) || (remoteopencontrol && door.remote_open) || (autoopenrequest && false == door.is_open);
+}
+
+// whether the door is asked to close, by the passengers, from afar, or by itself: over the speed, after its time or
+// with its permit taken back
+bool TMoverParameters::door_close_request(basic_door const &door, bool const localclosecontrol, bool const remoteclosecontrol) const
+{
+	auto const autocloserequest{(Doors.auto_velocity != -1.f && Vel > Doors.auto_velocity) || (door.auto_timer != -1.f && door.auto_timer <= 0.f) ||
+	                            (Doors.permit_needed && false == door.open_permit)};
+	return (door.remote_close && remoteclosecontrol) || (door.local_close && localclosecontrol) || (autocloserequest && door.is_open);
+}
+
+// whether the doors have the voltage they work on
+bool TMoverParameters::doors_powered() const
+{
+	if (Doors.voltage == 0)
+	{
+		return true;
+	}
+	if (Doors.voltage == 24)
+	{
+		return Power24vIsAvailable || Power110vIsAvailable;
+	}
+	return Doors.voltage == 110 && Power110vIsAvailable;
+}
+
+// whether the unfolded step folds: without the permission to stay out, or with the door closing, once it's about to
+// close or closed
+bool TMoverParameters::door_step_folding(basic_door const &door) const
+{
+	auto const unfolded{door.step_position > 0.f};
+	auto const mayfold{false == Doors.step_enabled || (Doors.permit_needed ? false == door.open_permit : door.is_closing)};
+	return unfolded && mayfold && (door.close_delay > Doors.close_delay || door.position <= 0.f);
+}
+
+// how long the opening door stays open: the time of the doors, for the passengers' opening and, if it counts, the
+// opening from afar; none otherwise
+float TMoverParameters::door_open_duration(basic_door const &door, bool const localopencontrol, bool const remoteopencontrol) const
+{
+	if (localopencontrol && door.local_open)
+	{
+		return Doors.auto_duration;
+	}
+	if (remoteopencontrol && door.remote_open && Doors.auto_include_remote)
+	{
+		return Doors.auto_duration;
+	}
+	return -1.f;
 }
 
 // a door and its step moved as they open or close
