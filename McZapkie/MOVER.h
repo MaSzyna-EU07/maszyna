@@ -2508,6 +2508,7 @@ class TMoverParameters
 	void SeriesMotorDynamicBrake(double dt);
 	void DieselEngineTractionForce(double dt, double dmoment, double dtrans);
 	void DieselElectricTractionForce(double tmp);
+	double DieselElectricForce(double tmpV, double LinePower, double Ratio, double HyperbolaPower) const;
 	void DieselElectricShuntPower(double tmp);
 	void DieselElectricGenerator(double tmp, double tempUmax, double tempImax);
 	void ShuntFieldRelaysCheck(double tmpV, double PosRatio, double tmp);

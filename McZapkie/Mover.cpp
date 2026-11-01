@@ -6109,21 +6109,7 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 		tempPmax = DElist[MainCtrlPosNo].GenPower * std::min(eimic_positive, rpmratio);
 		tmp = tempPmax;
 		if (true == StLinFlag)
-		{
-
-			if (tmpV < Vhyp * tempPmax / DElist[MainCtrlPosNo].GenPower)
-			{
-				// czy na czesci prostej, czy na hiperboli
-				Ft =
-				    (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * eimic_positive; // posratio - bo sila jakos tam sie rozklada
-			}
-			else
-			{
-				// na hiperboli
-				// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
-				Ft = 1000.0 * tempPmax / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
-			}
-		}
+			Ft = DieselElectricForce(tmpV, tempPmax, eimic_positive, tempPmax);
 		else
 			Ft = 0; // jak nastawnik na zero, to sila tez zero
 
@@ -6169,20 +6155,7 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 		// stosunek mocy teraz do mocy max
 		// NOTE: Mains in this context is working diesel engine
 		if (true == StLinFlag)
-		{
-
-			if (tmpV < Vhyp * power / DElist[MainCtrlPosNo].GenPower)
-			{
-				// czy na czesci prostej, czy na hiperboli
-				Ft = (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * PosRatio; // posratio - bo sila jakos tam sie rozklada
-			}
-			else
-			{
-				// na hiperboli
-				// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
-				Ft = 1000.0 * tmp / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
-			}
-		}
+			Ft = DieselElectricForce(tmpV, power, PosRatio, tmp);
 		else
 			Ft = 0; // jak nastawnik na zero, to sila tez zero
 
@@ -6229,6 +6202,20 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 			ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
 		}
 	}
+}
+
+// the tractive force of a diesel-electric at the speed tmpV: on the straight part of its characteristic under the speed
+// Vhyp gives at the power LinePower, at the share Ratio of it, on the hyperbola of the power HyperbolaPower over it
+double TMoverParameters::DieselElectricForce(double const tmpV, double const LinePower, double const Ratio, double const HyperbolaPower) const
+{
+	if (tmpV < Vhyp * LinePower / DElist[MainCtrlPosNo].GenPower)
+	{
+		// czy na czesci prostej, czy na hiperboli
+		return (Ftmax - (Ftmax - 1000.0 * DElist[MainCtrlPosNo].GenPower / (Vhyp + Vadd)) * (tmpV / Vhyp) / PowerCorRatio) * Ratio; // posratio - bo sila jakos tam sie rozklada
+	}
+	// na hiperboli
+	// 1.107 - wspolczynnik sredniej nadwyzki Ft w symku nad charakterystyka
+	return 1000.0 * HyperbolaPower / (tmpV + Vadd) / PowerCorRatio; // tu jest zawarty stosunek mocy
 }
 
 // in the shunting mode, the generator's power limited to tmp, the power the engine gives
