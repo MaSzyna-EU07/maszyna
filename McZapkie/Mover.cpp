@@ -5478,21 +5478,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 				// zderzenie
 				thiscoupler.CheckCollision = true;
 			}
-			if (std::abs(CF) > thiscoupler.FmaxC)
-			{
-				// coupler is stretched with excessive force, may break
-				thiscoupler.stretch_duration += static_cast<float>(dt);
-				// give coupler 1 sec of leeway to account for simulation glitches, before checking whether it breaks
-				// (arbitrary) chance to break grows from 10-100% over 10 sec period
-				if (Global.crash_damage && thiscoupler.stretch_duration > 1.f && Random() < thiscoupler.stretch_duration * 0.1f * dt)
-				{
-					damage_coupler(End);
-				}
-			}
-			else
-			{
-				thiscoupler.stretch_duration = 0.f;
-			}
+			CouplerStretchCheck(End, CF, dt);
 		}
 		if (newdistance < 0)
 		{
@@ -5518,22 +5504,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 				    thiscoupler.AutomaticCouplingAllowed &&
 				    othercoupler.AutomaticCouplingAllowed)
 			{
-				// sprzeganie wagonow z samoczynnymi sprzegami
-				auto couplingtype{thiscoupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag};
-				// potentially exclude incompatible control coupling
-				if (thiscoupler.control_type != othercoupler.control_type)
-				{
-					couplingtype &= ~coupling::control;
-				}
-
-				// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
-				auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};
-				auto const caught{safe && Attach(End, otherend, othervehicle, couplingtype)};
-				// HACK: we're reusing sound enum to mark whether vehicle was connected to another
-				AIFlag |= (caught ? sound::attachcoupler : 0);
-				// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
-				thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
-				othercoupler.AutomaticCouplingAllowed = safe && false == caught;
+				AutomaticCouplingCheck(End, othervehicle, otherend);
 			}
 		}
 	}
@@ -5546,6 +5517,50 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	}
 
 	return CF;
+}
+
+// a coupler stretched with more than its strength for over a second breaks, the more likely the longer, with crash damage on
+void TMoverParameters::CouplerStretchCheck(int const End, double const CF, double dt)
+{
+	auto &thiscoupler{Couplers[End]};
+	if (std::abs(CF) > thiscoupler.FmaxC)
+	{
+		// coupler is stretched with excessive force, may break
+		thiscoupler.stretch_duration += static_cast<float>(dt);
+		// give coupler 1 sec of leeway to account for simulation glitches, before checking whether it breaks
+		// (arbitrary) chance to break grows from 10-100% over 10 sec period
+		if (Global.crash_damage && thiscoupler.stretch_duration > 1.f && Random() < thiscoupler.stretch_duration * 0.1f * dt)
+		{
+			damage_coupler(End);
+		}
+	}
+	else
+	{
+		thiscoupler.stretch_duration = 0.f;
+	}
+}
+
+// automatic couplers touching couple, as far as their kinds and controls match, unless the hit is too fast for them
+void TMoverParameters::AutomaticCouplingCheck(int const End, TMoverParameters *othervehicle, int const otherend)
+{
+	auto &thiscoupler{Couplers[End]};
+	auto &othercoupler{othervehicle->Couplers[otherend]};
+		// sprzeganie wagonow z samoczynnymi sprzegami
+		auto couplingtype{thiscoupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag};
+		// potentially exclude incompatible control coupling
+		if (thiscoupler.control_type != othercoupler.control_type)
+		{
+			couplingtype &= ~coupling::control;
+		}
+
+		// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
+		auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};
+		auto const caught{safe && Attach(End, otherend, othervehicle, couplingtype)};
+		// HACK: we're reusing sound enum to mark whether vehicle was connected to another
+		AIFlag |= (caught ? sound::attachcoupler : 0);
+		// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
+		thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
+		othercoupler.AutomaticCouplingAllowed = safe && false == caught;
 }
 
 // *************************************************************************************************
@@ -7769,40 +7784,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 		{
 			if (!SpeedCtrlUnit.Standby)
 			{
-				if (SpeedCtrlUnit.ManualStateOverride && eimic > 0.0009)
-					eimic = 1.0;
-				double error = std::max(SpeedCtrlValue + SpeedCtrlUnit.Offset, 0.0) - Vel;
-				double factorP = error > 0 ? SpeedCtrlUnit.FactorPpos : SpeedCtrlUnit.FactorPneg;
-				double eSCP = std::clamp(factorP * error, -1.2, 1.0); // P module
-				bool retarder_not_work = EngineType != TEngineType::DieselEngine || Vel < SpeedCtrlUnit.BrakeInterventionVel;
-				if (eSCP < -1.0)
-				{
-					SpeedCtrlUnit.BrakeInterventionBraking = eSCP < -1.1 && retarder_not_work && eimicSpeedCtrl < -0.99 * SpeedCtrlUnit.DesiredPower;
-					eSCP = -1.0;
-				}
-				SpeedCtrlUnit.BrakeInterventionUnbraking = eSCP > 0.0 || Vel == 0.0;
-				if (abs(eSCP) < 0.999)
-				{
-					// TODO: check how to disable integral part when braking in smart way
-					// double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
-					double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
-					eimicSpeedCtrlIntegral = safe_clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
-				}
-				else
-				{
-					eimicSpeedCtrlIntegral = 0;
-				}
-				auto const DesiredeimicSpeedCtrl{safe_clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
-				eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
-				if (Vel < SpeedCtrlUnit.FullPowerVelocity)
-				{
-					eimicSpeedCtrl = std::min(eimicSpeedCtrl, SpeedCtrlUnit.InitialPower);
-				}
-				if (Vel < SpeedCtrlUnit.StartVelocity && MainCtrlPos < MainCtrlPosNo)
-				{
-					eimicSpeedCtrl = 0;
-					eimic = 0;
-				}
+				SpeedCtrlRegulator(dt, accfactor);
 			}
 			else
 			{
@@ -7832,6 +7814,46 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 		SpeedCtrlUnit.Parking = false;
 		SendCtrlToNext("SpeedCtrlUnit.Parking", SpeedCtrlUnit.Parking, CabActive);
 	}
+}
+
+// the PI regulator of the speed control: the power asked of the drive, or its brake intervention, from the error of
+// the speed; accfactor, the most power it may ask
+void TMoverParameters::SpeedCtrlRegulator(double dt, double const accfactor)
+{
+		if (SpeedCtrlUnit.ManualStateOverride && eimic > 0.0009)
+			eimic = 1.0;
+		double error = std::max(SpeedCtrlValue + SpeedCtrlUnit.Offset, 0.0) - Vel;
+		double factorP = error > 0 ? SpeedCtrlUnit.FactorPpos : SpeedCtrlUnit.FactorPneg;
+		double eSCP = std::clamp(factorP * error, -1.2, 1.0); // P module
+		bool retarder_not_work = EngineType != TEngineType::DieselEngine || Vel < SpeedCtrlUnit.BrakeInterventionVel;
+		if (eSCP < -1.0)
+		{
+			SpeedCtrlUnit.BrakeInterventionBraking = eSCP < -1.1 && retarder_not_work && eimicSpeedCtrl < -0.99 * SpeedCtrlUnit.DesiredPower;
+			eSCP = -1.0;
+		}
+		SpeedCtrlUnit.BrakeInterventionUnbraking = eSCP > 0.0 || Vel == 0.0;
+		if (abs(eSCP) < 0.999)
+		{
+			// TODO: check how to disable integral part when braking in smart way
+			// double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
+			double factorI = eimicSpeedCtrlIntegral >= 0 ? SpeedCtrlUnit.FactorIpos : SpeedCtrlUnit.FactorIneg;
+			eimicSpeedCtrlIntegral = safe_clamp(eimicSpeedCtrlIntegral + factorI * eSCP * dt, -1.0 + eSCP, 1.0 - eSCP);
+		}
+		else
+		{
+			eimicSpeedCtrlIntegral = 0;
+		}
+		auto const DesiredeimicSpeedCtrl{safe_clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
+		eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
+		if (Vel < SpeedCtrlUnit.FullPowerVelocity)
+		{
+			eimicSpeedCtrl = std::min(eimicSpeedCtrl, SpeedCtrlUnit.InitialPower);
+		}
+		if (Vel < SpeedCtrlUnit.StartVelocity && MainCtrlPos < MainCtrlPosNo)
+		{
+			eimicSpeedCtrl = 0;
+			eimic = 0;
+		}
 }
 
 void TMoverParameters::SpeedCtrlButton(int button)

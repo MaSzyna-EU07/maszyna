@@ -2509,6 +2509,8 @@ class TMoverParameters
 	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
+	void CouplerStretchCheck(int End, double CF, double dt);
+	void AutomaticCouplingCheck(int End, TMoverParameters *othervehicle, int otherend);
 	void CollisionDetect(int const End, double const dt);
 	// closing speed of a collision [km/h] above which the vehicles involved may derail, adjusted for their mass ratio
 	static constexpr double SafeCollisionVelocity{15.0};
@@ -2638,6 +2640,7 @@ class TMoverParameters
 	void EIMICTraxxLocalBrake(double dt);
 	void EIMICLimit();
 	void CheckSpeedCtrl(double dt);
+	void SpeedCtrlRegulator(double dt, double accfactor);
 	void SpeedCtrlButton(int button);
 	void SpeedCtrlInc();
 	void SpeedCtrlDec();
