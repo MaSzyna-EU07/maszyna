@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -114,6 +115,48 @@ private:
 	double m_reservoirpressure{-1.0};
 	trace *m_trace{nullptr};
 	double m_time{0.0}; // of the simulation, since the vehicle got created
+};
+
+// two vehicles on a straight track, the FirstEnd of the first one facing the SecondEnd of the second one Gap metres
+// away (from coupler to coupler), with nothing else around. a step runs them the way the simulation runs the
+// vehicles of a scene (vehicle_table::update()): each one finds its neighbour, then both take the forces, the
+// coupler and buffer ones among them (CouplerForce()), then both move and handle the collisions (CollisionDetect()).
+// they couple and part on their own, as the couplers let them; the speed of each runs along its own axis
+//   test::pair pair{moving, end::front, standing, end::rear, 1.0}; // 1 m apart
+//   pair.run(5.0); // for 5 s
+//   CHECK(pair.coupled());
+class pair {
+public:
+	pair(vehicle &First, int FirstEnd, vehicle &Second, int SecondEnd, double Gap);
+	~pair();
+	pair(pair const &) = delete;
+	pair &operator=(pair const &) = delete;
+	// the vehicles point at the stand-ins of the pair, which stay where they are
+	pair(pair &&) = delete;
+	pair &operator=(pair &&) = delete;
+
+	// advances both vehicles by one step of Dt
+	void step(track const &Track = {}, double Dt = 0.01);
+	// advances both vehicles by Seconds in steps of Dt
+	void run(double Seconds, track const &Track = {}, double Dt = 0.01);
+	// distance between the facing couplers [m], negative while the buffers are pressed in
+	double gap() const;
+	// type of the coupling between the vehicles, coupling::faux when they aren't coupled
+	int coupling() const;
+	bool coupled() const { return coupling() != coupling::faux; }
+
+private:
+	struct placement {
+		vehicle *owner{nullptr};
+		int end{0}; // the end facing the other vehicle
+		double position{0.0}; // of the middle of the vehicle along the track [m]
+		double heading{1.0}; // +1 when the vehicle runs forwards towards the growing position, -1 otherwise
+		std::vector<std::byte> standin; // what the other vehicle sees as this one, see vehicle.cpp
+	};
+
+	void find_neighbours();
+
+	std::array<placement, 2> m_vehicles;
 };
 
 } // namespace test

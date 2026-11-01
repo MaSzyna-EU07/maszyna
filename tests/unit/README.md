@@ -74,6 +74,9 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
   vigilance), `release_brakes()`, `drive_cycle()` (a whole run from start-up to a stop).
 - `scenario` (`scenario.h`) puts a train, its driver and a golden trace for each vehicle together,
   for a test of a feature: `act()` marks an event in the traces, `wait()` runs the train.
+- `pair` (`vehicle.h`) puts two vehicles on that track facing each other with the given ends and
+  runs them together, as the simulation runs the vehicles of a scene: the coupler and buffer
+  forces, collisions and automatic coupling come from the physics (`test_couplers.cpp`).
 - Check behaviour (speeds, pressures, states the player sees) rather than internal flags, and make
   the test check its own preconditions (`REQUIRE` that the braking skidded, before checking what a
   skid leads to).
