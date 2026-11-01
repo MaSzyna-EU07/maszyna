@@ -2693,6 +2693,9 @@ class TMoverParameters
 	void LoadFIZ_BuffCoupl(std::string const &line, int const Index);
 	void LoadFIZ_TurboPos(std::string const &line);
 	void LoadFIZ_Cntrl(std::string const &line);
+	void LoadFIZ_CntrlBrakes(std::string const &line);
+	void LoadFIZ_CntrlControllers(std::string const &line);
+	void LoadFIZ_CntrlStarts(std::string const &line);
 	void LoadFIZ_Blending(std::string const &line);
 	void LoadFIZ_DCEMUED(std::string const &line);
 	void LoadFIZ_SpringBrake(std::string const &line);
@@ -2702,6 +2705,10 @@ class TMoverParameters
 	void LoadFIZ_Power(std::string const &Line);
 	void LoadFIZ_SpeedControl(std::string const &Line);
 	void LoadFIZ_Engine(std::string const &Input);
+	void LoadFIZ_EngineDiesel(std::string const &Input);
+	void LoadFIZ_EngineDieselElectric(std::string const &Input);
+	void LoadFIZ_EngineInductionMotor(std::string const &Input);
+	void LoadFIZ_EngineDieselShared(std::string const &Input);
 	void LoadFIZ_Switches(std::string const &Input);
 	void LoadFIZ_MotorParamTable(std::string const &Input);
 	void LoadFIZ_Circuit(std::string const &Input);
