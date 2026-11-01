@@ -10042,7 +10042,7 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser)
 			continue;
 		}
 
-		if (LoadFIZ_TableEnd(inputline) || LoadFIZ_Section(inputline, fizlines))
+		if (LoadFIZ_TableEnd(inputline) || LoadFIZ_Section(inputline, fizlines) || LoadFIZ_TableSection(inputline, fizlines))
 		{
 			continue;
 		}
@@ -10165,7 +10165,7 @@ bool TMoverParameters::LoadFIZ_TableEnd(std::string const &inputline) const
 	return false;
 }
 
-// a section of the definition, kept in fizlines by its name; returns whether the line is one
+// a section of the definition giving values, kept in fizlines by its name; returns whether the line is one
 bool TMoverParameters::LoadFIZ_Section(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines)
 {
 	// ...then all recognized sections...
@@ -10361,6 +10361,28 @@ bool TMoverParameters::LoadFIZ_Section(std::string const &inputline, std::map<st
 		return true;
 	}
 
+	if (issection("Circuit:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("Circuit", inputline);
+		LoadFIZ_Circuit(inputline);
+		return true;
+	}
+
+	if (issection("AI:", inputline))
+	{
+		startBPT = false;
+		fizlines.try_emplace("AI", inputline);
+		LoadFIZ_AI(inputline);
+		return true;
+	}
+
+	return false;
+}
+
+// a section of the definition opening a table, kept in fizlines by its name; returns whether the line is one
+bool TMoverParameters::LoadFIZ_TableSection(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines)
+{
 	if (issection("MotorParamTable:", inputline))
 	{
 		startBPT = false;
@@ -10376,22 +10398,6 @@ bool TMoverParameters::LoadFIZ_Section(std::string const &inputline, std::map<st
 		startBPT = false;
 		startMPT0 = true;
 		LISTLINE = 0;
-		return true;
-	}
-
-	if (issection("Circuit:", inputline))
-	{
-		startBPT = false;
-		fizlines.try_emplace("Circuit", inputline);
-		LoadFIZ_Circuit(inputline);
-		return true;
-	}
-
-	if (issection("AI:", inputline))
-	{
-		startBPT = false;
-		fizlines.try_emplace("AI", inputline);
-		LoadFIZ_AI(inputline);
 		return true;
 	}
 
@@ -12670,16 +12676,23 @@ bool TMoverParameters::SendCtrlToNext(std::string const &CtrlCommand, double con
 bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype)
 {
 	// the group of the command sets OK; a command none of them knows isn't done
-	if (bool OK{false}; RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) || RunBrakeCommand(Command, CValue1, CValue2, Couplertype, OK) ||
-	    RunAuxiliariesCommand(Command, CValue1, CValue2, Couplertype, OK) || RunPowerCommand(Command, CValue1, CValue2, Couplertype, OK) ||
-	    RunDoorsCommand(Command, CValue1, CValue2, Couplertype, OK) || RunLoadCommand(Command, CValue1, CValue2, Couplertype, OK))
+	if (bool OK{false}; RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunCabCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunBrakeCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunBrakeEquipmentCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunAuxiliariesCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunPumpsCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunBlowersCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunPowerCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunDoorsCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	                    RunLoadCommand(Command, CValue1, CValue2, Couplertype, OK))
 	{
 		return OK; // dla true komenda będzie usunięta, dla false wykonana ponownie
 	}
 	return false;
 }
 
-// RunCommand() for the controllers, the direction and the cab; returns whether the command is one of them
+// RunCommand() for the controllers and the direction; returns whether the command is one of them
 bool TMoverParameters::RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
 {
 	if (Command == "MainCtrl")
@@ -12726,7 +12739,35 @@ bool TMoverParameters::RunControllerCommand(std::string const &Command, double C
 		DirAbsolute = DirActive * CabActive;
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "CabActivisation")
+	else if (Command == "AutoRelaySwitch")
+	{
+		if (CValue1 == 1 && AutoRelayType == 2)
+			AutoRelayFlag = true;
+		else
+			AutoRelayFlag = false;
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "MaxCurrentSwitch")
+	{
+		MaxCurrentSwitch(CValue1 == 1, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "MinCurrentSwitch")
+	{
+		OK = MinCurrentSwitch(CValue1 == 1);
+	}
+	/*test komend oddzialywujacych na tabor*/
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the cab and the speed control; returns whether the command is one of them
+bool TMoverParameters::RunCabCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "CabActivisation")
 	{
 		//  OK:=Power>0.01;
 		switch (static_cast<int>(CValue1 * CValue2))
@@ -12751,24 +12792,6 @@ bool TMoverParameters::RunControllerCommand(std::string const &Command, double C
 		CabMaster = false;
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "AutoRelaySwitch")
-	{
-		if (CValue1 == 1 && AutoRelayType == 2)
-			AutoRelayFlag = true;
-		else
-			AutoRelayFlag = false;
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "MaxCurrentSwitch")
-	{
-		MaxCurrentSwitch(CValue1 == 1, range_t::local);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "MinCurrentSwitch")
-	{
-		OK = MinCurrentSwitch(CValue1 == 1);
-	}
-	/*test komend oddzialywujacych na tabor*/
 	else if (Command == "SpeedCntrl")
 	{
 		if (EngineType == TEngineType::ElectricInductionMotor || SpeedCtrl)
@@ -12787,7 +12810,7 @@ bool TMoverParameters::RunControllerCommand(std::string const &Command, double C
 	return true;
 }
 
-// RunCommand() for the brakes, the sand and the cab signalling; returns whether the command is one of them
+// RunCommand() for the train brake, the releaser and the emergency brake; returns whether the command is one of them
 bool TMoverParameters::RunBrakeCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
 {
 	if (Command == "Brake") // youBy - jak sie EP hamuje, to trza sygnal wyslac...
@@ -12820,7 +12843,17 @@ bool TMoverParameters::RunBrakeCommand(std::string const &Command, double CValue
 		else
 			OK = false;
 	}
-	else if (Command == "BrakeDelay")
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the brake delays, the spring brake, the sand and the cab signalling; returns whether the command is one of them
+bool TMoverParameters::RunBrakeEquipmentCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "BrakeDelay")
 	{
 		if (auto const brakesetting = static_cast<int>(std::floor(CValue1)); true == Hamulec->SetBDF(brakesetting))
 		{
@@ -12864,8 +12897,55 @@ bool TMoverParameters::RunBrakeCommand(std::string const &Command, double CValue
 	return true;
 }
 
-// RunCommand() for the pumps, the blowers, the lights, the heating, the converter, the battery and the compressor; returns whether the command is one of them
+// RunCommand() for the heating, the converter, the battery and the compressor; returns whether the command is one of them
 bool TMoverParameters::RunAuxiliariesCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "HeatingSwitch")
+	{
+		HeatingSwitch_(CValue1 > 0.0);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "ConverterSwitch") /*NBMX*/
+	{
+		if (ConverterStart == start_t::manual)
+		{
+			ConverterAllow = CValue1 > 0.0;
+		}
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "BatterySwitch") /*NBMX*/
+	{
+		if (BatteryStart == start_t::manual)
+		{
+			Battery = CValue1 > 0.0;
+		}
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	//   else if command='EpFuseSwitch' then         {NBMX}
+	//   begin
+	//     if (CValue1=1) then EpFuse:=true
+	//     else if (CValue1=0) then EpFuse:=false;
+	//     OK:=SendCtrlToNext(command,CValue1,CValue2);
+	//   end
+	else if (Command == "CompressorSwitch") /*NBMX*/
+	{
+		CompressorSwitch(CValue1 == 1, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "CompressorPreset")
+	{
+		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the water, fuel and oil pumps and the water heater; returns whether the command is one of them
+bool TMoverParameters::RunPumpsCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
 {
 	if (Command == "WaterPumpBreakerSwitch")
 	{
@@ -12968,7 +13048,17 @@ bool TMoverParameters::RunAuxiliariesCommand(std::string const &Command, double 
 		}
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "MotorBlowersFrontSwitch")
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the motor blowers and the compartment lights; returns whether the command is one of them
+bool TMoverParameters::RunBlowersCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "MotorBlowersFrontSwitch")
 	{
 		if (MotorBlowers[end::front].start_type != start_t::manual && MotorBlowers[end::front].start_type != start_t::manualwithautofallback)
 		{
@@ -13022,43 +13112,6 @@ bool TMoverParameters::RunAuxiliariesCommand(std::string const &Command, double 
 			// automatic lights ignore 'manual' state commands
 			CompartmentLights.is_disabled = CValue1 == 1;
 		}
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "HeatingSwitch")
-	{
-		HeatingSwitch_(CValue1 > 0.0);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "ConverterSwitch") /*NBMX*/
-	{
-		if (ConverterStart == start_t::manual)
-		{
-			ConverterAllow = CValue1 > 0.0;
-		}
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "BatterySwitch") /*NBMX*/
-	{
-		if (BatteryStart == start_t::manual)
-		{
-			Battery = CValue1 > 0.0;
-		}
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	//   else if command='EpFuseSwitch' then         {NBMX}
-	//   begin
-	//     if (CValue1=1) then EpFuse:=true
-	//     else if (CValue1=0) then EpFuse:=false;
-	//     OK:=SendCtrlToNext(command,CValue1,CValue2);
-	//   end
-	else if (Command == "CompressorSwitch") /*NBMX*/
-	{
-		CompressorSwitch(CValue1 == 1, range_t::local);
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "CompressorPreset")
-	{
-		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else
@@ -13117,60 +13170,12 @@ bool TMoverParameters::RunDoorsCommand(std::string const &Command, double CValue
 {
 	if (Command == "DoorPermit")
 	{
-
-		auto const leftside{CValue2 > 0 ? 1 : 2};
-
-		if (auto const rightside{3 - leftside}; std::abs(static_cast<int>(CValue1)) & rightside)
-		{
-			PermitDoors_(side::right, CValue1 > 0);
-		}
-		if (std::abs(static_cast<int>(CValue1)) & leftside)
-		{
-			PermitDoors_(side::left, CValue1 > 0);
-		}
-
+		DoorPermitCommand(CValue1, CValue2);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "DoorOpen") /*NBMX*/
+	else if (Command == "DoorOpen" || Command == "DoorClose") /*NBMX*/
 	{ // Ra: uwzględnić trzeba jeszcze zgodność sprzęgów
-		// ignore remote command if the door is only operated locally
-		if ((Doors.open_control == control_t::conductor || Doors.open_control == control_t::driver || Doors.open_control == control_t::mixed) && (Power24vIsAvailable || Power110vIsAvailable))
-		{
-
-			auto const leftside{CValue2 > 0 ? 1 : 2};
-
-			if (auto const rightside{3 - leftside}; static_cast<int>(CValue1) & rightside)
-			{
-				Doors.instances[side::right].remote_open = true;
-				Doors.instances[side::right].remote_close = false;
-			}
-			if (static_cast<int>(CValue1) & leftside)
-			{
-				Doors.instances[side::left].remote_open = true;
-				Doors.instances[side::left].remote_close = false;
-			}
-		}
-		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
-	}
-	else if (Command == "DoorClose") /*NBMX*/
-	{ // Ra: uwzględnić trzeba jeszcze zgodność sprzęgów
-		// ignore remote command if the door is only operated locally
-		if ((Doors.close_control == control_t::conductor || Doors.close_control == control_t::driver || Doors.close_control == control_t::mixed) && (Power24vIsAvailable || Power110vIsAvailable))
-		{
-
-			auto const leftside{CValue2 > 0 ? 1 : 2};
-
-			if (auto const rightside{3 - leftside}; static_cast<int>(CValue1) & rightside)
-			{
-				Doors.instances[side::right].remote_close = true;
-				Doors.instances[side::right].remote_open = false;
-			}
-			if (static_cast<int>(CValue1) & leftside)
-			{
-				Doors.instances[side::left].remote_close = true;
-				Doors.instances[side::left].remote_open = false;
-			}
-		}
+		DoorRemoteCommand(Command == "DoorOpen", CValue1, CValue2);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else if (Command == "DoorLock")
@@ -13198,6 +13203,43 @@ bool TMoverParameters::RunDoorsCommand(std::string const &Command, double CValue
 		return false;
 	}
 	return true;
+}
+
+// the doors' permits, on the sides the command names: CValue1 the sides, negative to take the permit back, CValue2 the
+// direction the command comes from
+void TMoverParameters::DoorPermitCommand(double const CValue1, double const CValue2)
+{
+	auto const leftside{CValue2 > 0 ? 1 : 2};
+	if (auto const rightside{3 - leftside}; std::abs(static_cast<int>(CValue1)) & rightside)
+	{
+		PermitDoors_(side::right, CValue1 > 0);
+	}
+	if (std::abs(static_cast<int>(CValue1)) & leftside)
+	{
+		PermitDoors_(side::left, CValue1 > 0);
+	}
+}
+
+// the doors opened or closed from afar on the sides the command names, unless they're only worked locally
+void TMoverParameters::DoorRemoteCommand(bool const Open, double const CValue1, double const CValue2)
+{
+	using enum control_t;
+	auto const control{Open ? Doors.open_control : Doors.close_control};
+	if ((control != conductor && control != driver && control != mixed) || (false == Power24vIsAvailable && false == Power110vIsAvailable))
+	{
+		return;
+	}
+	auto const leftside{CValue2 > 0 ? 1 : 2};
+	if (auto const rightside{3 - leftside}; static_cast<int>(CValue1) & rightside)
+	{
+		Doors.instances[side::right].remote_open = Open;
+		Doors.instances[side::right].remote_close = false == Open;
+	}
+	if (static_cast<int>(CValue1) & leftside)
+	{
+		Doors.instances[side::left].remote_open = Open;
+		Doors.instances[side::left].remote_close = false == Open;
+	}
 }
 
 // RunCommand() for the load and the damage; returns whether the command is one of them

@@ -2384,10 +2384,16 @@ class TMoverParameters
 	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
 	// the parts of RunCommand(), by the area of the commands
 	bool RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunCabCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunBrakeCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBrakeEquipmentCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunAuxiliariesCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunPumpsCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBlowersCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunPowerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunDoorsCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	void DoorPermitCommand(double CValue1, double CValue2);
+	void DoorRemoteCommand(bool Open, double CValue1, double CValue2);
 	bool RunLoadCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunInternalCommand();
 	void PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
@@ -2704,6 +2710,7 @@ class TMoverParameters
 	// the parts of LoadFIZ_Parse(), for a line of the definition
 	bool LoadFIZ_TableEnd(std::string const &inputline) const;
 	bool LoadFIZ_Section(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines);
+	bool LoadFIZ_TableSection(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines);
 	void LoadFIZ_TableRow(std::string const &inputline);
 	void LoadFIZ_Param(std::string const &line);
 	void LoadFIZ_Load(std::string const &line);
