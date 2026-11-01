@@ -69,12 +69,12 @@ The rails, the top of the ballast, `sleepermodel`, the axles, the roll of the bo
 
 Models from includes (e.g. switch drives and timbers), the terrain and the catenary don't follow it, so at large values a rail shifts away from such a model by a few centimetres.
 
-On a track with unevenness the track itself shakes the cab, in place of two of the sources of shake that were there before. It goes by the track under the vehicle, and a track with only dips at its joints counts too. On tracks with no unevenness everything works as before.
+On a track with unevenness the track itself shakes the cab, in place of two of the sources of shake that were there before, as far as it has something to put in their place. It goes by the track under the vehicle, and on a switch by the path set and what its joined tracks allow. Dips at the joints and cross level replace nothing, as they don't shake the cab all the way along or sideways. On tracks with no unevenness everything works as before.
 
 | source of the cab shake                                            | on a track with unevenness |
 |--------------------------------------------------------------------|----------------------------|
-| side sway from the lateral acceleration: curve radius and cant, jolts sideways on a damaged switch | off |
-| random jolts over 25 km/h                                          | off                        |
+| side sway from the lateral acceleration: curve radius and cant, jolts sideways on a damaged switch | off with a sideways value |
+| random jolts over 25 km/h                                          | off with a vertical or a sideways value |
 | the track itself, from the bend under the axles                    | added                      |
 | vertical jolts at the joints of a damaged track                    | stays                      |
 | fore and aft, when accelerating and braking                        | stays                      |

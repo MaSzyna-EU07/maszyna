@@ -38,6 +38,28 @@ void add_chord(std::vector<double> &Output, std::vector<double> const &Line, int
 
 } // namespace
 
+TEST_CASE("uneven track: the cab keeps what the ride on the track doesn't stand in for")
+{
+	auto const replaced = [](double const Up, double const Side, double const Cross) {
+		return track_uneven::replaced_shake({Up, Side, Cross});
+	};
+	// all of it, as "uneven 18"
+	CHECK(replaced(18.0, 18.0, 18.0).sway);
+	CHECK(replaced(18.0, 18.0, 18.0).jolts);
+	// nothing at all, as on a track with dips at its joints alone
+	CHECK_FALSE(replaced(0.0, 0.0, 0.0).sway);
+	CHECK_FALSE(replaced(0.0, 0.0, 0.0).jolts);
+	// up and down only: there is nothing to sway with
+	CHECK_FALSE(replaced(18.0, 0.0, 0.0).sway);
+	CHECK(replaced(18.0, 0.0, 0.0).jolts);
+	// sideways only
+	CHECK(replaced(0.0, 18.0, 0.0).sway);
+	CHECK(replaced(0.0, 18.0, 0.0).jolts);
+	// cross level only turns the body
+	CHECK_FALSE(replaced(0.0, 0.0, 18.0).sway);
+	CHECK_FALSE(replaced(0.0, 0.0, 18.0).jolts);
+}
+
 TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 {
 	// appendix 1, class C at 80 km/h: 18 mm vertically, 17 mm sideways, 16 mm of twist on 5 m, gauge +10/-8 mm, 20 mm of cross level, J = 5.3

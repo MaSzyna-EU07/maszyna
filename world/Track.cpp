@@ -1375,7 +1375,7 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
-    ++s_layoutstamp;
+    m_drawnrun = {};
 
     Geometry1.clear();
     Geometry2.clear();
@@ -1392,6 +1392,9 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
     share_joints();
+    if( rail_phase( 0.0 ) >= 0.0 ) {
+        m_drawnrun = m_railrun;
+    }
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
     if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {

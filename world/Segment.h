@@ -59,7 +59,8 @@ class TSegment
         int path { 0 }; // which path of a switch
         // where the path meets the next one: the middle of their ends and their common vector across
         std::array<std::optional<std::pair<glm::dvec3, glm::dvec3>>, 2> joints;
-    } m_setting;
+    };
+    setting m_setting;
     double fLength { -1.0 }; // długość policzona
     std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
     std::vector<double> fTsSlope; // nachylenie dt/du (= dt/ds * fStep) w tych samych punktach

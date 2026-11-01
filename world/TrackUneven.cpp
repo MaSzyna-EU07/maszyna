@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "world/Track.h"
 
+#include <span>
+
 // The part of TTrack that goes with the unevenness of a track and with what it meets at its ends: joined tracks and switches.
 // The rules themselves are in TrackUneven.h, here they get applied to the tracks.
 
@@ -64,7 +66,7 @@ void keep_to_plain_track( std::array<track_uneven::amounts, 2> &Values, TTrack c
 }
 
 // the value along each path: the lowest of that path in the group, 0 in a component that a plain track joined has none of
-std::array<track_uneven::amounts, 2> group_path_values( std::vector<TTrack *> const &Group ) {
+std::array<track_uneven::amounts, 2> group_path_values( std::span<TTrack * const> const Group ) {
 
     std::array<track_uneven::amounts, 2> values { Group.front()->uneven_declared( 0 ), Group.front()->uneven_declared( 1 ) };
     for( auto const *track : Group ) {
@@ -173,6 +175,11 @@ bool TTrack::is_uneven() const {
     return any( uneven_declared( 0 ) ) || any( uneven_declared( 1 ) ) || joint_depth() > 0.0;
 }
 
+track_uneven::amounts TTrack::uneven_underway() {
+
+    return is_switch( this ) ? switch_uneven().paths[ SwitchExtension->CurrentIndex ] : uneven_declared();
+}
+
 double TTrack::uneven_bed_share( double const Depth ) const {
 
     return track_uneven::bed_share( Depth, std::abs( track_rail_profile( m_profile1.second ).front().position.y ), fTexHeight1 );
@@ -187,7 +194,7 @@ track_uneven::amounts TTrack::uneven_at( double const Distance, int const Path )
     return track_uneven::along( uneven_declared(), uneven_met( trPrev, end_point( *Segment, 0 ) ), uneven_met( trNext, end_point( *Segment, 1 ) ), Distance, Length() );
 }
 
-track_uneven::amounts TTrack::uneven_met( TTrack *Other, glm::dvec3 const &Point ) {
+track_uneven::amounts TTrack::uneven_met( TTrack *Other, glm::dvec3 const &Point ) const {
 
     if( Other == nullptr ) {
         return {};
@@ -276,6 +283,32 @@ double TTrack::rail_phase( double const Distance ) {
         settle_rail_run();
     }
     return track_uneven::rail_phase( m_railrun.origin + m_railrun.way * Distance, fSoundDistance );
+}
+
+bool TTrack::rail_joints_moved() {
+
+    return m_drawnrun.stamp != -1
+        && rail_phase( 0.0 ) >= 0.0
+        && ( m_railrun.origin != m_drawnrun.origin || m_railrun.way != m_drawnrun.way );
+}
+
+std::vector<TTrack *> TTrack::switch_followers( std::vector<TTrack *> const &Tracks ) {
+
+    std::vector<TTrack *> followers;
+    auto const follow = [ &followers ]( TTrack *Track ) {
+        if( Track != nullptr && Track->is_uneven() && std::ranges::find( followers, Track ) == followers.end() ) {
+            followers.push_back( Track );
+        } };
+    for( auto *track : Tracks ) {
+        if( false == is_switch( track ) ) {
+            continue;
+        }
+        for( auto *member : switch_group( *track ) ) {
+            follow( member );
+            std::ranges::for_each( joined_to_switch( *member ), follow );
+        }
+    }
+    return followers;
 }
 
 void TTrack::settle_rail_run() {

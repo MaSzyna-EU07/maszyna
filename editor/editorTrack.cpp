@@ -426,7 +426,7 @@ bool editor_track::can_edit_geometry(TTrack const &Track, std::string &Reason)
 	return true;
 }
 
-void editor_track::commit(std::vector<TTrack *> const &Tracks)
+void editor_track::commit(std::vector<TTrack *> const &Tracks, bool const Dragging)
 {
 	if (Tracks.empty())
 		return;
@@ -457,6 +457,8 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks)
 			add_unique(affected, neighbour);
 	for (auto *track : affected)
 		update_transition(*track);
+	if (false == Dragging)
+		add_followers(affected);
 	for (auto *track : affected)
 		rebuild_geometry(*track);
 	for (auto *track : Tracks)
@@ -478,6 +480,7 @@ void editor_track::commit_parameters(TTrack &Track)
 		add_unique(affected, neighbour);
 	for (auto *track : affected)
 		update_transition(*track);
+	add_followers(affected);
 	for (auto *track : affected)
 		rebuild_geometry(*track);
 	Track.mark_dirty();
@@ -2819,12 +2822,23 @@ void editor_track::retire(TTrack &Track)
 	simulation::Region->erase_and_unregister(&Track);
 	Track.m_editorremoved = true;
 	for (auto *neighbour : adjoining)
-	{
 		update_transition(*neighbour);
-		rebuild_geometry(*neighbour);
-	}
+	auto affected{adjoining};
+	add_followers(affected);
+	for (auto *track : affected)
+		rebuild_geometry(*track);
 	if (s_observer != nullptr)
 		s_observer->track_retired(Track);
+}
+
+void editor_track::add_followers(std::vector<TTrack *> &Tracks)
+{
+	++TTrack::s_layoutstamp;
+	for (auto *track : TTrack::switch_followers(Tracks))
+		add_unique(Tracks, track);
+	for (auto *track : simulation::Paths.sequence())
+		if (false == track->m_editorremoved && track->rail_joints_moved())
+			add_unique(Tracks, track);
 }
 
 void editor_track::rebuild_geometry(TTrack &Track)

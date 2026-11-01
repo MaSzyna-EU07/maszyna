@@ -261,20 +261,29 @@ def plain_neighbours(t, joints):
     return [other for key in ("p1", "p2") for other, _, _ in joints.at(t["paths"][0][key]) if other is not t and other["kind"] == "normal"]
 
 
+def joined_at(t, point, joints, seen):
+    # the plain tracks joined at a point, and the far ends of the straight paths of the switches joined there
+    plain, further = [], []
+    for other, part, side in joints.at(point):
+        if other is t or id(part) in seen:
+            continue
+        seen.add(id(part))
+        if other["kind"] != "switch":
+            plain.append(other)
+        elif other["paths"].index(part) != other["bent"]:
+            further.append(part["p2" if side == "p1" else "p1"])
+    return plain, further
+
+
 def plain_past_switches(t, point, joints):
     # the plain tracks reached from a point of a track along the straight paths of switches
     points, seen, found = [point], set(), []
     for _ in range(6):
         onward = []
         for reached in points:
-            for other, part, side in joints.at(reached):
-                if other is t or id(part) in seen:
-                    continue
-                seen.add(id(part))
-                if other["kind"] != "switch":
-                    found.append(other)
-                elif other["paths"].index(part) != other["bent"]:
-                    onward.append(part["p2" if side == "p1" else "p1"])
+            plain, further = joined_at(t, reached, joints, seen)
+            found += plain
+            onward += further
         points = onward
     return found
 
