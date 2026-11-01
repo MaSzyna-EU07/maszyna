@@ -6120,19 +6120,7 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 	}
 	else if (true == ShuntMode)
 	{
-		if (true == StLinFlag)
-		{
-			EngineVoltage = SST[MainCtrlPos].Umax * AnPos + SST[MainCtrlPos].Umin * (1.0 - AnPos);
-			// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
-			// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
-			tmp = EngineRPMRatio() * (SST[MainCtrlPos].Pmax * AnPos) + SST[MainCtrlPos].Pmin * (1.0 - AnPos);
-			Ft = tmp * 1000.0 / (abs(tmpV) + 1.6);
-		}
-		else
-		{
-			EngineVoltage = 0;
-			Ft = 0;
-		}
+		DieselElectricShuntForce(tmpV, tmp);
 		PosRatio = 1;
 	}
 	else // jazda ciapongowa
@@ -6204,6 +6192,25 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 		{
 			ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
 		}
+	}
+}
+
+// the tractive force of a diesel-electric shunting, by the generator's table SST and the shunting controller AnPos;
+// tmp, the power the generator gives
+void TMoverParameters::DieselElectricShuntForce(double const tmpV, double &tmp)
+{
+	if (true == StLinFlag)
+	{
+		EngineVoltage = SST[MainCtrlPos].Umax * AnPos + SST[MainCtrlPos].Umin * (1.0 - AnPos);
+		// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
+		// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
+		tmp = EngineRPMRatio() * (SST[MainCtrlPos].Pmax * AnPos) + SST[MainCtrlPos].Pmin * (1.0 - AnPos);
+		Ft = tmp * 1000.0 / (abs(tmpV) + 1.6);
+	}
+	else
+	{
+		EngineVoltage = 0;
+		Ft = 0;
 	}
 }
 
@@ -12918,7 +12925,7 @@ bool TMoverParameters::SendCtrlToNext(std::string const &CtrlCommand, double con
 bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype)
 {
 	// the group of the command sets OK; a command none of them knows isn't done
-	if (bool OK{false}; RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) ||
+	if (bool OK{false}; RunControllerCommand(Command, CValue1, CValue2, Couplertype, OK) || RunRelaysCommand(Command, CValue1, CValue2, Couplertype, OK) ||
 	                    RunCabCommand(Command, CValue1, CValue2, Couplertype, OK) ||
 	                    RunBrakeCommand(Command, CValue1, CValue2, Couplertype, OK) ||
 	                    RunBrakeEquipmentCommand(Command, CValue1, CValue2, Couplertype, OK) ||
@@ -12934,7 +12941,7 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 	return false;
 }
 
-// RunCommand() for the controllers and the direction; returns whether the command is one of them
+// RunCommand() for the controllers; returns whether the command is one of them
 bool TMoverParameters::RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
 {
 	if (Command == "MainCtrl")
@@ -12975,7 +12982,17 @@ bool TMoverParameters::RunControllerCommand(std::string const &Command, double C
 		eimic_real = CValue1;
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
-	else if (Command == "Direction")
+	else
+	{
+		return false;
+	}
+	return true;
+}
+
+// RunCommand() for the direction, the automatic start and the current relays; returns whether the command is one of them
+bool TMoverParameters::RunRelaysCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype, bool &OK)
+{
+	if (Command == "Direction")
 	{
 		DirActive = static_cast<int>(floor(CValue1));
 		DirAbsolute = DirActive * CabActive;

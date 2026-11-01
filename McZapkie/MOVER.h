@@ -2387,6 +2387,7 @@ class TMoverParameters
 	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
 	// the parts of RunCommand(), by the area of the commands
 	bool RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunRelaysCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunCabCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunBrakeCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunBrakeEquipmentCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
@@ -2511,6 +2512,7 @@ class TMoverParameters
 	void SeriesMotorDynamicBrake(double dt);
 	void DieselEngineTractionForce(double dt, double dmoment, double dtrans);
 	void DieselElectricTractionForce(double tmp);
+	void DieselElectricShuntForce(double tmpV, double &tmp);
 	double DieselElectricDigitalForce(double tmpV, double &tempUmax, double &tempImax);
 	double DieselElectricForce(double tmpV, double LinePower, double Ratio, double HyperbolaPower) const;
 	void DieselElectricShuntPower(double tmp);
