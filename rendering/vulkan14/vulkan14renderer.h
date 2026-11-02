@@ -407,6 +407,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void update_clusters(glm::ivec2 const &Targetsize);
 	// which program of the depth prepass stands for the program of the material: 0 none, 1 without the alpha test, 2 with it
 	int prepass_class(material_handle const Material);
+	// the program of the sun shadows of a material with a vertex shader of its own (mat_<name>.vert), nullptr for the others
+	vk14::scene_program *own_shadow_program(material_handle const Material) const;
 	// the depth of the whole opaque scene of the colour pass of the main viewport before its colour, for the contact shadows
 	// (Contactonly: with them alone) or for itself (gfx.depthprepass.scene), and the contact shadows set up to read it
 	void render_scene_depth(std::size_t const Viewport, glm::mat4 const &Future);

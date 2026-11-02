@@ -1645,6 +1645,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		scene.skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+		gl::set_camera_place(scene_ubs, m_colorpass.pass_camera.position());
 		setup_shadow_matrices();
 		upload_scene_block();
 		if (clustered)
@@ -1680,6 +1681,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	walk_blending(true);
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+	gl::set_camera_place(scene_ubs, m_colorpass.pass_camera.position());
 	upload_scene_block();
 	render_environment(&simulation::Environment);
 
@@ -2335,6 +2337,10 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 		ensure_cull();
 	}
 	static char const *const parts[] = {"sun shadows 1", "sun shadows 2", "sun shadows 3"};
+	// the camera of the view, given back to the scene block after the cascades (walk_cascade() puts the one of each in it)
+	auto const colorinvview{scene_ubs.inv_view};
+	auto const colorcamerahi{scene_ubs.camera_hi};
+	auto const colorcameralo{scene_ubs.camera_lo};
 	for (std::size_t idx = 0; idx < m_shadowpass.size(); ++idx)
 	{
 		ctx.passes.begin_pass(parts[idx], {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
@@ -2358,6 +2364,9 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 		}
 		ctx.passes.end_pass();
 	}
+	scene_ubs.inv_view = colorinvview;
+	scene_ubs.camera_hi = colorcamerahi;
+	scene_ubs.camera_lo = colorcameralo;
 	vk14::barriers(commands, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
 }
 
@@ -2382,6 +2391,10 @@ void vulkan14_renderer::walk_cascade(std::size_t const Index)
 	start_draws(scene.shadow_formats, static_cast<int>(scene.shadow_size), static_cast<int>(scene.shadow_size), vk14::scene_state::set_plain, true);
 	m_shadowcascade = static_cast<int>(Index);
 	walk_blending(false);
+	// the rotation and the place of the camera of the cascade (the sun's): the shaders which put the model in the world (mat_vat.vert,
+	// the moment of the animation of every one of the animals and people from its place and turn) see the same as in the colour pass
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+	gl::set_camera_place(scene_ubs, m_renderpass.pass_camera.position());
 	upload_scene_block();
 	if (m_shadowcolor != colors::white)
 	{
@@ -2544,6 +2557,7 @@ void vulkan14_renderer::render_reflection_face(viewport_config &Viewport)
 	walk_blending(true);
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+	gl::set_camera_place(scene_ubs, m_renderpass.pass_camera.position());
 	upload_scene_block();
 	// the sky and the clouds alone: the scenery is reflected by the screen space reflections (gfx.ssr) and the ray tracing, the
 	// environment map gives what they don't find

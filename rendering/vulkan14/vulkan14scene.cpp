@@ -1412,10 +1412,14 @@ std::shared_ptr<gfx::shader_program> vulkan14_renderer::Fetch_Shader(std::string
 	}
 	// throws gfx::shader_exception, which the materials catch
 	auto program{std::make_shared<vk14::scene_program>()};
-	program->vertex = m_context->shaders.get("vertex.vert");
+	// a material can move its vertices in a vertex shader of its own, mat_<name>.vert (animals and people animated by textures,
+	// mat_vat.vert), the others take the common one
+	auto const ownvertex{std::filesystem::exists(gfx::shader_source_dir(gfx::shader_api::vulkan14) + "mat_" + name + ".vert")};
+	auto const vertexname{ownvertex ? "mat_" + name + ".vert" : std::string("vertex.vert")};
+	program->vertex = m_context->shaders.get(vertexname);
 	program->fragment = m_context->shaders.get("mat_" + name + ".frag");
 	program->fragment_name = "mat_" + name + ".frag";
-	program->vertex_name = "vertex.vert";
+	program->vertex_name = vertexname;
 	program->vertices = vk14::vertex_kind::scene;
 	program->name = "mat_" + name;
 	// the directives of the material, of both stages as the opengl program has them
@@ -1424,8 +1428,49 @@ std::shared_ptr<gfx::shader_program> vulkan14_renderer::Fetch_Shader(std::string
 		program->texture_conf.insert(stage->source.texture_conf.begin(), stage->source.texture_conf.end());
 		program->param_conf.insert(stage->source.param_conf.begin(), stage->source.param_conf.end());
 	}
+	if (ownvertex)
+	{
+		// its sun shadows go through the same vertex shader (MATERIAL_SHADOW), so they are cast by where the vertices are
+		std::array<std::shared_ptr<vk14::scene_program>, 2> shadows;
+		for (auto alpha = 0; alpha < 2; ++alpha)
+		{
+			auto shadow{std::make_shared<vk14::scene_program>()};
+			char const *fragment{alpha ? "alphashadowmap.frag" : "shadowmap.frag"};
+			shadow->defines = "#define MATERIAL_SHADOW 1\n";
+			shadow->vertex = m_context->shaders.get(vertexname, shadow->defines);
+			shadow->fragment = m_context->shaders.get(fragment, shadow->defines);
+			shadow->vertex_name = vertexname;
+			shadow->fragment_name = fragment;
+			shadow->vertices = vk14::vertex_kind::scene;
+			shadow->name = vertexname + " (shadow) + " + fragment;
+			shadows[alpha] = std::move(shadow);
+		}
+		m_context->scene.own_shadows.emplace(program.get(), std::move(shadows));
+	}
 	materials.emplace(name, program);
 	return program;
+}
+
+// the program of the sun shadows of a material with a vertex shader of its own, nullptr for the others (and in the cube maps of
+// the lamps, which keep their own programs)
+vk14::scene_program *vulkan14_renderer::own_shadow_program(material_handle const Material) const
+{
+	if ((Material == null_handle) || m_cubeshadows || (false == bool(m_context)))
+	{
+		return nullptr;
+	}
+	auto const &material{m_materials.material(Material)};
+	if ((false == material.is_good) || (material.shader == nullptr))
+	{
+		return nullptr;
+	}
+	auto const &shadows{m_context->scene.own_shadows};
+	auto const lookup{shadows.find(material.shader.get())};
+	if (lookup == shadows.end())
+	{
+		return nullptr;
+	}
+	return lookup->second[material.textures[0] != null_handle ? 1 : 0].get();
 }
 
 std::string vulkan14_renderer::Shader_Name(std::shared_ptr<gfx::shader_program> const &Program) const
@@ -1624,6 +1669,12 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 
 void vulkan14_renderer::walk_shadow_material(material_handle const Material)
 {
+	// a material which moves its vertices itself reads its params in the vertex shader of its shadow too
+	auto *own{own_shadow_program(Material)};
+	if (own != nullptr)
+	{
+		std::memcpy(&model_ubs.param[0], &m_materials.material(Material).params[0], sizeof(model_ubs.param));
+	}
 	if (m_indirectrecording)
 	{
 		// the walk of the groups of the gpu culling of a shadow pass only notes the material
@@ -1633,6 +1684,20 @@ void vulkan14_renderer::walk_shadow_material(material_handle const Material)
 	}
 	auto &draw{*m_draw};
 	auto &scene{m_context->scene};
+	if (own != nullptr)
+	{
+		// its textures (the alpha test and the ones its vertex shader reads) and its program
+		auto const &textures{m_materials.material(Material).textures};
+		for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
+		{
+			if (textures[unit] != null_handle)
+			{
+				walk_texture(unit, textures[unit]);
+			}
+		}
+		draw.program = own;
+		return;
+	}
 	// the cube maps of the lamps with programs of their own (the faces drawn by multiview)
 	if ((Material != null_handle) && (m_materials.material(Material).textures[0] != null_handle))
 	{

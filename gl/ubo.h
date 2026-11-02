@@ -206,6 +206,14 @@ namespace gl
 
     static_assert(sizeof(scene_ubs) == 992 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
 
+    // the camera of a pass in the world for the scene block (scene_ubs::camera_hi, camera_lo)
+    inline void set_camera_place(scene_ubs &Ubs, glm::dvec3 const &Place)
+    {
+        auto const high{glm::floor(Place / 64.0) * 64.0};
+        Ubs.camera_hi = glm::vec4{glm::vec3{high}, 0.f};
+        Ubs.camera_lo = glm::vec4{glm::vec3{Place - high}, 0.f};
+    }
+
     const size_t MAX_PARAMS = 3;
 
     struct model_ubs
