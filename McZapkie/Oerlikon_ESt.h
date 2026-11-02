@@ -196,6 +196,7 @@ class TNESt3 : public TBrake {
     void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
     double GetCRP() override;
     double GetRapidRatio(double const Vel) const override;
+    double CelBCP(double const CVP, double const VVP) const; // docelowe cisnienie w cylindrze
     void CheckState(double const BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double const dt); // odluzniacz
     double CVs(double const BP) const; // napelniacz sterujacego
