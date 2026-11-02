@@ -146,18 +146,31 @@ const float streak_link      = 1.5;   // head widths above the head where the tr
 // (or in a light wind) nothing of it shows: the rain lands, grows and runs down as it always did.
 const float wind_drag_gain     = 4.0;   // how strongly the air drives the water (1 = the drag of the stock shader: on a
                                         // vertical front glass the water would go up only at ~250 km/h)
-const float wind_streaks       = 3.0;   // density of the rivulets driven by the air, at full drag (x streak_density)
-const float wind_cell_scale    = 0.36;  // the rivulets of the air: their cells this much narrower ...
-const float wind_run_scale     = 0.28;  // ... and shorter than those of gravity: many small drops with short trails
-const float wind_head_scale    = 0.55;  // their heads this much smaller
+const float wind_streaks       = 1.5;   // density of the rivulets driven by the air, at full drag (x streak_density)
+const float wind_cell_scale    = 0.5;   // the rivulets of the air: their cells this much narrower ...
+const float wind_run_scale     = 1.2;   // ... and their runs this long against those of gravity: few drops with long trails
+const float wind_head_scale    = 0.4;   // their heads this much smaller (a small bead at the front of a long trail)
 const int   wind_layers        = 4;     // layers of them, each with drops of its own (1 .. 4)
-const float wind_long_run      = 1.6;   // the last layer: its trails this much longer than those of gravity (the long ones, a part of all)
-const float wind_streak_period = 14.0;  // seconds a rivulet driven by the air lives (they run faster than the ones of gravity)
+const float wind_long_run      = 3.0;   // the last layer: its trails this much longer than those of gravity (the long ones, a part of all)
+const float wind_streak_period = 18.0;  // seconds a rivulet driven by the air lives (they run faster than the ones of gravity)
 const float drop_wind_stretch  = 0.4;   // drops are stretched up to this much along the push of the air (0 = off)
 const float WS_DRAG_SPEED = 24.0;       // speed of the air along the glass at which its drag equals the weight of a drop, m/s
 const float WS_HEAD_ON    = 0.35;       // share of the air meeting the glass head on which turns up along it
 const float WS_WIND_STEP  = 0.1309;     // the direction of the rivulets of the air in steps of 7.5 degrees (no seams on a
                                         // curved glass, where every triangle would turn them a little)
+
+// --- The rivulets of the air of different thickness: the width of every one is drawn from this range (x streak_head, x
+// wind_head_scale), most of them thin, a few thick (never wider than their cell) -------------------------------------------------
+const float streak_thin       = 0.5;   // the thinnest
+const float streak_thick      = 2.0;   // the thickest
+const float streak_thick_bias = 2.0;   // > 1: more thin ones
+// --- What the blades leave: they don't take every drop (a few stay where they were), and the water they push lies along the edge
+// of their sweep, just outside it, as a row of beads (where the blades went lately) ------------------------------------------------
+const float wiper_miss       = 0.05;  // share of the drops a blade goes over without taking them
+const float wiper_edge_boost = 0.0;   // along the edge of the sweep this many times more drops (and droplets) (0 = off) ...
+const float wiper_edge_size  = 0.65;  // ... this much smaller: a row of beads
+const float wiper_edge_reach = 4.0;   // how wide the row is: the mip level of the mask read (4: ~16 texels of the mask out)
+const float wiper_edge_keep  = 180.0; // seconds after the last stroke the water at the edge keeps (then it's like the rest of the glass)
 
 #ifndef STREAK_FLIP_Y
 #define STREAK_FLIP_Y 0                 // set to 1 if the rivulets run UP the glass (head on top)
@@ -301,6 +314,7 @@ uint  wsLayerSalt    = 91u;
 float wsLayerHead    = 1.0;    // x streak_head
 float wsLayerCos     = 1.0;    // the layer is turned by this angle (its "down" is the way its water runs on the glass)
 float wsLayerSin     = 0.0;
+bool  wsLayerVaried  = false;  // the widths of its rivulets from streak_thin .. streak_thick (the air)
 
 // glass UV (v up) -> coordinates of the layer, where the rivulets run down (-v)
 vec2 wsToLayerDir(vec2 v)
@@ -335,6 +349,7 @@ void wsSetLayer(int layer)
         wsLayerHead    = 1.0;
         wsLayerCos     = 1.0;
         wsLayerSin     = 0.0;
+        wsLayerVaried  = false;
     }
     else
     {
@@ -344,6 +359,7 @@ void wsSetLayer(int layer)
         wsLayerHead    = wind_head_scale;
         wsLayerCos     = wsWindCos;
         wsLayerSin     = wsWindSin;
+        wsLayerVaried  = true;
     }
 }
 
@@ -355,7 +371,11 @@ Riv getRiv(vec2 sCell, float sCW, float sCH, float gridSize)
     float sPeriod = wsLayerPeriod * mix(0.6, 1.6, RandF(sSeed));
     float sPhase  = fract(time / sPeriod + RandF(sSeed));
     r.life   = smoothstep(0.0, 0.05, sPhase) * (1.0 - smoothstep(0.86, 1.0, sPhase));
-    r.width  = streak_head * wsLayerHead / gridSize * mix(0.75, 1.25, RandF(sSeed));
+    float wr = RandF(sSeed);
+    r.width  = streak_head * wsLayerHead / gridSize
+             * (wsLayerVaried ? mix(streak_thin, streak_thick, pow(wr, streak_thick_bias)) : mix(0.75, 1.25, wr));
+    if (wsLayerVaried)
+        r.width = min(r.width, sCW / 2.6);   // the trail with its swing (sMargin) stays in its cell
     r.headH  = r.width * 0.88 * streak_uv_aspect;
     float sSpan = max(sCH * mix(0.35, 0.70, RandF(sSeed)), r.headH * 3.0);
     // stick-slip: the drop waits, then lurches forward; N waits on the way down
@@ -565,6 +585,20 @@ float wsWipeAge(vec2 co)
     return age;
 }
 
+// how much the place Co (texture UV) lies along the edge of the sweep of the blades, just outside it: 0 .. 1. the mask is 0 there and
+// a coarse level of it isn't (the sweep is near). times wsWiperRecent: only where the blades went lately
+float wsWiperRecent = 0.0;
+float wsWiperEdge(vec2 co)
+{
+    if ((wiper_edge_boost <= 0.0) || (wsWiperRecent <= 0.0))
+        return 0.0;
+    vec4 m = textureLod(wipermask, co, 0.0);
+    if (max(max(m.r, m.g), max(m.b, m.a)) > 0.001)
+        return 0.0;
+    vec4 c = textureLod(wipermask, co, wiper_edge_reach);
+    return smoothstep(0.01, 0.12, max(max(c.r, c.g), max(c.b, c.a))) * wsWiperRecent;
+}
+
 void main()
 {
     // ---- screen-space derivatives (before any non-uniform flow) ----
@@ -609,6 +643,13 @@ void main()
     // wiper state of this pixel (blur, micro droplets)
     float hazeSide;
     float wipeVis = GetMixFactor(f_coord, hazeSide);
+    // the blades went over the glass lately (the water they pushed still lies along the edge of the sweep)
+    for (int i = 0; i < 4; ++i)
+    {
+        float t = max(wiper_timer_out[i], wiper_timer_return[i]);
+        if ((t > -500.0) && (t <= time))
+            wsWiperRecent = max(wsWiperRecent, 1.0 - smoothstep(0.5 * wiper_edge_keep, wiper_edge_keep, time - t));
+    }
 
     Hit hit;
     hit.score = 0.0; hit.cov = 0.0; hit.colA = 0.0; hit.n = vec3(0.0, 0.0, 1.0);
@@ -683,16 +724,20 @@ void main()
             uint  ep      = uint(mod(epoch, 65521.0));
             // activation first (cheap), the wiper texture only for live drops
             uint s1 = Hash(uvec3(key, ep * 4u + 1u));
-            if (RandF(s1) > rain_params.x * drop_density)
+            float edge = wsWiperEdge((nc + 0.5) / gridSize);
+            if (RandF(s1) > min(rain_params.x * drop_density * (1.0 + wiper_edge_boost * edge), 0.95))
                 continue;
+            // a drop the blades miss: the same drop before and after the stroke, left where it is
+            bool  missed = RandF(s1) < wiper_miss;
             float side;
-            float mixF = GetMixFactor((nc + 0.5) / gridSize, side);
+            float mixF = missed ? 1.0 : GetMixFactor((nc + 0.5) / gridSize, side);
+            if (missed) side = 0.0;
             uint s2 = Hash(uvec3(key, ep * 4u + 2u + uint(side) * 2u));
             if (mixF < RandF(s2))
                 continue;
 
             vec2  center = (nc + vec2(RandF(s2), RandF(s2))) / gridSize;
-            float size   = mix(drop_size_min, drop_size_max, pow(RandF(s2), drop_size_bias)) / gridSize;
+            float size   = mix(drop_size_min, drop_size_max, pow(RandF(s2), drop_size_bias)) / gridSize * mix(1.0, wiper_edge_size, edge);
             float sag    = 1.0 + drop_sag * RandF(s2);
             float flipX  = (RandF(s2) < 0.5) ? 1.0 : 0.0;
             float choice = RandF(s2);
@@ -754,7 +799,7 @@ void main()
             float mph   = fract(mtt);
             uint  mep   = uint(mod(floor(mtt), 65521.0));
             uint  m1    = Hash(uvec3(mk, mep * 4u + 1u));
-            if (RandF(m1) < rain_params.x * micro_density)
+            if (RandF(m1) < min(rain_params.x * micro_density * (1.0 + wiper_edge_boost * wsWiperEdge((mc + 0.5) / mg)), 0.95))
             {
                 uint m2 = Hash(uvec3(mk, mep * 4u + 2u + uint(hazeSide) * 2u));
                 if (wipeVis >= RandF(m2))
