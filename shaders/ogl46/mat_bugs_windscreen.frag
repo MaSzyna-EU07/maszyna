@@ -102,7 +102,8 @@ const float bugs_unknown_level = 1.0;  // upper limit of the dirt where the wipe
 const float bugs_wiper_clean = 1.0;    // 1 = wipers wipe the bugs off (uses wipermask), 0 = wipers ignore them
 const float bugs_gloss = 0.45;   // shininess of the wet splats (sun / headlight glints on the bumps), 0 = matt
 const float bugs_bump = 1.0;    // strength of the 3D relief from the normal map, 0 = flat
-const float bugs_halo_blur = 0.45;   // blur of the scene in a ring around every bug (0 = off, 1 = full); done in the post-processing (rain_windscreen_haze.glsl)
+const float bugs_halo_blur = 0.8;    // blur of the scene seen through the see-through parts of a bug (its texture half transparent: wings,
+                                     // the thin smear of the splat), none around it (0 = off, 1 = full); done in the post-processing
 const float bugs_halo_size = 1.15;   // ring radius = bug half-size * this (1 = only under the splat, max 1.6)
 const float bugs_halo_px = 60.0;   // a bug this many pixels wide on screen gets the full blur, smaller ones less (the blur radius is fixed in pixels)
 const float bugs_vertical = 0.0;    // -1..1: more dirt at the bottom (<0) or at the top (>0) of the pane, 0 = even
@@ -331,13 +332,6 @@ void bugLayer(float gridSize, float density, uint layerSeed,
 
             // Blur ring around the splat (greasy smear): strongest next to the bug, fading out
             // (the post pass blurs with a fixed radius in pixels, so a bug that is small on screen gets less of it)
-            float haloR = size * 0.5 * clamp(bugs_halo_size, 1.0, 1.6);
-            float dist  = length(d);
-            if (dist < haloR)
-            {
-                float pxScale = clamp(size / max(pixelUV, 1e-6) / max(bugs_halo_px, 1.0), 0.15, 1.0);
-                smear = max(smear, (1.0 - smoothstep(0.5 * haloR, haloR, dist)) * haloStrength * appear * pxScale);
-            }
 
             float c = cos(ang);
             float s = sin(ang);
@@ -356,6 +350,12 @@ void bugLayer(float gridSize, float density, uint layerSeed,
             // fine specks: fainter and lighter than the big bugs (the splat bodies are nearly black)
             t.rgb = mix(t.rgb, vec3(0.42, 0.34, 0.16), lightMix);
             float a = clamp(t.a * appear * bugs_opacity * opacityMul, 0.0, 1.0);
+
+            // the scene blurred only where the bug is see-through (half transparent), not around it and not where it's opaque
+            // (the post pass blurs with a fixed radius in pixels, so a bug that is small on screen gets less of it)
+            float pxScale = clamp(size / max(pixelUV, 1e-6) / max(bugs_halo_px, 1.0), 0.15, 1.0);
+            float seeThrough = smoothstep(0.03, 0.3, a) * (1.0 - smoothstep(0.75, 0.95, a));
+            smear = max(smear, seeThrough * haloStrength * pxScale);
 
             // relief: tangent-space normal of the splat -> glass UV frame (undo the mirror, then the rotation)
             vec4 nm = textureLod(normalmap, tileOffset(choice) + local * 0.5, lod);
@@ -493,8 +493,8 @@ void main()
     if (MOTIONBLUR_ENABLED)
     {
         // alpha 0 = blending keeps the scene's own motion vectors
-        // the bug itself stays sharp (1 - bugA); no blur over opaque parts of the pane (1 - glassA)
-        float blurMask = clamp(smear * bugs_halo_blur * (1.0 - bugA) * (1.0 - smoothstep(0.5, 0.95, glassA)), 0.0, 1.0);
+        // only the see-through parts of the bugs (smear); no blur over opaque parts of the pane (1 - glassA)
+        float blurMask = clamp(smear * bugs_halo_blur * (1.0 - smoothstep(0.5, 0.95, glassA)), 0.0, 1.0);
         out_motion = (blurMask >= 0.01) ? vec4(WS_ENC * blurMask, 0.0, 0.0, 1.0) : vec4(0.0);
     }
 }

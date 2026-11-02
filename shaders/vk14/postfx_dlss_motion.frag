@@ -20,6 +20,12 @@ void main()
 	ivec2 pixel = ivec2(gl_FragCoord.xy);
 	vec2 velocity = texelFetch(velocity_tex, pixel, 0).xy;
 	float depth = texelFetch(depth_tex, pixel, 0).r;
+	// the windscreens (mat_rain_windscreen, mat_bugs_windscreen) send the post-processing their drops and haze as large values
+	// (real motion is far below a quarter of the screen per frame): no motion for dlss there, the glass goes with the camera
+	if (any(greaterThan(abs(velocity), vec2(0.25))))
+	{
+		velocity = vec2(0.0);
+	}
 	if (depth <= 0.0)
 	{
 		vec4 world = mat4(param[2], param[3], param[4], param[5]) * vec4(f_coords * 2.0 - 1.0, depth, 1.0);

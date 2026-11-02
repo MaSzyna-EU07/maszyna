@@ -44,7 +44,7 @@ vec3 wsStabilize(vec3 current, ivec2 pixel)
     if (false == TAA_HISTORY_VALID)
         return current;
     vec4 last = texelFetch(history_tex, pixel, 0);
-    if (any(isnan(last)) || (last.a < 0.5 * (1.0 + WS_HAZED)))   // not a drop or haze pixel in the last frame
+    if (any(isnan(last)) || (false == wsWasHazed(last.a)))   // not a drop or haze pixel in the last frame
         return current;
     vec2 size = vec2(textureSize(color_tex, 0));
     float depth = texelFetch(depth_tex, pixel, 0).r;

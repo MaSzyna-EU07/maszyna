@@ -26,7 +26,7 @@ void main()
     if (wsIsDrop(rawv))
     {
         vec4 picture = texture(color_tex, f_coords);
-        out_color = vec4((picture.a > 0.5 * (1.0 + WS_HAZED)) ? picture.rgb
+        out_color = vec4(wsWasHazed(picture.a) ? picture.rgb
                                                               : wsDropRefraction(color_tex, velocity_tex, depth_tex, f_coords, rawv), 1.0);
         return;
     }
@@ -34,7 +34,7 @@ void main()
     if (blurAmt > 0.0)
     {
         vec4 picture = texture(color_tex, f_coords);
-        out_color = vec4((picture.a > 0.5 * (1.0 + WS_HAZED)) ? picture.rgb : wsHaze(color_tex, velocity_tex, f_coords, blurAmt), 1.0);
+        out_color = vec4(wsWasHazed(picture.a) ? picture.rgb : wsHaze(color_tex, velocity_tex, f_coords, blurAmt), 1.0);
         return;
     }
 

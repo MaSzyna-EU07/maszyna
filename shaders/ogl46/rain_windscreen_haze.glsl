@@ -10,7 +10,15 @@
 
 const float WS_ENC    = 64.0;    // must match mat_rain_windscreen.frag
 const float WS_FLOOR  = 0.004;   // = 0.256 in raw velocity units: everything below is real motion
-const float WS_HAZED  = 2.0;     // alpha of the picture the taa already blurred
+const float WS_HAZED  = -4.0;    // alpha of the picture the taa already blurred: below anything a scene writes (additive
+                                 // particles took the alpha of the image above 1.5, and the motion blur then left the haze of a
+                                 // bug or of the glass out on some frames: a flicker). negative, so the lock of the taa takes 0
+
+// whether the picture was blurred by the taa already (WS_HAZED in its alpha)
+bool wsWasHazed(float alpha)
+{
+    return alpha < -3.0;
+}
 
 // blur of hazy glass
 const float WS_RADIUS = 0.014;   // max blur radius, fraction of screen height
@@ -20,7 +28,10 @@ const float WS_HAZE_LIGHT_CAP = 12.0;   // the most a light adds to the haze aro
 // strength of the blur request, 0 for pixels that are not blur pixels
 float wsBlur(vec2 raw)
 {
-    if (raw.x > 100.0 || raw.y > 100.0)   // a blended edge with something else: not a blur pixel
+    // a blended edge with something else: not a blur pixel. the haze is asked with y = 0; with msaa the samples of a pixel are
+    // averaged, and the edge of a drop (y half of a drop's) came out as a full haze request: a ring blurred around the drop which
+    // flickered as the edges moved over the samples
+    if (raw.x > 100.0 || raw.y > 1.0)
         return 0.0;
     float m = clamp(raw.x / WS_ENC, 0.0, 1.0);
     return clamp((m - WS_FLOOR) / (1.0 - WS_FLOOR), 0.0, 1.0);
@@ -139,7 +150,9 @@ float wsLum(vec3 c)
 // a drop pixel (drop, rivulet): both values in 132..252
 bool wsIsDrop(vec2 raw)
 {
-    return raw.x > 120.0 && raw.y > 120.0;
+    // 132 .. 252 exactly: with msaa the edge of a drop averaged with the scene behind (half the values, up to 126) isn't a drop,
+    // else its decoded bend was nonsense, pulling the picture from far away for a frame (a drop flashing)
+    return raw.x > 131.5 && raw.y > 131.5;
 }
 
 vec2 wsBend(vec2 raw)
@@ -148,19 +161,43 @@ vec2 wsBend(vec2 raw)
 }
 
 #ifndef LAYOUT_POST
+// the image of the reflections around Uv as blurred as its mip level Lod, but round: a level of the mipmaps is a grid of squares
+// (2^Lod pixels each), and a light read from it alone lit the drops in a square around it. a ring of taps of the finer level
+// around the place, weighed as a soft disc, gives the same blur without the squares
+vec3 wsHistoryRound(vec2 uv, float lod)
+{
+    float level = min(lod, ssr_params2.x);
+    float finer = max(level - 1.0, 0.0);
+    vec2  pixel = 1.0 / vec2(textureSize(ws_light_history, 0));
+    float radius = 0.6 * exp2(level);                 // pixels of the image
+    vec3  sum = wsSafe(textureLod(ws_light_history, uv, finer).rgb) * 0.2;
+    for (int i = 0; i < 8; ++i)
+    {
+        float a = (float(i) + 0.5) * 0.7853982;
+        sum += wsSafe(textureLod(ws_light_history, uv + vec2(cos(a), sin(a)) * radius * pixel, finer).rgb) * 0.06;
+        sum += wsSafe(textureLod(ws_light_history, uv + vec2(cos(a + 0.3927), sin(a + 0.3927)) * (2.0 * radius) * pixel, finer).rgb) * 0.04;
+    }
+    return sum;
+}
+
 vec3 wsLightExcess(vec2 uv, float lod, vec3 wide)
 {
-    vec3 c = wsSafe(textureLod(ws_light_history, uv, min(lod, ssr_params2.x)).rgb);
+    vec3 c = wsHistoryRound(uv, lod);
     vec3 excess = max(c - wide * WS_LIGHT_CONTRAST, vec3(0.0));
-    return excess * smoothstep(0.5 * WS_LIGHT_MIN_LUM, WS_LIGHT_MIN_LUM, wsLum(excess));
+    // no threshold with an edge: a light dims away from it (the drops right by a lamp the brightest, then less and less); full
+    // from twice WS_LIGHT_MIN_LUM above the place around, as much as before there
+    return excess * clamp(wsLum(excess) / (2.0 * WS_LIGHT_MIN_LUM), 0.0, 1.0);
 }
 
 vec3 wsLightGlow(vec2 uv)
 {
     if ((ssr_params.x < 1.0) || (textureSize(ws_light_history, 0).x < 16))
         return vec3(0.0);
-    vec3 wide = wsSafe(textureLod(ws_light_history, uv, min(WS_LIGHT_WIDE, ssr_params2.x)).rgb);
-    vec3 glow = wsLightExcess(uv, WS_LIGHT_FINE, wide) + WS_LIGHT_MID_SHARE * wsLightExcess(uv, WS_LIGHT_MID, wide);
+    vec3 wide = wsHistoryRound(uv, WS_LIGHT_WIDE);
+    // the near light in full, the one a little further away fading with it squared: the farther the drop, the less
+    vec3  mid  = wsLightExcess(uv, WS_LIGHT_MID, wide);
+    float midF = clamp(wsLum(mid) / (2.0 * WS_LIGHT_MIN_LUM), 0.0, 1.0);
+    vec3 glow = wsLightExcess(uv, WS_LIGHT_FINE, wide) + WS_LIGHT_MID_SHARE * mid * midF;
     glow *= WS_LIGHT_GAIN;
     // a light close by is kept to the brightness of one light
     return glow * min(1.0, WS_LIGHT_CAP / max(wsLum(glow), 1e-4));
