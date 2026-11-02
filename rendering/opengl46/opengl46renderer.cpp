@@ -2222,6 +2222,8 @@ if (!Global.gfx_skippipeline)
 
 		glViewport(0, 0, m_shadowbuffersize, m_shadowbuffersize);
 		auto csmstageboundaries { Shadow_Fixed_Splits() };
+		// the rotation of the camera of the view, given back to the scene block after the cascades
+		auto const colorinvview { scene_ubs.inv_view };
 		// the cascades fitted to the depth of the view (gfx.shadow.sdsm) go between the distances of its pixels, each map
 		// covering the area of the pixels its cascade takes
 		std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> fitareas;
@@ -2249,6 +2251,9 @@ if (!Global.gfx_skippipeline)
 
             setup_matrices();
             scene_ubs.projection = OpenGLMatrices.data( GL_PROJECTION );
+            // the rotation of the camera of this pass (the sun's): the shaders which put the model in the world (mat_vat.vert, the
+            // moment of the animation of every one of the people from its turn) see the same turn as in the color pass
+            scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_renderpass.pass_camera.modelview() } } );
             auto const csmstagezfar {
                 (csmstageboundaries[ idx + 1 ])
               + ( m_shadowpass.size() - idx ) }; // we can fairly safely add some extra padding in the early stages
@@ -2267,6 +2272,8 @@ if (!Global.gfx_skippipeline)
             }
         }
 		m_shadow_fb->unbind();
+		scene_ubs.inv_view = colorinvview;
+		scene_ubo->update( scene_ubs );
 
 		glDebug("rendermode::shadows end");
 
@@ -6697,7 +6704,10 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	camera.update_frustum(glm::perspective(fieldofview, 1.f, nearplane, reach));
 	setup_matrices();
 	auto const colorprojection{scene_ubs.projection};
+	auto const colorinvview{scene_ubs.inv_view};
 	scene_ubs.projection = projection;
+	// the rotation of the projector, as the one of the sun in its shadows (see rendermode::shadows)
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{camera.modelview()}});
 	scene_ubo->update(scene_ubs);
 
 	m_localshadows.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
@@ -6713,6 +6723,7 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	m_shadowskipvehicle = nullptr;
 	m_localshadows.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	scene_ubs.projection = colorprojection;
+	scene_ubs.inv_view = colorinvview;
 	scene_ubo->update(scene_ubs);
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);
