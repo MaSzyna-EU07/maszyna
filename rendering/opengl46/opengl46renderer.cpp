@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46renderer.h"
+#include "rendering/common/shadersource.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
@@ -30,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
+#include <filesystem>
 
 //#define EU07_DEBUG_OPENGL
 
@@ -3232,7 +3234,19 @@ std::shared_ptr<gfx::shader_program> opengl46_renderer::Fetch_Shader(const std::
 	if (it == m_shaders.end())
 	{
 		gl::shader fragment("mat_" + name + ".frag");
-		gl::program *program = new gl::program({fragment, *m_vertex_shader.get()});
+		gl::program *program{nullptr};
+		// a material can move its vertices in a vertex shader of its own, mat_<name>.vert (people animated by textures,
+		// mat_vat.vert), the others take the common one
+		if (std::filesystem::exists(gfx::shader_source_dir(gfx::shader_api::opengl46) + "mat_" + name + ".vert"))
+		{
+			gl::shader vertex("mat_" + name + ".vert");
+			program = new gl::program({fragment, vertex});
+			m_ownvertexprograms.insert(program);
+		}
+		else
+		{
+			program = new gl::program({fragment, *m_vertex_shader.get()});
+		}
 		m_shaders.insert({name, std::shared_ptr<gl::program>(program)});
 		// the variant for the multi draws of the instances, made now rather than when the instances first come into view
 		if ((Global.gfx_gpucull == 1) && Global.gfx_gpucull_multidraw)
@@ -3464,6 +3478,24 @@ void opengl46_renderer::Bind_Material_Shadow(material_handle const Material)
 	if (Material != null_handle)
 	{
 		auto &material = m_materials.material(Material);
+
+		if (false == m_cubeshadows)
+		{
+			// a material which moves its vertices itself casts the shadow of where they are: its vertex shader, with the
+			// textures and the params it reads them by
+			if (auto *program{Material_Shadow_Program(Material, material.textures[0] != null_handle)})
+			{
+				for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
+				{
+					if (material.textures[unit] == null_handle)
+						break;
+					m_textures.bind(unit, material.textures[unit]);
+				}
+				memcpy(&model_ubs.param[0], &material.params[0], sizeof(model_ubs.param));
+				program->bind();
+				return;
+			}
+		}
 
 		if (material.textures[0] != null_handle)
 		{
@@ -4018,8 +4050,11 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 	for( std::size_t index = 0; index < count; ) {
 		auto const &draw { m_indirectdraws[ index ] };
 		auto const texture { Indirect_Shadow_Texture( draw.material ) };
+		// the materials with a vertex shader of their own are drawn one by one, with it (Bind_Material_Shadow())
+		auto const ownvertex = [ this ]( material_handle const Material ) {
+			return ( false == m_cubeshadows ) && ( Material_Shadow_Program( Material, Indirect_Shadow_Texture( Material ) != null_handle ) != nullptr ); };
 		auto *multidrawprogram {
-			m_indirectmultidraw ?
+			( m_indirectmultidraw && ( false == ownvertex( draw.material ) ) ) ?
 				( m_cubeshadows ?
 					m_localshadows.multidraw_program( texture != null_handle ) :
 					( texture != null_handle ? m_alpha_shadow_multidraw_shader.get() : m_shadow_multidraw_shader.get() ) ) :
@@ -4031,7 +4066,8 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				&& ( m_indirectdraws[ last ].group == draw.group )
 				&& ( m_indirectdraws[ last ].type == draw.type )
 				&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
-				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture ) ) {
+				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture )
+				&& ( false == ownvertex( m_indirectdraws[ last ].material ) ) ) {
 				++last;
 			}
 			if( texture != null_handle ) {
@@ -4045,8 +4081,10 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			index = last;
 		}
 		else {
-			Bind_Material_Shadow( draw.material );
+			// the block of the draw first: Bind_Material_Shadow() puts the params of the material in it, for the materials which
+			// read them in their vertex shader
 			model_ubs = draw.ubs;
+			Bind_Material_Shadow( draw.material );
 			model_ubo->update( model_ubs );
 			m_geometry.draw_indirect( draw.geometry, m_indirectcull->draw_command_offset( Set, index ) );
 			++counts.draws;
@@ -4111,7 +4149,14 @@ gl::program *opengl46_renderer::Multidraw_Program( gl::program const *Program )
 		if( shader.second.get() != Program ) { continue; }
 		try {
 			gl::shader fragment( "mat_" + shader.first + ".frag", "#define MODEL_DRAWS 1\n" );
-			variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, *m_vertex_multidraw_shader } );
+			if( m_ownvertexprograms.count( Program ) > 0 ) {
+				// the vertex shader of the material itself, in its variant of the multi draws
+				gl::shader vertex( "mat_" + shader.first + ".vert", "#define MODEL_DRAWS 1\n" );
+				variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, vertex } );
+			}
+			else {
+				variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, *m_vertex_multidraw_shader } );
+			}
 		}
 		catch( gl::shader_exception const &e ) {
 			ErrorLog( "material " + shader.first + " drawn without multi draws: " + std::string( e.what() ) );
@@ -4120,6 +4165,35 @@ gl::program *opengl46_renderer::Multidraw_Program( gl::program const *Program )
 	}
 	auto *result { variant.get() };
 	m_multidrawprograms.emplace( Program, std::move( variant ) );
+	return result;
+}
+
+gl::program *opengl46_renderer::Material_Shadow_Program( material_handle const Material, bool const Alphatest )
+{
+	if( Material == null_handle ) { return nullptr; }
+	auto const &material { m_materials.material( Material ) };
+	if( ( false == material.is_good ) || ( material.shader == nullptr ) ) { return nullptr; }
+	auto const *program { static_cast<gl::program const *>( material.shader.get() ) };
+	if( m_ownvertexprograms.count( program ) == 0 ) { return nullptr; }
+	auto &programs { m_materialshadowprograms[ Alphatest ? 1 : 0 ] };
+	auto const lookup { programs.find( program ) };
+	if( lookup != programs.end() ) { return lookup->second.get(); }
+
+	std::unique_ptr<gl::program> shadow;
+	for( auto const &shader : m_shaders ) {
+		if( shader.second.get() != program ) { continue; }
+		try {
+			gl::shader vertex( "mat_" + shader.first + ".vert", "#define MATERIAL_SHADOW 1\n" );
+			gl::shader fragment( Alphatest ? "alphashadowmap.frag" : "shadowmap.frag" );
+			shadow = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ vertex, fragment } );
+		}
+		catch( gl::shader_exception const &e ) {
+			ErrorLog( "material " + shader.first + " casts its shadow in the pose of the model: " + std::string( e.what() ) );
+		}
+		break;
+	}
+	auto *result { shadow.get() };
+	programs.emplace( program, std::move( shadow ) );
 	return result;
 }
 
