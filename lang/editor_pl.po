@@ -13456,3 +13456,12 @@ msgid_plural "%zu tracks put on the common grade line of the route"
 msgstr[0] "%zu tor dołączony do wspólnej niwelety trasy"
 msgstr[1] "%zu tory dołączone do wspólnej niwelety trasy"
 msgstr[2] "%zu torów dołączonych do wspólnej niwelety trasy"
+
+msgid "Assign from the camera"
+msgstr "Przypisz z kamery"
+
+msgid "The place clicked on the map is where the camera stands now: the middle of the scenery is set from it, so the orthophoto, the terrain model and the map lie under the scenery again. Fly the camera to a place you know on the map (a station, a crossing), click that place and assign"
+msgstr "Punkt kliknięty na mapie to miejsce, gdzie teraz stoi kamera: z tego ustawiany jest środek scenerii, tak że ortofotomapa, NMT i mapa znów leżą pod scenerią. Przeleć kamerą nad znane miejsce (stację, przejazd), kliknij je na mapie i przypisz"
+
+msgid "The middle the scenery file gives"
+msgstr "Środek zapisany w pliku scenerii"

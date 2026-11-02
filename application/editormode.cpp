@@ -3788,13 +3788,32 @@ void editor_mode::read_georeference()
             }
         }
     }
-    std::ifstream stream(file);
+    // the scenery file first, then the files it includes near its top: a scenery made of
+    // an include (the IRT one) keeps its origin in the included file
+    std::vector<std::filesystem::path> files{file};
     std::string line;
+    for (std::size_t index = 0; index < files.size() && false == m_georeference; ++index)
+    {
+    std::ifstream stream(files[index]);
     for (int count = 0; count < 200 && std::getline(stream, line); ++count)
     {
         auto const mark = line.find("//$g");
         if (mark == std::string::npos)
+        {
+            // include <file> ... end, only from the scenery file and one level down
+            auto const start{line.find_first_not_of(" \t")};
+            if (index == 0 && files.size() < 8 && start != std::string::npos && line.compare(start, 8, "include ") == 0)
+            {
+                std::istringstream words(line.substr(start + 8));
+                std::string name;
+                if (words >> name && name.find("//") != 0)
+                {
+                    std::replace(name.begin(), name.end(), '\\', '/');
+                    files.emplace_back(std::filesystem::path{Global.asCurrentSceneryPath} / name);
+                }
+            }
             continue;
+        }
         // Rainsted writes the origin of the scenery as: //$g <system> <easting> <northing>, in kilometres
         std::istringstream words(line.substr(mark + 4));
         std::string system;
@@ -3809,6 +3828,7 @@ void editor_mode::read_georeference()
             m_georeference_line.pop_back();
         m_georeference = true;
         break;
+    }
     }
 }
 
