@@ -751,13 +751,13 @@ track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> cons
             continue;
         }
         crossers.push_back( entry.track );
-        for( int otherpath = 0; otherpath < path_count( *entry.track ); ++otherpath ) {
+        for( int otherpath = 0; otherpath < track_rails::path_count( *entry.track ); ++otherpath ) {
             for( auto const side : { -1.0, 1.0 } ) {
-                crossing.push_back( make_gauge_line( path_segment( *entry.track, otherpath ), side * 0.5 * std::abs( entry.track->fTrackWidth ), 0.0 ) );
+                crossing.push_back( make_gauge_line( track_rails::path_segment( *entry.track, otherpath ), side * 0.5 * std::abs( entry.track->fTrackWidth ), 0.0 ) );
             }
         }
     }
-    for( int path = 0; path < path_count( *this ); ++path ) {
+    for( int path = 0; path < track_rails::path_count( *this ); ++path ) {
         for( int right = 0; right < 2; ++right ) {
             auto &checks { plans[ path ][ right ] };
             if( checks.empty() ) {

@@ -656,8 +656,56 @@ std::vector<track_property> make_properties()
 	// ride and sound
 	add_float(list, "friction", section::ride, group::ride_sound, "Friction", "Friction coefficient of the rails, 0.15 for the dry rails; lower values make the wheels slip", &TTrack::fFriction, 3, 0.f, false);
 	list.back().applies = any;
-	add_float(list, "sounddistance", section::ride, group::ride_sound, "Sound distance (m)", "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default", &TTrack::fSoundDistance, 1, -1.f, false);
+	// the rails dip at the joints of an uneven track, every sound distance
+	add_float(list, "sounddistance", section::ride, group::ride_sound, "Sound distance (m)", "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default", &TTrack::fSoundDistance, 1, -1.f, true);
 	list.back().applies = any;
+	{
+		auto const railway = [](TTrack const &Track) { return (Track.eType == tt_Normal || Track.eType == tt_Switch) && (Track.iCategoryFlag & 15) == 1; };
+		auto &property{add(list, "uneven", field::number, section::ride, group::ride_sound, "Unevenness (mm)",
+		    "Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values")};
+		property.applies = railway;
+		property.rebuild = true;
+		property.get = [](TTrack const &Track) { return decimal(Track.m_uneven.value, 1); };
+		property.set = [](TTrack &Track, std::string const &Text) {
+			double value;
+			if (false == parse_number(Text, value))
+				return false;
+			auto const clamped{std::clamp(static_cast<float>(value), 0.f, track_uneven::most)};
+			if (decimal(clamped, 1) == decimal(Track.m_uneven.value, 1))
+				return false;
+			Track.m_uneven.value = clamped;
+			return true;
+		};
+		// a component set apart from the unevenness, empty or negative: the unevenness
+		auto const component = [&](char const *Key, char const *Label, char const *Tooltip, float track_uneven::attribute::*Member, std::function<bool(TTrack const &)> Applies) {
+			auto &property{add(list, Key, field::number, section::ride, group::ride_sound, Label, Tooltip)};
+			property.applies = std::move(Applies);
+			property.rebuild = true;
+			property.empty = "as the unevenness";
+			property.get = [Member](TTrack const &Track) { return Track.m_uneven.*Member < 0.f ? std::string{} : decimal(Track.m_uneven.*Member, 1); };
+			property.set = [Member](TTrack &Track, std::string const &Text) {
+				double value{-1.0};
+				if (false == words_of(Text).empty() && false == parse_number(Text, value))
+					return false;
+				auto const clamped{value < 0.0 ? -1.f : std::min(static_cast<float>(value), track_uneven::most)};
+				if (decimal(clamped, 1) == decimal(Track.m_uneven.*Member, 1))
+					return false;
+				Track.m_uneven.*Member = clamped;
+				return true;
+			};
+		};
+		auto const plain = [railway](TTrack const &Track) { return railway(Track) && Track.eType == tt_Normal; };
+		auto const turnout = [railway](TTrack const &Track) { return railway(Track) && Track.eType == tt_Switch; };
+		char const *const apart{"Set apart from the unevenness, mm. Empty: the unevenness"};
+		component("unevenup", "Up and down (mm)", apart, &track_uneven::attribute::up, railway);
+		component("unevenside", "Sideways (mm)", apart, &track_uneven::attribute::side, railway);
+		component("unevencross", "Cross level (mm)", apart, &track_uneven::attribute::cross, plain);
+		component("unevenbranch", "Diverging path (mm)", apart, &track_uneven::attribute::branch, turnout);
+		component("unevenbranchup", "Diverging, up and down (mm)", apart, &track_uneven::attribute::branchup, turnout);
+		component("unevenbranchside", "Diverging, sideways (mm)", apart, &track_uneven::attribute::branchside, turnout);
+		component("jointdip", "Dip at rail joints (mm)", "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Empty: 0.4 of the unevenness",
+		    &track_uneven::attribute::dip, plain);
+	}
 	{
 		auto &property{add(list, "quality", field::number, section::ride, group::ride_sound, "Quality", "Quality of the track, 20 is the nominal one; lower values give a rougher ride")};
 		property.applies = any;

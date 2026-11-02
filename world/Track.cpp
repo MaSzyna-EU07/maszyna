@@ -85,6 +85,7 @@ void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const
 
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
+int TTrack::s_layoutstamp { 0 };
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
@@ -367,6 +368,7 @@ void TTrack::ConnectPrevPrev(TTrack *pTrack, int typ)
 { //łączenie torów - Point1 własny do Point1 cudzego
     if (pTrack)
     { //(pTrack) może być zwrotnicą, a (this) tylko zwykłym odcinkiem
+        ++s_layoutstamp;
         trPrev = pTrack;
         iPrevDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
@@ -377,6 +379,7 @@ void TTrack::ConnectPrevNext(TTrack *pTrack, int typ)
 { //łaczenie torów - Point1 własny do Point2 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trPrev = pTrack;
         iPrevDirection = typ | 1; // 1:zwykły lub pierwszy zwrotnicy, 3:drugi zwrotnicy
         pTrack->trNext = this;
@@ -396,6 +399,7 @@ void TTrack::ConnectNextPrev(TTrack *pTrack, int typ)
 { //łaczenie torów - Point2 własny do Point1 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trNext = pTrack;
         iNextDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
@@ -415,6 +419,7 @@ void TTrack::ConnectNextNext(TTrack *pTrack, int typ)
 { //łaczenie torów - Point2 własny do Point2 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trNext = pTrack;
         iNextDirection = typ | 1; // 1:zwykły lub pierwszy zwrotnicy, 3:drugi zwrotnicy
         pTrack->trNext = this;
@@ -714,6 +719,13 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             m_timber_model_name = modelpath;
             m_timber_skin_name = ( skinpath == "none" ? std::string{} : skinpath );
         }
+        else if( str == "uneven" ) {
+            // uneven <mm>[;<mm>...]: see TrackUneven.h. The semicolons stay in the token
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
+                m_uneven = track_uneven::read_attribute( values, eType == tt_Switch );
+            }
+        }
         else if( str == "friction" ) {
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
@@ -774,6 +786,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
 
     auto const velocity { fVelocity };
     init_segments( true );
+    // made with no unevenness, which is read with the attributes and goes onto them by making them again
+    if( is_uneven() ) {
+        init_segments( false );
+    }
     if( SwitchExtension ) {
         fVelocity = velocity;
     }
@@ -808,6 +824,14 @@ void TTrack::init_segments( bool const Initial ) {
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
     iTrapezoid = 0;
+    ++s_layoutstamp;
+    if( eType == tt_Switch && SwitchExtension ) {
+        SwitchExtension->Segments[ 0 ]->set_uneven( is_uneven() );
+        SwitchExtension->Segments[ 1 ]->set_uneven( is_uneven(), 1 );
+    }
+    else if( Segment ) {
+        Segment->set_uneven( is_uneven() );
+    }
 
     switch (eType) {
         // Ra: łuki segmentowane co 5m albo 314-kątem foremnym
@@ -1493,6 +1517,8 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
+    m_drawnrun = {};
+
     track_rails::forget();
     auto const erase = [ this ]( gfx::geometry_handle const &Chunk ) {
         if( SwitchExtension
@@ -1527,47 +1553,6 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
     create_geometry( Bank );
 }
 
-void TTrack::share_joints() {
-
-    for( int path = 0; path < track_rails::path_count( *this ); ++path ) {
-        auto *segment { eType == tt_Switch ? SwitchExtension->Segments[ path ].get() : Segment.get() };
-        if( segment == nullptr ) {
-            continue;
-        }
-        for( int end = 0; end < 2; ++end ) {
-            std::optional<std::pair<glm::dvec3, glm::dvec3>> joint;
-            auto *neighbour { track_rails::path_neighbour( *this, path, end ) };
-            if( neighbour != nullptr && neighbour != this && ( neighbour->iCategoryFlag & 15 ) == ( iCategoryFlag & 15 ) ) {
-                glm::dvec3 point;
-                glm::dvec3 across;
-                segment->plan_frame( end ? segment->GetLength() : 0.0, point, across );
-                auto closest { 0.2 };
-                for( int theirpath = 0; theirpath < track_rails::path_count( *neighbour ); ++theirpath ) {
-                    auto const *theirs { neighbour->eType == tt_Switch ? neighbour->SwitchExtension->Segments[ theirpath ].get() : neighbour->Segment.get() };
-                    if( theirs == nullptr ) {
-                        continue;
-                    }
-                    for( int theirend = 0; theirend < 2; ++theirend ) {
-                        glm::dvec3 theirpoint;
-                        glm::dvec3 theiracross;
-                        theirs->plan_frame( theirend ? theirs->GetLength() : 0.0, theirpoint, theiracross );
-                        if( theirend == end ) {
-                            theiracross = -theiracross;
-                        }
-                        auto const gap { glm::length( theirpoint - point ) };
-                        if( gap >= closest || glm::dot( across, theiracross ) < 0.9 ) {
-                            continue;
-                        }
-                        closest = gap;
-                        joint.emplace( 0.5 * ( point + theirpoint ), glm::normalize( across + theiracross ) );
-                    }
-                }
-            }
-            segment->set_joint( end, joint );
-        }
-    }
-}
-
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
     // the rails of a frog with a movable nose are laid again as it moves over, in the same chunks
@@ -1578,6 +1563,9 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
     }
     share_joints();
     m_sleepers3d.active = track_sleepers::lays( *this );
+    if( rail_phase( 0.0 ) >= 0.0 ) {
+        m_drawnrun = m_railrun;
+    }
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
     if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
@@ -2791,6 +2779,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
      && false == m_profile1.first.empty() ) {
         Output << "railprofile " << m_profile1.first << ' ';
     }
+    Output << track_uneven::write_attribute( m_uneven, eType == tt_Switch );
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
@@ -4049,6 +4038,11 @@ path_table::InitTracks() {
         isolated->pMemCell = memorycell;
 
         isolated = isolated->Next();
+    }
+
+    // the physics goes by the cant at the joints too, and comes before any geometry is made
+    for( auto *track : m_items ) {
+        track->share_joints();
     }
 
     TTrack::fetch_default_profiles();
