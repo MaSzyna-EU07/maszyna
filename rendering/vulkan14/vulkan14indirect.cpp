@@ -593,19 +593,35 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_shadow(vk14:
 	{
 		auto const &entry{m_indirectdraws[index]};
 		auto const texture{Indirect_Shadow_Texture(entry.material)};
-		auto &program{m_cubeshadows ? (texture != null_handle ? *scene.cube_alpha_shadow : *scene.cube_shadow) : (texture != null_handle ? *scene.alpha_shadow : *scene.shadow)};
+		// a material which moves its vertices itself: its own program, with its textures; the draws of it alone go together
+		auto *own{own_shadow_program(entry.material)};
+		auto &program{own != nullptr ? *own :
+		              m_cubeshadows  ? (texture != null_handle ? *scene.cube_alpha_shadow : *scene.cube_shadow) :
+		                               (texture != null_handle ? *scene.alpha_shadow : *scene.shadow)};
 		auto *multidraw{m_indirectmultidraw ? multidraw_program(program) : nullptr};
 		auto last{index + 1};
 		if (multidraw != nullptr)
 		{
 			// the draws which follow in the same bank and of the same primitive, with the same texture for the alpha test
 			while ((last < count) && (last - index < longest) && (m_indirectdraws[last].group == entry.group) && (m_indirectdraws[last].type == entry.type) &&
-			       (m_indirectcommands[last].indexed == m_indirectcommands[index].indexed) && (Indirect_Shadow_Texture(m_indirectdraws[last].material) == texture))
+			       (m_indirectcommands[last].indexed == m_indirectcommands[index].indexed) && (Indirect_Shadow_Texture(m_indirectdraws[last].material) == texture) &&
+			       (own_shadow_program(m_indirectdraws[last].material) == own) && ((own == nullptr) || (m_indirectdraws[last].material == entry.material)))
 			{
 				++last;
 			}
 		}
-		if (texture != null_handle)
+		if (own != nullptr)
+		{
+			auto const &textures{m_materials.material(entry.material).textures};
+			for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
+			{
+				if (textures[unit] != null_handle)
+				{
+					walk_texture(unit, textures[unit]);
+				}
+			}
+		}
+		else if (texture != null_handle)
 		{
 			walk_texture(0, texture);
 		}
