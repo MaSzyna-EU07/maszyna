@@ -413,6 +413,10 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// the variant of a material program for multi draws (built with MODEL_DRAWS), made the first time it's asked for.
 	// nullptr if there's none (a program not fetched by Fetch_Shader(), or one which didn't compile)
 	gl::program *Multidraw_Program( gl::program const *Program );
+	// the program of the sun shadows of a material which moves its vertices in its own vertex shader (mat_<name>.vert, see
+	// Fetch_Shader()): that shader with MATERIAL_SHADOW and the shadow fragment shader (Alphatest: alphashadowmap.frag).
+	// nullptr for the materials of the common vertex shader, which the shadow programs draw as they are
+	gl::program *Material_Shadow_Program( material_handle const Material, bool const Alphatest );
 	// how the depth prepass treats the material: 0 left out, 1 drawn without alpha test, 2 with the alpha test of the diffuse texture
 	int Prepass_Class( material_handle const Material );
 	// depth of the whole opaque scene of the colour pass, before its colour (Global.gfx_depthprepass_scene): the colour pass
@@ -651,25 +655,9 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// programs of the multi draws: the vertex shader of the materials, variants of the material programs, of the depth prepass
 	std::unique_ptr<gl::shader> m_vertex_multidraw_shader;
 	std::unordered_map<gl::program const *, std::unique_ptr<gl::program>> m_multidrawprograms;
-	// Prewarm_Shaders(): the programs to draw with, the next one, and a small target of the formats of the colour pass with a
-	// triangle of no area to draw
-	struct shader_prewarm
-	{
-		bool started{ false };
-		std::vector<gl::program *> programs;
-		std::size_t next{ 0 };
-		std::size_t water{ 0 }; // programs of the windscreen water made ahead
-		bool water_done{ false };
-		std::unique_ptr<gl::renderbuffer> color;
-		std::unique_ptr<gl::renderbuffer> depth;
-		std::unique_ptr<gl::renderbuffer> motion;
-		std::unique_ptr<gl::framebuffer> target;
-		// one model block for the variants of the multi draws, which read theirs from a storage buffer (MODEL_DRAW_SSBO_BINDING)
-		std::unique_ptr<gl::ssbo> draws;
-		gfx::geometrybank_handle bank{};
-		gfx::geometry_handle triangle{};
-	};
-	shader_prewarm m_prewarm;
+	// the material programs with a vertex shader of their own (mat_<name>.vert), and their programs of the sun shadows
+	std::unordered_set<gl::program const *> m_ownvertexprograms;
+	std::unordered_map<gl::program const *, std::unique_ptr<gl::program>> m_materialshadowprograms[ 2 ];
 	std::unique_ptr<gl::program> m_prepass_multidraw_shader;
 	std::unique_ptr<gl::program> m_prepass_alpha_multidraw_shader;
 	std::unique_ptr<gl::program> m_shadow_multidraw_shader; // and of the sun shadows
