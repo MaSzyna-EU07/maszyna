@@ -8099,7 +8099,9 @@ void TController::control_tractive_force() {
         }
         else if( velocity > VelDesired + SpeedCtrlMargin
               || ( fAccGravity < -0.01 ?
-                        AccDesired < 0.0 :
+                        AccDesired < 0.0
+                        // holding the speed uphill on the way to a stop asks for no speeding up
+                        || ( VelNext == 0.0 && ActualProximityDist <= fMaxProximityDist && AbsAccS > AccDesired + 0.05 ) :
                         AbsAccS > AccDesired + 10.05 )
                || IsAnyCouplerStretched ) {
                 // jak za bardzo przyspiesza albo prędkość przekroczona
