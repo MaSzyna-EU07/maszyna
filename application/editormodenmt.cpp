@@ -1905,6 +1905,31 @@ bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 		if (ImGui::Button(cancel, ImVec2(0.0f, tall_button_height())))
 			state.moving = false;
 	}
+	// the other way round: the place clicked is where the camera stands now, the middle of the scenery follows from it. It puts
+	// the scenery back where it belongs after "The scenery is here" moved it: fly the camera to a place known on the map (a
+	// station, a crossing), click that place on the map, and assign
+	ImGui::BeginDisabled(false == map.picked());
+	if (ImGui::Button(STR_C("Assign from the camera"), ImVec2(-FLT_MIN, 0.0f)))
+	{
+		auto const point{map.point()};
+		// E = E0 - x, N = N0 + z of the camera
+		nmt_place_scenery({point.x + Camera.Pos.x, point.y - Camera.Pos.z});
+		placed = true;
+	}
+	ImGui::EndDisabled();
+	item_tooltip("The place clicked on the map is where the camera stands now: the middle of the scenery is set from it, so the orthophoto, the terrain model "
+	             "and the map lie under the scenery again. Fly the camera to a place you know on the map (a station, a crossing), click that place and assign");
+	read_georeference();
+	if (m_georeference)
+	{
+		if (ImGui::Button(STR_C("The middle the scenery file gives"), ImVec2(-FLT_MIN, 0.0f)))
+		{
+			nmt_place_scenery({m_georeference_origin.y, m_georeference_origin.x});
+			placed = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", m_georeference_line.c_str());
+	}
 	return placed;
 }
 
