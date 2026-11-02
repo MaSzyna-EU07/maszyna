@@ -33,6 +33,17 @@ http://mozilla.org/MPL/2.0/.
 #include <imgui/imgui_impl_opengl3.h>
 #include <filesystem>
 
+namespace
+{
+// the camera of a pass in the world for the scene block (gl::scene_ubs::camera_hi, camera_lo)
+void scene_camera_place(gl::scene_ubs &Ubs, glm::dvec3 const &Place)
+{
+	auto const high{glm::floor(Place / 64.0) * 64.0};
+	Ubs.camera_hi = glm::vec4{glm::vec3{high}, 0.f};
+	Ubs.camera_lo = glm::vec4{glm::vec3{Place - high}, 0.f};
+}
+} // namespace
+
 //#define EU07_DEBUG_OPENGL
 
 int constexpr EU07_PICKBUFFERSIZE{ 1024 }; // size of (square) textures bound with the pick framebuffer
@@ -1694,6 +1705,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		m_skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
         scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_colorpass.pass_camera.modelview() } } );
+        scene_camera_place( scene_ubs, m_colorpass.pass_camera.position() );
         scene_ubo->update(scene_ubs);
 		scene_ubo->bind_uniform();
 		// the water on the windscreens of the cab: a step of its simulation once a frame, its storage for the glasses of every view
@@ -1866,6 +1878,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		// back to the rotation of the camera after the faces of the environment map, which are drawn with their own
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+		scene_camera_place(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 
@@ -2224,6 +2237,8 @@ if (!Global.gfx_skippipeline)
 		auto csmstageboundaries { Shadow_Fixed_Splits() };
 		// the rotation of the camera of the view, given back to the scene block after the cascades
 		auto const colorinvview { scene_ubs.inv_view };
+		auto const colorcamerahi { scene_ubs.camera_hi };
+		auto const colorcameralo { scene_ubs.camera_lo };
 		// the cascades fitted to the depth of the view (gfx.shadow.sdsm) go between the distances of its pixels, each map
 		// covering the area of the pixels its cascade takes
 		std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> fitareas;
@@ -2254,6 +2269,7 @@ if (!Global.gfx_skippipeline)
             // the rotation of the camera of this pass (the sun's): the shaders which put the model in the world (mat_vat.vert, the
             // moment of the animation of every one of the people from its turn) see the same turn as in the color pass
             scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_renderpass.pass_camera.modelview() } } );
+            scene_camera_place( scene_ubs, m_renderpass.pass_camera.position() );
             auto const csmstagezfar {
                 (csmstageboundaries[ idx + 1 ])
               + ( m_shadowpass.size() - idx ) }; // we can fairly safely add some extra padding in the early stages
@@ -2273,6 +2289,8 @@ if (!Global.gfx_skippipeline)
         }
 		m_shadow_fb->unbind();
 		scene_ubs.inv_view = colorinvview;
+		scene_ubs.camera_hi = colorcamerahi;
+		scene_ubs.camera_lo = colorcameralo;
 		scene_ubo->update( scene_ubs );
 
 		glDebug("rendermode::shadows end");
@@ -2310,6 +2328,7 @@ if (!Global.gfx_skippipeline)
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		// world space directions of the shading of the face (the sky, the directional ambient light)
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+		scene_camera_place(scene_ubs, m_renderpass.pass_camera.position());
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 		// the passes after this one expect the state the opaque scenery left behind (depth writes on, no blending)
@@ -5893,6 +5912,7 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{View}});
+	scene_camera_place(scene_ubs, Eye);
 	scene_ubs.time = 0.f;
 	for (auto idx = 0; idx < m_shadowpass.size(); ++idx)
 	{
@@ -6705,9 +6725,12 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	setup_matrices();
 	auto const colorprojection{scene_ubs.projection};
 	auto const colorinvview{scene_ubs.inv_view};
+	auto const colorcamerahi{scene_ubs.camera_hi};
+	auto const colorcameralo{scene_ubs.camera_lo};
 	scene_ubs.projection = projection;
-	// the rotation of the projector, as the one of the sun in its shadows (see rendermode::shadows)
+	// the rotation and the place of the projector, as the ones of the sun in its shadows (see rendermode::shadows)
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{camera.modelview()}});
+	scene_camera_place(scene_ubs, camera.position());
 	scene_ubo->update(scene_ubs);
 
 	m_localshadows.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
@@ -6724,6 +6747,8 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	m_localshadows.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	scene_ubs.projection = colorprojection;
 	scene_ubs.inv_view = colorinvview;
+	scene_ubs.camera_hi = colorcamerahi;
+	scene_ubs.camera_lo = colorcameralo;
 	scene_ubo->update(scene_ubs);
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);

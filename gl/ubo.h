@@ -197,9 +197,14 @@ namespace gl
         // wiper_timer_return (mat_bugs_windscreen: what hit the glass since a blade went over it); -1 not known
         glm::vec4 wiper_bugs_out;
         glm::vec4 wiper_bugs_return;
+        // the place of the camera of the pass in the world, which the models are drawn relative to: xyz of camera_hi the place
+        // rounded down to whole 64 metres, of camera_lo the rest (both exact in floats), w unused. mat_vat.vert puts a model in the
+        // world with them, inv_view and its modelview (the moment of its animation from its place)
+        glm::vec4 camera_hi;
+        glm::vec4 camera_lo;
     };
 
-    static_assert(sizeof(scene_ubs) == 960 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 992 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
 
     const size_t MAX_PARAMS = 3;
 
