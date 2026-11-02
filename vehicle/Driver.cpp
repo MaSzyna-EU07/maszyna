@@ -7927,6 +7927,10 @@ TController::adjust_desired_speed_for_braking_test() {
     if( false == AIControllFlag ) { return; } // TBD: add notification about braking test and enable it for human driver as well?
 
     auto const vel { DirectionalVel() };
+    // what the route ahead asks for; the test may brake harder than that, never softer
+    auto const routeaccdesired { AccDesired };
+    auto const routeaccdesiredgravity { fAccDesiredGravity };
+    auto const routeveldesired { VelDesired };
 
     switch( DynamicBrakeTest ) {
         case 0: {
@@ -7992,6 +7996,14 @@ TController::adjust_desired_speed_for_braking_test() {
         default: {
             break;
         }
+    }
+    // a stop or a restriction coming up while the test runs takes precedence
+    if( ( DynamicBrakeTest >= 1 )
+     && ( DynamicBrakeTest <= 3 )
+     && ( routeaccdesired < AccDesired ) ) {
+        AccDesired = routeaccdesired;
+        fAccDesiredGravity = routeaccdesiredgravity;
+        VelDesired = std::min( VelDesired, routeveldesired );
     }
 }
 
