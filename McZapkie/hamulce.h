@@ -421,6 +421,10 @@ class TBrake
 	double GetVRP() const; // cisnienie komory wstepnej rozdzielacza
 	/// <summary>Returns control reservoir (ZS) pressure [bar]; defaults to the auxiliary reservoir for valves without a dedicated ZS.</summary>
 	virtual double GetCRP(); // cisnienie zbiornika sterujacego
+	/// <summary>Share of the full cylinder pressure the distributor settles at for the given share
+	/// of the full service pipe drop. Used only to predict the brake force; the default is proportional.</summary>
+	/// <param name="Ratio">Share of the full service brake pipe drop.</param>
+	virtual double GetBrakeRatio(double const Ratio) const { return Ratio; }
 	/// <summary>
 	/// Sets the brake delay (G/P/R/M) selector if requested mode is supported.
 	/// </summary>

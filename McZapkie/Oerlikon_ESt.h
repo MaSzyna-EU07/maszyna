@@ -197,6 +197,7 @@ class TNESt3 : public TBrake {
     double GetCRP() override;
     double GetRapidRatio(double const Vel) const override;
     double CelBCP(double const CVP, double const VVP) const; // docelowe cisnienie w cylindrze
+    double GetBrakeRatio(double const Ratio) const override; // udzial cisnienia w cylindrze dla udzialu spadku w PG
     void CheckState(double const BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double const dt); // odluzniacz
     double CVs(double const BP) const; // napelniacz sterujacego

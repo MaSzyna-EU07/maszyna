@@ -351,6 +351,17 @@ double TNESt3::GetCRP()
     //  return Miedzypoj.P;
 }
 
+double TNESt3::GetBrakeRatio( double const Ratio ) const // udzial cisnienia w cylindrze dla udzialu spadku w PG
+{
+    if( MaxBP <= 0.0 || BVM <= 0.0 ) {
+        return Ratio;
+    }
+    // pelny spadek sluzbowy w PG (HPP - LPP), odtworzony z przelozenia
+    double const spadek{ MaxBP / BVM + dPSprezyny };
+    double const cel{ ( Ratio * spadek - dPSprezyny ) * BVM };
+    return ( cel > 0.0 ? std::max( cel, pStopnia ) / MaxBP : 0.0 );
+}
+
 double TNESt3::CelBCP( double const CVP, double const VVP ) const // docelowe cisnienie w cylindrze
 {
     double const cel{ ( CVP - dPSprezyny - VVP ) * BVM };

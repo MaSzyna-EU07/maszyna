@@ -5091,6 +5091,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 double TMoverParameters::BrakeForceR(double ratio, double velocity)
 {
 	double press = 0;
+	ratio = Hamulec->GetBrakeRatio(ratio);
 	if (MBPM > 2)
 	{
 		press = MaxBrakePress[1] + (MaxBrakePress[3] - MaxBrakePress[1]) * std::min(1.0, (TotalMass - Mass) / (MBPM - Mass));
