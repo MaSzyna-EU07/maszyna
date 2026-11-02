@@ -371,6 +371,9 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     // the insects met when the blades were at the ends of their sweep (mat_bugs_windscreen), see gl::scene_ubs
     vec4 wiper_bugs_out;
     vec4 wiper_bugs_return;
+    // the place of the camera of the pass in the world (whole 64 m, the rest), see gl::scene_ubs
+    vec4 camera_hi;
+    vec4 camera_lo;
 };
 
 #ifdef STAGE_VERTEX
