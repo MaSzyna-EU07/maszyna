@@ -8110,11 +8110,7 @@ void TController::control_tractive_force() {
             cue_action( driver_hint::mastercontrollersetzerospeed );
         }
         else if( velocity > VelDesired + SpeedCtrlMargin
-              || ( fAccGravity < -0.01 ?
-                        AccDesired < 0.0
-                        // holding the speed uphill on the way to a stop asks for no speeding up
-                        || ( VelNext == 0.0 && ActualProximityDist <= fMaxProximityDist && AbsAccS > AccDesired + 0.05 ) :
-                        AbsAccS > AccDesired + 10.05 )
+              || ( fAccGravity < -0.01 ? is_too_fast_uphill() : AbsAccS > AccDesired + 10.05 )
                || IsAnyCouplerStretched ) {
                 // jak za bardzo przyspiesza albo prędkość przekroczona
 				// dodany wyjatek na "pelna w przod"
@@ -8124,6 +8120,13 @@ void TController::control_tractive_force() {
 
     control_handles();
     SpeedSet(); // ciągla regulacja prędkości
+}
+
+bool TController::is_too_fast_uphill() const {
+
+    if( AccDesired < 0.0 ) { return true; }
+    // holding the speed uphill on the way to a stop asks for no speeding up
+    return ( VelNext == 0.0 && ActualProximityDist <= fMaxProximityDist && AbsAccS > AccDesired + 0.05 );
 }
 
 void TController::increase_tractive_force() {

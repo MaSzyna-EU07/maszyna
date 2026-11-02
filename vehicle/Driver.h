@@ -358,6 +358,7 @@ private:
     void control_motor_connectors();
     void control_tractive_force();
     void increase_tractive_force();
+    bool is_too_fast_uphill() const;
     void control_braking_force();
     // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
     // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
