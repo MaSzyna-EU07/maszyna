@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <cmath>
 #include <map>
 #include <optional>
 #include <string>
@@ -48,11 +49,13 @@ struct record
 	std::string number{"-"};
 	std::string source{"designed"}; // designed: from the catalogue, measured: copied from a switch of the scenery
 	double middle{0.0}; // the radius in the middle of the slip curves of a double slip with the blades outside of the diamond
-	// a crossover laid along a curve: the outer track went up by lift over it, level between the two points, with ramps of
-	// ramp m on both sides
+	// a crossover laid along a curve: the outer track went up by lift at the first point and by lift_end at the second, in a straight
+	// line between them, with ramps of ramp m on both sides
 	double lift{0.0};
+	double lift_end{0.0};
 	glm::dvec3 lift_from{0.0}, lift_to{0.0};
 	double ramp{0.0};
+	bool lifted() const { return std::abs(lift) > 0.002 || std::abs(lift_end) > 0.002; }
 };
 
 void reset();

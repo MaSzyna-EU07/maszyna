@@ -125,11 +125,13 @@ void mark(scene::layer_handle const Layer)
 		text += " number " + word(entry.number) + " source " + word(entry.source);
 		if (entry.middle > 0.0)
 			text += format(" middle %.3f", entry.middle);
-		if (entry.lift != 0.0)
+		if (entry.lift != 0.0 || entry.lift_end != 0.0)
 		{
 			auto const from{context.to_local(entry.lift_from)};
 			auto const to{context.to_local(entry.lift_to)};
 			text += format(" lift %.4f %.4f %.4f %.4f %.4f %.4f %.4f ramp %.3f", entry.lift, from.x, from.y, from.z, to.x, to.y, to.z, entry.ramp);
+			if (entry.lift_end != entry.lift)
+				text += format(" liftend %.4f", entry.lift_end);
 		}
 		lines.push_back(text);
 	}
@@ -194,9 +196,12 @@ void load()
 				{
 					glm::dvec3 from{0.0}, to{0.0};
 					line >> entry.lift >> from.x >> from.y >> from.z >> to.x >> to.y >> to.z >> keyword >> entry.ramp;
+					entry.lift_end = entry.lift;
 					entry.lift_from = context.to_world(from);
 					entry.lift_to = context.to_world(to);
 				}
+				else if (keyword == "liftend")
+					line >> entry.lift_end;
 			}
 			entry.start = context.to_world(start);
 			ahead = context.to_world(start + glm::dvec3{direction.x, 0.0, direction.y});

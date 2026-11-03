@@ -386,7 +386,7 @@ void editor_mode::insert_partner_connection()
 	switch_store::follow();
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	records_to_history();
-	if (std::abs(crossover->record.lift) > 0.002)
+	if (crossover->record.lifted())
 		profiles_to_history(std::move(library));
 	auto const from{editor_track::find_straight(*nearplain, m_straights.tolerance)};
 	auto const to{editor_track::find_straight(*farplain, m_straights.tolerance)};
