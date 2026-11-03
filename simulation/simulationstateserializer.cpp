@@ -543,6 +543,12 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "track" ) {
 
         auto *path { deserialize_path( Input, Scratchpad, nodedata ) };
+        if( path->eType == tt_Unknown ) {
+            // with no path made it can't be joined nor drawn, and nothing could run on it
+            ErrorLog( "Bad scenario: track \"" + path->name() + "\" of an unknown type defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ") left out" );
+            delete path;
+            return;
+        }
         // duplicates of named tracks are currently experimentally allowed
         if( false == simulation::Paths.insert( path ) ) {
             ErrorLog( "Bad scenario: duplicate track name \"" + path->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );
