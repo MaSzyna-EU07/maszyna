@@ -435,6 +435,28 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::size_t lines{0}; // grade lines fitted and applied
 		std::size_t refused{0}; // grade lines the checks didn't let apply
 		std::size_t departures{0}; // grade lines parting from the terrain model by much
+		// what the last putting of the tracks onto the terrain found, listed in the panel to be looked at: a line the checks
+		// refused, a line parting from the model by much, a path which didn't take its line
+		struct finding
+		{
+			enum class kind
+			{
+				refused,
+				off,
+				parted
+			};
+			kind what{kind::refused};
+			TTrack *from{nullptr}; // the ends of the line, for its profile
+			TTrack *to{nullptr};
+			double length{0.0};
+			glm::dvec3 where{0.0}; // the place to look at
+			std::string text;
+			double size{0.0}; // m the line or the path is off by: of one kind the worst told first
+		};
+		std::vector<finding> findings;
+		bool result{false}; // the putting onto the terrain ended: what it did is told in the panel until the next one
+		bool run{false}; // the tracks are being put onto the terrain, the chunks after the grade lines too: the steps told
+		std::size_t fetch_most{0}; // the most squares of the model waited for since the loading began, for its progress
 		// the terrain made under the tracks as they are: the model drawn to them by the difference found at the places along them,
 		// fading out away from them into the offset of the whole scenery
 		bool under{false};
@@ -506,9 +528,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_restore_terrain(std::vector<TTrack *> const &Tracks);
 	// the terrain of the selected tracks in the panel of the tracks
 	void render_track_terrain(std::vector<TTrack *> const &Tracks);
-	// all the tracks of the scenery onto the terrain model, or it under them: step 3 of the terrain model (Terrain_panel), and in
+	// all the tracks of the scenery onto the terrain model, or it under them: step 2 of the terrain model (Terrain_panel), and in
 	// the panel of the tracks
 	void render_nmt_all_tracks(bool const Terrain_panel);
+	// what the last putting of the tracks onto the terrain did, and the places it found to be looked at, each to be shown
+	void render_nmt_result();
+	// a line from From to To being put onto the terrain kept to be looked at: the place of it to show and what's wrong there
+	void nmt_note(nmt_state::finding::kind const What, TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Where, std::string Text, double const Size = 0.0);
+	// the place found shown in the 3d view with the track there selected; Profile: the profile of its line opened too
+	void nmt_show(nmt_state::finding const &Finding, bool const Profile);
 	// the chunks waiting for the terrain model and the tiles of the imagery asked for outlined where they will be, so it's seen
 	// what's on its way
 	void draw_nmt_pending() const;

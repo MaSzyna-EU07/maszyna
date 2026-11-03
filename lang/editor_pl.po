@@ -12795,8 +12795,8 @@ msgstr "Nowy tor częściowo schowany w ziemi: komunikat nad widokiem ma przycis
 msgid "One grade line for nearly parallel tracks under 5.1 m apart"
 msgstr "Wspólna niweleta dla torów równoległych bliżej niż 5,1 m"
 
-msgid "Nearly parallel tracks under 5.1 m apart lie on one grade line, so the switches and crossovers between them stay in one plane. A run of tracks from switch to switch going away from the others by more has a grade line of its own; on timbers common with a switch they always lie on one surface. A hump and tracks over 2 m apart in height keep theirs. Off: each track follows the terrain by itself"
-msgstr "Tory biegnące prawie równolegle, bliżej niż 5,1 m, leżą na jednej niwelecie, więc rozjazdy i przejścia między nimi zostają w jednej płaszczyźnie. Ciąg torów od rozjazdu do rozjazdu, który odchodzi od reszty dalej, ma własną niweletę; tory i rozjazdy na wspólnych podrozjazdnicach leżą zawsze na jednej płaszczyźnie. Górka rozrządowa i tory różniące się wysokością o ponad 2 m zachowują swoją. Wyłączone: każdy tor idzie za terenem osobno"
+msgid "Nearly parallel tracks under 5.1 m apart lie on one grade line, so the switches and crossovers between them stay in one plane. A run of tracks from switch to switch with nothing beside it over more than 15 m and a quarter of its length has a grade line of its own; on timbers common with a switch they always lie on one surface. A hump, steep tracks and tracks over 1 m apart in height keep theirs. Off: each track follows the terrain by itself"
+msgstr "Tory biegnące prawie równolegle, bliżej niż 5,1 m, leżą na jednej niwelecie, więc rozjazdy i przejścia między nimi zostają w jednej płaszczyźnie. Ciąg torów od rozjazdu do rozjazdu, który nie ma toru obok na ponad 15 m i ponad ćwierci swojej długości, ma własną niweletę; tory i rozjazdy na wspólnych podrozjazdnicach leżą zawsze na jednej płaszczyźnie. Górka rozrządowa, tory strome i tory różniące się wysokością o ponad 1 m zachowują swoją. Wyłączone: każdy tor idzie za terenem osobno"
 
 msgid "Move the whole common grade line"
 msgstr "Przesuwaj całą wspólną niweletę"
@@ -13079,3 +13079,90 @@ msgstr "Osobno od nierówności, mm. Puste: wartość nierówności"
 
 msgid "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Empty: 0.4 of the unevenness"
 msgstr "Głębokość zapadnięcia na każdym styku szyn, co odstęp styków. Działa też przy nierównościach 0. Puste: 0,4 nierówności"
+msgid "No line of tracks runs over the track"
+msgstr "Żadna linia torów nie przebiega przez ten tor"
+
+msgid "The line has no profile"
+msgstr "Linia nie ma profilu"
+
+msgid "The path %s keeps off the line by %.2f m"
+msgstr "Tor %s odstaje od niwelety o %.2f m"
+
+msgid "Over a dip of the model %.1f m deep along %.0f m: a bridge, a culvert or the model off"
+msgstr "Nad zagłębieniem NMT głębokim na %.1f m na długości %.0f m: most, przepust albo błąd NMT"
+
+msgid "Under the model by %.1f m along %.0f m: a cutting, a wall or the model off"
+msgstr "Poniżej NMT o %.1f m na długości %.0f m: przekop, mur albo błąd NMT"
+
+msgid "What the last putting onto the terrain did"
+msgstr "Wynik ostatniego dopasowania torów do terenu"
+
+msgid "lines fitted"
+msgstr "niwelet dopasowanych"
+
+msgid "refused"
+msgstr "odrzucone"
+
+msgid "off the line"
+msgstr "poza niweletą"
+
+msgid "apart from the model"
+msgstr "odstaje od NMT"
+
+msgid "Turntables set level: %zu"
+msgstr "Obrotnice wypoziomowane: %zu"
+
+msgid "Nothing to look at: every line lies on the model"
+msgstr "Nie ma czego sprawdzać: wszystkie linie leżą na NMT"
+
+msgid "To look at, each with its place and its profile:"
+msgstr "Do sprawdzenia, każde z miejscem i profilem:"
+
+msgid "The place in the 3d view, the track there selected"
+msgstr "Miejsce w widoku 3D, z zaznaczonym torem"
+
+msgid "The profile of the line opened: its grade line, the terrain model under it and what the checks say"
+msgstr "Otwiera profil linii: niweletę, NMT pod nią i uwagi kontroli"
+
+msgid "Show the %zu track not fitted"
+msgid_plural "Show the %zu tracks not fitted"
+msgstr[0] "Pokaż %zu niedopasowany tor"
+msgstr[1] "Pokaż %zu niedopasowane tory"
+msgstr[2] "Pokaż %zu niedopasowanych torów"
+
+msgid "They are selected, the first one in the 3d view"
+msgstr "Zaznacza je i pokazuje pierwszy w widoku 3D"
+
+msgid "The terrain of the model only, the tracks as they are"
+msgstr "Sam teren z NMT, tory bez zmian"
+
+msgid "Settings"
+msgstr "Ustawienia"
+
+msgid "Height offset of the model (m)"
+msgstr "Przesunięcie NMT w pionie (m)"
+
+msgid "Added to the heights of the model, for a scenery built at heights of its own; the tracks put onto the terrain find it by themselves"
+msgstr "Dodawane do wysokości NMT, dla scenerii zbudowanej na własnych wysokościach; „Tory na teren” znajduje je samo"
+
+msgid "Recommended: the tracks go down or up onto the real terrain, each line on a grade line within its norms, with the formation and the slopes"
+msgstr "Zalecane: tory schodzą albo wchodzą na prawdziwy teren, każda linia na niwelecie w swoich normach, z torowiskiem i skarpami"
+
+msgid "The tracks stay at their heights and the terrain comes up or down to them: for a scenery built level or at heights of its own"
+msgstr "Tory zostają na swoich wysokościach, a teren podnosi się albo obniża do nich: dla scenerii zbudowanej na płasko albo na własnych wysokościach"
+
+msgid "The terrain of the model only"
+msgstr "Sam teren z NMT"
+
+msgid "The real terrain along the tracks as it is; the tracks stay where they are, under it or over it"
+msgstr "Prawdziwy teren wzdłuż torów taki, jaki jest; tory zostają, gdzie są, pod nim albo nad nim"
+
+msgid "the line %s, %.0f m"
+msgstr "linia %s, %.0f m"
+
+msgid "The terrain model has no data under the line"
+msgstr "NMT nie ma danych pod linią"
+
+msgid "No grade line fits the terrain model under the line"
+msgstr "Żadna niweleta nie pasuje do NMT pod linią"
+

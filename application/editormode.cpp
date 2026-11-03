@@ -699,7 +699,7 @@ bool editor_mode::init()
     auto const &model{EditorSettings.terrain_model()};
     m_nmt_state.grow = EditorSettings.terrain_while_laying();
     m_nmt_state.band = std::clamp(model.band, 50.0, 3000.0);
-    m_nmt_state.shape = model.shape;
+    // the formation and the slopes are always made along the tracks: the switch of them is gone, a setting left off by it isn't kept
     m_nmt_state.follow = model.follow;
     m_terrain_add_count = std::clamp(model.around, 1, 8);
     EditorModelSets.load();
@@ -1797,6 +1797,12 @@ void editor_mode::render_terrain_ui()
             ImGui::SetTooltip("%s", STR_C("Kept in the folder terrain/<name of the scenery>/ and written there with the scenery (Ctrl+S)"));
         return;
     }
+    // the real terrain first, open: the tracks put onto it from there
+    if (nmt_busy())
+        ImGui::SetNextItemOpen(true);
+    if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
+        render_nmt_ui();
+
     // the tools are chosen in the toolbar, here are their settings
     if (ImGui::CollapsingHeader(STR_C("Chunks"), m_terrain_tool == terrain_tool::chunks ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
@@ -1826,11 +1832,6 @@ void editor_mode::render_terrain_ui()
                 ImGui::SetTooltip("%s", STR_C("The chunks under the model take its shape, and the model is removed"));
         }
     }
-
-    if (nmt_busy())
-        ImGui::SetNextItemOpen(true);
-    if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)")))
-        render_nmt_ui();
 
     if (ImGui::CollapsingHeader(STR_C("Chunk resolution"), m_terrain_tool == terrain_tool::spacing ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
