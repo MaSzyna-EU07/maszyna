@@ -78,8 +78,15 @@ void opengl46_windscreen_water::update_rain_cells(float const Time, float const 
 	// the glasses of the frame before read the cells, this one writes them
 	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	m_raincells->bind_base();
+	auto const groups = [](std::size_t const Count) { return static_cast<GLuint>((Count + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE); };
 	::glProgramUniform1f(*m_raincellprogram, 0, Time);
-	m_raincellprogram->dispatch(static_cast<GLuint>((gl::RAIN_CELLS_COUNT + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE));
+	::glProgramUniform1f(*m_raincellprogram, 1, Rain);
+	// the cells, then the reach of the drops into the quarters of each drop cell, which reads them
+	::glProgramUniform1i(*m_raincellprogram, 2, 0);
+	m_raincellprogram->dispatch(groups(gl::RAIN_MASK_BASE));
+	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+	::glProgramUniform1i(*m_raincellprogram, 2, 1);
+	m_raincellprogram->dispatch(groups(gl::RAIN_CELLS_COUNT - gl::RAIN_MASK_BASE));
 	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	gl::program::unbind();
 }

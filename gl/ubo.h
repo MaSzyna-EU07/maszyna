@@ -712,7 +712,9 @@ namespace gl
     const size_t RAIN_DROP_CELLS = 512;
     const size_t RAIN_RIV_CELLS = 128;
     const size_t RAIN_RIV_LAYERS = 5;
-    const size_t RAIN_CELLS_COUNT = RAIN_DROP_CELLS * RAIN_DROP_CELLS + RAIN_RIV_LAYERS * RAIN_RIV_CELLS * RAIN_RIV_CELLS;
+    // the cells (the first pass of rain_cells.comp), then the reach of the drops into the quarters of each drop cell (the second)
+    const size_t RAIN_MASK_BASE = RAIN_DROP_CELLS * RAIN_DROP_CELLS + RAIN_RIV_LAYERS * RAIN_RIV_CELLS * RAIN_RIV_CELLS;
+    const size_t RAIN_CELLS_COUNT = RAIN_MASK_BASE + RAIN_DROP_CELLS * RAIN_DROP_CELLS;
     const size_t RAIN_CELLS_GROUP_SIZE = 64;
     const GLuint WATER_UBO_BINDING = 6;
     const size_t WATER_MASK_TEX = MAX_TEXTURES + HELPER_TEXTURES + 13;
