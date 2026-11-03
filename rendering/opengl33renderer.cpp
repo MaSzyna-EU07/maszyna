@@ -3835,7 +3835,11 @@ void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 		auto const &beammodel = *bucket.model;
 		auto *model = beammodel.model;
 		if( bucket.part >= 0 ) {
-			// only the part of the model is visible, its siblings are skipped as the model is walked
+			// only the part of the model is visible, its siblings are skipped as the model is walked: the other parts, and what
+			// else the model has, like the fastenings of the rails, which aren't laid
+			for( auto *submodel = model->Root; submodel != nullptr; submodel = submodel->Next ) {
+				submodel->iVisible = 0;
+			}
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
 				beammodel.parts[ part ]->iVisible = ( part == bucket.part ? 1 : 0 );
 			}
@@ -3863,6 +3867,9 @@ void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 			++m_renderpass.draw_stats.instanced_drawcalls;
 		}
 		if( bucket.part >= 0 ) {
+			for( auto *submodel = model->Root; submodel != nullptr; submodel = submodel->Next ) {
+				submodel->iVisible = 1;
+			}
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
 				beammodel.parts[ part ]->iVisible = 1;
 			}
