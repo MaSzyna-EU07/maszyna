@@ -1621,6 +1621,38 @@ bool terrain_streamer::remove_modifier(std::string const &Name)
 	return true;
 }
 
+std::size_t terrain_streamer::remove_modifiers(std::vector<std::string> const &Names)
+{
+	std::unordered_set<std::string> const names(Names.begin(), Names.end());
+	auto &list{m_manifest.modifiers};
+	auto const matches = [&](heightmap::modifier const &Item) { return names.contains(Item.name); };
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> areas;
+	for (auto const &item : list)
+		if (matches(item))
+			areas.push_back(item.bounds());
+	if (areas.empty())
+		return 0;
+	remember_manifest();
+	list.erase(std::remove_if(list.begin(), list.end(), matches), list.end());
+	m_manifestchanged = true;
+	// one by one, the thousands of a terrain made for another version of the scenery took minutes of the terrain led anew each time
+	std::unordered_map<editor_terrain *, std::pair<glm::dvec2, glm::dvec2>> reached;
+	for (auto const &[from, to] : areas)
+		for (auto *chunk : chunks_in(from, to, true))
+		{
+			auto const [found, fresh]{reached.try_emplace(chunk, from, to)};
+			if (false == fresh)
+			{
+				found->second.first = glm::min(found->second.first, from);
+				found->second.second = glm::max(found->second.second, to);
+			}
+		}
+	auto const bounds{modifier_bounds()};
+	for (auto const &[chunk, area] : reached)
+		apply_modifiers(*chunk, area.first, area.second, bounds);
+	return areas.size();
+}
+
 bool terrain_streamer::bake_modifier(std::string const &Name)
 {
 	auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Name; })};

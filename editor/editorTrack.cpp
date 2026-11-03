@@ -2337,6 +2337,82 @@ bool editor_track::find_route(TTrack *From, TTrack *To, route &Route, std::strin
 	return true;
 }
 
+bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Middle, route &Route)
+{
+	Route = {};
+	if (From == nullptr || To == nullptr || From == To || false == is_supported(*From) || false == is_supported(*To))
+		return false;
+	// depth first, a way given up as it gets longer than the route, or passes the half of it away from the middle; a line of some
+	// thousand paths is walked without the depth of calls
+	double constexpr kSlack{1.0}; // m
+	double constexpr kMiddle{2.0}; // m, the length along a path being measured on its curve only roughly
+	std::size_t constexpr kMost{200000}; // paths walked
+	std::size_t walked{0};
+	auto const half{Length * 0.5};
+	// how long the way is past the path, below 0 when the way can't go on along it
+	auto const along = [&](route_node const &Node, double const Before) {
+		bezier const curve{std::get<0>(Node)->m_paths[std::get<1>(Node)]};
+		auto const own{curve.plan_length(16)};
+		auto const after{Before + own};
+		if (after > Length + kSlack)
+			return -1.0;
+		if (Before <= half && after >= half && own > 1e-6)
+		{
+			auto const share{(half - Before) / own};
+			if (geometry::plan_distance(curve.point(std::get<2>(Node) ? share : 1.0 - share), Middle) > kMiddle + own * 0.02)
+				return -1.0;
+		}
+		return after;
+	};
+	struct step
+	{
+		route_node node;
+		double after;
+		std::vector<route_node> next;
+		std::size_t index{0};
+	};
+	for (int i = 0; i < static_cast<int>(From->m_paths.size()); ++i)
+		for (auto const forward : {true, false})
+		{
+			route_node const first{From, i, forward};
+			auto const length{along(first, 0.0)};
+			if (length < 0.0)
+				continue;
+			std::vector<step> way{{first, length, route_next(first)}};
+			std::unordered_set<TTrack const *> on_way{From};
+			while (false == way.empty() && walked < kMost)
+			{
+				auto &top{way.back()};
+				if (top.index >= top.next.size())
+				{
+					on_way.erase(std::get<0>(top.node));
+					way.pop_back();
+					continue;
+				}
+				auto const node{top.next[top.index++]};
+				auto *track{std::get<0>(node)};
+				if (on_way.contains(track))
+					continue;
+				++walked;
+				auto const after{along(node, top.after)};
+				if (after < 0.0)
+					continue;
+				if (track == To)
+				{
+					if (std::abs(after - Length) > kSlack)
+						continue;
+					for (auto const &done : way)
+						Route.spans.push_back({std::get<0>(done.node), std::get<1>(done.node), std::get<2>(done.node)});
+					Route.spans.push_back({track, std::get<1>(node), std::get<2>(node)});
+					return true;
+				}
+				on_way.insert(track);
+				way.push_back({node, after, route_next(node)});
+			}
+		}
+	return false;
+}
+
 editor_track::route editor_track::run_route(TTrack &Track, double const Maximum, int const Path)
 {
 	route result;

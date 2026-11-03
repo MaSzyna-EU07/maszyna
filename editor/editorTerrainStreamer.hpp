@@ -140,6 +140,8 @@ class terrain_streamer
 	// the modifiers whose names start so are forgotten, the chunks keep their heights till they're made anew; returns how many
 	std::size_t drop_modifiers(std::string const &Prefix);
 	bool remove_modifier(std::string const &Name);
+	// many at once, as the formations of tracks gone: each chunk they reach is led anew once; returns how many
+	std::size_t remove_modifiers(std::vector<std::string> const &Names);
 	// the ground takes the shape the modifier gives it for good, and the modifier is removed: from then on the
 	// terrain there is shaped by hand like anywhere else
 	bool bake_modifier(std::string const &Name);

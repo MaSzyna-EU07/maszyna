@@ -188,12 +188,14 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			}
 			if (isswitch && track->m_paths.size() >= 2)
 			{
-				// the far end of the second path against the plane the first path and its grade make
+				// the far end of the second path against the first as far along it, in its plane or on the vertical curve it lies on
 				geometry::bezier const main{track->m_paths[0]};
 				geometry::bezier const branch{track->m_paths[1]};
-				auto const direction{main.first(0.0)};
-				auto const grade{direction.y / std::max(1e-6, std::hypot(direction.x, direction.z))};
-				auto const off{branch.point(1.0).y - (branch.point(0.0).y + grade * std::hypot(branch.point(1.0).x - branch.point(0.0).x, branch.point(1.0).z - branch.point(0.0).z))};
+				auto const chord{geometry::plan_of(main.point(1.0) - main.point(0.0))};
+				auto const along{glm::dot(geometry::plan_of(branch.point(1.0) - main.point(0.0)), chord) / std::max(1e-9, glm::dot(chord, chord))};
+				auto const last{main.first(1.0)};
+				// a second path reaching past the end of the first against the grade the first ends with
+				auto const off{branch.point(1.0).y - (main.point(std::clamp(along, 0.0, 1.0)).y + std::max(0.0, along - 1.0) * glm::length(chord) * last.y / std::max(1e-6, std::hypot(last.x, last.z)))};
 				if (std::abs(off) > 0.03)
 				{
 					++faults;

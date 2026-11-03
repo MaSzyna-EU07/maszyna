@@ -439,8 +439,15 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 		auto const index{static_cast<std::size_t>(std::distance(Chainages.begin(), next))};
 		auto const run{Chainages[index] - Chainages[index - 1]};
 		auto const measured{run > 1e-9 ? Elevations[index - 1] + (Elevations[index] - Elevations[index - 1]) * (point.chainage - Chainages[index - 1]) / run : Elevations[index]};
-		auto const radius{radius_for_sagitta(result, i, measured - point.elevation)};
-		if (radius > 0.0)
+		auto radius{radius_for_sagitta(result, i, measured - point.elevation)};
+		// of a change of grade too small to tell its curve by, the sagitta is the millimetres of the track: the curve is no longer
+		// than half the grades on either side of it, off the curves beside and the ends
+		auto room{std::numeric_limits<double>::max()};
+		if (auto const change{std::abs(grade_after(result, i) - grade_after(result, i - 1))}; change > 1e-9)
+			room = std::min(point.chainage - result.points[i - 1].chainage, result.points[i + 1].chainage - point.chainage) / change;
+		if (radius > room)
+			point.radius = std::floor(room);
+		else if (radius > 0.0)
 			point.radius = std::round(radius);
 	}
 	if (Options.detail <= 0.0)
@@ -947,6 +954,45 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			previous = i;
 		}
 		close();
+		// a structure comes to an end. The ground parted from the line up to a loose end of it, however far, back to the first bank or
+		// wall, is only the line going on at the grade it left the ground with, as six metres under a level field past a viaduct it
+		// had to keep to
+		auto const loose_end = [&](bool const Atend) {
+			std::vector<std::size_t> stretch;
+			std::size_t behind{0};
+			int way{0};
+			double most{0.0};
+			for (std::size_t index = 0; index < count; ++index)
+			{
+				auto const i{Atend ? count - 1 - index : index};
+				if (false == std::isfinite(Ground[i]) || told(i) < tolerance)
+					continue;
+				// the ground coming to an end short of the end of the line: what's past it isn't ground, the line ends on a structure
+				if (stretch.empty() && std::abs(Chainages[i] - Chainages[Atend ? count - 1 : 0]) > chord)
+					break;
+				auto const off{x[cell[i]] * (1.0 - part[i]) + x[cell[i] + 1] * part[i] - Ground[i]};
+				auto const now{followed[i] > 0.0 ? 0 : off > reach(i) ? 1 : off < -reach(i) ? -1 : 0};
+				if (now == 0 || (way != 0 && now != way))
+					break;
+				way = now;
+				while (behind + 1 < stretch.size() && std::abs(Chainages[i] - Chainages[stretch[behind + 1]]) >= chord)
+					++behind;
+				if (false == stretch.empty())
+					if (auto const along{std::abs(Chainages[i] - Chainages[stretch[behind]])}; along >= chord && std::abs(Ground[i] - Ground[stretch[behind]]) / along > Options.follow_steepest / 1000.0)
+						break;
+				most = std::max(most, std::abs(off));
+				stretch.push_back(i);
+			}
+			if (stretch.empty() || std::abs(Chainages[stretch.back()] - Chainages[stretch.front()]) <= Options.follow_length)
+				return;
+			for (auto const i : stretch)
+				followed[i] = most + tolerance;
+			more = true;
+		};
+		if (false == start_fixed)
+			loose_end(false);
+		if (false == end_fixed)
+			loose_end(true);
 		if (false == more)
 			break;
 		solve();

@@ -728,12 +728,15 @@ std::optional<editor_track::route> editor_mode::profile_stored_route(stored_prof
 	for (auto *from : touching(Entry.start))
 		for (auto *to : touching(Entry.end))
 		{
+			// the route of the fewest paths, or where the design was laid along another, the one as long through its middle; the length of
+			// a route comes with its samples
+			auto const fits = [&](editor_track::route &Route) {
+				auto const samples{editor_track::sample_route(Route, 1.0)};
+				return false == samples.empty() && std::abs(Route.length - Entry.length) <= 0.5 && plan_distance(samples.front().position, Entry.start) <= 0.1 && plan_distance(editor_track::sampled_position(samples, Route.length * 0.5), Entry.middle) <= 0.5;
+			};
 			editor_track::route route;
 			std::string error;
-			if (false == editor_track::find_route(from, to, route, error) || std::abs(route.length - Entry.length) > 0.5)
-				continue;
-			auto const samples{editor_track::sample_route(route, 1.0)};
-			if (samples.empty() || plan_distance(samples.front().position, Entry.start) > 0.1 || plan_distance(editor_track::sampled_position(samples, route.length * 0.5), Entry.middle) > 0.5)
+			if ((false == editor_track::find_route(from, to, route, error) || false == fits(route)) && (false == editor_track::find_route_along(from, to, Entry.length, Entry.middle, route) || false == fits(route)))
 				continue;
 			if (From != nullptr)
 				*From = from;
@@ -744,6 +747,91 @@ std::optional<editor_track::route> editor_mode::profile_stored_route(stored_prof
 	return std::nullopt;
 }
 
+std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unordered_set<TTrack const *> const &Moved)
+{
+	// the designs were applied to the tracks one line at a time, the grade lines shared moved the tracks after them: a design left as
+	// it was parts from them, and a profile opened over them reads the stretches changed from the track again, a polyline bending
+	// wherever it falls, on the switches too. Each is laid anew onto the tracks as they lie now, as a line is onto the ground, within a
+	// centimetre and to the norms; one which can't be without an error stays as it was
+	double constexpr kTolerance{0.01}; // m
+	double constexpr kReach{100.0}; // m, however far a track is, it's what the line keeps to
+	double constexpr kSteepest{50.0}; // per mille, as the lines are fitted to the terrain, past the limit of the norms
+	profile_library_load();
+	auto &state{m_profile};
+	auto const show_model{state.show_model};
+	state.show_model = false;
+	std::size_t refitted{0}, failed{0};
+	std::vector<scene::layer_handle> layers;
+	for (auto &entry : m_profiles)
+	{
+		auto route{profile_stored_route(entry)};
+		if (false == route.has_value() || std::none_of(route->spans.begin(), route->spans.end(), [&](editor_track::route_span const &Span) { return Moved.contains(Span.track); }))
+			continue;
+		state.route = std::move(*route);
+		profile_resample();
+		auto const &samples{state.samples};
+		if (samples.size() < 2)
+			continue;
+		state.line = entry.line;
+		state.changed = false;
+		profile_check();
+		if (state.departure <= kStale && false == has_errors(state.issues))
+			continue;
+		auto const before{state.departure};
+		// the tracks are no ground with structures to go past: the line keeps to all of them, as steep as they are, as sharply bent as
+		// on a hump the line was fitted to
+		std::vector<double> chainages, heights;
+		for (auto const &sample : samples)
+		{
+			chainages.push_back(sample.chainage);
+			heights.push_back(sample.position.y);
+		}
+		std::vector<double> const tolerances(samples.size(), kTolerance * 0.5);
+		std::vector<double> const reaches(samples.size(), kReach);
+		profile::ground_fit options;
+		options.tolerance = kTolerance;
+		options.grade_max = kSteepest;
+		options.humps = profile::humps(chainages, heights, state.context, kTolerance);
+		options.hump_radius = 300.0;
+		auto line{profile::fit_ground(chainages, heights, state.context, entry.line, options, tolerances, reaches)};
+		if (line.points.size() < 2)
+			continue;
+		state.line = std::move(line);
+		profile_check();
+		if (has_errors(state.issues))
+		{
+			++failed;
+			std::string errors;
+			for (auto const &issue : state.issues)
+				if (issue.error)
+					errors += " | " + issue.text;
+			WriteLog(format("Editor: vertical profile - the design of %.0f m from %.1f %.1f, %.3f m off the tracks moved, can't be laid onto them anew without an error, it stays as it was%s", state.route.length, entry.start.x, entry.start.z, before, errors.c_str()), logtype::generic);
+			continue;
+		}
+		++refitted;
+		entry.length = state.route.length;
+		entry.start = samples.front().position;
+		entry.end = samples.back().position;
+		entry.middle = editor_track::sampled_position(samples, state.route.length * 0.5);
+		entry.line = state.line;
+		entry.departure = state.departure;
+		for (auto &point : entry.line.points)
+			if (point.joint)
+			{
+				point.joint = false;
+				point.automatic = false;
+			}
+		layers.push_back(entry.layer);
+	}
+	state.show_model = show_model;
+	state.open = false;
+	state.route = {};
+	state.samples.clear();
+	if (false == layers.empty())
+		profile_library_mark(std::move(layers));
+	return {refitted, failed};
+}
+
 void editor_mode::profile_open_stored(std::size_t const Index)
 {
 	auto &state{m_profile};
@@ -752,9 +840,13 @@ void editor_mode::profile_open_stored(std::size_t const Index)
 	auto const entry{m_profiles[Index]};
 	TTrack *from{nullptr};
 	TTrack *to{nullptr};
-	if (profile_stored_route(entry, &from, &to).has_value())
+	// the route the design lies along, not the one of the fewest paths between its ends
+	if (auto route{profile_stored_route(entry, &from, &to)})
 	{
-		profile_open(from, to);
+		state.open = true;
+		state.status.clear();
+		state.error.clear();
+		profile_take(std::move(*route), from, to);
 		return;
 	}
 	state.open = true;

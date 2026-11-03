@@ -326,6 +326,14 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog("SELFTEST nmtauto " + which + ": " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
+	if (command == "shareexplain")
+	{
+		// the next sharing of the grade lines tells in the log of the runs of the tracks named
+		m_nmt_state.explain = " ";
+		for (std::string name; words >> name;)
+			m_nmt_state.explain += name + " ";
+		return selftest_result::handled;
+	}
 	if (command == "turntables")
 	{
 		// each turntable: the height of its rails and of the model in its pit; of each track running up to it the heights out along
@@ -791,7 +799,12 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				auto const grade{direction.y / std::max(1e-6, std::hypot(direction.x, direction.z))};
 				auto const end{branch.point(1.0)};
 				auto const start{branch.point(0.0)};
-				stream << "P " << track->name() << ' ' << line << ' ' << end.y - (start.y + grade * std::hypot(end.x - start.x, end.z - start.z)) << ' ' << grade * 1000.0 << ' ' << start.x << ' ' << start.z << '\n';
+				// against the first path as far along it, in its plane or on the vertical curve it lies on; past its end against the grade it ends with
+				auto const chord{geometry::plan_of(main.point(1.0) - main.point(0.0))};
+				auto const along{glm::dot(geometry::plan_of(end - main.point(0.0)), chord) / std::max(1e-9, glm::dot(chord, chord))};
+				auto const last{main.first(1.0)};
+				auto const on_main{main.point(std::clamp(along, 0.0, 1.0)).y + std::max(0.0, along - 1.0) * glm::length(chord) * last.y / std::max(1e-6, std::hypot(last.x, last.z))};
+				stream << "P " << track->name() << ' ' << line << ' ' << end.y - on_main << ' ' << grade * 1000.0 << ' ' << start.x << ' ' << start.z << '\n';
 			}
 		}
 		struct pair_worst
@@ -932,6 +945,153 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		for (auto const &point : m_profile.line.points)
 			stream << "P " << point.chainage << ' ' << point.elevation << ' ' << point.radius << '\n';
 		WriteLog("SELFTEST profiledump: " + file);
+		return selftest_result::handled;
+	}
+	// the tracks beside the route open in the profile tool, every 5 m: T track line, B chainage height track line across height of the nearest
+	// nearly parallel track under 6 m on each side
+	if (command == "besidedump")
+	{
+		std::string file;
+		words >> file;
+		std::ofstream stream{file, std::ios::app};
+		stream << std::fixed << std::setprecision(3);
+		grade_lines_load();
+		auto const line_of = [&](TTrack const &Track) {
+			auto const found{m_nmt_state.grade_lines.find(grade_line_key(Track))};
+			return found != m_nmt_state.grade_lines.end() ? found->second : -100;
+		};
+		std::unordered_set<TTrack const *> route;
+		for (auto const &span : m_profile.route.spans)
+		{
+			route.insert(span.track);
+			stream << "T " << span.track->name() << ' ' << line_of(*span.track) << ' ' << (grade_hand(*span.track) ? 'h' : grade_fitted(*span.track) ? 'f' : 'n') << '\n';
+		}
+		struct spot
+		{
+			glm::dvec3 position;
+			glm::dvec2 along;
+			TTrack const *track;
+		};
+		std::vector<spot> spots;
+		for (auto const *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && false == route.contains(track))
+				for (auto const &path : track->m_paths)
+				{
+					geometry::bezier const curve{path};
+					auto const count{std::max(1, static_cast<int>(geometry::plan_distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 1.0))};
+					for (int i = 0; i <= count; ++i)
+					{
+						auto const tangent{geometry::plan_of(curve.first(static_cast<double>(i) / count))};
+						spots.push_back({curve.point(static_cast<double>(i) / count), glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, track});
+					}
+				}
+		auto const &samples{m_profile.samples};
+		for (std::size_t i = 0; i + 1 < samples.size(); i += 5)
+		{
+			auto const &here{samples[i]};
+			auto const along{glm::normalize(geometry::plan_of(samples[i + 1].position - here.position))};
+			std::array<spot const *, 2> sides{nullptr, nullptr};
+			std::array<double, 2> across{6.0, 6.0};
+			for (auto const &other : spots)
+			{
+				glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
+				if (std::abs(glm::dot(offset, along)) > 0.6 || std::abs(glm::dot(along, other.along)) < 0.985)
+					continue;
+				auto const side{along.x * offset.y - along.y * offset.x};
+				if (auto const k{side > 0.0 ? 0 : 1}; std::abs(side) < across[k])
+				{
+					across[k] = std::abs(side);
+					sides[k] = &other;
+				}
+			}
+			auto const *track{here.span < m_profile.route.spans.size() ? m_profile.route.spans[here.span].track : nullptr};
+			stream << "B " << here.chainage << ' ' << here.position.y << ' ' << (track != nullptr ? track->name() : std::string{"-"}) << ' ' << (track != nullptr ? line_of(*track) : -100);
+			for (int k = 0; k < 2; ++k)
+				if (sides[k] != nullptr)
+					stream << " | " << sides[k]->track->name() << ' ' << line_of(*sides[k]->track) << ' ' << across[k] << ' ' << sides[k]->position.y - here.position.y;
+				else
+					stream << " | -";
+			stream << '\n';
+		}
+		WriteLog("SELFTEST besidedump: " + file);
+		return selftest_result::handled;
+	}
+	if (command == "profileaudit")
+	{
+		// every design kept in the scenery opened as the profile opens it: how many have errors, how many were read from the track again
+		profile_library_load();
+		std::size_t gone{0}, failing{0}, retaken{0};
+		auto const count{m_profiles.size()};
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			auto const entry{m_profiles[i]};
+			TTrack *from{nullptr};
+			TTrack *to{nullptr};
+			if (false == profile_stored_route(entry, &from, &to).has_value())
+			{
+				if (++gone <= 5)
+				{
+					// what the route between the ends found is against the design
+					std::string routes;
+					for (auto *track : simulation::Paths.sequence())
+						if (track != nullptr && false == track->m_editorremoved && editor_track::is_supported(*track))
+							for (auto const &path : track->m_paths)
+								for (auto const index : {segment_data::point::start, segment_data::point::end})
+									if (glm::length(glm::dvec2{path.points[index].x - entry.start.x, path.points[index].z - entry.start.z}) <= 0.1)
+										for (auto *other : simulation::Paths.sequence())
+											if (other != nullptr && other != track && false == other->m_editorremoved && editor_track::is_supported(*other))
+												for (auto const &end : other->m_paths)
+													for (auto const last : {segment_data::point::start, segment_data::point::end})
+														if (glm::length(glm::dvec2{end.points[last].x - entry.end.x, end.points[last].z - entry.end.z}) <= 0.1)
+														{
+															editor_track::route route;
+															std::string error;
+															if (false == editor_track::find_route(track, other, route, error))
+															{
+																routes += format(" [%s > %s: none]", track->name().c_str(), other->name().c_str());
+																continue;
+															}
+															auto const samples{editor_track::sample_route(route, 1.0)};
+															auto const middle{editor_track::sampled_position(samples, route.length * 0.5)};
+															routes += format(" [%s > %s: %zu spans %.1f m, start %.2f, middle %.2f]", track->name().c_str(), other->name().c_str(), route.spans.size(), route.length, glm::length(glm::dvec2{samples.front().position.x - entry.start.x, samples.front().position.z - entry.start.z}), glm::length(glm::dvec2{middle.x - entry.middle.x, middle.z - entry.middle.z}));
+														}
+					WriteLog(format("SELFTEST profileaudit: no route for the design of %.1f m from %.2f %.2f %.2f to %.2f %.2f %.2f;%s", entry.length, entry.start.x, entry.start.y, entry.start.z, entry.end.x, entry.end.y, entry.end.z, routes.c_str()));
+				}
+				continue;
+			}
+			profile_open_stored(i);
+			// the design leaves the track by more than what it's read again from it for
+			if (m_profile.departure > 0.02)
+			{
+				++retaken;
+				double worst{0.0};
+				std::size_t at{0};
+				for (std::size_t k = 0; k < m_profile.samples.size(); ++k)
+					if (auto const off{std::abs(profile::elevation(m_profile.line, m_profile.samples[k].chainage) - m_profile.samples[k].position.y)}; off > worst)
+					{
+						worst = off;
+						at = k;
+					}
+				std::string zone;
+				if (false == m_profile.samples.empty())
+					for (auto const &one : m_profile.context.switches)
+						if (m_profile.samples[at].chainage >= one.from - 5.0 && m_profile.samples[at].chainage <= one.to + 5.0)
+							zone += format(" [%.1f..%.1f %s]", one.from, one.to, one.name.c_str());
+				if (false == m_profile.samples.empty())
+					WriteLog(format("SELFTEST profileaudit off: %s .. %s, %.0f m, %.3f m off at %.1f on %s, kept departure %.3f;%s %s", from->name().c_str(), to->name().c_str(), m_profile.route.length, worst, m_profile.samples[at].chainage,
+					                m_profile.route.spans[m_profile.samples[at].span].track->name().c_str(), entry.departure, zone.c_str(), m_profile.status.c_str()));
+			}
+			std::string errors;
+			for (auto const &issue : m_profile.issues)
+				if (issue.error)
+					errors += " | " + issue.text;
+			if (false == errors.empty())
+			{
+				++failing;
+				WriteLog(format("SELFTEST profileaudit: %s .. %s, %.0f m, departure %.3f m; %s%s", from->name().c_str(), to->name().c_str(), m_profile.route.length, m_profile.departure, m_profile.status.c_str(), errors.c_str()));
+			}
+		}
+		WriteLog(format("SELFTEST profileaudit: %zu designs, %zu with errors, %zu off the track by over 2 cm, %zu with no route", count, failing, retaken, gone));
 		return selftest_result::handled;
 	}
 	if (command == "gradelines")

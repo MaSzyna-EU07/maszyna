@@ -374,6 +374,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool grade_lines_loaded{false};
 		std::unordered_set<TTrack const *> on_hump; // the tracks of the humps fitted to the model: no grade line shared levels them
 		std::size_t grade_lines_changes{0};
+		std::string explain; // a track whose run the next sharing of the grade lines tells of in the log, for a selftest
 		struct surface_place
 		{
 			TTrack const *track;
@@ -2799,6 +2800,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool profile_restore_parts();
 	// the route a kept design was laid over, as it runs now; none when its paths moved or are gone
 	std::optional<editor_track::route> profile_stored_route(stored_profile const &Entry, TTrack **From = nullptr, TTrack **To = nullptr) const;
+	// the kept designs over the tracks moved, as by the grade lines shared, laid anew onto them where they part from them; returns how
+	// many were, how many couldn't be without an error and are left as they were
+	std::pair<std::size_t, std::size_t> profile_refit_stored(std::unordered_set<TTrack const *> const &Moved);
 	void profile_store();
 	void profile_forget();
 	void profile_open_stored(std::size_t const Index);
