@@ -1814,7 +1814,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_rail_profile_hint(TTrack &Track);
 	bool start_switch_placement();
 	void finish_switch_placement();
-	// a switch with no track there: where a press on the ground starts it, at the free end of a track within reach or right there
+	// a switch with no track under it: a press on the ground starts it at the free end of a track within reach, none with no free end near
 	editor_track::snap_target free_switch_end(glm::dvec3 const &Ground) const;
 	bool free_switch_offered() const;
 	void start_free_switch(glm::dvec3 const &Ground);
@@ -1844,6 +1844,23 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void insert_free_switch();
 	std::vector<segment_data> switch_preview() const;
 	std::vector<segment_data> switch_preview_now() const;
+	// where a switch can't go, or doesn't go where it's dragged: what's in the way blinking in the view, each point told what's there,
+	// why by the cursor; while it's dragged, and a while after it's refused
+	struct switch_problem
+	{
+		std::string text;
+		std::vector<segment_data> paths;
+		std::vector<std::pair<glm::dvec3, std::string>> marks;
+	};
+	// what's at the end of the straight: a curve beginning, a switch, the track ending
+	std::string straight_end_note(editor_track::straight const &Line, bool const Far) const;
+	std::optional<switch_problem> switch_drag_problem() const;
+	std::optional<switch_problem> straight_switch_problem(editor_track::straight const &Line, double const Length, double const Along, int const Direction) const;
+	void flash_switch_problem(switch_problem Problem);
+	void flash_switch_problem(std::string const &Text, std::vector<segment_data> Paths, std::vector<std::pair<glm::dvec3, std::string>> Marks = {});
+	void draw_switch_problem(switch_problem const &Problem) const;
+	switch_problem m_switch_flash;
+	double m_switch_flash_until{-1.0};
 	// a preview worked out once a frame for the drawing and the readouts which all show it: the frame and the state of the tool it
 	// was worked out for
 	template <typename Result> struct frame_memo

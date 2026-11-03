@@ -628,7 +628,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		m_cursor_override.reset();
 		if (false == tool.placing)
 		{
-			WriteLog("SELFTEST switchfree: not started, no template " + label);
+			WriteLog("SELFTEST switchfree: not started, no template " + label + " or no free end near");
 			return selftest_result::handled;
 		}
 		if (tool.free_end.track == nullptr)
@@ -656,6 +656,41 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				WriteLog(format("SELFTEST switchfree path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f, R %.1f, turning R %.1f", track->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, static_cast<double>(track->m_paths[i].radius),
 				                std::abs(turn) > 1e-6 ? curve.plan_length() / turn : 0.0));
 			}
+		return selftest_result::handled;
+	}
+	if (command == "switchproblem")
+	{
+		// switchproblem <label> x z <direction>: what a switch dragged on the straight there runs into, blinking as it does
+		std::string label;
+		glm::dvec3 point{0.0};
+		int direction{1};
+		words >> label >> point.x >> point.z >> direction;
+		std::replace(label.begin(), label.end(), '_', ' ');
+		auto const templates{editor_track::standard_switch_templates()};
+		auto const found{std::find_if(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+		TTrack *nearest{nullptr};
+		double distance{1e9};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Normal && false == track->m_paths.empty())
+				if (auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+		if (found == templates.end() || nearest == nullptr)
+		{
+			WriteLog("SELFTEST switchproblem: no template " + label + " or no track");
+			return selftest_result::handled;
+		}
+		auto const line{editor_track::find_straight(*nearest, m_straights.tolerance)};
+		auto const problem{straight_switch_problem(line, found->length, line.along(point), direction)};
+		std::string marks;
+		if (problem.has_value())
+			for (auto const &[at, text] : problem->marks)
+				marks += format(" | %.2f %.2f: %s", at.x, at.z, text.c_str());
+		WriteLog(format("SELFTEST switchproblem %s on %s, %.1f m of %.1f m: %s%s", found->title().c_str(), nearest->name().c_str(), line.along(point), line.length, problem.has_value() ? problem->text.c_str() : "none", marks.c_str()));
+		if (problem.has_value())
+			flash_switch_problem(*problem);
 		return selftest_result::handled;
 	}
 	if (command == "switchplace" || command == "switchcurve" || command == "slipplace")

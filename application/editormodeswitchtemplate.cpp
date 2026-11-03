@@ -447,9 +447,11 @@ bool editor_mode::change_switch_template(TTrack &Switch, int const Index)
 	auto &tool{m_switch};
 	if (Index < 0 || Index >= static_cast<int>(tool.templates.size()))
 		return false;
+	// the switch that keeps its template blinks
 	auto const fail = [&](std::string const &Status) {
 		tool.status = Status;
 		ui()->set_status(Status, true);
+		flash_switch_problem(Status, Switch.m_paths, {{Switch.location(), ""}});
 		return false;
 	};
 	if (auto const reason{template_change_blocked(Switch)}; false == reason.empty())

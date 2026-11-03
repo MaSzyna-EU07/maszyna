@@ -187,15 +187,40 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 	}
 	if (command == "analyse")
 	{
+		// analyse <name>, or analyse at x z: the plain track nearest the point
 		std::string name;
 		words >> name;
+		auto *track{simulation::Paths.find(name)};
+		if (glm::dvec3 point{0.0}; name == "at" && words >> point.x >> point.z)
+		{
+			auto distance{1e9};
+			for (auto *candidate : simulation::Paths.sequence())
+				if (candidate != nullptr && false == candidate->m_editorremoved && candidate->eType == tt_Normal && false == candidate->m_paths.empty())
+					if (auto const d{geometry::plan_distance(editor_track::point_at(*candidate, editor_track::nearest_parameter(*candidate, point)), point)}; d < distance)
+					{
+						distance = d;
+						track = candidate;
+					}
+			if (track != nullptr)
+				name = track->name();
+		}
 		editor_track::curve curve;
-		if (auto *track{simulation::Paths.find(name)}; track != nullptr && editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
+		if (track != nullptr && editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
 		{
 			std::string arcs;
 			for (auto const &arc : curve.arcs)
 				arcs += format(" R%.0f/%.1fdeg/after %.1fm", arc.radius, glm::degrees(arc.turn), arc.transition);
 			WriteLog(format("SELFTEST analyse %s: R %.0f, compound %d, in %.1f m, out %.1f m, turn %.1f deg,", name.c_str(), curve.radius, curve.compound ? 1 : 0, curve.transition_in, curve.transition_out, glm::degrees(curve.turn)) + arcs);
+			// the tracks it's of, the ends of each, to find where its transitions lie
+			editor_track::chain chain;
+			if (std::string error; curve.from != nullptr && curve.to != nullptr && editor_track::find_chain(curve.from, curve.to, chain, error))
+				for (auto const *part : chain.tracks)
+				{
+					auto const &path{part->m_paths.front()};
+					auto const &a{path.points[segment_data::point::start]};
+					auto const &b{path.points[segment_data::point::end]};
+					WriteLog(format("SELFTEST analyse track %s: %.2f %.2f -> %.2f %.2f, R %.1f", part->name().c_str(), a.x, a.z, b.x, b.z, static_cast<double>(path.radius)));
+				}
 		}
 		else
 			WriteLog("SELFTEST analyse " + name + ": no curve");

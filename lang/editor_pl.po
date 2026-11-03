@@ -13283,6 +13283,33 @@ msgstr "Szablon rozjazdów na drugim torze i wzdłuż drabinki, gdy rozjazd prze
 msgid "a crossover; over a crossover the other way a double or a scissors one, across tracks a ladder"
 msgstr "przejście rozjazdowe; nad przejściem w drugą stronę podwójne albo nożycowe, w poprzek torów drabinka"
 
+msgid "Press+drag from a free end"
+msgstr "Wciśnij i przeciągnij od wolnego końca"
+
 msgid "a switch going on from the end of a track"
 msgstr "rozjazd przedłużający tor od jego końca"
+
+msgid "the track ends here"
+msgstr "tu kończy się tor"
+
+msgid "a switch begins here"
+msgstr "tu zaczyna się rozjazd"
+
+msgid "a curve begins here"
+msgstr "tu zaczyna się łuk"
+
+msgid "the line turns here"
+msgstr "tu linia zmienia kierunek"
+
+msgid "the straight ends here"
+msgstr "tu kończy się prosta"
+
+msgid "the curve ends here"
+msgstr "tu kończy się łuk"
+
+msgid "The switch goes back %.1f m to stay on the straight: %s"
+msgstr "Rozjazd cofnięty o %.1f m, żeby został na prostej: %s"
+
+msgid "The switch goes back %.1f m to stay in the curve: the curve ends here"
+msgstr "Rozjazd cofnięty o %.1f m, żeby został w łuku: tu kończy się łuk"
 

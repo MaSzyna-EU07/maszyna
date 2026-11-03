@@ -584,7 +584,17 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	if (command == "undo")
 	{
 		undo_last();
-		WriteLog("SELFTEST undo");
+		// undo <name>: the record of that name as it is after it, a slip laid again back of its template
+		std::string name;
+		words >> name;
+		std::string what;
+		if (false == name.empty())
+		{
+			auto const &records{switch_store::records()};
+			auto const known{std::find_if(records.begin(), records.end(), [&](switch_store::record const &Entry) { return Entry.name == name; })};
+			what = known != records.end() ? format(": %s %s, %zu parts", known->kind.c_str(), switch_store::label(*known).c_str(), known->parts.size()) : ": no record " + name;
+		}
+		WriteLog("SELFTEST undo" + what);
 		return selftest_result::handled;
 	}
 	if (command == "redo")

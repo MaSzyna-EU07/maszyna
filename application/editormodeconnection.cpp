@@ -355,6 +355,7 @@ void editor_mode::insert_partner_connection()
 	auto const fail = [&](std::string const &Reason) {
 		tool.status = Reason;
 		ui()->set_status(Reason, true);
+		flash_switch_problem(Reason, {}, {{tool.partner->location(), ""}});
 	};
 	if (false == plan_partner_connection(request, plan))
 		return fail(plan.error.empty() ? std::string{STR_C("The connection doesn't fit with the crossover there")} : plan.error);
@@ -450,11 +451,14 @@ void editor_mode::insert_connection()
 	connection::request request;
 	connection::result plan;
 	auto const planned{plan_connection(request, plan)};
+	// the switches as they'd go, blinking where they don't fit
+	auto const preview{planned ? std::vector<segment_data>{} : switch_preview()};
 	tool.placing = false;
 	if (false == planned)
 	{
 		tool.status = plan.error.empty() ? std::string{STR_C("Drag onto the other track")} : plan.error;
 		ui()->set_status(tool.status, true);
+		flash_switch_problem(tool.status, preview, {{tool.mouse, ""}});
 		return;
 	}
 	lay_planned_connection(request, plan, tool.line.tracks.front());

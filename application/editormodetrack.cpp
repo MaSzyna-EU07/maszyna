@@ -1812,7 +1812,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 				hints.push_back({"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"});
 			break;
 		default:
-			hints = {{"Press+drag on a track", "a switch on it: along its direction, sideways its side"}, {"Press+drag on the ground", "a switch with no track, on from a free end near it"}, {"LMB on a track", "selects it"}};
+			hints = {{"Press+drag on a track", "a switch on it: along its direction, sideways its side"}, {"Press+drag from a free end", "a switch going on from the end of a track"}, {"LMB on a track", "selects it"}};
 			break;
 		}
 		if (selected != nullptr)
@@ -2392,6 +2392,47 @@ void editor_mode::draw_blade_tips() const
 		mark(tip, IM_COL32(255, 170, 40, 255), 3.0f, STR_C("tips of the blades"), 1);
 }
 
+void editor_mode::draw_switch_problem(switch_problem const &Problem) const
+{
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	// blinking twice a second, never out quite
+	auto const pulse{static_cast<float>(0.5 + 0.5 * std::cos(ImGui::GetTime() * 4.0 * glm::pi<double>()))};
+	auto const colour{(overlay_color::invalid & ~IM_COL32_A_MASK) | (static_cast<ImU32>(70.0f + 185.0f * pulse) << IM_COL32_A_SHIFT)};
+	for (auto const &path : Problem.paths)
+		for (auto const &piece : path.pieces.empty() ? std::vector<segment_data>{path} : path.pieces)
+		{
+			bezier const curve{piece};
+			auto previous{curve.point(0.0)};
+			for (int i = 1; i <= 24; ++i)
+			{
+				auto const next{curve.point(i / 24.0)};
+				projection.line(drawlist, previous, next, IM_COL32(0, 0, 0, 150), 10.0f);
+				projection.line(drawlist, previous, next, colour, 6.0f);
+				previous = next;
+			}
+		}
+	auto const label = [&](ImVec2 const &At, std::string const &Text) {
+		auto const size{ImGui::CalcTextSize(Text.c_str(), nullptr, false, 460.0f)};
+		drawlist->AddRectFilled({At.x - 5.0f, At.y - 3.0f}, {At.x + size.x + 5.0f, At.y + size.y + 3.0f}, IM_COL32(0, 0, 0, 200), 3.0f);
+		drawlist->AddText(ImGui::GetFont(), ImGui::GetFontSize(), At, overlay_color::invalid, Text.c_str(), nullptr, 460.0f);
+	};
+	for (auto const &[point, text] : Problem.marks)
+	{
+		ImVec2 screen;
+		if (false == projection.project(point, screen))
+			continue;
+		auto const radius{10.0f + 8.0f * pulse};
+		drawlist->AddCircle(screen, radius, IM_COL32(0, 0, 0, 150), 24, 6.0f);
+		drawlist->AddCircle(screen, radius, colour, 24, 3.0f);
+		if (false == text.empty())
+			label({screen.x + 26.0f, screen.y - 0.5f * ImGui::GetFontSize()}, text);
+	}
+	// why, by the cursor
+	if (auto const &io{ImGui::GetIO()}; false == Problem.text.empty() && ImGui::IsMousePosValid())
+		label({io.MousePos.x + 20.0f, io.MousePos.y + 26.0f}, Problem.text);
+}
+
 void editor_mode::draw_build_overlay() const
 {
 	screen_projection const projection;
@@ -2625,6 +2666,9 @@ void editor_mode::draw_build_overlay() const
 		auto const preview{switch_preview()};
 		for (auto const &piece : preview)
 			drawpath(piece, overlay_color::marked);
+		// moved back onto the straight or into the curve, or too long for it: what's in the way blinks
+		if (auto const problem{switch_drag_problem()})
+			draw_switch_problem(*problem);
 		// the lines told of a switch bent, in a box beside the point
 		auto const readout_at = [&](glm::dvec3 const &Point, std::vector<std::pair<std::string, ImU32>> const &Lines) {
 			ImVec2 screen;
@@ -2740,6 +2784,9 @@ void editor_mode::draw_build_overlay() const
 				drawlist->AddText({screen.x + 18.0f, screen.y - 8.0f}, overlay_color::invalid, plan.reason.c_str());
 		}
 	}
+	// a switch refused or laid elsewhere than dragged to: where and why, a while after it's let go
+	if (false == m_switch.placing && ImGui::GetTime() < m_switch_flash_until)
+		draw_switch_problem(m_switch_flash);
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};

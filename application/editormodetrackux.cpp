@@ -862,14 +862,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.position = m_hover.point;
 		return make(kind::switch_at, "Press and drag: a switch on this track, along sets its direction, sideways its side. Click: select the track");
 	}
-	// a press on the ground lays a switch with no track there, going on from a free end within reach
+	// a press on the ground by a free end within reach lays a switch going on from it; with no track near, none
 	if (m_hover.track == nullptr && free_switch_offered())
-	{
-		auto const end{free_switch_end(ground)};
-		intent.position = end.track != nullptr ? end.position : ground;
-		return make(kind::switch_free, end.track != nullptr ? "Press and drag: a switch going on from this free end, sideways its side"
-		                                                    : "Press and drag: a switch with no track, along the direction of its main track, then sideways its side");
-	}
+		if (auto const end{free_switch_end(ground)}; end.track != nullptr)
+		{
+			intent.position = end.position;
+			return make(kind::switch_free, "Press and drag: a switch going on from this free end, sideways its side");
+		}
 	if (m_track_tab == track_tab::lineside && m_fouling.tab().open)
 		if (auto const hit{m_fouling.hit()}; hit.has_value())
 		{
