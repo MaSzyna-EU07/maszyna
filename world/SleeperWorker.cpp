@@ -81,27 +81,34 @@ std::vector<beam> beams_of( cluster_beams const &Cluster, TTrack const &Track ) 
 class background_worker {
 
 public:
-    // the thread finishes the cluster it's on first; the tracks it reads go with the paths of the simulation, made before the worker
-    // and so destroyed after it, and what it keeps the clusters in is made before the worker too
+    // stopped as the application exits, before the scenery goes; here only where it exits some other way
     ~background_worker() {
+        shut_down();
+    }
+
+    // the thread finishes the cluster it's on and is joined, the waiting ones dropped; it isn't started again
+    void shut_down() {
         {
             std::lock_guard<std::mutex> lock { mutex };
             stop = true;
             queue.clear();
+            queued.clear();
         }
         wake.notify_all();
         if( thread.joinable() ) {
             thread.join();
         }
+        enabled = false;
     }
 
     bool enabled { true };
 
     void request( TTrack &Track ) {
 
-        if( false == resolved ) {
-            // the models the sleepers are made of loaded here, the thread can't load them
-            resolved = true;
+        if( auto const epoch { layout_epoch().load() }; epoch != resolved ) {
+            // the models the sleepers are made of loaded here, the thread doesn't load them; again whenever a track changed, as it
+            // may have got other models
+            resolved = epoch;
             for( auto *track : simulation::Paths.sequence() ) {
                 if( track != nullptr && bedded( *track ) ) {
                     plain_model( *track );
@@ -111,7 +118,7 @@ public:
         }
         {
             std::lock_guard<std::mutex> lock { mutex };
-            if( queued.count( &Track ) ) {
+            if( stop || queued.count( &Track ) ) {
                 return;
             }
             queued.insert( &Track );
@@ -135,6 +142,7 @@ public:
 private:
     void run() {
 
+        models_loaded( false );
         while( true ) {
             TTrack *track { nullptr };
             {
@@ -167,11 +175,11 @@ private:
     std::thread thread;
     bool stop { false };
     bool busy { false };
-    bool resolved { false };
+    std::uint64_t resolved { 0 }; // the version of the layout the models were loaded for
 };
 
 background_worker &worker() {
-    // what the thread works with is made first, to be destroyed only after the thread is stopped
+    // what the thread keeps the clusters in is made first, to be destroyed after it where the application didn't stop it
     layout_epoch();
     known_clusters();
     clusters_mutex();
@@ -232,6 +240,11 @@ void ask_layout( TTrack &Track ) {
 void settle_background() {
 
     worker().settle();
+}
+
+void stop_background() {
+
+    worker().shut_down();
 }
 
 } // namespace track_sleepers

@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/SleeperPaths.h"
 #include "world/SleeperRules.h"
 #include "world/SleeperWorker.h"
+#include "world/TrackFeatures.h"
 #include "world/Track.h"
 #include "simulation/simulation.h"
 #include "scene/scene.h"
@@ -361,6 +362,10 @@ layout_check check() {
 
 void unsettle_around( TTrack &Track ) {
 
+    if( false == track_features::sleepers ) {
+        // nothing laid, nothing to lay again
+        return;
+    }
     outdate_layouts();
     tracks_near( Track, []( TTrack *Other ) {
         if( Other->m_sleepers3d.active ) {

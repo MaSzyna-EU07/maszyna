@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
@@ -690,6 +691,8 @@ void eu07_application::release_python_lock()
 void eu07_application::exit()
 {
 	Global.applicationQuitOrder = true;
+	// the sleepers laid in the background read the scenery, which goes below
+	track_sleepers::stop_background();
 	for (auto &mode : m_modes)
 		mode.reset();
 

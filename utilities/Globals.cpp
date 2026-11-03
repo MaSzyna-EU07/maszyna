@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "scripting/PyInt.h"
 #include "utilities/Timer.h"
+#include "world/TrackFeatures.h"
 #include "vao.h"
 
 void global_settings::LoadIniFile(std::string asFileName)
@@ -1639,9 +1640,12 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "smoothtraction", bSmoothTraction );
     export_as_text( Output, "splinefidelity", SplineFidelity );
     export_as_text( Output, "sleeperdistance", SleeperDistance );
-    export_as_text( Output, "sleepers3d", ( Sleepers3D.empty() ? std::string{ "none" } : Sleepers3D ) );
-    export_as_text( Output, "sleepers3dbed", Sleepers3DBed );
-    Output << "sleepers3dplain " << ( Sleepers3DPlain.empty() ? std::string{ "none" } : Sleepers3DPlain ) << ' ' << ( Sleepers3DPlainSkin.empty() ? std::string{ "none" } : Sleepers3DPlainSkin ) << ' ' << Sleepers3DPlainSeat << '\n';
+    if constexpr( track_features::sleepers ) {
+        // the settings of the 3D sleepers do nothing while they're switched off in the build
+        export_as_text( Output, "sleepers3d", ( Sleepers3D.empty() ? std::string{ "none" } : Sleepers3D ) );
+        export_as_text( Output, "sleepers3dbed", Sleepers3DBed );
+        Output << "sleepers3dplain " << ( Sleepers3DPlain.empty() ? std::string{ "none" } : Sleepers3DPlain ) << ' ' << ( Sleepers3DPlainSkin.empty() ? std::string{ "none" } : Sleepers3DPlainSkin ) << ' ' << Sleepers3DPlainSeat << '\n';
+    }
     export_as_text( Output, "rendercab", render_cab );
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );
