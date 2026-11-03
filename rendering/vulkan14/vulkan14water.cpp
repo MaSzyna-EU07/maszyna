@@ -49,6 +49,12 @@ bool windscreen_water::init(VkDevice const Device, pipeline_library &Pipelines, 
 	m_ring = &Ring;
 	m_alignment = std::max<VkDeviceSize>(Alignment, 16);
 	m_host = std::move(Host);
+	m_raincells = std::make_shared<buffer>();
+	if (false == m_raincells->create(Memory, static_cast<VkDeviceSize>(gl::RAIN_CELLS_COUNT * 16), storage_usage, memory_kind::device, "rain cells"))
+	{
+		m_raincells.reset();
+		return false;
+	}
 	m_storage = std::make_shared<buffer>();
 	m_full = m_storage->create(Memory, static_cast<VkDeviceSize>(gl::WATER_STORAGE_SIZE), storage_usage, memory_kind::device, "windscreen water");
 	if (false == m_full)
@@ -75,6 +81,9 @@ void windscreen_water::destroy()
 	{
 		kernel.destroy(m_device);
 	}
+	m_raincellkernel.destroy(m_device);
+	m_raincelltried = false;
+	m_raincells.reset();
 	m_storage.reset();
 	m_device = VK_NULL_HANDLE;
 	m_cleared = false;
@@ -162,6 +171,49 @@ void windscreen_water::gpu_setup(std::size_t const Slot, std::vector<glm::vec4> 
 	commands->copy_buffer2(&copy);
 	compute_barrier(commands);
 	m_deletions->push(m_uploads->current_value(), [staging]() {});
+}
+
+void windscreen_water::update_rain_cells(float const Time, float const Rain)
+{
+	if ((m_device == VK_NULL_HANDLE) || (false == bool(m_raincells)) || (Rain <= 0.f) || (false == bool(m_host.commands)))
+	{
+		return;
+	}
+	if (false == m_raincelltried)
+	{
+		m_raincelltried = true;
+		try
+		{
+			if (false == m_raincellkernel.create(m_device, *m_pipelines, m_shaders->get("rain_cells.comp"), m_passlayout, {}, "rain_cells.comp"))
+			{
+				ErrorLog("rain cells: no compute pipeline of rain_cells.comp, the glasses with rain stay dry");
+			}
+		}
+		catch (gfx::shader_exception const &e)
+		{
+			ErrorLog("rain cells: can't use rain_cells.comp: " + std::string(e.what()));
+		}
+	}
+	if (false == bool(m_raincellkernel))
+	{
+		return;
+	}
+	auto const commands{m_host.commands()};
+	if (commands == nullptr)
+	{
+		return;
+	}
+	// the glasses of the frames before read the cells, this one writes them
+	memory_barrier(commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+	               VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+	struct constants
+	{
+		float time;
+		float pad[3];
+	} const data{Time, {0.f, 0.f, 0.f}};
+	m_raincellkernel.dispatch(commands, {buffer_descriptor(m_raincells->handle(), 0, VK_WHOLE_SIZE)}, data,
+	                          static_cast<std::uint32_t>((gl::RAIN_CELLS_COUNT + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE));
+	compute_barrier(commands);
 }
 
 ring_slice windscreen_water::block(gl::water_ubs const &Block)

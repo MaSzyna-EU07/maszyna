@@ -1046,6 +1046,8 @@ void vulkan14_renderer::render_scene()
 	auto &scene{ctx.scene};
 	// the water on the windscreens of the cab: a step of its simulation once a frame, before the passes which draw the glasses
 	scene.water.update(Timer::GetDeltaTime());
+	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
+	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), glm::saturate(Global.Overcast - 1.f));
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
