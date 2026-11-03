@@ -3381,15 +3381,12 @@ bool TDynamicObject::Update(double dt, double dt1)
 				&& MoverParameters->eimc[eimc_p_abed] < 0.001)
 				FzadED = 0; //pętla bezpieczeństwa - bez ED
             auto const FzadPN = Fzad - FrED * MoverParameters->MED_FrED_factor;
-            //np = 0;
-            // BUG: likely memory leak, allocation per inner loop, deleted only once outside
-            // TODO: sort this shit out
-			bool* PrzekrF = new bool[np];
+			std::vector<bool> PrzekrF( np );
 			float nPrzekrF = 0;
 			bool test = true;
-			float* FzED = new float[np];
-			float* FzEP = new float[np];
-			float* FmaxEP = new float[np];
+			std::vector<float> FzED( np );
+			std::vector<float> FzEP( np );
+			std::vector<float> FmaxEP( np );
 			// 3. ustaw pojazdom sile hamowania ED
             //   - proporcjonalnie do mozliwosci
 
@@ -3547,11 +3544,6 @@ bool TDynamicObject::Update(double dt, double dt1)
 				}
 
 			}
-
-			delete[] PrzekrF;
-			delete[] FzED;
-			delete[] FzEP;
-			delete[] FmaxEP;
 
 			MED_oldFED = FzadED;
         }
