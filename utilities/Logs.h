@@ -23,7 +23,9 @@ enum class logtype : unsigned int {
     traction = 1 << 9,
     powergrid = 1 << 10,
 };
+// writes the log until StopLogService(), and all of it that came before
 void LogService();
+void StopLogService();
 void WriteLog( const char *str, logtype const Type = logtype::generic, bool isError = false );
 void Error( const std::string &asMessage, bool box = false );
 void Error( const char* &asMessage, bool box = false );
