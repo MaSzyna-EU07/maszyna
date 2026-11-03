@@ -145,6 +145,8 @@ public:
     // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
     material_handle
         create_matte( material_handle const Material );
+    // copy of provided material with its texture tinted to the colour as far as the userdata of the vertices says. returns: handle to
+    // the copy, made once per material and colour; the material itself when its shader can't tint it
     material_handle
         create_tinted( material_handle const Material, glm::vec3 const &Colour );
     opengl_material const &
@@ -166,6 +168,9 @@ private:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle
         find_in_databank( std::string const &Materialname ) const;
+    // the matte and tinted copies of the materials changed with the weather or the season made again from them, under their handles
+    void
+        update_variants( bool const Weather );
     public:
     // checks whether specified file exists. returns name of the located file, or empty string.
     static std::pair<std::string, std::string>

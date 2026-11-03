@@ -676,6 +676,7 @@ variant_of( opengl_material const &Source, std::string const &Suffix ) {
     variant.opacity = Source.opacity;
     variant.selfillum = Source.selfillum;
     variant.shadow_rank = Source.shadow_rank;
+    variant.glossiness = Source.glossiness;
     variant.name = Source.name + Suffix;
     variant.size = Source.size;
     variant.is_good = Source.is_good;
@@ -700,6 +701,65 @@ shares_slot( std::unordered_map<std::string, gl::shader::param_entry> const &Con
                 && own->second.offset < Entry.second.offset + Entry.second.size; } );
 }
 
+// the highlights of a copy of a material damped and its weathering on
+void
+make_matte( opengl_material &Variant ) {
+
+    Variant.glossiness = 0.1f;
+    if( !Variant.shader ) {
+        return;
+    }
+    for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
+        auto const entry { Variant.shader->param_conf.find( key ) };
+        if( entry == Variant.shader->param_conf.end()
+         || shares_slot( Variant.shader->param_conf, key ) ) {
+            continue;
+        }
+        for( std::size_t i = 0; i < entry->second.size; ++i ) {
+            Variant.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
+        }
+        Variant.params_state.erase(
+            std::remove_if(
+                std::begin( Variant.params_state ), std::end( Variant.params_state ),
+                [&]( gl::shader::param_entry const &State ) {
+                    return State.location == entry->second.location && State.offset == entry->second.offset; } ),
+            std::end( Variant.params_state ) );
+    }
+}
+
+// the colour in the rgb of the slot of the weathering of a copy of a material, which tells the shader to tint by its sign. returns:
+// whether the shader can tint it, the weathering and the tint alone in that slot
+bool
+make_tinted( opengl_material &Variant, glm::vec3 const &Colour ) {
+
+    if( !Variant.shader ) {
+        return false;
+    }
+    auto const &conf { Variant.shader->param_conf };
+    auto const weathering { conf.find( "weathering" ) };
+    auto const tint { conf.find( "tint" ) };
+    if( weathering == conf.end()
+     || tint == conf.end()
+     || weathering->second.offset != 3
+     || tint->second.location != weathering->second.location
+     || tint->second.offset != 0
+     || std::any_of(
+            std::begin( conf ), std::end( conf ),
+            [&]( auto const &Entry ) {
+                return Entry.first != weathering->first && Entry.first != tint->first && Entry.second.location == weathering->second.location; } ) ) {
+        return false;
+    }
+    auto const location { weathering->second.location };
+    Variant.params[ location ] = glm::vec4{ Colour, -1.f };
+    Variant.params_state.erase(
+        std::remove_if(
+            std::begin( Variant.params_state ), std::end( Variant.params_state ),
+            [&]( gl::shader::param_entry const &State ) {
+                return State.location == location; } ),
+        std::end( Variant.params_state ) );
+    return true;
+}
+
 } // namespace
 
 material_handle
@@ -713,25 +773,7 @@ material_manager::create_matte( material_handle const Material ) {
         return lookup->second;
     }
     auto matte { variant_of( m_materials[ Material ], ":matte" ) };
-    matte.glossiness = 0.1f;
-    if( matte.shader ) {
-        for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
-            auto const entry { matte.shader->param_conf.find( key ) };
-            if( entry == matte.shader->param_conf.end()
-             || shares_slot( matte.shader->param_conf, key ) ) {
-                continue;
-            }
-            for( std::size_t i = 0; i < entry->second.size; ++i ) {
-                matte.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
-            }
-            matte.params_state.erase(
-                std::remove_if(
-                    std::begin( matte.params_state ), std::end( matte.params_state ),
-                    [&]( gl::shader::param_entry const &State ) {
-                        return State.location == entry->second.location && State.offset == entry->second.offset; } ),
-                std::end( matte.params_state ) );
-        }
-    }
+    make_matte( matte );
     auto const mattehandle { static_cast<material_handle>( m_materials.size() ) };
     m_materials.emplace_back( std::move( matte ) );
     m_mattes.emplace( Material, mattehandle );
@@ -748,35 +790,38 @@ material_manager::create_tinted( material_handle const Material, glm::vec3 const
     if( auto const lookup { m_tints.find( key ) }; lookup != m_tints.end() ) {
         return lookup->second;
     }
-    // the colour in the rgb of the slot of the weathering, which tells the shader to tint by its sign; nothing else in that slot
-    auto const &conf { m_materials[ Material ].shader->param_conf };
-    auto const weathering { conf.find( "weathering" ) };
-    auto const tint { conf.find( "tint" ) };
-    if( weathering == conf.end()
-     || tint == conf.end()
-     || weathering->second.offset != 3
-     || tint->second.location != weathering->second.location
-     || tint->second.offset != 0
-     || std::any_of(
-            std::begin( conf ), std::end( conf ),
-            [&]( auto const &Entry ) {
-                return Entry.first != weathering->first && Entry.first != tint->first && Entry.second.location == weathering->second.location; } ) ) {
+    auto tinted { variant_of( m_materials[ Material ], ":tinted" ) };
+    if( false == make_tinted( tinted, Colour ) ) {
         return Material;
     }
-    auto tinted { variant_of( m_materials[ Material ], ":tinted" ) };
-    tinted.glossiness = m_materials[ Material ].glossiness;
-    auto const location { weathering->second.location };
-    tinted.params[ location ] = glm::vec4{ Colour, -1.f };
-    tinted.params_state.erase(
-        std::remove_if(
-            std::begin( tinted.params_state ), std::end( tinted.params_state ),
-            [&]( gl::shader::param_entry const &State ) {
-                return State.location == location; } ),
-        std::end( tinted.params_state ) );
     auto const tintedhandle { static_cast<material_handle>( m_materials.size() ) };
     m_materials.emplace_back( std::move( tinted ) );
     m_tints.emplace( key, tintedhandle );
     return tintedhandle;
+}
+
+void
+material_manager::update_variants( bool const Weather ) {
+
+    // the copies don't update themselves, their names aren't files to read again
+    auto const changed = [&]( material_handle const Source ) {
+        auto const &source { m_materials[ Source ] };
+        return Weather ? source.update_on_weather_change : source.update_on_season_change; };
+    for( auto const &[ source, matte ] : m_mattes ) {
+        if( changed( source ) ) {
+            auto variant { variant_of( m_materials[ source ], ":matte" ) };
+            make_matte( variant );
+            m_materials[ matte ] = std::move( variant );
+        }
+    }
+    for( auto const &[ key, tinted ] : m_tints ) {
+        auto const source { std::get<0>( key ) };
+        if( changed( source ) ) {
+            auto variant { variant_of( m_materials[ source ], ":tinted" ) };
+            make_tinted( variant, glm::vec3 { std::get<1>( key ), std::get<2>( key ), std::get<3>( key ) } );
+            m_materials[ tinted ] = std::move( variant );
+        }
+    }
 }
 
 void
@@ -785,6 +830,7 @@ material_manager::on_weather_change() {
     for( auto &material : m_materials ) {
         if( material.update_on_weather_change ) { material.update(); }
     }
+    update_variants( true );
 }
 
 void
@@ -793,6 +839,7 @@ material_manager::on_season_change() {
     for( auto &material : m_materials ) {
         if( material.update_on_season_change ) { material.update(); }
     }
+    update_variants( false );
 }
 
 // checks whether specified material is in the material bank. returns handle to the material, or a null handle

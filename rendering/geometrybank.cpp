@@ -378,6 +378,8 @@ geometry_bank::vertices( gfx::geometry_handle const &Geometry ) const {
 unsigned int
 geometry_bank::primitive( gfx::geometry_handle const &Geometry ) const {
 
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return no_primitive; }
+
     return geometry_bank::chunk( Geometry ).type;
 }
 
@@ -515,6 +517,8 @@ geometrybank_manager::vertices( gfx::geometry_handle const &Geometry ) const {
 // kind of geometry of specified chunk
 unsigned int
 geometrybank_manager::primitive( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.bank == 0 ) || ( Geometry.bank > m_geometrybanks.size() ) ) { return geometry_bank::no_primitive; }
 
     return bank( Geometry ).first->primitive( Geometry );
 }

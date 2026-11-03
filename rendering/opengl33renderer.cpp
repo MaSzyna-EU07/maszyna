@@ -2225,7 +2225,8 @@ gfx::userdata_array const &opengl33_renderer::UserData(const gfx::geometry_handl
 
 int opengl33_renderer::Primitive(gfx::geometry_handle const &Geometry) const
 {
-	return static_cast<int>(m_geometry.primitive(Geometry));
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
 }
 
 // material methods
