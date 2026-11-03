@@ -60,8 +60,8 @@ std::shared_ptr<cluster_beams> work_out( TTrack &Track ) {
     auto const epoch { layout_epoch().load() };
     auto const tracks { cluster_of( Track ) };
     auto const laid { lay_out( tracks, epoch ) };
-    faults().slowest = std::max( faults().slowest, std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count() );
-    faults().biggest = std::max( faults().biggest, tracks.size() );
+    raise_to( faults().slowest, std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count() );
+    raise_to( faults().biggest, tracks.size() );
     std::lock_guard<std::mutex> lock { clusters_mutex() };
     if( laid->epoch == layout_epoch() ) {
         for( auto *track : tracks ) {
@@ -81,6 +81,8 @@ std::vector<beam> beams_of( cluster_beams const &Cluster, TTrack const &Track ) 
 class background_worker {
 
 public:
+    // the thread finishes the cluster it's on first; the tracks it reads go with the paths of the simulation, made before the worker
+    // and so destroyed after it, and what it keeps the clusters in is made before the worker too
     ~background_worker() {
         {
             std::lock_guard<std::mutex> lock { mutex };
@@ -169,6 +171,11 @@ private:
 };
 
 background_worker &worker() {
+    // what the thread works with is made first, to be destroyed only after the thread is stopped
+    layout_epoch();
+    known_clusters();
+    clusters_mutex();
+    faults();
     static background_worker worker;
     return worker;
 }

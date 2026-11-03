@@ -239,7 +239,7 @@ layout_check check() {
     layout_check result;
     result.digest = 1469598103934665603ull;
     settle_background();
-    faults() = {};
+    faults().reset();
     // laid anew, for the counts of what's wrong with them
     outdate_layouts();
     // the beams of all the tracks in plan, as boxes, with the grid of where they are
