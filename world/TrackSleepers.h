@@ -56,6 +56,7 @@ struct beam_model {
     // model without these is drawn whole, a plain sleeper at its own length and a timber stretched to its length
     bool stretchable { false };
     std::array<TSubModel *, part_count> parts {};
+    std::vector<TSubModel *> others; // the submodels of the top level besides the parts, like the fastenings of the rails, not drawn
     std::array<glm::vec2, part_count> spans {}; // from and to along x, of the parts
     glm::vec2 span { -1.3f, 1.3f }; // from and to along x, of the most detailed submodels of the whole model
     float seat { 0.f }; // the height in the model the feet of the rails go to

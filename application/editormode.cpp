@@ -8,6 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
+#include "world/TrackSleepers.h"
 #include <filesystem>
 #include <iterator>
 #include <fstream>
@@ -5054,6 +5055,8 @@ void editor_mode::update_camera(double const Deltatime)
 void editor_mode::enter()
 {
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
+    // the editor changes the tracks, their sleepers are worked out as they're needed
+    track_sleepers::lay_in_background(false);
 
     if (simulation::Region != nullptr)
     {
@@ -5130,6 +5133,7 @@ void editor_mode::enter()
 
 void editor_mode::exit()
 {
+    track_sleepers::lay_in_background(true);
     Global.editor_tracks = false;
     EditorModeFlag = false;
     Global.ControlPicking = m_statebackup.picking;

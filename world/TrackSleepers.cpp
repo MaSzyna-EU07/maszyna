@@ -15,8 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "world/SleeperPaths.h"
 #include "world/SleeperRules.h"
 #include "world/SleeperWorker.h"
-#include "world/TrackFeatures.h"
 #include "world/Track.h"
+#include "rendering/renderer.h"
 #include "simulation/simulation.h"
 #include "scene/scene.h"
 #include "utilities/utilities.h"
@@ -59,7 +59,8 @@ bool bedded( TTrack const &Track ) {
 
 bool lays( TTrack const &Track ) {
 
-    return timber_model() != nullptr && bedded( Track );
+    // a renderer which doesn't draw them leaves the tracks their ballast, as they have it without the sleepers
+    return GfxRenderer != nullptr && GfxRenderer->Draws_Timbers() && timber_model() != nullptr && bedded( Track );
 }
 
 std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int const Path ) {
@@ -362,7 +363,7 @@ layout_check check() {
 
 void unsettle_around( TTrack &Track ) {
 
-    if( false == track_features::sleepers ) {
+    if( Global.Sleepers3D.empty() ) {
         // nothing laid, nothing to lay again
         return;
     }
