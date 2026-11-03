@@ -50,6 +50,38 @@ void opengl46_windscreen_water::bind() const
 {
 	if (m_storage)
 		m_storage->bind_base();
+	if (m_raincells)
+		m_raincells->bind_base();
+}
+
+void opengl46_windscreen_water::update_rain_cells(float const Time, float const Rain)
+{
+	if (Rain <= 0.f)
+		return;
+	if (false == m_raincelltried)
+	{
+		m_raincelltried = true;
+		try
+		{
+			gl::shader shader("rain_cells.comp");
+			m_raincellprogram = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+			m_raincells = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(gl::RAIN_CELLS_COUNT * 16), gl::RAIN_CELLS_SSBO_BINDING);
+		}
+		catch (gl::shader_exception const &e)
+		{
+			ErrorLog("rain cells: can't use rain_cells.comp, the glasses with rain stay dry: " + std::string(e.what()));
+			m_raincellprogram.reset();
+		}
+	}
+	if ((!m_raincellprogram) || (!m_raincells))
+		return;
+	// the glasses of the frame before read the cells, this one writes them
+	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+	m_raincells->bind_base();
+	::glProgramUniform1f(*m_raincellprogram, 0, Time);
+	m_raincellprogram->dispatch(static_cast<GLuint>((gl::RAIN_CELLS_COUNT + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE));
+	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+	gl::program::unbind();
 }
 
 void opengl46_windscreen_water::gpu_setup(std::size_t const Slot, std::vector<glm::vec4> const &Axes)

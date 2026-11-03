@@ -1710,7 +1710,11 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		scene_ubo->bind_uniform();
 		// the water on the windscreens of the cab: a step of its simulation once a frame, its storage for the glasses of every view
 		if (vp.main)
+		{
 			m_windscreenwater.update(Timer::GetDeltaTime());
+			// the drops and the rivulets of the glasses with rain, for the time of the block of the scene
+			m_windscreenwater.update_rain_cells(scene_ubs.time, scene_ubs.rain_params.x);
+		}
 		m_windscreenwater.bind();
 
 		if (Global.bWireFrame)

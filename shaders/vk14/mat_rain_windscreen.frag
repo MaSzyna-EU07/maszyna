@@ -19,6 +19,10 @@
 //      The trail right above the head is taken from the sprite part that touches the head, then it blends
 //      into the trail pattern that is fixed to the glass (beads stay where they were left).
 //
+// Speed: the hashes and the life cycles of the cells (which drop a cell holds now, where, how big; where the head of a rivulet is)
+// are worked out once a frame for every cell by rain_cells.comp (rain_cells.glsl), not here for the 9 cells around every pixel;
+// the wipers are asked only for the drops the pixel lies on. the look is the same.
+//
 // Shading: the grey atlas (bright rim, dark middle) is read once per pixel, only for the drop that wins the
 // pixel (it used to be read for all 9 neighbours). Micro droplets are shaded analytically.
 //
@@ -69,6 +73,7 @@ layout(location = 1) out vec4 out_motion;
 #include "apply_fog.glsl"
 #include "tonemapping.glsl"
 #include "random.glsl"
+#include "rain_cells.glsl"
 
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 0) uniform sampler2D diffuse;
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 1) uniform sampler2D raindropsatlas;
@@ -88,14 +93,11 @@ const float WS_DROP_BIAS  = 192.0;
 const float WS_ENC        = 64.0;           // the haze request in the velocity target; must match rain_windscreen_haze.glsl
 
 // --- Drops (atlas tiles) ------------------------------------------------------
+// (how long they live: rain_cells.glsl; the cells of the drops and of the rivulets are worked out once a frame by rain_cells.comp)
 const float drop_density    = 0.6;          // share of grid cells holding a drop at full rain (scaled by rain intensity)
 const float drop_size_min   = 0.45;         // drop size in grid cells
 const float drop_size_max   = 1.15;
 const float drop_size_bias  = 1.8;          // >1 = more small/medium drops, fewer big ones
-const float drop_life_min   = 14.0;         // seconds a drop sits on the glass
-const float drop_life_max   = 45.0;
-const float drop_appear     = 0.18;         // seconds of the landing "pop"
-const float drop_fade       = 1.5;          // seconds a drop takes to vanish at the end of its life
 const float drop_sag        = 0.12;         // max vertical stretch of a resting drop (gravity)
 
 // --- Micro droplets -------------------------------------------------------------
@@ -135,7 +137,6 @@ const float streak_density   = 1.00;  // share of cells carrying a rivulet (scal
 const float streak_cell      = 6.0;   // width of a rivulet cell in drop cells
 const float streak_run       = 20.0;  // height of a rivulet cell in drop cells = the longest run of one rivulet
 const float streak_head      = 1.7;   // mean width of the drop head, in drop cells (randomised 0.75x .. 1.25x)
-const float streak_period    = 40.0;  // seconds a rivulet lives (it runs for ~90% of that and then fades out), average
 const float streak_wiggle    = 0.35;  // how far the path swings sideways, in head widths (0 = straight)
 const float streak_wiggle_speed = 0.5; // speed of the little waves that flow down the trail
 const float streak_flow      = 0.15;  // ripples flowing down inside the trail (shows in refraction and glints), 0 = off
@@ -157,7 +158,6 @@ const float wind_run_scale     = 1.2;   // ... and their runs this long against 
 const float wind_head_scale    = 0.4;   // their heads this much smaller (a small bead at the front of a long trail)
 const int   wind_layers        = 4;     // layers of them, each with drops of its own (1 .. 4)
 const float wind_long_run      = 3.0;   // the last layer: its trails this much longer than those of gravity (the long ones, a part of all)
-const float wind_streak_period = 18.0;  // seconds a rivulet driven by the air lives (they run faster than the ones of gravity)
 const float drop_wind_stretch  = 0.4;   // drops are stretched up to this much along the push of the air (0 = off)
 const float WS_DRAG_SPEED = 24.0;       // speed of the air along the glass at which its drag equals the weight of a drop, m/s
 const float WS_HEAD_ON    = 0.35;       // share of the air meeting the glass head on which turns up along it
@@ -169,13 +169,7 @@ const float WS_WIND_STEP  = 0.1309;     // the direction of the rivulets of the 
 const float streak_thin       = 0.5;   // the thinnest
 const float streak_thick      = 2.0;   // the thickest
 const float streak_thick_bias = 2.0;   // > 1: more thin ones
-// --- What the blades leave: they don't take every drop (a few stay where they were), and the water they push lies along the edge
-// of their sweep, just outside it, as a row of beads (where the blades went lately) ------------------------------------------------
-const float wiper_miss       = 0.05;  // share of the drops a blade goes over without taking them
-const float wiper_edge_boost = 0.0;   // along the edge of the sweep this many times more drops (and droplets) (0 = off) ...
-const float wiper_edge_size  = 0.65;  // ... this much smaller: a row of beads
-const float wiper_edge_reach = 4.0;   // how wide the row is: the mip level of the mask read (4: ~16 texels of the mask out)
-const float wiper_edge_keep  = 180.0; // seconds after the last stroke the water at the edge keeps (then it's like the rest of the glass)
+// --- What the blades leave: they don't take every drop (a few stay where they were): wiper_miss of rain_cells.glsl -----------------
 
 #ifndef STREAK_FLIP_Y
 #define STREAK_FLIP_Y 0                 // set to 1 if the rivulets run UP the glass (head on top)
@@ -314,8 +308,7 @@ struct Riv
 // the layer of rivulets being worked on: the one of gravity (the rivulets as they always were, coordinates = glass UV with v
 // up) or the one of the air (its own cells and seeds, turned so that its rivulets run along the push of the air)
 float wsLayerDensity = 1.0;    // x rain x streak_density: share of the cells holding a rivulet
-float wsLayerPeriod  = streak_period;
-uint  wsLayerSalt    = 91u;
+int   wsLayerIndex   = 0;      // its cells in rain_cells (0 gravity, 1 .. 4 the air)
 float wsLayerHead    = 1.0;    // x streak_head
 float wsLayerCos     = 1.0;    // the layer is turned by this angle (its "down" is the way its water runs on the glass)
 float wsLayerSin     = 0.0;
@@ -349,8 +342,7 @@ void wsSetLayer(int layer)
     if (layer == 0)
     {
         wsLayerDensity = 1.0 - wsWindShare;
-        wsLayerPeriod  = streak_period;
-        wsLayerSalt    = 91u;
+        wsLayerIndex   = 0;
         wsLayerHead    = 1.0;
         wsLayerCos     = 1.0;
         wsLayerSin     = 0.0;
@@ -359,8 +351,7 @@ void wsSetLayer(int layer)
     else
     {
         wsLayerDensity = wsWindShare * wind_streaks;
-        wsLayerPeriod  = wind_streak_period;
-        wsLayerSalt    = 91u + 2u * uint(layer);
+        wsLayerIndex   = layer;
         wsLayerHead    = wind_head_scale;
         wsLayerCos     = wsWindCos;
         wsLayerSin     = wsWindSin;
@@ -368,35 +359,33 @@ void wsSetLayer(int layer)
     }
 }
 
+// the rivulet of cell SCell of the layer set (wsSetLayer): the randoms and the life of the cell from rain_cells (rain_cells.comp
+// worked them out as this did once from the hashes of the cell), the sizes and the places from them
 Riv getRiv(vec2 sCell, float sCW, float sCH, float gridSize)
 {
     Riv r;
-    uint sSeed = Hash(uvec3(cellKey(sCell), wsLayerSalt));
-    r.on = (RandF(sSeed) < rain_params.x * streak_density * wsLayerDensity);
-    float sPeriod = wsLayerPeriod * mix(0.6, 1.6, RandF(sSeed));
-    float sPhase  = fract(time / sPeriod + RandF(sSeed));
-    r.life   = smoothstep(0.0, 0.05, sPhase) * (1.0 - smoothstep(0.86, 1.0, sPhase));
-    float wr = RandF(sSeed);
+    uvec4 d  = rain_cells[rain_riv_index(wsLayerIndex, ivec2(sCell))];
+    r.on     = ((float(d.x & 65535u) + 0.5) * (1.0 / 65536.0) < rain_params.x * streak_density * wsLayerDensity);
+    r.life   = float((d.x >> 16) & 255u) * (1.0 / 255.0);
+    float wr = rain_byte(d.y, 16u);
     r.width  = streak_head * wsLayerHead / gridSize
              * (wsLayerVaried ? mix(streak_thin, streak_thick, pow(wr, streak_thick_bias)) : mix(0.75, 1.25, wr));
     if (wsLayerVaried)
         r.width = min(r.width, sCW / 2.6);   // the trail with its swing (sMargin) stays in its cell
     r.headH  = r.width * 0.88 * streak_uv_aspect;
-    float sSpan = max(sCH * mix(0.35, 0.70, RandF(sSeed)), r.headH * 3.0);
-    // stick-slip: the drop waits, then lurches forward; N waits on the way down
-    float sSteps = floor(mix(3.0, 8.0, RandF(sSeed)));
-    float sXs    = clamp(sPhase / 0.88, 0.0, 1.0) * sSteps;
-    float sRun   = clamp((floor(sXs) + smoothstep(0.55, 1.0, fract(sXs))) / sSteps, 0.0, 1.0);
-    r.topY   = sCell.y * sCH + sSpan + RandF(sSeed) * max(sCH - sSpan, 0.0);
+    float sSpan = max(sCH * mix(0.35, 0.70, rain_byte(d.y, 24u)), r.headH * 3.0);
+    // stick-slip: how far down its run the head is now (rain_cells.comp)
+    float sRun  = float(d.y & 65535u) * (1.0 / 65535.0);
+    r.topY   = sCell.y * sCH + sSpan + rain_byte(d.z, 0u) * max(sCH - sSpan, 0.0);
     r.bottom = r.topY - r.headH * 1.2 - sRun * (sSpan - r.headH * 1.2);
     const float sMargin = 0.8;
-    r.left   = sCell.x * sCW + sMargin * r.width + RandF(sSeed) * max(sCW - r.width * (1.0 + 2.0 * sMargin), 0.0);
-    r.flip   = (RandF(sSeed) < 0.5) ? 1.0 : 0.0;
-    r.col    = floor(RandF(sSeed) * 4.0);
-    r.wipe   = RandF(sSeed);
-    r.wavK   = 6.2831853 / mix(2.5, 5.0, RandF(sSeed));
-    r.wavPh  = RandF(sSeed) * 6.2831853;
-    r.wavSp  = streak_wiggle_speed * mix(0.6, 1.4, RandF(sSeed));
+    r.left   = sCell.x * sCW + sMargin * r.width + rain_byte(d.z, 8u) * max(sCW - r.width * (1.0 + 2.0 * sMargin), 0.0);
+    r.flip   = (((d.w >> 8) & 1u) != 0u) ? 1.0 : 0.0;
+    r.col    = float((d.w >> 9) & 3u);
+    r.wipe   = rain_byte(d.x, 24u);
+    r.wavK   = 6.2831853 / mix(2.5, 5.0, rain_byte(d.z, 16u));
+    r.wavPh  = rain_byte(d.z, 24u) * 6.2831853;
+    r.wavSp  = streak_wiggle_speed * mix(0.6, 1.4, rain_byte(d.w, 0u));
     return r;
 }
 
@@ -590,18 +579,20 @@ float wsWipeAge(vec2 co)
     return age;
 }
 
-// how much the place Co (texture UV) lies along the edge of the sweep of the blades, just outside it: 0 .. 1. the mask is 0 there and
-// a coarse level of it isn't (the sweep is near). times wsWiperRecent: only where the blades went lately
-float wsWiperRecent = 0.0;
-float wsWiperEdge(vec2 co)
+// the drop of a cell for one side of the blades (A, B: its half of the cell in rain_cells): where it lies, how big it is and its
+// shape (the sag, the stretch by the air along PushT). true when P lies on it
+bool wsDropShape(uint a, uint b, vec2 nc, float gridSize, float spreadF, float speed, vec2 pushT, vec2 p,
+                 out vec2 center, out float sq, out float sag, out mat2 shapeM, out vec2 dl)
 {
-    if ((wiper_edge_boost <= 0.0) || (wsWiperRecent <= 0.0))
-        return 0.0;
-    vec4 m = textureLod(wipermask, co, 0.0);
-    if (max(max(m.r, m.g), max(m.b, m.a)) > 0.001)
-        return 0.0;
-    vec4 c = textureLod(wipermask, co, wiper_edge_reach);
-    return smoothstep(0.01, 0.12, max(max(c.r, c.g), max(c.b, c.a))) * wsWiperRecent;
+    center = (nc + vec2(rain_byte(a, 8u), rain_byte(a, 16u))) / gridSize;
+    float size = mix(drop_size_min, drop_size_max, pow(rain_byte(a, 24u), drop_size_bias)) / gridSize;
+    sag    = 1.0 + drop_sag * rain_byte(b, 0u);
+    // at speed the air stretches the drop along its push (1 standing still: the drop as it always was)
+    float stretch = 1.0 + drop_wind_stretch * speed * rain_byte(b, 8u);
+    shapeM = mat2(1.0, 0.0, 0.0, 1.0 / sag) * (mat2(1.0) + (1.0 / stretch - 1.0) * outerProduct(pushT, pushT));
+    sq     = size * spreadF;   // spreads out as it lands
+    dl     = shapeM * (p - center);
+    return max(abs(dl.x), abs(dl.y)) < sq * 0.5;
 }
 
 void main()
@@ -648,13 +639,6 @@ void main()
     // wiper state of this pixel (blur, micro droplets)
     float hazeSide;
     float wipeVis = GetMixFactor(f_coord, hazeSide);
-    // the blades went over the glass lately (the water they pushed still lies along the edge of the sweep)
-    for (int i = 0; i < 4; ++i)
-    {
-        float t = max(wiper_timer_out[i], wiper_timer_return[i]);
-        if ((t > -500.0) && (t <= time))
-            wsWiperRecent = max(wsWiperRecent, 1.0 - smoothstep(0.5 * wiper_edge_keep, wiper_edge_keep, time - t));
-    }
 
     Hit hit;
     hit.score = 0.0; hit.cov = 0.0; hit.colA = 0.0; hit.n = vec3(0.0, 0.0, 1.0);
@@ -714,52 +698,46 @@ void main()
         // ===================================================================
         // 1. drops from the atlas: this cell and its 8 neighbours
         // ===================================================================
-        vec2 cell = floor(rainCoord * gridSize);
+        vec2  cell   = floor(rainCoord * gridSize);
+        float actMax = min(rain_params.x * drop_density, 0.95);
         for (int oy = -1; oy <= 1; oy++)
         for (int ox = -1; ox <= 1; ox++)
         {
-            vec2  nc   = cell + vec2(ox, oy);
-            uvec2 key  = cellKey(nc);
-            // life cycle of this cell: a new drop every lifeLen seconds
-            uint  s0      = Hash(uvec3(key, 23u));
-            float lifeLen = mix(drop_life_min, drop_life_max, RandF(s0));
-            float tt      = time / lifeLen + RandF(s0);
-            float epoch   = floor(tt);
-            float ph      = tt - epoch;
-            uint  ep      = uint(mod(epoch, 65521.0));
-            // activation first (cheap), the wiper texture only for live drops
-            uint s1 = Hash(uvec3(key, ep * 4u + 1u));
-            float edge = wsWiperEdge((nc + 0.5) / gridSize);
-            if (RandF(s1) > min(rain_params.x * drop_density * (1.0 + wiper_edge_boost * edge), 0.95))
+            vec2  nc = cell + vec2(ox, oy);
+            // the drop of the cell as it is now (rain_cells.comp): none, or the one of either side of the blades
+            uvec4 d  = rain_cells[rain_drop_index(ivec2(nc))];
+            if (rain_byte(d.y, 24u) > actMax)
                 continue;
+            float vis = float(d.w >> 24) * (1.0 / 255.0);
+            if (vis <= 0.001)
+                continue;
+            float spreadF = mix(0.8, 1.0, float((d.y >> 19) & 31u) * (1.0 / 31.0));
             // a drop the blades miss: the same drop before and after the stroke, left where it is
-            bool  missed = RandF(s1) < wiper_miss;
-            float side;
+            bool  missed  = ((d.w >> 19) & 1u) != 0u;
+            vec2  center0, center1, dl0, dl1;
+            float sq0, sq1, sag0, sag1;
+            mat2  shape0, shape1;
+            bool  in0 = wsDropShape(d.x, d.y, nc, gridSize, spreadF, wsSpeed, wsPushT, rainCoord, center0, sq0, sag0, shape0, dl0);
+            bool  in1 = (!missed) && wsDropShape(d.z, d.w, nc, gridSize, spreadF, wsSpeed, wsPushT, rainCoord, center1, sq1, sag1, shape1, dl1);
+            // the wipers asked only for the drops the pixel lies on
+            if (!(in0 || in1))
+                continue;
+            float side = 0.0;
             float mixF = missed ? 1.0 : GetMixFactor((nc + 0.5) / gridSize, side);
-            if (missed) side = 0.0;
-            uint s2 = Hash(uvec3(key, ep * 4u + 2u + uint(side) * 2u));
-            if (mixF < RandF(s2))
+            bool  back = (side > 0.5);
+            if (!(back ? in1 : in0))
                 continue;
-
-            vec2  center = (nc + vec2(RandF(s2), RandF(s2))) / gridSize;
-            float size   = mix(drop_size_min, drop_size_max, pow(RandF(s2), drop_size_bias)) / gridSize * mix(1.0, wiper_edge_size, edge);
-            float sag    = 1.0 + drop_sag * RandF(s2);
-            float flipX  = (RandF(s2) < 0.5) ? 1.0 : 0.0;
-            float choice = RandF(s2);
-            // at speed the air stretches the drop along its push (1 standing still: the drop as it always was)
-            float stretch = 1.0 + drop_wind_stretch * wsSpeed * RandF(s2);
-            mat2  shapeM  = mat2(1.0, 0.0, 0.0, 1.0 / sag)
-                          * (mat2(1.0) + (1.0 / stretch - 1.0) * outerProduct(wsPushT, wsPushT));
-
-            float appearF = drop_appear / lifeLen;
-            float fadeF   = drop_fade / lifeLen;
-            float vis  = smoothstep(0.0, appearF, ph) * (1.0 - smoothstep(1.0 - fadeF, 1.0, ph));
-            float sq   = size * mix(0.8, 1.0, smoothstep(0.0, 2.0 * appearF, ph));   // spreads out as it lands
-
-            vec2 diff = rainCoord - center;
-            vec2 dl   = shapeM * diff;
-            if (max(abs(dl.x), abs(dl.y)) >= sq * 0.5)
+            if (mixF < rain_byte(back ? d.z : d.x, 0u))
                 continue;
+            uint  db      = back ? d.w : d.y;
+            vec2  center  = back ? center1 : center0;
+            float sq      = back ? sq1 : sq0;
+            float sag     = back ? sag1 : sag0;
+            mat2  shapeM  = back ? shape1 : shape0;
+            vec2  dl      = back ? dl1 : dl0;
+            float flipX   = (((db >> 16) & 1u) != 0u) ? 1.0 : 0.0;
+            float choice  = (float((db >> 17) & 3u) + 0.5) * 0.25;
+            vec2  diff    = rainCoord - center;
 
             if (sweepOn)
             {
@@ -804,7 +782,7 @@ void main()
             float mph   = fract(mtt);
             uint  mep   = uint(mod(floor(mtt), 65521.0));
             uint  m1    = Hash(uvec3(mk, mep * 4u + 1u));
-            if (RandF(m1) < min(rain_params.x * micro_density * (1.0 + wiper_edge_boost * wsWiperEdge((mc + 0.5) / mg)), 0.95))
+            if (RandF(m1) < min(rain_params.x * micro_density, 0.95))
             {
                 uint m2 = Hash(uvec3(mk, mep * 4u + 2u + uint(hazeSide) * 2u));
                 if (wipeVis >= RandF(m2))
