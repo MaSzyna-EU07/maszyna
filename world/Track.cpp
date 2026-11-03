@@ -442,7 +442,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     std::string str;
     size_t i; //,state; //Ra: teraz już nie ma początkowego stanu zwrotnicy we wpisie
     std::string token;
-    bool tributary{false};
 
     parser->getTokens();
     *parser >> str; // typ toru
@@ -484,17 +483,11 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     else if (str == "tributary")
     {
-        ErrorLog("Bad track: type \"tributary\" of track \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + ") isn't supported, loaded as a river with its first path");
-        eType = tt_Normal;
+        eType = tt_Tributary;
         iCategoryFlag = 4;
-        tributary = true;
     }
     else
-    {
-        ErrorLog("Bad track: unknown type \"" + str + "\" of track \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + "), loaded as a normal track");
-        eType = tt_Normal;
-        iCategoryFlag = 1;
-    }
+        eType = tt_Unknown;
     if (Global.iWriteLogEnabled & 4)
         WriteLog(str);
     parser->getTokens(4);
@@ -567,10 +560,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // all subtypes contain at least one path
     m_paths.emplace_back();
     m_paths.back().deserialize( *parser, pOrigin );
-    if( tributary ) {
-        segment_data ignored;
-        ignored.deserialize( *parser, pOrigin );
-    }
     switch( eType ) {
         case tt_Switch:
         case tt_Cross:
