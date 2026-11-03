@@ -89,11 +89,6 @@ const float WS_ENC        = 64.0;           // the haze request in the velocity 
 
 // --- Drops (atlas tiles) ------------------------------------------------------
 // (how long they live: rain_cells.glsl; the cells of the drops and of the rivulets are worked out once a frame by rain_cells.comp)
-const float drop_density    = 0.6;          // share of grid cells holding a drop at full rain (scaled by rain intensity)
-const float drop_size_min   = 0.45;         // drop size in grid cells
-const float drop_size_max   = 1.15;
-const float drop_size_bias  = 1.8;          // >1 = more small/medium drops, fewer big ones
-const float drop_sag        = 0.12;         // max vertical stretch of a resting drop (gravity)
 
 // --- Micro droplets -------------------------------------------------------------
 const float micro_density   = 0.45;         // share of micro cells holding a droplet at full rain, 0 = off
@@ -153,7 +148,6 @@ const float wind_run_scale     = 1.2;   // ... and their runs this long against 
 const float wind_head_scale    = 0.4;   // their heads this much smaller (a small bead at the front of a long trail)
 const int   wind_layers        = 4;     // layers of them, each with drops of its own (1 .. 4)
 const float wind_long_run      = 3.0;   // the last layer: its trails this much longer than those of gravity (the long ones, a part of all)
-const float drop_wind_stretch  = 0.4;   // drops are stretched up to this much along the push of the air (0 = off)
 const float WS_DRAG_SPEED = 24.0;       // speed of the air along the glass at which its drag equals the weight of a drop, m/s
 const float WS_HEAD_ON    = 0.35;       // share of the air meeting the glass head on which turns up along it
 const float WS_WIND_STEP  = 0.1309;     // the direction of the rivulets of the air in steps of 7.5 degrees (no seams on a
@@ -543,12 +537,10 @@ void drawRivulet(inout Hit hit, Riv r, vec2 sUVr, vec2 rd1, vec2 rd2)
 }
 
 // how much of a drop centred at Cg (glass UV, v up) with radius Rad the rivulets of both layers have swept up (0..1 kept)
-float wsKept(vec2 cg, float rad, Riv rivP, vec2 sCell, float sCW, float sCH, float gridSize)
+float wsKept(vec2 cg, float rad, float sCW, float sCH, float gridSize)
 {
     wsSetLayer(0);
-    vec2 rc = floor(cg / vec2(sCW, sCH));
-    Riv  rv = rivP;
-    if (rc != sCell) rv = getRiv(rc, sCW, sCH, gridSize);
+    Riv  rv = getRiv(floor(cg / vec2(sCW, sCH)), sCW, sCH, gridSize);
     float kept = 1.0 - streak_sweep * rivSwept(rv, cg, rad);
     if (wsWindShare > 0.001)
     {
@@ -581,13 +573,27 @@ float wsWipeAge(vec2 co)
     return age;
 }
 
+// the tangent frame of the glass (the directions of u and v on it, view space) from the screen-space change of the place and the uv
+void wsGlassFrame(vec3 Ngl, vec2 duv1, vec2 duv2, out vec3 Tgl, out vec3 Bgl)
+{
+    vec3  dp1     = dFdx(f_pos.xyz);
+    vec3  dp2     = dFdy(f_pos.xyz);
+    vec3  dp2perp = cross(dp2, Ngl);
+    vec3  dp1perp = cross(Ngl, dp1);
+    Tgl = dp2perp * duv1.x + dp1perp * duv2.x;
+    Bgl = dp2perp * duv1.y + dp1perp * duv2.y;
+    float invmax  = inversesqrt(max(max(dot(Tgl, Tgl), dot(Bgl, Bgl)), 1e-20));
+    Tgl *= invmax;
+    Bgl *= invmax;
+}
+
 // the drop of a cell for one side of the blades (A, B: its half of the cell in rain_cells): where it lies, how big it is and its
 // shape (the sag, the stretch by the air along PushT). true when P lies on it
 bool wsDropShape(uint a, uint b, vec2 nc, float gridSize, float spreadF, float speed, vec2 pushT, vec2 p,
                  out vec2 center, out float sq, out float sag, out mat2 shapeM, out vec2 dl)
 {
     center = (nc + vec2(rain_byte(a, 8u), rain_byte(a, 16u))) / gridSize;
-    float size = mix(drop_size_min, drop_size_max, pow(rain_byte(a, 24u), drop_size_bias)) / gridSize;
+    float size = mix(drop_size_min, drop_size_max, rain_byte(a, 24u)) / gridSize;   // the bias of the sizes: rain_cells.comp
     sag    = 1.0 + drop_sag * rain_byte(b, 0u);
     // at speed the air stretches the drop along its push (1 standing still: the drop as it always was)
     float stretch = 1.0 + drop_wind_stretch * speed * rain_byte(b, 8u);
@@ -600,28 +606,12 @@ bool wsDropShape(uint a, uint b, vec2 nc, float gridSize, float spreadF, float s
 void main()
 {
     // ---- screen-space derivatives (before any non-uniform flow) ----
-    float uvPerPx = max(length(dFdx(f_coord)), length(dFdy(f_coord)));
-    vec2  sxy         = f_pos.xy / max(-f_pos.z, 1e-3);
-    float pxPerSlope  = 1.0 / max(max(length(dFdx(sxy)), length(dFdy(sxy))), 1e-6);
-    vec3  Ngl     = normalize(f_normal);
-    vec3  wsView  = normalize(f_pos.xyz);   // the view through the glass and its change per pixel (for the bent view)
-    vec3  wsDvx   = dFdx(wsView);
-    vec3  wsDvy   = dFdy(wsView);
-    vec3  dp1     = dFdx(f_pos.xyz);
-    vec3  dp2     = dFdy(f_pos.xyz);
+    // only what the drops, the droplets and the rivulets read is kept through their loops; the frame of the glass, the change of the
+    // view and the lens are worked out again for the shading after them (fewer registers in the loops: more pixels at once)
     vec2  duv1    = dFdx(f_coord);
     vec2  duv2    = dFdy(f_coord);
-    vec3  dp2perp = cross(dp2, Ngl);
-    vec3  dp1perp = cross(Ngl, dp1);
-    vec3  Tgl     = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3  Bgl     = dp2perp * duv1.y + dp1perp * duv2.y;
-    float invmax  = inversesqrt(max(max(dot(Tgl, Tgl), dot(Bgl, Bgl)), 1e-20));
-    Tgl *= invmax;
-    Bgl *= invmax;
-    // glass UV offset -> screen pixels (inverse of the UV Jacobian), for the drop lens
-    mat2  Juv  = mat2(duv1, duv2);
-    float detJ = determinant(Juv);
-    mat2  Jinv = (abs(detJ) > 1e-20) ? inverse(Juv) : mat2(0.0);
+    float uvPerPx = max(length(duv1), length(duv2));
+    vec3  Ngl     = normalize(f_normal);
 
     vec4 tex_color = texture(diffuse, f_coord);
     float glassA   = tex_color.a * alpha_mult;
@@ -647,11 +637,16 @@ void main()
     hit.offUV = vec2(0.0); hit.radUV = 1.0; hit.isDrop = 1.0;
     hit.vis = 0.0; hit.auv = vec2(0.0); hit.agx = vec2(0.0); hit.agy = vec2(0.0); hit.atlas = 0.0; hit.shade = 0.0;
 
-    // ---- the air against the vehicle on the glass (uniform flow: the derivatives of the glass above) ----
+    // ---- the air against the vehicle on the glass (uniform flow: the derivatives of the glass) ----
+    vec2  wsPushT;
+    float wsSpeed;
     float flipS  = (STREAK_FLIP_Y != 0) ? -1.0 : 1.0;          // texture v -> glass v (up)
+    vec3  wsN    = (dot(Ngl, f_pos.xyz) < 0.0) ? -Ngl : Ngl;    // the outside of the glass
+    {
+    vec3  Tgl, Bgl;
+    wsGlassFrame(Ngl, duv1, duv2, Tgl, Bgl);
     vec3  wsUp   = vec3(0.0, 1.0, 0.0) * mat3(inv_view);       // world up, view space
     vec3  wsAir  = rain_wind.xyz * mat3(inv_view);              // the air against the vehicle, view space, m/s
-    vec3  wsN    = (dot(Ngl, f_pos.xyz) < 0.0) ? -Ngl : Ngl;    // the outside of the glass
     vec3  wsGrav = -wsUp - wsN * dot(-wsUp, wsN);               // the weight along the glass
     vec3  wsRise = wsUp - wsN * dot(wsUp, wsN);
     wsRise = (length(wsRise) > 0.1) ? normalize(wsRise) : vec3(0.0);
@@ -662,7 +657,7 @@ void main()
     // to the glass UV (v up) through the tangent frame of the texture
     vec2  gravG  = vec2(dot(wsGrav, Tgl), dot(wsGrav, Bgl) * flipS);
     vec2  flowG  = vec2(dot(wsFlowDir, Tgl), dot(wsFlowDir, Bgl) * flipS);
-    float wsSpeed = smoothstep(0.3, 1.2, wsDrag);               // 0 standing still .. 1 at speed (haze, drops)
+    wsSpeed = smoothstep(0.3, 1.2, wsDrag);               // 0 standing still .. 1 at speed (haze, drops)
     wsWindShare   = smoothstep(0.5, 1.3, wsDrag);               // how much the air drives the rivulets
     if (wsWindShare > 0.0)
     {
@@ -680,8 +675,9 @@ void main()
             wsWindShare = 0.0;
     }
     // the push of the air on the drops, texture UV (for stretching them)
-    vec2  wsPushT  = vec2(dot(wsPush, Tgl), dot(wsPush, Bgl));
+    wsPushT  = vec2(dot(wsPush, Tgl), dot(wsPush, Bgl));
     wsPushT = (dot(wsPushT, wsPushT) > 1e-10) ? normalize(wsPushT) : vec2(0.0, -1.0);
+    }
     // the change of the glass UV (v up) per screen pixel, for the rivulets
     vec2  wsRd1 = vec2(duv1.x, flipS * duv1.y);
     vec2  wsRd2 = vec2(duv2.x, flipS * duv2.y);
@@ -692,7 +688,6 @@ void main()
     float sCH   = streak_run  / gridSize;
     vec2  sUVg  = vec2(f_coord.x, (STREAK_FLIP_Y != 0) ? 1.0 - f_coord.y : f_coord.y);   // glass UV, v up
     vec2  sCell = floor(sUVg / vec2(sCW, sCH));
-    Riv   rivP  = getRiv(sCell, sCW, sCH, gridSize);
     bool  sweepOn = streak_sweep > 0.0 && streak_density > 0.0 && (wind_streaks > 0.0 || wsWindShare < 1.0) && (WS_PROFILE != 2);
 
     if ((rain_params.x > 0.001) && (WS_PROFILE != 5))
@@ -700,20 +695,20 @@ void main()
         // ===================================================================
         // 1. drops from the atlas: this cell and its 8 neighbours
         // ===================================================================
-        vec2  cell   = floor(rainCoord * gridSize);
+        vec2  cellF  = rainCoord * gridSize;
+        vec2  cell   = floor(cellF);
 #if WS_PROFILE != 4
-        float actMax = min(rain_params.x * drop_density, 0.95);
-        for (int oy = -1; oy <= 1; oy++)
-        for (int ox = -1; ox <= 1; ox++)
+        // the drops of the 9 cells around which reach the quarter of the cell the pixel lies in (worked out by rain_cells.comp,
+        // with the drops there are now): usually 1 .. 3 of them
+        uvec2 quarter = uvec2(greaterThanEqual(cellF - cell, vec2(0.5)));
+        uint  reach   = rain_cells[rain_mask_index(ivec2(cell))][quarter.y * 2u + quarter.x];
+        while (reach != 0u)
         {
-            vec2  nc = cell + vec2(ox, oy);
-            // the drop of the cell as it is now (rain_cells.comp): none, or the one of either side of the blades
+            int   bit = findLSB(reach);
+            reach &= reach - 1u;
+            vec2  nc = cell + vec2(float(bit % 3 - 1), float(bit / 3 - 1));
             uvec4 d  = rain_cells[rain_drop_index(ivec2(nc))];
-            if (rain_byte(d.y, 24u) > actMax)
-                continue;
             float vis = float(d.w >> 24) * (1.0 / 255.0);
-            if (vis <= 0.001)
-                continue;
             float spreadF = mix(0.8, 1.0, float((d.y >> 19) & 31u) * (1.0 / 31.0));
             // a drop the blades miss: the same drop before and after the stroke, left where it is
             bool  missed  = ((d.w >> 19) & 1u) != 0u;
@@ -745,7 +740,7 @@ void main()
             if (sweepOn)
             {
                 vec2  cg = vec2(center.x, (STREAK_FLIP_Y != 0) ? 1.0 - center.y : center.y);
-                vis *= wsKept(cg, 0.35 * sq, rivP, sCell, sCW, sCH, gridSize);
+                vis *= wsKept(cg, 0.35 * sq, sCW, sCH, gridSize);
             }
             if (vis <= 0.001)
                 continue;
@@ -804,7 +799,7 @@ void main()
                         {
                             vec2 cu = c / mg;
                             vec2 cg = vec2(cu.x, (STREAK_FLIP_Y != 0) ? 1.0 - cu.y : cu.y);
-                            vis *= wsKept(cg, r / mg, rivP, sCell, sCW, sCH, gridSize);
+                            vis *= wsKept(cg, r / mg, sCW, sCH, gridSize);
                         }
                         float d   = sqrt(d2);
                         float cov = smoothstep(1.0, 0.8, d) * vis;
@@ -830,7 +825,7 @@ void main()
         // ===================================================================
 #if WS_PROFILE != 2
         wsSetLayer(0);
-        drawRivulet(hit, rivP, sUVg, wsRd1, wsRd2);
+        drawRivulet(hit, getRiv(sCell, sCW, sCH, gridSize), sUVg, wsRd1, wsRd2);
         if (wsWindShare > 0.001)
         {
             for (int wl = 1; wl <= wind_layers; ++wl)
@@ -846,6 +841,21 @@ void main()
         }
 #endif
     }
+
+    // ---- the frame of the glass, the change of the view and the lens, for the shading (uniform flow again) ----
+    vec2  sxy         = f_pos.xy / max(-f_pos.z, 1e-3);
+    float pxPerSlope  = 1.0 / max(max(length(dFdx(sxy)), length(dFdy(sxy))), 1e-6);
+    vec3  wsView  = normalize(f_pos.xyz);   // the view through the glass and its change per pixel (for the bent view)
+    vec3  wsDvx   = dFdx(wsView);
+    vec3  wsDvy   = dFdy(wsView);
+    vec3  dp1     = dFdx(f_pos.xyz);
+    vec3  dp2     = dFdy(f_pos.xyz);
+    vec3  Tgl, Bgl;
+    wsGlassFrame(Ngl, duv1, duv2, Tgl, Bgl);
+    // glass UV offset -> screen pixels (inverse of the UV Jacobian), for the drop lens
+    mat2  Juv  = mat2(duv1, duv2);
+    float detJ = determinant(Juv);
+    mat2  Jinv = (abs(detJ) > 1e-20) ? inverse(Juv) : mat2(0.0);
 
     // -----------------------------------------------------------------------
     // Shading of the winning dome

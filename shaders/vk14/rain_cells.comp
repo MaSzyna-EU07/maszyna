@@ -1,15 +1,18 @@
 #version 460 core
 #define STAGE_COMPUTE 1
 // the cells of the glasses with rain (rain_cells.glsl): the drops and the rivulets of every cell worked out for the time of the
-// frame, a thread a cell, before the passes which draw the glasses (mat_rain_windscreen.frag only reads them)
+// frame, a thread a cell, before the passes which draw the glasses (mat_rain_windscreen.frag only reads them). two passes: the
+// cells (rain_pass 0), then which drops reach the quarters of each drop cell (rain_pass 1, it reads the first)
 
-// none of the pass set: the cells pushed with the dispatch (set COMPUTE_SET), the time in the push constants
+// none of the pass set: the cells pushed with the dispatch (set COMPUTE_SET), the time and the pass in the push constants
 #define LAYOUT_UI 1
 #include "common.glsl"
 
 layout(push_constant) uniform kernel_constants
 {
-	float rain_time; // the time of the block of the scene (scene_ubs.time)
+	float rain_time;   // the time of the block of the scene (scene_ubs.time)
+	float rain_amount; // how hard it rains (scene_ubs.rain_params.x)
+	int   rain_pass;   // 0 the cells, 1 the reach of the drops
 };
 
 #include "random.glsl"
@@ -65,7 +68,7 @@ uvec4 drop_cell(ivec2 Cell)
 		float choice  = RandF(s2);
 		float stretch = RandF(s2);
 		uint  tile    = min(uint(choice * 4.0), 3u);
-		uint  a = q8(thr) | (q8(cx) << 8) | (q8(cy) << 16) | (q8(size) << 24);
+		uint  a = q8(thr) | (q8(cx) << 8) | (q8(cy) << 16) | (q8(pow(size, drop_size_bias)) << 24);
 		uint  b = q8(sag) | (q8(stretch) << 8) | ((flip < 0.5) ? (1u << 16) : 0u) | (tile << 17);
 		if (side == 0u)
 		{
@@ -113,10 +116,64 @@ uvec4 rivulet_cell(int Layer, ivec2 Cell)
 	return result;
 }
 
+// how far from the centre (in cells) the drop of side half A, B of a cell can reach at most: half its size, the sag, the stretch of the
+// air at its strongest, any way it is turned
+float drop_reach(uint A, uint B, float Spread)
+{
+	float half_size = 0.5 * mix(drop_size_min, drop_size_max, rain_byte(A, 24u)) * Spread;
+	float sag       = 1.0 + drop_sag * rain_byte(B, 0u);
+	float stretch   = 1.0 + drop_wind_stretch * rain_byte(B, 8u);
+	return half_size * sqrt(1.0 + sag * sag) * stretch * 1.01;
+}
+
+// the reach of the drops around a drop cell into its quarters (rain_cells.glsl), from the cells worked out by the first pass
+uvec4 drop_masks(ivec2 Cell)
+{
+	uvec4 result = uvec4(0u);
+	float most   = min(rain_amount * drop_density, 0.95);
+	for (int dy = -1; dy <= 1; ++dy)
+	for (int dx = -1; dx <= 1; ++dx)
+	{
+		uvec4 d = rain_cells[rain_drop_index(Cell + ivec2(dx, dy))];
+		if ((rain_byte(d.y, 24u) > most) || ((d.w >> 24) == 0u))
+			continue;
+		float spread = mix(0.8, 1.0, float((d.y >> 19) & 31u) * (1.0 / 31.0));
+		bool  missed = ((d.w >> 19) & 1u) != 0u;
+		uint  bit    = 1u << uint((dy + 1) * 3 + dx + 1);
+		for (uint side = 0u; side < 2u; ++side)
+		{
+			if ((side == 1u) && missed)
+				break;
+			uint  a      = (side == 0u) ? d.x : d.z;
+			uint  b      = (side == 0u) ? d.y : d.w;
+			vec2  centre = vec2(dx, dy) + vec2(rain_byte(a, 8u), rain_byte(a, 16u));
+			float reach  = drop_reach(a, b, spread);
+			for (uint q = 0u; q < 4u; ++q)
+			{
+				vec2 low  = vec2(float(q & 1u), float(q >> 1)) * 0.5;
+				vec2 away = max(max(low - centre, centre - (low + 0.5)), vec2(0.0));
+				if (dot(away, away) < reach * reach)
+					result[q] |= bit;
+			}
+		}
+	}
+	return result;
+}
+
 void main()
 {
 	uint index = gl_GlobalInvocationID.x;
-	if (index >= uint(RAIN_CELLS_COUNT))
+	if (rain_pass == 1)
+	{
+		// the second pass: the reach of the drops, a thread a drop cell
+		if (index >= uint(RAIN_DROP_CELLS * RAIN_DROP_CELLS))
+			return;
+		ivec2 texel = ivec2(int(index % uint(RAIN_DROP_CELLS)), int(index / uint(RAIN_DROP_CELLS)));
+		ivec2 cell = ivec2(texel.x == RAIN_DROP_CELLS - 1 ? -1 : texel.x, texel.y == RAIN_DROP_CELLS - 1 ? -1 : texel.y);
+		rain_cells[uint(RAIN_MASK_BASE) + index] = drop_masks(cell);
+		return;
+	}
+	if (index >= uint(RAIN_MASK_BASE))
 		return;
 	if (index < uint(RAIN_RIV_BASE))
 	{
