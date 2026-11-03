@@ -476,6 +476,12 @@ std::string FileCased(std::string const &Filename)
 	std::error_code error;
 	if (std::filesystem::exists(Filename, error))
 		return Filename;
+#ifdef _WIN32
+	// the names there are found in any case already: no folder to go through for every file missing, nor names outside of the
+	// code page to throw on
+	return {};
+#else
+	// only the name of the file itself, a folder named in another case isn't found
 	std::filesystem::path const path{Filename};
 	auto const directory{path.has_parent_path() ? path.parent_path() : std::filesystem::path{"."}};
 	auto const wanted{ToLower(path.filename().string())};
@@ -483,6 +489,7 @@ std::string FileCased(std::string const &Filename)
 		if (ToLower(entry->path().filename().string()) == wanted)
 			return path.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
 	return {};
+#endif
 }
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)

@@ -598,7 +598,7 @@ void ui_layer::render_hierarchy(){
 
                 if (ImGui::IsItemHovered())
                 {
-                    ImGui::SetTooltip(STR_C("UUID: %s\nNode type: %s"),uuid.c_str(), typeid(*node).name());
+                    ImGui::SetTooltip(STR_C("UUID: %s\nNode type: %s"), uuid.c_str(), typeid(*node).name());
                 }
             }
         }

@@ -67,8 +67,13 @@ bool scenarioloader_mode::update() {
 			return true;
 	}
 	catch (invalid_scenery_exception &e) {
+		// back to the launcher as when the scenario can't be opened, not on to the driver mode with the scenery half loaded
 		ErrorLog( "Bad init: scenario loading failed" );
+		state.reset();
+		Global.SceneryFile.clear();
 		Application.pop_mode();
+		Application.push_mode(eu07_application::mode::launcher);
+		return true;
 	}
 	// the loading state holds the scenario file open, which on some systems keeps the file from being replaced
 	// when the scenery is saved in the editor. it'd also get in the way of another load
