@@ -53,6 +53,7 @@ void gl::glsl_common_setup()
     "#define WATER_MAP " + std::to_string(WATER_MAP) + "\n" +
     "#define WATER_GROUP_SIZE " + std::to_string(WATER_GROUP_SIZE) + "\n" +
     "#define WATER_SSBO_BINDING " + std::to_string(WATER_SSBO_BINDING) + "\n" +
+    "#define RAIN_CELLS_SSBO_BINDING " + std::to_string(RAIN_CELLS_SSBO_BINDING) + "\n" +
     "#define WATER_UBO_BINDING " + std::to_string(WATER_UBO_BINDING) + "\n" +
     "#define WATER_MASK_TEX " + std::to_string(WATER_MASK_TEX) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
