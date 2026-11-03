@@ -79,6 +79,8 @@ class opengl33_renderer : public gfx_renderer {
 		UserData( gfx::geometry_handle const &Geometry ) const override;
 	int
 		Primitive( gfx::geometry_handle const &Geometry ) const override;
+	bool
+		Draws_Timbers() const override { return true; }
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
