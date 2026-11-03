@@ -483,6 +483,8 @@ class opengl33_renderer : public gfx_renderer {
 		std::vector<glm::mat4> instances;
 	};
 	std::vector<timber_bucket> m_timberbuckets;
+	// the visibility of the submodels of the top level of a timber model, kept while a part of it is drawn alone
+	std::vector<int> m_timbervisibility;
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance
 	// camera-space root modelview matrices for the batch currently being built.
 	// Kept as a member rather than a function-local so its heap allocation is

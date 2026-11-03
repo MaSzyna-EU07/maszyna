@@ -94,6 +94,23 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
             model.parts[ part ] = model.model->GetFromName( names[ part ] );
             model.stretchable = model.stretchable && model.parts[ part ] != nullptr;
         }
+        if( model.stretchable ) {
+            // a part is drawn with the other submodels of the top level hidden, so the parts are there too
+            auto toplevel { 0 };
+            for( auto *submodel { model.model->Root }; submodel != nullptr; submodel = submodel->Next ) {
+                if( std::find( model.parts.begin(), model.parts.end(), submodel ) != model.parts.end() ) {
+                    ++toplevel;
+                }
+                else {
+                    model.others.push_back( submodel );
+                }
+            }
+            if( toplevel < part_count ) {
+                ErrorLog( "Bad sleepers3d: model \"" + Name + "\" has its parts begin, main and end below its top level, it's drawn whole" );
+                model.stretchable = false;
+                model.others.clear();
+            }
+        }
         auto top { std::numeric_limits<float>::lowest() };
         model.span = { std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest() };
         if( model.stretchable ) {

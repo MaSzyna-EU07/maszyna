@@ -3752,7 +3752,8 @@ void opengl33_renderer::Render_Sleepers( TTrack *Track )
 void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last )
 {
 	if( Global.SleeperDistance <= 0.f ) { return; }
-	if( track_sleepers::timber_model() == nullptr ) { return; }
+	// a name alone, without looking the model up: the tracks it failed to load for aren't laid
+	if( Global.Sleepers3D.empty() ) { return; }
 
 	auto const shadows = ( m_renderpass.draw_mode == rendermode::shadows );
 	// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
@@ -3836,12 +3837,15 @@ void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 		auto *model = beammodel.model;
 		if( bucket.part >= 0 ) {
 			// only the part of the model is visible, its siblings are skipped as the model is walked: the other parts, and what
-			// else the model has, like the fastenings of the rails, which aren't laid
-			for( auto *submodel = model->Root; submodel != nullptr; submodel = submodel->Next ) {
-				submodel->iVisible = 0;
-			}
+			// else the model holds, like the fastenings of the rails, which aren't laid
+			m_timbervisibility.clear();
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
+				m_timbervisibility.push_back( beammodel.parts[ part ]->iVisible );
 				beammodel.parts[ part ]->iVisible = ( part == bucket.part ? 1 : 0 );
+			}
+			for( auto *other : beammodel.others ) {
+				m_timbervisibility.push_back( other->iVisible );
+				other->iVisible = 0;
 			}
 		}
 		material_data skins {};
@@ -3867,11 +3871,13 @@ void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 			++m_renderpass.draw_stats.instanced_drawcalls;
 		}
 		if( bucket.part >= 0 ) {
-			for( auto *submodel = model->Root; submodel != nullptr; submodel = submodel->Next ) {
-				submodel->iVisible = 1;
-			}
+			// as they were, some hidden by the model itself, which may stand in the scenery too
+			auto visibility = m_timbervisibility.begin();
 			for( int part = 0; part < track_sleepers::part_count; ++part ) {
-				beammodel.parts[ part ]->iVisible = 1;
+				beammodel.parts[ part ]->iVisible = *visibility++;
+			}
+			for( auto *other : beammodel.others ) {
+				other->iVisible = *visibility++;
 			}
 		}
 	}
