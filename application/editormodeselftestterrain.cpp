@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <array>
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -324,6 +325,26 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		words >> which;
 		nmt_auto_start(which == "unfitted");
 		WriteLog("SELFTEST nmtauto " + which + ": " + m_nmt_state.status);
+		return selftest_result::handled;
+	}
+	if (command == "shorttracks")
+	{
+		// how many plain tracks are short, the ballast mapped on each from its start: under 1, 3 and 6 m
+		std::string label;
+		words >> label;
+		std::array<int, 3> counts{};
+		int all{0};
+		for (auto const *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || track->eType != tt_Normal)
+				continue;
+			++all;
+			auto const length{geometry::bezier{track->m_paths.front()}.plan_length()};
+			for (auto const [i, limit] : {std::pair{0, 1.0}, std::pair{1, 3.0}, std::pair{2, 6.0}})
+				if (length < limit)
+					++counts[i];
+		}
+		WriteLog(format("SELFTEST shorttracks %s: %d plain tracks, under 1 m %d, under 3 m %d, under 6 m %d", label.c_str(), all, counts[0], counts[1], counts[2]));
 		return selftest_result::handled;
 	}
 	if (command == "shareexplain")
@@ -944,6 +965,18 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		}
 		for (auto const &point : m_profile.line.points)
 			stream << "P " << point.chainage << ' ' << point.elevation << ' ' << point.radius << '\n';
+		// what a fit of the line is told besides: the ends joined, the switches, the heights held, the norms
+		auto const &context{m_profile.context};
+		auto const &line{m_profile.line};
+		stream << "C " << context.length << ' ' << context.start_joined << ' ' << context.start_elevation << ' ' << context.start_grade << ' ' << context.end_joined << ' ' << context.end_elevation << ' ' << context.end_grade << '\n';
+		for (auto const &zone : context.switches)
+			stream << "Z " << zone.from << ' ' << zone.to << '\n';
+		for (auto const &zone : context.humps)
+			stream << "H " << zone.from << ' ' << zone.to << '\n';
+		for (auto const &[chainage, elevation] : context.fixed)
+			stream << "F " << chainage << ' ' << elevation << '\n';
+		stream << "L " << line.speed << ' ' << line.norms.grade_max << ' ' << line.norms.grade_switch_max << ' ' << line.norms.radius_factor << ' ' << line.norms.radius_min << ' ' << line.norms.curve_threshold << ' ' << line.norms.element_min << ' '
+		       << line.norms.fixed_tolerance << ' ' << line.join_start << ' ' << line.join_end << '\n';
 		WriteLog("SELFTEST profiledump: " + file);
 		return selftest_result::handled;
 	}

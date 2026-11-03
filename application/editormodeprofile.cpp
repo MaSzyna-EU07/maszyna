@@ -1741,7 +1741,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	std::vector<double> ends;
 	for (auto const &span : state.route.spans)
 		ends.insert(ends.end(), {span.from, span.to});
-	auto cuts{Fewest > 0.0 ? profile::fewest_breaks(line, ends, Fewest) : profile::breaks(line)};
+	auto cuts{profile::breaks(line)};
 	// an edit goes onto the track as what it changed in the line: where it changed nothing the track stays as it lies, whatever the line
 	// read from it is off it by, and isn't cut
 	bool const edit_only{state.changed && false == state.fitting};
@@ -1755,6 +1755,11 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 		});
 	auto const height_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage); };
 	auto const grade_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read_line, Chainage) : profile::grade(line, Chainage); };
+	// the paths are cut only at the breaks they can't go over keeping to the line within a hair: one cut there, by a joint, or by
+	// another cut, would leave a sliver of a track, the line applied again leaving more of them by the first, the ballast mapped
+	// on each from its start. A path just laid keeps to it as closely as Fewest
+	double constexpr kFollow{0.002}; // m
+	cuts = profile::fewest_breaks(cuts, ends, Fewest > 0.0 ? Fewest : kFollow, height_at, grade_at);
 	// a bridge ends at a joint or a break of the line by its abutment rather than leave a sliver of a path there
 	double constexpr kBridgeSnap{1.0}; // m
 	auto joints{cuts};
