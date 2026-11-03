@@ -1563,6 +1563,9 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
         SwitchExtension->Geometry3 = gfx::geometry_handle{};
     }
     m_sleeper_local_transforms.clear();
+    // the sleepers of this track and of the tracks around depend on where it runs
+    m_sleepers3d.dirty = true;
+    track_sleepers::unsettle_around( *this );
 
     if( Bank == null_handle ) { return; }
 
@@ -1578,6 +1581,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         SwitchExtension->m_nosethrow = ( Bank != null_handle ? nose_throw() : -1.0 );
     }
     share_joints();
+    m_sleepers3d.active = track_sleepers::lays( *this );
     if( rail_phase( 0.0 ) >= 0.0 ) {
         m_drawnrun = m_railrun;
     }
@@ -1607,7 +1611,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         {
         case tt_Table: // obrotnica jak zwykły tor, tylko animacja dochodzi
         case tt_Normal:
-            if (m_material2)
+            if (m_material2 && ( Global.Sleepers3DBed || false == m_sleepers3d.active ) )
             { // podsypka z podkładami jest tylko dla zwykłego toru
                 gfx::vertex_array bpts1;
                 create_track_bed_profile( bpts1, trPrev, trNext );
@@ -3488,6 +3492,12 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
                 {0.5f + map12, 0.f} }; // prawy skos
         }
     }
+    if( m_sleepers3d.active ) {
+        // the ballast lowered under the sleepers laid on it, so they stick out of it
+        for( auto &point : Output ) {
+            point.position.y -= static_cast<float>( track_sleepers::bed_drop );
+        }
+    }
 }
 
 // creates road profile data for current path
@@ -3724,8 +3734,8 @@ TTrack::create_switch_trackbed( gfx::vertex_array &Output ) {
      && trNext->eType == tt_Normal ) {
         SwitchExtension->m_material3 = trNext->m_material2;
     }
-    // without material don't bother
-    if( SwitchExtension->m_material3 == null_handle ) { return; }
+    // without material don't bother, nor when the ballast isn't laid under the 3D sleepers
+    if( SwitchExtension->m_material3 == null_handle || ( m_sleepers3d.active && false == Global.Sleepers3DBed ) ) { return; }
     // generate trackbed for each path of the switch...
     auto const texturelength { texture_length( SwitchExtension->m_material3 ) };
     gfx::vertex_array trackbedprofile;
