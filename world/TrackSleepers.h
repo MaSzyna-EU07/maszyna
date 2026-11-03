@@ -100,6 +100,9 @@ beam_model const *plain_model();
 // the models the track lays its beams of: those set for it with timbermodel and sleepermodel, else the ones of eu07.ini
 beam_model const *timber_model( TTrack const &Track );
 beam_model const *plain_model( TTrack const &Track );
+// whether the models not loaded yet are loaded by the thread asking for them; the thread laying the beams in the background loads
+// none, finding only those loaded for it already, as the renderer runs in the thread loading them
+void models_loaded( bool const Loaded );
 // how long the plain sleepers of the track are, of the model it lays them of; 2.6 m at the standard gauge where there's none
 double plain_length( TTrack const &Track );
 // whether the track has the ballast the simulator makes, which the beams are laid on when there's a model of them

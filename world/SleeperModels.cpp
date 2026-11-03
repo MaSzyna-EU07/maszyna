@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 
 namespace track_sleepers {
 
@@ -35,6 +36,15 @@ std::map<std::string, beam_model> &known_models() {
     static std::map<std::string, beam_model> models;
     return models;
 }
+
+// the models found and loaded by more than one thread
+std::mutex &models_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+// whether this thread loads the models it doesn't find
+thread_local bool loads_models { true };
 
 // the vertices of the submodel in the space of the model, through its own transform
 template <typename Visit>
@@ -59,8 +69,13 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
     }
     auto const Skin { Skinname == "none" ? std::string {} : Skinname };
     auto const key { Name + '|' + Skin + '|' + std::to_string( Seat ) };
+    std::lock_guard<std::mutex> lock { models_mutex() };
     auto &models { known_models() };
     auto found { models.find( key ) };
+    if( found == models.end() && false == loads_models ) {
+        // loaded for it before a layout is asked for of the thread, for all the tracks, so it's none it could load
+        return nullptr;
+    }
     if( found == models.end() ) {
         auto &model { models[ key ] };
         model.name = Name;
@@ -132,6 +147,11 @@ beam_model const *find_model( std::string const &Name, std::string const &Skinna
 }
 
 } // namespace
+
+void models_loaded( bool const Loaded ) {
+
+    loads_models = Loaded;
+}
 
 beam_model const *timber_model() {
 

@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
@@ -699,6 +700,9 @@ void eu07_application::exit()
 	auto const step = [&](char const *What) {
 		WriteLog(std::string{"Closing: "} + What + " at " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()) + " ms");
 	};
+	step("the sleepers laid in the background");
+	// the sleepers laid in the background read the scenery, which goes below
+	track_sleepers::stop_background();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
