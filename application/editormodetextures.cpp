@@ -85,6 +85,11 @@ std::uint64_t editor_mode::texture_thumbnail(texture_browser::item const &Item)
 	if (lookup == browser.thumbnails.end())
 	{
 		// reading a texture takes a moment, a few of them go in a frame
+		if (browser.loadsframe != ImGui::GetFrameCount())
+		{
+			browser.loadsframe = ImGui::GetFrameCount();
+			browser.loads = 0;
+		}
 		if (browser.loads >= 2)
 			return 0;
 		++browser.loads;
@@ -110,7 +115,6 @@ std::uint64_t editor_mode::texture_thumbnail(texture_browser::item const &Item)
 void editor_mode::render_texture_browser()
 {
 	auto &browser{m_textures};
-	browser.loads = 0;
 	if (false == browser.listed)
 	{
 		browser.listed = true;

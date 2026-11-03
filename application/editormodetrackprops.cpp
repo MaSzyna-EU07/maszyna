@@ -179,9 +179,6 @@ std::pair<std::string, std::string> two_lines(std::string const &Text, float con
 	return {Text.substr(0, split), rest};
 }
 
-// files of the folder of the textures shown in the picker at most, the rest wait for more of the name typed
-std::size_t const kPickerFiles{120};
-
 // the width of each of Count buttons in a row across the panel
 float button_width(int const Count)
 {
@@ -1041,16 +1038,16 @@ void editor_mode::track_textures_scan()
 		list.clear();
 		for (auto const &[material, count] : counted)
 			if (material != null_handle)
-				list.push_back({material, editor_track::material_name(material), count});
+				list.push_back({material, editor_track::material_name(material), count, format(STR_C("In this scenery: %s"), tracks_count(static_cast<std::size_t>(count)).c_str())});
 		std::stable_sort(list.begin(), list.end(), [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
 	}
 }
 
-void editor_mode::track_textures_index()
+void editor_mode::textures_index()
 {
-	if (m_track_texture_indexed)
+	if (m_texture_indexed)
 		return;
-	m_track_texture_indexed = true;
+	m_texture_indexed = true;
 	std::map<std::string, bool> found; // the name, whether there's a .mat of it
 	std::filesystem::path const root{paths::textures};
 	auto const options{std::filesystem::directory_options::follow_directory_symlink | std::filesystem::directory_options::skip_permission_denied};
@@ -1073,7 +1070,11 @@ void editor_mode::track_textures_index()
 				continue;
 			auto path{entry->path().lexically_relative(root)};
 			path.replace_extension();
-			auto &known{found[path.generic_string()]};
+			auto const name{path.generic_string()};
+			// names with spaces can't be put in a scenery file
+			if (name.find(' ') != std::string::npos)
+				continue;
+			auto &known{found[name]};
 			known = known || material;
 		}
 		catch (std::exception const &)
@@ -1081,18 +1082,23 @@ void editor_mode::track_textures_index()
 			continue;
 		}
 	}
-	m_track_texture_index.clear();
-	m_track_texture_index.reserve(found.size());
+	m_texture_index.clear();
+	m_texture_index.reserve(found.size());
 	for (auto const &[name, material] : found)
-		m_track_texture_index.push_back({name, lowered(name), material});
+		m_texture_index.push_back({name, lowered(name), material});
 }
 
 std::uint64_t editor_mode::track_texture_image(int const Kind, std::string const &Name)
 {
-	for (auto const &use : m_track_textures[Kind])
-		if (use.name == Name)
+	return texture_image(m_track_textures[Kind], Name);
+}
+
+std::uint64_t editor_mode::texture_image(std::vector<texture_use> const &Used, std::string const &Name)
+{
+	for (auto const &use : Used)
+		if (use.material != null_handle && use.name == Name)
 			return material_image(use.material);
-	auto const &index{m_track_texture_index};
+	auto const &index{m_texture_index};
 	auto const found{std::lower_bound(index.begin(), index.end(), Name, [](texture_index_entry const &Entry, std::string const &Wanted) { return Entry.name < Wanted; })};
 	texture_browser::item item;
 	item.name = Name;
@@ -1102,59 +1108,60 @@ std::uint64_t editor_mode::track_texture_image(int const Kind, std::string const
 
 bool editor_mode::track_texture_picker(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen)
 {
-	auto &filter{m_track_texture_filter};
+	return texture_picker({STR_C("On the tracks of this scenery:"),
+	                       [this, Kind]() {
+		                       track_textures_scan();
+		                       return m_track_textures[Kind];
+	                       },
+	                       STR_C("No texture"), "none"},
+	                      Current, Mixed, Chosen);
+}
+
+bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &Current, bool const Mixed, std::string &Chosen)
+{
+	auto &filter{m_texture_filter};
 	if (ImGui::IsWindowAppearing())
 	{
-		track_textures_scan();
-		track_textures_index();
+		m_texture_used = Offer.used();
+		textures_index();
 		filter[0] = '\0';
-		m_track_texture_hovered.clear();
+		m_texture_hovered.clear();
 		ImGui::SetKeyboardFocusHere();
 	}
-	// the thumbnails are read a few in a frame
-	m_textures.loads = 0;
 	ImGui::SetNextItemWidth(-FLT_MIN);
-	auto const entered{ImGui::InputTextWithHint("##filter", STR_C("find, or a texture path and Enter"), filter.data(), filter.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
-	std::string const typed{filter.data()};
-	auto const words{words_of(lowered(typed))};
+	auto const entered{ImGui::InputTextWithHint("##filter", STR_C("find a texture"), filter.data(), filter.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
+	auto const words{words_of(lowered(filter.data()))};
 	auto const matches = [&](std::string const &Lowered) {
 		return std::all_of(words.begin(), words.end(), [&](std::string const &Word) { return Lowered.find(Word) != std::string::npos; });
 	};
-	// those on the tracks of the scenery first, then the files; with nothing typed the files offered are the ones named like the kind
-	std::vector<track_texture_use const *> used;
+	// those in use first, then every other one of the folder
+	std::vector<texture_use const *> used;
 	std::set<std::string> usednames;
-	for (auto const &use : m_track_textures[Kind])
+	for (auto const &use : m_texture_used)
 	{
-		usednames.insert(use.name);
-		if (matches(lowered(use.name)))
+		auto const name{lowered(use.name)};
+		usednames.insert(name);
+		if (matches(name))
 			used.push_back(&use);
 	}
-	std::string const suggested{Kind == 0 ? "rail" : "tpb"};
 	std::vector<texture_index_entry const *> files;
-	std::size_t more{0};
-	for (auto const &entry : m_track_texture_index)
-	{
-		if (usednames.count(entry.name) > 0 || (words.empty() ? entry.lowered.find(suggested) == std::string::npos : false == matches(entry.lowered)))
-			continue;
-		if (files.size() < kPickerFiles)
+	for (auto const &entry : m_texture_index)
+		if (usednames.count(entry.lowered) == 0 && matches(entry.lowered))
 			files.push_back(&entry);
-		else
-			++more;
-	}
 	std::string const first{false == used.empty() ? used.front()->name : false == files.empty() ? files.front()->name : std::string{}};
-	if (entered && false == words.empty())
+	if (entered && false == words.empty() && false == first.empty())
 	{
-		// the first match when there's one, the path as typed otherwise
-		Chosen = first.empty() ? typed.substr(typed.find_first_not_of(' ')) : first;
+		Chosen = first;
 		return true;
 	}
 
-	// large: the tile under the mouse, or what Enter would choose, or the texture of the tracks
-	auto const shown{false == m_track_texture_hovered.empty() ? m_track_texture_hovered : false == words.empty() ? first : Mixed ? std::string{} : Current};
-	m_track_texture_hovered.clear();
+	// large: the tile under the mouse, or what Enter would choose, or the current texture
+	auto const current{lowered(Current)};
+	auto const shown{false == m_texture_hovered.empty() ? m_texture_hovered : false == words.empty() ? first : Mixed ? std::string{} : Current};
+	m_texture_hovered.clear();
 	auto const big{std::round(ImGui::GetFontSize() * 10.0f)};
 	auto const corner{ImGui::GetCursorScreenPos()};
-	if (auto const image{shown.empty() || shown == "none" ? 0 : track_texture_image(Kind, shown)}; image != 0)
+	if (auto const image{shown.empty() || shown == "none" ? 0 : texture_image(m_texture_used, shown)}; image != 0)
 		ImGui::Image(static_cast<ImTextureID>(image), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
 	else
 	{
@@ -1164,18 +1171,23 @@ bool editor_mode::track_texture_picker(int const Kind, std::string const &Curren
 	ImGui::SameLine();
 	ImGui::BeginGroup();
 	ImGui::PushTextWrapPos(0.0f);
-	if (shown.empty())
-		ImGui::TextDisabled("%s", words.empty() ? STR_C("The selected tracks have different ones") : STR_C("None of them: Enter sets the path as typed"));
+	if (shown.empty() && false == words.empty())
+		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
+	else if (shown.empty() && Mixed)
+		ImGui::TextDisabled("%s", STR_C("The selected tracks have different ones"));
+	else if (shown.empty() || shown == "none")
+		ImGui::TextUnformatted(Offer.none != nullptr ? Offer.none : STR_C("No texture"));
 	else
 	{
-		ImGui::TextUnformatted(shown == "none" ? STR_C("No texture") : shown.c_str());
-		auto const use{std::find_if(m_track_textures[Kind].begin(), m_track_textures[Kind].end(), [&](track_texture_use const &Use) { return Use.name == shown; })};
-		if (use != m_track_textures[Kind].end())
-			ImGui::TextDisabled(STR_C("In this scenery: %s"), tracks_count(static_cast<std::size_t>(use->count)).c_str());
-		else if (shown != "none")
-			ImGui::TextDisabled("%s", STR_C("From the textures folder, on no track yet"));
-		if (false == Mixed && shown == Current)
-			ImGui::TextDisabled("%s", STR_C("On the selected tracks now"));
+		ImGui::TextUnformatted(shown.c_str());
+		auto const use{std::find_if(m_texture_used.begin(), m_texture_used.end(), [&](texture_use const &Use) { return Use.name == shown; })};
+		auto const isset{false == Mixed && lowered(shown) == current};
+		if (use != m_texture_used.end())
+			ImGui::TextDisabled("%s", use->note.c_str());
+		else if (false == isset)
+			ImGui::TextDisabled("%s", STR_C("From the textures folder, not used here yet"));
+		if (isset)
+			ImGui::TextDisabled("%s", STR_C("Set now"));
 		if (false == words.empty() && shown == first)
 			ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", STR_C("Enter chooses this one"));
 	}
@@ -1187,7 +1199,7 @@ bool editor_mode::track_texture_picker(int const Kind, std::string const &Curren
 	auto const label{ImGui::GetTextLineHeight() * 2.0f};
 	auto const spacing{ImGui::GetStyle().ItemSpacing};
 	bool picked{false};
-	ImGui::BeginChild("##tiles", ImVec2(0.0f, std::round((tile + label + spacing.y) * 2.5f)), ImGuiChildFlags_Borders);
+	ImGui::BeginChild("##tiles", ImVec2(0.0f, std::round((tile + label + spacing.y) * 4.5f)), ImGuiChildFlags_Borders);
 	auto const columns{std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + spacing.x) / (tile + spacing.x)))};
 	int column{0};
 	auto const draw_tile = [&](std::string const &Name, int const Count) {
@@ -1195,17 +1207,17 @@ bool editor_mode::track_texture_picker(int const Kind, std::string const &Curren
 			ImGui::SameLine();
 		ImGui::PushID(Name.c_str());
 		auto const low{ImGui::GetCursorScreenPos()};
-		if (ImGui::Selectable("##tile", false == Mixed && Name == Current, ImGuiSelectableFlags_None, ImVec2(tile, tile + label)))
+		if (ImGui::Selectable("##tile", false == Mixed && lowered(Name) == current, ImGuiSelectableFlags_None, ImVec2(tile, tile + label)))
 		{
 			Chosen = Name;
 			picked = true;
 		}
 		if (ImGui::IsItemHovered())
-			m_track_texture_hovered = Name;
+			m_texture_hovered = Name;
 		if (ImGui::IsItemVisible())
 		{
 			auto *drawlist{ImGui::GetWindowDrawList()};
-			if (auto const image{track_texture_image(Kind, Name)}; image != 0)
+			if (auto const image{texture_image(m_texture_used, Name)}; image != 0)
 				drawlist->AddImage(static_cast<ImTextureID>(image), low, ImVec2(low.x + tile, low.y + tile), ImVec2(0, 1), ImVec2(1, 0));
 			else
 				drawlist->AddRect(low, ImVec2(low.x + tile, low.y + tile), ImGui::GetColorU32(ImGuiCol_Border));
@@ -1226,28 +1238,88 @@ bool editor_mode::track_texture_picker(int const Kind, std::string const &Curren
 	};
 	if (false == used.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("On the tracks of this scenery:"));
+		ImGui::TextDisabled("%s", Offer.title);
 		for (auto const *use : used)
 			draw_tile(use->name, use->count);
 	}
 	if (false == files.empty())
 	{
-		ImGui::TextDisabled("%s", words.empty() ? STR_C("Suggested from the textures folder:") : STR_C("In the textures folder:"));
-		column = 0;
-		for (auto const *entry : files)
-			draw_tile(entry->name, 0);
+		ImGui::TextDisabled("%s", STR_C("In the textures folder:"));
+		// thousands of them: only the rows in sight are drawn
+		ImGuiListClipper clipper;
+		clipper.Begin((static_cast<int>(files.size()) + columns - 1) / columns, tile + label + spacing.y);
+		while (clipper.Step())
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+			{
+				column = 0;
+				for (int i = row * columns; i < (row + 1) * columns && i < static_cast<int>(files.size()); ++i)
+					draw_tile(files[i]->name, 0);
+			}
 	}
-	if (more > 0)
-		ImGui::TextDisabled(STR_C("and %d more: type more of the name"), static_cast<int>(more));
 	if (used.empty() && files.empty())
-		ImGui::TextDisabled("%s", STR_C("None of them: Enter sets the path as typed"));
+		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
 	ImGui::EndChild();
-	if (ImGui::Selectable(STR_C("No texture"), false == Mixed && Current == "none"))
+	if (Offer.none != nullptr && ImGui::Selectable(Offer.none, false == Mixed && (Current == Offer.none_name || Current == "none")))
 	{
-		Chosen = "none";
+		Chosen = Offer.none_name;
 		picked = true;
 	}
 	return picked;
+}
+
+bool editor_mode::texture_field(char const *Label, float const Width, std::string &Value, texture_offer const &Offer)
+{
+	bool changed{false};
+	auto const none{Value.empty() || Value == "none"};
+	auto const side{ImGui::GetFrameHeight()};
+	auto const corner{ImGui::GetCursorScreenPos()};
+	if (auto const image{none ? 0 : texture_image({}, Value)}; image != 0)
+	{
+		ImGui::Image(static_cast<ImTextureID>(image), ImVec2(side, side), ImVec2(0, 1), ImVec2(1, 0));
+		if (ImGui::IsItemHovered())
+		{
+			auto const big{std::round(ImGui::GetFontSize() * 14.0f)};
+			ImGui::BeginTooltip();
+			ImGui::Image(static_cast<ImTextureID>(image), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
+			ImGui::TextUnformatted(Value.c_str());
+			ImGui::EndTooltip();
+		}
+	}
+	else
+	{
+		ImGui::Dummy(ImVec2(side, side));
+		ImGui::GetWindowDrawList()->AddRect(corner, ImVec2(corner.x + side, corner.y + side), ImGui::GetColorU32(ImGuiCol_Border));
+	}
+	ImGui::SameLine(0.0f, 4.0f);
+	ImGui::SetNextItemWidth(Width);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+	auto const slash{Value.find_last_of('/')};
+	auto const preview{none ? std::string{Offer.none != nullptr ? Offer.none : ""} : slash == std::string::npos ? Value : Value.substr(slash + 1)};
+	if (ImGui::BeginCombo(Label, preview.c_str(), ImGuiComboFlags_HeightLargest))
+	{
+		if (std::string chosen; texture_picker(Offer, Value, false, chosen))
+		{
+			changed = chosen != Value;
+			Value = chosen;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndCombo();
+	}
+	if (std::string dropped; material_drop(dropped))
+	{
+		changed = changed || dropped != Value;
+		Value = dropped;
+	}
+	return changed;
+}
+
+bool editor_mode::texture_field(char const *Label, float const Width, char *Buffer, std::size_t const Size, texture_offer const &Offer)
+{
+	std::string value{Buffer};
+	if (false == texture_field(Label, Width, value, Offer))
+		return false;
+	std::snprintf(Buffer, Size, "%s", value.c_str());
+	return true;
 }
 
 void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)

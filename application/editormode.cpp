@@ -1975,9 +1975,7 @@ void editor_mode::render_terrain_ui()
                 ImGui::SetTooltip("%s", STR_C("Angle the textures of the chosen material are turned by, on every chunk painted with it.\n"
                                         "Ctrl+click to type it. To have the material turned in one place only, fill it there with an angle of its own."));
         }
-        ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputText(STR_C("Material"), m_terrain_material, IM_ARRAYSIZE(m_terrain_material));
-        material_drop(m_terrain_material, IM_ARRAYSIZE(m_terrain_material));
+        texture_field(STR_C("Material"), 160.0f, m_terrain_material, IM_ARRAYSIZE(m_terrain_material), terrain_texture_offer(nullptr));
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Add to the palette")) && m_terrain_material[0] != '\0')
             m_terrain_layer = m_streamer.layer(m_terrain_material, m_terrain_material_size);
@@ -2021,11 +2019,9 @@ void editor_mode::render_terrain_ui()
             ImGui::SetNextItemWidth(120.0f);
             if (ImGui::DragFloat(STR_C("Level (m)"), &m_water_level, 0.01f, -1000.0f, 5000.0f, "%.2f"))
                 m_water_level_edited = true;
-            ImGui::SetNextItemWidth(160.0f);
-            ImGui::InputText(STR_C("Material##water"), m_water_material, IM_ARRAYSIZE(m_water_material));
-            material_drop(m_water_material, IM_ARRAYSIZE(m_water_material));
+            texture_field(STR_C("Material##water"), 160.0f, m_water_material, IM_ARRAYSIZE(m_water_material), terrain_texture_offer(STR_C("The default water material")));
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(STR_C("Empty: %s, the water material of the terrain"), m_streamer.manifest().water_material.c_str());
+                ImGui::SetTooltip(STR_C("The default one: %s, the water material of the terrain"), m_streamer.manifest().water_material.c_str());
             ImGui::BeginDisabled(m_water_points.size() < 3);
             if (ImGui::Button(STR_C("Make the water")))
             {
@@ -2095,12 +2091,9 @@ void editor_mode::render_terrain_ui()
                 m_water_material_of = m_water_selected;
             }
             bool retexture = false;
-            ImGui::SetNextItemWidth(160.0f);
-            ImGui::InputText(STR_C("Material of the chosen"), m_water_selected_material, IM_ARRAYSIZE(m_water_selected_material));
-            retexture |= ImGui::IsItemDeactivatedAfterEdit();
-            retexture |= material_drop(m_water_selected_material, IM_ARRAYSIZE(m_water_selected_material));
+            retexture |= texture_field(STR_C("Material of the chosen"), 160.0f, m_water_selected_material, IM_ARRAYSIZE(m_water_selected_material), terrain_texture_offer(STR_C("The default water material")));
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(STR_C("A material or a texture (drag one from the texture browser).\nEmpty: %s, the water material of the terrain"), m_streamer.manifest().water_material.c_str());
+                ImGui::SetTooltip(STR_C("Chosen from the textures, or dragged from the texture browser.\nThe default one: %s, the water material of the terrain"), m_streamer.manifest().water_material.c_str());
             ImGui::SetNextItemWidth(120.0f);
             ImGui::DragFloat(STR_C("Texture repeats every (m)##water"), &m_water_selected_size, 0.1f, 0.0f, 500.0f, "%.1f");
             m_water_selected_size = std::max(0.0f, m_water_selected_size);
@@ -2126,17 +2119,12 @@ void editor_mode::render_terrain_ui()
             m_water_material_of = -1;
         }
         // the material of the bodies of water which don't name their own
-        if (false == m_water_default_edited)
-            std::snprintf(m_water_default_material, sizeof(m_water_default_material), "%s", m_streamer.manifest().water_material.c_str());
-        ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputText(STR_C("Default water material"), m_water_default_material, IM_ARRAYSIZE(m_water_default_material));
-        m_water_default_edited = ImGui::IsItemActive();
-        bool redefault = ImGui::IsItemDeactivatedAfterEdit();
-        redefault |= material_drop(m_water_default_material, IM_ARRAYSIZE(m_water_default_material));
+        auto defaultmaterial{m_streamer.manifest().water_material};
+        auto const redefault{texture_field(STR_C("Default water material"), 160.0f, defaultmaterial, terrain_texture_offer(nullptr))};
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Material of the bodies of water which don't name their own"));
         if (redefault)
-            m_streamer.water_material(m_water_default_material);
+            m_streamer.water_material(defaultmaterial);
     }
 
     if (ImGui::CollapsingHeader(STR_C("Modifiers")))
@@ -4379,6 +4367,26 @@ void editor_mode::terrain_workspace(bool const Open)
         m_terrain_tool = terrain_tool::none;
     else if (m_streamer.active())
         m_terrain_spacing = m_streamer.manifest().spacing;
+}
+
+editor_mode::texture_offer editor_mode::terrain_texture_offer(char const *None)
+{
+    return {STR_C("In the palette and on the water of this terrain:"),
+            [this]() {
+                std::vector<texture_use> list;
+                auto const add = [&](std::string const &Name, char const *Note) {
+                    if (Name.empty() || Name == "none" || std::any_of(list.begin(), list.end(), [&](texture_use const &Use) { return Use.name == Name; }))
+                        return;
+                    list.push_back({null_handle, Name, 0, Note});
+                };
+                for (auto const &layer : m_streamer.manifest().layers)
+                    add(layer.material, STR_C("In the palette of the terrain"));
+                add(m_streamer.manifest().water_material, STR_C("The default water material"));
+                for (auto const &body : m_streamer.water())
+                    add(body.material, STR_C("On a body of water"));
+                return list;
+            },
+            None, ""};
 }
 
 void editor_mode::render_terrain_tool_options()

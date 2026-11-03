@@ -26,7 +26,8 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
+#include <map>
+#include <set>
 
 namespace
 {
@@ -120,12 +121,6 @@ glm::dvec3 path_point(segment_data const &Path, double const T)
 bool is_curved(segment_data const &Path)
 {
 	return Path.points[segment_data::point::control1] != glm::dvec3{0.0} || Path.points[segment_data::point::control2] != glm::dvec3{0.0};
-}
-
-void copy_text(char *Buffer, std::size_t const Size, std::string const &Text)
-{
-	std::strncpy(Buffer, Text.c_str(), Size - 1);
-	Buffer[Size - 1] = 0;
 }
 
 std::string lower_case(std::string Text)
@@ -318,12 +313,6 @@ void editor_mode::road_select(road_node *Road)
 		tool.settings.missing = {};
 	}
 	tool.varied = tool.settings.changing();
-	copy_text(tool.surface, sizeof(tool.surface), tool.settings.surface);
-	for (int side = 0; side < 2; ++side)
-		copy_text(tool.sides[side], sizeof(tool.sides[side]), tool.settings.sides[side].material);
-	copy_text(tool.kerbtext, sizeof(tool.kerbtext), tool.settings.kerbmaterial);
-	copy_text(tool.mediantext, sizeof(tool.mediantext), tool.settings.median.material);
-	copy_text(tool.banktext, sizeof(tool.banktext), tool.settings.bankmaterial);
 }
 
 void editor_mode::junction_select(junction_node *Junction)
@@ -337,12 +326,6 @@ void editor_mode::junction_select(junction_node *Junction)
 	tool.status = format(STR_C("Selected: %s"), Junction->name().c_str());
 	if (false == editor_road::can_edit(*Junction, &reason))
 		tool.status += ". " + format(STR_C("It can't be changed: %s"), STR(reason).c_str());
-	// the fields for the names of materials are shared with the roads
-	copy_text(tool.surface, sizeof(tool.surface), Junction->definition().surface);
-	copy_text(tool.sides[0], sizeof(tool.sides[0]), Junction->definition().side.material);
-	copy_text(tool.kerbtext, sizeof(tool.kerbtext), Junction->definition().kerbmaterial);
-	copy_text(tool.banktext, sizeof(tool.banktext), Junction->definition().bankmaterial);
-	copy_text(tool.mediantext, sizeof(tool.mediantext), Junction->definition().medianmaterial);
 }
 
 void editor_mode::roadpoint_select(roadpoint_node *Point)
@@ -705,7 +688,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		state.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
-	if (render_road_material("Surface", tool.surface, sizeof(tool.surface), state.surface))
+	if (render_road_material("Surface", state.surface))
 		changed = true;
 	if (number(STR_C("Texture length [m]"), state.texturelength, 0.5f, "%.2f"))
 	{
@@ -724,7 +707,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			state.kerbwidth = std::clamp(state.kerbwidth, 0.05f, 2.0f);
 			changed = true;
 		}
-		if (render_road_material("Kerb material", tool.kerbtext, sizeof(tool.kerbtext), state.kerbmaterial))
+		if (render_road_material("Kerb material", state.kerbmaterial))
 			changed = true;
 		if (state.side.type != road_node::side_type::sidewalk && number(STR_C("Kerb height [m]"), state.kerbheight, 0.01f, "%.2f"))
 		{
@@ -751,7 +734,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			state.side.width = std::clamp(state.side.width, 0.1f, 20.0f);
 			changed = true;
 		}
-		if (render_road_material("Material", tool.sides[0], sizeof(tool.sides[0]), state.side.material))
+		if (render_road_material("Material", state.side.material))
 			changed = true;
 		if (state.side.material.empty() || state.side.material == "none")
 			ImGui::TextDisabled("%s", STR_C("Pick a material to have the sides drawn"));
@@ -782,7 +765,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 	// banks leading from the corners to the ground
 	if (ImGui::CollapsingHeader(STR_C("Banks to the ground##banks")))
 	{
-		if (render_road_material("Bank material", tool.banktext, sizeof(tool.banktext), state.bankmaterial))
+		if (render_road_material("Bank material", state.bankmaterial))
 			changed = true;
 		item_tooltip("What the banks are covered with next to a sidewalk, a kerb or the bare edge.\nA bank of a shoulder is covered with the material of the shoulder");
 		ImGui::SetNextItemWidth(120.0f);
@@ -826,7 +809,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		}
 		item_tooltip("Shows where a road which keeps its two directions apart meets this stretch:\n"
 		             "what's between the directions is led on to the other road, where it closes or carries on");
-		if (state.median == road_node::median_type::island && render_road_material("Island material", tool.mediantext, sizeof(tool.mediantext), state.medianmaterial))
+		if (state.median == road_node::median_type::island && render_road_material("Island material", state.medianmaterial))
 			changed = true;
 	}
 
@@ -1881,60 +1864,42 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 	tool.aimedkind = -1;
 }
 
-// a field for the name of a material, with a list of the ones in the texture folder to pick from. returns: true if the material was changed
-bool editor_mode::render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value)
+// a field of the material of a part of a road or of a junction. returns: true if the material was changed
+bool editor_mode::render_road_material(char const *Label, std::string &Value)
 {
-	auto &tool{m_roadtool};
-	bool picked{false};
 	ImGui::PushID(Label);
-	ImGui::SetNextItemWidth(200.0f);
-	if (ImGui::InputText("##name", Buffer, Size, ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
-	{
-		auto const name{lower_case(Buffer)};
-		if (name != Value && name.find(' ') == std::string::npos)
-		{
-			Value = name.empty() ? std::string{"none"} : name;
-			picked = true;
-		}
-		copy_text(Buffer, Size, Value);
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("..."))
-		ImGui::OpenPopup("pick");
-	item_tooltip("Pick from the materials in the texture folder");
-	ImGui::SameLine();
-	ImGui::TextUnformatted(STR_C(Label));
-	if (ImGui::BeginPopup("pick"))
-	{
-		ImGui::TextDisabled("%s", STR_C("Materials and images found in the texture folder"));
-		ImGui::SetNextItemWidth(200.0f);
-		ImGui::InputText(STR_C("Filter"), tool.filter, sizeof(tool.filter));
-		auto const filter{lower_case(tool.filter)};
-		std::vector<std::string const *> listed;
-		for (auto const &name : editor_road::materials())
-			if (filter.empty() || name.find(filter) != std::string::npos)
-				listed.emplace_back(&name);
-		ImGui::BeginChild("list", ImVec2(340.0f, 280.0f), true);
-		ImGuiListClipper clipper;
-		clipper.Begin(static_cast<int>(listed.size()));
-		while (clipper.Step())
-		{
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
-			{
-				if (ImGui::Selectable(listed[i]->c_str(), *listed[i] == Value))
-				{
-					Value = *listed[i];
-					copy_text(Buffer, Size, Value);
-					picked = true;
-					ImGui::CloseCurrentPopup();
-				}
-			}
-		}
-		ImGui::EndChild();
-		ImGui::EndPopup();
-	}
+	auto const picked{texture_field(STR_C(Label), 200.0f, Value, {STR_C("On the roads of this scenery:"), [this]() { return road_textures_used(); }, STR_C("No texture"), "none"})};
 	ImGui::PopID();
+	if (picked)
+		Value = lower_case(Value);
 	return picked;
+}
+
+std::vector<editor_mode::texture_use> editor_mode::road_textures_used() const
+{
+	std::map<std::string, int> counted;
+	auto const count = [&](std::set<std::string> const &Names) {
+		for (auto const &name : Names)
+			if (false == name.empty() && name != "none")
+				++counted[name];
+	};
+	for (auto const *road : simulation::Roads.sequence())
+		if (road != nullptr && false == road->m_editorremoved)
+		{
+			auto const &state{road->definition()};
+			count({state.surface, state.sides[0].material, state.sides[1].material, state.kerbmaterial, state.bankmaterial, state.median.material});
+		}
+	for (auto const *junction : simulation::Junctions.sequence())
+		if (junction != nullptr && false == junction->m_editorremoved)
+		{
+			auto const &state{junction->definition()};
+			count({state.surface, state.side.material, state.kerbmaterial, state.bankmaterial, state.medianmaterial});
+		}
+	std::vector<texture_use> list;
+	for (auto const &[name, number] : counted)
+		list.push_back({null_handle, name, number, format(STR_P("On %d road or junction", "On %d roads or junctions", static_cast<long long>(number)), number)});
+	std::stable_sort(list.begin(), list.end(), [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
+	return list;
 }
 
 // draws controls for the layout of a road. returns: true if the layout was changed in a way which calls for the road to be made anew
@@ -1947,7 +1912,6 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		ImGui::SetNextItemWidth(120.0f);
 		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
 	};
-	auto const material = [this](char const *Label, char *Buffer, std::size_t const Size, std::string &Value) { return render_road_material(Label, Buffer, Size, Value); };
 
 	// lanes. a piece of a road which is there already can end with other lanes than it starts with
 	{
@@ -2024,7 +1988,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		State.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
-	if (material("Surface", tool.surface, sizeof(tool.surface), State.surface))
+	if (render_road_material("Surface", State.surface))
 		changed = true;
 	char const *sidenames[]{STR_C("Left side"), STR_C("Right side")};
 	char const *sidetypes[]{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
@@ -2049,7 +2013,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				data.width = std::clamp(data.width, 0.1f, 20.0f);
 				changed = true;
 			}
-			if (material("Material", tool.sides[side], sizeof(tool.sides[side]), data.material))
+			if (render_road_material("Material", data.material))
 				changed = true;
 			if (data.material.empty() || data.material == "none")
 				ImGui::TextDisabled("%s", STR_C("Pick a material to have the side drawn"));
@@ -2067,7 +2031,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	if (State.kerbs[0] || State.kerbs[1] || island)
 	{
 		ImGui::Indent();
-		if (material("Kerb material", tool.kerbtext, sizeof(tool.kerbtext), State.kerbmaterial))
+		if (render_road_material("Kerb material", State.kerbmaterial))
 			changed = true;
 		if ((State.kerbs[0] || State.kerbs[1]) && (State.kerbmaterial.empty() || State.kerbmaterial == "none"))
 			ImGui::TextDisabled("%s", STR_C("Pick a material to have the kerbs drawn"));
@@ -2122,7 +2086,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 			}
 			ImGui::PopID();
 		}
-		if (material("Bank material", tool.banktext, sizeof(tool.banktext), State.bankmaterial))
+		if (render_road_material("Bank material", State.bankmaterial))
 			changed = true;
 		item_tooltip("What a bank is covered with next to a sidewalk, a kerb or the bare edge of the road.\nA bank of a shoulder is covered with the material of the shoulder");
 		if (tool.selected != nullptr)
@@ -2166,7 +2130,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		item_tooltip(apart);
 		if (State.median.type == road_node::median_type::island)
 		{
-			if (material("Island material", tool.mediantext, sizeof(tool.mediantext), State.median.material))
+			if (render_road_material("Island material", State.median.material))
 				changed = true;
 			item_tooltip("The island is as high as the kerbs; with a kerb material set it gets kerbs of its own");
 			char const *rounded{"Length of the rounded end of the island at that end of the piece; half of the width of the island makes it a half circle.\n"
@@ -2306,8 +2270,8 @@ void editor_mode::render_road_tool_options()
 			if (ImGui::InputFloat(STR_C("Radius [m]##ring"), &tool.ringradius, 1.0f, 5.0f, "%.1f"))
 				tool.ringradius = std::clamp(tool.ringradius, 8.0f, 200.0f);
 			item_tooltip("Radius of the middle of the road going around");
-			render_road_material("Island in the middle", tool.islandtext, sizeof(tool.islandtext), tool.island);
-			item_tooltip("What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nnone: the middle is left as it is");
+			render_road_material("Island in the middle", tool.island);
+			item_tooltip("What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nNo texture: the middle is left as it is");
 		}
 		else
 		{

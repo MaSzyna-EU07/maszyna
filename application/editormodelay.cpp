@@ -2450,7 +2450,6 @@ void editor_mode::render_lay_ui()
 		tool.copy_selected = source == 1;
 	if (false == tool.copy_selected)
 	{
-		m_textures.loads = 0;
 		auto const column{std::round(ImGui::GetCursorPosX() + std::max(ImGui::CalcTextSize(STR_C("Rails")).x, ImGui::CalcTextSize(STR_C("Trackbed")).x) + ImGui::GetStyle().ItemSpacing.x)};
 		auto const texture_row = [&](int const Kind, char const *Label, std::string &Value) {
 			ImGui::PushID(Kind);

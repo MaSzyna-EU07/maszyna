@@ -5631,14 +5631,8 @@ msgstr "%s: nic do zmiany"
 msgid "different (%d)"
 msgstr "różne (%d)"
 
-msgid "find, or a texture path and Enter"
-msgstr "szukaj albo wpisz ścieżkę tekstury i Enter"
-
 msgid "On the tracks of this scenery:"
 msgstr "Na torach tej scenerii:"
-
-msgid "None of them: Enter sets the path as typed"
-msgstr "Żadna nie pasuje: Enter ustawi wpisaną ścieżkę"
 
 msgid "No texture"
 msgstr "Bez tekstury"
@@ -5703,23 +5697,11 @@ msgstr "Zaznaczone tory mają różne"
 msgid "In this scenery: %s"
 msgstr "W tej scenerii: %s"
 
-msgid "From the textures folder, on no track yet"
-msgstr "Z folderu textures, jeszcze na żadnym torze"
-
-msgid "On the selected tracks now"
-msgstr "Teraz na zaznaczonych torach"
-
 msgid "Enter chooses this one"
 msgstr "Enter wybiera tę"
 
-msgid "Suggested from the textures folder:"
-msgstr "Podpowiedzi z folderu textures:"
-
 msgid "In the textures folder:"
 msgstr "W folderze textures:"
-
-msgid "and %d more: type more of the name"
-msgstr "i jeszcze %d: wpisz więcej z nazwy"
 
 msgid "Pipette: the next click on a track in the view takes its properties, to paste them on the selection"
 msgstr "Pipeta: następne kliknięcie toru w widoku pobiera jego właściwości, do wklejenia na zaznaczenie"
@@ -6531,9 +6513,6 @@ msgstr "Poziom (m)"
 msgid "Material##water"
 msgstr "Materiał##water"
 
-msgid "Empty: %s, the water material of the terrain"
-msgstr "Puste: %s, materiał wody terenu"
-
 msgid "Make the water"
 msgstr "Utwórz wodę"
 
@@ -6548,9 +6527,6 @@ msgstr "Poziom wybranej (m)"
 
 msgid "Material of the chosen"
 msgstr "Materiał wybranej"
-
-msgid "A material or a texture (drag one from the texture browser).\nEmpty: %s, the water material of the terrain"
-msgstr "Materiał albo tekstura (przeciągnij z przeglądarki tekstur).\nPuste: %s, materiał wody terenu"
 
 msgid "Texture repeats every (m)##water"
 msgstr "Rozmiar tekstury (m)##water"
@@ -8070,12 +8046,6 @@ msgstr "Podzielono na dwa: \"%s\" i \"%s\", Ctrl+Z cofa. Kliknij punkt między n
 msgid "There's nothing to change at the selected points"
 msgstr "W zaznaczonych punktach nie ma czego zmienić"
 
-msgid "Pick from the materials in the texture folder"
-msgstr "Pokazuje materiały z katalogu tekstur do wyboru"
-
-msgid "Materials and images found in the texture folder"
-msgstr "Materiały i obrazy z katalogu tekstur"
-
 msgid "Lanes along the axis, at the start"
 msgstr "Pasy zgodnie z osią, na początku"
 
@@ -8244,8 +8214,8 @@ msgstr "Promień środka jezdni ronda"
 msgid "Island in the middle"
 msgstr "Wyspa na środku"
 
-msgid "What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nnone: the middle is left as it is"
-msgstr "Czym pokryty jest środek ronda; leży na krawężniku tak wysokim jak krawężniki drogi.\nnone: środek zostaje taki, jaki jest"
+msgid "What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nNo texture: the middle is left as it is"
+msgstr "Czym pokryty jest środek ronda; leży na krawężniku tak wysokim jak krawężniki drogi.\nBez tekstury: środek zostaje taki, jaki jest"
 
 msgid "the start, then each next point"
 msgstr "stawia początek, potem każdy następny punkt"
@@ -13129,6 +13099,45 @@ msgstr "Zapisane w pliku"
 
 msgid "Saves the scenery, as Ctrl+S does"
 msgstr "Zapisuje scenerię, tak jak Ctrl+S"
+
+msgid "find a texture"
+msgstr "szukaj tekstury"
+
+msgid "No texture of this name"
+msgstr "Nie ma tekstury o takiej nazwie"
+
+msgid "From the textures folder, not used here yet"
+msgstr "Z folderu textures, jeszcze tu nieużywana"
+
+msgid "Set now"
+msgstr "Ustawiona teraz"
+
+msgid "On the roads of this scenery:"
+msgstr "Na drogach tej scenerii:"
+
+msgid "On %d road or junction"
+msgid_plural "On %d roads or junctions"
+msgstr[0] "Na %d drodze lub skrzyżowaniu"
+msgstr[1] "Na %d drogach lub skrzyżowaniach"
+msgstr[2] "Na %d drogach lub skrzyżowaniach"
+
+msgid "In the palette and on the water of this terrain:"
+msgstr "Na palecie i na wodzie tego terenu:"
+
+msgid "In the palette of the terrain"
+msgstr "Na palecie terenu"
+
+msgid "The default water material"
+msgstr "Domyślny materiał wody"
+
+msgid "On a body of water"
+msgstr "Na zbiorniku wody"
+
+msgid "The default one: %s, the water material of the terrain"
+msgstr "Domyślny: %s, materiał wody terenu"
+
+msgid "Chosen from the textures, or dragged from the texture browser.\nThe default one: %s, the water material of the terrain"
+msgstr "Wybierany z tekstur albo przeciągany z przeglądarki tekstur.\nDomyślny: %s, materiał wody terenu"
 
 msgid "No line of tracks runs over the track"
 msgstr "Żadna linia torów nie przebiega przez ten tor"

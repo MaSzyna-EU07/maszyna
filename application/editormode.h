@@ -699,6 +699,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string selected;
 		std::map<std::string, int> thumbnails; // texture shown for the item of the name, 0: none
 		int loads{0}; // textures read in the frame, a few at most so the browser doesn't stall the editor
+		int loadsframe{-1};
 	} m_textures;
 	void render_texture_browser();
 	// texture of the image of the item of the browser, 0 while there's none
@@ -768,8 +769,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	char m_water_selected_material[128]{""}; // material of the chosen water, while it's edited
 	int m_water_material_of{-1}; // the water whose material is in the field above
 	float m_water_selected_size{0.0f}; // metres its texture repeats at, 0: given by the material
-	char m_water_default_material[128]{""}; // of the waters which don't name their own, while it's edited
-	bool m_water_default_edited{false};
 	std::set<heightmap::chunk_key> m_terrain_selection; // chunks chosen with the spacing tool
 	float m_terrain_convert_spacing{1.0f}; // point spacing the selected chunks are converted to
 	bool m_terrain_convert_paint{true}; // chunks converted to 0.5 m get paint samples every 0.5 m too
@@ -2405,12 +2404,40 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void track_field_finish();
 	void track_field_settle();
 	void track_textures_scan();
+	// a texture in use, offered first in the picker
+	struct texture_use
+	{
+		material_handle material{null_handle}; // null: its image is read by the name
+		std::string name;
+		int count{0}; // shown on its tile, 0: nothing
+		std::string note; // what's said of it above the tiles
+	};
+	// what the picker of a texture offers besides every texture of the folder
+	struct texture_offer
+	{
+		char const *title; // the heading of the ones in use
+		std::function<std::vector<texture_use>()> used; // gathered when the picker opens
+		char const *none; // the entry for no texture, nullptr: there's none
+		char const *none_name; // the name that entry gives
+	};
 	// every texture and material under the folder of the textures, read on the first use of the picker
-	void track_textures_index();
-	// the picker of a texture of the rails (Kind 0) or of the trackbed (1), in an open combo. returns: true when one is chosen, its name in Chosen, "none" for no texture
+	void textures_index();
+	// the picker of a texture, in an open combo. returns: true when one is chosen, its name in Chosen
+	bool texture_picker(texture_offer const &Offer, std::string const &Current, bool const Mixed, std::string &Chosen);
+	// the same, of a texture of the rails (Kind 0) or of the trackbed (1)
 	bool track_texture_picker(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen);
-	// image of the texture of the name for the picker, 0 while there's none
+	// image of the texture of the name, 0 while there's none
+	std::uint64_t texture_image(std::vector<texture_use> const &Used, std::string const &Name);
 	std::uint64_t track_texture_image(int const Kind, std::string const &Name);
+	// a field of a texture: its image and its name, a click opens the picker, a material of the texture browser can be dropped on it.
+	// returns: true when another one was chosen, in Value
+	bool texture_field(char const *Label, float const Width, std::string &Value, texture_offer const &Offer);
+	// the same, for a name kept in a buffer
+	bool texture_field(char const *Label, float const Width, char *Buffer, std::size_t const Size, texture_offer const &Offer);
+	// the textures of the roads and junctions of the scenery
+	std::vector<texture_use> road_textures_used() const;
+	// the textures of the palette and of the water of the terrain; None: the entry for no texture of its own, nullptr: there's none
+	texture_offer terrain_texture_offer(char const *None);
 	void render_track_properties(std::vector<TTrack *> const &Tracks);
 	void render_track_set_header(std::vector<TTrack *> const &Tracks);
 	void render_track_select_tools(std::vector<TTrack *> const &Tracks);
@@ -2475,24 +2502,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int frame{0};
 	};
 	track_field m_track_field;
-	struct track_texture_use
-	{
-		material_handle material{null_handle};
-		std::string name;
-		int count{0};
-	};
-	std::array<std::vector<track_texture_use>, 2> m_track_textures; // of the rails, of the trackbed
-	std::array<char, 128> m_track_texture_filter{};
+	std::array<std::vector<texture_use>, 2> m_track_textures; // of the rails, of the trackbed
+	std::vector<texture_use> m_texture_used; // the ones in use the open picker offers
+	std::array<char, 128> m_texture_filter{};
 	struct texture_index_entry
 	{
 		std::string name; // as the materials are named: relative to the folder of the textures, without the extension
 		std::string lowered;
 		bool material{false}; // there's a .mat file of the name
 	};
-	std::vector<texture_index_entry> m_track_texture_index; // sorted by the name
-	bool m_track_texture_indexed{false};
-	std::string m_track_texture_hovered; // the tile under the mouse in the picker, shown large above them
-	// properties copied from a track, to be pasted on others
+	std::vector<texture_index_entry> m_texture_index; // sorted by the name
+	bool m_texture_indexed{false};
+	std::string m_texture_hovered; // the tile under the mouse in the picker, shown large above them
 	struct track_style
 	{
 		std::string from;
@@ -3194,20 +3215,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool hashover{false};
 		glm::dvec3 mouse{0.0};
 		std::string status;
-		char surface[128]{};
-		char sides[2][128]{};
-		char filter[64]{"asph"};
-		char kerbtext[128]{};
-		char mediantext[128]{};
-		char banktext[128]{};
-		char islandtext[128]{"none"};
 	};
 	void render_road_tool_options();
 	// the change of the road tool
 	void road_choose_tool(int const Tool);
 	void render_road_selection();
 	bool render_road_layout(road_node::state &State);
-	bool render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value);
+	bool render_road_material(char const *Label, std::string &Value);
 	void render_junction_layout(junction_node &Junction);
 	void junction_apply(junction_node &Junction, junction_node::state const &State);
 	// leads the banks of the corners of a junction to the ground beside it
