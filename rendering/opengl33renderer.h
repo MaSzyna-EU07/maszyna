@@ -116,6 +116,8 @@ class opengl33_renderer : public gfx_renderer {
         Pick_Control() const override { return m_pickcontrolitem; }
     scene::basic_node const *
         Pick_Node() const override { return m_picksceneryitem; }
+    void
+        Forget_Node( scene::basic_node const *Node ) override;
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
     bool

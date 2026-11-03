@@ -10,13 +10,21 @@ scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
 
 void scenery_scanner::scan()
 {
-	for (auto &f : std::filesystem::directory_iterator("scenery")) {
-		std::filesystem::path path(std::filesystem::relative(f.path(), "scenery/"));
+	std::error_code error;
+	for (std::filesystem::directory_iterator f{"scenery", std::filesystem::directory_options::skip_permission_denied, error}, end; f != end; f.increment(error)) {
+		std::filesystem::path path(std::filesystem::relative(f->path(), "scenery/", error));
+		std::string name;
+		try {
+			name = path.string();
+		}
+		catch (std::exception const &) {
+			continue;
+		}
 
-		if (*path.filename().string().begin() == '$')
+		if (name.empty() || path.filename().string().front() == '$')
 			continue;
 
-		if (path.string().ends_with(".scn"))
+		if (name.ends_with(".scn"))
 			scan_scn(path);
 	}
 

@@ -23,7 +23,7 @@ bool ui::scenerylist_panel::on_key(int key, int action)
 	if (it == keyboard.keytonamemap.end())
 		return false;
 
-	if (Global.ctrlState && it->second == "delete")
+	if (Global.ctrlState && it->second == "delete" && selected_trainset != nullptr)
 		purge_selected_trainset();
 
 	return true;
@@ -117,7 +117,7 @@ void ui::scenerylist_panel::draw_launch_box()
 {
 	ImGui::NextColumn();
 
-	ImGui::TextWrapped(selected_trainset->description.c_str());
+	ImGui::TextWrapped("%s", selected_trainset->description.c_str());
 
 	ImGui::Checkbox(STR_C("Trainset turned around"), &selected_trainset->reversed);
 	if (ImGui::IsItemHovered())
@@ -283,7 +283,8 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 	draw_droptarget(trainset, position++);
 	ImGui::SameLine(15.0f);
 
-	for (auto &dyn_desc : trainset.vehicles) {
+	for (std::size_t index = 0; index < trainset.vehicles.size(); ++index) {
+		auto &dyn_desc = trainset.vehicles[index];
 		deferred_image *mini = nullptr;
 
 		if (dyn_desc.skin && dyn_desc.skin->mini.get() != deferred_image::invalid_id)
@@ -345,16 +346,19 @@ void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int positio
 		if (payload) {
 			skin_set *ptr = *reinterpret_cast<skin_set **>(payload->Data);
 			std::shared_ptr<skin_set> skin;
-			for (auto &s : ptr->vehicle.lock()->matching_skinsets)
-				if (s.get() == ptr)
-					skin = s;
+			if (auto const vehicle = ptr->vehicle.lock())
+				for (auto &s : vehicle->matching_skinsets)
+					if (s.get() == ptr)
+						skin = s;
 
-			trainset.vehicles.emplace(trainset.vehicles.begin() + position);
-			dynamic_desc &desc = trainset.vehicles[position];
+			if (skin) {
+				trainset.vehicles.emplace(trainset.vehicles.begin() + position);
+				dynamic_desc &desc = trainset.vehicles[position];
 
-			desc.name = skin->skin + "_" + std::to_string((int)LocalRandom(0.0, 10000000.0));
-			desc.vehicle = skin->vehicle.lock();
-			desc.skin = skin;
+				desc.name = skin->skin + "_" + std::to_string((int)LocalRandom(0.0, 10000000.0));
+				desc.vehicle = skin->vehicle.lock();
+				desc.skin = skin;
+			}
 		}
 
 		payload = ImGui::AcceptDragDropPayload("vehicle_set");
@@ -368,7 +372,7 @@ void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int positio
 				if (moved->position < position)
 					offset = -1;
 			} else {
-				desc_copy.name = desc_copy.skin->skin + "_" + std::to_string((int)LocalRandom(0.0, 10000000.0));
+				desc_copy.name = (desc_copy.skin ? desc_copy.skin->skin : desc_copy.name) + "_" + std::to_string((int)LocalRandom(0.0, 10000000.0));
 			}
 
 			trainset.vehicles.insert(trainset.vehicles.begin() + position + offset, desc_copy);

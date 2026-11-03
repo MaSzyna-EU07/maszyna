@@ -270,7 +270,11 @@ void eu07_application::DiscordRPCService()
 		}
 
 		if (currentMode != mode::driver)
+		{
+			// the editor and the other modes: nothing to tell, without spinning a core on it
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			continue;
+		}
 
 		// Discord RPC updater
 		if (simulation::is_ready)
@@ -690,19 +694,29 @@ void eu07_application::release_python_lock()
 void eu07_application::exit()
 {
 	Global.applicationQuitOrder = true;
+	// each step of the closing in the log, to tell from it where a closing that hangs stops
+	auto const closing{std::chrono::steady_clock::now()};
+	auto const step = [&](char const *What) {
+		WriteLog(std::string{"Closing: "} + What + " at " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()) + " ms");
+	};
+	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
 
+	step("the renderer");
 	GfxRenderer->Shutdown();
 	m_network.reset();
 
 	//    SafeDelete( simulation::Train );
+	step("the scenery");
 	SafeDelete(simulation::Region);
 
+	step("the ui and the python workers");
 	ui_layer::shutdown();
 
 	// the python workers detach their GL context on the way out, so they have to be done before the windows they use are destroyed
 	m_taskqueue.exit();
+	step("the windows");
 	for (auto *window : m_windows)
 	{
 		glfwDestroyWindow(window);
@@ -713,6 +727,8 @@ void eu07_application::exit()
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
 
+	step("done");
+	StopLogService();
 	auto it = Global.threads.find("LogService");
 	if (it != Global.threads.end())
 	{
