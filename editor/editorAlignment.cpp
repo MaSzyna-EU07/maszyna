@@ -1605,19 +1605,83 @@ std::optional<join_result> curve_join(join_frame const &Frame)
 	return fitted_join(Frame, tangent_intersection(probe, intersection) ? join_kind::curve : join_kind::reverse_curve);
 }
 
+// the free curve between ends no curve fits between: a cubic, its handles as long as keeps it widest, the sharpest bend of it as wide as
+// can be; with the ends turned away from each other a third of the chord each makes a loop, or a bend as sharp as a corner. None widening
+// to this or not crossing itself, the ends aren't joined: a loop isn't a track
+double constexpr kFreeSharpest{10.0}; // m
+
 join_result bezier_join(join_frame const &Frame)
 {
 	auto const &a{Frame.request.start};
 	auto const &b{Frame.request.end};
 	join_result fallback;
-	fallback.kind = join_kind::bezier;
 	auto const grade{Frame.rise / Frame.distance};
-	auto const handle{Frame.distance / 3.0};
+	auto const from{plan_of(a.position)};
+	auto const to{plan_of(b.position)};
+	// the sharpest bend of the cubic with the handles so long, 0 where it crosses itself or stops
+	auto const widest = [&](double const First, double const Second) {
+		auto const p1{from + Frame.start_direction * First};
+		auto const p2{to - Frame.end_direction * Second};
+		int constexpr steps{192};
+		std::vector<glm::dvec2> line;
+		std::vector<glm::dvec2> headings;
+		auto sharpest{std::numeric_limits<double>::max()};
+		for (int i = 0; i <= steps; ++i)
+		{
+			auto const t{static_cast<double>(i) / steps};
+			auto const s{1.0 - t};
+			line.push_back(from * (s * s * s) + p1 * (3.0 * s * s * t) + p2 * (3.0 * s * t * t) + to * (t * t * t));
+			auto const speed{((p1 - from) * (s * s) + (p2 - p1) * (2.0 * s * t) + (to - p2) * (t * t)) * 3.0};
+			auto const bend{((p2 - p1 * 2.0 + from) * s + (to - p2 * 2.0 + p1) * t) * 6.0};
+			auto const length{glm::length(speed)};
+			if (length < 1e-9)
+				return 0.0;
+			if (auto const curvature{std::abs(cross(speed, bend)) / (length * length * length)}; curvature > 1e-12)
+				sharpest = std::min(sharpest, 1.0 / curvature);
+			headings.push_back(speed / length);
+			// a point all but stopping on, a cusp between two of them, by the turn from one to the next
+			if (i > 0)
+				if (auto const turn{std::abs(geometry::signed_angle(headings[i - 1], headings[i]))}; turn > 1e-9)
+					sharpest = std::min(sharpest, glm::distance(line[i - 1], line[i]) / turn);
+		}
+		for (std::size_t i = 0; i + 1 < line.size(); ++i)
+			for (std::size_t k = i + 2; k + 1 < line.size(); ++k)
+			{
+				auto const r{line[i + 1] - line[i]};
+				auto const q{line[k + 1] - line[k]};
+				auto const denominator{cross(r, q)};
+				if (std::abs(denominator) < 1e-12)
+					continue;
+				auto const t{cross(line[k] - line[i], q) / denominator};
+				auto const u{cross(line[k] - line[i], r) / denominator};
+				if (t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9)
+					return 0.0;
+			}
+		return sharpest;
+	};
+	double const shares[]{0.1, 0.2, 1.0 / 3.0, 0.5, 0.75, 1.0, 1.4};
+	auto first{Frame.distance / 3.0};
+	auto second{Frame.distance / 3.0};
+	auto best{widest(first, second)};
+	for (auto const one : shares)
+		for (auto const other : shares)
+			if (auto const radius{widest(Frame.distance * one, Frame.distance * other)}; radius > best * 1.001)
+			{
+				best = radius;
+				first = Frame.distance * one;
+				second = Frame.distance * other;
+			}
+	if (best < kFreeSharpest)
+	{
+		fallback.warnings.push_back(STR_C("No curve fits between the ends, and a free curve between them would make a loop: click a point or two between them"));
+		return fallback;
+	}
+	fallback.kind = join_kind::bezier;
 	segment_data path;
 	path.points[segment_data::point::start] = a.position;
 	path.points[segment_data::point::end] = b.position;
-	path.points[segment_data::point::control1] = glm::dvec3{Frame.start_direction.x, grade, Frame.start_direction.y} * handle;
-	path.points[segment_data::point::control2] = -glm::dvec3{Frame.end_direction.x, grade, Frame.end_direction.y} * handle;
+	path.points[segment_data::point::control1] = glm::dvec3{Frame.start_direction.x, grade, Frame.start_direction.y} * first;
+	path.points[segment_data::point::control2] = -glm::dvec3{Frame.end_direction.x, grade, Frame.end_direction.y} * second;
 	fallback.pieces = {path};
 	spread_rolls(fallback.pieces, a.roll, b.roll);
 	fallback.length = Frame.distance;

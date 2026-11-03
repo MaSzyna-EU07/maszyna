@@ -432,21 +432,25 @@ void editor_mode::draw_track_labels() const
 		}
 		if (length < 0.5)
 			continue;
-		// the label in the middle of the row
-		glm::dvec3 middle{first.point(0.5)};
-		auto left{length * 0.5};
-		for (auto const &[member, forward] : run)
-		{
-			bezier const piece{member->m_paths.front()};
-			auto const span{piece.plan_length()};
-			if (left <= span || &member == &run.back().first)
+		// the point of the row so far along it; the label in its middle
+		auto const along_row = [&](double const Distance) {
+			glm::dvec3 point{first.point(0.5)};
+			auto left{Distance};
+			for (auto const &[member, forward] : run)
 			{
-				auto const share{std::clamp(span > 1e-6 ? left / span : 0.5, 0.0, 1.0)};
-				middle = piece.point(forward ? share : 1.0 - share);
-				break;
+				bezier const piece{member->m_paths.front()};
+				auto const span{piece.plan_length()};
+				if (left <= span || &member == &run.back().first)
+				{
+					auto const share{std::clamp(span > 1e-6 ? left / span : 0.5, 0.0, 1.0)};
+					point = piece.point(forward ? share : 1.0 - share);
+					break;
+				}
+				left -= span;
 			}
-			left -= span;
-		}
+			return point;
+		};
+		auto const middle{along_row(length * 0.5)};
 		if (straight)
 		{
 			labels.push_back({2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225)});
@@ -455,7 +459,14 @@ void editor_mode::draw_track_labels() const
 		// a track bent by hand, as an S between two points dragged, has no radius to read: its length alone
 		editor_track::curve shape;
 		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5 && shape.radius <= 50000.0)
+		{
 			labels.push_back({1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240)});
+			// the tracks of the transition curves told apart from the arc, each transition by a label of its own in its middle; two
+			// meeting at the radius are both of the curve
+			for (auto const &[transition, at] : {std::pair{shape.transition_in, shape.transition_in * 0.5}, std::pair{shape.transition_out, length - shape.transition_out * 0.5}})
+				if (transition >= 0.5 && transition < length)
+					labels.push_back({2, -transition, along_row(at), format(STR_C("transition L %.0f m"), transition), IM_COL32(150, 205, 255, 235)});
+		}
 		else
 			labels.push_back({2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240)});
 	}

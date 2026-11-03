@@ -45,9 +45,11 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdlib>
 #include <fstream>
 #include <map>
+#include <random>
 #include <sstream>
 #include <array>
 #include "application/editormodeselftest.h"
+#include "application/editormodetrackshared.h"
 
 editor_mode::selftest_result editor_mode::selftest_join(std::string const &command, std::istringstream &words)
 {
@@ -922,6 +924,237 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 	{
 		WriteLog(format("SELFTEST laystate: layout %d, join variant %d, R %.0f m, join R %.0f m, camera %.1f %.1f %.1f, extent %.1f", static_cast<int>(m_track_layout), m_join_variant, m_lay.radius, m_join_radius, Camera.Pos.x,
 		                Camera.Pos.y, Camera.Pos.z, static_cast<double>(Global.EditorOrthoExtent)));
+		return selftest_result::handled;
+	}
+	// monkey tests of the laying to and from the free ends of the scenery: Count lines of random points, modes, layouts and radii, from a
+	// point or a free end, through up to three points, to a free end, one clicked beside a few metres off and snapped as the nearest, or to
+	// a point. Each line as the preview shows it is checked: its ends at the free ends (a gap over 1 mm, an angle over 0.1 degree), its
+	// pieces against each other, a loop (the line crossing itself), the turning wasted (over 200 degrees more than it turns from end to
+	// end) and the sharpest curve. Only: that case alone, as it was in the run
+	if (command == "laymonkey")
+	{
+		unsigned seed{1};
+		int count{200};
+		int only{-1};
+		words >> seed >> count >> only;
+		std::mt19937 random{seed};
+		auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>{Low, High}(random); };
+		auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>{0, std::max(0, Count - 1)}(random); };
+		auto const turned = [](glm::dvec2 const &Direction, double const Angle) { return glm::dvec2{Direction.x * std::cos(Angle) - Direction.y * std::sin(Angle), Direction.x * std::sin(Angle) + Direction.y * std::cos(Angle)}; };
+		auto const lifted = [](glm::dvec2 const &Point, double const Height) { return glm::dvec3{Point.x, Height, Point.y}; };
+		auto const plan_way = [](editor_track::snap_target const &End) { return glm::normalize(geometry::plan_of(End.direction) + glm::dvec2{1e-12, 0.0}); };
+		auto const ends{editor_track::free_ends(nullptr, 1, glm::dvec3{0.0}, 1e7, {})};
+		if (ends.empty())
+		{
+			WriteLog("SELFTEST laymonkey: no free ends");
+			return selftest_result::handled;
+		}
+		auto const saved_start{m_lay.start};
+		auto const saved_radius{m_lay.radius};
+		auto const saved_layout{m_track_layout};
+		char const *kinds[]{"point-end", "point-points-end", "end-end", "end-points-end", "end-points-point", "point-points-beside"};
+		std::map<std::string, int> tally;
+		std::map<std::string, int> refused;
+		int failed_shown{0};
+		for (int index = 0; index < count; ++index)
+		{
+			// every case draws its numbers whether it's run or not, so one of them alone is the same as in the whole run
+			auto const kind{pick(6)};
+			auto const &target{ends[pick(static_cast<int>(ends.size()))]};
+			auto const &other{ends[pick(static_cast<int>(ends.size()))]};
+			auto const layout{pick(4)};
+			double const radii[]{150.0, 300.0, 500.0, 1000.0, 2000.0};
+			auto const radius{radii[pick(5)]};
+			auto const distance{std::exp(uniform(std::log(10.0), std::log(400.0)))};
+			auto const bearing{std::clamp(uniform(-1.0, 1.0) * uniform(0.0, 1.0) * glm::pi<double>(), -2.97, 2.97)};
+			auto const inner{1 + pick(3)};
+			std::array<double, 3> shares{uniform(0.1, 0.9), uniform(0.1, 0.9), uniform(0.1, 0.9)};
+			std::array<double, 3> across{uniform(-0.25, 0.25), uniform(-0.25, 0.25), uniform(-0.25, 0.25)};
+			std::array<int, 5> modes_drawn{pick(2), pick(2), pick(2), pick(2), pick(2)};
+			auto const near_end{uniform(0.0, 1.0) < 0.3};
+			auto const near_back{uniform(1.0, 15.0)};
+			auto const near_side{uniform(-3.0, 3.0)};
+			auto const beside{glm::dvec2{uniform(-4.0, 4.0), uniform(-4.0, 4.0)}};
+			if (only >= 0 && index != only)
+				continue;
+			// the line from a free end starts at another one, to one within 30 to 600 m of it, else to a point
+			auto const from_end{kind >= 2 && kind <= 4};
+			editor_track::snap_target start;
+			editor_track::snap_target end;
+			glm::dvec3 first{0.0};
+			glm::dvec3 last{0.0};
+			glm::dvec2 heading{0.0};
+			if (from_end)
+			{
+				start = other;
+				first = start.position;
+				heading = -plan_way(start);
+				if (kind != 4)
+				{
+					auto const reach{geometry::plan_distance(target.position, first)};
+					if ((target.track == start.track && target.point == start.point) || reach < 30.0 || reach > 600.0)
+					{
+						// the nearest end in that band instead, any else as the point
+						double best{1e9};
+						for (auto const &candidate : editor_track::free_ends(nullptr, 1, first, 600.0, {}))
+							if (auto const apart{geometry::plan_distance(candidate.position, first)}; apart >= 30.0 && std::abs(apart - distance) < best)
+							{
+								best = std::abs(apart - distance);
+								end = candidate;
+							}
+					}
+					else
+						end = target;
+				}
+				last = end.track != nullptr ? end.position : lifted(geometry::plan_of(first) + turned(heading, bearing) * distance, first.y);
+			}
+			else
+			{
+				end = target;
+				last = end.position;
+				first = lifted(geometry::plan_of(last) - turned(plan_way(end), bearing) * distance, last.y);
+			}
+			std::vector<glm::dvec3> points{first};
+			if (kind == 1 || kind == 3 || kind == 4 || kind == 5)
+			{
+				std::vector<double> along(shares.begin(), shares.begin() + inner);
+				std::sort(along.begin(), along.end());
+				auto const chord{geometry::plan_of(last - first)};
+				glm::dvec2 const side{-chord.y, chord.x};
+				for (int k = 0; k < inner; ++k)
+					points.push_back(lifted(geometry::plan_of(first) + chord * along[k] + side * across[k], first.y + (last.y - first.y) * along[k]));
+				// a point clicked just before the free end, a little to the side of the way into it
+				if (near_end && end.track != nullptr)
+				{
+					auto const way{plan_way(end)};
+					points.back() = lifted(geometry::plan_of(last) - way * near_back + glm::dvec2{-way.y, way.x} * near_side, last.y);
+				}
+			}
+			// clicked beside the free end: the nearest one within the reach of the snap is the one joined, as the cursor finds it
+			if (kind == 5)
+			{
+				auto const clicked{lifted(geometry::plan_of(target.position) + beside, target.position.y)};
+				end = editor_track::find_free_end(nullptr, 1, clicked, ::track_mode::kLaySnapRadius, {});
+				if (end.track == nullptr)
+					continue;
+				last = end.position;
+			}
+			points.push_back(last);
+			std::vector<lay_mode> modes;
+			for (std::size_t k = 0; k < points.size(); ++k)
+				modes.push_back(modes_drawn[std::min<std::size_t>(k, 4)] != 0 ? lay_mode::curve : lay_mode::straights);
+			m_lay.start = from_end ? start : editor_track::snap_target{};
+			m_lay.radius = radius;
+			m_track_layout = static_cast<track_layout>(layout);
+			double length{0.0};
+			std::string error;
+			auto const pieces{lay_pieces(points, modes, end, length, error)};
+			auto const kind_name{std::string{kinds[kind]}};
+			++tally[kind_name];
+			if (pieces.empty())
+			{
+				++refused[error.empty() ? std::string{"(no error)"} : error.substr(0, 60)];
+				++tally["refused"];
+				continue;
+			}
+			// the line as the preview shows it, every metre or so, and its pieces against each other
+			std::vector<glm::dvec2> line;
+			std::vector<glm::dvec2> headings;
+			double inner_gap{0.0};
+			double inner_kink{0.0};
+			for (std::size_t p = 0; p < pieces.size(); ++p)
+			{
+				geometry::bezier const curve{pieces[p]};
+				if (p > 0)
+				{
+					geometry::bezier const before{pieces[p - 1]};
+					inner_gap = std::max(inner_gap, glm::distance(before.point(1.0), curve.point(0.0)));
+					inner_kink = std::max(inner_kink, glm::degrees(std::abs(geometry::signed_angle(geometry::plan_of(before.first(1.0)), geometry::plan_of(curve.first(0.0))))));
+				}
+				auto const span{curve.plan_length()};
+				auto const steps{std::max(2, static_cast<int>(std::ceil(span / 1.0)))};
+				for (int k = p == 0 ? 0 : 1; k <= steps; ++k)
+				{
+					auto const t{curve.parameter(span * k / steps)};
+					line.push_back(geometry::plan_of(curve.point(t)));
+					headings.push_back(geometry::plan_of(curve.first(t)));
+				}
+			}
+			double turning{0.0};
+			double sharpest{1e9};
+			for (std::size_t k = 1; k < headings.size(); ++k)
+			{
+				auto const angle{std::abs(geometry::signed_angle(headings[k - 1], headings[k]))};
+				turning += angle;
+				if (auto const step{glm::distance(line[k - 1], line[k])}; angle > 1e-6 && step > 1e-6)
+					sharpest = std::min(sharpest, step / angle);
+			}
+			auto const net{std::abs(geometry::signed_angle(headings.front(), headings.back()))};
+			// the line crossing itself, the stretches next to each other left out
+			bool loop{false};
+			for (std::size_t a = 0; a + 1 < line.size() && false == loop; ++a)
+				for (std::size_t b = a + 3; b + 1 < line.size(); ++b)
+				{
+					auto const r{line[a + 1] - line[a]};
+					auto const s{line[b + 1] - line[b]};
+					auto const denominator{r.x * s.y - r.y * s.x};
+					if (std::abs(denominator) < 1e-12)
+						continue;
+					auto const q{line[b] - line[a]};
+					auto const t{(q.x * s.y - q.y * s.x) / denominator};
+					auto const u{(q.x * r.y - q.y * r.x) / denominator};
+					if (t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9)
+					{
+						loop = true;
+						break;
+					}
+				}
+			geometry::bezier const head{pieces.front()};
+			geometry::bezier const tail{pieces.back()};
+			auto const start_gap{from_end ? glm::distance(head.point(0.0), start.position) : 0.0};
+			auto const start_angle{from_end ? glm::degrees(std::abs(geometry::signed_angle(geometry::plan_of(head.first(0.0)), -plan_way(start)))) : 0.0};
+			auto const end_gap{end.track != nullptr ? glm::distance(tail.point(1.0), end.position) : 0.0};
+			auto const end_angle{end.track != nullptr ? glm::degrees(std::abs(geometry::signed_angle(geometry::plan_of(tail.first(1.0)), plan_way(end)))) : 0.0};
+			auto const wasted{glm::degrees(turning - net) > 200.0};
+			std::string faults;
+			if (start_gap > 0.001 || start_angle > 0.1)
+				faults += format(" start joint %.4f m %.3f deg;", start_gap, start_angle);
+			if (end_gap > 0.001 || end_angle > 0.1)
+				faults += format(" end joint %.4f m %.3f deg;", end_gap, end_angle);
+			if (inner_gap > 0.001 || inner_kink > 0.1)
+				faults += format(" pieces %.4f m %.3f deg;", inner_gap, inner_kink);
+			if (loop)
+				faults += " loop;";
+			if (wasted)
+				faults += format(" turning %.0f deg for %.0f;", glm::degrees(turning), glm::degrees(net));
+			if (sharpest < 50.0)
+				faults += format(" R %.1f m;", sharpest);
+			if (faults.empty())
+			{
+				++tally["clean"];
+				continue;
+			}
+			for (auto const *fault : {"start joint", "end joint", "pieces", "loop", "turning", "R "})
+				if (faults.find(fault) != std::string::npos)
+					++tally[fault];
+			if (failed_shown++ < 40 || only >= 0)
+			{
+				std::string clicked;
+				for (std::size_t k = 0; k < points.size(); ++k)
+					clicked += format(" %.1f,%.1f%s", points[k].x, points[k].z, modes[k] == lay_mode::curve ? "c" : "s");
+				WriteLog(format("SELFTEST laymonkey case %d %s:%s from %s to %s, layout %d R %.0f, %zu pieces %.1f m, points%s; %s", index, kind_name.c_str(), faults.c_str(), from_end ? (start.track->name() + (start.track->eType == tt_Switch ? " (switch)" : "")).c_str() : "-",
+				                end.track != nullptr ? (end.track->name() + (end.track->eType == tt_Switch ? " (switch)" : "")).c_str() : "-", layout, radius, pieces.size(), length, clicked.c_str(), error.c_str()));
+			}
+		}
+		m_lay.start = saved_start;
+		m_lay.radius = saved_radius;
+		m_track_layout = saved_layout;
+		std::string summary;
+		for (auto const &[name, number] : tally)
+			summary += format(" %s %d,", name.c_str(), number);
+		WriteLog(format("SELFTEST laymonkey seed %u, %d cases:", seed, count) + summary);
+		for (auto const &[error, number] : refused)
+			WriteLog(format("SELFTEST laymonkey refused %d: %s", number, error.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "layclicks")

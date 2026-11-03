@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorGeometry.hpp"
+#include "application/editormodetrackshared.h"
 
 #include "scene/scene.h"
 #include "simulation/simulation.h"

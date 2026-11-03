@@ -133,8 +133,10 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
+//   laymonkey <seed> <count> [case]      random lines laid to and from the free ends of the scenery, as the preview shows them: gaps and
+//                                        angles at the joints, loops, the turning wasted and the sharpest curve logged; case: that one alone
 //   layspeed <km/h> <own 0|1>            the speed set for the laying, and whether it goes also on from a track with its own
-//   laymode <straights|curve>, layradius <R from> <R to>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
+//   laymode <straights|curve>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
 //   endcurves                            logs every free end of the rails: where, the way out and the curvature its track goes on with
 //   curvejoint <x> <z>                   logs the paths meeting at the end nearest the point, the curvature of each and its jump from the ones before to the ones after
 //   cantcheck <label>                    logs each jump of the cant at a joint of plain tracks, and the steepest ramp of the cant on a path

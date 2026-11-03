@@ -1859,6 +1859,13 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		std::tie(design.end, design.end_direction) = *easedend;
 		end = design.end;
 	}
+	// the last bend goes onto the line of the free end, as far before it as it was clicked: one clicked past it would come into the end
+	// the wrong way, the joint turned round
+	if (joined && false == bends.empty() && bends.back().corner && glm::dot(plan_of(end - bends.back().position), design.end_direction) <= 0.0)
+	{
+		Error = STR_C("The last point clicked lies past the free end: the track can't come into it from there");
+		return false;
+	}
 	for (auto const &bend : bends)
 	{
 		auto vertex{bend.corner ? alignment::vertex{} : bend.vertex};

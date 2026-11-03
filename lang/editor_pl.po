@@ -13166,3 +13166,15 @@ msgstr "NMT nie ma danych pod linią"
 msgid "No grade line fits the terrain model under the line"
 msgstr "Żadna niweleta nie pasuje do NMT pod linią"
 
+msgid "No curve fits between the ends, and a free curve between them would make a loop: click a point or two between them"
+msgstr "Między końcami nie mieści się żaden łuk, a krzywa swobodna zrobiłaby pętlę: kliknij punkt albo dwa między nimi"
+
+msgid "The last point clicked lies past the free end: the track can't come into it from there"
+msgstr "Ostatni kliknięty punkt leży za wolnym końcem: tor nie wejdzie w niego z tej strony"
+
+msgid "The radius the two transition curves of a bend meet at, at least, and from 2000 m up always; where they don't fit at it, an arc of the norms as large as fits"
+msgstr "Promień, przy którym stykają się dwie krzywe przejściowe załamania, co najmniej, a od 2000 m w górę zawsze; gdzie się przy nim nie mieszczą, łuk według norm tak duży, jak się mieści"
+
+msgid "transition L %.0f m"
+msgstr "przejściowa L %.0f m"
+
