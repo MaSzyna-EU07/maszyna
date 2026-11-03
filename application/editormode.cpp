@@ -3267,6 +3267,7 @@ void editor_mode::toggle_include(scene::instance_handle const Instance)
         return;
     }
     scene::Layers.removed(Instance, false == included.removed);
+    m_drives_standing.reset();
     ui()->set_status(format(included.removed ? STR_C("Include of \"%s\" removed") : STR_C("Include of \"%s\" restored"), included.file->c_str()));
 }
 
@@ -3303,6 +3304,7 @@ void editor_mode::restore_includes(EditorSnapshot &Snapshot)
         }
         scene::Layers.removed(instance, false == scene::Layers.instance(instance).removed);
     }
+    m_drives_standing.reset();
     for (auto &entry : Snapshot.directives)
     {
         auto current = scene::Layers.directive(entry.first);
@@ -3347,6 +3349,7 @@ void editor_mode::select_include(scene::instance_handle const Instance)
 
 void editor_mode::set_include_directive(scene::instance_handle const Instance, std::string const &Directive)
 {
+    m_drives_standing.reset();
     std::string file;
     std::vector<std::string> values;
     if (scene::Layers.tracked(Instance) && editor_includes::parse_directive(Directive, file, values) && scene::Layers.instance(Instance).file != nullptr &&

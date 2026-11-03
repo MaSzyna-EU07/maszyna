@@ -2355,6 +2355,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int index{0};
 	};
 	std::optional<switch_drive> find_switch_drive(TTrack const &Switch, bool Wait = true);
+	// the drives standing in the scenery by the switch each is set to, read from the files once a frame for all the switches
+	std::map<std::string, switch_drive> const &switch_drives_standing(bool Wait = true);
+	struct drives_standing
+	{
+		std::map<std::string, switch_drive> by_switch;
+		int frame{-1};
+		int revision{-1}; // of the drives scanned
+		std::size_t instances{0};
+	};
+	std::optional<drives_standing> m_drives_standing; // emptied when an include changes
 	std::string missing_drive_variant(int const Family, bool const Rightswitch, bool const Driveright) const;
 	bool replace_switch_drive(TTrack &Switch, int Family, bool Flip);
 	void apply_switch_drive_choice(TTrack &Switch);

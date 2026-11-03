@@ -143,21 +143,25 @@ void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
 {
 	if (m_infra_suspended)
 		return;
+	// a copy: each directive set below empties the drives kept
+	std::optional<std::map<std::string, switch_drive>> drives;
 	for (auto const *track : Tracks)
 	{
 		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
 			continue;
-		auto const found{find_switch_drive(*track)};
+		if (false == drives.has_value())
+			drives = switch_drives_standing();
+		auto const found{drives->find(drive_file(track->name()))};
 		auto const spot{editor_track::drive_spot_of(*track)};
-		if (false == found.has_value() || false == spot.has_value())
+		if (found == drives->end() || false == spot.has_value())
 			continue;
-		auto const &drive{found->standing};
+		auto const &drive{found->second.standing};
 		auto const &included{scene::Layers.instance(drive.instance)};
 		include_info info;
 		std::string error;
 		if (included.file == nullptr || false == editor_includes::load(*included.file, info, error))
 			continue;
-		auto const local{spot->location + glm::dvec3{0.0, m_switch.drives[found->family].heights[found->index], 0.0} - included.context.offset};
+		auto const local{spot->location + glm::dvec3{0.0, m_switch.drives[found->second.family].heights[found->second.index], 0.0} - included.context.offset};
 		auto values{drive.values};
 		for (auto const &parameter : info.parameters)
 		{
@@ -215,20 +219,43 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 
 std::optional<editor_mode::switch_drive> editor_mode::find_switch_drive(TTrack const &Switch, bool const Wait)
 {
+	auto const &drives{switch_drives_standing(Wait)};
+	auto const found{drives.find(drive_file(Switch.name()))};
+	if (found == drives.end())
+		return std::nullopt;
+	return found->second;
+}
+
+// each include is read from its scenery file, so the drives of all the switches are read at once: done for each switch, the start of a
+// scenery of a few hundred took a quarter of a minute. Kept for the frame, while no include comes or goes; the first drive of a switch counts
+std::map<std::string, editor_mode::switch_drive> const &editor_mode::switch_drives_standing(bool const Wait)
+{
 	auto const &tool{m_switch};
 	scan_switch_drives(Wait);
+	auto &kept{m_drives_standing};
+	auto const instances{static_cast<std::size_t>(scene::Layers.instance_count())};
+	if (kept.has_value() && kept->frame == ImGui::GetFrameCount() && kept->revision == tool.drives_revision && kept->instances == instances &&
+	    std::none_of(kept->by_switch.begin(), kept->by_switch.end(), [](auto const &Drive) {
+		    auto const &included{scene::Layers.instance(Drive.second.standing.instance)};
+		    return included.removed || included.dead;
+	    }))
+		return kept->by_switch;
 	std::map<std::string, std::pair<int, int>, std::less<>> variants;
 	for (int family = 0; family < static_cast<int>(tool.drives.size()); ++family)
 		for (int index = 0; index < 4; ++index)
 			if (false == tool.drives[family].files[index].empty())
 				variants[drive_file(tool.drives[family].files[index])] = {family, index};
-	auto const name{drive_file(Switch.name())};
-	auto const standing{standing_templates([&](std::string const &File) { return variants.contains(File); })};
-	auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_template const &Standing) { return drive_file(Standing.values[0]) == name; })};
-	if (found == standing.end())
-		return std::nullopt;
-	auto const &[family, index]{variants[found->file]};
-	return switch_drive{*found, family, index};
+	kept.emplace();
+	kept->frame = ImGui::GetFrameCount();
+	kept->revision = tool.drives_revision;
+	kept->instances = instances;
+	for (auto &standing : standing_templates([&](std::string const &File) { return variants.contains(File); }))
+	{
+		auto const &[family, index]{variants[standing.file]};
+		auto name{drive_file(standing.values[0])};
+		kept->by_switch.try_emplace(std::move(name), switch_drive{std::move(standing), family, index});
+	}
+	return kept->by_switch;
 }
 
 void editor_mode::apply_switch_drive_choice(TTrack &Switch)
