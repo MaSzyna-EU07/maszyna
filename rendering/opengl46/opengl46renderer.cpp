@@ -4294,8 +4294,9 @@ void opengl46_renderer::Render_Scene_Depth( glm::mat4 const &Future, bool const 
 		m_scenerecordedparts = static_cast<std::uint32_t>( m_scenechunks.size() );
 	}
 	else {
-		// the conditions of the cab drawn early by the colour pass
-		if( ( false == FreeFlyModeFlag ) && ( Global.Overcast <= 1.0f ) && ( Global.render_cab ) ) {
+		// the cab first, also in the rain: the colour pass draws it after the rain then (the rain inside it hidden), but with its depth
+		// here nothing the cab hides is shaded by the opaque pass
+		if( ( false == FreeFlyModeFlag ) && ( Global.render_cab ) ) {
 			model_ubs.future = m_cabfuture;
 			auto const *vehicle { simulation::Train->Dynamic() };
 			Render_cab( vehicle, vehicle->InteriorLightLevel, false );
