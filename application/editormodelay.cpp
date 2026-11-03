@@ -199,11 +199,26 @@ void editor_mode::update_build_tools()
 	lay_trim();
 	lay.plan = {};
 	if (lay.points.empty())
+	{
+		lay.shown.reset();
+		lay.settling.reset();
 		return;
+	}
+	// the line worked out last stays shown as long as the points clicked go on from its ones; one through a point taken back doesn't
+	if (lay.shown.has_value() && (lay.shown->points.size() > lay.points.size() || false == std::equal(lay.shown->points.begin(), lay.shown->points.end(), lay.points.begin())))
+		lay.shown.reset();
+	// the line is worked out for the cursor where it was when its fits were asked for, till the thread has done them all, frame after
+	// frame: then for where the cursor is by then. Another point clicked, or a track changed, the cursor is taken where it is
+	if (auto const &settling{lay.settling};
+	    false == lay.whole || (settling.has_value() && (settling->points != lay.points || settling->modes != lay.modes || settling->mode != lay.mode || settling->edits != m_track_edits)))
+		lay.settling.reset();
+	if (false == lay.settling.has_value())
+		lay.settling = lay_tool::settling_cursor{lay.mouse, lay.mouse_snap, lay.points, lay.modes, lay.mode, m_track_edits};
+	auto const &mouse{lay.settling->mouse};
 	// the cursor is the next point, in the mode it would be clicked in
 	auto points{lay.points};
 	auto modes{lay.modes};
-	auto end{lay.mouse_snap};
+	auto end{lay.settling->snap};
 	if (end.track != nullptr && glm::distance(end.position, points.front()) > 1.0)
 	{
 		points.push_back(end.position);
@@ -212,15 +227,32 @@ void editor_mode::update_build_tools()
 	else
 	{
 		end = {};
-		if (plan_distance(lay.mouse, points.back()) > 1.0)
+		if (plan_distance(mouse, points.back()) > 1.0)
 		{
-			points.push_back(lay.mouse);
+			points.push_back(mouse);
 			modes.push_back(lay.mode);
 		}
 	}
+	m_fits_waiting = false;
 	m_follow_preview = true;
 	lay.preview = lay_pieces(points, modes, end, lay.preview_length, lay.preview_error, &lay.plan);
 	m_follow_preview = false;
+	if (false == m_fits_waiting || false == lay.whole)
+	{
+		lay.shown = lay_tool::worked_out{lay.preview, lay.preview_error, lay.preview_length, lay.plan, m_eased_last, m_join_last, lay.points};
+		lay.settling.reset();
+	}
+	else if (lay.shown.has_value())
+	{
+		// all of what the line shown was worked out with: the readout tells of it too
+		auto const &shown{*lay.shown};
+		lay.preview = shown.preview;
+		lay.preview_error = shown.error;
+		lay.preview_length = shown.length;
+		lay.plan = shown.plan;
+		m_eased_last = shown.eased;
+		m_join_last = shown.join;
+	}
 	auto const planning{lap()};
 	if (oncursor + snapping + bedding + planning > 30.0)
 	{
@@ -1596,6 +1628,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				// the last two points clicked on the straight after the curve, as the mode asks for: the straight goes through them, the curve
 				// fitted with their heading ending before them; before the last one alone, where the last three points show a line much
 				// flatter than the end of the curve. Only points showing the curve going on draw it on to the last one
+				// a fit of the straight clicked after the curve is still on the thread
+				bool straight_waiting{false};
 				auto const clicked_straight = [&]() -> std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> {
 					constexpr double kFlatter{4.0};
 					auto const count{fitted_points.size()};
@@ -1607,15 +1641,14 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					auto const fitted_heading = [&](glm::dvec2 const &Heading) -> std::optional<alignment::trace_stretch> {
 						bool again{true};
 						auto const fit{fit_to(Heading, false, again)};
+						if (false == fit.has_value())
+							straight_waiting = true;
 						if (false == fit.has_value() || false == fit->valid || fit->vertices.empty())
 							return std::nullopt;
 						return fit;
 					};
 					auto const chorded{glm::normalize(chord)};
 					auto heading{chorded};
-					auto fit{fitted_heading(heading)};
-					if (false == fit.has_value())
-						return std::nullopt;
 					// the heading of two points clicked a little off is a little off too: turned a bit either way, and to where the closeness
 					// to all the points says the bottom is, the heading the curve keeps closest to them with. A few fits more, done on the
 					// thread from frame to frame while the cursor moves
@@ -1623,6 +1656,17 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					// none for points clicked as closely as this: their heading is good as it is
 					constexpr double kClose{0.05};
 					auto const step{std::clamp(0.5 / glm::length(chord), 0.002, 0.03)};
+					auto fit{fitted_heading(heading)};
+					if (false == fit.has_value())
+					{
+						// the two turned either way asked for with it, the thread fitting them one after another, not a frame after
+						if (straight_waiting && tool.whole)
+						{
+							fitted_heading(rotated(-step));
+							fitted_heading(rotated(step));
+						}
+						return std::nullopt;
+					}
 					auto const minus{fit->rms > kClose ? fitted_heading(rotated(-step)) : std::nullopt};
 					auto const plus{fit->rms > kClose ? fitted_heading(rotated(step)) : std::nullopt};
 					if (minus.has_value() && plus.has_value())
@@ -1680,6 +1724,10 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					leaving = straight->second;
 					base.end_direction = leaving;
 				}
+				else if (straight_waiting && tool.whole)
+				{
+					// the line waits for the straight: no more turns asked for meanwhile, the thread fitting them before it
+				}
 				else if (first.has_value() && *first > 0.5)
 				{
 					auto low{0.0};
@@ -1690,12 +1738,19 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					// by 15 degrees at most: more is no longer the heading the points show
 					constexpr double kMost{0.26};
 					auto angle{std::min(kMost, lowshort / ending)};
+					// the turn the line before was given first: the cursor has moved on a little since, it's near enough most often
+					if (tool.whole && m_turned_last > 0.0)
+						angle = std::min(kMost, m_turned_last);
+					auto waited{false};
 					for (int i = 0; i < 8; ++i)
 					{
 						bool again{true};
 						auto const trial{fit_to(turned(angle), false, again)};
 						if (false == trial.has_value())
+						{
+							waited = true;
 							break;
+						}
 						if (auto const left{short_of(*trial, turned(angle))}; left.has_value() && *left >= 0.0)
 						{
 							low = angle;
@@ -1711,6 +1766,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 							break;
 						angle = high.has_value() ? 0.5 * (low + *high) : std::min(kMost, low + lowshort / ending);
 					}
+					if (false == waited)
+						m_turned_last = bestangle;
 					fitted = best;
 					leaving = turned(bestangle);
 					base.end_direction = leaving;
@@ -1878,6 +1935,7 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 		keep(fit);
 		return fit;
 	}
+	m_fits_waiting = true;
 	m_stretch_fitter.ask({key, Base, Points, Radii, Straights, Going});
 	std::vector<double> last;
 	auto const header{std::size_t{19}};

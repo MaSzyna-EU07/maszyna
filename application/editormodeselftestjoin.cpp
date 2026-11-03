@@ -719,6 +719,154 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		lay_report("sample");
 		return selftest_result::handled;
 	}
+	// the cursor moved on along the arc of the points clicked, frame after frame, as the hand moves it while laying in the mode of a curve:
+	// from x z heading (degrees) the start clicked, Count points of the arc of radius R to the left every Spacing metres, then the cursor
+	// further along it Moves frames Step metres each, Holds frames still, Legs times over, shifted across by up to Noise. Tells how many
+	// lines were shown one after another while it stood still, how many frames after the last came, and how many frames showed a line
+	// some fit of which wasn't done yet. Whole 0: each fit shown as it comes, as before
+	if (command == "laydrag")
+	{
+		struct drag_state
+		{
+			bool started{false};
+			std::vector<glm::dvec3> cursor; // frame after frame
+			std::vector<int> legs; // of the frames, minus for the ones held still
+			std::size_t frame{0};
+			std::array<double, 4> shown{};
+			int changes{0};
+			int partial{0};
+			// of the leg the frame before was in
+			int leg{0};
+			int leg_changes{0};
+			int leg_partial{0};
+			int leg_frames{0};
+			int leg_last{0};
+			// over all of them
+			int moved_changes{0};
+			int moved_partial{0};
+			int moved_frames{0};
+			int still_lines{0};
+			int still_most{0};
+			int still_last{0};
+			int still_slowest{0};
+			int stills{0};
+		};
+		static drag_state drag;
+		auto const signature = [this]() {
+			std::array<double, 4> result{m_lay.preview_length, 0.0, 0.0, 0.0};
+			if (false == m_lay.preview.empty())
+			{
+				geometry::bezier const curve{m_lay.preview.back()};
+				auto const tip{curve.point(1.0)};
+				auto const along{geometry::plan_of(curve.first(1.0))};
+				result = {m_lay.preview_length, tip.x, tip.z, std::atan2(along.y, along.x)};
+			}
+			return result;
+		};
+		if (false == drag.started)
+		{
+			drag = {};
+			int whole{1}, count{6}, moves{20}, holds{40}, legs{4};
+			double x{0.0}, z{0.0}, heading{0.0}, radius{600.0}, spacing{20.0}, step{0.5}, noise{0.0};
+			words >> whole >> x >> z >> heading >> radius >> spacing >> count >> step >> moves >> holds >> legs >> noise;
+			choose_work_area(work_area::tracks);
+			show_track_tab(track_tab::lay);
+			m_lay.whole = whole != 0;
+			m_lay.active = true;
+			lay_cancel();
+			m_stretch_cache.clear();
+			m_turned_last = 0.0;
+			if (m_lay.mode != lay_mode::straights)
+				lay_switch_mode();
+			glm::dvec2 const start{x, z};
+			glm::dvec2 const direction{std::cos(glm::radians(heading)), std::sin(glm::radians(heading))};
+			glm::dvec2 const left{-direction.y, direction.x};
+			auto const centre{start + left * radius};
+			auto const along = [&](double const Chainage, double const Shift) {
+				auto const angle{Chainage / radius};
+				auto const radial{geometry::turned(start - centre, angle)};
+				auto const point{centre + radial * (1.0 + Shift / radius)};
+				return glm::dvec3{point.x, 0.0, point.y};
+			};
+			auto const shift = [&](int const Count) { return noise * (Count % 3 == 0 ? 1.0 : Count % 3 == 1 ? -0.6 : 0.2); };
+			lay_point({start.x, 0.0, start.y});
+			lay_switch_mode();
+			for (int k = 1; k <= count; ++k)
+				lay_point(along(spacing * k, shift(k)));
+			auto chainage{spacing * count};
+			for (int leg = 1; leg <= legs; ++leg)
+			{
+				for (int i = 0; i < moves; ++i)
+				{
+					chainage += step;
+					drag.cursor.push_back(along(chainage, 0.3 * shift(i)));
+					drag.legs.push_back(leg);
+				}
+				for (int i = 0; i < holds; ++i)
+				{
+					drag.cursor.push_back(drag.cursor.back());
+					drag.legs.push_back(-leg);
+				}
+			}
+			WriteLog(format("SELFTEST laydrag %s: %zu points clicked, %zu frames, %s", m_lay.whole ? "whole" : "as fitted", m_lay.points.size(), drag.cursor.size(), m_lay.status.c_str()));
+			drag.started = true;
+			drag.shown = signature();
+			m_cursor_override = drag.cursor.front();
+			drag.frame = 1;
+			return selftest_result::again;
+		}
+		// the line shown now is the one worked out the frame before, for the cursor set then
+		auto const now{signature()};
+		auto const changed{std::abs(now[0] - drag.shown[0]) > 0.005 || std::hypot(now[1] - drag.shown[1], now[2] - drag.shown[2]) > 0.005 || std::abs(now[3] - drag.shown[3]) > 1e-4};
+		auto const partial{m_fits_waiting && (false == m_lay.whole || false == m_lay.shown.has_value())};
+		drag.shown = now;
+		auto const leg{drag.legs[drag.frame - 1]};
+		auto const close_leg = [&]() {
+			if (drag.leg > 0)
+			{
+				drag.moved_changes += drag.leg_changes;
+				drag.moved_partial += drag.leg_partial;
+				drag.moved_frames += drag.leg_frames;
+				WriteLog(format("SELFTEST laydrag leg %d moving: %d frames, the line changed %d times, %d frames of a line not worked out whole", drag.leg, drag.leg_frames, drag.leg_changes, drag.leg_partial));
+			}
+			else if (drag.leg < 0)
+			{
+				++drag.stills;
+				drag.still_lines += drag.leg_changes;
+				drag.still_most = std::max(drag.still_most, drag.leg_changes);
+				drag.still_last += drag.leg_last;
+				drag.still_slowest = std::max(drag.still_slowest, drag.leg_last);
+				WriteLog(format("SELFTEST laydrag leg %d still: %d lines one after another, the last after %d frames, %d frames of a line not worked out whole, L %.2f m, heading %.4f, %s", -drag.leg, drag.leg_changes, drag.leg_last, drag.leg_partial, drag.shown[0],
+				                drag.shown[3], m_lay.preview_error.c_str()));
+			}
+			drag.leg = leg;
+			drag.leg_changes = drag.leg_partial = drag.leg_frames = drag.leg_last = 0;
+		};
+		if (leg != drag.leg)
+			close_leg();
+		++drag.leg_frames;
+		if (changed)
+		{
+			++drag.leg_changes;
+			drag.leg_last = drag.leg_frames;
+		}
+		if (partial)
+			++drag.leg_partial;
+		if (drag.frame < drag.cursor.size())
+		{
+			m_cursor_override = drag.cursor[drag.frame++];
+			return selftest_result::again;
+		}
+		close_leg();
+		WriteLog(format("SELFTEST laydrag %s: moving %d frames, the line changed %d times, %d frames of a line not worked out whole; still %d times, %.1f lines one after another on average, %d at most, the last after %.1f frames on average, %d at most",
+		                m_lay.whole ? "whole" : "as fitted", drag.moved_frames, drag.moved_changes, drag.moved_partial, drag.stills, drag.stills > 0 ? static_cast<double>(drag.still_lines) / drag.stills : 0.0, drag.still_most,
+		                drag.stills > 0 ? static_cast<double>(drag.still_last) / drag.stills : 0.0, drag.still_slowest));
+		m_cursor_override.reset();
+		lay_cancel();
+		m_lay.whole = true;
+		drag.started = false;
+		return selftest_result::handled;
+	}
 	if (command == "tracktab")
 	{
 		std::string key;

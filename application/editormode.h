@@ -1654,6 +1654,31 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<segment_data> preview;
 		std::string preview_error;
 		double preview_length{0.0};
+		// the line worked out whole last, all its fits done: shown while the one of the cursor now still waits for them on the thread,
+		// so that the curves don't jump from one fit to the next as each comes
+		struct worked_out
+		{
+			std::vector<segment_data> preview;
+			std::string error;
+			double length{0.0};
+			lay_line_plan plan;
+			std::optional<alignment::lay_result> eased;
+			alignment::join_result join;
+			std::vector<glm::dvec3> points; // the ones clicked it was worked out for
+		};
+		std::optional<worked_out> shown;
+		// the cursor the line is being worked out for, kept till all its fits are done: what it was worked out from
+		struct settling_cursor
+		{
+			glm::dvec3 mouse{0.0};
+			editor_track::snap_target snap;
+			std::vector<glm::dvec3> points;
+			std::vector<lay_mode> modes;
+			lay_mode mode{lay_mode::straights};
+			int edits{0};
+		};
+		std::optional<settling_cursor> settling;
+		bool whole{true}; // false: each fit shown as it comes, as before, for a selftest to compare
 		double radius{500.0};
 		double piece_length{100.0};
 		bool copy_selected{false};
@@ -1706,6 +1731,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	mutable std::vector<std::pair<std::vector<double>, alignment::trace_stretch>> m_stretch_cache;
 	// the stretch the cursor moves along is fitted on a thread, the frames drawn meanwhile with the fit done last
 	mutable alignment::stretch_fitter m_stretch_fitter;
+	// a fit the line asked the thread for isn't done yet: the line is one of the fits meanwhile
+	mutable bool m_fits_waiting{false};
+	// how much more the curve at the cursor was turned last to reach it, the first one tried for the next line
+	mutable double m_turned_last{0.0};
 	void render_switch_ui();
 	void render_switch_timbers();
 	void render_rail_profile_hint(TTrack &Track);
