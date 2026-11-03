@@ -471,6 +471,20 @@ bool FileExists(std::string const &Filename)
 	return std::filesystem::exists(Filename);
 }
 
+std::string FileCased(std::string const &Filename)
+{
+	std::error_code error;
+	if (std::filesystem::exists(Filename, error))
+		return Filename;
+	std::filesystem::path const path{Filename};
+	auto const directory{path.has_parent_path() ? path.parent_path() : std::filesystem::path{"."}};
+	auto const wanted{ToLower(path.filename().string())};
+	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
+		if (ToLower(entry->path().filename().string()) == wanted)
+			return path.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
+	return {};
+}
+
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
 {
 

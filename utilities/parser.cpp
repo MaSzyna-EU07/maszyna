@@ -64,6 +64,15 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 		std::ifstream file(Path, std::ios_base::binary);
 		if (file.fail())
 		{
+			// named in another case than it's on the disk
+			if (auto const cased{FileCased(Path)}; false == cased.empty())
+			{
+				file.clear();
+				file.open(cased, std::ios_base::binary);
+			}
+		}
+		if (file.fail())
+		{
 			mFailBit = true;
 		}
 		else
