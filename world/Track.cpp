@@ -427,11 +427,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     else if (str == "tributary")
     {
-        eType = tt_Tributary;
+        // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
+        // second one kept and written back
+        ErrorLog("Bad track: tributary \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + ") is drawn and run on as a river of its first path");
+        eType = tt_Normal;
         iCategoryFlag = 4;
+        m_tributary = true;
     }
     else
-        eType = tt_Unknown;
+        eType = tt_Unknown; // left out by the loader
     if (Global.iWriteLogEnabled & 4)
         WriteLog(str);
     parser->getTokens(4);
@@ -516,6 +520,11 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         default: {
             break;
         }
+    }
+    if( m_tributary ) {
+        // the second path of a tributary, kept to be written back
+        m_paths.emplace_back();
+        m_paths.back().deserialize( *parser, pOrigin );
     }
 
     init_segments( true );
@@ -681,6 +690,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
     }
 
+    if( CurrentSegment() == nullptr ) {
+        // of an unknown type, no path of it is made
+        return;
+    }
     update_location();
     // sleeper transforms are baked later in create_geometry(), once the owning cell has
     // assigned this track its m_origin (otherwise the local-space matrices would be relative
@@ -2314,6 +2327,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     // type
     Output << (
             eType == tt_Normal ? (
+                m_tributary ? "tributary" :
                 iCategoryFlag == 1 ? "normal" :
                 iCategoryFlag == 2 ? "road" :
                 iCategoryFlag == 4 ? "river" :
