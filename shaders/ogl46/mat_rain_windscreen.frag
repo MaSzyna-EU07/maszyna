@@ -179,6 +179,13 @@ const float WS_REFR_MIX       = 0.85;  // 0 = no refraction, 1 = only the refrac
 const float WS_LIGHT_GAIN     = 1.0;   // brightness of the lights near a drop shown in it (0 = off)
 const float WS_LIGHT_CONTRAST = 3.0;   // a light: this many times brighter than the place around it
 
+// measuring what costs what (the time of "colour, translucent and cab" with each): 0 everything (as in the game), 1 the drops not lit
+// (no sun glint, lamps, reflection), 2 no rivulets (and nothing swept by them), 3 no micro droplets, 4 no drops of the atlas,
+// 5 none of the rain (only the glass and the haze)
+#ifndef WS_PROFILE
+#define WS_PROFILE 0
+#endif
+
 const vec3  DROP_LIGHT = vec3(-0.5527, 0.6532, 0.5226);   // same light as the atlas generator (upper left)
 
 // the surroundings in a view space direction where the image doesn't hold them: the environment map above the horizon,
@@ -686,14 +693,15 @@ void main()
     vec2  sUVg  = vec2(f_coord.x, (STREAK_FLIP_Y != 0) ? 1.0 - f_coord.y : f_coord.y);   // glass UV, v up
     vec2  sCell = floor(sUVg / vec2(sCW, sCH));
     Riv   rivP  = getRiv(sCell, sCW, sCH, gridSize);
-    bool  sweepOn = streak_sweep > 0.0 && streak_density > 0.0 && (wind_streaks > 0.0 || wsWindShare < 1.0);
+    bool  sweepOn = streak_sweep > 0.0 && streak_density > 0.0 && (wind_streaks > 0.0 || wsWindShare < 1.0) && (WS_PROFILE != 2);
 
-    if (rain_params.x > 0.001)
+    if ((rain_params.x > 0.001) && (WS_PROFILE != 5))
     {
         // ===================================================================
         // 1. drops from the atlas: this cell and its 8 neighbours
         // ===================================================================
         vec2  cell   = floor(rainCoord * gridSize);
+#if WS_PROFILE != 4
         float actMax = min(rain_params.x * drop_density, 0.95);
         for (int oy = -1; oy <= 1; oy++)
         for (int ox = -1; ox <= 1; ox++)
@@ -762,11 +770,12 @@ void main()
             consider(hit, cov * (nm.b * sq * sag + 1e-5), cov, 0.0, n, diff, 0.5 * sq, 1.0,
                      vis, dropAtlasUV(choice, luv), gx, gy, 1.0, 0.0);
         }
+#endif
 
         // ===================================================================
         // 2. micro droplets: procedural, one per micro cell, fully inside it
         // ===================================================================
-        if (micro_density > 0.0)
+        if ((micro_density > 0.0) && (WS_PROFILE != 3))
         {
             float mg  = gridSize * micro_scale;
             vec2  mc  = floor(rainCoord * mg);
@@ -819,6 +828,7 @@ void main()
         // ===================================================================
         // 3. rivulets of this pixel's cells: the layer of gravity and, at speed, the one of the air
         // ===================================================================
+#if WS_PROFILE != 2
         wsSetLayer(0);
         drawRivulet(hit, rivP, sUVg, wsRd1, wsRd2);
         if (wsWindShare > 0.001)
@@ -834,6 +844,7 @@ void main()
             }
             wsSetLayer(0);
         }
+#endif
     }
 
     // -----------------------------------------------------------------------
@@ -958,6 +969,9 @@ void main()
             float NoV = clamp(dot(Nv, -I), 0.0, 1.0);
             glint += envmap_color_lod(Nv, 0.8) * EnvBRDFApprox(vec3(0.04), 0.1, NoV) * drop_env * wsNight;
         }
+#if WS_PROFILE == 1
+        glint = vec3(0.0);
+#endif
         dropGlint = glint;
         if (!POSTFX_ENABLED)
             dropGlint = min(dropGlint, vec3(1.0));   // this path is not tonemapped
