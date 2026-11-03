@@ -13178,3 +13178,12 @@ msgstr "Promień, przy którym stykają się dwie krzywe przejściowe załamania
 msgid "transition L %.0f m"
 msgstr "przejściowa L %.0f m"
 
+msgid "The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"
+msgstr "Edytor bierze największy promień, który mieści się między Twoimi punktami: od 6000 m do 2000 m dwie stykające się krzywe przejściowe bez przechyłki, poniżej łuk z krzywymi przejściowymi i przechyłką według norm"
+
+msgid "The largest radius that fits between your points is taken: from 6000 m down to 2000 m two transition curves meeting, with no cant; below that an arc with the transitions and the cant of the norms"
+msgstr "Edytor bierze największy promień, który mieści się między Twoimi punktami: od 6000 m do 2000 m dwie stykające się krzywe przejściowe bez przechyłki, poniżej łuk z krzywymi przejściowymi i przechyłką według norm"
+
+msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm; each transition curve has a label of its own along it"
+msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm); każda krzywa przejściowa ma też własny opis wzdłuż niej"
+

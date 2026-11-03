@@ -485,15 +485,6 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		WriteLog("SELFTEST laymode: " + std::string{m_lay.mode == lay_mode::curve ? "curve" : "straights"});
 		return selftest_result::handled;
 	}
-	if (command == "layradius")
-	{
-		double low{3000.0};
-		double high{6000.0};
-		words >> low >> high;
-		EditorSettings.corners(low, high);
-		WriteLog(format("SELFTEST layradius: %.0f - %.0f m", EditorSettings.corner_low(), EditorSettings.corner_high()));
-		return selftest_result::handled;
-	}
 	if (command == "laytrace")
 	{
 		int straights{1};

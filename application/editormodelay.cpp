@@ -1235,7 +1235,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			easeddesign.vertices.front().offset = std::max(0.1, glm::dot(shape.vertices.front() - plan_of(easeddesign.start), glm::normalize(easeddesign.start_direction)));
 			easeddesign.vertices.back().offset = std::max(0.1, glm::dot(plan_of(easeddesign.end) - shape.vertices.back(), glm::normalize(easeddesign.end_direction)));
 		}
-		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()}, bends_fit())};
+		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {}, bends_fit())};
 		if (easedshape.valid)
 		{
 			Length = editor_track::eased_length(in, easedshape.length, out);
@@ -1878,7 +1878,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		design.vertices.front().offset = glm::dot(plan_of(bends.front().position - design.start), design.start_direction);
 		design.vertices.back().offset = glm::dot(plan_of(end - bends.back().position), design.end_direction);
 	}
-	Plan.shape = alignment::ease_corners(design, Plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()}, bends_fit());
+	Plan.shape = alignment::ease_corners(design, Plan.corners, {}, bends_fit());
 	if (false == Plan.shape.valid)
 	{
 		Error = Plan.shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : Plan.shape.errors.front();
@@ -2325,8 +2325,6 @@ void editor_mode::render_lay_ui()
 	ImGui::PushItemWidth(120.0f);
 	if (tool.mode == lay_mode::straights)
 	{
-		double low{EditorSettings.corner_low()};
-		double high{EditorSettings.corner_high()};
 		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
 		ImGui::SameLine();
 		if (ImGui::SmallButton("?##corners"))
@@ -2336,44 +2334,8 @@ void editor_mode::render_lay_ui()
 		}
 		item_tooltip("What it is: the lesson of the tutorial");
 		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("The larger the radius, the gentler the turn: the largest that fits between your points is taken"));
+		ImGui::TextDisabled("%s", STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
 		ImGui::PopTextWrapPos();
-		auto changed{ImGui::DragScalar(STR_C("from (m)"), ImGuiDataType_Double, &low, 10.0f, nullptr, nullptr, "%.0f")};
-		// the settings file written when a drag ends, not at each frame of it
-		auto release{ImGui::IsItemDeactivatedAfterEdit()};
-		item_tooltip("The radius the two transition curves of a bend meet at, at least; where they don't fit at it, an arc of the norms as large as fits");
-		changed |= ImGui::DragScalar(STR_C("to (m)"), ImGuiDataType_Double, &high, 10.0f, nullptr, nullptr, "%.0f");
-		release |= ImGui::IsItemDeactivatedAfterEdit();
-		item_tooltip("The radius tried first; a bend too slight for transitions long enough at the speed takes a larger one");
-		ImGui::PushID("bends");
-		auto first{true};
-		for (auto const &[from, to] : {std::pair{1000.0, 2000.0}, std::pair{2000.0, 4000.0}, std::pair{3000.0, 6000.0}, std::pair{4000.0, 8000.0}})
-		{
-			if (false == first)
-				ImGui::SameLine();
-			first = false;
-			auto const chosen{std::abs(low - from) < 0.5 && std::abs(high - to) < 0.5};
-			if (chosen)
-				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-			if (ImGui::SmallButton(format("%.0f-%.0f", from, to).c_str()))
-			{
-				low = from;
-				high = to;
-				changed = true;
-				release = true;
-			}
-			if (chosen)
-				ImGui::PopStyleColor();
-		}
-		ImGui::PopID();
-		if (changed)
-		{
-			low = std::max(10.0, low);
-			EditorSettings.corners(low, std::max(low, high));
-			first_step_done(first_step::corners);
-		}
-		if (release)
-			EditorSettings.save();
 	}
 	else
 	{
