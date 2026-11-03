@@ -187,7 +187,7 @@ std::string editor_mode::switch_template_label(editor_track::switch_template con
 editor_mode::switch_kind editor_mode::current_switch_kind() const
 {
 	auto const &tool{m_switch};
-	if (tool.connection >= 0)
+	if (tool.connection >= 0 && false == tool.recognised)
 		return switch_kind::connection;
 	if (tool.armed >= 0 && tool.armed < static_cast<int>(tool.templates.size()) && tool.templates[tool.armed].double_slip)
 		return tool.templates[tool.armed].type == "Skrz" ? switch_kind::crossing : switch_kind::slip;
@@ -287,7 +287,11 @@ void editor_mode::render_switch_ui()
 		if (tool.connection == static_cast<int>(connection::kind::double_crossover))
 			how.push_back({"Alt+wheel", "where they meet"});
 		break;
-	default: how = {{"Drag on a track", "along: the direction, sideways: the side"}, {"Drag on the ground", "a switch with no track, on from a free end near it"}}; break;
+	default:
+		how = {{"Drag on a track", "along: the direction, sideways: the side"},
+		       {"Drag onto the other track", "a crossover; over a crossover the other way a double or a scissors one, across tracks a ladder"},
+		       {"Drag from a free end", "a switch going on from the end of a track"}};
+		break;
 	}
 	gesture_rows(how);
 

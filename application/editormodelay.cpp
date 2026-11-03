@@ -156,6 +156,7 @@ void editor_mode::update_build_tools()
 	if (m_switch.placing)
 	{
 		m_switch.mouse = cursor_level(m_switch.point.y);
+		recognise_connection();
 		// a switch with no track takes the direction of its main track once the drag is long enough, dragged sideways after that it
 		// takes the side; back by its start the direction is free again
 		if (auto &tool{m_switch}; tool.free && tool.free_end.track == nullptr)
@@ -917,12 +918,23 @@ void editor_mode::finish_extend()
 		if (false == place_switch_on_straight(plan.target, plan.shape, origin, plan.along, plan.direction, plan.side, false, states, created, removed, switch_name_for_new()))
 			return;
 		auto *placed{*std::find_if(created.begin(), created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
-		if (glm::distance(plan.insert.points[segment_data::point::start], plan.insert.points[segment_data::point::end]) > 0.01)
+		std::vector<TTrack *> inserts;
+		for (auto piece : plan.inserts)
 		{
-			auto *insert{editor_track::create_path(*origin, plan.insert)};
-			editor_track::commit({insert});
-			created.push_back(insert);
+			if (glm::distance(piece.points[segment_data::point::start], piece.points[segment_data::point::end]) <= 0.01)
+				continue;
+			// meeting the two switches at the heights they're at
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				for (auto const *track : {origin, placed})
+					if (auto const &end{track->m_paths.back().points[segment_data::point::end]}; geometry::plan_distance(piece.points[index], end) < 0.05)
+						piece.points[index].y = end.y;
+			if (auto *insert{editor_track::create_path(*origin, piece)})
+				inserts.push_back(insert);
 		}
+		editor_track::commit(inserts);
+		created.insert(created.end(), inserts.begin(), inserts.end());
+		// kept as a crossover, so it's taken out, slid and followed as one
+		record_connection(connection::kind::crossover, {origin, placed}, plan.connection, editor_track::template_of_switch(origin).value_or(plan.shape));
 		push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 		straight_refresh();
 		if (place_switch_drive(*placed))
@@ -1060,8 +1072,12 @@ bool editor_mode::track_wheel(double const Offset)
 		int const step{wheel_step(Offset, false == io.KeyCtrl)};
 		if (step == 0)
 			return true;
+		// the kind of a connection a switch dragged makes comes from where it's let go
 		if (io.KeyShift)
-			tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
+		{
+			if (false == tool.recognised)
+				tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
+		}
 		else if (io.KeyCtrl)
 		{
 			static double const radii[]{0.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0};
@@ -1071,7 +1087,7 @@ bool editor_mode::track_wheel(double const Offset)
 					index = i;
 			tool.connection_radius = radii[std::clamp(index + step, 0, static_cast<int>(std::size(radii)) - 1)];
 		}
-		else
+		else if (false == tool.recognised)
 			tool.connection_together = false == tool.connection_together;
 		return true;
 	}

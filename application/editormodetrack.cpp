@@ -1855,9 +1855,11 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_switch.placing && m_switch.curved && current_switch_kind() == switch_kind::slip)
 		hints = {{"Drag", "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
-		hints = m_switch.connection >= 0 && false == m_switch.curved ?
+		hints = m_switch.connection >= 0 && m_switch.recognised ?
+		            std::vector<key_hint>{{"Let go", connection_name(m_switch.connection)}, {"Ctrl+wheel", "R of the aligning curve"}, {"Esc", "cancel"}} :
+		        m_switch.connection >= 0 && false == m_switch.curved ?
 		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
-		            std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Esc", "cancel"}};
+		            std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Drag onto the track beside", "a crossover there"}, {"Esc", "cancel"}};
 	else if (m_track_tab == track_tab::lay)
 		hints = {{"LMB", "start, on the ground or at a free end"}};
 	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
@@ -2583,7 +2585,8 @@ void editor_mode::draw_build_overlay() const
 		{
 			for (auto const &piece : plan.paths)
 				drawpath(piece, overlay_color::marked);
-			drawpath(plan.insert, overlay_color::grip);
+			for (auto const &piece : plan.inserts)
+				drawpath(piece, overlay_color::grip);
 		}
 		else
 		{
@@ -2591,11 +2594,24 @@ void editor_mode::draw_build_overlay() const
 				drawpath(piece, overlay_color::marked);
 		}
 	}
+	// what letting go there makes, by the cursor
+	auto const connection_label = [&](std::string const &Text, ImU32 const Colour) {
+		ImVec2 screen;
+		if (false == projection.project(m_switch.mouse, screen))
+			return;
+		auto const size{ImGui::CalcTextSize(Text.c_str())};
+		drawlist->AddRectFilled(ImVec2(screen.x + 14.0f, screen.y + 10.0f), ImVec2(screen.x + 22.0f + size.x, screen.y + 14.0f + size.y), IM_COL32(0, 0, 0, 180), 3.0f);
+		drawlist->AddText(ImVec2(screen.x + 18.0f, screen.y + 12.0f), Colour, Text.c_str());
+	};
+	if (m_switch.placing && m_switch.connection >= 0 && m_switch.curved)
+		// along a curve it's worked out as the switch is let go
+		connection_label(connection_name(m_switch.connection), overlay_color::highlight);
 	if (m_switch.placing && m_switch.connection >= 0 && false == m_switch.curved)
 	{
 		connection::request request;
 		connection::result plan;
-		auto const valid{plan_connection(request, plan)};
+		// over a crossover there already, the double or the scissors one made with it
+		auto const valid{m_switch.partner != nullptr ? plan_partner_connection(request, plan) : plan_connection(request, plan)};
 		if (valid)
 		{
 			for (auto const &entry : plan.switches)
@@ -2615,14 +2631,8 @@ void editor_mode::draw_build_overlay() const
 		else
 			for (auto const &piece : switch_preview())
 				drawpath(piece, overlay_color::invalid);
-		ImVec2 screen;
 		auto const text{valid ? connection_readout(plan) : plan.error.empty() ? std::string{STR_C("Drag onto the other track")} : plan.error};
-		if (projection.project(m_switch.mouse, screen))
-		{
-			auto const size{ImGui::CalcTextSize(text.c_str())};
-			drawlist->AddRectFilled(ImVec2(screen.x + 14.0f, screen.y + 10.0f), ImVec2(screen.x + 22.0f + size.x, screen.y + 14.0f + size.y), IM_COL32(0, 0, 0, 180), 3.0f);
-			drawlist->AddText(ImVec2(screen.x + 18.0f, screen.y + 12.0f), valid ? (plan.warning.empty() ? overlay_color::highlight : overlay_color::warning) : overlay_color::invalid, text.c_str());
-		}
+		connection_label(text, valid ? (plan.warning.empty() ? overlay_color::highlight : overlay_color::warning) : overlay_color::invalid);
 	}
 	else if (auto const *selected{selected_track()}; false == m_switch.placing && m_track_tab == track_tab::turnout && m_switch.connection < 0 && m_switch.armed >= 0 && m_switch.armed < static_cast<int>(m_switch.templates.size()) &&
 	                                                 m_switch.templates[m_switch.armed].double_slip && selected != nullptr && selected == m_straights.current_for && false == m_straights.current.tracks.empty() &&

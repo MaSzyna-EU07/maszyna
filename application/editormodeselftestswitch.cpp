@@ -229,7 +229,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		glm::dvec3 toward{0.0};
 		words >> kindword >> at.x >> at.z >> toward.x >> toward.z >> label >> second;
 		connection::kind kind{connection::kind::crossover};
-		if (kindword != "single" && false == connection::parse(kindword, kind))
+		// drag: a switch let go there as the mouse lets it go, the connection told by where
+		auto const drag{kindword == "drag"};
+		if (kindword != "single" && false == drag && false == connection::parse(kindword, kind))
 		{
 			WriteLog("SELFTEST connection: unknown kind " + kindword);
 			return selftest_result::handled;
@@ -269,9 +271,17 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		tool.armed = first;
 		tool.connection_second = find(second);
-		tool.connection = kindword == "single" ? -1 : static_cast<int>(kind);
+		tool.connection = kindword == "single" || drag ? -1 : static_cast<int>(kind);
 		auto const line{straight_near(at, {}, 3.0)};
-		TTrack *start{line.tracks.empty() ? nullptr : line.tracks.front()};
+		// the track of the straight under the press
+		TTrack *start{nullptr};
+		auto closest{3.0};
+		for (auto *track : line.tracks)
+			if (auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, at)), at)}; distance < closest)
+			{
+				closest = distance;
+				start = track;
+			}
 		if (start == nullptr)
 		{
 			// along a curve: the track nearest to the press
@@ -300,10 +310,47 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		m_cursor_override.reset();
 		if (false == started)
 		{
-			WriteLog("SELFTEST connection: not started, " + tool.status);
+			auto const *selected{selected_track()};
+			WriteLog(format("SELFTEST connection: not started at %s (%d), armed %d, tab %d, straight of %zu tracks, %s", selected != nullptr ? selected->name().c_str() : "nothing", selected != nullptr ? static_cast<int>(selected->eType) : -1, tool.armed,
+			                static_cast<int>(m_track_tab), current_straight().tracks.size(), tool.status.c_str()));
 			return selftest_result::handled;
 		}
 		tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+		auto const log_records = [&]() {
+			for (auto const &entry : switch_store::records())
+				if (entry.kind == "connection")
+				{
+					std::string parts;
+					for (auto const &part : entry.parts)
+						parts += ' ' + part;
+					WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
+				}
+		};
+		if (drag)
+		{
+			recognise_connection();
+			WriteLog(std::string{"SELFTEST connection drag: "} + (tool.connection < 0 ? "a switch" : connection::word(static_cast<connection::kind>(tool.connection))) + (tool.partner != nullptr ? " with " + tool.partner->name() : std::string{}) +
+			         (tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}));
+			if (tool.connection >= 0 && false == tool.curved)
+			{
+				connection::request request;
+				connection::result plan;
+				auto const valid{tool.partner != nullptr ? plan_partner_connection(request, plan) : plan_connection(request, plan)};
+				WriteLog("SELFTEST connection drag plan: " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
+				for (auto const &entry : plan.switches)
+				{
+					auto const &start{entry.paths[0].points[segment_data::point::start]};
+					auto const &end{entry.paths[0].points[segment_data::point::end]};
+					WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d: %.3f %.3f -> %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, start.x, start.z, end.x, end.z));
+				}
+				for (auto const &line : request.to)
+					WriteLog(format("SELFTEST connection to the line from %.3f %.3f, %.1f m", line.start.x, line.start.z, line.length));
+			}
+			finish_switch_placement();
+			WriteLog("SELFTEST connection built: " + tool.status);
+			log_records();
+			return selftest_result::handled;
+		}
 		if (tool.curved)
 		{
 			finish_switch_placement();
@@ -340,14 +387,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		insert_connection();
 		WriteLog("SELFTEST connection built: " + tool.status);
-		for (auto const &entry : switch_store::records())
-			if (entry.kind == "connection")
-			{
-				std::string parts;
-				for (auto const &part : entry.parts)
-					parts += ' ' + part;
-				WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
-			}
+		log_records();
 		return selftest_result::handled;
 	}
 	if (command == "conecheck")
@@ -822,6 +862,10 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		finish_extend();
 		WriteLog(format("SELFTEST branchlink: switch now %.3f %.3f -> %.3f %.3f", own->m_paths[0].points[segment_data::point::start].x, own->m_paths[0].points[segment_data::point::start].z, own->m_paths[0].points[segment_data::point::end].x,
 		                own->m_paths[0].points[segment_data::point::end].z));
+		// a crossover made by letting the end go on the track beside
+		for (auto const &entry : switch_store::records())
+			if (entry.kind == "connection" && false == entry.parts.empty() && entry.parts.front() == own->name())
+				WriteLog(format("SELFTEST branchlink: crossover %s %s, spacing %.3f, insert %.3f", entry.parts.front().c_str(), entry.parts.back().c_str(), entry.a, entry.b));
 		return selftest_result::handled;
 	}
 	if (command == "switchslide" || command == "switchreplace")

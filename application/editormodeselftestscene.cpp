@@ -539,7 +539,7 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 			m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, action == "press" ? GLFW_PRESS : GLFW_RELEASE);
 		else
 		{
-			auto const code{key == "S" ? GLFW_KEY_S : key == "W" ? GLFW_KEY_W : key == "CTRL" ? GLFW_KEY_LEFT_CONTROL : 0};
+			auto const code{key == "CTRL" ? GLFW_KEY_LEFT_CONTROL : key == "F10" ? GLFW_KEY_F10 : key.size() == 1 && key[0] >= 'A' && key[0] <= 'Z' ? GLFW_KEY_A + (key[0] - 'A') : 0};
 			on_key(code, 0, action == "press" ? GLFW_PRESS : GLFW_RELEASE, mods == "ctrl" ? GLFW_MOD_CONTROL : 0);
 		}
 		WriteLog(format("SELFTEST key %s %s %s: camera %.2f %.2f %.2f, key S %d, right button %d", key.c_str(), action.c_str(), mods.c_str(), Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, static_cast<int>(input::keys[GLFW_KEY_S]), m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT)));

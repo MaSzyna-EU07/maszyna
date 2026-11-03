@@ -128,6 +128,13 @@ bool editor_mode::start_switch_placement()
 	auto &tool{m_switch};
 	if (tool.armed < 0 || m_track_tab != track_tab::turnout)
 		return false;
+	// what the drag makes is told again as it goes
+	if (tool.recognised)
+	{
+		tool.connection = -1;
+		tool.recognised = false;
+		tool.partner = nullptr;
+	}
 	// with no plain track selected, or a press away from it, the click selects
 	auto *selected{selected_track()};
 	if (selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
@@ -227,10 +234,17 @@ void editor_mode::finish_switch_placement()
 	}
 	if (tool.connection >= 0)
 	{
-		if (false == tool.curved)
-		{
+		if (tool.partner != nullptr)
+			insert_partner_connection();
+		else if (false == tool.curved)
 			insert_connection();
-			return;
+		else
+			insert_curved_connection();
+		if (tool.recognised)
+		{
+			tool.connection = -1;
+			tool.recognised = false;
+			tool.partner = nullptr;
 		}
 		insert_curved_connection();
 		return;
@@ -725,7 +739,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 bool editor_mode::plan_crossover(crossover_plan &Plan) const
 {
 	auto const &tool{m_extend};
-	if (false == tool.active || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() < 2 || tool.path != 1 || false == tool.atend || m_track_layout == track_layout::straight)
+	if (false == tool.active || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() < 2 || tool.path != 1 || false == tool.atend)
 		return false;
 	auto const &own{*tool.track};
 	auto const &main{own.m_paths[0]};
@@ -746,7 +760,8 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 
 	auto const ground{tool.mouse};
 	TTrack *target{nullptr};
-	double best{8.0};
+	// laying straights the end goes on as a straight, unless it's let go on the track
+	double best{m_track_layout == track_layout::straight ? 1.5 : 8.0};
 	auto const sections{simulation::Region->sections(ground, 40.f)};
 	for (auto *section : sections)
 	{
@@ -774,7 +789,11 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		return false;
 	Plan.target = editor_track::find_straight(*target, m_straights.tolerance);
 	auto const &line{Plan.target};
-	if (line.tracks.empty() || std::abs(cross(line.direction, axis)) > std::sin(glm::radians(1.0)))
+	if (line.tracks.empty())
+		return false;
+	auto const parallel{std::abs(cross(line.direction, axis)) <= std::sin(glm::radians(1.0))};
+	// the track the switch is on, going on past it
+	if (parallel && std::abs(connection::of(line).lateral(origin)) < 1.0)
 		return false;
 	editor_track::switch_template shape;
 	shape.source = tool.track;
@@ -794,14 +813,53 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		}
 	}
 	Plan.shape = shape;
-	auto const faced{connection::face(frog, tangent, connection::of(line), 1, shape)};
-	if (false == faced.valid)
+	Plan.connection = {};
+	if (parallel)
+	{
+		auto const faced{connection::face(frog, tangent, connection::of(line), 1, shape)};
+		if (false == faced.valid)
+			return false;
+		Plan.along = faced.partner.along;
+		Plan.direction = faced.partner.forward;
+		Plan.side = faced.partner.side;
+		Plan.paths = faced.partner.paths;
+		Plan.inserts.clear();
+		if (faced.length >= 0.01)
+			Plan.inserts.push_back(faced.insert);
+		Plan.connection.valid = true;
+		Plan.connection.spacing = std::abs(connection::of(line).lateral(origin));
+		Plan.connection.straights = {faced.length};
+		return true;
+	}
+	// onto a track at an angle, the switch facing it with an aligning curve between the two: a crossover planned from the
+	// switch there, the other switch near where the end is let go
+	double constexpr reach{2000.0};
+	connection::request request;
+	request.type = connection::kind::crossover;
+	request.from.direction = axis;
+	request.from.grade = (main.points[segment_data::point::end].y - origin.y) / std::max(1e-9, glm::length(plan_of(main.points[segment_data::point::end] - origin)));
+	request.from.start = origin - glm::dvec3{axis.x, request.from.grade, axis.y} * reach;
+	request.from.length = 2.0 * reach;
+	request.to = {connection::of(line)};
+	request.along = reach;
+	request.forward = 1;
+	request.target = request.to.front().along(ground);
+	request.first = shape;
+	request.second = shape;
+	request.radius = m_switch.connection_radius;
+	auto const planned{connection::plan(request)};
+	if (false == planned.valid || planned.switches.size() < 2 || planned.switches.front().paths.size() < 2)
 		return false;
-	Plan.along = faced.partner.along;
-	Plan.direction = faced.partner.forward;
-	Plan.side = faced.partner.side;
-	Plan.paths = faced.partner.paths;
-	Plan.insert = faced.insert;
+	// on the side the switch there diverges to
+	if (plan_distance(planned.switches.front().paths[1].points[segment_data::point::end], frog) > 0.05)
+		return false;
+	auto const &partner{planned.switches[1]};
+	Plan.along = partner.along;
+	Plan.direction = partner.forward;
+	Plan.side = partner.side;
+	Plan.paths = partner.paths;
+	Plan.inserts = planned.inserts;
+	Plan.connection = planned;
 	return true;
 }
 

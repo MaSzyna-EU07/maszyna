@@ -601,7 +601,15 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 	{
 		glm::dvec3 around{0.0};
 		words >> around.x >> around.z;
-		auto const end{editor_track::find_free_end(nullptr, 1, around, 60.0, {})};
+		// the free end nearest the point on the plan, whatever the height of the scenery
+		editor_track::snap_target end;
+		auto nearest{60.0};
+		for (auto const &free : editor_track::free_ends(nullptr, 1, glm::dvec3{0.0}, 1e7, {}))
+			if (auto const distance{glm::distance(glm::dvec2{free.position.x, free.position.z}, glm::dvec2{around.x, around.z})}; distance < nearest)
+			{
+				nearest = distance;
+				end = free;
+			}
 		auto const bend{end.track != nullptr ? editor_track::bend_at(*end.track, end.position) : std::nullopt};
 		if (false == bend.has_value())
 		{

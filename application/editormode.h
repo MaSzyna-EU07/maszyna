@@ -1479,6 +1479,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool connection_together{false};
 		char connection_spacings[64]{"4.75;4.75;5.0"};
 		double connection_stub{25.0};
+		// the connection a switch dragged makes, as where it's let go tells it, in connection then: let go on the other track a
+		// crossover, across the tracks between them a ladder; by a crossover there already turned the other way a double crossover
+		// with it, over it a scissors one
+		bool recognised{false};
+		TTrack *partner{nullptr}; // a switch of the crossover there already
 	};
 	switch_tool m_switch;
 	// what the switch tool places: a switch into a straight or a curve, a slip switch or a crossing at a crossing of two
@@ -1494,6 +1499,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void choose_switch_kind(switch_kind const Kind);
 	bool switch_kind_offered(switch_kind const Kind) const;
 	bool plan_connection(connection::request &Request, connection::result &Result) const;
+	// what the drag of the switch being placed makes, from where the cursor is: sets connection and partner of the tool
+	void recognise_connection();
+	// the double or the scissors crossover of the partner and the crossover dragged, on the lines of their tracks
+	bool plan_partner_connection(connection::request &Request, connection::result &Result) const;
+	void insert_partner_connection();
+	// the switches and the inserts of the connection planned laid, one step of the history. false if they don't fit
+	bool lay_planned_connection(connection::request const &Request, connection::result const &Plan, TTrack *Style);
 	void insert_connection();
 	void render_connection_options();
 	// the name of a kind of connection of tracks, translated
@@ -1871,8 +1883,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double along{0.0};
 		int direction{1};
 		int side{1};
-		segment_data insert;
+		std::vector<segment_data> inserts; // a straight one, or an aligning curve between straights onto a track not parallel
 		std::vector<segment_data> paths;
+		connection::result connection; // as it's kept with the two switches
 	};
 	bool plan_crossover(crossover_plan &Plan) const;
 	struct switch_link
