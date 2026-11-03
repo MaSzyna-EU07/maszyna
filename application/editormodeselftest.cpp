@@ -166,6 +166,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   tracksel <name>...                   the tracks selected together, as Shift+clicks select them; none: nothing selected
 //   trackprop <key> [value]              the value given to the selected tracks, as typed into the inspector; trackprops logs their values,
 //                                        the lines shown under the rows and how many tracks aren't saved
+//   trackstyle copy [name] | groups <n>... | tick <key> <0|1> | paste | panel | list   the properties of a track taken, the groups ticked
+//                                        or a property by itself, set on the selected tracks; list logs what they'd change
 //   tracksimilar <key>                   the tracks of the scenery with the value of the property of the selected ones selected
 //   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged
 //   mouse <x> <y>, mouseat <x> <y> <z>   the cursor moved to the point of the window, or to where the point of the scene is seen, as the mouse moves it

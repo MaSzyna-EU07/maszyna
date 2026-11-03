@@ -1322,13 +1322,15 @@ void editor_mode::render_track_context()
 	if (many)
 		ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), STR_P("one of %d selected tracks", "one of %d selected tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size()));
 	ImGui::Separator();
-	if (ImGui::MenuItem(STR_C("Copy its properties"), "Ctrl+Shift+C"))
+	if (ImGui::MenuItem(STR_C("Take its properties"), "Ctrl+Shift+C"))
 		copy_track_style(*track);
-	auto const paste{many ? format(STR_P("Paste the properties on %d track", "Paste the properties on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Paste the properties")}};
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The inspector lists what they change on the selected tracks, From another track or a preset"));
+	auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}};
 	if (ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, false == m_track_style.values.empty()))
 		paste_track_style(tracks);
 	if (false == m_track_style.values.empty() && ImGui::IsItemHovered())
-		ImGui::SetTooltip(STR_C("Properties of %s"), m_track_style.from.c_str());
+		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_track_style.from.c_str());
 	if (ImGui::BeginMenu(STR_C("Select alike")))
 	{
 		char const *const keys[] = {"rails", "trackbed", "speed", "environment", "circuits"};

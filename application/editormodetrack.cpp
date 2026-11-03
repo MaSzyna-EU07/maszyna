@@ -779,8 +779,8 @@ void editor_mode::render_track_selection()
 			return;
 		render_track_select_tools(tracks);
 		render_track_terrain(tracks);
-		render_track_style(tracks);
 		render_track_properties(tracks);
+		render_track_style(tracks);
 		ImGui::Spacing();
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.15f, 1.0f));
 		if (ImGui::Button(format(STR_P("Delete %d track", "Delete %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())).c_str()))
@@ -1895,7 +1895,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB on a track", "selects it"}, {"Drag on the ground", "selects the tracks in a box"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"RMB on a track", "what can be done with it"}, {"L", "lay a new track"}};
 	else if (m_track_tab == track_tab::path && m_track_set.size() >= 2 && in_track_set(selected))
 	{
-		hints = {{"Inspector", "the properties of all of them at once"}, {"Gizmo", "moves them together"}, {"Shift+LMB", "adds or takes out a track"}, {"Ctrl+Shift+V", "pastes the copied properties"}, {"Esc", "deselects"}, {"Del", "deletes them"}};
+		hints = {{"Inspector", "the properties of all of them at once"}, {"Gizmo", "moves them together"}, {"Shift+LMB", "adds or takes out a track"}, {"Ctrl+Shift+V", "sets what's ticked of the track taken"}, {"Esc", "deselects"}, {"Del", "deletes them"}};
 		gizmo = true;
 	}
 	else if (m_point_drag.moved)

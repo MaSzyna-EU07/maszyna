@@ -1574,7 +1574,6 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		if (any_in(section::look_sleepers, false) && ImGui::TreeNode(STR_C("Sleeper models")))
 		{
 			rows(section::look_sleepers, false);
-			render_track_presets(Tracks);
 			ImGui::TreePop();
 		}
 	}
@@ -1587,7 +1586,43 @@ void editor_mode::copy_track_style(TTrack const &Track)
 	auto &style{m_track_style};
 	style.from = name_of(Track);
 	style.values = values_of_track(Track);
-	ui()->set_status(format(STR_C("Properties of %s copied: Ctrl+Shift+V pastes them on the selected tracks"), style.from.c_str()), false);
+	style.picking = false;
+	style.reveal = true;
+	ui()->set_status(format(STR_C("Taken from %s: the inspector lists what it changes on the selected tracks, Ctrl+Shift+V sets what's ticked"), style.from.c_str()), false);
+}
+
+bool editor_mode::track_style_takes(std::string const &Key) const
+{
+	auto const &style{m_track_style};
+	if (auto const tick{style.ticks.find(Key)}; tick != style.ticks.end())
+		return tick->second;
+	auto const index{track_property_index(Key)};
+	return index >= 0 && style.groups[properties()[index].group];
+}
+
+std::vector<editor_mode::track_style_line> editor_mode::track_style_lines(std::vector<TTrack *> const &Tracks)
+{
+	std::vector<track_style_line> lines;
+	auto const &list{properties()};
+	auto const &cache{m_track_values};
+	// the values of the selected tracks gathered for the sheet, when it was drawn for them
+	auto const known{cache.signature == tracks_signature(Tracks) && cache.values.size() == list.size()};
+	for (auto const &[key, value] : m_track_style.values)
+	{
+		auto const index{track_property_index(key)};
+		if (index < 0 || list[index].off)
+			continue;
+		auto const &property{list[index]};
+		auto const values{known ? cache.values[index] : values_of(property, Tracks)};
+		std::size_t differ{0};
+		for (auto const &[other, count] : values)
+			if (other != value)
+				differ += static_cast<std::size_t>(count);
+		if (differ == 0)
+			continue;
+		lines.push_back({index, values.size() == 1 ? shown_value(property, values.front().first) : format(STR_C("different (%d)"), static_cast<int>(values.size())), shown_value(property, value), differ});
+	}
+	return lines;
 }
 
 std::size_t editor_mode::paste_track_style(std::vector<TTrack *> const &Tracks)
@@ -1595,14 +1630,20 @@ std::size_t editor_mode::paste_track_style(std::vector<TTrack *> const &Tracks)
 	auto const &style{m_track_style};
 	if (style.values.empty() || Tracks.empty())
 		return 0;
-	auto const changed{apply_track_values(style.values, style.groups, Tracks, "Pasted properties")};
+	std::vector<std::pair<std::string, std::string>> ticked;
+	for (auto const &value : style.values)
+		if (track_style_takes(value.first))
+			ticked.push_back(value);
+	track_groups all;
+	all.fill(true);
+	auto const changed{apply_track_values(ticked, all, Tracks, "From another track")};
 	if (false == changed.has_value())
 	{
-		ui()->set_status(STR_C("Nothing chosen to paste"), true);
+		ui()->set_status(STR_C("Nothing is ticked to be set"), true);
 		return 0;
 	}
 	if (Tracks.size() == 1)
-		ui()->set_status(*changed > 0 ? format(STR_C("Properties of %s pasted, Ctrl+Z takes them back"), style.from.c_str()) : std::string{STR_C("The track has these properties already")}, false);
+		ui()->set_status(*changed > 0 ? format(STR_C("Set as on %s, Ctrl+Z takes it back"), style.from.c_str()) : std::string{STR_C("The track has these properties already")}, false);
 	return *changed;
 }
 
@@ -1796,7 +1837,7 @@ void editor_mode::render_track_presets_menu()
 		return;
 	auto const &presets{EditorTrackPresets.presets()};
 	if (presets.empty())
-		ImGui::TextDisabled("%s", STR_C("No presets: save one in the inspector of a track, Look, Sleeper models, Presets"));
+		ImGui::TextDisabled("%s", STR_C("No presets: save one in the inspector of a track, From another track or a preset, Presets"));
 	auto const tracks{selected_tracks()};
 	int chosen{0};
 	for (auto const &preset : presets)
@@ -1814,81 +1855,109 @@ void editor_mode::render_track_presets_menu()
 void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
 {
 	auto &style{m_track_style};
-	auto const single{Tracks.size() == 1};
-	if (false == ImGui::CollapsingHeader(format("%s###trackstyle%d", STR_C("Copying properties"), single ? 1 : 2).c_str(), single ? 0 : ImGuiTreeNodeFlags_DefaultOpen))
-		return;
-	auto const width{button_width(3)};
-	ImGui::BeginDisabled(false == single);
-	if (ImGui::Button(STR_C("Copy"), ImVec2(width, 0.0f)))
-		copy_track_style(*Tracks.front());
-	ImGui::EndDisabled();
-	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-		ImGui::SetTooltip("%s", STR_C(single ? "Copies the properties of this track, to paste them on others (Ctrl+Shift+C)" : "Select one track to copy its properties, or take them from a track with the pipette"));
-	ImGui::SameLine();
-	ImGui::BeginDisabled(style.values.empty());
-	// pressed in while its choice is open under the row
-	if (style.open)
-		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-	if (ImGui::Button(STR_C("Paste..."), ImVec2(width, 0.0f)))
-		style.open = false == style.open;
-	if (style.open)
-		ImGui::PopStyleColor();
-	ImGui::EndDisabled();
-	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+	if (style.reveal)
 	{
-		if (style.values.empty())
-			ImGui::SetTooltip("%s", STR_C("Copy the properties of a track first"));
-		else
-			ImGui::SetTooltip(STR_C("Properties of %s: choose what goes on the selected tracks (Ctrl+Shift+V pastes the same choice at once)"), style.from.c_str());
+		ImGui::SetNextItemOpen(true);
+		style.reveal = false;
 	}
-	ImGui::SameLine();
+	if (false == ImGui::CollapsingHeader(format("%s###trackfrom", STR_C("From another track or a preset")).c_str()))
+		return;
 	if (style.picking)
 	{
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.55f, 0.1f, 1.0f));
-		if (ImGui::Button(STR_C("Click a track"), ImVec2(width, 0.0f)))
+		if (ImGui::Button(STR_C("Click a track in the view, Esc gives up"), ImVec2(-FLT_MIN, 0.0f)))
 			style.picking = false;
 		ImGui::PopStyleColor();
-		item_tooltip("Click a track in the view to take its properties; Esc or this button gives up");
 	}
 	else
 	{
-		if (ImGui::Button(STR_C("Pipette"), ImVec2(width, 0.0f)))
+		if (ImGui::Button(STR_C(style.values.empty() ? "Take from a track..." : "Take from another track..."), ImVec2(-FLT_MIN, 0.0f)))
 			style.picking = true;
-		item_tooltip("Pipette: the next click on a track in the view takes its properties, to paste them on the selection");
+		item_tooltip("Then click a track in the view: the list under shows what it changes on the selected tracks, each with a tick");
 	}
 
-	if (false == style.open || style.values.empty())
-		return;
-	// its own id scope: the group checkboxes share their labels with the sections of the properties under them
-	ImGui::PushID("paste");
-	ImGui::Indent();
-	ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), STR_C("Paste from %s:"), style.from.c_str());
-	std::array<bool, group_count> available{};
-	for (auto const &[key, value] : style.values)
-		if (auto const index{track_property_index(key)}; index >= 0)
-			available[properties()[index].group] = true;
-	int column{0};
-	auto const half{ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x * 0.5f};
-	for (int group = 0; group < group_count; ++group)
+	if (style.values.empty())
 	{
-		if (false == available[group])
-			continue;
-		if (column % 2 == 1)
-			ImGui::SameLine(half);
-		ImGui::Checkbox(STR_C(kGroupLabels[group]), &style.groups[group]);
-		++column;
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("Click a track after it: the list shows what it changes on the selected tracks, one button sets it"));
+		ImGui::PopTextWrapPos();
 	}
-	if (ImGui::Button(format(STR_P("Paste on %d track", "Paste on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str()))
+	else
 	{
-		paste_track_style(Tracks);
-		style.open = false;
+		ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), STR_C("From %s:"), style.from.c_str());
+		ImGui::SameLine();
+		if (auto const room{ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Forget")).x - ImGui::GetStyle().FramePadding.x * 2.0f}; room > 0.0f)
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + room);
+		auto forget{ImGui::SmallButton(STR_C("Forget"))};
+		item_tooltip("Forgets the track taken");
+		auto const lines{track_style_lines(Tracks)};
+		if (lines.empty())
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextDisabled(STR_C("The selected tracks have all of it as %s has"), style.from.c_str());
+			ImGui::PopTextWrapPos();
+		}
+		// a property each: the tick, then how it changes, the text a part of the tick
+		auto const brief = [&](int const Property, std::string const &Text) {
+			auto const slash{properties()[Property].kind == field::texture ? Text.find_last_of('/') : std::string::npos};
+			return slash == std::string::npos ? Text : Text.substr(slash + 1);
+		};
+		ImGui::PushID("taken");
+		int ticked{0};
+		for (auto const &line : lines)
+		{
+			auto const &property{properties()[line.property]};
+			ImGui::PushID(property.key);
+			auto take{track_style_takes(property.key)};
+			if (ImGui::Checkbox("##take", &take))
+				style.ticks[property.key] = take;
+			auto const help = [&]() {
+				if (false == ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+					return;
+				ImGui::BeginTooltip();
+				ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+				ImGui::TextUnformatted(STR_C(property.tooltip));
+				ImGui::Separator();
+				ImGui::Text(STR_C("Now: %s\nOn %s: %s"), line.now.c_str(), style.from.c_str(), line.taken.c_str());
+				ImGui::Text(STR_P("Changes %d selected track", "Changes %d selected tracks", static_cast<long long>(line.differ)), static_cast<int>(line.differ));
+				ImGui::PopTextWrapPos();
+				ImGui::EndTooltip();
+			};
+			help();
+			ImGui::SameLine();
+			auto text{format("%s: %s -> %s", STR_C(property.label), brief(line.property, line.now).c_str(), brief(line.property, line.taken).c_str())};
+			if (line.differ < Tracks.size())
+				text += format(STR_C("  (%d of %d)"), static_cast<int>(line.differ), static_cast<int>(Tracks.size()));
+			ImGui::PushTextWrapPos(0.0f);
+			if (take)
+				ImGui::TextUnformatted(text.c_str());
+			else
+				ImGui::TextDisabled("%s", text.c_str());
+			ImGui::PopTextWrapPos();
+			if (ImGui::IsItemClicked())
+				style.ticks[property.key] = false == take;
+			help();
+			ticked += take ? 1 : 0;
+			ImGui::PopID();
+		}
+		ImGui::PopID();
+		if (false == lines.empty())
+		{
+			ImGui::BeginDisabled(ticked == 0);
+			if (ImGui::Button(format(STR_P("Set on %d track", "Set on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str(), ImVec2(-FLT_MIN, 0.0f)))
+				paste_track_style(Tracks);
+			ImGui::EndDisabled();
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", STR_C(ticked == 0 ? "Tick what's to be set first" : "Sets what's ticked on the selected tracks, in one step of the undo; Ctrl+Shift+V does the same"));
+		}
+		if (forget)
+		{
+			style.from.clear();
+			style.values.clear();
+		}
 	}
-	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Cancel")))
-		style.open = false;
-	ImGui::Unindent();
-	ImGui::PopID();
-	ImGui::Separator();
+	ImGui::Spacing();
+	render_track_presets(Tracks);
 }
 
 std::vector<TTrack *> editor_mode::similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const
@@ -1986,7 +2055,7 @@ void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 		                              "Drag on the ground: select the tracks in a box, with Shift: add them\n"
 		                              "Ctrl+Shift+click: the whole run of joined tracks\n"
 		                              "Esc: clear the selection, Del: delete the selected tracks\n"
-		                              "Ctrl+Shift+C / Ctrl+Shift+V: copy and paste the properties"));
+		                              "Ctrl+Shift+C / Ctrl+Shift+V: take the properties of a track, set them on the selected ones"));
 	if (false == open)
 		return;
 	auto const width{button_width(2)};
@@ -2084,16 +2153,34 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 		}
 		else if (action == "groups")
 		{
-			// the groups pasted, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement
+			// the groups ticked, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement
 			m_track_style.groups.fill(false);
+			m_track_style.ticks.clear();
 			for (int group; Words >> group;)
 				if (group >= 0 && group < group_count)
 					m_track_style.groups[group] = true;
 		}
+		else if (action == "tick")
+		{
+			std::string key;
+			int tick{1};
+			Words >> key >> tick;
+			m_track_style.ticks[key] = tick != 0;
+		}
 		else if (action == "paste")
 			WriteLog(format("SELFTEST trackstyle paste: %zu changed", paste_track_style(selected_tracks())));
 		else if (action == "panel")
-			m_track_style.open = true;
+			m_track_style.reveal = true;
+		else if (action == "list")
+		{
+			auto const lines{track_style_lines(selected_tracks())};
+			WriteLog(format("SELFTEST trackstyle list: %zu lines from %s", lines.size(), m_track_style.from.c_str()));
+			for (auto const &line : lines)
+			{
+				auto const &property{properties()[line.property]};
+				WriteLog(format("SELFTEST trackstyle line %s [%s] %s -> %s (%zu)", property.key, track_style_takes(property.key) ? "x" : " ", line.now.c_str(), line.taken.c_str(), line.differ));
+			}
+		}
 		return selftest_result::handled;
 	}
 	if (Command == "tracksimilar")

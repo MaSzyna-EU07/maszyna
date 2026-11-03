@@ -7017,12 +7017,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 if (from != nullptr)
                     copy_track_style(*from);
                 else
-                    ui()->set_status(STR_C("Select one track, or point at one, to copy its properties"), true);
+                    ui()->set_status(STR_C("Select one track, or point at one, to take its properties"), true);
             }
             else if (m_track_style.values.empty())
-                ui()->set_status(STR_C("Copy the properties of a track first: Ctrl+Shift+C"), true);
+                ui()->set_status(STR_C("Take the properties of a track first: Ctrl+Shift+C"), true);
             else if (tracks.empty())
-                ui()->set_status(STR_C("Select the tracks to paste the properties on"), true);
+                ui()->set_status(STR_C("Select the tracks to set the properties on"), true);
             else
                 paste_track_style(tracks);
         }

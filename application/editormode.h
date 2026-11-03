@@ -2514,16 +2514,29 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<texture_index_entry> m_texture_index; // sorted by the name
 	bool m_texture_indexed{false};
 	std::string m_texture_hovered; // the tile under the mouse in the picker, shown large above them
+	// properties taken from a track, to be set on the selected ones
 	struct track_style
 	{
 		std::string from;
 		std::vector<std::pair<std::string, std::string>> values;
-		// speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and sound, frogs, sleeper placement
+		// ticked at first by their groups: speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and
+		// sound, frogs, sleeper placement
 		track_groups groups{false, false, false, false, true, true, true, true, false, true, true};
-		bool open{false};
-		bool picking{false}; // the next click on a track in the view copies its properties
+		std::map<std::string, bool> ticks; // changed by hand, by the keys of the properties
+		bool picking{false}; // the next click on a track in the view takes its properties
+		bool reveal{false};  // its section of the inspector opens, a track having been taken
 	};
 	track_style m_track_style;
+	// a property of the track taken which the selected ones have otherwise
+	struct track_style_line
+	{
+		int property{-1};
+		std::string now;       // as the selected tracks have it, or how many values they have
+		std::string taken;     // as the track taken has it
+		std::size_t differ{0}; // of the selected tracks, the ones it changes
+	};
+	std::vector<track_style_line> track_style_lines(std::vector<TTrack *> const &Tracks);
+	bool track_style_takes(std::string const &Key) const;
 	struct track_presets_panel
 	{
 		int selected{0}; // id of the preset chosen in the inspector

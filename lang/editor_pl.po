@@ -5490,8 +5490,8 @@ msgstr "przesuwa je razem"
 msgid "adds or takes out a track"
 msgstr "dodaje albo odznacza tor"
 
-msgid "pastes the copied properties"
-msgstr "wkleja skopiowane właściwości"
+msgid "sets what's ticked of the track taken"
+msgstr "ustawia to, co ma ptaszek, z wziętego toru"
 
 msgid "deletes them"
 msgstr "usuwa je"
@@ -5643,47 +5643,8 @@ msgstr "Ruch"
 msgid "Look"
 msgstr "Wygląd"
 
-msgid "Properties of %s copied: Ctrl+Shift+V pastes them on the selected tracks"
-msgstr "Skopiowano właściwości %s: Ctrl+Shift+V wkleja je na zaznaczone tory"
-
-msgid "Nothing chosen to paste"
-msgstr "Nic nie wybrano do wklejenia"
-
-msgid "Pasted properties"
-msgstr "Wklejone właściwości"
-
-msgid "Properties of %s pasted, Ctrl+Z takes them back"
-msgstr "Wklejono właściwości %s, Ctrl+Z cofa"
-
 msgid "The track has these properties already"
 msgstr "Tor ma już te właściwości"
-
-msgid "Copies the properties of this track, to paste them on others (Ctrl+Shift+C)"
-msgstr "Kopiuje właściwości tego toru, żeby wkleić je na inne (Ctrl+Shift+C)"
-
-msgid "Select one track to copy its properties, or take them from a track with the pipette"
-msgstr "Zaznacz jeden tor, żeby skopiować jego właściwości, albo pobierz je pipetą z toru"
-
-msgid "Paste..."
-msgstr "Wklej..."
-
-msgid "Copy the properties of a track first"
-msgstr "Najpierw skopiuj właściwości jakiegoś toru"
-
-msgid "Properties of %s: choose what goes on the selected tracks (Ctrl+Shift+V pastes the same choice at once)"
-msgstr "Właściwości %s: wybierz, co trafi na zaznaczone tory (Ctrl+Shift+V od razu wkleja ten sam wybór)"
-
-msgid "Copying properties"
-msgstr "Kopiowanie właściwości"
-
-msgid "Pipette"
-msgstr "Pipeta"
-
-msgid "Click a track"
-msgstr "Kliknij tor"
-
-msgid "Click a track in the view to take its properties; Esc or this button gives up"
-msgstr "Kliknij tor w widoku, żeby pobrać jego właściwości; Esc albo ten przycisk rezygnuje"
 
 msgid "Selection"
 msgstr "Zaznaczenie"
@@ -5702,12 +5663,6 @@ msgstr "Enter wybiera tę"
 
 msgid "In the textures folder:"
 msgstr "W folderze textures:"
-
-msgid "Pipette: the next click on a track in the view takes its properties, to paste them on the selection"
-msgstr "Pipeta: następne kliknięcie toru w widoku pobiera jego właściwości, do wklejenia na zaznaczenie"
-
-msgid "Paste from %s:"
-msgstr "Wklej z %s:"
 
 msgid "Deselect"
 msgstr "Odznacz"
@@ -5757,17 +5712,8 @@ msgstr "Ta sama sieć trakcyjna"
 msgid "%s: %s selected in the scenery"
 msgstr "%s: zaznaczono w scenerii %s"
 
-msgid "Shift+click: add or take out a track\nCtrl+click: the same\nDrag on the ground: select the tracks in a box, with Shift: add them\nCtrl+Shift+click: the whole run of joined tracks\nEsc: clear the selection, Del: delete the selected tracks\nCtrl+Shift+C / Ctrl+Shift+V: copy and paste the properties"
-msgstr "Shift+LPM: dodaj tor do zaznaczenia albo go odznacz\nCtrl+LPM: to samo\nPrzeciągnij po terenie: zaznacz tory w ramce, z Shift: dodaj je\nCtrl+Shift+LPM: cały ciąg połączonych torów\nEsc: wyczyść zaznaczenie, Del: usuń zaznaczone tory\nCtrl+Shift+C / Ctrl+Shift+V: kopiuj i wklej właściwości"
-
-msgid "Select one track, or point at one, to copy its properties"
-msgstr "Zaznacz jeden tor albo wskaż go kursorem, żeby skopiować jego właściwości"
-
-msgid "Copy the properties of a track first: Ctrl+Shift+C"
-msgstr "Najpierw skopiuj właściwości toru: Ctrl+Shift+C"
-
-msgid "Select the tracks to paste the properties on"
-msgstr "Zaznacz tory, na które mają trafić właściwości"
+msgid "Shift+click: add or take out a track\nCtrl+click: the same\nDrag on the ground: select the tracks in a box, with Shift: add them\nCtrl+Shift+click: the whole run of joined tracks\nEsc: clear the selection, Del: delete the selected tracks\nCtrl+Shift+C / Ctrl+Shift+V: take the properties of a track, set them on the selected ones"
+msgstr "Shift+LPM: dodaj tor do zaznaczenia albo go odznacz\nCtrl+LPM: to samo\nPrzeciągnij po terenie: zaznacz tory w ramce, z Shift: dodaj je\nCtrl+Shift+LPM: cały ciąg połączonych torów\nEsc: wyczyść zaznaczenie, Del: usuń zaznaczone tory\nCtrl+Shift+C / Ctrl+Shift+V: weź właściwości toru, ustaw je na zaznaczonych"
 
 msgid "Deletes the selected tracks (Del); Ctrl+Z brings them back"
 msgstr "Usuwa zaznaczone tory (Del); Ctrl+Z je przywraca"
@@ -5779,25 +5725,16 @@ msgid "What the track sets off as the vehicles run on it"
 msgstr "Co tor wyzwala, gdy jadą po nim pojazdy"
 
 msgid "Click: take the properties of this track"
-msgstr "LPM: pobierz właściwości tego toru"
+msgstr "LPM: weź właściwości tego toru"
 
 msgid "Click a track to take its properties, Esc: cancel"
-msgstr "Kliknij tor, żeby pobrać jego właściwości, Esc: anuluj"
+msgstr "Kliknij tor, żeby wziąć jego właściwości, Esc: anuluj"
 
 msgid "Click: take out of the selection"
 msgstr "LPM: usuń z zaznaczenia"
 
 msgid "Click: add to the selection"
 msgstr "LPM: dodaj do zaznaczenia"
-
-msgid "Copy its properties"
-msgstr "Kopiuj jego właściwości"
-
-msgid "Paste the properties"
-msgstr "Wklej właściwości"
-
-msgid "Properties of %s"
-msgstr "Właściwości %s"
 
 msgid "Select alike"
 msgstr "Zaznacz podobne"
@@ -5816,12 +5753,6 @@ msgid_plural "%s: changed on %d tracks, Ctrl+Z takes it back"
 msgstr[0] "%s: zmieniono na %d torze, Ctrl+Z cofa"
 msgstr[1] "%s: zmieniono na %d torach, Ctrl+Z cofa"
 msgstr[2] "%s: zmieniono na %d torach, Ctrl+Z cofa"
-
-msgid "Paste on %d track"
-msgid_plural "Paste on %d tracks"
-msgstr[0] "Wklej na %d tor"
-msgstr[1] "Wklej na %d tory"
-msgstr[2] "Wklej na %d torów"
 
 msgid "%d track selected, %.1f m"
 msgid_plural "%d tracks selected, %.1f m"
@@ -5846,12 +5777,6 @@ msgid_plural "one of %d selected tracks"
 msgstr[0] "jeden z %d zaznaczonych torów"
 msgstr[1] "jeden z %d zaznaczonych torów"
 msgstr[2] "jeden z %d zaznaczonych torów"
-
-msgid "Paste the properties on %d track"
-msgid_plural "Paste the properties on %d tracks"
-msgstr[0] "Wklej właściwości na %d tor"
-msgstr[1] "Wklej właściwości na %d tory"
-msgstr[2] "Wklej właściwości na %d torów"
 
 msgid "%s: %d track selected in the scenery"
 msgid_plural "%s: %d tracks selected in the scenery"
@@ -11618,9 +11543,6 @@ msgstr "Usunąć zestaw \"%s\"?"
 msgid "Track presets"
 msgstr "Zestawy torów"
 
-msgid "No presets: save one in the inspector of a track, Look, Sleeper models, Presets"
-msgstr "Brak zestawów: zapisz zestaw w inspektorze toru, Wygląd, Modele podkładów, Zestawy"
-
 msgid "Select the tracks to apply the preset on first"
 msgstr "Najpierw zaznacz tory, na których zastosować zestaw"
 
@@ -13138,6 +13060,102 @@ msgstr "Domyślny: %s, materiał wody terenu"
 
 msgid "Chosen from the textures, or dragged from the texture browser.\nThe default one: %s, the water material of the terrain"
 msgstr "Wybierany z tekstur albo przeciągany z przeglądarki tekstur.\nDomyślny: %s, materiał wody terenu"
+
+msgid "Taken from %s: the inspector lists what it changes on the selected tracks, Ctrl+Shift+V sets what's ticked"
+msgstr "Wzięto z %s: inspektor pokazuje, co zmieni na zaznaczonych torach, Ctrl+Shift+V ustawia to, co ma ptaszek"
+
+msgid "Nothing is ticked to be set"
+msgstr "Nic nie ma ptaszka, nie ma czego ustawić"
+
+msgid "From another track"
+msgstr "Z innego toru"
+
+msgid "Set as on %s, Ctrl+Z takes it back"
+msgstr "Ustawiono jak na %s, Ctrl+Z cofa"
+
+msgid "From another track or a preset"
+msgstr "Z innego toru albo zestawu"
+
+msgid "Click a track in the view, Esc gives up"
+msgstr "Kliknij tor w widoku, Esc rezygnuje"
+
+msgid "Take from a track..."
+msgstr "Weź z toru..."
+
+msgid "Take from another track..."
+msgstr "Weź z innego toru..."
+
+msgid "Then click a track in the view: the list under shows what it changes on the selected tracks, each with a tick"
+msgstr "Potem kliknij tor w widoku: lista pod spodem pokaże, co zmieni na zaznaczonych torach, każdą rzecz z ptaszkiem"
+
+msgid "Click a track after it: the list shows what it changes on the selected tracks, one button sets it"
+msgstr "Potem kliknij tor: lista pokaże, co zmieni na zaznaczonych torach, a jeden przycisk to ustawi"
+
+msgid "From %s:"
+msgstr "Z toru %s:"
+
+msgid "Forget"
+msgstr "Zapomnij"
+
+msgid "Forgets the track taken"
+msgstr "Zapomina wzięty tor"
+
+msgid "The selected tracks have all of it as %s has"
+msgstr "Zaznaczone tory mają już wszystko tak jak %s"
+
+msgid "Now: %s\nOn %s: %s"
+msgstr "Teraz: %s\nNa %s: %s"
+
+msgid "Changes %d selected track"
+msgid_plural "Changes %d selected tracks"
+msgstr[0] "Zmienia %d zaznaczony tor"
+msgstr[1] "Zmienia %d zaznaczone tory"
+msgstr[2] "Zmienia %d zaznaczonych torów"
+
+msgid "  (%d of %d)"
+msgstr "  (%d z %d)"
+
+msgid "Set on %d track"
+msgid_plural "Set on %d tracks"
+msgstr[0] "Ustaw na %d torze"
+msgstr[1] "Ustaw na %d torach"
+msgstr[2] "Ustaw na %d torach"
+
+msgid "Tick what's to be set first"
+msgstr "Najpierw zaznacz ptaszkiem, co ustawić"
+
+msgid "Sets what's ticked on the selected tracks, in one step of the undo; Ctrl+Shift+V does the same"
+msgstr "Ustawia na zaznaczonych torach to, co ma ptaszek, w jednym kroku cofania; Ctrl+Shift+V robi to samo"
+
+msgid "No presets: save one in the inspector of a track, From another track or a preset, Presets"
+msgstr "Brak zestawów: zapisz zestaw w inspektorze toru, Z innego toru albo zestawu, Zestawy"
+
+msgid "Take its properties"
+msgstr "Weź jego właściwości"
+
+msgid "The inspector lists what they change on the selected tracks, From another track or a preset"
+msgstr "Inspektor pokaże, co zmienią na zaznaczonych torach, w części Z innego toru albo zestawu"
+
+msgid "Set the properties taken on %d track"
+msgid_plural "Set the properties taken on %d tracks"
+msgstr[0] "Ustaw wzięte właściwości na %d torze"
+msgstr[1] "Ustaw wzięte właściwości na %d torach"
+msgstr[2] "Ustaw wzięte właściwości na %d torach"
+
+msgid "Set the properties taken"
+msgstr "Ustaw wzięte właściwości"
+
+msgid "Taken from %s: what's ticked in the inspector"
+msgstr "Wzięte z %s: to, co ma ptaszek w inspektorze"
+
+msgid "Select one track, or point at one, to take its properties"
+msgstr "Zaznacz jeden tor albo wskaż go kursorem, żeby wziąć jego właściwości"
+
+msgid "Take the properties of a track first: Ctrl+Shift+C"
+msgstr "Najpierw weź właściwości toru: Ctrl+Shift+C"
+
+msgid "Select the tracks to set the properties on"
+msgstr "Zaznacz tory, na których ustawić właściwości"
 
 msgid "No line of tracks runs over the track"
 msgstr "Żadna linia torów nie przebiega przez ten tor"
