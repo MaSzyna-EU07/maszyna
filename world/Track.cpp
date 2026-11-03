@@ -81,6 +81,15 @@ void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const
     }
 }
 
+// whether the path was drawn straight before, told a straight by its first control vector alone, where its second one bends it
+// now; both of them along it, it bends a centimetre or so at most, a radius given or not
+bool straightened_before( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &Cp2, glm::dvec3 const &P2 ) {
+
+    return glm::length2( ( P1 + P1 + P2 ) / 3.0 - P1 - Cp1 ) < sq( 0.02 )
+        && Cp2 != glm::dvec3()
+        && glm::length2( ( P1 + P2 + P2 ) / 3.0 - P2 - Cp2 ) >= sq( 0.02 );
+}
+
 } // namespace
 
 TTrack::profiles_array TTrack::m_profiles;
@@ -870,6 +879,10 @@ void TTrack::init_segments( bool const Initial ) {
         if( startalong && endalong && fRadius == 0 ) {
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
         }
+        else if( straightened_before( p1, cp1, cp2, p2 ) ) {
+            // a scenery made before may count on the straight
+            WriteLog( "Track \"" + name() + "\" is drawn bent by its second control vector, it was drawn straight before" );
+        }
 
         if( fRadius != 0 ) {
             // gdy podany promień
@@ -968,6 +981,9 @@ void TTrack::init_segments( bool const Initial ) {
 				cp1 = cp2 = glm::dvec3(0, 0, 0);
             }
         }
+        else if( eType != tt_Cross && straightened_before( p1, cp1, cp2, p2 ) ) {
+            WriteLog( "Track \"" + name() + "\": its first path is drawn bent by its second control vector, it was drawn straight before" );
+        }
 
         if( fRadiusTable[ 0 ] != 0 ) {
             // gdy podany promień
@@ -1032,6 +1048,9 @@ void TTrack::init_segments( bool const Initial ) {
                 // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 				cp3 = cp4 = glm::dvec3(0, 0, 0);
             }
+        }
+        else if( eType != tt_Cross && straightened_before( p3, cp3, cp4, p4 ) ) {
+            WriteLog( "Track \"" + name() + "\": its second path is drawn bent by its second control vector, it was drawn straight before" );
         }
 
         if( fRadiusTable[ 1 ] != 0 ) {
