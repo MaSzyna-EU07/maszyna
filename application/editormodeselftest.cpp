@@ -164,8 +164,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
 //   deletetrack <name>, deletekind <kind>   the path deleted as Del does it, or the first path over an element of the kind
 //   tracksel <name>...                   the tracks selected together, as Shift+clicks select them; none: nothing selected
-//   trackprop <key> [value]              the value given to the selected tracks, as typed into the inspector; trackprops logs their values
-//   trackstyle copy [name] | groups <n>... | paste | panel   the properties of a track copied, the groups chosen, pasted on the selected tracks
+//   trackprop <key> [value]              the value given to the selected tracks, as typed into the inspector; trackprops logs their values,
+//                                        the lines shown under the rows and how many tracks aren't saved
 //   tracksimilar <key>                   the tracks of the scenery with the value of the property of the selected ones selected
 //   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged
 //   mouse <x> <y>, mouseat <x> <y> <z>   the cursor moved to the point of the window, or to where the point of the scene is seen, as the mouse moves it

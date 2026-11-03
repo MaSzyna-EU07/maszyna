@@ -2402,6 +2402,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t set_switch_timbers(std::string const &Model);
 	int track_property_index(std::string const &Key) const;
 	std::size_t track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text);
+	void track_field_finish();
 	void track_field_settle();
 	void track_textures_scan();
 	// every texture and material under the folder of the textures, read on the first use of the picker
@@ -2436,8 +2437,34 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int frame{-100};
 		std::vector<std::vector<std::pair<std::string, int>>> values;
 		std::vector<std::size_t> applies;
+		std::size_t unsaved{0}; // of the tracks, changed since the file was written
 	};
 	track_values m_track_values;
+	// how the last value given in the sheet went: on how many tracks, and why not on the others
+	struct track_outcome
+	{
+		int property{-1};
+		std::string text;
+		bool refused{false}; // some tracks couldn't take it
+		std::size_t signature{0}; // of the tracks it was given to
+		std::size_t history{0};
+		double time{0.0};
+	};
+	track_outcome m_track_outcome;
+	// the lines under the rows of the sheet
+	struct track_note
+	{
+		enum class kind
+		{
+			typing,
+			done,
+			refused
+		};
+		int property{-1};
+		std::string text;
+		kind type{kind::done};
+	};
+	std::vector<track_note> m_track_notes;
 	// the field being typed in, with the tracks it was started on
 	struct track_field
 	{

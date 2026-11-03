@@ -601,17 +601,11 @@ msgstr "Skarpa podsypki"
 msgid "Track circuits"
 msgstr "Odcinki izolowane"
 
-msgid "The track circuits can't change while vehicles stand on the path"
-msgstr "Odcinki izolowane nie mogą się zmienić, gdy na torze stoją pojazdy"
-
 msgid "Speed with the pantographs lowered (km/h)"
 msgstr "Prędkość z opuszczonymi pantografami (km/h)"
 
 msgid "Sleeper models"
 msgstr "Modele podkładów"
-
-msgid "Give the sleeper model first"
-msgstr "Najpierw podaj model podkładu"
 
 msgid "Sleeper model"
 msgstr "Model podkładu"
@@ -5633,9 +5627,6 @@ msgstr "Wartość wpisana tutaj trafi do wszystkich"
 
 msgid "%s: nothing to change"
 msgstr "%s: nic do zmiany"
-
-msgid "%s: \"%s\" isn't a number"
-msgstr "%s: \"%s\" to nie liczba"
 
 msgid "different (%d)"
 msgstr "różne (%d)"
@@ -13079,6 +13070,66 @@ msgstr "Osobno od nierówności, mm. Puste: wartość nierówności"
 
 msgid "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Empty: 0.4 of the unevenness"
 msgstr "Głębokość zapadnięcia na każdym styku szyn, co odstęp styków. Działa też przy nierównościach 0. Puste: 0,4 nierówności"
+
+# scenery editor: the sheet of the tracks, how a value given went and whether it's in the file
+
+msgid "\"%s\" isn't a number"
+msgstr "\"%s\" to nie liczba"
+
+msgid "Set on %d track, Ctrl+Z takes it back"
+msgid_plural "Set on %d tracks, Ctrl+Z takes it back"
+msgstr[0] "Ustawiono na %d torze, Ctrl+Z cofa"
+msgstr[1] "Ustawiono na %d torach, Ctrl+Z cofa"
+msgstr[2] "Ustawiono na %d torach, Ctrl+Z cofa"
+
+msgid "%d track has it already"
+msgid_plural "%d tracks have it already"
+msgstr[0] "%d tor już to ma"
+msgstr[1] "%d tory już to mają"
+msgstr[2] "%d torów już to ma"
+
+msgid "%d track doesn't have it"
+msgid_plural "%d tracks don't have it"
+msgstr[0] "%d tor tego nie ma"
+msgstr[1] "%d tory tego nie mają"
+msgstr[2] "%d torów tego nie ma"
+
+msgid "%d track has vehicles on it"
+msgid_plural "%d tracks have vehicles on them"
+msgstr[0] "%d tor z pojazdami, odcinki izolowane zostają"
+msgstr[1] "%d tory z pojazdami, odcinki izolowane zostają"
+msgstr[2] "%d torów z pojazdami, odcinki izolowane zostają"
+
+msgid "%d track has no sleeper model"
+msgid_plural "%d tracks have no sleeper model"
+msgstr[0] "%d tor bez modelu podkładu, najpierw go podaj"
+msgstr[1] "%d tory bez modelu podkładu, najpierw go podaj"
+msgstr[2] "%d torów bez modelu podkładu, najpierw go podaj"
+
+msgid "%d track can't be changed: %s"
+msgid_plural "%d tracks can't be changed: %s"
+msgstr[0] "%d toru nie można zmienić: %s"
+msgstr[1] "%d torów nie można zmienić: %s"
+msgstr[2] "%d torów nie można zmienić: %s"
+
+msgid "Enter or leaving the field sets it on %d track, Esc gives up"
+msgid_plural "Enter or leaving the field sets it on %d tracks, Esc gives up"
+msgstr[0] "Enter albo wyjście z pola ustawia na %d torze, Esc rezygnuje"
+msgstr[1] "Enter albo wyjście z pola ustawia na %d torach, Esc rezygnuje"
+msgstr[2] "Enter albo wyjście z pola ustawia na %d torach, Esc rezygnuje"
+
+msgid "Not saved to the file: %d track"
+msgid_plural "Not saved to the file: %d tracks"
+msgstr[0] "Niezapisane w pliku: %d tor"
+msgstr[1] "Niezapisane w pliku: %d tory"
+msgstr[2] "Niezapisane w pliku: %d torów"
+
+msgid "Saved in the file"
+msgstr "Zapisane w pliku"
+
+msgid "Saves the scenery, as Ctrl+S does"
+msgstr "Zapisuje scenerię, tak jak Ctrl+S"
+
 msgid "No line of tracks runs over the track"
 msgstr "Żadna linia torów nie przebiega przez ten tor"
 

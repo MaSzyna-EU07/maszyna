@@ -52,6 +52,7 @@ using geometry::bezier;
 int const kRailCategory{1};
 std::size_t const kListedValues{8}; // in the tooltip of a property whose values differ
 std::size_t const kLargeSelection{300}; // above it the values are gathered again only every few frames
+double const kOutcomeSeconds{10.0}; // the line under a row telling how a value went
 
 bool rail(TTrack const &Track)
 {
@@ -775,6 +776,14 @@ std::string tracks_count(std::size_t const Count)
 	return format(STR_P("%d track", "%d tracks", static_cast<long long>(Count)), static_cast<int>(Count));
 }
 
+std::size_t tracks_signature(std::vector<TTrack *> const &Tracks)
+{
+	std::size_t signature{Tracks.size()};
+	for (auto const *track : Tracks)
+		signature = signature * 31 + reinterpret_cast<std::uintptr_t>(track);
+	return signature;
+}
+
 // the tooltip of a row: what the property is, and the values of the tracks when they differ
 void row_tooltip(track_property const &Property, value_counts const &Values, std::size_t const Applies, std::size_t const Selected)
 {
@@ -937,29 +946,70 @@ int editor_mode::track_property_index(std::string const &Key) const
 std::size_t editor_mode::track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text)
 {
 	auto const &property{properties()[Property]};
+	std::string const key{property.key};
 	std::vector<TTrack *> targets;
+	std::size_t without{0};
 	for (auto *track : Tracks)
-		if (track != nullptr && false == property.off && false == track->m_editorremoved && property.applies(*track))
-			targets.push_back(track);
-	auto const changed{tracks_apply(targets, [&](TTrack &Track) { return property.set(Track, Text); }, property.rebuild, property.label)};
-	if (changed == 0 && targets.size() == 1)
 	{
-		double value;
-		if (property.kind == field::number && false == words_of(Text).empty() && false == parse_number(Text, value))
-			ui()->set_status(format(STR_C("%s: \"%s\" isn't a number"), STR_C(property.label), Text.c_str()), true);
-		else if (std::string{property.key} == "sleepers" && Text == "1" && targets.front()->m_sleeper_model_name.empty())
-			ui()->set_status(STR_C("Give the sleeper model first"), true);
-		else if (std::string{property.key} == "circuits" && false == targets.front()->Dynamics.empty())
-			ui()->set_status(STR_C("The track circuits can't change while vehicles stand on the path"), true);
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		if (false == property.off && property.applies(*track))
+			targets.push_back(track);
+		else
+			++without;
 	}
+	auto const tell = [&](std::string const &Outcome, bool const Refused) {
+		m_track_outcome = {Property, Outcome, Refused, tracks_signature(Tracks), m_history.size(), ImGui::GetTime()};
+		ui()->set_status(format("%s: %s", STR_C(property.label), Outcome.c_str()), Refused);
+	};
+	// only the speed takes an empty field, for no limit
+	if (double number; property.kind == field::number && false == parse_number(Text, number) && (property.empty == nullptr || false == words_of(Text).empty()))
+	{
+		tell(format(STR_C("\"%s\" isn't a number"), Text.c_str()), true);
+		return 0;
+	}
+	std::size_t same{0};
+	std::size_t occupied{0};
+	std::size_t nomodel{0};
+	auto const changed{tracks_apply(targets, [&](TTrack &Track) {
+		if (property.set(Track, Text))
+			return true;
+		if (key == "circuits" && false == Track.Dynamics.empty() && property.get(Track) != Text)
+			++occupied;
+		else if (key == "sleepers" && Text == "1" && Track.m_sleeper_model_name.empty())
+			++nomodel;
+		else
+			++same;
+		return false;
+	}, property.rebuild, property.label)};
+	auto const locked{targets.size() - changed - same - occupied - nomodel};
+
+	auto outcome{changed > 0 ? format(STR_P("Set on %d track, Ctrl+Z takes it back", "Set on %d tracks, Ctrl+Z takes it back", static_cast<long long>(changed)), static_cast<int>(changed)) : std::string{STR_C("Nothing changed")}};
+	auto const also = [&](std::size_t const Count, char const *Format) {
+		if (Count > 0)
+			outcome += "; " + format(Format, static_cast<int>(Count));
+	};
+	also(same, STR_P("%d track has it already", "%d tracks have it already", static_cast<long long>(same)));
+	also(without, STR_P("%d track doesn't have it", "%d tracks don't have it", static_cast<long long>(without)));
+	also(occupied, STR_P("%d track has vehicles on it", "%d tracks have vehicles on them", static_cast<long long>(occupied)));
+	also(nomodel, STR_P("%d track has no sleeper model", "%d tracks have no sleeper model", static_cast<long long>(nomodel)));
+	if (locked > 0)
+	{
+		std::string reason;
+		for (auto const *track : targets)
+			if (false == scene::Layers.editable(track, &reason))
+				break;
+		outcome += "; " + format(STR_P("%d track can't be changed: %s", "%d tracks can't be changed: %s", static_cast<long long>(locked)), static_cast<int>(locked), reason.c_str());
+	}
+	tell(outcome, locked > 0 || occupied > 0 || nomodel > 0);
 	return changed;
 }
 
-void editor_mode::track_field_settle()
+void editor_mode::track_field_finish()
 {
-	// a field left without being drawn again, the selection gone or folded away: what was typed is taken as it is
+	// what was typed goes on the tracks the field was started on
 	auto &edit{m_track_field};
-	if (edit.property < 0 || edit.frame + 1 >= ImGui::GetFrameCount())
+	if (edit.property < 0)
 		return;
 	auto const property{edit.property};
 	auto const tracks{edit.tracks};
@@ -968,6 +1018,15 @@ void editor_mode::track_field_settle()
 	edit = {};
 	if (typed != initial)
 		track_property_apply(property, tracks, typed);
+}
+
+void editor_mode::track_field_settle()
+{
+	// a field left without being drawn again, the selection gone or folded away: what was typed is taken as it is
+	auto const &edit{m_track_field};
+	if (edit.property < 0 || edit.frame + 1 >= ImGui::GetFrameCount())
+		return;
+	track_field_finish();
 }
 
 void editor_mode::track_textures_scan()
@@ -1196,9 +1255,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 	auto const &list{properties()};
 	auto &cache{m_track_values};
 	// the values are gathered again when the selection or the tracks change, for a large selection not on every frame
-	std::size_t signature{Tracks.size()};
-	for (auto const *track : Tracks)
-		signature = signature * 31 + reinterpret_cast<std::uintptr_t>(track);
+	auto const signature{tracks_signature(Tracks)};
 	auto const stale{cache.signature != signature || cache.generation_seen != cache.generation || cache.history != m_history.size() || Tracks.size() <= kLargeSelection || ImGui::GetFrameCount() - cache.frame > 15};
 	if (stale)
 	{
@@ -1217,7 +1274,29 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			cache.applies[i] = applies;
 			cache.values[i] = std::move(values);
 		}
+		cache.unsaved = static_cast<std::size_t>(std::count_if(Tracks.begin(), Tracks.end(), [](TTrack const *Track) { return Track != nullptr && Track->dirty(); }));
 	}
+
+	// the lines under the rows come and go with no mouse button held: rows moved under a click would give it to another row
+	if (false == ImGui::IsAnyMouseDown())
+	{
+		m_track_notes.clear();
+		auto const &edit{m_track_field};
+		auto const typing{edit.property >= 0 && edit.initial != edit.text.data()};
+		if (typing)
+		{
+			auto const count{cache.applies[edit.property]};
+			m_track_notes.push_back({edit.property, format(STR_P("Enter or leaving the field sets it on %d track, Esc gives up", "Enter or leaving the field sets it on %d tracks, Esc gives up", static_cast<long long>(count)), static_cast<int>(count)), track_note::kind::typing});
+		}
+		auto const &outcome{m_track_outcome};
+		if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == signature && outcome.history == m_history.size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
+			m_track_notes.push_back({outcome.property, outcome.text, outcome.refused ? track_note::kind::refused : track_note::kind::done});
+	}
+	// the tooltip of a row would cover the line under it
+	auto const row_help = [&](std::size_t const Index) {
+		if (std::none_of(m_track_notes.begin(), m_track_notes.end(), [&](track_note const &Note) { return Note.property == static_cast<int>(Index); }))
+			row_tooltip(list[Index], cache.values[Index], cache.applies[Index], Tracks.size());
+	};
 
 	auto const row_label = [&](std::size_t const Index) {
 		auto const &property{list[Index]};
@@ -1237,7 +1316,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			ImGui::SameLine(0.0f, 4.0f);
 			ImGui::TextDisabled("(%d)", static_cast<int>(cache.applies[Index]));
 		}
-		row_tooltip(property, cache.values[Index], cache.applies[Index], Tracks.size());
+		row_help(Index);
 		ImGui::TableSetColumnIndex(1);
 		ImGui::SetNextItemWidth(-FLT_MIN);
 	};
@@ -1252,26 +1331,23 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			std::snprintf(shown.data(), shown.size(), "%s", values.front().first == "none" ? "" : values.front().first.c_str());
 		auto *buffer{editing ? edit.text.data() : shown.data()};
 		auto const hint{values.size() > 1 ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : property.empty != nullptr ? std::string{STR_C(property.empty)} : std::string{}};
-		ImGui::InputTextWithHint("##value", hint.c_str(), buffer, shown.size(), property.kind == field::number ? ImGuiInputTextFlags_CharsDecimal : 0);
+		// a number clicked is typed anew, the digits wouldn't add up to what's meant going after the old ones
+		ImGui::InputTextWithHint("##value", hint.c_str(), buffer, shown.size(), property.kind == field::number ? ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_AutoSelectAll : 0);
 		if (ImGui::IsItemActivated())
 		{
+			// the field left for this one, lower down, is drawn after it: it would find its place here taken and what was typed lost
+			std::string const text{buffer};
+			track_field_finish();
 			edit.property = static_cast<int>(Index);
 			edit.tracks = Tracks;
-			edit.initial = buffer;
-			std::snprintf(edit.text.data(), edit.text.size(), "%s", buffer);
+			edit.initial = text;
+			std::snprintf(edit.text.data(), edit.text.size(), "%s", text.c_str());
 		}
 		if (edit.property == static_cast<int>(Index))
 			edit.frame = ImGui::GetFrameCount();
-		row_tooltip(property, values, cache.applies[Index], Tracks.size());
+		row_help(Index);
 		if (ImGui::IsItemDeactivated() && edit.property == static_cast<int>(Index))
-		{
-			auto const tracks{edit.tracks};
-			std::string const typed{edit.text.data()};
-			auto const initial{edit.initial};
-			edit = {};
-			if (typed != initial)
-				track_property_apply(static_cast<int>(Index), tracks, typed);
-		}
+			track_field_finish();
 	};
 
 	auto const choice_row = [&](std::size_t const Index) {
@@ -1286,7 +1362,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 					track_property_apply(static_cast<int>(Index), Tracks, std::to_string(i));
 			ImGui::EndCombo();
 		}
-		row_tooltip(property, values, cache.applies[Index], Tracks.size());
+		row_help(Index);
 	};
 
 	auto const check_row = [&](std::size_t const Index) {
@@ -1300,7 +1376,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			track_property_apply(static_cast<int>(Index), Tracks, value ? "1" : "0");
 		if (mixed)
 			ImGui::PopItemFlag();
-		row_tooltip(property, values, cache.applies[Index], Tracks.size());
+		row_help(Index);
 	};
 
 	auto const texture_row = [&](std::size_t const Index) {
@@ -1337,7 +1413,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			}
 			ImGui::EndCombo();
 		}
-		row_tooltip(property, values, cache.applies[Index], Tracks.size());
+		row_help(Index);
 		if (std::string dropped; material_drop(dropped))
 			track_property_apply(static_cast<int>(Index), Tracks, dropped);
 	};
@@ -1373,6 +1449,15 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			if (list[i].off && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 				ImGui::SetTooltip("%s", STR_C("Switched off in this build of the simulator"));
 			ImGui::PopID();
+			for (auto const &note : m_track_notes)
+				if (note.property == static_cast<int>(i))
+				{
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(1);
+					ImGui::PushTextWrapPos(0.0f);
+					ImGui::TextColored(note.type == track_note::kind::typing ? ImVec4(0.55f, 0.8f, 1.0f, 1.0f) : note.type == track_note::kind::done ? ImVec4(0.45f, 0.9f, 0.45f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", note.text.c_str());
+					ImGui::PopTextWrapPos();
+				}
 		}
 		ImGui::EndTable();
 	};
@@ -1387,6 +1472,18 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		}
 		ImGui::PopID();
 	};
+
+	// whether what's set here is in the file yet; the same height either way, the rows don't move
+	if (cache.unsaved > 0)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_P("Not saved to the file: %d track", "Not saved to the file: %d tracks", static_cast<long long>(cache.unsaved)), static_cast<int>(cache.unsaved));
+		ImGui::SameLine();
+		if (ImGui::SmallButton(format("%s##tracksheet", STR_C("Save")).c_str()))
+			save();
+		item_tooltip("Saves the scenery, as Ctrl+S does");
+	}
+	else
+		ImGui::TextDisabled("%s", STR_C("Saved in the file"));
 
 	if (ImGui::CollapsingHeader(STR_C("Traffic"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
@@ -1882,7 +1979,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 			return selftest_result::handled;
 		}
 		auto const changed{track_property_apply(index, selected_tracks(), value)};
-		WriteLog(format("SELFTEST trackprop %s=\"%s\": %zu changed", key.c_str(), value.c_str(), changed));
+		WriteLog(format("SELFTEST trackprop %s=\"%s\": %zu changed: %s", key.c_str(), value.c_str(), changed, m_track_outcome.text.c_str()));
 		return selftest_result::handled;
 	}
 	if (Command == "trackprops")
@@ -1896,6 +1993,9 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 				text += format(" [%s]x%d", value.c_str(), count);
 			WriteLog(format("SELFTEST trackprops %s:%s", property.key, text.c_str()));
 		}
+		for (auto const &note : m_track_notes)
+			WriteLog(format("SELFTEST trackprops note %s: %s", properties()[note.property].key, note.text.c_str()));
+		WriteLog(format("SELFTEST trackprops unsaved: %zu", m_track_values.unsaved));
 		return selftest_result::handled;
 	}
 	if (Command == "trackstyle")
