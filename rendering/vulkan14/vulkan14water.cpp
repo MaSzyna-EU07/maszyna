@@ -209,10 +209,16 @@ void windscreen_water::update_rain_cells(float const Time, float const Rain)
 	struct constants
 	{
 		float time;
-		float pad[3];
-	} const data{Time, {0.f, 0.f, 0.f}};
-	m_raincellkernel.dispatch(commands, {buffer_descriptor(m_raincells->handle(), 0, VK_WHOLE_SIZE)}, data,
-	                          static_cast<std::uint32_t>((gl::RAIN_CELLS_COUNT + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE));
+		float rain;
+		std::int32_t pass;
+		float pad;
+	};
+	auto const groups = [](std::size_t const Count) { return static_cast<std::uint32_t>((Count + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE); };
+	std::vector<descriptor> const descriptors{buffer_descriptor(m_raincells->handle(), 0, VK_WHOLE_SIZE)};
+	// the cells, then the reach of the drops into the quarters of each drop cell, which reads them
+	m_raincellkernel.dispatch(commands, descriptors, constants{Time, Rain, 0, 0.f}, groups(gl::RAIN_MASK_BASE));
+	compute_barrier(commands);
+	m_raincellkernel.dispatch(commands, descriptors, constants{Time, Rain, 1, 0.f}, groups(gl::RAIN_CELLS_COUNT - gl::RAIN_MASK_BASE));
 	compute_barrier(commands);
 }
 
