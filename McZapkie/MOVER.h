@@ -169,6 +169,8 @@ enum DerailReason
 	WRONG_TRACK_TYPE = 4, // Ra: powód wykolejenia: nieodpowiednia trajektoria
 	/// <summary>Collision with another vehicle.</summary>
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
+	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
+	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
