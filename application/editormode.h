@@ -371,7 +371,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		static int constexpr grade_line_off{-3}; // taken off a grade line by hand, stays on its own when the lines are worked out again
 		static int constexpr grade_line_off_number{-10}; // this and below: taken off the grade line of this number less this
 		std::map<std::string, int> grade_lines; // of each track the number of the grade line it shares, or one of those above
+		std::set<std::string> grade_lines_hand; // the tracks put on their grade line by hand: they stay on it when the lines are worked out again
 		bool grade_lines_loaded{false};
+		bool grade_lines_dirty{false}; // the edits of the tracks carried their lines on: stored once, with the next frame
+		std::unordered_map<TTrack const *, std::string> grade_line_keys; // of the tracks changed, the key each had last, to carry its line on to the next
+		std::vector<std::pair<std::string, segment_data>> grade_line_replaced; // the first paths of the tracks of a line changed since the last frame: a new track on one takes its line
 		std::unordered_set<TTrack const *> on_hump; // the tracks of the humps fitted to the model: no grade line shared levels them
 		std::size_t grade_lines_changes{0};
 		std::string explain; // a track whose run the next sharing of the grade lines tells of in the log, for a selftest
@@ -564,6 +568,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> const &grade_line_beside();
 	std::size_t grade_line_follow(std::vector<editor_track::route_sample> const &Before);
 	void grade_line_take_off(bool const Off);
+	// the grade line the route shares, by most of its paths; -1 when it shares none
+	int route_grade_line();
+	// the plain tracks from switch to switch the track is one of, a switch by itself; Alone: the track only
+	static std::vector<TTrack *> grade_line_run(TTrack &Track, bool const Alone);
+	// the run of the track clicked onto the grade line of the route by hand, or off it if it's on it; a route sharing none makes one with it
+	void grade_line_pick(TTrack &Track, bool const Alone);
+	// all the tracks of the grade line, wherever they are, for the view while they're picked
+	std::vector<TTrack const *> const &grade_line_members(int const Number);
+	void draw_grade_line_pick();
+	// a piece split off a track lies on the grade line the track does
+	void grade_line_split(TTrack const &Original, TTrack const &Created);
+	// a track changed keeps its grade line under the key it has after it; a new one between two tracks of a line, a switch put into one, lies on it
+	void grade_line_captured(TTrack const &Track);
+	void grade_lines_committed(std::vector<TTrack *> const &Tracks);
+	void grade_line_renamed(TTrack const &Track, std::string const &Old);
 	void render_profile_grade_line();
 	// the tracks laid since the step of the history hidden in the ground, told over the 3d view with the way to fit the ground to them
 	void nmt_check_buried(std::size_t const From);
@@ -2142,6 +2161,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_switch_designer_clicks() const;
 	void draw_cursor_ring(glm::dvec3 const &Point) const;
 	static std::string grade_line_key(TTrack const &Track);
+	static std::string grade_line_key(std::string const &Name, TTrack const &Track);
 	static void move_path_heights(segment_data &Path, double const First, double const Second, std::function<void(segment_data &)> const &After = {});
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
@@ -2206,7 +2226,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, fouling, measure, route_trace, kilometrage, srk_boundary };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -2860,6 +2880,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool fitting{false}; // the line comes from the fit to the terrain model: any error of it refuses it
 		std::vector<TTrack *> beside; // those of them lying by it, for the route and the state of the tracks below
 		std::tuple<TTrack const *, std::size_t, std::size_t, std::size_t> beside_of{nullptr, 0, 0, 0};
+		bool picking{false}; // a click on a track in the view puts it on the grade line of the route or takes it off
+		std::vector<TTrack const *> members; // of the grade line picked, wherever they are
+		std::tuple<int, std::size_t, std::size_t> members_of{-1, 0, 0};
 		int selected{-1};
 		int dragging{-1};
 		// where the point was grabbed: the mouse there, the point against the mouse; the point moves once the mouse does
@@ -3056,6 +3079,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void tracks_committed(std::vector<TTrack *> const &Tracks) override;
 	void track_retired(TTrack &Track) override;
 	void track_split(TTrack &Original, TTrack &Created, segment_data const &First) override;
+	void track_renamed(TTrack const &Track, std::string const &Old) override;
 	void infra_move(infra::binding &Binding);
 	void infra_attach(EditorSnapshot &Snapshot);
 	void render_infra_body();

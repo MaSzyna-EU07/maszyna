@@ -483,6 +483,8 @@ void editor_track::rename(TTrack &Track, std::string const &Name, std::vector<sc
 			cell->asTrackName = Name;
 			cell->mark_dirty();
 		}
+	if (s_observer != nullptr)
+		s_observer->track_renamed(Track, old);
 	if (old.empty() || old == "none")
 		return;
 	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)

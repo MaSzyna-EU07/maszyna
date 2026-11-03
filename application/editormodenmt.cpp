@@ -3691,6 +3691,15 @@ void editor_mode::nmt_share_grades()
 		if (meeting.size() == 2 && meeting[0] != meeting[1] && meeting[0]->eType == tt_Normal && meeting[1]->eType == tt_Normal)
 			if (auto const *a{run_of(meeting[0])}, *b{run_of(meeting[1])}; a != b)
 				runs[a] = b;
+	// who was put on a grade line by hand stays on it, with the others put on it wherever they lie, never on another one so put
+	grade_lines_load();
+	std::unordered_map<TTrack const *, int> held;
+	for (auto const *track : tracks)
+	{
+		auto const key{grade_line_key(*track)};
+		if (auto const found{state.grade_lines.find(key)}; found != state.grade_lines.end() && found->second >= 0 && state.grade_lines_hand.contains(key))
+			held[track] = found->second;
+	}
 	std::unordered_set<TTrack const *> apart;
 	auto const nearest_sides = [&](place const &Here) {
 		// the nearest track on each side
@@ -3705,7 +3714,7 @@ void editor_mode::nmt_share_grades()
 					continue;
 				for (auto const &other : found->second)
 				{
-					if (other.track == here.track || other.first == here.first || other.first == here.second || other.second == here.first || other.second == here.second || apart.contains(run_of(other.track)))
+					if (other.track == here.track || other.first == here.first || other.first == here.second || other.second == here.first || other.second == here.second || (apart.contains(run_of(other.track)) && false == held.contains(other.track)))
 						continue;
 					glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
 					// across the track, not past its end: the next piece of a line isn't beside it
@@ -3784,19 +3793,90 @@ void editor_mode::nmt_share_grades()
 			root = found->second;
 		return root;
 	};
+	// of a group tied, the grade line one of it was put on by hand: two groups of two such lines don't tie
+	std::unordered_map<TTrack const *, int> tied_held(held.begin(), held.end());
+	auto const held_of = [&](TTrack const *Root) {
+		auto const found{tied_held.find(Root)};
+		return found != tied_held.end() ? found->second : -1;
+	};
+	auto const tie = [&](TTrack const *A, TTrack const *B) {
+		auto const *a{tied_root(A)};
+		auto const *b{tied_root(B)};
+		if (a == b)
+			return true;
+		auto const of_a{held_of(a)};
+		auto const of_b{held_of(b)};
+		if (of_a >= 0 && of_b >= 0 && of_a != of_b)
+			return false;
+		tied[a] = b;
+		if (of_b < 0 && of_a >= 0)
+			tied_held[b] = of_a;
+		return true;
+	};
+	{
+		std::unordered_map<int, TTrack const *> first;
+		for (auto const &[track, line] : held)
+			if (auto const [found, added]{first.try_emplace(line, track)}; false == added)
+				tie(track, found->second);
+	}
 	for (auto const &here : all)
 	{
-		if (apart.contains(run_of(here.track)))
+		auto const inapart{apart.contains(run_of(here.track))};
+		if (inapart && false == held.contains(here.track))
 			continue;
 		for (auto const &[distance, other] : nearest_sides(here))
 			if (other != nullptr)
 			{
+				if (false == tie(here.track, other->track))
+					continue;
 				++pairs;
-				if (auto const *a{tied_root(here.track)}, *b{tied_root(other->track)}; a != b)
-					tied[a] = b;
-				if (auto const *a{tied_root(here.track)}, *b{tied_root(run_of(here.track))}; a != b)
-					tied[a] = b;
-				terms.push_back({{here.first, here.second, other->first, other->second}, {1.0 - here.share, here.share, -(1.0 - other->share), -other->share}, other->position.y - here.position.y, 1.0 / (kBeside * kBeside)});
+				if (false == inapart)
+					tie(here.track, run_of(here.track));
+				terms.push_back({{here.first, here.second, other->first, other->second}, {1.0 - here.share, here.share, -(1.0 - other->share), -other->share}, other->position.y - here.position.y, 1.0 / (kBeside * kBeside)});			}
+	}
+	// the tracks put on one line by hand further apart than the ones side by side, across a platform say, go up and down together too:
+	// each place of them with the nearest place of another track of that line on each side
+	double constexpr kHandApart{40.0}; // m between the axes
+	std::size_t hand_pairs{0};
+	if (false == held.empty())
+	{
+		auto const hand_cell = [&](glm::dvec3 const &Point) { return key{static_cast<int>(std::floor(Point.x / kHandApart)), static_cast<int>(std::floor(Point.z / kHandApart))}; };
+		std::map<key, std::vector<place const *>> held_places;
+		for (auto const &here : all)
+			if (held.contains(here.track))
+				held_places[hand_cell(here.position)].push_back(&here);
+		for (auto const &[cell, those] : held_places)
+			for (auto const *here : those)
+			{
+				auto const line{held.at(here->track)};
+				std::array<std::pair<double, place const *>, 2> sides{std::pair{kHandApart, nullptr}, std::pair{kHandApart, nullptr}};
+				for (int dx = -1; dx <= 1; ++dx)
+					for (int dz = -1; dz <= 1; ++dz)
+					{
+						auto const found{held_places.find({cell.first + dx, cell.second + dz})};
+						if (found == held_places.end())
+							continue;
+						for (auto const *other : found->second)
+						{
+							if (other->track == here->track || held.at(other->track) != line || other->first == here->first || other->first == here->second || other->second == here->first || other->second == here->second)
+								continue;
+							glm::dvec2 const offset{other->position.x - here->position.x, other->position.z - here->position.z};
+							if (std::abs(glm::dot(offset, here->along)) > 0.6 * kSpacing || std::abs(other->position.y - here->position.y) > kLevel || std::abs(glm::dot(here->along, other->along)) < kParallel)
+								continue;
+							auto const across{here->along.x * offset.y - here->along.y * offset.x};
+							auto &side{sides[across > 0.0 ? 0 : 1]};
+							if (std::abs(across) < side.first)
+								side = {std::abs(across), other};
+						}
+					}
+				for (auto const &[distance, other] : sides)
+				{
+					// the ones side by side are tied already
+					if (other == nullptr || distance < kApart)
+						continue;
+					++hand_pairs;
+					terms.push_back({{here->first, here->second, other->first, other->second}, {1.0 - here->share, here->share, -(1.0 - other->share), -other->share}, other->position.y - here->position.y, 1.0 / (kBeside * kBeside)});
+				}
 			}
 	}
 	// the groups on common timbers: tracks and switches tied by the places under a sleeper's length apart, each group on a plane of its
@@ -3906,19 +3986,41 @@ void editor_mode::nmt_share_grades()
 			if (false == apart.contains(run_of(here.track)))
 				if (auto const found{tied.find(here.track)}; found != tied.end() || tied.end() != std::find_if(tied.begin(), tied.end(), [&](auto const &Tie) { return Tie.second == here.track; }))
 					++sizes[tied_root(here.track)];
+		// the lines put by hand keep their numbers, the others worked out get ones besides them
+		std::set<int> kept;
+		for (auto const &[track, line] : held)
+			kept.insert(line);
+		int next{0};
 		for (auto const *track : tracks)
 		{
 			auto line{nmt_state::grade_line_own};
 			if (off.contains(track))
 				line = nmt_state::grade_line_off;
+			else if (auto const found{held.find(track)}; found != held.end())
+				line = found->second;
 			else if (steep(*track))
 				line = nmt_state::grade_line_steep;
 			else if (false == apart.contains(run_of(track)))
-				if (auto const root{tied_root(track)}; sizes.contains(root))
-					line = numbers.try_emplace(root, static_cast<int>(numbers.size())).first->second;
+			{
+				// by the run: a track of it with nothing beside itself lies on the line the rest of the run does
+				auto const root{tied_root(run_of(track))};
+				if (auto const by_hand{held_of(root)}; by_hand >= 0)
+					line = by_hand;
+				else if (sizes.contains(root))
+				{
+					auto const [number, added]{numbers.try_emplace(root, 0)};
+					if (added)
+					{
+						while (kept.contains(next))
+							++next;
+						number->second = next++;
+					}
+					line = number->second;
+				}
+			}
 			state.grade_lines[grade_line_key(*track)] = line;
 		}
-		WriteLog(format("Editor: NMT - %zu grade lines shared", numbers.size()), logtype::generic);
+		WriteLog(format("Editor: NMT - %zu grade lines shared, %zu of them put by hand, their tracks further apart tied at %zu places", numbers.size() + kept.size(), kept.size(), hand_pairs), logtype::generic);
 		explain("lines");
 		++state.grade_lines_changes;
 		grade_lines_store();

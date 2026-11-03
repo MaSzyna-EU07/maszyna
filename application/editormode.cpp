@@ -1649,6 +1649,12 @@ bool editor_mode::update()
         steps.step("speed");
         m_joints.update();
         steps.step("joints");
+        if (m_nmt_state.grade_lines_dirty)
+        {
+            m_nmt_state.grade_lines_dirty = false;
+            grade_lines_store();
+        }
+        m_nmt_state.grade_line_replaced.clear();
         m_srk.update();
         kilometrage::follow(m_track_edits);
         m_km.update();
@@ -1656,6 +1662,7 @@ bool editor_mode::update()
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
+        draw_grade_line_pick();
         draw_infra_overlay();
         m_speed.draw_overlay();
         m_joints.draw_overlay();
@@ -7116,6 +7123,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 lay_escape();
             else if (m_track_style.picking)
                 m_track_style.picking = false;
+            else if (m_profile.picking)
+                m_profile.picking = false;
             else if (track_busy())
             {
                 cancel_track_tools();

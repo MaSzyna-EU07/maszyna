@@ -13313,3 +13313,68 @@ msgstr "Rozjazd cofnięty o %.1f m, żeby został na prostej: %s"
 msgid "The switch goes back %.1f m to stay in the curve: the curve ends here"
 msgstr "Rozjazd cofnięty o %.1f m, żeby został w łuku: tu kończy się łuk"
 
+msgid "This is the route itself: the button above takes it off the common grade line"
+msgstr "To sama trasa: przycisk powyżej zdejmuje ją ze wspólnej niwelety"
+
+msgid "Common grade line %d, %zu tracks on it"
+msgstr "Wspólna niweleta nr %d, torów na niej: %zu"
+
+msgid "The route shares no grade line with other tracks"
+msgstr "Trasa nie ma wspólnej niwelety z innymi torami"
+
+msgid "Click the tracks in the view, Esc: done"
+msgstr "Klikaj tory w widoku, Esc: koniec"
+
+msgid "Put tracks on it or take them off..."
+msgstr "Dołącz tory albo je odłącz..."
+
+msgid "Make a common grade line..."
+msgstr "Utwórz wspólną niweletę..."
+
+msgid "Then click the tracks in the view: a click puts the stretch from switch to switch on the common grade line of the route, on a blue one takes it off; Shift+click the track only.\nWhat's set by hand stays when the lines are worked out again from the terrain model; there needn't be one"
+msgstr "Potem klikaj tory w widoku: kliknięcie dołącza odcinek od rozjazdu do rozjazdu do wspólnej niwelety trasy, na niebieskim go odłącza; Shift+klik tylko ten tor.\nTo, co ustawione ręcznie, zostaje przy ponownym wyznaczaniu niwelet z NMT; NMT nie jest do tego potrzebny"
+
+msgid "Click a track: onto the common grade line of the route or off it; Esc: done"
+msgstr "Kliknij tor: dołącz do wspólnej niwelety trasy albo odłącz; Esc: koniec"
+
+msgid "Click: this track off the common grade line"
+msgstr "Klik: odłącz ten tor od wspólnej niwelety"
+
+msgid "Click: this track onto the common grade line"
+msgstr "Klik: dołącz ten tor do wspólnej niwelety"
+
+msgid "Click: the stretch from switch to switch off the common grade line, Shift: the track only"
+msgstr "Klik: odłącz odcinek od rozjazdu do rozjazdu od wspólnej niwelety, Shift: tylko ten tor"
+
+msgid "Click: the stretch from switch to switch onto the common grade line, Shift: the track only"
+msgstr "Klik: dołącz odcinek od rozjazdu do rozjazdu do wspólnej niwelety, Shift: tylko ten tor"
+
+msgid "the stretch from switch to switch onto the common grade line"
+msgstr "odcinek od rozjazdu do rozjazdu do wspólnej niwelety"
+
+msgid "LMB on a blue one"
+msgstr "LPM na niebieskim"
+
+msgid "off it"
+msgstr "odłącza go"
+
+msgid "the track only"
+msgstr "tylko ten tor"
+
+msgid "%zu track taken off the common grade line of the route"
+msgid_plural "%zu tracks taken off the common grade line of the route"
+msgstr[0] "%zu tor zdjęty ze wspólnej niwelety trasy"
+msgstr[1] "%zu tory zdjęte ze wspólnej niwelety trasy"
+msgstr[2] "%zu torów zdjętych ze wspólnej niwelety trasy"
+
+msgid "A common grade line made of the route and %zu track"
+msgid_plural "A common grade line made of the route and %zu tracks"
+msgstr[0] "Utworzono wspólną niweletę z trasy i %zu toru"
+msgstr[1] "Utworzono wspólną niweletę z trasy i %zu torów"
+msgstr[2] "Utworzono wspólną niweletę z trasy i %zu torów"
+
+msgid "%zu track put on the common grade line of the route"
+msgid_plural "%zu tracks put on the common grade line of the route"
+msgstr[0] "%zu tor dołączony do wspólnej niwelety trasy"
+msgstr[1] "%zu tory dołączone do wspólnej niwelety trasy"
+msgstr[2] "%zu torów dołączonych do wspólnej niwelety trasy"

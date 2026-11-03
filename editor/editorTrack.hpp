@@ -555,6 +555,8 @@ class editor_track
 		virtual void track_retired(TTrack &Track) = 0;
 		// called before the commit; Original keeps the beginning of the path, given in First
 		virtual void track_split(TTrack &Original, TTrack &Created, segment_data const &First) = 0;
+		// under the new name already, Old the one it had
+		virtual void track_renamed(TTrack const &Track, std::string const &Old) = 0;
 	};
 	static void observe(observer *Observer) { s_observer = Observer; }
 

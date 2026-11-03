@@ -754,6 +754,21 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			return make(kind::box, track_selected(m_hover.track) ? "Click: take out of the selection" : "Click: add to the selection");
 		}
 	}
+	if (m_track_tab == track_tab::profile && m_profile.picking && false == m_profile.route.spans.empty())
+	{
+		intent.track = m_hover.track;
+		intent.index = shift ? 1 : 0;
+		if (m_hover.track == nullptr)
+			return make(kind::grade_line_pick, "Click a track: onto the common grade line of the route or off it; Esc: done");
+		intent.position = m_hover.point;
+		auto const number{route_grade_line()};
+		auto const found{m_nmt_state.grade_lines.find(grade_line_key(*m_hover.track))};
+		auto const on{number >= 0 && found != m_nmt_state.grade_lines.end() && found->second == number};
+		if (shift)
+			return make(kind::grade_line_pick, on ? "Click: this track off the common grade line" : "Click: this track onto the common grade line");
+		return make(kind::grade_line_pick, on ? "Click: the stretch from switch to switch off the common grade line, Shift: the track only"
+		                                      : "Click: the stretch from switch to switch onto the common grade line, Shift: the track only");
+	}
 	if (m_track_tab == track_tab::profile && shift && false == gizmo_frame::over())
 	{
 		// a box from the empty ground is the route by itself, a click on a track adds it to the route or takes it out
@@ -1018,11 +1033,11 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::box: start_track_box(Intent.index == 1); return;
 	case kind::pick_style:
 		if (Intent.track != nullptr)
-		{
 			copy_track_style(*Intent.track);
-			m_track_style.picking = false;
-			m_track_style.open = true;
-		}
+		return;
+	case kind::grade_line_pick:
+		if (Intent.track != nullptr)
+			grade_line_pick(*Intent.track, Intent.index == 1);
 		return;
 	case kind::spread:
 		if (Intent.track != nullptr)

@@ -869,9 +869,10 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	// taken off it and back; whole 0/1: whether the tracks beside go with it; state told in the log
 	if (command == "gradeline")
 	{
-		std::string action;
-		double value{0.0};
-		words >> action >> value;
+		// the word after the action is its number, or the name of a track
+		std::string action, word;
+		words >> action >> word;
+		double const value{std::atof(word.c_str())};
 		auto &state{m_profile};
 		if (action == "part")
 		{
@@ -918,6 +919,59 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		}
 		else if (action == "off" || action == "on")
 			grade_line_take_off(action == "off");
+		else if (action == "picking")
+			state.picking = value != 0.0;
+		else if (action == "move")
+		{
+			// move <name> <dx> <dz>: the track by that in the plan, its ends off the ones it met
+			glm::dvec3 offset{0.0};
+			words >> offset.x >> offset.z;
+			if (auto *track{simulation::Paths.find(word)}; track != nullptr)
+			{
+				std::vector<std::pair<TTrack *, editor_track::state>> states{{track, editor_track::capture(*track)}};
+				editor_track::translate(*track, offset);
+				editor_track::commit({track});
+				push_track_snapshot(std::move(states), {});
+			}
+		}
+		else if (action == "of" || action == "rename")
+		{
+			// of <name|selected>: the line of the track; rename <name> <new>: under the new name, its line going with it
+			auto const &name{word};
+			std::string renamed;
+			words >> renamed;
+			auto *track{name == "selected" ? selected_track() : simulation::Paths.find(name)};
+			if (track != nullptr && action == "rename" && false == renamed.empty())
+				editor_track::rename(*track, renamed);
+			grade_lines_load();
+			auto const found{track != nullptr ? m_nmt_state.grade_lines.find(grade_line_key(*track)) : m_nmt_state.grade_lines.end()};
+			WriteLog(format("SELFTEST gradeline %s %s: %s, line %d%s", action.c_str(), name.c_str(), track != nullptr ? track->name().c_str() : "-", found != m_nmt_state.grade_lines.end() ? found->second : -100,
+			                found != m_nmt_state.grade_lines.end() && m_nmt_state.grade_lines_hand.contains(found->first) ? " by hand" : ""));
+		}
+		else if (action == "pick")
+		{
+			// pick <x> <z> [1]: the track nearest to it clicked while picking, onto the grade line of the route or off it; 1: the track only
+			double z{0.0};
+			int alone{0};
+			words >> z >> alone;
+			glm::dvec3 const point{value, 0.0, z};
+			TTrack *closest{nullptr};
+			auto nearest{10.0};
+			for (auto *track : simulation::Paths.sequence())
+			{
+				if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || track->eType == tt_Table)
+					continue;
+				if (auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; distance < nearest)
+				{
+					nearest = distance;
+					closest = track;
+				}
+			}
+			if (closest != nullptr)
+				grade_line_pick(*closest, alone != 0);
+			auto const number{route_grade_line()};
+			WriteLog(format("SELFTEST gradeline pick %s: %s; the route on line %d of %zu tracks", closest != nullptr ? closest->name().c_str() : "-", state.status.c_str(), number, grade_line_members(number).size()));
+		}
 		else if (action == "whole")
 			state.whole_grade_line = value != 0.0;
 		else if (action == "hand")
@@ -930,7 +984,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		}
 		grade_lines_load();
 		auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(grade_line_key(*state.route.spans.front().track))};
-		WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size()));
+		WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines, %zu by hand", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size(), m_nmt_state.grade_lines_hand.size()));
 		return selftest_result::handled;
 	}
 	// the heights of the ends of the paths of all the tracks to the file, for two states of the scenery to be compared, the stay of each
