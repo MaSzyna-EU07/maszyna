@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 
-std::string switch_name_translated(std::string Title);
 
 namespace
 {
@@ -382,7 +381,6 @@ void editor_mode::switch_templates_refresh(std::string const &Arm)
 				tool.armed = i;
 			break;
 		}
-	m_turnout_template = 0;
 }
 
 void editor_mode::switch_designer_click(glm::dvec3 const &Point)

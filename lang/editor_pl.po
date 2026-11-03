@@ -13187,6 +13187,84 @@ msgstr "Edytor bierze największy promień, który mieści się między Twoimi p
 msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm; each transition curve has a label of its own along it"
 msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm); każda krzywa przejściowa ma też własny opis wzdłuż niej"
 
+msgid "%.0f km/h on the diverging track"
+msgstr "%.0f km/h na torze zwrotnym"
+
+msgid "Not a switch"
+msgstr "To nie jest rozjazd"
+
+msgid "A slip bent into a curve: delete it and lay it again of another template"
+msgstr "Rozjazd krzyżowy wygięty w łuk: usuń go i ułóż ponownie z innego szablonu"
+
+msgid "A switch of a connection laid whole: delete the connection and lay it again of another template"
+msgstr "Rozjazd połączenia ułożonego w całości: usuń połączenie i ułóż je ponownie z innego szablonu"
+
+msgid "The slip can't be laid again while vehicles stand on it"
+msgstr "Rozjazdu krzyżowego nie można ułożyć ponownie, gdy stoją na nim pojazdy"
+
+msgid "The tracks of the slip can't be laid crossing in its place"
+msgstr "Nie da się ułożyć torów rozjazdu krzyżowego krzyżujących się w jego miejscu"
+
+msgid "The tracks of the slip don't cross"
+msgstr "Tory rozjazdu krzyżowego się nie krzyżują"
+
+msgid "%s doesn't fit where the tracks cross"
+msgstr "%s nie mieści się w miejscu skrzyżowania torów"
+
+msgid "%s laid again of %s"
+msgstr "%s ułożony ponownie z szablonu %s"
+
+msgid "A switch bent into a curve takes another template where plain tracks go on from both ends of its main track"
+msgstr "Rozjazd wygięty w łuk zmienia szablon, gdy z obu końców jego toru zasadniczego wychodzą zwykłe tory"
+
+msgid "The template is %.2f m longer than the curve the switch lies in gives it, past the track beyond the switch"
+msgstr "Szablon jest o %.2f m dłuższy, niż daje łuk, w którym leży rozjazd, aż za tor za rozjazdem"
+
+msgid "%s doesn't fit in place of the switch"
+msgstr "%s nie mieści się w miejscu rozjazdu"
+
+msgid "Switch %s: %s"
+msgstr "Rozjazd %s: %s"
+
+msgid "The track doesn't tell its rail: the templates of the rail picked are listed, all of them under All templates"
+msgstr "Tor nie podaje swoich szyn: lista pokazuje szablony wybranych szyn, wszystkie są pod „Wszystkie szablony”"
+
+msgid "Speed on the diverging track"
+msgstr "Prędkość na torze zwrotnym"
+
+msgid "Picks the usual switch of the rail for the speed; the others of the same speed are on the list under it"
+msgstr "Wybiera typowy rozjazd tych szyn na tę prędkość; inne o tej samej prędkości są na liście poniżej"
+
+msgid "Chosen"
+msgstr "Wybrany"
+
+msgid "All templates"
+msgstr "Wszystkie szablony"
+
+msgid "Own shape: %s"
+msgstr "Własny kształt: %s"
+
+msgid "Own shape"
+msgstr "Własny kształt"
+
+msgid "Template##switchtemplate"
+msgstr "Szablon##switchtemplate"
+
+msgid "Another template in place of this one: the start and the side of the switch kept, the tracks it joins following it"
+msgstr "Inny szablon w miejsce tego: początek i strona rozjazdu zostają, dołączone tory idą za nim"
+
+msgid "Crossover laid again of %s"
+msgstr "Przejście rozjazdowe ułożone ponownie z %s"
+
+msgid "rail of the track %s"
+msgstr "szyny toru %s"
+
+msgid "A switch bent into a curve of no template of the catalogue isn't flipped: delete it and lay it again"
+msgstr "Rozjazdu wygiętego w łuk, spoza katalogu, nie da się odwrócić: usuń go i ułóż ponownie"
+
+msgid "Switches laid before keep their shape; a template picked for one in the inspector gives it the one of the catalogue"
+msgstr "Rozjazdy ułożone wcześniej zachowują kształt; szablon wybrany w inspektorze nadaje rozjazdowi kształt z katalogu"
+
 msgid "Let go"
 msgstr "Puść"
 

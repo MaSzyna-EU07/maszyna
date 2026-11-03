@@ -44,9 +44,6 @@ http:
 
 using namespace track_mode;
 
-// the name of the template in the language of the editor, editormodeswitchtool.cpp
-std::string switch_name_translated(std::string Title);
-
 namespace
 {
 
@@ -1114,10 +1111,14 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	auto const centreB{at(Crossing + First * gap, Height)};
 	auto const centreC{at(Crossing - Second * gap, Height)};
 	auto const centreD{at(Crossing + Second * gap, Height)};
-	std::string base;
+	auto const taken = [](std::string const &Base) { return simulation::Paths.find(Base + "_a") != nullptr || simulation::Paths.find(Base + "_d") != nullptr || switch_store::has(Base); };
+	// the name of the one it's laid in place of, else the next free one; a crossing keeps the names of its tracks, only its record holds
+	// the name
+	auto base{std::exchange(m_switch.keep_slip, std::string{})};
 	auto const prefix{Type == "Skrz" ? "editor_skrz" : Type == "Rkp" ? "editor_dkp" : "editor_dks"};
-	// a crossing keeps the names of its tracks, only its record holds the name
-	for (int i = 1; base.empty() || simulation::Paths.find(base + "_a") != nullptr || simulation::Paths.find(base + "_d") != nullptr || switch_store::has(base); ++i)
+	if (false == base.empty() && taken(base))
+		base.clear();
+	for (int i = 1; base.empty() || taken(base); ++i)
 		base = prefix + std::to_string(i);
 	std::vector<TTrack *> parts;
 	if (Type == "Skrz")

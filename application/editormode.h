@@ -1240,6 +1240,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::optional<slip_set> slip_of(TTrack const &Track) const;
 	// the two tracks of the slip through it from end to end, as they cross where it's taken out
 	static std::array<segment_data, 2> slip_throughs(slip_set const &Slip);
+	// the slip taken out with its record, nothing of it put in the history yet; with Throughs its two tracks laid crossing in its
+	// place, given back
+	std::vector<TTrack *> slip_taken_out(slip_set const &Slip, bool const Throughs);
+	// the record of the crossing of two plain tracks the track is one of
+	std::optional<switch_store::record> crossing_record(TTrack const &Track) const;
 	// the paths of the set in the order editor_track::place_switch gives them
 	static std::vector<segment_data> double_paths(double_switch const &Set);
 	// the switch of the template, or the two switches of a double one with the plain track between them, committed and recorded
@@ -1408,6 +1413,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	struct switch_tool
 	{
 		std::vector<std::string> keep_names; // the names the switches laid next take, before the ones of the tool
+		std::string keep_slip; // the name the slip or the crossing laid next takes, of the one it's laid in place of
 		bool curved{false};
 		// a switch placed where there's no track: started on the ground, or at the free end it goes on from in its direction; the direction
 		// of its main track taken from the drag once it's long enough, then the drag sideways gives the side of the diverging one
@@ -1472,7 +1478,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double slide_typed{0.0};
 		int connection{-1};
 		int connection_kind{0}; // the kind of connection chosen last, taken again when the connections are chosen
-		bool rail_only{true}; // the templates listed only for the rail of the selected track, where its rail profile tells it
+		std::string rail_pick{"60E1"}; // the rail whose templates are listed first where the track doesn't tell its rail
 		int connection_second{-1};
 		double connection_radius{0.0};
 		double connection_gap{6.0};
@@ -1512,6 +1518,32 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static char const *connection_name(int const Kind);
 	// the name of a switch template for the lists: where it comes from and its name without the lengths
 	static std::string switch_template_label(editor_track::switch_template const &Template);
+	// the name of a switch template for the user: translated, with the speed on its diverging track
+	static std::string template_name(editor_track::switch_template const &Template);
+	// the template of the catalogue a record of the switches was laid of, -1 if none: Lengths compares a and b too, which the
+	// record of a connection keeps for its spacing; Movable: the nose of the frog, either when not given
+	int matching_template(switch_store::record const &Record, bool const Lengths, std::optional<bool> const Movable = std::nullopt) const;
+	// the template the switch was laid of, -1 if none: a switch of the scenery of its own shape, say
+	int switch_template_index(TTrack const &Switch) const;
+	// why the switch can't take another template here, empty when it can
+	std::string template_change_blocked(TTrack const &Switch) const;
+	// the template of the catalogue a slip or a crossing was laid of, of the rail before the others; -1 if none
+	int slip_template_index(switch_store::record const &Record, std::string const &Rail) const;
+	// the switch of the template of the index in place: its start and its side kept, the tracks it joins following; a switch of a
+	// crossover takes the crossover with it, laid again, a slip or a crossing is laid again where its tracks cross. One step of the
+	// history; the status says how it went
+	bool change_switch_template(TTrack &Switch, int const Index);
+	bool change_slip_template(TTrack &Part, int const Index);
+	// the switch, or the double switch it's a part of, given the shape in place, straight or bent into the curve it lies in; Flip:
+	// the diverging track to the other side. Notes: for the user
+	bool apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
+	// the template to choose: the speeds on the diverging track as chips, the templates of the rail by their skos, all the others
+	// folded under. Fits: those of the kind wanted; Rail: of the track, empty when it doesn't tell; Popup: inside a combo, with no
+	// windows of its own. Gives the index picked, -1 while none is
+	int render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup);
+	// the template of the selected switch, slip or crossing, changed with a pick: in a combo for the inspector, else in full; nothing
+	// for another track
+	void render_switch_template(TTrack &Track, bool const Combo);
 	std::string connection_readout(connection::result const &Plan) const;
 	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
@@ -1553,6 +1585,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the paths of the switch moved along the curve by the distance, shaped as the curve is there
 	std::vector<segment_data> bent_switch_paths(TTrack const &Track, std::vector<curve_sample> const &Frame, double const Station, double const Distance) const;
 	bool slide_bent_switch(TTrack &Track, double const Distance);
+	// the switch bent into a curve given the paths, along the curve of the bent_switch_frame: the tracks next to it laid along it up to
+	// its new ends, one taken up whole going, the curve past the diverging track following. Notes: for the user
+	bool lay_bent_switch(TTrack &Track, std::vector<curve_sample> const &Frame, std::array<TTrack *, 2> const &Sides, std::vector<segment_data> const &Paths, std::string &Notes);
 	void switch_slide_start(TTrack &Track);
 	void switch_slide_update();
 	void switch_slide_finish();
@@ -1565,7 +1600,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void advance_switch_name();
 	void join_last_steps();
 	bool render_switch_drive_choice();
-	int m_turnout_template{0};
 	struct turntable_template
 	{
 		std::string file;
@@ -1866,7 +1900,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the single crossover the switch is a part of, along a curve or straights
 	std::optional<curved_crossover> crossover_of(TTrack const &Switch) const;
 	bool take_out_crossover(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second);
-	bool slide_curved_connection(TTrack &Switch, double const Distance);
+	bool slide_curved_connection(TTrack &Switch, double const Distance, int const Shape = -1);
 	// the template a crossover was laid of, -1 if it's not among the templates
 	int crossover_template(switch_store::record const &Record);
 	// a crossover laid again from the press on one track to the release by the other, as by the mouse. false if it doesn't fit

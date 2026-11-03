@@ -1122,8 +1122,7 @@ void editor_mode::render_turnout_ui()
 		list->AddRectFilled(ImVec2(top.x + (width - size.x) * 0.5f - 4.0f, y), ImVec2(top.x + (width + size.x) * 0.5f + 4.0f, y + label), ImGui::GetColorU32(ImGuiCol_FrameBg));
 		list->AddText(ImVec2(std::round(top.x + (width - size.x) * 0.5f), y), ImGui::GetColorU32(ImGuiCol_TextDisabled), text.c_str());
 	}
-	if (auto const known{switch_store::of(*track)}; known.has_value())
-		ImGui::TextUnformatted(switch_store::label(*known).c_str());
+	render_switch_template(*track, false);
 	// the name, the number, the rail and the kilometre of the switch, with what the scenery keeps of it
 	if (ImGui::CollapsingHeader(STR_C("Details##switchdetails")))
 	{
@@ -1202,22 +1201,6 @@ void editor_mode::render_turnout_ui()
 		ImGui::TextWrapped("%s", m_switch.status.c_str());
 
 	auto &tool{m_switch};
-	if (false == tool.collected)
-	{
-		tool.templates = editor_track::standard_switch_templates();
-		tool.collected = true;
-	}
-	if (tool.templates.empty())
-		return;
-	m_turnout_template = std::clamp(m_turnout_template, 0, static_cast<int>(tool.templates.size()) - 1);
-	auto const fits = [&](editor_track::switch_template const &Template) { return false == Template.double_slip && Template.twofold() == set.has_value(); };
-	if (false == fits(tool.templates[m_turnout_template]))
-	{
-		auto const ordinary{std::find_if(tool.templates.begin(), tool.templates.end(), fits)};
-		if (ordinary == tool.templates.end())
-			return;
-		m_turnout_template = static_cast<int>(ordinary - tool.templates.begin());
-	}
 	ImGui::Separator();
 	auto const finish_set = [&](std::string const &Status) {
 		switch_store::follow();
@@ -1226,46 +1209,10 @@ void editor_mode::render_turnout_ui()
 		if (false == Status.empty())
 			ui()->set_status(Status, true);
 	};
-	auto const replace = [&](editor_track::switch_template const &Template, int const Side) {
-		auto const grade{length > 0.0 ? (main.points[segment_data::point::end].y - origin.y) / length : 0.0};
-		auto paths{editor_track::place_switch(Template, origin, axis, Side, grade)};
-		if (set.has_value())
-		{
-			if (paths.size() < 5)
-				return;
-			auto const before{double_paths(*set)};
-			for (std::size_t i = 0; i < paths.size(); ++i)
-				if (paths[i].rolls[0] == 0.f && paths[i].rolls[1] == 0.f)
-					paths[i].rolls = before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
-			std::string status;
-			if (false == move_double_paths(*set, paths, status))
-			{
-				ui()->set_status(status, true);
-				return;
-			}
-			record_double(*set->first, *set->second, Template);
-			finish_set(status);
-			return;
-		}
-		if (paths.size() < 2)
-			return;
-		for (int i = 0; i < 2; ++i)
-			if (paths[i].rolls[0] == 0.f && paths[i].rolls[1] == 0.f)
-				paths[i].rolls = track->m_paths[i].rolls;
-		std::string status;
-		if (false == move_switch_paths(*track, paths, status))
-		{
-			ui()->set_status(status, true);
-			return;
-		}
-		record_switch(*track, Template);
-		records_to_history();
-		straight_refresh();
-		if (false == status.empty())
-			ui()->set_status(status, true);
-	};
 	int const side{offset > 0.0 ? 1 : -1};
-	if (set.has_value() && ImGui::Button(STR_C("Flip the side")))
+	// a switch of a connection laid whole or of a slip turns over with it only
+	auto const flips{template_change_blocked(*track).empty() && false == slip_of(*track).has_value() && false == crossover_of(*track).has_value()};
+	if (flips && set.has_value() && ImGui::Button(STR_C("Flip the side")))
 	{
 		auto const mirror = [&](glm::dvec3 const &Vector) {
 			auto const across{glm::dot(plan_of(Vector), normal)};
@@ -1288,48 +1235,48 @@ void editor_mode::render_turnout_ui()
 			finish_set(status);
 		}
 	}
-	else if (false == set.has_value() && ImGui::Button(STR_C("Flip the side")))
+	else if (flips && false == set.has_value() && ImGui::Button(STR_C("Flip the side")))
 	{
-		editor_track::switch_template own;
-		own.source = track;
-		for (int i = 0; i < 2; ++i)
+		std::string notes;
+		bool done{false};
+		if (geometry::has_controls(main))
 		{
-			auto &local{own.local[i]};
-			local = track->m_paths[i];
-			auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), normal) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-			local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
-			if (side < 0)
-			{
-				local.rolls = {-local.rolls[0], -local.rolls[1]};
-				for (auto &piece : local.pieces)
-					piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
-			}
+			// bent into a curve: bent into it again of its template, turned over
+			if (auto const index{switch_template_index(*track)}; index >= 0)
+				done = apply_switch_template(*track, tool.templates[index], true, notes);
+			else
+				notes = STR_C("A switch bent into a curve of no template of the catalogue isn't flipped: delete it and lay it again");
 		}
-		replace(own, -side);
+		else
+		{
+			// its own shape, mirrored
+			editor_track::switch_template own;
+			own.source = track;
+			for (int i = 0; i < 2; ++i)
+			{
+				auto &local{own.local[i]};
+				local = track->m_paths[i];
+				auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), normal) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
+				local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
+				if (side < 0)
+				{
+					local.rolls = {-local.rolls[0], -local.rolls[1]};
+					for (auto &piece : local.pieces)
+						piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
+				}
+			}
+			done = apply_switch_template(*track, own, true, notes);
+		}
+		if (false == notes.empty())
+			ui()->set_status(notes, false == done);
 	}
-	item_tooltip("Mirrors the switch: the diverging track goes to the other side");
+	if (flips)
+		item_tooltip("Mirrors the switch: the diverging track goes to the other side");
 	double low{0.0}, high{0.0}, reach{length};
 	auto const slides{switch_slides(*track) && (set.has_value() ? switch_slides(*set->second) && double_room(*set, low, high, reach, m_switch.status) : switch_room(*track, low, high, m_switch.status))};
 	ImGui::PushID("turnout");
 	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		ImGui::PushItemWidth(-1.0f);
-		if (ImGui::BeginCombo("##turnouttemplate", switch_template_label(tool.templates[m_turnout_template]).c_str()))
-		{
-			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-			{
-				if (false == fits(tool.templates[i]))
-					continue;
-				auto const label{switch_template_label(tool.templates[i])};
-				if (ImGui::Selectable(label.c_str(), i == m_turnout_template))
-					m_turnout_template = i;
-			}
-			ImGui::EndCombo();
-		}
-		ImGui::PopItemWidth();
-		if (ImGui::Button(STR_C("Replace the geometry with the template")))
-			replace(tool.templates[m_turnout_template], side);
-		item_tooltip("Keeps the start and the direction of the switch, takes the shape of the chosen template");
 		if (slides)
 		{
 			ImGui::PushItemWidth(100.0f);
@@ -1507,11 +1454,14 @@ void editor_mode::render_path_ui()
 		item_tooltip(track->SwitchExtension->CurrentIndex ? "Set to the diverging track: throws it over to the main one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track"
 		                                                   : "Set to the main track: throws it over to the diverging one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track");
 	}
+	// the template of a switch, a slip or a crossing, another one picked in place
+	if (geometry)
+		render_switch_template(*track, true);
 	std::vector<TTrack *> const tracks{track};
 	render_track_select_tools(tracks);
 	render_track_terrain(tracks);
-	render_track_style(tracks);
 	render_track_properties(tracks);
+	render_track_style(tracks);
 	render_path_events(*track);
 	// the shape is given by dragging in the view, the numbers are for the exact values
 	if (m_track_tab != track_tab::path)
@@ -1734,21 +1684,9 @@ void editor_mode::delete_selected_track()
 				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
 				return;
 			}
-		switch_store::forget(slip->record.name);
-		auto &style{*slip->switches.front()};
-		auto const velocity{speed_check::path_velocity(style, 0)};
-		for (auto *part : slip->parts)
-			editor_track::retire(*part);
-		std::vector<TTrack *> created;
+		auto const created{slip_taken_out(*slip, false == Global.shiftState)};
 		if (false == Global.shiftState)
 		{
-			for (auto const &path : slip_throughs(*slip))
-				if (auto *through{editor_track::create_path(style, path)})
-				{
-					editor_track::velocity(*through, velocity);
-					created.push_back(through);
-				}
-			editor_track::commit(created);
 			// kept in the scenery as a crossing
 			std::string base;
 			for (int i = 1; base.empty() || switch_store::has(base); ++i)

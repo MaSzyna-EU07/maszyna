@@ -803,14 +803,15 @@ bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vec
 	return true;
 }
 
-// the crossover along a curve moved along it by the distance, from its first switch towards the second: taken out and laid again
-bool editor_mode::slide_curved_connection(TTrack &Switch, double const Distance)
+// the crossover along a curve moved along it by the distance, from its first switch towards the second: taken out and laid again,
+// of the template Shape when it's given
+bool editor_mode::slide_curved_connection(TTrack &Switch, double const Distance, int const Shape)
 {
 	auto const crossover{crossover_of(Switch)};
 	if (false == crossover.has_value())
 		return false;
 	auto &tool{m_switch};
-	auto const shape{crossover_template(crossover->record)};
+	auto const shape{Shape >= 0 ? Shape : crossover_template(crossover->record)};
 	if (shape < 0)
 	{
 		tool.status = STR_C("The template the crossover was laid of isn't among the templates");
@@ -865,7 +866,7 @@ bool editor_mode::slide_curved_connection(TTrack &Switch, double const Distance)
 		return false;
 	}
 	join_last_steps();
-	tool.status = format(STR_C("Crossover moved %.2f m"), Distance) + "\n" + tool.status;
+	tool.status = (Shape >= 0 ? format(STR_C("Crossover laid again of %s"), template_name(tool.templates[shape]).c_str()) : format(STR_C("Crossover moved %.2f m"), Distance)) + "\n" + tool.status;
 	ui()->set_status(tool.status, false);
 	return true;
 }
@@ -1023,12 +1024,8 @@ int editor_mode::crossover_template(switch_store::record const &Record)
 	auto &tool{m_switch};
 	show_track_tab(track_tab::turnout);
 	arm_switch();
-	for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-	{
-		auto const &candidate{tool.templates[i]};
-		if (candidate.source == nullptr && false == candidate.double_slip && false == candidate.twofold() && std::abs(candidate.radius - Record.radius) < 0.5 && std::abs(candidate.ratio - Record.ratio) < 0.01 && (Record.rail == "-" || candidate.rail == Record.rail))
-			return i;
-	}
+	if (auto const found{matching_template(Record, false)}; found >= 0)
+		return found;
 	// switches of no template of the catalogue, as the digitized ones of the old sceneries: the first one is the template
 	if (Record.source != "measured" || Record.parts.empty())
 		return -1;

@@ -29,6 +29,10 @@ template <typename Node_> inline std::string name_of(Node_ const &Node)
 	return Node.name().empty() ? std::string{STR_C("(no name)")} : Node.name();
 }
 
+// the name of a switch template in the language of the editor: the words of the catalogue translated, the kind of a slip or a
+// crossing left out where its type says it
+std::string switch_name_translated(std::string Title);
+
 inline float tall_button_height()
 {
 	return std::round(ImGui::GetFrameHeight() * 1.3f);

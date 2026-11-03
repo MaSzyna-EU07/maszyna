@@ -5800,7 +5800,7 @@ void editor_mode::render_first_steps()
 	    {"Sceneries made before",
 	     nullptr,
 	     {{"LMB", "A track of an include or of a file that isn't saved: the inspector says why it can't be changed"},
-	      {"T", "Switches laid before keep their shape; Replace the geometry with the template, under More settings of the switch, gives them the one of the catalogue"},
+	      {"T", "Switches laid before keep their shape; a template picked for one in the inspector gives it the one of the catalogue"},
 	      {"P", "Grade lines kept by an older editor are read as they were kept"},
 	      {"Ctrl + S", "Only what changed is written: the other lines stay as they were, the comment lines of other tools too"}},
 	     {},

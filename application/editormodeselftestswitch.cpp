@@ -757,7 +757,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			if (command == "slipplace")
 			{
 				WriteLog(format("SELFTEST slipplace: straight from %s, %zu paths, start %.3f %.3f, %.3f m", nearest->name().c_str(), line.tracks.size(), line.start.x, line.start.z, line.length));
-				insert_double_slip(line, point, tool.templates[tool.armed]);
+				// with no track crossing there it brings its crossing track along to the side
+				insert_double_slip(line, point, tool.templates[tool.armed], side);
 			}
 			else
 				insert_switch(line, std::clamp(line.along(point), 0.0, line.length), direction, side);
@@ -872,8 +873,12 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	{
 		std::string name;
 		words >> name;
-		auto *track{simulation::Paths.find(name)};
-		if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2)
+		// the one selected: the switch laid last, say
+		auto *track{name == "selected" ? selected_track() : simulation::Paths.find(name)};
+		if (track != nullptr)
+			name = track->name();
+		// a crossing is plain tracks
+		if (track == nullptr || (command == "switchslide" && (track->eType != tt_Switch || track->m_paths.size() < 2)))
 		{
 			WriteLog("SELFTEST " + command + ": no switch " + name);
 			return selftest_result::handled;
@@ -915,41 +920,47 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			}
 			return selftest_result::handled;
 		}
+		// the template by the start of its label, as the user picks it: the switch keeps its side, a slip or a crossover is laid again
 		std::string label;
-		int side{1};
-		words >> label >> side;
+		words >> label;
 		std::replace(label.begin(), label.end(), '_', ' ');
-		auto const templates{editor_track::standard_switch_templates()};
-		auto const found{std::find_if(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
-		if (found == templates.end())
+		auto &tool{m_switch};
+		if (false == tool.collected)
+		{
+			tool.templates = editor_track::standard_switch_templates();
+			tool.collected = true;
+		}
+		auto const found{std::find_if(tool.templates.begin(), tool.templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+		if (found == tool.templates.end())
 		{
 			WriteLog("SELFTEST switchreplace: no template " + label);
 			return selftest_result::handled;
 		}
-		auto const set{double_of(*track)};
-		if (set.has_value())
-			track = set->first;
-		auto const &main{track->m_paths[0]};
-		auto const origin{main.points[segment_data::point::start]};
-		auto const chord{geometry::plan_of(main.points[segment_data::point::end] - origin)};
-		auto const length{glm::length(chord)};
-		auto paths{editor_track::place_switch(*found, origin, chord / length, side, (main.points[segment_data::point::end].y - origin.y) / length)};
-		std::string status;
-		auto const done{set.has_value() ? found->twofold() && paths.size() >= 5 && move_double_paths(*set, paths, status) : paths.size() >= 2 && move_switch_paths(*track, paths, status)};
-		if (done && set.has_value())
-		{
-			record_double(*set->first, *set->second, *found);
-			switch_store::follow();
-			records_to_history();
-			straight_refresh();
-		}
-		else if (done)
-		{
-			record_switch(*track, *found);
-			records_to_history();
-			straight_refresh();
-		}
-		WriteLog(format("SELFTEST switchreplace %s %s: done %d, %s", name.c_str(), found->label.c_str(), done ? 1 : 0, status.c_str()));
+		// the template as the inspector shows it: of the record of a slip or a crossing, of the switch
+		auto const current = [&](TTrack const &Track) {
+			if (auto const slip{slip_of(Track)})
+				return slip_template_index(slip->record, editor_track::rail_of(&Track));
+			if (auto const crossing{crossing_record(Track)})
+				return slip_template_index(*crossing, editor_track::rail_of(&Track));
+			return switch_template_index(Track);
+		};
+		auto const before{current(*track)};
+		auto const done{change_switch_template(*track, static_cast<int>(found - tool.templates.begin()))};
+		// a slip laid again is of new parts, the first of them selected; a part of a crossing may be left beside it a plain track
+		auto *again{selected_track()};
+		if (again == nullptr)
+			again = simulation::Paths.find(name);
+		auto const after{again != nullptr ? current(*again) : -1};
+		auto const of = [&](int const Index) { return Index >= 0 ? tool.templates[Index].title() : std::string{"-"}; };
+		std::string record;
+		if (again != nullptr)
+			if (auto const slip{slip_of(*again)}; slip.has_value() || crossing_record(*again).has_value())
+			{
+				auto const known{slip.has_value() ? slip->record : *crossing_record(*again)};
+				record = format(", record %s %s R %.1f 1:%.3f, rail %s", known.kind.c_str(), known.type.c_str(), known.radius, known.ratio, editor_track::rail_of(again).c_str());
+			}
+		WriteLog(format("SELFTEST switchreplace %s %s: done %d, template %s -> %s (%s%s), %s", name.c_str(), found->title().c_str(), done ? 1 : 0, of(before).c_str(), of(after).c_str(), again != nullptr ? again->name().c_str() : "-", record.c_str(),
+		                tool.status.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "switchpieces" || command == "switchbreak")

@@ -440,6 +440,39 @@ std::optional<editor_mode::slip_set> editor_mode::slip_of(TTrack const &Track) c
 	return slip;
 }
 
+std::vector<TTrack *> editor_mode::slip_taken_out(slip_set const &Slip, bool const Throughs)
+{
+	switch_store::forget(Slip.record.name);
+	auto &style{*Slip.switches.front()};
+	auto const velocity{speed_check::path_velocity(style, 0)};
+	for (auto *part : Slip.parts)
+		editor_track::retire(*part);
+	std::vector<TTrack *> laid;
+	if (false == Throughs)
+		return laid;
+	for (auto const &path : slip_throughs(Slip))
+		if (auto *through{editor_track::create_path(style, path)})
+		{
+			editor_track::velocity(*through, velocity);
+			laid.push_back(through);
+		}
+	editor_track::commit(laid);
+	return laid;
+}
+
+std::optional<switch_store::record> editor_mode::crossing_record(TTrack const &Track) const
+{
+	if (Track.eType != tt_Normal || Track.m_editorremoved)
+		return std::nullopt;
+	auto const known{switch_store::named(Track)};
+	if (false == known.has_value() || known->kind != "crossing" || known->parts.size() != 2)
+		return std::nullopt;
+	for (auto const &name : known->parts)
+		if (auto const *part{simulation::Paths.find(name)}; part == nullptr || part->m_editorremoved || part->eType != tt_Normal || part->m_paths.size() != 1)
+			return std::nullopt;
+	return known;
+}
+
 std::array<segment_data, 2> editor_mode::slip_throughs(slip_set const &Slip)
 {
 	// from end to end, a straight where the slip is one, else heading out of the ends as the slip does
