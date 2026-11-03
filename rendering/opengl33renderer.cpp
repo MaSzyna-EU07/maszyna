@@ -2201,8 +2201,13 @@ bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
 
+void opengl33_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	m_geometry.erase(Geometry);
+}
+
 // provides direct access to index data of specfied chunk
-gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const 
+gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const
 {
     return m_geometry.indices(Geometry);
 }
@@ -2218,11 +2223,28 @@ gfx::userdata_array const &opengl33_renderer::UserData(const gfx::geometry_handl
 	return m_geometry.userdata(Geometry);
 }
 
+int opengl33_renderer::Primitive(gfx::geometry_handle const &Geometry) const
+{
+	return static_cast<int>(m_geometry.primitive(Geometry));
+}
+
 // material methods
 material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
 
 	return m_materials.create(Filename, Loadnow);
+}
+
+material_handle opengl33_renderer::Matte_Material(material_handle const Material)
+{
+
+	return m_materials.create_matte(Material);
+}
+
+material_handle opengl33_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
 }
 
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
