@@ -10983,7 +10983,7 @@ msgid "Fit the lights"
 msgstr "Dopasuj światła"
 
 msgid "Gives each signal marked the template of its kind and mount with the lights its routes need and the least beyond them, the name, the plate and the place kept, the trains reading it as before. One step of undo"
-msgstr "Daje każdemu zaznaczonemu semaforowi szablon tego samego rodzaju i mocowania ze światłami, jakich wymagają jego przebiegi, i jak najmniejszym nadmiarem. Nazwa, tablica i miejsce zostają, pociągi odczytują go jak dotąd. Jeden krok cofania"
+msgstr "Daje każdemu zaznaczonemu sygnalizatorowi szablon tego samego rodzaju i mocowania ze światłami, jakich wymagają jego przebiegi, i jak najmniejszym nadmiarem. Nazwa, tablica i miejsce zostają, pociągi odczytują go jak dotąd. Jeden krok cofania"
 
 msgid "The lights go by the routes of the trains: 40 km/h through the switches 1:9, 60 through 1:12 and 1:14, 100 through 1:18.5, by their radii, for these a lower orange light, with an orange strip for 60, a green one for 100, Ie-1; an upper orange one where the next signal can show stop; the white one of the substitute signal. A signal telling of the next one standing nearer than the braking distance slows the trains with it at stop, Ie-4 § 8 ust. 5"
 msgstr "Światła wynikają z przebiegów pociągów: 40 km/h przez rozjazdy 1:9, 60 przez 1:12 i 1:14, 100 przez 1:18,5, liczone z ich promieni; dla nich dolne światło pomarańczowe, z pomarańczowym pasem dla 60 i zielonym dla 100, Ie-1; górne pomarańczowe, gdy następny semafor może pokazać stój; białe dla sygnału zastępczego. Semafor zapowiadający następny, który stoi bliżej niż droga hamowania, zmniejsza prędkość pociągów, gdy tamten pokazuje stój, Ie-4 § 8 ust. 5"
@@ -11001,10 +11001,10 @@ msgid "The block section to %s is %.0f m long, shorter than the braking distance
 msgstr "Odstęp do %s ma %.0f m, mniej niż droga hamowania %.0f m, Ie-4 § 8 ust. 1"
 
 msgid "No template has what the signals marked need"
-msgstr "Żaden szablon nie ma tego, czego potrzebują zaznaczone semafory"
+msgstr "Żaden szablon nie ma tego, czego potrzebują zaznaczone sygnalizatory"
 
 msgid "The signals have what they need already"
-msgstr "Semafory mają już to, czego potrzebują"
+msgstr "Sygnalizatory mają już to, czego potrzebują"
 
 msgid "The signals couldn't be changed: %s"
 msgstr "Nie udało się zmienić semaforów: %s"
@@ -11017,9 +11017,9 @@ msgstr[2] "%zu semaforów szlaku pasuje, ich SHP też"
 
 msgid "%zu signal got what it needs, Ctrl+Z takes it back"
 msgid_plural "%zu signals got what they need, Ctrl+Z takes it back"
-msgstr[0] "%zu semafor dostał to, czego potrzebuje, Ctrl+Z cofa"
-msgstr[1] "%zu semafory dostały to, czego potrzebują, Ctrl+Z cofa"
-msgstr[2] "%zu semaforów dostało to, czego potrzebują, Ctrl+Z cofa"
+msgstr[0] "%zu sygnalizator dostał to, czego potrzebuje, Ctrl+Z cofa"
+msgstr[1] "%zu sygnalizatory dostały to, czego potrzebują, Ctrl+Z cofa"
+msgstr[2] "%zu sygnalizatorów dostało to, czego potrzebują, Ctrl+Z cofa"
 
 msgid "Template: %s"
 msgstr "Szablon: %s"
@@ -13514,8 +13514,8 @@ msgstr "Inne mocowanie"
 msgid "Another template of its kind for the signal, light or shaped, of its mount or another: the name, the plate, the place and the event the train reads it by stay. Ctrl+Z takes it back"
 msgstr "Inny szablon tego samego rodzaju, świetlny albo kształtowy, z tym samym albo innym mocowaniem: nazwa, tablica, miejsce i event, po którym pociąg go odczytuje, zostają. Ctrl+Z cofa"
 
-msgid "Sets it to %s here, as its event %s sets it in the game. Only how it looks: nothing of it is saved, the scenery opens with it as it was"
-msgstr "Ustawia go tutaj na %s, tak jak w grze robi to event %s. Zmienia tylko wygląd: nic się nie zapisuje, sceneria otworzy się z nim tak jak przedtem"
+msgid "Sets it to %s here, as its event %s sets it in the game. Only how it looks: the trains read it as its events set it last, in a run started from here too. Nothing of it is saved, the scenery opens with it as it was"
+msgstr "Ustawia go tutaj na %s, tak jak w grze robi to event %s. Zmienia tylko wygląd: pociągi odczytują go tak, jak ostatnio ustawiły go eventy, także w jeździe uruchomionej stąd. Nic się nie zapisuje, sceneria otworzy się z nim tak jak przedtem"
 
 msgid "It always shows the same: no aspect to set"
 msgstr "Zawsze pokazuje to samo: nie ma czego przestawiać"
@@ -13535,5 +13535,8 @@ msgstr "Żadna tarcza tego mocowania nie zapowiada wszystkiego, co pokazuje jej 
 msgid "It doesn't tell apart all its semaphore shows: %s does"
 msgstr "Nie rozróżnia wszystkiego, co pokazuje jej semafor: %s rozróżnia"
 
-msgid "Its template doesn't say what it tells: %s does"
-msgstr "Jej szablon nie ma opisu tego, co zapowiada: %s ma"
+msgid "Its template doesn't say what it tells, so it isn't checked: %s says so and tells all its semaphore shows. The fitting leaves it be, swap it by hand if you like"
+msgstr "Jej szablon nie ma opisu tego, co zapowiada, więc nie jest sprawdzana: %s ma taki opis i zapowiada wszystko, co pokazuje jej semafor. Dopasowanie jej nie zmienia, możesz ją zamienić ręcznie"
+
+msgid "not described"
+msgstr "bez opisu"

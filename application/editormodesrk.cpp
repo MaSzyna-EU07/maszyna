@@ -1980,11 +1980,13 @@ void srk_tool::render_heads()
 				}
 				else if (head.told)
 				{
-					// a shaped warning disc before a semaphore described, by the events it repeats
-					if (false == head.fits && head.fit.empty())
+					// a shaped warning disc before a semaphore described, by the events it repeats; one not described only offered the one
+					if (head.unsaid)
+						ImGui::TextDisabled("%s", format(STR_C("Its template doesn't say what it tells, so it isn't checked: %s says so and tells all its semaphore shows. The fitting leaves it be, swap it by hand if you like"), head.fit.c_str()).c_str());
+					else if (false == head.fits && head.fit.empty())
 						ImGui::TextColored(kWrong, "%s", STR_C("No disc of its mount tells all its semaphore shows"));
 					else if (false == head.fits)
-						ImGui::TextColored(kDoubtful, "%s", format(head.unsaid ? STR_C("Its template doesn't say what it tells: %s does") : STR_C("It doesn't tell apart all its semaphore shows: %s does"), head.fit.c_str()).c_str());
+						ImGui::TextColored(kDoubtful, "%s", format(STR_C("It doesn't tell apart all its semaphore shows: %s does"), head.fit.c_str()).c_str());
 				}
 				else if (head.lamps.empty() && head.kind != "warning")
 					ImGui::TextDisabled("%s", STR_C("A semaphore with arms: its lights aren't checked"));
@@ -2034,6 +2036,8 @@ void srk_tool::render_heads()
 			ImGui::TableNextColumn();
 			if (head.lamps.empty() && head.arms == 0 && false == head.told)
 				ImGui::TextDisabled("-");
+			else if (head.unsaid)
+				ImGui::TextDisabled("%s", STR_C("not described"));
 			else if (false == head.fits)
 				ImGui::TextColored(head.fit.empty() ? kWrong : kDoubtful, "%s", head.fit.empty() ? STR_C("no template") : head.arms > 0 || head.told ? STR_C("aspects missing") : STR_C("lights missing"));
 			else if (head.more)
@@ -4054,12 +4058,13 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 				else if (route.length < braking - 1.0)
 					check.problems.push_back(format(STR_C("It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"), route.length, check.nexts[k].c_str(), braking));
 			}
-			// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows; one
-			// not described so is offered one which is, a disc with lights isn't checked
+			// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows. One not
+			// described so may as well, it is offered the one described as a hint and the fitting leaves it be. A disc with lights isn't
+			// checked, nor one whose template isn't among the scanned, its mount not known
 			auto const described{template_of != nullptr && false == template_of->repeats.empty()};
-			if (described || template_of == nullptr || template_of->lamps.empty())
+			auto const mount{m_signals.signal_mount("warning", signal.file)};
+			if (false == mount.empty() && (described || template_of == nullptr || template_of->lamps.empty()))
 			{
-				auto const mount{m_signals.signal_mount("warning", signal.file)};
 				for (auto const &route : check.routes)
 				{
 					auto const ahead{route.next >= 0 ? by_file.find(Standing[owners[route.next]].file) : by_file.end()};
@@ -4069,11 +4074,18 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 					auto fit{disc_template(heads, &main, mount)};
 					if (auto const offered{by_file.find(fit)}; fit == signal.file || offered == by_file.end() || false == disc_tells(heads[offered->second], main))
 						fit.clear();
-					if (false == described && fit.empty())
+					if (false == described)
+					{
+						if (fit.empty())
+							continue;
+						check.told = true;
+						check.unsaid = true;
+						if (check.fit.empty())
+							check.fit = fit;
 						continue;
+					}
 					check.told = true;
-					check.unsaid = false == described;
-					if (described && disc_tells(*template_of, main))
+					if (disc_tells(*template_of, main))
 						continue;
 					check.fits = false;
 					if (check.fit.empty())

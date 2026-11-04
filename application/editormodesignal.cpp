@@ -407,15 +407,18 @@ editor_mode::signal_template const *editor_mode::signal_template_for(signal_orde
 		return wanted;
 	if (item != nullptr && shaped_disc(item->kind, item->lamps, item->arms))
 	{
-		// a shaped disc chosen isn't placed by the signalling: the light one of the tile with the most variants, as chosen at the start
+		// a shaped disc chosen isn't placed by the signalling: a light one of the mount of it, of the tile with the most variants as
+		// chosen at the start; of another mount when its mount has none
 		std::unordered_map<std::string, int> sizes;
 		for (auto const &other : tool.templates)
 			if (other.kind == Order.kind && false == shaped_disc(other.kind, other.lamps, other.arms))
 				++sizes[group_of(other.mount, other.lamps, other.arms)];
+		auto const mount{item->mount};
+		auto const rank{[&](signal_template const &Item) { return std::make_pair(Item.mount == mount, sizes[group_of(Item.mount, Item.lamps, Item.arms)]); }};
 		item = nullptr;
 		for (auto const &other : tool.templates)
 			if (other.kind == Order.kind && false == shaped_disc(other.kind, other.lamps, other.arms))
-				if (item == nullptr || sizes[group_of(other.mount, other.lamps, other.arms)] > sizes[group_of(item->mount, item->lamps, item->arms)])
+				if (item == nullptr || rank(other) > rank(*item))
 					item = &other;
 	}
 	return item;
@@ -1866,7 +1869,7 @@ void editor_mode::render_signal_selected()
 				if (ImGui::Button((aspect + "##aspect" + event).c_str()))
 					signal_show_aspect(instance, aspect, event);
 				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip(STR_C("Sets it to %s here, as its event %s sets it in the game. Only how it looks: nothing of it is saved, the scenery opens with it as it was"), aspect.c_str(), editor_includes::substitute("(p1)_" + event, {found->name}).c_str());
+					ImGui::SetTooltip(STR_C("Sets it to %s here, as its event %s sets it in the game. Only how it looks: the trains read it as its events set it last, in a run started from here too. Nothing of it is saved, the scenery opens with it as it was"), aspect.c_str(), editor_includes::substitute("(p1)_" + event, {found->name}).c_str());
 			}
 		}
 		else if (shaped_disc(item->kind, item->lamps, item->arms))
