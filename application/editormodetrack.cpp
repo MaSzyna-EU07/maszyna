@@ -484,7 +484,7 @@ std::array<editor_mode::track_mode, 12> const &editor_mode::track_modes()
 	    {"Switch", "T", track_tab::turnout, "Puts switches into a straight or a curve: press on it and drag along the way the switch goes. Edits the geometry of the selected switch", editor_icons::icon::turnout, 0},
 	    {"Parallel", "N", track_tab::parallel, "A second track beside a track: LMB on it, then the side and the spacing", editor_icons::icon::parallel, 0},
 	    {"Turntable", "U", track_tab::turntable, "Places a turntable, leads tracks out of it and fits the tracks around to it", editor_icons::icon::turntable, 1},
-	    {"Signalling", "I", track_tab::srk, "The signals, placed by hand from the templates in the panel", editor_icons::icon::signal, 1},
+	    {"Signalling", "I", track_tab::srk, "The signals and the signalling of the stations: LMB on a switch lays its station out as a schematic, the signals placed by hand from the templates in the panel", editor_icons::icon::signal, 1},
 	    {"Kilometrage", "X", track_tab::kilometrage, "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too", editor_icons::icon::kilometrage, 1},
 	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
@@ -648,6 +648,7 @@ void editor_mode::render_track_inspector()
 	m_speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.set_open(m_track_window_open && m_track_tab == track_tab::joints);
+	m_srk.set_open(m_track_window_open && m_track_tab == track_tab::srk);
 	m_km.set_open(m_track_window_open && m_track_tab == track_tab::kilometrage);
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 	{
@@ -690,6 +691,7 @@ void editor_mode::render_track_inspector()
 	m_profile.strip_top = -1.0f;
 	if (m_track_tab == track_tab::profile && m_track_window_open)
 		render_profile_strip();
+	m_srk.render_windows();
 }
 
 void editor_mode::render_track_tool_options()
@@ -732,6 +734,7 @@ void editor_mode::render_track_tool_options()
 	case track_tab::lineside: render_lineside_ui(); break;
 	case track_tab::srk:
 		render_signal_selected();
+		m_srk.render_options();
 		break;
 	case track_tab::kilometrage: m_km.render_options(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
@@ -1837,12 +1840,12 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"Drag along", "moves the signal along the track"}, {"Drag over the track", "to the other side"}, {"Release", "done"}, {"Esc", "cancel"}};
 	else if (m_track_window_open && m_track_tab == track_tab::srk && m_signal.placing)
 		hints = {{"Drag along", "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (m_track_window_open && m_track_tab == track_tab::srk)
+	else if (m_track_window_open && m_track_tab == track_tab::srk && false == m_srk.drawing())
 	{
 		if (signal_armed() != nullptr)
 			hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Esc", "stops placing"}};
 		else
-			hints = {{"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
+			hints = {{"LMB on a switch", "opens its station"}, {"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
 		if (m_signal.selected != 0 && m_signal.selected == m_instance)
 			hints.push_back({"Del", "removes the selected signal with its event"});
 	}
@@ -1852,6 +1855,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
 	else if (m_track_window_open && m_track_tab == track_tab::turntable)
 		hints = {{"LMB", "places a new turntable"}};
+	else if (m_track_window_open && m_track_tab == track_tab::srk)
+		hints = {{"LMB on a switch", "opens its station"}};
 	else if (m_track_window_open && m_track_tab == track_tab::kilometrage)
 		hints = {{"LMB on a track", "a point of the km there"}, {"Mouse over a track", "its km by the cursor"}};
 	else if (m_track_window_open && m_track_tab == track_tab::joints)
