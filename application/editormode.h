@@ -2598,6 +2598,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool linked{false};
 		std::vector<int> speeds;
 		int aspects{0}; // of a block signal, 3 or 4
+		int arms{0}; // of a semaphore, 1 or 2, from its description
+		// the aspects its description lists, by name (Sr1, Od2...) with the event giving each; empty for a template not described so
+		std::vector<std::pair<std::string, std::string>> aspect_events;
+		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
+		std::vector<std::pair<std::string, std::string>> repeats;
 	};
 	struct signal_spot
 	{

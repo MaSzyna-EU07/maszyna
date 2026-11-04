@@ -164,6 +164,8 @@ class srk_tool final : public editor_tool
 		glm::dvec2 travel{0.0, 1.0};
 		std::string file; // of its template
 		std::string lamps;
+		int arms{0}; // of a semaphore described with its arms: its aspects checked by name, not by lights
+		std::vector<std::string> aspect_names; // of its template, from its description
 		std::vector<int> own; // the speeds of its template
 		bool station{false}; // stands by the station, not out on a line
 		std::vector<station::route> routes;

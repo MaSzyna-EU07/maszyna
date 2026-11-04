@@ -152,9 +152,11 @@ ImU32 lamp_colour(char const Lamp)
 	}
 }
 
-std::string group_of(std::string const &Mount, std::string const &Lamps)
+// the tile of the palette a template goes to: by its mount and its lights, the semaphores of a mount all on one, their arms and
+// the substitute signal chosen under it
+std::string group_of(std::string const &Mount, std::string const &Lamps, int const Arms)
 {
-	return Mount + "|" + Lamps;
+	return Arms > 0 ? Mount + "|arms" : Mount + "|" + Lamps;
 }
 
 std::vector<std::string> const &plate_textures()
@@ -192,7 +194,7 @@ std::string plate_for(std::string const &Plate, std::string const &Name)
 	return std::binary_search(plates.begin(), plates.end(), name) ? name : std::string{"0_nothing"};
 }
 
-void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, std::string const &Mount, std::string const &Lamps, ImU32 const Frame)
+void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, std::string const &Mount, std::string const &Lamps, ImU32 const Frame, int const Arms = 0)
 {
 	auto const lamps{std::max<int>(1, static_cast<int>(Lamps.size()))};
 	auto const centre{Origin.x + Size.x * 0.5f};
@@ -221,8 +223,10 @@ void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, 
 	}
 	if (Lamps.empty())
 	{
+		// a semaphore with its arms, one under the other; a disc or one not described with one
 		Draw->AddLine(ImVec2(centre, headtop), ImVec2(centre, headtop + headheight), pole, 3.0f);
-		Draw->AddLine(ImVec2(centre, headtop + 6.0f), ImVec2(centre + 14.0f, headtop - 2.0f), IM_COL32(230, 60, 60, 255), 4.0f);
+		for (int arm = 0; arm < std::max(1, Arms); ++arm)
+			Draw->AddLine(ImVec2(centre, headtop + 6.0f + arm * 14.0f), ImVec2(centre + 14.0f, headtop - 2.0f + arm * 14.0f), IM_COL32(230, 60, 60, 255), 4.0f);
 		return;
 	}
 	Draw->AddRectFilled(ImVec2(centre - headwidth * 0.5f, headtop), ImVec2(centre + headwidth * 0.5f, headtop + headheight), IM_COL32(25, 25, 25, 255), 3.0f);
@@ -313,12 +317,16 @@ bool editor_mode::signal_scan(bool const Wait)
 		item.lamps = info.signal_lamps;
 		item.lean = info.signal_lean;
 		item.read = info.signal_read;
+		item.arms = info.signal_arms;
+		item.aspect_events = info.signal_aspects;
+		item.repeats = info.signal_repeats;
 		for (auto const &parameter : info.parameters)
 		{
 			item.parameters = std::max(item.parameters, parameter.id);
 			if (parameter.id == 6 && parameter.role == "texture")
 				item.plate = true;
-			if (parameter.id == 7)
+			// the signal it's linked to: a link, or a text as the older descriptions give it, not a texture or another value
+			if (parameter.id == 7 && (parameter.role == "link" || parameter.role == "text"))
 				item.linked = true;
 		}
 		editor_includes::signal_speeds(entry.file, item.speeds);
@@ -335,7 +343,7 @@ bool editor_mode::signal_scan(bool const Wait)
 		std::unordered_map<std::string, int> sizes;
 		for (auto const &item : tool.templates)
 			if (item.kind == kKinds[i])
-				++sizes[group_of(item.mount, item.lamps)];
+				++sizes[group_of(item.mount, item.lamps, item.arms)];
 		auto best{-1};
 		for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 		{
@@ -347,7 +355,7 @@ bool editor_mode::signal_scan(bool const Wait)
 				best = k;
 				break;
 			}
-			if (best < 0 || sizes[group_of(item.mount, item.lamps)] > sizes[group_of(tool.templates[best].mount, tool.templates[best].lamps)])
+			if (best < 0 || sizes[group_of(item.mount, item.lamps, item.arms)] > sizes[group_of(tool.templates[best].mount, tool.templates[best].lamps, tool.templates[best].arms)])
 				best = k;
 		}
 		tool.chosen[i] = best;
@@ -810,11 +818,11 @@ std::string editor_mode::signal_variant(signal_template const &Template, signal_
 	auto const wanted{lean_wanted(glm::dot(right_of(Spot.travel), plan_of(Spot.position) - plan_of(Spot.axis)) >= 0.0 ? 1 : -1)};
 	if (lean_of(Template.lean) == 0 || lean_of(Template.lean) == wanted)
 		return file;
-	auto const group{group_of(Template.mount, Template.lamps)};
+	auto const group{group_of(Template.mount, Template.lamps, Template.arms)};
 	auto best{std::numeric_limits<std::size_t>::max()};
 	for (auto const &other : m_signal.templates)
 	{
-		if (other.kind != Template.kind || group_of(other.mount, other.lamps) != group || lean_of(other.lean) != wanted || other.speeds != Template.speeds)
+		if (other.kind != Template.kind || group_of(other.mount, other.lamps, other.arms) != group || lean_of(other.lean) != wanted || other.speeds != Template.speeds)
 			continue;
 		auto const distance{edit_distance(other.name, Template.name)};
 		if (distance < best)
@@ -1305,10 +1313,14 @@ bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
 	for (int index = 0; index < static_cast<int>(m_signal.templates.size()); ++index)
 	{
 		auto const &item{m_signal.templates[index]};
-		if (item.lamps.empty())
+		// the signalling knows a template by its lights, by the arms and the aspects of a semaphore, by the events a disc repeats
+		if (item.lamps.empty() && item.arms == 0 && item.repeats.empty())
 			continue;
 		auto const kind{kind_index(item.kind)};
-		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects, item.lean});
+		std::vector<std::string> names;
+		for (auto const &[name, event] : item.aspect_events)
+			names.push_back(name);
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects, item.lean, item.arms, std::move(names), item.repeats});
 	}
 	return true;
 }
@@ -1538,7 +1550,7 @@ void editor_mode::render_signal_palette()
 			continue;
 		if (false == filter.empty() && item.name.find(filter) == std::string::npos && ToLower(item.description).find(filter) == std::string::npos)
 			continue;
-		auto const key{group_of(item.mount, item.lamps)};
+		auto const key{group_of(item.mount, item.lamps, item.arms)};
 		auto const found{std::find(keys.begin(), keys.end(), key)};
 		if (found == keys.end())
 		{
@@ -1562,7 +1574,7 @@ void editor_mode::render_signal_palette()
 	{
 		auto const &group{groups[g]};
 		auto const &first{tool.templates[group.front()]};
-		auto const chosen{current != nullptr && group_of(current->mount, current->lamps) == keys[g] && current->kind == first.kind};
+		auto const chosen{current != nullptr && group_of(current->mount, current->lamps, current->arms) == keys[g] && current->kind == first.kind};
 		if (g % columns != 0)
 			ImGui::SameLine();
 		ImGui::PushID(g);
@@ -1580,8 +1592,10 @@ void editor_mode::render_signal_palette()
 		auto const hovered{ImGui::IsItemHovered()};
 		auto const armed{chosen && tool.armed};
 		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), armed ? IM_COL32(45, 110, 60, 255) : chosen ? IM_COL32(60, 90, 140, 255) : hovered ? IM_COL32(60, 60, 60, 255) : IM_COL32(40, 40, 40, 255), 4.0f);
-		draw_signal_icon(draw, origin, ImVec2(tile.x, tile.y - 14.0f), first.mount, first.lamps, chosen ? overlay_color::selected : IM_COL32(120, 120, 120, 255));
-		auto const caption{first.lamps.empty() ? first.name : first.lamps};
+		// a semaphore with the arms of the one chosen on its tile
+		auto const &shown{chosen ? *current : first};
+		draw_signal_icon(draw, origin, ImVec2(tile.x, tile.y - 14.0f), first.mount, first.lamps, chosen ? overlay_color::selected : IM_COL32(120, 120, 120, 255), shown.arms);
+		auto const caption{first.arms > 0 ? std::string{STR_C("arms")} : first.lamps.empty() ? first.name : first.lamps};
 		auto const captionsize{ImGui::CalcTextSize(caption.c_str())};
 		draw->AddText(ImVec2(origin.x + std::max(2.0f, (tile.x - captionsize.x) * 0.5f), origin.y + tile.y - 15.0f), IM_COL32(220, 220, 220, 255), caption.c_str());
 		if (group.size() > 1)
@@ -1600,14 +1614,14 @@ void editor_mode::render_signal_palette()
 	ImGui::EndChild();
 	if (current == nullptr)
 		return;
-	auto const key{group_of(current->mount, current->lamps)};
+	auto const key{group_of(current->mount, current->lamps, current->arms)};
 	ImGui::SetNextItemWidth(-1.0f);
 	if (ImGui::BeginCombo("##signalvariant", current->name.c_str()))
 	{
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 		{
 			auto const &item{tool.templates[i]};
-			if (item.kind != current->kind || group_of(item.mount, item.lamps) != key)
+			if (item.kind != current->kind || group_of(item.mount, item.lamps, item.arms) != key)
 				continue;
 			auto const label{item.name + (item.lean == "left" ? std::string{"  \xE2\x86\x96"} : item.lean == "right" ? std::string{"  \xE2\x86\x97"} : std::string{}) + "##" + item.file};
 			if (ImGui::Selectable(label.c_str(), &item == current))
@@ -1622,6 +1636,43 @@ void editor_mode::render_signal_palette()
 		auto const read{current->read.empty() ? std::string{current->kind == "warning" || current->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")}
 		                                      : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(current->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str())};
 		ImGui::SetTooltip("%s\n%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"), read.c_str());
+	}
+	if (current->arms > 0)
+	{
+		// a semaphore: its arms and the substitute signal picked, the template with them taken, of the same tile
+		auto const substitute = [](signal_template const &Item) {
+			return std::any_of(Item.aspect_events.begin(), Item.aspect_events.end(), [](auto const &Aspect) { return Aspect.first == "Sz"; });
+		};
+		auto const with = [&](int const Arms, bool const Substitute) {
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+			{
+				auto const &item{tool.templates[i]};
+				if (item.kind == current->kind && group_of(item.mount, item.lamps, item.arms) == key && item.arms == Arms && substitute(item) == Substitute)
+					return i;
+			}
+			return -1;
+		};
+		auto const sz{substitute(*current)};
+		auto const arms{current->arms};
+		for (auto const count : {1, 2})
+		{
+			auto const found{with(count, sz)};
+			ImGui::BeginDisabled(found < 0);
+			if (ImGui::RadioButton(count == 1 ? STR_C("1 arm") : STR_C("2 arms"), arms == count) && found >= 0)
+				tool.chosen[tool.kind] = found;
+			ImGui::EndDisabled();
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", found < 0 ? STR_C("No template of this tile has it") : count == 1 ? STR_C("Sr1 stop, Sr2 go at the highest speed") : STR_C("Sr3 too, with the second arm: go at no more than 40 km/h"));
+			ImGui::SameLine();
+		}
+		auto const other{with(arms, false == sz)};
+		auto shown{sz};
+		ImGui::BeginDisabled(other < 0);
+		if (ImGui::Checkbox(STR_C("Sz"), &shown) && other >= 0)
+			tool.chosen[tool.kind] = other;
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("%s", other < 0 ? STR_C("No template of this tile has it") : STR_C("The substitute signal under the arms: it lets a train past the semaphore at stop"));
 	}
 	if (false == current->description.empty())
 		ImGui::TextWrapped("%s", current->description.c_str());

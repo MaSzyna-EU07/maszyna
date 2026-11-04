@@ -13459,3 +13459,36 @@ msgid_plural "%zu tracks put on the common grade line of the route"
 msgstr[0] "%zu tor dołączony do wspólnej niwelety trasy"
 msgstr[1] "%zu tory dołączone do wspólnej niwelety trasy"
 msgstr[2] "%zu torów dołączonych do wspólnej niwelety trasy"
+
+msgid "1 arm"
+msgstr "1 ramię"
+
+msgid "2 arms"
+msgstr "2 ramiona"
+
+msgid "No template of this tile has it"
+msgstr "Żaden szablon tego kafelka tego nie ma"
+
+msgid "Sr1 stop, Sr2 go at the highest speed"
+msgstr "Sr1 stój, Sr2 jazda z największą prędkością"
+
+msgid "Sr3 too, with the second arm: go at no more than 40 km/h"
+msgstr "Także Sr3, drugim ramieniem: jazda z prędkością nie większą niż 40 km/h"
+
+msgid "Sz"
+msgstr "Sz"
+
+msgid "The substitute signal under the arms: it lets a train past the semaphore at stop"
+msgstr "Sygnał zastępczy pod ramionami: pozwala przejechać obok semafora wskazującego stój"
+
+msgid "No semaphore of its mount has these aspects"
+msgstr "Żaden semafor tego mocowania nie ma tych sygnałów"
+
+msgid "Its arms don't show all of it: %s does"
+msgstr "Brakuje mu sygnałów, pasuje %s"
+
+msgid "It has more than it needs: %s will do"
+msgstr "Ma więcej sygnałów, niż trzeba: wystarczy %s"
+
+msgid "aspects missing"
+msgstr "brak sygnałów"
