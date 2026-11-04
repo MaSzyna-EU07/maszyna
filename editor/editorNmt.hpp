@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -113,5 +114,5 @@ class editor_nmt
 	std::uint32_t m_prefetch_generation{0};
 	bool m_prefetch_paused{false};
 	void start_workers(); // under the lock
-	std::string file_of(key const &Key) const;
+	std::filesystem::path file_of(key const &Key) const; // in the disk cache
 };
