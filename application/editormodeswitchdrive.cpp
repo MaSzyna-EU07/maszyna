@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "utilities/utilities.h"
 
@@ -73,6 +74,20 @@ double angle_value(std::vector<std::string> const &Values, std::size_t const Ind
 	if (Index < Values.size())
 		std::sscanf(Values[Index].c_str(), "%lf", &value);
 	return value;
+}
+
+// the first line of the file of the keys by the movable noses, which tells it from the files of the scenery made by hand
+char const *const kNoseHeader{"// made by the scenery editor on each save: T and Shift+T by the movable nose throw its switch, as by its drive"};
+
+// true if the file is one of the keys by the movable noses the editor writes
+bool nose_file(std::string const &Path)
+{
+	std::ifstream input{Path, std::ios_base::binary};
+	std::string first;
+	std::getline(input, first);
+	if (false == first.empty() && first.back() == '\r')
+		first.pop_back();
+	return first == kNoseHeader;
 }
 
 } // namespace
@@ -422,7 +437,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	auto const exists{std::filesystem::exists(path, error)};
 	if (noses == 0 && false == exists)
 		return false;
-	auto const content{"// made by the scenery editor on each save: T and Shift+T by the movable nose throw its switch, as by its drive\r\n" + text.str()};
+	auto const content{std::string{kNoseHeader} + "\r\n" + text.str()};
 	std::string current;
 	{
 		std::ifstream input{path, std::ios_base::binary};
@@ -432,6 +447,21 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	{
 		std::ofstream output{path, std::ios_base::binary | std::ios_base::trunc};
 		output << content;
+	}
+	// the keys written for this scenery under another name, the file it was copied from, give way to these: with both included
+	// each key would stand twice. their files stay on the disk, for the scenery they were made for
+	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
+	{
+		auto const layer{static_cast<scene::layer_handle>(handle)};
+		if (false == scene::Layers.listed(layer) || scene::Layers.layer(layer).removed)
+			continue;
+		auto name{scene::Layers.layer(layer).name};
+		std::replace(name.begin(), name.end(), '\\', '/');
+		auto const lower{ToLower(name)};
+		if (lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_dzioby.scm"))
+			continue;
+		if (nose_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
+			WriteLog("Editor: " + name + " left out of the scenery, the keys by the movable noses are in " + file + " now");
 	}
 	auto included{m_nose_included};
 	for (std::size_t handle = 1; handle <= scene::Layers.size() && false == included; ++handle)
