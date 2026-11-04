@@ -4185,7 +4185,7 @@ msgid "Seen in the editor only; the scenery keeps its own time and weather"
 msgstr "Widoczne tylko w edytorze; sceneria zachowuje własny czas i pogodę"
 
 msgid "Top view, orthographic (O)"
-msgstr "Widok z góry, ortogonalny (O)"
+msgstr "Widok z góry (O)"
 
 # scenery editor: tools over the 3d view
 
@@ -5307,70 +5307,70 @@ msgstr "Zamknij"
 msgid "Looking around"
 msgstr "Rozglądanie się"
 
-msgid "Hold the right button and move the mouse: look around"
-msgstr "Trzymaj prawy przycisk i ruszaj myszą: rozglądasz się"
+msgid "Hold the right mouse button and move the mouse to look around"
+msgstr "Trzymaj prawy przycisk myszy i ruszaj myszą, żeby się rozglądać"
 
-msgid "With the right button held: fly forwards, back and to the sides; E and Q: up and down"
-msgstr "Z wciśniętym prawym przyciskiem: lot do przodu, do tyłu i na boki; E i Q: w górę i w dół"
+msgid "Keep holding the right button and press W S A D to fly around; E takes you up, Q down"
+msgstr "Trzymając prawy przycisk, naciskaj W S A D, żeby latać; E unosi w górę, Q opuszcza w dół"
 
-msgid "The top view, and back to 3D"
-msgstr "Widok z góry i z powrotem do 3D"
+msgid "Switches between the view from above, like a map, and the normal 3D view"
+msgstr "Przełącza między widokiem z góry, jak na mapie, a zwykłym widokiem 3D"
 
-msgid "Zoom in and out where the cursor points"
-msgstr "Przybliża i oddala tam, gdzie wskazuje kursor"
+msgid "Zooms in and out at the mouse pointer"
+msgstr "Przybliża i oddala w miejscu, na które wskazuje mysz"
 
-msgid "In the top view: hold the wheel and drag to move the map"
+msgid "In the view from above: press the wheel down and drag to move the map"
 msgstr "W widoku z góry: wciśnij kółko i przeciągnij, żeby przesunąć mapę"
 
-msgid "Fly to what is selected"
-msgstr "Lot do zaznaczonego"
+msgid "Flies to what you have selected"
+msgstr "Przelatuje do tego, co masz zaznaczone"
 
-msgid "Look around with the right button held"
-msgstr "Rozejrzyj się z wciśniętym prawym przyciskiem"
+msgid "Look around with the right mouse button held"
+msgstr "Rozejrzyj się z wciśniętym prawym przyciskiem myszy"
 
-msgid "Switch to the top view"
+msgid "Switch to the view from above"
 msgstr "Przełącz na widok z góry"
 
 msgid "Laying track"
 msgstr "Układanie toru"
 
-msgid "The Tracks field of work"
-msgstr "Dział Tory"
+msgid "Opens Tracks, the part of the editor where track is laid"
+msgstr "Otwiera dział Tory, w którym układa się tory"
 
-msgid "The lay tool"
-msgstr "Narzędzie Układanie"
+msgid "Turns laying on"
+msgstr "Włącza układanie toru"
 
-msgid "Open the Tracks field of work"
-msgstr "Otwórz dział Tory"
+msgid "Open Tracks (F3)"
+msgstr "Otwórz dział Tory (F3)"
 
-msgid "Turn the lay tool on"
-msgstr "Włącz układanie"
+msgid "Turn laying on (L)"
+msgstr "Włącz układanie (L)"
 
 msgid "Curves"
 msgstr "Łuki"
 
-msgid "Held: the direction turns in steps of 15 degrees, or to 1:9, 1:6.6... to a straight track it starts by or crosses"
-msgstr "Trzymany: kierunek zmienia się co 15 stopni albo na 1:9, 1:6,6… do prostego toru, przy którym się zaczyna albo który przecina"
+msgid "Hold it while clicking: the direction jumps in steps of 15 degrees, or to the angle of a switch to a straight track nearby"
+msgstr "Przytrzymaj przy klikaniu: kierunek przeskakuje co 15 stopni albo ustawia się pod kątem rozjazdu do prostego toru obok"
 
-msgid "Alone it zooms, as everywhere"
+msgid "The wheel alone zooms, as everywhere"
 msgstr "Samo kółko przybliża, jak wszędzie"
 
 msgid "Joining tracks"
 msgstr "Łączenie torów"
 
-msgid "Press on a free end (a magenta ring) and drag: a new track goes out of it"
-msgstr "Wciśnij na wolnym końcu (różowy okrąg) i przeciągnij: wychodzi z niego nowy tor"
+msgid "Press on the loose end of a track (a pink ring while laying) and drag: a new track comes out of it"
+msgstr "Wciśnij na wolnym końcu toru (różowe kółko podczas układania) i przeciągnij: wychodzi z niego nowy tor"
 
-msgid "Let go on another free end: a curve joins the two tracks"
+msgid "Let go on another loose end: a curve joins the two tracks"
 msgstr "Puść na innym wolnym końcu: łuk połączy oba tory"
 
-msgid "While over the other end: the radius of the joining curve"
-msgstr "Nad drugim końcem: promień łuku, który je łączy"
+msgid "Over the other end: makes the joining curve bigger or smaller"
+msgstr "Nad drugim końcem: łuk łączący robi się większy albo mniejszy"
 
-msgid "While over the other end: another way to join"
+msgid "Over the other end: tries another way of joining"
 msgstr "Nad drugim końcem: inny sposób połączenia"
 
-msgid "Join two free ends"
+msgid "Join two loose ends"
 msgstr "Połącz dwa wolne końce"
 
 msgid "Back to selecting"
@@ -5382,61 +5382,61 @@ msgstr "Wstaw rozjazd w tor"
 msgid "Selecting and fixing"
 msgstr "Zaznaczanie i poprawki"
 
-msgid "The select tool"
-msgstr "Narzędzie Zaznaczanie"
+msgid "Turns selecting on"
+msgstr "Włącza zaznaczanie"
 
-msgid "Click a track: it is selected, with its ends"
-msgstr "Kliknij tor: zostaje zaznaczony, widać jego końce"
+msgid "Click a track to select it; its ends show"
+msgstr "Kliknij tor, żeby go zaznaczyć; widać wtedy jego końce"
 
-msgid "The gizmo, to move, turn or lengthen the track, its control vectors to bend it: the next lesson"
-msgstr "Gizmo do przesuwania, obracania i wydłużania toru, jego wektory kontrolne do wyginania: następna lekcja"
+msgid "Handles on the track to move, turn, lengthen or bend it: the next lesson"
+msgstr "Uchwyty na torze do przesuwania, obracania, wydłużania i wyginania: następna lekcja"
 
 msgid "Editing with the gizmo"
-msgstr "Edycja z gizmo"
+msgstr "Uchwyty na torze (gizmo)"
 
-msgid "The gizmo on the selected track, hidden until then: arrows which move it"
-msgstr "Gizmo na zaznaczonym torze, do tej pory ukryte: strzałki, które go przesuwają"
+msgid "Shows arrows on the selected track: drag one to move the track"
+msgstr "Pokazuje strzałki na zaznaczonym torze: przeciągnij jedną, żeby przesunąć tor"
 
-msgid "Rings which turn it: its direction, its grade and its cant; the tracks joined to it follow"
-msgstr "Pierścienie, które go obracają: kierunek, pochylenie i przechyłka; połączone tory idą za nim"
+msgid "Shows rings: drag one to turn the track, to tilt it up or down, or to raise one rail; the tracks joined to it follow"
+msgstr "Pokazuje pierścienie: przeciągnij jeden, żeby obrócić tor, pochylić go w górę lub w dół albo podnieść jedną szynę; połączone tory idą za nim"
 
-msgid "Handles which lengthen it at its free end, the curve keeping its radius"
-msgstr "Uchwyty, które wydłużają go na wolnym końcu, łuk zachowuje promień"
+msgid "Shows handles that make the track longer at its loose end; a curve stays as sharp as it was"
+msgstr "Pokazuje uchwyty, które wydłużają tor na wolnym końcu; łuk zostaje tak samo ostry"
 
-msgid "With the gizmo out the control vectors are there too: drag one, the curve follows it"
-msgstr "Z gizmo widać też wektory sterujące: przeciągnij jeden, łuk idzie za nim"
+msgid "With the handles out there are also points that bend the track: drag one and the track bends after it"
+msgstr "Gdy uchwyty są widoczne, są też punkty do wyginania toru: przeciągnij jeden, a tor wygnie się za nim"
 
-msgid "A click on a point of the track: the gizmo goes to it; Q moves that point alone, W turns the whole track about it, a control vector alone"
-msgstr "Klik w punkt toru: gizmo przechodzi do niego; Q przesuwa sam ten punkt, W obraca wokół niego cały tor, a wektor kontrolny sam"
+msgid "Click a point of the track to put the handles there: Q then moves that point only, W turns the whole track around it"
+msgstr "Kliknij punkt toru, żeby przenieść tam uchwyty: wtedy Q przesuwa tylko ten punkt, a W obraca cały tor wokół niego"
 
-msgid "Held while dragging: the gizmo goes by its step"
-msgstr "Trzymany przy przeciąganiu: gizmo przeskakuje o swój krok"
+msgid "Hold it while dragging to move in even steps"
+msgstr "Przytrzymaj przy przeciąganiu, żeby ruch szedł równymi krokami"
 
-msgid "Releases the point; the arrow above the view hides the gizmo again"
-msgstr "Puszcza punkt; strzałka nad widokiem chowa gizmo z powrotem"
+msgid "Lets go of the point; the arrow button above the view hides the handles again"
+msgstr "Puszcza punkt; przycisk ze strzałką nad widokiem znowu chowa uchwyty"
 
-msgid "Bring out the gizmo with Q, W or E"
-msgstr "Pokaż gizmo klawiszem Q, W albo E"
+msgid "Show the handles with Q, W or E"
+msgstr "Pokaż uchwyty klawiszem Q, W albo E"
 
-msgid "Bend a track by a control vector, or move it with the gizmo"
-msgstr "Wygnij tor wektorem sterującym albo przesuń go gizmem"
+msgid "Bend a track by one of its points, or move it with the handles"
+msgstr "Wygnij tor za jeden z jego punktów albo przesuń go uchwytami"
 
-msgid "Drag an end: at a joint the neighbours follow, from a free end a new track goes out, with Ctrl the end moves"
-msgstr "Przeciągnij koniec: na styku sąsiednie tory idą za nim, z wolnego końca wychodzi nowy tor, z Ctrl koniec się przesuwa"
+msgid "Drag an end: where tracks meet, the ones beside follow; a loose end pulls out a new track, or with Ctrl moves by itself"
+msgstr "Przeciągnij koniec: tam, gdzie tory się stykają, sąsiednie idą za nim; wolny koniec wyciąga nowy tor, a z Ctrl sam się przesuwa"
 
-msgid "A click on a track: what can be done with it"
-msgstr "Klik na torze: co można z nim zrobić"
+msgid "Click a track: a menu of what can be done with it"
+msgstr "Kliknij tor: menu z tym, co można z nim zrobić"
 
-msgid "Deletes the selected"
-msgstr "Usuwa zaznaczone"
+msgid "Deletes what is selected"
+msgstr "Usuwa to, co zaznaczone"
 
-msgid "Takes the last change back; Ctrl+Y brings it back again"
+msgid "Undoes the last change; Ctrl+Y brings it back"
 msgstr "Cofa ostatnią zmianę; Ctrl+Y ją przywraca"
 
 msgid "Select a track"
 msgstr "Zaznacz tor"
 
-msgid "Take a change back"
+msgid "Undo a change"
 msgstr "Cofnij zmianę"
 
 msgid "Saving and driving"
@@ -5925,20 +5925,20 @@ msgstr "wzdłuż: kierunek, w bok: strona"
 msgid "Only the templates of the rail the selected track is laid with"
 msgstr "Tylko szablony na szynę zaznaczonego toru"
 
-msgid "The switch tool; at the top: what to place"
-msgstr "Narzędzie Rozjazd; na górze: co stawiasz"
+msgid "Turns Switch on. The tiles at the top choose what you put in: a switch, a slip switch or a crossing"
+msgstr "Włącza narzędzie Rozjazd. Kafelki u góry wybierają, co wstawiasz: rozjazd, rozjazd krzyżowy albo skrzyżowanie"
 
-msgid "Click a track: the one the switch goes into"
-msgstr "Kliknij tor: ten, w który wejdzie rozjazd"
+msgid "Click the track the switch should go into"
+msgstr "Kliknij tor, w który ma wejść rozjazd"
 
-msgid "Press on it and drag: along the direction, sideways the side; let go: the switch is laid"
-msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę; puszczenie kładzie rozjazd"
+msgid "Press on it and drag: along the track sets which way the switch points, sideways which side it branches off to; let go to lay it"
+msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru ustawiasz, w którą stronę patrzy rozjazd, a w bok, na którą stronę odbija; puść, żeby go położyć"
 
-msgid "Drag from a straight onto the other track: a crossover; over a crossover the other way, a double one, or scissors where they overlap"
-msgstr "Przeciągnij z prostej na drugi tor: przejście rozjazdowe; nad przejściem w drugą stronę podwójne, a gdzie się nakładają, nożycowe"
+msgid "Drag from a straight track onto the track beside it: two switches joining them (a crossover). Over a crossover going the other way you get a double or a scissors one"
+msgstr "Przeciągnij z prostego toru na tor obok: dwa rozjazdy, które je łączą (przejście rozjazdowe). Nad przejściem w drugą stronę powstaje podwójne albo nożycowe"
 
-msgid "Switch ladder: drag from a straight across the parallel tracks beside it and let go on the farthest; a switch onto each, with the straights up to where they start"
-msgstr "Ulica zwrotnicowa: przeciągnij z prostej w poprzek równoległych torów obok i puść na najdalszym; na każdy z nich rozjazd, z prostymi do miejsca, gdzie się zaczynają"
+msgid "Drag from a straight across several tracks running alongside and let go on the farthest: a row of switches leading onto each of them (a switch ladder)"
+msgstr "Przeciągnij z prostej w poprzek kilku torów biegnących obok i puść na najdalszym: rząd rozjazdów prowadzących na każdy z nich (ulica zwrotnicowa)"
 
 msgid "Click the green or red point in the view: that one only"
 msgstr "Kliknij zielony albo czerwony punkt w widoku: postawi albo poprawi tylko ten wskaźnik"
@@ -6676,7 +6676,7 @@ msgid "The tracks stay at their heights and the terrain comes up or down to them
 msgstr "Tory zostają na swojej wysokości, a teren podnosi się albo obniża do nich"
 
 msgid "The terrain to some of the tracks only: select them (F3), Terrain in the inspector"
-msgstr "Teren tylko pod wybrane tory: zaznacz je (F3), sekcja Teren w inspektorze"
+msgstr "Teren tylko pod wybrane tory: zaznacz je (F3), w Inspektorze sekcja Teren"
 
 msgid "Terrain of the model right away while laying"
 msgstr "Wczytuj teren na bieżąco podczas układania"
@@ -6937,61 +6937,61 @@ msgid "; %zu stretches changed on the track since read from it again"
 msgstr "; %zu odcinków zmienionych na torze odczytano z niego ponownie"
 
 msgid "The grade line"
-msgstr "Niweleta"
+msgstr "Wzniesienia i spadki"
 
-msgid "The profile tool: a click on a track opens the grade line of its whole line in the strip below"
-msgstr "Narzędzie Profil: klik na torze otwiera niweletę całej jego linii w pasku na dole"
+msgid "Turns Profile on. Click a track: below the view you see how its whole line goes up and down"
+msgstr "Włącza narzędzie Profil. Kliknij tor: pod widokiem zobaczysz, jak cała jego linia wznosi się i opada"
 
-msgid "Drag a point of the grade line: the grades on both sides of it follow"
-msgstr "Przeciągnij punkt niwelety: pochylenia po obu jego stronach idą za nim"
+msgid "Drag a point of the line: the slopes on both sides of it change with it"
+msgstr "Przeciągnij punkt linii: spadki po obu jego stronach zmieniają się razem z nim"
 
-msgid "A double click on the line adds a point"
-msgstr "Podwójny klik na linii dodaje punkt"
+msgid "Double-click the line to add a point"
+msgstr "Kliknij dwa razy na linii, żeby dodać punkt"
 
 msgid "Removes the chosen point"
 msgstr "Usuwa wybrany punkt"
 
-msgid "Over the plot: the heights stretched, the grades seen better"
-msgstr "Nad wykresem: wysokości rozciągnięte, pochylenia lepiej widać"
+msgid "Over the chart: stretches it up and down, so the slopes are easier to see"
+msgstr "Nad wykresem: rozciąga go w pionie, żeby spadki było lepiej widać"
 
-msgid "Over the plot: the view moves along the line"
-msgstr "Nad wykresem: widok przesuwa się wzdłuż linii"
+msgid "Over the chart: moves along the line"
+msgstr "Nad wykresem: przesuwa widok wzdłuż linii"
 
-msgid "Open the grade line of a track"
-msgstr "Otwórz niweletę toru"
+msgid "Open the profile of a track"
+msgstr "Otwórz profil toru"
 
 msgid "Move or add a point"
 msgstr "Przesuń albo dodaj punkt"
 
-msgid "Apply it: the tracks take its heights"
-msgstr "Zastosuj ją: tory przyjmą jej wysokości"
+msgid "Apply it: the tracks take the new heights"
+msgstr "Zastosuj: tory przyjmą nowe wysokości"
 
 msgid "Terrain from the terrain model"
-msgstr "Teren z modelu terenu"
+msgstr "Prawdziwy teren"
 
-msgid "The Terrain field of work: the terrain model (NMT) is in its tool options"
-msgstr "Dział Teren: numeryczny model terenu (NMT) jest w jego opcjach narzędzia"
+msgid "Opens Terrain; the real ground (the terrain model) is in its panel"
+msgstr "Otwiera dział Teren; prawdziwy teren (model terenu) jest w jego panelu"
 
-msgid "Open the Terrain field of work"
-msgstr "Otwórz dział Teren"
+msgid "Open Terrain (F5)"
+msgstr "Otwórz dział Teren (F5)"
 
-msgid "Load terrain from the model"
-msgstr "Wczytaj teren z modelu"
+msgid "Load the real ground"
+msgstr "Wczytaj prawdziwy teren"
 
 msgid "Sceneries made before"
 msgstr "Starsze scenerie"
 
-msgid "A track that can't be changed says why in the inspector: one of an include template (.inc), of the binary terrain cache, of a file included twice or with parameters, or on a locked or hidden layer"
-msgstr "Tor, którego nie można zmienić, mówi w inspektorze dlaczego: z szablonu include (.inc), z binarnej pamięci podręcznej terenu, z pliku dołączonego dwa razy albo z parametrami, albo na zablokowanej lub ukrytej warstwie"
+msgid "Some tracks can't be changed, for example ones put in from a ready .inc file or lying on a locked layer: the Inspector says why"
+msgstr "Niektórych torów nie da się zmienić, np. tych wstawionych z gotowego pliku .inc albo leżących na zablokowanej warstwie: Inspektor napisze dlaczego"
 
 msgid "Switches laid before keep their shape; Replace the geometry with the template, under More settings of the switch, gives them the one of the catalogue"
 msgstr "Rozjazdy ułożone wcześniej zachowują kształt; „Zastąp geometrię szablonem” w „Więcej ustawień” rozjazdu daje im kształt z katalogu szablonów"
 
-msgid "Grade lines kept by an older editor are read as they were kept"
-msgstr "Niwelety zapisane przez starszy edytor są czytane tak, jak je zapisano"
+msgid "Heights saved by an older editor are read as they were saved"
+msgstr "Wysokości zapisane przez starszy edytor są wczytywane tak, jak je zapisano"
 
-msgid "Only what changed is written: the other lines stay as they were, the comment lines of other tools too"
-msgstr "Zapisuje się tylko to, co się zmieniło: reszta pliku zostaje jak była, także komentarze innych narzędzi"
+msgid "Saving writes only what was changed; the rest of the files stays as it was"
+msgstr "Zapis zmienia w plikach tylko to, co zostało zmienione; reszta zostaje taka, jak była"
 
 msgid "P, LMB on a track"
 msgstr "P, LPM na torze"
@@ -7134,29 +7134,29 @@ msgstr "R w górę i w dół, przejściowe w bok"
 msgid "Correcting a curve"
 msgstr "Poprawianie łuku"
 
-msgid "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"
-msgstr "Narzędzie Plan: klik na łuku pokazuje jego projekt, wierzchołek i promień do przeciągania w widoku"
+msgid "Turns Plan on. Click a curve to see how it is built; its corner point and its size can be dragged in the view"
+msgstr "Włącza narzędzie Plan. Kliknij łuk, żeby zobaczyć, z czego się składa; jego wierzchołek i wielkość przeciągniesz w widoku"
 
-msgid "In the panel, the band of the curvature: drag the plateau of an arc up or down for its radius, each arc of a compound curve its own"
-msgstr "W panelu pasek krzywizny: półka łuku przeciągnięta w górę albo w dół zmienia jego promień, każdy łuk koszowego osobno"
+msgid "The strip in the panel shows how much the track turns along the way. Drag a flat part of it up or down to change how sharp that curve is"
+msgstr "Pasek w panelu pokazuje, jak mocno tor skręca na całej długości. Przeciągnij jego płaski fragment w górę albo w dół, żeby zmienić, jak ciasny jest ten łuk"
 
-msgid "Drag a ramp sideways: the transition curve gets longer or shorter"
-msgstr "Rampa przeciągnięta w bok: krzywa przejściowa wydłuża się albo skraca"
+msgid "Drag a sloping part sideways: the easing into the curve gets longer or shorter"
+msgstr "Przeciągnij pochyły fragment w bok: łagodne wejście w łuk wydłuża się albo skraca"
 
-msgid "Over the band: the radius by 5%, a transition by 5 m"
-msgstr "Nad paskiem: promień o 5%, przejściowa o 5 m"
+msgid "Over the strip, the wheel changes it in small steps"
+msgstr "Nad paskiem kółko zmienia go małymi krokami"
 
-msgid "Apply to the scenery: the tracks are laid by the design"
-msgstr "Zastosuj w scenerii: tory układają się według projektu"
+msgid "Apply to the scenery: the tracks are laid again as the plan shows"
+msgstr "Zastosuj w scenerii: tory układają się na nowo tak, jak pokazuje plan"
 
 msgid "Open the plan of a curve"
 msgstr "Otwórz plan łuku"
 
-msgid "Change the curve in the band"
-msgstr "Zmień łuk na pasku krzywizny"
+msgid "Change the curve on the strip"
+msgstr "Zmień łuk na pasku"
 
-msgid "Apply it to the scenery"
-msgstr "Zastosuj go w scenerii"
+msgid "Apply the change"
+msgstr "Zastosuj zmianę"
 
 msgid "The plan tool (G)"
 msgstr "Narzędzie Plan (G)"
@@ -7437,56 +7437,56 @@ msgstr "Przeciągnij: trasa po torach w ramce"
 msgid "The route between the outermost of the tracks, through the switches"
 msgstr "Trasa między skrajnymi torami, przez rozjazdy"
 
-msgid "Shift + a box: between the outermost"
-msgstr "Shift+ramka: między skrajnymi"
+msgid "Shift + a box: between the outermost tracks"
+msgstr "Shift+ramka: trasa między skrajnymi torami"
 
 msgid "LMB on a track: its whole line"
 msgstr "LPM na torze: cała jego linia"
 
-msgid "A click adds a track, a box from the empty ground takes the tracks in it: the route runs between the outermost of them"
-msgstr "Klik dodaje tor, ramka z pustego terenu bierze tory w niej: trasa biegnie między skrajnymi z nich"
+msgid "A click adds another track; a box drawn from empty ground takes the tracks inside it. The route runs between the outermost of them, through the switches"
+msgstr "Klik dodaje kolejny tor; ramka narysowana od pustego terenu bierze tory, które są w środku. Trasa biegnie między skrajnymi z nich, przez rozjazdy"
 
-msgid "Trainset tool: a click on the track where the train stands"
-msgstr "Narzędzie Skład: klik na torze, gdzie stoi pociąg"
+msgid "The trainset tool (the button below): click the track where the train should stand"
+msgstr "Narzędzie Skład (przycisk niżej): kliknij tor, na którym ma stać pociąg"
 
-msgid "A double click on a vehicle of the list puts it into the train; a click on a vehicle of the train moves it, turns it or takes it out"
-msgstr "Podwójny klik na pojeździe z listy wstawia go do pociągu; klik na pojeździe pociągu przesuwa go, obraca albo wyjmuje"
+msgid "Double-click a vehicle in the list to add it to the train; click a vehicle in the train to move it, turn it round or take it out"
+msgstr "Kliknij dwa razy pojazd na liście, żeby dodać go do pociągu; kliknij pojazd w pociągu, żeby go przesunąć, obrócić albo wyjąć"
 
-msgid "Place and drive: the train goes onto the track and the cab is yours"
-msgstr "Postaw i jedź: pociąg staje na torze, a kabina jest twoja"
+msgid "Place and drive: the train stands on the track and you sit in the cab"
+msgstr "Postaw i jedź: pociąg staje na torze, a ty siadasz w kabinie"
 
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
 msgid "Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień na załamaniach, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
+msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień łuku, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, poprawki, uchwyty na torze, wzniesienia i spadki, teren, starsze scenerie, zapis i jazda"
 
-msgid "B: the hectometre posts of the whole line at once"
-msgstr "B: słupki hektometrowe całej linii naraz"
+msgid "B: posts every 100 m along the whole line at once"
+msgstr "B: słupki co 100 m wzdłuż całej linii naraz"
 
 msgid "Signals and posts"
 msgstr "Sygnalizatory i słupki"
 
-msgid "The signalling tool: click a type of signal in its Signals, from the templates of the scenery"
-msgstr "Narzędzie SRK: kliknij typ sygnalizatora w sekcji Sygnalizatory, z szablonów scenerii"
+msgid "Turns Signalling on. Click a kind of signal in its Signals list; it shows the signals this scenery has"
+msgstr "Włącza narzędzie SRK, czyli sygnalizację. Kliknij rodzaj sygnalizatora na liście Sygnalizatory; są na niej sygnalizatory dostępne w tej scenerii"
 
-msgid "A click by a track places the signal on that side"
-msgstr "Klik przy torze stawia sygnalizator po tej stronie"
+msgid "Click beside a track: the signal stands on that side"
+msgstr "Kliknij obok toru: sygnalizator stanie po tej stronie"
 
-msgid "Press by the track and drag along it: the trains running that way see the signal"
-msgstr "Wciśnij przy torze i przeciągnij wzdłuż: sygnalizator widzą pociągi jadące w tę stronę"
+msgid "Press beside the track and drag along it: the signal faces the trains going the way you dragged"
+msgstr "Wciśnij obok toru i przeciągnij wzdłuż niego: sygnalizator będzie widoczny dla pociągów jadących w stronę przeciągnięcia"
 
-msgid "Drag a standing signal: it moves along its track"
-msgstr "Przeciągnij stojący sygnalizator: przesuwa się wzdłuż swojego toru"
+msgid "Drag a signal that already stands: it slides along its track"
+msgstr "Przeciągnij stojący już sygnalizator: przesuwa się wzdłuż swojego toru"
 
-msgid "Objects along the track: the hectometre posts of a whole line at once; the W17 markers of the fouling points by the selected switch, around the camera or in the whole scenery; trainsets"
-msgstr "Obiekty przy torze: słupki hektometrowe całej linii naraz; wskaźniki W17 ukresów przy wybranym rozjeździe, wokół kamery albo w całej scenerii; składy"
+msgid "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains"
+msgstr "Rzeczy przy torze: słupki co 100 m (hektometrowe) wzdłuż całej linii naraz, wskaźniki W17 przy rozjazdach (dokąd może stać wagon) i składy"
 
-msgid "Place a signal"
+msgid "Put up a signal"
 msgstr "Postaw sygnalizator"
 
-msgid "Place the hectometre posts of a line"
-msgstr "Postaw słupki hektometrowe linii"
+msgid "Put up the posts along a line"
+msgstr "Postaw słupki wzdłuż linii"
 
 msgid "The signalling tool (I)"
 msgstr "Narzędzie SRK (I)"
@@ -11797,6 +11797,9 @@ msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, dwa ostat
 msgid "Type the length of the next straight, Enter puts the point"
 msgstr "Wpisz długość następnej prostej, Enter stawia punkt"
 
+msgid "After the first point: type a number and press Enter, and the next straight piece is that many metres long"
+msgstr "Po pierwszym punkcie: wpisz liczbę i naciśnij Enter, a następny prosty odcinek będzie miał tyle metrów"
+
 msgid "Laying track: lay the points clicked / take back the last point"
 msgstr "Układanie toru: połóż kliknięte punkty / cofnij ostatni punkt"
 
@@ -12065,50 +12068,50 @@ msgstr "Porzuć punkty"
 msgid "Esc twice does the same"
 msgstr "To samo robi dwa razy Esc"
 
-msgid "A click on the ground or on a free end: where the track starts"
-msgstr "Klik na terenie albo na wolnym końcu: tu zaczyna się tor"
+msgid "Click the ground where the track should start, or the end of a track to carry it on"
+msgstr "Kliknij teren tam, gdzie ma się zacząć tor, albo koniec toru, żeby go przedłużyć"
 
-msgid "Each next click: a bend of the line, the curve at it made by itself. The line shown isn't a track yet"
-msgstr "Każdy następny klik: załamanie linii, łuk na nim powstaje sam. Pokazana linia nie jest jeszcze torem"
+msgid "Click again wherever the track should turn; the curves are made for you. Until you press Enter it is only a line, not a track"
+msgstr "Klikaj dalej tam, gdzie tor ma skręcić; łuki zrobią się same. Dopóki nie naciśniesz Enter, to tylko linia, a nie tor"
 
-msgid "Lays the track clicked; to go on from its end, click the end"
-msgstr "Układa wyklikany tor; żeby iść dalej od jego końca, kliknij ten koniec"
+msgid "Lays the track along the line. To carry on, click its end"
+msgstr "Układa tor wzdłuż linii. Żeby iść dalej, kliknij jego koniec"
 
-msgid "Takes the last point back"
-msgstr "Cofa ostatni punkt"
+msgid "Removes the last point you clicked"
+msgstr "Usuwa ostatni kliknięty punkt"
 
-msgid "Ends laying; the points not laid yet go only with a second Esc within 3 s"
-msgstr "Kończy układanie; nieułożone punkty znikają dopiero po drugim Esc w ciągu 3 s"
+msgid "Throws away the points not laid yet, but only when pressed twice within 3 seconds: the first press just warns. With no points left, Esc stops laying"
+msgstr "Wyrzuca nieułożone punkty, ale dopiero gdy naciśniesz go dwa razy w ciągu 3 sekund: pierwsze naciśnięcie tylko ostrzega. Gdy punktów już nie ma, Esc kończy układanie"
 
-msgid "Click a few points and lay them with Enter"
-msgstr "Wyklikaj kilka punktów i ułóż je Enterem"
+msgid "Click a few points and press Enter"
+msgstr "Kliknij kilka punktów i naciśnij Enter"
 
-msgid "Click the bends of the line: each gets a curve as large as fits; one too sharp for the speed set in the panel has its label in orange"
-msgstr "Klikaj załamania linii: każde dostaje łuk tak duży, jak się zmieści; łuk za ostry dla prędkości ustawionej w panelu ma pomarańczowy opis"
+msgid "Every place where the line turns gets a curve, as big as fits. An orange label means the curve breaks the rules for the speed set in the panel"
+msgstr "Każde miejsce, w którym linia skręca, dostaje łuk, tak duży, jak się zmieści. Pomarańczowy opis znaczy, że łuk nie spełnia przepisów dla prędkości ustawionej w panelu"
 
 msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it; one of two or three radii comes out a compound curve"
 msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
 
-msgid "Lay a track with a bend in it"
-msgstr "Ułóż tor z załamaniem"
+msgid "Lay a track that turns"
+msgstr "Ułóż tor, który skręca"
 
-msgid "Switch to tracing a curve with Tab"
-msgstr "Przełącz klawiszem Tab na odrysowywanie łuku"
+msgid "Press Tab to copy a curve from the photo"
+msgstr "Naciśnij Tab, żeby odrysować łuk ze zdjęcia"
 
-msgid "Change the radius of the joining curve with Ctrl+wheel"
-msgstr "Zmień promień łuku łączącego Ctrl+kółkiem"
+msgid "Change the size of the joining curve with Ctrl+wheel"
+msgstr "Zmień wielkość łuku łączącego Ctrl+kółkiem"
 
-msgid "In a scenery begun from nothing the first L asks: the real terrain of the place, or the flat plane"
-msgstr "W scenerii zaczętej od zera pierwsze L pyta: prawdziwy teren tego miejsca czy płaska płaszczyzna"
+msgid "In a new, empty scenery the first L asks whether you want the real ground of the place or a flat plane"
+msgstr "W nowej, pustej scenerii pierwsze L pyta, czy chcesz prawdziwy teren tego miejsca, czy płaską powierzchnię"
 
-msgid "Step 1, Location: where the scenery lies, a click on the map or the place typed"
-msgstr "Krok 1, Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
+msgid "Step 1, Location: show where the scenery is, with a click on the map or by typing the place"
+msgstr "Krok 1, Położenie: pokaż, gdzie leży sceneria, klikając na mapie albo wpisując miejsce"
 
-msgid "Step 2 while there are no tracks, Load around the camera: a square of the model, from geoportal.gov.pl"
-msgstr "Krok 2, póki nie ma torów: Wczytaj wokół kamery, kwadrat modelu z geoportal.gov.pl"
+msgid "Step 2, before there are tracks: Load around the camera brings the ground of that spot from geoportal.gov.pl"
+msgstr "Krok 2, zanim są tory: Wczytaj wokół kamery pobiera teren tego miejsca z geoportal.gov.pl"
 
-msgid "Step 2 with tracks, Tracks and terrain. Tracks onto the terrain: the tracks not fitted yet go onto the model, the fitted ones stay; or Terrain under the tracks, or The terrain of the model only, along them"
-msgstr "Krok 2, gdy są tory: Tory i teren. Tory na teren: tory jeszcze niedopasowane idą na model, dopasowane zostają; albo Teren pod tory, albo Sam teren z NMT wzdłuż nich"
+msgid "Step 2, once there are tracks: Tracks onto the terrain puts the tracks not fitted yet onto the real ground; Terrain under the tracks brings the ground up or down to them; The terrain of the model only loads the ground along them and leaves the tracks alone"
+msgstr "Krok 2, gdy są już tory: Tory na teren kładzie na prawdziwy teren tory jeszcze niedopasowane; Teren pod tory podnosi albo obniża teren do torów; Sam teren z NMT wczytuje teren wzdłuż torów i ich nie rusza"
 
 msgid "Takes the changes back"
 msgstr "Cofa zmiany"
@@ -12258,8 +12261,8 @@ msgstr "Ustawiony na wprost: przekłada go na bok. Tylko w edytorze, żeby zobac
 msgid "Throw the selected switch over to its other path, in the editor only"
 msgstr "Przekłada zaznaczony rozjazd na drugi tor, tylko w edytorze"
 
-msgid "A curve seen on the photo: click points along its middle, the curve ending at the last one; one of two or three radii comes out a compound curve"
-msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, łuk kończy się na ostatnim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
+msgid "To copy a curve from the aerial photo: press Tab, then click points along the middle of the curve; it ends at the last one"
+msgstr "Żeby odrysować łuk ze zdjęcia lotniczego: naciśnij Tab i klikaj punkty wzdłuż środka łuku; łuk skończy się na ostatnim"
 
 msgid "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"
 msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, który kończy się na ostatnim; ponownie Tab: z powrotem załamania"
@@ -12624,8 +12627,8 @@ msgid "Click Laying on the toolbar or press L, then click the points of the trac
 msgstr "Kliknij Układanie na pasku narzędzi albo naciśnij L, a potem klikaj punkty toru"
 
 # the lesson of the radius of the curves at the bends
-msgid "No ground under the cursor: track goes onto the level 0 plane. Terrain: F5"
-msgstr "Pod kursorem nie ma terenu: tor trafia na płaszczyznę na wysokości 0. Teren: F5"
+msgid "There is no ground under the mouse: the track will lie flat at height 0. Real ground: F5"
+msgstr "Pod myszą nie ma terenu: tor położy się płasko na wysokości 0. Prawdziwy teren: F5"
 
 msgid "R %.0f m: %s"
 msgstr "R %.0f m: %s"
@@ -12636,11 +12639,11 @@ msgstr "ciasny łuk, pociąg musi zwolnić"
 msgid "a gentle curve, a fast train"
 msgstr "łagodny łuk, pociąg jedzie szybko"
 
-msgid "Where you click a bend, the two straights meet at a sharp corner a train can't take: the editor rounds it off with a curve by itself"
-msgstr "W klikniętym załamaniu dwie proste spotykają się pod ostrym kątem, którego pociąg by nie pokonał, więc edytor sam zaokrągla je łukiem"
+msgid "Where the line turns, two straight pieces meet at a corner no train could take, so the editor rounds it off with a curve"
+msgstr "Tam, gdzie linia skręca, dwa proste odcinki spotykają się pod kątem, którego żaden pociąg by nie pokonał, więc edytor zaokrągla go łukiem"
 
-msgid "The radius is the size of that curve, in metres: the larger, the gentler the turn and the faster a train can take it"
-msgstr "Promień to wielkość tego łuku w metrach: im większy, tym łagodniejszy zakręt i tym szybciej może nim jechać pociąg"
+msgid "The radius tells how big the curve is, in metres: the bigger it is, the gentler the curve and the faster a train can go round it"
+msgstr "Promień mówi, jak duży jest łuk, w metrach: im większy, tym łagodniejszy łuk i tym szybciej pociąg może nim jechać"
 
 msgid "In the panel of the lay tool: the radius tried first is the larger one, to; the curve gets smaller only when it doesn't fit between your points, down to from"
 msgstr "W panelu Układania: najpierw próbowany jest większy promień (do); łuk maleje tylko wtedy, gdy nie mieści się między Twoimi punktami, najwyżej do wartości od"
@@ -12648,8 +12651,8 @@ msgstr "W panelu Układania: najpierw próbowany jest większy promień (do); ł
 msgid "For a start take 3000-6000 on a main line, 1000-2000 by a station; the four buttons under the fields set both"
 msgstr "Na początek: 3000-6000 na szlaku, 1000-2000 przy stacji; cztery przyciski pod polami ustawiają obie wartości naraz"
 
-msgid "Bends too close together leave no room: the curve comes out smaller, its label orange where it breaks the norms. Click the points further apart"
-msgstr "Załamania zbyt blisko siebie nie zostawiają miejsca: łuk wychodzi mniejszy, a jego opis jest pomarańczowy, gdy łamie normy. Klikaj punkty dalej od siebie"
+msgid "Points too close together leave little room, so the curve comes out smaller. When it no longer meets the rules, its label turns orange: click the points further apart"
+msgstr "Punkty zbyt blisko siebie zostawiają mało miejsca, więc łuk wychodzi mniejszy. Gdy przestaje spełniać przepisy, jego opis robi się pomarańczowy: klikaj punkty dalej od siebie"
 
 msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm"
 msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm)"
@@ -12657,8 +12660,8 @@ msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w 
 msgid "Choose other radii in the panel of the lay tool"
 msgstr "Wybierz inne promienie w panelu Układania"
 
-msgid "Lay a track with a bend and read the label of its curve"
-msgstr "Ułóż tor z załamaniem i odczytaj opis jego łuku"
+msgid "Lay a track that turns and read the label of its curve"
+msgstr "Ułóż tor, który skręca, i przeczytaj opis jego łuku"
 
 msgid "from - to"
 msgstr "od - do"
@@ -12672,11 +12675,11 @@ msgstr "Co to jest: lekcja w samouczku"
 msgid "The larger the radius, the gentler the turn: the largest that fits between your points is taken"
 msgstr "Im większy promień, tym łagodniejszy zakręt; edytor bierze największy, który mieści się między Twoimi punktami"
 
-msgid "The end snaps by itself: a click on a free end while laying joins the track to it, with no gap and with the cant of the track there going on smoothly"
-msgstr "Koniec przyciąga się sam: kliknięcie wolnego końca podczas układania łączy z nim tor bez przerwy, a przechyłka tamtego toru przechodzi płynnie w nowy"
+msgid "While laying, a click on a loose end joins your track to it exactly, with no gap"
+msgstr "Podczas układania kliknięcie wolnego końca łączy z nim twój tor dokładnie, bez szpary"
 
-msgid "A new track partly hidden in the ground: the message above the view has Fit the ground to the track, one click makes the track bed along it"
-msgstr "Nowy tor częściowo schowany w ziemi: komunikat nad widokiem ma przycisk Dopasuj teren do toru, a jedno kliknięcie robi wzdłuż niego torowisko"
+msgid "A new track partly under the ground: the message above the view has Fit the ground to the track; one click builds the bank or the cutting along it"
+msgstr "Nowy tor częściowo pod ziemią: komunikat nad widokiem ma przycisk Dopasuj teren do toru; jedno kliknięcie robi wzdłuż niego nasyp albo wykop"
 
 msgid "One grade line for nearly parallel tracks under 5.1 m apart"
 msgstr "Wspólna niweleta dla torów równoległych bliżej niż 5,1 m"
@@ -12702,11 +12705,11 @@ msgstr "Przyłącz do wspólnej niwelety"
 msgid "The route lies on the common grade line again. Its height doesn't change by this; if it's off the tracks beside, fit it to them with the grade line or by working out the lines anew"
 msgstr "Trasa znów należy do wspólnej niwelety. Jej wysokość przez to się nie zmienia; jeśli odstaje od torów obok, popraw ją niweletą albo dopasuj tory od nowa"
 
-msgid "Your own grade line for one route: Take off the common grade line, the tracks beside stop going with it"
-msgstr "Własna niweleta dla jednej trasy: Odłącz od wspólnej niwelety, tory obok przestają iść za nią"
+msgid "To give the route open in Profile a line of its own, press Take off the common grade line"
+msgstr "Żeby trasa otwarta w Profilu miała własną linię, naciśnij Odłącz od wspólnej niwelety"
 
-msgid "Tracks on one common grade line go together: drag a point, Apply, and the tracks beside (blue) go too"
-msgstr "Tory na wspólnej niwelecie idą razem: przeciągnij punkt, Zastosuj, a tory obok (niebieskie) pójdą też"
+msgid "Tracks running side by side share one line: change it, press Apply to the scenery, and the tracks beside it (blue) change too"
+msgstr "Tory biegnące obok siebie mają wspólną linię: zmień ją, naciśnij Zastosuj w scenerii, a tory obok (niebieskie) zmienią się też"
 
 msgid "%zu track beside goes with the route (blue in the view)"
 msgid_plural "%zu tracks beside go with the route (blue in the view)"
@@ -12906,32 +12909,32 @@ msgstr "Ortofoto..."
 msgid "The photo to click the switch off isn't turned on"
 msgstr "Zdjęcie, z którego wyklikujesz rozjazd, nie jest włączone"
 
-msgid "The switch tool, Template editor...: the catalogue and your own templates. A value under the mouse lights up on the drawing"
-msgstr "Narzędzie Rozjazd, Edytor szablonów...: katalog i własne szablony. Wartość pod kursorem świeci się na rysunku"
+msgid "In Switch, the Template editor... button: ready switch shapes and your own. Point at a number to see on the drawing what it means"
+msgstr "W narzędziu Rozjazd przycisk Edytuj szablony...: gotowe kształty rozjazdów i własne. Wskaż liczbę, a na rysunku zobaczysz, co oznacza"
 
-msgid "Click off the view...: click the start of the switch, the end of its main track and the end of its diverging track, then a point further on that track"
-msgstr "Wyklikaj z widoku...: kliknij początek rozjazdu, koniec toru zasadniczego i koniec toru zwrotnego, potem punkt dalej na tym torze"
+msgid "To copy a switch from the aerial photo: Click off the view..., then click where the switch starts, the end of its straight track, the end of its branching track and one point further along that branch"
+msgstr "Żeby odrysować rozjazd ze zdjęcia lotniczego: Wyklikaj z widoku..., potem kliknij początek rozjazdu, koniec jego prostego toru, koniec toru odbijającego i jeden punkt dalej na tym torze"
 
-msgid "Then points along the diverging track, 3 at least: the shape and the radius follow them"
-msgstr "Potem punkty wzdłuż toru zwrotnego, co najmniej 3: kształt i promień idą za nimi"
+msgid "Then at least 3 points along the branching track: its shape and size follow them"
+msgstr "Potem co najmniej 3 punkty wzdłuż toru odbijającego: jego kształt i wielkość dopasują się do nich"
 
-msgid "Takes the last point back; Esc stops clicking"
-msgstr "Cofa ostatni punkt; Esc przerywa klikanie"
+msgid "Removes the last point; Esc stops clicking"
+msgstr "Usuwa ostatni punkt; Esc przerywa klikanie"
 
-msgid "The top view; the orthophoto is turned on in the Layers panel"
-msgstr "Widok z góry; ortofoto włączasz w panelu Warstwy"
+msgid "The view from above; the aerial photo is turned on in the Layers panel"
+msgstr "Widok z góry; zdjęcie lotnicze włączasz w panelu Warstwy"
 
-msgid "Make the template: it lies over the photo where it was clicked and changes with its values"
-msgstr "Utwórz szablon: leży na zdjęciu tam, gdzie go wyklikano, i zmienia się razem z wartościami"
+msgid "Make the template: the new switch lies on the photo where it was clicked and changes as its numbers change"
+msgstr "Utwórz szablon: nowy rozjazd leży na zdjęciu tam, gdzie został wyklikany, i zmienia się razem z jego liczbami"
 
 msgid "Open the template editor"
 msgstr "Otwórz edytor szablonów"
 
-msgid "Make a template off the view"
-msgstr "Wyklikaj szablon z widoku"
+msgid "Make a template by clicking in the view"
+msgstr "Utwórz szablon, klikając w widoku"
 
-msgid "Nearly parallel tracks under 5.1 m apart get one grade line, the ones on common timbers one surface; a track crossing others with the ground low on both sides goes under them; a hump keeps to the model"
-msgstr "Tory prawie równoległe bliżej niż 5,1 m dostają wspólną niweletę, te na wspólnych podrozjazdnicach jedną powierzchnię; tor przecinający inne, gdy teren po obu stronach jest nisko, idzie pod nimi; górka trzyma się modelu"
+msgid "Tracks close side by side (under 5.1 m apart) get one common line of heights; a track crossing others where the ground is low on both sides goes under them"
+msgstr "Tory blisko obok siebie (mniej niż 5,1 m) dostają wspólną linię wysokości; tor przecinający inne tam, gdzie teren po obu stronach jest nisko, przechodzi pod nimi"
 
 msgid "%zu tracks get new grade lines; Ctrl+Z takes it back"
 msgstr "%zu torów dostanie nowe niwelety; Ctrl+Z to cofa"
@@ -12948,8 +12951,8 @@ msgstr[0] "%zu tor z niweletą edytowaną ręcznie zostaje bez zmian"
 msgstr[1] "%zu tory z niweletą edytowaną ręcznie zostają bez zmian"
 msgstr[2] "%zu torów z niweletą edytowaną ręcznie zostaje bez zmian"
 
-msgid "A grade line edited by hand with the profile stays as it is, in All anew too unless you tick it"
-msgstr "Niweleta edytowana ręcznie w profilu zostaje bez zmian, także przy dopasowaniu od nowa, chyba że to zaznaczysz"
+msgid "A line you shaped by hand in Profile stays as it is, even when all the tracks are fitted anew, unless you tick that the ones edited by hand go too"
+msgstr "Linia ukształtowana ręcznie w Profilu zostaje bez zmian, nawet gdy wszystkie tory są dopasowywane od nowa, chyba że zaznaczysz, że ręcznie edytowane też"
 
 msgid "%zu track name is used more than once in the scenery"
 msgid_plural "%zu track names are used more than once in the scenery"
@@ -13262,11 +13265,11 @@ msgstr "przejściowa L %.0f m"
 msgid "The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"
 msgstr "Edytor bierze największy promień, który mieści się między Twoimi punktami: od 6000 m do 2000 m dwie stykające się krzywe przejściowe bez przechyłki, poniżej łuk z krzywymi przejściowymi i przechyłką według norm"
 
-msgid "The largest curve that fits between your points is taken: first two transition curves meeting, with no cant, from 6000 m down to 2000 m while they are long enough for the speed; where none fits, an arc with the transitions and the cant of the norms"
-msgstr "Edytor bierze największy łuk, który mieści się między Twoimi punktami: najpierw dwie stykające się krzywe przejściowe bez przechyłki, od 6000 m do 2000 m, dopóki są dość długie dla prędkości; gdy żadne się nie mieszczą, łuk z krzywymi przejściowymi i przechyłką według norm"
+msgid "The editor picks the biggest curve that fits between your points. A slight turn gets only a gentle easing in and out; a sharper one gets a real curve, eased in and out, with the outer rail raised, as the railway rules say"
+msgstr "Edytor wybiera największy łuk, jaki mieści się między twoimi punktami. Lekki skręt dostaje samo łagodne wejście i wyjście; mocniejszy prawdziwy łuk, z łagodnym wejściem i wyjściem i z podniesioną zewnętrzną szyną, tak jak każą przepisy kolejowe"
 
-msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm; two transition curves meeting read 2xL and R. A laid track also has a label on each transition curve, in the top view close up"
-msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm); dwie stykające się krzywe przejściowe mają opis 2xL i R. Ułożony tor ma też opis na każdej krzywej przejściowej, w widoku z góry z bliska"
+msgid "The label of a curve: R is the radius, L the length of the easing into it, h how much higher the outer rail is, in millimetres. A slight turn with no real curve reads 2xL"
+msgstr "Opis łuku: R to promień, L długość łagodnego wejścia w łuk, h o ile wyżej leży zewnętrzna szyna, w milimetrach. Lekki skręt bez prawdziwego łuku ma opis 2xL"
 
 msgid "%.0f km/h on the diverging track"
 msgstr "%.0f km/h na torze zwrotnym"
@@ -13343,8 +13346,8 @@ msgstr "szyny toru %s"
 msgid "A switch bent into a curve of no template of the catalogue isn't flipped: delete it and lay it again"
 msgstr "Rozjazdu wygiętego w łuk, spoza katalogu, nie da się odwrócić: usuń go i ułóż ponownie"
 
-msgid "Switches laid before keep their shape; a template picked for one in the inspector gives it the one of the catalogue"
-msgstr "Rozjazdy ułożone wcześniej zachowują kształt; szablon wybrany w inspektorze nadaje rozjazdowi kształt z katalogu"
+msgid "Switches laid earlier keep their shape; a template picked for one in the Inspector gives it the ready shape"
+msgstr "Rozjazdy ułożone wcześniej zachowują kształt; szablon wybrany dla rozjazdu w Inspektorze nadaje mu gotowy kształt"
 
 msgid "Let go"
 msgstr "Puść"
