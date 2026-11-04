@@ -24,3 +24,11 @@ TEST_CASE("win1250: what win1250_to_utf8 gives is valid utf-8") {
 	CHECK(decoded.size() == kWin1250.size());
 	CHECK(decoded[12] == U'\x0142');
 }
+
+TEST_CASE("win1250: utf-8 written back the way a scenery file has it") {
+	CHECK(utf8_to_win1250("Bia\xC5\x82" "a Podlaska") == "Bia\xB3" "a Podlaska");
+	CHECK(utf8_to_win1250(kUtf8) == kWin1250);
+	CHECK(win1250_to_utf8(utf8_to_win1250(kUtf8)) == kUtf8);
+	// the letters other than the polish ones turn into question marks
+	CHECK(utf8_to_win1250("\xC3\xA9t\xC3\xA9") == "?t?");
+}

@@ -779,6 +779,9 @@ void srk_tool::load()
 				{
 					std::getline(words, entry.name);
 					entry.name.erase(0, entry.name.find_first_not_of(' '));
+					// windows-1250 like the rest of the scenery file; earlier builds wrote it in utf-8, which stays as it is
+					if (std::u32string decoded; false == utf8_to_utf32(entry.name, decoded))
+						entry.name = win1250_to_utf8(entry.name);
 					break;
 				}
 			}
@@ -818,7 +821,7 @@ void srk_tool::store()
 			for (auto const &[signal, both] : entry.ways)
 				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
 					ways += (ways.empty() ? " ways " : ",") + signal + (both ? "=2" : "=1");
-			lines.push_back(format("station %s line %s km %s from %s anchor %s%s%s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), blocks.c_str(), ways.c_str(), entry.name.c_str()));
+			lines.push_back(format("station %s line %s km %s from %s anchor %s%s%s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), blocks.c_str(), ways.c_str(), utf8_to_win1250(entry.name).c_str()));
 		}
 		scene::Layers.mark(layer, kMark, std::move(lines));
 	}
@@ -879,7 +882,15 @@ srk_tool::record &srk_tool::record_of_open()
 		auto *first{m_layout->switches.front()};
 		entry.anchor = first->name();
 		entry.track = first;
-		entry.layer = m_templates.output_layer("srk");
+		// beside the records of the other stations, in the file of the scenery they were written in under another name too
+		for (auto const layer : scene::Layers.marked_layers(kMark))
+			if (scene::Layers.accepts(layer))
+			{
+				entry.layer = layer;
+				break;
+			}
+		if (entry.layer == null_handle)
+			entry.layer = m_templates.output_layer("srk");
 		if (entry.layer == null_handle)
 			entry.layer = alignment_store::layer_of(*first);
 		m_records.push_back(std::move(entry));
@@ -2001,6 +2012,35 @@ void srk_tool::number_switches()
 		if (false == editor_track::name_valid(*track, name, reason, &owner) && (owner == nullptr || own.count(owner) == 0))
 		{
 			m_status = format(STR_C("%s can't be named %s: %s"), track->name().c_str(), name.c_str(), reason.c_str());
+			return;
+		}
+	}
+	// the events aiming at a switch by its old name or named after it, <name>:event0, the editor doesn't write: renamed, the
+	// switch would lose them. they're listed first, the same renames clicked again go ahead
+	{
+		std::vector<std::string> unwritten;
+		std::string key{code};
+		for (auto const &[track, name] : names)
+		{
+			if (track->name() == name)
+				continue;
+			key += ' ' + track->name() + '>' + name;
+			auto const uses{editor_track::uses_of_name(*track)};
+			for (auto const *events : {&uses.events, &uses.loose})
+				for (auto const &event : *events)
+					unwritten.push_back(track->name() + ": " + event);
+		}
+		if (unwritten.empty() || m_numbering_confirm == key)
+			m_numbering_confirm.clear();
+		else
+		{
+			m_numbering_confirm = key;
+			std::string listed;
+			for (std::size_t i = 0; i < unwritten.size() && i < 6; ++i)
+				listed += (i > 0 ? ", " : "") + unwritten[i];
+			if (unwritten.size() > 6)
+				listed += format(" (+%zu)", unwritten.size() - 6);
+			m_status = format(STR_C("These events aim at the switches by their old names, the editor doesn't write them and they'd lose them: %s. Number the switches again to rename them anyway"), listed.c_str());
 			return;
 		}
 	}

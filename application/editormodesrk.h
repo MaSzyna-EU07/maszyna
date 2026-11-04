@@ -286,6 +286,9 @@ class srk_tool final : public editor_tool
 		bool remove{false}; // the block signals standing there taken away, else placed
 	};
 	std::string m_status;
+	// the renames Number the switches was clicked for while events aim at the switches by their old names: a second click with
+	// the same ones renames anyway
+	std::string m_numbering_confirm;
 
 	void load();
 	void open(TTrack &Track);

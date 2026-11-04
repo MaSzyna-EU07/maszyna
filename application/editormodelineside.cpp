@@ -256,22 +256,49 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 	if (stem.empty())
 		stem = "scenery";
 	std::string reason;
+	auto const take = [&](scene::layer_handle const Layer) {
+		if (Layer == null_handle || false == scene::Layers.accepts(Layer, &reason))
+			return false;
+		scene::Layers.visible(Layer, true);
+		scene::Layers.locked(Layer, false);
+		return true;
+	};
+	// the layer included of the name of the part, <scenery>_<part>.scm or with a number, if it can take more. returns: null_handle if none
+	auto const included = [&](auto const &Named) -> scene::layer_handle {
+		for (std::size_t index = 1; index <= scene::Layers.size(); ++index)
+			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && Named(ToLower(existing.name)))
+				if (auto const layer{scene::Layers.resolve(static_cast<scene::layer_handle>(index))}; take(layer))
+					return layer;
+		return null_handle;
+	};
+	auto const name_of = [&](int const Attempt) { return ToLower(stem + "_" + Part + (Attempt > 1 ? std::to_string(Attempt) : std::string{}) + ".scm"); };
+	for (int attempt = 1; attempt <= 9; ++attempt)
+		if (auto const layer{included([&](std::string const &Name) { return Name == name_of(attempt); })}; layer != null_handle)
+			return layer;
+	// one of the scenery saved under another name before, the file it was copied from: what the part made stays in one file
+	auto const part{"_" + ToLower(Part)};
+	if (auto const layer{included([&](std::string const &Name) {
+		    if (false == Name.ends_with(".scm"))
+			    return false;
+		    auto base{Name.substr(0, Name.size() - 4)};
+		    if (false == base.empty() && std::isdigit(static_cast<unsigned char>(base.back())))
+			    base.pop_back();
+		    return base.size() > part.size() && base.ends_with(part);
+	    })};
+	    layer != null_handle)
+		return layer;
 	// a file of that name the scenery doesn't include, or one which can't take more, gives way to the next number
 	for (int attempt = 1; attempt <= 9; ++attempt)
 	{
-		auto const name{ToLower(stem + "_" + Part + (attempt > 1 ? std::to_string(attempt) : std::string{}) + ".scm")};
-		auto layer{null_handle};
-		for (std::size_t index = 1; index <= scene::Layers.size() && layer == null_handle; ++index)
-			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && existing.name == name)
-				layer = scene::Layers.resolve(static_cast<scene::layer_handle>(index));
-		if (layer == null_handle)
-			layer = scene::Layers.create(name, scene::layer_handle{1}, reason, false);
-		if (layer != null_handle && scene::Layers.accepts(layer, &reason))
-		{
-			scene::Layers.visible(layer, true);
-			scene::Layers.locked(layer, false);
+		auto const name{name_of(attempt)};
+		auto known{false};
+		for (std::size_t index = 1; index <= scene::Layers.size() && false == known; ++index)
+			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && ToLower(existing.name) == name)
+				known = true;
+		if (known)
+			continue;
+		if (auto const layer{scene::Layers.create(name, scene::layer_handle{1}, reason, false)}; take(layer))
 			return layer;
-		}
 	}
 	WriteLog("Editor: no layer for " + Part + ", the active one takes it: " + reason, logtype::generic);
 	return null_handle;
