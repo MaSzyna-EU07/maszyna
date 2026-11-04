@@ -196,6 +196,7 @@ set(SOURCES
 "editor/editorSwitchStore.cpp"
 "editor/editorSwitchCurve.cpp"
 "editor/editorKilometrage.cpp"
+"editor/editorStation.cpp"
 "editor/editorSwitchDesign.cpp"
 "editor/editorConnections.cpp"
 "application/editormodeconnection.cpp"
