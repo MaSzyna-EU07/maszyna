@@ -5388,8 +5388,8 @@ msgstr "Narzędzie Zaznaczanie"
 msgid "Click a track: it is selected, with its ends"
 msgstr "Kliknij tor: zostaje zaznaczony, widać jego końce"
 
-msgid "The gizmo, to move, turn or bend the track: the next lesson"
-msgstr "Gizmo do przesuwania, obracania i wyginania toru: następna lekcja"
+msgid "The gizmo, to move, turn or lengthen the track, its control vectors to bend it: the next lesson"
+msgstr "Gizmo do przesuwania, obracania i wydłużania toru, jego wektory kontrolne do wyginania: następna lekcja"
 
 msgid "Editing with the gizmo"
 msgstr "Edycja z gizmo"
@@ -5406,8 +5406,8 @@ msgstr "Uchwyty, które wydłużają go na wolnym końcu, łuk zachowuje promie�
 msgid "With the gizmo out the control vectors are there too: drag one, the curve follows it"
 msgstr "Z gizmo widać też wektory sterujące: przeciągnij jeden, łuk idzie za nim"
 
-msgid "A click on a point of the track: the gizmo goes to it, that point alone is moved or turned"
-msgstr "Klik na punkcie toru: gizmo przechodzi do niego, przesuwa albo obraca tylko ten punkt"
+msgid "A click on a point of the track: the gizmo goes to it; Q moves that point alone, W turns the whole track about it, a control vector alone"
+msgstr "Klik w punkt toru: gizmo przechodzi do niego; Q przesuwa sam ten punkt, W obraca wokół niego cały tor, a wektor kontrolny sam"
 
 msgid "Held while dragging: the gizmo goes by its step"
 msgstr "Trzymany przy przeciąganiu: gizmo przeskakuje o swój krok"
@@ -5934,11 +5934,11 @@ msgstr "Kliknij tor: ten, w który wejdzie rozjazd"
 msgid "Press on it and drag: along the direction, sideways the side; let go: the switch is laid"
 msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę; puszczenie kładzie rozjazd"
 
-msgid "Connection: drag from a straight onto the other track; a crossover, a double one or scissors, as chosen at the top"
-msgstr "Połączenie: przeciągnij z prostej na drugi tor; przejście rozjazdowe, podwójne albo nożyce, jak wybrano na górze"
+msgid "Drag from a straight onto the other track: a crossover; over a crossover the other way, a double one, or scissors where they overlap"
+msgstr "Przeciągnij z prostej na drugi tor: przejście rozjazdowe; nad przejściem w drugą stronę podwójne, a gdzie się nakładają, nożycowe"
 
-msgid "Switch ladder: drag from the straight to the side the tracks go off to; the ones missing are laid with it"
-msgstr "Ulica zwrotnicowa: przeciągnij z prostej w stronę, w którą odchodzą tory; brakujące tory układają się razem z nią"
+msgid "Switch ladder: drag from a straight across the parallel tracks beside it and let go on the farthest; a switch onto each, with the straights up to where they start"
+msgstr "Ulica zwrotnicowa: przeciągnij z prostej w poprzek równoległych torów obok i puść na najdalszym; na każdy z nich rozjazd, z prostymi do miejsca, gdzie się zaczynają"
 
 msgid "Click the green or red point in the view: that one only"
 msgstr "Kliknij zielony albo czerwony punkt w widoku: postawi albo poprawi tylko ten wskaźnik"
@@ -6981,8 +6981,8 @@ msgstr "Wczytaj teren z modelu"
 msgid "Sceneries made before"
 msgstr "Starsze scenerie"
 
-msgid "A track of an include or of a file that isn't saved: the inspector says why it can't be changed"
-msgstr "Tor z pliku dołączanego (include) albo z pliku, który nie jest zapisywany: Inspektor mówi, czemu nie da się go zmienić"
+msgid "A track that can't be changed says why in the inspector: one of an include template (.inc), of the binary terrain cache, of a file included twice or with parameters, or on a locked or hidden layer"
+msgstr "Tor, którego nie można zmienić, mówi w inspektorze dlaczego: z szablonu include (.inc), z binarnej pamięci podręcznej terenu, z pliku dołączonego dwa razy albo z parametrami, albo na zablokowanej lub ukrytej warstwie"
 
 msgid "Switches laid before keep their shape; Replace the geometry with the template, under More settings of the switch, gives them the one of the catalogue"
 msgstr "Rozjazdy ułożone wcześniej zachowują kształt; „Zastąp geometrię szablonem” w „Więcej ustawień” rozjazdu daje im kształt z katalogu szablonów"
@@ -7458,8 +7458,8 @@ msgstr "Postaw i jedź: pociąg staje na torze, a kabina jest twoja"
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
-msgid "Short lessons with clips and drawings: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Krótkie lekcje z filmikami i rysunkami: kamera, układanie toru, łuki, promień na załamaniach, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
+msgid "Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień na załamaniach, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: the hectometre posts of the whole line at once"
 msgstr "B: słupki hektometrowe całej linii naraz"
@@ -7479,8 +7479,8 @@ msgstr "Wciśnij przy torze i przeciągnij wzdłuż: sygnalizator widzą pociąg
 msgid "Drag a standing signal: it moves along its track"
 msgstr "Przeciągnij stojący sygnalizator: przesuwa się wzdłuż swojego toru"
 
-msgid "Objects along the track: the hectometre posts and the W17 markers of a whole line at once, and trainsets"
-msgstr "Obiekty przy torze: słupki hektometrowe i wskaźniki W17 całej linii naraz oraz składy"
+msgid "Objects along the track: the hectometre posts of a whole line at once; the W17 markers of the fouling points by the selected switch, around the camera or in the whole scenery; trainsets"
+msgstr "Obiekty przy torze: słupki hektometrowe całej linii naraz; wskaźniki W17 ukresów przy wybranym rozjeździe, wokół kamery albo w całej scenerii; składy"
 
 msgid "Place a signal"
 msgstr "Postaw sygnalizator"
@@ -12077,8 +12077,8 @@ msgstr "Układa wyklikany tor; żeby iść dalej od jego końca, kliknij ten kon
 msgid "Takes the last point back"
 msgstr "Cofa ostatni punkt"
 
-msgid "Ends laying; the points not laid yet go only with the second Esc"
-msgstr "Kończy układanie; nieułożone punkty znikają dopiero po drugim Esc"
+msgid "Ends laying; the points not laid yet go only with a second Esc within 3 s"
+msgstr "Kończy układanie; nieułożone punkty znikają dopiero po drugim Esc w ciągu 3 s"
 
 msgid "Click a few points and lay them with Enter"
 msgstr "Wyklikaj kilka punktów i ułóż je Enterem"
@@ -12101,14 +12101,14 @@ msgstr "Zmień promień łuku łączącego Ctrl+kółkiem"
 msgid "In a scenery begun from nothing the first L asks: the real terrain of the place, or the flat plane"
 msgstr "W scenerii zaczętej od zera pierwsze L pyta: prawdziwy teren tego miejsca czy płaska płaszczyzna"
 
-msgid "Location: where the scenery lies, a click on the map or the place typed"
-msgstr "Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
+msgid "Step 1, Location: where the scenery lies, a click on the map or the place typed"
+msgstr "Krok 1, Położenie: gdzie leży sceneria, klik na mapie albo wpisane miejsce"
 
-msgid "Load along the tracks, or around the camera: the model comes from geoportal.gov.pl"
-msgstr "Wczytaj wzdłuż torów albo wokół kamery: model pochodzi z geoportal.gov.pl"
+msgid "Step 2 while there are no tracks, Load around the camera: a square of the model, from geoportal.gov.pl"
+msgstr "Krok 2, póki nie ma torów: Wczytaj wokół kamery, kwadrat modelu z geoportal.gov.pl"
 
-msgid "Tracks onto the terrain: the tracks not fitted yet go onto the model, the ones fitted stay; the terrain to some tracks only: select them, Terrain in the inspector"
-msgstr "Tory na teren: tory jeszcze niedopasowane idą na model, dopasowane zostają; teren tylko pod wybrane tory: zaznacz je, sekcja Teren w inspektorze"
+msgid "Step 2 with tracks, Tracks and terrain. Tracks onto the terrain: the tracks not fitted yet go onto the model, the fitted ones stay; or Terrain under the tracks, or The terrain of the model only, along them"
+msgstr "Krok 2, gdy są tory: Tory i teren. Tory na teren: tory jeszcze niedopasowane idą na model, dopasowane zostają; albo Teren pod tory, albo Sam teren z NMT wzdłuż nich"
 
 msgid "Takes the changes back"
 msgstr "Cofa zmiany"
@@ -12648,8 +12648,8 @@ msgstr "W panelu Układania: najpierw próbowany jest większy promień (do); ł
 msgid "For a start take 3000-6000 on a main line, 1000-2000 by a station; the four buttons under the fields set both"
 msgstr "Na początek: 3000-6000 na szlaku, 1000-2000 przy stacji; cztery przyciski pod polami ustawiają obie wartości naraz"
 
-msgid "Bends too close together leave no room: the curve comes out smaller and its label turns orange. Click the points further apart"
-msgstr "Załamania zbyt blisko siebie nie zostawiają miejsca: łuk wychodzi mniejszy, a jego opis robi się pomarańczowy. Klikaj punkty dalej od siebie"
+msgid "Bends too close together leave no room: the curve comes out smaller, its label orange where it breaks the norms. Click the points further apart"
+msgstr "Załamania zbyt blisko siebie nie zostawiają miejsca: łuk wychodzi mniejszy, a jego opis jest pomarańczowy, gdy łamie normy. Klikaj punkty dalej od siebie"
 
 msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm"
 msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm)"
@@ -13262,11 +13262,11 @@ msgstr "przejściowa L %.0f m"
 msgid "The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"
 msgstr "Edytor bierze największy promień, który mieści się między Twoimi punktami: od 6000 m do 2000 m dwie stykające się krzywe przejściowe bez przechyłki, poniżej łuk z krzywymi przejściowymi i przechyłką według norm"
 
-msgid "The largest radius that fits between your points is taken: from 6000 m down to 2000 m two transition curves meeting, with no cant; below that an arc with the transitions and the cant of the norms"
-msgstr "Edytor bierze największy promień, który mieści się między Twoimi punktami: od 6000 m do 2000 m dwie stykające się krzywe przejściowe bez przechyłki, poniżej łuk z krzywymi przejściowymi i przechyłką według norm"
+msgid "The largest curve that fits between your points is taken: first two transition curves meeting, with no cant, from 6000 m down to 2000 m while they are long enough for the speed; where none fits, an arc with the transitions and the cant of the norms"
+msgstr "Edytor bierze największy łuk, który mieści się między Twoimi punktami: najpierw dwie stykające się krzywe przejściowe bez przechyłki, od 6000 m do 2000 m, dopóki są dość długie dla prędkości; gdy żadne się nie mieszczą, łuk z krzywymi przejściowymi i przechyłką według norm"
 
-msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm; each transition curve has a label of its own along it"
-msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm); każda krzywa przejściowa ma też własny opis wzdłuż niej"
+msgid "The label of a curve: R the radius, L the transition curve easing into it, h how much the outer rail is raised, in mm; two transition curves meeting read 2xL and R. A laid track also has a label on each transition curve, in the top view close up"
+msgstr "Opis łuku: R to promień, L krzywa przejściowa łagodząca wejście w łuk, h o ile podniesiona jest zewnętrzna szyna (mm); dwie stykające się krzywe przejściowe mają opis 2xL i R. Ułożony tor ma też opis na każdej krzywej przejściowej, w widoku z góry z bliska"
 
 msgid "%.0f km/h on the diverging track"
 msgstr "%.0f km/h na torze zwrotnym"
