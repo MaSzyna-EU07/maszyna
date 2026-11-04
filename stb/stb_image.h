@@ -7017,6 +7017,8 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
             }
             memcpy( out + ((layers - 1) * stride), u, stride );
             if (layers >= 2) {
+               // MaSzyna: a local fix, keep it when stb_image is updated. Upstream (v2.29 and v2.30) has
+               // two_back = out - 2 * stride, before the buffer, instead of the frame two back in it
                two_back = out + (layers - 2) * stride;
             }
 

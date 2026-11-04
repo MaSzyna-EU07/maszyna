@@ -699,7 +699,8 @@ if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE ws2_32)
 endif()
 
-# http client of the editor's geoportal orthophoto layer: WinHTTP on Windows, libcurl elsewhere when available
+# http client of the editor, for the orthophoto, the terrain model and the topo map of geoportal.gov.pl: WinHTTP on Windows,
+# libcurl elsewhere when available
 if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE winhttp)
 else()
@@ -708,7 +709,7 @@ else()
 		target_link_libraries(eu07_settings INTERFACE CURL::libcurl)
 		target_compile_definitions(eu07_settings INTERFACE EU07_WITH_CURL)
 	else()
-		message(STATUS "libcurl not found: the editor's orthophoto layer will only show cached tiles")
+		message(STATUS "libcurl not found: the editor's orthophoto and terrain model will only show what's cached, its topo map nothing")
 	endif()
 endif()
 
