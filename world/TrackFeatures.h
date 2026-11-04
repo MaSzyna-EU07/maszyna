@@ -12,11 +12,9 @@ http://mozilla.org/MPL/2.0/.
 // features of the tracks built into the simulator but switched off in it as a whole, whatever the scenery or eu07.ini sets
 namespace track_features {
 
-// the rails cut where they cross other rails into frogs, wing rails and check rails; off, the rails of plain tracks and of
-// switches with the key frogs are laid whole, as before
-bool constexpr crossings { false };
 // the blades of the switches with the key frogs shaped as their templates have them, from the tip their planed nose ends at to the heel,
-// with the rails left whole where the crossings are off; off with the crossings too, they're laid from the start of the switch as before
+// with the rails left whole where the frogs aren't cut (frogs in eu07.ini off); off with the frogs too, they're laid from the start of
+// the switch as before
 bool constexpr blades { true };
 
 } // namespace track_features
