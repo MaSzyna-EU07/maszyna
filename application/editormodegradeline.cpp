@@ -31,7 +31,7 @@ http://mozilla.org/MPL/2.0/.
 
 namespace
 {
-std::string const kGradeLineMark{"//$n"};
+std::string const kGradeLineMark{"//$w"};
 } // namespace
 
 // the ends of the path up or down by these, what's between them in proportion; After is given the path and each of its pieces then
@@ -75,7 +75,7 @@ std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &T
 	return format("%s@%lld,%lld", Name.c_str(), static_cast<long long>(std::llround(start.x)), static_cast<long long>(std::llround(start.z)));
 }
 
-// the grade lines shared go to the scenery files as "//$n" comment lines, by those keys
+// the grade lines shared go to the scenery files as "//$w" comment lines, by those keys
 void editor_mode::grade_lines_load()
 {
 	auto &state{m_nmt_state};

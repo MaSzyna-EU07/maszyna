@@ -84,7 +84,7 @@ double nice_step(double const Approximate)
 }
 
 std::string const kProfileMark{"//$p"};
-std::string const kFittedMark{"//$f"};
+std::string const kFittedMark{"//$t"};
 
 profile::line reversed_line(profile::line Line, double const Length)
 {

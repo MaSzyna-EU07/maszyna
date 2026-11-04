@@ -2392,7 +2392,7 @@ void editor_mode::load_orthophoto_settings()
     m_orthophoto.settings(config);
     m_orthophoto_origin_edit = {config.north, config.east};
     // the area the imagery and the terrain model are downloaded in, none in a scenery which has none
-    m_orthophoto_area_mark = scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$a");
+    m_orthophoto_area_mark = scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$z");
     m_orthophoto.area(editor_orthophoto::read_area(m_orthophoto_area_mark));
     if (false == m_orthophoto.area().empty())
         WriteLog(format("Editor: the download area of the scenery, %zu points, %d tiles of the orthophoto", m_orthophoto.area().size(), m_orthophoto.stats().area_tiles));
@@ -3209,7 +3209,7 @@ bool editor_mode::save()
     if (auto const area{editor_orthophoto::area_lines(m_orthophoto.area())}; false == m_orthophoto_scenery.empty() && area != m_orthophoto_area_mark)
     {
         m_orthophoto_area_mark = area;
-        scene::Layers.mark(scene::layer_handle{1}, "//$a", area);
+        scene::Layers.mark(scene::layer_handle{1}, "//$z", area);
     }
     auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
     auto const controls{turntable_controls(rootstatements)};

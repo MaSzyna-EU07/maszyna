@@ -1316,6 +1316,24 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		}
 	}
 
+	// the lines read from the letters the marks had before go to the mark they have now, also those the editor didn't change
+	for (auto const &[markedlayer, lines] : m_marked)
+	{
+		auto const target{resolve(markedlayer)};
+		if (false == is_output(target) || false == writable(markedlayer))
+		{
+			continue;
+		}
+		for (auto const &line : lines)
+		{
+			if (line.moved && m_marking.count({markedlayer, line.mark}) == 0)
+			{
+				push_edit(markedlayer, line.span, {}, nullptr);
+				markedtext[target].push_back(line.mark + ' ' + line.text);
+			}
+		}
+	}
+
 	// includes of templates
 	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
 	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)

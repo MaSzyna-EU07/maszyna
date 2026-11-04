@@ -2972,7 +2972,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profiles_to_history(std::vector<stored_profile> Library);
 	// the kept grade lines back to the library given, the step changing them given up before it went to the history
 	void profiles_restore(std::vector<stored_profile> Library);
-	// the tracks whose grade line was fitted, by name, with the shape they had then, kept as "//$f" comment lines: a track
+	// the tracks whose grade line was fitted, by name, with the shape they had then, kept as "//$t" comment lines: a track
 	// changed since, by hand or taken back, isn't fitted any more
 	struct fitted_mark
 	{

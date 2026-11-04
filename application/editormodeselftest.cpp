@@ -192,7 +192,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back
 //   trackheights <file>                  the heights of the ends of all the paths and how each track stands to the terrain model
 //   profiledump <file>                   the route open in the profile tool to the file: its heights and the points of its grade line
-//   fittedstate [reload]                logs how many tracks have their grade line fitted, and which; reload: read again from the //$f lines
+//   fittedstate [reload]                logs how many tracks have their grade line fitted, and which; reload: read again from the //$t lines
 //   trackterrain <pull|restore> <track>...   the terrain drawn to the tracks, or their formations taken out of it, as the panel of the tracks
 //   terrainhash                          a hash of the heights of the terrain chunks in memory, to compare the ground two builds made
 //   rebuildall                           the geometry of every path in the sections made already laid anew, the time it took logged,

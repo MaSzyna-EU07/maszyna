@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <sstream>
 #include <string_view>
 
 namespace scene
@@ -845,26 +846,59 @@ bool node_layers::pending() const
 
 namespace
 {
-// marks of the lines the editor keeps track of
-std::array<char const *, 11> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$a", "//$n", "//$f"};
+// marks of the lines the editor keeps track of. The letters the starters read in a scenery file are left to them: the title //$n,
+// the description //$d, the attachments //$f, the image //$i, the id //$l and the old scenery //$a, in the trainsets //$o and //$r
+std::array<char const *, 11> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$z", "//$w", "//$t"};
 
-// other tools put lines of their own after some of these marks: Rainsted its includes after //$r, the launcher the descriptions
-// of the trainsets after //$o. The editor's lines of them are told by their first word
-bool editor_line(char const *Mark, std::string const &Text)
+// the marks some of these had before, on the letters of the starters: the download area //$z was //$a, the shared grade lines //$w
+// were //$n, the fitted tracks //$t were //$f. Their lines are read only by the word the editor wrote in them, or by the start of
+// the comment line it put before them, and are kept under the mark they have now: saved, they go and are written again with it
+struct moved_mark
 {
-	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 5> const words{{
+	std::string_view before;
+	char const *now;
+	std::string_view word;
+	std::string_view note;
+};
+std::array<moved_mark, 3> const movedmarks{{
+    {"//$a", "//$z", "point", "# the area the editor downloads"},
+    {"//$n", "//$w", "gradeline", "# the tracks sharing a grade line"},
+    {"//$f", "//$t", "fitted", "# the tracks whose grade line was fitted"},
+}};
+
+std::string_view first_word(std::string const &Text)
+{
+	return std::string_view{Text}.substr(0, Text.find_first_of(" \t"));
+}
+
+// other tools put lines of their own after some of these marks: Rainsted its includes after //$r, the starters the descriptions
+// of the trainsets after //$o. The editor's lines of them are told by their first words, and so are those of most marks of its
+// own, so a line the editor didn't write is never taken off as the scenery is saved
+bool editor_line(std::string_view const Mark, std::string const &Text)
+{
+	if (Mark == "//$o")
+	{
+		// "on 0" or "on 1", the origin after it (older builds put the settings of the imagery there, from the year on); a trainset
+		// described as "on ..." isn't the editor's
+		std::istringstream words{Text};
+		std::string on, state, next;
+		return words >> on >> state && on == "on" && (state == "0" || state == "1") && (false == static_cast<bool>(words >> next) || next == "origin" || next == "year");
+	}
+	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 7> const words{{
 	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "kept", "vertex", "click", "element", "end"}},
 	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
-	    {"//$o", {"on"}},
 	    {"//$s", {"#", "station"}},
 	    {"//$k", {"#", "mark", "via"}},
+	    {"//$z", {"#", "point"}},
+	    {"//$w", {"#", "gradeline"}},
+	    {"//$t", {"#", "fitted"}},
 	}};
 	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())
 	{
 		return true;
 	}
-	auto const word{std::string_view{Text}.substr(0, Text.find_first_of(" \t"))};
+	auto const word{first_word(Text)};
 	return std::any_of(lookup->second.begin(), lookup->second.end(), [&](std::string_view const Known) { return false == Known.empty() && Known == word; });
 }
 } // namespace
@@ -888,27 +922,39 @@ void node_layers::scan(layer_handle const Layer)
 		auto end{content.find('\n', begin)};
 		end = (end == std::string::npos ? content.size() : end + 1);
 		auto const first{content.find_first_not_of(" \t", begin)};
+		// the text after the mark, if the line starts with it
+		auto const marked_text = [&](std::string_view const Mark, std::string &Text) {
+			auto const length{Mark.size()};
+			if (content.compare(first, length, Mark) != 0 || (first + length < end && content[first + length] != ' ' && content[first + length] != '\t' && content[first + length] != '\r' && content[first + length] != '\n'))
+			{
+				return false;
+			}
+			Text = content.substr(first + length, end - first - length);
+			while (false == Text.empty() && (Text.back() == '\n' || Text.back() == '\r'))
+			{
+				Text.pop_back();
+			}
+			Text.erase(0, Text.find_first_not_of(" \t"));
+			return true;
+		};
 		if (first < end)
 		{
-			for (auto const *mark : editormarks)
+			std::string text;
+			char const *taken{nullptr};
+			bool moved{false};
+			auto const mark{std::find_if(editormarks.begin(), editormarks.end(), [&](char const *Mark) { return marked_text(Mark, text); })};
+			if (mark != editormarks.end())
 			{
-				auto const length{std::char_traits<char>::length(mark)};
-				if (content.compare(first, length, mark) != 0 || (first + length < end && content[first + length] != ' ' && content[first + length] != '\t' && content[first + length] != '\r' && content[first + length] != '\n'))
-				{
-					continue;
-				}
-				auto text{content.substr(first + length, end - first - length)};
-				while (false == text.empty() && (text.back() == '\n' || text.back() == '\r'))
-				{
-					text.pop_back();
-				}
-				text.erase(0, text.find_first_not_of(" \t"));
-				if (false == editor_line(mark, text))
-				{
-					break;
-				}
-				m_marked[Layer].push_back({mark, {static_cast<std::streamoff>(begin), static_cast<std::streamoff>(end)}, std::move(text)});
-				break;
+				taken = (editor_line(*mark, text) ? *mark : nullptr);
+			}
+			else if (auto const before{std::find_if(movedmarks.begin(), movedmarks.end(), [&](moved_mark const &Moved) { return marked_text(Moved.before, text); })}; before != movedmarks.end())
+			{
+				taken = (first_word(text) == before->word || text.starts_with(before->note) ? before->now : nullptr);
+				moved = true;
+			}
+			if (nullptr != taken)
+			{
+				m_marked[Layer].push_back({taken, {static_cast<std::streamoff>(begin), static_cast<std::streamoff>(end)}, std::move(text), moved});
 			}
 		}
 		begin = end;

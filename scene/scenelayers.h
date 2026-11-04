@@ -362,6 +362,7 @@ class node_layers
 		std::string mark;
 		source_span span; // whole line, its end included
 		std::string text;
+		bool moved{false}; // read from the letter its mark had before; the save writes it again with the mark it has now
 	};
 	// methods
 	std::string path(layer_handle const Layer) const;

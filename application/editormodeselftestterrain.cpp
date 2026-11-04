@@ -435,8 +435,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				}
 			}
 		std::size_t written{0};
-		for (auto const layer : scene::Layers.marked_layers("//$f"))
-			written += scene::Layers.marked(layer, "//$f").size();
+		for (auto const layer : scene::Layers.marked_layers("//$t"))
+			written += scene::Layers.marked(layer, "//$t").size();
 		WriteLog(format("SELFTEST fittedstate: %zu of %zu tracks fitted, %zu marks kept, %zu lines for the files;", done, rails, m_fitted.size(), written) + names);
 		return selftest_result::handled;
 	}
