@@ -197,7 +197,8 @@ class editor_templates
 {
   public:
 	virtual std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const = 0;
-	// the layer a tool keeps what it makes in, "<scenery>_<Part>.scm", made when the scenery has none yet. returns: null_handle if there can't be one
+	// the layer a tool keeps what it makes in, "<scenery>_<Part>.scm", or the one made for the part of the scenery a copy was saved
+	// from, told by its first line; made when the scenery has none yet. returns: null_handle if there can't be one
 	virtual scene::layer_handle output_layer(std::string const &Part) = 0;
 	// in the active layer unless given another
 	virtual std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle Layer = scene::layer_handle{}) = 0;

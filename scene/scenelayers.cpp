@@ -559,7 +559,7 @@ void node_layers::stat(layer_handle const Layer)
 }
 
 // creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
-layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate)
+layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate, std::string Header)
 {
 	Parent = resolve(Parent);
 	if (false == valid(Parent) || layer(Parent).removed || layer(Parent).binary)
@@ -636,6 +636,7 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 	created.created = true;
 	created.editormade = true;
 	created.anchor = anchor;
+	created.header = std::move(Header);
 	// placement the new file is going to be loaded with
 	created.context_begin = valid(anchor) ? layer(anchor).context_end : layer(Parent).context_insert();
 	created.context_end = created.context_begin;

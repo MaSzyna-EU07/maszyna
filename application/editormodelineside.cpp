@@ -263,27 +263,39 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 		scene::Layers.locked(Layer, false);
 		return true;
 	};
-	// the layer included of the name of the part, <scenery>_<part>.scm or with a number, if it can take more. returns: null_handle if none
+	// the first line of the files made here, which tells them from the files of the scenery named alike
+	auto const header{"// scenery layer created in the editor for its " + Part + " part"};
+	auto const headed = [&](std::string const &Name) {
+		std::ifstream input{Global.asCurrentSceneryPath + Name, std::ios_base::binary};
+		std::string first;
+		std::getline(input, first);
+		if (false == first.empty() && first.back() == '\r')
+			first.pop_back();
+		return first == header;
+	};
+	// the layer included which the test takes, by its name in lower case and its name as given, if it can take more. returns:
+	// null_handle if none
 	auto const included = [&](auto const &Named) -> scene::layer_handle {
 		for (std::size_t index = 1; index <= scene::Layers.size(); ++index)
-			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && Named(ToLower(existing.name)))
+			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && Named(ToLower(existing.name), existing.name))
 				if (auto const layer{scene::Layers.resolve(static_cast<scene::layer_handle>(index))}; take(layer))
 					return layer;
 		return null_handle;
 	};
 	auto const name_of = [&](int const Attempt) { return ToLower(stem + "_" + Part + (Attempt > 1 ? std::to_string(Attempt) : std::string{}) + ".scm"); };
 	for (int attempt = 1; attempt <= 9; ++attempt)
-		if (auto const layer{included([&](std::string const &Name) { return Name == name_of(attempt); })}; layer != null_handle)
+		if (auto const layer{included([&](std::string const &Name, std::string const &) { return Name == name_of(attempt); })}; layer != null_handle)
 			return layer;
-	// one of the scenery saved under another name before, the file it was copied from: what the part made stays in one file
+	// the one made here for the scenery saved under another name before, the file it was copied from: what the part made stays
+	// in one file. a file of the scenery of a name alike, without the first line written here, is left as it is
 	auto const part{"_" + ToLower(Part)};
-	if (auto const layer{included([&](std::string const &Name) {
+	if (auto const layer{included([&](std::string const &Name, std::string const &Given) {
 		    if (false == Name.ends_with(".scm"))
 			    return false;
 		    auto base{Name.substr(0, Name.size() - 4)};
 		    if (false == base.empty() && std::isdigit(static_cast<unsigned char>(base.back())))
 			    base.pop_back();
-		    return base.size() > part.size() && base.ends_with(part);
+		    return base.size() > part.size() && base.ends_with(part) && headed(Given);
 	    })};
 	    layer != null_handle)
 		return layer;
@@ -297,7 +309,7 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 				known = true;
 		if (known)
 			continue;
-		if (auto const layer{scene::Layers.create(name, scene::layer_handle{1}, reason, false)}; take(layer))
+		if (auto const layer{scene::Layers.create(name, scene::layer_handle{1}, reason, false, header)}; take(layer))
 			return layer;
 	}
 	WriteLog("Editor: no layer for " + Part + ", the active one takes it: " + reason, logtype::generic);
