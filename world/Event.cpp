@@ -1253,6 +1253,17 @@ std::vector<basic_event *> multi_event::children() const {
     return result;
 }
 
+std::vector<std::pair<basic_event *, bool>> multi_event::branches() const {
+    std::vector<std::pair<basic_event *, bool>> result;
+    for (auto const &childevent : m_children) {
+        if (std::get<basic_event *>(childevent) != nullptr) {
+            // the flag is set for the ones before "else"
+            result.emplace_back(std::get<basic_event *>(childevent), false == std::get<bool>(childevent));
+        }
+    }
+    return result;
+}
+
 std::vector<scene::basic_node *> basic_event::target_nodes() const {
     std::vector<scene::basic_node *> result;
     for (auto const &target : m_targets) {
@@ -1744,6 +1755,16 @@ animation_event::run_() {
 		}
 		return false;
 	});
+}
+
+void
+animation_event::finish() {
+
+    for (auto const &container : m_animationcontainers) {
+        if (auto const target = container.lock()) {
+            target->Finish();
+        }
+    }
 }
 
 // export_as_text() subclass details

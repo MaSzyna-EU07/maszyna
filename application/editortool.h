@@ -226,6 +226,8 @@ class editor_signals
 	virtual std::string signal_templates_missing(std::vector<signal_order> const &Orders) = 0;
 	// the signal templates with lights, false while they are still being looked for
 	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
+	// the mount of the signal template given, with none of the one chosen for the kind; empty for none
+	virtual std::string signal_mount(std::string const &Kind, std::string const &File) = 0;
 	// the signals given which no track reads, read again by the track they stand by: one step of the history. returns: how many
 	virtual std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) = 0;
 	// the signal picked, its card at the top of the panel

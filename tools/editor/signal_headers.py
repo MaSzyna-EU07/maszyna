@@ -72,9 +72,10 @@ def flow_items(inner):
     return items
 
 
-def kept_of(text):
+def kept_of(text, file=''):
     """What a description written before has that the guesses mustn't replace: the keys of its signal map other than the guessed
-    ones (arms, aspects, repeats...), its description, its parameters from 6 on, by id."""
+    ones (arms, aspects, repeats...), its description, its parameters from 6 on, by id. Only a signal map written on one line is
+    kept; one written as a block is told of, its keys are lost"""
     lines = [line[len(LINEMARK):].strip() for line in text.splitlines() if line.startswith(LINEMARK)]
     signal, description, params = [], None, {}
     for line in lines:
@@ -82,6 +83,8 @@ def kept_of(text):
             inner = line[len('signal:'):].strip()
             if inner.startswith('{') and inner.endswith('}'):
                 signal = [item for item in flow_items(inner[1:-1]) if item.split(':', 1)[0].strip() not in GUESSED]
+            else:
+                print('WARNING %s: its signal map isn\'t written on one line as {...}, its keys written by hand aren\'t kept' % (file or '?'), file=sys.stderr)
         elif line.startswith('description:'):
             description = line[len('description:'):].strip()
         elif line.startswith('- {id:'):
@@ -94,7 +97,7 @@ def kept_of(text):
 def examine(path, file):
     raw = load(path)
     text, encoding = decode(raw, 'utf-8')
-    kept_signal, kept_description, kept_params = kept_of(text)
+    kept_signal, kept_description, kept_params = kept_of(text, file)
     lines = body_lines(text)
     body = '\n'.join(lines)
     words = tokens(body)

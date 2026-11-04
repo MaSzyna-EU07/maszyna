@@ -175,6 +175,8 @@ class srk_tool final : public editor_tool
 		bool white{false}; // it must give the substitute signal
 		int shortened{0}; // km/h, it slows the trains to, the next signal nearer than the braking distance: Ie-4 § 8 ust. 5
 		bool indicator{false}; // a W21 "14" beside it, for 140 km/h so
+		bool told{false}; // a shaped warning disc before a semaphore described: the events it repeats checked
+		bool unsaid{false}; // of those, its template doesn't say what it repeats
 		bool fits{true}; // its template shows all of it
 		bool more{false}; // its template has more than it needs
 		std::string fit; // the template that fits best, empty for none

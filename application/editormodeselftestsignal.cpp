@@ -85,6 +85,42 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			if (head.arms > 0 || false == head.repeats.empty())
 				known += " " + head.name + (head.chosen ? "*" : "");
 		WriteLog(format("SELFTEST signaltemplates: %zu templates, %zu for the signalling, of them by arms or repeats:", tool.templates.size(), heads.size()) + known);
+		// what the signalling places of each kind, with no template asked for
+		std::string placed;
+		for (int i = 0; i < 7; ++i)
+		{
+			signal_order order;
+			order.kind = kinds[i];
+			auto const *item{signal_template_for(order)};
+			auto const *chosen{tool.chosen[i] >= 0 ? &tool.templates[tool.chosen[i]] : nullptr};
+			placed += format(" %s=%s(chosen %s)", kinds[i], item != nullptr ? item->file.c_str() : "-", chosen != nullptr ? chosen->file.c_str() : "-");
+		}
+		WriteLog("SELFTEST signaltemplates placed by the signalling:" + placed);
+		return selftest_result::handled;
+	}
+	if (command == "signalaspect")
+	{
+		// signalaspect name=<signal> aspect=<name>: the signal set to the aspect its description lists, in the editor
+		auto values{selftest_values(words)};
+		show_track_tab(track_tab::srk);
+		signal_scan(true);
+		signal_refresh(true);
+		auto const found{std::find_if(m_signal.standing.begin(), m_signal.standing.end(), [&](signal_standing const &Standing) { return Standing.name == values["name"]; })};
+		auto const *item{found != m_signal.standing.end() ? signal_template_of(found->include.file) : nullptr};
+		std::pair<std::string, std::string> const *event{nullptr};
+		if (item != nullptr)
+			for (auto const &aspect : item->aspect_events)
+				if (aspect.first == values["aspect"])
+					event = &aspect;
+		if (event == nullptr)
+		{
+			WriteLog("SELFTEST signalaspect: no signal " + values["name"] + " with the aspect " + values["aspect"]);
+			return selftest_result::handled;
+		}
+		signal_select(found->include.instance);
+		select_include(found->include.instance);
+		auto const shown{signal_show_aspect(found->include.instance, event->first, event->second)};
+		WriteLog(std::string{"SELFTEST signalaspect "} + values["name"] + " " + values["aspect"] + (shown ? ": " : ": failed, ") + m_signal.status);
 		return selftest_result::handled;
 	}
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")

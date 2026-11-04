@@ -2579,6 +2579,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
 	std::string signal_templates_missing(std::vector<signal_order> const &Orders) override;
 	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
+	std::string signal_mount(std::string const &Kind, std::string const &File) override;
 	std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) override;
 	void select_signal(scene::instance_handle const Instance) override;
 	void render_signal_templates() override;
@@ -2677,6 +2678,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool signal_flip(scene::instance_handle const Instance);
 	bool signal_turn(scene::instance_handle const Instance);
 	bool signal_swap(scene::instance_handle const Instance, std::string const &File);
+	// the signal set to the aspect in the editor, as its event sets it in the game: only how it looks, nothing saved
+	bool signal_show_aspect(scene::instance_handle const Instance, std::string const &Aspect, std::string const &Event);
 	signal_standing const *signal_standing_of(scene::instance_handle const Instance) const;
 	bool signal_delete(scene::instance_handle const Instance);
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
