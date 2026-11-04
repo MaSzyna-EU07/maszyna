@@ -332,6 +332,7 @@ bool editor_mode::signal_scan(bool const Wait)
 		item.arms = info.signal_arms;
 		item.aspect_events = info.signal_aspects;
 		item.repeats = info.signal_repeats;
+		item.chain = info.signal_chain;
 		for (auto const &parameter : info.parameters)
 		{
 			item.parameters = std::max(item.parameters, parameter.id);
@@ -342,8 +343,12 @@ bool editor_mode::signal_scan(bool const Wait)
 				item.linked = true;
 		}
 		editor_includes::signal_speeds(entry.file, item.speeds);
+		// a block signal of four aspects gives S3, the warning two signals ahead: as its description lists it, else by its events
 		if (item.kind == "block")
-			item.aspects = editor_includes::block_aspects(entry.file);
+		{
+			auto const s3{std::any_of(item.aspect_events.begin(), item.aspect_events.end(), [](auto const &Aspect) { return Aspect.first == "S3"; })};
+			item.aspects = item.aspect_events.empty() ? editor_includes::block_aspects(entry.file) : s3 ? 4 : 3;
+		}
 		tool.templates.push_back(std::move(item));
 	}
 	std::sort(tool.templates.begin(), tool.templates.end(), [](signal_template const &A, signal_template const &B) {
@@ -1414,7 +1419,7 @@ bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
 			if (item.arms > 1)
 				names.emplace_back("Sr3");
 		}
-		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects, item.lean, item.arms, std::move(names), item.repeats});
+		Heads.push_back({item.file, item.name, item.kind, item.mount, item.lamps, item.speeds, kind >= 0 && m_signal.chosen[kind] == index, item.aspects, item.lean, item.arms, std::move(names), item.repeats, item.chain, item.aspect_events});
 	}
 	return true;
 }
@@ -1874,6 +1879,35 @@ void editor_mode::render_signal_selected()
 		}
 		else if (shaped_disc(item->kind, item->lamps, item->arms))
 			ImGui::TextDisabled("%s", STR_C("It always shows the same: no aspect to set"));
+		if (item->kind == "block")
+		{
+			// a block signal: what its description says it sets the one before it to, the track circuit it guards and the one before
+			// it as the signalling of its open station finds them
+			auto const aspect_name = [&](std::string const &Event) {
+				for (auto const &[name, event] : item->aspect_events)
+					if (ToLower(event) == ToLower(Event))
+						return name;
+				return Event;
+			};
+			std::string chain;
+			for (auto const &[event, given] : item->chain)
+				chain += (chain.empty() ? "" : ", ") + aspect_name(event) + ": " + aspect_name(given);
+			if (chain.empty())
+				ImGui::TextDisabled("%s", STR_C("Its template doesn't say what it sets the block signal before it to"));
+			else
+				ImGui::TextWrapped("%s", format(STR_C("When it changes, the block signal before it gets (its aspect: that one's): %s"), chain.c_str()).c_str());
+			std::string circuit, before, missing;
+			if (m_srk.block_signal(found->name, circuit, before, missing))
+			{
+				ImGui::TextUnformatted(circuit.empty() ? STR_C("It guards no track circuit") : format(STR_C("It guards the track circuit %s"), circuit.c_str()).c_str());
+				ImGui::TextUnformatted(before.empty() ? STR_C("No block signal before it") : format(STR_C("The block signal before it: %s"), before.c_str()).c_str());
+				if (false == missing.empty())
+					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", format(STR_C("%s has no event %s"), before.c_str(), missing.c_str()).c_str());
+			}
+			else
+				ImGui::TextDisabled("%s", STR_C("Its track circuit and the block signal before it: open its station in Signalling"));
+			ImGui::TextDisabled("%s", STR_C("The editor writes no events of the chain or of the track circuits: it only shows them"));
+		}
 	}
 	auto const width{(ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f};
 	if (ImGui::Button(STR_C("To the other side"), ImVec2(width, 0.0f)))

@@ -2604,6 +2604,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<std::pair<std::string, std::string>> aspect_events;
 		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
 		std::vector<std::pair<std::string, std::string>> repeats;
+		// of a block signal: for an event of its own, the event the block signal before it is to get then, from its description
+		std::vector<std::pair<std::string, std::string>> chain;
 	};
 	struct signal_spot
 	{

@@ -62,14 +62,16 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 		{
 			auto const &item{tool.templates[k]};
-			std::string aspects, repeats;
+			std::string aspects, repeats, chain;
 			for (auto const &[name, event] : item.aspect_events)
 				aspects += (aspects.empty() ? "" : " ") + name + "=" + event;
 			for (auto const &[speed, event] : item.repeats)
 				repeats += (repeats.empty() ? "" : " ") + speed + "=" + event;
+			for (auto const &[event, given] : item.chain)
+				chain += (chain.empty() ? "" : " ") + event + "=" + given;
 			if (item.arms > 0 || false == item.aspect_events.empty() || false == item.repeats.empty() || values["all"] == "1")
-				WriteLog(format("SELFTEST signaltemplates %s: %s %s lamps=%s arms=%d aspects=[%s] repeats=[%s] linked=%d read=%s", item.file.c_str(), item.kind.c_str(), item.mount.c_str(), item.lamps.empty() ? "-" : item.lamps.c_str(), item.arms, aspects.c_str(), repeats.c_str(), item.linked ? 1 : 0,
-				                item.read.empty() ? "-" : item.read.c_str()));
+				WriteLog(format("SELFTEST signaltemplates %s: %s %s lamps=%s arms=%d aspects=[%s] repeats=[%s] chain=[%s] block=%d linked=%d read=%s", item.file.c_str(), item.kind.c_str(), item.mount.c_str(), item.lamps.empty() ? "-" : item.lamps.c_str(), item.arms, aspects.c_str(), repeats.c_str(),
+				                chain.c_str(), item.aspects, item.linked ? 1 : 0, item.read.empty() ? "-" : item.read.c_str()));
 			if (values.count("file") && item.file == values["file"])
 				for (int i = 0; i < 7; ++i)
 					if (item.kind == kinds[i])
@@ -141,7 +143,9 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			auto const path{values.count("path") ? std::stoi(values["path"]) : 0};
 			auto const at{values.count("at") ? std::stod(values["at"]) : 0.5};
 			geometry::bezier const curve{track->m_paths[std::clamp(path, 0, static_cast<int>(track->m_paths.size()) - 1)]};
-			return signal_spot_at(*track, path, curve.point(at), curve.point(at), Facing, Side, Template, Spot);
+			// x= y= z=: by the point of the track nearest to it, else at= along its path
+			auto const point{values.count("x") && values.count("z") ? glm::dvec3{std::stod(values["x"]), values.count("y") ? std::stod(values["y"]) : 0.0, std::stod(values["z"])} : curve.point(at)};
+			return signal_spot_at(*track, path, point, point, Facing, Side, Template, Spot);
 		};
 		if (command == "signal")
 		{

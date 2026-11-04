@@ -54,7 +54,6 @@ double constexpr kGapReach{1500.0}; // m, the tracks going on beyond the end of 
 double constexpr kBlockShare{1.1}; // of the braking distance, the block sections towards the end of the tracks
 double constexpr kPredicted{305.0}; // m, out from the next station to its entry signal, while it has none
 // the events of a block section, switching the block signal guarding it
-char const *const kControl{"sbl_odstep.inc"};
 // the SHP track resonator: its model on the axis, 0.2 m below it, turned as a signal facing the trains, and its event
 char const *const kResonator{"rezonator.inc"};
 double constexpr kShpBefore{200.0}; // m, of the resonator before an entry signal, a block signal and a warning disc
@@ -754,16 +753,6 @@ std::string disc_template(std::vector<signal_head> const &Heads, signal_head con
 	return best != nullptr ? best->file : std::string{};
 }
 
-// the block signals switched by the block sections of the editor, lower case
-std::unordered_set<std::string> guarded(std::vector<standing_template> const &Controls)
-{
-	std::unordered_set<std::string> result;
-	for (auto const &control : Controls)
-		for (std::size_t index = 5; index < control.values.size() && index < 7; ++index)
-			result.insert(ToLower(control.values[index]));
-	return result;
-}
-
 // a block signal standing by the track of the line facing its trains, or Wrong: its wrong-track ones, Distance: how far out along it
 bool faces_along(station::line const &Line, standing_signal const &Signal, double &Distance, bool const Wrong = false)
 {
@@ -802,6 +791,72 @@ bool wrong_disc(std::vector<station::line> const &Lines, std::size_t const Index
 double out_of(station::line const &Line)
 {
 	return Line.inbound ? -1.0 : 1.0;
+}
+
+// the track circuit a block signal standing Distance out along the line guards, beyond the joint it turns its trains to stop at,
+// Wrong: one facing the wrong-track trains; empty for none
+std::string circuit_guarded(station::line const &Line, double const Distance, bool const Wrong = false)
+{
+	auto const way{out_of(Line) * (Wrong ? -1.0 : 1.0)};
+	auto const at{station::point_on(Line, Distance + (station::signal_drop + 1.0) * way)};
+	return at.track == nullptr || at.track->Isolated.empty() || at.track->Isolated.front() == nullptr ? std::string{} : at.track->Isolated.front()->asName;
+}
+
+// a track circuit named as the editor names the block sections of a line: 2411-2571@lk2.1
+bool block_section(std::string const &Circuit)
+{
+	return ToLower(Circuit).find("@lk") != std::string::npos;
+}
+
+signal_head const *head_of(std::vector<signal_head> const &Heads, std::string const &File)
+{
+	auto const file{ToLower(File)};
+	auto const found{std::find_if(Heads.begin(), Heads.end(), [&](signal_head const &Head) { return Head.file == file; })};
+	return found != Heads.end() ? &*found : nullptr;
+}
+
+// the name of an event of a block signal, the part after "(p1)_", as its description lists it among its aspects: S5 for s5; the
+// event itself for one that isn't an aspect, ciemny, uszk
+std::string aspect_of(signal_head const *Signal, std::string const &Event)
+{
+	if (Signal != nullptr)
+		for (auto const &[name, event] : Signal->aspect_events)
+			if (ToLower(event) == ToLower(Event))
+				return name;
+	return Event;
+}
+
+// the events of a block signal named by its description: those of its aspects, those its chain begins with
+bool names_event(signal_head const &Signal, std::string const &Event)
+{
+	auto const event{ToLower(Event)};
+	return std::any_of(Signal.aspect_events.begin(), Signal.aspect_events.end(), [&](auto const &Aspect) { return ToLower(Aspect.second) == event; }) ||
+	       std::any_of(Signal.chain.begin(), Signal.chain.end(), [&](auto const &Link) { return ToLower(Link.first) == event; });
+}
+
+// the events the chain of the block signal of the template File sets the one before it to, of the template Before, that one hasn't,
+// by its description, joined; empty where it has them all, or where either isn't described with its chain
+std::string chain_missing(std::vector<signal_head> const &Heads, std::string const &File, std::string const &Before)
+{
+	auto const *own{head_of(Heads, File)};
+	auto const *before{Before.empty() ? nullptr : head_of(Heads, Before)};
+	if (own == nullptr || before == nullptr || own->chain.empty() || before->chain.empty())
+		return {};
+	std::string missing;
+	for (auto const &[event, given] : own->chain)
+		if (false == names_event(*before, given) && (" " + missing + ",").find(" " + given + ",") == std::string::npos)
+			missing += (missing.empty() ? "" : ", ") + given;
+	return missing;
+}
+
+// the chain of a block signal in words, each of its aspects with the one it sets the block signal before it to: S1: S5, S3: S2,
+// ciemny: ciemny
+std::string chain_text(signal_head const &Signal, signal_head const *Before)
+{
+	std::string text;
+	for (auto const &[event, given] : Signal.chain)
+		text += (text.empty() ? "" : ", ") + aspect_of(&Signal, event) + ": " + aspect_of(Before != nullptr ? Before : &Signal, given);
+	return text;
 }
 
 } // namespace
@@ -2889,6 +2944,23 @@ double srk_tool::line_braking(station::line const &Line) const
 	return braking_distance(speed > 0.0 ? speed : 160.0);
 }
 
+bool srk_tool::block_signal(std::string const &Name, std::string &Circuit, std::string &Before, std::string &Missing) const
+{
+	if (false == m_open || false == m_layout.has_value())
+		return false;
+	auto const name{ToLower(Name)};
+	for (auto const &row : m_lines)
+		for (auto const &post : row.posts)
+			if (post.block && ToLower(post.signal) == name)
+			{
+				Circuit = post.circuit;
+				Before = signal_shown(post.before, stem_of_open());
+				Missing = post.missing;
+				return true;
+			}
+	return false;
+}
+
 void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 {
 	m_lines.clear();
@@ -2901,7 +2973,6 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		return;
 	std::vector<signal_head> heads;
 	m_signals.signal_heads(heads, false);
-	auto const guards{guarded(m_templates.standing_templates([](std::string const &File) { return File == kControl; }))};
 	auto const stem{stem_of_open()};
 	auto const on_line = [](station::line const &Line, glm::dvec3 const &Point) {
 		double gap{0.0};
@@ -2923,6 +2994,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.km_number = km_line(line);
 		row.rising = km_rising(line, row.km_number);
 		row.both = both_ways(lines, static_cast<std::size_t>(&line - lines.data()), row.entry, Standing, row.both_hand, row.own_both);
+		// the block signals the editor set: of the block sections it named, each guarding the one beyond it
 		auto switched{false};
 		for (auto const &signal : Standing)
 		{
@@ -2930,13 +3002,30 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			if (block_along(line, signal, distance, true))
 			{
 				row.wrong.emplace_back(distance, signal_shown(signal.name, stem));
-				row.posts.push_back({distance, signal_shown(signal.name, stem), true, km_along(line, row.km_number, distance)});
+				row.posts.push_back({distance, signal_shown(signal.name, stem), true, km_along(line, row.km_number, distance), true, signal.name, signal.file, circuit_guarded(line, distance, true)});
 			}
 			if (false == block_along(line, signal, distance))
 				continue;
 			row.stops.emplace_back(distance + station::signal_drop * out_of(line), signal_shown(signal.name, stem));
-			row.posts.push_back({distance, signal_shown(signal.name, stem), false, km_along(line, row.km_number, distance)});
-			switched = switched || guards.count(ToLower(signal.name)) > 0;
+			auto const circuit{circuit_guarded(line, distance)};
+			row.posts.push_back({distance, signal_shown(signal.name, stem), false, km_along(line, row.km_number, distance), true, signal.name, signal.file, circuit});
+			switched = switched || block_section(circuit);
+		}
+		// the block signal the trains of each pass before it, the nearest one behind it of the same facing
+		for (auto &post : row.posts)
+		{
+			if (false == post.block)
+				continue;
+			auto const way{out_of(line) * (post.wrong ? -1.0 : 1.0)};
+			line_row::post const *before{nullptr};
+			for (auto const &other : row.posts)
+				if (other.block && other.wrong == post.wrong && (post.distance - other.distance) * way > 0.0 && (before == nullptr || (other.distance - before->distance) * way > 0.0))
+					before = &other;
+			post.before = before != nullptr ? before->signal : std::string{};
+			post.before_file = before != nullptr ? before->file : std::string{};
+			if (auto const *own{head_of(heads, post.file)}; own != nullptr)
+				post.chain = chain_text(*own, head_of(heads, post.before_file));
+			post.missing = chain_missing(heads, post.file, post.before_file);
 		}
 		// the warning discs: of the semi-automatic block, of the wrong-track trains of the mixed one
 		for (auto const &signal : Standing)
@@ -3057,16 +3146,11 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 		for (auto const &bare : row.bare)
 			m_problems.push_back({format(STR_C("The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"), row.entry.c_str(), bare.second - bare.first, bare.first), station::point_on(line, (bare.first + bare.second) * 0.5).point, 0, true});
 	}
-	// the block sections their controls switch, the tracks gone
-	std::unordered_set<std::string> circuits;
-	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && false == track->m_editorremoved)
-			for (auto const *isolated : track->Isolated)
-				if (isolated != nullptr)
-					circuits.insert(ToLower(isolated->asName));
-	for (auto const &control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
-		if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0 && by_open(control.location))
-			m_problems.push_back({format(STR_C("Block section %s has no track"), control.values[0].c_str()), control.location});
+	// the block signals whose chain sets the one before them to an event it hasn't, both described with their chains
+	for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size(); ++index)
+		for (auto const &post : m_lines[index].posts)
+			if (false == post.missing.empty())
+				m_problems.push_back({format(STR_C("Block signal %s: the one before it, %s, has no event %s, which its chain sets it to"), post.name.c_str(), signal_shown(post.before, stem).c_str(), post.missing.c_str()), station::point_on(m_line_ways[index], post.distance).point});
 }
 
 void srk_tool::render_problems()
@@ -3142,9 +3226,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		return;
 	std::vector<signal_head> heads;
 	m_signals.signal_heads(heads, true);
-	auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
-	auto const guards{guarded(controls)};
-	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
+	auto const facing_out =[&](station::line const &Line, standing_signal const &Signal, double const Distance) {
 		auto const way{station::point_on(Line, Distance).way};
 		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
 	};
@@ -3172,13 +3254,14 @@ void srk_tool::set_lines(block_edit const *Edit)
 		for (std::size_t k = 0; k < standing.size(); ++k)
 		{
 			double distance{0.0};
-			if (block_along(line, standing[k], distance, true))
+			auto const wrong_track{block_along(line, standing[k], distance, true)};
+			if (wrong_track)
 				wrong[index].push_back(k);
 			else if (block_along(line, standing[k], distance))
 				along[index].push_back(k);
 			else
 				continue;
-			switched = switched || guards.count(ToLower(standing[k].name)) > 0;
+			switched = switched || block_section(circuit_guarded(line, distance, wrong_track));
 		}
 		if (kind != block_kind::semi)
 			automatic[index] = line.number > 0 && (along[index].empty() || switched) ? 1 : 2;
@@ -3487,9 +3570,6 @@ void srk_tool::set_lines(block_edit const *Edit)
 		std::size_t line{0};
 		double from{0.0};
 		double to{0.0};
-		std::string guard; // the block signal at its start, empty for a station one
-		std::string wrong_guard; // the one at its end facing the wrong-track trains, empty for none
-		glm::dvec3 start{0.0};
 	};
 	std::vector<section> sections;
 	std::vector<std::pair<std::size_t, std::string>> relinked; // standing station signals, the block signal before each
@@ -3557,10 +3637,6 @@ void srk_tool::set_lines(block_edit const *Edit)
 			found.line = index;
 			found.from = std::min(joint_of(before), joint_of(here));
 			found.to = std::max(joint_of(before), joint_of(here));
-			found.guard = before.signal >= 0 ? before.name : std::string{};
-			if (auto const twin{twin_of(i)}; twin >= 0)
-				found.wrong_guard = planned[twin].name;
-			found.start = station::point_on(line, before.distance).point;
 			sections.push_back(std::move(found));
 		}
 	}
@@ -3743,67 +3819,6 @@ void srk_tool::set_lines(block_edit const *Edit)
 		if (gone[k])
 			changes.removed.push_back(standing[k].instance);
 	auto const removed{changes.removed.size()};
-	// the block signals switched by the sections they guard, the wrong-track one the 7th, or the one guard twice
-	include_info control;
-	std::string missing;
-	auto const controlled{editor_includes::load(kControl, control, missing)};
-	if (controlled)
-	{
-		for (auto const &found : sections)
-		{
-			auto const already{std::find_if(controls.begin(), controls.end(), [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
-			if (found.guard.empty() && found.wrong_guard.empty())
-			{
-				// guarded by station signals only, once its wrong-track signal is gone
-				if (already != controls.end())
-					changes.removed.push_back(already->instance);
-				continue;
-			}
-			std::array<std::string, 2> const guards_of{found.guard.empty() ? found.wrong_guard : found.guard, found.wrong_guard.empty() ? found.guard : found.wrong_guard};
-			if (already != controls.end())
-			{
-				auto values{already->values};
-				values.resize(std::max<std::size_t>(values.size(), 7));
-				auto differ{false};
-				for (std::size_t k = 0; k < guards_of.size(); ++k)
-					if (ToLower(values[5 + k]) != ToLower(guards_of[k]))
-					{
-						values[5 + k] = guards_of[k];
-						differ = true;
-					}
-				if (differ)
-					changes.values.emplace_back(already->instance, std::move(values));
-				continue;
-			}
-			template_item item;
-			item.file = kControl;
-			item.location = found.start;
-			item.described = true;
-			item.values["name"] = found.name;
-			item.values["#6"] = guards_of[0];
-			item.values["#7"] = guards_of[1];
-			changes.others.push_back(std::move(item));
-		}
-		// those of the sections gone from the lines set taken away with them
-		std::unordered_set<std::string> named;
-		for (auto const &found : sections)
-			named.insert(found.name);
-		for (auto const &standing_control : controls)
-		{
-			if (standing_control.values.empty() || named.count(ToLower(standing_control.values[0])) > 0)
-				continue;
-			for (std::size_t index = 0; index < lines.size(); ++index)
-			{
-				double gap{0.0};
-				auto const distance{station::distance_on(lines[index], standing_control.location, gap)};
-				if (processed[index] && automatic[index] != 2 && gap < 4.5 && distance > 0.0 && distance < lines[index].length())
-				{
-					changes.removed.push_back(standing_control.instance);
-					break;
-				}
-			}
-		}
-	}
 	if (changes.placed.empty() && changes.renamed.empty() && changes.others.empty() && changes.values.empty() && changes.files.empty() && changes.removed.empty() && before.empty() && created.empty())
 	{
 		m_status = STR_C("The lines are set already");
@@ -3824,8 +3839,6 @@ void srk_tool::set_lines(block_edit const *Edit)
 	if (swapped > 0)
 		m_status += ", " + format(STR_P("%zu given the template of the aspects of its line", "%zu given the templates of the aspects of their lines", swapped), swapped);
 	m_status += ". " + STR("Ctrl+Z takes it back");
-	if (false == controlled && std::any_of(sections.begin(), sections.end(), [](section const &Found) { return false == Found.guard.empty(); }))
-		m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
 }
 
 void srk_tool::survey_signals()
@@ -4807,6 +4820,25 @@ void srk_tool::render_canvas(float const Height)
 			ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(circuit_colour(run->name)), STR_C("Block section %s, %.2f km"), run->name.c_str(), (run->to - std::max(0.0, run->from)) / 1000.0);
 			if (row.km_known)
 				ImGui::TextDisabled(STR_C("km %.3f to %.3f"), std::min(run->km_from, run->km_to), std::max(run->km_from, run->km_to));
+			// the block signals guarding it, with what their descriptions say they set the one before them to
+			auto guarded{false};
+			for (auto const &post : row.posts)
+			{
+				if (false == post.block || ToLower(post.circuit) != ToLower(run->name))
+					continue;
+				guarded = true;
+				ImGui::TextUnformatted(format(post.wrong ? STR_C("Guarded by block signal %s, of the wrong-track trains") : STR_C("Guarded by block signal %s"), post.name.c_str()).c_str());
+				if (post.chain.empty())
+					ImGui::TextDisabled("%s", STR_C("Its template doesn't say what it sets the block signal before it to"));
+				else if (post.before.empty())
+					ImGui::TextDisabled("%s", format(STR_C("No block signal before it, its chain has none to set: %s"), post.chain.c_str()).c_str());
+				else
+					ImGui::TextUnformatted(format(STR_C("When it changes, the one before it, %s, gets (its aspect: that one's): %s"), signal_shown(post.before, stem_of_open()).c_str(), post.chain.c_str()).c_str());
+				if (false == post.missing.empty())
+					ImGui::TextColored(kWrong, "%s", format(STR_C("%s has no event %s"), signal_shown(post.before, stem_of_open()).c_str(), post.missing.c_str()).c_str());
+			}
+			if (guarded)
+				ImGui::TextDisabled("%s", STR_C("The editor writes no events of the chain or of the track circuits: it only shows them"));
 		}
 		else
 			ImGui::TextDisabled("%s", STR_C("No track circuit here"));
@@ -5199,8 +5231,15 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			return text;
 		};
 		for (auto const &row : m_lines)
+		{
 			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d own %d ways %d%s leftovers %zu legacy %d stops%s wrong%s", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks,
 			                row.block == block_kind::four ? "sbl4" : row.block == block_kind::three ? "sbl" : "semi", static_cast<int>(row.why), static_cast<int>(row.own), row.both ? 2 : 1, row.both_hand ? " hand" : "", row.leftovers, row.legacy ? 1 : 0, listed(row.stops).c_str(), listed(row.wrong).c_str()));
+			// each block signal with the track circuit it guards, the one before it, what its chain sets that one to
+			for (auto const &post : row.posts)
+				if (post.block)
+					WriteLog(format("SELFTEST srkblock   %s%s %s circuit=%s before=%s chain=[%s] missing=%s", post.signal.c_str(), post.wrong ? "(wrong)" : "", post.file.c_str(), post.circuit.empty() ? "-" : post.circuit.c_str(), post.before.empty() ? "-" : post.before.c_str(), post.chain.c_str(),
+					                post.missing.empty() ? "-" : post.missing.c_str()));
+		}
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkboundary")
@@ -5232,6 +5271,36 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			WriteLog("SELFTEST srkboundary: " + m_status);
 		}
 		m_drawing = false;
+		return editor_selftest_result::handled;
+	}
+	if (Command == "srkway")
+	{
+		// srkway entry=<A> at=<m> [circuit=<name>]: the track of the line out beyond the entry signal at the distance out, with the
+		// point and the way out there; with circuit, that track put in the track circuit of the name
+		if (m_history.history_revision() != m_history_revision)
+			refresh();
+		auto const values{selftest_values(Words)};
+		auto const entry{values.count("entry") > 0 ? values.at("entry") : std::string{}};
+		auto const at{values.count("at") > 0 ? std::atof(values.at("at").c_str()) : 0.0};
+		auto const found{std::find_if(m_lines.begin(), m_lines.end(), [&](line_row const &Row) { return Row.entry == entry; })};
+		if (false == m_layout.has_value() || found == m_lines.end())
+		{
+			WriteLog("SELFTEST srkway: no line beyond " + entry);
+			return editor_selftest_result::handled;
+		}
+		auto const place{station::point_on(m_line_ways[found - m_lines.begin()], at)};
+		if (place.track == nullptr)
+		{
+			WriteLog(format("SELFTEST srkway %s at %.0f: no track", entry.c_str(), at));
+			return editor_selftest_result::handled;
+		}
+		if (auto const circuit{values.find("circuit")}; circuit != values.end())
+		{
+			editor_track::isolated(*place.track, {circuit->second});
+			survey_signals();
+		}
+		WriteLog(format("SELFTEST srkway %s at %.0f: track=%s point=%.2f %.2f %.2f way=%.3f %.3f circuit=%s", entry.c_str(), at, place.track->name().c_str(), place.point.x, place.point.y, place.point.z, place.way.x, place.way.z,
+		                place.track->Isolated.empty() ? "-" : place.track->Isolated.front()->asName.c_str()));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkfit")
@@ -5267,8 +5336,8 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 	}
 	if (Command == "srkcheck")
 	{
-		// srkcheck: the block sections of the scenery checked: each switched by a block signal standing, none twice, no two signals of
-		// one name
+		// srkcheck: the signals of the scenery checked: no two of one name, each read by a track; the block sections the editor named
+		// counted
 		std::vector<standing_signal> standing;
 		m_signals.standing_signals(standing, true);
 		std::unordered_map<std::string, int> names;
@@ -5281,28 +5350,6 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				++bad;
 				WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
 			}
-		std::unordered_map<std::string, int> sections;
-		auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
-		for (auto const &control : controls)
-		{
-			if (control.values.size() < 6)
-			{
-				++bad;
-				WriteLog("SELFTEST srkcheck: a block section without its signal");
-				continue;
-			}
-			if (++sections[ToLower(control.values[0])] > 1)
-			{
-				++bad;
-				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " twice");
-			}
-			for (std::size_t index = 5; index < control.values.size() && index < 7; ++index)
-				if (names.count(ToLower(control.values[index])) == 0)
-				{
-					++bad;
-					WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " switched by " + control.values[index] + ", which doesn't stand");
-				}
-		}
 		std::size_t unread{0};
 		for (auto const &signal : standing)
 			if (false == signal.read.empty() && signal.track == nullptr)
@@ -5310,27 +5357,21 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				++unread;
 				WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
 			}
-		std::unordered_set<std::string> circuits;
+		// the block sections the editor named, by their track circuits
+		std::unordered_set<std::string> sections;
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
 				for (auto const *isolated : track->Isolated)
-					if (isolated != nullptr)
-						circuits.insert(ToLower(isolated->asName));
-		std::size_t bare{0};
-		for (auto const &control : controls)
-			if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0)
-			{
-				++bare;
-				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " without a track");
-			}
-		bad += unread + bare;
+					if (isolated != nullptr && block_section(isolated->asName))
+						sections.insert(ToLower(isolated->asName));
+		bad += unread;
 		if (m_layout.has_value())
 		{
 			survey_signals();
 			for (auto const &problem : m_problems)
 				WriteLog(format("SELFTEST srkcheck: open station: %s at %.1f %.1f%s%s", problem.text.c_str(), problem.at.x, problem.at.z, problem.signal != 0 ? " (signal)" : "", problem.lines ? " (lines)" : ""));
 		}
-		WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu unread, %zu without a track, %zu problems of the open station, %zu bad", standing.size(), controls.size(), unread, bare, m_problems.size(), bad));
+		WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu unread, %zu problems of the open station, %zu bad", standing.size(), sections.size(), unread, m_problems.size(), bad));
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkfix")

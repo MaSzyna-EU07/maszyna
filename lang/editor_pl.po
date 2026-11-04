@@ -10471,9 +10471,6 @@ msgstr "Za semaforami wjazdowymi nie wychodzi ze stacji żaden szlak"
 msgid "The lines are set already"
 msgstr "Szlaki są już ustawione"
 
-msgid "%s isn't in the scenery folder: the block signals won't change their lights"
-msgstr "Brak %s w katalogu scenery: semafory SBL nie będą zmieniać świateł"
-
 msgid "%zu block signal placed"
 msgid_plural "%zu block signals placed"
 msgstr[0] "Postawiono %zu semafor SBL"
@@ -11380,9 +11377,6 @@ msgstr "Szlak za semaforem %s urywa się po %.0f m, tory biegną dalej %.0f m za
 
 msgid "The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"
 msgstr "Szlak za semaforem %s: %.0f m torów %.0f m za semaforem nie należy do żadnego odstępu"
-
-msgid "Block section %s has no track"
-msgstr "Odstęp %s nie ma już toru"
 
 msgid "To repair"
 msgstr "Do naprawy"
@@ -13540,3 +13534,45 @@ msgstr "Jej szablon nie ma opisu tego, co zapowiada, więc nie jest sprawdzana: 
 
 msgid "not described"
 msgstr "bez opisu"
+
+msgid "Block signal %s: the one before it, %s, has no event %s, which its chain sets it to"
+msgstr "Semafor SBL %s: poprzedni, %s, nie ma zdarzenia %s, na które ten ma go przestawiać"
+
+msgid "Guarded by block signal %s, of the wrong-track trains"
+msgstr "Osłania go semafor SBL %s, dla jazdy po torze lewym"
+
+msgid "Guarded by block signal %s"
+msgstr "Osłania go semafor SBL %s"
+
+msgid "Its template doesn't say what it sets the block signal before it to"
+msgstr "Jego szablon nie mówi, na co przestawia poprzedni semafor SBL"
+
+msgid "No block signal before it, its chain has none to set: %s"
+msgstr "Przed nim nie ma semafora SBL, więc jego łańcuch nie ma czego przestawiać: %s"
+
+msgid "When it changes, the one before it, %s, gets (its aspect: that one's): %s"
+msgstr "Gdy ten zmienia sygnał, poprzedni, %s, dostaje (sygnał tego: sygnał poprzedniego): %s"
+
+msgid "%s has no event %s"
+msgstr "%s nie ma zdarzenia %s"
+
+msgid "The editor writes no events of the chain or of the track circuits: it only shows them"
+msgstr "Edytor nie pisze eventów łańcucha ani izolacji, tylko je pokazuje"
+
+msgid "When it changes, the block signal before it gets (its aspect: that one's): %s"
+msgstr "Gdy ten zmienia sygnał, poprzedni semafor SBL dostaje (sygnał tego: sygnał poprzedniego): %s"
+
+msgid "It guards no track circuit"
+msgstr "Nie osłania żadnej izolacji"
+
+msgid "It guards the track circuit %s"
+msgstr "Osłania izolację %s"
+
+msgid "No block signal before it"
+msgstr "Przed nim nie ma semafora SBL"
+
+msgid "The block signal before it: %s"
+msgstr "Poprzedni semafor SBL: %s"
+
+msgid "Its track circuit and the block signal before it: open its station in Signalling"
+msgstr "Jego izolację i poprzedni semafor SBL zobaczysz, gdy otworzysz jego stację w SRK"

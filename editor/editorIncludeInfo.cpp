@@ -277,6 +277,7 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 			};
 			pairs(signal["aspects"], Info.signal_aspects);
 			pairs(signal["repeats"], Info.signal_repeats);
+			pairs(signal["chain"], Info.signal_chain);
 		}
 		if (auto const table{document["turntable"]}; table.IsDefined() && table.IsMap())
 		{

@@ -45,6 +45,9 @@ class srk_tool final : public editor_tool
 	void boundary_click();
 	// the stations described go to the files of their layers, as "//$s" lines
 	void store();
+	// of a block signal along a line of the open station, by its name: the track circuit it guards, the block signal before it,
+	// shown, the events of those its chain sets that one to which it hasn't, joined; false where none is known so
+	bool block_signal(std::string const &Name, std::string &Circuit, std::string &Before, std::string &Missing) const;
 
   private:
 	editor_selection &m_selection;
@@ -242,8 +245,16 @@ class srk_tool final : public editor_tool
 			std::string name; // shown
 			bool wrong{false}; // facing the wrong-track trains
 			double km{0.0};
+			bool block{false}; // a block signal, else a warning disc
+			std::string signal; // of a block signal: its name as it stands
+			std::string file; // its template
+			std::string circuit; // the track circuit it guards, beyond the joint it turns its trains to stop at; empty for none
+			std::string before; // the block signal its trains pass before it, as it stands; empty for none, a station signal
+			std::string before_file; // the template of that one
+			std::string chain; // what it sets the one before it to, by its description, in words: S1: S5, S3: S2...; empty for none
+			std::string missing; // the events of those the one before it hasn't, by its description, joined
 		};
-		std::vector<post> posts; // the block signals along it
+		std::vector<post> posts; // the block signals along it, the warning discs
 		// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
 		// semi-automatic one, the first of them
 		std::size_t leftovers{0};

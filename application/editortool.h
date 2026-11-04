@@ -121,6 +121,10 @@ struct signal_head
 	std::vector<std::string> aspect_names; // the aspects its description lists: Sr1, Sr2, Sr3, Sz...; empty where it lists none
 	// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
 	std::vector<std::pair<std::string, std::string>> repeats;
+	// of a block signal: for an event of its own, the event the block signal before it is to get then
+	std::vector<std::pair<std::string, std::string>> chain;
+	// the aspects its description lists, by name with the event giving each, the part after "(p1)_"
+	std::vector<std::pair<std::string, std::string>> aspect_events;
 };
 // one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values
 // of standing ones replaced

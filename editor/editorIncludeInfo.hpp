@@ -53,6 +53,9 @@ struct include_info
 	std::vector<std::pair<std::string, std::string>> signal_aspects;
 	// of a warning disc: its event for each speed class of the signal after it (stop, vmax, 100, 60, 40)
 	std::vector<std::pair<std::string, std::string>> signal_repeats;
+	// of a block signal: for an event of its own, the event the block signal before it is to get then (s1: s5, uszk: s1...), both
+	// the part after "(p1)_". The editor writes no event of it: what the description says, shown
+	std::vector<std::pair<std::string, std::string>> signal_chain;
 	std::vector<include_parameter> parameters;
 
 	// description of specified parameter, created if there's none
