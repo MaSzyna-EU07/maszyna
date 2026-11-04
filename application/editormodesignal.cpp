@@ -886,6 +886,8 @@ bool editor_mode::signal_show_aspect(scene::instance_handle const Instance, std:
 	std::stable_sort(looks.begin(), looks.end(), [](auto const &A, auto const &B) { return A.first < B.first; });
 	for (auto const &[at, event] : looks)
 	{
+		// the vehicle that set it off last may be gone by now, and run() names it in the log; the queue sets it anew each time
+		event->m_activator = nullptr;
 		event->run();
 		if (auto *animation{dynamic_cast<animation_event *>(event)})
 			animation->finish();
