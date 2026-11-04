@@ -326,6 +326,24 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		save();
 		return selftest_result::handled;
 	}
+	if (command == "layermerge")
+	{
+		// the layer of the first file merged into the layer of the second, as the Merge button of the layers panel does
+		std::string source, target;
+		words >> source >> target;
+		auto const find = [](std::string const &Name) -> scene::layer_handle {
+			for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
+				if (scene::Layers.layer(static_cast<scene::layer_handle>(idx)).name == Name)
+					return static_cast<scene::layer_handle>(idx);
+			return null_handle;
+		};
+		auto const from{find(source)};
+		auto const into{find(target)};
+		std::string reason;
+		auto const merged{from != null_handle && into != null_handle && scene::Layers.can_merge(from, into, reason) && scene::Layers.merge(from, into)};
+		WriteLog("SELFTEST layermerge " + source + " " + target + ": " + (merged ? std::string{"merged"} : "not merged " + reason));
+		return selftest_result::handled;
+	}
 	if (command == "ortho")
 	{
 		float extent{0.0f};

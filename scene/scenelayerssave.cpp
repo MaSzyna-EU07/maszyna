@@ -1320,7 +1320,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	for (auto const &[markedlayer, lines] : m_marked)
 	{
 		auto const target{resolve(markedlayer)};
-		if (false == is_output(target) || false == writable(markedlayer))
+		if (layer(markedlayer).dead || false == is_output(target) || false == writable(markedlayer))
 		{
 			continue;
 		}
@@ -1813,13 +1813,11 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		stat(output);
 		scan(output);
 	}
-	for (auto const &marking : m_marking)
+	// the lines of the merged layers are now in the files of their targets, read again with them: all of them, the ones the
+	// editor didn't change too, or the next save would write the lines moved off the letters of the starters twice
+	for (auto marked{m_marked.begin()}; marked != m_marked.end();)
 	{
-		if (resolve(marking.first.first) != marking.first.first)
-		{
-			// the lines of the merged layer are now in the file of its target
-			m_marked.erase(marking.first.first);
-		}
+		marked = (resolve(marked->first) != marked->first ? m_marked.erase(marked) : std::next(marked));
 	}
 	m_marking.clear();
 	for (auto &included : m_instances)

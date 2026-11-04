@@ -178,6 +178,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   type <text>                          the characters typed into the text field with the focus
 //   screenshot
 //   save
+//   layermerge <file> <file>             the layer of the first file merged into the layer of the second, as the layers panel does
 //   log <text>
 //   perf <label>                         the frames drawn since the last perf and the time per frame logged, the longest frame and those over 33 ms,
 //                                        with the timings and counts of the renderer
