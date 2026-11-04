@@ -78,6 +78,7 @@ option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
 option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
+option(WITH_EDITOR_SELFTESTS "Run the scripts of the editor and launcher self-tests named by the EU07_EDITOR_SELFTEST and EU07_LAUNCHER_SELFTEST variables" OFF)
 option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
@@ -183,17 +184,32 @@ set(SOURCES
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorModelSets.cpp"
+"editor/editorTrackPresets.cpp"
 "editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
+"editor/editorTrackShape.cpp"
+"editor/editorGroundFollow.cpp"
+"editor/editorAlignmentStore.cpp"
+"editor/editorSwitchStore.cpp"
+"editor/editorSwitchCurve.cpp"
+"editor/editorKilometrage.cpp"
+"editor/editorSwitchDesign.cpp"
+"editor/editorConnections.cpp"
+"application/editormodeconnection.cpp"
+"application/editormodeconnectioncurve.cpp"
+"application/editormodedigitize.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorHttp.cpp"
+"editor/editorNmt.cpp"
+"editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
 "application/editormode.cpp"
@@ -203,15 +219,24 @@ set(SOURCES
 "application/editormodelay.cpp"
 "application/editormodeswitchplace.cpp"
 "application/editormodetrackgizmo.cpp"
+"application/editormoderecords.cpp"
 "application/editormodeswitchdrive.cpp"
 "application/editormodeswitchtool.cpp"
+"application/editormodeswitchtemplate.cpp"
+"application/editormodenmt.cpp"
+"application/editormodegradeline.cpp"
+"application/editormodeswitchslide.cpp"
+"application/editormodeswitchdesign.cpp"
+"application/editormodetrackbed.cpp"
 "application/editormodetrackux.cpp"
+"application/editormodetrackprops.cpp"
 "application/editormoderoad.cpp"
 "application/editormodeprofile.cpp"
 "application/editormodetextures.cpp"
 "application/editormodegauge.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
+"application/editormodekm.cpp"
 "application/editormodejoints.cpp"
 "application/editormodeparallel.cpp"
 "application/editormodelineside.cpp"
@@ -222,6 +247,17 @@ set(SOURCES
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"
+"application/editormodeselftestscene.cpp"
+"application/editormodeselftestsleepers.cpp"
+"application/editormodeselftestsweep.cpp"
+"application/editormodeselftesttrack.cpp"
+"application/editormodeselftestswitch.cpp"
+"application/editormodeselftestjoin.cpp"
+"application/editormodeselftestsignal.cpp"
+"application/editormodeselftestterrain.cpp"
+"application/editormodeselftestrails.cpp"
+"application/editormodeselftestmonkey.cpp"
+"application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"
@@ -627,6 +663,12 @@ else()
 	target_compile_definitions(eu07_settings INTERFACE WITH_DISCORD_RPC=0)
 endif()
 
+if(WITH_EDITOR_SELFTESTS)
+	target_compile_definitions(eu07_settings INTERFACE WITH_EDITOR_SELFTESTS=1)
+else()
+	target_compile_definitions(eu07_settings INTERFACE WITH_EDITOR_SELFTESTS=0)
+endif()
+
 find_package(OpenAL REQUIRED)
 if (TARGET OpenAL::OpenAL)
 	target_link_libraries(eu07_settings INTERFACE OpenAL::OpenAL)
@@ -758,4 +800,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()
