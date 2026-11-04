@@ -195,9 +195,19 @@ void calculate_tangents(vertex_array &vertices, index_array const &indices, int 
         const glm::vec3 &t = tan[a];
         const glm::vec3 &t2 = tan[vertex_count + a];
 
+        auto tangent { t - n * glm::dot( n, t ) };
+        if( false == ( glm::dot( tangent, tangent ) > 1e-12f ) ) {
+            // the texture of the faces gives the vertex no direction, as where they all have one spot of it like the cut ends of the rails;
+            // normalized, nothing would be NaN and the pixels black whatever the light and fog, any direction across the normal does
+            tangent = glm::cross( n, ( std::abs( n.x ) < 0.9f ? glm::vec3 { 1.f, 0.f, 0.f } : glm::vec3 { 0.f, 1.f, 0.f } ) );
+            if( false == ( glm::dot( tangent, tangent ) > 1e-12f ) ) {
+                tangent = { 1.f, 0.f, 0.f };
+            }
+        }
+
         vertices[a].tangent =
             glm::vec4(
-                glm::normalize((t - n * glm::dot(n, t))),
+                glm::normalize( tangent ),
                 (glm::dot(glm::cross(n, t), t2) < 0.0F) ?
                    -1.0F :
                     1.0F);
