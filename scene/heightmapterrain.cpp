@@ -483,8 +483,17 @@ bool modifier_shape::reaches(glm::dvec2 const &Min, glm::dvec2 const &Max) const
 
 bool modifier_shape::apply(double const X, double const Z, float &Height) const
 {
-	if (m_grid.empty() || X < m_min.x || X > m_max.x || Z < m_min.y || Z > m_max.y)
+	auto const result{evaluate(X, Z, Height)};
+	if (false == result.has_value() || std::abs(result->height - Height) < 0.001)
 		return false;
+	Height = static_cast<float>(result->height);
+	return true;
+}
+
+std::optional<modifier_shape::effect> modifier_shape::evaluate(double const X, double const Z, double const Ground) const
+{
+	if (m_grid.empty() || X < m_min.x || X > m_max.x || Z < m_min.y || Z > m_max.y)
+		return std::nullopt;
 	auto const &points{m_modifier.points};
 	auto const reach{m_widest + m_modifier.reach};
 	auto distance{reach};
@@ -505,7 +514,10 @@ bool modifier_shape::apply(double const X, double const Z, float &Height) const
 				auto const &b{points[i + 1].position};
 				auto const run{b - a};
 				auto const length{glm::dot(run, run)};
-				auto const t{length > 1e-12 ? std::clamp(glm::dot(point - a, run) / length, 0.0, 1.0) : 0.0};
+				auto const along{length > 1e-12 ? glm::dot(point - a, run) / length : 0.0};
+				if ((m_modifier.open_start && i == 0 && along < 0.0) || (m_modifier.open_end && i + 2 == points.size() && along > 1.0))
+					continue;
+				auto const t{std::clamp(along, 0.0, 1.0)};
 				auto const offset{glm::length(point - (a + run * t))};
 				if (offset < distance)
 				{
@@ -517,18 +529,17 @@ bool modifier_shape::apply(double const X, double const Z, float &Height) const
 			}
 		}
 	if (false == found)
-		return false;
+		return std::nullopt;
 	// the formation under the axis, slopes from its edges down or up to the ground, the bends rounded off
 	auto const slope{std::max(0.1, m_modifier.slope)};
 	auto const rounding{std::max(0.0, m_modifier.rounding)};
-	auto const ground{static_cast<double>(Height)};
+	auto const ground{Ground};
 	auto const beyond{soft_max(0.0, distance - halfwidth, rounding)};
-	auto const bend{rounding / slope};
+	// the bends of the slopes round off only away from the formation: under it the ground is the formation itself, a cut or a
+	// fill as shallow as the bend isn't let to sink or rise it
+	auto const bend{rounding / slope * std::clamp(beyond / std::max(rounding, 1e-6), 0.0, 1.0)};
 	auto const target{ground > formation ? -soft_max(-ground, -(formation + beyond / slope), bend) : soft_max(ground, formation - beyond / slope, bend)};
-	if (std::abs(target - ground) < 0.001)
-		return false;
-	Height = static_cast<float>(target);
-	return true;
+	return effect{target, distance - halfwidth, distance};
 }
 
 // manifest
@@ -600,6 +611,10 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 					item.reach = reach.as<double>();
 				if (auto const rounding{entry["rounding"]})
 					item.rounding = rounding.as<double>();
+				if (auto const open{entry["open_start"]})
+					item.open_start = open.as<bool>();
+				if (auto const open{entry["open_end"]})
+					item.open_end = open.as<bool>();
 				if (auto const points{entry["points"]}; points && points.IsSequence())
 					for (auto const &point : points)
 						if (point.IsSequence() && point.size() >= 4)
@@ -673,6 +688,10 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 			out << YAML::Key << "slope" << YAML::Value << item.slope;
 			out << YAML::Key << "reach" << YAML::Value << item.reach;
 			out << YAML::Key << "rounding" << YAML::Value << item.rounding;
+			if (item.open_start)
+				out << YAML::Key << "open_start" << YAML::Value << true;
+			if (item.open_end)
+				out << YAML::Key << "open_end" << YAML::Value << true;
 			out << YAML::Key << "points" << YAML::Value << YAML::BeginSeq;
 			for (auto const &point : item.points)
 				out << YAML::Flow << YAML::BeginSeq << point.position.x << point.position.y << point.formation << point.half_width << YAML::EndSeq;
