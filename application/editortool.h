@@ -34,6 +34,8 @@ enum class editor_selftest_result
 	again
 };
 
+enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, template_open, template_clicked, count };
+
 enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, srk, kilometrage };
 
 struct track_hover
@@ -259,7 +261,16 @@ class editor_track_design
 	~editor_track_design() = default;
 };
 
-class editor_services : public editor_selection, public editor_view, public editor_history, public editor_templates, public editor_signals, public editor_ground, public editor_track_design
+class editor_guide
+{
+  public:
+	virtual void first_step_done(editor_first_step const Step) = 0;
+
+  protected:
+	~editor_guide() = default;
+};
+
+class editor_services : public editor_selection, public editor_view, public editor_history, public editor_templates, public editor_signals, public editor_ground, public editor_track_design, public editor_guide
 {
   protected:
 	~editor_services() = default;

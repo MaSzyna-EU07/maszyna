@@ -677,6 +677,7 @@ void editor_mode::insert_curved_connection()
 	if (library.has_value())
 		profiles_to_history(std::move(*library));
 	straight_refresh();
+	first_step_done(first_step::turnout);
 	m_node = switches.front();
 	ui()->set_node(m_node);
 	std::string names;

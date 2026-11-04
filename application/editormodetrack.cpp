@@ -761,8 +761,12 @@ void editor_mode::render_track_selection()
 		ImGui::Separator();
 		ImGui::Spacing();
 		ImGui::TextDisabled("%s", STR_C("Or start with:"));
-		if (ImGui::Button(STR_C("Lay a track  (L)"), ImVec2(-1.0f, ImGui::GetFrameHeight() * 1.4f)))
+		auto const width{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
+		if (ImGui::Button(STR_C("Lay a track  (L)"), ImVec2(width, ImGui::GetFrameHeight() * 1.4f)))
 			show_track_tab(track_tab::lay);
+		ImGui::SameLine();
+		if (ImGui::Button(STR_C("Tutorial"), ImVec2(width, ImGui::GetFrameHeight() * 1.4f)))
+			m_first_steps_open = true;
 		return;
 	}
 	// the properties belong to the select tool and to the switch tool, the other tools show the track they work with
@@ -2214,7 +2218,7 @@ std::string editor_mode::track_shaping(bool const Joined) const
 
 void editor_mode::draw_empty_scenery_hint()
 {
-	if (m_terrain_open || (m_track_tab != track_tab::path && m_track_tab != track_tab::lay) || (m_lay.active && false == m_lay.points.empty()) || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+	if (m_terrain_open || (m_track_tab != track_tab::path && m_track_tab != track_tab::lay) || (m_lay.active && false == m_lay.points.empty()) || m_first_steps_open || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 		return;
 	auto const &paths{simulation::Paths.sequence()};
 	if (std::any_of(paths.begin(), paths.end(), [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; }))
@@ -2231,7 +2235,7 @@ void editor_mode::draw_empty_scenery_hint()
 		rows.emplace_back("L", "the lay tool");
 	rows.emplace_back("LMB", "on the ground: the first point, then the bends of the line, the curves at them made by themselves");
 	rows.emplace_back("Enter", "lays the track clicked");
-	rows.emplace_back("F1", "all the shortcuts");
+	rows.emplace_back("F1", "all the shortcuts, and the tutorial");
 	auto const width{std::min(high.x - low.x - 2.0f * pad, std::round(font * 30.0f))};
 	auto const column{std::round(picture * 5.0f)};
 	auto const wrap{width - 2.0f * pad - column};

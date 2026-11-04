@@ -561,6 +561,7 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 		return;
 	auto const slip{std::count_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; }) > 1};
 	m_switch.placing = false;
+	first_step_done(first_step::turnout);
 	m_track_point = {};
 	m_node = *found;
 	ui()->set_node(m_node);

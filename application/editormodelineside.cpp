@@ -649,6 +649,8 @@ void hekto_tool::hekto_place()
 	tool.status = placed > 0 ? format(STR_P("%zu hectometre post placed, Ctrl+Z takes it back", "%zu hectometre posts placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
 	if (placed > 0 && layer != null_handle)
 		tool.status += format(STR_C(" (layer \"%s\")"), scene::Layers.layer(layer).name.c_str());
+	if (placed > 0)
+		m_guide.first_step_done(editor_first_step::posts);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.dirty = true;
 }

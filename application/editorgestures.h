@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the mouse and the keys drawn as pictures: the gestures of the tools and of the vertical profile
+// the mouse and the keys drawn as pictures: the lessons of the tutorial, the gestures of the tools and of the vertical profile
 
 #pragma once
 

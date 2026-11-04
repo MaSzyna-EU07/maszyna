@@ -900,6 +900,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	std::snprintf(tool.name, sizeof(tool.name), "%s", signal_next_name(name).c_str());
 	signal_refresh(true);
 	signal_select(instance);
+	first_step_done(first_step::signal);
 	return true;
 }
 

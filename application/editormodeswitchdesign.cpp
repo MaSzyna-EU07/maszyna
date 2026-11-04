@@ -462,6 +462,7 @@ void editor_mode::switch_designer_finish()
 	designer.selected = static_cast<int>(designer.own.size()) - 1;
 	designer.dirty = true;
 	designer.picking = false;
+	first_step_done(first_step::template_clicked);
 	designer.status = format(STR_C("Measured a %.2f m, b %.2f m, 1:%.2f"), designer.quick_a, designer.quick_b, designer.quick_ratio);
 	if (false == designer.measured_text.empty())
 		designer.status += "\n" + designer.measured_text;
@@ -561,6 +562,7 @@ void editor_mode::render_switch_designer()
 	draw_switch_designer_clicks();
 	if (false == designer.open)
 		return;
+	first_step_done(first_step::template_open);
 	switch_designs_load();
 	ImGui::SetNextWindowSize(ImVec2(820.0f, 560.0f), ImGuiCond_FirstUseEver);
 	if (false == ImGui::Begin((std::string(STR_C("Switch templates")) + "###switchdesigner").c_str(), &designer.open, ImGuiWindowFlags_NoCollapse))

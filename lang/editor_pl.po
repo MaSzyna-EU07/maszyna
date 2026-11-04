@@ -7458,8 +7458,8 @@ msgstr "Postaw i jedź: pociąg staje na torze, a kabina jest twoja"
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
-msgid "Thirteen short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Trzynaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
+msgid "Short lessons with clips and drawings: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Krótkie lekcje z filmikami i rysunkami: kamera, układanie toru, łuki, promień na załamaniach, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: the hectometre posts of the whole line at once"
 msgstr "B: słupki hektometrowe całej linii naraz"

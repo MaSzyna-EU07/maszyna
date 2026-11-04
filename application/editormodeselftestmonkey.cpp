@@ -36,6 +36,7 @@ http://mozilla.org/MPL/2.0/.
 //   invariants                           logs the tracks whose points, rolls or length aren't finite, or that have no path
 //   undoall                              undoes every change in the history
 //   trackhash                            logs the number of the tracks and a hash of their names and points to the millimetre
+//   tutorial <page>                      opens the tutorial at the lesson, from 0; -1 closes it
 //   badge [<x> <y> <gesture>]            the mouse or the keys drawn with the bottom left corner at the point of the window, as
 //                                        "LMB" or "Enter", for the clips of the tutorial; with nothing after it none
 //   shortcuts [filter]                   opens the list of the shortcuts
@@ -302,6 +303,14 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 			for (auto const character : entry)
 				hash = (hash ^ static_cast<unsigned char>(character)) * 1099511628211ull;
 		WriteLog(format("SELFTEST trackhash %zu tracks %016llx", entries.size(), static_cast<unsigned long long>(hash)));
+		return selftest_result::handled;
+	}
+	if (command == "tutorial")
+	{
+		int page{0};
+		words >> page;
+		m_first_steps_open = page >= 0;
+		m_tutorial_page = std::max(0, page);
 		return selftest_result::handled;
 	}
 	if (command == "badge")
