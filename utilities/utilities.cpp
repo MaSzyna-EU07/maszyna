@@ -335,8 +335,11 @@ void win1250_to_ascii(std::string &Input)
 
 std::string win1250_to_utf8(const std::string &Input)
 {
-	std::unordered_map<char, std::string> const charmap{{165, "Ą"}, {198, "Ć"}, {202, "Ę"}, {163, "Ł"}, {209, "Ń"}, {211, "Ó"}, {140, "Ś"}, {143, "Ź"}, {175, "Ż"},
-	                                                    {185, "ą"}, {230, "ć"}, {234, "ę"}, {179, "ł"}, {241, "ń"}, {243, "ó"}, {156, "ś"}, {159, "ź"}, {191, "ż"}};
+	// the utf-8 sequences written as bytes: the file has a byte order mark and the build doesn't give the compiler /utf-8, so letters
+	// written as letters would end up in the program in windows-1250, the same as the input
+	static std::unordered_map<char, std::string> const charmap{{'\xA5', "\xC4\x84"}, {'\xC6', "\xC4\x86"}, {'\xCA', "\xC4\x98"}, {'\xA3', "\xC5\x81"}, {'\xD1', "\xC5\x83"}, {'\xD3', "\xC3\x93"},
+	                                                           {'\x8C', "\xC5\x9A"}, {'\x8F', "\xC5\xB9"}, {'\xAF', "\xC5\xBB"}, {'\xB9', "\xC4\x85"}, {'\xE6', "\xC4\x87"}, {'\xEA', "\xC4\x99"},
+	                                                           {'\xB3', "\xC5\x82"}, {'\xF1', "\xC5\x84"}, {'\xF3', "\xC3\xB3"}, {'\x9C', "\xC5\x9B"}, {'\x9F', "\xC5\xBA"}, {'\xBF', "\xC5\xBC"}};
 	std::string output;
 	std::unordered_map<char, std::string>::const_iterator lookup;
 	for (auto &input : Input)
