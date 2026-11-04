@@ -629,6 +629,13 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "frogs")
+    {
+        // yes: the rails of the plain tracks and of the switches with the key frogs cut where they cross other rails
+        ParseOne(Parser, Frogs);
+        return true;
+    }
+
     if (token == "timespeed")
     {
         ParseOne(Parser, default_timespeed, 1, false);
@@ -1644,6 +1651,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     Output << "sleepers3dplain " << ( Sleepers3DPlain.empty() ? std::string{ "none" } : Sleepers3DPlain ) << ' ' << ( Sleepers3DPlainSkin.empty() ? std::string{ "none" } : Sleepers3DPlainSkin ) << ' ' << Sleepers3DPlainSeat << '\n';
     export_as_text( Output, "rendercab", render_cab );
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
+    export_as_text( Output, "frogs", Frogs );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );
     export_as_text( Output, "gfx.resource.move", ResourceMove );
     export_as_text( Output, "gfx.textures.streaming", gfx_texture_streaming );
