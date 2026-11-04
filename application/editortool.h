@@ -216,6 +216,9 @@ class editor_signals
 	// the signals placed by the templates chosen for their kinds and the rest of the changes, with the tracks changed before: one
 	// step of the history. returns: how many signals were placed
 	virtual std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
+	// the error signal_batch would stop with for the signals given, a kind with no template, so a step finds it before it cuts any
+	// track for them. returns: empty if each one has its template
+	virtual std::string signal_templates_missing(std::vector<signal_order> const &Orders) = 0;
 	// the signal templates with lights, false while they are still being looked for
 	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
 	// the signals given which no track reads, read again by the track they stand by: one step of the history. returns: how many

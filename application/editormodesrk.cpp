@@ -1686,7 +1686,7 @@ void srk_tool::render_lengths()
 		else
 		{
 			dimmed(STR_C("Set the track circuits first: the station tracks are measured by their numbers, from their joints, the fouling points and the signals"));
-			if (ImGui::Button(STR_C("Set the track circuits"), ImVec2(-1.0f, 0.0f)))
+			if (ImGui::Button((std::string{STR_C("Set the track circuits")} + "##srklengthcircuits").c_str(), ImVec2(-1.0f, 0.0f)))
 				set_circuits();
 		}
 		return;
@@ -1764,7 +1764,7 @@ void srk_tool::render_lengths()
 	if (std::none_of(m_lengths.begin(), m_lengths.end(), [](station::lengths const &Track) { return Track.ways[0].head.what == station::limit::kind::signal || Track.ways[1].head.what == station::limit::kind::signal; }))
 	{
 		dimmed(STR_C("No signal stands by the station tracks yet, the lengths run between the fouling points: set the signals for the useful ones"));
-		if (ImGui::Button(STR_C("Set the signals"), ImVec2(-1.0f, 0.0f)))
+		if (ImGui::Button((std::string{STR_C("Set the signals")} + "##srklengthsignals").c_str(), ImVec2(-1.0f, 0.0f)))
 			set_signals();
 	}
 	if (ImGui::Button(STR_C("Copy the list of tracks"), ImVec2(-1.0f, 0.0f)))
@@ -2430,6 +2430,21 @@ void srk_tool::set_signals()
 				return;
 			}
 		cuts.push_back(std::move(entry));
+	}
+	// a template for each signal placed, before any track is cut for them
+	{
+		std::vector<signal_order> wanted;
+		for (std::size_t i = 0; i < plan.size(); ++i)
+			if (match[i] < 0)
+			{
+				wanted.emplace_back();
+				wanted.back().kind = plan[i].kind == station::signal::role::shunting ? "shunt" : "main";
+			}
+		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
+		{
+			m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
+			return;
+		}
 	}
 	std::vector<std::pair<TTrack *, editor_track::state>> before;
 	std::vector<TTrack *> created;
@@ -3386,6 +3401,23 @@ void srk_tool::set_lines(block_edit const *Edit)
 				found.wrong_guard = planned[twin].name;
 			found.start = station::point_on(line, before.distance).point;
 			sections.push_back(std::move(found));
+		}
+	}
+	// a template for each signal placed, before any track is cut for them
+	{
+		std::vector<signal_order> wanted;
+		for (auto const &signal : planned)
+			if (signal.match < 0)
+			{
+				auto const block{signal.kind == station::signal::role::block};
+				wanted.emplace_back();
+				wanted.back().kind = block ? "block" : "warning";
+				wanted.back().file = block ? block_template(heads, {}, aspects[signal.line], signal.wrong) : std::string{};
+			}
+		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
+		{
+			m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
+			return;
 		}
 	}
 	// the tracks cut where the sections meet, all of it checked before any is

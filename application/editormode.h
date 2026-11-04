@@ -2577,6 +2577,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) override;
 	bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) override;
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
+	std::string signal_templates_missing(std::vector<signal_order> const &Orders) override;
 	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
 	std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) override;
 	void select_signal(scene::instance_handle const Instance) override;
@@ -2654,6 +2655,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	signal_template const *signal_current() const;
 	signal_template const *signal_armed() const;
 	signal_template const *signal_template_of(std::string const &File) const;
+	// the template it is placed by: the one of its file if that is of its kind, else the one chosen for its kind. returns: nullptr if none
+	signal_template const *signal_template_for(signal_order const &Order) const;
 	bool signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Facing, int const Side, signal_template const &Template, signal_spot &Spot) const;
 	void signal_refresh(bool const Force = false);
 	// the signals standing, read by the tracks as they are now, the templates as found so far

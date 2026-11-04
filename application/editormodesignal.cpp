@@ -65,6 +65,11 @@ int kind_index(std::string const &Kind)
 	return -1;
 }
 
+std::string no_template(std::string const &Kind)
+{
+	return format(STR_C("no template of the kind %s"), STR(kKindLabels[std::max(0, kind_index(Kind))]).c_str());
+}
+
 double nearest_on(TTrack const &Track, int const Path, glm::dvec3 const &Point)
 {
 	bezier const curve{Track.m_paths[Path]};
@@ -371,6 +376,25 @@ editor_mode::signal_template const *editor_mode::signal_template_of(std::string 
 		if (item.file == file)
 			return &item;
 	return nullptr;
+}
+
+editor_mode::signal_template const *editor_mode::signal_template_for(signal_order const &Order) const
+{
+	auto const &tool{m_signal};
+	auto const kind{kind_index(Order.kind)};
+	auto const *item{kind >= 0 && tool.chosen[kind] >= 0 && tool.chosen[kind] < static_cast<int>(tool.templates.size()) ? &tool.templates[tool.chosen[kind]] : nullptr};
+	if (auto const *wanted{Order.file.empty() ? nullptr : signal_template_of(Order.file)}; wanted != nullptr && wanted->kind == Order.kind)
+		item = wanted;
+	return item;
+}
+
+std::string editor_mode::signal_templates_missing(std::vector<signal_order> const &Orders)
+{
+	signal_scan();
+	for (auto const &order : Orders)
+		if (signal_template_for(order) == nullptr)
+			return no_template(order.kind);
+	return {};
 }
 
 bool editor_mode::signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const &Point, glm::dvec3 const &Cursor, int const Facing, int const Side, signal_template const &Template, signal_spot &Spot) const
@@ -1291,20 +1315,16 @@ bool editor_mode::signal_heads(std::vector<signal_head> &Heads, bool const Wait)
 
 std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error)
 {
-	auto &tool{m_signal};
 	signal_scan();
 	signal_refresh(true);
 	std::vector<template_item> items;
 	std::vector<std::pair<signal_spot, std::string>> reads;
 	for (auto const &order : Changes.placed)
 	{
-		auto const kind{kind_index(order.kind)};
-		auto const *item{kind >= 0 && tool.chosen[kind] >= 0 && tool.chosen[kind] < static_cast<int>(tool.templates.size()) ? &tool.templates[tool.chosen[kind]] : nullptr};
-		if (auto const *wanted{order.file.empty() ? nullptr : signal_template_of(order.file)}; wanted != nullptr && wanted->kind == order.kind)
-			item = wanted;
+		auto const *item{signal_template_for(order)};
 		if (item == nullptr)
 		{
-			Error = format(STR_C("no template of the kind %s"), STR(kKindLabels[std::max(0, kind)]).c_str());
+			Error = no_template(order.kind);
 			break;
 		}
 		signal_spot spot;
