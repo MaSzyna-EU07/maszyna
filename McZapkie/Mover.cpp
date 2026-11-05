@@ -51,7 +51,7 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 		double sum = m1 + m2;
 		double w1 = (m2 * v2 * 2.0 + v1 * (m1 - m2)) / sum;
 		double w2 = (m1 * v1 * 2.0 + v2 * (m2 - m1)) / sum;
-		// niejawna zmiana predkosci wskutek zderzenia: the bounce loses energy in the velocities relative to the
+		// the collision changes the velocities directly: the bounce loses energy in the velocities relative to the
 		// centre of mass only, the pair keeps its momentum. scaling the velocities themselves braked the vehicles
 		// down with every step their couplers spent stretched or pressed in all the way (eu07/maszyna#553)
 		auto const centre{(m1 * v1 + m2 * v2) / sum};
