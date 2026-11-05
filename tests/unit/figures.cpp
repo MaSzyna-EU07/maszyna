@@ -170,7 +170,7 @@ std::vector<recorded_part> parts_of(std::vector<std::string> const &Lines) {
 			continue;
 		}
 		if (parts.empty()) {
-			parts.push_back({});
+			parts.emplace_back();
 		}
 		figure.text = line.substr(line.find(" = ") + 3);
 		parts.back().figures.push_back(figure);
