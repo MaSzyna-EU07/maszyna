@@ -1,0 +1,39 @@
+{
+  "_source": "pkp/tem2_v2/tem2a.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "116000", "Mred": "20000", "Vmax": "100", "PWR": "780", "SandCap": "2000"},
+  "Dimensions": {"L": "17", "H": "4.62", "W": "2.95", "Cx": "0.1"},
+  "Wheels": {"D": "1.05", "AIM": "4000", "Tw": "1.435", "Axle": "Co'Co'", "Ad": "2.1", "Bd": "8.6", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "LSt", "NBpA": "2", "MBF": "124", "MaxBP": "4.1", "MaxLBP": "3.9", "BCN": "4", "BCR": "0.127", "BCD": "0.1", "BCM": "10.77", "HiPP": "5.0", "LoPP": "3.5", "Vv": "0.888", "MinCP": "7", "MaxCP": "8.5", "CompressorSpeed": "0.077", "CompressorPower": "Main", "BCS": "1", "BSA": "0", "BM": "P10-Bgu", "BVV": "222", "BRE": "0.85"},
+  "BuffCoupl1": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "3"},
+  "BuffCoupl2": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "23", "ControlType": "TEM2"},
+  "Cntrl": {"BrakeHandle": "M394", "LocBrakeHandle": "FD1", "BrakeDelays": "G", "BrakeSystem": "Pneumatic", "BCPN": "5", "BDelay1": "25", "BDelay2": "13", "BDelay3": "25", "BDelay4": "13", "ASB": "None", "LocalBrake": "PneumaticBrake", "MCPN": "8", "SCPN": "2", "AutoRelay": "Yes", "IniCDelay": "0.5", "SCDelay": "0.1", "rows": [
+    ["-1","1.0","-1","10","Pneumatic"],
+    ["0","0.5","-1","4","Pneumatic"],
+    ["1","-1","-1","0","Pneumatic"],
+    ["2","-1","-1","2","Pneumatic"],
+    ["3","0.0","-1","2","Pneumatic"],
+    ["4","0.0","-1","6","Pneumatic"],
+    ["5","0.0","-1","15","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "5", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "6", "RadioStop": "Yes"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "75", "LMaxCurrent": "75"},
+  "TurboPos": {"TurboPos": "3"},
+  "Engine": {"AIM": "0.9", "EngineType": "DieselElectric", "Trans": "15:68", "Ftmax": "396000", "Flat": "1", "Vhyp": "15", "Vadd": "0", "Cr": "1.107", "OilMinPressure": "0.16", "OilMaxPressure": "0.3", "WaterCoolingFanSpeed": "1.41", "WaterMaxTemperature": "88", "WaterCoolingTemperature": "76", "WaterShutters": "yes"},
+  "MotorParamTable": {"rows": [
+    ["0","24","66","2000","14","1000","0"],
+    ["1","18","70","1600","17","1000","1400"],
+    ["2","15","106","1400","26","0","1400"]
+  ]},
+  "WWList": {"Size": "8", "rows": [
+    ["300","0","0","0"],
+    ["290","65","870","1900"],
+    ["270","166","870","1900"],
+    ["330","268","870","1900"],
+    ["400","370","870","1900"],
+    ["480","471","870","1900"],
+    ["570","573","870","1900"],
+    ["650","647","870","1900"],
+    ["750","780","870","1900"]
+  ]}
+}
