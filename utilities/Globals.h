@@ -538,6 +538,12 @@ struct global_settings {
     // the sound and the driver
     bool gfx_tunnelflags { false };
     float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
+    // moths flying about the lit lamps of the scenery (rendering/common/moths.cpp): a swarm (the model animals/cmy, animated by
+    // textures) at a part of the lamps shining downwards, picked by their places, in the warm months, within the range of the camera
+    bool moths { true };
+    float moths_share { 0.4f }; // part of the lamps with a swarm, 0-1
+    float moths_range { 80.f }; // distance from the camera the swarms are shown at, metres
+    float moths_temperature { 8.f }; // the lowest temperature of the air moths fly at, degrees Celsius
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab
     int gfx_lights_shadows { 2 };

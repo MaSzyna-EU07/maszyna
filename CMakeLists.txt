@@ -347,6 +347,7 @@ set(SOURCES
 "rendering/common/gpuparticles.cpp"
 "rendering/common/windscreenwater.cpp"
 "rendering/common/locallights.cpp"
+"rendering/common/moths.cpp"
 "rendering/common/skylight.cpp"
 "rendering/common/weatherstate.cpp"
 "rendering/common/exposure.cpp"

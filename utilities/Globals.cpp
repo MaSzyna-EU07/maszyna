@@ -1968,6 +1968,10 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
     else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
     else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
+    else if( Token == "moths" ) { readswitch( moths ); }
+    else if( Token == "moths.share" ) { readvalue( moths_share, 0.f, 1.f ); }
+    else if( Token == "moths.range" ) { readvalue( moths_range, 0.f, 500.f ); }
+    else if( Token == "moths.temperature" ) { readvalue( moths_temperature, -50.f, 50.f ); }
     else if( Token == "gfx.lights.shadows" ) {
         // no/low/medium/high, or the number of the level
         Parser.getTokens( 1 );
@@ -2463,6 +2467,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
+    export_as_text( Output, "moths", moths );
+    export_as_text( Output, "moths.share", moths_share );
+    export_as_text( Output, "moths.range", moths_range );
+    export_as_text( Output, "moths.temperature", moths_temperature );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.lights.shadows.cab", gfx_lights_shadows_cab );
     export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );

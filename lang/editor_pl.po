@@ -11826,6 +11826,11 @@ msgstr "Nie udało się zapisać sieci trakcyjnej: jej plik \"%s\" jest plikiem 
 msgid "it's a part of the catenary, which is changed with the Catenary tool (F6)"
 msgstr "to część sieci trakcyjnej, którą zmienia się narzędziem Sieć trakcyjna (F6)"
 
+# scenery editor: moths at the lamps, made by the game
+
+msgid "it's made by the game while it runs (the moths at a lamp), not a part of the scenery"
+msgstr "to robi sama gra podczas jazdy (ćmy przy lampie), nie jest częścią scenerii"
+
 msgid "A part of the catenary: it's changed with the Catenary tool (F6)"
 msgstr "Część sieci trakcyjnej: zmienia się ją narzędziem Sieć trakcyjna (F6)"
 

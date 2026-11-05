@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "rendering/common/locallights.h"
+#include "rendering/common/moths.h"
 
 #include <algorithm>
 #include <array>
@@ -185,6 +186,9 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 		});
 	}
 
+	// the moths fly about the lamps of the scenery which shine
+	Moths.update(m_lights, Camera, Framestamp);
+
 	auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()};
 	m_gathertime = (m_gathertime == 0.0 ? elapsed : m_gathertime * 0.95 + elapsed * 0.05);
 }
@@ -199,6 +203,7 @@ void gfx::local_lights::reset()
 	m_sections.clear();
 	m_models.clear();
 	m_scenerycount = m_vehiclecount = m_compartmentcount = m_placed = m_dropped = 0;
+	Moths.reset();
 }
 
 void gfx::local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 const &Camera, float const Brightness, unsigned int const Framestamp)
@@ -581,7 +586,7 @@ std::string gfx::local_lights::info() const
 {
 	return "local lights: " + std::to_string(m_lights.size()) + " (scenery " + std::to_string(m_scenerycount) + ", vehicles " + std::to_string(m_vehiclecount) + ", compartments " +
 	       std::to_string(m_compartmentcount) + ")" + (m_cablampon ? " + cab lights " + std::to_string(m_cablights.size()) : "") + ", placed " + std::to_string(m_placed) + ", over capacity " + std::to_string(m_dropped) +
-	       ", gather " + to_string(m_gathertime, 2) + " ms";
+	       ", gather " + to_string(m_gathertime, 2) + " ms, moth swarms " + std::to_string(Moths.shown()) + "/" + std::to_string(Moths.count());
 }
 
 void gfx::local_lights::draw_debug_ui()
@@ -595,6 +600,10 @@ void gfx::local_lights::draw_debug_ui()
 	ImGui::SliderFloat("cab lamp brightness", &Global.gfx_lights_cab_intensity, 0.f, 10.f);
 	ImGui::SliderFloat("cab ambient kept", &Global.gfx_lights_cab_bounce, 0.f, 1.f);
 	ImGui::SliderFloat("range, m", &Global.gfx_lights_range, 0.f, 1000.f);
+	ImGui::Checkbox("moths at the lamps of the scenery", &Global.moths);
+	ImGui::SliderFloat("moths: part of the lamps", &Global.moths_share, 0.f, 1.f);
+	ImGui::SliderFloat("moths: range, m", &Global.moths_range, 0.f, 300.f);
+	ImGui::Text("moth swarms shown %u, made %u", static_cast<unsigned>(Moths.shown()), static_cast<unsigned>(Moths.count()));
 	ImGui::Text("gathered %u: scenery %u, vehicles %u, compartments %u, cab %u", static_cast<unsigned>(m_lights.size()), m_scenerycount, m_vehiclecount, m_compartmentcount,
 	            static_cast<unsigned>(m_cablights.size()));
 	ImGui::Text("in the light buffer %u, over capacity %u", m_placed, m_dropped);
