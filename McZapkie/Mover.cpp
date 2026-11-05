@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 
+#include <cmath>
 #include <format>
 //---------------------------------------------------------------------------
 
@@ -51,8 +52,13 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 		double sum = m1 + m2;
 		double w1 = (m2 * v2 * 2.0 + v1 * (m1 - m2)) / sum;
 		double w2 = (m1 * v1 * 2.0 + v2 * (m2 - m1)) / sum;
-		v1 = w1 * std::sqrt(1.0 - beta); // niejawna zmiana predkosci wskutek zderzenia
-		v2 = w2 * std::sqrt(1.0 - beta);
+		// the collision changes the velocities directly: the bounce loses energy in the velocities relative to the
+		// centre of mass only, the pair keeps its momentum. scaling the velocities themselves braked the vehicles
+		// down with every step their couplers spent stretched or pressed in all the way (eu07/maszyna#553)
+		auto const centre{(m1 * v1 + m2 * v2) / sum};
+		auto const restitution{std::sqrt(1.0 - beta)};
+		v1 = std::lerp(centre, w1, restitution);
+		v2 = std::lerp(centre, w2, restitution);
 		return m1 * (w2 - w1) * (1 - beta);
 	}
 }
@@ -10695,12 +10701,15 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		        coupler->beta = 0.55;
 		*/
 		thiscoupler->SpringKC = 4500 * 1000;
-		thiscoupler->DmaxC = 0.05;
 		thiscoupler->FmaxC = 850 * 1000;
 		thiscoupler->SpringKB = 9200 * 1000;
-		thiscoupler->DmaxB = 0.05;
 		thiscoupler->FmaxB = 320 * 1000;
 		thiscoupler->beta = 0.55;
+		// the spring force is taken up to Dmax only, past it the vehicles collide (CollisionDetect()); so the joint
+		// carries the full FmaxC either way before it gives. with 0.05 m it carried 225 kN, short of what a loaded
+		// articulated wagon in a freight train takes, which then collided at every step (eu07/maszyna#553)
+		thiscoupler->DmaxC = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKC);
+		thiscoupler->DmaxB = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKB);
 	}
 
 	if (Index == 0)
