@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 
+#include <cmath>
 #include <format>
 //---------------------------------------------------------------------------
 
@@ -56,8 +57,8 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 		// down with every step their couplers spent stretched or pressed in all the way (eu07/maszyna#553)
 		auto const centre{(m1 * v1 + m2 * v2) / sum};
 		auto const restitution{std::sqrt(1.0 - beta)};
-		v1 = centre + (w1 - centre) * restitution;
-		v2 = centre + (w2 - centre) * restitution;
+		v1 = std::lerp(centre, w1, restitution);
+		v2 = std::lerp(centre, w2, restitution);
 		return m1 * (w2 - w1) * (1 - beta);
 	}
 }

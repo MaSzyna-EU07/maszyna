@@ -479,49 +479,49 @@ void join(vehicle &First, int FirstEnd, vehicle &Second, int SecondEnd) {
 
 TEST_CASE("couplers: an articulated joint takes its full tensile force within its travel") {
 	auto wagon{articulated_wagon(0.0, "wagon")};
-	auto const &coupler{wagon->Couplers[end::front]};
-	REQUIRE(coupler.type() == TCouplerType::Articulated);
+	auto const &joint{wagon->Couplers[end::front]};
+	REQUIRE(joint.type() == TCouplerType::Articulated);
 
-	CHECK(coupler.SpringKC * coupler.DmaxC >= doctest::Approx(coupler.FmaxC));
-	CHECK(coupler.SpringKB * coupler.DmaxB >= doctest::Approx(coupler.FmaxC));
+	CHECK(joint.SpringKC * joint.DmaxC >= doctest::Approx(joint.FmaxC));
+	CHECK(joint.SpringKB * joint.DmaxB >= doctest::Approx(joint.FmaxC));
 	// and no less than it had before
-	CHECK(coupler.DmaxC >= 0.05);
-	CHECK(coupler.DmaxB >= 0.05);
+	CHECK(joint.DmaxC >= 0.05);
+	CHECK(joint.DmaxB >= 0.05);
 }
 
 TEST_CASE("couplers: an articulated set keeps its momentum when one section jerks the other") {
 	// the front section moving, the rear one barely (so that its brakes are released), joined: the jerk overstretches the joint, the sections collide
 	// and run on together at half the speed, as the momentum they have between them dictates
-	auto front{articulated_wagon(20.0, "front")};
-	auto rear{articulated_wagon(0.1, "rear")};
-	join(rear, end::front, front, end::rear);
-	test::pair pair{rear, end::front, front, end::rear, 0.0};
+	auto front_section{articulated_wagon(20.0, "front")};
+	auto rear_section{articulated_wagon(0.1, "rear")};
+	join(rear_section, end::front, front_section, end::rear);
+	test::pair pair{rear_section, end::front, front_section, end::rear, 0.0};
 	REQUIRE(pair.coupled());
 	// brakes released, as a locomotive keeps them
-	front.hold_brake_pipe(5.0);
-	rear.hold_brake_pipe(5.0);
+	front_section.hold_brake_pipe(5.0);
+	rear_section.hold_brake_pipe(5.0);
 
 	pair.run(3.0, test::track{0.15, 0.0});
 
-	CHECK(front.speed() == doctest::Approx(rear.speed()).epsilon(0.1));
+	CHECK(front_section.speed() == doctest::Approx(rear_section.speed()).epsilon(0.1));
 	// rolling resistance takes a little in the 3 s, the collisions used to take most of it
-	CHECK(0.5 * (front.speed() + rear.speed()) > 9.0);
-	CHECK(0.5 * (front.speed() + rear.speed()) < 10.05 + 1e-6);
+	CHECK(0.5 * (front_section.speed() + rear_section.speed()) > 9.0);
+	CHECK(0.5 * (front_section.speed() + rear_section.speed()) < 10.05 + 1e-6);
 	CHECK(pair.coupled());
 }
 
 TEST_CASE("couplers: a collision of coupled vehicles keeps the momentum of the pair") {
 	// the same jerk through screw couplers, which collide when stretched beyond their travel as well
-	auto front{vehicle{definition::load("wagon"), 30.0, "front"}};
-	auto rear{vehicle{definition::load("wagon"), 0.1, "rear"}};
-	join(rear, end::front, front, end::rear);
-	test::pair pair{rear, end::front, front, end::rear, 0.0};
+	auto front_wagon{vehicle{definition::load("wagon"), 30.0, "front"}};
+	auto rear_wagon{vehicle{definition::load("wagon"), 0.1, "rear"}};
+	join(rear_wagon, end::front, front_wagon, end::rear);
+	test::pair pair{rear_wagon, end::front, front_wagon, end::rear, 0.0};
 	REQUIRE(pair.coupled());
-	front.hold_brake_pipe(5.0);
-	rear.hold_brake_pipe(5.0);
+	front_wagon.hold_brake_pipe(5.0);
+	rear_wagon.hold_brake_pipe(5.0);
 
 	pair.run(3.0, test::track{0.15, 0.0});
 
-	CHECK(0.5 * (front.speed() + rear.speed()) > 13.5);
-	CHECK(0.5 * (front.speed() + rear.speed()) < 15.05 + 1e-6);
+	CHECK(0.5 * (front_wagon.speed() + rear_wagon.speed()) > 13.5);
+	CHECK(0.5 * (front_wagon.speed() + rear_wagon.speed()) < 15.05 + 1e-6);
 }
