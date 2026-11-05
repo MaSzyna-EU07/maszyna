@@ -45,6 +45,8 @@ std::map<std::string, section_format, std::less<>> const sections{
     {"DimmerList", {':', "endDimmerList"}},
     {"WiperList", {':', "endwl"}},
     {"CompressorList", {':', "endCL"}},
+    {"RList", {':', "END-RL"}},
+    {"MotorParamTable0", {':', "END-MPT"}},
 };
 
 section_format const &format_of(std::string const &Section) {

@@ -6904,13 +6904,12 @@ bool TMoverParameters::AutoRelayCheck(void)
 			}
 			else
 			{ // zmieniaj mainctrlactualpos
-				if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
-				{
-					return false; // nie poprawiamy przy konwersji
-					// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
-				}
+				// running backwards, the motors don't get joined in more branches than allowed (the series connection
+				// alone, usually); the camshaft still goes back down from there (eu07/maszyna#393: it stayed where it
+				// was, the line contactors closed, whatever the driver did with the master controller)
+				auto const backwardslimit{DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed};
 				// main bez samoczynnego rozruchu
-				if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
+				if (false == backwardslimit && MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
 				    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
 				        (TrainType == dt_ET22 && DelayCtrlFlag)))
 				{
