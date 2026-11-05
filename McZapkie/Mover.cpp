@@ -6132,10 +6132,7 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 		{
 			power -= HeatingPower;
 		}
-		if (power < 0.0)
-		{
-			power = 0.0;
-		}
+		power = std::max(power, 0.0);
 		// NOTE: very crude way to approximate power generated at current rpm instead of instant top output
 		// NOTE, TODO: doesn't take into account potentially increased revolutions if heating is on, fix it
 		auto const currentgenpower{(DElist[MainCtrlPos].RPM > 0 ? DElist[MainCtrlPos].GenPower * (60.0 * enrot / DElist[MainCtrlPos].RPM) : 0.0)};
@@ -6186,12 +6183,9 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 	{
 		ScndCtrlPos = 0;
 	}
-	else
+	else if (AutoRelayFlag)
 	{
-		if (AutoRelayFlag)
-		{
-			ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
-		}
+		ShuntFieldRelaysCheck(tmpV, PosRatio, tmp);
 	}
 }
 
@@ -7464,22 +7458,18 @@ bool TMoverParameters::CamshaftRunDown()
 		{
 			OK = CamshaftRunDownEMU();
 		}
-		else
+		else if (LastRelayTime > CtrlDownDelay) // wal kulakowy dwukierunkowy
 		{
-			// wal kulakowy dwukierunkowy
-			if (LastRelayTime > CtrlDownDelay)
+			if (ScndCtrlActualPos > 0)
 			{
-				if (ScndCtrlActualPos > 0)
-				{
-					--ScndCtrlActualPos;
-					SetFlag(SoundFlag, sound::shuntfield);
-				}
-				else
-				{
-					--MainCtrlActualPos;
-				}
-				OK = true;
+				--ScndCtrlActualPos;
+				SetFlag(SoundFlag, sound::shuntfield);
 			}
+			else
+			{
+				--MainCtrlActualPos;
+			}
+			OK = true;
 		}
 	}
 	else if (HasCamshaft)
@@ -11447,7 +11437,7 @@ void TMoverParameters::LoadFIZ_CntrlTrainBrake(std::string const &line)
 }
 
 // Cntrl.: the kind of the anti-slip brake, by hand or automatic only for a vehicle with a brake handle
-void TMoverParameters::LoadFIZ_CntrlAntiSlipBrake(std::string const &asb)
+void TMoverParameters::LoadFIZ_CntrlAntiSlipBrake(std::string_view const asb)
 {
 	if (asb == "yes")
 	{
@@ -13483,8 +13473,8 @@ void TMoverParameters::DoorPermitCommand(double const CValue1, double const CVal
 void TMoverParameters::DoorRemoteCommand(bool const Open, double const CValue1, double const CValue2)
 {
 	using enum control_t;
-	auto const control{Open ? Doors.open_control : Doors.close_control};
-	if ((control != conductor && control != driver && control != mixed) || (false == Power24vIsAvailable && false == Power110vIsAvailable))
+	if (auto const doorcontrol{Open ? Doors.open_control : Doors.close_control};
+	    (doorcontrol != conductor && doorcontrol != driver && doorcontrol != mixed) || (false == Power24vIsAvailable && false == Power110vIsAvailable))
 	{
 		return;
 	}

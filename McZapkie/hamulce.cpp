@@ -1952,7 +1952,7 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 	ImplsRes->Flow(-dv);
 	BrakeRes->Flow(dv);
 
-	IntermediateFlow(BCP, VVP, CVP, MPP, BVP, nastG, dt);
+	Miedzypoj->Flow(IntermediateFlow(BCP, VVP, CVP, MPP, BVP, nastG) * dt * 0.15);
 
 	CylinderFlow(BCP, BVP, dt, Vel);
 
@@ -2022,8 +2022,8 @@ void TEStED::UpdateStatus(double const BCP, double const VVP, double const CVP, 
 		Zamykajacy = false;
 }
 
-// the intermediate reservoir filled from the pipe and the control reservoir, and filling the auxiliary one
-void TEStED::IntermediateFlow(double const BCP, double const VVP, double const CVP, double const MPP, double const BVP, double const nastG, double const dt)
+// the flow into the intermediate reservoir from the pipe and the control reservoir, less the flow filling the auxiliary one
+double TEStED::IntermediateFlow(double const BCP, double const VVP, double const CVP, double const MPP, double const BVP, double const nastG) const
 {
 	double dv;
 	double temp;
@@ -2051,7 +2051,7 @@ void TEStED::IntermediateFlow(double const BCP, double const VVP, double const C
 		dv = dv + PF(MPP - 0.05, BVP, Nozzles[10] * nastG + (1 - nastG) * Nozzles[9]);
 	if (MPP > VVP)
 		dv = dv + PF(MPP, VVP, 0.02);
-	Miedzypoj->Flow(dv * dt * 0.15);
+	return dv;
 }
 
 // the cylinders filled or let out to the pressure the relay is set to: by the pilot pressure and the load, at least the

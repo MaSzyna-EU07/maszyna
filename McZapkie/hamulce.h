@@ -794,7 +794,7 @@ class TEStED : public TLSt
   private:
 	// the parts of GetPF()
 	void UpdateStatus(double BCP, double VVP, double CVP, double MPP);
-	void IntermediateFlow(double BCP, double VVP, double CVP, double MPP, double BVP, double nastG, double dt);
+	double IntermediateFlow(double BCP, double VVP, double CVP, double MPP, double BVP, double nastG) const;
 	void CylinderFlow(double BCP, double BVP, double dt, double Vel);
 
   public:

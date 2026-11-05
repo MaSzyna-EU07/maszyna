@@ -2763,7 +2763,7 @@ class TMoverParameters
 	void LoadFIZ_Cntrl(std::string const &line);
 	void LoadFIZ_CntrlBrakes(std::string const &line);
 	void LoadFIZ_CntrlTrainBrake(std::string const &line);
-	void LoadFIZ_CntrlAntiSlipBrake(std::string const &asb);
+	void LoadFIZ_CntrlAntiSlipBrake(std::string_view asb);
 	void LoadFIZ_CntrlControllers(std::string const &line);
 	void LoadFIZ_CntrlStarts(std::string const &line);
 	void LoadFIZ_Blending(std::string const &line);
