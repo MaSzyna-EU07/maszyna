@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <array>
+#include <numbers>
 #include <vector>
 #include <glm/glm.hpp>
 #include "utilities/Classes.h"
@@ -37,7 +38,7 @@ double constexpr spacer_length { 0.12 };
 double constexpr spacer_pitch { 0.5 };
 double constexpr check_flangeway { 0.041 };
 double constexpr guard_planing { 0.015 }; // how far the ends of guard rails are planed off their face toward the running rail
-double constexpr guard_bevel { 1.7320508 }; // how far along the flared ends of guard rails are cut back across them, from their face toward the running rail: 30 degrees to the rail
+double constexpr guard_bevel { std::numbers::sqrt3 }; // how far along the flared ends of guard rails are cut back across them, from their face toward the running rail: 30 degrees to the rail
 double constexpr blade_throw { 0.160 };
 double constexpr blade_clearance { 0.058 };
 double constexpr blade_point { 0.003 };
@@ -50,12 +51,16 @@ double constexpr blade_lowered { 0.050 };
 double constexpr blade_spacing { 0.5 };
 double constexpr blade_runon_margin { 0.2 }; // how far short of the end of the plain track a blade running on into it ends
 
+// a value for each rail of a track: path, right side
+template <typename Type_>
+using path_sides = std::array<std::array<Type_, 2>, 2>;
+
 // where the inner rails of the two paths of a switch cross, found from their gauge lines behind the blades
 struct switch_frog {
     bool valid { false };
-    int side[ 2 ] {}; // rail profile of the crossing rail of each path, 1 right, -1 left
-    double at[ 2 ] {}; // distance of the crossing along each path
-    double blades[ 2 ] {}; // distance the blades take along each path
+    std::array<int, 2> side {}; // rail profile of the crossing rail of each path, 1 right, -1 left
+    std::array<double, 2> at {}; // distance of the crossing along each path
+    std::array<double, 2> blades {}; // distance the blades take along each path
     double angle { 0.0 };
 };
 struct switch_blade {
@@ -116,7 +121,7 @@ struct check_rail {
     double frombend { 0.0 };
     double tobend { 0.0 };
 };
-using check_rail_set = std::array<std::array<std::vector<check_rail>, 2>, 2>; // path, right side
+using check_rail_set = path_sides<std::vector<check_rail>>;
 inline double check_flare( check_rail const &Check ) {
 
     return std::min( guard_flare, 0.4 * ( Check.to - Check.from ) );
@@ -131,32 +136,32 @@ enum class rail_end {
     sharp,
     mitre
 };
+// one of the two parts of a rail broken where another one crosses it, at the break: the part coming from below as it ends there, or the part
+// going on as it starts there
+struct rail_cut_part {
+    knots::line offsets;
+    knots::line extents;
+    knots::line inner;
+    knots::line rolled; // how far out from the gauge line the wheels roll on the head
+    knots::line worn; // from how far out from the gauge line the wheels of a rail beside roll on the head, where it's planed flush against that rail
+    material_handle wornby { 0 }; // what the wheels rolling on it from beside polish the head to, the brightest of them
+    glm::dvec2 miter { 0.0 };
+    double bend { 0.0 };
+    bool cap { true };
+    // what carving the part against the rails around takes from the design of the crossing
+    rail_end kind { rail_end::square };
+    double anchor { 0.0 }; // from where on a part planed down to its point can end
+    double runon { 0.0 }; // how far past its end a wing rail can go on to be planed down to its point
+    knots::line carve; // offsets the part is carved with where they aren't those it's laid with: a leg of a movable nose, as it lies with the first path set
+};
 // a rail broken where another one crosses it: the part coming from below ends at end, the part going on starts at start
 struct rail_cut {
     double at { 0.0 };
     double end { 0.0 };
     double start { 0.0 };
-    knots::line endoffsets, endextents, startoffsets, startextents;
-    knots::line endrolled, startrolled; // how far out from the gauge line the wheels roll on the head, of the part coming from below and of the part going on
-    glm::dvec2 endmiter { 0.0 };
-    glm::dvec2 startmiter { 0.0 };
-    double endbend { 0.0 };
-    double startbend { 0.0 };
-    knots::line endinner, startinner;
-    bool endcap { true };
-    bool startcap { true };
-    knots::line endworn, startworn; // from how far out from the gauge line the wheels of a rail beside roll on the head, where it's planed flush against that rail
-    material_handle endwornby { 0 }; // what the wheels rolling on it from beside polish the head to, the brightest of them
-    material_handle startwornby { 0 };
-    // what carving the parts against the rails around takes from the design of the crossing
+    rail_cut_part ending; // the part coming from below
+    rail_cut_part starting; // the part going on
     bool carved { false }; // the lines of the parts are left to carving
-    rail_end endkind { rail_end::square };
-    rail_end startkind { rail_end::square };
-    double endanchor { 0.0 }; // from where on a part planed down to its point can end
-    double startanchor { 0.0 };
-    double endrunon { 0.0 }; // how far past its end a wing rail can go on to be planed down to its point
-    double startrunon { 0.0 };
-    knots::line endcarve, startcarve; // offsets the parts are carved with where they aren't those they're laid with: the legs of a movable nose, as they lie with the first path set
     bool throwable { false }; // the part going on moves with the switch: a leg of a movable nose
     glm::dvec2 mark { 0.0 }; // where the rails cross, in plan: the parts at an obtuse crossing aren't carved against the other rail's there, they're designed to meet
     bool obtuse { false };
@@ -198,20 +203,30 @@ struct rail_band {
 struct rail_fill {
     double from { 0.0 };
     double to { 0.0 };
-    knots::line inner, outer;
+    knots::line inner;
+    knots::line outer;
     bool capfrom { false };
     bool capto { false };
     double lift { 0.0 };
     bool web { false };
 };
+// which rail of the track is laid and how: its path and side, the length of its texture, from how far along the path on, its ends left open
+struct rail_course {
+    int path { 0 };
+    int side { 0 };
+    float texturelength { 0.f };
+    double from { 0.0 };
+    bool openstart { false };
+    bool openend { false };
+};
 struct rail_layout {
-    rail_plan plans[ 2 ][ 2 ]; // path, right side
-    std::vector<rail_band> bands[ 2 ][ 2 ];
-    std::vector<rail_fill> fills[ 2 ][ 2 ];
-    knots::line blocks[ 2 ][ 2 ];
-    std::vector<rail_tread> treads[ 2 ][ 2 ];
-    std::vector<guard_rail> guards[ 2 ][ 2 ];
-    knots::line wingends[ 2 ][ 2 ]; // ends of the wing rails of other rails running along each rail, and which way they run there
+    path_sides<rail_plan> plans;
+    path_sides<std::vector<rail_band>> bands;
+    path_sides<std::vector<rail_fill>> fills;
+    path_sides<knots::line> blocks;
+    path_sides<std::vector<rail_tread>> treads;
+    path_sides<std::vector<guard_rail>> guards;
+    path_sides<knots::line> wingends; // ends of the wing rails of other rails running along each rail, and which way they run there
     check_rail_set checks;
     std::vector<TTrack *> crossed; // tracks whose rails cross the rails of this one
 };

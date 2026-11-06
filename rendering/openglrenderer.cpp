@@ -1914,7 +1914,7 @@ opengl_renderer::Forget_Node( scene::basic_node const *Node ) {
     if( m_picksceneryitem == Node ) {
         m_picksceneryitem = nullptr;
     }
-    std::replace_if( m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node]( scene::basic_node const *Item ) { return Item == Node; }, nullptr );
+    std::ranges::replace_if( m_picksceneryitems, [Node]( scene::basic_node const *Item ) { return Item == Node; }, nullptr );
 }
 
 void
@@ -3191,6 +3191,31 @@ opengl_renderer::Render( TTrack *Track ) {
     }
 }
 
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials
+void
+opengl_renderer::Render_cuts( TTrack const *Track ) {
+
+    std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence const *>> parts { { Track->m_materialcut1, &Track->GeometryCut1 }, { Track->m_materialcut2, &Track->GeometryCut2 } };
+    for( auto const &tread : Track->GeometryTreads ) {
+        parts.emplace_back( tread.material, &tread.geometry );
+        parts.emplace_back( tread.matte, &tread.cuts );
+    }
+    for( auto const &[ material, geometry ] : parts ) {
+        if( ( material == null_handle )
+         || ( geometry->empty() ) ) {
+            continue;
+        }
+        if( Track->eEnvironment != e_flat ) {
+            setup_environment_light( Track->eEnvironment );
+        }
+        Bind_Material( material );
+        m_geometry.draw( std::begin( *geometry ), std::end( *geometry ) );
+        if( Track->eEnvironment != e_flat ) {
+            setup_environment_light();
+        }
+    }
+}
+
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
 void
 opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last ) {
@@ -3375,25 +3400,7 @@ opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First,
             if( false == track->m_visible ) {
                 continue;
             }
-            std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence const *>> parts { { track->m_materialcut1, &track->GeometryCut1 }, { track->m_materialcut2, &track->GeometryCut2 } };
-            for( auto const &tread : track->GeometryTreads ) {
-                parts.emplace_back( tread.material, &tread.geometry );
-                parts.emplace_back( tread.matte, &tread.cuts );
-            }
-            for( auto const &cuts : parts ) {
-                if( ( cuts.first == null_handle )
-                 || ( cuts.second->empty() ) ) {
-                    continue;
-                }
-                if( track->eEnvironment != e_flat ) {
-                    setup_environment_light( track->eEnvironment );
-                }
-                Bind_Material( cuts.first );
-                m_geometry.draw( std::begin( *cuts.second ), std::end( *cuts.second ) );
-                if( track->eEnvironment != e_flat ) {
-                    setup_environment_light();
-                }
-            }
+            Render_cuts( track );
         }
     }
     // post-render reset

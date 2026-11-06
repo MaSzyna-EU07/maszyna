@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -30,7 +31,7 @@ struct cluster_beams {
 // sleepers would meet, in the order of their names
 std::vector<TTrack *> cluster_of( TTrack &Track );
 // the beams of the tracks of a cluster, laid out together for the layout of the given epoch
-std::shared_ptr<cluster_beams> lay_out( std::vector<TTrack *> const &Tracks, std::uint64_t const Epoch );
+std::shared_ptr<cluster_beams> lay_out( std::span<TTrack * const> const Tracks, std::uint64_t const Epoch );
 // how far the paths of the switch stand off one plane where they share the timbers of its panel, and where along the diverging
 // path; the switch itself is out of shape for its timbers where it's more than the tolerance
 std::pair<double, double> panel_off_plane( TTrack &Track );

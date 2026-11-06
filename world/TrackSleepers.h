@@ -28,13 +28,11 @@ class TSubModel;
 // at their own length. A track can have models of its own: of its sleepers with sleepermodel, of its timbers with timbermodel.
 namespace track_sleepers {
 
-// the parts of the model a beam is put together from, by the names of the submodels
-enum part : int {
-    part_begin, // the end of the beam on its +x side
-    part_main, // the piece between the ends
-    part_end, // the end on the -x side
-    part_count
-};
+// the parts of the model a beam is put together from, by the names of the submodels, as the indices of what's kept of each
+int constexpr part_begin { 0 }; // the end of the beam on its +x side
+int constexpr part_main { 1 }; // the piece between the ends
+int constexpr part_end { 2 }; // the end on the -x side
+int constexpr part_count { 3 };
 
 // a sleeper or a timber, by the middle of its top face at both ends
 struct beam {
