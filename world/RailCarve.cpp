@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include <format>
+#include <span>
 
 #include "world/TrackRails.h"
 #include "utilities/Logs.h"
@@ -244,7 +245,8 @@ carve_part design_part( rail_cut const *Before, rail_cut const *After ) {
     part.carved = ( Before != nullptr && Before->carved ) || ( After != nullptr && After->carved );
     auto const &endoffsets { After ? After->ending.offsets : nothing };
     part.offsets = knots::sum( Before ? Before->starting.offsets : nothing, endoffsets );
-    part.carve = ( part.throwable ? knots::sum( Before->starting.carve, endoffsets ) : part.offsets );
+    // only the cut before makes the part throwable
+    part.carve = ( Before != nullptr && part.throwable ? knots::sum( Before->starting.carve, endoffsets ) : part.offsets );
     part.rolled = knots::bound( Before ? Before->starting.rolled : nothing, After ? After->ending.rolled : nothing, true );
     return part;
 }
@@ -466,8 +468,7 @@ public:
         auto distance { 0.0 };
         auto tracking { false };
         for( auto const &[ s, outwards_here, centre ] : coarse_stations() ) {
-            auto const point { plan( centre ) };
-            if( point.x < low.x || point.y < low.y || point.x > high.x || point.y > high.y ) {
+            if( auto const point { plan( centre ) }; point.x < low.x || point.y < low.y || point.x > high.x || point.y > high.y ) {
                 tracking = false;
                 continue;
             }
@@ -1016,7 +1017,7 @@ std::string settled_log( double const At, std::size_t const Part, bool const Abo
 }
 
 // the log of the part as carved: where it's scanned, where its ends are put, and the tracks around it's carved against
-void log_carved( carve_rail const &Rail, carve_part const &Part, part_scan const &Scan, double const From, double const To, bool const Faulty, std::vector<TTrack *> const &Around ) {
+void log_carved( carve_rail const &Rail, carve_part const &Part, part_scan const &Scan, double const From, double const To, bool const Faulty, std::span<TTrack * const> const Around ) {
 
     std::string names;
     for( auto const *other : Around ) {

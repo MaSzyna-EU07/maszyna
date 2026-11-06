@@ -496,7 +496,7 @@ private:
         std::array<gfx::vertex_array, 2> fillers;
         float platetexture { 0.f };
     };
-    rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
+    rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank ) const;
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
     bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, gfx::vertex_array const &Profile, track_rails::rail_course const &Course, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
     class rail_layer;
