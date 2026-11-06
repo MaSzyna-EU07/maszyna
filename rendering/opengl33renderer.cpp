@@ -4265,6 +4265,58 @@ void opengl33_renderer::Render(TTrack *Track)
 	}
 }
 
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials: batched with
+// those of the other tracks, unless the track lies where the light differs
+void opengl33_renderer::Render_cuts(TTrack *Track, material_handle &Batchmaterial)
+{
+	std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{Track->m_materialcut1, &Track->GeometryCut1}, {Track->m_materialcut2, &Track->GeometryCut2}};
+	for (auto &tread : Track->GeometryTreads)
+	{
+		parts.emplace_back(tread.material, &tread.geometry);
+		parts.emplace_back(tread.matte, &tread.cuts);
+	}
+	for (auto const &[material, geometry] : parts)
+	{
+		if ((material == null_handle) || geometry->empty())
+		{
+			continue;
+		}
+		if (Track->eEnvironment != e_flat)
+		{
+			flush_path_batch(Batchmaterial);
+			setup_environment_light(Track->eEnvironment);
+			Bind_Material(material);
+			draw(std::begin(*geometry), std::end(*geometry));
+			setup_environment_light();
+			continue;
+		}
+		begin_path_batch(Batchmaterial, material);
+		m_pathbatch.insert(std::end(m_pathbatch), std::begin(*geometry), std::end(*geometry));
+	}
+}
+
+void opengl33_renderer::flush_path_batch(material_handle &Batchmaterial)
+{
+	if (false == m_pathbatch.empty())
+	{
+		draw(std::begin(m_pathbatch), std::end(m_pathbatch));
+		m_pathbatch.clear();
+	}
+	Batchmaterial = null_handle;
+}
+
+bool opengl33_renderer::begin_path_batch(material_handle &Batchmaterial, material_handle const Material)
+{
+	if (Material == Batchmaterial)
+	{
+		return false;
+	}
+	flush_path_batch(Batchmaterial);
+	Bind_Material(Material);
+	Batchmaterial = Material;
+	return true;
+}
+
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
 void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last)
 {
@@ -4287,27 +4339,9 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	// geometry of neighbouring tracks which share the material is gathered and drawn together.
 	// only neighbours are combined, the tracks are still drawn in their order in the cell
 	material_handle batchmaterial{null_handle};
-	auto const flush_batch = [&]()
-	{
-		if (false == m_pathbatch.empty())
-		{
-			draw(std::begin(m_pathbatch), std::end(m_pathbatch));
-			m_pathbatch.clear();
-		}
-		batchmaterial = null_handle;
-	};
+	auto const flush_batch = [this, &batchmaterial]() { flush_path_batch(batchmaterial); };
 	// returns: true if the material starts a new batch, false if it continues the current one
-	auto const begin_batch = [&](material_handle const Material)
-	{
-		if (Material == batchmaterial)
-		{
-			return false;
-		}
-		flush_batch();
-		Bind_Material(Material);
-		batchmaterial = Material;
-		return true;
-	};
+	auto const begin_batch = [this, &batchmaterial](material_handle const Material) { return begin_path_batch(batchmaterial, Material); };
 
 	// TODO: render auto generated trackbeds together with regular trackbeds in pass 1, and all rails in pass 2
 	// first pass, material 1
@@ -4512,30 +4546,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			{
 				continue;
 			}
-			std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{track->m_materialcut1, &track->GeometryCut1}, {track->m_materialcut2, &track->GeometryCut2}};
-			for (auto &tread : track->GeometryTreads)
-			{
-				parts.emplace_back(tread.material, &tread.geometry);
-				parts.emplace_back(tread.matte, &tread.cuts);
-			}
-			for (auto const &cuts : parts)
-			{
-				if ((cuts.first == null_handle) || cuts.second->empty())
-				{
-					continue;
-				}
-				if (track->eEnvironment != e_flat)
-				{
-					flush_batch();
-					setup_environment_light(track->eEnvironment);
-					Bind_Material(cuts.first);
-					draw(std::begin(*cuts.second), std::end(*cuts.second));
-					setup_environment_light();
-					continue;
-				}
-				begin_batch(cuts.first);
-				m_pathbatch.insert(std::end(m_pathbatch), std::begin(*cuts.second), std::end(*cuts.second));
-			}
+			Render_cuts(track, batchmaterial);
 		}
 		flush_batch();
 	}

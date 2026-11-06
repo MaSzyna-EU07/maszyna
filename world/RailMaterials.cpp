@@ -51,12 +51,12 @@ glm::vec3 unpack_565( unsigned const Color ) {
     return glm::vec3{ ( ( Color >> 11 ) & 31 ) * 255.f / 31.f, ( ( Color >> 5 ) & 63 ) * 255.f / 63.f, ( Color & 31 ) * 255.f / 31.f };
 }
 
-void add_dxt_block( unsigned char const *Block, bool const Alpha, int const Column, int const First, int const Last, colour_mean &Mean ) {
+void add_dxt_block( std::byte const *Block, bool const Alpha, int const Column, int const First, int const Last, colour_mean &Mean ) {
 
-    auto const low { static_cast<unsigned>( Block[ 0 ] | Block[ 1 ] << 8 ) };
-    auto const top { static_cast<unsigned>( Block[ 2 ] | Block[ 3 ] << 8 ) };
+    auto const low { std::to_integer<unsigned>( Block[ 0 ] ) | std::to_integer<unsigned>( Block[ 1 ] ) << 8 };
+    auto const top { std::to_integer<unsigned>( Block[ 2 ] ) | std::to_integer<unsigned>( Block[ 3 ] ) << 8 };
     auto const opaque { Alpha || low > top };
-    glm::vec3 const colors[ 4 ] {
+    std::array const colors {
         unpack_565( low ),
         unpack_565( top ),
         opaque ? ( 2.f * unpack_565( low ) + unpack_565( top ) ) / 3.f : 0.5f * ( unpack_565( low ) + unpack_565( top ) ),
@@ -72,6 +72,18 @@ void add_dxt_block( unsigned char const *Block, bool const Alpha, int const Colu
     }
 }
 
+// the bytes of a block of four by four texels in the compression the fourcc of the file names: 8 for dxt1, 16 for dxt3 and dxt5, 0 for any other
+int dxt_block_size( std::uint32_t const Fourcc ) {
+
+    if( Fourcc == 0x31545844u ) {
+        return 8;
+    }
+    if( Fourcc == 0x33545844u || Fourcc == 0x35545844u ) {
+        return 16;
+    }
+    return 0;
+}
+
 void sample_dds( std::string const &File, glm::vec2 const &Band, colour_mean &Mean ) {
 
     std::ifstream input( File, std::ios::binary );
@@ -84,13 +96,13 @@ void sample_dds( std::string const &File, glm::vec2 const &Band, colour_mean &Me
     auto const height { static_cast<int>( word( 12 ) ) };
     auto const width { static_cast<int>( word( 16 ) ) };
     auto const fourcc { word( 84 ) };
-    auto const blocksize { fourcc == 0x31545844u ? 8 : ( fourcc == 0x33545844u || fourcc == 0x35545844u ) ? 16 : 0 };
+    auto const blocksize { dxt_block_size( fourcc ) };
     if( blocksize == 0 || width <= 0 || height <= 0 ) {
         return;
     }
     auto const wide { ( width + 3 ) / 4 };
     auto const high { ( height + 3 ) / 4 };
-    std::vector<unsigned char> data( static_cast<std::size_t>( wide ) * high * blocksize );
+    std::vector<std::byte> data( static_cast<std::size_t>( wide ) * high * blocksize );
     if( !input.read( reinterpret_cast<char *>( data.data() ), data.size() ) ) {
         return;
     }
@@ -104,7 +116,9 @@ void sample_dds( std::string const &File, glm::vec2 const &Band, colour_mean &Me
 
 void sample_image( std::string const &File, glm::vec2 const &Band, colour_mean &Mean ) {
 
-    int width, height, components;
+    int width { 0 };
+    int height { 0 };
+    int components { 0 };
     auto *pixels { stbi_load( File.c_str(), &width, &height, &components, 4 ) };
     if( pixels == nullptr ) {
         return;
@@ -148,7 +162,7 @@ std::pair<float, glm::vec3> const &tread_sample( material_handle const Material,
         sample_image( file, Band, mean );
     }
     if( mean.count > 0 ) {
-        result = { static_cast<float>( mean.sum / mean.count ), glm::vec3{ mean.colour / static_cast<double>( mean.count ) } };
+        result = { static_cast<float>( mean.sum / static_cast<double>( mean.count ) ), glm::vec3{ mean.colour / static_cast<double>( mean.count ) } };
     }
     return result;
 }

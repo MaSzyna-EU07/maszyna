@@ -58,8 +58,8 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
 { // przejechanie na inny odcinkek toru, z ewentualnym rozpruciem
     auto path { -1 };
     auto trailat { -1.0 };
-    if (pTrack)
-        switch (pTrack->eType)
+    // with no track to go on there's nothing to throw: a kind of track that is none
+    switch (pTrack != nullptr ? pTrack->eType : tt_Unknown)
         {
         case tt_Switch: // jeśli zwrotnica, to przekładamy ją, aby uzyskać dobry segment
         {
@@ -104,6 +104,9 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             pTrack->SwitchForced(abs(iSegment) - 1, nullptr); // wybór zapamiętanego segmentu
         }
         break;
+        default:
+            // the other kinds of track have nothing to throw
+            break;
         }
     if (!pTrack) {
         // gdy nie ma toru w kierunku jazdy tworzenie toru wykolejącego na przedłużeniu pCurrentTrack
@@ -119,12 +122,20 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
     }
     pCurrentTrack = pTrack;
     // on a switch the axle keeps to the path it came on, the switch thrown under it doesn't move it over to the other one
-    iPath = ( pCurrentTrack != nullptr && pCurrentTrack->eType == tt_Switch && pCurrentTrack->SwitchExtension ) ? ( path >= 0 ? path : pCurrentTrack->SwitchExtension->CurrentIndex ) : -1;
+    iPath = -1;
+    if( pCurrentTrack != nullptr && pCurrentTrack->eType == tt_Switch && pCurrentTrack->SwitchExtension ) {
+        iPath = ( path >= 0 ? path : pCurrentTrack->SwitchExtension->CurrentIndex );
+    }
     fTrailAt = ( iPath >= 0 ? trailat : -1.0 );
-    pCurrentSegment =
-        iPath >= 0 ? pCurrentTrack->SwitchExtension->Segments[ iPath ] :
-        pCurrentTrack != nullptr ? pCurrentTrack->CurrentSegment() :
-        nullptr;
+    if( iPath >= 0 ) {
+        pCurrentSegment = pCurrentTrack->SwitchExtension->Segments[ iPath ];
+    }
+    else if( pCurrentTrack != nullptr ) {
+        pCurrentSegment = pCurrentTrack->CurrentSegment();
+    }
+    else {
+        pCurrentSegment = nullptr;
+    }
     if (!pCurrentTrack)
         Error(Owner->MoverParameters->Name + " at NULL track");
     return pCurrentTrack;
