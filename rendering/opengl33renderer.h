@@ -321,6 +321,13 @@ class opengl33_renderer : public gfx_renderer {
 	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
 	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
 	void Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
+	// the cut faces of the rails of a track and the treads on them, batched with those of the other tracks where the light is the same
+	void Render_cuts( TTrack *Track, material_handle &Batchmaterial );
+	// the geometry of the neighbouring tracks gathered for one draw drawn, the batch of the material given emptied
+	void flush_path_batch( material_handle &Batchmaterial );
+	// a batch of the material started, the one gathered before drawn; returns: true if the material starts a new batch, false if it
+	// continues the current one
+	bool begin_path_batch( material_handle &Batchmaterial, material_handle const Material );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );

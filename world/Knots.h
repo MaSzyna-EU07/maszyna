@@ -24,7 +24,7 @@ inline bool by_position( glm::dvec2 const &A, glm::dvec2 const &B ) {
 
 inline void sort( line &Line ) {
 
-    std::sort( Line.begin(), Line.end(), by_position );
+    std::ranges::sort( Line, by_position );
 }
 
 inline double sample( line const &Line, double const Position, double const Default ) {
@@ -60,7 +60,7 @@ inline std::vector<double> stations( line const &A, line const &B ) {
             result.push_back( knot.x );
         }
     }
-    std::sort( result.begin(), result.end() );
+    std::ranges::sort( result );
     return result;
 }
 
@@ -89,7 +89,7 @@ inline line bound( line const &A, line const &B, bool const Lower ) {
     auto all { stations( A, B ) };
     auto const crossed { meetings( A, B ) };
     all.insert( all.end(), crossed.begin(), crossed.end() );
-    std::sort( all.begin(), all.end() );
+    std::ranges::sort( all );
     line result;
     for( auto const position : all ) {
         auto const a { sample( A, position, 0.0 ) };
