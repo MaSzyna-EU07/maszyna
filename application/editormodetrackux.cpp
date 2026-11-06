@@ -131,7 +131,7 @@ char const *track_type_name(TTrack const &Track)
 	}
 }
 
-editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixels) const
+track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixels) const
 {
 	track_hover result;
 	auto const &io{ImGui::GetIO()};

@@ -2198,7 +2198,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// a scenery with no tracks yet: in the middle of the view, how the first one is laid
 	void draw_empty_scenery_hint();
 	// path under the cursor, outlined before a click so it's known which one the click takes
-	using track_hover = ::track_hover;
 	track_hover m_hover;
 	track_hover track_under_cursor(TTrack const *Only = nullptr, float const Pixels = 0.0f) const;
 	track_hover split_spot() const;
