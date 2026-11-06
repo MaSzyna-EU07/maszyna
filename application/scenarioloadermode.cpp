@@ -21,6 +21,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "audio/audiorenderer.h"
 
+#include <format>
+
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();
 }
@@ -52,8 +54,9 @@ bool scenarioloader_mode::update() {
 		try {
 			state = simulation::State.deserialize_begin(Global.SceneryFile);
 		}
-		catch (std::exception const &e) {
-			ErrorLog("Bad init: scenario \"" + Global.SceneryFile + "\" couldn't be opened (" + e.what() + ")");
+		// the file it can't read, as the parser and the scenery opening it report it
+		catch (std::runtime_error const &e) {
+			ErrorLog(std::format("Bad init: scenario \"{}\" couldn't be opened ({})", Global.SceneryFile, e.what()));
 			state.reset();
 			Global.SceneryFile.clear();
 			Application.pop_mode();

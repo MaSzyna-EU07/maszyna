@@ -55,7 +55,10 @@ void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool con
 // the geometry of a track laid while one is alive goes into the chunks of the pool given, of the same type, before new ones
 class reused_chunks {
 public:
-    reused_chunks( chunk_pool *Pool );
+    explicit reused_chunks( chunk_pool *Pool );
+    // it puts the pool it took the place of back as it goes: one taking the place of the same one twice would put it back twice
+    reused_chunks( reused_chunks const & ) = delete;
+    reused_chunks &operator=( reused_chunks const & ) = delete;
     ~reused_chunks();
 private:
     chunk_pool *m_previous { nullptr };

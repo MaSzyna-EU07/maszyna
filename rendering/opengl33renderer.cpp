@@ -3779,6 +3779,31 @@ void opengl33_renderer::Render_Sleepers( TTrack *Track )
 	m_renderpass.draw_stats.models    += static_cast<int>( total );
 }
 
+namespace {
+
+// the level of detail of the whole model a run of beams is seen at, from its distance
+float timber_band( track_sleepers::beam_model const &Model, double const Distance )
+{
+	auto const squaredistance { static_cast<float>( Distance * Distance ) };
+	auto band { Model.bands.empty() ? 0.f : Model.bands.front() };
+	for( auto const start : Model.bands ) {
+		if( squaredistance >= start ) {
+			band = start;
+		}
+	}
+	return band;
+}
+
+// the transforms of a run of beams, relative to the origin of their track, put in the camera space of the modelview given
+void append_timbers( std::vector<glm::mat4> &Instances, glm::mat4 const &Modelview, std::vector<glm::mat4> const &Transforms, std::size_t const First, std::size_t const Last )
+{
+	for( auto index { First }; index < Last; ++index ) {
+		Instances.emplace_back( Modelview * Transforms[ index ] );
+	}
+}
+
+} // namespace
+
 // Renders the sleepers and switch timbers of a run of tracks of a cell. Each beam is made of instances of the parts of a model or
 // of a whole model, kept by its track relative to the origin of the track. The runs of beams in range and in sight are gathered
 // for the whole run of tracks by the model and its part or its level of detail, and each is drawn in as few instanced batches
@@ -3790,138 +3815,157 @@ void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_
 	if( Global.Sleepers3D.empty() ) { return; }
 
 	auto const shadows = ( m_renderpass.draw_mode == rendermode::shadows );
-	// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
-	auto const camera = ( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() );
-	auto const range = static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance );
-	glm::mat4 const originmodelview = OpenGLMatrices.data( GL_MODELVIEW );
+	timber_view const view {
+		// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
+		( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() ),
+		static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance ),
+		shadows,
+		OpenGLMatrices.data( GL_MODELVIEW ) };
 	for( auto &bucket : m_timberbuckets ) {
 		bucket.instances.clear();
 	}
-	auto const bucket_for = [&]( track_sleepers::beam_model const *Model, int const Part, float const Band ) -> std::vector<glm::mat4> & {
-		for( auto &bucket : m_timberbuckets ) {
-			if( bucket.model == Model && bucket.part == Part && bucket.band == Band ) {
-				return bucket.instances;
-			}
-		}
-		m_timberbuckets.push_back( { Model, Part, Band, {} } );
-		return m_timberbuckets.back().instances; };
-	// the level of detail of the whole model the run of beams is seen at, from its distance
-	auto const band_of = []( track_sleepers::beam_model const &Model, double const Distance ) {
-		auto const squaredistance { static_cast<float>( Distance * Distance ) };
-		auto band { Model.bands.empty() ? 0.f : Model.bands.front() };
-		for( auto const start : Model.bands ) {
-			if( squaredistance >= start ) {
-				band = start;
-			}
-		}
-		return band; };
 	for( auto first { First }; first != Last; ++first ) {
-		auto *track = *first;
-		if( false == track->m_visible || false == track->m_sleepers3d.active ) { continue; }
-		if( glm::length( track->location() - camera ) > range + track->radius() ) {
-			// worked out ahead, in the background, before it comes in range
-			if( false == shadows && track->m_sleepers3d.dirty && glm::length( track->location() - camera ) < range + track->radius() + 300.0 ) {
-				track_sleepers::prefetch( *track );
-			}
-			continue;
-		}
-		if( track->m_sleepers3d.dirty ) {
-			track_sleepers::lay( *track );
-		}
-		auto const &laid = track->m_sleepers3d;
-		if( laid.timbers == nullptr ) { continue; }
-		// the transforms of the beams are relative to the origin of the track, which the modelview is translated to already
-		auto const &trackmodelview = originmodelview;
-		for( auto const &chunk : laid.chunks ) {
-			auto const centre = track->m_origin + glm::dvec3( chunk.centre );
-			auto const distance = glm::length( centre - camera );
-			if( distance > range + chunk.radius ) { continue; }
-			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
-			auto const nearest = std::max( 0.0, distance - chunk.radius );
-			if( laid.timbers->stretchable ) {
-				for( int part = 0; part < track_sleepers::part_count; ++part ) {
-					auto &instances = bucket_for( laid.timbers, part, 0.f );
-					for( auto index = chunk.first[ part ]; index < chunk.last[ part ]; ++index ) {
-						instances.emplace_back( trackmodelview * laid.instances[ part ][ index ] );
-					}
-				}
-			}
-			if( chunk.wholelast > chunk.wholefirst ) {
-				auto &instances = bucket_for( laid.timbers, -1, band_of( *laid.timbers, nearest ) );
-				for( auto index = chunk.wholefirst; index < chunk.wholelast; ++index ) {
-					instances.emplace_back( trackmodelview * laid.whole[ index ] );
-				}
-			}
-			if( laid.plains != nullptr && chunk.plainlast > chunk.plainfirst ) {
-				auto &instances = bucket_for( laid.plains, -1, band_of( *laid.plains, nearest ) );
-				for( auto index = chunk.plainfirst; index < chunk.plainlast; ++index ) {
-					instances.emplace_back( trackmodelview * laid.plain[ index ] );
-				}
-			}
-		}
+		gather_timbers( **first, view );
 	}
-
-	auto const alpha = ( 0x30300030 ^ 0x0F0F000F );
 	std::size_t total { 0 };
-	for( auto &bucket : m_timberbuckets ) {
-		auto const &instances = bucket.instances;
-		if( instances.empty() ) { continue; }
-		total += instances.size();
-		auto const &beammodel = *bucket.model;
-		auto *model = beammodel.model;
-		if( bucket.part >= 0 ) {
-			// only the part of the model is visible, its siblings are skipped as the model is walked: the other parts, and what
-			// else the model holds, like the fastenings of the rails, which aren't laid
-			m_timbervisibility.clear();
-			for( int part = 0; part < track_sleepers::part_count; ++part ) {
-				m_timbervisibility.push_back( beammodel.parts[ part ]->iVisible );
-				beammodel.parts[ part ]->iVisible = ( part == bucket.part ? 1 : 0 );
-			}
-			for( auto *other : beammodel.others ) {
-				m_timbervisibility.push_back( other->iVisible );
-				other->iVisible = 0;
-			}
-		}
-		material_data skins {};
-		if( beammodel.skin != null_handle ) {
-			skins.replacable_skins[ 1 ] = beammodel.skin;
-		}
-		for( std::size_t offset = 0; offset < instances.size(); offset += gl::MAX_INSTANCES_PER_BATCH ) {
-			auto const batch = std::min<std::size_t>( instances.size() - offset, gl::MAX_INSTANCES_PER_BATCH );
-			instance_ubo->update(
-				reinterpret_cast<uint8_t const *>( instances.data() + offset ),
-				0,
-				static_cast<int>( batch * sizeof( glm::mat4 ) ) );
-			::glPushMatrix();
-			::glLoadIdentity();
-			m_current_instance_count = batch;
-			// inside the range of the level of detail the beams are at
-			model->Root->fSquareDist = ( bucket.part >= 0 ? 0.f : bucket.band + 1.f );
-			model->Root->ReplacableSet( ( beammodel.skin != null_handle ? skins.replacable_skins : nullptr ), alpha );
-			model->Root->pRoot = model;
-			Render( model->Root );
-			m_current_instance_count = 0;
-			::glPopMatrix();
-			++m_renderpass.draw_stats.instanced_drawcalls;
-		}
-		if( bucket.part >= 0 ) {
-			// as they were, some hidden by the model itself, which may stand in the scenery too
-			auto visibility = m_timbervisibility.begin();
-			for( int part = 0; part < track_sleepers::part_count; ++part ) {
-				beammodel.parts[ part ]->iVisible = *visibility++;
-			}
-			for( auto *other : beammodel.others ) {
-				other->iVisible = *visibility++;
-			}
-		}
+	for( auto const &bucket : m_timberbuckets ) {
+		if( bucket.instances.empty() ) { continue; }
+		total += bucket.instances.size();
+		draw_timbers( bucket );
 	}
 	if( total == 0 ) { return; }
 	// instance_modelview[0] back to identity for the draws which aren't instanced
 	{
 		glm::mat4 const identity( 1.0f );
-		instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+		instance_ubo->update( std::as_bytes( std::span { &identity, 1 } ), 0 );
 	}
 	m_renderpass.draw_stats.instances += static_cast<int>( total );
+}
+
+// the camera-space transforms of the beams of a model and its part or its level of detail gathered for the frame, in a bucket of
+// their own made for the first of them
+std::vector<glm::mat4> &opengl33_renderer::timber_instances( track_sleepers::beam_model const *Model, int const Part, float const Band )
+{
+	for( auto &bucket : m_timberbuckets ) {
+		if( bucket.model == Model && bucket.part == Part && bucket.band == Band ) {
+			return bucket.instances;
+		}
+	}
+	auto &bucket { m_timberbuckets.emplace_back() };
+	bucket.model = Model;
+	bucket.part = Part;
+	bucket.band = Band;
+	return bucket.instances;
+}
+
+// the beams of a track in range and in sight gathered into the buckets, laid first where they've changed; those of a track about to
+// come in range laid ahead, in the background
+void opengl33_renderer::gather_timbers( TTrack &Track, timber_view const &View )
+{
+	if( false == Track.m_visible || false == Track.m_sleepers3d.active ) { return; }
+	if( glm::length( Track.location() - View.camera ) > View.reach + Track.radius() ) {
+		// worked out ahead, in the background, before it comes in range
+		if( false == View.shadows && Track.m_sleepers3d.dirty && glm::length( Track.location() - View.camera ) < View.reach + Track.radius() + 300.0 ) {
+			track_sleepers::prefetch( Track );
+		}
+		return;
+	}
+	if( Track.m_sleepers3d.dirty ) {
+		track_sleepers::lay( Track );
+	}
+	auto const &laid = Track.m_sleepers3d;
+	if( laid.timbers == nullptr ) { return; }
+	for( auto const &chunk : laid.chunks ) {
+		auto const centre = Track.m_origin + glm::dvec3( chunk.centre );
+		auto const distance = glm::length( centre - View.camera );
+		if( distance > View.reach + chunk.radius ) { continue; }
+		if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
+		// the transforms of the beams are relative to the origin of the track, which the modelview is translated to already
+		gather_timber_chunk( laid, chunk, std::max( 0.0, distance - chunk.radius ), View.modelview );
+	}
+}
+
+// the beams of a run of them along a track gathered into the buckets: the parts of the timbers of a model made of them, the whole
+// timbers and the plain sleepers at the level of detail they're seen at from the nearest of them
+void opengl33_renderer::gather_timber_chunk( track_sleepers::laid const &Laid, track_sleepers::chunk const &Chunk, double const Nearest, glm::mat4 const &Modelview )
+{
+	if( Laid.timbers->stretchable ) {
+		for( int part = 0; part < track_sleepers::part_count; ++part ) {
+			auto &instances { timber_instances( Laid.timbers, part, 0.f ) };
+			append_timbers( instances, Modelview, Laid.instances[ part ], Chunk.first[ part ], Chunk.last[ part ] );
+		}
+	}
+	if( Chunk.wholelast > Chunk.wholefirst ) {
+		auto &instances { timber_instances( Laid.timbers, -1, timber_band( *Laid.timbers, Nearest ) ) };
+		append_timbers( instances, Modelview, Laid.whole, Chunk.wholefirst, Chunk.wholelast );
+	}
+	if( Laid.plains != nullptr && Chunk.plainlast > Chunk.plainfirst ) {
+		auto &instances { timber_instances( Laid.plains, -1, timber_band( *Laid.plains, Nearest ) ) };
+		append_timbers( instances, Modelview, Laid.plain, Chunk.plainfirst, Chunk.plainlast );
+	}
+}
+
+// the beams of a bucket drawn in as few instanced batches as they fit in: of a part of a model with the rest of it hidden, or of a whole
+// model at the level of detail of the bucket
+void opengl33_renderer::draw_timbers( timber_bucket const &Bucket )
+{
+	auto const &beammodel = *Bucket.model;
+	auto *model = beammodel.model;
+	if( Bucket.part >= 0 ) {
+		show_timber_part( beammodel, Bucket.part );
+	}
+	material_data skins {};
+	if( beammodel.skin != null_handle ) {
+		skins.replacable_skins[ 1 ] = beammodel.skin;
+	}
+	auto const alpha = ( 0x30300030 ^ 0x0F0F000F );
+	auto const &instances = Bucket.instances;
+	for( std::size_t offset = 0; offset < instances.size(); offset += gl::MAX_INSTANCES_PER_BATCH ) {
+		auto const batch = std::min<std::size_t>( instances.size() - offset, gl::MAX_INSTANCES_PER_BATCH );
+		instance_ubo->update( std::as_bytes( std::span { instances.data() + offset, batch } ), 0 );
+		::glPushMatrix();
+		::glLoadIdentity();
+		m_current_instance_count = batch;
+		// inside the range of the level of detail the beams are at
+		TSubModel::fSquareDist = ( Bucket.part >= 0 ? 0.f : Bucket.band + 1.f );
+		TSubModel::ReplacableSet( ( beammodel.skin != null_handle ? skins.replacable_skins : nullptr ), alpha );
+		TSubModel::pRoot = model;
+		Render( model->Root );
+		m_current_instance_count = 0;
+		::glPopMatrix();
+		++m_renderpass.draw_stats.instanced_drawcalls;
+	}
+	if( Bucket.part >= 0 ) {
+		restore_timber_parts( beammodel );
+	}
+}
+
+// only the given part of a timber model seen, its siblings skipped as the model is walked: the other parts, and what else the model
+// holds, like the fastenings of the rails, which aren't laid. what each was is kept to put it back
+void opengl33_renderer::show_timber_part( track_sleepers::beam_model const &Model, int const Part )
+{
+	m_timbervisibility.clear();
+	for( int part = 0; part < track_sleepers::part_count; ++part ) {
+		m_timbervisibility.push_back( Model.parts[ part ]->iVisible );
+		Model.parts[ part ]->iVisible = ( part == Part ? 1 : 0 );
+	}
+	for( auto *other : Model.others ) {
+		m_timbervisibility.push_back( other->iVisible );
+		other->iVisible = 0;
+	}
+}
+
+// the parts of a timber model and its other submodels seen as they were, some hidden by the model itself, which may stand in the
+// scenery too
+void opengl33_renderer::restore_timber_parts( track_sleepers::beam_model const &Model )
+{
+	auto visibility = m_timbervisibility.begin();
+	for( int part = 0; part < track_sleepers::part_count; ++part ) {
+		Model.parts[ part ]->iVisible = *visibility++;
+	}
+	for( auto *other : Model.others ) {
+		other->iVisible = *visibility++;
+	}
 }
 
 bool opengl33_renderer::Render(TDynamicObject *Dynamic)
@@ -4444,6 +4488,58 @@ void opengl33_renderer::Render(TTrack *Track)
 	}
 }
 
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials: batched with
+// those of the other tracks, unless the track lies where the light differs
+void opengl33_renderer::Render_cuts(TTrack *Track, material_handle &Batchmaterial)
+{
+	std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{Track->m_materialcut1, &Track->GeometryCut1}, {Track->m_materialcut2, &Track->GeometryCut2}};
+	for (auto &tread : Track->GeometryTreads)
+	{
+		parts.emplace_back(tread.material, &tread.geometry);
+		parts.emplace_back(tread.matte, &tread.cuts);
+	}
+	for (auto const &[material, geometry] : parts)
+	{
+		if ((material == null_handle) || geometry->empty())
+		{
+			continue;
+		}
+		if (Track->eEnvironment != e_flat)
+		{
+			flush_path_batch(Batchmaterial);
+			setup_environment_light(Track->eEnvironment);
+			Bind_Material(material);
+			draw(std::begin(*geometry), std::end(*geometry));
+			setup_environment_light();
+			continue;
+		}
+		begin_path_batch(Batchmaterial, material);
+		m_pathbatch.insert(std::end(m_pathbatch), std::begin(*geometry), std::end(*geometry));
+	}
+}
+
+void opengl33_renderer::flush_path_batch(material_handle &Batchmaterial)
+{
+	if (false == m_pathbatch.empty())
+	{
+		draw(std::begin(m_pathbatch), std::end(m_pathbatch));
+		m_pathbatch.clear();
+	}
+	Batchmaterial = null_handle;
+}
+
+bool opengl33_renderer::begin_path_batch(material_handle &Batchmaterial, material_handle const Material)
+{
+	if (Material == Batchmaterial)
+	{
+		return false;
+	}
+	flush_path_batch(Batchmaterial);
+	Bind_Material(Material);
+	Batchmaterial = Material;
+	return true;
+}
+
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
 void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last)
 {
@@ -4466,27 +4562,9 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	// geometry of neighbouring tracks which share the material is gathered and drawn together.
 	// only neighbours are combined, the tracks are still drawn in their order in the cell
 	material_handle batchmaterial{null_handle};
-	auto const flush_batch = [&]()
-	{
-		if (false == m_pathbatch.empty())
-		{
-			draw(std::begin(m_pathbatch), std::end(m_pathbatch));
-			m_pathbatch.clear();
-		}
-		batchmaterial = null_handle;
-	};
+	auto const flush_batch = [this, &batchmaterial]() { flush_path_batch(batchmaterial); };
 	// returns: true if the material starts a new batch, false if it continues the current one
-	auto const begin_batch = [&](material_handle const Material)
-	{
-		if (Material == batchmaterial)
-		{
-			return false;
-		}
-		flush_batch();
-		Bind_Material(Material);
-		batchmaterial = Material;
-		return true;
-	};
+	auto const begin_batch = [this, &batchmaterial](material_handle const Material) { return begin_path_batch(batchmaterial, Material); };
 
 	// TODO: render auto generated trackbeds together with regular trackbeds in pass 1, and all rails in pass 2
 	// first pass, material 1
@@ -4699,30 +4777,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			{
 				continue;
 			}
-			std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{track->m_materialcut1, &track->GeometryCut1}, {track->m_materialcut2, &track->GeometryCut2}};
-			for (auto &tread : track->GeometryTreads)
-			{
-				parts.emplace_back(tread.material, &tread.geometry);
-				parts.emplace_back(tread.matte, &tread.cuts);
-			}
-			for (auto const &cuts : parts)
-			{
-				if ((cuts.first == null_handle) || cuts.second->empty())
-				{
-					continue;
-				}
-				if (track->eEnvironment != e_flat)
-				{
-					flush_batch();
-					setup_environment_light(track->eEnvironment);
-					Bind_Material(cuts.first);
-					draw(std::begin(*cuts.second), std::end(*cuts.second));
-					setup_environment_light();
-					continue;
-				}
-				begin_batch(cuts.first);
-				m_pathbatch.insert(std::end(m_pathbatch), std::begin(*cuts.second), std::end(*cuts.second));
-			}
+			Render_cuts(track, batchmaterial);
 		}
 		flush_batch();
 	}
@@ -5685,7 +5740,7 @@ void opengl33_renderer::Forget_Node(scene::basic_node const *Node)
 {
 	if (m_picksceneryitem == Node)
 		m_picksceneryitem = nullptr;
-	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
+	std::ranges::replace_if(m_picksceneryitems, [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
 }
 
 glm::dvec3 opengl33_renderer::Update_Mouse_Position()
