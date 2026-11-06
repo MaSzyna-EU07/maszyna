@@ -168,8 +168,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 				if (segment == nullptr)
 					continue;
 				output << "axis " << track->name() << ' ' << path;
-				for (auto at{0.0}; at <= segment->GetLength() + 1e-6; at += 0.25)
+				for (int k = 0; k * 0.25 <= segment->GetLength() + 1e-6; ++k)
 				{
+					auto const at{k * 0.25};
 					glm::dvec3 spot, across;
 					segment->plan_frame(std::min(at, segment->GetLength()), spot, across);
 					output << format(" %.4f %.4f", spot.x, spot.z);
@@ -380,8 +381,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 						auto const lengthb{b->eType == tt_Switch ? b->SwitchExtension->Segments[pb]->GetLength() : b->Segment->GetLength()};
 						auto least{1e9};
 						auto where{0.0};
-						for (auto at{0.0}; at <= length; at += 0.02)
+						for (int k = 0; k * 0.02 <= length; ++k)
 						{
+							auto const at{k * 0.02};
 							double d, l;
 							track_rails::rail_offset(*b, pb, sb, track_rails::rail_point(*a, pa, sa, at, head_a), d, l);
 							if (d < 0.0 || d > lengthb || l < -0.3 || l > 0.3)
@@ -430,10 +432,11 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							continue;
 						++count;
 						std::string hits;
-						for (auto at{from}; at <= to; at += 0.05)
+						for (int k = 0; from + k * 0.05 <= to; ++k)
 							// the head of the check rail as drawn, 40 mm at the head of the rail of 73.5
 							for (auto const lateral : {-track_rails::check_flangeway, -track_rails::check_flangeway - 0.020 * size.head / 0.0735, -track_rails::check_flangeway - 0.040 * size.head / 0.0735})
 							{
+								auto const at{from + k * 0.05};
 								auto const point{track_rails::rail_point(*track, path, side, at, lateral)};
 								for (auto *other : others)
 									for (int otherpath = 0; otherpath < (other->eType == tt_Switch ? 2 : 1); ++otherpath)
@@ -554,8 +557,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 								continue;
 							++count;
 							std::string hits;
-							for (auto at{from}; at <= to; at += 0.02)
+							for (int k = 0; from + k * 0.02 <= to; ++k)
 							{
+								auto const at{from + k * 0.02};
 								auto const offset{knots::sample(offsets, at, 0.0)};
 								if (offset <= 0.002)
 									continue;
@@ -742,8 +746,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							where[Kind] = What;
 						} };
 					// past the last knots of its lines, the lines planing on as they end
-					for (auto s{from}; s <= to + 1e-9; s += 0.02)
+					for (int k = 0; from + k * 0.02 <= to + 1e-9; ++k)
 					{
+						auto const s{from + k * 0.02};
 						auto const l{lines_at(part, s)};
 						for (auto const *line : {l.extents, l.inner})
 						{
@@ -760,8 +765,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 					auto start{from + 0.05};
 					auto end{to - 0.05};
 					if (part.before != nullptr && part.before->starting.kind == track_rails::rail_end::sharp)
-						for (auto s{from}; s < to; s += 0.02)
+						for (int k = 0; from + k * 0.02 < to; ++k)
 						{
+							auto const s{from + k * 0.02};
 							double offset, low, high;
 							head_of(ours, part, s, offset, low, high);
 							if (high - low >= 0.001)
@@ -771,8 +777,10 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							}
 						}
 					std::vector<double> stations, widths;
-					for (auto s{std::ceil(start / 0.02) * 0.02}; s <= end; s += 0.02)
+					auto const first{std::ceil(start / 0.02) * 0.02};
+					for (int k = 0; first + k * 0.02 <= end; ++k)
 					{
+						auto const s{first + k * 0.02};
 						double offset, low, high;
 						head_of(ours, part, s, offset, low, high);
 						auto const width{std::max(0.0, high - low)};
@@ -798,8 +806,10 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							auto const &low{theirs.line->low};
 							auto const &high{theirs.line->high};
 							auto distance{-1e9};
-							for (auto s{std::ceil(from / 0.02) * 0.02}; s <= to; s += 0.02)
+							auto const first{std::ceil(from / 0.02) * 0.02};
+							for (int k = 0; first + k * 0.02 <= to; ++k)
 							{
+								auto const s{first + k * 0.02};
 								double offset, lo, hi;
 								head_of(ours, part, s, offset, lo, hi);
 								if (hi - lo < 2.0 * tolerance)
@@ -938,7 +948,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 									return Latest ? std::max(a, b) : std::min(a, b);
 								};
 								auto covered{false};
-								for (auto const &theirs : against->plan_rails(true).guards[againstpath][againstside > 0])
+								// the plan kept while its guard rails are gone through: one made in the loop would go before them
+								auto const plan{against->plan_rails(true)};
+								for (auto const &theirs : plan.guards[againstpath][againstside > 0])
 									covered |= (along > reach(theirs.frommiter, theirs.from, false) - 0.002 && along < reach(theirs.tomiter, theirs.to, true) + 0.002);
 								result += covered ? ", on its guard rail" : ", no guard rail there";
 								fault |= (false == covered || std::abs(lateral + track_rails::flangeway) > 0.002);

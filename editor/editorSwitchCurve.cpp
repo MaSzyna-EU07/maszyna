@@ -157,8 +157,9 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 		auto const margin{std::min(1.0, length * 0.25)};
 		result.first = sign * curvature_at(Track, Track.front().station + margin);
 		result.last = sign * curvature_at(Track, finish - margin);
-		for (auto s{Track.front().station + margin}; s <= finish - margin + 1e-9; s += 0.5)
+		for (int k = 0; Track.front().station + margin + k * 0.5 <= finish - margin + 1e-9; ++k)
 		{
+			auto const s{Track.front().station + margin + k * 0.5};
 			auto const curvature{sign * curvature_at(Track, s)};
 			result.low = std::min(result.low, curvature);
 			result.high = std::max(result.high, curvature);
@@ -222,8 +223,9 @@ slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std:
 	auto const along = [&](std::vector<track_point> const &Track) {
 		span result;
 		auto const margin{std::min(1.0, (Track.back().station - Track.front().station) * 0.25)};
-		for (auto s{Track.front().station + margin}; s <= Track.back().station - margin + 1e-9; s += 0.5)
+		for (int k = 0; Track.front().station + margin + k * 0.5 <= Track.back().station - margin + 1e-9; ++k)
 		{
+			auto const s{Track.front().station + margin + k * 0.5};
 			auto const curvature{sign * curvature_at(Track, s)};
 			result.low = std::min(result.low, curvature);
 			result.high = std::max(result.high, curvature);
