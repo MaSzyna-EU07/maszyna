@@ -341,7 +341,7 @@ public:
     std::vector<track_rails::rail_crossing> rail_crossings( bool const Joined = true );
     track_rails::rail_size rail_dimensions() const;
     // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
-    track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings );
+    track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings ) const;
     // Carve: the parts of the rails at crossings carved out of what lies around them, false: only their design
     track_rails::rail_layout plan_rails( bool const Crossings, bool const Carve = true );
     void update_location();
@@ -448,7 +448,7 @@ private:
     float texture_length( material_handle const Material );
     // creates profile for a part of current path
     void create_switch_trackbed( gfx::vertex_array &Output );
-    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape = nullptr );
+    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape = nullptr ) const;
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void profile_rolls( float &Roll1, float &Roll2 ) const;
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
@@ -491,14 +491,14 @@ private:
         gfx::geometrybank_handle bank;
         track_rails::rail_size size;
         float halfwidth { 0.f };
-        gfx::vertex_array checkshapes[ 2 ];
-        gfx::vertex_array plates[ 2 ];
-        gfx::vertex_array fillers[ 2 ];
+        std::array<gfx::vertex_array, 2> checkshapes;
+        std::array<gfx::vertex_array, 2> plates;
+        std::array<gfx::vertex_array, 2> fillers;
         float platetexture { 0.f };
     };
     rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
-    bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
+    bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, gfx::vertex_array const &Profile, track_rails::rail_course const &Course, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
     class rail_layer;
     class rail_planner;
     int blade_side( int const Path ) const;

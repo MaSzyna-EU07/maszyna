@@ -684,17 +684,20 @@ variant_of( opengl_material const &Source, std::string const &Suffix ) {
     return variant;
 }
 
+// the params of a shader, as the shader keeps them
+using param_confs = decltype( gl::shader::param_conf );
+
 // whether another param of the shader lies on a component of the named one, which a value set for that one would change too
 bool
-shares_slot( std::unordered_map<std::string, gl::shader::param_entry> const &Conf, std::string const &Name ) {
+shares_slot( param_confs const &Conf, std::string const &Name ) {
 
     auto const own { Conf.find( Name ) };
     if( own == Conf.end() ) {
         return false;
     }
-    return std::any_of(
-        std::begin( Conf ), std::end( Conf ),
-        [&]( auto const &Entry ) {
+    return std::ranges::any_of(
+        Conf,
+        [ &Name, &own ]( auto const &Entry ) {
             return Entry.first != Name
                 && Entry.second.location == own->second.location
                 && Entry.second.offset < own->second.offset + own->second.size
@@ -715,15 +718,16 @@ make_matte( opengl_material &Variant ) {
          || shares_slot( Variant.shader->param_conf, key ) ) {
             continue;
         }
-        for( std::size_t i = 0; i < entry->second.size; ++i ) {
-            Variant.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
+        auto &slot { Variant.params[ entry->second.location ] };
+        auto const offset { static_cast<glm::length_t>( entry->second.offset ) };
+        auto const size { static_cast<glm::length_t>( entry->second.size ) };
+        for( glm::length_t i = 0; i < size; ++i ) {
+            slot[ offset + i ] = value[ i ];
         }
-        Variant.params_state.erase(
-            std::remove_if(
-                std::begin( Variant.params_state ), std::end( Variant.params_state ),
-                [&]( gl::shader::param_entry const &State ) {
-                    return State.location == entry->second.location && State.offset == entry->second.offset; } ),
-            std::end( Variant.params_state ) );
+        std::erase_if(
+            Variant.params_state,
+            [ &entry ]( gl::shader::param_entry const &State ) {
+                return State.location == entry->second.location && State.offset == entry->second.offset; } );
     }
 }
 
@@ -737,26 +741,24 @@ make_tinted( opengl_material &Variant, glm::vec3 const &Colour ) {
     }
     auto const &conf { Variant.shader->param_conf };
     auto const weathering { conf.find( "weathering" ) };
-    auto const tint { conf.find( "tint" ) };
-    if( weathering == conf.end()
+    if( auto const tint { conf.find( "tint" ) };
+        weathering == conf.end()
      || tint == conf.end()
      || weathering->second.offset != 3
      || tint->second.location != weathering->second.location
      || tint->second.offset != 0
-     || std::any_of(
-            std::begin( conf ), std::end( conf ),
-            [&]( auto const &Entry ) {
+     || std::ranges::any_of(
+            conf,
+            [ &weathering, &tint ]( auto const &Entry ) {
                 return Entry.first != weathering->first && Entry.first != tint->first && Entry.second.location == weathering->second.location; } ) ) {
         return false;
     }
     auto const location { weathering->second.location };
     Variant.params[ location ] = glm::vec4{ Colour, -1.f };
-    Variant.params_state.erase(
-        std::remove_if(
-            std::begin( Variant.params_state ), std::end( Variant.params_state ),
-            [&]( gl::shader::param_entry const &State ) {
-                return State.location == location; } ),
-        std::end( Variant.params_state ) );
+    std::erase_if(
+        Variant.params_state,
+        [ location ]( gl::shader::param_entry const &State ) {
+            return State.location == location; } );
     return true;
 }
 
@@ -768,8 +770,7 @@ material_manager::create_matte( material_handle const Material ) {
     if( Material == null_handle || Material >= m_materials.size() ) {
         return Material;
     }
-    auto const lookup { m_mattes.find( Material ) };
-    if( lookup != m_mattes.end() ) {
+    if( auto const lookup { m_mattes.find( Material ) }; lookup != m_mattes.end() ) {
         return lookup->second;
     }
     auto matte { variant_of( m_materials[ Material ], ":matte" ) };
