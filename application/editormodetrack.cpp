@@ -70,7 +70,7 @@ glm::dvec3 editor_mode::camera_position() const
 	return Camera.Pos;
 }
 
-editor_mode::track_hover const &editor_mode::hovered_track() const
+track_hover const &editor_mode::hovered_track() const
 {
 	return m_hover;
 }
