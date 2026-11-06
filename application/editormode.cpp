@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "world/TrackSleepers.h"
 #include <filesystem>
+#include <format>
 #include <iterator>
 #include <fstream>
 #include <regex>
@@ -5305,19 +5306,18 @@ void tutorial_profile_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 	List.Flags = flags;
 	List.AddPolyline(ground.data(), static_cast<int>(ground.size()), IM_COL32(170, 130, 80, 220), 0, 1.5f);
 	auto const lift{static_cast<float>(0.5 + 0.5 * std::sin(Time * 1.6))};
-	ImVec2 const points[]{ImVec2(x_of(0.0f), y_of(0.32f)), ImVec2(x_of(0.38f), y_of(0.42f)), ImVec2(x_of(0.66f), y_of(0.35f + 0.4f * lift)), ImVec2(x_of(1.0f), y_of(0.55f))};
-	List.AddPolyline(points, 4, IM_COL32(170, 170, 170, 160), 0, 1.0f);
-	List.AddPolyline(points, 4, IM_COL32(90, 220, 110, 255), 0, 2.5f);
-	for (int i = 0; i < 4; ++i)
+	std::array const points{ImVec2(x_of(0.0f), y_of(0.32f)), ImVec2(x_of(0.38f), y_of(0.42f)), ImVec2(x_of(0.66f), y_of(0.35f + 0.4f * lift)), ImVec2(x_of(1.0f), y_of(0.55f))};
+	List.AddPolyline(points.data(), static_cast<int>(points.size()), IM_COL32(170, 170, 170, 160), 0, 1.0f);
+	List.AddPolyline(points.data(), static_cast<int>(points.size()), IM_COL32(90, 220, 110, 255), 0, 2.5f);
+	for (std::size_t i = 0; i < points.size(); ++i)
 		List.AddCircleFilled(points[i], i == 2 ? 6.0f : 4.5f, i == 2 ? kGestureLit : IM_COL32(250, 210, 80, 255));
 	List.AddCircle(points[2], 9.0f, kGestureLit, 0, 1.5f);
-	for (int i = 0; i < 3; ++i)
+	for (std::size_t i = 0; i + 1 < points.size(); ++i)
 	{
 		auto const grade{-(points[i + 1].y - points[i].y) / (points[i + 1].x - points[i].x) * 40.0f};
-		char text[32];
-		std::snprintf(text, sizeof(text), "%+.1f", std::abs(grade) < 0.05f ? 0.0f : grade);
+		auto const text{std::format("{:+.1f}", std::abs(grade) < 0.05f ? 0.0f : grade)};
 		ImVec2 const middle{(points[i].x + points[i + 1].x) * 0.5f, (points[i].y + points[i + 1].y) * 0.5f - ImGui::GetTextLineHeight() - 2.0f};
-		List.AddText(ImVec2(middle.x - ImGui::CalcTextSize(text).x * 0.5f, middle.y), i == 0 ? IM_COL32(200, 200, 200, 255) : IM_COL32(255, 255, 255, 255), text);
+		List.AddText(ImVec2(middle.x - ImGui::CalcTextSize(text.c_str()).x * 0.5f, middle.y), i == 0 ? IM_COL32(200, 200, 200, 255) : IM_COL32(255, 255, 255, 255), text.c_str());
 	}
 	gesture_mouse(List, ImVec2(points[2].x + 12.0f, points[2].y + 10.0f), height * 0.18f, "LMB");
 }
@@ -5332,7 +5332,7 @@ void tutorial_template_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const H
 	auto const shown{static_cast<int>(std::fmod(static_cast<float>(Time), 10.0f))};
 	std::vector<ImVec2> line;
 	for (int i = 0; i <= 24; ++i)
-		line.push_back(curve(i / 24.0f));
+		line.push_back(curve(static_cast<float>(i) / 24.0f));
 	List.AddLine(at(0.08f, 0.72f), at(0.78f, 0.72f), IM_COL32(150, 150, 150, 130), 3.0f);
 	List.AddPolyline(line.data(), static_cast<int>(line.size()), IM_COL32(150, 150, 150, 130), ImDrawFlags_None, 3.0f);
 	std::array<ImVec2, 8> const points{at(0.08f, 0.72f), at(0.78f, 0.72f), curve(1.0f), at(0.94f, 0.14f), curve(0.28f), curve(0.5f), curve(0.72f), curve(0.88f)};
@@ -5380,10 +5380,10 @@ void tutorial_corner_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hig
 	while (sweep < -glm::pi<float>())
 		sweep += glm::two_pi<float>();
 	auto const radius{glm::length(start - centre)};
-	std::vector<ImVec2> line{point(from)};
+	std::vector line{point(from)};
 	for (int i = 0; i <= 32; ++i)
 	{
-		auto const angle{begin + sweep * i / 32.0f};
+		auto const angle{begin + sweep * static_cast<float>(i) / 32.0f};
 		line.push_back(ImVec2(centre.x + radius * std::cos(angle), centre.y + radius * std::sin(angle)));
 	}
 	line.push_back(point(to));
@@ -5405,7 +5405,7 @@ void tutorial_route_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const High
 	auto const mix = [](ImVec2 const A, ImVec2 const B, float const T) { return ImVec2(A.x + (B.x - A.x) * T, A.y + (B.y - A.y) * T); };
 	auto const ease = [](float const T) { auto const t{std::clamp(T, 0.0f, 1.0f)}; return t * t * (3.0f - 2.0f * t); };
 	// the joints of the tracks of the line, and a siding going off it at a switch
-	ImVec2 const joints[]{at(0.04f, 0.72f), at(0.18f, 0.64f), at(0.32f, 0.54f), at(0.46f, 0.48f), at(0.60f, 0.46f), at(0.74f, 0.42f), at(0.88f, 0.32f), at(0.98f, 0.24f)};
+	std::array const joints{at(0.04f, 0.72f), at(0.18f, 0.64f), at(0.32f, 0.54f), at(0.46f, 0.48f), at(0.60f, 0.46f), at(0.74f, 0.42f), at(0.88f, 0.32f), at(0.98f, 0.24f)};
 	int constexpr tracks{7};
 	List.AddBezierQuadratic(joints[3], at(0.58f, 0.52f), at(0.80f, 0.66f), IM_COL32(130, 130, 130, 200), 2.0f);
 	auto const cycle{static_cast<float>(std::fmod(Time, 8.0))};
@@ -5460,8 +5460,11 @@ void tutorial_signal_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hig
 	// the track seen from above: sleepers and the two rails
 	auto const middle{at(0.0f, 0.5f).y};
 	auto const gauge{height * 0.07f};
-	for (float x = 0.02f; x < 1.0f; x += 0.025f)
-		List.AddLine(ImVec2(at(x, 0.0f).x, middle - gauge * 1.6f), ImVec2(at(x, 0.0f).x, middle + gauge * 1.6f), IM_COL32(110, 90, 70, 255), 3.0f);
+	for (int sleeper = 0; sleeper < 40; ++sleeper)
+	{
+		auto const x{at(0.02f + 0.025f * static_cast<float>(sleeper), 0.0f).x};
+		List.AddLine(ImVec2(x, middle - gauge * 1.6f), ImVec2(x, middle + gauge * 1.6f), IM_COL32(110, 90, 70, 255), 3.0f);
+	}
 	List.AddLine(ImVec2(Low.x, middle - gauge), ImVec2(High.x, middle - gauge), IM_COL32(200, 200, 205, 255), 2.0f);
 	List.AddLine(ImVec2(Low.x, middle + gauge), ImVec2(High.x, middle + gauge), IM_COL32(200, 200, 205, 255), 2.0f);
 	auto const line{ImGui::GetTextLineHeight()};
@@ -5487,11 +5490,9 @@ void tutorial_signal_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hig
 			ImVec2 const head_high{foot.x + height * 0.04f, foot.y - height * 0.06f};
 			List.AddRectFilled(head_low, head_high, IM_COL32(25, 25, 25, 255), height * 0.03f);
 			List.AddRect(head_low, head_high, IM_COL32(150, 150, 150, 255), height * 0.03f);
-			for (int i = 0; i < 3; ++i)
-			{
-				ImU32 const lights[]{IM_COL32(230, 60, 50, 255), IM_COL32(70, 210, 90, 255), IM_COL32(240, 240, 240, 255)};
-				List.AddCircleFilled(ImVec2(foot.x, head_low.y + height * (0.04f + 0.065f * i)), height * 0.025f, lights[i]);
-			}
+			std::array const lights{IM_COL32(230, 60, 50, 255), IM_COL32(70, 210, 90, 255), IM_COL32(240, 240, 240, 255)};
+			for (std::size_t i = 0; i < lights.size(); ++i)
+				List.AddCircleFilled(ImVec2(foot.x, head_low.y + height * (0.04f + 0.065f * static_cast<float>(i))), height * 0.025f, lights[i]);
 			List.AddText(ImVec2(foot.x - height * 0.06f - ImGui::CalcTextSize("S1").x, foot.y - line), IM_COL32(255, 255, 255, 230), "S1");
 		}
 		gesture_mouse(List, ImVec2(cursor.x + 2.0f, cursor.y + 2.0f), std::round(height * 0.16f), "LMB");
@@ -5502,13 +5503,12 @@ void tutorial_signal_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hig
 	auto const shown{static_cast<int>((cycle - 4.3f) / 0.35f) + 1};
 	for (int i = 0; i < std::min(shown, 9); ++i)
 	{
-		auto const x{at(0.07f + 0.105f * i, 0.0f).x};
+		auto const x{at(0.07f + 0.105f * static_cast<float>(i), 0.0f).x};
 		auto const foot{middle - gauge * 3.2f};
 		List.AddRectFilled(ImVec2(x - 3.0f, foot - height * 0.14f), ImVec2(x + 3.0f, foot), IM_COL32(240, 240, 240, 255), 1.0f);
-		char text[16];
-		std::snprintf(text, sizeof(text), "12.%d", i + 1);
-		auto const size{ImGui::CalcTextSize(text)};
-		List.AddText(ImVec2(std::round(x - size.x * 0.5f), foot - height * 0.14f - size.y - 1.0f), IM_COL32(255, 220, 120, 255), text);
+		auto const text{std::format("12.{}", i + 1)};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		List.AddText(ImVec2(std::round(x - size.x * 0.5f), foot - height * 0.14f - size.y - 1.0f), IM_COL32(255, 220, 120, 255), text.c_str());
 	}
 	List.AddText(ImVec2(Low.x + 6.0f, High.y - line - 4.0f), IM_COL32(230, 230, 230, 230), STR_C("B: posts every 100 m along the whole line at once"));
 }
@@ -5524,9 +5524,12 @@ void tutorial_vehicle(ImDrawList &List, ImVec2 const Low, ImVec2 const High, ImU
 	auto const windows{Locomotive ? 2 : 5};
 	for (int i = 0; i < windows; ++i)
 	{
-		auto const left{Locomotive ? (i == 0 ? Low.x + width * 0.06f : High.x - width * 0.2f) : Low.x + width * (0.08f + 0.18f * i)};
+		// a locomotive has a window at each end, a coach a row of them
+		auto window_x{Low.x + width * (0.08f + 0.18f * static_cast<float>(i))};
+		if (Locomotive)
+			window_x = (i == 0 ? Low.x + width * 0.06f : High.x - width * 0.2f);
 		auto const size{Locomotive ? width * 0.14f : width * 0.12f};
-		List.AddRectFilled(ImVec2(left, Low.y + height * 0.15f), ImVec2(left + size, Low.y + height * 0.42f), IM_COL32(30, 40, 50, 255), 2.0f);
+		List.AddRectFilled(ImVec2(window_x, Low.y + height * 0.15f), ImVec2(window_x + size, Low.y + height * 0.42f), IM_COL32(30, 40, 50, 255), 2.0f);
 	}
 	for (float const share : {0.22f, 0.78f})
 	{
@@ -5544,14 +5547,15 @@ void tutorial_trainset_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const H
 	auto const height{High.y - Low.y};
 	auto const at = [&](float const X, float const Y) { return ImVec2(Low.x + width * X, Low.y + height * Y); };
 	auto const cycle{static_cast<float>(std::fmod(Time, 9.0))};
-	ImU32 const colours[]{IM_COL32(200, 60, 50, 255), IM_COL32(60, 120, 70, 255), IM_COL32(70, 100, 160, 255)};
+	std::array const colours{IM_COL32(200, 60, 50, 255), IM_COL32(60, 120, 70, 255), IM_COL32(70, 100, 160, 255)};
 	auto const line{ImGui::GetTextLineHeight()};
 	// the list: the side view of each vehicle and its name
-	for (int i = 0; i < 3; ++i)
+	for (std::size_t i = 0; i < colours.size(); ++i)
 	{
-		auto const top{0.08f + 0.28f * i};
-		auto const clicked{cycle > 0.8f + 1.4f * i && cycle < 1.2f + 1.4f * i};
-		if (clicked)
+		auto const slot{static_cast<float>(i)};
+		auto const top{0.08f + 0.28f * slot};
+		// lit while it's double clicked
+		if (cycle > 0.8f + 1.4f * slot && cycle < 1.2f + 1.4f * slot)
 			List.AddRectFilled(at(0.02f, top - 0.02f), at(0.40f, top + 0.24f), IM_COL32(90, 175, 255, 70), 3.0f);
 		tutorial_vehicle(List, at(0.03f, top), at(0.16f, top + 0.2f), colours[i], i == 0);
 		List.AddRectFilled(at(0.19f, top + 0.03f), at(0.36f, top + 0.03f + line / height * 0.6f), IM_COL32(220, 220, 220, 200), 2.0f);
@@ -5559,7 +5563,7 @@ void tutorial_trainset_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const H
 	}
 	// the cursor goes down the list double clicking, then to the button
 	auto const row{std::min(2, static_cast<int>(std::max(0.0f, cycle - 0.4f) / 1.4f))};
-	ImVec2 cursor{at(0.30f, 0.16f + 0.28f * row)};
+	ImVec2 cursor{at(0.30f, 0.16f + 0.28f * static_cast<float>(row))};
 	auto const added{std::clamp(static_cast<int>((cycle - 0.8f) / 1.4f) + 1, 0, 3)};
 	auto const button_low{at(0.55f, 0.08f)};
 	auto const button_high{at(0.95f, 0.30f)};
@@ -5576,10 +5580,10 @@ void tutorial_trainset_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const H
 	auto const run{cycle > 5.6f ? (cycle - 5.6f) * (cycle - 5.6f) * width * 0.06f : 0.0f};
 	auto const car{width * 0.15f};
 	List.PushClipRect(ImVec2(at(0.44f, 0.0f).x, Low.y), High, true);
-	for (int i = 0; i < added; ++i)
+	for (std::size_t i = 0; i < static_cast<std::size_t>(added); ++i)
 	{
-		auto const left{at(0.46f, 0.0f).x + (car + 3.0f) * i - run};
-		tutorial_vehicle(List, ImVec2(left, rail - height * 0.24f), ImVec2(left + car, rail), colours[i], i == 0);
+		auto const front{at(0.46f, 0.0f).x + (car + 3.0f) * static_cast<float>(i) - run};
+		tutorial_vehicle(List, ImVec2(front, rail - height * 0.24f), ImVec2(front + car, rail), colours[i], i == 0);
 	}
 	List.PopClipRect();
 	gesture_mouse(List, ImVec2(cursor.x + 2.0f, cursor.y + 2.0f), std::round(height * 0.16f), "LMB");
@@ -5600,7 +5604,8 @@ void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 	auto const x_of = [&](float const Share) { return Low.x + width * Share; };
 	auto const y_of = [&](float const Level) { return Low.y + height * (0.95f - 0.75f * Level); };
 	int constexpr steps{80};
-	std::vector<ImVec2> ground, track;
+	std::vector<ImVec2> ground;
+	std::vector<ImVec2> track;
 	for (int i = 0; i <= steps; ++i)
 	{
 		auto const share{static_cast<float>(i) / steps};
@@ -5611,15 +5616,14 @@ void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 	List.Flags &= ~ImDrawListFlags_AntiAliasedFill;
 	for (int i = 0; i < steps; ++i)
 	{
-		ImVec2 const quad[]{ground[i], ground[i + 1], ImVec2(ground[i + 1].x, High.y), ImVec2(ground[i].x, High.y)};
-		List.AddConvexPolyFilled(quad, 4, IM_COL32(95, 120, 70, 120));
+		std::array const quad{ground[i], ground[i + 1], ImVec2(ground[i + 1].x, High.y), ImVec2(ground[i].x, High.y)};
+		List.AddConvexPolyFilled(quad.data(), static_cast<int>(quad.size()), IM_COL32(95, 120, 70, 120));
 	}
 	if (eased > 0.99f)
 		for (int i = 0; i < steps; ++i)
 		{
 			auto const fill{track[i].y < ground[i].y};
-			ImVec2 const quad[]{track[i], track[i + 1], ground[i + 1], ground[i]};
-			List.AddQuadFilled(quad[0], quad[1], quad[2], quad[3], fill ? IM_COL32(190, 150, 90, 150) : IM_COL32(60, 45, 30, 150));
+			List.AddQuadFilled(track[i], track[i + 1], ground[i + 1], ground[i], fill ?IM_COL32(190, 150, 90, 150) : IM_COL32(60, 45, 30, 150));
 		}
 	List.Flags = flags;
 	List.AddPolyline(ground.data(), static_cast<int>(ground.size()), IM_COL32(150, 190, 110, 255), 0, 1.5f);
@@ -5630,29 +5634,11 @@ void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 
 } // namespace
 
-void editor_mode::render_first_steps()
+// a lesson of the tutorial: its clip or sketch, the mouse and the keys it teaches, the steps to try and the button under it
+struct editor_mode::tutorial_lesson
 {
-	if (false == m_first_steps_open)
-	{
-		if (false == m_tutorial_clip.path().empty())
-			m_tutorial_clip.close();
-		return;
-	}
-	if (ui()->mode() == nodebank_panel::TRACK)
-		first_step_done(first_step::tracks);
-	if (m_lay.active)
-		first_step_done(first_step::lay);
-	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && selected_track() != nullptr)
-		first_step_done(first_step::select);
-	if (current_work_area() == work_area::terrain)
-		first_step_done(first_step::terrain);
-	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && false == m_route.chain.tracks.empty())
-		first_step_done(first_step::plan);
-	if (ui()->mode() == nodebank_panel::TRACK && m_track_gizmo_on)
-		first_step_done(first_step::gizmo);
-	if (m_track_gizmo_using || (m_point_drag.moved && m_track_point.valid() && false == editor_track::is_end(m_track_point.kind)))
-		first_step_done(first_step::vector);
-	enum class trial { none, top, lay, turnout, select, profile, terrain, plan, trainset, signals };
+	// what the button under a lesson does: opens the tool the lesson is about, or switches the view
+	enum class trial { reading, top, lay, turnout, select, profile, terrain, plan, trainset, signals };
 	struct input
 	{
 		char const *keys;
@@ -5663,16 +5649,18 @@ void editor_mode::render_first_steps()
 		first_step step;
 		char const *text;
 	};
-	struct lesson
-	{
-		char const *title;
-		char const *clip;
-		std::vector<input> inputs;
-		std::vector<goal> goals;
-		trial action;
-		void (*sketch)(ImDrawList &, ImVec2, ImVec2, double){nullptr};
-	};
-	static std::vector<lesson> const lessons{
+	char const *title;
+	char const *clip;
+	std::vector<input> inputs;
+	std::vector<goal> goals;
+	trial action;
+	void (*sketch)(ImDrawList &, ImVec2, ImVec2, double){nullptr};
+};
+
+std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
+{
+	using trial = tutorial_lesson::trial;
+	static std::vector<tutorial_lesson> const lessons{
 	    {"Looking around",
 	     "camera",
 	     {{"RMB + move", "Hold the right mouse button and move the mouse to look around"},
@@ -5820,7 +5808,7 @@ void editor_mode::render_first_steps()
 	      {"P", "Heights saved by an older editor are read as they were saved"},
 	      {"Ctrl + S", "Saving writes only what was changed; the rest of the files stays as it was"}},
 	     {},
-	     trial::none},
+	     trial::reading},
 	    {"Saving and driving",
 	     nullptr,
 	     {{"Ctrl + S", "Saves the scenery"},
@@ -5831,39 +5819,75 @@ void editor_mode::render_first_steps()
 	     trial::trainset,
 	     tutorial_trainset_sketch},
 	};
-	auto const done = [&](lesson const &Lesson) {
-		return false == Lesson.goals.empty() && std::all_of(Lesson.goals.begin(), Lesson.goals.end(), [&](goal const &Goal) { return m_first_steps_done[static_cast<std::size_t>(Goal.step)]; });
-	};
-	auto const open_lesson = [&](std::string_view const Title) {
-		for (std::size_t i = 0; i < lessons.size(); ++i)
-			if (Title == lessons[i].title)
-				m_tutorial_page = static_cast<int>(i);
-	};
-	auto const undone = [&](std::initializer_list<char const *> Titles) -> char const * {
+	return lessons;
+}
+
+bool editor_mode::tutorial_done(tutorial_lesson const &Lesson) const
+{
+	return false == Lesson.goals.empty() && std::ranges::all_of(Lesson.goals, [this](tutorial_lesson::goal const &Goal) { return m_first_steps_done[static_cast<std::size_t>(Goal.step)]; });
+}
+
+void editor_mode::note_first_steps()
+{
+	if (ui()->mode() == nodebank_panel::TRACK)
+		first_step_done(first_step::tracks);
+	if (m_lay.active)
+		first_step_done(first_step::lay);
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::path && selected_track() != nullptr)
+		first_step_done(first_step::select);
+	if (current_work_area() == work_area::terrain)
+		first_step_done(first_step::terrain);
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && false == m_route.chain.tracks.empty())
+		first_step_done(first_step::plan);
+	if (ui()->mode() == nodebank_panel::TRACK && m_track_gizmo_on)
+		first_step_done(first_step::gizmo);
+	if (m_track_gizmo_using || (m_point_drag.moved && m_track_point.valid() && false == editor_track::is_end(m_track_point.kind)))
+		first_step_done(first_step::vector);
+}
+
+char const *editor_mode::tutorial_of_tool()
+{
+	auto const &lessons{tutorial_lessons()};
+	// the first of the lessons named whose steps aren't all reached yet
+	auto const undone = [&](std::initializer_list<char const *> const Titles) {
 		for (auto const *title : Titles)
-			for (auto const &entry : lessons)
-				if (std::string_view{title} == entry.title && false == done(entry))
-					return title;
+			if (auto const found{std::ranges::find_if(lessons, [title](tutorial_lesson const &Lesson) { return std::string_view{title} == Lesson.title; })};
+			    found != lessons.end() && false == tutorial_done(*found))
+				return title;
 		return "";
 	};
-	// the lesson of what's being done now, the next one once its goals are reached; opened when that changes, so a page turned by hand stays
-	char const *followed{""};
 	if (m_lay.active)
-		followed = undone({"Laying track", "Radius of the curves at the bends", "Curves", "Joining tracks"});
-	else if (current_work_area() == work_area::terrain)
-		followed = undone({"Terrain from the terrain model"});
-	else if (ui()->mode() == nodebank_panel::TRACK)
+		return undone({"Laying track", "Radius of the curves at the bends", "Curves", "Joining tracks"});
+	if (current_work_area() == work_area::terrain)
+		return undone({"Terrain from the terrain model"});
+	if (ui()->mode() != nodebank_panel::TRACK)
+		return "";
+	switch (m_track_tab)
 	{
-		if (m_track_tab == track_tab::turnout)
-			followed = m_switch_designer.open ? undone({"Switch templates"}) : undone({"Switches"});
-		else if (m_track_tab == track_tab::profile)
-			followed = undone({"The grade line"});
-		else if (m_track_tab == track_tab::route || m_track_tab == track_tab::straights)
-			followed = undone({"Correcting a curve"});
-		else if (m_track_tab == track_tab::srk)
-			followed = undone({"Signals and posts"});
+	case track_tab::turnout:
+		return undone({m_switch_designer.open ? "Switch templates" : "Switches"});
+	case track_tab::profile:
+		return undone({"The grade line"});
+	case track_tab::route:
+	case track_tab::straights:
+		return undone({"Correcting a curve"});
+	case track_tab::srk:
+		return undone({"Signals and posts"});
+	default:
+		return "";
 	}
-	if (m_tutorial_followed != followed)
+}
+
+void editor_mode::follow_tutorial()
+{
+	auto const &lessons{tutorial_lessons()};
+	auto const open_lesson = [&](std::string_view const Title) {
+		if (auto const found{std::ranges::find_if(lessons, [Title](tutorial_lesson const &Lesson) { return Title == Lesson.title; })}; found != lessons.end())
+			m_tutorial_page = static_cast<int>(found - lessons.begin());
+	};
+	// the lesson of what's being done now, the next one once its steps are reached; opened when that changes, so a page turned by
+	// hand stays
+	if (auto const *followed{tutorial_of_tool()}; m_tutorial_followed != followed)
 	{
 		m_tutorial_followed = followed;
 		open_lesson(followed);
@@ -5882,6 +5906,20 @@ void editor_mode::render_first_steps()
 		m_tutorial_clip.open(path);
 		m_tutorial_since = ImGui::GetTime();
 	}
+}
+
+void editor_mode::render_first_steps()
+{
+	if (false == m_first_steps_open)
+	{
+		if (false == m_tutorial_clip.path().empty())
+			m_tutorial_clip.close();
+		return;
+	}
+	note_first_steps();
+	follow_tutorial();
+	auto const &lessons{tutorial_lessons()};
+	auto const &lesson{lessons[m_tutorial_page]};
 	auto const scale{Global.ui_scale};
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowBgAlpha(1.0f);
@@ -5895,170 +5933,176 @@ void editor_mode::render_first_steps()
 		ImGui::TextDisabled(STR_C("Lesson %d of %d"), m_tutorial_page + 1, static_cast<int>(lessons.size()));
 		ImGui::SameLine();
 		ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", STR_C(lesson.title));
-		if (lesson.clip != nullptr && false == m_tutorial_clip.missing())
-		{
-			// the room of a clip still loading, as the clips are recorded: 520 x 325
-			auto const height{width * 325.0f / 520.0f};
-			if (auto const texture{m_tutorial_clip.texture(ImGui::GetTime() - m_tutorial_since)}; texture != 0)
-			{
-				ImGui::Image(static_cast<ImTextureID>(texture), ImVec2(width, width * m_tutorial_clip.height() / std::max(1, m_tutorial_clip.width())));
-				if (ImGui::IsItemClicked())
-					m_tutorial_since = ImGui::GetTime();
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s", STR_C("Click: play it from the start"));
-			}
-			else
-			{
-				auto const at{ImGui::GetCursorScreenPos()};
-				ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + width, at.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg));
-				ImGui::Dummy(ImVec2(width, height));
-			}
-		}
-		if (lesson.sketch != nullptr)
-		{
-			auto const at{ImGui::GetCursorScreenPos()};
-			ImVec2 const end{at.x + width, at.y + std::round(width * 0.36f)};
-			auto *list{ImGui::GetWindowDrawList()};
-			list->AddRectFilled(at, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
-			list->PushClipRect(at, end, true);
-			lesson.sketch(*list, at, end, ImGui::GetTime());
-			list->PopClipRect();
-			ImGui::Dummy(ImVec2(width, end.y - at.y));
-		}
-		ImGui::SeparatorText(STR_C("Mouse and keys"));
-		for (auto const &entry : lesson.inputs)
-			tutorial_input(entry.keys, entry.text, 150.0f * scale);
-		if (false == lesson.goals.empty())
-			ImGui::SeparatorText(STR_C("Try it"));
-		for (auto const &entry : lesson.goals)
-		{
-			bool const reached{m_first_steps_done[static_cast<std::size_t>(entry.step)]};
-			ImGui::TextColored(reached ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", reached ? "[x]" : "[ ]");
-			ImGui::SameLine();
-			if (reached)
-				ImGui::TextDisabled("%s", STR_C(entry.text));
-			else
-				ImGui::TextWrapped("%s", STR_C(entry.text));
-		}
-		if (lesson.action == trial::lay && ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
-			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("There is no ground under the mouse: the track will lie flat at height 0. Real ground: F5"));
-		switch (lesson.action)
-		{
-		case trial::top:
-			if (ImGui::Button(Global.EditorOrtho ? STR_C("3D view (O)") : STR_C("Top view, orthographic (O)")))
-				toggle_ortho();
-			break;
-		case trial::profile:
-		{
-			auto const on{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::profile};
-			ImGui::BeginDisabled(on);
-			if (ImGui::Button(STR_C("The profile tool (P)")))
-			{
-				choose_work_area(work_area::tracks);
-				show_track_tab(track_tab::profile);
-			}
-			ImGui::EndDisabled();
-			break;
-		}
-		case trial::signals:
-		{
-			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::srk);
-			if (ImGui::Button(STR_C("The signalling tool (I)")))
-			{
-				choose_work_area(work_area::tracks);
-				show_track_tab(track_tab::srk);
-			}
-			ImGui::EndDisabled();
-			break;
-		}
-		case trial::trainset:
-		{
-			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::lineside && m_vehicle.tab().open);
-			if (ImGui::Button(STR_C("The trainset tool")))
-			{
-				choose_work_area(work_area::tracks);
-				show_track_tab(track_tab::lineside);
-				m_vehicle.tab().expand = true;
-			}
-			ImGui::EndDisabled();
-			break;
-		}
-		case trial::plan:
-		{
-			ImGui::BeginDisabled(ui()->mode() == nodebank_panel::TRACK && (m_track_tab == track_tab::route || m_track_tab == track_tab::straights));
-			if (ImGui::Button(STR_C("The plan tool (G)")))
-			{
-				choose_work_area(work_area::tracks);
-				show_track_tab(track_tab::straights);
-			}
-			ImGui::EndDisabled();
-			break;
-		}
-		case trial::terrain:
-		{
-			ImGui::BeginDisabled(current_work_area() == work_area::terrain);
-			if (ImGui::Button(STR_C("Terrain (F5)")))
-				choose_work_area(work_area::terrain);
-			ImGui::EndDisabled();
-			break;
-		}
-		case trial::lay:
-		case trial::turnout:
-		case trial::select:
-		{
-			auto const tab{lesson.action == trial::lay ? track_tab::lay : lesson.action == trial::turnout ? track_tab::turnout : track_tab::path};
-			auto const on{ui()->mode() == nodebank_panel::TRACK && m_track_tab == tab};
-			ImGui::BeginDisabled(on);
-			if (ImGui::Button(lesson.action == trial::lay ? STR_C("Lay track (L)") : lesson.action == trial::turnout ? STR_C("The switch tool (T)") : STR_C("The select tool (Esc)")))
-			{
-				choose_work_area(work_area::tracks);
-				show_track_tab(tab);
-			}
-			ImGui::EndDisabled();
-			break;
-		}
-		default: break;
-		}
+		render_tutorial_media(lesson, width);
+		render_tutorial_goals(lesson);
+		render_tutorial_trial(lesson);
 		ImGui::PopTextWrapPos();
 		ImGui::Separator();
-		ImGui::BeginDisabled(m_tutorial_page == 0);
-		if (ImGui::Button(STR_C("< Back")))
-			--m_tutorial_page;
-		ImGui::EndDisabled();
-		ImGui::SameLine();
-		auto const dot{ImGui::GetFrameHeight()};
-		for (int index = 0; index < static_cast<int>(lessons.size()); ++index)
-		{
-			ImGui::PushID(index);
-			auto const at{ImGui::GetCursorScreenPos()};
-			if (ImGui::InvisibleButton("##lesson", ImVec2(dot * 0.8f, dot)))
-				m_tutorial_page = index;
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C(lessons[index].title));
-			ImVec2 const centre{at.x + dot * 0.4f, at.y + dot * 0.5f};
-			auto const colour{done(lessons[index]) ? IM_COL32(100, 230, 100, 255) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
-			if (index == m_tutorial_page)
-				ImGui::GetWindowDrawList()->AddCircle(centre, dot * 0.3f, kGestureLit, 0, 2.0f);
-			ImGui::GetWindowDrawList()->AddCircleFilled(centre, dot * 0.17f, colour);
-			ImGui::PopID();
-			ImGui::SameLine(0.0f, 0.0f);
-		}
-		ImGui::SameLine();
-		if (m_tutorial_page + 1 < static_cast<int>(lessons.size()))
-		{
-			if (ImGui::Button(STR_C("Next >")))
-				++m_tutorial_page;
-		}
-		else if (ImGui::Button(STR_C("Close")))
-			m_first_steps_open = false;
-		bool show{EditorSettings.first_steps()};
-		if (ImGui::Checkbox(STR_C("Show when the editor opens"), &show))
-		{
-			EditorSettings.first_steps(show);
-			EditorSettings.save();
-		}
+		render_tutorial_pages();
 	}
 	ImGui::End();
+}
+
+void editor_mode::render_tutorial_media(tutorial_lesson const &Lesson, float const Width)
+{
+	if (Lesson.clip != nullptr && false == m_tutorial_clip.missing())
+	{
+		// the room of a clip still loading, as the clips are recorded: 520 x 325
+		auto const height{Width * 325.0f / 520.0f};
+		if (auto const texture{m_tutorial_clip.texture(ImGui::GetTime() - m_tutorial_since)}; texture != 0)
+		{
+			auto const shown{Width * static_cast<float>(m_tutorial_clip.height()) / static_cast<float>(std::max(1, m_tutorial_clip.width()))};
+			ImGui::Image(static_cast<ImTextureID>(texture), ImVec2(Width, shown));
+			if (ImGui::IsItemClicked())
+				m_tutorial_since = ImGui::GetTime();
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("Click: play it from the start"));
+		}
+		else
+		{
+			auto const at{ImGui::GetCursorScreenPos()};
+			ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + Width, at.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg));
+			ImGui::Dummy(ImVec2(Width, height));
+		}
+	}
+	if (Lesson.sketch != nullptr)
+	{
+		auto const at{ImGui::GetCursorScreenPos()};
+		ImVec2 const end{at.x + Width, at.y + std::round(Width * 0.36f)};
+		auto *list{ImGui::GetWindowDrawList()};
+		list->AddRectFilled(at, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+		list->PushClipRect(at, end, true);
+		Lesson.sketch(*list, at, end, ImGui::GetTime());
+		list->PopClipRect();
+		ImGui::Dummy(ImVec2(Width, end.y - at.y));
+	}
+}
+
+void editor_mode::render_tutorial_goals(tutorial_lesson const &Lesson)
+{
+	ImGui::SeparatorText(STR_C("Mouse and keys"));
+	for (auto const &entry : Lesson.inputs)
+		tutorial_input(entry.keys, entry.text, 150.0f * Global.ui_scale);
+	if (false == Lesson.goals.empty())
+		ImGui::SeparatorText(STR_C("Try it"));
+	for (auto const &entry : Lesson.goals)
+	{
+		bool const reached{m_first_steps_done[static_cast<std::size_t>(entry.step)]};
+		ImGui::TextColored(reached ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s", reached ? "[x]" : "[ ]");
+		ImGui::SameLine();
+		if (reached)
+			ImGui::TextDisabled("%s", STR_C(entry.text));
+		else
+			ImGui::TextWrapped("%s", STR_C(entry.text));
+	}
+	if (Lesson.action == tutorial_lesson::trial::lay && ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("There is no ground under the mouse: the track will lie flat at height 0. Real ground: F5"));
+}
+
+void editor_mode::render_tutorial_trial(tutorial_lesson const &Lesson)
+{
+	using trial = tutorial_lesson::trial;
+	if (Lesson.action == trial::top)
+	{
+		if (ImGui::Button(Global.EditorOrtho ? STR_C("3D view (O)") : STR_C("Top view, orthographic (O)")))
+			toggle_ortho();
+		return;
+	}
+	if (Lesson.action == trial::terrain)
+	{
+		ImGui::BeginDisabled(current_work_area() == work_area::terrain);
+		if (ImGui::Button(STR_C("Terrain (F5)")))
+			choose_work_area(work_area::terrain);
+		ImGui::EndDisabled();
+		return;
+	}
+	// a tool of Tracks: the tab its button opens, and the one beside it which counts as that tool open as well
+	struct tool_button
+	{
+		char const *label;
+		track_tab tab;
+		track_tab also;
+	};
+	tool_button button{};
+	switch (Lesson.action)
+	{
+	case trial::lay:
+		button = {STR_C("Lay track (L)"), track_tab::lay, track_tab::lay};
+		break;
+	case trial::turnout:
+		button = {STR_C("The switch tool (T)"), track_tab::turnout, track_tab::turnout};
+		break;
+	case trial::select:
+		button = {STR_C("The select tool (Esc)"), track_tab::path, track_tab::path};
+		break;
+	case trial::profile:
+		button = {STR_C("The profile tool (P)"), track_tab::profile, track_tab::profile};
+		break;
+	case trial::signals:
+		button = {STR_C("The signalling tool (I)"), track_tab::srk, track_tab::srk};
+		break;
+	case trial::plan:
+		button = {STR_C("The plan tool (G)"), track_tab::straights, track_tab::route};
+		break;
+	case trial::trainset:
+		button = {STR_C("The trainset tool"), track_tab::lineside, track_tab::lineside};
+		break;
+	default:
+		return;
+	}
+	// the trainset tool is open only with its part of the tab expanded
+	auto const in_use{ui()->mode() == nodebank_panel::TRACK && (m_track_tab == button.tab || m_track_tab == button.also) && (Lesson.action != trial::trainset || m_vehicle.tab().open)};
+	ImGui::BeginDisabled(in_use);
+	if (ImGui::Button(button.label))
+	{
+		choose_work_area(work_area::tracks);
+		show_track_tab(button.tab);
+		if (Lesson.action == trial::trainset)
+			m_vehicle.tab().expand = true;
+	}
+	ImGui::EndDisabled();
+}
+
+void editor_mode::render_tutorial_pages()
+{
+	auto const &lessons{tutorial_lessons()};
+	auto const count{static_cast<int>(lessons.size())};
+	ImGui::BeginDisabled(m_tutorial_page == 0);
+	if (ImGui::Button(STR_C("< Back")))
+		--m_tutorial_page;
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	auto const dot{ImGui::GetFrameHeight()};
+	for (int index = 0; index < count; ++index)
+	{
+		ImGui::PushID(index);
+		auto const at{ImGui::GetCursorScreenPos()};
+		if (ImGui::InvisibleButton("##lesson", ImVec2(dot * 0.8f, dot)))
+			m_tutorial_page = index;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C(lessons[index].title));
+		ImVec2 const centre{at.x + dot * 0.4f, at.y + dot * 0.5f};
+		auto const colour{tutorial_done(lessons[index]) ? IM_COL32(100, 230, 100, 255) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
+		if (index == m_tutorial_page)
+			ImGui::GetWindowDrawList()->AddCircle(centre, dot * 0.3f, kGestureLit, 0, 2.0f);
+		ImGui::GetWindowDrawList()->AddCircleFilled(centre, dot * 0.17f, colour);
+		ImGui::PopID();
+		ImGui::SameLine(0.0f, 0.0f);
+	}
+	ImGui::SameLine();
+	if (m_tutorial_page + 1 < count)
+	{
+		if (ImGui::Button(STR_C("Next >")))
+			++m_tutorial_page;
+	}
+	else if (ImGui::Button(STR_C("Close")))
+		m_first_steps_open = false;
+	bool show{EditorSettings.first_steps()};
+	if (ImGui::Checkbox(STR_C("Show when the editor opens"), &show))
+	{
+		EditorSettings.first_steps(show);
+		EditorSettings.save();
+	}
 }
 
 void editor_mode::render_shortcuts_window()
