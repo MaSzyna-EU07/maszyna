@@ -4189,7 +4189,7 @@ void srk_tool::fit_heads()
 			changes.files.emplace_back(head.instance, head.fit);
 	if (changes.files.empty())
 	{
-		m_status = std::ranges::any_of(m_heads, [](head_check const &Head) { return false == Head.fits; }) ?STR_C("No template has what the signals marked need") : STR_C("The signals have what they need already");
+		m_status = std::ranges::any_of(m_heads, [](head_check const &Head) { return false == Head.fits; }) ? STR_C("No template has what the signals marked need") : STR_C("The signals have what they need already");
 		return;
 	}
 	std::string error;
