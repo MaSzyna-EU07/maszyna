@@ -26,14 +26,13 @@ namespace {
 // whether the plain sleepers of the two paths would meet anywhere, so they lie on timbers together there
 bool share_anywhere( sampled_path const &Left, sampled_path const &Right ) {
 
-    auto const margin { Left.half + Right.half + half_width + end_gap };
-    if( Left.low.x > Right.high.x + margin || Right.low.x > Left.high.x + margin || Left.low.y > Right.high.y + margin || Right.low.y > Left.high.y + margin ) {
+    if( auto const margin { Left.half + Right.half + half_width + end_gap }; Left.low.x > Right.high.x + margin || Right.low.x > Left.high.x + margin || Left.low.y > Right.high.y + margin || Right.low.y > Left.high.y + margin ) {
         return false;
     }
-    for( auto const &pair : { std::make_pair( &Left, &Right ), std::make_pair( &Right, &Left ) } ) {
-        auto const &path { *pair.first };
+    for( auto const &[ own, other ] : { std::make_pair( &Left, &Right ), std::make_pair( &Right, &Left ) } ) {
+        auto const &path { *own };
         for( std::size_t index = 0; index < path.points.size(); ++index ) {
-            if( shares_with( path, path.points[ index ], heading( path, path.distances[ index ] ), *pair.second ) ) {
+            if( shares_with( path, path.points[ index ], heading( path, path.distances[ index ] ), *other ) ) {
                 return true;
             }
         }
@@ -41,18 +40,50 @@ bool share_anywhere( sampled_path const &Left, sampled_path const &Right ) {
     return false;
 }
 
+// the tracks whose plain sleepers would meet those of the track, put in the cluster where they're not in it yet
+void reach_from( TTrack &Track, std::vector<TTrack *> &Cluster ) {
+
+    auto const around { paths_around( Track ) };
+    for( auto const &path : around ) {
+        if( path.track != &Track ) {
+            continue;
+        }
+        for( auto const &other : around ) {
+            if( other.track == &Track || std::ranges::find( Cluster, other.track ) != Cluster.end() ) {
+                continue;
+            }
+            if( share_anywhere( path, other ) ) {
+                Cluster.push_back( other.track );
+            }
+        }
+    }
+}
+
+// whether the point of the path is beside the other path so close that their sleepers can't be laid apart
+bool runs_beside( sampled_path const &Path, glm::dvec3 const &Point, sampled_path const &Other ) {
+
+    double gap { 0.0 };
+    glm::dvec2 direction { 0.0 };
+    return beside( Other, Point, shared_spacing( Path, Other ), gap, direction );
+}
+
+// whether the two paths cross each other at one of the crossings
+bool cross_each_other( sampled_path const &Path, sampled_path const &Other, std::vector<feature> const &Crossings ) {
+
+    return std::ranges::any_of( Crossings, [ &Path, &Other ]( feature const &Feature ) {
+        return ( Feature.paths[ 0 ] == &Path && Feature.paths[ 1 ] == &Other ) || ( Feature.paths[ 0 ] == &Other && Feature.paths[ 1 ] == &Path ); } );
+}
+
 // the stretches of the path where another path of the cluster runs so near that their plain sleepers would meet
 std::vector<glm::dvec2> zones_of( sampled_path const &Path, std::vector<sampled_path> const &Paths, std::vector<feature> const &Crossings ) {
 
-    return stretches_where( Path, [&]( glm::dvec3 const &Point, glm::dvec2 const &Direction ) {
-        return std::any_of( Paths.begin(), Paths.end(), [&]( sampled_path const &Other ) {
+    return stretches_where( Path, [ &Path, &Paths, &Crossings ]( glm::dvec3 const &Point, glm::dvec2 const &Direction ) {
+        return std::ranges::any_of( Paths, [ &Path, &Crossings, &Point, &Direction ]( sampled_path const &Other ) {
             if( &Other == &Path ) {
                 return false;
             }
             // tracks crossing share the timbers where their sleepers would meet, others only where they're too close to part them
-            auto const crossed { std::any_of( Crossings.begin(), Crossings.end(), [&]( feature const &Feature ) {
-                return ( Feature.paths[ 0 ] == &Path && Feature.paths[ 1 ] == &Other ) || ( Feature.paths[ 0 ] == &Other && Feature.paths[ 1 ] == &Path ); } ) };
-            if( crossed ) {
+            if( cross_each_other( Path, Other, Crossings ) ) {
                 return shares_with( Path, Point, Direction, Other );
             }
             double gap;
@@ -65,23 +96,112 @@ std::vector<glm::dvec2> without( std::vector<glm::dvec2> const &Stretches, std::
 
     std::vector<glm::dvec2> result { Stretches };
     for( auto const &taken : Taken ) {
-        std::vector<glm::dvec2> left;
+        std::vector<glm::dvec2> remaining;
         for( auto const &stretch : result ) {
             if( stretch.y <= taken.x || stretch.x >= taken.y ) {
-                left.push_back( stretch );
+                remaining.push_back( stretch );
                 continue;
             }
             if( stretch.x < taken.x ) {
-                left.emplace_back( stretch.x, taken.x );
+                remaining.emplace_back( stretch.x, taken.x );
             }
             if( stretch.y > taken.y ) {
-                left.emplace_back( taken.y, stretch.y );
+                remaining.emplace_back( taken.y, stretch.y );
             }
         }
-        result = std::move( left );
+        result = std::move( remaining );
     }
-    result.erase( std::remove_if( result.begin(), result.end(), [&]( glm::dvec2 const &Stretch ) { return Stretch.y - Stretch.x < Least; } ), result.end() );
+    std::erase_if( result, [ Least ]( glm::dvec2 const &Stretch ) { return Stretch.y - Stretch.x < Least; } );
     return result;
+}
+
+// the stretches of the line the rails take: of the path laying it, of the paths it carries and of those it keeps clear of
+std::vector<band> bands_on( sampled_path const &Path, glm::dvec2 const &Forward, glm::dvec2 const &Along, std::vector<crossing> const &Members, std::vector<crossing> const &Others ) {
+
+    std::vector bands { band_of( Path, 0.0, std::max( crossing_sine_min, std::abs( glm::dot( Forward, Along ) ) ), Forward ) };
+    for( auto const *listed : { &Members, &Others } ) {
+        for( auto const &crossing : *listed ) {
+            if( crossing.carried ) {
+                bands.push_back( band_of( *crossing.path, crossing.across, crossing.sine, crossing.direction ) );
+            }
+            else if( crossing.sine >= crossing_sine_min && angle_between( crossing.direction, Forward ) < grid_angle ) {
+                bands.push_back( band_of( *crossing.path, crossing.across, crossing.sine, crossing.direction, false ) );
+            }
+        }
+    }
+    return bands;
+}
+
+// which way each beam of the line lies, those under the rails of one track alone turned toward square to it
+std::vector<glm::dvec2> piece_ways( std::vector<band> const &Bands, std::vector<piece> const &Pieces, glm::dvec2 const &Along ) {
+
+    // the parts of a timber parted between tracks going apart turn square to their own track, the more the further apart the
+    // tracks run, till square where their plain sleepers wouldn't touch any more
+    std::vector turned( Pieces.size(), Along );
+    if( Pieces.size() < 2 ) {
+        return turned;
+    }
+    for( std::size_t index = 0; index < Pieces.size(); ++index ) {
+        auto const *own { Pieces[ index ].single };
+        if( own == nullptr ) {
+            continue;
+        }
+        band const *nearest { nullptr };
+        for( auto const &other : Bands ) {
+            if( &other != own && other.carried && ( nearest == nullptr || std::abs( other.centre - own->centre ) < std::abs( nearest->centre - own->centre ) ) ) {
+                nearest = &other;
+            }
+        }
+        if( nearest == nullptr ) {
+            continue;
+        }
+        auto const spacing { std::abs( nearest->centre - own->centre ) * std::min( own->sine, nearest->sine ) };
+        auto const parted { shared_spacing( *own->path, *nearest->path ) };
+        auto const touching { own->path->half + nearest->path->half + end_gap };
+        auto const share { touching > parted ? std::clamp( ( spacing - parted ) / ( touching - parted ), 0.0, 1.0 ) : 1.0 };
+        turned[ index ] = rotated( Along, share * turn_off( Along, own->direction ) );
+    }
+    return turned;
+}
+
+// which way the beam of the line carrying the rails of the path alone lies, the way of the line where none does
+glm::dvec2 turned_for( std::vector<piece> const &Pieces, std::vector<glm::dvec2> const &Turned, sampled_path const *Path, glm::dvec2 const &Along ) {
+
+    for( std::size_t index = 0; index < Pieces.size(); ++index ) {
+        if( Pieces[ index ].single != nullptr && Pieces[ index ].single->path == Path ) {
+            return Turned[ index ];
+        }
+    }
+    return Along;
+}
+
+// whether the beam keeps clear of the beams laid before it about it
+bool clear_of( plan_grid<beam_box> const &Laid, beam_box const &Box ) {
+
+    return Laid.all_about( Box.centre, Box.half + half_width, [ &Box ]( beam_box const &Other ) { return apart( Box, Other ); } );
+}
+
+// the beam shortened at either end or both till it's clear of the beams laid before it, none where it can't be
+std::optional<beam> shortened_clear( beam const &Beam, double const Length, plan_grid<beam_box> const &Laid ) {
+
+    auto const direction { ( Beam.to - Beam.from ) / Length };
+    auto const most { std::max( 0.0, Beam.corefrom - beam_overhang_min ) }; // off the from end
+    auto const mostto { std::max( 0.0, Length - Beam.coreto - beam_overhang_min ) };
+    for( int step = 1; step <= 20; ++step ) {
+        auto const share { step / 20.0 };
+        for( auto const ends : { glm::dvec2 { 0.0, mostto * share }, glm::dvec2 { most * share, 0.0 }, glm::dvec2 { most * share, mostto * share } } ) {
+            auto shortened { Beam };
+            shortened.from = Beam.from + direction * ends.x;
+            shortened.to = Beam.to - direction * ends.y;
+            shortened.corefrom -= ends.x;
+            shortened.coreto -= ends.x;
+            if( clear_of( Laid, box_of( shortened ) ) ) {
+                shortened.plain = false;
+                return shortened;
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 // the beams of a cluster of tracks, laid together: lines of timbers led along the paths near other paths one after another, each
@@ -90,7 +210,7 @@ std::vector<glm::dvec2> without( std::vector<glm::dvec2> const &Stretches, std::
 class cluster_layout {
 
 public:
-    cluster_layout( std::vector<TTrack *> const &Tracks, std::uint64_t const Epoch ) :
+    cluster_layout( std::span<TTrack * const> const Tracks, std::uint64_t const Epoch ) :
         tracks( Tracks ), epoch( Epoch ) {}
 
     std::shared_ptr<cluster_beams> lay() {
@@ -103,16 +223,8 @@ public:
                 paths.emplace_back( sample( *track, path ) );
             }
         }
-        paths.erase( std::remove_if( paths.begin(), paths.end(), []( sampled_path const &Path ) { return Path.points.size() < 2; } ), paths.end() );
-        for( auto *track : tracks ) {
-            for( auto &other : paths_around( *track ) ) {
-                if( std::find( tracks.begin(), tracks.end(), other.track ) != tracks.end()
-                 || std::any_of( context.begin(), context.end(), [&]( sampled_path const &Known ) { return Known.track == other.track && Known.path == other.path; } ) ) {
-                    continue;
-                }
-                context.emplace_back( std::move( other ) );
-            }
-        }
+        std::erase_if( paths, []( sampled_path const &Path ) { return Path.points.size() < 2; } );
+        gather_context();
         features = find_features( paths );
         for( auto const &feature : features ) {
             if( false == feature.frog && false == feature.grid ) {
@@ -125,26 +237,7 @@ public:
         for( std::size_t index = 0; index < paths.size(); ++index ) {
             zones[ index ] = ( tracks.size() > 1 || paths.size() > 1 ? zones_of( paths[ index ], paths, crossings ) : std::vector<glm::dvec2> {} );
         }
-        // the lines of timbers, led along the path first by priority with a stretch near another path no line carries yet
-        for( std::size_t round = 0; round < 1000; ++round ) {
-            auto best { paths.size() };
-            glm::dvec2 stretch { 0.0 };
-            for( std::size_t index = 0; index < paths.size(); ++index ) {
-                auto const left { without( zones[ index ], covered( index ), 0.3 ) };
-                if( left.empty() ) {
-                    continue;
-                }
-                if( best == paths.size() || before( paths[ index ], paths[ best ] ) ) {
-                    best = index;
-                    stretch = *std::max_element( left.begin(), left.end(), []( glm::dvec2 const &Left, glm::dvec2 const &Right ) { return Left.y - Left.x < Right.y - Right.x; } );
-                }
-            }
-            if( best == paths.size() ) {
-                break;
-            }
-            lead( best, stretch );
-            done[ best ].push_back( stretch );
-        }
+        lead_lines();
         // the plain sleepers of each path, between the timbers carrying it and its ends
         for( std::size_t index = 0; index < paths.size(); ++index ) {
             lay_plain( index );
@@ -164,7 +257,7 @@ private:
         beam value;
     };
 
-    std::vector<TTrack *> const &tracks;
+    std::span<TTrack * const> const tracks;
     std::uint64_t const epoch; // of the layout the tracks are laid out for
     std::vector<sampled_path> paths; // of the tracks of the cluster
     std::vector<sampled_path> context; // of the tracks about them, whose rails and sleepers the beams keep clear of
@@ -179,6 +272,44 @@ private:
     std::vector<std::vector<record>> records; // the lines of timbers carrying each path
     std::vector<std::vector<glm::dvec2>> done; // the stretches of each path lines were led along
     std::vector<owned> beams;
+
+    // the paths of the tracks about the cluster, not of it, each taken once
+    void gather_context() {
+
+        for( auto *track : tracks ) {
+            for( auto &other : paths_around( *track ) ) {
+                if( std::ranges::find( tracks, other.track ) != tracks.end()
+                 || std::ranges::any_of( context, [ &other ]( sampled_path const &Known ) { return Known.track == other.track && Known.path == other.path; } ) ) {
+                    continue;
+                }
+                context.emplace_back( std::move( other ) );
+            }
+        }
+    }
+
+    // the lines of timbers, led along the path first by priority with a stretch near another path no line carries yet
+    void lead_lines() {
+
+        for( std::size_t pass = 0; pass < 1000; ++pass ) {
+            auto best { paths.size() };
+            glm::dvec2 stretch { 0.0 };
+            for( std::size_t index = 0; index < paths.size(); ++index ) {
+                auto const remaining { without( zones[ index ], covered( index ), 0.3 ) };
+                if( remaining.empty() ) {
+                    continue;
+                }
+                if( best == paths.size() || before( paths[ index ], paths[ best ] ) ) {
+                    best = index;
+                    stretch = *std::ranges::max_element( remaining, []( glm::dvec2 const &Left, glm::dvec2 const &Right ) { return Left.y - Left.x < Right.y - Right.x; } );
+                }
+            }
+            if( best == paths.size() ) {
+                break;
+            }
+            lead( best, stretch );
+            done[ best ].push_back( stretch );
+        }
+    }
 
     // the stretches of the path the lines laid so far carry it on, and those lines were led along
     std::vector<glm::dvec2> covered( std::size_t const Index ) const {
@@ -197,7 +328,8 @@ private:
             }
             result.emplace_back( start - 0.5 * pitch, last + 0.5 * pitch );
             if( index < at.size() ) {
-                start = last = at[ index ];
+                start = at[ index ];
+                last = at[ index ];
             }
         }
         return result;
@@ -223,7 +355,7 @@ private:
                 result.push_back( feature.at[ side ] + 0.5 * other->gauge / sine );
             }
         }
-        std::sort( result.begin(), result.end() );
+        std::ranges::sort( result );
         return result;
     }
 
@@ -232,8 +364,7 @@ private:
 
         std::optional<record> result;
         for( auto const &line : records[ Index ] ) {
-            auto const along { ( line.at - Distance ) * Side };
-            if( along < -0.25 * pitch || along > Reach ) {
+            if( auto const along { ( line.at - Distance ) * Side }; along < -0.25 * pitch || along > Reach ) {
                 continue;
             }
             if( false == result.has_value() || std::abs( line.at - Distance ) < std::abs( result->at - Distance ) ) {
@@ -250,8 +381,8 @@ private:
         for( auto const &line : records[ Index ] ) {
             result.push_back( line.at );
         }
-        std::sort( result.begin(), result.end() );
-        result.erase( std::unique( result.begin(), result.end(), []( double const Left, double const Right ) { return Right - Left < 0.05; } ), result.end() );
+        std::ranges::sort( result );
+        result.erase( std::ranges::unique( result, []( double const Left, double const Right ) { return Right - Left < 0.05; } ).begin(), result.end() );
         return result;
     }
 
@@ -259,7 +390,8 @@ private:
     bool frame_at( sampled_path const &Path, double const Distance, glm::dvec3 &Point, glm::vec3 &Angles, glm::dvec2 &Forward ) const {
 
         Path.segment->RaPositionGet( Distance, Point, Angles );
-        glm::dvec3 behind, ahead;
+        glm::dvec3 behind;
+        glm::dvec3 ahead;
         glm::vec3 unused;
         Path.segment->RaPositionGet( std::max( 0.0, Distance - 0.1 ), behind, unused );
         Path.segment->RaPositionGet( std::min( Path.length, Distance + 0.1 ), ahead, unused );
@@ -269,6 +401,30 @@ private:
         }
         Forward = glm::normalize( Forward );
         return true;
+    }
+
+    // the turns of the lines from one to the other kept within the rate of the turn before, from the seed where there's one
+    static void limit_turns( std::vector<double> &Turns, std::vector<glm::dvec2> const &Forwards, std::size_t const From, std::size_t const To, std::optional<record> const &Seed, double const Rate, bool const Led ) {
+
+        auto const step { To > From ? 1 : -1 };
+        std::optional<double> previous;
+        auto rate { Rate };
+        if( Seed.has_value() ) {
+            previous = turn_off( Forwards[ From ], Seed->along );
+            if( false == Led ) {
+                // square after three sleepers
+                rate = std::max( 0.004, std::abs( *previous ) / 3.0 );
+            }
+        }
+        for( auto index { From }; ; index += step ) {
+            if( previous.has_value() ) {
+                Turns[ index ] = std::clamp( Turns[ index ], *previous - rate, *previous + rate );
+            }
+            previous = Turns[ index ];
+            if( index == To ) {
+                break;
+            }
+        }
     }
 
     // the lines at the distances along the path, turned as the frogs and crossings about them ask, but by no more than the rate
@@ -302,28 +458,8 @@ private:
         if( distances.empty() ) {
             return;
         }
-        auto const limit = [&]( std::size_t const From, std::size_t const To, std::optional<record> const &Seed ) {
-            auto const step { To > From ? 1 : -1 };
-            std::optional<double> previous;
-            auto rate { Rate };
-            if( Seed.has_value() ) {
-                previous = turn_off( forwards[ From ], Seed->along );
-                if( false == Led ) {
-                    // square after three sleepers
-                    rate = std::max( 0.004, std::abs( *previous ) / 3.0 );
-                }
-            }
-            for( auto index { From }; ; index += step ) {
-                if( previous.has_value() ) {
-                    turns[ index ] = std::clamp( turns[ index ], *previous - rate, *previous + rate );
-                }
-                previous = turns[ index ];
-                if( index == To ) {
-                    break;
-                }
-            } };
-        limit( 0, distances.size() - 1, First );
-        limit( distances.size() - 1, 0, Last );
+        limit_turns( turns, forwards, 0, distances.size() - 1, First, Rate, Led );
+        limit_turns( turns, forwards, distances.size() - 1, 0, Last, Rate, Led );
         for( std::size_t index = 0; index < distances.size(); ++index ) {
             lay_line( Index, distances[ index ], Led, rotated( forwards[ index ], turns[ index ] ) );
         }
@@ -336,8 +472,11 @@ private:
         auto const &path { paths[ Index ] };
         auto const back { record_near( Index, Stretch.x, -1.0, 2.0 * pitch ) };
         auto const fore { record_near( Index, Stretch.y, 1.0, 2.0 * pitch ) };
-        anchor const start { back.has_value() ? anchor { back->at, 1.0 } : anchor { Stretch.x <= 0.01 ? 0.0 : Stretch.x, 0.5 } };
-        anchor const end { fore.has_value() ? anchor { fore->at, 1.0 } : anchor { Stretch.y >= path.length - 0.01 ? path.length : Stretch.y, 0.5 } };
+        // the free ends of the stretch, taken to the ends of the path close to them
+        auto const freestart { Stretch.x <= 0.01 ? 0.0 : Stretch.x };
+        auto const freeend { Stretch.y >= path.length - 0.01 ? path.length : Stretch.y };
+        anchor const start { back.has_value() ? anchor { back->at, 1.0 } : anchor { freestart, 0.5 } };
+        anchor const end { fore.has_value() ? anchor { fore->at, 1.0 } : anchor { freeend, 0.5 } };
         if( end.at - start.at <= 0.0 ) {
             return;
         }
@@ -387,10 +526,23 @@ private:
 
     bool whole_with( sampled_path const &Path, std::vector<crossing> const &Members ) const {
 
-        auto const carries = [&]( sampled_path const *Carried ) {
-            return Carried == &Path || std::any_of( Members.begin(), Members.end(), [&]( crossing const &Crossing ) { return Crossing.carried && Crossing.path == Carried; } ); };
-        return std::any_of( crossings.begin(), crossings.end(), [&]( feature const &Feature ) {
+        auto const carries = [ &Path, &Members ]( sampled_path const *Carried ) {
+            return Carried == &Path || std::ranges::any_of( Members, [ Carried ]( crossing const &Crossing ) { return Crossing.carried && Crossing.path == Carried; } ); };
+        return std::ranges::any_of( crossings, [ &carries ]( feature const &Feature ) {
             return carries( Feature.paths[ 0 ] ) && carries( Feature.paths[ 1 ] ); } );
+    }
+
+    // the rails of the paths of the cluster crossing it the timber led along the path takes, marked among them
+    void take_rails( sampled_path const &Path, glm::dvec2 const &Forward, glm::dvec2 const &Along, std::vector<crossing> &Members ) const {
+
+        // about a crossing the timbers take all the tracks whose sleepers would meet, elsewhere only those too close to part
+        carry( Path, Forward, Along, Members, false );
+        if( false == whole_with( Path, Members ) ) {
+            for( auto &crossing : Members ) {
+                crossing.carried = false;
+            }
+            carry( Path, Forward, Along, Members, true );
+        }
     }
 
     // the plain sleepers of the path on the stretches no line of timbers carries it, in step with the timbers at their ends
@@ -411,16 +563,15 @@ private:
             }
             stretches.push_back( { { at.back(), 1.0 }, { path.length, 0.5 } } );
         }
-        for( auto const &stretch : stretches ) {
-            auto const span { stretch.second.at - stretch.first.at };
-            if( span <= 0.0 || span < ( stretch.first.offset + stretch.second.offset - 1.0 ) * pitch + 0.5 * pitch_min ) {
+        for( auto const &[ from, to ] : stretches ) {
+            if( auto const span { to.at - from.at }; span <= 0.0 || span < ( from.offset + to.offset - 1.0 ) * pitch + 0.5 * pitch_min ) {
                 continue;
             }
             std::vector<double> stations;
-            spread( stretch.first, stretch.second, stations );
+            spread( from, to, stations );
             // turned back square to the path from the timbers at the ends of the stretch
-            auto const first { stretch.first.offset == 1.0 ? record_near( Index, stretch.first.at, 1.0, 0.05 ) : std::optional<record> {} };
-            auto const last { stretch.second.offset == 1.0 ? record_near( Index, stretch.second.at, -1.0, 0.05 ) : std::optional<record> {} };
+            auto const first { from.offset == 1.0 ? record_near( Index, from.at, 1.0, 0.05 ) : std::optional<record> {} };
+            auto const last { to.offset == 1.0 ? record_near( Index, to.at, -1.0, 0.05 ) : std::optional<record> {} };
             lay_lines( Index, stations, first, last, sleeper_turn, false );
         }
     }
@@ -439,70 +590,25 @@ private:
         auto const along { Along };
         glm::dvec2 const across { -along.y, along.x };
         auto const reach { 0.5 * length_cap + path.reach };
-        std::vector<crossing> members, others;
+        std::vector<crossing> members;
+        std::vector<crossing> others;
         find_crossings( path, point, along, across, reach, paths, members );
         find_crossings( path, point, along, across, reach, context, others );
         if( Led ) {
-            // about a crossing the timbers take all the tracks whose sleepers would meet, elsewhere only those too close to part
-            carry( path, forward, along, members, false );
-            if( false == whole_with( path, members ) ) {
-                for( auto &crossing : members ) {
-                    crossing.carried = false;
-                }
-                carry( path, forward, along, members, true );
-            }
+            take_rails( path, forward, along, members );
         }
-        std::vector<band> bands { band_of( path, 0.0, std::max( crossing_sine_min, std::abs( glm::dot( forward, along ) ) ), forward ) };
-        for( auto const *crossings : { &members, &others } ) {
-            for( auto const &crossing : *crossings ) {
-                if( crossing.carried ) {
-                    bands.push_back( band_of( *crossing.path, crossing.across, crossing.sine, crossing.direction ) );
-                }
-                else if( crossing.sine >= crossing_sine_min && angle_between( crossing.direction, forward ) < grid_angle ) {
-                    bands.push_back( band_of( *crossing.path, crossing.across, crossing.sine, crossing.direction, false ) );
-                }
-            }
-        }
+        auto bands { bands_on( path, forward, along, members, others ) };
         // a timber carrying both tracks of a crossing lies whole under all the tracks it carries
         auto const whole { Led && whole_with( path, members ) };
         std::vector<piece> pieces;
         emit_line( bands, pieces, whole );
         cut_long( bands, pieces );
-        // the parts of a timber parted between tracks going apart turn square to their own track, the more the further apart the
-        // tracks run, till square where their plain sleepers wouldn't touch any more
-        std::vector<glm::dvec2> turned( pieces.size(), along );
-        for( std::size_t index = 0; index < pieces.size() && pieces.size() > 1; ++index ) {
-            auto const *own { pieces[ index ].single };
-            if( own == nullptr ) {
-                continue;
-            }
-            band const *nearest { nullptr };
-            for( auto const &other : bands ) {
-                if( &other != own && other.carried && ( nearest == nullptr || std::abs( other.centre - own->centre ) < std::abs( nearest->centre - own->centre ) ) ) {
-                    nearest = &other;
-                }
-            }
-            if( nearest == nullptr ) {
-                continue;
-            }
-            auto const spacing { std::abs( nearest->centre - own->centre ) * std::min( own->sine, nearest->sine ) };
-            auto const parted { shared_spacing( *own->path, *nearest->path ) };
-            auto const apart { own->path->half + nearest->path->half + end_gap };
-            auto const share { apart > parted ? std::clamp( ( spacing - parted ) / ( apart - parted ), 0.0, 1.0 ) : 1.0 };
-            turned[ index ] = rotated( along, share * turn_off( along, own->direction ) );
-        }
-        auto const turned_for = [&]( sampled_path const *Path ) {
-            for( std::size_t index = 0; index < pieces.size(); ++index ) {
-                if( pieces[ index ].single != nullptr && pieces[ index ].single->path == Path ) {
-                    return turned[ index ];
-                }
-            }
-            return along; };
+        auto const turned { piece_ways( bands, pieces, along ) };
         if( Led ) {
-            records[ Index ].push_back( { Distance, turned_for( &path ) } );
+            records[ Index ].emplace_back( Distance, turned_for( pieces, turned, &path, along ) );
             for( auto const &crossing : members ) {
                 if( crossing.carried ) {
-                    records[ crossing.path - paths.data() ].push_back( { crossing.at, turned_for( crossing.path ) } );
+                    records[ crossing.path - paths.data() ].emplace_back( crossing.at, turned_for( pieces, turned, crossing.path, along ) );
                 }
             }
         }
@@ -514,7 +620,7 @@ private:
         auto const rolledup { flatacross * std::sin( roll ) + up * std::cos( roll ) };
         auto const top { point - rolledup * static_cast<double>( path.track->rail_height() ) };
         // a sleeper of a plain track running alone and square to it, the rest are the timbers of the switches and crossings
-        auto const carried { std::count_if( bands.begin(), bands.end(), []( band const &Band ) { return Band.carried; } ) };
+        auto const carried { std::ranges::count_if( bands, []( band const &Band ) { return Band.carried; } ) };
         auto const plain { path.track->eType == tt_Normal && carried == 1 && pieces.size() == 1 && false == pieces.front().clipped && std::abs( glm::dot( forward, along ) ) > 0.9998 };
         for( std::size_t index = 0; index < pieces.size(); ++index ) {
             auto const &piece { pieces[ index ] };
@@ -527,6 +633,45 @@ private:
             auto const centre { top + rolledacross * piece.single->centre };
             glm::dvec3 const turnedacross { glm::dvec3 { -way.y, 0.0, way.x } * std::cos( roll ) - up * std::sin( roll ) };
             beams.push_back( { path.track, { centre + turnedacross * ( piece.from - piece.single->centre ), centre + turnedacross * ( piece.to - piece.single->centre ), glm::dvec3 { way.x, 0.0, way.y }, false, piece.corefrom - piece.from, piece.coreto - piece.from } } );
+        }
+    }
+
+    // which way along the track the beam laid under the rail at the point runs, of those in the grid; none where there's none
+    std::optional<glm::dvec2> beam_way_at( plan_grid<std::size_t> const &Grid, glm::dvec2 const &Rail ) const {
+
+        auto const *cell { Grid.at( Rail ) };
+        if( cell == nullptr ) {
+            return std::nullopt;
+        }
+        for( auto const laid : *cell ) {
+            if( auto const box { box_of( beams[ laid ].value ) }; 2.0 * box.half >= 0.1 && holds( box, Rail ) ) {
+                return glm::dvec2 { -box.axis.y, box.axis.x };
+            }
+        }
+        return std::nullopt;
+    }
+
+    // the middles of the gaps in the beams under the rail of the path on the side, and the way the beams at their ends run
+    void find_gaps( sampled_path const &Path, double const Side, int const Steps, plan_grid<std::size_t> const &Grid, std::vector<double> &Gaps, std::vector<glm::dvec2> &Turns ) const {
+
+        std::optional<std::pair<double, glm::dvec2>> last;
+        for( int step = 0; step <= Steps; ++step ) {
+            auto const distance { Path.length * step / Steps };
+            glm::dvec3 point;
+            glm::dvec3 across;
+            Path.segment->plan_frame( distance, point, across );
+            auto const rail { plan( point + across * ( Side * 0.5 * Path.gauge ) ) };
+            auto const found { beam_way_at( Grid, rail ) };
+            if( false == found.has_value() ) {
+                continue;
+            }
+            if( last.has_value() && distance - last->first > 0.06 && distance - last->first + 2.0 * half_width > 1.25 * pitch_max ) {
+                // the middle of the stretch without one, and the way the beams at its ends run
+                Gaps.push_back( 0.5 * ( distance + last->first ) );
+                auto along { last->second + ( glm::dot( last->second, *found ) < 0.0 ? -*found : *found ) };
+                Turns.push_back( glm::length( along ) > 1e-9 ? glm::normalize( along ) : heading( Path, Gaps.back() ) );
+            }
+            last = std::make_pair( distance, *found );
         }
     }
 
@@ -548,35 +693,7 @@ private:
             std::vector<double> gaps;
             std::vector<glm::dvec2> turns;
             for( auto const side : { -1.0, 1.0 } ) {
-                std::optional<std::pair<double, glm::dvec2>> last;
-                for( int step = 0; step <= steps; ++step ) {
-                    auto const distance { path.length * step / steps };
-                    glm::dvec3 point, across;
-                    path.segment->plan_frame( distance, point, across );
-                    auto const rail { plan( point + across * ( side * 0.5 * path.gauge ) ) };
-                    std::optional<glm::dvec2> found;
-                    auto const *cell { grid.at( rail ) };
-                    if( cell == nullptr ) {
-                        continue;
-                    }
-                    for( auto const laid : *cell ) {
-                        auto const box { box_of( beams[ laid ].value ) };
-                        if( 2.0 * box.half >= 0.1 && holds( box, rail ) ) {
-                            found = glm::dvec2 { -box.axis.y, box.axis.x };
-                            break;
-                        }
-                    }
-                    if( false == found.has_value() ) {
-                        continue;
-                    }
-                    if( last.has_value() && distance - last->first > 0.06 && distance - last->first + 2.0 * half_width > 1.25 * pitch_max ) {
-                        // the middle of the stretch without one, and the way the beams at its ends run
-                        gaps.push_back( 0.5 * ( distance + last->first ) );
-                        auto along { last->second + ( glm::dot( last->second, *found ) < 0.0 ? -*found : *found ) };
-                        turns.push_back( glm::length( along ) > 1e-9 ? glm::normalize( along ) : heading( path, gaps.back() ) );
-                    }
-                    last = std::make_pair( distance, *found );
-                }
+                find_gaps( path, side, steps, grid, gaps, turns );
             }
             // a sleeper in each, those of both rails about one place put in once
             for( std::size_t gap = 0; gap < gaps.size(); ++gap ) {
@@ -594,39 +711,19 @@ private:
 
         plan_grid<beam_box> grid { 3.0 };
         std::vector<owned> kept;
-        auto const clear_of_laid = [&]( beam_box const &Box ) {
-            return grid.all_about( Box.centre, Box.half + half_width, [&]( beam_box const &Other ) { return apart( Box, Other ); } ); };
         for( auto laid : beams ) {
             auto const length { glm::length( laid.value.to - laid.value.from ) };
             if( length < 0.1 ) {
                 continue;
             }
-            if( false == clear_of_laid( box_of( laid.value ) ) ) {
+            if( false == clear_of( grid, box_of( laid.value ) ) ) {
                 // shortened from either end or both, down to the least overhang past the rails it carries, till it's clear
-                auto const direction { ( laid.value.to - laid.value.from ) / length };
-                auto const most { std::max( 0.0, laid.value.corefrom - overhang_min ) }; // off the from end
-                auto const mostto { std::max( 0.0, length - laid.value.coreto - overhang_min ) };
-                auto found { false };
-                for( int step = 1; step <= 20 && false == found; ++step ) {
-                    auto const share { step / 20.0 };
-                    for( auto const ends : { glm::dvec2 { 0.0, mostto * share }, glm::dvec2 { most * share, 0.0 }, glm::dvec2 { most * share, mostto * share } } ) {
-                        auto shortened { laid.value };
-                        shortened.from = laid.value.from + direction * ends.x;
-                        shortened.to = laid.value.to - direction * ends.y;
-                        shortened.corefrom -= ends.x;
-                        shortened.coreto -= ends.x;
-                        if( clear_of_laid( box_of( shortened ) ) ) {
-                            shortened.plain = false;
-                            laid.value = shortened;
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if( false == found ) {
+                auto const shortened { shortened_clear( laid.value, length, grid ) };
+                if( false == shortened.has_value() ) {
                     ++faults().dropped;
                     continue;
                 }
+                laid.value = *shortened;
                 ++faults().clipped;
             }
             auto const box { box_of( laid.value ) };
@@ -644,29 +741,18 @@ private:
 // sleepers would meet, in the order of their names
 std::vector<TTrack *> cluster_of( TTrack &Track ) {
 
-    std::vector<TTrack *> result { &Track };
-    for( std::size_t index = 0; index < result.size() && result.size() < cluster_cap; ++index ) {
-        auto const around { paths_around( *result[ index ] ) };
-        for( auto const &path : around ) {
-            if( path.track != result[ index ] ) {
-                continue;
-            }
-            for( auto const &other : around ) {
-                if( other.track == result[ index ] || std::find( result.begin(), result.end(), other.track ) != result.end() ) {
-                    continue;
-                }
-                if( share_anywhere( path, other ) ) {
-                    result.push_back( other.track );
-                }
-            }
-        }
+    std::vector result { &Track };
+    std::size_t index { 0 };
+    while( index < result.size() && result.size() < cluster_cap ) {
+        reach_from( *result[ index ], result );
+        ++index;
     }
-    std::sort( result.begin(), result.end(), []( TTrack const *Left, TTrack const *Right ) {
+    std::ranges::sort( result, []( TTrack const *Left, TTrack const *Right ) {
         return ( Left->name() != Right->name() ? Left->name() < Right->name() : Left < Right ); } );
     return result;
 }
 
-std::shared_ptr<cluster_beams> lay_out( std::vector<TTrack *> const &Tracks, std::uint64_t const Epoch ) {
+std::shared_ptr<cluster_beams> lay_out( std::span<TTrack * const> const Tracks, std::uint64_t const Epoch ) {
 
     return cluster_layout( Tracks, Epoch ).lay();
 }
@@ -686,9 +772,7 @@ std::pair<double, double> panel_off_plane( TTrack &Track ) {
     }
     auto alongside { false };
     for( std::size_t index = 0; index < diverging.points.size(); ++index ) {
-        double gap;
-        glm::dvec2 direction;
-        if( false == beside( main, diverging.points[ index ], shared_spacing( diverging, main ), gap, direction ) ) {
+        if( false == runs_beside( diverging, diverging.points[ index ], main ) ) {
             if( alongside ) {
                 // apart far enough to lay their own
                 break;
