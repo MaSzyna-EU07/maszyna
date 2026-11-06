@@ -399,9 +399,9 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				}
 				// level off the rim within a centimetre
 				double level{0.0};
-				for (double off = 0.0; off <= length; off += 0.5)
-					if (std::abs(height_at(off) - points[segment_data::point::start].y) <= 0.01)
-						level = off;
+				for (int k = 0; k * 0.5 <= length; ++k)
+					if (std::abs(height_at(k * 0.5) - points[segment_data::point::start].y) <= 0.01)
+						level = k * 0.5;
 					else
 						break;
 				WriteLog(format("SELFTEST turntable %s track %s: at the rim %.3f m, %+.2f per mille over its first 5 m, level within 1 cm of the table for %.1f m; out along it%s", table.table->name().c_str(), track->name().c_str(), rim.y,
