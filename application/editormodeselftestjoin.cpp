@@ -186,7 +186,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				ends.push_back({track, index, curve.point(0.0), grade_at(0.0, 1.0)});
 				ends.push_back({track, index, curve.point(1.0), grade_at(1.0, -1.0)});
 				for (int tenth = 0; tenth < 10; ++tenth)
-					clearance(curve.point(0.05 + 0.1 * tenth),isswitch ? switch_low : track_low, isswitch ? switch_high : track_high);
+					clearance(curve.point(0.05 + 0.1 * tenth), isswitch ? switch_low : track_low, isswitch ? switch_high : track_high);
 			}
 			if (isswitch && track->m_paths.size() >= 2)
 			{
