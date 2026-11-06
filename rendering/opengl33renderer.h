@@ -490,6 +490,24 @@ class opengl33_renderer : public gfx_renderer {
 		std::vector<glm::mat4> instances;
 	};
 	std::vector<timber_bucket> m_timberbuckets;
+	// where the sleepers and timbers of a pass are seen from, and how far
+	struct timber_view {
+		glm::dvec3 camera { 0.0 };
+		double reach { 0.0 };
+		bool shadows { false };
+		glm::mat4 modelview { 1.f }; // of the origin of the tracks
+	};
+	// the camera-space transforms of the beams of a model and its part or its level of detail gathered for the frame
+	std::vector<glm::mat4> &timber_instances( track_sleepers::beam_model const *Model, int const Part, float const Band );
+	// the beams of a track in range and in sight gathered into the buckets
+	void gather_timbers( TTrack &Track, timber_view const &View );
+	// the beams of a run of them along a track gathered into the buckets, at the level of detail they're seen at from the nearest
+	void gather_timber_chunk( track_sleepers::laid const &Laid, track_sleepers::chunk const &Chunk, double const Nearest, glm::mat4 const &Modelview );
+	// the beams of a bucket drawn in as few instanced batches as they fit in
+	void draw_timbers( timber_bucket const &Bucket );
+	// only the given part of a timber model seen, and all its parts as they were
+	void show_timber_part( track_sleepers::beam_model const &Model, int const Part );
+	void restore_timber_parts( track_sleepers::beam_model const &Model );
 	// the visibility of the submodels of the top level of a timber model, kept while a part of it is drawn alone
 	std::vector<int> m_timbervisibility;
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance

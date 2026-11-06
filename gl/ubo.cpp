@@ -16,3 +16,8 @@ void gl::ubo::update(const uint8_t *data, int offset, GLsizeiptr size)
 {
     upload(buffer::UNIFORM_BUFFER, data, offset, size);
 }
+
+void gl::ubo::update(std::span<std::byte const> Data, int const Offset)
+{
+    upload(buffer::UNIFORM_BUFFER, Data.data(), Offset, static_cast<GLsizeiptr>(Data.size()));
+}

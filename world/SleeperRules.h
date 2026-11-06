@@ -22,8 +22,8 @@ double constexpr pitch_max { 1.08 * pitch };
 // how far out from the middle of a track its rail reaches past half the gauge: the foot of the rail outside the gauge line
 double constexpr rail_reach { 0.1115 };
 // how far a beam reaches out past the foot of the rail, 2.6 m sleepers under the standard gauge, and how far at least
-double constexpr overhang { 0.471 };
-double constexpr overhang_min { 0.25 };
+double constexpr beam_overhang { 0.471 };
+double constexpr beam_overhang_min { 0.25 };
 // how far the feet of the rails a timber carries may stand off one plane
 double constexpr coplanar_tolerance { 0.01 };
 // the gap left between the ends of two beams on one line
@@ -79,7 +79,9 @@ struct fault_counts {
 template <typename Type_>
 void raise_to( std::atomic<Type_> &Value, Type_ const Other ) {
     auto current { Value.load() };
-    while( current < Other && false == Value.compare_exchange_weak( current, Other ) ) {}
+    while( current < Other && false == Value.compare_exchange_weak( current, Other ) ) {
+        // another thread changed it first: the exchange gave back what it holds now, tried again against that
+    }
 }
 
 inline fault_counts &faults() {
