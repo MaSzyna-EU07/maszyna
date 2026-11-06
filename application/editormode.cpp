@@ -5623,7 +5623,7 @@ void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 		for (int i = 0; i < steps; ++i)
 		{
 			auto const fill{track[i].y < ground[i].y};
-			List.AddQuadFilled(track[i], track[i + 1], ground[i + 1], ground[i], fill ?IM_COL32(190, 150, 90, 150) : IM_COL32(60, 45, 30, 150));
+			List.AddQuadFilled(track[i], track[i + 1], ground[i + 1], ground[i], fill ? IM_COL32(190, 150, 90, 150) : IM_COL32(60, 45, 30, 150));
 		}
 	List.Flags = flags;
 	List.AddPolyline(ground.data(), static_cast<int>(ground.size()), IM_COL32(150, 190, 110, 255), 0, 1.5f);
