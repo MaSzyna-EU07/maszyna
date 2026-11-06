@@ -8,6 +8,28 @@
 #include "utilities/translation.h"
 
 #include <filesystem>
+#include <format>
+
+namespace
+{
+
+// the skin of the bank of vehicles as it's shared, the one a skin dragged out of the bank points at; none for one gone since
+std::shared_ptr<ui::skin_set> shared_skin(ui::skin_set const *Skin)
+{
+	auto const vehicle{Skin->vehicle.lock()};
+	if (vehicle == nullptr)
+		return {};
+	auto const found{std::ranges::find_if(vehicle->matching_skinsets, [Skin](std::shared_ptr<ui::skin_set> const &Set) { return Set.get() == Skin; })};
+	return found != vehicle->matching_skinsets.end() ? *found : nullptr;
+}
+
+// the name of a vehicle put in a trainset, with a number of its own
+std::string numbered(std::string const &Name)
+{
+	return std::format("{}_{}", Name, static_cast<int>(LocalRandom(0.0, 10000000.0)));
+}
+
+} // namespace
 
 ui::scenerylist_panel::scenerylist_panel(scenery_scanner &scanner)
     : ui_panel(STR("Scenario list"), false), scanner(scanner), placeholder_mini("textures/mini/other")
@@ -283,8 +305,8 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 	draw_droptarget(trainset, position++);
 	ImGui::SameLine(15.0f);
 
-	for (std::size_t index = 0; index < trainset.vehicles.size(); ++index) {
-		auto &dyn_desc = trainset.vehicles[index];
+	// a vehicle dropped between them goes in once they're all drawn, so they're gone through unchanged
+	for (auto &dyn_desc : trainset.vehicles) {
 		deferred_image *mini = nullptr;
 
 		if (dyn_desc.skin && dyn_desc.skin->mini.get() != deferred_image::invalid_id)
@@ -333,6 +355,10 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 
 		ImGui::PopID();
 	}
+	if (m_drop) {
+		m_drop();
+		m_drop = nullptr;
+	}
 
 	ImGui::NewLine();
 	ImGui::PopID();
@@ -341,44 +367,47 @@ void ui::scenerylist_panel::draw_trainset(trainset_desc &trainset)
 void ui::scenerylist_panel::draw_droptarget(trainset_desc &trainset, int position)
 {
 	ImGui::Dummy(ImVec2(15, 30));
-	if (ImGui::BeginDragDropTarget()) {
-		const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("vehicle_pure");
-		if (payload) {
-			skin_set *ptr = *reinterpret_cast<skin_set **>(payload->Data);
-			std::shared_ptr<skin_set> skin;
-			if (auto const vehicle = ptr->vehicle.lock())
-				for (auto &s : vehicle->matching_skinsets)
-					if (s.get() == ptr)
-						skin = s;
+	if (false == ImGui::BeginDragDropTarget())
+		return;
+	if (auto const *payload{ImGui::AcceptDragDropPayload("vehicle_pure")})
+		drop_new_vehicle(trainset, position, *static_cast<skin_set *const *>(payload->Data));
+	if (auto const *payload{ImGui::AcceptDragDropPayload("vehicle_set")})
+		drop_moved_vehicle(trainset, position, *static_cast<vehicle_moved const *>(payload->Data));
+	ImGui::EndDragDropTarget();
+}
 
-			if (skin) {
-				trainset.vehicles.emplace(trainset.vehicles.begin() + position);
-				dynamic_desc &desc = trainset.vehicles[position];
+// a vehicle of the bank dropped on a gap of a trainset, put in there as a new one of it
+void ui::scenerylist_panel::drop_new_vehicle(trainset_desc &trainset, int const position, skin_set const *Skin)
+{
+	auto skin{shared_skin(Skin)};
+	if (skin == nullptr)
+		return;
+	m_drop = [&trainset, position, skin] {
+		auto &desc{*trainset.vehicles.emplace(trainset.vehicles.begin() + position)};
+		desc.name = numbered(skin->skin);
+		desc.vehicle = skin->vehicle.lock();
+		desc.skin = skin;
+	};
+}
 
-				desc.name = skin->skin + "_" + std::to_string((int)LocalRandom(0.0, 10000000.0));
-				desc.vehicle = skin->vehicle.lock();
-				desc.skin = skin;
-			}
+// a vehicle of a trainset dropped on a gap of it or of another one: moved there within it, from another one copied in with a
+// name of its own
+void ui::scenerylist_panel::drop_moved_vehicle(trainset_desc &trainset, int const position, vehicle_moved const &Moved)
+{
+	auto copy{Moved.dynamic};
+	auto &source{Moved.source};
+	auto const from{Moved.position};
+	if (&trainset != &source)
+		copy.name = numbered(copy.skin ? copy.skin->skin : copy.name);
+	m_drop = [&trainset, &source, from, position, copy] {
+		auto offset{0};
+		if (&trainset == &source) {
+			trainset.vehicles.erase(trainset.vehicles.begin() + from);
+			if (from < position)
+				offset = -1;
 		}
-
-		payload = ImGui::AcceptDragDropPayload("vehicle_set");
-		if (payload) {
-			vehicle_moved *moved = reinterpret_cast<vehicle_moved*>(payload->Data);
-
-			dynamic_desc desc_copy = moved->dynamic;
-			int offset = 0;
-			if (&trainset == &moved->source) {
-				trainset.vehicles.erase(trainset.vehicles.begin() + moved->position);
-				if (moved->position < position)
-					offset = -1;
-			} else {
-				desc_copy.name = (desc_copy.skin ? desc_copy.skin->skin : desc_copy.name) + "_" + std::to_string((int)LocalRandom(0.0, 10000000.0));
-			}
-
-			trainset.vehicles.insert(trainset.vehicles.begin() + position + offset, desc_copy);
-		}
-		ImGui::EndDragDropTarget();
-	}
+		trainset.vehicles.insert(trainset.vehicles.begin() + position + offset, copy);
+	};
 }
 
 void ui::scenerylist_panel::purge_selected_trainset()

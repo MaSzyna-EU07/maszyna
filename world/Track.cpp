@@ -31,6 +31,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
 
+#include <format>
+
 // 101206 Ra: trapezoidalne drogi i tory
 // 110720 Ra: rozprucie zwrotnicy i odcinki izolowane
 
@@ -485,7 +487,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     {
         // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
         // second one kept and written back
-        ErrorLog("Bad track: tributary \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + ") is drawn and run on as a river of its first path");
+        ErrorLog(std::format("Bad track: tributary \"{}\" in file \"{}\" (line {}) is drawn and run on as a river of its first path", m_name, parser->Name(), parser->Line()));
         eType = tt_Normal;
         iCategoryFlag = 4;
         m_tributary = true;
@@ -2626,25 +2628,37 @@ TTrack::deserialize_( std::istream &Input ) {
     // TODO: implement
 }
 
+// the keyword the track is written with, by its type and for a plain one by what runs on it
+char const *
+TTrack::type_keyword() const {
+
+    if( eType == tt_Normal && m_tributary ) {
+        return "tributary";
+    }
+    if( eType == tt_Normal ) {
+        switch( iCategoryFlag & 15 ) {
+            case 1: { return "normal"; }
+            case 2: { return "road"; }
+            case 4: { return "river"; }
+            default: { return "none"; }
+        }
+    }
+    switch( eType ) {
+        case tt_Switch: { return "switch"; }
+        case tt_Cross: { return "cross"; }
+        case tt_Table: { return "turn"; }
+        case tt_Tributary: { return "tributary"; }
+        default: { return "none"; }
+    }
+}
+
 // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
 void
 TTrack::export_as_text_( std::ostream &Output ) const {
     // header
     Output << "track ";
     // type
-    Output << (
-            eType == tt_Normal ? (
-                m_tributary ? "tributary" :
-                ( iCategoryFlag & 15 ) == 1 ? "normal" :
-                ( iCategoryFlag & 15 ) == 2 ? "road" :
-                ( iCategoryFlag & 15 ) == 4 ? "river" :
-                "none" ) :
-            eType == tt_Switch ? "switch" :
-            eType == tt_Cross ? "cross" :
-            eType == tt_Table ? "turn" :
-            eType == tt_Tributary ? "tributary" :
-            "none" )
-            << ' ';
+    Output << type_keyword() << ' ';
     // basic attributes
     Output
         << Length() << ' '

@@ -709,8 +709,8 @@ void eu07_application::exit()
 	Global.applicationQuitOrder = true;
 	// each step of the closing in the log, to tell from it where a closing that hangs stops
 	auto const closing{std::chrono::steady_clock::now()};
-	auto const step = [&](char const *What) {
-		WriteLog(std::string{"Closing: "} + What + " at " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()) + " ms");
+	auto const step = [closing](char const *What) {
+		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
 	};
 	step("the sleepers laid in the background");
 	// the sleepers laid in the background read the scenery, which goes below
