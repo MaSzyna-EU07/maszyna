@@ -358,6 +358,8 @@ private:
     void deserialize_( std::istream &Input );
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
     void export_as_text_( std::ostream &Output ) const;
+    // the keyword the track is written with, by its type and for a plain one by what runs on it
+    char const *type_keyword() const;
     // locates specified profile in the profile database, potentially loading it from a file
     static std::pair<std::string, int> fetch_track_rail_profile( std::string const &Profile );
     // loads content of specified file and converts it into a vertex array

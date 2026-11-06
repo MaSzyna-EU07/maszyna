@@ -5414,7 +5414,7 @@ void opengl33_renderer::Forget_Node(scene::basic_node const *Node)
 {
 	if (m_picksceneryitem == Node)
 		m_picksceneryitem = nullptr;
-	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
+	std::ranges::replace_if(m_picksceneryitems, [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
 }
 
 glm::dvec3 opengl33_renderer::Update_Mouse_Position()
