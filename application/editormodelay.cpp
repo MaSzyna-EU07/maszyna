@@ -2294,7 +2294,7 @@ TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 con
 	return nearest;
 }
 
-editor_mode::track_hover editor_mode::split_spot() const
+track_hover editor_mode::split_spot() const
 {
 	auto const *selected{selected_track()};
 	if (selected == nullptr || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse)
