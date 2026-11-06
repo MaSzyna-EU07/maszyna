@@ -476,9 +476,11 @@ void editor_mode::draw_track_labels() const
 	std::vector<std::pair<ImVec2, ImVec2>> taken;
 	auto const tracks_under = [&](ImVec2 const &From, ImVec2 const &To) {
 		int count{0};
-		for (auto y = From.y; y <= To.y + cell * 0.5f; y += cell)
-			for (auto x = From.x; x <= To.x + cell * 0.5f; x += cell)
+		for (int down = 0; From.y + cell * static_cast<float>(down) <= To.y + cell * 0.5f; ++down)
+			for (int across = 0; From.x + cell * static_cast<float>(across) <= To.x + cell * 0.5f; ++across)
 			{
+				auto const y{From.y + cell * static_cast<float>(down)};
+				auto const x{From.x + cell * static_cast<float>(across)};
 				int column, row;
 				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, row))
 					count += covered[static_cast<std::size_t>(row) * columns + column];
