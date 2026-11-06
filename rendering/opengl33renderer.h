@@ -321,6 +321,13 @@ class opengl33_renderer : public gfx_renderer {
 	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
 	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
 	void Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
+	// the cut faces of the rails of a track and the treads on them, batched with those of the other tracks where the light is the same
+	void Render_cuts( TTrack *Track, material_handle &Batchmaterial );
+	// the geometry of the neighbouring tracks gathered for one draw drawn, the batch of the material given emptied
+	void flush_path_batch( material_handle &Batchmaterial );
+	// a batch of the material started, the one gathered before drawn; returns: true if the material starts a new batch, false if it
+	// continues the current one
+	bool begin_path_batch( material_handle &Batchmaterial, material_handle const Material );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
@@ -485,6 +492,24 @@ class opengl33_renderer : public gfx_renderer {
 		std::vector<glm::mat4> instances;
 	};
 	std::vector<timber_bucket> m_timberbuckets;
+	// where the sleepers and timbers of a pass are seen from, and how far
+	struct timber_view {
+		glm::dvec3 camera { 0.0 };
+		double reach { 0.0 };
+		bool shadows { false };
+		glm::mat4 modelview { 1.f }; // of the origin of the tracks
+	};
+	// the camera-space transforms of the beams of a model and its part or its level of detail gathered for the frame
+	std::vector<glm::mat4> &timber_instances( track_sleepers::beam_model const *Model, int const Part, float const Band );
+	// the beams of a track in range and in sight gathered into the buckets
+	void gather_timbers( TTrack &Track, timber_view const &View );
+	// the beams of a run of them along a track gathered into the buckets, at the level of detail they're seen at from the nearest
+	void gather_timber_chunk( track_sleepers::laid const &Laid, track_sleepers::chunk const &Chunk, double const Nearest, glm::mat4 const &Modelview );
+	// the beams of a bucket drawn in as few instanced batches as they fit in
+	void draw_timbers( timber_bucket const &Bucket );
+	// only the given part of a timber model seen, and all its parts as they were
+	void show_timber_part( track_sleepers::beam_model const &Model, int const Part );
+	void restore_timber_parts( track_sleepers::beam_model const &Model );
 	// the visibility of the submodels of the top level of a timber model, kept while a part of it is drawn alone
 	std::vector<int> m_timbervisibility;
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance

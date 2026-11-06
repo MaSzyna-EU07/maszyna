@@ -37,21 +37,38 @@ bool joined( TTrack const &Track, TTrack const &Other ) {
 }
 
 struct rails_memo {
-    std::optional<gauge_line> lines[ 2 ][ 2 ][ 2 ]; // path, right side, from the blades
+    path_sides<std::array<std::optional<gauge_line>, 2>> lines; // path, right side, from the blades
     std::optional<std::vector<track_rails::rail_crossing>> own;
     std::optional<std::vector<track_rails::rail_crossing>> joined;
     std::optional<track_rails::check_rail_set> checks;
-    std::optional<track_rails::switch_blade> blades[ 2 ];
+    std::array<std::optional<track_rails::switch_blade>, 2> blades;
 };
-std::unordered_map<TTrack const *, rails_memo> memos;
-unsigned int memostamp { 0 };
-unsigned int stamp { 1 };
+// the stamp what's kept of the rails of the tracks was kept with, and the one it holds with: forget() changes it
+struct rails_stamps {
+    unsigned int memostamp { 0 };
+    unsigned int stamp { 1 };
+};
+
+// the stamps of what's kept of the rails; nothing to tear down at the end, as the tracks still forget as they go then
+rails_stamps &kept_stamps() {
+
+    static rails_stamps stamps;
+    return stamps;
+}
+
+// what's kept of the rails of each track
+std::unordered_map<TTrack const *, rails_memo> &kept_memos() {
+
+    static std::unordered_map<TTrack const *, rails_memo> memos;
+    return memos;
+}
 
 rails_memo &memo_of( TTrack const &Track ) {
 
-    if( memostamp != stamp ) {
+    auto &memos { kept_memos() };
+    if( auto &stamps { kept_stamps() }; stamps.memostamp != stamps.stamp ) {
         memos.clear();
-        memostamp = stamp;
+        stamps.memostamp = stamps.stamp;
     }
     return memos[ &Track ];
 }
@@ -62,12 +79,12 @@ namespace track_rails {
 
 void forget() {
 
-    ++stamp;
+    ++kept_stamps().stamp;
 }
 
 unsigned int memo_stamp() {
 
-    return stamp;
+    return kept_stamps().stamp;
 }
 
 
@@ -144,8 +161,8 @@ TTrack const *runon_track( TTrack const &Switch, int const Path ) {
         return nullptr;
     }
     // only as in a double switch: the plain track leads on to the start of the next switch, not to the end of the other half of a slip
-    auto const *after { next->trNext };
-    if( after == nullptr || after->eType != tt_Switch || after->SwitchExtension == nullptr
+    if( auto const *after { next->trNext };
+        after == nullptr || after->eType != tt_Switch || after->SwitchExtension == nullptr
      || glm::distance( after->SwitchExtension->Segments[ 0 ]->FastGetPoint_0(), next->Segment->FastGetPoint_1() ) > 0.01 ) {
         return nullptr;
     }
@@ -199,7 +216,7 @@ bool replaced_check( std::vector<check_rail> const &Checks, double const Wingend
 bool replaced_by_wing( check_rail const &Check, knots::line const &Wingends ) {
 
     auto farend { 0.0 };
-    return std::any_of( Wingends.begin(), Wingends.end(), [&]( glm::dvec2 const &Wing ) { return replaced_check( { Check }, Wing.x, Wing.y, farend ); } );
+    return std::ranges::any_of( Wingends, [ &Check, &farend ]( glm::dvec2 const &Wing ) { return replaced_check( { Check }, Wing.x, Wing.y, farend ); } );
 }
 
 // gauge line of a rail of a track, along a path of a switch from past its blades when Blades
@@ -225,7 +242,8 @@ track_rails::check_rail_set const &rail_checks( TTrack &Track ) {
 glm::dvec3 rail_point( TTrack const &Track, int const Path, int const Side, double const Distance, double const Lateral ) {
 
     auto const line { make_gauge_line( path_segment( Track, Path ), Side * 0.5 * std::abs( Track.fTrackWidth ), 0.0 ) };
-    glm::dvec3 point, tangent;
+    glm::dvec3 point;
+    glm::dvec3 tangent;
     line.at( Distance, point, tangent );
     return point - line.normal( Distance, Side ) * Lateral;
 }
@@ -263,27 +281,35 @@ struct rail_run {
     double length { 0.0 };
 };
 
+// the tracks with rails of a cell around the track, each added once: the ones whose rails are cut, or with Whole all of them
+void add_cell_rails( TTrack &Track, scene::basic_cell const &Cell, bool const Whole, std::vector<TTrack *> &Others ) {
+
+    for( auto *other : Cell.m_directories.paths ) {
+        if( other == nullptr || other == &Track || false == ( Whole ? railed( *other ) : cut_rails( *other ) ) ) {
+            continue;
+        }
+        if( glm::length( other->location() - Track.location() ) > other->radius() + Track.radius() + 1.0 ) {
+            continue;
+        }
+        if( std::ranges::find( Others, other ) == Others.end() ) {
+            Others.push_back( other );
+        }
+    }
+}
+
 // the tracks with rails around the track: the ones whose rails are cut, or with Whole all of them
 std::vector<TTrack *> nearby_rails( TTrack &Track, bool const Whole = false ) {
 
     std::vector<TTrack *> others;
-    auto const sections { simulation::Region->sections( Track.location(), static_cast<float>( Track.radius() + 50.0 ) ) };
-    for( auto *section : sections ) {
+    // a list of its own, not the one the region shares
+    std::vector<scene::basic_section *> sections;
+    simulation::Region->sections( Track.location(), static_cast<float>( Track.radius() + 50.0 ), sections );
+    for( auto const *section : sections ) {
         for( auto const &cell : section->m_cells ) {
             if( glm::length( cell.area().center - Track.location() ) > cell.area().radius + Track.radius() + 1.0 ) {
                 continue;
             }
-            for( auto *other : cell.m_directories.paths ) {
-                if( other == nullptr || other == &Track || false == ( Whole ? railed( *other ) : cut_rails( *other ) ) ) {
-                    continue;
-                }
-                if( glm::length( other->location() - Track.location() ) > other->radius() + Track.radius() + 1.0 ) {
-                    continue;
-                }
-                if( std::find( others.begin(), others.end(), other ) == others.end() ) {
-                    others.push_back( other );
-                }
-            }
+            add_cell_rails( Track, cell, Whole, others );
         }
     }
     return others;
@@ -291,7 +317,9 @@ std::vector<TTrack *> nearby_rails( TTrack &Track, bool const Whole = false ) {
 
 double line_bend( gauge_line const &Line, double const At ) {
 
-    glm::dvec3 point, before, after;
+    glm::dvec3 point;
+    glm::dvec3 before;
+    glm::dvec3 after;
     Line.at( At - 1.0, point, before );
     Line.at( At + 1.0, point, after );
     return std::abs( cross( plan( before ), plan( after ) ) );
@@ -315,7 +343,10 @@ bool same_place( rail_crossing const &Crossing, int const Path, int const Side, 
 
 void refine_meeting( gauge_line const &Ours, gauge_line const &Theirs, double &S, double &T ) {
 
-    glm::dvec3 p, tp, q, tq;
+    glm::dvec3 p;
+    glm::dvec3 tp;
+    glm::dvec3 q;
+    glm::dvec3 tq;
     for( int step = 0; step < 6; ++step ) {
         Ours.at( S, p, tp );
         Theirs.at( T, q, tq );
@@ -351,6 +382,67 @@ rail_crossing make_crossing( rail_run const &Ours, rail_run const &Theirs, doubl
     return crossing;
 }
 
+// a piece of the gauge line of our rail between two of its points, in plan, and the box around it a little wider
+struct gauge_piece {
+    std::size_t index { 0 }; // of the point the piece ends at
+    glm::dvec2 start { 0.0 };
+    glm::dvec2 along { 0.0 };
+    glm::dvec2 low { 0.0 };
+    glm::dvec2 high { 0.0 };
+};
+
+// where a piece of our rail crosses the piece of their rail ending at their point J, added unless a crossing is found there already
+void meet_pieces( rail_run const &Ours, rail_run const &Theirs, gauge_piece const &Piece, std::size_t const J, std::vector<rail_crossing> &Result ) {
+
+    auto const &line { *Ours.line };
+    auto const &theirs { *Theirs.line };
+    auto const b0 { plan( theirs.points[ J - 1 ] ) };
+    auto const b { plan( theirs.points[ J ] ) - b0 };
+    if( auto const reach { 0.02 * glm::length( b ) };
+        Piece.low.x > std::max( b0.x, b0.x + b.x ) + reach || std::min( b0.x, b0.x + b.x ) - reach > Piece.high.x
+     || Piece.low.y > std::max( b0.y, b0.y + b.y ) + reach || std::min( b0.y, b0.y + b.y ) - reach > Piece.high.y ) {
+        return;
+    }
+    double u;
+    double v;
+    if( false == meet( Piece.start, Piece.along, b0, b, 1e-12, u, v ) ) {
+        return;
+    }
+    if( u < -0.01 || u > 1.01 || v < -0.01 || v > 1.01 ) {
+        return;
+    }
+    auto s { glm::mix( line.distances[ Piece.index - 1 ], line.distances[ Piece.index ], u ) };
+    auto t { glm::mix( theirs.distances[ J - 1 ], theirs.distances[ J ], v ) };
+    refine_meeting( line, theirs, s, t );
+    glm::dvec3 p;
+    glm::dvec3 tp;
+    glm::dvec3 q;
+    glm::dvec3 tq;
+    line.at( s, p, tp );
+    theirs.at( t, q, tq );
+    if( glm::length( plan( p ) - plan( q ) ) > 0.01
+     || s < 0.0 || s > Ours.length
+     || t < Theirs.from || t > Theirs.length ) {
+        return;
+    }
+    if( std::abs( p.y - q.y ) > 0.5 ) {
+        return;
+    }
+    if( ( s < 0.5 || s > Ours.length - 0.5 ) && ( t < 0.5 || t > Theirs.length - 0.5 ) && joined( *Ours.track, *Theirs.track ) ) {
+        return;
+    }
+    auto const tangent { glm::normalize( plan( tp ) ) };
+    auto const othertangent { glm::normalize( plan( tq ) ) };
+    auto const angle { std::acos( std::min( 1.0, std::abs( glm::dot( tangent, othertangent ) ) ) ) };
+    if( angle < 0.03 ) {
+        return;
+    }
+    if( std::ranges::any_of( Result, [ &Ours, s ]( rail_crossing const &Crossing ) { return same_place( Crossing, Ours.path, Ours.side, s ); } ) ) {
+        return;
+    }
+    Result.push_back( make_crossing( Ours, Theirs, s, t, tangent, othertangent, angle ) );
+}
+
 void meet_rails( rail_run const &Ours, rail_run const &Theirs, std::vector<rail_crossing> &Result ) {
 
     auto const &line { *Ours.line };
@@ -366,48 +458,20 @@ void meet_rails( rail_run const &Ours, rail_run const &Theirs, std::vector<rail_
         if( alow.x > theirs.high.x + 1.0 || theirs.low.x - 1.0 > ahigh.x || alow.y > theirs.high.y + 1.0 || theirs.low.y - 1.0 > ahigh.y ) {
             continue;
         }
+        gauge_piece const piece { i, a0, a, alow, ahigh };
         for( std::size_t j = 1; j < theirs.points.size(); ++j ) {
-            auto const b0 { plan( theirs.points[ j - 1 ] ) };
-            auto const b { plan( theirs.points[ j ] ) - b0 };
-            auto const reach { 0.02 * glm::length( b ) };
-            if( alow.x > std::max( b0.x, b0.x + b.x ) + reach || std::min( b0.x, b0.x + b.x ) - reach > ahigh.x
-             || alow.y > std::max( b0.y, b0.y + b.y ) + reach || std::min( b0.y, b0.y + b.y ) - reach > ahigh.y ) {
-                continue;
-            }
-            double u, v;
-            if( false == meet( a0, a, b0, b, 1e-12, u, v ) ) {
-                continue;
-            }
-            if( u < -0.01 || u > 1.01 || v < -0.01 || v > 1.01 ) {
-                continue;
-            }
-            auto s { glm::mix( line.distances[ i - 1 ], line.distances[ i ], u ) };
-            auto t { glm::mix( theirs.distances[ j - 1 ], theirs.distances[ j ], v ) };
-            refine_meeting( line, theirs, s, t );
-            glm::dvec3 p, tp, q, tq;
-            line.at( s, p, tp );
-            theirs.at( t, q, tq );
-            if( glm::length( plan( p ) - plan( q ) ) > 0.01
-             || s < 0.0 || s > Ours.length
-             || t < Theirs.from || t > Theirs.length ) {
-                continue;
-            }
-            if( std::abs( p.y - q.y ) > 0.5 ) {
-                continue;
-            }
-            if( ( s < 0.5 || s > Ours.length - 0.5 ) && ( t < 0.5 || t > Theirs.length - 0.5 ) && joined( *Ours.track, *Theirs.track ) ) {
-                continue;
-            }
-            auto const tangent { glm::normalize( plan( tp ) ) };
-            auto const othertangent { glm::normalize( plan( tq ) ) };
-            auto const angle { std::acos( std::min( 1.0, std::abs( glm::dot( tangent, othertangent ) ) ) ) };
-            if( angle < 0.03 ) {
-                continue;
-            }
-            if( std::any_of( Result.begin(), Result.end(), [&]( rail_crossing const &Crossing ) { return same_place( Crossing, Ours.path, Ours.side, s ); } ) ) {
-                continue;
-            }
-            Result.push_back( make_crossing( Ours, Theirs, s, t, tangent, othertangent, angle ) );
+            meet_pieces( Ours, Theirs, piece, j, Result );
+        }
+    }
+}
+
+// the crossings of the rails of the track with a rail of another one
+void meet_track( TTrack &Track, rail_run const &Theirs, std::vector<rail_crossing> &Result ) {
+
+    for( int path = 0; path < path_count( Track ); ++path ) {
+        auto const length { path_segment( Track, path ).GetLength() };
+        for( int side = 0; side < 2; ++side ) {
+            meet_rails( { &Track, path, side ? 1 : -1, &rail_line( Track, path, side, false ), 0.0, length }, Theirs, Result );
         }
     }
 }
@@ -423,12 +487,7 @@ std::vector<rail_crossing> own_crossings( TTrack &Track ) {
             for( int otherside = 0; otherside < 2; ++otherside ) {
                 theirs.side = ( otherside ? 1 : -1 );
                 theirs.line = &rail_line( *other, otherpath, otherside, true );
-                for( int path = 0; path < path_count( Track ); ++path ) {
-                    auto const length { path_segment( Track, path ).GetLength() };
-                    for( int side = 0; side < 2; ++side ) {
-                        meet_rails( { &Track, path, side ? 1 : -1, &rail_line( Track, path, side, false ), 0.0, length }, theirs, result );
-                    }
-                }
+                meet_track( Track, theirs, result );
             }
         }
     }
@@ -451,11 +510,7 @@ std::vector<rail_crossing> unbladed_crossings( TTrack const &Track, bool const W
             for( int otherside = 0; otherside < 2; ++otherside ) {
                 theirs.side = ( otherside ? 1 : -1 );
                 theirs.line = &rail_line( *other, otherpath, otherside, false );
-                for( int path = 0; path < path_count( track ); ++path ) {
-                    for( int side = 0; side < 2; ++side ) {
-                        meet_rails( { &track, path, side ? 1 : -1, &rail_line( track, path, side, false ), 0.0, path_segment( track, path ).GetLength() }, theirs, found );
-                    }
-                }
+                meet_track( track, theirs, found );
             }
         }
     }
@@ -490,53 +545,87 @@ double blade_reach( TTrack const &Track, int const Path, int const Side ) {
     return reach;
 }
 
-// crossings of the tracks going on from the ends, near enough for their check rails and wings to reach this one
-void add_neighbour_crossings( TTrack &Track, std::vector<rail_crossing> &Result ) {
+// a path of a track going on from an end of a path of the track, joined to it there
+struct joined_path {
+    TTrack const *track { nullptr }; // the track the crossings of the neighbour are mapped onto
+    TTrack *neighbour { nullptr };
+    int path { 0 }; // of the track
+    int end { 0 }; // of the path of the track the neighbour goes on from
+    double length { 0.0 }; // of the path of the track
+    int neighbourpath { 0 };
+    double neighbourlength { 0.0 };
+    bool atstart { false }; // the path of the neighbour starts at the joint
+    bool same { false }; // the path of the neighbour runs on the same way as the path of the track
+};
+
+// the crossings of a joined path near enough to the joint, mapped onto the path of the track, where it has none of its own
+void add_joined_crossings( joined_path const &Joined, std::vector<rail_crossing> const &Theirs, std::size_t const Owncount, std::vector<rail_crossing> &Result ) {
 
     auto const extension { 10.0 };
+    for( auto const &crossing : Theirs ) {
+        if( crossing.path != Joined.neighbourpath || crossing.track == Joined.track ) {
+            continue;
+        }
+        auto const along { Joined.atstart ? crossing.at : Joined.neighbourlength - crossing.at };
+        if( along > extension ) {
+            continue;
+        }
+        auto mapped { crossing };
+        mapped.path = Joined.path;
+        mapped.at = ( Joined.end ? Joined.length + along : -along );
+        mapped.owner = Joined.neighbour;
+        if( false == Joined.same ) {
+            mapped.side = -crossing.side;
+            mapped.into = -crossing.into;
+            mapped.aligned = !crossing.aligned;
+        }
+        if( std::none_of( Result.begin(), Result.begin() + Owncount, [ &mapped ]( rail_crossing const &Crossing ) { return same_place( Crossing, mapped.path, mapped.side, mapped.at ); } ) ) {
+            Result.push_back( mapped );
+        }
+    }
+}
+
+// the crossings of the track going on from an end of a path of the track, near enough for their check rails and wings to reach this one
+void add_end_crossings( TTrack const &Track, int const Path, int const End, double const Length, std::size_t const Owncount, std::vector<rail_crossing> &Result ) {
+
+    auto const &segment { path_segment( Track, Path ) };
+    auto *neighbour { path_neighbour( Track, Path, End ) };
+    if( neighbour == nullptr || neighbour == &Track || false == cut_rails( *neighbour ) ) {
+        return;
+    }
+    auto const joint { End ? segment.FastGetPoint_1() : segment.FastGetPoint_0() };
+    auto const theirs { neighbour->rail_crossings( false ) };
+    for( int neighbourpath = 0; neighbourpath < path_count( *neighbour ); ++neighbourpath ) {
+        auto const &neighboursegment { path_segment( *neighbour, neighbourpath ) };
+        auto const neighbourlength { neighboursegment.GetLength() };
+        auto const tostart { glm::length( neighboursegment.FastGetPoint_0() - joint ) };
+        auto const toend { glm::length( neighboursegment.FastGetPoint_1() - joint ) };
+        if( std::min( tostart, toend ) > 0.05 ) {
+            continue;
+        }
+        auto const atstart { tostart <= toend };
+        joined_path const joinedpath {
+            .track = &Track,
+            .neighbour = neighbour,
+            .path = Path,
+            .end = End,
+            .length = Length,
+            .neighbourpath = neighbourpath,
+            .neighbourlength = neighbourlength,
+            .atstart = atstart,
+            .same = ( atstart == ( End == 1 ) ) };
+        add_joined_crossings( joinedpath, theirs, Owncount, Result );
+    }
+}
+
+// crossings of the tracks going on from the ends, near enough for their check rails and wings to reach this one
+void add_neighbour_crossings( TTrack const &Track, std::vector<rail_crossing> &Result ) {
+
     auto const owncount { Result.size() };
     for( int path = 0; path < path_count( Track ); ++path ) {
-        auto const &segment { path_segment( Track, path ) };
-        auto const length { segment.GetLength() };
+        auto const length { path_segment( Track, path ).GetLength() };
         for( int end = 0; end < 2; ++end ) {
-            auto *neighbour { path_neighbour( Track, path, end ) };
-            if( neighbour == nullptr || neighbour == &Track || false == cut_rails( *neighbour ) ) {
-                continue;
-            }
-            auto const joint { end ? segment.FastGetPoint_1() : segment.FastGetPoint_0() };
-            auto const theirs { neighbour->rail_crossings( false ) };
-            for( int neighbourpath = 0; neighbourpath < path_count( *neighbour ); ++neighbourpath ) {
-                auto const &neighboursegment { path_segment( *neighbour, neighbourpath ) };
-                auto const neighbourlength { neighboursegment.GetLength() };
-                auto const tostart { glm::length( neighboursegment.FastGetPoint_0() - joint ) };
-                auto const toend { glm::length( neighboursegment.FastGetPoint_1() - joint ) };
-                if( std::min( tostart, toend ) > 0.05 ) {
-                    continue;
-                }
-                auto const atstart { tostart <= toend };
-                auto const same { atstart == ( end == 1 ) };
-                for( auto const &crossing : theirs ) {
-                    if( crossing.path != neighbourpath || crossing.track == &Track ) {
-                        continue;
-                    }
-                    auto const along { atstart ? crossing.at : neighbourlength - crossing.at };
-                    if( along > extension ) {
-                        continue;
-                    }
-                    auto mapped { crossing };
-                    mapped.path = path;
-                    mapped.at = ( end ? length + along : -along );
-                    mapped.owner = neighbour;
-                    if( false == same ) {
-                        mapped.side = -crossing.side;
-                        mapped.into = -crossing.into;
-                        mapped.aligned = !crossing.aligned;
-                    }
-                    if( std::none_of( Result.begin(), Result.begin() + owncount, [&]( rail_crossing const &Crossing ) { return same_place( Crossing, mapped.path, mapped.side, mapped.at ); } ) ) {
-                        Result.push_back( mapped );
-                    }
-                }
-            }
+            add_end_crossings( Track, path, end, length, owncount, Result );
         }
     }
 }
@@ -557,7 +646,7 @@ using planned_check_set = std::array<std::array<std::vector<planned_check>, 2>, 
 void add_acute_check( std::vector<planned_check> &Checks, double const At, double const Toward, double const Slope, double const Flare ) {
 
     auto const half { 0.5 * check_length( Slope ) };
-    Checks.push_back( { At + Toward * 0.25 - half, At + Toward * 0.25 + half, true, true, 1.5, Flare, 0.0, 0.0, true } );
+    Checks.emplace_back( At + Toward * 0.25 - half, At + Toward * 0.25 + half, true, true, 1.5, Flare, 0.0, 0.0, true );
 }
 
 planned_check_set planned_checks( TTrack const &Track, std::vector<rail_crossing> const &Crossings ) {
@@ -571,10 +660,10 @@ planned_check_set planned_checks( TTrack const &Track, std::vector<rail_crossing
             add_acute_check( plans[ crossing.path ][ crossing.side < 0 ], crossing.at, crossing.into > 0.0 ? 1.0 : -1.0, std::tan( crossing.angle ), 0.02 );
         }
         else if( crossing.into > 0.0 ) {
-            plans[ crossing.path ][ crossing.side > 0 ].push_back( { crossing.at, crossing.at + 1.2, false, true, 0.5, 0.02, -knuckle_bend( crossing.into ), 0.0 } );
+            plans[ crossing.path ][ crossing.side > 0 ].emplace_back( crossing.at, crossing.at + 1.2, false, true, 0.5, 0.02, -knuckle_bend( crossing.into ), 0.0 );
         }
         else {
-            plans[ crossing.path ][ crossing.side > 0 ].push_back( { crossing.at - 1.2, crossing.at, true, false, 0.5, 0.02, 0.0, knuckle_bend( crossing.into ) } );
+            plans[ crossing.path ][ crossing.side > 0 ].emplace_back( crossing.at - 1.2, crossing.at, true, false, 0.5, 0.02, 0.0, knuckle_bend( crossing.into ) );
         }
     }
     if( Track.eType == tt_Switch ) {
@@ -591,8 +680,9 @@ planned_check_set planned_checks( TTrack const &Track, std::vector<rail_crossing
 
 void merge_checks( std::vector<planned_check> &Checks ) {
 
-    std::sort( Checks.begin(), Checks.end(), []( planned_check const &A, planned_check const &B ) { return A.from < B.from; } );
-    for( std::size_t i = 1; i < Checks.size(); ++i ) {
+    std::ranges::sort( Checks, []( planned_check const &A, planned_check const &B ) { return A.from < B.from; } );
+    std::size_t i { 1 };
+    while( i < Checks.size() ) {
         if( Checks[ i ].from < Checks[ i - 1 ].to + 2.0 ) {
             if( Checks[ i ].to > Checks[ i - 1 ].to ) {
                 Checks[ i - 1 ].to = Checks[ i ].to;
@@ -602,7 +692,11 @@ void merge_checks( std::vector<planned_check> &Checks ) {
             Checks[ i - 1 ].shortest = std::min( Checks[ i - 1 ].shortest, Checks[ i ].shortest );
             Checks[ i - 1 ].flare = std::max( Checks[ i - 1 ].flare, Checks[ i ].flare );
             Checks[ i - 1 ].acute = Checks[ i - 1 ].acute || Checks[ i ].acute;
-            Checks.erase( Checks.begin() + i-- );
+            // the merged one is gone, the next one comes in its place
+            Checks.erase( Checks.begin() + static_cast<std::ptrdiff_t>( i ) );
+        }
+        else {
+            ++i;
         }
     }
 }
@@ -614,7 +708,8 @@ bool blocked_by( std::vector<gauge_line> const &Others, glm::dvec2 const &Gauge,
         for( std::size_t i = 1; i < other.points.size() && false == blocked; ++i ) {
             auto const a { plan( other.points[ i - 1 ] ) };
             auto const edge { plan( other.points[ i ] ) - a };
-            double t, u;
+            double t;
+            double u;
             if( false == meet( Gauge, Inward, a, edge, 1e-9, t, u ) ) {
                 continue;
             }
@@ -622,6 +717,36 @@ bool blocked_by( std::vector<gauge_line> const &Others, glm::dvec2 const &Gauge,
         }
     }
     return blocked;
+}
+
+// how far the heels of the blades of a switch reach, the furthest of them
+double heels_reach( TTrack const &Track ) {
+
+    auto heel { 0.0 };
+    for( int path = 0; path < 2; ++path ) {
+        auto const &blade { Track.blade( path ) };
+        if( blade.valid ) {
+            heel = std::max( heel, blade.heel );
+        }
+    }
+    return heel;
+}
+
+// the places along a check rail, every 0.1, where a rail inside it comes nearer than the Clearance: one of the Others, or with an acute check one of the Crossing ones
+void block_check( gauge_line const &Ours, int const Side, planned_check const &Check, std::vector<gauge_line> const &Others, std::vector<gauge_line> const &Crossing, double const Clearance, knots::line &Blocks ) {
+
+    auto s { Check.from };
+    while( s <= Check.to ) {
+        glm::dvec3 point;
+        glm::dvec3 tangent;
+        Ours.at( s, point, tangent );
+        if( auto const inward { plan( Ours.normal( s, Side ) ) };
+            blocked_by( Others, plan( point ), inward, Clearance )
+         || ( Check.acute && blocked_by( Crossing, plan( point ), inward, Clearance ) ) ) {
+            Blocks.emplace_back( s - 0.3, s + 0.3 );
+        }
+        s += 0.1;
+    }
 }
 
 // check rails keep clear of the blades and the rails of the other path of a switch running inside the rail, here and in a switch joined at an end, and of the blade tips;
@@ -640,14 +765,7 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
         others.push_back( make_gauge_line( Other, halfwidth, 0.0 ) ); };
     if( Track.eType == tt_Switch ) {
         // past the heels of the blades
-        auto heel { 0.0 };
-        for( int path = 0; path < 2; ++path ) {
-            auto const &blade { Track.blade( path ) };
-            if( blade.valid ) {
-                heel = std::max( heel, blade.heel );
-            }
-        }
-        blocks.emplace_back( -1e9, heel + 0.3 );
+        blocks.emplace_back( -1e9, heels_reach( Track ) + 0.3 );
         add_path( path_segment( Track, 1 - Path ) );
     }
     for( auto const *neighbour : { Track.trPrev, Track.trNext } ) {
@@ -675,15 +793,7 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
     if( false == others.empty() || false == Crossing.empty() ) {
         auto const ours { make_gauge_line( segment, Side * halfwidth, 0.0 ) };
         for( auto const &check : Checks ) {
-            for( auto s { check.from }; s <= check.to; s += 0.1 ) {
-                glm::dvec3 point, tangent;
-                ours.at( s, point, tangent );
-                auto const inward { plan( ours.normal( s, Side ) ) };
-                if( blocked_by( others, plan( point ), inward, Clearance )
-                 || ( check.acute && blocked_by( Crossing, plan( point ), inward, Clearance ) ) ) {
-                    blocks.emplace_back( s - 0.3, s + 0.3 );
-                }
-            }
+            block_check( ours, Side, check, others, Crossing, Clearance, blocks );
         }
     }
     knots::sort( blocks );
@@ -692,13 +802,13 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
 
 void cut_check( planned_check const &Check, knots::line const &Blocks, std::vector<check_rail> &Result ) {
 
-    auto const add = [&]( double const From, double const To ) {
-        Result.push_back( {
+    auto const add = [ &Check, &Result ]( double const From, double const To ) {
+        Result.emplace_back(
             From, To,
             ( From > Check.from || Check.flarefrom ) ? Check.flare : 0.0,
             ( To < Check.to || Check.flareto ) ? Check.flare : 0.0,
             From > Check.from ? 0.0 : Check.frombend,
-            To < Check.to ? 0.0 : Check.tobend } ); };
+            To < Check.to ? 0.0 : Check.tobend ); };
     auto from { Check.from };
     for( auto const &block : Blocks ) {
         if( block.y <= from || block.x >= Check.to ) {
@@ -711,6 +821,267 @@ void cut_check( planned_check const &Check, knots::line const &Blocks, std::vect
     }
     if( Check.to - from >= Check.shortest ) {
         add( from, Check.to );
+    }
+}
+
+// where the gauge lines of the crossing rails of the two paths of a switch meet past the blades, from their points in plan and the distances
+// along the paths: true where they do, with the distances of the meeting put in the frog
+bool meet_frog_lines( std::array<std::vector<glm::dvec2>, 2> const &Lines, std::array<std::vector<double>, 2> const &Distances, switch_frog &Frog ) {
+
+    for( std::size_t i = 1; i < Lines[ 0 ].size(); ++i ) {
+        if( Distances[ 0 ][ i ] <= Frog.blades[ 0 ] ) {
+            continue;
+        }
+        auto const a0 { Lines[ 0 ][ i - 1 ] };
+        auto const a { Lines[ 0 ][ i ] - a0 };
+        for( std::size_t j = 1; j < Lines[ 1 ].size(); ++j ) {
+            if( Distances[ 1 ][ j ] <= Frog.blades[ 1 ] ) {
+                continue;
+            }
+            auto const b0 { Lines[ 1 ][ j - 1 ] };
+            auto const b { Lines[ 1 ][ j ] - b0 };
+            double u;
+            double v;
+            if( false == meet( a0, a, b0, b, 1e-12, u, v ) ) {
+                continue;
+            }
+            if( u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0 ) {
+                continue;
+            }
+            Frog.at[ 0 ] = glm::mix( Distances[ 0 ][ i - 1 ], Distances[ 0 ][ i ], u );
+            Frog.at[ 1 ] = glm::mix( Distances[ 1 ][ j - 1 ], Distances[ 1 ][ j ], v );
+            return true;
+        }
+    }
+    return false;
+}
+
+// how far along the blade the gap to the rail of the other path gets as wide as the Width; -1 where it doesn't
+double gauge_reach( std::vector<glm::dvec2> const &Gauge, double const Width ) {
+
+    for( std::size_t i = 1; i < Gauge.size(); ++i ) {
+        if( Gauge[ i ].y >= Width ) {
+            auto const &a { Gauge[ i - 1 ] };
+            auto const &b { Gauge[ i ] };
+            return glm::mix( a.x, b.x, std::clamp( ( Width - a.y ) / std::max( b.y - a.y, 1e-9 ), 0.0, 1.0 ) );
+        }
+    }
+    return -1.0;
+}
+
+// how wide the gap to the rail of the other path is at a distance along the blade
+double gauge_level( std::vector<glm::dvec2> const &Gauge, double const Distance ) {
+
+    for( std::size_t i = 1; i < Gauge.size(); ++i ) {
+        if( Gauge[ i ].x >= Distance ) {
+            auto const &a { Gauge[ i - 1 ] };
+            auto const &b { Gauge[ i ] };
+            return glm::mix( a.y, b.y, std::clamp( ( Distance - a.x ) / std::max( b.x - a.x, 1e-9 ), 0.0, 1.0 ) );
+        }
+    }
+    return Gauge.back().y;
+}
+
+// how far the rail of the other path turns away from the rail of the blade at a distance along it: the sine of the angle between them in plan
+double gauge_turn( gauge_line const &Ours, gauge_line const &Theirs, int const Side, double const Distance ) {
+
+    glm::dvec3 here;
+    glm::dvec3 ourtangent;
+    glm::dvec3 line;
+    glm::dvec3 along;
+    Ours.at( Distance, here, ourtangent );
+    auto there { nearest_distance( Theirs, here ) };
+    lateral( Theirs, Side, here, there );
+    Theirs.at( there, line, along );
+    return std::abs( glm::cross( glm::normalize( glm::dvec3 { ourtangent.x, 0.0, ourtangent.z } ), glm::normalize( glm::dvec3 { along.x, 0.0, along.z } ) ).y );
+}
+
+// the gap between the gauge line of the rail of the blade and the one of the rail of the other path, sampled along the Length from the tip,
+// in order along the blade
+void sample_gauge( gauge_line const &Ours, gauge_line const &Theirs, int const Side, double const Length, std::vector<glm::dvec2> &Gauge ) {
+
+    auto const count { std::max( 2, static_cast<int>( std::ceil( Length / 0.1 ) ) ) };
+    glm::dvec3 point;
+    glm::dvec3 tangent;
+    Ours.at( 0.0, point, tangent );
+    auto otherat { nearest_distance( Theirs, point ) };
+    for( int i = 0; i <= count; ++i ) {
+        auto const distance { Length * i / count };
+        Ours.at( distance, point, tangent );
+        lateral( Theirs, Side, point, otherat );
+        glm::dvec3 line;
+        Theirs.at( otherat, line, tangent );
+        auto at { distance };
+        auto const gap { lateral( Ours, Side, line, at ) };
+        Gauge.emplace_back( at, gap );
+    }
+    std::ranges::sort( Gauge, []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
+}
+
+// the blade meets the stock rail at an angle too steep for its point to be planed along, from where it's Thin to where it's as Thick as the nose
+bool angled_blade( gauge_line const &Ours, gauge_line const &Theirs, int const Side, double const Thin, double const Thick ) {
+
+    auto angled { false };
+    if( Thin >= 0.0 && Thick > Thin ) {
+        auto const at { gauge_turn( Ours, Theirs, Side, Thin ) };
+        auto const bending { ( gauge_turn( Ours, Theirs, Side, Thick ) - at ) / ( Thick - Thin ) };
+        angled = std::sqrt( std::max( 0.0, at * at - 2.0 * bending * blade_point ) ) >= blade_tangent;
+    }
+    return angled;
+}
+
+// the last joint of the pieces of a path, short of where the blade stands apart by the mark, at which it stands apart enough for its tip, or at all
+// with an Angled blade; -1 where there's none
+double tip_mark( TSegment const &Segment, std::vector<glm::dvec2> const &Gauge, bool const Angled ) {
+
+    auto mark { -1.0 };
+    for( std::size_t piece = 1; piece < Segment.PieceCount(); ++piece ) {
+        auto const at { Segment.PieceStart( piece ) };
+        auto const apart { gauge_level( Gauge, at ) };
+        if( apart > blade_mark ) {
+            break;
+        }
+        if( Angled || apart >= blade_gap ) {
+            mark = at;
+        }
+    }
+    return mark;
+}
+
+// how far the heel of a blade may go: from where the blade stands clear of the stock rail up to the limit
+struct heel_bounds {
+    double clear { 0.0 };
+    double limit { 0.0 };
+    bool capped { false }; // the limit is cut short: the crossings of a slip or the frog of another track end the blade
+    bool reached { false }; // the frog of another track ends the blade
+};
+
+// the bounds of the heel of the blade of a path, cut short by the crossings past it
+void cap_heel( TTrack const &Track, int const Path, int const Side, double const Full, heel_bounds &Bounds ) {
+
+    // the blades of a double slip with them outside of the diamond end before the check rails of its crossings, shorter than they'd bend;
+    // with the throat of an acute frog of the diamond nearer than the blade gets clear of the stock rail, it ends short of the throat with the head clear of it,
+    // the frog over the blade wouldn't be made at all
+    if( Track.DoubleSlip() && Bounds.clear >= 0.0 ) {
+        auto const [ slipreach, sliplatest ] { slip_blade_reach( Track ) };
+        auto const cap { slipreach >= Bounds.clear ? slipreach : sliplatest };
+        if( cap < Bounds.limit && ( cap >= Bounds.clear || ( Full >= 0.0 && cap > Full ) ) ) {
+            Bounds.limit = cap;
+            Bounds.capped = true;
+            Bounds.clear = std::min( Bounds.clear, cap );
+        }
+    }
+    // the blade of a switch with a frog of another track right past the heel keeps as long as it may, it doesn't bend as far as it would
+    if( false == Track.DoubleSlip() && Bounds.clear >= 0.0 ) {
+        auto const cap { blade_reach( Track, Path, Side ) };
+        if( cap >= Bounds.clear && cap < Bounds.limit ) {
+            Bounds.limit = cap;
+            Bounds.capped = true;
+            Bounds.reached = true;
+        }
+    }
+}
+
+// how far over the blade bends at a distance along it: nothing at the Heel, all the way at the tip
+double blade_bend( switch_blade const &Blade, double const Distance, double const Heel ) {
+
+    auto const u { std::clamp( ( Heel - Distance ) / std::max( Heel - Blade.tip, 1e-6 ), 0.0, 1.0 ) };
+    return ( Blade.rigid ? u : u * u * ( 3.0 - u ) * 0.5 );
+}
+
+// the narrowest gap the blade thrown over by the Throw leaves to the stock rail with its Head, from the tip to the Heel, and where it is
+double blade_opening( switch_blade const &Blade, double const Head, double const Throw, double const Heel, double &At ) {
+
+    auto least { 1e9 };
+    for( auto const &sample : Blade.gauge ) {
+        if( sample.x < Blade.tip || sample.x > Heel ) {
+            continue;
+        }
+        auto const gap { std::max( 0.0, sample.y - Head ) + Throw * blade_bend( Blade, sample.x, Heel ) };
+        if( gap < least ) {
+            least = gap;
+            At = sample.x;
+        }
+    }
+    return least;
+}
+
+// the heel of a blade the template of the switch doesn't set: as near the tip as the blade thrown over still opens clear of the stock rail, then
+// on to where the rail behind it stands clear of it; false where the blade can't be made
+bool find_heel( switch_blade &Blade, heel_bounds const &Bounds, rail_size const &Size, double const Throw ) {
+
+    auto at { 0.0 };
+    auto short_blade { false };
+    if( blade_opening( Blade, Size.head, Throw, Bounds.limit, at ) < blade_clearance ) {
+        Blade.rigid = true;
+        if( blade_opening( Blade, Size.head, Throw, Bounds.limit, at ) < blade_clearance || Bounds.reached ) {
+            if( false == Bounds.capped ) {
+                return false;
+            }
+            short_blade = true;
+        }
+    }
+    auto low { Bounds.clear };
+    auto high { Bounds.limit };
+    for( int step = 0; step < 40 && false == short_blade; ++step ) {
+        auto const middle { 0.5 * ( low + high ) };
+        ( blade_opening( Blade, Size.head, Throw, middle, at ) >= blade_clearance ? high : low ) = middle;
+    }
+    Blade.heel = high;
+    // the blade goes on until the rail behind it stands clear of the stock rail with its whole foot, so it moves out of the place of the rail
+    // of the other path all along; only the frog of another track or the crossings of a slip end it sooner
+    if( auto const apart { gauge_reach( Blade.gauge, Size.high - Size.low + blade_gap ) };
+        apart > Blade.heel && Blade.heel < Bounds.limit ) {
+        Blade.heel = std::min( apart, Bounds.limit );
+        Blade.rigid = false;
+        Blade.rigid = ( blade_opening( Blade, Size.head, Throw, Blade.heel, at ) < blade_clearance );
+    }
+    return true;
+}
+
+// the gap to the rail of the other path doesn't narrow anywhere from the start of the blade to its heel
+bool opens_steadily( std::vector<glm::dvec2> const &Gauge, double const Heel ) {
+
+    for( std::size_t i = 1; i < Gauge.size() && Gauge[ i ].x <= Heel; ++i ) {
+        if( Gauge[ i ].y < Gauge[ i - 1 ].y - 1e-4 ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// how high the top of the blade is: the highest of the second half of the points of the rail profile, those of the blade
+double blade_top( gfx::vertex_array const &Profile ) {
+
+    auto bladetop { -1e9 };
+    for( auto i { Profile.size() / 2 }; i < Profile.size(); ++i ) {
+        bladetop = std::max( bladetop, static_cast<double>( Profile[ i ].position.y ) );
+    }
+    return bladetop;
+}
+
+// how wide the blade is from the tip to where it's cut to, every blade spacing, and how far it's dropped below the stock rail where it's narrow
+void blade_extents( switch_blade &Blade, double const Cutto, double const Lowered ) {
+
+    auto distance { Blade.tip };
+    while( distance < Cutto + 0.5 * blade_spacing ) {
+        auto const at { std::min( distance, Cutto ) };
+        auto const width { gauge_level( Blade.gauge, at ) - blade_gap };
+        Blade.extents.emplace_back( at, width );
+        if( Blade.drop > 0.0 && ( Lowered < 0.0 || at <= Lowered + blade_spacing ) ) {
+            Blade.drops.emplace_back( at, Blade.drop * std::clamp( 1.0 - width / blade_lowered, 0.0, 1.0 ) );
+        }
+        distance += blade_spacing;
+    }
+}
+
+// how far over the blade bends along it, from the tip to the heel
+void blade_bends( switch_blade &Blade ) {
+
+    auto const steps { std::max( 1, static_cast<int>( std::ceil( ( Blade.heel - Blade.tip ) / blade_spacing ) ) ) };
+    for( int i = 0; i <= steps; ++i ) {
+        auto const distance { glm::mix( Blade.tip, Blade.heel, static_cast<double>( i ) / steps ) };
+        Blade.bends.emplace_back( distance, blade_bend( Blade, distance, Blade.heel ) );
     }
 }
 
@@ -737,7 +1108,7 @@ std::vector<track_rails::rail_crossing> TTrack::rail_crossings( bool const Joine
     return result;
 }
 
-track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Crossings ) {
+track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> const &Crossings ) const {
 
     check_rail_set result;
     auto const size { rail_dimensions() };
@@ -749,7 +1120,7 @@ track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> cons
     std::vector<gauge_line> crossing;
     std::vector<TTrack const *> crossers;
     for( auto const &entry : Crossings ) {
-        if( entry.track == nullptr || entry.track == this || std::find( crossers.begin(), crossers.end(), entry.track ) != crossers.end() ) {
+        if( entry.track == nullptr || entry.track == this || std::ranges::find( crossers, entry.track ) != crossers.end() ) {
             continue;
         }
         crossers.push_back( entry.track );
@@ -760,15 +1131,15 @@ track_rails::check_rail_set TTrack::check_rails( std::vector<rail_crossing> cons
         }
     }
     for( int path = 0; path < track_rails::path_count( *this ); ++path ) {
-        for( int right = 0; right < 2; ++right ) {
-            auto &checks { plans[ path ][ right ] };
+        for( int rightside = 0; rightside < 2; ++rightside ) {
+            auto &checks { plans[ path ][ rightside ] };
             if( checks.empty() ) {
                 continue;
             }
             merge_checks( checks );
-            auto const blocks { check_blocks( *this, path, right ? 1 : -1, checks, clearance, crossing ) };
+            auto const blocks { check_blocks( *this, path, rightside ? 1 : -1, checks, clearance, crossing ) };
             for( auto const &check : checks ) {
-                cut_check( check, blocks, result[ path ][ right ] );
+                cut_check( check, blocks, result[ path ][ rightside ] );
             }
         }
     }
@@ -784,8 +1155,8 @@ track_rails::switch_frog TTrack::frog() const {
     result.side[ 0 ] = blade_side( 0 );
     result.side[ 1 ] = -result.side[ 0 ];
     auto const halfwidth { 0.5 * std::abs( fTrackWidth ) };
-    std::vector<glm::dvec2> lines[ 2 ];
-    std::vector<double> distances[ 2 ];
+    std::array<std::vector<glm::dvec2>, 2> lines;
+    std::array<std::vector<double>, 2> distances;
     for( int path = 0; path < 2; ++path ) {
         auto const &segment { *SwitchExtension->Segments[ path ] };
         auto const length { segment.GetLength() };
@@ -793,42 +1164,21 @@ track_rails::switch_frog TTrack::frog() const {
         auto const count { std::max( 1, static_cast<int>( std::ceil( length / 0.25 ) ) ) };
         for( int i = 0; i <= count; ++i ) {
             auto const distance { length * i / count };
-            glm::dvec3 point, across;
+            glm::dvec3 point;
+            glm::dvec3 across;
             segment.plan_frame( distance, point, across );
             auto const gauge { point + across * ( result.side[ path ] * halfwidth ) };
             lines[ path ].emplace_back( gauge.x, gauge.z );
             distances[ path ].push_back( distance );
         }
     }
-    for( std::size_t i = 1; i < lines[ 0 ].size() && false == result.valid; ++i ) {
-        if( distances[ 0 ][ i ] <= result.blades[ 0 ] ) {
-            continue;
-        }
-        auto const a0 { lines[ 0 ][ i - 1 ] };
-        auto const a { lines[ 0 ][ i ] - a0 };
-        for( std::size_t j = 1; j < lines[ 1 ].size(); ++j ) {
-            if( distances[ 1 ][ j ] <= result.blades[ 1 ] ) {
-                continue;
-            }
-            auto const b0 { lines[ 1 ][ j - 1 ] };
-            auto const b { lines[ 1 ][ j ] - b0 };
-            double u, v;
-            if( false == meet( a0, a, b0, b, 1e-12, u, v ) ) {
-                continue;
-            }
-            if( u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0 ) {
-                continue;
-            }
-            result.at[ 0 ] = glm::mix( distances[ 0 ][ i - 1 ], distances[ 0 ][ i ], u );
-            result.at[ 1 ] = glm::mix( distances[ 1 ][ j - 1 ], distances[ 1 ][ j ], v );
-            result.valid = true;
-            break;
-        }
-    }
+    result.valid = meet_frog_lines( lines, distances, result );
     if( false == result.valid ) {
         return result;
     }
-    glm::dvec3 point, across0, across1;
+    glm::dvec3 point;
+    glm::dvec3 across0;
+    glm::dvec3 across1;
     SwitchExtension->Segments[ 0 ]->plan_frame( result.at[ 0 ], point, across0 );
     SwitchExtension->Segments[ 1 ]->plan_frame( result.at[ 1 ], point, across1 );
     result.angle = std::acos( std::min( 1.0, std::abs( glm::dot( across0, across1 ) ) ) );
@@ -875,185 +1225,52 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
         std::max( SwitchExtension->Segments[ Path ]->GetLength(), SwitchExtension->Segments[ 1 - Path ]->GetLength() ),
         runs( Path ),
         runs( 1 - Path ) } ) ) };
-    auto const count { std::max( 2, static_cast<int>( std::ceil( length / 0.1 ) ) ) };
-    auto &gauge { result.gauge };
-    glm::dvec3 point, tangent;
-    ours.at( 0.0, point, tangent );
-    auto otherat { nearest_distance( theirs, point ) };
-    for( int i = 0; i <= count; ++i ) {
-        auto const distance { length * i / count };
-        ours.at( distance, point, tangent );
-        lateral( theirs, side, point, otherat );
-        glm::dvec3 line;
-        theirs.at( otherat, line, tangent );
-        auto at { distance };
-        auto const gap { lateral( ours, side, line, at ) };
-        gauge.emplace_back( at, gap );
-    }
-    std::sort( gauge.begin(), gauge.end(), []( glm::dvec2 const &A, glm::dvec2 const &B ) { return A.x < B.x; } );
+    auto const &gauge { result.gauge };
+    sample_gauge( ours, theirs, side, length, result.gauge );
     if( std::abs( gauge.front().y ) > 0.002 ) {
         return result;
     }
-    auto const reach = [&]( double const Width ) {
-        for( std::size_t i = 1; i < gauge.size(); ++i ) {
-            if( gauge[ i ].y >= Width ) {
-                auto const &a { gauge[ i - 1 ] };
-                auto const &b { gauge[ i ] };
-                return glm::mix( a.x, b.x, std::clamp( ( Width - a.y ) / std::max( b.y - a.y, 1e-9 ), 0.0, 1.0 ) );
-            }
-        }
-        return -1.0; };
-    auto const level = [&]( double const Distance ) {
-        for( std::size_t i = 1; i < gauge.size(); ++i ) {
-            if( gauge[ i ].x >= Distance ) {
-                auto const &a { gauge[ i - 1 ] };
-                auto const &b { gauge[ i ] };
-                return glm::mix( a.y, b.y, std::clamp( ( Distance - a.x ) / std::max( b.x - a.x, 1e-9 ), 0.0, 1.0 ) );
-            }
-        }
-        return gauge.back().y; };
-    auto const turn = [&]( double const Distance ) {
-        glm::dvec3 here, heading, line, along;
-        ours.at( Distance, here, heading );
-        auto there { nearest_distance( theirs, here ) };
-        lateral( theirs, side, here, there );
-        theirs.at( there, line, along );
-        return std::abs( glm::cross( glm::normalize( glm::dvec3 { heading.x, 0.0, heading.z } ), glm::normalize( glm::dvec3 { along.x, 0.0, along.z } ) ).y ); };
-    auto const thin { reach( blade_point ) };
-    auto const thick { reach( blade_nose ) };
-    auto angled { false };
-    if( thin >= 0.0 && thick > thin ) {
-        auto const at { turn( thin ) };
-        auto const bending { ( turn( thick ) - at ) / ( thick - thin ) };
-        angled = std::sqrt( std::max( 0.0, at * at - 2.0 * bending * blade_point ) ) >= blade_tangent;
-    }
+    auto const thin { gauge_reach( gauge, blade_point ) };
+    auto const thick { gauge_reach( gauge, blade_nose ) };
+    auto const angled { angled_blade( ours, theirs, side, thin, thick ) };
     result.tip = ( angled || thick < 0.0 ? thin : std::max( thin, thick - blade_planed ) );
     for( auto const path : { Path, 1 - Path } ) {
-        auto const &segment { *SwitchExtension->Segments[ path ] };
-        auto mark { -1.0 };
-        for( std::size_t piece = 1; piece < segment.PieceCount(); ++piece ) {
-            auto const at { segment.PieceStart( piece ) };
-            auto const apart { level( at ) };
-            if( apart > blade_mark ) {
-                break;
-            }
-            if( angled || apart >= blade_gap ) {
-                mark = at;
-            }
-        }
-        if( mark >= 0.0 ) {
-            result.tip = std::max( mark, reach( blade_gap ) );
+        if( auto const mark { tip_mark( *SwitchExtension->Segments[ path ], gauge, angled ) }; mark >= 0.0 ) {
+            result.tip = std::max( mark, gauge_reach( gauge, blade_gap ) );
             break;
         }
     }
-    result.full = reach( size.head + blade_gap );
-    auto clear { reach( size.head + blade_clearance ) };
-    auto const foot { reach( size.high + blade_gap ) };
-    auto limit { length > shortest + 1e-3 ? length : 0.9 * length };
-    // the blades of a double slip with them outside of the diamond end before the check rails of its crossings, shorter than they'd bend;
-    // with the throat of an acute frog of the diamond nearer than the blade gets clear of the stock rail, it ends short of the throat with the head clear of it,
-    // the frog over the blade wouldn't be made at all
-    auto capped { false };
-    if( DoubleSlip() && clear >= 0.0 ) {
-        auto const [ reach, latest ] { slip_blade_reach( *this ) };
-        auto const cap { reach >= clear ? reach : latest };
-        if( cap < limit && ( cap >= clear || ( result.full >= 0.0 && cap > result.full ) ) ) {
-            limit = cap;
-            capped = true;
-            clear = std::min( clear, cap );
-        }
-    }
-    // the blade of a switch with a frog of another track right past the heel keeps as long as it may, it doesn't bend as far as it would
-    auto reached { false };
-    if( false == DoubleSlip() && clear >= 0.0 ) {
-        auto const cap { blade_reach( *this, Path, side ) };
-        if( cap >= clear && cap < limit ) {
-            limit = cap;
-            capped = true;
-            reached = true;
-        }
-    }
-    if( result.tip < 0.0 || result.full < 0.0 || clear < 0.0 || clear > limit ) {
+    result.full = gauge_reach( gauge, size.head + blade_gap );
+    heel_bounds bounds;
+    bounds.clear = gauge_reach( gauge, size.head + blade_clearance );
+    auto const foot { gauge_reach( gauge, size.high + blade_gap ) };
+    bounds.limit = ( length > shortest + 1e-3 ? length : 0.9 * length );
+    cap_heel( *this, Path, side, result.full, bounds );
+    if( result.tip < 0.0 || result.full < 0.0 || bounds.clear < 0.0 || bounds.clear > bounds.limit ) {
         return result;
     }
-    auto const bend = [&]( double const Distance, double const Heel ) {
-        auto const u { std::clamp( ( Heel - Distance ) / std::max( Heel - result.tip, 1e-6 ), 0.0, 1.0 ) };
-        return ( result.rigid ? u : u * u * ( 3.0 - u ) * 0.5 ); };
-    auto const opening = [&]( double const Heel, double &At ) {
-        auto least { 1e9 };
-        for( auto const &sample : gauge ) {
-            if( sample.x < result.tip || sample.x > Heel ) {
-                continue;
-            }
-            auto const gap { std::max( 0.0, sample.y - size.head ) + blades_throw() * bend( sample.x, Heel ) };
-            if( gap < least ) {
-                least = gap;
-                At = sample.x;
-            }
-        }
-        return least; };
-    auto at { 0.0 };
-    auto short_blade { false };
-    auto const given { SwitchExtension->m_bladeheel };
-    if( given > 0.0 ) {
+    auto const bladethrow { blades_throw() };
+    if( auto const given { SwitchExtension->m_bladeheel }; given > 0.0 ) {
         // the template of the switch says where its blades end; they bend stiff about the heel where the flangeway is too narrow for them to flex
-        result.heel = std::clamp( given, result.tip + blade_spacing, limit );
-        result.rigid = ( opening( result.heel, at ) < blade_clearance );
+        result.heel = std::clamp( given, result.tip + blade_spacing, bounds.limit );
+        auto at { 0.0 };
+        result.rigid = ( blade_opening( result, size.head, bladethrow, result.heel, at ) < blade_clearance );
     }
-    else {
-        if( opening( limit, at ) < blade_clearance ) {
-            result.rigid = true;
-            if( opening( limit, at ) < blade_clearance || reached ) {
-                if( false == capped ) {
-                    return result;
-                }
-                short_blade = true;
-            }
-        }
-        auto low { clear };
-        auto high { limit };
-        for( int step = 0; step < 40 && false == short_blade; ++step ) {
-            auto const middle { 0.5 * ( low + high ) };
-            ( opening( middle, at ) >= blade_clearance ? high : low ) = middle;
-        }
-        result.heel = high;
-        // the blade goes on until the rail behind it stands clear of the stock rail with its whole foot, so it moves out of the place of the rail
-        // of the other path all along; only the frog of another track or the crossings of a slip end it sooner
-        auto const apart { reach( size.high - size.low + blade_gap ) };
-        if( apart > result.heel && result.heel < limit ) {
-            result.heel = std::min( apart, limit );
-            result.rigid = false;
-            result.rigid = ( opening( result.heel, at ) < blade_clearance );
-        }
+    else if( false == find_heel( result, bounds, size, bladethrow ) ) {
+        return result;
     }
-    result.opening = opening( result.heel, result.openingat );
-    for( std::size_t i = 1; i < gauge.size() && gauge[ i ].x <= result.heel; ++i ) {
-        if( gauge[ i ].y < gauge[ i - 1 ].y - 1e-4 ) {
-            return result;
-        }
+    result.opening = blade_opening( result, size.head, bladethrow, result.heel, result.openingat );
+    if( false == opens_steadily( gauge, result.heel ) ) {
+        return result;
     }
     auto const &profile { track_rail_profile( m_profile1.second ) };
     auto const half { profile.size() / 2 };
-    auto bladetop { -1e9 };
-    for( auto i { half }; i < profile.size(); ++i ) {
-        bladetop = std::max( bladetop, static_cast<double>( profile[ i ].position.y ) );
-    }
+    auto const bladetop { blade_top( profile ) };
     result.drop = ( half > 0 ? std::max( 0.0, size.crest - bladetop ) : 0.0 );
-    auto const lowered { reach( blade_lowered + blade_gap ) };
+    auto const lowered { gauge_reach( gauge, blade_lowered + blade_gap ) };
     auto const cutto { std::min( result.heel, foot >= 0.0 ? foot + blade_spacing : result.heel ) };
-    for( auto distance { result.tip }; distance < cutto + 0.5 * blade_spacing; distance += blade_spacing ) {
-        auto const at { std::min( distance, cutto ) };
-        auto const width { level( at ) - blade_gap };
-        result.extents.emplace_back( at, width );
-        if( result.drop > 0.0 && ( lowered < 0.0 || at <= lowered + blade_spacing ) ) {
-            result.drops.emplace_back( at, result.drop * std::clamp( 1.0 - width / blade_lowered, 0.0, 1.0 ) );
-        }
-    }
-    auto const steps { std::max( 1, static_cast<int>( std::ceil( ( result.heel - result.tip ) / blade_spacing ) ) ) };
-    for( int i = 0; i <= steps; ++i ) {
-        auto const distance { glm::mix( result.tip, result.heel, static_cast<double>( i ) / steps ) };
-        result.bends.emplace_back( distance, bend( distance, result.heel ) );
-    }
+    blade_extents( result, cutto, lowered );
+    blade_bends( result );
     result.valid = true;
     return result;
 }

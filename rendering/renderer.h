@@ -60,7 +60,9 @@ public:
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
     // empties specified chunk, its handle stays valid to be filled again
-    virtual void Erase( gfx::geometry_handle const &Geometry ) {}
+    virtual void Erase( gfx::geometry_handle const & /*Geometry*/ ) {
+        // a renderer which keeps no chunks of its own has none to empty
+    }
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
@@ -101,7 +103,9 @@ public:
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
     // a node deleted from the scene is no longer given as picked
-    virtual void Forget_Node( scene::basic_node const *Node ) {}
+    virtual void Forget_Node( scene::basic_node const * /*Node*/ ) {
+        // a renderer which keeps no node picked has none to forget
+    }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
     virtual auto Mouse_Hit() const -> bool { return true; }
