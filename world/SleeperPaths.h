@@ -9,7 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <functional>
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -77,9 +78,56 @@ bool shares_with( sampled_path const &Path, glm::dvec3 const &Point, glm::dvec2 
 // they get beams or not
 std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded = false );
 // the tracks of the region near enough the track to take part in laying its beams, itself among them, some more than once
-void tracks_near( TTrack &Track, std::function<void( TTrack * )> const &Visit );
+std::vector<TTrack *> near_tracks( TTrack &Track );
+// the same tracks, each visited in turn
+template <typename Visitor_>
+void tracks_near( TTrack &Track, Visitor_ const &Visit ) {
+
+    for( auto *other : near_tracks( Track ) ) {
+        Visit( other );
+    }
+}
+// the place at a distance along the path, kept just off its ends, and the way the path runs there
+void place_along( sampled_path const &Path, double const Distance, glm::dvec3 &Point, glm::dvec2 &Direction );
+// how many steps the stretches of the path are tested at: half the step of the samples
+int stretch_steps( sampled_path const &Path );
 // the stretches of the path where the test holds of the place at a distance along it and the way the path runs there, tested at
 // half the step of the samples, with the ends narrowed down between
-std::vector<glm::dvec2> stretches_where( sampled_path const &Path, std::function<bool( glm::dvec3 const &, glm::dvec2 const & )> const &Test );
+template <typename Test_>
+std::vector<glm::dvec2> stretches_where( sampled_path const &Path, Test_ const &Test ) {
+
+    std::vector<glm::dvec2> result;
+    auto const holds = [ &Path, &Test ]( double const Distance ) {
+        glm::dvec3 point;
+        glm::dvec2 direction;
+        place_along( Path, Distance, point, direction );
+        return Test( point, direction ); };
+    auto const count { stretch_steps( Path ) };
+    auto was { holds( 0.0 ) };
+    auto start { 0.0 };
+    auto previous { 0.0 };
+    for( int step = 1; step <= count; ++step ) {
+        auto const distance { Path.length * step / count };
+        if( auto const is { holds( distance ) }; is != was ) {
+            auto low { previous };
+            auto high { distance };
+            for( int narrow = 0; narrow < 8; ++narrow ) {
+                auto const middle { 0.5 * ( low + high ) };
+                ( holds( middle ) == was ? low : high ) = middle;
+            }
+            auto const boundary { 0.5 * ( low + high ) };
+            if( was ) {
+                result.emplace_back( start, boundary );
+            }
+            start = boundary;
+            was = is;
+        }
+        previous = distance;
+    }
+    if( was ) {
+        result.emplace_back( start, Path.length );
+    }
+    return result;
+}
 
 } // namespace track_sleepers

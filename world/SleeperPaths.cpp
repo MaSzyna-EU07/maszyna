@@ -27,45 +27,57 @@ TSegment const *path_segment( TTrack const &Track, int const Path ) {
     return ( Track.eType == tt_Switch ? Track.SwitchExtension->Segments[ Path ].get() : Track.Segment.get() );
 }
 
+namespace {
+
+// a step of the line of tracks over one track of it: the length of the track, and the track the line goes on to past it
+struct line_step {
+    double length { 0.0 };
+    TTrack const *following { nullptr };
+};
+
+// the step of the line over the track it comes to from the previous one; none where the line ends at the track, come to the
+// diverging path of a switch or to a track of some other kind
+std::optional<line_step> step_along( TTrack const &Current, TTrack const *Previous ) {
+
+    if( Current.eType == tt_Normal && Current.Segment != nullptr ) {
+        return line_step { Current.Segment->GetLength(), ( Current.trPrev == Previous ? Current.trNext : Current.trPrev ) };
+    }
+    if( Current.eType == tt_Switch && Current.SwitchExtension != nullptr && Current.SwitchExtension->Segments[ 0 ] ) {
+        auto const &links { *Current.SwitchExtension };
+        if( links.pNexts[ 0 ] == Previous ) {
+            return line_step { links.Segments[ 0 ]->GetLength(), links.pPrevs[ 0 ] };
+        }
+        if( links.pPrevs[ 0 ] == Previous || links.pPrevs[ 1 ] == Previous ) {
+            return line_step { links.Segments[ 0 ]->GetLength(), links.pNexts[ 0 ] };
+        }
+        // come to the diverging path
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 // how long the line of tracks joined end to end the plain track is part of, so a line keeps laying the timbers where it runs
 // past the tracks of another, from one track of it to the next. the line goes on through the main path of a switch, and ends
 // where it comes to its diverging path
-namespace {
-
 double line_length( TTrack const &Track ) {
 
     if( Track.eType != tt_Normal || Track.Segment == nullptr ) {
         return 0.0;
     }
     auto result { Track.Segment->GetLength() };
-    for( auto *next : { Track.trPrev, Track.trNext } ) {
+    for( auto const *next : { Track.trPrev, Track.trNext } ) {
         TTrack const *previous { &Track };
         auto const *current { next };
-        for( int count = 0; current != nullptr && current != &Track && count < 1000; ++count ) {
-            TTrack const *following { nullptr };
-            if( current->eType == tt_Normal && current->Segment != nullptr ) {
-                result += current->Segment->GetLength();
-                following = ( current->trPrev == previous ? current->trNext : current->trPrev );
-            }
-            else if( current->eType == tt_Switch && current->SwitchExtension != nullptr && current->SwitchExtension->Segments[ 0 ] ) {
-                auto const &links { *current->SwitchExtension };
-                if( links.pNexts[ 0 ] == previous ) {
-                    following = links.pPrevs[ 0 ];
-                }
-                else if( links.pPrevs[ 0 ] == previous || links.pPrevs[ 1 ] == previous ) {
-                    following = links.pNexts[ 0 ];
-                }
-                else {
-                    // come to the diverging path
-                    break;
-                }
-                result += links.Segments[ 0 ]->GetLength();
-            }
-            else {
+        auto count { 0 };
+        while( current != nullptr && current != &Track && count < 1000 ) {
+            auto const stepped { step_along( *current, previous ) };
+            if( false == stepped.has_value() ) {
                 break;
             }
+            result += stepped->length;
             previous = current;
-            current = following;
+            current = stepped->following;
+            ++count;
         }
     }
     return result;
@@ -85,7 +97,7 @@ sampled_path sample( TTrack &Track, int const Path ) {
     result.length = result.segment->GetLength();
     result.gauge = std::abs( Track.fTrackWidth );
     result.rails = 0.5 * result.gauge + rail_reach;
-    result.reach = result.rails + overhang;
+    result.reach = result.rails + beam_overhang;
     result.half = 0.5 * plain_length( Track );
     result.line = line_length( Track );
     auto const count { std::max( 1, static_cast<int>( std::ceil( result.length / sample_step ) ) ) };
@@ -112,7 +124,7 @@ sampled_path sample( TTrack &Track, int const Path ) {
 glm::dvec2 heading( sampled_path const &Path, double const Distance ) {
 
     auto const count { Path.points.size() };
-    auto index { static_cast<std::size_t>( std::upper_bound( Path.distances.begin(), Path.distances.end(), Distance ) - Path.distances.begin() ) };
+    auto index { static_cast<std::size_t>( std::ranges::upper_bound( Path.distances, Distance ) - Path.distances.begin() ) };
     index = std::clamp<std::size_t>( index, 1, count - 1 );
     auto const direction { plan( Path.points[ index ] - Path.points[ index - 1 ] ) };
     auto const length { glm::length( direction ) };
@@ -125,8 +137,7 @@ glm::dvec2 heading( sampled_path const &Path, double const Distance ) {
 bool before( sampled_path const &Left, sampled_path const &Right ) {
 
     auto const leftswitch { Left.track->eType == tt_Switch };
-    auto const rightswitch { Right.track->eType == tt_Switch };
-    if( leftswitch != rightswitch ) {
+    if( auto const rightswitch { Right.track->eType == tt_Switch }; leftswitch != rightswitch ) {
         return leftswitch;
     }
     if( Left.track == Right.track ) {
@@ -178,8 +189,7 @@ bool beside( sampled_path const &Path, glm::dvec3 const &Point, double const Dis
         if( gap2 >= nearest ) {
             continue;
         }
-        auto const level { from.y + ( to.y - from.y ) * clamped };
-        if( std::abs( level - Point.y ) > level_tolerance ) {
+        if( auto const level { from.y + ( to.y - from.y ) * clamped }; std::abs( level - Point.y ) > level_tolerance ) {
             continue;
         }
         nearest = gap2;
@@ -224,7 +234,8 @@ void rail_frame( sampled_path const &Path, double const Distance, glm::dvec3 &Mi
 
     glm::vec3 angles;
     Path.segment->RaPositionGet( Distance, Middle, angles );
-    glm::dvec3 behind, ahead;
+    glm::dvec3 behind;
+    glm::dvec3 ahead;
     glm::vec3 unused;
     Path.segment->RaPositionGet( std::max( 0.0, Distance - 0.1 ), behind, unused );
     Path.segment->RaPositionGet( std::min( Path.length, Distance + 0.1 ), ahead, unused );
@@ -247,10 +258,16 @@ double off_plane( sampled_path const &Path, glm::dvec3 const &Point, sampled_pat
     if( Path.level && Other.level ) {
         return std::abs( Path.feet - Other.feet );
     }
-    glm::dvec2 position, direction;
+    glm::dvec2 position;
+    glm::dvec2 direction;
     auto const at { nearest_on( Path, plan( Point ), position, direction ) };
     auto const otherat { nearest_on( Other, plan( Point ), position, direction ) };
-    glm::dvec3 middle, across, along, othermiddle, otheracross, otheralong;
+    glm::dvec3 middle;
+    glm::dvec3 across;
+    glm::dvec3 along;
+    glm::dvec3 othermiddle;
+    glm::dvec3 otheracross;
+    glm::dvec3 otheralong;
     rail_frame( Path, at, middle, across, along );
     rail_frame( Other, otherat, othermiddle, otheracross, otheralong );
     auto const normal { glm::normalize( glm::cross( otheracross, otheralong ) ) };
@@ -272,7 +289,7 @@ double touch_spacing( sampled_path const &Path, sampled_path const &Other, doubl
 // how close two paths run where their sleepers can't be laid apart, so they share the timbers whether they're in one plane or not
 double shared_spacing( sampled_path const &Path, sampled_path const &Other ) {
 
-    return Path.rails + Other.rails + 2.0 * overhang_min + end_gap;
+    return Path.rails + Other.rails + 2.0 * beam_overhang_min + end_gap;
 }
 
 // whether the path at the point, running the given way, is carried by the beams of a path before it, which it runs beside so
@@ -305,11 +322,11 @@ std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded ) {
         result.emplace_back( sample( Track, path ) );
     }
     std::vector<TTrack *> others;
-    tracks_near( Track, [&]( TTrack *Other ) {
+    tracks_near( Track, [ &Track, &others, Bedded ]( TTrack *Other ) {
         if( Other == &Track || Other->m_editorremoved ) {
             return;
         }
-        if( std::find( others.begin(), others.end(), Other ) != others.end() || false == ( Bedded ? bedded( *Other ) : lays( *Other ) ) ) {
+        if( std::ranges::find( others, Other ) != others.end() || false == ( Bedded ? bedded( *Other ) : lays( *Other ) ) ) {
             return;
         }
         others.push_back( Other ); } );
@@ -318,67 +335,53 @@ std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded ) {
             result.emplace_back( sample( *other, path ) );
         }
     }
-    result.erase(
-        std::remove_if( result.begin(), result.end(), []( sampled_path const &Path ) { return Path.points.size() < 2; } ),
-        result.end() );
+    std::erase_if( result, []( sampled_path const &Path ) { return Path.points.size() < 2; } );
     return result;
 }
 
+namespace {
 
-void tracks_near( TTrack &Track, std::function<void( TTrack * )> const &Visit ) {
+// the tracks of the cell near enough the track to take part in laying its beams, added to the list
+void add_near( scene::basic_cell const &Cell, TTrack &Track, std::vector<TTrack *> &Near ) {
 
-    auto const sections { simulation::Region->sections( Track.location(), static_cast<float>( Track.radius() + 50.0 ) ) };
-    for( auto *section : sections ) {
+    for( auto *other : Cell.m_directories.paths ) {
+        if( other == nullptr || glm::length( other->location() - Track.location() ) > other->radius() + Track.radius() + around_margin ) {
+            continue;
+        }
+        Near.push_back( other );
+    }
+}
+
+} // namespace
+
+std::vector<TTrack *> near_tracks( TTrack &Track ) {
+
+    std::vector<TTrack *> result;
+    // a list of its own, not the one the region shares: the main thread and the one laying the beams both search
+    std::vector<scene::basic_section *> sections;
+    simulation::Region->sections( Track.location(), static_cast<float>( Track.radius() + 50.0 ), sections );
+    for( auto const *section : sections ) {
         for( auto const &cell : section->m_cells ) {
             if( glm::length( cell.area().center - Track.location() ) > cell.area().radius + Track.radius() + around_margin ) {
                 continue;
             }
-            for( auto *other : cell.m_directories.paths ) {
-                if( other == nullptr || glm::length( other->location() - Track.location() ) > other->radius() + Track.radius() + around_margin ) {
-                    continue;
-                }
-                Visit( other );
-            }
+            add_near( cell, Track, result );
         }
-    }
-}
-
-std::vector<glm::dvec2> stretches_where( sampled_path const &Path, std::function<bool( glm::dvec3 const &, glm::dvec2 const & )> const &Test ) {
-
-    std::vector<glm::dvec2> result;
-    auto const holds = [&]( double const Distance ) {
-        auto const distance { std::clamp( Distance, std::min( 0.01, 0.5 * Path.length ), std::max( Path.length - 0.01, 0.5 * Path.length ) ) };
-        glm::dvec3 point;
-        glm::vec3 angles;
-        Path.segment->RaPositionGet( distance, point, angles );
-        return Test( point, heading( Path, distance ) ); };
-    auto const count { std::max( 1, static_cast<int>( std::ceil( Path.length / ( 0.5 * sample_step ) ) ) ) };
-    auto was { holds( 0.0 ) };
-    auto start { 0.0 };
-    auto previous { 0.0 };
-    for( int step = 1; step <= count; ++step ) {
-        auto const distance { Path.length * step / count };
-        auto const is { holds( distance ) };
-        if( is != was ) {
-            auto low { previous };
-            auto high { distance };
-            for( int narrow = 0; narrow < 8; ++narrow ) {
-                auto const middle { 0.5 * ( low + high ) };
-                ( holds( middle ) == was ? low : high ) = middle;
-            }
-            auto const boundary { 0.5 * ( low + high ) };
-            if( was ) {
-                result.emplace_back( start, boundary );
-            }
-            start = boundary;
-            was = is;
-        }
-        previous = distance;
-    }
-    if( was ) {
-        result.emplace_back( start, Path.length );
     }
     return result;
+}
+
+void place_along( sampled_path const &Path, double const Distance, glm::dvec3 &Point, glm::dvec2 &Direction ) {
+
+    auto const distance { std::clamp( Distance, std::min( 0.01, 0.5 * Path.length ), std::max( Path.length - 0.01, 0.5 * Path.length ) ) };
+    glm::vec3 angles;
+    Path.segment->RaPositionGet( distance, Point, angles );
+    Direction = heading( Path, distance );
+}
+
+int stretch_steps( sampled_path const &Path ) {
+
+    return std::max( 1, static_cast<int>( std::ceil( Path.length / ( 0.5 * sample_step ) ) ) );
 }
 
 } // namespace track_sleepers
