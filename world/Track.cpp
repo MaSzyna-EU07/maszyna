@@ -1701,7 +1701,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 Geometry.emplace_back( track_rails::insert_chunk( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
             };
             // rail along the whole path
-            auto const whole_rail = [ this, &layout, &drawing, &empty_userdata, &Bank, jointlength ]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
+            auto const whole_rail = [ this, &layout, &drawing, &empty_userdata, &Bank ]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
                 if( false == lay_rail( layout, drawing, Profile, { .path = Path, .side = Side, .texturelength = Texturelength, .from = 0.0 }, Geometry, Cuts ) ) {
                     gfx::vertex_array vertices;
                     SwitchExtension->Segments[ Path ]->RenderLoft( vertices, m_origin, Profile, false, Texturelength, 1.0, jointlength );
@@ -1709,7 +1709,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 }
             };
             // part of the diverging rail touched by wheels of vehicle going straight, laid with the first path
-            auto const joint_rail = [ this, &empty_userdata, &Bank, jointlength ]( int const Path, gfx::vertex_array const &Rail, float const Texturelength, geometryhandle_sequence &Geometry, gfx::vertex_array &Vertices ) {
+            auto const joint_rail = [ this, &empty_userdata, &Bank ]( int const Path, gfx::vertex_array const &Rail, float const Texturelength, geometryhandle_sequence &Geometry, gfx::vertex_array &Vertices ) {
                 if( Path == 0 && jointlength > 0 ) {
                     SwitchExtension->Segments[ 1 ]->RenderLoft( Vertices, m_origin, Rail, false, Texturelength, 1.0, 0, jointlength );
                     Geometry.emplace_back( track_rails::insert_chunk( Vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
@@ -3126,24 +3126,20 @@ TTrack *crossroads_neighbour( TSwitchExtension const &Extension, int const s, do
                                     iEnds3[s + 6]) // numer końca 0..3, -1 to błąd
     { // zjazd ze skrzyżowania
     case 0:
-        if (Extension.pPrevs[0])
-            if (s > 0 == Extension.iPrevDirection[0])
-                d = -d;
+        if (Extension.pPrevs[0] && (s > 0) == Extension.iPrevDirection[0])
+            d = -d;
         return Extension.pPrevs[0];
     case 1:
-        if (Extension.pNexts[0])
-            if (s > 0 == Extension.iNextDirection[0])
-                d = -d;
+        if (Extension.pNexts[0] && (s > 0) == Extension.iNextDirection[0])
+            d = -d;
         return Extension.pNexts[0];
     case 2:
-        if (Extension.pPrevs[1])
-            if (s > 0 == Extension.iPrevDirection[1])
-                d = -d;
+        if (Extension.pPrevs[1] && (s > 0) == Extension.iPrevDirection[1])
+            d = -d;
         return Extension.pPrevs[1];
     case 3:
-        if (Extension.pNexts[1])
-            if (s > 0 == Extension.iNextDirection[1])
-                d = -d;
+        if (Extension.pNexts[1] && (s > 0) == Extension.iNextDirection[1])
+            d = -d;
         return Extension.pNexts[1];
     default:
         // no such end
