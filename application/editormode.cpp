@@ -86,6 +86,9 @@ namespace
     class frame_steps
     {
       public:
+        frame_steps() = default;
+        frame_steps(frame_steps const &) = delete;
+        frame_steps &operator=(frame_steps const &) = delete;
         void step(char const *Name)
         {
             auto const now{std::chrono::steady_clock::now()};
@@ -100,10 +103,10 @@ namespace
             if (total < kSlow || m_start - told < std::chrono::milliseconds{500})
                 return;
             told = m_start;
-            std::string text{"Editor: slow frame, update " + std::to_string(static_cast<int>(total)) + " ms:"};
+            std::string text{std::format("Editor: slow frame, update {} ms:", static_cast<int>(total))};
             for (auto const &[name, time] : m_steps)
                 if (time >= 3.0)
-                    text += " " + std::string{name} + " " + std::to_string(static_cast<int>(time));
+                    text += std::format(" {} {}", name, static_cast<int>(time));
             WriteLog(text, logtype::generic);
         }
 
@@ -111,6 +114,19 @@ namespace
         std::chrono::steady_clock::time_point const m_start{std::chrono::steady_clock::now()};
         std::chrono::steady_clock::time_point m_last{m_start};
         std::vector<std::pair<char const *, double>> m_steps;
+    };
+
+    // a flag set for a while: put back to false when this goes out of scope
+    class flag_reset
+    {
+      public:
+        explicit flag_reset(bool &Flag) : m_flag{Flag} {}
+        flag_reset(flag_reset const &) = delete;
+        flag_reset &operator=(flag_reset const &) = delete;
+        ~flag_reset() { m_flag = false; }
+
+      private:
+        bool &m_flag;
     };
 
     inline bool is_release(int state)
@@ -1059,11 +1075,7 @@ void editor_mode::undo_one()
         return;
 
     m_nmt_state.restoring = true;
-    struct restored
-    {
-        bool &flag;
-        ~restored() { flag = false; }
-    } const restoring{m_nmt_state.restoring};
+    flag_reset const restoring{m_nmt_state.restoring};
     EditorSnapshot snap = m_history.back();
     m_history.pop_back();
 
@@ -1235,11 +1247,7 @@ void editor_mode::redo_one()
         return;
 
     m_nmt_state.restoring = true;
-    struct restored
-    {
-        bool &flag;
-        ~restored() { flag = false; }
-    } const restoring{m_nmt_state.restoring};
+    flag_reset const restoring{m_nmt_state.restoring};
     EditorSnapshot snap = g_redo.back();
     g_redo.pop_back();
 
@@ -1441,7 +1449,7 @@ bool editor_mode::update()
     auto const deltarealtime = Timer::GetDeltaRenderTime();
     // the whole frame before, drawing included: one slow where its update wasn't took the time drawing
     if (deltarealtime > 0.15 && simulation::is_ready)
-        WriteLog("Editor: slow frame before, " + std::to_string(static_cast<int>(deltarealtime * 1000.0)) + " ms in all", logtype::generic);
+        WriteLog(std::format("Editor: slow frame before, {} ms in all", static_cast<int>(deltarealtime * 1000.0)), logtype::generic);
 
     // reconcile camera fly-mode with the real right-button state. ImGui is always fed the button
     // events (even when it captures the mouse), so io.MouseDown[1] is authoritative; if a release
@@ -1562,7 +1570,7 @@ bool editor_mode::update()
     if (resident > m_ortho_resident || waiting < m_ortho_waiting)
     {
         m_orthophoto.ground_arrived();
-        for (auto &layer : m_wms)
+        for (auto const &layer : m_wms)
             layer->ground_arrived();
     }
     m_ortho_resident = resident;
@@ -3775,7 +3783,7 @@ void editor_mode::read_georeference()
             {
                 name = entry->path().filename().string();
             }
-            catch (std::exception const &)
+            catch (std::system_error const &)
             {
                 continue;
             }
@@ -3954,8 +3962,7 @@ void editor_mode::render_wms_adding()
     ImGui::PopTextWrapPos();
     ImGui::SetNextItemWidth(-1.0f);
     auto const entered{ImGui::InputTextWithHint("##url", "https://...", adding.url.data(), adding.url.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
-    std::string const url{adding.url.data()};
-    if ((ImGui::Button(STR_C("Read the layers")) || entered) && false == adding.reading.valid() && false == url.empty())
+    if (std::string const url{adding.url.data()}; (ImGui::Button(STR_C("Read the layers")) || entered) && false == adding.reading.valid() && false == url.empty())
     {
         adding.info.reset();
         adding.ticked.clear();
@@ -4049,8 +4056,12 @@ void editor_mode::update_wms_layers()
     auto const &stored{EditorSettings.wms_layers()};
     // a layer added or removed: the ones of the view made again, as the settings have them
     auto same{m_wms.size() == stored.size()};
-    for (std::size_t i = 0; same && i < stored.size(); ++i)
-        same = m_wms[i]->settings().service == stored[i].url && m_wms[i]->settings().layers == stored[i].layers;
+    std::size_t index{0};
+    while (same && index < stored.size())
+    {
+        same = m_wms[index]->settings().service == stored[index].url && m_wms[index]->settings().layers == stored[index].layers;
+        ++index;
+    }
     if (false == same)
     {
         for (auto const &layer : m_wms)
@@ -4112,7 +4123,7 @@ void editor_mode::render_view_menu()
     }
     if (ImGui::BeginMenu(STR_C("Track colours")))
     {
-        char const *const names[]{"Plain", "By the radius", "By the speed", "By the grade"};
+        constexpr std::array<char const *, 4> names{"Plain", "By the radius", "By the speed", "By the grade"};
         for (int i = 0; i < 4; ++i)
             if (ImGui::MenuItem(STR_C(names[i]), nullptr, static_cast<int>(m_track_colouring) == i))
                 m_track_colouring = static_cast<track_colouring>(i);
@@ -4284,7 +4295,7 @@ bool editor_mode::restart_editor(std::string const &Scenery)
 void editor_mode::render_open_scenery_popup()
 {
     auto const lower = [](std::string Text) {
-        std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+        std::ranges::transform(Text, Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
         return Text;
     };
     if (m_openscenery_asked)
@@ -4300,7 +4311,7 @@ void editor_mode::render_open_scenery_popup()
             {
                 name = entry->path().filename().string();
             }
-            catch (std::exception const &)
+            catch (std::system_error const &)
             {
                 continue;
             }
@@ -6207,9 +6218,9 @@ void editor_mode::render_shortcuts_window()
 	ImGui::SetNextWindowBgAlpha(0.97f);
 	if (ImGui::Begin((std::string(STR_C("Keyboard shortcuts")) + "###shortcuts").c_str(), &m_shortcuts_open, ImGuiWindowFlags_NoCollapse))
 	{
-		static char filter[64]{};
+		static std::array<char, 64> filter{};
 		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-		ImGui::InputTextWithHint("##shortcutfilter", STR_C("Find: a key or what it does"), filter, sizeof(filter));
+		ImGui::InputTextWithHint("##shortcutfilter", STR_C("Find: a key or what it does"), filter.data(), filter.size());
 		ImGui::SameLine();
 		if (ImGui::Button(STR_C("Tutorial")))
 			m_first_steps_open = true;
@@ -6217,7 +6228,7 @@ void editor_mode::render_shortcuts_window()
 			std::ranges::transform(Text, Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
 			return Text;
 		};
-		auto const wanted{lower(filter)};
+		auto const wanted{lower(filter.data())};
 		auto const matches = [&](shortcut const &Item) { return wanted.empty() || lower(STR_C(Item.keys)).find(wanted) != std::string::npos || lower(STR_C(Item.action)).find(wanted) != std::string::npos; };
 		auto const picture{std::round(ImGui::GetTextLineHeight() * 1.15f)};
 		for (auto const &entry : groups)
@@ -6646,7 +6657,12 @@ void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
         auto const ground{found[0] != 0 ? below[0] : 0.0};
         auto const height{std::max(2.0, std::abs(Camera.Pos.y - ground))};
         glm::dvec3 level;
-        auto distance{std::min(GfxRenderer->Mouse_Hit() ? glm::length(GfxRenderer->Mouse_Position()) : projection.on_level(ImGui::GetIO().MousePos, ground, level) ? glm::distance(level, origin) : 2.0 * height, 20000.0)};
+        auto reach{2.0 * height};
+        if (GfxRenderer->Mouse_Hit())
+            reach = glm::length(GfxRenderer->Mouse_Position());
+        else if (projection.on_level(ImGui::GetIO().MousePos, ground, level))
+            reach = glm::distance(level, origin);
+        auto distance{std::min(reach, 20000.0)};
         // backing away from a point on the horizon would throw the camera kilometres up
         if (notches < 0.0)
             distance = std::min(distance, std::max(100.0, 4.0 * height));
@@ -7008,11 +7024,31 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_F4: choose_work_area(work_area::roads); break;
         case GLFW_KEY_F5: choose_work_area(work_area::terrain); break;
         // the edit modes in the order of the toolbar; in the track mode the digits typed as a value were taken already
-        case GLFW_KEY_1: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::MODIFY); break;
-        case GLFW_KEY_2: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::ADD); break;
-        case GLFW_KEY_3: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::BRUSH); break;
-        case GLFW_KEY_4: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::FILL); break;
-        case GLFW_KEY_5: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::COPY); break;
+        case GLFW_KEY_1:
+            handled = ui()->mode() != nodebank_panel::TRACK;
+            if (handled)
+                choose_edit_mode(nodebank_panel::MODIFY);
+            break;
+        case GLFW_KEY_2:
+            handled = ui()->mode() != nodebank_panel::TRACK;
+            if (handled)
+                choose_edit_mode(nodebank_panel::ADD);
+            break;
+        case GLFW_KEY_3:
+            handled = ui()->mode() != nodebank_panel::TRACK;
+            if (handled)
+                choose_edit_mode(nodebank_panel::BRUSH);
+            break;
+        case GLFW_KEY_4:
+            handled = ui()->mode() != nodebank_panel::TRACK;
+            if (handled)
+                choose_edit_mode(nodebank_panel::FILL);
+            break;
+        case GLFW_KEY_5:
+            handled = ui()->mode() != nodebank_panel::TRACK;
+            if (handled)
+                choose_edit_mode(nodebank_panel::COPY);
+            break;
         default: handled = false; break;
         }
         if (handled)
@@ -7623,21 +7659,29 @@ void editor_mode::render_change_history(){
 
     ImGui::Text(STR_C("History (newest at end): %zu entries"), m_history.size());
     ImGui::BeginChild("history_list", ImVec2(400, 200), true);
+    auto const tag = [](EditorSnapshot::Action const Action) -> char const * {
+        using enum EditorSnapshot::Action;
+        switch (Action)
+        {
+        case Add: return "ADD";
+        case Delete: return "DEL";
+        case Move: return "MOV";
+        case Rotate: return "ROT";
+        case Scale: return "SCA";
+        case TrackEdit: return "TRK";
+        case RoadEdit: return "ROAD";
+        case Array: return "ARR";
+        case Terrain: return "TER";
+        case Kilometrage: return "KM";
+        default: return "OTH";
+        }
+    };
     for (int i = 0; i < (int)m_history.size(); ++i)
     {
         auto &s = m_history[i];
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%3d: %s %s pos=(%.1f,%.1f,%.1f)", i,
-                        s.action == EditorSnapshot::Action::Add ? "ADD" :
-                        s.action == EditorSnapshot::Action::Delete ? "DEL" :
-                        s.action == EditorSnapshot::Action::Move ? "MOV" :
-                        s.action == EditorSnapshot::Action::Rotate ? "ROT" :
-                        s.action == EditorSnapshot::Action::Scale ? "SCA" :
-                        s.action == EditorSnapshot::Action::TrackEdit ? "TRK" :
-                        s.action == EditorSnapshot::Action::RoadEdit ? "ROAD" :
-                        s.action == EditorSnapshot::Action::Array ? "ARR" :
-                        s.action == EditorSnapshot::Action::Terrain ? "TER" :
-                        s.action == EditorSnapshot::Action::Kilometrage ? "KM" : "OTH",
+                        tag(s.action),
                         s.node_name.empty() ? STR_C("(no name)") : s.node_name.c_str(),
                         s.position.x, s.position.y, s.position.z);
 
@@ -7740,8 +7784,8 @@ void editor_mode::starter_trainset(std::vector<std::string> &Trailing)
 
 void editor_mode::render_top_tracks_choice(bool const Combo)
 {
-    static char const *const labels[]{"Whole", "Without ballast", "Rails only"};
-    static char const *const tooltips[]{"The tracks as in the 3D view", "The rails and the sleepers, the ground under them shows", "The rails alone, without the sleepers and the timbers of the switches, as on a plan"};
+    static constexpr std::array<char const *, 3> labels{"Whole", "Without ballast", "Rails only"};
+    static constexpr std::array<char const *, 3> tooltips{"The tracks as in the 3D view", "The rails and the sleepers, the ground under them shows", "The rails alone, without the sleepers and the timbers of the switches, as on a plan"};
     auto chosen{std::clamp(Global.EditorOrthoTracks, 0, 2)};
     auto const pick = [&](int const Choice) {
         Global.EditorOrthoTracks = Choice;

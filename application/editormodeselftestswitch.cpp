@@ -249,7 +249,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			{
 				std::string value;
 				words >> value;
-				std::snprintf(tool.connection_spacings, sizeof(tool.connection_spacings), "%s", value.c_str());
+				tool.connection_spacings = value.substr(0, 63); // as long as the field it was typed in took
 			}
 		}
 		show_track_tab(track_tab::turnout);

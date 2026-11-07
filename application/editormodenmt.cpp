@@ -2409,8 +2409,8 @@ bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 	ImGui::EndChild();
 	ImGui::SetNextItemWidth(-FLT_MIN);
 	glm::dvec2 typed;
-	auto const understood{editor_geo::parse_place(state.place, typed)};
-	if (ImGui::InputTextWithHint("##nmtplace", STR_C("or type it: 52.2297, 21.0122"), state.place, sizeof(state.place)) && editor_geo::parse_place(state.place, typed))
+	auto const understood{editor_geo::parse_place(state.place.data(), typed)};
+	if (ImGui::InputTextWithHint("##nmtplace", STR_C("or type it: 52.2297, 21.0122"), state.place.data(), state.place.size()) && editor_geo::parse_place(state.place.data(), typed))
 	{
 		map.pick(typed);
 		map.show(typed, 8.0);
