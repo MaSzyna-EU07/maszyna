@@ -2991,6 +2991,33 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_bend_set(std::istringstream &words);
 	selftest_result selftest_bend_probe() const;
 	selftest_result selftest_track(std::string const &command, std::istringstream &words);
+	// the track commands of the self-test by the group: the lineside sweeps, the routes and their traces, the alignments, the
+	// grade lines, the checks of the tracks; and those of them with more to them
+	selftest_result selftest_track_sweep(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_routes(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_alignment(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_profiles(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_checks(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_probe(std::istringstream &words);
+	selftest_result selftest_track_lay(std::istringstream &words);
+	selftest_result selftest_track_analyse(std::istringstream &words);
+	selftest_result selftest_track_route(std::istringstream &words);
+	selftest_result selftest_track_route_vertex(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_trace_sample(std::istringstream &words);
+	selftest_result selftest_track_trace_step(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_alignments() const;
+	selftest_result selftest_track_backward_curve(std::istringstream &words);
+	selftest_result selftest_track_delete(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_split_kind(std::string const &command, std::istringstream &words);
+	void selftest_track_nudge(TTrack &Chosen, glm::dvec3 const &Offset);
+	selftest_result selftest_track_vprofile_model() const;
+	selftest_result selftest_track_vprofile_zoom(std::istringstream &words);
+	selftest_result selftest_track_vprofile(std::istringstream &words);
+	selftest_result selftest_track_tape(std::istringstream &words);
+	selftest_result selftest_track_vprofile_run(std::string const &command, std::istringstream &words);
+	void selftest_track_log_grade_line(std::string const &command) const;
+	selftest_result selftest_track_vprofile_apply(std::istringstream &words);
+	void selftest_track_infrascan(std::istringstream &words);
 	selftest_result selftest_switch(std::string const &command, std::istringstream &words);
 	selftest_result selftest_rails(std::string const &command, std::istringstream &words);
 	selftest_result selftest_join(std::string const &command, std::istringstream &words);
