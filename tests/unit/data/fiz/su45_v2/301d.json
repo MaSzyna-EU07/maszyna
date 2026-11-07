@@ -1,0 +1,47 @@
+{
+  "_source": "pkp/su45_v2/301d.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "102000", "Mred": "15000", "Vmax": "120", "PWR": "1250", "SandCap": "400", "HeatingP": "300"},
+  "Dimensions": {"L": "18.99", "H": "4.238", "W": "2.900", "Cx": "0.2"},
+  "Wheels": {"D": "1.100", "AIM": "4000", "Tw": "1.435", "Axle": "Co'Co'", "Ad": "1.950", "Bd": "10.3", "Rmin": "100"},
+  "Brake": {"BrakeValve": "LSt", "NBpA": "4", "MBF": "85.0", "MaxBP": "4.1", "LocMaxBP": "4.5", "MaxASBP": "1.5", "RM": "0.69", "BCN": "8", "BCR": "0.114", "BCD": "0.06", "BCM": "8.1", "HiPP": "5", "LoPP": "3.5", "Vv": "0.8", "MinCP": "7.0", "MaxCP": "8.5", "CompressorSpeed": "0.053", "BCS": "1", "BSA": "2", "BM": "P10-Bgu", "CompressorPower": "Engine", "BVV": "240", "BRE": "0.9"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "103", "ControlType": "SU45"},
+  "Cntrl": {"BrakeHandle": "FV4a", "LocBrakeHandle": "FD1", "BrakeSystem": "Pneumatic", "BCPN": "6", "BDelay1": "15", "BDelay2": "6", "BDelay3": "36", "BDelay4": "32", "ASB": "Manual", "LocalBrake": "PneumaticBrake", "MCPN": "14", "SCPN": "3", "AutoRelay": "Yes", "IniCDelay": "0.5", "SCDelay": "0.1", "BrakeDelays": "GPR", "MotorBlowersStart": "Manual", "ConverterStart": "Automatic", "rows": [
+    ["-1","0.7","-1","15","Pneumatic"],
+    ["0","0.5","-1","9","Pneumatic"],
+    ["1","0.46","-1","9","Pneumatic"],
+    ["2","0.42","-1","9","Pneumatic"],
+    ["3","0.38","-1","9","Pneumatic"],
+    ["4","0.34","-1","9","Pneumatic"],
+    ["5","0.29","-1","9","Pneumatic"],
+    ["6","0","-1","15","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "5", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "6", "RadioStop": "Yes"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "227.8"},
+  "TurboPos": {"TurboPos": "4"},
+  "Engine": {"AIM": "1.6", "EngineType": "DumbDE", "Trans": "18:62", "Ftmax": "326000", "Flat": "0", "Vhyp": "7.2", "Vadd": "5.5", "Cr": "1.0", "RelayType": "45", "WaterMinTemperature": "40", "WaterFlowTemperature": "70", "WaterCoolingTemperature": "82", "WaterMaxTemperature": "91", "WaterShutters": "Yes", "WaterAuxCircuit": "Yes", "WaterAuxCoolingTemperature": "60", "WaterAuxMaxTemperature": "74", "WaterAuxShutters": "Yes", "OilMinPressure": "0.15", "HeatKFO2": "24", "HeatingRPM": "1096", "MotorBlowersSpeed": "-10"},
+  "Clima": {"HMaxVoltage": "3000", "Heating": "Generator", "HGeneratorEngine": "Main", "HGeneratorMinRPM": "696", "HGeneratorMinVoltage": "2400", "HGeneratorMaxRPM": "1500", "HGeneratorMaxVoltage": "3300"},
+  "MotorParamTable": {"rows": [
+    ["0","20","100","3000","20.8","1340","0"],
+    ["1","18.5","110","2700","25","1340","40"],
+    ["2","17.2","135","2500","30","1340","50"],
+    ["3","14.3","170","2000","48.5","1340","1713"]
+  ]},
+  "WWList": {"Size": "14", "rows": [
+    ["696","0","0","0"],
+    ["696","0","0","0"],
+    ["629","96","78","273"],
+    ["763","192","147","547"],
+    ["830","288","221","820"],
+    ["897","384","295","1094"],
+    ["964","480","369","1367"],
+    ["1031","576","442","1641"],
+    ["1098","672","516","1914"],
+    ["1165","768","590","2187"],
+    ["1232","864","664","2461"],
+    ["1299","960","737","2734"],
+    ["1366","1056","811","3007"],
+    ["1433","1152","885","3281"],
+    ["1500","1245","960","3560"]
+  ]}
+}
