@@ -118,6 +118,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::unique_ptr<rail_tools> m_rail_tools;
 	void make_rail_tools();
 	// rail services: overrides
+	void switch_templates_refresh(std::string const &Arm) override;
+	void arm_switch_tool() override;
+	glm::dvec3 cursor_on_ground() const override;
+	glm::dvec3 cursor_on_level(double const Height) const override;
+	void draw_ring(glm::dvec3 const &Point) const override;
+	bool orthophoto_shown() const override;
+	void open_orthophoto_window() override;
 	// rail services: end
 
 	// types
@@ -2437,49 +2444,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int m_lineside_tab{0};
 	void render_lineside_ui();
 	void arm_switch();
-	// the window of the switch templates: the catalogue and the own ones, made of straights, arcs and transition curves
-	struct switch_designer
-	{
-		bool open{false};
-		bool loaded{false};
-		std::vector<switch_design::design> catalogue;
-		std::vector<switch_design::design> own;
-		bool from_catalogue{true};
-		int selected{-1};
-		bool dirty{false};
-		bool stretched{true};
-		double quick_radius{300.0};
-		double quick_ratio{9.0};
-		double quick_a{0.0};
-		double quick_b{0.0};
-		int fit_kind{3}; // of switch_design::tangent_fit
-		double quick_first{0.0}; // the radius of the first arc of an arc, a straight and an arc, 0: the R
-		bool picking{false}; // the switch clicked off the view, the orthophoto under it
-		std::vector<glm::dvec3> clicks;
-		bool on_view{true}; // the template shown in the view where its first points were clicked
-		switch_design::design measured; // what the points clicked so far make
-		bool measured_ready{false};
-		std::string measured_text;
-		int pointed{-1}; // the value under the mouse, its dimension shown on the drawing
-		int pointed_test{-1};
-		double blade_length{5.0};
-		double blade_gap{0.15};
-		std::string status;
-	};
-	switch_designer m_switch_designer;
-	void switch_designs_load();
-	// the list of the switch tool built again with the own templates, keeping the armed one or arming the one whose label starts with Arm
-	void switch_templates_refresh(std::string const &Arm = {});
-	void render_switch_designer();
-	void render_switch_designer_list();
-	void render_switch_designer_clicking();
-	void render_switch_designer_edit();
-	bool render_switch_designer_quick(switch_design::design &Entry, int &Pointing);
-	void render_switch_designer_actions(switch_design::design const &Entry, bool const Editable, bool const Buildable);
-	void switch_designer_click(glm::dvec3 const &Point);
-	void switch_designer_measure();
-	void switch_designer_finish();
-	void draw_switch_designer_clicks() const;
 	void draw_cursor_ring(glm::dvec3 const &Point) const;
 	static std::string grade_line_key(TTrack const &Track);
 	static std::string grade_line_key(std::string const &Name, TTrack const &Track);
@@ -3404,8 +3368,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_switch_drives(std::string const &command, std::istringstream &words);
 	selftest_result selftest_blade_tips(std::string const &command);
 	selftest_result selftest_curvedswitch(std::istringstream &words);
-	selftest_result selftest_designer(std::istringstream &words);
-	selftest_result selftest_designerpick(std::istringstream &words);
 	selftest_result selftest_release();
 	selftest_result selftest_hover(std::istringstream &words);
 	selftest_result selftest_layhold(std::istringstream &words);

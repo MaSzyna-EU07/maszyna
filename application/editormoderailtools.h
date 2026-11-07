@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/editormode.h"
+#include "application/editormodeswitchdesign.h"
 
 // the rail tools: the track tab and its panels, the gizmo, track properties and bed, switches, signals, the turntable and the lineside; owned by editor_mode, made by make_rail_tools()
 struct rail_tools
@@ -19,4 +20,6 @@ struct rail_tools
 	speed_tool speed;
 	srk_tool srk;
 	km_tool km;
+	// the window of the switch templates
+	switch_designer_tool switch_designer;
 };

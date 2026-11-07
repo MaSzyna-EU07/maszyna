@@ -1745,7 +1745,7 @@ bool editor_mode::update()
     render_nmt_banner();
     render_nmt_buried();
     render_empty_scenery_hint();
-    render_switch_designer();
+    m_rail_tools->switch_designer.render_windows();
     render_environment_window();
     draw_selection_overlay();
     render_context_menu();
@@ -5967,7 +5967,7 @@ char const *editor_mode::tutorial_of_tool()
 	switch (m_track_tab)
 	{
 	case track_tab::turnout:
-		return undone({m_switch_designer.open ? "Switch templates" : "Switches"});
+		return undone({m_rail_tools->switch_designer.is_open() ? "Switch templates" : "Switches"});
 	case track_tab::profile:
 		return undone({"The grade line"});
 	case track_tab::route:
@@ -7283,9 +7283,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
             break;
         // the switch being clicked off the view given up
-        if (is_press(Action) && m_switch_designer.open && m_switch_designer.picking)
+        if (is_press(Action) && m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking())
         {
-            m_switch_designer.picking = false;
+            m_rail_tools->switch_designer.stop_picking();
             break;
         }
         // the download area being drawn given up, the one before stays
@@ -7345,13 +7345,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
     case GLFW_KEY_BACKSPACE:
         // the switch being clicked off the view: the last point taken back
-        if (m_switch_designer.open && m_switch_designer.picking)
+        if (m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking())
         {
-            if (is_press(Action) && false == m_switch_designer.clicks.empty())
-            {
-                m_switch_designer.clicks.pop_back();
-                switch_designer_measure();
-            }
+            if (is_press(Action))
+                m_rail_tools->switch_designer.click_back();
             break;
         }
         // the download area: the last point taken back
@@ -7480,11 +7477,11 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     }
 
     // a switch being clicked off the view for the template editor takes the left button
-    if (m_switch_designer.open && m_switch_designer.picking && Button == GLFW_MOUSE_BUTTON_LEFT)
+    if (m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking() && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         // on the terrain under the cursor, then on the level of the first point: no track or ballast in the view catches the point
         if (is_press(Action))
-            switch_designer_click(m_switch_designer.clicks.empty() ? cursor_terrain(std::as_const(*this).cursor_ground().y) : cursor_level(m_switch_designer.clicks.front().y));
+            m_rail_tools->switch_designer.click(m_rail_tools->switch_designer.clicks().empty() ? cursor_terrain(std::as_const(*this).cursor_ground().y) : cursor_level(m_rail_tools->switch_designer.clicks().front().y));
         m_input.mouse.button(Button, Action);
         return;
     }

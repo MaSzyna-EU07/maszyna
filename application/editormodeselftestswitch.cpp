@@ -47,6 +47,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <sstream>
 #include "application/editormodeselftest.h"
+#include "application/editormodeswitchdesign.h"
 
 #include <format>
 #include <string_view>
@@ -425,18 +426,17 @@ editor_mode::selftest_result editor_mode::selftest_curvedswitch(std::istringstre
 	return selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_designer(std::istringstream &words)
+editor_selftest_result switch_designer_tool::selftest_designer(std::istringstream &Words)
 {
 	std::string list;
 	int index{0};
-	auto &designer{m_switch_designer};
-	designer.pointed_test = -1;
-	words >> list >> index >> designer.pointed_test;
-	designer.open = list != "close";
-	designer.from_catalogue = list != "own";
-	designer.selected = index;
-	switch_designs_load();
-	if (auto const &list_of{designer.from_catalogue ? designer.catalogue : designer.own}; designer.open && index >= 0 && index < static_cast<int>(list_of.size()))
+	m_drawing.pointed_test = -1;
+	Words >> list >> index >> m_drawing.pointed_test;
+	m_list.open = list != "close";
+	m_list.from_catalogue = list != "own";
+	m_list.selected = index;
+	load();
+	if (auto const &list_of{m_list.from_catalogue ? m_list.catalogue : m_list.own}; m_list.open && index >= 0 && index < static_cast<int>(list_of.size()))
 	{
 		std::string problem;
 		auto const shape{switch_design::build(list_of[index], problem)};
@@ -445,32 +445,40 @@ editor_mode::selftest_result editor_mode::selftest_designer(std::istringstream &
 			text += format(" %.3f/R%.1f", part.length, part.radius1);
 		WriteLog(text + " " + problem);
 	}
-	return selftest_result::handled;
+	return editor_selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_designerpick(std::istringstream &words)
+editor_selftest_result switch_designer_tool::selftest_designerpick(std::istringstream &Words)
 {
 	// the points of a switch clicked off the view for the template editor, by x z; finish: the template made of them
-	auto &designer{m_switch_designer};
-	designer.open = true;
-	designer.picking = true;
-	for (glm::dvec2 point; words >> point.x >> point.y;)
-		switch_designer_click({point.x, 0.0, point.y});
-	words.clear();
+	m_list.open = true;
+	m_picked.picking = true;
+	for (glm::dvec2 point; Words >> point.x >> point.y;)
+		click({point.x, 0.0, point.y});
+	Words.clear();
 	std::string finish;
-	words >> finish;
+	Words >> finish;
 	if (finish == "finish")
 	{
-		switch_designer_finish();
-		WriteLog("SELFTEST designerpick: " + designer.status);
-		if (false == designer.from_catalogue && designer.selected >= 0 && designer.selected < static_cast<int>(designer.own.size()))
+		make_template();
+		WriteLog("SELFTEST designerpick: " + m_list.status);
+		if (false == m_list.from_catalogue && m_list.selected >= 0 && m_list.selected < static_cast<int>(m_list.own.size()))
 		{
 			auto text{std::string{"SELFTEST designerpick parts"}};
-			std::ranges::for_each(designer.own[designer.selected].parts, [&text](auto const &Part) { text += format(" %.3f/R%.1f..%.1f", Part.length, Part.radius1, Part.radius2); });
-			WriteLog(text + format(", lead %.3f", designer.own[designer.selected].lead));
+			std::ranges::for_each(m_list.own[m_list.selected].parts, [&text](auto const &Part) { text += format(" %.3f/R%.1f..%.1f", Part.length, Part.radius1, Part.radius2); });
+			WriteLog(text + format(", lead %.3f", m_list.own[m_list.selected].lead));
 		}
 	}
-	return selftest_result::handled;
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result switch_designer_tool::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "designer")
+		return selftest_designer(Words);
+	if (Command == "designerpick")
+		return selftest_designerpick(Words);
+	return editor_selftest_result::unhandled;
 }
 
 editor_mode::selftest_result editor_mode::selftest_release()
@@ -1379,10 +1387,6 @@ editor_mode::selftest_result editor_mode::selftest_switch_placing(std::string co
 {
 	if (command == "curvedswitch")
 		return selftest_curvedswitch(words);
-	if (command == "designer")
-		return selftest_designer(words);
-	if (command == "designerpick")
-		return selftest_designerpick(words);
 	if (command == "layhold")
 		return selftest_layhold(words);
 	if (command == "connection" || command == "connectionplan" || command == "connectionhold")

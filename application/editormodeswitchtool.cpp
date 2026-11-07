@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editorgestures.h"
 #include "application/editormodeshared.h"
+#include "application/editormoderailtools.h"
 #include "editor/editorConnections.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorTrack.hpp"
@@ -267,7 +268,7 @@ void editor_mode::render_switch_ui()
 	}
 
 	if (ImGui::Button(STR_C("Template editor...")))
-		m_switch_designer.open = true;
+		m_rail_tools->switch_designer.open_window();
 	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
 }
 

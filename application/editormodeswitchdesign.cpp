@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
+#include "application/editormodeswitchdesign.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorSwitchDesign.hpp"
@@ -771,14 +772,13 @@ void save_before_placing(std::vector<switch_design::design> const &Own, bool &Di
 
 } // namespace
 
-void editor_mode::switch_designs_load()
+void switch_designer_tool::load()
 {
-	auto &designer{m_switch_designer};
-	if (designer.loaded)
+	if (m_list.loaded)
 		return;
-	designer.loaded = true;
-	designer.catalogue = switch_design::catalogue();
-	designer.own = switch_design::own();
+	m_list.loaded = true;
+	m_list.catalogue = switch_design::catalogue();
+	m_list.own = switch_design::own();
 }
 
 void editor_mode::switch_templates_refresh(std::string const &Arm)
@@ -804,29 +804,36 @@ void editor_mode::switch_templates_refresh(std::string const &Arm)
 		}
 }
 
-void editor_mode::switch_designer_click(glm::dvec3 const &Point)
+void switch_designer_tool::click(glm::dvec3 const &Point)
 {
-	m_switch_designer.clicks.push_back(Point);
-	switch_designer_measure();
+	m_picked.clicks.push_back(Point);
+	measure();
+}
+
+void switch_designer_tool::click_back()
+{
+	if (m_picked.clicks.empty())
+		return;
+	m_picked.clicks.pop_back();
+	measure();
 }
 
 // what the points clicked so far make: the shape and the radius keeping closest to the points along the diverging track; too few of them:
 // the shape chosen at the radius given
-void editor_mode::switch_designer_measure()
+void switch_designer_tool::measure()
 {
-	auto &designer{m_switch_designer};
-	designer.measured_ready = false;
-	designer.measured_text.clear();
-	if (designer.clicks.size() < 4)
+	m_picked.measured_ready = false;
+	m_picked.measured_text.clear();
+	if (m_picked.clicks.size() < 4)
 		return;
 	std::vector<glm::dvec2> plan;
-	for (auto const &click : designer.clicks)
-		plan.push_back(geometry::plan_of(click));
+	for (auto const &point : m_picked.clicks)
+		plan.push_back(geometry::plan_of(point));
 	switch_design::measured found;
 	std::string problem;
 	if (false == switch_design::measure_clicks(plan, found, problem))
 	{
-		designer.measured_text = STR(problem);
+		m_picked.measured_text = STR(problem);
 		return;
 	}
 	switch_design::design entry;
@@ -836,75 +843,73 @@ void editor_mode::switch_designer_measure()
 	{
 		switch_design::clicks_fit fitted;
 		std::array<char const *, 4> const shapes{STR_C("straights"), STR_C("transition curve"), STR_C("two arcs"), STR_C("arc, straight, arc")};
-		if (switch_design::fit_clicks(entry, plan, static_cast<switch_design::tangent_fit>(designer.fit_kind), designer.quick_first, fitted, problem))
+		if (switch_design::fit_clicks(entry, plan, static_cast<switch_design::tangent_fit>(m_quick.fit_kind), m_quick.quick_first, fitted, problem))
 		{
-			designer.quick_radius = std::round(fitted.radius);
+			m_quick.quick_radius = std::round(fitted.radius);
 			found.radius = 0.0;
-			designer.fit_kind = static_cast<int>(fitted.kind);
-			designer.measured_text = format(STR_C("Along the points clicked: %s, R %.0f m, off them %.2f m at most"), shapes[static_cast<std::size_t>(fitted.kind)], fitted.radius, fitted.worst);
+			m_quick.fit_kind = static_cast<int>(fitted.kind);
+			m_picked.measured_text = format(STR_C("Along the points clicked: %s, R %.0f m, off them %.2f m at most"), shapes[static_cast<std::size_t>(fitted.kind)], fitted.radius, fitted.worst);
 		}
 	}
-	if (entry.parts.empty() && false == switch_design::fit_tangents(entry, found.radius > 0.0 ? found.radius : designer.quick_radius, found.ratio, found.a, found.b, static_cast<switch_design::tangent_fit>(designer.fit_kind), problem, designer.quick_first))
+	if (entry.parts.empty() && false == switch_design::fit_tangents(entry, found.radius > 0.0 ? found.radius : m_quick.quick_radius, found.ratio, found.a, found.b, static_cast<switch_design::tangent_fit>(m_quick.fit_kind), problem, m_quick.quick_first))
 	{
-		designer.measured_text = format(STR_C("Measured a %.2f m, b %.2f m, 1:%.2f: %s"), found.a, found.b, found.ratio, STR(problem).c_str());
+		m_picked.measured_text = format(STR_C("Measured a %.2f m, b %.2f m, 1:%.2f: %s"), found.a, found.b, found.ratio, STR(problem).c_str());
 		return;
 	}
 	entry.a = found.a;
 	entry.b = found.main - found.a;
 	entry.main = found.main;
 	if (std::abs(found.past) > 0.5)
-		designer.measured_text += (designer.measured_text.empty() ? "" : "\n") + format(STR_C("The end of the diverging track lies %+.2f m along the main track from its end: check points 2 and 3"), found.past);
-	designer.quick_a = found.a;
-	designer.quick_b = found.b;
-	designer.quick_ratio = found.ratio;
+		m_picked.measured_text += (m_picked.measured_text.empty() ? "" : "\n") + format(STR_C("The end of the diverging track lies %+.2f m along the main track from its end: check points 2 and 3"), found.past);
+	m_quick.quick_a = found.a;
+	m_quick.quick_b = found.b;
+	m_quick.quick_ratio = found.ratio;
 	if (found.radius > 0.0)
-		designer.quick_radius = found.radius;
-	designer.measured = entry;
-	designer.measured_ready = true;
+		m_quick.quick_radius = found.radius;
+	m_picked.measured = entry;
+	m_picked.measured_ready = true;
 }
 
-void editor_mode::switch_designer_finish()
+void switch_designer_tool::make_template()
 {
-	auto &designer{m_switch_designer};
-	switch_designs_load();
-	switch_designer_measure();
-	if (false == designer.measured_ready)
+	load();
+	measure();
+	if (false == m_picked.measured_ready)
 	{
-		designer.status = designer.measured_text;
+		m_list.status = m_picked.measured_text;
 		return;
 	}
-	auto entry{designer.measured};
-	entry.name = format("%s %zu", STR_C("Switch"), designer.own.size() + 1);
-	designer.own.push_back(entry);
-	designer.from_catalogue = false;
-	designer.selected = static_cast<int>(designer.own.size()) - 1;
-	designer.dirty = true;
-	designer.picking = false;
-	first_step_done(first_step::template_clicked);
-	designer.status = format(STR_C("Measured a %.2f m, b %.2f m, 1:%.2f"), designer.quick_a, designer.quick_b, designer.quick_ratio);
-	if (false == designer.measured_text.empty())
-		designer.status += "\n" + designer.measured_text;
+	auto entry{m_picked.measured};
+	entry.name = format("%s %zu", STR_C("Switch"), m_list.own.size() + 1);
+	m_list.own.push_back(entry);
+	m_list.from_catalogue = false;
+	m_list.selected = static_cast<int>(m_list.own.size()) - 1;
+	m_list.dirty = true;
+	m_picked.picking = false;
+	m_guide.first_step_done(editor_first_step::template_clicked);
+	m_list.status = format(STR_C("Measured a %.2f m, b %.2f m, 1:%.2f"), m_quick.quick_a, m_quick.quick_b, m_quick.quick_ratio);
+	if (false == m_picked.measured_text.empty())
+		m_list.status += "\n" + m_picked.measured_text;
 }
 
-void editor_mode::draw_switch_designer_clicks() const
+void switch_designer_tool::draw_clicks() const
 {
-	auto const &designer{m_switch_designer};
-	if (designer.open && designer.picking)
-		draw_cursor_ring(designer.clicks.empty() ? cursor_ground() : cursor_level(designer.clicks.front().y));
-	if (false == designer.open || designer.clicks.empty())
+	if (m_list.open && m_picked.picking)
+		m_rail.draw_ring(m_picked.clicks.empty() ? m_rail.cursor_on_ground() : m_rail.cursor_on_level(m_picked.clicks.front().y));
+	if (false == m_list.open || m_picked.clicks.empty())
 		return;
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-	auto const &clicks{designer.clicks};
+	auto const &clicks{m_picked.clicks};
 	if (clicks.size() >= 2)
 		projection.line(drawlist, clicks[0], clicks[1], IM_COL32(230, 230, 230, 230), 2.0f);
 	if (clicks.size() >= 4)
 		projection.line(drawlist, clicks[2], clicks[3], IM_COL32(90, 200, 255, 230), 2.0f);
 	// the template laid where it was clicked: the one measured so far while clicking, then the one chosen on the list
-	if (clicks.size() >= 3 && designer.on_view)
+	if (clicks.size() >= 3 && m_picked.on_view)
 	{
-		auto const &list{designer.from_catalogue ? designer.catalogue : designer.own};
-		if (auto const *shown{shown_design(designer.picking, designer.measured, designer.measured_ready, list, designer.selected)}; shown != nullptr)
+		auto const &list{m_list.from_catalogue ? m_list.catalogue : m_list.own};
+		if (auto const *shown{shown_design(m_picked.picking, m_picked.measured, m_picked.measured_ready, list, m_list.selected)}; shown != nullptr)
 		{
 			std::string problem;
 			draw_laid(projection, drawlist, clicks, switch_design::build(*shown, problem));
@@ -920,127 +925,123 @@ void editor_mode::draw_switch_designer_clicks() const
 	}
 }
 
-void editor_mode::render_switch_designer()
+void switch_designer_tool::render_windows()
 {
-	auto &designer{m_switch_designer};
-	draw_switch_designer_clicks();
-	if (false == designer.open)
+	draw_clicks();
+	if (false == m_list.open)
 		return;
-	first_step_done(first_step::template_open);
-	switch_designs_load();
+	m_guide.first_step_done(editor_first_step::template_open);
+	load();
 	ImGui::SetNextWindowSize(ImVec2(820.0f, 560.0f), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin((std::string(STR_C("Switch templates")) + "###switchdesigner").c_str(), &designer.open, ImGuiWindowFlags_NoCollapse))
+	if (false == ImGui::Begin((std::string(STR_C("Switch templates")) + "###switchdesigner").c_str(), &m_list.open, ImGuiWindowFlags_NoCollapse))
 	{
 		ImGui::End();
 		return;
 	}
 	ImGui::BeginChild("##designlist", ImVec2(230.0f, 0.0f), true);
-	render_switch_designer_list();
+	render_list();
 	ImGui::EndChild();
 	ImGui::SameLine();
 	ImGui::BeginChild("##designedit", ImVec2(0.0f, 0.0f), false);
-	render_switch_designer_edit();
+	render_edit();
 	ImGui::EndChild();
 	ImGui::End();
 }
 
 // the templates on the left of the window, and the switch clicked off the view
-void editor_mode::render_switch_designer_list()
+void switch_designer_tool::render_list()
 {
-	auto &designer{m_switch_designer};
 	ImGui::TextDisabled("%s", STR_C("Catalogue (read only)"));
 	item_tooltip("The catalogue switches start tangentially at the joint before the blades: without the pre-blade stretch and the angle of the blade, which a copy can be given");
-	for (int i = 0; i < static_cast<int>(designer.catalogue.size()); ++i)
-		if (ImGui::Selectable(std::format("{}##catalogue{}", switch_name_translated(designer.catalogue[i].name), i).c_str(), designer.from_catalogue && designer.selected == i))
+	for (int i = 0; i < static_cast<int>(m_list.catalogue.size()); ++i)
+		if (ImGui::Selectable(std::format("{}##catalogue{}", switch_name_translated(m_list.catalogue[i].name), i).c_str(), m_list.from_catalogue && m_list.selected == i))
 		{
-			designer.from_catalogue = true;
-			designer.selected = i;
+			m_list.from_catalogue = true;
+			m_list.selected = i;
 		}
 	ImGui::Separator();
 	ImGui::TextDisabled("%s", STR_C("Own templates"));
-	for (int i = 0; i < static_cast<int>(designer.own.size()); ++i)
-		if (ImGui::Selectable(std::format("{}##own{}", designer.own[i].name, i).c_str(), false == designer.from_catalogue && designer.selected == i))
+	for (int i = 0; i < static_cast<int>(m_list.own.size()); ++i)
+		if (ImGui::Selectable(std::format("{}##own{}", m_list.own[i].name, i).c_str(), false == m_list.from_catalogue && m_list.selected == i))
 		{
-			designer.from_catalogue = false;
-			designer.selected = i;
+			m_list.from_catalogue = false;
+			m_list.selected = i;
 		}
-	if (designer.own.empty())
+	if (m_list.own.empty())
 		ImGui::TextDisabled("%s", STR_C("(none yet)"));
 	if (ImGui::Button(STR_C("New")))
 	{
 		switch_design::design entry;
 		entry.own = true;
-		entry.name = format("%s %zu", STR_C("Switch"), designer.own.size() + 1);
+		entry.name = format("%s %zu", STR_C("Switch"), m_list.own.size() + 1);
 		auto const angle{std::atan(1.0 / 9.0)};
 		entry.parts = {{190.0 * angle, 190.0, 190.0}, {6.0, 0.0, 0.0}};
-		designer.own.push_back(entry);
-		designer.from_catalogue = false;
-		designer.selected = static_cast<int>(designer.own.size()) - 1;
-		designer.dirty = true;
+		m_list.own.push_back(entry);
+		m_list.from_catalogue = false;
+		m_list.selected = static_cast<int>(m_list.own.size()) - 1;
+		m_list.dirty = true;
 	}
 	item_tooltip("A new own template, an Rz 1:9 R190 to start from");
-	if (ImGui::Button(designer.picking ? STR_C("Stop clicking") : STR_C("Click off the view...")))
+	if (ImGui::Button(m_picked.picking ? STR_C("Stop clicking") : STR_C("Click off the view...")))
 	{
-		designer.picking = false == designer.picking;
-		if (designer.picking)
-			designer.clicks.clear();
+		m_picked.picking = false == m_picked.picking;
+		if (m_picked.picking)
+			m_picked.clicks.clear();
 	}
 	item_tooltip("Measures a switch off the orthophoto: click its points in the view, in the top view (O) they're best seen. The orthophoto is turned on in the layers");
-	if (designer.clicks.size() >= 3)
+	if (m_picked.clicks.size() >= 3)
 	{
-		ImGui::Checkbox(STR_C("Show on the view"), &designer.on_view);
+		ImGui::Checkbox(STR_C("Show on the view"), &m_picked.on_view);
 		item_tooltip("The chosen template drawn in the view where the switch was clicked, as it changes: to be compared with the orthophoto under it");
 	}
-	if (designer.picking)
-		render_switch_designer_clicking();
+	if (m_picked.picking)
+		render_clicking();
 }
 
 // the points of the switch to click off the view, the one to click next lit
-void editor_mode::render_switch_designer_clicking()
+void switch_designer_tool::render_clicking()
 {
-	auto &designer{m_switch_designer};
 	std::array<char const *, 5> const steps{STR_C("1. The start of the switch"), STR_C("2. The end of the switch on the main track"), STR_C("3. The end of the switch on the diverging track"), STR_C("4. A point further on the diverging track, for its way"), STR_C("5. Points along the diverging track, 3 at least, as laying a curve from clicks (optional)")};
-	auto const at{std::min<std::size_t>(designer.clicks.size(), 4)};
+	auto const at{std::min<std::size_t>(m_picked.clicks.size(), 4)};
 	for (std::size_t i = 0; i < steps.size(); ++i)
 		if (i == at)
 			ImGui::TextColored(ImVec4(1.0f, 0.88f, 0.25f, 1.0f), "%s", steps[i]);
 		else
 			ImGui::TextDisabled("%s", steps[i]);
 	if (at == 4)
-		ImGui::TextDisabled(STR_C("On the arc: %zu"), designer.clicks.size() - 4);
+		ImGui::TextDisabled(STR_C("On the arc: %zu"), m_picked.clicks.size() - 4);
 	ImGui::TextDisabled("%s", STR_C("Backspace: back, Esc: stop"));
-	if (false == m_orthophoto.enabled())
+	if (false == m_rail.orthophoto_shown())
 	{
 		if (ImGui::SmallButton(STR_C("Orthophoto...")))
-			m_orthophoto_window = true;
+			m_rail.open_orthophoto_window();
 		item_tooltip("The photo to click the switch off isn't turned on");
 	}
-	if (ImGui::SmallButton(STR_C("Back")) && false == designer.clicks.empty())
+	if (ImGui::SmallButton(STR_C("Back")) && false == m_picked.clicks.empty())
 	{
-		designer.clicks.pop_back();
-		switch_designer_measure();
+		m_picked.clicks.pop_back();
+		measure();
 	}
-	if (false == designer.measured_text.empty())
-		ImGui::TextWrapped("%s", designer.measured_text.c_str());
+	if (false == m_picked.measured_text.empty())
+		ImGui::TextWrapped("%s", m_picked.measured_text.c_str());
 	ImGui::SameLine();
-	if (designer.clicks.size() >= 4 && ImGui::SmallButton(STR_C("Make the template")))
-		switch_designer_finish();
+	if (m_picked.clicks.size() >= 4 && ImGui::SmallButton(STR_C("Make the template")))
+		make_template();
 }
 
 // the template chosen on the list, on the right of the window
-void editor_mode::render_switch_designer_edit()
+void switch_designer_tool::render_edit()
 {
-	auto &designer{m_switch_designer};
-	if (auto const &list{designer.from_catalogue ? designer.catalogue : designer.own}; designer.selected < 0 || designer.selected >= static_cast<int>(list.size()))
+	if (auto const &list{m_list.from_catalogue ? m_list.catalogue : m_list.own}; m_list.selected < 0 || m_list.selected >= static_cast<int>(list.size()))
 	{
 		ImGui::TextWrapped("%s", STR_C("Choose a template on the left; copy a catalogue one to own templates to change it"));
 		item_tooltip("A template is a straight main track and the diverging track from the start of the switch as a chain of straights, arcs and transition curves; a double switch is two switches, the second one starting on the main track of the first");
 		return;
 	}
-	bool const editable{false == designer.from_catalogue};
-	auto &entry{designer.from_catalogue ? designer.catalogue[designer.selected] : designer.own[designer.selected]};
+	bool const editable{false == m_list.from_catalogue};
+	auto &entry{m_list.from_catalogue ? m_list.catalogue[m_list.selected] : m_list.own[m_list.selected]};
 	bool changed{false};
-	auto pointing{designer.pointed_test};
+	auto pointing{m_drawing.pointed_test};
 	if (false == editable)
 	{
 		if (ImGui::Button(STR_C("Copy to own templates")))
@@ -1049,10 +1050,10 @@ void editor_mode::render_switch_designer_edit()
 			copy.own = true;
 			copy.note.clear();
 			copy.name = switch_name_translated(copy.name) + STR(" (copy)");
-			designer.own.push_back(copy);
-			designer.from_catalogue = false;
-			designer.selected = static_cast<int>(designer.own.size()) - 1;
-			designer.dirty = true;
+			m_list.own.push_back(copy);
+			m_list.from_catalogue = false;
+			m_list.selected = static_cast<int>(m_list.own.size()) - 1;
+			m_list.dirty = true;
 			return;
 		}
 		ImGui::SameLine();
@@ -1070,17 +1071,17 @@ void editor_mode::render_switch_designer_edit()
 
 	{
 		std::string problem;
-		ImGui::Checkbox(STR_C("Stretch across"), &designer.stretched);
+		ImGui::Checkbox(STR_C("Stretch across"), &m_drawing.stretched);
 		item_tooltip("Draws the offsets from the main track larger, so the shape of the diverging track can be seen");
 		// what's being clicked while it's clicked: the template chosen isn't changed by it
-		auto const &drawn{designer.picking && designer.measured_ready ? designer.measured : entry};
-		draw_schematic(drawn, switch_design::build(drawn, problem), designer.pointed, designer.stretched);
+		auto const &drawn{m_picked.picking && m_picked.measured_ready ? m_picked.measured : entry};
+		draw_schematic(drawn, switch_design::build(drawn, problem), m_drawing.pointed, m_drawing.stretched);
 	}
 
 	ImGui::Separator();
 	ImGui::TextDisabled("%s", STR_C("Diverging track from the start of the switch"));
 	if (editable && begin_fields("##quickfields", 0.5f))
-		changed |= render_switch_designer_quick(entry, pointing);
+		changed |= render_quick(entry, pointing);
 	changed |= edit_parts(entry.parts, "##parts", editable, pointing, value::part);
 	bool const twofold{switch_design::double_switch(entry.type)};
 	if (false == editable)
@@ -1091,7 +1092,7 @@ void editor_mode::render_switch_designer_edit()
 		ImGui::EndDisabled();
 	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		changed |= edit_more_settings(entry, editable, pointing, designer.blade_length, designer.blade_gap);
+		changed |= edit_more_settings(entry, editable, pointing, m_drawing.blade_length, m_drawing.blade_gap);
 		ImGui::TreePop();
 	}
 
@@ -1099,73 +1100,71 @@ void editor_mode::render_switch_designer_edit()
 	auto const shape{switch_design::build(entry, error)};
 	ImGui::Separator();
 	show_shape(entry, shape, error);
-	designer.pointed = pointing;
+	m_drawing.pointed = pointing;
 	if (changed)
-		designer.dirty = true;
-	render_switch_designer_actions(entry, editable, error.empty());
-	if (false == designer.status.empty())
-		ImGui::TextWrapped("%s", designer.status.c_str());
+		m_list.dirty = true;
+	render_actions(entry, editable, error.empty());
+	if (false == m_list.status.empty())
+		ImGui::TextWrapped("%s", m_list.status.c_str());
 }
 
 // the diverging track of a template filled in from its radius, its angle and its a and b, in the fields table, which it ends
-bool editor_mode::render_switch_designer_quick(switch_design::design &Entry, int &Pointing)
+bool switch_designer_tool::render_quick(switch_design::design &Entry, int &Pointing)
 {
-	auto &designer{m_switch_designer};
 	auto changed{false};
-	input_row("R##quickradius", "##quickradius", designer.quick_radius, "%.0f");
+	input_row("R##quickradius", "##quickradius", m_quick.quick_radius, "%.0f");
 	mark(Pointing, value::radius);
-	input_row("1:n##quickratio", "##quickratio", designer.quick_ratio, "%.2f");
+	input_row("1:n##quickratio", "##quickratio", m_quick.quick_ratio, "%.2f");
 	mark(Pointing, value::ratio);
-	input_row("a, m##quicka", "##quicka", designer.quick_a, "%.3f");
+	input_row("a, m##quicka", "##quicka", m_quick.quick_a, "%.3f");
 	mark(Pointing, value::a);
 	item_tooltip("From the start to the point where the tangents of both tracks meet; with a b differing the curve is made of two arcs; shorter than the tangent of the arc: the blade meets the stock rail at an angle. 0: the tangent of the arc");
-	input_row("b, m##quickb", "##quickb", designer.quick_b, "%.3f");
+	input_row("b, m##quickb", "##quickb", m_quick.quick_b, "%.3f");
 	mark(Pointing, value::b);
 	std::array<char const *, 4> const fits{STR_C("straights"), STR_C("transition curve"), STR_C("two arcs"), STR_C("arc, straight, arc")};
 	field_row("Rest of the tangents##quickkind");
-	ImGui::Combo("##quickkind", &designer.fit_kind, fits.data(), 4);
+	ImGui::Combo("##quickkind", &m_quick.fit_kind, fits.data(), 4);
 	item_tooltip("What makes up where a or b is longer than the tangent of the arc");
-	if (designer.fit_kind == static_cast<int>(switch_design::tangent_fit::arc_straight_arc))
+	if (m_quick.fit_kind == static_cast<int>(switch_design::tangent_fit::arc_straight_arc))
 	{
-		input_row("R of the first arc##quickfirst", "##quickfirst", designer.quick_first, "%.0f");
+		input_row("R of the first arc##quickfirst", "##quickfirst", m_quick.quick_first, "%.0f");
 		item_tooltip("The radius of the arc before the straight, when it isn't the one after it; 0: the R");
 	}
 	item_tooltip("From the point where the tangents meet to the end of the switch. 0: the tangent of the arc");
 	ImGui::TableNextRow();
 	ImGui::TableSetColumnIndex(1);
-	if (ImGui::Button(STR_C("Fill in"), ImVec2(-FLT_MIN, 0.0f)) && designer.quick_radius >= 10.0 && designer.quick_ratio > 1.0)
+	if (ImGui::Button(STR_C("Fill in"), ImVec2(-FLT_MIN, 0.0f)) && m_quick.quick_radius >= 10.0 && m_quick.quick_ratio > 1.0)
 	{
 		std::string problem;
-		if (switch_design::fit_tangents(Entry, designer.quick_radius, designer.quick_ratio, designer.quick_a, designer.quick_b, static_cast<switch_design::tangent_fit>(designer.fit_kind), problem, designer.quick_first))
+		if (switch_design::fit_tangents(Entry, m_quick.quick_radius, m_quick.quick_ratio, m_quick.quick_a, m_quick.quick_b, static_cast<switch_design::tangent_fit>(m_quick.fit_kind), problem, m_quick.quick_first))
 		{
-			designer.status.clear();
+			m_list.status.clear();
 			changed = true;
 		}
 		else
-			designer.status = problem;
+			m_list.status = problem;
 	}
 	item_tooltip("Replaces the parts with the curve from the start of the switch up to the angle 1:n fitted to a and b, R the sharpest of it: two arcs where a and b differ, else one arc with the straights they ask for");
 	ImGui::EndTable();
-	if (designer.quick_radius >= 10.0 && designer.quick_ratio > 1.0)
-		ImGui::TextDisabled(STR_C("The tangent of the arc alone is %.3f m"), designer.quick_radius * std::tan(std::atan(1.0 / designer.quick_ratio) * 0.5));
+	if (m_quick.quick_radius >= 10.0 && m_quick.quick_ratio > 1.0)
+		ImGui::TextDisabled(STR_C("The tangent of the arc alone is %.3f m"), m_quick.quick_radius * std::tan(std::atan(1.0 / m_quick.quick_ratio) * 0.5));
 	return changed;
 }
 
 // saving, removing and placing the template chosen; Buildable: it makes a switch
-void editor_mode::render_switch_designer_actions(switch_design::design const &Entry, bool const Editable, bool const Buildable)
+void switch_designer_tool::render_actions(switch_design::design const &Entry, bool const Editable, bool const Buildable)
 {
-	auto &designer{m_switch_designer};
 	if (Editable)
 	{
-		if (ImGui::Button(designer.dirty ? STR_C("Save *") : STR_C("Save")) && save_templates(designer.own, designer.dirty, designer.status))
-			switch_templates_refresh();
+		if (ImGui::Button(m_list.dirty ? STR_C("Save *") : STR_C("Save")) && save_templates(m_list.own, m_list.dirty, m_list.status))
+			m_rail.switch_templates_refresh({});
 		item_tooltip("Keeps the own templates in eu07_switch_templates.txt in the configuration directory of the simulator and puts them on the list of the switch tool");
 		ImGui::SameLine();
 		if (ImGui::Button(STR_C("Delete")))
 		{
-			designer.own.erase(designer.own.begin() + designer.selected);
-			designer.selected = -1;
-			designer.dirty = true;
+			m_list.own.erase(m_list.own.begin() + m_list.selected);
+			m_list.selected = -1;
+			m_list.dirty = true;
 		}
 		item_tooltip("Removes the template; Save keeps the change");
 	}
@@ -1175,11 +1174,11 @@ void editor_mode::render_switch_designer_actions(switch_design::design const &En
 		ImGui::SameLine();
 	if (ImGui::Button(STR_C("Place this switch")))
 	{
-		if (designer.dirty && Editable)
-			save_before_placing(designer.own, designer.dirty, designer.status);
-		switch_templates_refresh(Entry.name + "  ");
-		show_track_tab(track_tab::turnout);
-		arm_switch();
+		if (m_list.dirty && Editable)
+			save_before_placing(m_list.own, m_list.dirty, m_list.status);
+		m_rail.switch_templates_refresh(Entry.name + "  ");
+		m_view.show_track_tab(editor_track_tab::turnout);
+		m_rail.arm_switch_tool();
 	}
 	item_tooltip("Saves the own templates and chooses this one in the switch tool: then click a straight and drag to the side the switch goes");
 }
