@@ -599,13 +599,26 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	}
 
 	auto &thiscoupler{Couplers[ConnectNo]};
-	auto &othercoupler = ConnectTo->Couplers[ConnectToNr != 2 ? ConnectToNr : thiscoupler.ConnectedNr];
+	auto const otherend{ConnectToNr != 2 ? ConnectToNr : thiscoupler.ConnectedNr};
+	auto &othercoupler = ConnectTo->Couplers[otherend];
 	auto const distance{CouplerDist(this, ConnectTo) - (thiscoupler.adapter_length + othercoupler.adapter_length)};
 
 
 	if (auto const couplercheck{Enforce || (distance <= dEpsilon && thiscoupler.type() != TCouplerType::NoCoupler && thiscoupler.type() == othercoupler.type())}; false == couplercheck)
 	{
 		return false;
+	}
+
+	// no multiple-unit control between an electric and a diesel locomotive, whoever asks for it: the scenario, the AI
+	// or the player (eu07/maszyna#520)
+	if (auto const compatible{CompatibleCoupling(ConnectNo, *ConnectTo, otherend, CouplingType)}; compatible != CouplingType)
+	{
+		WriteLog(std::format("Vehicles \"{}\" and \"{}\" can't share their control, coupled without the control connection", Name, ConnectTo->Name));
+		CouplingType = compatible;
+		if (CouplingType == coupling::faux)
+		{
+			return false;
+		}
 	}
 
 	// stykaja sie zderzaki i kompatybilne typy sprzegow, chyba że łączenie na starcie
@@ -1204,6 +1217,59 @@ double TMoverParameters::CouplerVelocityDifference(int const End, TMoverParamete
 bool TMoverParameters::AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const
 {
 	return false == Global.crash_damage || CollisionVelocity(End, Other, OtherEnd) <= SafeCollisionVelocity;
+}
+
+namespace
+{
+
+// the kind of traction a vehicle's engine stands for, as far as its multiple-unit control goes
+enum class traction_kind
+{
+	none,
+	electric,
+	diesel
+};
+
+traction_kind traction_of(TEngineType const Engine)
+{
+	switch (Engine)
+	{
+	case TEngineType::ElectricSeriesMotor:
+	case TEngineType::ElectricInductionMotor:
+		return traction_kind::electric;
+	case TEngineType::DieselEngine:
+	case TEngineType::DieselElectric:
+		return traction_kind::diesel;
+	default:
+		return traction_kind::none;
+	}
+}
+
+} // namespace
+
+bool TMoverParameters::ControlCouplingAllowed(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	if (false == Global.control_coupling_engine_check)
+	{
+		return true;
+	}
+	// the same control system named on both couplers is the vehicle authors' word that they work together
+	if (auto const &controltype{Couplers[End].control_type}; false == controltype.empty() && controltype == Other.Couplers[OtherEnd].control_type)
+	{
+		return true;
+	}
+	auto const traction{traction_of(EngineType)};
+	auto const othertraction{traction_of(Other.EngineType)};
+	return traction == traction_kind::none || othertraction == traction_kind::none || traction == othertraction;
+}
+
+int TMoverParameters::CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, int const CouplingType) const
+{
+	if ((CouplingType & coupling::control) == 0 || (CouplingType & coupling::permanent) != 0 || ControlCouplingAllowed(End, Other, OtherEnd))
+	{
+		return CouplingType;
+	}
+	return CouplingType & ~coupling::control;
 }
 
 int TMoverParameters::SoundingHorns(int const Signal) const
@@ -5454,6 +5520,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 				{
 					couplingtype &= ~coupling::control;
 				}
+				couplingtype = CompatibleCoupling(End, *othervehicle, otherend, couplingtype);
 
 				// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
 				auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};

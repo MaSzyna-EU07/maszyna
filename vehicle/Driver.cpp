@@ -6907,8 +6907,14 @@ TController::UpdateConnect() {
         auto *vehicle { iCouplingVehicle.value().first };
         auto const couplingend { iCouplingVehicle.value().second };
         auto *vehicleparameters { vehicle->MoverParameters };
-        if( vehicleparameters->Couplers[ couplingend ].CouplingFlag != iCoupler ) {
-            auto const &neighbour { vehicleparameters->Neighbours[ couplingend ] };
+        auto const &neighbour { vehicleparameters->Neighbours[ couplingend ] };
+        // vehicles which can't share their control get coupled without the control connection (eu07/maszyna#520)
+        auto expectedcoupling { iCoupler };
+        if( neighbour.vehicle != nullptr ) {
+            auto const neighbourend { neighbour.vehicle_end != 2 ? neighbour.vehicle_end : vehicleparameters->Couplers[ couplingend ].ConnectedNr };
+            expectedcoupling = vehicleparameters->CompatibleCoupling( couplingend, *neighbour.vehicle->MoverParameters, neighbourend, iCoupler );
+        }
+        if( vehicleparameters->Couplers[ couplingend ].CouplingFlag != expectedcoupling ) {
             if( neighbour.vehicle != nullptr && neighbour.distance < 10 ) {
 				// check whether we need to attach coupler adapter
 				auto coupleriscompatible{true};
@@ -6930,7 +6936,7 @@ TController::UpdateConnect() {
 			}
         }
         // NOTE: no else as the preceeding block can potentially establish expected connection
-        if( vehicleparameters->Couplers[ couplingend ].CouplingFlag == iCoupler ) {
+        if( vehicleparameters->Couplers[ couplingend ].CouplingFlag == expectedcoupling ) {
             // jeżeli został podłączony
             CheckVehicles( Connect ); // sprawdzić światła nowego składu
 

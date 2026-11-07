@@ -2453,6 +2453,14 @@ class TMoverParameters
 	// whether the automatic couplers at the End of this vehicle and the OtherEnd of the other one can catch each other on
 	// contact, rather than the vehicles colliding (with crash damage enabled, only at a closing speed which doesn't derail them)
 	bool AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// whether the control coupling (multiple-unit control) can join the End of this vehicle and the OtherEnd of the other
+	// one: not between an electric and a diesel traction vehicle, unless both couplers name the same control system
+	// (ControlType). Vehicles without own traction (cars, control trailers) take any. Global.control_coupling_engine_check
+	// off allows it always (eu07/maszyna#520)
+	bool ControlCouplingAllowed(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// the CouplingType to join the End of this vehicle and the OtherEnd of the other one with, without the control coupling
+	// when ControlCouplingAllowed() rules it out. a permanent coupling (of the vehicles of one unit) is kept whole
+	int CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, int const CouplingType) const;
 	// the horns of the Signal (WarningSignal bits) which have the air or the voltage they need to sound
 	int SoundingHorns(int const Signal) const;
 	// whether the signal lamps of the main circuit (line contactors, ground relay, motor overload relays) can light:
