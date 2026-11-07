@@ -89,6 +89,19 @@ void driver_ui::render_menu_contents()
 
 		ImGui::EndMenu();
 	}
+
+	auto const *driver = (simulation::Train && simulation::Train->Dynamic()) ? simulation::Train->Dynamic()->Mechanik : nullptr;
+	if (driver && (false == Global.RealisticControlMode || DebugModeFlag))
+	{
+		if (ImGui::BeginMenu(STR_C("Vehicle")))
+		{
+			bool autopilot = driver->AIControllFlag;
+			if (ImGui::MenuItem(STR_C("Autopilot"), nullptr, &autopilot))
+				m_relay.post(autopilot ? user_command::aidriverenable : user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+
+			ImGui::EndMenu();
+		}
+	}
 }
 
 void driver_ui::showDebugUI()
