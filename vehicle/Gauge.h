@@ -55,6 +55,9 @@ public:
     void AssignBool(bool *bValue);
     void UpdateValue();
     void AssignState( bool const *State );
+    // copies of the control animated along with it, from its definitions marked duplicate: yes
+    std::vector<TGauge> const &mirrors() const {
+        return m_mirrors; }
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
     TGaugeType type() const;
@@ -74,6 +77,7 @@ private:
 // types
     struct scratch_data {
         std::optional< std::array<float, 6> > soundproofing;
+        bool duplicate { false }; // the definition is a duplicate submodel of the control defined before
     };
 // methods
     // imports member data pair from the config file
@@ -83,6 +87,12 @@ private:
         GetScaledValue() const;
     void
         UpdateAnimation( TSubModel *Submodel ) const;
+    // shows the default or the active state submodel as the state says
+    void
+        UpdateVisibility() const;
+    // the copy of this control's submodels and animation, without its sounds and bindings
+    TGauge
+        MirrorCopy() const;
 
 // members
     TGaugeAnimation m_animation { TGaugeAnimation::gt_Unknown }; // typ ruchu
@@ -112,6 +122,8 @@ private:
     sound_source m_soundfxincrease { m_soundtemplate }; // sound associated with increasing control's value
     sound_source m_soundfxdecrease { m_soundtemplate }; // sound associated with decreasing control's value
     std::map<int, sound_source> m_soundfxvalues; // sounds associated with specific values
+    TModel3d const *m_sourcemodel { nullptr }; // the 3d model the submodel was found in by Load()
+    std::vector<TGauge> m_mirrors; // duplicate submodels of the control (duplicate: yes), animated along with it
 
 };
 
