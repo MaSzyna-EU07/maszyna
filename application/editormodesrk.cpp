@@ -5521,6 +5521,158 @@ void srk_tool::render_windows()
 	ImGui::End();
 }
 
+namespace
+{
+
+// the speeds listed in the log: 40/60/100, - for none
+std::string speeds_listed(std::vector<int> const &Speeds)
+{
+	std::string text;
+	for (auto const speed : Speeds)
+		text += std::format("{}{}", text.empty() ? "" : "/", speed);
+	return text.empty() ? std::string{"-"} : text;
+}
+
+// a route of a head in the log: the signal it leads to, its end or none, its length and speed, :to where it leads past a warning
+// signal, the turnouts on it
+std::string route_logged(srk_tool::head_check const &Head, std::size_t const K)
+{
+	auto const &route{Head.routes[K]};
+	char const *next{"none"};
+	if (route.next >= 0)
+		next = Head.nexts[K].c_str();
+	else if (route.ended)
+		next = "end";
+	return format(" %s:%.0f:%.0f%s%s", next, route.length, route.speed, route.warning >= 0 ? ":to" : "", route.turnouts.empty() ? "" : format(":%zut", route.turnouts.size()).c_str());
+}
+
+// the line of the log of a head checked
+std::string head_logged(srk_tool::head_check const &Head)
+{
+	std::string routes;
+	for (std::size_t k = 0; k < Head.routes.size(); ++k)
+		routes += route_logged(Head, k);
+	return format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d told=%d%s fit=%s shp=%.0f/%.0f routes%s problems=%zu", Head.name.c_str(), Head.kind.c_str(), Head.station ? "" : "(line)", Head.file.c_str(), Head.lamps.c_str(), speeds_listed(Head.own).c_str(), speeds_listed(Head.speeds).c_str(),
+	              Head.informs ? "+inform" : "", Head.white ? "+white" : "", Head.shortened, Head.indicator ? " w21" : "", Head.fits ? 1 : 0, Head.more ? 1 : 0, Head.told ? 1 : 0, Head.unsaid ? "(unsaid)" : "", Head.fit.empty() ? "-" : Head.fit.c_str(), Head.shp, Head.shp_found, routes.c_str(),
+	              Head.problems.size());
+}
+
+// the stops along a line in the log: name@distance each
+std::string stops_listed(std::vector<std::pair<double, std::string>> const &Stops)
+{
+	std::string text;
+	for (auto const &[distance, name] : Stops)
+		text += format(" %s@%.0f", name.c_str(), distance);
+	return text;
+}
+
+// the block in the words of the self-test: sbl4, sbl or semi
+char const *block_word(srk_tool::block_kind const Block)
+{
+	if (Block == srk_tool::block_kind::four)
+		return "sbl4";
+	if (Block == srk_tool::block_kind::three)
+		return "sbl";
+	return "semi";
+}
+
+// the line of the log of a line out of the station
+std::string row_logged(srk_tool::line_row const &Row)
+{
+	return format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d own %d ways %d%s leftovers %zu legacy %d stops%s wrong%s", Row.entry.c_str(), Row.number, Row.inbound ? "in" : "out", Row.next.empty() ? "-" : Row.next.c_str(), Row.length, Row.blocks, block_word(Row.block),
+	              static_cast<int>(Row.why), static_cast<int>(Row.own), Row.both ? 2 : 1, Row.both_hand ? " hand" : "", Row.leftovers, Row.legacy ? 1 : 0, stops_listed(Row.stops).c_str(), stops_listed(Row.wrong).c_str());
+}
+
+// the block sections checked, each logged where it's wrong: without its signal, twice, switched by a signal which doesn't stand;
+// how many are wrong
+std::size_t sections_checked(std::vector<standing_template> const &Controls, std::unordered_map<std::string, int, string_hash, std::equal_to<>> const &Names)
+{
+	std::size_t bad{0};
+	std::unordered_map<std::string, int, string_hash, std::equal_to<>> sections;
+	for (auto const &block_control : Controls)
+	{
+		if (block_control.values.size() < 6)
+		{
+			++bad;
+			WriteLog("SELFTEST srkcheck: a block section without its signal");
+			continue;
+		}
+		if (++sections[ToLower(block_control.values[0])] > 1)
+		{
+			++bad;
+			WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " twice");
+		}
+		for (std::size_t index = 5; index < block_control.values.size() && index < 7; ++index)
+		{
+			if (Names.contains(ToLower(block_control.values[index])))
+				continue;
+			++bad;
+			WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " switched by " + block_control.values[index] + ", which doesn't stand");
+		}
+	}
+	return bad;
+}
+
+// the names of the track circuits of the scenery, in lower case
+std::unordered_set<std::string, string_hash, std::equal_to<>> scenery_circuits()
+{
+	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
+	for (auto const *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		for (auto const *isolated : track->Isolated)
+			if (isolated != nullptr)
+				circuits.insert(ToLower(isolated->asName));
+	}
+	return circuits;
+}
+
+// the points of the paths of the schematic as drawn: on the rows or between them, the bends, the steps back along x
+struct drawn_points
+{
+	std::size_t on_rows{0};
+	std::size_t between{0};
+	std::size_t bends{0};
+	std::size_t backwards{0};
+
+	// the points of a path drawn, Schematic: those of the schematic it's drawn from
+	template <typename Drawn, typename Schematic>
+	void count(Drawn const &Points, Schematic const &Plan)
+	{
+		for (auto const &point : Points)
+		{
+			auto const row_at{point.y / station::row_height};
+			if (std::abs(row_at - std::round(row_at)) < 1e-6)
+				++on_rows;
+			else
+				++between;
+		}
+		for (std::size_t k = 2; k < Points.size(); ++k)
+		{
+			auto const a{Points[k - 1] - Points[k - 2]};
+			auto const b{Points[k] - Points[k - 1]};
+			if (std::abs(a.x) > 1e-6 && std::abs(b.x) > 1e-6 && (std::abs(a.y) > 1e-6 || std::abs(b.y) > 1e-6) && std::abs(a.y / a.x - b.y / b.x) > 1e-3)
+				++bends;
+		}
+		for (std::size_t k = 1; k < Points.size(); ++k)
+			if ((Points[k].x - Points[k - 1].x) * (Plan[k].x - Plan[k - 1].x) < 0.0)
+				++backwards;
+	}
+};
+
+// every fourth point of the schematic of a path in the log: offset/row>row drawn
+template <typename Schematic, typename Drawn>
+std::string schematic_listed(Schematic const &Plan, Drawn const &Points)
+{
+	std::string schematic;
+	for (std::size_t k = 0; k < Plan.size(); k += 4)
+		schematic += format(" %.0f/%.2f>%.2f", Plan[k].x, Plan[k].y, Points[k].y / station::row_height);
+	return schematic;
+}
+
+} // namespace
+
 editor_selftest_result srk_tool::selftest_open(std::istringstream &Words)
 {
 	// srkopen track=<name>: the station of the track, as a click on it opens it
@@ -5772,22 +5924,9 @@ editor_selftest_result srk_tool::selftest_heads(std::istringstream &Words)
 		return editor_selftest_result::handled;
 	}
 	WriteLog(format("SELFTEST srkheads: speed %.0f (set %.0f), braking %.0f, %zu checked, templates %zu", speed_of_open(), set_speed_of_open(), braking_of_open(), m_heads.size(), heads.size()));
-	auto const list = [](std::vector<int> const &Speeds) {
-		std::string text;
-		for (auto const speed : Speeds)
-			text += std::format("{}{}", text.empty() ? "" : "/", speed);
-		return text.empty() ? std::string{"-"} : text;
-	};
 	for (auto const &head : m_heads)
 	{
-		std::string routes;
-		for (std::size_t k = 0; k < head.routes.size(); ++k)
-		{
-			auto const &route{head.routes[k]};
-			routes += format(" %s:%.0f:%.0f%s%s", route.next >= 0 ? head.nexts[k].c_str() : route.ended ? "end" : "none", route.length, route.speed, route.warning >= 0 ? ":to" : "", route.turnouts.empty() ? "" : format(":%zut", route.turnouts.size()).c_str());
-		}
-		WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d told=%d%s fit=%s shp=%.0f/%.0f routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
-		                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.told ? 1 : 0, head.unsaid ? "(unsaid)" : "", head.fit.empty() ? "-" : head.fit.c_str(), head.shp, head.shp_found, routes.c_str(), head.problems.size()));
+		WriteLog(head_logged(head));
 		for (auto const &problem : head.problems)
 			WriteLog("SELFTEST srkheads   " + problem);
 	}
@@ -5862,15 +6001,8 @@ editor_selftest_result srk_tool::selftest_block(std::istringstream &Words)
 	survey_signals();
 	if (false == m_lines_problem.empty())
 		WriteLog("SELFTEST srkblock: " + m_lines_problem);
-	auto const listed = [](std::vector<std::pair<double, std::string>> const &Stops) {
-		std::string text;
-		for (auto const &[distance, name] : Stops)
-			text += format(" %s@%.0f", name.c_str(), distance);
-		return text;
-	};
 	for (auto const &row : m_lines)
-		WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d own %d ways %d%s leftovers %zu legacy %d stops%s wrong%s", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks,
-		                row.block == block_kind::four ? "sbl4" : row.block == block_kind::three ? "sbl" : "semi", static_cast<int>(row.why), static_cast<int>(row.own), row.both ? 2 : 1, row.both_hand ? " hand" : "", row.leftovers, row.legacy ? 1 : 0, listed(row.stops).c_str(), listed(row.wrong).c_str()));
+		WriteLog(row_logged(row));
 	return editor_selftest_result::handled;
 }
 
@@ -5955,28 +6087,8 @@ editor_selftest_result srk_tool::selftest_check(std::istringstream & /*Words*/)
 			++bad;
 			WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
 		}
-	std::unordered_map<std::string, int, string_hash, std::equal_to<>> sections;
 	auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
-	for (auto const &block_control : controls)
-	{
-		if (block_control.values.size() < 6)
-		{
-			++bad;
-			WriteLog("SELFTEST srkcheck: a block section without its signal");
-			continue;
-		}
-		if (++sections[ToLower(block_control.values[0])] > 1)
-		{
-			++bad;
-			WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " twice");
-		}
-		for (std::size_t index = 5; index < block_control.values.size() && index < 7; ++index)
-			if (false == names.contains(ToLower(block_control.values[index])))
-			{
-				++bad;
-				WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " switched by " + block_control.values[index] + ", which doesn't stand");
-			}
-	}
+	bad += sections_checked(controls, names);
 	std::size_t unread{0};
 	for (auto const &signal : standing)
 		if (false == signal.read.empty() && signal.track == nullptr)
@@ -5984,12 +6096,7 @@ editor_selftest_result srk_tool::selftest_check(std::istringstream & /*Words*/)
 			++unread;
 			WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
 		}
-	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
-	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && false == track->m_editorremoved)
-			for (auto const *isolated : track->Isolated)
-				if (isolated != nullptr)
-					circuits.insert(ToLower(isolated->asName));
+	auto const circuits{scenery_circuits()};
 	std::size_t bare{0};
 	for (auto const &block_control : controls)
 		if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])))
@@ -6043,44 +6150,15 @@ editor_selftest_result srk_tool::selftest_drawing(std::istringstream &Words)
 	WriteLog(format("SELFTEST srkdrawing tracks %zu, rows %zu, spacing %.2f", m_plot.runs.size(), rows.size(), m_plot.spacing));
 	WriteLog("SELFTEST srkdrawing rows" + list);
 	WriteLog(format("SELFTEST srkdrawing switches over %.0f..%.0f m drawn %.0f..%.0f, back %.1f..%.1f", layout.from, layout.to, m_plot.x(layout.from), m_plot.x(layout.to), m_plot.chainage(m_plot.x(layout.from)), m_plot.chainage(m_plot.x(layout.to))));
-	std::size_t on_rows{0};
-	std::size_t between{0};
-	std::size_t bends{0};
-	std::size_t backwards{0};
+	drawn_points drawn;
 	for (std::size_t index = 0; index < layout.paths.size(); ++index)
-	{
-		if (layout.paths[index].approach)
-			continue;
-		auto const &points{m_plot.paths[index]};
-		for (auto const &point : points)
-		{
-			auto const row_at{point.y / station::row_height};
-			if (std::abs(row_at - std::round(row_at)) < 1e-6)
-				++on_rows;
-			else
-				++between;
-		}
-		for (std::size_t k = 2; k < points.size(); ++k)
-		{
-			auto const a{points[k - 1] - points[k - 2]};
-			auto const b{points[k] - points[k - 1]};
-			if (std::abs(a.x) > 1e-6 && std::abs(b.x) > 1e-6 && (std::abs(a.y) > 1e-6 || std::abs(b.y) > 1e-6) && std::abs(a.y / a.x - b.y / b.x) > 1e-3)
-				++bends;
-		}
-		for (std::size_t k = 1; k < points.size(); ++k)
-			if ((points[k].x - points[k - 1].x) * (layout.paths[index].schematic[k].x - layout.paths[index].schematic[k - 1].x) < 0.0)
-				++backwards;
-	}
-	WriteLog(format("SELFTEST srkdrawing points on rows %zu, between %zu, bends %zu, x backwards %zu", on_rows, between, bends, backwards));
+		if (false == layout.paths[index].approach)
+			drawn.count(m_plot.paths[index], layout.paths[index].schematic);
+	WriteLog(format("SELFTEST srkdrawing points on rows %zu, between %zu, bends %zu, x backwards %zu", drawn.on_rows, drawn.between, drawn.bends, drawn.backwards));
 	if (auto const values{selftest_values(Words)}; values.contains("track"))
 		for (std::size_t index = 0; index < layout.paths.size(); ++index)
 			if (auto const &path{layout.paths[index]}; false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == values.at("track"))
-			{
-				std::string schematic;
-				for (std::size_t k = 0; k < path.schematic.size(); k += 4)
-					schematic += format(" %.0f/%.2f>%.2f", path.schematic[k].x, path.schematic[k].y, m_plot.paths[index][k].y / station::row_height);
-				WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + schematic);
-			}
+				WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + schematic_listed(path.schematic, m_plot.paths[index]));
 	return editor_selftest_result::handled;
 }
 
