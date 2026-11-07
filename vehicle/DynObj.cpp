@@ -4852,7 +4852,7 @@ void TDynamicObject::RenderSounds() {
 #endif
      && ( // compound test whether the vehicle belongs to user-driven consist (as these don't emit outer noise in cab view)
             FreeFlyModeFlag ? true : // in external view all vehicles emit outer noise
-            // Global.pWorld->train() == nullptr ? true : // (can skip this check, with no player train the external view is a given)
+            simulation::Train == nullptr ? true : // no player train, e.g. it went through a portal and the view isn't switched yet
             ctOwner == nullptr ? true : // standalone vehicle, can't be part of user-driven train
             ctOwner != simulation::Train->Dynamic()->ctOwner ? true : // confirmed isn't a part of the user-driven train
             Global.CabWindowOpen ? true : // sticking head out we get to hear outer noise
