@@ -2928,6 +2928,9 @@ bool TController::ReleaseEngine() {
     return OK;
 }
 
+// defined further down, with the braking demand it is used for
+static double brake_response_horizon( TMoverParameters const *Vehicle, TBrakeSystem const Brakesystem, double const Acceleration, double const Brakea0 );
+
 bool TController::IncBrake()
 { // zwiększenie hamowania
     auto OK { false };
@@ -3040,7 +3043,7 @@ bool TController::IncBrake()
 					}
 					double deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
 
-                    if( deltaAcc > fBrake_a1[0])
+                    if( deltaAcc > brake_increase_margin() )
 					{
                         if( /*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition < 0.1 ) {
                             OK = /*mvOccupied->*/BrakeLevelAdd( BrakingInitialLevel ); //GBH
@@ -3069,10 +3072,13 @@ bool TController::IncBrake()
                     }
                     else if( BrakeCtrlPosition > 0.0
                           && AccDesired < 0.0 // only while braking is asked for, not when called for a train slipping back while starting
-                          && fBrakeHeldTime > (
-                                mvOccupied->BrakeDelayFlag > bdelay_G ?
-                                    mvOccupied->BrakeDelay[ 1 ] :
-                                    mvOccupied->BrakeDelay[ 3 ] ) ) {
+                          && ( fBrakeHeldTime > (
+                                  mvOccupied->BrakeDelayFlag > bdelay_G ?
+                                      mvOccupied->BrakeDelay[ 1 ] :
+                                      mvOccupied->BrakeDelay[ 3 ] )
+                            // a train falling further behind needs no full fill time to be seen not to get enough
+                            || ( ( fShortfall > 0.02 )
+                              && ( fBrakeHeldTime > brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) ) ) ) {
                         // the table says the present position is enough, but the brake has had its full fill
                         // time since the handle last moved and the train is still not slowing down as asked:
                         // believe the train rather than the table
@@ -3194,7 +3200,9 @@ bool TController::DecBrake() {
             if( fBrake_a0[0] != 0.0
              || fBrake_a1[0] != 0.0 ) {
                 auto const pos_diff { ( is_dmu() ? 0.25 : 1.0 ) };
-                deltaAcc = -AccDesired * BrakeAccFactor() - ( fBrake_a0[ 0 ] + 4 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - pos_diff )*fBrake_a1[ 0 ] );
+                // a distributor applied at all gives at least its minimum stage, about what the first position does, so
+                // a position short of the first one brakes no weaker than that
+                deltaAcc = -AccDesired * BrakeAccFactor() - ( fBrake_a0[ 0 ] + 4 * std::max( 0.0, BrakeCtrlPosition - pos_diff ) * fBrake_a1[ 0 ] );
             }
 		    if (deltaAcc < 0 && /*GBH mvOccupied->BrakeCtrlPosR*/ BrakeCtrlPosition > 0) {
 			    OK = /*mvOccupied->*/ BrakeLevelAdd(-0.25);
@@ -7701,7 +7709,7 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
                                 // train is still speeding up, the prediction above has taken that off already)
                                 auto room { brakingroom };
                                 if( ( AbsAccS <= 0.0 )
-                                 && ( ( VelNext > 0.0 ) || ( BrakeCtrlPosition <= 0.0 ) ) ) { // for a stop, only while the brake is still to be applied
+                                 && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
                                     room = std::max(
                                         0.5 * brakingroom,
                                         brakingroom - vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) );
@@ -7830,6 +7838,10 @@ TController::adjust_desired_speed_for_current_speed() {
                 BrakeSystem == TBrakeSystem::Pneumatic ?
                     std::clamp( fAccGravity * 15.0, 1.0, 3.0 ) :
                     std::clamp( fAccGravity * 7.5, 1.0, 1.5 ) ) };
+            // the predicted difference is to be made up over the time the brake takes to respond, not at once: with a
+            // slow brake, a demand sized to remove it at once comes on as a deep application, which then takes as
+            // long to let go, and the train ends up well below the speed it was to hold
+            auto const holdgain { std::min( 0.04, 1.0 / ( 3.6 * std::max( 1.0, horizon ) ) ) };
             if( ( speedestimate > VelDesired )
              && ( VelDesired == 0.0 ) ) {
                 // jesli stoj, to hamuj, ale i tak juz za pozno :)
@@ -7843,7 +7855,7 @@ TController::adjust_desired_speed_for_current_speed() {
                 AccDesired = std::min(
                     AccDesired, // but don't override decceleration for VelNext
                     std::clamp(
-                        EU07_AI_NOACCELERATION - 0.04 * ( speedestimate - holdspeed ),
+                        EU07_AI_NOACCELERATION - holdgain * ( speedestimate - holdspeed ),
                         -0.05 + fAccThreshold,
                         std::max( EU07_AI_NOACCELERATION, AccPreferred ) ) );
                 // HACK: for cargo trains with high braking threshold ensure we cross that threshold
@@ -8151,6 +8163,20 @@ void TController::increase_tractive_force() {
     cue_action( driver_hint::tractiveforceincrease );
 }
 
+// how far the deceleration may fall short of the demand before the brake is applied harder. approaching a lower
+// speed, a pneumatic brake given a full step only once that much is missing acts too late: the demand
+// creeps up meanwhile, and in a long G train the next step takes many seconds to act, so half a step is enough
+double
+TController::brake_increase_margin() const {
+
+    if( ( BrakeSystem == TBrakeSystem::Pneumatic )
+     && ( VelNext > 0.0 )
+     && ( VelNext < DirectionalVel() ) ) {
+        return 0.5 * fBrake_a1[ 0 ];
+    }
+    return fBrake_a1[ 0 ];
+}
+
 void TController::control_braking_force() {
 
     // don't touch the brakes when compressing buffers during coupling/uncoupling
@@ -8167,6 +8193,19 @@ void TController::control_braking_force() {
     // AbsAccS is the resultant acceleration, gravity included, so it is compared with the
     // resultant the AI asks for, not with the brake-only demand AccDesired holds on a descent
     auto const accdesiredresultant { AccDesired + fAccDesiredGravity };
+
+    // every few seconds, note how far the train falls short of the demand and whether that is getting worse: a brake
+    // still filling, or blocks gripping harder as the train slows down, make up a shortfall on their own, but a
+    // shortfall that keeps growing at a constant handle means the train is falling further behind its braking curve
+    if( ElapsedTime - fShortfallTime >= 3.0 ) {
+        auto const shortfall { AbsAccS - accdesiredresultant };
+        iShortfallGrowth = (
+            ( ( AccDesired < 0.0 ) && ( shortfall > fShortfall + 0.005 ) ) ?
+                iShortfallGrowth + 1 :
+                0 );
+        fShortfall = shortfall;
+        fShortfallTime = ElapsedTime;
+    }
 
     if( is_emu() && !ForcePNBrake ) {
         // właściwie, to warunek powinien być na działający EP
@@ -8201,7 +8240,7 @@ void TController::control_braking_force() {
     } // type & dt_ezt
     else {
         // a stara wersja w miarę dobrze działa na składy wagonowe
-        if( (accdesiredresultant < fAccGravity - 0.1 && AbsAccS > accdesiredresultant + fBrake_a1[0] // regular braking
+        if( (accdesiredresultant < fAccGravity - 0.1 && AbsAccS > accdesiredresultant + brake_increase_margin() // regular braking
 		     || fAccGravity < -0.05 && velocity < -0.1) && // also brake if uphill and slipping back
 		    (fBrakeTime < 0.0
 		     // the size of the brake demand decides whether to skip the reaction time, so the brake-only part
@@ -8214,6 +8253,18 @@ void TController::control_braking_force() {
 			           // Ra: ten czas należy zmniejszyć, jeśli czas dojazdu do zatrzymania jest mniejszy
 			           (3.0 + 0.5 * ((mvOccupied->BrakeDelayFlag > bdelay_G ? mvOccupied->BrakeDelay[1] : mvOccupied->BrakeDelay[3]) - 3.0)) * 0.5); // Ra: tymczasowo, bo przeżyna S1
 		}
+        else if( ( BrakeSystem == TBrakeSystem::Pneumatic )
+              && ( AccDesired < 0.0 )
+              && ( BrakeCtrlPosition > 0.0 )
+              && ( fShortfall > 0.02 )
+              && ( iShortfallGrowth >= 2 )
+              && ( fBrakeHeldTime > brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) ) {
+            // the train has been falling further behind the demand for a while at a handle left alone for longer than
+            // the brake takes to respond: a small step now, while it still is small, rather than the deep one the
+            // margin above would allow only once the train is far behind
+            cue_action( driver_hint::brakingforceincrease );
+            iShortfallGrowth = 0;
+        }
         if ( (accdesiredresultant < fAccGravity - 0.05
               || AccDesired >= EU07_AI_NOACCELERATION) // no braking asked for, yet the train is slowing down more than that
             && accdesiredresultant - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 && OrderCurrentGet() != Disconnect && VelDesired > 0.0 ) {
