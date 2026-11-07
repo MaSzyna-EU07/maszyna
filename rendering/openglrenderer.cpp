@@ -4327,12 +4327,15 @@ opengl_renderer::Update( double const Deltatime ) {
     }
 
     m_updateaccumulator = 0.0;
-    m_framerate = 1000.f / ( Timer::subsystem.gfx_total.average() );
+    // the frames actually shown, the wait for fpslimit included (eu07/maszyna#416)
+    m_framerate = 1000.f / ( Timer::subsystem.mainloop_period.average() );
+    // the draw ranges follow the time spent on drawing alone, as before
+    auto const drawframerate { 1000.f / ( Timer::subsystem.gfx_total.average() ) };
 
 	// adjust draw ranges etc, based on recent performance
 	// TODO: it doesn't make much sense with vsync
     if( Global.targetfps != 0.f ) {
-        auto const fps_diff = m_framerate - Global.targetfps;
+        auto const fps_diff = drawframerate - Global.targetfps;
         if( fps_diff < -0.5f ) {
             Global.fDistanceFactor = std::min( std::max( 1.0f, Global.fDistanceFactor - 0.05f ), Global.gfx_distance_factor_max );
         }
@@ -4342,7 +4345,7 @@ opengl_renderer::Update( double const Deltatime ) {
     }
     // legacy framerate parameters
     else if( Global.fFpsAverage != 0.f ) {
-        auto const fps_diff = m_framerate - Global.fFpsAverage;
+        auto const fps_diff = drawframerate - Global.fFpsAverage;
         if( fps_diff < -Global.fFpsDeviation ) {
             Global.fDistanceFactor = std::min( std::max( 1.0f, Global.fDistanceFactor - 0.05f ), Global.gfx_distance_factor_max );
         }
