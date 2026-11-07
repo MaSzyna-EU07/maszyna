@@ -2463,10 +2463,23 @@ class TMoverParameters
 	{
 		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
 	}
-	// whether the lamp of the open line contactors is lit, telling the start can be made
+	// whether the lamp of the open line contactors is lit. on the electric locomotives it tells the start can be made, so
+	// it goes out with the start cut off; on the diesel-electric ones (the SU45 and SU46 family) it just tells the
+	// contactors are open, whatever opened them: the master controller at 0, or the pressure switch (eu07/maszyna#263)
 	bool LineContactorsLampLit() const
 	{
+		if (EngineType == TEngineType::DieselElectric)
+		{
+			return false == StLinFlag;
+		}
 		return false == StLinFlag && MainCircuitLampsEnabled();
+	}
+	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
+	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
+	// starts on its own (eu07/maszyna#427). the other vehicles with such a button keep ignoring the command
+	bool MainCircuitOpensWithStarterOnly() const
+	{
+		return EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric;
 	}
 	// whether the pumps a joint oil and fuel pump switch works, those not started automatically, are all switched on
 	bool OilFuelPumpsEnabled() const
