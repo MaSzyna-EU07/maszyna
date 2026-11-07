@@ -11474,6 +11474,7 @@ void TMoverParameters::LoadFIZ_AI(std::string const &Input)
 {
 
 	extract_value(AIHintPantstate, "Pantstate", Input, "");
+	extract_value(AIHintShuntPantstate, "ShuntPantstate", Input, "");
 	extract_value(AIHintPantUpIfIdle, "IdlePantUp", Input, "");
 	extract_value(AIHintLocalBrakeAccFactor, "LocalBrakeAccFactor", Input, "");
 }

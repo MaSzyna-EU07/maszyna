@@ -2300,6 +2300,9 @@ class TMoverParameters
 	plc::basic_controller m_plc;
 
 	int AIHintPantstate{0}; // suggested pantograph setup
+	// suggested pantograph setup in shunting (AI: ShuntPantstate=, eu07/maszyna#461), the bits as in Pantstate: 1 front,
+	// 2 rear, 3 both; 0 (the default) shunts with the pantographs handled as in train mode
+	int AIHintShuntPantstate{0};
 	bool AIHintPantUpIfIdle{true}; // whether raise both pantographs if idling for a while
 	double AIHintLocalBrakeAccFactor{1.05}; // suggested acceleration weight for local brake operation
 
