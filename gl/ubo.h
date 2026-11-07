@@ -62,7 +62,7 @@ namespace gl
 
     static_assert(sizeof(scene_ubs) == 400, "bad size of ubs");
 
-    const size_t MAX_PARAMS = 3;
+    const size_t MAX_PARAMS = 4;
 
     struct model_ubs
     {

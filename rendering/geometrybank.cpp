@@ -318,6 +318,20 @@ geometry_bank::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gf
     return replace( Vertices, Userdata, Geometry, gfx::geometry_bank::chunk( Geometry ).vertices.size() );
 }
 
+void
+geometry_bank::erase( gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return; }
+
+    auto &chunk = gfx::geometry_bank::chunk( Geometry );
+    if( chunk.vertices.empty() && chunk.indices.empty() ) { return; }
+
+    gfx::vertex_array().swap( chunk.vertices );
+    gfx::index_array().swap( chunk.indices );
+    gfx::userdata_array().swap( chunk.userdata );
+    replace_( Geometry );
+}
+
 // draws geometry stored in specified chunk
 std::size_t
 geometry_bank::draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) {
@@ -358,6 +372,15 @@ vertex_array const &
 geometry_bank::vertices( gfx::geometry_handle const &Geometry ) const {
 
     return geometry_bank::chunk( Geometry ).vertices;
+}
+
+// kind of geometry of specified chunk
+unsigned int
+geometry_bank::primitive( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return no_primitive; }
+
+    return geometry_bank::chunk( Geometry ).type;
 }
 
 // provides direct access to vertex user data of specfied chunk
@@ -417,6 +440,14 @@ bool
 geometrybank_manager::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gfx::geometry_handle const &Geometry ) {
 
     return bank( Geometry ).first->append( Vertices, Userdata, Geometry );
+}
+
+void
+geometrybank_manager::erase( gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.bank == 0 ) || ( Geometry.bank > m_geometrybanks.size() ) ) { return; }
+
+    bank( Geometry ).first->erase( Geometry );
 }
 // draws geometry stored in specified chunk
 void
@@ -481,6 +512,15 @@ gfx::vertex_array const &
 geometrybank_manager::vertices( gfx::geometry_handle const &Geometry ) const {
 
     return bank( Geometry ).first->vertices( Geometry );
+}
+
+// kind of geometry of specified chunk
+unsigned int
+geometrybank_manager::primitive( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.bank == 0 ) || ( Geometry.bank > m_geometrybanks.size() ) ) { return geometry_bank::no_primitive; }
+
+    return bank( Geometry ).first->primitive( Geometry );
 }
 
 // provides direct access to vertex user data of specfied chunk
