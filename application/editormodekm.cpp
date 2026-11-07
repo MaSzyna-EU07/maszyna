@@ -933,6 +933,32 @@ void km_tool::render_anchor_row(kilometrage::axis const &Axis, std::vector<kilom
 		ImGui::SetTooltip("%s", STR_C("How much longer the stretch is in the scenery than by the km: the km between the points are stretched to it evenly"));
 }
 
+namespace
+{
+
+// the axis of a line drawn, faint where the km run on past the last point
+template <typename Drawn>
+void draw_axis(screen_projection const &Projection, ImDrawList *List, Drawn const &Entry, glm::dvec3 const &Camera, glm::dvec3 const &Lift)
+{
+	for (std::size_t i = 1; i < Entry.points.size(); i += 5)
+	{
+		auto const next{std::min(i + 4, Entry.points.size() - 1)};
+		if (near_enough(Entry.points[next], Camera, kOverlayRange))
+			Projection.line(List, Entry.points[i - 1] + Lift, Entry.points[next] + Lift, Entry.guessed[next] != 0 ? kGuessed : kAxis, Global.EditorOrtho ? 4.0f : 2.5f);
+	}
+}
+
+// the rhombus of a track chosen for the way of the line through a station, at the point of the screen
+void draw_via_mark(ImDrawList *List, ImVec2 const &Screen, ImU32 const Colour, std::string const &Line)
+{
+	auto const r{8.0f};
+	List->AddQuadFilled(ImVec2(Screen.x, Screen.y - r), ImVec2(Screen.x + r, Screen.y), ImVec2(Screen.x, Screen.y + r), ImVec2(Screen.x - r, Screen.y), Colour);
+	List->AddQuad(ImVec2(Screen.x, Screen.y - r), ImVec2(Screen.x + r, Screen.y), ImVec2(Screen.x, Screen.y + r), ImVec2(Screen.x - r, Screen.y), IM_COL32(16, 18, 22, 255), 1.5f);
+	draw_label(List, ImVec2(Screen.x, Screen.y - r - 2.0f), Colour, IM_COL32(16, 18, 22, 255), format(STR_C("%s: this way"), Line.c_str()));
+}
+
+} // namespace
+
 void km_tool::draw_overlay() const
 {
 	if (false == m_open)
@@ -943,13 +969,7 @@ void km_tool::draw_overlay() const
 	glm::dvec3 const lift{0.0, kRailHead, 0.0};
 	for (auto const &entry : m_drawn)
 	{
-		// the axis, faint where the km run on past the last point
-		for (std::size_t i = 1; i < entry.points.size(); i += 5)
-		{
-			auto const next{std::min(i + 4, entry.points.size() - 1)};
-			if (near_enough(entry.points[next], camera, kOverlayRange))
-				projection.line(drawlist, entry.points[i - 1] + lift, entry.points[next] + lift, entry.guessed[next] != 0 ? kGuessed : kAxis, Global.EditorOrtho ? 4.0f : 2.5f);
-		}
+		draw_axis(projection, drawlist, entry, camera, lift);
 		for (auto const &tick : entry.ticks)
 			draw_tick(projection, drawlist, camera, tick);
 	}
@@ -968,11 +988,7 @@ void km_tool::draw_overlay() const
 		auto blocked{false};
 		if (auto const *axis{kilometrage::axis_of(via.line)}; axis != nullptr)
 			blocked = via_blocked(*axis, index);
-		auto const colour{blocked ? kAstray : kAxis};
-		auto const r{8.0f};
-		drawlist->AddQuadFilled(ImVec2(screen.x, screen.y - r), ImVec2(screen.x + r, screen.y), ImVec2(screen.x, screen.y + r), ImVec2(screen.x - r, screen.y), colour);
-		drawlist->AddQuad(ImVec2(screen.x, screen.y - r), ImVec2(screen.x + r, screen.y), ImVec2(screen.x, screen.y + r), ImVec2(screen.x - r, screen.y), IM_COL32(16, 18, 22, 255), 1.5f);
-		draw_label(drawlist, ImVec2(screen.x, screen.y - r - 2.0f), colour, IM_COL32(16, 18, 22, 255), format(STR_C("%s: this way"), via.line.c_str()));
+		draw_via_mark(drawlist, screen, blocked ? kAstray : kAxis, via.line);
 	}
 	if (m_pick.has_value() && m_edited < 0)
 	{
