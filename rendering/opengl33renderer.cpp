@@ -3745,6 +3745,195 @@ void opengl33_renderer::Render_Sleepers( TTrack *Track )
 	m_renderpass.draw_stats.models    += static_cast<int>( total );
 }
 
+namespace {
+
+// the level of detail of the whole model a run of beams is seen at, from its distance
+float timber_band( track_sleepers::beam_model const &Model, double const Distance )
+{
+	auto const squaredistance { static_cast<float>( Distance * Distance ) };
+	auto band { Model.bands.empty() ? 0.f : Model.bands.front() };
+	for( auto const start : Model.bands ) {
+		if( squaredistance >= start ) {
+			band = start;
+		}
+	}
+	return band;
+}
+
+// the transforms of a run of beams, relative to the origin of their track, put in the camera space of the modelview given
+void append_timbers( std::vector<glm::mat4> &Instances, glm::mat4 const &Modelview, std::vector<glm::mat4> const &Transforms, std::size_t const First, std::size_t const Last )
+{
+	for( auto index { First }; index < Last; ++index ) {
+		Instances.emplace_back( Modelview * Transforms[ index ] );
+	}
+}
+
+} // namespace
+
+// Renders the sleepers and switch timbers of a run of tracks of a cell. Each beam is made of instances of the parts of a model or
+// of a whole model, kept by its track relative to the origin of the track. The runs of beams in range and in sight are gathered
+// for the whole run of tracks by the model and its part or its level of detail, and each is drawn in as few instanced batches
+// as they fit in. In the shadow pass only those near the camera are drawn, their shadows falling where they can be seen.
+void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last )
+{
+	if( Global.SleeperDistance <= 0.f ) { return; }
+	// a name alone, without looking the model up: the tracks it failed to load for aren't laid
+	if( Global.Sleepers3D.empty() ) { return; }
+
+	auto const shadows = ( m_renderpass.draw_mode == rendermode::shadows );
+	timber_view const view {
+		// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
+		( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() ),
+		static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance ),
+		shadows,
+		OpenGLMatrices.data( GL_MODELVIEW ) };
+	for( auto &bucket : m_timberbuckets ) {
+		bucket.instances.clear();
+	}
+	for( auto first { First }; first != Last; ++first ) {
+		gather_timbers( **first, view );
+	}
+	std::size_t total { 0 };
+	for( auto const &bucket : m_timberbuckets ) {
+		if( bucket.instances.empty() ) { continue; }
+		total += bucket.instances.size();
+		draw_timbers( bucket );
+	}
+	if( total == 0 ) { return; }
+	// instance_modelview[0] back to identity for the draws which aren't instanced
+	{
+		glm::mat4 const identity( 1.0f );
+		instance_ubo->update( std::as_bytes( std::span { &identity, 1 } ), 0 );
+	}
+	m_renderpass.draw_stats.instances += static_cast<int>( total );
+}
+
+// the camera-space transforms of the beams of a model and its part or its level of detail gathered for the frame, in a bucket of
+// their own made for the first of them
+std::vector<glm::mat4> &opengl33_renderer::timber_instances( track_sleepers::beam_model const *Model, int const Part, float const Band )
+{
+	for( auto &bucket : m_timberbuckets ) {
+		if( bucket.model == Model && bucket.part == Part && bucket.band == Band ) {
+			return bucket.instances;
+		}
+	}
+	auto &bucket { m_timberbuckets.emplace_back() };
+	bucket.model = Model;
+	bucket.part = Part;
+	bucket.band = Band;
+	return bucket.instances;
+}
+
+// the beams of a track in range and in sight gathered into the buckets, laid first where they've changed; those of a track about to
+// come in range laid ahead, in the background
+void opengl33_renderer::gather_timbers( TTrack &Track, timber_view const &View )
+{
+	if( false == Track.m_visible || false == Track.m_sleepers3d.active ) { return; }
+	if( glm::length( Track.location() - View.camera ) > View.reach + Track.radius() ) {
+		// worked out ahead, in the background, before it comes in range
+		if( false == View.shadows && Track.m_sleepers3d.dirty && glm::length( Track.location() - View.camera ) < View.reach + Track.radius() + 300.0 ) {
+			track_sleepers::prefetch( Track );
+		}
+		return;
+	}
+	if( Track.m_sleepers3d.dirty ) {
+		track_sleepers::lay( Track );
+	}
+	auto const &laid = Track.m_sleepers3d;
+	if( laid.timbers == nullptr ) { return; }
+	for( auto const &chunk : laid.chunks ) {
+		auto const centre = Track.m_origin + glm::dvec3( chunk.centre );
+		auto const distance = glm::length( centre - View.camera );
+		if( distance > View.reach + chunk.radius ) { continue; }
+		if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
+		// the transforms of the beams are relative to the origin of the track, which the modelview is translated to already
+		gather_timber_chunk( laid, chunk, std::max( 0.0, distance - chunk.radius ), View.modelview );
+	}
+}
+
+// the beams of a run of them along a track gathered into the buckets: the parts of the timbers of a model made of them, the whole
+// timbers and the plain sleepers at the level of detail they're seen at from the nearest of them
+void opengl33_renderer::gather_timber_chunk( track_sleepers::laid const &Laid, track_sleepers::chunk const &Chunk, double const Nearest, glm::mat4 const &Modelview )
+{
+	if( Laid.timbers->stretchable ) {
+		for( int part = 0; part < track_sleepers::part_count; ++part ) {
+			auto &instances { timber_instances( Laid.timbers, part, 0.f ) };
+			append_timbers( instances, Modelview, Laid.instances[ part ], Chunk.first[ part ], Chunk.last[ part ] );
+		}
+	}
+	if( Chunk.wholelast > Chunk.wholefirst ) {
+		auto &instances { timber_instances( Laid.timbers, -1, timber_band( *Laid.timbers, Nearest ) ) };
+		append_timbers( instances, Modelview, Laid.whole, Chunk.wholefirst, Chunk.wholelast );
+	}
+	if( Laid.plains != nullptr && Chunk.plainlast > Chunk.plainfirst ) {
+		auto &instances { timber_instances( Laid.plains, -1, timber_band( *Laid.plains, Nearest ) ) };
+		append_timbers( instances, Modelview, Laid.plain, Chunk.plainfirst, Chunk.plainlast );
+	}
+}
+
+// the beams of a bucket drawn in as few instanced batches as they fit in: of a part of a model with the rest of it hidden, or of a whole
+// model at the level of detail of the bucket
+void opengl33_renderer::draw_timbers( timber_bucket const &Bucket )
+{
+	auto const &beammodel = *Bucket.model;
+	auto *model = beammodel.model;
+	if( Bucket.part >= 0 ) {
+		show_timber_part( beammodel, Bucket.part );
+	}
+	material_data skins {};
+	if( beammodel.skin != null_handle ) {
+		skins.replacable_skins[ 1 ] = beammodel.skin;
+	}
+	auto const alpha = ( 0x30300030 ^ 0x0F0F000F );
+	auto const &instances = Bucket.instances;
+	for( std::size_t offset = 0; offset < instances.size(); offset += gl::MAX_INSTANCES_PER_BATCH ) {
+		auto const batch = std::min<std::size_t>( instances.size() - offset, gl::MAX_INSTANCES_PER_BATCH );
+		instance_ubo->update( std::as_bytes( std::span { instances.data() + offset, batch } ), 0 );
+		::glPushMatrix();
+		::glLoadIdentity();
+		m_current_instance_count = batch;
+		// inside the range of the level of detail the beams are at
+		TSubModel::fSquareDist = ( Bucket.part >= 0 ? 0.f : Bucket.band + 1.f );
+		TSubModel::ReplacableSet( ( beammodel.skin != null_handle ? skins.replacable_skins : nullptr ), alpha );
+		TSubModel::pRoot = model;
+		Render( model->Root );
+		m_current_instance_count = 0;
+		::glPopMatrix();
+		++m_renderpass.draw_stats.instanced_drawcalls;
+	}
+	if( Bucket.part >= 0 ) {
+		restore_timber_parts( beammodel );
+	}
+}
+
+// only the given part of a timber model seen, its siblings skipped as the model is walked: the other parts, and what else the model
+// holds, like the fastenings of the rails, which aren't laid. what each was is kept to put it back
+void opengl33_renderer::show_timber_part( track_sleepers::beam_model const &Model, int const Part )
+{
+	m_timbervisibility.clear();
+	for( int part = 0; part < track_sleepers::part_count; ++part ) {
+		m_timbervisibility.push_back( Model.parts[ part ]->iVisible );
+		Model.parts[ part ]->iVisible = ( part == Part ? 1 : 0 );
+	}
+	for( auto *other : Model.others ) {
+		m_timbervisibility.push_back( other->iVisible );
+		other->iVisible = 0;
+	}
+}
+
+// the parts of a timber model and its other submodels seen as they were, some hidden by the model itself, which may stand in the
+// scenery too
+void opengl33_renderer::restore_timber_parts( track_sleepers::beam_model const &Model )
+{
+	auto visibility = m_timbervisibility.begin();
+	for( int part = 0; part < track_sleepers::part_count; ++part ) {
+		Model.parts[ part ]->iVisible = *visibility++;
+	}
+	for( auto *other : Model.others ) {
+		other->iVisible = *visibility++;
+	}
+}
+
 bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 {
 	glDebug("Render TDynamicObject");
@@ -4561,8 +4750,17 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }
 			if( false == track->m_sleeper_enabled ) { continue; }
+			// a track with the sleepers and timbers of eu07.ini lays its sleeper model there
+			if( track->m_sleepers3d.active )      { continue; }
 			Render_Sleepers( track );
 		}
+		if( m_renderpass.draw_mode == rendermode::color ) {
+			Render_Timbers( First, Last );
+		}
+		break;
+	}
+	case rendermode::shadows: {
+		Render_Timbers( First, Last );
 		break;
 	}
 	default:

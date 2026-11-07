@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "world/Segment.h"
 #include "world/RailLayout.h"
+#include "world/TrackSleepers.h"
 #include "world/TrackUneven.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
@@ -233,8 +234,8 @@ public:
     std::string m_sleeper_skin_name;  // replacable skin path, or "none" for default
     glm::vec3 m_sleeper_offset { 0.f, 0.f, 0.f }; // local offset from track centerline (x: left/right, y: forward/back, z: up/down)
     float m_sleeper_ballast_z { 0.f }; // vertical offset applied to the trackbed (ballast) profile
-    // timbermodel optional parameter: the model of the timbers laid under the track where it's part of a switch or a crossing.
-    // Read and written back, not drawn yet. Defined in scenery file as:
+    // timbermodel optional parameter: the model of the timbers laid under the track where it's part of a switch or a crossing,
+    // in place of the one set with sleepers3d in eu07.ini. Defined in scenery file as:
     //   timbermodel <model> <skin>
     std::string m_timber_model_name;
     std::string m_timber_skin_name; // replacable skin, empty for the textures of the model
@@ -244,6 +245,8 @@ public:
     // Each matrix is translate(world_pos - m_origin) * rotate(direction, roll) * translate(local_offset).
     // The renderer composes this with (view * translate(m_origin - camera_pos)) per draw.
     std::vector<glm::mat4> m_sleeper_local_transforms;
+    // sleepers and switch timbers made of the model set with sleepers3d in eu07.ini, laid where the simulator makes the ballast
+    track_sleepers::laid m_sleepers3d;
 
 public:
     using dynamics_sequence = std::deque<TDynamicObject *>;

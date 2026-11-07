@@ -4,6 +4,8 @@
 #include "bindable.h"
 #include "buffer.h"
 #include <glm/glm.hpp>
+#include <cstddef>
+#include <span>
 
 #define UBS_PAD(x) uint8_t PAD[x]
 
@@ -27,6 +29,8 @@ namespace gl
         void bind_uniform();
 
         void update(const uint8_t *data, int offset, GLsizeiptr size);
+        // the bytes given, put from the offset on
+        void update(std::span<std::byte const> Data, int Offset);
         template <typename T> void update(const T &data, size_t offset = 0)
         {
             update(reinterpret_cast<const uint8_t*>(&data), static_cast<int>(offset), sizeof(data));
