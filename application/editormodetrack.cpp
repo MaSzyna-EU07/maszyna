@@ -1943,8 +1943,12 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_track_point.valid())
 	{
 		char const *action{"moves the point along the axes"};
-		if (false == editor_track::is_end(m_track_point.kind))
-			action = m_gizmo_op == gizmo_operation::rotate ? "turns the control vector sideways or up, cant at its end, the joined track keeps the tangent" : m_gizmo_op == gizmo_operation::scale ? "length of the control vector" : "moves the control point, the joined track keeps the tangent";
+		if (false == editor_track::is_end(m_track_point.kind) && m_gizmo_op == gizmo_operation::rotate)
+			action = "turns the control vector sideways or up, cant at its end, the joined track keeps the tangent";
+		else if (false == editor_track::is_end(m_track_point.kind) && m_gizmo_op == gizmo_operation::scale)
+			action = "length of the control vector";
+		else if (false == editor_track::is_end(m_track_point.kind))
+			action = "moves the control point, the joined track keeps the tangent";
 		else if (m_gizmo_op == gizmo_operation::rotate)
 			action = "rings about the point: direction, grade, cant; the joined tracks follow";
 		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, true) == gizmo_operation::scale)
@@ -2760,7 +2764,11 @@ void editor_mode::draw_build_overlay() const
 					                   IM_COL32(255, 170, 40, 255));
 				if (bend.target.track != nullptr)
 				{
-					lines.emplace_back(bend.problem.empty() ? link_summary(bend.target, bend.link, editor_track::branch_radius(bend.paths[bend.diverging ? 1 : 0])) : bend.problem, bend.problem.empty() ? IM_COL32(255, 60, 255, 255) : overlay_color::invalid);
+					auto const &branch{bend.paths[bend.diverging ? 1 : 0]};
+					if (bend.problem.empty())
+						lines.emplace_back(link_summary(bend.target, bend.link, editor_track::branch_radius(branch)), IM_COL32(255, 60, 255, 255));
+					else
+						lines.emplace_back(bend.problem, overlay_color::invalid);
 					ImVec2 screen;
 					if (projection.project(bend.target.position, screen))
 						drawlist->AddCircle(screen, 14.0f, bend.problem.empty() ? IM_COL32(255, 60, 255, 255) : overlay_color::invalid, 20, 3.0f);

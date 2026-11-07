@@ -1573,7 +1573,12 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 					ImGui::TableNextRow();
 					ImGui::TableSetColumnIndex(1);
 					ImGui::PushTextWrapPos(0.0f);
-					ImGui::TextColored(note.type == track_note::kind::typing ? ImVec4(0.55f, 0.8f, 1.0f, 1.0f) : note.type == track_note::kind::done ? ImVec4(0.45f, 0.9f, 0.45f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", note.text.c_str());
+					ImVec4 color{1.0f, 0.75f, 0.3f, 1.0f};
+					if (note.type == track_note::kind::typing)
+						color = ImVec4(0.55f, 0.8f, 1.0f, 1.0f);
+					else if (note.type == track_note::kind::done)
+						color = ImVec4(0.45f, 0.9f, 0.45f, 1.0f);
+					ImGui::TextColored(color, "%s", note.text.c_str());
 					ImGui::PopTextWrapPos();
 				}
 		}

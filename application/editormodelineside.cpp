@@ -34,6 +34,8 @@ http://mozilla.org/MPL/2.0/.
 
 namespace
 {
+// the "no layer" handle in the type of the layers, so that it isn't compared and returned as int
+constexpr scene::layer_handle no_layer{null_handle};
 
 using geometry::bezier;
 using geometry::plan_distance;
@@ -291,7 +293,7 @@ std::string part_stem()
 // the layer takes the part where it can take more, then it's shown and unlocked; Reason says why not
 bool part_take(scene::layer_handle const Layer, std::string &Reason)
 {
-	if (Layer == null_handle || false == scene::Layers.accepts(Layer, &Reason))
+	if (Layer == no_layer || false == scene::Layers.accepts(Layer, &Reason))
 		return false;
 	scene::Layers.visible(Layer, true);
 	scene::Layers.locked(Layer, false);
@@ -318,7 +320,7 @@ scene::layer_handle part_included(Test const &Named, std::string &Reason)
 		if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && Named(ToLower(existing.name), existing.name))
 			if (auto const layer{scene::Layers.resolve(static_cast<scene::layer_handle>(index))}; part_take(layer, Reason))
 				return layer;
-	return null_handle;
+	return no_layer;
 }
 
 // the file of the part, numbered from the second one: <stem>_<part>2.scm
@@ -353,18 +355,18 @@ bool part_known(std::string const &Name)
 scene::layer_handle editor_mode::output_layer(std::string const &Part)
 {
 	if (scene::Layers.empty())
-		return null_handle;
+		return no_layer;
 	auto const stem{part_stem()};
 	std::string reason;
 	// the first line of the files made here, which tells them from the files of the scenery named alike
 	auto const header{"// scenery layer created in the editor for its " + Part + " part"};
 	for (int attempt = 1; attempt <= 9; ++attempt)
-		if (auto const layer{part_included([&stem, &Part, &attempt](std::string const &Name, std::string const &) { return Name == part_file(stem, Part, attempt); }, reason)}; layer != null_handle)
+		if (auto const layer{part_included([&stem, &Part, &attempt](std::string const &Name, std::string const &) { return Name == part_file(stem, Part, attempt); }, reason)}; layer != no_layer)
 			return layer;
 	// the one made here for the scenery saved under another name before, the file it was copied from: what the part made stays
 	// in one file. a file of the scenery of a name alike, without the first line written here, is left as it is
 	auto const part{"_" + ToLower(Part)};
-	if (auto const layer{part_included([&part, &header](std::string const &Name, std::string const &Given) { return part_copied(Name, Given, part, header); }, reason)}; layer != null_handle)
+	if (auto const layer{part_included([&part, &header](std::string const &Name, std::string const &Given) { return part_copied(Name, Given, part, header); }, reason)}; layer != no_layer)
 		return layer;
 	// a file of that name the scenery doesn't include, or one which can't take more, gives way to the next number
 	for (int attempt = 1; attempt <= 9; ++attempt)
@@ -376,7 +378,7 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 			return layer;
 	}
 	WriteLog("Editor: no layer for " + Part + ", the active one takes it: " + reason, logtype::generic);
-	return null_handle;
+	return no_layer;
 }
 
 std::size_t editor_mode::place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle const Layer)
@@ -389,7 +391,7 @@ std::size_t editor_mode::place_templates(std::vector<template_item> const &Items
 		Error = STR_C("Templates can be placed only in a scenery opened for editing (-edit)");
 		return 0;
 	}
-	auto const layer{scene::Layers.resolve(Layer != null_handle ? Layer : scene::Layers.active())};
+	auto const layer{scene::Layers.resolve(Layer != no_layer ? Layer : scene::Layers.active())};
 	if (std::string reason; false == scene::Layers.accepts(layer, &reason))
 	{
 		Error = STR_C("The active layer can't take them: ") + (reason.empty() ? std::string{STR_C("there's no active layer")} : reason);
@@ -734,10 +736,10 @@ void hekto_tool::hekto_place()
 		items.push_back(std::move(item));
 	}
 	std::string error;
-	auto const layer{items.empty() ? scene::layer_handle{null_handle} : m_templates.output_layer("hektometry")};
+	auto const layer{items.empty() ? no_layer : m_templates.output_layer("hektometry")};
 	auto const placed{m_templates.place_templates(items, error, layer)};
 	tool.status = placed > 0 ? format(STR_P("%zu hectometre post placed, Ctrl+Z takes it back", "%zu hectometre posts placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
-	if (placed > 0 && layer != null_handle)
+	if (placed > 0 && layer != no_layer)
 		tool.status += format(STR_C(" (layer \"%s\")"), scene::Layers.layer(layer).name.c_str());
 	if (placed > 0)
 		m_guide.first_step_done(editor_first_step::posts);

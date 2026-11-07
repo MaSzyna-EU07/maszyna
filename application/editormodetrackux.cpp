@@ -739,7 +739,9 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		if (shift && false == gizmo_frame::over())
 		{
 			intent.track = m_hover.track;
-			return make(kind::box, m_hover.track == nullptr ? "Drag: the tracks in a box join the selection" : track_selected(m_hover.track) ? "Click: take out of the selection, drag: a box" : "Click: add to the selection, drag: a box");
+			if (m_hover.track == nullptr)
+				return make(kind::box, "Drag: the tracks in a box join the selection");
+			return make(kind::box, track_selected(m_hover.track) ? "Click: take out of the selection, drag: a box" : "Click: add to the selection, drag: a box");
 		}
 		if (auto const hit{track_handle_hit()}; hit.valid() && selected != nullptr)
 		{
@@ -919,7 +921,10 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		{
 		case track_tab::straights:
 		case track_tab::route: return make(kind::select, m_hover.track->eType != tt_Switch && editor_track::is_straight(*m_hover.track, m_straights.tolerance) ? "Click: the whole straight through this track" : "Click: the curve of this track with its straights");
-		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
+		case track_tab::turnout:
+			if (m_hover.track->eType == tt_Switch)
+				return make(kind::select, "Click: edit this switch");
+			return make(kind::select, m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
 		case track_tab::profile: return make(kind::select, "Click: the grade line of the whole line through this track; Shift: the route between the tracks");
 		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
 		case track_tab::parallel: return make(kind::select, "Click: the straight the new track goes beside");

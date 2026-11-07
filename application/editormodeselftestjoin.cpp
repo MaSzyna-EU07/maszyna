@@ -1523,7 +1523,12 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			auto const chosen{track_gizmo_operation(*track, m_track_point.valid())};
 			m_gizmo_op = previous;
 			track_gizmo_begin(*track, m_track_point.valid(), chosen);
-			WriteLog(format("SELFTEST gizmo begin %s: %s, %zu tracks dragged, %zu joints, %zu partners%s", operation.c_str(), chosen == gizmo_operation::rotate ? "rotate" : chosen == gizmo_operation::scale ? "scale" : "translate", m_track_drag.size(), m_track_joints.size(),
+			char const *chosen_name{"translate"};
+			if (chosen == gizmo_operation::rotate)
+				chosen_name = "rotate";
+			else if (chosen == gizmo_operation::scale)
+				chosen_name = "scale";
+			WriteLog(format("SELFTEST gizmo begin %s: %s, %zu tracks dragged, %zu joints, %zu partners%s", operation.c_str(), chosen_name, m_track_drag.size(), m_track_joints.size(),
 			                m_track_gizmo_drag.partners.size(), m_track_gizmo_drag.fixed != glm::dvec3{} ? ", fixed direction" : ""));
 		}
 		else if (action == "turn")
