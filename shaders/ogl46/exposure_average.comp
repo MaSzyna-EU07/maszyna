@@ -1,0 +1,81 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// exposure from the luminance histogram (exposure_histogram.comp): the average log2 luminance of the pixels between the
+// low and high percentile (the darkest and brightest parts of the image do not move the exposure), adapted over time to,
+// faster towards the brighter. the exposure brings the adapted luminance to the key, within the limits. one work group,
+// one invocation per bin; the histogram is cleared for the next frame
+
+#include "common.glsl"
+
+layout(local_size_x = EXPOSURE_HISTOGRAM_BINS) in;
+
+layout(std430, binding = EXPOSURE_SSBO_BINDING) buffer exposure_ssbo
+{
+	uint histogram[EXPOSURE_HISTOGRAM_BINS];
+	float adapted_luminance;
+	float exposure;
+	float average_luminance;
+	uint valid;
+};
+
+// x: log2 of the lowest luminance binned, y: log2 luminance per bin
+layout(location = 0) uniform vec2 log_range;
+// x: time since the last frame (s), y: rate of adaptation to a darker image, z: to a brighter one (1/s), w: key
+layout(location = 1) uniform vec4 adaptation;
+// lowest and highest exposure (multipliers)
+layout(location = 2) uniform vec2 exposure_range;
+
+const float LOW_PERCENTILE = 0.4;
+const float HIGH_PERCENTILE = 0.95;
+
+shared float shared_counts[EXPOSURE_HISTOGRAM_BINS];
+
+void main()
+{
+	uint index = gl_LocalInvocationIndex;
+	shared_counts[index] = float(histogram[index]);
+	histogram[index] = 0U;
+	barrier();
+
+	if (index != 0U)
+		return;
+
+	float total = 0.0;
+	for (uint bin = 1U; bin < EXPOSURE_HISTOGRAM_BINS; ++bin)
+		total += shared_counts[bin];
+	// an all black image (or none) leaves the exposure as it was
+	if (total < 1.0)
+		return;
+
+	float low = total * LOW_PERCENTILE;
+	float high = total * HIGH_PERCENTILE;
+	float counted = 0.0;
+	float logsum = 0.0;
+	float weight = 0.0;
+	for (uint bin = 1U; bin < EXPOSURE_HISTOGRAM_BINS; ++bin)
+	{
+		float count = shared_counts[bin];
+		// the part of the bin between the percentiles
+		float inside = max(min(counted + count, high) - max(counted, low), 0.0);
+		counted += count;
+		float binluminance = log_range.x + (float(bin - 1U) + 0.5) * log_range.y;
+		logsum += inside * binluminance;
+		weight += inside;
+	}
+	float averagelog = (weight > 0.0) ? logsum / weight : log_range.x;
+	average_luminance = exp2(averagelog);
+
+	if (valid == 0U || !(adapted_luminance > 0.0))
+	{
+		adapted_luminance = average_luminance;
+		valid = 1U;
+	}
+	else
+	{
+		float adaptedlog = log2(adapted_luminance);
+		float rate = (averagelog < adaptedlog) ? adaptation.y : adaptation.z;
+		adaptedlog = mix(adaptedlog, averagelog, 1.0 - exp(-adaptation.x * rate));
+		adapted_luminance = exp2(adaptedlog);
+	}
+	exposure = clamp(adaptation.w / adapted_luminance, exposure_range.x, exposure_range.y);
+}

@@ -1,0 +1,37 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the blades going over the wetted paths in the step wipe them. a thread per texel
+// of the map of the paths, a row of groups per glass
+
+// none of the pass set: everything the kernel reads is pushed with its dispatch (set COMPUTE_SET, water_sim.glsl), so it runs
+// before the passes of the frame set theirs up
+#define LAYOUT_UI 1
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint texel = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (texel >= uint(WATER_TRAIL * WATER_TRAIL)))
+		return;
+	uint index = water_trail_base(slot) + texel;
+	if (water_cells[index] == 0u)
+		return;
+	vec2 uv = (vec2(float(texel % uint(WATER_TRAIL)), float(texel / uint(WATER_TRAIL))) + 0.5) / float(WATER_TRAIL);
+	vec4 mask = water_blades_at(slot, uv);
+	for (int k = 0; k < 4; ++k)
+	{
+		float before = water_blades_before[k];
+		float now = water_blades_now[k];
+		if ((mask[k] < 0.001) || (before < 0.0) || (now < 0.0) || (before == now))
+			continue;
+		if ((mask[k] > min(before, now)) && (mask[k] <= max(before, now)))
+		{
+			water_cells[index] = 0u;
+			return;
+		}
+	}
+}

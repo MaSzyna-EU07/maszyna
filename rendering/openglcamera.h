@@ -53,6 +53,9 @@ public:
     inline
     std::vector<glm::vec4> &
         frustum_points() { return m_frustumpoints; }
+    inline
+    cFrustum const &
+        frustum() const { return m_frustum; }
     // transforms provided set of clip space points to world space
     template <class Iterator_>
     void
@@ -64,9 +67,6 @@ public:
                     point = this->m_inversetransformation * point;
                     // ...and scale by transformed w
                     point = glm::vec4{ glm::vec3{ point } / point.w, 1.f }; } ); }
-    // debug helper, draws shape of frustum in world space
-    void
-        draw( glm::vec3 const &Offset ) const;
 
 private:
 // members:

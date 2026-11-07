@@ -27,6 +27,8 @@ public:
         return m_vertices; }
     std::vector<glm::vec3> & colors() {
         return m_colours; }
+    std::vector<glm::vec3> const & colors() const {
+        return m_colours; }
     std::vector<std::uint16_t> const & indices() const {
         return m_indices; }
     auto const & is_dirty() const { return m_dirty; }

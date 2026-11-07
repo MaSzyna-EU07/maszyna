@@ -139,6 +139,9 @@ public:
     // returns location of the sound source in simulation region space
     glm::dvec3
         location() const;
+    // returns location-based gain factor of the emitter for the current position of the listener
+    float
+        soundproofing_factor();
     // returns defined range of the sound
     void
         range( float const Range );

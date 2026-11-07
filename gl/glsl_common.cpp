@@ -1,114 +1,150 @@
 #include "stdafx.h"
 #include "glsl_common.h"
+#include "rendering/common/shadersource.h"
 
 std::string gl::glsl_common;
 
 void gl::glsl_common_setup()
 {
+    // the values shaders/ogl46/common.glsl takes instead of its own (MASZYNA_CONSTANTS). the settings of the game aren't here,
+    // they are specialization constants of the binaries (glsl_settings_defines(), glsl_settings_values())
     glsl_common =
-    "#define SHADOWMAP_ENABLED " + std::to_string((int)Global.gfx_shadowmap_enabled) + "\n" +
-    "#define ENVMAP_ENABLED " + std::to_string((int)Global.gfx_envmap_enabled) + "\n" +
-    "#define MOTIONBLUR_ENABLED " + std::to_string((int)Global.gfx_postfx_motionblur_enabled) + "\n" +
-    "#define POSTFX_ENABLED " + std::to_string((int)!Global.gfx_skippipeline) + "\n" +
-    "#define EXTRAEFFECTS_ENABLED " + std::to_string((int)Global.gfx_extraeffects) + "\n" +
+    "#define MASZYNA_CONSTANTS 1\n"
     "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "U\n" +
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
-    "#define MAX_INSTANCES_PER_BATCH " + std::to_string(MAX_INSTANCES_PER_BATCH) + "U\n" +
-    R"STRING(
-    const uint LIGHT_SPOT = 0U;
-    const uint LIGHT_POINT = 1U;
-    const uint LIGHT_DIR = 2U;
-    const uint LIGHT_HEADLIGHTS = 3U;
+    "#define SHADOW_TEX " + std::to_string(SHADOW_TEX) + "\n" +
+    "#define ENV_TEX " + std::to_string(ENV_TEX) + "\n" +
+    "#define HEADLIGHT_TEX " + std::to_string(HEADLIGHT_TEX) + "\n" +
+    "#define ENV_GGX_TEX " + std::to_string(ENV_GGX_TEX) + "\n" +
+    "#define SCENE_UBO_BINDING " + std::to_string(SCENE_UBO_BINDING) + "\n" +
+    "#define MODEL_UBO_BINDING " + std::to_string(MODEL_UBO_BINDING) + "\n" +
+    "#define INSTANCE_SSBO_BINDING " + std::to_string(INSTANCE_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_RECORD_SSBO_BINDING " + std::to_string(INSTANCE_RECORD_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_JOB_SSBO_BINDING " + std::to_string(INSTANCE_JOB_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_GROUP_SSBO_BINDING " + std::to_string(INSTANCE_GROUP_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_LOD_SSBO_BINDING " + std::to_string(INSTANCE_LOD_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_COUNTER_SSBO_BINDING " + std::to_string(INSTANCE_COUNTER_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_OUTPUT_SSBO_BINDING " + std::to_string(INSTANCE_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_COMMAND_SSBO_BINDING " + std::to_string(INSTANCE_COMMAND_SSBO_BINDING) + "\n" +
+    "#define MODEL_DRAW_SSBO_BINDING " + std::to_string(MODEL_DRAW_SSBO_BINDING) + "\n" +
+    "#define INSTANCE_CULL_GROUP_SIZE " + std::to_string(INSTANCE_CULL_GROUP_SIZE) + "\n" +
+    "#define INSTANCE_OFFSETS_GROUP_SIZE " + std::to_string(INSTANCE_OFFSETS_GROUP_SIZE) + "\n" +
+    "#define INSTANCE_COMMAND_GROUP_SIZE " + std::to_string(INSTANCE_COMMAND_GROUP_SIZE) + "\n" +
+    "#define HIZ_GROUP_SIZE " + std::to_string(HIZ_GROUP_SIZE) + "\n" +
+    "#define SHADOW_FIT_GROUP_SIZE " + std::to_string(SHADOW_FIT_GROUP_SIZE) + "\n" +
+    "#define SHADOW_FIT_SSBO_BINDING " + std::to_string(SHADOW_FIT_SSBO_BINDING) + "\n" +
+    "#define TIMBER_GROUP_SIZE " + std::to_string(TIMBER_GROUP_SIZE) + "\n" +
+    "#define TIMBER_LOCAL_SSBO_BINDING " + std::to_string(TIMBER_LOCAL_SSBO_BINDING) + "\n" +
+    "#define TIMBER_RANGE_SSBO_BINDING " + std::to_string(TIMBER_RANGE_SSBO_BINDING) + "\n" +
+    "#define TIMBER_OUTPUT_SSBO_BINDING " + std::to_string(TIMBER_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define TIMBER_ORIGIN_SSBO_BINDING " + std::to_string(TIMBER_ORIGIN_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_GROUP_SIZE " + std::to_string(PARTICLE_GROUP_SIZE) + "\n" +
+    "#define PARTICLE_SSBO_BINDING " + std::to_string(PARTICLE_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_SOURCE_SSBO_BINDING " + std::to_string(PARTICLE_SOURCE_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_OWNER_SSBO_BINDING " + std::to_string(PARTICLE_OWNER_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_OUTPUT_SSBO_BINDING " + std::to_string(PARTICLE_OUTPUT_SSBO_BINDING) + "\n" +
+    "#define PARTICLE_COMMAND_SSBO_BINDING " + std::to_string(PARTICLE_COMMAND_SSBO_BINDING) + "\n" +
+    "#define WATER_SLOTS " + std::to_string(WATER_SLOTS) + "\n" +
+    "#define WATER_DROPS " + std::to_string(WATER_DROPS) + "\n" +
+    "#define WATER_GRID " + std::to_string(WATER_GRID) + "\n" +
+    "#define WATER_CELL_DROPS " + std::to_string(WATER_CELL_DROPS) + "\n" +
+    "#define WATER_TRAIL " + std::to_string(WATER_TRAIL) + "\n" +
+    "#define WATER_MAP " + std::to_string(WATER_MAP) + "\n" +
+    "#define WATER_GROUP_SIZE " + std::to_string(WATER_GROUP_SIZE) + "\n" +
+    "#define WATER_SSBO_BINDING " + std::to_string(WATER_SSBO_BINDING) + "\n" +
+    "#define WATER_UBO_BINDING " + std::to_string(WATER_UBO_BINDING) + "\n" +
+    "#define WATER_MASK_TEX " + std::to_string(WATER_MASK_TEX) + "\n" +
+    "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
+    "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
+    "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_GRID_X " + std::to_string(CLUSTER_GRID_X) + "\n" +
+    "#define CLUSTER_GRID_Y " + std::to_string(CLUSTER_GRID_Y) + "\n" +
+    "#define CLUSTER_GRID_Z " + std::to_string(CLUSTER_GRID_Z) + "\n" +
+    "#define CLUSTER_COUNT " + std::to_string(CLUSTER_COUNT) + "\n" +
+    "#define MAX_LIGHTS_PER_CLUSTER " + std::to_string(MAX_LIGHTS_PER_CLUSTER) + "\n" +
+    "#define CLUSTER_BUILD_GROUP_SIZE " + std::to_string(CLUSTER_BUILD_GROUP_SIZE) + "\n" +
+    "#define CLUSTER_CULL_GROUP_SIZE " + std::to_string(CLUSTER_CULL_GROUP_SIZE) + "\n" +
+    "#define CLUSTER_UBO_BINDING " + std::to_string(CLUSTER_UBO_BINDING) + "\n" +
+    "#define CLUSTER_AABB_SSBO_BINDING " + std::to_string(CLUSTER_AABB_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_RANGE_SSBO_BINDING " + std::to_string(CLUSTER_RANGE_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_INDEX_SSBO_BINDING " + std::to_string(CLUSTER_INDEX_SSBO_BINDING) + "\n" +
+    "#define CLUSTER_COUNTER_SSBO_BINDING " + std::to_string(CLUSTER_COUNTER_SSBO_BINDING) + "\n" +
+    "#define ENVMAP_GGX_LEVELS " + std::to_string(ENVMAP_GGX_LEVELS) + "\n" +
+    "#define ENVMAP_GGX_ROUGHNESS_MIN " + std::to_string(ENVMAP_GGX_ROUGHNESS_MIN) + "\n" +
+    "#define ENVMAP_GGX_GROUP_SIZE " + std::to_string(ENVMAP_GGX_GROUP_SIZE) + "\n" +
+    "#define SKY_SSBO_BINDING " + std::to_string(SKY_SSBO_BINDING) + "\n" +
+    "#define EXPOSURE_SSBO_BINDING " + std::to_string(EXPOSURE_SSBO_BINDING) + "\n" +
+    "#define EXPOSURE_HISTOGRAM_BINS " + std::to_string(EXPOSURE_HISTOGRAM_BINS) + "\n" +
+    "#define EXPOSURE_HISTOGRAM_GROUP_SIZE " + std::to_string(EXPOSURE_HISTOGRAM_GROUP_SIZE) + "\n" +
+    "#define ATMOSPHERE_UBO_BINDING " + std::to_string(ATMOSPHERE_UBO_BINDING) + "\n" +
+    "#define ATMOSPHERE_RESULT_SSBO_BINDING " + std::to_string(ATMOSPHERE_RESULT_SSBO_BINDING) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_WIDTH " + std::to_string(ATMOSPHERE_TRANSMITTANCE_WIDTH) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_HEIGHT " + std::to_string(ATMOSPHERE_TRANSMITTANCE_HEIGHT) + "\n" +
+    "#define ATMOSPHERE_MULTISCATTERING_SIZE " + std::to_string(ATMOSPHERE_MULTISCATTERING_SIZE) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_WIDTH " + std::to_string(ATMOSPHERE_SKYVIEW_WIDTH) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_HEIGHT " + std::to_string(ATMOSPHERE_SKYVIEW_HEIGHT) + "\n" +
+    "#define ATMOSPHERE_AMBIENT_GROUP_SIZE " + std::to_string(ATMOSPHERE_AMBIENT_GROUP_SIZE) + "\n" +
+    "#define ATMOSPHERE_TRANSMITTANCE_UNIT " + std::to_string(ATMOSPHERE_TRANSMITTANCE_UNIT) + "\n" +
+    "#define ATMOSPHERE_MULTISCATTERING_UNIT " + std::to_string(ATMOSPHERE_MULTISCATTERING_UNIT) + "\n" +
+    "#define ATMOSPHERE_SKYVIEW_UNIT " + std::to_string(ATMOSPHERE_SKYVIEW_UNIT) + "\n" +
+    "#define SKY_VIEW_TEX " + std::to_string(SKY_VIEW_TEX) + "\n" +
+    "#define LOCAL_SHADOW_TEX " + std::to_string(LOCAL_SHADOW_TEX) + "\n" +
+    "#define LOCAL_SHADOW_LAMPS_TEX " + std::to_string(LOCAL_SHADOW_LAMPS_TEX) + "\n" +
+    "#define HEADLIGHT_SHADOW_TEX " + std::to_string(HEADLIGHT_SHADOW_TEX) + "\n" +
+    "#define MAX_HEADLIGHT_SHADOWS " + std::to_string(MAX_HEADLIGHT_SHADOWS) + "U\n" +
+    "#define MAX_CAB_PROBE_LAMPS " + std::to_string(MAX_CAB_PROBE_LAMPS) + "U\n" +
+    "#define FOG_VOLUME_TEX " + std::to_string(FOG_VOLUME_TEX) + "\n" +
+    "#define CLOUD_SHADOW_TEX " + std::to_string(CLOUD_SHADOW_TEX) + "\n" +
+    "#define CLOUD_TEX " + std::to_string(CLOUD_TEX) + "\n" +
+    "#define CLOUD_SHAPE_TEX " + std::to_string(CLOUD_SHAPE_TEX) + "\n" +
+    "#define CLOUD_DETAIL_TEX " + std::to_string(CLOUD_DETAIL_TEX) + "\n" +
+    "#define CLOUD_COVERAGE_TEX " + std::to_string(CLOUD_COVERAGE_TEX) + "\n" +
+    "#define CLOUD_HISTORY_TEX " + std::to_string(CLOUD_HISTORY_TEX) + "\n" +
+    "#define SCENE_DEPTH_TEX " + std::to_string(SCENE_DEPTH_TEX) + "\n" +
+    "#define SSR_HISTORY_TEX " + std::to_string(SSR_HISTORY_TEX) + "\n" +
+    "#define SCENE_AO_TEX " + std::to_string(SCENE_AO_TEX) + "\n" +
+    "#define CAB_PROBE_TEX " + std::to_string(CAB_PROBE_TEX) + "\n" +
+    "#define CAB_PROBE_ALBEDO_TEX " + std::to_string(CAB_PROBE_ALBEDO_TEX) + "\n" +
+    "#define CAB_PROBE_MASK_TEX " + std::to_string(CAB_PROBE_MASK_TEX) + "\n" +
+    "#define SKY_OCCLUSION_HEIGHT_TEX " + std::to_string(SKY_OCCLUSION_HEIGHT_TEX) + "\n" +
+    "#define SKY_OCCLUSION_TEX " + std::to_string(SKY_OCCLUSION_TEX) + "\n" +
+    "#define CAB_PROBE_SSBO_BINDING " + std::to_string(CAB_PROBE_SSBO_BINDING) + "\n" +
+    "#define CAB_PROBE_SH_SIZE " + std::to_string(CAB_PROBE_SH_SIZE) + "\n" +
+    "#define CAB_PROBE_SH_GROUP_SIZE " + std::to_string(CAB_PROBE_SH_GROUP_SIZE) + "\n" +
+    "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
+    "#define WEATHER_SCRATCH_SSBO_BINDING " + std::to_string(WEATHER_SCRATCH_SSBO_BINDING) + "\n" +
+    "#define MAX_CLOUD_LAYERS " + std::to_string(MAX_CLOUD_LAYERS) + "\n" +
+    "#define FOG_HORIZON_SAMPLES " + std::to_string(FOG_HORIZON_SAMPLES) + "\n" +
+    "#define WEATHER_GROUP_SIZE " + std::to_string(WEATHER_GROUP_SIZE) + "\n" +
+    "#define FOG_VOLUME_BIAS " + std::to_string(FOG_VOLUME_BIAS) + "\n";
+}
 
-    struct light_s
-    {
-            vec3 pos;
-            uint type;
+std::string gl::glsl_settings_defines()
+{
+    auto const value = [](bool const Value) { return std::string(Value ? "true" : "false"); };
+    return
+        "#define SHADOWMAP_ENABLED_VALUE " + value(Global.gfx_shadowmap_enabled) + "\n"
+        "#define ENVMAP_ENABLED_VALUE " + value(Global.gfx_envmap_enabled) + "\n"
+        "#define MOTIONBLUR_ENABLED_VALUE " + value(Global.gfx_motion_vectors()) + "\n"
+        "#define POSTFX_ENABLED_VALUE " + value(!Global.gfx_skippipeline) + "\n"
+        "#define EXTRAEFFECTS_ENABLED_VALUE " + value(Global.gfx_extraeffects) + "\n"
+        "#define OUTPUT_GAMMA_VALUE " + value(Global.gfx_shadergamma) + "\n";
+}
 
-            vec3 dir;
-            float in_cutoff;
+std::array<GLuint, 6> gl::glsl_settings_values()
+{
+    // in the order of gl::shader_setting
+    return {
+        static_cast<GLuint>(Global.gfx_shadowmap_enabled),
+        static_cast<GLuint>(Global.gfx_envmap_enabled),
+        static_cast<GLuint>(Global.gfx_motion_vectors()),
+        static_cast<GLuint>(!Global.gfx_skippipeline),
+        static_cast<GLuint>(Global.gfx_extraeffects),
+        static_cast<GLuint>(Global.gfx_shadergamma) };
+}
 
-            vec3 color;
-            float out_cutoff;
-
-            float linear;
-            float quadratic;
-
-	        float intensity;
-	        float ambient;
-
-            mat4 headlight_projection;
-            vec4 headlight_weights;
-    };
-
-    layout(std140) uniform light_ubo
-    {
-            vec3 ambient;
-
-            vec3 fog_color;
-            uint lights_count;
-
-            light_s lights[MAX_LIGHTS];
-    };
-
-    layout (std140) uniform model_ubo
-    {
-            mat4 modelview;
-            mat3 modelviewnormal;
-            vec4 param[MAX_PARAMS];
-
-            mat4 future;
-            float opacity;
-            float emission;
-            float fog_density;
-            float alpha_mult;
-            float shadow_tone;
-    };
-
-    layout (std140) uniform scene_ubo
-    {
-        mat4 projection;
-        mat4 inv_view;
-        mat4 lightview[MAX_CASCADES];
-        vec3 cascade_end;
-        float time;
-		vec4 rain_params;
-		vec4 wiper_pos;
-		vec4 wiper_timer_out;
-		vec4 wiper_timer_return;
-    };
-
-    // Per-instance modelview matrices for GPU-instanced draws.
-    // The UBO itself is declared in every stage so the binding stays valid,
-    // but the helper functions reference gl_InstanceID which is vertex-only,
-    // so they are guarded behind STAGE_VERTEX.
-    layout (std140) uniform instance_ubo
-    {
-        mat4 instance_modelview[MAX_INSTANCES_PER_BATCH];
-    };
-
-    #ifdef STAGE_VERTEX
-    // For non-instanced draws gl_InstanceID == 0 and slot 0 is permanently set
-    // to identity, so effective_modelview() reduces to model_ubo.modelview.
-    // For instanced draws the C++ side uploads camera-space root transforms for
-    // instances 0..N-1 and sets model_ubo.modelview to the submodel-local chain
-    // (computed from identity, NOT from the camera/instance), so the product
-    // gives the correct final transform per instance per submodel.
-    mat4 effective_modelview() {
-        return instance_modelview[gl_InstanceID] * modelview;
-    }
-    mat3 effective_modelviewnormal() {
-        // instance_modelview can include per-instance scale (uniform or per-axis),
-        // so its upper-3x3 is NOT its own inverse-transpose in the non-uniform
-        // case. Compute the correct normal matrix via transpose(inverse(...)).
-        // For pure rotation+translation this still produces the rotation matrix
-        // (one extra mat3 inverse per vertex — modern GPUs handle it cheaply).
-        mat3 instance_mv3 = mat3(instance_modelview[gl_InstanceID]);
-        mat3 instance_normal = transpose(inverse(instance_mv3));
-        return instance_normal * modelviewnormal;
-    }
-    #endif
-
-    )STRING";
+bool gl::glsl_common_matches(std::string const &Basedir, std::vector<std::string> &Differences)
+{
+    return gfx::shader_constants_match(gfx::shader_api::opengl46, "common.glsl", glsl_common, Basedir, Differences);
 }

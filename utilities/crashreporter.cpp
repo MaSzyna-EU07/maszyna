@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <iostream>
 #include "version_info.h"
+#include "utilities/crashdump.h"
 
 #if defined __has_attribute
 #  if __has_attribute (init_priority)
@@ -166,6 +167,8 @@ const std::string& crashreport_get_provider()
 
 void crashreport_add_info(const char *name, const std::string &value)
 {
+	crashdump_set_info(name, value);
+
 	char *copy = new char[value.size() + 1];
 	strcpy(copy, value.c_str());
 

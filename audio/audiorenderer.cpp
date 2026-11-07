@@ -274,6 +274,8 @@ openal_renderer::~openal_renderer() {
 
     if( m_alcEventCallbackSOFT != nullptr ) { m_alcEventCallbackSOFT( nullptr, nullptr ); } // stop callbacks before teardown
 
+    if( m_context != nullptr ) { m_fmradio.release(); } // the receiver owns implementation-side resources, which have to go before the context does
+
     ::alcMakeContextCurrent( nullptr );
 
     if( m_context != nullptr ) { ::alcDestroyContext( m_context ); }
@@ -485,6 +487,11 @@ openal_renderer::update( double const Deltatime ) {
             // otherwise proceed through the list normally
             ++source;
         }
+    }
+
+    // update streamed sound
+    if( m_ready ) {
+        m_fmradio.update( Deltatime, cached_camerapos );
     }
 
     // reset potentially used volume change flag

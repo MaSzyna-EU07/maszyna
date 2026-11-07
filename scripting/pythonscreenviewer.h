@@ -1,4 +1,6 @@
 #include "rendering/renderer.h"
+#include "gl/shader.h"
+#include "gl/ubo.h"
 #include "scripting/PyInt.h"
 #include <GLFW/glfw3.h>
 

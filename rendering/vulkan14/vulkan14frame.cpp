@@ -1,0 +1,4545 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+// the scene of the vulkan renderer, part two (the stages D3-D7 of the plan): the frame and its passes, in the order of
+// opengl46_renderer::Render_pass(): the cascades of the sun shadows, the faces of the environment map, the light clusters, the
+// colour of the scene (the sky, the opaque scene with the cab, the translucent parts, the particles, the precipitation, the cab),
+// the post-processing (the motion blur, the tonemapping, the chromatic aberration), the output to the windows with the user
+// interface; the picking, the position of the cursor of the editor, the screenshots, the previews of the models
+
+#include "stdafx.h"
+#include "rendering/vulkan14/vulkan14context.h"
+#include "rendering/vulkan14/vulkan14commands.h"
+#include "rendering/screenshot.h"
+#include "rendering/editoroverlay.h"
+#include "rendering/common/exposure.h"
+#include "application/application.h"
+#include "simulation/simulation.h"
+#include "simulation/simulationenvironment.h"
+#include "simulation/simulationtime.h"
+#include "vehicle/Train.h"
+#include "vehicle/DynObj.h"
+#include "model/Model3d.h"
+#include "model/AnimModel.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/Timer.h"
+#include "utilities/utilities.h"
+#include "utilities/color.h"
+
+#include <chrono>
+
+namespace
+{
+
+// the size of the (square) images of the picking passes
+int constexpr pick_buffer_size{1024};
+
+// the projections of the opengl renderer (opengl46_renderer::perspective_projection() and the others): reverse z with the
+// range 1..0, an infinite far plane for the perspective ones
+glm::mat4 perspective_projection(viewport_proj_config const &c, float n, float f, glm::mat4 &frustum)
+{
+	glm::vec3 vr, vu, vn;
+	vr = glm::normalize(c.pb - c.pa);
+	vu = glm::normalize(c.pc - c.pa);
+	vn = glm::normalize(glm::cross(vr, vu));
+
+	glm::mat4 M;
+	M[0] = glm::vec4(vr, 0.0f);
+	M[1] = glm::vec4(vu, 0.0f);
+	M[2] = glm::vec4(vn, 0.0f);
+	M = glm::transpose(M);
+
+	glm::vec3 va, vb, vc;
+	va = c.pa - c.pe;
+	vb = c.pb - c.pe;
+	vc = c.pc - c.pe;
+
+	float l, r, b, t, d;
+	d = -glm::dot(va, vn);
+
+	l = glm::dot(vr, va) * n / d;
+	r = glm::dot(vr, vb) * n / d;
+	b = glm::dot(vu, va) * n / d;
+	t = glm::dot(vu, vc) * n / d;
+
+	frustum = glm::frustum(l, r, b, t, n, f);
+	glm::mat4 R = frustum;
+	frustum = glm::translate(frustum * M, -c.pe);
+
+	R[2][2] = -1.0f;
+	R[3][2] = -2.0f * n;
+	R = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.5f, 0.0f, 0.0f, 0.0f, 0.5f, 1.0f) * R;
+
+	return glm::translate(R * M, -c.pe);
+}
+
+glm::mat4 perspective_projection_raw(float fovy, float aspect, float znear, float zfar)
+{
+	const float f = 1.0f / std::tan(fovy / 2.0f);
+	return glm::mat4(f / aspect, 0.0f, 0.0f, 0.0f, 0.0f, f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, znear, 0.0f);
+}
+
+glm::mat4 ortho_projection(float l, float r, float b, float t, float znear, float zfar)
+{
+	glm::mat4 proj = glm::ortho(l, r, b, t, znear, zfar);
+	return glm::mat4(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.5f, 0.0f, 0.0f, 0.0f, 0.5f, 1.0f) * proj;
+}
+
+glm::mat4 ortho_frustumtest_projection(float l, float r, float b, float t, float znear, float zfar)
+{
+	return glm::ortho(l, r, b, t, znear, zfar);
+}
+
+// transform 1..-1 NDC xy coordinates to 1..0 (the z is 1..0 already)
+glm::mat4 const coordmove{0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 1.0};
+
+// the vertices of a particle of the smoke (opengl46_particles)
+struct particle_vertex
+{
+	glm::vec3 position;
+	glm::vec4 color;
+	glm::vec2 texture;
+};
+static_assert(sizeof(particle_vertex) == 36, "the layout of the vertices of the particles");
+
+std::vector<std::pair<glm::vec3, glm::vec2>> const billboard_vertices{
+    {{-0.5f, -0.5f, 0.f}, {0.f, 0.f}}, {{0.5f, -0.5f, 0.f}, {1.f, 0.f}}, {{0.5f, 0.5f, 0.f}, {1.f, 1.f}}, {{-0.5f, -0.5f, 0.f}, {0.f, 0.f}}, {{0.5f, 0.5f, 0.f}, {1.f, 1.f}}, {{-0.5f, 0.5f, 0.f}, {0.f, 1.f}},
+};
+
+// the cone of the precipitation around the camera (opengl46_precipitation::create())
+struct precipitation_mesh
+{
+	std::vector<glm::vec3> vertices;
+	std::vector<glm::vec2> uvs;
+	std::vector<std::uint16_t> indices;
+
+	void create(int const Tesselation)
+	{
+		auto const heightfactor{10.f};
+		auto const verticaltexturestretchfactor{1.5f};
+		auto const latitudes{3};
+		auto const longitudes{Tesselation};
+		auto const longitudehalfstep{0.5f * static_cast<float>(2.0 * M_PI * 1.f / longitudes)};
+		std::uint16_t index = 0;
+		std::vector radii{25.f, 10.f, 5.f, 1.f};
+		for (auto radius : radii)
+		{
+			for (int i = 0; i <= latitudes; ++i)
+			{
+				auto const latitude{static_cast<float>(M_PI * (-0.5f + (float)(i) / latitudes))};
+				auto const z{std::sin(latitude)};
+				auto const zr{std::cos(latitude)};
+				for (int j = 0; j <= longitudes; ++j)
+				{
+					auto const longitude{static_cast<float>(2.0 * M_PI * (float)(j) / longitudes)};
+					auto const x{std::cos(longitude)};
+					auto const y{std::sin(longitude)};
+					vertices.emplace_back(glm::vec3(-x * zr, -z * heightfactor, -y * zr) * radius);
+					auto u = (i == 0 ? longitude + longitudehalfstep : i == latitudes ? longitude - longitudehalfstep : longitude);
+					uvs.emplace_back(u / (2.0 * M_PI) * radius, 1.f - (float)(i) / latitudes * radius * heightfactor * 0.5f / verticaltexturestretchfactor);
+					if ((i == 0) || (j == 0))
+					{
+						++index;
+					}
+					else
+					{
+						if (i < latitudes)
+						{
+							indices.emplace_back(index - 1 - (longitudes + 1));
+							indices.emplace_back(index - 1);
+							indices.emplace_back(index);
+						}
+						if (i > 1)
+						{
+							indices.emplace_back(index);
+							indices.emplace_back(index - (longitudes + 1));
+							indices.emplace_back(index - 1 - (longitudes + 1));
+						}
+						++index;
+					}
+				}
+			}
+		}
+	}
+};
+
+precipitation_mesh &precipitation()
+{
+	static precipitation_mesh mesh;
+	if (mesh.vertices.empty())
+	{
+		mesh.create(18);
+	}
+	return mesh;
+}
+
+VkPipelineStageFlags2 const colour_stage{VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT};
+VkAccessFlags2 const colour_access{VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT};
+VkPipelineStageFlags2 const depth_stage{VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT};
+VkAccessFlags2 const depth_access{VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT};
+// a depth resolved by a rendering: written in the stage of the colour output
+VkPipelineStageFlags2 const resolve_depth_stage{VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT};
+VkAccessFlags2 const resolve_depth_access{VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT};
+VkPipelineStageFlags2 const sampled_stage{VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT};
+VkAccessFlags2 const sampled_access{VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
+
+// the copies to the buffers the cpu reads back, made seen by the host once the gpu is done with the frame
+void host_read_barrier(vk14::command_stream *Commands)
+{
+	VkMemoryBarrier2 barrier{};
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+	barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+	barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+	barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+	VkDependencyInfo dependency{};
+	dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	dependency.memoryBarrierCount = 1;
+	dependency.pMemoryBarriers = &barrier;
+	Commands->pipeline_barrier2(&dependency);
+}
+
+// the images the colour of a viewport is drawn to, as its rendering uses them
+std::vector<vk14::image_use> colour_target_uses(vk14::viewport_targets &targets)
+{
+	auto const msaa{targets.samples != VK_SAMPLE_COUNT_1_BIT};
+	std::vector<vk14::image_use> uses;
+	auto &colourimage{msaa ? *targets.msaa_colour : *targets.colour};
+	auto &depthimage{msaa ? *targets.msaa_depth : *targets.depth};
+	uses.push_back(vk14::use_of(colourimage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access));
+	uses.push_back(vk14::use_of(depthimage, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access));
+	if (msaa)
+	{
+		uses.push_back(vk14::use_of(*targets.colour, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access));
+		uses.push_back(vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, resolve_depth_stage, resolve_depth_access));
+	}
+	if (targets.motion)
+	{
+		uses.push_back(vk14::use_of(msaa ? *targets.msaa_motion : *targets.motion_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access));
+		if (msaa)
+		{
+			uses.push_back(vk14::use_of(*targets.motion_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access));
+		}
+	}
+	return uses;
+}
+
+VkRenderingAttachmentInfo attachment_info(VkImageView View, VkImageLayout Layout, bool const Clear, VkClearValue const &Value)
+{
+	VkRenderingAttachmentInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	info.imageView = View;
+	info.imageLayout = Layout;
+	info.loadOp = (Clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD);
+	info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	info.clearValue = Value;
+	return info;
+}
+
+} // namespace
+
+// the data of the frames, prepared once the renderer is there
+
+void vulkan14_renderer::init_frame_data()
+{
+	auto &ctx{*m_context};
+	// rgb value for 5780 kelvin
+	Global.DayLight.diffuse[0] = 1.0f;
+	Global.DayLight.diffuse[1] = 0.9490196f;
+	Global.DayLight.diffuse[2] = 0.9058824f;
+	Global.DayLight.is_directional = true;
+
+	auto const texturesize{static_cast<int>(ctx.device.caps().limits.maxImageDimension2D)};
+	Global.iMaxTextureSize = std::min(Global.iMaxTextureSize, texturesize);
+	Global.iMaxCabTextureSize = std::min(Global.iMaxCabTextureSize, texturesize);
+	Global.CurrentMaxTextureSize = Global.iMaxTextureSize;
+	WriteLog("texture sizes capped at " + std::to_string(Global.iMaxTextureSize) + "p (" + std::to_string(Global.iMaxCabTextureSize) + "p for cab textures)");
+	if (Global.iMultisampling)
+	{
+		WriteLog("using multisampling x" + std::to_string(1 << Global.iMultisampling));
+	}
+	// the image of the main window: a part of the window (gfx.buffer.percent) stretched to it, or with dlss the size it planned,
+	// upscaled to the window
+	if (m_dlssrender.x > 0)
+	{
+		Global.gfx_framebuffer_width = m_dlssrender.x;
+		Global.gfx_framebuffer_height = m_dlssrender.y;
+	}
+	else if ((Global.gfx_framebuffer_width == -1) || (Global.gfx_framebuffer_height == -1))
+	{
+		auto const size{Global.gfx_buffer_size()};
+		Global.gfx_framebuffer_width = size.x;
+		Global.gfx_framebuffer_height = size.y;
+	}
+	WriteLog("main window size: " + std::to_string(Global.fb_size.x) + "x" + std::to_string(Global.fb_size.y) + ", drawn at " + std::to_string(Global.gfx_framebuffer_width) + "x" + std::to_string(Global.gfx_framebuffer_height) +
+	         (m_dlssrender.x > 0 ? " for dlss" : ""));
+
+	m_viewports.clear();
+	auto &main{m_viewports.emplace_back()};
+	main.width = Global.gfx_framebuffer_width;
+	main.height = Global.gfx_framebuffer_height;
+	main.output_width = (m_dlssrender.x > 0 ? m_dlssoutput.x : 0);
+	main.output_height = (m_dlssrender.x > 0 ? m_dlssoutput.y : 0);
+	main.main = true;
+	main.shadow = true;
+	main.window = 0;
+	main.draw_range = 1.0f;
+
+	// preload some common textures
+	WriteLog("Loading common gfx data...");
+	m_glaretexture = Fetch_Texture("fx/lightglare");
+	m_suntexture = Fetch_Texture("fx/sun");
+	m_moontexture = Fetch_Texture("fx/moon");
+	m_smoketexture = Fetch_Texture("fx/smoke");
+	m_headlightstexture = Fetch_Texture("fx/headlights:st");
+	WriteLog("...gfx data pre-loading done");
+
+	// prepare basic geometry chunks
+	float const size = 2.5f / 2.0f;
+	auto const geometrybank = Create_Bank();
+	gfx::vertex_array billboard_array{
+	    {{-size, size, 0.f}, glm::vec3(), {1.f, 1.f}}, {{size, size, 0.f}, glm::vec3(), {0.f, 1.f}}, {{-size, -size, 0.f}, glm::vec3(), {1.f, 0.f}}, {{size, -size, 0.f}, glm::vec3(), {0.f, 0.f}}};
+	gfx::userdata_array userdata{};
+	m_billboardgeometry = m_geometry.create_chunk(billboard_array, userdata, geometrybank, GL_TRIANGLE_STRIP);
+
+	m_invalid_material = Fetch_Material("invalid");
+	m_fogrange = 2000.f;
+}
+
+// the images of a viewport for its size and the settings
+namespace
+{
+
+bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std::uint64_t const Value, std::uint32_t &Formatscount, VkSampleCountFlags const Samplecounts, VkFormat const Bloomformat, VkFormat const Historyformat,
+                  vk14::viewport_targets &Targets, int const Width, int const Height, int const OutputWidth, int const OutputHeight, bool const Srgb, bool const Taa, bool const Reflections, bool const Dlss)
+{
+	// as many samples as asked for, as far as the device has them for the colour and the depth; one for dlss
+	auto samples{static_cast<VkSampleCountFlagBits>(Dlss ? 1 : std::clamp(1 << Global.iMultisampling, 1, 8))};
+	while ((samples > VK_SAMPLE_COUNT_1_BIT) && (0 == (Samplecounts & samples)))
+	{
+		samples = static_cast<VkSampleCountFlagBits>(samples >> 1);
+	}
+	auto const motion{Global.gfx_motion_vectors()};
+	auto const aberration{Global.gfx_postfx_chromaticaberration_enabled};
+	VkExtent2D const extent{static_cast<std::uint32_t>(std::max(Width, 1)), static_cast<std::uint32_t>(std::max(Height, 1))};
+	// the images after the upscaling of dlss have the size of the window, the others that of the scene
+	VkExtent2D const outputextent{Dlss ? VkExtent2D{static_cast<std::uint32_t>(std::max(OutputWidth, 1)), static_cast<std::uint32_t>(std::max(OutputHeight, 1))} : extent};
+	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.output_extent.width == outputextent.width) && (Targets.output_extent.height == outputextent.height) &&
+	    (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.dlss == Dlss) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) && (Targets.reflections == Reflections) && Targets.output)
+	{
+		return true;
+	}
+	Deletions.push(Value, [old = std::move(Targets)]() {});
+	auto const oldformats{Targets.formats};
+	auto const oldoutput{Targets.output_formats};
+	auto const oldpost{Targets.post_formats};
+	auto const olddepth{Targets.depth_formats};
+	Targets = vk14::viewport_targets{};
+	Targets.extent = extent;
+	Targets.output_extent = outputextent;
+	Targets.dlss = Dlss;
+	Targets.samples = samples;
+	Targets.motion = motion;
+	Targets.taa = Taa;
+	Targets.aberration = aberration;
+	Targets.srgb = Srgb;
+	Targets.reflections = Reflections;
+
+	auto make = [&](std::shared_ptr<vk14::image> &Image, VkFormat Format, VkImageUsageFlags Usage, VkSampleCountFlagBits Samples, char const *Name, VkExtent2D const Size = VkExtent2D{0, 0}) {
+		vk14::image_desc desc;
+		desc.format = Format;
+		desc.extent = {Size.width > 0 ? Size.width : extent.width, Size.height > 0 ? Size.height : extent.height, 1};
+		desc.samples = Samples;
+		desc.usage = Usage;
+		Image = std::make_shared<vk14::image>();
+		if (false == Image->create(Memory, desc, Name))
+		{
+			Image.reset();
+			return false;
+		}
+		return true;
+	};
+	auto const hdr{VK_FORMAT_R16G16B16A16_SFLOAT};
+	auto const velocity{VK_FORMAT_R16G16_SFLOAT};
+	auto const depth{VK_FORMAT_D32_SFLOAT};
+	auto const sampledcolour{VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
+	auto ok{true};
+	if (samples != VK_SAMPLE_COUNT_1_BIT)
+	{
+		ok = ok && make(Targets.msaa_colour, hdr, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samples, "msaa colour") && make(Targets.msaa_depth, depth, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, samples, "msaa depth");
+		if (motion)
+		{
+			ok = ok && make(Targets.msaa_motion, velocity, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, samples, "msaa velocity");
+		}
+	}
+	// the images of the scene the history of the screen space reflections is copied from (blits) are a source of transfers as well
+	auto const historysource{Reflections ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0u};
+	ok = ok && make(Targets.colour, hdr, sampledcolour | historysource, VK_SAMPLE_COUNT_1_BIT, "scene colour") &&
+	     make(Targets.depth, depth, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT, "scene depth");
+	if (motion)
+	{
+		ok = ok && make(Targets.motion_image, velocity, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "scene velocity");
+	}
+	if (motion && Global.gfx_postfx_motionblur_enabled)
+	{
+		ok = ok && make(Targets.blurred, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "motion blurred", outputextent);
+	}
+	if (Taa)
+	{
+		ok = ok && make(Targets.taa_history[0], hdr, sampledcolour | historysource, VK_SAMPLE_COUNT_1_BIT, "taa history") &&
+		     make(Targets.taa_history[1], hdr, sampledcolour | historysource, VK_SAMPLE_COUNT_1_BIT, "taa history");
+	}
+	if (ok && Reflections)
+	{
+		// the history of the screen space reflections, with its mipmaps made by blits; without it they're off
+		vk14::image_desc desc;
+		desc.format = Historyformat;
+		desc.extent = {extent.width, extent.height, 1};
+		desc.mips = static_cast<std::uint32_t>(std::floor(std::log2(static_cast<float>(std::max(extent.width, extent.height))))) + 1;
+		desc.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		Targets.ssr_history = std::make_shared<vk14::image>();
+		if (false == Targets.ssr_history->create(Memory, desc, "reflection history"))
+		{
+			ErrorLog("reflection history setup failed, no screen space reflections");
+			Targets.ssr_history.reset();
+		}
+	}
+	auto const output{Srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM};
+	if (aberration)
+	{
+		ok = ok && make(Targets.tonemapped, output, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "tonemapped", outputextent);
+	}
+	ok = ok && make(Targets.output, output, sampledcolour | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT, "output", outputextent);
+	if (Dlss)
+	{
+		// what dlss takes besides the scene, and its output, which the post-processing reads (and the history of the reflections is
+		// copied from)
+		ok = ok && make(Targets.dlss_motion, velocity, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "dlss velocity") && make(Targets.dlss_exposure, VK_FORMAT_R32_SFLOAT, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "dlss exposure", VkExtent2D{1, 1}) &&
+		     make(Targets.dlss_output, hdr, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | historysource, VK_SAMPLE_COUNT_1_BIT, "dlss output", outputextent);
+	}
+	// the ambient occlusion, half the size, when it's on
+	if (ok && (Global.gfx_postfx_ao != 0))
+	{
+		auto makehalf = [&](std::shared_ptr<vk14::image> &Image, char const *Name) {
+			vk14::image_desc desc;
+			desc.format = VK_FORMAT_R8_UNORM;
+			desc.extent = {std::max(extent.width / 2, 1u), std::max(extent.height / 2, 1u), 1};
+			desc.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+			Image = std::make_shared<vk14::image>();
+			if (false == Image->create(Memory, desc, Name))
+			{
+				Image.reset();
+				return false;
+			}
+			return true;
+		};
+		if ((false == makehalf(Targets.ssao, "ambient occlusion")) || (false == makehalf(Targets.ssao_blur, "ambient occlusion smoothed")))
+		{
+			ErrorLog("ambient occlusion framebuffer setup failed");
+			Targets.ssao.reset();
+			Targets.ssao_blur.reset();
+		}
+	}
+	// the bloom chain, made whether the bloom is on or not: it can be switched on in the debug window
+	if (ok)
+	{
+		auto const sizes{gfx::exposure_settings::bloom_sizes(static_cast<int>(outputextent.width), static_cast<int>(outputextent.height))};
+		auto makelevel = [&](std::vector<std::shared_ptr<vk14::image>> &Levels, glm::ivec2 const &Size, char const *Name) {
+			vk14::image_desc desc;
+			desc.format = Bloomformat;
+			desc.extent = {static_cast<std::uint32_t>(Size.x), static_cast<std::uint32_t>(Size.y), 1};
+			desc.usage = sampledcolour;
+			auto level{std::make_shared<vk14::image>()};
+			if (false == level->create(Memory, desc, Name))
+			{
+				return false;
+			}
+			Levels.push_back(level);
+			return true;
+		};
+		auto bloomok{true};
+		for (std::size_t level = 0; bloomok && (level < sizes.size()); ++level)
+		{
+			bloomok = makelevel(Targets.bloom_down, sizes[level], "bloom down");
+		}
+		for (std::size_t level = 0; bloomok && (level + 1 < sizes.size()); ++level)
+		{
+			bloomok = makelevel(Targets.bloom_up, sizes[level], "bloom up");
+		}
+		if (bloomok)
+		{
+			Targets.bloom_sizes = sizes;
+		}
+		else
+		{
+			Targets.bloom_down.clear();
+			Targets.bloom_up.clear();
+			ErrorLog("bloom framebuffer setup failed, no bloom");
+		}
+	}
+	if (false == ok)
+	{
+		vk14::log_error("the images of a viewport of " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + " can't be made");
+		Targets.output.reset();
+		return false;
+	}
+	Targets.formats.colour = {hdr, motion ? velocity : VK_FORMAT_UNDEFINED};
+	Targets.formats.colours = (motion ? 2 : 1);
+	Targets.formats.depth = depth;
+	Targets.formats.samples = samples;
+	Targets.output_formats.colour = {output, VK_FORMAT_UNDEFINED};
+	Targets.output_formats.colours = 1;
+	Targets.post_formats.colour = {hdr, VK_FORMAT_UNDEFINED};
+	Targets.post_formats.colours = 1;
+	Targets.depth_formats.depth = depth;
+	Targets.depth_formats.samples = samples;
+	// the pipelines are made for the number of the formats: the same formats keep theirs
+	auto const same = [](vk14::target_formats const &Left, vk14::target_formats const &Right) {
+		return (Left.colour == Right.colour) && (Left.colours == Right.colours) && (Left.depth == Right.depth) && (Left.samples == Right.samples);
+	};
+	Targets.formats.id = ((oldformats.id != 0) && same(oldformats, Targets.formats) ? oldformats.id : ++Formatscount);
+	Targets.output_formats.id = ((oldoutput.id != 0) && same(oldoutput, Targets.output_formats) ? oldoutput.id : ++Formatscount);
+	Targets.post_formats.id = ((oldpost.id != 0) && same(oldpost, Targets.post_formats) ? oldpost.id : ++Formatscount);
+	Targets.depth_formats.id = ((olddepth.id != 0) && same(olddepth, Targets.depth_formats) ? olddepth.id : ++Formatscount);
+	return true;
+}
+
+} // namespace
+
+// the frame
+
+bool vulkan14_renderer::Render()
+{
+	if (!m_context || m_context->devicelost)
+	{
+		return false;
+	}
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const device{ctx.device.handle()};
+	auto const slot{static_cast<std::uint32_t>(ctx.framecount % ctx.frames.size())};
+	auto &frame{ctx.frames[slot]};
+	// the walkers of a frame which didn't get to its end
+	join_walks();
+
+	Timer::subsystem.gfx_total.start();
+
+	// the render thread is done with the frame before: the queue, the swapchains and the frames are the main thread's again. with
+	// the frame generation it may still be presenting it, the queue and the swapchains are waited for before the windows are acquired
+	auto const latepresent{m_generated > 0};
+	if (latepresent)
+	{
+		ctx.wait_submitted();
+	}
+	else if (auto const *failure{ctx.drain()})
+	{
+		report_device_lost(failure);
+		return false;
+	}
+	// reflex: the simulation of the frame is over, the frame is made
+	if (false == ctx.windows.empty())
+	{
+		ctx.windows.front()->latency_marker(ctx.framecount + 1, VK_LATENCY_MARKER_SIMULATION_END_NV);
+	}
+	// what the replay left to dlss; failed: off from now on, the scene of the main window stretched to it without anti-aliasing (the
+	// frame generation alone: the frames it was to make are the frame drawn, then it's off)
+	if (auto const error{ctx.dlss.sync()}; false == error.empty())
+	{
+		vk14::log_error(error + (ctx.dlss.failed() ? "; dlss is off, the scene is stretched to the window without anti-aliasing" : "; the frame generation is off"));
+	}
+
+	// the gpu has to be done with the frame which used the slot before
+	if (frame.done > 0)
+	{
+		if (false == ctx.wait(frame.done))
+		{
+			report_device_lost("waiting for a frame");
+			return false;
+		}
+		ctx.passes.collect(slot);
+	}
+	// what the frames done used last goes
+	ctx.deletions.collect(std::max(ctx.completed(), frame.done));
+	VK14_VERIFY(vkResetCommandPool(device, frame.pool, 0));
+	if (frame.compute_pool != VK_NULL_HANDLE)
+	{
+		VK14_VERIFY(vkResetCommandPool(device, frame.compute_pool, 0));
+	}
+	for (auto &worker : frame.workers)
+	{
+		VK14_VERIFY(vkResetCommandPool(device, worker.pool, 0));
+		worker.used = 0;
+	}
+	ctx.ring.begin_frame(slot);
+	scene.draws.ring.begin_frame(slot);
+	scene.instances.ring.begin_frame(slot);
+	// the parts of the rings the main renderer places its draws in, and their windows, anew
+	m_draw->draws_cache.reset(&scene.draws.ring, vk14::draw_ring_part);
+	m_draw->instances_cache.reset(&scene.instances.ring, vk14::instance_ring_part);
+	m_draw->draws_window = {};
+	m_draw->instances_window = {};
+	// the draws which aren't instanced read the identity at the start of the window from the first draw of the frame on
+	open_instance_window();
+	// the occlusion queries of the lamps the slot made the last time
+	{
+		auto &submodels{scene.occlusion_submodels[slot]};
+		if (false == submodels.empty())
+		{
+			std::vector<std::uint32_t> results(submodels.size(), 1);
+			if (vkGetQueryPoolResults(device, scene.occlusion_pools[slot], 0, static_cast<std::uint32_t>(submodels.size()), results.size() * sizeof(std::uint32_t), results.data(), sizeof(std::uint32_t), 0) == VK_SUCCESS)
+			{
+				for (std::size_t i = 0; i < submodels.size(); ++i)
+				{
+					scene.glare_visible[submodels[i]] = (results[i] > 0);
+				}
+			}
+			vkResetQueryPool(device, scene.occlusion_pools[slot], 0, static_cast<std::uint32_t>(submodels.size()));
+			submodels.clear();
+		}
+	}
+
+	// the calls of the frame are kept, recorded into the command buffers once the frame is done
+	frame.upload_stream.clear();
+	frame.commands.clear();
+	frame.compute_stream.clear();
+	auto const value{ctx.timelinevalue + 1};
+	ctx.uploads.begin_frame(&frame.upload_stream, value);
+	ctx.slot = slot;
+	ctx.commands = &frame.commands;
+	m_commands = ctx.commands;
+	if (scene.cull.ready)
+	{
+		// the cullings share what they need of the frame
+		scene.cull.main.begin_frame(slot, value, ctx.completed());
+	}
+	scene.lamps.begin_frame(m_commands, value);
+	scene.cabprobe.begin_frame(value);
+	scene.skyocclusion.begin_frame(value);
+	if (scene.terrain)
+	{
+		// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
+		scene.terrain->begin_frame(m_commands, value);
+		scene.terrain->update();
+	}
+	// the copies of the light buffer were in the part of the ring of another frame
+	m_lightheaders.clear();
+	// the content other threads gave the textures (python), and the textures the background threads made: in the table before the
+	// walks of the frame, their copies with the uploads of the frame
+	{
+		std::vector<vk14::vulkan14_texture *> pending;
+		std::vector<vk14::vulkan14_texture *> made;
+		{
+			std::lock_guard<std::mutex> lock(ctx.pending.mutex);
+			pending.swap(ctx.pending.textures);
+			made.swap(ctx.pending.made);
+		}
+		for (auto *texture : pending)
+		{
+			texture->apply_pending();
+		}
+		for (auto *texture : made)
+		{
+			texture->publish();
+		}
+	}
+
+	// the frame generation of dlss: the images of the main window for the frames it makes, where the scene is drawn with dlss. the
+	// frames it can make are known once the windows are acquired; till then the frame is made for all of them
+	auto const generating{(m_generated > 0) && simulation::is_ready && (false == Global.gfx_skiprendering) && dlss_active() && (false == ctx.dlss.generation_failed()) && (false == m_viewports.empty()) &&
+	                      (m_viewports.front().window == 0) && (m_viewports.front().output_width > 0) && (ctx.scene.generation.unusable == VK_FORMAT_UNDEFINED)};
+	m_generatedframe = (generating ? std::min(m_generated, ctx.windows.front()->generated_room()) : 0);
+	m_generationinputs = false;
+	auto const acquire_windows = [&]() {
+		ctx.acquired.clear();
+		for (auto &window : ctx.windows)
+		{
+			switch (window->acquire(slot, ((window == ctx.windows.front()) && generating) ? m_generated : 0))
+			{
+			case vk14::swapchain::acquire_result::ready:
+				ctx.acquired.push_back(window.get());
+				break;
+			case vk14::swapchain::acquire_result::skipped:
+				break;
+			default:
+				if (window != ctx.windows.front())
+				{
+					// a window of an extra viewport which can't be shown doesn't stop the others
+					break;
+				}
+				ctx.acquired.clear();
+				report_device_lost("acquiring an image");
+				return false;
+			}
+		}
+		m_generatedframe = 0;
+		if (generating && (false == ctx.acquired.empty()) && (ctx.acquired.front() == ctx.windows.front().get()) && (ctx.windows.front()->generated_count() > 0) && prepare_generation(0))
+		{
+			m_generatedframe = ctx.windows.front()->generated_count();
+		}
+		return true;
+	};
+	// with the frame generation the render thread may still be presenting the frame before, spaced over the time of a frame: the
+	// windows are acquired once the scene is recorded, after it's done
+	if ((false == latepresent) && (false == acquire_windows()))
+	{
+		return false;
+	}
+
+	frame.number = ctx.framecount;
+	ctx.passes.begin_frame(m_commands, slot, ctx.framecount);
+	// the passes of the sky and the weather go to the compute queue once the images of the scene are in their layouts (cleared by the
+	// graphics queue below the first time) and the noises of the clouds are made (their mipmaps are blitted, which the compute queue
+	// can't do)
+	m_asyncframe = ctx.async_compute && scene.images_ready && scene.weather.noise_made && simulation::is_ready && (false == Global.gfx_skiprendering);
+
+	// the stand-ins put in place the first time: the empty maps cleared
+	if (false == scene.images_ready)
+	{
+		scene.images_ready = true;
+		std::vector<vk14::image *> const standins{scene.shadow_empty.get(),           scene.env_empty.get(),   scene.volume_empty.get(),   scene.cube_shadow_empty.get(),
+		                                          scene.headlight_shadow_empty.get(), scene.depth_empty.get(), scene.cabprobe_empty.get(), scene.skyocclusion_heights_empty.get(),
+		                                          scene.skyocclusion_empty.get()};
+		std::vector<vk14::image_use> clears;
+		for (auto *image : standins)
+		{
+			clears.push_back(vk14::use_of(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT));
+		}
+		ctx.passes.begin_pass("frame setup", clears);
+		// the empty shadow maps hold the farthest depth, the empty images black
+		VkClearDepthStencilValue const farthest{0.f, 0};
+		VkClearColorValue const black{{0.f, 0.f, 0.f, 0.f}};
+		std::vector<vk14::image_use> uses;
+		for (auto *image : standins)
+		{
+			VkImageSubresourceRange const range{image->aspect(), 0, image->desc().mips, 0, image->desc().layers};
+			if (image->aspect() == VK_IMAGE_ASPECT_DEPTH_BIT)
+			{
+				m_commands->clear_depth_stencil_image(image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &farthest, 1, &range);
+			}
+			else
+			{
+				m_commands->clear_color_image(image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+			}
+			uses.push_back(vk14::use_of(*image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access));
+		}
+		// the maps which aren't drawn yet are read before they are (the pass sets hold them)
+		if (scene.shadow_map)
+		{
+			uses.push_back(vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access));
+		}
+		if (scene.env_map)
+		{
+			uses.push_back(vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access));
+		}
+		vk14::barriers(m_commands, uses);
+		// no light is assigned to any cluster until the culling pass runs
+		m_commands->fill_buffer(scene.clusters.ranges.handle(), 0, VK_WHOLE_SIZE, 0);
+		// nor does the cab light itself until its probe is drawn
+		m_commands->fill_buffer(scene.cabprobe_bounce.handle(), 0, VK_WHOLE_SIZE, 0);
+		VkMemoryBarrier2 barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.memoryBarrierCount = 1;
+		dependency.pMemoryBarriers = &barrier;
+		m_commands->pipeline_barrier2(&dependency);
+		// the light of the sky and the exposure from their first state
+		clear_sky_images();
+		ctx.passes.end_pass();
+	}
+	// the set of the ray tracing of the frame has a structure to read from its first frame on
+	if (scene.raytracing)
+	{
+		scene.raytracing->begin_frame(m_commands, slot, value);
+	}
+	// the block of the weather and the scene for the compute passes before the first pass of the scene
+	m_draw->scene_offset = 0;
+	m_draw->light_offset = 0;
+	m_draw->cluster_offset = 0;
+	upload_scene_block();
+	upload_weather_block();
+
+	// fetch simulation data
+	if (simulation::is_ready)
+	{
+		static_cast<basic_light &>(m_sunlight) = Global.DayLight;
+		// quantize sun angle to reduce shadow crawl
+		auto const quantizationstep{0.004f};
+		m_sunlight.direction = glm::normalize(quantizationstep * glm::roundEven(m_sunlight.direction * (1.f / quantizationstep)));
+		m_fogcolor = Global.FogColor;
+		// the light of the sky for the render: colours of the sun, ambient light and fog from the atmosphere where it is used, the
+		// directional part of the ambient light. the volumetric clouds of the previous frame tell the sky whether to look overcast
+		// and dim the sun itself
+		m_skylight.set_clouds(m_weatherstate.clouds_drawn(), m_weatherstate.cloud_shadows());
+		if (m_asyncframe)
+		{
+			m_commands = &frame.compute_stream;
+			ctx.passes.begin_async(m_commands);
+		}
+		update_sky();
+		// fog, clouds and stars of the weather, in the light of the sky worked out above
+		if (false == Global.gfx_skiprendering)
+		{
+			update_weather();
+		}
+		if (m_asyncframe)
+		{
+			ctx.passes.end_async();
+			m_commands = ctx.commands;
+		}
+		// lamps of models and vehicles around the camera and the cab lamp, for the views of the frame to take into their light buffers
+		if ((false == Global.gfx_skiprendering) && (simulation::Region != nullptr))
+		{
+			m_locallights.gather(Global.pCamera.Pos, *simulation::Region, m_geometry, m_framestamp);
+		}
+		// the occlusion of the sky by the scenery around the camera: the tiles which came in, what the background worked out
+		if (false == Global.gfx_skiprendering)
+		{
+			scene.skyocclusion.update(simulation::Region, Global.pCamera.Pos, -m_sunlight.direction);
+		}
+	}
+	else
+	{
+		// a scenery is being loaded: the cells, instances and models the lights were taken from may be gone
+		m_locallights.reset();
+		scene.skyocclusion.clear();
+		scene.lamps.reset_lamps();
+		scene.lamps.reset_headlights();
+		// and so may the tracks the sleeper records were made for, and the models drawn on their own
+		Clear_Indirect_Records();
+		scene.glare_visible.clear();
+		// and the geometry the structures of the ray tracing were built from
+		if (scene.raytracing)
+		{
+			scene.raytracing->clear(ctx.uploads.current_value());
+		}
+	}
+	if ((EditorModeFlag) || (m_nodestateversion != scene::node_state_version))
+	{
+		// the editor moves and resizes model instances in place, events show and hide them: the instance records are out of date
+		++m_instancerecordsversion;
+		m_nodestateversion = scene::node_state_version;
+	}
+	// what the maps of the occlusion of the sky were given, copied to them
+	scene.skyocclusion.flush(m_commands);
+	// the sleeper records of tracks out of sight for a while, and the records of the models drawn on their own
+	Expire_Indirect_Records();
+	// scenery lamps which get shadows in this frame. their maps hold the scenery as of the version of the instance records
+	if (simulation::is_ready && (false == Global.gfx_skiprendering))
+	{
+		scene.lamps.update_lamps(m_locallights.lights(), Global.pCamera.Pos, m_instancerecordsversion, m_framestamp);
+	}
+	m_renderpass.draw_mode = rendermode::none;
+	// the vehicles which moved in the last frame (motion blur)
+	m_vehiclesmoved = m_vehiclesmoving;
+	m_vehiclesmoving = false;
+	m_renderpass.draw_stats = debug_stats();
+	m_draw->draws = 0;
+
+	auto const drawscene{simulation::is_ready && (false == Global.gfx_skiprendering)};
+	if (drawscene)
+	{
+		render_scene();
+		if (m_pickcontrolswanted && simulation::Train)
+		{
+			render_picking(rendermode::pickcontrols);
+		}
+		if (m_picknodewanted)
+		{
+			render_picking(rendermode::pickscenery);
+		}
+	}
+	m_pickcontrolswanted = false;
+	m_picknodewanted = false;
+
+	// the user interface after the scene, as in the opengl renderer: imgui makes its frame, the images it asks for are uploaded in
+	// this frame
+	Timer::subsystem.gfx_gui.start();
+	draw_debug_ui();
+	Application.render_ui();
+	Timer::subsystem.gfx_gui.stop();
+
+	if (latepresent)
+	{
+		if (auto const *failure{ctx.drain()})
+		{
+			report_device_lost(failure);
+			return false;
+		}
+		if (false == acquire_windows())
+		{
+			return false;
+		}
+	}
+
+	// the windows: the image of their viewport, the user interface over the main one. what's left of the frame waits for the compute
+	// queue, where the scene wasn't drawn
+	split_frame();
+	bool uidrawn{false};
+	for (auto *window : ctx.acquired)
+	{
+		std::size_t viewport{m_viewports.size()};
+		for (std::size_t i = 0; i < m_viewports.size(); ++i)
+		{
+			if (ctx.windows[m_viewports[i].window].get() == window)
+			{
+				viewport = i;
+				break;
+			}
+		}
+		auto const ismain{window == ctx.windows.front().get()};
+		if (ismain && (window->generated_count() > 0) && (viewport < m_viewports.size()))
+		{
+			// with the frames generated by dlss (or the frame drawn again in their images, where they can't be made)
+			render_generation(viewport);
+			uidrawn = true;
+			continue;
+		}
+		ctx.passes.begin_pass(ismain ? "ui" : "other viewports", {window->use(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access)});
+		VkClearValue clear{};
+		clear.color = {{0.f, 0.f, 0.f, 1.f}};
+		auto attachment{attachment_info(window->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true, clear)};
+		VkRenderingInfo rendering{};
+		rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+		rendering.renderArea = {{0, 0}, window->extent()};
+		rendering.layerCount = 1;
+		rendering.colorAttachmentCount = 1;
+		rendering.pColorAttachments = &attachment;
+		m_commands->begin_rendering(&rendering);
+		if (drawscene && (viewport < scene.targets.size()) && scene.targets[viewport].output)
+		{
+			present_viewport(viewport);
+		}
+		if (ismain)
+		{
+			ctx.imgui.record(m_commands, window->extent(), window->format(), window->srgb());
+			uidrawn = true;
+		}
+		m_commands->end_rendering();
+		ctx.passes.end_pass();
+		vk14::barriers(m_commands, {window->use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)});
+	}
+	if (false == uidrawn)
+	{
+		// the main window is minimized: the frame of imgui has nowhere to go
+		ctx.imgui.skip();
+	}
+	// the screenshot asked for: the output of the main viewport, read back once the gpu is done with the frame
+	if (scene.screenshot_wanted && drawscene && (false == scene.targets.empty()) && scene.targets.front().output && (false == scene.screenshot_pending))
+	{
+		scene.screenshot_wanted = false;
+		auto &output{*scene.targets.front().output};
+		VkExtent2D const extent{output.desc().extent.width, output.desc().extent.height};
+		scene.screenshot = std::make_shared<vk14::buffer>();
+		if (scene.screenshot->create(ctx.memory, static_cast<VkDeviceSize>(extent.width) * extent.height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::readback, "screenshot"))
+		{
+			vk14::barriers(m_commands, {vk14::use_of(output, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT)});
+			VkBufferImageCopy2 region{};
+			region.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
+			region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			region.imageExtent = {extent.width, extent.height, 1};
+			VkCopyImageToBufferInfo2 copy{};
+			copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2;
+			copy.srcImage = output.handle();
+			copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			copy.dstBuffer = scene.screenshot->handle();
+			copy.regionCount = 1;
+			copy.pRegions = &region;
+			m_commands->copy_image_to_buffer2(&copy);
+			host_read_barrier(m_commands);
+			scene.screenshot_pending = true;
+			scene.screenshot_value = value;
+			scene.screenshot_extent = extent;
+		}
+	}
+	// nothing is left to the walkers when the frame is handed over
+	join_walks();
+	ctx.passes.end_frame();
+	vulkan14_renderer::context::render_job job;
+	job.target = &frame;
+	job.uploaded = ctx.uploads.end_frame();
+	job.value = value;
+	job.async = m_asyncframe;
+	// the stream of the frame is the render thread's now: nothing records into it any more
+	ctx.commands = nullptr;
+	m_commands = nullptr;
+	m_draw->commands = nullptr;
+	scene.lamps.end_frame();
+	if (scene.terrain)
+	{
+		scene.terrain->end_frame();
+	}
+	ctx.ring.flush();
+	scene.draws.ring.flush();
+	scene.instances.ring.flush();
+
+	for (auto *window : ctx.acquired)
+	{
+		VkSemaphoreSubmitInfo wait{};
+		wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		wait.semaphore = window->acquire_semaphore(slot);
+		wait.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+		job.waits.push_back(wait);
+
+		VkSemaphoreSubmitInfo signal{};
+		signal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		signal.semaphore = window->present_semaphore();
+		signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		job.signals.push_back(signal);
+		// the images of the frames generated, shown before it
+		for (std::uint32_t i = 0; i < window->generated_count(); ++i)
+		{
+			wait.semaphore = window->generated_acquire_semaphore(slot, i);
+			job.waits.push_back(wait);
+			signal.semaphore = window->generated_present_semaphore(i);
+			job.signals.push_back(signal);
+		}
+	}
+	job.present_id = ctx.framecount + 1;
+	VkSemaphoreSubmitInfo timelinesignal{};
+	timelinesignal.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+	timelinesignal.semaphore = ctx.timeline;
+	timelinesignal.value = value;
+	timelinesignal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	job.signals.push_back(timelinesignal);
+
+	if (ctx.render_threaded())
+	{
+		// the render thread records, submits and presents the frame while the simulation goes on; the value of the frame is
+		// known now, the gpu reaches it once the thread submitted it
+		job.windows.swap(ctx.acquired);
+		frame.done = ctx.timelinevalue = value;
+		ctx.hand_over(std::move(job));
+	}
+	else
+	{
+		char const *failure{nullptr};
+		if (false == ctx.execute(job, failure))
+		{
+			report_device_lost(failure);
+			return false;
+		}
+		frame.done = ctx.timelinevalue = value;
+	}
+
+	m_laststats = m_colorpass.draw_stats;
+	++m_framestamp;
+	Timer::subsystem.gfx_total.stop();
+	return true;
+}
+
+void vulkan14_renderer::render_scene()
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	// the water on the windscreens of the cab: a step of its simulation once a frame, before the passes which draw the glasses
+	scene.water.update(Timer::GetDeltaTime());
+	if (scene.targets.size() < m_viewports.size())
+	{
+		scene.targets.resize(m_viewports.size());
+	}
+	for (std::size_t i = 0; i < m_viewports.size(); ++i)
+	{
+		auto const &viewport{m_viewports[i]};
+		auto const srgb{false == Global.gfx_shadergamma};
+		auto const *history{scene.targets[i].taa_history[0].get()};
+		auto const *upscaled{scene.targets[i].dlss_output.get()};
+		auto const *reflections{scene.targets[i].ssr_history.get()};
+		auto const dlss{viewport.main && dlss_active() && (viewport.output_width > 0) && (viewport.output_height > 0)};
+		if (false == make_targets(ctx.memory, ctx.deletions, ctx.uploads.current_value(), scene.formats_count, ctx.device.caps().limits.framebufferColorSampleCounts & ctx.device.caps().limits.framebufferDepthSampleCounts, scene.bloom_format,
+		                          scene.history_format, scene.targets[i], viewport.width, viewport.height, viewport.output_width, viewport.output_height, srgb, viewport.main && Global.gfx_taa(),
+		                          viewport.main && (false == Global.gfx_skippipeline) && ((Global.gfx_ssr > 0) || (m_raytracingon && scene.raytracing)), dlss))
+		{
+			continue;
+		}
+		if (viewport.main && ((scene.targets[i].taa_history[0].get() != history) || (scene.targets[i].dlss_output.get() != upscaled)))
+		{
+			// new images of the history, nothing in them yet
+			m_taa.reset();
+			m_dlssreset = true;
+		}
+		auto &targets{scene.targets[i]};
+		if (targets.ssr_history.get() != reflections)
+		{
+			m_ssr.reset();
+		}
+		if (targets.ssr_history && (false == targets.ssr_cleared))
+		{
+			// the pass sets hold the history from now on, it's read (by none of the pixels) before the first frame goes to it
+			targets.ssr_cleared = true;
+			auto &image{*targets.ssr_history};
+			ctx.passes.begin_pass("reflection history", {vk14::use_of(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+			VkClearColorValue const black{{0.f, 0.f, 0.f, 0.f}};
+			VkImageSubresourceRange const range{VK_IMAGE_ASPECT_COLOR_BIT, 0, image.desc().mips, 0, 1};
+			m_commands->clear_color_image(image.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+			vk14::barriers(m_commands, {vk14::use_of(image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+			ctx.passes.end_pass();
+		}
+		render_viewport(i);
+	}
+	// the passes given to the walkers are done before the frame goes on (they were walked at the same time as the viewports)
+	join_walks();
+	m_helpedgroups = ctx.helped.exchange(0);
+	m_current_viewport = (m_viewports.empty() ? nullptr : &m_viewports.front());
+}
+
+// the passes of the walk
+
+void vulkan14_renderer::start_draws(vk14::target_formats const &Targets, int const Width, int const Height, int const Set, bool const Shadows)
+{
+	auto &draw{*m_draw};
+	draw.commands = m_commands;
+	draw.targets = &Targets;
+	draw.extent = {static_cast<std::uint32_t>(Width), static_cast<std::uint32_t>(Height)};
+	draw.set = static_cast<vk14::scene_state::pass_set_kind>(Set);
+	draw.shadows = Shadows;
+	draw.rendering = true;
+	draw.set_dirty = true;
+	draw.textures_dirty = true;
+	draw.pipeline = VK_NULL_HANDLE;
+	draw.vertices = VK_NULL_HANDLE;
+	draw.userdata = VK_NULL_HANDLE;
+	draw.indices = VK_NULL_HANDLE;
+	draw.topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+	draw.cull = VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
+	draw.depthtest = -1;
+	draw.depthwrite = -1;
+	draw.pushed_draw = ~0u;
+	draw.block = ~0u;
+	draw.cullface = true;
+	draw.glare = false;
+	draw.depthmask_off = false;
+	vk14::set_draw_state(draw.commands, draw.extent);
+	// the faces counter-clockwise in the window of opengl are clockwise in the framebuffer of vulkan, which counts its rows the
+	// other way (with the same memory of the images, decision K8)
+	draw.commands->set_front_face(VK_FRONT_FACE_CLOCKWISE);
+}
+
+void vulkan14_renderer::end_draws()
+{
+	auto &draw{*m_draw};
+	draw.rendering = false;
+	draw.program = nullptr;
+	draw.resume.valid = false;
+	draw.cull_sets = nullptr;
+}
+
+void vulkan14_renderer::upload_scene_block()
+{
+	auto &ctx{*m_context};
+	auto const slice{ctx.ring.allocate(sizeof(gl::scene_ubs), ctx.device.caps().limits.minUniformBufferOffsetAlignment)};
+	if (false == bool(slice))
+	{
+		return;
+	}
+	std::memcpy(slice.data, &scene_ubs, sizeof(gl::scene_ubs));
+	m_draw->scene_offset = static_cast<std::uint32_t>(slice.offset);
+	m_draw->set_dirty = true;
+}
+
+void vulkan14_renderer::upload_light_header()
+{
+	// the header with the lights in use: what changes between the draws (the sun in tunnels, the ambient light of the cab) goes
+	// with a copy of the lights, the shaders read the buffer whole
+	auto &ctx{*m_context};
+	// the lights stay the same between the calls of update_lights(): a header with the sun given already goes again
+	auto const *header{reinterpret_cast<std::uint8_t const *>(&light_data)};
+	for (auto const &[copy, offset] : m_lightheaders)
+	{
+		if (0 == std::memcmp(copy.data(), header, copy.size()))
+		{
+			if (m_draw && (m_draw->light_offset != offset))
+			{
+				m_draw->light_offset = offset;
+				m_draw->set_dirty = true;
+			}
+			return;
+		}
+	}
+	auto const size{offsetof(gl::light_data, lights) + sizeof(gl::light_element) * std::max<std::uint32_t>(m_lightcount, 1)};
+	auto const slice{ctx.ring.allocate(size, ctx.device.caps().limits.minStorageBufferOffsetAlignment)};
+	if (false == bool(slice))
+	{
+		return;
+	}
+	std::memcpy(slice.data, &light_data, size);
+	if (m_lightheaders.size() < 32)
+	{
+		auto &entry{m_lightheaders.emplace_back()};
+		std::memcpy(entry.first.data(), header, entry.first.size());
+		entry.second = static_cast<std::uint32_t>(slice.offset);
+	}
+	if (m_draw)
+	{
+		m_draw->light_offset = static_cast<std::uint32_t>(slice.offset);
+		m_draw->set_dirty = true;
+	}
+}
+
+void vulkan14_renderer::upload_lights()
+{
+	upload_light_header();
+}
+
+void vulkan14_renderer::setup_matrices()
+{
+	OpenGLMatrices.mode(GL_PROJECTION);
+	OpenGLMatrices.load_matrix(m_renderpass.pass_camera.projection());
+	// trim modelview matrix just to rotation, since rendering is done in camera-centric world space
+	OpenGLMatrices.mode(GL_MODELVIEW);
+	OpenGLMatrices.load_matrix(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+}
+
+void vulkan14_renderer::setup_shadow_matrices()
+{
+	if (false == Global.gfx_shadowmap_enabled)
+	{
+		return;
+	}
+	for (std::size_t idx = 0; idx < m_shadowpass.size(); ++idx)
+	{
+		glm::mat4 depthproj = m_shadowpass[idx].pass_camera.projection();
+		// NOTE: we strip transformations from camera projections to remove jitter that occurs
+		// with large (and unneded as we only need the offset) transformations back and forth
+		auto const depthcam{glm::mat3{m_shadowpass[idx].pass_camera.modelview()}};
+		auto const worldcam{glm::mat3{m_renderpass.pass_camera.modelview()}};
+		scene_ubs.lightview[idx] = coordmove * depthproj * glm::translate(glm::mat4{depthcam}, glm::vec3{m_renderpass.pass_camera.position() - m_shadowpass[idx].pass_camera.position()}) * glm::mat4{glm::inverse(worldcam)};
+	}
+}
+
+// the camera of the pass, as opengl46_renderer::setup_pass() sets it up (without the vr and the cascades fitted to the depth)
+void vulkan14_renderer::setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear, float const Zfar, bool const Ignoredebug)
+{
+	Config.draw_mode = Mode;
+
+	if (false == simulation::is_ready)
+	{
+		return;
+	}
+	switch (Mode)
+	{
+	case rendermode::color:
+		Config.draw_range = Global.BaseDrawRange * Global.fDistanceFactor * Viewport.draw_range;
+		break;
+	case rendermode::shadows:
+		Config.draw_range = Global.shadowtune.range;
+		break;
+	case rendermode::reflections:
+		Config.draw_range = Global.BaseDrawRange * Viewport.draw_range;
+		break;
+	case rendermode::pickcontrols:
+		Config.draw_range = 50.f;
+		break;
+	case rendermode::pickscenery:
+		Config.draw_range = Global.BaseDrawRange * Viewport.draw_range * 0.5f;
+		break;
+	default:
+		Config.draw_range = 0.f;
+		break;
+	}
+
+	auto &camera = Config.pass_camera;
+	glm::dmat4 viewmatrix(1.0);
+	glm::mat4 frustumtest_proj;
+	Config.viewport_camera.position() = Global.pCamera.Pos;
+
+	auto const editor_ortho_projection = [](viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum) {
+		if (false == (EditorModeFlag && Global.EditorOrtho && Viewport.main))
+		{
+			return;
+		}
+		auto const height{Global.EditorOrthoExtent};
+		auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+		Projection = ortho_projection(-width, width, -height, height, -Zfar, Zfar);
+		Frustum = ortho_frustumtest_projection(-width, width, -height, height, -Zfar, Zfar);
+	};
+
+	switch (Mode)
+	{
+	case rendermode::color:
+	{
+		if ((Viewport.proj_type == viewport_config::normal) && Viewport.main)
+		{
+			float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
+			// setup virtual screen
+			glm::vec2 screen_h = glm::vec2(Global.window_size) / 2.0f;
+			float const dist = screen_h.y / glm::tan(fovy / 2.0f);
+			Viewport.projection.pa = glm::vec3(-screen_h.x, -screen_h.y, -dist);
+			Viewport.projection.pb = glm::vec3(screen_h.x, -screen_h.y, -dist);
+			Viewport.projection.pc = glm::vec3(-screen_h.x, screen_h.y, -dist);
+			Viewport.projection.pe = glm::vec3(0.0f, 0.0f, 0.0f);
+		}
+		if (Global.headtrack_conf.magic_window)
+		{
+			Viewport.projection.pe = Global.viewport_move;
+		}
+		TCamera *cam = ((false == DebugCameraFlag) || (true == Ignoredebug)) ? &Global.pCamera : &Global.pDebugCamera;
+		camera.position() = cam->Pos;
+		cam->SetMatrix(viewmatrix);
+		if (!Global.headtrack_conf.magic_window)
+		{
+			camera.position() += Global.viewport_move * glm::mat3(viewmatrix);
+			viewmatrix = glm::dmat4(glm::inverse(Global.viewport_rotate)) * viewmatrix;
+		}
+		// optimization: don't bother drawing things completely blended with the background
+		// but ensure at least 2 km range to account for signals and lights
+		Config.draw_range = std::min(Config.draw_range, m_fogrange * 2);
+		Config.draw_range = std::max(2000.f, Config.draw_range);
+		auto zfar = (Zfar > 1.f ? Zfar : Config.draw_range * Zfar);
+		auto const znear = (Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
+		if (EditorModeFlag && Viewport.main)
+		{
+			zfar = editor_track_view_range(zfar, true);
+		}
+		Config.znear = znear;
+		Config.zfar = zfar;
+		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
+		break;
+	}
+	case rendermode::shadows:
+	{
+		auto const zfar = (Zfar > 1.f ? Zfar : Zfar * Global.shadowtune.range * std::max(Zfar, Global.ZoomFactor * 0.5f));
+		std::size_t bounding_viewports_count = 0;
+		std::vector<glm::vec4> frustumchunkshapepoints;
+		glm::dvec3 pass_camera{0.0};
+		for (auto &conf : m_viewports)
+		{
+			if (!conf.shadow)
+			{
+				continue;
+			}
+			renderpass_config worldview;
+			setup_pass(conf, worldview, rendermode::color, Znear, zfar, true);
+			auto &points = worldview.pass_camera.frustum_points();
+			frustumchunkshapepoints.insert(frustumchunkshapepoints.end(), points.begin(), points.end());
+			pass_camera += worldview.pass_camera.position();
+			bounding_viewports_count++;
+		}
+		pass_camera /= std::max<std::size_t>(bounding_viewports_count, 1);
+		// ...a cascade fitted to the depth of the view (gfx.shadow.sdsm) covers the area of the pixels it takes, within the slice of the
+		// view...
+		auto quantizationstep{gfx::shadow_fit::fit_slice(frustumchunkshapepoints, m_shadowfitarea, gfx::shadow_fit::light_rotation(m_sunlight.direction), m_shadowslicesize)};
+		// ...modelview matrix: determine the centre of frustum chunk in world space...
+		glm::vec3 frustumchunkmin, frustumchunkmax;
+		bounding_box(frustumchunkmin, frustumchunkmax, std::begin(frustumchunkshapepoints), std::end(frustumchunkshapepoints));
+		auto const frustumchunkcentre = (frustumchunkmin + frustumchunkmax) * 0.5f;
+		// ...cap the vertical angle to keep shadows from getting too long...
+		auto const lightvector{gfx::shadow_fit::light_vector(m_sunlight.direction)};
+		// ...place the light source at the calculated centre and setup world space light view matrix...
+		camera.position() = pass_camera + glm::dvec3{frustumchunkcentre};
+		viewmatrix *= glm::lookAt(camera.position(), camera.position() + glm::dvec3{lightvector}, glm::dvec3{0.f, 1.f, 0.f});
+		// ...projection matrix: calculate boundaries of the frustum chunk in light space...
+		auto const lightviewmatrix = glm::translate(glm::mat4{glm::mat3{viewmatrix}}, -frustumchunkcentre);
+		for (auto &point : frustumchunkshapepoints)
+		{
+			point = lightviewmatrix * point;
+		}
+		bounding_box(frustumchunkmin, frustumchunkmax, std::begin(frustumchunkshapepoints), std::end(frustumchunkshapepoints));
+		// quantize the frustum points and add some padding, to reduce shadow shimmer on scale changes
+		auto const frustumchunkdepth{zfar - (Znear > 1.f ? Znear : 0.f)};
+		if (quantizationstep <= 0.f)
+		{
+			quantizationstep = std::min(frustumchunkdepth, 50.f);
+		}
+		frustumchunkmin = quantizationstep * glm::floor(frustumchunkmin * (1.f / quantizationstep));
+		frustumchunkmax = quantizationstep * glm::ceil(frustumchunkmax * (1.f / quantizationstep));
+		m_shadowdrawnsize = std::max(frustumchunkmax.x - frustumchunkmin.x, frustumchunkmax.y - frustumchunkmin.y);
+		// ...use the dimensions to set up light projection boundaries...
+		camera.projection() = ortho_projection(frustumchunkmin.x, frustumchunkmax.x, frustumchunkmin.y, frustumchunkmax.y, frustumchunkmin.z - 500.f, frustumchunkmax.z + 500.f);
+		frustumtest_proj = ortho_frustumtest_projection(frustumchunkmin.x, frustumchunkmax.x, frustumchunkmin.y, frustumchunkmax.y, frustumchunkmin.z - 500.f, frustumchunkmax.z + 500.f);
+		// ... and adjust the projection to sample complete shadow map texels
+		auto const shadowbuffersize{static_cast<float>(m_context->scene.shadow_size)};
+		auto shadowmaptexel = glm::vec2{camera.projection() * glm::mat4{viewmatrix} * glm::vec4{0.f, 0.f, 0.f, 1.f}};
+		shadowmaptexel *= shadowbuffersize * 0.5f;
+		auto shadowmapadjustment = glm::round(shadowmaptexel) - shadowmaptexel;
+		shadowmapadjustment /= shadowbuffersize * 0.5f;
+		camera.projection() = glm::translate(glm::mat4{1.f}, glm::vec3{shadowmapadjustment, 0.f}) * camera.projection();
+		break;
+	}
+	case rendermode::pickcontrols:
+	case rendermode::pickscenery:
+	{
+		camera.position() = Global.pCamera.Pos;
+		Global.pCamera.SetMatrix(viewmatrix);
+		viewport_proj_config proj = Viewport.projection;
+		float znear = 0.1f * Global.ZoomFactor;
+		float zfar = Config.draw_range * Global.fDistanceFactor;
+		if (EditorModeFlag && Viewport.main && Mode == rendermode::pickscenery)
+		{
+			zfar = editor_track_view_range(zfar, true);
+		}
+		camera.projection() = perspective_projection(proj, znear, zfar, frustumtest_proj);
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
+		break;
+	}
+	case rendermode::reflections:
+	{
+		if (m_rtgather)
+		{
+			// the scenery for the ray traced reflections: around the camera of the colour pass in the axes of the world, the draws
+			// going to the world around the camera; a box of the range of the rays stands for the frustum
+			auto const range{Global.gfx_raytracing_range};
+			camera.position() = m_colorpass.pass_camera.position();
+			// the frustum is tested in the world, the draws keep only the rotation of the view (none here)
+			viewmatrix = glm::translate(viewmatrix, -camera.position());
+			camera.projection() = ortho_projection(-range, range, -range, range, -range, range);
+			frustumtest_proj = ortho_frustumtest_projection(-range, range, -range, range, -range, range);
+			Config.draw_range = range;
+			break;
+		}
+		// the faces of the map are drawn over a few frames. each is drawn from the place the camera was at
+		// when the update began, so they fit together along the edges when the camera moves in the meantime
+		camera.position() = m_environmentupdatelocation;
+		glm::dvec3 const cubefacetargetvectors[6] = {{1.0, 0.0, 0.0}, {-1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}};
+		glm::dvec3 const cubefaceupvectors[6] = {{0.0, -1.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}, {0.0, -1.0, 0.0}, {0.0, -1.0, 0.0}};
+		auto const cubefaceindex = m_environmentcubetextureface;
+		viewmatrix *= glm::lookAt(camera.position(), camera.position() + cubefacetargetvectors[cubefaceindex], cubefaceupvectors[cubefaceindex]);
+		float znear = 0.1f * Global.ZoomFactor;
+		float zfar = Config.draw_range * Global.fDistanceFactor;
+		viewport_proj_config proj({{-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}});
+		camera.projection() = perspective_projection(proj, znear, zfar, frustumtest_proj);
+		break;
+	}
+	default:
+		break;
+	}
+	camera.modelview() = viewmatrix;
+	camera.update_frustum(frustumtest_proj);
+}
+
+// the colour pass of a viewport (opengl46_renderer::Render_pass(), rendermode::color)
+// the frame goes to the queue in two submits from here on, the second waiting for the passes of the sky and the weather on the compute
+// queue (the async compute); the first split counts
+void vulkan14_renderer::split_frame()
+{
+	if (m_asyncframe && (m_main == nullptr) && (m_commands != nullptr))
+	{
+		m_commands->split();
+	}
+}
+
+void vulkan14_renderer::render_viewport(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &vp{m_viewports[Index]};
+	auto &targets{scene.targets[Index]};
+	auto const commands{m_commands};
+	m_current_viewport = &vp;
+	if (false == vp.main)
+	{
+		// the views other than the main one have no sun shadows to draw before what reads the sky and the weather
+		split_frame();
+	}
+
+	setup_pass(vp, m_renderpass, rendermode::color);
+	// the temporal anti-aliasing or dlss: the projection of the frame moved by a part of a pixel, the velocities pointed to the last
+	// frame. dlss goes through more offsets the smaller the scene is drawn
+	auto const dlss{vp.main && targets.dlss && targets.dlss_output && dlss_active()};
+	auto const taa{(vp.main && targets.taa && Global.gfx_taa()) || dlss};
+	m_motionhistory = taa;
+	m_cabfuture = glm::mat4{1.f};
+	if (taa)
+	{
+		// the frame generation takes the camera without the offset of the frame
+		m_generationcamera.projection = m_renderpass.pass_camera.projection();
+		m_generationcamera.view = glm::mat3{glm::dmat3{m_renderpass.pass_camera.modelview()}};
+		m_generationcamera.position = glm::vec3{m_renderpass.pass_camera.position()};
+		m_taa.set_phases(dlss ? m_context->dlss.jitter_phases() : 8);
+		auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
+		m_renderpass.pass_camera.projection() = m_taa.begin_frame(
+		    m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height});
+		m_cabfuture = m_taa.cab_future();
+	}
+	// the screen space reflections: where the points the rays hit were in the image of the history. the ray traced ones fill in what
+	// they don't find, or go on their own without them
+	m_ssrframe = (ssr_wanted(vp) || raytracing_wanted(vp)) && targets.ssr_history;
+	if (m_ssrframe)
+	{
+		auto const *cab{((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr)) ? simulation::Train->Dynamic() : nullptr};
+		m_ssr.begin_frame(m_renderpass.pass_camera.projection(), glm::dmat3{m_renderpass.pass_camera.modelview()}, m_renderpass.pass_camera.position(), cab, glm::ivec2{vp.width, vp.height},
+		                  static_cast<int>(targets.ssr_history->desc().mips));
+	}
+	m_colorpass = m_renderpass;
+
+	scene_ubs.time = Timer::GetTime();
+	{
+		float percipitation_intensity = glm::saturate(Global.Overcast - 1.);
+		scene_ubs.rain_params.x = percipitation_intensity;
+		scene_ubs.rain_params.y = glm::mix(15., 1., percipitation_intensity);
+		scene_ubs.rain_params.z = (Global.Weather == "snow:" ? 1.f : 0.f); // flakes on the glass in place of the drops
+		scene_ubs.rain_params.w = Global.AirTemperature; // how fast the flakes melt
+		{
+			// the air the drops on the glass are blown with: the wind as the particles drift with it, less the velocity of the
+			// vehicle (V is along the front of the vehicle)
+			glm::dvec3 air{glm::dvec3{simulation::Environment.wind()} * 0.5};
+			if (TDynamicObject const *owner = Global.pCamera.m_owner)
+				air -= owner->VectorFront() * owner->MoverParameters->V;
+			scene_ubs.rain_wind = glm::vec4{glm::vec3{air}, 0.f};
+		}
+		if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
+		{
+			for (int i = 0; i < 4; ++i)
+			{
+				if (i < owner->dWiperPos.size())
+				{
+					int index = owner->MoverParameters->CabActive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+					scene_ubs.wiper_pos[i] = owner->dWiperPos[index];
+					if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index])
+					{
+						scene_ubs.wiper_pos[i] += 1.;
+					}
+					if (owner->dWiperPos[index] < .025)
+					{
+						scene_ubs.wiper_timer_out[i] = scene_ubs.time;
+					}
+					if (owner->dWiperPos[index] > .975)
+					{
+						scene_ubs.wiper_timer_return[i] = scene_ubs.time;
+					}
+				}
+				else
+				{
+					scene_ubs.wiper_pos[i] = 0.;
+					scene_ubs.wiper_timer_out[i] = -1000.;
+					scene_ubs.wiper_timer_return[i] = -1000.;
+				}
+			}
+		}
+		else
+		{
+			scene_ubs.wiper_pos = glm::vec4{0.};
+			scene_ubs.wiper_timer_out = glm::vec4{-1000.};
+			scene_ubs.wiper_timer_return = glm::vec4{-1000.};
+		}
+	}
+	// the stages after D: no contact shadows, no cascades fitted to the depth, no shadow maps of headlights
+	scene_ubs.contact_shadow_params = glm::vec4{0.f};
+	scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+	scene_ubs.shadow_fit = glm::vec4{0.f};
+	// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour pass of
+	// the main view only
+	scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, (m_rtfoliage ? 0.f : 1.f), Global.gfx_interior_bounce, 0.f};
+	gfx::screen_reflections::clear(scene_ubs);
+
+	if (vp.main)
+	{
+		// the shadow maps of the lamps made since the last frame, before the passes read them
+		ready_lamp_maps();
+	}
+	if (Global.gfx_shadowmap_enabled && vp.main && scene.shadow_map)
+	{
+		Timer::subsystem.gfx_shadows.start();
+		m_renderpass.draw_stats = {};
+		render_shadows(vp);
+		m_renderpass = m_colorpass;
+		Timer::subsystem.gfx_shadows.stop();
+	}
+	// the sun shadows went on at the same time as the passes of the sky and the weather on the compute queue; the passes from here on
+	// read what they made (the reflections draw the sky)
+	split_frame();
+	if (Global.gfx_envmap_enabled && vp.main && scene.env_map)
+	{
+		m_renderpass.draw_stats = {};
+		Timer::subsystem.gfx_reflections.start();
+		if (render_reflections(vp))
+		{
+			m_renderpass = m_colorpass;
+		}
+		// the prefiltered map is made with every update of the environment map, or once the switch is turned on
+		if (Global.gfx_envmap_ggx && m_environmentready && (false == scene.sky.ggx_ready))
+		{
+			prefilter_environment();
+		}
+		Timer::subsystem.gfx_reflections.stop();
+	}
+	// rough reflections read the prefiltered map with the environment map of the main view; the other views keep to the mipmaps
+	m_envmap_bound = (vp.main && Global.gfx_envmap_enabled && scene.env_map && scene.sky.ggx_ready);
+	if (vp.main)
+	{
+		// the shadow maps of the cab lamp, the scenery lamps and the headlights
+		render_local_shadows();
+		render_lamp_shadows();
+		render_headlight_shadows();
+		ready_lamp_maps();
+		// the probe of the cab, which reads the map of the cab lamp
+		render_cab_probe();
+	}
+	// the scenery around the camera the reflections are traced through, before the passes which trace them
+	auto const raytracing{raytracing_wanted(vp)};
+	if (raytracing)
+	{
+		render_ray_scene(vp);
+	}
+
+	// the motion blur only when something in the view moves (see opengl46_renderer::Render_pass())
+	auto const motionblur{Global.gfx_postfx_motionblur_enabled && targets.motion &&
+	                      (m_vehiclesmoved || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
+
+	setup_matrices();
+	m_renderpass.draw_stats = {};
+	model_ubs.future = glm::mat4();
+	glm::mat4 future;
+	if (taa)
+	{
+		future = m_taa.world_future();
+	}
+	else if (Global.pCamera.m_owner != nullptr)
+	{
+		auto const *vehicle = Global.pCamera.m_owner;
+		glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
+		future = glm::translate(mv, -glm::vec3(vehicle->get_future_movement())) * glm::inverse(mv);
+	}
+
+	// the light clusters of the viewport (the buffers of the grid are taken by each viewport in turn), and the lights of the pass
+	auto const clusters{Global.gfx_lights_clustered || Global.gfx_lights_clusterheatmap};
+	ctx.passes.begin_pass("clear, clusters, lights");
+	if (clusters)
+	{
+		update_clusters(glm::ivec2{vp.width, vp.height});
+	}
+	auto const clustered{clusters && Global.gfx_lights_clustered && (scene.clusters.params.valid != 0)};
+	update_lights(simulation::Lights, true, clustered);
+	ctx.passes.end_pass();
+
+	// the clouds of the view and the fog volume, which take the lights of the clusters and the shadow map of the pass
+	{
+		auto const fogtarget{glm::ivec2{vp.width, vp.height}};
+		// the occlusion of the sky by the scenery, seen from the camera of the view
+		scene.skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
+		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+		setup_shadow_matrices();
+		upload_scene_block();
+		if (clustered)
+		{
+			m_draw->cluster_offset = static_cast<std::uint32_t>(scene.clusters.params_offset);
+		}
+		if (vp.main)
+		{
+			render_weather_view(OpenGLMatrices.data(GL_PROJECTION), glm::mat4{m_colorpass.pass_camera.modelview()}, m_colorpass.pass_camera.position(), fogtarget, (m_cablamplit && clustered) ? m_cablamps : 0);
+		}
+		m_weatherstate.setup_pass(vp.main, fogtarget);
+		upload_weather_block();
+	}
+
+	// the ambient occlusion the shading may read (SCENE_AO_TEX) is in the layout it's read in from the first frame on
+	if (targets.ssao_blur && (targets.ssao_blur->state.layout == VK_IMAGE_LAYOUT_UNDEFINED))
+	{
+		vk14::barriers(commands, {vk14::use_of(*targets.ssao_blur, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+	}
+	// the colour of the scene: drawn to the images with the samples, resolved to the single ones
+	auto const uses{colour_target_uses(targets)};
+	ctx.passes.begin_pass("sky", uses);
+	begin_colour_rendering(Index, true);
+	// as in the opengl renderer, the shadow map and the environment map are those of the main view only
+	start_draws(targets.formats, static_cast<int>(targets.extent.width), static_cast<int>(targets.extent.height), vp.main ? vk14::scene_state::set_colour : vk14::scene_state::set_plain, false);
+	upload_light_header();
+	if (clustered)
+	{
+		m_draw->cluster_offset = static_cast<std::uint32_t>(scene.clusters.params_offset);
+	}
+
+	// the sky
+	walk_blending(true);
+	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+	upload_scene_block();
+	render_environment(&simulation::Environment);
+
+	setup_shadow_matrices();
+	upload_scene_block();
+
+	// the probe of the cab, which the parts of the cab drawn in the colour pass of the main view read
+	if (vp.main)
+	{
+		scene.cabprobe.setup_scene(scene_ubs, cab_probe_vehicle(), m_colorpass.pass_camera.position(), glm::mat3{m_colorpass.pass_camera.modelview()});
+		m_cabprobelit = (scene_ubs.cab_probe_box.w > 0.f);
+		if (m_cabprobelit)
+		{
+			upload_scene_block();
+		}
+	}
+
+	// the depth of the whole opaque scene before its colour, which the contact shadows need
+	m_indirectcolourpending = false;
+	m_aolighting = false;
+	auto const contactshadows{contact_shadows_wanted(vp)};
+	auto const reflections{m_ssrframe && (false == Global.bWireFrame)};
+	// and the ambient occlusion in the light of the surfaces
+	auto const aolighting{ao_lighting_wanted(vp)};
+	if ((Global.gfx_depthprepass_scene || contactshadows || reflections || aolighting) && vp.main && (false == Global.bWireFrame))
+	{
+		render_scene_depth(Index, future);
+		if (contactshadows)
+		{
+			setup_contact_shadows(Index);
+		}
+		if (reflections)
+		{
+			setup_screen_reflections(Index, taa);
+		}
+		if (m_aolighting)
+		{
+			setup_ao_lighting();
+		}
+	}
+
+	// opaque parts...
+	ctx.passes.begin_pass("colour, opaque");
+	walk_blending(false);
+	// without rain/snow we can render the cab early to limit the overdraw
+	if (!FreeFlyModeFlag && Global.Overcast <= 1.0f && Global.render_cab && simulation::Train)
+	{
+		model_ubs.future = m_cabfuture;
+		auto const *vehicle{simulation::Train->Dynamic()};
+		// the lamp lighting the shadows of the sun, unless it is a light of its own
+		if ((vehicle->InteriorLightLevel > 0.f) && (false == m_cablamplit))
+		{
+			setup_shadow_color(glm::min(colors::white, m_shadowcolor + glm::vec4(vehicle->InteriorLight * vehicle->InteriorLightLevel, 1.f)));
+		}
+		Render_cab(vehicle, vehicle->InteriorLightLevel, false);
+	}
+	setup_shadow_color(m_shadowcolor);
+	model_ubs.future = future;
+	walk_region(simulation::Region, false);
+	m_indirectcolourpending = false;
+
+	// the grass of the terrain, opaque, over the ground drawn
+	if (vp.main && (false == Global.bWireFrame))
+	{
+		ctx.passes.begin_pass("grass");
+		render_grass(future);
+	}
+
+	// ...translucent parts
+	ctx.passes.begin_pass("colour, translucent and cab");
+	walk_blending(true);
+	walk_region(simulation::Region, true);
+	render_editor_overlay();
+	// the depth drawn so far, which the particles of the gpu fade in front of
+	m_particlesoft = (Global.gfx_particles_soft > 0.f) && ((Global.Smoke && Global.gfx_smoke_gpu && (false == simulation::Particles.sequence().empty())) || (Global.gfx_precipitation_gpu && (Global.Overcast > 1.f))) &&
+	                 setup_particles_depth(Index);
+	// particles
+	render_particles();
+	// precipitation; done at end, only before cab render
+	render_precipitation();
+	// cab render
+	if ((false == FreeFlyModeFlag) && Global.render_cab && simulation::Train)
+	{
+		model_ubs.future = m_cabfuture;
+		auto *vehicle{simulation::Train->Dynamic()};
+		if ((vehicle->InteriorLightLevel > 0.f) && (false == m_cablamplit))
+		{
+			setup_shadow_color(glm::min(colors::white, m_shadowcolor + glm::vec4(vehicle->InteriorLight * vehicle->InteriorLightLevel, 1.f)));
+		}
+		if (Global.Overcast > 1.0f)
+		{
+			// with active precipitation draw the opaque cab parts here to mask rain/snow placed 'inside' the cab
+			walk_blending(false);
+			Render_cab(vehicle, vehicle->InteriorLightLevel, false);
+			Render_interior(false);
+			walk_blending(true);
+			Render_interior(true);
+		}
+		Render_cab(vehicle, vehicle->InteriorLightLevel, true);
+		setup_shadow_color(m_shadowcolor);
+		if (Global.Overcast > 1.0f)
+		{
+			// with the cab in place we can (finally) safely draw translucent part of the occupied vehicle
+			if (taa)
+			{
+				// the vehicle adds its own motion to the view of the world (the cab future has it already)
+				model_ubs.future = m_taa.world_future();
+			}
+			Render_Alpha(vehicle);
+		}
+	}
+	commands->end_rendering();
+	end_draws();
+	if (m_contactshadows || m_ssractive || m_aolighting || m_cabprobelit)
+	{
+		// the depth they read is of this view only, and so is the probe of the cab
+		m_contactshadows = false;
+		m_ssractive = false;
+		m_cabprobelit = false;
+		scene_ubs.contact_shadow_params = glm::vec4{0.f};
+		scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
+		scene_ubs.ao_params = glm::vec4{0.f};
+		gfx::screen_reflections::clear(scene_ubs);
+		gfx::cab_probe::clear_scene(scene_ubs);
+	}
+	// the images resolved and drawn are read by the post-processing
+	m_colorpass.draw_stats = m_renderpass.draw_stats;
+	// the depth of the finished view, which the cascades of the sun shadows of the next frames are fitted to (gfx.shadow.sdsm)
+	measure_shadow_fit(Index);
+
+	render_post(Index, motionblur);
+}
+
+// the depth of the whole opaque scene of the colour pass, before its colour (opengl46_renderer::Render_Scene_Depth() without the
+// record of the walk, gfx.depthprepass.replay no): the same walk as the colour pass makes (the cab drawn early, then the region)
+// with the programs of the depth prepass, the depth a little farther than the surface, so the colour pass which tests and writes
+// its depth as usual passes where it's the same surface. the rendering of the colour is ended for it and begun again after it;
+// the depth is resolved or copied for the contact shadows
+void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 const &Future)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &targets{scene.targets[Index]};
+	auto &draw{*m_draw};
+	auto const commands{m_commands};
+	auto const msaa{targets.samples != VK_SAMPLE_COUNT_1_BIT};
+	// the depth copied apart from the one the colour pass goes on with, for the contact shadows, the screen space reflections and the
+	// ambient occlusion in the light of the surfaces
+	auto const aolighting{ao_lighting_wanted(m_viewports[Index])};
+	auto const contact{contact_shadows_wanted(m_viewports[Index]) || m_ssrframe || aolighting};
+	commands->end_rendering();
+	// what the draws go on with
+	auto const set{draw.set};
+	auto const offsets{std::array<std::uint32_t, 4>{draw.scene_offset, draw.light_offset, draw.cluster_offset, draw.weather_offset}};
+	end_draws();
+
+	if (contact && ((false == bool(targets.scene_depth)) || (targets.scene_depth->desc().extent.width != targets.extent.width) || (targets.scene_depth->desc().extent.height != targets.extent.height)))
+	{
+		// the depth is resolved apart from the one the colour pass draws to, which it tests and writes
+		vk14::image_desc desc;
+		desc.format = VK_FORMAT_D32_SFLOAT;
+		desc.extent = {targets.extent.width, targets.extent.height, 1};
+		desc.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (targets.scene_depth)
+		{
+			ctx.deletions.push(ctx.uploads.current_value(), [old = std::move(targets.scene_depth)]() {});
+		}
+		targets.scene_depth = std::make_shared<vk14::image>();
+		if (false == targets.scene_depth->create(ctx.memory, desc, "scene depth"))
+		{
+			targets.scene_depth.reset();
+		}
+	}
+	auto &depthimage{msaa ? *targets.msaa_depth : *targets.depth};
+	std::vector<vk14::image_use> uses{vk14::use_of(depthimage, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)};
+	// the first sample resolved to the depth of one sample, as the colour pass resolves it: the contact shadows copy it, the depth
+	// pyramid of the gpu culling is made from it
+	if (msaa)
+	{
+		uses.push_back(vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, resolve_depth_stage, resolve_depth_access));
+	}
+	ctx.passes.begin_pass("scene depth", uses);
+	VkClearValue clear{};
+	auto depth{attachment_info(depthimage.view(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, false, clear)};
+	if (msaa)
+	{
+		depth.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+		depth.resolveImageView = targets.depth->view();
+		depth.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+	}
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, targets.extent};
+	rendering.layerCount = 1;
+	rendering.pDepthAttachment = &depth;
+	commands->begin_rendering(&rendering);
+	remember_rendering(rendering, uses);
+	start_draws(targets.depth_formats, static_cast<int>(targets.extent.width), static_cast<int>(targets.extent.height), set, false);
+	draw.scene_offset = offsets[0];
+	draw.light_offset = offsets[1];
+	draw.cluster_offset = offsets[2];
+	draw.weather_offset = offsets[3];
+	draw.depthpass = true;
+	draw.depthskip = true;
+	commands->set_depth_bias_enable(VK_TRUE);
+	commands->set_depth_bias(-1.f, 0.f, -1.f);
+	auto const colourstats{m_renderpass.draw_stats};
+	m_renderpass.draw_stats = {};
+	walk_blending(false);
+	// the conditions of the cab drawn early by the colour pass
+	if ((false == FreeFlyModeFlag) && (Global.Overcast <= 1.0f) && Global.render_cab && simulation::Train)
+	{
+		model_ubs.future = m_cabfuture;
+		auto const *vehicle{simulation::Train->Dynamic()};
+		Render_cab(vehicle, vehicle->InteriorLightLevel, false);
+	}
+	model_ubs.future = Future;
+	walk_region(simulation::Region, false);
+	m_renderpass.draw_stats = colourstats;
+	commands->set_depth_bias_enable(VK_FALSE);
+	draw.depthpass = false;
+	draw.depthskip = true;
+	commands->end_rendering();
+	end_draws();
+	if (contact && targets.scene_depth)
+	{
+		// the depth of one sample (resolved with more of them) copied apart from the one the colour pass goes on with
+		vk14::barriers(commands, {vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
+		                          vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+		VkImageCopy2 region{};
+		region.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+		region.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+		region.dstSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+		region.extent = {targets.extent.width, targets.extent.height, 1};
+		VkCopyImageInfo2 copy{};
+		copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+		copy.srcImage = targets.depth->handle();
+		copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		copy.dstImage = targets.scene_depth->handle();
+		copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		copy.regionCount = 1;
+		copy.pRegions = &region;
+		commands->copy_image2(&copy);
+		vk14::barriers(commands, {vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+		// the ambient occlusion of the depth, between the renderings (compute)
+		if (aolighting)
+		{
+			m_aolighting = compute_ao_lighting(Index);
+		}
+	}
+	// the colour pass goes on where the sky left it
+	vk14::barriers(commands, colour_target_uses(targets));
+	begin_colour_rendering(Index, false);
+	start_draws(targets.formats, static_cast<int>(targets.extent.width), static_cast<int>(targets.extent.height), set, false);
+	draw.scene_offset = offsets[0];
+	draw.light_offset = offsets[1];
+	draw.cluster_offset = offsets[2];
+	draw.weather_offset = offsets[3];
+}
+
+// the contact shadows read the depth of the scene drawn before the colour, which the main view has, and work out the distance
+// of a surface from its depth the way a perspective projection with the far plane at infinity gives it (depth = near / w): not
+// in the orthographic view of the editor (opengl46_renderer::Contact_Shadows_Wanted())
+bool vulkan14_renderer::contact_shadows_wanted(viewport_config const &Viewport) const
+{
+	if ((Global.gfx_contactshadows <= 0) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	{
+		return false;
+	}
+	auto const &projection{scene_ubs.projection};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+void vulkan14_renderer::setup_contact_shadows(std::size_t const Index)
+{
+	auto &targets{m_context->scene.targets[Index]};
+	if (false == bool(targets.scene_depth))
+	{
+		return;
+	}
+	// steps of the ray towards the sun, of the rays towards lamps and headlights, and how many of those a pixel traces
+	struct contact_level
+	{
+		float sunsteps;
+		float lampsteps;
+		float lamps;
+	};
+	static contact_level const levels[]{{8.f, 0.f, 0.f}, {12.f, 8.f, 2.f}, {16.f, 12.f, 4.f}};
+	auto const &level{levels[std::clamp(Global.gfx_contactshadows, 1, 3) - 1]};
+	scene_ubs.contact_shadow_params = glm::vec4{Global.gfx_contactshadows_length, Global.gfx_contactshadows_range, level.sunsteps, level.lampsteps};
+	scene_ubs.contact_shadow_lamps = glm::vec4{level.lamps, 0.f, 0.f, 0.f};
+	upload_scene_block();
+	m_contactshadows = true;
+}
+
+// the screen space reflections of the main view trace the depth of the scene drawn before the colour and work out the distance of a
+// surface from its depth as the contact shadows do: not in the orthographic view of the editor (opengl46_renderer::Ssr_View())
+bool vulkan14_renderer::ssr_wanted(viewport_config const &Viewport) const
+{
+	if ((Global.gfx_ssr <= 0) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	{
+		return false;
+	}
+	auto const &projection{m_renderpass.pass_camera.projection()};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+void vulkan14_renderer::setup_screen_reflections(std::size_t const Index, bool const Temporal)
+{
+	auto &targets{m_context->scene.targets[Index]};
+	if ((false == bool(targets.scene_depth)) || (false == bool(targets.ssr_history)))
+	{
+		return;
+	}
+	m_ssr.setup(scene_ubs, gfx::screen_reflections::steps(Global.gfx_ssr), raytracing_wanted(m_viewports[Index]), Global.gfx_raytracing_range, Temporal);
+	upload_scene_block();
+	m_ssractive = true;
+}
+
+// the ray traced reflections, of the main view only (as the screen space ones, which they fill in)
+bool vulkan14_renderer::raytracing_wanted(viewport_config const &Viewport) const
+{
+	if ((false == m_raytracingon) || (false == bool(m_context->scene.raytracing)) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	{
+		return false;
+	}
+	auto const &projection{m_renderpass.pass_camera.projection()};
+	return (projection[2][3] != 0.f) && (projection[2][2] == 0.f) && (projection[3][2] > 0.f);
+}
+
+// the scenery around the camera for the ray traced reflections: the walk of the scene in its reflection mode (the sections, the models
+// and the vehicles in their ranges, gfx.reflections.*) around the camera of the colour pass, noting the draws instead of making them,
+// built into the acceleration structures of the frame. the vehicle of the cab is left out: from the inside of the cab it would be its
+// own shell that the rays hit
+void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const walkstart{std::chrono::steady_clock::now()};
+	m_rtdraws.clear();
+	m_rtinstances.clear();
+	auto const skipvehicle{m_shadowskipvehicle};
+	if ((false == FreeFlyModeFlag) && Global.render_cab && (simulation::Train != nullptr))
+	{
+		m_shadowskipvehicle = simulation::Train->Dynamic();
+	}
+	auto const colourpass{m_renderpass};
+	// the chunks of the heightmap terrain are told by their programs (mat_terrain.frag, mat_terrain_holes.frag)
+	auto const program_of = [&](char const *Name) -> vk14::scene_program const * {
+		auto const lookup{scene.materials.find(Name)};
+		return (lookup != scene.materials.end() ? lookup->second.get() : nullptr);
+	};
+	m_rtterrain = {program_of("terrain"), program_of("terrain_holes")};
+	m_rtgather = true;
+	setup_pass(Viewport, m_renderpass, rendermode::reflections);
+	setup_matrices();
+	// the walk binds materials and notes the draws; nothing is recorded
+	auto &draw{*m_draw};
+	auto const rendering{draw.rendering};
+	draw.rendering = false;
+	draw.blending = false;
+	Render(simulation::Region);
+	draw.rendering = rendering;
+	m_rtgather = false;
+	m_shadowskipvehicle = skipvehicle;
+	m_renderpass = colourpass;
+	setup_matrices();
+
+	auto const buildstart{std::chrono::steady_clock::now()};
+	ctx.passes.begin_pass("ray tracing scene");
+	scene.raytracing->build(m_commands, ctx.slot, ctx.uploads.current_value(), m_framestamp, m_rtdraws, ctx.images);
+	ctx.passes.end_pass();
+	auto const buildend{std::chrono::steady_clock::now()};
+	m_rtwalkms += (std::chrono::duration<double, std::milli>(buildstart - walkstart).count() - m_rtwalkms) * 0.05;
+	m_rtbuildms += (std::chrono::duration<double, std::milli>(buildend - buildstart).count() - m_rtbuildms) * 0.05;
+}
+
+// a draw of the walk noted for the ray tracing: the chunk with its data on the gpu, the transform, the texture and the colour of the
+// material, for each instance of an instanced draw
+void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
+{
+	auto &draw{*m_draw};
+	if ((Geometry == null_handle) || (draw.program == nullptr) || (draw.program->vertices != vk14::vertex_kind::scene) || draw.blending || draw.glare)
+	{
+		return;
+	}
+	if ((Geometry.bank == 0) || (Geometry.bank > m_banks.size()) || (m_banks[Geometry.bank - 1] == nullptr))
+	{
+		return;
+	}
+	vk14::chunk_source chunk;
+	if (false == chunk_of(Geometry, chunk))
+	{
+		return;
+	}
+	if (((chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) && (chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) && (chunk.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)) || (chunk.vertex_address == 0))
+	{
+		return;
+	}
+	vk14::ray_draw ray;
+	ray.key = static_cast<std::uint64_t>(Geometry);
+	ray.source = chunk;
+	// the diffuse colour of the material as material_diffuse() of the shaders makes it
+	glm::vec3 const colour{glm::pow(glm::max(glm::vec3{model_ubs.param[0]}, glm::vec3{0.f}), glm::vec3{2.2f})};
+	auto const value{std::max({model_ubs.param[0].r, model_ubs.param[0].g, model_ubs.param[0].b})};
+	ray.colour = (value > 0.f ? colour * (model_ubs.param[1].x / value) : glm::vec3{0.f});
+	ray.glow = model_ubs.emission;
+	// the id of a texture of the material in the image table, 0: none (yet)
+	auto const image_of = [&](texture_handle const Texture) -> std::uint64_t {
+		if (Texture == null_handle)
+		{
+			return 0;
+		}
+		auto &texture{m_context->textures->mark_as_used(Texture)};
+		return ((texture.create() && (m_context->images.find(texture.get_id()) != nullptr)) ? texture.get_id() : 0);
+	};
+	if ((draw.program != nullptr) && ((draw.program == m_rtterrain[0]) || (draw.program == m_rtterrain[1])))
+	{
+		// a chunk of the heightmap terrain: its layers blended by its weights (mat_terrain.glsl: weights0 1, weights1 2, the array of the
+		// diffuse maps of the layers 3, the table 6, the placement param[2])
+		ray.terrain_weights[0] = image_of(draw.textures[1]);
+		ray.terrain_weights[1] = image_of(draw.textures[2]);
+		ray.terrain_layers = image_of(draw.textures[3]);
+		ray.terrain_table = image_of(draw.textures[6]);
+		ray.placement = model_ubs.param[2];
+	}
+	else if (auto const texture{image_of(draw.textures[0])}; texture != 0)
+	{
+		// the diffuse texture of the material, and its alpha test when it has an alpha channel
+		ray.texture = texture;
+		ray.cutoff = (m_context->textures->mark_as_used(draw.textures[0]).get_has_alpha() ? std::max(model_ubs.opacity, 0.f) : 0.f);
+	}
+	glm::mat4 const modelview{model_ubs.modelview};
+	if (m_current_instance_count > 0)
+	{
+		for (std::size_t instance = 0; instance < m_current_instance_count; ++instance)
+		{
+			auto const index{static_cast<std::size_t>(m_current_instance_base) + instance};
+			if (index >= m_rtinstances.size())
+			{
+				break;
+			}
+			ray.transform = m_rtinstances[index] * modelview;
+			m_rtdraws.push_back(ray);
+		}
+	}
+	else
+	{
+		ray.transform = modelview;
+		m_rtdraws.push_back(ray);
+	}
+}
+
+// the finished image of the frame (before the motion blur) copied to the history the reflections of the next frame take their colour
+// from, with its mipmaps for the rough surfaces, each level blitted from the one before it
+void vulkan14_renderer::store_ssr_history(std::size_t const Index, vk14::image &Source)
+{
+	auto &ctx{*m_context};
+	auto &targets{ctx.scene.targets[Index]};
+	if (false == bool(targets.ssr_history))
+	{
+		return;
+	}
+	auto const commands{m_commands};
+	auto &image{*targets.ssr_history};
+	auto const mips{image.desc().mips};
+	auto const width{static_cast<std::int32_t>(image.desc().extent.width)};
+	auto const height{static_cast<std::int32_t>(image.desc().extent.height)};
+	ctx.passes.begin_pass("reflections, image of the frame", {vk14::use_of(Source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
+	                                                          vk14::use_of(image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+	auto blit = [&](VkImage From, std::uint32_t FromLevel, VkImageLayout FromLayout, std::uint32_t ToLevel, glm::ivec2 const &FromSize, glm::ivec2 const &ToSize) {
+		VkImageBlit2 region{};
+		region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+		region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, FromLevel, 0, 1};
+		region.srcOffsets[1] = {FromSize.x, FromSize.y, 1};
+		region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, ToLevel, 0, 1};
+		region.dstOffsets[1] = {ToSize.x, ToSize.y, 1};
+		VkBlitImageInfo2 info{};
+		info.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+		info.srcImage = From;
+		info.srcImageLayout = FromLayout;
+		info.dstImage = image.handle();
+		info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		info.regionCount = 1;
+		info.pRegions = &region;
+		info.filter = VK_FILTER_LINEAR;
+		commands->blit_image2(&info);
+	};
+	auto barrier = [&](std::uint32_t Level, VkImageLayout From, VkImageLayout To, VkPipelineStageFlags2 SrcStage, VkAccessFlags2 SrcAccess, VkPipelineStageFlags2 DstStage, VkAccessFlags2 DstAccess) {
+		VkImageMemoryBarrier2 entry{};
+		entry.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		entry.srcStageMask = SrcStage;
+		entry.srcAccessMask = SrcAccess;
+		entry.dstStageMask = DstStage;
+		entry.dstAccessMask = DstAccess;
+		entry.oldLayout = From;
+		entry.newLayout = To;
+		entry.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		entry.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		entry.image = image.handle();
+		entry.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, Level, 1, 0, 1};
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.imageMemoryBarrierCount = 1;
+		dependency.pImageMemoryBarriers = &entry;
+		commands->pipeline_barrier2(&dependency);
+	};
+	glm::ivec2 const sourcesize{static_cast<std::int32_t>(Source.desc().extent.width), static_cast<std::int32_t>(Source.desc().extent.height)};
+	blit(Source.handle(), 0, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 0, sourcesize, {width, height});
+	for (std::uint32_t level = 1; level < mips; ++level)
+	{
+		barrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		blit(image.handle(), level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, level, {std::max(width >> (level - 1), 1), std::max(height >> (level - 1), 1)}, {std::max(width >> level, 1), std::max(height >> level, 1)});
+	}
+	// the levels read from are in the layout of the sources, the last one in that of the destination: all of them read by the shaders
+	for (std::uint32_t level = 0; level < mips; ++level)
+	{
+		auto const from{(level + 1 < mips) ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL};
+		barrier(level, from, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, sampled_stage, sampled_access);
+	}
+	image.state = vk14::image_state{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access};
+	ctx.passes.end_pass();
+	m_ssr.end_frame();
+}
+
+// the rendering of the colour of a viewport: begun with the images cleared, or again after the depth under the cursor was read
+void vulkan14_renderer::begin_colour_rendering(std::size_t const Index, bool const Clear)
+{
+	auto &ctx{*m_context};
+	auto &targets{ctx.scene.targets[Index]};
+	auto const msaa{targets.samples != VK_SAMPLE_COUNT_1_BIT};
+	VkClearValue colourclear{};
+	colourclear.color = {{0.f, 0.f, 0.f, 0.f}};
+	VkClearValue depthclear{};
+	depthclear.depthStencil = {0.f, 0};
+	std::array<VkRenderingAttachmentInfo, 2> colours{};
+	colours[0] = attachment_info((msaa ? targets.msaa_colour : targets.colour)->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, Clear, colourclear);
+	if (msaa)
+	{
+		colours[0].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+		colours[0].resolveImageView = targets.colour->view();
+		colours[0].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+	if (targets.motion)
+	{
+		colours[1] = attachment_info((msaa ? targets.msaa_motion : targets.motion_image)->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, Clear, colourclear);
+		if (msaa)
+		{
+			colours[1].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+			colours[1].resolveImageView = targets.motion_image->view();
+			colours[1].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		}
+	}
+	auto depth{attachment_info((msaa ? targets.msaa_depth : targets.depth)->view(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, Clear, depthclear)};
+	if (msaa)
+	{
+		// the depth of the first sample, for the motion blur and the cursor of the editor
+		depth.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+		depth.resolveImageView = targets.depth->view();
+		depth.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+	}
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, targets.extent};
+	rendering.layerCount = 1;
+	rendering.colorAttachmentCount = targets.formats.colours;
+	rendering.pColorAttachments = colours.data();
+	rendering.pDepthAttachment = &depth;
+	m_commands->begin_rendering(&rendering);
+	remember_rendering(rendering, colour_target_uses(targets));
+}
+
+// the depth of the ground under the cursor of the editor: the rendering is ended (which resolves the depth), the depths around the
+// cursor copied, and the rendering it was in begun again where it was. it's the colour pass, or the depth pass of the scene drawn
+// before the colour (render_scene_depth()), whichever walks the ground first; the depth read before is taken first, once the gpu is
+// done with it (opengl46_renderer::walk_editor_cursor())
+void vulkan14_renderer::walk_editor_cursor()
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &draw{*m_draw};
+	if ((m_main != nullptr) || (m_current_viewport == nullptr) || (false == m_current_viewport->main) || (false == draw.rendering) || scene.targets.empty())
+	{
+		return;
+	}
+	Update_Mouse_Position();
+	if (scene.cursor.pending || (false == draw.resume.valid))
+	{
+		return;
+	}
+	auto &targets{scene.targets.front()};
+	auto const commands{m_commands};
+	glm::vec2 mousepos = Global.cursor_pos;
+	// cursor coordinates are flipped compared to opengl, whose rows the images keep
+	mousepos.y = Global.window_size.y - mousepos.y;
+	glm::ivec2 const extent{static_cast<int>(targets.extent.width), static_cast<int>(targets.extent.height)};
+	auto bufferpos{glm::ivec2(mousepos * glm::vec2(extent) / glm::max(glm::vec2(Global.window_size), glm::vec2(1.f)))};
+	bufferpos = glm::clamp(bufferpos, glm::ivec2(0, 0), extent - 1);
+	// the pixels around the one under the cursor too, for the slope of the depth there (Update_Mouse_Position())
+	auto const blocksize{glm::min(glm::ivec2(3), extent)};
+	auto const blockcorner{glm::clamp(bufferpos - 1, glm::ivec2(0), extent - blocksize)};
+
+	auto readback{std::make_shared<vk14::buffer>()};
+	if (false == readback->create(ctx.memory, sizeof(float) * blocksize.x * blocksize.y, VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::readback, "cursor depth"))
+	{
+		return;
+	}
+	suspend_rendering();
+	vk14::barriers(commands, {vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT)});
+	VkBufferImageCopy2 region{};
+	region.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
+	region.imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+	region.imageOffset = {blockcorner.x, blockcorner.y, 0};
+	region.imageExtent = {static_cast<std::uint32_t>(blocksize.x), static_cast<std::uint32_t>(blocksize.y), 1};
+	VkCopyImageToBufferInfo2 copy{};
+	copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2;
+	copy.srcImage = targets.depth->handle();
+	copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	copy.dstBuffer = readback->handle();
+	copy.regionCount = 1;
+	copy.pRegions = &region;
+	commands->copy_image_to_buffer2(&copy);
+	host_read_barrier(commands);
+	scene.cursor.data = readback;
+	scene.cursor.value = ctx.timelinevalue + 1;
+	scene.cursor.pending = true;
+	scene.cursor.position = bufferpos;
+	m_cursorblockcorner = blockcorner;
+	m_cursorblocksize = blocksize;
+	m_cursorbiased = draw.depthpass;
+	// the rendering the walk was in (the colour or the depth of the scene) goes on, its images brought back from the copy
+	resume_rendering();
+}
+
+// the cascades of the sun shadows
+void vulkan14_renderer::render_shadows(viewport_config &Viewport)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const commands{m_commands};
+	setup_pass(Viewport, m_renderpass, rendermode::shadows);
+	auto csmstageboundaries{gfx::shadow_fit::fixed_splits()};
+	// the cascades fitted to the depth of the view (gfx.shadow.sdsm) go between the distances of its pixels, each map covering the
+	// area of the pixels its cascade takes
+	gfx::shadow_fit::areas fitareas;
+	auto const fitted{shadow_fit(Viewport, csmstageboundaries, fitareas)};
+	scene_ubs.shadow_fit = glm::vec4{fitted ? 1.f : 0.f, 0.f, 0.f, 0.f};
+	m_shadowfitstate.splits = csmstageboundaries;
+	// the cascades walked by the walkers (gfx.vulkan.parallelpasses), each with a culling of its own made beforehand
+	auto const walkers{walks_wanted()};
+	if (walkers)
+	{
+		ensure_cull();
+	}
+	static char const *const parts[] = {"sun shadows 1", "sun shadows 2", "sun shadows 3"};
+	for (std::size_t idx = 0; idx < m_shadowpass.size(); ++idx)
+	{
+		ctx.passes.begin_pass(parts[idx], {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+		m_shadowfitarea = (fitareas[idx] ? &(*fitareas[idx]) : nullptr);
+		setup_pass(Viewport, m_renderpass, rendermode::shadows, csmstageboundaries[idx], csmstageboundaries[idx + 1]);
+		m_shadowfitarea = nullptr;
+		m_shadowpass[idx] = m_renderpass;
+		m_shadowfitstate.slice[idx] = m_shadowslicesize;
+		m_shadowfitstate.drawn[idx] = m_shadowdrawnsize;
+		setup_matrices();
+		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+		auto const csmstagezfar{(csmstageboundaries[idx + 1]) + (m_shadowpass.size() - idx)};
+		scene_ubs.cascade_end[idx] = csmstagezfar * csmstagezfar;
+		if (walkers)
+		{
+			fork_walk([idx](vulkan14_renderer &Walker) { Walker.walk_cascade(idx); });
+		}
+		else
+		{
+			walk_cascade(idx);
+		}
+		ctx.passes.end_pass();
+	}
+	vk14::barriers(commands, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+}
+
+// the walk of a cascade of the sun shadows set up by render_shadows(): by the main renderer, or by a walker given the state of the frame
+void vulkan14_renderer::walk_cascade(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const commands{m_commands};
+	// the matrices of the camera of the cascade (the walker's own, made from the pass it was given)
+	setup_matrices();
+	VkClearValue clear{};
+	clear.depthStencil = {0.f, 0};
+	auto depth{attachment_info(scene.shadow_layers[Index], VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, true, clear)};
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, {scene.shadow_size, scene.shadow_size}};
+	rendering.layerCount = 1;
+	rendering.pDepthAttachment = &depth;
+	commands->begin_rendering(&rendering);
+	remember_rendering(rendering, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+	start_draws(scene.shadow_formats, static_cast<int>(scene.shadow_size), static_cast<int>(scene.shadow_size), vk14::scene_state::set_plain, true);
+	m_shadowcascade = static_cast<int>(Index);
+	walk_blending(false);
+	upload_scene_block();
+	if (m_shadowcolor != colors::white)
+	{
+		walk_region(simulation::Region, false);
+		// render cab only in the closest csm stage
+		if ((Index == 0) && !FreeFlyModeFlag && Global.render_cab && simulation::Train)
+		{
+			Render_cab(simulation::Train->Dynamic(), 0.0f, false);
+			Render_cab(simulation::Train->Dynamic(), 0.0f, true);
+		}
+	}
+	m_shadowcascade = -1;
+	commands->end_rendering();
+	end_draws();
+}
+
+// the environment map (the sky and the clouds around the camera), a face of it per frame (opengl46_renderer::Render_reflections())
+bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	if (Global.reflectiontune.update_interval == 0)
+	{
+		return false;
+	}
+	// the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+	if (EditorModeFlag && Global.EditorOrtho)
+	{
+		return false;
+	}
+	if (m_environmentupdateface >= 6)
+	{
+		// no update in progress, check whether it's time for another one
+		auto const timestamp{Timer::GetRenderTime()};
+		if ((timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval) && (glm::length2(m_renderpass.pass_camera.position() - m_environmentupdatelocation) < sq(1000.0)))
+		{
+			return false;
+		}
+		m_environmentupdatetime = timestamp;
+		m_environmentupdatelocation = m_renderpass.pass_camera.position();
+		m_environmentupdateface = 0;
+	}
+	// the first update is done in one go, as there's nothing to show in the meantime
+	auto const lastface{m_environmentready ? m_environmentupdateface : 5};
+	ctx.passes.begin_pass("reflections", {vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access),
+	                                      vk14::use_of(*scene.env_depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+	for (; m_environmentupdateface <= lastface; ++m_environmentupdateface)
+	{
+		// the depth of the faces is the same image: the clear of a face waits for the draws of the one before
+		vk14::barriers(m_commands, {vk14::use_of(*scene.env_depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+		m_environmentcubetextureface = m_environmentupdateface;
+		render_reflection_face(Viewport);
+	}
+	if (m_environmentupdateface >= 6)
+	{
+		// the mipmaps, each level from the one before it
+		auto const commands{m_commands};
+		auto &image{*scene.env_map};
+		auto const mips{image.desc().mips};
+		auto const size{static_cast<std::int32_t>(image.desc().extent.width)};
+		auto barrier = [&](std::uint32_t Level, std::uint32_t Count, VkImageLayout From, VkImageLayout To, VkPipelineStageFlags2 SrcStage, VkAccessFlags2 SrcAccess, VkPipelineStageFlags2 DstStage, VkAccessFlags2 DstAccess) {
+			VkImageMemoryBarrier2 entry{};
+			entry.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+			entry.srcStageMask = SrcStage;
+			entry.srcAccessMask = SrcAccess;
+			entry.dstStageMask = DstStage;
+			entry.dstAccessMask = DstAccess;
+			entry.oldLayout = From;
+			entry.newLayout = To;
+			entry.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			entry.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			entry.image = image.handle();
+			entry.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, Level, Count, 0, 6};
+			VkDependencyInfo dependency{};
+			dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+			dependency.imageMemoryBarrierCount = 1;
+			dependency.pImageMemoryBarriers = &entry;
+			commands->pipeline_barrier2(&dependency);
+		};
+		// the first level was drawn, the others are undefined
+		barrier(0, 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, colour_stage, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		if (mips > 1)
+		{
+			barrier(1, mips - 1, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+		}
+		for (std::uint32_t level = 1; level < mips; ++level)
+		{
+			VkImageBlit2 blit{};
+			blit.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+			blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 6};
+			blit.srcOffsets[1] = {std::max(size >> (level - 1), 1), std::max(size >> (level - 1), 1), 1};
+			blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 6};
+			blit.dstOffsets[1] = {std::max(size >> level, 1), std::max(size >> level, 1), 1};
+			VkBlitImageInfo2 info{};
+			info.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+			info.srcImage = image.handle();
+			info.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			info.dstImage = image.handle();
+			info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			info.regionCount = 1;
+			info.pRegions = &blit;
+			info.filter = VK_FILTER_LINEAR;
+			commands->blit_image2(&info);
+			barrier(level, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		}
+		barrier(0, mips, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, sampled_stage, sampled_access);
+		image.state = vk14::image_state{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access};
+		m_environmentready = true;
+		ctx.passes.end_pass();
+		if (Global.gfx_envmap_ggx)
+		{
+			prefilter_environment();
+		}
+		return true;
+	}
+	else
+	{
+		vk14::barriers(m_commands, {vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+	}
+	return true;
+}
+
+void vulkan14_renderer::render_reflection_face(viewport_config &Viewport)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const commands{m_commands};
+	auto const size{scene.env_map->desc().extent.width};
+	setup_pass(Viewport, m_renderpass, rendermode::reflections);
+
+	VkClearValue colourclear{};
+	colourclear.color = {{0.f, 0.f, 0.f, 1.f}};
+	VkClearValue depthclear{};
+	depthclear.depthStencil = {0.f, 0};
+	auto colour{attachment_info(scene.env_faces[m_environmentcubetextureface], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true, colourclear)};
+	auto depth{attachment_info(scene.env_depth->view(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, true, depthclear)};
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, {size, size}};
+	rendering.layerCount = 1;
+	rendering.colorAttachmentCount = 1;
+	rendering.pColorAttachments = &colour;
+	rendering.pDepthAttachment = &depth;
+	commands->begin_rendering(&rendering);
+	remember_rendering(rendering, {vk14::use_of(*scene.env_map, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access),
+	                               vk14::use_of(*scene.env_depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+	start_draws(scene.reflection_formats, static_cast<int>(size), static_cast<int>(size), vk14::scene_state::set_reflections, false);
+
+	setup_matrices();
+	// the fog volume is the one of the main view
+	m_weatherstate.setup_pass(false, glm::ivec2{static_cast<int>(gl::ENVMAP_SIZE)});
+	upload_weather_block();
+	// the light buffer holds what the last color pass left in it; the lights go in anew, without the headlights
+	auto const envmapbound{m_envmap_bound};
+	m_envmap_bound = false;
+	update_lights(simulation::Lights, false);
+	m_envmap_bound = envmapbound;
+	upload_light_header();
+	// environment...
+	walk_blending(true);
+	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+	upload_scene_block();
+	// the sky and the clouds alone: the scenery is reflected by the screen space reflections (gfx.ssr) and the ray tracing, the
+	// environment map gives what they don't find
+	render_environment(&simulation::Environment);
+
+	commands->end_rendering();
+	end_draws();
+}
+
+// the sky dome (with the atmosphere), the stars, the sun and the moon, the clouds and the fog over the sky
+// (opengl46_renderer::Render(world_environment *))
+void vulkan14_renderer::render_environment(world_environment *Environment)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &draw{*m_draw};
+	m_shadowcolor = colors::white; // prevent shadow from affecting sky
+	setup_shadow_color(m_shadowcolor);
+	if (Global.bWireFrame)
+	{
+		return;
+	}
+	walk_material(null_handle);
+	::glPushMatrix();
+	auto const fogdensity{model_ubs.fog_density};
+	model_ubs.fog_density = 0.f;
+
+	// skydome, drawn with 500m radius to blend in if the fog range is low
+	auto &skydome{simulation::Environment.skydome()};
+	skydome.is_dirty() = false;
+	if (false == skydome.indices().empty())
+	{
+		::glPushMatrix();
+		::glScalef(500.0f, 500.0f, 500.0f);
+		model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+		auto const atmosphere{m_skylight.atmosphere_weight() > 0.f};
+		if (atmosphere)
+		{
+			m_skylight.sky_params(model_ubs.param[0], model_ubs.param[1]);
+		}
+		auto &domeprogram{atmosphere ? *scene.sky.atmosphere_dome : *scene.skydome};
+		auto const &vertices{skydome.vertices()};
+		auto const &colours{skydome.colors()};
+		auto const &indices{skydome.indices()};
+		auto const vertexslice{ctx.ring.allocate(vertices.size() * sizeof(glm::vec3), 16)};
+		auto const colourslice{ctx.ring.allocate(colours.size() * sizeof(glm::vec3), 16)};
+		auto const indexslice{ctx.ring.allocate(indices.size() * sizeof(std::uint16_t), 16)};
+		if (vertexslice && colourslice && indexslice && bind_scene_pipeline(domeprogram, *draw.targets, draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST))
+		{
+			std::memcpy(vertexslice.data, vertices.data(), vertexslice.size);
+			std::memcpy(colourslice.data, colours.data(), colourslice.size);
+			std::memcpy(indexslice.data, indices.data(), indexslice.size);
+			apply_draw_state();
+			draw.block = push_draw_block();
+			if (draw.block != ~0u)
+			{
+				if (draw.set_dirty)
+				{
+					bind_pass_set();
+				}
+				if (draw.textures_dirty)
+				{
+					push_textures();
+				}
+				vk14::draw_constants constants;
+				constants.draw = draw.block;
+				push_constants(&constants);
+				VkBuffer const buffers[2]{vertexslice.buffer, colourslice.buffer};
+				VkDeviceSize const offsets[2]{vertexslice.offset, colourslice.offset};
+				draw.commands->bind_vertex_buffers(0, 2, buffers, offsets);
+				draw.commands->bind_index_buffer(indexslice.buffer, indexslice.offset, VK_INDEX_TYPE_UINT16);
+				draw.commands->draw_indexed(static_cast<std::uint32_t>(indices.size()), 1, 0, 0, 0);
+				draw.vertices = VK_NULL_HANDLE;
+				draw.userdata = VK_NULL_HANDLE;
+				draw.indices = VK_NULL_HANDLE;
+			}
+		}
+		::glPopMatrix();
+	}
+
+	auto const &modelview = OpenGLMatrices.data(GL_MODELVIEW);
+	// stars of the catalogue, turned by the sidereal time; the fog and the clouds go over them
+	render_stars(modelview);
+	// the bodies give their colour premultiplied, and as alpha how much of the sky behind them they hide (celestial.frag)
+	auto const &sun{Environment->sun()};
+	auto const &moon{Environment->moon()};
+	// the fog and the clouds laid over the sky hide the sun and the moon; without the clouds the overcast fades them
+	auto const overcastfactor{m_weatherstate.clouds_drawn() ? 1.f : std::clamp(1.5f - Global.Overcast, 0.f, 1.f)};
+	float const duskfactor = 1.0f - std::clamp(std::abs(sun.getAngle()), 0.0f, 12.0f) / 12.0f;
+	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
+	suncolor = m_skylight.sun_disc_color(suncolor);
+	glm::vec2 zenith{glm::mat3{modelview} * glm::vec3{0.f, 1.f, 0.f}};
+	zenith = (glm::length(zenith) > 1e-3f ? glm::normalize(zenith) : glm::vec2{0.f, 1.f});
+	auto const flattening = [](float const Elevation, float const Radius) {
+		auto const refraction = [](float const Height) {
+			auto const height{std::max(Height, -2.f)};
+			return 1.f / std::tan(glm::radians(height + 7.31f / (height + 4.4f)));
+		};
+		auto const radius{glm::degrees(Radius)};
+		return std::clamp(1.f - (refraction(Elevation - radius) - refraction(Elevation + radius)) / (2.f * radius * 60.f), 0.5f, 1.f);
+	};
+	auto const mainview{(m_renderpass.draw_mode == rendermode::color) && (m_current_viewport != nullptr) && m_current_viewport->main};
+	auto const draw_body = [&](std::array<glm::vec4, 3> const &Body) {
+		if (false == bind_scene_pipeline(*scene.celestial, *draw.targets, vk14::blend_mode::premultiplied, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP))
+		{
+			return;
+		}
+		apply_draw_state();
+		draw.block = push_draw_block();
+		if (draw.block == ~0u)
+		{
+			return;
+		}
+		if (draw.set_dirty)
+		{
+			bind_pass_set();
+		}
+		if (draw.textures_dirty)
+		{
+			push_textures();
+		}
+		vk14::draw_constants constants;
+		constants.draw = draw.block;
+		for (std::size_t i = 0; i < Body.size(); ++i)
+		{
+			constants.data[i] = Body[i];
+		}
+		push_constants(&constants);
+		draw.commands->draw(4, 1, 0, 0);
+	};
+	std::array<glm::vec4, 3> body{};
+	// sun
+	{
+		float const sunradius{glm::radians(0.2666f)};
+		float const quadmargin{1.25f};
+		glm::vec3 const limbdarkening{0.50f, 0.60f, 0.75f};
+		float const limbpeak{1.f / (1.f - 0.75f / 3.f)};
+		float const radiancemax{60000.f};
+		auto const sunvector = sun.getDirection();
+		glm::vec3 radiance{suncolor * overcastfactor};
+		if (mainview)
+		{
+			auto const solidangle{2.f * glm::pi<float>() * (1.f - std::cos(sunradius))};
+			auto const hidden{m_weatherstate.clouds_drawn() ? 0.f : glm::smoothstep(0.5f, 1.f, Global.Overcast)};
+			auto const physical{glm::vec3{m_sunlight.diffuse} * (1.5f * glm::pi<float>() / solidangle * Global.gfx_sun_disc)};
+			radiance = glm::mix(physical, radiance, hidden);
+			auto const peak{std::max({radiance.r, radiance.g, radiance.b}) * limbpeak};
+			if (peak > radiancemax)
+			{
+				radiance *= radiancemax / peak;
+			}
+		}
+		body[0] = glm::vec4{zenith, flattening(sun.getAngle(), sunradius), 1.f / quadmargin};
+		body[1] = glm::vec4{0.f};
+		body[2] = glm::vec4{limbdarkening, 0.f};
+		model_ubs.param[0] = glm::vec4{radiance, 1.f};
+		model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), std::tan(sunradius) * quadmargin);
+		model_ubs.param[2] = glm::vec4(0.f, 0.f, 0.f, 1.f);
+		draw_body(body);
+	}
+	// moon
+	{
+		glm::vec2 const discposition{0.5f, 0.5f};
+		float const discradius{0.1635f};
+		float const quadmargin{1.1f};
+		float const earthshine{0.005f};
+		glm::vec3 const extinction{0.10f, 0.17f, 0.30f};
+		walk_texture(0, m_moontexture);
+		glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
+		float visibility = std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(sun.getDirection(), moon.getDirection()))) * overcastfactor;
+		if (mainview)
+		{
+			visibility = 1.4f * overcastfactor;
+		}
+		auto const moonvector = moon.getDirection();
+		auto const moonradius{moon.getAngularRadius()};
+		auto const moonelevation{moon.getAngle()};
+		auto const moonview{glm::vec3(modelview * glm::vec4(moonvector, 1.0f))};
+		if (moon.getPhase() == 50)
+		{
+			model_ubs.param[0] = glm::vec4(mooncolor, visibility);
+			model_ubs.param[1] = glm::vec4(moonview, std::tan(moonradius) * (0.1665f / discradius));
+			model_ubs.param[2] = glm::vec4(0.66f, 1.0f - 0.667f, 0.333f, 0.f);
+		}
+		else
+		{
+			auto const zenithangle{90.f - std::max(moonelevation, -1.f)};
+			auto const airmass{1.f / (std::cos(glm::radians(zenithangle)) + 0.50572f * std::pow(std::max(96.07995f - zenithangle, 0.1f), -1.6364f))};
+			auto const transmittance{glm::exp(-extinction * (airmass - 1.f))};
+			auto const night{1.f - glm::smoothstep(-15.f, -9.f, sun.getAngle())};
+			auto const earthphase{0.5f * (1.f - std::cos(glm::radians(moon.getPhaseAngle())))};
+			body[0] = glm::vec4{zenith, flattening(moonelevation, moonradius), 1.f / quadmargin};
+			body[1] = glm::vec4{glm::normalize(glm::mat3{modelview} * sun.getDirection()), earthshine * earthphase};
+			body[2] = glm::vec4{0.f};
+			model_ubs.param[0] = glm::vec4(mooncolor * transmittance * (visibility * Global.gfx_moon_disc), night * overcastfactor);
+			model_ubs.param[1] = glm::vec4(moonview, std::tan(moonradius) * quadmargin);
+			model_ubs.param[2] = glm::vec4(discposition, discradius, 2.f);
+		}
+		draw_body(body);
+	}
+	// clouds of the weather and the fog over the sky: of the main view in its colour pass, of the panorama around the camera in the
+	// other views and in the faces of the environment map
+	render_sky_weather(OpenGLMatrices.data(GL_PROJECTION), mainview);
+	::glPopMatrix();
+	model_ubs.fog_density = fogdensity;
+	m_sunlight.factor = 1.f;
+
+	// calculate shadow tone, based on positions of celestial bodies
+	m_shadowcolor = glm::mix(glm::vec4{colors::shadow}, glm::vec4{colors::white}, std::clamp(-sun.getAngle(), 0.f, 6.f) / 6.f);
+	if ((sun.getAngle() < -18.f) && (moon.getAngle() > 0.f))
+	{
+		// turn on moon shadows after astronomical twilight, if the moon is actually up
+		auto const moonshadow{std::clamp(4.f * moon.getBrightness() * Global.gfx_moonlight, 0.f, 1.f) * std::clamp((-18.f - sun.getAngle()) / 2.f, 0.f, 1.f) * std::clamp(moon.getAngle() / 5.f, 0.f, 1.f)};
+		m_shadowcolor = glm::mix(glm::vec4{colors::white}, glm::vec4{colors::shadow}, moonshadow);
+	}
+	// soften shadows depending on sky overcast factor, unless the shadows of the clouds hold back the sun where they fall
+	if (false == m_weatherstate.cloud_shadows())
+	{
+		m_shadowcolor = glm::min(colors::white, m_shadowcolor + ((colors::white - colors::shadow) * Global.Overcast));
+	}
+	setup_shadow_color(m_shadowcolor);
+}
+
+void vulkan14_renderer::push_constants(void const *Constants)
+{
+	auto &draw{*m_draw};
+	VkPushConstantsInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+	info.layout = m_context->scene.scene_layout;
+	info.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	info.offset = 0;
+	info.size = sizeof(vk14::draw_constants);
+	info.pValues = Constants;
+	draw.commands->push_constants2(&info);
+	draw.pushed_draw = ~0u;
+}
+
+// the grass of the heightmap terrain (opengl46_renderer::Render_grass(), opengl46_grass::render()): a draw of the instances of a
+// blade for each tile seen, the textures of its chunk pushed in place of those of a material
+void vulkan14_renderer::render_grass(glm::mat4 const &Future)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &draw{*m_draw};
+	auto &grass{scene.grass};
+	if ((false == Global.gfx_grass) || grass.empty())
+	{
+		return;
+	}
+	auto const &camera{m_renderpass.pass_camera};
+	if (false == grass.prepare(camera.position(), [&](scene::bounding_area const &Area) { return camera.visible(Area); }))
+	{
+		return;
+	}
+	if ((scene.grass_program == nullptr) && (false == scene.grass_tried))
+	{
+		scene.grass_tried = true;
+		try
+		{
+			auto program{std::make_shared<vk14::scene_program>()};
+			program->vertex = ctx.shaders.get("grass.vert");
+			program->fragment = ctx.shaders.get("grass.frag");
+			program->fragment_name = "grass.frag";
+			program->vertex_name = "grass.vert";
+			program->vertices = vk14::vertex_kind::none;
+			program->name = "grass.vert + grass.frag";
+			scene.grass_program = program;
+		}
+		catch (gfx::shader_exception const &e)
+		{
+			ErrorLog("heightmap terrain: can't use the grass shader: " + std::string(e.what()));
+		}
+	}
+	if ((scene.grass_program == nullptr) || grass.chunk_draws().empty())
+	{
+		return;
+	}
+	// the blades bring their colour, the lights do the rest
+	model_ubs.future = Future;
+	model_ubs.param[0] = glm::vec4(1.f);
+	model_ubs.param[1] = glm::vec4(1.f, 1.f, 0.f, 1.f); // diffuse, specular, reflection, glossiness
+	model_ubs.param[2] = glm::vec4(0.f);
+	model_ubs.emission = 0.f;
+	model_ubs.alpha_mult = 1.f;
+	model_ubs.opacity = 0.5f;
+	if (false == bind_scene_pipeline(*scene.grass_program, *draw.targets, vk14::blend_mode::none, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP))
+	{
+		return;
+	}
+	auto const cullface{draw.cullface};
+	draw.cullface = false;
+	apply_draw_state();
+	if (draw.set_dirty)
+	{
+		bind_pass_set();
+	}
+	glm::mat4 const view{OpenGLMatrices.data(GL_MODELVIEW)};
+	auto const &frame{grass.frame()};
+	auto const &tiles{grass.tile_draws()};
+	for (auto const &chunk : grass.chunk_draws())
+	{
+		auto const *images{grass.images(chunk)};
+		if (images == nullptr)
+		{
+			continue;
+		}
+		// the chunk is drawn relative to its corner, the heights as they are
+		model_ubs.set_modelview(glm::translate(view, glm::vec3{chunk.offset}));
+		auto const block{push_draw_block()};
+		if (block == ~0u)
+		{
+			break;
+		}
+		std::array<VkDescriptorImageInfo, gl::MAX_TEXTURES> descriptors;
+		for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
+		{
+			descriptors[unit] = (unit < images->images.size()) ? VkDescriptorImageInfo{images->samplers[unit], images->images[unit]->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+			                                                    : VkDescriptorImageInfo{ctx.sampling.repeat_aniso, scene.white->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		}
+		scene.material_set.push(draw.commands, scene.scene_layout, descriptors.data());
+		vk14::draw_constants constants;
+		constants.draw = block;
+		constants.data[2] = chunk.camera;
+		constants.data[3] = frame.lod;
+		constants.data[4] = frame.wind;
+		constants.data[5] = frame.season;
+		for (auto i = chunk.first; i < chunk.first + chunk.count; ++i)
+		{
+			auto const &tile{tiles[i]};
+			constants.data[0] = tile.tile;
+			constants.data[1] = tile.part;
+			push_constants(&constants);
+			draw.commands->draw(static_cast<std::uint32_t>(tile.segments * 2 + 1), static_cast<std::uint32_t>(tile.count), 0, 0);
+			++draw.draws;
+		}
+	}
+	m_renderpass.draw_stats.triangles += static_cast<int>(grass.triangles());
+	// the textures of the next material go in place of the ones of the grass
+	draw.textures_dirty = true;
+	draw.cullface = cullface;
+	apply_draw_state();
+}
+
+// what the particles of the gpu are drawn with in the colour pass under way (opengl46_renderer::Particles_View())
+gfx::gpu_particles::view vulkan14_renderer::particles_view() const
+{
+	gfx::gpu_particles::view view;
+	view.modelview = OpenGLMatrices.data(GL_MODELVIEW);
+	view.projection = OpenGLMatrices.data(GL_PROJECTION);
+	view.camera = m_renderpass.pass_camera.position();
+	view.height = static_cast<int>(m_draw->extent.height);
+	view.soft = m_particlesoft;
+	return view;
+}
+
+// the depth of the scene drawn so far copied for the particles of the gpu, which fade in front of it (opengl46_renderer::
+// Setup_Particles_Depth()): the rendering is ended (which resolves the depth of many samples), the depth copied to the depth of
+// the scene the pass sets read (the one of the contact shadows, as in the opengl renderer), and the rendering begun again
+bool vulkan14_renderer::setup_particles_depth(std::size_t const Index)
+{
+	// the fading works out the distance from the depth as the contact shadows do (contact_shadows_wanted())
+	auto &ctx{*m_context};
+	auto &targets{ctx.scene.targets[Index]};
+	auto &draw{*m_draw};
+	if (Global.gfx_skippipeline || Global.bWireFrame || (false == draw.rendering) || (false == draw.resume.valid))
+	{
+		return false;
+	}
+	auto const &projection{scene_ubs.projection};
+	if ((projection[2][3] == 0.f) || (projection[2][2] != 0.f) || (projection[3][2] <= 0.f))
+	{
+		return false;
+	}
+	if ((false == bool(targets.scene_depth)) || (targets.scene_depth->desc().extent.width != targets.extent.width) || (targets.scene_depth->desc().extent.height != targets.extent.height))
+	{
+		vk14::image_desc desc;
+		desc.format = VK_FORMAT_D32_SFLOAT;
+		desc.extent = {targets.extent.width, targets.extent.height, 1};
+		desc.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (targets.scene_depth)
+		{
+			ctx.deletions.push(ctx.uploads.current_value(), [old = std::move(targets.scene_depth)]() {});
+		}
+		targets.scene_depth = std::make_shared<vk14::image>();
+		if (false == targets.scene_depth->create(ctx.memory, desc, "scene depth"))
+		{
+			targets.scene_depth.reset();
+			return false;
+		}
+	}
+	auto const commands{m_commands};
+	suspend_rendering();
+	vk14::barriers(commands, {vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT),
+	                          vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)});
+	VkImageCopy2 region{};
+	region.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+	region.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+	region.dstSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+	region.extent = {targets.extent.width, targets.extent.height, 1};
+	VkCopyImageInfo2 copy{};
+	copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+	copy.srcImage = targets.depth->handle();
+	copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	copy.dstImage = targets.scene_depth->handle();
+	copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	copy.regionCount = 1;
+	copy.pRegions = &region;
+	commands->copy_image2(&copy);
+	vk14::barriers(commands, {vk14::use_of(*targets.scene_depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
+	resume_rendering();
+	return true;
+}
+
+// the smoke of the cpu (opengl46_particles)
+void vulkan14_renderer::render_particles()
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &draw{*m_draw};
+	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	walk_texture(0, m_smoketexture);
+	// the smoke of the gpu, when its programs could be made; otherwise the particle manager simulates it on the cpu. a switch
+	// takes effect from the next update of the manager
+	auto const gpu{Global.gfx_smoke_gpu && scene.particles.smoke_available()};
+	simulation::Particles.gpu(gpu);
+	if (gpu)
+	{
+		if (Global.Smoke)
+		{
+			scene.particles.simulate_smoke(simulation::Particles, m_renderpass.pass_camera.position());
+			m_renderpass.draw_stats.particles = static_cast<int>(scene.particles.render_smoke(particles_view()));
+			// the compute passes ended the rendering, which a draw may not have begun again
+			resume_rendering();
+		}
+		return;
+	}
+	if (false == Global.Smoke)
+	{
+		return;
+	}
+	auto const &camera{m_renderpass.pass_camera};
+	std::multimap<float, smoke_source const &> sources;
+	for (auto const &source : simulation::Particles.sequence())
+	{
+		if (false == camera.visible(source.area()))
+		{
+			continue;
+		}
+		sources.emplace(static_cast<float>(glm::length(camera.position() - source.area().center) - source.area().radius), source);
+	}
+	if (sources.empty())
+	{
+		return;
+	}
+	std::vector<particle_vertex> vertices;
+	auto const camerarotation{glm::mat3(camera.modelview())};
+	particle_vertex vertex;
+	for (auto const &[sourcekey, sourcedata] : sources)
+	{
+		auto const particlecolor{glm::clamp(sourcedata.color() * (glm::vec3{Global.DayLight.ambient} + 0.35f * glm::vec3{Global.DayLight.diffuse}) * simulation::Environment.light_intensity(), glm::vec3{0.f}, glm::vec3{1.f})};
+		for (auto const &particle : sourcedata.sequence())
+		{
+			vertex.color[0] = particlecolor.r;
+			vertex.color[1] = particlecolor.g;
+			vertex.color[2] = particlecolor.b;
+			vertex.color.a = std::clamp(particle.opacity, 0.0f, 1.0f) * sourcedata.fade_in(particle.age);
+			auto const offset{glm::vec3{particle.position - camera.position()}};
+			auto const rotation{glm::angleAxis(particle.rotation, glm::vec3{0.f, 0.f, 1.f})};
+			for (auto const &[billboardoffset, billboardtexture] : billboard_vertices)
+			{
+				vertex.position = offset + (rotation * billboardoffset * particle.size) * camerarotation;
+				vertex.texture = billboardtexture;
+				vertices.emplace_back(vertex);
+			}
+		}
+	}
+	m_renderpass.draw_stats.particles = static_cast<int>(vertices.size() / 6);
+	auto const slice{ctx.ring.allocate(vertices.size() * sizeof(particle_vertex), 16)};
+	if ((false == bool(slice)) || (false == bind_scene_pipeline(*scene.smoke, *draw.targets, vk14::blend_mode::scene_alpha, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
+	{
+		return;
+	}
+	std::memcpy(slice.data, vertices.data(), slice.size);
+	apply_draw_state();
+	draw.block = push_draw_block();
+	if (draw.block == ~0u)
+	{
+		return;
+	}
+	if (draw.set_dirty)
+	{
+		bind_pass_set();
+	}
+	if (draw.textures_dirty)
+	{
+		push_textures();
+	}
+	vk14::draw_constants constants;
+	constants.draw = draw.block;
+	push_constants(&constants);
+	VkDeviceSize const offset{slice.offset};
+	draw.commands->bind_vertex_buffers(0, 1, &slice.buffer, &offset);
+	draw.commands->draw(static_cast<std::uint32_t>(vertices.size()), 1, 0, 0);
+	draw.vertices = VK_NULL_HANDLE;
+	draw.userdata = VK_NULL_HANDLE;
+}
+
+// the rain and the snow of the cpu (opengl46_renderer::Render_precipitation(), opengl46_precipitation)
+void vulkan14_renderer::render_precipitation()
+{
+	if (Global.Overcast <= 1.f)
+	{
+		return;
+	}
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &draw{*m_draw};
+	if (Global.gfx_precipitation_gpu && scene.particles.precipitation_available())
+	{
+		// the particles of the gpu: the overcast above 1 is how heavy the rain or snow is
+		model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+		scene.particles.render_precipitation(particles_view(), Global.Weather == "snow:", std::clamp(Global.Overcast - 1.f, 0.f, 1.f), m_framestamp);
+		resume_rendering();
+		return;
+	}
+	if (m_precipitationovercast != Global.Overcast)
+	{
+		m_precipitationovercast = Global.Overcast;
+		std::string const densitysuffix{(m_precipitationovercast < 1.35 ? "_light" : "_medium")};
+		if (Global.Weather == "rain:")
+		{
+			m_precipitationtexture = Fetch_Texture("fx/rain" + densitysuffix);
+		}
+		else if (Global.Weather == "snow:")
+		{
+			m_precipitationtexture = Fetch_Texture("fx/snow" + densitysuffix);
+		}
+	}
+	::glPushMatrix();
+	// tilt the precipitation cone against the velocity vector for crude motion blur, include current wind vector while at it
+	auto const velocity{simulation::Environment.precipitation().m_cameramove * -1.0 + glm::dvec3{simulation::Environment.wind()} * 0.5};
+	if (glm::length2(velocity) > 0.0)
+	{
+		auto const forward{glm::normalize(velocity)};
+		auto left{glm::cross(forward, {0.0, 1.0, 0.0})};
+		auto const rotationangle{std::min(45.0, ((FreeFlyModeFlag || simulation::Train == nullptr) ? 5 * glm::length(velocity) : simulation::Train->Dynamic()->GetVelocity() * 0.2))};
+		::glRotated(rotationangle, left.x, 0.0, left.z);
+	}
+	if ((false == FreeFlyModeFlag) && (simulation::Train != nullptr))
+	{
+		// counter potential vehicle roll
+		auto const roll{0.5 * glm::degrees(simulation::Train->Dynamic()->Roll())};
+		if (roll != 0.0)
+		{
+			auto const forward{simulation::Train->Dynamic()->VectorFront()};
+			::glRotated(roll, forward.x, 0.0, forward.z);
+		}
+	}
+	if (!Global.iPause)
+	{
+		// oddly enough random streaks produce more natural looking rain than ones the eye can follow
+		m_precipitationrotation = (Global.Weather == "rain:" ? LocalRandom() * 360 : 0.0);
+	}
+	::glRotated(m_precipitationrotation, 0.0, 1.0, 0.0);
+	model_ubs.set_modelview(OpenGLMatrices.data(GL_MODELVIEW));
+	model_ubs.param[0] = glm::mix(0.5f * (Global.DayLight.diffuse + Global.DayLight.ambient), colors::white, 0.5f * std::clamp((float)Global.fLuminance, 0.f, 1.f));
+	model_ubs.param[1].x = simulation::Environment.precipitation().get_textureoffset();
+	walk_texture(0, m_precipitationtexture);
+
+	auto const &mesh{precipitation()};
+	auto const vertexslice{ctx.ring.allocate(mesh.vertices.size() * sizeof(glm::vec3), 16)};
+	auto const uvslice{ctx.ring.allocate(mesh.uvs.size() * sizeof(glm::vec2), 16)};
+	auto const indexslice{ctx.ring.allocate(mesh.indices.size() * sizeof(std::uint16_t), 16)};
+	if (vertexslice && uvslice && indexslice && bind_scene_pipeline(*scene.precipitation, *draw.targets, draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST))
+	{
+		std::memcpy(vertexslice.data, mesh.vertices.data(), vertexslice.size);
+		std::memcpy(uvslice.data, mesh.uvs.data(), uvslice.size);
+		std::memcpy(indexslice.data, mesh.indices.data(), indexslice.size);
+		apply_draw_state();
+		draw.block = push_draw_block();
+		if (draw.block != ~0u)
+		{
+			if (draw.set_dirty)
+			{
+				bind_pass_set();
+			}
+			if (draw.textures_dirty)
+			{
+				push_textures();
+			}
+			vk14::draw_constants constants;
+			constants.draw = draw.block;
+			push_constants(&constants);
+			VkBuffer const buffers[2]{vertexslice.buffer, uvslice.buffer};
+			VkDeviceSize const offsets[2]{vertexslice.offset, uvslice.offset};
+			draw.commands->bind_vertex_buffers(0, 2, buffers, offsets);
+			draw.commands->bind_index_buffer(indexslice.buffer, indexslice.offset, VK_INDEX_TYPE_UINT16);
+			draw.commands->draw_indexed(static_cast<std::uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+			draw.vertices = VK_NULL_HANDLE;
+			draw.userdata = VK_NULL_HANDLE;
+			draw.indices = VK_NULL_HANDLE;
+		}
+	}
+	::glPopMatrix();
+}
+
+// the lines the editor draws over the scene (opengl46_renderer::Render_editor_overlay())
+void vulkan14_renderer::render_editor_overlay()
+{
+	if (false == EditorModeFlag || EditorOverlay.batches.empty())
+	{
+		return;
+	}
+	if (m_editor_overlay_revision != EditorOverlay.revision)
+	{
+		m_editor_overlay_revision = EditorOverlay.revision;
+		if (m_editor_overlay_bank == null_handle)
+		{
+			m_editor_overlay_bank = Create_Bank();
+		}
+		auto const &batches{EditorOverlay.batches};
+		for (std::size_t i = 0; i < batches.size(); ++i)
+		{
+			gfx::vertex_array vertices;
+			vertices.reserve(batches[i].points.size());
+			for (auto const &point : batches[i].points)
+			{
+				vertices.emplace_back(point, glm::vec3(0.f, 1.f, 0.f), glm::vec2());
+			}
+			gfx::userdata_array userdata;
+			if (i >= m_editor_overlay_geometry.size())
+			{
+				m_editor_overlay_geometry.emplace_back();
+			}
+			auto &geometry{m_editor_overlay_geometry[i]};
+			if (geometry != null_handle)
+			{
+				m_geometry.replace(vertices, userdata, geometry);
+			}
+			else if (false == vertices.empty())
+			{
+				geometry = m_geometry.create_chunk(vertices, userdata, m_editor_overlay_bank, batches[i].type);
+			}
+		}
+	}
+	auto &draw{*m_draw};
+	::glPushMatrix();
+	auto const origin{EditorOverlay.origin - m_renderpass.pass_camera.position()};
+	::glTranslated(origin.x, origin.y, origin.z);
+	draw.cullface = false;
+	draw.depthmask_off = true;
+	walk_program(walk_shader::line);
+	auto const &batches{EditorOverlay.batches};
+	for (std::size_t i = 0; i < batches.size() && i < m_editor_overlay_geometry.size(); ++i)
+	{
+		if (batches[i].points.empty() || m_editor_overlay_geometry[i] == null_handle)
+		{
+			continue;
+		}
+		model_ubs.param[0] = batches[i].color;
+		walk_draw(m_editor_overlay_geometry[i]);
+		++m_renderpass.draw_stats.drawcalls;
+	}
+	draw.depthmask_off = false;
+	draw.cullface = true;
+	::glPopMatrix();
+}
+
+// a pass of the post-processing: the fragment shader over the whole of the target, reading the images and the exposure
+void vulkan14_renderer::post_pass(char const *Fragment, vk14::image &Target, std::vector<vk14::image *> const &Inputs, vk14::draw_constants const &Constants, char const *Pass, unsigned const Repeated)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const commands{m_commands};
+	VkExtent2D const extent{Target.desc().extent.width, Target.desc().extent.height};
+	std::vector<vk14::image_use> uses{vk14::use_of(Target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access)};
+	for (auto *input : Inputs)
+	{
+		uses.push_back(vk14::use_of(*input, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, sampled_access));
+	}
+	if (Pass != nullptr)
+	{
+		ctx.passes.begin_pass(Pass, uses);
+	}
+	else
+	{
+		vk14::barriers(commands, uses);
+	}
+	auto const pipeline{post_pipeline(Fragment, static_cast<int>(Target.desc().format))};
+	if (pipeline == nullptr)
+	{
+		return;
+	}
+	VkClearValue clear{};
+	auto attachment{attachment_info(Target.view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false, clear)};
+	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, extent};
+	rendering.layerCount = 1;
+	rendering.colorAttachmentCount = 1;
+	rendering.pColorAttachments = &attachment;
+	commands->begin_rendering(&rendering);
+	vk14::set_draw_state(commands, extent);
+	commands->bind_pipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, reinterpret_cast<VkPipeline>(pipeline));
+	commands->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+	std::array<vk14::descriptor, vk14::bindings::POST_TEXTURES + 1> descriptors;
+	for (std::size_t i = 0; i < vk14::bindings::POST_TEXTURES; ++i)
+	{
+		auto *input{i < Inputs.size() ? Inputs[i] : Inputs.front()};
+		// a depth as the opengl renderer reads its depth targets (filtered where the device can, the farthest depth past the edges)
+		auto const depth{input->desc().format == VK_FORMAT_D32_SFLOAT};
+		auto const repeated{(i < Inputs.size()) && ((Repeated & (1u << i)) != 0)};
+		descriptors[i] = vk14::image_descriptor(repeated ? ctx.sampling.repeat_nearest : depth ? ctx.sampling.depth : ctx.sampling.clamp_linear, input->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
+	descriptors[vk14::bindings::POST_EXPOSURE_SSBO] = vk14::buffer_descriptor(scene.exposure.data.handle(), 0, sizeof(gl::exposure_data));
+	scene.post_set.push(commands, scene.post_layout, descriptors.data());
+	VkPushConstantsInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+	info.layout = scene.post_layout;
+	info.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	info.size = sizeof(Constants);
+	info.pValues = &Constants;
+	commands->push_constants2(&info);
+	commands->draw(4, 1, 0, 0);
+	commands->end_rendering();
+}
+
+// dlss of the main viewport (gfx.antialiasing dlss): its inputs made (the velocities of the sky, which has none drawn, from the
+// motion of the camera; the exposure of the tonemapping in a texel), then its evaluation into the output of the size of the window
+void vulkan14_renderer::render_dlss(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &targets{ctx.scene.targets[Index]};
+	vk14::draw_constants motion;
+	auto const &reprojection{m_taa.reprojection()};
+	for (int column = 0; column < 4; ++column)
+	{
+		motion.data[2 + column] = reprojection[column];
+	}
+	post_pass("postfx_dlss_motion.frag", *targets.dlss_motion, {targets.motion_image.get(), targets.depth.get()}, motion, "dlss inputs");
+	vk14::image *exposure{nullptr};
+	if (false == Global.gfx_dlss_autoexposure)
+	{
+		vk14::draw_constants constants;
+		constants.data[0] = gfx::exposure_settings::tonemap_params(0);
+		post_pass("postfx_dlss_exposure.frag", *targets.dlss_exposure, {targets.colour.get()}, constants);
+		exposure = targets.dlss_exposure.get();
+	}
+	// the inputs read and the output written by the passes of the library, whichever stages they are
+	auto const stage{VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+	std::vector<vk14::image_use> uses{vk14::use_of(*targets.colour, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT),
+	                                  vk14::use_of(*targets.depth, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT),
+	                                  vk14::use_of(*targets.dlss_motion, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT),
+	                                  vk14::use_of(*targets.dlss_output, VK_IMAGE_LAYOUT_GENERAL, stage, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT)};
+	if (exposure != nullptr)
+	{
+		uses.push_back(vk14::use_of(*exposure, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage, VK_ACCESS_2_SHADER_READ_BIT));
+	}
+	ctx.passes.begin_pass("dlss", uses);
+	vk14::dlss::frame_inputs inputs;
+	inputs.colour = targets.colour.get();
+	inputs.depth = targets.depth.get();
+	inputs.motion = targets.dlss_motion.get();
+	inputs.exposure = exposure;
+	inputs.output = targets.dlss_output.get();
+	inputs.jitter = m_taa.jitter();
+	inputs.reset = m_dlssreset || (false == m_taa.history_valid());
+	inputs.frame_time = static_cast<float>(Timer::GetDeltaRenderTime() * 1000.0);
+	ctx.dlss.evaluate(*m_commands, inputs, ctx.deletions, ctx.uploads.current_value());
+	m_dlssreset = false;
+	ctx.passes.end_pass();
+}
+
+bool vulkan14_renderer::dlss_active() const
+{
+	return (m_dlssrender.x > 0) && Global.gfx_dlss() && m_context && m_context->dlss.available() && (false == m_context->dlss.failed());
+}
+
+namespace
+{
+
+// the unorm format with the bits of a format of a window (a storage image can't be srgb)
+VkFormat unorm_format(VkFormat const Format)
+{
+	switch (Format)
+	{
+	case VK_FORMAT_B8G8R8A8_SRGB:
+		return VK_FORMAT_B8G8R8A8_UNORM;
+	case VK_FORMAT_R8G8B8A8_SRGB:
+		return VK_FORMAT_R8G8B8A8_UNORM;
+	case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+		return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+	default:
+		return Format;
+	}
+}
+
+} // namespace
+
+// the images of the frame generation for the size and the format of the main window; false: they can't be had
+bool vulkan14_renderer::prepare_generation(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &generation{ctx.scene.generation};
+	auto const &window{*ctx.windows[m_viewports[Index].window]};
+	auto const extent{window.extent()};
+	auto const windowformat{window.format()};
+	if (generation.backbuffer && (generation.extent.width == extent.width) && (generation.extent.height == extent.height) && (generation.window_format == windowformat))
+	{
+		return true;
+	}
+	if (generation.unusable == windowformat)
+	{
+		return false;
+	}
+	auto const features = [&](VkFormat const Format) {
+		VkFormatProperties properties{};
+		vkGetPhysicalDeviceFormatProperties(ctx.device.physical(), Format, &properties);
+		return properties.optimalTilingFeatures;
+	};
+	VkFormatFeatureFlags const needed{VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT};
+	// the bits of the format of the window, copied to it; or else rgba, blitted to it
+	auto format{unorm_format(windowformat)};
+	auto blit{false};
+	if ((features(format) & needed) != needed)
+	{
+		format = VK_FORMAT_R8G8B8A8_UNORM;
+		blit = true;
+		// a blit to an srgb window would encode the colour encoded already
+		if (((features(format) & (needed | VK_FORMAT_FEATURE_BLIT_SRC_BIT)) != (needed | VK_FORMAT_FEATURE_BLIT_SRC_BIT)) || ((features(windowformat) & VK_FORMAT_FEATURE_BLIT_DST_BIT) == 0) || window.srgb())
+		{
+			generation.unusable = windowformat;
+			vk14::log_info("gfx.framegeneration: the format " + std::to_string(windowformat) + " of the main window can't be given the frames, they aren't generated");
+			return false;
+		}
+	}
+	vk14::generation_targets fresh;
+	fresh.extent = extent;
+	fresh.window_format = windowformat;
+	fresh.format = format;
+	fresh.blit = blit;
+	auto make = [&](std::shared_ptr<vk14::image> &Image, VkImageUsageFlags const Usage, char const *Name) {
+		vk14::image_desc desc;
+		desc.format = format;
+		desc.extent = {extent.width, extent.height, 1};
+		desc.usage = Usage | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		Image = std::make_shared<vk14::image>();
+		if (false == Image->create(ctx.memory, desc, Name))
+		{
+			Image.reset();
+			return false;
+		}
+		return true;
+	};
+	auto ok{make(fresh.backbuffer, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, "frame generation backbuffer") && make(fresh.hudless, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, "frame generation hudless")};
+	for (std::uint32_t i = 0; ok && (i < m_generated); ++i)
+	{
+		ok = make(fresh.outputs[i], VK_IMAGE_USAGE_TRANSFER_DST_BIT, "frame generated");
+	}
+	// what was made for the window before goes once the frames which use it are done
+	ctx.deletions.push(ctx.uploads.current_value(), [old = std::move(generation)]() {});
+	if (false == ok)
+	{
+		generation = vk14::generation_targets{};
+		generation.unusable = windowformat;
+		vk14::log_error("gfx.framegeneration: the images for the window of " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + " can't be made, the frames aren't generated");
+		return false;
+	}
+	generation = std::move(fresh);
+	return true;
+}
+
+// the depth and the velocities of the main view turned the way up of the window, for the frame generation (after dlss, which made
+// the velocities of the sky)
+void vulkan14_renderer::flip_generation_inputs(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &generation{ctx.scene.generation};
+	auto &targets{ctx.scene.targets[Index]};
+	if ((false == static_cast<bool>(targets.dlss_motion)) || (false == static_cast<bool>(targets.depth)))
+	{
+		return;
+	}
+	auto const render{targets.extent};
+	if ((false == static_cast<bool>(generation.depth)) || (generation.render.width != render.width) || (generation.render.height != render.height))
+	{
+		auto make = [&](std::shared_ptr<vk14::image> &Image, VkFormat const Format, char const *Name) {
+			vk14::image_desc desc;
+			desc.format = Format;
+			desc.extent = {render.width, render.height, 1};
+			desc.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+			Image = std::make_shared<vk14::image>();
+			if (false == Image->create(ctx.memory, desc, Name))
+			{
+				Image.reset();
+				return false;
+			}
+			return true;
+		};
+		ctx.deletions.push(ctx.uploads.current_value(), [depth = std::move(generation.depth), motion = std::move(generation.motion)]() {});
+		generation.depth.reset();
+		generation.motion.reset();
+		generation.render = {0, 0};
+		if ((false == make(generation.depth, VK_FORMAT_R32_SFLOAT, "frame generation depth")) || (false == make(generation.motion, VK_FORMAT_R16G16_SFLOAT, "frame generation velocity")))
+		{
+			generation.depth.reset();
+			generation.motion.reset();
+			return;
+		}
+		generation.render = render;
+	}
+	post_pass("postfx_fg_flip.frag", *generation.depth, {targets.depth.get()}, vk14::draw_constants{}, "frame generation inputs");
+	post_pass("postfx_fg_flip.frag", *generation.motion, {targets.dlss_motion.get()}, vk14::draw_constants{});
+	m_generationinputs = true;
+}
+
+// the main window with the frames generated by dlss: the frame without the user interface and with it, the frames generated from it
+// and the last one, all of them copied to the images of the window acquired for them. without what the frame generation needs (its
+// images, the inputs of the frame) every image of the window gets the frame drawn
+void vulkan14_renderer::render_generation(std::size_t const Index)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &generation{scene.generation};
+	auto &window{*ctx.windows[m_viewports[Index].window]};
+	auto const count{std::min<std::uint32_t>(window.generated_count(), m_generated)};
+	auto const extent{window.extent()};
+	auto const drawn{(Index < scene.targets.size()) && scene.targets[Index].output};
+	VkClearValue clear{};
+	clear.color = {{0.f, 0.f, 0.f, 1.f}};
+	auto const ready{drawn && m_generationinputs && generation.backbuffer && generation.depth && (generation.extent.width == extent.width) && (generation.extent.height == extent.height)};
+	if (false == ready)
+	{
+		for (std::uint32_t i = 0; i <= window.generated_count(); ++i)
+		{
+			auto const last{i == window.generated_count()};
+			ctx.passes.begin_pass(last ? "ui" : "frame generation: the frame again",
+			                      {last ? window.use(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access) : window.generated_use(i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access)});
+			auto attachment{attachment_info(last ? window.view() : window.generated_view(i), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true, clear)};
+			VkRenderingInfo rendering{};
+			rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+			rendering.renderArea = {{0, 0}, extent};
+			rendering.layerCount = 1;
+			rendering.colorAttachmentCount = 1;
+			rendering.pColorAttachments = &attachment;
+			m_commands->begin_rendering(&rendering);
+			if (drawn)
+			{
+				present_viewport(Index);
+			}
+			// the user interface in each of them (kept for the next one but the last)
+			ctx.imgui.record(m_commands, extent, window.format(), window.srgb(), false == last);
+			m_commands->end_rendering();
+			ctx.passes.end_pass();
+		}
+		std::vector<vk14::image_use> presents{window.use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)};
+		for (std::uint32_t i = 0; i < window.generated_count(); ++i)
+		{
+			presents.push_back(window.generated_use(i, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE));
+		}
+		vk14::barriers(m_commands, presents);
+		return;
+	}
+
+	// the frame without the user interface, and with it
+	auto drawto = [&](vk14::image &Target, bool const Ui, char const *Pass) {
+		ctx.passes.begin_pass(Pass, {vk14::use_of(Target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access)});
+		auto attachment{attachment_info(Target.view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true, clear)};
+		VkRenderingInfo rendering{};
+		rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+		rendering.renderArea = {{0, 0}, extent};
+		rendering.layerCount = 1;
+		rendering.colorAttachmentCount = 1;
+		rendering.pColorAttachments = &attachment;
+		m_commands->begin_rendering(&rendering);
+		present_viewport(Index, &Target);
+		if (Ui)
+		{
+			ctx.imgui.record(m_commands, extent, Target.desc().format, false);
+		}
+		m_commands->end_rendering();
+		ctx.passes.end_pass();
+	};
+	drawto(*generation.hudless, false, "frame generation hudless");
+	drawto(*generation.backbuffer, true, "ui");
+
+	// the frames between the last one and this one, by the passes of the library, whichever stages they are
+	auto const stage{VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+	auto const read{VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_TRANSFER_READ_BIT};
+	std::vector<vk14::image_use> uses{vk14::use_of(*generation.backbuffer, VK_IMAGE_LAYOUT_GENERAL, stage, read), vk14::use_of(*generation.hudless, VK_IMAGE_LAYOUT_GENERAL, stage, read),
+	                                  vk14::use_of(*generation.depth, VK_IMAGE_LAYOUT_GENERAL, stage, read), vk14::use_of(*generation.motion, VK_IMAGE_LAYOUT_GENERAL, stage, read)};
+	vk14::dlss::generation_inputs inputs;
+	inputs.backbuffer = generation.backbuffer.get();
+	inputs.hudless = generation.hudless.get();
+	inputs.depth = generation.depth.get();
+	inputs.motion = generation.motion.get();
+	for (std::uint32_t i = 0; i < count; ++i)
+	{
+		uses.push_back(vk14::use_of(*generation.outputs[i], VK_IMAGE_LAYOUT_GENERAL, stage, read | VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT));
+		inputs.outputs.push_back(generation.outputs[i].get());
+	}
+	ctx.passes.begin_pass("frame generation", uses);
+	auto const &camera{m_generationcamera};
+	inputs.view_to_clip = camera.projection;
+	inputs.clip_to_previous_clip = m_taa.reprojection_without_offset();
+	inputs.position = camera.position;
+	// the axes of the view in the world: the rows of the rotation of the world to the view (the view looks along its -z)
+	inputs.right = glm::vec3{camera.view[0][0], camera.view[1][0], camera.view[2][0]};
+	inputs.up = glm::vec3{camera.view[0][1], camera.view[1][1], camera.view[2][1]};
+	inputs.forward = -glm::vec3{camera.view[0][2], camera.view[1][2], camera.view[2][2]};
+	inputs.znear = m_colorpass.znear;
+	inputs.zfar = m_colorpass.zfar;
+	auto const yscale{camera.projection[1][1]};
+	inputs.fov = (yscale > 0.f ? 2.f * std::atan(1.f / yscale) : glm::radians(45.f));
+	inputs.aspect = ((camera.projection[0][0] > 0.f) ? yscale / camera.projection[0][0] : 1.f);
+	inputs.jitter = m_taa.jitter();
+	// its history is of no use after a frame without it (minimized, not drawn, without the images)
+	inputs.reset = (false == m_taa.history_valid()) || (m_generationframe + 1 != ctx.framecount);
+	m_generationframe = ctx.framecount;
+	ctx.dlss.generate(*m_commands, inputs, ctx.deletions, ctx.uploads.current_value());
+	ctx.passes.end_pass();
+
+	// the frames to the images of the window: the ones generated first, in the order they are shown, then the one drawn
+	auto const transfer{VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT};
+	std::vector<vk14::image_use> copies{vk14::use_of(*generation.backbuffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, transfer, VK_ACCESS_2_TRANSFER_READ_BIT),
+	                                    window.use(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, transfer, VK_ACCESS_2_TRANSFER_WRITE_BIT)};
+	for (std::uint32_t i = 0; i < window.generated_count(); ++i)
+	{
+		auto &source{*generation.outputs[std::min(i, count - 1)]};
+		copies.push_back(vk14::use_of(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, transfer, VK_ACCESS_2_TRANSFER_READ_BIT));
+		copies.push_back(window.generated_use(i, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, transfer, VK_ACCESS_2_TRANSFER_WRITE_BIT));
+	}
+	ctx.passes.begin_pass("frame generation to the window", copies);
+	auto const send = [&](vk14::image &Source, VkImage const Destination) {
+		if (generation.blit)
+		{
+			VkImageBlit2 region{};
+			region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+			region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			region.srcOffsets[1] = {static_cast<std::int32_t>(extent.width), static_cast<std::int32_t>(extent.height), 1};
+			region.dstOffsets[1] = region.srcOffsets[1];
+			VkBlitImageInfo2 blit{};
+			blit.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+			blit.srcImage = Source.handle();
+			blit.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			blit.dstImage = Destination;
+			blit.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			blit.regionCount = 1;
+			blit.pRegions = &region;
+			blit.filter = VK_FILTER_NEAREST;
+			m_commands->blit_image2(&blit);
+			return;
+		}
+		VkImageCopy2 region{};
+		region.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+		region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+		region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+		region.extent = {extent.width, extent.height, 1};
+		VkCopyImageInfo2 copy{};
+		copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+		copy.srcImage = Source.handle();
+		copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		copy.dstImage = Destination;
+		copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		copy.regionCount = 1;
+		copy.pRegions = &region;
+		m_commands->copy_image2(&copy);
+	};
+	for (std::uint32_t i = 0; i < window.generated_count(); ++i)
+	{
+		send(*generation.outputs[std::min(i, count - 1)], window.generated_image(i));
+	}
+	send(*generation.backbuffer, window.image());
+	ctx.passes.end_pass();
+	std::vector<vk14::image_use> presents{window.use(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE)};
+	for (std::uint32_t i = 0; i < window.generated_count(); ++i)
+	{
+		presents.push_back(window.generated_use(i, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE));
+	}
+	vk14::barriers(m_commands, presents);
+}
+
+// the post-processing of a viewport: from the colour of the scene to its output, which the window shows (the part of
+// opengl46_renderer::Render_pass() after the colour pass)
+void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionblur)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &targets{scene.targets[Index]};
+	auto const commands{m_commands};
+
+	// the occlusion goes into the image before the blur, which smears both alike. the targets are there only when it was on as they
+	// were made. in the light of the surfaces it's in the image already
+	auto const aomode{((targets.ssao != nullptr) && (false == m_aolighting)) ? Global.gfx_postfx_ao : 0};
+	m_aolighting = false;
+	if (aomode != 0)
+	{
+		ctx.passes.begin_pass("ambient occlusion");
+		render_ao(Index, aomode);
+	}
+	auto *hdr{targets.colour.get()};
+	// dlss: the scene anti-aliased and upscaled to the window, into the images the rest of the post-processing reads
+	if (m_motionhistory && targets.dlss && targets.dlss_output && targets.dlss_motion && targets.motion_image && dlss_active())
+	{
+		render_dlss(Index);
+		hdr = targets.dlss_output.get();
+		if ((m_generatedframe > 0) && m_viewports[Index].main)
+		{
+			flip_generation_inputs(Index);
+		}
+	}
+	// the temporal anti-aliasing: the scene blended into its history (the motion blur takes the result)
+	if (m_motionhistory && targets.taa && targets.taa_history[0] && targets.taa_history[1] && targets.motion_image)
+	{
+		auto const target{m_taa.target()};
+		vk14::draw_constants constants;
+		// the near plane gives the distance of the pixels from their depth
+		constants.data[0] = glm::vec4{m_taa.history_valid() ? 1.f : 0.f, m_colorpass.znear, 0.f, 0.f};
+		auto const &reprojection{m_taa.reprojection()};
+		for (int column = 0; column < 4; ++column)
+		{
+			constants.data[2 + column] = reprojection[column];
+		}
+		post_pass("postfx_taa.frag", *targets.taa_history[target], {targets.colour.get(), targets.motion_image.get(), targets.depth.get(), targets.taa_history[1 - target].get()}, constants, "temporal anti-aliasing");
+		hdr = targets.taa_history[target].get();
+	}
+	// the image before the blur is the one the reflections of the next frame take
+	if (m_ssrframe && m_viewports[Index].main)
+	{
+		store_ssr_history(Index, *hdr);
+	}
+	m_ssrframe = false;
+	if (Motionblur && targets.blurred)
+	{
+		vk14::draw_constants constants;
+		constants.data[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
+		// with the frames generated by dlss each frame drawn is shown for a part of its time: the blur as much shorter (the guide of
+		// the frame generation)
+		if (m_generationinputs && m_viewports[Index].main)
+		{
+			constants.data[0].x /= static_cast<float>(1 + m_generatedframe);
+		}
+		post_pass("postfx_motionblur.frag", *targets.blurred, {hdr, targets.motion_image.get(), targets.depth.get()}, constants, "resolve, ambient occlusion, motion blur");
+		hdr = targets.blurred.get();
+	}
+	ctx.passes.begin_pass("exposure, bloom");
+	// the exposure follows the main view; the other viewports use it too
+	if (Global.gfx_postfx_autoexposure && m_viewports[Index].main)
+	{
+		measure_exposure(*hdr);
+	}
+	vk14::image *bloom{nullptr};
+	if (Global.gfx_postfx_bloom)
+	{
+		bloom = render_bloom(Index, *hdr);
+	}
+	vk14::draw_constants tonemap;
+	tonemap.data[0] = gfx::exposure_settings::tonemap_params(bloom != nullptr ? targets.bloom_sizes.size() : 0);
+	// the dither goes to the last pass before the window: the chromatic aberration, when it follows
+	tonemap.data[1] = glm::vec4{targets.aberration ? 0.f : 1.f, gfx::exposure_settings::white_balance()};
+	std::vector<vk14::image *> const tonemapinput{hdr, (bloom != nullptr ? bloom : hdr)};
+	if (targets.aberration && targets.tonemapped)
+	{
+		post_pass("postfx_tonemapping.frag", *targets.tonemapped, tonemapinput, tonemap, "tonemapping, output");
+		post_pass("postfx_chromaticaberration.frag", *targets.output, {targets.tonemapped.get()}, vk14::draw_constants{});
+	}
+	else
+	{
+		post_pass("postfx_tonemapping.frag", *targets.output, tonemapinput, tonemap, "tonemapping, output");
+	}
+	// the lights of the clusters of the pixels over the image, for the debugging of the lights (the clusters are those of the size the
+	// scene is drawn at, which dlss upscales)
+	if (Global.gfx_lights_clusterheatmap && (false == targets.dlss))
+	{
+		render_cluster_heatmap(Index);
+	}
+	vk14::barriers(commands, {vk14::use_of(*targets.output, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, sampled_access)});
+}
+
+// the output of a viewport drawn to its window turned upside down (decision K8), inside the rendering of the window; or to Target,
+// an image of the size of the window in the place of it (the frame generation, unorm)
+void vulkan14_renderer::present_viewport(std::size_t const Index, vk14::image const *Target)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &targets{scene.targets[Index]};
+	auto const &window{*ctx.windows[m_viewports[Index].window]};
+	auto const commands{m_commands};
+	auto const format{Target != nullptr ? Target->desc().format : window.format()};
+	auto const srgb{Target != nullptr ? false : window.srgb()};
+	VkExtent2D const extent{Target != nullptr ? VkExtent2D{Target->desc().extent.width, Target->desc().extent.height} : window.extent()};
+	// the output encoded already goes as it is; an srgb output to a window which isn't (no srgb format of the surface) is encoded
+	auto const pipeline{post_pipeline("present.frag", static_cast<int>(format), (targets.srgb && (false == srgb)) ? 1 : 0)};
+	if (pipeline == nullptr)
+	{
+		return;
+	}
+	vk14::set_draw_state(commands, extent);
+	commands->bind_pipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, reinterpret_cast<VkPipeline>(pipeline));
+	commands->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+	std::array<vk14::descriptor, vk14::bindings::POST_TEXTURES + 1> descriptors;
+	descriptors.fill(vk14::image_descriptor(ctx.sampling.clamp_linear, targets.output->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+	descriptors[vk14::bindings::POST_EXPOSURE_SSBO] = vk14::buffer_descriptor(scene.exposure.data.handle(), 0, sizeof(gl::exposure_data));
+	scene.post_set.push(commands, scene.post_layout, descriptors.data());
+	vk14::draw_constants constants;
+	VkPushConstantsInfo info{};
+	info.sType = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+	info.layout = scene.post_layout;
+	info.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	info.size = sizeof(constants);
+	info.pValues = &constants;
+	commands->push_constants2(&info);
+	commands->draw(4, 1, 0, 0);
+}
+
+// a pipeline of the post-processing: quad.vert with the fragment shader, to an image of the format. the copy to a window has the
+// colour encoded already (the output of the viewport is srgb, or encoded by the tonemapping with gfx.shadergamma)
+void *vulkan14_renderer::post_pipeline(char const *Fragment, int const Format, int const Encode)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const lookup{scene.post_fragments.find(Fragment)};
+	if (lookup == scene.post_fragments.end())
+	{
+		return nullptr;
+	}
+	vk14::pipeline_desc desc;
+	desc.stages = {scene.quad, lookup->second};
+	desc.layout = scene.post_layout;
+	desc.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	desc.colour_formats = {static_cast<VkFormat>(Format)};
+	auto const gamma{Encode >= 0 ? (Encode > 0) : Global.gfx_shadergamma};
+	desc.specialization = {gamma ? 1u : 0u, Global.gfx_shadowmap_enabled ? 1u : 0u, Global.gfx_envmap_enabled ? 1u : 0u, Global.gfx_postfx_motionblur_enabled ? 1u : 0u, 1u, Global.gfx_extraeffects ? 1u : 0u};
+	desc.name = Fragment;
+	return reinterpret_cast<void *>(ctx.pipelines.get(desc));
+}
+
+// the lights of the pass (opengl46_renderer::Update_Lights())
+void vulkan14_renderer::update_lights(light_array &Lights, bool const Headlights, bool const Clustered)
+{
+	// arrange the light array from closest to farthest from current position of the camera
+	auto const camera = m_colorpass.pass_camera.position();
+	if (Headlights)
+	{
+		std::sort(std::begin(Lights.data), std::end(Lights.data), [&camera](light_array::light_record const &Left, light_array::light_record const &Right) {
+			if (Left.intensity == 0.f)
+			{
+				return false;
+			}
+			if (Right.intensity == 0.f)
+			{
+				return true;
+			}
+			return (glm::length2(camera - Left.position) / Left.intensity) < (glm::length2(camera - Right.position) / Right.intensity);
+		});
+	}
+	glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
+	// the headlights as the debug window sets them (opengl46_renderer::headlight_config)
+	auto const in_cutoff{m_headlightconfig.in_cutoff};
+	auto const out_cutoff{m_headlightconfig.out_cutoff};
+	auto const falloff_linear{m_headlightconfig.falloff_linear};
+	auto const falloff_quadratic{m_headlightconfig.falloff_quadratic};
+	auto const intensity{m_headlightconfig.intensity};
+	auto const ambient{m_headlightconfig.ambient};
+
+	sun_light renderlight;
+	renderlight.is_directional = false;
+	std::size_t light_i = 1;
+	m_lights_dropped = 0;
+
+	// the lights other than the headlights are only taken from the lists of the clusters. the lights of the occupied cab go first
+	auto const locallights{Headlights && Clustered};
+	m_cablamplit = false;
+	m_cablamps = 0;
+	if (locallights)
+	{
+		auto const *vehicle{m_locallights.cab_lamp_vehicle()};
+		auto const &lamps{m_context->scene.lamps};
+		for (auto const &cablight : m_locallights.cab_lights())
+		{
+			if (light_i >= gl::MAX_LIGHTS)
+			{
+				break;
+			}
+			auto &light{light_data.lights[light_i++]};
+			write_local_light(light, cablight.source, camera, mv);
+			++m_cablamps;
+			if (auto const slot{lamps.cab_slot_of(vehicle, cablight)}; slot >= 0)
+			{
+				// view space to the space of the map: the space of the cab model, with the light at the origin. the vehicle is where it
+				// is now, the map stays right as it moves
+				auto const toworld{glm::dmat4{glm::transpose(glm::mat3{mv})}};
+				auto const tomap{glm::translate(glm::dmat4{1.0}, -glm::dvec3{lamps.cab(static_cast<std::size_t>(slot)).lamp}) * glm::inverse(vehicle->mMatrix) *
+				                 glm::translate(glm::dmat4{1.0}, camera - vehicle->GetPosition()) * toworld};
+				light.headlight_projection = glm::mat4{tomap};
+				light.headlight_weights = lamps.weights(static_cast<std::size_t>(slot));
+			}
+		}
+		m_cablamplit = (m_cablamps > 0);
+	}
+	auto const headlightsstart{light_i};
+	for (auto const &scenelight : Lights.data)
+	{
+		if (!Headlights || !Global.gfx_lights_headlights || scenelight.intensity == 0.f)
+		{
+			break;
+		}
+		auto const lightoffset = glm::vec3{scenelight.position - camera};
+		if (glm::length2(lightoffset) > sq(1000.f))
+		{
+			continue;
+		}
+		if (light_i >= gl::MAX_LIGHTS)
+		{
+			++m_lights_dropped;
+			continue;
+		}
+		renderlight.position = lightoffset;
+		renderlight.direction = scenelight.direction;
+		auto const luminance = static_cast<float>(Global.fLuminance) * gfx::vehicle_light_level(scenelight.owner);
+		renderlight.diffuse = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color - glm::vec3{luminance}), renderlight.diffuse[3]};
+		renderlight.ambient = glm::vec4{glm::max(glm::vec3{colors::none}, scenelight.color * glm::vec3{scenelight.intensity} - glm::vec3{luminance}), renderlight.ambient[3]};
+		renderlight.factor = (scenelight.count * 0.5) * (scenelight.owner->DimHeadlights ? 0.5 : 1.0);
+
+		gl::light_element *light = &light_data.lights[light_i];
+		light->pos = mv * glm::vec4(renderlight.position, 1.0f);
+		light->dir = mv * glm::vec4(renderlight.direction, 0.0f);
+		light->type = gl::light_element::HEADLIGHTS;
+		light->in_cutoff = in_cutoff;
+		light->out_cutoff = out_cutoff;
+		light->color = renderlight.diffuse * renderlight.factor;
+		light->linear = falloff_linear / 10.0f;
+		light->quadratic = falloff_quadratic / 100.0f;
+		light->ambient = ambient;
+		light->intensity = intensity;
+		auto const worldcam{glm::mat3{m_renderpass.pass_camera.modelview()}};
+		{
+			glm::dvec3 projector;
+			glm::mat3 lightcam;
+			glm::mat4 depthproj;
+			float nearplane, fieldofview;
+			headlight_projector(scenelight, projector, lightcam, depthproj, nearplane, fieldofview);
+			light->headlight_projection = coordmove * depthproj * glm::translate(glm::mat4{lightcam}, glm::vec3{m_renderpass.pass_camera.position() - projector}) * glm::mat4{glm::inverse(worldcam)};
+		}
+		// headlights weights
+		light->headlight_weights = {scenelight.state, 0.f};
+		// the shadow map of the headlights, if they have one: the same projection, from where the projector was when it was drawn
+		auto const &lamps{m_context->scene.lamps};
+		if (auto const shadowmap{lamps.headlight_map(scenelight.owner, scenelight.index)}; shadowmap >= 0)
+		{
+			auto const &slot{lamps.headlight(static_cast<std::size_t>(shadowmap))};
+			scene_ubs.headlight_shadow[shadowmap] = coordmove * slot.projection * glm::translate(glm::mat4{slot.rotation}, glm::vec3{m_renderpass.pass_camera.position() - slot.projector}) * glm::mat4{glm::inverse(worldcam)};
+			scene_ubs.headlight_shadow_params[shadowmap] = lamps.headlight_params(static_cast<std::size_t>(shadowmap));
+			light->headlight_weights.w = static_cast<float>(shadowmap + 1);
+		}
+		++light_i;
+	}
+	m_lights_lit = static_cast<uint32_t>(light_i - headlightsstart);
+	// lamps of models and vehicles, the most important first, those which may be seen lighting something in this view
+	if (locallights)
+	{
+		auto const toworld{glm::dmat4{glm::transpose(glm::mat3{mv})}};
+		auto const &lamps{m_context->scene.lamps};
+		uint32_t placed{0};
+		uint32_t dropped{0};
+		for (auto const &local : m_locallights.lights())
+		{
+			if (false == m_renderpass.pass_camera.visible(scene::bounding_area{local.position, local.range}))
+			{
+				continue;
+			}
+			if (light_i >= gl::MAX_LIGHTS)
+			{
+				++dropped;
+				continue;
+			}
+			auto &light{light_data.lights[light_i++]};
+			write_local_light(light, local, camera, mv);
+			std::size_t slot;
+			if (auto const *lamp{lamps.lamp(local, slot)})
+			{
+				// view space to the space of the map: world axes with the lamp at the origin
+				light.headlight_projection = glm::mat4{glm::translate(glm::dmat4{1.0}, camera - lamp->position) * toworld};
+				light.headlight_weights = lamps.lamp_weights(slot);
+				// the map is in the array of the scenery lamps
+				light.linear = 1.0f;
+			}
+			++placed;
+		}
+		m_locallights.placed(placed, dropped);
+	}
+	light_data.lights_total = static_cast<uint32_t>(light_i);
+	light_data.lights_count = 1 + std::min<uint32_t>(m_lights_lit, static_cast<uint32_t>(std::max(Global.DynamicLightCount, 0)));
+	light_data.lights_clustered = Clustered ? 1 : 0;
+	light_data.env_ggx = (Global.gfx_envmap_ggx && m_envmap_bound) ? 1 : 0;
+	// fill sunlight data
+	light_data.ambient = m_sunlight.ambient * m_sunlight.factor;
+	light_data.sky_ambient_factor = (Global.gfx_ambient_sh ? m_sunlight.factor : 0.f);
+	light_data.lights[0].type = gl::light_element::DIR;
+	light_data.lights[0].dir = mv * glm::vec4(m_sunlight.direction, 0.0f);
+	light_data.lights[0].color = m_sunlight.diffuse * m_sunlight.factor * simulation::Environment.light_intensity();
+	light_data.lights[0].ambient = 0.0f;
+	light_data.lights[0].intensity = 1.0f;
+	// fill fog data
+	light_data.fog_color = m_fogcolor;
+	if (Global.fFogEnd > 0)
+	{
+		// the fog of the weather; the regular density is a reference the shading scales the fog of a draw with
+		m_fogrange = m_weatherstate.fog_range();
+		model_ubs.fog_density = m_weatherstate.fog_density();
+	}
+	else
+	{
+		model_ubs.fog_density = 0.0f;
+	}
+	m_lightcount = static_cast<std::uint32_t>(light_i);
+	m_lightheaders.clear();
+	if (m_draw && m_draw->rendering)
+	{
+		upload_light_header();
+	}
+
+	// the lights of the clusters: the culling into the lists, for the colour pass which follows
+	if (Clustered)
+	{
+		auto &ctx{*m_context};
+		auto &scene{ctx.scene};
+		auto &clusters{scene.clusters};
+		auto const commands{m_commands};
+		auto const lightsize{offsetof(gl::light_data, lights) + sizeof(gl::light_element) * m_lightcount};
+		auto const lights{ctx.ring.allocate(sizeof(gl::light_data), ctx.device.caps().limits.minStorageBufferOffsetAlignment)};
+		if (false == bool(lights))
+		{
+			return;
+		}
+		std::memcpy(lights.data, &light_data, lightsize);
+		m_draw->light_offset = static_cast<std::uint32_t>(lights.offset);
+		commands->fill_buffer(clusters.counters.handle(), 0, VK_WHOLE_SIZE, 0);
+		VkMemoryBarrier2 barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.memoryBarrierCount = 1;
+		dependency.pMemoryBarriers = &barrier;
+		commands->pipeline_barrier2(&dependency);
+		std::array<VkDescriptorBufferInfo, 6> buffers{{{ctx.ring.handle(), clusters.params_offset, sizeof(gl::cluster_ubs)},
+		                                               {clusters.aabbs.handle(), 0, VK_WHOLE_SIZE},
+		                                               {clusters.ranges.handle(), 0, VK_WHOLE_SIZE},
+		                                               {clusters.indices.handle(), 0, VK_WHOLE_SIZE},
+		                                               {clusters.counters.handle(), 0, VK_WHOLE_SIZE},
+		                                               {lights.buffer, lights.offset, sizeof(gl::light_data)}}};
+		commands->bind_pipeline(VK_PIPELINE_BIND_POINT_COMPUTE, scene.cluster_cull);
+		scene.cluster_set.push(commands, scene.cluster_layout, buffers.data());
+		commands->dispatch((gl::CLUSTER_COUNT + gl::CLUSTER_CULL_GROUP_SIZE - 1) / gl::CLUSTER_CULL_GROUP_SIZE, 1, 1);
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		commands->pipeline_barrier2(&dependency);
+		clusters.lights_total = light_data.lights_total;
+		// the counters of the culling for the debug panel, read once the gpu is done with the frame
+		clusters.counters_readback.push(commands, ctx.slot, ctx.timelinevalue + 1, clusters.counters.handle(), 0, sizeof(gl::cluster_counters));
+	}
+}
+
+void vulkan14_renderer::write_local_light(gl::light_element &Light, gfx::local_lights::light const &Source, glm::dvec3 const &Camera, glm::mat4 const &View)
+{
+	// a cone wider than a half of the space is no limit for the culling, but the shading still fades the light out of it
+	Light.type = gl::light_element::SPOT;
+	Light.pos = View * glm::vec4(glm::vec3{Source.position - Camera}, 1.0f);
+	Light.dir = glm::normalize(glm::vec3{View * glm::vec4(Source.direction, 0.0f)});
+	Light.in_cutoff = Source.cos_inner;
+	Light.out_cutoff = Source.cos_outer;
+	if (Source.cos_outer <= -1.f)
+	{
+		Light.type = gl::light_element::POINT;
+	}
+	Light.color = Source.color;
+	Light.intensity = 1.0f;
+	// the sphere the light shines from, see gl::light_element
+	Light.ambient = (Source.soft_falloff ? -Source.radius : Source.radius);
+	// the shading takes the light to end at 1 / sqrt(quadratic)
+	Light.linear = 0.0f;
+	Light.quadratic = 1.0f / sq(std::max(Source.range, 0.01f));
+	Light.headlight_projection = glm::mat4{1.0f};
+	// no shadow map; a light which casts no shadows has no contact shadows either
+	Light.headlight_weights = glm::vec4{-1.0f, (Source.cast_shadows ? 0.0f : 1.0f), 0.0f, 0.0f};
+}
+
+void vulkan14_renderer::headlight_projector(light_array::light_record const &Light, glm::dvec3 &Position, glm::mat3 &Rotation, glm::mat4 &Projection, float &Near, float &Fieldofview)
+{
+	auto const &ownerdimensions{Light.owner->MoverParameters->Dim};
+	auto const up{static_cast<glm::dvec3>(Light.owner->VectorUp())};
+	auto const size{static_cast<float>(std::max(ownerdimensions.W, ownerdimensions.H) * 1.0)};
+	auto const cone{5.f};
+	auto const offset{75.f * (5.f / cone)};
+	Position = Light.owner->GetPosition() - glm::dvec3(Light.direction * offset) + up * (size * 0.5);
+	Near = static_cast<float>(ownerdimensions.L * 0.5 + offset - 0.25);
+	Fieldofview = glm::radians(cone);
+	Projection = perspective_projection_raw(Fieldofview, 1.0, Near, 1000.0f);
+	glm::dmat4 viewmatrix{1.0};
+	viewmatrix *= glm::lookAt(Position, Position - up * 1.0 + glm::dvec3{Light.direction * 1000.f}, glm::dvec3{0.f, 1.f, 0.f});
+	Rotation = glm::mat3{glm::mat4{viewmatrix}};
+}
+
+// the light cluster grid of a viewport for the projection of its colour pass (gl::cluster_grid::update() and build()); the
+// viewports take the buffers of the grid in turn, its boxes are made anew when the projection changes
+void vulkan14_renderer::update_clusters(glm::ivec2 const &Targetsize)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto &clusters{scene.clusters};
+	auto const commands{m_commands};
+	auto const projection{OpenGLMatrices.data(GL_PROJECTION)};
+	auto const znear{m_renderpass.znear};
+	auto const zfar{m_renderpass.zfar};
+	auto params{clusters.params};
+	params.viewport_width = static_cast<float>(Targetsize.x);
+	params.viewport_height = static_cast<float>(Targetsize.y);
+	// clip space w is a function of the position in a perspective projection, and a constant in an orthographic one
+	bool const perspective{glm::length(glm::vec3{projection[0][3], projection[1][3], projection[2][3]}) > 1e-4f};
+	bool const usable{perspective && znear > 0.f && zfar > znear};
+	params.valid = usable ? 1 : 0;
+	if (usable && (projection != clusters.params.projection || znear != clusters.params.znear || zfar != clusters.params.zfar))
+	{
+		params.projection = projection;
+		params.znear = znear;
+		params.zfar = zfar;
+		params.slice_scale = static_cast<float>(gl::CLUSTER_GRID_Z) / std::log(zfar / znear);
+		params.slice_bias = -std::log(znear) * params.slice_scale;
+		clusters.stale = true;
+	}
+	clusters.params = params;
+	auto const block{ctx.ring.allocate(sizeof(gl::cluster_ubs), ctx.device.caps().limits.minUniformBufferOffsetAlignment)};
+	if (false == bool(block))
+	{
+		clusters.params.valid = 0;
+		return;
+	}
+	std::memcpy(block.data, &clusters.params, sizeof(gl::cluster_ubs));
+	clusters.params_offset = block.offset;
+	if (usable && clusters.stale)
+	{
+		// the boxes of the clusters depend only on the projection and the depth range
+		std::array<VkDescriptorBufferInfo, 6> buffers{{{block.buffer, block.offset, sizeof(gl::cluster_ubs)},
+		                                               {clusters.aabbs.handle(), 0, VK_WHOLE_SIZE},
+		                                               {clusters.ranges.handle(), 0, VK_WHOLE_SIZE},
+		                                               {clusters.indices.handle(), 0, VK_WHOLE_SIZE},
+		                                               {clusters.counters.handle(), 0, VK_WHOLE_SIZE},
+		                                               {ctx.ring.handle(), 0, sizeof(gl::light_data)}}};
+		VkMemoryBarrier2 barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		VkDependencyInfo dependency{};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.memoryBarrierCount = 1;
+		dependency.pMemoryBarriers = &barrier;
+		commands->pipeline_barrier2(&dependency);
+		commands->bind_pipeline(VK_PIPELINE_BIND_POINT_COMPUTE, scene.cluster_build);
+		scene.cluster_set.push(commands, scene.cluster_layout, buffers.data());
+		commands->dispatch((gl::CLUSTER_COUNT + gl::CLUSTER_BUILD_GROUP_SIZE - 1) / gl::CLUSTER_BUILD_GROUP_SIZE, 1, 1);
+		barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+		commands->pipeline_barrier2(&dependency);
+		clusters.stale = false;
+	}
+}
+
+// picking: the colours of the controls of the cab or of the nodes of the scenery, and the one under the cursor read back
+
+void vulkan14_renderer::render_picking(rendermode const Mode)
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	auto const commands{m_commands};
+	auto &readback{Mode == rendermode::pickcontrols ? scene.pick_controls : scene.pick_scenery};
+	if (readback.pending || m_viewports.empty())
+	{
+		return;
+	}
+	auto &vp{m_viewports.front()};
+	setup_pass(vp, m_renderpass, Mode);
+	ctx.passes.begin_pass(Mode == rendermode::pickcontrols ? "pick controls" : "pick scenery", {vk14::use_of(*scene.pick_colour, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, colour_stage, colour_access),
+	                                                                                             vk14::use_of(*scene.pick_depth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
+	VkClearValue colourclear{};
+	colourclear.color = {{0.f, 0.f, 0.f, 0.f}};
+	VkClearValue depthclear{};
+	depthclear.depthStencil = {0.f, 0};
+	auto colour{attachment_info(scene.pick_colour->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true, colourclear)};
+	auto depth{attachment_info(scene.pick_depth->view(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, true, depthclear)};
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, {static_cast<std::uint32_t>(pick_buffer_size), static_cast<std::uint32_t>(pick_buffer_size)}};
+	rendering.layerCount = 1;
+	rendering.colorAttachmentCount = 1;
+	rendering.pColorAttachments = &colour;
+	rendering.pDepthAttachment = &depth;
+	commands->begin_rendering(&rendering);
+	start_draws(scene.pick_formats, pick_buffer_size, pick_buffer_size, vk14::scene_state::set_plain, false);
+	setup_matrices();
+	walk_blending(false);
+	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+	upload_scene_block();
+	upload_light_header();
+	if (Mode == rendermode::pickcontrols)
+	{
+		m_picksurfaceitems.clear();
+		m_pickcontrolsitems.clear();
+		Render_cab(simulation::Train->Dynamic(), 0.0f);
+		Render(simulation::Train->Dynamic());
+	}
+	else
+	{
+		m_picksceneryitems.clear();
+		Render(simulation::Region);
+	}
+	commands->end_rendering();
+	end_draws();
+
+	auto buffer{std::make_shared<vk14::buffer>()};
+	if (buffer->create(ctx.memory, 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk14::memory_kind::readback, "pick colour"))
+	{
+		vk14::barriers(commands, {vk14::use_of(*scene.pick_colour, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT)});
+		VkBufferImageCopy2 region{};
+		region.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
+		region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+		region.imageOffset = {m_pickposition.x, m_pickposition.y, 0};
+		region.imageExtent = {1, 1, 1};
+		VkCopyImageToBufferInfo2 copy{};
+		copy.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2;
+		copy.srcImage = scene.pick_colour->handle();
+		copy.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		copy.dstBuffer = buffer->handle();
+		copy.regionCount = 1;
+		copy.pRegions = &region;
+		commands->copy_image_to_buffer2(&copy);
+		host_read_barrier(commands);
+		readback.data = buffer;
+		readback.value = ctx.timelinevalue + 1;
+		readback.pending = true;
+	}
+	ctx.passes.end_pass();
+	m_renderpass = m_colorpass;
+}
+
+namespace
+{
+// the place in the image of the picking under the cursor, in the rows of opengl
+glm::ivec2 pick_position()
+{
+	glm::vec2 mousepos = Global.cursor_pos;
+	mousepos.y = Global.window_size.y - mousepos.y;
+	auto pickbufferpos{glm::ivec2(mousepos * glm::vec2(pick_buffer_size) / glm::max(glm::vec2(Global.window_size), glm::vec2(1.f)))};
+	return glm::clamp(pickbufferpos, glm::ivec2(0, 0), glm::ivec2(pick_buffer_size - 1, pick_buffer_size - 1));
+}
+} // namespace
+
+void vulkan14_renderer::Update_Pick_Control()
+{
+	if (!m_context)
+	{
+		return;
+	}
+	auto &ctx{*m_context};
+	auto &readback{ctx.scene.pick_controls};
+	if (readback.pending)
+	{
+		if (ctx.completed() < readback.value)
+		{
+			return;
+		}
+		readback.pending = false;
+		readback.data->invalidate(0, 4);
+		auto const *data{readback.data->mapped()};
+		auto const controlindex = pick_index(glm::ivec3{data[0], data[1], data[2]});
+		TSubModel const *control{nullptr};
+		glm::vec2 position(0.0f);
+		if ((controlindex > 0) && (controlindex <= m_pickcontrolsitems.size()))
+		{
+			control = m_pickcontrolsitems[controlindex - 1];
+		}
+		else if (255 - data[0] < m_picksurfaceitems.size())
+		{
+			control = m_picksurfaceitems[255 - data[0]];
+			position.x = data[1] / 255.0f;
+			position.y = data[2] / 255.0f;
+		}
+		m_pickcontrolitem = control;
+		for (auto const &callback : m_control_pick_requests)
+		{
+			callback(m_pickcontrolitem, position);
+		}
+		m_control_pick_requests.clear();
+		readback.data.reset();
+	}
+	if (false == m_control_pick_requests.empty())
+	{
+		m_pickposition = pick_position();
+		m_pickcontrolswanted = true;
+	}
+}
+
+void vulkan14_renderer::Update_Pick_Node()
+{
+	if (!m_context)
+	{
+		return;
+	}
+	auto &ctx{*m_context};
+	auto &readback{ctx.scene.pick_scenery};
+	if (readback.pending)
+	{
+		if (ctx.completed() < readback.value)
+		{
+			return;
+		}
+		readback.pending = false;
+		readback.data->invalidate(0, 4);
+		auto const *data{readback.data->mapped()};
+		auto const nodeindex = pick_index(glm::ivec3{data[0], data[1], data[2]});
+		scene::basic_node *node{nullptr};
+		if ((nodeindex > 0) && (nodeindex <= m_picksceneryitems.size()))
+		{
+			node = m_picksceneryitems[nodeindex - 1];
+		}
+		m_picksceneryitem = node;
+		for (auto const &callback : m_node_pick_requests)
+		{
+			callback(m_picksceneryitem);
+		}
+		m_node_pick_requests.clear();
+		readback.data.reset();
+	}
+	if (false == m_node_pick_requests.empty())
+	{
+		m_pickposition = pick_position();
+		m_picknodewanted = true;
+	}
+}
+
+void vulkan14_renderer::Pick_Control_Callback(std::function<void(TSubModel const *, glm::vec2 const)> Callback)
+{
+	if (!Global.render_cab)
+	{
+		Callback(nullptr, glm::vec2());
+		return;
+	}
+	m_control_pick_requests.push_back(Callback);
+}
+
+void vulkan14_renderer::Pick_Node_Callback(std::function<void(scene::basic_node *)> Callback)
+{
+	m_node_pick_requests.push_back(Callback);
+}
+
+TSubModel const *vulkan14_renderer::Pick_Control() const
+{
+	return m_pickcontrolitem;
+}
+
+scene::basic_node const *vulkan14_renderer::Pick_Node() const
+{
+	return m_picksceneryitem;
+}
+
+void vulkan14_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+	{
+		m_picksceneryitem = nullptr;
+	}
+	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
+}
+
+glm::dvec3 vulkan14_renderer::Mouse_Position() const
+{
+	return m_worldmousecoordinates;
+}
+
+bool vulkan14_renderer::Mouse_Hit() const
+{
+	return m_mousehit;
+}
+
+glm::mat4 vulkan14_renderer::Camera_View_Matrix() const
+{
+	return glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview()));
+}
+
+glm::mat4 vulkan14_renderer::Camera_Projection_Matrix() const
+{
+	return m_colorpass.pass_camera.projection();
+}
+
+glm::dvec3 vulkan14_renderer::Camera_Position() const
+{
+	return m_colorpass.pass_camera.position();
+}
+
+// the position of the cursor of the editor in the scene: the depth under it read back from an earlier frame
+glm::dvec3 vulkan14_renderer::Update_Mouse_Position()
+{
+	if (m_context)
+	{
+		auto &ctx{*m_context};
+		auto &cursor{ctx.scene.cursor};
+		if (cursor.pending && (ctx.completed() >= cursor.value) && (false == ctx.scene.targets.empty()))
+		{
+			cursor.pending = false;
+			std::array<float, 9> depths{};
+			auto const count{static_cast<std::size_t>(std::clamp(m_cursorblocksize.x * m_cursorblocksize.y, 0, static_cast<int>(depths.size())))};
+			cursor.data->invalidate(0, sizeof(float) * count);
+			std::memcpy(depths.data(), cursor.data->mapped(), sizeof(float) * count);
+			cursor.data.reset();
+			auto const centre{cursor.position - m_cursorblockcorner};
+			auto const depth_at = [&](glm::ivec2 const Pixel) {
+				if ((Pixel.x < 0) || (Pixel.y < 0) || (Pixel.x >= m_cursorblocksize.x) || (Pixel.y >= m_cursorblocksize.y))
+				{
+					return 0.f;
+				}
+				return depths[static_cast<std::size_t>(Pixel.y * m_cursorblocksize.x + Pixel.x)];
+			};
+			float pointdepth{depth_at(centre)};
+			if (m_cursorbiased && (pointdepth > 0.f))
+			{
+				// the depth pass of the scene draws everything a little farther than it lies (depth bias -1, slope -1), so the colour
+				// pass passes on the same surface. the slope of the depth grows towards the horizon, and the ground seen at a grazing
+				// angle came out much farther than it lies, or not at all. the slope is taken back: the pixels next to it on the same
+				// triangle are moved by the same bias, so their difference is the slope; of the two sides the smaller, which is less
+				// likely to lie on another surface. the larger slope of the two axes, the one implementations use for m
+				auto const slope = [&](glm::ivec2 const Step) {
+					auto result{-1.f};
+					for (auto const side : {-1, 1})
+					{
+						auto const other{depth_at(centre + Step * side)};
+						if (other > 0.f)
+						{
+							auto const difference{std::abs(other - pointdepth)};
+							result = (result < 0.f ? difference : std::min(result, difference));
+						}
+					}
+					return std::max(result, 0.f);
+				};
+				pointdepth += std::max(slope({1, 0}), slope({0, 1})) + std::ldexp(1.f, std::ilogb(pointdepth) - 23);
+			}
+			auto const extent{ctx.scene.targets.front().extent};
+			m_mousehit = pointdepth > 0.0f;
+			if (pointdepth > 0.0f)
+			{
+				m_worldmousecoordinates = glm::unProjectZO(glm::vec3(cursor.position, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),
+				                                           glm::vec4(0, 0, extent.width, extent.height));
+			}
+		}
+	}
+	return m_colorpass.pass_camera.position() + glm::dvec3{m_worldmousecoordinates};
+}
+
+// screenshots: the output of the main viewport copied with the frame, saved once the gpu is done with it
+void vulkan14_renderer::MakeScreenshot()
+{
+	if (m_context)
+	{
+		m_context->scene.screenshot_wanted = true;
+	}
+}
+
+void vulkan14_renderer::update_screenshot()
+{
+	if (!m_context)
+	{
+		return;
+	}
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	if ((false == scene.screenshot_pending) || (ctx.completed() < scene.screenshot_value))
+	{
+		return;
+	}
+	scene.screenshot_pending = false;
+	auto const width{static_cast<int>(scene.screenshot_extent.width)};
+	auto const height{static_cast<int>(scene.screenshot_extent.height)};
+	scene.screenshot->invalidate(0, VK_WHOLE_SIZE);
+	auto const *rgba{scene.screenshot->mapped()};
+	// rgb rows as glReadPixels() of the opengl renderer gives them: the rows of the images are those of opengl (decision K8)
+	auto *image = new char[static_cast<std::size_t>(width) * height * 3];
+	for (std::size_t pixel = 0; pixel < static_cast<std::size_t>(width) * height; ++pixel)
+	{
+		image[pixel * 3 + 0] = static_cast<char>(rgba[pixel * 4 + 0]);
+		image[pixel * 3 + 1] = static_cast<char>(rgba[pixel * 4 + 1]);
+		image[pixel * 3 + 2] = static_cast<char>(rgba[pixel * 4 + 2]);
+	}
+	scene.screenshot.reset();
+	screenshot_manager::save(image, width, height);
+}
+
+// textures used only by vehicles farther than gfx.textures.releasedistance times the draw range give their images back
+// (opengl46_renderer::Update_Texture_Release())
+void vulkan14_renderer::update_texture_release()
+{
+	if (!m_context || !m_context->textures || (m_colorpass.draw_range <= 0.f))
+	{
+		return;
+	}
+	auto &textures{*m_context->textures};
+	auto const range{static_cast<double>(Global.gfx_texture_releasedistance) * m_colorpass.draw_range};
+	auto const camera{m_colorpass.pass_camera.position()};
+	textures.begin_release_scan();
+	for (auto *vehicle : simulation::Vehicles.sequence())
+	{
+		if (vehicle == nullptr)
+		{
+			continue;
+		}
+		bool const isnear{glm::length(vehicle->vPosition - camera) - vehicle->radius() <= range};
+		auto const mark_model = [&](TModel3d *Model) {
+			if (Model == nullptr)
+			{
+				return;
+			}
+			for (auto const texture : Model_Textures(Model))
+			{
+				textures.mark_as_needed(texture, isnear);
+			}
+		};
+		mark_model(vehicle->mdModel);
+		mark_model(vehicle->mdLowPolyInt);
+		mark_model(vehicle->mdLoad);
+		for (auto *attachment : vehicle->mdAttachments)
+		{
+			mark_model(attachment);
+		}
+		for (auto const skin : vehicle->Material()->replacable_skins)
+		{
+			if (skin <= 0)
+			{
+				continue;
+			}
+			auto const &material{m_materials.material(skin)};
+			for (auto const texture : material.textures)
+			{
+				textures.mark_as_needed(texture, isnear);
+			}
+			for (auto const &variant : material.texture_variants)
+			{
+				for (auto const texture : variant)
+				{
+					textures.mark_as_needed(texture, isnear);
+				}
+			}
+		}
+	}
+	textures.release_unneeded();
+}
+
+std::vector<texture_handle> const &vulkan14_renderer::Model_Textures(TModel3d *Model)
+{
+	auto const lookup{m_modeltextures.find(Model)};
+	if (lookup != m_modeltextures.end())
+	{
+		return lookup->second;
+	}
+	auto &textures{m_modeltextures[Model]};
+	std::vector<TSubModel *> submodels;
+	if (Model->GetSMRoot() != nullptr)
+	{
+		submodels.emplace_back(Model->GetSMRoot());
+	}
+	while (false == submodels.empty())
+	{
+		auto *submodel{submodels.back()};
+		submodels.pop_back();
+		if (submodel->NextGet() != nullptr)
+		{
+			submodels.emplace_back(submodel->NextGet());
+		}
+		if (submodel->ChildGet() != nullptr)
+		{
+			submodels.emplace_back(submodel->ChildGet());
+		}
+		// negative material is one of replaceable skins of the vehicle, these are handled with the vehicle
+		if (submodel->GetMaterial() <= 0)
+		{
+			continue;
+		}
+		auto const &material{m_materials.material(submodel->GetMaterial())};
+		for (auto const texture : material.textures)
+		{
+			if (texture > 0)
+			{
+				textures.emplace_back(texture);
+			}
+		}
+		for (auto const &variant : material.texture_variants)
+		{
+			for (auto const texture : variant)
+			{
+				if (texture > 0)
+				{
+					textures.emplace_back(texture);
+				}
+			}
+		}
+	}
+	std::sort(std::begin(textures), std::end(textures));
+	textures.erase(std::unique(std::begin(textures), std::end(textures)), std::end(textures));
+	return textures;
+}
+
+// a preview of a model (opengl46_renderer::Render_Preview()) isn't made by the vulkan renderer yet: the caller falls back to no
+// preview
+bool vulkan14_renderer::Render_Preview(TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image)
+{
+	return false;
+}

@@ -19,8 +19,16 @@ public:
 	float getAngle() const;
 	// returns current intensity of the sun
 	float getIntensity();
-    // returns current phase of the moon
+    // returns current phase of the moon: age in days from the new moon (50 on May 4th)
     float getPhase() const { return m_phase; }
+    // returns current phase angle (sun - moon - earth), degrees: 0 at the full moon, 180 at the new moon
+    float getPhaseAngle() const { return m_phaseangle; }
+    // returns lit fraction of the disc, 0...1
+    float getIllumination() const;
+    // returns brightness of the moon relative to the full moon, 0...1
+    float getBrightness() const;
+    // returns angular radius of the disc, radians
+    float getAngularRadius() const;
     // sets current time, overriding one acquired from the system clock
     void setTime( int const Hour, int const Minute, int const Second );
 	// sets current geographic location
@@ -62,6 +70,7 @@ protected:
 		double mnanom;		// mean anomaly, degrees
         double tranom;      // true anomaly, degrees
 		double eclong;		// ecliptic longitude, degrees.
+		double eclat{ 0.0 };	// ecliptic latitude, degrees.
 		double oblecl;		// obliquity of ecliptic.
 		double declin;		// declination--zenith angle of solar noon at equator, degrees NORTH.
 		double rascen;		// right ascension, degrees
@@ -95,5 +104,7 @@ protected:
     celestialbody m_body;
     observer m_observer;
     glm::vec3 m_position;
-    float m_phase;
+    float m_phase{ 0.f };
+    double m_elongation{ 0.0 }; // ecliptic longitude of the moon less that of the sun, degrees 0...360
+    float m_phaseangle{ 0.f };
 };

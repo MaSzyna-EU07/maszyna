@@ -13,21 +13,8 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
     png.width = w;
     png.height = h;
 
-    int stride;
-    if (Global.gfx_usegles)
-    {
-        png.format = PNG_FORMAT_RGBA;
-        stride = -w * 4;
-
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-                img[(y * w + x) * 4 + 3] = 0xFF;
-    }
-    else
-    {
-        png.format = PNG_FORMAT_RGB;
-        stride = -w * 3;
-    }
+    png.format = PNG_FORMAT_RGB;
+    int stride = -w * 3;
 
 	std::array<char, 64> datetime{};
 	std::tm const tm_info = local_tm(std::time(nullptr));
@@ -53,13 +40,9 @@ void screenshot_manager::screenshot_save_thread( char *img, int w, int h )
 	delete[] img;
 }
 
-void screenshot_manager::make_screenshot()
+void screenshot_manager::save(char *Image, int Width, int Height)
 {
-    auto img = new char[Global.fb_size.x * Global.fb_size.y * 4];
-    glReadPixels(0, 0, Global.fb_size.x, Global.fb_size.y, Global.gfx_usegles ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, (GLvoid*)img);
-	//m7t: use pbo
-	
-    std::thread t(screenshot_save_thread, img, Global.fb_size.x, Global.fb_size.y);
+    std::thread t(screenshot_save_thread, Image, Width, Height);
 	t.detach();
 }
 

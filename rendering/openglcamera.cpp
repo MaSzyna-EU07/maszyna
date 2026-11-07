@@ -41,15 +41,4 @@ opengl_camera::visible( TDynamicObject const *Dynamic ) const {
     return ( m_frustum.sphere_inside( Dynamic->GetPosition(), static_cast<float>(Dynamic->radius() * 1.25) ) > 0.0f );
 }
 
-// debug helper, draws shape of frustum in world space
-void
-opengl_camera::draw( glm::vec3 const &Offset ) const {
-
-    ::glBegin( GL_LINES );
-    for( auto const pointindex : frustumshapepoinstorder ) {
-        ::glVertex3fv( glm::value_ptr( glm::vec3{ m_frustumpoints[ pointindex ] } - Offset ) );
-    }
-    ::glEnd();
-}
-
 //---------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 | Console/ |  Hardware I/O |
 | application/ | Core simulation loop, time, environment, state serializer, sounds |
 | scene/ | Scene graph, scene nodes, scene editor, utilities |
-| rendering/ | All renderers (OpenGL legacy and full), geometry banks, particles, lights, frustum |
+| rendering/ | Renderers (the OpenGL 4.6 one is in rendering/opengl46/), geometry banks, particles, lights, frustum |
 | audio/ | Sound, audio, and audio renderer |
 | environment/ | Sky, sun, moon, stars, skydome | 
 | application/ | Application modes, UI layers/panels, driver/editor/scenario modes | 

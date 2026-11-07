@@ -57,6 +57,9 @@ public:
                 m_valuechangemodifier == nullptr ?
                     m_valuechange :
                     m_valuechange / *m_valuechangemodifier ); }
+    Type_
+        limit( value_limit const Limit ) const {
+            return m_valuelimits[ Limit ]; }
 
 private:
 //types
@@ -81,6 +84,31 @@ class smoke_source {
 public:
 // types
     using particle_sequence = std::vector<smoke_particle>;
+    // what the particles simulated on the gpu (particle_manager::gpu(), opengl46_gpu_particles) take from the source in an
+    // update: how many are born, where and how they start, and how they change, all as the cpu update would do it
+    struct gpu_state {
+        std::uint32_t spawns { 0 }; // particles born in the last update, at most max_particles()
+        glm::dvec3 location { 0.0 }; // of the emitter at the last update...
+        glm::dvec3 previous { 0.0 }; // ...and at the one before; the particles of an update are born along the way between
+        bool started { false };
+        float inclination[ 2 ] { 0.f, 0.f }; // radians
+        float velocity[ 2 ] { 0.f, 0.f }; // m/s, with the share the owner gives
+        float size[ 2 ] { 0.f, 0.f };
+        float opacity[ 2 ] { 0.f, 0.f }; // with the smoke fidelity and the share the owner gives
+        float sizechange[ 3 ] { 0.f, 0.f, 0.f }; // per second, min, max
+        float opacitychange[ 3 ] { 0.f, 0.f, 0.f }; // per second (with the fidelity), min, max
+        // the vertical velocity: changes by (rise - damping) * itself per second, and doesn't fall below risemin
+        float rise { 0.f };
+        float damping { 0.f };
+        float risemin { std::numeric_limits<float>::lowest() };
+        // with a settling velocity (settles): the velocity goes over to it instead, see smoke_source::m_settling
+        bool settles { false };
+        float settling { 0.f };
+        float drag { 1.f };
+        float spread { 0.f }; // see smoke_source::m_spread
+        float fadein { 0.f }; // see smoke_source::m_fadein
+        glm::vec3 color { 0.f };
+    };
 // methods
     bool
         deserialize( cParser &Input );
@@ -93,6 +121,21 @@ public:
     // updates state of owned particles
     void
         update( double const Timedelta, bool const Onlydespawn );
+    // the same for particles simulated on the gpu: only the births and the state of the source they start from
+    void
+        update_gpu( double const Timedelta, bool const Onlydespawn );
+    gpu_state const &
+        gpu() const {
+            return m_gpu; }
+    std::size_t
+        max_particles() const {
+            return m_max_particles; }
+    // share of the opacity of a particle the age has let through so far, 0-1 (fade_in:)
+    float
+        fade_in( float const Age ) const {
+            if( m_fadein <= 0.f ) { return 1.f; }
+            auto const share { std::clamp( Age / m_fadein, 0.f, 1.f ) };
+            return share * share * ( 3.f - 2.f * share ); }
     glm::vec3 const &
         color() const {
             return m_emitter.color; }
@@ -131,6 +174,12 @@ private:
     // imports member data pair from the config file
     bool
         deserialize_mapping( cParser &Input );
+    // adds the particles to spawn in an update of Timedelta to m_spawncount
+    void
+        accumulate_spawns( double const Timedelta, bool const Onlydespawn );
+    // shares of the launch velocity and of the opacity of a particle born now, which the owner gives
+    void
+        launch_scales( float &Velocity, float &Opacity ) const;
     void
         initialize( smoke_particle &Particle );
     // updates state of provided particle and bounding box. returns: true if particle is still alive afterwards, false otherwise
@@ -152,19 +201,29 @@ private:
     fixedstep_modifier<float> m_sizemodifier; // particle billboard size
 //    fixedstep_modifier<glm::vec3> m_colormodifier; // particle billboard color and opacity
     fixedstep_modifier<float> m_opacitymodifier;
+    // optional velocity the particles settle at in still air, m/s, positive upwards (light, hot smoke rises, heavy particles
+    // fall), and how fast they get to it: the share of the rest of the way per second is 1 - exp(-drag). when given, it takes
+    // the place of the crude dispersion of update( Particle ) (the rise in cold air, the damping in humid air)
+    bool m_settles { false };
+    float m_settling { 0.f }; // terminal_velocity:
+    float m_drag { 1.f }; // drag:
+    // optional growth of the particles with the way they go through the air, metres of size per metre: the jet out of the
+    // exhaust widens into a cone as it takes in the air around, instead of the puffs swelling in one place
+    float m_spread { 0.f }; // spread:
+    // optional time the particles take to show up after they're born, seconds, so they don't pop up at the exhaust
+    float m_fadein { 0.f }; // fade_in:
 //    texture_handle m_texture { -1 }; // texture assigned to particle billboards
     // current state
     float m_spawncount { 0.f }; // number of particles to spawn during next update
     particle_sequence m_particles; // collection of spawned particles
     std::size_t m_max_particles; // maximum number of particles existing
     scene::bounding_area m_area; // bounding sphere of owned particles
+    gpu_state m_gpu; // for the particles simulated on the gpu
 };
 
 
 // holds all particle emitters defined in the scene and updates their state
 class particle_manager {
-
-    friend opengl_renderer;
 
 public:
 // types
@@ -184,6 +243,20 @@ public:
     // updates state of all owned emitters
     void
         update();
+    // whether the renderer simulates the particles on the gpu: the sources then work out only their births (smoke_source::gpu());
+    // the renderer sets it before the next update. the particles simulated on the cpu are dropped when it's switched on
+    void
+        gpu( bool const Gpu );
+    bool
+        gpu() const {
+            return m_gpu; }
+    // number of the updates in which the time went on, and the time of the last one: the gpu simulates once per update
+    std::uint64_t
+        updates() const {
+            return m_updates; }
+    double
+        timedelta() const {
+            return m_timedelta; }
     // data access
     source_sequence &
         sequence() {
@@ -200,6 +273,9 @@ private:
 // members
     source_map m_sourcetemplates; // cached particle emitter configurations
     source_sequence m_sources; // all owned particle emitters
+    bool m_gpu { false };
+    std::uint64_t m_updates { 0 };
+    double m_timedelta { 0.0 };
 };
 
 

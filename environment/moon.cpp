@@ -6,7 +6,30 @@
 #include "simulation/simulationtime.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// cSun -- class responsible for dynamic calculation of position and intensity of the Sun,
+// cMoon -- class responsible for dynamic calculation of position, phase and intensity of the Moon
+
+namespace {
+
+// direction to a body on the sky of the observer (x to the west, y up, z to the north) from its hour angle and declination,
+// at the given (refracted) elevation. degrees
+glm::vec3
+horizontal_direction( double const Hourangle, double const Declination, double const Latitude, double const Elevation ) {
+
+    auto const hourangle { glm::radians( Hourangle ) };
+    auto const declination { glm::radians( Declination ) };
+    auto const latitude { glm::radians( Latitude ) };
+    auto const elevation { glm::radians( Elevation ) };
+    auto const west { std::cos( declination ) * std::sin( hourangle ) };
+    auto const north { std::cos( latitude ) * std::sin( declination ) - std::sin( latitude ) * std::cos( declination ) * std::cos( hourangle ) };
+    auto const horizontal { std::hypot( west, north ) };
+    if( horizontal < 1e-9 ) {
+        return { 0.f, ( Elevation >= 0.0 ? 1.f : -1.f ), 0.f };
+    }
+    auto const scale { std::cos( elevation ) / horizontal };
+    return glm::normalize( glm::vec3( static_cast<float>( west * scale ), static_cast<float>( std::sin( elevation ) ), static_cast<float>( north * scale ) ) );
+}
+
+} // namespace
 
 cMoon::cMoon() {
 
@@ -21,23 +44,20 @@ void
 cMoon::init() {
 
     m_observer.timezone = -1.0 * simulation::Time.zone_bias();
-    // NOTE: we're calculating phase just once, because it's unlikely simulation will last a few days,
-    // plus a sudden texture change would be pretty jarring
+    move();
     phase();
 }
 
 void
-cMoon::update( bool const Includephase ) {
+cMoon::update( [[maybe_unused]] bool const Includephase ) {
 
     m_observer.temp = Global.AirTemperature;
 
     move();
-    if( Includephase ) { phase(); }
-    glm::vec3 position( 0.f, 0.f, -1.f );
-    position = glm::rotateX( position, glm::radians( static_cast<float>( m_body.elevref ) ) );
-    position = glm::rotateY( position, glm::radians( static_cast<float>( -m_body.hrang ) ) );
-
-    m_position = glm::normalize( position );
+    // the phase follows the positions of the moon and the sun, worked out in move(); the moon is drawn lit from the side
+    // of the sun, so it changes smoothly and is kept up to date on every update
+    phase();
+    m_position = horizontal_direction( m_body.hrang, m_body.declin, m_observer.latitude, m_body.elevref );
 }
 
 void
@@ -65,8 +85,31 @@ float cMoon::getIntensity() {
     // calculating intensity of the sun instead, and returning 15% of the value,
     // which roughly matches how much sunlight is reflected by the moon
     // We alter the intensity further based on current phase of the moon
-    auto const phasefactor = 1.0f - std::abs( m_phase - 29.53f * 0.5f ) / ( 29.53f * 0.5f );
-	return static_cast<float>( m_body.etr / 1399.0 * phasefactor * 0.15 ); // arbitrary scaling factor taken from etrn value
+	return static_cast<float>( m_body.etr / 1399.0 * getBrightness() * 0.15 ); // arbitrary scaling factor taken from etrn value
+}
+
+// brightness of the moon relative to the full moon. it falls with the phase much faster than the lit part of the disc
+// shrinks, the quarter moon gives about a tenth of the light of the full one (phase law of the lunar magnitude, Allen 1976)
+float
+cMoon::getBrightness() const {
+
+    auto const angle { std::abs( m_phaseangle ) };
+    return std::pow( 10.f, -0.4f * ( 0.026f * angle + 4.0e-9f * angle * angle * angle * angle ) );
+}
+
+// lit fraction of the disc, 0 at the new moon, 1 at the full moon
+float
+cMoon::getIllumination() const {
+
+    return 0.5f * ( 1.f + std::cos( glm::radians( m_phaseangle ) ) );
+}
+
+// angular radius of the disc seen from the earth, radians
+float
+cMoon::getAngularRadius() const {
+
+    // radius of the moon in earth radii, over the distance in earth radii
+    return static_cast<float>( std::asin( 0.2725 / std::max( m_body.distance, 50.0 ) ) );
 }
 
 void cMoon::setLocation( float const Longitude, float const Latitude ) {
@@ -118,7 +161,7 @@ void cMoon::move() {
         + 275 * localtime.wMonth / 9
         + localtime.wDay
         - 730530
-        + localut / 24.0;
+        + ( localut - m_observer.timezone ) / 24.0; // the orbital elements count days of universal time
 
     // Universal Coordinated (Greenwich standard) time
     m_observer.utime = localut - m_observer.timezone;
@@ -175,19 +218,57 @@ void cMoon::move() {
     double const pertevection = -1.274 * std::sin( degtorad * ( m_body.mnanom - 2.0 * mnelong ) ); // Evection
     double const pertvariation = +0.658 * std::sin( degtorad * ( 2.0 * mnelong ) ); // Variation
     double const pertyearlyeqt = -0.186 * std::sin( degtorad * sunmnanom ); // Yearly equation
+    // smaller longitude perturbations, all of them together up to about a quarter of a degree
+    // Moon's argument of latitude:  F   =  Lm - N
+    double const latarg = clamp_circular( m_body.mnlong - longascnode );
+    auto const sindeg = [&]( double const Angle ) { return std::sin( degtorad * Angle ); };
+    double const pertsmall =
+        - 0.059 * sindeg( 2.0 * m_body.mnanom - 2.0 * mnelong )
+        - 0.057 * sindeg( m_body.mnanom - 2.0 * mnelong + sunmnanom )
+        + 0.053 * sindeg( m_body.mnanom + 2.0 * mnelong )
+        + 0.046 * sindeg( 2.0 * mnelong - sunmnanom )
+        + 0.041 * sindeg( m_body.mnanom - sunmnanom )
+        - 0.035 * sindeg( mnelong ) // Parallactic equation
+        - 0.031 * sindeg( m_body.mnanom + sunmnanom )
+        - 0.015 * sindeg( 2.0 * latarg - 2.0 * mnelong )
+        + 0.011 * sindeg( m_body.mnanom - 4.0 * mnelong );
     // latitude perturbations
+    double const pertlatitude =
+        - 0.173 * sindeg( latarg - 2.0 * mnelong )
+        - 0.055 * sindeg( m_body.mnanom - latarg - 2.0 * mnelong )
+        - 0.046 * sindeg( m_body.mnanom + latarg - 2.0 * mnelong )
+        + 0.033 * sindeg( latarg + 2.0 * mnelong )
+        + 0.017 * sindeg( 2.0 * m_body.mnanom + latarg );
+    // distance perturbations, earth radii
+    m_body.distance +=
+        - 0.58 * std::cos( degtorad * ( m_body.mnanom - 2.0 * mnelong ) )
+        - 0.46 * std::cos( degtorad * ( 2.0 * mnelong ) );
 
-    m_body.eclong += pertevection + pertvariation + pertyearlyeqt;
+    m_body.eclong = clamp_circular( m_body.eclong + pertevection + pertvariation + pertyearlyeqt + pertsmall );
+    // ecliptic latitude: the orbit is tilted by about 5 degrees, which moves the moon as much off the ecliptic
+    m_body.eclat = radtodeg * std::atan2( zeclip, std::sqrt( xeclip * xeclip + yeclip * yeclip ) ) + pertlatitude;
+
+    // equatorial coordinates
+    double const xequat = std::cos( degtorad * m_body.eclong ) * std::cos( degtorad * m_body.eclat );
+    double const yeclon = std::sin( degtorad * m_body.eclong ) * std::cos( degtorad * m_body.eclat );
+    double const zeclat = std::sin( degtorad * m_body.eclat );
+    double const yequat = yeclon * std::cos( degtorad * m_body.oblecl ) - zeclat * std::sin( degtorad * m_body.oblecl );
+    double const zequat = yeclon * std::sin( degtorad * m_body.oblecl ) + zeclat * std::cos( degtorad * m_body.oblecl );
     // declination
-	m_body.declin = radtodeg * std::asin( std::sin (m_body.oblecl * degtorad) * std::sin(m_body.eclong * degtorad) );
-
+    m_body.declin = radtodeg * std::atan2( zequat, std::sqrt( xequat * xequat + yequat * yequat ) );
     // right ascension
-	double top = std::cos( degtorad * m_body.oblecl ) * std::sin( degtorad * m_body.eclong );
-	double bottom = std::cos( degtorad * m_body.eclong );
-	m_body.rascen = clamp_circular( radtodeg * std::atan2( top, bottom ) );
+    m_body.rascen = clamp_circular( radtodeg * std::atan2( yequat, xequat ) );
+
+    // phase: the angle between the sun and the moon seen from the earth (elongation), from the true longitude of the sun
+    double const sunlong = sunmnlong + 1.915 * sindeg( sunmnanom ) + 0.020 * sindeg( 2.0 * sunmnanom );
+    m_elongation = clamp_circular( m_body.eclong - sunlong );
+    double const coselongation = std::cos( degtorad * m_body.eclat ) * std::cos( degtorad * m_elongation );
+    // the phase angle (sun - moon - earth) is the supplement of the elongation, closely enough at the distance of the sun
+    m_phaseangle = static_cast<float>( 180.0 - radtodeg * std::acos( std::clamp( coselongation, -1.0, 1.0 ) ) );
 
 	// Greenwich mean sidereal time
-	m_observer.gmst = 6.697375 + 0.0657098242 * daynumber + m_observer.utime;
+	// (Schlyter: GMST0 = sun's mean longitude + 180 degrees, for the day number counted from 2000 Jan 0.0 UT)
+	m_observer.gmst = 6.5991604 + 0.0657098242 * daynumber + m_observer.utime;
 
 	m_observer.gmst -= 24.0 * (int)( m_observer.gmst / 24.0 );
 	if( m_observer.gmst < 0.0 ) m_observer.gmst += 24.0;
@@ -219,6 +300,8 @@ void cMoon::move() {
 
 	m_body.zenetr = std::acos( cz ) * radtodeg;
 	m_body.elevetr = 90.0 - m_body.zenetr;
+	// topocentric parallax: the moon is close enough to be seen about a degree lower than from the centre of the earth
+	m_body.elevetr -= radtodeg * std::asin( 1.0 / m_body.distance ) * std::cos( degtorad * m_body.elevetr );
 	refract();
 }
 
@@ -290,9 +373,8 @@ cMoon::phase() {
 	if (lt.wMonth == 5 && lt.wDay == 4) //May the forth be with you!
 		m_phase = 50;
 	else {
-		// calculate moon's age in days from new moon
-		float ip = normalize( ( static_cast<float>(simulation::Time.julian_day()) - 2451550.1f ) / 29.530588853f );
-		m_phase = ip * 29.53f;
+		// moon's age in days from new moon, from the elongation worked out in move()
+		m_phase = normalize( static_cast<float>( m_elongation / 360.0 ) ) * 29.53f;
 	}
 }
 

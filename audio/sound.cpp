@@ -914,6 +914,18 @@ sound_source::location() const {
         + m_owner->VectorFront() * (double)m_offset.z };
 }
 
+// returns location-based gain factor of the emitter for the current position of the listener
+float
+sound_source::soundproofing_factor() {
+
+    // NOTE: the calculation needs the listener to be assigned to a vehicle or in one of the outside views.
+    // this may not be the case yet when we're called from vehicle update, as the global camera data is refreshed later in the frame
+    if( FreeFlyModeFlag || Global.CabWindowOpen || Global.pCamera.m_owner != nullptr ) {
+        update_soundproofing();
+    }
+    return m_properties.soundproofing;
+}
+
 void
 sound_source::range( float const Range ) {
 

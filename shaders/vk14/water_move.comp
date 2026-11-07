@@ -1,0 +1,257 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): every drop through the step. a thread per drop, a row of groups per glass.
+// a blade going over the drop takes it along in front of itself until it turns back at the end of its sweep or stops, or until
+// the drop is pushed out of the sweep; a drop of its own slides when gravity and the air pull it harder than its line of
+// contact holds it, wetting its path and leaving droplets behind; a flake melts into a drop
+
+// none of the pass set: everything the kernel reads is pushed with its dispatch (set COMPUTE_SET, water_sim.glsl), so it runs
+// before the passes of the frame set theirs up
+#define LAYOUT_UI 1
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+// how fresh the wetted path is at a place of the glass
+float water_fresh(uint slot, vec2 uv)
+{
+	return water_wetted_at(slot, uv, water_step.y, 8.0);
+}
+
+// the path from one place to another marked wetted, Halfwidth (metres) to the sides: the texels around it get the time and how
+// near they are to the middle of the path
+void water_wet_path(uint slot, water_frame_s frame, vec2 from, vec2 to, float halfwidth)
+{
+	uint stamp = (uint(water_step.y * 2.0) + 1u) << 8u;
+	uint base = water_trail_base(slot);
+	float texels = float(WATER_TRAIL);
+	// the half width in texels, a texel and a half more for the filtering
+	float reach = halfwidth / max(min(length(frame.tu), length(frame.tv)), 1e-6) * texels + 1.5;
+	int spread = clamp(int(ceil(reach)), 1, 3);
+	vec2 a = from * texels - 0.5;
+	vec2 b = to * texels - 0.5;
+	int steps = clamp(int(ceil(length(b - a) * 2.0)), 1, 24);
+	for (int s = 1; s <= steps; ++s)
+	{
+		vec2 point = mix(a, b, float(s) / float(steps));
+		ivec2 centre = ivec2(floor(point + 0.5));
+		for (int y = -spread; y <= spread; ++y)
+		{
+			for (int x = -spread; x <= spread; ++x)
+			{
+				ivec2 texel = centre + ivec2(x, y);
+				if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, ivec2(WATER_TRAIL))))
+					continue;
+				float near = 1.0 - length(vec2(texel) - point) / reach;
+				if (near <= 0.0)
+					continue;
+				atomicMax(water_cells[base + uint(texel.y * WATER_TRAIL + texel.x)], stamp | uint(near * 255.0));
+			}
+		}
+	}
+}
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint place = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (place >= uint(WATER_DROPS)))
+		return;
+	uint index = slot * uint(WATER_DROPS) + place;
+	water_drop_s drop = water_drops[index];
+	if (drop.place.z <= 0.0)
+		return;
+	float seconds = water_step.x;
+	uint state = water_state[index];
+	vec4 extra = water_extra[index];
+	vec2 uv = drop.place.xy;
+	water_frame_s frame = water_frame(slot, uv);
+	if (frame.valid < 0.25)
+	{
+		water_remove(index);
+		return;
+	}
+	uint seed = water_pcg4d(uvec4(water_counts.x, slot, place, 9u)).x;
+
+	// a flake melts into a drop: the glass is warmed by the cab, the faster the warmer the air
+	bool flake = drop.motion.w < 1.0;
+	if (flake)
+	{
+		float warm = water_up.w;
+		float melt = (warm > 0.5) ? mix(3.0, 10.0, drop.motion.z) / (1.0 + 0.25 * warm) : mix(15.0, 45.0, drop.motion.z);
+		drop.motion.w = min(drop.motion.w + seconds / melt, 1.0);
+		flake = drop.motion.w < 1.0;
+	}
+
+	// the blades: one going over the drop in the step takes it along
+	uint carried = (state >> 1u) & 7u;
+	float way = (((state >> 4u) & 1u) != 0u) ? 1.0 : -1.0;
+	vec4 mask = water_blades_at(slot, uv);
+	vec4 reached = water_blades_texel(slot, uv);
+	for (int k = 0; k < 4; ++k)
+	{
+		float before = water_blades_before[k];
+		float now = water_blades_now[k];
+		if ((before < 0.0) || (now < 0.0))
+		{
+			if (carried == uint(k + 1))
+				carried = 0u;
+			continue;
+		}
+		float moved = now - before;
+		if (carried == uint(k + 1))
+		{
+			// the blade turned back at the end of its sweep or stopped: the water stays where it brought it
+			if ((moved * way <= 0.0) || (now >= 0.995) || (now <= 0.005))
+				carried = 0u;
+		}
+		// a blade goes over a drop which was ahead of it (by a little more than nothing: the water it left where it turned back at
+		// the end of its sweep isn't taken back) and is behind it now
+		else if ((carried == 0u) && (moved != 0.0) && (reached[k] >= 0.001) && ((mask[k] - before) * sign(moved) > 0.003) && ((mask[k] - now) * sign(moved) <= 0.0))
+		{
+			carried = uint(k + 1);
+			way = (moved > 0.0) ? 1.0 : -1.0;
+			// the blade doesn't take all of it: now and then a droplet stays behind
+			vec4 r = water_random(seed, 5u, place, slot);
+			if ((false == flake) && (drop.place.z > 1.0) && (r.x < 0.35))
+			{
+				float left = mix(0.02, 0.08, r.y);
+				if (water_add(slot, seed ^ 0x9e3779b9u, uv, left, 1.0, r.z, false))
+					drop.place.z -= left;
+			}
+		}
+	}
+
+	vec3 velocity = frame.tu * drop.motion.x + frame.tv * drop.motion.y;
+	if (carried != 0u)
+	{
+		// in front of the blade by its own size and the lip of the bead: the place where the mask is as far ahead of the blade,
+		// found along the gradient of the mask (along the arc of the blade)
+		int k = int(carried) - 1;
+		float radius = flake ? 0.5 * water_flake(drop.place.z) : water_radius(drop.place.z);
+		float a = dot(frame.tu, frame.tu);
+		float b = dot(frame.tu, frame.tv);
+		float c = dot(frame.tv, frame.tv);
+		float det = max(a * c - b * b, 1e-20);
+		float h = 1.0 / float(WATER_MAP);
+		bool edge = false;
+		for (int step = 0; step < 4; ++step)
+		{
+			// at the edge of the sweep (the end of the blade) the water squeezes out and stays
+			if ((water_blades_texel(slot, uv + vec2(h, 0.0))[k] < 0.001) || (water_blades_texel(slot, uv - vec2(h, 0.0))[k] < 0.001) ||
+			    (water_blades_texel(slot, uv + vec2(0.0, h))[k] < 0.001) || (water_blades_texel(slot, uv - vec2(0.0, h))[k] < 0.001))
+			{
+				edge = true;
+				break;
+			}
+			float m = water_blades_at(slot, uv)[k];
+			vec2 gradient = vec2(water_blades_at(slot, uv + vec2(h, 0.0))[k] - water_blades_at(slot, uv - vec2(h, 0.0))[k],
+			                     water_blades_at(slot, uv + vec2(0.0, h))[k] - water_blades_at(slot, uv - vec2(0.0, h))[k]) / (2.0 * h);
+			float g2 = dot(gradient, gradient);
+			if (g2 < 1e-6)
+				break;
+			// how fast the mask changes along the glass, per metre
+			float permetre = sqrt(max((c * gradient.x * gradient.x - 2.0 * b * gradient.x * gradient.y + a * gradient.y * gradient.y) / det, 0.0));
+			float target = water_blades_now[k] + way * (0.0015 + radius) * permetre;
+			vec2 delta = gradient * ((target - m) / g2);
+			float length_delta = length(delta);
+			if (length_delta > 0.02)
+				delta *= 0.02 / length_delta;
+			uv += delta;
+			if (length_delta < 1e-5)
+				break;
+		}
+		// pushed out of the sweep it stays at its edge
+		if (edge || (water_blades_texel(slot, uv)[k] < 0.001))
+			carried = 0u;
+		velocity = vec3(0.0);
+	}
+	else if (false == flake)
+	{
+		float volume = drop.place.z;
+		float radius = water_radius(volume);
+		vec3 n = frame.normal;
+		vec3 up = water_up.xyz;
+		// gravity along the glass
+		float weight = 1000.0 * WATER_GRAVITY * volume * 1e-9;
+		vec3 force = -(up - n * dot(up, n)) * weight;
+		// the drag of the air going along the glass, with a share of the air meeting it head on turned up along it
+		vec3 air = water_air.xyz;
+		vec3 rise = up - n * dot(up, n);
+		rise = (length(rise) > 0.1) ? normalize(rise) : vec3(0.0);
+		vec3 flow = (air - n * dot(air, n) + rise * (max(-dot(air, n), 0.0) * WATER_HEAD_ON)) * WATER_BOUNDARY;
+		float area = 2.0 * radius * (0.364 * radius) * 0.8;
+		force += flow * (0.6 * area * length(flow));
+		// the hold of the line of contact, uneven over the glass, much less on a path wetted lately
+		vec2 spread = uv * vec2(length(frame.tu), length(frame.tv));
+		float uneven = mix(0.55, 1.45, water_noise(spread / 0.003, 3u + slot));
+		float hold = WATER_TENSION * 2.0 * radius * WATER_HOLD * uneven * mix(1.0, 0.3, water_fresh(slot, uv)) * mix(0.85, 1.15, drop.motion.z);
+		float pull = length(force);
+		vec3 target = vec3(0.0);
+		if (pull > hold)
+		{
+			vec3 dir = force / pull;
+			// the way bent towards the side which holds the drop less: the wetter one (the water keeps to the wetted paths) and the
+			// one where the glass is cleaner, so it meanders
+			vec3 side = cross(n, dir);
+			float offset = max(radius, 0.0015);
+			vec2 leftuv = uv + water_to_uv(frame, side * offset);
+			vec2 rightuv = uv - water_to_uv(frame, side * offset);
+			float wetter = water_fresh(slot, leftuv) - water_fresh(slot, rightuv);
+			float cleaner = water_noise(rightuv * vec2(length(frame.tu), length(frame.tv)) / 0.003, 3u + slot) - water_noise(leftuv * vec2(length(frame.tu), length(frame.tv)) / 0.003, 3u + slot);
+			float wander = water_noise(spread / 0.02 + vec2(17.0 * drop.motion.z), 11u + slot) - 0.5;
+			dir = normalize(dir + side * (wetter * 0.6 + cleaner * 0.5 + wander * 0.35));
+			target = dir * min((pull - hold) / (WATER_VISCOUS * radius), 1.5);
+		}
+		velocity += (target - velocity) * (1.0 - exp(-seconds / ((pull > hold) ? 0.05 : 0.015)));
+		velocity -= n * dot(velocity, n);
+		vec3 moved = velocity * seconds;
+		float travel = length(moved);
+		if (travel > 1e-7)
+		{
+			vec2 next = uv + water_to_uv(frame, moved);
+			water_wet_path(slot, frame, uv, next, 0.4 * radius);
+			// a sliding drop leaves droplets behind as it goes, and thins; a large one breaks up the faster (a lot of water runs as
+			// a stream of beads rather than as one big drop)
+			extra.x += travel;
+			if ((extra.x >= extra.y) && (volume > 1.5))
+			{
+				vec4 r = water_random(seed, 6u, place, slot);
+				float left = clamp(volume * mix(0.01, 0.03, r.x) * (1.0 + volume / 40.0), 0.01, 0.25 * volume);
+				vec3 behind = -(velocity / max(length(velocity), 1e-6)) * ((radius + 1.2 * water_radius(left)) * 1.05);
+				if (water_add(slot, seed ^ 0x85ebca6bu, uv + water_to_uv(frame, behind), left, 1.0, r.y, false))
+					drop.place.z -= left;
+				extra.x = 0.0;
+				extra.y = mix(0.002, 0.005, r.z) / (1.0 + volume / 100.0);
+			}
+			uv = next;
+		}
+		// without the rain the water dries, slowly
+		if (water_step.z <= 0.0)
+			drop.place.z -= seconds * 0.004 * radius * 1000.0;
+	}
+	else
+	{
+		velocity = vec3(0.0);
+	}
+
+	if ((drop.place.z < WATER_LEAST) || any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+	{
+		water_remove(index);
+		return;
+	}
+	water_frame_s there = water_frame(slot, uv);
+	if (there.valid < 0.25)
+	{
+		// off the glass, it falls off
+		water_remove(index);
+		return;
+	}
+	drop.place.xy = uv;
+	drop.place.w += seconds;
+	drop.motion.xy = water_to_uv(there, velocity);
+	water_drops[index] = drop;
+	water_extra[index] = extra;
+	water_state[index] = 1u | (carried << 1u) | ((way > 0.0) ? 16u : 0u);
+}

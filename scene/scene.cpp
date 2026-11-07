@@ -352,7 +352,6 @@ void
 basic_cell::insert( TAnimModel *Instance ) {
 
     m_active = true;
-    m_instancecache.boundsversion = 0; // the renderer builds it anew
 
     auto const flags = Instance->Flags();
     auto alpha =
@@ -382,7 +381,7 @@ basic_cell::insert( TAnimModel *Instance ) {
             }
             auto &bucket { m_instancebuckets_opaque[ key ] };
             bucket.instances.emplace_back( Instance );
-            bucket.bounds.clear();
+            bucket.records.clear();
         }
     }
    // re-calculate cell bounding area, in case model extends outside the cell's boundaries
@@ -455,8 +454,6 @@ basic_cell::unregister_end( TTrack *Path ) {
 void
 basic_cell::erase( TAnimModel *Instance ) {
 
-    m_instancecache.boundsversion = 0; // the renderer builds it anew
-
     auto const flags = Instance->Flags();
     auto alpha =
         Instance->Material() != nullptr ? Instance->Material()->textures_alpha : 0x30300030;
@@ -487,7 +484,7 @@ basic_cell::erase( TAnimModel *Instance ) {
             instances.erase(
                 std::remove( std::begin( instances ), std::end( instances ), Instance ),
                 std::end( instances ) );
-            bucket->second.bounds.clear();
+            bucket->second.records.clear();
             if( instances.empty() ) {
                 bucket = m_instancebuckets_opaque.erase( bucket );
             }

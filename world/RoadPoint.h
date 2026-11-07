@@ -25,19 +25,23 @@ class TDynamicObject;
 class basic_event;
 
 // a place on a road where something happens to the traffic, or is painted for it:
-// - a level crossing: vehicles are stopped ahead of the rails for as long as a train is near,
+// - a level crossing: vehicles are stopped ahead of the rails for as long as a train is near, or the scenery says so,
 // - a point where vehicles appear, drawn from a set made ready while the scenery is loaded,
 // - a point where vehicles are taken away. the ones which came from a point of the previous kind go back to its set,
 // - a pedestrian crossing: stripes painted across the road.
 // scenery entries:
-// node <max> <min> <name> crossing <position> [clearance <m>] [warning <m>] [stoplines <yes|no>] endcrossing
+// node <max> <min> <name> crossing <position> [clearance <m>] [warning <m>] [stoplines <yes|no>] [memcell <name>] endcrossing
 // node <max> <min> <name> spawn <position> [interval <s>] [variation <0..1>] [velocity <km/h>] [count <n>]
 //     [node <max> <min> <name> dynamic <folder> <skin> <type> <path> <offset> <driver> <velocity> <load> [<load type>] enddynamic]... endspawn
 // node <max> <min> <name> despawn <position> [radius <m>] enddespawn
 // node <max> <min> <name> crosswalk <position> [length <m>] endcrosswalk
 // the vehicles of a spawn point are given the way vehicles are put in a scenery; where they're put and how they're driven
 // is up to the point, so the path, the offset, the driver and the velocity of these entries don't matter. the listed vehicles
-// are what the point draws from to have <count> vehicles of its own on the roads; one which gets stuck is taken off the road
+// are what the point draws from to have <count> vehicles of its own on the roads; one which gets stuck is taken off the road.
+// a level crossing is told by the scenery through a memory cell: the one named in its entry, or "<name of the crossing>:block",
+// made if the scenery doesn't have it. its first value above zero closes the entry onto the crossing, below zero keeps it open
+// whatever comes by the rails, and zero leaves it to the trains. the vehicles past the stops, on the crossing or leaving it, drive on.
+// the second value is set by the crossing: 1 while its entry is closed, 0 while it's open
 class roadpoint_node : public scene::basic_node
 {
 
@@ -71,6 +75,7 @@ class roadpoint_node : public scene::basic_node
 		float clearance{6.f}; // distance along the road from the point to the places the vehicles stop at
 		float warning{800.f}; // how far along the rails a train coming closes the crossing
 		bool stoplines{true}; // lines are painted where the vehicles stop
+		std::string memcell; // name of the memory cell the scenery tells the crossing by; empty: the one named after the crossing
 		// point where vehicles appear
 		float interval{20.f}; // seconds from a vehicle to the next
 		float variation{0.5f}; // part of the interval which is drawn at random
@@ -135,6 +140,13 @@ class roadpoint_node : public scene::basic_node
 	{
 		return m_rails.size();
 	}
+	// memory cell the level crossing is told by, nullptr if there's none
+	TMemCell *memcell() const
+	{
+		return m_memcell;
+	}
+	// name of that cell: the one the entry gives, or the one made of the name of the crossing; empty if neither is there
+	std::string memcell_name() const;
 	// vehicles made for a spawn point, and how many of them wait for their turn
 	std::size_t vehicles() const
 	{
@@ -169,6 +181,7 @@ class roadpoint_node : public scene::basic_node
 	void deserialize_(std::istream &Input) override;
 	void export_as_text_(std::ostream &Output) const override;
 	void bind_crossing();
+	void bind_memcell();
 	void update_crossing(double const Deltatime);
 	void update_spawn(double const Deltatime);
 	void update_despawn();
@@ -184,6 +197,7 @@ class roadpoint_node : public scene::basic_node
 	std::map<TDynamicObject const *, double> m_seen; // rail vehicles near, with how far each was the last time
 	bool m_closed{false};
 	double m_hold{0.0}; // time left for the crossing to stay closed after the last train was seen
+	TMemCell *m_memcell{nullptr}; // what the scenery tells the crossing by
 	double m_scan{0.0}; // time left to the next look at the rails
 	// spawn and despawn
 	std::vector<TTrack *> m_lanes; // spawn: the lane the vehicles are put on. despawn: lanes the vehicles are taken from

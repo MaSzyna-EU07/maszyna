@@ -6,6 +6,7 @@
 #include "stdafx.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/Timer.h"
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
 
@@ -18,6 +19,12 @@ global_settings &GetGlobalSettings() {
 	// defaults, as before reading eu07.ini
 	static global_settings settings;
 	return settings;
+}
+
+// timers of the debug panel, which the physics counts its switching in ---------------------------------
+
+namespace Timer {
+subsystem_stopwatches subsystem; // NOSONAR the engine's extern global, utilities/Timer.h
 }
 
 // logs: quiet, unless EU07_UNIT_TESTS_LOG is set --------------------------------------------------

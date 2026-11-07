@@ -383,4 +383,13 @@ void TTrack::share_joints() {
             iTrapezoid |= 1;
         }
     }
+    if( eType == tt_Switch && SwitchExtension ) {
+        // the profiles of the switch are made at the mean of the rolls of its paths as they meet the tracks joined, and turned from it
+        // along each path (init_segments() bakes the mean of the rolls as designed)
+        float mean1, mean2;
+        profile_rolls( mean1, mean2 );
+        for( int path = 0; path < 2; ++path ) {
+            SwitchExtension->Segments[ path ]->set_baked_roll( mean1 );
+        }
+    }
 }

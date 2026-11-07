@@ -9,6 +9,13 @@ namespace gl
 		thread_local static bindable<T>* active;
 
     public:
+        ~bindable()
+        {
+            // deleting an object leaves its address free for the next one, which must not be taken for the bound one
+            if (active == this)
+                active = nullptr;
+        }
+
         void bind()
         {
             if (active == this)

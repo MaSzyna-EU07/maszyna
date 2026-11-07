@@ -1,0 +1,41 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// one level of the depth pyramid of the occlusion test of the instances (opengl46_hiz): each texel holds the farthest
+// depth of the texels of the level below it which it covers. the depth is reversed (1 near, 0 far), so the farthest is
+// the smallest. the first level is made from the resolved depth of the scene, the others from the level below.
+// a level halves the one below, rounding down; when that one has an odd size, the last row and column of the new level
+// take its last row and column as well, so that nothing is left out
+
+#include "common.glsl"
+
+layout(local_size_x = HIZ_GROUP_SIZE, local_size_y = HIZ_GROUP_SIZE) in;
+
+layout(binding = 0) uniform sampler2D source;
+layout(r32f, binding = 0) writeonly uniform image2D target;
+
+// xy: size of the source level, zw: size of the target level
+layout(location = 0) uniform ivec4 sizes;
+// x: level of the source read
+layout(location = 1) uniform ivec4 params;
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(texel, sizes.zw)))
+		return;
+
+	ivec2 first = min(2 * texel, sizes.xy - 1);
+	ivec2 last = min(2 * texel + 1, sizes.xy - 1);
+	if (texel.x == sizes.z - 1)
+		last.x = sizes.x - 1;
+	if (texel.y == sizes.w - 1)
+		last.y = sizes.y - 1;
+
+	float farthest = 1.0;
+	for (int y = first.y; y <= last.y; ++y)
+	{
+		for (int x = first.x; x <= last.x; ++x)
+			farthest = min(farthest, texelFetch(source, ivec2(x, y), params.x).r);
+	}
+	imageStore(target, texel, vec4(farthest));
+}

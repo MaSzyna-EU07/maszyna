@@ -28,14 +28,18 @@ namespace scene { class basic_section; }
 class editor_terrain
 {
   public:
-	explicit editor_terrain(heightmap::chunk_ptr Data) : m_data(std::move(Data)) {}
+	explicit editor_terrain(heightmap::chunk_ptr Data);
 
 	heightmap::chunk_data const &data() const { return *m_data; }
 	heightmap::chunk_ptr const &shared() const { return m_data; }
 	// the data, to be changed. marks the chunk as edited; Shape: the heights changed, Paint: the materials changed
 	heightmap::chunk_data &edit(bool const Shape, bool const Paint);
-	// puts provided data in place of the current one
-	void replace(heightmap::chunk_ptr Data, bool const Shape, bool const Paint);
+	// puts provided data in place of the current one; Grass: the grass changed
+	void replace(heightmap::chunk_ptr Data, bool const Shape, bool const Paint, bool const Grass = false);
+	// tells this chunk from any other, also from the same chunk loaded again
+	std::uint64_t serial() const { return m_serial; }
+	// changes with every change of what the grass of the chunk is made of: the ground, the holes and the grass itself
+	std::uint64_t grass_version() const { return m_shapeversion + m_paintversion + m_grassversion; }
 
 	heightmap::chunk_key key() const { return m_data->key; }
 	// true if (X,Z) lies within the chunk
@@ -64,6 +68,8 @@ class editor_terrain
 	bool m_modified{false};
 	std::uint64_t m_shapeversion{1}; // grows with every change of the heights
 	std::uint64_t m_paintversion{1}; // grows with every change of the paint
+	std::uint64_t m_grassversion{1}; // grows with every change of the grass
+	std::uint64_t m_serial{0};
 
 	// drawn state, managed by the streamer
 	int m_slot{-1}; // geometry slot holding the mesh

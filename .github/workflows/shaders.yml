@@ -1,0 +1,54 @@
+# .github/workflows/shaders.yml
+# UNTRUSTED CONTEXT. This workflow runs fork-authored code and must not reference `secrets.*`.
+#
+# Checks every shader of shaders/ogl46 against GLSL 4.60 (compute stage included) with glslang, after the same
+# preprocessing the game does, and as SPIR-V for OpenGL as glslc compiles the binaries of shaders/ogl46bin; the shaders of
+# shaders/vk14 as SPIR-V for Vulkan (ci_shadervalidator). No graphics card is needed.
+
+name: Shaders
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'shaders/**'
+      - 'gl/**'
+      - 'rendering/common/**'
+      - 'ci_shadervalidator/**'
+      - '.github/workflows/shaders.yml'
+  pull_request:
+    types: [ opened, reopened, synchronize ]
+    paths:
+      - 'shaders/**'
+      - 'gl/**'
+      - 'rendering/common/**'
+      - 'ci_shadervalidator/**'
+      - '.github/workflows/shaders.yml'
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate shaders (GLSL 4.60, SPIR-V)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install glslang
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y glslang-tools
+
+      # the validator only needs GLM; the other submodules are not fetched
+      - name: Fetch GLM
+        run: git submodule update --init --depth 1 ref/glm
+
+      - name: Build the validator
+        run: ci_shadervalidator/build.sh
+
+      - name: Validate shaders
+        working-directory: ci_shadervalidator
+        run: ./validateshaders

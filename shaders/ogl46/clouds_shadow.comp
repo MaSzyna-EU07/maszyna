@@ -1,0 +1,29 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the shadow the clouds cast on the ground: for points of the ground reference around the camera, what the clouds let through
+// towards the key light. the shading (light_common.glsl) and the fog (fog_inject.comp) look it up along the ray of the sun,
+// see cloud_shadow() in weather_common.glsl
+
+#include "common.glsl"
+#include "clouds_common.glsl"
+
+layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, local_size_z = 1) in;
+
+layout(r16f, binding = 0) uniform writeonly image2D shadow;
+
+layout(location = 1) uniform int size;
+// world x and z of the centre of the map relative to the camera, size of the map (metres)
+layout(location = 2) uniform vec3 placement;
+// samples through a layer
+layout(location = 3) uniform int steps;
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(texel, ivec2(size))))
+		return;
+	vec2 offset = placement.xy + ((vec2(texel) + 0.5) / float(size) - 0.5) * placement.z;
+	// the ground reference, the earth curving away
+	vec3 ground = vec3(offset.x, -weather_camera.x + dot(offset, offset) * (0.5 / CLOUD_EARTH_RADIUS), offset.y);
+	imageStore(shadow, texel, vec4(cloud_transmittance_to_sun(ground, steps)));
+}

@@ -76,6 +76,7 @@ private:
     void deserialize_endscale( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_rotate( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_sky( cParser &Input, scene::scratch_data &Scratchpad );
+    void deserialize_weather( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_test( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_time( cParser &Input, scene::scratch_data &Scratchpad );
     void deserialize_trainset( cParser &Input, scene::scratch_data &Scratchpad );

@@ -1,0 +1,51 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// luminance histogram of the image for the automatic exposure: every second pixel in both directions, binned by the log2
+// of its luminance. bin 0 takes the black pixels, which the average leaves out. exposure_average.comp reads and clears it
+
+#include "common.glsl"
+
+layout(local_size_x = EXPOSURE_HISTOGRAM_GROUP_SIZE, local_size_y = EXPOSURE_HISTOGRAM_GROUP_SIZE) in;
+
+layout(binding = 0) uniform sampler2D hdr_image;
+
+layout(std430, binding = EXPOSURE_SSBO_BINDING) buffer exposure_ssbo
+{
+	uint histogram[EXPOSURE_HISTOGRAM_BINS];
+	float adapted_luminance;
+	float exposure;
+	float average_luminance;
+	uint valid;
+};
+
+// x: log2 of the lowest luminance binned, y: number of bins per unit of log2 luminance
+layout(location = 0) uniform vec2 log_range;
+
+shared uint shared_histogram[EXPOSURE_HISTOGRAM_BINS];
+
+void main()
+{
+	uint index = gl_LocalInvocationIndex;
+	shared_histogram[index] = 0U;
+	barrier();
+
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy) * 2;
+	ivec2 size = textureSize(hdr_image, 0);
+	if (pixel.x < size.x && pixel.y < size.y)
+	{
+		vec3 color = texelFetch(hdr_image, pixel, 0).rgb;
+		float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
+		uint bin = 0U;
+		// also false for a NaN
+		if (luminance > 1e-6)
+		{
+			float position = clamp((log2(luminance) - log_range.x) * log_range.y, 0.0, float(EXPOSURE_HISTOGRAM_BINS - 2U));
+			bin = 1U + uint(position);
+		}
+		atomicAdd(shared_histogram[bin], 1U);
+	}
+	barrier();
+
+	if (shared_histogram[index] != 0U)
+		atomicAdd(histogram[index], shared_histogram[index]);
+}

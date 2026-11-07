@@ -1,0 +1,44 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// colours of the fog towards the horizon by the angle from the azimuth of the sun, from the sky-view table of the atmosphere,
+// written into the weather buffer (weather_common.glsl: fog_horizon). the far fog then has the colour of the sky behind it.
+// the atmosphere blends into the old sky as opengl46_sky does it, by its share, white balance and brightness
+
+#include "common.glsl"
+#include "atmosphere_common.glsl"
+
+layout(local_size_x = FOG_HORIZON_SAMPLES) in;
+
+layout(binding = SKY_VIEW_TEX) uniform sampler2D sky_view_lut;
+
+layout(std430, binding = WEATHER_SCRATCH_SSBO_BINDING) buffer weather_scratch
+{
+	vec4 weather_words[];
+};
+
+// first vec4 of fog_horizon in the weather buffer
+layout(location = 0) uniform int offset;
+// x: share of the atmosphere, y: its brightness, z: desaturation by the overcast, w: brightest the colour gets
+layout(location = 1) uniform vec4 params;
+layout(location = 2) uniform vec3 white_balance;
+// the colour of the old fog, which the atmosphere replaces by its share
+layout(location = 3) uniform vec3 old_color;
+
+void main()
+{
+	uint index = gl_LocalInvocationID.x;
+	float angle = float(index) / float(FOG_HORIZON_SAMPLES - 1) * ATMO_PI;
+	vec3 sun = normalize(atmo_sun_direction.xyz);
+	vec2 flat_sun = (dot(sun.xz, sun.xz) > 1e-8) ? normalize(sun.xz) : vec2(1.0, 0.0);
+	vec2 side = vec2(-flat_sun.y, flat_sun.x);
+	vec2 flat_view = flat_sun * cos(angle) + side * sin(angle);
+	// a little above the horizon, where the far fog meets the sky
+	vec3 direction = normalize(vec3(flat_view.x, 0.035, flat_view.y));
+	vec3 color = textureLod(sky_view_lut, atmo_skyview_uv_world(direction, sun), 0.0).rgb * white_balance * params.y;
+	color = min(color, vec3(params.w));
+	float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
+	color = mix(color, vec3(luminance), params.z);
+	if (any(isnan(color)))
+		color = old_color;
+	weather_words[offset + int(index)] = vec4(mix(old_color, color, params.x), 1.0);
+}

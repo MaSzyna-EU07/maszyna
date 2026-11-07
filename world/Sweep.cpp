@@ -1356,7 +1356,7 @@ void sweep_table::create_geometry(scene::scratch_data &Scratchpad)
 		{
 			sweep->refresh();
 		}
-		if (Global.editor_session && false == Global.NvRenderer)
+		if (Global.editor_session)
 		{
 			// scenery opened for editing: the copies are kept apart, so they can be changed later
 			sweep->show();

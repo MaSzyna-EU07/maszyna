@@ -107,7 +107,7 @@ public:
     IMaterial const *
         Material( material_handle const Material ) const override { return m_materials.at(Material - 1).get(); }
     // shader methods
-    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override { throw std::runtime_error("not impl"); }
+    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gfx::shader_program> override { throw std::runtime_error("not impl"); }
     // texture methods
     texture_handle
         Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override { throw std::runtime_error("not impl"); }
