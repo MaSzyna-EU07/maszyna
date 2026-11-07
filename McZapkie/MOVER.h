@@ -2171,6 +2171,10 @@ class TMoverParameters
 	bool dizel_startup{false}; // engine startup procedure request indicator
 	bool dizel_ignition{false}; // engine ignition request indicator
 	bool dizel_spinup{false}; // engine spin up to idle speed flag
+	// the starter turns the engine a while before it fires: smoke comes out only after SmokeDelay (the Engine section of the .fiz,
+	// seconds from the start of the spin up) has passed. 0 lets it out as soon as the starter turns, as before eu07/maszyna#523
+	double dizel_SmokeDelay{2.0};
+	double dizel_FiringCountdown{0.0}; // seconds left until the engine being started fires, 0 once it runs on its own
 	double dizel_engagedeltaomega = 0.0; /*roznica predkosci katowych tarcz sprzegla*/
 	double dizel_n_old = 0.0; /*poredkosc na potrzeby obliczen sprzegiel*/
 	double dizel_Torque = 0.0; /*aktualny moment obrotowy silnika spalinowego*/

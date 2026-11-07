@@ -7843,6 +7843,9 @@ bool TMoverParameters::dizel_Update(double dt)
 	WaterHeaterCheck(dt);
 	OilPumpCheck(dt);
 	FuelPumpCheck(dt);
+	// the engine being started fires once the starter has turned it a while; one stopped meanwhile starts over
+	dizel_FiringCountdown = (Mains ? std::max(0.0, dizel_FiringCountdown - dt) : 0.0);
+
 	if (true == dizel_startup && true == dizel_StartupCheck())
 	{
 		dizel_ignition = true;
@@ -7857,6 +7860,7 @@ bool TMoverParameters::dizel_Update(double dt)
 		LastSwitchingTime = 0;
 		Mains = true;
 		dizel_spinup = true;
+		dizel_FiringCountdown = dizel_SmokeDelay;
 		enrot = std::max(enrot,
 		                 0.35 * ( // TODO: dac zaleznie od temperatury i baterii
 		                            EngineType == TEngineType::DieselEngine ? dizel_nmin : DElist[0].RPM / 60.0));
@@ -11365,6 +11369,9 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		// oil pump
 		extract_value(OilPump.pressure_minimum, "OilMinPressure", Input, "");
 		extract_value(OilPump.pressure_maximum, "OilMaxPressure", Input, "");
+		// the time the starter turns the engine before it fires and smokes (eu07/maszyna#523)
+		extract_value(dizel_SmokeDelay, "SmokeDelay", Input, "");
+		dizel_SmokeDelay = std::max(0.0, dizel_SmokeDelay);
 		// engine cooling factore
 		extract_value(dizel_heat.kw, "HeatKW", Input, "");
 		extract_value(dizel_heat.kv, "HeatKV", Input, "");
