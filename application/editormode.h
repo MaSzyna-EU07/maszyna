@@ -2030,6 +2030,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// after the grade line of the open route went on its paths: the line on the other side of each crossover of the route
 	// takes the same change of the heights where it runs beside, and its design with it. returns: how many lines followed
 	std::size_t follow_crossovers(std::vector<editor_track::route_sample> const &Before);
+	// its steps: whether the line across a crossover follows, the line following and its design
+	bool crossover_followed(TTrack const &Other, editor_track::route const &Route, std::vector<TTrack const *> const &Done);
+	bool follow_crossover(TTrack &Other, std::vector<editor_track::route_sample> const &Before, std::vector<editor_track::route_sample> const &After, profile::line const &Line);
+	void follow_design(profile::line const &Designed, std::vector<double> const &Breaks, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes);
 	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, std::string const &Name = {});
 	struct crossover_plan
 	{

@@ -316,6 +316,117 @@ std::pair<double, double> nearest_sample(std::vector<editor_track::route_sample>
 	return {nearest_distance, chainage};
 }
 
+// the point of the route nearest the point in the plan, between its samples too: how far it is from it, and its chainage
+std::pair<double, double> nearest_on_route(std::vector<editor_track::route_sample> const &Samples, glm::dvec3 const &Point)
+{
+	double nearest_distance{std::numeric_limits<double>::max()};
+	double chainage{0.0};
+	for (std::size_t i = 0; i + 1 < Samples.size(); ++i)
+	{
+		auto const a{plan_of(Samples[i].position)};
+		auto const run{plan_of(Samples[i + 1].position) - a};
+		auto const t{std::clamp(glm::dot(plan_of(Point) - a, run) / std::max(1e-12, glm::dot(run, run)), 0.0, 1.0)};
+		if (auto const distance{glm::length(plan_of(Point) - (a + run * t))}; distance < nearest_distance)
+		{
+			nearest_distance = distance;
+			chainage = Samples[i].chainage + (Samples[i + 1].chainage - Samples[i].chainage) * t;
+		}
+	}
+	return {nearest_distance, chainage};
+}
+
+// the plain track at the start of the first switch of a crossover, the insert where there's none: the plain paths taking its place
+// are of its style
+TTrack const *crossover_style(TTrack const &First, TTrack const *Insert)
+{
+	TTrack const *style{nullptr};
+	for (auto const &[track, point] : editor_track::connected_points(First, First.m_paths.front().points[segment_data::point::start]))
+		if (track != nullptr && track->eType == tt_Normal && false == track->m_editorremoved)
+			style = track;
+	if (style == nullptr)
+		style = Insert;
+	return style;
+}
+
+// of the plain paths the one the level stretch of the lift lies on, the outer track; none where none is
+TTrack *outer_of(std::vector<TTrack *> const &Plains, switch_store::record const &Record)
+{
+	TTrack *outer{nullptr};
+	for (auto *plain : Plains)
+		if (plan_distance(editor_track::point_at(*plain, editor_track::nearest_parameter(*plain, Record.lift_from)), Record.lift_from) < 1.0 ||
+		    plan_distance(editor_track::point_at(*plain, editor_track::nearest_parameter(*plain, Record.lift_to)), Record.lift_to) < 1.0)
+			outer = plain;
+	return outer;
+}
+
+// the design of the outer track down by the lift, the corners of the ramps left out where the line runs on straight through them
+std::vector<profile::pvi> lowered_points(profile::line const &Before, outer_lift const &Lowered)
+{
+	std::vector<profile::pvi> points;
+	for (auto point : Before.points)
+	{
+		point.elevation -= Lowered.at(point.chainage);
+		points.push_back(point);
+	}
+	for (std::size_t k = 1; k + 1 < points.size();)
+	{
+		auto const in{(points[k].elevation - points[k - 1].elevation) / std::max(1e-6, points[k].chainage - points[k - 1].chainage)};
+		auto const out{(points[k + 1].elevation - points[k].elevation) / std::max(1e-6, points[k + 1].chainage - points[k].chainage)};
+		if (std::abs(out - in) < 1e-7)
+			points.erase(points.begin() + static_cast<std::ptrdiff_t>(k));
+		else
+			++k;
+	}
+	return points;
+}
+
+// a line across a crossover follows the change of the route in full up to this far from it, and none from the second distance on
+double constexpr kFollowBeside{25.0};
+double constexpr kFollowLeave{50.0};
+
+// how much the route went up at the point beside it, and how far the point is from it
+double change_beside(std::vector<editor_track::route_sample> const &After, std::vector<editor_track::route_sample> const &Before, glm::dvec3 const &Point, double &Distance)
+{
+	auto const [nearest_distance, chainage]{nearest_on_route(After, Point)};
+	Distance = nearest_distance;
+	auto const weight{std::clamp((kFollowLeave - Distance) / (kFollowLeave - kFollowBeside), 0.0, 1.0)};
+	return weight * (editor_track::sampled_elevation(After, chainage) - editor_track::sampled_elevation(Before, chainage));
+}
+
+// the change of the line at the chainage, between the changes of its samples
+double change_along(std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes, double const Chainage)
+{
+	auto const at{std::clamp(Chainage, Samples.front().chainage, Samples.back().chainage)};
+	auto const next{std::ranges::lower_bound(Samples, at, {}, [](auto const &Sample) { return Sample.chainage; })};
+	if (next == Samples.begin())
+		return Changes.front();
+	if (next == Samples.end())
+		return Changes.back();
+	auto const i{static_cast<std::size_t>(std::distance(Samples.begin(), next))};
+	auto const f{(at - Samples[i - 1].chainage) / std::max(1e-9, Samples[i].chainage - Samples[i - 1].chainage)};
+	return Changes[i - 1] + (Changes[i] - Changes[i - 1]) * f;
+}
+
+// where the grade line of the route breaks, the line following it breaks too, and where it starts and stops running beside the route
+std::vector<double> followed_breaks(profile::line const &Line, std::vector<editor_track::route_sample> const &After, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Distances, double const Length)
+{
+	std::vector<double> breaks;
+	for (auto const &point : Line.points)
+	{
+		auto const at{editor_track::sampled_position(After, point.chainage)};
+		auto const [best, chainage]{nearest_sample(Samples, at)};
+		if (best < kFollowBeside && chainage > 0.5 && chainage < Length - 0.5)
+			breaks.push_back(chainage);
+	}
+	for (std::size_t i = 1; i < Samples.size(); ++i)
+		for (auto const bound : {kFollowBeside, kFollowLeave})
+			if ((Distances[i - 1] < bound) != (Distances[i] < bound) && Samples[i].chainage > 0.5 && Samples[i].chainage < Length - 0.5)
+				breaks.push_back(Samples[i].chainage);
+	std::ranges::sort(breaks);
+	breaks.erase(std::ranges::unique(breaks, [](double const A, double const B) { return std::abs(A - B) < 1.0; }).begin(), breaks.end());
+	return breaks;
+}
+
 } // namespace
 
 // the plan of a connection between straights laid onto the curve: its x across the curve, minus to the left, its z the station
@@ -923,12 +1034,7 @@ std::optional<editor_mode::curved_crossover> editor_mode::crossover_of(TTrack co
 // down by the lift it went up by. Gives the plain paths in place of the first and the second switch
 bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second)
 {
-	TTrack const *style{nullptr};
-	for (auto const &[track, point] : editor_track::connected_points(*Crossover.first, Crossover.first->m_paths.front().points[segment_data::point::start]))
-		if (track != nullptr && track->eType == tt_Normal && false == track->m_editorremoved)
-			style = track;
-	if (style == nullptr)
-		style = Crossover.insert;
+	TTrack const *style{crossover_style(*Crossover.first, Crossover.insert)};
 	std::vector<TTrack *> plains;
 	for (auto *track : {Crossover.first, Crossover.second})
 	{
@@ -952,34 +1058,14 @@ bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vec
 	if (false == record.lifted() || record.ramp <= 0.0)
 		return true;
 	// the outer track is the one the level stretch of the lift lies on
-	TTrack *outer{nullptr};
-	for (auto *plain : plains)
-		if (plan_distance(editor_track::point_at(*plain, editor_track::nearest_parameter(*plain, record.lift_from)), record.lift_from) < 1.0 ||
-		    plan_distance(editor_track::point_at(*plain, editor_track::nearest_parameter(*plain, record.lift_to)), record.lift_to) < 1.0)
-			outer = plain;
+	auto *outer{outer_of(plains, record)};
 	if (outer == nullptr)
 		return true;
 	auto route{editor_track::run_route(*outer, 3000.0)};
 	auto const samples{editor_track::sample_route(route, 1.0)};
 	if (samples.size() < 2)
 		return true;
-	auto const chainage_of = [&](glm::dvec3 const &Point) {
-		double nearest_distance{std::numeric_limits<double>::max()};
-		double chainage{0.0};
-		for (std::size_t i = 0; i + 1 < samples.size(); ++i)
-		{
-			auto const a{plan_of(samples[i].position)};
-			auto const run{plan_of(samples[i + 1].position) - a};
-			auto const t{std::clamp(glm::dot(plan_of(Point) - a, run) / std::max(1e-12, glm::dot(run, run)), 0.0, 1.0)};
-			if (auto const distance{glm::length(plan_of(Point) - (a + run * t))}; distance < nearest_distance)
-			{
-				nearest_distance = distance;
-				chainage = samples[i].chainage + (samples[i + 1].chainage - samples[i].chainage) * t;
-			}
-		}
-		return chainage;
-	};
-	outer_lift lowered{chainage_of(record.lift_from), chainage_of(record.lift_to), record.lift, record.lift_end, record.ramp};
+	outer_lift lowered{nearest_on_route(samples, record.lift_from).second, nearest_on_route(samples, record.lift_to).second, record.lift, record.lift_end, record.ramp};
 	if (lowered.from > lowered.to)
 	{
 		std::swap(lowered.from, lowered.to);
@@ -993,22 +1079,7 @@ bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vec
 	    [&samples, &lowered](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) - lowered.grade(Chainage); }, breaks, States, Created);
 	// the design of the outer track down with it, the corners of the ramps left out where the line runs on straight through them
 	profile_take(route, route.spans.front().track, route.spans.back().track);
-	std::vector<profile::pvi> points;
-	for (auto point : before.points)
-	{
-		point.elevation -= lowered.at(point.chainage);
-		points.push_back(point);
-	}
-	for (std::size_t k = 1; k + 1 < points.size();)
-	{
-		auto const in{(points[k].elevation - points[k - 1].elevation) / std::max(1e-6, points[k].chainage - points[k - 1].chainage)};
-		auto const out{(points[k + 1].elevation - points[k].elevation) / std::max(1e-6, points[k + 1].chainage - points[k].chainage)};
-		if (std::abs(out - in) < 1e-7)
-			points.erase(points.begin() + static_cast<std::ptrdiff_t>(k));
-		else
-			++k;
-	}
-	if (points.size() >= 2)
+	if (auto points{lowered_points(before, lowered)}; points.size() >= 2)
 	{
 		m_profile.line = before;
 		m_profile.line.points = std::move(points);
@@ -1091,9 +1162,90 @@ bool editor_mode::slide_curved_connection(TTrack const &Switch, double const Dis
 	return true;
 }
 
+// whether the line on the other side of a crossover follows the route: not on its grade line, which goes with the route anyway, not
+// one a fit to the terrain leaves as it is, not of the route itself nor one followed already
+bool editor_mode::crossover_followed(TTrack const &Other, editor_track::route const &Route, std::vector<TTrack const *> const &Done)
+{
+	// on the same grade line it goes with the route anyway, grade_line_follow sees to it; what a fit to the terrain leaves as it is stays
+	if ((m_profile.whole_grade_line && false == m_profile.fitting && on_route_grade_line(Other)) || (m_profile.fitting && m_nmt_state.stayed.contains(&Other)))
+		return false;
+	return std::ranges::none_of(Route.spans, [&Other](auto const &Span) { return Span.track == &Other; }) && std::ranges::find(Done, &Other) == Done.end();
+}
+
+// the design of the line followed changed by as much as its heights, with a point at each break
+void editor_mode::follow_design(profile::line const &Designed, std::vector<double> const &Breaks, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes)
+{
+	std::vector<profile::pvi> points;
+	for (auto point : Designed.points)
+	{
+		point.elevation += change_along(Samples, Changes, point.chainage);
+		points.push_back(point);
+	}
+	for (auto const chainage : Breaks)
+	{
+		profile::pvi point;
+		point.chainage = chainage;
+		point.elevation = profile::elevation(Designed, chainage) + change_along(Samples, Changes, chainage);
+		points.push_back(point);
+	}
+	std::ranges::sort(points, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
+	std::vector<profile::pvi> line;
+	for (auto const &point : points)
+		if (line.empty() || point.chainage - line.back().chainage >= 0.5)
+			line.push_back(point);
+	if (line.size() >= 2)
+	{
+		m_profile.line = Designed;
+		m_profile.line.points = std::move(line);
+		m_profile.selected = -1;
+		profile_check();
+		profile_store();
+	}
+}
+
+// the line through the track takes the change of the heights of the route, After against Before, where it runs beside it, its design
+// with it; false where nothing of it changes
+bool editor_mode::follow_crossover(TTrack &Other, std::vector<editor_track::route_sample> const &Before, std::vector<editor_track::route_sample> const &After, profile::line const &Line)
+{
+	auto route{editor_track::run_route(Other, 3000.0)};
+	auto const samples{editor_track::sample_route(route, 1.0)};
+	if (samples.size() < 2)
+		return false;
+	// the change of each point of the other line
+	std::vector changes(samples.size(), 0.0);
+	std::vector distances(samples.size(), 0.0);
+	bool any{false};
+	for (std::size_t i = 0; i < samples.size(); ++i)
+	{
+		changes[i] = change_beside(After, Before, samples[i].position, distances[i]);
+		any = any || std::abs(changes[i]) > 0.001;
+	}
+	if (false == any)
+		return false;
+	auto const change = [&samples, &changes](double const Chainage) { return change_along(samples, changes, Chainage); };
+	auto const breaks{followed_breaks(Line, After, samples, distances, route.length)};
+	profile_take(route, route.spans.front().track, route.spans.back().track);
+	auto const designed{m_profile.line};
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	editor_track::apply_profile(
+	    route, [&samples, &change](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) + change(Chainage); },
+	    [&samples, &change](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) + (change(Chainage + 0.5) - change(Chainage - 0.5)); }, breaks, states, created);
+	profile_library_load();
+	auto library{m_profiles};
+	push_track_snapshot(std::move(states), std::move(created));
+	m_history.back().profiles = true;
+	m_history.back().profile_library = std::move(library);
+	join_last_steps();
+	// its design changed by as much
+	profile_take(route, route.spans.front().track, route.spans.back().track);
+	follow_design(designed, breaks, samples, changes);
+	return true;
+}
+
 std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sample> const &Before)
 {
-	auto &state{m_profile};
+	auto const &state{m_profile};
 	auto const changedroute{state.route};
 	auto *changedfrom{state.from};
 	auto *changedto{state.to};
@@ -1101,26 +1253,6 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 	auto const changedline{state.line}; // NOSONAR: a copy, as above
 	if (Before.size() < 2 || after.size() < 2)
 		return 0;
-	double constexpr follow{25.0};
-	double constexpr leave{50.0};
-	// how much the route went up at the point beside it, and how far the point is from it
-	auto const change_at = [&](glm::dvec3 const &Point, double &Distance, double &Chainage) {
-		Distance = std::numeric_limits<double>::max();
-		Chainage = 0.0;
-		for (std::size_t i = 0; i + 1 < after.size(); ++i)
-		{
-			auto const a{plan_of(after[i].position)};
-			auto const run{plan_of(after[i + 1].position) - a};
-			auto const t{std::clamp(glm::dot(plan_of(Point) - a, run) / std::max(1e-12, glm::dot(run, run)), 0.0, 1.0)};
-			if (auto const distance{glm::length(plan_of(Point) - (a + run * t))}; distance < Distance)
-			{
-				Distance = distance;
-				Chainage = after[i].chainage + (after[i + 1].chainage - after[i].chainage) * t;
-			}
-		}
-		auto const weight{std::clamp((leave - Distance) / (leave - follow), 0.0, 1.0)};
-		return weight * (editor_track::sampled_elevation(after, Chainage) - editor_track::sampled_elevation(Before, Chainage));
-	};
 	std::vector<TTrack const *> done;
 	std::size_t followed{0};
 	for (auto const &span : changedroute.spans)
@@ -1131,99 +1263,11 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 		if (false == crossover.has_value())
 			continue;
 		auto *other{crossover->first == span.track ? crossover->second : crossover->first};
-		// on the same grade line it goes with the route anyway, grade_line_follow sees to it; what a fit to the terrain leaves as it is stays
-		if ((m_profile.whole_grade_line && false == m_profile.fitting && on_route_grade_line(*other)) || (m_profile.fitting && m_nmt_state.stayed.contains(other)))
-			continue;
-		if (std::ranges::any_of(changedroute.spans, [&](auto const &Span) { return Span.track == other; }) || std::ranges::find(done, other) != done.end())
+		if (false == crossover_followed(*other, changedroute, done))
 			continue;
 		done.push_back(other);
-		auto route{editor_track::run_route(*other, 3000.0)};
-		auto const samples{editor_track::sample_route(route, 1.0)};
-		if (samples.size() < 2)
+		if (false == follow_crossover(*other, Before, after, changedline))
 			continue;
-		// the change of each point of the other line
-		std::vector changes(samples.size(), 0.0);
-		std::vector distances(samples.size(), 0.0);
-		bool any{false};
-		for (std::size_t i = 0; i < samples.size(); ++i)
-		{
-			double chainage;
-			changes[i] = change_at(samples[i].position, distances[i], chainage);
-			any = any || std::abs(changes[i]) > 0.001;
-		}
-		if (false == any)
-			continue;
-		auto const change = [&](double const Chainage) {
-			auto const at{std::clamp(Chainage, samples.front().chainage, samples.back().chainage)};
-			auto const next{std::ranges::lower_bound(samples, at, {}, [](auto const &Sample) { return Sample.chainage; })};
-			if (next == samples.begin())
-				return changes.front();
-			if (next == samples.end())
-				return changes.back();
-			auto const i{static_cast<std::size_t>(std::distance(samples.begin(), next))};
-			auto const f{(at - samples[i - 1].chainage) / std::max(1e-9, samples[i].chainage - samples[i - 1].chainage)};
-			return changes[i - 1] + (changes[i] - changes[i - 1]) * f;
-		};
-		// where the grade line of the route breaks, the other line breaks too
-		std::vector<double> breaks;
-		for (auto const &point : changedline.points)
-		{
-			auto const at{editor_track::sampled_position(after, point.chainage)};
-			auto const [best, chainage]{nearest_sample(samples, at)};
-			if (best < follow && chainage > 0.5 && chainage < route.length - 0.5)
-				breaks.push_back(chainage);
-		}
-		// and where it starts and stops running beside the route
-		auto const crossings = [&](std::size_t const I) {
-			for (auto const bound : {follow, leave})
-				if ((distances[I - 1] < bound) != (distances[I] < bound) && samples[I].chainage > 0.5 && samples[I].chainage < route.length - 0.5)
-					breaks.push_back(samples[I].chainage);
-		};
-		for (std::size_t i = 1; i < samples.size(); ++i)
-			crossings(i);
-		std::ranges::sort(breaks);
-		breaks.erase(std::ranges::unique(breaks, [](double const A, double const B) { return std::abs(A - B) < 1.0; }).begin(), breaks.end());
-		profile_take(route, route.spans.front().track, route.spans.back().track);
-		auto const designed{m_profile.line};
-		std::vector<std::pair<TTrack *, editor_track::state>> states;
-		std::vector<TTrack *> created;
-		editor_track::apply_profile(
-		    route, [&samples, &change](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) + change(Chainage); },
-		    [&samples, &change](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) + (change(Chainage + 0.5) - change(Chainage - 0.5)); }, breaks, states, created);
-		profile_library_load();
-		auto library{m_profiles};
-		push_track_snapshot(std::move(states), std::move(created));
-		m_history.back().profiles = true;
-		m_history.back().profile_library = std::move(library);
-		join_last_steps();
-		// its design changed by as much
-		profile_take(route, route.spans.front().track, route.spans.back().track);
-		std::vector<profile::pvi> points;
-		for (auto point : designed.points)
-		{
-			point.elevation += change(point.chainage);
-			points.push_back(point);
-		}
-		for (auto const chainage : breaks)
-		{
-			profile::pvi point;
-			point.chainage = chainage;
-			point.elevation = profile::elevation(designed, chainage) + change(chainage);
-			points.push_back(point);
-		}
-		std::ranges::sort(points, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
-		std::vector<profile::pvi> line;
-		for (auto const &point : points)
-			if (line.empty() || point.chainage - line.back().chainage >= 0.5)
-				line.push_back(point);
-		if (line.size() >= 2)
-		{
-			m_profile.line = designed;
-			m_profile.line.points = std::move(line);
-			m_profile.selected = -1;
-			profile_check();
-			profile_store();
-		}
 		++followed;
 		WriteLog(format("Editor: vertical profile - the track %s across the crossover %s followed the change", other->name().c_str(), crossover->first->name().c_str()), logtype::generic);
 	}
