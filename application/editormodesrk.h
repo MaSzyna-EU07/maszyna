@@ -426,6 +426,11 @@ class srk_tool final : public editor_tool
 	bool km_rising(station::line const &Line, std::string const &Number) const;
 	// m, the braking distance at the highest speed out along the line, at 160 km/h while its tracks have none, unless set by hand
 	double line_braking(station::line const &Line) const;
+	// the signals along a line, Row: of it, Line: one of Lines: its stops, its posts, the block signals facing its wrong-track trains,
+	// the warning discs; whether a stop is switched by a block section of the editor, Guards: the signals switched so
+	bool line_signals(line_row &Row, station::line const &Line, std::vector<station::line> const &Lines, std::vector<standing_signal> const &Standing, name_set const &Guards, std::string const &Stem) const;
+	// the track circuits along a line, Row: of it, with their km; the stretches in none between them
+	std::vector<std::pair<double, double>> line_sections(line_row &Row, station::line const &Line) const;
 	// the lines out of the open station, for the panel
 	void survey_lines(std::vector<standing_signal> const &Standing);
 	void render_lines();

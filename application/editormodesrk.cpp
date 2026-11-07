@@ -3539,6 +3539,111 @@ double srk_tool::line_braking(station::line const &Line) const
 	return braking_distance(speed > 0.0 ? speed : 160.0);
 }
 
+namespace
+{
+
+// whether a point is along a line, beyond its first 50 m
+bool on_line(station::line const &Line, glm::dvec3 const &Point)
+{
+	double gap{0.0};
+	auto const distance{station::distance_on(Line, Point, gap)};
+	return gap < 4.5 && distance > 50.0 && distance < Line.length() - 1.0;
+}
+
+// whether a point is along a line of another block than Automatic tells, Lines: the lines listed, Ways: their tracks
+bool other_block_at(std::vector<srk_tool::line_row> const &Lines, std::vector<station::line> const &Ways, bool const Automatic, glm::dvec3 const &Point)
+{
+	for (std::size_t other = 0; other < Lines.size(); ++other)
+		if ((Lines[other].block != srk_tool::block_kind::semi) != Automatic && on_line(Ways[other], Point))
+			return true;
+	return false;
+}
+
+// the signals of the other block along the lines, Ways: their tracks, but where a line shares its track with a line of that block:
+// how many, the first of them
+void leftovers_found(std::vector<srk_tool::line_row> &Lines, std::vector<station::line> const &Ways, std::vector<standing_signal> const &Standing)
+{
+	using enum srk_tool::block_kind;
+	for (std::size_t index = 0; index < Lines.size(); ++index)
+	{
+		auto &row{Lines[index]};
+		if (row.legacy || (row.number == 0 && row.block != semi))
+			continue;
+		auto const automatic{row.block != semi};
+		for (auto const &signal : Standing)
+		{
+			if (signal.kind != (automatic ? "warning" : "block") || false == on_line(Ways[index], signal.position))
+				continue;
+			if (automatic && false == row.both && wrong_disc(Ways, index, signal))
+				continue;
+			if (other_block_at(Lines, Ways, automatic, signal.position))
+				continue;
+			if (row.leftovers++ > 0)
+				continue;
+			row.leftover = signal.position;
+			row.leftover_travel = travel_of(signal.yaw);
+		}
+	}
+}
+
+} // namespace
+
+bool srk_tool::line_signals(line_row &Row, station::line const &Line, std::vector<station::line> const &Lines, std::vector<standing_signal> const &Standing, name_set const &Guards, std::string const &Stem) const
+{
+	using enum srk_tool::block_kind;
+	auto switched{false};
+	for (auto const &signal : Standing)
+	{
+		double distance{0.0};
+		if (block_along(Line, signal, distance, true))
+		{
+			Row.wrong.emplace_back(distance, signal_shown(signal.name, Stem));
+			Row.posts.emplace_back(distance, signal_shown(signal.name, Stem), true, km_along(Line, Row.km_number, distance));
+		}
+		if (false == block_along(Line, signal, distance))
+			continue;
+		Row.stops.emplace_back(distance + station::signal_drop * out_of(Line), signal_shown(signal.name, Stem));
+		Row.posts.emplace_back(distance, signal_shown(signal.name, Stem), false, km_along(Line, Row.km_number, distance));
+		switched = switched || Guards.contains(ToLower(signal.name));
+	}
+	// the warning discs: of the semi-automatic block, of the wrong-track trains of the mixed one
+	for (auto const &signal : Standing)
+	{
+		double distance{0.0};
+		auto const mixed_lines{Row.block != semi && wrong_disc(Lines, static_cast<std::size_t>(&Line - Lines.data()), signal)};
+		if (signal.kind == "warning" && (mixed_lines || (Row.block == semi && faces_along(Line, signal, distance))))
+		{
+			faces_along(Line, signal, distance, mixed_lines);
+			Row.posts.emplace_back(distance, signal_shown(signal.name, Stem), mixed_lines, km_along(Line, Row.km_number, distance));
+		}
+	}
+	return switched;
+}
+
+std::vector<std::pair<double, double>> srk_tool::line_sections(line_row &Row, station::line const &Line) const
+{
+	for (std::size_t k = 0; k < Line.points.size() && k < Line.distances.size() && k < Line.owners.size(); ++k)
+	{
+		auto const *track{Line.owners[k] < Line.tracks.size() ? Line.tracks[Line.owners[k]] : nullptr};
+		if (auto const name{track == nullptr || track->Isolated.empty() ? std::string{} : track->Isolated.front()->asName}; Row.sections.empty() || Row.sections.back().name != name)
+			Row.sections.emplace_back(Line.distances[k], Line.distances[k], name);
+		Row.sections.back().to = Line.distances[k];
+		if (k > 0 && Row.sections.size() > 1 && Row.sections.back().from == Line.distances[k])
+			Row.sections[Row.sections.size() - 2].to = Line.distances[k];
+	}
+	std::vector<std::pair<double, double>> bare;
+	for (std::size_t k = 1; k + 1 < Row.sections.size(); ++k)
+		if (Row.sections[k].name.empty() && Row.sections[k].from >= 0.0 && Row.sections[k].to - Row.sections[k].from >= 1.0)
+			bare.emplace_back(Row.sections[k].from, Row.sections[k].to);
+	std::erase_if(Row.sections, [](line_row::run const &Run) { return Run.name.empty() || Run.to - std::max(0.0, Run.from) < 1.0; });
+	for (auto &run : Row.sections)
+	{
+		run.km_from = km_along(Line, Row.km_number, run.from);
+		run.km_to = km_along(Line, Row.km_number, run.to);
+	}
+	return bare;
+}
+
 void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 {
 	using enum srk_tool::block_kind;
@@ -3554,11 +3659,6 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 	m_signals.signal_heads(heads, false);
 	auto const guards{guarded(m_templates.standing_templates([](std::string_view const File) { return File == kControl; }))};
 	auto const stem{stem_of_open()};
-	auto const on_line = [](station::line const &Line, glm::dvec3 const &Point) {
-		double gap{0.0};
-		auto const distance{station::distance_on(Line, Point, gap)};
-		return gap < 4.5 && distance > 50.0 && distance < Line.length() - 1.0;
-	};
 	for (auto const &line : lines)
 	{
 		line_row row;
@@ -3579,32 +3679,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.km_number = km_line(line);
 		row.rising = km_rising(line, row.km_number);
 		row.both = both_ways(lines, static_cast<std::size_t>(&line - lines.data()), row.entry, Standing, row.both_hand, row.own_both);
-		auto switched{false};
-		for (auto const &signal : Standing)
-		{
-			double distance{0.0};
-			if (block_along(line, signal, distance, true))
-			{
-				row.wrong.emplace_back(distance, signal_shown(signal.name, stem));
-				row.posts.emplace_back(distance, signal_shown(signal.name, stem), true, km_along(line, row.km_number, distance));
-			}
-			if (false == block_along(line, signal, distance))
-				continue;
-			row.stops.emplace_back(distance + station::signal_drop * out_of(line), signal_shown(signal.name, stem));
-			row.posts.emplace_back(distance, signal_shown(signal.name, stem), false, km_along(line, row.km_number, distance));
-			switched = switched || guards.contains(ToLower(signal.name));
-		}
-		// the warning discs: of the semi-automatic block, of the wrong-track trains of the mixed one
-		for (auto const &signal : Standing)
-		{
-			double distance{0.0};
-			auto const mixed_lines{row.block != semi && wrong_disc(lines, static_cast<std::size_t>(&line - lines.data()), signal)};
-			if (signal.kind == "warning" && (mixed_lines || (row.block == semi && faces_along(line, signal, distance))))
-			{
-				faces_along(line, signal, distance, mixed_lines);
-				row.posts.emplace_back(distance, signal_shown(signal.name, stem), mixed_lines, km_along(line, row.km_number, distance));
-			}
-		}
+		auto const switched{line_signals(row, line, lines, Standing, guards, stem)};
 		std::ranges::sort(row.stops);
 		std::ranges::sort(row.wrong);
 		// the schematic: straight out of the entry signal along the chainage, the track circuits along it in the colours of their names
@@ -3614,25 +3689,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.outward = station::project(*m_layout, station::point_on(line, std::min(50.0, line.length())).point).x >= entry_at.x ? 1.0 : -1.0;
 		double probe{0.0};
 		row.km_known = kilometrage::km_at(row.km_number, station::point_on(line, 0.0).point, probe) || km_of_open(row.chainage, probe);
-		for (std::size_t k = 0; k < line.points.size() && k < line.distances.size() && k < line.owners.size(); ++k)
-		{
-			auto const *track{line.owners[k] < line.tracks.size() ? line.tracks[line.owners[k]] : nullptr};
-			if (auto const name{track == nullptr || track->Isolated.empty() ? std::string{} : track->Isolated.front()->asName}; row.sections.empty() || row.sections.back().name != name)
-				row.sections.emplace_back(line.distances[k], line.distances[k], name);
-			row.sections.back().to = line.distances[k];
-			if (k > 0 && row.sections.size() > 1 && row.sections.back().from == line.distances[k])
-				row.sections[row.sections.size() - 2].to = line.distances[k];
-		}
-		std::vector<std::pair<double, double>> bare;
-		for (std::size_t k = 1; k + 1 < row.sections.size(); ++k)
-			if (row.sections[k].name.empty() && row.sections[k].from >= 0.0 && row.sections[k].to - row.sections[k].from >= 1.0)
-				bare.emplace_back(row.sections[k].from, row.sections[k].to);
-		std::erase_if(row.sections, [](line_row::run const &Run) { return Run.name.empty() || Run.to - std::max(0.0, Run.from) < 1.0; });
-		for (auto &run : row.sections)
-		{
-			run.km_from = km_along(line, row.km_number, run.from);
-			run.km_to = km_along(line, row.km_number, run.to);
-		}
+		auto bare{line_sections(row, line)};
 		row.legacy = false == row.stops.empty() && false == switched;
 		if (false == row.legacy && row.block != semi)
 			row.bare = std::move(bare);
@@ -3642,33 +3699,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		m_line_ways.push_back(line);
 	}
 	// the signals of the other block along a line, but where it shares its track with a line of that block
-	for (std::size_t index = 0; index < m_lines.size(); ++index)
-	{
-		auto &row{m_lines[index]};
-		if (row.legacy || (row.number == 0 && row.block != semi))
-			continue;
-		auto const automatic{row.block != semi};
-		for (auto const &signal : Standing)
-		{
-			if (signal.kind != (automatic ? "warning" : "block") || false == on_line(m_line_ways[index], signal.position))
-				continue;
-			if (automatic && false == row.both && wrong_disc(m_line_ways, index, signal))
-				continue;
-			auto shared{false};
-			for (std::size_t other = 0; other < m_lines.size(); ++other)
-			{
-				shared = (m_lines[other].block != semi) != automatic && on_line(m_line_ways[other], signal.position);
-				if (shared)
-					break;
-			}
-			if (shared)
-				continue;
-			if (row.leftovers++ > 0)
-				continue;
-			row.leftover = signal.position;
-			row.leftover_travel = travel_of(signal.yaw);
-		}
-	}
+	leftovers_found(m_lines, m_line_ways, Standing);
 }
 
 namespace
