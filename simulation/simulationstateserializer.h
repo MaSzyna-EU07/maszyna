@@ -42,10 +42,12 @@ public:
     // stores class data in specified file, in legacy (text) format
     void
         export_as_text( std::string const &Scenariofile ) const;
-	// create new model from node stirng
+	// create new model from node string
 	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position);
 	// places the vehicles, given as their node statements, as a trainset on the path, while the simulation runs. returns: the vehicles made
-	std::vector<TDynamicObject *> insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
+	std::vector<TDynamicObject *> insert_trainset(std::string const &Name, TTrack *Path, double Offset, double Velocity, std::string const &Vehicles, bool Reversed = false);
+	// places the vehicles, given as their node statements, as a trainset on the path, while the simulation runs. returns: the vehicles made
+	std::vector<TDynamicObject *> insert_trainset_full(std::string const &Vehicles);
 	// create new eventlauncher from node stirng
 	TEventLauncher * create_eventlauncher(std::string const &src, std::string const &name, const glm::dvec3 &position);
 	// creates model instances defined by an include directive placed or changed in the scenery editor, to show the outcome.
