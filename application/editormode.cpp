@@ -2609,6 +2609,16 @@ void editor_mode::render_orthophoto_ui()
         // newest imagery, or the newest imagery taken up to the end of the selected year
         int const thisyear = static_cast<int>(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year());
         std::string const yearlabel = config.year ? std::to_string(config.year) : std::string(STR_C("Newest"));
+        // the years back to the oldest of the imagery as rows of the combo, the one picked set
+        auto const year_rows = [&]() {
+            for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
+                if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
+                {
+                    config.year = year;
+                    changed = true;
+                    persist = true;
+                }
+        };
         ImGui::SetNextItemWidth(160.0f);
         if (ImGui::BeginCombo(STR_C("Photo year"), yearlabel.c_str()))
         {
@@ -2618,15 +2628,7 @@ void editor_mode::render_orthophoto_ui()
                 changed = true;
                 persist = true;
             }
-            for (int year = thisyear; year >= editor_orthophoto::oldest_year; --year)
-            {
-                if (ImGui::Selectable(std::to_string(year).c_str(), config.year == year))
-                {
-                    config.year = year;
-                    changed = true;
-                    persist = true;
-                }
-            }
+            year_rows();
             ImGui::EndCombo();
         }
 
@@ -2938,6 +2940,16 @@ namespace
             }
         }
         return dropped;
+    }
+
+    // the names of the layers of a service ticked, with commas between them
+    std::string ticked_layers(std::vector<std::pair<std::string, std::string>> const &Layers, std::vector<char> const &Ticked)
+    {
+        std::string layers;
+        for (std::size_t i = 0; i < Layers.size(); ++i)
+            if (Ticked[i] != 0)
+                layers += (layers.empty() ? "" : ",") + Layers[i].first;
+        return layers;
     }
 } // namespace
 
@@ -3874,18 +3886,14 @@ void editor_mode::render_base_layers()
                 ImGui::TextDisabled("%s", entry.terms.c_str());
                 ImGui::PopTextWrapPos();
             }
+            if (i > 0 && ImGui::SmallButton(STR_C("Up")))
+                moved = i - 1;
             if (i > 0)
-            {
-                if (ImGui::SmallButton(STR_C("Up")))
-                    moved = i - 1;
                 ImGui::SameLine();
-            }
+            if (i + 1 < static_cast<int>(stored.size()) && ImGui::SmallButton(STR_C("Down")))
+                moved = i;
             if (i + 1 < static_cast<int>(stored.size()))
-            {
-                if (ImGui::SmallButton(STR_C("Down")))
-                    moved = i;
                 ImGui::SameLine();
-            }
             if (ImGui::SmallButton(STR_C("Remove")))
                 removed = i;
             ImGui::TreePop();
@@ -3950,6 +3958,18 @@ void editor_mode::render_base_layers()
 void editor_mode::render_wms_adding()
 {
     auto &adding{m_wms_adding};
+    // the row of a layer of the service, ticked or not, if the filter lets it through
+    auto const layer_row = [&adding](std::size_t const I, std::string const &Filter) {
+        auto const &[name, title]{adding.info->layers[I]};
+        auto const label{title.empty() || title == name ? name : title + " (" + name + ")"};
+        if (false == Filter.empty() && ToLower(label).find(Filter) == std::string::npos)
+            return;
+        bool ticked{adding.ticked[I] != 0};
+        ImGui::PushID(static_cast<int>(I));
+        if (ImGui::Checkbox(label.c_str(), &ticked))
+            adding.ticked[I] = ticked ? 1 : 0;
+        ImGui::PopID();
+    };
     ImGui::PushID("wmsadding");
     if (false == ImGui::TreeNode("##add", "%s", STR_C("Add a WMS layer")))
     {
@@ -4002,22 +4022,9 @@ void editor_mode::render_wms_adding()
             auto const filter{ToLower(adding.filter.data())};
             ImGui::BeginChild("##layers", ImVec2(0.0f, std::min(200.0f, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(info.layers.size()) + 4.0f)), true);
             for (std::size_t i = 0; i < info.layers.size(); ++i)
-            {
-                auto const &[name, title]{info.layers[i]};
-                auto const label{title.empty() || title == name ? name : title + " (" + name + ")"};
-                if (false == filter.empty() && ToLower(label).find(filter) == std::string::npos)
-                    continue;
-                bool ticked{adding.ticked[i] != 0};
-                ImGui::PushID(static_cast<int>(i));
-                if (ImGui::Checkbox(label.c_str(), &ticked))
-                    adding.ticked[i] = ticked ? 1 : 0;
-                ImGui::PopID();
-            }
+                layer_row(i, filter);
             ImGui::EndChild();
-            std::string layers;
-            for (std::size_t i = 0; i < info.layers.size(); ++i)
-                if (adding.ticked[i] != 0)
-                    layers += (layers.empty() ? "" : ",") + info.layers[i].first;
+            auto const layers{ticked_layers(info.layers, adding.ticked)};
             auto const ready{info.puwg && false == layers.empty()};
             if (false == ready)
             {
@@ -6231,6 +6238,29 @@ void editor_mode::render_shortcuts_window()
 		auto const wanted{lower(filter.data())};
 		auto const matches = [&](shortcut const &Item) { return wanted.empty() || lower(STR_C(Item.keys)).find(wanted) != std::string::npos || lower(STR_C(Item.action)).find(wanted) != std::string::npos; };
 		auto const picture{std::round(ImGui::GetTextLineHeight() * 1.15f)};
+		// the row of a shortcut in the table, if the filter lets it through: its keys, drawn where they're a gesture, and what it does
+		auto const shortcut_row = [&](shortcut const &Item) {
+			if (false == matches(Item))
+				return;
+			ImGui::TableNextColumn();
+			auto const words{gesture_picture(Item.keys)};
+			if (false == words.empty())
+			{
+				auto const at{ImGui::GetCursorScreenPos()};
+				auto const drawn{gesture_draw(*ImGui::GetWindowDrawList(), at, picture, words, ImGui::GetColorU32(ImGuiCol_Text))};
+				ImGui::Dummy(ImVec2(drawn, picture));
+				ImGui::SameLine();
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
+			}
+			if (words.empty() || false == gesture_keys_only(Item.keys))
+				ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(Item.keys));
+			else
+				ImGui::NewLine();
+			ImGui::TableNextColumn();
+			if (false == words.empty())
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
+			ImGui::TextWrapped("%s", STR_C(Item.action));
+		};
 		for (auto const &entry : groups)
 		{
 			if (std::ranges::none_of(entry.shortcuts, matches))
@@ -6241,28 +6271,7 @@ void editor_mode::render_shortcuts_window()
 			ImGui::TableSetupColumn("##keys", ImGuiTableColumnFlags_WidthFixed, 250.0f * Global.ui_scale);
 			ImGui::TableSetupColumn("##action", ImGuiTableColumnFlags_WidthStretch, 1.0f);
 			for (auto const &item : entry.shortcuts)
-			{
-				if (false == matches(item))
-					continue;
-				ImGui::TableNextColumn();
-				auto const words{gesture_picture(item.keys)};
-				if (false == words.empty())
-				{
-					auto const at{ImGui::GetCursorScreenPos()};
-					auto const drawn{gesture_draw(*ImGui::GetWindowDrawList(), at, picture, words, ImGui::GetColorU32(ImGuiCol_Text))};
-					ImGui::Dummy(ImVec2(drawn, picture));
-					ImGui::SameLine();
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
-				}
-				if (words.empty() || false == gesture_keys_only(item.keys))
-					ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(item.keys));
-				else
-					ImGui::NewLine();
-				ImGui::TableNextColumn();
-				if (false == words.empty())
-					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
-				ImGui::TextWrapped("%s", STR_C(item.action));
-			}
+				shortcut_row(item);
 			ImGui::EndTable();
 		}
 	}
@@ -7083,25 +7092,21 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     // the properties of a track copied and pasted on the selected ones
     if (Global.ctrlState && Global.shiftState && (Key == GLFW_KEY_C || Key == GLFW_KEY_V) && ui()->mode() == nodebank_panel::TRACK)
     {
-        if (is_press(Action) && false == ImGui::GetIO().WantTextInput)
-        {
-            auto const tracks{selected_tracks()};
-            if (Key == GLFW_KEY_C)
-            {
-                // the selected track, or the one under the cursor when there are more of them
-                auto const *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
-                if (from != nullptr)
-                    copy_track_style(*from);
-                else
-                    ui()->set_status(STR_C("Select one track, or point at one, to take its properties"), true);
-            }
-            else if (m_track_style.values.empty())
-                ui()->set_status(STR_C("Take the properties of a track first: Ctrl+Shift+C"), true);
-            else if (tracks.empty())
-                ui()->set_status(STR_C("Select the tracks to set the properties on"), true);
-            else
-                paste_track_style(tracks);
-        }
+        if (false == is_press(Action) || ImGui::GetIO().WantTextInput)
+            return;
+        auto const tracks{selected_tracks()};
+        // the selected track, or the one under the cursor when there are more of them
+        auto const *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
+        if (Key == GLFW_KEY_C && from != nullptr)
+            copy_track_style(*from);
+        else if (Key == GLFW_KEY_C)
+            ui()->set_status(STR_C("Select one track, or point at one, to take its properties"), true);
+        else if (m_track_style.values.empty())
+            ui()->set_status(STR_C("Take the properties of a track first: Ctrl+Shift+C"), true);
+        else if (tracks.empty())
+            ui()->set_status(STR_C("Select the tracks to set the properties on"), true);
+        else
+            paste_track_style(tracks);
         return;
     }
 
@@ -7331,6 +7336,43 @@ void editor_mode::on_cursor_pos(double const Horizontal, double const Vertical)
     m_input.mouse.position(Horizontal, Vertical);
 }
 
+// the left button let go: what it drew, dragged or placed finished
+void editor_mode::mouse_left_release()
+{
+    mouseHold = false;
+    finish_track_box();
+    point_drag_finish();
+    m_handle_drag = {};
+    sweep_release();
+    if (m_straights.tool_mouse)
+        finish_straight_gesture();
+    if (m_extend.active)
+        finish_extend();
+    if (m_switch.placing)
+    {
+        // a press let go with no drag places no switch: the track it took is only selected, the ground with no track there
+        // selects nothing
+        auto const &io{ImGui::GetIO()};
+        if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_switch.pressed_at) <= 10.0f)
+        {
+            m_switch.placing = false;
+            if (m_switch.free)
+            {
+                m_switch.free = false;
+                track_click_select(nullptr);
+            }
+        }
+        else
+            finish_switch_placement();
+    }
+    if (m_turntable.placing)
+        turntable_finish_placement();
+    if (m_signal.placing || m_signal.moving)
+        signal_release();
+    if (m_switch.slide.active)
+        switch_slide_finish();
+}
+
 void editor_mode::on_mouse_button(int const Button, int const Action, int const Mods)
 {
     // UI first
@@ -7547,40 +7589,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         else
         {
             if (is_release(Action))
-            {
-                mouseHold = false;
-                finish_track_box();
-                point_drag_finish();
-                m_handle_drag = {};
-                sweep_release();
-                if (m_straights.tool_mouse)
-                    finish_straight_gesture();
-                if (m_extend.active)
-                    finish_extend();
-                if (m_switch.placing)
-                {
-                    // a press let go with no drag places no switch: the track it took is only selected, the ground with no track there
-                    // selects nothing
-                    auto const &io{ImGui::GetIO()};
-                    if (glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_switch.pressed_at) <= 10.0f)
-                    {
-                        m_switch.placing = false;
-                        if (m_switch.free)
-                        {
-                            m_switch.free = false;
-                            track_click_select(nullptr);
-                        }
-                    }
-                    else
-                        finish_switch_placement();
-                }
-                if (m_turntable.placing)
-                    turntable_finish_placement();
-                if (m_signal.placing || m_signal.moving)
-                    signal_release();
-                if (m_switch.slide.active)
-                    switch_slide_finish();
-            }
+                mouse_left_release();
 
             m_dragging = false;
         }

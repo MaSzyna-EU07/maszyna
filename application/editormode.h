@@ -1683,6 +1683,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void switch_slide_start(TTrack &Track);
 	void switch_slide_update();
 	void switch_slide_finish();
+	void mouse_left_release();
 	void draw_switch_slide() const;
 	// reads the drives from the include bank once it changes; Wait: for the templates being looked for. true if it read them
 	bool scan_switch_drives(bool Wait = true);
