@@ -2649,7 +2649,7 @@ TTrack::endpoints() const {
 
 // radius() subclass details, calculates node's bounding radius
 float
-TTrack::radius_() {
+TTrack::radius_() const {
 
     auto const points { endpoints() };
     auto radius { 0.f };

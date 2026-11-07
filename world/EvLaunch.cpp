@@ -234,7 +234,7 @@ bool TEventLauncher::IsRadioActivated() const {
 
 // radius() subclass details, calculates node's bounding radius
 float
-TEventLauncher::radius_() {
+TEventLauncher::radius_() const {
 
     return static_cast<float>(std::sqrt( dRadius ));
 }
