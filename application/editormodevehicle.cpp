@@ -204,6 +204,7 @@ bool vehicle_tool::place()
 		return false;
 	}
 	tool.placed = head;
+	m_guide.first_step_done(editor_first_step::drive);
 	auto const trackname{name_of(*tool.track)};
 	auto const behind{static_cast<int>(vehicles.size()) - 1};
 	tool.status = behind > 0 ? format(STR_P("%s and %d vehicle behind it stand on %s", "%s and %d vehicles behind it stand on %s", behind), head.c_str(), behind, trackname.c_str()) : format(STR_C("%s stands on %s"), head.c_str(), trackname.c_str());

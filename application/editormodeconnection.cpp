@@ -573,6 +573,7 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 	record_connection(request.type, switches, plan, request.first);
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
+	first_step_done(first_step::turnout);
 	m_track_point = {};
 	m_node = switches.front();
 	ui()->set_node(m_node);

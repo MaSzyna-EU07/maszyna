@@ -213,6 +213,7 @@ set(SOURCES
 "editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
+"editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
 "application/editormoderoute.cpp"

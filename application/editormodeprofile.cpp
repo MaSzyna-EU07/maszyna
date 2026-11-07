@@ -857,6 +857,7 @@ void editor_mode::profile_edited()
 {
 	m_profile.changed = true;
 	profile_check();
+	first_step_done(first_step::profile_point);
 }
 
 void editor_mode::profile_remove_point(int const Index)
@@ -961,6 +962,7 @@ void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *
 	state.route = std::move(Route);
 	state.selected = -1;
 	state.edits = m_track_edits;
+	first_step_done(first_step::profile);
 	profile_resample();
 	if (false == profile_restore())
 	{
@@ -1797,6 +1799,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	bool const pushed{false == states.empty() || false == created.empty()};
 	push_track_snapshot(std::move(states), std::move(created));
 	state.edits = m_track_edits;
+	first_step_done(first_step::profile_apply);
 	if (pushed)
 	{
 		m_history.back().profiles = true;

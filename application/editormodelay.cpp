@@ -956,6 +956,9 @@ void editor_mode::finish_extend()
 	editor_track::commit(created);
 	auto const from{m_history.size()};
 	push_track_snapshot({}, created);
+	first_step_done(first_step::laid);
+	if (target.track != nullptr)
+		first_step_done(first_step::join);
 	if (auto const warnings{switch_exit_warnings(style, pieces.front().points[segment_data::point::start], target.track, target.position, pieces)}; false == warnings.empty())
 		ui()->set_status(lines_of(warnings), true);
 	m_node = created.back();
@@ -1112,6 +1115,7 @@ bool editor_mode::track_wheel(double const Offset)
 				return *radius;
 		return radii[0];
 	};
+	first_step_done(io.KeyCtrl ? first_step::wheel : first_step::shape);
 	if (io.KeyCtrl && io.KeyShift)
 	{
 		static double const speeds[]{20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 120.0, 140.0, 160.0, 200.0, 250.0};
@@ -1983,6 +1987,8 @@ void editor_mode::lay_switch_mode()
 	auto &tool{m_lay};
 	tool.mode = tool.mode == lay_mode::straights ? lay_mode::curve : lay_mode::straights;
 	m_track_layout = tool.mode == lay_mode::curve ? track_layout::arc_straight : track_layout::straight;
+	if (tool.mode == lay_mode::curve)
+		first_step_done(first_step::trace);
 	tool.status = tool.mode == lay_mode::curve ? STR("Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights")
 	                                           : STR("Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo");
 	tool.status_time = ImGui::GetTime();
@@ -2065,6 +2071,11 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		alignment_store::store(plan.design, plan.shape, 0.0, alignment_store::layer_of(*created.front()), "drawn", 0.0, tool.points);
 	tool.history = m_history.size();
 	push_track_snapshot({}, created);
+	first_step_done(first_step::laid);
+	if (plan.shape.valid && false == plan.shape.curves.empty())
+		first_step_done(first_step::bend);
+	if (End.track != nullptr)
+		first_step_done(first_step::join);
 	tool.status = format(STR_P("Laid %.1f m of track in %zu piece, Ctrl+Z takes it back", "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back", static_cast<long long>(created.size())), length, created.size());
 	if (false == error.empty())
 		tool.status += "\n" + error;
@@ -2331,6 +2342,13 @@ void editor_mode::render_lay_ui()
 	if (tool.mode == lay_mode::straights)
 	{
 		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
+		ImGui::SameLine();
+		if (ImGui::SmallButton("?##corners"))
+		{
+			m_first_steps_open = true;
+			m_tutorial_goto = "Radius of the curves at the bends";
+		}
+		item_tooltip("What it is: the lesson of the tutorial");
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextDisabled("%s", STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
 		ImGui::PopTextWrapPos();

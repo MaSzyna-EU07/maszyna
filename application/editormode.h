@@ -43,6 +43,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGroundFollow.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
+#include "editor/editorClips.hpp"
 #include "editor/editorIcons.hpp"
 #include "application/scriptedinput.h"
 #include "world/Sweep.h"
@@ -259,6 +260,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_help_menu();
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
+	using first_step = editor_first_step;
+	void render_first_steps();
+	void first_step_done(first_step const Step) override;
+	bool m_first_steps_open{false};
+	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
+	int m_tutorial_page{0};
+	char const *m_tutorial_goto{nullptr}; // the lesson of this title opened by a button of a panel
+	std::string m_tutorial_followed; // the lesson the tool in use asked for last: it's opened when that changes
+	double m_tutorial_since{0.0};
+	editor_clips::clip m_tutorial_clip;
 	// deletes what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks (Del)
 	void delete_selected();
 	void delete_model(TAnimModel *Model, bool const Joined);
@@ -3147,8 +3158,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	gauge_tool m_gauge{*this, *this, *this, *this};
 	speed_tool m_speed{*this, *this, *this, *this};
 	joints_tool m_joints{*this, *this, *this, *this};
-	vehicle_tool m_vehicle{*this};
-	hekto_tool m_hekto{*this, *this, *this, *this, *this};
+	vehicle_tool m_vehicle{*this, *this};
+	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
 	srk_tool m_srk{*this, *this, *this, *this, *this};
