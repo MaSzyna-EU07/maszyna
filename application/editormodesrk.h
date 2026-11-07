@@ -431,6 +431,10 @@ class srk_tool final : public editor_tool
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
 	void set_lines(block_edit const *Edit = nullptr);
+	// the state of set_lines() and its steps: the lines and their block, the signals planned, the changes made
+	struct lines_set;
+	struct lines_plan;
+	struct lines_change;
 	// the lines out of the open station from its entry signals standing, Entries: the signals of the plan they begin at, Owners:
 	// the standing ones; false with the reason while it has none
 	bool lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const;

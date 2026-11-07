@@ -3845,76 +3845,99 @@ void srk_tool::fix_problems()
 		m_status = status;
 }
 
-void srk_tool::set_lines(block_edit const *Edit)
+// the state of set_lines(), each of its steps a function of its own: the lines out of the open station and the block of each
+struct srk_tool::lines_set
 {
-	m_status.clear();
-	auto const stem{stem_of_open()};
+	srk_tool &tool;
+	block_edit const *edit{nullptr};
+	std::string stem;
 	std::vector<standing_signal> standing;
-	m_signals.standing_signals(standing, true);
 	std::vector<station::line> lines;
 	std::vector<station::signal> entries;
 	std::vector<std::size_t> entry_standing;
-	if (false == lines_of_open(standing, lines, entries, entry_standing, m_status))
-		return;
 	std::vector<signal_head> heads;
-	m_signals.signal_heads(heads, true);
-	auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
-	auto const guards{guarded(controls)};
-	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
-		auto const way{station::point_on(Line, Distance).way};
-		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
-	};
+	std::vector<standing_template> controls;
+	name_set guards;
 	// of each line, 1: the automatic block, placed on a double-track line only, 2: the automatic block left as it stands, on a
 	// single-track line its signals facing both ways on a track, or with block signals the block sections of the editor don't switch,
 	// 0: the semi-automatic one
-	std::vector<char> automatic(lines.size(), 0);
-	std::vector aspects(lines.size(), 3);
-	std::vector<char> both(lines.size(), 0); // the automatic block both ways
-	std::vector<std::vector<std::size_t>> along(lines.size()); // the block signals standing along each line facing its trains
-	std::vector<std::vector<std::size_t>> wrong(lines.size()); // and facing its wrong-track trains
-	for (std::size_t index = 0; index < lines.size(); ++index)
+	std::vector<char> automatic;
+	std::vector<int> aspects;
+	std::vector<char> both; // the automatic block both ways
+	std::vector<std::vector<std::size_t>> along; // the block signals standing along each line facing its trains
+	std::vector<std::vector<std::size_t>> wrong; // and facing its wrong-track trains
+	// the lines set: all of them, or the one a block boundary is drawn on with the other track of a double-track one
+	std::vector<char> processed;
+	int edited{-1};
+	double drawn{0.0};
+
+	lines_set(srk_tool &Tool, block_edit const *Edit) : tool{Tool}, edit{Edit}, stem{Tool.stem_of_open()} {}
+
+	// the standing signals, the lines out of the station, the heads and the controls of the block sections; false with the reason
+	// while the station has no lines
+	bool gather()
 	{
-		auto const &line{lines[index]};
-		auto const kind{block_of(line, entries[line.entry].name, standing, heads).kind};
-		aspects[index] = kind == block_kind::four ? 4 : 3;
+		tool.m_signals.standing_signals(standing, true);
+		if (false == tool.lines_of_open(standing, lines, entries, entry_standing, tool.m_status))
+			return false;
+		tool.m_signals.signal_heads(heads, true);
+		controls = tool.m_templates.standing_templates([](std::string_view const File) { return File == kControl; });
+		guards = guarded(controls);
+		return true;
+	}
+	void classify()
+	{
+		automatic.assign(lines.size(), 0);
+		aspects.assign(lines.size(), 3);
+		both.assign(lines.size(), 0);
+		along.resize(lines.size());
+		wrong.resize(lines.size());
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			classify_line(index);
+	}
+	void classify_line(std::size_t const Index)
+	{
+		auto const &line{lines[Index]};
+		auto const kind{tool.block_of(line, entries[line.entry].name, standing, heads).kind};
+		aspects[Index] = kind == block_kind::four ? 4 : 3;
 		auto hand{false};
 		auto own_both{false};
-		both[index] = both_ways(lines, index, entries[line.entry].name, standing, hand, own_both) ? 1 : 0;
+		both[Index] = tool.both_ways(lines, Index, entries[line.entry].name, standing, hand, own_both) ? 1 : 0;
 		auto switched{false};
 		for (std::size_t k = 0; k < standing.size(); ++k)
 		{
 			if (double distance{0.0}; block_along(line, standing[k], distance, true))
-				wrong[index].push_back(k);
+				wrong[Index].push_back(k);
 			else if (block_along(line, standing[k], distance))
-				along[index].push_back(k);
+				along[Index].push_back(k);
 			else
 				continue;
 			switched = switched || guards.contains(ToLower(standing[k].name));
 		}
 		if (kind != block_kind::semi)
-			automatic[index] = line.number > 0 && (along[index].empty() || switched) ? 1 : 2;
+			automatic[Index] = line.number > 0 && (along[Index].empty() || switched) ? 1 : 2;
 	}
-	// the lines set: all of them, or the one a block boundary is drawn on with the other track of a double-track one
-	std::vector<char> processed(lines.size(), Edit == nullptr ? 1 : 0);
-	int edited{-1};
-	double drawn{0.0};
-	if (Edit != nullptr)
+	// the lines set; false with the reason where the line a boundary is drawn on can't be set
+	bool target()
 	{
+		processed.assign(lines.size(), edit == nullptr ? 1 : 0);
+		if (edit == nullptr)
+			return true;
 		for (std::size_t index = 0; index < lines.size(); ++index)
-			if (entries[lines[index].entry].name == Edit->entry)
+			if (entries[lines[index].entry].name == edit->entry)
 				edited = static_cast<int>(index);
 		double gap{0.0};
 		if (edited >= 0)
-			drawn = station::distance_on(lines[edited], Edit->point, gap);
+			drawn = station::distance_on(lines[edited], edit->point, gap);
 		if (edited < 0 || gap > 5.0)
 		{
-			m_status = STR_C("The line drawn on isn't there any more");
-			return;
+			tool.m_status = STR_C("The line drawn on isn't there any more");
+			return false;
 		}
 		if (automatic[edited] != 1)
 		{
-			m_status = format(STR_C("The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"), Edit->entry.c_str());
-			return;
+			tool.m_status = format(STR_C("The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"), edit->entry.c_str());
+			return false;
 		}
 		processed[edited] = 1;
 		if (auto const partner{lines[edited].partner}; partner >= 0 && automatic[partner] == 1)
@@ -3922,15 +3945,51 @@ void srk_tool::set_lines(block_edit const *Edit)
 			station::distance_on(lines[partner], station::point_on(lines[edited], drawn).point, gap);
 			processed[partner] = gap < 12.0 ? 1 : 0;
 		}
+		return true;
 	}
-	auto const described{line_of_open()};
-	double known{0.0};
-	if (std::ranges::any_of(std::views::iota(std::size_t{0}, lines.size()), [&](std::size_t const Index) { return processed[Index] && automatic[Index] == 1; }) &&
-	    (false == km_of_open(0.0, known) || described.empty()))
+	// false with the reason while a line of the automatic block is set and the station has no line or km to name its signals after
+	bool km_known() const
 	{
-		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
-		return;
+		auto const described{tool.line_of_open()};
+		double known{0.0};
+		if (std::ranges::any_of(std::views::iota(std::size_t{0}, lines.size()), [this](std::size_t const Index) { return processed[Index] && automatic[Index] == 1; }) &&
+			(false == tool.km_of_open(0.0, known) || described.empty()))
+		{
+			tool.m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
+			return false;
+		}
+		return true;
 	}
+};
+
+void srk_tool::set_lines(block_edit const *Edit)
+{
+	m_status.clear();
+	lines_set work{*this, Edit};
+	if (false == work.gather())
+		return;
+	work.classify();
+	if (false == work.target() || false == work.km_known())
+		return;
+	auto const &stem{work.stem};
+	auto const &standing{work.standing};
+	auto const &lines{work.lines};
+	auto const &entries{work.entries};
+	auto const &entry_standing{work.entry_standing};
+	auto const &heads{work.heads};
+	auto const &controls{work.controls};
+	auto const &automatic{work.automatic};
+	auto const &aspects{work.aspects};
+	auto const &both{work.both};
+	auto const &along{work.along};
+	auto const &wrong{work.wrong};
+	auto const &processed{work.processed};
+	auto const edited{work.edited};
+	auto const drawn{work.drawn};
+	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
+		auto const way{station::point_on(Line, Distance).way};
+		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
+	};
 	struct planned_signal
 	{
 		station::signal::role kind{station::signal::role::block};
