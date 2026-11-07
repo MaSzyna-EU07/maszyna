@@ -3180,6 +3180,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_gradelines(std::istringstream &words) const;
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
+	// monkey <seed> <steps>: the random steps written into the script after this line
+	selftest_result selftest_monkey_run(std::istringstream &words);
+	// monkeyview <seed>, or monkeyat <seed> with View false
+	selftest_result selftest_monkey_view(bool const View, std::istringstream &words);
+	selftest_result selftest_undoall();
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives
