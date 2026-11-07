@@ -462,6 +462,7 @@ set(CORE_SOURCES
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
+"vehicle/brakesetting.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/smoke.cpp"

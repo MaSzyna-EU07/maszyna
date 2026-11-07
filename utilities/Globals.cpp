@@ -699,6 +699,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "ai.brakesetting.cw1")
+    {
+        ParseOne(Parser, AIBrakeSettingCw1, 1, false);
+        return true;
+    }
+
     if (token == "pause")
     {
         std::string value;
@@ -1590,6 +1596,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.time.current", ScenarioTimeCurrent );
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
     export_as_text( Output, "ai.trainman", AITrainman );
+    export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
     export_as_text( Output, "shadows", RenderShadows );

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
 #include "vehicle/Train.h"
+#include "vehicle/brakesetting.h"
 #include "vehicle/handover.h"
 #include "world/mtable.h"
 #include "vehicle/DynObj.h"
@@ -2080,106 +2081,30 @@ void TController::Activation()
 
 void TController::AutoRewident()
 { // autorewident: nastawianie hamulców w składzie
-    int r = 0, g = 0, p = 0; // ilości wagonów poszczególnych typów
-    TDynamicObject *d = pVehicles[0]; // pojazd na czele składu
-    // 1. Zebranie informacji o składzie pociągu — przejście wzdłuż składu i odczyt parametrów:
-    //   · ilość wagonów -> są zliczane, wszystkich pojazdów jest (iVehicles)
-    //   · długość (jako suma) -> jest w (fLength)
-    //   · masa (jako suma) -> jest w (fMass)
-    while (d)
-    { // klasyfikacja pojazdów wg BrakeDelays i mocy (licznik)
-        if (d->MoverParameters->Power < 1) // - lokomotywa - Power>1 - ale może być nieczynna na końcu...
-            if (TestFlag(d->MoverParameters->BrakeDelays, bdelay_R))
-                ++r; // - wagon pospieszny - jest R
-            else if (TestFlag(d->MoverParameters->BrakeDelays, bdelay_G))
-                ++g; // - wagon towarowy - jest G (nie ma R)
-            else
-                ++p; // - wagon osobowy - reszta (bez G i bez R)
-        d = d->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
+    // 1. Zebranie informacji o składzie pociągu, od czoła do końca
+    std::vector<brake_setting::vehicle> consist;
+    for (auto const *d = pVehicles[0]; d != nullptr; d = d->Next()) {
+        auto const *mover{d->MoverParameters};
+        // a locomotive has Power > 1, though it may be a dead one at the end of the train
+        consist.emplace_back(mover->BrakeDelays, mover->Power >= 1.0, mover->Dim.L, mover->TotalMass);
     }
-    // 2. Określenie typu pociągu i nastawy:
-    int ustaw; //+16 dla pasażerskiego
-    if (r + g + p == 0)
-        ustaw = 16 + bdelay_R; // lokomotywa luzem (może być wieloczłonowa)
-    else
-    { // jeśli są wagony
-        ustaw = g < std::min(4, r + p) ? 16 : 0;
-        if (ustaw) // jeśli towarowe < Min(4, pospieszne+osobowe)
-        { // to skład pasażerski - nastawianie pasażerskiego
-            ustaw += g && r < g + p ? bdelay_P : bdelay_R;
-            // jeżeli towarowe>0 oraz pospiesze<=towarowe+osobowe to P (0)
-            // inaczej R (2)
-        }
-        else
-        { // inaczej towarowy - nastawianie towarowego
-            if (fLength < 300.0 && fMass < 600000.0) //[kg]
-                ustaw |= bdelay_P; // jeżeli długość<300 oraz masa<600 to P (0)
-            else if (fLength < 500.0 && fMass < 1300000.0)
-                ustaw |= bdelay_R; // jeżeli długość<500 oraz masa<1300 to GP (2)
-            else
-                ustaw |= bdelay_G; // inaczej G (1)
-        }
-        // zasadniczo na sieci PKP kilka lat temu na P/GP jeździły tylko kontenerowce o
-        // rozkładowej 90 km/h. Pozostałe jeździły 70 km/h i były nastawione na G.
-    }
-    d = pVehicles[0]; // pojazd na czele składu
-    p = 0; // będziemy tu liczyć wagony od lokomotywy dla nastawy GP
-    while (d)
-    { // 3. Nastawianie
-        if( true == AIControllFlag
-         || d != pVehicle ) {
+    // 2. Określenie typu pociągu i nastaw: by the brake instruction Cw-1 (eu07/maszyna#350), or as the releases before it did
+    auto const settings{Global.AIBrakeSettingCw1 ? brake_setting::choose(consist) : brake_setting::choose_legacy(consist)};
+    // a light engine counts as a passenger train for the braking below
+    auto const passengertrain{brake_setting::passenger(brake_setting::choose_train_setting(consist))};
+    // 3. Nastawianie
+    auto setting{settings.begin()};
+    for (auto *d = pVehicles[0]; d != nullptr && setting != settings.end(); d = d->Next(), ++setting) {
+        if (false == AIControllFlag && d == pVehicle) {
             // don't touch human-controlled vehicle, but others are free game
-            switch( ustaw ) {
-
-                case bdelay_P: {
-                    // towarowy P - lokomotywa na G, reszta na P.
-                    d->MoverParameters->BrakeDelaySwitch(
-                        d->MoverParameters->Power > 1 ?
-                            bdelay_G :
-                            bdelay_P );
-                    break;
-                }
-                case bdelay_G: {
-                    // towarowy G - wszystko na G, jeśli nie ma to P (powinno się wyłączyć hamulec)
-                    d->MoverParameters->BrakeDelaySwitch(
-                        TestFlag( d->MoverParameters->BrakeDelays, bdelay_G ) ?
-                            bdelay_G :
-                            bdelay_P );
-                    break;
-                }
-                case bdelay_R: {
-                    // towarowy GP - lokomotywa oraz 5 pierwszych pojazdów przy niej na G, reszta na P
-                    if( d->MoverParameters->Power > 1 ) {
-                        d->MoverParameters->BrakeDelaySwitch( bdelay_G );
-                        p = 0; // a jak będzie druga w środku?
-                    }
-                    else {
-                        d->MoverParameters->BrakeDelaySwitch(
-                            ++p <= 5 ?
-                                bdelay_G :
-                                bdelay_P );
-                    }
-                    break;
-                }
-                case 16 + bdelay_R: {
-                    // pasażerski R - na R, jeśli nie ma to P
-                    d->MoverParameters->BrakeDelaySwitch(
-                        TestFlag( d->MoverParameters->BrakeDelays, bdelay_R ) ?
-                            bdelay_R :
-                            bdelay_P );
-                    break;
-                }
-                case 16 + bdelay_P: {
-                    // pasażerski P - wszystko na P
-                    d->MoverParameters->BrakeDelaySwitch( bdelay_P );
-                    break;
-                }
-            }
-            // potentially release manual brake
-            d->MoverParameters->DecManualBrakeLevel( ManualBrakePosNo );
-            d->MoverParameters->SpringBrake.Activate = false;
+            continue;
         }
-        d = d->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
+        if (*setting != 0) {
+            d->MoverParameters->BrakeDelaySwitch(*setting);
+        }
+        // potentially release manual brake
+        d->MoverParameters->DecManualBrakeLevel( ManualBrakePosNo );
+        d->MoverParameters->SpringBrake.Activate = false;
     }
     //ustawianie trybu pracy zadajnika hamulca, wystarczy raz po inicjalizacji AI
     if( true == AIControllFlag ) {
@@ -2218,7 +2143,7 @@ void TController::AutoRewident()
     if( OrderCurrentGet() & ( Obey_train | Bank ) ) {
         // 4. Przeliczanie siły hamowania
         double const velstep = mvOccupied->Vmax * 0.5 / BrakeAccTableSize;
-        d = pVehicles[0]; // pojazd na czele składu
+        auto *d = pVehicles[0]; // pojazd na czele składu
 	    while (d) {
             for( int i = 0; i < BrakeAccTableSize; ++i ) {
                 fBrake_a0[ i + 1 ] += d->MoverParameters->BrakeForceR( 0.25, velstep*( 1 + 2 * i ) );
@@ -2257,7 +2182,7 @@ void TController::AutoRewident()
             fNominalAccThreshold = std::max( -0.75, -fBrake_a0[ BrakeAccTableSize ] - 8 * fBrake_a1[ BrakeAccTableSize ] );
             fBrakeReaction = 0.25;
         }
-        else if (ustaw > 16) {
+        else if (passengertrain) {
             fNominalAccThreshold = -fBrake_a0[ BrakeAccTableSize ] - 4 * fBrake_a1[ BrakeAccTableSize ];
 		    fBrakeReaction = 1.00 + fLength*0.004;
 	    }

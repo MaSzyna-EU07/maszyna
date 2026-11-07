@@ -1,0 +1,57 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+#include <vector>
+
+// the brake setting (G/P/R/Mg) the virtual wagon inspector (TController::AutoRewident) chooses for every
+// vehicle of a train, by the rules of the brake instruction Cw-1 (Mw56), §18 and §19 (eu07/maszyna#350)
+namespace brake_setting {
+
+// what the inspector needs to know about a vehicle of the train
+struct vehicle {
+	int delays{0}; // the settings the vehicle has (BrakeDelays, a combination of bdelay_*)
+	bool powered{false}; // a locomotive or a powered unit, as opposed to a wagon
+	double length{0.0}; // [m]
+	double mass{0.0}; // with its load [kg]
+};
+
+// the kind of train the inspector takes the consist for, and how it sets the brakes
+enum class train_setting {
+	light_engine, // no wagons: R where there is one, else P
+	passenger_r, // passenger train on R, wagons with Mg on R+Mg (Cw-1 §18.2)
+	passenger_p, // passenger train on P (Cw-1 §18.3, §18.4)
+	freight_p, // freight train on P: locomotives on G, wagons on P (Cw-1 §19.3a)
+	freight_gp, // freight train on P: locomotives and the first five wagons on G, the rest on P (Cw-1 §19.3b)
+	freight_g // freight train on G (Cw-1 §19.1)
+};
+
+// how many wagons next to the locomotive stay on G in a freight_gp train
+inline constexpr int freight_gp_wagons_on_g{5};
+
+// the train setting by Cw-1. Consist runs from the head of the train to its rear
+train_setting choose_train_setting(std::vector<vehicle> const &Consist);
+
+// a passenger train or a light engine, as opposed to a freight train. the inspector of the earlier
+// releases tells them apart the same way
+constexpr bool passenger(train_setting const Setting) {
+	return Setting == train_setting::light_engine || Setting == train_setting::passenger_r || Setting == train_setting::passenger_p;
+}
+
+// the brake setting (bdelay_*) for every vehicle of Consist, in the same order, by Cw-1. a vehicle
+// without the setting the train needs gets the other one of G and P it has, and 0 (left as it is)
+// when it has neither. Cw-1 §19.9 would have the brake of such a vehicle cut out instead
+std::vector<int> choose(std::vector<vehicle> const &Consist);
+
+// the inspector of the releases before eu07/maszyna#350, kept for ai.brakesetting.cw1 no. the settings
+// are requests: a vehicle which doesn't have the one asked for keeps its own
+std::vector<int> choose_legacy(std::vector<vehicle> const &Consist);
+
+} // namespace brake_setting
