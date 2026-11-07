@@ -170,10 +170,12 @@ std::vector<std::array<std::size_t, 3>> ear_clip( std::vector<glm::dvec2> const 
         if( ear == remaining.size() ) {
             ear = 0;
         }
-        triangles.push_back( { remaining[ ( ear + remaining.size() - 1 ) % remaining.size() ], remaining[ ear ], remaining[ ( ear + 1 ) % remaining.size() ] } );
+        std::array const corners { remaining[ ( ear + remaining.size() - 1 ) % remaining.size() ], remaining[ ear ], remaining[ ( ear + 1 ) % remaining.size() ] };
+        triangles.push_back( corners );
         remaining.erase( remaining.begin() + ear );
     }
-    triangles.push_back( { remaining[ 0 ], remaining[ 1 ], remaining[ 2 ] } );
+    std::array const closing { remaining[ 0 ], remaining[ 1 ], remaining[ 2 ] };
+    triangles.push_back( closing );
     return triangles;
 }
 
