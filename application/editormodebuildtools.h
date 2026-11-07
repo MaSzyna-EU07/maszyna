@@ -11,10 +11,15 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/editormode.h"
 #include "application/editormoderoad.h"
+#include "application/editormodesweep.h"
 
 // the build tools: laying track, routes, straights, roads, sweeps, vertical profiles and grade lines, the terrain model, connections and the infrastructure; owned by editor_mode, made by make_build_tools()
 struct build_tools
 {
-	explicit build_tools(editor_build_services &Build) : road{Build} {}
+	build_tools(editor_services &Services, editor_build_services &Build) : road{Build}, sweep{Services, Build, bend_state}, bend{Services, Build, bend_state, sweep} {}
 	road_editor road;
+	// the model bent along the track, edited by the bend tool and set by the sweep tool once it lays one
+	bend_tool bend_state;
+	sweep_editor sweep;
+	bend_editor bend;
 };

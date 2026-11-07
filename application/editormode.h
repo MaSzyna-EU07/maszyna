@@ -3178,157 +3178,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool orphan_take_event(orphan_takeover &Takeover, TTrack const &Old, std::string const &Name, int const List, signal_standing const *Standing) const;
 	void orphan_take_record(orphan_takeover &Takeover, orphan_record &Record);
 
-	// a model laid along the track: bent to follow it, or repeated along it
-	struct sweep_tool
-	{
-		bool open{false};
-		bool expand{false};
-		char model[256]{};
-		char skin[128]{"none"};
-		char search[64]{};
-		std::vector<std::string> models;
-		bool scanned{false};
-		int revision{-1}; // of the include bank the templates were taken from
-		// parameters of a template laid along the track, with their names
-		std::string parameters_for;
-		std::vector<std::array<char, 128>> parameters;
-		std::vector<std::string> parameter_labels;
-		std::vector<bool> parameter_placement; // filled in with zeros: the template is placed in its own space
-		std::vector<std::vector<std::string>> parameter_choices; // variants of the textures a parameter is a part of the name of
-		int length_mode{2}; // 0: one copy as long as the original, 1: the length given, 2: the whole stretch of the line
-		double length{200.0};
-		sweep_node::state settings;
-		int axis{0}; // 0: the longer one of the model, 1: z, 2: x
-		double model_length{0.0};
-		std::string measured; // model the length is of
-		// the curve: the axis of the track
-		TTrack *curve_for{nullptr};
-		std::size_t curve_history{0};
-		struct piece
-		{
-			TTrack *track{nullptr};
-			int path{0};
-			bool forward{true};
-		};
-		std::vector<piece> curve_pieces;
-		std::vector<segment_data> curve;
-		double curve_length{0.0};
-		std::vector<glm::dvec3> outline; // of the curve, for the preview
-		std::vector<double> stations;
-		// marking the stretch in the view: press where it starts, the distance from the track sets the offset, drag to the end
-		bool marking{false};
-		bool dragging{false};
-		double anchor{0.0}; // station the drag started at
-		sweep_node *edited{nullptr};
-		std::string status;
-	};
 	sweep_tool m_sweep;
-	// paths the models along curves were laid on, so they follow the changes of the paths
-	struct sweep_link
-	{
-		sweep_node *sweep{nullptr};
-		std::size_t piece{0};
-		TTrack *track{nullptr};
-		int path{0};
-		bool reversed{false};
-	};
-	std::vector<sweep_link> m_sweep_links;
-	void sweep_curve();
-	void sweep_outline();
-	bool sweep_extend(bool const Atend, glm::dvec3 const &Cursor);
-	double sweep_station(glm::dvec3 const &Point, double &Lateral) const;
-	void sweep_scan_models();
-	void sweep_measure();
-	sweep_node::state sweep_definition() const;
-	void sweep_create();
-	void sweep_apply();
-	void sweep_delete(sweep_node &Sweep);
-	void sweep_edit(sweep_node &Sweep);
-	std::vector<sweep_node *> sweeps_near(TTrack const &Track) const;
 	bool sweep_press();
-	void sweep_drag();
-	void sweep_release();
-	// the same at a point of the world: Anywhere takes the press however far from the track it is
-	bool sweep_press_at(glm::dvec3 const &Point, bool const Anywhere);
-	void sweep_drag_at(glm::dvec3 const &Point);
-	void render_sweep_ui();
-	void draw_sweep_overlay() const;
 	void restore_sweeps(EditorSnapshot &Snapshot);
-	void sweeps_captured(TTrack const &Track);
-	void sweeps_committed(std::vector<TTrack *> const &Tracks);
-	void sweeps_split(TTrack &Original, TTrack &Created);
 
-	struct bend_source
-	{
-		TAnimModel *model{nullptr};
-		scene::instance_handle instance{0};
-		std::string file;
-		std::string skin{"none"};
-		std::vector<std::string> parameters;
-		glm::dmat4 transform{1.0};
-		glm::dvec3 scale{1.0};
-		scene::layer_handle layer{null_handle};
-	};
-	struct bend_tool
-	{
-		int axis{0};
-		bool turned{false};
-		int along_anchor{1};
-		int side_anchor{0};
-		int height_anchor{0};
-		glm::dvec3 point{0.0};
-		bool picking{false};
-		void const *tracks_for{nullptr};
-		glm::dvec3 tracks_at{0.0};
-		std::vector<std::pair<TTrack *, double>> tracks;
-		int track{0};
-		sweep_node *edited{nullptr};
-		std::string signature;
-		bool marker_valid{false};
-		glm::dvec3 marker{0.0};
-		std::string status;
-		int dragging{0};
-		sweep_node::state drag_state;
-		glm::dvec3 drag_anchor{0.0};
-		double drag_station{0.0};
-		std::string drag_label;
-		sweep_node *hover{nullptr};
-		bool over_marker{false};
-		std::string label;
-		std::string details;
-	};
-	bend_tool m_bend;
-	bool bend_drag_start(int const Mods);
-	void bend_drag_update();
-	sweep_node *sweep_under(glm::dvec3 const &Point) const;
-	bool bend_click();
-	bool bend_shortcut();
-	bool bend_source_of_selection(bend_source &Source) const;
-	void bend_find_tracks(glm::dvec3 const &Point, void const *Key);
-	bool bend_definition(bend_source const &Source, TTrack &Track, sweep_node::state &State, std::vector<TTrack *> &Tracks);
-	void bend_selection();
-	void bend_edit(sweep_node::state const &State);
-	void bend_reanchor(sweep_node::state &State, int const Side, int const Height, glm::dvec3 const &Point) const;
-	double bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point) const;
-	void bend_stretch(sweep_node const &Sweep, double const Fixed, double const Length, glm::dvec3 const &Point, sweep_node::state &State) const;
-	void bend_pick(glm::dvec3 const &Point);
-	glm::dvec3 bend_marker(sweep_node const &Sweep) const;
 	void restore_bend(EditorSnapshot &Snapshot, bool const Undo);
-	void render_bend();
-	// the bent model edited: where it lies by the track, how long, bent or repeated, and the rest of its settings
-	void render_bend_edited(sweep_node &Sweep);
-	bool render_bend_place(sweep_node &Sweep, sweep_node::state &State, double const Stretch) const;
-	bool render_bend_lengths(sweep_node &Sweep, sweep_node::state &State, double const Own, float const Half) const;
-	bool render_bend_more(sweep_node::state &State);
-	void render_bend_finish(sweep_node &Sweep, float const Half);
-	// no bent model edited: the model selected to be bent, the bent ones by the track or near the camera to pick
-	void render_bend_choice();
-	void render_bend_listed(TTrack const *Track);
-	// the reference point of the model bent: where along the track, across and up it lies
-	void render_bend_anchors(bool &Changed);
-	// a model chosen to be bent, the tracks by it found: the track to bend it along and how
-	void render_bend_source(bend_source const &Source, void const *Key);
-	void draw_bend_overlay() const;
 
 	// script of editor actions given in the EU07_EDITOR_SELFTEST file, run a step at a time, for testing without a person
 	struct selftest
@@ -3361,13 +3215,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_key(std::istringstream &words);
 	selftest_result selftest_sleepers(std::string const &command, std::istringstream &words);
 	selftest_result selftest_sweep(std::string const &command, std::istringstream &words);
-	// the sweep commands of the self-test with more to them: a model laid along the selected track, a model bent along a track,
-	// set again, probed; the commands of the bent models and of the lineside tabs
-	selftest_result selftest_sweep_lay(std::istringstream &words);
 	selftest_result selftest_bend(std::string const &command, std::istringstream &words);
-	selftest_result selftest_bend_lay(std::istringstream &words);
-	selftest_result selftest_bend_set(std::istringstream &words);
-	selftest_result selftest_bend_probe() const;
 	selftest_result selftest_track(std::string const &command, std::istringstream &words);
 	// the track commands of the self-test by the group: the lineside sweeps, the routes, their traces, the alignments, the
 	// grade lines, the checks of the tracks; and those of them with more to them
@@ -3843,6 +3691,17 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<double> ground_heights_at(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const override;
 	void push_road_snapshot(editor_road::record Record) override;
 	bool render_road_material(char const *Label, std::string &Value) override;
+	sweep_tool &sweep_state() override;
+	void sweep_curve() override;
+	void push_sweep_toggled(sweep_node &Sweep) override;
+	void push_sweep_change(sweep_node &Sweep, sweep_node::state Before) override;
+	void push_bend_made(sweep_node &Sweep, bend_source const &Source) override;
+	bool bend_source_of_selection(bend_source &Source) const override;
+	editor_ui *build_ui() const override;
+	scene::basic_node *current_node() const override;
+	scene::instance_handle current_instance() const override;
+	void drop_node_selection() override;
+	bool right_button_held() const override;
 	// build services: end
 
 

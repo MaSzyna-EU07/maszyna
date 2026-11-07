@@ -596,7 +596,7 @@ editor_mode::editor_mode() {
 		ui()->set_node(m_node);
 	});
 	ui()->set_array_options([this]() { render_array(); });
-	ui()->set_bend_options([this]() { render_bend(); });
+	ui()->set_bend_options([this]() { m_build_tools->bend.render_bend(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
@@ -1712,10 +1712,10 @@ bool editor_mode::update()
     }
     else
     {
-        draw_sweep_overlay();
+        m_build_tools->sweep.draw_overlay();
         m_sweep.open = false;
-        bend_drag_update();
-        draw_bend_overlay();
+        m_build_tools->bend.bend_drag_update();
+        m_build_tools->bend.draw_overlay();
     }
     m_gauge.update();
     m_gauge.render_windows();
@@ -5317,7 +5317,7 @@ void editor_mode::render_edit_menu()
 		m_track_search.focus = true;
 	}
 	if (ImGui::MenuItem(STR_C("Bend the selected along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
-		bend_shortcut();
+		m_build_tools->bend.bend_shortcut();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Bends the selected model, e.g. a platform edge or a fence, along the nearest track; the settings are in the inspector"));
 	ImGui::EndMenu();
@@ -7121,7 +7121,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
         case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
         case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
-        case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && bend_shortcut(); break;
+        case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && m_build_tools->bend.bend_shortcut(); break;
         case GLFW_KEY_F1: m_shortcuts_open = !m_shortcuts_open; break;
         // the fields of work in the order of their row
         case GLFW_KEY_F2: choose_work_area(work_area::surroundings); break;
@@ -7439,7 +7439,7 @@ void editor_mode::mouse_left_release()
     finish_track_box();
     point_drag_finish();
     m_handle_drag = {};
-    sweep_release();
+    m_build_tools->sweep.sweep_release();
     if (m_straights.tool_mouse)
         finish_straight_gesture();
     if (m_extend.active)
@@ -7540,16 +7540,16 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         return;
     }
 
-    if (Button == GLFW_MOUSE_BUTTON_LEFT && is_press(Action) && false == m_bend.picking && ui()->mode() != nodebank_panel::TRACK && (bend_drag_start(Mods) || bend_click()))
+    if (Button == GLFW_MOUSE_BUTTON_LEFT && is_press(Action) && false == m_build_tools->bend_state.picking && ui()->mode() != nodebank_panel::TRACK && (m_build_tools->bend.bend_drag_start(Mods) || m_build_tools->bend.bend_click()))
     {
         m_input.mouse.button(Button, Action);
         return;
     }
 
-    if (m_bend.picking && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
+    if (m_build_tools->bend_state.picking && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
     {
         if (is_press(Action))
-            bend_pick(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+            m_build_tools->bend.bend_pick(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
         m_input.mouse.button(Button, Action);
         return;
     }

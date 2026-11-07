@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -1377,7 +1378,7 @@ void editor_mode::infra_adopt(TTrack &Track)
 
 void editor_mode::track_captured(TTrack const &Track)
 {
-	sweeps_captured(Track);
+	m_build_tools->sweep.sweeps_captured(Track);
 	switch_drive_captured(Track);
 	grade_line_captured(Track);
 	if (m_infra_suspended || false == m_infra.follow)
@@ -1424,7 +1425,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
 	nmt_track_changed(Tracks);
 	m_joints.tracks_committed(Tracks);
-	sweeps_committed(Tracks);
+	m_build_tools->sweep.sweeps_committed(Tracks);
 	switch_drives_committed(Tracks);
 	grade_lines_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
@@ -1556,7 +1557,7 @@ void editor_mode::track_renamed(TTrack const &Track, std::string const &Old)
 
 void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data const &First)
 {
-	sweeps_split(Original, Created);
+	m_build_tools->sweep.sweeps_split(Original, Created);
 	grade_line_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
