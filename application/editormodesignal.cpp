@@ -350,6 +350,53 @@ std::string lean_arrow(std::string_view const Lean)
 	return {};
 }
 
+using name_set = std::unordered_set<std::string, string_hash, std::equal_to<>>;
+
+// the names of the events the path reads put into the set, in lower case
+void add_event_names(name_set &Names, TTrack &Track)
+{
+	for (int list = 0; list < 6; ++list)
+		for (auto const &[event_name, event_target] : editor_track::events(Track, list))
+			Names.insert(ToLower(event_name));
+}
+
+// the names of the circuits of the path put into the set, in lower case
+void add_circuit_names(name_set &Names, TTrack const &Track)
+{
+	for (auto const *isolated : Track.Isolated)
+		if (isolated != nullptr)
+			Names.insert(ToLower(isolated->asName));
+}
+
+// the track lies over the old one for the most part, by the points of its paths in plan
+bool mostly_over(TTrack const &Track, TTrack const &Old)
+{
+	std::size_t on{0};
+	std::size_t all{0};
+	for (auto const &path : Track.m_paths)
+	{
+		bezier const curve{path};
+		for (int k = 0; k <= 32; ++k)
+		{
+			int old_path{0};
+			double old_parameter{0.0};
+			++all;
+			if (plan_gap(Old, curve.point(k / 32.0), old_path, old_parameter) <= kOrphanReach)
+				++on;
+		}
+	}
+	return all != 0 && on * 2 >= all;
+}
+
+// the events of the name the path reads given the name after, in lower case, unbound
+void rename_events(TTrack &Track, std::string const &Name, std::string const &After)
+{
+	for (int list = 0; list < 6; ++list)
+		for (auto &event : editor_track::events(Track, list))
+			if (ToLower(event.first) == Name)
+				event = {ToLower(After), nullptr};
+}
+
 } // namespace
 
 bool editor_mode::signal_scan(bool const Wait)
@@ -1109,18 +1156,14 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 	if (gone.empty())
 		return;
 	// what the step moved onto the tracks left isn't lost
-	std::unordered_set<std::string, string_hash, std::equal_to<>> carried;
+	name_set carried;
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
-			for (int list = 0; list < 6; ++list)
-				for (auto const &[event_name, event_target] : editor_track::events(*track, list))
-					carried.insert(ToLower(event_name));
-	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
+			add_event_names(carried, *track);
+	name_set circuits;
 	for (auto const *track : Kept)
 		if (track != nullptr && false == track->m_editorremoved)
-			for (auto const *isolated : track->Isolated)
-				if (isolated != nullptr)
-					circuits.insert(ToLower(isolated->asName));
+			add_circuit_names(circuits, *track);
 	for (auto *track : gone)
 	{
 		orphan_record record;
@@ -1157,12 +1200,10 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 				candidates.push_back(track);
 	if (candidates.empty() && std::ranges::none_of(m_orphans, [](orphan_record const &Record) { return Record.fresh; }))
 		return;
-	std::unordered_set<std::string, string_hash, std::equal_to<>> carried;
+	name_set carried;
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
-			for (int list = 0; list < 6; ++list)
-				for (auto const &[event_name, event_target] : editor_track::events(*track, list))
-					carried.insert(ToLower(event_name));
+			add_event_names(carried, *track);
 	// not the signals standing as last listed, nor the templates once found: the step taken may hold one of them; looked for once an event
 	// waits
 	std::vector<signal_standing> signals;
@@ -1181,6 +1222,77 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 		}
 		auto const found{readers.find(Name)};
 		return found != readers.end() ? found->second : nullptr;
+	};
+	// the event of the old track put onto the candidate lying in its place, by the signal reading it, else by the middle of the old
+	// track: false where none lies there
+	auto const take_event = [&](TTrack const &Old, std::string const &Name, int const List, signal_standing const *Standing) {
+		// the place on the old axis: by the signal reading it, else the middle of the track
+		int old_path{0};
+		double old_parameter{0.5};
+		auto const by_signal{Standing != nullptr && plan_gap(Old, Standing->include.location, old_path, old_parameter) <= kSignalReach};
+		if (false == by_signal)
+		{
+			old_path = 0;
+			old_parameter = 0.5;
+		}
+		auto const anchor{bezier{Old.m_paths[old_path]}.point(old_parameter)};
+		auto const old_forward{forward_at(Old, old_path, old_parameter)};
+		TTrack *best{nullptr};
+		int best_path{0};
+		double best_parameter{0.0};
+		auto nearest{kOrphanReach};
+		for (auto *track : candidates)
+		{
+			int path{0};
+			double parameter{0.0};
+			auto const gap{plan_gap(*track, anchor, path, parameter)};
+			if (gap <= nearest && std::abs(glm::dot(forward_at(*track, path, parameter), old_forward)) > 0.9)
+			{
+				nearest = gap;
+				best = track;
+				best_path = path;
+				best_parameter = parameter;
+			}
+		}
+		if (best == nullptr)
+			return false;
+		// laid the other way round, the trains running towards its end read it at its start
+		auto const reversed{glm::dot(forward_at(*best, best_path, best_parameter), old_forward) < 0.0};
+		auto target{reversed ? list_turned(List) : List};
+		if (by_signal)
+		{
+			auto const &location{Standing->include.location};
+			auto const axis{bezier{best->m_paths[best_path]}.point(nearest_on(*best, best_path, location))};
+			auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(Standing->include.yaw))) >= 0.0 ? 1 : -1};
+			signal_spot spot;
+			if (signal_drop_at(*Standing, *best, best_path, location, side, spot))
+				target = spot.list + (List >= 3 ? 3 : 0);
+		}
+		editor_track::events(*best, target).emplace_back(Name, nullptr);
+		std::string missing;
+		editor_track::bind_events(*best, missing);
+		best->mark_dirty();
+		carried.insert(Name);
+		return true;
+	};
+	// the circuits of the old track given to the candidates lying in its place for the most part: new ones, in the circuit of the
+	// track they were made from, or ones without a circuit; false where none lies there
+	auto const take_circuits = [&](auto &Record, TTrack const &Old) {
+		auto got{false};
+		for (auto *track : candidates)
+		{
+			if (auto const made{std::ranges::find(Created, track) != Created.end()}; (false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, Old, 2.0))
+				continue;
+			if (auto const same{track->Isolated.size() == Record.circuits.size() && std::equal(Record.circuits.begin(), Record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })}; same)
+				continue;
+			if (false == mostly_over(*track, Old))
+				continue;
+			editor_track::isolated(*track, Record.circuits);
+			if (std::ranges::find(Record.given, track) == Record.given.end())
+				Record.given.push_back(track);
+			got = true;
+		}
+		return got;
 	};
 	std::vector<std::string> taken;
 	std::vector<std::string> remaining;
@@ -1205,107 +1317,20 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 			if (carried.contains(name))
 				continue;
 			auto const *standing{reader_of(name)};
-			auto got{false};
 			// an event no longer there, of a signal taken away, stays off the tracks
-			if (false == candidates.empty() && simulation::Events.FindEvent(name) != nullptr)
-			{
-				// the place on the old axis: by the signal reading it, else the middle of the track
-				int old_path{0};
-				double old_parameter{0.5};
-				auto const by_signal{standing != nullptr && plan_gap(old, standing->include.location, old_path, old_parameter) <= kSignalReach};
-				if (false == by_signal)
-				{
-					old_path = 0;
-					old_parameter = 0.5;
-				}
-				auto const anchor{bezier{old.m_paths[old_path]}.point(old_parameter)};
-				auto const old_forward{forward_at(old, old_path, old_parameter)};
-				TTrack *best{nullptr};
-				int best_path{0};
-				double best_parameter{0.0};
-				auto nearest{kOrphanReach};
-				for (auto *track : candidates)
-				{
-					int path{0};
-					double parameter{0.0};
-					auto const gap{plan_gap(*track, anchor, path, parameter)};
-					if (gap <= nearest && std::abs(glm::dot(forward_at(*track, path, parameter), old_forward)) > 0.9)
-					{
-						nearest = gap;
-						best = track;
-						best_path = path;
-						best_parameter = parameter;
-					}
-				}
-				if (best != nullptr)
-				{
-					// laid the other way round, the trains running towards its end read it at its start
-					auto const reversed{glm::dot(forward_at(*best, best_path, best_parameter), old_forward) < 0.0};
-					auto target{reversed ? list_turned(list) : list};
-					if (by_signal)
-					{
-						auto const &location{standing->include.location};
-						auto const axis{bezier{best->m_paths[best_path]}.point(nearest_on(*best, best_path, location))};
-						auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(standing->include.yaw))) >= 0.0 ? 1 : -1};
-						signal_spot spot;
-						if (signal_drop_at(*standing, *best, best_path, location, side, spot))
-							target = spot.list + (list >= 3 ? 3 : 0);
-					}
-					editor_track::events(*best, target).emplace_back(name, nullptr);
-					std::string missing;
-					editor_track::bind_events(*best, missing);
-					best->mark_dirty();
-					carried.insert(name);
-					got = true;
-				}
-			}
-			if (got)
-			{
-				if (standing != nullptr)
-					taken.push_back(standing->name);
-				else
-					++taken_events;
-			}
+			auto const got{false == candidates.empty() && simulation::Events.FindEvent(name) != nullptr && take_event(old, name, list, standing)};
+			if (got && standing != nullptr)
+				taken.push_back(standing->name);
+			else if (got)
+				++taken_events;
+			else if (record.fresh && standing != nullptr)
+				remaining.push_back(standing->name);
 			else if (record.fresh)
-			{
-				if (standing != nullptr)
-					remaining.push_back(standing->name);
-				else
-					++left_events;
-			}
+				++left_events;
 		}
 		if (false == record.circuits.empty() && std::ranges::all_of(record.given, [](TTrack const *Track) { return Track->m_editorremoved; }))
 		{
-			auto got{false};
-			// a track lying in the place of the old one for the most part: a new one, in the circuit of the track it was made from,
-			// or one without a circuit
-			for (auto *track : candidates)
-			{
-				if (auto const made{std::ranges::find(Created, track) != Created.end()}; (false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, old, 2.0))
-					continue;
-				if (auto const same{track->Isolated.size() == record.circuits.size() && std::equal(record.circuits.begin(), record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })}; same)
-					continue;
-				std::size_t on{0};
-				std::size_t all{0};
-				for (auto const &path : track->m_paths)
-				{
-					bezier const curve{path};
-					for (int k = 0; k <= 32; ++k)
-					{
-						int old_path{0};
-						double old_parameter{0.0};
-						++all;
-						if (plan_gap(old, curve.point(k / 32.0), old_path, old_parameter) <= kOrphanReach)
-							++on;
-					}
-				}
-				if (all == 0 || on * 2 < all)
-					continue;
-				editor_track::isolated(*track, record.circuits);
-				if (std::ranges::find(record.given, track) == record.given.end())
-					record.given.push_back(track);
-				got = true;
-			}
+			auto const got{take_circuits(record, old)};
 			if (got)
 				taken_circuits.insert(taken_circuits.end(), record.circuits.begin(), record.circuits.end());
 			else if (record.fresh)
@@ -1406,10 +1431,7 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 			continue;
 		if (std::none_of(Snapshot.tracks.begin(), Snapshot.tracks.end(), [&](auto const &State) { return State.first == track; }))
 			Snapshot.tracks.emplace_back(track, editor_track::capture(*track));
-		for (int list = 0; list < 6; ++list)
-			for (auto &event : editor_track::events(*track, list))
-				if (ToLower(event.first) == name)
-					event = {ToLower(After), nullptr};
+		rename_events(*track, name, After);
 		std::string missing;
 		editor_track::bind_events(*track, missing);
 		track->mark_dirty();
@@ -1601,18 +1623,19 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		editor_includes::load(item->file, had, missing);
 		editor_includes::load(variant->file, info, missing);
 		auto const role_of = [](include_info &Info, int const Id) { return Info.parameter(Id).role; };
+		// the first value given of a parameter of the role in the old template, none for a free one or a text
+		auto const value_of_role = [&](std::string const &Role) {
+			for (int old = 1; old <= static_cast<int>(values.size()); ++old)
+				if (Role != "free" && Role != "text" && role_of(had, old) == Role && false == values[old - 1].empty())
+					return values[old - 1];
+			return std::string{};
+		};
 		std::vector<std::string> after(std::max(variant->parameters, 1));
 		for (int id = 1; id <= static_cast<int>(after.size()); ++id)
 		{
 			auto &value{after[id - 1]};
 			auto const role{role_of(info, id)};
-			int old{1};
-			while (old <= static_cast<int>(values.size()) && value.empty())
-			{
-				if (role != "free" && role != "text" && role_of(had, old) == role)
-					value = values[old - 1];
-				++old;
-			}
+			value = value_of_role(role);
 			if (id == 7 && variant->linked)
 				value = item->linked && values.size() > 6 ? values[6] : std::string{"none"};
 			if (value.empty() && id == 6 && variant->plate)
@@ -2020,6 +2043,21 @@ void editor_mode::render_signal_ui()
 			ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
 		ImGui::EndTable();
 	}
+	// the field of the plate of the signal: true while it's typed in, or while it names no texture there is
+	auto const plate_field = [&]() {
+		auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
+		field_row("Plate");
+		ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
+		auto const typing{ImGui::IsItemActive()};
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
+		auto const &plates{plate_textures()};
+		auto const typed{ToLower(tool.plate)};
+		auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
+		if (false == exists)
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
+		return typing || (false == exists && false == typed.empty());
+	};
 	ImGui::PushID("signalmore");
 	if (ImGui::TreeNode(STR_C("More settings")))
 	{
@@ -2027,20 +2065,7 @@ void editor_mode::render_signal_ui()
 		if (begin_fields("##signalplace", 0.45f))
 		{
 			if (armed != nullptr && armed->plate)
-			{
-				auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
-				field_row("Plate");
-				ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
-				auto const typing{ImGui::IsItemActive()};
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
-				auto const &plates{plate_textures()};
-				auto const typed{ToLower(tool.plate)};
-				auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
-				if (false == exists)
-					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
-				missing = typing || (false == exists && false == typed.empty());
-			}
+				missing = plate_field();
 			if (armed != nullptr && armed->linked)
 			{
 				field_row("Linked signal");

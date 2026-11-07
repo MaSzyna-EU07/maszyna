@@ -41,6 +41,7 @@ http://mozilla.org/MPL/2.0/.
 #include <set>
 #include <optional>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace
@@ -748,6 +749,18 @@ std::optional<infra::binding> read_binding(std::string const &Text, scene::layer
 	return binding;
 }
 
+// the paths reading the events, by the names of the events in lower case
+using reader_map = std::unordered_map<std::string, TTrack *, string_hash, std::equal_to<>>;
+
+// the events the path reads put into the map, a name in it already kept with the path it has
+void add_readers(reader_map &Readers, TTrack &Track)
+{
+	for (int list = 0; list < 6; ++list)
+		for (auto const &[event_name, event_target] : editor_track::events(Track, list))
+			if (false == event_name.empty())
+				Readers.emplace(ToLower(event_name), &Track);
+}
+
 } // namespace
 
 void editor_mode::infra_load()
@@ -1179,13 +1192,10 @@ void editor_mode::infra_adopt(TTrack &Track)
 		m_point_objects_revision = revision;
 		m_point_objects_count = scene::Layers.instance_count();
 		m_point_objects.clear();
-		std::unordered_map<std::string, TTrack *, string_hash, std::equal_to<>> readers;
+		reader_map readers;
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
-				for (int list = 0; list < 6; ++list)
-					for (auto const &[event_name, event_target] : editor_track::events(*track, list))
-						if (false == event_name.empty())
-							readers.emplace(ToLower(event_name), track);
+				add_readers(readers, *track);
 		static auto const rules{infra::default_rules()};
 		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 		{
@@ -1198,6 +1208,7 @@ void editor_mode::infra_adopt(TTrack &Track)
 			auto const file{ToLower(place.file)};
 			auto const *signal{signal_template_of(place.file)};
 			std::string read;
+			bool skipped{false};
 			if (signal != nullptr)
 			{
 				object.group = infra::category::signal;
@@ -1214,12 +1225,12 @@ void editor_mode::infra_adopt(TTrack &Track)
 			{
 				auto const named{infra::category_named(place.category)};
 				object.group = named.has_value() ? *named : infra::classify(place.file + ' ' + place.description, rules);
-				if (object.group != infra::category::signal && object.group != infra::category::sign)
-					continue;
+				skipped = object.group != infra::category::signal && object.group != infra::category::sign;
 			}
-			if (false == read.empty())
-				if (auto const reader{readers.find(ToLower(read))}; reader != readers.end())
-					object.reader = reader->second;
+			if (skipped)
+				continue;
+			if (auto const reader{read.empty() ? readers.end() : readers.find(ToLower(read))}; reader != readers.end())
+				object.reader = reader->second;
 			m_point_objects.push_back(std::move(object));
 		}
 		// the path nearest to each one no path reads, the objects by cells of the plan
@@ -1230,33 +1241,39 @@ void editor_mode::infra_adopt(TTrack &Track)
 			if (m_point_objects[i].reader == nullptr)
 				cells[{key(m_point_objects[i].location.x), key(m_point_objects[i].location.z)}].push_back(i);
 		std::vector nearest(m_point_objects.size(), kAdoptReach);
+		// the path taken for the nearest of the objects of the cell of the plan it's nearer than the path before
+		auto const adopt_cell = [&](TTrack &Path, track_area const &Area, std::pair<long long, long long> const &Cell) {
+			auto const found{cells.find(Cell)};
+			if (found == cells.end())
+				return;
+			for (auto const i : found->second)
+			{
+				auto &object{m_point_objects[i]};
+				if (plan_distance(object.location, Area.centre) > Area.radius + nearest[i])
+					continue;
+				infra::station station;
+				bool interior;
+				auto const distance{infra::project(Path, object.location, station, interior)};
+				if (distance < nearest[i] && beside(station, object.location, interior))
+				{
+					nearest[i] = distance;
+					object.nearest = &Path;
+				}
+			}
+		};
+		// the same for the cells within reach of the path
+		auto const adopt_around = [&](TTrack &Path) {
+			auto const area{area_of(Path)};
+			auto const reach{area.radius + kAdoptReach};
+			for (auto x = key(area.centre.x - reach); x <= key(area.centre.x + reach); ++x)
+				for (auto z = key(area.centre.z - reach); z <= key(area.centre.z + reach); ++z)
+					adopt_cell(Path, area, {x, z});
+		};
 		for (auto *track : simulation::Paths.sequence())
 		{
 			if (cells.empty() || track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
 				continue;
-			auto const area{area_of(*track)};
-			auto const reach{area.radius + kAdoptReach};
-			for (auto x = key(area.centre.x - reach); x <= key(area.centre.x + reach); ++x)
-				for (auto z = key(area.centre.z - reach); z <= key(area.centre.z + reach); ++z)
-				{
-					auto const found{cells.find({x, z})};
-					if (found == cells.end())
-						continue;
-					for (auto const i : found->second)
-					{
-						auto &object{m_point_objects[i]};
-						if (plan_distance(object.location, area.centre) > area.radius + nearest[i])
-							continue;
-						infra::station station;
-						bool interior;
-						auto const distance{infra::project(*track, object.location, station, interior)};
-						if (distance < nearest[i] && beside(station, object.location, interior))
-						{
-							nearest[i] = distance;
-							object.nearest = track;
-						}
-					}
-				}
+			adopt_around(*track);
 		}
 	}
 	auto const area{area_of(Track)};
