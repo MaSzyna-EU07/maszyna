@@ -309,15 +309,13 @@ std::vector<issue> check(line const &Line, context const &Context)
 			add(true, point, c.end, format(STR_C("Vertical curves of points %zu and %zu overlap by %.2f m"), c.point + 1, list[i + 1].point + 1, c.end - list[i + 1].start));
 		// a switch may lie on a concave curve, and on a convex one no sharper than switch_crest, though better off them; within
 		// what the fit rounds the radius to its room by
-		for (auto const &zone : Context.switches)
-			if (overlaps(c.start, c.end, zone))
-			{
-				if (auto const on_hump{std::ranges::any_of(Context.humps, [&](context::zone const &Hump) { return points[c.point].chainage >= Hump.from && points[c.point].chainage <= Hump.to; })}; c.change < 0.0 && points[c.point].radius < switch_crest * 0.99 && false == on_hump)
-					add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"), c.point + 1, zone.name.c_str(), switch_crest));
-				else
-					add(false, point, points[c.point].chainage, format(STR_C("Point %zu: the vertical curve lies on switch %s"), c.point + 1, zone.name.c_str()));
-				break;
-			}
+		if (auto const zone{std::ranges::find_if(Context.switches, [&c](context::zone const &Zone) { return overlaps(c.start, c.end, Zone); })}; zone != Context.switches.end())
+		{
+			if (auto const on_hump{std::ranges::any_of(Context.humps, [&](context::zone const &Hump) { return points[c.point].chainage >= Hump.from && points[c.point].chainage <= Hump.to; })}; c.change < 0.0 && points[c.point].radius < switch_crest * 0.99 && false == on_hump)
+				add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"), c.point + 1, zone->name.c_str(), switch_crest));
+			else
+				add(false, point, points[c.point].chainage, format(STR_C("Point %zu: the vertical curve lies on switch %s"), c.point + 1, zone->name.c_str()));
+		}
 	}
 	if (norms.element_min > 0.0)
 	{
