@@ -35,6 +35,7 @@ http:
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -44,6 +45,31 @@ http:
 #include "application/editormodetrackshared.h"
 
 using namespace track_mode;
+
+namespace
+{
+
+// how far the points stray from the curve traced through them, as a colour: green within 10 cm, amber within 30 cm, red beyond
+ImU32 departure_colour(double const Departure)
+{
+	if (Departure <= 0.1)
+		return IM_COL32(90, 220, 110, 255);
+	if (Departure <= 0.3)
+		return IM_COL32(255, 200, 60, 255);
+	return IM_COL32(255, 90, 70, 255);
+}
+
+// the colour an element of the design is drawn in: white straights, green arcs, orange transitions
+ImU32 element_colour(alignment::element_kind const Kind)
+{
+	if (Kind == alignment::element_kind::straight)
+		return IM_COL32(255, 255, 255, 230);
+	if (Kind == alignment::element_kind::arc)
+		return overlay_color::grip;
+	return IM_COL32(255, 140, 30, 255);
+}
+
+} // namespace
 
 bool editor_mode::route_active() const
 {
@@ -299,7 +325,7 @@ void editor_mode::route_read_stored(TTrack &Track)
 	{
 		route_take_stored(index);
 	}
-	else if (auto const km{alignment_store::chainage_at(chain.start)})
+	else if (auto const km{alignment_store::chainage_at(chain.start)}; km.has_value())
 	{
 		auto const ahead{chain.start + glm::dvec3{route.design.start_direction.x, 0.0, route.design.start_direction.y}};
 		auto const further{alignment_store::chainage_at(ahead)};
@@ -1261,7 +1287,7 @@ void editor_mode::draw_route_overlay() const
 	{
 		for (auto const &e : result.elements)
 		{
-			ImU32 const color = e.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : e.kind == alignment::element_kind::arc ? overlay_color::grip : IM_COL32(255, 140, 30, 255);
+			ImU32 const color = element_colour(e.kind);
 			int const steps = std::clamp(static_cast<int>(e.length / 2.0), 1, 400);
 			auto previous{alignment::evaluate(result, e.chainage).position};
 			for (int j = 1; j <= steps; ++j)
@@ -1407,7 +1433,7 @@ void editor_mode::draw_route_overlay() const
 		if (state.corner || std::abs(state.offset) > 3.0 || false == projection.project(route.clicks[i], screen))
 			continue;
 		auto const departure{std::abs(state.offset)};
-		auto const colour{departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255)};
+		auto const colour{departure_colour(departure)};
 		drawlist->AddCircleFilled(screen, 4.5f, IM_COL32(0, 0, 0, 200), 12);
 		drawlist->AddCircleFilled(screen, 3.0f, colour, 12);
 		if (state.vertex == route.focus.vertex)
@@ -1426,7 +1452,7 @@ void editor_mode::draw_route_overlay() const
 		if (false == projection.project(route.trace.points[i], screen))
 			continue;
 		auto const departure{i < projections.size() ? std::abs(projections[i].offset) : 0.0};
-		auto const colour{departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255)};
+		auto const colour{departure_colour(departure)};
 		drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 200), 12, 3.5f);
 		drawlist->AddCircle(screen, 5.0f, colour, 12, 2.0f);
 		if (static_cast<int>(i) == hit)
@@ -1454,10 +1480,9 @@ void editor_mode::render_route_trace()
 	}
 	else
 	{
-		auto const colour = [](double const Departure) { return Departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : Departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255); };
 		metric_tiles({{format("%zu", trace.points.size()), STR_C("points"), ImGui::GetColorU32(ImGuiCol_Text)},
-		              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), colour(trace.rms)},
-		              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), colour(trace.worst)}});
+		              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), departure_colour(trace.rms)},
+		              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), departure_colour(trace.worst)}});
 	}
 	if (main_button(STR_C("Apply   Enter"), ImVec2(-1.0f, 0.0f)))
 		route_trace_end(true);
@@ -1709,9 +1734,7 @@ bool editor_mode::render_route_band()
 		auto const [start, end]{alignment::end_curvatures(Element)};
 		return {sign * start, sign * end};
 	};
-	auto const colour = [](alignment::element const &Element) {
-		return Element.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : Element.kind == alignment::element_kind::arc ? overlay_color::grip : IM_COL32(255, 140, 30, 255);
-	};
+	auto const colour = [](alignment::element const &Element) { return element_colour(Element.kind); };
 	double peak{0.0};
 	bool on_left{false};
 	bool on_right{false};
@@ -1733,7 +1756,11 @@ bool editor_mode::render_route_band()
 	auto const flip{(false == both && on_right) ? -1.0f : 1.0f};
 	auto const dragging{band.vertex >= 0};
 	auto const metres{dragging ? band.metres : inner_width / static_cast<float>(result.length)};
-	auto const curvature{dragging ? band.curvature : (peak > 0.0 ? (axis - plot_top) * 0.85f / static_cast<float>(peak) : 0.0f)};
+	auto curvature{0.0f};
+	if (dragging)
+		curvature = band.curvature;
+	else if (peak > 0.0)
+		curvature = (axis - plot_top) * 0.85f / static_cast<float>(peak);
 	auto const x_of = [&](double const Chainage) { return inner_left + static_cast<float>(Chainage) * metres; };
 	auto const y_of = [&](double const K) { return axis - flip * static_cast<float>(K) * curvature; };
 	auto const mouse{ImGui::GetIO().MousePos};
@@ -1773,8 +1800,12 @@ bool editor_mode::render_route_band()
 				roles[i] = {1, arc};
 				arcs[element.vertex] = std::max(arcs[element.vertex], arc + 1);
 			}
+			else if (std::abs(from) <= 1e-9)
+				roles[i] = role{2, 0};
+			else if (std::abs(to) <= 1e-9)
+				roles[i] = role{3, 0};
 			else
-				roles[i] = std::abs(from) <= 1e-9 ? role{2, 0} : std::abs(to) <= 1e-9 ? role{3, 0} : role{4, arc + 1};
+				roles[i] = role{4, arc + 1};
 		}
 	}
 	// the element under the mouse and what of it a drag changes: near the ends of a plateau the transitions either side of it, also the
@@ -1837,7 +1868,7 @@ bool editor_mode::render_route_band()
 	if (band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()) && active)
 	{
 		auto &value{value_of(band.vertex, band.part, band.arc)};
-		double wanted{value};
+		double wanted{0.0};
 		if (band.part == 1)
 		{
 			int turn{1};
@@ -1871,7 +1902,10 @@ bool editor_mode::render_route_band()
 		if (auto const wheel{ImGui::GetIO().MouseWheel}; wheel != 0.0f)
 		{
 			auto &value{value_of(result.elements[under].vertex, part, arc)};
-			value = part == 1 ? rounded_radius(value * (wheel > 0.0f ? 0.95 : 1.0 / 0.95)) : std::max(0.0, std::round(value / 5.0) * 5.0 + (wheel > 0.0f ? 5.0 : -5.0));
+			if (part == 1)
+				value = rounded_radius(value * (wheel > 0.0f ? 0.95 : 1.0 / 0.95));
+			else
+				value = std::max(0.0, std::round(value / 5.0) * 5.0 + (wheel > 0.0f ? 5.0 : -5.0));
 			changed = true;
 		}
 	}
@@ -1879,7 +1913,11 @@ bool editor_mode::render_route_band()
 	ImGui::PushClipRect(top, bottom, true);
 	auto const disabled{ImGui::GetColorU32(ImGuiCol_TextDisabled)};
 	list->AddLine(ImVec2(inner_left, axis), ImVec2(inner_left + inner_width, axis), ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.5f));
-	auto const hot_vertex{dragging ? band.vertex : under >= 0 ? result.elements[under].vertex : -1};
+	auto hot_vertex{-1};
+	if (dragging)
+		hot_vertex = band.vertex;
+	else if (under >= 0)
+		hot_vertex = result.elements[under].vertex;
 	for (int i = 0; i < count; ++i)
 	{
 		auto const &element{result.elements[i]};
@@ -1982,8 +2020,10 @@ bool editor_mode::render_route_band()
 			ImGui::Text(STR_C("Curve %d: R %.0f m, cant %.0f mm"), index + 1, value, vertex.cant);
 		else if (part == 4)
 			ImGui::Text(STR_C("Curve %d, transition between R%d and R%d: %.0f m"), index + 1, arc, arc + 1, value);
+		else if (part == 2)
+			ImGui::Text(STR_C("Transition into curve %d: %.0f m"), index + 1, value);
 		else
-			ImGui::Text(part == 2 ? STR_C("Transition into curve %d: %.0f m") : STR_C("Transition out of curve %d: %.0f m"), index + 1, value);
+			ImGui::Text(STR_C("Transition out of curve %d: %.0f m"), index + 1, value);
 		gesture_rows({{"Drag", part == 1 ? "up or down: the radius" : "sideways: the length"}, {"Wheel", part == 1 ? "the radius by 5%" : "the length by 5 m"}});
 		ImGui::EndTooltip();
 	}
@@ -2121,7 +2161,11 @@ bool editor_mode::render_route_vertex(int const Index)
 		if (clicked > 0)
 		{
 			ImGui::SameLine();
-			auto const colour{worst <= 0.1 ? ImVec4(0.35f, 0.86f, 0.43f, 1.0f) : worst <= 0.3 ? ImVec4(1.0f, 0.78f, 0.24f, 1.0f) : ImVec4(1.0f, 0.35f, 0.27f, 1.0f)};
+			ImVec4 colour{1.0f, 0.35f, 0.27f, 1.0f};
+			if (worst <= 0.1)
+				colour = ImVec4(0.35f, 0.86f, 0.43f, 1.0f);
+			else if (worst <= 0.3)
+				colour = ImVec4(1.0f, 0.78f, 0.24f, 1.0f);
 			ImGui::TextColored(colour, STR_C("points clicked %zu: %.0f cm on average, at most %.0f cm"), clicked, std::sqrt(sum / static_cast<double>(clicked)) * 100.0, worst * 100.0);
 			item_tooltip("The points clicked along the curve when it was laid, kept in the scenery, and how far the curve is from them now");
 			mark(part::whole, 0);
@@ -2309,7 +2353,12 @@ bool editor_mode::render_route_vertex(int const Index)
 			if (ImGui::Checkbox(Label, &along))
 			{
 				// let go of the transition where it lay along it, to be moved from there
-				Length = along ? -1.0 : Which < ramps.size() ? ramps[Which].to - ramps[Which].from : 0.0;
+				if (along)
+					Length = -1.0;
+				else if (Which < ramps.size())
+					Length = ramps[Which].to - ramps[Which].from;
+				else
+					Length = 0.0;
 				Offset = 0.0;
 				changed = true;
 			}
@@ -2382,9 +2431,9 @@ void editor_mode::render_route_result()
 	if (ImGui::TreeNode(STR_C("Elements")))
 	{
 		ImGui::TextDisabled(STR_C("Straight available beyond the ends: %.2f / %.2f m"), design.start_reserve, design.end_reserve);
-		static char const *const kinds[] = {"straight", "transition", "arc", "transition", "transition between arcs"};
+		static constexpr std::array<char const *, 5> kinds{"straight", "transition", "arc", "transition", "transition between arcs"};
 		for (auto const &e : result.elements)
-			ImGui::Text("km %s  %-10s  L %8.2f m%s", profile::format_chainage(m_route.origin + e.chainage).c_str(), STR_C(kinds[static_cast<int>(e.kind)]), e.length, e.kind == alignment::element_kind::straight ? "" : ("  R " + std::to_string(static_cast<int>(std::round(e.radius))) + " m").c_str());
+			ImGui::Text("km %s  %-10s  L %8.2f m%s", profile::format_chainage(m_route.origin + e.chainage).c_str(), STR_C(kinds[static_cast<std::size_t>(e.kind)]), e.length, e.kind == alignment::element_kind::straight ? "" : ("  R " + std::to_string(static_cast<int>(std::round(e.radius))) + " m").c_str());
 		ImGui::TreePop();
 	}
 

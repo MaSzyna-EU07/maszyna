@@ -331,9 +331,13 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 	{
 		auto const name{name_of(attempt)};
 		auto known{false};
-		for (std::size_t index = 1; index <= scene::Layers.size() && false == known; ++index)
+		std::size_t index{1};
+		while (index <= scene::Layers.size() && false == known)
+		{
 			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && ToLower(existing.name) == name)
 				known = true;
+			++index;
+		}
 		if (known)
 			continue;
 		if (auto const layer{scene::Layers.create(name, scene::layer_handle{1}, reason, false, header)}; take(layer))
