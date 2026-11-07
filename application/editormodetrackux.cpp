@@ -116,6 +116,413 @@ double segment_distance2(glm::vec2 const &Point, glm::vec2 const &A, glm::vec2 c
 	return glm::dot(Point - closest, Point - closest);
 }
 
+
+// the point of the path nearest to the mouse on the screen where it's nearer than Best, the square of the distance in pixels, given
+// with Best brought down to it; false when it's nowhere nearer
+bool nearest_on_screen(screen_projection const &Projection, glm::vec2 const &Mouse, bezier const &Curve, double &Best, glm::dvec3 &Point)
+{
+	auto const count{std::clamp(static_cast<int>(Curve.plan_length() / 3.0), 6, 64)};
+	auto previous{Curve.point(0.0)};
+	ImVec2 from;
+	bool visible{Projection.project(previous, from)};
+	bool found{false};
+	for (int k = 1; k <= count; ++k)
+	{
+		auto const next{Curve.point(static_cast<double>(k) / count)};
+		ImVec2 to;
+		bool const shown{Projection.project(next, to)};
+		if (visible && shown)
+		{
+			double t;
+			auto const distance{segment_distance2(Mouse, {from.x, from.y}, {to.x, to.y}, t)};
+			if (distance < Best)
+			{
+				Best = distance;
+				Point = glm::mix(previous, next, t);
+				found = true;
+			}
+		}
+		previous = next;
+		from = to;
+		visible = shown;
+	}
+	return found;
+}
+
+// where and how the lines of the tracks are drawn: the metres of a pixel, both rails in their colour where they're apart on the
+// screen, each step coloured by its grade
+struct line_canvas
+{
+	screen_projection const &projection;
+	ImDrawList *drawlist;
+	double metres;
+	bool rails;
+	bool grade;
+	float width;
+};
+
+// the two rails of the track along the path, in Count steps
+void draw_rails(line_canvas const &Canvas, TTrack const &Track, bezier const &Curve, int const Count, ImU32 const Colour, std::vector<glm::dvec3> &Points)
+{
+	Points.clear();
+	for (int k = 0; k <= Count; ++k)
+		Points.push_back(Curve.point(static_cast<double>(k) / Count));
+	auto const half{(Track.fTrackWidth + 0.07) * 0.5};
+	auto const across = [&Points, half](std::size_t const K) {
+		auto const along{Points[std::min(K + 1, Points.size() - 1)] - Points[K > 0 ? K - 1 : 0]};
+		auto const normal{glm::dvec3{-along.z, 0.0, along.x}};
+		auto const size{glm::length(normal)};
+		return size > 1e-9 ? normal * (half / size) : glm::dvec3{0.0};
+	};
+	for (auto const side : {-1.0, 1.0})
+		for (std::size_t k = 1; k < Points.size(); ++k)
+			Canvas.projection.line(Canvas.drawlist, Points[k - 1] + across(k - 1) * side, Points[k] + across(k) * side, Colour, Canvas.width);
+}
+
+// the line of the path of the track, of both its rails where they're apart on the screen
+void draw_path_line(line_canvas const &Canvas, TTrack const &Track, bezier const &Curve, ImU32 Colour, std::vector<glm::dvec3> &Points)
+{
+	auto const length{Curve.plan_length(4)};
+	auto const count{std::clamp(static_cast<int>(length / std::max(Canvas.metres, 0.5) / 8.0), Canvas.grade ? std::clamp(static_cast<int>(length / 10.0), 1, 8) : 1, Canvas.rails ? 128 : 32)};
+	if (Canvas.rails && Track.fTrackWidth / Canvas.metres > 6.0)
+	{
+		draw_rails(Canvas, Track, Curve, count, Colour, Points);
+		return;
+	}
+	auto previous{Curve.point(0.0)};
+	for (int k = 1; k <= count; ++k)
+	{
+		auto const next{Curve.point(static_cast<double>(k) / count)};
+		if (Canvas.grade)
+		{
+			auto const run{geometry::plan_distance(previous, next)};
+			Colour = run > 1e-3 ? band_colour(kGradeBands, std::abs(next.y - previous.y) / run * 1000.0) : kUncoloured;
+		}
+		Canvas.projection.line(Canvas.drawlist, previous, next, Colour, Canvas.width);
+		previous = next;
+	}
+}
+
+// the screen in cells, the ones the tracks are drawn over marked: a label keeps off them when it can
+struct cover_grid
+{
+	static float constexpr cell{8.0f};
+	glm::vec2 low;
+	glm::vec2 high;
+	int columns;
+	int rows;
+	std::vector<char> covered;
+
+	cover_grid(glm::vec2 const Low, glm::vec2 const High)
+	    : low{Low}, high{High}, columns{std::max(1, static_cast<int>((High.x - Low.x) / cell) + 1)}, rows{std::max(1, static_cast<int>((High.y - Low.y) / cell) + 1)}, covered(static_cast<std::size_t>(columns) * rows, 0)
+	{
+	}
+	bool cell_of(float const X, float const Y, int &Column, int &Row) const
+	{
+		Column = static_cast<int>((X - low.x) / cell);
+		Row = static_cast<int>((Y - low.y) / cell);
+		return Column >= 0 && Row >= 0 && Column < columns && Row < rows;
+	}
+	// the cells along the line on the screen marked
+	void mark_line(ImVec2 const From, ImVec2 const To)
+	{
+		auto const steps{std::max(1, static_cast<int>(std::max(std::abs(To.x - From.x), std::abs(To.y - From.y)) / cell * 2.0f))};
+		for (int step = 0; step <= steps; ++step)
+		{
+			auto const t{static_cast<float>(step) / steps};
+			int column;
+			int cell_row;
+			if (cell_of(From.x + (To.x - From.x) * t, From.y + (To.y - From.y) * t, column, cell_row))
+				covered[static_cast<std::size_t>(cell_row) * columns + column] = 1;
+		}
+	}
+	// the cells the path is drawn over marked, Metres those of a pixel
+	void mark_path(screen_projection const &Projection, bezier const &Curve, double const Metres)
+	{
+		auto const count{std::clamp(static_cast<int>(Curve.plan_length() / (Metres * cell)), 2, 256)};
+		ImVec2 previous;
+		bool known{false};
+		for (int k = 0; k <= count; ++k)
+		{
+			ImVec2 at;
+			if (false == Projection.project(Curve.point(static_cast<double>(k) / count), at))
+			{
+				known = false;
+				continue;
+			}
+			if (known)
+				mark_line(previous, at);
+			previous = at;
+			known = true;
+		}
+	}
+	// how many of the cells the rectangle covers have a track drawn over them
+	int tracks_under(ImVec2 const &From, ImVec2 const &To) const
+	{
+		int count{0};
+		for (int down = 0; From.y + cell * static_cast<float>(down) <= To.y + cell * 0.5f; ++down)
+			for (int across = 0; From.x + cell * static_cast<float>(across) <= To.x + cell * 0.5f; ++across)
+			{
+				auto const y{From.y + cell * static_cast<float>(down)};
+				auto const x{From.x + cell * static_cast<float>(across)};
+				int column{0};
+				int line{0};
+				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, line))
+					count += covered[static_cast<std::size_t>(line) * columns + column];
+			}
+		return count;
+	}
+};
+
+// a label of the plan by its track: the switches first, then the curves by their radius, then the rest, the longer first
+struct track_label
+{
+	int rank;
+	double order;
+	glm::dvec3 point;
+	std::string text;
+	ImU32 colour;
+};
+
+using track_row = std::vector<std::pair<TTrack *, bool>>;
+
+bool plain_rail(TTrack const *Other)
+{
+	return Other != nullptr && Other->eType == tt_Normal && rail(*Other) && false == Other->m_paths.empty();
+}
+
+glm::dvec2 heading_of(TTrack const &Other)
+{
+	return plan_of(Other.m_paths.front().points[segment_data::point::end] - Other.m_paths.front().points[segment_data::point::start]);
+}
+
+// how far the path of the track turns, gone along from its start, or from its end
+double own_turn(TTrack const &Other, bool const Forward)
+{
+	bezier const curve{Other.m_paths.front()};
+	auto const begin{plan_of(curve.first(0.0))};
+	auto const finish{plan_of(curve.first(1.0))};
+	if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
+		return 0.0;
+	auto const turn{geometry::signed_angle(glm::normalize(begin), glm::normalize(finish))};
+	return Forward ? turn : -turn;
+}
+
+// the paths joined in a row with the one given, both ways, as long as each next one belongs with it and has no label yet; each with
+// the flag of being gone along from its start
+template <typename Belongs>
+track_row row_of(TTrack &Track, std::unordered_set<TTrack const *> const &Labelled, Belongs const &Belongs_with)
+{
+	std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
+	auto const known = [&run](TTrack const *Other) { return std::ranges::any_of(run, [Other](auto const &Member) { return Member.first == Other; }); };
+	for (auto const throughend : {true, false})
+	{
+		TTrack const *previous{&Track};
+		TTrack *current{throughend ? Track.trNext : Track.trPrev};
+		while (plain_rail(current) && false == known(current) && false == Labelled.contains(current))
+		{
+			auto const entersatstart{current->trPrev == previous};
+			if ((false == entersatstart && current->trNext != previous) || false == Belongs_with(*current, throughend == entersatstart))
+				break;
+			if (throughend)
+				run.emplace_back(current, entersatstart);
+			else
+				run.emplace_front(current, false == entersatstart);
+			previous = current;
+			current = entersatstart ? current->trNext : current->trPrev;
+		}
+	}
+	return track_row{run.begin(), run.end()};
+}
+
+// the straights in line: the next one parallel to this one, a bend between them is the end of the row
+track_row straight_row(TTrack &Track, editor_track::straight_tolerance const &Tolerance, std::unordered_set<TTrack const *> const &Labelled)
+{
+	auto const along{heading_of(Track)};
+	return row_of(Track, Labelled, [&Tolerance, &along](TTrack const &Other, bool) {
+		auto const other{heading_of(Other)};
+		return editor_track::is_straight(Other, Tolerance) && glm::length(along) > 1e-6 && glm::length(other) > 1e-6 && std::abs(geometry::cross(glm::normalize(along), glm::normalize(other))) < 0.002;
+	});
+}
+
+// the pieces of a curve turning the same way: one turning the other way starts a curve of its own
+track_row curve_row(TTrack &Track, editor_track::straight_tolerance const &Tolerance, std::unordered_set<TTrack const *> const &Labelled)
+{
+	auto const side{own_turn(Track, true)};
+	return row_of(Track, Labelled, [&Tolerance, side](TTrack const &Other, bool const Forward) { return false == editor_track::is_straight(Other, Tolerance) && own_turn(Other, Forward) * side >= 0.0; });
+}
+
+// the radius of the arc of the curve, of each arc of a compound one
+std::string radii_text(editor_track::curve const &Curve)
+{
+	std::string text{"R "};
+	if (false == (Curve.compound && Curve.arcs.size() >= 2))
+		return text + format("%.0f", Curve.radius);
+	for (std::size_t i = 0; i < Curve.arcs.size(); ++i)
+		text += format(i == 0 ? "%.0f" : "/%.0f", Curve.arcs[i].radius);
+	return text;
+}
+
+// the cant of the curve; the arcs of a compound curve kept with its design have each a cant of their own: all shown where they aren't
+// the same
+std::string cants_text(editor_track::curve const &Curve)
+{
+	auto const cants{Curve.designed.has_value() && Curve.compound ? alignment::compound_cants(*Curve.designed) : std::vector<double>{}};
+	std::string text;
+	if (std::ranges::any_of(cants, [&cants](double const Cant) { return std::abs(Cant - cants.front()) >= 0.5; }))
+		for (std::size_t i = 0; i < cants.size(); ++i)
+			text += format(i == 0 ? "  h %.0f" : "/%.0f", cants[i]);
+	else if (Curve.cant >= 0.5)
+		text += format("  h %.0f", Curve.cant);
+	return text;
+}
+
+// the curve as the plan reads it: the radius of the arc, of each arc of a compound one, the transition curves and the cant
+std::string curve_text(editor_track::curve const &Curve)
+{
+	if (Curve.designed.has_value() && Curve.designed->spirals)
+		return format("2xL %.0f  R %.0f", Curve.transition_in, Curve.radius);
+	auto text{radii_text(Curve)};
+	if (Curve.transition_in >= 0.5 || Curve.transition_out >= 0.5)
+		text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
+	return text + cants_text(Curve);
+}
+
+// the point of the row so far along it
+glm::dvec3 along_row(track_row const &Run, bezier const &First, double const Distance)
+{
+	glm::dvec3 point{First.point(0.5)};
+	auto remaining{Distance};
+	for (auto const &[member, forward] : Run)
+	{
+		bezier const piece{member->m_paths.front()};
+		auto const span{piece.plan_length()};
+		if (remaining <= span || &member == &Run.back().first)
+		{
+			auto const share{std::clamp(span > 1e-6 ? remaining / span : 0.5, 0.0, 1.0)};
+			point = piece.point(forward ? share : 1.0 - share);
+			break;
+		}
+		remaining -= span;
+	}
+	return point;
+}
+
+// the labels of the row of the Length, in its middle: of the straights in line, or of the curve, each of its transitions by a label of
+// its own in its middle
+void label_row(track_row const &Run, bool const Straight, bezier const &First, double const Gauge, double const Length, std::vector<track_label> &Labels)
+{
+	auto const middle{along_row(Run, First, Length * 0.5)};
+	if (Straight)
+	{
+		Labels.emplace_back(2, -Length, middle, format(STR_C("straight %.0f m"), Length), IM_COL32(200, 215, 230, 225));
+		return;
+	}
+	// a track bent by hand, as an S between two points dragged, has no radius to read: its length alone
+	editor_track::curve shape;
+	if (editor_track::analyse_curve(Run, Gauge, shape) && shape.radius >= 0.5 && shape.radius <= 50000.0)
+	{
+		Labels.emplace_back(1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240));
+		// the tracks of the transition curves told apart from the arc, each transition by a label of its own in its middle; two
+		// meeting at the radius are both of the curve
+		for (auto const &[transition, at] : {std::pair{shape.transition_in, shape.transition_in * 0.5}, std::pair{shape.transition_out, Length - shape.transition_out * 0.5}})
+			if (transition >= 0.5 && transition < Length)
+				Labels.emplace_back(2, -transition, along_row(Run, First, at), format(STR_C("transition L %.0f m"), transition), IM_COL32(150, 205, 255, 235));
+	}
+	else
+		Labels.emplace_back(2, -Length, middle, format("L %.0f m", Length), IM_COL32(235, 235, 235, 240));
+}
+
+// one label for a curve, from its first transition curve to its last, and one for a row of straights in line, not one for each of
+// their paths: the paths of a curve are pieces of it, a piece of a transition curve has no radius of its own to name. A switch named
+// with its type
+void label_track(TTrack &Track, bezier const &First, editor_track::straight_tolerance const &Tolerance, double const Gauge, std::unordered_set<TTrack const *> &Labelled, std::vector<track_label> &Labels)
+{
+	if (Track.eType == tt_Switch)
+	{
+		auto text{name_of(Track)};
+		if (auto const record{switch_store::of(Track)})
+			text += "  " + switch_store::label(*record);
+		Labels.emplace_back(0, 0.0, First.point(0.0), text, IM_COL32(255, 220, 120, 255));
+		return;
+	}
+	if (Labelled.contains(&Track) || false == plain_rail(&Track))
+		return;
+	auto const straight{editor_track::is_straight(Track, Tolerance)};
+	track_row run;
+	if (straight)
+		run = straight_row(Track, Tolerance, Labelled);
+	else
+		run = curve_row(Track, Tolerance, Labelled);
+	double length{0.0};
+	for (auto const &[row_track, forward] : run)
+	{
+		Labelled.insert(row_track);
+		length += bezier{row_track->m_paths.front()}.plan_length();
+	}
+	if (length < 0.5)
+		return;
+	label_row(run, straight, First, Gauge, length, Labels);
+}
+
+// where the label of the Box goes: beside its track if it's free there, else moved out to the nearest room, From and To its corners;
+// false when there's none
+bool label_room(cover_grid const &Grid, std::vector<std::pair<ImVec2, ImVec2>> const &Taken, ImVec2 const Nearest, ImVec2 const Box, ImVec2 &From, ImVec2 &To)
+{
+	constexpr std::array kRings{0.0f, 26.0f, 42.0f, 62.0f, 86.0f, 116.0f, 150.0f};
+	int constexpr kDirections{16};
+	auto best{std::numeric_limits<float>::max()};
+	for (auto const ring : kRings)
+		for (int k = 0; k < (ring > 0.0f ? kDirections : 1); ++k)
+		{
+			auto const angle{static_cast<float>(k) * 6.2831853f / kDirections};
+			ImVec2 const middle{Nearest.x + std::cos(angle) * ring * 1.6f, Nearest.y + std::sin(angle) * ring};
+			ImVec2 const a{middle.x - Box.x * 0.5f, middle.y - Box.y * 0.5f};
+			ImVec2 const b{middle.x + Box.x * 0.5f, middle.y + Box.y * 0.5f};
+			if (a.x < Grid.low.x || a.y < Grid.low.y || b.x > Grid.high.x || b.y > Grid.high.y
+			    || std::ranges::any_of(Taken, [&a, &b](auto const &Rect) { return a.x < Rect.second.x + 4.0f && b.x > Rect.first.x - 4.0f && a.y < Rect.second.y + 2.0f && b.y > Rect.first.y - 2.0f; }))
+				continue;
+			auto const cost{ring + 5.0f * static_cast<float>(Grid.tracks_under(a, b))};
+			if (cost < best)
+			{
+				best = cost;
+				From = a;
+				To = b;
+			}
+		}
+	return best != std::numeric_limits<float>::max();
+}
+
+// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back
+void draw_labels(screen_projection const &Projection, ImDrawList *Drawlist, cover_grid const &Grid, std::vector<track_label> const &Labels)
+{
+	std::vector<std::pair<ImVec2, ImVec2>> taken;
+	for (auto const &label : Labels)
+	{
+		ImVec2 at;
+		if (false == Projection.project(label.point, at) || at.x < Grid.low.x || at.y < Grid.low.y || at.x > Grid.high.x || at.y > Grid.high.y)
+			continue;
+		auto const size{ImGui::CalcTextSize(label.text.c_str())};
+		auto const width{size.x + 8.0f};
+		auto const height{size.y + 4.0f};
+		ImVec2 const nearest{at.x, at.y - 10.0f - height * 0.5f};
+		ImVec2 from;
+		ImVec2 to;
+		if (false == label_room(Grid, taken, nearest, ImVec2{width, height}, from, to))
+			continue;
+		taken.emplace_back(from, to);
+		if (ImVec2 const middle{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f}; std::hypot(middle.x - nearest.x, middle.y - nearest.y) > 1.0f)
+		{
+			ImVec2 const end{std::clamp(at.x, from.x, to.x), std::clamp(at.y, from.y, to.y)};
+			auto const lead{(label.colour & 0x00ffffffu) | (170u << 24)};
+			Drawlist->AddLine(at, end, lead, 1.0f);
+			Drawlist->AddCircleFilled(at, 2.5f, lead);
+		}
+		Drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 165), 3.0f);
+		Drawlist->AddText(ImVec2(from.x + 4.0f, from.y + 2.0f), label.colour, label.text.c_str());
+	}
+}
+
 } // namespace
 
 // the type of a track in words, a tributary kept as a river told by its own name
@@ -159,30 +566,10 @@ track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixe
 			bezier const curve{track->m_paths[i]};
 			if (cull && false == plan_near(curve, plan_of(origin), reach))
 				continue;
-			auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
-			auto previous{curve.point(0.0)};
-			ImVec2 from;
-			bool visible{projection.project(previous, from)};
-			for (int k = 1; k <= count; ++k)
+			if (nearest_on_screen(projection, mouse, curve, best, result.point))
 			{
-				auto const next{curve.point(static_cast<double>(k) / count)};
-				ImVec2 to;
-				bool const shown{projection.project(next, to)};
-				if (visible && shown)
-				{
-					double t;
-					auto const distance{segment_distance2(mouse, {from.x, from.y}, {to.x, to.y}, t)};
-					if (distance < best)
-					{
-						best = distance;
-						result.track = track;
-						result.path = i;
-						result.point = glm::mix(previous, next, t);
-					}
-				}
-				previous = next;
-				from = to;
-				visible = shown;
+				result.track = track;
+				result.path = i;
 			}
 		}
 	}
@@ -225,6 +612,8 @@ void editor_mode::draw_track_lines() const
 	auto const railcolour{EditorSettings.top_rails()};
 	std::vector<glm::dvec3> points;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	line_canvas const canvas{projection, drawlist, metres, rails, colouring == track_colouring::grade, width};
+	auto const plain{rails ? railcolour : IM_COL32(235, 235, 235, 150)};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track))
@@ -233,49 +622,22 @@ void editor_mode::draw_track_lines() const
 		for (auto const &path : track->m_paths)
 		{
 			bezier const curve{path};
-			if (false == plan_near(curve, centre, reach))
-				continue;
-			auto colour{rails ? railcolour : IM_COL32(235, 235, 235, 150)};
-			if (colouring == track_colouring::radius)
-			{
-				auto const radius{::track_mode::piece_plan_radius(path)};
-				colour = radius >= 0.5 ? band_colour(kRadiusBands, radius) : kUncoloured;
-			}
-			else if (colouring == track_colouring::speed)
-				colour = velocity > 0.0 ? band_colour(kSpeedBands, velocity) : kUncoloured;
-			auto const length{curve.plan_length(4)};
-			auto const count{std::clamp(static_cast<int>(length / std::max(metres, 0.5) / 8.0), colouring == track_colouring::grade ? std::clamp(static_cast<int>(length / 10.0), 1, 8) : 1, rails ? 128 : 32)};
-			if (rails && track->fTrackWidth / metres > 6.0)
-			{
-				points.clear();
-				for (int k = 0; k <= count; ++k)
-					points.push_back(curve.point(static_cast<double>(k) / count));
-				auto const half{(track->fTrackWidth + 0.07) * 0.5};
-				auto const across = [&](std::size_t const K) {
-					auto const along{points[std::min(K + 1, points.size() - 1)] - points[K > 0 ? K - 1 : 0]};
-					auto const normal{glm::dvec3{-along.z, 0.0, along.x}};
-					auto const size{glm::length(normal)};
-					return size > 1e-9 ? normal * (half / size) : glm::dvec3{0.0};
-				};
-				for (auto const side : {-1.0, 1.0})
-					for (std::size_t k = 1; k < points.size(); ++k)
-						projection.line(drawlist, points[k - 1] + across(k - 1) * side, points[k] + across(k) * side, colour, width);
-				continue;
-			}
-			auto previous{curve.point(0.0)};
-			for (int k = 1; k <= count; ++k)
-			{
-				auto const next{curve.point(static_cast<double>(k) / count)};
-				if (colouring == track_colouring::grade)
-				{
-					auto const run{geometry::plan_distance(previous, next)};
-					colour = run > 1e-3 ? band_colour(kGradeBands, std::abs(next.y - previous.y) / run * 1000.0) : kUncoloured;
-				}
-				projection.line(drawlist, previous, next, colour, width);
-				previous = next;
-			}
+			if (plan_near(curve, centre, reach))
+				draw_path_line(canvas, *track, curve, track_line_colour(colouring, path, velocity, plain), points);
 		}
 	}
+}
+
+ImU32 editor_mode::track_line_colour(track_colouring const Colouring, segment_data const &Path, double const Velocity, ImU32 const Plain)
+{
+	if (Colouring == track_colouring::radius)
+	{
+		auto const radius{::track_mode::piece_plan_radius(Path)};
+		return radius >= 0.5 ? band_colour(kRadiusBands, radius) : kUncoloured;
+	}
+	if (Colouring == track_colouring::speed)
+		return Velocity > 0.0 ? band_colour(kSpeedBands, Velocity) : kUncoloured;
+	return Plain;
 }
 
 void editor_mode::draw_track_labels() const
@@ -288,86 +650,9 @@ void editor_mode::draw_track_labels() const
 	glm::dvec2 const centre{Global.pCamera.Pos.x, Global.pCamera.Pos.z};
 	auto const reach{0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y))};
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-	auto const low{editor_ui::view_min()};
-	auto const high{editor_ui::view_max()};
-	struct track_label
-	{
-		int rank;
-		double order;
-		glm::dvec3 point;
-		std::string text;
-		ImU32 colour;
-	};
+	cover_grid grid{editor_ui::view_min(), editor_ui::view_max()};
 	std::vector<track_label> labels;
-	// the screen in cells, the ones the tracks are drawn over marked: a label keeps off them when it can
-	float constexpr cell{8.0f};
-	auto const columns{std::max(1, static_cast<int>((high.x - low.x) / cell) + 1)};
-	auto const rows{std::max(1, static_cast<int>((high.y - low.y) / cell) + 1)};
-	std::vector<char> covered(static_cast<std::size_t>(columns) * rows, 0);
-	auto const cell_of = [&](float const X, float const Y, int &Column, int &Row) {
-		Column = static_cast<int>((X - low.x) / cell);
-		Row = static_cast<int>((Y - low.y) / cell);
-		return Column >= 0 && Row >= 0 && Column < columns && Row < rows;
-	};
-	// one label for a curve, from its first transition curve to its last, and one for a row of straights in line, not one for each
-	// of their paths: the paths of a curve are pieces of it, a piece of a transition curve has no radius of its own to name
 	std::unordered_set<TTrack const *> labelled;
-	auto const plain = [&](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && rail(*Other) && false == Other->m_paths.empty(); };
-	auto const heading = [](TTrack const &Other) { return plan_of(Other.m_paths.front().points[segment_data::point::end] - Other.m_paths.front().points[segment_data::point::start]); };
-	auto const own_turn = [](TTrack const &Other, bool const Forward) {
-		bezier const curve{Other.m_paths.front()};
-		auto const begin{plan_of(curve.first(0.0))};
-		auto const finish{plan_of(curve.first(1.0))};
-		if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9)
-			return 0.0;
-		auto const turn{geometry::signed_angle(glm::normalize(begin), glm::normalize(finish))};
-		return Forward ? turn : -turn;
-	};
-	// the paths joined in a row with the one given, both ways, as long as each next one belongs with it; each with the flag of being
-	// gone along from its start
-	auto const row = [&](TTrack &Track, auto const &Belongs) {
-		std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
-		auto const known = [&](TTrack const *Other) { return std::ranges::any_of(run, [&](auto const &Member) { return Member.first == Other; }); };
-		for (auto const throughend : {true, false})
-		{
-			TTrack const *previous{&Track};
-			TTrack *current{throughend ? Track.trNext : Track.trPrev};
-			while (plain(current) && false == known(current) && false == labelled.contains(current))
-			{
-				auto const entersatstart{current->trPrev == previous};
-				if ((false == entersatstart && current->trNext != previous) || false == Belongs(*current, throughend == entersatstart))
-					break;
-				if (throughend)
-					run.emplace_back(current, entersatstart);
-				else
-					run.emplace_front(current, false == entersatstart);
-				previous = current;
-				current = entersatstart ? current->trNext : current->trPrev;
-			}
-		}
-		return std::vector<std::pair<TTrack *, bool>>{run.begin(), run.end()};
-	};
-	// the curve as the plan reads it: the radius of the arc, of each arc of a compound one, the transition curves and the cant
-	auto const curve_text = [](editor_track::curve const &Curve) {
-		if (Curve.designed.has_value() && Curve.designed->spirals)
-			return format("2xL %.0f  R %.0f", Curve.transition_in, Curve.radius);
-		std::string text{"R "};
-		if (Curve.compound && Curve.arcs.size() >= 2)
-			for (std::size_t i = 0; i < Curve.arcs.size(); ++i)
-				text += format(i == 0 ? "%.0f" : "/%.0f", Curve.arcs[i].radius);
-		else
-			text += format("%.0f", Curve.radius);
-		if (Curve.transition_in >= 0.5 || Curve.transition_out >= 0.5)
-			text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
-		// the arcs of a compound curve kept with its design have each a cant of their own: all shown where they aren't the same
-		auto const cants{Curve.designed.has_value() && Curve.compound ? alignment::compound_cants(*Curve.designed) : std::vector<double>{}};
-		if (std::ranges::any_of(cants, [&](double const Cant) { return std::abs(Cant - cants.front()) >= 0.5; }))
-			for (std::size_t i = 0; i < cants.size(); ++i)
-				text += format(i == 0 ? "  h %.0f" : "/%.0f", cants[i]);
-		else if (Curve.cant >= 0.5)
-			text += format("  h %.0f", Curve.cant);
-		return text;
-	};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track) || track->m_paths.empty())
@@ -376,172 +661,11 @@ void editor_mode::draw_track_labels() const
 		if (false == plan_near(first, centre, reach))
 			continue;
 		for (auto const &path : track->m_paths)
-		{
-			bezier const curve{path};
-			auto const count{std::clamp(static_cast<int>(curve.plan_length() / (metres * cell)), 2, 256)};
-			ImVec2 previous;
-			bool known{false};
-			for (int k = 0; k <= count; ++k)
-			{
-				ImVec2 at;
-				if (false == projection.project(curve.point(static_cast<double>(k) / count), at))
-				{
-					known = false;
-					continue;
-				}
-				if (known)
-				{
-					auto const steps{std::max(1, static_cast<int>(std::max(std::abs(at.x - previous.x), std::abs(at.y - previous.y)) / cell * 2.0f))};
-					for (int step = 0; step <= steps; ++step)
-					{
-						auto const t{static_cast<float>(step) / steps};
-						int column;
-						int cell_row;
-						if (cell_of(previous.x + (at.x - previous.x) * t, previous.y + (at.y - previous.y) * t, column, cell_row))
-							covered[static_cast<std::size_t>(cell_row) * columns + column] = 1;
-					}
-				}
-				previous = at;
-				known = true;
-			}
-		}
-		if (track->eType == tt_Switch)
-		{
-			auto text{name_of(*track)};
-			if (auto const record{switch_store::of(*track)})
-				text += "  " + switch_store::label(*record);
-			labels.emplace_back(0, 0.0, first.point(0.0), text, IM_COL32(255, 220, 120, 255));
-			continue;
-		}
-		if (labelled.contains(track) || false == plain(track))
-			continue;
-		auto const straight{editor_track::is_straight(*track, m_straights.tolerance)};
-		std::vector<std::pair<TTrack *, bool>> run;
-		if (straight)
-		{
-			// the straights in line: the next one parallel to this one, a bend between them is the end of the row
-			auto const along{heading(*track)};
-			run = row(*track, [this, &heading, &along](TTrack const &Other, bool) {
-				auto const other{heading(Other)};
-				return editor_track::is_straight(Other, m_straights.tolerance) && glm::length(along) > 1e-6 && glm::length(other) > 1e-6 &&
-				       std::abs(geometry::cross(glm::normalize(along), glm::normalize(other))) < 0.002;
-			});
-		}
-		else
-		{
-			// the pieces of a curve turning the same way: one turning the other way starts a curve of its own
-			auto const side{own_turn(*track, true)};
-			run = row(*track, [this, &side, &own_turn](TTrack const &Other, bool const Forward) { return false == editor_track::is_straight(Other, m_straights.tolerance) && own_turn(Other, Forward) * side >= 0.0; });
-		}
-		double length{0.0};
-		for (auto const &[row_track, forward] : run)
-		{
-			labelled.insert(row_track);
-			length += bezier{row_track->m_paths.front()}.plan_length();
-		}
-		if (length < 0.5)
-			continue;
-		// the point of the row so far along it; the label in its middle
-		auto const along_row = [&](double const Distance) {
-			glm::dvec3 point{first.point(0.5)};
-			auto remaining{Distance};
-			for (auto const &[member, forward] : run)
-			{
-				bezier const piece{member->m_paths.front()};
-				auto const span{piece.plan_length()};
-				if (remaining <= span || &member == &run.back().first)
-				{
-					auto const share{std::clamp(span > 1e-6 ? remaining / span : 0.5, 0.0, 1.0)};
-					point = piece.point(forward ? share : 1.0 - share);
-					break;
-				}
-				remaining -= span;
-			}
-			return point;
-		};
-		auto const middle{along_row(length * 0.5)};
-		if (straight)
-		{
-			labels.emplace_back(2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225));
-			continue;
-		}
-		// a track bent by hand, as an S between two points dragged, has no radius to read: its length alone
-		editor_track::curve shape;
-		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5 && shape.radius <= 50000.0)
-		{
-			labels.emplace_back(1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240));
-			// the tracks of the transition curves told apart from the arc, each transition by a label of its own in its middle; two
-			// meeting at the radius are both of the curve
-			for (auto const &[transition, at] : {std::pair{shape.transition_in, shape.transition_in * 0.5}, std::pair{shape.transition_out, length - shape.transition_out * 0.5}})
-				if (transition >= 0.5 && transition < length)
-					labels.emplace_back(2, -transition, along_row(at), format(STR_C("transition L %.0f m"), transition), IM_COL32(150, 205, 255, 235));
-		}
-		else
-			labels.emplace_back(2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240));
+			grid.mark_path(projection, bezier{path}, metres);
+		label_track(*track, first, m_straights.tolerance, m_route.design.norms.gauge, labelled, labels);
 	}
 	std::ranges::sort(labels, [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
-	// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back
-	std::vector<std::pair<ImVec2, ImVec2>> taken;
-	auto const tracks_under = [&](ImVec2 const &From, ImVec2 const &To) {
-		int count{0};
-		for (int down = 0; From.y + cell * static_cast<float>(down) <= To.y + cell * 0.5f; ++down)
-			for (int across = 0; From.x + cell * static_cast<float>(across) <= To.x + cell * 0.5f; ++across)
-			{
-				auto const y{From.y + cell * static_cast<float>(down)};
-				auto const x{From.x + cell * static_cast<float>(across)};
-				int column{0};
-				int line{0};
-				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, line))
-					count += covered[static_cast<std::size_t>(line) * columns + column];
-			}
-		return count;
-	};
-	constexpr std::array kRings{0.0f, 26.0f, 42.0f, 62.0f, 86.0f, 116.0f, 150.0f};
-	int constexpr kDirections{16};
-	for (auto const &label : labels)
-	{
-		ImVec2 at;
-		if (false == projection.project(label.point, at) || at.x < low.x || at.y < low.y || at.x > high.x || at.y > high.y)
-			continue;
-		auto const size{ImGui::CalcTextSize(label.text.c_str())};
-		auto const width{size.x + 8.0f};
-		auto const height{size.y + 4.0f};
-		ImVec2 const nearest{at.x, at.y - 10.0f - height * 0.5f};
-		auto best{std::numeric_limits<float>::max()};
-		ImVec2 from;
-		ImVec2 to;
-		for (auto const ring : kRings)
-			for (int k = 0; k < (ring > 0.0f ? kDirections : 1); ++k)
-			{
-				auto const angle{static_cast<float>(k) * 6.2831853f / kDirections};
-				ImVec2 const middle{nearest.x + std::cos(angle) * ring * 1.6f, nearest.y + std::sin(angle) * ring};
-				ImVec2 const a{middle.x - width * 0.5f, middle.y - height * 0.5f};
-				ImVec2 const b{middle.x + width * 0.5f, middle.y + height * 0.5f};
-				if (a.x < low.x || a.y < low.y || b.x > high.x || b.y > high.y)
-					continue;
-				if (std::ranges::any_of(taken, [&](auto const &Rect) { return a.x < Rect.second.x + 4.0f && b.x > Rect.first.x - 4.0f && a.y < Rect.second.y + 2.0f && b.y > Rect.first.y - 2.0f; }))
-					continue;
-				auto const cost{ring + 5.0f * static_cast<float>(tracks_under(a, b))};
-				if (cost < best)
-				{
-					best = cost;
-					from = a;
-					to = b;
-				}
-			}
-		if (best == std::numeric_limits<float>::max())
-			continue;
-		taken.emplace_back(from, to);
-		if (ImVec2 const middle{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f}; std::hypot(middle.x - nearest.x, middle.y - nearest.y) > 1.0f)
-		{
-			ImVec2 const end{std::clamp(at.x, from.x, to.x), std::clamp(at.y, from.y, to.y)};
-			auto const lead{(label.colour & 0x00ffffffu) | (170u << 24)};
-			drawlist->AddLine(at, end, lead, 1.0f);
-			drawlist->AddCircleFilled(at, 2.5f, lead);
-		}
-		drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 165), 3.0f);
-		drawlist->AddText(ImVec2(from.x + 4.0f, from.y + 2.0f), label.colour, label.text.c_str());
-	}
+	draw_labels(projection, drawlist, grid, labels);
 }
 
 void editor_mode::draw_track_legend() const

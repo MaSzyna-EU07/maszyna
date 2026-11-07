@@ -2408,6 +2408,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_lines() const;
 	// what the colours of the tracks in the view tell
 	enum class track_colouring { plain, radius, speed, grade };
+	// the colour draw_track_lines gives the path: by its radius, or by the speed along it, else Plain
+	static ImU32 track_line_colour(track_colouring const Colouring, segment_data const &Path, double const Velocity, ImU32 const Plain);
 	track_colouring m_track_colouring{track_colouring::plain};
 	void draw_track_legend() const;
 	// the radii and lengths of the curves and the names and types of the switches written by them, from above, as on a plan
