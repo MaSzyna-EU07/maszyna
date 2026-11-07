@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/Train.h"
 #include "vehicle/horn.h"
+#include "vehicle/holdcoillever.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -3646,6 +3647,15 @@ void TTrain::OnCommand_pantographcompressoractivate(TTrain *Train, command_data 
 	}
 }
 
+namespace
+{
+// whether the cab's main_off_bt is the bistable lever of the line breaker's hold coil (eu07/maszyna#364)
+bool is_hold_coil_lever(TGauge const &Button)
+{
+	return Button.SubModel != nullptr && hold_coil_lever::is_bistable(Button.type_declared(), Button.type() == TGaugeType::toggle);
+}
+} // namespace
+
 void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Command)
 {
 
@@ -3655,6 +3665,11 @@ void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Comm
 		if (Train->m_linebreakerstate == 0)
 		{
 			// ...to close the circuit
+			if (is_hold_coil_lever(Train->ggMainOffButton) && hold_coil_lever::cuts_off(Train->ggMainOffButton.GetDesiredValue()))
+			{
+				// the one key works both controls: the hold coil lever goes back on first, or the line breaker couldn't close
+				Train->ggMainOffButton.UpdateValue(0.0, Train->dsbSwitch);
+			}
 			// NOTE: bit of a dirty shortcut here
 			OnCommand_linebreakerclose(Train, Command);
 		}
@@ -3694,7 +3709,18 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 	if (Command.action == GLFW_PRESS)
 	{
 		// visual feedback
-		if (Train->ggMainOffButton.SubModel != nullptr)
+		if (is_hold_coil_lever(Train->ggMainOffButton))
+		{
+			// the bistable lever goes over to its other position and stays there
+			auto const position{hold_coil_lever::operated(Train->ggMainOffButton.GetDesiredValue())};
+			Train->ggMainOffButton.UpdateValue(position, Train->dsbSwitch);
+			if (false == hold_coil_lever::cuts_off(position))
+			{
+				// the hold coil is fed again, which by itself doesn't close the line breaker
+				return;
+			}
+		}
+		else if (Train->ggMainOffButton.SubModel != nullptr)
 		{
 			Train->ggMainOffButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
@@ -3731,8 +3757,9 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 		{
 			Train->ggMainOnButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
-		if (Train->ggMainOffButton.SubModel != nullptr)
+		if (Train->ggMainOffButton.SubModel != nullptr && false == is_hold_coil_lever(Train->ggMainOffButton))
 		{
+			// (the bistable hold coil lever stays where it was put)
 			Train->ggMainOffButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
 		// and the two-state switch too, for good measure
@@ -8364,6 +8391,20 @@ bool TTrain::Update(double const Deltatime)
 		// crude way to catch cases where the main was knocked out
 		// because the state of the line breaker isn't changed to match, we need to do it here manually
 		m_linebreakerstate = 0;
+	}
+	if (is_hold_coil_lever(ggMainOffButton) && hold_coil_lever::cuts_off(ggMainOffButton.GetDesiredValue()))
+	{
+		if (true == mvControlled->Mains)
+		{
+			// the line breaker was closed with the hold coil lever off, by the AI or through the control cable:
+			// put the lever back on to match, like the line breaker state above
+			ggMainOffButton.UpdateValue(0.0);
+		}
+		else if (m_linebreakerstate == 2)
+		{
+			// the hold coil was cut off while the closing button was held, the line breaker won't close on its release
+			m_linebreakerstate = 0;
+		}
 	}
 
 	if ((ggMainButton.SubModel != nullptr && ggMainButton.GetDesiredValue() > 0.95) ||
