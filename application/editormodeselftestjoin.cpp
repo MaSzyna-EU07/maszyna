@@ -415,7 +415,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		double worst_kink{0.0};
 		// the two ends, where they meet as a joint of two tracks: its step and its break of the grade
 		auto const joint_of = [&](joint_end const &A, joint_end const &B) {
-			if (A.track == B.track || geometry::plan_distance(A.point, B.point) >= 0.05)
+			if (A.track == B.track || false == (geometry::plan_distance(A.point, B.point) < 0.05))
 				return;
 			++joints;
 			auto const step{std::abs(A.point.y - B.point.y)};
@@ -506,20 +506,22 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		}
 		int joints{0};
 		int faults{0};
+		// the two ends, where they meet as a joint of two tracks: the jump of the cant there
+		auto const joint_of = [&](joint_end const &A, joint_end const &B) {
+			if (A.track == B.track || false == (geometry::plan_distance(A.point, B.point) < 0.05))
+				return;
+			++joints;
+			// the same cant seen from the other side has the other sign
+			auto const jump{std::abs(mm(A.roll) + mm(B.roll))};
+			if (jump > 1.0)
+			{
+				++faults;
+				WriteLog(format("SELFTEST cantcheck %s FAULT %s / %s at %.2f %.2f: %.1f mm against %.1f mm, jump %.1f mm", label.c_str(), A.track->name().c_str(), B.track->name().c_str(), A.point.x, A.point.z, mm(A.roll), -mm(B.roll), jump));
+			}
+		};
 		for (std::size_t a = 0; a < ends.size(); ++a)
 			for (std::size_t b = a + 1; b < ends.size(); ++b)
-				if (ends[a].track != ends[b].track && geometry::plan_distance(ends[a].point, ends[b].point) < 0.05)
-				{
-					++joints;
-					// the same cant seen from the other side has the other sign
-					auto const jump{std::abs(mm(ends[a].roll) + mm(ends[b].roll))};
-					if (jump > 1.0)
-					{
-						++faults;
-						WriteLog(format("SELFTEST cantcheck %s FAULT %s / %s at %.2f %.2f: %.1f mm against %.1f mm, jump %.1f mm", label.c_str(), ends[a].track->name().c_str(), ends[b].track->name().c_str(), ends[a].point.x, ends[a].point.z, mm(ends[a].roll),
-						                -mm(ends[b].roll), jump));
-					}
-				}
+				joint_of(ends[a], ends[b]);
 		WriteLog(format("SELFTEST cantcheck %s: %d joints, %d faults, steepest ramp %.2f mm/m on %s", label.c_str(), joints, faults, steepest, steepest_name.c_str()));
 		return selftest_result::handled;
 	}
