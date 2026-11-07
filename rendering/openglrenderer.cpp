@@ -1758,6 +1758,11 @@ bool opengl_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array &U
     return m_geometry.append( Vertices, Userdata, Geometry );
 }
 
+void opengl_renderer::Erase( gfx::geometry_handle const &Geometry )
+{
+    m_geometry.erase( Geometry );
+}
+
 // provides direct access to vertex data of specfied chunk
 gfx::index_array const &
 opengl_renderer::Indices( gfx::geometry_handle const &Geometry ) const {
@@ -3140,6 +3145,10 @@ opengl_renderer::Render( TTrack *Track ) {
                 Bind_Material( Track->m_material2 );
                 m_geometry.draw( std::begin( Track->Geometry2 ), std::end( Track->Geometry2 ) );
             }
+            for( auto const &tread : Track->GeometryTreads ) {
+                Bind_Material( tread.material );
+                m_geometry.draw( std::begin( tread.geometry ), std::end( tread.geometry ) );
+            }
             if( ( Track->eType == tt_Switch )
              && ( Track->SwitchExtension->m_material3 != 0 ) ) {
                 Bind_Material( Track->SwitchExtension->m_material3 );
@@ -3149,6 +3158,31 @@ opengl_renderer::Render( TTrack *Track ) {
         }
         default: {
             break;
+        }
+    }
+}
+
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials
+void
+opengl_renderer::Render_cuts( TTrack const *Track ) {
+
+    std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence const *>> parts { { Track->m_materialcut1, &Track->GeometryCut1 }, { Track->m_materialcut2, &Track->GeometryCut2 } };
+    for( auto const &tread : Track->GeometryTreads ) {
+        parts.emplace_back( tread.material, &tread.geometry );
+        parts.emplace_back( tread.matte, &tread.cuts );
+    }
+    for( auto const &[ material, geometry ] : parts ) {
+        if( ( material == null_handle )
+         || ( geometry->empty() ) ) {
+            continue;
+        }
+        if( Track->eEnvironment != e_flat ) {
+            setup_environment_light( Track->eEnvironment );
+        }
+        Bind_Material( material );
+        m_geometry.draw( std::begin( *geometry ), std::end( *geometry ) );
+        if( Track->eEnvironment != e_flat ) {
+            setup_environment_light();
         }
     }
 }
@@ -3325,6 +3359,19 @@ opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First,
             default: {
                 break;
             }
+        }
+    }
+    // cut faces of rails
+    if( ( m_renderpass.draw_mode == rendermode::color )
+     || ( m_renderpass.draw_mode == rendermode::reflections ) ) {
+        for( auto first { First }; first != Last; ++first ) {
+
+            auto const track { *first };
+
+            if( false == track->m_visible ) {
+                continue;
+            }
+            Render_cuts( track );
         }
     }
     // post-render reset

@@ -2201,8 +2201,13 @@ bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
 
+void opengl33_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	m_geometry.erase(Geometry);
+}
+
 // provides direct access to index data of specfied chunk
-gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const 
+gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const
 {
     return m_geometry.indices(Geometry);
 }
@@ -2218,11 +2223,29 @@ gfx::userdata_array const &opengl33_renderer::UserData(const gfx::geometry_handl
 	return m_geometry.userdata(Geometry);
 }
 
+int opengl33_renderer::Primitive(gfx::geometry_handle const &Geometry) const
+{
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
+}
+
 // material methods
 material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
 
 	return m_materials.create(Filename, Loadnow);
+}
+
+material_handle opengl33_renderer::Matte_Material(material_handle const Material)
+{
+
+	return m_materials.create_matte(Material);
+}
+
+material_handle opengl33_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
 }
 
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
@@ -4229,6 +4252,8 @@ void opengl33_renderer::Render(TTrack *Track)
 
 		draw(std::begin(Track->Geometry1), std::end(Track->Geometry1));
 		draw(std::begin(Track->Geometry2), std::end(Track->Geometry2));
+		for (auto &tread : Track->GeometryTreads)
+			draw(std::begin(tread.geometry), std::end(tread.geometry));
 		if (Track->eType == tt_Switch)
 			draw(Track->SwitchExtension->Geometry3);
 		break;
@@ -4238,6 +4263,58 @@ void opengl33_renderer::Render(TTrack *Track)
 		break;
 	}
 	}
+}
+
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials: batched with
+// those of the other tracks, unless the track lies where the light differs
+void opengl33_renderer::Render_cuts(TTrack *Track, material_handle &Batchmaterial)
+{
+	std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{Track->m_materialcut1, &Track->GeometryCut1}, {Track->m_materialcut2, &Track->GeometryCut2}};
+	for (auto &tread : Track->GeometryTreads)
+	{
+		parts.emplace_back(tread.material, &tread.geometry);
+		parts.emplace_back(tread.matte, &tread.cuts);
+	}
+	for (auto const &[material, geometry] : parts)
+	{
+		if ((material == null_handle) || geometry->empty())
+		{
+			continue;
+		}
+		if (Track->eEnvironment != e_flat)
+		{
+			flush_path_batch(Batchmaterial);
+			setup_environment_light(Track->eEnvironment);
+			Bind_Material(material);
+			draw(std::begin(*geometry), std::end(*geometry));
+			setup_environment_light();
+			continue;
+		}
+		begin_path_batch(Batchmaterial, material);
+		m_pathbatch.insert(std::end(m_pathbatch), std::begin(*geometry), std::end(*geometry));
+	}
+}
+
+void opengl33_renderer::flush_path_batch(material_handle &Batchmaterial)
+{
+	if (false == m_pathbatch.empty())
+	{
+		draw(std::begin(m_pathbatch), std::end(m_pathbatch));
+		m_pathbatch.clear();
+	}
+	Batchmaterial = null_handle;
+}
+
+bool opengl33_renderer::begin_path_batch(material_handle &Batchmaterial, material_handle const Material)
+{
+	if (Material == Batchmaterial)
+	{
+		return false;
+	}
+	flush_path_batch(Batchmaterial);
+	Bind_Material(Material);
+	Batchmaterial = Material;
+	return true;
 }
 
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
@@ -4262,27 +4339,9 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	// geometry of neighbouring tracks which share the material is gathered and drawn together.
 	// only neighbours are combined, the tracks are still drawn in their order in the cell
 	material_handle batchmaterial{null_handle};
-	auto const flush_batch = [&]()
-	{
-		if (false == m_pathbatch.empty())
-		{
-			draw(std::begin(m_pathbatch), std::end(m_pathbatch));
-			m_pathbatch.clear();
-		}
-		batchmaterial = null_handle;
-	};
+	auto const flush_batch = [this, &batchmaterial]() { flush_path_batch(batchmaterial); };
 	// returns: true if the material starts a new batch, false if it continues the current one
-	auto const begin_batch = [&](material_handle const Material)
-	{
-		if (Material == batchmaterial)
-		{
-			return false;
-		}
-		flush_batch();
-		Bind_Material(Material);
-		batchmaterial = Material;
-		return true;
-	};
+	auto const begin_batch = [this, &batchmaterial](material_handle const Material) { return begin_path_batch(batchmaterial, Material); };
 
 	// TODO: render auto generated trackbeds together with regular trackbeds in pass 1, and all rails in pass 2
 	// first pass, material 1
@@ -4475,6 +4534,22 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 	}
 	flush_batch();
+
+	// cut faces of rails, in matte variants of the rail materials
+	if ((m_renderpass.draw_mode == rendermode::color) || (m_renderpass.draw_mode == rendermode::reflections))
+	{
+		for (auto first{First}; first != Last; ++first)
+		{
+			auto const track{*first};
+
+			if (false == track->m_visible)
+			{
+				continue;
+			}
+			Render_cuts(track, batchmaterial);
+		}
+		flush_batch();
+	}
 
 	// fourth pass: per-track sleeper models (sleepermodel optional directive).
 	// drawn after rails/trackbeds so depth pre-pass culling is favourable, and only in passes

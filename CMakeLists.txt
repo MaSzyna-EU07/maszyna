@@ -96,6 +96,13 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
+"world/GaugeLine.cpp"
+"world/RailCrossings.cpp"
+"world/RailMaterials.cpp"
+"world/RailProfile.cpp"
+"world/RailPlan.cpp"
+"world/RailCarve.cpp"
+"world/RailLayer.cpp"
 "world/TrackUneven.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
@@ -463,6 +470,7 @@ set(CORE_SOURCES
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
 "vehicle/handover.cpp"
+"vehicle/horn.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)

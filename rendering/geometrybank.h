@@ -117,6 +117,7 @@ public:
     auto replace( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry ) -> bool;
+    void erase( gfx::geometry_handle const &Geometry );
     // draws geometry stored in specified chunk
     auto draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in specified chunk N times via glDrawElementsInstanced*
@@ -138,6 +139,9 @@ public:
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
 	// provides direct access to vertex user data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
+	// kind of geometry of specified chunk, GL_TRIANGLES, GL_TRIANGLE_STRIP...; no_primitive for a handle to no chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
+	static constexpr unsigned int no_primitive { ~0u };
 
 protected:
 // types:
@@ -220,6 +224,7 @@ public:
     auto replace( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
+    void erase( gfx::geometry_handle const &Geometry );
     // draws geometry stored in specified chunk
     void draw( gfx::geometry_handle const &Geometry, unsigned int const Streams = basic_streams );
     // draws geometry stored in specified chunk InstanceCount times via GPU instancing.
@@ -238,6 +243,8 @@ public:
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
 	// provides direct access to vertex data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
+	// kind of geometry of specified chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
     // sets target texture unit for the texture data stream
     auto units() -> gfx::stream_units & { return m_units; }
     // provides access to primitives count

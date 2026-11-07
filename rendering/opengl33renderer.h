@@ -66,6 +66,7 @@ class opengl33_renderer : public gfx_renderer {
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
     // adds supplied vertex data at the end of specified chunk
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	void Erase( gfx::geometry_handle const &Geometry ) override;
     // provides direct access to index data of specfied chunk
     gfx::index_array const &
         Indices( gfx::geometry_handle const &Geometry ) const override;
@@ -75,9 +76,15 @@ class opengl33_renderer : public gfx_renderer {
 	// provides direct access to vertex data of specfied chunk
 	gfx::userdata_array const &
 		UserData( gfx::geometry_handle const &Geometry ) const override;
+	int
+		Primitive( gfx::geometry_handle const &Geometry ) const override;
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
+    material_handle
+        Matte_Material( material_handle const Material ) override;
+    material_handle
+        Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) override;
     void
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *
@@ -306,6 +313,13 @@ class opengl33_renderer : public gfx_renderer {
 	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
 	// Global.SleeperDistance from the track origin.
 	void Render_Sleepers( TTrack *Track );
+	// the cut faces of the rails of a track and the treads on them, batched with those of the other tracks where the light is the same
+	void Render_cuts( TTrack *Track, material_handle &Batchmaterial );
+	// the geometry of the neighbouring tracks gathered for one draw drawn, the batch of the material given emptied
+	void flush_path_batch( material_handle &Batchmaterial );
+	// a batch of the material started, the one gathered before drawn; returns: true if the material starts a new batch, false if it
+	// continues the current one
+	bool begin_path_batch( material_handle &Batchmaterial, material_handle const Material );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
