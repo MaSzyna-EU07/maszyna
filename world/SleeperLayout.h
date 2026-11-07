@@ -29,11 +29,11 @@ struct cluster_beams {
 
 // the tracks whose timbers are laid together with those of the track: all those reached from it through paths whose plain
 // sleepers would meet, in the order of their names
-std::vector<TTrack *> cluster_of( TTrack &Track );
+std::vector<TTrack const *> cluster_of( TTrack const &Track );
 // the beams of the tracks of a cluster, laid out together for the layout of the given epoch
-std::shared_ptr<cluster_beams> lay_out( std::span<TTrack * const> const Tracks, std::uint64_t const Epoch );
+std::shared_ptr<cluster_beams> lay_out( std::span<TTrack const * const> const Tracks, std::uint64_t const Epoch );
 // how far the paths of the switch stand off one plane where they share the timbers of its panel, and where along the diverging
 // path; the switch itself is out of shape for its timbers where it's more than the tolerance
-std::pair<double, double> panel_off_plane( TTrack &Track );
+std::pair<double, double> panel_off_plane( TTrack const &Track );
 
 } // namespace track_sleepers

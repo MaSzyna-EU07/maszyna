@@ -54,7 +54,7 @@ std::shared_ptr<cluster_beams> cached_cluster( TTrack const &Track ) {
 }
 
 // the beams of the cluster of the track worked out, and kept for each track of it unless the tracks changed meanwhile
-std::shared_ptr<cluster_beams> work_out( TTrack &Track ) {
+std::shared_ptr<cluster_beams> work_out( TTrack const &Track ) {
 
     auto const start { std::chrono::steady_clock::now() };
     auto const epoch { layout_epoch().load() };
@@ -152,7 +152,7 @@ private:
 
         models_loaded( false );
         while( true ) {
-            TTrack *track { nullptr };
+            TTrack const *track { nullptr };
             {
                 std::unique_lock lock { mutex };
                 wake.wait( lock, [ this ]() { return stop || false == queue.empty(); } );
@@ -199,7 +199,7 @@ background_worker &worker() {
 
 } // namespace
 
-std::vector<beam> place( TTrack &Track ) {
+std::vector<beam> place( TTrack const &Track ) {
 
     auto cluster { cached_cluster( Track ) };
     if( cluster == nullptr ) {

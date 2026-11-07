@@ -85,7 +85,7 @@ double line_length( TTrack const &Track ) {
 
 } // namespace
 
-sampled_path sample( TTrack &Track, int const Path ) {
+sampled_path sample( TTrack const &Track, int const Path ) {
 
     sampled_path result;
     result.track = &Track;
@@ -315,14 +315,14 @@ bool shares_with( sampled_path const &Path, glm::dvec3 const &Point, glm::dvec2 
 
 // the paths of the track, and of the tracks with beams around it; or of all those with the ballast the simulator makes, whether
 // they get beams or not
-std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded ) {
+std::vector<sampled_path> paths_around( TTrack const &Track, bool const Bedded ) {
 
     std::vector<sampled_path> result;
     for( int path = 0; path < path_count( Track ); ++path ) {
         result.emplace_back( sample( Track, path ) );
     }
-    std::vector<TTrack *> others;
-    tracks_near( Track, [ &Track, &others, Bedded ]( TTrack *Other ) {
+    std::vector<TTrack const *> others;
+    tracks_near( Track, [ &Track, &others, Bedded ]( TTrack const *Other ) {
         if( Other == &Track || Other->m_editorremoved ) {
             return;
         }
@@ -330,7 +330,7 @@ std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded ) {
             return;
         }
         others.push_back( Other ); } );
-    for( auto *other : others ) {
+    for( auto const *other : others ) {
         for( int path = 0; path < path_count( *other ); ++path ) {
             result.emplace_back( sample( *other, path ) );
         }
@@ -342,7 +342,7 @@ std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded ) {
 namespace {
 
 // the tracks of the cell near enough the track to take part in laying its beams, added to the list
-void add_near( scene::basic_cell const &Cell, TTrack &Track, std::vector<TTrack *> &Near ) {
+void add_near( scene::basic_cell const &Cell, TTrack const &Track, std::vector<TTrack *> &Near ) {
 
     for( auto *other : Cell.m_directories.paths ) {
         if( other == nullptr || glm::length( other->location() - Track.location() ) > other->radius() + Track.radius() + around_margin ) {
@@ -354,7 +354,7 @@ void add_near( scene::basic_cell const &Cell, TTrack &Track, std::vector<TTrack 
 
 } // namespace
 
-std::vector<TTrack *> near_tracks( TTrack &Track ) {
+std::vector<TTrack *> near_tracks( TTrack const &Track ) {
 
     std::vector<TTrack *> result;
     // a list of its own, not the one the region shares: the main thread and the one laying the beams both search

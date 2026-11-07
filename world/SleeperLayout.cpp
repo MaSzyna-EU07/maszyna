@@ -41,7 +41,7 @@ bool share_anywhere( sampled_path const &Left, sampled_path const &Right ) {
 }
 
 // the tracks whose plain sleepers would meet those of the track, put in the cluster where they're not in it yet
-void reach_from( TTrack &Track, std::vector<TTrack *> &Cluster ) {
+void reach_from( TTrack const &Track, std::vector<TTrack const *> &Cluster ) {
 
     auto const around { paths_around( Track ) };
     for( auto const &path : around ) {
@@ -210,14 +210,14 @@ std::optional<beam> shortened_clear( beam const &Beam, double const Length, plan
 class cluster_layout {
 
 public:
-    cluster_layout( std::span<TTrack * const> const Tracks, std::uint64_t const Epoch ) :
+    cluster_layout( std::span<TTrack const * const> const Tracks, std::uint64_t const Epoch ) :
         tracks( Tracks ), epoch( Epoch ) {}
 
     std::shared_ptr<cluster_beams> lay() {
 
         auto result { std::make_shared<cluster_beams>() };
         result->epoch = epoch;
-        for( auto *track : tracks ) {
+        for( auto const *track : tracks ) {
             result->beams[ track ];
             for( int path = 0; path < path_count( *track ); ++path ) {
                 paths.emplace_back( sample( *track, path ) );
@@ -257,7 +257,7 @@ private:
         beam value;
     };
 
-    std::span<TTrack * const> const tracks;
+    std::span<TTrack const * const> const tracks;
     std::uint64_t const epoch; // of the layout the tracks are laid out for
     std::vector<sampled_path> paths; // of the tracks of the cluster
     std::vector<sampled_path> context; // of the tracks about them, whose rails and sleepers the beams keep clear of
@@ -276,7 +276,7 @@ private:
     // the paths of the tracks about the cluster, not of it, each taken once
     void gather_context() {
 
-        for( auto *track : tracks ) {
+        for( auto const *track : tracks ) {
             for( auto &other : paths_around( *track ) ) {
                 if( std::ranges::find( tracks, other.track ) != tracks.end()
                  || std::ranges::any_of( context, [ &other ]( sampled_path const &Known ) { return Known.track == other.track && Known.path == other.path; } ) ) {
@@ -739,7 +739,7 @@ private:
 
 // the tracks whose timbers are laid together with those of the track: all those reached from it through paths whose plain
 // sleepers would meet, in the order of their names
-std::vector<TTrack *> cluster_of( TTrack &Track ) {
+std::vector<TTrack const *> cluster_of( TTrack const &Track ) {
 
     std::vector result { &Track };
     std::size_t index { 0 };
@@ -752,14 +752,14 @@ std::vector<TTrack *> cluster_of( TTrack &Track ) {
     return result;
 }
 
-std::shared_ptr<cluster_beams> lay_out( std::span<TTrack * const> const Tracks, std::uint64_t const Epoch ) {
+std::shared_ptr<cluster_beams> lay_out( std::span<TTrack const * const> const Tracks, std::uint64_t const Epoch ) {
 
     return cluster_layout( Tracks, Epoch ).lay();
 }
 
 // how far the paths of the switch stand off one plane where they share the timbers of its panel, and where along the diverging
 // path; the switch itself is out of shape for its timbers where it's more than the tolerance
-std::pair<double, double> panel_off_plane( TTrack &Track ) {
+std::pair<double, double> panel_off_plane( TTrack const &Track ) {
 
     std::pair<double, double> result { 0.0, 0.0 };
     if( Track.eType != tt_Switch ) {

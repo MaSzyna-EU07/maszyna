@@ -70,7 +70,7 @@ std::vector<std::pair<double, double>> shared_zones( TTrack const &Track, int co
     if( false == bedded( Track ) || Path < 0 || Path >= path_count( Track ) ) {
         return result;
     }
-    auto const around { paths_around( const_cast<TTrack &>( Track ), true ) };
+    auto const around { paths_around( Track, true ) };
     auto const found { std::ranges::find_if( around, [ &Track, Path ]( sampled_path const &Sampled ) { return Sampled.track == &Track && Sampled.path == Path; } ) };
     if( found == around.end() ) {
         return result;
@@ -277,7 +277,7 @@ void digest_beam( std::uint64_t &Digest, beam const &Beam ) {
 }
 
 // the beams of the track placed anew, as boxes in plan with the track they're laid with, counted into what's wrong with the layout
-void box_beams( TTrack &Track, std::vector<beam_box> &Boxes, std::vector<TTrack const *> &Owners, layout_check &Result ) {
+void box_beams( TTrack const &Track, std::vector<beam_box> &Boxes, std::vector<TTrack const *> &Owners, layout_check &Result ) {
 
     if( auto const [ off, at ] { panel_off_plane( Track ) }; off > coplanar_tolerance ) {
         ++Result.panels;
@@ -387,7 +387,7 @@ layout_check check() {
     std::vector<beam_box> boxes;
     std::vector<TTrack const *> owners;
     std::vector<TTrack const *> tracks;
-    for( auto *track : simulation::Paths.sequence() ) {
+    for( auto const *track : simulation::Paths.sequence() ) {
         if( track == nullptr || track->m_editorremoved || false == track->m_sleepers3d.active ) {
             continue;
         }
@@ -423,7 +423,7 @@ layout_check check() {
     return result;
 }
 
-void unsettle_around( TTrack &Track ) {
+void unsettle_around( TTrack const &Track ) {
 
     if( Global.Sleepers3D.empty() ) {
         // nothing laid, nothing to lay again
