@@ -709,6 +709,7 @@ public: // reszta może by?publiczna
     TButton btLampkaNadmPrzetw;
     TButton btLampkaPrzetw;
     TButton btLampkaPrzetwOff;
+    TButton btLampkaPrzetwAOff; // the converter of this very unit off, where the trainset shares its 110 V (ET42 section fans)
     TButton btLampkaPrzekRozn; // TODO: implement
     TButton btLampkaPrzekRoznPom; // TODO: implement
     TButton btLampkaNadmSil;

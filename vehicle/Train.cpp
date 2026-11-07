@@ -8975,6 +8975,7 @@ bool TTrain::Update(double const Deltatime)
 
 		btLampkaPrzetw.Turn(mvOccupied->Power110vIsAvailable);
 		btLampkaPrzetwOff.Turn(!mvOccupied->Power110vIsAvailable);
+		btLampkaPrzetwAOff.Turn(!mvControlled->ConverterFlag);
 		btLampkaNadmPrzetw.Turn(Dynamic()->Mechanik ? Dynamic()->Mechanik->IsAnyConverterOverloadRelayOpen : mvControlled->ConvOvldFlag);
 
 		btLampkaOpory.Turn(mvControlled->StLinFlag && mvControlled->ResistorsFlagCheck());
@@ -9147,6 +9148,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaNapNastHam.Turn(false);
 		btLampkaPrzetw.Turn(false);
 		btLampkaPrzetwOff.Turn(false);
+		btLampkaPrzetwAOff.Turn(false);
 		btLampkaNadmPrzetw.Turn(false);
 		btLampkaSprezarka.Turn(false);
 		btLampkaSprezarkaOff.Turn(false);
@@ -11131,6 +11133,7 @@ void TTrain::clear_cab_controls()
 	btLampkaPrzetw.Clear();
 	btLampkaPrzetwB.Clear();
 	btLampkaPrzetwBOff.Clear();
+	btLampkaPrzetwAOff.Clear();
 	btLampkaPrzekRozn.Clear();
 	btLampkaPrzekRoznPom.Clear();
 	btLampkaUkrotnienie.Clear();
@@ -11546,6 +11549,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-conv_ovld:", btLampkaNadmPrzetw},
 	    {"i-converter:", btLampkaPrzetw},
 	    {"i-converteroff:", btLampkaPrzetwOff},
+	    {"i-converteraoff:", btLampkaPrzetwAOff},
 	    {"i-converterb:", btLampkaPrzetwB},
 	    {"i-converterboff:", btLampkaPrzetwBOff},
 	    {"i-diff_relay:", btLampkaPrzekRozn},

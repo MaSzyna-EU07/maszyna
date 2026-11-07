@@ -279,6 +279,16 @@ enum class operation_t
 	/// <summary>Disable button release transition.</summary>
 	disable_off,
 };
+/// <summary>What else the line contactors of a vehicle need before they can close (LineContactorsInterlock in the Cntrl. section).</summary>
+enum class line_contactors_interlock
+{
+	/// <summary>Nothing more, the legacy behaviour.</summary>
+	none,
+	/// <summary>The converter of the vehicle itself running, where it drives the traction motor fans (ET42).</summary>
+	converter,
+	/// <summary>The traction motor blowers of the vehicle running.</summary>
+	motor_blowers
+};
 /// <summary>Auto-start method for ancillary devices (mutually exclusive).</summary>
 enum class start_t
 {
@@ -2152,6 +2162,7 @@ class TMoverParameters
 	start_t GroundRelayStart{start_t::manual}; // relay activation method
 	bool StLinFlag = false; /*!o styczniki liniowe*/
 	bool StLinSwitchOff{false}; // state of the button forcing motor connectors open
+	line_contactors_interlock LineContactorsInterlock{line_contactors_interlock::none}; // what else the line contactors need to close
 	bool ResistorsFlag = false; /*!o jazda rezystorowa*/
 	double RventRot = 0.0; /*!s obroty wentylatorow rozruchowych*/
 	double PantographVoltage{0.0}; // voltage supplied to pantographs
@@ -2466,6 +2477,8 @@ class TMoverParameters
 	{
 		return false == StLinFlag && MainCircuitLampsEnabled();
 	}
+	// whether the devices the line contactors are interlocked with (LineContactorsInterlock) let them close
+	bool LineContactorsInterlockReleased() const;
 	// whether the pumps a joint oil and fuel pump switch works, those not started automatically, are all switched on
 	bool OilFuelPumpsEnabled() const
 	{

@@ -7148,7 +7148,21 @@ bool TMoverParameters::MotorConnectorsCheck()
 
 	auto const connectorsoff{false == Mains || true == FuseFlag || true == StLinSwitchOff || DirActive == 0};
 
-	return false == connectorsoff;
+	return false == connectorsoff && LineContactorsInterlockReleased();
+}
+
+bool TMoverParameters::LineContactorsInterlockReleased() const
+{
+	switch (LineContactorsInterlock)
+	{
+	case line_contactors_interlock::converter:
+		// the converter of this very vehicle, not the 110 V of the trainset: a section with its fans off doesn't start
+		return ConverterFlag;
+	case line_contactors_interlock::motor_blowers:
+		return std::ranges::all_of(MotorBlowers, [](auto const &Blower) { return Blower.is_active; });
+	default:
+		return true;
+	}
 }
 
 bool TMoverParameters::OperatePantographsValve(operation_t const State, range_t const Notify)
@@ -11000,6 +11014,13 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = starts.find(extract_value("MotorBlowersStart", line));
 		MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : start_t::manual;
 		MotorBlowers[end::front].start_type = MotorBlowers[end::rear].start_type;
+	}
+	// what else the line contactors need to close
+	{
+		std::map<std::string, line_contactors_interlock, std::less<>> const interlocks{{"Converter", line_contactors_interlock::converter},
+		                                                                             {"MotorBlowers", line_contactors_interlock::motor_blowers}};
+		auto lookup = interlocks.find(extract_value("LineContactorsInterlock", line));
+		LineContactorsInterlock = lookup != interlocks.end() ? lookup->second : line_contactors_interlock::none;
 	}
 	// compartment lights
 	{
