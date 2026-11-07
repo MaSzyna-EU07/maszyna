@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "application/editormodenmtstate.h"
+#include "application/editormodeprofilestate.h"
 #include "application/editormoderoadstate.h"
 #include "application/editormodesweepstate.h"
 #include "scene/scenenode.h"

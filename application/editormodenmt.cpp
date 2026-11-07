@@ -2875,7 +2875,7 @@ std::size_t turntable_followers(Turntable const &Table, double const Rise, std::
 
 } // namespace
 
-std::vector<editor_mode::nmt_state::turntable> editor_mode::nmt_turntables() const
+std::vector<nmt_state::turntable> editor_mode::nmt_turntables() const
 {
 	std::vector<nmt_state::turntable> result;
 	for (auto *track : simulation::Paths.sequence())
