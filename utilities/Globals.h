@@ -137,7 +137,7 @@ struct global_settings {
     float UIBgOpacity{ 0.94f }; // opacity of ui windows
     std::string asLang{ "pl" }; // domyślny język - http://tools.ietf.org/html/bcp47
     // gfx
-    glm::ivec2 window_size; // main window size in platform-specific virtual pixels
+    glm::ivec2 window_size{ 1280, 720 }; // main window size in platform-specific virtual pixels
     glm::ivec2 cursor_pos; // cursor position in platform-specific virtual pixels
     glm::ivec2 fb_size; // main window framebuffer size
 	float ShakingMultiplierBF {1.f}; // mnożnik bujania kamera przod/tyl

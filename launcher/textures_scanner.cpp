@@ -1,9 +1,16 @@
 #include "stdafx.h"
 #include "textures_scanner.h"
 #include "utilities/utilities.h"
+#include "utilities/Logs.h"
 
 void ui::vehicles_bank::scan_textures()
 {
+	if (!std::filesystem::is_directory("dynamic"))
+	{
+		ErrorLog("Bad init: \"dynamic\" directory not found, no vehicles available");
+		return;
+	}
+
 	for (auto &f : std::filesystem::recursive_directory_iterator("dynamic")) {
 		if (f.path().filename() != "textures.txt")
 			continue;

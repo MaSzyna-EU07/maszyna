@@ -83,6 +83,11 @@ void cursor_enter_callback(GLFWwindow *window, int entered)
 	ui_layer::cursor_enter_callback(entered);
 }
 
+void glfw_error_callback(int error, char const *description)
+{
+	ErrorLog("glfw error " + std::to_string(error) + ": " + (description ? description : ""));
+}
+
 void framebuffer_resize_callback(GLFWwindow *, int w, int h)
 {
 	Global.fb_size = glm::ivec2(w, h);
@@ -1230,6 +1235,8 @@ int eu07_application::init_glfw()
 		glfwInitHint(GLFW_ANGLE_PLATFORM_TYPE, platform);
 	}
 #endif
+
+	glfwSetErrorCallback(glfw_error_callback);
 
 	if (glfwInit() == GLFW_FALSE)
 	{
