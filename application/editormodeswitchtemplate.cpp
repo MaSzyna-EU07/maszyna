@@ -396,6 +396,12 @@ bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_tem
 			if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
 				Paths[i].rolls = Before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
 	};
+	// the same for the two paths of a switch, from the paths of the track before
+	auto const keep_own_rolls = [](std::vector<segment_data> &Paths, auto const &Before) {
+		for (int i = 0; i < 2; ++i)
+			if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
+				Paths[i].rolls = Before.m_paths[i].rolls;
+	};
 	auto const set{double_of(Switch)};
 	auto &first{set.has_value() ? *set->first : Switch};
 	if (first.m_paths.size() < 2 || Shape.twofold() != set.has_value())
@@ -426,9 +432,7 @@ bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_tem
 		{
 			if (paths.size() < 2)
 				return false;
-			for (int i = 0; i < 2; ++i)
-				if (paths[i].rolls[0] == 0.f && paths[i].rolls[1] == 0.f)
-					paths[i].rolls = first.m_paths[i].rolls;
+			keep_own_rolls(paths, first);
 			if (false == move_switch_paths(first, paths, Notes))
 				return false;
 		}
