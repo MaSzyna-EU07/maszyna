@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <limits>
@@ -160,7 +161,7 @@ fs::path cache_root()
 				count += ec ? 0 : 1;
 			}
 			auto const path{root.u8string()};
-			WriteLog("Editor orthophoto: " + std::to_string(count) + " products of the orthophoto moved to " + std::string(path.begin(), path.end()));
+			WriteLog(std::format("Editor orthophoto: {} products of the orthophoto moved to {}", count, std::string(path.begin(), path.end())));
 		}
 		fs::remove_all(old, ec);
 	});
@@ -223,7 +224,11 @@ void write_file(fs::path const &Path, std::vector<std::uint8_t> const &Data)
 }
 
 // the requests made of the services, the disk cache left out
-std::atomic<int> requests_made{0};
+std::atomic<int> &requests_made()
+{
+	static std::atomic<int> made{0};
+	return made;
+}
 
 // cached file if present, otherwise downloads (with a few retries, the service drops connections and answers 404 now and then);
 // with no path nothing is read from the disk nor written to it
@@ -234,7 +239,7 @@ bool fetch(http_client &Client, std::string const &Url, fs::path const &Path, st
 
 	for (int attempt = 0; attempt < 4; ++attempt)
 	{
-		++requests_made;
+		++requests_made();
 		if (Stop())
 		{
 			Error = "cancelled";
@@ -310,7 +315,7 @@ bool is_blank(image const &Image)
 // a file of no content standing for a place the standard imagery came blank for twice: none there, not asked for again
 fs::path blank_file(tile_request const &Request)
 {
-	return cache_file(Request, false, std::to_string(standard_pixels) + ".blank");
+	return cache_file(Request, false, std::format("{}.blank", standard_pixels));
 }
 
 bool load_standard(http_client &Client, tile_request const &Request, image &Out, std::string &Error, stop_check const &Stop)
@@ -322,7 +327,7 @@ bool load_standard(http_client &Client, tile_request const &Request, image &Out,
 		return true;
 	}
 	std::vector<std::uint8_t> data;
-	auto const path{cache_file(Request, false, std::to_string(standard_pixels) + ".jpg")};
+	auto const path{cache_file(Request, false, std::format("{}.jpg", standard_pixels))};
 	for (int attempt = 0; attempt < 2; ++attempt)
 	{
 		if (!fetch(Client, wms_url(Request, false, standard_pixels, false), path, data, Error, Stop) || !decode(data, Out, Error))
@@ -340,7 +345,7 @@ bool load_standard(http_client &Client, tile_request const &Request, image &Out,
 bool prefetch_tile(http_client &Client, tile_request const &Request, std::string &Error, stop_check const &Stop)
 {
 	std::error_code ec;
-	if (false == fs::exists(cache_file(Request, false, std::to_string(standard_pixels) + ".jpg"), ec) && false == fs::exists(blank_file(Request), ec))
+	if (false == fs::exists(cache_file(Request, false, std::format("{}.jpg", standard_pixels)), ec) && false == fs::exists(blank_file(Request), ec))
 	{
 		image standard;
 		if (!load_standard(Client, Request, standard, Error, Stop))
@@ -354,11 +359,12 @@ bool prefetch_tile(http_client &Client, tile_request const &Request, std::string
 		return false;
 	std::size_t covered{0};
 	for (std::size_t i = 3; i < probe.rgba.size(); i += 4)
-		covered += (probe.rgba[i] != 0);
+		if (probe.rgba[i] != 0)
+			++covered;
 	if (covered == 0)
 		return true;
 	auto const png{covered < probe.rgba.size() / 4};
-	auto const path{cache_file(Request, true, std::to_string(hires_pixels) + (png ? ".png" : ".jpg"))};
+	auto const path{cache_file(Request, true, std::format("{}{}", hires_pixels, png ? ".png" : ".jpg"))};
 	return fs::exists(path, ec) || fetch(Client, wms_url(Request, true, hires_pixels, png), path, data, Error, Stop);
 }
 
@@ -376,7 +382,8 @@ bool load_tile(http_client &Client, tile_request const &Request, image &Out, boo
 			return false;
 		std::size_t covered{0};
 		for (std::size_t i = 3; i < probe.rgba.size(); i += 4)
-			covered += (probe.rgba[i] != 0);
+			if (probe.rgba[i] != 0)
+				++covered;
 		std::size_t const total = probe.rgba.size() / 4;
 
 		auto const superseded = [&]() {
@@ -387,12 +394,12 @@ bool load_tile(http_client &Client, tile_request const &Request, image &Out, boo
 		};
 		if (covered == total)
 		{
-			return fetch(Client, wms_url(Request, true, hires_pixels, false), cache_file(Request, true, std::to_string(hires_pixels) + ".jpg"), data, Error, Stop) && false == superseded() && decode(data, Out, Error);
+			return fetch(Client, wms_url(Request, true, hires_pixels, false), cache_file(Request, true, std::format("{}.jpg", hires_pixels)), data, Error, Stop) && false == superseded() && decode(data, Out, Error);
 		}
 		if (covered > 0)
 		{
 			// edge of the covered area: transparent png, holes filled from the standard imagery
-			if (!fetch(Client, wms_url(Request, true, hires_pixels, true), cache_file(Request, true, std::to_string(hires_pixels) + ".png"), data, Error, Stop) || superseded() || !decode(data, Out, Error))
+			if (!fetch(Client, wms_url(Request, true, hires_pixels, true), cache_file(Request, true, std::format("{}.png", hires_pixels)), data, Error, Stop) || superseded() || !decode(data, Out, Error))
 				return false;
 			image standard;
 			std::string ignored;
@@ -440,11 +447,7 @@ std::string url_encoded(std::string const &Text)
 		if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == ':' || c == ',')
 			out += static_cast<char>(c);
 		else
-		{
-			char hex[4];
-			std::snprintf(hex, sizeof(hex), "%%%02X", c);
-			out += hex;
-		}
+			out += std::format("%{:02X}", c);
 	}
 	return out;
 }
@@ -523,7 +526,21 @@ constexpr float no_height{-std::numeric_limits<float>::max()};
 // and the tiles fitted onto a heightmap terrain carry its full grid (hundreds of thousands of vertices each)
 std::vector<std::uint32_t> scene_banks;
 // the textures made by all the layers, named apart: main thread only
-int texture_slots{0};
+int &texture_slots()
+{
+	static int slots{0};
+	return slots;
+}
+
+// a point at the edge of the grid of a tile moved a little out of it, the first one way and the last the other
+double edge_nudge(int const Index, int const Last, double const Outward)
+{
+	if (Index == 0)
+		return Outward;
+	if (Index == Last)
+		return -Outward;
+	return 0.0;
+}
 
 std::string slot_name(int Index)
 {
@@ -614,17 +631,20 @@ namespace
 std::string xml_text(std::string const &Text)
 {
 	std::string out;
-	for (std::size_t i = 0; i < Text.size(); ++i)
+	std::size_t i{0};
+	while (i < Text.size())
 	{
 		if (Text[i] != '&')
 		{
 			out += Text[i];
+			++i;
 			continue;
 		}
 		auto const end{Text.find(';', i)};
 		if (end == std::string::npos)
 		{
 			out += Text[i];
+			++i;
 			continue;
 		}
 		if (auto const entity{Text.substr(i + 1, end - i - 1)}; entity == "amp")
@@ -659,7 +679,7 @@ std::string xml_text(std::string const &Text)
 		}
 		else
 			out += Text.substr(i, end - i + 1);
-		i = end;
+		i = end + 1;
 	}
 	// the blanks at the ends of the text dropped
 	auto const first{out.find_first_not_of(" \t\r\n")};
@@ -669,16 +689,16 @@ std::string xml_text(std::string const &Text)
 }
 
 // the text of the first element of the tag between From and To, empty where there's none
-std::string xml_element(std::string const &Xml, std::string const &Tag, std::size_t const From, std::size_t const To)
+std::string xml_element(std::string_view const Xml, std::string_view const Tag, std::size_t const From, std::size_t const To)
 {
-	auto const open{"<" + Tag + ">"};
+	auto const open{std::format("<{}>", Tag)};
 	auto const start{Xml.find(open, From)};
-	if (start == std::string::npos || start >= To)
+	if (start == std::string_view::npos || start >= To)
 		return {};
-	auto const end{Xml.find("</" + Tag + ">", start)};
-	if (end == std::string::npos || end > To)
+	auto const end{Xml.find(std::format("</{}>", Tag), start)};
+	if (end == std::string_view::npos || end > To)
 		return {};
-	return xml_text(Xml.substr(start + open.size(), end - start - open.size()));
+	return xml_text(std::string{Xml.substr(start + open.size(), end - start - open.size())});
 }
 
 } // namespace
@@ -695,8 +715,12 @@ editor_orthophoto::service_info editor_orthophoto::describe(std::string const &S
 	// a few tries, the services drop connections and time out now and then
 	std::vector<std::uint8_t> data;
 	auto read{false};
-	for (int attempt = 0; attempt < 3 && false == read; ++attempt)
+	for (int attempt = 0; attempt < 3; ++attempt)
+	{
 		read = editor_http_get(url, data, info.error);
+		if (read)
+			break;
+	}
 	if (false == read)
 		return info;
 	info.error.clear();
@@ -760,14 +784,9 @@ std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bo
 {
 	// how the imagery is shown is the user's, kept with the editor (EditorSettings); the scenery keeps whether it's on and where the
 	// scenery lies
-	char text[256];
-	std::snprintf(text, sizeof(text), "on %d", Enabled ? 1 : 0);
-	std::string result{text};
+	auto result{std::format("on {}", Enabled ? 1 : 0)};
 	if (Origin)
-	{
-		std::snprintf(text, sizeof(text), " origin %.2f %.2f", Config.north, Config.east);
-		result += text;
-	}
+		result += std::format(" origin {:.2f} {:.2f}", Config.north, Config.east);
 	return result;
 }
 
@@ -897,11 +916,7 @@ std::vector<std::string> editor_orthophoto::area_lines(std::vector<glm::dvec2> c
 		return lines;
 	lines.emplace_back("# the area the editor downloads the orthophoto and the terrain model in, PUWG 1992 easting northing");
 	for (auto const &point : Polygon)
-	{
-		char text[64];
-		std::snprintf(text, sizeof(text), "point %.2f %.2f", point.x, point.y);
-		lines.emplace_back(text);
-	}
+		lines.emplace_back(std::format("point {:.2f} {:.2f}", point.x, point.y));
 	return lines;
 }
 
@@ -924,8 +939,8 @@ std::vector<glm::dvec2> editor_orthophoto::read_area(std::vector<std::string> co
 void editor_orthophoto::refit()
 {
 	// the current shapes stay until their tile is sampled again, so nothing blinks
-	for (auto &entry : m_tiles)
-		entry.second.grounded = false;
+	for (auto &[key, t] : m_tiles)
+		t.grounded = false;
 }
 
 void editor_orthophoto::ground_arrived()
@@ -1004,7 +1019,7 @@ editor_orthophoto::statistics editor_orthophoto::stats() const
 {
 	statistics out;
 	out.area_tiles = static_cast<int>(m_area_tiles.size());
-	out.requests = requests_made.load();
+	out.requests = requests_made().load();
 	out.uploads = m_uploads;
 	out.stale = m_stale;
 	{
@@ -1021,8 +1036,8 @@ editor_orthophoto::statistics editor_orthophoto::stats() const
 		else if (t.failures > 0 && t.level == 0)
 			++out.failed;
 	};
-	for (auto const &entry : m_tiles)
-		count(entry.second);
+	for (auto const &[key, t] : m_tiles)
+		count(t);
 	return out;
 }
 
@@ -1069,7 +1084,7 @@ editor_orthophoto::texture_slot editor_orthophoto::acquire_slot()
 		return slot;
 	}
 	texture_slot slot;
-	slot.index = texture_slots++;
+	slot.index = texture_slots()++;
 	slot.texture = GfxRenderer->Fetch_Texture(slot_name(slot.index), true);
 	return slot;
 }
@@ -1092,7 +1107,7 @@ void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std
 	{
 		std::scoped_lock lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
-		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires, m_config.service, m_config.layers}, m_generation.load()});
+		m_queue.emplace_back(Key, Level, Alpha, source{m_config.year, m_config.hires, m_config.service, m_config.layers}, m_generation.load());
 	}
 	Tile.requested = Level;
 	Tile.requested_alpha = Alpha;
@@ -1315,8 +1330,8 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 				{
 					if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
 						continue;
-					auto const x{corner.x - i * step + (i == 0 ? outward : i == ground_grid ? -outward : 0.0)};
-					auto const z{corner.y - j * step + (j == 0 ? outward : j == ground_grid ? -outward : 0.0)};
+					auto const x{corner.x - i * step + edge_nudge(i, ground_grid, outward)};
+					auto const z{corner.y - j * step + edge_nudge(j, ground_grid, outward)};
 					if (float y; sampled_height(Key, x, z, y))
 						heights[static_cast<std::size_t>(j) * samples + i] = y;
 				}
@@ -1562,10 +1577,8 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		result done;
 		{
 			std::scoped_lock lock(m_mutex);
-			if (m_done.empty())
-				break;
 			// a 4K tile only in a frame of its own: two in one frame would stall it twice as long
-			if (uploaded > 0 && m_done.front().pixels.size() > upload_budget)
+			if (m_done.empty() || (uploaded > 0 && m_done.front().pixels.size() > upload_budget))
 				break;
 			done = std::move(m_done.front());
 			m_done.pop_front();
@@ -1649,7 +1662,8 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	if (m_config.drape && m_ground && simulation::Region != nullptr)
 	{
 		auto const until{now + 0.004};
-		for (;;)
+		auto going{true};
+		while (going)
 		{
 			tile *nearest{nullptr};
 			tile_key nearestkey{0, 0};
@@ -1669,8 +1683,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 			if (nearest == nullptr)
 				break;
 			sample_ground(nearestkey, *nearest);
-			if (steady_seconds() >= until)
-				break;
+			going = steady_seconds() < until;
 		}
 	}
 
@@ -1742,7 +1755,7 @@ void editor_orthophoto::worker()
 			if (m_stop)
 				return;
 			if (!ok)
-				ErrorLog("Editor orthophoto: tile " + std::to_string(prefetch->second) + "_" + std::to_string(prefetch->first) + " of the download area failed: " + error);
+				ErrorLog(std::format("Editor orthophoto: tile {}_{} of the download area failed: {}", prefetch->second, prefetch->first, error));
 			std::scoped_lock lock(m_mutex);
 			if (prefetchgeneration == m_prefetch_generation)
 			{
@@ -1780,7 +1793,7 @@ void editor_orthophoto::worker()
 		if (m_stop)
 			return;
 		if (!out.ok && error != "superseded")
-			ErrorLog(std::string("Editor orthophoto: tile ") + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
+			ErrorLog(std::format("Editor orthophoto: tile {}_{} failed: {}", current.key.second, current.key.first, error));
 		if (out.ok && current.alpha < 255)
 			for (std::size_t i = 3; i < picture.rgba.size(); i += 4)
 				picture.rgba[i] = static_cast<std::uint8_t>((picture.rgba[i] * current.alpha + 127u) / 255u);
