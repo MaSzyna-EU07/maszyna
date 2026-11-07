@@ -499,7 +499,7 @@ std::string vertex_notes(auto const &Curve, std::vector<std::string> const &Warn
 }
 
 // the name of a texture shown, without its folder
-std::string texture_preview(std::string const &Value)
+std::string texture_preview_label(std::string const &Value)
 {
 	if (Value.empty() || Value == "none")
 		return std::string{STR_C("No texture")};
@@ -3060,7 +3060,7 @@ void editor_mode::render_texture_row(int const Kind, char const *Label, std::str
 	ImGui::SameLine(0.0f, 4.0f);
 	ImGui::SetNextItemWidth(-FLT_MIN);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
-	if (auto const preview{texture_preview(Value)}; ImGui::BeginCombo("##texture", preview.c_str(), ImGuiComboFlags_HeightLargest))
+	if (auto const preview{texture_preview_label(Value)}; ImGui::BeginCombo("##texture", preview.c_str(), ImGuiComboFlags_HeightLargest))
 	{
 		if (std::string chosen; track_texture_picker(Kind, Value, false, chosen))
 		{
