@@ -403,6 +403,8 @@ bool ui_layer::init(GLFWwindow *Window)
 	{
 		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 		m_imguiio->ConfigViewportsNoTaskBarIcon = true;
+		// only dragging a panel with the cursor past the main window takes it out, not resizing it or placing it at the edge
+		m_imguiio->ConfigViewportsNoAutoDetach = true;
 		auto &platformio{ImGui::GetPlatformIO()};
 		imgui_create_window = platformio.Platform_CreateWindow;
 		platformio.Platform_CreateWindow = create_viewport_window;
