@@ -1342,6 +1342,27 @@ void editor_mode::nmt_update()
 		m_streamer.begin_change();
 }
 
+namespace
+{
+
+// what a chunk came to counted: made, at the height ahead it was made at, its key among the ones changed; or left empty, the model
+// having no data there
+template <typename State>
+void count_chunk(State &Nmt, bool const Made, heightmap::chunk_key const &Key, std::optional<double> const &Offset, std::vector<heightmap::chunk_key> &Changed)
+{
+	if (Made)
+	{
+		if (Offset.has_value())
+			Nmt.ahead = Offset;
+		Changed.push_back(Key);
+		++Nmt.made;
+	}
+	else
+		++Nmt.empty;
+}
+
+} // namespace
+
 void editor_mode::nmt_make_pending(int &Made, std::size_t &Apart, std::vector<heightmap::chunk_key> &Changed)
 {
 	auto &state{m_nmt_state};
@@ -1380,15 +1401,7 @@ void editor_mode::nmt_make_pending(int &Made, std::size_t &Apart, std::vector<he
 			++it;
 			continue;
 		}
-		if (chunk == nmt_chunk::made)
-		{
-			if (offset.has_value())
-				state.ahead = offset;
-			Changed.push_back(*it);
-			++state.made;
-		}
-		else
-			++state.empty;
+		count_chunk(state, chunk == nmt_chunk::made, *it, offset, Changed);
 		state.refill.erase(*it);
 		it = state.pending.erase(it);
 		++Made;
@@ -2160,6 +2173,38 @@ void editor_mode::area_update()
 	drawing.points[drawing.dragged] = {cursor.x, cursor.z};
 }
 
+namespace
+{
+
+// the tiles of the area as they are: in the disk cache, failed; the ones waiting left clear. At: the point of the plan in the view
+template <typename Place>
+void draw_area_tiles(ImDrawList *Drawlist, screen_projection const &Projection, std::vector<editor_orthophoto::area_square> const &Squares, Place const &At)
+{
+	for (auto const &square : Squares)
+	{
+		if (square.state == 0)
+			continue;
+		std::array<ImVec2, 4> corners;
+		std::array<glm::dvec2, 4> const at{{square.low, {square.high.x, square.low.y}, square.high, {square.low.x, square.high.y}}};
+		// the corners projected one by one, up to the first one out of the view
+		auto const seen{std::ranges::all_of(std::views::iota(0, 4), [&At, &Projection, &at, &corners](int const i) { return Projection.project(At(at[i]), corners[i]); })};
+		if (seen)
+			Drawlist->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], square.state == 1 ? IM_COL32(90, 220, 120, 45) : IM_COL32(240, 80, 70, 80));
+	}
+}
+
+// the points of the area, the one under the cursor larger
+template <typename Place>
+void draw_area_points(ImDrawList *Drawlist, screen_projection const &Projection, std::vector<glm::dvec2> const &Points, ImU32 const Colour, Place const &At)
+{
+	ImVec2 screen;
+	for (auto const &point : Points)
+		if (Projection.project(At(point), screen))
+			Drawlist->AddCircleFilled(screen, Projection.mouse_distance2(At(point)) < 100.0f ? 6.0f : 4.0f, Colour);
+}
+
+} // namespace
+
 void editor_mode::draw_download_area() const
 {
 	auto const &drawing{m_area_drawing};
@@ -2174,19 +2219,9 @@ void editor_mode::draw_download_area() const
 		return;
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList()};
-	// the tiles of the area as they are: in the disk cache, failed; the ones waiting left clear
+	auto const at = [this](glm::dvec2 const &Point) { return area_point(Point); };
 	if (false == drawing.active && orthophoto_settings_open())
-		for (auto const &square : m_orthophoto.area_squares())
-		{
-			if (square.state == 0)
-				continue;
-			std::array<ImVec2, 4> corners;
-			std::array<glm::dvec2, 4> const at{{square.low, {square.high.x, square.low.y}, square.high, {square.low.x, square.high.y}}};
-			// the corners projected one by one, up to the first one out of the view
-			auto const seen{std::ranges::all_of(std::views::iota(0, 4), [this, &projection, &at, &corners](int const i) { return projection.project(area_point(at[i]), corners[i]); })};
-			if (seen)
-				drawlist->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], square.state == 1 ? IM_COL32(90, 220, 120, 45) : IM_COL32(240, 80, 70, 80));
-		}
+		draw_area_tiles(drawlist, projection, m_orthophoto.area_squares(), at);
 	auto const edge{IM_COL32(80, 220, 255, 230)};
 	auto const closing{IM_COL32(80, 220, 255, drawing.active ? 110 : 230)};
 	// the edge back to the first point from three points on
@@ -2199,10 +2234,7 @@ void editor_mode::draw_download_area() const
 	if (false == drawing.active)
 		return;
 	// the points, the one under the cursor larger, and the line on to the cursor
-	ImVec2 screen;
-	for (auto const &point : points)
-		if (projection.project(area_point(point), screen))
-			drawlist->AddCircleFilled(screen, projection.mouse_distance2(area_point(point)) < 100.0f ? 6.0f : 4.0f, edge);
+	draw_area_points(drawlist, projection, points, edge, at);
 	if (false == points.empty() && drawing.dragged < 0 && false == ImGui::GetIO().WantCaptureMouse)
 	{
 		auto const cursor{std::as_const(*this).cursor_ground()};
@@ -3909,82 +3941,150 @@ void editor_mode::nmt_sample_paths(TTrack const &Track, std::map<std::pair<int, 
 	}
 }
 
+namespace
+{
+
+// the way the path leaves its start, by its control there or its chord
+glm::dvec2 leaving_way(segment_data const &Path)
+{
+	auto const control_point{geometry::plan_of(Path.points[segment_data::point::control1])};
+	auto const chord{geometry::plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
+	auto const along{glm::length(control_point) > 1e-6 ? control_point : chord};
+	return along / std::max(1e-12, glm::length(along));
+}
+
+bool path_runs_straight(segment_data const &Path)
+{
+	if (std::abs(Path.radius) > 1e-3f)
+		return false;
+	auto const along{leaving_way(Path)};
+	return std::abs(geometry::cross(along, geometry::plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start]))) < 1e-3
+	    && std::abs(geometry::cross(along, geometry::plan_of(Path.points[segment_data::point::control2]))) < 1e-3;
+}
+
+struct merge_circle
+{
+	glm::dvec2 centre{0.0};
+	double radius{0.0};
+	int side{0};
+	double angle{0.0};
+};
+
+// the circle the path is an arc of, with the angle it turns by; none where it's no arc
+std::optional<merge_circle> merge_arc(segment_data const &Path)
+{
+	auto const radius{std::abs(static_cast<double>(Path.radius))};
+	if (radius < 1e-3 || glm::length(geometry::plan_of(Path.points[segment_data::point::control1])) < 1e-6)
+		return std::nullopt;
+	auto const start{geometry::plan_of(Path.points[segment_data::point::start])};
+	auto const end{geometry::plan_of(Path.points[segment_data::point::end])};
+	auto const along{leaving_way(Path)};
+	auto const side{geometry::cross(along, end - start) > 0.0 ? 1 : -1};
+	merge_circle result{start + glm::dvec2{-along.y, along.x} * (side * radius), radius, side, 0.0};
+	if (std::abs(glm::distance(result.centre, end) - radius) > 0.01)
+		return std::nullopt;
+	result.angle = std::abs(geometry::signed_angle(start - result.centre, end - result.centre));
+	return result;
+}
+
+bool tracks_alike(TTrack const &A, TTrack const &B)
+{
+	return editor_track::velocity(A) == editor_track::velocity(B) && A.eEnvironment == B.eEnvironment && A.iCategoryFlag == B.iCategoryFlag && A.iDamageFlag == B.iDamageFlag;
+}
+
+// the controls of the path the two make, merged into one: false where they make neither one straight nor one arc
+bool merged_shape(segment_data const &First, segment_data const &Second, segment_data &Path)
+{
+	if (path_runs_straight(First) && path_runs_straight(Second) && std::abs(geometry::cross(leaving_way(First), leaving_way(Second))) < 1e-5 && glm::dot(leaving_way(First), leaving_way(Second)) > 0.0)
+	{
+		Path.points[segment_data::point::control1] = {};
+		Path.points[segment_data::point::control2] = {};
+		Path.radius = 0.f;
+		return true;
+	}
+	auto const a{merge_arc(First)};
+	auto const b{merge_arc(Second)};
+	if (false == (a && b && a->side == b->side && std::abs(a->radius - b->radius) < 1e-3 * a->radius && glm::distance(a->centre, b->centre) < 0.01 && a->angle + b->angle <= glm::radians(90.0)))
+		return false;
+	auto const pieces{geometry::arc_pieces(First.points[segment_data::point::start], leaving_way(First), 0.0, a->radius, a->angle + b->angle, a->side)};
+	if (pieces.size() != 1)
+		return false;
+	Path.points[segment_data::point::control1] = pieces.front().points[segment_data::point::control1];
+	Path.points[segment_data::point::control2] = pieces.front().points[segment_data::point::control2];
+	return true;
+}
+
+// the track after this one which may merge with it: both laid, plain, of one path, alike, the one going on from the other and together
+// no longer than a path may be; none where there is none
+TTrack *merge_partner(TTrack *Track, std::unordered_set<TTrack const *> const &Laid)
+{
+	if (Track == nullptr || Track->m_editorremoved || false == Laid.contains(Track) || Track->eType != tt_Normal || Track->m_paths.size() != 1)
+		return nullptr;
+	auto *next{Track->trNext};
+	if (next == nullptr || next == Track || next->m_editorremoved || false == Laid.contains(next) || next->eType != tt_Normal || next->m_paths.size() != 1 || next->trPrev != Track || false == tracks_alike(*Track, *next))
+		return nullptr;
+	auto const &first{Track->m_paths.front()};
+	auto const &second{next->m_paths.front()};
+	if (glm::distance(first.points[segment_data::point::end], second.points[segment_data::point::start]) > 1e-3)
+		return nullptr;
+	if (auto const length{geometry::bezier(first).plan_length() + geometry::bezier(second).plan_length()}; length > geometry::longest_path)
+		return nullptr;
+	return next;
+}
+
+// the tracks the history steps from the one given on made, left in the scenery; of them the rails only, where asked
+template <typename Steps>
+std::unordered_set<TTrack const *> created_since(Steps const &History, std::size_t const From, bool const Rails)
+{
+	std::unordered_set<TTrack const *> result;
+	for (auto step{From}; step < History.size(); ++step)
+		for (auto const *track : History[step].created)
+			if (track != nullptr && false == track->m_editorremoved && (false == Rails || rail(*track)))
+				result.insert(track);
+	return result;
+}
+
+// the plain track of those laid whose first path ends at the point; none where none does
+TTrack *laid_ending_at(std::unordered_set<TTrack const *> const &Laid, glm::dvec3 const &End)
+{
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && Laid.contains(track) && track->eType == tt_Normal && geometry::plan_distance(track->m_paths.front().points[segment_data::point::end], End) < 0.01)
+			return track;
+	return nullptr;
+}
+
+// the corners of the plan the tracks lie in, widened by the margin
+std::pair<glm::dvec2, glm::dvec2> laid_bounds(std::unordered_set<TTrack const *> const &Laid, double const Margin)
+{
+	glm::dvec2 low{std::numeric_limits<double>::max()};
+	glm::dvec2 high{std::numeric_limits<double>::lowest()};
+	for (auto const *track : Laid)
+		for (auto const &path : track->m_paths)
+			for (auto const end : {segment_data::point::start, segment_data::point::end})
+			{
+				low = glm::min(low, geometry::plan_of(path.points[end]));
+				high = glm::max(high, geometry::plan_of(path.points[end]));
+			}
+	low -= Margin;
+	high += Margin;
+	return {low, high};
+}
+
+} // namespace
+
 void editor_mode::nmt_merge_laid(std::unordered_set<TTrack const *> &Laid)
 {
-	auto const direction = [](segment_data const &Path) {
-		auto const control_point{geometry::plan_of(Path.points[segment_data::point::control1])};
-		auto const chord{geometry::plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
-		auto const along{glm::length(control_point) > 1e-6 ? control_point : chord};
-		return along / std::max(1e-12, glm::length(along));
-	};
-	auto const straight = [&](segment_data const &Path) {
-		if (std::abs(Path.radius) > 1e-3f)
-			return false;
-		auto const along{direction(Path)};
-		return std::abs(geometry::cross(along, geometry::plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start]))) < 1e-3
-		    && std::abs(geometry::cross(along, geometry::plan_of(Path.points[segment_data::point::control2]))) < 1e-3;
-	};
-	struct circle
-	{
-		glm::dvec2 centre{0.0};
-		double radius{0.0};
-		int side{0};
-		double angle{0.0};
-	};
-	auto const arc = [&](segment_data const &Path) -> std::optional<circle> {
-		auto const radius{std::abs(static_cast<double>(Path.radius))};
-		if (radius < 1e-3 || glm::length(geometry::plan_of(Path.points[segment_data::point::control1])) < 1e-6)
-			return std::nullopt;
-		auto const start{geometry::plan_of(Path.points[segment_data::point::start])};
-		auto const end{geometry::plan_of(Path.points[segment_data::point::end])};
-		auto const along{direction(Path)};
-		auto const side{geometry::cross(along, end - start) > 0.0 ? 1 : -1};
-		circle result{start + glm::dvec2{-along.y, along.x} * (side * radius), radius, side, 0.0};
-		if (std::abs(glm::distance(result.centre, end) - radius) > 0.01)
-			return std::nullopt;
-		result.angle = std::abs(geometry::signed_angle(start - result.centre, end - result.centre));
-		return result;
-	};
-	auto const alike = [](TTrack const &A, TTrack const &B) {
-		return editor_track::velocity(A) == editor_track::velocity(B) && A.eEnvironment == B.eEnvironment && A.iCategoryFlag == B.iCategoryFlag && A.iDamageFlag == B.iDamageFlag;
-	};
 	editor_track::edit edit;
-	// the controls of the path the two make, merged into one: false where they make neither one straight nor one arc
-	auto const merged_shape = [&](segment_data const &First, segment_data const &Second, segment_data &Path) {
-		if (straight(First) && straight(Second) && std::abs(geometry::cross(direction(First), direction(Second))) < 1e-5 && glm::dot(direction(First), direction(Second)) > 0.0)
-		{
-			Path.points[segment_data::point::control1] = {};
-			Path.points[segment_data::point::control2] = {};
-			Path.radius = 0.f;
-			return true;
-		}
-		auto const a{arc(First)};
-		auto const b{arc(Second)};
-		if (false == (a && b && a->side == b->side && std::abs(a->radius - b->radius) < 1e-3 * a->radius && glm::distance(a->centre, b->centre) < 0.01 && a->angle + b->angle <= glm::radians(90.0)))
-			return false;
-		auto const pieces{geometry::arc_pieces(First.points[segment_data::point::start], direction(First), 0.0, a->radius, a->angle + b->angle, a->side)};
-		if (pieces.size() != 1)
-			return false;
-		Path.points[segment_data::point::control1] = pieces.front().points[segment_data::point::control1];
-		Path.points[segment_data::point::control2] = pieces.front().points[segment_data::point::control2];
-		return true;
-	};
 	for (bool merged{true}; merged;)
 	{
 		merged = false;
 		for (auto *track : simulation::Paths.sequence())
 		{
-			if (track == nullptr || track->m_editorremoved || false == Laid.contains(track) || track->eType != tt_Normal || track->m_paths.size() != 1)
-				continue;
-			auto *next{track->trNext};
-			if (next == nullptr || next == track || next->m_editorremoved || false == Laid.contains(next) || next->eType != tt_Normal || next->m_paths.size() != 1 || next->trPrev != track || false == alike(*track, *next))
+			auto *next{merge_partner(track, Laid)};
+			if (next == nullptr)
 				continue;
 			auto const &first{track->m_paths.front()};
 			auto const &second{next->m_paths.front()};
-			if (glm::distance(first.points[segment_data::point::end], second.points[segment_data::point::start]) > 1e-3)
-				continue;
-			if (auto const length{geometry::bezier(first).plan_length() + geometry::bezier(second).plan_length()}; length > geometry::longest_path)
-				continue;
 			auto path{first};
 			path.pieces.clear();
 			if (false == merged_shape(first, second, path))
@@ -4009,36 +4109,16 @@ bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
 	auto &state{m_nmt_state};
 	if (EditorSettings.heights() != editorSettings::lay_heights::fitted || state.stage != nmt_state::automatic::idle || false == m_nmt.placed() || From >= m_history.size())
 		return false;
-	std::unordered_set<TTrack const *> laid;
-	for (auto step{From}; step < m_history.size(); ++step)
-		for (auto const *track : m_history[step].created)
-			if (track != nullptr && false == track->m_editorremoved && rail(*track))
-				laid.insert(track);
-	auto const at_end = [&]() -> TTrack * {
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && laid.contains(track) && track->eType == tt_Normal && geometry::plan_distance(track->m_paths.front().points[segment_data::point::end], End) < 0.01)
-				return track;
-		return nullptr;
-	};
+	auto laid{created_since(m_history, From, true)};
 	auto const steps{m_history.size()};
 	nmt_merge_laid(laid);
-	auto *last{at_end()};
+	auto *last{laid_ending_at(laid, End)};
 	if (last == nullptr)
 		return false;
 	// the tracks around stay as they are, as lines fitted already: the line keeps level with the ones beside it, the more closely
 	// the nearer they are, and crosses the ones it crosses at their height
 	double constexpr kAround{60.0}; // m
-	glm::dvec2 low{std::numeric_limits<double>::max()};
-	glm::dvec2 high{std::numeric_limits<double>::lowest()};
-	for (auto const *track : laid)
-		for (auto const &path : track->m_paths)
-			for (auto const end : {segment_data::point::start, segment_data::point::end})
-			{
-				low = glm::min(low, geometry::plan_of(path.points[end]));
-				high = glm::max(high, geometry::plan_of(path.points[end]));
-			}
-	low -= kAround;
-	high += kAround;
+	auto const [low, high]{laid_bounds(laid, kAround)};
 	std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> around;
 	for (auto *track : simulation::Paths.sequence())
 	{
@@ -4068,18 +4148,11 @@ bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
 	// taken back with the laying
 	for (auto step{steps}; step < m_history.size(); ++step)
 		m_history[step].joined = true;
-	// the tracks the step made, left in the scenery, taken for laid
-	auto const laid_by = [&laid](auto const &Step) {
-		for (auto const *track : Step.created)
-			if (track != nullptr && false == track->m_editorremoved)
-				laid.insert(track);
-	};
 	if (applied)
 	{
-		laid.clear();
-		for (auto step{From}; step < m_history.size(); ++step)
-			laid_by(m_history[step]);
-		if (auto *track{at_end()}; track != nullptr)
+		// the tracks the step made, left in the scenery, taken for laid
+		laid = created_since(m_history, From, false);
+		if (auto *track{laid_ending_at(laid, End)}; track != nullptr)
 		{
 			m_node = track;
 			ui()->set_node(m_node);
@@ -5143,140 +5216,173 @@ void editor_mode::nmt_share_grades()
 	share.run();
 }
 
+namespace
+{
+
+// the track meets one of those fitted at an end of a path of it: a track going on from there is, or the loose end tied there leads to one
+template <typename Loose>
+bool touches_fitted(TTrack *Track, std::unordered_set<TTrack const *> const &Fitted, Loose const &Ends)
+{
+	auto const touches_at = [Track, &Fitted, &Ends](int const Path, bool const Forward) {
+		auto const onward{editor_track::continuations({Track, Path, Forward})};
+		if (std::ranges::any_of(onward, [&](editor_track::continuation const &Next) { return Fitted.contains(Next.span.track); }))
+			return true;
+		auto const loose{Ends.find({Track, Path, Forward})};
+		return loose != Ends.end() && Fitted.contains(std::get<0>(loose->second));
+	};
+	for (int path = 0; path < static_cast<int>(Track->m_paths.size()); ++path)
+		if (touches_at(path, true) || touches_at(path, false))
+			return true;
+	return false;
+}
+
+} // namespace
+
+// the scenery stays at its own heights, the terrain model meets it: offset by how far the tracks lie from it, so the lines fitted one
+// after another meet at heights near their own; the grade lines then follow the model so offset. False where the model has no data
+// under the tracks
+bool editor_mode::nmt_auto_offset()
+{
+	auto &state{m_nmt_state};
+	// the places of the tracks fitted already, the last ones, apart
+	std::vector<double> differences;
+	std::vector<double> kept;
+	auto const first_kept{state.probes.size() - std::min(state.probes_kept, state.probes.size())};
+	for (std::size_t i = 0; i < state.probes.size(); ++i)
+		if (double height; m_nmt.height(state.probes[i].position.x, state.probes[i].position.z, height))
+			(i < first_kept ? differences : kept).push_back(height - state.probes[i].crown);
+	if (differences.empty())
+	{
+		state.stage = nmt_state::automatic::idle;
+		state.status = STR("The terrain model has no data under the tracks: is the scenery placed where it is?");
+		return false;
+	}
+	std::ranges::nth_element(differences, differences.begin() + differences.size() / 2);
+	auto const lift{differences[differences.size() / 2]};
+	if (state.unfitted && false == kept.empty())
+	{
+		// the tracks fitted already stay where they are, and the model keeps the offset they were fitted to, told by them
+		std::ranges::nth_element(kept, kept.begin() + kept.size() / 2);
+		if (auto const offset{-kept[kept.size() / 2]}; std::abs(offset - state.offset) > 0.05)
+			state.offset = offset;
+		WriteLog(format("Editor: NMT - the tracks fitted already lie on the terrain model offset %+.2f m, kept; the ones not fitted yet lie %+.2f m against it", state.offset, -lift - state.offset), logtype::generic);
+	}
+	else
+	{
+		// the offset of the run before kept where the tracks fitted to it lie within 5 cm of it: they don't creep a centimetre a run
+		if (auto const offset{std::abs(lift) > 0.05 ? -lift : 0.0}; std::abs(offset - state.offset) > 0.05)
+			state.offset = offset;
+		WriteLog(format("Editor: NMT - the terrain model offset %+.2f m to the scenery", state.offset), logtype::generic);
+	}
+	return true;
+}
+
+// the terrain model fetched under the tracks waited for, then offset to them and the lines to fit gathered
+void editor_mode::nmt_auto_fetch()
+{
+	auto &state{m_nmt_state};
+	bool all{true};
+	for (auto const &place : state.probes)
+		all = nmt_ready(glm::dvec2{place.position.x, place.position.z} - glm::dvec2{1.0}, glm::dvec2{place.position.x, place.position.z} + glm::dvec2{1.0}) && all;
+	auto const waiting{m_nmt.waiting()};
+	state.status = format(STR_P("Fetching the terrain model under the tracks: %zu square left", "Fetching the terrain model under the tracks: %zu squares left", waiting), waiting);
+	if (false == all)
+		return;
+	if (false == nmt_auto_offset())
+		return;
+	state.fitted = true;
+	nmt_join_ends();
+	state.levelled = nmt_level_turntables();
+	// the longest tracks first: the main lines lead, the sidings join them
+	state.left_to_fit.clear();
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && rail(*track) && track->eType != tt_Table && false == nmt_stays(*track))
+			state.left_to_fit.push_back(track);
+	std::ranges::sort(state.left_to_fit, [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });
+	state.tracks = state.left_to_fit.size();
+	state.split = 0;
+	state.done.clear();
+	// the tracks fitted before are lines fitted already: the new ones run up to them and meet them as they are
+	state.stayed.clear();
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && rail(*track) && nmt_stays(*track))
+		{
+			state.done.push_back(track);
+			state.stayed.insert(track);
+		}
+	state.laid.clear();
+	state.bridged.clear();
+	state.on_hump.clear();
+	// every path sampled as laid, for the crossings of the lines
+	state.paths.clear();
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && rail(*track))
+			nmt_sample_paths(*track, state.paths);
+	state.stage = nmt_state::automatic::fitting_lines;
+}
+
+// the line of the longest track next to the lines fitted already fitted, the longest of all where none is next to them, and its tracks
+// done; false where the lines split off too many paths and the fitting stopped
+bool editor_mode::nmt_fit_next_line()
+{
+	auto &state{m_nmt_state};
+	std::unordered_set<TTrack const *> const fitted(state.done.begin(), state.done.end());
+	if (auto const next{std::ranges::find_if(state.left_to_fit, [&fitted, &state](TTrack *Track) { return touches_fitted(Track, fitted, state.loose); })}; next != state.left_to_fit.end())
+		std::rotate(state.left_to_fit.begin(), next, next + 1);
+	auto *track{state.left_to_fit.front()};
+	auto const name{track->name()}; // NOSONAR: a copy, the fit may split the track and name its pieces anew
+	auto const known{simulation::Paths.sequence().size()};
+	if (nmt_fit_line(*track, [&fitted](TTrack const *Other) { return fitted.contains(Other); }, false))
+		++state.lines;
+	else
+		++state.refused;
+	// the tracks of the line are done, whether it went or not; so is every path made meanwhile, split off by the grade line or
+	// by the lines following it over the crossovers: the next line over them would lay them again, and split them again
+	std::set<TTrack const *> done{track};
+	state.done.push_back(track);
+	for (auto const &span : m_profile.route.spans)
+		if (done.insert(span.track).second)
+			state.done.push_back(span.track);
+	auto const &sequence{simulation::Paths.sequence()};
+	std::string made;
+	for (auto i{known}; i < sequence.size(); ++i)
+	{
+		auto *piece{sequence[i]};
+		if (piece == nullptr || false == done.insert(piece).second)
+			continue;
+		state.done.push_back(piece);
+		if (made.size() < 300)
+			made += ' ' + piece->name();
+	}
+	auto const added{sequence.size() - known};
+	state.split += added;
+	if (added > 20)
+		WriteLog(format("Editor: NMT line %s made %zu paths:%s", name.c_str(), added, made.c_str()), logtype::generic);
+	if (state.split > state.tracks / 2 + 200)
+	{
+		// something lays the same tracks over and over: stopped before it takes all the memory
+		state.left_to_fit.clear();
+		state.error = format(STR_P("Stopped: the grade lines split off %zu path from %zu tracks, more than they should; Ctrl+Z takes the changes back", "Stopped: the grade lines split off %zu paths from %zu tracks, more than they should; Ctrl+Z takes the changes back", state.split), state.split, state.tracks);
+		WriteLog("Editor: NMT - " + state.error, logtype::generic);
+		return false;
+	}
+	std::erase_if(state.left_to_fit, [&done](TTrack *Track) { return done.contains(Track); });
+	return true;
+}
+
 void editor_mode::nmt_auto_step()
 {
 	auto &state{m_nmt_state};
 	if (state.stage == nmt_state::automatic::fetching)
 	{
-		bool all{true};
-		for (auto const &place : state.probes)
-			all = nmt_ready(glm::dvec2{place.position.x, place.position.z} - glm::dvec2{1.0}, glm::dvec2{place.position.x, place.position.z} + glm::dvec2{1.0}) && all;
-		auto const waiting{m_nmt.waiting()};
-		state.status = format(STR_P("Fetching the terrain model under the tracks: %zu square left", "Fetching the terrain model under the tracks: %zu squares left", waiting), waiting);
-		if (false == all)
-			return;
-		// the scenery stays at its own heights, the terrain model meets it: offset by how far the tracks lie from it, so the lines
-		// fitted one after another meet at heights near their own; the grade lines then follow the model so offset
-		// the places of the tracks fitted already, the last ones, apart
-		std::vector<double> differences;
-		std::vector<double> kept;
-		auto const first_kept{state.probes.size() - std::min(state.probes_kept, state.probes.size())};
-		for (std::size_t i = 0; i < state.probes.size(); ++i)
-			if (double height; m_nmt.height(state.probes[i].position.x, state.probes[i].position.z, height))
-				(i < first_kept ? differences : kept).push_back(height - state.probes[i].crown);
-		if (differences.empty())
-		{
-			state.stage = nmt_state::automatic::idle;
-			state.status = STR("The terrain model has no data under the tracks: is the scenery placed where it is?");
-			return;
-		}
-		std::ranges::nth_element(differences, differences.begin() + differences.size() / 2);
-		auto const lift{differences[differences.size() / 2]};
-		if (state.unfitted && false == kept.empty())
-		{
-			// the tracks fitted already stay where they are, and the model keeps the offset they were fitted to, told by them
-			std::ranges::nth_element(kept, kept.begin() + kept.size() / 2);
-			if (auto const offset{-kept[kept.size() / 2]}; std::abs(offset - state.offset) > 0.05)
-				state.offset = offset;
-			WriteLog(format("Editor: NMT - the tracks fitted already lie on the terrain model offset %+.2f m, kept; the ones not fitted yet lie %+.2f m against it", state.offset, -lift - state.offset), logtype::generic);
-		}
-		else
-		{
-			// the offset of the run before kept where the tracks fitted to it lie within 5 cm of it: they don't creep a centimetre a run
-			if (auto const offset{std::abs(lift) > 0.05 ? -lift : 0.0}; std::abs(offset - state.offset) > 0.05)
-				state.offset = offset;
-			WriteLog(format("Editor: NMT - the terrain model offset %+.2f m to the scenery", state.offset), logtype::generic);
-		}
-		state.fitted = true;
-		nmt_join_ends();
-		state.levelled = nmt_level_turntables();
-		// the longest tracks first: the main lines lead, the sidings join them
-		state.left_to_fit.clear();
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && rail(*track) && track->eType != tt_Table && false == nmt_stays(*track))
-				state.left_to_fit.push_back(track);
-		std::ranges::sort(state.left_to_fit, [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });
-		state.tracks = state.left_to_fit.size();
-		state.split = 0;
-		state.done.clear();
-		// the tracks fitted before are lines fitted already: the new ones run up to them and meet them as they are
-		state.stayed.clear();
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && rail(*track) && nmt_stays(*track))
-			{
-				state.done.push_back(track);
-				state.stayed.insert(track);
-			}
-		state.laid.clear();
-		state.bridged.clear();
-		state.on_hump.clear();
-		// every path sampled as laid, for the crossings of the lines
-		state.paths.clear();
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && rail(*track))
-				nmt_sample_paths(*track, state.paths);
-		state.stage = nmt_state::automatic::fitting_lines;
+		nmt_auto_fetch();
 		return;
 	}
 	// a few lines a frame: the longest track next to the lines fitted already, so that a line meets the ones it leads into as
 	// it's fitted, not when the lines between them come; the longest of all where none is next to them
 	for (int line = 0; line < 2 && false == state.left_to_fit.empty(); ++line)
-	{
-		std::unordered_set<TTrack const *> const fitted(state.done.begin(), state.done.end());
-		auto const touches_at = [&](TTrack *Track, int const Path, bool const Forward) {
-			auto const onward{editor_track::continuations({Track, Path, Forward})};
-			if (std::ranges::any_of(onward, [&](editor_track::continuation const &Next) { return fitted.contains(Next.span.track); }))
-				return true;
-			auto const loose{state.loose.find({Track, Path, Forward})};
-			return loose != state.loose.end() && fitted.contains(std::get<0>(loose->second));
-		};
-		auto const touches = [&](TTrack *Track) {
-			for (int path = 0; path < static_cast<int>(Track->m_paths.size()); ++path)
-				if (touches_at(Track, path, true) || touches_at(Track, path, false))
-					return true;
-			return false;
-		};
-		if (auto const next{std::ranges::find_if(state.left_to_fit, touches)}; next != state.left_to_fit.end())
-			std::rotate(state.left_to_fit.begin(), next, next + 1);
-		auto *track{state.left_to_fit.front()};
-		auto const name{track->name()}; // NOSONAR: a copy, the fit may split the track and name its pieces anew
-		auto const known{simulation::Paths.sequence().size()};
-		if (nmt_fit_line(*track, [&fitted](TTrack const *Other) { return fitted.contains(Other); }, false))
-			++state.lines;
-		else
-			++state.refused;
-		// the tracks of the line are done, whether it went or not; so is every path made meanwhile, split off by the grade line or
-		// by the lines following it over the crossovers: the next line over them would lay them again, and split them again
-		std::set<TTrack const *> done{track};
-		state.done.push_back(track);
-		for (auto const &span : m_profile.route.spans)
-			if (done.insert(span.track).second)
-				state.done.push_back(span.track);
-		auto const &sequence{simulation::Paths.sequence()};
-		std::string made;
-		for (auto i{known}; i < sequence.size(); ++i)
-		{
-			auto *piece{sequence[i]};
-			if (piece == nullptr || false == done.insert(piece).second)
-				continue;
-			state.done.push_back(piece);
-			if (made.size() < 300)
-				made += ' ' + piece->name();
-		}
-		auto const added{sequence.size() - known};
-		state.split += added;
-		if (added > 20)
-			WriteLog(format("Editor: NMT line %s made %zu paths:%s", name.c_str(), added, made.c_str()), logtype::generic);
-		if (state.split > state.tracks / 2 + 200)
-		{
-			// something lays the same tracks over and over: stopped before it takes all the memory
-			state.left_to_fit.clear();
-			state.error = format(STR_P("Stopped: the grade lines split off %zu path from %zu tracks, more than they should; Ctrl+Z takes the changes back", "Stopped: the grade lines split off %zu paths from %zu tracks, more than they should; Ctrl+Z takes the changes back", state.split), state.split, state.tracks);
-			WriteLog("Editor: NMT - " + state.error, logtype::generic);
+		if (false == nmt_fit_next_line())
 			break;
-		}
-		std::erase_if(state.left_to_fit, [&](TTrack *Track) { return done.contains(Track); });
-	}
 	state.status = format(STR_C("Terrain model offset %+.2f m to the scenery; grade lines fitted to the terrain: %zu, refused by the checks: %zu, tracks left: %zu"), state.offset, state.lines, state.refused, state.left_to_fit.size());
 	if (state.departures > 0)
 		state.status += format(STR_P("\n%zu line parts from the terrain model by over 0.5 m: the model or the track is off there, the terrain follows the tracks (the log names it)", "\n%zu lines part from the terrain model by over 0.5 m: the model or the track is off there, the terrain follows the tracks (the log names them)", state.departures), state.departures);

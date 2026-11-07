@@ -659,6 +659,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// Unfitted: only the tracks whose grade line isn't fitted yet, the scenery left at its height
 	void nmt_auto_start(bool const Unfitted = false);
 	void nmt_auto_step();
+	// its steps: the model fetched and offset to the tracks, then one line fitted
+	void nmt_auto_fetch();
+	bool nmt_auto_offset();
+	bool nmt_fit_next_line();
 	// the grade line of the line of tracks through the track fitted to the terrain model and applied; false if it couldn't be.
 	// The line runs over the tracks not Fitted, the ones fitted stay as they are and the line meets them. Where the model falls
 	// away under the line by the abutments the tracks go over on a bridge; Laid: the tracks just laid, the formation fills it and
