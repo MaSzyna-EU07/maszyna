@@ -66,8 +66,11 @@ extern char **environ;
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <functional>
+#include <future>
 #include <limits>
+#include <thread>
 #include <vector>
 
 // Static member initialization
@@ -634,6 +637,69 @@ editor_mode::~editor_mode()
 	editor_track::observe(nullptr);
 }
 
+namespace
+{
+    // the tile of the ground under the point, gathered anew where it's stale: told to wait the caller gets every tile it needs,
+    // otherwise what's there, with one tile gathered each frame
+    ground_tile &ground_tile_at(glm::dvec3 const &Point, double const Now, int const Frame, bool const Fresh)
+    {
+        std::pair<int, int> const key{static_cast<int>(std::floor(Point.x / ground_tile_size)), static_cast<int>(std::floor(Point.z / ground_tile_size))};
+        auto &tile = ground_tiles[key];
+        bool const missing = (tile.grid == nullptr);
+        bool const stale = missing || Now < tile.gathered || Now - tile.gathered > ground_tile_lifetime;
+        if (stale && (Fresh ? missing : ground_tile_frame != Frame))
+        {
+            glm::dvec2 const tilemin{key.first * ground_tile_size, key.second * ground_tile_size};
+            glm::dvec2 const tilemax{tilemin + glm::dvec2{ground_tile_size}};
+            std::vector<world_triangle> triangles;
+            // the same ground as the area fill uses, terrain tile models included
+            gather_ground_triangles(tilemin, tilemax, true, 50.0f, triangles, true);
+            tile.grid = std::make_unique<triangle_grid>(std::move(triangles), tilemin, tilemax);
+            tile.gathered = Now;
+            if (false == Fresh)
+                ground_tile_frame = Frame;
+        }
+        tile.used = Frame;
+        return tile;
+    }
+
+    // the height of the ground at the point, of the tile or of a terrain over it, whichever is higher; false where neither has one
+    bool ground_height_at(ground_tile const &Tile, std::vector<editor_terrain *> const &Terrains, glm::dvec3 const &Point, double &Y)
+    {
+        // surfaces much higher than the point are something it's under, rather than the ground
+        double constexpr height_tolerance = 50.0;
+        double const ceiling = Point.y + height_tolerance;
+        bool found = (Tile.grid != nullptr) && Tile.grid->height_at(Point.x, Point.z, ceiling, Y);
+        for (editor_terrain *terrain : Terrains)
+        {
+            if (!terrain->contains(Point.x, Point.z))
+                continue;
+            double const h = terrain->height_at(Point.x, Point.z);
+            if (h <= ceiling && (!found || h > Y))
+            {
+                Y = h;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    // the tiles left alone the longest go once there are too many, none of those asked for in the frame
+    void drop_old_ground_tiles(int const Frame)
+    {
+        while (ground_tiles.size() > ground_tile_limit)
+        {
+            auto oldest = ground_tiles.begin();
+            for (auto tile = ground_tiles.begin(); tile != ground_tiles.end(); ++tile)
+                if (tile->second.used < oldest->second.used)
+                    oldest = tile;
+            if (oldest->second.used == Frame)
+                break;
+            ground_tiles.erase(oldest);
+        }
+    }
+} // namespace
+
 std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const
 {
     std::vector<double> heights;
@@ -647,63 +713,21 @@ std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &P
 
     double const now = ImGui::GetTime();
     int const frame = ImGui::GetFrameCount();
-    // surfaces much higher than the point are something it's under, rather than the ground
-    double constexpr height_tolerance = 50.0;
     auto const terrains = active_terrains();
     for (std::size_t i = 0; i < Points.size(); ++i)
     {
         auto const &p = Points[i];
         if (false == std::isfinite(p.x) || false == std::isfinite(p.y) || false == std::isfinite(p.z))
             continue;
-        std::pair<int, int> const key{static_cast<int>(std::floor(p.x / ground_tile_size)), static_cast<int>(std::floor(p.z / ground_tile_size))};
-        auto &tile = ground_tiles[key];
-        bool const missing = (tile.grid == nullptr);
-        bool const stale = missing || now < tile.gathered || now - tile.gathered > ground_tile_lifetime;
-        // told to wait the caller gets every tile it needs, otherwise what's there, with one tile gathered each frame
-        if (stale && (Fresh ? missing : ground_tile_frame != frame))
-        {
-            glm::dvec2 const tilemin{key.first * ground_tile_size, key.second * ground_tile_size};
-            glm::dvec2 const tilemax{tilemin + glm::dvec2{ground_tile_size}};
-            std::vector<world_triangle> triangles;
-            // the same ground as the area fill uses, terrain tile models included
-            gather_ground_triangles(tilemin, tilemax, true, 50.0f, triangles, true);
-            tile.grid = std::make_unique<triangle_grid>(std::move(triangles), tilemin, tilemax);
-            tile.gathered = now;
-            if (false == Fresh)
-                ground_tile_frame = frame;
-        }
-        tile.used = frame;
-
-        double const ceiling = p.y + height_tolerance;
+        auto const &tile = ground_tile_at(p, now, frame, Fresh);
         double y = 0.0;
-        bool found = (tile.grid != nullptr) && tile.grid->height_at(p.x, p.z, ceiling, y);
-        for (editor_terrain *terrain : terrains)
-        {
-            if (!terrain->contains(p.x, p.z))
-                continue;
-            double const h = terrain->height_at(p.x, p.z);
-            if (h <= ceiling && (!found || h > y))
-            {
-                y = h;
-                found = true;
-            }
-        }
+        bool const found = ground_height_at(tile, terrains, p, y);
         if (found)
             heights[i] = y;
         if (Found != nullptr)
             (*Found)[i] = found ? 1 : 0;
     }
-    // the tiles left alone the longest go once there are too many
-    while (ground_tiles.size() > ground_tile_limit)
-    {
-        auto oldest = ground_tiles.begin();
-        for (auto tile = ground_tiles.begin(); tile != ground_tiles.end(); ++tile)
-            if (tile->second.used < oldest->second.used)
-                oldest = tile;
-        if (oldest->second.used == frame)
-            break;
-        ground_tiles.erase(oldest);
-    }
+    drop_old_ground_tiles(frame);
     return heights;
 }
 
@@ -2467,6 +2491,19 @@ void editor_mode::keep_nmt_settings()
         EditorSettings.save();
 }
 
+namespace
+{
+    // the ground was edited: what's kept of it has to go as well, the imagery laid onto it anew
+    void refit_imagery(editor_orthophoto &Orthophoto, std::vector<std::unique_ptr<editor_orthophoto>> const &Layers)
+    {
+        ground_tiles.clear();
+        forget_ground_shapes();
+        Orthophoto.refit();
+        for (auto const &layer : Layers)
+            layer->refit();
+    }
+} // namespace
+
 void editor_mode::render_orthophoto_ui()
 {
     load_orthophoto_settings();
@@ -2565,14 +2602,7 @@ void editor_mode::render_orthophoto_ui()
         {
             ImGui::SameLine();
             if (ImGui::Button(STR_C("Refit")))
-            {
-                // the ground was edited: what's kept of it has to go as well
-                ground_tiles.clear();
-                forget_ground_shapes();
-                m_orthophoto.refit();
-                for (auto const &layer : m_wms)
-                    layer->refit();
-            }
+                refit_imagery(m_orthophoto, m_wms);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(STR_C("Samples the ground again, after it was edited"));
         }
@@ -3859,6 +3889,175 @@ bool editor_mode::orthophoto_settings_open() const
     return ImGui::GetCurrentContext() != nullptr && ImGui::GetFrameCount() - m_orthophoto_frame <= 1;
 }
 
+namespace
+{
+    // a WMS layer of the user's in the list: shown or not, its address, layers, opacity and terms, and the buttons moving it up,
+    // down or away, which give its place to the ones asked; true where a setting kept changed
+    bool render_wms_entry(editorSettings::wms_layer &Entry, int const I, int const Count, int &Moved, int &Removed)
+    {
+        bool save{false};
+        ImGui::PushID(I + 1);
+        save |= ImGui::Checkbox("##visible", &Entry.visible);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Show or hide the layer"));
+        ImGui::SameLine();
+        if (ImGui::TreeNode("##wms", "%s", Entry.title.empty() ? Entry.layers.c_str() : Entry.title.c_str()))
+        {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", Entry.url.c_str());
+            ImGui::TextDisabled(STR_C("Layers: %s"), Entry.layers.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::SliderFloat(STR_C("Opacity"), &Entry.opacity, 0.0f, 1.0f, "%.2f");
+            save |= ImGui::IsItemDeactivatedAfterEdit();
+            if (false == Entry.terms.empty())
+            {
+                ImGui::TextUnformatted(STR_C("Terms of the service:"));
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextDisabled("%s", Entry.terms.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            if (I > 0 && ImGui::SmallButton(STR_C("Up")))
+                Moved = I - 1;
+            if (I > 0)
+                ImGui::SameLine();
+            if (I + 1 < Count && ImGui::SmallButton(STR_C("Down")))
+                Moved = I;
+            if (I + 1 < Count)
+                ImGui::SameLine();
+            if (ImGui::SmallButton(STR_C("Remove")))
+                Removed = I;
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+        return save;
+    }
+
+    // a layer swapped with the one under it, or one taken away; the ones of the view go along. True where one was
+    bool reorder_wms(std::vector<editorSettings::wms_layer> &Stored, std::vector<std::unique_ptr<editor_orthophoto>> &Layers, int const Moved, int const Removed)
+    {
+        bool save{false};
+        if (Moved >= 0 && Moved + 1 < static_cast<int>(Stored.size()))
+        {
+            std::swap(Stored[static_cast<std::size_t>(Moved)], Stored[static_cast<std::size_t>(Moved) + 1]);
+            if (Moved + 1 < static_cast<int>(Layers.size()))
+                std::swap(Layers[static_cast<std::size_t>(Moved)], Layers[static_cast<std::size_t>(Moved) + 1]);
+            save = true;
+        }
+        if (Removed >= 0)
+        {
+            Stored.erase(Stored.begin() + Removed);
+            if (Removed < static_cast<int>(Layers.size()))
+            {
+                Layers[static_cast<std::size_t>(Removed)]->enabled(false);
+                Layers[static_cast<std::size_t>(Removed)]->detach_scene();
+                Layers.erase(Layers.begin() + Removed);
+            }
+            save = true;
+        }
+        return save;
+    }
+
+    // the row of a layer of the service, ticked or not, if the filter lets it through
+    template <typename Adding>
+    void render_layer_row(Adding &State, std::size_t const I, std::string const &Filter)
+    {
+        auto const &[name, title]{State.info->layers[I]};
+        auto const label{title.empty() || title == name ? name : title + " (" + name + ")"};
+        if (false == Filter.empty() && ToLower(label).find(Filter) == std::string::npos)
+            return;
+        bool ticked{State.ticked[I] != 0};
+        ImGui::PushID(static_cast<int>(I));
+        if (ImGui::Checkbox(label.c_str(), &ticked))
+            State.ticked[I] = ticked ? 1 : 0;
+        ImGui::PopID();
+    }
+
+    // the capabilities of the service read on a thread of its own, the frame polling the future for them
+    template <typename Adding>
+    void start_wms_reading(Adding &State, std::string const &Url)
+    {
+        State.info.reset();
+        State.ticked.clear();
+        State.service = Url;
+        std::promise<editor_orthophoto::service_info> described;
+        State.reading = described.get_future();
+        State.reader = std::jthread([Url, described = std::move(described)]() mutable {
+            try
+            {
+                described.set_value(editor_orthophoto::describe(Url));
+            }
+            catch (...)
+            {
+                described.set_exception(std::current_exception());
+            }
+        });
+    }
+
+    // what the service tells of itself: the error, the title, the terms and whether the editor can lay it out
+    void render_service_info(editor_orthophoto::service_info const &Info)
+    {
+        ImGui::PushTextWrapPos(0.0f);
+        if (false == Info.error.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), STR_C("The service can't be read: %s"), Info.error.c_str());
+        if (false == Info.title.empty())
+            ImGui::TextUnformatted(Info.title.c_str());
+        if (false == Info.terms.empty())
+        {
+            ImGui::TextUnformatted(STR_C("Terms of the service:"));
+            ImGui::TextDisabled("%s", Info.terms.c_str());
+        }
+        if (false == Info.puwg && false == Info.layers.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("The service doesn't draw in PUWG 1992 (EPSG:2180), the editor can't lay it out"));
+        ImGui::PopTextWrapPos();
+    }
+
+    // the button adding the layers ticked, greyed out until they can be; true when clicked
+    bool render_add_button(bool const Ready)
+    {
+        if (false == Ready)
+        {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
+        auto const add{ImGui::Button(STR_C("Add")) && Ready};
+        if (false == Ready)
+        {
+            ImGui::PopStyleVar();
+            ImGui::PopItemFlag();
+        }
+        return add;
+    }
+
+    // the layers of the service to tick, filtered, and the ones ticked added on top of the others
+    template <typename Adding>
+    void render_layer_choice(Adding &State, editor_orthophoto::service_info const &Info)
+    {
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##filter", STR_C("Filter the layers"), State.filter.data(), State.filter.size());
+        auto const filter{ToLower(State.filter.data())};
+        ImGui::BeginChild("##layers", ImVec2(0.0f, std::min(200.0f, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(Info.layers.size()) + 4.0f)), true);
+        for (std::size_t i = 0; i < Info.layers.size(); ++i)
+            render_layer_row(State, i, filter);
+        ImGui::EndChild();
+        auto const layers{ticked_layers(Info.layers, State.ticked)};
+        if (false == render_add_button(Info.puwg && false == layers.empty()))
+            return;
+        editorSettings::wms_layer entry;
+        entry.url = State.service;
+        entry.layers = layers;
+        entry.title = Info.title.empty() ? layers : Info.title;
+        entry.terms = Info.terms;
+        // on top of the others
+        EditorSettings.wms_layers().insert(EditorSettings.wms_layers().begin(), entry);
+        EditorSettings.save();
+        State.info.reset();
+        State.ticked.clear();
+        State.url.fill('\0');
+        State.filter.fill('\0');
+    }
+} // namespace
+
 void editor_mode::render_base_layers()
 {
     auto &stored{EditorSettings.wms_layers()};
@@ -3867,62 +4066,8 @@ void editor_mode::render_base_layers()
     int moved{-1};
     int removed{-1};
     for (int i = 0; i < static_cast<int>(stored.size()); ++i)
-    {
-        auto &entry{stored[static_cast<std::size_t>(i)]};
-        ImGui::PushID(i + 1);
-        save |= ImGui::Checkbox("##visible", &entry.visible);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", STR_C("Show or hide the layer"));
-        ImGui::SameLine();
-        if (ImGui::TreeNode("##wms", "%s", entry.title.empty() ? entry.layers.c_str() : entry.title.c_str()))
-        {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextDisabled("%s", entry.url.c_str());
-            ImGui::TextDisabled(STR_C("Layers: %s"), entry.layers.c_str());
-            ImGui::PopTextWrapPos();
-            ImGui::SetNextItemWidth(160.0f);
-            ImGui::SliderFloat(STR_C("Opacity"), &entry.opacity, 0.0f, 1.0f, "%.2f");
-            save |= ImGui::IsItemDeactivatedAfterEdit();
-            if (false == entry.terms.empty())
-            {
-                ImGui::TextUnformatted(STR_C("Terms of the service:"));
-                ImGui::PushTextWrapPos(0.0f);
-                ImGui::TextDisabled("%s", entry.terms.c_str());
-                ImGui::PopTextWrapPos();
-            }
-            if (i > 0 && ImGui::SmallButton(STR_C("Up")))
-                moved = i - 1;
-            if (i > 0)
-                ImGui::SameLine();
-            if (i + 1 < static_cast<int>(stored.size()) && ImGui::SmallButton(STR_C("Down")))
-                moved = i;
-            if (i + 1 < static_cast<int>(stored.size()))
-                ImGui::SameLine();
-            if (ImGui::SmallButton(STR_C("Remove")))
-                removed = i;
-            ImGui::TreePop();
-        }
-        ImGui::PopID();
-    }
-    // a layer swapped with the one under it, or one taken away; the ones of the view go along
-    if (moved >= 0 && moved + 1 < static_cast<int>(stored.size()))
-    {
-        std::swap(stored[static_cast<std::size_t>(moved)], stored[static_cast<std::size_t>(moved) + 1]);
-        if (moved + 1 < static_cast<int>(m_wms.size()))
-            std::swap(m_wms[static_cast<std::size_t>(moved)], m_wms[static_cast<std::size_t>(moved) + 1]);
-        save = true;
-    }
-    if (removed >= 0)
-    {
-        stored.erase(stored.begin() + removed);
-        if (removed < static_cast<int>(m_wms.size()))
-        {
-            m_wms[static_cast<std::size_t>(removed)]->enabled(false);
-            m_wms[static_cast<std::size_t>(removed)]->detach_scene();
-            m_wms.erase(m_wms.begin() + removed);
-        }
-        save = true;
-    }
+        save |= render_wms_entry(stored[static_cast<std::size_t>(i)], i, static_cast<int>(stored.size()), moved, removed);
+    save |= reorder_wms(stored, m_wms, moved, removed);
     if (save)
         EditorSettings.save();
 
@@ -3962,18 +4107,6 @@ void editor_mode::render_base_layers()
 void editor_mode::render_wms_adding()
 {
     auto &adding{m_wms_adding};
-    // the row of a layer of the service, ticked or not, if the filter lets it through
-    auto const layer_row = [&adding](std::size_t const I, std::string const &Filter) {
-        auto const &[name, title]{adding.info->layers[I]};
-        auto const label{title.empty() || title == name ? name : title + " (" + name + ")"};
-        if (false == Filter.empty() && ToLower(label).find(Filter) == std::string::npos)
-            return;
-        bool ticked{adding.ticked[I] != 0};
-        ImGui::PushID(static_cast<int>(I));
-        if (ImGui::Checkbox(label.c_str(), &ticked))
-            adding.ticked[I] = ticked ? 1 : 0;
-        ImGui::PopID();
-    };
     ImGui::PushID("wmsadding");
     if (false == ImGui::TreeNode("##add", "%s", STR_C("Add a WMS layer")))
     {
@@ -3987,12 +4120,7 @@ void editor_mode::render_wms_adding()
     ImGui::SetNextItemWidth(-1.0f);
     auto const entered{ImGui::InputTextWithHint("##url", "https://...", adding.url.data(), adding.url.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
     if (std::string const url{adding.url.data()}; (ImGui::Button(STR_C("Read the layers")) || entered) && false == adding.reading.valid() && false == url.empty())
-    {
-        adding.info.reset();
-        adding.ticked.clear();
-        adding.service = url;
-        adding.reading = std::async(std::launch::async, [url]() { return editor_orthophoto::describe(url); });
-    }
+        start_wms_reading(adding, url);
     if (adding.reading.valid())
     {
         if (adding.reading.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
@@ -4006,57 +4134,9 @@ void editor_mode::render_wms_adding()
     if (adding.info.has_value())
     {
         auto const &info{*adding.info};
-        ImGui::PushTextWrapPos(0.0f);
-        if (false == info.error.empty())
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), STR_C("The service can't be read: %s"), info.error.c_str());
-        if (false == info.title.empty())
-            ImGui::TextUnformatted(info.title.c_str());
-        if (false == info.terms.empty())
-        {
-            ImGui::TextUnformatted(STR_C("Terms of the service:"));
-            ImGui::TextDisabled("%s", info.terms.c_str());
-        }
-        if (false == info.puwg && false == info.layers.empty())
-            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("The service doesn't draw in PUWG 1992 (EPSG:2180), the editor can't lay it out"));
-        ImGui::PopTextWrapPos();
+        render_service_info(info);
         if (false == info.layers.empty())
-        {
-            ImGui::SetNextItemWidth(-1.0f);
-            ImGui::InputTextWithHint("##filter", STR_C("Filter the layers"), adding.filter.data(), adding.filter.size());
-            auto const filter{ToLower(adding.filter.data())};
-            ImGui::BeginChild("##layers", ImVec2(0.0f, std::min(200.0f, ImGui::GetFrameHeightWithSpacing() * static_cast<float>(info.layers.size()) + 4.0f)), true);
-            for (std::size_t i = 0; i < info.layers.size(); ++i)
-                layer_row(i, filter);
-            ImGui::EndChild();
-            auto const layers{ticked_layers(info.layers, adding.ticked)};
-            auto const ready{info.puwg && false == layers.empty()};
-            if (false == ready)
-            {
-                ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-            }
-            auto const add{ImGui::Button(STR_C("Add")) && ready};
-            if (false == ready)
-            {
-                ImGui::PopStyleVar();
-                ImGui::PopItemFlag();
-            }
-            if (add)
-            {
-                editorSettings::wms_layer entry;
-                entry.url = adding.service;
-                entry.layers = layers;
-                entry.title = info.title.empty() ? layers : info.title;
-                entry.terms = info.terms;
-                // on top of the others
-                EditorSettings.wms_layers().insert(EditorSettings.wms_layers().begin(), entry);
-                EditorSettings.save();
-                adding.info.reset();
-                adding.ticked.clear();
-                adding.url.fill('\0');
-                adding.filter.fill('\0');
-            }
-        }
+            render_layer_choice(adding, info);
     }
     ImGui::TreePop();
     ImGui::PopID();
@@ -6123,6 +6203,32 @@ void editor_mode::render_tutorial_pages()
 	}
 }
 
+namespace
+{
+	// the row of a shortcut in the table: its keys, drawn where they're a gesture, and what it does; Picture: the height of a gesture drawn
+	void render_shortcut_row(char const *Keys, char const *Action, float const Picture)
+	{
+		ImGui::TableNextColumn();
+		auto const words{gesture_picture(Keys)};
+		if (false == words.empty())
+		{
+			auto const at{ImGui::GetCursorScreenPos()};
+			auto const drawn{gesture_draw(*ImGui::GetWindowDrawList(), at, Picture, words, ImGui::GetColorU32(ImGuiCol_Text))};
+			ImGui::Dummy(ImVec2(drawn, Picture));
+			ImGui::SameLine();
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((Picture - ImGui::GetTextLineHeight()) * 0.5f));
+		}
+		if (words.empty() || false == gesture_keys_only(Keys))
+			ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(Keys));
+		else
+			ImGui::NewLine();
+		ImGui::TableNextColumn();
+		if (false == words.empty())
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((Picture - ImGui::GetTextLineHeight()) * 0.5f));
+		ImGui::TextWrapped("%s", STR_C(Action));
+	}
+} // namespace
+
 void editor_mode::render_shortcuts_window()
 {
 	if (false == m_shortcuts_open)
@@ -6242,28 +6348,11 @@ void editor_mode::render_shortcuts_window()
 		auto const wanted{lower(filter.data())};
 		auto const matches = [&](shortcut const &Item) { return wanted.empty() || lower(STR_C(Item.keys)).find(wanted) != std::string::npos || lower(STR_C(Item.action)).find(wanted) != std::string::npos; };
 		auto const picture{std::round(ImGui::GetTextLineHeight() * 1.15f)};
-		// the row of a shortcut in the table, if the filter lets it through: its keys, drawn where they're a gesture, and what it does
+		// the row of a shortcut in the table, if the filter lets it through
 		auto const shortcut_row = [&](shortcut const &Item) {
 			if (false == matches(Item))
 				return;
-			ImGui::TableNextColumn();
-			auto const words{gesture_picture(Item.keys)};
-			if (false == words.empty())
-			{
-				auto const at{ImGui::GetCursorScreenPos()};
-				auto const drawn{gesture_draw(*ImGui::GetWindowDrawList(), at, picture, words, ImGui::GetColorU32(ImGuiCol_Text))};
-				ImGui::Dummy(ImVec2(drawn, picture));
-				ImGui::SameLine();
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
-			}
-			if (words.empty() || false == gesture_keys_only(Item.keys))
-				ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_CheckMark), "%s", STR_C(Item.keys));
-			else
-				ImGui::NewLine();
-			ImGui::TableNextColumn();
-			if (false == words.empty())
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((picture - ImGui::GetTextLineHeight()) * 0.5f));
-			ImGui::TextWrapped("%s", STR_C(Item.action));
+			render_shortcut_row(Item.keys, Item.action, picture);
 		};
 		for (auto const &entry : groups)
 		{
@@ -7795,37 +7884,45 @@ void editor_mode::starter_trainset(std::vector<std::string> &Trailing)
     }
 }
 
-void editor_mode::render_top_tracks_choice(bool const Combo)
+namespace
 {
-    static constexpr std::array<char const *, 3> labels{"Whole", "Without ballast", "Rails only"};
-    static constexpr std::array<char const *, 3> tooltips{"The tracks as in the 3D view", "The rails and the sleepers, the ground under them shows", "The rails alone, without the sleepers and the timbers of the switches, as on a plan"};
-    auto chosen{std::clamp(Global.EditorOrthoTracks, 0, 2)};
-    auto const pick = [&](int const Choice) {
+    // the ways the top view draws the tracks, and what each of them does
+    constexpr std::array<char const *, 3> top_track_labels{"Whole", "Without ballast", "Rails only"};
+    constexpr std::array<char const *, 3> top_track_tooltips{"The tracks as in the 3D view", "The rails and the sleepers, the ground under them shows", "The rails alone, without the sleepers and the timbers of the switches, as on a plan"};
+
+    // the way picked, kept with the settings
+    void pick_top_tracks(int const Choice)
+    {
         Global.EditorOrthoTracks = Choice;
         EditorSettings.top_tracks(Choice);
         EditorSettings.save();
-    };
-    if (false == Combo)
+    }
+
+    // the ways as the items of a combo, or of a menu, the one chosen marked
+    void render_top_tracks_items(int const Chosen, bool const Combo)
     {
         for (int choice = 0; choice < 3; ++choice)
         {
-            if (ImGui::MenuItem(STR_C(labels[choice]), nullptr, chosen == choice))
-                pick(choice);
+            if (Combo ? ImGui::Selectable(STR_C(top_track_labels[choice]), Chosen == choice) : ImGui::MenuItem(STR_C(top_track_labels[choice]), nullptr, Chosen == choice))
+                pick_top_tracks(choice);
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", STR_C(tooltips[choice]));
+                ImGui::SetTooltip("%s", STR_C(top_track_tooltips[choice]));
         }
+    }
+} // namespace
+
+void editor_mode::render_top_tracks_choice(bool const Combo)
+{
+    auto const chosen{std::clamp(Global.EditorOrthoTracks, 0, 2)};
+    if (false == Combo)
+    {
+        render_top_tracks_items(chosen, false);
         return;
     }
     ImGui::SetNextItemWidth(130.0f);
-    if (ImGui::BeginCombo(STR_C("Tracks"), STR_C(labels[chosen])))
+    if (ImGui::BeginCombo(STR_C("Tracks"), STR_C(top_track_labels[chosen])))
     {
-        for (int choice = 0; choice < 3; ++choice)
-        {
-            if (ImGui::Selectable(STR_C(labels[choice]), chosen == choice))
-                pick(choice);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", STR_C(tooltips[choice]));
-        }
+        render_top_tracks_items(chosen, true);
         ImGui::EndCombo();
     }
     if (ImGui::IsItemHovered())

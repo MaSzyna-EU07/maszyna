@@ -62,6 +62,7 @@ http://mozilla.org/MPL/2.0/.
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 class TAnimModel;
@@ -910,6 +911,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::array<char, 512> url{};
 		std::array<char, 64> filter{};
 		std::future<editor_orthophoto::service_info> reading;
+		std::jthread reader; // reads them, the future above gets what it found; joined before the future goes
 		std::optional<editor_orthophoto::service_info> info;
 		std::string service; // the address the capabilities were read of
 		std::vector<char> ticked;
