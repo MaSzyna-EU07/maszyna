@@ -3211,22 +3211,56 @@ std::size_t minimum_pieces(result const &Result, design const &Design)
 	return count;
 }
 
-std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count, std::vector<double> const &Breaks, std::vector<std::size_t> const &Counts,
-                                 std::vector<std::size_t> *Intervals)
+namespace
 {
-	struct span
-	{
-		std::size_t element;
-		double from;
-		double to;
-		bool generic{false};
-		double start{0.0};
-		double end{0.0};
-	};
-	auto const extent = [&](span const &Span) { return Span.generic ? Span.end - Span.start : Span.to - Span.from; };
-	auto const chainage_from = [&](span const &Span) { return Span.generic ? Span.start : Result.elements[Span.element].chainage + Span.from; };
-	auto const chainage_to = [&](span const &Span) { return Span.generic ? Span.end : Result.elements[Span.element].chainage + Span.to; };
-	std::vector<span> spans;
+
+// a stretch of the alignment one path stands for: a share of an element, or one laid generically between two chainages over the
+// elements it took in
+struct piece_span
+{
+	std::size_t element;
+	double from;
+	double to;
+	bool generic{false};
+	double start{0.0};
+	double end{0.0};
+};
+
+double span_extent(piece_span const &Span)
+{
+	return Span.generic ? Span.end - Span.start : Span.to - Span.from;
+}
+
+double span_from(result const &Result, piece_span const &Span)
+{
+	return Span.generic ? Span.start : Result.elements[Span.element].chainage + Span.from;
+}
+
+double span_to(result const &Result, piece_span const &Span)
+{
+	return Span.generic ? Span.end : Result.elements[Span.element].chainage + Span.to;
+}
+
+// the span taken on generically to the chainage given at its end
+void span_on_to(result const &Result, piece_span &Span, double const End)
+{
+	Span.start = span_from(Result, Span);
+	Span.end = End;
+	Span.generic = true;
+}
+
+// the span taken on generically from the chainage given at its start
+void span_back_to(result const &Result, piece_span &Span, double const Start)
+{
+	Span.end = span_to(Result, Span);
+	Span.start = Start;
+	Span.generic = true;
+}
+
+// the pieces of each element; an element of none goes to the span before it, or to the first one after it
+std::vector<piece_span> element_spans(result const &Result, design const &Design)
+{
+	std::vector<piece_span> spans;
 	std::optional<double> lead;
 	for (std::size_t i = 0; i < Result.elements.size(); ++i)
 	{
@@ -3241,136 +3275,141 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 				lead = lead.value_or(e.chainage);
 				continue;
 			}
-			auto &previous{spans.back()};
-			previous.start = chainage_from(previous);
-			previous.end = e.chainage + e.length;
-			previous.generic = true;
+			span_on_to(Result, spans.back(), e.chainage + e.length);
 			continue;
 		}
 		for (std::size_t j = 0; j < count; ++j)
 			spans.push_back({i, e.length * j / count, e.length * (j + 1) / count});
 		if (lead.has_value())
 		{
-			auto &first{spans[spans.size() - count]};
-			first.end = chainage_to(first);
-			first.start = *lead;
-			first.generic = true;
+			span_back_to(Result, spans[spans.size() - count], *lead);
 			lead.reset();
 		}
 	}
+	return spans;
+}
+
+// a straight shorter than a metre goes to the span before it, or to the one after it
+void merge_short_straights(result const &Result, std::vector<piece_span> &Spans)
+{
 	double const shortest{1.0};
-	for (std::size_t i = 0; i < spans.size() && spans.size() > 1;)
+	for (std::size_t i = 0; i < Spans.size() && Spans.size() > 1;)
 	{
-		auto const &e{Result.elements[spans[i].element]};
-		if (e.kind != element_kind::straight || extent(spans[i]) >= shortest)
+		auto const &e{Result.elements[Spans[i].element]};
+		if (e.kind != element_kind::straight || span_extent(Spans[i]) >= shortest)
 		{
 			++i;
 			continue;
 		}
-		auto const start{chainage_from(spans[i])};
-		auto const end{chainage_to(spans[i])};
+		auto const start{span_from(Result, Spans[i])};
+		auto const end{span_to(Result, Spans[i])};
 		if (i > 0)
-		{
-			auto &previous{spans[i - 1]};
-			previous.start = chainage_from(previous);
-			previous.end = end;
-			previous.generic = true;
-		}
+			span_on_to(Result, Spans[i - 1], end);
 		else
-		{
-			auto &next{spans[i + 1]};
-			next.end = chainage_to(next);
-			next.start = start;
-			next.generic = true;
-		}
-		spans.erase(spans.begin() + i);
+			span_back_to(Result, Spans[i + 1], start);
+		Spans.erase(Spans.begin() + i);
 	}
-	// splits the span at the chainage
-	auto const split = [&](std::vector<span>::iterator Span, double const Chainage) {
-		span second{*Span};
-		if (Span->generic)
-		{
-			second.start = Chainage;
-			Span->end = Chainage;
-		}
-		else
-		{
-			auto const local{Chainage - Result.elements[Span->element].chainage};
-			second.from = local;
-			Span->to = local;
-		}
-		spans.insert(std::next(Span), second);
-	};
+}
+
+// splits the span at the chainage
+void split_span(result const &Result, std::vector<piece_span> &Spans, std::vector<piece_span>::iterator const Span, double const Chainage)
+{
+	piece_span second{*Span};
+	if (Span->generic)
+	{
+		second.start = Chainage;
+		Span->end = Chainage;
+	}
+	else
+	{
+		auto const local{Chainage - Result.elements[Span->element].chainage};
+		second.from = local;
+		Span->to = local;
+	}
+	Spans.insert(std::next(Span), second);
+}
+
+// the spans split at the ends of the cant ramps of their own, where the cant starts or stops changing along a straight, a transition or
+// an arc, and at the breaks
+void split_at_ramps_and_breaks(result const &Result, std::vector<piece_span> &Spans, std::vector<double> const &Breaks)
+{
 	double constexpr margin{0.01};
-	// the ends of the cant ramps of their own, where the cant starts or stops changing along a straight, a transition or an arc
 	for (auto const &ramp : Result.ramps)
 		for (auto const chainage : {ramp.from, ramp.to})
-			if (auto inside{std::ranges::find_if(spans, [&](span const &Span) { return chainage_from(Span) < chainage - margin && chainage_to(Span) > chainage + margin; })};
-			    ramp.own && inside != spans.end())
-				split(inside, chainage);
+			if (auto inside{std::ranges::find_if(Spans, [&](piece_span const &Span) { return span_from(Result, Span) < chainage - margin && span_to(Result, Span) > chainage + margin; })};
+			    ramp.own && inside != Spans.end())
+				split_span(Result, Spans, inside, chainage);
 	for (auto const chainage : Breaks)
 	{
-		auto inside{std::find_if(spans.begin(), spans.end(), [&](span const &Span) { return chainage_from(Span) < chainage - margin && chainage_to(Span) > chainage + margin; })};
-		if (inside != spans.end())
-			split(inside, chainage);
+		auto inside{std::find_if(Spans.begin(), Spans.end(), [&](piece_span const &Span) { return span_from(Result, Span) < chainage - margin && span_to(Result, Span) > chainage + margin; })};
+		if (inside != Spans.end())
+			split_span(Result, Spans, inside, chainage);
 	}
-	auto const interval = [&](span const &Span) {
-		return static_cast<std::size_t>(std::upper_bound(Breaks.begin(), Breaks.end(), (chainage_from(Span) + chainage_to(Span)) * 0.5) - Breaks.begin());
-	};
-	// no path of a few millimetres, as an arc of a compound curve squeezed to almost nothing or a joint by the end of an element
-	// leaves: the simulation takes a path under 5 cm for one of no length. Such a stretch goes to the path next to it, the one
-	// between the same joints if there's one
+}
+
+// the interval between the breaks the middle of the span lies in
+std::size_t span_interval(result const &Result, std::vector<double> const &Breaks, piece_span const &Span)
+{
+	return static_cast<std::size_t>(std::upper_bound(Breaks.begin(), Breaks.end(), (span_from(Result, Span) + span_to(Result, Span)) * 0.5) - Breaks.begin());
+}
+
+// no path of a few millimetres, as an arc of a compound curve squeezed to almost nothing or a joint by the end of an element
+// leaves: the simulation takes a path under 5 cm for one of no length. Such a stretch goes to the path next to it, the one
+// between the same joints if there's one
+void merge_short_pieces(result const &Result, std::vector<piece_span> &Spans, std::vector<double> const &Breaks)
+{
 	double constexpr shortest_piece{0.1};
-	for (std::size_t i = 0; i < spans.size() && spans.size() > 1;)
+	for (std::size_t i = 0; i < Spans.size() && Spans.size() > 1;)
 	{
-		if (extent(spans[i]) >= shortest_piece)
+		if (span_extent(Spans[i]) >= shortest_piece)
 		{
 			++i;
 			continue;
 		}
-		auto const own{interval(spans[i])};
-		if (i > 0 && (i + 1 == spans.size() || interval(spans[i - 1]) == own || interval(spans[i + 1]) != own))
-		{
-			auto &previous{spans[i - 1]};
-			previous.start = chainage_from(previous);
-			previous.end = chainage_to(spans[i]);
-			previous.generic = true;
-		}
+		auto const own{span_interval(Result, Breaks, Spans[i])};
+		if (i > 0 && (i + 1 == Spans.size() || span_interval(Result, Breaks, Spans[i - 1]) == own || span_interval(Result, Breaks, Spans[i + 1]) != own))
+			span_on_to(Result, Spans[i - 1], span_to(Result, Spans[i]));
 		else
-		{
-			auto &next{spans[i + 1]};
-			next.end = chainage_to(next);
-			next.start = chainage_from(spans[i]);
-			next.generic = true;
-		}
-		spans.erase(spans.begin() + static_cast<std::ptrdiff_t>(i));
+			span_back_to(Result, Spans[i + 1], span_from(Result, Spans[i]));
+		Spans.erase(Spans.begin() + static_cast<std::ptrdiff_t>(i));
 		if (i > 0)
 			--i;
 	}
+}
+
+// the longest span in the interval
+std::vector<piece_span>::iterator longest_in(result const &Result, std::vector<piece_span> &Spans, std::vector<double> const &Breaks, std::size_t const Interval)
+{
+	auto longest{Spans.end()};
+	for (auto candidate = Spans.begin(); candidate != Spans.end(); ++candidate)
+		if (span_interval(Result, Breaks, *candidate) == Interval && (longest == Spans.end() || span_extent(*candidate) > span_extent(*longest)))
+			longest = candidate;
+	return longest;
+}
+
+// each interval between the breaks split into as many spans as asked for at least, the longest in halves
+void split_to_counts(result const &Result, std::vector<piece_span> &Spans, std::vector<double> const &Breaks, std::vector<std::size_t> const &Counts)
+{
 	for (std::size_t k = 0; k < Counts.size(); ++k)
 	{
 		while (true)
 		{
-			auto const inside{static_cast<std::size_t>(std::count_if(spans.begin(), spans.end(), [&](span const &Span) { return interval(Span) == k; }))};
+			auto const inside{static_cast<std::size_t>(std::count_if(Spans.begin(), Spans.end(), [&](piece_span const &Span) { return span_interval(Result, Breaks, Span) == k; }))};
 			if (inside == 0 || inside >= Counts[k])
 				break;
-			auto longest{spans.end()};
-			for (auto candidate = spans.begin(); candidate != spans.end(); ++candidate)
-				if (interval(*candidate) == k && (longest == spans.end() || extent(*candidate) > extent(*longest)))
-					longest = candidate;
-			split(longest, (chainage_from(*longest) + chainage_to(*longest)) * 0.5);
+			auto const longest{longest_in(Result, Spans, Breaks, k)};
+			split_span(Result, Spans, longest, (span_from(Result, *longest) + span_to(Result, *longest)) * 0.5);
 		}
 	}
-	while (false == spans.empty() && spans.size() < Count)
+}
+
+// no path longer than a track may be
+void split_too_long(result const &Result, std::vector<piece_span> &Spans)
+{
+	for (std::size_t i = 0; i < Spans.size();)
 	{
-		auto longest = std::max_element(spans.begin(), spans.end(), [&](span const &A, span const &B) { return extent(A) < extent(B); });
-		split(longest, (chainage_from(*longest) + chainage_to(*longest)) * 0.5);
-	}
-	// no path longer than a track may be
-	for (std::size_t i = 0; i < spans.size();)
-	{
-		auto const from{chainage_from(spans[i])};
-		auto const length{chainage_to(spans[i]) - from};
+		auto const from{span_from(Result, Spans[i])};
+		auto const length{span_to(Result, Spans[i]) - from};
 		// a length not finite would be split for ever
 		if (length <= geometry::longest_path || false == std::isfinite(length))
 		{
@@ -3378,116 +3417,141 @@ std::vector<segment_data> pieces(result const &Result, design const &Design, std
 			continue;
 		}
 		auto const count{static_cast<int>(std::ceil(length / geometry::longest_path))};
-		split(spans.begin() + static_cast<std::ptrdiff_t>(i), from + length / count);
+		split_span(Result, Spans, Spans.begin() + static_cast<std::ptrdiff_t>(i), from + length / count);
 	}
+}
+
+// the path of a span laid generically: a cubic between the stations at its ends
+segment_data generic_piece(result const &Result, design const &Design, piece_span const &Piece)
+{
+	auto const first{evaluate(Result, Piece.start)};
+	auto const last{evaluate(Result, Piece.end)};
+	glm::dvec2 const p0{first.position.x, first.position.z};
+	glm::dvec2 const p3{last.position.x, last.position.z};
+	auto const d0{glm::normalize(glm::dvec2{first.direction.x, first.direction.z})};
+	auto const d3{glm::normalize(glm::dvec2{last.direction.x, last.direction.z})};
+	auto const handle{glm::distance(p0, p3) / 3.0};
+	auto const p1{p0 + d0 * handle};
+	auto const p2{p3 - d3 * handle};
+	auto const y0{first.position.y};
+	auto const y3{last.position.y};
+	auto const y1{y0 + grade(Result, Piece.start) * handle};
+	auto const y2{y3 - grade(Result, Piece.end) * handle};
+	auto const roll = [&Design](station const &Station) { return static_cast<float>(Station.turn * glm::degrees(std::asin(std::clamp(Station.cant / Design.norms.gauge, -1.0, 1.0)))); };
+	segment_data path;
+	path.points[segment_data::point::start] = first.position;
+	path.points[segment_data::point::end] = last.position;
+	path.points[segment_data::point::control1] = glm::dvec3{p1.x, y1, p1.y} - first.position;
+	path.points[segment_data::point::control2] = glm::dvec3{p2.x, y2, p2.y} - last.position;
+	path.rolls[0] = roll(first);
+	path.rolls[1] = roll(last);
+	auto const &e{Result.elements[Piece.element]};
+	path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
+	return path;
+}
+
+// the plan of a share of an element of a transition as a cubic: of a cubic parabola exactly, by its blossoms, of the others by the
+// directions at its ends
+void transition_controls(element const &E, transition_shape const Shape, piece_span const &Piece, std::array<glm::dvec2, 4> &Points, std::array<glm::dvec2, 2> const &Directions)
+{
+	if (Shape == transition_shape::cubic_parabola && E.kind != element_kind::spiral)
+	{
+		std::array<glm::dvec2, 4> const local{glm::dvec2{0.0, 0.0}, glm::dvec2{E.transition / 3.0, 0.0}, glm::dvec2{E.transition * 2.0 / 3.0, 0.0}, glm::dvec2{E.transition, E.transition * E.transition / (6.0 * E.radius)}};
+		auto const a{E.kind == element_kind::transition_in ? Piece.from / E.transition : 1.0 - Piece.from / E.transition};
+		auto const b{E.kind == element_kind::transition_in ? Piece.to / E.transition : 1.0 - Piece.to / E.transition};
+		auto const world = [&E](glm::dvec2 const &Point) { return E.origin + E.direction * Point.x + E.normal * Point.y; };
+		Points[0] = world(blossom(local, a, a, a));
+		Points[1] = world(blossom(local, a, a, b));
+		Points[2] = world(blossom(local, a, b, b));
+		Points[3] = world(blossom(local, b, b, b));
+	}
+	else
+	{
+		auto const chord{glm::distance(Points[0], Points[3]) / 3.0};
+		Points[1] = Points[0] + Directions[0] * chord;
+		Points[2] = Points[3] - Directions[1] * chord;
+	}
+}
+
+// the path of a share of an element: its plan as the element runs, its heights and its cant along the alignment
+segment_data element_piece(result const &Result, design const &Design, piece_span const &Piece)
+{
+	auto const &e{Result.elements[Piece.element]};
+	// the ends, then the controls between them
+	std::array<glm::dvec2, 4> p;
+	std::array<glm::dvec2, 2> d;
+	element_point(e, Design.shape, Piece.from, p[0], d[0]);
+	element_point(e, Design.shape, Piece.to, p[3], d[1]);
+	switch (e.kind)
+	{
+	case element_kind::straight:
+		p[1] = p[0] + (p[3] - p[0]) / 3.0;
+		p[2] = p[0] + (p[3] - p[0]) * (2.0 / 3.0);
+		break;
+	case element_kind::arc:
+	{
+		auto const angle{(Piece.to - Piece.from) / e.radius};
+		auto const handle{4.0 / 3.0 * std::tan(angle / 4.0) * e.radius};
+		p[1] = p[0] + d[0] * handle;
+		p[2] = p[3] - d[1] * handle;
+		break;
+	}
+	default:
+		transition_controls(e, Design.shape, Piece, p, d);
+		break;
+	}
+	auto const s0{e.chainage + Piece.from};
+	auto const s3{e.chainage + Piece.to};
+	auto const y0{elevation(Result, s0)};
+	auto const y3{elevation(Result, s3)};
+	auto const y1{y0 + grade(Result, s0) * glm::distance(p[0], p[1])};
+	auto const y2{y3 - grade(Result, s3) * glm::distance(p[2], p[3])};
+
+	// the cant signed with the turn, a ramp of its own on a straight too; where it changes all at once, the one of the piece itself
+	auto const roll = [&Design](double const Cant) { return static_cast<float>(glm::degrees(std::asin(std::clamp(Cant / Design.norms.gauge, -1.0, 1.0)))); };
+
+	segment_data path;
+	path.points[segment_data::point::start] = {p[0].x, y0, p[0].y};
+	path.points[segment_data::point::end] = {p[3].x, y3, p[3].y};
+	path.points[segment_data::point::control1] = glm::dvec3{p[1].x, y1, p[1].y} - path.points[segment_data::point::start];
+	path.points[segment_data::point::control2] = glm::dvec3{p[2].x, y2, p[2].y} - path.points[segment_data::point::end];
+	path.rolls[0] = roll(signed_cant(Result, e, Piece.from, false));
+	path.rolls[1] = roll(signed_cant(Result, e, Piece.to, true));
+	path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
+	if (e.kind == element_kind::spiral)
+	{
+		auto const curvature{e.curvature_start + (e.curvature_end - e.curvature_start) * (Piece.from + Piece.to) * 0.5 / std::max(e.length, 1e-9)};
+		path.radius = curvature > 1e-9 ? static_cast<float>(1.0 / curvature) : 0.f;
+	}
+	return path;
+}
+
+} // namespace
+
+std::vector<segment_data> pieces(result const &Result, design const &Design, std::size_t const Count, std::vector<double> const &Breaks, std::vector<std::size_t> const &Counts,
+                                 std::vector<std::size_t> *Intervals)
+{
+	auto spans{element_spans(Result, Design)};
+	merge_short_straights(Result, spans);
+	split_at_ramps_and_breaks(Result, spans, Breaks);
+	merge_short_pieces(Result, spans, Breaks);
+	split_to_counts(Result, spans, Breaks, Counts);
+	while (false == spans.empty() && spans.size() < Count)
+	{
+		auto longest = std::max_element(spans.begin(), spans.end(), [](piece_span const &A, piece_span const &B) { return span_extent(A) < span_extent(B); });
+		split_span(Result, spans, longest, (span_from(Result, *longest) + span_to(Result, *longest)) * 0.5);
+	}
+	split_too_long(Result, spans);
 	if (Intervals != nullptr)
 	{
 		Intervals->clear();
 		for (auto const &piece : spans)
-			Intervals->push_back(interval(piece));
+			Intervals->push_back(span_interval(Result, Breaks, piece));
 	}
 
 	std::vector<segment_data> result;
 	for (auto const &piece : spans)
-	{
-		if (piece.generic)
-		{
-			auto const first{evaluate(Result, piece.start)};
-			auto const last{evaluate(Result, piece.end)};
-			glm::dvec2 const p0{first.position.x, first.position.z};
-			glm::dvec2 const p3{last.position.x, last.position.z};
-			auto const d0{glm::normalize(glm::dvec2{first.direction.x, first.direction.z})};
-			auto const d3{glm::normalize(glm::dvec2{last.direction.x, last.direction.z})};
-			auto const handle{glm::distance(p0, p3) / 3.0};
-			auto const p1{p0 + d0 * handle};
-			auto const p2{p3 - d3 * handle};
-			auto const y0{first.position.y};
-			auto const y3{last.position.y};
-			auto const y1{y0 + grade(Result, piece.start) * handle};
-			auto const y2{y3 - grade(Result, piece.end) * handle};
-			auto const roll = [&](station const &Station) { return static_cast<float>(Station.turn * glm::degrees(std::asin(std::clamp(Station.cant / Design.norms.gauge, -1.0, 1.0)))); };
-			segment_data path;
-			path.points[segment_data::point::start] = first.position;
-			path.points[segment_data::point::end] = last.position;
-			path.points[segment_data::point::control1] = glm::dvec3{p1.x, y1, p1.y} - first.position;
-			path.points[segment_data::point::control2] = glm::dvec3{p2.x, y2, p2.y} - last.position;
-			path.rolls[0] = roll(first);
-			path.rolls[1] = roll(last);
-			auto const &e{Result.elements[piece.element]};
-			path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
-			result.push_back(path);
-			continue;
-		}
-		auto const &e{Result.elements[piece.element]};
-		glm::dvec2 p0;
-		glm::dvec2 p3;
-		glm::dvec2 d0;
-		glm::dvec2 d3;
-		element_point(e, Design.shape, piece.from, p0, d0);
-		element_point(e, Design.shape, piece.to, p3, d3);
-		glm::dvec2 p1;
-		glm::dvec2 p2;
-		switch (e.kind)
-		{
-		case element_kind::straight:
-			p1 = p0 + (p3 - p0) / 3.0;
-			p2 = p0 + (p3 - p0) * (2.0 / 3.0);
-			break;
-		case element_kind::arc:
-		{
-			auto const angle{(piece.to - piece.from) / e.radius};
-			auto const handle{4.0 / 3.0 * std::tan(angle / 4.0) * e.radius};
-			p1 = p0 + d0 * handle;
-			p2 = p3 - d3 * handle;
-			break;
-		}
-		default:
-		{
-			if (Design.shape == transition_shape::cubic_parabola && e.kind != element_kind::spiral)
-			{
-				std::array<glm::dvec2, 4> const local{glm::dvec2{0.0, 0.0}, glm::dvec2{e.transition / 3.0, 0.0}, glm::dvec2{e.transition * 2.0 / 3.0, 0.0}, glm::dvec2{e.transition, e.transition * e.transition / (6.0 * e.radius)}};
-				auto const a{e.kind == element_kind::transition_in ? piece.from / e.transition : 1.0 - piece.from / e.transition};
-				auto const b{e.kind == element_kind::transition_in ? piece.to / e.transition : 1.0 - piece.to / e.transition};
-				auto const world = [&](glm::dvec2 const &Point) { return e.origin + e.direction * Point.x + e.normal * Point.y; };
-				p0 = world(blossom(local, a, a, a));
-				p1 = world(blossom(local, a, a, b));
-				p2 = world(blossom(local, a, b, b));
-				p3 = world(blossom(local, b, b, b));
-			}
-			else
-			{
-				auto const chord{glm::distance(p0, p3) / 3.0};
-				p1 = p0 + d0 * chord;
-				p2 = p3 - d3 * chord;
-			}
-			break;
-		}
-		}
-		auto const s0{e.chainage + piece.from};
-		auto const s3{e.chainage + piece.to};
-		auto const y0{elevation(Result, s0)};
-		auto const y3{elevation(Result, s3)};
-		auto const y1{y0 + grade(Result, s0) * glm::distance(p0, p1)};
-		auto const y2{y3 - grade(Result, s3) * glm::distance(p2, p3)};
-
-		// the cant signed with the turn, a ramp of its own on a straight too; where it changes all at once, the one of the piece itself
-		auto const roll = [&](double const Cant) { return static_cast<float>(glm::degrees(std::asin(std::clamp(Cant / Design.norms.gauge, -1.0, 1.0)))); };
-
-		segment_data path;
-		path.points[segment_data::point::start] = {p0.x, y0, p0.y};
-		path.points[segment_data::point::end] = {p3.x, y3, p3.y};
-		path.points[segment_data::point::control1] = glm::dvec3{p1.x, y1, p1.y} - path.points[segment_data::point::start];
-		path.points[segment_data::point::control2] = glm::dvec3{p2.x, y2, p2.y} - path.points[segment_data::point::end];
-		path.rolls[0] = roll(signed_cant(Result, e, piece.from, false));
-		path.rolls[1] = roll(signed_cant(Result, e, piece.to, true));
-		path.radius = e.kind == element_kind::straight ? 0.f : static_cast<float>(e.radius);
-		if (e.kind == element_kind::spiral)
-		{
-			auto const curvature{e.curvature_start + (e.curvature_end - e.curvature_start) * (piece.from + piece.to) * 0.5 / std::max(e.length, 1e-9)};
-			path.radius = curvature > 1e-9 ? static_cast<float>(1.0 / curvature) : 0.f;
-		}
-		result.push_back(path);
-	}
+		result.push_back(piece.generic ? generic_piece(Result, Design, piece) : element_piece(Result, Design, piece));
 	return result;
 }
 
