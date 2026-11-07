@@ -1686,7 +1686,7 @@ bool editor_mode::update()
         draw_track_intent();
         draw_tape();
         steps.step("track drawn");
-        m_speed.update();
+        m_rail_tools->speed.update();
         steps.step("speed");
         m_joints.update();
         steps.step("joints");
@@ -1696,19 +1696,19 @@ bool editor_mode::update()
             grade_lines_store();
         }
         m_nmt_state.grade_line_replaced.clear();
-        m_srk.update();
+        m_rail_tools->srk.update();
         kilometrage::follow(m_track_edits);
-        m_km.update();
+        m_rail_tools->km.update();
         steps.step("srk km");
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
         draw_grade_line_pick();
         draw_infra_overlay();
-        m_speed.draw_overlay();
+        m_rail_tools->speed.draw_overlay();
         m_joints.draw_overlay();
-        m_srk.draw_overlay();
-        m_km.draw_overlay();
+        m_rail_tools->srk.draw_overlay();
+        m_rail_tools->km.draw_overlay();
         steps.step("overlays");
     }
     else
@@ -3259,7 +3259,7 @@ bool editor_mode::save()
     switch_store::tidy();
     switch_store::settle();
     infra_store();
-    m_srk.store();
+    m_rail_tools->srk.store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormoderailtools.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -790,13 +791,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
-	if (m_track_tab == track_tab::srk && m_srk.drawing())
+	if (m_track_tab == track_tab::srk && m_rail_tools->srk.drawing())
 	{
 		bool valid{false};
 		intent.track = m_hover.track;
 		intent.path = m_hover.path;
 		intent.position = m_hover.track != nullptr ? m_hover.point : ground;
-		intent.action = m_srk.boundary_hover(intent.position, valid);
+		intent.action = m_rail_tools->srk.boundary_hover(intent.position, valid);
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
@@ -838,7 +839,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.path = m_hover.path;
 		intent.position = m_hover.point;
 		make(kind::kilometrage, "Click: a point of the km here");
-		if (auto const km{m_km.readout(m_hover.point)}; false == km.empty())
+		if (auto const km{m_rail_tools->km.readout(m_hover.point)}; false == km.empty())
 			intent.action = km + "\n" + intent.action;
 		return intent;
 	}
@@ -1243,9 +1244,9 @@ void editor_mode::track_press(track_intent const &Intent)
 	}
 	case kind::kilometrage:
 		if (Intent.track != nullptr)
-			m_km.pick(*Intent.track, Intent.position);
+			m_rail_tools->km.pick(*Intent.track, Intent.position);
 		return;
-	case kind::srk_boundary: m_srk.boundary_click(); return;
+	case kind::srk_boundary: m_rail_tools->srk.boundary_click(); return;
 	case kind::fouling:
 		if (Intent.path == 1)
 			m_fouling.fix(Intent.index);
@@ -1528,7 +1529,7 @@ void editor_mode::render_track_context()
 	if (ImGui::MenuItem(STR_C("Speed check of the line"), "V"))
 	{
 		show_track_tab(track_tab::speed);
-		m_speed.check_line();
+		m_rail_tools->speed.check_line();
 	}
 	ImGui::Separator();
 	if (ImGui::MenuItem(track_selected(track) ? STR_C("Take out of the selection") : STR_C("Add to the selection"), STR_C("Shift+LMB")))
