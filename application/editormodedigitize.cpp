@@ -273,9 +273,10 @@ crossover_insert insert_of(TTrack const &First)
 		auto const step{insert_step_from(*from, point, &First, insert.tracks)};
 		if (step.second != nullptr)
 		{
+			// the other switch reached: the condition of the loop ends it
 			insert.second = step.second;
 			insert.direct = insert.tracks.empty();
-			break;
+			continue;
 		}
 		if (step.next == nullptr)
 			break;
@@ -335,6 +336,26 @@ void digitize_crossover(auto &Report, bool const Write, TTrack const &First, TTr
 	++Report.crossovers_recorded;
 }
 
+// the shape of the switch: of the template of the catalogue found for it, else as measured from its size; counted in Report either
+// way
+editor_track::switch_template shape_of(auto &Report, std::vector<editor_track::switch_template> const &Templates, int const Found, TTrack *Track, switch_size const &Size)
+{
+	editor_track::switch_template shape;
+	if (Found >= 0)
+	{
+		shape = Templates[Found];
+		++Report.designed;
+		++Report.types[shape.label.substr(0, shape.label.find("  "))];
+		return shape;
+	}
+	shape.source = Track;
+	shape.radius = nominal_radius(Size.radius);
+	shape.ratio = Size.angle > 1e-6 ? 1.0 / std::tan(Size.angle) : 0.0;
+	++Report.measured;
+	++Report.shapes[format("L %.2f / %.2f  1:%.2f  R %.0f", Size.main, Size.branch, shape.ratio, shape.radius)];
+	return shape;
+}
+
 } // namespace
 
 void editor_mode::digitize_switches(digitize_report &Report, bool const Write) const
@@ -367,21 +388,7 @@ void editor_mode::digitize_switches(digitize_report &Report, bool const Write) c
 		auto const size{size_of(main, branch)};
 		auto const movable{track->SwitchExtension != nullptr && track->SwitchExtension->m_movablenose};
 		auto const found{matching(templates, sizes, size, editor_track::rail_of(track), movable)};
-		editor_track::switch_template shape;
-		if (found >= 0)
-		{
-			shape = templates[found];
-			++Report.designed;
-			++Report.types[shape.label.substr(0, shape.label.find("  "))];
-		}
-		else
-		{
-			shape.source = track;
-			shape.radius = nominal_radius(size.radius);
-			shape.ratio = size.angle > 1e-6 ? 1.0 / std::tan(size.angle) : 0.0;
-			++Report.measured;
-			++Report.shapes[format("L %.2f / %.2f  1:%.2f  R %.0f", size.main, size.branch, shape.ratio, shape.radius)];
-		}
+		auto const shape{shape_of(Report, templates, found, track, size)};
 		if (false == named(*track))
 		{
 			// the record finds the switch by its name; the names of the scenery stay as they are

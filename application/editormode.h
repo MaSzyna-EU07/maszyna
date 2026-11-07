@@ -1639,13 +1639,41 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the switch, or the double switch it's a part of, given the shape in place, straight or bent into the curve it lies in; Flip:
 	// the diverging track to the other side. Notes: for the user
 	bool apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
+	// the same along the straight, the start and the direction of the switch kept; and bent into the curve it lies in, its start kept
+	// where it is along the curve
+	bool reapply_straight_switch(TTrack &First, std::optional<double_switch> const &Set, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
+	bool reapply_bent_switch(TTrack &First, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
 	// the template to choose: the speeds on the diverging track as chips, the templates of the rail by their skos, all the others
-	// folded under. Fits: those of the kind wanted; Rail: of the track, empty when it doesn't tell; Popup: inside a combo, with no
-	// windows of its own. Gives the index picked, -1 while none is
-	int render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup);
+	// folded under. Fits: of each template by its index, 1 for those of the kind wanted; Rail: of the track, empty when it doesn't
+	// tell; Popup: inside a combo, with no windows of its own. Gives the index picked, -1 while none is
+	int render_template_picker(char const *Id, std::span<char const> const Fits, std::string const &Rail, int const Chosen, bool const Popup);
+	// of each template of the switch tool by its index, 1 for those that fit
+	template <typename Fit_> std::vector<char> templates_fitting(Fit_ const &Fit) const
+	{
+		std::vector<char> fitting;
+		fitting.reserve(m_switch.templates.size());
+		for (auto const &entry : m_switch.templates)
+			fitting.push_back(Fit(entry) ? 1 : 0);
+		return fitting;
+	}
 	// the template of the selected switch, slip or crossing, changed with a pick: in a combo for the inspector, else in full; nothing
 	// for another track
 	void render_switch_template(TTrack &Track, bool const Combo);
+	// what a switch, a slip or a crossing is offered the templates by: those that fit it, its rail, the template it has, its record
+	struct template_offer
+	{
+		TTrack const *first{nullptr}; // of a double switch, its first switch
+		std::optional<switch_store::record> known;
+		std::function<bool(editor_track::switch_template const &)> fits;
+		std::string rail;
+		int current{-1};
+	};
+	// what the track is offered the templates by; false for a track that isn't a switch, a slip or a crossing
+	bool template_offer_of(TTrack const &Track, template_offer &Offer) const;
+	// the name of the template the track has, or of its own shape
+	std::string offered_name(template_offer const &Offer) const;
+	// the template in a combo of the inspector: the one picked, -1 while none is
+	int render_template_combo(template_offer const &Offer, std::string const &Blocked);
 	std::string connection_readout(connection::result const &Plan) const;
 	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
@@ -1877,9 +1905,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_escape();
 	std::size_t lay_pending() const; // the points clicked and not laid yet
 	void render_lay_ui();
-	void render_lay_status();
+	// the parts of it: the points not laid yet, the settings of the mode, the curves of the line shown, the settings folded away, a
+	// texture of the new track
+	void render_lay_pending();
+	void render_lay_shape();
+	void render_lay_curves() const;
+	void render_lay_more();
+	void render_texture_row(int const Kind, char const *Label, std::string &Value, float const Column);
+	void render_lay_status() const;
 	void lay_click();
 	void lay_finish(editor_track::snap_target const &End);
+	// the notes told of the track laid; the compound curve it makes with the tracks of the free ends
+	void lay_notes(std::vector<TTrack *> const &Created, std::vector<segment_data> const &Pieces, editor_track::snap_target const &End, lay_line_plan const &Plan,
+	               std::optional<alignment::lay_result> const &Eased, std::string const &Error, TTrack const *Style);
+	void compound_note(std::vector<TTrack *> const &Created, editor_track::snap_target const &End);
 	void lay_cancel();
 	void lay_enter();
 	// Tab: the bends of straights or the curve traced, for the points clicked from now on
@@ -1889,8 +1928,30 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the track through the points clicked, each the way its mode says; End: the free end it finishes at, the last point then
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
 	                                     lay_line_plan *Plan = nullptr) const;
+	// the parts of it: the track from a point to a free end, the second point; the heights of the pieces and the cant at the free ends
+	std::vector<segment_data> lay_to_end(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
+	void lay_heights(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan const &Plan) const;
 	// Adjoining: the curve next to a free end on a curve goes on from its curvature, where it turns its way; else from a straight there
 	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining = true) const;
+	// the parts of it, on its state and a stretch of points along a curve, defined where they're used: the points gone through, the curve
+	// fitted to a stretch of them, the line closed at its end; the fit of a stretch leaving that way, going on from the curve of the free
+	// end, from a straight at a switch, into the curve of the free end at the end, its end turned onto the straight clicked after it or
+	// to reach the last point
+	struct lay_line_state;
+	struct lay_stretch;
+	bool lay_line_points(lay_line_state &State) const;
+	bool lay_line_stretch(lay_line_state &State, std::size_t const First, std::size_t const Last, bool const Reaching, bool const Fromend) const;
+	bool lay_stretch_fit(lay_line_state &State, lay_stretch &Stretch) const;
+	bool lay_line_close(lay_line_state &State) const;
+	std::optional<alignment::trace_stretch> stretch_fit_to(lay_stretch const &Stretch, glm::dvec2 const &Leaving, bool const Meanwhile, bool &Exact) const;
+	std::optional<alignment::trace_stretch> stretch_going(lay_line_state &State, lay_stretch &Stretch) const;
+	bool straight_first_closer(lay_stretch const &Stretch, alignment::trace_stretch const &Going) const;
+	std::optional<alignment::trace_stretch> stretch_into(lay_stretch &Stretch) const;
+	void stretch_end_turn(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted) const;
+	std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> clicked_straight(lay_stretch const &Stretch, bool &Waiting) const;
+	std::optional<alignment::trace_stretch> heading_fit(lay_stretch const &Stretch, glm::dvec2 const &Heading, bool &Waiting) const;
+	void closest_heading(lay_stretch const &Stretch, glm::dvec2 const &Chorded, double const Step, std::optional<alignment::trace_stretch> &Fit, glm::dvec2 &Heading, bool &Waiting) const;
+	void turn_to_point(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted, double const First, double const Ending) const;
 	// whether the points next to the start of the line, or to its end, AtEnd, a free end joined there, are clicked along a curve
 	static bool traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd);
 	// the curves of a stretch traced, the ones fitted lately kept for the same points
@@ -2139,13 +2200,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void insert_curved_slip(int const Direction, int const Side);
 	bool start_extend(editor_track::snap_target const &End);
 	void finish_extend();
+	// the parts of it: a press let go where it was made; the second switch of a crossover placed
+	void extend_tap();
+	void finish_crossover(crossover_plan const &Plan);
 	std::vector<segment_data> extend_pieces() const;
+	// the track dragged on from the diverging end of a switch, in the radius of its branch; nullopt for any other
+	std::optional<std::vector<segment_data>> extend_branch_pieces() const;
 	// the same for the track shown while it's dragged: its grade line fitted on the thread of the fitter, the frame not waiting for it
 	std::vector<segment_data> extend_preview() const;
 	// the free end of the path as the start of a new track; false if it isn't free or has no direction
 	static bool free_end(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool);
 	// the free end new pieces are added at: the selected point if it's one, else the end, else the start
-	bool chosen_free_end(extend_tool &Tool);
+	bool chosen_free_end(extend_tool &Tool) const;
 	// adds a straight (Side 0) or a curve to the left (1) or the right (-1) at the free end of the selected track
 	void extend_add(int const Side);
 	void render_extend_ui();
@@ -2163,6 +2229,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	mutable std::optional<alignment::lay_result> m_eased_last;
 	mutable std::optional<std::pair<alignment::lay_request, std::optional<alignment::lay_result>>> m_eased_cache;
 	bool track_wheel(double const Offset);
+	// the parts of it: the connection of a switch dragged out, the speed laid for, the radius of the curve laid or joining
+	void wheel_connection(double const Offset);
+	void wheel_speed(int const Step);
+	void wheel_radius(bool const Joined, int const Step);
 	// a touchpad sends fractions of a notch: a choice moves a step for each whole notch gathered, and only one in a gesture when
 	// Gesture; a pause, another key or the other way starts over
 	struct wheel_state
@@ -2191,6 +2261,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	double m_extend_radius{300.0};
 	bool extend_snap(editor_track::snap_target &Target) const;
 	void update_build_tools();
+	// the parts of it: the track and the point the cursor joins, the end of a track dragged on, the switch dragged out, the line being
+	// laid; the cursor taken where it is for the line, or kept where its fits were asked for; the line worked out through the points
+	void join_target(editor_track::snap_target const &Target);
+	void update_extend_drag(glm::vec2 const &Cursor, bool const Pointing);
+	void update_switch_placing();
+	void update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &Cursor, bool const Pointing);
+	void lay_settle();
+	void lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End);
 	void draw_build_overlay() const;
 	// the joint before the blades of the switch being placed or the one selected and the tips of its blades
 	void draw_blade_tips() const;
@@ -2388,6 +2466,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool handle_drag_step(glm::dvec3 &Position, TTrack const *Ground = nullptr);
 	void point_drag_start(editor_track::point_ref const &Point);
 	void point_drag_update();
+	// the drag started once the cursor went far enough, false while it hasn't or the track can't be changed; where the point goes
+	bool point_drag_begin(TTrack &Track, glm::vec2 const &Mouse);
+	void point_drag_place(TTrack &Track, glm::vec2 const &Mouse, glm::dvec3 &Position);
 	void point_drag_finish();
 	bool route_hit(int &Vertex, int &Grip) const;
 	int straight_handle_hit();
@@ -2686,6 +2767,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) override;
 	bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) override;
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
+	// the parts of a batch of signal changes, on its state defined where it's used: the signals placed, renamed, given other values or
+	// another template, taken away; the step of the batch put into the history
+	struct signal_batch_state;
+	void signal_batch_place(signal_changes const &Changes, std::vector<template_item> &Items, signal_batch_state &Batch, std::string &Error);
+	void signal_batch_rename(signal_rename const &Rename, bool const Temporary, signal_batch_state &Batch);
+	void signal_batch_values(signal_changes const &Changes, signal_batch_state &Batch);
+	void signal_batch_file(scene::instance_handle const Instance, std::string const &Wanted, signal_batch_state &Batch);
+	std::vector<scene::instance_handle> signal_batch_remove(signal_changes const &Changes, std::unordered_set<TTrack const *> const &Created, signal_batch_state &Batch);
+	void signal_batch_commit(signal_batch_state &Batch, std::vector<TTrack *> Created, std::vector<scene::instance_handle> Instances);
 	std::string signal_templates_missing(std::vector<signal_order> const &Orders) override;
 	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
 	std::string signal_mount(std::string const &Kind, std::string const &File) override;
@@ -2819,9 +2909,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	};
 	std::vector<orphan_record> m_orphans;
 	std::string m_orphan_note; // shown by the cursor after the step which made it
-	void orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept);
+	void orphans_register(std::span<TTrack *const> const Removed, std::span<TTrack *const> const Kept);
 	// Created: made by the step, their circuits the ones of the tracks they were made from; Changed: the others it changed
-	void orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed);
+	void orphans_take_over(std::span<TTrack *const> const Created, std::span<TTrack *const> const Changed);
+	// the state of the taking over, defined where it's used; the signal reading the event of the name, nullptr for none; the event
+	// of the old track put onto the candidate lying in its place, false where none lies there; a record taken over as far as it goes
+	struct orphan_takeover;
+	signal_standing const *orphan_reader(orphan_takeover &Takeover, std::string const &Name);
+	bool orphan_take_event(orphan_takeover &Takeover, TTrack const &Old, std::string const &Name, int const List, signal_standing const *Standing) const;
+	void orphan_take_record(orphan_takeover &Takeover, orphan_record &Record);
 
 	// a model laid along the track: bent to follow it, or repeated along it
 	struct sweep_tool
@@ -3005,6 +3101,34 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_bend_set(std::istringstream &words);
 	selftest_result selftest_bend_probe() const;
 	selftest_result selftest_track(std::string const &command, std::istringstream &words);
+	// the track commands of the self-test by the group: the lineside sweeps, the routes, their traces, the alignments, the
+	// grade lines, the checks of the tracks; and those of them with more to them
+	selftest_result selftest_track_sweep(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_routes(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_traces(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_alignment(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_profiles(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_checks(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_probe(std::istringstream &words);
+	selftest_result selftest_track_lay(std::istringstream &words);
+	selftest_result selftest_track_analyse(std::istringstream &words);
+	selftest_result selftest_track_route(std::istringstream &words);
+	selftest_result selftest_track_route_vertex(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_trace_sample(std::istringstream &words);
+	selftest_result selftest_track_trace_step(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_alignments() const;
+	selftest_result selftest_track_backward_curve(std::istringstream &words);
+	selftest_result selftest_track_delete(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_split_kind(std::string const &command, std::istringstream &words);
+	void selftest_track_nudge(TTrack &Chosen, glm::dvec3 const &Offset);
+	selftest_result selftest_track_vprofile_model() const;
+	selftest_result selftest_track_vprofile_zoom(std::istringstream &words);
+	selftest_result selftest_track_vprofile(std::istringstream &words);
+	selftest_result selftest_track_tape(std::istringstream &words);
+	selftest_result selftest_track_vprofile_run(std::string const &command, std::istringstream &words);
+	void selftest_track_log_grade_line(std::string const &command) const;
+	selftest_result selftest_track_vprofile_apply(std::istringstream &words);
+	void selftest_track_infrascan(std::istringstream &words);
 	selftest_result selftest_switch(std::string const &command, std::istringstream &words);
 	// the commands of selftest_switch by the group: placing the switches, the switches there are, their drives; each command of them
 	selftest_result selftest_switch_placing(std::string const &command, std::istringstream &words);

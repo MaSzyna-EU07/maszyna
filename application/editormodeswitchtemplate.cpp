@@ -24,11 +24,17 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <format>
 #include <map>
+#include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -212,6 +218,266 @@ float list_height(int const Rows, int const Headers)
 	return std::min(std::round(ImGui::GetFontSize() * 18.0f), (static_cast<float>(Rows) + 0.5f) * row + static_cast<float>(Headers) * ImGui::GetTextLineHeightWithSpacing() + 8.0f);
 }
 
+// the tracks of a crossing its record names, of those still in the scenery
+std::vector<TTrack *> crossing_parts(switch_store::record const &Record)
+{
+	std::vector<TTrack *> parts;
+	for (auto const &name : Record.parts)
+		if (auto *part{simulation::Paths.find(name)}; part != nullptr && false == part->m_editorremoved)
+			parts.push_back(part);
+	return parts;
+}
+
+// where the two tracks left in place of a slip cross in plan, and the height of the start of the first; the problem when they
+// don't, nullptr when they do
+struct slip_crossing
+{
+	glm::dvec2 middle{0.0};
+	double height{0.0};
+	char const *problem{nullptr};
+};
+
+slip_crossing crossing_of(std::vector<TTrack *> const &Throughs)
+{
+	std::array<glm::dvec2, 2> directions;
+	std::array<glm::dvec3, 2> starts;
+	for (int i = 0; i < 2; ++i)
+	{
+		auto const &path{Throughs[i]->m_paths.front()};
+		starts[i] = path.points[segment_data::point::start];
+		directions[i] = plan_of(path.points[segment_data::point::end] - starts[i]);
+		if (glm::length(directions[i]) < 1e-6)
+			return {glm::dvec2{0.0}, 0.0, STR_C("The tracks of the slip can't be laid crossing in its place")};
+		directions[i] = glm::normalize(directions[i]);
+	}
+	double along{0.0};
+	double alongother{0.0};
+	if (false == geometry::lines_cross(plan_of(starts[0]), directions[0], plan_of(starts[1]), directions[1], along, alongother))
+		return {glm::dvec2{0.0}, 0.0, STR_C("The tracks of the slip don't cross")};
+	return {plan_of(starts[0]) + directions[0] * along, starts[0].y, nullptr};
+}
+
+// the point a slip is laid again at: where its tracks cross, a single slip a metre from there towards the pair of the tracks it
+// joined, when it's given
+glm::dvec3 slip_point(slip_crossing const &Crossing, editor_track::switch_template const &Shape, glm::dvec3 const &Pair)
+{
+	auto point{glm::dvec3{Crossing.middle.x, Crossing.height, Crossing.middle.y}};
+	if (Shape.type != "Rkp" || Pair == glm::dvec3{0.0})
+		return point;
+	if (auto const towards{plan_of(Pair) - Crossing.middle}; glm::length(towards) > 1e-3)
+	{
+		auto const shift{glm::normalize(towards)};
+		point += glm::dvec3{shift.x, 0.0, shift.y};
+	}
+	return point;
+}
+
+// a single slip laid again joins the pair of the tracks it joined: the point given by them; none for the others
+glm::dvec3 pair_point(auto const &Slip, switch_store::record const &Record)
+{
+	if (false == Slip.has_value() || Record.type != "Rkp")
+		return glm::dvec3{0.0};
+	return 0.5 * (Slip->ends[0] + Slip->ends[3]);
+}
+
+// the first part of the slip or the crossing of the name as the records have it now, nullptr when it has none in the scenery
+TTrack *first_part_of(std::string const &Name)
+{
+	auto const &records{switch_store::records()};
+	auto const again{std::ranges::find_if(records, [&Name](switch_store::record const &Entry) { return Entry.name == Name && false == Entry.parts.empty(); })};
+	if (again == records.end())
+		return nullptr;
+	auto *first{simulation::Paths.find(again->parts.front())};
+	return first != nullptr && false == first->m_editorremoved ? first : nullptr;
+}
+
+// the rolls of the paths laid anew, where they have none, taken from the paths they replace
+void keep_rolls(std::vector<segment_data> &Paths, std::vector<segment_data> const &Before)
+{
+	for (std::size_t i = 0; i < Paths.size(); ++i)
+		if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
+			Paths[i].rolls = Before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
+}
+
+// the same for the two paths of a switch, from the paths of the track before
+void keep_own_rolls(std::vector<segment_data> &Paths, TTrack const &Before)
+{
+	for (int i = 0; i < 2; ++i)
+		if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
+			Paths[i].rolls = Before.m_paths[i].rolls;
+}
+
+// the blades and the frog of a template of the catalogue given to the switch, as a switch laid of it has them
+void take_blades(TTrack *Track, editor_track::switch_template const &Shape)
+{
+	auto *extension{Track != nullptr ? Track->SwitchExtension.get() : nullptr};
+	if (extension == nullptr || (extension->m_movablenose == Shape.movable && extension->m_bladeheel == Shape.heel && extension->m_bladethrow == Shape.bladethrow))
+		return;
+	extension->m_movablenose = Shape.movable;
+	extension->m_bladeheel = Shape.heel;
+	extension->m_bladethrow = Shape.bladethrow;
+	editor_track::commit_parameters(*Track);
+}
+
+using switch_templates = std::vector<editor_track::switch_template>;
+
+// the rails the catalogue has templates of the kind for, in the order of the catalogue
+std::vector<std::string> rails_of(switch_templates const &Templates, std::span<char const> const Fit)
+{
+	std::vector<std::string> rails;
+	for (std::size_t i = 0; i < Templates.size(); ++i)
+		if (auto const &entry{Templates[i]}; 0 != Fit[i] && entry.source == nullptr && false == entry.own && entry.rail != "-" && std::ranges::find(rails, entry.rail) == rails.end())
+			rails.push_back(entry.rail);
+	return rails;
+}
+
+// the rail picked among the rails given, the first of them when the one picked before isn't; as chips when there's a choice
+void render_rail_chips(std::vector<std::string> const &Rails, std::string &Pick)
+{
+	if (std::ranges::find(Rails, Pick) == Rails.end() && false == Rails.empty())
+		Pick = Rails.front();
+	if (Rails.size() <= 1)
+		return;
+	ImGui::TextDisabled("%s", STR_C("Rails"));
+	item_tooltip("The track doesn't tell its rail: the templates of the rail picked are listed, all of them under All templates");
+	int pick{static_cast<int>(std::ranges::find(Rails, Pick) - Rails.begin())};
+	std::vector<segment_option> options;
+	for (std::size_t i = 0; i < Rails.size(); ++i)
+		options.emplace_back(static_cast<int>(i), Rails[i].c_str());
+	ImGui::SameLine();
+	if (choice_chips("##rails", pick, options))
+		Pick = Rails[pick];
+}
+
+// the short list: the catalogue of the rail and the own templates
+std::vector<int> short_list(switch_templates const &Templates, std::span<char const> const Fit, std::string const &Rail)
+{
+	std::vector<int> listed;
+	for (int i = 0; i < static_cast<int>(Templates.size()); ++i)
+	{
+		auto const &entry{Templates[i]};
+		if (0 != Fit[i] && entry.source == nullptr && (entry.own || entry.rail == Rail || entry.rail == "-"))
+			listed.push_back(i);
+	}
+	return listed;
+}
+
+// the speeds on the diverging track the switches of the list are made for, each with the index of the switch usual for it
+std::map<int, int> usual_switches(switch_templates const &Templates, std::vector<int> const &Listed)
+{
+	std::map<int, int> speeds;
+	auto const usual = [&Templates](int const Index) {
+		auto const &entry{Templates[Index]};
+		return std::make_tuple(entry.movable, std::abs(entry.ratio - usual_ratio(speed_of(entry))), false == words_of(entry).rest.empty(), Index);
+	};
+	for (auto const index : Listed)
+	{
+		auto const &entry{Templates[index]};
+		if (entry.own || entry.double_slip || entry.twofold() || entry.type != "Rz" || speed_of(entry) <= 0.0)
+			continue;
+		auto const speed{static_cast<int>(speed_of(entry))};
+		if (auto const known{speeds.find(speed)}; known == speeds.end() || usual(index) < usual(known->second))
+			speeds[speed] = index;
+	}
+	return speeds;
+}
+
+// the speeds as chips, the one of the template chosen lit: the index of the switch usual for the speed picked, -1 while none is
+int render_speed_chips(switch_templates const &Templates, std::map<int, int> &Speeds, int const Chosen)
+{
+	if (Speeds.size() <= 1)
+		return -1;
+	ImGui::TextDisabled("%s", STR_C("Speed on the diverging track"));
+	item_tooltip("Picks the usual switch of the rail for the speed; the others of the same speed are on the list under it");
+	int speed{Chosen >= 0 && Chosen < static_cast<int>(Templates.size()) ? static_cast<int>(speed_of(Templates[Chosen])) : -1};
+	std::vector<std::string> labels;
+	for (auto const &[value, index] : Speeds)
+		labels.push_back(format("%d km/h", value));
+	std::vector<segment_option> options;
+	auto label{labels.begin()};
+	for (auto const &[value, index] : Speeds)
+		options.emplace_back(value, (label++)->c_str());
+	if (choice_chips("##speeds", speed, options))
+		return Speeds[speed];
+	return -1;
+}
+
+// the group of the short list a template is shown under: its skos; the own templates and the one chosen from elsewhere after them
+std::pair<double, std::string> short_group_of(switch_templates const &Templates, int const Index, int const Chosen, bool const Outside)
+{
+	auto const &entry{Templates[Index]};
+	if (Index == Chosen && Outside)
+		return {1e9, STR("Chosen")};
+	if (entry.own)
+		return {1e8, STR("Own templates")};
+	return {entry.ratio, skos_of(entry)};
+}
+
+// the templates of the short list of one group under its title; Picked: the one clicked
+void render_short_group(switch_templates const &Templates, std::vector<int> const &Shown, std::pair<double, std::string> const &Group, int const Chosen, bool const Outside, int &Picked)
+{
+	ImGui::SeparatorText(Group.second.c_str());
+	for (auto const index : Shown)
+		if (short_group_of(Templates, index, Chosen, Outside) == Group && template_row(index, Templates[index], row_name(Templates[index]), index == Chosen))
+			Picked = index;
+}
+
+// the templates of the short list, the steepest skos first, in a window of their own unless in a popup; Picked: the one clicked
+void render_short_list(switch_templates const &Templates, std::vector<int> const &Shown, int const Chosen, bool const Outside, bool const Popup, int &Picked)
+{
+	std::vector<std::pair<double, std::string>> groups;
+	for (auto const index : Shown)
+		if (auto const group{short_group_of(Templates, index, Chosen, Outside)}; std::ranges::find(groups, group) == groups.end())
+			groups.push_back(group);
+	std::ranges::sort(groups);
+	if (Popup || ImGui::BeginChild("##short", ImVec2(0.0f, list_height(static_cast<int>(Shown.size()), static_cast<int>(groups.size()))), ImGuiChildFlags_Borders))
+		for (auto const &group : groups)
+			render_short_group(Templates, Shown, group, Chosen, Outside, Picked);
+	if (false == Popup)
+		ImGui::EndChild();
+}
+
+// the group of the whole list a template is shown under: the switches of the scenery, the own templates, the catalogue by the rail
+std::string whole_group_of(editor_track::switch_template const &Template)
+{
+	if (Template.source != nullptr)
+		return std::string{STR("From the scenery")};
+	if (Template.own)
+		return std::string{STR("Own templates")};
+	return "PLK " + (Template.rail == "-" ? std::string{} : Template.rail);
+}
+
+// the templates of the kind of one group of the whole list under its title; Picked: the one clicked
+void render_whole_group(switch_templates const &Templates, std::span<char const> const Fit, std::string const &Group, int const Chosen, int &Picked)
+{
+	ImGui::SeparatorText(Group.c_str());
+	for (int i = 0; i < static_cast<int>(Templates.size()); ++i)
+		if (0 != Fit[i] && whole_group_of(Templates[i]) == Group &&
+		    template_row(i, Templates[i], Templates[i].source != nullptr ? row_name(Templates[i]) : switch_name_translated(Templates[i].title()), i == Chosen))
+			Picked = i;
+}
+
+// all the templates of the kind: the switches of the scenery, the own templates, then the catalogue rail by rail, in a window of
+// their own unless in a popup; Picked: the one clicked
+void render_all_templates(switch_templates const &Templates, std::span<char const> const Fit, int const Chosen, bool const Popup, int &Picked)
+{
+	std::vector<std::string> wholes;
+	int rows{0};
+	for (std::size_t i = 0; i < Templates.size(); ++i)
+	{
+		if (0 == Fit[i])
+			continue;
+		++rows;
+		if (auto const group{whole_group_of(Templates[i])}; std::ranges::find(wholes, group) == wholes.end())
+			wholes.push_back(group);
+	}
+	if (Popup || ImGui::BeginChild("##all", ImVec2(0.0f, list_height(rows, static_cast<int>(wholes.size()))), ImGuiChildFlags_Borders))
+		for (auto const &group : wholes)
+			render_whole_group(Templates, Fit, group, Chosen, Picked);
+	if (false == Popup)
+		ImGui::EndChild();
+}
+
 } // namespace
 
 std::string editor_mode::template_name(editor_track::switch_template const &Template)
@@ -298,7 +564,7 @@ bool editor_mode::change_slip_template(TTrack const &Part, int const Index)
 {
 	auto &tool{m_switch};
 	auto const &shape{tool.templates[Index]};
-	auto const fail = [&](std::string const &Status) {
+	auto const fail = [this, &tool](std::string const &Status) {
 		tool.status = Status;
 		ui()->set_status(Status, true);
 		return false;
@@ -308,19 +574,10 @@ bool editor_mode::change_slip_template(TTrack const &Part, int const Index)
 	if (false == slip.has_value() && false == crossing.has_value())
 		return false;
 	auto const &record{slip.has_value() ? slip->record : *crossing};
-	std::vector<TTrack *> parts;
-	if (slip.has_value())
-		parts = slip->parts;
-	else
-		for (auto const &name : record.parts)
-			if (auto *part{simulation::Paths.find(name)}; part != nullptr && false == part->m_editorremoved)
-				parts.push_back(part);
-	for (auto const *part : parts)
-		if (false == part->Dynamics.empty())
-			return fail(STR_C("The slip can't be laid again while vehicles stand on it"));
-	// a single slip laid again joins the pair of the tracks it joined: the point given by them
-	auto const &ends{slip.has_value() ? slip->ends : std::array<glm::dvec3, 4>{}};
-	auto const pair{slip.has_value() && record.type == "Rkp" ? 0.5 * (ends[0] + ends[3]) : glm::dvec3{0.0}};
+	auto const parts{slip.has_value() ? slip->parts : crossing_parts(record)};
+	if (std::ranges::any_of(parts, [](TTrack const *Piece) { return false == Piece->Dynamics.empty(); }))
+		return fail(STR_C("The slip can't be laid again while vehicles stand on it"));
+	auto const pair{pair_point(slip, record)};
 	// taken out, the two tracks left crossing in its place; a crossing is those two tracks already
 	std::vector<TTrack *> throughs;
 	if (slip.has_value())
@@ -339,35 +596,16 @@ bool editor_mode::change_slip_template(TTrack const &Part, int const Index)
 		throughs = parts;
 	}
 	records_to_history();
-	auto const undo = [&](std::string const &Status) {
+	auto const undo = [this, &fail](std::string const &Status) {
 		undo_last();
 		return fail(Status);
 	};
 	if (throughs.size() != 2)
 		return undo(STR_C("The tracks of the slip can't be laid crossing in its place"));
-	std::array<glm::dvec2, 2> directions;
-	std::array<glm::dvec3, 2> starts;
-	for (int i = 0; i < 2; ++i)
-	{
-		auto const &path{throughs[i]->m_paths.front()};
-		starts[i] = path.points[segment_data::point::start];
-		directions[i] = plan_of(path.points[segment_data::point::end] - starts[i]);
-		if (glm::length(directions[i]) < 1e-6)
-			return undo(STR_C("The tracks of the slip can't be laid crossing in its place"));
-		directions[i] = glm::normalize(directions[i]);
-	}
-	double along{0.0};
-	double alongother{0.0};
-	if (false == geometry::lines_cross(plan_of(starts[0]), directions[0], plan_of(starts[1]), directions[1], along, alongother))
-		return undo(STR_C("The tracks of the slip don't cross"));
-	auto const middle{plan_of(starts[0]) + directions[0] * along};
-	auto point{glm::dvec3{middle.x, starts[0].y, middle.y}};
-	if (shape.type == "Rkp" && pair != glm::dvec3{0.0})
-		if (auto const towards{plan_of(pair) - middle}; glm::length(towards) > 1e-3)
-		{
-			auto const shift{glm::normalize(towards)};
-			point += glm::dvec3{shift.x, 0.0, shift.y};
-		}
+	auto const crossed{crossing_of(throughs)};
+	if (crossed.problem != nullptr)
+		return undo(crossed.problem);
+	auto const point{slip_point(crossed, shape, pair)};
 	tool.keep_slip = record.name;
 	auto const steps{m_history.size()};
 	auto const laid{insert_double_slip(editor_track::find_straight(*throughs[0], m_straights.tolerance), point, shape, 0)};
@@ -380,98 +618,31 @@ bool editor_mode::change_slip_template(TTrack const &Part, int const Index)
 	ui()->set_status(tool.status, false);
 	WriteLog("Editor: slip " + record.name + " laid again of the template " + shape.title(), logtype::generic);
 	// the first part of the new one selected, the slip whole for the inspector
-	auto const &records{switch_store::records()};
-	if (auto const again{std::ranges::find_if(records, [&](switch_store::record const &Entry) { return Entry.name == record.name && false == Entry.parts.empty(); })}; again != records.end())
-		if (auto *first{simulation::Paths.find(again->parts.front())}; first != nullptr && false == first->m_editorremoved)
-			select_track(first);
+	if (auto *first{first_part_of(record.name)}; first != nullptr)
+		select_track(first);
 	return true;
 }
 
 bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes)
 {
 	Notes.clear();
-	// the rolls of the paths laid anew, where they have none, taken from the paths they replace
-	auto const keep_rolls = [](std::vector<segment_data> &Paths, auto const &Before) {
-		for (std::size_t i = 0; i < Paths.size(); ++i)
-			if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
-				Paths[i].rolls = Before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
-	};
-	// the same for the two paths of a switch, from the paths of the track before
-	auto const keep_own_rolls = [](std::vector<segment_data> &Paths, auto const &Before) {
-		for (int i = 0; i < 2; ++i)
-			if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
-				Paths[i].rolls = Before.m_paths[i].rolls;
-	};
 	auto const set{double_of(Switch)};
 	auto &first{set.has_value() ? *set->first : Switch};
 	if (first.m_paths.size() < 2 || Shape.twofold() != set.has_value())
 		return false;
-	auto const &main{first.m_paths[0]};
-	auto const &diverging{first.m_paths[1]};
-	if (set.has_value() || false == has_controls(main))
+	if (set.has_value() || false == has_controls(first.m_paths[0]))
 	{
 		// along the straight: the start and the direction of the switch kept
-		auto const origin{main.points[segment_data::point::start]};
-		auto const chord{plan_of(main.points[segment_data::point::end] - origin)};
-		auto const length{glm::length(chord)};
-		if (length < 1e-3)
-			return false;
-		glm::dvec2 const axis{chord / length};
-		glm::dvec2 const normal{-axis.y, axis.x};
-		auto const side{(glm::dot(plan_of(diverging.points[segment_data::point::end] - origin), normal) > 0.0) != Flip ? 1 : -1};
-		auto paths{editor_track::place_switch(Shape, origin, axis, side, (main.points[segment_data::point::end].y - origin.y) / length)};
-		if (set.has_value())
-		{
-			if (paths.size() < 5)
-				return false;
-			keep_rolls(paths, double_paths(*set));
-			if (false == move_double_paths(*set, paths, Notes))
-				return false;
-		}
-		else
-		{
-			if (paths.size() < 2)
-				return false;
-			keep_own_rolls(paths, first);
-			if (false == move_switch_paths(first, paths, Notes))
-				return false;
-		}
-	}
-	else
-	{
-		// bent into a curve: bent into it again, the start kept where it is along the curve
-		std::vector<curve_sample> frame;
-		std::array<TTrack *, 2> sides;
-		double station{0.0};
-		if (false == bent_switch_frame(first, frame, sides, station))
-		{
-			Notes = STR_C("A switch bent into a curve takes another template where plain tracks go on from both ends of its main track");
-			return false;
-		}
-		auto const reach{std::abs(Shape.local[0].points[segment_data::point::end].z)};
-		if (auto const over{station + reach - frame.back().station}; over > 1e-3)
-		{
-			Notes = format(STR_C("The template is %.2f m longer than the curve the switch lies in gives it, past the track beyond the switch"), over);
-			return false;
-		}
-		auto const end{diverging.points[segment_data::point::end]};
-		auto const at{sample_at(frame, nearest_station(frame, end))};
-		auto const side{(glm::dot(plan_of(end) - plan_of(at.position), glm::dvec2{-at.tangent.y, at.tangent.x}) > 0.0) != Flip ? 1 : -1};
-		if (false == lay_bent_switch(first, frame, sides, curved_switch_paths(Shape, frame, station, 1, side), Notes))
+		if (false == reapply_straight_switch(first, set, Shape, Flip, Notes))
 			return false;
 	}
+	// bent into a curve: bent into it again, the start kept where it is along the curve
+	else if (false == reapply_bent_switch(first, Shape, Flip, Notes))
+		return false;
 	// the blades and the frog of a template of the catalogue, as a switch laid of it has them
 	if (Shape.source == nullptr)
 		for (auto *track : {&first, set.has_value() ? set->second : nullptr})
-		{
-			auto *extension{track != nullptr ? track->SwitchExtension.get() : nullptr};
-			if (extension == nullptr || (extension->m_movablenose == Shape.movable && extension->m_bladeheel == Shape.heel && extension->m_bladethrow == Shape.bladethrow))
-				continue;
-			extension->m_movablenose = Shape.movable;
-			extension->m_bladeheel = Shape.heel;
-			extension->m_bladethrow = Shape.bladethrow;
-			editor_track::commit_parameters(*track);
-		}
+			take_blades(track, Shape);
 	if (set.has_value())
 		record_double(*set->first, *set->second, Shape);
 	else
@@ -480,6 +651,54 @@ bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_tem
 	records_to_history();
 	straight_refresh();
 	return true;
+}
+
+bool editor_mode::reapply_straight_switch(TTrack &First, std::optional<double_switch> const &Set, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes)
+{
+	auto const &main{First.m_paths[0]};
+	auto const &diverging{First.m_paths[1]};
+	auto const origin{main.points[segment_data::point::start]};
+	auto const chord{plan_of(main.points[segment_data::point::end] - origin)};
+	auto const length{glm::length(chord)};
+	if (length < 1e-3)
+		return false;
+	glm::dvec2 const axis{chord / length};
+	glm::dvec2 const normal{-axis.y, axis.x};
+	auto const side{(glm::dot(plan_of(diverging.points[segment_data::point::end] - origin), normal) > 0.0) != Flip ? 1 : -1};
+	auto paths{editor_track::place_switch(Shape, origin, axis, side, (main.points[segment_data::point::end].y - origin.y) / length)};
+	if (Set.has_value())
+	{
+		if (paths.size() < 5)
+			return false;
+		keep_rolls(paths, double_paths(*Set));
+		return move_double_paths(*Set, paths, Notes);
+	}
+	if (paths.size() < 2)
+		return false;
+	keep_own_rolls(paths, First);
+	return move_switch_paths(First, paths, Notes);
+}
+
+bool editor_mode::reapply_bent_switch(TTrack &First, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes)
+{
+	std::vector<curve_sample> frame;
+	std::array<TTrack *, 2> sides;
+	double station{0.0};
+	if (false == bent_switch_frame(First, frame, sides, station))
+	{
+		Notes = STR_C("A switch bent into a curve takes another template where plain tracks go on from both ends of its main track");
+		return false;
+	}
+	auto const reach{std::abs(Shape.local[0].points[segment_data::point::end].z)};
+	if (auto const over{station + reach - frame.back().station}; over > 1e-3)
+	{
+		Notes = format(STR_C("The template is %.2f m longer than the curve the switch lies in gives it, past the track beyond the switch"), over);
+		return false;
+	}
+	auto const end{First.m_paths[1].points[segment_data::point::end]};
+	auto const at{sample_at(frame, nearest_station(frame, end))};
+	auto const side{(glm::dot(plan_of(end) - plan_of(at.position), glm::dvec2{-at.tangent.y, at.tangent.x}) > 0.0) != Flip ? 1 : -1};
+	return lay_bent_switch(First, frame, sides, curved_switch_paths(Shape, frame, station, 1, side), Notes);
 }
 
 bool editor_mode::change_switch_template(TTrack &Switch, int const Index)
@@ -519,139 +738,96 @@ bool editor_mode::change_switch_template(TTrack &Switch, int const Index)
 	return true;
 }
 
-int editor_mode::render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup)
+int editor_mode::render_template_picker(char const *Id, std::span<char const> const Fits, std::string const &Rail, int const Chosen, bool const Popup)
 {
 	auto &tool{m_switch};
 	auto const &templates{tool.templates};
 	auto const count{static_cast<int>(templates.size())};
-	int picked{-1};
 	ImGui::PushID(Id);
 	// the rail: of the track, else the one picked, among the rails the catalogue has templates of the kind for
 	auto rail{Rail};
 	if (rail.empty())
 	{
-		std::vector<std::string> rails;
-		for (auto const &entry : templates)
-			if (Fits(entry) && entry.source == nullptr && false == entry.own && entry.rail != "-" && std::ranges::find(rails, entry.rail) == rails.end())
-				rails.push_back(entry.rail);
-		if (std::ranges::find(rails, tool.rail_pick) == rails.end() && false == rails.empty())
-			tool.rail_pick = rails.front();
-		if (rails.size() > 1)
-		{
-			ImGui::TextDisabled("%s", STR_C("Rails"));
-			item_tooltip("The track doesn't tell its rail: the templates of the rail picked are listed, all of them under All templates");
-			int pick{static_cast<int>(std::ranges::find(rails, tool.rail_pick) - rails.begin())};
-			std::vector<segment_option> options;
-			for (std::size_t i = 0; i < rails.size(); ++i)
-				options.emplace_back(static_cast<int>(i), rails[i].c_str());
-			ImGui::SameLine();
-			if (choice_chips("##rails", pick, options))
-				tool.rail_pick = rails[pick];
-		}
+		render_rail_chips(rails_of(templates, Fits), tool.rail_pick);
 		rail = tool.rail_pick;
 	}
 	// the short list: the catalogue of the rail and the own templates, the one chosen also when it's of neither
-	std::vector<int> listed;
-	for (int i = 0; i < count; ++i)
-	{
-		auto const &entry{templates[i]};
-		if (Fits(entry) && entry.source == nullptr && (entry.own || entry.rail == rail || entry.rail == "-"))
-			listed.push_back(i);
-	}
+	auto const listed{short_list(templates, Fits, rail)};
 	auto const outside{Chosen >= 0 && Chosen < count && std::ranges::find(listed, Chosen) == listed.end()};
 	// the speeds on the diverging track the switches of the rail are made for, each picking the switch usual for it
-	std::map<int, int> speeds;
-	auto const usual = [&](int const Index) {
-		auto const &entry{templates[Index]};
-		return std::make_tuple(entry.movable, std::abs(entry.ratio - usual_ratio(speed_of(entry))), false == words_of(entry).rest.empty(), Index);
-	};
-	for (auto const index : listed)
-	{
-		auto const &entry{templates[index]};
-		if (entry.own || entry.double_slip || entry.twofold() || entry.type != "Rz" || speed_of(entry) <= 0.0)
-			continue;
-		auto const speed{static_cast<int>(speed_of(entry))};
-		if (auto const known{speeds.find(speed)}; known == speeds.end() || usual(index) < usual(known->second))
-			speeds[speed] = index;
-	}
-	if (speeds.size() > 1)
-	{
-		ImGui::TextDisabled("%s", STR_C("Speed on the diverging track"));
-		item_tooltip("Picks the usual switch of the rail for the speed; the others of the same speed are on the list under it");
-		int speed{Chosen >= 0 && Chosen < count ? static_cast<int>(speed_of(templates[Chosen])) : -1};
-		std::vector<std::string> labels;
-		for (auto const &[value, index] : speeds)
-			labels.push_back(format("%d km/h", value));
-		std::vector<segment_option> options;
-		auto label{labels.begin()};
-		for (auto const &[value, index] : speeds)
-			options.emplace_back(value, (label++)->c_str());
-		if (choice_chips("##speeds", speed, options))
-			picked = speeds[speed];
-	}
+	auto speeds{usual_switches(templates, listed)};
+	int picked{render_speed_chips(templates, speeds, Chosen)};
 	// by the skos, the steepest first; the own templates and the one chosen from elsewhere after them
-	std::vector<std::pair<double, std::string>> groups;
-	auto const group_of = [&](int const Index) -> std::pair<double, std::string> {
-		auto const &entry{templates[Index]};
-		if (Index == Chosen && outside)
-			return {1e9, STR("Chosen")};
-		if (entry.own)
-			return {1e8, STR("Own templates")};
-		return {entry.ratio, skos_of(entry)};
-	};
 	auto shown{listed};
 	if (outside)
 		shown.push_back(Chosen);
-	for (auto const index : shown)
-		if (auto const group{group_of(index)}; std::ranges::find(groups, group) == groups.end())
-			groups.push_back(group);
-	std::ranges::sort(groups);
-	auto const short_group = [&](auto const &Group) {
-		ImGui::SeparatorText(Group.second.c_str());
-		for (auto const index : shown)
-			if (group_of(index) == Group && template_row(index, templates[index], row_name(templates[index]), index == Chosen))
-				picked = index;
-	};
-	if (Popup || ImGui::BeginChild("##short", ImVec2(0.0f, list_height(static_cast<int>(shown.size()), static_cast<int>(groups.size()))), ImGuiChildFlags_Borders))
-		for (auto const &group : groups)
-			short_group(group);
-	if (false == Popup)
-		ImGui::EndChild();
+	render_short_list(templates, shown, Chosen, outside, Popup, picked);
 	// all of them: the switches of the scenery, the own templates, then the catalogue rail by rail
 	if (ImGui::TreeNode(STR_C("All templates")))
 	{
-		auto const whole_group = [](editor_track::switch_template const &Template) {
-			if (Template.source != nullptr)
-				return std::string{STR("From the scenery")};
-			if (Template.own)
-				return std::string{STR("Own templates")};
-			return "PLK " + (Template.rail == "-" ? std::string{} : Template.rail);
-		};
-		std::vector<std::string> wholes;
-		int rows{0};
-		for (auto const &entry : templates)
-			if (Fits(entry))
-			{
-				++rows;
-				if (auto const group{whole_group(entry)}; std::ranges::find(wholes, group) == wholes.end())
-					wholes.push_back(group);
-			}
-		auto const whole_rows = [&](std::string const &Group) {
-			ImGui::SeparatorText(Group.c_str());
-			for (int i = 0; i < count; ++i)
-				if (Fits(templates[i]) && whole_group(templates[i]) == Group &&
-				    template_row(i, templates[i], templates[i].source != nullptr ? row_name(templates[i]) : switch_name_translated(templates[i].title()), i == Chosen))
-					picked = i;
-		};
-		if (Popup || ImGui::BeginChild("##all", ImVec2(0.0f, list_height(rows, static_cast<int>(wholes.size()))), ImGuiChildFlags_Borders))
-			for (auto const &group : wholes)
-				whole_rows(group);
-		if (false == Popup)
-			ImGui::EndChild();
+		render_all_templates(templates, Fits, Chosen, Popup, picked);
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
 	return picked == Chosen ? -1 : picked;
+}
+
+bool editor_mode::template_offer_of(TTrack const &Track, template_offer &Offer) const
+{
+	auto const slip{slip_of(Track)};
+	auto const crossing{slip.has_value() ? std::nullopt : crossing_record(Track)};
+	auto const set{double_of(Track)};
+	Offer.first = set.has_value() ? set->first : &Track;
+	Offer.rail = editor_track::rail_of(Offer.first);
+	if (slip.has_value() || crossing.has_value())
+	{
+		Offer.known = slip.has_value() ? slip->record : *crossing;
+		auto const angle{angle_of(*Offer.known)};
+		Offer.fits = [angle](editor_track::switch_template const &Template) { return of_skos(Template, angle); };
+		Offer.current = slip_template_index(*Offer.known, Offer.rail);
+		return true;
+	}
+	if (Track.eType != tt_Switch)
+		return false;
+	Offer.known = switch_store::named(*Offer.first);
+	Offer.fits = [twofold{set.has_value()}](editor_track::switch_template const &Template) { return false == Template.double_slip && Template.twofold() == twofold; };
+	Offer.current = switch_template_index(*Offer.first);
+	if (Offer.rail.empty() && Offer.known.has_value() && Offer.known->rail != "-")
+		Offer.rail = Offer.known->rail;
+	return true;
+}
+
+std::string editor_mode::offered_name(template_offer const &Offer) const
+{
+	if (Offer.current >= 0)
+		return template_name(m_switch.templates[Offer.current]);
+	if (Offer.known.has_value())
+		return format(STR_C("Own shape: %s"), switch_store::label(*Offer.known).c_str());
+	return std::string{STR_C("Own shape")};
+}
+
+int editor_mode::render_template_combo(template_offer const &Offer, std::string const &Blocked)
+{
+	int picked{-1};
+	if (false == begin_fields("##switchtemplate", 0.3f))
+		return picked;
+	field_row("Template##switchtemplate");
+	ImGui::BeginDisabled(false == Blocked.empty());
+	ImGui::PushItemWidth(-1.0f);
+	// the templates in a combo: the one picked, -1 while none is
+	if (ImGui::BeginCombo("##switchtemplate", offered_name(Offer).c_str(), ImGuiComboFlags_HeightLargest))
+	{
+		picked = render_template_picker("##inspector", templates_fitting(Offer.fits), Offer.rail, Offer.current, true);
+		if (picked >= 0)
+			ImGui::CloseCurrentPopup();
+		ImGui::EndCombo();
+	}
+	ImGui::PopItemWidth();
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", Blocked.empty() ? STR_C("Another template in place of this one: the start and the side of the switch kept, the tracks it joins following it") : Blocked.c_str());
+	ImGui::EndTable();
+	return picked;
 }
 
 void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
@@ -663,72 +839,24 @@ void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 		tool.collected = true;
 	}
 	// a slip or a crossing: the templates for the angle its tracks cross at; a switch, a double one: those of its kind
-	auto const slip{slip_of(Track)};
-	auto const crossing{slip.has_value() ? std::nullopt : crossing_record(Track)};
-	auto const set{double_of(Track)};
-	auto const *first{set.has_value() ? set->first : &Track};
-	std::optional<switch_store::record> known;
-	std::function<bool(editor_track::switch_template const &)> fits;
-	auto rail{editor_track::rail_of(first)};
-	int current{-1};
-	if (slip.has_value() || crossing.has_value())
-	{
-		known = slip.has_value() ? slip->record : *crossing;
-		auto const angle{angle_of(*known)};
-		fits = [angle](editor_track::switch_template const &Template) { return of_skos(Template, angle); };
-		current = slip_template_index(*known, rail);
-	}
-	else if (Track.eType == tt_Switch)
-	{
-		known = switch_store::named(*first);
-		fits = [twofold{set.has_value()}](editor_track::switch_template const &Template) { return false == Template.double_slip && Template.twofold() == twofold; };
-		current = switch_template_index(*first);
-		if (rail.empty() && known.has_value() && known->rail != "-")
-			rail = known->rail;
-	}
-	else
+	template_offer offer;
+	if (false == template_offer_of(Track, offer))
 		return;
-	auto const blocked{template_change_blocked(*first)};
-	auto const own = [&]() { return known.has_value() ? format(STR_C("Own shape: %s"), switch_store::label(*known).c_str()) : std::string{STR_C("Own shape")}; };
+	auto const blocked{template_change_blocked(*offer.first)};
 	int picked{-1};
-	// the templates in a combo: the one picked, -1 while none is
-	auto const combo_pick = [&]() {
-		int chosen{-1};
-		if (ImGui::BeginCombo("##switchtemplate", current >= 0 ? template_name(tool.templates[current]).c_str() : own().c_str(), ImGuiComboFlags_HeightLargest))
-		{
-			chosen = render_template_picker("##inspector", fits, rail, current, true);
-			if (chosen >= 0)
-				ImGui::CloseCurrentPopup();
-			ImGui::EndCombo();
-		}
-		return chosen;
-	};
 	if (Combo)
-	{
-		if (begin_fields("##switchtemplate", 0.3f))
-		{
-			field_row("Template##switchtemplate");
-			ImGui::BeginDisabled(false == blocked.empty());
-			ImGui::PushItemWidth(-1.0f);
-			picked = combo_pick();
-			ImGui::PopItemWidth();
-			ImGui::EndDisabled();
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-				ImGui::SetTooltip("%s", blocked.empty() ? STR_C("Another template in place of this one: the start and the side of the switch kept, the tracks it joins following it") : blocked.c_str());
-			ImGui::EndTable();
-		}
-	}
+		picked = render_template_combo(offer, blocked);
 	else
 	{
 		ImGui::TextDisabled("%s", STR_C("Template"));
 		ImGui::SameLine();
-		ImGui::TextUnformatted(current >= 0 ? template_name(tool.templates[current]).c_str() : own().c_str());
+		ImGui::TextUnformatted(offered_name(offer).c_str());
 		if (false == blocked.empty())
 		{
 			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", blocked.c_str());
 			return;
 		}
-		picked = render_template_picker("##turnout", fits, rail, current, false);
+		picked = render_template_picker("##turnout", templates_fitting(offer.fits), offer.rail, offer.current, false);
 	}
 	if (picked >= 0)
 		change_switch_template(Track, picked);

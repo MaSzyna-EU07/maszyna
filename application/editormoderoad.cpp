@@ -296,6 +296,58 @@ glm::dvec3 path_direction(segment_data const &Path, double const T)
 	return 3.0 * u * u * (p1 - p0) + 6.0 * u * T * (p2 - p1) + 3.0 * T * T * (p3 - p2);
 }
 
+
+// the right of way of the traffic coming in from a road of a junction, and the ways each of its lanes can be left by: whether
+// any of them changed
+bool render_arm_rules(auto &Data)
+{
+	bool changed{false};
+	ImGui::Indent();
+	// the entries are in the order of the stored values
+	std::array<char const *, 4> const priorities{STR_C("no sign: gives way to the right"), STR_C("has the right of way"), STR_C("gives way"), STR_C("stops, then gives way")};
+	int priority{static_cast<int>(Data.priority)};
+	ImGui::SetNextItemWidth(220.0f);
+	if (ImGui::Combo("##priority", &priority, priorities.data(), 4))
+	{
+		Data.priority = static_cast<junction_node::right_of_way>(std::clamp(priority, 0, 3));
+		changed = true;
+	}
+	item_tooltip("Right of way of the traffic coming in from this road");
+	// ways each lane can be left by
+	std::array<char const *, 8> const ways{STR_C("automatic"), STR_C("left"), STR_C("straight on"), STR_C("left, straight on"), STR_C("right"), STR_C("left, right"), STR_C("straight on, right"), STR_C("any way")};
+	for (int lane = 0; lane < Data.incoming; ++lane)
+	{
+		ImGui::PushID(100 + lane);
+		int turns{static_cast<std::size_t>(lane) < Data.turns.size() ? Data.turns[lane] & 7 : 0};
+		auto const label{format(STR_C("Lane %d goes"), lane + 1)};
+		ImGui::SetNextItemWidth(140.0f);
+		if (ImGui::Combo(label.c_str(), &turns, ways.data(), 8))
+		{
+			Data.turns.resize(std::max(Data.turns.size(), static_cast<std::size_t>(lane) + 1), 0);
+			Data.turns[lane] = turns;
+			changed = true;
+		}
+		ImGui::PopID();
+	}
+	ImGui::Unindent();
+	return changed;
+}
+
+// the way a vehicle may change between a lane, Id, and the one next to it, Next: whether it changed
+bool render_lane_change(int &Change, std::string const &Id, std::string const &Next)
+{
+	// the entries are in the order of the stored values: none, to the right, to the left, both
+	auto const toright{format(STR_C("only %s to %s"), Id.c_str(), Next.c_str())};
+	auto const toleft{format(STR_C("only %s to %s"), Next.c_str(), Id.c_str())};
+	std::array<char const *, 4> const modes{STR_C("no lane change"), toright.c_str(), toleft.c_str(), STR_C("lane change both ways")};
+	ImGui::Indent();
+	ImGui::SetNextItemWidth(200.0f);
+	auto const changed{ImGui::Combo("##change", &Change, modes.data(), 4)};
+	item_tooltip("Which way a vehicle may change between these two lanes");
+	ImGui::Unindent();
+	return changed;
+}
+
 }
 
 void editor_mode::update_road_tool()
@@ -902,37 +954,8 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			ImGui::Text(STR_C("%d: %d in, %d out, lanes %.2f m wide"), static_cast<int>(arm) + 1, data.incoming, data.outgoing, data.width);
 			if (state.arms.size() > 2 && render_arm_crossings(data))
 				changed = true;
-			if (data.incoming > 0 && state.arms.size() > 2)
-			{
-				ImGui::Indent();
-				// the entries are in the order of the stored values
-				std::array<char const *, 4> const priorities{STR_C("no sign: gives way to the right"), STR_C("has the right of way"), STR_C("gives way"), STR_C("stops, then gives way")};
-				int priority{static_cast<int>(data.priority)};
-				ImGui::SetNextItemWidth(220.0f);
-				if (ImGui::Combo("##priority", &priority, priorities.data(), 4))
-				{
-					data.priority = static_cast<junction_node::right_of_way>(std::clamp(priority, 0, 3));
-					changed = true;
-				}
-				item_tooltip("Right of way of the traffic coming in from this road");
-				// ways each lane can be left by
-				std::array<char const *, 8> const ways{STR_C("automatic"), STR_C("left"), STR_C("straight on"), STR_C("left, straight on"), STR_C("right"), STR_C("left, right"), STR_C("straight on, right"), STR_C("any way")};
-				for (int lane = 0; lane < data.incoming; ++lane)
-				{
-					ImGui::PushID(100 + lane);
-					int turns{static_cast<std::size_t>(lane) < data.turns.size() ? data.turns[lane] & 7 : 0};
-					auto const label{format(STR_C("Lane %d goes"), lane + 1)};
-					ImGui::SetNextItemWidth(140.0f);
-					if (ImGui::Combo(label.c_str(), &turns, ways.data(), 8))
-					{
-						data.turns.resize(std::max(data.turns.size(), static_cast<std::size_t>(lane) + 1), 0);
-						data.turns[lane] = turns;
-						changed = true;
-					}
-					ImGui::PopID();
-				}
-				ImGui::Unindent();
-			}
+			if (data.incoming > 0 && state.arms.size() > 2 && render_arm_rules(data))
+				changed = true;
 			ImGui::PopID();
 		}
 	}
@@ -2253,20 +2276,8 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				changed = true;
 			}
 			item_tooltip("Speed limit of the lane, 0: no limit");
-			if (lane + 1 < State.lanes.size() && lane < State.changes.size())
-			{
-				// the entries are in the order of the stored values: none, to the right, to the left, both
-				auto const next{State.lane_id(lane + 1)};
-				auto const toright{format(STR_C("only %s to %s"), id.c_str(), next.c_str())};
-				auto const toleft{format(STR_C("only %s to %s"), next.c_str(), id.c_str())};
-				std::array<char const *, 4> const modes{STR_C("no lane change"), toright.c_str(), toleft.c_str(), STR_C("lane change both ways")};
-				ImGui::Indent();
-				ImGui::SetNextItemWidth(200.0f);
-				if (ImGui::Combo("##change", &State.changes[lane], modes.data(), 4))
-					changed = true;
-				item_tooltip("Which way a vehicle may change between these two lanes");
-				ImGui::Unindent();
-			}
+			if (lane + 1 < State.lanes.size() && lane < State.changes.size() && render_lane_change(State.changes[lane], id, State.lane_id(lane + 1)))
+				changed = true;
 			ImGui::PopID();
 		}
 	}

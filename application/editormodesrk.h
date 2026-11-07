@@ -334,6 +334,25 @@ class srk_tool final : public editor_tool
 	void render_track_number();
 	void render_switch_list(station::layout const &Layout);
 	void render_canvas(float const Height);
+	// the parts of it, on where the schematic is drawn and the labels placed, defined where they're used: the wheel, the path and the line
+	// out under the mouse, a click let go, the drawing with its ruler, paths, lines out, useful lengths and labels, the tooltips
+	struct canvas_frame;
+	struct canvas_labels;
+	void canvas_wheel(ImVec2 const &Corner, ImVec2 const &Size);
+	int path_hovered(canvas_frame const &Frame) const;
+	void line_hovered(canvas_frame const &Frame, int &Hover, double &At) const;
+	void canvas_click(int const LineHover, double const LineAt);
+	void draw_canvas(canvas_frame const &Frame, int const LineHover, double const LineAt);
+	void draw_ruler(canvas_frame const &Frame) const;
+	void draw_paths(canvas_frame const &Frame) const;
+	void draw_lines(canvas_frame const &Frame, int const LineHover, double const LineAt) const;
+	std::vector<std::pair<std::string, ImVec2>> useful_lengths(canvas_frame const &Frame) const;
+	void label_switches(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void label_signals(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void label_lines(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void label_circuits(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void path_tooltip(canvas_frame const &Frame) const;
+	void line_out_tooltip(int const LineHover, double const LineAt) const;
 	void fit_view(float const Width, float const Height);
 	void find_all();
 	// the switches numbered along the station and named after its code; one step of the history
@@ -350,6 +369,8 @@ class srk_tool final : public editor_tool
 	bool circuits_editable(std::vector<station::joint> const &Planned);
 	// the track circuits as the tracks have them, for the schematic
 	void survey();
+	// the joints of the circuits, where paths of different ones meet
+	void survey_joints(station::layout const &Layout);
 	// the signals placed where the station has none and the standing ones named, the circuits before the entry signals set too; one
 	// step of the history
 	void set_signals();
@@ -396,6 +417,8 @@ class srk_tool final : public editor_tool
 	editor_selftest_result selftest_heads(std::istringstream &Words);
 	editor_selftest_result selftest_shp(std::istringstream &Words);
 	editor_selftest_result selftest_block(std::istringstream &Words);
+	// the ways of the block it sets
+	void selftest_ways(std::string const &Entry, std::string const &Ways);
 	editor_selftest_result selftest_boundary(std::istringstream &Words);
 	editor_selftest_result selftest_fit(std::istringstream &Words);
 	editor_selftest_result selftest_draw(std::istringstream &Words);
@@ -408,6 +431,10 @@ class srk_tool final : public editor_tool
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
 	void set_lines(block_edit const *Edit = nullptr);
+	// the state of set_lines() and its steps: the lines and their block, the signals planned, the changes made
+	struct lines_set;
+	struct lines_plan;
+	struct lines_change;
 	// the lines out of the open station from its entry signals standing, Entries: the signals of the plan they begin at, Owners:
 	// the standing ones; false with the reason while it has none
 	bool lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const;

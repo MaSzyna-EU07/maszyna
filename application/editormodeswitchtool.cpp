@@ -246,7 +246,7 @@ void editor_mode::render_switch_ui()
 	}
 	else if (auto const *track{selected_track()}; track != nullptr && (track->iCategoryFlag & 15) == 1 && track->m_profile1.first.empty())
 		render_rail_profile_hint(*track);
-	if (auto const picked{render_template_picker("##place", [kind](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }, rail, tool.armed, false)}; picked >= 0)
+	if (auto const picked{render_template_picker("##place", templates_fitting([kind](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }), rail, tool.armed, false)}; picked >= 0)
 	{
 		tool.last = picked;
 		tool.armed = picked;

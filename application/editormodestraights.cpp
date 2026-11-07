@@ -587,6 +587,20 @@ bool side_follows(bool const Curve, TTrack const *Neighbour, bool const Pivot)
 	return Curve || Neighbour == nullptr || Pivot;
 }
 
+// the note of the straights tool, then the group of straights moving together with a button clearing it
+void render_straights_status(auto &State)
+{
+	if (false == State.status.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", State.status.c_str());
+	if (false == State.set.empty())
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.15f, 1.0f), STR_C("Group: %zu straights move together"), State.set.size());
+		ImGui::SameLine();
+		if (ImGui::SmallButton(STR_C("Clear")))
+			State.set.clear();
+	}
+}
+
 } // namespace
 
 void editor_mode::draw_straights_overlay() const
@@ -808,15 +822,7 @@ void editor_mode::render_straight_ui()
 	item_tooltip("Straights of a group move together and stay parallel; Alt+click in the view adds another one");
 	if (state.tool != 0)
 		render_curve_settings(state.curve_radius, state.auto_transitions, state.transition);
-	if (false == state.status.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
-	if (false == state.set.empty())
-	{
-		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.15f, 1.0f), STR_C("Group: %zu straights move together"), state.set.size());
-		ImGui::SameLine();
-		if (ImGui::SmallButton(STR_C("Clear")))
-			state.set.clear();
-	}
+	render_straights_status(state);
 
 	if (false == ImGui::IsAnyItemActive())
 	{
