@@ -1886,9 +1886,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_escape();
 	std::size_t lay_pending() const; // the points clicked and not laid yet
 	void render_lay_ui();
-	void render_lay_status();
+	// the parts of it: the points not laid yet, the settings of the mode, the curves of the line shown, the settings folded away, a
+	// texture of the new track
+	void render_lay_pending();
+	void render_lay_shape();
+	void render_lay_curves() const;
+	void render_lay_more();
+	void render_texture_row(int const Kind, char const *Label, std::string &Value, float const Column);
+	void render_lay_status() const;
 	void lay_click();
 	void lay_finish(editor_track::snap_target const &End);
+	// the notes told of the track laid; the compound curve it makes with the tracks of the free ends
+	void lay_notes(std::vector<TTrack *> const &Created, std::vector<segment_data> const &Pieces, editor_track::snap_target const &End, lay_line_plan const &Plan,
+	               std::optional<alignment::lay_result> const &Eased, std::string const &Error, TTrack const *Style);
+	void compound_note(std::vector<TTrack *> const &Created, editor_track::snap_target const &End);
 	void lay_cancel();
 	void lay_enter();
 	// Tab: the bends of straights or the curve traced, for the points clicked from now on
@@ -1898,8 +1909,30 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the track through the points clicked, each the way its mode says; End: the free end it finishes at, the last point then
 	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
 	                                     lay_line_plan *Plan = nullptr) const;
+	// the parts of it: the track from a point to a free end, the second point; the heights of the pieces and the cant at the free ends
+	std::vector<segment_data> lay_to_end(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
+	void lay_heights(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan const &Plan) const;
 	// Adjoining: the curve next to a free end on a curve goes on from its curvature, where it turns its way; else from a straight there
 	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining = true) const;
+	// the parts of it, on its state and a stretch of points along a curve, defined where they're used: the points gone through, the curve
+	// fitted to a stretch of them, the line closed at its end; the fit of a stretch leaving that way, going on from the curve of the free
+	// end, from a straight at a switch, into the curve of the free end at the end, its end turned onto the straight clicked after it or
+	// to reach the last point
+	struct lay_line_state;
+	struct lay_stretch;
+	bool lay_line_points(lay_line_state &State) const;
+	bool lay_line_stretch(lay_line_state &State, std::size_t const First, std::size_t const Last, bool const Reaching, bool const Fromend) const;
+	bool lay_stretch_fit(lay_line_state &State, lay_stretch &Stretch) const;
+	bool lay_line_close(lay_line_state &State) const;
+	std::optional<alignment::trace_stretch> stretch_fit_to(lay_stretch const &Stretch, glm::dvec2 const &Leaving, bool const Meanwhile, bool &Exact) const;
+	std::optional<alignment::trace_stretch> stretch_going(lay_line_state &State, lay_stretch &Stretch) const;
+	bool straight_first_closer(lay_stretch const &Stretch, alignment::trace_stretch const &Going) const;
+	std::optional<alignment::trace_stretch> stretch_into(lay_stretch &Stretch) const;
+	void stretch_end_turn(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted) const;
+	std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> clicked_straight(lay_stretch const &Stretch, bool &Waiting) const;
+	std::optional<alignment::trace_stretch> heading_fit(lay_stretch const &Stretch, glm::dvec2 const &Heading, bool &Waiting) const;
+	void closest_heading(lay_stretch const &Stretch, glm::dvec2 const &Chorded, double const Step, std::optional<alignment::trace_stretch> &Fit, glm::dvec2 &Heading, bool &Waiting) const;
+	void turn_to_point(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted, double const First, double const Ending) const;
 	// whether the points next to the start of the line, or to its end, AtEnd, a free end joined there, are clicked along a curve
 	static bool traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd);
 	// the curves of a stretch traced, the ones fitted lately kept for the same points
@@ -2144,13 +2177,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void insert_curved_slip(int const Direction, int const Side);
 	bool start_extend(editor_track::snap_target const &End);
 	void finish_extend();
+	// the parts of it: a press let go where it was made; the second switch of a crossover placed
+	void extend_tap();
+	void finish_crossover(crossover_plan const &Plan);
 	std::vector<segment_data> extend_pieces() const;
+	// the track dragged on from the diverging end of a switch, in the radius of its branch; nullopt for any other
+	std::optional<std::vector<segment_data>> extend_branch_pieces() const;
 	// the same for the track shown while it's dragged: its grade line fitted on the thread of the fitter, the frame not waiting for it
 	std::vector<segment_data> extend_preview() const;
 	// the free end of the path as the start of a new track; false if it isn't free or has no direction
 	static bool free_end(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool);
 	// the free end new pieces are added at: the selected point if it's one, else the end, else the start
-	bool chosen_free_end(extend_tool &Tool);
+	bool chosen_free_end(extend_tool &Tool) const;
 	// adds a straight (Side 0) or a curve to the left (1) or the right (-1) at the free end of the selected track
 	void extend_add(int const Side);
 	void render_extend_ui();
@@ -2168,6 +2206,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	mutable std::optional<alignment::lay_result> m_eased_last;
 	mutable std::optional<std::pair<alignment::lay_request, std::optional<alignment::lay_result>>> m_eased_cache;
 	bool track_wheel(double const Offset);
+	// the parts of it: the connection of a switch dragged out, the speed laid for, the radius of the curve laid or joining
+	void wheel_connection(double const Offset);
+	void wheel_speed(int const Step);
+	void wheel_radius(bool const Joined, int const Step);
 	// a touchpad sends fractions of a notch: a choice moves a step for each whole notch gathered, and only one in a gesture when
 	// Gesture; a pause, another key or the other way starts over
 	struct wheel_state
@@ -2196,6 +2238,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	double m_extend_radius{300.0};
 	bool extend_snap(editor_track::snap_target &Target) const;
 	void update_build_tools();
+	// the parts of it: the track and the point the cursor joins, the end of a track dragged on, the switch dragged out, the line being
+	// laid; the cursor taken where it is for the line, or kept where its fits were asked for; the line worked out through the points
+	void join_target(editor_track::snap_target const &Target);
+	void update_extend_drag(glm::vec2 const &Cursor, bool const Pointing);
+	void update_switch_placing();
+	void update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &Cursor, bool const Pointing);
+	void lay_settle();
+	void lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End);
 	void draw_build_overlay() const;
 	// the joint before the blades of the switch being placed or the one selected and the tips of its blades
 	void draw_blade_tips() const;
@@ -2393,6 +2443,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool handle_drag_step(glm::dvec3 &Position, TTrack const *Ground = nullptr);
 	void point_drag_start(editor_track::point_ref const &Point);
 	void point_drag_update();
+	// the drag started once the cursor went far enough, false while it hasn't or the track can't be changed; where the point goes
+	bool point_drag_begin(TTrack &Track, glm::vec2 const &Mouse);
+	void point_drag_place(TTrack &Track, glm::vec2 const &Mouse, glm::dvec3 &Position);
 	void point_drag_finish();
 	bool route_hit(int &Vertex, int &Grip) const;
 	int straight_handle_hit();
