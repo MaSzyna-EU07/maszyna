@@ -809,6 +809,19 @@ bool TMoverParameters::ChangeCab(int direction)
 // rozruch wysoki (true) albo niski (false)
 bool TMoverParameters::CurrentSwitch(bool const State)
 {
+	// TBD, TODO: split off shunt mode toggle into a separate command? It doesn't make much sense to have these two together like that
+	// the diesels with a shunt mode have no motor overload relay threshold to switch, the switch sets their shunt mode alone.
+	// MaxCurrentSwitch() takes any change of the setting, so asked first it took the first move of the switch (eu07/maszyna#497)
+	if (true == ShuntModeAllow && (EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric))
+	{
+		// dla 2Ls150 przed ustawieniem kierunku, for SM42/SP42 at the controller's zero position
+		if (EngineType == TEngineType::DieselEngine ? DirActive != 0 : false == IsMainCtrlNoPowerPos())
+		{
+			return false;
+		}
+		ShuntMode = State;
+		return true;
+	}
 
 	if (MaxCurrentSwitch(State))
 	{
@@ -816,20 +829,6 @@ bool TMoverParameters::CurrentSwitch(bool const State)
 		{
 			MinCurrentSwitch(State);
 		}
-		return true;
-	}
-	// TBD, TODO: split off shunt mode toggle into a separate command? It doesn't make much sense to have these two together like that
-	// dla 2Ls150
-	if (EngineType == TEngineType::DieselEngine && true == ShuntModeAllow && DirActive == 0)
-	{
-		// przed ustawieniem kierunku
-		ShuntMode = State;
-		return true;
-	}
-	// for SM42/SP42
-	if (EngineType == TEngineType::DieselElectric && true == ShuntModeAllow && IsMainCtrlNoPowerPos())
-	{
-		ShuntMode = State;
 		return true;
 	}
 
