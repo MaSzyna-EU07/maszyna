@@ -2710,7 +2710,7 @@ int TMoverParameters::MainCtrlNoPowerPos() const
 	}
 	case 2:
 	{
-		return 3;
+		return 3 + EIMCtrlEmergencyPositions();
 	}
 	case 3:
 	{
@@ -2733,6 +2733,16 @@ int TMoverParameters::MainCtrlPowerPos() const
 {
 
 	return MainCtrlPos - MainCtrlNoPowerPos();
+}
+
+int TMoverParameters::EIMCtrlEmergencyPositions() const
+{
+	return (EIMCtrlType == 2 && EIMCtrlMainEmergency) ? 1 : 0;
+}
+
+bool TMoverParameters::IsMainCtrlEmergencyPos() const
+{
+	return MainCtrlPos < EIMCtrlEmergencyPositions();
 }
 
 // *************************************************************************************************
@@ -4577,7 +4587,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
 	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
-	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || SecuritySystem.is_braking() ||
+	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || IsMainCtrlEmergencyPos() || SecuritySystem.is_braking() ||
 		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
 		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
 	{
@@ -7357,10 +7367,16 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic = 0;
 		break;
 	case 2:
-		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
+		if (IsMainCtrlEmergencyPos())
+		{
+			// hamowanie nagle: pelne hamowanie od razu, przewod glowny oproznia UpdatePipePressure()
+			eimic = -1.0;
+		}
+		else if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
 		{
 			double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
-			switch (MainCtrlPos)
+			// the positions below are those of the controller without the emergency brake position
+			switch (MainCtrlPos - EIMCtrlEmergencyPositions())
 			{
 			case 0:
 			case 1:
@@ -10895,6 +10911,14 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(LocHandleTimeTraxx, "LocalBrakeTraxx", line, "");
 	extract_value(EIMCtrlAdditionalZeros, "EIMCtrlAddZeros", line, "");
 	extract_value(EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
+	// Elf (EIMCtrlType 2): an emergency brake position below the controller's position 0, which shifts the other positions up by one
+	extract_value(EIMCtrlMainEmergency, "EIMCtrlMainEmergency", line, "");
+	if (auto const elfpositions{4 + EIMCtrlEmergencyPositions()}; EIMCtrlEmergencyPositions() > 0 && MainCtrlPosNo < elfpositions)
+	{
+		// without it the controller would have no power position
+		ErrorLog(std::format("Bad fiz: EIMCtrlMainEmergency needs MCPN={} in {}", elfpositions, TypeName));
+		MainCtrlPosNo = elfpositions;
+	}
 
 	extract_value(ScndS, "ScndS", line, ""); // brak pozycji rownoleglej przy niskiej nastawie PSR
 
