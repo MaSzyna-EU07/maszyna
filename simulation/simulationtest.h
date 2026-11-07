@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 
 // integration test mode (eu07 --test -s <scenery>, eu07/maszyna#541): the scenery runs unattended in a tight
 // fixed-step loop and the simulator quits with an exit code saying how the test went
@@ -44,9 +45,9 @@ public:
 	// checks the end conditions after a simulation frame of Deltatime seconds
 	void update(double Deltatime);
 	// reported by a driver whose train went past a signal showing stop
-	void signal_passed_at_danger(std::string const &Vehicle, std::string const &Signal);
+	void signal_passed_at_danger(std::string_view Vehicle, std::string_view Signal);
 	// ends the test with given result; the first call wins
-	void finish(test_result Result, std::string const &Reason);
+	void finish(test_result Result, std::string_view Reason);
 
 	bool finished() const { return m_finished; }
 	// exit code of the process: the result, or error while the test hasn't finished
@@ -61,6 +62,7 @@ private:
 	double m_resttime { 0.0 }; // how long every vehicle has been standing [s]
 };
 
-extern test_manager Test;
+// the test of the run
+test_manager &test();
 
 } // namespace simulation

@@ -23,6 +23,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include <cstdlib>
+#include <format>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
 #include <Windows.h>
@@ -150,7 +151,7 @@ int main(int argc, char *argv[])
 #ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
-			ErrorLog("Critical error: " + std::string(Error.what()));
+			ErrorLog(std::format("Critical error: {}", Error.what()));
 			// in test mode nobody is there to close the box, the exit code tells of the error
 			if (false == Global.test.enabled)
 			{
@@ -167,5 +168,5 @@ int main(int argc, char *argv[])
 #endif
 	// skip destructors, there are ordering errors which causes segfaults
 	// a test run (--test) says its result in the exit code
-	std::_Exit(Global.test.enabled ? simulation::Test.exit_code() : 0);
+	std::_Exit(Global.test.enabled ? simulation::test().exit_code() : 0);
 }

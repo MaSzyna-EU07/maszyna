@@ -26,7 +26,17 @@ double fRenderTime{ 0.0 };
 double fSoundTimer{ 0.0 };
 double fSinceStart{ 0.0 };
 double override_delta = -1.0f;
-double fixed_step = 0.0;
+
+namespace {
+
+// when set (test mode), every frame lasts this long, see set_fixed_step()
+double &fixed_step()
+{
+	static double step{0.0};
+	return step;
+}
+
+} // namespace
 
 double GetTime()
 {
@@ -56,7 +66,7 @@ void set_delta_override(double t)
 
 void set_fixed_step(double t)
 {
-	fixed_step = t;
+	fixed_step() = t;
 }
 
 void ResetTimers()
@@ -82,15 +92,16 @@ void UpdateTimers(bool pause)
 	fr = 1000000000;
 #endif
     DeltaRenderTime = double(count - oldCount) / double(fr);
-    if (fixed_step > 0.0)
+    auto const fixedstep{fixed_step()};
+    if (fixedstep > 0.0)
     {
         // the frame lasts exactly as long as said, however long it took to compute; the time speed doesn't apply
-        DeltaRenderTime = fixed_step;
+        DeltaRenderTime = fixedstep;
     }
     fRenderTime += DeltaRenderTime;
     if (!pause)
     {
-        DeltaTime = (fixed_step > 0.0 ? 1.0 : Global.fTimeSpeed) * DeltaRenderTime;
+        DeltaTime = (fixedstep > 0.0 ? 1.0 : Global.fTimeSpeed) * DeltaRenderTime;
         fSoundTimer += DeltaTime;
         if (fSoundTimer > 0.1)
             fSoundTimer = 0.0;

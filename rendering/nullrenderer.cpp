@@ -7,8 +7,9 @@ void null_imgui_renderer::BeginFrame()
 {
     auto &io { ImGui::GetIO() };
     if( false == io.Fonts->IsBuilt() ) {
-        unsigned char *pixels;
-        int width, height;
+        unsigned char *pixels { nullptr };
+        int width { 0 };
+        int height { 0 };
         io.Fonts->GetTexDataAsAlpha8( &pixels, &width, &height );
     }
 }

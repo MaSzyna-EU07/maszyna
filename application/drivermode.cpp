@@ -309,7 +309,7 @@ bool driver_mode::update()
 
 		if (Global.test.enabled && simulation::is_ready)
 		{
-			simulation::Test.update(deltatime);
+			simulation::test().update(deltatime);
 		}
 	}
 
@@ -488,7 +488,7 @@ void driver_mode::enter()
 	{
 		// the test runs as fast as it can compute, in steps of fixed length, so that runs on different machines agree
 		Timer::set_fixed_step(simulation::test_manager::frame_step);
-		simulation::Test.start();
+		simulation::test().start();
 	}
 
 	set_picking(!Global.captureonstart);

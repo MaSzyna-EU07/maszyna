@@ -19,9 +19,29 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Event.h"
 #include "world/MemCell.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <format>
+#include <memory>
+
+namespace {
+
+// the cell holds what the scenery wrote, so the values are whole numbers; the margin only keeps a stray fraction out
+bool holds(double const Value, double const Expected)
+{
+	return std::abs(Value - Expected) < 1e-6;
+}
+
+} // namespace
+
 namespace simulation {
 
-test_manager Test;
+test_manager &test()
+{
+	static test_manager instance;
+	return instance;
+}
 
 std::string_view to_string(test_result const Result)
 {
@@ -39,11 +59,12 @@ std::string_view to_string(test_result const Result)
 
 void test_manager::init_result_cell()
 {
-	auto *cell = new TMemCell({0, -1, std::string(result_cell), "memcell"});
+	auto cell { std::make_unique<TMemCell>(scene::node_data{0, -1, std::string(result_cell), "memcell"}) };
 	// neither of the reported values, so that a cell nobody wrote to says nothing
 	cell->UpdateValues("", -1.0, 0.0, basic_event::flags::value1 | basic_event::flags::value2);
-	simulation::Memory.insert(cell);
-	simulation::Region->insert(cell);
+	simulation::Region->insert(cell.get());
+	// the table owns its cells
+	simulation::Memory.insert(cell.release());
 }
 
 void test_manager::start()
@@ -76,21 +97,21 @@ void test_manager::update(double const Deltatime)
 	if (auto const *cell = simulation::Memory.find(std::string(result_cell)))
 	{
 		auto const value { cell->Value1() };
-		auto const reason { cell->Text().empty() ? std::string() : " (" + cell->Text() + ")" };
-		if (value == 0.0)
+		auto const reason { cell->Text().empty() ? std::string() : std::format(" ({})", cell->Text()) };
+		if (holds(value, 0.0))
 		{
-			finish(test_result::fail, "__test.result set to 0" + reason);
+			finish(test_result::fail, std::format("__test.result set to 0{}", reason));
 			return;
 		}
-		if (value == 1.0 && false == m_passrequested)
+		if (holds(value, 1.0) && false == m_passrequested)
 		{
 			m_passrequested = true;
 			WriteLog(std::format("test: pass requested at {:.1f} s{}, waiting for every vehicle to stop", m_time, reason));
 		}
 	}
 
-	auto const atrest = std::none_of(simulation::Vehicles.sequence().begin(), simulation::Vehicles.sequence().end(),
-	                                 [](TDynamicObject const *Vehicle) { return std::abs(Vehicle->GetVelocity()) > 0.01; });
+	auto const atrest { std::ranges::none_of(simulation::Vehicles.sequence(),
+	                                         [](TDynamicObject const *Vehicle) { return std::abs(Vehicle->GetVelocity()) > 0.01; }) };
 	m_resttime = atrest ? m_resttime + Deltatime : 0.0;
 
 	if (m_passrequested && m_resttime >= pass_settle_time)
@@ -111,9 +132,9 @@ void test_manager::update(double const Deltatime)
 	}
 }
 
-void test_manager::signal_passed_at_danger(std::string const &Vehicle, std::string const &Signal)
+void test_manager::signal_passed_at_danger(std::string_view const Vehicle, std::string_view const Signal)
 {
-	auto const reason { Vehicle + " passed signal " + Signal + " at danger" };
+	auto const reason { std::format("{} passed signal {} at danger", Vehicle, Signal) };
 	if (false == Global.test.enabled)
 	{
 		WriteLog(reason, logtype::generic);
@@ -127,7 +148,7 @@ void test_manager::signal_passed_at_danger(std::string const &Vehicle, std::stri
 	finish(test_result::signal_passed_at_danger, reason);
 }
 
-void test_manager::finish(test_result const Result, std::string const &Reason)
+void test_manager::finish(test_result const Result, std::string_view const Reason)
 {
 	if (m_finished || false == Global.test.enabled)
 		return;

@@ -60,7 +60,7 @@ bool scenarioloader_mode::update() {
 			ErrorLog(std::format("Bad init: scenario \"{}\" couldn't be opened ({})", Global.SceneryFile, e.what()));
 			state.reset();
 			if (Global.test.enabled) {
-				simulation::Test.finish(simulation::test_result::error, "scenario couldn't be opened");
+				simulation::test().finish(simulation::test_result::error, "scenario couldn't be opened");
 				return true;
 			}
 			Global.SceneryFile.clear();
@@ -80,7 +80,7 @@ bool scenarioloader_mode::update() {
 		state.reset();
 		if( Global.test.enabled ) {
 			// there's nothing to test; the exit code says the run went wrong
-			simulation::Test.finish( simulation::test_result::error, "scenario loading failed" );
+			simulation::test().finish( simulation::test_result::error, "scenario loading failed" );
 			return true;
 		}
 		Global.SceneryFile.clear();

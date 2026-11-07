@@ -768,12 +768,7 @@ void TController::TableCheck(double fDistance)
         { // aktualizacja rekordów z wyjątkiem ostatniego
             if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
             {
-                auto const waspassed { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
-                auto const switchchanged { sSpeedTable[ i ].Update() };
-                if( false == waspassed ) {
-                    CheckSignalPassedAtDanger( sSpeedTable[ i ] );
-                }
-                if (switchchanged)
+                if (UpdateSpeedPosition(sSpeedTable[i]))
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
                         WriteLog( "Speed table for " + OwnerName() + " detected switch change at " + sSpeedTable[ i ].trTrack->name() + " (generating fresh trace)" );
@@ -823,11 +818,7 @@ void TController::TableCheck(double fDistance)
             }
         }
         // aktualizacja ostatniego; a signal at stop often is the last, the scan doesn't go past it
-        auto const lastwaspassed { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
-        sSpeedTable[iLast].Update();
-        if( false == lastwaspassed ) {
-            CheckSignalPassedAtDanger( sSpeedTable[ iLast ] );
-        }
+        UpdateSpeedPosition(sSpeedTable[iLast]);
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
             TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
@@ -838,18 +829,31 @@ void TController::TableCheck(double fDistance)
     }
 };
 
-void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point ) const
+namespace {
+
+// the position is a signal showing stop (SetVelocity 0 0). SetVelocity 0 x on automatic block isn't: it may be passed after a stop
+bool is_signal_at_stop( TSpeedPos const &Point )
 {
-    if( false == TestFlag( Point.iFlags, spElapsed )
-     || false == TestFlag( Point.iFlags, spEvent )
-     || false == TestFlag( Point.iFlags, spSemaphor )
-     || true == TestFlag( Point.iFlags, spStopOnSBL ) // SetVelocity 0 x on automatic block: may go on after a stop
-     || Point.fVelNext != 0.0
-     || Point.evEvent == nullptr
-     || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
-        return;
+    return TestFlag( Point.iFlags, spEvent )
+        && TestFlag( Point.iFlags, spSemaphor )
+        && false == TestFlag( Point.iFlags, spStopOnSBL )
+        && std::abs( Point.fVelNext ) <= 0.0
+        && Point.evEvent != nullptr;
+}
+
+} // namespace
+
+bool TController::UpdateSpeedPosition( TSpeedPos &Point ) const
+{
+    auto const passedbefore { TestFlag( Point.iFlags, spElapsed ) };
+    auto const switchchanged { Point.Update() };
+    if( false == passedbefore
+     && TestFlag( Point.iFlags, spElapsed )
+     && is_signal_at_stop( Point )
+     && ( mvOccupied->CategoryFlag & 1 ) != 0 ) { // railway only
+        simulation::test().signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
     }
-    simulation::Test.signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
+    return switchchanged;
 }
 
 auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head

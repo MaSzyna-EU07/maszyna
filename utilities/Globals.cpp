@@ -1779,6 +1779,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.shadowmap.enabled", gfx_shadowmap_enabled );
     // TODO: export fpslimit
     export_as_text( Output, "randomseed", Global.random_seed );
+    export_as_text( Output, "test.timeout", test.timeout );
+    export_as_text( Output, "test.standstill", test.standstill );
+    export_as_text( Output, "test.pass_on_standstill", test.pass_on_standstill );
+    export_as_text( Output, "test.fail_if_stop_overran", test.fail_if_stop_overran );
     export_as_text( Output, "gfx.envmap.enabled", gfx_envmap_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );

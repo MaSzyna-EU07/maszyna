@@ -111,7 +111,7 @@ state_manager::init_scripting_interface() {
         simulation::Region->insert( memorycell );
     }
     // the cell a test scenery reports its result to
-    simulation::Test.init_result_cell();
+    simulation::test().init_result_cell();
 }
 
 // legacy method, calculates changes in simulation state over specified time
