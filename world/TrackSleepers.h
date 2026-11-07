@@ -126,7 +126,7 @@ std::vector<pack_model> const &pack_models();
 // the beams of the track placed anew, as instances of the parts of the model
 void lay( TTrack &Track );
 // the beams of the tracks around the track to be placed again, as they depend on where it runs
-void unsettle_around( TTrack &Track );
+void unsettle_around( TTrack const &Track );
 // the beams worked out in a thread of their own as the tracks come near, while the simulation runs; off in the editor, where the
 // tracks change and the beams are worked out as they're needed. turning it off waits for the beams being worked out
 void lay_in_background( bool const Background );
@@ -158,6 +158,6 @@ layout_check check();
 // the beams laid with the track: the tracks whose plain sleepers would meet make a cluster laid together, lines of timbers
 // across all of their rails turned to the bisectors of frogs and crossings, and the plain sleepers square to each track where no
 // timber carries it, in step with the timbers. every beam is laid with one track of the cluster
-std::vector<beam> place( TTrack &Track );
+std::vector<beam> place( TTrack const &Track );
 
 } // namespace track_sleepers

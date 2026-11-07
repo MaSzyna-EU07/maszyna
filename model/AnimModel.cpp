@@ -817,7 +817,7 @@ void TAnimModel::AnimUpdate(double dt)
 // For non-uniform scale we use the largest axis factor so the bounding sphere
 // fully contains the scaled model — undersizing would cause incorrect culling.
 float
-TAnimModel::radius_() {
+TAnimModel::radius_() const {
 
     if( pModel == nullptr ) { return 0.f; }
     float const max_scale = std::max( { m_scale.x, m_scale.y, m_scale.z } );

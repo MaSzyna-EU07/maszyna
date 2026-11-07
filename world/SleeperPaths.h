@@ -24,7 +24,7 @@ namespace track_sleepers {
 
 // a path of a track by samples taken along it
 struct sampled_path {
-    TTrack *track { nullptr };
+    TTrack const *track { nullptr };
     int path { 0 };
     TSegment const *segment { nullptr };
     double length { 0.0 };
@@ -43,7 +43,7 @@ struct sampled_path {
 
 int path_count( TTrack const &Track );
 TSegment const *path_segment( TTrack const &Track, int const Path );
-sampled_path sample( TTrack &Track, int const Path );
+sampled_path sample( TTrack const &Track, int const Path );
 // the direction of the path in plan by its samples about the distance
 glm::dvec2 heading( sampled_path const &Path, double const Distance );
 // which of two paths lays the beams where they're merged: a switch before a plain track, the main path of a switch
@@ -76,12 +76,12 @@ double shared_spacing( sampled_path const &Path, sampled_path const &Other );
 bool shares_with( sampled_path const &Path, glm::dvec3 const &Point, glm::dvec2 const &Direction, sampled_path const &Other );
 // the paths of the track, and of the tracks with beams around it; or of all those with the ballast the simulator makes, whether
 // they get beams or not
-std::vector<sampled_path> paths_around( TTrack &Track, bool const Bedded = false );
+std::vector<sampled_path> paths_around( TTrack const &Track, bool const Bedded = false );
 // the tracks of the region near enough the track to take part in laying its beams, itself among them, some more than once
-std::vector<TTrack *> near_tracks( TTrack &Track );
+std::vector<TTrack *> near_tracks( TTrack const &Track );
 // the same tracks, each visited in turn
 template <typename Visitor_>
-void tracks_near( TTrack &Track, Visitor_ const &Visit ) {
+void tracks_near( TTrack const &Track, Visitor_ const &Visit ) {
 
     for( auto *other : near_tracks( Track ) ) {
         Visit( other );

@@ -184,7 +184,7 @@ public:
     void RaAnimate( unsigned int const Framestamp ); // przeliczenie animacji egzemplarza
 
     // radius() subclass details, calculates node's bounding radius
-    float radius_();
+    float radius_() const override;
     // serialize() subclass details, sends content of the subclass to provided stream
     void serialize_( std::ostream &Output ) const;
     // deserialize() subclass details, restores content of the subclass from provided stream
