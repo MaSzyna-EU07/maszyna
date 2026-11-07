@@ -334,6 +334,25 @@ class srk_tool final : public editor_tool
 	void render_track_number();
 	void render_switch_list(station::layout const &Layout);
 	void render_canvas(float const Height);
+	// the parts of it, on where the schematic is drawn and the labels placed, defined where they're used: the wheel, the path and the line
+	// out under the mouse, a click let go, the drawing with its ruler, paths, lines out, useful lengths and labels, the tooltips
+	struct canvas_frame;
+	struct canvas_labels;
+	void canvas_wheel(ImVec2 const &Corner, ImVec2 const &Size);
+	int path_hovered(canvas_frame const &Frame) const;
+	void line_hovered(canvas_frame const &Frame, int &Hover, double &At) const;
+	void canvas_click(int const LineHover, double const LineAt);
+	void draw_canvas(canvas_frame const &Frame, int const LineHover, double const LineAt);
+	void draw_ruler(canvas_frame const &Frame) const;
+	void draw_paths(canvas_frame const &Frame) const;
+	void draw_lines(canvas_frame const &Frame, int const LineHover, double const LineAt) const;
+	std::vector<std::pair<std::string, ImVec2>> useful_lengths(canvas_frame const &Frame) const;
+	void label_switches(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void label_signals(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void label_lines(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void label_circuits(canvas_frame const &Frame, canvas_labels &Labels) const;
+	void path_tooltip(canvas_frame const &Frame) const;
+	void line_out_tooltip(int const LineHover, double const LineAt) const;
 	void fit_view(float const Width, float const Height);
 	void find_all();
 	// the switches numbered along the station and named after its code; one step of the history
