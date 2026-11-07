@@ -95,6 +95,25 @@ double path_radius(segment_data const &Path, double const T)
 	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
 }
 
+// the way, the radius and the side of the turn of a path at its end, Atend: the end, Leaving: the chain leaves the path there
+void direction_at(segment_data const &Path, bool const Atend, bool const Leaving, glm::dvec3 &Direction, double &Radius, int &Turn)
+{
+	// measured on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends,
+	// R 300.9 at the end of the diverging track of a switch of R 300
+	auto const *end{&Path};
+	if (false == Path.pieces.empty())
+		end = Atend ? &Path.pieces.back() : &Path.pieces.front();
+	auto const tangent{glm::normalize(path_tangent(*end, Atend))};
+	auto const along{Leaving != Atend};
+	auto const at{Atend ? 1.0 : 0.0};
+	Direction = along ? tangent : -tangent;
+	Radius = path_radius(*end, at);
+	// the side it turns to as the chain runs, the path gone against its points turning the other way
+	Turn = 0;
+	if (Radius > 0.0)
+		Turn = (bezier{*end}.plan_curvature(at) > 0.0) == along ? 1 : -1;
+}
+
 bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius, int &Turn)
 {
 	if (Neighbour == nullptr)
@@ -106,20 +125,7 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 			auto const &point{path.points[atend ? segment_data::point::end : segment_data::point::start]};
 			if (glm::distance(point, Joint) > kSamePoint)
 				continue;
-			// measured on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends,
-			// R 300.9 at the end of the diverging track of a switch of R 300
-			auto const *end{&path};
-			if (false == path.pieces.empty())
-				end = atend ? &path.pieces.back() : &path.pieces.front();
-			auto const tangent{glm::normalize(path_tangent(*end, atend))};
-			auto const along{Leaving != atend};
-			auto const at{atend ? 1.0 : 0.0};
-			Direction = along ? tangent : -tangent;
-			Radius = path_radius(*end, at);
-			// the side it turns to as the chain runs, the path gone against its points turning the other way
-			Turn = 0;
-			if (Radius > 0.0)
-				Turn = (bezier{*end}.plan_curvature(at) > 0.0) == along ? 1 : -1;
+			direction_at(path, atend, Leaving, Direction, Radius, Turn);
 			return true;
 		}
 	}
@@ -163,6 +169,38 @@ std::pair<double, double> element_curvatures(alignment::element const &Element)
 
 // the pieces of a curve along the run of its paths: of the elements of the stored design a path lies along, of the path itself where
 // it lies along none, its curvature as at its middle where it barely changes along it. False where no path lies along a design
+// a path along the run as one piece of the curve, Forward: along it, of its Length: its curvature as at its middle where it barely
+// changes along it
+curve_piece path_piece(segment_data const &Path, bool const Forward, double const Length)
+{
+	auto const curvature_at = [&](double const T) {
+		auto const radius{path_radius(Path, Forward ? T : 1.0 - T)};
+		return radius > 0.0 ? 1.0 / radius : 0.0;
+	};
+	auto const start{curvature_at(0.0)};
+	if (auto const end{curvature_at(1.0)}; std::abs(start - end) <= 0.1 * std::max(start, end))
+		return {Length, curvature_at(0.5), curvature_at(0.5)};
+	else
+		return {Length, start, end};
+}
+
+// the pieces of the curve of the elements of a design between two chainages
+std::vector<curve_piece> element_pieces(std::vector<alignment::element> const &Elements, double const Low, double const High)
+{
+	std::vector<curve_piece> own;
+	for (auto const &element : Elements)
+	{
+		auto const from{std::max(Low, element.chainage)};
+		auto const to{std::min(High, element.chainage + element.length)};
+		if (to - from < 1e-6)
+			continue;
+		auto const [start, end]{element_curvatures(element)};
+		auto const at = [&](double const Chainage) { return element.length > 1e-9 ? start + (end - start) * (Chainage - element.chainage) / element.length : start; };
+		own.emplace_back(to - from, at(from), at(to));
+	}
+	return own;
+}
+
 bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vector<curve_piece> &Pieces)
 {
 	Pieces.clear();
@@ -182,32 +220,14 @@ bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vec
 		}
 		if (false == first.has_value() || false == last.has_value() || first->record != last->record || std::abs(last->chainage - first->chainage) < 1e-3)
 		{
-			auto const curvature_at = [&](double const T) {
-				auto const radius{path_radius(path, forward ? T : 1.0 - T)};
-				return radius > 0.0 ? 1.0 / radius : 0.0;
-			};
-			auto const start{curvature_at(0.0)};
-			if (auto const end{curvature_at(1.0)}; std::abs(start - end) <= 0.1 * std::max(start, end))
-				Pieces.emplace_back(length, curvature_at(0.5), curvature_at(0.5));
-			else
-				Pieces.emplace_back(length, start, end);
+			Pieces.push_back(path_piece(path, forward, length));
 			continue;
 		}
 		designed = true;
 		auto const &elements{alignment_store::records()[static_cast<std::size_t>(first->record)].result.elements};
 		auto const low{std::min(first->chainage, last->chainage)};
 		auto const high{std::max(first->chainage, last->chainage)};
-		std::vector<curve_piece> own;
-		for (auto const &element : elements)
-		{
-			auto const from{std::max(low, element.chainage)};
-			auto const to{std::min(high, element.chainage + element.length)};
-			if (to - from < 1e-6)
-				continue;
-			auto const [start, end]{element_curvatures(element)};
-			auto const at = [&](double const Chainage) { return element.length > 1e-9 ? start + (end - start) * (Chainage - element.chainage) / element.length : start; };
-			own.emplace_back(to - from, at(from), at(to));
-		}
+		auto own{element_pieces(elements, low, high)};
 		// the design running against the run
 		if (last->chainage < first->chainage)
 		{
@@ -2434,25 +2454,45 @@ bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Lengt
 	return false;
 }
 
+namespace
+{
+
+// whether a path of a track turns between its ends
+bool path_bends(TTrack const &Of, int const Path)
+{
+	bezier const curve{Of.m_paths[Path]};
+	auto const from{plan_of(curve.first(0.0))};
+	auto const to{plan_of(curve.first(1.0))};
+	return glm::length(from) > 1e-9 && glm::length(to) > 1e-9 && std::abs(std::atan2(from.x * to.y - from.y * to.x, glm::dot(from, to))) > 0.002;
+}
+
+// the path a run goes along through a track: its first path, the main one; but where that one bends and another runs straight, as in
+// the quarters of a double slip, straight on
+int main_path(TTrack const &Of)
+{
+	for (int i = 1; i < static_cast<int>(Of.m_paths.size()); ++i)
+		if (path_bends(Of, 0) && false == path_bends(Of, i))
+			return i;
+	return 0;
+}
+
+// of the paths a run can go on along, the last one along the main path of its track; the first where none is
+route_node main_candidate(std::vector<route_node> const &Candidates)
+{
+	auto chosen{Candidates.front()};
+	for (auto const &candidate : Candidates)
+		if (std::get<1>(candidate) == main_path(*std::get<0>(candidate)))
+			chosen = candidate;
+	return chosen;
+}
+
+} // namespace
+
 editor_track::route editor_track::run_route(TTrack &Track, double const Maximum, int const Path)
 {
 	route result;
 	if (false == is_supported(Track))
 		return result;
-	// through a switch the run goes along its first path, the main one; but where that one bends and the other runs straight,
-	// as in the quarters of a double slip, straight on
-	auto const bends = [](TTrack const &Of, int const Path) {
-		bezier const curve{Of.m_paths[Path]};
-		auto const from{plan_of(curve.first(0.0))};
-		auto const to{plan_of(curve.first(1.0))};
-		return glm::length(from) > 1e-9 && glm::length(to) > 1e-9 && std::abs(std::atan2(from.x * to.y - from.y * to.x, glm::dot(from, to))) > 0.002;
-	};
-	auto const main_of = [&](TTrack const &Of) {
-		for (int i = 1; i < static_cast<int>(Of.m_paths.size()); ++i)
-			if (bends(Of, 0) && false == bends(Of, i))
-				return i;
-		return 0;
-	};
 	auto const walk = [&](route_node Node) {
 		std::vector<route_node> nodes;
 		double length{0.0};
@@ -2461,10 +2501,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum,
 			auto candidates{route_next(Node)};
 			if (candidates.empty())
 				break;
-			auto chosen{candidates.front()};
-			for (auto const &candidate : candidates)
-				if (std::get<1>(candidate) == main_of(*std::get<0>(candidate)))
-					chosen = candidate;
+			auto const chosen{main_candidate(candidates)};
 			auto *track{std::get<0>(chosen)};
 			if (track == &Track || std::any_of(nodes.begin(), nodes.end(), [&](route_node const &Other) { return std::get<0>(Other) == track; }))
 				break;
@@ -2474,7 +2511,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum,
 		}
 		return nodes;
 	};
-	auto const own{Path >= 0 && Path < static_cast<int>(Track.m_paths.size()) ? Path : main_of(Track)};
+	auto const own{Path >= 0 && Path < static_cast<int>(Track.m_paths.size()) ? Path : main_path(Track)};
 	auto const ahead{walk({&Track, own, true})};
 	auto const behind{walk({&Track, own, false})};
 	for (auto node = behind.rbegin(); node != behind.rend(); ++node)
