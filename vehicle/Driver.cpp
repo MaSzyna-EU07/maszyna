@@ -8057,8 +8057,11 @@ void TController::control_releaser() {
             }
         }
         // wyluzuj lokomotywę, to szybciej ruszymy
+        // this rule is for starting off, so only below 1 km/h: at speed, just after an application, it would vent
+        // the control reservoir of a locomotive that may have to brake again before the pipe has refilled it
         if( mvOccupied->BrakePress > 0.4
-         && mvOccupied->Hamulec->GetCRP() > 4.9 ) {
+         && mvOccupied->Hamulec->GetCRP() > 4.9
+         && mvOccupied->Vel < 1.0 ) {
             actuate = true;
         }
         // keep engine brakes released during coupling/uncoupling
