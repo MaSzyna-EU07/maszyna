@@ -206,8 +206,8 @@ editor_mode::selftest_result editor_mode::selftest_signal_aspect(std::istringstr
 	show_track_tab(track_tab::srk);
 	signal_scan(true);
 	signal_refresh(true);
-	auto const found{std::ranges::find_if(m_signal.standing, [&values](signal_standing const &Standing) { return Standing.name == values["name"]; })};
-	auto const *item{found != m_signal.standing.end() ? signal_template_of(found->include.file) : nullptr};
+	auto const found{std::ranges::find_if(m_signal.known.standing, [&values](signal_standing const &Standing) { return Standing.name == values["name"]; })};
+	auto const *item{found != m_signal.known.standing.end() ? signal_template_of(found->include.file) : nullptr};
 	// of the aspects of the same name the last one, as the description lists them
 	std::pair<std::string, std::string> const *aspect_event{nullptr};
 	if (item != nullptr)
@@ -247,7 +247,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		selftest_signal_move(values);
 	else if (command == "signalflip" || command == "signalturn")
 	{
-		auto const *standing{standing_named(tool.standing, values["name"])};
+		auto const *standing{standing_named(tool.known.standing, values["name"])};
 		auto const done{standing != nullptr && (command == "signalflip" ? signal_flip(standing->include.instance) : signal_turn(standing->include.instance))};
 		WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
 	}
@@ -255,13 +255,13 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		selftest_signal_select(command, values);
 	else if (command == "signaldelete")
 	{
-		auto const *standing{standing_named(tool.standing, values["name"])};
+		auto const *standing{standing_named(tool.known.standing, values["name"])};
 		auto const deleted{standing != nullptr && signal_delete(standing->include.instance)};
 		WriteLog(std::string{"SELFTEST signaldelete "} + values["name"] + (deleted ? ": removed with its event" : ": not removed by the signal tool"));
 	}
 	else if (command == "signalrename")
 	{
-		auto const *standing{standing_named(tool.standing, values["name"])};
+		auto const *standing{standing_named(tool.known.standing, values["name"])};
 		if (standing == nullptr)
 		{
 			WriteLog("SELFTEST signalrename: no signal " + values["name"]);
@@ -295,9 +295,9 @@ void editor_mode::selftest_signal_place(std::map<std::string, std::string, std::
 		tool.chosen[kind] = static_cast<int>(std::distance(tool.templates.begin(), found));
 	}
 	if (values.contains("name"))
-		copy_text(tool.name, values["name"].c_str());
+		copy_text(tool.labels.name, values["name"].c_str());
 	if (values.contains("plate"))
-		copy_text(tool.plate, values["plate"].c_str());
+		copy_text(tool.labels.plate, values["plate"].c_str());
 	auto const side{values["side"] == "left" ? -1 : 1};
 	auto const facing{facing_named(values["facing"])};
 	auto const &chosen{*signal_current()};
@@ -323,7 +323,7 @@ void editor_mode::selftest_signal_place(std::map<std::string, std::string, std::
 void editor_mode::selftest_signal_move(std::map<std::string, std::string, std::less<>> &values)
 {
 	auto &tool{m_signal};
-	auto const *standing{standing_named(tool.standing, values["name"])};
+	auto const *standing{standing_named(tool.known.standing, values["name"])};
 	auto *track{simulation::Paths.find(values["track"])};
 	if (standing == nullptr || track == nullptr || track->m_paths.empty())
 	{
@@ -347,7 +347,7 @@ void editor_mode::selftest_signal_move(std::map<std::string, std::string, std::l
 		side = home.side * (home.list == 2 ? 1 : -1);
 	signal_select(standing->include.instance);
 	tool.moving = true;
-	tool.moved_valid = signal_drop_at(*standing, *track, path, point, side, tool.moved);
+	tool.drag.moved_valid = signal_drop_at(*standing, *track, path, point, side, tool.drag.moved);
 	tool.pressed = {-1000.f, -1000.f};
 	signal_release();
 	WriteLog("SELFTEST signalmove: " + tool.status);
@@ -355,7 +355,7 @@ void editor_mode::selftest_signal_move(std::map<std::string, std::string, std::l
 
 void editor_mode::selftest_signal_select(std::string const &command, std::map<std::string, std::string, std::less<>> &values)
 {
-	auto const *standing{standing_named(m_signal.standing, values["name"])};
+	auto const *standing{standing_named(m_signal.known.standing, values["name"])};
 	if (standing == nullptr)
 	{
 		WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
@@ -376,8 +376,8 @@ void editor_mode::selftest_signal_probe()
 {
 	auto &tool{m_signal};
 	signal_refresh(true);
-	WriteLog(format("SELFTEST signalprobe: %zu signals", tool.standing.size()));
-	for (auto const &standing : tool.standing)
+	WriteLog(format("SELFTEST signalprobe: %zu signals", tool.known.standing.size()));
+	for (auto const &standing : tool.known.standing)
 	{
 		std::string where{"not read"};
 		if (standing.track != nullptr)

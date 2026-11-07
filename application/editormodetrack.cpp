@@ -2496,9 +2496,9 @@ std::string editor_mode::gizmo_readout(TTrack const &Track) const
 		return text;
 	}
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-		return format(STR_C("grade changed by %+.1f per mille"), 1000.0 * drag.grade);
+		return format(STR_C("grade changed by %+.1f per mille"), 1000.0 * drag.tilt.grade);
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
-		return format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
+		return format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)), 1500.0 * (std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)) - std::sin(glm::radians(drag.tilt.roll0))));
 	if (drag.operation == gizmo_operation::rotate)
 		return format(STR_C("turned %+.2f deg"), glm::degrees(drag.angle));
 	if (m_track_point.valid() && m_track_point.path < static_cast<int>(Track.m_paths.size()))
@@ -2522,9 +2522,9 @@ std::string editor_mode::control_readout(TTrack const &Track) const
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 1)
 		text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-		text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
+		text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.tilt.basis[2]) >= 0.0 ? 1.0 : -1.0));
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
-		text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
+		text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)), 1500.0 * (std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)) - std::sin(glm::radians(drag.tilt.roll0))));
 	if (drag.fixed != glm::dvec3{})
 		text += "\n" + STR("along the switch");
 	return text;

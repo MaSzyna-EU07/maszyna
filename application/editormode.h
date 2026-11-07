@@ -135,6 +135,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void grow_selection(std::vector<TTrack *> const &From) override;
 	void toggle_in_selection(TTrack &Track) override;
 	// rail services: end
+	// the state of the rail tools the other tools read too (editormoderailstate.h)
+	using gizmo_operation = rail_state::gizmo_operation;
+	using track_gizmo_drag = rail_state::track_gizmo_drag;
+	using turntable_template = rail_state::turntable_template;
+	using turntable_fit = rail_state::turntable_fit;
+	using turntable_tool = rail_state::turntable_tool;
+	using signal_template = rail_state::signal_template;
+	using signal_spot = rail_state::signal_spot;
+	using signal_standing = rail_state::signal_standing;
+	using signal_tool = rail_state::signal_tool;
 
 	// types
 	struct editormode_input
@@ -1049,7 +1059,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void restore_array_snapshot(EditorSnapshot Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 
 	// ImGuizmo-based transform gizmo for the selected node
-	enum class gizmo_operation { translate, rotate, scale };
 	void render_gizmo();
 	// gizmo settings, drawn in the toolset window
 	void render_gizmo_options();
@@ -1135,48 +1144,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 m_track_pivot{0.0};
 	glm::mat4 m_track_gizmo{1.0f};
 	bool m_track_gizmo_using{false};
-	struct track_gizmo_drag
-	{
-		gizmo_operation operation{gizmo_operation::translate};
-		bool on_control{false};
-		double angle{0.0};
-		int path{-1};
-		bool atend{true};
-		std::size_t pieces{1};
-		std::vector<segment_data> paths;
-		editor_track::point_ref point;
-		glm::dvec3 origin{0.0};
-		glm::dvec3 axis{0.0};
-		double grabbed{0.0};
-		double length{0.0};
-		double stretch{0.0};
-		std::vector<std::pair<TTrack *, editor_track::point_ref>> partners;
-		glm::dvec3 fixed{0.0};
-		std::vector<std::pair<TTrack *, std::vector<int>>> held;
-		std::vector<TTrack *> extra;
-		int ring{-1};
-		glm::dmat3 basis{1.0};
-		glm::dvec3 pivot{0.0};
-		double grade{0.0};
-		double roll{0.0};
-		double roll0{0.0};
-		double pivot_chainage{0.0};
-		std::vector<double> chainages;
-		std::vector<double> lengths;
-		struct switch_joint
-		{
-			TTrack *track{nullptr};
-			editor_track::point_ref own;
-			editor_track::point_ref theirs;
-			glm::dvec3 point{0.0};
-			glm::dvec3 tangent{0.0};
-			double roll{0.0};
-			bool moved{false};
-			std::vector<std::pair<TTrack *, std::vector<segment_data>>> cluster;
-			std::vector<std::pair<TTrack *, std::vector<editor_track::joint>>> joints;
-		};
-		std::vector<switch_joint> switches;
-	};
 	track_gizmo_drag m_track_gizmo_drag;
 	gizmo_operation track_gizmo_operation(TTrack const &Track, bool const Pointmode) const;
 	glm::mat4 track_gizmo_frame(TTrack const &Track, bool const Pointmode, gizmo_operation const Operation) const;
@@ -1883,56 +1850,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void advance_switch_name();
 	void join_last_steps();
 	bool render_switch_drive_choice();
-	struct turntable_template
-	{
-		std::string file;
-		std::string name;
-		double length{0.0};
-		int angles{0};
-		int positions{0};
-		int track{0};
-		int yaw{0};
-		std::vector<double> fixed;
-	};
-	struct turntable_fit
-	{
-		editor_track::snap_target end;
-		double heading{0.0};
-		double radius{0.0};
-		double length{0.0};
-		std::vector<segment_data> pieces;
-		std::string issue;
-		bool chosen{true};
-		TTrack *replaces{nullptr};
-	};
-	struct turntable_tool
-	{
-		std::vector<turntable_template> templates;
-		int revision{-1}; // of the include bank the templates were read from
-		int chosen{-1};
-		char name[64]{};
-		bool placing{false};
-		glm::dvec3 centre{0.0};
-		double yaw{0.0};
-		glm::vec2 pressed{0.f};
-		editor_track::snap_target snap;
-		TTrack *table{nullptr};
-		scene::instance_handle include{0};
-		int kind{-1};
-		double length{0.0};
-		double table_yaw{0.0};
-		std::vector<double> exits;
-		float reach{80.f};
-		float radius{150.f};
-		float stub{25.f};
-		float step{0.f};
-		std::vector<turntable_fit> fits;
-		int hovered{-1};
-		double heading{0.0};
-		double exit_length{0.0};
-		std::string status;
-		std::string error;
-	};
 	turntable_tool m_turntable;
 	bool scan_turntables(bool Wait = true);
 	std::string turntable_name_for_new() const;
@@ -2871,78 +2788,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void select_signal(scene::instance_handle const Instance) override;
 	void render_signal_templates() override;
 
-	struct signal_template
-	{
-		std::string file;
-		std::string name;
-		std::string description;
-		std::string kind;
-		std::string mount;
-		std::string lamps;
-		std::string lean;
-		std::string read;
-		int parameters{0};
-		bool plate{false};
-		bool linked{false};
-		std::vector<int> speeds;
-		int aspects{0}; // of a block signal, 3 or 4
-		int arms{0}; // of a semaphore, 1 or 2, from its description
-		// the aspects its description lists, by name (Sr1, Od2...) with the event giving each; empty for a template not described so
-		std::vector<std::pair<std::string, std::string>> aspect_events;
-		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
-		std::vector<std::pair<std::string, std::string>> repeats;
-	};
-	struct signal_spot
-	{
-		TTrack *track{nullptr};
-		int path{0};
-		glm::dvec3 axis{0.0};
-		glm::dvec2 travel{0.0, 1.0};
-		int side{1};
-		int list{2};
-		double offset{0.0};
-		glm::dvec3 position{0.0};
-		double yaw{0.0};
-	};
-	struct signal_standing
-	{
-		standing_template include;
-		int kind{-1};
-		std::string name;
-		std::string read;
-		TTrack *track{nullptr};
-		int list{0};
-	};
-	struct signal_tool
-	{
-		std::vector<signal_template> templates;
-		int revision{-1};
-		int kind{0};
-		std::array<int, 7> chosen{-1, -1, -1, -1, -1, -1, -1};
-		bool armed{false}; // a click by a track places the chosen template
-		char filter[64]{};
-		char name[64]{"A"};
-		char plate[64]{};
-		char linked[64]{"none"};
-		float height{0.0f};
-		bool placing{false};
-		signal_spot press;
-		glm::vec2 pressed{0.f};
-		int facing{0};
-		std::vector<signal_standing> standing;
-		std::size_t standing_history{static_cast<std::size_t>(-1)};
-		std::size_t standing_redo{static_cast<std::size_t>(-1)};
-		double standing_time{-1.0};
-		int hover{-1};
-		scene::instance_handle selected{0};
-		bool moving{false};
-		glm::dvec2 grab{0.0};
-		signal_spot home;
-		bool home_valid{false};
-		signal_spot moved;
-		bool moved_valid{false};
-		std::string status;
-	};
 	signal_tool m_signal;
 	bool signal_scan(bool Wait = true);
 	signal_template const *signal_current() const;

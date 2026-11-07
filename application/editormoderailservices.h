@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <vector>
 
+#include "application/editormoderailstate.h"
+
 class TTrack;
 
 // what the rail tools (the track tab and its panels, the gizmo, track properties and bed, switches, signals, the turntable and the lineside) need from the editor beyond the interfaces of editortool.h; editor_mode implements it

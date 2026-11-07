@@ -805,7 +805,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	{
 		if (auto const hit{signal_hit()}; hit >= 0)
 		{
-			auto const &standing{m_signal.standing[hit]};
+			auto const &standing{m_signal.known.standing[hit]};
 			intent.index = hit;
 			intent.position = standing.include.location;
 			intent.action = format(STR_C("Click: select the signal %s, drag: move it along the track"), standing.name.c_str());
