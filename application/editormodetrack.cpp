@@ -286,14 +286,14 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	// then reviving the ones taken out would bring it back
 	for (auto made{Created.begin()}; made != Created.end();)
 	{
-		auto const gone{std::find(Removed.begin(), Removed.end(), *made)};
+		auto const gone{std::ranges::find(Removed, *made)};
 		if (gone == Removed.end())
 		{
 			++made;
 			continue;
 		}
 		Removed.erase(gone);
-		States.erase(std::remove_if(States.begin(), States.end(), [&](auto const &Entry) { return Entry.first == *made; }), States.end());
+		std::erase_if(States, [&](auto const &Entry) { return Entry.first == *made; });
 		made = Created.erase(made);
 	}
 	if (States.empty() && Created.empty() && Removed.empty())
@@ -433,7 +433,7 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	for (auto const &entry : Snapshot.directives)
 		restored.push_back(entry.first);
 	for (auto const &entry : Snapshot.tracks)
-		if (entry.second.name != entry.first->name() && std::any_of(Snapshot.tracks.begin(), Snapshot.tracks.end(), [&](auto const &Other) { return Other.first != entry.first && Other.second.name == entry.first->name(); }))
+		if (entry.second.name != entry.first->name() && std::ranges::any_of(Snapshot.tracks, [&](auto const &Other) { return Other.first != entry.first && Other.second.name == entry.first->name(); }))
 			editor_track::rename(*entry.first, entry.first->name() + "~", restored);
 	for (auto const &entry : Snapshot.tracks)
 		if (entry.second.name != entry.first->name())
@@ -803,7 +803,7 @@ void editor_mode::render_track_guide()
 	// a card of the tool in use: what it is for, and how the mouse and the keys drive it, drawn
 	auto const &modes{track_modes()};
 	auto const tab{false == m_track_window_open ? track_tab::path : m_track_tab == track_tab::route ? track_tab::straights : m_track_tab};
-	auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == tab; })};
+	auto const found{std::ranges::find_if(modes, [&](track_mode const &Mode) { return Mode.tab == tab; })};
 	auto const family{found != modes.end() ? found->family : 0};
 	auto const accent{family_colour(family)};
 	auto const font{ImGui::GetFontSize()};
@@ -1602,7 +1602,7 @@ void editor_mode::throw_switch(TTrack &Switch)
 	// the blades and the route the paths make; the simulation starts with the switches set to the main track
 	auto const state{1 - (Switch.SwitchExtension->CurrentIndex & 1)};
 	Switch.Switch(state);
-	if (std::find(m_thrown_switches.begin(), m_thrown_switches.end(), &Switch) == m_thrown_switches.end())
+	if (std::ranges::find(m_thrown_switches, &Switch) == m_thrown_switches.end())
 		m_thrown_switches.push_back(&Switch);
 	ui()->set_status(format(state ? STR_C("Switch %s set to the diverging track, H throws it back") : STR_C("Switch %s set to the main track, H throws it over"), Switch.name().c_str()), false);
 }
@@ -1667,7 +1667,7 @@ void editor_mode::delete_selected_track()
 			ui()->set_status(note, false);
 		push_track_snapshot({}, created, {set->first, set->link, set->second});
 		drives_deleted({set->first, set->second});
-		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
+		if (std::ranges::any_of(m_route.chain.tracks, [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
 			m_route = {};
 		m_node = nullptr;
 		ui()->set_node(nullptr);
@@ -1698,7 +1698,7 @@ void editor_mode::delete_selected_track()
 			ui()->set_status(note, false);
 		push_track_snapshot({}, created, slip->parts);
 		drives_deleted(slip->switches);
-		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return std::find(slip->parts.begin(), slip->parts.end(), Each) != slip->parts.end(); }))
+		if (std::ranges::any_of(m_route.chain.tracks, [&](TTrack const *Each) { return std::ranges::find(slip->parts, Each) != slip->parts.end(); }))
 			m_route = {};
 		m_node = nullptr;
 		ui()->set_node(nullptr);
@@ -1926,8 +1926,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (gizmo && false == m_track_gizmo_on)
 	{
 		auto const named = [](char const *Key) { return [Key](key_hint const &Hint) { return std::string_view{Hint.key} == Key; }; };
-		auto const handles{std::find_if(hints.begin(), hints.end(), named("Gizmo"))};
-		if (auto const keys{std::find_if(hints.begin(), hints.end(), named("Q W E"))}; keys != hints.end())
+		auto const handles{std::ranges::find_if(hints, named("Gizmo"))};
+		if (auto const keys{std::ranges::find_if(hints, named("Q W E"))}; keys != hints.end())
 		{
 			keys->action = "bring out the gizmo: move, turn, lengthen, bend by the control vectors";
 			if (handles != hints.end())
@@ -1936,7 +1936,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		else if (handles != hints.end())
 			*handles = {"Q W E", "bring out the gizmo: move, turn, lengthen, bend by the control vectors"};
 		// with it hidden only the ends of the track are there to drag, the control vectors come out with it
-		if (auto const points{std::find_if(hints.begin(), hints.end(), named("Drag a point"))}; points != hints.end())
+		if (auto const points{std::ranges::find_if(hints, named("Drag a point"))}; points != hints.end())
 			*points = {"Drag an end", "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"};
 		gizmo = false;
 	}
@@ -2221,7 +2221,7 @@ void editor_mode::draw_empty_scenery_hint()
 	if (m_terrain_open || (m_track_tab != track_tab::path && m_track_tab != track_tab::lay) || (m_lay.active && false == m_lay.points.empty()) || m_first_steps_open || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 		return;
 	auto const &paths{simulation::Paths.sequence()};
-	if (std::any_of(paths.begin(), paths.end(), [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; }))
+	if (std::ranges::any_of(paths, [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; }))
 		return;
 	auto *list{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const low{editor_ui::view_min()};
@@ -2311,7 +2311,7 @@ void editor_mode::draw_track_hints()
 	auto x{left};
 	auto const &modes{track_modes()};
 	auto const tab{false == m_track_window_open ? track_tab::path : m_track_tab == track_tab::route ? track_tab::straights : m_track_tab};
-	auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == tab; })};
+	auto const found{std::ranges::find_if(modes, [&](track_mode const &Mode) { return Mode.tab == tab; })};
 	auto const family{(family_colour(found != modes.end() ? found->family : 0) & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 235)};
 	x += chip(ImVec2(x, y), mode.c_str(), fade(family), fade(IM_COL32(255, 255, 255, 255)));
 	for (std::size_t i = 0; i < shown; ++i)

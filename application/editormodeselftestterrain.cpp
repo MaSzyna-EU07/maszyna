@@ -298,13 +298,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			else if (off < -0.3)
 				under.push_back({off, place.position, name});
 		}
-		std::sort(offs.begin(), offs.end());
+		std::ranges::sort(offs);
 		auto const quantile = [&](double const Q) { return offs.empty() ? 0.0 : offs[static_cast<std::size_t>(Q * (offs.size() - 1))]; };
 		WriteLog(format("SELFTEST nmtcheck: %zu places, %zu without terrain, %zu on bridges or in tunnels; ground less formation: 5%% %.2f, median %.2f, 95%% %.2f m; over the top of the ballast %zu, more than 0.3 m under the formation %zu; modifiers %zu",
 		                places, none, bridges, quantile(0.05), quantile(0.5), quantile(0.95), over.size(), under.size(), m_streamer.manifest().modifiers.size()));
 		for (auto *list : {&over, &under})
 		{
-			std::sort(list->begin(), list->end(), [](finding const &A, finding const &B) { return std::abs(A.off) > std::abs(B.off); });
+			std::ranges::sort(*list, [](finding const &A, finding const &B) { return std::abs(A.off) > std::abs(B.off); });
 			for (std::size_t i = 0; i < std::min<std::size_t>(list->size(), static_cast<std::size_t>(top)); ++i)
 				WriteLog(format("SELFTEST nmtcheck %s %+.2f m at %.1f %.1f %.1f %s", list == &over ? "over the crown" : "under the formation", (*list)[i].off, (*list)[i].at.x, (*list)[i].at.y, (*list)[i].at.z, (*list)[i].track.c_str()));
 		}
@@ -588,7 +588,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 						++held;
 						if (false == alive.contains(instance))
 							++gone;
-						else if (std::any_of(m_retired.begin(), m_retired.end(), [&](std::pair<TAnimModel *, int> const &Retired) { return Retired.first == instance; }))
+						else if (std::ranges::any_of(m_retired, [&](std::pair<TAnimModel *, int> const &Retired) { return Retired.first == instance; }))
 							++retired;
 					}
 		}
@@ -880,7 +880,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			std::string name;
 			words >> name;
 			auto const &spans{state.route.spans};
-			auto const at{std::find_if(spans.begin(), spans.end(), [&](auto const &Span) { return Span.track->name() == name; })};
+			auto const at{std::ranges::find_if(spans, [&](auto const &Span) { return Span.track->name() == name; })};
 			if (at != spans.end())
 			{
 				auto const index{std::distance(spans.begin(), at)};
@@ -898,7 +898,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			point.chainage = at;
 			point.elevation = profile::elevation(state.line, point.chainage) + value;
 			auto &points{state.line.points};
-			points.insert(std::lower_bound(points.begin(), points.end(), point.chainage, [](profile::pvi const &Point, double const Chainage) { return Point.chainage < Chainage; }), point);
+			points.insert(std::ranges::lower_bound(points, point.chainage, {}, &profile::pvi::chainage), point);
 			profile_edited();
 			profile_apply(false);
 			WriteLog("SELFTEST gradeline bump: " + state.status + " " + state.error);
@@ -1235,7 +1235,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		// the heights of the chunks in memory hashed, to compare the ground two builds made
 		std::vector<editor_terrain *> chunks;
 		m_streamer.collect(chunks);
-		std::sort(chunks.begin(), chunks.end(), [](editor_terrain const *A, editor_terrain const *B) { return A->key() < B->key(); });
+		std::ranges::sort(chunks, [](editor_terrain const *A, editor_terrain const *B) { return A->key() < B->key(); });
 		std::uint64_t hash{1469598103934665603ull};
 		for (auto const *chunk : chunks)
 			for (auto const height : chunk->heights())

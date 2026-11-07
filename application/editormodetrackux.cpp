@@ -795,7 +795,7 @@ void editor_mode::draw_track_labels() const
 	// gone along from its start
 	auto const row = [&](TTrack &Track, std::function<bool(TTrack const &, bool)> const &Belongs) {
 		std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
-		auto const known = [&](TTrack const *Other) { return std::any_of(run.begin(), run.end(), [&](auto const &Member) { return Member.first == Other; }); };
+		auto const known = [&](TTrack const *Other) { return std::ranges::any_of(run, [&](auto const &Member) { return Member.first == Other; }); };
 		for (auto const throughend : {true, false})
 		{
 			TTrack *previous{&Track};
@@ -831,7 +831,7 @@ void editor_mode::draw_track_labels() const
 			text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
 		// the arcs of a compound curve kept with its design have each a cant of their own: all shown where they aren't the same
 		auto const cants{Curve.designed.has_value() && Curve.compound ? alignment::compound_cants(*Curve.designed) : std::vector<double>{}};
-		if (std::any_of(cants.begin(), cants.end(), [&](double const Cant) { return std::abs(Cant - cants.front()) >= 0.5; }))
+		if (std::ranges::any_of(cants, [&](double const Cant) { return std::abs(Cant - cants.front()) >= 0.5; }))
 			for (std::size_t i = 0; i < cants.size(); ++i)
 				text += format(i == 0 ? "  h %.0f" : "/%.0f", cants[i]);
 		else if (Curve.cant >= 0.5)
@@ -948,7 +948,7 @@ void editor_mode::draw_track_labels() const
 		else
 			labels.push_back({2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240)});
 	}
-	std::sort(labels.begin(), labels.end(), [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
+	std::ranges::sort(labels, [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
 	// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back
 	std::vector<std::pair<ImVec2, ImVec2>> taken;
 	auto const tracks_under = [&](ImVec2 const &From, ImVec2 const &To) {
@@ -986,7 +986,7 @@ void editor_mode::draw_track_labels() const
 				ImVec2 const b{middle.x + width * 0.5f, middle.y + height * 0.5f};
 				if (a.x < low.x || a.y < low.y || b.x > high.x || b.y > high.y)
 					continue;
-				if (std::any_of(taken.begin(), taken.end(), [&](auto const &Rect) { return a.x < Rect.second.x + 4.0f && b.x > Rect.first.x - 4.0f && a.y < Rect.second.y + 2.0f && b.y > Rect.first.y - 2.0f; }))
+				if (std::ranges::any_of(taken, [&](auto const &Rect) { return a.x < Rect.second.x + 4.0f && b.x > Rect.first.x - 4.0f && a.y < Rect.second.y + 2.0f && b.y > Rect.first.y - 2.0f; }))
 					continue;
 				auto const cost{ring + 5.0f * static_cast<float>(tracks_under(a, b))};
 				if (cost < best)

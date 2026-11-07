@@ -462,7 +462,7 @@ bool load_service(http_client &Client, editor_orthophoto::config const &Source, 
 	else if (url.back() != '?' && url.back() != '&')
 		url += '&';
 	// a style for each layer, the default one
-	auto const count{static_cast<std::size_t>(std::count(Source.layers.begin(), Source.layers.end(), ',')) + 1};
+	auto const count{static_cast<std::size_t>(std::ranges::count(Source.layers, ',')) + 1};
 	url += "SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG:2180&FORMAT=image/png&TRANSPARENT=TRUE&LAYERS=" + url_encoded(Source.layers) + "&STYLES=" + std::string(count - 1, ',') +
 	       "&WIDTH=" + std::to_string(Request.level) + "&HEIGHT=" + std::to_string(Request.level) + "&BBOX=" + std::to_string(east) + "," + std::to_string(north) + "," + std::to_string(east + size) + "," +
 	       std::to_string(north + size);
@@ -853,7 +853,7 @@ void editor_orthophoto::area(std::vector<glm::dvec2> Polygon)
 	{
 		// the jobs for the tiles outside it forgotten, the tiles shown let go by the next update
 		std::lock_guard<std::mutex> lock(m_mutex);
-		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return 0 == m_area_tiles.count(Job.key); }), m_queue.end());
+		std::erase_if(m_queue, [&](job const &Job) { return 0 == m_area_tiles.count(Job.key); });
 	}
 	restart_prefetch();
 }
@@ -879,7 +879,7 @@ void editor_orthophoto::restart_prefetch()
 		auto const dy{static_cast<long long>(Key.second) - centre.second};
 		return dx * dx + dy * dy;
 	};
-	std::sort(keys.begin(), keys.end(), [&](tile_key const &A, tile_key const &B) { return distance(A) < distance(B); });
+	std::ranges::sort(keys, [&](tile_key const &A, tile_key const &B) { return distance(A) < distance(B); });
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_prefetch = std::move(keys);
@@ -1310,7 +1310,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 			for (int i = 0; i < samples; ++i)
 				if (double y; m_guess && m_guess(corner.x - i * step, corner.y - j * step, y))
 					heights[static_cast<std::size_t>(j) * samples + i] = static_cast<float>(y);
-		if (std::count(heights.begin(), heights.end(), no_height) == static_cast<std::ptrdiff_t>(heights.size()))
+		if (std::ranges::count(heights, no_height) == static_cast<std::ptrdiff_t>(heights.size()))
 		{
 			double constexpr outward{0.01};
 			for (int j = 0; j < samples; ++j)
@@ -1326,7 +1326,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 		}
 		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
 		Tile.guessed = true;
-		missing = std::count(heights.begin(), heights.end(), no_height);
+		missing = std::ranges::count(heights, no_height);
 		if (missing == heights.size())
 			return;
 	}
@@ -1769,7 +1769,7 @@ void editor_orthophoto::worker()
 		// a job of the same tile queued since: the tile wants another image now
 		stop_check const superseded = [&]() {
 			std::lock_guard<std::mutex> lock(m_mutex);
-			return std::any_of(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == current.key; });
+			return std::ranges::any_of(m_queue, [&](job const &Job) { return Job.key == current.key; });
 		};
 		if (current.src.service.empty())
 			out.ok = load_tile(client, request, picture, out.empty, error, stopping, superseded);

@@ -274,7 +274,7 @@ void editor_mode::route_read_stored(TTrack &Track)
 	bool reversed;
 	auto index{alignment_store::find(chain.start, chain.end, reversed)};
 	route.departed = alignment_store::departed(chain.tracks, route.departure);
-	auto const loose{std::any_of(chain.tracks.begin(), chain.tracks.end(), [](TTrack const *Track) { return false == alignment_store::on_track(*Track).has_value(); })};
+	auto const loose{std::ranges::any_of(chain.tracks, [](TTrack const *Track) { return false == alignment_store::on_track(*Track).has_value(); })};
 	bool digitized{false};
 	int parts{0};
 	int skipped{0};
@@ -454,7 +454,7 @@ void editor_mode::digitize_all(int *Kept, int *Failed)
 int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped)
 {
 	auto const count{Chain.tracks.size()};
-	if (count == 0 || std::all_of(Chain.tracks.begin(), Chain.tracks.end(), [](TTrack const *Track) { return alignment_store::on_track(*Track).has_value(); }))
+	if (count == 0 || std::ranges::all_of(Chain.tracks, [](TTrack const *Track) { return alignment_store::on_track(*Track).has_value(); }))
 		return 0;
 	TTrack *culprit{nullptr};
 	std::string reason;
@@ -469,7 +469,7 @@ int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *R
 			*Reason = reason;
 		return 0;
 	}
-	auto const found{static_cast<std::size_t>(std::find(Chain.tracks.begin(), Chain.tracks.end(), culprit) - Chain.tracks.begin())};
+	auto const found{static_cast<std::size_t>(std::ranges::find(Chain.tracks, culprit) - Chain.tracks.begin())};
 	auto const split{found < count ? std::max<std::size_t>(1, found) : count / 2};
 	int parts{0};
 	for (auto const &[first, last] : {std::pair<std::size_t, std::size_t>{0, split - 1}, std::pair<std::size_t, std::size_t>{split, count - 1}})
@@ -712,7 +712,7 @@ void editor_mode::route_lay()
 		for (auto *switchtrack : switches)
 		{
 			auto const crossover{crossover_of(*switchtrack)};
-			if (false == crossover.has_value() || std::find(seen.begin(), seen.end(), crossover->first) != seen.end())
+			if (false == crossover.has_value() || std::ranges::find(seen, crossover->first) != seen.end())
 				continue;
 			seen.push_back(crossover->first);
 			// the press on this line, the release on the other one
@@ -841,7 +841,7 @@ void editor_mode::route_lay()
 		}
 	}
 	for (auto *track : chain.tracks)
-		if (std::none_of(states.begin(), states.end(), [&](auto const &Entry) { return Entry.first == track; }))
+		if (std::ranges::none_of(states, [&](auto const &Entry) { return Entry.first == track; }))
 			states.emplace_back(track, editor_track::capture(*track));
 	std::vector<TTrack *> relaid;
 	if (chain.switches.empty())
@@ -1033,19 +1033,19 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 
 	// all checked, the changes go in
 	auto const remember = [&](TTrack *Track) {
-		if (std::none_of(States.begin(), States.end(), [&](auto const &Entry) { return Entry.first == Track; }))
+		if (std::ranges::none_of(States, [&](auto const &Entry) { return Entry.first == Track; }))
 			States.emplace_back(Track, editor_track::capture(*Track));
 	};
 	for (auto const &place : placements)
 	{
 		auto joints{editor_track::joints(*place.track)};
-		joints.erase(std::remove_if(joints.begin(), joints.end(), [&](editor_track::joint const &Joint) { return std::find(Chain.tracks.begin(), Chain.tracks.end(), Joint.other) != Chain.tracks.end(); }), joints.end());
+		std::erase_if(joints, [&](editor_track::joint const &Joint) { return std::ranges::find(Chain.tracks, Joint.other) != Chain.tracks.end(); });
 		remember(place.track);
 		std::vector<TTrack *> changed{place.track};
 		for (auto const &joint : joints)
 		{
 			remember(joint.other);
-			if (std::find(changed.begin(), changed.end(), joint.other) == changed.end())
+			if (std::ranges::find(changed, joint.other) == changed.end())
 				changed.push_back(joint.other);
 		}
 		// the heights stay, the paths between the switches keep theirs too

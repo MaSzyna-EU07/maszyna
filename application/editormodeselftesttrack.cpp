@@ -537,7 +537,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			points[i].y = found[i] != 0 ? heights[i] : 0.0;
 		m_tape = {true, points, points.empty() ? glm::dvec3{0.0} : points.back()};
 		auto readout{tape_readout()};
-		std::replace(readout.begin(), readout.end(), '\n', '|');
+		std::ranges::replace(readout, '\n', '|');
 		WriteLog("SELFTEST tape: " + readout);
 		m_tape = {};
 		return selftest_result::handled;
@@ -756,7 +756,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		std::vector<std::pair<int, std::string>> sorted;
 		for (auto const &[name, entry] : unknown)
 			sorted.emplace_back(entry.first, name + " (e.g. " + entry.second + " off the axis)");
-		std::sort(sorted.begin(), sorted.end(), [](auto const &A, auto const &B) { return A.first > B.first; });
+		std::ranges::sort(sorted, [](auto const &A, auto const &B) { return A.first > B.first; });
 		for (std::size_t i = 0; i < sorted.size() && static_cast<int>(i) < top; ++i)
 			WriteLog(format("SELFTEST infrascan unknown %d x %s", sorted[i].first, sorted[i].second.c_str()));
 		WriteLog(format("SELFTEST infrascan: %zu files the rules don't know", sorted.size()));
@@ -950,7 +950,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			for (auto const &end : {path.points[segment_data::point::start], path.points[segment_data::point::end]})
 				for (auto *neighbour : {chosen->trPrev, chosen->trNext})
 				{
-					if (neighbour == nullptr || neighbour->m_paths.empty() || std::find(moved.begin(), moved.end(), neighbour) != moved.end())
+					if (neighbour == nullptr || neighbour->m_paths.empty() || std::ranges::find(moved, neighbour) != moved.end())
 						continue;
 					auto const &other{neighbour->m_paths.front()};
 					for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})

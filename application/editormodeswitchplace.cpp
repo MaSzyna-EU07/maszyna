@@ -272,7 +272,7 @@ bool editor_mode::start_switch_placement()
 		if (false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
 			return refuse(error.empty() ? std::string{STR_C("The curve can't be followed")} : error);
 		for (auto const &part : editor_track::chain_parts(chain))
-			if (std::find(part.tracks.begin(), part.tracks.end(), track) != part.tracks.end())
+			if (std::ranges::find(part.tracks, track) != part.tracks.end())
 			{
 				chain = part;
 				break;
@@ -556,10 +556,10 @@ void editor_mode::insert_free_switch()
 
 void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 {
-	auto const found{std::find_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
+	auto const found{std::ranges::find_if(Created, [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
 	if (found == Created.end())
 		return;
-	auto const slip{std::count_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; }) > 1};
+	auto const slip{std::ranges::count_if(Created, [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; }) > 1};
 	m_switch.placing = false;
 	first_step_done(first_step::turnout);
 	m_track_point = {};
@@ -716,7 +716,7 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 		auto const b{Line.along(path.points[segment_data::point::end])};
 		spans.push_back({Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b});
 	}
-	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
+	std::ranges::sort(spans, [](span const &A, span const &B) { return A.from < B.from; });
 	int first{-1};
 	int last{-1};
 	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
@@ -1099,7 +1099,7 @@ bool editor_mode::plan_branch_link(editor_track::branch_link &Link, std::string 
 	Reason.clear();
 	if (false == extend_snap(target) || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() != 2 || tool.path != 1 || false == tool.atend)
 		return false;
-	if (std::find(tool.line.begin(), tool.line.end(), target.track) != tool.line.end())
+	if (std::ranges::find(tool.line, target.track) != tool.line.end())
 		return false;
 	auto const &diverging{tool.track->m_paths[1]};
 	auto const radius{editor_track::branch_radius(diverging)};
@@ -1230,7 +1230,7 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	auto const laid = [&](segment_data const &Path) { return Bend ? Bend(Path) : Path; };
 	auto const back = [](segment_data const &Path) {
 		auto result{reversed(Path)};
-		std::reverse(result.pieces.begin(), result.pieces.end());
+		std::ranges::reverse(result.pieces);
 		for (auto &piece : result.pieces)
 			piece = reversed(piece);
 		return result;
@@ -1256,7 +1256,7 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 		// the two tracks just cross, their ends far from the crossing
 		parts.push_back(editor_track::create_path(Style, laid(straight_path(PointA, PointB))));
 		parts.push_back(editor_track::create_path(Style, laid(straight_path(PointC, PointD))));
-		parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+		std::erase(parts, nullptr);
 		record_slip(parts, "crossing", Type, 0.0, Angle, base);
 		return parts;
 	}
@@ -1278,7 +1278,7 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	parts.push_back(editor_track::create_path(Style, laid(arc(PointA, First, side, PointD, middle - split, middle + split))));
 	if (false == single)
 		parts.push_back(editor_track::create_path(Style, laid(arc(PointC, Second, -side, PointB, middle - split, middle + split))));
-	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+	std::erase(parts, nullptr);
 	record_slip(parts, "slip", Type, Curve.radius, Angle, base, Curve.middle);
 	return parts;
 }
@@ -1306,7 +1306,7 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 		for (auto const &cell : section->m_cells)
 			for (auto *track : cell.m_paths)
 			{
-				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != category || std::find(Line.tracks.begin(), Line.tracks.end(), track) != Line.tracks.end())
+				if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != category || std::ranges::find(Line.tracks, track) != Line.tracks.end())
 					continue;
 				for (auto const &path : track->m_paths)
 				{
@@ -1631,7 +1631,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 		for (int i = 0; i < 2; ++i)
 		{
 			auto *inner{track->SwitchExtension->pNexts[i]};
-			if (inner != nullptr && inner->eType == tt_Normal && std::find(parts.begin(), parts.end(), inner) == parts.end() && inner->Length() < 5.0)
+			if (inner != nullptr && inner->eType == tt_Normal && std::ranges::find(parts, inner) == parts.end() && inner->Length() < 5.0)
 				parts.push_back(inner);
 		}
 	}
@@ -1734,7 +1734,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 	auto const parts2{build_double_slip(points[0], points[1], points[2], points[3], crossing, height, first, direction, angle, curve.scaled(half / full), *style)};
 	std::vector<TTrack *> commitlist(parts2.begin(), parts2.end());
 	for (auto *track : created)
-		if (std::find(commitlist.begin(), commitlist.end(), track) == commitlist.end())
+		if (std::ranges::find(commitlist, track) == commitlist.end())
 			commitlist.push_back(track);
 	editor_track::commit(commitlist);
 	created.insert(created.end(), parts2.begin(), parts2.end());
@@ -1795,7 +1795,7 @@ editor_mode::curve_sample editor_mode::sample_at(std::vector<curve_sample> const
 		return Frame.front();
 	if (Station >= Frame.back().station)
 		return Frame.back();
-	auto const next{std::lower_bound(Frame.begin(), Frame.end(), Station, [](curve_sample const &Sample, double const Value) { return Sample.station < Value; })};
+	auto const next{std::ranges::lower_bound(Frame, Station, {}, &curve_sample::station)};
 	auto const previous{std::prev(next)};
 	auto const span{std::max(1e-9, next->station - previous->station)};
 	auto const f{(Station - previous->station) / span};
@@ -2109,7 +2109,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	editor_track::edit edit;
 	// a track of the scenery changed: its state before kept once for Ctrl+Z, none for one made here
 	auto const keep = [&](TTrack &Track) {
-		if (std::find(edit.created.begin(), edit.created.end(), &Track) == edit.created.end())
+		if (std::ranges::find(edit.created, &Track) == edit.created.end())
 			edit.capture(Track);
 	};
 	auto const frogged{frog_zone(shape).has_value()};
@@ -2173,7 +2173,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 					continue;
 				keep(*candidate);
 				editor_track::move_point(*candidate, {0, kind}, target);
-				if (std::find(snapped.begin(), snapped.end(), candidate) == snapped.end())
+				if (std::ranges::find(snapped, candidate) == snapped.end())
 					snapped.push_back(candidate);
 			}
 		}
@@ -2194,7 +2194,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 		for (auto *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty() ||
-			    std::find(edit.removed.begin(), edit.removed.end(), track) != edit.removed.end())
+			    std::ranges::find(edit.removed, track) != edit.removed.end())
 				continue;
 			auto const &path{track->m_paths.front()};
 			auto const atend{plan_distance(path.points[segment_data::point::end], ending) < 0.05};
@@ -2249,7 +2249,7 @@ std::vector<std::string> editor_mode::free_switch_exits(std::vector<segment_data
 	// the main and the diverging track of this one, each going on from that switch
 	for (std::size_t i = 0; i < std::min<std::size_t>(2, Paths.size()); ++i)
 		for (auto const &warning : switch_exit_warnings(tool.free_end.track, tool.free_end.position, nullptr, {}, {Paths[i]}))
-			if (std::find(result.begin(), result.end(), warning) == result.end())
+			if (std::ranges::find(result, warning) == result.end())
 				result.push_back(warning);
 	return result;
 }

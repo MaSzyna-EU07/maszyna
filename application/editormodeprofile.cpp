@@ -351,8 +351,8 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Han
 	}
 	if (scene::Layers.empty())
 		return;
-	std::sort(layers.begin(), layers.end());
-	layers.erase(std::unique(layers.begin(), layers.end()), layers.end());
+	std::ranges::sort(layers);
+	layers.erase(std::ranges::unique(layers).begin(), layers.end());
 	// the marks of the tracks there are no more, or changed since, aren't written again
 	std::set<std::pair<std::string, std::uint64_t>> standing;
 	for (auto const *track : simulation::Paths.sequence())
@@ -456,7 +456,7 @@ bool editor_mode::profile_restore_parts()
 	std::optional<double> start, end;
 	// the newer designs first: where two lie over the same stretch, the one kept later is the one meant
 	std::vector<std::pair<double, double>> covered;
-	auto const taken = [&](double const Chainage) { return std::any_of(covered.begin(), covered.end(), [&](auto const &Stretch) { return Chainage > Stretch.first + 0.25 && Chainage < Stretch.second - 0.25; }); };
+	auto const taken = [&](double const Chainage) { return std::ranges::any_of(covered, [&](auto const &Stretch) { return Chainage > Stretch.first + 0.25 && Chainage < Stretch.second - 0.25; }); };
 	for (auto entries{m_profiles.rbegin()}; entries != m_profiles.rend(); ++entries)
 	{
 		auto const &entry{*entries};
@@ -545,7 +545,7 @@ bool editor_mode::profile_restore_parts()
 				stretch.second = std::min(high, stretch.second + kStaleMargin);
 			}
 		}
-		auto const changed = [&](double const Chainage) { return std::any_of(stale.begin(), stale.end(), [&](auto const &Stretch) { return Chainage >= Stretch.first - 0.25 && Chainage <= Stretch.second + 0.25; }); };
+		auto const changed = [&](double const Chainage) { return std::ranges::any_of(stale, [&](auto const &Stretch) { return Chainage >= Stretch.first - 0.25 && Chainage <= Stretch.second + 0.25; }); };
 		for (auto point : entry.line.points)
 		{
 			point.chainage = origin + direction * point.chainage * scale;
@@ -596,7 +596,7 @@ bool editor_mode::profile_restore_parts()
 	}
 	if (parts == 0)
 		return false;
-	std::sort(points.begin(), points.end(), [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
+	std::ranges::sort(points, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
 	std::vector<profile::pvi> line;
 	for (auto point : points)
 	{
@@ -765,7 +765,7 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 	for (auto &entry : m_profiles)
 	{
 		auto route{profile_stored_route(entry)};
-		if (false == route.has_value() || std::none_of(route->spans.begin(), route->spans.end(), [&](editor_track::route_span const &Span) { return Moved.contains(Span.track); }))
+		if (false == route.has_value() || std::ranges::none_of(route->spans, [&](editor_track::route_span const &Span) { return Moved.contains(Span.track); }))
 			continue;
 		state.route = std::move(*route);
 		profile_resample();
@@ -923,8 +923,8 @@ void editor_mode::profile_open_selection(std::vector<TTrack *> const &Tracks)
 	auto &state{m_profile};
 	if (state.route.spans.empty())
 		return;
-	auto const off{std::count_if(Tracks.begin(), Tracks.end(), [&](TTrack const *Track) {
-		return std::none_of(state.route.spans.begin(), state.route.spans.end(), [&](editor_track::route_span const &Span) { return Span.track == Track; });
+	auto const off{std::ranges::count_if(Tracks, [&](TTrack const *Track) {
+		return std::ranges::none_of(state.route.spans, [&](editor_track::route_span const &Span) { return Span.track == Track; });
 	})};
 	if (off > 0)
 		state.status = format(STR_C("%d of the selected tracks are off the route from %s to %s"), static_cast<int>(off), from->name().c_str(), to->name().c_str());
@@ -941,7 +941,7 @@ void editor_mode::profile_follow_selection()
 	state.followed = tracks;
 	if (tracks.empty())
 		return;
-	auto const on_route{std::any_of(state.route.spans.begin(), state.route.spans.end(), [&](editor_track::route_span const &Span) { return Span.track == tracks.front(); })};
+	auto const on_route{std::ranges::any_of(state.route.spans, [&](editor_track::route_span const &Span) { return Span.track == tracks.front(); })};
 	if (tracks.size() == 1 && on_route)
 		return;
 	if (state.changed)
@@ -1010,7 +1010,7 @@ void editor_mode::profile_resample()
 	// the others
 	if (false == own.empty())
 	{
-		std::nth_element(own.begin(), own.begin() + own.size() / 2, own.end());
+		std::ranges::nth_element(own, own.begin() + own.size() / 2);
 		for (std::size_t i = 0; i < samples.size(); ++i)
 			if (bedless[i] != 0)
 				state.beds[i] = own[own.size() / 2];
@@ -1061,7 +1061,7 @@ void editor_mode::profile_resample()
 					context.switches.push_back({a, b, STR("shared timbers")});
 			}
 		}
-		std::sort(context.switches.begin(), context.switches.end(), [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
+		std::ranges::sort(context.switches, [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
 	}
 	context.start_elevation = samples.front().position.y;
 	context.end_elevation = samples.back().position.y;
@@ -1122,7 +1122,7 @@ void editor_mode::profile_sample_model()
 	auto offset{m_nmt_state.offset};
 	if (false == m_nmt_state.fitted && false == differences.empty())
 	{
-		std::nth_element(differences.begin(), differences.begin() + differences.size() / 2, differences.end());
+		std::ranges::nth_element(differences, differences.begin() + differences.size() / 2);
 		if (auto const median{differences[differences.size() / 2]}; std::abs(median) > 30.0)
 			offset = median;
 	}
@@ -1767,12 +1767,12 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	auto bridges{Bridges};
 	for (auto &bridge : bridges)
 		for (auto *end : {&bridge.from, &bridge.to})
-			if (auto const nearest{std::min_element(joints.begin(), joints.end(), [&](double const A, double const B) { return std::abs(A - *end) < std::abs(B - *end); })};
+			if (auto const nearest{std::ranges::min_element(joints, [&](double const A, double const B) { return std::abs(A - *end) < std::abs(B - *end); })};
 			    nearest != joints.end() && std::abs(*nearest - *end) <= kBridgeSnap)
 				*end = *nearest;
 	for (auto const &bridge : bridges)
 		cuts.insert(cuts.end(), {bridge.from, bridge.to});
-	std::sort(cuts.begin(), cuts.end());
+	std::ranges::sort(cuts);
 	auto const gaps{editor_track::apply_profile(
 	    state.route, height_at, grade_at, cuts, states, created)};
 	// the paths over a bridge sound and light as on one, and get no formation; within what a cut too near an end leaves on
@@ -1780,7 +1780,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	std::size_t bridged{0};
 	for (auto const &span : state.route.spans)
 		if (span.track->eEnvironment != e_bridge && span.track->eEnvironment != e_tunnel
-		    && std::any_of(bridges.begin(), bridges.end(), [&](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
+		    && std::ranges::any_of(bridges, [&](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
 		{
 			span.track->eEnvironment = e_bridge;
 			++bridged;
@@ -1857,8 +1857,8 @@ void editor_mode::profile_follow_terrain(std::size_t const Edits)
 		tracks.insert(tracks.end(), step->removed.begin(), step->removed.end());
 	}
 	std::erase(tracks, nullptr);
-	std::sort(tracks.begin(), tracks.end());
-	tracks.erase(std::unique(tracks.begin(), tracks.end()), tracks.end());
+	std::ranges::sort(tracks);
+	tracks.erase(std::ranges::unique(tracks).begin(), tracks.end());
 	if (tracks.empty())
 		return;
 	// the route shaped by the earthworks of the profile keeps its modifier, shaped again to the new grade line; the tracks
@@ -1866,9 +1866,9 @@ void editor_mode::profile_follow_terrain(std::size_t const Edits)
 	auto const name = [](TTrack const *Track) { return Track != nullptr && false == Track->name().empty() ? Track->name() : std::string{"?"}; };
 	auto const route{"route " + name(state.from) + " - " + name(state.to)};
 	auto const &modifiers{m_streamer.modifiers()};
-	auto const has = [&](std::string const &Name) { return std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return Modifier.name == Name; }); };
+	auto const has = [&](std::string const &Name) { return std::ranges::any_of(modifiers, [&](heightmap::modifier const &Modifier) { return Modifier.name == Name; }); };
 	auto const shaped{has(route) || (false == state.earthworks.modifier.empty() && has(state.earthworks.modifier))};
-	auto const own{std::any_of(tracks.begin(), tracks.end(), [&](TTrack const *Track) {
+	auto const own{std::ranges::any_of(tracks, [&](TTrack const *Track) {
 		return false == Track->name().empty() && std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return Modifier.name == "nmt " + Track->name() || Modifier.name.starts_with("nmt " + Track->name() + " "); });
 	})};
 	auto status{state.status};

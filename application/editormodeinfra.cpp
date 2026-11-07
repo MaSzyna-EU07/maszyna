@@ -785,8 +785,8 @@ void editor_mode::infra_forget(scene::basic_node const *Node)
 {
 	Live.forget(Node);
 	auto const held = [Node](infra::binding const &Binding) { return Binding.type != infra::kind::include && Binding.node == Node; };
-	m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), held), m_bindings.end());
-	m_infra_buffer.erase(std::remove_if(m_infra_buffer.begin(), m_infra_buffer.end(), [&](infra::object_state const &State) { return held(State.saved); }), m_infra_buffer.end());
+	std::erase_if(m_bindings, held);
+	std::erase_if(m_infra_buffer, [&](infra::object_state const &State) { return held(State.saved); });
 	for (auto &candidate : m_infra.candidates)
 		if (held(candidate.binding))
 			candidate.binding.node = nullptr;
@@ -884,7 +884,7 @@ std::string editor_mode::infra_carried_note()
 
 int editor_mode::infra_bound_count() const
 {
-	return static_cast<int>(std::count_if(m_bindings.begin(), m_bindings.end(), [](infra::binding const &Binding) { return false == Binding.adopted; }));
+	return static_cast<int>(std::ranges::count_if(m_bindings, [](infra::binding const &Binding) { return false == Binding.adopted; }));
 }
 
 void editor_mode::infra_recognize()
@@ -1273,7 +1273,7 @@ void editor_mode::infra_adopt(TTrack &Track)
 		if (object.reader != nullptr && object.reader != &Track)
 		{
 			auto const spans{editor_track::run_route(*object.reader, 250.0).spans};
-			if (std::none_of(spans.begin(), spans.end(), [&](auto const &Span) { return Span.track == &Track; }))
+			if (std::ranges::none_of(spans, [&](auto const &Span) { return Span.track == &Track; }))
 				continue;
 		}
 		if (object.reader == nullptr && object.nearest != &Track)
@@ -1462,7 +1462,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 				entry.moved = true;
 	}
 	if (false == dropped.empty())
-		m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), [&](infra::binding const &Binding) { return Binding.adopted && contains(dropped, Binding.include); }), m_bindings.end());
+		std::erase_if(m_bindings, [&](infra::binding const &Binding) { return Binding.adopted && contains(dropped, Binding.include); });
 }
 
 void editor_mode::track_retired(TTrack &Track)
@@ -1811,7 +1811,7 @@ void editor_mode::render_infra_bound()
 		std::unordered_set<TTrack const *> const tracks(scope.begin(), scope.end());
 		std::vector<std::size_t> along;
 		for (std::size_t i = 0; i < m_bindings.size(); ++i)
-			if (false == m_bindings[i].adopted && std::any_of(m_bindings[i].anchors.begin(), m_bindings[i].anchors.end(), [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
+			if (false == m_bindings[i].adopted && std::ranges::any_of(m_bindings[i].anchors, [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
 				along.push_back(i);
 		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), infra_bound_count());
 		if (false == along.empty())

@@ -116,7 +116,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 			return true;
 		if (Word.size() >= 2 && Word[0] == 'F' && std::isdigit(static_cast<unsigned char>(Word[1])))
 			return true;
-		return std::find_if(std::begin(keys), std::end(keys), [&](char const *Key) { return Word == Key; }) != std::end(keys);
+		return std::ranges::find_if(keys, [&](char const *Key) { return Word == Key; }) != std::end(keys);
 	};
 	std::vector<gesture_word> words;
 	std::string text;
@@ -133,7 +133,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 		for (std::size_t plus; (plus = word.find('+', from)) != std::string::npos && plus > from; from = plus + 1)
 			parts.push_back(word.substr(from, plus - from));
 		parts.push_back(word.substr(from));
-		bool const all{std::all_of(parts.begin(), parts.end(), [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })};
+		bool const all{std::ranges::all_of(parts, [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })};
 		if (false == all || (parts.size() == 1 && words.empty() == false && words.back().what == gesture_word::kind::text && false == key(parts[0]) && mouse(parts[0]).empty()))
 		{
 			text += (text.empty() ? "" : " ") + word;
@@ -170,7 +170,7 @@ inline std::vector<gesture_word> gesture_picture(std::string const &Keys)
 inline bool gesture_keys_only(std::string const &Keys)
 {
 	auto const words{gesture_words(Keys)};
-	return false == words.empty() && std::all_of(words.begin(), words.end(), [](gesture_word const &Word) { return Word.what == gesture_word::kind::key || Word.what == gesture_word::kind::plus; });
+	return false == words.empty() && std::ranges::all_of(words, [](gesture_word const &Word) { return Word.what == gesture_word::kind::key || Word.what == gesture_word::kind::plus; });
 }
 
 // the gesture drawn in a row; the width it took

@@ -485,7 +485,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 		if (false == scene::Layers.listed(layer) || scene::Layers.layer(layer).removed)
 			continue;
 		auto name{scene::Layers.layer(layer).name};
-		std::replace(name.begin(), name.end(), '\\', '/');
+		std::ranges::replace(name, '\\', '/');
 		auto const lower{ToLower(name)};
 		if (lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_dzioby.scm"))
 			continue;

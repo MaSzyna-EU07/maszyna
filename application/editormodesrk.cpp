@@ -3592,8 +3592,8 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 				row.posts.push_back({distance, signal_shown(signal.name, stem), mixed, km_along(line, row.km_number, distance)});
 			}
 		}
-		std::sort(row.stops.begin(), row.stops.end());
-		std::sort(row.wrong.begin(), row.wrong.end());
+		std::ranges::sort(row.stops);
+		std::ranges::sort(row.wrong);
 		// the schematic: straight out of the entry signal along the chainage, the track circuits along it in the colours of their names
 		auto const entry_at{station::project(*m_layout, station::point_on(line, 0.0).point)};
 		row.chainage = entry_at.x;
@@ -3615,7 +3615,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		for (std::size_t k = 1; k + 1 < row.sections.size(); ++k)
 			if (row.sections[k].name.empty() && row.sections[k].from >= 0.0 && row.sections[k].to - row.sections[k].from >= 1.0)
 				bare.emplace_back(row.sections[k].from, row.sections[k].to);
-		row.sections.erase(std::remove_if(row.sections.begin(), row.sections.end(), [](line_row::run const &Run) { return Run.name.empty() || Run.to - std::max(0.0, Run.from) < 1.0; }), row.sections.end());
+		std::erase_if(row.sections, [](line_row::run const &Run) { return Run.name.empty() || Run.to - std::max(0.0, Run.from) < 1.0; });
 		for (auto &run : row.sections)
 		{
 			run.km_from = km_along(line, row.km_number, run.from);
@@ -3663,7 +3663,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 	auto const by_open = [&](glm::dvec3 const &Point) {
 		if (gap_to(*m_layout, Point) <= 8.0)
 			return true;
-		return std::any_of(m_line_ways.begin(), m_line_ways.end(), [&](station::line const &Line) {
+		return std::ranges::any_of(m_line_ways, [&](station::line const &Line) {
 			double gap{0.0};
 			auto const distance{station::distance_on(Line, Point, gap)};
 			return gap <= 8.0 && distance > -50.0 && distance < Line.length() + 1.0;
@@ -3731,7 +3731,7 @@ void srk_tool::render_problems()
 			m_view.fly_to(problem.at + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{0.3, -0.5, 0.8}), 60.0);
 		ImGui::PopStyleColor();
 	}
-	auto const fixable{static_cast<std::size_t>(std::count_if(m_problems.begin(), m_problems.end(), [](problem const &Problem) { return Problem.signal != 0 || Problem.lines; }))};
+	auto const fixable{static_cast<std::size_t>(std::ranges::count_if(m_problems, [](problem const &Problem) { return Problem.signal != 0 || Problem.lines; }))};
 	if (fixable == 0)
 	{
 		ImGui::TextDisabled("%s", STR_C("A track missing is laid in the Track tool: laid in the place of a deleted one it takes over its events and its track circuit"));
@@ -4031,7 +4031,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			continue;
 		for (std::size_t k = 0; k < standing.size(); ++k)
 		{
-			if (automatic[index] == 1 ? standing[k].kind != "warning" : std::find(along[index].begin(), along[index].end(), k) == along[index].end())
+			if (automatic[index] == 1 ? standing[k].kind != "warning" : std::ranges::find(along[index], k) == along[index].end())
 				continue;
 			// the one of the wrong-track trains of the mixed block kept
 			if (automatic[index] == 1 && false == both[index] && wrong_disc(lines, index, standing[k]))
@@ -4082,7 +4082,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 				candidates.emplace_back(std::abs(distance - signal.distance) + gap * 10.0, i, k);
 		}
 	}
-	std::sort(candidates.begin(), candidates.end());
+	std::ranges::sort(candidates);
 	for (auto const &[score, i, k] : candidates)
 		if (planned[i].match < 0 && 0 == used[k])
 		{
@@ -4150,9 +4150,9 @@ void srk_tool::set_lines(block_edit const *Edit)
 				order.push_back({planned[i].distance, planned[i].name, static_cast<int>(i), planned[i].match});
 		if (ends[index].signal >= 0)
 			order.push_back({ends[index].distance, standing[ends[index].signal].name, -1, ends[index].signal});
-		std::sort(order.begin(), order.end(), [](stop const &A, stop const &B) { return A.distance < B.distance; });
+		std::ranges::sort(order, [](stop const &A, stop const &B) { return A.distance < B.distance; });
 		if (line.inbound)
-			std::reverse(order.begin(), order.end());
+			std::ranges::reverse(order);
 		// the joints the trains pass the signals to: on beyond a block signal, in towards the station from an entry one
 		auto const joint_of = [&](stop const &Stop) {
 			if (Stop.signal >= 0)
@@ -4239,7 +4239,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	std::vector<cut> cuts;
 	auto const add_cut = [&](station::line const &Line, double const Distance) -> bool {
 		auto const at{station::point_on(Line, Distance)};
-		if (at.track == nullptr || std::any_of(cuts.begin(), cuts.end(), [&](cut const &Cut) { return glm::distance(Cut.point, at.point) < 0.5; }))
+		if (at.track == nullptr || std::ranges::any_of(cuts, [&](cut const &Cut) { return glm::distance(Cut.point, at.point) < 0.5; }))
 			return true;
 		auto const &ends_of{at.track->m_paths.front().points};
 		if (std::min(glm::distance(at.point, ends_of[segment_data::point::start]), glm::distance(at.point, ends_of[segment_data::point::end])) <= 0.3)
@@ -4258,7 +4258,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			return;
 	for (auto const &line : lines)
 		for (auto *part : line.tracks)
-			if (std::string reason; false == scene::Layers.editable(part, &reason) && std::any_of(sections.begin(), sections.end(), [&](section const &Found) { return &lines[Found.line] == &line; }))
+			if (std::string reason; false == scene::Layers.editable(part, &reason) && std::ranges::any_of(sections, [&](section const &Found) { return &lines[Found.line] == &line; }))
 			{
 				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
 				return;
@@ -4323,7 +4323,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			auto const distance{station::distance_on(lines[index], editor_track::point_at(*part, 0.5), gap)};
 			if (gap > 1.0)
 				continue;
-			auto const found{std::find_if(sections.begin(), sections.end(), [&](section const &Section) { return Section.line == index && distance > Section.from && distance < Section.to; })};
+			auto const found{std::ranges::find_if(sections, [&](section const &Section) { return Section.line == index && distance > Section.from && distance < Section.to; })};
 			if (found == sections.end() || (part->Isolated.size() == 1 && ToLower(part->Isolated.front()->asName) == found->name))
 				continue;
 			if (captured.insert(part).second)
@@ -4349,7 +4349,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			if (ToLower(found.name) != ToLower(signal.name))
 				++renamed;
 			// of the aspects of its line
-			auto const head{std::find_if(heads.begin(), heads.end(), [&](signal_head const &Head) { return Head.file == found.file; })};
+			auto const head{std::ranges::find_if(heads, [&](signal_head const &Head) { return Head.file == found.file; })};
 			if (block && head != heads.end() && head->aspects != 0 && (head->aspects != aspects[signal.line] || (head->lean == "right") != signal.wrong))
 				if (auto const other{block_template(heads, found.file, aspects[signal.line], signal.wrong)}; false == other.empty() && other != found.file)
 				{
@@ -4390,7 +4390,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	{
 		for (auto const &found : sections)
 		{
-			auto const already{std::find_if(controls.begin(), controls.end(), [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
+			auto const already{std::ranges::find_if(controls, [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
 			if (found.guard.empty() && found.wrong_guard.empty())
 			{
 				// guarded by station signals only, once its wrong-track signal is gone
@@ -4463,7 +4463,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	if (swapped > 0)
 		m_status += ", " + format(STR_P("%zu given the template of the aspects of its line", "%zu given the templates of the aspects of their lines", swapped), swapped);
 	m_status += ". " + STR("Ctrl+Z takes it back");
-	if (false == controlled && std::any_of(sections.begin(), sections.end(), [](section const &Found) { return false == Found.guard.empty(); }))
+	if (false == controlled && std::ranges::any_of(sections, [](section const &Found) { return false == Found.guard.empty(); }))
 		m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
 }
 
@@ -4499,7 +4499,7 @@ void srk_tool::survey_signals()
 		auto const travel{travel_of(signal.yaw)};
 		auto const at{station::project(*m_layout, signal.position)};
 		auto const ahead{station::project(*m_layout, signal.position + glm::dvec3{travel.x, 0.0, travel.y} * 5.0)};
-		auto const unfit{std::any_of(m_heads.begin(), m_heads.end(), [&](head_check const &Head) { return Head.instance == signal.instance && (false == Head.fits || false == Head.problems.empty()); })};
+		auto const unfit{std::ranges::any_of(m_heads, [&](head_check const &Head) { return Head.instance == signal.instance && (false == Head.fits || false == Head.problems.empty()); })};
 		m_signal_marks.push_back({at, ahead.x > at.x, signal_shown(signal.name, stem), signal.position + glm::dvec3{0.0, signal.kind == "shunt" ? 3.0 : 7.0, 0.0}, unfit});
 		// in the plot on the track it stands by, to its side
 		auto &mark{m_signal_marks.back()};
@@ -4534,7 +4534,7 @@ void srk_tool::measure(std::vector<station::signal> const &Signals)
 	if (false == m_numbered)
 		return;
 	m_lengths = station::track_lengths(*m_layout, tracks, Signals);
-	std::sort(m_lengths.begin(), m_lengths.end(), [](station::lengths const &A, station::lengths const &B) {
+	std::ranges::sort(m_lengths, [](station::lengths const &A, station::lengths const &B) {
 		return std::make_pair(std::atoi(A.number.c_str()), A.number) < std::make_pair(std::atoi(B.number.c_str()), B.number);
 	});
 }
@@ -4634,7 +4634,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			if (checked[index] || routes_of[index] < 0 || posts[index].kind == role::entry)
 				continue;
 			auto const &routes{found[routes_of[index]]};
-			if (std::none_of(routes.begin(), routes.end(), [&](station::route const &Route) { return Route.next >= 0 && checked[Route.next]; }))
+			if (std::ranges::none_of(routes, [&](station::route const &Route) { return Route.next >= 0 && checked[Route.next]; }))
 				continue;
 			checked[index] = 1;
 			order.push_back(index);
@@ -4683,7 +4683,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			auto const ahead{station::project(layout, signal.position + travel * 10.0).x};
 			if ((along < layout.from && ahead > along) || (along > layout.to && ahead < along))
 				check.shp = kShpBefore;
-			else if (std::any_of(check.routes.begin(), check.routes.end(), [](station::route const &Route) { return Route.next >= 0 && Route.warning < 0; }))
+			else if (std::ranges::any_of(check.routes, [](station::route const &Route) { return Route.next >= 0 && Route.warning < 0; }))
 				check.shp = 0.0;
 		}
 		if (check.shp >= 0.0)
@@ -4752,7 +4752,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		}
 		m_heads.push_back(std::move(check));
 	}
-	std::stable_sort(m_heads.begin(), m_heads.end(), [&](head_check const &A, head_check const &B) {
+	std::ranges::stable_sort(m_heads, [&](head_check const &A, head_check const &B) {
 		if (A.station != B.station)
 			return A.station;
 		if (A.station)
@@ -4785,7 +4785,7 @@ void srk_tool::fit_heads()
 	m_signals.standing_signals(standing, true);
 	std::size_t changed{0};
 	for (auto const &head : m_heads)
-		changed += static_cast<std::size_t>(std::count_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return Signal.instance == head.instance && Signal.file != head.file; }));
+		changed += static_cast<std::size_t>(std::ranges::count_if(standing, [&](standing_signal const &Signal) { return Signal.instance == head.instance && Signal.file != head.file; }));
 	if (changed == 0)
 		m_status = STR_C("The signals have what they need already");
 	else
@@ -4835,7 +4835,7 @@ void srk_tool::set_shp()
 			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
 			continue;
 		}
-		auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return Signal.instance == head.instance; })};
+		auto const found{std::ranges::find_if(standing, [&](standing_signal const &Signal) { return Signal.instance == head.instance; })};
 		if (found == standing.end())
 			continue;
 		auto const post{post_of(*found)};
@@ -4992,7 +4992,7 @@ void srk_tool::survey()
 		auto const &name{path.track->Isolated.front()->asName};
 		if (path.approach && (stem.empty() || name.compare(0, stem.size(), stem) != 0))
 			continue;
-		auto found{std::find_if(m_circuits.begin(), m_circuits.end(), [&](circuit_mark const &Mark) { return Mark.text == name; })};
+		auto found{std::ranges::find_if(m_circuits, [&](circuit_mark const &Mark) { return Mark.text == name; })};
 		if (found == m_circuits.end())
 		{
 			found = m_circuits.insert(m_circuits.end(), {glm::dvec2{0.0}, glm::dvec3{0.0}, name, circuit_colour(name)});
@@ -5058,7 +5058,7 @@ void srk_tool::survey()
 	for (std::size_t i = 0; i < ends.size(); ++i)
 		for (std::size_t j = i + 1; j < ends.size(); ++j)
 			if (ends[i].circuit != ends[j].circuit && (ends[i].circuit >= 0 || ends[j].circuit >= 0) && glm::distance(ends[i].point, ends[j].point) < 0.05 &&
-			    std::none_of(m_joints.begin(), m_joints.end(), [&](joint_mark const &Joint) { return glm::distance(Joint.at, ends[i].point) < 0.05; }))
+			    std::ranges::none_of(m_joints, [&](joint_mark const &Joint) { return glm::distance(Joint.at, ends[i].point) < 0.05; }))
 			{
 				m_ticks.push_back(station::project(layout, ends[i].point));
 				m_ticks_drawn.push_back(ends[i].drawn);
@@ -5330,7 +5330,7 @@ void srk_tool::render_canvas(float const Height)
 		for (auto const &place : Places)
 		{
 			ImVec4 const box{place.x - extent.x * 0.5f - 2.0f, place.y - 1.0f, place.x + extent.x * 0.5f + 2.0f, place.y + extent.y + 1.0f};
-			if (std::any_of(placed.begin(), placed.end(), [&](ImVec4 const &Other) { return box.x < Other.z && Other.x < box.z && box.y < Other.w && Other.y < box.w; }))
+			if (std::ranges::any_of(placed, [&](ImVec4 const &Other) { return box.x < Other.z && Other.x < box.z && box.y < Other.w && Other.y < box.w; }))
 				continue;
 			placed.push_back(box);
 			draw->AddRectFilled(ImVec2(box.x, box.y), ImVec2(box.z, box.w), IM_COL32(22, 24, 28, 200), 2.0f);
@@ -5395,7 +5395,7 @@ void srk_tool::render_canvas(float const Height)
 	for (std::size_t index = 0; index < m_circuits.size(); ++index)
 		if (m_circuits[index].labelled)
 			order.push_back(index);
-	std::sort(order.begin(), order.end(), [&](std::size_t A, std::size_t B) { return m_circuits[A].length > m_circuits[B].length; });
+	std::ranges::sort(order, [&](std::size_t A, std::size_t B) { return m_circuits[A].length > m_circuits[B].length; });
 	for (auto const index : order)
 	{
 		auto const &mark{m_circuits[index]};
@@ -5427,7 +5427,7 @@ void srk_tool::render_canvas(float const Height)
 		auto const &row{m_lines[line_hover]};
 		ImGui::BeginTooltip();
 		ImGui::TextUnformatted((format(STR_C("The line out beyond the entry signal %s"), row.entry.c_str()) + ", " + (row.number == 0 ? std::string{STR_C("single track")} : format(STR_C("track %d"), row.number))).c_str());
-		auto const run{std::find_if(row.sections.begin(), row.sections.end(), [&](line_row::run const &Run) { return line_at >= Run.from && line_at <= Run.to; })};
+		auto const run{std::ranges::find_if(row.sections, [&](line_row::run const &Run) { return line_at >= Run.from && line_at <= Run.to; })};
 		if (run != row.sections.end())
 		{
 			ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(circuit_colour(run->name)), STR_C("Block section %s, %.2f km"), run->name.c_str(), (run->to - std::max(0.0, run->from)) / 1000.0);
@@ -5656,7 +5656,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 					along.emplace_back(line.distances[i], "[" + name + "]");
 				last = name;
 			}
-			std::sort(along.begin(), along.end());
+			std::ranges::sort(along);
 			std::string list;
 			for (auto const &[distance, text] : along)
 				list += format(" %.0f:%s", distance, text.c_str());
@@ -5804,7 +5804,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		}
 		if (auto const ways{values.find("ways")}; entry != values.end() && ways != values.end())
 		{
-			auto const row{std::find_if(m_lines.begin(), m_lines.end(), [&](line_row const &Row) { return Row.entry == entry->second; })};
+			auto const row{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry->second; })};
 			std::vector<std::string> entries{entry->second};
 			if (row != m_lines.end() && row->partner >= 0 && row->partner < static_cast<int>(m_lines.size()))
 				entries.push_back(m_lines[row->partner].entry);
@@ -5839,7 +5839,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const entry{values.count("entry") > 0 ? values.at("entry") : std::string{}};
 		auto at{values.count("at") > 0 ? std::atof(values.at("at").c_str()) : 0.0};
 		auto const nudge{values.count("nudge") > 0 ? std::atof(values.at("nudge").c_str()) : 0.0};
-		auto const found{std::find_if(m_lines.begin(), m_lines.end(), [&](line_row const &Row) { return Row.entry == entry; })};
+		auto const found{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry; })};
 		if (false == m_layout.has_value() || found == m_lines.end())
 		{
 			WriteLog("SELFTEST srkboundary: no line beyond " + entry);
@@ -6067,7 +6067,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		if (auto const name{values.find("name")}; name != values.end())
 		{
 			entry.name = name->second;
-			std::replace(entry.name.begin(), entry.name.end(), '_', ' ');
+			std::ranges::replace(entry.name, '_', ' ');
 		}
 		if (auto const km{values.find("km")}; km != values.end())
 			entry.km = km->second;

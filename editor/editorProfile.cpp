@@ -273,7 +273,7 @@ std::vector<issue> check(line const &Line, context const &Context)
 		for (auto const &zone : Context.switches)
 			if (overlaps(c.start, c.end, zone))
 			{
-				auto const on_hump{std::any_of(Context.humps.begin(), Context.humps.end(), [&](context::zone const &Hump) { return points[c.point].chainage >= Hump.from && points[c.point].chainage <= Hump.to; })};
+				auto const on_hump{std::ranges::any_of(Context.humps, [&](context::zone const &Hump) { return points[c.point].chainage >= Hump.from && points[c.point].chainage <= Hump.to; })};
 				if (c.change < 0.0 && points[c.point].radius < switch_crest * 0.99 && false == on_hump)
 					add(true, point, points[c.point].chainage, format(STR_C("Point %zu: the convex vertical curve on switch %s is sharper than %.0f m"), c.point + 1, zone.name.c_str(), switch_crest));
 				else
@@ -514,7 +514,7 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 	if (bends.empty())
 		return result;
 	result.points.insert(result.points.end() - 1, bends.begin(), bends.end());
-	std::sort(result.points.begin(), result.points.end(), [](pvi const &Left, pvi const &Right) { return Left.chainage < Right.chainage; });
+	std::ranges::sort(result.points, [](pvi const &Left, pvi const &Right) { return Left.chainage < Right.chainage; });
 	std::vector<pvi> points;
 	for (auto const &point : result.points)
 		if (points.empty() || point.chainage - points.back().chainage >= 0.5 || &point == &result.points.back())
@@ -669,9 +669,9 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	// a change of grade at a node is the curve of the required radius around it. On a hump the least radius is the one of the
 	// hump, though a convex curve over a switch is no sharper than switch_crest
 	auto const required{std::ceil(required_radius(result) / 10.0) * 10.0};
-	auto const on_hump = [&](double const Chainage) { return std::any_of(Options.humps.begin(), Options.humps.end(), [&](hump const &Hump) { return Chainage >= Hump.from && Chainage <= Hump.to; }); };
+	auto const on_hump = [&](double const Chainage) { return std::ranges::any_of(Options.humps, [&](hump const &Hump) { return Chainage >= Hump.from && Chainage <= Hump.to; }); };
 	auto const least = [&](double const Chainage) { return Options.hump_radius > 0.0 && on_hump(Chainage) ? std::min(required, std::ceil(Options.hump_radius / 10.0) * 10.0) : required; };
-	auto const on_switch = [&](double const From, double const To) { return std::any_of(Context.switches.begin(), Context.switches.end(), [&](auto const &Zone) { return Zone.to > From && Zone.from < To; }); };
+	auto const on_switch = [&](double const From, double const To) { return std::ranges::any_of(Context.switches, [&](auto const &Zone) { return Zone.to > From && Zone.from < To; }); };
 	auto const sharpest{step / (required * 1.001)};
 	std::vector<double> sag_max(nodes), crest_max(nodes);
 	for (std::size_t k = 0; k < nodes; ++k)
@@ -700,7 +700,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	}
 	// the bounds which contradict each other about one place, as of two crossovers into lines fitted apart in height, hold as far
 	// as both can: the line keeps between them. Held both, it would tear itself apart over them
-	std::sort(bounds.begin(), bounds.end(), [](held const &A, held const &B) { return A.cell + A.part < B.cell + B.part; });
+	std::ranges::sort(bounds, [](held const &A, held const &B) { return A.cell + A.part < B.cell + B.part; });
 	for (std::size_t first = 0; first < bounds.size();)
 	{
 		auto last{first + 1};
@@ -771,10 +771,10 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	auto const cost = [&](std::vector<double> const &Line, bool const Derivatives) {
 		if (Derivatives)
 		{
-			std::fill(gradient.begin(), gradient.end(), 0.0);
-			std::fill(diagonal.begin(), diagonal.end(), 1e-9);
-			std::fill(first.begin(), first.end(), 0.0);
-			std::fill(second.begin(), second.end(), 0.0);
+			std::ranges::fill(gradient, 0.0);
+			std::ranges::fill(diagonal, 1e-9);
+			std::ranges::fill(first, 0.0);
+			std::ranges::fill(second, 0.0);
 		}
 		auto total{0.0};
 		auto const add = [&](std::initializer_list<std::pair<std::size_t, double>> Terms, double const Value, double const Slope, double const Curvature) {
@@ -1120,7 +1120,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		auto completed{Line};
 		complete(completed, Context);
 		auto const found{check(completed, Context)};
-		return std::count_if(found.begin(), found.end(), [](issue const &Issue) { return Issue.error; });
+		return std::ranges::count_if(found, [](issue const &Issue) { return Issue.error; });
 	};
 	auto faults{errors(result)};
 	// a convex curve over a switch which the room of its bend cut sharper than a switch may lie on takes the radius it may have,
@@ -1186,8 +1186,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			assign_radii(merged);
 			candidates.emplace_back(departure(merged, from, points[std::min(last, i + 3)].chainage), std::move(merged));
 		}
-		std::sort(candidates.begin(), candidates.end(), [](auto const &A, auto const &B) { return A.first < B.first; });
-		auto const chosen{std::find_if(candidates.begin(), candidates.end(), [&](auto const &Candidate) { return Candidate.first <= 0.5 && errors(Candidate.second) <= faults; })};
+		std::ranges::sort(candidates, [](auto const &A, auto const &B) { return A.first < B.first; });
+		auto const chosen{std::ranges::find_if(candidates, [&](auto const &Candidate) { return Candidate.first <= 0.5 && errors(Candidate.second) <= faults; })};
 		if (chosen == candidates.end())
 			break;
 		result = std::move(chosen->second);
@@ -1291,10 +1291,10 @@ std::vector<double> fewest_breaks(line const &Line, std::vector<double> Joints, 
 
 std::vector<double> fewest_breaks(std::vector<double> const &Breaks, std::vector<double> Joints, double const Tolerance, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade)
 {
-	std::sort(Joints.begin(), Joints.end());
-	Joints.erase(std::unique(Joints.begin(), Joints.end(), [](double const A, double const B) { return std::abs(A - B) < 1e-6; }), Joints.end());
+	std::ranges::sort(Joints);
+	Joints.erase(std::ranges::unique(Joints, [](double const A, double const B) { return std::abs(A - B) < 1e-6; }).begin(), Joints.end());
 	auto all{Breaks};
-	std::sort(all.begin(), all.end());
+	std::ranges::sort(all);
 	auto const inward = [&](double const Chainage, double const Other) { return Grade(Chainage + std::min(1e-3, std::abs(Other - Chainage) * 0.5) * (Other > Chainage ? 1.0 : -1.0)); };
 	auto const follows = [&](double const From, double const To) {
 		auto const length{To - From};

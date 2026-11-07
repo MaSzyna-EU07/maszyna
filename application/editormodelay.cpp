@@ -86,7 +86,7 @@ alignment::trace_stretch turned_round(alignment::trace_stretch const &Fit)
 		// the arcs from the far end: the first one of the vertex, then its arcs, each with the transition before it
 		std::vector<alignment::compound_arc> arcs{{curve.radius, 0.0, curve.share, curve.first_cant}};
 		arcs.insert(arcs.end(), curve.arcs.begin(), curve.arcs.end());
-		std::reverse(arcs.begin(), arcs.end());
+		std::ranges::reverse(arcs);
 		// the transition between two arcs moves to the arc after it the other way round
 		for (std::size_t i = arcs.size(); i-- > 1;)
 			arcs[i].transition = arcs[i - 1].transition;
@@ -97,7 +97,7 @@ alignment::trace_stretch turned_round(alignment::trace_stretch const &Fit)
 	}
 	if (false == result.offsets.empty())
 		result.offsets.pop_back();
-	std::reverse(result.offsets.begin(), result.offsets.end());
+	std::ranges::reverse(result.offsets);
 	result.leaving = -Fit.leaving;
 	return result;
 }
@@ -548,7 +548,7 @@ void editor_mode::point_drag_update()
 				if (false == editor_track::can_edit_geometry(*connection.first, neighbourreason))
 					continue;
 				m_track_drag_points.emplace_back(connection);
-				if (std::find(m_track_drag.begin(), m_track_drag.end(), connection.first) == m_track_drag.end())
+				if (std::ranges::find(m_track_drag, connection.first) == m_track_drag.end())
 					m_track_drag.emplace_back(connection.first);
 			}
 		}
@@ -805,7 +805,7 @@ std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, g
 				continue;
 			std::vector<segment_data> pieces{path.pieces.empty() ? std::vector<segment_data>{path} : path.pieces};
 			if (atend)
-				std::reverse(pieces.begin(), pieces.end());
+				std::ranges::reverse(pieces);
 			for (auto const &piece : pieces)
 				back.push_back({bezier{piece}.plan_length(), atend ? curvature_at(piece, 1.0) : -curvature_at(piece, 0.0), atend ? curvature_at(piece, 0.0) : -curvature_at(piece, 1.0)});
 		}
@@ -873,7 +873,7 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	Length = result.length;
 	std::vector<std::string> notes;
 	for (auto const &warning : result.warnings)
-		if (m_join_radius > 0.0 || std::find(result.radius_warnings.begin(), result.radius_warnings.end(), warning) == result.radius_warnings.end())
+		if (m_join_radius > 0.0 || std::ranges::find(result.radius_warnings, warning) == result.radius_warnings.end())
 			notes.push_back(warning);
 	if (result.kind == alignment::join_kind::bezier)
 		notes.insert(notes.begin(), STR_C("No curve fits between the ends, they are joined with a free curve"));
@@ -917,7 +917,7 @@ void editor_mode::finish_extend()
 		std::vector<TTrack *> removed;
 		if (false == place_switch_on_straight(plan.target, plan.shape, origin, plan.along, plan.direction, plan.side, false, states, created, removed, switch_name_for_new()))
 			return;
-		auto *placed{*std::find_if(created.begin(), created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
+		auto *placed{*std::ranges::find_if(created, [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
 		std::vector<TTrack *> inserts;
 		for (auto piece : plan.inserts)
 		{

@@ -945,14 +945,14 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
             if (copy.model == node)
                 copy.model = nullptr;
         }
-        s.infra.erase(std::remove_if(s.infra.begin(), s.infra.end(), followed), s.infra.end());
+        std::erase_if(s.infra, followed);
     }
 
     for (auto &s : g_redo)
     {
         if (s.node_ptr == node)
             s.node_ptr = nullptr;
-        s.infra.erase(std::remove_if(s.infra.begin(), s.infra.end(), followed), s.infra.end());
+        std::erase_if(s.infra, followed);
     }
 
     // deleted nodes also drop out of the "undo last fill" set
@@ -2655,7 +2655,7 @@ void editor_mode::render_orthophoto_ui()
 
 void editor_mode::draw_orthophoto()
 {
-    if (false == m_orthophoto.enabled() && std::none_of(m_wms.begin(), m_wms.end(), [](auto const &Layer) { return Layer->enabled(); }))
+    if (false == m_orthophoto.enabled() && std::ranges::none_of(m_wms, [](auto const &Layer) { return Layer->enabled(); }))
         return;
     // the camera was just published to the renderer (update_camera), so build the view from it rather than
     // from the renderer's previous frame; camera-relative rotation, same projection as the other overlays
@@ -4376,7 +4376,7 @@ editor_mode::texture_offer editor_mode::terrain_texture_offer(char const *None)
             [this]() {
                 std::vector<texture_use> list;
                 auto const add = [&](std::string const &Name, char const *Note) {
-                    if (Name.empty() || Name == "none" || std::any_of(list.begin(), list.end(), [&](texture_use const &Use) { return Use.name == Name; }))
+                    if (Name.empty() || Name == "none" || std::ranges::any_of(list, [&](texture_use const &Use) { return Use.name == Name; }))
                         return;
                     list.push_back({null_handle, Name, 0, Note});
                 };
@@ -6218,7 +6218,7 @@ void editor_mode::render_shortcuts_window()
 		if (ImGui::Button(STR_C("Tutorial")))
 			m_first_steps_open = true;
 		auto const lower = [](std::string Text) {
-			std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+			std::ranges::transform(Text, Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
 			return Text;
 		};
 		auto const wanted{lower(filter)};
@@ -6226,7 +6226,7 @@ void editor_mode::render_shortcuts_window()
 		auto const picture{std::round(ImGui::GetTextLineHeight() * 1.15f)};
 		for (auto const &entry : groups)
 		{
-			if (std::none_of(entry.shortcuts.begin(), entry.shortcuts.end(), matches))
+			if (std::ranges::none_of(entry.shortcuts, matches))
 				continue;
 			ImGui::SeparatorText(STR_C(entry.title));
 			if (false == ImGui::BeginTable(entry.title, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))

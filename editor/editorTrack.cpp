@@ -207,7 +207,7 @@ bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vec
 		// the design running against the run
 		if (last->chainage < first->chainage)
 		{
-			std::reverse(own.begin(), own.end());
+			std::ranges::reverse(own);
 			for (auto &piece : own)
 				std::swap(piece.from, piece.to);
 		}
@@ -492,7 +492,7 @@ void editor_track::rename(TTrack &Track, std::string const &Name, std::vector<sc
 		std::string file;
 		std::vector<std::string> values;
 		auto const index{track_parameter(handle, file, values)};
-		if (index < 0 || lower_name(values[index]) != old || std::find(Kept.begin(), Kept.end(), handle) != Kept.end())
+		if (index < 0 || lower_name(values[index]) != old || std::ranges::find(Kept, handle) != Kept.end())
 			continue;
 		values[index] = Name;
 		scene::Layers.modify(handle, editor_includes::compose_directive(file, values));
@@ -2485,7 +2485,7 @@ double editor_track::route_speed(route const &Route)
 			speeds.emplace_back(speed, std::abs(span.to - span.from));
 			total += speeds.back().second;
 		}
-	std::sort(speeds.begin(), speeds.end());
+	std::ranges::sort(speeds);
 	auto passed{0.0};
 	for (auto const &[speed, length] : speeds)
 		if ((passed += length) >= total * 0.5)
@@ -2509,7 +2509,7 @@ std::vector<editor_track::route_sample> editor_track::sample_route(route &Route,
 			for (auto const &piece : path.pieces)
 				parts.push_back(&piece);
 		if (false == span.forward)
-			std::reverse(parts.begin(), parts.end());
+			std::ranges::reverse(parts);
 		span.from = chainage;
 		for (auto const *part : parts)
 		{
@@ -2762,7 +2762,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 				for (int k = 1; k < count; ++k)
 					cuts.push_back(bounds[i] + length * k / count);
 			}
-			std::sort(cuts.begin(), cuts.end());
+			std::ranges::sort(cuts);
 		}
 		if (cuts.empty())
 		{
@@ -3224,7 +3224,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 	auto const ratio_of = [](std::string const &Name) {
 		auto const at{Name.find("1:")};
 		auto number{Name.substr(at + 2)};
-		std::replace(number.begin(), number.end(), ',', '.');
+		std::ranges::replace(number, ',', '.');
 		return std::stod(number);
 	};
 	for (auto const &entry : slips)
@@ -3614,7 +3614,7 @@ std::vector<TTrack *> editor_track::relay(chain const &Chain, std::vector<segmen
 	// each path of the chain keeps the stretch of the ground it had, where the pieces were cut at its joints: its events and its
 	// track circuit stay where they were, not handed on along the line
 	auto const along{Intervals != nullptr && Intervals->size() == Pieces.size() && Intervals->front() == 0 && Intervals->back() + 1 == count &&
-	                 std::adjacent_find(Intervals->begin(), Intervals->end(), [](std::size_t const A, std::size_t const B) { return B < A || B > A + 1; }) == Intervals->end()};
+	                 std::ranges::adjacent_find(*Intervals, [](std::size_t const A, std::size_t const B) { return B < A || B > A + 1; }) == Intervals->end()};
 	std::vector<TTrack *> tracks;
 	std::size_t previous{count};
 	for (std::size_t i = 0; i < Pieces.size(); ++i)
@@ -3849,7 +3849,7 @@ void editor_track::retire(TTrack &Track)
 	auto crossings{Track.m_crossings};
 	for (auto *crossing : Track.m_crossings)
 		for (auto *neighbour : neighbours(*crossing))
-			if (std::find(crossings.begin(), crossings.end(), neighbour) == crossings.end())
+			if (std::ranges::find(crossings, neighbour) == crossings.end())
 				crossings.push_back(neighbour);
 	for (auto *crossing : crossings)
 		if (crossing != &Track && false == crossing->m_editorremoved)
@@ -3882,11 +3882,11 @@ void editor_track::rebuild_geometry(TTrack &Track)
 	auto crossings{Track.m_crossings};
 	rebuild(Track);
 	for (auto *crossing : Track.m_crossings)
-		if (std::find(crossings.begin(), crossings.end(), crossing) == crossings.end())
+		if (std::ranges::find(crossings, crossing) == crossings.end())
 			crossings.push_back(crossing);
 	for (std::size_t i = 0, count = crossings.size(); i < count; ++i)
 		for (auto *neighbour : neighbours(*crossings[i]))
-			if (std::find(crossings.begin(), crossings.end(), neighbour) == crossings.end())
+			if (std::ranges::find(crossings, neighbour) == crossings.end())
 				crossings.push_back(neighbour);
 	for (auto *crossing : crossings)
 		if (crossing != &Track && false == crossing->m_editorremoved)

@@ -348,7 +348,7 @@ bool editor_mode::change_slip_template(TTrack &Part, int const Index)
 	WriteLog("Editor: slip " + record.name + " laid again of the template " + shape.title(), logtype::generic);
 	// the first part of the new one selected, the slip whole for the inspector
 	auto const &records{switch_store::records()};
-	if (auto const again{std::find_if(records.begin(), records.end(), [&](switch_store::record const &Entry) { return Entry.name == record.name && false == Entry.parts.empty(); })}; again != records.end())
+	if (auto const again{std::ranges::find_if(records, [&](switch_store::record const &Entry) { return Entry.name == record.name && false == Entry.parts.empty(); })}; again != records.end())
 		if (auto *first{simulation::Paths.find(again->parts.front())}; first != nullptr && false == first->m_editorremoved)
 			select_track(first);
 	return true;
@@ -492,15 +492,15 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 	{
 		std::vector<std::string> rails;
 		for (auto const &entry : templates)
-			if (Fits(entry) && entry.source == nullptr && false == entry.own && entry.rail != "-" && std::find(rails.begin(), rails.end(), entry.rail) == rails.end())
+			if (Fits(entry) && entry.source == nullptr && false == entry.own && entry.rail != "-" && std::ranges::find(rails, entry.rail) == rails.end())
 				rails.push_back(entry.rail);
-		if (std::find(rails.begin(), rails.end(), tool.rail_pick) == rails.end() && false == rails.empty())
+		if (std::ranges::find(rails, tool.rail_pick) == rails.end() && false == rails.empty())
 			tool.rail_pick = rails.front();
 		if (rails.size() > 1)
 		{
 			ImGui::TextDisabled("%s", STR_C("Rails"));
 			item_tooltip("The track doesn't tell its rail: the templates of the rail picked are listed, all of them under All templates");
-			int pick{static_cast<int>(std::find(rails.begin(), rails.end(), tool.rail_pick) - rails.begin())};
+			int pick{static_cast<int>(std::ranges::find(rails, tool.rail_pick) - rails.begin())};
 			std::vector<segment_option> options;
 			for (std::size_t i = 0; i < rails.size(); ++i)
 				options.push_back({static_cast<int>(i), rails[i].c_str()});
@@ -518,7 +518,7 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 		if (Fits(entry) && entry.source == nullptr && (entry.own || entry.rail == rail || entry.rail == "-"))
 			listed.push_back(i);
 	}
-	auto const outside{Chosen >= 0 && Chosen < count && std::find(listed.begin(), listed.end(), Chosen) == listed.end()};
+	auto const outside{Chosen >= 0 && Chosen < count && std::ranges::find(listed, Chosen) == listed.end()};
 	// the speeds on the diverging track the switches of the rail are made for, each picking the switch usual for it
 	std::map<int, int> speeds;
 	auto const usual = [&](int const Index) {
@@ -563,9 +563,9 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 	if (outside)
 		shown.push_back(Chosen);
 	for (auto const index : shown)
-		if (auto const group{group_of(index)}; std::find(groups.begin(), groups.end(), group) == groups.end())
+		if (auto const group{group_of(index)}; std::ranges::find(groups, group) == groups.end())
 			groups.push_back(group);
-	std::sort(groups.begin(), groups.end());
+	std::ranges::sort(groups);
 	if (Popup || ImGui::BeginChild("##short", ImVec2(0.0f, list_height(static_cast<int>(shown.size()), static_cast<int>(groups.size()))), ImGuiChildFlags_Borders))
 		for (auto const &group : groups)
 		{
@@ -588,7 +588,7 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 			if (Fits(entry))
 			{
 				++rows;
-				if (auto const group{whole_group(entry)}; std::find(wholes.begin(), wholes.end(), group) == wholes.end())
+				if (auto const group{whole_group(entry)}; std::ranges::find(wholes, group) == wholes.end())
 					wholes.push_back(group);
 			}
 		if (Popup || ImGui::BeginChild("##all", ImVec2(0.0f, list_height(rows, static_cast<int>(wholes.size()))), ImGuiChildFlags_Borders))

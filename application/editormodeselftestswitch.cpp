@@ -75,7 +75,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 					auto const &shape{track->blade(path)};
 					auto const gap = [&](double const At) {
 						auto const &gauge{shape.gauge};
-						auto const next{std::find_if(gauge.begin(), gauge.end(), [&](glm::dvec2 const &Sample) { return Sample.x >= At; })};
+						auto const next{std::ranges::find_if(gauge, [&](glm::dvec2 const &Sample) { return Sample.x >= At; })};
 						return next == gauge.end() ? (gauge.empty() ? -1.0 : gauge.back().y) : next->y;
 					};
 					text += format(", path %d %s side %d gaps", path, shape.valid ? "shaped" : "not shaped", track->SwitchExtension->RightSwitch == (path == 0) ? 1 : -1);
@@ -93,7 +93,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		glm::dvec3 at{0.0};
 		glm::dvec3 toward{0.0};
 		words >> name >> at.x >> at.z >> toward.x >> toward.z >> label;
-		std::replace(label.begin(), label.end(), '_', ' ');
+		std::ranges::replace(label, '_', ' ');
 		m_node = simulation::Paths.find(name);
 		ui()->set_node(m_node);
 		show_track_tab(track_tab::turnout);
@@ -257,7 +257,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		show_track_tab(track_tab::turnout);
 		arm_switch();
 		auto const find = [&](std::string Label) {
-			std::replace(Label.begin(), Label.end(), '_', ' ');
+			std::ranges::replace(Label, '_', ' ');
 			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
 				if (false == Label.empty() && Label != "-" && false == tool.templates[i].double_slip && false == tool.templates[i].twofold() && tool.templates[i].label.find(Label) != std::string::npos)
 					return i;
@@ -602,7 +602,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		glm::dvec3 heading{0.0};
 		glm::dvec3 release{0.0};
 		words >> label >> press.x >> press.z >> heading.x >> heading.z >> release.x >> release.z;
-		std::replace(label.begin(), label.end(), '_', ' ');
+		std::ranges::replace(label, '_', ' ');
 		auto oneside{false};
 		auto shift{false};
 		for (std::string flag; words >> flag;)
@@ -665,9 +665,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		glm::dvec3 point{0.0};
 		int direction{1};
 		words >> label >> point.x >> point.z >> direction;
-		std::replace(label.begin(), label.end(), '_', ' ');
+		std::ranges::replace(label, '_', ' ');
 		auto const templates{editor_track::standard_switch_templates()};
-		auto const found{std::find_if(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+		auto const found{std::ranges::find_if(templates, [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
 		TTrack *nearest{nullptr};
 		double distance{1e9};
 		for (auto *track : simulation::Paths.sequence())
@@ -703,7 +703,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		// snap: the start of a switch into a curve drawn to the ends of the cant ramps and to the joints, as a drag lets it go
 		std::string snap;
 		words >> snap;
-		std::replace(label.begin(), label.end(), '_', ' ');
+		std::ranges::replace(label, '_', ' ');
 		auto &tool{m_switch};
 		tool.templates = editor_track::standard_switch_templates();
 		tool.collected = true;
@@ -809,7 +809,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		if (command == "switchlink")
 			words >> label;
 		words >> point.x >> point.z >> target.x >> target.z;
-		std::replace(label.begin(), label.end(), '_', ' ');
+		std::ranges::replace(label, '_', ' ');
 		auto const log_link = [&](editor_track::branch_link const &Link, std::string const &Reason) {
 			WriteLog(format("SELFTEST %s plan: valid %d, R %.1f m, before %.3f m, after %.3f m, trim %.3f m, shortfall %.3f m, %zu pieces%s", command.c_str(), Link.valid ? 1 : 0, Link.radius, Link.before, Link.after, Link.trim,
 			                Link.shortfall, Link.pieces.size(), Reason.empty() ? "" : (", " + Reason).c_str()));
@@ -958,14 +958,14 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		// the template by the start of its label, as the user picks it: the switch keeps its side, a slip or a crossover is laid again
 		std::string label;
 		words >> label;
-		std::replace(label.begin(), label.end(), '_', ' ');
+		std::ranges::replace(label, '_', ' ');
 		auto &tool{m_switch};
 		if (false == tool.collected)
 		{
 			tool.templates = editor_track::standard_switch_templates();
 			tool.collected = true;
 		}
-		auto const found{std::find_if(tool.templates.begin(), tool.templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+		auto const found{std::ranges::find_if(tool.templates, [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
 		if (found == tool.templates.end())
 		{
 			WriteLog("SELFTEST switchreplace: no template " + label);

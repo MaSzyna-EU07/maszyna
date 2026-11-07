@@ -1017,7 +1017,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			if (kind == 1 || kind == 3 || kind == 4 || kind == 5)
 			{
 				std::vector<double> along(shares.begin(), shares.begin() + inner);
-				std::sort(along.begin(), along.end());
+				std::ranges::sort(along);
 				auto const chord{geometry::plan_of(last - first)};
 				glm::dvec2 const side{-chord.y, chord.x};
 				for (int k = 0; k < inner; ++k)
@@ -1183,7 +1183,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				points.push_back(m_lay.mouse_snap.track != nullptr ? m_lay.mouse_snap.position : m_lay.mouse);
 				m_lay.preview = lay_pieces(points, modes, m_lay.mouse_snap, m_lay.preview_length, m_lay.preview_error);
 				auto readout{track_readout()};
-				std::replace(readout.begin(), readout.end(), '\n', '|');
+				std::ranges::replace(readout, '\n', '|');
 				WriteLog("SELFTEST layclicks readout: " + readout);
 			}
 			lay_click();
@@ -1207,13 +1207,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		std::vector<TTrack const *> laid;
 		for (auto step{before}; step < m_history.size(); ++step)
 			for (auto const *track : m_history[step].created)
-				if (track != nullptr && false == track->m_editorremoved && std::find(laid.begin(), laid.end(), track) == laid.end())
+				if (track != nullptr && false == track->m_editorremoved && std::ranges::find(laid, track) == laid.end())
 					laid.push_back(track);
 		if (false == laid.empty())
 		{
 			auto const origin{laid.front()->m_paths.front().points[segment_data::point::start]};
 			auto const along{glm::normalize(geometry::plan_of(laid.back()->m_paths.front().points[segment_data::point::end] - origin) + glm::dvec2{1e-9, 0.0})};
-			std::stable_sort(laid.begin(), laid.end(), [&](TTrack const *A, TTrack const *B) {
+			std::ranges::stable_sort(laid, [&](TTrack const *A, TTrack const *B) {
 				return glm::dot(geometry::plan_of(A->m_paths.front().points[segment_data::point::start] - origin), along) < glm::dot(geometry::plan_of(B->m_paths.front().points[segment_data::point::start] - origin), along);
 			});
 		}

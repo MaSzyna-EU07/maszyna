@@ -61,7 +61,7 @@ std::optional<std::vector<switch_end_move>> switch_end_moves(TTrack const &Track
 		}
 		ends.push_back({from, to, index == segment_data::point::start ? axis->along(from) - target : target - axis->along(from)});
 	}
-	std::stable_sort(ends.begin(), ends.end(), [](switch_end_move const &A, switch_end_move const &B) { return A.shift > B.shift; });
+	std::ranges::stable_sort(ends, [](switch_end_move const &A, switch_end_move const &B) { return A.shift > B.shift; });
 	return ends;
 }
 
@@ -186,7 +186,7 @@ bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::str
 		auto const b{axis->along(path.points[segment_data::point::end])};
 		spans.emplace_back(std::min(a, b), std::max(a, b), line.tracks[i]->eType == tt_Normal);
 	}
-	std::sort(spans.begin(), spans.end());
+	std::ranges::sort(spans);
 	double low{0.0};
 	double high{axis->length};
 	for (auto const &[from, to, plain] : spans)
@@ -228,7 +228,7 @@ bool editor_mode::switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec
 	{
 		if (other->m_editorremoved)
 			continue;
-		if (other->eType == tt_Normal && std::find(Line.tracks.begin(), Line.tracks.end(), other) != Line.tracks.end())
+		if (other->eType == tt_Normal && std::ranges::find(Line.tracks, other) != Line.tracks.end())
 		{
 			Edit.capture(*other);
 			editor_track::move_point(*other, point, To);
@@ -264,7 +264,7 @@ std::optional<editor_mode::switch_branch> editor_mode::take_switch_branch(TTrack
 	int phase{0};
 	std::size_t straight{0};
 	double past{0.0};
-	while (regular(current) && std::find(run.begin(), run.end(), current) == run.end() && past < kBranchStraight)
+	while (regular(current) && std::ranges::find(run, current) == run.end() && past < kBranchStraight)
 	{
 		auto const plain{editor_track::is_straight(*current, m_straights.tolerance)};
 		if (false == plain && phase == 2)
@@ -559,7 +559,7 @@ std::vector<editor_mode::switch_branch> editor_mode::switch_branches(TTrack cons
 		return branches;
 	for (std::size_t i = 0; i < Joints.size(); ++i)
 	{
-		if (std::find(Skip.begin(), Skip.end(), Joints[i].other) != Skip.end() || axis->lateral(editor_track::point_position(Track, Joints[i].own)) <= m_straights.tolerance.offset)
+		if (std::ranges::find(Skip, Joints[i].other) != Skip.end() || axis->lateral(editor_track::point_position(Track, Joints[i].own)) <= m_straights.tolerance.offset)
 			continue;
 		if (auto branch{take_switch_branch(Track, Joints[i], i)})
 			branches.push_back(std::move(*branch));
@@ -640,7 +640,7 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 	if (false == outer(*Set.first, Set.first->m_paths.front().points[segment_data::point::start], Paths[0].points[segment_data::point::start], true) ||
 	    false == outer(*Set.second, Set.second->m_paths.front().points[segment_data::point::end], Paths[2].points[segment_data::point::end], false))
 		return false;
-	std::stable_sort(ends.begin(), ends.end(), [](outer_end const &A, outer_end const &B) { return A.move.shift > B.move.shift; });
+	std::ranges::stable_sort(ends, [](outer_end const &A, outer_end const &B) { return A.move.shift > B.move.shift; });
 	std::array<TTrack *, 2> const switches{Set.first, Set.second};
 	std::array<std::vector<editor_track::joint>, 2> joints;
 	std::array<std::vector<glm::dvec3>, 2> positions;
@@ -721,14 +721,14 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 		return false;
 	Slide.shift = chord / run;
 	Slide.movers = Slip.parts;
-	auto const outside = [&](TTrack const *Track) { return std::find(Slip.parts.begin(), Slip.parts.end(), Track) == Slip.parts.end(); };
+	auto const outside = [&](TTrack const *Track) { return std::ranges::find(Slip.parts, Track) == Slip.parts.end(); };
 	// its crossing track goes along where it goes on into tracks ending free, as when it was laid on one straight
 	for (std::size_t end = 2; end < 4; ++end)
 	{
 		for (auto const *part : Slip.parts)
 			for (auto const &[other, point] : editor_track::connected_points(*part, Slip.ends[end]))
 			{
-				if (false == outside(other) || std::find(Slide.movers.begin(), Slide.movers.end(), other) != Slide.movers.end())
+				if (false == outside(other) || std::ranges::find(Slide.movers, other) != Slide.movers.end())
 					continue;
 				auto const free{other->eType == tt_Normal && other->m_paths.size() == 1 &&
 				                editor_track::connected_points(*other, editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start})).empty()};
@@ -752,7 +752,7 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 		for (auto const *part : Slip.parts)
 			for (auto const &[other, point] : editor_track::connected_points(*part, Slip.ends[end]))
 				if (outside(other) && straight_along(*other) && std::abs(geometry::chord_length(other->m_paths.front()) - extension) < 0.01 &&
-				    std::find(Slide.movers.begin(), Slide.movers.end(), other) == Slide.movers.end())
+				    std::ranges::find(Slide.movers, other) == Slide.movers.end())
 				{
 					Slide.movers.push_back(other);
 					joints[end] = editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start});
@@ -765,7 +765,7 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 		for (auto *track : Slide.movers)
 			for (auto const &[other, point] : editor_track::connected_points(*track, joints[end]))
 			{
-				if (std::find(Slide.movers.begin(), Slide.movers.end(), other) != Slide.movers.end() || Slide.ends[end].first != nullptr)
+				if (std::ranges::find(Slide.movers, other) != Slide.movers.end() || Slide.ends[end].first != nullptr)
 					continue;
 				Slide.ends[end] = {other, point};
 				straight[end] = straight_along(*other);
@@ -1136,7 +1136,7 @@ void editor_mode::switch_slide_start(TTrack &Track)
 		auto const line{editor_track::find_straight(*member, m_straights.tolerance)};
 		for (std::size_t i = 0; i < line.tracks.size(); ++i)
 		{
-			if (std::find(members.begin(), members.end(), line.tracks[i]) != members.end())
+			if (std::ranges::find(members, line.tracks[i]) != members.end())
 				continue;
 			auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
 			for (auto const index : {segment_data::point::start, segment_data::point::end})

@@ -75,7 +75,7 @@ std::string decimal(double const Value, int const Digits)
 
 bool parse_number(std::string Text, double &Value)
 {
-	std::replace(Text.begin(), Text.end(), ',', '.');
+	std::ranges::replace(Text, ',', '.');
 	auto const *start{Text.c_str()};
 	char *end{nullptr};
 	Value = std::strtod(start, &end);
@@ -133,7 +133,7 @@ std::uint64_t material_image(material_handle const Material)
 
 std::string lowered(std::string Text)
 {
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+	std::ranges::transform(Text, Text.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
 	return Text;
 }
 
@@ -407,7 +407,7 @@ std::vector<track_property> make_properties()
 		property.applies = [](TTrack const &Track) { return Track.m_visible && (Track.iCategoryFlag & 15) == 1; };
 		property.choices = {"No profile", "S60 (60E1)", "UIC60", "S49 (49E1)", "S42", "S39", "S30 PN", "S30 DIN", "S24", "S20", "S18", "S14", "S10", "R65", "Ri60N", "LK1"};
 		property.get = [](TTrack const &Track) {
-			auto const at{std::find_if(std::begin(profiles), std::end(profiles), [&](char const *Name) { return Track.m_profile1.first == Name; })};
+			auto const at{std::ranges::find_if(profiles, [&](char const *Name) { return Track.m_profile1.first == Name; })};
 			return at != std::end(profiles) ? std::to_string(at - std::begin(profiles)) : Track.m_profile1.first;
 		};
 		property.set = [](TTrack &Track, std::string const &Text) {
@@ -563,7 +563,7 @@ std::vector<track_property> make_properties()
 			return result;
 		};
 		auto const index_of = [](std::vector<std::string> const &Models, std::string const &Name) {
-			auto const found{std::find(Models.begin(), Models.end(), Name)};
+			auto const found{std::ranges::find(Models, Name)};
 			return found == Models.end() ? 0 : static_cast<int>(found - Models.begin()) + 1;
 		};
 		{
@@ -733,7 +733,7 @@ value_counts values_of(track_property const &Property, std::vector<TTrack *> con
 		if (track != nullptr && false == track->m_editorremoved && Property.applies(*track))
 			++counted[Property.get(*track)];
 	value_counts result(counted.begin(), counted.end());
-	std::stable_sort(result.begin(), result.end(), [](auto const &Left, auto const &Right) { return Left.second > Right.second; });
+	std::ranges::stable_sort(result, [](auto const &Left, auto const &Right) { return Left.second > Right.second; });
 	return result;
 }
 
@@ -863,7 +863,7 @@ void editor_mode::select_tracks(std::vector<TTrack *> const &Tracks)
 	// the tracks may be the set itself
 	std::vector<TTrack *> tracks;
 	for (auto *track : Tracks)
-		if (track != nullptr && false == track->m_editorremoved && std::find(tracks.begin(), tracks.end(), track) == tracks.end())
+		if (track != nullptr && false == track->m_editorremoved && std::ranges::find(tracks, track) == tracks.end())
 			tracks.push_back(track);
 	m_track_set.clear();
 	if (tracks.size() >= 2)
@@ -1023,7 +1023,7 @@ void editor_mode::track_textures_scan()
 		for (auto const &[material, count] : counted)
 			if (material != null_handle)
 				list.push_back({material, editor_track::material_name(material), count, format(STR_C("In this scenery: %s"), tracks_count(static_cast<std::size_t>(count)).c_str())});
-		std::stable_sort(list.begin(), list.end(), [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
+		std::ranges::stable_sort(list, [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
 	}
 }
 
@@ -1083,7 +1083,7 @@ std::uint64_t editor_mode::texture_image(std::vector<texture_use> const &Used, s
 		if (use.material != null_handle && use.name == Name)
 			return material_image(use.material);
 	auto const &index{m_texture_index};
-	auto const found{std::lower_bound(index.begin(), index.end(), Name, [](texture_index_entry const &Entry, std::string const &Wanted) { return Entry.name < Wanted; })};
+	auto const found{std::ranges::lower_bound(index, Name, {}, &texture_index_entry::name)};
 	texture_browser::item item;
 	item.name = Name;
 	item.material = found == index.end() || found->name != Name || found->material;
@@ -1116,7 +1116,7 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	auto const entered{ImGui::InputTextWithHint("##filter", STR_C("find a texture"), filter.data(), filter.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
 	auto const words{words_of(lowered(filter.data()))};
 	auto const matches = [&](std::string const &Lowered) {
-		return std::all_of(words.begin(), words.end(), [&](std::string const &Word) { return Lowered.find(Word) != std::string::npos; });
+		return std::ranges::all_of(words, [&](std::string const &Word) { return Lowered.find(Word) != std::string::npos; });
 	};
 	// those in use first, then every other one of the folder
 	std::vector<texture_use const *> used;
@@ -1164,7 +1164,7 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	else
 	{
 		ImGui::TextUnformatted(shown.c_str());
-		auto const use{std::find_if(m_texture_used.begin(), m_texture_used.end(), [&](texture_use const &Use) { return Use.name == shown; })};
+		auto const use{std::ranges::find_if(m_texture_used, [&](texture_use const &Use) { return Use.name == shown; })};
 		auto const isset{false == Mixed && lowered(shown) == current};
 		if (use != m_texture_used.end())
 			ImGui::TextDisabled("%s", use->note.c_str());
@@ -1330,7 +1330,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			cache.applies[i] = applies;
 			cache.values[i] = std::move(values);
 		}
-		cache.unsaved = static_cast<std::size_t>(std::count_if(Tracks.begin(), Tracks.end(), [](TTrack const *Track) { return Track != nullptr && Track->dirty(); }));
+		cache.unsaved = static_cast<std::size_t>(std::ranges::count_if(Tracks, [](TTrack const *Track) { return Track != nullptr && Track->dirty(); }));
 	}
 
 	// the lines under the rows come and go with no mouse button held: rows moved under a click would give it to another row
@@ -1350,7 +1350,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 	}
 	// the tooltip of a row would cover the line under it
 	auto const row_help = [&](std::size_t const Index) {
-		if (std::none_of(m_track_notes.begin(), m_track_notes.end(), [&](track_note const &Note) { return Note.property == static_cast<int>(Index); }))
+		if (std::ranges::none_of(m_track_notes, [&](track_note const &Note) { return Note.property == static_cast<int>(Index); }))
 			row_tooltip(list[Index], cache.values[Index], cache.applies[Index], Tracks.size());
 	};
 

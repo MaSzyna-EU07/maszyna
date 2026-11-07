@@ -894,13 +894,13 @@ bool editor_line(std::string_view const Mark, std::string const &Text)
 	    {"//$w", {"#", "gradeline"}},
 	    {"//$t", {"#", "fitted"}},
 	}};
-	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
+	auto const lookup{std::ranges::find_if(words, [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())
 	{
 		return true;
 	}
 	auto const word{first_word(Text)};
-	return std::any_of(lookup->second.begin(), lookup->second.end(), [&](std::string_view const Known) { return false == Known.empty() && Known == word; });
+	return std::ranges::any_of(lookup->second, [&](std::string_view const Known) { return false == Known.empty() && Known == word; });
 }
 } // namespace
 
@@ -943,12 +943,12 @@ void node_layers::scan(layer_handle const Layer)
 			std::string text;
 			char const *taken{nullptr};
 			bool moved{false};
-			auto const mark{std::find_if(editormarks.begin(), editormarks.end(), [&](char const *Mark) { return marked_text(Mark, text); })};
+			auto const mark{std::ranges::find_if(editormarks, [&](char const *Mark) { return marked_text(Mark, text); })};
 			if (mark != editormarks.end())
 			{
 				taken = (editor_line(*mark, text) ? *mark : nullptr);
 			}
-			else if (auto const before{std::find_if(movedmarks.begin(), movedmarks.end(), [&](moved_mark const &Moved) { return marked_text(Moved.before, text); })}; before != movedmarks.end())
+			else if (auto const before{std::ranges::find_if(movedmarks, [&](moved_mark const &Moved) { return marked_text(Moved.before, text); })}; before != movedmarks.end())
 			{
 				taken = (first_word(text) == before->word || text.starts_with(before->note) ? before->now : nullptr);
 				moved = true;

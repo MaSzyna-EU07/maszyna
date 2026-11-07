@@ -653,7 +653,7 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 editor_mode::signal_standing const *editor_mode::signal_standing_of(scene::instance_handle const Instance) const
 {
 	auto const &standing{m_signal.standing};
-	auto const found{std::find_if(standing.begin(), standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == Instance; })};
+	auto const found{std::ranges::find_if(standing, [&](signal_standing const &Standing) { return Standing.include.instance == Instance; })};
 	return found != standing.end() ? &*found : nullptr;
 }
 
@@ -763,7 +763,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	if (false == Standing.read.empty() && Spot.track->Dynamics.empty())
 	{
 		signal_detach_events(Standing.read, states);
-		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == Spot.track; }))
+		if (std::ranges::none_of(states, [&](auto const &State) { return State.first == Spot.track; }))
 			states.emplace_back(Spot.track, editor_track::capture(*Spot.track));
 		editor_track::events(*Spot.track, Spot.list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
@@ -963,7 +963,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	}
 	signal_refresh(true);
 	auto const taken = [&](std::string const &Name) {
-		return std::any_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return ToLower(Standing.name) == ToLower(Name); });
+		return std::ranges::any_of(tool.standing, [&](signal_standing const &Standing) { return ToLower(Standing.name) == ToLower(Name); });
 	};
 	for (int guard = 0; taken(name) && guard < 1000; ++guard)
 		name = signal_next_name(name);
@@ -1033,7 +1033,7 @@ void editor_mode::signal_detach_events(std::string const &Read, std::vector<std:
 		for (int list = 0; list < 6; ++list)
 		{
 			auto &events{editor_track::events(*track, list)};
-			events.erase(std::remove_if(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == name; }), events.end());
+			std::erase_if(events, [&](auto const &Event) { return ToLower(Event.first) == name; });
 		}
 		std::string missing;
 		editor_track::bind_events(*track, missing);
@@ -1051,10 +1051,10 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 		return false == Track.Isolated.empty();
 	};
 	// a record of a track removed again, after an undo brought it back, is the step's to make anew
-	m_orphans.erase(std::remove_if(m_orphans.begin(), m_orphans.end(), [&](orphan_record const &Record) { return std::find(Removed.begin(), Removed.end(), Record.track) != Removed.end(); }), m_orphans.end());
+	std::erase_if(m_orphans, [&](orphan_record const &Record) { return std::ranges::find(Removed, Record.track) != Removed.end(); });
 	// a track which took the circuits over, removed by the step, leaves them to what the step made
 	for (auto &record : m_orphans)
-		if (std::any_of(record.given.begin(), record.given.end(), [&](TTrack const *Track) { return std::find(Removed.begin(), Removed.end(), Track) != Removed.end(); }))
+		if (std::ranges::any_of(record.given, [&](TTrack const *Track) { return std::ranges::find(Removed, Track) != Removed.end(); }))
 		{
 			record.circuits.clear();
 			record.given.clear();
@@ -1087,7 +1087,7 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 			for (auto const &event : editor_track::events(*track, list))
 			{
 				auto const name{ToLower(event.first)};
-				if (false == name.empty() && carried.count(name) == 0 && std::none_of(record.events.begin(), record.events.end(), [&](auto const &Event) { return Event.first == name; }))
+				if (false == name.empty() && carried.count(name) == 0 && std::ranges::none_of(record.events, [&](auto const &Event) { return Event.first == name; }))
 					record.events.emplace_back(name, list);
 			}
 		for (auto const *isolated : track->Isolated)
@@ -1104,15 +1104,15 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed)
 {
 	// a record waits while its track stays deleted, so the step laying another one in its place, undone and laid again, gets it again
-	if (std::none_of(m_orphans.begin(), m_orphans.end(), [](orphan_record const &Record) { return Record.track->m_editorremoved; }))
+	if (std::ranges::none_of(m_orphans, [](orphan_record const &Record) { return Record.track->m_editorremoved; }))
 		return;
 	std::vector<TTrack *> candidates;
 	for (auto const *tracks : {&Created, &Changed})
 		for (auto *track : *tracks)
 			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && track->Dynamics.empty() && editor_track::is_supported(*track) &&
-			    std::find(candidates.begin(), candidates.end(), track) == candidates.end())
+			    std::ranges::find(candidates, track) == candidates.end())
 				candidates.push_back(track);
-	if (candidates.empty() && std::none_of(m_orphans.begin(), m_orphans.end(), [](orphan_record const &Record) { return Record.fresh; }))
+	if (candidates.empty() && std::ranges::none_of(m_orphans, [](orphan_record const &Record) { return Record.fresh; }))
 		return;
 	std::unordered_set<std::string> carried;
 	for (auto *track : simulation::Paths.sequence())
@@ -1231,14 +1231,14 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 					++left_events;
 			}
 		}
-		if (false == record.circuits.empty() && std::all_of(record.given.begin(), record.given.end(), [](TTrack const *Track) { return Track->m_editorremoved; }))
+		if (false == record.circuits.empty() && std::ranges::all_of(record.given, [](TTrack const *Track) { return Track->m_editorremoved; }))
 		{
 			auto got{false};
 			// a track lying in the place of the old one for the most part: a new one, in the circuit of the track it was made from,
 			// or one without a circuit
 			for (auto *track : candidates)
 			{
-				auto const made{std::find(Created.begin(), Created.end(), track) != Created.end()};
+				auto const made{std::ranges::find(Created, track) != Created.end()};
 				if ((false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, old, 2.0))
 					continue;
 				auto const same{track->Isolated.size() == record.circuits.size() && std::equal(record.circuits.begin(), record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })};
@@ -1261,7 +1261,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 				if (all == 0 || on * 2 < all)
 					continue;
 				editor_track::isolated(*track, record.circuits);
-				if (std::find(record.given.begin(), record.given.end(), track) == record.given.end())
+				if (std::ranges::find(record.given, track) == record.given.end())
 					record.given.push_back(track);
 				got = true;
 			}
@@ -1308,7 +1308,7 @@ std::size_t editor_mode::signal_reattach(std::vector<scene::instance_handle> con
 		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.track; }))
 			states.emplace_back(spot.track, editor_track::capture(*spot.track));
 		auto &events{editor_track::events(*spot.track, spot.list)};
-		if (std::none_of(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == ToLower(standing->read); }))
+		if (std::ranges::none_of(events, [&](auto const &Event) { return ToLower(Event.first) == ToLower(standing->read); }))
 			events.emplace_back(ToLower(standing->read), nullptr);
 		std::string missing;
 		editor_track::bind_events(*spot.track, missing);
@@ -1598,7 +1598,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			std::vector<std::pair<TTrack *, editor_track::state>> states;
 			signal_detach_events(editor_includes::substitute(item->read, values), states);
 			for (auto &state : states)
-				if (created.count(state.first) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &Taken) { return Taken.first == state.first; }))
+				if (created.count(state.first) == 0 && std::ranges::none_of(step.tracks, [&](auto const &Taken) { return Taken.first == state.first; }))
 					step.tracks.push_back(std::move(state));
 		}
 		scene::Layers.removed(instance, true);
@@ -1622,7 +1622,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 	{
 		if (read.empty() || false == spot.track->Dynamics.empty() || false == scene::Layers.editable(spot.track))
 			continue;
-		if (created.count(spot.track) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &State) { return State.first == spot.track; }))
+		if (created.count(spot.track) == 0 && std::ranges::none_of(step.tracks, [&](auto const &State) { return State.first == spot.track; }))
 			step.tracks.emplace_back(spot.track, editor_track::capture(*spot.track));
 		editor_track::events(*spot.track, spot.list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
@@ -1954,12 +1954,12 @@ void editor_mode::render_signal_ui()
 	labels.reserve(kKindCount);
 	std::vector<segment_option> kinds;
 	for (int k = 0; k < kKindCount; ++k)
-		if (std::any_of(tool.templates.begin(), tool.templates.end(), [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
+		if (std::ranges::any_of(tool.templates, [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
 		{
 			labels.push_back(STR(kKindLabels[k]));
 			kinds.push_back({k, labels.back().c_str()});
 		}
-	if (false == kinds.empty() && std::none_of(kinds.begin(), kinds.end(), [&](segment_option const &Option) { return Option.value == tool.kind; }))
+	if (false == kinds.empty() && std::ranges::none_of(kinds, [&](segment_option const &Option) { return Option.value == tool.kind; }))
 		tool.kind = kinds.front().value;
 	choice_chips("signalkinds", tool.kind, kinds);
 	render_signal_palette();

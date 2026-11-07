@@ -1234,7 +1234,7 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 		// on the same grade line it goes with the route anyway, grade_line_follow sees to it; what a fit to the terrain leaves as it is stays
 		if ((m_profile.whole_grade_line && false == m_profile.fitting && on_route_grade_line(*other)) || (m_profile.fitting && m_nmt_state.stayed.contains(other)))
 			continue;
-		if (std::any_of(changedroute.spans.begin(), changedroute.spans.end(), [&](auto const &Span) { return Span.track == other; }) || std::find(done.begin(), done.end(), other) != done.end())
+		if (std::ranges::any_of(changedroute.spans, [&](auto const &Span) { return Span.track == other; }) || std::ranges::find(done, other) != done.end())
 			continue;
 		done.push_back(other);
 		auto route{editor_track::run_route(*other, 3000.0)};
@@ -1255,7 +1255,7 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 			continue;
 		auto const change = [&](double const Chainage) {
 			auto const at{std::clamp(Chainage, samples.front().chainage, samples.back().chainage)};
-			auto const next{std::lower_bound(samples.begin(), samples.end(), at, [](auto const &Sample, double const Value) { return Sample.chainage < Value; })};
+			auto const next{std::ranges::lower_bound(samples, at, {}, [](auto const &Sample) { return Sample.chainage; })};
 			if (next == samples.begin())
 				return changes.front();
 			if (next == samples.end())
@@ -1285,8 +1285,8 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 			for (auto const bound : {follow, leave})
 				if ((distances[i - 1] < bound) != (distances[i] < bound) && samples[i].chainage > 0.5 && samples[i].chainage < route.length - 0.5)
 					breaks.push_back(samples[i].chainage);
-		std::sort(breaks.begin(), breaks.end());
-		breaks.erase(std::unique(breaks.begin(), breaks.end(), [](double const A, double const B) { return std::abs(A - B) < 1.0; }), breaks.end());
+		std::ranges::sort(breaks);
+		breaks.erase(std::ranges::unique(breaks, [](double const A, double const B) { return std::abs(A - B) < 1.0; }).begin(), breaks.end());
 		profile_take(route, route.spans.front().track, route.spans.back().track);
 		auto const designed{m_profile.line};
 		std::vector<std::pair<TTrack *, editor_track::state>> states;
@@ -1315,7 +1315,7 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 			point.elevation = profile::elevation(designed, chainage) + change(chainage);
 			points.push_back(point);
 		}
-		std::sort(points.begin(), points.end(), [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
+		std::ranges::sort(points, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
 		std::vector<profile::pvi> line;
 		for (auto const &point : points)
 			if (line.empty() || point.chainage - line.back().chainage >= 0.5)
@@ -1410,7 +1410,7 @@ bool editor_mode::lay_crossover(int const Shape, glm::dvec3 const &Press, glm::d
 				for (auto const which : {segment_data::point::start, segment_data::point::end})
 				{
 					auto const joined{editor_track::connected_points(*part, part->m_paths.front().points[which])};
-					if (std::none_of(joined.begin(), joined.end(), [&](auto const &Entry) { return Entry.first != part && Entry.first != nullptr && false == Entry.first->m_editorremoved; }))
+					if (std::ranges::none_of(joined, [&](auto const &Entry) { return Entry.first != part && Entry.first != nullptr && false == Entry.first->m_editorremoved; }))
 					{
 						undo_last();
 						tool.status = STR_C("The crossover wouldn't join the tracks there");

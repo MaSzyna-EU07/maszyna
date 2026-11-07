@@ -138,10 +138,10 @@ TEST_CASE("ground fit: the same off a loose start") {
 	auto const end{ground.chainages.back()};
 	for (auto &chainage : ground.chainages)
 		chainage = end - chainage;
-	std::reverse(ground.chainages.begin(), ground.chainages.end());
-	std::reverse(ground.heights.begin(), ground.heights.end());
-	std::reverse(ground.tolerances.begin(), ground.tolerances.end());
-	std::reverse(ground.reaches.begin(), ground.reaches.end());
+	std::ranges::reverse(ground.chainages);
+	std::ranges::reverse(ground.heights);
+	std::ranges::reverse(ground.tolerances);
+	std::ranges::reverse(ground.reaches);
 	auto const line{fit(ground)};
 	REQUIRE(line.points.size() >= 2);
 	CHECK(profile::elevation(line, 0.0) > 79.5);

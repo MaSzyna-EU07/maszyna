@@ -2925,7 +2925,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	auto const &fitted{Fitted};
 	// the line runs over the tracks not fitted yet around the track: the ones fitted stay as they are
 	auto route{editor_track::run_route(Track, profile.run_length)};
-	auto const at{std::find_if(route.spans.begin(), route.spans.end(), [&](auto const &Span) { return Span.track == &Track; })};
+	auto const at{std::ranges::find_if(route.spans, [&](auto const &Span) { return Span.track == &Track; })};
 	auto const middle{geometry::bezier{Track.m_paths.front()}.point(0.5)};
 	if (at == route.spans.end())
 	{
@@ -2967,7 +2967,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	};
 	profile.context.start_joined = profile.context.start_joined && joint(false, profile.context.start_elevation);
 	profile.context.end_joined = profile.context.end_joined && joint(true, profile.context.end_elevation);
-	auto const on_route = [&](TTrack const *Other) { return std::any_of(profile.route.spans.begin(), profile.route.spans.end(), [&](auto const &Span) { return Span.track == Other; }); };
+	auto const on_route = [&](TTrack const *Other) { return std::ranges::any_of(profile.route.spans, [&](auto const &Span) { return Span.track == Other; }); };
 	// an end on a switch which meets a switch fitted already unlinked, laid apart in height, takes it over as if it went on into it
 	auto const partner_of = [&](editor_track::route_span const &Span, bool const Atend) -> std::optional<loose_end> {
 		auto const found{m_nmt_state.loose.find({Span.track, Span.path, Atend})};
@@ -3045,7 +3045,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	{
 		auto const &span{atend ? profile.route.spans.back() : profile.route.spans.front()};
 		auto const end{end_of(*span.track, span.path, atend ? span.forward : false == span.forward)};
-		auto const table{std::find_if(m_nmt_state.turntables.begin(), m_nmt_state.turntables.end(), [&](nmt_state::turntable const &Table) { return on_rim(end, Table.centre, Table.rim); })};
+		auto const table{std::ranges::find_if(m_nmt_state.turntables, [&](nmt_state::turntable const &Table) { return on_rim(end, Table.centre, Table.rim); })};
 		if (table == m_nmt_state.turntables.end())
 			continue;
 		auto const height{table->centre.y};
@@ -3060,7 +3060,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		WriteLog(format("Editor: NMT line %s runs up to turntable %s level at %.2f m over %.1f m", Track.name().c_str(), table->table->name().c_str(), height, level), logtype::generic);
 	}
 	auto const in_pit =[&](glm::dvec3 const &Point) {
-		return std::any_of(m_nmt_state.turntables.begin(), m_nmt_state.turntables.end(), [&](nmt_state::turntable const &Table) { return geometry::plan_distance(Point, Table.centre) < Table.rim + kPitWall; });
+		return std::ranges::any_of(m_nmt_state.turntables, [&](nmt_state::turntable const &Table) { return geometry::plan_distance(Point, Table.centre) < Table.rim + kPitWall; });
 	};
 	auto const length_of =[](TTrack const &Track, int const Path) { return Track.eType == tt_Switch ? Track.SwitchExtension->Segments[Path]->GetLength() : Track.Segment->GetLength(); };
 	std::vector<editor_track::route_span> exits;
@@ -3107,13 +3107,13 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		std::set<std::tuple<TTrack const *, int, bool>> seen;
 		while (false == open.empty())
 		{
-			auto const nearest{std::min_element(open.begin(), open.end(), [](walk const &A, walk const &B) { return A.between < B.between; })};
+			auto const nearest{std::ranges::min_element(open, [](walk const &A, walk const &B) { return A.between < B.between; })};
 			auto const step{*nearest};
 			open.erase(nearest);
 			if (step.between >= kFarthest || false == seen.insert({step.span.track, step.span.path, step.span.forward}).second)
 				continue;
 			auto onward{editor_track::continuations(step.span)};
-			onward.erase(std::remove_if(onward.begin(), onward.end(), [&](editor_track::continuation const &Next) { return on_route(Next.span.track); }), onward.end());
+			std::erase_if(onward, [&](editor_track::continuation const &Next) { return on_route(Next.span.track); });
 			// met unlinked, laid apart in height: on as if linked
 			if (onward.empty())
 				if (auto const end{partner_of(step.span, step.span.forward)})
@@ -3154,7 +3154,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	};
 	std::vector<other_level> other_levels;
 	auto const on_other_level = [&](double const Chainage, double const Height) {
-		return std::any_of(other_levels.begin(), other_levels.end(), [&](other_level const &Other) { return std::abs(Chainage - Other.chainage) <= Other.reach && std::abs(Height - Other.height) < kOtherSide; });
+		return std::ranges::any_of(other_levels, [&](other_level const &Other) { return std::abs(Chainage - Other.chainage) <= Other.reach && std::abs(Height - Other.height) < kOtherSide; });
 	};
 	auto const alongside = [&](editor_track::route_sample const &Sample) {
 		std::array<std::pair<double, nmt_state::laid_point const *>, 2> sides{std::pair{kNear, nullptr}, std::pair{kNear, nullptr}};
@@ -3267,7 +3267,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 				}
 		}
 		// the nearest samples of each crossing tell it
-		std::sort(found.begin(), found.end(), [](crossing const &A, crossing const &B) { return std::tie(A.track, A.chainage) < std::tie(B.track, B.chainage); });
+		std::ranges::sort(found, [](crossing const &A, crossing const &B) { return std::tie(A.track, A.chainage) < std::tie(B.track, B.chainage); });
 		std::vector<crossing> result;
 		for (auto const &one : found)
 			if (one.chainage < 0.0 || one.chainage > profile.route.length || on_route(one.track))
@@ -3299,7 +3299,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		auto const reach{std::clamp(kFormation / found.sine, kCrossedReach, kFormationReach)};
 		auto const terrain_towards = [&](int const Way) {
 			auto const last{static_cast<std::ptrdiff_t>(count) - 1};
-			auto const from{std::min(last, static_cast<std::ptrdiff_t>(std::distance(sampled.begin(), std::lower_bound(sampled.begin(), sampled.end(), found.chainage + Way * reach))))};
+			auto const from{std::min(last, static_cast<std::ptrdiff_t>(std::distance(sampled.begin(), std::ranges::lower_bound(sampled, found.chainage + Way * reach))))};
 			for (auto at{from}; at >= 0 && at <= last; at += Way)
 				if (std::isfinite(model[at]))
 					return model[at];
@@ -3383,7 +3383,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			reaches.push_back(kOtherReach);
 		}
 	}
-	if (std::none_of(ground.begin(), ground.end(), [](double const Height) { return std::isfinite(Height); }))
+	if (std::ranges::none_of(ground, [](double const Height) { return std::isfinite(Height); }))
 	{
 		nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, STR("The terrain model has no data under the line"));
 		return false;
@@ -3393,7 +3393,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	for (auto const &found : crossings_of(m_nmt_state.paths))
 	{
 		// a track going over or under isn't crossed on the rails
-		if (std::any_of(other_levels.begin(), other_levels.end(), [&](other_level const &Other) { return Other.track == found.track; }))
+		if (std::ranges::any_of(other_levels, [&](other_level const &Other) { return Other.track == found.track; }))
 			continue;
 		auto const half{std::min(30.0, kGauge / found.sine + 1.5)};
 		auto first{std::numeric_limits<double>::max()};
@@ -3412,7 +3412,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	}
 	for (auto const &hold : crossing_holds)
 	{
-		auto const at{static_cast<std::size_t>(std::distance(chainages.begin(), std::upper_bound(chainages.begin(), chainages.end(), hold.chainage)))};
+		auto const at{static_cast<std::size_t>(std::distance(chainages.begin(), std::ranges::upper_bound(chainages, hold.chainage)))};
 		chainages.insert(chainages.begin() + at, hold.chainage);
 		ground.insert(ground.begin() + at, hold.height);
 		tolerances.insert(tolerances.begin() + at, hold.tolerance);
@@ -3425,7 +3425,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	{
 		if (other == nullptr || other->eType != tt_Switch || other->m_paths.empty() || false == rail(*other))
 			continue;
-		if (std::any_of(profile.route.spans.begin(), profile.route.spans.end(), [&](auto const &Span) { return Span.track == other; }))
+		if (std::ranges::any_of(profile.route.spans, [&](auto const &Span) { return Span.track == other; }))
 			continue;
 		auto const &points{other->m_paths.front().points};
 		double from{std::numeric_limits<double>::max()};
@@ -3450,7 +3450,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		if (from < to)
 			profile.context.switches.push_back({from, to, other->name()});
 	}
-	std::sort(profile.context.switches.begin(), profile.context.switches.end(), [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
+	std::ranges::sort(profile.context.switches, [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
 	auto settings{profile.line};
 	settings.join_start = true;
 	settings.join_end = true;
@@ -3498,7 +3498,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		}
 		else
 			bridges.push_back(stretch);
-	bridges.erase(std::remove_if(bridges.begin(), bridges.end(), [&](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; }), bridges.end());
+	std::erase_if(bridges, [&](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; });
 	profile.fitting = true;
 	profile_apply(false, bridges, Laid ? kFewest : 0.0);
 	profile.fitting = false;
@@ -3570,7 +3570,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	// told in the panel too: the line refused and why, the path which didn't take it, the worst place where it parts from the model
 	// other than over a bridge found
 	auto const place_at = [&](double const Chainage) {
-		return std::min_element(profile.samples.begin(), profile.samples.end(), [&](auto const &A, auto const &B) { return std::abs(A.chainage - Chainage) < std::abs(B.chainage - Chainage); })->position;
+		return std::ranges::min_element(profile.samples, [&](auto const &A, auto const &B) { return std::abs(A.chainage - Chainage) < std::abs(B.chainage - Chainage); })->position;
 	};
 	if (false == applied)
 	{
@@ -3596,7 +3596,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		profile::departure const *worst{nullptr};
 		for (auto const &stretch : parted)
 			if (std::abs(stretch.depth) >= kTold && stretch.to - stretch.from >= kToldLength &&
-			    false == std::any_of(spans.begin(), spans.end(), [&](profile::departure const &Bridge) { return stretch.depth < 0.0 && stretch.from < Bridge.to && stretch.to > Bridge.from; }) &&
+			    false == std::ranges::any_of(spans, [&](profile::departure const &Bridge) { return stretch.depth < 0.0 && stretch.from < Bridge.to && stretch.to > Bridge.from; }) &&
 			    (worst == nullptr || std::abs(stretch.depth) > std::abs(worst->depth)))
 				worst = &stretch;
 		if (worst != nullptr)
@@ -3887,7 +3887,7 @@ struct grade_term
 std::vector<double> grade_moves(std::vector<grade_term> const &Terms, int const Unknowns, int &Iterations)
 {
 	auto const multiply = [&](std::vector<double> const &In, std::vector<double> &Out) {
-		std::fill(Out.begin(), Out.end(), 0.0);
+		std::ranges::fill(Out, 0.0);
 		for (auto const &one : Terms)
 		{
 			auto sum{0.0};
@@ -4041,7 +4041,7 @@ void editor_mode::nmt_share_grades()
 	auto const steep = [&](TTrack const &Track) {
 		if (state.on_hump.contains(&Track))
 			return true;
-		return std::any_of(Track.m_paths.begin(), Track.m_paths.end(), [&](segment_data const &Path) {
+		return std::ranges::any_of(Track.m_paths, [&](segment_data const &Path) {
 			auto const &start{Path.points[segment_data::point::start]};
 			auto const &end{Path.points[segment_data::point::end]};
 			auto const length{geometry::plan_distance(start, end)};
@@ -4590,7 +4590,7 @@ void editor_mode::nmt_share_grades()
 		if (false == bare)
 			continue;
 		edit.capture(*track);
-		if (std::find(moved.begin(), moved.end(), track) == moved.end())
+		if (std::ranges::find(moved, track) == moved.end())
 			moved.push_back(track);
 		++curved;
 		std::optional<double> blades; // the paths leave the blades with one grade, the first path tells it
@@ -4670,12 +4670,12 @@ void editor_mode::nmt_auto_step()
 			state.status = STR("The terrain model has no data under the tracks: is the scenery placed where it is?");
 			return;
 		}
-		std::nth_element(differences.begin(), differences.begin() + differences.size() / 2, differences.end());
+		std::ranges::nth_element(differences, differences.begin() + differences.size() / 2);
 		auto const lift{differences[differences.size() / 2]};
 		if (state.unfitted && false == kept.empty())
 		{
 			// the tracks fitted already stay where they are, and the model keeps the offset they were fitted to, told by them
-			std::nth_element(kept.begin(), kept.begin() + kept.size() / 2, kept.end());
+			std::ranges::nth_element(kept, kept.begin() + kept.size() / 2);
 			auto const offset{-kept[kept.size() / 2]};
 			if (std::abs(offset - state.offset) > 0.05)
 				state.offset = offset;
@@ -4697,7 +4697,7 @@ void editor_mode::nmt_auto_step()
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && rail(*track) && track->eType != tt_Table && false == nmt_stays(*track))
 				state.left.push_back(track);
-		std::sort(state.left.begin(), state.left.end(), [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });
+		std::ranges::sort(state.left, [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });
 		state.tracks = state.left.size();
 		state.split = 0;
 		state.done.clear();
@@ -4730,14 +4730,14 @@ void editor_mode::nmt_auto_step()
 				for (auto const forward : {true, false})
 				{
 					auto const onward{editor_track::continuations({Track, path, forward})};
-					if (std::any_of(onward.begin(), onward.end(), [&](editor_track::continuation const &Next) { return fitted.contains(Next.span.track); }))
+					if (std::ranges::any_of(onward, [&](editor_track::continuation const &Next) { return fitted.contains(Next.span.track); }))
 						return true;
 					if (auto const loose{state.loose.find({Track, path, forward})}; loose != state.loose.end() && fitted.contains(std::get<0>(loose->second)))
 						return true;
 				}
 			return false;
 		};
-		auto const next{std::find_if(state.left.begin(), state.left.end(), touches)};
+		auto const next{std::ranges::find_if(state.left, touches)};
 		if (next != state.left.end())
 			std::rotate(state.left.begin(), next, next + 1);
 		auto *track{state.left.front()};
@@ -4775,7 +4775,7 @@ void editor_mode::nmt_auto_step()
 			WriteLog("Editor: NMT - " + state.error, logtype::generic);
 			break;
 		}
-		state.left.erase(std::remove_if(state.left.begin(), state.left.end(), [&](TTrack *Track) { return done.contains(Track); }), state.left.end());
+		std::erase_if(state.left, [&](TTrack *Track) { return done.contains(Track); });
 	}
 	state.status = format(STR_C("Terrain model offset %+.2f m to the scenery; grade lines fitted to the terrain: %zu, refused by the checks: %zu, tracks left: %zu"), state.offset, state.lines, state.refused, state.left.size());
 	if (state.departures > 0)
