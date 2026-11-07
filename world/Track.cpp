@@ -431,7 +431,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     {
         // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
         // second one kept and written back
-        ErrorLog(std::format("Bad track: tributary \"{}\" in file \"{}\" (line {}) is drawn and run on as a river of its first path", m_name, parser->Name(), parser->Line()));
+        ErrorLog(std::format(R"(Bad track: tributary "{}" in file "{}" (line {}) is drawn and run on as a river of its first path)", m_name, parser->Name(), parser->Line()));
         eType = tt_Normal;
         iCategoryFlag = 4;
         m_tributary = true;
