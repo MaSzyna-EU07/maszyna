@@ -101,7 +101,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 14 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. All 17 cases
   take about 30 s with `-j 4`, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -146,6 +146,7 @@ scenery is newer.
 | `track_friction` | set the friction of every track of the base scenery (default in the sceneries is 0.15), e.g. for slippery rail |
 | `track_events` | lines added to tracks of the base scenery, by track name, e.g. `{ "tor1k": "event0 test_pass" }`; only tracks in the scenery file itself, not in its includes |
 | `test_config` | lines of a `config` block added to the scenery, e.g. `["test.timeout 90"]` |
+| `ini` | extra `eu07.ini` lines for the run, after the common ones of the runner's `-ini` file, e.g. `["crashdamage yes"]` |
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`. Default `timeout` for a case with `duration`, else `pass` |
@@ -169,6 +170,12 @@ event), `test_mode_signal_passed_at_danger` (exit 2), `test_mode_timeout` (exit 
 `test.timeout`) and `test_mode_standstill` (exit 4, from `test.standstill`).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
+
+The `en57_2000_automatic_coupler_*` cases (issue #86) share `td_automatic_coupler_hit.scn`: an
+EN57-2000 unit without a driver runs at `vars.velocity` km/h into a standing one, from
+`35.6 - vars.offset` m behind it, with `crashdamage yes` in `ini`. At 50 km/h the automatic
+couplers mustn't catch and the log has to show the collision and the derailment; at 4 km/h they
+couple and neither shows up. Nothing reports a result, so both end on the 60 s test timeout.
 
 Checks (speeds in km/h, times in seconds of physicslog time, distances in metres). Most use
 the physicslog Velocity column, which is the wheel speed: it stays at 0 while the wheels are
@@ -194,6 +201,10 @@ the row instead, logged by builds from this branch on.
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 - `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
   the test ended without waiting for the train to stop.
+- `log_contains` `pattern`: a line of the run's `log.txt` matches the regex, e.g. the
+  `Bad driving: ... collided` message of a collision.
+- `log_lacks` `pattern`: no line of the run's `log.txt` matches the regex.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
-parameters and returns `(passed, detail)`.
+parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
+text of `log.txt` instead of the rows.
