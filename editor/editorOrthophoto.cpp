@@ -368,62 +368,72 @@ bool prefetch_tile(http_client &Client, tile_request const &Request, std::string
 	return fs::exists(path, ec) || fetch(Client, wms_url(Request, true, hires_pixels, png), path, data, Error, Stop);
 }
 
+// the transparent pixels of an image, its holes, filled from another one of the same place, scaled to it
+void holes_filled(image &Out, image const &Standard)
+{
+	for (int y = 0; y < Out.height; ++y)
+		for (int x = 0; x < Out.width; ++x)
+		{
+			std::uint8_t *pixel = &Out.rgba[(static_cast<std::size_t>(y) * Out.width + x) * 4];
+			if (pixel[3] == 255)
+				continue;
+			int const sx = std::min(Standard.width - 1, x * Standard.width / Out.width);
+			int const sy = std::min(Standard.height - 1, y * Standard.height / Out.height);
+			std::uint8_t const *source = &Standard.rgba[(static_cast<std::size_t>(sy) * Standard.width + sx) * 4];
+			unsigned const alpha = pixel[3];
+			for (int c = 0; c < 3; ++c)
+				pixel[c] = static_cast<std::uint8_t>((pixel[c] * alpha + source[c] * (255u - alpha) + 127u) / 255u);
+			pixel[3] = 255;
+		}
+}
+
+// a tile of the high-resolution imagery, false on failure; none where the place isn't covered by it at all, the standard imagery
+// is taken then
+std::optional<bool> load_hires(http_client &Client, tile_request const &Request, image &Out, std::string &Error, stop_check const &Stop, stop_check const &Superseded)
+{
+	// the high-resolution product covers only parts of the country; a tiny transparent png tells whether this tile is covered
+	std::vector<std::uint8_t> data;
+	image probe;
+	if (!fetch(Client, wms_url(Request, true, probe_pixels, true), cache_file(Request, true, "probe.png"), data, Error, Stop) || !decode(data, probe, Error))
+		return false;
+	std::size_t covered{0};
+	for (std::size_t i = 3; i < probe.rgba.size(); i += 4)
+		if (probe.rgba[i] != 0)
+			++covered;
+	std::size_t const total = probe.rgba.size() / 4;
+
+	auto const superseded = [&]() {
+		if (false == Superseded())
+			return false;
+		Error = "superseded";
+		return true;
+	};
+	if (covered == total)
+	{
+		return fetch(Client, wms_url(Request, true, hires_pixels, false), cache_file(Request, true, std::format("{}.jpg", hires_pixels)), data, Error, Stop) && false == superseded() && decode(data, Out, Error);
+	}
+	if (covered > 0)
+	{
+		// edge of the covered area: transparent png, holes filled from the standard imagery
+		if (!fetch(Client, wms_url(Request, true, hires_pixels, true), cache_file(Request, true, std::format("{}.png", hires_pixels)), data, Error, Stop) || superseded() || !decode(data, Out, Error))
+			return false;
+		image standard;
+		std::string ignored;
+		if (load_standard(Client, Request, standard, ignored, Stop) && standard.width > 0 && standard.height > 0)
+			holes_filled(Out, standard);
+		return true;
+	}
+	// not covered at all: fall back to the standard imagery
+	return std::nullopt;
+}
+
 // returns false on failure (to be retried later); Empty is set when the place has no imagery. Superseded: the tile wants another image
 // now, the large one downloaded isn't decoded for nothing
 bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, stop_check const &Stop, stop_check const &Superseded)
 {
 	Empty = false;
-	if (Request.hires && Request.level >= hires_pixels)
-	{
-		// the high-resolution product covers only parts of the country; a tiny transparent png tells whether this tile is covered
-		std::vector<std::uint8_t> data;
-		image probe;
-		if (!fetch(Client, wms_url(Request, true, probe_pixels, true), cache_file(Request, true, "probe.png"), data, Error, Stop) || !decode(data, probe, Error))
-			return false;
-		std::size_t covered{0};
-		for (std::size_t i = 3; i < probe.rgba.size(); i += 4)
-			if (probe.rgba[i] != 0)
-				++covered;
-		std::size_t const total = probe.rgba.size() / 4;
-
-		auto const superseded = [&]() {
-			if (false == Superseded())
-				return false;
-			Error = "superseded";
-			return true;
-		};
-		if (covered == total)
-		{
-			return fetch(Client, wms_url(Request, true, hires_pixels, false), cache_file(Request, true, std::format("{}.jpg", hires_pixels)), data, Error, Stop) && false == superseded() && decode(data, Out, Error);
-		}
-		if (covered > 0)
-		{
-			// edge of the covered area: transparent png, holes filled from the standard imagery
-			if (!fetch(Client, wms_url(Request, true, hires_pixels, true), cache_file(Request, true, std::format("{}.png", hires_pixels)), data, Error, Stop) || superseded() || !decode(data, Out, Error))
-				return false;
-			image standard;
-			std::string ignored;
-			if (load_standard(Client, Request, standard, ignored, Stop) && standard.width > 0 && standard.height > 0)
-			{
-				for (int y = 0; y < Out.height; ++y)
-					for (int x = 0; x < Out.width; ++x)
-					{
-						std::uint8_t *pixel = &Out.rgba[(static_cast<std::size_t>(y) * Out.width + x) * 4];
-						if (pixel[3] == 255)
-							continue;
-						int const sx = std::min(standard.width - 1, x * standard.width / Out.width);
-						int const sy = std::min(standard.height - 1, y * standard.height / Out.height);
-						std::uint8_t const *source = &standard.rgba[(static_cast<std::size_t>(sy) * standard.width + sx) * 4];
-						unsigned const alpha = pixel[3];
-						for (int c = 0; c < 3; ++c)
-							pixel[c] = static_cast<std::uint8_t>((pixel[c] * alpha + source[c] * (255u - alpha) + 127u) / 255u);
-						pixel[3] = 255;
-					}
-			}
-			return true;
-		}
-		// not covered at all: fall back to the standard imagery
-	}
+	if (auto const hires{Request.hires && Request.level >= hires_pixels ? load_hires(Client, Request, Out, Error, Stop, Superseded) : std::nullopt}; hires.has_value())
+		return *hires;
 
 	if (!load_standard(Client, Request, Out, Error, Stop))
 		return false;
@@ -627,6 +637,27 @@ editor_orthophoto::~editor_orthophoto()
 namespace
 {
 
+// a character given by its number, Entity: #number or #xhex, added to a text: carriage returns left out, the rest as UTF-8
+void character_appended(std::string &Out, std::string const &Entity)
+{
+	auto const code{Entity.size() > 1 && (Entity[1] == 'x' || Entity[1] == 'X') ? std::strtoul(Entity.c_str() + 2, nullptr, 16) : std::strtoul(Entity.c_str() + 1, nullptr, 10)};
+	if (code == 13)
+		return;
+	if (code < 0x80)
+		Out += static_cast<char>(code);
+	else if (code < 0x800)
+	{
+		Out += static_cast<char>(0xC0 | (code >> 6));
+		Out += static_cast<char>(0x80 | (code & 0x3F));
+	}
+	else
+	{
+		Out += static_cast<char>(0xE0 | (code >> 12));
+		Out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+		Out += static_cast<char>(0x80 | (code & 0x3F));
+	}
+}
+
 // the text of an element of the capabilities, its entities read
 std::string xml_text(std::string const &Text)
 {
@@ -658,25 +689,7 @@ std::string xml_text(std::string const &Text)
 		else if (entity == "apos")
 			out += '\'';
 		else if (false == entity.empty() && entity[0] == '#')
-		{
-			auto const code{entity.size() > 1 && (entity[1] == 'x' || entity[1] == 'X') ? std::strtoul(entity.c_str() + 2, nullptr, 16) : std::strtoul(entity.c_str() + 1, nullptr, 10)};
-			// carriage returns left out, the rest as UTF-8
-			if (code == 13)
-				;
-			else if (code < 0x80)
-				out += static_cast<char>(code);
-			else if (code < 0x800)
-			{
-				out += static_cast<char>(0xC0 | (code >> 6));
-				out += static_cast<char>(0x80 | (code & 0x3F));
-			}
-			else
-			{
-				out += static_cast<char>(0xE0 | (code >> 12));
-				out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-				out += static_cast<char>(0x80 | (code & 0x3F));
-			}
-		}
+			character_appended(out, entity);
 		else
 			out += Text.substr(i, end - i + 1);
 		i = end + 1;
@@ -699,6 +712,15 @@ std::string xml_element(std::string_view const Xml, std::string_view const Tag, 
 	if (end == std::string_view::npos || end > To)
 		return {};
 	return xml_text(std::string{Xml.substr(start + open.size(), end - start - open.size())});
+}
+
+// where the next element of a layer starts in the capabilities, From on; npos for none
+std::size_t layer_at(std::string const &Xml, std::size_t const From)
+{
+	for (auto at{Xml.find("<Layer", From)}; at != std::string::npos; at = Xml.find("<Layer", at + 6))
+		if (at + 6 < Xml.size() && (Xml[at + 6] == '>' || std::isspace(static_cast<unsigned char>(Xml[at + 6]))))
+			return at;
+	return std::string::npos;
 }
 
 } // namespace
@@ -740,15 +762,9 @@ editor_orthophoto::service_info editor_orthophoto::describe(std::string const &S
 			info.terms += (info.terms.empty() ? "" : "\n") + part;
 	info.puwg = xml.find("EPSG:2180", capability) != std::string::npos;
 	// each layer up to the next one or to its end: a name of its own makes it one to ask for
-	auto const layer_at = [&](std::size_t From) {
-		for (auto at{xml.find("<Layer", From)}; at != std::string::npos; at = xml.find("<Layer", at + 6))
-			if (at + 6 < xml.size() && (xml[at + 6] == '>' || std::isspace(static_cast<unsigned char>(xml[at + 6]))))
-				return at;
-		return std::string::npos;
-	};
-	for (auto at{layer_at(capability)}; at != std::string::npos; at = layer_at(at + 6))
+	for (auto at{layer_at(xml, capability)}; at != std::string::npos; at = layer_at(xml, at + 6))
 	{
-		auto const next{layer_at(at + 6)};
+		auto const next{layer_at(xml, at + 6)};
 		auto const close{xml.find("</Layer>", at)};
 		auto const end{std::min(next, close)};
 		auto const name{xml_element(xml, "Name", at, end)};
@@ -1235,6 +1251,22 @@ bool editor_orthophoto::sampled_height(tile_key const &Own, double const X, doub
 	return true;
 }
 
+namespace
+{
+
+// the heights of a grid of Samples by Samples points, Corner: the first, Step: between them, taken from the terrain model where it has
+// them, Model: what it tells
+template <typename Guess>
+void heights_guessed(std::vector<float> &Heights, int const Samples, glm::dvec2 const &Corner, double const Step, Guess const &Model)
+{
+	for (int j = 0; j < Samples; ++j)
+		for (int i = 0; i < Samples; ++i)
+			if (double y; Model && Model(Corner.x - i * Step, Corner.y - j * Step, y))
+				Heights[static_cast<std::size_t>(j) * Samples + i] = static_cast<float>(y);
+}
+
+} // namespace
+
 void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 {
 	Tile.grounded = true;
@@ -1318,10 +1350,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	if (missing == heights.size())
 	{
 		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
-		for (int j = 0; j < samples; ++j)
-			for (int i = 0; i < samples; ++i)
-				if (double y; m_guess && m_guess(corner.x - i * step, corner.y - j * step, y))
-					heights[static_cast<std::size_t>(j) * samples + i] = static_cast<float>(y);
+		heights_guessed(heights, samples, corner, step, m_guess);
 		if (std::ranges::count(heights, no_height) == static_cast<std::ptrdiff_t>(heights.size()))
 		{
 			double constexpr outward{0.01};
@@ -1566,6 +1595,30 @@ void editor_orthophoto::update_scene()
 	}
 }
 
+namespace
+{
+
+// the tile nearest the camera, by Distance_of, which isn't fitted to the ground yet nor empty; none where there's none
+template <typename Tiles, typename Distance>
+typename Tiles::value_type *nearest_ungrounded(Tiles &All, Distance const &Distance_of)
+{
+	typename Tiles::value_type *nearest{nullptr};
+	int nearestdistance{INT_MAX};
+	for (auto &entry : All)
+	{
+		if (entry.second.grounded || entry.second.empty)
+			continue;
+		if (int const d = Distance_of(entry.first); d < nearestdistance)
+		{
+			nearestdistance = d;
+			nearest = &entry;
+		}
+	}
+	return nearest;
+}
+
+} // namespace
+
 void editor_orthophoto::update(glm::dvec3 const &Camera)
 {
 	double const now = steady_seconds();
@@ -1635,15 +1688,14 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		{
 			tile_key const key{centre.first + dx, centre.second + dy};
 			// outside the download area: nothing asked for, nothing shown
-			if (false == m_area.empty() && false == m_area_tiles.contains(key))
+			auto const outside{false == m_area.empty() && false == m_area_tiles.contains(key)};
+			if (auto const found{outside ? m_tiles.find(key) : m_tiles.end()}; found != m_tiles.end())
 			{
-				if (auto const found{m_tiles.find(key)}; found != m_tiles.end())
-				{
-					release_tile(found->second);
-					m_tiles.erase(found);
-				}
-				continue;
+				release_tile(found->second);
+				m_tiles.erase(found);
 			}
+			if (outside)
+				continue;
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
@@ -1665,24 +1717,11 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		auto going{true};
 		while (going)
 		{
-			tile *nearest{nullptr};
-			tile_key nearestkey{0, 0};
-			int nearestdistance{INT_MAX};
-			for (auto &entry : m_tiles)
-			{
-				if (entry.second.grounded || entry.second.empty)
-					continue;
-				int const d = distance(entry.first);
-				if (d < nearestdistance)
-				{
-					nearestdistance = d;
-					nearest = &entry.second;
-					nearestkey = entry.first;
-				}
-			}
+			auto *nearest{nearest_ungrounded(m_tiles, distance)};
 			if (nearest == nullptr)
 				break;
-			sample_ground(nearestkey, *nearest);
+			tile_key const nearestkey{nearest->first};
+			sample_ground(nearestkey, nearest->second);
 			going = steady_seconds() < until;
 		}
 	}
@@ -1758,12 +1797,7 @@ void editor_orthophoto::worker()
 				ErrorLog(std::format("Editor orthophoto: tile {}_{} of the download area failed: {}", prefetch->second, prefetch->first, error));
 			std::scoped_lock lock(m_mutex);
 			if (prefetchgeneration == m_prefetch_generation)
-			{
-				if (ok)
-					m_prefetch_cached.insert(*prefetch);
-				else
-					m_prefetch_failed.insert(*prefetch);
-			}
+				(ok ? m_prefetch_cached : m_prefetch_failed).insert(*prefetch);
 			continue;
 		}
 
