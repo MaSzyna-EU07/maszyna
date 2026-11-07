@@ -150,7 +150,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
     void
         Forget_Node( scene::basic_node const *Node ) override;
     glm::dvec3
-        Mouse_Position() const override { return m_worldmousecoordinates; }
+        Mouse_Position() const override { return m_mouseknown ? m_worldmouseposition - m_colorpass.pass_camera.position() : glm::dvec3 { 0.0 }; }
     bool
         Mouse_Hit() const override { return m_mousehit; }
     glm::mat4
@@ -748,8 +748,20 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	std::array<renderpass_config, 3> m_shadowpass; // parametrs of most recent shadowmap pass for each of csm stages
 	TSubModel const *m_pickcontrolitem{nullptr};
     scene::basic_node *m_picksceneryitem{nullptr};
-    glm::vec3 m_worldmousecoordinates { 0.f };
+    // the point of the scene under the cursor of the editor, in world space (Update_Mouse_Position())
+    glm::dvec3 m_worldmouseposition { 0.0 };
+    bool m_mouseknown { false }; // whether the cursor hit anything yet
     bool m_mousehit { false };
+    // the depths around the cursor asked of the gpu: where they lie in the image, whether they come from the depth pass of the
+    // scene (drawn a little farther than it lies), and the view they were drawn in
+    glm::ivec2 m_cursorposition { 0 };
+    glm::ivec2 m_cursorblockcorner { 0 };
+    glm::ivec2 m_cursorblocksize { 0 };
+    bool m_cursorbiased { false };
+    glm::mat4 m_cursorview { 1.f };
+    glm::mat4 m_cursorprojection { 1.f };
+    glm::dvec3 m_cursorcamera { 0.0 };
+    glm::vec4 m_cursorviewport { 0.f };
 #ifdef EU07_USE_DEBUG_CAMERA
 	renderpass_config m_worldcamera; // debug item
 #endif
