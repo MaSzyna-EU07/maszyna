@@ -53,6 +53,44 @@ bool overlaps(double const From, double const To, context::zone const &Zone)
 	return From < Zone.to - 1e-6 && To > Zone.from + 1e-6;
 }
 
+// a break of the grade line where two parts of it don't meet, half a metre past the point before it at least
+void add_break(line &Result, double const At, double const Slope, double const Offset)
+{
+	if (At - Result.points.back().chainage >= 0.5)
+	{
+		pvi point;
+		point.automatic = false;
+		point.chainage = At;
+		point.elevation = Slope * At + Offset;
+		Result.points.push_back(point);
+	}
+}
+
+// the point between A and B the elevations lie farthest off the chord between them at, and how far: A itself and 0 when none does
+std::pair<double, std::size_t> farthest_off(std::vector<double> const &Chainages, std::vector<double> const &Elevations, std::size_t const A, std::size_t const B, double const Run)
+{
+	double worst{0.0};
+	std::size_t index{A};
+	for (auto k = A + 1; k < B; ++k)
+	{
+		auto const departure{std::abs(Elevations[k] - (Elevations[A] + (Elevations[B] - Elevations[A]) * (Chainages[k] - Chainages[A]) / Run))};
+		if (departure > worst)
+		{
+			worst = departure;
+			index = k;
+		}
+	}
+	return {worst, index};
+}
+
+// the points of a run of the line parted from the ground followed at the height, those followed already kept as they are
+void follow_run(std::vector<double> &Followed, std::vector<std::size_t> const &Run, double const Height)
+{
+	for (auto const i : Run)
+		if (Followed[i] <= 0.0)
+			Followed[i] = Height;
+}
+
 } // namespace
 
 double grade_after(line const &Line, std::size_t const Index)
@@ -254,11 +292,12 @@ std::vector<issue> check(line const &Line, context const &Context)
 			add(false, static_cast<int>(k), points[k].chainage, format(STR_C("Point %zu: R %.0f m is below the required %.0f m for %.0f km/h"), k + 1, radius, required, Line.speed));
 		// a change as small as the grade lines laid one after another meet with, a few millimetres over the length of a switch, is no
 		// break of it: the tracks of a slip met so lie in one plane all the same (pila.scn: 0.05 per mille inside shared timbers)
-		if (radius <= 0.0 && change > switch_break)
-			for (auto const &zone : Context.switches)
-				// a break on the bound of a switch is let be, within what the chainages of routes laid over each other differ by
-				if (points[k].chainage > zone.from + 0.05 && points[k].chainage < zone.to - 0.05)
-					add(true, static_cast<int>(k), points[k].chainage, format(STR_C("Point %zu: the grade changes inside switch %s"), k + 1, zone.name.c_str()));
+		if (false == (radius <= 0.0 && change > switch_break))
+			continue;
+		for (auto const &zone : Context.switches)
+			// a break on the bound of a switch is let be, within what the chainages of routes laid over each other differ by
+			if (points[k].chainage > zone.from + 0.05 && points[k].chainage < zone.to - 0.05)
+				add(true, static_cast<int>(k), points[k].chainage, format(STR_C("Point %zu: the grade changes inside switch %s"), k + 1, zone.name.c_str()));
 	}
 	for (std::size_t i = 0; i < list.size(); ++i)
 	{
@@ -406,14 +445,7 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 		if (apart(a, b, chainage) > Options.step)
 		{
 			for (auto const &[at, slope, offset] : {std::tuple{from, a.slope, a.offset}, std::tuple{to, b.slope, b.offset}})
-				if (at - result.points.back().chainage >= 0.5)
-				{
-					pvi point;
-					point.automatic = false;
-					point.chainage = at;
-					point.elevation = slope * at + offset;
-					result.points.push_back(point);
-				}
+				add_break(result, at, slope, offset);
 			continue;
 		}
 		pvi point;
@@ -481,17 +513,7 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 			if (b <= a + 1)
 				continue;
 			auto const run{std::max(1e-9, Chainages[b] - Chainages[a])};
-			double worst{0.0};
-			std::size_t index{a};
-			for (auto k = a + 1; k < b; ++k)
-			{
-				auto const departure{std::abs(Elevations[k] - (Elevations[a] + (Elevations[b] - Elevations[a]) * (Chainages[k] - Chainages[a]) / run))};
-				if (departure > worst)
-				{
-					worst = departure;
-					index = k;
-				}
-			}
+			auto const [worst, index]{farthest_off(Chainages, Elevations, a, b, run)};
 			if (worst > Options.detail * 0.5)
 			{
 				keep[index] = 1;
@@ -937,13 +959,19 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		auto const close = [&]() {
 			if (side != 0 && Chainages[run.back()] - Chainages[run.front()] > Options.follow_length && farthest <= Options.follow_height && steepest <= Options.follow_steepest / 1000.0)
 			{
-				for (auto const i : run)
-					if (followed[i] <= 0.0)
-						followed[i] = farthest + tolerance;
+				follow_run(followed, run, farthest + tolerance);
 				more = true;
 			}
 			side = 0;
 			run.clear();
+		};
+		auto const begin_run = [&](int const Side) {
+			side = Side;
+			back = 0;
+			farthest = 0.0;
+			steepest = 0.0;
+			if (previous < count)
+				run.push_back(previous);
 		};
 		auto const extend = [&](std::size_t const I) {
 			while (back + 1 < run.size() && Chainages[I] - Chainages[run[back + 1]] >= chord)
@@ -958,19 +986,11 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 				continue;
 			auto const off{x[cell[i]] * (1.0 - part[i]) + x[cell[i] + 1] * part[i] - Ground[i]};
 			auto const now{side_of(i, off)};
-			if (now != side)
-			{
+			auto const changed{now != side};
+			if (changed)
 				close();
-				if (now != 0)
-				{
-					side = now;
-					back = 0;
-					farthest = 0.0;
-					steepest = 0.0;
-					if (previous < count)
-						run.push_back(previous);
-				}
-			}
+			if (changed && now != 0)
+				begin_run(now);
 			if (now != 0)
 			{
 				farthest = std::max(farthest, std::abs(off));
@@ -1098,16 +1118,15 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		for (std::size_t i = 1; i + 1 < result.points.size(); ++i)
 		{
 			auto const turn{std::abs(grade_after(result, i) - grade_after(result, i - 1))};
-			if (turn * 1000.0 <= result.norms.curve_threshold + 1e-6)
+			auto const bare{turn * 1000.0 <= result.norms.curve_threshold + 1e-6};
+			// a change no curve needs breaks bare, but not on a switch
+			if (auto const at{result.points[i].chainage}; bare && turn > 1e-9 && on_switch(at, at))
 			{
-				// a change no curve needs breaks bare, but not on a switch
-				if (auto const at{result.points[i].chainage}; turn > 1e-9 && on_switch(at, at))
-				{
-					result.points[i].radius = std::min(required, 2.0 * std::max(0.0, rooms[i] - 1e-4) / turn);
-					result.points[i].automatic = false;
-				}
-				continue;
+				result.points[i].radius = std::min(required, 2.0 * std::max(0.0, rooms[i] - 1e-4) / turn);
+				result.points[i].automatic = false;
 			}
+			if (bare)
+				continue;
 			auto const radius{least(result.points[i].chainage)};
 			auto bent{radius < required ? std::clamp(std::ceil(lengths[i] / turn / 10.0) * 10.0, radius, required) : required};
 			if (auto const at{result.points[i].chainage}; bent < switch_crest && grade_after(result, i) < grade_after(result, i - 1) && on_switch(at - bent * turn * 0.5, at + bent * turn * 0.5))

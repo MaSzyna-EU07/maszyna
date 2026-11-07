@@ -148,6 +148,15 @@ bool texture_extension(std::string_view const Extension)
 	return Extension == ".dds" || Extension == ".tga" || Extension == ".png" || Extension == ".bmp" || Extension == ".jpg" || Extension == ".ktx" || Extension == ".tex";
 }
 
+// each row of a list the clipper finds in sight drawn
+template <typename Draw>
+void clipped_rows(ImGuiListClipper &Clipper, Draw &&Row)
+{
+	while (Clipper.Step())
+		for (int row = Clipper.DisplayStart; row < Clipper.DisplayEnd; ++row)
+			Row(row);
+}
+
 // a byte continuing a character of UTF-8, not starting one
 bool utf8_continuation(char const Byte)
 {
@@ -250,6 +259,13 @@ enum group : int
 constexpr std::array<char const *, group_count> kGroupLabels{"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
 // the groups as the presets keep them in their file, by names which don't change with the order of the groups
 constexpr std::array<char const *, group_count> kGroupKeys{"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement"};
+
+// the group of the properties of the number ticked, a number of none left alone
+void tick_group(std::span<bool> const Groups, int const Group)
+{
+	if (Group >= 0 && Group < group_count)
+		Groups[Group] = true;
+}
 
 struct track_property
 {
@@ -1279,13 +1295,11 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 		// thousands of them: only the rows in sight are drawn
 		ImGuiListClipper clipper;
 		clipper.Begin((static_cast<int>(files.size()) + columns - 1) / columns, tile + label + spacing.y);
-		while (clipper.Step())
-			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
-			{
-				column = 0;
-				for (int i = row * columns; i < (row + 1) * columns && i < static_cast<int>(files.size()); ++i)
-					draw_tile(files[i]->name, 0);
-			}
+		clipped_rows(clipper, [&](int const Row) {
+			column = 0;
+			for (int i = Row * columns; i < (Row + 1) * columns && i < static_cast<int>(files.size()); ++i)
+				draw_tile(files[i]->name, 0);
+		});
 	}
 	if (used.empty() && files.empty())
 		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
@@ -2042,32 +2056,30 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		TTrack *alone{nullptr};
 		ImGuiListClipper clipper;
 		clipper.Begin(static_cast<int>(Tracks.size()));
-		while (clipper.Step())
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+		clipped_rows(clipper, [&](int const i) {
+			auto *track{Tracks[i]};
+			ImGui::PushID(i);
+			if (ImGui::SmallButton("x"))
+				removed = track;
+			item_tooltip("Takes the track out of the selection");
+			ImGui::SameLine();
+			if (ImGui::Selectable(name_of(*track).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
 			{
-				auto *track{Tracks[i]};
-				ImGui::PushID(i);
-				if (ImGui::SmallButton("x"))
-					removed = track;
-				item_tooltip("Takes the track out of the selection");
-				ImGui::SameLine();
-				if (ImGui::Selectable(name_of(*track).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
-				{
-					if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-						alone = track;
-					else
-						focus_track(*track, 0, bezier{track->m_paths.front()}.point(0.5));
-				}
-				if (ImGui::IsItemHovered())
-				{
-					m_track_list_hover = track;
-					m_track_list_hover_frame = ImGui::GetFrameCount();
-					ImGui::SetTooltip("%s", STR_C("Click: look at it, double click: select only this one"));
-				}
-				ImGui::SameLine(column);
-				ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*track)), track->Length());
-				ImGui::PopID();
+				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+					alone = track;
+				else
+					focus_track(*track, 0, bezier{track->m_paths.front()}.point(0.5));
 			}
+			if (ImGui::IsItemHovered())
+			{
+				m_track_list_hover = track;
+				m_track_list_hover_frame = ImGui::GetFrameCount();
+				ImGui::SetTooltip("%s", STR_C("Click: look at it, double click: select only this one"));
+			}
+			ImGui::SameLine(column);
+			ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*track)), track->Length());
+			ImGui::PopID();
+		});
 		ImGui::EndChild();
 		ImGui::TreePop();
 		if (removed != nullptr)
@@ -2189,8 +2201,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 			m_track_style.groups.fill(false);
 			m_track_style.ticks.clear();
 			for (int group; Words >> group;)
-				if (group >= 0 && group < group_count)
-					m_track_style.groups[group] = true;
+				tick_group(m_track_style.groups, group);
 		}
 		else if (action == "tick")
 		{

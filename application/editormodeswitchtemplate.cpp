@@ -390,6 +390,12 @@ bool editor_mode::change_slip_template(TTrack const &Part, int const Index)
 bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes)
 {
 	Notes.clear();
+	// the rolls of the paths laid anew, where they have none, taken from the paths they replace
+	auto const keep_rolls = [](std::vector<segment_data> &Paths, auto const &Before) {
+		for (std::size_t i = 0; i < Paths.size(); ++i)
+			if (Paths[i].rolls[0] == 0.f && Paths[i].rolls[1] == 0.f)
+				Paths[i].rolls = Before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
+	};
 	auto const set{double_of(Switch)};
 	auto &first{set.has_value() ? *set->first : Switch};
 	if (first.m_paths.size() < 2 || Shape.twofold() != set.has_value())
@@ -412,10 +418,7 @@ bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_tem
 		{
 			if (paths.size() < 5)
 				return false;
-			auto const before{double_paths(*set)};
-			for (std::size_t i = 0; i < paths.size(); ++i)
-				if (paths[i].rolls[0] == 0.f && paths[i].rolls[1] == 0.f)
-					paths[i].rolls = before[i < 4 ? i & ~std::size_t{1} : 4].rolls;
+			keep_rolls(paths, double_paths(*set));
 			if (false == move_double_paths(*set, paths, Notes))
 				return false;
 		}
@@ -599,14 +602,15 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 		if (auto const group{group_of(index)}; std::ranges::find(groups, group) == groups.end())
 			groups.push_back(group);
 	std::ranges::sort(groups);
+	auto const short_group = [&](auto const &Group) {
+		ImGui::SeparatorText(Group.second.c_str());
+		for (auto const index : shown)
+			if (group_of(index) == Group && template_row(index, templates[index], row_name(templates[index]), index == Chosen))
+				picked = index;
+	};
 	if (Popup || ImGui::BeginChild("##short", ImVec2(0.0f, list_height(static_cast<int>(shown.size()), static_cast<int>(groups.size()))), ImGuiChildFlags_Borders))
 		for (auto const &group : groups)
-		{
-			ImGui::SeparatorText(group.second.c_str());
-			for (auto const index : shown)
-				if (group_of(index) == group && template_row(index, templates[index], row_name(templates[index]), index == Chosen))
-					picked = index;
-		}
+			short_group(group);
 	if (false == Popup)
 		ImGui::EndChild();
 	// all of them: the switches of the scenery, the own templates, then the catalogue rail by rail
@@ -628,15 +632,16 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 				if (auto const group{whole_group(entry)}; std::ranges::find(wholes, group) == wholes.end())
 					wholes.push_back(group);
 			}
+		auto const whole_rows = [&](std::string const &Group) {
+			ImGui::SeparatorText(Group.c_str());
+			for (int i = 0; i < count; ++i)
+				if (Fits(templates[i]) && whole_group(templates[i]) == Group &&
+				    template_row(i, templates[i], templates[i].source != nullptr ? row_name(templates[i]) : switch_name_translated(templates[i].title()), i == Chosen))
+					picked = i;
+		};
 		if (Popup || ImGui::BeginChild("##all", ImVec2(0.0f, list_height(rows, static_cast<int>(wholes.size()))), ImGuiChildFlags_Borders))
 			for (auto const &group : wholes)
-			{
-				ImGui::SeparatorText(group.c_str());
-				for (int i = 0; i < count; ++i)
-					if (Fits(templates[i]) && whole_group(templates[i]) == group &&
-					    template_row(i, templates[i], templates[i].source != nullptr ? row_name(templates[i]) : switch_name_translated(templates[i].title()), i == Chosen))
-						picked = i;
-			}
+				whole_rows(group);
 		if (false == Popup)
 			ImGui::EndChild();
 		ImGui::TreePop();
@@ -682,6 +687,18 @@ void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 	auto const blocked{template_change_blocked(*first)};
 	auto const own = [&]() { return known.has_value() ? format(STR_C("Own shape: %s"), switch_store::label(*known).c_str()) : std::string{STR_C("Own shape")}; };
 	int picked{-1};
+	// the templates in a combo: the one picked, -1 while none is
+	auto const combo_pick = [&]() {
+		int chosen{-1};
+		if (ImGui::BeginCombo("##switchtemplate", current >= 0 ? template_name(tool.templates[current]).c_str() : own().c_str(), ImGuiComboFlags_HeightLargest))
+		{
+			chosen = render_template_picker("##inspector", fits, rail, current, true);
+			if (chosen >= 0)
+				ImGui::CloseCurrentPopup();
+			ImGui::EndCombo();
+		}
+		return chosen;
+	};
 	if (Combo)
 	{
 		if (begin_fields("##switchtemplate", 0.3f))
@@ -689,13 +706,7 @@ void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 			field_row("Template##switchtemplate");
 			ImGui::BeginDisabled(false == blocked.empty());
 			ImGui::PushItemWidth(-1.0f);
-			if (ImGui::BeginCombo("##switchtemplate", current >= 0 ? template_name(tool.templates[current]).c_str() : own().c_str(), ImGuiComboFlags_HeightLargest))
-			{
-				picked = render_template_picker("##inspector", fits, rail, current, true);
-				if (picked >= 0)
-					ImGui::CloseCurrentPopup();
-				ImGui::EndCombo();
-			}
+			picked = combo_pick();
 			ImGui::PopItemWidth();
 			ImGui::EndDisabled();
 			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
