@@ -69,6 +69,469 @@ ImU32 element_colour(alignment::element_kind const Kind)
 	return IM_COL32(255, 140, 30, 255);
 }
 
+// the way the first curve of the design, or the last one, turns by the legs of the polygon: 1 left, -1 right
+int design_turn(alignment::design const &Design, bool const Atend)
+{
+	auto const count{Design.vertices.size()};
+	if (count == 1)
+		return cross(Design.start_direction, Design.end_direction) > 0.0 ? 1 : -1;
+	glm::dvec2 const in{Atend ? Design.vertices[count - 1].position - Design.vertices[count - 2].position : Design.start_direction};
+	glm::dvec2 const out{Atend ? Design.end_direction : Design.vertices[1].position - Design.vertices[0].position};
+	return cross(in, out) > 0.0 ? 1 : -1;
+}
+
+// how far the paths stray from the line laid along them at most, the most there is when it can't be laid
+double design_departure(alignment::result const &Result, std::vector<TTrack *> const &Tracks)
+{
+	TTrack *worst{nullptr};
+	return Result.valid ? alignment_store::deviation(Result, Tracks, worst) : std::numeric_limits<double>::max();
+}
+
+// the first vertex of the design and the last one as far into the line from its ends as they lie
+void design_end_offsets(alignment::design &Design)
+{
+	if (Design.vertices.size() < 2)
+		return;
+	Design.vertices.front().offset = std::max(0.0, glm::dot(Design.vertices.front().position - plan_of(Design.start), Design.start_direction));
+	Design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(Design.end) - Design.vertices.back().position, Design.end_direction));
+}
+
+// the name of the path as the reasons of the digitization give it
+std::string digitized_name(TTrack const *Track)
+{
+	return Track == nullptr || Track->name().empty() ? std::string{STR_C("(no name)")} : Track->name();
+}
+
+// the path of the chain with an end nearest to the point
+TTrack *nearest_end(editor_track::chain const &Chain, glm::dvec2 const &Point)
+{
+	TTrack *found{nullptr};
+	double distance{std::numeric_limits<double>::max()};
+	for (auto *track : Chain.tracks)
+		for (auto const end : {segment_data::point::start, segment_data::point::end})
+			if (auto const d{glm::distance(plan_of(track->m_paths.front().points[end]), Point)}; d < distance)
+			{
+				distance = d;
+				found = track;
+			}
+	return found;
+}
+
+// the design the digitization reads the chain into, the vertices yet to come; none when an end of the chain has no direction
+std::optional<alignment::design> digitized_design(editor_track::chain const &Chain, alignment::design const &Route)
+{
+	alignment::design design;
+	design.norms = Route.norms;
+	design.transition_pieces = Route.transition_pieces;
+	design.arc_piece_angle = Route.arc_piece_angle;
+	design.speed = Chain.velocity > 0.0 ? Chain.velocity : 100.0;
+	design.start = Chain.start;
+	design.end = Chain.end;
+	if (glm::length(plan_of(Chain.start_direction)) < 1e-9 || glm::length(plan_of(Chain.end_direction)) < 1e-9)
+		return std::nullopt;
+	design.start_direction = glm::normalize(plan_of(Chain.start_direction));
+	design.end_direction = glm::normalize(plan_of(Chain.end_direction));
+	design.start_grade = grade_of(Chain.start_direction);
+	design.end_grade = grade_of(Chain.end_direction);
+	design.start_radius = Chain.start_radius;
+	design.end_radius = Chain.end_radius;
+	design.start_turn = Chain.start_turn;
+	design.end_turn = Chain.end_turn;
+	return design;
+}
+
+// the attempt at reading the paths which kept closest to them, of those which don't follow them
+struct digitize_best
+{
+	alignment::design design;
+	alignment::result result;
+	double closest{std::numeric_limits<double>::max()};
+	TTrack *farthest{nullptr};
+
+	void take(alignment::design const &Design, alignment::result const &Result, std::vector<TTrack *> const &Tracks)
+	{
+		TTrack *worst{nullptr};
+		if (auto const away{alignment_store::deviation(Result, Tracks, worst)}; away < closest)
+		{
+			closest = away;
+			farthest = worst;
+			design = Design;
+			result = Result;
+		}
+	}
+	// why none of the attempts made the line, and the path it strayed farthest from
+	void refuse(std::string *Reason, TTrack **Culprit) const
+	{
+		if (Culprit != nullptr)
+			*Culprit = farthest;
+		if (Reason == nullptr)
+			return;
+		if (closest < std::numeric_limits<double>::max())
+			*Reason = format(STR_C("the curves read from the paths leave path %s by %.2f m"), digitized_name(farthest).c_str(), closest);
+		else
+			*Reason = std::string{STR_C("the paths don't make a line of straights, arcs and transition curves")};
+	}
+};
+
+// the line read from the paths kept in the scenery in place of the lines kept along them, its chainage carried on from the first of
+// them; false when one of them doesn't lie along it
+bool store_digitized(std::vector<TTrack *> const &Tracks, alignment::design const &Design, alignment::result const &Result, double const Fit)
+{
+	auto const &records{alignment_store::records()};
+	std::set<int> covered;
+	for (auto const *track : Tracks)
+		if (auto const found{alignment_store::on_track(*track)})
+			covered.insert(found->record);
+	double origin{0.0};
+	for (auto const index : covered)
+	{
+		auto const &old{records[index]};
+		auto const start{alignment_store::chainage_on(Result, alignment_store::kept_start(old))};
+		auto const end{alignment_store::chainage_on(Result, alignment_store::kept_end(old))};
+		if (false == start.has_value() || false == end.has_value())
+			return false;
+		if (index == *covered.begin() && *end > *start)
+			origin = old.origin + old.from - *start;
+	}
+	auto const layer{covered.empty() ? alignment_store::layer_of(*Tracks.front()) : records[*covered.begin()].layer};
+	for (auto index{covered.rbegin()}; index != covered.rend(); ++index)
+		alignment_store::forget(*index);
+	alignment_store::store(Design, Result, origin, layer, "drawn", Fit);
+	return true;
+}
+
+// what was done before the paths were re-laid taken back: the tracks created retired, the ones changed put back as they were
+void undo_relay(std::vector<TTrack *> const &Created, std::vector<std::pair<TTrack *, editor_track::state>> const &States)
+{
+	for (auto *track : Created)
+		editor_track::retire(*track);
+	for (auto entry = States.rbegin(); entry != States.rend(); ++entry)
+	{
+		editor_track::apply(*entry->first, entry->second);
+		editor_track::commit({entry->first});
+	}
+}
+
+// the track has an end at the point
+bool has_end_at(TTrack const &Track, glm::dvec3 const &Point)
+{
+	return std::ranges::any_of(std::array{segment_data::point::start, segment_data::point::end}, [&Track, &Point](auto const Which) { return plan_distance(Track.m_paths.front().points[Which], Point) < 0.01; });
+}
+
+// a plain track of the scenery with an end at the point, none when there's no such
+TTrack *normal_end_at(glm::dvec3 const &Point)
+{
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Normal && false == track->m_paths.empty() && has_end_at(*track, Point))
+			return track;
+	return nullptr;
+}
+
+// the status of the line laid: the paths re-laid and added, what the curve took over of the straights adjoining
+std::string route_laid_note(std::size_t const Relaid, std::size_t const Added, double const Startextension, double const Endextension)
+{
+	auto note{Added > 0 ? format(STR_P("Re-laid %zu path, added %zu", "Re-laid %zu paths, added %zu", Relaid), Relaid, Added) : format(STR_P("Re-laid %zu path", "Re-laid %zu paths", Relaid), Relaid)};
+	if (Startextension > 0.0 || Endextension > 0.0)
+		note += format(STR_C(", the curve took over %.2f / %.2f m of the adjoining straights"), Startextension, Endextension);
+	return note;
+}
+
+
+// the track as it is kept among the states, unless it's there already
+void remember_state(std::vector<std::pair<TTrack *, editor_track::state>> &States, TTrack *Track)
+{
+	if (std::ranges::none_of(States, [Track](auto const &Entry) { return Entry.first == Track; }))
+		States.emplace_back(Track, editor_track::capture(*Track));
+}
+
+// a switch of the chain where it goes along the new line
+struct switch_placement
+{
+	TTrack *track;
+	double from; // chainage along the new line
+	double length;
+	glm::dvec3 entry; // of the main track, where the chain comes in
+	double angle;
+};
+
+// the chainages of the switches of the chain along the old line, with its Length
+std::vector<double> switch_starts(editor_track::chain const &Chain, double &Length)
+{
+	double before{0.0};
+	std::vector<double> starts;
+	std::size_t next{0};
+	for (std::size_t i = 0; i <= Chain.tracks.size(); ++i)
+	{
+		for (; next < Chain.switches.size() && Chain.switches[next].before == i; ++next)
+		{
+			starts.push_back(before);
+			before += bezier{Chain.switches[next].track->m_paths.front()}.plan_length();
+		}
+		if (i < Chain.tracks.size())
+			before += bezier{Chain.tracks[i]->m_paths.front()}.plan_length();
+	}
+	Length = before;
+	return starts;
+}
+
+// where the switches of the chain go along the new line, each one with its entry and its ends along it; the switches keep their
+// distance from the nearer end of the chain. Why one doesn't fit, empty when they all do
+std::string place_switches(editor_track::chain const &Chain, alignment::result const &Result, std::vector<switch_placement> &Placements, std::vector<double> &Ends)
+{
+	auto const plan = [](glm::dvec3 const &Vector) { return glm::normalize(plan_of(Vector)); };
+	double oldlength{0.0};
+	auto const starts{switch_starts(Chain, oldlength)};
+	for (std::size_t k = 0; k < Chain.switches.size(); ++k)
+	{
+		auto const &passage{Chain.switches[k]};
+		auto const &main{passage.track->m_paths.front()};
+		auto const length{bezier{main}.plan_length()};
+		auto const from{starts[k] + length * 0.5 < oldlength * 0.5 ? starts[k] : Result.length - (oldlength - starts[k])};
+		if (from < 0.0 || from + length > Result.length || (false == Ends.empty() && from < Ends.back() - 0.01))
+			return format(STR_C("The switch %s doesn't fit on the designed line"), name_of(*passage.track).c_str());
+		auto const entry{main.points[passage.forward ? segment_data::point::start : segment_data::point::end]};
+		auto const exit{main.points[passage.forward ? segment_data::point::end : segment_data::point::start]};
+		bezier const curve{main};
+		auto const direction{passage.forward ? plan(curve.first(0.0)) : -plan(curve.first(1.0))};
+		auto const first{alignment::evaluate(Result, from)};
+		auto const last{alignment::evaluate(Result, from + length)};
+		auto const angle{signed_angle(direction, plan(first.direction))};
+		// where the other end of the main track goes, set against the line
+		auto const moved{plan_of(first.position) + turned(plan_of(exit - entry), angle)};
+		if (auto const departure{glm::distance(moved, plan_of(last.position))}; departure > 0.02)
+			return format(STR_C("The switch %s would leave the designed line by %.2f m at its other end: it lies in a curve of the design. "
+			                    "Move the vertices so that the switch falls on a straight"),
+			              name_of(*passage.track).c_str(), departure);
+		Placements.emplace_back(passage.track, from, length, entry, angle);
+		Ends.push_back(from);
+		Ends.push_back(from + length);
+	}
+	return {};
+}
+
+// the switch moved onto the new line, the tracks joined to it off the chain following it; the heights stay
+void place_switch(switch_placement const &Place, editor_track::chain const &Chain, alignment::result const &Result, std::vector<std::pair<TTrack *, editor_track::state>> &States)
+{
+	auto joints{editor_track::joints(*Place.track)};
+	std::erase_if(joints, [&Chain](editor_track::joint const &Joint) { return std::ranges::find(Chain.tracks, Joint.other) != Chain.tracks.end(); });
+	remember_state(States, Place.track);
+	std::vector changed{Place.track};
+	for (auto const &joint : joints)
+	{
+		remember_state(States, joint.other);
+		if (std::ranges::find(changed, joint.other) == changed.end())
+			changed.push_back(joint.other);
+	}
+	// the heights stay, the paths between the switches keep theirs too
+	auto target{alignment::evaluate(Result, Place.from).position};
+	target.y = Place.entry.y;
+	editor_track::place(*Place.track, Place.entry, target, Place.angle);
+	editor_track::follow(*Place.track, joints);
+	editor_track::commit(changed);
+}
+
+// the intervals the new line is cut into for the parts of the chain between its switches and for the switches: where it's cut, how
+// many paths each one takes, and whose they are: the part, -1 for none, and its path, -1 for any
+struct relay_intervals
+{
+	std::vector<double> breaks;
+	std::vector<std::size_t> counts;
+	std::vector<std::pair<int, int>> owners;
+
+	// the part of Count paths, cut at the joints of its paths where they follow one another along the line, else one interval
+	void add_part(std::size_t const Part, std::size_t const Count, std::vector<double> const &Inner)
+	{
+		if (Count > 1 && Inner.size() + 1 == Count)
+		{
+			for (std::size_t j = 0; j < Count; ++j)
+			{
+				if (j > 0)
+					breaks.push_back(Inner[j - 1]);
+				counts.push_back(1);
+				owners.emplace_back(static_cast<int>(Part), static_cast<int>(j));
+			}
+			return;
+		}
+		counts.push_back(Count);
+		owners.emplace_back(static_cast<int>(Part), -1);
+	}
+	// the parts and the switches in their order along the chain; how many of the parts were taken
+	std::size_t split(editor_track::chain const &Chain, std::vector<editor_track::chain> const &Parts, alignment::result const &Result, std::vector<double> const &Ends)
+	{
+		std::size_t part{0};
+		for (std::size_t k = 0; k <= Chain.switches.size(); ++k)
+		{
+			auto const first{k == 0 ? std::size_t{0} : Chain.switches[k - 1].before};
+			if (auto const last{k == Chain.switches.size() ? Chain.tracks.size() : Chain.switches[k].before}; last > first && part < Parts.size())
+			{
+				add_part(part, last - first, alignment::breaks_at(Result, editor_track::chain_joints(Parts[part]), k == 0 ? 0.0 : Ends[2 * k - 1], k == Chain.switches.size() ? Result.length : Ends[2 * k]));
+				++part;
+			}
+			else
+			{
+				counts.push_back(last - first);
+				owners.emplace_back(-1, -1);
+			}
+			if (k < Chain.switches.size())
+			{
+				breaks.push_back(Ends[2 * k]);
+				breaks.push_back(Ends[2 * k + 1]);
+				counts.push_back(1);
+				owners.emplace_back(-1, -1);
+			}
+		}
+		return part;
+	}
+};
+
+
+// two curvatures the same but for the rounding
+bool same_curvature(double const A, double const B)
+{
+	return std::abs(A - B) <= 1e-6 * std::max(std::abs(A), std::abs(B)) + 1e-12;
+}
+
+// the radii of the arcs of the curve of the vertex, of a curve of one arc its radius; none when the line has no such curve
+std::vector<double> radii_of(alignment::result const &Result, int const Vertex)
+{
+	std::vector<double> radii;
+	for (auto const &curve : Result.curves)
+		if (curve.vertex == Vertex)
+			radii = curve.radii.size() > 1 ? curve.radii : std::vector<double>{curve.radius};
+	return radii;
+}
+
+// the element of the line in steps of about 2 m, each one handed to Step from its start to its end
+template <typename Step>
+void along_element(alignment::result const &Result, alignment::element const &Element, Step const &Draw)
+{
+	int const steps = std::clamp(static_cast<int>(Element.length / 2.0), 1, 400);
+	auto previous{alignment::evaluate(Result, Element.chainage).position};
+	for (int j = 1; j <= steps; ++j)
+	{
+		auto const next{alignment::evaluate(Result, Element.chainage + Element.length * j / steps).position};
+		Draw(previous, next);
+		previous = next;
+	}
+}
+
+// the cant ramps: their ends across the track, the ones moved off the transitions brighter, with how the cant goes along them
+void draw_cant_ramps(screen_projection const &Projection, ImDrawList *Drawlist, alignment::result const &Result)
+{
+	for (auto const &ramp : Result.ramps)
+	{
+		if (ramp.cant < 0.5)
+			continue;
+		auto const colour{ramp.own ? IM_COL32(255, 170, 40, 255) : IM_COL32(255, 170, 40, 120)};
+		for (auto const ramp_end : {ramp.from, ramp.to})
+		{
+			auto const station{alignment::evaluate(Result, ramp_end)};
+			glm::dvec3 const across{-station.direction.z * 2.0, 0.0, station.direction.x * 2.0};
+			Projection.line(Drawlist, station.position - across, station.position + across, colour, 3.0f);
+		}
+		ImVec2 screen;
+		if (ramp.own && Projection.project(alignment::evaluate(Result, (ramp.from + ramp.to) * 0.5).position, screen))
+			Drawlist->AddText({screen.x + 8.0f, screen.y + 6.0f}, colour, format(STR_C("ramp %.0f m, %.0f mm"), ramp.to - ramp.from, ramp.cant).c_str());
+	}
+}
+
+// the ends of the design, each one with an arrow along the track there
+void draw_design_ends(screen_projection const &Projection, ImDrawList *Drawlist, alignment::design const &Design, glm::dvec3 const &Start, glm::dvec3 const &End)
+{
+	for (auto const atend : {false, true})
+	{
+		auto const &point{atend ? End : Start};
+		auto const direction{atend ? Design.end_direction : Design.start_direction};
+		if (ImVec2 screen; Projection.project(point, screen))
+			Drawlist->AddRectFilled(ImVec2(screen.x - 5.0f, screen.y - 5.0f), ImVec2(screen.x + 5.0f, screen.y + 5.0f), IM_COL32(70, 140, 255, 255));
+		auto const arrow{glm::dvec3{direction.x, 0.0, direction.y} * (atend ? 15.0 : -15.0)};
+		Projection.line(Drawlist, point, point + arrow, IM_COL32(70, 140, 255, 255), 2.0f);
+	}
+}
+
+// the radius of the curve by its grip, of a compound curve each one of its radii
+std::string radius_label(alignment::curve_report const *Report, double const Radius)
+{
+	auto radius{format("R %.0f", Report != nullptr ? Report->radius : Radius)};
+	if (Report != nullptr && Report->radii.size() >= 2)
+	{
+		radius = "R";
+		for (std::size_t k = 0; k < Report->radii.size(); ++k)
+			radius += format(k == 0 ? " %.0f" : " / %.0f", Report->radii[k]);
+	}
+	return radius;
+}
+
+
+// the curvatures at the ends of the element, to the left above 0
+std::pair<double, double> signed_ends(alignment::element const &Element)
+{
+	auto const sign{static_cast<double>(Element.turn)};
+	auto const [start, end]{alignment::end_curvatures(Element)};
+	return {sign * start, sign * end};
+}
+
+// a label of the band takes the span from Left to Right unless one taken before is too close to it
+bool place_label(std::vector<std::pair<float, float>> &Taken, float const Left, float const Right)
+{
+	for (auto const &[low, high] : Taken)
+		if (Left < high + 4.0f && Right > low - 4.0f)
+			return false;
+	Taken.emplace_back(Left, Right);
+	return true;
+}
+
+// the radius dragged in the band, to a metre below 1 km, to 10 m above
+double rounded_radius(double const Radius)
+{
+	auto const step{Radius < 1000.0 ? 1.0 : 10.0};
+	return std::clamp(std::round(Radius / step) * step, 10.0, 100000.0);
+}
+
+// the value of the vertex a drag in the band changes: of the Part 1 the radius of the arc, 2 the transition in, 3 the transition out,
+// else the transition into the arc
+template <typename Vertex>
+auto &band_value(Vertex &Of, int const Part, int const Arc)
+{
+	auto const later{Arc >= 1 && Arc <= static_cast<int>(Of.arcs.size())};
+	switch (Part)
+	{
+	case 1: return later ? Of.arcs[Arc - 1].radius : Of.radius;
+	case 2: return Of.transition_in;
+	case 3: return Of.transition_out;
+	default: return later ? Of.arcs[Arc - 1].transition : Of.transition_in;
+	}
+}
+
+
+// the share of an arc of a compound curve in percent of all of them
+double share_percent(double const Share, double const Total)
+{
+	return Total > 0.0 ? 100.0 * std::max(0.0, Share) / Total : 0.0;
+}
+
+// what the curve is made of: an arc between two transitions, two transitions with no arc, or several arcs
+bool render_vertex_kind(alignment::vertex &Vertex)
+{
+	bool changed{false};
+	if (ImGui::Checkbox(STR_C("Two transition curves, no arc"), &Vertex.spirals))
+	{
+		changed = true;
+		if (Vertex.spirals)
+			Vertex.compound = false;
+	}
+	item_tooltip("The bend eased the way the lines are drawn: two transition curves meeting at the radius, with no arc between them and no cant; their lengths follow from the radius and the angle");
+	if (false == Vertex.spirals && ImGui::Checkbox(STR_C("Compound curve (several radii)"), &Vertex.compound))
+	{
+		changed = true;
+		if (Vertex.compound && Vertex.arcs.empty())
+			Vertex.arcs.emplace_back(std::max(10.0, std::round(Vertex.radius * 0.6 / 10.0) * 10.0), 0.0, 1.0);
+	}
+	if (false == Vertex.spirals)
+		item_tooltip("Curve made of arcs of different radii, each one its own path, joined with transitions");
+	return changed;
+}
+
 } // namespace
 
 bool editor_mode::route_active() const
@@ -217,47 +680,37 @@ void editor_mode::route_curved_ends()
 	// into the curve too. A track of R 10 km or more is a straight there, as the lay tool takes it. The way the first curve and the last
 	// one turn by the legs of the polygon
 	auto const count{design.vertices.size()};
-	auto const turn_of = [&](bool const Atend) {
-		if (count == 1)
-			return cross(design.start_direction, design.end_direction) > 0.0 ? 1 : -1;
-		glm::dvec2 const in{Atend ? design.vertices[count - 1].position - design.vertices[count - 2].position : design.start_direction};
-		glm::dvec2 const out{Atend ? design.end_direction : design.vertices[1].position - design.vertices[0].position};
-		return cross(in, out) > 0.0 ? 1 : -1;
-	};
-	auto const goes_on = [&](bool const Atend) {
-		auto const radius{Atend ? design.end_radius : design.start_radius};
-		if (radius <= 0.0 || radius >= 10000.0 || (Atend ? design.end_turn : design.start_turn) != turn_of(Atend))
-			return false;
-		// within a tenth: the path of a switch bent into the curve approximates it at its ends, R 860 m at the start of one in R 800 m
-		auto const *track{Atend ? m_route.chain.tracks.back() : m_route.chain.tracks.front()};
-		auto const bend{editor_track::bend_at(*track, Atend ? m_route.chain.end : m_route.chain.start)};
-		return bend.has_value() && std::abs(std::abs(bend->curvature) - 1.0 / radius) <= 0.1 / radius;
-	};
-	design.start_curved = goes_on(false);
-	design.end_curved = (count > 1 || false == design.start_curved) && goes_on(true);
+	design.start_curved = route_goes_on(false);
+	design.end_curved = (count > 1 || false == design.start_curved) && route_goes_on(true);
 	route_update();
 	// a curve read from its paths as going on from the curve adjoining it which the design can't lay along them so, as one whose arc
 	// going on is too short to be read as an arc: read from a straight there, whichever of the two keeps closer to its paths
-	if (design.start_curved || design.end_curved)
+	if (false == design.start_curved && false == design.end_curved)
+		return;
+	auto const curved{design_departure(m_route.result, m_route.chain.tracks)};
+	if (false == (curved > 0.25))
+		return;
+	auto const kept{design};
+	design.start_curved = false;
+	design.end_curved = false;
+	route_update();
+	if (design_departure(m_route.result, m_route.chain.tracks) >= curved)
 	{
-		auto const departure = [&]() {
-			TTrack *worst{nullptr};
-			return m_route.result.valid ? alignment_store::deviation(m_route.result, m_route.chain.tracks, worst) : std::numeric_limits<double>::max();
-		};
-		auto const curved{departure()};
-		if (curved > 0.25)
-		{
-			auto const kept{design};
-			design.start_curved = false;
-			design.end_curved = false;
-			route_update();
-			if (departure() >= curved)
-			{
-				design = kept;
-				route_update();
-			}
-		}
+		design = kept;
+		route_update();
 	}
+}
+
+bool editor_mode::route_goes_on(bool const Atend) const
+{
+	auto const &design{m_route.design};
+	auto const radius{Atend ? design.end_radius : design.start_radius};
+	if (radius <= 0.0 || radius >= 10000.0 || (Atend ? design.end_turn : design.start_turn) != design_turn(design, Atend))
+		return false;
+	// within a tenth: the path of a switch bent into the curve approximates it at its ends, R 860 m at the start of one in R 800 m
+	auto const *track{Atend ? m_route.chain.tracks.back() : m_route.chain.tracks.front()};
+	auto const bend{editor_track::bend_at(*track, Atend ? m_route.chain.end : m_route.chain.start)};
+	return bend.has_value() && std::abs(std::abs(bend->curvature) - 1.0 / radius) <= 0.1 / radius;
 }
 
 alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve) const
@@ -332,20 +785,28 @@ void editor_mode::route_read_stored(TTrack &Track)
 		if (further.has_value() && *further > *km)
 			route.origin = *km;
 	}
-	if (digitized && route.designed == 0)
-		route.status += STR_C("\nThe line is digitized now, a straight");
-	else if (digitized)
-		route.status += format(STR_C("\nThe line is digitized now, curves kept in the scenery: %d"), route.designed);
-	else if (parts > 0)
-		route.status += format(STR_C("\nThe line is digitized in parts: %d, paths left out: %d"), parts, skipped) + (failure.empty() ? std::string{} : " - " + failure);
-	else if (skipped > 0 && loose && skipped < static_cast<int>(chain.tracks.size()))
-		route.status += format(STR_C("\nPaths left out of the digitized line: %d"), skipped) + (failure.empty() ? std::string{} : " - " + failure);
-	else if (false == failure.empty())
-		route.status += STR_C("\nThe line can't be digitized: ") + failure;
-	else if (route.designed > 0)
-		route.status += format(STR_C("\nCurves read from the design kept in the scenery: %d"), route.designed);
-	else if (false == route.design.vertices.empty())
-		route.status += STR_C("\nCurves recognized from the paths, the scenery keeps no design for them");
+	route.status += route_stored_note(digitized, parts, skipped, failure, loose && skipped < static_cast<int>(chain.tracks.size()));
+}
+
+std::string editor_mode::route_stored_note(bool const Digitized, int const Parts, int const Skipped, std::string const &Failure, bool const Left) const
+{
+	auto const &route{m_route};
+	auto const failure{Failure.empty() ? std::string{} : " - " + Failure};
+	if (Digitized && route.designed == 0)
+		return STR_C("\nThe line is digitized now, a straight");
+	if (Digitized)
+		return format(STR_C("\nThe line is digitized now, curves kept in the scenery: %d"), route.designed);
+	if (Parts > 0)
+		return format(STR_C("\nThe line is digitized in parts: %d, paths left out: %d"), Parts, Skipped) + failure;
+	if (Skipped > 0 && Left)
+		return format(STR_C("\nPaths left out of the digitized line: %d"), Skipped) + failure;
+	if (false == Failure.empty())
+		return STR_C("\nThe line can't be digitized: ") + Failure;
+	if (route.designed > 0)
+		return format(STR_C("\nCurves read from the design kept in the scenery: %d"), route.designed);
+	if (false == route.design.vertices.empty())
+		return STR_C("\nCurves recognized from the paths, the scenery keeps no design for them");
+	return {};
 }
 
 void editor_mode::route_take_stored(int const Index)
@@ -509,128 +970,69 @@ int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *R
 	return parts;
 }
 
-bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason, TTrack **Culprit)
+bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason, TTrack **Culprit) const
 {
 	if (Chain.tracks.empty() || scene::Layers.empty())
 		return false;
-	auto const name = [](TTrack const *Track) { return Track == nullptr || Track->name().empty() ? std::string{STR_C("(no name)")} : Track->name(); };
-	auto const nearest = [&](glm::dvec2 const &Point) {
-		TTrack *found{nullptr};
-		double distance{std::numeric_limits<double>::max()};
-		for (auto *track : Chain.tracks)
-			for (auto const end : {segment_data::point::start, segment_data::point::end})
-				if (auto const d{glm::distance(plan_of(track->m_paths.front().points[end]), Point)}; d < distance)
-				{
-					distance = d;
-					found = track;
-				}
-		return found;
-	};
-	alignment::design design;
-	design.norms = m_route.design.norms;
-	design.transition_pieces = m_route.design.transition_pieces;
-	design.arc_piece_angle = m_route.design.arc_piece_angle;
-	design.speed = Chain.velocity > 0.0 ? Chain.velocity : 100.0;
-	design.start = Chain.start;
-	design.end = Chain.end;
-	if (glm::length(plan_of(Chain.start_direction)) < 1e-9 || glm::length(plan_of(Chain.end_direction)) < 1e-9)
+	auto read{digitized_design(Chain, m_route.design)};
+	if (false == read.has_value())
 		return false;
-	design.start_direction = glm::normalize(plan_of(Chain.start_direction));
-	design.end_direction = glm::normalize(plan_of(Chain.end_direction));
-	design.start_grade = grade_of(Chain.start_direction);
-	design.end_grade = grade_of(Chain.end_direction);
-	design.start_radius = Chain.start_radius;
-	design.end_radius = Chain.end_radius;
-	design.start_turn = Chain.start_turn;
-	design.end_turn = Chain.end_turn;
+	auto &design{*read};
 	auto const preferred{m_route.design.shape};
 	auto const other{preferred == alignment::transition_shape::clothoid ? alignment::transition_shape::cubic_parabola : alignment::transition_shape::clothoid};
 	alignment::result result;
-	alignment::design best;
-	alignment::result bestresult;
-	double closest{std::numeric_limits<double>::max()};
-	TTrack *farthest{nullptr};
+	digitize_best best;
 	bool fits{false};
 	for (auto const attempt : {0, 1, 2, 3})
 	{
-		auto const shape{attempt % 2 == 0 ? preferred : other};
-		design.shape = shape;
+		design.shape = attempt % 2 == 0 ? preferred : other;
 		if (attempt == 2)
 		{
 			design.norms.arc_min = 0.0;
 			design.norms.arc_min_factor = 0.0;
 		}
-		design.vertices.clear();
-		for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, design.norms.gauge, shape))
-		{
-			if (entry.kink)
-			{
-				if (Reason != nullptr)
-					*Reason = format(STR_C("the straights meet with no curve at path %s"), name(nearest(entry.position)).c_str());
-				if (Culprit != nullptr)
-					*Culprit = nearest(entry.position);
-				return false;
-			}
-			auto vertex{route_vertex_of(entry.shape)};
-			vertex.position = entry.position;
-			design.vertices.push_back(vertex);
-		}
-		if (design.vertices.size() >= 2)
-		{
-			design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - plan_of(design.start), design.start_direction));
-			design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(design.end) - design.vertices.back().position, design.end_direction));
-		}
+		if (false == digitize_vertices(Chain, design, Reason, Culprit))
+			return false;
 		result = alignment::compute(design);
-		if (alignment_store::follows(result, Chain.tracks))
-		{
-			fits = true;
+		fits = alignment_store::follows(result, Chain.tracks);
+		if (fits)
 			break;
-		}
-		TTrack *worst{nullptr};
-		if (auto const away{alignment_store::deviation(result, Chain.tracks, worst)}; away < closest)
-		{
-			closest = away;
-			farthest = worst;
-			best = design;
-			bestresult = result;
-		}
+		best.take(design, result, Chain.tracks);
 	}
 	double fit{0.0};
-	if (false == fits && closest <= kDigitizeFit)
+	if (false == fits && best.closest <= kDigitizeFit)
 	{
-		design = best;
-		result = bestresult;
-		fit = closest;
+		design = best.design;
+		result = best.result;
+		fit = best.closest;
 		fits = true;
 	}
 	if (false == fits)
 	{
-		if (Culprit != nullptr)
-			*Culprit = farthest;
-		if (Reason != nullptr)
-			*Reason = closest < std::numeric_limits<double>::max() ? format(STR_C("the curves read from the paths leave path %s by %.2f m"), name(farthest).c_str(), closest) : std::string{STR_C("the paths don't make a line of straights, arcs and transition curves")};
+		best.refuse(Reason, Culprit);
 		return false;
 	}
-	auto const &records{alignment_store::records()};
-	std::set<int> covered;
-	for (auto const *track : Chain.tracks)
-		if (auto const found{alignment_store::on_track(*track)})
-			covered.insert(found->record);
-	double origin{0.0};
-	for (auto const index : covered)
+	return store_digitized(Chain.tracks, design, result, fit);
+}
+
+bool editor_mode::digitize_vertices(editor_track::chain const &Chain, alignment::design &Design, std::string *Reason, TTrack **Culprit) const
+{
+	Design.vertices.clear();
+	for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, Design.norms.gauge, Design.shape))
 	{
-		auto const &old{records[index]};
-		auto const start{alignment_store::chainage_on(result, alignment_store::kept_start(old))};
-		auto const end{alignment_store::chainage_on(result, alignment_store::kept_end(old))};
-		if (false == start.has_value() || false == end.has_value())
+		if (entry.kink)
+		{
+			if (Reason != nullptr)
+				*Reason = format(STR_C("the straights meet with no curve at path %s"), digitized_name(nearest_end(Chain, entry.position)).c_str());
+			if (Culprit != nullptr)
+				*Culprit = nearest_end(Chain, entry.position);
 			return false;
-		if (index == *covered.begin() && *end > *start)
-			origin = old.origin + old.from - *start;
+		}
+		auto vertex{route_vertex_of(entry.shape)};
+		vertex.position = entry.position;
+		Design.vertices.push_back(vertex);
 	}
-	auto const layer{covered.empty() ? alignment_store::layer_of(*Chain.tracks.front()) : records[*covered.begin()].layer};
-	for (auto index{covered.rbegin()}; index != covered.rend(); ++index)
-		alignment_store::forget(*index);
-	alignment_store::store(design, result, origin, layer, "drawn", fit);
+	design_end_offsets(Design);
 	return true;
 }
 
@@ -664,17 +1066,12 @@ bool editor_mode::route_from_line(TTrack &Track)
 			else
 			{
 				vertex = route_vertex_of(entry.shape);
-				if (entry.shape.designed.has_value())
-					++route.designed;
+				route.designed += entry.shape.designed.has_value() ? 1 : 0;
 			}
 			vertex.position = entry.position;
 			design.vertices.push_back(vertex);
 		}
-		if (design.vertices.size() >= 2)
-		{
-			design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - plan_of(design.start), design.start_direction));
-			design.vertices.back().offset = std::max(0.0, glm::dot(plan_of(design.end) - design.vertices.back().position, design.end_direction));
-		}
+		design_end_offsets(design);
 		route_curved_ends();
 	}
 	route.status = format(STR_P("Line of %zu path, %.0f m, %zu vertices", "Line of %zu paths, %.0f m, %zu vertices", route.chain.tracks.size()), route.chain.tracks.size(), route.chain.length, design.vertices.size());
@@ -709,165 +1106,19 @@ void editor_mode::route_lay()
 		involved.push_back(passage.track);
 	if (false == tracks_editable(involved, route.error))
 		return;
-	// the crossovers of the line can't be moved as their switches are: they're taken out, the line laid again, and they go back
-	// where they were, onto the new line
-	if (false == route.relaying)
-	{
-		struct again
-		{
-			int shape;
-			glm::dvec3 press;
-			glm::dvec3 release;
-			std::string name;
-			std::vector<std::string> names; // of the switches at the press and at the release
-		};
-		std::vector<again> crossovers;
-		std::vector<TTrack const *> seen;
-		// a line which ends on a switch of a crossover would be laid again only up to it, the crossover left on a kink
-		for (auto const &end : {chain.start, chain.end})
-			for (auto const *track : chain.tracks)
-				for (auto const &[other, point] : editor_track::connected_points(*track, end))
-					if (other != nullptr && other->eType == tt_Switch && crossover_of(*other).has_value())
-					{
-						route.error = format(STR_C("The line ends on the switch %s of a crossover: move the crossover off the curve or take it out, change both lines, then lay it again"), other->name().c_str());
-						return;
-					}
-		std::vector<TTrack *> switches;
-		for (auto const &passage : chain.switches)
-			switches.push_back(passage.track);
-		for (auto const *switchtrack : switches)
-		{
-			auto const crossover{crossover_of(*switchtrack)};
-			if (false == crossover.has_value() || std::ranges::find(seen, crossover->first) != seen.end())
-				continue;
-			seen.push_back(crossover->first);
-			// the press on this line, the release on the other one
-			auto *here{crossover->first == switchtrack ? crossover->first : crossover->second};
-			auto *there{here == crossover->first ? crossover->second : crossover->first};
-			crossovers.push_back({crossover_template(crossover->record), here->m_paths.front().points[segment_data::point::start], there->m_paths.front().points[segment_data::point::start], crossover->first->name(), {here->name(), there->name()}});
-		}
-		if (false == crossovers.empty())
-		{
-			auto const tab{m_track_tab};
-			std::vector<std::pair<TTrack *, editor_track::state>> states;
-			std::vector<TTrack *> created;
-			std::vector<TTrack *> removed;
-			// the designs of the outer tracks come down with the lifts taken back, an undo puts them back
-			profile_library_load();
-			auto library{m_profiles};
-			bool lifted{false};
-			for (auto const *switchtrack : switches)
-				if (auto const crossover{crossover_of(*switchtrack)})
-				{
-					TTrack *first{nullptr};
-					TTrack *second{nullptr};
-					lifted = lifted || crossover->record.lifted();
-					take_out_crossover(*crossover, states, created, removed, first, second);
-				}
-			switch_store::follow();
-			push_track_snapshot(std::move(states), std::move(created), std::move(removed));
-			records_to_history();
-			if (lifted)
-				profiles_to_history(std::move(library));
-			show_track_tab(tab);
-			// the line between the same points again: taking the lift back may have cut its paths
-			auto const end_at = [&](glm::dvec3 const &Point) -> TTrack * {
-				for (auto *track : simulation::Paths.sequence())
-					if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Normal && false == track->m_paths.empty())
-						for (auto const which : {segment_data::point::start, segment_data::point::end})
-							if (plan_distance(track->m_paths.front().points[which], Point) < 0.01)
-								return track;
-				return nullptr;
-			};
-			auto *start{end_at(route.chain.start)};
-			auto *finish{end_at(route.chain.end)};
-			editor_track::chain refreshed;
-			if (std::string error; start != nullptr && finish != nullptr && editor_track::find_chain(start, finish, refreshed, error, true))
-			{
-				route.from = start;
-				route.to = finish;
-				route.chain = refreshed;
-			}
-			route.relaying = true;
-			auto const steps{m_history.size()};
-			route_apply();
-			route.relaying = false;
-			if (m_history.size() == steps)
-			{
-				undo_last();
-				return;
-			}
-			join_last_steps();
-			std::string back;
-			std::string left_side;
-			for (auto const &crossover : crossovers)
-			{
-				// the new line moved sideways: the press onto it, the release onto the other line
-				if (lay_crossover(crossover.shape, crossover.press, crossover.release, 30.0, crossover.names))
-				{
-					join_last_steps();
-					back += (back.empty() ? "" : ", ") + crossover.name;
-				}
-				else
-				{
-					left_side += (left_side.empty() ? "" : ", ") + crossover.name;
-					route.crossovers_out.emplace_back(crossover.shape, crossover.press, crossover.release, crossover.name, crossover.names);
-				}
-			}
-			show_track_tab(tab);
-			if (false == back.empty())
-				route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
-			if (false == left_side.empty())
-				route.status += "\n" + format(STR_C("Crossovers taken out which don't fit the new line, lay them again: %s"), left_side.c_str());
-			return;
-		}
-	}
+	if (false == route.relaying && route_lay_crossovers(chain))
+		return;
 
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
-	// takes back what was done before the paths were re-laid
-	auto const undo = [&]() {
-		for (auto *track : created)
-			editor_track::retire(*track);
-		for (auto entry = states.rbegin(); entry != states.rend(); ++entry)
-		{
-			editor_track::apply(*entry->first, entry->second);
-			editor_track::commit({entry->first});
-		}
-	};
 	auto *from{route.from};
 	auto *to{route.to};
 	auto const startextension{route.result.start_extension};
 	auto const endextension{route.result.end_extension};
-	if (startextension > 0.0 || endextension > 0.0)
-	{
-		auto const before{chain};
-		if (startextension > 0.0)
-			from = editor_track::take_straight(editor_track::straight_beyond(before, false, m_straights.tolerance), from, before.start, route.result.start, states, created);
-		if (endextension > 0.0)
-			to = editor_track::take_straight(editor_track::straight_beyond(before, true, m_straights.tolerance), to, before.end, route.result.end, states, created);
-		std::string error;
-		auto const found{editor_track::find_chain(from, to, chain, error, true)};
-		auto const startoff{found && startextension > 0.0 ? plan_distance(chain.start, route.result.start) : 0.0};
-		if (auto const endoff{found && endextension > 0.0 ? plan_distance(chain.end, route.result.end) : 0.0}; false == found || startoff > 5.0 || endoff > 5.0)
-		{
-			auto const startrun{editor_track::straight_beyond(before, false, m_straights.tolerance)};
-			auto const endrun{editor_track::straight_beyond(before, true, m_straights.tolerance)};
-			WriteLog(format("editor: cutting the straights failed: found %d, start %.2f m off (extension %.2f, run %zu paths %.2f m), end %.2f m off (extension %.2f, run %zu paths %.2f m), chain %zu paths, from %s, to %s, error '%s'", found ? 1 : 0, startoff,
-			                startextension, startrun.tracks.size(), startrun.length, endoff, endextension, endrun.tracks.size(), endrun.length, chain.tracks.size(), from != nullptr ? from->name().c_str() : "-", to != nullptr ? to->name().c_str() : "-", error.c_str()));
-			undo();
-			route.error = error.empty() ? format(STR_C("The adjoining straights can't be cut at the ends of the curve: the start misses by %.1f m, the end by %.1f m"), startoff, endoff) : error;
-			return;
-		}
-		if (false == tracks_editable(chain.tracks, route.error))
-		{
-			undo();
-			return;
-		}
-	}
+	if ((startextension > 0.0 || endextension > 0.0) && false == route_cut_straights(chain, from, to, states, created))
+		return;
 	for (auto *track : chain.tracks)
-		if (std::ranges::none_of(states, [&](auto const &Entry) { return Entry.first == track; }))
-			states.emplace_back(track, editor_track::capture(*track));
+		remember_state(states, track);
 	std::vector<TTrack *> relaid;
 	if (chain.switches.empty())
 	{
@@ -878,7 +1129,7 @@ void editor_mode::route_lay()
 	}
 	else if (false == route_relay_through_switches(chain, states, relaid, to))
 	{
-		undo();
+		undo_relay(created, states);
 		return;
 	}
 	// the straights were cut along their own direction, the curve ends where the design says: the ends are brought together
@@ -890,40 +1141,202 @@ void editor_mode::route_lay()
 	route.to = to;
 	editor_track::find_chain(route.from, route.to, route.chain, route.error, true);
 	if (startextension > 0.0 || endextension > 0.0)
-	{
-		route_bind_ends();
-		if (auto &vertices{route.design.vertices}; vertices.size() >= 2)
-		{
-			vertices.front().offset += startextension;
-			vertices.back().offset += endextension;
-		}
-		route_update();
-	}
+		route_extend_ends(startextension, endextension);
 	route_store();
 	records_to_history();
-	route.status = added > 0 ? format(STR_P("Re-laid %zu path, added %zu", "Re-laid %zu paths, added %zu", chain.tracks.size()), chain.tracks.size(), added) : format(STR_P("Re-laid %zu path", "Re-laid %zu paths", chain.tracks.size()), chain.tracks.size());
-	if (startextension > 0.0 || endextension > 0.0)
-		route.status += format(STR_C(", the curve took over %.2f / %.2f m of the adjoining straights"), startextension, endextension);
+	route.status = route_laid_note(chain.tracks.size(), added, startextension, endextension);
 	route.status += infra_carried_note();
 	// the crossovers taken out before which fit the lines now
 	if (false == route.relaying && false == route.crossovers_out.empty())
-	{
-		auto const tab{m_track_tab};
-		std::string back;
-		for (auto out{route.crossovers_out.begin()}; out != route.crossovers_out.end();)
-			if (lay_crossover(out->shape, out->press, out->release, 30.0, out->names))
-			{
-				join_last_steps();
-				back += (back.empty() ? "" : ", ") + out->name;
-				out = route.crossovers_out.erase(out);
-			}
-			else
-				++out;
-		show_track_tab(tab);
-		if (false == back.empty())
-			route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
-	}
+		route_crossovers_again();
 	WriteLog("Editor: route design - " + route.status, logtype::generic);
+}
+
+void editor_mode::route_extend_ends(double const Startextension, double const Endextension)
+{
+	route_bind_ends();
+	if (auto &vertices{m_route.design.vertices}; vertices.size() >= 2)
+	{
+		vertices.front().offset += Startextension;
+		vertices.back().offset += Endextension;
+	}
+	route_update();
+}
+
+// the crossovers of the line can't be moved as their switches are: they're taken out, the line laid again, and they go back where
+// they were, onto the new line
+bool editor_mode::route_lay_crossovers(editor_track::chain const &Chain)
+{
+	auto &route{m_route};
+	// a line which ends on a switch of a crossover would be laid again only up to it, the crossover left on a kink
+	if (auto const *ending{route_end_crossover(Chain)}; ending != nullptr)
+	{
+		route.error = format(STR_C("The line ends on the switch %s of a crossover: move the crossover off the curve or take it out, change both lines, then lay it again"), ending->name().c_str());
+		return true;
+	}
+	std::vector<TTrack *> switches;
+	for (auto const &passage : Chain.switches)
+		switches.push_back(passage.track);
+	auto const crossovers{route_crossovers_on(switches)};
+	if (crossovers.empty())
+		return false;
+	auto const tab{m_track_tab};
+	route_take_out_crossovers(switches);
+	show_track_tab(tab);
+	// the line between the same points again: taking the lift back may have cut its paths
+	auto *start{normal_end_at(route.chain.start)};
+	auto *finish{normal_end_at(route.chain.end)};
+	editor_track::chain refreshed;
+	if (std::string error; start != nullptr && finish != nullptr && editor_track::find_chain(start, finish, refreshed, error, true))
+	{
+		route.from = start;
+		route.to = finish;
+		route.chain = refreshed;
+	}
+	route.relaying = true;
+	auto const steps{m_history.size()};
+	route_apply();
+	route.relaying = false;
+	if (m_history.size() == steps)
+	{
+		undo_last();
+		return true;
+	}
+	join_last_steps();
+	route_crossovers_back(crossovers, tab);
+	return true;
+}
+
+TTrack const *editor_mode::route_end_crossover(editor_track::chain const &Chain) const
+{
+	auto const crossing = [this](auto const &Joined) { return Joined.first != nullptr && Joined.first->eType == tt_Switch && crossover_of(*Joined.first).has_value(); };
+	for (auto const &end : {Chain.start, Chain.end})
+		for (auto const *track : Chain.tracks)
+		{
+			auto const joined{editor_track::connected_points(*track, end)};
+			if (auto const found{std::ranges::find_if(joined, crossing)}; found != joined.end())
+				return found->first;
+		}
+	return nullptr;
+}
+
+std::vector<editor_mode::route_design::crossover_out> editor_mode::route_crossovers_on(std::vector<TTrack *> const &Switches)
+{
+	std::vector<route_design::crossover_out> crossovers;
+	std::vector<TTrack const *> seen;
+	for (auto const *switchtrack : Switches)
+	{
+		auto const crossover{crossover_of(*switchtrack)};
+		if (false == crossover.has_value() || std::ranges::find(seen, crossover->first) != seen.end())
+			continue;
+		seen.push_back(crossover->first);
+		// the press on this line, the release on the other one
+		auto *here{crossover->first == switchtrack ? crossover->first : crossover->second};
+		auto *there{here == crossover->first ? crossover->second : crossover->first};
+		crossovers.push_back({crossover_template(crossover->record), here->m_paths.front().points[segment_data::point::start], there->m_paths.front().points[segment_data::point::start], crossover->first->name(), {here->name(), there->name()}});
+	}
+	return crossovers;
+}
+
+void editor_mode::route_take_out_crossovers(std::vector<TTrack *> const &Switches)
+{
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	std::vector<TTrack *> removed;
+	// the designs of the outer tracks come down with the lifts taken back, an undo puts them back
+	profile_library_load();
+	auto library{m_profiles};
+	bool lifted{false};
+	for (auto const *switchtrack : Switches)
+		if (auto const crossover{crossover_of(*switchtrack)})
+		{
+			TTrack *first{nullptr};
+			TTrack *second{nullptr};
+			lifted = lifted || crossover->record.lifted();
+			take_out_crossover(*crossover, states, created, removed, first, second);
+		}
+	switch_store::follow();
+	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
+	records_to_history();
+	if (lifted)
+		profiles_to_history(std::move(library));
+}
+
+void editor_mode::route_crossovers_back(std::vector<route_design::crossover_out> const &Crossovers, editor_track_tab const Tab)
+{
+	auto &route{m_route};
+	std::string back;
+	std::string left_side;
+	for (auto const &crossover : Crossovers)
+	{
+		// the new line moved sideways: the press onto it, the release onto the other line
+		if (lay_crossover(crossover.shape, crossover.press, crossover.release, 30.0, crossover.names))
+		{
+			join_last_steps();
+			back += (back.empty() ? "" : ", ") + crossover.name;
+		}
+		else
+		{
+			left_side += (left_side.empty() ? "" : ", ") + crossover.name;
+			route.crossovers_out.emplace_back(crossover);
+		}
+	}
+	show_track_tab(Tab);
+	if (false == back.empty())
+		route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
+	if (false == left_side.empty())
+		route.status += "\n" + format(STR_C("Crossovers taken out which don't fit the new line, lay them again: %s"), left_side.c_str());
+}
+
+bool editor_mode::route_cut_straights(editor_track::chain &Chain, TTrack *&From, TTrack *&To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
+{
+	auto &route{m_route};
+	auto const startextension{route.result.start_extension};
+	auto const endextension{route.result.end_extension};
+	auto const before{Chain};
+	if (startextension > 0.0)
+		From = editor_track::take_straight(editor_track::straight_beyond(before, false, m_straights.tolerance), From, before.start, route.result.start, States, Created);
+	if (endextension > 0.0)
+		To = editor_track::take_straight(editor_track::straight_beyond(before, true, m_straights.tolerance), To, before.end, route.result.end, States, Created);
+	std::string error;
+	auto const found{editor_track::find_chain(From, To, Chain, error, true)};
+	auto const startoff{found && startextension > 0.0 ? plan_distance(Chain.start, route.result.start) : 0.0};
+	if (auto const endoff{found && endextension > 0.0 ? plan_distance(Chain.end, route.result.end) : 0.0}; false == found || startoff > 5.0 || endoff > 5.0)
+	{
+		auto const startrun{editor_track::straight_beyond(before, false, m_straights.tolerance)};
+		auto const endrun{editor_track::straight_beyond(before, true, m_straights.tolerance)};
+		WriteLog(format("editor: cutting the straights failed: found %d, start %.2f m off (extension %.2f, run %zu paths %.2f m), end %.2f m off (extension %.2f, run %zu paths %.2f m), chain %zu paths, from %s, to %s, error '%s'", found ? 1 : 0, startoff,
+		                startextension, startrun.tracks.size(), startrun.length, endoff, endextension, endrun.tracks.size(), endrun.length, Chain.tracks.size(), From != nullptr ? From->name().c_str() : "-", To != nullptr ? To->name().c_str() : "-", error.c_str()));
+		undo_relay(Created, States);
+		route.error = error.empty() ? format(STR_C("The adjoining straights can't be cut at the ends of the curve: the start misses by %.1f m, the end by %.1f m"), startoff, endoff) : error;
+		return false;
+	}
+	if (false == tracks_editable(Chain.tracks, route.error))
+	{
+		undo_relay(Created, States);
+		return false;
+	}
+	return true;
+}
+
+
+void editor_mode::route_crossovers_again()
+{
+	auto &route{m_route};
+	auto const tab{m_track_tab};
+	std::string back;
+	for (auto out{route.crossovers_out.begin()}; out != route.crossovers_out.end();)
+		if (lay_crossover(out->shape, out->press, out->release, 30.0, out->names))
+		{
+			join_last_steps();
+			back += (back.empty() ? "" : ", ") + out->name;
+			out = route.crossovers_out.erase(out);
+		}
+		else
+			++out;
+	show_track_tab(tab);
+	if (false == back.empty())
+		route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
 }
 
 // the switches of the chain are moved as a whole onto the designed line, the regular paths between them re-laid
@@ -931,117 +1344,30 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 {
 	auto &route{m_route};
 	auto const &result{route.result};
-	auto const name = [](TTrack const *Track) { return name_of(*Track); };
-	auto const plan = [](glm::dvec3 const &Vector) { return glm::normalize(plan_of(Vector)); };
-	struct placement
-	{
-		TTrack *track;
-		double from; // chainage along the new line
-		double length;
-		glm::dvec3 entry; // of the main track, where the chain comes in
-		double angle;
-	};
-	// chainages along the old line, the switches keep their distance from the nearer end of the chain
-	double before{0.0};
-	std::vector<double> starts;
-	std::size_t next{0};
-	for (std::size_t i = 0; i <= Chain.tracks.size(); ++i)
-	{
-		for (; next < Chain.switches.size() && Chain.switches[next].before == i; ++next)
-		{
-			starts.push_back(before);
-			before += bezier{Chain.switches[next].track->m_paths.front()}.plan_length();
-		}
-		if (i < Chain.tracks.size())
-			before += bezier{Chain.tracks[i]->m_paths.front()}.plan_length();
-	}
-	auto const oldlength{before};
-	std::vector<placement> placements;
+	std::vector<switch_placement> placements;
 	std::vector<double> ends; // of the switches along the new line
-	for (std::size_t k = 0; k < Chain.switches.size(); ++k)
+	if (auto const error{place_switches(Chain, result, placements, ends)}; false == error.empty())
 	{
-		auto const &passage{Chain.switches[k]};
-		auto const &main{passage.track->m_paths.front()};
-		auto const length{bezier{main}.plan_length()};
-		auto const from{starts[k] + length * 0.5 < oldlength * 0.5 ? starts[k] : result.length - (oldlength - starts[k])};
-		if (from < 0.0 || from + length > result.length || (false == ends.empty() && from < ends.back() - 0.01))
-		{
-			route.error = format(STR_C("The switch %s doesn't fit on the designed line"), name(passage.track).c_str());
-			return false;
-		}
-		auto const entry{main.points[passage.forward ? segment_data::point::start : segment_data::point::end]};
-		auto const exit{main.points[passage.forward ? segment_data::point::end : segment_data::point::start]};
-		bezier const curve{main};
-		auto const direction{passage.forward ? plan(curve.first(0.0)) : -plan(curve.first(1.0))};
-		auto const first{alignment::evaluate(result, from)};
-		auto const last{alignment::evaluate(result, from + length)};
-		auto const angle{signed_angle(direction, plan(first.direction))};
-		// where the other end of the main track goes, set against the line
-		auto const moved{plan_of(first.position) + turned(plan_of(exit - entry), angle)};
-		if (auto const departure{glm::distance(moved, plan_of(last.position))}; departure > 0.02)
-		{
-			route.error = format(STR_C("The switch %s would leave the designed line by %.2f m at its other end: it lies in a curve of the design. "
-			                     "Move the vertices so that the switch falls on a straight"),
-			                     name(passage.track).c_str(), departure);
-			return false;
-		}
-		placements.emplace_back(passage.track, from, length, entry, angle);
-		ends.push_back(from);
-		ends.push_back(from + length);
+		route.error = error;
+		return false;
 	}
 	// the regular parts between the switches, cut at the joints of their paths set square onto the new line where they follow one
 	// another along it, else one interval each; the switches taking the ones between
 	auto const parts{editor_track::chain_parts(Chain)};
-	std::vector<double> breaks;
-	std::vector<std::size_t> counts;
-	std::vector<std::pair<int, int>> owners; // of each interval: the part, -1 for none, and its path, -1 for any
-	std::size_t part{0};
-	for (std::size_t k = 0; k <= Chain.switches.size(); ++k)
-	{
-		auto const first{k == 0 ? std::size_t{0} : Chain.switches[k - 1].before};
-		if (auto const last{k == Chain.switches.size() ? Chain.tracks.size() : Chain.switches[k].before}; last > first && part < parts.size())
-		{
-			if (auto const inner{alignment::breaks_at(result, editor_track::chain_joints(parts[part]), k == 0 ? 0.0 : ends[2 * k - 1], k == Chain.switches.size() ? result.length : ends[2 * k])}; last - first > 1 && inner.size() + 1 == last - first)
-				for (std::size_t j = 0; j < last - first; ++j)
-				{
-					if (j > 0)
-						breaks.push_back(inner[j - 1]);
-					counts.push_back(1);
-					owners.emplace_back(static_cast<int>(part), static_cast<int>(j));
-				}
-			else
-			{
-				counts.push_back(last - first);
-				owners.emplace_back(static_cast<int>(part), -1);
-			}
-			++part;
-		}
-		else
-		{
-			counts.push_back(last - first);
-			owners.emplace_back(-1, -1);
-		}
-		if (k < Chain.switches.size())
-		{
-			breaks.push_back(ends[2 * k]);
-			breaks.push_back(ends[2 * k + 1]);
-			counts.push_back(1);
-			owners.emplace_back(-1, -1);
-		}
-	}
-	if (part != parts.size())
+	relay_intervals cut;
+	if (cut.split(Chain, parts, result, ends) != parts.size())
 	{
 		route.error = STR_C("The paths between the switches can't be read as a chain");
 		return false;
 	}
 	std::vector<std::size_t> intervals;
-	auto const pieces{alignment::pieces(result, route.design, 0, breaks, counts, &intervals)};
+	auto const pieces{alignment::pieces(result, route.design, 0, cut.breaks, cut.counts, &intervals)};
 	std::vector<std::vector<segment_data>> groups(parts.size());
 	std::vector<std::vector<std::size_t>> paths(parts.size()); // of each piece of a part, its path, where its joints cut the line
 	for (std::size_t i = 0; i < pieces.size() && i < intervals.size(); ++i)
-		if (intervals[i] < owners.size() && owners[intervals[i]].first >= 0)
+		if (intervals[i] < cut.owners.size() && cut.owners[intervals[i]].first >= 0)
 		{
-			auto const &[owner, path]{owners[intervals[i]]};
+			auto const &[owner, path]{cut.owners[intervals[i]]};
 			groups[owner].push_back(pieces[i]);
 			if (path >= 0)
 				paths[owner].push_back(static_cast<std::size_t>(path));
@@ -1054,29 +1380,8 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 		}
 
 	// all checked, the changes go in
-	auto const remember = [&](TTrack *Track) {
-		if (std::ranges::none_of(States, [&](auto const &Entry) { return Entry.first == Track; }))
-			States.emplace_back(Track, editor_track::capture(*Track));
-	};
 	for (auto const &place : placements)
-	{
-		auto joints{editor_track::joints(*place.track)};
-		std::erase_if(joints, [&](editor_track::joint const &Joint) { return std::ranges::find(Chain.tracks, Joint.other) != Chain.tracks.end(); });
-		remember(place.track);
-		std::vector changed{place.track};
-		for (auto const &joint : joints)
-		{
-			remember(joint.other);
-			if (std::ranges::find(changed, joint.other) == changed.end())
-				changed.push_back(joint.other);
-		}
-		// the heights stay, the paths between the switches keep theirs too
-		auto target{alignment::evaluate(result, place.from).position};
-		target.y = place.entry.y;
-		editor_track::place(*place.track, place.entry, target, place.angle);
-		editor_track::follow(*place.track, joints);
-		editor_track::commit(changed);
-	}
+		place_switch(place, Chain, result, States);
 	for (std::size_t i = 0; i < parts.size(); ++i)
 	{
 		auto group{groups[i]};
@@ -1181,30 +1486,29 @@ std::vector<std::size_t> editor_mode::route_focused() const
 	if (own.empty() || focus.what == part::whole)
 		return own;
 	// the arcs of a compound curve found by the curvature at the start and at the end of each element and their radii
-	auto const same = [](double const A, double const B) { return std::abs(A - B) <= 1e-6 * std::max(std::abs(A), std::abs(B)) + 1e-12; };
-	std::vector<double> radii;
-	for (auto const &curve : result.curves)
-		if (curve.vertex == focus.vertex)
-			radii = curve.radii.size() > 1 ? curve.radii : std::vector<double>{curve.radius};
+	auto const radii{radii_of(result, focus.vertex)};
 	std::vector<std::size_t> found;
 	for (auto const i : own)
-	{
-		auto const [start, end] {alignment::end_curvatures(result.elements[i])};
-		auto const arc{static_cast<std::size_t>(focus.arc)};
-		switch (focus.what)
-		{
-		case part::entry: if (i == own.front() && start == 0.0 && end > 0.0) found.push_back(i); break;
-		case part::exit: if (i == own.back() && end == 0.0 && start > 0.0) found.push_back(i); break;
-		case part::radius_arc: if (arc < radii.size() && radii[arc] > 0.0 && same(start, 1.0 / radii[arc]) && same(end, start)) found.push_back(i); break;
-		case part::between:
-			if (arc >= 1 && arc < radii.size() && radii[arc] > 0.0 && radii[arc - 1] > 0.0 && same(start, 1.0 / radii[arc - 1]) && same(end, 1.0 / radii[arc]))
-				found.push_back(i);
-			break;
-		default: break;
-		}
-	}
+		if (route_focus_takes(i, own, radii))
+			found.push_back(i);
 	// a part of no length, the arc of two transition curves meeting say, shows the whole curve
 	return found.empty() ? own : found;
+}
+
+bool editor_mode::route_focus_takes(std::size_t const Element, std::vector<std::size_t> const &Own, std::vector<double> const &Radii) const
+{
+	using part = route_design::curve_focus::part;
+	auto const &focus{m_route.focus};
+	auto const [start, end] {alignment::end_curvatures(m_route.result.elements[Element])};
+	auto const arc{static_cast<std::size_t>(focus.arc)};
+	switch (focus.what)
+	{
+	case part::entry: return Element == Own.front() && start == 0.0 && end > 0.0;
+	case part::exit: return Element == Own.back() && end == 0.0 && start > 0.0;
+	case part::radius_arc: return arc < Radii.size() && Radii[arc] > 0.0 && same_curvature(start, 1.0 / Radii[arc]) && same_curvature(end, start);
+	case part::between: return arc >= 1 && arc < Radii.size() && Radii[arc] > 0.0 && Radii[arc - 1] > 0.0 && same_curvature(start, 1.0 / Radii[arc - 1]) && same_curvature(end, 1.0 / Radii[arc]);
+	default: return false;
+	}
 }
 
 void editor_mode::route_measure_clicks()
@@ -1284,181 +1588,155 @@ void editor_mode::draw_route_overlay() const
 		projection.line(drawlist, polygon[i], polygon[i + 1], IM_COL32(255, 210, 60, 150), 1.5f);
 
 	if (result.length > 0.0 && result.profile.size() >= 2)
-	{
-		for (auto const &e : result.elements)
-		{
-			ImU32 const color = element_colour(e.kind);
-			int const steps = std::clamp(static_cast<int>(e.length / 2.0), 1, 400);
-			auto previous{alignment::evaluate(result, e.chainage).position};
-			for (int j = 1; j <= steps; ++j)
-			{
-				auto const next{alignment::evaluate(result, e.chainage + e.length * j / steps).position};
-				projection.line(drawlist, previous, next, color, 3.0f);
-				previous = next;
-			}
-			ImVec2 screen;
-			if (projection.project(alignment::evaluate(result, e.chainage).position, screen))
-				drawlist->AddCircleFilled(screen, 3.5f, overlay_color::highlight);
-		}
-		// what the mouse points at in the band of the curvature in the panel
-		if (route.band.hot >= 0 && route.band.hot < static_cast<int>(result.elements.size()))
-		{
-			auto const &e{result.elements[route.band.hot]};
-			int const steps = std::clamp(static_cast<int>(e.length / 2.0), 1, 400);
-			auto previous{alignment::evaluate(result, e.chainage).position};
-			for (int j = 1; j <= steps; ++j)
-			{
-				auto const next{alignment::evaluate(result, e.chainage + e.length * j / steps).position};
-				projection.line(drawlist, previous, next, IM_COL32(255, 255, 255, 110), 8.0f);
-				previous = next;
-			}
-		}
-		// the cant ramps: their ends across the track, the ones moved off the transitions brighter, with how the cant goes along them
-		for (auto const &ramp : result.ramps)
-		{
-			if (ramp.cant < 0.5)
-				continue;
-			auto const colour{ramp.own ? IM_COL32(255, 170, 40, 255) : IM_COL32(255, 170, 40, 120)};
-			for (auto const ramp_end : {ramp.from, ramp.to})
-			{
-				auto const station{alignment::evaluate(result, ramp_end)};
-				glm::dvec3 const across{-station.direction.z * 2.0, 0.0, station.direction.x * 2.0};
-				projection.line(drawlist, station.position - across, station.position + across, colour, 3.0f);
-			}
-			ImVec2 screen;
-			if (ramp.own && projection.project(alignment::evaluate(result, (ramp.from + ramp.to) * 0.5).position, screen))
-				drawlist->AddText({screen.x + 8.0f, screen.y + 6.0f}, colour, format(STR_C("ramp %.0f m, %.0f mm"), ramp.to - ramp.from, ramp.cant).c_str());
-		}
-		// the part of the curve whose fields are pointed at or edited in the panel, lit up and named
-		if (auto const focused{route_focused()}; false == focused.empty())
-		{
-			using part = route_design::curve_focus::part;
-			auto const &focus{route.focus};
-			for (auto const index : focused)
-			{
-				auto const &e{result.elements[index]};
-				int const steps = std::clamp(static_cast<int>(e.length / 2.0), 1, 400);
-				auto previous{alignment::evaluate(result, e.chainage).position};
-				for (int j = 1; j <= steps; ++j)
-				{
-					auto const next{alignment::evaluate(result, e.chainage + e.length * j / steps).position};
-					projection.line(drawlist, previous, next, IM_COL32(60, 230, 255, 120), 11.0f);
-					projection.line(drawlist, previous, next, IM_COL32(200, 250, 255, 255), 3.0f);
-					previous = next;
-				}
-			}
-			auto const &first{result.elements[focused.front()]};
-			auto const &last{result.elements[focused.back()]};
-			alignment::curve_report const *report{nullptr};
-			for (auto const &curve : result.curves)
-				if (curve.vertex == focus.vertex)
-					report = &curve;
-			std::string name;
-			if (report != nullptr)
-			{
-				auto const compound{report->radii.size() > 1};
-				auto const arc{static_cast<std::size_t>(focus.arc)};
-				switch (focus.what)
-				{
-				case part::entry: name = format(STR_C("W%d  transition in %.0f m"), focus.vertex + 1, first.length); break;
-				case part::exit: name = format(STR_C("W%d  transition out %.0f m"), focus.vertex + 1, last.length); break;
-				case part::between: name = format(STR_C("W%d  transition R%d-R%d %.0f m"), focus.vertex + 1, focus.arc, focus.arc + 1, first.length); break;
-				case part::radius_arc:
-					if (compound && arc < report->radii.size())
-						name = format(STR_C("W%d  R%d %.0f m  cant %.0f mm"), focus.vertex + 1, focus.arc + 1, report->radii[arc], arc < report->cants.size() ? report->cants[arc] : report->cant);
-					else
-						name = format(STR_C("W%d  R %.0f m  cant %.0f mm"), focus.vertex + 1, report->radius, report->cant);
-					break;
-				default: name = format("W%d  ", focus.vertex + 1) + curve_label(*report, design.norms); break;
-				}
-			}
-			ImVec2 middle;
-			if (false == name.empty() && projection.project(alignment::evaluate(result, (first.chainage + last.chainage + last.length) * 0.5).position, middle))
-			{
-				auto const size{ImGui::GetFontSize() * 1.25f};
-				auto const text{ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, name.c_str())};
-				ImVec2 const corner{middle.x - text.x * 0.5f, middle.y - text.y - 22.0f};
-				drawlist->AddRectFilled(ImVec2(corner.x - 6.0f, corner.y - 3.0f), ImVec2(corner.x + text.x + 6.0f, corner.y + text.y + 3.0f), IM_COL32(10, 20, 30, 210), 4.0f);
-				drawlist->AddText(ImGui::GetFont(), size, corner, IM_COL32(200, 250, 255, 255), name.c_str());
-				drawlist->AddLine(ImVec2(middle.x, corner.y + text.y + 3.0f), middle, IM_COL32(200, 250, 255, 200), 1.5f);
-			}
-		}
-		ImVec2 pointed;
-		if (route.band.at >= 0.0 && projection.project(alignment::evaluate(result, std::min(route.band.at, result.length)).position, pointed))
-		{
-			drawlist->AddCircleFilled(pointed, 5.0f, overlay_color::highlight);
-			drawlist->AddCircle(pointed, 10.0f, overlay_color::highlight, 20, 2.0f);
-		}
-	}
+		draw_route_line(projection, drawlist);
 
-	for (auto const atend : {false, true})
-	{
-		auto const &point{atend ? end : start};
-		auto const direction{atend ? design.end_direction : design.start_direction};
-		if (ImVec2 screen; projection.project(point, screen))
-			drawlist->AddRectFilled(ImVec2(screen.x - 5.0f, screen.y - 5.0f), ImVec2(screen.x + 5.0f, screen.y + 5.0f), IM_COL32(70, 140, 255, 255));
-		auto const arrow{glm::dvec3{direction.x, 0.0, direction.y} * (atend ? 15.0 : -15.0)};
-		projection.line(drawlist, point, point + arrow, IM_COL32(70, 140, 255, 255), 2.0f);
-	}
+	draw_design_ends(projection, drawlist, design, start, end);
 	for (int i = 0; i < static_cast<int>(design.vertices.size()); ++i)
+		draw_route_vertex(projection, drawlist, i);
+	draw_route_clicks(projection, drawlist);
+	draw_route_traced(projection, drawlist);
+}
+
+void editor_mode::draw_route_line(screen_projection const &Projection, ImDrawList *Drawlist) const
+{
+	auto const &route{m_route};
+	auto const &result{route.result};
+	for (auto const &e : result.elements)
 	{
+		ImU32 const color = element_colour(e.kind);
+		along_element(result, e, [&Projection, Drawlist, color](glm::dvec3 const &From, glm::dvec3 const &To) { Projection.line(Drawlist, From, To, color, 3.0f); });
 		ImVec2 screen;
-		if (false == projection.project(route_vertex_position(i), screen))
-			continue;
-		drawlist->AddCircleFilled(screen, 6.0f, overlay_color::marked);
-		if (i == route.vertex)
-			drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
-		if (i < static_cast<int>(result.vertex_chainages.size()) && result.length > 0.0 && projection.project(alignment::evaluate(result, result.vertex_chainages[i]).position, screen))
-		{
-			drawlist->AddCircleFilled(screen, 6.0f, overlay_color::grip, 4);
-			if (i == route.grip)
-				drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
-			auto const *report{i < static_cast<int>(result.curves.size()) ? &result.curves[i] : nullptr};
-			auto radius{format("R %.0f", report != nullptr ? report->radius : design.vertices[i].radius)};
-			if (report != nullptr && report->radii.size() >= 2)
-			{
-				radius = "R";
-				for (std::size_t k = 0; k < report->radii.size(); ++k)
-					radius += format(k == 0 ? " %.0f" : " / %.0f", report->radii[k]);
-			}
-			drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), overlay_color::grip, radius.c_str());
-		}
-		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", i + 1).c_str());
+		if (Projection.project(alignment::evaluate(result, e.chainage).position, screen))
+			Drawlist->AddCircleFilled(screen, 3.5f, overlay_color::highlight);
 	}
-	// the points clicked when the line was laid, in the colours of their departure; how far each is, along the curve in focus
+	// what the mouse points at in the band of the curvature in the panel
+	if (route.band.hot >= 0 && route.band.hot < static_cast<int>(result.elements.size()))
+		along_element(result, result.elements[route.band.hot], [&Projection, Drawlist](glm::dvec3 const &From, glm::dvec3 const &To) { Projection.line(Drawlist, From, To, IM_COL32(255, 255, 255, 110), 8.0f); });
+	draw_cant_ramps(Projection, Drawlist, result);
+	// the part of the curve whose fields are pointed at or edited in the panel, lit up and named
+	if (auto const focused{route_focused()}; false == focused.empty())
+		draw_route_focus(Projection, Drawlist, focused);
+	ImVec2 pointed;
+	if (route.band.at >= 0.0 && Projection.project(alignment::evaluate(result, std::min(route.band.at, result.length)).position, pointed))
+	{
+		Drawlist->AddCircleFilled(pointed, 5.0f, overlay_color::highlight);
+		Drawlist->AddCircle(pointed, 10.0f, overlay_color::highlight, 20, 2.0f);
+	}
+}
+
+void editor_mode::draw_route_focus(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<std::size_t> const &Focused) const
+{
+	auto const &result{m_route.result};
+	for (auto const index : Focused)
+		along_element(result, result.elements[index], [&Projection, Drawlist](glm::dvec3 const &From, glm::dvec3 const &To) {
+			Projection.line(Drawlist, From, To, IM_COL32(60, 230, 255, 120), 11.0f);
+			Projection.line(Drawlist, From, To, IM_COL32(200, 250, 255, 255), 3.0f);
+		});
+	auto const &first{result.elements[Focused.front()]};
+	auto const &last{result.elements[Focused.back()]};
+	auto const name{route_focus_name(first.length, last.length)};
+	ImVec2 middle;
+	if (false == name.empty() && Projection.project(alignment::evaluate(result, (first.chainage + last.chainage + last.length) * 0.5).position, middle))
+	{
+		auto const size{ImGui::GetFontSize() * 1.25f};
+		auto const text{ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, name.c_str())};
+		ImVec2 const corner{middle.x - text.x * 0.5f, middle.y - text.y - 22.0f};
+		Drawlist->AddRectFilled(ImVec2(corner.x - 6.0f, corner.y - 3.0f), ImVec2(corner.x + text.x + 6.0f, corner.y + text.y + 3.0f), IM_COL32(10, 20, 30, 210), 4.0f);
+		Drawlist->AddText(ImGui::GetFont(), size, corner, IM_COL32(200, 250, 255, 255), name.c_str());
+		Drawlist->AddLine(ImVec2(middle.x, corner.y + text.y + 3.0f), middle, IM_COL32(200, 250, 255, 200), 1.5f);
+	}
+}
+
+std::string editor_mode::route_focus_name(double const Firstlength, double const Lastlength) const
+{
+	using part = route_design::curve_focus::part;
+	auto const &focus{m_route.focus};
+	alignment::curve_report const *report{nullptr};
+	for (auto const &curve : m_route.result.curves)
+		if (curve.vertex == focus.vertex)
+			report = &curve;
+	if (report == nullptr)
+		return {};
+	auto const compound{report->radii.size() > 1};
+	auto const arc{static_cast<std::size_t>(focus.arc)};
+	switch (focus.what)
+	{
+	case part::entry: return format(STR_C("W%d  transition in %.0f m"), focus.vertex + 1, Firstlength);
+	case part::exit: return format(STR_C("W%d  transition out %.0f m"), focus.vertex + 1, Lastlength);
+	case part::between: return format(STR_C("W%d  transition R%d-R%d %.0f m"), focus.vertex + 1, focus.arc, focus.arc + 1, Firstlength);
+	case part::radius_arc:
+		if (compound && arc < report->radii.size())
+			return format(STR_C("W%d  R%d %.0f m  cant %.0f mm"), focus.vertex + 1, focus.arc + 1, report->radii[arc], arc < report->cants.size() ? report->cants[arc] : report->cant);
+		return format(STR_C("W%d  R %.0f m  cant %.0f mm"), focus.vertex + 1, report->radius, report->cant);
+	default: return format("W%d  ", focus.vertex + 1) + curve_label(*report, m_route.design.norms);
+	}
+}
+
+void editor_mode::draw_route_vertex(screen_projection const &Projection, ImDrawList *Drawlist, int const Index) const
+{
+	auto const &route{m_route};
+	auto const &design{route.design};
+	auto const &result{route.result};
+	ImVec2 screen;
+	if (false == Projection.project(route_vertex_position(Index), screen))
+		return;
+	Drawlist->AddCircleFilled(screen, 6.0f, overlay_color::marked);
+	if (Index == route.vertex)
+		Drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
+	if (Index < static_cast<int>(result.vertex_chainages.size()) && result.length > 0.0 && Projection.project(alignment::evaluate(result, result.vertex_chainages[Index]).position, screen))
+	{
+		Drawlist->AddCircleFilled(screen, 6.0f, overlay_color::grip, 4);
+		if (Index == route.grip)
+			Drawlist->AddCircle(screen, 11.0f, overlay_color::highlight, 16, 2.5f);
+		auto const *report{Index < static_cast<int>(result.curves.size()) ? &result.curves[Index] : nullptr};
+		Drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y + 4.0f), overlay_color::grip, radius_label(report, design.vertices[Index].radius).c_str());
+	}
+	Drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", Index + 1).c_str());
+}
+
+// the points clicked when the line was laid, in the colours of their departure; how far each is, along the curve in focus
+void editor_mode::draw_route_clicks(screen_projection const &Projection, ImDrawList *Drawlist) const
+{
+	auto const &route{m_route};
 	for (std::size_t i = 0; i < route.clicks.size() && i < route.click_states.size(); ++i)
 	{
 		auto const &state{route.click_states[i]};
 		ImVec2 screen;
-		if (state.corner || std::abs(state.offset) > 3.0 || false == projection.project(route.clicks[i], screen))
+		if (state.corner || std::abs(state.offset) > 3.0 || false == Projection.project(route.clicks[i], screen))
 			continue;
 		auto const departure{std::abs(state.offset)};
 		auto const colour{departure_colour(departure)};
-		drawlist->AddCircleFilled(screen, 4.5f, IM_COL32(0, 0, 0, 200), 12);
-		drawlist->AddCircleFilled(screen, 3.0f, colour, 12);
+		Drawlist->AddCircleFilled(screen, 4.5f, IM_COL32(0, 0, 0, 200), 12);
+		Drawlist->AddCircleFilled(screen, 3.0f, colour, 12);
 		if (state.vertex == route.focus.vertex)
-			drawlist->AddText(ImVec2(screen.x + 7.0f, screen.y - 7.0f), colour, format("%.0f cm", departure * 100.0).c_str());
+			Drawlist->AddText(ImVec2(screen.x + 7.0f, screen.y - 7.0f), colour, format("%.0f cm", departure * 100.0).c_str());
 	}
+}
+
+// the points traced on the orthophoto, in the colours of their departure from the curve fitted to them
+void editor_mode::draw_route_traced(screen_projection const &Projection, ImDrawList *Drawlist) const
+{
+	auto const &route{m_route};
 	if (route.trace.points.empty())
 		return;
 	std::vector<glm::dvec2> plan;
 	for (auto const &point : route.trace.points)
 		plan.push_back(plan_of(point));
-	auto const projections{alignment::project(result, plan)};
+	auto const projections{alignment::project(route.result, plan)};
 	auto const hit{route_trace_hit()};
 	for (std::size_t i = 0; i < route.trace.points.size(); ++i)
 	{
 		ImVec2 screen;
-		if (false == projection.project(route.trace.points[i], screen))
+		if (false == Projection.project(route.trace.points[i], screen))
 			continue;
 		auto const departure{i < projections.size() ? std::abs(projections[i].offset) : 0.0};
 		auto const colour{departure_colour(departure)};
-		drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 200), 12, 3.5f);
-		drawlist->AddCircle(screen, 5.0f, colour, 12, 2.0f);
+		Drawlist->AddCircle(screen, 5.0f, IM_COL32(0, 0, 0, 200), 12, 3.5f);
+		Drawlist->AddCircle(screen, 5.0f, colour, 12, 2.0f);
 		if (static_cast<int>(i) == hit)
-			drawlist->AddCircle(screen, 10.0f, overlay_color::highlight, 16, 2.0f);
+			Drawlist->AddCircle(screen, 10.0f, overlay_color::highlight, 16, 2.0f);
 		if (i < projections.size())
-			drawlist->AddText(ImVec2(screen.x + 8.0f, screen.y - 7.0f), colour, format("%.0f cm", departure * 100.0).c_str());
+			Drawlist->AddText(ImVec2(screen.x + 8.0f, screen.y - 7.0f), colour, format("%.0f cm", departure * 100.0).c_str());
 	}
 }
 
@@ -1619,18 +1897,7 @@ void editor_mode::render_route_gizmo()
 	m_route_dragging = true;
 	if (grip)
 	{
-		auto &vertex{route.design.vertices[route.grip]};
-		auto const corner{route_vertex_position(route.grip)};
-		auto const distance{plan_distance(moved, corner)};
-		for (auto const &curve : route.result.curves)
-		{
-			if (curve.vertex != route.grip || vertex.reverse_turn)
-				continue;
-			auto const secant{1.0 / std::cos(curve.deflection * 0.5) - 1.0};
-			if (secant > 1e-6)
-				vertex.radius = std::max(10.0, std::round(distance / secant));
-		}
-		route_update();
+		route_drag_grip(moved);
 		return;
 	}
 	auto &vertex{route.design.vertices[route.vertex]};
@@ -1643,6 +1910,23 @@ void editor_mode::render_route_gizmo()
 			vertex.offset = std::max(0.1, glm::dot(plan_of(route.design.end) - point, glm::normalize(route.design.end_direction)));
 		else
 			vertex.position = point;
+	}
+	route_update();
+}
+
+void editor_mode::route_drag_grip(glm::dvec3 const &Moved)
+{
+	auto &route{m_route};
+	auto &vertex{route.design.vertices[route.grip]};
+	auto const corner{route_vertex_position(route.grip)};
+	auto const distance{plan_distance(Moved, corner)};
+	for (auto const &curve : route.result.curves)
+	{
+		if (curve.vertex != route.grip || vertex.reverse_turn)
+			continue;
+		auto const secant{1.0 / std::cos(curve.deflection * 0.5) - 1.0};
+		if (secant > 1e-6)
+			vertex.radius = std::max(10.0, std::round(distance / secant));
 	}
 	route_update();
 }
@@ -1717,7 +2001,6 @@ bool editor_mode::render_route_band()
 		return false;
 	}
 	auto const font{ImGui::GetFontSize()};
-	auto const pad{std::round(font * 0.5f)};
 	auto const width{ImGui::GetContentRegionAvail().x};
 	auto const height{std::round(font * 6.0f)};
 	auto const top{ImGui::GetCursorScreenPos()};
@@ -1726,308 +2009,338 @@ bool editor_mode::render_route_band()
 	auto const hovered{ImGui::IsItemHovered()};
 	auto const active{ImGui::IsItemActive()};
 	auto *list{ImGui::GetWindowDrawList()};
-	ImVec2 const bottom{top.x + width, top.y + height};
-	list->AddRectFilled(top, bottom, ImGui::GetColorU32(ImGuiCol_FrameBg), std::round(font * 0.35f));
+	auto view{route_band_layout(top, ImVec2(width, height))};
+	list->AddRectFilled(view.top, view.bottom, ImGui::GetColorU32(ImGuiCol_FrameBg), std::round(font * 0.35f));
+	std::vector<int> arcs;
+	auto const roles{route_band_roles(result, design.vertices.size(), arcs)};
+	// the element under the mouse and what of it a drag changes: near the ends of a plateau the transitions either side of it, also the
+	// ones of no length yet
+	if (hovered && false == view.dragging)
+		route_band_pick(view, roles, arcs);
+	bool changed{route_band_drag(view, active)};
+	changed = route_band_wheel(view) || changed;
 
-	auto const ends = [](alignment::element const &Element) -> std::pair<double, double> {
-		auto const sign{static_cast<double>(Element.turn)};
-		auto const [start, end]{alignment::end_curvatures(Element)};
-		return {sign * start, sign * end};
-	};
-	auto const colour = [](alignment::element const &Element) { return element_colour(Element.kind); };
+	ImGui::PushClipRect(view.top, view.bottom, true);
+	draw_route_band(view, list);
+	draw_route_band_labels(view, list);
+	// the point under the mouse, shown in the view too
+	if (hovered || view.dragging)
+	{
+		auto const at{std::clamp(static_cast<double>((view.mouse.x - view.inner_left) / std::max(1e-6f, view.metres)), 0.0, result.length)};
+		band.at = at;
+		band.hot = view.dragging ? -1 : view.under;
+		if (false == view.dragging)
+			list->AddLine(ImVec2(view.mouse.x, view.plot_top), ImVec2(view.mouse.x, view.plot_bottom), IM_COL32(255, 255, 255, 60));
+	}
+	if (view.dragging && band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()))
+		draw_route_band_value(view, list);
+	ImGui::PopClipRect();
+	if (changed)
+		first_step_done(first_step::plan_band);
+
+	if (view.part != 0 && false == view.dragging && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+		route_band_tooltip(view, arcs);
+	return changed;
+}
+
+editor_mode::route_band_view editor_mode::route_band_layout(ImVec2 const Top, ImVec2 const Size) const
+{
+	auto const &result{m_route.result};
+	auto const &band{m_route.band};
+	route_band_view view;
+	view.font = ImGui::GetFontSize();
+	view.pad = std::round(view.font * 0.5f);
+	view.top = Top;
+	view.bottom = ImVec2{Top.x + Size.x, Top.y + Size.y};
 	double peak{0.0};
 	bool on_left{false};
 	bool on_right{false};
 	for (auto const &element : result.elements)
 	{
-		auto const [from, to]{ends(element)};
+		auto const [from, to]{signed_ends(element)};
 		peak = std::max({peak, std::abs(from), std::abs(to)});
 		on_left |= from > 1e-9 || to > 1e-9;
 		on_right |= from < -1e-9 || to < -1e-9;
 	}
-	auto const line{ImGui::GetTextLineHeight()};
-	auto const inner_left{top.x + pad};
-	auto const inner_width{width - 2.0f * pad};
-	auto const plot_top{top.y + pad * 0.5f + line};
-	auto const plot_bottom{bottom.y - pad * 0.5f - line};
-	auto const both{on_left && on_right};
-	auto const axis{both ? std::round((plot_top + plot_bottom) * 0.5f) : plot_bottom};
+	view.line = ImGui::GetTextLineHeight();
+	view.inner_left = Top.x + view.pad;
+	view.inner_width = Size.x - 2.0f * view.pad;
+	view.plot_top = Top.y + view.pad * 0.5f + view.line;
+	view.plot_bottom = view.bottom.y - view.pad * 0.5f - view.line;
+	view.both = on_left && on_right;
+	view.axis = view.both ? std::round((view.plot_top + view.plot_bottom) * 0.5f) : view.plot_bottom;
 	// the curves to one side only grow upwards
-	auto const flip{(false == both && on_right) ? -1.0f : 1.0f};
-	auto const dragging{band.vertex >= 0};
-	auto const metres{dragging ? band.metres : inner_width / static_cast<float>(result.length)};
-	auto curvature{0.0f};
-	if (dragging)
-		curvature = band.curvature;
+	view.flip = (false == view.both && on_right) ? -1.0f : 1.0f;
+	view.dragging = band.vertex >= 0;
+	view.metres = view.dragging ? band.metres : view.inner_width / static_cast<float>(result.length);
+	if (view.dragging)
+		view.curvature = band.curvature;
 	else if (peak > 0.0)
-		curvature = (axis - plot_top) * 0.85f / static_cast<float>(peak);
-	auto const x_of = [&](double const Chainage) { return inner_left + static_cast<float>(Chainage) * metres; };
-	auto const y_of = [&](double const K) { return axis - flip * static_cast<float>(K) * curvature; };
-	auto const mouse{ImGui::GetIO().MousePos};
-	auto const count{static_cast<int>(result.elements.size())};
+		view.curvature = (view.axis - view.plot_top) * 0.85f / static_cast<float>(peak);
+	view.mouse = ImGui::GetIO().MousePos;
+	return view;
+}
 
-	// what of its vertex each element is: an arc, the arcs of a compound curve counted from the first one, which are elements of an even
-	// curvature as an arc is, or a transition, in from the straight, out to it, or between two arcs, which goes on from the arc before it
-	struct role
-	{
-		int part{0};
-		int arc{0};
-	};
-	std::vector<role> roles(static_cast<std::size_t>(count));
-	std::vector arcs(design.vertices.size(), 0);
-	{
-		int vertex{-1};
-		int arc{-1};
-		double last{0.0};
-		for (int i = 0; i < count; ++i)
-		{
-			auto const &element{result.elements[i]};
-			if (element.vertex != vertex)
-			{
-				vertex = element.vertex;
-				arc = -1;
-				last = 0.0;
-			}
-			if (element.vertex < 0 || element.vertex >= static_cast<int>(design.vertices.size()) || element.kind == alignment::element_kind::straight)
-				continue;
-			auto const [from, to]{ends(element)};
-			if (element.kind == alignment::element_kind::arc || (std::abs(from - to) <= 1e-6 * std::abs(from) && std::abs(from) > 1e-9))
-			{
-				// the next arc where the curvature isn't the one of the arc before, an arc cut in parts staying one
-				if (arc < 0 || std::abs(std::abs(from) - last) > 1e-6 * std::abs(from))
-					++arc;
-				last = std::abs(from);
-				roles[i] = {1, arc};
-				arcs[element.vertex] = std::max(arcs[element.vertex], arc + 1);
-			}
-			else if (std::abs(from) <= 1e-9)
-				roles[i] = role{2, 0};
-			else if (std::abs(to) <= 1e-9)
-				roles[i] = role{3, 0};
-			else
-				roles[i] = role{4, arc + 1};
-		}
-	}
-	// the element under the mouse and what of it a drag changes: near the ends of a plateau the transitions either side of it, also the
-	// ones of no length yet
-	int under{-1};
-	int part{0};
-	int arc{0};
-	if (hovered && false == dragging)
-	{
-		for (int i = 0; i < count; ++i)
-		{
-			auto const &element{result.elements[i]};
-			if (mouse.x < x_of(element.chainage) || mouse.x >= x_of(element.chainage + element.length))
-				continue;
-			under = i;
-			part = roles[i].part;
-			arc = roles[i].arc;
-			if (part == 1)
-			{
-				auto const from{x_of(element.chainage)};
-				auto const to{x_of(element.chainage + element.length)};
-				auto const edge{std::min(std::round(font * 0.5f), (to - from) * 0.25f)};
-				if (mouse.x < from + edge)
-					part = arc == 0 ? 2 : 4;
-				else if (mouse.x >= to - edge)
-				{
-					part = arc + 1 >= arcs[element.vertex] ? 3 : 4;
-					arc += 1;
-				}
-			}
-			break;
-		}
-	}
-	auto const value_of = [&](int const Vertex, int const Part, int const Arc) -> double & {
-		auto &vertex{design.vertices[Vertex]};
-		auto const later{Arc >= 1 && Arc <= static_cast<int>(vertex.arcs.size())};
-		switch (Part)
-		{
-		case 1: return later ? vertex.arcs[Arc - 1].radius : vertex.radius;
-		case 2: return vertex.transition_in;
-		case 3: return vertex.transition_out;
-		default: return later ? vertex.arcs[Arc - 1].transition : vertex.transition_in;
-		}
-	};
-	auto const rounded_radius = [](double const Radius) {
-		auto const step{Radius < 1000.0 ? 1.0 : 10.0};
-		return std::clamp(std::round(Radius / step) * step, 10.0, 100000.0);
-	};
-	bool changed{false};
-	if (part != 0 && ImGui::IsItemActivated())
-	{
-		band.vertex = result.elements[under].vertex;
-		band.part = part;
-		band.arc = arc;
-		band.value = value_of(band.vertex, part, arc);
-		band.press = mouse;
-		band.metres = metres;
-		band.curvature = curvature;
-	}
-	if (band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()) && active)
-	{
-		auto &value{value_of(band.vertex, band.part, band.arc)};
-		double wanted{0.0};
-		if (band.part == 1)
-		{
-			int turn{1};
-			for (auto const &element : result.elements)
-				if (element.vertex == band.vertex && element.turn != 0)
-					turn = element.turn;
-			auto const start{y_of(turn / std::max(1.0, band.value)) + (mouse.y - band.press.y)};
-			auto const k{(axis - start) * flip * turn / std::max(1e-6f, curvature)};
-			wanted = rounded_radius(1.0 / std::max(1e-5, static_cast<double>(k)));
-		}
-		else
-		{
-			// the transition in grows to the left, from where it starts; the others to the right
-			auto const shift{(mouse.x - band.press.x) / std::max(1e-6f, metres)};
-			wanted = std::max(0.0, std::round(band.value + (band.part == 2 ? -shift : shift)));
-		}
-		if (wanted != value)
-		{
-			value = wanted;
-			changed = true;
-		}
-		ImGui::SetMouseCursor(band.part == 1 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
-	}
-	else if (dragging && false == active)
-	{
-		band.vertex = -1;
-	}
-	if (part != 0)
-	{
-		ImGui::SetMouseCursor(part == 1 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
-		if (auto const wheel{ImGui::GetIO().MouseWheel}; wheel != 0.0f)
-		{
-			auto &value{value_of(result.elements[under].vertex, part, arc)};
-			if (part == 1)
-				value = rounded_radius(value * (wheel > 0.0f ? 0.95 : 1.0 / 0.95));
-			else
-				value = std::max(0.0, std::round(value / 5.0) * 5.0 + (wheel > 0.0f ? 5.0 : -5.0));
-			changed = true;
-		}
-	}
-
-	ImGui::PushClipRect(top, bottom, true);
-	auto const disabled{ImGui::GetColorU32(ImGuiCol_TextDisabled)};
-	list->AddLine(ImVec2(inner_left, axis), ImVec2(inner_left + inner_width, axis), ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.5f));
-	auto hot_vertex{-1};
-	if (dragging)
-		hot_vertex = band.vertex;
-	else if (under >= 0)
-		hot_vertex = result.elements[under].vertex;
+// what of its vertex each element is: an arc, the arcs of a compound curve counted from the first one, which are elements of an even
+// curvature as an arc is, or a transition, in from the straight, out to it, or between two arcs, which goes on from the arc before it
+std::vector<editor_mode::route_band_view::role> editor_mode::route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs)
+{
+	auto const count{static_cast<int>(Result.elements.size())};
+	std::vector<route_band_view::role> roles(static_cast<std::size_t>(count));
+	Arcs.assign(Vertices, 0);
+	int vertex{-1};
+	int arc{-1};
+	double last{0.0};
 	for (int i = 0; i < count; ++i)
 	{
-		auto const &element{result.elements[i]};
-		auto const [from, to]{ends(element)};
-		ImVec2 const a{x_of(element.chainage), y_of(from)};
-		ImVec2 const b{x_of(element.chainage + element.length), y_of(to)};
-		auto const lit{element.vertex >= 0 && element.vertex == hot_vertex};
-		auto const tint{colour(element)};
-		if (element.kind != alignment::element_kind::straight)
-			list->AddQuadFilled(ImVec2(a.x, axis), a, b, ImVec2(b.x, axis), (tint & ~IM_COL32_A_MASK) | (lit ? IM_COL32(0, 0, 0, 90) : IM_COL32(0, 0, 0, 40)));
-		list->AddLine(a, b, tint, lit ? 3.0f : 2.0f);
-		if (i > 0)
-			list->AddLine(ImVec2(a.x, axis - 3.0f), ImVec2(a.x, axis + 3.0f), disabled);
+		auto const &element{Result.elements[i]};
+		if (element.vertex != vertex)
+		{
+			vertex = element.vertex;
+			arc = -1;
+			last = 0.0;
+		}
+		if (element.vertex < 0 || element.vertex >= static_cast<int>(Vertices) || element.kind == alignment::element_kind::straight)
+			continue;
+		auto const [from, to]{signed_ends(element)};
+		if (element.kind == alignment::element_kind::arc || (std::abs(from - to) <= 1e-6 * std::abs(from) && std::abs(from) > 1e-9))
+		{
+			// the next arc where the curvature isn't the one of the arc before, an arc cut in parts staying one
+			if (arc < 0 || std::abs(std::abs(from) - last) > 1e-6 * std::abs(from))
+				++arc;
+			last = std::abs(from);
+			roles[i] = {1, arc};
+			Arcs[element.vertex] = std::max(Arcs[element.vertex], arc + 1);
+		}
+		else if (std::abs(from) <= 1e-9)
+			roles[i] = route_band_view::role{2, 0};
+		else if (std::abs(to) <= 1e-9)
+			roles[i] = route_band_view::role{3, 0};
+		else
+			roles[i] = route_band_view::role{4, arc + 1};
 	}
-	// the labels: the radius over its plateau, the transition lengths along the axis, the km of the ends at the bottom
+	return roles;
+}
+
+void editor_mode::route_band_pick(route_band_view &View, std::vector<route_band_view::role> const &Roles, std::vector<int> const &Arcs) const
+{
+	auto const &result{m_route.result};
+	for (int i = 0; i < static_cast<int>(result.elements.size()); ++i)
+	{
+		auto const &element{result.elements[i]};
+		if (View.mouse.x < View.x_of(element.chainage) || View.mouse.x >= View.x_of(element.chainage + element.length))
+			continue;
+		View.under = i;
+		View.part = Roles[i].part;
+		View.arc = Roles[i].arc;
+		if (View.part == 1)
+		{
+			auto const from{View.x_of(element.chainage)};
+			auto const to{View.x_of(element.chainage + element.length)};
+			auto const edge{std::min(std::round(View.font * 0.5f), (to - from) * 0.25f)};
+			if (View.mouse.x < from + edge)
+				View.part = View.arc == 0 ? 2 : 4;
+			else if (View.mouse.x >= to - edge)
+			{
+				View.part = View.arc + 1 >= Arcs[element.vertex] ? 3 : 4;
+				View.arc += 1;
+			}
+		}
+		return;
+	}
+}
+
+bool editor_mode::route_band_drag(route_band_view const &View, bool const Active)
+{
+	auto &design{m_route.design};
+	auto &band{m_route.band};
+	auto const &result{m_route.result};
+	if (View.part != 0 && ImGui::IsItemActivated())
+	{
+		band.vertex = result.elements[View.under].vertex;
+		band.part = View.part;
+		band.arc = View.arc;
+		band.value = band_value(design.vertices[band.vertex], View.part, View.arc);
+		band.press = View.mouse;
+		band.metres = View.metres;
+		band.curvature = View.curvature;
+	}
+	if (false == (band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()) && Active))
+	{
+		if (View.dragging && false == Active)
+			band.vertex = -1;
+		return false;
+	}
+	auto &value{band_value(design.vertices[band.vertex], band.part, band.arc)};
+	double wanted{0.0};
+	if (band.part == 1)
+		wanted = route_band_radius(View);
+	else
+	{
+		// the transition in grows to the left, from where it starts; the others to the right
+		auto const shift{(View.mouse.x - band.press.x) / std::max(1e-6f, View.metres)};
+		wanted = std::max(0.0, std::round(band.value + (band.part == 2 ? -shift : shift)));
+	}
+	bool changed{false};
+	if (wanted != value)
+	{
+		value = wanted;
+		changed = true;
+	}
+	ImGui::SetMouseCursor(band.part == 1 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
+	return changed;
+}
+
+double editor_mode::route_band_radius(route_band_view const &View) const
+{
+	auto const &band{m_route.band};
+	int turn{1};
+	for (auto const &element : m_route.result.elements)
+		if (element.vertex == band.vertex && element.turn != 0)
+			turn = element.turn;
+	auto const start{View.y_of(turn / std::max(1.0, band.value)) + (View.mouse.y - band.press.y)};
+	auto const k{(View.axis - start) * View.flip * turn / std::max(1e-6f, View.curvature)};
+	return rounded_radius(1.0 / std::max(1e-5, static_cast<double>(k)));
+}
+
+bool editor_mode::route_band_wheel(route_band_view const &View)
+{
+	if (View.part == 0)
+		return false;
+	ImGui::SetMouseCursor(View.part == 1 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
+	auto const wheel{ImGui::GetIO().MouseWheel};
+	if (wheel == 0.0f)
+		return false;
+	auto &value{band_value(m_route.design.vertices[m_route.result.elements[View.under].vertex], View.part, View.arc)};
+	if (View.part == 1)
+		value = rounded_radius(value * (wheel > 0.0f ? 0.95 : 1.0 / 0.95));
+	else
+		value = std::max(0.0, std::round(value / 5.0) * 5.0 + (wheel > 0.0f ? 5.0 : -5.0));
+	return true;
+}
+
+void editor_mode::draw_route_band(route_band_view const &View, ImDrawList *List) const
+{
+	auto const &route{m_route};
+	auto const &result{route.result};
+	auto const disabled{ImGui::GetColorU32(ImGuiCol_TextDisabled)};
+	List->AddLine(ImVec2(View.inner_left, View.axis), ImVec2(View.inner_left + View.inner_width, View.axis), ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.5f));
+	auto hot_vertex{-1};
+	if (View.dragging)
+		hot_vertex = route.band.vertex;
+	else if (View.under >= 0)
+		hot_vertex = result.elements[View.under].vertex;
+	for (int i = 0; i < static_cast<int>(result.elements.size()); ++i)
+	{
+		auto const &element{result.elements[i]};
+		auto const [from, to]{signed_ends(element)};
+		ImVec2 const a{View.x_of(element.chainage), View.y_of(from)};
+		ImVec2 const b{View.x_of(element.chainage + element.length), View.y_of(to)};
+		auto const lit{element.vertex >= 0 && element.vertex == hot_vertex};
+		auto const tint{element_colour(element.kind)};
+		if (element.kind != alignment::element_kind::straight)
+			List->AddQuadFilled(ImVec2(a.x, View.axis), a, b, ImVec2(b.x, View.axis), (tint & ~IM_COL32_A_MASK) | (lit ? IM_COL32(0, 0, 0, 90) : IM_COL32(0, 0, 0, 40)));
+		List->AddLine(a, b, tint, lit ? 3.0f : 2.0f);
+		if (i > 0)
+			List->AddLine(ImVec2(a.x, View.axis - 3.0f), ImVec2(a.x, View.axis + 3.0f), disabled);
+	}
+}
+
+// the labels: the radius over its plateau, the transition lengths along the axis, the km of the ends at the bottom
+void editor_mode::draw_route_band_labels(route_band_view const &View, ImDrawList *List) const
+{
+	auto const &route{m_route};
+	auto const &result{route.result};
+	auto const disabled{ImGui::GetColorU32(ImGuiCol_TextDisabled)};
 	std::vector<std::pair<float, float>> taken;
-	auto const place = [&](float const Left, float const Right) {
-		for (auto const &[low, high] : taken)
-			if (Left < high + 4.0f && Right > low - 4.0f)
-				return false;
-		taken.emplace_back(Left, Right);
-		return true;
-	};
 	auto const start_km{format("km %s", profile::format_chainage(route.origin).c_str())};
 	auto const end_km{format("km %s", profile::format_chainage(route.origin + result.length).c_str())};
-	auto const label_y{bottom.y - pad * 0.25f - line};
+	auto const label_y{View.label_y()};
 	auto const start_size{ImGui::CalcTextSize(start_km.c_str())};
 	auto const end_size{ImGui::CalcTextSize(end_km.c_str())};
-	place(inner_left, inner_left + start_size.x);
-	list->AddText(ImVec2(inner_left, label_y), disabled, start_km.c_str());
-	if (place(inner_left + inner_width - end_size.x, inner_left + inner_width))
-		list->AddText(ImVec2(inner_left + inner_width - end_size.x, label_y), disabled, end_km.c_str());
+	place_label(taken, View.inner_left, View.inner_left + start_size.x);
+	List->AddText(ImVec2(View.inner_left, label_y), disabled, start_km.c_str());
+	if (place_label(taken, View.inner_left + View.inner_width - end_size.x, View.inner_left + View.inner_width))
+		List->AddText(ImVec2(View.inner_left + View.inner_width - end_size.x, label_y), disabled, end_km.c_str());
 	for (auto const &element : result.elements)
 	{
-		auto const from{x_of(element.chainage)};
-		auto const to{x_of(element.chainage + element.length)};
-		auto const middle{(from + to) * 0.5f};
-		if (dragging && element.vertex == band.vertex)
+		if (View.dragging && element.vertex == route.band.vertex)
 			continue;
 		if (element.kind == alignment::element_kind::arc || (element.kind == alignment::element_kind::spiral && element.curvature_start == element.curvature_end && element.radius > 0.0))
-		{
-			auto const &vertex{design.vertices[std::clamp(element.vertex, 0, static_cast<int>(design.vertices.size()) - 1)]};
-			auto text{format("R %.0f", element.radius)};
-			if (vertex.cant > 0.0)
-			{
-				auto const longer{text + format(" \xc2\xb7 %.0f mm", vertex.cant)};
-				if (ImGui::CalcTextSize(longer.c_str()).x <= to - from)
-					text = longer;
-			}
-			auto const size{ImGui::CalcTextSize(text.c_str())};
-			auto const y{ends(element).first * flip >= 0.0 ? y_of(ends(element).first) - size.y - 1.0f : y_of(ends(element).first) + 1.0f};
-			if (size.x <= std::max(to - from, size.x * 0.8f))
-				list->AddText(ImVec2(std::round(middle - size.x * 0.5f), std::round(std::max(top.y + 1.0f, y))), colour(element), text.c_str());
-		}
+			draw_band_radius(View, List, element);
 		else if (element.kind == alignment::element_kind::transition_in || element.kind == alignment::element_kind::transition_out)
-		{
-			auto const text{format("%.0f m", element.length)};
-			auto const size{ImGui::CalcTextSize(text.c_str())};
-			if (both)
-			{
-				auto const y{ends(element).first + ends(element).second > 0.0 ? axis + 2.0f : axis - size.y - 2.0f};
-				if (size.x <= to - from + 8.0f)
-					list->AddText(ImVec2(std::round(middle - size.x * 0.5f), std::round(y)), colour(element), text.c_str());
-			}
-			else if (place(middle - size.x * 0.5f, middle + size.x * 0.5f))
-				list->AddText(ImVec2(std::round(middle - size.x * 0.5f), label_y), colour(element), text.c_str());
-		}
+			draw_band_length(View, List, element, taken);
 	}
-	// the point under the mouse, shown in the view too
-	if (hovered || dragging)
-	{
-		auto const at{std::clamp(static_cast<double>((mouse.x - inner_left) / std::max(1e-6f, metres)), 0.0, result.length)};
-		band.at = at;
-		band.hot = dragging ? -1 : under;
-		if (false == dragging)
-			list->AddLine(ImVec2(mouse.x, plot_top), ImVec2(mouse.x, plot_bottom), IM_COL32(255, 255, 255, 60));
-	}
-	if (dragging && band.vertex >= 0 && band.vertex < static_cast<int>(design.vertices.size()))
-	{
-		auto const value{value_of(band.vertex, band.part, band.arc)};
-		auto const text{band.part == 1 ? format("R %.0f m", value) : format("%.0f m", value)};
-		auto const size{ImGui::CalcTextSize(text.c_str())};
-		ImVec2 const at{std::clamp(mouse.x + pad, top.x, bottom.x - size.x - pad), std::clamp(mouse.y - size.y - pad, top.y, bottom.y - size.y)};
-		list->AddRectFilled(ImVec2(at.x - 3.0f, at.y - 1.0f), ImVec2(at.x + size.x + 3.0f, at.y + size.y + 1.0f), IM_COL32(0, 0, 0, 170), 3.0f);
-		list->AddText(at, IM_COL32(255, 255, 255, 255), text.c_str());
-	}
-	ImGui::PopClipRect();
-	if (changed)
-		first_step_done(first_step::plan_band);
+}
 
-	if (part != 0 && false == dragging && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+void editor_mode::draw_band_radius(route_band_view const &View, ImDrawList *List, alignment::element const &Element) const
+{
+	auto const &design{m_route.design};
+	auto const from{View.x_of(Element.chainage)};
+	auto const to{View.x_of(Element.chainage + Element.length)};
+	auto const middle{(from + to) * 0.5f};
+	auto const &vertex{design.vertices[std::clamp(Element.vertex, 0, static_cast<int>(design.vertices.size()) - 1)]};
+	auto text{format("R %.0f", Element.radius)};
+	if (vertex.cant > 0.0)
 	{
-		auto const index{result.elements[under].vertex};
-		auto const &vertex{design.vertices[index]};
-		auto const value{value_of(index, part, arc)};
-		ImGui::BeginTooltip();
-		if (part == 1 && arcs[index] > 1)
-			ImGui::Text(STR_C("Curve %d, arc R%d: %.0f m"), index + 1, arc + 1, value);
-		else if (part == 1)
-			ImGui::Text(STR_C("Curve %d: R %.0f m, cant %.0f mm"), index + 1, value, vertex.cant);
-		else if (part == 4)
-			ImGui::Text(STR_C("Curve %d, transition between R%d and R%d: %.0f m"), index + 1, arc, arc + 1, value);
-		else if (part == 2)
-			ImGui::Text(STR_C("Transition into curve %d: %.0f m"), index + 1, value);
-		else
-			ImGui::Text(STR_C("Transition out of curve %d: %.0f m"), index + 1, value);
-		gesture_rows({{"Drag", part == 1 ? "up or down: the radius" : "sideways: the length"}, {"Wheel", part == 1 ? "the radius by 5%" : "the length by 5 m"}});
-		ImGui::EndTooltip();
+		auto const longer{text + format(" \xc2\xb7 %.0f mm", vertex.cant)};
+		if (ImGui::CalcTextSize(longer.c_str()).x <= to - from)
+			text = longer;
 	}
-	return changed;
+	auto const size{ImGui::CalcTextSize(text.c_str())};
+	auto const y{signed_ends(Element).first * View.flip >= 0.0 ? View.y_of(signed_ends(Element).first) - size.y - 1.0f : View.y_of(signed_ends(Element).first) + 1.0f};
+	if (size.x <= std::max(to - from, size.x * 0.8f))
+		List->AddText(ImVec2(std::round(middle - size.x * 0.5f), std::round(std::max(View.top.y + 1.0f, y))), element_colour(Element.kind), text.c_str());
+}
+
+void editor_mode::draw_band_length(route_band_view const &View, ImDrawList *List, alignment::element const &Element, std::vector<std::pair<float, float>> &Taken)
+{
+	auto const from{View.x_of(Element.chainage)};
+	auto const to{View.x_of(Element.chainage + Element.length)};
+	auto const middle{(from + to) * 0.5f};
+	auto const text{format("%.0f m", Element.length)};
+	auto const size{ImGui::CalcTextSize(text.c_str())};
+	if (View.both)
+	{
+		auto const y{signed_ends(Element).first + signed_ends(Element).second > 0.0 ? View.axis + 2.0f : View.axis - size.y - 2.0f};
+		if (size.x <= to - from + 8.0f)
+			List->AddText(ImVec2(std::round(middle - size.x * 0.5f), std::round(y)), element_colour(Element.kind), text.c_str());
+	}
+	else if (place_label(Taken, middle - size.x * 0.5f, middle + size.x * 0.5f))
+		List->AddText(ImVec2(std::round(middle - size.x * 0.5f), View.label_y()), element_colour(Element.kind), text.c_str());
+}
+
+void editor_mode::draw_route_band_value(route_band_view const &View, ImDrawList *List) const
+{
+	auto const &band{m_route.band};
+	auto const value{band_value(m_route.design.vertices[band.vertex], band.part, band.arc)};
+	auto const text{band.part == 1 ? format("R %.0f m", value) : format("%.0f m", value)};
+	auto const size{ImGui::CalcTextSize(text.c_str())};
+	ImVec2 const at{std::clamp(View.mouse.x + View.pad, View.top.x, View.bottom.x - size.x - View.pad), std::clamp(View.mouse.y - size.y - View.pad, View.top.y, View.bottom.y - size.y)};
+	List->AddRectFilled(ImVec2(at.x - 3.0f, at.y - 1.0f), ImVec2(at.x + size.x + 3.0f, at.y + size.y + 1.0f), IM_COL32(0, 0, 0, 170), 3.0f);
+	List->AddText(at, IM_COL32(255, 255, 255, 255), text.c_str());
+}
+
+void editor_mode::route_band_tooltip(route_band_view const &View, std::vector<int> const &Arcs) const
+{
+	auto const part{View.part};
+	auto const arc{View.arc};
+	auto const index{m_route.result.elements[View.under].vertex};
+	auto const &vertex{m_route.design.vertices[index]};
+	auto const value{band_value(vertex, part, arc)};
+	ImGui::BeginTooltip();
+	if (part == 1 && Arcs[index] > 1)
+		ImGui::Text(STR_C("Curve %d, arc R%d: %.0f m"), index + 1, arc + 1, value);
+	else if (part == 1)
+		ImGui::Text(STR_C("Curve %d: R %.0f m, cant %.0f mm"), index + 1, value, vertex.cant);
+	else if (part == 4)
+		ImGui::Text(STR_C("Curve %d, transition between R%d and R%d: %.0f m"), index + 1, arc, arc + 1, value);
+	else if (part == 2)
+		ImGui::Text(STR_C("Transition into curve %d: %.0f m"), index + 1, value);
+	else
+		ImGui::Text(STR_C("Transition out of curve %d: %.0f m"), index + 1, value);
+	gesture_rows({{"Drag", part == 1 ? "up or down: the radius" : "sideways: the length"}, {"Wheel", part == 1 ? "the radius by 5%" : "the length by 5 m"}});
+	ImGui::EndTooltip();
 }
 
 bool editor_mode::render_route_parameters()
@@ -2111,90 +2424,115 @@ bool editor_mode::render_route_vertex(int const Index)
 	// a transition or a cant changed, the edit done: the curve fitted to the points clicked again, its radii given by them
 	bool settled{false};
 	using part = route_design::curve_focus::part;
-	// the field just drawn shows its part of the curve in the view while the mouse is over it or it's being edited
-	auto const mark = [&](part const What, int const Arc) {
-		if (ImGui::IsItemActive())
-			route.focus = {Index, What, Arc, true};
-		else if (false == route.focus.held && ImGui::IsItemHovered())
-			route.focus = {Index, What, Arc, false};
-	};
 	ImGui::BeginGroup();
 	// named as the vertex is in the view, W1, W2..., with where it lies along the line
-	{
-		auto from{-1.0};
-		auto to{-1.0};
-		for (auto const &e : route.result.elements)
-			if (e.vertex == Index)
-			{
-				from = from < 0.0 ? e.chainage : from;
-				to = e.chainage + e.length;
-			}
-		auto title{format(STR_C("Curve W%d"), Index + 1)};
-		if (from >= 0.0)
-			title += format("   km %s - %s", profile::format_chainage(route.origin + from).c_str(), profile::format_chainage(route.origin + to).c_str());
-		// the vertex picked in the view stands out
-		auto const picked{route.vertex == Index || route.grip == Index};
-		if (picked)
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(overlay_color::highlight));
-		ImGui::SeparatorText(title.c_str());
-		if (picked)
-			ImGui::PopStyleColor();
-		mark(part::whole, 0);
-		if (from >= 0.0)
-		{
-			if (ImGui::SmallButton(STR_C("Show in the view")))
-				route_show_curve(from, to);
-			item_tooltip("The camera flies over the curve, which is lit up in the view while the mouse is over its fields");
-			mark(part::whole, 0);
-		}
-		// how far the curve is from the points clicked along it when it was laid
-		std::size_t clicked{0};
-		double sum{0.0};
-		double worst{0.0};
-		for (auto const &state : route.click_states)
-			if (state.vertex == Index && false == state.corner && std::abs(state.offset) <= 3.0)
-			{
-				++clicked;
-				sum += state.offset * state.offset;
-				worst = std::max(worst, std::abs(state.offset));
-			}
-		if (clicked > 0)
-		{
-			ImGui::SameLine();
-			ImVec4 colour{1.0f, 0.35f, 0.27f, 1.0f};
-			if (worst <= 0.1)
-				colour = ImVec4(0.35f, 0.86f, 0.43f, 1.0f);
-			else if (worst <= 0.3)
-				colour = ImVec4(1.0f, 0.78f, 0.24f, 1.0f);
-			ImGui::TextColored(colour, STR_C("points clicked %zu: %.0f cm on average, at most %.0f cm"), clicked, std::sqrt(sum / static_cast<double>(clicked)) * 100.0, worst * 100.0);
-			item_tooltip("The points clicked along the curve when it was laid, kept in the scenery, and how far the curve is from them now");
-			mark(part::whole, 0);
-			if (clicked >= 3)
-			{
-				ImGui::SameLine();
-				if (ImGui::SmallButton(STR_C("Fit to them")))
-					changed |= route_hold_clicks(Index);
-				item_tooltip("The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are");
-			}
-		}
-	}
+	changed |= route_vertex_heading(Index);
 	// two fields in a row, the name and the unit inside them, a bar in the colour of the element in the band and in the view
 	auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
-	auto const field = [&](char const *Id, double &Value, float const Speed, char const *Format, ImU32 const Colour, char const *Tooltip, part const What) {
-		ImGui::SetNextItemWidth(half);
-		auto const edited{ImGui::DragScalar(Id, ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format)};
-		// the radius is the user's own, the curve no longer fitted after it
-		settled |= What != part::radius_arc && ImGui::IsItemDeactivatedAfterEdit();
-		mark(What, 0);
-		auto const low{ImGui::GetItemRectMin()};
-		auto const high{ImGui::GetItemRectMax()};
-		ImGui::GetWindowDrawList()->AddRectFilled(low, ImVec2(low.x + 3.0f, high.y), Colour, 2.0f, ImDrawFlags_RoundCornersLeft);
-		item_tooltip(Tooltip);
-		return edited;
-	};
-	ImU32 const transition{IM_COL32(255, 140, 30, 255)};
-	// the first curve, or the last one, may go on from the curve of the track adjoining at that end: it begins right there, its radius
-	// the one which begins it there, its entry, or exit, the transition between the two curves
+	changed |= route_vertex_curved_ends(Index);
+	changed |= route_vertex_fields(Index, half, settled);
+	ImGui::PushItemWidth(110.0f);
+	changed |= render_vertex_kind(vertex);
+	if (vertex.compound)
+		changed |= route_vertex_arcs(Index, settled);
+	ImGui::PopItemWidth();
+	vertex.radius = std::max(1.0, vertex.radius);
+	vertex.transition_in = std::max(0.0, vertex.transition_in);
+	vertex.transition_out = std::max(0.0, vertex.transition_out);
+	vertex.cant = std::max(0.0, vertex.cant);
+	changed |= route_vertex_reshape(Index);
+	changed |= route_vertex_ramps(Index, half);
+	changed |= route_vertex_details(Index);
+	ImGui::EndGroup();
+	if (route.focus.vertex != Index && false == route.focus.held && ImGui::IsItemHovered())
+		route.focus = {Index, part::whole, 0, false};
+	if (settled && route.hold)
+		changed |= route_hold_clicks(Index);
+	return changed;
+}
+
+void editor_mode::route_mark(int const Index, route_design::curve_focus::part const What, int const Arc)
+{
+	if (ImGui::IsItemActive())
+		m_route.focus = {Index, What, Arc, true};
+	else if (false == m_route.focus.held && ImGui::IsItemHovered())
+		m_route.focus = {Index, What, Arc, false};
+}
+
+bool editor_mode::route_vertex_heading(int const Index)
+{
+	using part = route_design::curve_focus::part;
+	auto const &route{m_route};
+	auto from{-1.0};
+	auto to{-1.0};
+	for (auto const &e : route.result.elements)
+		if (e.vertex == Index)
+		{
+			from = from < 0.0 ? e.chainage : from;
+			to = e.chainage + e.length;
+		}
+	auto title{format(STR_C("Curve W%d"), Index + 1)};
+	if (from >= 0.0)
+		title += format("   km %s - %s", profile::format_chainage(route.origin + from).c_str(), profile::format_chainage(route.origin + to).c_str());
+	// the vertex picked in the view stands out
+	auto const picked{route.vertex == Index || route.grip == Index};
+	if (picked)
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(overlay_color::highlight));
+	ImGui::SeparatorText(title.c_str());
+	if (picked)
+		ImGui::PopStyleColor();
+	route_mark(Index, part::whole, 0);
+	if (from >= 0.0)
+	{
+		if (ImGui::SmallButton(STR_C("Show in the view")))
+			route_show_curve(from, to);
+		item_tooltip("The camera flies over the curve, which is lit up in the view while the mouse is over its fields");
+		route_mark(Index, part::whole, 0);
+	}
+	return route_vertex_clicks(Index);
+}
+
+// how far the curve is from the points clicked along it when it was laid
+bool editor_mode::route_vertex_clicks(int const Index)
+{
+	using part = route_design::curve_focus::part;
+	std::size_t clicked{0};
+	double sum{0.0};
+	double worst{0.0};
+	for (auto const &state : m_route.click_states)
+		if (state.vertex == Index && false == state.corner && std::abs(state.offset) <= 3.0)
+		{
+			++clicked;
+			sum += state.offset * state.offset;
+			worst = std::max(worst, std::abs(state.offset));
+		}
+	if (clicked == 0)
+		return false;
+	ImGui::SameLine();
+	ImVec4 colour{1.0f, 0.35f, 0.27f, 1.0f};
+	if (worst <= 0.1)
+		colour = ImVec4(0.35f, 0.86f, 0.43f, 1.0f);
+	else if (worst <= 0.3)
+		colour = ImVec4(1.0f, 0.78f, 0.24f, 1.0f);
+	ImGui::TextColored(colour, STR_C("points clicked %zu: %.0f cm on average, at most %.0f cm"), clicked, std::sqrt(sum / static_cast<double>(clicked)) * 100.0, worst * 100.0);
+	item_tooltip("The points clicked along the curve when it was laid, kept in the scenery, and how far the curve is from them now");
+	route_mark(Index, part::whole, 0);
+	if (clicked < 3)
+		return false;
+	ImGui::SameLine();
+	bool changed{false};
+	if (ImGui::SmallButton(STR_C("Fit to them")))
+		changed = route_hold_clicks(Index);
+	item_tooltip("The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are");
+	return changed;
+}
+
+// the first curve, or the last one, may go on from the curve of the track adjoining at that end: it begins right there, its radius
+// the one which begins it there, its entry, or exit, the transition between the two curves
+bool editor_mode::route_vertex_curved_ends(int const Index)
+{
+	auto &design{m_route.design};
+	bool changed{false};
 	auto const count{static_cast<int>(design.vertices.size())};
 	for (auto const atend : {false, true})
 	{
@@ -2206,6 +2544,27 @@ bool editor_mode::render_route_vertex(int const Index)
 		item_tooltip("The curve begins right at the end of the fragment, at the curvature of the track adjoining there, where it turns the same way; its radius is the one "
 		             "which begins it there, the transition at that end goes between the two curves");
 	}
+	return changed;
+}
+
+bool editor_mode::route_vertex_fields(int const Index, float const Half, bool &Settled)
+{
+	using part = route_design::curve_focus::part;
+	auto &vertex{m_route.design.vertices[Index]};
+	auto const field = [this, Index, Half, &Settled](char const *Id, double &Value, float const Speed, char const *Format, ImU32 const Colour, char const *Tooltip, part const What) {
+		ImGui::SetNextItemWidth(Half);
+		auto const edited{ImGui::DragScalar(Id, ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format)};
+		// the radius is the user's own, the curve no longer fitted after it
+		Settled |= What != part::radius_arc && ImGui::IsItemDeactivatedAfterEdit();
+		route_mark(Index, What, 0);
+		auto const low{ImGui::GetItemRectMin()};
+		auto const high{ImGui::GetItemRectMax()};
+		ImGui::GetWindowDrawList()->AddRectFilled(low, ImVec2(low.x + 3.0f, high.y), Colour, 2.0f, ImDrawFlags_RoundCornersLeft);
+		item_tooltip(Tooltip);
+		return edited;
+	};
+	ImU32 const transition{IM_COL32(255, 140, 30, 255)};
+	bool changed{false};
 	changed |= field("##radius", vertex.radius, 5.0f, vertex.compound ? STR_C("R1 %.0f m") : STR_C("R %.0f m"), overlay_color::grip, "Radius of the arc: drag sideways, or a double click to type it", part::radius_arc);
 	ImGui::SameLine();
 	changed |= field("##cant", vertex.cant, 1.0f, STR_C("cant %.0f mm"), IM_COL32(240, 170, 60, 255),
@@ -2215,195 +2574,206 @@ bool editor_mode::render_route_vertex(int const Index)
 	changed |= field("##entry", vertex.transition_in, 1.0f, STR_C("entry %.0f m"), transition, "Length of the transition curve leading into the arc", part::entry);
 	ImGui::SameLine();
 	changed |= field("##exit", vertex.transition_out, 1.0f, STR_C("exit %.0f m"), transition, "Length of the transition curve leading out of the arc", part::exit);
-	ImGui::PushItemWidth(110.0f);
-	if (ImGui::Checkbox(STR_C("Two transition curves, no arc"), &vertex.spirals))
+	return changed;
+}
+
+bool editor_mode::route_vertex_arcs(int const Index, bool &Settled)
+{
+	using part = route_design::curve_focus::part;
+	auto &vertex{m_route.design.vertices[Index]};
+	bool changed{false};
+	auto total{std::max(0.0, vertex.share)};
+	for (auto const &arc : vertex.arcs)
+		total += std::max(0.0, arc.share);
+	auto const cants{alignment::compound_cants(vertex)};
+	changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), 1).c_str(), ImGuiDataType_Double, &vertex.share, 0.01f, nullptr, nullptr, "%.2f");
+	route_mark(Index, part::radius_arc, 0);
+	ImGui::SameLine();
+	ImGui::TextDisabled("%.0f%%", share_percent(vertex.share, total));
+	changed |= route_arc_cant(Index, 0, vertex.first_cant, cants, Settled);
+	int removed{-1};
+	for (int k = 0; k < static_cast<int>(vertex.arcs.size()); ++k)
+		changed |= route_vertex_arc(Index, k, total, cants, Settled, removed);
+	vertex.share = std::max(0.0, vertex.share);
+	if (removed >= 0)
 	{
-		changed = true;
-		if (vertex.spirals)
+		vertex.arcs.erase(vertex.arcs.begin() + removed);
+		if (vertex.arcs.empty())
 			vertex.compound = false;
-	}
-	item_tooltip("The bend eased the way the lines are drawn: two transition curves meeting at the radius, with no arc between them and no cant; their lengths follow from the radius and the angle");
-	if (false == vertex.spirals && ImGui::Checkbox(STR_C("Compound curve (several radii)"), &vertex.compound))
-	{
 		changed = true;
-		if (vertex.compound && vertex.arcs.empty())
-			vertex.arcs.emplace_back(std::max(10.0, std::round(vertex.radius * 0.6 / 10.0) * 10.0), 0.0, 1.0);
+	}
+	if (ImGui::SmallButton(STR_C("Add a radius")))
+	{
+		auto const last{vertex.arcs.empty() ? vertex.radius : vertex.arcs.back().radius};
+		vertex.arcs.emplace_back(std::max(10.0, std::round(last * 0.8 / 10.0) * 10.0), 0.0, 1.0);
+		changed = true;
+	}
+	item_tooltip("Another arc after the last one, the angle of the curve is shared out by the shares");
+	ImGui::Separator();
+	return changed;
+}
+
+bool editor_mode::route_vertex_arc(int const Index, int const K, double const Total, std::vector<double> const &Cants, bool &Settled, int &Removed)
+{
+	using part = route_design::curve_focus::part;
+	auto &arc{m_route.design.vertices[Index].arcs[K]};
+	bool changed{false};
+	ImGui::PushID(K);
+	ImGui::Separator();
+	changed |= ImGui::DragScalar(format(STR_C("Radius R%d (m)"), K + 2).c_str(), ImGuiDataType_Double, &arc.radius, 5.0f, nullptr, nullptr, "%.0f");
+	route_mark(Index, part::radius_arc, K + 1);
+	ImGui::SameLine();
+	if (ImGui::SmallButton("x"))
+		Removed = K;
+	item_tooltip("Takes this radius out of the curve");
+	route_mark(Index, part::radius_arc, K + 1);
+	changed |= ImGui::DragScalar(format(STR_C("Transition R%d-R%d (m)"), K + 1, K + 2).c_str(), ImGuiDataType_Double, &arc.transition, 1.0f, nullptr, nullptr, "%.0f");
+	Settled |= ImGui::IsItemDeactivatedAfterEdit();
+	route_mark(Index, part::between, K + 1);
+	changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), K + 2).c_str(), ImGuiDataType_Double, &arc.share, 0.01f, nullptr, nullptr, "%.2f");
+	route_mark(Index, part::radius_arc, K + 1);
+	ImGui::SameLine();
+	ImGui::TextDisabled("%.0f%%", share_percent(arc.share, Total));
+	changed |= route_arc_cant(Index, K + 1, arc.cant, Cants, Settled);
+	arc.radius = std::max(1.0, arc.radius);
+	arc.transition = std::max(0.0, arc.transition);
+	arc.share = std::max(0.0, arc.share);
+	ImGui::PopID();
+	return changed;
+}
+
+// the cant of one arc: the one in proportion to the curvature until it's given its own
+bool editor_mode::route_arc_cant(int const Index, int const Arc, double &Cant, std::vector<double> const &Cants, bool &Settled)
+{
+	using part = route_design::curve_focus::part;
+	auto value{static_cast<std::size_t>(Arc) < Cants.size() ? Cants[Arc] : std::max(0.0, Cant)};
+	auto edited{ImGui::DragScalar(format(STR_C("Cant of R%d (mm)"), Arc + 1).c_str(), ImGuiDataType_Double, &value, 1.0f, nullptr, nullptr, "%.0f")};
+	Settled |= ImGui::IsItemDeactivatedAfterEdit();
+	route_mark(Index, part::radius_arc, Arc);
+	if (edited)
+		Cant = std::max(0.0, value);
+	item_tooltip("The cant of this arc, ramped along the transition curves to the arcs either side of it; until it's set here, the cant of the curve in proportion to the curvature of the arc");
+	ImGui::SameLine();
+	if (Cant < 0.0)
+		ImGui::TextDisabled("%s", STR_C("auto"));
+	else if (ImGui::SmallButton(STR_C("auto")))
+	{
+		Cant = -1.0;
+		edited = true;
+		Settled = true;
+	}
+	item_tooltip("The cant of the arc in proportion to its curvature again");
+	return edited;
+}
+
+bool editor_mode::route_vertex_reshape(int const Index)
+{
+	using part = route_design::curve_focus::part;
+	auto &route{m_route};
+	auto &design{route.design};
+	auto &vertex{design.vertices[Index]};
+	bool changed{false};
+	// the transitions follow the radii, which follow the points clicked: a few rounds settle them
+	auto const reshape = [this, Index, &route, &changed](auto const &Shape) {
+		for (int pass = 0; pass < 3; ++pass)
+		{
+			Shape();
+			if (false == route.hold || false == route_hold_clicks(Index))
+				break;
+		}
+		changed = true;
+	};
+	if (ImGui::SmallButton(STR_C("Apply recommended for V")))
+		reshape([this, &vertex] { route_recommend(vertex); });
+	if (ImGui::IsItemHovered())
+	{
+		auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
+		ImGui::SetTooltip("%s\n%s", STR_C("Cant and transitions recommended for the design speed and the radius"),
+		                  format(STR_C("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m"), design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition).c_str());
 	}
 	if (false == vertex.spirals)
-		item_tooltip("Curve made of arcs of different radii, each one its own path, joined with transitions");
-	if (vertex.compound)
 	{
-		auto total{std::max(0.0, vertex.share)};
-		for (auto const &arc : vertex.arcs)
-			total += std::max(0.0, arc.share);
-		auto const percent = [&](double const Share) { return total > 0.0 ? 100.0 * std::max(0.0, Share) / total : 0.0; };
-		auto const cants{alignment::compound_cants(vertex)};
-		// the cant of one arc: the one in proportion to the curvature until it's given its own
-		auto const arc_cant = [&](int const Arc, double &Cant) {
-			auto value{static_cast<std::size_t>(Arc) < cants.size() ? cants[Arc] : std::max(0.0, Cant)};
-			auto edited{ImGui::DragScalar(format(STR_C("Cant of R%d (mm)"), Arc + 1).c_str(), ImGuiDataType_Double, &value, 1.0f, nullptr, nullptr, "%.0f")};
-			settled |= ImGui::IsItemDeactivatedAfterEdit();
-			mark(part::radius_arc, Arc);
-			if (edited)
-				Cant = std::max(0.0, value);
-			item_tooltip("The cant of this arc, ramped along the transition curves to the arcs either side of it; until it's set here, the cant of the curve in proportion to the curvature of the arc");
-			ImGui::SameLine();
-			if (Cant < 0.0)
-				ImGui::TextDisabled("%s", STR_C("auto"));
-			else if (ImGui::SmallButton(STR_C("auto")))
-			{
-				Cant = -1.0;
-				edited = true;
-				settled = true;
-			}
-			item_tooltip("The cant of the arc in proportion to its curvature again");
-			return edited;
-		};
-		changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), 1).c_str(), ImGuiDataType_Double, &vertex.share, 0.01f, nullptr, nullptr, "%.2f");
-		mark(part::radius_arc, 0);
 		ImGui::SameLine();
-		ImGui::TextDisabled("%.0f%%", percent(vertex.share));
-		changed |= arc_cant(0, vertex.first_cant);
-		int removed{-1};
-		for (int k = 0; k < static_cast<int>(vertex.arcs.size()); ++k)
-		{
-			auto &arc{vertex.arcs[k]};
-			ImGui::PushID(k);
-			ImGui::Separator();
-			changed |= ImGui::DragScalar(format(STR_C("Radius R%d (m)"), k + 2).c_str(), ImGuiDataType_Double, &arc.radius, 5.0f, nullptr, nullptr, "%.0f");
-			mark(part::radius_arc, k + 1);
-			ImGui::SameLine();
-			if (ImGui::SmallButton("x"))
-				removed = k;
-			item_tooltip("Takes this radius out of the curve");
-			mark(part::radius_arc, k + 1);
-			changed |= ImGui::DragScalar(format(STR_C("Transition R%d-R%d (m)"), k + 1, k + 2).c_str(), ImGuiDataType_Double, &arc.transition, 1.0f, nullptr, nullptr, "%.0f");
-			settled |= ImGui::IsItemDeactivatedAfterEdit();
-			mark(part::between, k + 1);
-			changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), k + 2).c_str(), ImGuiDataType_Double, &arc.share, 0.01f, nullptr, nullptr, "%.2f");
-			mark(part::radius_arc, k + 1);
-			ImGui::SameLine();
-			ImGui::TextDisabled("%.0f%%", percent(arc.share));
-			changed |= arc_cant(k + 1, arc.cant);
-			arc.radius = std::max(1.0, arc.radius);
-			arc.transition = std::max(0.0, arc.transition);
-			arc.share = std::max(0.0, arc.share);
-			ImGui::PopID();
-		}
-		vertex.share = std::max(0.0, vertex.share);
-		if (removed >= 0)
-		{
-			vertex.arcs.erase(vertex.arcs.begin() + removed);
-			if (vertex.arcs.empty())
-				vertex.compound = false;
-			changed = true;
-		}
-		if (ImGui::SmallButton(STR_C("Add a radius")))
-		{
-			auto const last{vertex.arcs.empty() ? vertex.radius : vertex.arcs.back().radius};
-			vertex.arcs.emplace_back(std::max(10.0, std::round(last * 0.8 / 10.0) * 10.0), 0.0, 1.0);
-			changed = true;
-		}
-		item_tooltip("Another arc after the last one, the angle of the curve is shared out by the shares");
-		ImGui::Separator();
+		if (ImGui::SmallButton(STR_C("Transitions for these cants")))
+			reshape([&vertex, &design] { alignment::norm_transitions(vertex, design.speed, design.norms); });
+		item_tooltip("The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones");
+		route_mark(Index, part::whole, 0);
 	}
-	ImGui::PopItemWidth();
-	vertex.radius = std::max(1.0, vertex.radius);
-	vertex.transition_in = std::max(0.0, vertex.transition_in);
-	vertex.transition_out = std::max(0.0, vertex.transition_out);
-	vertex.cant = std::max(0.0, vertex.cant);
+	return changed;
+}
+
+// the cant ramps at the ends of the curve: along its transitions, or where they're put, off a switch laid on a transition say
+bool editor_mode::route_vertex_ramps(int const Index, float const Half)
+{
+	if (m_route.design.vertices[Index].spirals || false == ImGui::TreeNode(STR_C("Cant ramps")))
+		return false;
+	std::vector<alignment::result::cant_ramp> ramps;
+	for (auto const &ramp : m_route.result.ramps)
+		if (ramp.vertex == Index)
+			ramps.push_back(ramp);
+	bool changed{route_cant_ramp(Index, false, ramps.empty() ? nullptr : &ramps[0], Half)};
+	changed |= route_cant_ramp(Index, true, ramps.size() > 1 ? &ramps[1] : nullptr, Half);
+	ImGui::TreePop();
+	return changed;
+}
+
+bool editor_mode::route_cant_ramp(int const Index, bool const Out, alignment::result::cant_ramp const *Ramp, float const Half)
+{
+	using part = route_design::curve_focus::part;
+	auto &vertex{m_route.design.vertices[Index]};
+	auto &offset{Out ? vertex.ramp_out_offset : vertex.ramp_in_offset};
+	auto &length{Out ? vertex.ramp_out_length : vertex.ramp_in_length};
+	auto const what{Out ? part::exit : part::entry};
+	bool changed{false};
+	ImGui::PushID(Out ? "out" : "in");
+	auto along{length < 0.0};
+	if (ImGui::Checkbox(Out ? STR_C("Ramp out along the transition curve") : STR_C("Ramp in along the transition curve"), &along))
 	{
-		// the transitions follow the radii, which follow the points clicked: a few rounds settle them
-		auto const reshape = [&](auto const &Shape) {
-			for (int pass = 0; pass < 3; ++pass)
-			{
-				Shape();
-				if (false == route.hold || false == route_hold_clicks(Index))
-					break;
-			}
-			changed = true;
-		};
-		if (ImGui::SmallButton(STR_C("Apply recommended for V")))
-			reshape([this, &vertex] { route_recommend(vertex); });
-		if (ImGui::IsItemHovered())
-		{
-			auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
-			ImGui::SetTooltip("%s\n%s", STR_C("Cant and transitions recommended for the design speed and the radius"),
-			                  format(STR_C("For %.0f km/h: R min %.0f m, cant %.0f mm (equilibrium %.0f, min %.0f), transition %.0f m"), design.speed, recommended.radius_min, recommended.cant, recommended.cant_equilibrium, recommended.cant_min, recommended.transition).c_str());
-		}
-		if (false == vertex.spirals)
-		{
-			ImGui::SameLine();
-			if (ImGui::SmallButton(STR_C("Transitions for these cants")))
-				reshape([&vertex, &design] { alignment::norm_transitions(vertex, design.speed, design.norms); });
-			item_tooltip("The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones");
-			mark(part::whole, 0);
-		}
+		// let go of the transition where it lay along it, to be moved from there
+		if (along)
+			length = -1.0;
+		else if (Ramp != nullptr)
+			length = Ramp->to - Ramp->from;
+		else
+			length = 0.0;
+		offset = 0.0;
+		changed = true;
 	}
-	// the cant ramps at the ends of the curve: along its transitions, or where they're put, off a switch laid on a transition say
-	if (false == vertex.spirals && ImGui::TreeNode(STR_C("Cant ramps")))
+	route_mark(Index, what, 0);
+	item_tooltip("The norms recommend the cant ramp along the transition curve; off it, it may lie on the straight before the curve or on the arc, a switch on the transition keeping the same cant all along");
+	if (false == along)
 	{
-		std::vector<alignment::result::cant_ramp> ramps;
-		for (auto const &ramp : route.result.ramps)
-			if (ramp.vertex == Index)
-				ramps.push_back(ramp);
-		auto const ramp = [&](char const *Id, char const *Label, double &Offset, double &Length, std::size_t const Which, part const What) {
-			ImGui::PushID(Id);
-			auto along{Length < 0.0};
-			if (ImGui::Checkbox(Label, &along))
-			{
-				// let go of the transition where it lay along it, to be moved from there
-				if (along)
-					Length = -1.0;
-				else if (Which < ramps.size())
-					Length = ramps[Which].to - ramps[Which].from;
-				else
-					Length = 0.0;
-				Offset = 0.0;
-				changed = true;
-			}
-			mark(What, 0);
-			item_tooltip("The norms recommend the cant ramp along the transition curve; off it, it may lie on the straight before the curve or on the arc, a switch on the transition keeping the same cant all along");
-			if (false == along)
-			{
-				ImGui::SetNextItemWidth(half);
-				changed |= ImGui::DragScalar("##offset", ImGuiDataType_Double, &Offset, 0.5f, nullptr, nullptr, STR_C("into the curve %.1f m"));
-				mark(What, 0);
-				item_tooltip("How far the outer end of the ramp lies into the curve from its end, below 0 out along the straight before it");
-				ImGui::SameLine();
-				ImGui::SetNextItemWidth(half);
-				changed |= ImGui::DragScalar("##length", ImGuiDataType_Double, &Length, 0.5f, nullptr, nullptr, STR_C("length %.1f m"));
-				mark(What, 0);
-				item_tooltip("The length of the ramp, the cant rising evenly along it");
-				Length = std::max(0.0, Length);
-			}
-			if (Which < ramps.size() && ramps[Which].to > ramps[Which].from)
-				ImGui::TextDisabled(STR_C("km %s - %s, %.2f mm/m"), profile::format_chainage(route.origin + ramps[Which].from).c_str(), profile::format_chainage(route.origin + ramps[Which].to).c_str(),
-				                    ramps[Which].cant / (ramps[Which].to - ramps[Which].from));
-			ImGui::PopID();
-		};
-		ramp("in", STR_C("Ramp in along the transition curve"), vertex.ramp_in_offset, vertex.ramp_in_length, 0, part::entry);
-		ramp("out", STR_C("Ramp out along the transition curve"), vertex.ramp_out_offset, vertex.ramp_out_length, 1, part::exit);
-		ImGui::TreePop();
+		ImGui::SetNextItemWidth(Half);
+		changed |= ImGui::DragScalar("##offset", ImGuiDataType_Double, &offset, 0.5f, nullptr, nullptr, STR_C("into the curve %.1f m"));
+		route_mark(Index, what, 0);
+		item_tooltip("How far the outer end of the ramp lies into the curve from its end, below 0 out along the straight before it");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(Half);
+		changed |= ImGui::DragScalar("##length", ImGuiDataType_Double, &length, 0.5f, nullptr, nullptr, STR_C("length %.1f m"));
+		route_mark(Index, what, 0);
+		item_tooltip("The length of the ramp, the cant rising evenly along it");
+		length = std::max(0.0, length);
 	}
-	if (ImGui::TreeNode(STR_C("Details")))
+	if (Ramp != nullptr && Ramp->to > Ramp->from)
+		ImGui::TextDisabled(STR_C("km %s - %s, %.2f mm/m"), profile::format_chainage(m_route.origin + Ramp->from).c_str(), profile::format_chainage(m_route.origin + Ramp->to).c_str(), Ramp->cant / (Ramp->to - Ramp->from));
+	ImGui::PopID();
+	return changed;
+}
+
+bool editor_mode::route_vertex_details(int const Index)
+{
+	if (false == ImGui::TreeNode(STR_C("Details")))
+		return false;
+	for (auto const &curve : m_route.result.curves)
 	{
-		for (auto const &curve : route.result.curves)
-		{
-			if (curve.vertex != Index)
-				continue;
-			ImGui::Text(STR_C("Deflection %.4f deg, tangents %.2f / %.2f m, arc %.2f m"), glm::degrees(curve.deflection), curve.tangent_in, curve.tangent_out, curve.arc_length);
-			ImGui::Text(STR_C("Unbalanced acc. %.3f m/s2, cant rate %.1f / %.1f mm/s, acc. rate %.3f / %.3f m/s3"), curve.unbalanced, curve.cant_rate_in, curve.cant_rate_out, curve.jerk_in, curve.jerk_out);
-		}
-		changed |= ImGui::Checkbox(STR_C("Turn the longer way (over 180 deg)"), &vertex.reverse_turn);
-		item_tooltip("For the loops: the curve turns by more than a half circle");
-		ImGui::TreePop();
+		if (curve.vertex != Index)
+			continue;
+		ImGui::Text(STR_C("Deflection %.4f deg, tangents %.2f / %.2f m, arc %.2f m"), glm::degrees(curve.deflection), curve.tangent_in, curve.tangent_out, curve.arc_length);
+		ImGui::Text(STR_C("Unbalanced acc. %.3f m/s2, cant rate %.1f / %.1f mm/s, acc. rate %.3f / %.3f m/s3"), curve.unbalanced, curve.cant_rate_in, curve.cant_rate_out, curve.jerk_in, curve.jerk_out);
 	}
-	ImGui::EndGroup();
-	if (route.focus.vertex != Index && false == route.focus.held && ImGui::IsItemHovered())
-		route.focus = {Index, part::whole, 0, false};
-	if (settled && route.hold)
-		changed |= route_hold_clicks(Index);
+	auto const changed{ImGui::Checkbox(STR_C("Turn the longer way (over 180 deg)"), &m_route.design.vertices[Index].reverse_turn)};
+	item_tooltip("For the loops: the curve turns by more than a half circle");
+	ImGui::TreePop();
 	return changed;
 }
 
