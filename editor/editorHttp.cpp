@@ -33,6 +33,41 @@ struct client::platform
 
 #if defined(_WIN32)
 
+namespace
+{
+
+// the body of the response read into Out. returns: false when it fails or is given up, why in Error
+bool read_response(HINTERNET const Request, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
+{
+	for (;;)
+	{
+		if (Stop())
+		{
+			Error = "cancelled";
+			return false;
+		}
+		DWORD available{0};
+		if (!::WinHttpQueryDataAvailable(Request, &available))
+		{
+			Error = "WinHTTP error " + std::to_string(::GetLastError());
+			return false;
+		}
+		if (available == 0)
+			return true;
+		std::size_t const offset = Out.size();
+		Out.resize(offset + available);
+		DWORD received{0};
+		if (!::WinHttpReadData(Request, Out.data() + offset, available, &received))
+		{
+			Error = "WinHTTP error " + std::to_string(::GetLastError());
+			return false;
+		}
+		Out.resize(offset + received);
+	}
+}
+
+} // namespace
+
 client::client() :
 	m_platform(std::make_unique<platform>())
 {
@@ -52,7 +87,7 @@ client::~client()
 		::WinHttpCloseHandle(m_platform->session);
 }
 
-bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
+bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop) const
 {
 	Out.clear();
 	if (m_platform->session == nullptr)
@@ -98,35 +133,10 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	DWORD statussize{sizeof(status)};
 	::WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &statussize, WINHTTP_NO_HEADER_INDEX);
 
-	for (;;)
-	{
-		if (Stop())
-		{
-			Error = "cancelled";
-			close();
-			return false;
-		}
-		DWORD available{0};
-		if (!::WinHttpQueryDataAvailable(request, &available))
-		{
-			Error = "WinHTTP error " + std::to_string(::GetLastError());
-			close();
-			return false;
-		}
-		if (available == 0)
-			break;
-		std::size_t const offset = Out.size();
-		Out.resize(offset + available);
-		DWORD received{0};
-		if (!::WinHttpReadData(request, Out.data() + offset, available, &received))
-		{
-			Error = "WinHTTP error " + std::to_string(::GetLastError());
-			close();
-			return false;
-		}
-		Out.resize(offset + received);
-	}
+	auto const read{read_response(request, Out, Error, Stop)};
 	close();
+	if (false == read)
+		return false;
 
 	if (status != 200)
 	{
@@ -152,7 +162,7 @@ client::~client()
 		::curl_easy_cleanup(m_platform->curl);
 }
 
-bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
+bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop) const
 {
 	Out.clear();
 	if (m_platform->curl == nullptr)
@@ -203,7 +213,7 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 client::client() = default;
 client::~client() = default;
 
-bool client::get(std::string const &, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &)
+bool client::get(std::string const &, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &) const
 {
 	Out.clear();
 	Error = "no http client in this build";

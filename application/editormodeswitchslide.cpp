@@ -161,6 +161,430 @@ void lift(std::vector<segment_data> &Pieces, double const Rise)
 	}
 }
 
+using axis_spans = std::vector<std::tuple<double, double, bool>>;
+
+// how far along the axis the straight goes on past the far end of a switch, Length along it, in plain tracks one after another
+double room_ahead(axis_spans const &Spans, double const Length)
+{
+	double high{Length};
+	for (auto const &[from, to, plain] : Spans)
+		if (from > Length - 0.01)
+		{
+			if (false == plain || from > high + 0.01)
+				break;
+			high = std::max(high, to);
+		}
+	return high;
+}
+
+// how far back along the axis the straight goes on before the start of a switch, in plain tracks one after another
+double room_behind(axis_spans const &Spans)
+{
+	double low{0.0};
+	for (auto span{Spans.rbegin()}; span != Spans.rend(); ++span)
+	{
+		auto const &[from, to, plain] = *span;
+		if (to < 0.01)
+		{
+			if (false == plain || to < low - 0.01)
+				break;
+			low = std::min(low, from);
+		}
+	}
+	return low;
+}
+
+// the track joined to the Current one at its end ahead, Atstart telling whether that's its start, set then for the next one; none
+// where the chain ends there
+TTrack *next_along(TTrack *Current, bool &Atstart)
+{
+	auto *next{Atstart ? Current->trNext : Current->trPrev};
+	if (next == nullptr || (next->trPrev != Current && next->trNext != Current))
+		return nullptr;
+	Atstart = next->trPrev == Current;
+	return next;
+}
+
+// the plain tracks of a branch from the switch on, a straight up to the curve maybe, the curve, the straight past it
+struct branch_walk
+{
+	std::vector<TTrack *> run;
+	int phase{0}; // 1 on the curve, 2 on the straight past it
+	std::size_t straight{0}; // the first track of the straight past the curve
+};
+
+// the branch from the switch on, from First reached at its start or end, Atstart, over the tracks Regular lets it run on, as far as
+// kBranchStraight along the straight past the curve
+template <typename Regular>
+branch_walk walked_branch(TTrack *First, bool Atstart, Regular const &Is_regular, editor_track::straight_tolerance const &Tolerance)
+{
+	branch_walk walk;
+	auto *current{First};
+	double past{0.0};
+	while (Is_regular(current) && std::ranges::find(walk.run, current) == walk.run.end() && past < kBranchStraight)
+	{
+		auto const plain{editor_track::is_straight(*current, Tolerance)};
+		if (false == plain && walk.phase == 2)
+			break;
+		if (false == plain)
+			walk.phase = 1;
+		else if (walk.phase == 1)
+		{
+			walk.phase = 2;
+			walk.straight = walk.run.size();
+		}
+		if (walk.phase == 2)
+			past += current->Length();
+		walk.run.push_back(current);
+		current = next_along(current, Atstart);
+	}
+	return walk;
+}
+
+// the largest factor of a curve from 1 up to some 5 with which it still fits, Fits_at telling, found by halving; none where even the
+// largest tried does
+template <typename Fits>
+std::optional<double> largest_fitting(Fits const &Fits_at)
+{
+	double low{1.0};
+	double high{1.5};
+	while (Fits_at(high) && high < 5.0)
+		high *= 1.5;
+	if (Fits_at(high))
+		return std::nullopt;
+	for (int i = 0; i < 40; ++i)
+	{
+		auto const middle{0.5 * (low + high)};
+		(Fits_at(middle) ? low : high) = middle;
+	}
+	return low;
+}
+
+// the vertex of a design made as compute() made its curve, Made, to fit between the ends: scaled where it's compound, else taking the
+// radius and the transitions of the curve. Returns the factor the radius was made smaller by
+double made_to_fit(alignment::vertex &Vertex, alignment::curve_report const &Made)
+{
+	auto const reduced{Made.radius / Vertex.radius};
+	if (Vertex.compound)
+		Vertex = scaled(Vertex, reduced);
+	else
+	{
+		Vertex.radius = Made.radius;
+		Vertex.transition_in = Made.transition_in;
+		Vertex.transition_out = Made.transition_out;
+	}
+	return reduced;
+}
+
+// the end of a Design at a switch moved to where the line Laid from the switch starts, Atstart: the start of the design
+void end_at_switch(alignment::design &Design, alignment::design const &Laid, bool const Atstart)
+{
+	if (Atstart)
+	{
+		Design.start = Laid.start;
+		Design.start_direction = Laid.start_direction;
+		Design.start_grade = Laid.start_grade;
+	}
+	else
+	{
+		Design.end = Laid.start;
+		Design.end_direction = -Laid.start_direction;
+		Design.end_grade = -Laid.start_grade;
+	}
+}
+
+// the corner K of the Vertices of a design moves along its other leg to the line Laid from the switch, Corners: where the corners lie;
+// false where it can't
+bool corner_onto_line(std::vector<alignment::vertex> &Vertices, std::vector<glm::dvec2> const &Corners, std::size_t const K, alignment::design const &Laid, bool const Atstart)
+{
+	if (Vertices.size() < 2 || Corners.size() != Vertices.size())
+		return true;
+	auto const corner{Corners[K]};
+	auto const leg{Corners[Atstart ? 1 : K - 1] - corner};
+	auto const determinant{cross(Laid.start_direction, leg)};
+	if (std::abs(determinant) < 1e-9)
+		return false;
+	auto const offset{cross(corner - plan_of(Laid.start), leg) / determinant};
+	if (offset <= 0.0)
+		return false;
+	Vertices[K].offset = offset;
+	return true;
+}
+
+// the curve next to the switch takes the Shape it was laid with: scaled by the Factor where either is compound
+void shaped_as_laid(alignment::vertex &Vertex, alignment::vertex const &Shape, double const Factor, bool const Atstart)
+{
+	if (Shape.compound || Vertex.compound)
+		Vertex = scaled(Vertex, Factor);
+	else
+	{
+		Vertex.radius = Shape.radius;
+		Vertex.transition_in = Atstart ? Shape.transition_in : Shape.transition_out;
+		Vertex.transition_out = Atstart ? Shape.transition_out : Shape.transition_in;
+	}
+}
+
+// the design of the record Index of the store, starting at the switch (Atstart) or ending there, follows the line Laid again from it:
+// its end and the corner next to it moved onto the line, the curve there taking the shape it was laid with, the km of the joint the
+// paths are laid up to kept. Left as it was where that can't be
+template <typename Branch>
+void record_follows(Branch const &Switch_branch, std::size_t const Index, bool const Atstart)
+{
+	auto const &record{alignment_store::records()[Index]};
+	auto design{record.design};
+	auto &vertices{design.vertices};
+	if (vertices.empty())
+		return;
+	auto const k{Atstart ? std::size_t{0} : vertices.size() - 1};
+	end_at_switch(design, Switch_branch.laid, Atstart);
+	if (false == corner_onto_line(vertices, record.result.vertices, k, Switch_branch.laid, Atstart))
+		return;
+	shaped_as_laid(vertices[k], Switch_branch.laid.vertices.front(), Switch_branch.factor, Atstart);
+	auto const result{alignment::compute(design)};
+	if (false == result.valid || false == alignment_store::follows(result, Switch_branch.part.tracks))
+		return;
+	auto origin{record.origin};
+	if (Atstart)
+	{
+		auto const before{alignment_store::chainage_on(record.result, Switch_branch.part.end)};
+		auto const after{alignment_store::chainage_on(result, Switch_branch.part.end)};
+		if (before.has_value() && after.has_value())
+			origin += *before - *after;
+	}
+	auto const layer{record.layer};
+	auto const source{record.source}; // NOSONAR: a copy, the record goes with forget() before it's stored again
+	auto const fit{record.fit};
+	alignment_store::forget(static_cast<int>(Index));
+	alignment_store::store(design, result, origin, layer, source, fit);
+}
+
+// the Text with More after it, the Separator between them where the text isn't empty
+std::string joined(std::string Text, std::string_view const Separator, std::string const &More)
+{
+	if (false == Text.empty())
+		Text += Separator;
+	Text += More;
+	return Text;
+}
+
+// an outer end of a double switch moved along its straight
+struct outer_end
+{
+	TTrack *track{nullptr};
+	switch_end_move move;
+};
+
+// an outer end of a double switch: its track, where it is, where it goes, whether it's the start of the track
+struct outer_place
+{
+	TTrack *track;
+	glm::dvec3 from;
+	glm::dvec3 to;
+	bool atstart;
+};
+
+// the moves of the outer ends of a double switch, the Places, along the Axis of its straight, Room: as far along it as the straight
+// lets them go; the farthest first. None where one would run into another switch or past the end of the straight, told in Status; no
+// moves where the switch isn't on a straight, Online
+std::optional<std::vector<outer_end>> outer_moves(bool const Online, editor_track::straight_axis const &Axis, std::array<outer_place, 2> const &Places, std::pair<double, double> const &Room, double const Offset, std::string &Status)
+{
+	std::vector<outer_end> ends;
+	for (auto const &place : Places)
+	{
+		if (false == Online || glm::distance(place.from, place.to) < 0.005 || Axis.lateral(place.to) > Offset)
+			continue;
+		auto const target{Axis.along(place.to)};
+		if (target < Room.first - 0.01 || target > Room.second + 0.01)
+		{
+			Status = STR_C("The switch would run into another switch or past the end of the straight");
+			return std::nullopt;
+		}
+		ends.push_back({place.track, {place.from, place.to, place.atstart ? Axis.along(place.from) - target : target - Axis.along(place.from)}});
+	}
+	std::ranges::stable_sort(ends, [](outer_end const &A, outer_end const &B) { return A.move.shift > B.move.shift; });
+	return ends;
+}
+
+// the joints of the two switches of a double switch, where they are, the ones with the set itself handled already
+struct pair_joints
+{
+	std::array<std::vector<editor_track::joint>, 2> joints;
+	std::array<std::vector<glm::dvec3>, 2> positions;
+	std::array<std::vector<bool>, 2> handled;
+};
+
+// the joints of the two Switches of a double switch joined by the Link
+pair_joints joints_of_pair(std::array<TTrack *, 2> const &Switches, TTrack const *Link)
+{
+	pair_joints pair;
+	for (std::size_t k = 0; k < 2; ++k)
+	{
+		pair.joints[k] = editor_track::joints(*Switches[k]);
+		for (auto const &joint : pair.joints[k])
+		{
+			pair.positions[k].push_back(editor_track::point_position(*Switches[k], joint.own));
+			pair.handled[k].push_back(joint.other == Link || joint.other == Switches[0] || joint.other == Switches[1]);
+		}
+	}
+	return pair;
+}
+
+// what's told of a switch moved: the tracks left unjoined, Loose, and the notes on the curves past it
+void moved_status(std::string &Status, std::string const &Loose, std::string const &Notes)
+{
+	if (false == Loose.empty())
+		Status = STR_C("Too far from the new ends of the switch, left unjoined: ") + Loose;
+	if (false == Notes.empty())
+		Status = joined(Status, "\n", Notes);
+}
+
+// the joints of the two switches at the Point, by where they were, marked as handled
+void handled_at(std::array<std::vector<glm::dvec3>, 2> const &Positions, glm::dvec3 const &Point, std::array<std::vector<bool>, 2> &Handled)
+{
+	for (std::size_t k = 0; k < 2; ++k)
+		for (std::size_t i = 0; i < Positions[k].size(); ++i)
+			if (glm::distance(Positions[k][i], Point) < geometry::same_point)
+				Handled[k][i] = true;
+}
+
+// the joints of a switch on its Path with the Other track marked as handled
+void handled_with(std::vector<editor_track::joint> const &Joints, int const Path, TTrack const *Other, std::vector<bool> &Handled)
+{
+	for (std::size_t i = 0; i < Joints.size(); ++i)
+		if (Joints[i].own.path == Path && Joints[i].other == Other)
+			Handled[i] = true;
+}
+
+// the other end of the path than Point
+editor_track::point_ref far_end(editor_track::point_ref const &Point)
+{
+	return {Point.path, Point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start};
+}
+
+// whether the Track is a plain one whose end away from Point is free
+bool free_beyond(TTrack const &Track, editor_track::point_ref const &Point)
+{
+	return Track.eType == tt_Normal && Track.m_paths.size() == 1 && editor_track::connected_points(Track, editor_track::point_position(Track, far_end(Point))).empty();
+}
+
+// whether the Track is a plain straight along the Shift
+bool straight_along(TTrack const &Track, glm::dvec3 const &Shift)
+{
+	return Track.eType == tt_Normal && Track.m_paths.size() == 1 && false == has_controls(Track.m_paths.front()) &&
+	       std::abs(geometry::cross(glm::normalize(plan_of(Track.m_paths.front().points[segment_data::point::end] - Track.m_paths.front().points[segment_data::point::start])), plan_of(Shift))) < 1e-3;
+}
+
+// the tracks the crossing track of a slip of the Parts goes on into at its End, each with its far end free, added to the Movers: they
+// go along with the slip. False where one is joined on beyond it, told in Reason
+bool crossing_movers(std::vector<TTrack *> const &Parts, glm::dvec3 const &End, std::vector<TTrack *> &Movers, std::string &Reason)
+{
+	for (auto const *part : Parts)
+		for (auto const &[other, point] : editor_track::connected_points(*part, End))
+		{
+			if (std::ranges::find(Parts, other) != Parts.end() || std::ranges::find(Movers, other) != Movers.end())
+				continue;
+			if (false == free_beyond(*other, point))
+			{
+				Reason = STR_C("The crossing track of the slip is joined on beyond it: the slip stays where the two tracks cross");
+				return false;
+			}
+			Movers.push_back(other);
+		}
+	return true;
+}
+
+// the straights of the first track of a slip of the Parts out from its End to the joints of its template, Extension long as the
+// ones of its crossing track going along, added to the Movers: the Joint at the end goes with them
+void straights_along(std::vector<TTrack *> const &Parts, glm::dvec3 const &End, double const Extension, glm::dvec3 const &Shift, std::vector<TTrack *> &Movers, glm::dvec3 &Joint)
+{
+	for (auto const *part : Parts)
+		for (auto const &[other, point] : editor_track::connected_points(*part, End))
+			if (std::ranges::find(Parts, other) == Parts.end() && straight_along(*other, Shift) && std::abs(geometry::chord_length(other->m_paths.front()) - Extension) < 0.01 &&
+			    std::ranges::find(Movers, other) == Movers.end())
+			{
+				Movers.push_back(other);
+				Joint = editor_track::point_position(*other, far_end(point));
+			}
+}
+
+// the first track joined to the Movers at the Joint which isn't one of them, with its end there; none where there's none
+std::optional<std::pair<TTrack *, editor_track::point_ref>> track_beyond(std::vector<TTrack *> const &Movers, glm::dvec3 const &Joint)
+{
+	for (auto const *track : Movers)
+		for (auto const &[other, point] : editor_track::connected_points(*track, Joint))
+			if (std::ranges::find(Movers, other) == Movers.end())
+				return std::pair{other, point};
+	return std::nullopt;
+}
+
+// the ends along the Axis of the tracks of the straights of the Members of a switch which aren't members themselves
+std::vector<double> straight_joints(std::vector<TTrack *> const &Members, editor_track::straight_axis const &Axis, editor_track::straight_tolerance const &Tolerance)
+{
+	std::vector<double> joints;
+	for (auto *member : Members)
+	{
+		if (member->eType != tt_Switch)
+			continue;
+		auto const line{editor_track::find_straight(*member, Tolerance)};
+		for (std::size_t i = 0; i < line.tracks.size(); ++i)
+		{
+			if (std::ranges::find(Members, line.tracks[i]) != Members.end())
+				continue;
+			auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				joints.push_back(Axis.along(path.points[index]));
+		}
+	}
+	return joints;
+}
+
+// the paths of the Movers moved by the Shift
+std::vector<segment_data> moved_paths(std::vector<TTrack *> const &Movers, glm::dvec3 const &Shift)
+{
+	std::vector<segment_data> paths;
+	for (auto const *mover : Movers)
+		for (auto path : mover->m_paths)
+		{
+			path.translate(Shift);
+			paths.push_back(path);
+		}
+	return paths;
+}
+
+// the Paths moved by the Shift
+std::vector<segment_data> shifted(std::vector<segment_data> Paths, glm::dvec3 const &Shift)
+{
+	for (auto &path : Paths)
+		path.translate(Shift);
+	return Paths;
+}
+
+// a path drawn on the screen as a line through 25 points of it
+void draw_path(screen_projection const &Projection, ImDrawList *Drawlist, segment_data const &Path, ImU32 const Color, float const Width)
+{
+	bezier const curve{Path};
+	auto previous{curve.point(0.0)};
+	for (int i = 1; i <= 24; ++i)
+	{
+		auto const next{curve.point(i / 24.0)};
+		Projection.line(Drawlist, previous, next, Color, Width);
+		previous = next;
+	}
+}
+
+// how far a switch is slid, by its Start, with the km there
+void draw_slide_label(screen_projection const &Projection, ImDrawList *Drawlist, glm::dvec3 const &Start, double const Distance)
+{
+	ImVec2 at;
+	if (false == Projection.project(Start, at))
+		return;
+	auto const km{alignment_store::chainage_at(Start)};
+	auto const label{km.has_value() ? format("%+.2f m  km %.3f", Distance, *km / 1000.0) : format("%+.2f m", Distance)};
+	auto const size{ImGui::CalcTextSize(label.c_str())};
+	Drawlist->AddRectFilled(ImVec2(at.x + 10.0f, at.y - 8.0f), ImVec2(at.x + 18.0f + size.x, at.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
+	Drawlist->AddText(ImVec2(at.x + 14.0f, at.y - 8.0f), overlay_color::highlight, label.c_str());
+}
+
 } // namespace
 
 bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::string &Reason) const
@@ -175,7 +599,7 @@ bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::str
 	auto const line{editor_track::find_straight(Track, m_straights.tolerance)};
 	if (false == tracks_editable(line.tracks, Reason))
 		return false;
-	std::vector<std::tuple<double, double, bool>> spans;
+	axis_spans spans;
 	for (std::size_t i = 0; i < line.tracks.size(); ++i)
 	{
 		if (line.tracks[i] == &Track)
@@ -186,31 +610,12 @@ bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::str
 		spans.emplace_back(std::min(a, b), std::max(a, b), line.tracks[i]->eType == tt_Normal);
 	}
 	std::ranges::sort(spans);
-	double low{0.0};
-	double high{axis->length};
-	for (auto const &[from, to, plain] : spans)
-		if (from > axis->length - 0.01)
-		{
-			if (false == plain || from > high + 0.01)
-				break;
-			high = std::max(high, to);
-		}
-	for (auto span{spans.rbegin()}; span != spans.rend(); ++span)
-	{
-		auto const &[from, to, plain] = *span;
-		if (to < 0.01)
-		{
-			if (false == plain || to < low - 0.01)
-				break;
-			low = std::min(low, from);
-		}
-	}
-	Low = low;
-	High = high;
+	High = room_ahead(spans, axis->length);
+	Low = room_behind(spans);
 	return true;
 }
 
-bool editor_mode::switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status)
+bool editor_mode::switch_vacate(TTrack const &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status)
 {
 	if (Shift > 0.0)
 	{
@@ -254,37 +659,13 @@ std::optional<editor_mode::switch_branch> editor_mode::take_switch_branch(TTrack
 	if (first == nullptr || first->eType != tt_Normal || first->m_paths.empty())
 		return std::nullopt;
 	auto const category{first->iCategoryFlag & 15};
-	auto const regular = [&](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && false == Other->m_editorremoved && editor_track::is_supported(*Other) && (Other->iCategoryFlag & 15) == category; };
+	auto const regular = [category](TTrack const *Other) { return Other != nullptr && Other->eType == tt_Normal && false == Other->m_editorremoved && editor_track::is_supported(*Other) && (Other->iCategoryFlag & 15) == category; };
 	// from the switch on: a straight up to the curve maybe, the curve, the straight past it
-	std::vector<TTrack *> run;
-	auto *current{first};
-	auto atstart{Joint.theirs.kind == editor_track::point_kind::start};
-	int phase{0};
-	std::size_t straight{0};
-	double past{0.0};
-	while (regular(current) && std::ranges::find(run, current) == run.end() && past < kBranchStraight)
-	{
-		auto const plain{editor_track::is_straight(*current, m_straights.tolerance)};
-		if (false == plain && phase == 2)
-			break;
-		if (false == plain)
-			phase = 1;
-		else if (phase == 1)
-		{
-			phase = 2;
-			straight = run.size();
-		}
-		if (phase == 2)
-			past += current->Length();
-		run.push_back(current);
-		auto *next{atstart ? current->trNext : current->trPrev};
-		if (next == nullptr || (next->trPrev != current && next->trNext != current))
-			break;
-		atstart = next->trPrev == current;
-		current = next;
-	}
-	if (phase != 2)
+	auto const walk{walked_branch(first, Joint.theirs.kind == editor_track::point_kind::start, regular, m_straights.tolerance)};
+	if (walk.phase != 2)
 		return std::nullopt;
+	auto const &run{walk.run};
+	auto const straight{walk.straight};
 	switch_branch branch;
 	branch.joint = Index;
 	branch.straight = straight;
@@ -348,18 +729,7 @@ bool editor_mode::plan_switch_branch(segment_data const &Path, editor_track::joi
 	if (false == fits(result))
 	{
 		// the design keeps the curve the way it was made to fit
-		auto &vertex{laid.vertices.front()};
-		auto const &report{result.curves.front()};
-		auto const reduced{report.radius / vertex.radius};
-		if (vertex.compound)
-			vertex = scaled(vertex, reduced);
-		else
-		{
-			vertex.radius = report.radius;
-			vertex.transition_in = report.transition_in;
-			vertex.transition_out = report.transition_out;
-		}
-		factor = reduced;
+		factor = made_to_fit(laid.vertices.front(), result.curves.front());
 		result = alignment::compute(laid);
 		if (false == result.valid)
 			return false;
@@ -367,18 +737,10 @@ bool editor_mode::plan_switch_branch(segment_data const &Path, editor_track::joi
 	else if (opening(Branch.result) < 0.1 && opening(result) >= 0.1)
 	{
 		// the curve which adjoined the switch keeps to it: the largest one which fits
-		double low{1.0};
-		double high{1.5};
-		while (fits(make(high)) && high < 5.0)
-			high *= 1.5;
-		if (fits(make(high)))
+		auto const largest{largest_fitting([&make, &fits](double const Factor) { return fits(make(Factor)); })};
+		if (false == largest.has_value())
 			return false;
-		for (int i = 0; i < 40; ++i)
-		{
-			auto const middle{0.5 * (low + high)};
-			(fits(make(middle)) ? low : high) = middle;
-		}
-		factor = low;
+		factor = *largest;
 		result = make(factor);
 		if (false == result.valid)
 			return false;
@@ -421,7 +783,7 @@ bool editor_mode::plan_switch_branch(segment_data const &Path, editor_track::joi
 	return true;
 }
 
-void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::edit &Edit)
+void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::edit &Edit) const
 {
 	for (auto *track : Branch.part.tracks)
 		Edit.capture(*track);
@@ -430,7 +792,6 @@ void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::e
 	// the design kept for the line starting or ending at the switch follows it
 	auto const &records{alignment_store::records()};
 	auto const from{Branch.chain.start};
-	auto const joint{Branch.part.end};
 	for (std::size_t i = 0; i < records.size(); ++i)
 	{
 		auto const &record{records[i]};
@@ -439,63 +800,7 @@ void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::e
 		auto const atstart{plan_distance(record.design.start, from) < geometry::same_point};
 		if (false == atstart && plan_distance(record.design.end, from) >= geometry::same_point)
 			continue;
-		auto design{record.design};
-		auto &vertices{design.vertices};
-		if (vertices.empty())
-			return;
-		auto const outward{Branch.laid.start_direction};
-		auto const k{atstart ? std::size_t{0} : vertices.size() - 1};
-		if (atstart)
-		{
-			design.start = Branch.laid.start;
-			design.start_direction = outward;
-			design.start_grade = Branch.laid.start_grade;
-		}
-		else
-		{
-			design.end = Branch.laid.start;
-			design.end_direction = -outward;
-			design.end_grade = -Branch.laid.start_grade;
-		}
-		if (auto const &corners{record.result.vertices}; vertices.size() >= 2 && corners.size() == vertices.size())
-		{
-			// the corner moves along its other leg to the line from the switch
-			auto const corner{corners[k]};
-			auto const leg{corners[atstart ? 1 : k - 1] - corner};
-			auto const determinant{cross(outward, leg)};
-			if (std::abs(determinant) < 1e-9)
-				return;
-			auto const offset{cross(corner - plan_of(Branch.laid.start), leg) / determinant};
-			if (offset <= 0.0)
-				return;
-			vertices[k].offset = offset;
-		}
-		// the curve next to the switch takes the shape it was laid with
-		if (auto const &shape{Branch.laid.vertices.front()}; shape.compound || vertices[k].compound)
-			vertices[k] = scaled(vertices[k], Branch.factor);
-		else
-		{
-			vertices[k].radius = shape.radius;
-			vertices[k].transition_in = atstart ? shape.transition_in : shape.transition_out;
-			vertices[k].transition_out = atstart ? shape.transition_out : shape.transition_in;
-		}
-		auto const result{alignment::compute(design)};
-		if (false == result.valid || false == alignment_store::follows(result, Branch.part.tracks))
-			return;
-		// the km of the joint the paths are laid up to stays as it was
-		auto origin{record.origin};
-		if (atstart)
-		{
-			auto const before{alignment_store::chainage_on(record.result, joint)};
-			auto const after{alignment_store::chainage_on(result, joint)};
-			if (before.has_value() && after.has_value())
-				origin += *before - *after;
-		}
-		auto const layer{record.layer};
-		auto const source{record.source}; // NOSONAR: a copy, the record goes with forget() before it's stored again
-		auto const fit{record.fit};
-		alignment_store::forget(static_cast<int>(i));
-		alignment_store::store(design, result, origin, layer, source, fit);
+		record_follows(Branch, i, atstart);
 		return;
 	}
 }
@@ -540,10 +845,7 @@ bool editor_mode::move_switch_paths(TTrack &Track, std::vector<segment_data> con
 	for (auto const &branch : branches)
 		lay_switch_branch(branch, edit);
 	push_track_snapshot(std::move(edit.states), std::move(edit.created), std::move(edit.removed));
-	if (false == loose.empty())
-		Status = STR_C("Too far from the new ends of the switch, left unjoined: ") + loose;
-	if (false == notes.empty())
-		Status += (Status.empty() ? "" : "\n") + notes;
+	moved_status(Status, loose, notes);
 	return true;
 }
 
@@ -614,41 +916,16 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 		Status = reason;
 		return false;
 	}
-	struct outer_end
-	{
-		TTrack *track{nullptr};
-		switch_end_move move;
-	};
-	std::vector<outer_end> ends;
-	if (auto const outer = [&](TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, bool const Atstart) {
-		if (false == online || glm::distance(From, To) < 0.005 || axis->lateral(To) > m_straights.tolerance.offset)
-			return true;
-		auto const target{axis->along(To)};
-		if (target < low - 0.01 || target > high + 0.01)
-		{
-			Status = STR_C("The switch would run into another switch or past the end of the straight");
-			return false;
-		}
-		ends.push_back({&Track, {From, To, Atstart ? axis->along(From) - target : target - axis->along(From)}});
-		return true;
-	};
-	    false == outer(*Set.first, Set.first->m_paths.front().points[segment_data::point::start], Paths[0].points[segment_data::point::start], true) ||
-	    false == outer(*Set.second, Set.second->m_paths.front().points[segment_data::point::end], Paths[2].points[segment_data::point::end], false))
+	std::array<outer_place, 2> const places{{{Set.first, Set.first->m_paths.front().points[segment_data::point::start], Paths[0].points[segment_data::point::start], true},
+	                                         {Set.second, Set.second->m_paths.front().points[segment_data::point::end], Paths[2].points[segment_data::point::end], false}}};
+	auto const ends{outer_moves(online, *axis, places, {low, high}, m_straights.tolerance.offset, Status)};
+	if (false == ends.has_value())
 		return false;
-	std::ranges::stable_sort(ends, [](outer_end const &A, outer_end const &B) { return A.move.shift > B.move.shift; });
 	std::array<TTrack *, 2> const switches{Set.first, Set.second};
-	std::array<std::vector<editor_track::joint>, 2> joints;
-	std::array<std::vector<glm::dvec3>, 2> positions;
-	std::array<std::vector<bool>, 2> handled;
-	for (std::size_t k = 0; k < 2; ++k)
-	{
-		joints[k] = editor_track::joints(*switches[k]);
-		for (auto const &joint : joints[k])
-		{
-			positions[k].push_back(editor_track::point_position(*switches[k], joint.own));
-			handled[k].push_back(joint.other == Set.link || joint.other == Set.first || joint.other == Set.second);
-		}
-	}
+	auto pair{joints_of_pair(switches, Set.link)};
+	auto const &joints{pair.joints};
+	auto const &positions{pair.positions};
+	auto &handled{pair.handled};
 	auto const joint{Set.first->m_paths.front().points[segment_data::point::end]};
 	auto const &link{Set.link->m_paths.front()};
 	bool const reversed{glm::distance(link.points[segment_data::point::start], joint) > glm::distance(link.points[segment_data::point::end], joint)};
@@ -658,12 +935,9 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 	editor_track::edit edit;
 	for (auto *track : {Set.first, Set.link, Set.second})
 		edit.capture(*track);
-	for (auto const &end : ends)
+	for (auto const &end : *ends)
 	{
-		for (std::size_t k = 0; k < 2; ++k)
-			for (std::size_t i = 0; i < joints[k].size(); ++i)
-				if (glm::distance(positions[k][i], end.move.from) < geometry::same_point)
-					handled[k][i] = true;
+		handled_at(positions, end.move.from, handled);
 		auto const line{editor_track::find_straight(*end.track, m_straights.tolerance)};
 		if (false == switch_vacate(*end.track, end.move.from, end.move.to, end.move.shift, line, edit, Status))
 			return false;
@@ -673,27 +947,18 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 	Set.link->m_paths = {reversed ? geometry::reversed(Paths[4]) : Paths[4]};
 	std::string notes;
 	for (std::size_t k = 0; k < 2; ++k)
-	{
-		auto const note{plan_switch_branches(*switches[k], joints[k], branches[k], handled[k])};
-		if (false == note.empty())
-			notes += (notes.empty() ? "" : "\n") + note;
-	}
+		if (auto const note{plan_switch_branches(*switches[k], joints[k], branches[k], handled[k])}; false == note.empty())
+			notes = joined(notes, "\n", note);
 	std::string loose;
 	for (std::size_t k = 0; k < 2; ++k)
-	{
-		auto const rejoin_problem{switch_rejoin(*switches[k], joints[k], handled[k], edit)};
-		if (false == rejoin_problem.empty())
-			loose += (loose.empty() ? "" : ", ") + rejoin_problem;
-	}
+		if (auto const rejoin_problem{switch_rejoin(*switches[k], joints[k], handled[k], edit)}; false == rejoin_problem.empty())
+			loose = joined(loose, ", ", rejoin_problem);
 	editor_track::commit(edit.changed);
 	for (auto const &set : branches)
 		for (auto const &branch : set)
 			lay_switch_branch(branch, edit);
 	push_track_snapshot(std::move(edit.states), std::move(edit.created), std::move(edit.removed));
-	if (false == loose.empty())
-		Status = STR_C("Too far from the new ends of the switch, left unjoined: ") + loose;
-	if (false == notes.empty())
-		Status += (Status.empty() ? "" : "\n") + notes;
+	moved_status(Status, loose, notes);
 	return true;
 }
 
@@ -716,56 +981,27 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 		return false;
 	Slide.shift = chord / run;
 	Slide.movers = Slip.parts;
-	auto const outside = [&](TTrack const *Track) { return std::ranges::find(Slip.parts, Track) == Slip.parts.end(); };
 	// its crossing track goes along where it goes on into tracks ending free, as when it was laid on one straight
 	for (std::size_t end = 2; end < 4; ++end)
-	{
-		for (auto const *part : Slip.parts)
-			for (auto const &[other, point] : editor_track::connected_points(*part, Slip.ends[end]))
-			{
-				if (false == outside(other) || std::ranges::find(Slide.movers, other) != Slide.movers.end())
-					continue;
-				if (auto const free{other->eType == tt_Normal && other->m_paths.size() == 1 &&
-				                    editor_track::connected_points(*other, editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start})).empty()};
-				    false == free)
-				{
-					Reason = STR_C("The crossing track of the slip is joined on beyond it: the slip stays where the two tracks cross");
-					return false;
-				}
-				Slide.movers.push_back(other);
-			}
-	}
+		if (false == crossing_movers(Slip.parts, Slip.ends[end], Slide.movers, Reason))
+			return false;
 	// the straights of its first track out to the joints of its template, as long as the ones of its crossing track going along, go
 	// along too, the joints with them
 	auto const extension{Slide.movers.size() > Slip.parts.size() ? geometry::chord_length(Slide.movers.back()->m_paths.front()) : 0.0};
-	auto const straight_along = [&](TTrack const &Track) {
-		return Track.eType == tt_Normal && Track.m_paths.size() == 1 && false == has_controls(Track.m_paths.front()) &&
-		       std::abs(geometry::cross(glm::normalize(plan_of(Track.m_paths.front().points[segment_data::point::end] - Track.m_paths.front().points[segment_data::point::start])), plan_of(Slide.shift))) < 1e-3;
-	};
 	std::array<glm::dvec3, 2> joints{Slip.ends[0], Slip.ends[1]};
 	for (std::size_t end = 0; end < 2 && extension > 0.0; ++end)
-		for (auto const *part : Slip.parts)
-			for (auto const &[other, point] : editor_track::connected_points(*part, Slip.ends[end]))
-				if (outside(other) && straight_along(*other) && std::abs(geometry::chord_length(other->m_paths.front()) - extension) < 0.01 &&
-				    std::ranges::find(Slide.movers, other) == Slide.movers.end())
-				{
-					Slide.movers.push_back(other);
-					joints[end] = editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start});
-				}
+		straights_along(Slip.parts, Slip.ends[end], extension, Slide.shift, Slide.movers, joints[end]);
 	Slide.joints = joints;
 	// the straights of its first track before it and past it give and take the length, a metre of them kept at least
 	std::array room{1e4, 1e4};
 	std::array straight{true, true};
 	for (std::size_t end = 0; end < 2; ++end)
-		for (auto const *track : Slide.movers)
-			for (auto const &[other, point] : editor_track::connected_points(*track, joints[end]))
-			{
-				if (std::ranges::find(Slide.movers, other) != Slide.movers.end() || Slide.ends[end].first != nullptr)
-					continue;
-				Slide.ends[end] = {other, point};
-				straight[end] = straight_along(*other);
-				room[end] = straight[end] ? geometry::chord_length(other->m_paths.front()) - 1.0 : 0.0;
-			}
+		if (auto const beyond{track_beyond(Slide.movers, joints[end])})
+		{
+			Slide.ends[end] = *beyond;
+			straight[end] = straight_along(*beyond->first, Slide.shift);
+			room[end] = straight[end] ? geometry::chord_length(beyond->first->m_paths.front()) - 1.0 : 0.0;
+		}
 	// back, it shortens the track before it and lengthens the one past it; on, the other way
 	Slide.low = straight[1] ? -std::max(0.0, room[0]) : 0.0;
 	Slide.high = straight[0] ? std::max(0.0, room[1]) : 0.0;
@@ -811,7 +1047,7 @@ bool editor_mode::slide_slip(slip_set const &Slip, double const Distance)
 	return true;
 }
 
-bool editor_mode::bent_switch_frame(TTrack const &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const
+bool editor_mode::bent_switch_frame(TTrack &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const
 {
 	Frame.clear();
 	Sides = {nullptr, nullptr};
@@ -832,8 +1068,7 @@ bool editor_mode::bent_switch_frame(TTrack const &Track, std::vector<curve_sampl
 	if (Sides[0] == nullptr || Sides[1] == nullptr || Sides[0] == Sides[1])
 		return false;
 	editor_track::chain chain;
-	// the chain only sampled, nothing written through it; its tracks are kept as the simulation's own
-	chain.tracks = {Sides[0], const_cast<TTrack *>(&Track), Sides[1]}; // NOSONAR
+	chain.tracks = {Sides[0], &Track, Sides[1]};
 	chain.forward = {forward[0], true, forward[1]};
 	Frame = sample_chain(chain);
 	Station = nearest_station(Frame, Track.m_paths.front().points[segment_data::point::start]);
@@ -937,9 +1172,7 @@ bool editor_mode::lay_bent_switch(TTrack &Track, std::vector<curve_sample> const
 	for (int k = 0; k < 2; ++k)
 	{
 		auto &side{*Sides[k]};
-		for (std::size_t i = 0; i < joints.size(); ++i)
-			if (joints[i].own.path == 0 && joints[i].other == &side)
-				handled[i] = true;
+		handled_with(joints, 0, &side, handled);
 		// taken up whole: the switch takes its place up to its far end
 		if ((k == 0 ? ends[0] : Frame.back().station - ends[1]) < 1e-3)
 		{
@@ -948,28 +1181,8 @@ bool editor_mode::lay_bent_switch(TTrack &Track, std::vector<curve_sample> const
 			edit.removed.push_back(&side);
 			continue;
 		}
-		auto const joint{Track.m_paths.front().points[k == 0 ? segment_data::point::start : segment_data::point::end]};
-		auto const &path{side.m_paths.front()};
-		auto const atend{glm::distance(path.points[segment_data::point::end], joint) < glm::distance(path.points[segment_data::point::start], joint)};
-		auto from{nearest_station(Frame, path.points[segment_data::point::start])};
-		auto to{nearest_station(Frame, path.points[segment_data::point::end])};
-		(atend ? to : from) = ends[k];
-		auto const a{sample_at(Frame, from)};
-		auto const b{sample_at(Frame, to)};
-		auto const way{to >= from ? 1.0 : -1.0};
-		auto const span{std::abs(to - from)};
-		auto const turn{std::abs(geometry::signed_angle(a.tangent, b.tangent))};
-		auto const handle{turn > 1e-6 ? 4.0 / 3.0 * std::tan(turn / 4.0) * span / turn : span / 3.0};
-		segment_data laid{path};
-		laid.pieces.clear();
-		laid.points[segment_data::point::start] = a.position;
-		laid.points[segment_data::point::end] = b.position;
-		// right at the new end of the switch
-		laid.points[atend ? segment_data::point::end : segment_data::point::start] = main.points[k == 0 ? segment_data::point::start : segment_data::point::end];
-		auto const rise{laid.points[segment_data::point::end].y - laid.points[segment_data::point::start].y};
-		laid.points[segment_data::point::control1] = {a.tangent.x * way * handle, rise / 3.0, a.tangent.y * way * handle};
-		laid.points[segment_data::point::control2] = {-b.tangent.x * way * handle, -rise / 3.0, -b.tangent.y * way * handle};
-		laid.rolls = {static_cast<float>(a.roll * way), static_cast<float>(b.roll * way)};
+		auto const end{k == 0 ? segment_data::point::start : segment_data::point::end};
+		auto const laid{side_along_frame(side.m_paths.front(), Frame, ends[k], Track.m_paths.front().points[end], main.points[end])};
 		edit.capture(side);
 		side.m_paths.front() = laid;
 	}
@@ -981,12 +1194,37 @@ bool editor_mode::lay_bent_switch(TTrack &Track, std::vector<curve_sample> const
 		lay_switch_branch(branch, edit);
 	push_track_snapshot(std::move(edit.states), std::move(edit.created), std::move(edit.removed));
 	for (auto const &name : gone)
-		Notes += (Notes.empty() ? "" : "\n") + format(STR_C("%s taken up whole, the switch joins what it joined"), name.c_str());
+		Notes = joined(Notes, "\n", format(STR_C("%s taken up whole, the switch joins what it joined"), name.c_str()));
 	if (false == loose.empty())
-		Notes += (Notes.empty() ? "" : "\n") + std::string{STR_C("Too far from the new ends of the switch, left unjoined: ")} + loose;
+		Notes = joined(Notes, "\n", std::string{STR_C("Too far from the new ends of the switch, left unjoined: ")} + loose);
 	if (false == notes.empty())
-		Notes += (Notes.empty() ? "" : "\n") + notes;
+		Notes = joined(Notes, "\n", notes);
 	return true;
+}
+
+segment_data editor_mode::side_along_frame(segment_data const &Path, std::vector<curve_sample> const &Frame, double const End, glm::dvec3 const &Joint, glm::dvec3 const &Corner)
+{
+	auto const atend{glm::distance(Path.points[segment_data::point::end], Joint) < glm::distance(Path.points[segment_data::point::start], Joint)};
+	auto from{nearest_station(Frame, Path.points[segment_data::point::start])};
+	auto to{nearest_station(Frame, Path.points[segment_data::point::end])};
+	(atend ? to : from) = End;
+	auto const a{sample_at(Frame, from)};
+	auto const b{sample_at(Frame, to)};
+	auto const way{to >= from ? 1.0 : -1.0};
+	auto const span{std::abs(to - from)};
+	auto const turn{std::abs(geometry::signed_angle(a.tangent, b.tangent))};
+	auto const handle{turn > 1e-6 ? 4.0 / 3.0 * std::tan(turn / 4.0) * span / turn : span / 3.0};
+	segment_data laid{Path};
+	laid.pieces.clear();
+	laid.points[segment_data::point::start] = a.position;
+	laid.points[segment_data::point::end] = b.position;
+	// right at the new end of the switch
+	laid.points[atend ? segment_data::point::end : segment_data::point::start] = Corner;
+	auto const rise{laid.points[segment_data::point::end].y - laid.points[segment_data::point::start].y};
+	laid.points[segment_data::point::control1] = {a.tangent.x * way * handle, rise / 3.0, a.tangent.y * way * handle};
+	laid.points[segment_data::point::control2] = {-b.tangent.x * way * handle, -rise / 3.0, -b.tangent.y * way * handle};
+	laid.rolls = {static_cast<float>(a.roll * way), static_cast<float>(b.roll * way)};
+	return laid;
 }
 
 bool editor_mode::slide_switch(TTrack &Track, double const Distance)
@@ -1035,7 +1273,7 @@ bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 	return true;
 }
 
-bool editor_mode::switch_slides(TTrack const &Track) const
+bool editor_mode::switch_slides(TTrack &Track) const
 {
 	if (auto const slip{slip_of(Track)})
 	{
@@ -1059,51 +1297,65 @@ bool editor_mode::switch_slides(TTrack const &Track) const
 	return bent_switch_frame(Track, frame, sides, station);
 }
 
+bool editor_mode::switch_slide_start_slip(TTrack const &Track)
+{
+	auto const slip{slip_of(Track)};
+	if (false == slip.has_value())
+		return false;
+	auto &slide{m_switch.slide};
+	std::string reason;
+	slip_slide room;
+	auto const axis{editor_track::main_axis(*slip->switches.front())};
+	if (false == slip_room(*slip, room, reason) || false == axis.has_value())
+	{
+		if (false == reason.empty())
+			ui()->set_status(reason, true);
+		return true;
+	}
+	auto const &mouse{ImGui::GetIO().MousePos};
+	slide.active = true;
+	slide.track = slip->switches.front();
+	slide.pressed = {mouse.x, mouse.y};
+	slide.grip = axis->along(cursor_level(axis->origin.y));
+	slide.length = 0.0;
+	slide.low = room.low;
+	slide.high = room.high;
+	return true;
+}
+
+bool editor_mode::switch_slide_start_bent(TTrack &Track)
+{
+	auto &slide{m_switch.slide};
+	if (std::array<TTrack *, 2> sides; false == bent_switch_frame(Track, slide.frame, sides, slide.station))
+		return false;
+	auto const &main{Track.m_paths.front()};
+	auto const &mouse{ImGui::GetIO().MousePos};
+	slide.active = true;
+	slide.track = &Track;
+	slide.pressed = {mouse.x, mouse.y};
+	slide.grip = nearest_station(slide.frame, cursor_level(main.points[segment_data::point::start].y));
+	slide.length = nearest_station(slide.frame, main.points[segment_data::point::end]) - slide.station;
+	slide.low = -slide.station;
+	slide.high = std::max(0.0, slide.frame.back().station - slide.station - slide.length);
+	auto const joints{editor_track::joints(Track)};
+	for (std::size_t i = 0; i < joints.size(); ++i)
+		if (joints[i].own.path == 1)
+			if (auto branch{take_switch_branch(Track, joints[i], i)})
+				slide.branches.emplace_back(joints[i], 1, std::move(*branch));
+	return true;
+}
+
 void editor_mode::switch_slide_start(TTrack &Track)
 {
 	auto &slide{m_switch.slide};
 	slide = {};
-	std::string reason;
 	// a slip along its first track, from its first switch
-	if (auto const slip{slip_of(Track)})
-	{
-		slip_slide room;
-		auto const axis{editor_track::main_axis(*slip->switches.front())};
-		if (false == slip_room(*slip, room, reason) || false == axis.has_value())
-		{
-			if (false == reason.empty())
-				ui()->set_status(reason, true);
-			return;
-		}
-		auto const &mouse{ImGui::GetIO().MousePos};
-		slide.active = true;
-		slide.track = slip->switches.front();
-		slide.pressed = {mouse.x, mouse.y};
-		slide.grip = axis->along(cursor_level(axis->origin.y));
-		slide.length = 0.0;
-		slide.low = room.low;
-		slide.high = room.high;
+	if (switch_slide_start_slip(Track))
 		return;
-	}
 	// bent into a curve: along it, the tracks next to it keeping a metre, the curve past its diverging track drawn as it'll be laid
-	if (std::array<TTrack *, 2> sides; bent_switch_frame(Track, slide.frame, sides, slide.station))
-	{
-		auto const &main{Track.m_paths.front()};
-		auto const &mouse{ImGui::GetIO().MousePos};
-		slide.active = true;
-		slide.track = &Track;
-		slide.pressed = {mouse.x, mouse.y};
-		slide.grip = nearest_station(slide.frame, cursor_level(main.points[segment_data::point::start].y));
-		slide.length = nearest_station(slide.frame, main.points[segment_data::point::end]) - slide.station;
-		slide.low = -slide.station;
-		slide.high = std::max(0.0, slide.frame.back().station - slide.station - slide.length);
-		auto const joints{editor_track::joints(Track)};
-		for (std::size_t i = 0; i < joints.size(); ++i)
-			if (joints[i].own.path == 1)
-				if (auto branch{take_switch_branch(Track, joints[i], i)})
-					slide.branches.emplace_back(joints[i], 1, std::move(*branch));
+	if (switch_slide_start_bent(Track))
 		return;
-	}
+	std::string reason;
 	auto const set{double_of(Track)};
 	auto &first{set.has_value() ? *set->first : Track};
 	auto const axis{editor_track::main_axis(first)};
@@ -1124,20 +1376,7 @@ void editor_mode::switch_slide_start(TTrack &Track)
 	std::vector members{&first};
 	if (set.has_value())
 		members = {set->first, set->link, set->second};
-	for (auto *member : members)
-	{
-		if (member->eType != tt_Switch)
-			continue;
-		auto const line{editor_track::find_straight(*member, m_straights.tolerance)};
-		for (std::size_t i = 0; i < line.tracks.size(); ++i)
-		{
-			if (std::ranges::find(members, line.tracks[i]) != members.end())
-				continue;
-			auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
-			for (auto const index : {segment_data::point::start, segment_data::point::end})
-				slide.joints.push_back(axis->along(path.points[index]));
-		}
-	}
+	slide.joints = straight_joints(members, *axis, m_straights.tolerance);
 	std::vector<TTrack const *> const skip(members.begin(), members.end());
 	for (auto const *member : members)
 	{
@@ -1225,52 +1464,27 @@ void editor_mode::draw_switch_slide() const
 		slip_slide room;
 		std::string reason;
 		slip_room(*slip, room, reason);
-		paths.clear();
-		for (auto const *mover : room.movers)
-			for (auto path : mover->m_paths)
-			{
-				path.translate(room.shift * slide.distance);
-				paths.push_back(path);
-			}
+		paths = moved_paths(room.movers, room.shift * slide.distance);
 	}
 	else if (auto const set{double_of(*slide.track)})
 	{
 		auto const shift{paths.front().points[segment_data::point::start] - slide.track->m_paths.front().points[segment_data::point::start]};
-		paths = double_paths(*set);
-		for (auto &path : paths)
-			path.translate(shift);
+		paths = shifted(double_paths(*set), shift);
 	}
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-	auto const draw = [&](segment_data const &Path, ImU32 const Color, float const Width) {
-		bezier const curve{Path};
-		auto previous{curve.point(0.0)};
-		for (int i = 1; i <= 24; ++i)
-		{
-			auto const next{curve.point(i / 24.0)};
-			projection.line(drawlist, previous, next, Color, Width);
-			previous = next;
-		}
-	};
 	for (auto const &path : paths)
-		draw(path, overlay_color::marked, 3.0f);
+		draw_path(projection, drawlist, path, overlay_color::marked, 3.0f);
 	// the curves past the switch, laid again up to the straight beyond them
 	for (auto const &line : slide.branches)
 	{
 		if (line.path >= paths.size())
 			continue;
 		auto branch{line.branch};
-		if (plan_switch_branch(paths[line.path], line.joint, branch))
-			for (auto const &piece : branch.pieces)
-				draw(piece, overlay_color::grip, 2.0f);
+		if (false == plan_switch_branch(paths[line.path], line.joint, branch))
+			continue;
+		for (auto const &piece : branch.pieces)
+			draw_path(projection, drawlist, piece, overlay_color::grip, 2.0f);
 	}
-	ImVec2 at;
-	auto const start{paths.front().points[segment_data::point::start]};
-	if (false == projection.project(start, at))
-		return;
-	auto const km{alignment_store::chainage_at(start)};
-	auto const label{km.has_value() ? format("%+.2f m  km %.3f", slide.distance, *km / 1000.0) : format("%+.2f m", slide.distance)};
-	auto const size{ImGui::CalcTextSize(label.c_str())};
-	drawlist->AddRectFilled(ImVec2(at.x + 10.0f, at.y - 8.0f), ImVec2(at.x + 18.0f + size.x, at.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
-	drawlist->AddText(ImVec2(at.x + 14.0f, at.y - 8.0f), overlay_color::highlight, label.c_str());
+	draw_slide_label(projection, drawlist, paths.front().points[segment_data::point::start], slide.distance);
 }

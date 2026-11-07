@@ -130,6 +130,36 @@ std::string wms_url(tile_request const &Request, bool Hires, int Pixels, bool Pn
 	return url;
 }
 
+// the orthophoto an older editor kept with the settings, the standard and the 4K imagery of each year, moved to the Root of the cache
+// where it has none yet; whatever else it kept there deleted
+void move_old_cache(fs::path const &Root)
+{
+	auto const old{user_config_path(".cache")};
+	std::error_code ec;
+	if (old.empty() || false == fs::exists(old, ec))
+		return;
+	std::vector<fs::path> products;
+	for (auto const &entry : fs::directory_iterator(old / "geoportal", ec))
+	{
+		auto const name{entry.path().filename().string()};
+		if (entry.is_directory(ec) && (name.rfind("sr_", 0) == 0 || name.rfind("hr_", 0) == 0))
+			products.push_back(entry.path());
+	}
+	if (false == products.empty() && false == fs::exists(Root, ec))
+	{
+		fs::create_directories(Root, ec);
+		std::size_t count{0};
+		for (auto const &product : products)
+		{
+			fs::rename(product, Root / product.filename(), ec);
+			count += ec ? 0 : 1;
+		}
+		auto const path{Root.u8string()};
+		WriteLog(std::format("Editor orthophoto: {} products of the orthophoto moved to {}", count, std::string(path.begin(), path.end())));
+	}
+	fs::remove_all(old, ec);
+}
+
 // among the files kept to be fetched again faster, which don't roam with the profile. The orthophoto an older editor kept with the
 // settings, the standard and the 4K imagery of each year, is moved there once, as the first tile is asked for; whatever else it
 // kept there, the base maps of old among it, is deleted, and so is the orthophoto where it can't be moved or the new place has its own
@@ -139,32 +169,7 @@ fs::path cache_root()
 	if (root.empty())
 		root = fs::path{".cache"} / "geoportal";
 	static std::once_flag moved;
-	std::call_once(moved, [&root]() {
-		auto const old{user_config_path(".cache")};
-		std::error_code ec;
-		if (old.empty() || false == fs::exists(old, ec))
-			return;
-		std::vector<fs::path> products;
-		for (auto const &entry : fs::directory_iterator(old / "geoportal", ec))
-		{
-			auto const name{entry.path().filename().string()};
-			if (entry.is_directory(ec) && (name.rfind("sr_", 0) == 0 || name.rfind("hr_", 0) == 0))
-				products.push_back(entry.path());
-		}
-		if (false == products.empty() && false == fs::exists(root, ec))
-		{
-			fs::create_directories(root, ec);
-			std::size_t count{0};
-			for (auto const &product : products)
-			{
-				fs::rename(product, root / product.filename(), ec);
-				count += ec ? 0 : 1;
-			}
-			auto const path{root.u8string()};
-			WriteLog(std::format("Editor orthophoto: {} products of the orthophoto moved to {}", count, std::string(path.begin(), path.end())));
-		}
-		fs::remove_all(old, ec);
-	});
+	std::call_once(moved, [&root]() { move_old_cache(root); });
 	return root;
 }
 
@@ -429,7 +434,8 @@ std::optional<bool> load_hires(http_client &Client, tile_request const &Request,
 
 // returns false on failure (to be retried later); Empty is set when the place has no imagery. Superseded: the tile wants another image
 // now, the large one downloaded isn't decoded for nothing
-bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, stop_check const &Stop, stop_check const &Superseded)
+template <typename Stop_check, typename Superseded_check>
+bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, Stop_check const &Stop, Superseded_check const &Superseded)
 {
 	Empty = false;
 	if (auto const hires{Request.hires && Request.level >= hires_pixels ? load_hires(Client, Request, Out, Error, Stop, Superseded) : std::nullopt}; hires.has_value())
@@ -1265,6 +1271,24 @@ void heights_guessed(std::vector<float> &Heights, int const Samples, glm::dvec2 
 				Heights[static_cast<std::size_t>(j) * Samples + i] = static_cast<float>(y);
 }
 
+// the heights of the points along the edges of the same grid, taken from the tiles beside it, a little outwards: Sampled(x, z, y) gives
+// the height of a place, false where none of them has it
+template <typename Sampler>
+void heights_from_edges(std::vector<float> &Heights, int const Samples, glm::dvec2 const &Corner, double const Step, Sampler const &Sampled)
+{
+	double constexpr outward{0.01};
+	for (int j = 0; j < Samples; ++j)
+		for (int i = 0; i < Samples; ++i)
+		{
+			if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
+				continue;
+			auto const x{Corner.x - i * Step + edge_nudge(i, ground_grid, outward)};
+			auto const z{Corner.y - j * Step + edge_nudge(j, ground_grid, outward)};
+			if (float y; Sampled(x, z, y))
+				Heights[static_cast<std::size_t>(j) * Samples + i] = y;
+		}
+}
+
 } // namespace
 
 void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
@@ -1352,19 +1376,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
 		heights_guessed(heights, samples, corner, step, m_guess);
 		if (std::ranges::count(heights, no_height) == static_cast<std::ptrdiff_t>(heights.size()))
-		{
-			double constexpr outward{0.01};
-			for (int j = 0; j < samples; ++j)
-				for (int i = 0; i < samples; ++i)
-				{
-					if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
-						continue;
-					auto const x{corner.x - i * step + edge_nudge(i, ground_grid, outward)};
-					auto const z{corner.y - j * step + edge_nudge(j, ground_grid, outward)};
-					if (float y; sampled_height(Key, x, z, y))
-						heights[static_cast<std::size_t>(j) * samples + i] = y;
-				}
-		}
+			heights_from_edges(heights, samples, corner, step, [this, &Key](double const X, double const Z, float &Y) { return sampled_height(Key, X, Z, Y); });
 		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
 		Tile.guessed = true;
 		missing = std::ranges::count(heights, no_height);
@@ -1617,6 +1629,14 @@ typename Tiles::value_type *nearest_ungrounded(Tiles &All, Distance const &Dista
 	return nearest;
 }
 
+// the square of the distance between the tiles From and To, in tiles
+long long tile_distance(std::pair<int, int> const &From, std::pair<int, int> const &To)
+{
+	long long const dx = From.first - To.first;
+	long long const dy = From.second - To.second;
+	return dx * dx + dy * dy;
+}
+
 } // namespace
 
 void editor_orthophoto::update(glm::dvec3 const &Camera)
@@ -1755,10 +1775,7 @@ void editor_orthophoto::worker()
 					// a 4K image is 64 MB decoded: that many at most at once, the standard tiles by all the workers
 					if (m_running.contains(it->key) || (it->level >= hires_pixels && m_running_hires >= camera_workers))
 						continue;
-					long long const dx = it->key.first - m_focus.first;
-					long long const dy = it->key.second - m_focus.second;
-					long long const d = dx * dx + dy * dy;
-					if (d < bestdistance)
+					if (long long const d = tile_distance(it->key, m_focus); d < bestdistance)
 					{
 						bestdistance = d;
 						best = it;

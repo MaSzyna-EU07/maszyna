@@ -152,6 +152,498 @@ bool sampled_chainage(std::vector<editor_track::route_sample> const &Samples, gl
 	return found;
 }
 
+// a kept design, what of it goes into one put together along a route
+struct kept_design
+{
+	glm::dvec3 start;
+	glm::dvec3 end;
+	double length;
+	double departure;
+	profile::line const &line;
+};
+
+// where a kept design lies along a route: the chainage its own chainage starts at, which way it grows, how much longer the route
+// between the ends of the design got, and the chainage of the end of the design the route meets
+struct design_placement
+{
+	double origin{0.0};
+	double direction{1.0};
+	double scale{1.0};
+	double anchor{0.0};
+
+	// the chainage of the design at the Chainage of the route
+	double local(double const Chainage) const
+	{
+		return (Chainage - origin) * direction / scale;
+	}
+	// the chainages of the route at the ends of the design, Length long
+	double low_end(double const Length) const
+	{
+		return std::min(origin, origin + direction * Length * scale);
+	}
+	double high_end(double const Length) const
+	{
+		return std::max(origin, origin + direction * Length * scale);
+	}
+};
+
+using stretch_list = std::vector<std::pair<double, double>>;
+
+// whether the Chainage lies within one of the Stretches, or a little past their ends
+bool in_stretches(stretch_list const &Stretches, double const Chainage)
+{
+	return std::ranges::any_of(Stretches, [Chainage](auto const &Stretch) { return Chainage >= Stretch.first - 0.25 && Chainage <= Stretch.second + 0.25; });
+}
+
+// the designs kept for routes lying along one, put together: their points carried over to the chainage of the route
+struct design_parts
+{
+	std::vector<editor_track::route_sample> const &samples;
+	std::vector<editor_track::route_span> const &spans;
+	double length;
+	std::vector<profile::pvi> points;
+	std::size_t parts{0};
+	std::size_t retaken{0};
+	// the ends of the route inside a kept design take their heights from it
+	std::optional<double> start;
+	std::optional<double> end;
+	stretch_list covered;
+
+	// the direction of the route at the chainage, in the plan
+	glm::dvec2 heading(double const Chainage) const
+	{
+		auto const a{editor_track::sampled_position(samples, std::max(0.0, Chainage - 1.0))};
+		auto const b{editor_track::sampled_position(samples, std::min(length, Chainage + 1.0))};
+		return glm::dvec2{b.x - a.x, b.z - a.z};
+	}
+	// a newer design lies over the Chainage
+	bool taken(double const Chainage) const
+	{
+		return std::ranges::any_of(covered, [Chainage](auto const &Stretch) { return Chainage > Stretch.first + 0.25 && Chainage < Stretch.second - 0.25; });
+	}
+	// the design laid over the route at least in part, one of its ends on it, the route running on towards the other; none where it
+	// isn't
+	std::optional<design_placement> placed(kept_design const &Design) const
+	{
+		double a{0.0};
+		double b{0.0};
+		auto const first{sampled_chainage(samples, Design.start, a)};
+		auto const last{sampled_chainage(samples, Design.end, b)};
+		if (false == first && false == last)
+			return std::nullopt;
+		design_placement placement;
+		placement.anchor = first ? a : b;
+		if (first && last)
+		{
+			// the route between the ends of the design got longer or shorter, as when a track of it was moved: the points go along
+			placement.scale = std::abs(b - a) / std::max(1.0, Design.length);
+			if (placement.scale < 0.8 || placement.scale > 1.25)
+				return std::nullopt;
+			placement.direction = b >= a ? 1.0 : -1.0;
+			placement.origin = a;
+			return placement;
+		}
+		auto const towards{first ? Design.end - Design.start : Design.start - Design.end};
+		auto const along{glm::dot(heading(placement.anchor), glm::dvec2{towards.x, towards.z})};
+		if (std::abs(along) < 1e-9)
+			return std::nullopt;
+		// the chainage of the design grows along the route or against it
+		placement.direction = (along > 0.0) == first ? 1.0 : -1.0;
+		placement.origin = first ? a : b - placement.direction * Design.length;
+		return placement;
+	}
+	// the stretch of the route over the paths of the design, from where it meets it: off it, as past the switch where the route
+	// turns away, the design says nothing. Own: the route the design was laid over; none where the route isn't on it
+	std::optional<std::pair<double, double>> extent(kept_design const &Design, design_placement const &Placement, std::optional<editor_track::route> const &Own) const
+	{
+		auto const low{Placement.low_end(Design.length)};
+		auto const high{Placement.high_end(Design.length)};
+		if (false == Own.has_value())
+			return std::pair{low, high};
+		std::set<std::pair<TTrack const *, int>> paths;
+		for (auto const &span : Own->spans)
+			paths.emplace(span.track, span.path);
+		auto const on = [this, &paths](std::size_t const Index) { return paths.contains({spans[Index].track, spans[Index].path}); };
+		std::optional<std::size_t> at;
+		for (std::size_t i = 0; i < spans.size(); ++i)
+			if (on(i) && Placement.anchor >= spans[i].from - 0.3 && Placement.anchor <= spans[i].to + 0.3)
+			{
+				at = i;
+				break;
+			}
+		if (false == at.has_value())
+			return std::nullopt;
+		auto lower{*at};
+		auto upper{*at};
+		while (lower > 0 && on(lower - 1))
+			--lower;
+		while (upper + 1 < spans.size() && on(upper + 1))
+			++upper;
+		return std::pair{std::max(low, spans[lower].from), std::min(high, spans[upper].to)};
+	}
+	// where the track was changed since the design was applied to it, by the gizmo or by dragging its points, the track holds:
+	// the design gives way there to the line read from the track
+	stretch_list stale_of(kept_design const &Design, design_placement const &Placement, double const Low, double const High) const
+	{
+		stretch_list stale;
+		if (Design.departure >= 0.0 && Design.departure <= kApplied)
+		{
+			for (auto const &sample : samples)
+			{
+				if (sample.chainage < Low - 0.25 || sample.chainage > High + 0.25)
+					continue;
+				if (auto const designed{profile::elevation(Design.line, std::clamp(Placement.local(sample.chainage), 0.0, Design.length))}; std::abs(designed - sample.position.y) <= kStale)
+					continue;
+				if (false == stale.empty() && sample.chainage - stale.back().second <= kStaleMargin)
+					stale.back().second = sample.chainage;
+				else
+					stale.emplace_back(sample.chainage, sample.chainage);
+			}
+			for (auto &[from, to] : stale)
+			{
+				from = std::max(Low, from - kStaleMargin);
+				to = std::min(High, to + kStaleMargin);
+			}
+		}
+		return stale;
+	}
+	// the points of the design over the stretch Low High of the route, where no newer design lies and the track wasn't changed
+	void design_points(kept_design const &Design, design_placement const &Placement, double const Low, double const High, stretch_list const &Stale)
+	{
+		for (auto point : Design.line.points)
+		{
+			point.chainage = Placement.origin + Placement.direction * point.chainage * Placement.scale;
+			point.joint = false;
+			if (point.chainage > 0.25 && point.chainage < length - 0.25 && point.chainage >= Low - 0.25 && point.chainage <= High + 0.25 && false == taken(point.chainage) && false == in_stretches(Stale, point.chainage))
+				points.push_back(point);
+		}
+	}
+	// the points of the line read from the track over a Stretch changed since the design was applied; false where it's too short
+	bool retaken_from_track(std::pair<double, double> const &Stretch)
+	{
+		std::vector<double> chainages;
+		std::vector<double> elevations;
+		std::vector<double> grades;
+		for (auto const &sample : samples)
+			if (sample.chainage >= Stretch.first - 1e-6 && sample.chainage <= Stretch.second + 1e-6)
+			{
+				chainages.push_back(sample.chainage);
+				elevations.push_back(sample.position.y);
+				grades.push_back(sample.grade);
+			}
+		if (chainages.size() < 2)
+			return false;
+		profile::recognition options;
+		options.minimum_length = 5.0;
+		options.detail = kStale;
+		for (auto point : profile::recognize(chainages, elevations, grades, options).points)
+		{
+			point.joint = false;
+			if (point.chainage >= 0.0 && point.chainage <= length && false == taken(point.chainage))
+				points.push_back(point);
+		}
+		return true;
+	}
+	// where the route turns off the design, its height there: between two designs the line goes straight, over the switches.
+	// where it runs on past the end of the design, onto track laid since, the break gets the vertical curve of the limits
+	void edge_points(kept_design const &Design, design_placement const &Placement, double const Low, double const High, stretch_list const &Stale)
+	{
+		for (auto const edge : {Low, High})
+			if (edge > 0.5 && edge < length - 0.5 && false == taken(edge) && false == in_stretches(Stale, edge))
+			{
+				profile::pvi point;
+				point.chainage = edge;
+				point.elevation = profile::elevation(Design.line, std::clamp(Placement.local(edge), 0.0, Design.length));
+				point.automatic = std::abs(edge - (edge == Low ? Placement.low_end(Design.length) : Placement.high_end(Design.length))) < 0.5;
+				points.push_back(point);
+			}
+	}
+	// the height the design gives the route at the Chainage of an end of it; none where it doesn't reach there or the track changed
+	static std::optional<double> end_height(kept_design const &Design, design_placement const &Placement, stretch_list const &Stale, double const Chainage)
+	{
+		if (false == in_stretches(Stale, Chainage) && Placement.local(Chainage) >= -0.25 && Placement.local(Chainage) <= Design.length + 0.25)
+			return profile::elevation(Design.line, std::clamp(Placement.local(Chainage), 0.0, Design.length));
+		return std::nullopt;
+	}
+	// what the design placed over the stretch Low High of the route tells of it
+	void add(kept_design const &Design, design_placement const &Placement, double const Low, double const High)
+	{
+		auto const stale{stale_of(Design, Placement, Low, High)};
+		design_points(Design, Placement, Low, High, stale);
+		for (auto const &stretch : stale)
+			if (retaken_from_track(stretch))
+				++retaken;
+		edge_points(Design, Placement, Low, High, stale);
+		if (false == start.has_value())
+			start = end_height(Design, Placement, stale, 0.0);
+		if (false == end.has_value())
+			end = end_height(Design, Placement, stale, length);
+		covered.emplace_back(Low, High);
+		++parts;
+	}
+	// the points in order along the route, none within half a metre of the one before, from its start to its end: there the heights
+	// First and Last where no point is
+	std::vector<profile::pvi> joined_points(double const First, double const Last) const
+	{
+		auto sorted{points};
+		std::ranges::sort(sorted, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
+		std::vector<profile::pvi> line;
+		for (auto point : sorted)
+		{
+			point.chainage = std::clamp(point.chainage, 0.0, length);
+			if (false == line.empty() && point.chainage - line.back().chainage < 0.5)
+				continue;
+			line.push_back(point);
+		}
+		if (line.empty() || line.front().chainage > 0.5)
+			line.emplace(line.begin(), 0.0, First);
+		else
+			line.front().chainage = 0.0;
+		if (line.back().chainage < length - 0.5)
+			line.emplace_back(length, Last);
+		else
+			line.back().chainage = length;
+		line.front().radius = 0.0;
+		line.back().radius = 0.0;
+		return line;
+	}
+};
+
+// the layer the mark of a fitted track goes to: its own where that takes marks, else the active one; none without layers
+scene::layer_handle fitted_layer(TTrack const &Track)
+{
+	scene::layer_handle layer{null_handle};
+	if (false == scene::Layers.empty())
+	{
+		layer = scene::Layers.resolve(Track.layer());
+		if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
+			layer = scene::Layers.active();
+	}
+	return layer;
+}
+
+// the lines of the marks of the Fitted tracks in the Layer, of those Standing with the shape they were fitted with
+template <typename Marks>
+std::vector<std::string> fitted_lines(Marks const &Fitted, scene::layer_handle const Layer, std::set<std::pair<std::string, std::uint64_t>> const &Standing)
+{
+	std::vector<std::string> lines;
+	for (auto const &[key, mark] : Fitted)
+	{
+		if (mark.layer != Layer || false == Standing.contains(key))
+			continue;
+		if (lines.empty())
+			lines.emplace_back("# the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines");
+		lines.push_back(format("fitted %s %016llx%s", key.first.c_str(), static_cast<unsigned long long>(mark.shape), mark.hand ? " hand" : ""));
+	}
+	return lines;
+}
+
+// whether an end of a path of the Track lies at the Point
+bool path_end_at(TTrack const &Track, glm::dvec3 const &Point)
+{
+	for (auto const &path : Track.m_paths)
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			if (plan_distance(path.points[index], Point) <= 0.1 && std::abs(path.points[index].y - Point.y) < 3.0)
+				return true;
+	return false;
+}
+
+// the tracks with an end of a path at the Point
+std::vector<TTrack *> tracks_touching(glm::dvec3 const &Point)
+{
+	std::vector<TTrack *> result;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
+			continue;
+		if (path_end_at(*track, Point) && std::find(result.begin(), result.end(), track) == result.end())
+			result.push_back(track);
+	}
+	return result;
+}
+
+// whether the Route is the one a design was kept for: Length long, from its Start, through its Middle; the length of a route comes
+// with its samples
+bool route_fits(editor_track::route &Route, double const Length, glm::dvec3 const &Start, glm::dvec3 const &Middle)
+{
+	auto const samples{editor_track::sample_route(Route, 1.0)};
+	return false == samples.empty() && std::abs(Route.length - Length) <= 0.5 && plan_distance(samples.front().position, Start) <= 0.1 && plan_distance(editor_track::sampled_position(samples, Route.length * 0.5), Middle) <= 0.5;
+}
+
+// a design laid anew onto the tracks of a route as they lie now, as a line is onto the ground, within a centimetre and to the norms:
+// the tracks are no ground with structures to go past, the line keeps to all of them, as steep as they are, as sharply bent as on a
+// hump the line was fitted to. Kept: the design as it was
+profile::line refitted_line(std::vector<editor_track::route_sample> const &Samples, profile::context const &Context, profile::line const &Kept)
+{
+	double constexpr kTolerance{0.01}; // m
+	double constexpr kReach{100.0}; // m, however far a track is, it's what the line keeps to
+	double constexpr kSteepest{50.0}; // per mille, as the lines are fitted to the terrain, past the limit of the norms
+	std::vector<double> chainages;
+	std::vector<double> heights;
+	for (auto const &sample : Samples)
+	{
+		chainages.push_back(sample.chainage);
+		heights.push_back(sample.position.y);
+	}
+	std::vector const tolerances(Samples.size(), kTolerance * 0.5);
+	std::vector const reaches(Samples.size(), kReach);
+	profile::ground_fit options;
+	options.tolerance = kTolerance;
+	options.grade_max = kSteepest;
+	options.humps = profile::humps(chainages, heights, Context, kTolerance);
+	options.hump_radius = 300.0;
+	return profile::fit_ground(chainages, heights, Context, Kept, options, tolerances, reaches);
+}
+
+// the texts of the errors among the Issues, each after a bar
+std::string errors_text(std::vector<profile::issue> const &Issues)
+{
+	std::string errors;
+	for (auto const &issue : Issues)
+		if (issue.error)
+			errors += " | " + issue.text;
+	return errors;
+}
+
+// the joints kept as points of their own: read back over a longer route, where the end is no longer joined, the line keeps the curve
+// it was laid with
+void joints_as_points(profile::line &Line)
+{
+	for (auto &point : Line.points)
+		if (point.joint)
+		{
+			point.joint = false;
+			point.automatic = false;
+		}
+}
+
+// the ends of the Bridges by a joint or a break of the line moved onto it, rather than leave a sliver of a path there
+std::vector<profile::departure> bridges_snapped(std::vector<profile::departure> Bridges, std::vector<double> const &Joints)
+{
+	double constexpr kBridgeSnap{1.0}; // m
+	for (auto &bridge : Bridges)
+		for (auto *end : {&bridge.from, &bridge.to})
+			if (auto const nearest{std::ranges::min_element(Joints, [end](double const A, double const B) { return std::abs(A - *end) < std::abs(B - *end); })};
+			    nearest != Joints.end() && std::abs(*nearest - *end) <= kBridgeSnap)
+				*end = *nearest;
+	return Bridges;
+}
+
+// the paths of the route over a bridge sound and light as on one, and get no formation; within what a cut too near an end leaves on.
+// Returns how many were set so
+std::size_t spans_bridged(std::vector<editor_track::route_span> const &Spans, std::vector<profile::departure> const &Bridges)
+{
+	double constexpr kBridgeEnd{0.5}; // m
+	std::size_t bridged{0};
+	for (auto const &span : Spans)
+		if (span.track->eEnvironment != e_bridge && span.track->eEnvironment != e_tunnel
+		    && std::ranges::any_of(Bridges, [&span](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
+		{
+			span.track->eEnvironment = e_bridge;
+			++bridged;
+		}
+	return bridged;
+}
+
+// the paths off the route brought to its height by the grade line applied, and the switch ends left off the adjoining paths
+std::string gaps_told(std::vector<editor_track::height_gap> const &Gaps)
+{
+	std::string status;
+	auto const name = [](TTrack const *Track) { return name_of(*Track); };
+	auto const closed{std::count_if(Gaps.begin(), Gaps.end(), [](auto const &Gap) { return Gap.closed; })};
+	if (closed > 0)
+		status += STR_C("\nPaths off the route brought to its height:");
+	for (auto const &gap : Gaps)
+		if (gap.closed)
+			status += format(STR_C("\n  %s at %s: %+.3f m"), name(gap.neighbour).c_str(), name(gap.track).c_str(), -gap.gap);
+	if (closed < static_cast<long>(Gaps.size()))
+		status += STR_C("\nSwitch ends off the adjoining paths, which can't be changed here:");
+	for (auto const &gap : Gaps)
+		if (false == gap.closed)
+			status += format("\n  %s -> %s: %+.3f m", name(gap.track).c_str(), name(gap.neighbour).c_str(), gap.gap);
+	return status;
+}
+
+// the heights a grade line applied gives a route: as it was designed, or for an edit what it changed in the line read from the track
+// added to the track as it lay before
+struct applied_heights
+{
+	profile::line const &line;
+	profile::line const &read;
+	std::vector<editor_track::route_sample> const &before;
+	bool edit_only;
+
+	double changed_at(double const Chainage) const
+	{
+		return profile::elevation(line, Chainage) - profile::elevation(read, Chainage);
+	}
+	double elevation(double const Chainage) const
+	{
+		return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage);
+	}
+	double grade(double const Chainage) const
+	{
+		return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read, Chainage) : profile::grade(line, Chainage);
+	}
+	// an edit leaves the track as it lies where it changed nothing in the line, whatever the line read from it is off it by: no cut there
+	void uncut_where_unchanged(std::vector<double> &Cuts) const
+	{
+		if (false == edit_only)
+			return;
+		std::erase_if(Cuts, [this](double const Cut) {
+			double constexpr kCutNear{1.0}; // m
+			double constexpr kNoChange{0.001}; // m
+			return std::abs(changed_at(Cut - kCutNear)) < kNoChange && std::abs(changed_at(Cut + kCutNear)) < kNoChange;
+		});
+	}
+};
+
+// a change of grade, by which way it bends
+char const *grade_change_kind(double const Change)
+{
+	return Change > 0.0 ? STR_C("sag") : STR_C("crest");
+}
+
+// what the radius of the vertical curve of a point does, with its tangent and sagitta at the Change of grade, per mille
+std::string radius_hint(double const Radius, double const Change)
+{
+	auto const tangent{Radius * std::abs(Change) / 2000.0};
+	auto text{std::string{STR_C("The radius of the vertical curve which rounds off the break of the grade here")} + "\n" + format(STR_C("Change of grade %+.2f per mille, %s"), Change, grade_change_kind(Change))};
+	if (Radius > 0.0)
+		text += "\n" + format(STR_C("Tangent T %.2f m, sagitta f %.3f m"), tangent, tangent * tangent / (2.0 * Radius));
+	return text;
+}
+
+// the tracks changed by the last Edits steps of the History which changed tracks, those of the Kind of action, each once
+template <typename Steps, typename Action>
+std::vector<TTrack *> tracks_of_edits(Steps const &History, std::size_t const Edits, Action const Kind)
+{
+	std::vector<TTrack *> tracks;
+	std::size_t found{0};
+	for (auto step{History.rbegin()}; step != History.rend() && found < Edits; ++step)
+	{
+		if (step->action != Kind)
+			continue;
+		++found;
+		for (auto const &[track, step_state] : step->tracks)
+			tracks.push_back(track);
+		tracks.insert(tracks.end(), step->created.begin(), step->created.end());
+		tracks.insert(tracks.end(), step->removed.begin(), step->removed.end());
+	}
+	std::erase(tracks, nullptr);
+	std::ranges::sort(tracks);
+	tracks.erase(std::ranges::unique(tracks).begin(), tracks.end());
+	return tracks;
+}
+
+// whether one of the Tracks has a formation of its own among the Modifiers, shaped one by one as the terrain model lays them
+bool shaped_one_by_one(std::vector<TTrack *> const &Tracks, std::vector<heightmap::modifier> const &Modifiers)
+{
+	return std::ranges::any_of(Tracks, [&Modifiers](TTrack const *Track) {
+		return false == Track->name().empty() && std::ranges::any_of(Modifiers, [Track](heightmap::modifier const &Modifier) { return Modifier.name == "nmt " + Track->name() || Modifier.name.starts_with("nmt " + Track->name() + " "); });
+	});
+}
+
 }
 
 // format of the lines, coordinates in the space of the file:
@@ -329,7 +821,7 @@ void editor_mode::fitted_load()
 		}
 }
 
-void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand)
+void editor_mode::fitted_set(std::span<TTrack *const> const Tracks, bool const Hand)
 {
 	fitted_load();
 	std::vector<scene::layer_handle> layers;
@@ -337,13 +829,7 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Han
 	{
 		if (track == nullptr || track->m_editorremoved || track->name().empty())
 			continue;
-		scene::layer_handle layer{null_handle};
-		if (false == scene::Layers.empty())
-		{
-			layer = scene::Layers.resolve(track->layer());
-			if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
-				layer = scene::Layers.active();
-		}
+		auto const layer{fitted_layer(*track)};
 		// a mark of the name in another layer leaves it when it's written again
 		for (auto found{m_fitted.lower_bound({track->name(), 0})}; found != m_fitted.end() && found->first.first == track->name(); ++found)
 			if (found->second.layer != layer)
@@ -362,20 +848,8 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Han
 		if (track != nullptr && false == track->m_editorremoved && false == track->name().empty())
 			standing.emplace(track->name(), fitted_shape(*track));
 	for (auto const layer : layers)
-	{
-		if (false == scene::Layers.valid(layer))
-			continue;
-		std::vector<std::string> lines;
-		for (auto const &[key, mark] : m_fitted)
-		{
-			if (mark.layer != layer || false == standing.contains(key))
-				continue;
-			if (lines.empty())
-				lines.emplace_back("# the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines");
-			lines.push_back(format("fitted %s %016llx%s", key.first.c_str(), static_cast<unsigned long long>(mark.shape), mark.hand ? " hand" : ""));
-		}
-		scene::Layers.mark(layer, kFittedMark, std::move(lines));
-	}
+		if (scene::Layers.valid(layer))
+			scene::Layers.mark(layer, kFittedMark, fitted_lines(m_fitted, layer, standing));
 }
 
 bool editor_mode::grade_hand(TTrack const &Track)
@@ -444,185 +918,23 @@ bool editor_mode::profile_restore_parts()
 	auto const &samples{state.samples};
 	if (samples.size() < 2)
 		return false;
-	auto const locate = [&](glm::dvec3 const &Point, double &Chainage) { return sampled_chainage(samples, Point, Chainage); };
-	auto const length{state.route.length};
-	// the direction of the route at the chainage, in the plan
-	auto const heading = [&](double const Chainage) {
-		auto const a{editor_track::sampled_position(samples, std::max(0.0, Chainage - 1.0))};
-		auto const b{editor_track::sampled_position(samples, std::min(length, Chainage + 1.0))};
-		return glm::dvec2{b.x - a.x, b.z - a.z};
-	};
-	std::vector<profile::pvi> points;
-	std::size_t parts{0};
-	std::size_t retaken{0};
-	// the ends of this route inside a kept design take their heights from it
-	std::optional<double> start;
-	std::optional<double> end;
+	design_parts gathered{samples, state.route.spans, state.route.length};
 	// the newer designs first: where two lie over the same stretch, the one kept later is the one meant
-	std::vector<std::pair<double, double>> covered;
-	auto const taken = [&](double const Chainage) { return std::ranges::any_of(covered, [&](auto const &Stretch) { return Chainage > Stretch.first + 0.25 && Chainage < Stretch.second - 0.25; }); };
 	for (auto entries{m_profiles.rbegin()}; entries != m_profiles.rend(); ++entries)
 	{
 		auto const &entry{*entries};
-		// the design laid over this route at least in part: one of its ends on it, the route running on towards the other
-		double a{0.0};
-		double b{0.0};
-		auto const first{locate(entry.start, a)};
-		auto const last{locate(entry.end, b)};
-		if (false == first && false == last)
+		kept_design const design{entry.start, entry.end, entry.length, entry.departure, entry.line};
+		auto const placement{gathered.placed(design)};
+		if (false == placement.has_value())
 			continue;
-		double origin;
-		double direction;
-		double scale{1.0};
-		if (first && last)
-		{
-			// the route between the ends of the design got longer or shorter, as when a track of it was moved: the points go along
-			scale = std::abs(b - a) / std::max(1.0, entry.length);
-			if (scale < 0.8 || scale > 1.25)
-				continue;
-			direction = b >= a ? 1.0 : -1.0;
-			origin = a;
-		}
-		else
-		{
-			auto const anchor{first ? a : b};
-			auto const towards{first ? entry.end - entry.start : entry.start - entry.end};
-			auto const along{glm::dot(heading(anchor), glm::dvec2{towards.x, towards.z})};
-			if (std::abs(along) < 1e-9)
-				continue;
-			// the chainage of the design grows along the route or against it
-			direction = (along > 0.0) == first ? 1.0 : -1.0;
-			origin = first ? a : b - direction * entry.length;
-		}
-		auto const local = [&](double const Chainage) { return (Chainage - origin) * direction / scale; };
-		// the stretch of this route over the paths of the design, from where it meets it: off it, as past the switch where this
-		// route turns away, the design says nothing
-		auto const extent_low{std::min(origin, origin + direction * entry.length * scale)};
-		auto const extent_high{std::max(origin, origin + direction * entry.length * scale)};
-		auto low{extent_low};
-		auto high{extent_high};
-		if (auto const own{profile_stored_route(entry)})
-		{
-			std::set<std::pair<TTrack const *, int>> paths;
-			for (auto const &span : own->spans)
-				paths.emplace(span.track, span.path);
-			auto const &spans{state.route.spans};
-			auto const on = [&](std::size_t const Index) { return paths.contains({spans[Index].track, spans[Index].path}); };
-			auto const anchor{first ? a : b};
-			std::optional<std::size_t> at;
-			for (std::size_t i = 0; i < spans.size(); ++i)
-				if (on(i) && anchor >= spans[i].from - 0.3 && anchor <= spans[i].to + 0.3)
-				{
-					at = i;
-					break;
-				}
-			if (false == at.has_value())
-				continue;
-			auto lower{*at};
-			auto upper{*at};
-			while (lower > 0 && on(lower - 1))
-				--lower;
-			while (upper + 1 < spans.size() && on(upper + 1))
-				++upper;
-			low = std::max(low, spans[lower].from);
-			high = std::min(high, spans[upper].to);
-		}
-		auto const inside = [&](double const Chainage) { return Chainage > 0.25 && Chainage < length - 0.25 && Chainage >= low - 0.25 && Chainage <= high + 0.25; };
-		// where the track was changed since the design was applied to it, by the gizmo or by dragging its points, the track holds:
-		// the design gives way there to the line read from the track
-		std::vector<std::pair<double, double>> stale;
-		if (entry.departure >= 0.0 && entry.departure <= kApplied)
-		{
-			for (auto const &sample : samples)
-			{
-				if (sample.chainage < low - 0.25 || sample.chainage > high + 0.25)
-					continue;
-				if (auto const designed{profile::elevation(entry.line, std::clamp(local(sample.chainage), 0.0, entry.length))}; std::abs(designed - sample.position.y) <= kStale)
-					continue;
-				if (false == stale.empty() && sample.chainage - stale.back().second <= kStaleMargin)
-					stale.back().second = sample.chainage;
-				else
-					stale.emplace_back(sample.chainage, sample.chainage);
-			}
-			for (auto &[from, to] : stale)
-			{
-				from = std::max(low, from - kStaleMargin);
-				to = std::min(high, to + kStaleMargin);
-			}
-		}
-		auto const changed = [&](double const Chainage) { return std::ranges::any_of(stale, [&](auto const &Stretch) { return Chainage >= Stretch.first - 0.25 && Chainage <= Stretch.second + 0.25; }); };
-		for (auto point : entry.line.points)
-		{
-			point.chainage = origin + direction * point.chainage * scale;
-			point.joint = false;
-			if (inside(point.chainage) && false == taken(point.chainage) && false == changed(point.chainage))
-				points.push_back(point);
-		}
-		for (auto const &[stretch_from, stretch_to] : stale)
-		{
-			std::vector<double> chainages;
-			std::vector<double> elevations;
-			std::vector<double> grades;
-			for (auto const &sample : samples)
-				if (sample.chainage >= stretch_from - 1e-6 && sample.chainage <= stretch_to + 1e-6)
-				{
-					chainages.push_back(sample.chainage);
-					elevations.push_back(sample.position.y);
-					grades.push_back(sample.grade);
-				}
-			if (chainages.size() < 2)
-				continue;
-			profile::recognition options;
-			options.minimum_length = 5.0;
-			options.detail = kStale;
-			for (auto point : profile::recognize(chainages, elevations, grades, options).points)
-			{
-				point.joint = false;
-				if (point.chainage >= 0.0 && point.chainage <= length && false == taken(point.chainage))
-					points.push_back(point);
-			}
-			++retaken;
-		}
-		// where this route turns off the design, its height there: between two designs the line goes straight, over the switches.
-		// where it runs on past the end of the design, onto track laid since, the break gets the vertical curve of the limits
-		for (auto const edge : {low, high})
-			if (edge > 0.5 && edge < length - 0.5 && false == taken(edge) && false == changed(edge))
-			{
-				profile::pvi point;
-				point.chainage = edge;
-				point.elevation = profile::elevation(entry.line, std::clamp(local(edge), 0.0, entry.length));
-				point.automatic = std::abs(edge - (edge == low ? extent_low : extent_high)) < 0.5;
-				points.push_back(point);
-			}
-		if (false == start.has_value() && false == changed(0.0) && local(0.0) >= -0.25 && local(0.0) <= entry.length + 0.25)
-			start = profile::elevation(entry.line, std::clamp(local(0.0), 0.0, entry.length));
-		if (false == end.has_value() && false == changed(length) && local(length) >= -0.25 && local(length) <= entry.length + 0.25)
-			end = profile::elevation(entry.line, std::clamp(local(length), 0.0, entry.length));
-		covered.emplace_back(low, high);
-		++parts;
+		auto const extent{gathered.extent(design, *placement, profile_stored_route(entry))};
+		if (false == extent.has_value())
+			continue;
+		gathered.add(design, *placement, extent->first, extent->second);
 	}
-	if (parts == 0)
+	if (gathered.parts == 0)
 		return false;
-	std::ranges::sort(points, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
-	std::vector<profile::pvi> line;
-	for (auto point : points)
-	{
-		point.chainage = std::clamp(point.chainage, 0.0, length);
-		if (false == line.empty() && point.chainage - line.back().chainage < 0.5)
-			continue;
-		line.push_back(point);
-	}
-	if (line.empty() || line.front().chainage > 0.5)
-		line.emplace(line.begin(), 0.0, start.value_or(samples.front().position.y));
-	else
-		line.front().chainage = 0.0;
-	if (line.back().chainage < length - 0.5)
-		line.emplace_back(length, end.value_or(samples.back().position.y));
-	else
-		line.back().chainage = length;
-	line.front().radius = 0.0;
-	line.back().radius = 0.0;
-	state.line.points = std::move(line);
+	state.line.points = gathered.joined_points(gathered.start.value_or(samples.front().position.y), gathered.end.value_or(samples.back().position.y));
 	state.selected = -1;
 	state.changed = false;
 	profile_check();
@@ -632,9 +944,9 @@ bool editor_mode::profile_restore_parts()
 		profile_recognize();
 		return true;
 	}
-	state.status = format(STR_C("Design put together from %zu designs kept for the routes along this one, largest departure from the track %.3f m"), parts, state.departure);
-	if (retaken > 0)
-		state.status += format(STR_C("; %zu stretches changed on the track since read from it again"), retaken);
+	state.status = format(STR_C("Design put together from %zu designs kept for the routes along this one, largest departure from the track %.3f m"), gathered.parts, state.departure);
+	if (gathered.retaken > 0)
+		state.status += format(STR_C("; %zu stretches changed on the track since read from it again"), gathered.retaken);
 	return true;
 }
 
@@ -717,33 +1029,12 @@ void editor_mode::profile_forget()
 
 std::optional<editor_track::route> editor_mode::profile_stored_route(stored_profile const &Entry, TTrack **From, TTrack **To) const
 {
-	auto const touching = [](glm::dvec3 const &Point) {
-		std::vector<TTrack *> result;
-		for (auto *track : simulation::Paths.sequence())
+	for (auto *from : tracks_touching(Entry.start))
+		for (auto *to : tracks_touching(Entry.end))
 		{
-			if (track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
-				continue;
-			for (auto const &path : track->m_paths)
-				for (auto const index : {segment_data::point::start, segment_data::point::end})
-					if (plan_distance(path.points[index], Point) <= 0.1 && std::abs(path.points[index].y - Point.y) < 3.0)
-					{
-						if (std::find(result.begin(), result.end(), track) == result.end())
-							result.push_back(track);
-					}
-		}
-		return result;
-	};
-	for (auto *from : touching(Entry.start))
-		for (auto *to : touching(Entry.end))
-		{
-			// the route of the fewest paths, or where the design was laid along another, the one as long through its middle; the length of
-			// a route comes with its samples
-			auto const fits = [&](editor_track::route &Route) {
-				auto const samples{editor_track::sample_route(Route, 1.0)};
-				return false == samples.empty() && std::abs(Route.length - Entry.length) <= 0.5 && plan_distance(samples.front().position, Entry.start) <= 0.1 && plan_distance(editor_track::sampled_position(samples, Route.length * 0.5), Entry.middle) <= 0.5;
-			};
+			// the route of the fewest paths, or where the design was laid along another, the one as long through its middle
 			editor_track::route route;
-			if (std::string error; (false == editor_track::find_route(from, to, route, error) || false == fits(route)) && (false == editor_track::find_route_along(from, to, Entry.length, Entry.middle, route) || false == fits(route)))
+			if (std::string error; (false == editor_track::find_route(from, to, route, error) || false == route_fits(route, Entry.length, Entry.start, Entry.middle)) && (false == editor_track::find_route_along(from, to, Entry.length, Entry.middle, route) || false == route_fits(route, Entry.length, Entry.start, Entry.middle)))
 				continue;
 			if (From != nullptr)
 				*From = from;
@@ -760,9 +1051,6 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 	// it was parts from them, and a profile opened over them reads the stretches changed from the track again, a polyline bending
 	// wherever it falls, on the switches too. Each is laid anew onto the tracks as they lie now, as a line is onto the ground, within a
 	// centimetre and to the norms; one which can't be without an error stays as it was
-	double constexpr kTolerance{0.01}; // m
-	double constexpr kReach{100.0}; // m, however far a track is, it's what the line keeps to
-	double constexpr kSteepest{50.0}; // per mille, as the lines are fitted to the terrain, past the limit of the norms
 	profile_library_load();
 	auto &state{m_profile};
 	auto const show_model{state.show_model};
@@ -786,23 +1074,7 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 		if (state.departure <= kStale && false == has_errors(state.issues))
 			continue;
 		auto const before{state.departure};
-		// the tracks are no ground with structures to go past: the line keeps to all of them, as steep as they are, as sharply bent as
-		// on a hump the line was fitted to
-		std::vector<double> chainages;
-		std::vector<double> heights;
-		for (auto const &sample : samples)
-		{
-			chainages.push_back(sample.chainage);
-			heights.push_back(sample.position.y);
-		}
-		std::vector const tolerances(samples.size(), kTolerance * 0.5);
-		std::vector const reaches(samples.size(), kReach);
-		profile::ground_fit options;
-		options.tolerance = kTolerance;
-		options.grade_max = kSteepest;
-		options.humps = profile::humps(chainages, heights, state.context, kTolerance);
-		options.hump_radius = 300.0;
-		auto line{profile::fit_ground(chainages, heights, state.context, entry.line, options, tolerances, reaches)};
+		auto line{refitted_line(samples, state.context, entry.line)};
 		if (line.points.size() < 2)
 			continue;
 		state.line = std::move(line);
@@ -810,11 +1082,7 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 		if (has_errors(state.issues))
 		{
 			++failed;
-			std::string errors;
-			for (auto const &issue : state.issues)
-				if (issue.error)
-					errors += " | " + issue.text;
-			WriteLog(format("Editor: vertical profile - the design of %.0f m from %.1f %.1f, %.3f m off the tracks moved, can't be laid onto them anew without an error, it stays as it was%s", state.route.length, entry.start.x, entry.start.z, before, errors.c_str()), logtype::generic);
+			WriteLog(format("Editor: vertical profile - the design of %.0f m from %.1f %.1f, %.3f m off the tracks moved, can't be laid onto them anew without an error, it stays as it was%s", state.route.length, entry.start.x, entry.start.z, before, errors_text(state.issues).c_str()), logtype::generic);
 			continue;
 		}
 		++refitted;
@@ -824,12 +1092,7 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 		entry.middle = editor_track::sampled_position(samples, state.route.length * 0.5);
 		entry.line = state.line;
 		entry.departure = state.departure;
-		for (auto &point : entry.line.points)
-			if (point.joint)
-			{
-				point.joint = false;
-				point.automatic = false;
-			}
+		joints_as_points(entry.line);
 		layers.push_back(entry.layer);
 	}
 	state.show_model = show_model;
@@ -1734,7 +1997,10 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	if (state.route.spans.empty() || state.line.points.size() < 2)
 		return;
 	auto const edits{m_track_edits};
-	if (state.changed && false == state.fitting ? errors_in_change(state.issues, state.line, state.line_read, state.samples) : has_errors(state.issues))
+	// an edit goes onto the track as what it changed in the line: where it changed nothing the track stays as it lies, whatever the line
+	// read from it is off it by, and isn't cut
+	bool const edit_only{state.changed && false == state.fitting};
+	if (edit_only ? errors_in_change(state.issues, state.line, state.line_read, state.samples) : has_errors(state.issues))
 	{
 		state.error = STR_C("Correct the errors to apply the grade line");
 		state.show_remarks = true;
@@ -1756,49 +2022,26 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	for (auto const &span : state.route.spans)
 		ends.insert(ends.end(), {span.from, span.to});
 	auto cuts{profile::breaks(line)};
-	// an edit goes onto the track as what it changed in the line: where it changed nothing the track stays as it lies, whatever the line
-	// read from it is off it by, and isn't cut
-	bool const edit_only{state.changed && false == state.fitting};
 	auto const read_line{state.line_read};
-	auto const changed_at = [&line, &read_line](double const Chainage) { return profile::elevation(line, Chainage) - profile::elevation(read_line, Chainage); };
-	if (edit_only)
-		std::erase_if(cuts, [&changed_at](double const Cut) {
-			double constexpr kCutNear{1.0}; // m
-			double constexpr kNoChange{0.001}; // m
-			return std::abs(changed_at(Cut - kCutNear)) < kNoChange && std::abs(changed_at(Cut + kCutNear)) < kNoChange;
-		});
-	auto const height_at = [&edit_only, &before, &changed_at, &line](double const Chainage) { return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage); };
-	auto const grade_at = [&edit_only, &before, &line, &read_line](double const Chainage) { return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read_line, Chainage) : profile::grade(line, Chainage); };
+	applied_heights const heights{line, read_line, before, edit_only};
+	heights.uncut_where_unchanged(cuts);
+	auto const height_at = [&heights](double const Chainage) { return heights.elevation(Chainage); };
+	auto const grade_at = [&heights](double const Chainage) { return heights.grade(Chainage); };
 	// the paths are cut only at the breaks they can't go over keeping to the line within a hair: one cut there, by a joint, or by
 	// another cut, would leave a sliver of a track, the line applied again leaving more of them by the first, the ballast mapped
 	// on each from its start. A path just laid keeps to it as closely as Fewest
 	double constexpr kFollow{0.002}; // m
 	cuts = profile::fewest_breaks(cuts, ends, Fewest > 0.0 ? Fewest : kFollow, height_at, grade_at);
 	// a bridge ends at a joint or a break of the line by its abutment rather than leave a sliver of a path there
-	double constexpr kBridgeSnap{1.0}; // m
 	auto joints{cuts};
 	joints.insert(joints.end(), ends.begin(), ends.end());
-	auto bridges{Bridges};
-	for (auto &bridge : bridges)
-		for (auto *end : {&bridge.from, &bridge.to})
-			if (auto const nearest{std::ranges::min_element(joints, [&](double const A, double const B) { return std::abs(A - *end) < std::abs(B - *end); })};
-			    nearest != joints.end() && std::abs(*nearest - *end) <= kBridgeSnap)
-				*end = *nearest;
+	auto const bridges{bridges_snapped(Bridges, joints)};
 	for (auto const &bridge : bridges)
 		cuts.insert(cuts.end(), {bridge.from, bridge.to});
 	std::ranges::sort(cuts);
 	auto const gaps{editor_track::apply_profile(
 	    state.route, height_at, grade_at, cuts, states, created)};
-	// the paths over a bridge sound and light as on one, and get no formation; within what a cut too near an end leaves on
-	double constexpr kBridgeEnd{0.5}; // m
-	std::size_t bridged{0};
-	for (auto const &span : state.route.spans)
-		if (span.track->eEnvironment != e_bridge && span.track->eEnvironment != e_tunnel
-		    && std::ranges::any_of(bridges, [&](profile::departure const &Bridge) { return span.from >= Bridge.from - kBridgeEnd && span.to <= Bridge.to + kBridgeEnd; }))
-		{
-			span.track->eEnvironment = e_bridge;
-			++bridged;
-		}
+	auto const bridged{spans_bridged(state.route.spans, bridges)};
 	auto const changed{states.size()};
 	auto const added{created.size()};
 	state.created = created;
@@ -1828,18 +2071,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 		state.status += STR_C("\nThe paths and the design (//$p lines) go to the scenery files on save");
 	if (bridged > 0)
 		state.status += format(STR_P("\nOver a bridge or a viaduct: %zu path", "\nOver a bridge or a viaduct: %zu paths", bridged), bridged);
-	auto const name = [](TTrack const *Track) { return name_of(*Track); };
-	auto const closed{std::count_if(gaps.begin(), gaps.end(), [](auto const &Gap) { return Gap.closed; })};
-	if (closed > 0)
-		state.status += STR_C("\nPaths off the route brought to its height:");
-	for (auto const &gap : gaps)
-		if (gap.closed)
-			state.status += format(STR_C("\n  %s at %s: %+.3f m"), name(gap.neighbour).c_str(), name(gap.track).c_str(), -gap.gap);
-	if (closed < static_cast<long>(gaps.size()))
-		state.status += STR_C("\nSwitch ends off the adjoining paths, which can't be changed here:");
-	for (auto const &gap : gaps)
-		if (false == gap.closed)
-			state.status += format("\n  %s -> %s: %+.3f m", name(gap.track).c_str(), name(gap.neighbour).c_str(), gap.gap);
+	state.status += gaps_told(gaps);
 	// the tracks on the other side of the crossovers of the route go up and down with it
 	if (auto const followed{follow_crossovers(before)}; followed > 0)
 		state.status += format(STR_C("\nThe tracks across %zu crossover(s) followed the change"), followed);
@@ -1857,21 +2089,7 @@ void editor_mode::profile_follow_terrain(std::size_t const Edits)
 	// the heightmap terrain the scenery has; the ground of a scenery without it stays as it is
 	if (false == m_streamer.active() || Edits == 0)
 		return;
-	std::vector<TTrack *> tracks;
-	std::size_t found{0};
-	for (auto step{m_history.rbegin()}; step != m_history.rend() && found < Edits; ++step)
-	{
-		if (step->action != EditorSnapshot::Action::TrackEdit)
-			continue;
-		++found;
-		for (auto const &[track, step_state] : step->tracks)
-			tracks.push_back(track);
-		tracks.insert(tracks.end(), step->created.begin(), step->created.end());
-		tracks.insert(tracks.end(), step->removed.begin(), step->removed.end());
-	}
-	std::erase(tracks, nullptr);
-	std::ranges::sort(tracks);
-	tracks.erase(std::ranges::unique(tracks).begin(), tracks.end());
+	auto tracks{tracks_of_edits(m_history, Edits, EditorSnapshot::Action::TrackEdit)};
 	if (tracks.empty())
 		return;
 	// the route shaped by the earthworks of the profile keeps its modifier, shaped again to the new grade line; the tracks
@@ -1881,9 +2099,7 @@ void editor_mode::profile_follow_terrain(std::size_t const Edits)
 	auto const &modifiers{m_streamer.modifiers()};
 	auto const has = [&](std::string const &Name) { return std::ranges::any_of(modifiers, [&](heightmap::modifier const &Modifier) { return Modifier.name == Name; }); };
 	auto const shaped{has(route) || (false == state.earthworks.modifier.empty() && has(state.earthworks.modifier))};
-	auto const own{std::ranges::any_of(tracks, [&](TTrack const *Track) {
-		return false == Track->name().empty() && std::ranges::any_of(modifiers, [&](heightmap::modifier const &Modifier) { return Modifier.name == "nmt " + Track->name() || Modifier.name.starts_with("nmt " + Track->name() + " "); });
-	})};
+	auto const own{shaped_one_by_one(tracks, modifiers)};
 	auto status{state.status};
 	std::size_t laid{0};
 	if (false == shaped || own)
@@ -2018,37 +2234,7 @@ void editor_mode::render_profile_strip()
 			ImGui::EndChild();
 			ImGui::SameLine();
 			ImGui::BeginChild("##profileside", ImVec2(0.0f, 0.0f), false);
-			if (ImGui::BeginTabBar("##profiletabs"))
-			{
-				// a click on a point in the plot brings its tab forward, a click on the state of the grade line the remarks
-				bool const picked{state.selected >= 0 && state.selected != state.shown};
-				state.shown = state.selected;
-				if (ImGui::BeginTabItem(STR_C("Point"), nullptr, picked ? ImGuiTabItemFlags_SetSelected : 0))
-				{
-					render_profile_point();
-					ImGui::EndTabItem();
-				}
-				if (ImGui::BeginTabItem(format("%s (%zu)###profilepoints", STR_C("Points"), state.line.points.size()).c_str()))
-				{
-					ImGui::BeginChild("##profilepointlist");
-					render_profile_points();
-					ImGui::EndChild();
-					ImGui::EndTabItem();
-				}
-				bool const errors{has_errors(state.issues)};
-				if (false == state.issues.empty())
-					ImGui::PushStyleColor(ImGuiCol_Text, errors ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.8f, 0.3f, 1.0f));
-				bool const remarks{ImGui::BeginTabItem(format("%s (%zu)###profileremarks", STR_C("Remarks"), state.issues.size()).c_str(), nullptr, state.show_remarks ? ImGuiTabItemFlags_SetSelected : 0)};
-				state.show_remarks = false;
-				if (false == state.issues.empty())
-					ImGui::PopStyleColor();
-				if (remarks)
-				{
-					render_profile_issues();
-					ImGui::EndTabItem();
-				}
-				ImGui::EndTabBar();
-			}
+			render_profile_tabs();
 			ImGui::EndChild();
 		}
 	}
@@ -2313,6 +2499,116 @@ void editor_mode::render_profile_issues()
 	ImGui::EndChild();
 }
 
+namespace
+{
+
+// a field of a point of the grade line dragged: true where it was changed
+bool profile_field_drag(char const *Label, double &Value, float const Speed, char const *Format)
+{
+	field_row(Label);
+	ImGui::PushID(Label);
+	auto const edited{ImGui::DragScalar("##value", ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format)};
+	ImGui::PopID();
+	return edited;
+}
+
+} // namespace
+
+void editor_mode::render_profile_tabs()
+{
+	auto &state{m_profile};
+	if (false == ImGui::BeginTabBar("##profiletabs"))
+		return;
+	// a click on a point in the plot brings its tab forward, a click on the state of the grade line the remarks
+	bool const picked{state.selected >= 0 && state.selected != state.shown};
+	state.shown = state.selected;
+	if (ImGui::BeginTabItem(STR_C("Point"), nullptr, picked ? ImGuiTabItemFlags_SetSelected : 0))
+	{
+		render_profile_point();
+		ImGui::EndTabItem();
+	}
+	if (ImGui::BeginTabItem(format("%s (%zu)###profilepoints", STR_C("Points"), state.line.points.size()).c_str()))
+	{
+		ImGui::BeginChild("##profilepointlist");
+		render_profile_points();
+		ImGui::EndChild();
+		ImGui::EndTabItem();
+	}
+	bool const errors{has_errors(state.issues)};
+	if (false == state.issues.empty())
+		ImGui::PushStyleColor(ImGuiCol_Text, errors ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.8f, 0.3f, 1.0f));
+	bool const remarks{ImGui::BeginTabItem(format("%s (%zu)###profileremarks", STR_C("Remarks"), state.issues.size()).c_str(), nullptr, state.show_remarks ? ImGuiTabItemFlags_SetSelected : 0)};
+	state.show_remarks = false;
+	if (false == state.issues.empty())
+		ImGui::PopStyleColor();
+	if (remarks)
+	{
+		render_profile_issues();
+		ImGui::EndTabItem();
+	}
+	ImGui::EndTabBar();
+}
+
+bool editor_mode::render_profile_point_fields(int const Index, bool const End, bool const Locked)
+{
+	auto &state{m_profile};
+	auto &points{state.line.points};
+	auto const count{static_cast<int>(points.size())};
+	auto &point{points[Index]};
+	bool changed{false};
+	auto chainage{point.chainage + state.origin};
+	if (false == End && profile_field_drag("Chainage (m)", chainage, 0.5f, "%.2f"))
+	{
+		point.chainage = std::clamp(chainage - state.origin, points[Index - 1].chainage + 0.5, points[Index + 1].chainage - 0.5);
+		changed = true;
+	}
+	if (Locked)
+	{
+		field_row("Elevation (m)");
+		ImGui::Text("%.3f", point.elevation);
+	}
+	else
+		changed |= profile_field_drag("Elevation (m)", point.elevation, 0.01f, "%.3f");
+	if (Index > 0 && false == Locked)
+	{
+		auto grade{profile::grade_after(state.line, Index - 1) * 1000.0};
+		if (profile_field_drag("Grade before (per mille)", grade, 0.05f, "%+.2f"))
+		{
+			point.elevation = points[Index - 1].elevation + grade / 1000.0 * (point.chainage - points[Index - 1].chainage);
+			changed = true;
+		}
+	}
+	if (Index + 1 < count)
+	{
+		auto grade{profile::grade_after(state.line, Index) * 1000.0};
+		if (profile_field_drag("Grade after (per mille)", grade, 0.05f, "%+.2f"))
+		{
+			points[Index + 1].elevation = point.elevation + grade / 1000.0 * (points[Index + 1].chainage - point.chainage);
+			changed = true;
+		}
+	}
+	if (false == End)
+	{
+		field_row("Vertical curve R (m)");
+		auto const box{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(STR_C("auto")).x};
+		ImGui::SetNextItemWidth(std::max(40.0f, ImGui::GetContentRegionAvail().x - box - ImGui::GetStyle().ItemSpacing.x));
+		if (ImGui::DragScalar("##pointradius", ImGuiDataType_Double, &point.radius, 10.0f, nullptr, nullptr, "%.0f"))
+		{
+			point.automatic = false;
+			changed = true;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", radius_hint(point.radius, (profile::grade_after(state.line, Index) - profile::grade_after(state.line, Index - 1)) * 1000.0).c_str());
+		point.radius = std::max(0.0, point.radius);
+		ImGui::SameLine();
+		changed |= ImGui::Checkbox(STR_C("auto"), &point.automatic);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("R follows the limits: the required radius where the change of grade needs a curve; 0: no curve"));
+	}
+	ImGui::EndTable();
+	return changed;
+}
+
 void editor_mode::render_profile_point()
 {
 	auto &state{m_profile};
@@ -2321,14 +2617,6 @@ void editor_mode::render_profile_point()
 	auto const count{static_cast<int>(points.size())};
 	if (state.selected >= count)
 		state.selected = -1;
-	auto const drag = [](char const *Label, double &Value, float const Speed, char const *Format) {
-		field_row(Label);
-		ImGui::PushID(Label);
-		auto const edited{ImGui::DragScalar("##value", ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format)};
-		ImGui::PopID();
-		return edited;
-	};
-	auto const kind_of = [](double const Change) { return Change > 0.0 ? STR_C("sag") : STR_C("crest"); };
 	if (state.selected < 0)
 	{
 		ImGui::TextWrapped("%s", STR_C("No point selected. Click a point of the grade line in the plot, or double click the line to add one."));
@@ -2340,7 +2628,7 @@ void editor_mode::render_profile_point()
 		auto const change{(profile::grade_after(state.line, index) - profile::grade_after(state.line, index - 1)) * 1000.0};
 		ImGui::Text(STR_C("Point %d: joint with the adjoining track"), index + 1);
 		ImGui::Text(STR_C("km %s   H %.3f m   R %.0f m"), profile::format_chainage(point.chainage + state.origin).c_str(), point.elevation, point.radius);
-		ImGui::Text(STR_C("Grade %+.2f -> %+.2f per mille (%s)"), profile::grade_after(state.line, index - 1) * 1000.0, profile::grade_after(state.line, index) * 1000.0, kind_of(change));
+		ImGui::Text(STR_C("Grade %+.2f -> %+.2f per mille (%s)"), profile::grade_after(state.line, index - 1) * 1000.0, profile::grade_after(state.line, index) * 1000.0, grade_change_kind(change));
 		ImGui::TextWrapped("%s", STR_C("Placed automatically, moves with the neighbouring point; untick the joining in the tool options to edit the end freely"));
 	}
 	else
@@ -2353,65 +2641,7 @@ void editor_mode::render_profile_point()
 		ImGui::SameLine();
 		ImGui::TextDisabled(STR_C("km %s%s"), profile::format_chainage(point.chainage + state.origin).c_str(), locked ? STR_C(", joined to the adjoining track") : end ? STR_C(", end of the route") : "");
 		if (begin_fields("##profilepoint", 0.45f))
-		{
-			auto chainage{point.chainage + state.origin};
-			if (false == end && drag("Chainage (m)", chainage, 0.5f, "%.2f"))
-			{
-				point.chainage = std::clamp(chainage - state.origin, points[index - 1].chainage + 0.5, points[index + 1].chainage - 0.5);
-				changed = true;
-			}
-			if (locked)
-			{
-				field_row("Elevation (m)");
-				ImGui::Text("%.3f", point.elevation);
-			}
-			else
-				changed |= drag("Elevation (m)", point.elevation, 0.01f, "%.3f");
-			if (index > 0 && false == locked)
-			{
-				auto grade{profile::grade_after(state.line, index - 1) * 1000.0};
-				if (drag("Grade before (per mille)", grade, 0.05f, "%+.2f"))
-				{
-					point.elevation = points[index - 1].elevation + grade / 1000.0 * (point.chainage - points[index - 1].chainage);
-					changed = true;
-				}
-			}
-			if (index + 1 < count)
-			{
-				auto grade{profile::grade_after(state.line, index) * 1000.0};
-				if (drag("Grade after (per mille)", grade, 0.05f, "%+.2f"))
-				{
-					points[index + 1].elevation = point.elevation + grade / 1000.0 * (points[index + 1].chainage - point.chainage);
-					changed = true;
-				}
-			}
-			if (false == end)
-			{
-				field_row("Vertical curve R (m)");
-				auto const box{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(STR_C("auto")).x};
-				ImGui::SetNextItemWidth(std::max(40.0f, ImGui::GetContentRegionAvail().x - box - ImGui::GetStyle().ItemSpacing.x));
-				if (ImGui::DragScalar("##pointradius", ImGuiDataType_Double, &point.radius, 10.0f, nullptr, nullptr, "%.0f"))
-				{
-					point.automatic = false;
-					changed = true;
-				}
-				if (ImGui::IsItemHovered())
-				{
-					auto const change{(profile::grade_after(state.line, index) - profile::grade_after(state.line, index - 1)) * 1000.0};
-					auto const tangent{point.radius * std::abs(change) / 2000.0};
-					auto text{std::string{STR_C("The radius of the vertical curve which rounds off the break of the grade here")} + "\n" + format(STR_C("Change of grade %+.2f per mille, %s"), change, kind_of(change))};
-					if (point.radius > 0.0)
-						text += "\n" + format(STR_C("Tangent T %.2f m, sagitta f %.3f m"), tangent, tangent * tangent / (2.0 * point.radius));
-					ImGui::SetTooltip("%s", text.c_str());
-				}
-				point.radius = std::max(0.0, point.radius);
-				ImGui::SameLine();
-				changed |= ImGui::Checkbox(STR_C("auto"), &point.automatic);
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s", STR_C("R follows the limits: the required radius where the change of grade needs a curve; 0: no curve"));
-			}
-			ImGui::EndTable();
-		}
+			changed |= render_profile_point_fields(index, end, locked);
 		if (index + 1 < count && ImGui::Button(STR_C("Add a point after")))
 		{
 			profile::pvi inserted;

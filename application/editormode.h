@@ -201,7 +201,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// puts the terrain back as the step recorded it, the step left with the state it replaced
 	void restore_terrain(EditorSnapshot &Snapshot);
 	// swaps the kilometrage with the one the snapshot keeps
-	void restore_kilometrage(EditorSnapshot &Snapshot);
+	void restore_kilometrage(EditorSnapshot &Snapshot) const;
 	bool m_history_busy{false}; // undo or redo under way
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
@@ -1059,6 +1059,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> const &track_set() const override;
 	editor_track_tab current_track_tab() const override;
 	void render_path_ui();
+	// a field of the path of the Track edited in the inspector: the state Before kept as it's taken, the step of the undo history and the
+	// track built again as it's let go
+	void path_field_done(TTrack &Track, editor_track::state const &Before);
+	// the points of the path Index of the Track to pick: its ends, (+) joined or (-) free, and its control points
+	void render_path_points(TTrack const &Track, int const Index);
+	// the exact position of the point picked of the path Index of the Track, or its control vector; the state Before for the undo history
+	void render_point_fields(TTrack &Track, int const Index, editor_track::state const &Before);
+	// the cant and the radius of the Path of the Track, and its straightening; the state Before for the undo history
+	void render_cant_radius(TTrack &Track, segment_data &Path, editor_track::state const &Before);
 	void draw_track_overlay() const;
 	editor_track::point_ref track_handle_hit() const;
 	void select_track(scene::basic_node *Node);
@@ -1186,6 +1195,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int m_track_event_list{0};
 	std::string m_track_events_missing;
 	void render_path_events(TTrack &Track);
+	// the events of the list List of the Track, one taken off with x where they're Editable; the state Before for the undo history
+	void render_event_list(TTrack &Track, int const List, bool const Editable, editor_track::state const &Before);
 	std::string m_track_mode_notice;
 	struct route_design
 	{
@@ -1786,12 +1797,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
 	void record_connection(connection::kind const Kind, std::vector<TTrack *> const &Switches, connection::result const &Plan, editor_track::switch_template const &Shape) const;
 	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason) const;
-	bool switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
+	bool switch_vacate(TTrack const &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
 	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);
 	std::optional<switch_branch> take_switch_branch(TTrack const &Track, editor_track::joint const &Joint, std::size_t const Index) const;
 	// for the path of the switch the line leaves, as it'll lie
 	bool plan_switch_branch(segment_data const &Path, editor_track::joint const &Joint, switch_branch &Branch) const;
-	void lay_switch_branch(switch_branch const &Branch, editor_track::edit &Edit);
+	void lay_switch_branch(switch_branch const &Branch, editor_track::edit &Edit) const;
 	// of the joints off the main straight of the switch, the neighbours in Skip left out
 	std::vector<switch_branch> switch_branches(TTrack const &Track, std::vector<editor_track::joint> const &Joints, std::vector<TTrack const *> const &Skip = {}) const;
 	// for the paths the switch has now; the joints of the branches which can be laid are handled, the others are left out. Gives the notes for the user
@@ -1800,7 +1811,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool double_room(double_switch const &Set, double &Low, double &High, double &Length, std::string &Reason);
 	bool move_double_paths(double_switch const &Set, std::vector<segment_data> const &Paths, std::string &Status);
 	bool slide_switch(TTrack &Track, double const Distance);
-	bool switch_slides(TTrack const &Track) const;
+	bool switch_slides(TTrack &Track) const;
 	// a slip slid along its first track: the slip and the tracks its crossing track goes on into with their ends free move whole, the
 	// straights of its first track before it and past it give and take the length. Low and High: how far back and on it may go
 	struct slip_slide
@@ -1818,14 +1829,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool slide_slip(slip_set const &Slip, double const Distance);
 	// a switch bent into a curve, its main track going on into a plain track at each end: the curve the three make, the two tracks,
 	// where the switch starts on it; false for any other
-	bool bent_switch_frame(TTrack const &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const;
+	bool bent_switch_frame(TTrack &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const;
 	// the paths of the switch moved along the curve by the distance, shaped as the curve is there
 	std::vector<segment_data> bent_switch_paths(TTrack const &Track, std::vector<curve_sample> const &Frame, double const Station, double const Distance) const;
 	bool slide_bent_switch(TTrack &Track, double const Distance);
 	// the switch bent into a curve given the paths, along the curve of the bent_switch_frame: the tracks next to it laid along it up to
 	// its new ends, one taken up whole going, the curve past the diverging track following. Notes: for the user
 	bool lay_bent_switch(TTrack &Track, std::vector<curve_sample> const &Frame, std::array<TTrack *, 2> const &Sides, std::vector<segment_data> const &Paths, std::string &Notes);
+	// a track next to a bent switch, its Path, laid along the Frame up to the new End of the switch on it, the station there; Joint: the
+	// old end of the switch it joined, Corner: the new one it's laid right up to
+	static segment_data side_along_frame(segment_data const &Path, std::vector<curve_sample> const &Frame, double const End, glm::dvec3 const &Joint, glm::dvec3 const &Corner);
 	void switch_slide_start(TTrack &Track);
+	// switch_slide_start for a slip, false for a track which isn't one
+	bool switch_slide_start_slip(TTrack const &Track);
+	// switch_slide_start for a switch bent into a curve, false for any other
+	bool switch_slide_start_bent(TTrack &Track);
 	void switch_slide_update();
 	void switch_slide_finish();
 	void mouse_left_release();
@@ -2085,7 +2103,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_switch_timbers();
 	void render_rail_profile_hint(TTrack const &Track);
 	bool start_switch_placement();
+	// start_switch_placement on a Track which isn't on a straight: into the curve it's in, pressed at the Ground
+	bool start_curved_switch_placement(TTrack &Track, glm::dvec3 const &Ground);
 	void finish_switch_placement();
+	// finish_switch_placement for a connection of two switches
+	void finish_connection_placement();
 	// a switch with no track under it: a press on the ground starts it at the free end of a track within reach, none with no free end near
 	editor_track::snap_target free_switch_end(glm::dvec3 const &Ground) const;
 	bool free_switch_offered() const;
@@ -2110,6 +2132,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// false where it isn't bent: near the switch, along the straight, or not from a free end
 	bool free_switch_bend(free_bend &Bend) const;
 	bool free_switch_bend_now(free_bend &Bend) const;
+	// the track into the free end the switch bent from a free end, Bend, is dragged to
+	void free_bend_link(free_bend &Bend) const;
 	// laid on from an end of a switch: what the norms say of the change of the curvature from that switch to the tracks of this one
 	std::vector<std::string> free_switch_exits(std::vector<segment_data> const &Paths) const;
 	std::vector<segment_data> free_switch_paths() const;
@@ -2270,8 +2294,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the cursor
 	int lone_slip_side() const;
 	bool replace_double_slip(TTrack const &Part, editor_track::switch_template const &Shape);
+	// the drives of the four switches of a double slip replaced, Old, taken out, the switches of the New one given theirs
+	void slip_drives_renewed(std::array<TTrack *, 4> const &Old, std::vector<TTrack *> const &New);
 	// Bend: what a path of the slip laid out as on straights turns into where it's bent into a curve
-	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd",
+	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack const &Style, std::string const &Type = "Rkpd",
 	                                        std::function<segment_data(segment_data const &)> const &Bend = {});
 	// a slip switch bent into a curve of a side track (ST-T1-A6 11.4 pkt 4b): laid out on the tangent to the curve at its crossing, where
 	// it was pressed, and bent onto the curve as a switch laid into it is, its crossing track coming along with its ends free. Direction
@@ -2377,6 +2403,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_settle();
 	void lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End);
 	void draw_build_overlay() const;
+	// the lines told of the switch or the slip being bent into a curve, the Preview of its paths: what its start was drawn to, the radii,
+	// the cant, the notes and the warnings; the Station they're told at, the middle of a slip or the start of a switch
+	std::vector<std::pair<std::string, ImU32>> curved_switch_lines(std::vector<segment_data> const &Preview, double &Station) const;
 	// the joint before the blades of the switch being placed or the one selected and the tips of its blades
 	void draw_blade_tips() const;
 	// modes of the track editor, one at a time: path is the plain selection
@@ -2451,11 +2480,23 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_track_tool_options();
 	void render_track_selection();
 	void show_track_tab(track_tab const Wanted) override;
+	// the route tool opened on a Track not in its chain: the line read from it, or the notice why it can't be
+	void open_route_on(TTrack &Track);
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
 	std::string track_mode_name() const;
 	void render_turnout_ui();
+	// the drive of the Switch, under its name where it's Named, a switch of a double one: the drive standing by it to change, the events
+	// switching it, or a drive to put by it
+	void render_switch_drive(TTrack &Switch, bool const Named);
+	// the drive standing by the Switch, of the Family and in the Variant for its side: another one put in its place, or turned to the
+	// other side
+	void render_standing_drive(TTrack &Switch, int const Family, int const Variant);
+	// the drives to pick in place of the drive of the Switch, of the Family now
+	void render_drive_combo(TTrack const &Switch, int const Family);
+	// the Track, a switch bent into a curve, slid along it by the distance typed, the tracks next to it keeping a metre
+	void render_bent_switch_slide(TTrack &Track);
 	struct track_name_edit
 	{
 		TTrack const *track{nullptr};
@@ -2471,12 +2512,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_straight_exact(editor_track::straight const &Line);
 	track_tab m_track_tab{track_tab::path};
 	void delete_selected_track();
+	// the double switch Set deleted, its main track left in its place unless Shift asks for all of it
+	void delete_double_switch(double_switch const &Set);
+	// the Slip deleted whole, its two tracks left crossing in its place unless Shift asks for all of it
+	void delete_slip(slip_set const &Slip);
 	// the switch thrown over to its other path in the editor, its blades going over as in the simulation; the scenery keeps no state of it
 	void throw_switch(TTrack &Switch);
 	// the blades of the switches thrown in the editor moved on by the time of the frame: the time of the simulation stands still in it
 	void move_thrown_switches();
 	std::vector<TTrack *> m_thrown_switches;
-	std::string designs_trimmed(std::vector<TTrack *> const &Removed);
+	std::string designs_trimmed(std::vector<TTrack *> const &Removed) const;
 	void start_straight_gesture(int const Tool);
 	void finish_straight_gesture();
 	void toggle_straight_set(TTrack &Track);
@@ -2487,11 +2532,56 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		char const *raw{nullptr}; // the key before it's translated, its gesture drawn from it
 	};
 	std::vector<key_hint> track_key_hints(bool const All) const;
+	// the Hints of the keys of a tool under way: laying, a detour of a straight, a track extended, a switch placed; false where none is
+	bool tool_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys while laying, by the points clicked so far
+	void lay_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys while a switch is dragged out on a straight: a connection recognised, one dragged onto the other track, or a
+	// switch alone
+	void placing_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys of the lay, the switch and the profile tabs, with the gizmo of the Selected track told of; false in another tab
+	bool tab_key_hints(std::vector<key_hint> &Hints, TTrack const *Selected, bool &Gizmo) const;
+	// the Hints of the keys of the switch tab by the kind of switch, the gizmo with a track Selected: whether the gizmo is told of
+	bool turnout_key_hints(std::vector<key_hint> &Hints, TTrack const *Selected) const;
+	// the Hints of the keys of the tools of the track window; false with the window closed or another tool in it
+	bool window_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys of the signalling: a signal moved or placed, or the stations
+	void srk_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys of the plan and the route tabs; false in another tab
+	bool plan_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys of the plan tab, by the tool and the straight dragged
+	void straights_key_hints(std::vector<key_hint> &Hints) const;
+	// the Hints of the keys of the Selected track, its point or a set of tracks: whether the gizmo is told of
+	bool selection_key_hints(std::vector<key_hint> &Hints, TTrack const *Selected) const;
+	// what the gizmo does to the point picked of the Selected track, by its operation
+	char const *point_gizmo_action(TTrack const *Selected) const;
+	// what the gizmo does to the whole Selected track, by its operation
+	char const *track_gizmo_action(TTrack const *Selected) const;
 	void render_track_guide();
 	std::string track_readout() const;
+	// track_readout of a track extended from its end: its length and radius, what it joins, the warnings
+	std::string extend_readout() const;
+	// track_readout while laying: the shape laid, what it joins, the warnings and the notices
+	std::string lay_readout() const;
+	// the shape laid told by the cursor: the start, the curves of the plan or the pieces of the preview
+	std::string lay_shape_text() const;
+	// the curve of the plan laid the cursor makes now, the points traced, the speed of the design and the grades
+	std::string lay_plan_text() const;
+	// the pieces of the preview laid: their length and radius, the speed of the design and the grades
+	std::string lay_pieces_text() const;
+	// track_readout of the tools of the plan placed: the turn of a straight broken, the shift of a detour
+	std::string straight_tool_readout() const;
+	// track_readout of a straight dragged: the curve fitted, its shift and the parallel offered, or its length and azimuth
+	std::string straight_drag_readout() const;
+	// track_readout of the gizmo dragging the Track or its point
+	std::string gizmo_readout(TTrack const &Track) const;
+	// track_readout of the gizmo dragging a control vector of the Track
+	std::string control_readout(TTrack const &Track) const;
 	void draw_track_hints();
+	// the readout of the change in progress in a box by the cursor, with the number typed
+	void draw_track_readout() const;
 	// a scenery with no tracks yet: in the middle of the view, how the first one is laid
-	void draw_empty_scenery_hint();
+	void draw_empty_scenery_hint() const;
 	// path under the cursor, outlined before a click so it's known which one the click takes
 	track_hover m_hover;
 	track_hover track_under_cursor(TTrack const *Only = nullptr, float const Pixels = 0.0f) const;
@@ -2687,7 +2777,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the model of the timbers, with the fastenings where it has them, set on all the switches and crossings of the scenery, in one
 	// step of the undo; empty: the one of eu07.ini. returns: the tracks changed
 	std::size_t set_switch_timbers(std::string const &Model);
-	int track_property_index(std::string const &Key) const;
+	int track_property_index(std::string_view const Key) const;
 	std::size_t track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text);
 	void track_field_finish();
 	void track_field_settle();
@@ -2712,6 +2802,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void textures_index();
 	// the picker of a texture, in an open combo. returns: true when one is chosen, its name in Chosen
 	bool texture_picker(texture_offer const &Offer, std::string const &Current, bool const Mixed, std::string &Chosen);
+	// the large image of the picker: the tile under the mouse, what Enter would choose or the current texture, with its notes
+	void texture_preview(texture_offer const &Offer, std::string const &Current, std::string const &First, bool const Searching, bool const Mixed);
+	// the notes next to the large image of a texture: where it's used, whether it's set now, whether Enter chooses it
+	void texture_notes(std::string const &Shown, std::string const &First, std::string const &Current, bool const Searching, bool const Mixed) const;
+	// the tiles of the picker, those in use and those of the folder. returns: true when one is clicked, its name in Chosen
+	bool texture_tiles(texture_offer const &Offer, std::vector<texture_use const *> const &Used, std::vector<std::string const *> const &Files, std::string const &Current, bool const Mixed, std::string &Chosen);
+	// one tile of the picker. returns: true when it's clicked
+	bool texture_tile(std::string const &Name, int const Count, float const Tile, float const Label, bool const Current);
 	// the same, of a texture of the rails (Kind 0) or of the trackbed (1)
 	bool track_texture_picker(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen);
 	// image of the texture of the name, 0 while there's none
@@ -2727,9 +2825,40 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the textures of the palette and of the water of the terrain; None: the entry for no texture of its own, nullptr: there's none
 	texture_offer terrain_texture_offer(char const *None);
 	void render_track_properties(std::vector<TTrack *> const &Tracks);
+	// the values of the properties over the tracks gathered again when the selection or the tracks changed
+	void property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature);
+	// the notes on the values of the properties made again when the selection or the tracks changed
+	void property_notes(std::size_t const Signature);
+	// the tooltip of a row of the properties
+	void property_row_help(std::size_t const Index, std::size_t const Selected) const;
+	// the label of a row of the properties, marked when the selected tracks differ in it
+	void property_row_label(std::size_t const Index, std::size_t const Selected) const;
+	// the rows of the properties by their kind: a text, a choice, a tick, a texture
+	void property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	void property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	void property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	void property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	// whether any property of the part is shown, More: of those under "more"
+	bool property_rows_any(int const Part, bool const More) const;
+	// the rows of the properties of the part
+	void property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks);
+	// the notes under a row of the properties
+	void property_row_notes(std::size_t const Index) const;
+	// the rows under "more" of the part, in a tree node of the id
+	void property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks);
+	// the rows of the look of the track
+	void property_look_rows(std::vector<TTrack *> const &Tracks);
 	void render_track_set_header(std::vector<TTrack *> const &Tracks);
+	// a row of the list of the selected tracks: Removed or Alone set to the track when it's taken out or kept alone
+	void render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone);
 	void render_track_select_tools(std::vector<TTrack *> const &Tracks);
+	// the popup selecting the tracks of the scenery alike the selected ones
+	void render_similar_popup(std::vector<TTrack *> const &Tracks);
 	void render_track_style(std::vector<TTrack *> const &Tracks);
+	// what the track taken changes on the selected tracks, each with a tick, and the button setting it
+	void render_style_taken(std::vector<TTrack *> const &Tracks);
+	// a line of what the track taken changes: its tick and how it changes. returns: true when it's ticked
+	bool render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected);
 	void copy_track_style(TTrack const &Track);
 	std::size_t paste_track_style(std::vector<TTrack *> const &Tracks);
 	// which groups of the properties are pasted or put on the tracks by a preset, in the order of the groups of editormodetrackprops.cpp
@@ -2739,6 +2868,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::optional<std::size_t> apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What);
 	// presets of the properties of the tracks (editorTrackPresets), made from a track and put on the selected ones
 	void render_track_presets(std::vector<TTrack *> const &Tracks);
+	// the combo choosing the preset
+	void render_preset_combo();
+	// the buttons applying the preset and making a new one from the track
+	void render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width);
+	// the name of the preset of the id, renamed by Enter or the button
+	void render_preset_name(int const Id);
+	// the ticks of what the preset of the id overwrites
+	void render_preset_groups(int const Id);
+	// the buttons updating the preset of the id from the track and deleting it
+	void render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width);
 	void render_track_presets_menu();
 	std::size_t apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks);
 	std::vector<TTrack *> similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const;
@@ -3382,6 +3521,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_profileaudit();
 	selftest_result selftest_gradelines(std::istringstream &words) const;
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
+	// the commands of selftest_props, one each
+	selftest_result selftest_tracksel(std::istringstream &words);
+	selftest_result selftest_trackprop(std::istringstream &words);
+	selftest_result selftest_trackprops();
+	selftest_result selftest_trackstyle(std::istringstream &words);
+	void selftest_trackstyle_list();
+	selftest_result selftest_tracksimilar(std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
 	// monkey <seed> <steps>: the random steps written into the script after this line
 	selftest_result selftest_monkey_run(std::istringstream &words);
@@ -3511,7 +3657,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::map<std::pair<std::string, std::uint64_t>, fitted_mark> m_fitted; // by the name and the shape: scenery files have names used twice
 	bool m_fitted_loaded{false};
 	void fitted_load();
-	void fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand = false);
+	void fitted_set(std::span<TTrack *const> const Tracks, bool const Hand = false);
 	bool grade_fitted(TTrack const &Track);
 	bool grade_hand(TTrack const &Track); // its grade line was edited with the profile tool, and it wasn't changed since
 	bool nmt_stays(TTrack const &Track); // this putting of the tracks onto the terrain leaves it as it is
@@ -3532,6 +3678,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_remove_point(int const Index);
 	void render_profile_body();
 	void render_profile_strip();
+	void render_profile_tabs();
 	void render_profile_header();
 	void render_profile_empty();
 	void render_profile_toolbar();
@@ -3577,6 +3724,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_profile_canvas(profile_view const &View, ImDrawList &Draw) const;
 	void profile_canvas_tooltip() const;
 	void render_profile_point();
+	// the fields of the point Index of the grade line: true where one was changed
+	bool render_profile_point_fields(int const Index, bool const End, bool const Locked);
 	void draw_profile_overlay() const;
 
 	// infrastructure along the track: objects bound to the paths follow their changes. bindings are kept in the
