@@ -2466,6 +2466,13 @@ class TMoverParameters
 	{
 		return false == StLinFlag && MainCircuitLampsEnabled();
 	}
+	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
+	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
+	// starts on its own (eu07/maszyna#427). the other vehicles with such a button keep ignoring the command
+	bool MainCircuitOpensWithStarterOnly() const
+	{
+		return EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric;
+	}
 	// whether the pumps a joint oil and fuel pump switch works, those not started automatically, are all switched on
 	bool OilFuelPumpsEnabled() const
 	{
