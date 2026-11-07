@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/Train.h"
 #include "vehicle/horn.h"
+#include "vehicle/linebreaker.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -3652,16 +3653,22 @@ void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Comm
 	if (Command.action == GLFW_PRESS)
 	{
 		// press or hold...
-		if (Train->m_linebreakerstate == 0)
+		// a single two-state lever stays where it was put, also when the line breaker gets knocked out
+		auto const latchinglever{Train->ggMainOnButton.SubModel == nullptr && Train->ggMainOffButton.SubModel == nullptr && Train->ggMainButton.SubModel != nullptr &&
+		                         Train->ggMainButton.type() == TGaugeType::toggle};
+		switch (linebreaker::pressed(Train->m_linebreakerstate, latchinglever, Train->ggMainButton.GetDesiredValue() > 0.5))
 		{
+		case linebreaker::toggle::close:
 			// ...to close the circuit
 			// NOTE: bit of a dirty shortcut here
 			OnCommand_linebreakerclose(Train, Command);
-		}
-		else if (Train->m_linebreakerstate == 1)
-		{
-			// ...to open the circuit
+			break;
+		case linebreaker::toggle::open:
+			// ...to open the circuit, or to put the lever off if the circuit was already opened
 			OnCommand_linebreakeropen(Train, Command);
+			break;
+		default:
+			break;
 		}
 	}
 	else if (Command.action == GLFW_RELEASE)
