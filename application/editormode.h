@@ -82,12 +82,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_mode();
 	~editor_mode() override;
 
-	// the rail tools (editormoderailtools.h), made by make_rail_tools()
-	std::unique_ptr<rail_tools> m_rail_tools;
-	void make_rail_tools();
-	// rail services: overrides
-	// rail services: end
-
 	// methods
 	// initializes internal data structures of the mode. returns: true on success, false otherwise
 	bool init() override;
@@ -120,6 +114,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static bool settings_open() { return m_settings_open; }
 	static void set_settings_open(bool enabled) { m_settings_open = enabled; }
   private:
+	// the rail tools (editormoderailtools.h), made by make_rail_tools()
+	std::unique_ptr<rail_tools> m_rail_tools;
+	void make_rail_tools();
+	// rail services: overrides
+	// rail services: end
+
 	// types
 	struct editormode_input
 	{
