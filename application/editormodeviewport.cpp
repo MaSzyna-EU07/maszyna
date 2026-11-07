@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editoruilayer.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -169,9 +170,9 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::roads:
 	{
 		auto &tool{m_roadtool};
-		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"), tool.tool == 0, [this]() { road_choose_tool(0); }});
-		Buttons.push_back({icon::road, STR_C("Build"), nullptr, STR_C("LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"), tool.tool == 1, [this]() { road_choose_tool(1); }});
-		Buttons.push_back({icon::place, STR_C("Place"), nullptr, STR_C("Level crossings, and the points where vehicles appear on the roads or are taken off them"), tool.tool == 2, [this]() { road_choose_tool(2); }});
+		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"), tool.tool == 0, [this]() { m_build_tools->road.road_choose_tool(0); }});
+		Buttons.push_back({icon::road, STR_C("Build"), nullptr, STR_C("LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"), tool.tool == 1, [this]() { m_build_tools->road.road_choose_tool(1); }});
+		Buttons.push_back({icon::place, STR_C("Place"), nullptr, STR_C("Level crossings, and the points where vehicles appear on the roads or are taken off them"), tool.tool == 2, [this]() { m_build_tools->road.road_choose_tool(2); }});
 		if (tool.tool == 2)
 		{
 			// what the place tool puts

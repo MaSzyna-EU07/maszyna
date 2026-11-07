@@ -577,7 +577,7 @@ editor_mode::editor_mode() {
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
 	ui()->set_workspace_bar([this]() { render_workspaces(); });
 	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
-	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
+	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { m_build_tools->road.render_options(); }, [this]() { m_build_tools->road.render_road_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
 	ui()->set_workspace_bank(editor_ui::workspace::terrain, [this]() { render_texture_browser(); }, STR("Textures"));
 	// a node picked in the scene window is selected as if clicked in the view; a double click flies the camera to it
@@ -609,7 +609,6 @@ editor_mode::editor_mode() {
 		render_help_menu();
 	});
 	m_roadtool.settings.normalize();
-	road_select(nullptr);
 	ground_sources(m_orthophoto);
 	ui()->set_base_layers([this]() { render_base_layers(); });
 	make_build_tools();
@@ -1722,8 +1721,8 @@ bool editor_mode::update()
     m_gauge.render_windows();
 
     // roads: trajectories of the lanes, and the tools of the road window
-    update_road_tool();
-    draw_road_overlay();
+    m_build_tools->road.update();
+    m_build_tools->road.draw_overlay();
     // the roads and the terrain are fields of work, their tools are drawn in the tool options window in place of the edit mode ones
     ui()->set_workspace(m_terrain_open ? editor_ui::workspace::terrain : m_roadtool.window ? editor_ui::workspace::roads : editor_ui::workspace::none);
 
@@ -7036,7 +7035,7 @@ void editor_mode::erase_model(TAnimModel *model)
 void editor_mode::delete_selected()
 {
     // what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks
-    if (road_delete())
+    if (m_build_tools->road.road_delete())
         return;
     if (m_instance != 0 && signal_delete(m_instance))
         return;
@@ -7296,7 +7295,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (is_press(Action))
         {
-            road_cancel();
+            m_build_tools->road.road_cancel();
         }
         // the first Esc drops what is going on in the track mode, the next one goes back to the selection
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
@@ -7389,7 +7388,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         break;
 
     case GLFW_KEY_K:
-        if (is_press(Action) && road_split())
+        if (is_press(Action) && m_build_tools->road.road_split())
         {
             break;
         }
@@ -7534,7 +7533,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             // NOTE: the pick is resolved a few frames later, by then it's known whether the press was meant for the UI
             GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
                 if (viewport_click())
-                    road_click();
+                    m_build_tools->road.road_click();
             });
         }
         m_input.mouse.button(Button, Action);

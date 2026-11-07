@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editoruilayer.h"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
@@ -350,7 +351,7 @@ bool render_lane_change(int &Change, std::string const &Id, std::string const &N
 
 }
 
-void editor_mode::update_road_tool()
+void road_editor::update()
 {
 	auto &tool{m_roadtool};
 	if (tool.selected != nullptr && tool.selected->m_editorremoved)
@@ -424,7 +425,7 @@ void editor_mode::update_road_tool()
 	}
 }
 
-void editor_mode::road_select(road_node *Road)
+void road_editor::road_select(road_node *Road)
 {
 	auto &tool{m_roadtool};
 	tool.selected = Road;
@@ -445,7 +446,7 @@ void editor_mode::road_select(road_node *Road)
 	tool.varied = tool.settings.changing();
 }
 
-void editor_mode::junction_select(junction_node *Junction)
+void road_editor::junction_select(junction_node *Junction)
 {
 	auto &tool{m_roadtool};
 	tool.junction = Junction;
@@ -458,7 +459,7 @@ void editor_mode::junction_select(junction_node *Junction)
 		tool.status += ". " + format(STR_C("It can't be changed: %s"), STR(reason).c_str());
 }
 
-void editor_mode::roadpoint_select(roadpoint_node *Point)
+void road_editor::roadpoint_select(roadpoint_node *Point)
 {
 	auto &tool{m_roadtool};
 	tool.marker = Point;
@@ -471,7 +472,7 @@ void editor_mode::roadpoint_select(roadpoint_node *Point)
 }
 
 // works out the point a click of the place tool would make with the cursor where it is
-void editor_mode::roadpoint_aim(bool const Fresh)
+void road_editor::roadpoint_aim(bool const Fresh)
 {
 	auto &tool{m_roadtool};
 	if (false == Fresh && tool.aimedkind == tool.placekind && glm::distance(tool.aimed, tool.mouse) < 0.1)
@@ -541,7 +542,7 @@ void editor_mode::roadpoint_aim(bool const Fresh)
 }
 
 // puts down the point the place tool is set for, as a step which can be taken back
-void editor_mode::roadpoint_place()
+void road_editor::roadpoint_place()
 {
 	auto &tool{m_roadtool};
 	roadpoint_aim(true);
@@ -560,7 +561,7 @@ void editor_mode::roadpoint_place()
 	auto const &state{point->definition()};
 	editor_road::record record;
 	record.points_created = created;
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	switch (state.kind)
 	{
 	case roadpoint_node::kind_type::crossing:
@@ -591,7 +592,7 @@ void editor_mode::roadpoint_place()
 }
 
 // replaces the definition of a level crossing or a traffic point, as a step which can be taken back
-void editor_mode::roadpoint_apply(roadpoint_node &Point, roadpoint_node::state const &State)
+void road_editor::roadpoint_apply(roadpoint_node &Point, roadpoint_node::state const &State)
 {
 	auto &tool{m_roadtool};
 	std::string reason;
@@ -603,12 +604,12 @@ void editor_mode::roadpoint_apply(roadpoint_node &Point, roadpoint_node::state c
 	editor_road::record record;
 	record.points.emplace_back(&Point, Point.definition());
 	editor_road::apply(std::vector<std::pair<roadpoint_node *, roadpoint_node::state>>{{&Point, State}});
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.status = STR_C("Changed, Ctrl+Z takes it back");
 }
 
 // draws controls for a level crossing or a traffic point. returns: true if something was changed
-bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoint_node const *Point)
+bool road_editor::render_roadpoint_layout(roadpoint_node::state &State, roadpoint_node const *Point)
 {
 	auto &tool{m_roadtool};
 	bool changed{false};
@@ -704,14 +705,14 @@ bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoin
 		}
 		if (State.vehicles.empty())
 			ImGui::TextColored(warning, "%s", STR_C("No vehicles, so nothing appears here"));
-		ImGui::InputTextMultiline("##vehicles", tool.vehicles, sizeof(tool.vehicles), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 5.0f));
+		ImGui::InputTextMultiline("##vehicles", tool.vehicles.data(), tool.vehicles.size(), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 5.0f));
 		item_tooltip("node -1 0 none dynamic <folder> <skin> <type> <path>\n"
 		             "  <offset> <driver> <velocity> <load> enddynamic\n"
 		             "or <folder> <skin> <type>, one vehicle a line.\n"
 		             "The path, the offset, the driver and the velocity don't matter");
 		if (ImGui::Button(STR_C("Add to the set")))
 		{
-			auto const parsed{roadpoint_node::parse_vehicles(tool.vehicles)};
+			auto const parsed{roadpoint_node::parse_vehicles(tool.vehicles.data())};
 			if (parsed.empty())
 			{
 				tool.status = STR_C("No vehicle found in the text");
@@ -762,7 +763,7 @@ bool editor_mode::render_roadpoint_layout(roadpoint_node::state &State, roadpoin
 }
 
 // replaces the definition of a junction, as a step which can be taken back
-void editor_mode::junction_apply(junction_node &Junction, junction_node::state const &State)
+void road_editor::junction_apply(junction_node &Junction, junction_node::state const &State)
 {
 	auto &tool{m_roadtool};
 	std::string reason;
@@ -777,12 +778,12 @@ void editor_mode::junction_apply(junction_node &Junction, junction_node::state c
 	editor_road::record record;
 	record.junctions.emplace_back(&Junction, Junction.definition());
 	editor_road::apply(std::vector<std::pair<junction_node *, junction_node::state>>{{&Junction, State}});
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.status = STR_C("Changed, Ctrl+Z takes it back");
 }
 
 // draws controls for what a junction is like, and makes the changes as they're made
-void editor_mode::render_junction_layout(junction_node &Junction)
+void road_editor::render_junction_layout(junction_node &Junction)
 {
 	auto &tool{m_roadtool};
 	auto state{Junction.definition()};
@@ -816,7 +817,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		state.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
-	if (render_road_material("Surface", state.surface))
+	if (m_build.render_road_material("Surface", state.surface))
 		changed = true;
 	if (number(STR_C("Texture length [m]"), state.texturelength, 0.5f, "%.2f"))
 	{
@@ -835,7 +836,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			state.kerbwidth = std::clamp(state.kerbwidth, 0.05f, 2.0f);
 			changed = true;
 		}
-		if (render_road_material("Kerb material", state.kerbmaterial))
+		if (m_build.render_road_material("Kerb material", state.kerbmaterial))
 			changed = true;
 		if (state.side.type != road_node::side_type::sidewalk && number(STR_C("Kerb height [m]"), state.kerbheight, 0.01f, "%.2f"))
 		{
@@ -862,7 +863,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			state.side.width = std::clamp(state.side.width, 0.1f, 20.0f);
 			changed = true;
 		}
-		if (render_road_material("Material", state.side.material))
+		if (m_build.render_road_material("Material", state.side.material))
 			changed = true;
 		if (state.side.material.empty() || state.side.material == "none")
 			ImGui::TextDisabled("%s", STR_C("Pick a material to have the sides drawn"));
@@ -893,7 +894,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 	// banks leading from the corners to the ground
 	if (ImGui::CollapsingHeader(STR_C("Banks to the ground##banks")))
 	{
-		if (render_road_material("Bank material", state.bankmaterial))
+		if (m_build.render_road_material("Bank material", state.bankmaterial))
 			changed = true;
 		item_tooltip("What the banks are covered with next to a sidewalk, a kerb or the bare edge.\nA bank of a shoulder is covered with the material of the shoulder");
 		ImGui::SetNextItemWidth(120.0f);
@@ -937,7 +938,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		}
 		item_tooltip("Shows where a road which keeps its two directions apart meets this stretch:\n"
 		             "what's between the directions is led on to the other road, where it closes or carries on");
-		if (state.median == road_node::median_type::island && render_road_material("Island material", state.medianmaterial))
+		if (state.median == road_node::median_type::island && m_build.render_road_material("Island material", state.medianmaterial))
 			changed = true;
 	}
 
@@ -963,7 +964,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		junction_apply(Junction, state);
 }
 
-void editor_mode::road_cancel()
+void road_editor::road_cancel()
 {
 	auto &tool{m_roadtool};
 	tool.chain = false;
@@ -972,7 +973,7 @@ void editor_mode::road_cancel()
 }
 
 // works out what a click of the build tool would make with the cursor where it is
-editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
+road_plan road_editor::road_preview(bool const Fresh)
 {
 	auto const &tool{m_roadtool};
 	auto const &layout{tool.settings};
@@ -1111,7 +1112,7 @@ editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 
 // gives the pieces laid out by the planner their heights: over the ground if the road is to follow it, with the slopes
 // of the pieces matched where they meet, and with what the road is attached to
-void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh)
+void road_editor::road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh)
 {
 	auto const &tool{m_roadtool};
 	if (Pieces.empty())
@@ -1142,7 +1143,7 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *
 		// the planner leads the road between its ends, which are over the ground already
 		for (auto &point : points)
 			point.y -= tool.offset;
-		auto ground{ground_heights(points, Fresh)};
+		auto ground{m_build.ground_heights_at(points, Fresh, nullptr)};
 		for (auto &height : ground)
 			height += tool.offset;
 		std::vector<double> heights(ground.begin(), ground.begin() + count + 1);
@@ -1169,7 +1170,7 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *
 	}
 }
 
-void editor_mode::road_click()
+void road_editor::road_click()
 {
 	auto &tool{m_roadtool};
 	glm::dvec3 const camera{Global.pCamera.Pos};
@@ -1403,7 +1404,7 @@ void editor_mode::road_click()
 	}
 	auto const created{editor_road::create(states)};
 	record.roads_created.insert(record.roads_created.end(), created.begin(), created.end());
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.branchroad = nullptr;
 	tool.branchjunction = nullptr;
 	if (created.empty())
@@ -1438,7 +1439,7 @@ void editor_mode::road_click()
 	tool.status += STR_C(", Ctrl+Z takes them back");
 }
 
-void editor_mode::road_apply()
+void road_editor::road_apply()
 {
 	auto &tool{m_roadtool};
 	if (tool.selected == nullptr)
@@ -1488,7 +1489,7 @@ void editor_mode::road_apply()
 	for (auto *road : pieces)
 		editor_road::settle(*road, record, notes);
 	auto const fitted{record.roads.size() + record.roads_removed.size() + record.junctions.size() + record.junctions_created.size() - pieces.size()};
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.settings = tool.selected->definition();
 	tool.status = (pieces.size() == 1 ? std::string{STR_C("Changed, Ctrl+Z takes it back")} : format(STR_C("Pieces changed: %d, Ctrl+Z takes it back"), static_cast<int>(pieces.size())));
 	if (fitted > 0)
@@ -1497,7 +1498,7 @@ void editor_mode::road_apply()
 		tool.status += ". " + notes;
 }
 
-bool editor_mode::road_delete()
+bool road_editor::road_delete()
 {
 	auto &tool{m_roadtool};
 	if (false == tool.window)
@@ -1514,7 +1515,7 @@ bool editor_mode::road_delete()
 		}
 		editor_road::remove(std::vector<roadpoint_node *>{point});
 		record.points_removed.emplace_back(point);
-		push_road_snapshot(std::move(record));
+		m_build.push_road_snapshot(std::move(record));
 		tool.marker = nullptr;
 		tool.status = format(STR_C("\"%s\" deleted, Ctrl+Z brings it back"), point->name().c_str());
 		return true;
@@ -1533,7 +1534,7 @@ bool editor_mode::road_delete()
 		}
 		editor_road::remove(std::vector<junction_node *>{junction});
 		record.junctions_removed.emplace_back(junction);
-		push_road_snapshot(std::move(record));
+		m_build.push_road_snapshot(std::move(record));
 		tool.junction = nullptr;
 		tool.status = format(STR_C("\"%s\" deleted, Ctrl+Z brings it back"), junction->name().c_str());
 		return true;
@@ -1546,14 +1547,14 @@ bool editor_mode::road_delete()
 	}
 	editor_road::remove(std::vector<road_node *>{road});
 	record.roads_removed.emplace_back(road);
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.selected = nullptr;
 	tool.status = format(STR_C("\"%s\" deleted, Ctrl+Z brings it back"), road->name().c_str());
 	return true;
 }
 
 // puts a roundabout around specified point
-void editor_mode::road_roundabout(glm::dvec3 const &Ground)
+void road_editor::road_roundabout(glm::dvec3 const &Ground)
 {
 	auto &tool{m_roadtool};
 	std::string reason;
@@ -1587,12 +1588,12 @@ void editor_mode::road_roundabout(glm::dvec3 const &Ground)
 	}
 	editor_road::record record;
 	record.roads_created = created;
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.status = STR_C("Roundabout made, Ctrl+Z takes it back. Untick Roundabout and lead roads out of its side, or into it: the traffic joining it gives way to the traffic going around");
 }
 
 // how far from specified point, and how far down, a slope of the grade set for the banks gets to the ground
-std::pair<float, float> editor_mode::bank_reach(glm::dvec3 const &Edge, glm::dvec3 const &Outwards)
+std::pair<float, float> road_editor::bank_reach(glm::dvec3 const &Edge, glm::dvec3 const &Outwards)
 {
 	auto const grade{std::clamp(static_cast<double>(m_roadtool.bankgrade), 0.25, 10.0)};
 	auto const steps{static_cast<int>(kBankReach / kBankStep)};
@@ -1600,7 +1601,7 @@ std::pair<float, float> editor_mode::bank_reach(glm::dvec3 const &Edge, glm::dve
 	std::vector<glm::dvec3> probes;
 	for (int step = 1; step <= steps; ++step)
 		probes.emplace_back(Edge + Outwards * (step * kBankStep));
-	auto const ground{ground_heights(probes, true)};
+	auto const ground{m_build.ground_heights_at(probes, true, nullptr)};
 	// the bank ends where a slope of the set grade, going down or up, gets to the ground
 	auto const rising{ground.front() > Edge.y};
 	auto width{kBankReach};
@@ -1620,7 +1621,7 @@ std::pair<float, float> editor_mode::bank_reach(glm::dvec3 const &Edge, glm::dve
 }
 
 // leads the banks of the corners of a junction to the ground beside it
-void editor_mode::junction_bank_to_ground(junction_node &Junction)
+void road_editor::junction_bank_to_ground(junction_node &Junction)
 {
 	auto state{Junction.definition()};
 	auto const order{state.arm_order()};
@@ -1655,7 +1656,7 @@ void editor_mode::junction_bank_to_ground(junction_node &Junction)
 }
 
 // leads the banks of the selected piece, or of the whole road, to the ground beside it
-void editor_mode::road_bank_to_ground()
+void road_editor::road_bank_to_ground()
 {
 	auto &tool{m_roadtool};
 	if (tool.selected == nullptr)
@@ -1702,7 +1703,7 @@ void editor_mode::road_bank_to_ground()
 	for (auto const &change : changes)
 		record.roads.emplace_back(change.first, change.first->definition());
 	editor_road::apply(changes);
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	road_select(tool.selected);
 	tool.status = format(STR_C("Banks led to the ground, pieces: %d, Ctrl+Z takes it back"), static_cast<int>(changes.size()));
 	auto const &layout{tool.selected->definition()};
@@ -1711,7 +1712,7 @@ void editor_mode::road_bank_to_ground()
 }
 
 // takes the selected points out of their roads
-bool editor_mode::road_points_delete()
+bool road_editor::road_points_delete()
 {
 	auto &tool{m_roadtool};
 	editor_road::record record;
@@ -1725,7 +1726,7 @@ bool editor_mode::road_points_delete()
 		else if (auto const note{". " + format(STR_C("A point was left: %s"), STR(error).c_str())}; notes.find(note) == std::string::npos)
 			notes += note;
 	}
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	// the points which stayed are still selected, so it's clear which ones these are
 	tool.points.erase(std::remove_if(tool.points.begin(), tool.points.end(), [](glm::dvec3 const &Point) { return editor_road::ends_at(Point).empty(); }), tool.points.end());
 	if (taken == 0)
@@ -1738,7 +1739,7 @@ bool editor_mode::road_points_delete()
 	return true;
 }
 
-bool editor_mode::road_split()
+bool road_editor::road_split()
 {
 	auto &tool{m_roadtool};
 	if (false == tool.window || tool.selected == nullptr)
@@ -1764,7 +1765,7 @@ bool editor_mode::road_split()
 		return true;
 	}
 	record.roads_created.emplace_back(created);
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	road_select(road);
 	tool.status = format(STR_C("Split in two: \"%s\" and \"%s\", Ctrl+Z takes it back. Click the point between them to set the width or the height of the road there"), road->name().c_str(),
 	                     created->name().c_str());
@@ -1772,7 +1773,7 @@ bool editor_mode::road_split()
 }
 
 // makes the changes gathered for the selected points. returns: true if they were made
-bool editor_mode::road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions)
+bool road_editor::road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions)
 {
 	auto &tool{m_roadtool};
 	if (Changes.empty() && Junctions.empty())
@@ -1806,14 +1807,14 @@ bool editor_mode::road_points_apply(std::vector<std::pair<road_node *, road_node
 	std::string notes;
 	for (auto const &change : Changes)
 		editor_road::settle(*change.first, record, notes);
-	push_road_snapshot(std::move(record));
+	m_build.push_road_snapshot(std::move(record));
 	tool.status = format(STR_C("Pieces changed: %d, Ctrl+Z takes it back"), static_cast<int>(Changes.size()));
 	if (false == notes.empty())
 		tool.status += ". " + notes;
 	return true;
 }
 
-void editor_mode::road_point_width(float const Width)
+void road_editor::road_point_width(float const Width)
 {
 	// the pieces on both sides of a point get to that width there, and from there go back to their own along their length
 	auto const changes{point_changes(m_roadtool.points, [Width](road_node::state &State, bool const Atend, std::size_t const) {
@@ -1825,7 +1826,7 @@ void editor_mode::road_point_width(float const Width)
 }
 
 // Heights: one for each of the selected points
-void editor_mode::road_point_heights(std::vector<double> const &Heights)
+void road_editor::road_point_heights(std::vector<double> const &Heights)
 {
 	auto &tool{m_roadtool};
 	if (Heights.size() != tool.points.size())
@@ -1936,6 +1937,11 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 		editor_road::revive(record.points_created);
 	}
 
+	m_build_tools->road.reselect_after_history();
+}
+
+void road_editor::reselect_after_history()
+{
 	auto &tool{m_roadtool};
 	road_cancel();
 	if (tool.selected != nullptr)
@@ -1986,7 +1992,7 @@ std::vector<editor_mode::texture_use> editor_mode::road_textures_used() const
 }
 
 // draws controls for the layout of a road. returns: true if the layout was changed in a way which calls for the road to be made anew
-bool editor_mode::render_road_layout(road_node::state &State)
+bool road_editor::render_road_layout(road_node::state &State)
 {
 	auto &tool{m_roadtool};
 	bool changed{false};
@@ -2070,7 +2076,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		State.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
-	if (render_road_material("Surface", State.surface))
+	if (m_build.render_road_material("Surface", State.surface))
 		changed = true;
 	std::array<char const *, 2> const sidenames{STR_C("Left side"), STR_C("Right side")};
 	std::array<char const *, 3> const sidetypes{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
@@ -2095,7 +2101,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				data.width = std::clamp(data.width, 0.1f, 20.0f);
 				changed = true;
 			}
-			if (render_road_material("Material", data.material))
+			if (m_build.render_road_material("Material", data.material))
 				changed = true;
 			if (data.material.empty() || data.material == "none")
 				ImGui::TextDisabled("%s", STR_C("Pick a material to have the side drawn"));
@@ -2113,7 +2119,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	if (State.kerbs[0] || State.kerbs[1] || island)
 	{
 		ImGui::Indent();
-		if (render_road_material("Kerb material", State.kerbmaterial))
+		if (m_build.render_road_material("Kerb material", State.kerbmaterial))
 			changed = true;
 		if ((State.kerbs[0] || State.kerbs[1]) && (State.kerbmaterial.empty() || State.kerbmaterial == "none"))
 			ImGui::TextDisabled("%s", STR_C("Pick a material to have the kerbs drawn"));
@@ -2157,7 +2163,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				changed = true;
 			ImGui::PopID();
 		}
-		if (render_road_material("Bank material", State.bankmaterial))
+		if (m_build.render_road_material("Bank material", State.bankmaterial))
 			changed = true;
 		item_tooltip("What a bank is covered with next to a sidewalk, a kerb or the bare edge of the road.\nA bank of a shoulder is covered with the material of the shoulder");
 		if (tool.selected != nullptr)
@@ -2201,7 +2207,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		item_tooltip(apart);
 		if (State.median.type == road_node::median_type::island)
 		{
-			if (render_road_material("Island material", State.median.material))
+			if (m_build.render_road_material("Island material", State.median.material))
 				changed = true;
 			item_tooltip("The island is as high as the kerbs; with a kerb material set it gets kerbs of its own");
 			char const *rounded{"Length of the rounded end of the island at that end of the piece; half of the width of the island makes it a half circle.\n"
@@ -2284,7 +2290,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	return changed;
 }
 
-void editor_mode::road_choose_tool(int const Tool)
+void road_editor::road_choose_tool(int const Tool)
 {
 	auto &tool{m_roadtool};
 	if (Tool == tool.tool)
@@ -2302,7 +2308,7 @@ void editor_mode::road_choose_tool(int const Tool)
 }
 
 // the road tools and what the next pieces get, in the tool options window; the selection is drawn in the inspector by render_road_selection()
-void editor_mode::render_road_tool_options()
+void road_editor::render_options()
 {
 	auto &tool{m_roadtool};
 	std::string reason;
@@ -2323,7 +2329,7 @@ void editor_mode::render_road_tool_options()
 			if (ImGui::InputFloat(STR_C("Radius [m]##ring"), &tool.ringradius, 1.0f, 5.0f, "%.1f"))
 				tool.ringradius = std::clamp(tool.ringradius, 8.0f, 200.0f);
 			item_tooltip("Radius of the middle of the road going around");
-			render_road_material("Island in the middle", tool.island);
+			m_build.render_road_material("Island in the middle", tool.island);
 			item_tooltip("What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nNo texture: the middle is left as it is");
 		}
 		else
@@ -2382,7 +2388,7 @@ void editor_mode::render_road_tool_options()
 }
 
 // what the select tool of the roads picked, in the inspector
-void editor_mode::render_road_selection()
+void road_editor::render_road_selection()
 {
 	auto &tool{m_roadtool};
 	// typed values are taken when confirmed, so nothing is made anew with each digit
@@ -2438,7 +2444,7 @@ void editor_mode::render_road_selection()
 			if (ImGui::Button(STR_C("Put on the ground")))
 			{
 				// a point with nothing under it comes back with the height it has, and is left where it is
-				auto const ground{ground_heights(tool.points, true)};
+				auto const ground{m_build.ground_heights_at(tool.points, true, nullptr)};
 				for (std::size_t index = 0; index < heights.size(); ++index)
 					if (ground[index] != tool.points[index].y)
 						heights[index] = ground[index] + tool.offset;
@@ -2499,7 +2505,7 @@ void editor_mode::render_road_selection()
 	}
 }
 
-void editor_mode::draw_road_overlay() const
+void road_editor::draw_overlay() const
 {
 	auto const &tool{m_roadtool};
 	if (false == tool.lanes && false == tool.window)

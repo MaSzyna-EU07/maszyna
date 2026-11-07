@@ -12,5 +12,18 @@ http://mozilla.org/MPL/2.0/.
 
 void editor_mode::make_build_tools()
 {
-	m_build_tools = std::make_unique<build_tools>();
+	editor_build_services &build{*this};
+	m_build_tools = std::make_unique<build_tools>(build);
+	// nothing selected in the road window at the start
+	m_build_tools->road.road_select(nullptr);
+}
+
+road_tool &editor_mode::road_state()
+{
+	return m_roadtool;
+}
+
+std::vector<double> editor_mode::ground_heights_at(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const
+{
+	return ground_heights(Points, Fresh, Found);
 }

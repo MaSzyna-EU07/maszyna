@@ -3839,6 +3839,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::unique_ptr<build_tools> m_build_tools;
 	void make_build_tools();
 	// build services: overrides
+	road_tool &road_state() override;
+	std::vector<double> ground_heights_at(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const override;
+	void push_road_snapshot(editor_road::record Record) override;
+	bool render_road_material(char const *Label, std::string &Value) override;
 	// build services: end
 
 
@@ -3854,115 +3858,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_track_align_tangent{true};
 	bool m_track_drag_connected{true};
 
-	// roads: a menu and a window of their own, independent from the edit modes of the toolset
-	// what a click of the build tool would make
-	struct road_plan
-	{
-		std::vector<segment_data> pieces; // axes of the pieces, in the order they're laid
-		editor_road::loose_end snap; // loose end of a road or arm of a junction the road is led to
-		editor_road::branch start; // junction made, or given another arm, for a road led out of the side of a road or out of a junction
-		bool hasstart{false};
-		editor_road::branch end; // the same for a road led into the side of a road or into a junction
-		bool hasend{false};
-		std::string error; // why there's nothing to make
-	};
-	struct road_tool
-	{
-		bool window{false}; // the road window is open, the left mouse button belongs to its tools
-		bool lanes{true}; // lanes of the roads are drawn as trajectories
-		int tool{0}; // 0: select, 1: build, 2: place
-		road_node *selected{nullptr};
-		junction_node *junction{nullptr}; // selected junction
-		roadpoint_node *marker{nullptr}; // selected level crossing or traffic point
-		std::vector<glm::dvec3> points; // selected points where the pieces meet or end
-		road_node::state settings; // layout shown in the window: of the selected piece, or of the pieces about to be built
-		bool whole{true}; // layout changes go to every piece of the road the selected one belongs to
-		bool varied{false}; // the selected piece is shown with lanes of its own for its end
-		bool chain{false}; // the point to build from is set
-		glm::dvec3 point{0.0}; // where the next piece starts
-		glm::dvec2 direction{0.0, 1.0}; // the way it has to leave that point
-		bool hasdirection{false};
-		bool reversed{false}; // the pieces are laid from their ends, to carry on a road from its start
-		double grade{0.0}; // slope the next piece has to start with, to carry on what it's attached to
-		bool hasgrade{false};
-		// the road being built leaves the side of a road, or a junction between its roads. the point to build from is the centre
-		// of the junction, which gets made, or gets another arm, along with the first piece
-		road_node *branchroad{nullptr};
-		double branchat{0.0}; // value of the curve parameter of the axis of that road
-		junction_node *branchjunction{nullptr};
-		float offset{0.1f}; // height above the ground the roads are built at
-		bool follow{true}; // built roads are led over the ground between the clicked points
-		float crossingspeed{30.f}; // speed limit on the junctions being made
-		float heightstep{0.1f}; // how much the selected points are raised or lowered at a time
-		bool ring{false}; // the build tool makes roundabouts
-		float ringradius{15.f}; // of the middle of the road going around
-		std::string island{"none"}; // what the middle of a roundabout is covered with
-		float bankgrade{1.5f}; // metres a bank led to the ground runs for each metre it drops
-		// level crossings and traffic points
-		int placekind{0}; // what the place tool puts down: 0: level crossing, 1: spawn point, 2: removal point, 3: pedestrian crossing
-		roadpoint_node::state placing[4]; // what the next point of each kind is going to be like
-		float stopmargin{5.f}; // distance from the outermost track of a new crossing to the places the vehicles stop at
-		roadpoint_node::state target; // the point a click of the place tool would make at the moment
-		bool hastarget{false};
-		glm::dvec3 targetdirection{0.0}; // the way the traffic goes there
-		std::string targetnote; // what's worth knowing about that point, or why there's none
-		glm::dvec3 aimed{0.0}; // where the cursor was when the target was worked out, and for what kind of point
-		int aimedkind{-1};
-		char vehicles[4096]{}; // vehicles to add to the set of a spawn point, written the way they're put in a scenery
-		road_plan plan; // what a click would make at the moment, worked out once a frame for display
-		glm::dvec3 hover{0.0}; // point of a road or a junction under the cursor a road can be led out of
-		bool hashover{false};
-		glm::dvec3 mouse{0.0};
-		std::string status;
-	};
-	void render_road_tool_options();
-	// the change of the road tool
-	void road_choose_tool(int const Tool);
-	void render_road_selection();
-	bool render_road_layout(road_node::state &State);
-	bool render_road_material(char const *Label, std::string &Value);
-	void render_junction_layout(junction_node &Junction);
-	void junction_apply(junction_node &Junction, junction_node::state const &State);
-	// leads the banks of the corners of a junction to the ground beside it
-	void junction_bank_to_ground(junction_node &Junction);
-	// how far from specified point, and how far down, a slope of the grade set for the banks gets to the ground.
-	// Outwards: the way the slope leads, seen from above
-	std::pair<float, float> bank_reach(glm::dvec3 const &Edge, glm::dvec3 const &Outwards);
-	void draw_road_overlay() const;
-	void update_road_tool();
-	void road_click();
-	void road_select(road_node *Road);
-	void junction_select(junction_node *Junction);
-	void road_apply();
-	bool road_delete();
-	bool road_split();
-	void road_cancel();
-	// sets the width of the road at the selected points, or the height of each of them
-	void road_point_width(float const Width);
-	void road_point_heights(std::vector<double> const &Heights);
-	bool road_points_apply(std::vector<std::pair<road_node *, road_node::state>> const &Changes, std::vector<std::pair<junction_node *, junction_node::state>> const &Junctions);
-	// takes the selected points out of their roads
-	bool road_points_delete();
-	// puts a roundabout around specified point
-	void road_roundabout(glm::dvec3 const &Ground);
-	// leads the banks of the selected piece, or of the whole road, to the ground beside it
-	void road_bank_to_ground();
-	// level crossings and traffic points
-	void roadpoint_select(roadpoint_node *Point);
-	// works out the point a click of the place tool would make. Fresh: even if the cursor is where it was the last time
-	void roadpoint_aim(bool const Fresh);
-	void roadpoint_place();
-	void roadpoint_apply(roadpoint_node &Point, roadpoint_node::state const &State);
-	// Point: the point the controls are for, nullptr for the one about to be made
-	bool render_roadpoint_layout(roadpoint_node::state &State, roadpoint_node const *Point);
-	// Fresh: the ground which wasn't looked up yet is gathered on the spot, instead of a bit of it each frame
-	road_plan road_preview(bool const Fresh);
-	// Firstgrade, Lastgrade: slopes the road has to start and end with, nullptr for none
-	void road_profile(std::vector<segment_data> &Pieces, double const *Firstgrade, double const *Lastgrade, bool const Fresh);
 	// height of the ground under each of the points, with the roads not taken for the ground. a point with nothing under it keeps its height
 	// Found: set for the points which have the ground under them
 	std::vector<double> ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found = nullptr) const;
-	void push_road_snapshot(editor_road::record Record);
 	void restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	road_tool m_roadtool;
 };
