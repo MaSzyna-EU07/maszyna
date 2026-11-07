@@ -519,6 +519,8 @@ private:
     bool TableNotFound( basic_event const *Event, double const Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
+    // reports the train going past a signal showing stop (SetVelocity 0 0); called once the head passed Point
+    void CheckSignalPassedAtDanger( TSpeedPos const &Point ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );

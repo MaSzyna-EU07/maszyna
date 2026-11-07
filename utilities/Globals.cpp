@@ -456,6 +456,40 @@ bool global_settings::ConfigParseInput(cParser& Parser, const std::string& token
     return false;
 }
 
+bool global_settings::ConfigParseTest(cParser& Parser, const std::string& token)
+{
+    // integration test limits, usually given in the config block of a test scenery
+    if (token == "test.timeout")
+    {
+        double value{ test.timeout };
+        ParseOne(Parser, value);
+        if (false == test.timeout_from_command_line)
+            test.timeout = std::max(0.0, value);
+        return true;
+    }
+
+    if (token == "test.standstill")
+    {
+        ParseOne(Parser, test.standstill);
+        test.standstill = std::max(0.0, test.standstill);
+        return true;
+    }
+
+    if (token == "test.pass_on_standstill")
+    {
+        ParseOne(Parser, test.pass_on_standstill);
+        return true;
+    }
+
+    if (token == "test.fail_if_stop_overran")
+    {
+        ParseOne(Parser, test.fail_if_stop_overran);
+        return true;
+    }
+
+    return false;
+}
+
 bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& token)
 {
     if (token == "async.trainThreads")
@@ -1314,6 +1348,9 @@ void global_settings::ConfigParse(cParser& Parser)
             continue;
 
         if (ConfigParseDebug(Parser, token))
+            continue;
+
+        if (ConfigParseTest(Parser, token))
             continue;
 
         // WriteLog(std::format("Unknown config token: {}", token), logtype::warning, false);

@@ -160,6 +160,7 @@ set(SOURCES
 "world/station.cpp"
 "application/application.cpp"
 "simulation/simulationtime.cpp"
+"simulation/simulationtest.cpp"
 "scene/sceneeditor.cpp"
 "rendering/screenshot.cpp"
 "input/driverkeyboardinput.cpp"

@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
+#include "simulation/simulationtest.h"
 #include "world/Track.h"
 #include "world/station.h"
 #include "input/keyboardinput.h"
@@ -767,7 +768,12 @@ void TController::TableCheck(double fDistance)
         { // aktualizacja rekordów z wyjątkiem ostatniego
             if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
             {
-                if (sSpeedTable[i].Update())
+                auto const waspassed { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
+                auto const switchchanged { sSpeedTable[ i ].Update() };
+                if( false == waspassed ) {
+                    CheckSignalPassedAtDanger( sSpeedTable[ i ] );
+                }
+                if (switchchanged)
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
                         WriteLog( "Speed table for " + OwnerName() + " detected switch change at " + sSpeedTable[ i ].trTrack->name() + " (generating fresh trace)" );
@@ -816,7 +822,12 @@ void TController::TableCheck(double fDistance)
 				}
             }
         }
-        sSpeedTable[iLast].Update(); // aktualizacja ostatniego
+        // aktualizacja ostatniego; a signal at stop often is the last, the scan doesn't go past it
+        auto const lastwaspassed { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
+        sSpeedTable[iLast].Update();
+        if( false == lastwaspassed ) {
+            CheckSignalPassedAtDanger( sSpeedTable[ iLast ] );
+        }
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
             TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
@@ -826,6 +837,20 @@ void TController::TableCheck(double fDistance)
         TablePurger();
     }
 };
+
+void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point ) const
+{
+    if( false == TestFlag( Point.iFlags, spElapsed )
+     || false == TestFlag( Point.iFlags, spEvent )
+     || false == TestFlag( Point.iFlags, spSemaphor )
+     || true == TestFlag( Point.iFlags, spStopOnSBL ) // SetVelocity 0 x on automatic block: may go on after a stop
+     || Point.fVelNext != 0.0
+     || Point.evEvent == nullptr
+     || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
+        return;
+    }
+    simulation::Test.signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
+}
 
 auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
 

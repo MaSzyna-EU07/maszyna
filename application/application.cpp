@@ -378,7 +378,7 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
-	if (crashreport_is_pending())
+	if (crashreport_is_pending() && false == Global.test.enabled)
 	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
@@ -951,14 +951,17 @@ GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int wi
 	}
 	// for index -1 create a new child window
 
-	auto const *vmode{glfwGetVideoMode(monitor ? monitor : glfwGetPrimaryMonitor())};
-
-	// match requested video mode to current to allow for
-	// fullwindow creation when resolution is the same
-	glfwWindowHint(GLFW_RED_BITS, vmode->redBits);
-	glfwWindowHint(GLFW_GREEN_BITS, vmode->greenBits);
-	glfwWindowHint(GLFW_BLUE_BITS, vmode->blueBits);
-	glfwWindowHint(GLFW_REFRESH_RATE, vmode->refreshRate);
+	auto *videomonitor{monitor ? monitor : glfwGetPrimaryMonitor()};
+	// a machine without a display (e.g. a test runner) has no monitor to match
+	if (auto const *vmode{videomonitor ? glfwGetVideoMode(videomonitor) : nullptr})
+	{
+		// match requested video mode to current to allow for
+		// fullwindow creation when resolution is the same
+		glfwWindowHint(GLFW_RED_BITS, vmode->redBits);
+		glfwWindowHint(GLFW_GREEN_BITS, vmode->greenBits);
+		glfwWindowHint(GLFW_BLUE_BITS, vmode->blueBits);
+		glfwWindowHint(GLFW_REFRESH_RATE, vmode->refreshRate);
+	}
 
 	glfwWindowHint(GLFW_VISIBLE, visible);
 
@@ -1195,6 +1198,19 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 				WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
 			}
 		}
+		else if (token == "--test")
+		{
+			// integration test: the scenery runs unattended and the exit code is the result (eu07/maszyna#541)
+			Global.test.enabled = true;
+		}
+		else if (token == "--test-timeout")
+		{
+			if (i + 1 < Argc)
+			{
+				Global.test.timeout = std::max(0.0, std::atof(Argv[++i]));
+				Global.test.timeout_from_command_line = true;
+			}
+		}
 		else if (token == "-ini")
 		{
 			// extra settings file read on top of eu07.ini, so a run can override a few keys
@@ -1210,12 +1226,44 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-v vehiclename]"
 			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]"
-			          << " [-ini settingsfile]" << std::endl;
+			          << " [-ini settingsfile]"
+			          << " [--test [--test-timeout seconds]]" << std::endl;
 			return -1;
 		}
 	}
 	if (editwithoutscenery && false == sceneryfromcommandline)
 		Global.SceneryFile.clear();
+
+	if (Global.test.enabled)
+	{
+		if (false == sceneryfromcommandline || Global.SceneryFile.empty())
+		{
+			ErrorLog("test: --test needs a scenery given with -s");
+			return -1;
+		}
+		// nobody watches nor listens: no player vehicle, nothing drawn, no sound, no window in the way
+		Global.editor_session = false;
+		Global.local_start_vehicle = "ghostview";
+		Global.GfxRenderer = "null";
+		Global.NvRenderer = false;
+		Global.bSoundEnabled = false;
+		Global.python_enabled = false;
+		Global.bInactivePause = false;
+		Global.bFullScreen = false;
+		Global.fullscreen_windowed = false;
+		Global.VSync = false;
+		Global.iMultisampling = 0;
+		Global.gfx_usegles = false;
+		Global.minframetime = std::chrono::duration<float>(0.0f);
+		Global.extra_viewports.clear();
+		Global.headtrack_conf.joy.clear();
+		// a test runs on its own
+		Global.network_servers.clear();
+		Global.network_client.reset();
+		// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
+		if (!Global.random_seed)
+			Global.random_seed = seed_of("test");
+	}
 
 	return 0;
 }
@@ -1290,6 +1338,12 @@ int eu07_application::init_glfw()
 	{
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	}
+	else if (Global.test.enabled)
+	{
+		// the null renderer draws nothing, but parts of the ui make textures with gl calls of their own.
+		// any context will do for them, so none is asked for in particular: a machine without a graphics
+		// driver (a test runner) has only the basic one of the system
+	}
 	else
 	{
 		if (!Global.LegacyRenderer)
@@ -1341,7 +1395,8 @@ int eu07_application::init_glfw()
 		Global.bFullScreen = true;
 	}
 
-	auto *mainwindow = window(-1, true, Global.window_size.x, Global.window_size.y, Global.bFullScreen ? monitor : nullptr, true, false);
+	// test mode keeps its window hidden: glfw, the ui and the input still need one, but nothing is shown in it
+	auto *mainwindow = window(-1, false == Global.test.enabled, Global.window_size.x, Global.window_size.y, Global.bFullScreen ? monitor : nullptr, true, false);
 
 	if (mainwindow == nullptr)
 	{
@@ -1427,6 +1482,11 @@ int eu07_application::init_gfx()
 	{
 		// default render path
 		GfxRenderer = gfx_renderer_factory::get_instance()->create("modern");
+	}
+	else if (Global.GfxRenderer == "null")
+	{
+		// draws nothing and loads no textures (test mode)
+		GfxRenderer = gfx_renderer_factory::get_instance()->create("null");
 	}
 	else if (Global.GfxRenderer == "experimental")
 	{

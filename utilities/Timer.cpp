@@ -26,6 +26,7 @@ double fRenderTime{ 0.0 };
 double fSoundTimer{ 0.0 };
 double fSinceStart{ 0.0 };
 double override_delta = -1.0f;
+double fixed_step = 0.0;
 
 double GetTime()
 {
@@ -53,6 +54,11 @@ void set_delta_override(double t)
 	override_delta = t;
 }
 
+void set_fixed_step(double t)
+{
+	fixed_step = t;
+}
+
 void ResetTimers()
 {
     UpdateTimers( Global.iPause != 0 );
@@ -76,10 +82,15 @@ void UpdateTimers(bool pause)
 	fr = 1000000000;
 #endif
     DeltaRenderTime = double(count - oldCount) / double(fr);
+    if (fixed_step > 0.0)
+    {
+        // the frame lasts exactly as long as said, however long it took to compute; the time speed doesn't apply
+        DeltaRenderTime = fixed_step;
+    }
     fRenderTime += DeltaRenderTime;
     if (!pause)
     {
-        DeltaTime = Global.fTimeSpeed * DeltaRenderTime;
+        DeltaTime = (fixed_step > 0.0 ? 1.0 : Global.fTimeSpeed) * DeltaRenderTime;
         fSoundTimer += DeltaTime;
         if (fSoundTimer > 0.1)
             fSoundTimer = 0.0;

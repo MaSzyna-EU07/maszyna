@@ -86,6 +86,15 @@ struct global_settings {
     std::string local_start_vehicle{ "EU07-424" };
     std::string editor_enter_vehicle; // vehicle placed in the editor, to be entered when the driving goes on
     bool editor_session{ false }; // scenery was opened for editing (-edit): loader keeps track of scenery layers and hands over to the editor
+    // integration test mode (--test, eu07/maszyna#541); the limits can be set in the scenery's config block (test.*)
+    struct test_settings {
+        bool enabled{ false };
+        double timeout{ 3600.0 }; // [s] of simulation time; no result by then fails the test
+        double standstill{ 300.0 }; // [s] every vehicle standing still this long ends the test; 0 = never
+        bool pass_on_standstill{ false }; // the standstill end passes the test instead of failing it
+        bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
+        bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
+    } test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
@@ -377,6 +386,7 @@ struct global_settings {
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
+	bool ConfigParseTest(cParser& Parser, const std::string& token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void

@@ -19,6 +19,8 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "stdafx.h"
 
 #include "application/application.h"
+#include "simulation/simulationtest.h"
+#include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include <cstdlib>
 #ifdef WITHDUMPGEN
@@ -148,9 +150,14 @@ int main(int argc, char *argv[])
 #ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
-			std::string msg = "Simulator crash occured :(\n";
-			msg += Error.what();
-			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
+			ErrorLog("Critical error: " + std::string(Error.what()));
+			// in test mode nobody is there to close the box, the exit code tells of the error
+			if (false == Global.test.enabled)
+			{
+				std::string msg = "Simulator crash occured :(\n";
+				msg += Error.what();
+				MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
+			}
 		}
 #endif
 	}
@@ -158,5 +165,7 @@ int main(int argc, char *argv[])
 	fflush(stdout);
 	fflush(stderr);
 #endif
-	std::_Exit(0); // skip destructors, there are ordering errors which causes segfaults
+	// skip destructors, there are ordering errors which causes segfaults
+	// a test run (--test) says its result in the exit code
+	std::_Exit(Global.test.enabled ? simulation::Test.exit_code() : 0);
 }
