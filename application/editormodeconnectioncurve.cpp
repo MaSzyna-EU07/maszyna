@@ -419,6 +419,20 @@ std::vector<profile::pvi> raised_design(profile::line const &Before, std::vector
 	return line;
 }
 
+// the chainage of the sample nearest the point in plan, and how far off it the point is: the largest double and 0 with no samples
+std::pair<double, double> nearest_sample(std::vector<editor_track::route_sample> const &Samples, glm::dvec3 const &At)
+{
+	double best{std::numeric_limits<double>::max()};
+	double chainage{0.0};
+	for (auto const &sample : Samples)
+		if (auto const distance{plan_distance(sample.position, At)}; distance < best)
+		{
+			best = distance;
+			chainage = sample.chainage;
+		}
+	return {best, chainage};
+}
+
 } // namespace
 
 // the plan of a connection between straights laid onto the curve: its x across the curve, minus to the left, its z the station
@@ -1272,22 +1286,18 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 		for (auto const &point : changedline.points)
 		{
 			auto const at{editor_track::sampled_position(after, point.chainage)};
-			double best{std::numeric_limits<double>::max()};
-			double chainage{0.0};
-			for (auto const &sample : samples)
-				if (auto const distance{plan_distance(sample.position, at)}; distance < best)
-				{
-					best = distance;
-					chainage = sample.chainage;
-				}
+			auto const [best, chainage]{nearest_sample(samples, at)};
 			if (best < follow && chainage > 0.5 && chainage < route.length - 0.5)
 				breaks.push_back(chainage);
 		}
 		// and where it starts and stops running beside the route
-		for (std::size_t i = 1; i < samples.size(); ++i)
+		auto const crossings = [&](std::size_t const I) {
 			for (auto const bound : {follow, leave})
-				if ((distances[i - 1] < bound) != (distances[i] < bound) && samples[i].chainage > 0.5 && samples[i].chainage < route.length - 0.5)
-					breaks.push_back(samples[i].chainage);
+				if ((distances[I - 1] < bound) != (distances[I] < bound) && samples[I].chainage > 0.5 && samples[I].chainage < route.length - 0.5)
+					breaks.push_back(samples[I].chainage);
+		};
+		for (std::size_t i = 1; i < samples.size(); ++i)
+			crossings(i);
 		std::ranges::sort(breaks);
 		breaks.erase(std::ranges::unique(breaks, [](double const A, double const B) { return std::abs(A - B) < 1.0; }).begin(), breaks.end());
 		profile_take(route, route.spans.front().track, route.spans.back().track);
@@ -1403,18 +1413,21 @@ bool editor_mode::lay_crossover(int const Shape, glm::dvec3 const &Press, glm::d
 		return false;
 	// both switches joined to their tracks at the start and at the end of the main track, else the line under them moved
 	// and it's taken back
-	for (auto const *track : std::vector<TTrack *>{m_node != nullptr ? dynamic_cast<TTrack *>(m_node) : nullptr})
-		if (auto const crossover{track != nullptr ? crossover_of(*track) : std::nullopt})
-			for (auto *part : {crossover->first, crossover->second})
-				for (auto const which : {segment_data::point::start, segment_data::point::end})
-				{
-					auto const joined{editor_track::connected_points(*part, part->m_paths.front().points[which])};
-					if (std::ranges::none_of(joined, [&](auto const &Entry) { return Entry.first != part && Entry.first != nullptr && false == Entry.first->m_editorremoved; }))
-					{
-						undo_last();
-						tool.status = STR_C("The crossover wouldn't join the tracks there");
-						return false;
-					}
-				}
+	// an end of a part of the crossover joined to no track but itself
+	auto const loose = [](TTrack *Part, segment_data::point const Which) {
+		auto const joined{editor_track::connected_points(*Part, Part->m_paths.front().points[Which])};
+		return std::ranges::none_of(joined, [&](auto const &Entry) { return Entry.first != Part && Entry.first != nullptr && false == Entry.first->m_editorremoved; });
+	};
+	auto const *built{m_node != nullptr ? dynamic_cast<TTrack *>(m_node) : nullptr};
+	auto const crossover{built != nullptr ? crossover_of(*built) : std::nullopt};
+	if (false == crossover.has_value())
+		return true;
+	for (auto *part : {crossover->first, crossover->second})
+		if (loose(part, segment_data::point::start) || loose(part, segment_data::point::end))
+		{
+			undo_last();
+			tool.status = STR_C("The crossover wouldn't join the tracks there");
+			return false;
+		}
 	return true;
 }
