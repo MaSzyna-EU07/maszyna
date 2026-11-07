@@ -23,6 +23,9 @@ With `--test` the simulator:
   data) but no textures, and the window stays hidden,
 - has no sound, no network, no python, no pause (not even one set by the scenery), and
   no crash dialog,
+- takes no input from outside: keys and mouse sent to its window, gamepad, UART (a cab
+  desk), ZeroMQ and commands sent by other programs (`WM_COPYDATA`) are all ignored, and
+  motion telemetry is off,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
   frame (three 10 ms physics steps), whatever the real time, the time speed or the machine,
 - seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
@@ -48,7 +51,7 @@ The test ends with the first of these:
 
 | exit code | result | when |
 | --- | --- | --- |
-| 0 | pass | `__test.result` was set to 1 and then every vehicle stood still for 1 s, so a train still moving towards a signal at stop has to stop first. Also the standstill end with `test.pass_on_standstill yes` |
+| 0 | pass | `__test.result` was set to 1 and then every vehicle stood still for 1 s, so a train still moving towards a signal at stop has to stop first (with `test.no_movement_before_pass no` the pass ends the test at once). Also the standstill end with `test.pass_on_standstill yes` |
 | 1 | fail | `__test.result` was set to 0; ends at once |
 | 2 | signal passed at danger | a train went past a signal showing stop (`SetVelocity 0 0`; `SetVelocity 0 x` on automatic block, which may be passed after a stop, doesn't count); ends at once, unless `test.fail_if_stop_overran no` |
 | 3 | timeout | `test.timeout` seconds of simulation time went by (default 3600) |
@@ -65,8 +68,17 @@ test.timeout 600
 test.standstill 120
 test.pass_on_standstill no
 test.fail_if_stop_overran yes
+test.no_movement_before_pass yes
 endconfig
 ```
+
+| key | default | meaning |
+| --- | --- | --- |
+| `test.timeout` | 3600 | seconds of simulation time before the test ends as `timeout`; 0 = never |
+| `test.standstill` | 300 | seconds with every vehicle still and no result before the test ends as `standstill`; 0 = never |
+| `test.pass_on_standstill` | no | the standstill end passes the test instead |
+| `test.fail_if_stop_overran` | yes | a signal passed at danger ends the test; with `no` it's only logged |
+| `test.no_movement_before_pass` | yes | a pass waits until every vehicle stands still; with `no` it ends the test at once |
 
 `--test-timeout` on the command line wins over `test.timeout` of the scenery.
 
@@ -155,6 +167,8 @@ on `tor1k`, the track in front of the signal.
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 2), `test_mode_timeout` (exit 3, from
 `test.timeout`) and `test_mode_standstill` (exit 4, from `test.standstill`).
+`test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
+it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
 
 Checks (speeds in km/h, times in seconds of physicslog time, distances in metres). Most use
 the physicslog Velocity column, which is the wheel speed: it stays at 0 while the wheels are
@@ -178,6 +192,8 @@ the row instead, logged by builds from this branch on.
   moving off, the wheels stop slipping within `within` seconds.
 - `holds_still` `moving_speed`, `stop_speed`, `max_distance` (*vehicle speed*): once stopped
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
+- `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
+  the test ended without waiting for the train to stop.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`.

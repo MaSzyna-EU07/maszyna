@@ -487,6 +487,12 @@ bool global_settings::ConfigParseTest(cParser& Parser, const std::string& token)
         return true;
     }
 
+    if (token == "test.no_movement_before_pass")
+    {
+        ParseOne(Parser, test.no_movement_before_pass);
+        return true;
+    }
+
     return false;
 }
 
@@ -1783,6 +1789,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "test.standstill", test.standstill );
     export_as_text( Output, "test.pass_on_standstill", test.pass_on_standstill );
     export_as_text( Output, "test.fail_if_stop_overran", test.fail_if_stop_overran );
+    export_as_text( Output, "test.no_movement_before_pass", test.no_movement_before_pass );
     export_as_text( Output, "gfx.envmap.enabled", gfx_envmap_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.enabled", gfx_postfx_motionblur_enabled );
     export_as_text( Output, "gfx.postfx.motionblur.shutter", gfx_postfx_motionblur_shutter );

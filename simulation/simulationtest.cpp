@@ -82,9 +82,10 @@ void test_manager::start()
 	}
 	// a pause set by the scenery or the settings would never be lifted, nobody is there to press the key
 	Global.iPause = 0;
-	WriteLog(std::format("test: started, timeout {:.0f} s, standstill {:.0f} s{}{}", Global.test.timeout, Global.test.standstill,
+	WriteLog(std::format("test: started, timeout {:.0f} s, standstill {:.0f} s{}{}{}", Global.test.timeout, Global.test.standstill,
 	                     Global.test.pass_on_standstill ? ", standstill passes" : "",
-	                     Global.test.fail_if_stop_overran ? "" : ", signals passed at danger allowed"));
+	                     Global.test.fail_if_stop_overran ? "" : ", signals passed at danger allowed",
+	                     Global.test.no_movement_before_pass ? "" : ", pass without waiting for a stop"));
 }
 
 void test_manager::update(double const Deltatime)
@@ -101,6 +102,11 @@ void test_manager::update(double const Deltatime)
 		if (holds(value, 0.0))
 		{
 			finish(test_result::fail, std::format("__test.result set to 0{}", reason));
+			return;
+		}
+		if (holds(value, 1.0) && false == Global.test.no_movement_before_pass)
+		{
+			finish(test_result::pass, std::format("__test.result set to 1{}", reason));
 			return;
 		}
 		if (holds(value, 1.0) && false == m_passrequested)

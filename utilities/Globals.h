@@ -93,6 +93,7 @@ struct global_settings {
         double standstill{ 300.0 }; // [s] every vehicle standing still this long ends the test; 0 = never
         bool pass_on_standstill{ false }; // the standstill end passes the test instead of failing it
         bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
+        bool no_movement_before_pass{ true }; // a pass waits until every vehicle stands still; with false it ends the test at once
         bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
     } test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap

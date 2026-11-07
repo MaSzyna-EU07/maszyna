@@ -416,6 +416,15 @@ def check_holds_still(rows, moving_speed, stop_speed, max_distance):
     return d <= max_distance, detail
 
 
+def check_ends_moving(rows, min_speed):
+    """The run ended with the vehicle still moving, e.g. a pass that didn't wait for the trains to stop."""
+    if not rows:
+        return False, "the physicslog is empty"
+    last = rows[-1]
+    ok = last[COL_VELOCITY] >= min_speed
+    return ok, f"last row t={last[COL_TIME]:.1f}s, v={last[COL_VELOCITY]:.1f} km/h (wanted >= {min_speed})"
+
+
 def check_slip_clears(rows, moving_speed, stop_speed, within):
     """Once the vehicle has stopped after moving off, its wheels stop slipping within `within` seconds
     (a vehicle left skidding on locked wheels keeps its brakes capped by the sliding adhesion)."""
@@ -444,6 +453,7 @@ CHECKS = {
     "stops": check_stops,
     "stays_stopped": check_stays_stopped,
     "distance": check_distance,
+    "ends_moving": check_ends_moving,
 }
 
 
