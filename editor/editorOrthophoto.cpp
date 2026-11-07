@@ -130,6 +130,36 @@ std::string wms_url(tile_request const &Request, bool Hires, int Pixels, bool Pn
 	return url;
 }
 
+// the orthophoto an older editor kept with the settings, the standard and the 4K imagery of each year, moved to the Root of the cache
+// where it has none yet; whatever else it kept there deleted
+void move_old_cache(fs::path const &Root)
+{
+	auto const old{user_config_path(".cache")};
+	std::error_code ec;
+	if (old.empty() || false == fs::exists(old, ec))
+		return;
+	std::vector<fs::path> products;
+	for (auto const &entry : fs::directory_iterator(old / "geoportal", ec))
+	{
+		auto const name{entry.path().filename().string()};
+		if (entry.is_directory(ec) && (name.rfind("sr_", 0) == 0 || name.rfind("hr_", 0) == 0))
+			products.push_back(entry.path());
+	}
+	if (false == products.empty() && false == fs::exists(Root, ec))
+	{
+		fs::create_directories(Root, ec);
+		std::size_t count{0};
+		for (auto const &product : products)
+		{
+			fs::rename(product, Root / product.filename(), ec);
+			count += ec ? 0 : 1;
+		}
+		auto const path{Root.u8string()};
+		WriteLog(std::format("Editor orthophoto: {} products of the orthophoto moved to {}", count, std::string(path.begin(), path.end())));
+	}
+	fs::remove_all(old, ec);
+}
+
 // among the files kept to be fetched again faster, which don't roam with the profile. The orthophoto an older editor kept with the
 // settings, the standard and the 4K imagery of each year, is moved there once, as the first tile is asked for; whatever else it
 // kept there, the base maps of old among it, is deleted, and so is the orthophoto where it can't be moved or the new place has its own
@@ -139,32 +169,7 @@ fs::path cache_root()
 	if (root.empty())
 		root = fs::path{".cache"} / "geoportal";
 	static std::once_flag moved;
-	std::call_once(moved, [&root]() {
-		auto const old{user_config_path(".cache")};
-		std::error_code ec;
-		if (old.empty() || false == fs::exists(old, ec))
-			return;
-		std::vector<fs::path> products;
-		for (auto const &entry : fs::directory_iterator(old / "geoportal", ec))
-		{
-			auto const name{entry.path().filename().string()};
-			if (entry.is_directory(ec) && (name.rfind("sr_", 0) == 0 || name.rfind("hr_", 0) == 0))
-				products.push_back(entry.path());
-		}
-		if (false == products.empty() && false == fs::exists(root, ec))
-		{
-			fs::create_directories(root, ec);
-			std::size_t count{0};
-			for (auto const &product : products)
-			{
-				fs::rename(product, root / product.filename(), ec);
-				count += ec ? 0 : 1;
-			}
-			auto const path{root.u8string()};
-			WriteLog(std::format("Editor orthophoto: {} products of the orthophoto moved to {}", count, std::string(path.begin(), path.end())));
-		}
-		fs::remove_all(old, ec);
-	});
+	std::call_once(moved, [&root]() { move_old_cache(root); });
 	return root;
 }
 
@@ -1624,6 +1629,14 @@ typename Tiles::value_type *nearest_ungrounded(Tiles &All, Distance const &Dista
 	return nearest;
 }
 
+// the square of the distance between the tiles From and To, in tiles
+long long tile_distance(std::pair<int, int> const &From, std::pair<int, int> const &To)
+{
+	long long const dx = From.first - To.first;
+	long long const dy = From.second - To.second;
+	return dx * dx + dy * dy;
+}
+
 } // namespace
 
 void editor_orthophoto::update(glm::dvec3 const &Camera)
@@ -1762,10 +1775,7 @@ void editor_orthophoto::worker()
 					// a 4K image is 64 MB decoded: that many at most at once, the standard tiles by all the workers
 					if (m_running.contains(it->key) || (it->level >= hires_pixels && m_running_hires >= camera_workers))
 						continue;
-					long long const dx = it->key.first - m_focus.first;
-					long long const dy = it->key.second - m_focus.second;
-					long long const d = dx * dx + dy * dy;
-					if (d < bestdistance)
+					if (long long const d = tile_distance(it->key, m_focus); d < bestdistance)
 					{
 						bestdistance = d;
 						best = it;
