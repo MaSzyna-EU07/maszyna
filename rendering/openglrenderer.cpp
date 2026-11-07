@@ -3582,9 +3582,7 @@ opengl_renderer::Render_Alpha( cell_sequence::reverse_iterator First, cell_seque
         auto first { First };
         while( first != Last ) {
 
-            auto const *cell = first->second;
-
-            if( false == cell->m_shapestranslucent.empty() && false == distant( cell ) ) {
+            if( auto const *cell = first->second; false == cell->m_shapestranslucent.empty() && false == distant( cell ) ) {
                 // since all shapes of the cell share center point we can optimize out a few calls here
                 ::glPushMatrix();
                 auto const originoffset{ cell->m_area.center - m_renderpass.camera.position() };

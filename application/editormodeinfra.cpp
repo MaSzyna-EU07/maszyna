@@ -1323,7 +1323,8 @@ void editor_mode::track_captured(TTrack const &Track)
 		return;
 	infra_load();
 	// the signals and the like of the track follow it, staying where they stand along it
-	infra_adopt(const_cast<TTrack &>(Track));
+	// the observer gets the track const, the areas and the stations keep it as the simulation's own: nothing writes through them
+	infra_adopt(const_cast<TTrack &>(Track)); // NOSONAR
 	if (m_bindings.empty())
 		return;
 	Live.refresh();

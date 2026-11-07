@@ -1006,7 +1006,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	editor_track::switch_template shape;
 	shape.source = tool.track;
 	shape.length = glm::dot(plan_of(main.points[segment_data::point::end] - origin), axis);
-	for (int i = 0; i < 2; ++i)
+	for (auto const i : {0, 1})
 	{
 		auto const &path{own.m_paths[i]};
 		auto &local{shape.local[i]};

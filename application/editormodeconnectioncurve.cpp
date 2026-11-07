@@ -305,15 +305,15 @@ std::vector<profile::pvi> raised_design(profile::line const &Before, std::vector
 // the chainage of the sample nearest the point in plan, and how far off it the point is: the largest double and 0 with no samples
 std::pair<double, double> nearest_sample(std::vector<editor_track::route_sample> const &Samples, glm::dvec3 const &At)
 {
-	double best{std::numeric_limits<double>::max()};
+	double nearest_distance{std::numeric_limits<double>::max()};
 	double chainage{0.0};
 	for (auto const &sample : Samples)
-		if (auto const distance{plan_distance(sample.position, At)}; distance < best)
+		if (auto const distance{plan_distance(sample.position, At)}; distance < nearest_distance)
 		{
-			best = distance;
+			nearest_distance = distance;
 			chainage = sample.chainage;
 		}
-	return {best, chainage};
+	return {nearest_distance, chainage};
 }
 
 } // namespace
@@ -964,16 +964,16 @@ bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vec
 	if (samples.size() < 2)
 		return true;
 	auto const chainage_of = [&](glm::dvec3 const &Point) {
-		double best{std::numeric_limits<double>::max()};
+		double nearest_distance{std::numeric_limits<double>::max()};
 		double chainage{0.0};
 		for (std::size_t i = 0; i + 1 < samples.size(); ++i)
 		{
 			auto const a{plan_of(samples[i].position)};
 			auto const run{plan_of(samples[i + 1].position) - a};
 			auto const t{std::clamp(glm::dot(plan_of(Point) - a, run) / std::max(1e-12, glm::dot(run, run)), 0.0, 1.0)};
-			if (auto const distance{glm::length(plan_of(Point) - (a + run * t))}; distance < best)
+			if (auto const distance{glm::length(plan_of(Point) - (a + run * t))}; distance < nearest_distance)
 			{
-				best = distance;
+				nearest_distance = distance;
 				chainage = samples[i].chainage + (samples[i + 1].chainage - samples[i].chainage) * t;
 			}
 		}

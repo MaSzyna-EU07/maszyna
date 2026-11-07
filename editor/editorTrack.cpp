@@ -1925,21 +1925,21 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 	}
 	Curve.radius = smallest;
 	std::vector<curve::arc_part> arcs;
-	double between{0.0};
+	double between_arcs{0.0};
 	for (std::size_t i = 0; i < run.size(); ++i)
 	{
 		if (varying[i] || curvatures[i] <= 0.0)
 		{
 			if (false == arcs.empty())
-				between += lengths[i];
+				between_arcs += lengths[i];
 			continue;
 		}
 		auto const radius{1.0 / curvatures[i]};
 		if (false == arcs.empty() && std::abs(arcs.back().radius - radius) < 0.05 * radius)
-			arcs.back().turn += (lengths[i] + between) / radius;
+			arcs.back().turn += (lengths[i] + between_arcs) / radius;
 		else
-			arcs.push_back({radius, lengths[i] / radius, arcs.empty() ? 0.0 : between});
-		between = 0.0;
+			arcs.push_back({radius, lengths[i] / radius, arcs.empty() ? 0.0 : between_arcs});
+		between_arcs = 0.0;
 	}
 	if (arcs.size() >= 2 && Curve.reversals == 0)
 	{

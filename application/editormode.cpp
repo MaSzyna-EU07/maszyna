@@ -89,6 +89,8 @@ namespace
         frame_steps() = default;
         frame_steps(frame_steps const &) = delete;
         frame_steps &operator=(frame_steps const &) = delete;
+        frame_steps(frame_steps &&) = delete;
+        frame_steps &operator=(frame_steps &&) = delete;
         void step(char const *Name)
         {
             auto const now{std::chrono::steady_clock::now()};
@@ -123,6 +125,8 @@ namespace
         explicit flag_reset(bool &Flag) : m_flag{Flag} {}
         flag_reset(flag_reset const &) = delete;
         flag_reset &operator=(flag_reset const &) = delete;
+        flag_reset(flag_reset &&) = delete;
+        flag_reset &operator=(flag_reset &&) = delete;
         ~flag_reset() { m_flag = false; }
 
       private:

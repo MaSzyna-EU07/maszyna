@@ -1768,7 +1768,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 			return std::abs(changed_at(Cut - kCutNear)) < kNoChange && std::abs(changed_at(Cut + kCutNear)) < kNoChange;
 		});
 	auto const height_at = [&edit_only, &before, &changed_at, &line](double const Chainage) { return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage); };
-	auto const grade_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read_line, Chainage) : profile::grade(line, Chainage); };
+	auto const grade_at = [&edit_only, &before, &line, &read_line](double const Chainage) { return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read_line, Chainage) : profile::grade(line, Chainage); };
 	// the paths are cut only at the breaks they can't go over keeping to the line within a hair: one cut there, by a joint, or by
 	// another cut, would leave a sliver of a track, the line applied again leaving more of them by the first, the ballast mapped
 	// on each from its start. A path just laid keeps to it as closely as Fewest
@@ -1882,7 +1882,7 @@ void editor_mode::profile_follow_terrain(std::size_t const Edits)
 	auto const has = [&](std::string const &Name) { return std::ranges::any_of(modifiers, [&](heightmap::modifier const &Modifier) { return Modifier.name == Name; }); };
 	auto const shaped{has(route) || (false == state.earthworks.modifier.empty() && has(state.earthworks.modifier))};
 	auto const own{std::ranges::any_of(tracks, [&](TTrack const *Track) {
-		return false == Track->name().empty() && std::any_of(modifiers.begin(), modifiers.end(), [&](heightmap::modifier const &Modifier) { return Modifier.name == "nmt " + Track->name() || Modifier.name.starts_with("nmt " + Track->name() + " "); });
+		return false == Track->name().empty() && std::ranges::any_of(modifiers, [&](heightmap::modifier const &Modifier) { return Modifier.name == "nmt " + Track->name() || Modifier.name.starts_with("nmt " + Track->name() + " "); });
 	})};
 	auto status{state.status};
 	std::size_t laid{0};

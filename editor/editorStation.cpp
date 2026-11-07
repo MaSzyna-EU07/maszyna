@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <numeric>
 #include <optional>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1296,7 +1297,7 @@ drawing generalize(layout const &Layout)
 	auto &runs{result.runs};
 	std::vector<std::vector<glm::dvec2>> samples(runs.size());
 	std::vector<char> level(runs.size(), 0);
-	for (std::size_t r = 0; r < runs.size(); ++r)
+	for (auto const r : std::views::iota(std::size_t{0}, runs.size()))
 	{
 		samples[r] = samples_of(paths, along, runs[r]);
 		if (samples[r].empty())

@@ -746,10 +746,10 @@ void read_mark(std::istringstream &Line, scene::layer_handle const Layer, scene:
 {
 	mark entry;
 	entry.layer = Layer;
-	glm::dvec3 point{0.0};
+	glm::dvec3 position{0.0};
 	glm::dvec2 way{0.0, 1.0};
 	std::string keyword;
-	Line >> entry.line >> point.x >> point.y >> point.z >> keyword >> way.x >> way.y >> keyword >> entry.km;
+	Line >> entry.line >> position.x >> position.y >> position.z >> keyword >> way.x >> way.y >> keyword >> entry.km;
 	if (Line.fail() || entry.line.empty() || false == std::isfinite(entry.km))
 		return;
 	while (Line >> keyword)
@@ -759,8 +759,8 @@ void read_mark(std::istringstream &Line, scene::layer_handle const Layer, scene:
 			if (Line >> beyond)
 				entry.beyond = beyond;
 		}
-	entry.point = Context.to_world(point);
-	entry.way = plan_of(Context.to_world(point + glm::dvec3{way.x, 0.0, way.y}) - entry.point);
+	entry.point = Context.to_world(position);
+	entry.way = plan_of(Context.to_world(position + glm::dvec3{way.x, 0.0, way.y}) - entry.point);
 	entry.way = glm::length(entry.way) > 1e-12 ? glm::normalize(entry.way) : glm::dvec2{0.0, 1.0};
 	kept().marks.push_back(std::move(entry));
 }

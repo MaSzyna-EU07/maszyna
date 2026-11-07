@@ -3167,9 +3167,9 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		};
 		while (false == open.empty())
 		{
-			auto const nearest{std::ranges::min_element(open, [](walk const &A, walk const &B) { return A.between < B.between; })};
-			auto const step{*nearest}; // NOSONAR: a copy, the step is erased from the list right after
-			open.erase(nearest);
+			auto const nearest_step{std::ranges::min_element(open, [](walk const &A, walk const &B) { return A.between < B.between; })};
+			auto const step{*nearest_step}; // NOSONAR: a copy, the step is erased from the list right after
+			open.erase(nearest_step);
 			if (step.between >= kFarthest || false == seen.insert({step.span.track, step.span.path, step.span.forward}).second)
 				continue;
 			auto onward{editor_track::continuations(step.span)};
@@ -3441,11 +3441,11 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	}
 	for (auto const &hold : crossing_holds)
 	{
-		auto const at{static_cast<std::size_t>(std::distance(chainages.begin(), std::ranges::upper_bound(chainages, hold.chainage)))};
-		chainages.insert(chainages.begin() + at, hold.chainage);
-		ground.insert(ground.begin() + at, hold.height);
-		tolerances.insert(tolerances.begin() + at, hold.tolerance);
-		reaches.insert(reaches.begin() + at, hold.reach);
+		auto const insert_at{static_cast<std::size_t>(std::distance(chainages.begin(), std::ranges::upper_bound(chainages, hold.chainage)))};
+		chainages.insert(chainages.begin() + insert_at, hold.chainage);
+		ground.insert(ground.begin() + insert_at, hold.height);
+		tolerances.insert(tolerances.begin() + insert_at, hold.tolerance);
+		reaches.insert(reaches.begin() + insert_at, hold.reach);
 	}
 	// the switches of the tracks beside, the ones of the crossovers above all, lie on bearers common with this track or close
 	// to it: no break of the grade on them either, so the tracks of the station stay in one plane
@@ -4154,7 +4154,8 @@ void editor_mode::nmt_share_grades()
 			{
 				heights[a] = start.y;
 				heights[b] = end.y;
-				fixed[a] = fixed[b] = 1;
+				fixed[a] = 1;
+				fixed[b] = 1;
 				stayed_nodes.insert({a, b});
 			}
 			geometry::bezier const curve{path};
@@ -4756,8 +4757,7 @@ void editor_mode::nmt_auto_step()
 		else
 		{
 			// the offset of the run before kept where the tracks fitted to it lie within 5 cm of it: they don't creep a centimetre a run
-			auto const offset{std::abs(lift) > 0.05 ? -lift : 0.0};
-			if (std::abs(offset - state.offset) > 0.05)
+			if (auto const offset{std::abs(lift) > 0.05 ? -lift : 0.0}; std::abs(offset - state.offset) > 0.05)
 				state.offset = offset;
 			WriteLog(format("Editor: NMT - the terrain model offset %+.2f m to the scenery", state.offset), logtype::generic);
 		}

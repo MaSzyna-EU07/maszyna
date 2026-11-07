@@ -981,10 +981,10 @@ void editor_orthophoto::ground_arrived()
 
 void editor_orthophoto::detach_scene()
 {
-	for (auto &entry : m_tiles)
+	for (auto &[key, piece] : m_tiles)
 	{
-		remove_shape(entry.second);
-		release_geometry(entry.second);
+		remove_shape(piece);
+		release_geometry(piece);
 	}
 }
 
@@ -1875,9 +1875,8 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 	// clip-space change per metre of height
 	glm::vec4 const up = ViewProjection * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
 
-	for (auto const &entry : m_tiles)
+	for (auto const &[key, t] : m_tiles)
 	{
-		tile const &t = entry.second;
 		if (t.level == 0 || t.empty || t.slot.texture == null_handle)
 			continue;
 		std::size_t const textureid = GfxRenderer->Texture(t.slot.texture).get_id();
@@ -1891,7 +1890,7 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 		double const yhi = draped ? t.height_max + lift : flat;
 
 		// world extent of the tile; u runs west->east (-x), v runs north->south (-z), matching the image rows
-		glm::dvec2 const corner = tile_corner(entry.first);
+		glm::dvec2 const corner = tile_corner(key);
 		auto const relative = [&](double U, double V) { return glm::vec3(glm::dvec3(corner.x - U * tile_size, 0.0, corner.y - V * tile_size) - CameraPos); };
 		// the projection is linear before the divide, so clip positions interpolate exactly: c = c00 + du*u + dv*v + up*height
 		glm::vec4 const c00 = ViewProjection * glm::vec4(relative(0.0, 0.0), 1.0f);

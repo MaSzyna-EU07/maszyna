@@ -1915,9 +1915,9 @@ bool terrain_streamer::save(std::string *Error)
 		}
 		for (auto it = m_removed.begin(); it != m_removed.end();)
 			it = (heightmap::pack_of(*it) == packkey ? m_removed.erase(it) : std::next(it));
-		for (auto const &entry : m_chunks)
-			if (heightmap::pack_of(entry.first) == packkey)
-				entry.second->clear_modified();
+		for (auto const &[key, chunk] : m_chunks)
+			if (heightmap::pack_of(key) == packkey)
+				chunk->clear_modified();
 	}
 	WriteLog("Heightmap terrain saved: " + m_directory + " (" + std::to_string(packs.size()) + " pack files written)", logtype::generic);
 	return true;

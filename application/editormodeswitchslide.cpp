@@ -832,7 +832,8 @@ bool editor_mode::bent_switch_frame(TTrack const &Track, std::vector<curve_sampl
 	if (Sides[0] == nullptr || Sides[1] == nullptr || Sides[0] == Sides[1])
 		return false;
 	editor_track::chain chain;
-	chain.tracks = {Sides[0], const_cast<TTrack *>(&Track), Sides[1]};
+	// the chain only sampled, nothing written through it; its tracks are kept as the simulation's own
+	chain.tracks = {Sides[0], const_cast<TTrack *>(&Track), Sides[1]}; // NOSONAR
 	chain.forward = {forward[0], true, forward[1]};
 	Frame = sample_chain(chain);
 	Station = nearest_station(Frame, Track.m_paths.front().points[segment_data::point::start]);

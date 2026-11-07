@@ -2802,7 +2802,7 @@ void srk_tool::render_lengths()
 		ImGui::TableSetupColumn(ways[1], ImGuiTableColumnFlags_WidthStretch, 0.28f);
 		ImGui::TableSetupColumn(STR_C("Train up to"), ImGuiTableColumnFlags_WidthStretch, 0.28f);
 		ImGui::TableHeadersRow();
-		for (std::size_t index = 0; index < m_lengths.size(); ++index)
+		for (auto const index : std::views::iota(std::size_t{0}, m_lengths.size()))
 			render_length_row(index, ways, stem);
 		ImGui::EndTable();
 	}
@@ -3911,13 +3911,8 @@ void srk_tool::set_lines(block_edit const *Edit)
 	}
 	auto const described{line_of_open()};
 	double known{0.0};
-	auto const blocked{[&] {
-		for (std::size_t index = 0; index < lines.size(); ++index)
-			if (processed[index] && automatic[index] == 1)
-				return true;
-		return false;
-	}()};
-	if (blocked && (false == km_of_open(0.0, known) || described.empty()))
+	if (std::ranges::any_of(std::views::iota(std::size_t{0}, lines.size()), [&](std::size_t const Index) { return processed[Index] && automatic[Index] == 1; }) &&
+	    (false == km_of_open(0.0, known) || described.empty()))
 	{
 		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
 		return;
@@ -4049,7 +4044,9 @@ void srk_tool::set_lines(block_edit const *Edit)
 					// as many on both tracks of the line, where both have the automatic block
 					auto const has_partner{line.partner >= 0 && line.partner < static_cast<int>(lines.size()) && automatic[line.partner] == 1};
 					auto const reach{has_partner ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
-					auto const other{has_partner ? braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0) : least};
+					double other{least};
+					if (has_partner)
+						other = braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0);
 					auto const sections{std::max(1.0, std::floor(reach / std::max(least, other)))};
 					for (int k = 1; k < sections; ++k)
 						places.push_back(end.distance * k / sections);

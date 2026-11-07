@@ -462,7 +462,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		if (drag)
 		{
 			recognise_connection();
-			auto const crossover{tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}};
+			auto const crossover{tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, static_cast<int>(tool.connection_together)) : std::string{}};
 			WriteLog(std::string{"SELFTEST connection drag: "} + (tool.connection < 0 ? "a switch" : connection::word(static_cast<connection::kind>(tool.connection))) + (tool.partner != nullptr ? " with " + tool.partner->name() : std::string{}) +
 			         crossover);
 			if (tool.connection >= 0 && false == tool.curved)
@@ -660,7 +660,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 			if (scene::Layers.tracked(handle) && scene::Layers.instance(handle).file != nullptr && scene::Layers.instance(handle).file->find("napedy") != std::string::npos)
 				files += format(" [%d %s removed %d dead %d]", static_cast<int>(handle), scene::Layers.instance(handle).file->c_str(), scene::Layers.instance(handle).removed ? 1 : 0, scene::Layers.instance(handle).dead ? 1 : 0);
-		WriteLog("SELFTEST drives " + name + ": chosen " + (m_switch.drive >= 0 ? m_switch.drives[m_switch.drive].name : std::string{"none"}) + ", side " + std::to_string(m_switch.drive_side) + ", standing" + files + ", steps " + std::to_string(m_history.size()));
+		WriteLog(std::format("SELFTEST drives {}: chosen {}, side {}, standing{}, steps {}", name, m_switch.drive >= 0 ? m_switch.drives[m_switch.drive].name : std::string{"none"}, m_switch.drive_side, files,
+		                      m_history.size()));
 		return selftest_result::handled;
 	}
 	if (command == "driveflip")

@@ -947,7 +947,7 @@ void editor_mode::update_track_intent()
 	m_intent = track_intent_at((io.KeyShift ? GLFW_MOD_SHIFT : 0) | (io.KeyCtrl ? GLFW_MOD_CONTROL : 0) | (io.KeyAlt ? GLFW_MOD_ALT : 0));
 	switch (m_intent.what)
 	{
-	case kind::none:
+	case kind::nothing:
 	case kind::gizmo: break;
 	case kind::point:
 	case kind::straight_handle:
@@ -1142,7 +1142,7 @@ void editor_mode::track_press(track_intent const &Intent)
 		}
 		return;
 	case kind::select:
-	case kind::none: track_click_select(Intent.track); return;
+	case kind::nothing: track_click_select(Intent.track); return;
 	}
 }
 
@@ -1174,7 +1174,7 @@ void editor_mode::draw_track_intent() const
 	using kind = track_intent::kind;
 	auto const &intent{m_intent};
 	auto const &io{ImGui::GetIO()};
-	if (intent.what == kind::none || intent.what == kind::gizmo || io.WantCaptureMouse)
+	if (intent.what == kind::nothing || intent.what == kind::gizmo || io.WantCaptureMouse)
 		return;
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};

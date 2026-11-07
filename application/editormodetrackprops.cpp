@@ -229,32 +229,32 @@ enum class field
 	texture
 };
 
-// parts of the sheet, in their order
-enum section : int
+// parts of the sheet, in their order; numbers, as they index the rows
+namespace section
 {
-	traffic,
-	look,
-	look_bed,
-	look_sleepers,
-	ride
-};
+constexpr int traffic{0};
+constexpr int look{1};
+constexpr int look_bed{2};
+constexpr int look_sleepers{3};
+constexpr int ride{4};
+} // namespace section
 
-// what can be pasted, each by itself
-enum group : int
+// what can be pasted, each by itself; numbers, as they index the ticks of the groups
+namespace group
 {
-	speed,
-	surroundings,
-	overhead_line,
-	circuits,
-	rails,
-	trackbed,
-	trackbed_shape,
-	sleepers,
-	ride_sound,
-	frogs,
-	sleeper_placement, // spacing and shift of the sleepers and of the trackbed under them, apart from their models
-	group_count
-};
+constexpr int speed{0};
+constexpr int surroundings{1};
+constexpr int overhead_line{2};
+constexpr int circuits{3};
+constexpr int rails{4};
+constexpr int trackbed{5};
+constexpr int trackbed_shape{6};
+constexpr int sleepers{7};
+constexpr int ride_sound{8};
+constexpr int frogs{9};
+constexpr int sleeper_placement{10}; // spacing and shift of the sleepers and of the trackbed under them, apart from their models
+} // namespace group
+constexpr int group_count{11};
 
 constexpr std::array<char const *, group_count> kGroupLabels{"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
 // the groups as the presets keep them in their file, by names which don't change with the order of the groups
@@ -1401,7 +1401,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		if (typing)
 		{
 			auto const count{cache.applies[edit.property]};
-			m_track_notes.push_back({edit.property, format(STR_P("Enter or leaving the field sets it on %d track, Esc gives up", "Enter or leaving the field sets it on %d tracks, Esc gives up", static_cast<long long>(count)), static_cast<int>(count)), track_note::kind::typing});
+			m_track_notes.emplace_back(edit.property, format(STR_P("Enter or leaving the field sets it on %d track, Esc gives up", "Enter or leaving the field sets it on %d tracks, Esc gives up", static_cast<long long>(count)), static_cast<int>(count)), track_note::kind::typing);
 		}
 		auto const &outcome{m_track_outcome};
 		if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == signature && outcome.history == m_history.size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
@@ -1727,7 +1727,7 @@ std::size_t editor_mode::apply_track_preset(int const Id, std::vector<TTrack *> 
 	auto const *preset{EditorTrackPresets.find(Id)};
 	if (preset == nullptr || Tracks.empty())
 		return 0;
-	auto const name{preset->name};
+	auto const &name{preset->name};
 	auto const changed{apply_track_values(preset->values, groups_of(*preset), Tracks, "Applied a track preset")};
 	if (false == changed.has_value())
 	{
