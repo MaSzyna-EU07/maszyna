@@ -169,6 +169,13 @@ bool start_up(driven Driven, track const &Track, double Seconds, trace *Trace) {
 		if (diesel) {
 			prepare_diesel(Driven);
 		}
+		if (controlling.PantographsRequireMains && false == controlling.Mains) {
+			// the pantographs rise only through the closed line breaker, which closes without their voltage
+			for (int i = 0; i < 3 && cab.DirActive <= 0; ++i) {
+				cab.DirectionForward();
+			}
+			close_line_breaker(Driven);
+		}
 		if (collector) {
 			raise_pantographs(Driven);
 		}

@@ -1735,7 +1735,8 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 		break;
 	}
 	}
-	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1};
+	// a line breaker closed ahead of the pantographs gets ready on the low voltage circuits
+	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1 || (PantographsRequireMains && (Power24vIsAvailable || Power110vIsAvailable))};
 
 	if (true == maincircuitpowersupply)
 	{
@@ -2327,7 +2328,8 @@ void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 		valve.is_active = (valve.spring ? lowvoltagepower : true) // spring actuator needs power to maintain non-default state
 		                  && (manualcontrol && lowvoltagepower ? false == valve.is_disabled : true) // needs power to change state, without it just pass through
 		                  && (manualcontrol && lowvoltagepower ? false == PantAllDown : true) &&
-		                  (valve.is_active || (manualcontrol && lowvoltagepower && valve.is_enabled) || (autostart && lowvoltagepower)); // shouldn't ever get this far but, eh
+		                  (Mains || false == PantographsRequireMains) // fed through the closed line breaker, where it comes first
+		                  && (valve.is_active || (manualcontrol && lowvoltagepower && valve.is_enabled) || (autostart && lowvoltagepower)); // shouldn't ever get this far but, eh
 
 		auto const pantographexists{EnginePowerSource.SourceType == TPowerSource::CurrentCollector && EnginePowerSource.CollectorParameters.PhysicalLayout & 1 << pant_id};
 
@@ -3683,7 +3685,8 @@ bool TMoverParameters::MainSwitchCheck() const
 	case ElectricInductionMotor:
 	{
 		// TODO: check whether we can simplify this check and skip the outer EngineType switch
-		powerisavailable = EnginePowerSourceVoltage() > 0.5 * EnginePowerSource.MaxVoltage;
+		// closed ahead of the pantographs, the line breaker runs on the low voltage circuits
+		powerisavailable = PantographsRequireMains ? Power24vIsAvailable || Power110vIsAvailable : EnginePowerSourceVoltage() > 0.5 * EnginePowerSource.MaxVoltage;
 		break;
 	}
 	default:
@@ -3693,7 +3696,8 @@ bool TMoverParameters::MainSwitchCheck() const
 	}
 
 	return powerisavailable && (ScndCtrlPos == 0 || EngineType == ElectricInductionMotor) && MainsInitTimeCountdown <= 0.0 &&
-	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && true == NoVoltRelay && true == OvervoltageRelay && LastSwitchingTime > CtrlDelay &&
+	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && (true == NoVoltRelay || PantographsRequireMains) && true == OvervoltageRelay &&
+	       LastSwitchingTime > CtrlDelay &&
 	       (HasCamshaft                       ? IsMainCtrlActualNoPowerPos() :
 	        LineBreakerClosesOnlyAtNoPowerPos ? IsMainCtrlNoPowerPos() :
 	                                            true) &&
@@ -5698,7 +5702,8 @@ double TMoverParameters::TractionForce(double dt)
 		OvervoltageRelay =
 		    EnginePowerSource.SourceType != TPowerSource::CurrentCollector || voltage <= EnginePowerSource.CollectorParameters.MaxV || false == EnginePowerSource.CollectorParameters.OVP;
 		// wywalanie szybkiego z powodu niewłaściwego napięcia
-		EventFlag |= true == Mains && (false == NoVoltRelay || false == OvervoltageRelay) &&
+		// (a line breaker closed ahead of the pantographs holds without voltage)
+		EventFlag |= true == Mains && ((false == NoVoltRelay && false == PantographsRequireMains) || false == OvervoltageRelay) &&
 		             MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		break;
 	}
@@ -5707,7 +5712,8 @@ double TMoverParameters::TractionForce(double dt)
 	{
 		// TODO: check if we can use instead the code for electricseriesmotor
 		// nie wchodzić w funkcję bez potrzeby
-		if (Mains && (std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV ||
+		// (a line breaker closed ahead of the pantographs holds without voltage)
+		if (Mains && ((std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV && false == PantographsRequireMains) ||
 			    std::max(GetTrainsetHighVoltage(), PantographVoltage) > EnginePowerSource.CollectorParameters.MaxV + 200))
 		{
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
@@ -10934,6 +10940,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = starts.find(extract_value("MainStart", line));
 		MainsStart = lookup != starts.end() ? lookup->second : start_t::manual;
 	}
+	extract_value(PantographsRequireMains, "PantRequiresMain", line, "");
 	// battery
 	{
 		auto lookup = starts.find(extract_value("BatteryStart", line));
