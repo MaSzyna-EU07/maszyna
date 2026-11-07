@@ -1634,9 +1634,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool reapply_straight_switch(TTrack &First, std::optional<double_switch> const &Set, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
 	bool reapply_bent_switch(TTrack &First, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
 	// the template to choose: the speeds on the diverging track as chips, the templates of the rail by their skos, all the others
-	// folded under. Fits: those of the kind wanted; Rail: of the track, empty when it doesn't tell; Popup: inside a combo, with no
-	// windows of its own. Gives the index picked, -1 while none is
-	int render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup);
+	// folded under. Fits: of each template by its index, 1 for those of the kind wanted; Rail: of the track, empty when it doesn't
+	// tell; Popup: inside a combo, with no windows of its own. Gives the index picked, -1 while none is
+	int render_template_picker(char const *Id, std::span<char const> const Fits, std::string const &Rail, int const Chosen, bool const Popup);
+	// of each template of the switch tool by its index, 1 for those that fit
+	template <typename Fit_> std::vector<char> templates_fitting(Fit_ const &Fit) const
+	{
+		std::vector<char> fitting;
+		fitting.reserve(m_switch.templates.size());
+		for (auto const &entry : m_switch.templates)
+			fitting.push_back(Fit(entry) ? 1 : 0);
+		return fitting;
+	}
 	// the template of the selected switch, slip or crossing, changed with a pick: in a combo for the inspector, else in full; nothing
 	// for another track
 	void render_switch_template(TTrack &Track, bool const Combo);

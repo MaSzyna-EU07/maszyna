@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include <format>
 #include <map>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -321,12 +322,11 @@ void take_blades(TTrack *Track, editor_track::switch_template const &Shape)
 using switch_templates = std::vector<editor_track::switch_template>;
 
 // the rails the catalogue has templates of the kind for, in the order of the catalogue
-template <typename Fits>
-std::vector<std::string> rails_of(switch_templates const &Templates, Fits const &Fit)
+std::vector<std::string> rails_of(switch_templates const &Templates, std::span<char const> const Fit)
 {
 	std::vector<std::string> rails;
-	for (auto const &entry : Templates)
-		if (Fit(entry) && entry.source == nullptr && false == entry.own && entry.rail != "-" && std::ranges::find(rails, entry.rail) == rails.end())
+	for (std::size_t i = 0; i < Templates.size(); ++i)
+		if (auto const &entry{Templates[i]}; 0 != Fit[i] && entry.source == nullptr && false == entry.own && entry.rail != "-" && std::ranges::find(rails, entry.rail) == rails.end())
 			rails.push_back(entry.rail);
 	return rails;
 }
@@ -350,14 +350,13 @@ void render_rail_chips(std::vector<std::string> const &Rails, std::string &Pick)
 }
 
 // the short list: the catalogue of the rail and the own templates
-template <typename Fits>
-std::vector<int> short_list(switch_templates const &Templates, Fits const &Fit, std::string const &Rail)
+std::vector<int> short_list(switch_templates const &Templates, std::span<char const> const Fit, std::string const &Rail)
 {
 	std::vector<int> listed;
 	for (int i = 0; i < static_cast<int>(Templates.size()); ++i)
 	{
 		auto const &entry{Templates[i]};
-		if (Fit(entry) && entry.source == nullptr && (entry.own || entry.rail == Rail || entry.rail == "-"))
+		if (0 != Fit[i] && entry.source == nullptr && (entry.own || entry.rail == Rail || entry.rail == "-"))
 			listed.push_back(i);
 	}
 	return listed;
@@ -449,29 +448,27 @@ std::string whole_group_of(editor_track::switch_template const &Template)
 }
 
 // the templates of the kind of one group of the whole list under its title; Picked: the one clicked
-template <typename Fits>
-void render_whole_group(switch_templates const &Templates, Fits const &Fit, std::string const &Group, int const Chosen, int &Picked)
+void render_whole_group(switch_templates const &Templates, std::span<char const> const Fit, std::string const &Group, int const Chosen, int &Picked)
 {
 	ImGui::SeparatorText(Group.c_str());
 	for (int i = 0; i < static_cast<int>(Templates.size()); ++i)
-		if (Fit(Templates[i]) && whole_group_of(Templates[i]) == Group &&
+		if (0 != Fit[i] && whole_group_of(Templates[i]) == Group &&
 		    template_row(i, Templates[i], Templates[i].source != nullptr ? row_name(Templates[i]) : switch_name_translated(Templates[i].title()), i == Chosen))
 			Picked = i;
 }
 
 // all the templates of the kind: the switches of the scenery, the own templates, then the catalogue rail by rail, in a window of
 // their own unless in a popup; Picked: the one clicked
-template <typename Fits>
-void render_all_templates(switch_templates const &Templates, Fits const &Fit, int const Chosen, bool const Popup, int &Picked)
+void render_all_templates(switch_templates const &Templates, std::span<char const> const Fit, int const Chosen, bool const Popup, int &Picked)
 {
 	std::vector<std::string> wholes;
 	int rows{0};
-	for (auto const &entry : Templates)
+	for (std::size_t i = 0; i < Templates.size(); ++i)
 	{
-		if (false == Fit(entry))
+		if (0 == Fit[i])
 			continue;
 		++rows;
-		if (auto const group{whole_group_of(entry)}; std::ranges::find(wholes, group) == wholes.end())
+		if (auto const group{whole_group_of(Templates[i])}; std::ranges::find(wholes, group) == wholes.end())
 			wholes.push_back(group);
 	}
 	if (Popup || ImGui::BeginChild("##all", ImVec2(0.0f, list_height(rows, static_cast<int>(wholes.size()))), ImGuiChildFlags_Borders))
@@ -741,7 +738,7 @@ bool editor_mode::change_switch_template(TTrack &Switch, int const Index)
 	return true;
 }
 
-int editor_mode::render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup)
+int editor_mode::render_template_picker(char const *Id, std::span<char const> const Fits, std::string const &Rail, int const Chosen, bool const Popup)
 {
 	auto &tool{m_switch};
 	auto const &templates{tool.templates};
@@ -820,7 +817,7 @@ int editor_mode::render_template_combo(template_offer const &Offer, std::string 
 	// the templates in a combo: the one picked, -1 while none is
 	if (ImGui::BeginCombo("##switchtemplate", offered_name(Offer).c_str(), ImGuiComboFlags_HeightLargest))
 	{
-		picked = render_template_picker("##inspector", Offer.fits, Offer.rail, Offer.current, true);
+		picked = render_template_picker("##inspector", templates_fitting(Offer.fits), Offer.rail, Offer.current, true);
 		if (picked >= 0)
 			ImGui::CloseCurrentPopup();
 		ImGui::EndCombo();
@@ -859,7 +856,7 @@ void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", blocked.c_str());
 			return;
 		}
-		picked = render_template_picker("##turnout", offer.fits, offer.rail, offer.current, false);
+		picked = render_template_picker("##turnout", templates_fitting(offer.fits), offer.rail, offer.current, false);
 	}
 	if (picked >= 0)
 		change_switch_template(Track, picked);
