@@ -5366,6 +5366,43 @@ void srk_tool::fit_view(float const Width, float const Height)
 	view.exaggeration = static_cast<float>(std::clamp(across / vertical, 1.0, 500.0));
 }
 
+namespace
+{
+
+// the square of the distance of the mouse on the screen from the nearest of the lines between the points of a path drawn, Screen_of:
+// where a point of the plot is on the screen; Limit where none is nearer
+template <typename Screen>
+float drawn_gap2(std::vector<glm::dvec2> const &Points, Screen const &Screen_of, ImVec2 const &Mouse, float const Limit)
+{
+	auto nearest{Limit};
+	for (std::size_t i = 1; i < Points.size(); ++i)
+	{
+		auto const a{Screen_of(Points[i - 1])};
+		auto const b{Screen_of(Points[i])};
+		auto const dx{b.x - a.x};
+		auto const dy{b.y - a.y};
+		auto const length2{dx * dx + dy * dy};
+		auto const t{length2 > 0.0f ? std::clamp(((Mouse.x - a.x) * dx + (Mouse.y - a.y) * dy) / length2, 0.0f, 1.0f) : 0.0f};
+		auto const ex{a.x + t * dx - Mouse.x};
+		auto const ey{a.y + t * dy - Mouse.y};
+		if (ex * ex + ey * ey < nearest)
+			nearest = ex * ex + ey * ey;
+	}
+	return nearest;
+}
+
+// the joints at the ends of a block section of a line straightened, but at the ends of the line; X_of: where a distance along the line
+// is on the screen
+template <typename Line_x>
+void joints_drawn(ImDrawList *Draw, srk_tool::line_row const &Row, srk_tool::line_row::run const &Run, float const Y, Line_x const &X_of)
+{
+	for (auto const end : {Run.from, Run.to})
+		if (end > 1.0 && end < Row.length - 1.0)
+			Draw->AddLine(ImVec2(X_of(Row, end), Y - 5.0f), ImVec2(X_of(Row, end), Y + 5.0f), kJoint, 2.0f);
+}
+
+} // namespace
+
 void srk_tool::render_canvas(float const Height)
 {
 	auto const &layout{*m_layout};
@@ -5417,25 +5454,11 @@ void srk_tool::render_canvas(float const Height)
 		auto nearest{7.0f * 7.0f};
 		auto const &mouse{io.MousePos};
 		for (int index = 0; index < static_cast<int>(layout.paths.size()); ++index)
-		{
-			auto const &points{drawn_of(index)};
-			for (std::size_t i = 1; i < points.size(); ++i)
+			if (auto const gap{drawn_gap2(drawn_of(index), screen_of, mouse, nearest)}; gap < nearest)
 			{
-				auto const a{screen_of(points[i - 1])};
-				auto const b{screen_of(points[i])};
-				auto const dx{b.x - a.x};
-				auto const dy{b.y - a.y};
-				auto const length2{dx * dx + dy * dy};
-				auto const t{length2 > 0.0f ? std::clamp(((mouse.x - a.x) * dx + (mouse.y - a.y) * dy) / length2, 0.0f, 1.0f) : 0.0f};
-				auto const ex{a.x + t * dx - mouse.x};
-				auto const ey{a.y + t * dy - mouse.y};
-				if (ex * ex + ey * ey < nearest)
-				{
-					nearest = ex * ex + ey * ey;
-					m_hover = index;
-				}
+				nearest = gap;
+				m_hover = index;
 			}
-		}
 	}
 	else if (false == hovered && false == ImGui::IsItemActive())
 		m_hover = -1;
@@ -5541,9 +5564,7 @@ void srk_tool::render_canvas(float const Height)
 		{
 			auto const lit{static_cast<int>(index) == line_hover && line_at >= run.from && line_at <= run.to};
 			draw->AddLine(ImVec2(line_x(row, std::max(0.0, run.from)), y), ImVec2(line_x(row, run.to), y), lit ? kHovered : circuit_colour(run.name), lit ? 4.0f : 2.5f);
-			for (auto const end : {run.from, run.to})
-				if (end > 1.0 && end < row.length - 1.0)
-					draw->AddLine(ImVec2(line_x(row, end), y - 5.0f), ImVec2(line_x(row, end), y + 5.0f), kJoint, 2.0f);
+			joints_drawn(draw, row, run, y, line_x);
 		}
 		for (auto const &post : row.posts)
 		{
@@ -5644,12 +5665,11 @@ void srk_tool::render_canvas(float const Height)
 		auto const outside = [&](float const Tall, float const Level) { return up ? y - 5.0f - (Tall + 3.0f) * Level + 3.0f : y + 5.0f + (Tall + 3.0f) * (Level - 1.0f); };
 		auto const tall{height * (row.km_known ? 2.0f : 1.0f)};
 		for (auto const wrong_track : {false, true})
-			for (auto const &post : row.posts)
-				if (post.wrong == wrong_track)
-				{
-					auto const x{line_x(row, post.distance)};
-					label(row.km_known ? post.name + "\n" + format("%.3f", post.km) : post.name, kSignal, {ImVec2(x, outside(tall, 1.0f)), ImVec2(x, outside(tall, 2.0f))});
-				}
+			for (auto const &post : row.posts | std::views::filter([wrong_track](line_row::post const &Post) { return Post.wrong == wrong_track; }))
+			{
+				auto const x{line_x(row, post.distance)};
+				label(row.km_known ? post.name + "\n" + format("%.3f", post.km) : post.name, kSignal, {ImVec2(x, outside(tall, 1.0f)), ImVec2(x, outside(tall, 2.0f))});
+			}
 		for (auto const &run : row.sections)
 		{
 			auto const x{line_x(row, (std::max(0.0, run.from) + run.to) * 0.5)};
