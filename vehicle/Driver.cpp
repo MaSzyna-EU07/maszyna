@@ -2957,9 +2957,8 @@ TController::increase_train_brake() {
         pos_corr += mvOccupied->Handle->GetCP()*0.2;
 
     }
-    double deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
-
-    if( deltaAcc > brake_increase_margin() )
+    if( double const deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
+        deltaAcc > brake_increase_margin() )
     {
         if( /*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition < 0.1 ) {
             auto const OK { /*mvOccupied->*/BrakeLevelAdd( BrakingInitialLevel ) }; //GBH
@@ -7628,6 +7627,83 @@ shaped_braking_demand(
     return Gravity - high * fullbraking( Velocity );
 }
 
+// outside of max safe range: follow the braking curve down to the speed ahead, Vel is the present speed in the
+// direction of travel
+void
+TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
+
+    AccDesired = AccPreferred;
+    if( Vel <= min_speed( ActualProximityDist > 10.0 ? 10.0 : 5.0, VelDesired ) ) {
+        return;
+    }
+    // allow to coast at reasonably low speed
+    auto const brakingdistance { fBrakeDist * braking_distance_multiplier( VelNext ) };
+    auto const slowdowndistance { (
+        mvOccupied->CategoryFlag == 2 ? // cars can stop on a dime, for bigger vehicles we enforce some minimal braking distance
+            brakingdistance :
+            std::max(
+                (OrderCurrentGet() & Connect) == 0 ? 100.0 : 25.0,
+                brakingdistance ) ) };
+    if( brakingdistance + std::max(slowdowndistance, fMaxProximityDist) < ActualProximityDist - fMaxProximityDist ) {
+        // don't slow down prematurely; as long as we have room to come to a full stop at a safe distance, we're good
+        return;
+    }
+    // ensure some minimal coasting speed, otherwise a vehicle entering this zone at very low speed will be crawling forever
+    auto const brakingpointoffset = (
+        ( VelNext == 0.0 ) && is_train() && ( OrderCurrentGet() & Obey_train ) ?
+            stopping_margin() : // the same stopping point as the final approach
+            VelNext * braking_distance_multiplier( static_cast<float>( VelNext ) ) );
+    // a pneumatic brake acts on the state the train will be in once it has responded; while the
+    // train is still speeding up, plan the deceleration from there, so more is asked for at once
+    auto velocity { Vel };
+    auto distance { ActualProximityDist };
+    if( ( BrakeSystem == TBrakeSystem::Pneumatic )
+     && ( AbsAccS > 0.0 ) ) {
+        auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
+        velocity = Vel + 3.6 * horizon * AbsAccS;
+        distance = std::max( 0.5 * ActualProximityDist, ActualProximityDist - ( Vel + velocity ) * 0.5 / 3.6 * horizon );
+    }
+    auto const brakingroom {
+        std::max(
+            distance - brakingpointoffset,
+            std::min(
+                distance,
+                brakingpointoffset ) ) };
+    auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
+    if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
+        // follow the shape of the consist brake force over speed rather than assume a constant
+        // deceleration, over the distance left once the brake has had time to fill (while the
+        // train is still speeding up, the prediction above has taken that off already)
+        auto room { brakingroom };
+        if( ( AbsAccS <= 0.0 )
+         && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
+            room = std::max(
+                0.5 * brakingroom,
+                brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) );
+        }
+        deceleration = shaped_braking_demand(
+            velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
+            { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } );
+    }
+    AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
+    if( Vel <= VelNext ) {
+        return;
+    }
+    if( deceleration < fAccGravity - 0.001 ) {
+        // no power while still above the speed being braked for
+        AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
+    }
+    else if( ( fAccGravity < -0.025 )
+          && ( ( OrderCurrentGet() & Obey_train ) != 0 )
+          && ( false == uphill_brake_committed( Vel ) )
+          && ( ActualProximityDist - uphill_stopping_distance( Vel, fAccGravity ) > brakingpointoffset ) ) {
+        // uphill the gradient alone slows the train down more than it is asked to;
+        // keep it rolling at the present speed until that changes
+        AccDesired = std::min( 0.0, AccPreferred );
+        VelDesired = min_speed( VelDesired, uphill_coasting_speed( ActualProximityDist - brakingpointoffset, fAccGravity ) );
+    }
+}
+
 // the final approach to a stop, inside the proximity range: Vel is the present speed in the direction of travel
 void
 TController::adjust_desired_speed_for_final_approach( double const Vel ) {
@@ -7720,74 +7796,7 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
             }
             else if (ActualProximityDist > fMinProximityDist) {
                 // jedzie szybciej, niż trzeba na końcu ActualProximityDist, ale jeszcze jest daleko
-                    // outside of max safe range
-                    AccDesired = AccPreferred;
-                    if( vel > min_speed( ActualProximityDist > 10.0 ? 10.0 : 5.0, VelDesired ) ) {
-                        // allow to coast at reasonably low speed
-                        auto const brakingdistance { fBrakeDist * braking_distance_multiplier( VelNext ) };
-                        auto const slowdowndistance { (
-                            mvOccupied->CategoryFlag == 2 ? // cars can stop on a dime, for bigger vehicles we enforce some minimal braking distance
-                                brakingdistance :
-                                std::max(
-                                    (OrderCurrentGet() & Connect) == 0 ? 100.0 : 25.0,
-                                    brakingdistance ) ) };
-                        if( brakingdistance + std::max(slowdowndistance, fMaxProximityDist) >= ActualProximityDist - fMaxProximityDist ) {
-                            // don't slow down prematurely; as long as we have room to come to a full stop at a safe distance, we're good
-                            // ensure some minimal coasting speed, otherwise a vehicle entering this zone at very low speed will be crawling forever
-                            auto const brakingpointoffset = (
-                                ( VelNext == 0.0 ) && is_train() && ( OrderCurrentGet() & Obey_train ) ?
-                                    stopping_margin() : // the same stopping point as the final approach
-                                    VelNext * braking_distance_multiplier( static_cast<float>( VelNext ) ) );
-                            // a pneumatic brake acts on the state the train will be in once it has responded; while the
-                            // train is still speeding up, plan the deceleration from there, so more is asked for at once
-                            auto velocity { vel };
-                            auto distance { ActualProximityDist };
-                            if( ( BrakeSystem == TBrakeSystem::Pneumatic )
-                             && ( AbsAccS > 0.0 ) ) {
-                                auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
-                                velocity = vel + 3.6 * horizon * AbsAccS;
-                                distance = std::max( 0.5 * ActualProximityDist, ActualProximityDist - ( vel + velocity ) * 0.5 / 3.6 * horizon );
-                            }
-                            auto const brakingroom {
-                                std::max(
-                                    distance - brakingpointoffset,
-                                    std::min(
-                                        distance,
-                                        brakingpointoffset ) ) };
-                            auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
-                            if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
-                                // follow the shape of the consist brake force over speed rather than assume a constant
-                                // deceleration, over the distance left once the brake has had time to fill (while the
-                                // train is still speeding up, the prediction above has taken that off already)
-                                auto room { brakingroom };
-                                if( ( AbsAccS <= 0.0 )
-                                 && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
-                                    room = std::max(
-                                        0.5 * brakingroom,
-                                        brakingroom - vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) );
-                                }
-                                deceleration = shaped_braking_demand(
-                                    velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
-                                    { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } );
-                            }
-                            AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
-                            if( vel > VelNext ) {
-                                if( deceleration < fAccGravity - 0.001 ) {
-                                    // no power while still above the speed being braked for
-                                    AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
-                                }
-                                else if( ( fAccGravity < -0.025 )
-                                      && ( ( OrderCurrentGet() & Obey_train ) != 0 )
-                                      && ( false == uphill_brake_committed( vel ) )
-                                      && ( ActualProximityDist - uphill_stopping_distance( vel, fAccGravity ) > brakingpointoffset ) ) {
-                                    // uphill the gradient alone slows the train down more than it is asked to;
-                                    // keep it rolling at the present speed until that changes
-                                    AccDesired = std::min( 0.0, AccPreferred );
-                                    VelDesired = min_speed( VelDesired, uphill_coasting_speed( ActualProximityDist - brakingpointoffset, fAccGravity ) );
-                                }
-                            }
-                        }
-                    }
+                adjust_desired_speed_for_braking_curve( vel );
                 AccDesired = std::min( AccDesired, AccPreferred );
             }
             else {
