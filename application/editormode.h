@@ -3129,7 +3129,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::map<std::pair<std::string, std::uint64_t>, fitted_mark> m_fitted; // by the name and the shape: scenery files have names used twice
 	bool m_fitted_loaded{false};
 	void fitted_load();
-	void fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand = false);
+	void fitted_set(std::span<TTrack *const> const Tracks, bool const Hand = false);
 	bool grade_fitted(TTrack const &Track);
 	bool grade_hand(TTrack const &Track); // its grade line was edited with the profile tool, and it wasn't changed since
 	bool nmt_stays(TTrack const &Track); // this putting of the tracks onto the terrain leaves it as it is
@@ -3150,6 +3150,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_remove_point(int const Index);
 	void render_profile_body();
 	void render_profile_strip();
+	void render_profile_tabs();
 	void render_profile_header();
 	void render_profile_empty();
 	void render_profile_toolbar();
@@ -3195,6 +3196,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_profile_canvas(profile_view const &View, ImDrawList &Draw) const;
 	void profile_canvas_tooltip() const;
 	void render_profile_point();
+	// the fields of the point Index of the grade line: true where one was changed
+	bool render_profile_point_fields(int const Index, bool const End, bool const Locked);
 	void draw_profile_overlay() const;
 
 	// infrastructure along the track: objects bound to the paths follow their changes. bindings are kept in the
