@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "utilities/utilities.h"
 #include "world/Track.h"
@@ -172,6 +173,20 @@ void label(screen_projection const &Projection, glm::dvec3 const &Point, std::st
 	auto const size{ImGui::CalcTextSize(Text.c_str())};
 	drawlist->AddRectFilled(ImVec2(at.x + 8.f, at.y - 4.f), ImVec2(at.x + 16.f + size.x, at.y + size.y + 4.f), IM_COL32(0, 0, 0, 170), 4.f);
 	drawlist->AddText(ImVec2(at.x + 12.f, at.y), IM_COL32(255, 255, 255, 235), Text.c_str());
+}
+
+// the first line of the file of the turntable controls, which tells it from the files of the scenery made by hand
+char const *const kControlsHeader{"// made by the scenery editor on each save: T turns each turntable to its next position, Shift+T to the previous one"};
+
+// true if the file is one of the turntable controls the editor writes
+bool controls_file(std::string const &Path)
+{
+	std::ifstream input{Path, std::ios_base::binary};
+	std::string first;
+	std::getline(input, first);
+	if (false == first.empty() && first.back() == '\r')
+		first.pop_back();
+	return first == kControlsHeader;
 }
 
 } // namespace
@@ -1215,7 +1230,7 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 	auto const exists{std::filesystem::exists(path, error)};
 	if (tables == 0 && false == exists)
 		return false;
-	auto const content{"// made by the scenery editor on each save: T turns each turntable to its next position, Shift+T to the previous one\r\n" + text.str()};
+	auto const content{std::string{kControlsHeader} + "\r\n" + text.str()};
 	std::string current;
 	{
 		std::ifstream input{path, std::ios_base::binary};
@@ -1225,6 +1240,21 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 	{
 		std::ofstream output{path, std::ios_base::binary | std::ios_base::trunc};
 		output << content;
+	}
+	// the controls written for this scenery under another name, the file it was copied from, give way to these: with both
+	// included each turntable would have its events twice. their files stay on the disk, for the scenery they were made for
+	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
+	{
+		auto const layer{static_cast<scene::layer_handle>(handle)};
+		if (false == scene::Layers.listed(layer) || scene::Layers.layer(layer).removed)
+			continue;
+		auto name{scene::Layers.layer(layer).name};
+		std::replace(name.begin(), name.end(), '\\', '/');
+		auto const lower{ToLower(name)};
+		if (lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_obrotnice.scm"))
+			continue;
+		if (controls_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
+			WriteLog("Editor: " + name + " left out of the scenery, the turntable controls are in " + file + " now");
 	}
 	auto included{m_turntable_included};
 	for (std::size_t handle = 1; handle <= scene::Layers.size() && false == included; ++handle)

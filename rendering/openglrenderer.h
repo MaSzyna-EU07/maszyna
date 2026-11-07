@@ -237,6 +237,9 @@ private:
         Render( TModel3d *Model, material_data const *Material, float const Squaredistance );
     void
         Render( TSubModel *Submodel );
+    // opaque characters of a text display
+    void
+        Render_text( TSubModel *Submodel );
     void
         Render( TTrack *Track );
     // the cut faces of the rails of a track and the treads on them

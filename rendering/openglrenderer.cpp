@@ -88,6 +88,10 @@ float const EU07_OPACITYDEFAULT { 0.5f };
 bool
 opengl_renderer::Init( GLFWwindow *Window ) {
 
+    glClearColor( 0.f, 0.f, 0.f, 1.f );
+    glClear( GL_COLOR_BUFFER_BIT );
+    glfwSwapBuffers( Window );
+
     if( false == Init_caps() ) { return false; }
 
     m_window = Window;
@@ -2810,6 +2814,21 @@ opengl_renderer::Render( TModel3d *Model, material_data const *Material, float c
     return result;
 }
 
+// opaque characters of a text display, laid out in a row the same way as the translucent ones
+void
+opengl_renderer::Render_text( TSubModel *Submodel ) {
+
+    if( TSubModel::pasText == nullptr ) { return; }
+
+    ::glPushMatrix();
+    for( auto *p : Submodel->text_letters( *TSubModel::pasText ) ) {
+        Render( p );
+        if( p->fMatrix )
+            ::glMultMatrixf( p->fMatrix->readArray() ); // move on to the place of the next character
+    }
+    ::glPopMatrix();
+}
+
 void
 opengl_renderer::Render( TSubModel *Submodel ) {
 
@@ -3128,9 +3147,15 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                 }
             }
         }
-        if( Submodel->Child != nullptr )
-            if( Submodel->iAlpha & Submodel->iFlags & 0x001F0000 )
+        if( Submodel->Child != nullptr
+         && ( TSubModel::iAlpha & Submodel->iFlags & 0x001F0000 ) ) {
+            if( Submodel->eType == TP_TEXT ) {
+                Render_text( Submodel );
+            }
+            else {
                 Render( Submodel->Child );
+            }
+        }
 
         if( Submodel->iFlags & 0xC000 )
             ::glPopMatrix();
