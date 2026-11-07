@@ -15,10 +15,12 @@ std::vector<switch_curve::track_point> line(double const Straight, double const 
 	double heading{0.0};
 	auto const curvature = [&](double const S) { return S <= Straight ? 0.0 : S <= Straight + Transition ? (S - Straight) / Transition / Radius : 1.0 / Radius; };
 	auto const cant = [&](double const S) { return S <= Straight ? 0.0 : S <= Straight + Transition ? Cant * (S - Straight) / Transition : Cant; };
-	for (double s{0.0}; s <= Straight + Transition + Arc + 1e-9; s += 0.5) {
+	double s{0.0};
+	while (s <= Straight + Transition + Arc + 1e-9) {
 		if (s > 0.0)
 			heading += 0.5 * (curvature(s - 0.5) + curvature(s)) * 0.5;
 		points.push_back({s, heading, cant(s)});
+		s += 0.5;
 	}
 	return points;
 }
@@ -151,8 +153,11 @@ namespace {
 // a track of one curvature from its start, heading as given there, a point every half metre
 std::vector<switch_curve::track_point> arc(double const Length, double const Heading, double const Curvature) {
 	std::vector<switch_curve::track_point> points;
-	for (double s{0.0}; s <= Length + 1e-9; s += 0.5)
+	double s{0.0};
+	while (s <= Length + 1e-9) {
 		points.push_back({s, Heading + Curvature * s, 0.0});
+		s += 0.5;
+	}
 	return points;
 }
 

@@ -305,12 +305,15 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				to = std::max(to, e.chainage + e.length);
 			}
 		int count{0};
-		for (auto chainage{std::max(0.0, from - 20.0)}; chainage <= std::min(result.length, to + 20.0); chainage += spacing, ++count)
+		auto chainage{std::max(0.0, from - 20.0)};
+		while (chainage <= std::min(result.length, to + 20.0))
 		{
 			auto const station{alignment::evaluate(result, chainage)};
 			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
 			auto const shift{noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)};
 			m_route.trace.points.push_back(station.position + glm::normalize(across) * shift);
+			chainage += spacing;
+			++count;
 		}
 		auto const &middle{m_route.trace.points.empty() ? glm::dvec3{0.0} : m_route.trace.points[m_route.trace.points.size() / 2]};
 		WriteLog(format("SELFTEST tracesample: %zu points over %.1f m, the middle one at %.3f %.3f", m_route.trace.points.size(), to - from, middle.x, middle.z));

@@ -157,12 +157,14 @@ switch_report check(std::vector<track_point> const &Main, std::vector<track_poin
 		auto const margin{std::min(1.0, length * 0.25)};
 		result.first = sign * curvature_at(Track, Track.front().station + margin);
 		result.last = sign * curvature_at(Track, finish - margin);
-		for (auto s{Track.front().station + margin}; s <= finish - margin + 1e-9; s += 0.5)
+		auto s{Track.front().station + margin};
+		while (s <= finish - margin + 1e-9)
 		{
 			auto const curvature{sign * curvature_at(Track, s)};
 			result.low = std::min(result.low, curvature);
 			result.high = std::max(result.high, curvature);
 			result.sharpest = std::max(result.sharpest, std::abs(curvature));
+			s += 0.5;
 		}
 		return result;
 	};
@@ -222,12 +224,14 @@ slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std:
 	auto const along = [&](std::vector<track_point> const &Track) {
 		span result;
 		auto const margin{std::min(1.0, (Track.back().station - Track.front().station) * 0.25)};
-		for (auto s{Track.front().station + margin}; s <= Track.back().station - margin + 1e-9; s += 0.5)
+		auto s{Track.front().station + margin};
+		while (s <= Track.back().station - margin + 1e-9)
 		{
 			auto const curvature{sign * curvature_at(Track, s)};
 			result.low = std::min(result.low, curvature);
 			result.high = std::max(result.high, curvature);
 			result.sharpest = std::max(result.sharpest, std::abs(curvature));
+			s += 0.5;
 		}
 		return result;
 	};

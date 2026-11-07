@@ -807,11 +807,19 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
 
     std::vector<double> stations { Span.from, Span.to };
     auto const step { std::max( fStep, 0.2 ) };
-    for( auto distance { std::ceil( Span.from / step ) * step }; distance < Span.to; distance += step ) {
-        stations.push_back( distance );
+    {
+        auto distance { std::ceil( Span.from / step ) * step };
+        while( distance < Span.to ) {
+            stations.push_back( distance );
+            distance += step;
+        }
     }
-    for( auto distance { std::ceil( Span.from / 0.5 ) * 0.5 }; distance < std::min( Span.to, m_dense ); distance += 0.5 ) {
-        stations.push_back( distance );
+    {
+        auto distance { std::ceil( Span.from / 0.5 ) * 0.5 };
+        while( distance < std::min( Span.to, m_dense ) ) {
+            stations.push_back( distance );
+            distance += 0.5;
+        }
     }
     for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops, &Span.rises, &Span.lows } ) {
         for( auto const &knot : *line ) {

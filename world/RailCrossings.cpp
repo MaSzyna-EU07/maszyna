@@ -673,7 +673,8 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
     if( false == others.empty() || false == Crossing.empty() ) {
         auto const ours { make_gauge_line( segment, Side * halfwidth, 0.0 ) };
         for( auto const &check : Checks ) {
-            for( auto s { check.from }; s <= check.to; s += 0.1 ) {
+            auto s { check.from };
+            while( s <= check.to ) {
                 glm::dvec3 point, tangent;
                 ours.at( s, point, tangent );
                 auto const inward { plan( ours.normal( s, Side ) ) };
@@ -681,6 +682,7 @@ knots::line check_blocks( TTrack const &Track, int const Path, int const Side, s
                  || ( check.acute && blocked_by( Crossing, plan( point ), inward, Clearance ) ) ) {
                     blocks.emplace_back( s - 0.3, s + 0.3 );
                 }
+                s += 0.1;
             }
         }
     }
@@ -1039,12 +1041,16 @@ track_rails::switch_blade const &TTrack::blade( int const Path ) const {
     result.drop = ( half > 0 ? std::max( 0.0, size.crest - bladetop ) : 0.0 );
     auto const lowered { reach( blade_lowered + blade_gap ) };
     auto const cutto { std::min( result.heel, foot >= 0.0 ? foot + blade_spacing : result.heel ) };
-    for( auto distance { result.tip }; distance < cutto + 0.5 * blade_spacing; distance += blade_spacing ) {
-        auto const at { std::min( distance, cutto ) };
-        auto const width { level( at ) - blade_gap };
-        result.extents.emplace_back( at, width );
-        if( result.drop > 0.0 && ( lowered < 0.0 || at <= lowered + blade_spacing ) ) {
-            result.drops.emplace_back( at, result.drop * std::clamp( 1.0 - width / blade_lowered, 0.0, 1.0 ) );
+    {
+        auto distance { result.tip };
+        while( distance < cutto + 0.5 * blade_spacing ) {
+            auto const at { std::min( distance, cutto ) };
+            auto const width { level( at ) - blade_gap };
+            result.extents.emplace_back( at, width );
+            if( result.drop > 0.0 && ( lowered < 0.0 || at <= lowered + blade_spacing ) ) {
+                result.drops.emplace_back( at, result.drop * std::clamp( 1.0 - width / blade_lowered, 0.0, 1.0 ) );
+            }
+            distance += blade_spacing;
         }
     }
     auto const steps { std::max( 1, static_cast<int>( std::ceil( ( result.heel - result.tip ) / blade_spacing ) ) ) };

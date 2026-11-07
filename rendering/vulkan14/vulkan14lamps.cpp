@@ -111,7 +111,8 @@ void vulkan14_renderer::render_local_shadows()
 	// only the light buffers with the lamps read the maps
 	auto const *vehicle{Global.gfx_lights_clustered ? m_locallights.cab_lamp_vehicle() : nullptr};
 	lamps.update_cab(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lights(), m_framestamp);
-	if (lamps.cab_draws().empty())
+	// without a vehicle there are no draws either
+	if ((vehicle == nullptr) || lamps.cab_draws().empty())
 	{
 		return;
 	}

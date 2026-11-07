@@ -100,6 +100,8 @@ std::uint64_t clip::texture(double const Seconds)
 	long long total{0};
 	for (auto const delay : frames.delays)
 		total += delay;
+	if (total <= 0)
+		total = 1; // no frame with a delay: the clip stands still
 	auto time{static_cast<long long>(std::floor(Seconds * 1000.0)) % total};
 	int index{0};
 	while (index + 1 < static_cast<int>(frames.delays.size()) && time >= frames.delays[index])

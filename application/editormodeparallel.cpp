@@ -71,10 +71,17 @@ bool side_picker(int &Side, double const Spacing)
 	auto const right{bottom.x - pad * 2.0f};
 	auto const gauge{std::round(font * 0.36f)};
 	// a track as two rails, sleepers under the solid ones
+	auto const sleepers = [list, left, right, font, gauge](float const Y, ImU32 const Colour) {
+		auto x{left + font * 0.3f};
+		while (x < right)
+		{
+			list->AddLine(ImVec2(x, Y - gauge * 0.95f), ImVec2(x, Y + gauge * 0.95f), (Colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90), 2.0f);
+			x += std::round(font * 0.9f);
+		}
+	};
 	auto const track = [&](float const Y, ImU32 const Colour, bool const Dashed) {
 		if (false == Dashed)
-			for (auto x{left + font * 0.3f}; x < right; x += std::round(font * 0.9f))
-				list->AddLine(ImVec2(x, Y - gauge * 0.95f), ImVec2(x, Y + gauge * 0.95f), (Colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90), 2.0f);
+			sleepers(Y, Colour);
 		for (auto const rail : {Y - gauge * 0.5f, Y + gauge * 0.5f})
 		{
 			if (false == Dashed)
@@ -82,8 +89,12 @@ bool side_picker(int &Side, double const Spacing)
 				list->AddLine(ImVec2(left, rail), ImVec2(right, rail), Colour, 1.5f);
 				continue;
 			}
-			for (auto x{left}; x < right; x += font)
+			auto x{left};
+			while (x < right)
+			{
 				list->AddLine(ImVec2(x, rail), ImVec2(std::min(right, x + font * 0.55f), rail), Colour, 1.0f);
+				x += font;
+			}
 		}
 	};
 	auto const line{ImGui::GetColorU32(ImGuiCol_Text, 0.85f)};

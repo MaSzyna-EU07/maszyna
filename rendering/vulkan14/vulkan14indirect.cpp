@@ -665,7 +665,8 @@ void vulkan14_renderer::render_instances_indirect()
 	// the draws, recorded while the gpu culls
 	record_indirect_draws(cull, false);
 
-	auto const twophase{cull.two_phase()};
+	// two phases only with the occlusion test, which needs the targets
+	auto const twophase{useocclusion && cull.two_phase()};
 	auto const draws{false == m_indirectdraws.empty()};
 	// the depth comes first in the depth pass of the whole scene, which leaves the colour to the colour pass, and with the depth
 	// prepass of the instances

@@ -3178,12 +3178,22 @@ void srk_tool::set_lines(block_edit const *Edit)
 					auto const reach{paired ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
 					auto const other{paired ? braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0) : least};
 					auto const sections{std::max(1.0, std::floor(reach / std::max(least, other)))};
-					for (auto k{1.0}; k < sections; k += 1.0)
+					auto k{1.0};
+					while (k < sections)
+					{
 						places.push_back(end.distance * k / sections);
+						k += 1.0;
+					}
 				}
 				else
-					for (auto distance{least * kBlockShare}; distance <= end.distance - 100.0; distance += least * kBlockShare)
+				{
+					auto distance{least * kBlockShare};
+					while (distance <= end.distance - 100.0)
+					{
 						places.push_back(distance);
+						distance += least * kBlockShare;
+					}
+				}
 				for (auto const distance : places)
 					add_wrong(plan(distance, station::block_number(km_on(index, distance), line.number, rising(index)), -1, false));
 			}
@@ -4371,8 +4381,11 @@ void srk_tool::render_canvas(float const Height)
 		auto const low{kilometrage ? std::min(km_from, km_to) * 1000.0 : first};
 		auto const high{kilometrage ? std::max(km_from, km_to) * 1000.0 : last};
 		auto shown{std::numeric_limits<float>::lowest()};
-		for (auto mark{std::ceil(low / step) * step}; mark <= high; mark += step)
+		auto next_mark{std::ceil(low / step) * step};
+		while (next_mark <= high)
 		{
+			auto const mark{next_mark};
+			next_mark += step;
 			auto const x{x_of(kilometrage ? first + (mark / 1000.0 - km_from) / (km_to - km_from) * (last - first) : mark)};
 			auto const label{kilometrage ? format("km %.3f", mark / 1000.0) : format("%.0f m", mark)};
 			if (std::abs(x - shown) < ImGui::CalcTextSize(label.c_str()).x + 12.0f)

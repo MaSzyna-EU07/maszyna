@@ -545,8 +545,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		lay_point(truth.start);
 		lay_switch_mode();
 		int count{0};
-		for (auto chainage{std::max(0.0, from - 30.0)}; chainage <= to; chainage += spacing, ++count)
+		auto chainage{std::max(0.0, from - 30.0)};
+		while (chainage <= to)
+		{
 			lay_point(along(chainage, noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
+			chainage += spacing;
+			++count;
+		}
 		lay_point(along(to + 30.0, noise * 0.5));
 		lay_point(along(to + 60.0, -noise * 0.5));
 		lay_switch_mode();

@@ -1404,7 +1404,8 @@ private:
                     // f(drop) = odległość osi blachy od liny - długość kolumny; szukane miejsce zerowe w -1,0 .. 2,5 m
                     auto f = [&]( double Drop ) { auto const p { solve( Drop, station, stay ) }; return p.ok ? length( p.pivot - messenger ) - column : 1e9; };
                     double previous { -1.0 }, fprevious { f( previous ) };
-                    for( double drop = -1.0 + 0.02; drop <= 2.5; drop += 0.02 ) {
+                    double drop { -1.0 + 0.02 };
+                    while( drop <= 2.5 ) {
                         auto const fnow { f( drop ) };
                         if( fprevious < 1e8 && fnow < 1e8 && ( fprevious <= 0.0 ) != ( fnow <= 0.0 ) ) {
                             double low { previous }, high { drop }, flow { fprevious };
@@ -1420,6 +1421,7 @@ private:
                             if( p.ok && hanging.z < 0.0 && score < bestscore ) { bestscore = score; best = p; bestdrop = low; beststation = station; besthole = static_cast<int>( hole ); }
                         }
                         previous = drop; fprevious = fnow;
+                        drop += 0.02;
                     }
                 }
             }

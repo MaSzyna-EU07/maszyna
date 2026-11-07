@@ -11,8 +11,6 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14grass.h"
 #include "utilities/Logs.h"
 
-#include <cstring>
-
 namespace vk14
 {
 
@@ -132,7 +130,7 @@ grass_field::chunk_images const *grass_field::images(chunk_draw const &Draw)
 	}
 	table[4 * 4 + 0] = Draw.share;
 	table[4 * 4 + 1] = Draw.chunk;
-	if ((false == chunk.table_made) || (std::memcmp(table.data(), chunk.table.data(), sizeof(table)) != 0) || (chunk.images[3] == nullptr))
+	if ((false == chunk.table_made) || (table != chunk.table) || (chunk.images[3] == nullptr))
 	{
 		auto map{chunk.images[3]};
 		if (map == nullptr)

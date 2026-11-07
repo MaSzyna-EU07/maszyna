@@ -85,7 +85,7 @@ std::string parse_address(std::string const &Url, stream_address &Address)
 	{
 		return "encrypted (https) streams aren't supported";
 	}
-	if (starts_with_nocase(url, "http://"))
+	if (starts_with_nocase(url, "http://")) // NOSONAR: internet radio streams come over plain http, which is all the player reads
 	{
 		url.erase(0, 7);
 	}
@@ -152,7 +152,7 @@ std::string resolve_redirect(std::string const &Location, stream_address const &
 	{
 		return "http:" + Location;
 	}
-	auto const root{"http://" + Origin.authority()};
+	auto const root{"http://" + Origin.authority()}; // NOSONAR: internet radio streams come over plain http, which is all the player reads
 	if (false == Location.empty() && Location.front() == '/')
 	{
 		return root + Location;
@@ -183,7 +183,7 @@ std::string parse_playlist(std::string const &Playlist)
 				line = trim(line.substr(separator + 1));
 			}
 		}
-		if (starts_with_nocase(line, "http://") || starts_with_nocase(line, "https://"))
+		if (starts_with_nocase(line, "http://") || starts_with_nocase(line, "https://")) // NOSONAR: internet radio streams come over plain http, which is all the player reads
 		{
 			return line;
 		}
@@ -730,7 +730,14 @@ radio_session::result radio_session::receive_audio(http_response const &Response
 
 radio_stream::~radio_stream()
 {
-	close();
+	try
+	{
+		close();
+	}
+	catch (std::exception const &)
+	{
+		// out of memory while retiring the worker: its thread still stops and is joined by its own destructor below
+	}
 	// NOTE: destructors of retired workers wait for their threads to finish
 }
 

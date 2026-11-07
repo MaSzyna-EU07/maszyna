@@ -1796,8 +1796,8 @@ void assign_lod_ranges(TSubModel *Root, std::string const &Filename)
 		if (path.find("siec_trakcyjna/") == std::string::npos)
 			return;
 	}
-	static float const limits[]{0.f, 20.f, 40.f, 100.f, 300.f, 400.f};
-	int const limitcount{6};
+	static constexpr std::array limits{0.f, 20.f, 40.f, 100.f, 300.f, 400.f};
+	constexpr std::size_t limitcount{limits.size()};
 	auto const radius{Root->m_boundingradius};
 	float const vanish{(radius > 0.f && radius < 0.5f) ? 400.f : 500.f};
 	float const farthest{15000.f}; // zakres nadawany przy wczytaniu, gdy model nie podał własnego
@@ -1805,7 +1805,7 @@ void assign_lod_ranges(TSubModel *Root, std::string const &Filename)
 	{
 		TSubModel *submodel;
 		std::string base;
-		int index;
+		std::size_t index; // the digit after _LOD, 0-9
 	};
 	std::vector<lod_phase> phases;
 	for (auto *submodel = Root; submodel != nullptr; submodel = submodel->NextGet())
@@ -1820,7 +1820,7 @@ void assign_lod_ranges(TSubModel *Root, std::string const &Filename)
 			continue;
 		if (submodel->fSquareMinDist != 0.f || submodel->fSquareMaxDist < farthest * farthest * 0.99f)
 			continue;
-		phases.push_back({submodel, name.substr(0, mark), digit - '0'});
+		phases.push_back({submodel, name.substr(0, mark), static_cast<std::size_t>(digit - '0')});
 	}
 	for (auto const &phase : phases)
 	{
