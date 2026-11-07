@@ -3709,13 +3709,14 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 		{
 			Train->ggMainButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
-		else if (Train->ggMainOnButton.SubModel != nullptr)
+		else if (Train->ggMainOnButton.SubModel != nullptr && false == Train->mvControlled->MainCircuitOpensWithStarterOnly())
 		{
 			// NOTE: legacy behaviour, for vehicles equipped only with impulse close switch
 			// it doesn't make any real sense to animate this one, but some people can't get over how there's no visual reaction to their keypress
 			Train->ggMainOnButton.UpdateValue(1.0, Train->dsbSwitch);
 			return;
 		}
+		// a diesel with only the starter button gets its engine stopped. the button stays put: held down, it would start the engine again
 		// play sound immediately when the switch is hit, not after release
 		Train->fMainRelayTimer = 0.0f;
 
@@ -5241,15 +5242,37 @@ void TTrain::OnCommand_headlighttoggleleft(TTrain *Train, command_data const &Co
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0)
+
+		if (Train->ggLeftEndLightButton.SubModel != nullptr || Train->ggLeftLightButton.SubModel == nullptr)
 		{
-			// turn on
-			OnCommand_headlightenableleft(Train, Command);
-		}
-		else
-		{
-			// turn off
-			OnCommand_headlightdisableleft(Train, Command);
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableleft(Train, Command);
+			}
+			else
+			{
+				// turn off
+				OnCommand_headlightdisableleft(Train, Command);
+			}
+		} else {
+			// if the light is controlled by 3-way switch, handle both headlight and redmarker
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0 &&
+				(Train->mvOccupied->iLights[vehicleend] & light::redmarker_left) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableleft(Train, Command);
+			}
+			else if (Train->mvOccupied->iLights[vehicleend] & light::headlight_left)
+			{
+				// switch to red
+				OnCommand_redmarkerenableleft(Train, Command);
+			}
+			else
+			{
+				// disable
+				OnCommand_redmarkerdisableleft(Train, Command);
+			}
 		}
 	}
 }
@@ -5324,15 +5347,37 @@ void TTrain::OnCommand_headlighttoggleright(TTrain *Train, command_data const &C
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0)
+
+		if (Train->ggRightEndLightButton.SubModel != nullptr || Train->ggRightLightButton.SubModel == nullptr)
 		{
-			// turn on
-			OnCommand_headlightenableright(Train, Command);
-		}
-		else
-		{
-			// turn off
-			OnCommand_headlightdisableright(Train, Command);
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableright(Train, Command);
+			}
+			else
+			{
+				// turn off
+				OnCommand_headlightdisableright(Train, Command);
+			}
+		} else {
+			// if the light is controlled by 3-way switch, handle both headlight and redmarker
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0 &&
+				(Train->mvOccupied->iLights[vehicleend] & light::redmarker_right) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableright(Train, Command);
+			}
+			else if (Train->mvOccupied->iLights[vehicleend] & light::headlight_right)
+			{
+				// switch to red
+				OnCommand_redmarkerenableright(Train, Command);
+			}
+			else
+			{
+				// disable
+				OnCommand_redmarkerdisableright(Train, Command);
+			}
 		}
 	}
 }
