@@ -543,9 +543,10 @@ bool node_layers::is_descendant(layer_handle Layer, layer_handle const Ancestor)
 
 std::string node_layers::path(layer_handle const Layer) const
 {
-	auto const named{Global.asCurrentSceneryPath + layer(Layer).name};
+	std::filesystem::path named{Global.asCurrentSceneryPath};
+	named += layer(Layer).name;
 	auto const cased{FileCased(named)};
-	return cased.empty() ? named : cased;
+	return cased.empty() ? named.string() : cased;
 }
 
 // stores current state of the layer file, to detect later whether it was changed behind our back
@@ -558,6 +559,39 @@ void node_layers::stat(layer_handle const Layer)
 	auto const filetime{std::filesystem::last_write_time(filepath, error)};
 	layer(Layer).filetime = error ? std::filesystem::file_time_type{} : filetime;
 }
+
+namespace
+{
+// the name of a new layer file the way the scenery processes it: in lower case, with forward slashes, without the blanks around it,
+// with the extension .scm where it has none. returns: false with the explanation in Reason, if it can't name a layer
+bool layer_file_name(std::string &Name, std::string &Reason)
+{
+	Name = ToLower(Name);
+	replace_slashes(Name);
+	Name.erase(0, Name.find_first_not_of(" \t"));
+	Name.erase(Name.find_last_not_of(" \t") + 1);
+	if (Name.empty())
+	{
+		Reason = STR_C("the layer needs a file name");
+		return false;
+	}
+	if (Name.find_first_of(" \t\";:*?<>|") != std::string::npos || Name.front() == '/' || Name.back() == '/' || contains(Name, ".."))
+	{
+		Reason = STR_C("the file name has to be a plain path inside the scenery directory, without spaces");
+		return false;
+	}
+	if (std::filesystem::path(Name).extension().empty())
+	{
+		Name += ".scm";
+	}
+	if (Name.ends_with(".inc"))
+	{
+		Reason = STR_C(".inc files are include templates, not layers");
+		return false;
+	}
+	return true;
+}
+} // namespace
 
 // creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
 layer_handle node_layers::create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate, std::string Header)
@@ -574,27 +608,8 @@ layer_handle node_layers::create(std::string Name, layer_handle Parent, std::str
 		return null_handle;
 	}
 	// file names in the scenery are processed in lower case, with forward slashes
-	Name = ToLower(Name);
-	replace_slashes(Name);
-	Name.erase(0, Name.find_first_not_of(" \t"));
-	Name.erase(Name.find_last_not_of(" \t") + 1);
-	if (Name.empty())
+	if (false == layer_file_name(Name, Reason))
 	{
-		Reason = STR_C("the layer needs a file name");
-		return null_handle;
-	}
-	if (Name.find_first_of(" \t\";:*?<>|") != std::string::npos || Name.front() == '/' || Name.back() == '/' || contains(Name, ".."))
-	{
-		Reason = STR_C("the file name has to be a plain path inside the scenery directory, without spaces");
-		return null_handle;
-	}
-	if (std::filesystem::path(Name).extension().empty())
-	{
-		Name += ".scm";
-	}
-	if (Name.ends_with(".inc"))
-	{
-		Reason = STR_C(".inc files are include templates, not layers");
 		return null_handle;
 	}
 	if (m_layers.size() >= static_cast<std::size_t>(std::numeric_limits<layer_handle>::max()))
@@ -1144,7 +1159,7 @@ std::string node_layers::directive(instance_handle const Instance) const
 }
 
 // replaces the directive of specified include, the scenery file receives it on save
-bool node_layers::modify(instance_handle const Instance, std::string const &Directive, std::string const &File)
+bool node_layers::modify(instance_handle const Instance, std::string_view const Directive, std::string_view const File)
 {
 	if (false == tracked(Instance) || m_instances[Instance - 1].dead || Directive.empty())
 	{

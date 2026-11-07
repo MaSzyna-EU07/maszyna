@@ -1669,15 +1669,16 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 auto const open { eType == tt_Normal && ( trPrev == nullptr || trNext == nullptr ) };
                 if( Bank != 0 && true == Geometry1.empty() ) {
-                    for( auto const side : { 1, -1 } ) {
-                        auto const &profile { side > 0 ? rpts1 : rpts2 };
-                        if( eType == tt_Normal && iTrapezoid == 0 && lay_rail( layout, drawing, profile, { .path = 0, .side = side, .texturelength = texturelength, .from = track_rails::blade_runon( *this, side ), .openstart = ( trPrev == nullptr ), .openend = ( trNext == nullptr ) }, Geometry1, GeometryCut1 ) ) {
-                            continue;
+                    // one rail of the plain track: laid with its blade run-on, or lofted whole
+                    auto const plain_rail = [ this, &rpts1, &rpts2, &layout, &drawing, &texturelength, &vertices, &open, &cut_faces, &nnumPts, &empty_userdata, &Bank ]( int const Side ) {
+                        auto const &profile { Side > 0 ? rpts1 : rpts2 };
+                        if( eType == tt_Normal && iTrapezoid == 0 && lay_rail( layout, drawing, profile, { .path = 0, .side = Side, .texturelength = texturelength, .from = track_rails::blade_runon( *this, Side ), .openstart = ( trPrev == nullptr ), .openend = ( trNext == nullptr ) }, Geometry1, GeometryCut1 ) ) {
+                            return;
                         }
                         vertices.clear(); // reuse the scratchpad
                         // the rail starts behind the heel of a blade running on into the track from the switch before it
-                        if( auto const runon { eType == tt_Normal && iTrapezoid == 0 ? track_rails::blade_runon( *this, side ) : 0.0 }; runon > 0.0 ) {
-                            Segment->RenderLoftSpan( vertices, m_origin, profile, { .side = side, .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = texturelength, .from = runon, .to = Segment->GetLength() } );
+                        if( auto const runon { eType == tt_Normal && iTrapezoid == 0 ? track_rails::blade_runon( *this, Side ) : 0.0 }; runon > 0.0 ) {
+                            Segment->RenderLoftSpan( vertices, m_origin, profile, { .side = Side, .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = texturelength, .from = runon, .to = Segment->GetLength() } );
                         }
                         else {
                             Segment->RenderLoft( vertices, m_origin, profile, iTrapezoid > 0, texturelength );
@@ -1686,7 +1687,9 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                             cut_faces( vertices, nnumPts, trPrev == nullptr, trNext == nullptr, GeometryCut1 );
                         }
                         Geometry1.emplace_back(track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                    }
+                    };
+                    plain_rail( 1 );
+                    plain_rail( -1 );
                 }
                 if( Bank == 0 && false == Geometry1.empty() ) {
                     // special variant, replace existing data for a turntable track

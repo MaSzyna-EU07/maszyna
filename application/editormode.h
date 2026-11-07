@@ -1271,10 +1271,78 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		trace_state trace;
 	};
 	void render_route_ui();
+	// the band of the curvature in the panel as it's drawn: where it lies, its plot with the axis of no curvature, how many pixels a
+	// metre and a unit of the curvature take, and the element under the mouse with what of it a drag changes
+	struct route_band_view
+	{
+		// what of its vertex an element is: part 1 an arc, the arc of a compound curve counted from 0, 2 the transition in, 3 the
+		// transition out, 4 the transition into the arc
+		struct role
+		{
+			int part{0};
+			int arc{0};
+		};
+		float font{0.0f};
+		float pad{0.0f};
+		float line{0.0f}; // of the text
+		ImVec2 top{0.0f, 0.0f};
+		ImVec2 bottom{0.0f, 0.0f};
+		float inner_left{0.0f};
+		float inner_width{0.0f};
+		float plot_top{0.0f};
+		float plot_bottom{0.0f};
+		float axis{0.0f};
+		bool both{false}; // curves to both sides
+		float flip{1.0f};
+		float metres{1.0f};
+		float curvature{0.0f};
+		bool dragging{false};
+		ImVec2 mouse{0.0f, 0.0f};
+		int under{-1};
+		int part{0};
+		int arc{0};
+		float x_of(double const Chainage) const { return inner_left + static_cast<float>(Chainage) * metres; }
+		float y_of(double const K) const { return axis - flip * static_cast<float>(K) * curvature; }
+		float label_y() const { return bottom.y - pad * 0.25f - line; }
+	};
 	bool render_route_band();
+	route_band_view route_band_layout(ImVec2 const Top, ImVec2 const Size) const;
+	static std::vector<route_band_view::role> route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs);
+	// the element under the mouse and what of it a drag changes, Arcs the number of the arcs of each curve
+	void route_band_pick(route_band_view &View, std::vector<route_band_view::role> const &Roles, std::vector<int> const &Arcs) const;
+	// a drag in the band begun, gone on or let go of; whether it changed the design
+	bool route_band_drag(route_band_view const &View, bool const Active);
+	// the radius the drag of an arc in the band asks for
+	double route_band_radius(route_band_view const &View) const;
+	bool route_band_wheel(route_band_view const &View);
+	void draw_route_band(route_band_view const &View, ImDrawList *List) const;
+	void draw_route_band_labels(route_band_view const &View, ImDrawList *List) const;
+	void draw_band_radius(route_band_view const &View, ImDrawList *List, alignment::element const &Element) const;
+	// the length of the transition along the axis, or with the km at the bottom where none taken there is too close
+	static void draw_band_length(route_band_view const &View, ImDrawList *List, alignment::element const &Element, std::vector<std::pair<float, float>> &Taken);
+	void draw_route_band_value(route_band_view const &View, ImDrawList *List) const;
+	void route_band_tooltip(route_band_view const &View, std::vector<int> const &Arcs) const;
 	bool render_route_parameters();
 	bool render_route_vertices();
 	bool render_route_vertex(int const Index);
+	// the part of the curve of the vertex the field just drawn is of in focus while it's edited or the mouse is over it
+	void route_mark(int const Index, route_design::curve_focus::part const What, int const Arc);
+	// the name of the curve of the vertex with where it lies along the line, a button to show it, how far it is from the points clicked
+	bool route_vertex_heading(int const Index);
+	bool route_vertex_clicks(int const Index);
+	bool route_vertex_curved_ends(int const Index);
+	// the radius, the cant and the transitions of the curve, two fields Half the panel wide in a row; Settled when an edit is done
+	bool route_vertex_fields(int const Index, float const Half, bool &Settled);
+	// the arcs of a compound curve, with their shares in the Total and their Cants as they are
+	bool route_vertex_arcs(int const Index, bool &Settled);
+	bool route_vertex_arc(int const Index, int const K, double const Total, std::vector<double> const &Cants, bool &Settled, int &Removed);
+	bool route_arc_cant(int const Index, int const Arc, double &Cant, std::vector<double> const &Cants, bool &Settled);
+	// the cant and the transitions as the norms recommend them, the radii fitted to the points clicked again after
+	bool route_vertex_reshape(int const Index);
+	bool route_vertex_ramps(int const Index, float const Half);
+	// the cant ramp in, or Out, of the curve, as the line has it laid
+	bool route_cant_ramp(int const Index, bool const Out, alignment::result::cant_ramp const *Ramp, float const Half);
+	bool route_vertex_details(int const Index);
 	void render_route_result();
 	void render_route_trace();
 	// the camera over the stretch of the line between the chainages, a curve seen whole
@@ -1287,6 +1355,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool route_hold_clicks(int const Vertex);
 	// the elements of the part of the curve in focus in the panel, in their order along the line
 	std::vector<std::size_t> route_focused() const;
+	// the element of the curve in focus, one of its Own elements, is of the part in focus; Radii those of the arcs of the curve
+	bool route_focus_takes(std::size_t const Element, std::vector<std::size_t> const &Own, std::vector<double> const &Radii) const;
 	void route_trace_start();
 	void route_trace_fit();
 	void route_trace_end(bool const Keep);
@@ -1299,9 +1369,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the first curve of the design and the last one going on from the curves of the tracks adjoining, where they turn their way: a
 	// curve cut by a switch bent into it, say. Lays the design
 	void route_curved_ends();
+	// the first curve of the design, or the last one, goes on from the curve of the track adjoining at that end
+	bool route_goes_on(bool const Atend) const;
 	alignment::vertex route_vertex_of(editor_track::curve const &Curve) const;
 	bool route_load(TTrack &Track);
 	void route_read_stored(TTrack &Track);
+	// the note on what reading the design kept did to the status: the line digitized whole or in parts, the paths Left out of it
+	std::string route_stored_note(bool const Digitized, int const Parts, int const Skipped, std::string const &Failure, bool const Left) const;
 	void route_take_stored(int const Index);
 	void record_switch(TTrack const &Track, editor_track::switch_template const &Shape) const;
 	void record_double(TTrack const &First, TTrack const &Second, editor_track::switch_template const &Shape) const;
@@ -1343,7 +1417,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true) override;
-	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr);
+	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr) const;
+	// the vertices of the design recognized from the paths of the chain in the shape of its transitions; false where two straights meet
+	// with no curve, why and at which path given
+	bool digitize_vertices(editor_track::chain const &Chain, alignment::design &Design, std::string *Reason, TTrack **Culprit) const;
 	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
 	// the lines kept, the paths left out
 	void digitize_all(int *Kept = nullptr, int *Failed = nullptr);
@@ -1385,10 +1462,40 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	}
 	void route_apply();
 	void route_lay();
+	// the crossovers on the switches of the chain taken out, the line laid again and the crossovers laid back onto it; false when
+	// there are none to take out, true when the line is done with, laid or refused
+	bool route_lay_crossovers(editor_track::chain const &Chain);
+	// the switch of a crossover a track of the chain joins at an end of the chain, none when there's no such
+	TTrack const *route_end_crossover(editor_track::chain const &Chain) const;
+	// the crossovers on the switches, each one once, with where they go back
+	std::vector<route_design::crossover_out> route_crossovers_on(std::vector<TTrack *> const &Switches);
+	void route_take_out_crossovers(std::vector<TTrack *> const &Switches);
+	// the crossovers laid back onto the new line, those which don't fit it kept to be laid later; the status tells which
+	void route_crossovers_back(std::vector<route_design::crossover_out> const &Crossovers, editor_track_tab const Tab);
+	// the adjoining straights cut where the curve takes them over, the chain found again between its new ends From and To; false
+	// when that fails, what was done taken back
+	bool route_cut_straights(editor_track::chain &Chain, TTrack *&From, TTrack *&To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
+	// the crossovers taken out before laid again where they fit the lines now
+	void route_crossovers_again();
+	// the ends of the design bound to the line laid, its first vertex and its last one moved in by what the curve took over of the
+	// straights there
+	void route_extend_ends(double const Startextension, double const Endextension);
 	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last);
 	void route_recommend(alignment::vertex &Vertex) const;
 	void draw_route_overlay() const;
+	// the line designed in its colours, with what the panel points at along it
+	void draw_route_line(screen_projection const &Projection, ImDrawList *Drawlist) const;
+	// the part of the curve in focus in the panel lit up, its Focused elements, and named
+	void draw_route_focus(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<std::size_t> const &Focused) const;
+	// the name of the part of the curve in focus, its first element and its last one that long; empty when the line has no such curve
+	std::string route_focus_name(double const Firstlength, double const Lastlength) const;
+	// the vertex and the grip of its curve, with its radii
+	void draw_route_vertex(screen_projection const &Projection, ImDrawList *Drawlist, int const Index) const;
+	void draw_route_clicks(screen_projection const &Projection, ImDrawList *Drawlist) const;
+	void draw_route_traced(screen_projection const &Projection, ImDrawList *Drawlist) const;
 	void render_route_gizmo();
+	// the grip of a curve dragged to the point: the radius of the curve passing through it
+	void route_drag_grip(glm::dvec3 const &Moved);
 	glm::dvec3 route_vertex_position(int const Vertex) const;
 	bool route_active() const;
 	route_design m_route;
@@ -2393,6 +2500,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_lines() const;
 	// what the colours of the tracks in the view tell
 	enum class track_colouring { plain, radius, speed, grade };
+	// the colour draw_track_lines gives the path: by its radius, or by the speed along it, else Plain
+	static ImU32 track_line_colour(track_colouring const Colouring, segment_data const &Path, double const Velocity, ImU32 const Plain);
 	track_colouring m_track_colouring{track_colouring::plain};
 	void draw_track_legend() const;
 	// the radii and lengths of the curves and the names and types of the switches written by them, from above, as on a plan
@@ -3056,6 +3165,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 bend_marker(sweep_node const &Sweep) const;
 	void restore_bend(EditorSnapshot &Snapshot, bool const Undo);
 	void render_bend();
+	// the bent model edited: where it lies by the track, how long, bent or repeated, and the rest of its settings
+	void render_bend_edited(sweep_node &Sweep);
+	bool render_bend_place(sweep_node &Sweep, sweep_node::state &State, double const Stretch) const;
+	bool render_bend_lengths(sweep_node &Sweep, sweep_node::state &State, double const Own, float const Half) const;
+	bool render_bend_more(sweep_node::state &State);
+	void render_bend_finish(sweep_node &Sweep, float const Half);
+	// no bent model edited: the model selected to be bent, the bent ones by the track or near the camera to pick
+	void render_bend_choice();
+	void render_bend_listed(TTrack const *Track);
 	// the reference point of the model bent: where along the track, across and up it lies
 	void render_bend_anchors(bool &Changed);
 	// a model chosen to be bent, the tracks by it found: the track to bend it along and how
@@ -3207,8 +3325,69 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void selftest_signal_select(std::string const &command, std::map<std::string, std::string, std::less<>> &values);
 	void selftest_signal_probe();
 	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);
+	// the terrain commands of the self-test by the group, and those of them with more to them
+	selftest_result selftest_terrain_imagery(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrain_model(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrain_fit(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrain_edit(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrain_told(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrain_reports(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_orthophoto(std::istringstream &words);
+	selftest_result selftest_orthoarea(std::istringstream &words);
+	selftest_result selftest_orthosettings(std::istringstream &words);
+	selftest_result selftest_nmtsettings(std::istringstream &words);
+	selftest_result selftest_wmsstats() const;
+	selftest_result selftest_orthostats() const;
+	selftest_result selftest_nmtmake(std::istringstream &words);
+	selftest_result selftest_nmtpending();
+	selftest_result selftest_nmtoffer(std::istringstream &words);
+	selftest_result selftest_nmtgrow(std::istringstream &words);
+	selftest_result selftest_nmtwait();
+	selftest_result selftest_nmtcheck(std::istringstream &words) const;
+	std::string turntable_include_text(std::string const &Name) const;
+	void log_turntable_end(nmt_state::turntable const &Table, TTrack *Track, int const Path, bool const Atend) const;
+	selftest_result selftest_turntables() const;
+	selftest_result selftest_fittedstate(std::istringstream &words);
+	void log_nmt_probe(nmt_place const &Place, nmt_place const &Next) const;
+	selftest_result selftest_nmtprobe(std::istringstream &words) const;
+	selftest_result selftest_trackterrain(std::istringstream &words);
+	selftest_result selftest_terrain_brush(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrainfill(std::istringstream &words);
+	selftest_result selftest_terrainrestore(std::istringstream &words);
+	selftest_result selftest_terrainbake(std::istringstream &words);
+	selftest_result selftest_terrainselect(std::istringstream &words);
+	selftest_result selftest_terrainwater(std::string_view const command, std::istringstream &words);
+	selftest_result selftest_terrainseams() const;
+	selftest_result selftest_danglers() const;
+	selftest_result selftest_terrainhash() const;
+	selftest_result selftest_terrainprobe(std::istringstream &words) const;
+	selftest_result selftest_terrainconvert();
+	int track_grade_line(TTrack const &Track) const;
+	selftest_result selftest_fitreport(std::istringstream &words) const;
+	selftest_result selftest_gradeline(std::istringstream &words);
+	void gradeline_part(std::istringstream &words, double const value);
+	void gradeline_bump(std::istringstream &words, double const value);
+	bool gradeline_action(std::string const &action, std::string const &word, double const value, std::istringstream &words);
+	void gradeline_move(std::string const &word, std::istringstream &words);
+	void gradeline_other(std::string const &action, std::string const &word, double const value, std::istringstream &words);
+	void gradeline_of(std::string const &action, std::string const &name, std::istringstream &words);
+	void gradeline_pick(double const x, std::istringstream &words);
+	selftest_result selftest_trackheights(std::istringstream &words);
+	TTrack const *profile_span_track(std::size_t const Span) const;
+	selftest_result selftest_profiledump(std::istringstream &words) const;
+	int beside_line(TTrack const &Track) const;
+	selftest_result selftest_besidedump(std::istringstream &words);
+	void log_profile_off(double const Departure, TTrack const *From, TTrack const *To) const;
+	void profile_audit(std::size_t const Index, std::size_t &Gone, std::size_t &Retaken, std::size_t &Failing);
+	selftest_result selftest_profileaudit();
+	selftest_result selftest_gradelines(std::istringstream &words) const;
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
+	// monkey <seed> <steps>: the random steps written into the script after this line
+	selftest_result selftest_monkey_run(std::istringstream &words);
+	// monkeyview <seed>, or monkeyat <seed> with View false
+	selftest_result selftest_monkey_view(bool const View, std::istringstream &words);
+	selftest_result selftest_undoall();
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives

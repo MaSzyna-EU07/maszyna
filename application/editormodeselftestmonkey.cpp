@@ -80,7 +80,7 @@ class monkey_script
 	std::vector<area> m_panels;
 	glm::vec2 m_view_low{};
 	glm::vec2 m_view_high{};
-	std::vector<TTrack *> m_tracks;
+	std::vector<TTrack const *> m_tracks;
 	std::vector<std::string> m_lines;
 };
 
@@ -91,7 +91,7 @@ monkey_script::monkey_script(unsigned int const Seed) : m_seed{Seed}, m_random{S
 			m_panels.emplace_back(window->Pos, ImVec2(window->Pos.x + window->Size.x, window->Pos.y + window->Size.y));
 	m_view_low = editor_ui::view_min();
 	m_view_high = editor_ui::view_max();
-	for (auto *track : simulation::Paths.sequence())
+	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved && false == track->name().empty())
 			m_tracks.push_back(track);
 }
@@ -294,10 +294,10 @@ std::vector<std::string> const &monkey_script::finish()
 }
 
 // the tracks with a path, one of them seen by the camera or pointed at by the mouse
-std::vector<TTrack *> tracks_with_paths()
+std::vector<TTrack const *> tracks_with_paths()
 {
-	std::vector<TTrack *> tracks;
-	for (auto *track : simulation::Paths.sequence())
+	std::vector<TTrack const *> tracks;
+	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty())
 			tracks.push_back(track);
 	return tracks;
@@ -323,7 +323,7 @@ double random_share(std::mt19937 &Random)
 }
 
 // the camera over one of the tracks picked at random, looking at it from 30..120 m; the track it's over
-TTrack const &view_random_track(std::vector<TTrack *> const &Tracks, std::mt19937 &Random, TCamera &View)
+TTrack const &view_random_track(std::vector<TTrack const *> const &Tracks, std::mt19937 &Random, TCamera &View)
 {
 	auto const &track{*Tracks[std::uniform_int_distribution<std::size_t>(0, Tracks.size() - 1)(Random)]};
 	auto const target{point_along(track, 0.5)};
@@ -339,7 +339,7 @@ TTrack const &view_random_track(std::vector<TTrack *> const &Tracks, std::mt1993
 
 // the mouse on a track seen in the view, at an end, the middle or a point between: the tracks tried in a random order, the
 // middle of the view with none of them seen
-glm::dvec2 point_on_track_seen(std::vector<TTrack *> &Tracks, std::mt19937 &Random)
+glm::dvec2 point_on_track_seen(std::vector<TTrack const *> &Tracks, std::mt19937 &Random)
 {
 	screen_projection const projection;
 	auto const low{editor_ui::view_min()};
@@ -444,50 +444,11 @@ std::string invariants_report(std::size_t const History)
 editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &command, std::istringstream &words)
 {
 	if (command == "monkey")
-	{
-		unsigned int seed{1};
-		int steps{100};
-		words >> seed >> steps;
-		monkey_script script{seed};
-		for (int step = 0; step < steps; ++step)
-			script.step(step);
-		auto const &lines{script.finish()};
-		WriteLog(format("SELFTEST monkey %u: %d steps, %zu lines, %zu panels", seed, steps, lines.size(), script.panels()));
-		m_selftest.lines.insert(m_selftest.lines.begin() + static_cast<std::ptrdiff_t>(m_selftest.next), lines.begin(), lines.end());
-		return selftest_result::handled;
-	}
+		return selftest_monkey_run(words);
 	if (command == "monkeyview" || command == "monkeyat")
-	{
-		unsigned int seed{1};
-		words >> seed;
-		std::mt19937 random{seed}; // NOSONAR: seeded on purpose, so that a run of the test can be repeated; nothing secret is drawn
-		auto tracks{tracks_with_paths()};
-		if (tracks.empty())
-			return selftest_result::handled;
-		if (command == "monkeyview")
-		{
-			auto const &track{view_random_track(tracks, random, Camera)};
-			m_focus_active = false;
-			WriteLog("SELFTEST monkeyview " + (track.name().empty() ? std::string{"(noname)"} : track.name()));
-			return selftest_result::handled;
-		}
-		m_selftest.input.mouse_to(point_on_track_seen(tracks, random));
-		return selftest_result::handled;
-	}
+		return selftest_monkey_view(command == "monkeyview", words);
 	if (command == "undoall")
-	{
-		std::size_t count{0};
-		while (false == m_history.empty() && count < 10000)
-		{
-			auto const before{m_history.size()};
-			undo_last();
-			++count;
-			if (m_history.size() >= before)
-				break;
-		}
-		WriteLog(format("SELFTEST undoall: %zu undone, %zu left", count, m_history.size()));
-		return selftest_result::handled;
-	}
+		return selftest_undoall();
 	if (command == "trackhash")
 	{
 		WriteLog(track_hash());
@@ -520,4 +481,52 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 		return selftest_result::handled;
 	}
 	return selftest_result::unhandled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_monkey_run(std::istringstream &words)
+{
+	unsigned int seed{1};
+	int steps{100};
+	words >> seed >> steps;
+	monkey_script script{seed};
+	for (int step = 0; step < steps; ++step)
+		script.step(step);
+	auto const &lines{script.finish()};
+	WriteLog(format("SELFTEST monkey %u: %d steps, %zu lines, %zu panels", seed, steps, lines.size(), script.panels()));
+	m_selftest.lines.insert(m_selftest.lines.begin() + static_cast<std::ptrdiff_t>(m_selftest.next), lines.begin(), lines.end());
+	return selftest_result::handled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_monkey_view(bool const View, std::istringstream &words)
+{
+	unsigned int seed{1};
+	words >> seed;
+	std::mt19937 random{seed}; // NOSONAR: seeded on purpose, so that a run of the test can be repeated; nothing secret is drawn
+	auto tracks{tracks_with_paths()};
+	if (tracks.empty())
+		return selftest_result::handled;
+	if (View)
+	{
+		auto const &track{view_random_track(tracks, random, Camera)};
+		m_focus_active = false;
+		WriteLog("SELFTEST monkeyview " + (track.name().empty() ? std::string{"(noname)"} : track.name()));
+		return selftest_result::handled;
+	}
+	m_selftest.input.mouse_to(point_on_track_seen(tracks, random));
+	return selftest_result::handled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_undoall()
+{
+	std::size_t count{0};
+	while (false == m_history.empty() && count < 10000)
+	{
+		auto const before{m_history.size()};
+		undo_last();
+		++count;
+		if (m_history.size() >= before)
+			break;
+	}
+	WriteLog(format("SELFTEST undoall: %zu undone, %zu left", count, m_history.size()));
+	return selftest_result::handled;
 }

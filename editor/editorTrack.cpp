@@ -2047,135 +2047,139 @@ bool editor_track::find_run(TTrack &Track, double const Limit, chain &Chain, std
 	return find_chain(ends[1], ends[0], Chain, Error);
 }
 
-std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge, alignment::transition_shape const Shape)
+namespace
 {
-	std::vector<line_vertex> result;
-	auto const count{Chain.tracks.size()};
-	auto const path = [&](std::size_t const Index) -> segment_data const & { return Chain.tracks[Index]->m_paths.front(); };
-	auto const tangent_in = [&](std::size_t const Index) { return glm::normalize(plan_of(Chain.forward[Index] ? path_tangent(path(Index), false) : -path_tangent(path(Index), true))); };
-	auto const tangent_out = [&](std::size_t const Index) { return glm::normalize(plan_of(Chain.forward[Index] ? path_tangent(path(Index), true) : -path_tangent(path(Index), false))); };
-	auto const point_in = [&](std::size_t const Index) { return plan_of(path(Index).points[Chain.forward[Index] ? segment_data::point::start : segment_data::point::end]); };
-	auto const point_out = [&](std::size_t const Index) { return plan_of(path(Index).points[Chain.forward[Index] ? segment_data::point::end : segment_data::point::start]); };
 
-	std::vector<bool> straight(count);
-	std::vector<double> turns(count);
-	for (std::size_t i = 0; i < count; ++i)
+// the chain read as an alignment: the vertices where its straights meet, each with the curve between them read from its paths
+class line_reader
+{
+  public:
+	line_reader(editor_track::chain const &Chain, editor_track::straight_tolerance const &Tolerance, double const Gauge, alignment::transition_shape const Shape)
+	    : m_chain{Chain}, m_gauge{Gauge}, m_shape{Shape}, m_straight(Chain.tracks.size()), m_turns(Chain.tracks.size())
 	{
-		straight[i] = is_straight(*Chain.tracks[i], Tolerance);
-		turns[i] = signed_angle(tangent_in(i), tangent_out(i));
+		for (std::size_t i = 0; i < Chain.tracks.size(); ++i)
+		{
+			m_straight[i] = editor_track::is_straight(*Chain.tracks[i], Tolerance);
+			m_turns[i] = signed_angle(tangent_in(i), tangent_out(i));
+		}
 	}
-	auto const kLongestTurn{0.85 * glm::pi<double>()};
-	auto const curvature = [&](std::size_t const Index, double const T) {
+
+	std::vector<editor_track::line_vertex> read()
+	{
+		auto const count{m_chain.tracks.size()};
+		std::size_t i{0};
+		while (i < count)
+		{
+			if (false == m_straight[i])
+			{
+				auto const first{i};
+				i = curve_end(first);
+				split_curve(first, i);
+				continue;
+			}
+			if (i + 1 < count && m_straight[i + 1] && std::abs(signed_angle(tangent_out(i), tangent_in(i + 1))) > 1e-3)
+			{
+				editor_track::line_vertex vertex;
+				vertex.position = point_out(i);
+				vertex.kink = true;
+				m_result.push_back(vertex);
+			}
+			++i;
+		}
+		return m_result;
+	}
+
+  private:
+	segment_data const &path(std::size_t const Index) const
+	{
+		return m_chain.tracks[Index]->m_paths.front();
+	}
+	glm::dvec2 tangent_in(std::size_t const Index) const
+	{
+		return glm::normalize(plan_of(m_chain.forward[Index] ? path_tangent(path(Index), false) : -path_tangent(path(Index), true)));
+	}
+	glm::dvec2 tangent_out(std::size_t const Index) const
+	{
+		return glm::normalize(plan_of(m_chain.forward[Index] ? path_tangent(path(Index), true) : -path_tangent(path(Index), false)));
+	}
+	glm::dvec2 point_in(std::size_t const Index) const
+	{
+		return plan_of(path(Index).points[m_chain.forward[Index] ? segment_data::point::start : segment_data::point::end]);
+	}
+	glm::dvec2 point_out(std::size_t const Index) const
+	{
+		return plan_of(path(Index).points[m_chain.forward[Index] ? segment_data::point::end : segment_data::point::start]);
+	}
+	double curvature(std::size_t const Index, double const T) const
+	{
 		auto const radius{path_radius(path(Index), T)};
 		return radius > 0.0 ? 1.0 / radius : 0.0;
-	};
-	auto const eases = [&](std::size_t const Index, bool const Atend) {
+	}
+	// the path eases into a straight at its end, or at its start: hardly curved there
+	bool eases(std::size_t const Index, bool const Atend) const
+	{
 		double peak{0.0};
 		for (auto const t : {0.0, 0.25, 0.5, 0.75, 1.0})
 			peak = std::max(peak, curvature(Index, t));
-		return peak > 0.0 && curvature(Index, Chain.forward[Index] == Atend ? 1.0 : 0.0) < 0.05 * peak;
-	};
-	auto const add_curve = [&](std::size_t const First, std::size_t const Last) {
-		auto const a{point_in(First)};
-		auto const b{point_out(Last)};
-		auto const directionin{tangent_in(First)};
-		auto const directionout{tangent_out(Last)};
-		auto const determinant{cross(directionin, directionout)};
-		if (std::abs(determinant) < 1e-6)
-			return;
-		line_vertex vertex;
-		vertex.position = a + directionin * (cross(b - a, directionout) / determinant);
-		std::vector<std::pair<TTrack *, bool>> run;
-		for (auto i = First; i <= Last; ++i)
-			run.emplace_back(Chain.tracks[i], Chain.forward[i]);
-		analyse_curve(run, Gauge, vertex.shape);
-		if (auto &shape{vertex.shape}; false == shape.designed.has_value() && false == shape.compound && shape.reversals == 0)
-		{
-			auto const pieces = [&](double const Length, bool const Fromstart) {
-				std::size_t taken{0};
-				double covered{0.0};
-				while (covered < Length - 1e-6 && taken <= Last - First)
-				{
-					covered += Chain.tracks[Fromstart ? First + taken : Last - taken]->Length();
-					++taken;
-				}
-				return taken;
-			};
-			auto const in{shape.transition_in > 0.0 ? pieces(shape.transition_in, true) : 0};
-			auto const out{shape.transition_out > 0.0 ? pieces(shape.transition_out, false) : 0};
-			auto const turn_of = [&](std::size_t const From, std::size_t const To) { return std::abs(std::accumulate(turns.begin() + From, turns.begin() + To + 1, 0.0)); };
-			auto const length = [&](double const Turn) { return Shape == alignment::transition_shape::clothoid ? 2.0 * shape.radius * Turn : 2.0 * shape.radius * std::tan(Turn); };
-			if (Last > First && shape.transition_in <= 0.0 && shape.transition_out <= 0.0 && eases(First, false) && eases(Last, true))
-			{
-				auto joint{First};
-				for (auto k = First; k < Last; ++k)
-					if (curvature(k, Chain.forward[k] ? 1.0 : 0.0) > curvature(joint, Chain.forward[joint] ? 1.0 : 0.0))
-						joint = k;
-				double tangentin;
-				double tangentout;
-				if (alignment::spiral_tangents(Shape, turn_of(First, joint), turn_of(joint + 1, Last), tangentin, tangentout))
-				{
-					shape.radius = 0.5 * (glm::distance(vertex.position, a) / tangentin + glm::distance(b, vertex.position) / tangentout);
-					shape.transition_in = length(turn_of(First, joint));
-					shape.transition_out = length(turn_of(joint + 1, Last));
-				}
-			}
-			else if (in + out <= Last - First)
-			{
-				auto const arc{turn_of(First + in, Last - out)};
-				if (arc > 1e-6 && arc < 2.0 * glm::pi<double>() - 1e-3)
-				{
-					shape.radius = glm::distance(point_in(First + in), point_out(Last - out)) / (2.0 * std::sin(arc * 0.5));
-					if (in > 0)
-						shape.transition_in = length(turn_of(First, First + in - 1));
-					if (out > 0)
-						shape.transition_out = length(turn_of(Last - out + 1, Last));
-				}
-			}
-		}
-		result.push_back(vertex);
-	};
-	std::size_t i{0};
-	while (i < count)
+		return peak > 0.0 && curvature(Index, m_chain.forward[Index] == Atend ? 1.0 : 0.0) < 0.05 * peak;
+	}
+	// how far the paths from the one to the other turn together
+	double turn_of(std::size_t const From, std::size_t const To) const
 	{
-		if (straight[i])
+		return std::abs(std::accumulate(m_turns.begin() + From, m_turns.begin() + To + 1, 0.0));
+	}
+	// the length of a transition curve of the radius turning so far
+	double transition_length(double const Radius, double const Turn) const
+	{
+		return m_shape == alignment::transition_shape::clothoid ? 2.0 * Radius * Turn : 2.0 * Radius * std::tan(Turn);
+	}
+	// how many paths of the curve from its start, or from its end, the length takes
+	std::size_t pieces(double const Length, bool const Fromstart, std::size_t const First, std::size_t const Last) const
+	{
+		std::size_t taken{0};
+		double covered{0.0};
+		while (covered < Length - 1e-6 && taken <= Last - First)
 		{
-			if (i + 1 < count && straight[i + 1] && std::abs(signed_angle(tangent_out(i), tangent_in(i + 1))) > 1e-3)
-			{
-				line_vertex vertex;
-				vertex.position = point_out(i);
-				vertex.kink = true;
-				result.push_back(vertex);
-			}
-			++i;
-			continue;
+			covered += m_chain.tracks[Fromstart ? First + taken : Last - taken]->Length();
+			++taken;
 		}
-		auto const first{i};
+		return taken;
+	}
+	// the end of the curve beginning at the path: where a reverse curve starts, where the curve eases into a straight, or a straight
+	std::size_t curve_end(std::size_t const First) const
+	{
+		auto i{First};
 		int sign{0};
-		while (i < count && false == straight[i])
+		while (i < m_chain.tracks.size() && false == m_straight[i])
 		{
 			int current{0};
-			if (turns[i] > 1e-9)
+			if (m_turns[i] > 1e-9)
 				current = 1;
-			else if (turns[i] < -1e-9)
+			else if (m_turns[i] < -1e-9)
 				current = -1;
 			// a reverse curve: the next one starts here; or the curve eases into a straight
-			if ((current != 0 && sign != 0 && current != sign) || (i > first && (eases(i - 1, true) || eases(i, false))))
+			if ((current != 0 && sign != 0 && current != sign) || (i > First && (eases(i - 1, true) || eases(i, false))))
 				break;
 			if (current != 0)
 				sign = current;
 			++i;
 		}
-		auto const total{std::abs(std::accumulate(turns.begin() + first, turns.begin() + i, 0.0))};
+		return i;
+	}
+	// the curve of the paths up to the end, a long one in parts turning by less than a half circle each
+	void split_curve(std::size_t const First, std::size_t const End)
+	{
+		auto const kLongestTurn{0.85 * glm::pi<double>()};
+		auto const total{std::abs(std::accumulate(m_turns.begin() + First, m_turns.begin() + End, 0.0))};
 		auto const parts{std::max(1.0, std::ceil(total / kLongestTurn))};
-		auto start{first};
+		auto start{First};
 		double turned{0.0};
 		double part{1.0};
-		for (auto k = first; k + 1 < i; ++k)
+		for (auto k = First; k + 1 < End; ++k)
 		{
 			if (part >= parts)
 				break;
-			turned += std::abs(turns[k]);
+			turned += std::abs(m_turns[k]);
 			if (turned >= total * part / parts)
 			{
 				add_curve(start, k);
@@ -2183,9 +2187,82 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 				part += 1.0;
 			}
 		}
-		add_curve(start, i - 1);
+		add_curve(start, End - 1);
 	}
-	return result;
+	// the vertex of the curve of the paths, where the tangents at its ends meet
+	void add_curve(std::size_t const First, std::size_t const Last)
+	{
+		auto const a{point_in(First)};
+		auto const b{point_out(Last)};
+		auto const directionin{tangent_in(First)};
+		auto const directionout{tangent_out(Last)};
+		auto const determinant{cross(directionin, directionout)};
+		if (std::abs(determinant) < 1e-6)
+			return;
+		editor_track::line_vertex vertex;
+		vertex.position = a + directionin * (cross(b - a, directionout) / determinant);
+		std::vector<std::pair<TTrack *, bool>> run;
+		for (auto i = First; i <= Last; ++i)
+			run.emplace_back(m_chain.tracks[i], m_chain.forward[i]);
+		editor_track::analyse_curve(run, m_gauge, vertex.shape);
+		if (auto const &shape{vertex.shape}; false == shape.designed.has_value() && false == shape.compound && shape.reversals == 0)
+			refit(First, Last, vertex);
+		m_result.push_back(vertex);
+	}
+	// the radius and the transitions of a plain curve read again by the turns of its paths: of two transitions with no arc, or of
+	// the arc between the paths of its transitions
+	void refit(std::size_t const First, std::size_t const Last, editor_track::line_vertex &Vertex) const
+	{
+		auto &shape{Vertex.shape};
+		auto const in{shape.transition_in > 0.0 ? pieces(shape.transition_in, true, First, Last) : 0};
+		auto const out{shape.transition_out > 0.0 ? pieces(shape.transition_out, false, First, Last) : 0};
+		if (Last > First && shape.transition_in <= 0.0 && shape.transition_out <= 0.0 && eases(First, false) && eases(Last, true))
+			refit_spirals(First, Last, Vertex);
+		else if (in + out <= Last - First)
+			refit_arc(First, Last, in, out, shape);
+	}
+	void refit_spirals(std::size_t const First, std::size_t const Last, editor_track::line_vertex &Vertex) const
+	{
+		auto &shape{Vertex.shape};
+		auto joint{First};
+		for (auto k = First; k < Last; ++k)
+			if (curvature(k, m_chain.forward[k] ? 1.0 : 0.0) > curvature(joint, m_chain.forward[joint] ? 1.0 : 0.0))
+				joint = k;
+		double tangentin;
+		double tangentout;
+		if (alignment::spiral_tangents(m_shape, turn_of(First, joint), turn_of(joint + 1, Last), tangentin, tangentout))
+		{
+			shape.radius = 0.5 * (glm::distance(Vertex.position, point_in(First)) / tangentin + glm::distance(point_out(Last), Vertex.position) / tangentout);
+			shape.transition_in = transition_length(shape.radius, turn_of(First, joint));
+			shape.transition_out = transition_length(shape.radius, turn_of(joint + 1, Last));
+		}
+	}
+	// In paths of the curve taken by its transition in, Out by its transition out
+	void refit_arc(std::size_t const First, std::size_t const Last, std::size_t const In, std::size_t const Out, editor_track::curve &Shape) const
+	{
+		auto const arc{turn_of(First + In, Last - Out)};
+		if (false == (arc > 1e-6 && arc < 2.0 * glm::pi<double>() - 1e-3))
+			return;
+		Shape.radius = glm::distance(point_in(First + In), point_out(Last - Out)) / (2.0 * std::sin(arc * 0.5));
+		if (In > 0)
+			Shape.transition_in = transition_length(Shape.radius, turn_of(First, First + In - 1));
+		if (Out > 0)
+			Shape.transition_out = transition_length(Shape.radius, turn_of(Last - Out + 1, Last));
+	}
+
+	editor_track::chain const &m_chain;
+	double m_gauge;
+	alignment::transition_shape m_shape;
+	std::vector<bool> m_straight;
+	std::vector<double> m_turns;
+	std::vector<editor_track::line_vertex> m_result;
+};
+
+} // namespace
+
+std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const &Chain, straight_tolerance const &Tolerance, double const Gauge, alignment::transition_shape const Shape)
+{
+	return line_reader{Chain, Tolerance, Gauge, Shape}.read();
 }
 
 namespace
@@ -2415,57 +2492,75 @@ std::vector<route_node> route_starts(TTrack *From)
 	return starts;
 }
 
+// what a way walked by find_route_along is to reach: the track, as long as given, within a metre, passing the middle given
+struct route_goal
+{
+	TTrack const *to;
+	double length;
+	glm::dvec3 middle;
+};
+
+// a node of the way walked depth first, with the length of the way past it and the nodes it goes on to, the next one to try
+struct route_step
+{
+	route_node node;
+	double after;
+	std::vector<route_node> next;
+	std::size_t index{0};
+};
+
+// the ways from the first node walked depth first, a way given up as it gets longer than the route, or passes the half of it away
+// from the middle; a line of some thousand paths is walked without the depth of calls. True with the route once one reaches the goal
+bool walk_route(route_node const &First, double const After, route_goal const &Goal, std::size_t &Walked, editor_track::route &Route)
+{
+	std::size_t constexpr kMost{200000}; // paths walked
+	std::vector<route_step> way{{First, After, route_next(First)}};
+	std::unordered_set<TTrack const *> on_way{std::get<0>(First)};
+	while (false == way.empty() && Walked < kMost)
+	{
+		auto &top{way.back()};
+		if (top.index >= top.next.size())
+		{
+			on_way.erase(std::get<0>(top.node));
+			way.pop_back();
+			continue;
+		}
+		auto const node{top.next[top.index++]};
+		auto *track{std::get<0>(node)};
+		if (on_way.contains(track))
+			continue;
+		++Walked;
+		auto const after{way_past(node, top.after, Goal.length, Goal.middle)};
+		if (after < 0.0 || (track == Goal.to && std::abs(after - Goal.length) > kRouteSlack))
+			continue;
+		if (track == Goal.to)
+		{
+			std::ranges::for_each(way, [&Route](route_step const &Done) { Route.spans.emplace_back(std::get<0>(Done.node), std::get<1>(Done.node), std::get<2>(Done.node)); });
+			Route.spans.emplace_back(track, std::get<1>(node), std::get<2>(node));
+			return true;
+		}
+		on_way.insert(track);
+		way.emplace_back(node, after, route_next(node));
+	}
+	return false;
+}
+
 } // namespace
 
-bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Middle, route &Route)
+bool editor_track::find_route_along(TTrack *From, TTrack const *To, double const Length, glm::dvec3 const &Middle, route &Route)
 {
 	Route = {};
 	if (From == nullptr || To == nullptr || From == To || false == is_supported(*From) || false == is_supported(*To))
 		return false;
-	// depth first, a way given up as it gets longer than the route, or passes the half of it away from the middle; a line of some
-	// thousand paths is walked without the depth of calls
-	std::size_t constexpr kMost{200000}; // paths walked
+	route_goal const goal{To, Length, Middle};
 	std::size_t walked{0};
-	struct step
-	{
-		route_node node;
-		double after;
-		std::vector<route_node> next;
-		std::size_t index{0};
-	};
 	for (auto const &first : route_starts(From))
 	{
 		auto const length{way_past(first, 0.0, Length, Middle)};
 		if (length < 0.0)
 			continue;
-		std::vector<step> way{{first, length, route_next(first)}};
-		std::unordered_set<TTrack const *> on_way{From};
-		while (false == way.empty() && walked < kMost)
-		{
-			auto &top{way.back()};
-			if (top.index >= top.next.size())
-			{
-				on_way.erase(std::get<0>(top.node));
-				way.pop_back();
-				continue;
-			}
-			auto const node{top.next[top.index++]};
-			auto *track{std::get<0>(node)};
-			if (on_way.contains(track))
-				continue;
-			++walked;
-			auto const after{way_past(node, top.after, Length, Middle)};
-			if (after < 0.0 || (track == To && std::abs(after - Length) > kRouteSlack))
-				continue;
-			if (track == To)
-			{
-				std::ranges::for_each(way, [&Route](step const &Done) { Route.spans.emplace_back(std::get<0>(Done.node), std::get<1>(Done.node), std::get<2>(Done.node)); });
-				Route.spans.emplace_back(track, std::get<1>(node), std::get<2>(node));
-				return true;
-			}
-			on_way.insert(track);
-			way.emplace_back(node, after, route_next(node));
-		}
+		if (walk_route(first, length, goal, walked, Route))
+			return true;
 	}
 	return false;
 }
