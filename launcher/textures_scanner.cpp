@@ -4,12 +4,13 @@
 
 void ui::vehicles_bank::scan_textures()
 {
-	for (auto &f : std::filesystem::recursive_directory_iterator("dynamic")) {
-		if (f.path().filename() != "textures.txt")
+	std::error_code error;
+	for (std::filesystem::recursive_directory_iterator f{"dynamic", std::filesystem::directory_options::skip_permission_denied, error}, end; f != end; f.increment(error)) {
+		if (f->path().filename() != "textures.txt")
 			continue;
 
-		std::fstream stream(f.path(), std::ios_base::binary | std::ios_base::in);
-		ctx_path = std::filesystem::relative(f.path().parent_path(), "dynamic/");
+		std::fstream stream(f->path(), std::ios_base::binary | std::ios_base::in);
+		ctx_path = std::filesystem::relative(f->path().parent_path(), "dynamic/", error);
 
 		std::string line;
 		while (std::getline(stream, line))

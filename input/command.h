@@ -403,6 +403,7 @@ enum class user_command
 	wiperswitchincrease,
 	wiperswitchdecrease,
 	lightsset,
+	oilfuelpumptoggle,
 	none = -1
 };
 
