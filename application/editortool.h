@@ -197,7 +197,8 @@ class editor_templates
 {
   public:
 	virtual std::vector<standing_template> standing_templates(std::function<bool(std::string const &)> const &Accept) const = 0;
-	// the layer a tool keeps what it makes in, "<scenery>_<Part>.scm", made when the scenery has none yet. returns: null_handle if there can't be one
+	// the layer a tool keeps what it makes in, "<scenery>_<Part>.scm", or the one made for the part of the scenery a copy was saved
+	// from, told by its first line; made when the scenery has none yet. returns: null_handle if there can't be one
 	virtual scene::layer_handle output_layer(std::string const &Part) = 0;
 	// in the active layer unless given another
 	virtual std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle Layer = scene::layer_handle{}) = 0;
@@ -216,6 +217,9 @@ class editor_signals
 	// the signals placed by the templates chosen for their kinds and the rest of the changes, with the tracks changed before: one
 	// step of the history. returns: how many signals were placed
 	virtual std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) = 0;
+	// the error signal_batch would stop with for the signals given, a kind with no template, so a step finds it before it cuts any
+	// track for them. returns: empty if each one has its template
+	virtual std::string signal_templates_missing(std::vector<signal_order> const &Orders) = 0;
 	// the signal templates with lights, false while they are still being looked for
 	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
 	// the signals given which no track reads, read again by the track they stand by: one step of the history. returns: how many

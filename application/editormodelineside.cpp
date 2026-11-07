@@ -256,22 +256,61 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 	if (stem.empty())
 		stem = "scenery";
 	std::string reason;
+	auto const take = [&](scene::layer_handle const Layer) {
+		if (Layer == null_handle || false == scene::Layers.accepts(Layer, &reason))
+			return false;
+		scene::Layers.visible(Layer, true);
+		scene::Layers.locked(Layer, false);
+		return true;
+	};
+	// the first line of the files made here, which tells them from the files of the scenery named alike
+	auto const header{"// scenery layer created in the editor for its " + Part + " part"};
+	auto const headed = [&](std::string const &Name) {
+		std::ifstream input{Global.asCurrentSceneryPath + Name, std::ios_base::binary};
+		std::string first;
+		std::getline(input, first);
+		if (false == first.empty() && first.back() == '\r')
+			first.pop_back();
+		return first == header;
+	};
+	// the layer included which the test takes, by its name in lower case and its name as given, if it can take more. returns:
+	// null_handle if none
+	auto const included = [&](auto const &Named) -> scene::layer_handle {
+		for (std::size_t index = 1; index <= scene::Layers.size(); ++index)
+			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && Named(ToLower(existing.name), existing.name))
+				if (auto const layer{scene::Layers.resolve(static_cast<scene::layer_handle>(index))}; take(layer))
+					return layer;
+		return null_handle;
+	};
+	auto const name_of = [&](int const Attempt) { return ToLower(stem + "_" + Part + (Attempt > 1 ? std::to_string(Attempt) : std::string{}) + ".scm"); };
+	for (int attempt = 1; attempt <= 9; ++attempt)
+		if (auto const layer{included([&](std::string const &Name, std::string const &) { return Name == name_of(attempt); })}; layer != null_handle)
+			return layer;
+	// the one made here for the scenery saved under another name before, the file it was copied from: what the part made stays
+	// in one file. a file of the scenery of a name alike, without the first line written here, is left as it is
+	auto const part{"_" + ToLower(Part)};
+	if (auto const layer{included([&](std::string const &Name, std::string const &Given) {
+		    if (false == Name.ends_with(".scm"))
+			    return false;
+		    auto base{Name.substr(0, Name.size() - 4)};
+		    if (false == base.empty() && std::isdigit(static_cast<unsigned char>(base.back())))
+			    base.pop_back();
+		    return base.size() > part.size() && base.ends_with(part) && headed(Given);
+	    })};
+	    layer != null_handle)
+		return layer;
 	// a file of that name the scenery doesn't include, or one which can't take more, gives way to the next number
 	for (int attempt = 1; attempt <= 9; ++attempt)
 	{
-		auto const name{ToLower(stem + "_" + Part + (attempt > 1 ? std::to_string(attempt) : std::string{}) + ".scm")};
-		auto layer{null_handle};
-		for (std::size_t index = 1; index <= scene::Layers.size() && layer == null_handle; ++index)
-			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && existing.name == name)
-				layer = scene::Layers.resolve(static_cast<scene::layer_handle>(index));
-		if (layer == null_handle)
-			layer = scene::Layers.create(name, scene::layer_handle{1}, reason, false);
-		if (layer != null_handle && scene::Layers.accepts(layer, &reason))
-		{
-			scene::Layers.visible(layer, true);
-			scene::Layers.locked(layer, false);
+		auto const name{name_of(attempt)};
+		auto known{false};
+		for (std::size_t index = 1; index <= scene::Layers.size() && false == known; ++index)
+			if (auto const &existing{scene::Layers.layer(static_cast<scene::layer_handle>(index))}; false == existing.dead && false == existing.removed && ToLower(existing.name) == name)
+				known = true;
+		if (known)
+			continue;
+		if (auto const layer{scene::Layers.create(name, scene::layer_handle{1}, reason, false, header)}; take(layer))
 			return layer;
-		}
 	}
 	WriteLog("Editor: no layer for " + Part + ", the active one takes it: " + reason, logtype::generic);
 	return null_handle;

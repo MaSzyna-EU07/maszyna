@@ -335,8 +335,11 @@ void win1250_to_ascii(std::string &Input)
 
 std::string win1250_to_utf8(const std::string &Input)
 {
-	std::unordered_map<char, std::string> const charmap{{165, "Ą"}, {198, "Ć"}, {202, "Ę"}, {163, "Ł"}, {209, "Ń"}, {211, "Ó"}, {140, "Ś"}, {143, "Ź"}, {175, "Ż"},
-	                                                    {185, "ą"}, {230, "ć"}, {234, "ę"}, {179, "ł"}, {241, "ń"}, {243, "ó"}, {156, "ś"}, {159, "ź"}, {191, "ż"}};
+	// the utf-8 sequences written as bytes: the file has a byte order mark and the build doesn't give the compiler /utf-8, so letters
+	// written as letters would end up in the program in windows-1250, the same as the input
+	static std::unordered_map<char, std::string> const charmap{{'\xA5', "\xC4\x84"}, {'\xC6', "\xC4\x86"}, {'\xCA', "\xC4\x98"}, {'\xA3', "\xC5\x81"}, {'\xD1', "\xC5\x83"}, {'\xD3', "\xC3\x93"},
+	                                                           {'\x8C', "\xC5\x9A"}, {'\x8F', "\xC5\xB9"}, {'\xAF', "\xC5\xBB"}, {'\xB9', "\xC4\x85"}, {'\xE6', "\xC4\x87"}, {'\xEA', "\xC4\x99"},
+	                                                           {'\xB3', "\xC5\x82"}, {'\xF1', "\xC5\x84"}, {'\xF3', "\xC3\xB3"}, {'\x9C', "\xC5\x9B"}, {'\x9F', "\xC5\xBA"}, {'\xBF', "\xC5\xBC"}};
 	std::string output;
 	std::unordered_map<char, std::string>::const_iterator lookup;
 	for (auto &input : Input)
@@ -345,6 +348,30 @@ std::string win1250_to_utf8(const std::string &Input)
 			output += lookup->second;
 		else
 			output += input;
+	}
+	return output;
+}
+
+// counterpart of win1250_to_utf8(). characters outside of the supported set are replaced with question marks
+std::string utf8_to_win1250(std::string const &Text)
+{
+	// polish letters, as utf-8 sequences; the same set win1250_to_utf8() handles
+	static std::unordered_map<std::string, char> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
+	                                                           {"\xC5\x9A", '\x8C'}, {"\xC5\xB9", '\x8F'}, {"\xC5\xBB", '\xAF'}, {"\xC4\x85", '\xB9'}, {"\xC4\x87", '\xE6'}, {"\xC4\x99", '\xEA'},
+	                                                           {"\xC5\x82", '\xB3'}, {"\xC5\x84", '\xF1'}, {"\xC3\xB3", '\xF3'}, {"\xC5\x9B", '\x9C'}, {"\xC5\xBA", '\x9F'}, {"\xC5\xBC", '\xBF'}};
+	std::string output;
+	for (std::size_t idx = 0; idx < Text.size();)
+	{
+		auto const lead{static_cast<unsigned char>(Text[idx])};
+		if (lead < 0x80)
+		{
+			output += Text[idx++];
+			continue;
+		}
+		auto const length{std::min<std::size_t>((lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1, Text.size() - idx)};
+		auto const lookup{charmap.find(Text.substr(idx, length))};
+		output += (lookup != charmap.end() ? lookup->second : '?');
+		idx += length;
 	}
 	return output;
 }

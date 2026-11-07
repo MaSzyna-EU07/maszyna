@@ -169,6 +169,8 @@ void win1250_to_ascii(std::string &Input);
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
+// counterpart of win1250_to_utf8(): the polish letters, the other characters outside of ascii as question marks
+std::string utf8_to_win1250(std::string const &Text);
 // decodes utf-8 encoded text into unicode code points. returns false if the text isn't valid utf-8
 bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
 // decodes windows-1250 (ansi) encoded text into unicode code points

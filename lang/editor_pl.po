@@ -10348,6 +10348,9 @@ msgstr "Numeruje rozjazdy 1, 2, 3... wzdłuż stacji i nazywa je od jej skrótu,
 msgid "Give the station its code first: the switches are named after it"
 msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy rozjazdów"
 
+msgid "These events aim at the switches by their old names, the editor doesn't write them and they'd lose them: %s. Number the switches again to rename them anyway"
+msgstr "Te eventy wskazują rozjazdy starymi nazwami, a edytor ich nie zapisuje, więc by je straciły: %s. Kliknij Ponumeruj rozjazdy jeszcze raz, by mimo to zmienić nazwy"
+
 msgid "%s can't be renamed: %s"
 msgstr "Nie można zmienić nazwy %s: %s"
 

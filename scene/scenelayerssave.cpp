@@ -1523,7 +1523,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		if (layer(output).created)
 		{
 			// NOTE: the parser treats an empty file as a missing one
-			text.text = "// scenery layer created in the editor" + eol;
+			text.text = (layer(output).header.empty() ? std::string{"// scenery layer created in the editor"} : layer(output).header) + eol;
 		}
 		composition body;
 		if (false == compose(state, output, body, 0))
