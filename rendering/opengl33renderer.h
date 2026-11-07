@@ -349,6 +349,8 @@ class opengl33_renderer : public gfx_renderer {
   void Render_vr_models();
 	void Render_Alpha(scene::basic_region *Region);
 	void Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last);
+	void Render_Alpha_shapes(scene::basic_cell const &Cell); // the translucent shapes of a cell, from its section banks
+	void Render_Alpha_wires(scene::basic_cell const &Cell); // the traction wires and the lines of a cell
 	void Render_Alpha(TAnimModel *Instance);
 	void Render_Alpha(TTraction *Traction);
     void Render_Alpha(scene::lines_node const &Lines);

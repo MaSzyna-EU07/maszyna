@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include <algorithm>
 #include <cctype>
+#include <format>
 #include <optional>
 #include <limits>
 
@@ -48,7 +49,7 @@ ImTextureID vehicle_mini(ui::skin_set &Skin, std::set<ui::skin_set const *> &Ask
 {
 	if (false == static_cast<bool>(Skin.mini))
 		return 0;
-	if (Asked.count(&Skin) == 0)
+	if (false == Asked.contains(&Skin))
 	{
 		if (Loads >= 4)
 			return 0;
@@ -146,6 +147,95 @@ double distance_along(TTrack const &Track, int const Path, glm::dvec3 const &Poi
 	return std::clamp(length * Track.Length() / std::max(total, 1e-6), 0.0, Track.Length());
 }
 
+// the first name for a vehicle of the stem that no vehicle has and that isn't taken already, the last one tried when all are
+std::string free_vehicle_name(std::string const &Stem, std::vector<std::string> const &Taken)
+{
+	std::string name;
+	for (int index = 1; index < 10000; ++index)
+	{
+		name = ToLower(std::format("editor_{}_{}", Stem, index));
+		if (simulation::Vehicles.find(name) == nullptr && std::ranges::find(Taken, name) == Taken.end())
+			break;
+	}
+	return name;
+}
+
+// the dynamic nodes of the train, one line each; Head gets the name of the first one, which has the driver when Driven
+std::string consist_nodes(auto const &Train, bool const Driven, std::string &Head)
+{
+	std::vector<std::string> names;
+	std::string nodes;
+	for (std::size_t i = 0; i < Train.size(); ++i)
+	{
+		auto const &item{Train[i]};
+		auto const stem{item.vehicle->path.stem().generic_string()};
+		auto const name{free_vehicle_name(stem, names)};
+		names.push_back(name);
+		auto const leads{i == 0};
+		if (leads)
+			Head = name;
+		nodes += "node -1 0 " + name + " dynamic " + item.vehicle->path.parent_path().generic_string() + " " + item.skin->skin + " " + stem + " " + (item.turned ? "-1" : "0") + " " + (leads && Driven ? "headdriver" : "nobody") + " 3 0 enddynamic\n";
+	}
+	return nodes;
+}
+
+// the lines of the trainset as it's written to the scenery, the dynamic nodes taken from Nodes
+std::vector<std::string> trainset_entry_lines(std::string Timetable, std::string const &Track, double const Offset, double const Velocity, bool const Against, std::string const &Nodes)
+{
+	std::erase_if(Timetable, [](unsigned char const Character) { return std::isspace(Character) != 0; });
+	std::vector<std::string> lines;
+	lines.push_back("trainset " + (Timetable.empty() ? std::string{"none"} : Timetable) + " " + Track + " " + to_string(Offset, 2) + " " + to_string(Velocity, 0));
+	if (Against)
+		lines.emplace_back("reversed");
+	std::istringstream nodes{Nodes};
+	for (std::string line; std::getline(nodes, line);)
+		if (false == line.empty())
+			lines.push_back(line);
+	lines.emplace_back("endtrainset");
+	return lines;
+}
+
+// the vehicles with their skins that the search matches, at most kVehicleList of them; Total counts all that match
+std::vector<std::pair<std::shared_ptr<ui::vehicle_desc>, std::shared_ptr<ui::skin_set>>> matching_vehicles(ui::vehicles_bank const &Bank, bool const Controllable, std::string const &Text, std::size_t &Total)
+{
+	std::vector<std::pair<std::shared_ptr<ui::vehicle_desc>, std::shared_ptr<ui::skin_set>>> listed;
+	for (auto const &[path, vehicle] : Bank.vehicles)
+	{
+		if (vehicle == nullptr || (Controllable && false == vehicle->controllable))
+			continue;
+		for (auto const &skin : vehicle->matching_skinsets)
+		{
+			if (skin == nullptr)
+				continue;
+			if (false == Text.empty() && ToLower(skin_label(*vehicle, *skin)).find(Text) == std::string::npos && (skin->meta == nullptr || skin->meta->search_lowered.find(Text) == std::string::npos))
+				continue;
+			++Total;
+			if (listed.size() < kVehicleList)
+				listed.emplace_back(vehicle, skin);
+		}
+	}
+	return listed;
+}
+
+// width of the side view of the vehicle drawn as tall as Height, in proportion
+float mini_width(ui::skin_set const &Skin, float const Height)
+{
+	auto const size{Skin.mini.size()};
+	return size.y > 0 ? std::round(Height * static_cast<float>(size.x) / static_cast<float>(size.y)) : Height * 3.0f;
+}
+
+// a button of the picked vehicle, on one line with the next one; true when pressed
+bool train_button(char const *Label, bool const Enabled, char const *Tooltip)
+{
+	ImGui::BeginDisabled(false == Enabled);
+	auto const pressed{ImGui::Button(STR_C(Label))};
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", STR_C(Tooltip));
+	ImGui::SameLine();
+	return pressed;
+}
+
 } // namespace
 
 void vehicle_tool::start(TTrack &Track, glm::dvec3 const &Point)
@@ -176,26 +266,8 @@ bool vehicle_tool::place()
 		tool.track->Switch(path);
 	auto const along{distance_along(*tool.track, path, tool.point)};
 	auto const against{tool.facing < 0};
-	std::vector<std::string> names;
-	std::string nodes;
 	std::string head;
-	for (std::size_t i = 0; i < train.size(); ++i)
-	{
-		auto const &item{train[i]};
-		auto const stem{item.vehicle->path.stem().generic_string()};
-		std::string name;
-		for (int index = 1; index < 10000; ++index)
-		{
-			name = ToLower("editor_" + stem + "_" + std::to_string(index));
-			if (simulation::Vehicles.find(name) == nullptr && std::find(names.begin(), names.end(), name) == names.end())
-				break;
-		}
-		names.push_back(name);
-		auto const leads{i == 0};
-		if (leads)
-			head = name;
-		nodes += "node -1 0 " + name + " dynamic " + item.vehicle->path.parent_path().generic_string() + " " + item.skin->skin + " " + stem + " " + (item.turned ? "-1" : "0") + " " + (leads && tool.driver == 0 ? "headdriver" : "nobody") + " 3 0 enddynamic\n";
-	}
+	auto const nodes{consist_nodes(train, tool.crew == 0, head)};
 	auto const offset{against ? along - kHalfVehicle : along + kHalfVehicle};
 	auto const vehicles{simulation::State.insert_trainset(head, tool.track, offset, nodes, against)};
 	if (vehicles.empty())
@@ -212,17 +284,7 @@ bool vehicle_tool::place()
 		tool.status += ". " + std::string{STR_C("The track has no name, the trainset can't be written to the scenery")};
 	else if (tool.write)
 	{
-		std::string timetable{tool.timetable};
-		timetable.erase(std::remove_if(timetable.begin(), timetable.end(), [](unsigned char const Character) { return std::isspace(Character) != 0; }), timetable.end());
-		vehicle_state::trainset entry{head, tool.track->name(), {}};
-		entry.lines.push_back("trainset " + (timetable.empty() ? std::string{"none"} : timetable) + " " + tool.track->name() + " " + to_string(offset, 2) + " " + to_string(tool.velocity, 0));
-		if (against)
-			entry.lines.push_back("reversed");
-		std::istringstream lines{nodes};
-		for (std::string line; std::getline(lines, line);)
-			if (false == line.empty())
-				entry.lines.push_back(line);
-		entry.lines.push_back("endtrainset");
+		vehicle_state::trainset entry{head, tool.track->name(), trainset_entry_lines(std::string{tool.timetable.data()}, tool.track->name(), offset, tool.velocity, against, nodes)};
 		tool.trainsets.push_back(std::move(entry));
 		tool.status += ". " + std::string{STR_C("Written to the scenery as a trainset on save (Ctrl+S)")};
 	}
@@ -236,8 +298,7 @@ void vehicle_tool::render_options()
 {
 	auto &tool{m_vehicle};
 	auto *selected{m_selection.selected_track()};
-	auto const &hover{m_selection.hovered_track()};
-	if (selected != nullptr && selected == tool.track && hover.track == selected && ImGui::IsMouseClicked(0) && false == ImGui::GetIO().WantCaptureMouse)
+	if (auto const &hover{m_selection.hovered_track()}; selected != nullptr && selected == tool.track && hover.track == selected && ImGui::IsMouseClicked(0) && false == ImGui::GetIO().WantCaptureMouse)
 		start(*selected, hover.point);
 	else if (selected != nullptr && selected != tool.track)
 		start(*selected, hover.track == selected ? hover.point : bezier{selected->m_paths.front()}.point(0.5));
@@ -251,30 +312,24 @@ void vehicle_tool::render_options()
 		tool.bank = std::make_shared<ui::vehicles_bank>();
 		tool.bank->scan_textures();
 	}
-	ImGui::SetNextItemWidth(-1.0f);
-	ImGui::InputTextWithHint("##vehiclesearch", STR_C("search: name, series, skin"), tool.search, sizeof(tool.search));
-	ImGui::Checkbox(STR_C("Only the ones with a cab"), &tool.controllable_only);
-	std::string const text{ToLower(tool.search)};
-	std::vector<std::pair<std::shared_ptr<ui::vehicle_desc>, std::shared_ptr<ui::skin_set>>> listed;
-	std::size_t total{0};
-	for (auto const &[path, vehicle] : tool.bank->vehicles)
-	{
-		if (vehicle == nullptr || (tool.controllable_only && false == vehicle->controllable))
-			continue;
-		for (auto const &skin : vehicle->matching_skinsets)
-		{
-			if (skin == nullptr)
-				continue;
-			if (false == text.empty() && ToLower(skin_label(*vehicle, *skin)).find(text) == std::string::npos && (skin->meta == nullptr || skin->meta->search_lowered.find(text) == std::string::npos))
-				continue;
-			++total;
-			if (listed.size() < kVehicleList)
-				listed.emplace_back(vehicle, skin);
-		}
-	}
 	int loads{0};
 	auto const line{ImGui::GetTextLineHeight()};
-	auto const box{ImVec2(std::round(ImGui::GetFontSize() * 7.0f), std::round(line * 2.0f))};
+	render_vehicle_list(loads, line);
+	render_train(loads, line);
+	render_placing();
+	render_trainsets();
+}
+
+void vehicle_tool::render_vehicle_list(int &Loads, float const Line)
+{
+	auto &tool{m_vehicle};
+	ImGui::SetNextItemWidth(-1.0f);
+	ImGui::InputTextWithHint("##vehiclesearch", STR_C("search: name, series, skin"), tool.search.data(), tool.search.size());
+	ImGui::Checkbox(STR_C("Only the ones with a cab"), &tool.controllable_only);
+	std::string const text{ToLower(tool.search.data())};
+	std::size_t total{0};
+	auto const listed{matching_vehicles(*tool.bank, tool.controllable_only, text, total)};
+	auto const box{ImVec2(std::round(ImGui::GetFontSize() * 7.0f), std::round(Line * 2.0f))};
 	ImGui::BeginChild("##vehicles", ImVec2(0.0f, (box.y + ImGui::GetStyle().ItemSpacing.y) * 5.5f + 6.0f), ImGuiChildFlags_Borders);
 	for (std::size_t i = 0; i < listed.size(); ++i)
 	{
@@ -286,17 +341,17 @@ void vehicle_tool::render_options()
 			tool.vehicle = vehicle;
 			tool.skin = skin;
 			if (ImGui::IsMouseDoubleClicked(0))
-				tool.consist.push_back({vehicle, skin, false});
+				tool.consist.emplace_back(vehicle, skin, false);
 		}
 		if (ImGui::IsItemVisible())
 		{
 			auto &draw{*ImGui::GetWindowDrawList()};
-			draw_mini(draw, vehicle_mini(*skin, tool.minis, loads), skin->mini.size(), ImVec2(low.x + 2.0f, low.y + 1.0f), ImVec2(low.x + box.x, low.y + box.y - 1.0f), false);
-			auto const left{low.x + box.x + ImGui::GetStyle().ItemSpacing.x};
-			auto const right{ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x};
-			draw.PushClipRect(ImVec2(left, low.y), ImVec2(right, low.y + box.y), true);
-			draw.AddText(ImVec2(left, low.y), ImGui::GetColorU32(ImGuiCol_Text), skin_name(*skin).c_str());
-			draw.AddText(ImVec2(left, low.y + line), ImGui::GetColorU32(ImGuiCol_TextDisabled), vehicle->path.generic_string().c_str());
+			draw_mini(draw, vehicle_mini(*skin, tool.minis, Loads), skin->mini.size(), ImVec2(low.x + 2.0f, low.y + 1.0f), ImVec2(low.x + box.x, low.y + box.y - 1.0f), false);
+			auto const text_left{low.x + box.x + ImGui::GetStyle().ItemSpacing.x};
+			auto const clip_right{ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x};
+			draw.PushClipRect(ImVec2(text_left, low.y), ImVec2(clip_right, low.y + box.y), true);
+			draw.AddText(ImVec2(text_left, low.y), ImGui::GetColorU32(ImGuiCol_Text), skin_name(*skin).c_str());
+			draw.AddText(ImVec2(text_left, low.y + Line), ImGui::GetColorU32(ImGuiCol_TextDisabled), vehicle->path.generic_string().c_str());
 			draw.PopClipRect();
 		}
 		ImGui::PopID();
@@ -307,101 +362,105 @@ void vehicle_tool::render_options()
 	if (tool.vehicle != nullptr && tool.skin != nullptr)
 	{
 		if (ImGui::Button(format(STR_C("Add %s to the train"), skin_name(*tool.skin).c_str()).c_str(), ImVec2(-1.0f, 0.0f)))
-			tool.consist.push_back({tool.vehicle, tool.skin, false});
+			tool.consist.emplace_back(tool.vehicle, tool.skin, false);
 		item_tooltip("A double click on the list adds it too");
 	}
+}
 
+void vehicle_tool::render_train(int &Loads, float const Line)
+{
+	auto &tool{m_vehicle};
 	// the train as a picture, the head on the left; a click on a vehicle shows its buttons
 	ImGui::SeparatorText(STR_C("Train"));
 	if (tool.consist.empty())
-		ImGui::TextDisabled("%s", STR_C("No vehicles yet: pick one from the list and add it"));
-	else
 	{
-		auto const height{std::round(line * 1.8f)};
-		auto const width_of = [&](ui::skin_set const &Skin) {
-			auto const size{Skin.mini.size()};
-			return size.y > 0 ? std::round(height * size.x / size.y) : height * 3.0f;
-		};
-		float total_width{0.0f};
-		for (auto const &item : tool.consist)
-			total_width += width_of(*item.skin) + 2.0f;
-		auto const scrolled{total_width > ImGui::GetContentRegionAvail().x};
-		ImGui::BeginChild("##train", ImVec2(0.0f, height + 6.0f + (scrolled ? ImGui::GetStyle().ScrollbarSize : 0.0f)), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
-		auto &draw{*ImGui::GetWindowDrawList()};
-		for (std::size_t i = 0; i < tool.consist.size(); ++i)
-		{
-			auto &item{tool.consist[i]};
-			auto const width{width_of(*item.skin)};
-			if (i > 0)
-				ImGui::SameLine(0.0f, 2.0f);
-			ImGui::PushID(static_cast<int>(i));
-			auto const low{ImGui::GetCursorScreenPos()};
-			if (ImGui::InvisibleButton("##car", ImVec2(width, height + 4.0f)))
-				tool.picked = tool.picked == static_cast<int>(i) ? -1 : static_cast<int>(i);
-			if (ImGui::IsItemHovered())
-			{
-				auto const vehicle{item.skin->vehicle.lock()};
-				ImGui::SetTooltip("%d. %s", static_cast<int>(i + 1), vehicle != nullptr ? skin_label(*vehicle, *item.skin).c_str() : item.skin->skin.c_str());
-			}
-			if (tool.picked == static_cast<int>(i) || ImGui::IsItemHovered())
-				draw.AddRectFilled(low, ImVec2(low.x + width, low.y + height + 4.0f), tool.picked == static_cast<int>(i) ? family_colour(0, 0.45f) : ImGui::GetColorU32(ImGuiCol_FrameBgHovered), 3.0f);
-			draw_mini(draw, vehicle_mini(*item.skin, tool.minis, loads), item.skin->mini.size(), ImVec2(low.x, low.y + 2.0f), ImVec2(low.x + width, low.y + height + 2.0f), item.turned);
-			ImGui::PopID();
-		}
-		ImGui::EndChild();
-		if (tool.picked >= static_cast<int>(tool.consist.size()))
-			tool.picked = -1;
-		if (tool.picked >= 0)
-		{
-			auto const i{static_cast<std::size_t>(tool.picked)};
-			auto &item{tool.consist[i]};
-			ImGui::Text("%d. %s", tool.picked + 1, skin_name(*item.skin).c_str());
-			auto const button = [](char const *Label, bool const Enabled, char const *Tooltip) {
-				ImGui::BeginDisabled(false == Enabled);
-				auto const pressed{ImGui::Button(STR_C(Label))};
-				ImGui::EndDisabled();
-				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-					ImGui::SetTooltip("%s", STR_C(Tooltip));
-				ImGui::SameLine();
-				return pressed;
-			};
-			auto const forward{button("Forward", i > 0, "Moves it one place towards the head")};
-			auto const back{button("Back", i + 1 < tool.consist.size(), "Moves it one place towards the end")};
-			auto const turn{button("Turn around", true, "Turned around in the train")};
-			auto const remove{button("Remove", true, "Takes it out of the train")};
-			ImGui::NewLine();
-			if (forward)
-			{
-				std::swap(tool.consist[i], tool.consist[i - 1]);
-				--tool.picked;
-			}
-			else if (back)
-			{
-				std::swap(tool.consist[i], tool.consist[i + 1]);
-				++tool.picked;
-			}
-			else if (turn)
-				item.turned = !item.turned;
-			else if (remove)
-			{
-				tool.consist.erase(tool.consist.begin() + static_cast<std::ptrdiff_t>(i));
-				tool.picked = -1;
-			}
-		}
-		else
-			ImGui::TextDisabled(STR_P("%d vehicle, the head on the left: click it to move it, turn it or remove it", "%d vehicles, the head on the left: click one to move it, turn it or remove it", static_cast<long long>(tool.consist.size())), static_cast<int>(tool.consist.size()));
-		if (ImGui::SmallButton(STR_C("Empty the train")))
-		{
-			tool.consist.clear();
-			tool.picked = -1;
-		}
+		ImGui::TextDisabled("%s", STR_C("No vehicles yet: pick one from the list and add it"));
+		return;
 	}
+	render_train_picture(Loads, std::round(Line * 1.8f));
+	if (tool.picked >= static_cast<int>(tool.consist.size()))
+		tool.picked = -1;
+	if (tool.picked >= 0)
+		render_picked_vehicle();
+	else
+		ImGui::TextDisabled(STR_P("%d vehicle, the head on the left: click it to move it, turn it or remove it", "%d vehicles, the head on the left: click one to move it, turn it or remove it", static_cast<long long>(tool.consist.size())), static_cast<int>(tool.consist.size()));
+	if (ImGui::SmallButton(STR_C("Empty the train")))
+	{
+		tool.consist.clear();
+		tool.picked = -1;
+	}
+}
 
+void vehicle_tool::render_train_picture(int &Loads, float const Height)
+{
+	auto &tool{m_vehicle};
+	float total_width{0.0f};
+	for (auto const &item : tool.consist)
+		total_width += mini_width(*item.skin, Height) + 2.0f;
+	auto const scrolled{total_width > ImGui::GetContentRegionAvail().x};
+	ImGui::BeginChild("##train", ImVec2(0.0f, Height + 6.0f + (scrolled ? ImGui::GetStyle().ScrollbarSize : 0.0f)), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
+	auto &draw{*ImGui::GetWindowDrawList()};
+	for (std::size_t i = 0; i < tool.consist.size(); ++i)
+	{
+		auto &item{tool.consist[i]};
+		auto const width{mini_width(*item.skin, Height)};
+		if (i > 0)
+			ImGui::SameLine(0.0f, 2.0f);
+		ImGui::PushID(static_cast<int>(i));
+		auto const low{ImGui::GetCursorScreenPos()};
+		if (ImGui::InvisibleButton("##car", ImVec2(width, Height + 4.0f)))
+			tool.picked = tool.picked == static_cast<int>(i) ? -1 : static_cast<int>(i);
+		if (ImGui::IsItemHovered())
+		{
+			auto const vehicle{item.skin->vehicle.lock()};
+			ImGui::SetTooltip("%d. %s", static_cast<int>(i + 1), vehicle != nullptr ? skin_label(*vehicle, *item.skin).c_str() : item.skin->skin.c_str());
+		}
+		if (tool.picked == static_cast<int>(i) || ImGui::IsItemHovered())
+			draw.AddRectFilled(low, ImVec2(low.x + width, low.y + Height + 4.0f), tool.picked == static_cast<int>(i) ? family_colour(0, 0.45f) : ImGui::GetColorU32(ImGuiCol_FrameBgHovered), 3.0f);
+		draw_mini(draw, vehicle_mini(*item.skin, tool.minis, Loads), item.skin->mini.size(), ImVec2(low.x, low.y + 2.0f), ImVec2(low.x + width, low.y + Height + 2.0f), item.turned);
+		ImGui::PopID();
+	}
+	ImGui::EndChild();
+}
+
+void vehicle_tool::render_picked_vehicle()
+{
+	auto &tool{m_vehicle};
+	auto const i{static_cast<std::size_t>(tool.picked)};
+	auto &item{tool.consist[i]};
+	ImGui::Text("%d. %s", tool.picked + 1, skin_name(*item.skin).c_str());
+	auto const forward{train_button("Forward", i > 0, "Moves it one place towards the head")};
+	auto const back{train_button("Back", i + 1 < tool.consist.size(), "Moves it one place towards the end")};
+	auto const turn{train_button("Turn around", true, "Turned around in the train")};
+	auto const remove{train_button("Remove", true, "Takes it out of the train")};
+	ImGui::NewLine();
+	if (forward)
+	{
+		std::swap(tool.consist[i], tool.consist[i - 1]);
+		--tool.picked;
+	}
+	else if (back)
+	{
+		std::swap(tool.consist[i], tool.consist[i + 1]);
+		++tool.picked;
+	}
+	else if (turn)
+		item.turned = !item.turned;
+	else if (remove)
+	{
+		tool.consist.erase(tool.consist.begin() + static_cast<std::ptrdiff_t>(i));
+		tool.picked = -1;
+	}
+}
+
+void vehicle_tool::render_placing()
+{
+	auto &tool{m_vehicle};
 	ImGui::SeparatorText(STR_C("On the track"));
 	if (ImGui::Button(STR_C("Turn the train around")))
 		tool.facing = -tool.facing;
 	item_tooltip("The head goes where the arrow at the marker points");
-	segmented("driver", tool.driver,
+	segmented("driver", tool.crew,
 	          {{0, STR_C("With a driver, to drive"), "The train can be driven or run by the AI at once"}, {1, STR_C("Nobody, parked"), "The vehicles stand braked, without a crew"}});
 	toggle_chips("vehiclewrite", {{STR_C("Write to the scenery as a trainset"), &tool.write, "On: the trainset is written to the scenery on save (Ctrl+S). Off: only to drive now, gone when the scenery is loaded again"}});
 	if (tool.write && ImGui::TreeNode(STR_C("More settings")))
@@ -409,7 +468,7 @@ void vehicle_tool::render_options()
 		if (begin_fields("##vehiclefields", 0.45f))
 		{
 			field_row("Timetable##trainset");
-			ImGui::InputText("##vehicletimetable", tool.timetable, sizeof(tool.timetable));
+			ImGui::InputText("##vehicletimetable", tool.timetable.data(), tool.timetable.size());
 			item_tooltip("The timetable the train runs by; none: no timetable, it waits for orders");
 			field_row("Speed at the start (km/h)");
 			ImGui::DragScalar("##vehiclevelocity", ImGuiDataType_Double, &tool.velocity, 1.0f, nullptr, nullptr, "%.0f");
@@ -434,6 +493,11 @@ void vehicle_tool::render_options()
 	}
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
+}
+
+void vehicle_tool::render_trainsets()
+{
+	auto &tool{m_vehicle};
 	if (tool.trainsets.empty())
 		return;
 	ImGui::Separator();
@@ -449,7 +513,7 @@ void vehicle_tool::render_options()
 		ImGui::Text("%s  (%s)", tool.trainsets[i].head.c_str(), tool.trainsets[i].track.c_str());
 		ImGui::PopID();
 	}
-	if (drop)
+	if (drop.has_value())
 		tool.trainsets.erase(tool.trainsets.begin() + static_cast<std::ptrdiff_t>(*drop));
 }
 

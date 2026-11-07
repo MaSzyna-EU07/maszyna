@@ -19,8 +19,11 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 
 #include <cctype>
+#include <cstddef>
 #include <cstdlib>
+#include <format>
 #include <fstream>
+#include <functional>
 #include <map>
 
 namespace
@@ -28,7 +31,7 @@ namespace
 
 int key_named(std::string const &Name)
 {
-	static std::map<std::string, int> const names{{"ctrl", GLFW_KEY_LEFT_CONTROL}, {"shift", GLFW_KEY_LEFT_SHIFT}, {"alt", GLFW_KEY_LEFT_ALT}, {"esc", GLFW_KEY_ESCAPE}, {"enter", GLFW_KEY_ENTER}, {"backspace", GLFW_KEY_BACKSPACE},
+	static std::map<std::string, int, std::less<>> const names{{"ctrl", GLFW_KEY_LEFT_CONTROL}, {"shift", GLFW_KEY_LEFT_SHIFT}, {"alt", GLFW_KEY_LEFT_ALT}, {"esc", GLFW_KEY_ESCAPE}, {"enter", GLFW_KEY_ENTER}, {"backspace", GLFW_KEY_BACKSPACE},
 	                                              {"del", GLFW_KEY_DELETE}, {"space", GLFW_KEY_SPACE}, {"tab", GLFW_KEY_TAB}};
 	if (auto const found{names.find(Name)}; found != names.end())
 		return found->second;
@@ -43,7 +46,61 @@ int key_named(std::string const &Name)
 
 int modifier_of(int const Key)
 {
-	return Key == GLFW_KEY_LEFT_CONTROL ? GLFW_MOD_CONTROL : Key == GLFW_KEY_LEFT_SHIFT ? GLFW_MOD_SHIFT : Key == GLFW_KEY_LEFT_ALT ? GLFW_MOD_ALT : 0;
+	if (Key == GLFW_KEY_LEFT_CONTROL)
+		return GLFW_MOD_CONTROL;
+	if (Key == GLFW_KEY_LEFT_SHIFT)
+		return GLFW_MOD_SHIFT;
+	if (Key == GLFW_KEY_LEFT_ALT)
+		return GLFW_MOD_ALT;
+	return 0;
+}
+
+int button_named(std::string const &Name)
+{
+	if (Name == "right")
+		return GLFW_MOUSE_BUTTON_RIGHT;
+	if (Name == "middle")
+		return GLFW_MOUSE_BUTTON_MIDDLE;
+	return GLFW_MOUSE_BUTTON_LEFT;
+}
+
+// how many bytes follow the lead one of a utf-8 sequence
+int utf8_followers(std::byte const Lead)
+{
+	if (Lead >= std::byte{0xF0})
+		return 3;
+	if (Lead >= std::byte{0xE0})
+		return 2;
+	if (Lead >= std::byte{0xC0})
+		return 1;
+	return 0;
+}
+
+// the code points of a utf-8 text, a sequence the end cuts short taken as far as it goes
+std::vector<unsigned int> code_points(std::string const &Text)
+{
+	std::vector<unsigned int> codes;
+	for (std::size_t index = 0; index < Text.size();)
+	{
+		auto const lead{std::byte{static_cast<unsigned char>(Text[index])}};
+		auto const extra{utf8_followers(lead)};
+		auto code{std::to_integer<unsigned int>(extra == 0 ? lead : lead & (std::byte{0x3F} >> extra))};
+		for (int k = 1; k <= extra && index + k < Text.size(); ++k)
+			code = (code << 6) | std::to_integer<unsigned int>(std::byte{static_cast<unsigned char>(Text[index + k])} & std::byte{0x3F});
+		codes.push_back(code);
+		index += extra + 1;
+	}
+	return codes;
+}
+
+// the steps of a script file, its empty lines and its comments left out
+void read_steps(char const *File, std::vector<std::string> &Steps)
+{
+	std::ifstream stream(File);
+	std::string line;
+	while (std::getline(stream, line))
+		if (false == line.empty() && line.front() != '#')
+			Steps.push_back(line);
 }
 
 void modifiers(int const Mods)
@@ -56,7 +113,7 @@ void modifiers(int const Mods)
 
 } // namespace
 
-char const *selftest_script(char const *Variable)
+char const *selftest_script([[maybe_unused]] char const *Variable)
 {
 #if WITH_EDITOR_SELFTESTS
 	return std::getenv(Variable);
@@ -75,8 +132,8 @@ void scripted_input::deliver()
 {
 	auto const events{std::move(m_events)};
 	m_events.clear();
-	for (auto const &event : events)
-		event();
+	for (auto const &pending : events)
+		pending();
 }
 
 void scripted_input::mouse_to(glm::dvec2 const &Screen)
@@ -114,7 +171,7 @@ bool scripted_input::dispatch(std::string const &Command, std::istringstream &Wo
 		std::string which;
 		std::string action;
 		Words >> which >> action;
-		auto const button{which == "right" ? GLFW_MOUSE_BUTTON_RIGHT : which == "middle" ? GLFW_MOUSE_BUTTON_MIDDLE : GLFW_MOUSE_BUTTON_LEFT};
+		auto const button{button_named(which)};
 		auto const state{action == "release" ? GLFW_RELEASE : GLFW_PRESS};
 		queue([button, state, mods = m_mods]() {
 			Application.on_mouse_button(button, state, mods);
@@ -164,16 +221,8 @@ bool scripted_input::dispatch(std::string const &Command, std::istringstream &Wo
 	{
 		std::string text;
 		std::getline(Words >> std::ws, text);
-		for (std::size_t index = 0; index < text.size();)
-		{
-			auto const lead{static_cast<unsigned char>(text[index])};
-			auto const extra{lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : 0};
-			unsigned int code{extra == 0 ? lead : lead & (0x3Fu >> extra)};
-			for (int k = 1; k <= extra && index + k < text.size(); ++k)
-				code = (code << 6) | (static_cast<unsigned char>(text[index + k]) & 0x3Fu);
+		for (auto const code : code_points(text))
 			queue([code]() { Application.on_char(code); });
-			index += extra + 1;
-		}
 		return true;
 	}
 	if (Command == "softcursor")
@@ -194,12 +243,8 @@ void input_script::step()
 		auto const *file{selftest_script(m_variable)};
 		if (file == nullptr)
 			return;
-		std::ifstream stream(file);
-		std::string line;
-		while (std::getline(stream, line))
-			if (false == line.empty() && line.front() != '#')
-				m_lines.push_back(line);
-		WriteLog("SELFTEST: " + std::to_string(m_lines.size()) + " steps from " + file);
+		read_steps(file, m_lines);
+		WriteLog(std::format("SELFTEST: {} steps from {}", m_lines.size(), file));
 	}
 	if (m_wait > 0)
 	{

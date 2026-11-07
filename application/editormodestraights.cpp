@@ -31,6 +31,8 @@ http:
 
 #include "imgui/imgui.h"
 #include "imgui/ImGuizmo.h"
+#include <format>
+#include <ranges>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -44,161 +46,578 @@ http:
 
 using namespace track_mode;
 
+namespace
+{
+
+// whether a straight runs within 3 km of the camera
+bool straight_nearby(editor_track::straight const &Line, glm::dvec3 const &Camera)
+{
+	auto const offset{Camera - Line.start};
+	auto const along{std::clamp(glm::dot(plan_of(offset), Line.direction), 0.0, Line.length)};
+	auto const closest{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * along};
+	return plan_distance(closest, Camera) < 3000.0;
+}
+
+// a straight over the view, with dots at its ends
+void draw_straight(screen_projection const &Projection, ImDrawList *Drawlist, editor_track::straight const &Line, ImU32 const Color, float const Thickness)
+{
+	if (Line.tracks.empty())
+		return;
+	Projection.line(Drawlist, Line.start, Line.end, Color, Thickness);
+	for (auto const &point : {Line.start, Line.end})
+	{
+		ImVec2 screen;
+		if (Projection.project(point, screen))
+			Drawlist->AddCircleFilled(screen, Thickness + 2.0f, Color);
+	}
+}
+
+// the straights recognized in the scenery near the camera, the one picked in the list lit
+void draw_found_straights(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<editor_track::straight> const &Found, int const Listed, glm::dvec3 const &Camera)
+{
+	for (int i = 0; i < static_cast<int>(Found.size()); ++i)
+	{
+		auto const &line{Found[i]};
+		if (false == straight_nearby(line, Camera))
+			continue;
+		auto const listed{i == Listed};
+		draw_straight(Projection, Drawlist, line, listed ? overlay_color::selected : IM_COL32(255, 255, 255, 110), listed ? 4.0f : 2.0f);
+	}
+}
+
+// the break of the straight being placed: the rest of it turned toward the handle
+void draw_break_preview(screen_projection const &Projection, ImDrawList *Drawlist, editor_track::straight const &Line, double const At, glm::dvec3 const &Point, glm::dvec3 const &Handle)
+{
+	if (auto const direction{plan_of(Handle - Point)}; glm::length(direction) > 1e-3)
+	{
+		auto const unit{glm::normalize(direction)};
+		auto const rest{std::max(0.0, Line.length - At)};
+		Projection.line(Drawlist, Point, Point + glm::dvec3{unit.x, Line.grade, unit.y} * rest, overlay_color::marked, 3.0f);
+	}
+}
+
+// the shift of a piece of the straight being placed: sideways out to the handle, and on to the end
+void draw_shift_preview(screen_projection const &Projection, ImDrawList *Drawlist, editor_track::straight const &Line, glm::dvec3 const &Point, glm::dvec3 const &Handle)
+{
+	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
+	auto const offset{plan_of(Handle - Point)};
+	auto const shift{glm::dot(offset, normal)};
+	auto const length{glm::dot(offset, Line.direction)};
+	auto const shifted{glm::dvec3{normal.x, 0.0, normal.y} * shift};
+	auto const along{glm::dvec3{Line.direction.x, 0.0, Line.direction.y}};
+	Projection.line(Drawlist, Point, Point + along * length + shifted, IM_COL32(255, 210, 60, 160), 2.0f);
+	Projection.line(Drawlist, Point + along * length + shifted, Line.end + shifted, overlay_color::marked, 3.0f);
+}
+
+// the point and the handle of the tool of the straight being placed, with what the tool makes
+void draw_straight_tool(screen_projection const &Projection, ImDrawList *Drawlist, int const Tool, editor_track::straight const &Line, double const At, glm::dvec3 const &Point, glm::dvec3 const &Handle)
+{
+	ImVec2 screen;
+	if (Projection.project(Point, screen))
+		Drawlist->AddCircleFilled(screen, 7.0f, overlay_color::invalid);
+	if (Projection.project(Handle, screen))
+		Drawlist->AddCircleFilled(screen, 7.0f, overlay_color::marked);
+	if (Tool == 1)
+		draw_break_preview(Projection, Drawlist, Line, At, Point, Handle);
+	else
+		draw_shift_preview(Projection, Drawlist, Line, Point, Handle);
+}
+
+// the route fitted between the curves around the straight as it's dragged
+void draw_fitted_route(screen_projection const &Projection, ImDrawList *Drawlist, alignment::result const &Result)
+{
+	if (Result.length <= 0.0 || Result.profile.size() < 2)
+		return;
+	int const steps{std::clamp(static_cast<int>(Result.length / 2.0), 2, 2000)};
+	auto previous{alignment::evaluate(Result, 0.0).position};
+	for (int i = 1; i <= steps; ++i)
+	{
+		auto const next{alignment::evaluate(Result, Result.length * i / steps).position};
+		Projection.line(Drawlist, previous, next, Result.valid ? overlay_color::marked : overlay_color::invalid, 3.0f);
+		previous = next;
+	}
+}
+
+// the paths of the straights dragged, as they lie
+void draw_dragged_paths(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<editor_track::straight> const &Lines)
+{
+	for (auto const &member : Lines)
+	{
+		for (auto const *track : member.tracks)
+		{
+			auto const &path{track->m_paths.front()};
+			Projection.line(Drawlist, path.points[segment_data::point::start], path.points[segment_data::point::end], overlay_color::marked, 3.0f);
+		}
+	}
+}
+
+// the handles of the straight: squares at its ends, a diamond in the middle, the one held ringed
+void draw_straight_handles(screen_projection const &Projection, ImDrawList *Drawlist, editor_track::straight const &Line, int const Handle)
+{
+	std::array<glm::dvec3, 3> const handles{Line.start, Line.end, (Line.start + Line.end) * 0.5};
+	for (int i = 0; i < 3; ++i)
+	{
+		ImVec2 screen;
+		if (false == Projection.project(handles[i], screen))
+			continue;
+		if (i < 2)
+			Drawlist->AddRectFilled(ImVec2(screen.x - 6.0f, screen.y - 6.0f), ImVec2(screen.x + 6.0f, screen.y + 6.0f), overlay_color::selected);
+		else
+			Drawlist->AddCircleFilled(screen, 6.0f, overlay_color::selected, 4);
+		if (i == Handle)
+			Drawlist->AddCircle(screen, 12.0f, overlay_color::highlight, 16, 2.5f);
+	}
+}
+
+// the straight moved over to lie between the ends of the preview of a drag
+void drag_to(editor_track::straight &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
+{
+	Line.start = Start;
+	Line.end = End;
+	auto const planar{plan_of(Line.end - Line.start)};
+	auto const length{glm::length(planar)};
+	if (length > 1e-6)
+	{
+		Line.direction = planar / length;
+		Line.length = length;
+	}
+}
+
+// how a neighbouring straight is offered for a parallel snap: lit as the one offered, snapping, at which spacing listed, at what angle to it
+struct neighbour_hint
+{
+	bool highlighted{false};
+	bool snaps{false};
+	double spacing{0.0};
+	double angle{0.0};
+};
+
+ImU32 neighbour_tick_colour(neighbour_hint const &Hint)
+{
+	if (false == Hint.highlighted)
+		return IM_COL32(255, 230, 120, 230);
+	return Hint.snaps ? IM_COL32(80, 230, 255, 255) : IM_COL32(255, 210, 60, 255);
+}
+
+// the distance to a neighbouring straight Lateral off, and the angle between them, as written at the tick to it
+std::string neighbour_label(neighbour_hint const &Hint, double const Lateral, double const Angle)
+{
+	if (Hint.highlighted)
+	{
+		if (Hint.snaps)
+			return format(STR_C("parallel  %.2f m"), Hint.spacing);
+		return format("%.2f -> %.2f m  %.1f°", std::abs(Lateral), Hint.spacing, Hint.angle);
+	}
+	if (Angle > 0.05)
+		return format("%.2f m  %.1f°", std::abs(Lateral), Angle);
+	return format("%.2f m", std::abs(Lateral));
+}
+
+// a tick across from the line to a neighbouring straight where they run side by side, with the distance and the angle written at it
+void draw_neighbour_tick(screen_projection const &Projection, ImDrawList *Drawlist, editor_track::straight const &Line, editor_track::straight const &Other, neighbour_hint const &Hint)
+{
+	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
+	auto const across = [&Line, &normal](glm::dvec3 const &Point) { return glm::dot(plan_of(Point - Line.start), normal); };
+	auto const a0{Line.along(Other.start)};
+	auto const a1{Line.along(Other.end)};
+	auto const from{std::max(0.0, std::min(a0, a1))};
+	auto const to{std::min(Line.length, std::max(a0, a1))};
+	if (to <= from)
+		return;
+	auto const middle{(from + to) * 0.5};
+	auto const fraction{std::abs(a1 - a0) > 1e-6 ? (middle - a0) / (a1 - a0) : 0.0};
+	auto const lateral{across(Other.start) + (across(Other.end) - across(Other.start)) * fraction};
+	glm::dvec3 const foot{Line.start.x + Line.direction.x * middle, Line.start.y + Line.grade * middle, Line.start.z + Line.direction.y * middle};
+	glm::dvec3 const target{foot.x + normal.x * lateral, foot.y, foot.z + normal.y * lateral};
+	auto const tick{neighbour_tick_colour(Hint)};
+	if (Hint.highlighted)
+		Projection.line(Drawlist, Other.start, Other.end, tick, 3.0f);
+	Projection.line(Drawlist, foot, target, tick, Hint.highlighted ? 3.0f : 1.5f);
+	ImVec2 screen;
+	if (false == Projection.project((foot + target) * 0.5, screen))
+		return;
+	auto const angle{glm::degrees(std::abs(std::asin(std::clamp(Line.direction.x * Other.direction.y - Line.direction.y * Other.direction.x, -1.0, 1.0))))};
+	auto const text{neighbour_label(Hint, lateral, angle)};
+	auto const *label{text.c_str()};
+	auto const size{ImGui::CalcTextSize(label)};
+	Drawlist->AddRectFilled(ImVec2(screen.x - 4.0f, screen.y - 2.0f), ImVec2(screen.x + size.x + 4.0f, screen.y + size.y + 2.0f), IM_COL32(0, 0, 0, 190), 3.0f);
+	Drawlist->AddText(screen, Hint.highlighted ? tick : IM_COL32(255, 230, 120, 255), label);
+}
+
+// whether the other straight misses the line: past its start or its end
+bool misses_along(editor_track::straight const &Line, editor_track::straight const &Other)
+{
+	auto const a0{Line.along(Other.start)};
+	auto const a1{Line.along(Other.end)};
+	return std::max(a0, a1) <= 0.0 || std::min(a0, a1) >= Line.length;
+}
+
+// the straight of a track put among the neighbours of the line where it runs alongside it near enough; its paths are looked at once
+void add_neighbour(std::vector<editor_track::straight> &Neighbours, std::vector<TTrack const *> &Visited, editor_track::straight const &Line, TTrack *Track, editor_track::straight_tolerance const &Tolerance)
+{
+	if (std::ranges::find(Visited, Track) != Visited.end() || false == editor_track::is_straight(*Track, Tolerance))
+		return;
+	auto other{editor_track::find_straight(*Track, Tolerance)};
+	Visited.insert(Visited.end(), other.tracks.begin(), other.tracks.end());
+	if (other.tracks.empty() || std::abs(Line.direction.x * other.direction.y - Line.direction.y * other.direction.x) > std::sin(glm::radians(kParallelFindAngle)))
+		return;
+	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
+	if (auto const offset{glm::dvec2{(other.start + other.end).x * 0.5 - Line.start.x, (other.start + other.end).z * 0.5 - Line.start.z}}; std::abs(glm::dot(offset, normal)) > 60.0)
+		return;
+	if (misses_along(Line, other))
+		return;
+	Neighbours.push_back(std::move(other));
+}
+
+// a point of a tile from Low to High, X of the way across and Y down
+ImVec2 tile_point(ImVec2 const Low, ImVec2 const High, float const X, float const Y)
+{
+	return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y);
+}
+
+// the sketch of the break: the rest of the straight turned off from a point
+void sketch_break(ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made)
+{
+	List.AddLine(tile_point(Low, High, 0.0f, 0.8f), tile_point(Low, High, 1.0f, 0.8f), (Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60), 1.0f);
+	List.AddLine(tile_point(Low, High, 0.0f, 0.8f), tile_point(Low, High, 0.4f, 0.8f), Line, 2.0f);
+	List.AddBezierQuadratic(tile_point(Low, High, 0.4f, 0.8f), tile_point(Low, High, 0.62f, 0.8f), tile_point(Low, High, 1.0f, 0.1f), Made, 2.0f);
+}
+
+// the sketch of the S-curve: a piece of the straight shifted sideways around an obstacle and back
+void sketch_scurve(ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made)
+{
+	List.AddLine(tile_point(Low, High, 0.0f, 0.8f), tile_point(Low, High, 1.0f, 0.8f), (Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60), 1.0f);
+	List.AddLine(tile_point(Low, High, 0.0f, 0.8f), tile_point(Low, High, 0.15f, 0.8f), Line, 2.0f);
+	List.AddBezierCubic(tile_point(Low, High, 0.15f, 0.8f), tile_point(Low, High, 0.3f, 0.8f), tile_point(Low, High, 0.25f, 0.2f), tile_point(Low, High, 0.42f, 0.2f), Made, 2.0f);
+	List.AddLine(tile_point(Low, High, 0.42f, 0.2f), tile_point(Low, High, 0.58f, 0.2f), Made, 2.0f);
+	List.AddBezierCubic(tile_point(Low, High, 0.58f, 0.2f), tile_point(Low, High, 0.75f, 0.2f), tile_point(Low, High, 0.7f, 0.8f), tile_point(Low, High, 0.85f, 0.8f), Made, 2.0f);
+	List.AddLine(tile_point(Low, High, 0.85f, 0.8f), tile_point(Low, High, 1.0f, 0.8f), Line, 2.0f);
+	List.AddCircleFilled(tile_point(Low, High, 0.5f, 0.8f), 2.5f, IM_COL32(230, 90, 70, 255));
+}
+
+// the sketch of the group: two straights moving together
+void sketch_group(ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made)
+{
+	List.AddLine(tile_point(Low, High, 0.0f, 0.2f), tile_point(Low, High, 1.0f, 0.2f), Line, 2.0f);
+	List.AddLine(tile_point(Low, High, 0.0f, 0.8f), tile_point(Low, High, 1.0f, 0.8f), Line, 2.0f);
+	for (auto const x : {0.3f, 0.7f})
+	{
+		List.AddLine(tile_point(Low, High, x, 0.32f), tile_point(Low, High, x, 0.68f), Made, 1.5f);
+		List.AddTriangleFilled(tile_point(Low, High, x - 0.08f, 0.38f), tile_point(Low, High, x + 0.08f, 0.38f), tile_point(Low, High, x, 0.26f), Made);
+		List.AddTriangleFilled(tile_point(Low, High, x - 0.08f, 0.62f), tile_point(Low, High, x + 0.08f, 0.62f), tile_point(Low, High, x, 0.74f), Made);
+	}
+}
+
+// the radius of the curves the break and the S-curve make, and the lengths of their transition curves
+void render_curve_settings(double &Radius, bool &Automatic, double &Transition)
+{
+	ImGui::TextDisabled("%s", STR_C("Curve R (m, 0: automatic)"));
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	ImGui::InputDouble("##straightcurve", &Radius, 10.0, 100.0, "%.0f");
+	Radius = std::max(0.0, Radius);
+	item_tooltip("Radius of the curves made by the break and the S-curve; automatic: 1.5 times the minimum radius for the speed of the line");
+	value_chips("straightcurves", Radius, {0.0, 300.0, 600.0, 1000.0, 2000.0}, "%.0f");
+	ImGui::TextDisabled("%s", STR_C("Transition curves"));
+	if (int transitions{Automatic ? 0 : 1}; segmented("straighttransitions", transitions,
+	                                                  {{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
+	                                                   {1, STR_C("Given length"), "The same length of the transition curves at every curve"}}))
+		Automatic = transitions == 0;
+	if (false == Automatic)
+	{
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::InputDouble("##straighttransition", &Transition, 1.0, 10.0, "%.1f m");
+		Transition = std::max(0.0, Transition);
+	}
+}
+
+// the straights of a group sharing a path with the line taken out of it
+void leave_straight_set(std::vector<editor_track::straight> &Set, editor_track::straight const &Line)
+{
+	std::erase_if(Set, [&Line](editor_track::straight const &Member) { return std::ranges::any_of(Line.tracks, [&Member](TTrack const *Track) { return std::ranges::find(Member.tracks, Track) != Member.tracks.end(); }); });
+}
+
+// whether the ends a straight is given can't be laid: not numbers, or too near or too far apart
+bool unlaid_ends(std::pair<glm::dvec3, glm::dvec3> const &End)
+{
+	auto const finite = [](glm::dvec3 const &Point) { return std::isfinite(Point.x) && std::isfinite(Point.y) && std::isfinite(Point.z); };
+	return false == finite(End.first) || false == finite(End.second) || false == (glm::distance(End.first, End.second) >= 0.1 && glm::distance(End.first, End.second) <= 100000.0);
+}
+
+// the moved end of the straight put the typed length away from the pivot, the way it was dragged, or the way it lay where that tells none
+glm::dvec3 typed_reach(glm::dvec3 const &Pivot, glm::dvec3 const &Original, glm::dvec3 Moved, double const Length)
+{
+	glm::dvec2 heading{Moved.x - Pivot.x, Moved.z - Pivot.z};
+	if (glm::length(heading) < 1e-6)
+		heading = {Original.x - Pivot.x, Original.z - Pivot.z};
+	heading = glm::normalize(heading) * Length;
+	Moved.x = Pivot.x + heading.x;
+	Moved.z = Pivot.z + heading.y;
+	return Moved;
+}
+
+// the paths turned and stretched about the pivot as the end of the straight goes from Original over to Moved, the grade going with it
+std::function<glm::dvec3(glm::dvec3 const &)> turn_about(glm::dvec3 const &Pivot, glm::dvec3 const &Original, glm::dvec3 const &Moved)
+{
+	glm::dvec2 const before{Original.x - Pivot.x, Original.z - Pivot.z};
+	glm::dvec2 const after{Moved.x - Pivot.x, Moved.z - Pivot.z};
+	auto const lengthbefore{glm::length(before)};
+	auto const lengthafter{std::max(0.1, glm::length(after))};
+	auto const axis{before / std::max(1e-9, lengthbefore)};
+	auto const newaxis{after / lengthafter};
+	auto const scale{lengthafter / std::max(1e-9, lengthbefore)};
+	auto const rise{Moved.y - Original.y};
+	return [pivot = Pivot, axis, newaxis, scale, rise, lengthbefore](glm::dvec3 const &Point) {
+		glm::dvec2 const offset{Point.x - pivot.x, Point.z - pivot.z};
+		auto const along{glm::dot(offset, axis)};
+		auto const across{axis.x * offset.y - axis.y * offset.x};
+		auto const planar{plan_of(pivot) + newaxis * (along * scale) + glm::dvec2{-newaxis.y, newaxis.x} * across};
+		return glm::dvec3{planar.x, Point.y + rise * along / std::max(1e-9, lengthbefore), planar.y};
+	};
+}
+
+// a path of a straight, by where along the straight it lies
+struct straight_span
+{
+	TTrack *track;
+	int path;
+	double from;
+	double to;
+	bool forward;
+};
+
+// the paths of the straight by where along it they lie
+std::vector<straight_span> straight_spans(editor_track::straight const &Line)
+{
+	std::vector<straight_span> spans;
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		auto const a{Line.along(path.points[segment_data::point::start])};
+		auto const b{Line.along(path.points[segment_data::point::end])};
+		spans.emplace_back(Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b);
+	}
+	std::ranges::sort(spans, [](straight_span const &A, straight_span const &B) { return A.from < B.from; });
+	return spans;
+}
+
+// a run of the spans of a straight, the first and the last of them, -1 for none
+struct span_run
+{
+	int first{-1};
+	int last{-1};
+};
+
+// the plain track among the spans of the run nearest to the span Middle, -1 for none
+int nearest_plain(std::vector<straight_span> const &Spans, span_run const &Run, int const Middle)
+{
+	int best{-1};
+	for (int i = Run.first; i <= Run.last; ++i)
+		if (Spans[i].track->eType == tt_Normal && (best < 0 || std::abs(i - Middle) < std::abs(best - Middle)))
+			best = i;
+	return best;
+}
+
+// the run of the spans a reshape lays its curve over: of those from From to End, the plain tracks in a row around the one at Centre, or the
+// nearest plain one to it; none where none is plain
+span_run reshaped_run(std::vector<straight_span> const &Spans, double const From, double const End, double const Centre)
+{
+	span_run run;
+	for (int i = 0; i < static_cast<int>(Spans.size()); ++i)
+	{
+		if (Spans[i].to > From && Spans[i].from < End)
+		{
+			if (run.first < 0)
+				run.first = i;
+			run.last = i;
+		}
+	}
+	if (run.first < 0)
+		return run;
+	int middle{run.first};
+	for (int i = run.first; i <= run.last; ++i)
+		if (Spans[i].from <= Centre && Spans[i].to >= Centre)
+			middle = i;
+	if (Spans[middle].track->eType != tt_Normal)
+	{
+		middle = nearest_plain(Spans, run, middle);
+		if (middle < 0)
+			return {};
+	}
+	int low{middle};
+	int high{middle};
+	while (low > run.first && Spans[low - 1].track->eType == tt_Normal)
+		--low;
+	while (high < run.last && Spans[high + 1].track->eType == tt_Normal)
+		++high;
+	return {low, high};
+}
+
+// a point of the straight in the world, at a distance along it
+glm::dvec3 straight_point(editor_track::straight const &Line, double const Along)
+{
+	auto const planar{plan_of(Line.start) + Line.direction * Along};
+	return glm::dvec3{planar.x, Line.start.y + Line.grade * Along, planar.y};
+}
+
+// where the last path of the straight is split for a reshape reaching to To: past the stretch reshaped, or most of the way along where that
+// ends near its end
+double split_point(straight_span const &Span, double const To)
+{
+	auto const length{Span.to - Span.from};
+	return To < Span.to - 1.0 ? std::max(To, Span.from + std::min(1.0, length * 0.5)) : Span.from + length * 0.7;
+}
+
+// the path of a span laid again as two pieces split at Cut, the paths made
+std::vector<TTrack *> split_span(editor_track::straight const &Line, straight_span const &Span, double const Cut)
+{
+	editor_track::chain split;
+	split.tracks = {Span.track};
+	split.forward = {Span.forward};
+	std::vector<segment_data> pieces(2);
+	pieces[0].points[segment_data::point::start] = straight_point(Line, Span.from);
+	pieces[0].points[segment_data::point::end] = straight_point(Line, Cut);
+	pieces[1].points[segment_data::point::start] = straight_point(Line, Cut);
+	pieces[1].points[segment_data::point::end] = straight_point(Line, Span.to);
+	return editor_track::relay(split, pieces);
+}
+
+// the split of the last path of the straight taken back
+void undo_split(std::vector<TTrack *> const &Created, std::vector<std::pair<TTrack *, editor_track::state>> const &States)
+{
+	for (auto *track : Created)
+		editor_track::retire(*track);
+	for (auto const &[track, saved] : States)
+	{
+		editor_track::apply(*track, saved);
+		editor_track::commit({track});
+	}
+}
+
+// the paths of the straight past the run, as a straight of their own
+editor_track::straight straight_tail(editor_track::straight const &Line, std::vector<straight_span> const &Spans, int const Last)
+{
+	editor_track::straight tail;
+	tail.direction = Line.direction;
+	for (int i = Last + 1; i < static_cast<int>(Spans.size()); ++i)
+	{
+		tail.tracks.push_back(Spans[i].track);
+		tail.paths.push_back(Spans[i].path);
+	}
+	tail.start = straight_point(Line, Spans[Last + 1].from);
+	tail.end = Line.end;
+	tail.length = Line.length - Spans[Last + 1].from;
+	tail.grade = Line.grade;
+	return tail;
+}
+
+// the paths a reshape changes: those the tail moves, and those of the run the curve is laid over
+std::vector<TTrack *> reshaped_tracks(editor_track::straight const &Tail, std::vector<straight_span> const &Spans, span_run const &Run)
+{
+	std::vector<TTrack *> chainpaths;
+	for (int i = Run.first; i <= Run.last; ++i)
+		chainpaths.push_back(Spans[i].track);
+	auto tracks{editor_track::straight_affected({Tail})};
+	for (auto *track : chainpaths)
+		if (std::ranges::find(tracks, track) == tracks.end())
+			tracks.push_back(track);
+	return tracks;
+}
+
+// the paths put back as they were kept
+void restore_states(std::vector<std::pair<TTrack *, editor_track::state>> const &States, std::vector<TTrack *> const &Tracks)
+{
+	for (auto const &[track, saved] : States)
+		editor_track::apply(*track, saved);
+	editor_track::commit(Tracks);
+}
+
+// the states kept before the split go over those kept after it, for the paths in both
+void merge_split_states(std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<std::pair<TTrack *, editor_track::state>> const &Split)
+{
+	for (auto const &entry : Split)
+	{
+		if (auto const found{std::ranges::find_if(States, [&entry](auto const &State) { return State.first == entry.first; })}; found != States.end())
+			found->second = entry.second;
+		else
+			States.push_back(entry);
+	}
+}
+
+// where along the straight the four clicks of the S-curve lie, in order, kept on it and apart
+std::array<double, 4> detour_stations(editor_track::straight const &Line, std::vector<glm::dvec3> const &Detour)
+{
+	std::array<double, 4> stations{Line.along(Detour[0]), Line.along(Detour[1]), Line.along(Detour[2]), Line.along(Detour[3])};
+	if (stations[0] > stations[3])
+	{
+		std::swap(stations[0], stations[3]);
+		std::swap(stations[1], stations[2]);
+	}
+	for (auto &station : stations)
+		station = std::clamp(station, 0.0, Line.length);
+	stations[1] = std::clamp(stations[1], stations[0] + 1.0, stations[3] - 1.0);
+	stations[2] = std::clamp(stations[2], stations[1], stations[3] - 1.0);
+	return stations;
+}
+
+// the run of plain tracks the S-curve is laid over, from From to To; a path that isn't plain inside it before the last click starts it over
+span_run detour_run(std::vector<straight_span> const &Spans, double const From, double const To, double const Last)
+{
+	span_run run;
+	for (int i = 0; i < static_cast<int>(Spans.size()); ++i)
+	{
+		if (Spans[i].to > From && Spans[i].from < To && Spans[i].track->eType == tt_Normal)
+		{
+			if (run.first < 0)
+				run.first = i;
+			run.last = i;
+		}
+		else if (run.first >= 0 && Spans[i].from < To)
+		{
+			if (Spans[i].from > Last)
+				break;
+			run = {};
+		}
+	}
+	return run;
+}
+
+// whether the side of the straight toward a neighbour follows the drag: with a curve there to fit again, nothing there, or the end held still
+bool side_follows(bool const Curve, TTrack const *Neighbour, bool const Pivot)
+{
+	return Curve || Neighbour == nullptr || Pivot;
+}
+
+} // namespace
+
 void editor_mode::draw_straights_overlay() const
 {
 	screen_projection const projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	glm::dvec3 const camera{Global.pCamera.Pos};
-	auto const nearby = [&](editor_track::straight const &Line) {
-		auto const offset{camera - Line.start};
-		auto const along{std::clamp(glm::dot(plan_of(offset), Line.direction), 0.0, Line.length)};
-		auto const closest{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * along};
-		return plan_distance(closest, camera) < 3000.0;
-	};
-	auto const draw = [&](editor_track::straight const &Line, ImU32 const Color, float const Thickness) {
-		if (Line.tracks.empty())
-			return;
-		projection.line(drawlist, Line.start, Line.end, Color, Thickness);
-		for (auto const &point : {Line.start, Line.end})
-		{
-			ImVec2 screen;
-			if (projection.project(point, screen))
-				drawlist->AddCircleFilled(screen, Thickness + 2.0f, Color);
-		}
-	};
-	for (int i = 0; i < static_cast<int>(m_straights.found.size()); ++i)
-	{
-		auto const &line{m_straights.found[i]};
-		if (nearby(line))
-			draw(line, i == m_straights.listed ? overlay_color::selected : IM_COL32(255, 255, 255, 110), i == m_straights.listed ? 4.0f : 2.0f);
-	}
+	draw_found_straights(projection, drawlist, m_straights.found, m_straights.listed, camera);
 	for (auto const &member : m_straights.set)
-		draw(member, IM_COL32(255, 150, 30, 255), 4.0f);
-	draw(m_straights.current, overlay_color::selected, 4.0f);
+		draw_straight(projection, drawlist, member, IM_COL32(255, 150, 30, 255), 4.0f);
+	draw_straight(projection, drawlist, m_straights.current, overlay_color::selected, 4.0f);
 	if (m_straights.tool_placed)
-	{
-		auto const &state{m_straights};
-		auto const &line{state.tool_line};
-		ImVec2 screen;
-		if (projection.project(state.tool_point, screen))
-			drawlist->AddCircleFilled(screen, 7.0f, overlay_color::invalid);
-		if (projection.project(state.tool_handle, screen))
-			drawlist->AddCircleFilled(screen, 7.0f, overlay_color::marked);
-		if (state.tool == 1)
-		{
-			auto const direction{plan_of(state.tool_handle - state.tool_point)};
-			if (glm::length(direction) > 1e-3)
-			{
-				auto const unit{glm::normalize(direction)};
-				auto const rest{std::max(0.0, line.length - state.tool_at)};
-				projection.line(drawlist, state.tool_point, state.tool_point + glm::dvec3{unit.x, line.grade, unit.y} * rest, overlay_color::marked, 3.0f);
-			}
-		}
-		else
-		{
-			glm::dvec2 const normal{-line.direction.y, line.direction.x};
-			auto const offset{plan_of(state.tool_handle - state.tool_point)};
-			auto const shift{glm::dot(offset, normal)};
-			auto const length{glm::dot(offset, line.direction)};
-			auto const shifted{glm::dvec3{normal.x, 0.0, normal.y} * shift};
-			auto const along{glm::dvec3{line.direction.x, 0.0, line.direction.y}};
-			projection.line(drawlist, state.tool_point, state.tool_point + along * length + shifted, IM_COL32(255, 210, 60, 160), 2.0f);
-			projection.line(drawlist, state.tool_point + along * length + shifted, line.end + shifted, overlay_color::marked, 3.0f);
-		}
-	}
+		draw_straight_tool(projection, drawlist, m_straights.tool, m_straights.tool_line, m_straights.tool_at, m_straights.tool_point, m_straights.tool_handle);
 	if (m_straights.dragging && m_straights.fitting)
-	{
-		auto const &result{m_route.result};
-		if (result.length > 0.0 && result.profile.size() >= 2)
-		{
-			int const steps{std::clamp(static_cast<int>(result.length / 2.0), 2, 2000)};
-			auto previous{alignment::evaluate(result, 0.0).position};
-			for (int i = 1; i <= steps; ++i)
-			{
-				auto const next{alignment::evaluate(result, result.length * i / steps).position};
-				projection.line(drawlist, previous, next, result.valid ? overlay_color::marked : overlay_color::invalid, 3.0f);
-				previous = next;
-			}
-		}
-	}
+		draw_fitted_route(projection, drawlist, m_route.result);
 	else if (m_straights.dragging)
-	{
-		for (auto const &member : m_straights.drag_lines)
-		{
-			for (auto const *track : member.tracks)
-			{
-				auto const &path{track->m_paths.front()};
-				projection.line(drawlist, path.points[segment_data::point::start], path.points[segment_data::point::end], overlay_color::marked, 3.0f);
-			}
-		}
-	}
+		draw_dragged_paths(projection, drawlist, m_straights.drag_lines);
 	else if (false == m_straights.current.tracks.empty())
-	{
-		auto const &line{m_straights.current};
-		glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
-		for (int i = 0; i < 3; ++i)
-		{
-			ImVec2 screen;
-			if (false == projection.project(handles[i], screen))
-				continue;
-			if (i < 2)
-				drawlist->AddRectFilled(ImVec2(screen.x - 6.0f, screen.y - 6.0f), ImVec2(screen.x + 6.0f, screen.y + 6.0f), overlay_color::selected);
-			else
-				drawlist->AddCircleFilled(screen, 6.0f, overlay_color::selected, 4);
-			if (i == m_straights.handle)
-				drawlist->AddCircle(screen, 12.0f, overlay_color::highlight, 16, 2.5f);
-		}
-	}
+		draw_straight_handles(projection, drawlist, m_straights.current, m_straights.handle);
 	auto line{m_straights.dragging ? m_straights.drag_line : m_straights.current};
 	if (line.tracks.empty())
 		return;
 	glm::dvec3 const offset{m_straights.dragging ? m_straights.preview_start - m_straights.drag_line.start : glm::dvec3{}};
 	if (m_straights.dragging)
-	{
-		line.start = m_straights.preview_start;
-		line.end = m_straights.preview_end;
-		auto const planar{plan_of(line.end - line.start)};
-		auto const length{glm::length(planar)};
-		if (length > 1e-6)
-		{
-			line.direction = planar / length;
-			line.length = length;
-		}
-	}
+		drag_to(line, m_straights.preview_start, m_straights.preview_end);
 	auto const offer{straight_parallel_offer(m_straights.dragging ? m_straights.drag_line : m_straights.current, offset)};
-	glm::dvec2 const normal{-line.direction.y, line.direction.x};
 	for (auto const &other : m_straights.neighbours)
-	{
-		auto const across = [&](glm::dvec3 const &Point) { return glm::dot(plan_of(Point - line.start), normal); };
-		auto const a0{line.along(other.start)}, a1{line.along(other.end)};
-		auto const from{std::max(0.0, std::min(a0, a1))};
-		auto const to{std::min(line.length, std::max(a0, a1))};
-		if (to <= from)
-			continue;
-		auto const middle{(from + to) * 0.5};
-		auto const fraction{std::abs(a1 - a0) > 1e-6 ? (middle - a0) / (a1 - a0) : 0.0};
-		auto const lateral{across(other.start) + (across(other.end) - across(other.start)) * fraction};
-		glm::dvec3 const foot{line.start.x + line.direction.x * middle, line.start.y + line.grade * middle, line.start.z + line.direction.y * middle};
-		glm::dvec3 const target{foot.x + normal.x * lateral, foot.y, foot.z + normal.y * lateral};
-		bool const highlighted{offer.nearby && offer.neighbour == &other};
-		auto const tick{highlighted ? (offer.snaps ? IM_COL32(80, 230, 255, 255) : IM_COL32(255, 210, 60, 255)) : IM_COL32(255, 230, 120, 230)};
-		if (highlighted)
-			projection.line(drawlist, other.start, other.end, tick, 3.0f);
-		projection.line(drawlist, foot, target, tick, highlighted ? 3.0f : 1.5f);
-		ImVec2 screen;
-		if (projection.project((foot + target) * 0.5, screen))
-		{
-			auto const angle{glm::degrees(std::abs(std::asin(std::clamp(line.direction.x * other.direction.y - line.direction.y * other.direction.x, -1.0, 1.0))))};
-			auto const text{highlighted ? (offer.snaps ? format(STR_C("parallel  %.2f m"), offer.spacing) : format("%.2f -> %.2f m  %.1f°", std::abs(lateral), offer.spacing, offer.angle)) :
-			                             (angle > 0.05 ? format("%.2f m  %.1f°", std::abs(lateral), angle) : format("%.2f m", std::abs(lateral)))};
-			auto const *label{text.c_str()};
-			auto const size{ImGui::CalcTextSize(label)};
-			drawlist->AddRectFilled(ImVec2(screen.x - 4.0f, screen.y - 2.0f), ImVec2(screen.x + size.x + 4.0f, screen.y + size.y + 2.0f), IM_COL32(0, 0, 0, 190), 3.0f);
-			drawlist->AddText(screen, highlighted ? tick : IM_COL32(255, 230, 120, 255), label);
-		}
-	}
+		draw_neighbour_tick(projection, drawlist, line, other, {offer.nearby && offer.neighbour == &other, offer.snaps, offer.spacing, offer.angle});
 	if (offer.nearby && false == offer.snaps && std::abs(offer.correction) > 0.02)
 	{
+		glm::dvec2 const normal{-line.direction.y, line.direction.x};
 		auto const shift{glm::dvec3{normal.x, 0.0, normal.y} * offer.correction};
 		projection.line(drawlist, line.start + shift, line.end + shift, IM_COL32(80, 230, 255, 210), 3.5f);
 	}
@@ -211,33 +630,14 @@ void editor_mode::find_neighbour_straights()
 	auto const &line{state.current};
 	if (line.tracks.empty())
 		return;
-	glm::dvec2 const normal{-line.direction.y, line.direction.x};
 	auto const middle{(line.start + line.end) * 0.5};
 	std::vector<TTrack const *> visited(line.tracks.begin(), line.tracks.end());
-	auto const sections{simulation::Region->sections(middle, static_cast<float>(line.length * 0.5 + 60.0))};
-	for (auto *section : sections)
-	{
+	std::vector<scene::basic_section *> sections;
+	simulation::Region->sections(middle, static_cast<float>(line.length * 0.5 + 60.0), sections);
+	for (auto const *section : sections)
 		for (auto const &cell : section->m_cells)
-		{
 			for (auto *track : cell.m_paths)
-			{
-				if (std::find(visited.begin(), visited.end(), track) != visited.end() || false == editor_track::is_straight(*track, state.tolerance))
-					continue;
-				auto other{editor_track::find_straight(*track, state.tolerance)};
-				visited.insert(visited.end(), other.tracks.begin(), other.tracks.end());
-				if (other.tracks.empty() || std::abs(line.direction.x * other.direction.y - line.direction.y * other.direction.x) > std::sin(glm::radians(kParallelFindAngle)))
-					continue;
-				auto const offset{glm::dvec2{(other.start + other.end).x * 0.5 - line.start.x, (other.start + other.end).z * 0.5 - line.start.z}};
-				if (std::abs(glm::dot(offset, normal)) > 60.0)
-					continue;
-				auto const a0{line.along(other.start)};
-				auto const a1{line.along(other.end)};
-				if (std::max(a0, a1) <= 0.0 || std::min(a0, a1) >= line.length)
-					continue;
-				state.neighbours.push_back(std::move(other));
-			}
-		}
-	}
+				add_neighbour(state.neighbours, visited, line, track, state.tolerance);
 }
 
 editor_mode::parallel_offer editor_mode::straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const
@@ -290,8 +690,7 @@ glm::dvec3 editor_mode::snap_straight_direction(glm::dvec3 const &Pivot, glm::dv
 	auto const direction{offset / length};
 	for (auto const &other : m_straights.neighbours)
 	{
-		auto const sine{direction.x * other.direction.y - direction.y * other.direction.x};
-		if (std::abs(sine) > std::sin(glm::radians(kParallelSnapAngle)))
+		if (auto const sine{direction.x * other.direction.y - direction.y * other.direction.x}; std::abs(sine) > std::sin(glm::radians(kParallelSnapAngle)))
 			continue;
 		auto const aligned{other.direction * (glm::dot(direction, other.direction) < 0.0 ? -1.0 : 1.0)};
 		return {Pivot.x + aligned.x * length, Moved.y, Pivot.z + aligned.y * length};
@@ -349,9 +748,9 @@ void editor_mode::render_straights_ui()
 			auto const &line{state.found[i]};
 			if (line.tracks.empty())
 				continue;
-			if (state.filter[0] != '\0' && std::none_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return Track->name().find(state.filter) != std::string::npos; }))
+			if (state.filter[0] != '\0' && std::ranges::none_of(line.tracks, [&state](TTrack const *Track) { return Track->name().find(state.filter) != std::string::npos; }))
 				continue;
-			auto const label{std::to_string(i + 1) + ".  " + describe(line) + "##straight" + std::to_string(i)};
+			auto const label{std::format("{}.  {}##straight{}", i + 1, describe(line), i)};
 			if (ImGui::Selectable(label.c_str(), state.listed == i))
 			{
 				state.listed = i;
@@ -385,9 +784,9 @@ void editor_mode::render_straight_ui()
 	// what else can be done with the straight, as tiles with a sketch of it
 	auto const gap{std::round(ImGui::GetFontSize() * 0.3f)};
 	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f)};
-	auto const toolbutton = [&](char const *Label, int const Tool, char const *Tooltip, std::function<void(ImDrawList &, ImVec2, ImVec2, ImU32, ImU32)> const &Sketch) {
-		bool const active{state.tool == Tool};
-		if (sketch_tile(Label, Label, active, width, Sketch))
+	using sketch = void (*)(ImDrawList &, ImVec2, ImVec2, ImU32, ImU32);
+	auto const toolbutton = [&state, width](char const *Label, int const Tool, char const *Tooltip, sketch const Sketch) {
+		if (bool const active{state.tool == Tool}; sketch_tile(Label, Label, active, width, Sketch))
 		{
 			state.tool = active ? 0 : Tool;
 			state.tool_placed = false;
@@ -395,63 +794,20 @@ void editor_mode::render_straight_ui()
 		}
 		item_tooltip(Tooltip);
 	};
-	auto const at = [](ImVec2 const Low, ImVec2 const High, float const X, float const Y) { return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y); };
-	toolbutton(STR_C("Break"), 1, STR_C("Turns the rest of the straight from a point, a curve goes at the break (Ctrl+drag in the view does the same)"), [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
-		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 1.0f, 0.8f), (Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60), 1.0f);
-		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 0.4f, 0.8f), Line, 2.0f);
-		List.AddBezierQuadratic(at(Low, High, 0.4f, 0.8f), at(Low, High, 0.62f, 0.8f), at(Low, High, 1.0f, 0.1f), Made, 2.0f);
-	});
+	toolbutton(STR_C("Break"), 1, STR_C("Turns the rest of the straight from a point, a curve goes at the break (Ctrl+drag in the view does the same)"), sketch_break);
 	ImGui::SameLine(0.0f, gap);
-	toolbutton(STR_C("S-curve"), 2, STR_C("Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"), [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
-		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 1.0f, 0.8f), (Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60), 1.0f);
-		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 0.15f, 0.8f), Line, 2.0f);
-		List.AddBezierCubic(at(Low, High, 0.15f, 0.8f), at(Low, High, 0.3f, 0.8f), at(Low, High, 0.25f, 0.2f), at(Low, High, 0.42f, 0.2f), Made, 2.0f);
-		List.AddLine(at(Low, High, 0.42f, 0.2f), at(Low, High, 0.58f, 0.2f), Made, 2.0f);
-		List.AddBezierCubic(at(Low, High, 0.58f, 0.2f), at(Low, High, 0.75f, 0.2f), at(Low, High, 0.7f, 0.8f), at(Low, High, 0.85f, 0.8f), Made, 2.0f);
-		List.AddLine(at(Low, High, 0.85f, 0.8f), at(Low, High, 1.0f, 0.8f), Line, 2.0f);
-		List.AddCircleFilled(at(Low, High, 0.5f, 0.8f), 2.5f, IM_COL32(230, 90, 70, 255));
-	});
+	toolbutton(STR_C("S-curve"), 2, STR_C("Shifts a piece of the straight sideways around an obstacle and back: four clicks on the straight (Shift+click in the view does the same)"), sketch_scurve);
 	ImGui::SameLine(0.0f, gap);
-	bool const member{in_straight_set(line)};
-	auto const grouped{sketch_tile("##group", member ? STR_C("Leave the group") : STR_C("Move with others"), member, width, [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
-		List.AddLine(at(Low, High, 0.0f, 0.2f), at(Low, High, 1.0f, 0.2f), Line, 2.0f);
-		List.AddLine(at(Low, High, 0.0f, 0.8f), at(Low, High, 1.0f, 0.8f), Line, 2.0f);
-		for (auto const x : {0.3f, 0.7f})
-		{
-			List.AddLine(at(Low, High, x, 0.32f), at(Low, High, x, 0.68f), Made, 1.5f);
-			List.AddTriangleFilled(at(Low, High, x - 0.08f, 0.38f), at(Low, High, x + 0.08f, 0.38f), at(Low, High, x, 0.26f), Made);
-			List.AddTriangleFilled(at(Low, High, x - 0.08f, 0.62f), at(Low, High, x + 0.08f, 0.62f), at(Low, High, x, 0.74f), Made);
-		}
-	})};
-	if (grouped)
+	if (bool const member{in_straight_set(line)}; sketch_tile("##group", member ? STR_C("Leave the group") : STR_C("Move with others"), member, width, sketch_group))
 	{
 		if (member)
-			state.set.erase(std::remove_if(state.set.begin(), state.set.end(), [&](editor_track::straight const &Member) { return std::any_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Track) { return std::find(Member.tracks.begin(), Member.tracks.end(), Track) != Member.tracks.end(); }); }), state.set.end());
+			leave_straight_set(state.set, line);
 		else
 			state.set.push_back(line);
 	}
 	item_tooltip("Straights of a group move together and stay parallel; Alt+click in the view adds another one");
 	if (state.tool != 0)
-	{
-		ImGui::TextDisabled("%s", STR_C("Curve R (m, 0: automatic)"));
-		ImGui::SetNextItemWidth(-FLT_MIN);
-		ImGui::InputDouble("##straightcurve", &state.curve_radius, 10.0, 100.0, "%.0f");
-		state.curve_radius = std::max(0.0, state.curve_radius);
-		item_tooltip("Radius of the curves made by the break and the S-curve; automatic: 1.5 times the minimum radius for the speed of the line");
-		value_chips("straightcurves", state.curve_radius, {0.0, 300.0, 600.0, 1000.0, 2000.0}, "%.0f");
-		ImGui::TextDisabled("%s", STR_C("Transition curves"));
-		int transitions{state.auto_transitions ? 0 : 1};
-		if (segmented("straighttransitions", transitions,
-		              {{0, STR_C("From the line speed"), "Lengths of the transition curves from the speed of the paths and the limits of the curve design"},
-		               {1, STR_C("Given length"), "The same length of the transition curves at every curve"}}))
-			state.auto_transitions = transitions == 0;
-		if (false == state.auto_transitions)
-		{
-			ImGui::SetNextItemWidth(-FLT_MIN);
-			ImGui::InputDouble("##straighttransition", &state.transition, 1.0, 10.0, "%.1f m");
-			state.transition = std::max(0.0, state.transition);
-		}
-	}
+		render_curve_settings(state.curve_radius, state.auto_transitions, state.transition);
 	if (false == state.status.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", state.status.c_str());
 	if (false == state.set.empty())
@@ -470,41 +826,44 @@ void editor_mode::render_straight_ui()
 		state.edit_azimuth = line.azimuth;
 	}
 	if (ImGui::CollapsingHeader(STR_C("Exact values")))
+		render_straight_exact(line);
+}
+
+void editor_mode::render_straight_exact(editor_track::straight const &Line)
+{
+	auto &state{m_straights};
+	if (begin_fields("##straightexact", 0.3f))
 	{
-		if (begin_fields("##straightexact", 0.3f))
-		{
-			field_row("Start (x, y, z)");
-			ImGui::InputScalarN("##straightstart", ImGuiDataType_Double, glm::value_ptr(state.edit_start), 3, nullptr, nullptr, "%.3f");
-			field_row("End (x, y, z)");
-			ImGui::InputScalarN("##straightend", ImGuiDataType_Double, glm::value_ptr(state.edit_end), 3, nullptr, nullptr, "%.3f");
-			ImGui::EndTable();
-		}
-		if (ImGui::Button(STR_C("Apply ends"), ImVec2(-FLT_MIN, 0.0f)))
-			straight_apply(line, state.edit_start, state.edit_end);
-		if (begin_fields("##straightmeasures", 0.3f))
-		{
-			field_row("Length (m)");
-			ImGui::InputDouble("##straightlength", &state.edit_length, 0.0, 0.0, "%.3f");
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(1);
-			if (ImGui::Button(STR_C("Set from the start##length"), ImVec2(-FLT_MIN, 0.0f)))
-			{
-				glm::dvec3 const direction{line.direction.x, line.grade, line.direction.y};
-				straight_apply(line, line.start, line.start + direction * std::max(0.1, state.edit_length));
-			}
-			field_row("Azimuth (deg)");
-			ImGui::InputDouble("##straightazimuth", &state.edit_azimuth, 0.0, 0.0, "%.5f");
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(1);
-			if (ImGui::Button(STR_C("Turn around the start"), ImVec2(-FLT_MIN, 0.0f)))
-			{
-				auto const azimuth{glm::radians(state.edit_azimuth)};
-				glm::dvec3 const direction{std::sin(azimuth), line.grade, std::cos(azimuth)};
-				straight_apply(line, line.start, line.start + direction * line.length);
-			}
-			ImGui::EndTable();
-		}
+		field_row("Start (x, y, z)");
+		ImGui::InputScalarN("##straightstart", ImGuiDataType_Double, glm::value_ptr(state.edit_start), 3, nullptr, nullptr, "%.3f");
+		field_row("End (x, y, z)");
+		ImGui::InputScalarN("##straightend", ImGuiDataType_Double, glm::value_ptr(state.edit_end), 3, nullptr, nullptr, "%.3f");
+		ImGui::EndTable();
 	}
+	if (ImGui::Button(STR_C("Apply ends"), ImVec2(-FLT_MIN, 0.0f)))
+		straight_apply(Line, state.edit_start, state.edit_end);
+	if (false == begin_fields("##straightmeasures", 0.3f))
+		return;
+	field_row("Length (m)");
+	ImGui::InputDouble("##straightlength", &state.edit_length, 0.0, 0.0, "%.3f");
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(1);
+	if (ImGui::Button(STR_C("Set from the start##length"), ImVec2(-FLT_MIN, 0.0f)))
+	{
+		glm::dvec3 const direction{Line.direction.x, Line.grade, Line.direction.y};
+		straight_apply(Line, Line.start, Line.start + direction * std::max(0.1, state.edit_length));
+	}
+	field_row("Azimuth (deg)");
+	ImGui::InputDouble("##straightazimuth", &state.edit_azimuth, 0.0, 0.0, "%.5f");
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(1);
+	if (ImGui::Button(STR_C("Turn around the start"), ImVec2(-FLT_MIN, 0.0f)))
+	{
+		auto const azimuth{glm::radians(state.edit_azimuth)};
+		glm::dvec3 const direction{std::sin(azimuth), Line.grade, std::cos(azimuth)};
+		straight_apply(Line, Line.start, Line.start + direction * Line.length);
+	}
+	ImGui::EndTable();
 }
 
 bool editor_mode::straights_active()
@@ -517,7 +876,7 @@ int editor_mode::straight_handle_hit()
 	if (false == straights_active())
 		return -1;
 	auto const &line{current_straight()};
-	glm::dvec3 const handles[] = {line.start, line.end, (line.start + line.end) * 0.5};
+	std::array<glm::dvec3, 3> const handles{line.start, line.end, (line.start + line.end) * 0.5};
 	screen_projection const projection;
 	float best = kHandleRadius * kHandleRadius;
 	int hit{-1};
@@ -550,7 +909,7 @@ bool editor_mode::in_straight_set(editor_track::straight const &Line) const
 {
 	for (auto const &member : m_straights.set)
 		for (auto const *track : Line.tracks)
-			if (std::find(member.tracks.begin(), member.tracks.end(), track) != member.tracks.end())
+			if (std::ranges::find(member.tracks, track) != member.tracks.end())
 				return true;
 	return false;
 }
@@ -564,10 +923,7 @@ void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lin
 {
 	auto &state{m_straights};
 	state.status.clear();
-	auto const finite = [](glm::dvec3 const &Point) { return std::isfinite(Point.x) && std::isfinite(Point.y) && std::isfinite(Point.z); };
-	if (std::any_of(Ends.begin(), Ends.end(), [&](std::pair<glm::dvec3, glm::dvec3> const &End) {
-		    return false == finite(End.first) || false == finite(End.second) || false == (glm::distance(End.first, End.second) >= 0.1 && glm::distance(End.first, End.second) <= 100000.0);
-	    }))
+	if (std::ranges::any_of(Ends, unlaid_ends))
 	{
 		state.status = refused(STR_C("The ends have to be numbers, from 0.1 m to 100 km apart"));
 		return;
@@ -601,124 +957,117 @@ void editor_mode::render_straight_gizmo()
 		return;
 	}
 
-	glm::dvec3 const anchors[] = {line.start, line.end, (line.start + line.end) * 0.5};
+	std::array<glm::dvec3, 3> const anchors{line.start, line.end, (line.start + line.end) * 0.5};
 	glm::dvec3 handled{anchors[state.handle]};
 	// the ends go onto the ground, the middle moves the line in plan alone
 	bool const held{handle_drag_step(handled, state.handle == 2 ? nullptr : line.tracks.front())};
-	if (false == held && false == state.dragging)
-		return;
-
 	if (held)
 	{
-		if (false == state.dragging)
-		{
-			std::vector<editor_track::straight> lines;
-			if (in_straight_set(line))
-			{
-				for (auto const &member : state.set)
-					if (false == member.tracks.empty())
-						lines.push_back(editor_track::find_straight(*member.tracks.front(), state.tolerance));
-			}
-			else
-			{
-				lines.push_back(line);
-			}
-			state.fitting = lines.size() == 1 && start_curve_fit(line, state.handle);
-			auto const tracks{state.fitting ? std::vector<TTrack *>{} : editor_track::straight_affected(lines)};
-			if (false == tracks_editable(tracks, state.status))
-			{
-				refused(state.status);
-				state.fitting = false;
-				return;
-			}
-			state.dragging = true;
-			state.drag_line = line;
-			state.drag_lines = lines;
-			state.drag_states.clear();
-			for (auto *track : tracks)
-				state.drag_states.emplace_back(track, editor_track::capture(*track));
-			if (false == state.fitting)
-			{
-				push_track_snapshot(state.drag_states);
-				state.drag_step = m_history.size();
-				m_track_drag = tracks;
-			}
-		}
-		auto const &grabbed{state.drag_line};
-		glm::dvec3 moved{handled};
-		std::function<glm::dvec3(glm::dvec3 const &)> transform;
-		if (state.handle == 2)
-		{
-			auto offset{snap_straight_offset(grabbed, moved - (grabbed.start + grabbed.end) * 0.5)};
-			if (auto const values{typed_values()}; false == values.empty())
-				offset = glm::dvec3{-grabbed.direction.y, 0.0, grabbed.direction.x} * values[0];
-			transform = [offset](glm::dvec3 const &Point) { return Point + offset; };
-		}
-		else
-		{
-			auto const pivot{state.handle == 0 ? grabbed.end : grabbed.start};
-			auto const original{state.handle == 0 ? grabbed.start : grabbed.end};
-			moved = snap_straight_direction(pivot, moved);
-			if (auto const values{typed_values()}; false == values.empty() && values[0] > 0.1)
-			{
-				glm::dvec2 heading{moved.x - pivot.x, moved.z - pivot.z};
-				if (glm::length(heading) < 1e-6)
-					heading = {original.x - pivot.x, original.z - pivot.z};
-				heading = glm::normalize(heading) * values[0];
-				moved.x = pivot.x + heading.x;
-				moved.z = pivot.z + heading.y;
-			}
-			glm::dvec2 const before{original.x - pivot.x, original.z - pivot.z};
-			glm::dvec2 const after{moved.x - pivot.x, moved.z - pivot.z};
-			auto const lengthbefore{glm::length(before)};
-			auto const lengthafter{std::max(0.1, glm::length(after))};
-			auto const axis{before / std::max(1e-9, lengthbefore)};
-			auto const newaxis{after / lengthafter};
-			auto const scale{lengthafter / std::max(1e-9, lengthbefore)};
-			auto const rise{moved.y - original.y};
-			transform = [=](glm::dvec3 const &Point) {
-				glm::dvec2 const offset{Point.x - pivot.x, Point.z - pivot.z};
-				auto const along{glm::dot(offset, axis)};
-				auto const across{axis.x * offset.y - axis.y * offset.x};
-				auto const planar{plan_of(pivot) + newaxis * (along * scale) + glm::dvec2{-newaxis.y, newaxis.x} * across};
-				return glm::dvec3{planar.x, Point.y + rise * along / std::max(1e-9, lengthbefore), planar.y};
-			};
-		}
-		std::vector<std::pair<glm::dvec3, glm::dvec3>> ends;
-		for (auto const &member : state.drag_lines)
-			ends.emplace_back(transform(member.start), transform(member.end));
-		state.preview_start = transform(grabbed.start);
-		state.preview_end = transform(grabbed.end);
-		if (state.fitting)
-		{
-			update_curve_fit(state.preview_start, state.preview_end);
+		if (false == state.dragging && false == start_straight_drag(line))
 			return;
-		}
-		for (auto const &entry : state.drag_states)
-			editor_track::apply(*entry.first, entry.second);
-		editor_track::move_straights(state.drag_lines, ends);
-		m_track_dirty = true;
-		commit_track_drag(false);
+		drag_straight(handled);
 	}
 	else if (state.dragging)
 	{
-		if (state.fitting)
-		{
-			state.fitting = false;
-			state.dragging = false;
-			state.drag_lines.clear();
-			if (m_route.result.valid)
-				route_apply();
-			straight_refresh();
-			return;
-		}
-		commit_track_drag(true);
-		state.dragging = false;
-		m_track_drag.clear();
-		state.drag_states.clear();
-		state.drag_lines.clear();
-		straight_refresh();
+		end_straight_drag();
 	}
+}
+
+bool editor_mode::start_straight_drag(editor_track::straight const &Line)
+{
+	auto &state{m_straights};
+	std::vector<editor_track::straight> lines;
+	if (in_straight_set(Line))
+	{
+		for (auto const &member : state.set)
+			if (false == member.tracks.empty())
+				lines.push_back(editor_track::find_straight(*member.tracks.front(), state.tolerance));
+	}
+	else
+	{
+		lines.push_back(Line);
+	}
+	state.fitting = lines.size() == 1 && start_curve_fit(Line, state.handle);
+	auto const tracks{state.fitting ? std::vector<TTrack *>{} : editor_track::straight_affected(lines)};
+	if (false == tracks_editable(tracks, state.status))
+	{
+		refused(state.status);
+		state.fitting = false;
+		return false;
+	}
+	state.dragging = true;
+	state.drag_line = Line;
+	state.drag_lines = lines;
+	state.drag_states.clear();
+	for (auto *track : tracks)
+		state.drag_states.emplace_back(track, editor_track::capture(*track));
+	if (false == state.fitting)
+	{
+		push_track_snapshot(state.drag_states);
+		state.drag_step = m_history.size();
+		m_track_drag = tracks;
+	}
+	return true;
+}
+
+void editor_mode::drag_straight(glm::dvec3 const &Handled)
+{
+	auto &state{m_straights};
+	auto const &grabbed{state.drag_line};
+	glm::dvec3 moved{Handled};
+	std::function<glm::dvec3(glm::dvec3 const &)> transform;
+	if (state.handle == 2)
+	{
+		auto offset{snap_straight_offset(grabbed, moved - (grabbed.start + grabbed.end) * 0.5)};
+		if (auto const values{typed_values()}; false == values.empty())
+			offset = glm::dvec3{-grabbed.direction.y, 0.0, grabbed.direction.x} * values[0];
+		transform = [offset](glm::dvec3 const &Point) { return Point + offset; };
+	}
+	else
+	{
+		auto const pivot{state.handle == 0 ? grabbed.end : grabbed.start};
+		auto const original{state.handle == 0 ? grabbed.start : grabbed.end};
+		moved = snap_straight_direction(pivot, moved);
+		if (auto const values{typed_values()}; false == values.empty() && values[0] > 0.1)
+			moved = typed_reach(pivot, original, moved, values[0]);
+		transform = turn_about(pivot, original, moved);
+	}
+	std::vector<std::pair<glm::dvec3, glm::dvec3>> ends;
+	for (auto const &member : state.drag_lines)
+		ends.emplace_back(transform(member.start), transform(member.end));
+	state.preview_start = transform(grabbed.start);
+	state.preview_end = transform(grabbed.end);
+	if (state.fitting)
+	{
+		update_curve_fit(state.preview_start, state.preview_end);
+		return;
+	}
+	for (auto const &[track, saved] : state.drag_states)
+		editor_track::apply(*track, saved);
+	editor_track::move_straights(state.drag_lines, ends);
+	m_track_dirty = true;
+	commit_track_drag(false);
+}
+
+void editor_mode::end_straight_drag()
+{
+	auto &state{m_straights};
+	if (state.fitting)
+	{
+		state.fitting = false;
+		state.dragging = false;
+		state.drag_lines.clear();
+		if (m_route.result.valid)
+			route_apply();
+		straight_refresh();
+		return;
+	}
+	commit_track_drag(true);
+	state.dragging = false;
+	m_track_drag.clear();
+	state.drag_states.clear();
+	state.drag_lines.clear();
+	straight_refresh();
 }
 
 void editor_mode::cancel_track_tools()
@@ -729,8 +1078,8 @@ void editor_mode::cancel_track_tools()
 		// the geometry goes back to what it was before the drag
 		if (false == state.fitting)
 		{
-			for (auto const &entry : state.drag_states)
-				editor_track::apply(*entry.first, entry.second);
+			for (auto const &[track, saved] : state.drag_states)
+				editor_track::apply(*track, saved);
 			m_track_dirty = true;
 			commit_track_drag(true);
 			m_track_drag.clear();
@@ -782,154 +1131,42 @@ void editor_mode::cancel_track_tools()
 	state.detour.clear();
 }
 
-void editor_mode::straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius)
+void editor_mode::straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius) // NOSONAR: the type of the tail is set by the declaration in editor_mode, which the callers share
 {
 	auto &state{m_straights};
 	state.status.clear();
 	m_infra_carried.clear();
-	struct span
-	{
-		TTrack *track;
-		int path;
-		double from;
-		double to;
-		bool forward;
-	};
 	auto line{Line};
-	auto const point = [&](double const Along) {
-		auto const planar{plan_of(line.start) + line.direction * Along};
-		return glm::dvec3{planar.x, line.start.y + line.grade * Along, planar.y};
-	};
-	std::vector<span> spans;
-	auto const collect = [&]() {
-		spans.clear();
-		for (std::size_t i = 0; i < line.tracks.size(); ++i)
-		{
-			auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
-			auto const a{line.along(path.points[segment_data::point::start])};
-			auto const b{line.along(path.points[segment_data::point::end])};
-			spans.push_back({line.tracks[i], line.paths[i], std::min(a, b), std::max(a, b), a < b});
-		}
-		std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
-	};
-	int first{-1};
-	int last{-1};
-	auto const select = [&](double const End) {
-		first = -1;
-		last = -1;
-		for (int i = 0; i < static_cast<int>(spans.size()); ++i)
-		{
-			if (spans[i].to > From && spans[i].from < End)
-			{
-				if (first < 0)
-					first = i;
-				last = i;
-			}
-		}
-	};
-	auto const keep_regular = [&]() {
-		if (first < 0)
-			return;
-		auto const centre{(std::max(From, 0.0) + std::min(To, line.length)) * 0.5};
-		int middle{first};
-		for (int i = first; i <= last; ++i)
-			if (spans[i].from <= centre && spans[i].to >= centre)
-				middle = i;
-		if (spans[middle].track->eType != tt_Normal)
-		{
-			int best{-1};
-			for (int i = first; i <= last; ++i)
-				if (spans[i].track->eType == tt_Normal && (best < 0 || std::abs(i - middle) < std::abs(best - middle)))
-					best = i;
-			if (best < 0)
-			{
-				first = -1;
-				last = -1;
-				return;
-			}
-			middle = best;
-		}
-		int low{middle};
-		int high{middle};
-		while (low > first && spans[low - 1].track->eType == tt_Normal)
-			--low;
-		while (high < last && spans[high + 1].track->eType == tt_Normal)
-			++high;
-		first = low;
-		last = high;
-	};
-	collect();
-	select(To);
-	keep_regular();
-	if (first < 0)
+	auto spans{straight_spans(line)};
+	auto run{reshaped_run(spans, From, To, (std::max(From, 0.0) + std::min(To, line.length)) * 0.5)};
+	if (run.first < 0)
 		return;
 
 	std::vector<std::pair<TTrack *, editor_track::state>> splitstates;
 	std::vector<TTrack *> splitcreated;
-	auto end{To};
-	if (last + 1 >= static_cast<int>(spans.size()))
+	if (run.last + 1 >= static_cast<int>(spans.size()))
 	{
-		auto const final{spans.back()};
-		if (final.track->eType != tt_Normal)
+		auto const &lastspan{spans.back()};
+		if (lastspan.track->eType != tt_Normal)
 			return;
-		auto const length{final.to - final.from};
-		auto const cut{To < final.to - 1.0 ? std::max(To, final.from + std::min(1.0, length * 0.5)) : final.from + length * 0.7};
-		splitstates.emplace_back(final.track, editor_track::capture(*final.track));
-		editor_track::chain split;
-		split.tracks = {final.track};
-		split.forward = {final.forward};
-		std::vector<segment_data> pieces(2);
-		pieces[0].points[segment_data::point::start] = point(final.from);
-		pieces[0].points[segment_data::point::end] = point(cut);
-		pieces[1].points[segment_data::point::start] = point(cut);
-		pieces[1].points[segment_data::point::end] = point(final.to);
-		splitcreated = editor_track::relay(split, pieces);
+		auto const cut{split_point(lastspan, To)};
+		splitstates.emplace_back(lastspan.track, editor_track::capture(*lastspan.track));
+		splitcreated = split_span(line, lastspan, cut);
 		line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
-		collect();
-		end = std::min(To, cut);
-		select(end);
-		keep_regular();
-		if (first < 0 || last + 1 >= static_cast<int>(spans.size()))
+		spans = straight_spans(line);
+		run = reshaped_run(spans, From, std::min(To, cut), (std::max(From, 0.0) + std::min(To, line.length)) * 0.5);
+		if (run.first < 0 || run.last + 1 >= static_cast<int>(spans.size()))
 		{
-			for (auto *track : splitcreated)
-				editor_track::retire(*track);
-			editor_track::apply(*splitstates.front().first, splitstates.front().second);
-			editor_track::commit({splitstates.front().first});
+			undo_split(splitcreated, splitstates);
 			return;
 		}
 	}
-	auto const undo_split = [&]() {
-		for (auto *track : splitcreated)
-			editor_track::retire(*track);
-		for (auto const &entry : splitstates)
-		{
-			editor_track::apply(*entry.first, entry.second);
-			editor_track::commit({entry.first});
-		}
-	};
 
-	editor_track::straight tail;
-	tail.direction = line.direction;
-	for (int i = last + 1; i < static_cast<int>(spans.size()); ++i)
-	{
-		tail.tracks.push_back(spans[i].track);
-		tail.paths.push_back(spans[i].path);
-	}
-	tail.start = point(spans[last + 1].from);
-	tail.end = line.end;
-	tail.length = line.length - spans[last + 1].from;
-	tail.grade = line.grade;
-
-	std::vector<TTrack *> chainpaths;
-	for (int i = first; i <= last; ++i)
-		chainpaths.push_back(spans[i].track);
-	auto tracks{editor_track::straight_affected({tail})};
-	for (auto *track : chainpaths)
-		if (std::find(tracks.begin(), tracks.end(), track) == tracks.end())
-			tracks.push_back(track);
+	auto const tail{straight_tail(line, spans, run.last)};
+	auto const tracks{reshaped_tracks(tail, spans, run)};
 	if (false == tracks_editable(tracks, m_straights.status))
 	{
-		undo_split();
+		undo_split(splitcreated, splitstates);
 		return;
 	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
@@ -938,17 +1175,15 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 
 	editor_track::move_straights({tail}, {{Tail(tail.start), Tail(tail.end)}});
 
-	m_route.from = spans[first].track;
-	m_route.to = spans[last].track;
+	m_route.from = spans[run.first].track;
+	m_route.to = spans[run.last].track;
 	route_reset();
 	if (m_route.chain.tracks.empty() || false == m_route.chain.switches.empty())
 	{
 		if (false == m_route.chain.switches.empty())
 			m_route.error = STR_C("The curve would run through a switch");
-		for (auto const &entry : states)
-			editor_track::apply(*entry.first, entry.second);
-		editor_track::commit(tracks);
-		undo_split();
+		restore_states(states, tracks);
+		undo_split(splitcreated, splitstates);
 		state.status = refused(m_route.error);
 		return;
 	}
@@ -967,10 +1202,8 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	route_update();
 	if (false == m_route.result.valid)
 	{
-		for (auto const &entry : states)
-			editor_track::apply(*entry.first, entry.second);
-		editor_track::commit(tracks);
-		undo_split();
+		restore_states(states, tracks);
+		undo_split(splitcreated, splitstates);
 		state.status = refused(m_route.result.errors.empty() ? STR_C("The curve can't be fitted") : m_route.result.errors.front());
 		return;
 	}
@@ -979,19 +1212,11 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	editor_track::keep_heights(m_route.chain, pieces);
 	auto created{editor_track::relay(m_route.chain, pieces, &m_route.to, &intervals)};
 	editor_track::commit(tracks);
-	for (auto const &entry : splitstates)
-	{
-		auto const found{std::find_if(states.begin(), states.end(), [&](auto const &State) { return State.first == entry.first; })};
-		if (found != states.end())
-			found->second = entry.second;
-		else
-			states.push_back(entry);
-	}
+	merge_split_states(states, splitstates);
 	created.insert(created.begin(), splitcreated.begin(), splitcreated.end());
 	{
 		auto changed{created};
-		for (auto const &entry : states)
-			changed.push_back(entry.first);
+		std::ranges::copy(std::views::keys(states), std::back_inserter(changed));
 		digitize_drawn(changed);
 	}
 	push_track_snapshot(std::move(states), std::move(created));
@@ -1058,7 +1283,9 @@ void editor_mode::apply_straight_tool()
 		double speed{-1.0};
 		for (auto const *track : line.tracks)
 			speed = std::max(speed, editor_track::velocity(*track));
-		auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition : state.transition};
+		auto transition{state.transition};
+		if (state.auto_transitions)
+			transition = alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition;
 		auto const reach{radius * std::tan(std::min(std::abs(angle), 3.0) * 0.5) + transition * 0.5 + 10.0};
 		straight_reshape(line, state.tool_at - reach, state.tool_at + reach,
 			[pivot, angle](glm::dvec3 const &Point) {
@@ -1113,7 +1340,7 @@ void editor_mode::toggle_straight_set(TTrack &Track)
 	if (line.tracks.empty())
 		return;
 	if (in_straight_set(line))
-		state.set.erase(std::remove_if(state.set.begin(), state.set.end(), [&](editor_track::straight const &Member) { return std::any_of(line.tracks.begin(), line.tracks.end(), [&](TTrack const *Other) { return std::find(Member.tracks.begin(), Member.tracks.end(), Other) != Member.tracks.end(); }); }), state.set.end());
+		leave_straight_set(state.set, line);
 	else
 		state.set.push_back(line);
 	m_node = &Track;
@@ -1168,16 +1395,7 @@ void editor_mode::apply_detour()
 		return;
 	glm::dvec2 const normal{-line.direction.y, line.direction.x};
 	auto const offset{glm::dot(plan_of(state.detour[1] - line.start), normal)};
-	std::array<double, 4> stations{line.along(state.detour[0]), line.along(state.detour[1]), line.along(state.detour[2]), line.along(state.detour[3])};
-	if (stations[0] > stations[3])
-	{
-		std::swap(stations[0], stations[3]);
-		std::swap(stations[1], stations[2]);
-	}
-	for (auto &station : stations)
-		station = std::clamp(station, 0.0, line.length);
-	stations[1] = std::clamp(stations[1], stations[0] + 1.0, stations[3] - 1.0);
-	stations[2] = std::clamp(stations[2], stations[1], stations[3] - 1.0);
+	auto const stations{detour_stations(line, state.detour)};
 	if (std::abs(offset) < 0.01 || stations[3] - stations[0] < 3.0)
 		return;
 
@@ -1186,56 +1404,27 @@ void editor_mode::apply_detour()
 	double speed{-1.0};
 	for (auto const *track : line.tracks)
 		speed = std::max(speed, editor_track::velocity(*track));
-	auto const transition{state.auto_transitions ? alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition : state.transition};
+	auto transition{state.transition};
+	if (state.auto_transitions)
+		transition = alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition;
 	auto const reach{radius * std::tan(slope * 0.5) + transition * 0.5 + 5.0};
 	auto const from{std::max(0.0, stations[0] - reach)};
 	auto const to{std::min(line.length, stations[3] + reach)};
 
-	struct span
-	{
-		TTrack *track;
-		double from;
-		double to;
-	};
-	std::vector<span> spans;
-	for (std::size_t i = 0; i < line.tracks.size(); ++i)
-	{
-		auto const &path{line.tracks[i]->m_paths[line.paths[i]]};
-		auto const a{line.along(path.points[segment_data::point::start])};
-		auto const b{line.along(path.points[segment_data::point::end])};
-		spans.push_back({line.tracks[i], std::min(a, b), std::max(a, b)});
-	}
-	std::sort(spans.begin(), spans.end(), [](span const &A, span const &B) { return A.from < B.from; });
-	int first{-1};
-	int last{-1};
-	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
-	{
-		if (spans[i].to > from && spans[i].from < to && spans[i].track->eType == tt_Normal)
-		{
-			if (first < 0)
-				first = i;
-			last = i;
-		}
-		else if (first >= 0 && spans[i].from < to)
-		{
-			if (spans[i].from > stations[3])
-				break;
-			first = -1;
-			last = -1;
-		}
-	}
-	if (first < 0)
+	auto const spans{straight_spans(line)};
+	auto const run{detour_run(spans, from, to, stations[3])};
+	if (run.first < 0)
 		return;
 
-	m_route.from = spans[first].track;
-	m_route.to = spans[last].track;
+	m_route.from = spans[run.first].track;
+	m_route.to = spans[run.last].track;
 	route_reset();
 	if (m_route.chain.tracks.empty())
 		return;
 	auto &design{m_route.design};
 	auto const startalong{line.along(design.start)};
 	auto const endalong{line.along(design.end)};
-	auto const place = [&](double const Along, double const Lateral) {
+	auto const place = [&line, &normal](double const Along, double const Lateral) {
 		auto const planar{plan_of(line.start) + line.direction * Along + normal * Lateral};
 		return planar;
 	};
@@ -1289,10 +1478,9 @@ bool editor_mode::start_curve_fit(editor_track::straight const &Line, int const 
 	state.fit_has_after = curve_at(after, state.fit_after);
 	if (false == state.fit_has_before && false == state.fit_has_after)
 		return false;
-	auto const side_follows = [&](bool const Curve, TTrack const *Neighbour, bool const Pivot) { return Curve || Neighbour == nullptr || Pivot; };
 	if (false == side_follows(state.fit_has_before, before, Handle == 1) || false == side_follows(state.fit_has_after, after, Handle == 0))
 		return false;
-	auto const own_end = [&](glm::dvec3 const &Point) -> TTrack * {
+	auto const own_end = [&Line](glm::dvec3 const &Point) {
 		for (auto *track : Line.tracks)
 			if (editor_track::touches(*track, Point))
 				return track;
@@ -1309,7 +1497,7 @@ bool editor_mode::start_curve_fit(editor_track::straight const &Line, int const 
 
 void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End)
 {
-	auto &state{m_straights};
+	auto const &state{m_straights};
 	auto &design{m_route.design};
 	glm::dvec2 const point{Start.x, Start.z};
 	glm::dvec2 const direction{glm::normalize(plan_of(End - Start))};

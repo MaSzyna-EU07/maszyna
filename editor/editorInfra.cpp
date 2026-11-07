@@ -112,8 +112,9 @@ char const *name(category const Category)
 
 std::optional<category> category_named(std::string const &Category)
 {
-	static std::map<std::string, category> const named{{"signal", category::signal}, {"sign", category::sign}, {"pole", category::pole}, {"catenary", category::catenary}, {"equipment", category::equipment}, {"environment", category::environment},
-	                                                   {"switch drive", category::equipment}, {"turntable", category::equipment}, {"logic", category::logic}};
+	using enum category;
+	static std::map<std::string, category, std::less<>> const named{{"signal", signal}, {"sign", sign}, {"pole", pole}, {"catenary", catenary}, {"equipment", equipment}, {"environment", environment},
+	                                                                {"switch drive", equipment}, {"turntable", equipment}, {"logic", logic}};
 	auto const found{named.find(lower(Category))};
 	if (found == named.end())
 		return std::nullopt;
@@ -122,7 +123,7 @@ std::optional<category> category_named(std::string const &Category)
 
 std::vector<category> const &categories()
 {
-	static std::vector<category> const result{category::signal, category::sign, category::pole, category::catenary, category::equipment, category::logic, category::environment, category::other};
+	static std::vector const result{category::signal, category::sign, category::pole, category::catenary, category::equipment, category::logic, category::environment, category::other};
 	return result;
 }
 

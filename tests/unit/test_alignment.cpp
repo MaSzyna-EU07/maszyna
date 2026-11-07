@@ -5,12 +5,19 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
+#include <numbers>
+#include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 
 namespace {
 
-double constexpr pi{3.14159265358979323846};
+double constexpr pi{std::numbers::pi};
+
+// the shifts across of the points traced, by the point in threes: off to and fro across the way, as clicks are
+std::array constexpr kShift{1.0, -0.6, 0.2};
 
 glm::dvec2 heading(double const Angle) { return {std::cos(Angle), std::sin(Angle)}; }
 
@@ -63,7 +70,7 @@ std::vector<glm::dvec2> traced(alignment::result const &Line, double const Spaci
 	};
 	auto const first{std::max(0.0, from - 30.0)};
 	for (int count = 0; first + count * Spacing <= to; ++count)
-		points.push_back(along(first + count * Spacing, Noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
+		points.push_back(along(first + count * Spacing, Noise * kShift[static_cast<std::size_t>(count % 3)]));
 	points.push_back(along(to + 30.0, Noise * 0.5));
 	points.push_back(along(to + 60.0, -Noise * 0.5));
 	return points;
@@ -75,6 +82,12 @@ struct line_end {
 	glm::dvec2 position{0.0};
 	double heading{0.0};
 };
+// the weight of Simpson of the step of the steps: 1 at the ends, 4 and 2 by turns between them
+double simpson_weight(int const Step, int const Steps) {
+	if (Step == 0 || Step == Steps)
+		return 1.0;
+	return Step % 2 ? 4.0 : 2.0;
+}
 line_end walked(std::vector<std::array<double, 3>> const &Segments) {
 	line_end end;
 	for (auto const &[from, to, length] : Segments) {
@@ -83,7 +96,7 @@ line_end walked(std::vector<std::array<double, 3>> const &Segments) {
 		auto const angle = [&, from = from, to = to, length = length](double const S) { return end.heading + from * S + (to - from) * S * S / (2.0 * length); };
 		glm::dvec2 sum{0.0};
 		for (int i = 0; i <= steps; ++i) {
-			double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
+			double const weight = simpson_weight(i, steps);
 			sum += weight * glm::dvec2{std::cos(angle(i * h)), std::sin(angle(i * h))};
 		}
 		end.position += sum * (h / 3.0);
@@ -183,7 +196,7 @@ TEST_CASE("alignment: a sharp bend between short straights is laid where clicked
 
 TEST_CASE("alignment: a curve going on at the radius of the curved track before it doesn't change the curvature abruptly") {
 	auto const adjoining = [](alignment::result const &Line) {
-		return std::any_of(Line.warnings.begin(), Line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the start") != std::string::npos; });
+		return std::ranges::any_of(Line.warnings, [](std::string_view const Warning) { return Warning.find("adjoining track at the start") != std::string_view::npos; });
 	};
 	// R 300 with no transition from the very start, as a curve after the diverging track of a switch, R 301 there
 	auto const tangent{300.0 * std::tan(10.0 * pi / 180.0)};
@@ -213,7 +226,7 @@ TEST_CASE("alignment: a curve going on at the radius of the curved track before 
 
 TEST_CASE("alignment: a circular arc under the least of the norms is told, the transitions and the cant stay") {
 	auto const says = [](alignment::result const &Line, std::string const &Text) {
-		return std::any_of(Line.warnings.begin(), Line.warnings.end(), [&](std::string const &Warning) { return Warning.find(Text) != std::string::npos; });
+		return std::ranges::any_of(Line.warnings, [&Text](std::string_view const Warning) { return Warning.find(Text) != std::string_view::npos; });
 	};
 	// R 500, 30 m of transitions on both sides in 6 degrees leave an arc of 22 m, the norms ask for 0.4 V = 32 m
 	auto design{straights({500.0, 500.0}, {6.0 * pi / 180.0}, 80.0)};
@@ -263,7 +276,8 @@ TEST_CASE("alignment: two transition curves meet with no arc in a design compute
 TEST_CASE("alignment: the radius and the transitions of a curve traced along a known one") {
 	auto truth{straights({500.0, 500.0}, {25.0 * pi / 180.0}, 120.0)};
 	truth.vertices.front().radius = 1000.0;
-	truth.vertices.front().transition_in = truth.vertices.front().transition_out = 120.0;
+	truth.vertices.front().transition_in = 120.0;
+	truth.vertices.front().transition_out = 120.0;
 	auto const line{alignment::compute(truth)};
 	REQUIRE(line.valid);
 	auto const points{traced(line, 20.0, 0.03)};
@@ -297,8 +311,10 @@ TEST_CASE("alignment: a curve, a straight and a curve the other way traced as tw
 	auto truth{straights({400.0, 700.0, 400.0}, {20.0 * pi / 180.0, -25.0 * pi / 180.0}, 120.0)};
 	truth.vertices[0].radius = 1500.0;
 	truth.vertices[1].radius = 1000.0;
-	for (auto &vertex : truth.vertices)
-		vertex.transition_in = vertex.transition_out = 100.0;
+	for (auto &vertex : truth.vertices) {
+		vertex.transition_in = 100.0;
+		vertex.transition_out = 100.0;
+	}
 	auto const line{alignment::compute(truth)};
 	REQUIRE(line.valid);
 	REQUIRE(line.curves.size() == 2);
@@ -317,8 +333,10 @@ TEST_CASE("alignment: two curves turning the same way with a straight between th
 	auto truth{straights({400.0, 600.0, 400.0}, {15.0 * pi / 180.0, 15.0 * pi / 180.0}, 120.0)};
 	truth.vertices[0].radius = 1200.0;
 	truth.vertices[1].radius = 900.0;
-	for (auto &vertex : truth.vertices)
-		vertex.transition_in = vertex.transition_out = 90.0;
+	for (auto &vertex : truth.vertices) {
+		vertex.transition_in = 90.0;
+		vertex.transition_out = 90.0;
+	}
 	auto const line{alignment::compute(truth)};
 	REQUIRE(line.valid);
 	REQUIRE(line.curves.size() == 2);
@@ -340,7 +358,8 @@ TEST_CASE("alignment: a compound curve traced is followed closely") {
 	vertex.compound = true;
 	vertex.share = 0.5;
 	vertex.arcs = {{700.0, 60.0, 0.5}};
-	vertex.transition_in = vertex.transition_out = 80.0;
+	vertex.transition_in = 80.0;
+	vertex.transition_out = 80.0;
 	auto const line{alignment::compute(truth)};
 	REQUIRE(line.valid);
 	auto const points{traced(line, 15.0, 0.02)};
@@ -366,7 +385,8 @@ TEST_CASE("alignment: each arc of a compound curve has a cant of its own, ramped
 	vertex.compound = true;
 	vertex.share = 0.5;
 	vertex.arcs = {{700.0, 60.0, 0.5}};
-	vertex.transition_in = vertex.transition_out = 80.0;
+	vertex.transition_in = 80.0;
+	vertex.transition_out = 80.0;
 	vertex.cant = 120.0;
 
 	// until they're set, the cants of the arcs go with their curvature, the cant of the curve on the sharpest one
@@ -412,7 +432,8 @@ TEST_CASE("alignment: an arc of a compound curve with no cant gets a longer tran
 	vertex.compound = true;
 	vertex.share = 0.5;
 	vertex.arcs = {{700.0, 0.0, 0.5}};
-	vertex.transition_in = vertex.transition_out = 80.0;
+	vertex.transition_in = 80.0;
+	vertex.transition_out = 80.0;
 	vertex.cant = 120.0;
 	alignment::recommend_between(vertex, design.speed, design.norms);
 	auto const line{alignment::compute(design)};
@@ -498,7 +519,8 @@ TEST_CASE("alignment: a cant ramp moved off the transition curve onto the straig
 	auto design{straights({300.0, 300.0}, {30.0 * pi / 180.0}, 80.0)};
 	auto &vertex{design.vertices.front()};
 	vertex.radius = 800.0;
-	vertex.transition_in = vertex.transition_out = 60.0;
+	vertex.transition_in = 60.0;
+	vertex.transition_out = 60.0;
 	vertex.cant = 60.0;
 	auto const along{alignment::compute(design)};
 	REQUIRE(along.valid);
@@ -529,19 +551,19 @@ TEST_CASE("alignment: a cant ramp moved off the transition curve onto the straig
 	auto const paths{alignment::pieces(moved, design, alignment::minimum_pieces(moved, design))};
 	auto const meets = [&](double const Chainage) {
 		auto const point{alignment::evaluate(moved, Chainage).position};
-		return std::any_of(paths.begin(), paths.end(), [&](segment_data const &Path) { return glm::distance(Path.points[segment_data::point::start], point) < 0.05; });
+		return std::ranges::any_of(paths, [&point](segment_data const &Path) { return glm::distance(Path.points[segment_data::point::start], point) < 0.05; });
 	};
 	CHECK(meets(start - 40.0));
 	CHECK(meets(start));
 	for (std::size_t i = 1; i < paths.size(); ++i)
 		CHECK(paths[i].rolls[0] == doctest::Approx(paths[i - 1].rolls[1]).epsilon(1e-4));
-	auto const turned{std::max_element(paths.begin(), paths.end(), [](segment_data const &A, segment_data const &B) { return std::abs(A.rolls[1]) < std::abs(B.rolls[1]); })};
+	auto const turned{std::ranges::max_element(paths, [](segment_data const &A, segment_data const &B) { return std::abs(A.rolls[1]) < std::abs(B.rolls[1]); })};
 	CHECK(std::abs(turned->rolls[1]) == doctest::Approx(glm::degrees(std::asin(60.0 / design.norms.gauge))).epsilon(1e-3));
 }
 
 TEST_CASE("alignment: a curve laid on from the diverging track of a switch begins at its end with its curvature") {
 	auto const adjoining = [](alignment::result const &Line) {
-		return std::any_of(Line.warnings.begin(), Line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the start") != std::string::npos; });
+		return std::ranges::any_of(Line.warnings, [](std::string_view const Warning) { return Warning.find("adjoining track at the start") != std::string_view::npos; });
 	};
 	// R 300 on for 100 m, then a transition of 40 m out to the straight, at 40 km/h
 	auto design{curved_from(300.0, {{1.0 / 300.0, 1.0 / 300.0, 100.0}, {1.0 / 300.0, 0.0, 40.0}}, 40.0)};
@@ -767,12 +789,38 @@ TEST_CASE("alignment: a curve laid into a curved free end ends at it with its cu
 	CHECK(std::none_of(line.warnings.begin(), line.warnings.end(), [](std::string const &Warning) { return Warning.find("adjoining track at the end") != std::string::npos; }));
 }
 
+namespace {
+// the first of the paths of no length to the simulation, under 5 cm, or not finite; Length: its length
+std::optional<std::size_t> short_piece(std::vector<segment_data> const &Paths, double &Length) {
+	for (std::size_t i = 0; i < Paths.size(); ++i) {
+		auto const &path{Paths[i]};
+		auto const length{glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end])};
+		if (auto const finite{std::isfinite(length) && std::isfinite(path.points[segment_data::point::control1].x) && std::isfinite(path.points[segment_data::point::control2].x)}; finite && length >= 0.05)
+			continue;
+		Length = length;
+		return i;
+	}
+	return std::nullopt;
+}
+
+// the arcs of a compound curve, for the message of a piece of no length
+std::string arcs_text(alignment::vertex const &Vertex) {
+	std::string arcs;
+	for (auto const &arc : Vertex.arcs)
+		arcs += std::format(" [R {:f} L {:f} share {:f}]", arc.radius, arc.transition, arc.share);
+	return arcs;
+}
+} // namespace
+
 TEST_CASE("alignment: the pieces of a compound curve are never of no length, whatever its arcs and transitions") {
 	std::mt19937 random{20261025}; // NOSONAR: seeded on purpose, so that the test draws the same curves each run; nothing secret is drawn
 	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>(Low, High)(random); };
 	auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>(0, Count - 1)(random); };
-	int bad{0}, valid{0};
-	for (int run = 0; run < 4000 && bad < 5; ++run) {
+	int bad{0};
+	int valid{0};
+	for (int run = 0; run < 4000; ++run) {
+		if (bad >= 5)
+			break;
 		auto design{straights({600.0 + uniform(0.0, 800.0), 600.0 + uniform(0.0, 800.0)}, {uniform(20.0, 110.0) * pi / 180.0}, 100.0)};
 		design.transition_pieces = 1 + pick(2);
 		design.arc_piece_angle = pick(2) == 0 ? 10.0 : 2.0;
@@ -783,8 +831,13 @@ TEST_CASE("alignment: the pieces of a compound curve are never of no length, wha
 		vertex.cant = pick(3) == 0 ? 0.0 : uniform(0.0, 150.0);
 		vertex.compound = true;
 		vertex.share = pick(5) == 0 ? 0.0 : uniform(0.0, 1.5);
-		for (int i = 0, count = 1 + pick(2); i < count; ++i)
-			vertex.arcs.push_back({uniform(300.0, 1500.0), pick(3) == 0 ? 0.0 : uniform(0.0, 120.0), pick(5) == 0 ? 0.0 : uniform(0.0, 0.5)});
+		for (int i = 0, count = 1 + pick(2); i < count; ++i) {
+			// drawn one by one in the order of the fields of the arc
+			auto const radius{uniform(300.0, 1500.0)};
+			auto const transition{pick(3) == 0 ? 0.0 : uniform(0.0, 120.0)};
+			auto const share{pick(5) == 0 ? 0.0 : uniform(0.0, 0.5)};
+			vertex.arcs.emplace_back(radius, transition, share);
+		}
 		auto const line{alignment::compute(design)};
 		if (false == line.valid)
 			continue;
@@ -797,21 +850,15 @@ TEST_CASE("alignment: the pieces of a compound curve are never of no length, wha
 			joints.emplace_back(at.position.x, at.position.z);
 		}
 		std::vector<std::size_t> intervals;
-		for (auto const &paths : {alignment::pieces_at(line, design, count, joints, intervals), alignment::pieces(line, design, count)})
-			for (std::size_t i = 0; i < paths.size(); ++i) {
-				auto const &path{paths[i]};
-				auto const length{glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end])};
-				auto const finite{std::isfinite(length) && std::isfinite(path.points[segment_data::point::control1].x) && std::isfinite(path.points[segment_data::point::control2].x)};
-				// the simulation takes a path under 5 cm for one of no length
-				if (finite && length >= 0.05)
-					continue;
-				++bad;
-				std::string arcs;
-				for (auto const &arc : vertex.arcs)
-					arcs += " [R " + std::to_string(arc.radius) + " L " + std::to_string(arc.transition) + " share " + std::to_string(arc.share) + "]";
-				MESSAGE("piece " << i << " of " << paths.size() << ": " << length << " m; R " << vertex.radius << " L " << vertex.transition_in << " / " << vertex.transition_out << " cant " << vertex.cant << " share " << vertex.share << arcs << ", count " << count << ", pieces " << design.transition_pieces << " angle " << design.arc_piece_angle);
-				break;
-			}
+		for (auto const &paths : {alignment::pieces_at(line, design, count, joints, intervals), alignment::pieces(line, design, count)}) {
+			double length{0.0};
+			auto const i{short_piece(paths, length)};
+			if (false == i.has_value())
+				continue;
+			++bad;
+			auto const arcs{arcs_text(vertex)};
+			MESSAGE("piece " << *i << " of " << paths.size() << ": " << length << " m; R " << vertex.radius << " L " << vertex.transition_in << " / " << vertex.transition_out << " cant " << vertex.cant << " share " << vertex.share << arcs << ", count " << count << ", pieces " << design.transition_pieces << " angle " << design.arc_piece_angle);
+		}
 	}
 	MESSAGE(valid << " valid designs");
 	CHECK(bad == 0);
@@ -877,7 +924,7 @@ TEST_CASE("alignment: reverse curves traced in the mode of a curve, with no stra
 		auto points{walked_points(each.segments, 10.0, end)};
 		// off to and fro across the way, as clicks are
 		for (std::size_t i = 0; i < points.size(); ++i)
-			points[i].y += each.noise * (i % 3 == 0 ? 1.0 : i % 3 == 1 ? -0.6 : 0.2);
+			points[i].y += each.noise * kShift[i % 3];
 		alignment::design base;
 		base.speed = each.speed;
 		base.start = {0.0, 0.0, 0.0};
@@ -950,7 +997,7 @@ TEST_CASE("alignment: curves turning the same way with straights between them, t
 		line_end end;
 		auto points{walked_points(each.segments, 10.0, end)};
 		for (std::size_t i = 0; i < points.size(); ++i)
-			points[i].y += each.noise * (i % 3 == 0 ? 1.0 : i % 3 == 1 ? -0.6 : 0.2);
+			points[i].y += each.noise * kShift[i % 3];
 		alignment::design base;
 		base.speed = 60.0;
 		base.start = {0.0, 0.0, 0.0};

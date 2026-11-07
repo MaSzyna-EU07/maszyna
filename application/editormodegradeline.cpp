@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <limits>
 #include <map>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <unordered_set>
@@ -32,6 +33,186 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 std::string const kGradeLineMark{"//$w"};
+
+// an end of a path by where it lies in the plan, to 5 cm: the ends meeting there have the same
+using point_key = std::pair<int, int>;
+
+point_key key_of(glm::dvec3 const &Point)
+{
+	return std::pair{static_cast<int>(std::round(Point.x * 20.0)), static_cast<int>(std::round(Point.z * 20.0))};
+}
+
+// what the route changed by abreast of the point, from the samples Before to the ones After; past the ends of the route the change fades
+// from kFollow to kLeave beyond them
+double change_abreast(std::vector<editor_track::route_sample> const &After, std::vector<editor_track::route_sample> const &Before, glm::dvec3 const &Point)
+{
+	double constexpr kFollow{0.0}; // m
+	double constexpr kLeave{50.0}; // m
+	auto closest{std::numeric_limits<double>::max()};
+	auto chainage{0.0};
+	auto past{0.0};
+	for (std::size_t i = 0; i + 1 < After.size(); ++i)
+	{
+		auto const a{geometry::plan_of(After[i].position)};
+		auto const run{geometry::plan_of(After[i + 1].position) - a};
+		auto const along{glm::dot(geometry::plan_of(Point) - a, run) / std::max(1e-12, glm::dot(run, run))};
+		auto const t{std::clamp(along, 0.0, 1.0)};
+		if (auto const distance{glm::length(geometry::plan_of(Point) - (a + run * t))}; distance < closest)
+		{
+			closest = distance;
+			chainage = After[i].chainage + (After[i + 1].chainage - After[i].chainage) * t;
+			// how far along the way of the route it lies past its first or its last point
+			past = (i == 0 && along < 0.0) || (i + 2 == After.size() && along > 1.0) ? std::abs(along - t) * glm::length(run) : 0.0;
+		}
+	}
+	return std::clamp((kLeave - past) / (kLeave - kFollow), 0.0, 1.0) * (editor_track::sampled_elevation(After, chainage) - editor_track::sampled_elevation(Before, chainage));
+}
+
+// the ends of the paths of the route, those of the switches on it with them, and the tracks of it
+void route_ends_of(editor_track::route const &Route, std::set<point_key> &Ends, std::unordered_set<TTrack const *> &Tracks)
+{
+	for (auto const &span : Route.spans)
+	{
+		Tracks.insert(span.track);
+		for (auto const &path : span.track->m_paths)
+			for (auto const end : {segment_data::point::start, segment_data::point::end})
+				Ends.insert(key_of(path.points[end]));
+	}
+}
+
+// the changes the ends of the path beside the route take, but the ends of the route and the ones which have one already; whether any of
+// them is worth moving by
+bool path_moves(segment_data const &Path, std::set<point_key> const &Ends, std::vector<editor_track::route_sample> const &After, std::vector<editor_track::route_sample> const &Before, std::map<point_key, double> &Moves)
+{
+	auto any{false};
+	for (auto const end : {segment_data::point::start, segment_data::point::end})
+	{
+		auto const key{key_of(Path.points[end])};
+		if (Ends.contains(key) || Moves.contains(key))
+			continue;
+		auto const move{change_abreast(After, Before, Path.points[end])};
+		Moves[key] = move;
+		any = any || std::abs(move) >= 0.001;
+	}
+	return any;
+}
+
+// the way along a path from one of its ends to the other, as long as the path in the plan
+struct joined_end
+{
+	point_key to;
+	double length;
+};
+
+// the ways along the paths of the tracks off the grade line, from each of their ends to the other: the route and the tracks on the line
+// left out
+std::map<point_key, std::vector<joined_end>> off_line_ways(std::unordered_set<TTrack const *> const &Route, std::unordered_set<TTrack const *> const &Members)
+{
+	std::map<point_key, std::vector<joined_end>> ways;
+	for (auto const *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || Route.contains(track) || Members.contains(track))
+			continue;
+		for (auto const &path : track->m_paths)
+		{
+			auto const a{key_of(path.points[segment_data::point::start])};
+			auto const b{key_of(path.points[segment_data::point::end])};
+			auto const length{glm::length(geometry::plan_of(path.points[segment_data::point::end] - path.points[segment_data::point::start]))};
+			ways[a].emplace_back(b, length);
+			ways[b].emplace_back(a, length);
+		}
+	}
+	return ways;
+}
+
+double constexpr kRampIn{60.0}; // m, 0.3 m in over it is 5 per mille
+
+// a change taken in along the tracks off the grade line
+struct ramp
+{
+	double from; // the change where it begins
+	double gone; // m from there
+};
+
+double ramp_height(ramp const &Ramp)
+{
+	return Ramp.from * std::max(0.0, 1.0 - Ramp.gone / kRampIn);
+}
+
+// the tracks going on from the ends moved off the grade line take the change in over a length, however short each of them is: the ends
+// along the ways from the moved ones get their changes too
+void ramp_moves(std::map<point_key, double> &Moves, std::map<point_key, std::vector<joined_end>> const &Ways, std::set<point_key> const &Ends)
+{
+	std::map<point_key, ramp> ramps;
+	std::vector<point_key> waiting;
+	for (auto const &[key, move] : Moves)
+	{
+		ramps[key] = {move, 0.0};
+		waiting.push_back(key);
+	}
+	while (false == waiting.empty())
+	{
+		auto const here{waiting.back()};
+		waiting.pop_back();
+		auto const ramp_here{ramps.at(here)};
+		auto const found{Ways.find(here)};
+		if (found == Ways.end())
+			continue;
+		for (auto const &way : found->second)
+		{
+			if (Ends.contains(way.to) || Moves.contains(way.to) || ramp_here.gone + way.length >= kRampIn)
+				continue;
+			ramp const further{ramp_here.from, ramp_here.gone + way.length};
+			if (auto const known{ramps.find(way.to)}; known == ramps.end() || std::abs(ramp_height(further)) > std::abs(ramp_height(known->second)))
+			{
+				ramps[way.to] = further;
+				waiting.push_back(way.to);
+			}
+		}
+	}
+	for (auto const &[key, ramped] : ramps)
+		Moves[key] = ramp_height(ramped);
+}
+
+// whether the middle of a path, going along Way, lies on the curve and along it, On m off it at most
+bool lies_along(geometry::bezier const &Theirs, glm::dvec3 const &Middle, glm::dvec2 const &Way, double const On)
+{
+	int constexpr kSteps{64};
+	for (int k = 0; k < kSteps; ++k)
+	{
+		auto const a{Theirs.point(static_cast<double>(k) / kSteps)};
+		auto const b{Theirs.point(static_cast<double>(k + 1) / kSteps)};
+		auto const run{geometry::plan_of(b - a)};
+		auto const square{glm::dot(run, run)};
+		if (square < 1e-12)
+			continue;
+		auto const t{std::clamp(glm::dot(geometry::plan_of(Middle - a), run) / square, 0.0, 1.0)};
+		if (glm::length(geometry::plan_of(Middle - a) - run * t) < On && std::abs(glm::dot(glm::normalize(run), glm::normalize(Way))) > 0.98)
+			return true;
+	}
+	return false;
+}
+
+// the key of the track of a line, changed since the last frame, whose first path the first path of the track lies on; nullptr if none
+std::string const *replaced_under(TTrack const &Track, std::vector<std::pair<std::string, segment_data>> const &Replaced)
+{
+	double constexpr kOn{0.3}; // m off the path it lay on
+	geometry::bezier const mine{Track.m_paths.front()};
+	auto const middle{mine.point(0.5)};
+	auto const way{geometry::plan_of(mine.point(0.55) - mine.point(0.45))};
+	if (glm::length(way) < 1e-9)
+		return nullptr;
+	for (auto const &[key, path] : Replaced)
+	{
+		geometry::bezier const theirs{path};
+		if (auto const reach{theirs.plan_length()}; geometry::plan_distance(middle, theirs.point(0.5)) > 0.5 * reach + kOn)
+			continue;
+		if (lies_along(theirs, middle, way, kOn))
+			return &key;
+	}
+	return nullptr;
+}
+
 } // namespace
 
 // the ends of the path up or down by these, what's between them in proportion; After is given the path and each of its pieces then
@@ -72,7 +253,7 @@ std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &T
 	if (Track.m_paths.empty())
 		return Name;
 	auto const &start{Track.m_paths.front().points[segment_data::point::start]};
-	return format("%s@%lld,%lld", Name.c_str(), static_cast<long long>(std::llround(start.x)), static_cast<long long>(std::llround(start.z)));
+	return format("%s@%lld,%lld", Name.c_str(), std::llround(start.x), std::llround(start.z));
 }
 
 // the grade lines shared go to the scenery files as "//$w" comment lines, by those keys
@@ -86,15 +267,16 @@ void editor_mode::grade_lines_load()
 		for (auto const &text : scene::Layers.marked(layer, kGradeLineMark))
 		{
 			std::istringstream line{text};
-			std::string keyword, name, hand;
+			std::string keyword;
+			std::string name;
+			std::string hand;
 			int number{0};
 			line >> keyword >> name >> number;
-			if (keyword == "gradeline" && false == line.fail())
-			{
-				state.grade_lines[name] = number;
-				if (line >> hand && hand == "hand")
-					state.grade_lines_hand.insert(name);
-			}
+			if (keyword != "gradeline" || line.fail())
+				continue;
+			state.grade_lines[name] = number;
+			if (line >> hand && hand == "hand")
+				state.grade_lines_hand.insert(name);
 		}
 }
 
@@ -134,7 +316,7 @@ bool editor_mode::on_route_grade_line(TTrack const &Track)
 	auto const found{lines.find(grade_line_key(Track))};
 	if (found == lines.end() || found->second < 0)
 		return false;
-	return std::any_of(m_profile.route.spans.begin(), m_profile.route.spans.end(), [&](auto const &Span) {
+	return std::ranges::any_of(m_profile.route.spans, [&lines, &found](auto const &Span) {
 		auto const own{lines.find(grade_line_key(*Span.track))};
 		return own != lines.end() && own->second == found->second;
 	});
@@ -160,11 +342,8 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 	}
 	if (numbers.empty() || state.samples.size() < 2)
 		return state.beside;
-	auto const lying_by = [&](glm::dvec3 const &Point) {
-		for (auto const &sample : state.samples)
-			if (glm::length(glm::dvec2{sample.position.x - Point.x, sample.position.z - Point.z}) < kBeside)
-				return true;
-		return false;
+	auto const lying_by = [&state](glm::dvec3 const &Point) {
+		return std::ranges::any_of(state.samples, [&Point](auto const &Sample) { return glm::length(glm::dvec2{Sample.position.x - Point.x, Sample.position.z - Point.z}) < kBeside; });
 	};
 	for (auto *track : simulation::Paths.sequence())
 	{
@@ -183,7 +362,7 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 			surfaces.insert(place.surface);
 	for (auto const &place : m_nmt_state.surface_places)
 		if (surfaces.contains(place.surface) && taken.insert(place.track).second && false == place.track->m_editorremoved)
-			state.beside.push_back(const_cast<TTrack *>(place.track));
+			state.beside.push_back(const_cast<TTrack *>(place.track)); // NOSONAR: the places point to the tracks of the simulation, none of which is a const object
 	return state.beside;
 }
 
@@ -192,114 +371,29 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 // them; a track joined to them from off the grade line takes the change at that end only
 std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sample> const &Before)
 {
-	double constexpr kFollow{0.0}; // m
-	double constexpr kLeave{50.0}; // m
-	auto &state{m_profile};
-	auto const after{state.samples};
+	auto const &state{m_profile};
+	auto const &after{state.samples};
 	if (false == state.whole_grade_line || Before.size() < 2 || after.size() < 2)
 		return 0;
 	auto const beside{grade_line_beside()};
 	if (beside.empty())
 		return 0;
-	auto const change_at = [&](glm::dvec3 const &Point) {
-		auto closest{std::numeric_limits<double>::max()};
-		auto chainage{0.0};
-		auto past{0.0};
-		for (std::size_t i = 0; i + 1 < after.size(); ++i)
-		{
-			auto const a{geometry::plan_of(after[i].position)};
-			auto const run{geometry::plan_of(after[i + 1].position) - a};
-			auto const along{glm::dot(geometry::plan_of(Point) - a, run) / std::max(1e-12, glm::dot(run, run))};
-			auto const t{std::clamp(along, 0.0, 1.0)};
-			if (auto const distance{glm::length(geometry::plan_of(Point) - (a + run * t))}; distance < closest)
-			{
-				closest = distance;
-				chainage = after[i].chainage + (after[i + 1].chainage - after[i].chainage) * t;
-				// how far along the way of the route it lies past its first or its last point
-				past = (i == 0 && along < 0.0) || (i + 2 == after.size() && along > 1.0) ? std::abs(along - t) * glm::length(run) : 0.0;
-			}
-		}
-		return std::clamp((kLeave - past) / (kLeave - kFollow), 0.0, 1.0) * (editor_track::sampled_elevation(after, chainage) - editor_track::sampled_elevation(Before, chainage));
-	};
-	auto const key_of = [](glm::dvec3 const &Point) { return std::pair{static_cast<int>(std::round(Point.x * 20.0)), static_cast<int>(std::round(Point.z * 20.0))}; };
 	// the ends of the route itself lie where they should already, those of the switches on it with them
-	std::set<std::pair<int, int>> route_ends;
+	std::set<point_key> route_ends;
 	std::unordered_set<TTrack const *> route;
-	for (auto const &span : state.route.spans)
-	{
-		route.insert(span.track);
-		for (auto const &path : span.track->m_paths)
-			for (auto const end : {segment_data::point::start, segment_data::point::end})
-				route_ends.insert(key_of(path.points[end]));
-	}
-	std::map<std::pair<int, int>, double> moves;
+	route_ends_of(state.route, route_ends, route);
+	std::map<point_key, double> moves;
 	auto any{false};
 	for (auto const *track : beside)
 		for (auto const &path : track->m_paths)
-			for (auto const end : {segment_data::point::start, segment_data::point::end})
-				if (auto const key{key_of(path.points[end])}; false == route_ends.contains(key) && false == moves.contains(key))
-				{
-					auto const move{change_at(path.points[end])};
-					moves[key] = move;
-					any = any || std::abs(move) >= 0.001;
-				}
+			if (path_moves(path, route_ends, after, Before, moves))
+				any = true;
 	if (false == any)
 		return 0;
 	// the tracks going on from them off the grade line take the change in over a length, however short each of them is
-	double constexpr kRampIn{60.0}; // m, 0.3 m in over it is 5 per mille
 	std::unordered_set<TTrack const *> const members(beside.begin(), beside.end());
-	struct joined
-	{
-		std::pair<int, int> to;
-		double length;
-	};
-	std::map<std::pair<int, int>, std::vector<joined>> ways;
-	for (auto const *track : simulation::Paths.sequence())
-		if (track != nullptr && false == track->m_editorremoved && false == route.contains(track) && false == members.contains(track))
-			for (auto const &path : track->m_paths)
-			{
-				auto const a{key_of(path.points[segment_data::point::start])};
-				auto const b{key_of(path.points[segment_data::point::end])};
-				auto const length{glm::length(geometry::plan_of(path.points[segment_data::point::end] - path.points[segment_data::point::start]))};
-				ways[a].push_back({b, length});
-				ways[b].push_back({a, length});
-			}
-	struct ramp
-	{
-		double from; // the change where it begins
-		double gone; // m from there
-	};
-	std::map<std::pair<int, int>, ramp> ramps;
-	std::vector<std::pair<int, int>> waiting;
-	for (auto const &[key, move] : moves)
-	{
-		ramps[key] = {move, 0.0};
-		waiting.push_back(key);
-	}
-	auto const height_of = [](ramp const &Ramp) { return Ramp.from * std::max(0.0, 1.0 - Ramp.gone / kRampIn); };
-	while (false == waiting.empty())
-	{
-		auto const here{waiting.back()};
-		waiting.pop_back();
-		auto const ramp_here{ramps.at(here)};
-		auto const found{ways.find(here)};
-		if (found == ways.end())
-			continue;
-		for (auto const &way : found->second)
-		{
-			if (route_ends.contains(way.to) || moves.contains(way.to) || ramp_here.gone + way.length >= kRampIn)
-				continue;
-			ramp const further{ramp_here.from, ramp_here.gone + way.length};
-			if (auto const known{ramps.find(way.to)}; known == ramps.end() || std::abs(height_of(further)) > std::abs(height_of(known->second)))
-			{
-				ramps[way.to] = further;
-				waiting.push_back(way.to);
-			}
-		}
-	}
-	for (auto const &[key, ramped] : ramps)
-		moves[key] = height_of(ramped);
-	auto const move_of = [&](glm::dvec3 const &Point) {
+	ramp_moves(moves, off_line_ways(route, members), route_ends);
+	auto const move_of = [&moves](glm::dvec3 const &Point) {
 		auto const found{moves.find(key_of(Point))};
 		return found != moves.end() ? found->second : 0.0;
 	};
@@ -309,8 +403,7 @@ std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sampl
 	{
 		if (track == nullptr || track->m_editorremoved || route.contains(track))
 			continue;
-		auto const touched{std::any_of(track->m_paths.begin(), track->m_paths.end(), [&](auto const &Path) { return moves.contains(key_of(Path.points[segment_data::point::start])) || moves.contains(key_of(Path.points[segment_data::point::end])); })};
-		if (false == touched)
+		if (false == std::ranges::any_of(track->m_paths, [&moves](auto const &Path) { return moves.contains(key_of(Path.points[segment_data::point::start])) || moves.contains(key_of(Path.points[segment_data::point::end])); }))
 			continue;
 		edit.capture(*track);
 		moved.push_back(track);
@@ -336,8 +429,7 @@ void editor_mode::grade_line_take_off(bool const Off)
 		auto const found{lines.find(grade_line_key(*span.track))};
 		if (found == lines.end())
 			continue;
-		auto &line{found->second};
-		if (Off && line >= 0)
+		if (auto &line{found->second}; Off && line >= 0)
 		{
 			line = nmt_state::grade_line_off_number - line;
 			m_nmt_state.grade_lines_hand.erase(found->first);
@@ -375,7 +467,7 @@ int editor_mode::route_grade_line()
 
 std::vector<TTrack *> editor_mode::grade_line_run(TTrack &Track, bool const Alone)
 {
-	std::vector<TTrack *> run{&Track};
+	std::vector run{&Track};
 	if (Alone || Track.eType != tt_Normal)
 		return run;
 	std::unordered_set<TTrack const *> seen{&Track};
@@ -414,11 +506,11 @@ void editor_mode::grade_line_pick(TTrack &Track, bool const Alone)
 		auto const found{lines.find(grade_line_key(Of))};
 		return found != lines.end() ? found->second : nmt_state::grade_line_own;
 	};
-	auto number{route_grade_line()};
+	auto const number{route_grade_line()};
 	auto const run{grade_line_run(Track, Alone)};
-	std::size_t changed{0};
 	if (number >= 0 && line_of(Track) == number)
 	{
+		std::size_t changed{0};
 		for (auto const *track : run)
 			if (line_of(*track) == number && false == route.contains(track))
 			{
@@ -430,35 +522,47 @@ void editor_mode::grade_line_pick(TTrack &Track, bool const Alone)
 		state.status = format(STR_P("%zu track taken off the common grade line of the route", "%zu tracks taken off the common grade line of the route", changed), changed);
 	}
 	else
-	{
-		auto const made{number < 0};
-		if (made)
-		{
-			// a new one, by a number no other line has, nor one a track taken off keeps
-			number = 0;
-			for (auto const &[key, line] : lines)
-				number = std::max(number, line >= 0 ? line + 1 : line <= nmt_state::grade_line_off_number ? nmt_state::grade_line_off_number - line + 1 : 0);
-			for (auto const *track : route)
-			{
-				auto const key{grade_line_key(*track)};
-				lines[key] = number;
-				hand.insert(key);
-			}
-		}
-		for (auto const *track : run)
-			if (false == route.contains(track))
-			{
-				auto const key{grade_line_key(*track)};
-				lines[key] = number;
-				hand.insert(key);
-				++changed;
-			}
-		state.status = format(made ? STR_P("A common grade line made of the route and %zu track", "A common grade line made of the route and %zu tracks", changed)
-		                           : STR_P("%zu track put on the common grade line of the route", "%zu tracks put on the common grade line of the route", changed),
-		                      changed);
-	}
+		grade_line_put_on(run, route, number);
 	++m_nmt_state.grade_lines_changes;
 	grade_lines_store();
+}
+
+void editor_mode::grade_line_put_on(std::vector<TTrack *> const &Run, std::unordered_set<TTrack const *> const &Route, int const Number)
+{
+	auto &lines{m_nmt_state.grade_lines};
+	auto &hand{m_nmt_state.grade_lines_hand};
+	auto number{Number};
+	std::size_t changed{0};
+	auto const made{number < 0};
+	if (made)
+	{
+		// a new one, by a number no other line has, nor one a track taken off keeps
+		number = 0;
+		for (auto const line : std::views::values(lines))
+		{
+			if (line >= 0)
+				number = std::max(number, line + 1);
+			else if (line <= nmt_state::grade_line_off_number)
+				number = std::max(number, nmt_state::grade_line_off_number - line + 1);
+		}
+		for (auto const *track : Route)
+		{
+			auto const key{grade_line_key(*track)};
+			lines[key] = number;
+			hand.insert(key);
+		}
+	}
+	for (auto const *track : Run)
+		if (false == Route.contains(track))
+		{
+			auto const key{grade_line_key(*track)};
+			lines[key] = number;
+			hand.insert(key);
+			++changed;
+		}
+	m_profile.status = format(made ? STR_P("A common grade line made of the route and %zu track", "A common grade line made of the route and %zu tracks", changed)
+	                               : STR_P("%zu track put on the common grade line of the route", "%zu tracks put on the common grade line of the route", changed),
+	                          changed);
 }
 
 void editor_mode::grade_line_split(TTrack const &Original, TTrack const &Created)
@@ -528,37 +632,25 @@ void editor_mode::grade_lines_committed(std::vector<TTrack *> const &Tracks)
 		carry(known->second, key);
 		known->second = key;
 	}
-	auto const lying_on = [&](TTrack const &Track) -> std::string const * {
-		double constexpr kOn{0.3}; // m off the path it lay on
-		geometry::bezier const mine{Track.m_paths.front()};
-		auto const middle{mine.point(0.5)};
-		auto const way{geometry::plan_of(mine.point(0.55) - mine.point(0.45))};
-		if (glm::length(way) < 1e-9)
-			return nullptr;
-		for (auto const &[key, path] : state.grade_line_replaced)
-		{
-			geometry::bezier const theirs{path};
-			auto const reach{theirs.plan_length()};
-			if (geometry::plan_distance(middle, theirs.point(0.5)) > 0.5 * reach + kOn)
-				continue;
-			int constexpr kSteps{64};
-			for (int k = 0; k < kSteps; ++k)
-			{
-				auto const a{theirs.point(static_cast<double>(k) / kSteps)};
-				auto const b{theirs.point(static_cast<double>(k + 1) / kSteps)};
-				auto const run{geometry::plan_of(b - a)};
-				auto const square{glm::dot(run, run)};
-				if (square < 1e-12)
-					continue;
-				auto const t{std::clamp(glm::dot(geometry::plan_of(middle - a), run) / square, 0.0, 1.0)};
-				if (glm::length(geometry::plan_of(middle - a) - run * t) < kOn && std::abs(glm::dot(glm::normalize(run), glm::normalize(way))) > 0.98)
-					return &key;
-			}
-		}
-		return nullptr;
-	};
-	for (auto *&track : fresh)
-		if (auto const *was{lying_on(*track)}; was != nullptr && lines.contains(*was))
+	if (grade_lines_take_replaced(fresh))
+		changed = true;
+	if (grade_lines_take_joined(fresh))
+		changed = true;
+	if (changed)
+	{
+		++state.grade_lines_changes;
+		state.grade_lines_dirty = true;
+	}
+}
+
+bool editor_mode::grade_lines_take_replaced(std::vector<TTrack *> &Fresh)
+{
+	auto &state{m_nmt_state};
+	auto &lines{state.grade_lines};
+	auto &hand{state.grade_lines_hand};
+	auto changed{false};
+	for (auto *&track : Fresh)
+		if (auto const *was{replaced_under(*track, state.grade_line_replaced)}; was != nullptr && lines.contains(*was))
 		{
 			auto const line{lines.at(*was)};
 			auto const byhand{hand.contains(*was)};
@@ -570,52 +662,71 @@ void editor_mode::grade_lines_committed(std::vector<TTrack *> const &Tracks)
 			track = nullptr;
 			changed = true;
 		}
-	auto const lines_at = [&](TTrack const &Track, glm::dvec3 const &Point) {
-		std::map<int, bool> found;
-		for (auto const &[other, end] : editor_track::connected_points(Track, Point))
-			if (other != &Track && false == other->m_editorremoved)
-				if (auto const entry{lines.find(grade_line_key(*other))}; entry != lines.end() && entry->second >= 0)
-					found[entry->second] = found[entry->second] || hand.contains(entry->first);
-		return found;
-	};
+	return changed;
+}
+
+std::map<int, bool> editor_mode::grade_lines_at(TTrack const &Track, glm::dvec3 const &Point) const
+{
+	auto const &lines{m_nmt_state.grade_lines};
+	auto const &hand{m_nmt_state.grade_lines_hand};
+	std::map<int, bool> found;
+	for (auto const &[other, end] : editor_track::connected_points(Track, Point))
+	{
+		if (other == &Track || other->m_editorremoved)
+			continue;
+		if (auto const entry{lines.find(grade_line_key(*other))}; entry != lines.end() && entry->second >= 0)
+			found[entry->second] = found[entry->second] || hand.contains(entry->first);
+	}
+	return found;
+}
+
+std::pair<int, bool> editor_mode::grade_line_between(TTrack const &Track) const
+{
+	auto const &path{Track.m_paths.front()};
+	auto const start{grade_lines_at(Track, path.points[segment_data::point::start])};
+	auto const end{grade_lines_at(Track, path.points[segment_data::point::end])};
+	auto number{-1};
+	auto byhand{false};
+	for (auto const &[line, lefthand] : start)
+	{
+		auto const other{end.find(line)};
+		if (other == end.end())
+			continue;
+		// two lines at both ends tell nothing
+		number = number < 0 ? line : -2;
+		byhand = lefthand && other->second;
+	}
+	return {number, byhand};
+}
+
+bool editor_mode::grade_lines_take_joined(std::vector<TTrack *> &Fresh)
+{
+	auto &state{m_nmt_state};
+	auto changed{false};
 	// the switches first, the link between two of them after
 	for (int pass = 0; pass < 3; ++pass)
 	{
 		auto any{false};
-		for (auto *&track : fresh)
+		for (auto *&track : Fresh)
 		{
 			if (track == nullptr)
 				continue;
-			auto const &path{track->m_paths.front()};
-			auto const start{lines_at(*track, path.points[segment_data::point::start])};
-			auto const end{lines_at(*track, path.points[segment_data::point::end])};
-			auto number{-1};
-			auto byhand{false};
-			for (auto const &[line, lefthand] : start)
-				if (auto const other{end.find(line)}; other != end.end())
-				{
-					// two lines at both ends tell nothing
-					number = number < 0 ? line : -2;
-					byhand = lefthand && other->second;
-				}
+			auto const [number, byhand]{grade_line_between(*track)};
 			if (number < 0)
 				continue;
 			auto const key{grade_line_key(*track)};
-			lines[key] = number;
+			state.grade_lines[key] = number;
 			if (byhand)
-				hand.insert(key);
+				state.grade_lines_hand.insert(key);
 			state.grade_line_keys.try_emplace(track, key);
 			track = nullptr;
-			any = changed = true;
+			any = true;
+			changed = true;
 		}
 		if (false == any)
 			break;
 	}
-	if (changed)
-	{
-		++state.grade_lines_changes;
-		state.grade_lines_dirty = true;
-	}
+	return changed;
 }
 
 void editor_mode::grade_line_renamed(TTrack const &Track, std::string const &Old)
@@ -626,8 +737,7 @@ void editor_mode::grade_line_renamed(TTrack const &Track, std::string const &Old
 	auto &state{m_nmt_state};
 	auto const from{grade_line_key(Old, Track)};
 	auto const to{grade_line_key(Track)};
-	auto const found{state.grade_lines.find(from)};
-	if (found != state.grade_lines.end() && false == state.grade_lines.contains(to))
+	if (auto const found{state.grade_lines.find(from)}; found != state.grade_lines.end() && false == state.grade_lines.contains(to))
 	{
 		auto const line{found->second};
 		auto const byhand{state.grade_lines_hand.contains(from)};
@@ -663,8 +773,7 @@ std::vector<TTrack const *> const &editor_mode::grade_line_members(int const Num
 // click does with it
 void editor_mode::draw_grade_line_pick()
 {
-	auto const &state{m_profile};
-	if (false == state.open || false == state.picking || state.route.spans.empty())
+	if (auto const &state{m_profile}; false == state.open || false == state.picking || state.route.spans.empty())
 		return;
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
@@ -698,7 +807,8 @@ void editor_mode::render_profile_grade_line()
 	auto &state{m_profile};
 	grade_lines_load();
 	auto const &lines{m_nmt_state.grade_lines};
-	std::size_t shared{0}, off{0};
+	std::size_t shared{0};
+	std::size_t off{0};
 	for (auto const &span : state.route.spans)
 		if (auto const found{lines.find(grade_line_key(*span.track))}; found != lines.end())
 		{

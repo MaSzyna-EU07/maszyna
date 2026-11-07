@@ -73,7 +73,8 @@ class gauge_tool final : public editor_tool
 		int current{-1}; // hit the camera went to
 		bool published{false}; // overlay up to date
 		std::shared_ptr<struct gauge_scan> scan; // of the whole scenery, done in slices over the frames
-	} m_gauge;
+	};
+	gauge_state m_gauge;
 	void gauge_load();
 	// the chosen railway and road outlines
 	gauge::choice gauge_choice() const;

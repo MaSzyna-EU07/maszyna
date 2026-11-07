@@ -17,14 +17,18 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <sstream>
+#include <string_view>
 
 namespace
 {
@@ -93,25 +97,79 @@ bool write_file(fs::path const &Path, std::vector<std::uint8_t> const &Data)
 }
 
 // the name of the model among the names the capabilities of the service list: the first which says it's a terrain model
-std::string coverage_of(std::string const &Capabilities)
+std::string coverage_of(std::string_view const Capabilities)
 {
 	std::vector<std::string> names;
-	for (std::size_t at{0}; (at = Capabilities.find("name>", at)) != std::string::npos;)
+	for (std::size_t at{0}; (at = Capabilities.find("name>", at)) != std::string_view::npos;)
 	{
 		at += 5;
 		auto const end{Capabilities.find('<', at)};
-		if (end == std::string::npos)
+		if (end == std::string_view::npos)
 			break;
 		names.emplace_back(Capabilities.substr(at, end - at));
 	}
 	for (auto const &name : names)
 	{
 		std::string lower{name};
-		std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char const Letter) { return static_cast<char>(std::tolower(Letter)); });
+		std::ranges::transform(lower, lower.begin(), [](unsigned char const Letter) { return static_cast<char>(std::tolower(Letter)); });
 		if (lower.find("dtm") != std::string::npos || lower.find("nmt") != std::string::npos || lower.find("terrain") != std::string::npos)
 			return name;
 	}
 	return fallback_coverage;
+}
+
+// the square read from the disk cache, or from the game folder where an older build kept it, which moves it to the cache.
+// false: no file of it, or only damaged ones, which are deleted
+template <typename Square>
+bool read_kept(fs::path const &File, Square &Result)
+{
+	std::error_code fault;
+	std::vector<std::uint8_t> data;
+	if (read_file(File, data))
+	{
+		if (editor_geotiff::read(data, Result, no_data - 1.f))
+			return true;
+		// damaged: fetched again
+		fs::remove(File, fault);
+	}
+	// a square an older build kept in the game folder is moved to the cache, as it's asked for
+	auto const old{fs::path{game_cache_folder} / File.filename()};
+	if (old == File || false == read_file(old, data))
+		return false;
+	if (false == editor_geotiff::read(data, Result, no_data - 1.f))
+	{
+		// damaged
+		fs::remove(old, fault);
+		return false;
+	}
+	// moved as it is when the cache is on the same disk, written there and deleted otherwise; one that can't be
+	// written there stays where it is
+	fs::create_directories(File.parent_path(), fault);
+	fs::rename(old, File, fault);
+	if (fault && write_file(File, data))
+		fs::remove(old, fault);
+	return true;
+}
+
+// the name of the model read from the capabilities of the service; none when they didn't come
+std::optional<std::string> service_coverage(editor_http::client &Client, editor_http::stop_check const &Stop)
+{
+	std::vector<std::uint8_t> capabilities;
+	std::string unused;
+	if (false == Client.get(std::string{service} + "?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCapabilities", capabilities, unused, Stop))
+		return std::nullopt;
+	return coverage_of(std::string(capabilities.begin(), capabilities.end()));
+}
+
+// the answer of the service which says the square lies outside of the model: why it failed told, and the square marked so
+template <typename Square>
+bool outside_coverage(std::vector<std::uint8_t> const &Data, std::string &Error, Square &Result)
+{
+	if (std::string const text(Data.begin(), Data.end()); text.find("outside requested coverage") == std::string::npos)
+		return false;
+	Error = STRN("The place lies outside of the terrain model of Poland: check the location of the scenery");
+	Result.outside = true;
+	return true;
 }
 
 } // namespace
@@ -121,7 +179,7 @@ editor_nmt::editor_nmt() = default;
 editor_nmt::~editor_nmt()
 {
 	{
-		std::lock_guard<std::mutex> lock{m_mutex};
+		std::scoped_lock lock{m_mutex};
 		m_stop = true;
 		m_queue.clear();
 	}
@@ -138,14 +196,14 @@ bool editor_nmt::can_download()
 
 void editor_nmt::place(double const North, double const East)
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	m_north = North;
 	m_east = East;
 }
 
 bool editor_nmt::placed() const
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	return m_north != 0.0 || m_east != 0.0;
 }
 
@@ -157,9 +215,10 @@ editor_nmt::key editor_nmt::key_of(double const East, double const North) const
 bool editor_nmt::height(double const X, double const Z, double &Height) const
 {
 	std::shared_ptr<square const> found;
-	double east, north;
+	double east{0.0};
+	double north{0.0};
 	{
-		std::lock_guard<std::mutex> lock{m_mutex};
+		std::scoped_lock lock{m_mutex};
 		east = m_east - X;
 		north = m_north + Z;
 		auto const it{m_squares.find(key_of(east, north))};
@@ -178,8 +237,8 @@ bool editor_nmt::height(double const X, double const Z, double &Height) const
 	auto const fc{std::clamp(column - c0, 0.0, 1.0)};
 	auto const fr{std::clamp(row - r0, 0.0, 1.0)};
 	auto const at = [&](int const C, int const R) { return grid.heights[static_cast<std::size_t>(R) * grid.width + C]; };
-	float const corners[4]{at(c0, r0), at(c0 + 1, r0), at(c0, r0 + 1), at(c0 + 1, r0 + 1)};
-	if (std::all_of(std::begin(corners), std::end(corners), [](float const Value) { return std::isfinite(Value) && Value > no_data; }))
+	std::array<float, 4> const corners{at(c0, r0), at(c0 + 1, r0), at(c0, r0 + 1), at(c0 + 1, r0 + 1)};
+	if (std::ranges::all_of(corners, [](float const Value) { return std::isfinite(Value) && Value > no_data; }))
 	{
 		Height = (corners[0] * (1.0 - fc) + corners[1] * fc) * (1.0 - fr) + (corners[2] * (1.0 - fc) + corners[3] * fc) * fr;
 		return true;
@@ -197,27 +256,33 @@ bool editor_nmt::request(glm::dvec2 const &Min, glm::dvec2 const &Max)
 	std::vector<key> wanted;
 	bool all{true};
 	{
-		std::lock_guard<std::mutex> lock{m_mutex};
-		auto const low{key_of(m_east - Max.x, m_north + Min.y)};
-		auto const high{key_of(m_east - Min.x, m_north + Max.y)};
-		auto const middle{key_of(m_east - 0.5 * (Min.x + Max.x), m_north + 0.5 * (Min.y + Max.y))};
+		std::scoped_lock lock{m_mutex};
+		auto const [low_east, low_north]{key_of(m_east - Max.x, m_north + Min.y)};
+		auto const [high_east, high_north]{key_of(m_east - Min.x, m_north + Max.y)};
+		auto const [middle_east, middle_north]{key_of(m_east - 0.5 * (Min.x + Max.x), m_north + 0.5 * (Min.y + Max.y))};
 		auto const now{seconds()};
-		for (auto e = low.first; e <= high.first; ++e)
-			for (auto n = low.second; n <= high.second; ++n)
+		// a square in, or one the service didn't give a short while ago; one it didn't give longer ago is dropped
+		auto const settled = [this, now](key const &Square) {
+			auto const found{m_squares.find(Square)};
+			if (found == m_squares.end())
+				return false;
+			if (false == found->second->failed || found->second->outside || now - found->second->failed_at < retry_after)
+				return true;
+			m_squares.erase(found);
+			return false;
+		};
+		for (auto e = low_east; e <= high_east; ++e)
+			for (auto n = low_north; n <= high_north; ++n)
 			{
 				key const square{e, n};
-				if (auto const found{m_squares.find(square)}; found != m_squares.end())
-				{
-					if (false == found->second->failed || found->second->outside || now - found->second->failed_at < retry_after)
-						continue;
-					m_squares.erase(found);
-				}
+				if (settled(square))
+					continue;
 				all = false;
 				if (false == m_queued.contains(square))
 					wanted.push_back(square);
 			}
-		std::sort(wanted.begin(), wanted.end(), [&](key const &Left, key const &Right) {
-			auto const distance = [&](key const &Square) { return std::abs(Square.first - middle.first) + std::abs(Square.second - middle.second); };
+		std::ranges::sort(wanted, [middle_east, middle_north](key const &Left, key const &Right) {
+			auto const distance = [middle_east, middle_north](key const &Square) { return std::abs(Square.first - middle_east) + std::abs(Square.second - middle_north); };
 			return distance(Left) < distance(Right);
 		});
 		for (auto const &square : wanted)
@@ -242,7 +307,7 @@ void editor_nmt::start_workers()
 
 std::filesystem::path editor_nmt::file_of(key const &Key) const
 {
-	return cache_root() / (std::to_string(Key.first) + "_" + std::to_string(Key.second) + ".tif");
+	return cache_root() / std::format("{}_{}.tif", Key.first, Key.second);
 }
 
 void editor_nmt::prefetch(std::vector<glm::dvec2> const &Polygon)
@@ -252,7 +317,7 @@ void editor_nmt::prefetch(std::vector<glm::dvec2> const &Polygon)
 		for (auto const &square : geometry::squares_in(Polygon, square_size))
 			keys.emplace_back(square);
 	{
-		std::lock_guard<std::mutex> lock{m_mutex};
+		std::scoped_lock lock{m_mutex};
 		m_prefetch = std::move(keys);
 		m_prefetch_next = 0;
 		m_prefetch_cached.clear();
@@ -267,7 +332,7 @@ void editor_nmt::prefetch(std::vector<glm::dvec2> const &Polygon)
 void editor_nmt::prefetch_paused(bool const Paused)
 {
 	{
-		std::lock_guard<std::mutex> lock{m_mutex};
+		std::scoped_lock lock{m_mutex};
 		m_prefetch_paused = Paused;
 	}
 	m_wake.notify_all();
@@ -275,23 +340,23 @@ void editor_nmt::prefetch_paused(bool const Paused)
 
 editor_nmt::prefetch_state editor_nmt::prefetched() const
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	return {static_cast<int>(m_prefetch_cached.size()), static_cast<int>(m_prefetch.size()), static_cast<int>(m_prefetch_failed.size())};
 }
 
 std::size_t editor_nmt::waiting() const
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	return m_queued.size();
 }
 
 bool editor_nmt::retrying(glm::dvec2 const &Min, glm::dvec2 const &Max) const
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
-	auto const low{key_of(m_east - Max.x, m_north + Min.y)};
-	auto const high{key_of(m_east - Min.x, m_north + Max.y)};
-	for (auto e = low.first; e <= high.first; ++e)
-		for (auto n = low.second; n <= high.second; ++n)
+	std::scoped_lock lock{m_mutex};
+	auto const [low_east, low_north]{key_of(m_east - Max.x, m_north + Min.y)};
+	auto const [high_east, high_north]{key_of(m_east - Min.x, m_north + Max.y)};
+	for (auto e = low_east; e <= high_east; ++e)
+		for (auto n = low_north; n <= high_north; ++n)
 			if (auto const found{m_squares.find({e, n})}; found != m_squares.end() && found->second->failed && false == found->second->outside)
 				return true;
 	return false;
@@ -299,13 +364,13 @@ bool editor_nmt::retrying(glm::dvec2 const &Min, glm::dvec2 const &Max) const
 
 void editor_nmt::retry()
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	std::erase_if(m_squares, [](auto const &Square) { return Square.second->failed && false == Square.second->outside; });
 }
 
 void editor_nmt::cancel()
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	for (auto const &square : m_queue)
 		m_queued.erase(square);
 	m_queue.clear();
@@ -313,7 +378,7 @@ void editor_nmt::cancel()
 
 std::string editor_nmt::error(bool *Again) const
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	std::string result;
 	bool outside{false};
 	if (Again != nullptr)
@@ -335,7 +400,7 @@ std::string editor_nmt::error(bool *Again) const
 
 void editor_nmt::clear()
 {
-	std::lock_guard<std::mutex> lock{m_mutex};
+	std::scoped_lock lock{m_mutex};
 	m_queue.clear();
 	m_queued.clear();
 	m_squares.clear();
@@ -349,9 +414,9 @@ void editor_nmt::work()
 		bool prefetching{false};
 		std::uint32_t generation{0};
 		{
-			std::unique_lock<std::mutex> lock{m_mutex};
+			std::unique_lock lock{m_mutex};
 			auto const prefetchable = [this]() { return false == m_prefetch_paused && m_prefetch_next < m_prefetch.size(); };
-			m_wake.wait(lock, [&]() { return m_stop || false == m_queue.empty() || prefetchable(); });
+			m_wake.wait(lock, [this, &prefetchable]() { return m_stop || false == m_queue.empty() || prefetchable(); });
 			if (m_stop)
 				return;
 			if (false == m_queue.empty())
@@ -373,7 +438,7 @@ void editor_nmt::work()
 			std::error_code fault;
 			std::string error;
 			auto const ok{fs::exists(file_of(square), fault) || false == fetch(square, error)->failed};
-			std::lock_guard<std::mutex> lock{m_mutex};
+			std::scoped_lock lock{m_mutex};
 			if (generation == m_prefetch_generation)
 				(ok ? m_prefetch_cached : m_prefetch_failed).insert(square);
 			continue;
@@ -381,7 +446,7 @@ void editor_nmt::work()
 		std::string error;
 		auto fetched{fetch(square, error)};
 		{
-			std::lock_guard<std::mutex> lock{m_mutex};
+			std::scoped_lock lock{m_mutex};
 			if (false == m_queued.contains(square))
 				continue; // cleared meanwhile
 			m_queued.erase(square);
@@ -393,33 +458,9 @@ void editor_nmt::work()
 std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std::string &Error)
 {
 	auto result{std::make_shared<square>()};
-	std::error_code fault;
 	auto const file{file_of(Key)};
-	std::vector<std::uint8_t> data;
-	if (read_file(file, data))
-	{
-		if (editor_geotiff::read(data, *result, no_data - 1.f))
-			return result;
-		// damaged: fetched again
-		fs::remove(file, fault);
-	}
-	// a square an older build kept in the game folder is moved to the cache, as it's asked for
-	if (auto const old{fs::path{game_cache_folder} / file.filename()}; old != file && read_file(old, data))
-	{
-		auto const whole{editor_geotiff::read(data, *result, no_data - 1.f)};
-		if (whole)
-		{
-			// moved as it is when the cache is on the same disk, written there and deleted otherwise; one that can't be
-			// written there stays where it is
-			fs::create_directories(file.parent_path(), fault);
-			fs::rename(old, file, fault);
-			if (fault && write_file(file, data))
-				fs::remove(old, fault);
-			return result;
-		}
-		// damaged
-		fs::remove(old, fault);
-	}
+	if (read_kept(file, *result))
+		return result;
 	if (false == can_download())
 	{
 		Error = STRN("This build can't fetch from the internet");
@@ -430,22 +471,20 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 	}
 	editor_http::client client;
 	auto const stop = [this]() {
-		std::lock_guard<std::mutex> lock{m_mutex};
+		std::scoped_lock lock{m_mutex};
 		return m_stop;
 	};
 	std::string coverage;
 	{
-		std::lock_guard<std::mutex> lock{m_mutex};
+		std::scoped_lock lock{m_mutex};
 		coverage = m_coverage;
 	}
 	if (coverage.empty())
 	{
-		std::vector<std::uint8_t> capabilities;
-		std::string unused;
-		if (client.get(std::string{service} + "?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCapabilities", capabilities, unused, stop))
+		if (auto const named{service_coverage(client, stop)}; named.has_value())
 		{
-			coverage = coverage_of(std::string(capabilities.begin(), capabilities.end()));
-			std::lock_guard<std::mutex> lock{m_mutex};
+			coverage = *named;
+			std::scoped_lock lock{m_mutex};
 			m_coverage = coverage;
 		}
 		else
@@ -458,10 +497,9 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 	auto const pixels{static_cast<int>(square_size) + 2 * border};
 	auto const east{Key.first * square_size - border};
 	auto const north{Key.second * square_size - border};
-	char bbox[128];
-	std::snprintf(bbox, sizeof(bbox), "%.0f,%.0f,%.0f,%.0f", east, north, east + pixels, north + pixels);
-	auto const url{std::string{service} + "?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage&COVERAGE=" + coverage + "&CRS=EPSG:2180&RESPONSE_CRS=EPSG:2180&BBOX=" + bbox +
-	               "&WIDTH=" + std::to_string(pixels) + "&HEIGHT=" + std::to_string(pixels) + "&FORMAT=GEOTIFF"};
+	auto const url{std::format("{}?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage&COVERAGE={}&CRS=EPSG:2180&RESPONSE_CRS=EPSG:2180&BBOX={:.0f},{:.0f},{:.0f},{:.0f}&WIDTH={}&HEIGHT={}&FORMAT=GEOTIFF",
+	                           service, coverage, east, north, east + pixels, north + pixels, pixels, pixels)};
+	std::vector<std::uint8_t> data;
 	for (int attempt = 0; attempt < 3; ++attempt)
 	{
 		if (client.get(url, data, Error, stop) && editor_geotiff::read(data, *result, no_data - 1.f))
@@ -470,18 +508,12 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 			Error.clear();
 			return result;
 		}
-		if (stop())
+		if (stop() || outside_coverage(data, Error, *result))
 			break;
-		if (std::string const text(data.begin(), data.end()); text.find("outside requested coverage") != std::string::npos)
-		{
-			Error = STRN("The place lies outside of the terrain model of Poland: check the location of the scenery");
-			result->outside = true;
-			break;
-		}
 		if (Error.empty())
 			Error = STRN("The service gave no terrain model");
 	}
-	WriteLog("Editor: NMT square " + std::to_string(Key.first) + "," + std::to_string(Key.second) + " not fetched: " + Error, logtype::generic);
+	WriteLog(std::format("Editor: NMT square {},{} not fetched: {}", Key.first, Key.second, Error), logtype::generic);
 	result->failed = true;
 	result->error = Error;
 	result->failed_at = seconds();

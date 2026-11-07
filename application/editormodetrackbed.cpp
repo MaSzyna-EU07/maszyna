@@ -31,7 +31,7 @@ double constexpr kModel{0.15}; // m, how closely the line keeps to the ground, a
 
 } // namespace
 
-glm::dvec3 editor_mode::cursor_terrain(double const Height)
+glm::dvec3 editor_mode::cursor_terrain(double const Height) const
 {
 	auto point{cursor_level(Height)};
 	for (int i = 0; i < 5 && std::isfinite(point.x) && std::isfinite(point.z); ++i)
@@ -60,7 +60,7 @@ double editor_mode::nearby_ground(glm::dvec3 const &Point) const
 		for (int i = 0; i < 12; ++i)
 		{
 			auto const angle{glm::two_pi<double>() * i / 12.0};
-			probes.push_back({Point.x + radius * std::cos(angle), ceiling, Point.z + radius * std::sin(angle)});
+			probes.emplace_back(Point.x + radius * std::cos(angle), ceiling, Point.z + radius * std::sin(angle));
 		}
 		std::vector<char> found;
 		auto const heights{ground_heights(probes, true, &found)};
@@ -101,7 +101,7 @@ std::vector<double> editor_mode::bed_heights(std::vector<glm::dvec3> const &Poin
 	for (std::size_t i = 0; i < probes.size(); ++i)
 		if (found[i] == 0 && nmt_ground(probes[i].x, probes[i].z, heights[i]))
 			found[i] = 1;
-	std::vector<double> result(Points.size(), std::numeric_limits<double>::quiet_NaN());
+	std::vector result(Points.size(), std::numeric_limits<double>::quiet_NaN());
 	for (std::size_t i = 0; i < Points.size(); ++i)
 	{
 		auto const axis{found[3 * i] != 0 ? heights[3 * i] : std::numeric_limits<double>::quiet_NaN()};
@@ -119,8 +119,7 @@ std::vector<double> editor_mode::bed_heights(std::vector<glm::dvec3> const &Poin
 
 double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const
 {
-	auto const height{bed_heights({Point}, {Direction}, Style).front()};
-	if (false == std::isnan(height))
+	if (auto const height{bed_heights({Point}, {Direction}, Style).front()}; false == std::isnan(height))
 		return height;
 	auto const nearby{nearby_ground(Point)};
 	return std::isnan(nearby) ? Point.y : nearby + trackbed(Style).first;
@@ -135,7 +134,7 @@ void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const 
 		return;
 	}
 	auto const grading{laying_grading(Style)};
-	auto const bed = [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); };
+	auto const bed = [this, Style](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &Directions) { return bed_heights(Points, Directions, Style); };
 	if (m_follow_preview)
 		ground_follow::follow_meanwhile(Pieces, {Height0, Grade0, Height1, Grade1}, bed, grading, m_fitter);
 	else
@@ -161,12 +160,14 @@ ground_follow::grading editor_mode::laying_grading(TTrack const *Style) const
 	return grading;
 }
 
-glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)
+glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point) const
 {
 	auto const &tool{m_lay};
 	// level: on at the height the laying goes on from, the first point on the ground
 	if (EditorSettings.heights() == editorSettings::lay_heights::level && false == tool.points.empty())
 		return {Point.x, tool.points.back().y, Point.z};
-	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
+	TTrack const *style{tool.start.track};
+	if (style == nullptr && tool.copy_selected)
+		style = selected_track();
 	return {Point.x, bed_height(Point, tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back()), style), Point.z};
 }

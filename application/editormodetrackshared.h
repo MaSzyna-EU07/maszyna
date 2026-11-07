@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -93,8 +94,7 @@ inline std::string curve_label(alignment::curve_report const &Curve, alignment::
 	if (Curve.transition_in > 0.0 || Curve.transition_out > 0.0)
 		text += std::abs(Curve.transition_in - Curve.transition_out) < 0.5 ? format("  L %.0f", Curve.transition_in) : format("  L %.0f/%.0f", Curve.transition_in, Curve.transition_out);
 	// a compound curve shows the cant of each arc where they aren't all the same
-	auto const varied{std::any_of(Curve.cants.begin(), Curve.cants.end(), [&](double const Cant) { return std::abs(Cant - Curve.cants.front()) >= 0.5; })};
-	if (varied)
+	if (std::ranges::any_of(Curve.cants, [&Curve](double const Cant) { return std::abs(Cant - Curve.cants.front()) >= 0.5; }))
 		for (std::size_t i = 0; i < Curve.cants.size(); ++i)
 			text += format(i == 0 ? "  h %.0f" : "/%.0f", Curve.cants[i]);
 	else if (Curve.cant > 0.0)
@@ -190,16 +190,17 @@ inline std::string describe(editor_track::straight const &Line)
 
 inline char const *point_label(editor_track::point_kind const Kind)
 {
+	using enum editor_track::point_kind;
 	switch (Kind)
 	{
-	case editor_track::point_kind::start: return STR_C("Start");
-	case editor_track::point_kind::control1: return STR_C("Control 1");
-	case editor_track::point_kind::control2: return STR_C("Control 2");
+	case start: return STR_C("Start");
+	case control1: return STR_C("Control 1");
+	case control2: return STR_C("Control 2");
 	default: return STR_C("End");
 	}
 }
 
-editor_track::point_kind const kPointKinds[] = {editor_track::point_kind::start, editor_track::point_kind::control1, editor_track::point_kind::control2, editor_track::point_kind::end};
+std::array<editor_track::point_kind, 4> const kPointKinds{editor_track::point_kind::start, editor_track::point_kind::control1, editor_track::point_kind::control2, editor_track::point_kind::end};
 
 float const kHandleRadius{10.0f};
 double const kLaySnapRadius{5.0};
@@ -213,7 +214,7 @@ double const kSlipReach{12.0}; // m; a slip goes to the crossing nearest the cur
 double constexpr kCrossoverStraights{250.0};
 double const kSkewSeat{2.0}; // m; the first point laid with Alt this close to a straight track goes onto its axis
 double const kSkewReach{30.0}; // m; Alt while laying turns the straight to a straight track this close to its start, or one it crosses
-double const kSkewRatios[]{4.8, 6.6, 7.5, 9.0, 12.0, 14.0, 18.5, 26.5};
+std::array<double, 8> const kSkewRatios{4.8, 6.6, 7.5, 9.0, 12.0, 14.0, 18.5, 26.5};
 double const kLineReach{2000.0}; // how far each way the Curve tab follows the line
 double const kDigitizeFit{0.5};
 double const kDrawnReach{100000.0};
@@ -239,7 +240,7 @@ inline double switch_from(editor_track::straight const &Line, double const Lengt
 	auto from{std::clamp(Direction > 0 ? Along : Along - Length, 0.0, Line.length - Length)};
 	if (false == Snap)
 		return from;
-	std::vector<double> joints{0.0, Line.length};
+	std::vector joints{0.0, Line.length};
 	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
 	{
 		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
@@ -265,8 +266,13 @@ inline double switch_from(editor_track::straight const &Line, double const Lengt
 inline std::string link_summary(editor_track::snap_target const &Target, editor_track::branch_link const &Link, double const Switchradius)
 {
 	auto const name{Target.track != nullptr && false == Target.track->name().empty() ? Target.track->name() : std::string{STR_C("(no name)")}};
-	auto text{Link.reverse ? format(STR_C("The branch leads into %s with reverse curves R %.0f m"), name.c_str(), Link.radius) :
-	          Link.radius > 0.0 ? format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius) : format(STR_C("The branch leads straight into %s"), name.c_str())};
+	std::string text;
+	if (Link.reverse)
+		text = format(STR_C("The branch leads into %s with reverse curves R %.0f m"), name.c_str(), Link.radius);
+	else if (Link.radius > 0.0)
+		text = format(STR_C("The branch leads into %s with an R %.0f m curve"), name.c_str(), Link.radius);
+	else
+		text = format(STR_C("The branch leads straight into %s"), name.c_str());
 	if (Link.insert > 0.0)
 		text += format(STR_C(", a straight of %.1f m between them"), Link.insert);
 	if (Link.reverse && Link.radius < Switchradius - 0.5)
@@ -298,7 +304,7 @@ inline std::optional<alignment::join_result> eased_join(alignment::join_request 
 	if (false == editor_track::eases_room(In, Out, Request.start.position, Request.start.direction, Request.end.position, Request.end.direction))
 		return std::nullopt;
 	auto eased{alignment::join(middle)};
-	if (eased.kind == alignment::join_kind::none || eased.kind == alignment::join_kind::bezier)
+	if (eased.kind == alignment::join_kind::no_join || eased.kind == alignment::join_kind::bezier)
 		return std::nullopt;
 	eased.length = editor_track::eased_length(In, eased.length, Out);
 	eased.pieces = editor_track::eased_pieces(In, eased.pieces, Out);
@@ -330,7 +336,7 @@ inline void compound_from(editor_track::curve const &Curve, alignment::vertex &V
 	Vertex.first_cant = -1.0;
 	Vertex.arcs.clear();
 	for (std::size_t i = 1; i < Curve.arcs.size(); ++i)
-		Vertex.arcs.push_back({value(Curve.arcs[i].radius), value(Curve.arcs[i].transition), Curve.arcs[i].turn});
+		Vertex.arcs.emplace_back(value(Curve.arcs[i].radius), value(Curve.arcs[i].transition), Curve.arcs[i].turn);
 }
 
 } // namespace track_mode

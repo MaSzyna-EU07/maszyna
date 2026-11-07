@@ -83,7 +83,7 @@ def read_tables(tables):
     for table in tables:
         scenery = os.path.basename(table).replace('use_', '').replace('.tsv', '')
         # a table named on the command line by whoever runs the tool, read as asked
-        with open(table, encoding='utf-8') as source:  # NOSONAR
+        with open(table, encoding='utf-8') as source:  # NOSONAR: the table is the file the user named to read
             next(source)
             for row in source:
                 cells = row.rstrip('\n').split('\t')
@@ -126,7 +126,6 @@ def main(argv):
     least = int(argv[argv.index('--least') + 1]) if '--least' in argv else 3
     uses = read_tables(tables)
     counts = {}
-    written = 0
     unknown = []
     for key, entry in sorted(uses.items(), key=lambda item: -len(item[1]['offsets'])):
         file = entry['file']
@@ -155,7 +154,6 @@ def main(argv):
             os.makedirs(os.path.dirname(beside), exist_ok=True)  # NOSONAR
             with open(beside, 'w', encoding='utf-8', newline='\n') as out:  # NOSONAR
                 out.write('\n'.join(lines) + '\n')
-            written += 1
         else:
             print('%-45s %-12s %s' % (file, kind, lines[3][13:120]))
     print('by kind:', ', '.join('%s %d' % item for item in sorted(counts.items())))

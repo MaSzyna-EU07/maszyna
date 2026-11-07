@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <glm/glm.hpp>
@@ -96,12 +98,12 @@ glm::dvec3 kept_end(record const &Record);
 // the stored alignments the tracks deleted lay along cut down to the stretches of their line other tracks still lie along, a design
 // with none left forgotten: the part of a line with no track is no part of its design any more. Called before the deletion goes into
 // the undo history, which takes the records along. The count of the designs cut down or forgotten
-std::size_t trim(std::vector<TTrack *> const &Removed);
+std::size_t trim(std::span<TTrack *const> const Removed);
 // stored alignment near the tracks, whose line they no longer follow; Departure receives the largest distance
 int departed(std::vector<TTrack *> const &Tracks, double &Departure);
 // keeps the design in the file of the layer, in place of the one with the same ends; with no points clicked given it keeps the
 // ones of the design it takes the place of
-int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string const &Source = "designed", double const Fit = 0.0,
+int store(alignment::design const &Design, alignment::result const &Result, double const Origin, scene::layer_handle const Layer, std::string_view const Source = "designed", double const Fit = 0.0,
           std::vector<glm::dvec3> const &Clicks = {});
 // the points clicked when the lines were laid, kept with them, which lie by the line within the reach, between its ends
 std::vector<glm::dvec3> clicks_along(alignment::result const &Result, double const Reach);

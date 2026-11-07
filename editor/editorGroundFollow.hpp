@@ -93,7 +93,7 @@ class fitter
 	std::optional<request> m_fitting;
 	std::optional<result> m_result;
 	bool m_stop{false};
-	std::thread m_thread;
+	std::jthread m_thread;
 };
 
 // where Bed finds no ground, the heights lead from one end to the other. With a fitter the line it fitted for the same ground

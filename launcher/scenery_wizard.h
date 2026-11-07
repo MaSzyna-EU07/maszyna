@@ -30,6 +30,7 @@ class scenerywizard_panel : public ui_panel
 
   private:
 	void render_form();
+	void render_settings();
 	void pick(glm::dvec2 const &Point);
 	bool create_scenery();
 

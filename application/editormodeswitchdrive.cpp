@@ -32,26 +32,66 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <optional>
+#include <span>
 #include <sstream>
+#include <string_view>
 
 namespace
 {
 
 std::string drive_file(std::string Text)
 {
-	std::replace(Text.begin(), Text.end(), '\\', '/');
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
+	std::ranges::replace(Text, '\\', '/');
+	std::ranges::transform(Text, Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
 	return Text;
 }
 
-int drive_side(std::string const &Side)
+int drive_side(std::string_view const Side)
 {
 	if (Side == "left")
 		return 0;
 	return Side == "right" ? 1 : -1;
 }
 
-std::optional<std::string> pose_value(std::string const &Role, glm::dvec3 const &Local, editor_track::drive_spot const &Spot)
+// a switch drive template among the includes, a variant of its family
+struct drive_variant
+{
+	std::string name; // of the family
+	int index{0}; // of the variant: 2 for a right-hand switch, plus 1 for the drive on the right
+	double height{0.0};
+	bool preferred{false};
+};
+
+// none where the entry isn't a switch drive, or its description lacks the track or the sides
+std::optional<drive_variant> drive_variant_of(include_entry const &Entry)
+{
+	if (Entry.category != "switch drive")
+		return std::nullopt;
+	include_info info;
+	if (std::string error; false == editor_includes::load(Entry.file, info, error) || editor_includes::parameter_with_role(info, "track") == 0)
+		return std::nullopt;
+	auto const hand{drive_side(info.switch_hand)};
+	auto const drive{drive_side(info.switch_drive)};
+	if (hand < 0 || drive < 0)
+		return std::nullopt;
+	return drive_variant{info.name.empty() ? Entry.file : info.name, hand * 2 + drive, info.switch_height, info.switch_default};
+}
+
+// a layer of the scenery is read from the file, named by it or by a path ending with it
+bool layer_of_file(std::string const &File)
+{
+	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
+	{
+		auto name{scene::Layers.layer(static_cast<scene::layer_handle>(handle)).name};
+		std::ranges::replace(name, '\\', '/');
+		if (ToLower(name) == ToLower(File) || ToLower(name).ends_with("/" + ToLower(File)))
+			return true;
+	}
+	return false;
+}
+
+std::optional<std::string> pose_value(std::string_view const Role, glm::dvec3 const &Local, editor_track::drive_spot const &Spot)
 {
 	if (Role == "pos.x")
 		return editor_includes::number(Local.x);
@@ -104,35 +144,27 @@ bool editor_mode::scan_switch_drives(bool const Wait)
 	tool.drives_revision = EditorIncludes.revision();
 	// the drive chosen stays chosen, also none
 	auto const chosen{tool.drive >= 0 && tool.drive < static_cast<int>(tool.drives.size()) ? std::optional<std::string>{tool.drives[tool.drive].name} : std::nullopt};
-	auto const none{false == tool.drives.empty() && tool.drive < 0};
+	auto const chosen_none{false == tool.drives.empty() && tool.drive < 0};
 	tool.drives.clear();
 	for (auto const &entry : EditorIncludes.entries())
 	{
-		if (entry.category != "switch drive")
+		auto const variant{drive_variant_of(entry)};
+		if (false == variant.has_value())
 			continue;
-		include_info info;
-		std::string error;
-		if (false == editor_includes::load(entry.file, info, error) || editor_includes::parameter_with_role(info, "track") == 0)
-			continue;
-		auto const hand{drive_side(info.switch_hand)};
-		auto const drive{drive_side(info.switch_drive)};
-		if (hand < 0 || drive < 0)
-			continue;
-		auto const name{info.name.empty() ? entry.file : info.name};
-		auto family{std::find_if(tool.drives.begin(), tool.drives.end(), [&](switch_tool::drive_family const &Family) { return Family.name == name; })};
+		auto family{std::ranges::find_if(tool.drives, [&variant](switch_tool::drive_family const &Family) { return Family.name == variant->name; })};
 		if (family == tool.drives.end())
 		{
-			tool.drives.push_back({name, {}});
+			tool.drives.push_back({variant->name, {}});
 			family = std::prev(tool.drives.end());
 		}
-		family->files[hand * 2 + drive] = entry.file;
-		family->heights[hand * 2 + drive] = info.switch_height;
-		family->preferred |= info.switch_default;
+		family->files[variant->index] = entry.file;
+		family->heights[variant->index] = variant->height;
+		family->preferred |= variant->preferred;
 	}
-	std::sort(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &A, switch_tool::drive_family const &B) { return A.name < B.name; });
-	auto const preferred{std::find_if(tool.drives.begin(), tool.drives.end(), [](switch_tool::drive_family const &Family) { return Family.preferred; })};
-	auto const kept{std::find_if(tool.drives.begin(), tool.drives.end(), [&](switch_tool::drive_family const &Family) { return chosen.has_value() && Family.name == *chosen; })};
-	if (tool.drives.empty() || none)
+	std::ranges::sort(tool.drives, [](switch_tool::drive_family const &A, switch_tool::drive_family const &B) { return A.name < B.name; });
+	auto const preferred{std::ranges::find_if(tool.drives, [](switch_tool::drive_family const &Family) { return Family.preferred; })};
+	auto const kept{std::ranges::find_if(tool.drives, [&chosen](switch_tool::drive_family const &Family) { return chosen.has_value() && Family.name == *chosen; })};
+	if (tool.drives.empty() || chosen_none)
 		tool.drive = -1;
 	else if (kept != tool.drives.end())
 		tool.drive = static_cast<int>(kept - tool.drives.begin());
@@ -149,17 +181,17 @@ void editor_mode::switch_drive_captured(TTrack const &Track)
 	if (false == found.has_value())
 		return;
 	auto const instance{found->standing.instance};
-	if (std::any_of(m_drive_buffer.begin(), m_drive_buffer.end(), [&](auto const &Entry) { return Entry.first == instance; }))
+	if (std::ranges::any_of(m_drive_buffer, [instance](auto const &Entry) { return Entry.first == instance; }))
 		return;
 	m_drive_buffer.emplace_back(instance, scene::Layers.directive(instance));
 }
 
-void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
+void editor_mode::switch_drives_committed(std::span<TTrack *const> const Tracks)
 {
 	if (m_infra_suspended)
 		return;
 	// a copy: each directive set below empties the drives kept
-	std::optional<std::map<std::string, switch_drive>> drives;
+	std::optional<std::map<std::string, switch_drive, std::less<>>> drives;
 	for (auto const *track : Tracks)
 	{
 		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
@@ -173,8 +205,7 @@ void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
 		auto const &drive{found->second.standing};
 		auto const &included{scene::Layers.instance(drive.instance)};
 		include_info info;
-		std::string error;
-		if (included.file == nullptr || false == editor_includes::load(*included.file, info, error))
+		if (std::string error; included.file == nullptr || false == editor_includes::load(*included.file, info, error))
 			continue;
 		auto const local{spot->location + glm::dvec3{0.0, m_switch.drives[found->second.family].heights[found->second.index], 0.0} - included.context.offset};
 		auto values{drive.values};
@@ -222,8 +253,7 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	item.tilt = spot->tilt;
 	if (auto const present{find_switch_drive(Switch)})
 		return replace_switch_drive(Switch, tool.drive, (present->index & 1) != (driveright ? 1 : 0));
-	std::string error;
-	if (place_templates({item}, error) == 0)
+	if (std::string error; place_templates({item}, error) == 0)
 	{
 		tool.status = refused(STR_C("The drive couldn't be placed: ") + error);
 		return false;
@@ -243,14 +273,14 @@ std::optional<editor_mode::switch_drive> editor_mode::find_switch_drive(TTrack c
 
 // each include is read from its scenery file, so the drives of all the switches are read at once: done for each switch, the start of a
 // scenery of a few hundred took a quarter of a minute. Kept for the frame, while no include comes or goes; the first drive of a switch counts
-std::map<std::string, editor_mode::switch_drive> const &editor_mode::switch_drives_standing(bool const Wait)
+std::map<std::string, editor_mode::switch_drive, std::less<>> const &editor_mode::switch_drives_standing(bool const Wait)
 {
 	auto const &tool{m_switch};
 	scan_switch_drives(Wait);
 	auto &kept{m_drives_standing};
 	auto const instances{static_cast<std::size_t>(scene::Layers.instance_count())};
 	if (kept.has_value() && kept->frame == ImGui::GetFrameCount() && kept->revision == tool.drives_revision && kept->instances == instances &&
-	    std::none_of(kept->by_switch.begin(), kept->by_switch.end(), [](auto const &Drive) {
+	    std::ranges::none_of(kept->by_switch, [](auto const &Drive) {
 		    auto const &included{scene::Layers.instance(Drive.second.standing.instance)};
 		    return included.removed || included.dead;
 	    }))
@@ -264,11 +294,11 @@ std::map<std::string, editor_mode::switch_drive> const &editor_mode::switch_driv
 	kept->frame = ImGui::GetFrameCount();
 	kept->revision = tool.drives_revision;
 	kept->instances = instances;
-	for (auto &standing : standing_templates([&](std::string const &File) { return variants.contains(File); }))
+	for (auto &standing : standing_templates([&variants](std::string const &File) { return variants.contains(File); }))
 	{
 		auto const &[family, index]{variants[standing.file]};
 		auto name{drive_file(standing.values[0])};
-		kept->by_switch.try_emplace(std::move(name), switch_drive{std::move(standing), family, index});
+		kept->by_switch.try_emplace(std::move(name), std::move(standing), family, index);
 	}
 	return kept->by_switch;
 }
@@ -289,7 +319,7 @@ bool editor_mode::flip_switch_drive(TTrack &Switch)
 	return replace_switch_drive(Switch, -1, true);
 }
 
-bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool const Flip)
+bool editor_mode::replace_switch_drive(TTrack const &Switch, int const Family, bool const Flip)
 {
 	auto &tool{m_switch};
 	auto const present{find_switch_drive(Switch)};
@@ -321,8 +351,7 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 		tool.status = refused(STR_C("The drive of this switch can't be changed in its file"));
 		return false;
 	}
-	std::string error;
-	if (place_templates({item}, error) == 0)
+	if (std::string error; place_templates({item}, error) == 0)
 	{
 		scene::Layers.removed(found.instance, false);
 		m_history.pop_back();
@@ -334,7 +363,7 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	return true;
 }
 
-void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
+void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches) // NOSONAR: callers in other files pass braced lists, which a std::span can't take in C++20
 {
 	if (m_history.empty())
 		return;
@@ -366,7 +395,7 @@ std::size_t editor_mode::drives_to_blade_tips()
 		}
 	}
 	switch_drives_committed(switches);
-	return static_cast<std::size_t>(std::count_if(before.begin(), before.end(), [](auto const &Before) { return scene::Layers.directive(Before.first) != Before.second; }));
+	return static_cast<std::size_t>(std::ranges::count_if(before, [](auto const &Before) { return scene::Layers.directive(Before.first) != Before.second; }));
 }
 
 bool editor_mode::render_switch_drive_choice()
@@ -415,7 +444,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	auto const file{root + "_dzioby.scm"};
 	std::ostringstream text;
 	auto noses{0};
-	for (auto *track : simulation::Paths.sequence())
+	for (auto const *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr || false == track->SwitchExtension->m_movablenose || track->name().empty())
 			continue;
@@ -425,17 +454,17 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 			continue;
 		auto const &name{track->name()};
 		// where the inner rails cross, on the gauge line of the main path
-		glm::dvec3 point, across;
+		glm::dvec3 point;
+		glm::dvec3 across;
 		segments[0]->plan_frame(frog.at[0], point, across);
 		auto const nose{point + across * (frog.side[0] * 0.5 * std::abs(track->fTrackWidth))};
-		auto const range{5.0 + track_rails::movable_nose_length(std::tan(frog.angle))};
-		text << "node -1 0 " << name << "_dziob eventlauncher " << format("%.3f %.3f %.3f %.1f", nose.x, nose.y, nose.z, range) << " t 0 " << name << "+ " << name << "- end\r\n";
+		auto const reach{5.0 + track_rails::movable_nose_length(std::tan(frog.angle))};
+		text << "node -1 0 " << name << "_dziob eventlauncher " << format("%.3f %.3f %.3f %.1f", nose.x, nose.y, nose.z, reach) << " t 0 " << name << "+ " << name << "- end\r\n";
 		++noses;
 	}
-	auto const path{Global.asCurrentSceneryPath + file};
+	std::filesystem::path const path{Global.asCurrentSceneryPath + file};
 	std::error_code error;
-	auto const exists{std::filesystem::exists(path, error)};
-	if (noses == 0 && false == exists)
+	if (auto const exists{std::filesystem::exists(path, error)}; noses == 0 && false == exists)
 		return false;
 	auto const content{std::string{kNoseHeader} + "\r\n" + text.str()};
 	std::string current;
@@ -463,14 +492,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 		if (nose_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
 			WriteLog("Editor: " + name + " left out of the scenery, the keys by the movable noses are in " + file + " now");
 	}
-	auto included{m_nose_included};
-	for (std::size_t handle = 1; handle <= scene::Layers.size() && false == included; ++handle)
-	{
-		auto name{scene::Layers.layer(static_cast<scene::layer_handle>(handle)).name};
-		std::replace(name.begin(), name.end(), '\\', '/');
-		included = ToLower(name) == ToLower(file) || ToLower(name).ends_with("/" + ToLower(file));
-	}
-	if (included)
+	if (m_nose_included || layer_of_file(file))
 		return false;
 	Rootstatements.push_back("include " + file + " end");
 	return true;

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -13,13 +14,25 @@ namespace {
 std::vector<switch_curve::track_point> line(double const Straight, double const Transition, double const Arc, double const Radius, double const Cant) {
 	std::vector<switch_curve::track_point> points;
 	double heading{0.0};
-	auto const curvature = [&](double const S) { return S <= Straight ? 0.0 : S <= Straight + Transition ? (S - Straight) / Transition / Radius : 1.0 / Radius; };
-	auto const cant = [&](double const S) { return S <= Straight ? 0.0 : S <= Straight + Transition ? Cant * (S - Straight) / Transition : Cant; };
+	auto const curvature = [&](double const S) {
+		if (S <= Straight)
+			return 0.0;
+		if (S <= Straight + Transition)
+			return (S - Straight) / Transition / Radius;
+		return 1.0 / Radius;
+	};
+	auto const cant = [&](double const S) {
+		if (S <= Straight)
+			return 0.0;
+		if (S <= Straight + Transition)
+			return Cant * (S - Straight) / Transition;
+		return Cant;
+	};
 	for (int k = 0; k * 0.5 <= Straight + Transition + Arc + 1e-9; ++k) {
 		auto const s{k * 0.5};
 		if (s > 0.0)
 			heading += 0.5 * (curvature(s - 0.5) + curvature(s)) * 0.5;
-		points.push_back({s, heading, cant(s)});
+		points.emplace_back(s, heading, cant(s));
 	}
 	return points;
 }
@@ -29,17 +42,17 @@ std::vector<switch_curve::track_point> line(double const Straight, double const 
 std::pair<std::vector<switch_curve::track_point>, std::vector<switch_curve::track_point>> laid(std::vector<switch_curve::track_point> const &Line, double const From, double const Length, double const Radius, int const Side) {
 	std::vector<switch_curve::track_point> main;
 	std::vector<switch_curve::track_point> branch;
-	auto const first{std::lower_bound(Line.begin(), Line.end(), From, [](auto const &Point, double const Value) { return Point.station < Value; })};
+	auto const first{std::ranges::lower_bound(Line, From, {}, &switch_curve::track_point::station)};
 	for (auto point{first}; point != Line.end() && point->station <= From + Length + 1e-9; ++point) {
 		auto const s{point->station - From};
-		main.push_back({s, point->heading - first->heading, 0.0});
-		branch.push_back({s, point->heading - first->heading + Side * s / Radius, 0.0});
+		main.emplace_back(s, point->heading - first->heading, 0.0);
+		branch.emplace_back(s, point->heading - first->heading + Side * s / Radius, 0.0);
 	}
 	return {main, branch};
 }
 
 bool says(std::vector<std::string> const &Lines, char const *Text) {
-	return std::any_of(Lines.begin(), Lines.end(), [&](std::string const &Line) { return Line.find(Text) != std::string::npos; });
+	return std::ranges::any_of(Lines, [Text](std::string_view const Line) { return Line.find(Text) != std::string_view::npos; });
 }
 
 } // namespace
@@ -109,7 +122,7 @@ TEST_CASE("switch on a curve: one with a straight frog bent up to the frog, both
 		// the last 6 m of both straight, the diverging one with no curve of its own there either: the frog of the switch
 		auto const frog{21.0};
 		auto const straighten = [&](std::vector<switch_curve::track_point> &Track) {
-			auto const at{std::find_if(Track.begin(), Track.end(), [&](auto const &Point) { return Point.station >= frog; })};
+			auto const at{std::ranges::find_if(Track, [&](auto const &Point) { return Point.station >= frog; })};
 			for (auto point{at}; point != Track.end(); ++point)
 				point->heading = at->heading;
 		};
@@ -153,7 +166,7 @@ namespace {
 std::vector<switch_curve::track_point> arc(double const Length, double const Heading, double const Curvature) {
 	std::vector<switch_curve::track_point> points;
 	for (int k = 0; k * 0.5 <= Length + 1e-9; ++k)
-		points.push_back({k * 0.5, Heading + Curvature * (k * 0.5), 0.0});
+		points.emplace_back(k * 0.5, Heading + Curvature * (k * 0.5), 0.0);
 	return points;
 }
 

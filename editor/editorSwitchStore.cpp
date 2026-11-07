@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <format>
 #include <set>
 #include <sstream>
 
@@ -34,10 +35,20 @@ using geometry::plan_of;
 std::string const kMark{"//$r"};
 double const kTolerance{0.02};
 
-std::vector<record> g_records;
-std::vector<record> g_base; // as they were before the changes not yet in the undo history
-bool g_changed{false};
-bool g_loaded{false};
+// the records of the switches, and the state of their undo history
+struct kept_state
+{
+	std::vector<record> records;
+	std::vector<record> base; // as they were before the changes not yet in the undo history
+	bool changed{false};
+	bool loaded{false};
+};
+
+kept_state &kept()
+{
+	static kept_state value;
+	return value;
+}
 
 // format of the lines, coordinates in the space of the file:
 //   <switch|slip|crossing|double> <name> <type> <rail> <R> <n of 1:n> <hand L|R|-> <a> <b> <R of the main track, + right, - left, 0 straight>
@@ -48,7 +59,7 @@ std::string word(std::string const &Text)
 	if (Text.empty())
 		return "-";
 	auto result{Text};
-	std::replace(result.begin(), result.end(), ' ', '_');
+	std::ranges::replace(result, ' ', '_');
 	return result;
 }
 
@@ -104,7 +115,7 @@ void mark(scene::layer_handle const Layer)
 		return;
 	auto const &context{scene::Layers.layer(Layer).context_insert()};
 	std::vector<std::string> lines;
-	for (auto const &entry : g_records)
+	for (auto const &entry : kept().records)
 	{
 		if (entry.layer != Layer)
 			continue;
@@ -138,101 +149,134 @@ void mark(scene::layer_handle const Layer)
 	scene::Layers.mark(Layer, kMark, std::move(lines));
 }
 
+bool known_kind(std::string const &Kind)
+{
+	return Kind == "switch" || Kind == "slip" || Kind == "crossing" || Kind == "double" || Kind == "connection";
+}
+
+// the km of a record line in m; none for "-" or what isn't a number
+std::optional<double> read_km(std::string const &Km)
+{
+	if (Km == "-")
+		return std::nullopt;
+	char *end{nullptr};
+	auto const value{std::strtod(Km.c_str(), &end)};
+	if (end != Km.c_str() && *end == '\0' && std::isfinite(value))
+		return value * 1000.0;
+	return std::nullopt;
+}
+
+// the words after the source: the middle radius of a double slip, the lift of a crossover laid along a curve
+void read_extras(std::istream &Line, record &Entry, scene::layer_context const &Context)
+{
+	std::string keyword;
+	while (Line >> keyword)
+	{
+		if (keyword == "middle")
+			Line >> Entry.middle;
+		else if (keyword == "lift")
+		{
+			glm::dvec3 from{0.0};
+			glm::dvec3 to{0.0};
+			Line >> Entry.lift >> from.x >> from.y >> from.z >> to.x >> to.y >> to.z >> keyword >> Entry.ramp;
+			Entry.lift_end = Entry.lift;
+			Entry.lift_from = Context.to_world(from);
+			Entry.lift_to = Context.to_world(to);
+		}
+		else if (keyword == "liftend")
+			Line >> Entry.lift_end;
+	}
+}
+
+// the record of a line of the file of the layer, none when the line isn't one
+std::optional<record> read_record(std::string const &Text, scene::layer_handle const Layer, scene::layer_context const &Context)
+{
+	std::istringstream line{Text};
+	record entry;
+	entry.layer = Layer;
+	std::string keyword;
+	std::string hand;
+	std::string km;
+	std::size_t count{0};
+	line >> entry.kind;
+	if (false == known_kind(entry.kind))
+		return std::nullopt;
+	line >> entry.name >> entry.type >> entry.rail >> entry.radius >> entry.ratio >> hand >> entry.a >> entry.b >> entry.main_radius >> keyword >> count;
+	if (line.fail() || keyword != "parts" || count == 0 || count > 64)
+		return std::nullopt;
+	entry.hand = hand.empty() ? '-' : hand.front();
+	entry.parts.resize(count);
+	for (auto &part : entry.parts)
+		line >> part;
+	glm::dvec3 start{0.0};
+	glm::dvec3 ahead{0.0};
+	glm::dvec2 direction{0.0, 1.0};
+	line >> keyword;
+	if (keyword == "shape")
+	{
+		line >> entry.shape.x >> entry.shape.y >> entry.shape.z >> entry.shape.w >> keyword;
+		entry.shaped = true;
+	}
+	line >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
+	if (line.fail())
+		return std::nullopt;
+	read_extras(line, entry, Context);
+	entry.start = Context.to_world(start);
+	ahead = Context.to_world(start + glm::dvec3{direction.x, 0.0, direction.y});
+	entry.direction = plan_of(ahead - entry.start);
+	entry.direction = glm::length(entry.direction) > 1e-12 ? glm::normalize(entry.direction) : glm::dvec2{0.0, 1.0};
+	entry.km = read_km(km);
+	return entry;
+}
+
+// the type of a switch by its main track: straight, bent to the side of the diverging track or away from it
+char const *arc_type(record const &Entry)
+{
+	if (Entry.main_radius == 0.0)
+		return "Rz";
+	return (Entry.main_radius > 0.0) == (Entry.hand == 'R') ? "Rlj" : "Rld";
+}
+
 } // namespace
 
 void reset()
 {
-	g_records.clear();
-	g_base.clear();
-	g_changed = false;
-	g_loaded = false;
+	auto &state{kept()};
+	state.records.clear();
+	state.base.clear();
+	state.changed = false;
+	state.loaded = false;
 }
 
 void load()
 {
-	if (g_loaded || scene::Layers.empty())
+	auto &state{kept()};
+	if (state.loaded || scene::Layers.empty())
 		return;
-	g_loaded = true;
-	g_records.clear();
+	state.loaded = true;
+	state.records.clear();
 	for (auto const layer : scene::Layers.marked_layers(kMark))
 	{
 		auto const &context{scene::Layers.layer(layer).context_insert()};
 		for (auto const &text : scene::Layers.marked(layer, kMark))
-		{
-			std::istringstream line{text};
-			record entry;
-			entry.layer = layer;
-			std::string keyword;
-			std::string hand;
-			std::string km;
-			std::size_t count{0};
-			line >> entry.kind;
-			if (entry.kind != "switch" && entry.kind != "slip" && entry.kind != "crossing" && entry.kind != "double" && entry.kind != "connection")
-				continue;
-			line >> entry.name >> entry.type >> entry.rail >> entry.radius >> entry.ratio >> hand >> entry.a >> entry.b >> entry.main_radius >> keyword >> count;
-			if (line.fail() || keyword != "parts" || count == 0 || count > 64)
-				continue;
-			entry.hand = hand.empty() ? '-' : hand.front();
-			entry.parts.resize(count);
-			for (auto &part : entry.parts)
-				line >> part;
-			glm::dvec3 start{0.0};
-			glm::dvec3 ahead{0.0};
-			glm::dvec2 direction{0.0, 1.0};
-			line >> keyword;
-			if (keyword == "shape")
-			{
-				line >> entry.shape.x >> entry.shape.y >> entry.shape.z >> entry.shape.w >> keyword;
-				entry.shaped = true;
-			}
-			line >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
-			if (line.fail())
-				continue;
-			while (line >> keyword)
-			{
-				if (keyword == "middle")
-					line >> entry.middle;
-				else if (keyword == "lift")
-				{
-					glm::dvec3 from{0.0}, to{0.0};
-					line >> entry.lift >> from.x >> from.y >> from.z >> to.x >> to.y >> to.z >> keyword >> entry.ramp;
-					entry.lift_end = entry.lift;
-					entry.lift_from = context.to_world(from);
-					entry.lift_to = context.to_world(to);
-				}
-				else if (keyword == "liftend")
-					line >> entry.lift_end;
-			}
-			entry.start = context.to_world(start);
-			ahead = context.to_world(start + glm::dvec3{direction.x, 0.0, direction.y});
-			entry.direction = plan_of(ahead - entry.start);
-			entry.direction = glm::length(entry.direction) > 1e-12 ? glm::normalize(entry.direction) : glm::dvec2{0.0, 1.0};
-			if (km != "-")
-			{
-				char *end{nullptr};
-				auto const value{std::strtod(km.c_str(), &end)};
-				if (end != km.c_str() && *end == '\0' && std::isfinite(value))
-					entry.km = value * 1000.0;
-			}
-			g_records.push_back(std::move(entry));
-		}
+			if (auto entry{read_record(text, layer, context)})
+				state.records.push_back(std::move(*entry));
 	}
-	g_base = g_records;
-	g_changed = false;
-	if (false == g_records.empty())
-		WriteLog("Editor: " + std::to_string(g_records.size()) + " switch record(s) read from the scenery", logtype::generic);
+	state.base = state.records;
+	state.changed = false;
+	if (false == state.records.empty())
+		WriteLog(std::format("Editor: {} switch record(s) read from the scenery", state.records.size()), logtype::generic);
 }
 
 std::vector<record> const &records()
 {
 	load();
-	return g_records;
+	return kept().records;
 }
 
 bool has(std::string const &Name)
 {
-	auto const &all{records()};
-	return std::any_of(all.begin(), all.end(), [&](record const &Record) { return Record.name == Name; });
+	return std::ranges::any_of(records(), [&Name](record const &Record) { return Record.name == Name; });
 }
 
 std::optional<record> named(TTrack const &Track)
@@ -241,8 +285,8 @@ std::optional<record> named(TTrack const &Track)
 	auto const &name{Track.name()};
 	if (name.empty())
 		return std::nullopt;
-	for (auto const &entry : g_records)
-		if (entry.kind != "connection" && std::find(entry.parts.begin(), entry.parts.end(), name) != entry.parts.end())
+	for (auto const &entry : kept().records)
+		if (entry.kind != "connection" && std::ranges::find(entry.parts, name) != entry.parts.end())
 			return entry;
 	return std::nullopt;
 }
@@ -254,8 +298,8 @@ std::vector<record> connections(TTrack const &Track)
 	auto const &name{Track.name()};
 	if (name.empty())
 		return result;
-	for (auto const &entry : g_records)
-		if (entry.kind == "connection" && std::find(entry.parts.begin(), entry.parts.end(), name) != entry.parts.end())
+	for (auto const &entry : kept().records)
+		if (entry.kind == "connection" && std::ranges::find(entry.parts, name) != entry.parts.end())
 			result.push_back(entry);
 	return result;
 }
@@ -265,8 +309,7 @@ std::optional<record> of(TTrack const &Track)
 	auto const found{named(Track)};
 	if (false == found.has_value())
 		return std::nullopt;
-	auto const *first{usable(found->parts.front())};
-	if (first == nullptr || false == in_shape(*found, *first))
+	if (auto const *first{usable(found->parts.front())}; first == nullptr || false == in_shape(*found, *first))
 		return std::nullopt;
 	return found;
 }
@@ -274,9 +317,10 @@ std::optional<record> of(TTrack const &Track)
 std::vector<std::string> follow()
 {
 	load();
+	auto &state{kept()};
 	std::vector<std::string> moved;
 	std::set<scene::layer_handle> layers;
-	for (auto &entry : g_records)
+	for (auto &entry : state.records)
 	{
 		auto const *first{usable(entry.parts.front())};
 		if (first == nullptr || false == entry.shaped || false == in_shape(entry, *first) || in_place(entry, *first))
@@ -289,7 +333,7 @@ std::vector<std::string> follow()
 	}
 	for (auto const layer : layers)
 		mark(layer);
-	g_changed = g_changed || false == moved.empty();
+	state.changed = state.changed || false == moved.empty();
 	return moved;
 }
 
@@ -310,49 +354,51 @@ void put(record Entry, scene::layer_handle const Layer)
 		Entry.shape = measure(*first);
 		Entry.shaped = true;
 	}
-	auto const existing{std::find_if(g_records.begin(), g_records.end(), [&](record const &Other) { return Other.name == Entry.name && Other.kind == Entry.kind; })};
-	if (existing != g_records.end())
+	auto &state{kept()};
+	if (auto const existing{std::ranges::find_if(state.records, [&Entry](record const &Other) { return Other.name == Entry.name && Other.kind == Entry.kind; })}; existing != state.records.end())
 	{
 		Entry.layer = existing->layer;
 		if (Entry.number == "-")
 			Entry.number = existing->number;
 		*existing = std::move(Entry);
-		g_changed = true;
+		state.changed = true;
 		mark(existing->layer);
 		return;
 	}
 	Entry.layer = Layer;
-	g_records.push_back(std::move(Entry));
-	g_changed = true;
-	mark(g_records.back().layer);
+	state.records.push_back(std::move(Entry));
+	state.changed = true;
+	mark(state.records.back().layer);
 }
 
 void forget(std::string const &Name)
 {
 	load();
+	auto &state{kept()};
 	std::set<scene::layer_handle> layers;
-	for (auto const &entry : g_records)
+	for (auto const &entry : state.records)
 		if (entry.name == Name)
 			layers.insert(entry.layer);
-	auto const count{g_records.size()};
-	g_records.erase(std::remove_if(g_records.begin(), g_records.end(), [&](record const &Entry) { return Entry.name == Name; }), g_records.end());
-	g_changed = g_changed || g_records.size() != count;
+	auto const count{state.records.size()};
+	std::erase_if(state.records, [&Name](record const &Entry) { return Entry.name == Name; });
+	state.changed = state.changed || state.records.size() != count;
 	for (auto const layer : layers)
 		mark(layer);
 }
 
-void rename(std::map<std::string, std::string> const &Parts, std::map<std::string, std::string> const &Bases)
+void rename(std::map<std::string, std::string> const &Parts, std::map<std::string, std::string> const &Bases) // NOSONAR: the numbering of the stations (editormodesrk.cpp) passes std::map<std::string, std::string>, the lookups are by std::string
 {
 	load();
-	auto const renamed = [](std::map<std::string, std::string> const &Names, std::string &Name) {
+	auto const renamed = [](auto const &Names, std::string &Name) {
 		auto const found{Names.find(Name)};
 		if (found == Names.end() || found->second == Name)
 			return false;
 		Name = found->second;
 		return true;
 	};
+	auto &state{kept()};
 	std::set<scene::layer_handle> layers;
-	for (auto &entry : g_records)
+	for (auto &entry : state.records)
 	{
 		auto changed{renamed(entry.kind == "slip" || entry.kind == "crossing" ? Bases : Parts, entry.name)};
 		for (auto &part : entry.parts)
@@ -362,18 +408,19 @@ void rename(std::map<std::string, std::string> const &Parts, std::map<std::strin
 	}
 	for (auto const layer : layers)
 		mark(layer);
-	g_changed = g_changed || false == layers.empty();
+	state.changed = state.changed || false == layers.empty();
 }
 
-void number(std::string const &Name, std::string const &Number)
+void number(std::string_view const Name, std::string_view const Number)
 {
 	load();
-	for (auto &entry : g_records)
+	auto &state{kept()};
+	for (auto &entry : state.records)
 		if (entry.kind != "connection" && entry.name == Name && entry.number != Number)
 		{
 			entry.number = Number;
 			mark(entry.layer);
-			g_changed = true;
+			state.changed = true;
 		}
 }
 
@@ -381,12 +428,13 @@ void tidy()
 {
 	load();
 	follow();
+	auto &state{kept()};
 	std::set<scene::layer_handle> layers;
-	for (auto &entry : g_records)
+	for (auto &entry : state.records)
 	{
 		if (entry.kind != "switch" || usable(entry.parts.front()) != nullptr)
 			continue;
-		for (auto *track : simulation::Paths.sequence())
+		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->m_paths.empty() || track->name().empty() || false == in_place(entry, *track))
 				continue;
@@ -396,14 +444,14 @@ void tidy()
 			break;
 		}
 	}
-	auto const gone = [](record const &Entry) { return std::any_of(Entry.parts.begin(), Entry.parts.end(), [](std::string const &Part) { return usable(Part) == nullptr; }); };
-	for (auto const &entry : g_records)
+	auto const gone = [](record const &Entry) { return std::ranges::any_of(Entry.parts, [](std::string const &Part) { return usable(Part) == nullptr; }); };
+	for (auto const &entry : state.records)
 		if (gone(entry))
 			layers.insert(entry.layer);
-	g_records.erase(std::remove_if(g_records.begin(), g_records.end(), gone), g_records.end());
+	std::erase_if(state.records, gone);
 	for (auto const layer : layers)
 		mark(layer);
-	g_changed = g_changed || false == layers.empty();
+	state.changed = state.changed || false == layers.empty();
 }
 
 std::string label(record const &Record)
@@ -426,27 +474,30 @@ std::string label(record const &Record)
 
 std::optional<std::vector<record>> take_changes()
 {
-	if (false == g_changed)
+	auto &state{kept()};
+	if (false == state.changed)
 		return std::nullopt;
-	auto before{std::move(g_base)};
-	g_base = g_records;
-	g_changed = false;
+	auto before{std::move(state.base)};
+	state.base = state.records;
+	state.changed = false;
 	return before;
 }
 
 void settle()
 {
-	g_base = g_records;
-	g_changed = false;
+	auto &state{kept()};
+	state.base = state.records;
+	state.changed = false;
 }
 
 void restore(std::vector<record> Records)
 {
+	auto &state{kept()};
 	std::set<scene::layer_handle> layers;
-	for (auto const *list : {&g_records, &Records})
+	for (auto const *list : {&state.records, &Records})
 		for (auto const &entry : *list)
 			layers.insert(entry.layer);
-	g_records = std::move(Records);
+	state.records = std::move(Records);
 	for (auto const layer : layers)
 		mark(layer);
 	settle();
@@ -478,7 +529,7 @@ void classify(record &Entry, TTrack const &Switch)
 	Entry.hand = geometry::cross(Entry.direction, geometry::plan_of(diverging.points[segment_data::point::end] - Entry.start)) > 0.0 ? 'R' : 'L';
 	Entry.main_radius = main_radius_of(Switch);
 	if (Entry.type == "Rz" || Entry.type == "Rlj" || Entry.type == "Rld")
-		Entry.type = Entry.main_radius == 0.0 ? "Rz" : (Entry.main_radius > 0.0) == (Entry.hand == 'R') ? "Rlj" : "Rld";
+		Entry.type = arc_type(Entry);
 }
 
 } // namespace switch_store

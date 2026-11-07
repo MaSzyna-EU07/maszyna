@@ -3,8 +3,8 @@
 #include "editor/editorGeoTiff.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 
 namespace {
@@ -33,8 +33,7 @@ std::vector<std::uint8_t> geotiff(int const Width, int const Height, std::uint32
 			out.push_back(static_cast<std::uint8_t>(Value >> (8 * i)));
 	};
 	auto const put64 = [&](double const Value) {
-		std::uint64_t bits;
-		std::memcpy(&bits, &Value, sizeof(bits));
+		auto const bits{std::bit_cast<std::uint64_t>(Value)};
 		for (int i = 0; i < 8; ++i)
 			out.push_back(static_cast<std::uint8_t>(bits >> (8 * i)));
 	};
@@ -75,9 +74,7 @@ std::vector<std::uint8_t> geotiff(int const Width, int const Height, std::uint32
 	for (int row = 0; row < Height; ++row)
 		for (int column = 0; column < Width; ++column) {
 			float const height{static_cast<float>(row * 10 + column)};
-			std::uint32_t bits;
-			std::memcpy(&bits, &height, sizeof(bits));
-			put32(bits);
+			put32(std::bit_cast<std::uint32_t>(height));
 		}
 	return out;
 }

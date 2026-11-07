@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -25,7 +26,19 @@ class TTrack;
 namespace switch_store
 {
 
-struct record
+// a crossover laid along a curve: the outer track went up by lift at the first point and by lift_end at the second, in a straight
+// line between them, with ramps of ramp m on both sides
+struct crossover_lift
+{
+	double lift{0.0};
+	double lift_end{0.0};
+	glm::dvec3 lift_from{0.0};
+	glm::dvec3 lift_to{0.0};
+	double ramp{0.0};
+	bool lifted() const { return std::abs(lift) > 0.002 || std::abs(lift_end) > 0.002; }
+};
+
+struct record : crossover_lift
 {
 	scene::layer_handle layer{null_handle};
 	std::string kind{"switch"}; // switch, slip, crossing, double, connection
@@ -49,13 +62,6 @@ struct record
 	std::string number{"-"};
 	std::string source{"designed"}; // designed: from the catalogue, measured: copied from a switch of the scenery
 	double middle{0.0}; // the radius in the middle of the slip curves of a double slip with the blades outside of the diamond
-	// a crossover laid along a curve: the outer track went up by lift at the first point and by lift_end at the second, in a straight
-	// line between them, with ramps of ramp m on both sides
-	double lift{0.0};
-	double lift_end{0.0};
-	glm::dvec3 lift_from{0.0}, lift_to{0.0};
-	double ramp{0.0};
-	bool lifted() const { return std::abs(lift) > 0.002 || std::abs(lift_end) > 0.002; }
 };
 
 void reset();
@@ -82,9 +88,9 @@ double main_radius_of(TTrack const &Switch);
 void forget(std::string const &Name);
 // the records follow renamed switches: their parts and the records named after them; Bases renames the records of slips and
 // crossings, whose names aren't the names of their parts
-void rename(std::map<std::string, std::string> const &Parts, std::map<std::string, std::string> const &Bases);
+void rename(std::map<std::string, std::string> const &Parts, std::map<std::string, std::string> const &Bases); // NOSONAR: the numbering of the stations (editormodesrk.cpp) passes std::map<std::string, std::string>, the lookups are by std::string
 // the number of the switch, slip or crossing of the record of the name, as the lists of the switches give it
-void number(std::string const &Name, std::string const &Number);
+void number(std::string_view Name, std::string_view Number);
 // on save: the records follow the renamed switches, the ones whose paths are gone are dropped
 void tidy();
 // "Rz 60E1-500-1:12 L", as the type is written on the lists of the switches

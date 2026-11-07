@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <string_view>
 
 namespace
 {
@@ -209,6 +210,32 @@ void draw_label(ImDrawList *Draw, ImVec2 const At, ImU32 const Colour, std::stri
 	Draw->AddText(ImVec2(At.x + 11.0f, At.y - 7.0f), Colour, Text.c_str());
 }
 
+// the state marked for an update when a field changed
+void mark_changed(bool &Dirty, bool const Changed)
+{
+	if (Changed)
+		Dirty = true;
+}
+
+// the side of the posts a self test names: alternately, on the left, else on the right
+int side_named(std::string_view const Word)
+{
+	if (Word == "alt")
+		return 0;
+	return Word == "left" ? -1 : 1;
+}
+
+// the switches of the railway with two paths or more: in the whole scenery for the scope 2, else around the camera within the reach
+std::vector<TTrack *> rail_switches(int const Scope, double const Reach, glm::dvec3 const &Camera)
+{
+	std::vector<TTrack *> switches;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved && (track->iCategoryFlag & 15) == kRailCategory && track->m_paths.size() >= 2 &&
+		    (Scope == 2 || glm::distance(track->location(), Camera) <= Reach))
+			switches.push_back(track);
+	return switches;
+}
+
 } // namespace
 
 std::vector<editor_mode::standing_template> editor_mode::standing_templates(std::function<bool(std::string const &)> const &Accept) const
@@ -353,7 +380,7 @@ std::size_t editor_mode::place_templates(std::vector<template_item> const &Items
 		else
 		{
 			auto const name{item.values.find("name")};
-			std::vector<std::string> values{name != item.values.end() ? name->second : std::string{"none"}, number(local.x, 3), number(local.y, 3), number(local.z, 3), number(item.yaw, 2)};
+			std::vector values{name != item.values.end() ? name->second : std::string{"none"}, number(local.x, 3), number(local.y, 3), number(local.z, 3), number(item.yaw, 2)};
 			values.insert(values.end(), item.rest.begin(), item.rest.end());
 			directive = editor_includes::compose_directive(item.file, values);
 		}
@@ -493,7 +520,7 @@ void hekto_tool::hekto_update()
 		tool.track = nullptr;
 		return;
 	}
-	tool.route = editor_track::run_route(*tool.track, tool.reach);
+	tool.route = editor_track::run_route(*tool.track, tool.settings.reach);
 	if (tool.route.spans.empty())
 	{
 		tool.error = STR_C("No line through this path");
@@ -508,17 +535,7 @@ void hekto_tool::hekto_update()
 	double distance;
 	tool.origin = project(tool.samples, tool.point, distance);
 	auto const length{tool.samples.back().chainage};
-	for (auto const &standing : m_templates.standing_templates([](std::string const &File) { return File.find("hekto") != std::string::npos; }))
-	{
-		hekto_found post;
-		post.post = standing;
-		if (false == hectometres_of(standing.values, post.hectometres))
-			continue;
-		post.chainage = project(tool.samples, standing.location, distance);
-		if (distance > kLineCorridor || post.chainage <= 0.0 || post.chainage >= length)
-			continue;
-		tool.found.push_back(post);
-	}
+	hekto_find_standing(length);
 	tool.line_set = kilometrage::line_at(tool.point);
 	tool.line = tool.own_km ? std::string{} : tool.line_set;
 	if (tool.line.empty() && false == tool.km_read)
@@ -526,53 +543,90 @@ void hekto_tool::hekto_update()
 		tool.km_read = true;
 		hekto_read_kilometrage();
 	}
-	auto const place = [&](hekto_post &Post) {
-		auto const axis{editor_track::sampled_position(tool.samples, Post.chainage)};
-		auto const growing{sampled_direction(tool.samples, Post.chainage) * static_cast<double>(Post.growth)};
-		glm::dvec2 const left{-growing.y, growing.x};
-		// alternately: the even hectometres on the right, the odd ones on the left of the growing kilometrage
-		auto const side{tool.side != 0 ? tool.side : (Post.hectometres % 2 == 0 ? 1 : -1)};
-		auto const planar{plan_of(axis) + left * (side * tool.offset)};
-		Post.position = m_ground.placement_on_ground({planar.x, axis.y, planar.y});
-		Post.yaw = std::fmod(heading_of(growing) + tool.turn, 360.0);
-		tool.posts.push_back(Post);
-	};
-	auto const *axis{tool.line.empty() ? nullptr : kilometrage::axis_of(tool.line)};
-	if (axis != nullptr)
-	{
-		// the hectometres of the kilometrage of the line, the jumps in it too
-		double km{0.0};
-		if (kilometrage::km_at(tool.line, tool.point, km))
-			tool.km = std::round(km * 1000.0) / 1000.0;
-		tool.growth = kilometrage::growth_at(tool.line, tool.point, sampled_direction(tool.samples, tool.origin)) < 0 ? -1 : 1;
-		for (auto const &hectometre : kilometrage::hectometres(*axis))
-		{
-			hekto_post post;
-			post.hectometres = hectometre.number;
-			post.chainage = project(tool.samples, hectometre.at, distance);
-			if (distance > kLineCorridor || post.chainage <= 0.0 || post.chainage >= length || hectometre.number < 0 || tool.posts.size() >= 5000)
-				continue;
-			post.growth = glm::dot(hectometre.rising, sampled_direction(tool.samples, post.chainage)) < 0.0 ? -1 : 1;
-			place(post);
-		}
-		std::sort(tool.posts.begin(), tool.posts.end(), [](hekto_post const &A, hekto_post const &B) { return A.chainage < B.chainage; });
-	}
+	if (auto const *axis{tool.line.empty() ? nullptr : kilometrage::axis_of(tool.line)}; axis != nullptr)
+		hekto_posts_of_axis(*axis, length);
 	else
+		hekto_posts_of_km(length);
+	hekto_match_standing();
+}
+
+void hekto_tool::hekto_find_standing(double const Length)
+{
+	auto &tool{m_hekto};
+	for (auto const &standing : m_templates.standing_templates([](std::string_view const File) { return File.find("hekto") != std::string_view::npos; }))
 	{
-		auto const km_at = [&](double const Chainage) { return tool.km + tool.growth * (Chainage - tool.origin) / 1000.0; };
-		auto const low{std::max(0, static_cast<int>(std::ceil(std::min(km_at(0.0), km_at(length)) * 10.0 - 1e-6)))};
-		auto const high{static_cast<int>(std::floor(std::max(km_at(0.0), km_at(length)) * 10.0 + 1e-6))};
-		for (int hectometres = low; hectometres <= high && tool.posts.size() < 5000; ++hectometres)
-		{
-			hekto_post post;
-			post.hectometres = hectometres;
-			post.chainage = tool.origin + tool.growth * (hectometres / 10.0 - tool.km) * 1000.0;
-			post.growth = tool.growth;
-			if (post.chainage < 0.0 || post.chainage > length)
-				continue;
-			place(post);
-		}
+		hekto_found post;
+		post.post = standing;
+		if (false == hectometres_of(standing.values, post.hectometres))
+			continue;
+		double distance;
+		post.chainage = project(tool.samples, standing.location, distance);
+		if (distance > kLineCorridor || post.chainage <= 0.0 || post.chainage >= Length)
+			continue;
+		tool.found.push_back(post);
 	}
+}
+
+void hekto_tool::hekto_put(hekto_post &Post)
+{
+	auto &tool{m_hekto};
+	auto const &settings{tool.settings};
+	auto const axis{editor_track::sampled_position(tool.samples, Post.chainage)};
+	auto const growing{sampled_direction(tool.samples, Post.chainage) * static_cast<double>(Post.growth)};
+	glm::dvec2 const left_normal{-growing.y, growing.x};
+	// alternately: the even hectometres on the right, the odd ones on the left of the growing kilometrage
+	auto side{settings.side};
+	if (side == 0)
+		side = Post.hectometres % 2 == 0 ? 1 : -1;
+	auto const planar{plan_of(axis) + left_normal * (side * settings.offset)};
+	Post.position = m_ground.placement_on_ground({planar.x, axis.y, planar.y});
+	Post.yaw = std::fmod(heading_of(growing) + settings.turn, 360.0);
+	tool.posts.push_back(Post);
+}
+
+void hekto_tool::hekto_posts_of_axis(kilometrage::axis const &Axis, double const Length)
+{
+	auto &tool{m_hekto};
+	if (double km{0.0}; kilometrage::km_at(tool.line, tool.point, km))
+		tool.km = std::round(km * 1000.0) / 1000.0;
+	tool.growth = kilometrage::growth_at(tool.line, tool.point, sampled_direction(tool.samples, tool.origin)) < 0 ? -1 : 1;
+	for (auto const &hectometre : kilometrage::hectometres(Axis))
+	{
+		hekto_post post;
+		post.hectometres = hectometre.number;
+		double distance;
+		post.chainage = project(tool.samples, hectometre.at, distance);
+		if (distance > kLineCorridor || post.chainage <= 0.0 || post.chainage >= Length || hectometre.number < 0 || tool.posts.size() >= 5000)
+			continue;
+		post.growth = glm::dot(hectometre.rising, sampled_direction(tool.samples, post.chainage)) < 0.0 ? -1 : 1;
+		hekto_put(post);
+	}
+	std::ranges::sort(tool.posts, [](hekto_post const &A, hekto_post const &B) { return A.chainage < B.chainage; });
+}
+
+void hekto_tool::hekto_posts_of_km(double const Length)
+{
+	auto &tool{m_hekto};
+	auto const km_at = [&tool](double const Chainage) { return tool.km + tool.growth * (Chainage - tool.origin) / 1000.0; };
+	auto const low{std::max(0, static_cast<int>(std::ceil(std::min(km_at(0.0), km_at(Length)) * 10.0 - 1e-6)))};
+	auto const high{static_cast<int>(std::floor(std::max(km_at(0.0), km_at(Length)) * 10.0 + 1e-6))};
+	for (int hectometres = low; hectometres <= high; ++hectometres)
+	{
+		if (tool.posts.size() >= 5000)
+			break;
+		hekto_post post;
+		post.hectometres = hectometres;
+		post.chainage = tool.origin + tool.growth * (hectometres / 10.0 - tool.km) * 1000.0;
+		post.growth = tool.growth;
+		if (post.chainage < 0.0 || post.chainage > Length)
+			continue;
+		hekto_put(post);
+	}
+}
+
+void hekto_tool::hekto_match_standing()
+{
+	auto &tool{m_hekto};
 	// each post standing goes with the place of its number nearest to it; of the posts going with a place the one nearest to it
 	// stands for it, the others are duplicates. it stands wrong when it's farther from the place than allowed: along the line,
 	// across it, or on the other side
@@ -609,7 +663,7 @@ void hekto_tool::hekto_update()
 	{
 		auto &found{tool.found[i]};
 		found.duplicate = found.place >= 0 && tool.posts[found.place].standing != i;
-		found.wrong = found.place >= 0 && false == found.duplicate && found.distance > tool.tolerance;
+		found.wrong = found.place >= 0 && false == found.duplicate && found.distance > tool.settings.tolerance;
 	}
 }
 
@@ -637,14 +691,14 @@ void hekto_tool::hekto_place()
 		if (post.standing >= 0)
 			continue;
 		template_item item;
-		item.file = hekto_file(post.hectometres, tool.style);
+		item.file = hekto_file(post.hectometres, tool.settings.style);
 		item.location = post.position;
 		item.yaw = post.yaw;
 		item.rest = hekto_digits(post.hectometres);
 		items.push_back(std::move(item));
 	}
 	std::string error;
-	auto const layer{items.empty() ? null_handle : m_templates.output_layer("hektometry")};
+	auto const layer{items.empty() ? scene::layer_handle{null_handle} : m_templates.output_layer("hektometry")};
 	auto const placed{m_templates.place_templates(items, error, layer)};
 	tool.status = placed > 0 ? format(STR_P("%zu hectometre post placed, Ctrl+Z takes it back", "%zu hectometre posts placed, Ctrl+Z takes them back", static_cast<long long>(placed)), placed) : error;
 	if (placed > 0 && layer != null_handle)
@@ -688,10 +742,29 @@ void hekto_tool::render_options()
 		}
 		start(*selected, bezier{selected->m_paths.front()}.point(0.0));
 	}
-	auto const changed = [&](bool const Changed) {
-		if (Changed)
-			tool.dirty = true;
-	};
+	hekto_render_kilometrage();
+	ImGui::TextDisabled("%s", STR_C("Side, looking where it grows"));
+	mark_changed(tool.dirty, segmented("side", tool.settings.side, {{1, STR_C("on the right")}, {-1, STR_C("on the left")}, {0, STR_C("alternately"), "The even hectometres on the right, the odd ones on the left"}}));
+	hekto_render_settings();
+	auto &settings{tool.settings};
+	settings.offset = std::clamp(settings.offset, 1.5, 30.0);
+	settings.reach = std::clamp(settings.reach, 100.0, 100000.0);
+	settings.tolerance = std::clamp(settings.tolerance, 0.5, 50.0);
+	hekto_update();
+	if (false == tool.error.empty())
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
+		return;
+	}
+	hekto_render_results();
+	if (false == tool.status.empty())
+		ImGui::TextWrapped("%s", tool.status.c_str());
+}
+
+// the kilometrage the posts follow: the one set for the line in the Kilometrage tool, or the one given here
+void hekto_tool::hekto_render_kilometrage()
+{
+	auto &tool{m_hekto};
 	if (false == tool.line.empty())
 	{
 		ImGui::TextWrapped("%s", format(STR_C("The km of line %s, as the Kilometrage tool sets them, its jumps too"), tool.line.c_str()).c_str());
@@ -703,73 +776,69 @@ void hekto_tool::render_options()
 			tool.dirty = true;
 		}
 		item_tooltip("The posts go by the km given at the point and the way it grows, without the jumps of the line");
-	}
-	else
-	{
-		if (false == tool.line_set.empty() && ImGui::SmallButton(format(STR_C("Follow the km of line %s"), tool.line_set.c_str()).c_str()))
-		{
-			tool.own_km = false;
-			tool.dirty = true;
-		}
-		if (begin_fields("##hektokm", 0.45f))
-		{
-			field_row("Kilometre at the point (km)");
-			changed(ImGui::InputDouble("##hektokilometre", &tool.km, 0.0, 0.0, "%.3f"));
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(1);
-			if (ImGui::Button(STR_C("Read from the posts"), ImVec2(-FLT_MIN, 0.0f)))
-			{
-				tool.km_read = false;
-				tool.dirty = true;
-			}
-			ImGui::EndTable();
-		}
-		ImGui::TextDisabled("%s", STR_C("The kilometrage grows"));
-		changed(segmented("growth", tool.growth, {{1, STR_C("along the line")}, {-1, STR_C("against it")}}));
-	}
-	ImGui::TextDisabled("%s", STR_C("Side, looking where it grows"));
-	changed(segmented("side", tool.side, {{1, STR_C("on the right")}, {-1, STR_C("on the left")}, {0, STR_C("alternately"), "The even hectometres on the right, the odd ones on the left"}}));
-	if (ImGui::TreeNode(STR_C("More settings")))
-	{
-		ImGui::TextDisabled("%s", STR_C("Look"));
-		segmented("hektostyle", tool.style, {{0, STR_C("new")}, {1, STR_C("old")}, {2, STR_C("rotten")}, {3, STR_C("mixed"), "New, old and rotten ones at random, mostly new"}});
-		ImGui::TextDisabled("%s", STR_C("Turned by (deg)"));
-		if (segmented("hektoturn", tool.turn, {{0, "0"}, {90, "90"}, {180, "180"}, {270, "270"}}))
-			tool.dirty = true;
-		if (begin_fields("##hektofields", 0.6f))
-		{
-			field_row("From the axis (m)");
-			changed(ImGui::InputDouble("##hektooffset", &tool.offset, 0.0, 0.0, "%.2f"));
-			field_row("Along the line each way (m)");
-			changed(ImGui::InputDouble("##hektoreach", &tool.reach, 0.0, 0.0, "%.0f"));
-			field_row("Tolerance (m)");
-			changed(ImGui::InputDouble("##hektotolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
-			item_tooltip("A post standing farther than this from its place counts as wrong");
-			ImGui::EndTable();
-		}
-		ImGui::TreePop();
-	}
-	tool.offset = std::clamp(tool.offset, 1.5, 30.0);
-	tool.reach = std::clamp(tool.reach, 100.0, 100000.0);
-	tool.tolerance = std::clamp(tool.tolerance, 0.5, 50.0);
-	hekto_update();
-	if (false == tool.error.empty())
-	{
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", tool.error.c_str());
 		return;
 	}
-	auto const missing{std::count_if(tool.posts.begin(), tool.posts.end(), [](hekto_post const &Post) { return Post.standing < 0; })};
-	auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.wrong; })};
-	auto const duplicates{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.duplicate; })};
+	if (false == tool.line_set.empty() && ImGui::SmallButton(format(STR_C("Follow the km of line %s"), tool.line_set.c_str()).c_str()))
+	{
+		tool.own_km = false;
+		tool.dirty = true;
+	}
+	if (begin_fields("##hektokm", 0.45f))
+	{
+		field_row("Kilometre at the point (km)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##hektokilometre", &tool.km, 0.0, 0.0, "%.3f"));
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(1);
+		if (ImGui::Button(STR_C("Read from the posts"), ImVec2(-FLT_MIN, 0.0f)))
+		{
+			tool.km_read = false;
+			tool.dirty = true;
+		}
+		ImGui::EndTable();
+	}
+	ImGui::TextDisabled("%s", STR_C("The kilometrage grows"));
+	mark_changed(tool.dirty, segmented("growth", tool.growth, {{1, STR_C("along the line")}, {-1, STR_C("against it")}}));
+}
+
+// the look of the posts, their turn, how far from the axis, along the line and how far off they may stand
+void hekto_tool::hekto_render_settings()
+{
+	auto &tool{m_hekto};
+	auto &settings{tool.settings};
+	if (false == ImGui::TreeNode(STR_C("More settings")))
+		return;
+	ImGui::TextDisabled("%s", STR_C("Look"));
+	segmented("hektostyle", settings.style, {{0, STR_C("new")}, {1, STR_C("old")}, {2, STR_C("rotten")}, {3, STR_C("mixed"), "New, old and rotten ones at random, mostly new"}});
+	ImGui::TextDisabled("%s", STR_C("Turned by (deg)"));
+	if (segmented("hektoturn", settings.turn, {{0, "0"}, {90, "90"}, {180, "180"}, {270, "270"}}))
+		tool.dirty = true;
+	if (begin_fields("##hektofields", 0.6f))
+	{
+		field_row("From the axis (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##hektooffset", &settings.offset, 0.0, 0.0, "%.2f"));
+		field_row("Along the line each way (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##hektoreach", &settings.reach, 0.0, 0.0, "%.0f"));
+		field_row("Tolerance (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##hektotolerance", &settings.tolerance, 0.0, 0.0, "%.1f"));
+		item_tooltip("A post standing farther than this from its place counts as wrong");
+		ImGui::EndTable();
+	}
+	ImGui::TreePop();
+}
+
+// the posts to place, the duplicates and the posts standing wrong, with the buttons which take care of them
+void hekto_tool::hekto_render_results()
+{
+	auto const &tool{m_hekto};
+	auto const missing{std::ranges::count_if(tool.posts, [](hekto_post const &Post) { return Post.standing < 0; })};
+	auto const wrong{std::ranges::count_if(tool.found, [](hekto_found const &Post) { return Post.wrong; })};
+	auto const duplicates{std::ranges::count_if(tool.found, [](hekto_found const &Post) { return Post.duplicate; })};
 	ImGui::Text(STR_C("To place: %d"), static_cast<int>(missing));
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Line %.0f m, km %s - %s. Standing: %zu, %d of them wrong"), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, tool.posts.empty() ? "-" : km_text(std::min(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(),
 		                  tool.posts.empty() ? "-" : km_text(std::max(tool.posts.front().hectometres, tool.posts.back().hectometres)).c_str(), tool.found.size(), static_cast<int>(wrong));
-	if (missing > 0)
-	{
-		if (main_button(format(STR_P("Place %d post", "Place %d posts", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall_button_height())))
-			hekto_place();
-	}
+	if (missing > 0 && main_button(format(STR_P("Place %d post", "Place %d posts", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall_button_height())))
+		hekto_place();
 	if (duplicates > 0)
 	{
 		if (ImGui::Button(format(STR_P("Remove %d duplicate post", "Remove %d duplicate posts", static_cast<long long>(duplicates)), static_cast<int>(duplicates)).c_str()))
@@ -778,29 +847,31 @@ void hekto_tool::render_options()
 			ImGui::SetTooltip("%s", STR_C("Posts with a number another post nearer to its place already has"));
 	}
 	if (wrong > 0 || duplicates > 0)
+		hekto_render_wrong(wrong, duplicates);
+}
+
+// the button which moves the posts standing wrong, and the list of them and of the duplicates: a click flies there
+void hekto_tool::hekto_render_wrong(std::ptrdiff_t const Wrong, std::ptrdiff_t const Duplicates)
+{
+	if (Wrong > 0)
 	{
-		if (wrong > 0)
-		{
-			if (duplicates > 0)
-				ImGui::SameLine();
-			if (ImGui::Button(format(STR_P("Move %d wrong post to its place", "Move %d wrong posts to their places", static_cast<long long>(wrong)), static_cast<int>(wrong)).c_str()))
-				hekto_fix();
-		}
-		ImGui::BeginChild("##hektowrong", ImVec2(0.0f, std::min(6, static_cast<int>(wrong + duplicates)) * ImGui::GetTextLineHeightWithSpacing() + 6.0f), true);
-		for (auto const &post : tool.found)
-		{
-			if (false == post.wrong && false == post.duplicate)
-				continue;
-			auto const label{post.duplicate ? format(STR_C("km %s duplicate##%u"), km_text(post.hectometres).c_str(), post.post.instance) : format(STR_C("km %s stands %.1f m from its place##%u"), km_text(post.hectometres).c_str(), post.distance, post.post.instance)};
-			if (ImGui::Selectable(label.c_str()))
-			{
-				m_view.fly_to(post.post.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 20.0);
-			}
-		}
-		ImGui::EndChild();
+		if (Duplicates > 0)
+			ImGui::SameLine();
+		if (ImGui::Button(format(STR_P("Move %d wrong post to its place", "Move %d wrong posts to their places", static_cast<long long>(Wrong)), static_cast<int>(Wrong)).c_str()))
+			hekto_fix();
 	}
-	if (false == tool.status.empty())
-		ImGui::TextWrapped("%s", tool.status.c_str());
+	ImGui::BeginChild("##hektowrong", ImVec2(0.0f, static_cast<float>(std::min(6, static_cast<int>(Wrong + Duplicates))) * ImGui::GetTextLineHeightWithSpacing() + 6.0f), true);
+	for (auto const &post : m_hekto.found)
+	{
+		if (false == post.wrong && false == post.duplicate)
+			continue;
+		auto const label{post.duplicate ? format(STR_C("km %s duplicate##%u"), km_text(post.hectometres).c_str(), post.post.instance) : format(STR_C("km %s stands %.1f m from its place##%u"), km_text(post.hectometres).c_str(), post.distance, post.post.instance)};
+		if (ImGui::Selectable(label.c_str()))
+		{
+			m_view.fly_to(post.post.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 20.0);
+		}
+	}
+	ImGui::EndChild();
 }
 
 void hekto_tool::draw_overlay() const
@@ -823,27 +894,33 @@ void hekto_tool::draw_overlay() const
 		drawlist->AddCircleFilled(screen, 4.0f, colour);
 		draw_label(drawlist, screen, colour, km_text(post.hectometres));
 	}
-	for (auto const &post : tool.found)
-	{
-		if ((false == post.wrong && false == post.duplicate) || glm::distance(post.post.location, camera) > kOverlayRange)
-			continue;
-		ImVec2 screen;
-		if (false == projection.project(post.post.location, screen))
-			continue;
-		auto const colour{post.duplicate ? IM_COL32(255, 160, 40, 235) : IM_COL32(255, 70, 60, 235)};
-		drawlist->AddCircle(screen, 9.0f, colour, 16, 2.5f);
-		draw_label(drawlist, screen, colour, post.duplicate ? format(STR_C("km %s duplicate"), km_text(post.hectometres).c_str()) : format(STR_C("km %s, %.1f m from its place"), km_text(post.hectometres).c_str(), post.distance));
-		if (post.duplicate)
-			continue;
-		for (auto const &target : tool.posts)
-			if (target.hectometres == post.hectometres)
-				projection.line(drawlist, post.post.location, target.position, IM_COL32(255, 70, 60, 160), 1.5f);
-	}
+	hekto_draw_found(projection, drawlist, camera);
 	ImVec2 screen;
 	if (projection.project(tool.point, screen))
 	{
 		drawlist->AddCircle(screen, 7.0f, IM_COL32(90, 200, 255, 235), 16, 2.5f);
 		draw_label(drawlist, screen, IM_COL32(90, 200, 255, 235), format("km %.3f", tool.km));
+	}
+}
+
+void hekto_tool::hekto_draw_found(screen_projection const &Projection, ImDrawList *Drawlist, glm::dvec3 const &Camera) const
+{
+	auto const &tool{m_hekto};
+	for (auto const &post : tool.found)
+	{
+		if ((false == post.wrong && false == post.duplicate) || glm::distance(post.post.location, Camera) > kOverlayRange)
+			continue;
+		ImVec2 screen;
+		if (false == Projection.project(post.post.location, screen))
+			continue;
+		auto const colour{post.duplicate ? IM_COL32(255, 160, 40, 235) : IM_COL32(255, 70, 60, 235)};
+		Drawlist->AddCircle(screen, 9.0f, colour, 16, 2.5f);
+		draw_label(Drawlist, screen, colour, post.duplicate ? format(STR_C("km %s duplicate"), km_text(post.hectometres).c_str()) : format(STR_C("km %s, %.1f m from its place"), km_text(post.hectometres).c_str(), post.distance));
+		if (post.duplicate)
+			continue;
+		for (auto const &target : tool.posts)
+			if (target.hectometres == post.hectometres)
+				Projection.line(Drawlist, post.post.location, target.position, IM_COL32(255, 70, 60, 160), 1.5f);
 	}
 }
 
@@ -873,49 +950,59 @@ void fouling_tool::fouling_update()
 		switches.push_back(selected);
 	}
 	else
-	{
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved && (track->iCategoryFlag & 15) == kRailCategory && track->m_paths.size() >= 2 &&
-			    (tool.scope == 2 || glm::distance(track->location(), camera) <= tool.reach))
-				switches.push_back(track);
-	}
+		switches = rail_switches(tool.scope, tool.reach, camera);
 	for (auto *track : switches)
 	{
 		if (track->m_paths.size() < 2 || false == editor_track::is_supported(*track))
 			continue;
-		auto const main{trace(*track, 0, true, kFoulingTrace)};
-		auto const branch{trace(*track, 1, true, kFoulingTrace)};
-		if (main.size() < 2 || branch.size() < 2)
-			continue;
-		glm::dvec3 previous{branch.front()};
-		double previousdistance{0.0};
-		for (std::size_t i = 1; i < branch.size(); ++i)
-		{
-			double distance;
-			nearest_on(main, branch[i], distance);
-			if (distance < tool.spacing)
-			{
-				previous = branch[i];
-				previousdistance = distance;
-				continue;
-			}
-			auto const f{distance - previousdistance > 1e-9 ? (tool.spacing - previousdistance) / (distance - previousdistance) : 1.0};
-			auto const onbranch{glm::mix(previous, branch[i], std::clamp(f, 0.0, 1.0))};
-			double unused;
-			auto const onmain{nearest_on(main, onbranch, unused)};
-			fouling_point point;
-			point.track = track;
-			auto const middle{(onbranch + onmain) * 0.5};
-			// the points of the paths are at the rail foot, the heads of the rails are the height of the rail over them
-			point.position = tool.height_mode == 1 ? glm::dvec3{middle.x, 0.5 * (onbranch.y + onmain.y) + kRailHeight + tool.height, middle.z} : m_ground.placement_on_ground({middle.x, std::max(onbranch.y, onmain.y), middle.z});
-			auto const back{plan_of(previous - branch[i])};
-			point.yaw = std::fmod(heading_of(glm::length(back) > 1e-9 ? glm::normalize(back) : glm::dvec2{0.0, 1.0}) + tool.turn, 360.0);
-			tool.points.push_back(point);
-			break;
-		}
+		if (auto const point{fouling_point_at(*track)}; point.has_value())
+			tool.points.push_back(*point);
 	}
-	// markers standing: each goes to the nearest fouling point, the others are left alone
-	auto const markers{m_templates.standing_templates([](std::string const &File) { return File.find("w17") != std::string::npos || File.find("ukres") != std::string::npos; })};
+	fouling_match_markers();
+	auto const missing{std::ranges::count_if(tool.points, [](fouling_point const &Point) { return Point.standing < 0; })};
+	auto const wrong{std::ranges::count_if(tool.found, [](fouling_found const &Found) { return Found.wrong; })};
+	tool.status = format(STR_C("%zu switches, %zu fouling points: %d without a marker, %d markers standing wrong"), switches.size(), tool.points.size(), static_cast<int>(missing), static_cast<int>(wrong));
+}
+
+std::optional<fouling_tool::fouling_point> fouling_tool::fouling_point_at(TTrack &Track) const
+{
+	auto const &tool{m_fouling};
+	auto const main{trace(Track, 0, true, kFoulingTrace)};
+	auto const branch{trace(Track, 1, true, kFoulingTrace)};
+	if (main.size() < 2 || branch.size() < 2)
+		return std::nullopt;
+	glm::dvec3 previous{branch.front()};
+	double previousdistance{0.0};
+	for (std::size_t i = 1; i < branch.size(); ++i)
+	{
+		double distance;
+		nearest_on(main, branch[i], distance);
+		if (distance < tool.spacing)
+		{
+			previous = branch[i];
+			previousdistance = distance;
+			continue;
+		}
+		auto const f{distance - previousdistance > 1e-9 ? (tool.spacing - previousdistance) / (distance - previousdistance) : 1.0};
+		auto const onbranch{glm::mix(previous, branch[i], std::clamp(f, 0.0, 1.0))};
+		double unused;
+		auto const onmain{nearest_on(main, onbranch, unused)};
+		fouling_point point;
+		point.track = &Track;
+		auto const middle{(onbranch + onmain) * 0.5};
+		// the points of the paths are at the rail foot, the heads of the rails are the height of the rail over them
+		point.position = tool.height_mode == 1 ? glm::dvec3{middle.x, 0.5 * (onbranch.y + onmain.y) + kRailHeight + tool.height, middle.z} : m_ground.placement_on_ground({middle.x, std::max(onbranch.y, onmain.y), middle.z});
+		auto const back{plan_of(previous - branch[i])};
+		point.yaw = std::fmod(heading_of(glm::length(back) > 1e-9 ? glm::normalize(back) : glm::dvec2{0.0, 1.0}) + tool.turn, 360.0);
+		return point;
+	}
+	return std::nullopt;
+}
+
+void fouling_tool::fouling_match_markers()
+{
+	auto &tool{m_fouling};
+	auto const markers{m_templates.standing_templates([](std::string_view const File) { return File.find("w17") != std::string_view::npos || File.find("ukres") != std::string_view::npos; })};
 	for (auto const &marker : markers)
 	{
 		int nearest{-1};
@@ -948,9 +1035,6 @@ void fouling_tool::fouling_update()
 			tool.found.push_back(found);
 		}
 	}
-	auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
-	auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
-	tool.status = format(STR_C("%zu switches, %zu fouling points: %d without a marker, %d markers standing wrong"), switches.size(), tool.points.size(), static_cast<int>(missing), static_cast<int>(wrong));
 }
 
 void fouling_tool::place(int const Only)
@@ -1040,108 +1124,117 @@ std::optional<std::pair<int, bool>> fouling_tool::hit() const
 void fouling_tool::render_options()
 {
 	auto &tool{m_fouling};
-	auto const changed = [&](bool const Changed) {
-		if (Changed)
-			tool.dirty = true;
-	};
-	changed(segmented("foulingscope", tool.scope, {{0, STR_C("The selected switch")}, {1, STR_C("Around the camera")}, {2, STR_C("Whole scenery")}}));
+	mark_changed(tool.dirty, segmented("foulingscope", tool.scope, {{0, STR_C("The selected switch")}, {1, STR_C("Around the camera")}, {2, STR_C("Whole scenery")}}));
 	fouling_update();
 	if (false == tool.error.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", tool.error.c_str());
 	else
-	{
-		ImGui::TextWrapped("%s", tool.status.c_str());
-		auto const missing{std::count_if(tool.points.begin(), tool.points.end(), [](fouling_point const &Point) { return Point.standing < 0; })};
-		auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](fouling_found const &Found) { return Found.wrong; })};
-		auto const tall{tall_button_height()};
-		if (missing > 0)
-		{
-			if (main_button(format(STR_P("Place %d marker", "Place %d markers", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall)))
-				place();
-		}
-		if (wrong > 0)
-		{
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.1f, 1.0f));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.48f, 0.15f, 1.0f));
-			if (ImGui::Button(format(STR_P("Move %d wrong marker to its place", "Move %d wrong markers to their places", static_cast<long long>(wrong)), static_cast<int>(wrong)).c_str(), ImVec2(-1.0f, tall)))
-				fix();
-			ImGui::PopStyleColor(2);
-		}
-		if (missing + wrong > 0)
-		{
-			// each one: a click flies there, the button fixes it alone; in the view a click on its point does the same
-			ImGui::TextDisabled("%s", STR_C("Click the green or red point in the view: that one only"));
-			ImGui::BeginChild("##foulinglist", ImVec2(0.0f, std::min(8, static_cast<int>(missing + wrong)) * ImGui::GetFrameHeightWithSpacing() + 6.0f), true);
-			auto const look{glm::normalize(glm::dvec3{-1.0, -0.8, -1.0})};
-			for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
-			{
-				auto const &point{tool.points[i]};
-				if (point.standing >= 0)
-					continue;
-				ImGui::PushID(i);
-				if (ImGui::SmallButton(STR_C("Place")))
-					place(i);
-				ImGui::SameLine();
-				if (ImGui::Selectable(format(STR_C("%s: no W17"), point.track->name().c_str()).c_str()))
-					m_view.fly_to(point.position, look, 25.0);
-				ImGui::PopID();
-			}
-			for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
-			{
-				auto const &found{tool.found[i]};
-				if (false == found.wrong)
-					continue;
-				ImGui::PushID(1000000 + i);
-				if (ImGui::SmallButton(STR_C("Fix")))
-					fix(i);
-				ImGui::SameLine();
-				if (ImGui::Selectable(format(STR_C("%s: W17 %.1f m off, %+.2f m high"), tool.points[found.point].track->name().c_str(), found.error, found.height_error).c_str()))
-					m_view.fly_to(found.marker.location, look, 25.0);
-				ImGui::PopID();
-			}
-			ImGui::EndChild();
-		}
-	}
-	if (ImGui::TreeNode(STR_C("More settings")))
-	{
-		if (begin_fields("##foulingfields", 0.6f))
-		{
-			if (tool.scope == 1)
-			{
-				field_row("Around the camera (m)");
-				changed(ImGui::InputDouble("##foulingreach", &tool.reach, 0.0, 0.0, "%.0f"));
-			}
-			field_row("Spacing of the axes (m)");
-			changed(ImGui::InputDouble("##foulingspacing", &tool.spacing, 0.0, 0.0, "%.2f"));
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
-			field_row("Tolerance (m)");
-			changed(ImGui::InputDouble("##foulingtolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
-			item_tooltip("A marker standing farther than this from its place counts as wrong");
-			ImGui::EndTable();
-		}
-		changed(segmented("foulingheight", tool.height_mode, {{0, STR_C("On the ground")}, {1, STR_C("Over the rail heads")}}));
-		if (tool.height_mode == 1 && begin_fields("##foulingheights", 0.6f))
-		{
-			field_row("by (m)");
-			changed(ImGui::InputDouble("##foulingby", &tool.height, 0.0, 0.0, "%.3f"));
-			field_row("Height tolerance (m)");
-			changed(ImGui::InputDouble("##foulingheighttolerance", &tool.height_tolerance, 0.0, 0.0, "%.3f"));
-			item_tooltip("A marker higher or lower than its place by more than this counts as wrong");
-			tool.height_tolerance = std::clamp(tool.height_tolerance, 0.005, 1.0);
-			ImGui::EndTable();
-		}
-		ImGui::TextDisabled("%s", STR_C("Marker"));
-		segmented("foulingmodel", tool.model,
-		          {{0, "w17", "Round post (ip/pkp/w17.inc)"}, {1, "w17_new", "Round post, taller than w17 (ip/pkp/w17_new.inc)"}, {2, "w17_old", "Square post (ip/pkp/w17_old.inc)"}, {3, STR_C("I-beam"), "Post of an HEB I-beam (ip/pkp/w17_dwuteo.inc)"}});
-		ImGui::TextDisabled("%s", STR_C("Turned by (deg)"));
-		if (segmented("foulingturn", tool.turn, {{0, "0"}, {90, "90"}, {180, "180"}, {270, "270"}}))
-			tool.dirty = true;
-		ImGui::TreePop();
-	}
+		fouling_render_results();
+	fouling_render_settings();
 	tool.reach = std::clamp(tool.reach, 50.0, 50000.0);
 	tool.spacing = std::clamp(tool.spacing, 2.0, 10.0);
 	tool.tolerance = std::clamp(tool.tolerance, 0.2, 20.0);
+}
+
+// what was found, the buttons which place the markers missing and move the ones standing wrong, the list of them
+void fouling_tool::fouling_render_results()
+{
+	auto const &tool{m_fouling};
+	ImGui::TextWrapped("%s", tool.status.c_str());
+	auto const missing{std::ranges::count_if(tool.points, [](fouling_point const &Point) { return Point.standing < 0; })};
+	auto const wrong{std::ranges::count_if(tool.found, [](fouling_found const &Found) { return Found.wrong; })};
+	auto const tall{tall_button_height()};
+	if (missing > 0 && main_button(format(STR_P("Place %d marker", "Place %d markers", static_cast<long long>(missing)), static_cast<int>(missing)).c_str(), ImVec2(-1.0f, tall)))
+		place();
+	if (wrong > 0)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.1f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.48f, 0.15f, 1.0f));
+		if (ImGui::Button(format(STR_P("Move %d wrong marker to its place", "Move %d wrong markers to their places", static_cast<long long>(wrong)), static_cast<int>(wrong)).c_str(), ImVec2(-1.0f, tall)))
+			fix();
+		ImGui::PopStyleColor(2);
+	}
+	if (missing + wrong > 0)
+		fouling_render_list(missing, wrong);
+}
+
+// each fouling point without a marker and each marker standing wrong: a click flies there, the button fixes it alone; in the
+// view a click on its point does the same
+void fouling_tool::fouling_render_list(std::ptrdiff_t const Missing, std::ptrdiff_t const Wrong)
+{
+	auto const &tool{m_fouling};
+	ImGui::TextDisabled("%s", STR_C("Click the green or red point in the view: that one only"));
+	ImGui::BeginChild("##foulinglist", ImVec2(0.0f, static_cast<float>(std::min(8, static_cast<int>(Missing + Wrong))) * ImGui::GetFrameHeightWithSpacing() + 6.0f), true);
+	auto const look{glm::normalize(glm::dvec3{-1.0, -0.8, -1.0})};
+	for (int i = 0; i < static_cast<int>(tool.points.size()); ++i)
+	{
+		auto const &point{tool.points[i]};
+		if (point.standing >= 0)
+			continue;
+		ImGui::PushID(i);
+		if (ImGui::SmallButton(STR_C("Place")))
+			place(i);
+		ImGui::SameLine();
+		if (ImGui::Selectable(format(STR_C("%s: no W17"), point.track->name().c_str()).c_str()))
+			m_view.fly_to(point.position, look, 25.0);
+		ImGui::PopID();
+	}
+	for (int i = 0; i < static_cast<int>(tool.found.size()); ++i)
+	{
+		auto const &found{tool.found[i]};
+		if (false == found.wrong)
+			continue;
+		ImGui::PushID(1000000 + i);
+		if (ImGui::SmallButton(STR_C("Fix")))
+			fix(i);
+		ImGui::SameLine();
+		if (ImGui::Selectable(format(STR_C("%s: W17 %.1f m off, %+.2f m high"), tool.points[found.point].track->name().c_str(), found.error, found.height_error).c_str()))
+			m_view.fly_to(found.marker.location, look, 25.0);
+		ImGui::PopID();
+	}
+	ImGui::EndChild();
+}
+
+// the reach, the spacing, the tolerances, the height of the markers, their model and their turn
+void fouling_tool::fouling_render_settings()
+{
+	auto &tool{m_fouling};
+	if (false == ImGui::TreeNode(STR_C("More settings")))
+		return;
+	if (begin_fields("##foulingfields", 0.6f))
+	{
+		if (tool.scope == 1)
+		{
+			field_row("Around the camera (m)");
+			mark_changed(tool.dirty, ImGui::InputDouble("##foulingreach", &tool.reach, 0.0, 0.0, "%.0f"));
+		}
+		field_row("Spacing of the axes (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##foulingspacing", &tool.spacing, 0.0, 0.0, "%.2f"));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
+		field_row("Tolerance (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##foulingtolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
+		item_tooltip("A marker standing farther than this from its place counts as wrong");
+		ImGui::EndTable();
+	}
+	mark_changed(tool.dirty, segmented("foulingheight", tool.height_mode, {{0, STR_C("On the ground")}, {1, STR_C("Over the rail heads")}}));
+	if (tool.height_mode == 1 && begin_fields("##foulingheights", 0.6f))
+	{
+		field_row("by (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##foulingby", &tool.height, 0.0, 0.0, "%.3f"));
+		field_row("Height tolerance (m)");
+		mark_changed(tool.dirty, ImGui::InputDouble("##foulingheighttolerance", &tool.height_tolerance, 0.0, 0.0, "%.3f"));
+		item_tooltip("A marker higher or lower than its place by more than this counts as wrong");
+		tool.height_tolerance = std::clamp(tool.height_tolerance, 0.005, 1.0);
+		ImGui::EndTable();
+	}
+	ImGui::TextDisabled("%s", STR_C("Marker"));
+	segmented("foulingmodel", tool.model,
+	          {{0, "w17", "Round post (ip/pkp/w17.inc)"}, {1, "w17_new", "Round post, taller than w17 (ip/pkp/w17_new.inc)"}, {2, "w17_old", "Square post (ip/pkp/w17_old.inc)"}, {3, STR_C("I-beam"), "Post of an HEB I-beam (ip/pkp/w17_dwuteo.inc)"}});
+	ImGui::TextDisabled("%s", STR_C("Turned by (deg)"));
+	if (segmented("foulingturn", tool.turn, {{0, "0"}, {90, "90"}, {180, "180"}, {270, "270"}}))
+		tool.dirty = true;
+	ImGui::TreePop();
 }
 
 void fouling_tool::draw_overlay() const
@@ -1179,62 +1272,60 @@ void fouling_tool::draw_overlay() const
 
 editor_selftest_result hekto_tool::selftest(std::string const &Command, std::istringstream &Words)
 {
-	if (Command == "hekto")
+	if (Command != "hekto")
+		return editor_selftest_result::unhandled;
+	auto values{selftest_values(Words)};
+	auto *track{simulation::Paths.find(values["track"])};
+	if (track == nullptr)
 	{
-		auto values{selftest_values(Words)};
-		auto *track{simulation::Paths.find(values["track"])};
-		if (track == nullptr)
-		{
-			WriteLog("SELFTEST hekto: no such track");
-			return editor_selftest_result::handled;
-		}
-		start(*track, track->m_paths.front().points[segment_data::point::start]);
-		auto &tool{m_hekto};
-		if (values.count("reach"))
-			tool.reach = std::stod(values["reach"]);
-		tool.own_km = values["own"] == "1";
-		tool.dirty = true;
-		hekto_update();
-		if (values.count("km"))
-		{
-			tool.km = std::stod(values["km"]);
-			tool.growth = values["growth"] == "-1" ? -1 : 1;
-		}
-		tool.side = values["side"] == "alt" ? 0 : values["side"] == "left" ? -1 : 1;
-		tool.dirty = true;
-		hekto_update();
-		auto const missing{std::count_if(tool.posts.begin(), tool.posts.end(), [](hekto_post const &Post) { return Post.standing < 0; })};
-		auto const wrong{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.wrong; })};
-		auto const duplicates{std::count_if(tool.found.begin(), tool.found.end(), [](hekto_found const &Post) { return Post.duplicate; })};
-		WriteLog(format("SELFTEST hekto: line %s km %.3f growth %d, %zu posts along %.0f m, %d to place, %zu standing, %d wrong, %d duplicate. %s", tool.line.empty() ? "-" : tool.line.c_str(), tool.km, tool.growth, tool.posts.size(), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, static_cast<int>(missing), tool.found.size(),
-		                static_cast<int>(wrong), static_cast<int>(duplicates), tool.status.c_str()));
-		for (std::size_t i = 0; i < tool.posts.size() && i < 4; ++i)
-		{
-			auto const &post{tool.posts[i]};
-			double lateral;
-			glm::dvec3 const axis{editor_track::sampled_position(tool.samples, post.chainage)};
-			auto const direction{editor_track::sampled_position(tool.samples, post.chainage + 1.0) - axis};
-			glm::dvec2 const offset{post.position.x - axis.x, post.position.z - axis.z};
-			lateral = glm::length(offset);
-			auto const right{(direction.x * offset.y - direction.z * offset.x) * post.growth >= 0.0};
-			WriteLog(format("SELFTEST hekto post %d.%d at %.1f m, %.2f m from the axis, %s of the growing kilometrage, at %.1f %.1f %.1f", post.hectometres / 10, post.hectometres % 10, post.chainage, lateral, right ? "right" : "left", post.position.x, post.position.y,
-			                post.position.z));
-		}
-		if (values["list"] == "1")
-		{
-			std::string list;
-			for (auto const &post : tool.posts)
-				list += format(" %d@%.0f", post.hectometres, post.chainage);
-			WriteLog("SELFTEST hekto posts:" + list);
-		}
-		if (values["place"] == "1")
-		{
-			hekto_place();
-			WriteLog("SELFTEST hekto: " + tool.status);
-		}
+		WriteLog("SELFTEST hekto: no such track");
 		return editor_selftest_result::handled;
 	}
-	return editor_selftest_result::unhandled;
+	start(*track, track->m_paths.front().points[segment_data::point::start]);
+	auto &tool{m_hekto};
+	if (values.contains("reach"))
+		tool.settings.reach = std::stod(values["reach"]);
+	tool.own_km = values["own"] == "1";
+	tool.dirty = true;
+	hekto_update();
+	if (values.contains("km"))
+	{
+		tool.km = std::stod(values["km"]);
+		tool.growth = values["growth"] == "-1" ? -1 : 1;
+	}
+	tool.settings.side = side_named(values["side"]);
+	tool.dirty = true;
+	hekto_update();
+	auto const missing{std::ranges::count_if(tool.posts, [](hekto_post const &Post) { return Post.standing < 0; })};
+	auto const wrong{std::ranges::count_if(tool.found, [](hekto_found const &Post) { return Post.wrong; })};
+	auto const duplicates{std::ranges::count_if(tool.found, [](hekto_found const &Post) { return Post.duplicate; })};
+	WriteLog(format("SELFTEST hekto: line %s km %.3f growth %d, %zu posts along %.0f m, %d to place, %zu standing, %d wrong, %d duplicate. %s", tool.line.empty() ? "-" : tool.line.c_str(), tool.km, tool.growth, tool.posts.size(), tool.samples.empty() ? 0.0 : tool.samples.back().chainage, static_cast<int>(missing), tool.found.size(),
+	                static_cast<int>(wrong), static_cast<int>(duplicates), tool.status.c_str()));
+	for (std::size_t i = 0; i < tool.posts.size() && i < 4; ++i)
+	{
+		auto const &post{tool.posts[i]};
+		double lateral;
+		glm::dvec3 const axis{editor_track::sampled_position(tool.samples, post.chainage)};
+		auto const direction{editor_track::sampled_position(tool.samples, post.chainage + 1.0) - axis};
+		glm::dvec2 const offset{post.position.x - axis.x, post.position.z - axis.z};
+		lateral = glm::length(offset);
+		auto const on_right{(direction.x * offset.y - direction.z * offset.x) * post.growth >= 0.0};
+		WriteLog(format("SELFTEST hekto post %d.%d at %.1f m, %.2f m from the axis, %s of the growing kilometrage, at %.1f %.1f %.1f", post.hectometres / 10, post.hectometres % 10, post.chainage, lateral, on_right ? "right" : "left", post.position.x, post.position.y,
+		                post.position.z));
+	}
+	if (values["list"] == "1")
+	{
+		std::string list;
+		for (auto const &post : tool.posts)
+			list += format(" %d@%.0f", post.hectometres, post.chainage);
+		WriteLog("SELFTEST hekto posts:" + list);
+	}
+	if (values["place"] == "1")
+	{
+		hekto_place();
+		WriteLog("SELFTEST hekto: " + tool.status);
+	}
+	return editor_selftest_result::handled;
 }
 
 glm::dvec3 fouling_tool::position_of(std::pair<int, bool> const &Hit) const
@@ -1251,53 +1342,58 @@ void fouling_tool::check_selected_switch()
 
 editor_selftest_result fouling_tool::selftest(std::string const &Command, std::istringstream &Words)
 {
-	if (Command == "fouling")
+	if (Command != "fouling")
+		return editor_selftest_result::unhandled;
+	auto values{selftest_values(Words)};
+	auto &tool{m_fouling};
+	if (values["show"] == "1")
 	{
-		auto values{selftest_values(Words)};
-		auto &tool{m_fouling};
-		if (values["show"] == "1")
+		m_view.show_track_tab(editor_track_tab::lineside);
+		m_tab.expand = true;
+	}
+	tool.scope = std::stoi(values.contains("scope") ? values["scope"] : "2");
+	tool.height_mode = values["mode"] == "ground" ? 0 : 1;
+	tool.height = std::stod(values.contains("height") ? values["height"] : "0");
+	tool.dirty = true;
+	fouling_update();
+	WriteLog("SELFTEST fouling: " + tool.status);
+	// the first five markers standing wrong
+	int shown{0};
+	for (auto const &found : tool.found)
+	{
+		if (false == found.wrong || shown >= 5)
+			continue;
+		++shown;
+		WriteLog(format("SELFTEST fouling: %s %.2f m off, %+.3f m high", found.marker.file.c_str(), found.error, found.height_error));
+	}
+	if (values["place"] == "one")
+	{
+		// the first fouling point without a marker alone, as a click on it in the view
+		for (int index = 0; index < static_cast<int>(tool.points.size()); ++index)
 		{
-			m_view.show_track_tab(editor_track_tab::lineside);
-			m_tab.expand = true;
+			if (tool.points[index].standing < 0)
+			{
+				place(index);
+				break;
+			}
 		}
-		tool.scope = std::stoi(values.count("scope") ? values["scope"] : "2");
-		tool.height_mode = values["mode"] == "ground" ? 0 : 1;
-		tool.height = std::stod(values.count("height") ? values["height"] : "0");
 		tool.dirty = true;
 		fouling_update();
-		WriteLog("SELFTEST fouling: " + tool.status);
-		int shown{0};
-		for (auto const &found : tool.found)
-			if (found.wrong && shown++ < 5)
-				WriteLog(format("SELFTEST fouling: %s %.2f m off, %+.3f m high", found.marker.file.c_str(), found.error, found.height_error));
-		if (values["place"] == "one")
-		{
-			// the first fouling point without a marker alone, as a click on it in the view
-			for (int index = 0; index < static_cast<int>(tool.points.size()); ++index)
-				if (tool.points[index].standing < 0)
-				{
-					place(index);
-					break;
-				}
-			tool.dirty = true;
-			fouling_update();
-			WriteLog("SELFTEST fouling one: " + tool.status);
-		}
-		if (values["place"] == "1")
-		{
-			place();
-			tool.dirty = true;
-			fouling_update();
-			WriteLog("SELFTEST fouling after placing: " + tool.status);
-		}
-		if (values["fix"] == "1")
-		{
-			fix();
-			tool.dirty = true;
-			fouling_update();
-			WriteLog("SELFTEST fouling after the fix: " + tool.status);
-		}
-		return editor_selftest_result::handled;
+		WriteLog("SELFTEST fouling one: " + tool.status);
 	}
-	return editor_selftest_result::unhandled;
+	if (values["place"] == "1")
+	{
+		place();
+		tool.dirty = true;
+		fouling_update();
+		WriteLog("SELFTEST fouling after placing: " + tool.status);
+	}
+	if (values["fix"] == "1")
+	{
+		fix();
+		tool.dirty = true;
+		fouling_update();
+		WriteLog("SELFTEST fouling after the fix: " + tool.status);
+	}
+	return editor_selftest_result::handled;
 }

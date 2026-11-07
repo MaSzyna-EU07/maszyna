@@ -52,7 +52,12 @@ float scale()
 	return std::max(1.0f, Global.ui_scale);
 }
 
-bool terrain_tools_more{false};
+// whether the tools of the terrain behind More are shown
+bool &terrain_tools_more()
+{
+	static bool more{false};
+	return more;
+}
 
 // side of a button, the icon with some room around it
 float button_side()
@@ -159,50 +164,8 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		break;
 	}
 	case work_area::tracks:
-	{
-		auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.tab().open};
-		auto const add = [&](track_tab const Tab, bool const Group) {
-			auto const &modes{track_modes()};
-			auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == Tab; })};
-			if (found == modes.end())
-				return;
-			// a tool chosen again gives way to the select one
-			auto const chosen{(m_track_tab == Tab || (Tab == track_tab::straights && track_plan_tab())) && false == (Tab == track_tab::lineside && vehicle)};
-			Buttons.push_back({found->picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
-			Buttons.back().accent = family_colour(found->family);
-		};
-		// the tools of laying track first, the others behind More, shown while one of them is in use
-		add(track_tab::path, false);
-		add(track_tab::lay, false);
-		add(track_tab::straights, false);
-		add(track_tab::turnout, false);
-		add(track_tab::parallel, false);
-		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::srk || m_track_tab == track_tab::kilometrage || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
-		                    m_track_tab == track_tab::joints || m_gauge.is_open()};
-		auto const more{EditorSettings.track_tools_more()};
-		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"), more, [more]() {
-			                   EditorSettings.track_tools_more(false == more);
-			                   EditorSettings.save();
-		                   }, true});
-		if (false == more && false == advanced)
-			break;
-		add(track_tab::turntable, true);
-		add(track_tab::srk, false);
-		add(track_tab::kilometrage, false);
-		add(track_tab::lineside, false);
-		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
-			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
-			                   m_vehicle.tab().expand = false == vehicle;
-		                   }});
-		Buttons.back().accent = family_colour(1);
-		add(track_tab::profile, true);
-		add(track_tab::speed, false);
-		add(track_tab::joints, false);
-		Buttons.push_back({icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.is_open(),
-		                   [this]() { m_gauge.toggle(); }});
-		Buttons.back().accent = family_colour(2);
+		track_area_tools(Buttons);
 		break;
-	}
 	case work_area::roads:
 	{
 		auto &tool{m_roadtool};
@@ -220,40 +183,89 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		break;
 	}
 	case work_area::terrain:
-	{
-		// what the left button does on the terrain
-		auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
-		auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
-		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none)});
-		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt)});
-		Buttons.push_back({icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), chosen(terrain_tool::smooth), choose(terrain_tool::smooth)});
-		Buttons.push_back({icon::profile, STR_C("Level"), nullptr, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"),
-		                   chosen(terrain_tool::level), choose(terrain_tool::level)});
-		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
-		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
-		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
-		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
-		                   choose(terrain_tool::fill)});
-		auto const orthophoto{m_orthophoto.enabled()};
-		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
-		                   [this, orthophoto]() { choose_orthophoto(false == orthophoto); }, true});
-		auto const advanced{m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::restore || orthophoto_settings_open()};
-		Buttons.push_back({icon::more, terrain_tools_more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Point spacing, restoring the terrain, orthophoto settings"), terrain_tools_more,
-		                   []() { terrain_tools_more = false == terrain_tools_more; }, true});
-		if (false == terrain_tools_more && false == advanced)
-			break;
-		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
-		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
-		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
-		                   choose(terrain_tool::restore)});
-		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
-			                   // among the base layers in the layers window
-			                   ui()->show_layers();
-			                   m_orthophoto_window = true;
-		                   }});
+		terrain_area_tools(Buttons);
 		break;
 	}
-	}
+}
+
+void editor_mode::track_area_tools(std::vector<tool_button> &Buttons)
+{
+	auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.tab().open};
+	auto const add = [this, &Buttons, vehicle](track_tab const Tab, bool const Group) {
+		auto const &modes{track_modes()};
+		auto const found{std::ranges::find_if(modes, [Tab](track_mode const &Mode) { return Mode.tab == Tab; })};
+		if (found == modes.end())
+			return;
+		// a tool chosen again gives way to the select one
+		auto const chosen{(m_track_tab == Tab || (Tab == track_tab::straights && track_plan_tab())) && false == (Tab == track_tab::lineside && vehicle)};
+		Buttons.emplace_back(found->picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group);
+		Buttons.back().accent = family_colour(found->family);
+	};
+	// the tools of laying track first, the others behind More, shown while one of them is in use
+	add(track_tab::path, false);
+	add(track_tab::lay, false);
+	add(track_tab::straights, false);
+	add(track_tab::turnout, false);
+	add(track_tab::parallel, false);
+	auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::srk || m_track_tab == track_tab::kilometrage || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
+	                    m_track_tab == track_tab::joints || m_gauge.is_open()};
+	auto const more{EditorSettings.track_tools_more()};
+	Buttons.emplace_back(icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"), more, [more]() {
+		EditorSettings.track_tools_more(false == more);
+		EditorSettings.save();
+	}, true);
+	if (false == more && false == advanced)
+		return;
+	add(track_tab::turntable, true);
+	add(track_tab::srk, false);
+	add(track_tab::kilometrage, false);
+	add(track_tab::lineside, false);
+	Buttons.emplace_back(icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
+		show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
+		m_vehicle.tab().expand = false == vehicle;
+	});
+	Buttons.back().accent = family_colour(1);
+	add(track_tab::profile, true);
+	add(track_tab::speed, false);
+	add(track_tab::joints, false);
+	Buttons.emplace_back(icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.is_open(),
+	                     [this]() { m_gauge.toggle(); });
+	Buttons.back().accent = family_colour(2);
+}
+
+void editor_mode::terrain_area_tools(std::vector<tool_button> &Buttons)
+{
+	// what the left button does on the terrain
+	auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
+	auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
+	Buttons.emplace_back(icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none));
+	Buttons.emplace_back(icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt));
+	Buttons.emplace_back(icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), chosen(terrain_tool::smooth), choose(terrain_tool::smooth));
+	Buttons.emplace_back(icon::profile, STR_C("Level"), nullptr, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"),
+	                     chosen(terrain_tool::level), choose(terrain_tool::level));
+	Buttons.emplace_back(icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint));
+	Buttons.emplace_back(icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks));
+	Buttons.emplace_back(icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water));
+	Buttons.emplace_back(icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
+	                     choose(terrain_tool::fill));
+	auto const orthophoto{m_orthophoto.enabled()};
+	Buttons.emplace_back(icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
+	                     [this, orthophoto]() { choose_orthophoto(false == orthophoto); }, true);
+	auto const advanced{m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::restore || orthophoto_settings_open()};
+	auto &more{terrain_tools_more()};
+	Buttons.emplace_back(icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Point spacing, restoring the terrain, orthophoto settings"), more,
+	                     []() { terrain_tools_more() = false == terrain_tools_more(); }, true);
+	if (false == more && false == advanced)
+		return;
+	Buttons.emplace_back(icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
+	                     chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true);
+	Buttons.emplace_back(icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
+	                     choose(terrain_tool::restore));
+	Buttons.emplace_back(icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
+		// among the base layers in the layers window
+		ui()->show_layers();
+		m_orthophoto_window = true;
+	});
 }
 
 void editor_mode::render_toolbar_caption(char const *Text)
@@ -294,7 +306,7 @@ void editor_mode::render_toolbar_tools()
 	auto const top{ImGui::GetWindowPos().y + margin};
 	// undo and redo at the right end of the row, the tools before them
 	auto const history_width{2.0f * buttonheight + gap};
-	auto const right{ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 4.0f * s - history_width - groupgap};
+	auto const rightend{ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 4.0f * s - history_width - groupgap};
 	// the names next to the icons if there's room for them; if there isn't, the name of the chosen tool only, or none
 	enum class names
 	{
@@ -321,7 +333,7 @@ void editor_mode::render_toolbar_tools()
 	};
 	auto shown{names::none};
 	for (auto const option : {names::all, names::chosen})
-		if (left + total(option) <= right)
+		if (left + total(option) <= rightend)
 		{
 			shown = option;
 			break;
@@ -383,7 +395,7 @@ void editor_mode::render_toolbar_tools()
 		auto const redo{index == 1};
 		auto const steps{redo ? g_redo.size() : m_history.size()};
 		auto const enabled{steps > 0 && false == dragging && false == m_history_busy};
-		ImVec2 const position{history_left + index * (buttonheight + gap), top};
+		ImVec2 const position{history_left + static_cast<float>(index) * (buttonheight + gap), top};
 		ImVec2 const end{position.x + buttonheight, position.y + buttonheight};
 		ImGui::SetCursorScreenPos(position);
 		ImGui::PushID(redo ? "##redo" : "##undo");
@@ -391,7 +403,8 @@ void editor_mode::render_toolbar_tools()
 		ImGui::PopID();
 		auto const hovered{ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)};
 		list->AddRectFilled(position, end, hovered && enabled ? ImGui::GetColorU32(ImGuiCol_HeaderHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
-		auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.85f) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
+		auto const alpha{hovered ? 1.0f : 0.85f};
+		auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, alpha) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
 		// a hook of an arrow: back to the left for undo, on to the right for redo
 		auto const centre{ImVec2(position.x + buttonheight * 0.5f, position.y + buttonheight * 0.5f)};
 		auto const r{buttonheight * 0.22f};
@@ -429,13 +442,13 @@ void editor_mode::render_viewport_gizmo()
 	};
 	std::vector<tool_button> buttons;
 	if (tracks)
-		buttons.push_back({icon::select, STR_C("No gizmo"), nullptr, STR_C("The gizmo hidden: a track is changed by dragging its ends, and won't move nor bend by chance; its control vectors come out with the gizmo"), false == on, [this]() { m_track_gizmo_on = false; }});
-	buttons.push_back({icon::translate, STR_C("Translate"), "Q", tooltip, on && m_gizmo_op == gizmo_operation::translate, [choose]() { choose(gizmo_operation::translate); }, tracks});
-	buttons.push_back({icon::rotate, STR_C("Rotate"), "W", tooltip, on && m_gizmo_op == gizmo_operation::rotate, [choose]() { choose(gizmo_operation::rotate); }});
-	buttons.push_back({icon::scale, STR_C("Scale"), "E", tooltip, on && m_gizmo_op == gizmo_operation::scale, [choose]() { choose(gizmo_operation::scale); }});
+		buttons.emplace_back(icon::select, STR_C("No gizmo"), nullptr, STR_C("The gizmo hidden: a track is changed by dragging its ends, and won't move nor bend by chance; its control vectors come out with the gizmo"), false == on, [this]() { m_track_gizmo_on = false; });
+	buttons.emplace_back(icon::translate, STR_C("Translate"), "Q", tooltip, on && m_gizmo_op == gizmo_operation::translate, [choose]() { choose(gizmo_operation::translate); }, tracks);
+	buttons.emplace_back(icon::rotate, STR_C("Rotate"), "W", tooltip, on && m_gizmo_op == gizmo_operation::rotate, [choose]() { choose(gizmo_operation::rotate); });
+	buttons.emplace_back(icon::scale, STR_C("Scale"), "E", tooltip, on && m_gizmo_op == gizmo_operation::scale, [choose]() { choose(gizmo_operation::scale); });
 	// the gizmo always scales along the axes of the model
-	buttons.push_back({icon::local_space, STR_C("Local space"), "R", STR_C("The handles along the axes of the selected model instead of the axes of the world"), on && (m_gizmo_local || m_gizmo_op == gizmo_operation::scale),
-	                   [this]() { m_gizmo_local = !m_gizmo_local; }, true, on && m_gizmo_op != gizmo_operation::scale});
+	buttons.emplace_back(icon::local_space, STR_C("Local space"), "R", STR_C("The handles along the axes of the selected model instead of the axes of the world"), on && (m_gizmo_local || m_gizmo_op == gizmo_operation::scale),
+	                     [this]() { m_gizmo_local = !m_gizmo_local; }, true, on && m_gizmo_op != gizmo_operation::scale);
 	// in a row at the top, in the middle
 	auto const side{button_side()};
 	auto const gap{2.0f * scale()};
@@ -444,7 +457,10 @@ void editor_mode::render_viewport_gizmo()
 	auto const pad{3.0f * scale()};
 	float width{0.0f};
 	for (auto const &button : buttons)
-		width += side + (&button == &buttons.front() ? 0.0f : button.group ? groupgap : gap);
+	{
+		auto const between{button.group ? groupgap : gap};
+		width += side + (&button == &buttons.front() ? 0.0f : between);
+	}
 	ImVec2 const origin{std::round((editor_ui::view_min().x + editor_ui::view_max().x - width) * 0.5f), editor_ui::view_min().y + margin};
 	if (begin_overlay("##viewportgizmo", ImVec2(origin.x - pad, origin.y - pad), ImVec2(width + 2.0f * pad, side + 2.0f * pad)))
 	{

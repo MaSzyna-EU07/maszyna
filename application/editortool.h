@@ -36,7 +36,7 @@ enum class editor_selftest_result
 
 enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, template_open, template_clicked, count };
 
-enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, srk, kilometrage };
+enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, srk, kilometrage }; // NOSONAR: scoped, its enumerators always named with the enum
 
 struct track_hover
 {
@@ -62,7 +62,7 @@ struct template_item
 	bool described{false};
 	std::string track;
 	glm::dvec2 tilt{0.0}; // rot.x and rot.z of a described template, degrees
-	std::map<std::string, std::string> values;
+	std::map<std::string, std::string> values; // NOSONAR: the map editor_includes::directive takes, with the comparator it has
 };
 struct standing_template
 {
@@ -147,9 +147,9 @@ struct nmt_place
 	bool shapes{true}; // not a bridge nor a tunnel
 };
 
-inline std::map<std::string, std::string> selftest_values(std::istringstream &Words)
+inline std::map<std::string, std::string, std::less<>> selftest_values(std::istringstream &Words)
 {
-	std::map<std::string, std::string> values;
+	std::map<std::string, std::string, std::less<>> values;
 	std::string pair;
 	while (Words >> pair)
 	{
@@ -286,10 +286,25 @@ class editor_tool
 {
   public:
 	virtual ~editor_tool() = default;
-	virtual void update() {}
-	virtual void draw_overlay() const {}
-	virtual void render_options() {}
-	virtual void render_windows() {}
-	virtual void forget(scene::basic_node const *Node) {}
+	virtual void update()
+	{
+		// a tool with nothing to follow from frame to frame does nothing here
+	}
+	virtual void draw_overlay() const
+	{
+		// a tool with nothing to draw over the scene does nothing here
+	}
+	virtual void render_options()
+	{
+		// a tool without options of its own shows nothing here
+	}
+	virtual void render_windows()
+	{
+		// a tool without windows of its own shows nothing here
+	}
+	virtual void forget(scene::basic_node const *Node)
+	{
+		// a tool that keeps no nodes has none to forget
+	}
 	virtual editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) { return editor_selftest_result::unhandled; }
 };

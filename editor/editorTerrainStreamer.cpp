@@ -21,6 +21,12 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <format>
+#include <functional>
+#include <optional>
+#include <ranges>
+#include <string_view>
+#include <unordered_set>
 
 terrain_streamer EditorTerrain;
 
@@ -87,6 +93,69 @@ void erase_shape(std::vector<scene::shape_node> &Shapes, gfx::geometry_handle co
 			return;
 		}
 	}
+}
+
+// the hash of a text, taking a string_view as well as a string
+struct text_hash
+{
+	using is_transparent = void;
+	std::size_t operator()(std::string_view const Text) const noexcept { return std::hash<std::string_view>{}(Text); }
+};
+
+// the heights of a chunk no modifier reaches any more: its own ones, with the touch-ups made over the modifiers
+void base_restored(heightmap::chunk_data &Data)
+{
+	Data.heights = std::move(Data.base);
+	if (Data.adjust.size() == Data.heights.size())
+		for (std::size_t index = 0; index < Data.heights.size(); ++index)
+			Data.heights[index] += Data.adjust[index];
+	Data.base.clear();
+	Data.adjust.clear();
+}
+
+// the effects of the modifiers at a point which decide its height
+struct modifier_effects
+{
+	std::optional<heightmap::modifier_shape::effect> bed;
+	std::optional<heightmap::modifier_shape::effect> fill;
+	std::optional<heightmap::modifier_shape::effect> cut;
+};
+
+// within the formation of a track its formation, of the nearest one where two overlap; elsewhere the highest fill and the lowest cut
+void effect_taken(heightmap::modifier_shape::effect const &Effect, double const Ground, modifier_effects &Out)
+{
+	if (Effect.outside <= 0.0)
+	{
+		if (false == Out.bed.has_value() || Effect.distance < Out.bed->distance)
+			Out.bed = Effect;
+	}
+	else if (Effect.height > Ground)
+	{
+		if (false == Out.fill.has_value() || Effect.height > Out.fill->height)
+			Out.fill = Effect;
+	}
+	else if (Effect.height < Ground && (false == Out.cut.has_value() || Effect.height < Out.cut->height))
+		Out.cut = Effect;
+}
+
+// the height of a point of the ground under the modifiers, the same for any order of them: within the formation of a track its
+// formation, of the nearest one where two overlap; elsewhere the slopes, the highest fill and the lowest cut, the nearer of the two
+// where both reach
+double modified_height(std::vector<heightmap::modifier_shape> const &Shapes, double const X, double const Z, double const Ground)
+{
+	modifier_effects effects;
+	for (auto const &shape : Shapes)
+		if (auto const effect{shape.evaluate(X, Z, Ground)}; effect.has_value())
+			effect_taken(*effect, Ground, effects);
+	if (effects.bed.has_value())
+		return effects.bed->height;
+	if (effects.fill.has_value() && effects.cut.has_value())
+		return effects.fill->outside <= effects.cut->outside ? effects.fill->height : effects.cut->height;
+	if (effects.fill.has_value())
+		return effects.fill->height;
+	if (effects.cut.has_value())
+		return effects.cut->height;
+	return Ground;
 }
 
 } // namespace
@@ -608,8 +677,8 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 
 	// chunks wanted around the camera and around where it's heading; the top view only as far as the screen reaches, not the
 	// range of the 3D view: zoomed in it would keep making anew the meshes of chunks far off the screen at each step of the zoom
-	auto const range{(top ? std::max(m_radius * heightmap::chunk_size, reach) : std::max({m_radius * heightmap::chunk_size, scenery, reach})) + heightmap::chunk_size * 0.5};
-	auto const radius{std::min(top ? top_radius : 64, static_cast<int>(std::ceil(range / heightmap::chunk_size)))};
+	auto const walk_reach{(top ? std::max(m_radius * heightmap::chunk_size, reach) : std::max({m_radius * heightmap::chunk_size, scenery, reach})) + heightmap::chunk_size * 0.5};
+	auto const radius{std::min(top ? top_radius : 64, static_cast<int>(std::ceil(walk_reach / heightmap::chunk_size)))};
 	if (m_ringradius < radius)
 	{
 		m_ring.clear();
@@ -639,12 +708,12 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 	else
 		centres.clear();
 	auto const walked{(radius + 1) * (radius + 1)};
+	// the ring goes from the centre out, the offsets within the walk at its start
+	auto const within_walk = [walked](chunk_key const &Offset) { return Offset.first * Offset.first + Offset.second * Offset.second <= walked; };
 	for (auto const &centre : centres)
 	{
-		for (auto const &offset : m_ring)
+		for (auto const &offset : m_ring | std::views::take_while(within_walk))
 		{
-			if (offset.first * offset.first + offset.second * offset.second > walked)
-				break;
 			if (m_loading.size() >= max_loading)
 			{
 				m_settled = false;
@@ -779,20 +848,21 @@ void terrain_streamer::upload_shape_material(editor_terrain &Chunk)
 
 std::string terrain_streamer::stats() const
 {
-	std::size_t drawn{0}, triangles{0};
+	std::size_t drawn{0};
+	std::size_t triangles{0};
 	std::map<int, std::size_t> strides;
-	for (auto const &entry : m_chunks)
+	for (auto const &held : m_chunks | std::views::values)
 	{
-		auto const &chunk{*entry.second};
+		auto const &chunk{*held};
 		if (chunk.m_section == nullptr)
 			continue;
 		++drawn;
 		triangles += chunk.m_triangles;
 		++strides[chunk.m_stride];
 	}
-	auto text{"terrain: " + std::to_string(m_chunks.size()) + " chunks, " + std::to_string(drawn) + " in the scene, " + std::to_string(triangles) + " triangles; strides"};
+	auto text{std::format("terrain: {} chunks, {} in the scene, {} triangles; strides", m_chunks.size(), drawn, triangles)};
 	for (auto const &[stride, count] : strides)
-		text += " " + std::to_string(stride) + ":" + std::to_string(count);
+		text += std::format(" {}:{}", stride, count);
 	return text;
 }
 
@@ -1471,13 +1541,7 @@ void terrain_streamer::apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &
 		if (false == current.base.empty())
 		{
 			remember(Chunk);
-			auto &data{Chunk.edit(true, false)};
-			data.heights = std::move(data.base);
-			if (data.adjust.size() == data.heights.size())
-				for (std::size_t index = 0; index < data.heights.size(); ++index)
-					data.heights[index] += data.adjust[index];
-			data.base.clear();
-			data.adjust.clear();
+			base_restored(Chunk.edit(true, false));
 		}
 		return;
 	}
@@ -1497,37 +1561,9 @@ void terrain_streamer::apply_modifiers(editor_terrain &Chunk, glm::dvec2 const &
 		{
 			auto const index{static_cast<std::size_t>(iz) * data.side() + ix};
 			auto const ground{static_cast<double>(data.base[index])};
-			auto const x{low.x + ix * step}, z{low.y + iz * step};
-			// the same for any order of the modifiers: within the formation of a track its formation, of the nearest one where two
-			// overlap; elsewhere the slopes, the highest fill and the lowest cut, the nearer of the two where both reach
-			std::optional<heightmap::modifier_shape::effect> bed, fill, cut;
-			for (auto const &shape : shapes)
-			{
-				auto const effect{shape.evaluate(x, z, ground)};
-				if (false == effect.has_value())
-					continue;
-				if (effect->outside <= 0.0)
-				{
-					if (false == bed.has_value() || effect->distance < bed->distance)
-						bed = effect;
-				}
-				else if (effect->height > ground)
-				{
-					if (false == fill.has_value() || effect->height > fill->height)
-						fill = effect;
-				}
-				else if (effect->height < ground && (false == cut.has_value() || effect->height < cut->height))
-					cut = effect;
-			}
-			auto height{ground};
-			if (bed.has_value())
-				height = bed->height;
-			else if (fill.has_value() && cut.has_value())
-				height = fill->outside <= cut->outside ? fill->height : cut->height;
-			else if (fill.has_value())
-				height = fill->height;
-			else if (cut.has_value())
-				height = cut->height;
+			auto const x{low.x + ix * step};
+			auto const z{low.y + iz * step};
+			auto const height{modified_height(shapes, x, z, ground)};
 			data.heights[index] = static_cast<float>(touchups ? height + data.adjust[index] : height);
 		}
 }
@@ -1548,12 +1584,11 @@ void terrain_streamer::modifiers(std::vector<heightmap::modifier> Modifiers)
 	for (auto &modifier : Modifiers)
 	{
 		auto bounds{modifier.bounds()};
-		auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == modifier.name; })};
-		if (existing != m_manifest.modifiers.end())
+		if (auto const existing{std::ranges::find_if(m_manifest.modifiers, [&modifier](heightmap::modifier const &Item) { return Item.name == modifier.name; })}; existing != m_manifest.modifiers.end())
 		{
-			auto const old{existing->bounds()};
-			bounds.first = glm::min(bounds.first, old.first);
-			bounds.second = glm::max(bounds.second, old.second);
+			auto const [oldfrom, oldto]{existing->bounds()};
+			bounds.first = glm::min(bounds.first, oldfrom);
+			bounds.second = glm::max(bounds.second, oldto);
 			*existing = std::move(modifier);
 		}
 		else
@@ -1566,8 +1601,8 @@ void terrain_streamer::modifiers(std::vector<heightmap::modifier> Modifiers)
 	for (auto const &[from, to] : areas)
 		for (auto *chunk : chunks_in(from, to, true))
 			chunks.push_back(chunk);
-	std::sort(chunks.begin(), chunks.end());
-	chunks.erase(std::unique(chunks.begin(), chunks.end()), chunks.end());
+	std::ranges::sort(chunks);
+	chunks.erase(std::ranges::unique(chunks).begin(), chunks.end());
 	auto const bounds{modifier_bounds()};
 	for (auto *chunk : chunks)
 	{
@@ -1599,11 +1634,11 @@ std::size_t terrain_streamer::drop_modifiers(std::string const &Prefix)
 {
 	auto &list{m_manifest.modifiers};
 	auto const matches = [&](heightmap::modifier const &Item) { return Item.name.rfind(Prefix, 0) == 0; };
-	auto const count{static_cast<std::size_t>(std::count_if(list.begin(), list.end(), matches))};
+	auto const count{static_cast<std::size_t>(std::ranges::count_if(list, matches))};
 	if (count == 0)
 		return 0;
 	remember_manifest();
-	list.erase(std::remove_if(list.begin(), list.end(), matches), list.end());
+	std::erase_if(list, matches);
 	m_manifestchanged = true;
 	return count;
 }
@@ -1623,7 +1658,7 @@ bool terrain_streamer::remove_modifier(std::string const &Name)
 
 std::size_t terrain_streamer::remove_modifiers(std::vector<std::string> const &Names)
 {
-	std::unordered_set<std::string> const names(Names.begin(), Names.end());
+	std::unordered_set<std::string, text_hash, std::equal_to<>> const names(Names.begin(), Names.end());
 	auto &list{m_manifest.modifiers};
 	auto const matches = [&](heightmap::modifier const &Item) { return names.contains(Item.name); };
 	std::vector<std::pair<glm::dvec2, glm::dvec2>> areas;
@@ -1633,7 +1668,7 @@ std::size_t terrain_streamer::remove_modifiers(std::vector<std::string> const &N
 	if (areas.empty())
 		return 0;
 	remember_manifest();
-	list.erase(std::remove_if(list.begin(), list.end(), matches), list.end());
+	std::erase_if(list, matches);
 	m_manifestchanged = true;
 	// one by one, the thousands of a terrain made for another version of the scenery took minutes of the terrain led anew each time
 	std::unordered_map<editor_terrain *, std::pair<glm::dvec2, glm::dvec2>> reached;

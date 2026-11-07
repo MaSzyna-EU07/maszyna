@@ -9,7 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <functional>
 #include <optional>
 #include <string>
@@ -171,9 +173,17 @@ struct signal
 // of the chainage, Z, Y... from its end, the leftmost first; the exit ones facing out at the ends of the longest circuit at least
 // 200 m long of each station track, for its longest useful length, a letter for the odd tracks and one for the even ones at each
 // end, with the number: F1, G2 towards the start, R1, P2 towards the end; the shunting ones at the ends of the shorter tracks, Tm1,
-// Tm2... along the chainage. Each on the right of the trains, unless another track runs too close by there. Inside: a track of the
-// circuits of the station
-std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &Tracks, std::function<bool(TTrack const &)> const &Inside);
+// Tm2... along the chainage. Each on the right of the trains, unless another track runs too close by there. Outside: of each line of
+// the layout, the index along it of its first track beyond the circuits of the station, the size of the line for none
+std::vector<signal> signals_beyond(layout const &Layout, std::vector<numbered> const &Tracks, std::vector<std::size_t> const &Outside);
+// the same, Inside: a track of the circuits of the station
+template <typename Test> std::vector<signal> signals(layout const &Layout, std::vector<numbered> const &Tracks, Test const &Inside)
+{
+	std::vector<std::size_t> outside;
+	for (auto const &tracks : Layout.lines)
+		outside.push_back(static_cast<std::size_t>(std::ranges::find_if(tracks, [&Inside](TTrack const *Track) { return false == Inside(*Track); }) - tracks.begin()));
+	return signals_beyond(Layout, Tracks, outside);
+}
 
 // a track of a line out beyond an entry signal of the station, to the next station or the end of the tracks
 struct line
@@ -232,7 +242,7 @@ struct limit
 struct stand
 {
 	limit head; // the trains stop by it
-	limit rear; // behind them
+	limit rear; // behind them // NOSONAR: a data member, only ever named through its struct; renaming it reaches into editormodesrk.cpp
 	double length{0.0};
 };
 // the lengths of a station track, as the list of the tracks of a station gives them: the rozporządzenie of the minister of

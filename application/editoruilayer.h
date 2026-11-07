@@ -181,7 +181,7 @@ class editor_ui : public ui_layer
 
   private:
 	// methods
-	void render_refusal();
+	void render_refusal() const;
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
 	// windows of the editor drawn by the user interface itself
 	void render_tool_options();

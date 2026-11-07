@@ -91,7 +91,9 @@ const char* locale::lookup_n(const char *singular, const char *plural, long long
 
 	auto const &forms = *cached->second;
 	auto const form = std::min(plural_form(n), forms.size() - 1);
-	return forms[form].empty() ? (n == 1 ? singular : plural) : forms[form].c_str();
+	if (forms[form].empty())
+		return n == 1 ? singular : plural;
+	return forms[form].c_str();
 }
 
 std::size_t locale::plural_form(long long n) const
@@ -119,7 +121,7 @@ bool locale::parse_translation(std::istream &stream)
 
 	auto const commit = [&]() {
 		if (!msgid.empty() && !forms.empty())
-			plural_mapping.emplace(msgid, std::move(forms));
+			plural_mapping.try_emplace(msgid, std::move(forms));
 		else if (!msgid.empty() && !msgstr.empty()) {
 			// TODO: context support is incomplete
 			if (!msgctxt.empty())

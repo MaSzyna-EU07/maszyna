@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui_internal.h"
 
 #include <filesystem>
+#include <format>
 #include <set>
 
 namespace
@@ -123,6 +124,25 @@ int card_columns(ImVec2 const &Cell)
 {
 	auto const &style{ImGui::GetStyle()};
 	return std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + style.ItemSpacing.x) / (Cell.x + style.ItemSpacing.x)));
+}
+
+// the slider of the size of the cards with the previews, the settings saved when it's let go
+void card_size_slider()
+{
+	auto cardsize{EditorSettings.nodebank_card()};
+	ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x, 120.0f * Global.ui_scale));
+	if (ImGui::SliderInt("##cardsize", &cardsize, 48, 256, STR_C("%d px")))
+	{
+		EditorSettings.nodebank_card(cardsize);
+	}
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		EditorSettings.save();
+	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("%s", STR_C("Size of the cards with the previews"));
+	}
 }
 } // namespace
 
@@ -238,9 +258,9 @@ void itemproperties_panel::update(scene::basic_node *Node)
 
 		// basic attributes
 		textline = format(STR_C("Track circuits: %s"), (!isolatedlist.empty() ? isolatedlist : std::string{STR_C("(none)")}).c_str()) + "\n" +
-		           format(STR_C("Speed limit: %.0f km/h"), static_cast<double>(subnode->SwitchExtension ? subnode->SwitchExtension->fVelocity : subnode->fVelocity)) + "\n" +
+		           format(STR_C("Speed limit: %.0f km/h"), subnode->SwitchExtension ? subnode->SwitchExtension->fVelocity : subnode->fVelocity) + "\n" +
 		           format(STR_C("Track gauge: %.0f mm"), subnode->fTrackWidth * 1000.0) + "\n" + format(STR_C("Friction: %.2f"), static_cast<double>(subnode->fFriction)) + "\n" +
-		           format(STR_C("Quality: %d"), static_cast<int>(subnode->iQualityFlag));
+		           format(STR_C("Quality: %d"), subnode->iQualityFlag);
 		text_lines.emplace_back(textline, Global.UITextColor);
 		// textures
 		auto texturefile{(subnode->m_material1 != null_handle ? GfxRenderer->Material(subnode->m_material1)->GetName() : std::string{STR_C("(none)")})};
@@ -990,20 +1010,7 @@ void nodebank_panel::render()
 			if (previews)
 			{
 				ImGui::SameLine();
-				auto card{EditorSettings.nodebank_card()};
-				ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x, 120.0f * Global.ui_scale));
-				if (ImGui::SliderInt("##cardsize", &card, 48, 256, STR_C("%d px")))
-				{
-					EditorSettings.nodebank_card(card);
-				}
-				if (ImGui::IsItemDeactivatedAfterEdit())
-				{
-					EditorSettings.save();
-				}
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("%s", STR_C("Size of the cards with the previews"));
-				}
+				card_size_slider();
 			}
 			ImGui::TreePop();
 		}
@@ -1696,7 +1703,7 @@ std::string layer_content(scene::basic_layer const &Layer)
 		auto const count{Layer.items[static_cast<std::size_t>(itemlabel.second)]};
 		if (count > 0)
 		{
-			content += (content.empty() ? "" : "\n") + std::string{STR_C(itemlabel.first)} + ": " + std::to_string(count);
+			content += std::format("{}{}: {}", content.empty() ? "" : "\n", STR_C(itemlabel.first), count);
 		}
 	}
 	return content;
@@ -2279,7 +2286,15 @@ void includes_panel::render_list()
 		for (auto row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{
 			auto const &entry{entries[m_listed[row]]};
-			auto const marker{entry.complete ? std::string{STR_C("[ready]")} + "  " : entry.described ? std::string{STR_C("[incomplete]")} + "  " : std::string{}};
+			std::string marker;
+			if (entry.complete)
+			{
+				marker = std::string{STR_C("[ready]")} + "  ";
+			}
+			else if (entry.described)
+			{
+				marker = std::string{STR_C("[incomplete]")} + "  ";
+			}
 			auto const label{marker + Bezogonkow(entry.file) + (entry.name.empty() ? "" : "  -  " + entry.name) + "##" + std::to_string(m_listed[row])};
 			if (false == entry.described)
 			{

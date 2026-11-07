@@ -24,8 +24,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <set>
 
@@ -33,10 +35,10 @@ namespace
 {
 
 // the same helper the track tools use to draw over the viewport
-class screen_projection
+class road_projection
 {
   public:
-	screen_projection()
+	road_projection()
 	{
 		ImGuiIO const &io = ImGui::GetIO();
 		m_size = io.DisplaySize;
@@ -169,10 +171,86 @@ roadpoint_node::kind_type point_kind(int const Index)
 
 char const *point_label(roadpoint_node::kind_type const Kind)
 {
-	return Kind == roadpoint_node::kind_type::spawn     ? STR_C("spawn point") :
-	       Kind == roadpoint_node::kind_type::despawn   ? STR_C("removal point") :
-	       Kind == roadpoint_node::kind_type::crosswalk ? STR_C("pedestrian crossing") :
-	                                                      STR_C("level crossing");
+	using enum roadpoint_node::kind_type;
+	switch (Kind)
+	{
+	case spawn: return STR_C("spawn point");
+	case despawn: return STR_C("removal point");
+	case crosswalk: return STR_C("pedestrian crossing");
+	default: return STR_C("level crossing");
+	}
+}
+
+// the stop line of a road where it meets a junction, and the pedestrian crossing across the road there. returns: true if
+// either was changed
+bool render_arm_crossings(junction_node::arm_data &Data)
+{
+	bool changed{false};
+	ImGui::SameLine();
+	if (ImGui::Checkbox(STR_C("Stop line"), &Data.stopline))
+		changed = true;
+	// stripes for the pedestrians, across the whole road where it meets the junction
+	ImGui::SameLine();
+	bool zebra{Data.crosswalk > 0.f};
+	if (ImGui::Checkbox(STR_C("Pedestrian crossing"), &zebra))
+	{
+		Data.crosswalk = (zebra ? 4.f : 0.f);
+		changed = true;
+	}
+	if (false == zebra)
+		return changed;
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(90.0f);
+	if (ImGui::InputFloat("m##crosswalk", &Data.crosswalk, 0.5f, 1.0f, "%.1f", ImGuiInputTextFlags_EnterReturnsTrue))
+	{
+		Data.crosswalk = std::clamp(Data.crosswalk, 1.0f, 20.0f);
+		changed = true;
+	}
+	item_tooltip("Length of the pedestrian crossing along the road");
+	return changed;
+}
+
+// the width and the height of a bank of a road, at both of its ends. Number: draws a field of a value, returns true if it
+// was changed. returns: true if any was changed
+template <class Number_>
+bool render_bank_extent(road_node::bank_data &Bank, Number_ const &Number)
+{
+	bool changed{false};
+	ImGui::Indent();
+	if (Number(STR_C("Width at the start [m]"), Bank.width[0], 0.5f, "%.2f"))
+		changed = true;
+	if (Number(STR_C("Height at the start [m]"), Bank.drop[0], 0.25f, "%.2f"))
+		changed = true;
+	if (Number(STR_C("Width at the end [m]"), Bank.width[1], 0.5f, "%.2f"))
+		changed = true;
+	if (Number(STR_C("Height at the end [m]"), Bank.drop[1], 0.25f, "%.2f"))
+		changed = true;
+	ImGui::Unindent();
+	return changed;
+}
+
+// the hint of the build tool while a road is led out of another road or out of a junction, or built on
+char const *build_hint(bool const Fromroad, bool const Fromjunction)
+{
+	if (Fromroad)
+		return STR_C("LMB: lead the road out to the cursor, with a junction where it leaves   Esc: give up");
+	if (Fromjunction)
+		return STR_C("LMB: lead the road out to the cursor, as another road of the junction   Esc: give up");
+	return STR_C("LMB: build up to the cursor   Ctrl: straight ahead   Esc: finish   Ctrl+Z: undo the last piece");
+}
+
+// the hint of the select tool, by what is selected
+char const *select_hint(bool const Marker, bool const Points, bool const Piece, bool const Junction)
+{
+	if (Marker)
+		return STR_C("LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo");
+	if (Points)
+		return STR_C("LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo");
+	if (Piece)
+		return STR_C("LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo");
+	if (Junction)
+		return STR_C("LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo");
+	return STR_C("LMB: select a piece, a junction, a point (white dot) or a marker");
 }
 
 std::string cannot_change(std::string const &Name, std::string const &Reason)
@@ -663,15 +741,13 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
 	};
 
-	auto limit{state.velocity > 0.f ? state.velocity : 0.f};
-	if (number(STR_C("Speed limit [km/h]"), limit, 5.0f, "%.0f"))
+	if (auto limit{state.velocity > 0.f ? state.velocity : 0.f}; number(STR_C("Speed limit [km/h]"), limit, 5.0f, "%.0f"))
 	{
 		state.velocity = (limit > 0.f ? limit : -1.f);
 		changed = true;
 	}
 	item_tooltip("0: no limit");
-	auto centre{static_cast<float>(state.centre.y)};
-	if (number(STR_C("Height of the middle [m]"), centre, 0.1f, "%.2f"))
+	if (auto centre{static_cast<float>(state.centre.y)}; number(STR_C("Height of the middle [m]"), centre, 0.1f, "%.2f"))
 	{
 		state.centre.y = centre;
 		changed = true;
@@ -680,10 +756,10 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 
 	// appearance
 	ImGui::Separator();
-	char const *colours[]{STR_C("no markings"), STR_C("white"), STR_C("orange")};
+	std::array<char const *, 3> const colours{STR_C("no markings"), STR_C("white"), STR_C("orange")};
 	int colour{state.markings == road_node::marking_colour::white ? 1 : state.markings == road_node::marking_colour::orange ? 2 : 0};
 	ImGui::SetNextItemWidth(120.0f);
-	if (ImGui::Combo(STR_C("Markings"), &colour, colours, 3))
+	if (ImGui::Combo(STR_C("Markings"), &colour, colours.data(), 3))
 	{
 		state.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
@@ -716,10 +792,10 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		}
 		ImGui::Unindent();
 	}
-	char const *sidetypes[]{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
+	std::array<char const *, 3> const sidetypes{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
 	int type{state.side.type == road_node::side_type::shoulder ? 1 : state.side.type == road_node::side_type::sidewalk ? 2 : 0};
 	ImGui::SetNextItemWidth(120.0f);
-	if (ImGui::Combo(STR_C("Beside the corners"), &type, sidetypes, 3))
+	if (ImGui::Combo(STR_C("Beside the corners"), &type, sidetypes.data(), 3))
 	{
 		state.side.type = (type == 1 ? road_node::side_type::shoulder : type == 2 ? road_node::side_type::sidewalk : road_node::side_type::none);
 		if (state.side.type != road_node::side_type::none && state.side.width <= 0.0f)
@@ -799,10 +875,10 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 	{
 		// where a road changes its lanes: what's between its two directions, if the roads keep them apart
 		ImGui::Separator();
-		char const *mediantypes[]{STR_C("nothing, the ground shows"), STR_C("surface closed to the traffic"), STR_C("island")};
+		std::array<char const *, 3> const mediantypes{STR_C("nothing, the ground shows"), STR_C("surface closed to the traffic"), STR_C("island")};
 		int median{state.median == road_node::median_type::gap ? 0 : state.median == road_node::median_type::island ? 2 : 1};
 		ImGui::SetNextItemWidth(220.0f);
-		if (ImGui::Combo(STR_C("Between the directions"), &median, mediantypes, 3))
+		if (ImGui::Combo(STR_C("Between the directions"), &median, mediantypes.data(), 3))
 		{
 			state.median = (median == 0 ? road_node::median_type::gap : median == 2 ? road_node::median_type::island : road_node::median_type::painted);
 			changed = true;
@@ -824,53 +900,30 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			ImGui::PushID(static_cast<int>(arm));
 			auto &data{state.arms[arm]};
 			ImGui::Text(STR_C("%d: %d in, %d out, lanes %.2f m wide"), static_cast<int>(arm) + 1, data.incoming, data.outgoing, data.width);
-			if (state.arms.size() > 2)
-			{
-				ImGui::SameLine();
-				if (ImGui::Checkbox(STR_C("Stop line"), &data.stopline))
-					changed = true;
-				// stripes for the pedestrians, across the whole road where it meets the junction
-				ImGui::SameLine();
-				bool zebra{data.crosswalk > 0.f};
-				if (ImGui::Checkbox(STR_C("Pedestrian crossing"), &zebra))
-				{
-					data.crosswalk = (zebra ? 4.f : 0.f);
-					changed = true;
-				}
-				if (zebra)
-				{
-					ImGui::SameLine();
-					ImGui::SetNextItemWidth(90.0f);
-					if (ImGui::InputFloat("m##crosswalk", &data.crosswalk, 0.5f, 1.0f, "%.1f", ImGuiInputTextFlags_EnterReturnsTrue))
-					{
-						data.crosswalk = std::clamp(data.crosswalk, 1.0f, 20.0f);
-						changed = true;
-					}
-					item_tooltip("Length of the pedestrian crossing along the road");
-				}
-			}
+			if (state.arms.size() > 2 && render_arm_crossings(data))
+				changed = true;
 			if (data.incoming > 0 && state.arms.size() > 2)
 			{
 				ImGui::Indent();
 				// the entries are in the order of the stored values
-				char const *priorities[]{STR_C("no sign: gives way to the right"), STR_C("has the right of way"), STR_C("gives way"), STR_C("stops, then gives way")};
+				std::array<char const *, 4> const priorities{STR_C("no sign: gives way to the right"), STR_C("has the right of way"), STR_C("gives way"), STR_C("stops, then gives way")};
 				int priority{static_cast<int>(data.priority)};
 				ImGui::SetNextItemWidth(220.0f);
-				if (ImGui::Combo("##priority", &priority, priorities, 4))
+				if (ImGui::Combo("##priority", &priority, priorities.data(), 4))
 				{
 					data.priority = static_cast<junction_node::right_of_way>(std::clamp(priority, 0, 3));
 					changed = true;
 				}
 				item_tooltip("Right of way of the traffic coming in from this road");
 				// ways each lane can be left by
-				char const *ways[]{STR_C("automatic"), STR_C("left"), STR_C("straight on"), STR_C("left, straight on"), STR_C("right"), STR_C("left, right"), STR_C("straight on, right"), STR_C("any way")};
+				std::array<char const *, 8> const ways{STR_C("automatic"), STR_C("left"), STR_C("straight on"), STR_C("left, straight on"), STR_C("right"), STR_C("left, right"), STR_C("straight on, right"), STR_C("any way")};
 				for (int lane = 0; lane < data.incoming; ++lane)
 				{
 					ImGui::PushID(100 + lane);
 					int turns{static_cast<std::size_t>(lane) < data.turns.size() ? data.turns[lane] & 7 : 0};
 					auto const label{format(STR_C("Lane %d goes"), lane + 1)};
 					ImGui::SetNextItemWidth(140.0f);
-					if (ImGui::Combo(label.c_str(), &turns, ways, 8))
+					if (ImGui::Combo(label.c_str(), &turns, ways.data(), 8))
 					{
 						data.turns.resize(std::max(data.turns.size(), static_cast<std::size_t>(lane) + 1), 0);
 						data.turns[lane] = turns;
@@ -1339,9 +1392,12 @@ void editor_mode::road_click()
 	if (plan.snap.valid() || plan.hasend)
 	{
 		tool.chain = false;
-		tool.status = (plan.snap.valid() ? format(STR_C("Joined with \"%s\", Ctrl+Z takes it back"), (plan.snap.road != nullptr ? plan.snap.road->name() : plan.snap.junction->name()).c_str()) :
-		               plan.end.junction != nullptr ? format(STR_C("Led into \"%s\" as another of its roads, Ctrl+Z takes it back"), plan.end.junction->name().c_str()) :
-		                                              std::string{STR_C("Led into the side of the road, with a junction made there, Ctrl+Z takes it back")});
+		if (plan.snap.valid())
+			tool.status = format(STR_C("Joined with \"%s\", Ctrl+Z takes it back"), (plan.snap.road != nullptr ? plan.snap.road->name() : plan.snap.junction->name()).c_str());
+		else if (plan.end.junction != nullptr)
+			tool.status = format(STR_C("Led into \"%s\" as another of its roads, Ctrl+Z takes it back"), plan.end.junction->name().c_str());
+		else
+			tool.status = STR_C("Led into the side of the road, with a junction made there, Ctrl+Z takes it back");
 		return;
 	}
 	glm::dvec2 const planar{tangent.x, tangent.z};
@@ -1649,8 +1705,12 @@ bool editor_mode::road_points_delete()
 	push_road_snapshot(std::move(record));
 	// the points which stayed are still selected, so it's clear which ones these are
 	tool.points.erase(std::remove_if(tool.points.begin(), tool.points.end(), [](glm::dvec3 const &Point) { return editor_road::ends_at(Point).empty(); }), tool.points.end());
-	tool.status = (taken == 0 ? std::string{STR_C("Nothing deleted")} : taken == 1 ? std::string{STR_C("Point deleted, Ctrl+Z brings it back")} :
-	                                                                 format(STR_C("Points deleted: %d, Ctrl+Z brings them back"), taken));
+	if (taken == 0)
+		tool.status = STR_C("Nothing deleted");
+	else if (taken == 1)
+		tool.status = STR_C("Point deleted, Ctrl+Z brings it back");
+	else
+		tool.status = format(STR_C("Points deleted: %d, Ctrl+Z brings them back"), taken);
 	tool.status += notes;
 	return true;
 }
@@ -1877,7 +1937,7 @@ bool editor_mode::render_road_material(char const *Label, std::string &Value)
 
 std::vector<editor_mode::texture_use> editor_mode::road_textures_used() const
 {
-	std::map<std::string, int> counted;
+	std::map<std::string, int, std::less<>> counted;
 	auto const count = [&](std::set<std::string> const &Names) {
 		for (auto const &name : Names)
 			if (false == name.empty() && name != "none")
@@ -1897,8 +1957,8 @@ std::vector<editor_mode::texture_use> editor_mode::road_textures_used() const
 		}
 	std::vector<texture_use> list;
 	for (auto const &[name, number] : counted)
-		list.push_back({null_handle, name, number, format(STR_P("On %d road or junction", "On %d roads or junctions", static_cast<long long>(number)), number)});
-	std::stable_sort(list.begin(), list.end(), [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
+		list.emplace_back(null_handle, name, number, format(STR_P("On %d road or junction", "On %d roads or junctions", static_cast<long long>(number)), number));
+	std::ranges::stable_sort(list, [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
 	return list;
 }
 
@@ -1968,8 +2028,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 			lane.width = State.lanewidth;
 		changed = true;
 	}
-	float limit{State.velocity > 0.0f ? State.velocity : 0.0f};
-	if (number(STR_C("Speed limit [km/h]"), limit, 10.0f, "%.0f"))
+	if (float limit{State.velocity > 0.0f ? State.velocity : 0.0f}; number(STR_C("Speed limit [km/h]"), limit, 10.0f, "%.0f"))
 	{
 		State.velocity = (limit > 0.0f ? limit : -1.0f);
 		for (auto &lane : State.lanes)
@@ -1980,25 +2039,25 @@ bool editor_mode::render_road_layout(road_node::state &State)
 
 	// appearance
 	ImGui::Separator();
-	char const *colours[]{STR_C("no markings"), STR_C("white"), STR_C("orange")};
+	std::array<char const *, 3> const colours{STR_C("no markings"), STR_C("white"), STR_C("orange")};
 	int colour{State.markings == road_node::marking_colour::white ? 1 : State.markings == road_node::marking_colour::orange ? 2 : 0};
 	ImGui::SetNextItemWidth(120.0f);
-	if (ImGui::Combo(STR_C("Markings"), &colour, colours, 3))
+	if (ImGui::Combo(STR_C("Markings"), &colour, colours.data(), 3))
 	{
 		State.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
 	if (render_road_material("Surface", State.surface))
 		changed = true;
-	char const *sidenames[]{STR_C("Left side"), STR_C("Right side")};
-	char const *sidetypes[]{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
+	std::array<char const *, 2> const sidenames{STR_C("Left side"), STR_C("Right side")};
+	std::array<char const *, 3> const sidetypes{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
 	for (int side = 0; side < 2; ++side)
 	{
 		ImGui::PushID(side);
 		auto &data{State.sides[side]};
 		int type{data.type == road_node::side_type::shoulder ? 1 : data.type == road_node::side_type::sidewalk ? 2 : 0};
 		ImGui::SetNextItemWidth(120.0f);
-		if (ImGui::Combo(sidenames[side], &type, sidetypes, 3))
+		if (ImGui::Combo(sidenames[side], &type, sidetypes.data(), 3))
 		{
 			data.type = (type == 1 ? road_node::side_type::shoulder : type == 2 ? road_node::side_type::sidewalk : road_node::side_type::none);
 			if (data.type != road_node::side_type::none && data.width <= 0.0f)
@@ -2057,7 +2116,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	{
 		ImGui::TextDisabled("%s", STR_C("A slope from the edge of the road to the ground"));
 		item_tooltip("It goes down, or up, to the ground. Set here it goes to every piece the changes go to;\nthe button below works out each piece on its own");
-		char const *banknames[]{STR_C("Bank on the left"), STR_C("Bank on the right")};
+		std::array<char const *, 2> const banknames{STR_C("Bank on the left"), STR_C("Bank on the right")};
 		for (int side = 0; side < 2; ++side)
 		{
 			ImGui::PushID(100 + side);
@@ -2071,19 +2130,8 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				}
 				changed = true;
 			}
-			if (bank.set)
-			{
-				ImGui::Indent();
-				if (number(STR_C("Width at the start [m]"), bank.width[0], 0.5f, "%.2f"))
-					changed = true;
-				if (number(STR_C("Height at the start [m]"), bank.drop[0], 0.25f, "%.2f"))
-					changed = true;
-				if (number(STR_C("Width at the end [m]"), bank.width[1], 0.5f, "%.2f"))
-					changed = true;
-				if (number(STR_C("Height at the end [m]"), bank.drop[1], 0.25f, "%.2f"))
-					changed = true;
-				ImGui::Unindent();
-			}
+			if (bank.set && render_bank_extent(bank, number))
+				changed = true;
 			ImGui::PopID();
 		}
 		if (render_road_material("Bank material", State.bankmaterial))
@@ -2110,10 +2158,10 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	// the two directions kept apart
 	if (State.forward > 0 && State.backward > 0 && ImGui::CollapsingHeader(STR_C("Between the directions##median")))
 	{
-		char const *mediantypes[]{STR_C("nothing, the ground shows"), STR_C("surface closed to the traffic"), STR_C("island")};
+		std::array<char const *, 3> const mediantypes{STR_C("nothing, the ground shows"), STR_C("surface closed to the traffic"), STR_C("island")};
 		int type{State.median.type == road_node::median_type::gap ? 0 : State.median.type == road_node::median_type::island ? 2 : 1};
 		ImGui::SetNextItemWidth(220.0f);
-		if (ImGui::Combo("##median", &type, mediantypes, 3))
+		if (ImGui::Combo("##median", &type, mediantypes.data(), 3))
 		{
 			State.median.type = (type == 0 ? road_node::median_type::gap : type == 2 ? road_node::median_type::island : road_node::median_type::painted);
 			changed = true;
@@ -2153,21 +2201,15 @@ bool editor_mode::render_road_layout(road_node::state &State)
 			changed = true;
 		}
 		item_tooltip("How many metres of the surface one copy of the texture covers");
-		if (State.kerbs[0] || State.kerbs[1] || island)
+		if ((State.kerbs[0] || State.kerbs[1] || island) && number(STR_C("Kerb width [m]"), State.kerbwidth, 0.05f, "%.2f"))
 		{
-			if (number(STR_C("Kerb width [m]"), State.kerbwidth, 0.05f, "%.2f"))
-			{
-				State.kerbwidth = std::clamp(State.kerbwidth, 0.05f, 2.0f);
-				changed = true;
-			}
+			State.kerbwidth = std::clamp(State.kerbwidth, 0.05f, 2.0f);
+			changed = true;
 		}
-		if (State.kerbs[0] || State.kerbs[1] || island || State.sides[0].type == road_node::side_type::sidewalk || State.sides[1].type == road_node::side_type::sidewalk)
+		if ((State.kerbs[0] || State.kerbs[1] || island || State.sides[0].type == road_node::side_type::sidewalk || State.sides[1].type == road_node::side_type::sidewalk) && number(STR_C("Kerb height [m]"), State.kerbheight, 0.01f, "%.2f"))
 		{
-			if (number(STR_C("Kerb height [m]"), State.kerbheight, 0.01f, "%.2f"))
-			{
-				State.kerbheight = std::clamp(State.kerbheight, 0.0f, 1.0f);
-				changed = true;
-			}
+			State.kerbheight = std::clamp(State.kerbheight, 0.0f, 1.0f);
+			changed = true;
 		}
 		// traffic
 		if (number(STR_C("Traffic share"), State.weight, 10.0f, "%.0f"))
@@ -2217,10 +2259,10 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				auto const next{State.lane_id(lane + 1)};
 				auto const toright{format(STR_C("only %s to %s"), id.c_str(), next.c_str())};
 				auto const toleft{format(STR_C("only %s to %s"), next.c_str(), id.c_str())};
-				char const *modes[]{STR_C("no lane change"), toright.c_str(), toleft.c_str(), STR_C("lane change both ways")};
+				std::array<char const *, 4> const modes{STR_C("no lane change"), toright.c_str(), toleft.c_str(), STR_C("lane change both ways")};
 				ImGui::Indent();
 				ImGui::SetNextItemWidth(200.0f);
-				if (ImGui::Combo("##change", &State.changes[lane], modes, 4))
+				if (ImGui::Combo("##change", &State.changes[lane], modes.data(), 4))
 					changed = true;
 				item_tooltip("Which way a vehicle may change between these two lanes");
 				ImGui::Unindent();
@@ -2280,11 +2322,8 @@ void editor_mode::render_road_tool_options()
 			              {"Esc", "finish the road"},
 			              {"LMB on a road or a junction", "the new road is joined to it there"}});
 		}
-		if (tool.chain)
-		{
-			if (ImGui::Button(STR_C("Finish (Esc)")))
-				road_cancel();
-		}
+		if (tool.chain && ImGui::Button(STR_C("Finish (Esc)")))
+			road_cancel();
 		// how the road is put on the ground
 		ImGui::Checkbox(STR_C("Follow the ground"), &tool.follow);
 		item_tooltip("On: the road is led over the ground between the clicked points, in pieces as short as the ground calls for,\nwith the profile rounded so the slope doesn't change abruptly.\nOff: the road goes straight from a point to the next one, like a ramp or a viaduct");
@@ -2361,13 +2400,11 @@ void editor_mode::render_road_selection()
 		if (false == ends.empty())
 		{
 			auto const &layout{ends.front().road->definition()};
-			auto width{static_cast<float>(layout.width(ends.front().atend ? 1 : 0) * layout.taper[ends.front().atend ? 1 : 0])};
-			if (number(STR_C("Road width here [m]"), width, 0.25f, "%.2f"))
+			if (auto width{static_cast<float>(layout.width(ends.front().atend ? 1 : 0) * layout.taper[ends.front().atend ? 1 : 0])}; number(STR_C("Road width here [m]"), width, 0.25f, "%.2f"))
 				road_point_width(std::clamp(width, 1.0f, 100.0f));
 			item_tooltip("Combined width of the lanes at this point; each lane takes its share of it.\nThe pieces on both sides get wider or narrower along their length to meet it.\nSelect several points to keep the width over the pieces between them");
 			// heights: set outright, moved by a step, or taken from the ground
-			auto height{static_cast<float>(tool.points.front().y)};
-			if (number(STR_C("Height [m]"), height, 0.1f, "%.2f"))
+			if (auto height{static_cast<float>(tool.points.front().y)}; number(STR_C("Height [m]"), height, 0.1f, "%.2f"))
 				road_point_heights(std::vector<double>(tool.points.size(), height));
 			item_tooltip("Height of the axis of the road at the point; with several points selected all are put at this height.\nThe slopes of the pieces at the point are kept, so the road stays smooth");
 			std::vector<double> heights;
@@ -2457,7 +2494,7 @@ void editor_mode::draw_road_overlay() const
 	if (false == tool.lanes && false == tool.window)
 		return;
 
-	screen_projection projection;
+	road_projection projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
 	glm::dvec3 const camera{Global.pCamera.Pos};
 	// pieces of a line needed to draw a path: one for a straight, more the longer a bend is and the nearer it is
@@ -2479,7 +2516,7 @@ void editor_mode::draw_road_overlay() const
 	// lanes, as the vehicles see them: a line for each, with an arrow pointing where the traffic goes
 	if (tool.lanes)
 	{
-		projection.limit = screen_projection::kLaneVertexLimit;
+		projection.limit = road_projection::kLaneVertexLimit;
 		for (auto const *road : simulation::Roads.sequence())
 		{
 			if (road == nullptr || road->m_editorremoved)
@@ -2530,7 +2567,7 @@ void editor_mode::draw_road_overlay() const
 			for (auto const &way : junction->movements())
 				drawpath(way, kWayColor, 1.5f, pieces(way, junction->location()));
 		}
-		projection.limit = screen_projection::kVertexLimit;
+		projection.limit = road_projection::kVertexLimit;
 	}
 	if (false == tool.window)
 		return;
@@ -2717,9 +2754,7 @@ void editor_mode::draw_road_overlay() const
 			}
 			if (plan.snap.valid())
 				drawpoint(plan.snap.position, kSnapColor, 14.0f, false);
-			hint += (tool.branchroad != nullptr ? STR_C("LMB: lead the road out to the cursor, with a junction where it leaves   Esc: give up") :
-			         tool.branchjunction != nullptr ? STR_C("LMB: lead the road out to the cursor, as another road of the junction   Esc: give up") :
-			                                          STR_C("LMB: build up to the cursor   Ctrl: straight ahead   Esc: finish   Ctrl+Z: undo the last piece"));
+			hint += build_hint(tool.branchroad != nullptr, tool.branchjunction != nullptr);
 		}
 		else
 		{
@@ -2780,11 +2815,7 @@ void editor_mode::draw_road_overlay() const
 			drawpoint(point, kSelectedColor, 6.0f, true);
 			drawpoint(point, kSelectedColor, 11.0f, false);
 		}
-		hint = tool.marker != nullptr       ? STR_C("LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo") :
-		       false == tool.points.empty() ? STR_C("LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo") :
-		       tool.selected != nullptr     ? STR_C("LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo") :
-		       tool.junction != nullptr     ? STR_C("LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo") :
-		                                      STR_C("LMB: select a piece, a junction, a point (white dot) or a marker");
+		hint = select_hint(tool.marker != nullptr, false == tool.points.empty(), tool.selected != nullptr, tool.junction != nullptr);
 	}
 	// shown above the place the track tools put their hints at
 	ImVec2 const position{editor_ui::view_min().x + 12.0f, editor_ui::view_max().y - 56.0f};

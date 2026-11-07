@@ -33,8 +33,11 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <map>
+#include <ranges>
+#include <string_view>
 #include <tuple>
 #include <functional>
 #include <unordered_map>
@@ -65,11 +68,19 @@ double constexpr kBoundaryReach{30.0}; // m, either way of a block signal, a cli
 double constexpr kBoundaryEnd{50.0}; // m, of a block boundary drawn from the entry signals at the ends of the line
 double constexpr kWrongTrack{30.0}; // m, a standing wrong-track block signal counts for the one of a boundary within it of its place
 
+using name_set = srk_tool::name_set;
+// a map by the names, looked up by their views too
+template <typename Value_> using name_map = std::unordered_map<std::string, Value_, srk_tool::name_hash, std::equal_to<>>;
+
 // m, of a train at the speed, as Ie-4 § 8 takes it: the least block section of the automatic block, a warning disc that far before
 // its signal
 double braking_distance(double const Speed)
 {
-	return Speed <= 60.0 ? 400.0 : Speed <= 100.0 ? 700.0 : Speed <= 140.0 ? 1000.0 : 1300.0;
+	if (Speed <= 60.0)
+		return 400.0;
+	if (Speed <= 100.0)
+		return 700.0;
+	return Speed <= 140.0 ? 1000.0 : 1300.0;
 }
 
 ImU32 constexpr kPlain{IM_COL32(170, 176, 188, 255)};
@@ -107,16 +118,47 @@ std::string shown(std::string const &Word)
 	return Word == "-" ? std::string{} : Word;
 }
 
-// the number of the switch of a unit: of its name once named after the station, of its record, else of its place
-std::string unit_number(station::unit const &Unit, std::string const &Stem, std::size_t const Index)
+// the items of a list of the record line, "a=1,b=2", each with its value; the ones without one left out
+std::vector<std::pair<std::string, std::string>> pairs_of(std::string const &Word)
 {
-	auto const &name{Unit.parts.front()->name()};
-	if (name.size() > Stem.size() && name.compare(0, Stem.size(), Stem) == 0)
+	std::vector<std::pair<std::string, std::string>> result;
+	std::size_t from{0};
+	while (from < Word.size())
+	{
+		auto const comma{std::min(Word.find(',', from), Word.size())};
+		auto const item{Word.substr(from, comma - from)};
+		if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
+			result.emplace_back(item.substr(0, equals), item.substr(equals + 1));
+		from = comma + 1;
+	}
+	return result;
+}
+
+// the name of the station, the rest of the record line
+void read_name(std::istringstream &Words, std::string &Name)
+{
+	std::getline(Words, Name);
+	Name.erase(0, Name.find_first_not_of(' '));
+	// windows-1250 like the rest of the scenery file; earlier builds wrote it in utf-8, which stays as it is
+	if (std::u32string decoded; false == utf8_to_utf32(Name, decoded))
+		Name = win1250_to_utf8(Name);
+}
+
+// a word of the record line written as it is: one without blanks, commas and equals signs
+bool plain_word(std::string const &Word)
+{
+	return false == Word.empty() && Word.find_first_of(" ,=\t") == std::string::npos;
+}
+
+// the number of the switch of a unit: of its name once named after the station, of its record, else of its place
+std::string unit_number(station::unit const &Unit, std::string_view const Stem, std::size_t const Index)
+{
+	if (auto const &name{Unit.parts.front()->name()}; name.size() > Stem.size() && name.compare(0, Stem.size(), Stem) == 0)
 	{
 		auto digits{name.substr(Stem.size())};
 		while (false == digits.empty() && std::isalpha(static_cast<unsigned char>(digits.back())))
 			digits.pop_back();
-		if (false == digits.empty() && std::all_of(digits.begin(), digits.end(), [](char const Digit) { return std::isdigit(static_cast<unsigned char>(Digit)) != 0; }))
+		if (false == digits.empty() && std::ranges::all_of(digits, [](char const Digit) { return std::isdigit(static_cast<unsigned char>(Digit)) != 0; }))
 			return digits;
 	}
 	if (auto const record{switch_store::named(*Unit.parts.front())}; record && record->number != "-")
@@ -126,13 +168,13 @@ std::string unit_number(station::unit const &Unit, std::string const &Stem, std:
 
 // the number of the station track a circuit is named after: bpd_it5b of track 5; empty for the other names, bpd_ita of the
 // circuit before the entry signal A among them
-std::string track_of(std::string const &Name, std::string const &Stem)
+std::string track_of(std::string_view const Name, std::string const &Stem)
 {
 	auto const head{Stem + "it"};
 	if (Stem.empty() || Name.size() <= head.size() || Name.compare(0, head.size(), head) != 0)
 		return {};
-	auto number{Name.substr(head.size())};
-	if (std::none_of(number.begin(), number.end(), [](char const Letter) { return std::isdigit(static_cast<unsigned char>(Letter)) != 0; }))
+	std::string number{Name.substr(head.size())};
+	if (std::ranges::none_of(number, [](char const Letter) { return std::isdigit(static_cast<unsigned char>(Letter)) != 0; }))
 		return {};
 	if (number.size() > 1 && std::isalpha(static_cast<unsigned char>(number.back())) && std::isdigit(static_cast<unsigned char>(number[number.size() - 2])))
 		number.pop_back();
@@ -140,7 +182,7 @@ std::string track_of(std::string const &Name, std::string const &Stem)
 }
 
 // the circuit between an entry signal and the station: bpd_ita
-bool entry_circuit(std::string const &Name, std::string const &Stem)
+bool entry_circuit(std::string_view const Name, std::string const &Stem)
 {
 	auto const head{Stem + "it"};
 	return false == Stem.empty() && Name.size() > head.size() && Name.compare(0, head.size(), head) == 0 &&
@@ -148,10 +190,10 @@ bool entry_circuit(std::string const &Name, std::string const &Stem)
 }
 
 // the name of a signal as its plate and the schematic show it: bpd_tm3 as Tm3, bpd_f1 as F1
-std::string signal_shown(std::string const &Name, std::string const &Stem)
+std::string signal_shown(std::string const &Name, std::string_view const Stem)
 {
 	auto text{false == Stem.empty() && Name.size() > Stem.size() && ToLower(Name).compare(0, Stem.size(), Stem) == 0 ? Name.substr(Stem.size()) : Name};
-	std::transform(text.begin(), text.end(), text.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+	std::ranges::transform(text, text.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
 	if (text.size() > 2 && text[0] == 'T' && (text[1] == 'M' || text[1] == 'O'))
 		text[1] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[1])));
 	return text;
@@ -163,8 +205,8 @@ std::string section_tag(std::string const &Name, int const Track)
 {
 	auto const cut{Name.rfind('_')};
 	auto tag{cut == std::string::npos ? Name : Name.substr(cut + 1)};
-	std::transform(tag.begin(), tag.end(), tag.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
-	return tag + std::to_string(Track);
+	std::ranges::transform(tag, tag.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+	return std::format("{}{}", tag, Track);
 }
 
 // the way the trains a signal faces run, in the plan: it stands turned to them
@@ -196,7 +238,7 @@ template <typename Record_> std::string anchor_of(Record_ const &Entry)
 }
 
 // the name without the code of the station: bpd_4 as 4
-std::string without_stem(std::string const &Name, std::string const &Stem)
+std::string without_stem(std::string const &Name, std::string_view const Stem)
 {
 	return false == Stem.empty() && Name.size() > Stem.size() && Name.compare(0, Stem.size(), Stem) == 0 ? Name.substr(Stem.size()) : Name;
 }
@@ -204,18 +246,19 @@ std::string without_stem(std::string const &Name, std::string const &Stem)
 // a limit of a useful length in words, as "from" and "to" take it
 std::string limit_text(station::limit const &Limit, std::string const &Stem)
 {
+	using enum station::limit::kind;
 	auto const name{without_stem(Limit.name, Stem)};
 	switch (Limit.what)
 	{
-	case station::limit::kind::signal:
+	case signal:
 		return format(STR_C("signal %s"), name.c_str());
-	case station::limit::kind::fouling:
+	case fouling:
 		return format(STR_C("the fouling point of switch %s"), name.c_str());
-	case station::limit::kind::start:
+	case start:
 		return format(STR_C("the start of switch %s"), name.c_str());
-	case station::limit::kind::buffer:
+	case buffer:
 		return STR_C("the buffer stop");
-	case station::limit::kind::crossing:
+	case crossing:
 		return STR_C("the level crossing");
 	default:
 		return name.empty() ? std::string{STR_C("the joint")} : format(STR_C("the joint by switch %s"), name.c_str());
@@ -226,24 +269,24 @@ std::string limit_text(station::limit const &Limit, std::string const &Stem)
 std::vector<glm::dvec3> stretch_of(station::lengths const &Track, double const From, double const To)
 {
 	auto const at = [&](double const Along) {
-		auto const after{std::min<std::size_t>(std::upper_bound(Track.distances.begin(), Track.distances.end(), Along) - Track.distances.begin(), Track.distances.size() - 1)};
+		auto const after{std::min<std::size_t>(std::ranges::upper_bound(Track.distances, Along) - Track.distances.begin(), Track.distances.size() - 1)};
 		auto const before{after > 0 ? after - 1 : 0};
 		auto const span{Track.distances[after] - Track.distances[before]};
 		return glm::mix(Track.points[before], Track.points[after], span > 1e-9 ? std::clamp((Along - Track.distances[before]) / span, 0.0, 1.0) : 0.0);
 	};
-	std::vector<glm::dvec3> result{at(std::min(From, To))};
+	std::vector result{at(std::min(From, To))};
 	for (std::size_t i = 0; i < Track.distances.size(); ++i)
 		if (Track.distances[i] > std::min(From, To) + 0.05 && Track.distances[i] < std::max(From, To) - 0.05)
 			result.push_back(Track.points[i]);
 	result.push_back(at(std::max(From, To)));
 	if (From > To)
-		std::reverse(result.begin(), result.end());
+		std::ranges::reverse(result);
 	return result;
 }
 
 glm::dvec3 axis_point(station::layout const &Layout, double const Chainage)
 {
-	auto const after{std::lower_bound(Layout.chainage.begin(), Layout.chainage.end(), Chainage)};
+	auto const after{std::ranges::lower_bound(Layout.chainage, Chainage)};
 	if (after == Layout.chainage.begin())
 		return Layout.axis.front();
 	if (after == Layout.chainage.end())
@@ -258,14 +301,22 @@ int shown_speed(double const Speed, double const Line)
 {
 	if (Speed <= 0.0 || Speed >= Line - 1.0)
 		return 0;
-	auto const shown{Speed >= 98.0 ? 100 : Speed >= 58.0 ? 60 : 40};
+	auto shown{40};
+	if (Speed >= 98.0)
+		shown = 100;
+	else if (Speed >= 58.0)
+		shown = 60;
 	return shown >= Line ? 0 : shown;
 }
 
 // km/h, a signal slows the trains to with the next one at stop standing that far on, Ie-4 § 8 ust. 5; 140 with a W21 indicator
 int shortened_speed(double const Length)
 {
-	return Length < 400.0 ? 40 : Length < 700.0 ? 60 : Length < 1000.0 ? 100 : 140;
+	if (Length < 400.0)
+		return 40;
+	if (Length < 700.0)
+		return 60;
+	return Length < 1000.0 ? 100 : 140;
 }
 
 // what the lights of a signal must show for the routes of its trains
@@ -283,7 +334,7 @@ head_need need_of(std::vector<station::route> const &Routes, bool const Main, do
 	head_need need;
 	need.white = Main;
 	auto const add = [&](int const Speed) {
-		if (Speed > 0 && std::find(need.speeds.begin(), need.speeds.end(), Speed) == need.speeds.end())
+		if (Speed > 0 && std::ranges::find(need.speeds, Speed) == need.speeds.end())
 			need.speeds.push_back(Speed);
 	};
 	for (auto const &route : Routes)
@@ -305,13 +356,13 @@ head_need need_of(std::vector<station::route> const &Routes, bool const Main, do
 			need.shortened = need.shortened == 0 ? slower : std::min(need.shortened, slower);
 		}
 	}
-	std::sort(need.speeds.begin(), need.speeds.end());
+	std::ranges::sort(need.speeds);
 	return need;
 }
 
 bool has_speed(std::vector<int> const &Speeds, int const Speed)
 {
-	return std::find(Speeds.begin(), Speeds.end(), Speed) != Speeds.end();
+	return std::ranges::find(Speeds, Speed) != Speeds.end();
 }
 
 // the template has the lights the need takes, by its chambers: an orange one to tell the next signal shows stop, a lower orange one
@@ -336,7 +387,7 @@ bool shows(signal_head const &Head, head_need const &Need)
 	if (Head.arms > 0)
 		return shows_arms(Head, Need);
 	auto const &lamps{Head.lamps};
-	auto const count = [&](char const Lamp) { return std::count(lamps.begin(), lamps.end(), Lamp); };
+	auto const count = [&lamps](char const Lamp) { return std::ranges::count(lamps, Lamp); };
 	if (count('z') == 0 || count('c') == 0 || (Need.white && count('b') == 0))
 		return false;
 	if (Need.informs && count('p') == 0)
@@ -345,7 +396,7 @@ bool shows(signal_head const &Head, head_need const &Need)
 		return true;
 	if (lamps.find('p', lamps.find('c')) == std::string::npos || (Need.informs && count('p') < 2))
 		return false;
-	return std::all_of(Need.speeds.begin(), Need.speeds.end(), [&](int const Speed) { return has_speed(Head.speeds, Speed); });
+	return std::ranges::all_of(Need.speeds, [&Head](int const Speed) { return has_speed(Head.speeds, Speed); });
 }
 
 // the more lights and strips beyond the need, the more
@@ -410,7 +461,7 @@ std::string need_text(head_need const &Need)
 		return text;
 	std::string speeds;
 	for (auto const speed : Need.speeds)
-		speeds += (speeds.empty() ? "" : ", ") + std::to_string(speed);
+		speeds += std::format("{}{}", speeds.empty() ? "" : ", ", speed);
 	text += "; " + format(STR_C("%s km/h"), speeds.c_str());
 	if (has_speed(Need.speeds, 60))
 		text += ", " + STR("an orange strip");
@@ -478,8 +529,9 @@ double nearest_of(TTrack const &Track, int const Path, glm::dvec3 const &Point, 
 	auto high{std::min(1.0, Parameter + 1.0 / count)};
 	for (int step = 0; step < 40; ++step)
 	{
-		auto const first{low + (high - low) / 3.0};
-		auto const second{high - (high - low) / 3.0};
+		auto const third{(high - low) / 3.0};
+		auto const first{low + third};
+		auto const second{high - third};
 		if (gap(first) < gap(second))
 			high = second;
 		else
@@ -544,8 +596,7 @@ int next_entry(station::line const &Line, std::vector<standing_signal> const &St
 		auto const distance{station::distance_on(Line, Standing[k].position, gap)};
 		if (gap > 4.5 || distance < 100.0 || distance > Line.length() - 1.0)
 			continue;
-		auto const way{station::point_on(Line, distance).way};
-		if (glm::dot(travel_of(Standing[k].yaw), glm::dvec2{way.x, way.z}) < 0.87)
+		if (auto const way{station::point_on(Line, distance).way}; glm::dot(travel_of(Standing[k].yaw), glm::dvec2{way.x, way.z}) < 0.87)
 			continue;
 		if (found < 0 || distance < Distance)
 		{
@@ -565,9 +616,22 @@ struct shp_trigger
 	glm::dvec3 way{0.0, 0.0, 1.0};
 };
 
-bool shp_event(std::string const &Name)
+bool shp_event(std::string_view const Name)
 {
-	return Name.size() > 4 && ToLower(Name.substr(Name.size() - 4)) == "_shp";
+	return Name.size() > 4 && ToLower(std::string{Name.substr(Name.size() - 4)}) == "_shp";
+}
+
+// the trains run into the event of the list of the track at its start, towards its end, or at its end the other way
+shp_trigger trigger_of(TTrack const &Track, bool const Towards_end)
+{
+	geometry::bezier const curve{Track.m_paths.front()};
+	auto const tangent{curve.first(Towards_end ? 0.0 : 1.0)};
+	glm::dvec3 way{tangent.x, 0.0, tangent.z};
+	if (glm::length(way) > 1e-9)
+		way = glm::normalize(way) * (Towards_end ? 1.0 : -1.0);
+	else
+		way = glm::dvec3{0.0, 0.0, 1.0};
+	return {curve.point(Towards_end ? 0.0 : 1.0), way};
 }
 
 std::vector<shp_trigger> shp_triggers()
@@ -578,18 +642,26 @@ std::vector<shp_trigger> shp_triggers()
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 			continue;
 		for (auto const list : {1, 2, 4, 5})
-			for (auto const &event : editor_track::events(*track, list))
-				if (shp_event(event.first))
-				{
-					auto const towards_end{list % 3 == 2};
-					geometry::bezier const curve{track->m_paths.front()};
-					auto const tangent{curve.first(towards_end ? 0.0 : 1.0)};
-					glm::dvec3 way{tangent.x, 0.0, tangent.z};
-					way = glm::length(way) > 1e-9 ? glm::normalize(way) * (towards_end ? 1.0 : -1.0) : glm::dvec3{0.0, 0.0, 1.0};
-					result.push_back({curve.point(towards_end ? 0.0 : 1.0), way});
-				}
+			for (auto const &[name, handler] : editor_track::events(*track, list))
+				if (shp_event(name))
+					result.push_back(trigger_of(*track, list % 3 == 2));
 	}
 	return result;
+}
+
+// m before the signal of the point of its way the trains run into the event at, the nearest within 2.5 m; the lowest double for
+// none
+double before_on_way(std::vector<station::approach_point> const &Way, shp_trigger const &Trigger)
+{
+	auto before{std::numeric_limits<double>::lowest()};
+	auto nearest{2.5};
+	for (auto const &point : Way)
+		if (auto const gap{geometry::plan_distance(point.point, Trigger.point)}; gap < nearest && glm::dot(point.way, Trigger.way) > 0.7)
+		{
+			nearest = gap;
+			before = point.distance;
+		}
+	return before;
 }
 
 // m before the signal the trains run into the event of an SHP resonator, the one nearest the place wanted within kShpWindow of it;
@@ -606,15 +678,7 @@ double shp_before(std::vector<station::approach_point> const &Way, glm::dvec3 co
 		if (geometry::plan_distance(trigger.point, Signal) < 12.0)
 			before = glm::dot(glm::dvec3{Signal.x - trigger.point.x, 0.0, Signal.z - trigger.point.z}, Travel);
 		else
-		{
-			auto nearest{2.5};
-			for (auto const &point : Way)
-				if (auto const gap{geometry::plan_distance(point.point, trigger.point)}; gap < nearest && glm::dot(point.way, trigger.way) > 0.7)
-				{
-					nearest = gap;
-					before = point.distance;
-				}
-		}
+			before = before_on_way(Way, trigger);
 		if (before < -10.0 || std::abs(before - Wanted) > kShpWindow)
 			continue;
 		if (std::abs(before - Wanted) < miss)
@@ -663,32 +727,73 @@ int resonator_at(std::vector<station::approach_point> const &Way, double const W
 // where it has them, else the one of their mount with them, its counterpart by the name first, then of its lights; not the first of
 // a line, whose events tell a station signal; Wrong: of a wrong-track one, standing on the left, its head leaning right where one
 // does, a head leaning so only for it; empty for none
-std::string block_template(std::vector<signal_head> const &Heads, std::string const &Like, int const Aspects, bool const Wrong = false)
+// the head leans as a block signal of the way wants it: right for a wrong-track one
+bool leans_for(signal_head const &Head, bool const Wrong)
 {
-	auto const leans = [&](signal_head const &Head) { return (Head.lean == "right") == Wrong; };
-	auto const any_leans{std::any_of(Heads.begin(), Heads.end(), [&](signal_head const &Head) { return Head.kind == "block" && Head.aspects == Aspects && leans(Head); })};
+	return (Head.lean == "right") == Wrong;
+}
+
+// the block signal standing, Like: its template, empty for the one chosen in Signals; nullptr for none
+signal_head const *block_like(std::vector<signal_head> const &Heads, std::string_view const Like)
+{
 	signal_head const *like{nullptr};
 	for (auto const &head : Heads)
 		if (head.kind == "block" && (Like.empty() ? head.chosen : head.file == Like))
 			like = &head;
-	if (like != nullptr && like->aspects == Aspects && (leans(*like) || false == any_leans))
-		return like->file;
-	auto counterpart{like != nullptr ? like->name : std::string{}};
+	return like;
+}
+
+// the name of the template of the other aspects: its 3 a 4, its 4 a 3
+std::string counterpart_of(signal_head const *Like)
+{
+	auto counterpart{Like != nullptr ? Like->name : std::string{}};
 	if (auto const digit{counterpart.find_first_of("34")}; digit != std::string::npos)
 		counterpart[digit] = counterpart[digit] == '3' ? '4' : '3';
+	return counterpart;
+}
+
+// how unlike the head is to the one standing: of another mount the most, then by the name, then by the lights; 0 for none standing
+int unlikeness(signal_head const &Head, signal_head const *Like, std::string const &Counterpart)
+{
+	if (Like == nullptr)
+		return 0;
+	auto score{0};
+	if (Head.mount != Like->mount)
+		score += 4;
+	if (Head.name != Counterpart)
+		score += 2;
+	if (Head.lamps != Like->lamps)
+		score += 1;
+	return score;
+}
+
+// of the templates of the block signals of the aspects, the one most like the one standing, the shortest file of those; nullptr
+// for none
+signal_head const *best_block(std::vector<signal_head> const &Heads, int const Aspects, bool const Wrong, bool const Any_leans, signal_head const *Like)
+{
+	auto const counterpart{counterpart_of(Like)};
 	signal_head const *best{nullptr};
 	auto rank{std::make_pair(std::numeric_limits<int>::max(), std::size_t{0})};
 	for (auto const &head : Heads)
 	{
-		if (head.kind != "block" || head.aspects != Aspects || ToLower(head.name).find("pierwszy") != std::string::npos || (any_leans && false == leans(head)))
+		if (head.kind != "block" || head.aspects != Aspects || ToLower(head.name).find("pierwszy") != std::string::npos || (Any_leans && false == leans_for(head, Wrong)))
 			continue;
-		auto const score{std::make_pair(like == nullptr ? 0 : (head.mount != like->mount ? 4 : 0) + (head.name != counterpart ? 2 : 0) + (head.lamps != like->lamps ? 1 : 0), head.file.size())};
-		if (score < rank)
+		if (auto const score{std::make_pair(unlikeness(head, Like, counterpart), head.file.size())}; score < rank)
 		{
 			rank = score;
 			best = &head;
 		}
 	}
+	return best;
+}
+
+std::string block_template(std::vector<signal_head> const &Heads, std::string_view const Like, int const Aspects, bool const Wrong = false)
+{
+	auto const any_leans{std::ranges::any_of(Heads, [Aspects, Wrong](signal_head const &Head) { return Head.kind == "block" && Head.aspects == Aspects && leans_for(Head, Wrong); })};
+	auto const *like{block_like(Heads, Like)};
+	if (like != nullptr && like->aspects == Aspects && (leans_for(*like, Wrong) || false == any_leans))
+		return like->file;
+	auto const *best{best_block(Heads, Aspects, Wrong, any_leans, like)};
 	return best != nullptr ? best->file : std::string{};
 }
 
@@ -799,13 +904,25 @@ disc_check check_disc(std::vector<signal_head> const &Heads, std::unordered_map<
 }
 
 // the block signals switched by the block sections of the editor, lower case
-std::unordered_set<std::string> guarded(std::vector<standing_template> const &Controls)
+name_set guarded(std::vector<standing_template> const &Controls)
 {
-	std::unordered_set<std::string> result;
-	for (auto const &control : Controls)
-		for (std::size_t index = 5; index < control.values.size() && index < 7; ++index)
-			result.insert(ToLower(control.values[index]));
+	name_set result;
+	for (auto const &section : Controls)
+		for (std::size_t index = 5; index < section.values.size() && index < 7; ++index)
+			result.insert(ToLower(section.values[index]));
 	return result;
+}
+
+// the template of the events of a block section
+bool is_control(std::string_view const File)
+{
+	return File == kControl;
+}
+
+// the template of an SHP track resonator
+bool is_resonator(std::string_view const File)
+{
+	return File == kResonator;
 }
 
 // a block signal standing by the track of the line facing its trains, or Wrong: its wrong-track ones, Distance: how far out along it
@@ -829,8 +946,7 @@ bool block_along(station::line const &Line, standing_signal const &Signal, doubl
 // run on, the automatic one of the track the other way
 bool wrong_disc(std::vector<station::line> const &Lines, std::size_t const Index, standing_signal const &Signal)
 {
-	double distance{0.0};
-	if (Signal.kind != "warning" || false == faces_along(Lines[Index], Signal, distance, true))
+	if (double distance{0.0}; Signal.kind != "warning" || false == faces_along(Lines[Index], Signal, distance, true))
 		return false;
 	for (std::size_t other = 0; other < Lines.size(); ++other)
 	{
@@ -848,15 +964,955 @@ double out_of(station::line const &Line)
 	return Line.inbound ? -1.0 : 1.0;
 }
 
+// what the overlay of the scenery draws with: the projection onto the screen, the draw list, the camera
+struct overlay_frame
+{
+	screen_projection const &projection;
+	ImDrawList *drawlist{nullptr};
+	glm::dvec3 camera{0.0};
+	glm::dvec3 lift{0.0, kRailHead, 0.0}; // the rail heads above the axes
+	// the point near enough the camera to be drawn, anywhere in the ortho view
+	bool near_enough(glm::dvec3 const &Point, double const Range) const { return Global.EditorOrtho || glm::distance(Point, camera) < Range; }
+};
+
+void draw_circuit_tracks(overlay_frame const &Frame, station::layout const &Layout, std::vector<int> const &Circuit_of, std::vector<srk_tool::circuit_mark> const &Circuits)
+{
+	for (std::size_t index = 0; index < Layout.paths.size() && index < Circuit_of.size(); ++index)
+	{
+		if (Circuit_of[index] < 0)
+			continue;
+		auto const colour{(Circuits[Circuit_of[index]].colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 200)};
+		auto const width{Global.EditorOrtho ? 6.0f : 3.0f};
+		auto const &points{Layout.paths[index].points};
+		for (std::size_t i = 1; i < points.size(); ++i)
+			if (Frame.near_enough(points[i], kOverlayRange))
+				Frame.projection.line(Frame.drawlist, points[i - 1] + Frame.lift, points[i] + Frame.lift, colour, width);
+	}
+}
+
+void draw_joints(overlay_frame const &Frame, std::vector<srk_tool::joint_mark> const &Joints)
+{
+	for (auto const &joint : Joints)
+	{
+		if (false == Frame.near_enough(joint.at, kJointRange))
+			continue;
+		auto const centre{joint.at + Frame.lift};
+		Frame.projection.line(Frame.drawlist, centre - joint.across * 1.7, centre + joint.across * 1.7, kJoint, 4.0f);
+		Frame.projection.line(Frame.drawlist, centre + joint.across * 1.7, centre + joint.across * 1.7 + glm::dvec3{0.0, 1.2, 0.0}, kJoint, 2.0f);
+		if (ImVec2 top; Frame.projection.project(centre + joint.across * 1.7 + glm::dvec3{0.0, 1.2, 0.0}, top))
+			Frame.drawlist->AddCircleFilled(top, 3.0f, kJoint);
+	}
+}
+
+void draw_circuit_labels(overlay_frame const &Frame, std::vector<srk_tool::circuit_mark> const &Circuits)
+{
+	for (auto const &mark : Circuits)
+	{
+		ImVec2 screen;
+		if (false == mark.labelled || false == Frame.near_enough(mark.world, kLabelRange) || false == Frame.projection.project(mark.world + glm::dvec3{0.0, 0.8, 0.0}, screen))
+			continue;
+		auto const size{ImGui::CalcTextSize(mark.text.c_str())};
+		Frame.drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 3.0f, screen.y - size.y - 2.0f), ImVec2(screen.x + size.x * 0.5f + 3.0f, screen.y + 2.0f), IM_COL32(0, 0, 0, 160), 3.0f);
+		Frame.drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y), mark.colour, mark.text.c_str());
+	}
+}
+
+void draw_switch_names(overlay_frame const &Frame, station::layout const &Layout)
+{
+	for (auto const *track : Layout.switches)
+	{
+		auto const start{track->m_paths.front().points[segment_data::point::start] + glm::dvec3{0.0, 1.0, 0.0}};
+		ImVec2 screen;
+		if (false == Frame.near_enough(start, kLabelRange) || false == Frame.projection.project(start, screen))
+			continue;
+		auto const &text{track->name()};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		Frame.drawlist->AddRectFilled(ImVec2(screen.x - 3.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x + 3.0f, screen.y), IM_COL32(0, 0, 0, 160), 3.0f);
+		Frame.drawlist->AddText(ImVec2(screen.x, screen.y - size.y - 2.0f), kSwitch, text.c_str());
+	}
+}
+
+// the points beside the stretch of the track, on the right of the trains running along it, above its rails
+std::vector<glm::dvec3> beside_of(std::vector<glm::dvec3> const &Points, glm::dvec3 const &Lift)
+{
+	std::vector<glm::dvec3> beside;
+	for (std::size_t i = 0; i < Points.size(); ++i)
+	{
+		auto const back{i > 0 && i + 1 == Points.size() ? i - 1 : i};
+		auto const way{Points[std::min(i + 1, Points.size() - 1)] - Points[back]};
+		glm::dvec2 const along{glm::normalize(glm::dvec2{way.x, way.z} + glm::dvec2{1e-12, 0.0})};
+		beside.push_back(Points[i] + Lift + glm::dvec3{-along.y, 0.1, along.x} * 0.9);
+	}
+	return beside;
+}
+
+void draw_useful(overlay_frame const &Frame, station::lengths const &Track)
+{
+	for (auto const &part : Track.ways)
+	{
+		if (part.length <= 0.0)
+			continue;
+		auto const beside{beside_of(stretch_of(Track, part.rear.along, part.head.along), Frame.lift)};
+		for (std::size_t i = 1; i < beside.size(); ++i)
+			if (Frame.near_enough(beside[i], kOverlayRange))
+				Frame.projection.line(Frame.drawlist, beside[i - 1], beside[i], kUseful, 3.0f);
+		auto const top{beside.back() + glm::dvec3{0.0, 2.5, 0.0}};
+		Frame.projection.line(Frame.drawlist, beside.front(), beside.front() + glm::dvec3{0.0, 1.0, 0.0}, kUseful, 2.0f);
+		Frame.projection.line(Frame.drawlist, beside.back(), top, kUseful, 2.0f);
+		ImVec2 screen;
+		if (false == Frame.near_enough(top, kLabelRange) || false == Frame.projection.project(top, screen))
+			continue;
+		auto const text{format(STR_C("track %s: %.0f m"), Track.number.c_str(), part.length)};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		Frame.drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), IM_COL32(0, 0, 0, 180), 3.0f);
+		Frame.drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), kUseful, text.c_str());
+	}
+}
+
+void draw_boundary(overlay_frame const &Frame, srk_tool::boundary const &Boundary)
+{
+	auto const colour{Boundary.remove ? IM_COL32(255, 90, 80, 255) : IM_COL32(110, 230, 120, 255)};
+	for (auto const &[point, way] : Boundary.joints)
+	{
+		glm::dvec3 const across{-way.z, 0.0, way.x};
+		Frame.projection.line(Frame.drawlist, point + Frame.lift - across * 2.0, point + Frame.lift + across * 2.0, colour, 4.0f);
+	}
+	for (auto const &post : Boundary.posts)
+	{
+		auto const base{post.point + Frame.lift + post.side * 2.4};
+		Frame.projection.line(Frame.drawlist, post.point + Frame.lift, base, colour, 2.0f);
+		Frame.projection.line(Frame.drawlist, base, base + glm::dvec3{0.0, 6.0, 0.0}, colour, 3.0f);
+		ImVec2 screen;
+		if (false == Frame.projection.project(base + glm::dvec3{0.0, 6.5, 0.0}, screen))
+			continue;
+		auto const &text{post.name};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		Frame.drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), colour, 3.0f);
+		Frame.drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), IM_COL32(0, 0, 0, 255), text.c_str());
+	}
+}
+
+void draw_signal_marks(overlay_frame const &Frame, std::vector<srk_tool::signal_mark> const &Marks)
+{
+	for (auto const &mark : Marks)
+	{
+		ImVec2 screen;
+		if (false == Frame.near_enough(mark.head, kLabelRange) || false == Frame.projection.project(mark.head, screen))
+			continue;
+		auto const text{mark.unfit ? mark.text + " !" : mark.text};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		Frame.drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), mark.unfit ? kUnfit : kSignal, 3.0f);
+		Frame.drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), mark.unfit ? IM_COL32(0, 0, 0, 255) : IM_COL32(255, 255, 255, 255), text.c_str());
+	}
+}
+
+// a pin over the signal of the row under the mouse in the list of the heads
+void draw_head_hover(overlay_frame const &Frame, srk_tool::head_check const &Head)
+{
+	ImVec2 label;
+	if (false == Frame.projection.project(Head.position + glm::dvec3{0.0, 7.0, 0.0}, label))
+		return;
+	ImVec2 const foot{label.x, label.y - ImGui::GetTextLineHeight() - 8.0f};
+	ImVec2 const top{label.x, foot.y - 30.0f};
+	Frame.drawlist->AddLine(foot, top, kHovered, 3.0f);
+	Frame.drawlist->AddCircle(ImVec2(top.x, top.y - 9.0f), 9.0f, kHovered, 0, 3.0f);
+}
+
+// a text field of the record of the station, true with the text typed into it
+bool record_field(char const *Label, char const *Id, std::string_view const Value, char const *Hint, std::string &Typed)
+{
+	field_row(Label);
+	std::array<char, 128> buffer{};
+	Value.copy(buffer.data(), buffer.size() - 1);
+	if (false == ImGui::InputTextWithHint(Id, Hint, buffer.data(), buffer.size()))
+		return false;
+	Typed = std::string{buffer.data()};
+	return true;
+}
+
+// how many of the signals checked have their resonators, and the ones standing off or nowhere
+std::string shp_summary(std::size_t const Found, std::size_t const Needed, std::size_t const Off, std::size_t const Nowhere)
+{
+	auto text{format(STR_P("%zu of %zu signal has its SHP resonator", "%zu of %zu signals have their SHP resonators", Needed), Found, Needed)};
+	if (Off > 0)
+		text += ", " + format(STR_P("%zu farther than 5 m from its place", "%zu farther than 5 m from their places", Off), Off);
+	if (Nowhere > 0)
+		text += ", " + format(STR_P("%zu with the tracks ending short of the place of its resonator", "%zu with the tracks ending short of the places of their resonators", Nowhere), Nowhere);
+	return text;
+}
+
+// the kind of a switch in the list of the station, its type when the store knows it
+std::string switch_type_text(TTrack const &Track)
+{
+	if (auto const known{switch_store::named(Track)}; known)
+		return switch_store::label(*known);
+	if (Track.eType == tt_Switch)
+		return STR_C("switch");
+	if (Track.eType == tt_Cross)
+		return STR_C("crossing");
+	return STR_C("turntable");
+}
+
+// why a line has its block, for the table of the lines
+char const *reason_text(srk_tool::block_reason const Why)
+{
+	using enum srk_tool::block_reason;
+	switch (Why)
+	{
+	case hand: return STR_C("set by hand");
+	case standing: return STR_C("block signals stand along it");
+	case double_track: return STR_C("a double-track line");
+	default: return STR_C("a single-track line");
+	}
+}
+
+// the block of a line, for the table of the lines
+char const *kind_text(srk_tool::block_kind const Kind)
+{
+	switch (Kind)
+	{
+	case srk_tool::block_kind::three: return STR_C("SBL, 3 aspects");
+	case srk_tool::block_kind::four: return STR_C("SBL, 4 aspects");
+	default: return STR_C("semi-automatic");
+	}
+}
+
+// where a line out of the station leads, for its row
+std::string line_end(srk_tool::line_row const &Row)
+{
+	if (false == Row.next.empty())
+		return Row.next;
+	if (Row.station)
+		return STR_C("station");
+	return STR_C("track end");
+}
+
+// where a line out of the station leads, for the tooltip of its row
+std::string line_end_tooltip(srk_tool::line_row const &Row)
+{
+	if (false == Row.next.empty())
+		return format(STR_C("To the entry signal %s of the next station"), Row.next.c_str());
+	if (Row.station)
+		return STR_C("To the next station, its entry signal not standing yet");
+	return STR_C("To the end of the tracks");
+}
+
+// the block shown in the choice of a line
+std::string block_preview(srk_tool::line_row const &Row)
+{
+	if (Row.legacy)
+		return STR_C("of the scenery");
+	if (Row.why == srk_tool::block_reason::hand)
+		return kind_text(Row.block);
+	return format(STR_C("%s, auto"), kind_text(Row.block));
+}
+
+// the tooltip of the row of a line out of the station
+void line_tooltip(srk_tool::line_row const &Row)
+{
+	ImGui::BeginTooltip();
+	ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+	ImGui::TextUnformatted(format(STR_C("The line out beyond the entry signal %s"), Row.entry.c_str()).c_str());
+	if (Row.number > 0)
+		ImGui::TextUnformatted((format(STR_C("Track %d of a double-track line"), Row.number) + ", " + (Row.inbound ? STR("its trains run in to the station") : STR("its trains run out of the station"))).c_str());
+	else
+		ImGui::TextUnformatted(STR_C("A single-track line"));
+	ImGui::TextUnformatted(format(STR_P("%zu block signal stands along it", "%zu block signals stand along it", Row.blocks), Row.blocks).c_str());
+	ImGui::TextUnformatted(format(STR_C("Block: %s, %s"), kind_text(Row.block), reason_text(Row.why)).c_str());
+	if (Row.number > 0 && Row.block != srk_tool::block_kind::semi)
+		ImGui::TextUnformatted(Row.both ? STR_C("Wrong-track running: SBL both ways, the block signals with N") : STR_C("Wrong-track running: the mixed block, a warning disc before the entry signal"));
+	if (Row.legacy)
+		ImGui::TextColored(kDoubtful, "%s", STR_C("No block section of the editor switches its block signals: it keeps the block of the scenery as it stands"));
+	if (Row.leftovers > 0)
+	{
+		ImGui::TextColored(kDoubtful, "%s", (Row.block != srk_tool::block_kind::semi ? format(STR_P("%zu warning disc stands along it, of the semi-automatic block: Set the line signals takes it away", "%zu warning discs stand along it, of the semi-automatic block: Set the line signals takes them away", Row.leftovers), Row.leftovers)
+		                                                                             : format(STR_P("%zu block signal stands along it, of the automatic block: Set the line signals takes it away", "%zu block signals stand along it, of the automatic block: Set the line signals takes them away", Row.leftovers), Row.leftovers)).c_str());
+		ImGui::TextDisabled("%s", STR_C("LMB: fly to the first of them"));
+	}
+	else
+		ImGui::TextDisabled("%s", STR_C("LMB: fly to the entry signal"));
+	ImGui::PopTextWrapPos();
+	ImGui::EndTooltip();
+}
+
+// a note in the colour of the disabled text, wrapped
+void dimmed(char const *Text)
+{
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	ImGui::TextWrapped("%s", Text);
+	ImGui::PopStyleColor();
+}
+
+// the tooltip of the row of a station track in the list of the lengths
+void length_tooltip(station::lengths const &Track, std::array<char const *, 2> const &Ways, std::string const &Stem)
+{
+	ImGui::BeginTooltip();
+	ImGui::TextUnformatted(format(STR_C("Track %s"), Track.number.c_str()).c_str());
+	for (int way = 0; way < 2; ++way)
+	{
+		auto const &part{Track.ways[way]};
+		ImGui::TextUnformatted(format(STR_C("%s: %.0f m, from %s to %s"), Ways[way], part.length, limit_text(part.rear, Stem).c_str(), limit_text(part.head, Stem).c_str()).c_str());
+	}
+	ImGui::TextDisabled(STR_C("Construction length %.0f m: between the switches at its ends, the switches within it left out"), Track.construction);
+	if (std::abs(Track.ways[0].length - Track.ways[1].length) > kUnequal)
+		ImGui::TextColored(kDoubtful, "%s", STR_C("The two ways differ: their trains stop on other stretches of the track, between other switches or signals"));
+	ImGui::TextDisabled("%s", STR_C("LMB: show it"));
+	ImGui::EndTooltip();
+}
+
+// the useful length of a station track one way, in its cell of the list
+void length_cell(station::stand const &Part, bool const Unequal)
+{
+	if (Unequal)
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, Part.head.what == station::limit::kind::signal ? 1.0f : 0.6f), "%.0f m", Part.length);
+	else if (Part.head.what == station::limit::kind::signal)
+		ImGui::Text("%.0f m", Part.length);
+	else
+		ImGui::TextDisabled("%.0f m", Part.length);
+}
+
+// the title of a signal in the tooltip of its row, with a %s for its name
+char const *head_title(srk_tool::head_check const &Head)
+{
+	if (Head.kind == "main")
+		return STR_C("Main signal %s");
+	if (Head.kind == "block")
+		return STR_C("Block signal %s");
+	return STR_C("Warning disc %s");
+}
+
+// a route of the trains past a signal, in the tooltip of its row
+std::string route_text(srk_tool::head_check const &Head, std::size_t const Index, double const Line, std::string const &Stem)
+{
+	auto const &route{Head.routes[Index]};
+	std::string text;
+	if (route.next >= 0)
+		text = format(STR_C("To %s: %.0f m"), Head.nexts[Index].c_str(), route.length);
+	else if (route.ended)
+		text = format(STR_C("To the end of the tracks: %.0f m"), route.length);
+	else
+		text = format(STR_C("No signal within %.0f m"), route.length);
+	if (Head.kind == "main")
+		text += ", " + (route.speed > 0.0 && shown_speed(route.speed, Line) > 0 ? format(STR_C("%d km/h through the switches"), shown_speed(route.speed, Line)) : format(STR_C("%.0f km/h"), Line));
+	std::string turnouts;
+	for (auto const *turnout : route.turnouts)
+		turnouts += (turnouts.empty() ? "" : ", ") + without_stem(turnout->name(), Stem);
+	if (false == turnouts.empty())
+		text += ", " + format(STR_P("off the straight at switch %s", "off the straight at switches %s", route.turnouts.size()), turnouts.c_str());
+	if (route.warning >= 0)
+		text += ", " + STR("past a warning disc");
+	return text;
+}
+
+// how the template of a signal fits its routes, in the tooltip of its row: the lights, or the aspects of a semaphore or of a
+// warning disc described
+void head_fit_note(srk_tool::head_check const &Head)
+{
+	if (Head.arms > 0)
+	{
+		// a semaphore described with its arms and its aspects
+		if (false == Head.fits && Head.fit.empty())
+			ImGui::TextColored(kWrong, "%s", STR_C("No semaphore of its mount has these aspects"));
+		else if (false == Head.fits)
+			ImGui::TextColored(kDoubtful, "%s", format(STR_C("Its arms don't show all of it: %s does"), Head.fit.c_str()).c_str());
+		else if (Head.more)
+			ImGui::TextDisabled("%s", format(STR_C("It has more than it needs: %s would do. The fitting leaves it be: events written by hand may use its aspects"), Head.fit.c_str()).c_str());
+	}
+	else if (Head.told)
+	{
+		// a shaped warning disc before a semaphore described, by the events it repeats; one not described only offered the one
+		if (Head.unsaid)
+			ImGui::TextDisabled("%s", format(STR_C("Its template doesn't say what it tells, so it isn't checked: %s says so and tells all its semaphore shows. The fitting leaves it be, swap it by hand if you like"), Head.fit.c_str()).c_str());
+		else if (false == Head.fits && Head.fit.empty())
+			ImGui::TextColored(kWrong, "%s", STR_C("No disc of its mount tells all its semaphore shows"));
+		else if (false == Head.fits)
+			ImGui::TextColored(kDoubtful, "%s", format(STR_C("It doesn't tell apart all its semaphore shows: %s does"), Head.fit.c_str()).c_str());
+	}
+	else if (Head.lamps.empty() && Head.kind != "warning")
+		ImGui::TextDisabled("%s", STR_C("A semaphore with arms: its lights aren't checked"));
+	else if (false == Head.fits && Head.fit.empty())
+		ImGui::TextColored(kWrong, "%s", STR_C("No template of its kind and mount has these lights"));
+	else if (false == Head.fits)
+		ImGui::TextColored(kDoubtful, "%s", format(STR_C("Its lights don't show all of it: %s does"), Head.fit.c_str()).c_str());
+	else if (Head.more)
+		ImGui::TextDisabled("%s", format(STR_C("It has more lights than it needs: %s will do"), Head.fit.c_str()).c_str());
+}
+
+// where the SHP resonator of a signal belongs and where it stands, in the tooltip of its row
+void head_shp_note(srk_tool::head_check const &Head)
+{
+	using enum srk_tool::shp_state;
+	auto const state{Head.shp_of()};
+	if (state == needless)
+		return;
+	auto const wanted{Head.shp > 0.0 ? format(STR_C("its SHP resonator belongs %.0f m before it"), Head.shp) : std::string{STR_C("its SHP resonator belongs at it, it tells of the next signal")}};
+	if (state == missing || state == beyond)
+		ImGui::TextColored(kWrong, "%s", (wanted + ", " + (state == beyond ? STR("the tracks before it end short of it") : STR("none stands"))).c_str());
+	else
+		ImGui::TextColored(state == off ? kDoubtful : kRight, "%s", (wanted + ", " + format(STR_C("its event %.0f m before it"), Head.shp_found)).c_str());
+}
+
+// the tooltip of the row of a signal in the list of the heads
+void head_tooltip(srk_tool::head_check const &Head, double const Line, std::string const &Stem)
+{
+	ImGui::BeginTooltip();
+	ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
+	ImGui::TextUnformatted(format(head_title(Head), Head.name.c_str()).c_str());
+	ImGui::TextDisabled("%s", Head.file.c_str());
+	for (std::size_t k = 0; k < Head.routes.size(); ++k)
+		ImGui::BulletText("%s", route_text(Head, k, Line, Stem).c_str());
+	if (Head.kind != "warning")
+	{
+		head_need need;
+		need.speeds = Head.speeds;
+		need.informs = Head.informs;
+		need.white = Head.white;
+		ImGui::TextUnformatted(format(STR_C("Needs: %s"), (Head.arms > 0 ? need_arms_text(need) : need_text(need)).c_str()).c_str());
+	}
+	if (Head.shortened > 0)
+		ImGui::TextColored(kDoubtful, "%s", format(STR_C("The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"), Head.shortened).c_str());
+	if (Head.indicator)
+		ImGui::TextColored(kDoubtful, "%s", STR_C("Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"));
+	head_fit_note(Head);
+	for (auto const &problem : Head.problems)
+		ImGui::TextColored(kWrong, "%s", problem.c_str());
+	head_shp_note(Head);
+	ImGui::TextDisabled("%s", STR_C("LMB: fly to it"));
+	ImGui::PopTextWrapPos();
+	ImGui::EndTooltip();
+}
+
+// the speeds a main signal shows, in its cell of the list of the heads
+void head_speeds_cell(srk_tool::head_check const &Head, double const Line)
+{
+	if (Head.kind != "main")
+	{
+		ImGui::TextDisabled("-");
+		return;
+	}
+	auto text{format("%.0f", Line)};
+	for (auto const speed : std::views::reverse(Head.speeds))
+		text += std::format(", {}", speed);
+	ImGui::TextUnformatted(text.c_str());
+}
+
+// how the template of a signal fits it, in its cell of the list of the heads
+void head_state_cell(srk_tool::head_check const &Head)
+{
+	if (Head.lamps.empty() && Head.arms == 0 && false == Head.told)
+		ImGui::TextDisabled("-");
+	else if (Head.unsaid)
+		ImGui::TextDisabled("%s", STR_C("not described"));
+	else if (false == Head.fits)
+	{
+		auto const *missing{Head.arms > 0 || Head.told ? STR_C("aspects missing") : STR_C("lights missing")};
+		ImGui::TextColored(Head.fit.empty() ? kWrong : kDoubtful, "%s", Head.fit.empty() ? STR_C("no template") : missing);
+	}
+	else if (Head.more)
+		ImGui::TextDisabled("%s", STR_C("more than needed"));
+	else
+		ImGui::TextColored(kRight, "%s", STR_C("fits"));
+	if (false == Head.problems.empty())
+	{
+		ImGui::SameLine();
+		ImGui::TextColored(kWrong, "%s", STR_C("too near"));
+	}
+}
+
+// the SHP resonator of a signal, in its cell of the list of the heads
+void head_shp_cell(srk_tool::head_check const &Head)
+{
+	using enum srk_tool::shp_state;
+	switch (Head.shp_of())
+	{
+	case needless: ImGui::TextDisabled("-"); break;
+	case missing: ImGui::TextColored(kWrong, "%s", STR_C("none")); break;
+	case beyond: ImGui::TextColored(kWrong, "%s", STR_C("no track")); break;
+	case off: ImGui::TextColored(kDoubtful, "%.0f m", Head.shp_found); break;
+	default: ImGui::TextColored(kRight, "%s", Head.shp > 0.0 ? format("%.0f m", Head.shp_found).c_str() : STR_C("at it")); break;
+	}
+}
+
+// of the block boundaries along the line, the one within reach of the distance, the end of them for none
+auto near_stop(srk_tool::line_row const &Row, double const Distance)
+{
+	auto const found{std::ranges::min_element(Row.stops, [Distance](auto const &A, auto const &B) { return std::abs(A.first - Distance) < std::abs(B.first - Distance); })};
+	return found != Row.stops.end() && std::abs(found->first - Distance) < kBoundaryReach ? found : Row.stops.end();
+}
+
+// m out along the line, the block boundaries before and beyond the distance, the one taken away left out
+std::pair<double, double> stops_around(srk_tool::line_row const &Row, double const At, bool const Remove)
+{
+	auto previous{0.0};
+	auto next{Row.length};
+	for (auto const &[along, name] : Row.stops)
+	{
+		if (Remove && std::abs(along - At) < kBoundaryReach)
+			continue;
+		if (along < At)
+			previous = std::max(previous, along);
+		else
+			next = std::min(next, along);
+	}
+	return {previous, next};
+}
+
+// a block signal of the boundary drawn, on the outside of the track
+void post_at(srk_tool::boundary &Boundary, station::line const &Way, double const Distance, std::string const &Name)
+{
+	auto const on{station::point_on(Way, Distance)};
+	glm::dvec3 const travel{on.way * out_of(Way)};
+	Boundary.posts.emplace_back(on.point, glm::dvec3{-travel.z, 0.0, travel.x}, Name);
+}
+
+// a number standing already gets a letter, as Set the line signals gives it
+std::string unused_name(name_set const &Names, std::string const &Base)
+{
+	auto name{Base};
+	for (char letter = 'a'; Names.contains(ToLower(name)) && letter <= 'z'; ++letter)
+		name = Base + letter;
+	return name;
+}
+
+// what a click on the line places, with the lengths of the block sections either side
+std::string boundary_label(srk_tool::line_row const &Row, std::string const &Names, double const At, double const Previous, double const Next)
+{
+	auto const least{Row.block == srk_tool::block_kind::four ? Row.braking * 0.5 : Row.braking};
+	auto label{format(STR_C("Click: block signals %s here: the block sections %.2f km and %.2f km"), Names.c_str(), (At - Previous) / 1000.0, (Next - At) / 1000.0)};
+	if (std::min(At - Previous, Next - At) < least)
+		label += "\n" + format(Row.block == srk_tool::block_kind::four ? STR_C("The block section of %.2f km is shorter than half the braking distance, %.0f m, of the 4-aspect block") : STR_C("The block section of %.2f km is shorter than the braking distance, %.0f m"), std::min(At - Previous, Next - At) / 1000.0, least);
+	return label;
+}
+
+// the names of the switches of the numbering
+using switch_names = std::vector<std::pair<TTrack *, std::string>>;
+
+// the events aiming at the switches listed, the first six of them
+std::string listed_of(std::vector<std::string> const &Unwritten)
+{
+	std::string listed;
+	for (std::size_t i = 0; i < Unwritten.size() && i < 6; ++i)
+		listed += (i > 0 ? ", " : "") + Unwritten[i];
+	if (Unwritten.size() > 6)
+		listed += format(" (+%zu)", Unwritten.size() - 6);
+	return listed;
+}
+
+// the switches given their names; the names go round among them: a switch whose name another one gets gives it up first
+void rename_switches(switch_names const &Names)
+{
+	for (auto const &[track, name] : Names)
+		if (track->name() != name && std::ranges::any_of(Names, [&track](auto const &Other) { return Other.first != track && Other.second == track->name(); }))
+			editor_track::rename(*track, track->name() + "~");
+	for (auto const &[track, name] : Names)
+		editor_track::rename(*track, name);
+}
+
+// the tracks of the station as captured before a change, the tracks themselves changed after
+using track_states = std::vector<std::pair<TTrack *, editor_track::state>>;
+
+// the tracks cut at the joints planned, each from its end back, so the pieces left to cut stay in the track; Points: of all the
+// joints
+void cut_at_joints(std::vector<station::joint> const &Planned, std::vector<glm::dvec3> &Points, track_states &Before, std::vector<TTrack *> &Created)
+{
+	std::vector<std::pair<TTrack *, std::vector<glm::dvec3>>> cuts;
+	for (auto const &entry : Planned)
+	{
+		Points.push_back(entry.point);
+		if (entry.track == nullptr)
+			continue;
+		auto found{std::ranges::find_if(cuts, [&entry](auto const &Cut) { return Cut.first == entry.track; })};
+		if (found == cuts.end())
+			found = cuts.insert(cuts.end(), {entry.track, {}});
+		found->second.push_back(entry.point);
+	}
+	for (auto &[track, at] : cuts)
+	{
+		Before.emplace_back(track, editor_track::capture(*track));
+		TTrack const *const piece{track};
+		std::ranges::sort(at, [piece](glm::dvec3 const &A, glm::dvec3 const &B) { return editor_track::nearest_parameter(*piece, A) > editor_track::nearest_parameter(*piece, B); });
+		for (auto const &point : at)
+			if (auto *cut{editor_track::split_path(*track, editor_track::nearest_parameter(*track, point))})
+				Created.push_back(cut);
+	}
+}
+
+// a station track keeps the name most of it has, given by hand or so far, unless another one has it too; the others take
+// the numbers left on their side. Taken: the names kept
+std::vector<std::string> kept_names(std::vector<station::circuit> const &Circuits, std::string const &Stem, name_set &Taken)
+{
+	std::vector<std::string> names(Circuits.size());
+	std::map<std::string, std::size_t, std::less<>> held;
+	for (std::size_t index = 0; index < Circuits.size(); ++index)
+	{
+		auto const &circuit{Circuits[index]};
+		if (circuit.unit >= 0)
+			continue;
+		std::map<std::string, std::size_t, std::less<>> counts;
+		for (auto const *track : circuit.tracks)
+			if (track->Isolated.size() == 1 && false == track_of(track->Isolated.front()->asName, Stem).empty())
+				++counts[track->Isolated.front()->asName];
+		if (auto const most{std::ranges::max_element(counts, [](auto const &A, auto const &B) { return A.second < B.second; })}; most != counts.end())
+		{
+			names[index] = most->first;
+			++held[names[index]];
+		}
+	}
+	for (auto &name : names)
+		if (false == name.empty() && held[name] > 1)
+			name.clear();
+		else if (false == name.empty())
+			Taken.insert(name);
+	return names;
+}
+
+// the name of a station track after its number, the next one on its side while another track has it
+std::string free_circuit_name(std::string Number, std::string const &Stem, name_set &Taken)
+{
+	while (Taken.contains(Stem + "it" + Number))
+	{
+		std::size_t digits{0};
+		while (digits < Number.size() && std::isdigit(static_cast<unsigned char>(Number[digits])))
+			++digits;
+		if (digits == 0)
+			break;
+		Number = std::format("{}{}", std::stoi(Number.substr(0, digits)) + 2, Number.substr(digits));
+	}
+	auto name{Stem + "it" + Number};
+	Taken.insert(name);
+	return name;
+}
+
+// the tracks of a circuit given its name, the ones not captured yet captured first
+void isolate_circuit(station::circuit const &Circuit, std::string const &Name, std::unordered_set<TTrack const *> &Captured, track_states &Before)
+{
+	for (auto *track : Circuit.tracks)
+	{
+		if (track->Isolated.size() == 1 && track->Isolated.front()->asName == Name)
+			continue;
+		if (Captured.insert(track).second)
+			Before.emplace_back(track, editor_track::capture(*track));
+		editor_track::isolated(*track, {Name});
+	}
+}
+
+// the circuits of the station as cut named: of the switches after their units, the station tracks after their numbers
+void name_circuits(station::layout const &Layout, std::vector<station::unit> const &Units, std::vector<station::circuit> const &Circuits, std::string const &Code, std::vector<TTrack *> const &Created, track_states &Before)
+{
+	auto const numbers{station::track_numbers(Layout, Circuits)};
+	auto const stem{station::prefix(Code)};
+	std::unordered_set<TTrack const *> captured(Created.begin(), Created.end());
+	for (auto const &[track, state] : Before)
+		captured.insert(track);
+	name_set taken;
+	auto names{kept_names(Circuits, stem, taken)};
+	for (std::size_t index = 0; index < Circuits.size(); ++index)
+	{
+		auto const &circuit{Circuits[index]};
+		auto &name{names[index]};
+		if (circuit.unit >= 0)
+			name = stem + "iz" + unit_number(Units[circuit.unit], stem, circuit.unit);
+		else if (name.empty())
+			name = free_circuit_name(numbers[index], stem, taken);
+		isolate_circuit(circuit, name, captured, Before);
+	}
+}
+
+// the records of the switches given the numbers of their units; how many were
+std::size_t renumber_records(std::vector<station::unit> const &Units)
+{
+	std::size_t numbered{0};
+	for (std::size_t index = 0; index < Units.size(); ++index)
+		if (auto const record{switch_store::named(*Units[index].parts.front())}; record && record->number != std::to_string(index + 1))
+		{
+			switch_store::number(record->name, std::to_string(index + 1));
+			++numbered;
+		}
+	return numbered;
+}
+
+// the name of a signal of the station in the scenery, with the code of the station
+std::string full_name(std::string const &Stem, station::signal const &Signal)
+{
+	return Stem + ToLower(Signal.name);
+}
+
+// m, how far a standing signal stands from the place of one planned and still counts for it
+double match_reach(station::signal::role const Kind)
+{
+	if (Kind == station::signal::role::entry)
+		return 400.0;
+	if (Kind == station::signal::role::exit)
+		return 60.0;
+	return 40.0;
+}
+
+// the standing signals by the places of the ones planned, each with how near: of the plan, of the standing ones
+std::vector<std::tuple<double, std::size_t, std::size_t>> match_candidates(std::vector<station::signal> const &Plan, std::vector<standing_signal> const &Standing)
+{
+	std::vector<std::tuple<double, std::size_t, std::size_t>> candidates;
+	for (std::size_t i = 0; i < Plan.size(); ++i)
+	{
+		auto const &planned{Plan[i]};
+		glm::dvec2 const travel{glm::normalize(glm::dvec2{planned.travel.x, planned.travel.z} + glm::dvec2{1e-12, 0.0})};
+		auto const reach{match_reach(planned.kind)};
+		for (std::size_t k = 0; k < Standing.size(); ++k)
+		{
+			auto const &signal{Standing[k]};
+			if ((signal.kind == "shunt") != (planned.kind == station::signal::role::shunting) || (signal.kind != "shunt" && signal.kind != "main") || glm::dot(travel_of(signal.yaw), travel) < 0.87)
+				continue;
+			glm::dvec2 const offset{signal.position.x - planned.point.x, signal.position.z - planned.point.z};
+			auto const along{glm::dot(offset, travel)};
+			auto const across{std::abs(offset.x * travel.y - offset.y * travel.x)};
+			if (std::abs(along) < reach && across < 3.0)
+				candidates.emplace_back(std::abs(along) + across * 10.0, i, k);
+		}
+	}
+	return candidates;
+}
+
+// of the plan, the standing signal each one is, -1 for none: by their places, then by their names the ones moved away; Used: the
+// standing ones taken so
+std::vector<int> match_signals(std::vector<station::signal> const &Plan, std::vector<standing_signal> const &Standing, std::string const &Stem, std::vector<char> &Used)
+{
+	std::vector match(Plan.size(), -1);
+	auto candidates{match_candidates(Plan, Standing)};
+	std::ranges::sort(candidates);
+	for (auto const &[score, i, k] : candidates)
+		if (match[i] < 0 && 0 == Used[k])
+		{
+			match[i] = static_cast<int>(k);
+			Used[k] = 1;
+		}
+	for (std::size_t i = 0; i < Plan.size(); ++i)
+		for (std::size_t k = 0; k < Standing.size() && match[i] < 0; ++k)
+			if (0 == Used[k] && ToLower(Standing[k].name) == full_name(Stem, Plan[i]))
+			{
+				match[i] = static_cast<int>(k);
+				Used[k] = 1;
+			}
+	return match;
+}
+
+// the circuit from an entry signal to the station: the line cut by it
+struct entry_cut
+{
+	std::size_t signal{0};
+	TTrack *track{nullptr};
+	double parameter{0.0};
+	glm::dvec3 point{0.0};
+	bool outward{false};
+	std::vector<TTrack *> named; // between the station and the cut
+	std::vector<TTrack *> beyond; // out from the cut to the signal and on
+};
+
+// of the tracks of the line in from the entry signal, the one nearest the point, with the parameter and the point on it
+std::size_t nearest_of_run(station::signal const &Planned, glm::dvec3 const &At, entry_cut &Entry)
+{
+	auto best{std::numeric_limits<double>::max()};
+	std::size_t nearest{0};
+	for (std::size_t k = 0; k < Planned.run.size(); ++k)
+	{
+		auto const t{editor_track::nearest_parameter(*Planned.run[k].first, At)};
+		auto const point{editor_track::point_at(*Planned.run[k].first, t)};
+		if (auto const distance{glm::distance(glm::dvec2{point.x, point.z}, glm::dvec2{At.x, At.z})}; distance < best)
+		{
+			best = distance;
+			nearest = k;
+			Entry.parameter = t;
+			Entry.point = point;
+		}
+	}
+	return nearest;
+}
+
+// the cut of the circuit of an entry signal standing at the position: at the joint the trains pass the signal to, in from it
+// towards the station; the reason while a track there can't be cut or changed
+std::string plan_cut(station::signal const &Planned, glm::dvec3 const &Position, entry_cut &Entry)
+{
+	auto const run{station::run_line(Planned)};
+	double gap{0.0};
+	auto const signal_at{station::distance_on(run, Position, gap)};
+	auto const at{station::point_on(run, std::max(0.0, signal_at - station::signal_drop)).point};
+	auto const nearest{nearest_of_run(Planned, at, Entry)};
+	for (std::size_t k = 0; k < nearest; ++k)
+		Entry.named.push_back(Planned.run[k].first);
+	for (std::size_t k = nearest + 1; k < Planned.run.size(); ++k)
+		Entry.beyond.push_back(Planned.run[k].first);
+	Entry.track = Planned.run[nearest].first;
+	Entry.outward = Planned.run[nearest].second;
+	auto const &ends{Entry.track->m_paths.front().points};
+	auto const to_start{glm::distance(Entry.point, ends[segment_data::point::start])};
+	auto const to_end{glm::distance(Entry.point, ends[segment_data::point::end])};
+	std::string reason;
+	if (std::min(to_start, to_end) <= 0.3)
+	{
+		// at an end already
+		((to_end < to_start) == Entry.outward ? Entry.named : Entry.beyond).push_back(Entry.track);
+		Entry.track = nullptr;
+	}
+	else if (false == editor_track::can_edit_geometry(*Entry.track, reason))
+		return format(STR_C("%s can't be cut: %s"), name_of(*Entry.track).c_str(), reason.c_str());
+	for (auto const *part : Entry.named)
+		if (false == scene::Layers.editable(part, &reason))
+			return format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
+	return {};
+}
+
+// the circuits from the entry signals to the station: the line cut by each one, all of it checked before any is; the reason while
+// a track can't be cut or changed
+std::string plan_cuts(std::vector<station::signal> const &Plan, std::vector<int> const &Match, std::vector<standing_signal> const &Standing, std::vector<entry_cut> &Cuts)
+{
+	for (std::size_t i = 0; i < Plan.size(); ++i)
+	{
+		auto const &planned{Plan[i]};
+		if (planned.kind != station::signal::role::entry || planned.run.empty())
+			continue;
+		entry_cut entry;
+		entry.signal = i;
+		if (auto const problem{plan_cut(planned, Match[i] >= 0 ? Standing[Match[i]].position : planned.point, entry)}; false == problem.empty())
+			return problem;
+		Cuts.push_back(std::move(entry));
+	}
+	return {};
+}
+
+// the kinds of the signals placed, of the plan the ones with no standing signal
+std::vector<signal_order> wanted_of(std::vector<station::signal> const &Plan, std::vector<int> const &Match)
+{
+	std::vector<signal_order> wanted;
+	for (std::size_t i = 0; i < Plan.size(); ++i)
+		if (Match[i] < 0)
+		{
+			wanted.emplace_back();
+			wanted.back().kind = Plan[i].kind == station::signal::role::shunting ? "shunt" : "main";
+		}
+	return wanted;
+}
+
+// the track of the circuit of an entry signal cut, the signal on the piece the trains pass it on
+void split_at_entry(entry_cut &Entry, station::signal &Planned, std::unordered_set<TTrack const *> &Captured, track_states &Before, std::vector<TTrack *> &Created)
+{
+	Captured.insert(Entry.track);
+	Before.emplace_back(Entry.track, editor_track::capture(*Entry.track));
+	auto *piece{editor_track::split_path(*Entry.track, Entry.parameter)};
+	if (piece == nullptr)
+		return;
+	Created.push_back(piece);
+	Captured.insert(piece);
+	Entry.named.push_back(Entry.outward ? Entry.track : piece);
+	Entry.beyond.push_back(Entry.outward ? piece : Entry.track);
+	if (Planned.track == Entry.track)
+		Planned.track = Entry.outward ? piece : Entry.track;
+}
+
+// the tracks of the circuit of an entry signal given its name, the ones beyond its joint out of it
+void name_entry_parts(entry_cut const &Entry, std::string const &Name, std::unordered_set<TTrack const *> &Captured, track_states &Before)
+{
+	for (auto *part : Entry.named)
+	{
+		if (part->Isolated.size() == 1 && part->Isolated.front()->asName == Name)
+			continue;
+		if (Captured.insert(part).second)
+			Before.emplace_back(part, editor_track::capture(*part));
+		editor_track::isolated(*part, {Name});
+	}
+	// out of the circuit beyond its joint, where an earlier one ended at the signal
+	for (auto *part : Entry.beyond)
+	{
+		if (part->Isolated.size() != 1 || ToLower(part->Isolated.front()->asName) != Name)
+			continue;
+		if (Captured.insert(part).second)
+			Before.emplace_back(part, editor_track::capture(*part));
+		editor_track::isolated(*part, {});
+	}
+}
+
+// the circuits of the entry signals cut and named
+void cut_entries(std::vector<entry_cut> &Cuts, std::vector<station::signal> &Plan, std::string const &Stem, track_states &Before, std::vector<TTrack *> &Created)
+{
+	std::unordered_set<TTrack const *> captured;
+	for (auto &entry : Cuts)
+	{
+		auto &planned{Plan[entry.signal]};
+		if (entry.track != nullptr)
+			split_at_entry(entry, planned, captured, Before, Created);
+		name_entry_parts(entry, Stem + "it" + ToLower(planned.name), captured, Before);
+	}
+}
+
+// the signals of the plan placed where none stands, the standing ones renamed after it; the others keep their names, unless one
+// of these takes it
+void orders_of(std::vector<station::signal> const &Plan, std::vector<int> const &Match, std::vector<standing_signal> const &Standing, std::vector<char> const &Used, std::string const &Stem, std::vector<signal_order> &Placed, std::vector<signal_rename> &Renamed)
+{
+	for (std::size_t i = 0; i < Plan.size(); ++i)
+	{
+		auto const &planned{Plan[i]};
+		auto const plate{ToLower(planned.name)};
+		if (Match[i] >= 0)
+		{
+			if (ToLower(Standing[Match[i]].name) != full_name(Stem, planned))
+				Renamed.emplace_back(Standing[Match[i]].instance, full_name(Stem, planned), plate);
+			continue;
+		}
+		signal_order order;
+		order.track = planned.track;
+		order.point = planned.point;
+		order.facing = planned.facing;
+		order.side = planned.side;
+		order.kind = planned.kind == station::signal::role::shunting ? "shunt" : "main";
+		order.name = full_name(Stem, planned);
+		order.plate = plate;
+		Placed.push_back(std::move(order));
+	}
+	for (std::size_t k = 0; k < Standing.size(); ++k)
+		if (0 == Used[k] && std::ranges::any_of(Plan, [&Stem, &Standing, k](station::signal const &Signal) { return full_name(Stem, Signal) == ToLower(Standing[k].name); }))
+			Renamed.emplace_back(Standing[k].instance, ToLower(Standing[k].name) + "_old", signal_shown(Standing[k].name, Stem) + "_old");
+}
+
+// the posts of the signals standing, then of the main and the shunting ones placed; From: of the posts, the main ones placed
+std::vector<station::post> posts_with(std::vector<standing_signal> const &Everywhere, std::vector<signal_order> const &Placed, std::vector<std::size_t> &From)
+{
+	std::vector<station::post> posts;
+	for (auto const &signal : Everywhere)
+		if (auto const post{post_of(signal)}; post.track != nullptr)
+			posts.push_back(post);
+	for (auto const &order : Placed)
+	{
+		if (order.kind == "main")
+			From.push_back(posts.size());
+		posts.emplace_back(order.track, order.facing, order.point, order.kind == "shunt" ? station::signal::role::shunting : station::signal::role::entry);
+	}
+	return posts;
+}
+
+// how setting the signals went, the signals placed without the lights they need listed
+std::string signals_status(std::size_t const Count, std::size_t const Renamed, std::string const &Error, bool const Touched, std::vector<std::string> const &Unfit)
+{
+	std::string status;
+	if (false == Error.empty())
+		status = format(STR_C("The signals couldn't be placed: %s"), Error.c_str()) + (Touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
+	else
+		status = format(STR_P("%zu signal placed", "%zu signals placed", Count), Count) + ", " + format(STR_P("%zu renamed", "%zu renamed", Renamed), Renamed);
+	if (Unfit.empty())
+		return status;
+	std::string names;
+	for (auto const &name : Unfit)
+		names += (names.empty() ? "" : ", ") + name;
+	status += "\n" + format(STR_C("No template has what %s need, they got the one chosen in Signals: see Signal heads"), names.c_str());
+	return status;
+}
+
 } // namespace
 
 srk_tool::shp_state srk_tool::head_check::shp_of() const
 {
+	using enum shp_state;
 	if (shp < 0.0)
-		return shp_state::needless;
+		return needless;
 	if (shp_found < 0.0)
-		return shp_short ? shp_state::beyond : shp_state::missing;
-	return std::abs(shp_found - shp) > kShpTolerance ? shp_state::off : shp_state::placed;
+		return shp_short ? beyond : missing;
+	return std::abs(shp_found - shp) > kShpTolerance ? off : placed;
 }
 
 void srk_tool::load()
@@ -877,49 +1933,7 @@ void srk_tool::load()
 			record entry;
 			entry.layer = layer;
 			words >> entry.code;
-			while (words >> word)
-			{
-				if (word == "line")
-					words >> entry.line;
-				else if (word == "km")
-					words >> entry.km;
-				else if (word == "from")
-					entry.reversed = (words >> word) && word == "right";
-				else if (word == "braking")
-					words >> entry.braking;
-				else if (word == "blocks" && words >> word)
-					for (std::size_t from = 0; from < word.size();)
-					{
-						auto const comma{std::min(word.find(',', from), word.size())};
-						auto const item{word.substr(from, comma - from)};
-						if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
-						{
-							auto const kind{item.substr(equals + 1)};
-							entry.blocks[item.substr(0, equals)] = kind == "sbl4" ? block_kind::four : kind == "sbl" || kind == "sbl3" ? block_kind::three : block_kind::semi;
-						}
-						from = comma + 1;
-					}
-				else if (word == "ways" && words >> word)
-					for (std::size_t from = 0; from < word.size();)
-					{
-						auto const comma{std::min(word.find(',', from), word.size())};
-						auto const item{word.substr(from, comma - from)};
-						if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
-							entry.ways[item.substr(0, equals)] = item.substr(equals + 1) == "2";
-						from = comma + 1;
-					}
-				else if (word == "anchor")
-					words >> entry.anchor;
-				else if (word == "name")
-				{
-					std::getline(words, entry.name);
-					entry.name.erase(0, entry.name.find_first_not_of(' '));
-					// windows-1250 like the rest of the scenery file; earlier builds wrote it in utf-8, which stays as it is
-					if (std::u32string decoded; false == utf8_to_utf32(entry.name, decoded))
-						entry.name = win1250_to_utf8(entry.name);
-					break;
-				}
-			}
+			entry.read(words);
 			entry.code = shown(entry.code);
 			entry.line = shown(entry.line);
 			entry.km = shown(entry.km);
@@ -929,6 +1943,65 @@ void srk_tool::load()
 		}
 }
 
+void srk_tool::record::read(std::istringstream &Words)
+{
+	using enum block_kind;
+	std::string word;
+	while (Words >> word)
+	{
+		if (word == "line")
+			Words >> line;
+		else if (word == "km")
+			Words >> km;
+		else if (word == "from")
+			reversed = (Words >> word) && word == "right";
+		else if (word == "braking")
+			Words >> braking;
+		else if (word == "blocks" && Words >> word)
+			for (auto const &[signal, kind] : pairs_of(word))
+			{
+				auto value{semi};
+				if (kind == "sbl4")
+					value = four;
+				else if (kind == "sbl" || kind == "sbl3")
+					value = three;
+				blocks[signal] = value;
+			}
+		else if (word == "ways" && Words >> word)
+			for (auto const &[signal, both] : pairs_of(word))
+				ways[signal] = both == "2";
+		else if (word == "anchor")
+			Words >> anchor;
+		else if (word == "name")
+		{
+			read_name(Words, name);
+			break;
+		}
+	}
+}
+
+std::string srk_tool::record::written() const
+{
+	auto const braking_text{braking > 0 ? format(" braking %d", braking) : std::string{}};
+	std::string blocks_text;
+	for (auto const &[signal, kind] : blocks)
+	{
+		if (false == plain_word(signal))
+			continue;
+		std::string_view suffix{"=semi"};
+		if (kind == block_kind::four)
+			suffix = "=sbl4";
+		else if (kind == block_kind::three)
+			suffix = "=sbl";
+		blocks_text += std::format("{}{}{}", blocks_text.empty() ? " blocks " : ",", signal, suffix);
+	}
+	std::string ways_text;
+	for (auto const &[signal, both] : ways)
+		if (plain_word(signal))
+			ways_text += std::format("{}{}{}", ways_text.empty() ? " ways " : ",", signal, both ? "=2" : "=1");
+	return format("station %s line %s km %s from %s anchor %s%s%s%s name %s", word_of(code).c_str(), word_of(line).c_str(), word_of(km).c_str(), reversed ? "right" : "left", anchor_of(*this).c_str(), braking_text.c_str(), blocks_text.c_str(), ways_text.c_str(), utf8_to_win1250(name).c_str());
+}
+
 void srk_tool::store()
 {
 	if (false == m_changed || scene::Layers.empty())
@@ -936,7 +2009,7 @@ void srk_tool::store()
 	m_changed = false;
 	std::vector<scene::layer_handle> layers{scene::Layers.marked_layers(kMark)};
 	for (auto const &entry : m_records)
-		if (std::find(layers.begin(), layers.end(), entry.layer) == layers.end())
+		if (std::ranges::find(layers, entry.layer) == layers.end())
 			layers.push_back(entry.layer);
 	for (auto const layer : layers)
 	{
@@ -947,16 +2020,7 @@ void srk_tool::store()
 				continue;
 			if (lines.empty())
 				lines.emplace_back("# stations described in the track editor, the simulation skips these lines");
-			auto const braking{entry.braking > 0 ? format(" braking %d", entry.braking) : std::string{}};
-			std::string blocks;
-			for (auto const &[signal, kind] : entry.blocks)
-				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
-					blocks += (blocks.empty() ? " blocks " : ",") + signal + (kind == block_kind::four ? "=sbl4" : kind == block_kind::three ? "=sbl" : "=semi");
-			std::string ways;
-			for (auto const &[signal, both] : entry.ways)
-				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
-					ways += (ways.empty() ? " ways " : ",") + signal + (both ? "=2" : "=1");
-			lines.push_back(format("station %s line %s km %s from %s anchor %s%s%s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), blocks.c_str(), ways.c_str(), utf8_to_win1250(entry.name).c_str()));
+			lines.push_back(entry.written());
 		}
 		scene::Layers.mark(layer, kMark, std::move(lines));
 	}
@@ -983,7 +2047,7 @@ void srk_tool::open(TTrack &Track)
 		auto &entry{m_records[index]};
 		if (entry.track == nullptr)
 			entry.track = simulation::Paths.find(entry.anchor);
-		if (std::find(m_layout->switches.begin(), m_layout->switches.end(), entry.track) != m_layout->switches.end())
+		if (std::ranges::find(m_layout->switches, entry.track) != m_layout->switches.end())
 			m_record = index;
 	}
 	m_anchor = m_record >= 0 ? m_records[m_record].track : m_layout->switches.front();
@@ -1053,7 +2117,7 @@ void srk_tool::find_all()
 	m_found.clear();
 	for (auto *track : station::stations())
 		m_found.emplace_back(track->name(), station::switches_of(*track).size());
-	std::sort(m_found.begin(), m_found.end(), [](auto const &A, auto const &B) { return A.second > B.second; });
+	std::ranges::sort(m_found, [](auto const &A, auto const &B) { return A.second > B.second; });
 }
 
 void srk_tool::update()
@@ -1072,7 +2136,12 @@ void srk_tool::update()
 		refresh();
 	else if (m_layout.has_value() && false == m_signals_known)
 		survey_signals();
-	m_length_shown = m_length_hover >= 0 ? m_length_hover : m_length_canvas >= 0 ? m_length_canvas : length_of(m_selection.selected_track());
+	if (m_length_hover >= 0)
+		m_length_shown = m_length_hover;
+	else if (m_length_canvas >= 0)
+		m_length_shown = m_length_canvas;
+	else
+		m_length_shown = length_of(m_selection.selected_track());
 	if (m_length_shown >= static_cast<int>(m_lengths.size()))
 		m_length_shown = -1;
 	// a track of another station selected opens it
@@ -1080,7 +2149,7 @@ void srk_tool::update()
 	if (track == nullptr || track == m_picked)
 		return;
 	m_picked = track;
-	if (m_layout.has_value() && std::any_of(m_layout->paths.begin(), m_layout->paths.end(), [&](station::path const &Path) { return Path.track == track && false == Path.approach; }))
+	if (m_layout.has_value() && std::ranges::any_of(m_layout->paths, [track](station::path const &Path) { return Path.track == track && false == Path.approach; }))
 		return;
 	open(*track);
 }
@@ -1096,14 +2165,10 @@ void srk_tool::forget(scene::basic_node const *Node)
 	{
 		m_anchor = nullptr;
 		if (m_layout.has_value())
-			for (auto *track : m_layout->switches)
-				if (track != Node)
-				{
-					m_anchor = track;
-					break;
-				}
+			if (auto const other{std::ranges::find_if(m_layout->switches, [Node](TTrack const *Track) { return Track != Node; })}; other != m_layout->switches.end())
+				m_anchor = *other;
 	}
-	if (m_layout.has_value() && std::any_of(m_layout->paths.begin(), m_layout->paths.end(), [&](station::path const &Path) { return Path.track == Node; }))
+	if (m_layout.has_value() && std::ranges::any_of(m_layout->paths, [Node](station::path const &Path) { return Path.track == Node; }))
 	{
 		// laid out again from its anchor at the next update
 		m_layout.reset();
@@ -1117,134 +2182,27 @@ void srk_tool::draw_overlay() const
 	if (false == m_open || false == m_layout.has_value())
 		return;
 	screen_projection const projection;
-	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-	glm::dvec3 const camera{Global.pCamera.Pos};
-	auto const near_enough = [&](glm::dvec3 const &Point, double const Range) { return Global.EditorOrtho || glm::distance(Point, camera) < Range; };
-	glm::dvec3 const lift{0.0, kRailHead, 0.0};
+	overlay_frame const frame{projection, ImGui::GetBackgroundDrawList(ImGui::GetMainViewport()), glm::dvec3{Global.pCamera.Pos}};
 	// the track circuits: the tracks in their colours, a bar across them at each joint with a post, the station tracks named
-	for (std::size_t index = 0; index < m_layout->paths.size() && index < m_circuit_of.size(); ++index)
-	{
-		if (m_circuit_of[index] < 0)
-			continue;
-		auto const colour{(m_circuits[m_circuit_of[index]].colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 200)};
-		auto const &points{m_layout->paths[index].points};
-		for (std::size_t i = 1; i < points.size(); ++i)
-			if (near_enough(points[i], kOverlayRange))
-				projection.line(drawlist, points[i - 1] + lift, points[i] + lift, colour, Global.EditorOrtho ? 6.0f : 3.0f);
-	}
-	for (auto const &joint : m_joints)
-	{
-		if (false == near_enough(joint.at, kJointRange))
-			continue;
-		auto const centre{joint.at + lift};
-		projection.line(drawlist, centre - joint.across * 1.7, centre + joint.across * 1.7, kJoint, 4.0f);
-		projection.line(drawlist, centre + joint.across * 1.7, centre + joint.across * 1.7 + glm::dvec3{0.0, 1.2, 0.0}, kJoint, 2.0f);
-		ImVec2 top;
-		if (projection.project(centre + joint.across * 1.7 + glm::dvec3{0.0, 1.2, 0.0}, top))
-			drawlist->AddCircleFilled(top, 3.0f, kJoint);
-	}
-	for (auto const &mark : m_circuits)
-	{
-		ImVec2 screen;
-		if (false == mark.labelled || false == near_enough(mark.world, kLabelRange) || false == projection.project(mark.world + glm::dvec3{0.0, 0.8, 0.0}, screen))
-			continue;
-		auto const size{ImGui::CalcTextSize(mark.text.c_str())};
-		drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 3.0f, screen.y - size.y - 2.0f), ImVec2(screen.x + size.x * 0.5f + 3.0f, screen.y + 2.0f), IM_COL32(0, 0, 0, 160), 3.0f);
-		drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y), mark.colour, mark.text.c_str());
-	}
+	draw_circuit_tracks(frame, *m_layout, m_circuit_of, m_circuits);
+	draw_joints(frame, m_joints);
+	draw_circuit_labels(frame, m_circuits);
 	if (m_hover >= 0 && m_hover < static_cast<int>(m_layout->paths.size()))
 	{
 		auto const &points{m_layout->paths[m_hover].points};
 		for (std::size_t i = 1; i < points.size(); ++i)
-			projection.line(drawlist, points[i - 1], points[i], kHovered, 4.0f);
+			projection.line(frame.drawlist, points[i - 1], points[i], kHovered, 4.0f);
 	}
-	for (auto const *track : m_layout->switches)
-	{
-		auto const start{track->m_paths.front().points[segment_data::point::start] + glm::dvec3{0.0, 1.0, 0.0}};
-		ImVec2 screen;
-		if (false == near_enough(start, kLabelRange) || false == projection.project(start, screen))
-			continue;
-		auto const text{track->name()};
-		auto const size{ImGui::CalcTextSize(text.c_str())};
-		drawlist->AddRectFilled(ImVec2(screen.x - 3.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x + 3.0f, screen.y), IM_COL32(0, 0, 0, 160), 3.0f);
-		drawlist->AddText(ImVec2(screen.x, screen.y - size.y - 2.0f), kSwitch, text.c_str());
-	}
+	draw_switch_names(frame, *m_layout);
 	// the useful lengths of the station track shown, beside it on the right of the trains, a post where they stop
 	if (m_length_shown >= 0 && m_length_shown < static_cast<int>(m_lengths.size()))
-	{
-		auto const &track{m_lengths[m_length_shown]};
-		for (auto const &part : track.ways)
-		{
-			if (part.length <= 0.0)
-				continue;
-			auto const points{stretch_of(track, part.rear.along, part.head.along)};
-			std::vector<glm::dvec3> beside;
-			for (std::size_t i = 0; i < points.size(); ++i)
-			{
-				auto const way{points[std::min(i + 1, points.size() - 1)] - points[i > 0 && i + 1 == points.size() ? i - 1 : i]};
-				glm::dvec2 const along{glm::normalize(glm::dvec2{way.x, way.z} + glm::dvec2{1e-12, 0.0})};
-				beside.push_back(points[i] + lift + glm::dvec3{-along.y, 0.1, along.x} * 0.9);
-			}
-			for (std::size_t i = 1; i < beside.size(); ++i)
-				if (near_enough(beside[i], kOverlayRange))
-					projection.line(drawlist, beside[i - 1], beside[i], kUseful, 3.0f);
-			auto const top{beside.back() + glm::dvec3{0.0, 2.5, 0.0}};
-			projection.line(drawlist, beside.front(), beside.front() + glm::dvec3{0.0, 1.0, 0.0}, kUseful, 2.0f);
-			projection.line(drawlist, beside.back(), top, kUseful, 2.0f);
-			ImVec2 screen;
-			if (false == near_enough(top, kLabelRange) || false == projection.project(top, screen))
-				continue;
-			auto const text{format(STR_C("track %s: %.0f m"), track.number.c_str(), part.length)};
-			auto const size{ImGui::CalcTextSize(text.c_str())};
-			drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), IM_COL32(0, 0, 0, 180), 3.0f);
-			drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), kUseful, text.c_str());
-		}
-	}
+		draw_useful(frame, m_lengths[m_length_shown]);
 	// the block boundary under the mouse while they are drawn: a bar across each track at the joint and a post where each signal goes
 	if (drawing() && m_boundary.valid)
-	{
-		auto const colour{m_boundary.remove ? IM_COL32(255, 90, 80, 255) : IM_COL32(110, 230, 120, 255)};
-		for (auto const &[point, way] : m_boundary.joints)
-		{
-			glm::dvec3 const across{-way.z, 0.0, way.x};
-			projection.line(drawlist, point + lift - across * 2.0, point + lift + across * 2.0, colour, 4.0f);
-		}
-		for (auto const &post : m_boundary.posts)
-		{
-			auto const base{post.point + lift + post.side * 2.4};
-			projection.line(drawlist, post.point + lift, base, colour, 2.0f);
-			projection.line(drawlist, base, base + glm::dvec3{0.0, 6.0, 0.0}, colour, 3.0f);
-			ImVec2 screen;
-			if (false == projection.project(base + glm::dvec3{0.0, 6.5, 0.0}, screen))
-				continue;
-			auto const &text{post.name};
-			auto const size{ImGui::CalcTextSize(text.c_str())};
-			drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), colour, 3.0f);
-			drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), IM_COL32(0, 0, 0, 255), text.c_str());
-		}
-	}
-	for (auto const &mark : m_signal_marks)
-	{
-		ImVec2 screen;
-		if (false == near_enough(mark.head, kLabelRange) || false == projection.project(mark.head, screen))
-			continue;
-		auto const text{mark.unfit ? mark.text + " !" : mark.text};
-		auto const size{ImGui::CalcTextSize(text.c_str())};
-		drawlist->AddRectFilled(ImVec2(screen.x - size.x * 0.5f - 4.0f, screen.y - size.y - 4.0f), ImVec2(screen.x + size.x * 0.5f + 4.0f, screen.y), mark.unfit ? kUnfit : kSignal, 3.0f);
-		drawlist->AddText(ImVec2(screen.x - size.x * 0.5f, screen.y - size.y - 2.0f), mark.unfit ? IM_COL32(0, 0, 0, 255) : IM_COL32(255, 255, 255, 255), text.c_str());
-	}
+		draw_boundary(frame, m_boundary);
+	draw_signal_marks(frame, m_signal_marks);
 	if (m_head_hover >= 0 && m_head_hover < static_cast<int>(m_heads.size()))
-	{
-		auto const &head{m_heads[m_head_hover]};
-		ImVec2 label;
-		if (projection.project(head.position + glm::dvec3{0.0, 7.0, 0.0}, label))
-		{
-			ImVec2 const foot{label.x, label.y - ImGui::GetTextLineHeight() - 8.0f};
-			ImVec2 const top{label.x, foot.y - 30.0f};
-			drawlist->AddLine(foot, top, kHovered, 3.0f);
-			drawlist->AddCircle(ImVec2(top.x, top.y - 9.0f), 9.0f, kHovered, 0, 3.0f);
-		}
-	}
+		draw_head_hover(frame, m_heads[m_head_hover]);
 }
 
 void srk_tool::render_found()
@@ -1255,7 +2213,7 @@ void srk_tool::render_found()
 	if (m_found.empty())
 		return;
 	ImGui::TextDisabled("%s", format(STR_P("%zu station", "%zu stations", m_found.size()), m_found.size()).c_str());
-	if (false == ImGui::BeginChild("##srkfound", ImVec2(0.0f, std::min(300.0f, ImGui::GetTextLineHeightWithSpacing() * (m_found.size() + 1.0f))), true))
+	if (false == ImGui::BeginChild("##srkfound", ImVec2(0.0f, std::min(300.0f, ImGui::GetTextLineHeightWithSpacing() * (static_cast<float>(m_found.size()) + 1.0f))), true))
 	{
 		ImGui::EndChild();
 		return;
@@ -1263,11 +2221,11 @@ void srk_tool::render_found()
 	for (std::size_t index = 0; index < m_found.size(); ++index)
 	{
 		auto const &[name, count]{m_found[index]};
-		auto const described{std::find_if(m_records.begin(), m_records.end(), [&](record const &Entry) { return anchor_of(Entry) == name; })};
+		auto const described{std::ranges::find_if(m_records, [&name](record const &Entry) { return anchor_of(Entry) == name; })};
 		auto label{format(STR_P("%s: %zu switch", "%s: %zu switches", count), name.c_str(), count)};
 		if (described != m_records.end() && false == described->name.empty())
 			label = described->name + " - " + label;
-		if (ImGui::Selectable((label + "##srkfound" + std::to_string(index)).c_str(), false))
+		if (ImGui::Selectable(std::format("{}##srkfound{}", label, index).c_str(), false))
 			if (auto *track{simulation::Paths.find(name)}; track != nullptr)
 			{
 				open(*track);
@@ -1303,68 +2261,8 @@ void srk_tool::render_options()
 	render_problems();
 	if (begin_fields("##srkstation"))
 	{
-		auto const text = [&](char const *Label, char const *Id, std::string const &Value, char const *Hint, auto const &Set) {
-			field_row(Label);
-			std::array<char, 128> buffer{};
-			Value.copy(buffer.data(), buffer.size() - 1);
-			if (ImGui::InputTextWithHint(Id, Hint, buffer.data(), buffer.size()))
-			{
-				Set(std::string{buffer.data()});
-				m_changed = true;
-			}
-		};
-		auto const *entry{m_record >= 0 ? &m_records[m_record] : nullptr};
-		text("Name", "##srkname", entry != nullptr ? entry->name : std::string{}, "Biała Podlaska", [&](std::string const &Value) { record_of_open().name = Value; });
-		text("Code", "##srkcode", entry != nullptr ? entry->code : std::string{}, "BPd", [&](std::string const &Value) { record_of_open().code = word_of(Value) == "-" ? std::string{} : word_of(Value); });
-		item_tooltip("The abbreviation of the station: the names of its switches, track circuits and signals begin with it");
-		auto const line_hint{line_of_open()};
-		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, line_hint.empty() ? "2" : line_hint.c_str(), [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
-		item_tooltip("The number of the railway line the station lies on, as the block sections between the stations are named after it");
-		double known{0.0};
-		if (km_of_line((layout.from + layout.to) * 0.5, known))
-		{
-			field_row("Km");
-			ImGui::TextDisabled("%s", format(STR_C("%s, of the kilometrage of line %s"), kilometrage::text(known).c_str(), line_of_open().c_str()).c_str());
-			item_tooltip("The km of the middle of the station, as the Kilometrage tool sets them for the line, the jumps too: the block signals of the lines are numbered after them");
-		}
-		else
-		{
-			auto const hint{layout.kilometrage && km_of_open((layout.from + layout.to) * 0.5, known) ? format("%.3f", known) : std::string{"189.563"}};
-			text("Km", "##srkkm", entry != nullptr ? entry->km : std::string{}, hint.c_str(), [&](std::string const &Value) {
-				auto km{word_of(Value)};
-				std::replace(km.begin(), km.end(), ',', '.');
-				record_of_open().km = km == "-" ? std::string{} : km;
-			});
-			item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
-		}
-		auto changed{false};
-		field_row("Line speed");
-		auto const set{set_speed_of_open()};
-		if (set > 0.0)
-			ImGui::TextWrapped("%s", format(STR_C("%.0f km/h, the highest set on its main tracks"), set).c_str());
-		else
-			ImGui::TextColored(kWrong, "%s", format(STR_C("%.0f km/h taken: no track of the station has a speed set"), speed_of_open()).c_str());
-		item_tooltip("The speed of the trains through the station, the highest one its main tracks and the lines out of it are set to in the Track tool, up to 250 km/h: the braking distance and the lights of the signals go by it. Without one 160 km/h is taken, or the speed of the braking distance set by hand");
-		field_row("Braking distance");
-		auto const by_hand{m_record >= 0 ? m_records[m_record].braking : 0};
-		auto const after{format(STR_C("%.0f m, after the speed"), braking_distance(set > 0.0 ? set : 160.0))};
-		ImGui::SetNextItemWidth(-1.0f);
-		if (ImGui::BeginCombo("##srkbrakingset", by_hand > 0 ? format(STR_C("%d m, set by hand"), by_hand).c_str() : after.c_str()))
-		{
-			if (ImGui::Selectable(after.c_str(), by_hand == 0))
-			{
-				record_of_open().braking = 0;
-				changed = true;
-			}
-			for (auto const distance : {400, 700, 1000, 1300})
-				if (ImGui::Selectable(format(STR_C("%d m, set by hand"), distance).c_str(), by_hand == distance))
-				{
-					record_of_open().braking = distance;
-					changed = true;
-				}
-			ImGui::EndCombo();
-		}
-		item_tooltip("The braking distance of the trains on the line, Ie-4 § 8: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. The block sections and the warning discs stand no nearer, a signal telling of the next one standing nearer slows the trains. Set it by hand where the line has another one");
+		render_record_fields(layout);
+		auto const changed{render_braking()};
 		ImGui::EndTable();
 		if (changed)
 		{
@@ -1372,11 +2270,116 @@ void srk_tool::render_options()
 			survey_signals();
 		}
 	}
+	render_steps(layout);
+	render_shp();
+	render_track_number();
+	if (false == m_status.empty())
+		ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
+	m_signals.render_signal_templates();
+	ImGui::Spacing();
+	m_length_hover = -1;
+	if (ImGui::CollapsingHeader(format("%s (%zu)###srklengths", STR_C("Track lengths"), m_lengths.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		render_lengths();
+	ImGui::Spacing();
+	m_head_hover = -1;
+	if (ImGui::CollapsingHeader(format("%s (%zu)###srkheads", STR_C("Signal heads"), static_cast<std::size_t>(std::ranges::count_if(m_heads, [](head_check const &Head) { return Head.station; }))).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		render_heads();
+	ImGui::Spacing();
+	if (ImGui::CollapsingHeader(format("%s (%zu)###srkswitches", STR_C("Switches"), layout.switches.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen) &&
+	    ImGui::BeginTable("##srkswitchlist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (static_cast<float>(layout.switches.size()) + 1.5f)))))
+		render_switch_list(layout);
+	ImGui::Spacing();
+	if (ImGui::Button(STR_C("Another station"), ImVec2(-1.0f, 0.0f)))
+	{
+		m_layout.reset();
+		m_anchor = nullptr;
+		m_record = -1;
+		m_hover = -1;
+	}
+	item_tooltip("Leaves this station; LMB on a switch opens another one");
+}
+
+void srk_tool::render_record_fields(station::layout const &Layout)
+{
+	auto const *entry{m_record >= 0 ? &m_records[m_record] : nullptr};
+	auto const of = [entry](std::string record::*Field) { return entry != nullptr ? std::string_view{entry->*Field} : std::string_view{}; };
+	if (std::string typed; record_field("Name", "##srkname", of(&record::name), "Biała Podlaska", typed))
+	{
+		record_of_open().name = typed;
+		m_changed = true;
+	}
+	if (std::string typed; record_field("Code", "##srkcode", of(&record::code), "BPd", typed))
+	{
+		record_of_open().code = shown(word_of(typed));
+		m_changed = true;
+	}
+	item_tooltip("The abbreviation of the station: the names of its switches, track circuits and signals begin with it");
+	auto const line_hint{line_of_open()};
+	if (std::string typed; record_field("Line", "##srkline", of(&record::line), line_hint.empty() ? "2" : line_hint.c_str(), typed))
+	{
+		record_of_open().line = shown(word_of(typed));
+		m_changed = true;
+	}
+	item_tooltip("The number of the railway line the station lies on, as the block sections between the stations are named after it");
+	if (double known{0.0}; km_of_line((Layout.from + Layout.to) * 0.5, known))
+	{
+		field_row("Km");
+		ImGui::TextDisabled("%s", format(STR_C("%s, of the kilometrage of line %s"), kilometrage::text(known).c_str(), line_of_open().c_str()).c_str());
+		item_tooltip("The km of the middle of the station, as the Kilometrage tool sets them for the line, the jumps too: the block signals of the lines are numbered after them");
+	}
+	else
+	{
+		auto const hint{Layout.kilometrage && km_of_open((Layout.from + Layout.to) * 0.5, known) ? format("%.3f", known) : std::string{"189.563"}};
+		if (std::string typed; record_field("Km", "##srkkm", of(&record::km), hint.c_str(), typed))
+		{
+			auto km{word_of(typed)};
+			std::ranges::replace(km, ',', '.');
+			record_of_open().km = shown(km);
+			m_changed = true;
+		}
+		item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
+	}
+}
+
+bool srk_tool::render_braking()
+{
+	auto changed{false};
+	field_row("Line speed");
+	auto const set{set_speed_of_open()};
+	if (set > 0.0)
+		ImGui::TextWrapped("%s", format(STR_C("%.0f km/h, the highest set on its main tracks"), set).c_str());
+	else
+		ImGui::TextColored(kWrong, "%s", format(STR_C("%.0f km/h taken: no track of the station has a speed set"), speed_of_open()).c_str());
+	item_tooltip("The speed of the trains through the station, the highest one its main tracks and the lines out of it are set to in the Track tool, up to 250 km/h: the braking distance and the lights of the signals go by it. Without one 160 km/h is taken, or the speed of the braking distance set by hand");
+	field_row("Braking distance");
+	auto const by_hand{m_record >= 0 ? m_records[m_record].braking : 0};
+	auto const after{format(STR_C("%.0f m, after the speed"), braking_distance(set > 0.0 ? set : 160.0))};
+	ImGui::SetNextItemWidth(-1.0f);
+	if (ImGui::BeginCombo("##srkbrakingset", by_hand > 0 ? format(STR_C("%d m, set by hand"), by_hand).c_str() : after.c_str()))
+	{
+		if (ImGui::Selectable(after.c_str(), by_hand == 0))
+		{
+			record_of_open().braking = 0;
+			changed = true;
+		}
+		for (auto const distance : {400, 700, 1000, 1300})
+			if (ImGui::Selectable(format(STR_C("%d m, set by hand"), distance).c_str(), by_hand == distance))
+			{
+				record_of_open().braking = distance;
+				changed = true;
+			}
+		ImGui::EndCombo();
+	}
+	item_tooltip("The braking distance of the trains on the line, Ie-4 § 8: 400 m up to 60 km/h, 700 m up to 100, 1000 m up to 140, 1300 m above. The block sections and the warning discs stand no nearer, a signal telling of the next one standing nearer slows the trains. Set it by hand where the line has another one");
+	return changed;
+}
+
+void srk_tool::render_steps(station::layout const &Layout)
+{
 	step_heading(1, STR_C("Switch numbers"));
-	int from{m_reversed ? 1 : 0};
-	if (segmented("##srkfrom", from,
-	              {{0, STR_C("From the left"), layout.kilometrage ? "From the lower km, as PKP PLK numbers them" : "From the west end of the station"},
-	               {1, STR_C("From the right"), layout.kilometrage ? "From the higher km" : "From the east end of the station"}}))
+	if (int from{m_reversed ? 1 : 0}; segmented("##srkfrom", from,
+	                                            {{0, STR_C("From the left"), Layout.kilometrage ? "From the lower km, as PKP PLK numbers them" : "From the west end of the station"},
+	                                             {1, STR_C("From the right"), Layout.kilometrage ? "From the higher km" : "From the east end of the station"}}))
 	{
 		m_reversed = from == 1;
 		record_of_open().reversed = m_reversed;
@@ -1413,11 +2416,15 @@ void srk_tool::render_options()
 	             "distance before the entry signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, "
 	             "700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it "
 	             "keeps what stands. One step of undo");
+}
+
+void srk_tool::render_shp()
+{
 	step_heading(5, STR_C("SHP"));
 	std::array<std::size_t, 5> states{};
 	for (auto const &head : m_heads)
 		++states[static_cast<std::size_t>(head.shp_of())];
-	auto const of = [&](shp_state const State) { return states[static_cast<std::size_t>(State)]; };
+	auto const of = [&states](shp_state const State) { return states[static_cast<std::size_t>(State)]; };
 	auto const needed{m_heads.size() - of(shp_state::needless)};
 	auto const found{of(shp_state::off) + of(shp_state::placed)};
 	auto const off{of(shp_state::off)};
@@ -1434,77 +2441,58 @@ void srk_tool::render_options()
 	if (m_heads_known && needed > 0)
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-		ImGui::TextWrapped("%s", (format(STR_P("%zu of %zu signal has its SHP resonator", "%zu of %zu signals have their SHP resonators", needed), found, needed) + (off > 0 ? ", " + format(STR_P("%zu farther than 5 m from its place", "%zu farther than 5 m from their places", off), off) : std::string{}) +
-		                          (nowhere > 0 ? ", " + format(STR_P("%zu with the tracks ending short of the place of its resonator", "%zu with the tracks ending short of the places of their resonators", nowhere), nowhere) : std::string{})).c_str());
+		ImGui::TextWrapped("%s", shp_summary(found, needed, off, nowhere).c_str());
 		ImGui::PopStyleColor();
 	}
-	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
-		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
-		{
-			field_row("Track number");
-			std::array<char, 16> buffer{};
-			number.copy(buffer.data(), buffer.size() - 1);
-			if (ImGui::InputText("##srktracknumber", buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
-				renumber_track(*selected, buffer.data());
-			item_tooltip("The number of the selected station track: type another one and its track circuits are renamed, bpd_it7a, bpd_it7b. One step of undo");
-			ImGui::EndTable();
-		}
-	if (false == m_status.empty())
-		ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
-	m_signals.render_signal_templates();
-	ImGui::Spacing();
-	m_length_hover = -1;
-	if (ImGui::CollapsingHeader(format("%s (%zu)###srklengths", STR_C("Track lengths"), m_lengths.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-		render_lengths();
-	ImGui::Spacing();
-	m_head_hover = -1;
-	if (ImGui::CollapsingHeader(format("%s (%zu)###srkheads", STR_C("Signal heads"), static_cast<std::size_t>(std::count_if(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return Head.station; }))).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-		render_heads();
-	ImGui::Spacing();
-	if (ImGui::CollapsingHeader(format("%s (%zu)###srkswitches", STR_C("Switches"), layout.switches.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+}
+
+void srk_tool::render_track_number()
+{
+	auto const *selected{m_selection.selected_track()};
+	if (selected == nullptr || selected->Isolated.empty())
+		return;
+	auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())};
+	if (number.empty() || false == begin_fields("##srktrack"))
+		return;
+	field_row("Track number");
+	std::array<char, 16> buffer{};
+	number.copy(buffer.data(), buffer.size() - 1);
+	if (ImGui::InputText("##srktracknumber", buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
+		renumber_track(*selected, buffer.data());
+	item_tooltip("The number of the selected station track: type another one and its track circuits are renamed, bpd_it7a, bpd_it7b. One step of undo");
+	ImGui::EndTable();
+}
+
+void srk_tool::render_switch_list(station::layout const &Layout)
+{
+	ImGui::TableSetupScrollFreeze(0, 1);
+	ImGui::TableSetupColumn(STR_C("Switch"), ImGuiTableColumnFlags_WidthStretch, 0.35f);
+	ImGui::TableSetupColumn(STR_C("Type"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
+	ImGui::TableSetupColumn(STR_C("km"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
+	ImGui::TableHeadersRow();
+	auto const *selected{m_selection.selected_track()};
+	for (std::size_t index = 0; index < Layout.switches.size(); ++index)
 	{
-		if (ImGui::BeginTable("##srkswitchlist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (layout.switches.size() + 1.5f)))))
+		auto *track{Layout.switches[index]};
+		auto const start{track->m_paths.front().points[segment_data::point::start]};
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn();
+		if (ImGui::Selectable(std::format("{}##srksw{}", track->name(), index).c_str(), track == selected, ImGuiSelectableFlags_SpanAllColumns))
 		{
-			ImGui::TableSetupScrollFreeze(0, 1);
-			ImGui::TableSetupColumn(STR_C("Switch"), ImGuiTableColumnFlags_WidthStretch, 0.35f);
-			ImGui::TableSetupColumn(STR_C("Type"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
-			ImGui::TableSetupColumn(STR_C("km"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
-			ImGui::TableHeadersRow();
-			auto *selected{m_selection.selected_track()};
-			for (std::size_t index = 0; index < layout.switches.size(); ++index)
-			{
-				auto *track{layout.switches[index]};
-				auto const start{track->m_paths.front().points[segment_data::point::start]};
-				ImGui::TableNextRow();
-				ImGui::TableNextColumn();
-				if (ImGui::Selectable((track->name() + "##srksw" + std::to_string(index)).c_str(), track == selected, ImGuiSelectableFlags_SpanAllColumns))
-				{
-					m_selection.set_current_node(track);
-					m_picked = track;
-					m_view.focus_track(*track, 0, start);
-				}
-				ImGui::TableNextColumn();
-				auto const record{switch_store::named(*track)};
-				ImGui::TextUnformatted(record ? switch_store::label(*record).c_str() : track->eType == tt_Switch ? STR_C("switch") : track->eType == tt_Cross ? STR_C("crossing") : STR_C("turntable"));
-				ImGui::TableNextColumn();
-				auto const along{station::project(layout, start).x};
-				if (layout.kilometrage)
-					ImGui::Text("%.3f", station::km_of(layout, along));
-				else
-					ImGui::Text("%.0f m", along);
-			}
-			ImGui::EndTable();
+			m_selection.set_current_node(track);
+			m_picked = track;
+			m_view.focus_track(*track, 0, start);
 		}
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(switch_type_text(*track).c_str());
+		ImGui::TableNextColumn();
+		auto const along{station::project(Layout, start).x};
+		if (Layout.kilometrage)
+			ImGui::Text("%.3f", station::km_of(Layout, along));
+		else
+			ImGui::Text("%.0f m", along);
 	}
-	ImGui::Spacing();
-	if (ImGui::Button(STR_C("Another station"), ImVec2(-1.0f, 0.0f)))
-	{
-		m_layout.reset();
-		m_anchor = nullptr;
-		m_record = -1;
-		m_hover = -1;
-	}
-	item_tooltip("Leaves this station; LMB on a switch opens another one");
+	ImGui::EndTable();
 }
 
 void srk_tool::render_lines()
@@ -1516,43 +2504,6 @@ void srk_tool::render_lines()
 		ImGui::PopStyleColor();
 		return;
 	}
-	auto const reason = [](block_reason const Why) {
-		switch (Why)
-		{
-		case block_reason::hand: return STR_C("set by hand");
-		case block_reason::standing: return STR_C("block signals stand along it");
-		case block_reason::double_track: return STR_C("a double-track line");
-		default: return STR_C("a single-track line");
-		}
-	};
-	auto const kind = [](block_kind const Kind) {
-		switch (Kind)
-		{
-		case block_kind::three: return STR_C("SBL, 3 aspects");
-		case block_kind::four: return STR_C("SBL, 4 aspects");
-		default: return STR_C("semi-automatic");
-		}
-	};
-	auto const set = [&](line_row const &Row, std::optional<block_kind> const Kind) {
-		auto &entry{record_of_open()};
-		for (auto const *row : std::initializer_list<line_row const *>{&Row, Row.partner >= 0 && Row.partner < static_cast<int>(m_lines.size()) ? &m_lines[Row.partner] : nullptr})
-			if (row != nullptr)
-			{
-				if (Kind.has_value())
-					entry.blocks[row->entry] = *Kind;
-				else
-					entry.blocks.erase(row->entry);
-			}
-		m_changed = true;
-	};
-	auto const set_ways = [&](line_row const &Row, std::optional<bool> const Both) {
-		auto &entry{record_of_open()};
-		if (Both.has_value())
-			entry.ways[Row.entry] = *Both;
-		else
-			entry.ways.erase(Row.entry);
-		m_changed = true;
-	};
 	auto changed{false};
 	if (ImGui::BeginTable("##srklinelist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 	{
@@ -1561,126 +2512,11 @@ void srk_tool::render_lines()
 		ImGui::TableSetupColumn(STR_C("Block"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
 		ImGui::TableHeadersRow();
 		for (std::size_t index = 0; index < m_lines.size() && false == changed; ++index)
-		{
-			auto const &row{m_lines[index]};
-			ImGui::PushID(static_cast<int>(index));
-			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			auto const track{row.number == 0 ? std::string{STR_C("single track")} : format(STR_C("track %d"), row.number)};
-			if (row.leftovers > 0)
-				ImGui::PushStyleColor(ImGuiCol_Text, kDoubtful);
-			auto const clicked{ImGui::Selectable(format("%s, %s##srkline", row.entry.c_str(), track.c_str()).c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)};
-			if (row.leftovers > 0)
-				ImGui::PopStyleColor();
-			if (clicked)
-			{
-				auto const &position{row.leftovers > 0 ? row.leftover : row.position};
-				auto const &travel{row.leftovers > 0 ? row.leftover_travel : row.travel};
-				m_view.fly_to(position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{travel.x, -0.3, travel.y}), 30.0);
-			}
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::BeginTooltip();
-				ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-				ImGui::TextUnformatted(format(STR_C("The line out beyond the entry signal %s"), row.entry.c_str()).c_str());
-				if (row.number > 0)
-					ImGui::TextUnformatted((format(STR_C("Track %d of a double-track line"), row.number) + ", " + (row.inbound ? STR("its trains run in to the station") : STR("its trains run out of the station"))).c_str());
-				else
-					ImGui::TextUnformatted(STR_C("A single-track line"));
-				ImGui::TextUnformatted(format(STR_P("%zu block signal stands along it", "%zu block signals stand along it", row.blocks), row.blocks).c_str());
-				ImGui::TextUnformatted(format(STR_C("Block: %s, %s"), kind(row.block), reason(row.why)).c_str());
-				if (row.number > 0 && row.block != block_kind::semi)
-					ImGui::TextUnformatted(row.both ? STR_C("Wrong-track running: SBL both ways, the block signals with N") : STR_C("Wrong-track running: the mixed block, a warning disc before the entry signal"));
-				if (row.legacy)
-					ImGui::TextColored(kDoubtful, "%s", STR_C("No block section of the editor switches its block signals: it keeps the block of the scenery as it stands"));
-				if (row.leftovers > 0)
-				{
-					ImGui::TextColored(kDoubtful, "%s", (row.block != block_kind::semi ? format(STR_P("%zu warning disc stands along it, of the semi-automatic block: Set the line signals takes it away", "%zu warning discs stand along it, of the semi-automatic block: Set the line signals takes them away", row.leftovers), row.leftovers)
-					                                                                  : format(STR_P("%zu block signal stands along it, of the automatic block: Set the line signals takes it away", "%zu block signals stand along it, of the automatic block: Set the line signals takes them away", row.leftovers), row.leftovers)).c_str());
-					ImGui::TextDisabled("%s", STR_C("LMB: fly to the first of them"));
-				}
-				else
-					ImGui::TextDisabled("%s", STR_C("LMB: fly to the entry signal"));
-				ImGui::PopTextWrapPos();
-				ImGui::EndTooltip();
-			}
-			ImGui::TableNextColumn();
-			auto const where{false == row.next.empty() ? row.next : row.station ? std::string{STR_C("station")} : std::string{STR_C("track end")}};
-			ImGui::TextUnformatted(format("%s %.1f km", where.c_str(), row.length / 1000.0).c_str());
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", (false == row.next.empty() ? format(STR_C("To the entry signal %s of the next station"), row.next.c_str()) : row.station ? std::string{STR_C("To the next station, its entry signal not standing yet")} : std::string{STR_C("To the end of the tracks")}).c_str());
-			ImGui::TableNextColumn();
-			ImGui::SetNextItemWidth(-1.0f);
-			auto const preview{row.legacy ? std::string{STR_C("of the scenery")} : row.why == block_reason::hand ? std::string{kind(row.block)} : format(STR_C("%s, auto"), kind(row.block))};
-			ImGui::BeginDisabled(row.legacy);
-			if (ImGui::BeginCombo("##srkblock", preview.c_str()))
-			{
-				if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind(row.own), reason(row.own_why)).c_str(), row.why != block_reason::hand))
-				{
-					set(row, std::nullopt);
-					changed = true;
-				}
-				for (auto const automatic : {block_kind::three, block_kind::four})
-				{
-					ImGui::BeginDisabled(row.number == 0);
-					if (ImGui::Selectable(automatic == block_kind::three ? STR_C("Automatic block, 3 aspects (SBL)") : STR_C("Automatic block, 4 aspects (SBL)"), row.why == block_reason::hand && row.block == automatic))
-					{
-						set(row, automatic);
-						changed = true;
-					}
-					ImGui::EndDisabled();
-					if (row.number == 0)
-						item_tooltip("Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are");
-					else
-						item_tooltip(automatic == block_kind::three ? "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance" :
-						                                              "A block signal tells of the next two, Ie-1: red, orange for the next at stop, green flashing for the one after it at stop, green. The block sections no shorter than half the braking distance, two of them no shorter than it");
-				}
-				if (ImGui::Selectable(STR_C("Semi-automatic block"), row.why == block_reason::hand && row.block == block_kind::semi))
-				{
-					set(row, block_kind::semi);
-					changed = true;
-				}
-				ImGui::EndCombo();
-			}
-			ImGui::EndDisabled();
-			item_tooltip(row.legacy ? "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands" :
-			                          "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no "
-			                          "warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. "
-			                          "Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where "
-			                          "block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal "
-			                          "chosen in Signals below, else the semi-automatic one");
-			ImGui::PopID();
-		}
+			changed = render_line_row(index);
 		ImGui::EndTable();
 	}
-	// the wrong-track trains on the automatic block too, or on the semi-automatic one: the mixed block, the double-track lines of the
-	// automatic block of the station alike
-	std::vector<line_row const *> two_track;
-	for (auto const &row : m_lines)
-		if (row.number > 0 && row.block != block_kind::semi && false == row.legacy)
-			two_track.push_back(&row);
-	if (false == two_track.empty())
-	{
-		auto const all = [&](bool const Both) { return std::all_of(two_track.begin(), two_track.end(), [&](line_row const *Row) { return Row->both == Both; }); };
-		int ways{all(true) ? 2 : all(false) ? 1 : 0};
-		ImGui::TextDisabled("%s", STR_C("Wrong-track running"));
-		ImGui::BeginDisabled(changed);
-		if (segmented("##srkways", ways,
-		              {{2, STR_C("SBL both ways"), "At each block boundary the block signals of both tracks either way: of the trains of the track 15 m "
-		                                         "before the joint, for the wrong-track ones 15 m beyond it, with N (523N), on the outside of the line, as "
-		                                         "on the lines of PKP PLK"},
-		               {1, STR_C("Mixed"), "The automatic block for the trains of the track, the semi-automatic one for the wrong-track ones: no N "
-		                                   "signals, a warning disc ToB the braking distance before the entry signal of the wrong-track trains, on the "
-		                                   "outside of the line. Set the line signals places it and takes the N signals away"}}))
-		{
-			for (auto const *row : two_track)
-				set_ways(*row, (ways == 2) == row->own_both ? std::nullopt : std::optional<bool>{ways == 2});
-			changed = true;
-		}
-		ImGui::EndDisabled();
-		if (ways == 0)
-			ImGui::TextDisabled("%s", STR_C("Each line as it stands: a choice sets all of them"));
-	}
+	if (render_wrong_track(changed))
+		changed = true;
 	if (changed)
 		survey_signals();
 	ImGui::Checkbox(STR_C("Draw the block boundaries"), &m_drawing);
@@ -1697,26 +2533,152 @@ void srk_tool::render_lines()
 	}
 }
 
+void srk_tool::set_block(line_row const &Row, std::optional<block_kind> const Kind)
+{
+	auto &entry{record_of_open()};
+	for (auto const *row : std::initializer_list<line_row const *>{&Row, Row.partner >= 0 && Row.partner < static_cast<int>(m_lines.size()) ? &m_lines[Row.partner] : nullptr})
+	{
+		if (row == nullptr)
+			continue;
+		if (Kind.has_value())
+			entry.blocks[row->entry] = *Kind;
+		else
+			entry.blocks.erase(row->entry);
+	}
+	m_changed = true;
+}
+
+void srk_tool::set_ways(line_row const &Row, std::optional<bool> const Both)
+{
+	auto &entry{record_of_open()};
+	if (Both.has_value())
+		entry.ways[Row.entry] = *Both;
+	else
+		entry.ways.erase(Row.entry);
+	m_changed = true;
+}
+
+bool srk_tool::render_line_row(std::size_t const Index)
+{
+	auto const &row{m_lines[Index]};
+	ImGui::PushID(static_cast<int>(Index));
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
+	auto const track{row.number == 0 ? std::string{STR_C("single track")} : format(STR_C("track %d"), row.number)};
+	if (row.leftovers > 0)
+		ImGui::PushStyleColor(ImGuiCol_Text, kDoubtful);
+	auto const clicked{ImGui::Selectable(format("%s, %s##srkline", row.entry.c_str(), track.c_str()).c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)};
+	if (row.leftovers > 0)
+		ImGui::PopStyleColor();
+	if (clicked)
+	{
+		auto const &position{row.leftovers > 0 ? row.leftover : row.position};
+		auto const &travel{row.leftovers > 0 ? row.leftover_travel : row.travel};
+		m_view.fly_to(position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{travel.x, -0.3, travel.y}), 30.0);
+	}
+	if (ImGui::IsItemHovered())
+		line_tooltip(row);
+	ImGui::TableNextColumn();
+	ImGui::TextUnformatted(format("%s %.1f km", line_end(row).c_str(), row.length / 1000.0).c_str());
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", line_end_tooltip(row).c_str());
+	ImGui::TableNextColumn();
+	ImGui::SetNextItemWidth(-1.0f);
+	auto const preview{block_preview(row)};
+	ImGui::BeginDisabled(row.legacy);
+	auto changed{false};
+	if (ImGui::BeginCombo("##srkblock", preview.c_str()))
+	{
+		changed = render_block_choices(row);
+		ImGui::EndCombo();
+	}
+	ImGui::EndDisabled();
+	item_tooltip(row.legacy ? "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands" :
+	                          "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no "
+	                          "warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. "
+	                          "Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where "
+	                          "block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal "
+	                          "chosen in Signals below, else the semi-automatic one");
+	ImGui::PopID();
+	return changed;
+}
+
+bool srk_tool::render_block_choices(line_row const &Row)
+{
+	auto changed{false};
+	if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind_text(Row.own), reason_text(Row.own_why)).c_str(), Row.why != block_reason::hand))
+	{
+		set_block(Row, std::nullopt);
+		changed = true;
+	}
+	for (auto const automatic : {block_kind::three, block_kind::four})
+	{
+		ImGui::BeginDisabled(Row.number == 0);
+		if (ImGui::Selectable(automatic == block_kind::three ? STR_C("Automatic block, 3 aspects (SBL)") : STR_C("Automatic block, 4 aspects (SBL)"), Row.why == block_reason::hand && Row.block == automatic))
+		{
+			set_block(Row, automatic);
+			changed = true;
+		}
+		ImGui::EndDisabled();
+		if (Row.number == 0)
+			item_tooltip("Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are");
+		else
+			item_tooltip(automatic == block_kind::three ? "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance" :
+			                                              "A block signal tells of the next two, Ie-1: red, orange for the next at stop, green flashing for the one after it at stop, green. The block sections no shorter than half the braking distance, two of them no shorter than it");
+	}
+	if (ImGui::Selectable(STR_C("Semi-automatic block"), Row.why == block_reason::hand && Row.block == block_kind::semi))
+	{
+		set_block(Row, block_kind::semi);
+		changed = true;
+	}
+	return changed;
+}
+
+bool srk_tool::render_wrong_track(bool const Changed)
+{
+	// the wrong-track trains on the automatic block too, or on the semi-automatic one: the mixed block, the double-track lines of the
+	// automatic block of the station alike
+	std::vector<line_row const *> two_track;
+	for (auto const &row : m_lines)
+		if (row.number > 0 && row.block != block_kind::semi && false == row.legacy)
+			two_track.push_back(&row);
+	if (two_track.empty())
+		return false;
+	auto const all = [&two_track](bool const Both) { return std::ranges::all_of(two_track, [Both](line_row const *Row) { return Row->both == Both; }); };
+	int ways{0};
+	if (all(true))
+		ways = 2;
+	else if (all(false))
+		ways = 1;
+	ImGui::TextDisabled("%s", STR_C("Wrong-track running"));
+	ImGui::BeginDisabled(Changed);
+	auto changed{false};
+	if (segmented("##srkways", ways,
+	              {{2, STR_C("SBL both ways"), "At each block boundary the block signals of both tracks either way: of the trains of the track 15 m "
+	                                         "before the joint, for the wrong-track ones 15 m beyond it, with N (523N), on the outside of the line, as "
+	                                         "on the lines of PKP PLK"},
+	               {1, STR_C("Mixed"), "The automatic block for the trains of the track, the semi-automatic one for the wrong-track ones: no N "
+	                                   "signals, a warning disc ToB the braking distance before the entry signal of the wrong-track trains, on the "
+	                                   "outside of the line. Set the line signals places it and takes the N signals away"}}))
+	{
+		for (auto const *row : two_track)
+			set_ways(*row, (ways == 2) == row->own_both ? std::nullopt : std::optional<bool>{ways == 2});
+		changed = true;
+	}
+	ImGui::EndDisabled();
+	if (ways == 0)
+		ImGui::TextDisabled("%s", STR_C("Each line as it stands: a choice sets all of them"));
+	return changed;
+}
+
 std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
 {
 	m_boundary = {};
 	Valid = false;
 	if (false == drawing())
 		return {};
-	auto best{-1};
-	auto nearest{3.0};
 	double at{0.0};
-	for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size(); ++index)
-	{
-		double gap{0.0};
-		auto const distance{station::distance_on(m_line_ways[index], Point, gap)};
-		if (gap < nearest && distance > 0.0 && distance < m_line_ways[index].length())
-		{
-			nearest = gap;
-			best = static_cast<int>(index);
-			at = distance;
-		}
-	}
+	auto const best{nearest_line(Point, at)};
 	if (best < 0)
 		return STR("Drawing the block boundaries: LMB on a track of a line out of the station, beyond its entry signal");
 	auto const &row{m_lines[best]};
@@ -1731,68 +2693,11 @@ std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
 		return format(STR_C("A block boundary stands %.0f m or more from the entry signals"), kBoundaryEnd);
 	m_boundary.entry = row.entry;
 	m_boundary.point = station::point_on(line, at).point;
-	// the other track across, the block signals standing within reach on both
-	std::vector<std::pair<std::size_t, double>> tracks{{static_cast<std::size_t>(best), at}};
-	if (row.partner >= 0 && row.partner < static_cast<int>(std::min(m_lines.size(), m_line_ways.size())) && false == m_lines[row.partner].legacy && m_lines[row.partner].block != block_kind::semi)
-		if (double gap{0.0}; true)
-			if (auto const across{station::distance_on(m_line_ways[row.partner], m_boundary.point, gap)}; gap < 12.0)
-				tracks.emplace_back(static_cast<std::size_t>(row.partner), across);
-	auto const near_stop = [&](line_row const &Row, double const Distance) {
-		auto const found{std::min_element(Row.stops.begin(), Row.stops.end(), [&](auto const &A, auto const &B) { return std::abs(A.first - Distance) < std::abs(B.first - Distance); })};
-		return found != Row.stops.end() && std::abs(found->first - Distance) < kBoundaryReach ? found : Row.stops.end();
-	};
+	auto const tracks{boundary_tracks(static_cast<std::size_t>(best), at)};
 	m_boundary.remove = near_stop(row, at) != row.stops.end();
-	auto previous{0.0};
-	auto next{row.length};
-	for (auto const &stop : row.stops)
-	{
-		if (m_boundary.remove && std::abs(stop.first - at) < kBoundaryReach)
-			continue;
-		if (stop.first < at)
-			previous = std::max(previous, stop.first);
-		else
-			next = std::min(next, stop.first);
-	}
-	// the joint across each track, the block signal of its trains before it, the wrong-track one beyond it, both on the outside
-	auto const post_at = [&](station::line const &Way, double const Distance, std::string const &Name) {
-		auto const on{station::point_on(Way, Distance)};
-		glm::dvec3 const travel{on.way * out_of(Way)};
-		m_boundary.posts.push_back({on.point, glm::dvec3{-travel.z, 0.0, travel.x}, Name});
-	};
+	auto const [previous, next]{stops_around(row, at, m_boundary.remove)};
 	for (auto const &[index, distance] : tracks)
-	{
-		auto const &other{m_lines[index]};
-		auto const &way{m_line_ways[index]};
-		auto const drop{station::signal_drop * out_of(way)};
-		auto joint{distance};
-		if (m_boundary.remove)
-		{
-			auto const stop{near_stop(other, distance)};
-			if (stop == other.stops.end())
-				continue;
-			joint = stop->first;
-			post_at(way, joint - drop, stop->second);
-			auto const wrong{std::min_element(other.wrong.begin(), other.wrong.end(), [&](auto const &A, auto const &B) { return std::abs(A.first - joint - drop) < std::abs(B.first - joint - drop); })};
-			if (wrong != other.wrong.end() && std::abs(wrong->first - joint - drop) < kWrongTrack)
-				post_at(way, wrong->first, wrong->second);
-		}
-		else
-		{
-			// a number standing already gets a letter, as Set the line signals gives it
-			auto const free = [&](std::string const &Base) {
-				auto name{Base};
-				for (char letter = 'a'; m_signal_names.count(ToLower(name)) > 0 && letter <= 'z'; ++letter)
-					name = Base + letter;
-				return name;
-			};
-			auto const name{free(station::block_number(km_along(way, other.km_number, joint - drop), way.number, other.rising))};
-			post_at(way, joint - drop, signal_shown(name, {}));
-			if (other.both)
-				post_at(way, joint + drop, signal_shown(free(name + "N"), {}));
-		}
-		auto const on{station::point_on(way, joint)};
-		m_boundary.joints.emplace_back(on.point, on.way);
-	}
+		boundary_posts(index, distance);
 	std::string names;
 	for (auto const &post : m_boundary.posts)
 		names += (names.empty() ? "" : ", ") + post.name;
@@ -1800,11 +2705,67 @@ std::string srk_tool::boundary_hover(glm::dvec3 const &Point, bool &Valid)
 	Valid = true;
 	if (m_boundary.remove)
 		return format(STR_C("Click: take the block signals %s away, the block sections either side joined: %.2f km"), names.c_str(), (next - previous) / 1000.0);
-	auto const least{row.block == block_kind::four ? row.braking * 0.5 : row.braking};
-	auto label{format(STR_C("Click: block signals %s here: the block sections %.2f km and %.2f km"), names.c_str(), (at - previous) / 1000.0, (next - at) / 1000.0)};
-	if (std::min(at - previous, next - at) < least)
-		label += "\n" + format(row.block == block_kind::four ? STR_C("The block section of %.2f km is shorter than half the braking distance, %.0f m, of the 4-aspect block") : STR_C("The block section of %.2f km is shorter than the braking distance, %.0f m"), std::min(at - previous, next - at) / 1000.0, least);
-	return label;
+	return boundary_label(row, names, at, previous, next);
+}
+
+int srk_tool::nearest_line(glm::dvec3 const &Point, double &At) const
+{
+	auto best{-1};
+	auto nearest{3.0};
+	for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size(); ++index)
+	{
+		double gap{0.0};
+		auto const distance{station::distance_on(m_line_ways[index], Point, gap)};
+		if (gap < nearest && distance > 0.0 && distance < m_line_ways[index].length())
+		{
+			nearest = gap;
+			best = static_cast<int>(index);
+			At = distance;
+		}
+	}
+	return best;
+}
+
+std::vector<std::pair<std::size_t, double>> srk_tool::boundary_tracks(std::size_t const Best, double const At) const
+{
+	// the other track across, the block signals standing within reach on both
+	auto const &row{m_lines[Best]};
+	std::vector<std::pair<std::size_t, double>> tracks{{Best, At}};
+	if (row.partner < 0 || row.partner >= static_cast<int>(std::min(m_lines.size(), m_line_ways.size())) || m_lines[row.partner].legacy || m_lines[row.partner].block == block_kind::semi)
+		return tracks;
+	double gap{0.0};
+	if (auto const across{station::distance_on(m_line_ways[row.partner], m_boundary.point, gap)}; gap < 12.0)
+		tracks.emplace_back(static_cast<std::size_t>(row.partner), across);
+	return tracks;
+}
+
+void srk_tool::boundary_posts(std::size_t const Index, double const Distance)
+{
+	// the joint across each track, the block signal of its trains before it, the wrong-track one beyond it, both on the outside
+	auto const &other{m_lines[Index]};
+	auto const &way{m_line_ways[Index]};
+	auto const drop{station::signal_drop * out_of(way)};
+	auto joint{Distance};
+	if (m_boundary.remove)
+	{
+		auto const stop{near_stop(other, Distance)};
+		if (stop == other.stops.end())
+			return;
+		joint = stop->first;
+		post_at(m_boundary, way, joint - drop, stop->second);
+		auto const wrong{std::ranges::min_element(other.wrong, [joint, drop](auto const &A, auto const &B) { return std::abs(A.first - joint - drop) < std::abs(B.first - joint - drop); })};
+		if (wrong != other.wrong.end() && std::abs(wrong->first - joint - drop) < kWrongTrack)
+			post_at(m_boundary, way, wrong->first, wrong->second);
+	}
+	else
+	{
+		auto const name{unused_name(m_signal_names, station::block_number(km_along(way, other.km_number, joint - drop), way.number, other.rising))};
+		post_at(m_boundary, way, joint - drop, signal_shown(name, {}));
+		if (other.both)
+			post_at(m_boundary, way, joint + drop, signal_shown(unused_name(m_signal_names, name + "N"), {}));
+	}
+	auto const on{station::point_on(way, joint)};
+	m_boundary.joints.emplace_back(on.point, on.way);
 }
 
 void srk_tool::boundary_click()
@@ -1818,11 +2779,6 @@ void srk_tool::boundary_click()
 
 void srk_tool::render_lengths()
 {
-	auto const dimmed = [](char const *Text) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-		ImGui::TextWrapped("%s", Text);
-		ImGui::PopStyleColor();
-	};
 	if (m_lengths.empty())
 	{
 		if (stem_of_open().empty())
@@ -1838,8 +2794,8 @@ void srk_tool::render_lengths()
 		return;
 	}
 	auto const stem{stem_of_open()};
-	char const *const ways[] = {STR_C("To the right"), STR_C("To the left")};
-	if (ImGui::BeginTable("##srklengthlist", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (m_lengths.size() + 1.5f)))))
+	std::array<char const *, 2> const ways{STR_C("To the right"), STR_C("To the left")};
+	if (ImGui::BeginTable("##srklengthlist", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (static_cast<float>(m_lengths.size()) + 1.5f)))))
 	{
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn(STR_C("Track"), ImGuiTableColumnFlags_WidthStretch, 0.16f);
@@ -1848,66 +2804,10 @@ void srk_tool::render_lengths()
 		ImGui::TableSetupColumn(STR_C("Train up to"), ImGuiTableColumnFlags_WidthStretch, 0.28f);
 		ImGui::TableHeadersRow();
 		for (std::size_t index = 0; index < m_lengths.size(); ++index)
-		{
-			auto const &track{m_lengths[index]};
-			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			if (ImGui::Selectable((track.number + "##srklength" + std::to_string(index)).c_str(), static_cast<int>(index) == m_length_shown, ImGuiSelectableFlags_SpanAllColumns))
-			{
-				// the track at the middle of its useful length selected, the camera over it
-				auto const &way{track.ways[0]};
-				auto const middle{stretch_of(track, way.rear.along, way.head.along)};
-				auto const at{middle[middle.size() / 2]};
-				station::path const *nearest{nullptr};
-				auto best{std::numeric_limits<double>::max()};
-				for (auto const &path : m_layout->paths)
-					for (auto const &point : path.points)
-						if (auto const distance{glm::distance(glm::dvec2{point.x, point.z}, glm::dvec2{at.x, at.z})}; false == path.approach && distance < best)
-						{
-							best = distance;
-							nearest = &path;
-						}
-				if (nearest != nullptr)
-				{
-					m_selection.set_current_node(nearest->track);
-					m_picked = nearest->track;
-					m_view.focus_track(*nearest->track, nearest->index, at);
-				}
-			}
-			if (ImGui::IsItemHovered())
-			{
-				m_length_hover = static_cast<int>(index);
-				ImGui::BeginTooltip();
-				ImGui::TextUnformatted(format(STR_C("Track %s"), track.number.c_str()).c_str());
-				for (int way = 0; way < 2; ++way)
-				{
-					auto const &part{track.ways[way]};
-					ImGui::TextUnformatted(format(STR_C("%s: %.0f m, from %s to %s"), ways[way], part.length, limit_text(part.rear, stem).c_str(), limit_text(part.head, stem).c_str()).c_str());
-				}
-				ImGui::TextDisabled(STR_C("Construction length %.0f m: between the switches at its ends, the switches within it left out"), track.construction);
-				if (std::abs(track.ways[0].length - track.ways[1].length) > kUnequal)
-					ImGui::TextColored(kDoubtful, "%s", STR_C("The two ways differ: their trains stop on other stretches of the track, between other switches or signals"));
-				ImGui::TextDisabled("%s", STR_C("LMB: show it"));
-				ImGui::EndTooltip();
-			}
-			auto const unequal{std::abs(track.ways[0].length - track.ways[1].length) > kUnequal};
-			for (int way = 0; way < 2; ++way)
-			{
-				ImGui::TableNextColumn();
-				auto const &part{track.ways[way]};
-				if (unequal)
-					ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, part.head.what == station::limit::kind::signal ? 1.0f : 0.6f), "%.0f m", part.length);
-				else if (part.head.what == station::limit::kind::signal)
-					ImGui::Text("%.0f m", part.length);
-				else
-					ImGui::TextDisabled("%.0f m", part.length);
-			}
-			ImGui::TableNextColumn();
-			ImGui::Text("%.0f m", std::max(0.0, std::min(track.ways[0].length, track.ways[1].length) - kTrainMargin));
-		}
+			render_length_row(index, ways, stem);
 		ImGui::EndTable();
 	}
-	if (std::none_of(m_lengths.begin(), m_lengths.end(), [](station::lengths const &Track) { return Track.ways[0].head.what == station::limit::kind::signal || Track.ways[1].head.what == station::limit::kind::signal; }))
+	if (std::ranges::none_of(m_lengths, [](station::lengths const &Track) { return Track.ways[0].head.what == station::limit::kind::signal || Track.ways[1].head.what == station::limit::kind::signal; }))
 	{
 		dimmed(STR_C("No signal stands by the station tracks yet, the lengths run between the fouling points: set the signals for the useful ones"));
 		if (ImGui::Button((std::string{STR_C("Set the signals")} + "##srklengthsignals").c_str(), ImVec2(-1.0f, 0.0f)))
@@ -1920,38 +2820,6 @@ void srk_tool::render_lengths()
 	}
 	item_tooltip("The lengths of the station tracks as a table to paste into a spreadsheet: the construction length and the useful one each way with its limits, as the list of the tracks of a station gives them");
 	dimmed(STR_C("The useful length: where a train stands, from the signal it stops by back to the joint, the fouling point or the level crossing behind it, between those where no signal stands (dimmed). The longest train leaves 25 m of it: 10 m to stop, 10 m to see the signal, 5 m to the joint"));
-}
-
-void srk_tool::render_head_fit(head_check const &Head)
-{
-	if (Head.arms > 0)
-	{
-		// a semaphore described with its arms and its aspects
-		if (false == Head.fits && Head.fit.empty())
-			ImGui::TextColored(kWrong, "%s", STR_C("No semaphore of its mount has these aspects"));
-		else if (false == Head.fits)
-			ImGui::TextColored(kDoubtful, "%s", format(STR_C("Its arms don't show all of it: %s does"), Head.fit.c_str()).c_str());
-		else if (Head.more)
-			ImGui::TextDisabled("%s", format(STR_C("It has more than it needs: %s would do. The fitting leaves it be: events written by hand may use its aspects"), Head.fit.c_str()).c_str());
-	}
-	else if (Head.told)
-	{
-		// a shaped warning disc before a semaphore described, by the events it repeats; one not described only offered the one
-		if (Head.unsaid)
-			ImGui::TextDisabled("%s", format(STR_C("Its template doesn't say what it tells, so it isn't checked: %s says so and tells all its semaphore shows. The fitting leaves it be, swap it by hand if you like"), Head.fit.c_str()).c_str());
-		else if (false == Head.fits && Head.fit.empty())
-			ImGui::TextColored(kWrong, "%s", STR_C("No disc of its mount tells all its semaphore shows"));
-		else if (false == Head.fits)
-			ImGui::TextColored(kDoubtful, "%s", format(STR_C("It doesn't tell apart all its semaphore shows: %s does"), Head.fit.c_str()).c_str());
-	}
-	else if (Head.lamps.empty() && Head.kind != "warning")
-		ImGui::TextDisabled("%s", STR_C("A semaphore with arms: its lights aren't checked"));
-	else if (false == Head.fits && Head.fit.empty())
-		ImGui::TextColored(kWrong, "%s", STR_C("No template of its kind and mount has these lights"));
-	else if (false == Head.fits)
-		ImGui::TextColored(kDoubtful, "%s", format(STR_C("Its lights don't show all of it: %s does"), Head.fit.c_str()).c_str());
-	else if (Head.more)
-		ImGui::TextDisabled("%s", format(STR_C("It has more lights than it needs: %s will do"), Head.fit.c_str()).c_str());
 }
 
 void srk_tool::render_head_aspects(head_check const &Head)
@@ -1970,19 +2838,58 @@ void srk_tool::render_head_aspects(head_check const &Head)
 		lamp_row(Head.lamps, Head.own);
 }
 
+void srk_tool::render_length_row(std::size_t const Index, std::array<char const *, 2> const &Ways, std::string const &Stem)
+{
+	auto const &track{m_lengths[Index]};
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
+	if (ImGui::Selectable(std::format("{}##srklength{}", track.number, Index).c_str(), static_cast<int>(Index) == m_length_shown, ImGuiSelectableFlags_SpanAllColumns))
+		show_length(track);
+	if (ImGui::IsItemHovered())
+	{
+		m_length_hover = static_cast<int>(Index);
+		length_tooltip(track, Ways, Stem);
+	}
+	auto const unequal{std::abs(track.ways[0].length - track.ways[1].length) > kUnequal};
+	for (auto const &part : track.ways)
+	{
+		ImGui::TableNextColumn();
+		length_cell(part, unequal);
+	}
+	ImGui::TableNextColumn();
+	ImGui::Text("%.0f m", std::max(0.0, std::min(track.ways[0].length, track.ways[1].length) - kTrainMargin));
+}
+
+void srk_tool::show_length(station::lengths const &Track)
+{
+	// the track at the middle of its useful length selected, the camera over it
+	auto const &way{Track.ways[0]};
+	auto const middle{stretch_of(Track, way.rear.along, way.head.along)};
+	auto const &at{middle[middle.size() / 2]};
+	station::path const *nearest{nullptr};
+	auto best{std::numeric_limits<double>::max()};
+	for (auto const &path : m_layout->paths)
+		for (auto const &point : path.points)
+			if (auto const distance{glm::distance(glm::dvec2{point.x, point.z}, glm::dvec2{at.x, at.z})}; false == path.approach && distance < best)
+			{
+				best = distance;
+				nearest = &path;
+			}
+	if (nearest == nullptr)
+		return;
+	m_selection.set_current_node(nearest->track);
+	m_picked = nearest->track;
+	m_view.focus_track(*nearest->track, nearest->index, at);
+}
+
 void srk_tool::render_heads()
 {
-	auto const dimmed = [](char const *Text) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-		ImGui::TextWrapped("%s", Text);
-		ImGui::PopStyleColor();
-	};
 	if (false == m_heads_known)
 	{
 		dimmed(STR_C("Looking for the signal templates..."));
 		return;
 	}
-	if (std::none_of(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return Head.station; }))
+	if (std::ranges::none_of(m_heads, [](head_check const &Head) { return Head.station; }))
 	{
 		dimmed(STR_C("No main signal stands by the station yet: its lights are checked once one does"));
 		if (ImGui::Button((std::string{STR_C("Set the signals")} + "##srkheads").c_str(), ImVec2(-1.0f, 0.0f)))
@@ -2000,7 +2907,7 @@ void srk_tool::render_heads()
 		else
 			++fine;
 	}
-	if (ImGui::BeginTable("##srkheadlist", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (rows.size() + 1.5f)))))
+	if (ImGui::BeginTable("##srkheadlist", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (static_cast<float>(rows.size()) + 1.5f)))))
 	{
 		ImGui::TableSetupScrollFreeze(0, 1);
 		ImGui::TableSetupColumn(STR_C("Signal"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
@@ -2010,123 +2917,43 @@ void srk_tool::render_heads()
 		ImGui::TableSetupColumn(STR_C("SHP"), ImGuiTableColumnFlags_WidthStretch, 0.15f);
 		ImGui::TableHeadersRow();
 		for (auto const index : rows)
-		{
-			auto const &head{m_heads[index]};
-			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			if (ImGui::Selectable((head.name + "##srkhead" + std::to_string(index)).c_str(), static_cast<int>(index) == m_head_hover, ImGuiSelectableFlags_SpanAllColumns))
-			{
-				m_view.fly_to(head.position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{head.travel.x, -0.3, head.travel.y}), 30.0);
-				m_signals.select_signal(head.instance);
-			}
-			if (ImGui::IsItemHovered())
-			{
-				m_head_hover = static_cast<int>(index);
-				ImGui::BeginTooltip();
-				ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
-				auto const *kind{head.kind == "main" ? STR_C("Main signal %s") : head.kind == "block" ? STR_C("Block signal %s") : STR_C("Warning disc %s")};
-				ImGui::TextUnformatted(format(kind, head.name.c_str()).c_str());
-				ImGui::TextDisabled("%s", head.file.c_str());
-				for (std::size_t k = 0; k < head.routes.size(); ++k)
-				{
-					auto const &route{head.routes[k]};
-					std::string text;
-					if (route.next >= 0)
-						text = format(STR_C("To %s: %.0f m"), head.nexts[k].c_str(), route.length);
-					else if (route.ended)
-						text = format(STR_C("To the end of the tracks: %.0f m"), route.length);
-					else
-						text = format(STR_C("No signal within %.0f m"), route.length);
-					if (head.kind == "main")
-						text += ", " + (route.speed > 0.0 && shown_speed(route.speed, line) > 0 ? format(STR_C("%d km/h through the switches"), shown_speed(route.speed, line)) : format(STR_C("%.0f km/h"), line));
-					std::string turnouts;
-					for (auto const *turnout : route.turnouts)
-						turnouts += (turnouts.empty() ? "" : ", ") + without_stem(turnout->name(), stem_of_open());
-					if (false == turnouts.empty())
-						text += ", " + format(STR_P("off the straight at switch %s", "off the straight at switches %s", route.turnouts.size()), turnouts.c_str());
-					if (route.warning >= 0)
-						text += ", " + STR("past a warning disc");
-					ImGui::BulletText("%s", text.c_str());
-				}
-				if (head.kind != "warning")
-				{
-					head_need need;
-					need.speeds = head.speeds;
-					need.informs = head.informs;
-					need.white = head.white;
-					ImGui::TextUnformatted(format(STR_C("Needs: %s"), (head.arms > 0 ? need_arms_text(need) : need_text(need)).c_str()).c_str());
-				}
-				if (head.shortened > 0)
-					ImGui::TextColored(kDoubtful, "%s", format(STR_C("The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"), head.shortened).c_str());
-				if (head.indicator)
-					ImGui::TextColored(kDoubtful, "%s", STR_C("Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"));
-				render_head_fit(head);
-				for (auto const &problem : head.problems)
-					ImGui::TextColored(kWrong, "%s", problem.c_str());
-				if (auto const state{head.shp_of()}; state != shp_state::needless)
-				{
-					auto const wanted{head.shp > 0.0 ? format(STR_C("its SHP resonator belongs %.0f m before it"), head.shp) : std::string{STR_C("its SHP resonator belongs at it, it tells of the next signal")}};
-					if (state == shp_state::missing || state == shp_state::beyond)
-						ImGui::TextColored(kWrong, "%s", (wanted + ", " + (state == shp_state::beyond ? STR("the tracks before it end short of it") : STR("none stands"))).c_str());
-					else
-						ImGui::TextColored(state == shp_state::off ? kDoubtful : kRight, "%s", (wanted + ", " + format(STR_C("its event %.0f m before it"), head.shp_found)).c_str());
-				}
-				ImGui::TextDisabled("%s", STR_C("LMB: fly to it"));
-				ImGui::PopTextWrapPos();
-				ImGui::EndTooltip();
-			}
-			ImGui::TableNextColumn();
-			if (head.kind == "main")
-			{
-				auto text{format("%.0f", line)};
-				for (auto speed{head.speeds.rbegin()}; speed != head.speeds.rend(); ++speed)
-					text += ", " + std::to_string(*speed);
-				ImGui::TextUnformatted(text.c_str());
-			}
-			else
-				ImGui::TextDisabled("-");
-			ImGui::TableNextColumn();
-			render_head_aspects(head);
-			ImGui::TableNextColumn();
-			if (head.lamps.empty() && head.arms == 0 && false == head.told)
-				ImGui::TextDisabled("-");
-			else if (head.unsaid)
-				ImGui::TextDisabled("%s", STR_C("not described"));
-			else if (false == head.fits)
-			{
-				auto const *missing{head.arms > 0 || head.told ? STR_C("aspects missing") : STR_C("lights missing")};
-				ImGui::TextColored(head.fit.empty() ? kWrong : kDoubtful, "%s", head.fit.empty() ? STR_C("no template") : missing);
-			}
-			else if (head.more)
-				ImGui::TextDisabled("%s", STR_C("more than needed"));
-			else
-				ImGui::TextColored(kRight, "%s", STR_C("fits"));
-			if (false == head.problems.empty())
-			{
-				ImGui::SameLine();
-				ImGui::TextColored(kWrong, "%s", STR_C("too near"));
-			}
-			ImGui::TableNextColumn();
-			switch (head.shp_of())
-			{
-			case shp_state::needless: ImGui::TextDisabled("-"); break;
-			case shp_state::missing: ImGui::TextColored(kWrong, "%s", STR_C("none")); break;
-			case shp_state::beyond: ImGui::TextColored(kWrong, "%s", STR_C("no track")); break;
-			case shp_state::off: ImGui::TextColored(kDoubtful, "%.0f m", head.shp_found); break;
-			default: ImGui::TextColored(kRight, "%s", head.shp > 0.0 ? format("%.0f m", head.shp_found).c_str() : STR_C("at it")); break;
-			}
-		}
+			render_head_row(index, line);
 		ImGui::EndTable();
 	}
 	if (fine > 0)
 		ImGui::TextDisabled("%s", format(STR_P("%zu signal of the lines fits, its SHP too", "%zu signals of the lines fit, their SHP too", fine), fine).c_str());
-	auto const fitting{static_cast<std::size_t>(std::count_if(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return false == Head.fit.empty() && Head.fit != Head.file && (false == Head.fits || Head.more); }))};
+	auto const fitting{static_cast<std::size_t>(std::ranges::count_if(m_heads, [](head_check const &Head) { return false == Head.fit.empty() && Head.fit != Head.file && (false == Head.fits || Head.more); }))};
 	ImGui::BeginDisabled(fitting == 0);
 	if (main_button(format("%s (%zu)###srkfitheads", STR_C("Fit the lights"), fitting).c_str(), ImVec2(-1.0f, 0.0f)))
 		fit_heads();
 	ImGui::EndDisabled();
 	item_tooltip("Gives each signal marked the template of its kind and mount with the lights its routes need and the least beyond them, the name, the plate and the place kept, the trains reading it as before. One step of undo");
 	dimmed(STR_C("The lights go by the routes of the trains: 40 km/h through the switches 1:9, 60 through 1:12 and 1:14, 100 through 1:18.5, by their radii, for these a lower orange light, with an orange strip for 60, a green one for 100, Ie-1; an upper orange one where the next signal can show stop; the white one of the substitute signal. A signal telling of the next one standing nearer than the braking distance slows the trains with it at stop, Ie-4 § 8 ust. 5"));
+}
+
+void srk_tool::render_head_row(std::size_t const Index, double const Line)
+{
+	auto const &head{m_heads[Index]};
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
+	if (ImGui::Selectable(std::format("{}##srkhead{}", head.name, Index).c_str(), static_cast<int>(Index) == m_head_hover, ImGuiSelectableFlags_SpanAllColumns))
+	{
+		m_view.fly_to(head.position + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{head.travel.x, -0.3, head.travel.y}), 30.0);
+		m_signals.select_signal(head.instance);
+	}
+	if (ImGui::IsItemHovered())
+	{
+		m_head_hover = static_cast<int>(Index);
+		head_tooltip(head, Line, stem_of_open());
+	}
+	ImGui::TableNextColumn();
+	head_speeds_cell(head, Line);
+	ImGui::TableNextColumn();
+	render_head_aspects(head);
+	ImGui::TableNextColumn();
+	head_state_cell(head);
+	ImGui::TableNextColumn();
+	head_shp_cell(head);
 }
 
 std::string srk_tool::lengths_table() const
@@ -2170,7 +2997,7 @@ void srk_tool::number_switches()
 		m_changed = true;
 	}
 	auto const units{station::numbering(*m_layout, m_reversed)};
-	std::vector<std::pair<TTrack *, std::string>> names;
+	switch_names names;
 	std::unordered_set<TTrack const *> own;
 	for (std::size_t index = 0; index < units.size(); ++index)
 		for (std::size_t part = 0; part < units[index].parts.size(); ++part)
@@ -2178,53 +3005,11 @@ void srk_tool::number_switches()
 			names.emplace_back(units[index].parts[part], station::switch_name(code, static_cast<int>(index) + 1, part, units[index].parts.size()));
 			own.insert(units[index].parts[part]);
 		}
-	for (auto &[track, name] : names)
-	{
-		std::string reason;
-		TTrack *owner{nullptr};
-		if (false == scene::Layers.editable(track, &reason))
-		{
-			m_status = format(STR_C("%s can't be renamed: %s"), track->name().c_str(), reason.c_str());
-			return;
-		}
-		if (false == editor_track::name_valid(*track, name, reason, &owner) && (owner == nullptr || own.count(owner) == 0))
-		{
-			m_status = format(STR_C("%s can't be named %s: %s"), track->name().c_str(), name.c_str(), reason.c_str());
-			return;
-		}
-	}
-	// the events aiming at a switch by its old name or named after it, <name>:event0, the editor doesn't write: renamed, the
-	// switch would lose them. they're listed first, the same renames clicked again go ahead
-	{
-		std::vector<std::string> unwritten;
-		std::string key{code};
-		for (auto const &[track, name] : names)
-		{
-			if (track->name() == name)
-				continue;
-			key += ' ' + track->name() + '>' + name;
-			auto const uses{editor_track::uses_of_name(*track)};
-			for (auto const *events : {&uses.events, &uses.loose})
-				for (auto const &event : *events)
-					unwritten.push_back(track->name() + ": " + event);
-		}
-		if (unwritten.empty() || m_numbering_confirm == key)
-			m_numbering_confirm.clear();
-		else
-		{
-			m_numbering_confirm = key;
-			std::string listed;
-			for (std::size_t i = 0; i < unwritten.size() && i < 6; ++i)
-				listed += (i > 0 ? ", " : "") + unwritten[i];
-			if (unwritten.size() > 6)
-				listed += format(" (+%zu)", unwritten.size() - 6);
-			m_status = format(STR_C("These events aim at the switches by their old names, the editor doesn't write them and they'd lose them: %s. Number the switches again to rename them anyway"), listed.c_str());
-			return;
-		}
-	}
+	if (false == names_allowed(names, own) || false == renames_confirmed(code, names))
+		return;
 	std::vector<std::pair<TTrack *, editor_track::state>> before;
-	std::map<std::string, std::string> parts;
-	std::map<std::string, std::string> bases;
+	std::map<std::string, std::string> parts; // NOSONAR: switch_store::rename takes the maps with the default comparator
+	std::map<std::string, std::string> bases; // NOSONAR: switch_store::rename takes the maps with the default comparator
 	for (auto const &[track, name] : names)
 		if (track->name() != name)
 		{
@@ -2235,37 +3020,9 @@ void srk_tool::number_switches()
 		if (false == units[index].record.empty())
 			bases[units[index].record] = station::switch_name(code, static_cast<int>(index) + 1, 0, 1);
 	switch_store::rename(parts, bases);
-	// the objects of the scenery naming a switch, as the lanterns of rainsted/lwzm.inc, follow it
-	std::map<std::string, std::string> renamed;
-	for (auto const &[track, name] : names)
-		if (track->name() != name)
-			renamed[ToLower(track->name())] = name;
-	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> following;
-	for (auto &standing : m_templates.standing_templates([](std::string const &) { return true; }))
-	{
-		auto changed{false};
-		for (auto &value : standing.values)
-			if (auto const found{renamed.find(ToLower(value))}; found != renamed.end())
-			{
-				value = found->second;
-				changed = true;
-			}
-		if (changed)
-			following.emplace_back(standing.instance, std::move(standing.values));
-	}
-	// the names go round among the switches: a switch whose name another one gets gives it up first
-	for (auto const &entry : names)
-		if (entry.first->name() != entry.second && std::any_of(names.begin(), names.end(), [&](auto const &Other) { return Other.first != entry.first && Other.second == entry.first->name(); }))
-			editor_track::rename(*entry.first, entry.first->name() + "~");
-	for (auto const &[track, name] : names)
-		editor_track::rename(*track, name);
-	std::size_t numbered{0};
-	for (std::size_t index = 0; index < units.size(); ++index)
-		if (auto const record{switch_store::named(*units[index].parts.front())}; record && record->number != std::to_string(index + 1))
-		{
-			switch_store::number(record->name, std::to_string(index + 1));
-			++numbered;
-		}
+	auto following{following_of(names)};
+	rename_switches(names);
+	auto const numbered{renumber_records(units)};
 	if (before.empty() && numbered == 0)
 	{
 		m_status = STR_C("The switches have these numbers already");
@@ -2286,6 +3043,75 @@ void srk_tool::number_switches()
 		m_status += ", " + format(STR_P("%zu object of the scenery follows them", "%zu objects of the scenery follow them", followed), followed);
 }
 
+bool srk_tool::names_allowed(std::vector<std::pair<TTrack *, std::string>> &Names, std::unordered_set<TTrack const *> const &Own)
+{
+	for (auto &[track, name] : Names)
+	{
+		std::string reason;
+		TTrack *owner{nullptr};
+		if (false == scene::Layers.editable(track, &reason))
+		{
+			m_status = format(STR_C("%s can't be renamed: %s"), track->name().c_str(), reason.c_str());
+			return false;
+		}
+		if (false == editor_track::name_valid(*track, name, reason, &owner) && (owner == nullptr || false == Own.contains(owner)))
+		{
+			m_status = format(STR_C("%s can't be named %s: %s"), track->name().c_str(), name.c_str(), reason.c_str());
+			return false;
+		}
+	}
+	return true;
+}
+
+bool srk_tool::renames_confirmed(std::string const &Code, std::vector<std::pair<TTrack *, std::string>> const &Names)
+{
+	// the events aiming at a switch by its old name or named after it, <name>:event0, the editor doesn't write: renamed, the
+	// switch would lose them. they're listed first, the same renames clicked again go ahead
+	std::vector<std::string> unwritten;
+	std::string key{Code};
+	for (auto const &[track, name] : Names)
+	{
+		if (track->name() == name)
+			continue;
+		key += ' ' + track->name() + '>' + name;
+		auto const uses{editor_track::uses_of_name(*track)};
+		for (auto const *events : {&uses.events, &uses.loose})
+			for (auto const &aimed : *events)
+				unwritten.push_back(track->name() + ": " + aimed);
+	}
+	if (unwritten.empty() || m_numbering_confirm == key)
+	{
+		m_numbering_confirm.clear();
+		return true;
+	}
+	m_numbering_confirm = key;
+	m_status = format(STR_C("These events aim at the switches by their old names, the editor doesn't write them and they'd lose them: %s. Number the switches again to rename them anyway"), listed_of(unwritten).c_str());
+	return false;
+}
+
+std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> srk_tool::following_of(std::vector<std::pair<TTrack *, std::string>> const &Names) const
+{
+	// the objects of the scenery naming a switch, as the lanterns of rainsted/lwzm.inc, follow it
+	std::map<std::string, std::string, std::less<>> renamed;
+	for (auto const &[track, name] : Names)
+		if (track->name() != name)
+			renamed[ToLower(track->name())] = name;
+	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> following;
+	for (auto &standing : m_templates.standing_templates([](std::string const &) { return true; }))
+	{
+		auto changed{false};
+		for (auto &value : standing.values)
+			if (auto const found{renamed.find(ToLower(value))}; found != renamed.end())
+			{
+				value = found->second;
+				changed = true;
+			}
+		if (changed)
+			following.emplace_back(standing.instance, std::move(standing.values));
+	}
+	return following;
+}
+
 void srk_tool::set_circuits()
 {
 	m_status.clear();
@@ -2297,103 +3123,18 @@ void srk_tool::set_circuits()
 	}
 	auto const units{station::numbering(*m_layout, m_reversed)};
 	auto const planned{station::joints(*m_layout, units)};
-	for (auto const &entry : planned)
-		if (std::string reason; entry.track != nullptr && false == editor_track::can_edit_geometry(*entry.track, reason))
-		{
-			m_status = format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str());
-			return;
-		}
-	for (auto const &path : m_layout->paths)
-		if (std::string reason; false == path.approach && false == scene::Layers.editable(path.track, &reason))
-		{
-			m_status = format(STR_C("%s can't be changed: %s"), name_of(*path.track).c_str(), reason.c_str());
-			return;
-		}
-	// the cuts: each track from its end back, so the pieces left to cut stay in the track
-	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	if (false == circuits_editable(planned))
+		return;
+	track_states before;
 	std::vector<TTrack *> created;
 	std::vector<glm::dvec3> points;
-	std::vector<std::pair<TTrack *, std::vector<glm::dvec3>>> cuts;
-	for (auto const &entry : planned)
-	{
-		points.push_back(entry.point);
-		if (entry.track == nullptr)
-			continue;
-		auto found{std::find_if(cuts.begin(), cuts.end(), [&](auto const &Cut) { return Cut.first == entry.track; })};
-		if (found == cuts.end())
-			found = cuts.insert(cuts.end(), {entry.track, {}});
-		found->second.push_back(entry.point);
-	}
-	for (auto &[track, at] : cuts)
-	{
-		before.emplace_back(track, editor_track::capture(*track));
-		auto *const piece{track};
-		std::sort(at.begin(), at.end(), [&](glm::dvec3 const &A, glm::dvec3 const &B) { return editor_track::nearest_parameter(*piece, A) > editor_track::nearest_parameter(*piece, B); });
-		for (auto const &point : at)
-			if (auto *cut{editor_track::split_path(*track, editor_track::nearest_parameter(*track, point))})
-				created.push_back(cut);
-	}
+	cut_at_joints(planned, points, before, created);
 	// the circuits of the station as cut
 	std::size_t count{0};
 	if (auto const found{station::find(*m_anchor)})
 	{
 		auto const circuits{station::circuits(*found, units, points)};
-		auto const numbers{station::track_numbers(*found, circuits)};
-		auto const stem{station::prefix(code)};
-		std::unordered_set<TTrack const *> captured(created.begin(), created.end());
-		for (auto const &[track, state] : before)
-			captured.insert(track);
-		// a station track keeps the name most of it has, given by hand or so far, unless another one has it too; the others take
-		// the numbers left on their side
-		std::vector<std::string> names(circuits.size());
-		std::map<std::string, std::size_t> held;
-		for (std::size_t index = 0; index < circuits.size(); ++index)
-		{
-			auto const &circuit{circuits[index]};
-			if (circuit.unit >= 0)
-				continue;
-			std::map<std::string, std::size_t> counts;
-			for (auto const *track : circuit.tracks)
-				if (track->Isolated.size() == 1 && false == track_of(track->Isolated.front()->asName, stem).empty())
-					++counts[track->Isolated.front()->asName];
-			if (auto const most{std::max_element(counts.begin(), counts.end(), [](auto const &A, auto const &B) { return A.second < B.second; })}; most != counts.end())
-				++held[names[index] = most->first];
-		}
-		std::unordered_set<std::string> taken;
-		for (auto &name : names)
-			if (false == name.empty() && held[name] > 1)
-				name.clear();
-			else if (false == name.empty())
-				taken.insert(name);
-		for (std::size_t index = 0; index < circuits.size(); ++index)
-		{
-			auto const &circuit{circuits[index]};
-			auto &name{names[index]};
-			if (circuit.unit >= 0)
-				name = stem + "iz" + unit_number(units[circuit.unit], stem, circuit.unit);
-			else if (name.empty())
-			{
-				auto number{numbers[index]};
-				while (taken.count(stem + "it" + number) > 0)
-				{
-					std::size_t digits{0};
-					while (digits < number.size() && std::isdigit(static_cast<unsigned char>(number[digits])))
-						++digits;
-					if (digits == 0)
-						break;
-					number = std::to_string(std::stoi(number.substr(0, digits)) + 2) + number.substr(digits);
-				}
-				taken.insert(name = stem + "it" + number);
-			}
-			for (auto *track : circuit.tracks)
-			{
-				if (track->Isolated.size() == 1 && track->Isolated.front()->asName == name)
-					continue;
-				if (captured.insert(track).second)
-					before.emplace_back(track, editor_track::capture(*track));
-				editor_track::isolated(*track, {name});
-			}
-		}
+		name_circuits(*found, units, circuits, code, created, before);
 		count = circuits.size();
 	}
 	if (before.empty() && created.empty())
@@ -2403,6 +3144,23 @@ void srk_tool::set_circuits()
 	}
 	m_history.push_track_snapshot(std::move(before), created);
 	m_status = format(STR_P("%zu track circuit", "%zu track circuits", count), count) + ", " + format(STR_P("%zu cut", "%zu cuts", created.size()), created.size());
+}
+
+bool srk_tool::circuits_editable(std::vector<station::joint> const &Planned)
+{
+	for (auto const &entry : Planned)
+		if (std::string reason; entry.track != nullptr && false == editor_track::can_edit_geometry(*entry.track, reason))
+		{
+			m_status = format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str());
+			return false;
+		}
+	for (auto const &path : m_layout->paths)
+		if (std::string reason; false == path.approach && false == scene::Layers.editable(path.track, &reason))
+		{
+			m_status = format(STR_C("%s can't be changed: %s"), name_of(*path.track).c_str(), reason.c_str());
+			return false;
+		}
+	return true;
 }
 
 std::string srk_tool::stem_of_open() const
@@ -2465,10 +3223,10 @@ bool srk_tool::station_tracks(std::vector<station::numbered> &Tracks, std::unord
 	auto const stem{stem_of_open()};
 	if (false == m_layout.has_value() || stem.empty())
 		return false;
-	std::map<std::string, std::map<std::string, std::vector<TTrack *>>> numbers;
+	std::map<std::string, std::map<std::string, std::vector<TTrack *>, std::less<>>, std::less<>> numbers;
 	for (auto const &path : m_layout->paths)
 	{
-		if (path.track->m_editorremoved || path.track->Isolated.empty() || Inside.count(path.track) > 0)
+		if (path.track->m_editorremoved || path.track->Isolated.empty() || Inside.contains(path.track))
 			continue;
 		auto const &name{path.track->Isolated.front()->asName};
 		if (name.size() <= stem.size() || name.compare(0, stem.size(), stem) != 0 || entry_circuit(name, stem))
@@ -2514,7 +3272,7 @@ void srk_tool::renumber_track(TTrack const &Track, std::string const &Number)
 		if (number == from)
 			before.emplace_back(path.track, editor_track::capture(*path.track));
 	}
-	for (auto &[track, state] : before)
+	for (auto const &[track, state] : before)
 	{
 		auto const &name{track->Isolated.front()->asName};
 		editor_track::isolated(*track, {stem + "it" + to + name.substr(stem.size() + 2 + from.size())});
@@ -2542,246 +3300,70 @@ void srk_tool::set_signals()
 		m_status = STR_C("Set the track circuits first: the signals stand at their joints");
 		return;
 	}
-	auto plan{station::signals(layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
+	auto plan{station::signals(layout, tracks, [&inside](TTrack const &Track) { return inside.contains(&Track); })};
 	std::vector<standing_signal> standing;
 	m_signals.standing_signals(standing, true);
-	standing.erase(std::remove_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return gap_to(layout, Signal.position) > 8.0; }), standing.end());
-	auto const full = [&](station::signal const &Signal) { return stem + ToLower(Signal.name); };
+	std::erase_if(standing, [&layout](standing_signal const &Signal) { return gap_to(layout, Signal.position) > 8.0; });
 	// the standing ones by their places, then by their names the ones moved away
-	std::vector<int> match(plan.size(), -1);
 	std::vector<char> used(standing.size(), 0);
-	std::vector<std::tuple<double, std::size_t, std::size_t>> candidates;
-	for (std::size_t i = 0; i < plan.size(); ++i)
+	auto const match{match_signals(plan, standing, stem, used)};
+	std::vector<entry_cut> cuts;
+	if (auto const problem{plan_cuts(plan, match, standing, cuts)}; false == problem.empty())
 	{
-		auto const &planned{plan[i]};
-		glm::dvec2 const travel{glm::normalize(glm::dvec2{planned.travel.x, planned.travel.z} + glm::dvec2{1e-12, 0.0})};
-		auto const reach{planned.kind == station::signal::role::entry ? 400.0 : planned.kind == station::signal::role::exit ? 60.0 : 40.0};
-		for (std::size_t k = 0; k < standing.size(); ++k)
-		{
-			auto const &signal{standing[k]};
-			if ((signal.kind == "shunt") != (planned.kind == station::signal::role::shunting) || (signal.kind != "shunt" && signal.kind != "main") || glm::dot(travel_of(signal.yaw), travel) < 0.87)
-				continue;
-			glm::dvec2 const offset{signal.position.x - planned.point.x, signal.position.z - planned.point.z};
-			auto const along{glm::dot(offset, travel)};
-			auto const across{std::abs(offset.x * travel.y - offset.y * travel.x)};
-			if (std::abs(along) < reach && across < 3.0)
-				candidates.emplace_back(std::abs(along) + across * 10.0, i, k);
-		}
-	}
-	std::sort(candidates.begin(), candidates.end());
-	for (auto const &[score, i, k] : candidates)
-		if (match[i] < 0 && 0 == used[k])
-		{
-			match[i] = static_cast<int>(k);
-			used[k] = 1;
-		}
-	for (std::size_t i = 0; i < plan.size(); ++i)
-		for (std::size_t k = 0; k < standing.size() && match[i] < 0; ++k)
-			if (0 == used[k] && ToLower(standing[k].name) == full(plan[i]))
-			{
-				match[i] = static_cast<int>(k);
-				used[k] = 1;
-			}
-	// the circuits from the entry signals to the station: the line cut by each one, all of it checked before any is
-	struct cut
-	{
-		std::size_t signal{0};
-		TTrack *track{nullptr};
-		double parameter{0.0};
-		glm::dvec3 point{0.0};
-		bool outward{false};
-		std::vector<TTrack *> named; // between the station and the cut
-		std::vector<TTrack *> beyond; // out from the cut to the signal and on
-	};
-	std::vector<cut> cuts;
-	for (std::size_t i = 0; i < plan.size(); ++i)
-	{
-		auto const &planned{plan[i]};
-		if (planned.kind != station::signal::role::entry || planned.run.empty())
-			continue;
-		// the joint the trains pass the signal to, in from it towards the station
-		auto const run{station::run_line(planned)};
-		double gap{0.0};
-		auto const signal_at{station::distance_on(run, match[i] >= 0 ? standing[match[i]].position : planned.point, gap)};
-		auto const at{station::point_on(run, std::max(0.0, signal_at - station::signal_drop)).point};
-		cut entry;
-		entry.signal = i;
-		auto best{std::numeric_limits<double>::max()};
-		std::size_t nearest{0};
-		for (std::size_t k = 0; k < planned.run.size(); ++k)
-		{
-			auto const t{editor_track::nearest_parameter(*planned.run[k].first, at)};
-			auto const point{editor_track::point_at(*planned.run[k].first, t)};
-			if (auto const distance{glm::distance(glm::dvec2{point.x, point.z}, glm::dvec2{at.x, at.z})}; distance < best)
-			{
-				best = distance;
-				nearest = k;
-				entry.parameter = t;
-				entry.point = point;
-			}
-		}
-		for (std::size_t k = 0; k < nearest; ++k)
-			entry.named.push_back(planned.run[k].first);
-		for (std::size_t k = nearest + 1; k < planned.run.size(); ++k)
-			entry.beyond.push_back(planned.run[k].first);
-		entry.track = planned.run[nearest].first;
-		entry.outward = planned.run[nearest].second;
-		auto const &ends{entry.track->m_paths.front().points};
-		auto const to_start{glm::distance(entry.point, ends[segment_data::point::start])};
-		auto const to_end{glm::distance(entry.point, ends[segment_data::point::end])};
-		std::string reason;
-		if (std::min(to_start, to_end) <= 0.3)
-		{
-			// at an end already
-			((to_end < to_start) == entry.outward ? entry.named : entry.beyond).push_back(entry.track);
-			entry.track = nullptr;
-		}
-		else if (false == editor_track::can_edit_geometry(*entry.track, reason))
-		{
-			m_status = format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str());
-			return;
-		}
-		for (auto *part : entry.named)
-			if (false == scene::Layers.editable(part, &reason))
-			{
-				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
-				return;
-			}
-		cuts.push_back(std::move(entry));
+		m_status = problem;
+		return;
 	}
 	// a template for each signal placed, before any track is cut for them
+	if (auto const missing{m_signals.signal_templates_missing(wanted_of(plan, match))}; false == missing.empty())
 	{
-		std::vector<signal_order> wanted;
-		for (std::size_t i = 0; i < plan.size(); ++i)
-			if (match[i] < 0)
-			{
-				wanted.emplace_back();
-				wanted.back().kind = plan[i].kind == station::signal::role::shunting ? "shunt" : "main";
-			}
-		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
-		{
-			m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
-			return;
-		}
+		m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
+		return;
 	}
-	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	track_states before;
 	std::vector<TTrack *> created;
-	std::unordered_set<TTrack const *> captured;
-	for (auto &entry : cuts)
-	{
-		auto &planned{plan[entry.signal]};
-		if (entry.track != nullptr)
-		{
-			captured.insert(entry.track);
-			before.emplace_back(entry.track, editor_track::capture(*entry.track));
-			if (auto *piece{editor_track::split_path(*entry.track, entry.parameter)})
-			{
-				created.push_back(piece);
-				captured.insert(piece);
-				entry.named.push_back(entry.outward ? entry.track : piece);
-				entry.beyond.push_back(entry.outward ? piece : entry.track);
-				if (planned.track == entry.track)
-					planned.track = entry.outward ? piece : entry.track;
-			}
-		}
-		auto const name{stem + "it" + ToLower(planned.name)};
-		for (auto *part : entry.named)
-		{
-			if (part->Isolated.size() == 1 && part->Isolated.front()->asName == name)
-				continue;
-			if (captured.insert(part).second)
-				before.emplace_back(part, editor_track::capture(*part));
-			editor_track::isolated(*part, {name});
-		}
-		// out of the circuit beyond its joint, where an earlier one ended at the signal
-		for (auto *part : entry.beyond)
-		{
-			if (part->Isolated.size() != 1 || ToLower(part->Isolated.front()->asName) != name)
-				continue;
-			if (captured.insert(part).second)
-				before.emplace_back(part, editor_track::capture(*part));
-			editor_track::isolated(*part, {});
-		}
-	}
+	cut_entries(cuts, plan, stem, before, created);
 	std::vector<signal_order> placed;
 	std::vector<signal_rename> renamed;
-	for (std::size_t i = 0; i < plan.size(); ++i)
-	{
-		auto const &planned{plan[i]};
-		auto const plate{ToLower(planned.name)};
-		if (match[i] >= 0)
-		{
-			if (ToLower(standing[match[i]].name) != full(planned))
-				renamed.push_back({standing[match[i]].instance, full(planned), plate});
-			continue;
-		}
-		signal_order order;
-		order.track = planned.track;
-		order.point = planned.point;
-		order.facing = planned.facing;
-		order.side = planned.side;
-		order.kind = planned.kind == station::signal::role::shunting ? "shunt" : "main";
-		order.name = full(planned);
-		order.plate = plate;
-		placed.push_back(std::move(order));
-	}
-	// the others keep their names, unless one of these takes it
-	for (std::size_t k = 0; k < standing.size(); ++k)
-		if (0 == used[k] && std::any_of(plan.begin(), plan.end(), [&](station::signal const &Signal) { return full(Signal) == ToLower(standing[k].name); }))
-			renamed.push_back({standing[k].instance, ToLower(standing[k].name) + "_old", signal_shown(standing[k].name, stem) + "_old"});
+	orders_of(plan, match, standing, used, stem, placed, renamed);
 	if (placed.empty() && renamed.empty() && before.empty() && created.empty())
 	{
 		m_status = STR_C("The signals are set already");
 		return;
 	}
+	auto const unfit{fit_placed(placed, stem)};
+	std::string error;
+	auto const touched{false == before.empty() || false == created.empty()};
+	auto const count{m_signals.signal_batch({placed, renamed, {}, {}, {}}, std::move(before), std::move(created), error)};
+	m_status = signals_status(count, renamed.size(), error, touched, unfit);
+}
+
+std::vector<std::string> srk_tool::fit_placed(std::vector<signal_order> &Placed, std::string const &Stem)
+{
 	// the lights of the main signals placed after the routes of their trains, to the signals standing and to these
 	std::vector<std::string> unfit;
 	std::vector<signal_head> heads;
 	m_signals.signal_heads(heads, true);
-	auto const chosen{std::find_if(heads.begin(), heads.end(), [](signal_head const &Head) { return Head.kind == "main" && Head.chosen; })};
-	if (chosen != heads.end())
+	auto const chosen{std::ranges::find_if(heads, [](signal_head const &Head) { return Head.kind == "main" && Head.chosen; })};
+	if (chosen == heads.end())
+		return unfit;
+	std::vector<standing_signal> everywhere;
+	m_signals.standing_signals(everywhere, true);
+	std::vector<std::size_t> from;
+	auto const posts{posts_with(everywhere, Placed, from)};
+	auto const found{station::routes(posts, from, route_reach(braking_of_open()))};
+	auto const line{speed_of_open()};
+	std::size_t next{0};
+	for (auto &order : Placed)
 	{
-		std::vector<standing_signal> everywhere;
-		m_signals.standing_signals(everywhere, true);
-		std::vector<station::post> posts;
-		for (auto const &signal : everywhere)
-			if (auto const post{post_of(signal)}; post.track != nullptr)
-				posts.push_back(post);
-		std::vector<std::size_t> from;
-		for (auto const &order : placed)
-		{
-			if (order.kind == "main")
-				from.push_back(posts.size());
-			posts.push_back({order.track, order.facing, order.point, order.kind == "shunt" ? station::signal::role::shunting : station::signal::role::entry});
-		}
-		auto const found{station::routes(posts, from, route_reach(braking_of_open()))};
-		auto const line{speed_of_open()};
-		std::size_t next{0};
-		for (auto &order : placed)
-		{
-			if (order.kind != "main")
-				continue;
-			auto const need{need_of(found[next++], true, line, braking_of_open())};
-			if (auto const best{best_head(heads, "main", chosen->mount, chosen->name, 0, need, chosen->arms > 0)}; best >= 0)
-				order.file = heads[best].file;
-			else
-				unfit.push_back(signal_shown(order.name, stem));
-		}
+		if (order.kind != "main")
+			continue;
+		auto const need{need_of(found[next++], true, line, braking_of_open())};
+		if (auto const best{best_head(heads, "main", chosen->mount, chosen->name, 0, need, chosen->arms > 0)}; best >= 0)
+			order.file = heads[best].file;
+		else
+			unfit.push_back(signal_shown(order.name, Stem));
 	}
-	std::string error;
-	auto const touched{false == before.empty() || false == created.empty()};
-	auto const count{m_signals.signal_batch({placed, renamed, {}, {}, {}}, std::move(before), std::move(created), error)};
-	if (false == error.empty())
-		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
-	else
-		m_status = format(STR_P("%zu signal placed", "%zu signals placed", count), count) + ", " + format(STR_P("%zu renamed", "%zu renamed", renamed.size()), renamed.size());
-	if (false == unfit.empty())
-	{
-		std::string names;
-		for (auto const &name : unfit)
-			names += (names.empty() ? "" : ", ") + name;
-		m_status += "\n" + format(STR_C("No template has what %s need, they got the one chosen in Signals: see Signal heads"), names.c_str());
-	}
+	return unfit;
 }
 
 bool srk_tool::lines_of_open(std::vector<standing_signal> const &Standing, std::vector<station::line> &Lines, std::vector<station::signal> &Entries, std::vector<std::size_t> &Owners, std::string &Problem) const
@@ -2804,13 +3386,13 @@ bool srk_tool::lines_of_open(std::vector<standing_signal> const &Standing, std::
 		Problem = STR_C("Set the track circuits first: the signals stand at their joints");
 		return false;
 	}
-	auto const plan{station::signals(*m_layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
+	auto const plan{station::signals(*m_layout, tracks, [&inside](TTrack const &Track) { return inside.contains(&Track); })};
 	// the lines begin at the entry signals standing
 	for (auto const &planned : plan)
 	{
 		if (planned.kind != station::signal::role::entry)
 			continue;
-		auto const found{std::find_if(Standing.begin(), Standing.end(), [&](standing_signal const &Signal) { return Signal.kind == "main" && ToLower(Signal.name) == stem + ToLower(planned.name); })};
+		auto const found{std::ranges::find_if(Standing, [&stem, &planned](standing_signal const &Signal) { return Signal.kind == "main" && ToLower(Signal.name) == stem + ToLower(planned.name); })};
 		if (found == Standing.end())
 			continue;
 		Entries.push_back(planned);
@@ -2839,45 +3421,45 @@ bool srk_tool::lines_of_open(std::vector<standing_signal> const &Standing, std::
 	return true;
 }
 
-srk_tool::block_kind srk_tool::block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads, block_reason &Why, block_kind &Own, block_reason &Own_why, std::size_t &Blocks) const
+srk_tool::block_found srk_tool::block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads) const
 {
-	Blocks = 0;
+	block_found found;
 	auto four{false};
 	for (auto const &signal : Standing)
 	{
 		if (signal.kind != "block")
 			continue;
 		double gap{0.0};
-		auto const distance{station::distance_on(Line, signal.position, gap)};
-		if (gap > 4.5 || distance < 50.0 || distance > Line.length() - 1.0)
+		if (auto const distance{station::distance_on(Line, signal.position, gap)}; gap > 4.5 || distance < 50.0 || distance > Line.length() - 1.0)
 			continue;
-		++Blocks;
-		four = four || std::any_of(Heads.begin(), Heads.end(), [&](signal_head const &Head) { return Head.file == signal.file && Head.aspects == 4; });
+		++found.blocks;
+		four = four || std::ranges::any_of(Heads, [&signal](signal_head const &Head) { return Head.file == signal.file && Head.aspects == 4; });
 	}
-	if (Blocks > 0)
+	if (found.blocks > 0)
 	{
-		Own = four ? block_kind::four : block_kind::three;
-		Own_why = block_reason::standing;
+		found.own = four ? block_kind::four : block_kind::three;
+		found.own_why = block_reason::standing;
 	}
 	else if (Line.number > 0)
 	{
-		auto const chosen{std::find_if(Heads.begin(), Heads.end(), [](signal_head const &Head) { return Head.kind == "block" && Head.chosen; })};
-		Own = chosen != Heads.end() && chosen->aspects == 4 ? block_kind::four : block_kind::three;
-		Own_why = block_reason::double_track;
+		auto const chosen{std::ranges::find_if(Heads, [](signal_head const &Head) { return Head.kind == "block" && Head.chosen; })};
+		found.own = chosen != Heads.end() && chosen->aspects == 4 ? block_kind::four : block_kind::three;
+		found.own_why = block_reason::double_track;
 	}
 	else
 	{
-		Own = block_kind::semi;
-		Own_why = block_reason::single;
+		found.own = block_kind::semi;
+		found.own_why = block_reason::single;
 	}
-	Why = Own_why;
+	found.kind = found.own;
+	found.why = found.own_why;
 	if (m_record >= 0)
 		if (auto const set{m_records[m_record].blocks.find(Entry)}; set != m_records[m_record].blocks.end())
 		{
-			Why = block_reason::hand;
-			return set->second;
+			found.kind = set->second;
+			found.why = block_reason::hand;
 		}
-	return Own;
+	return found;
 }
 
 bool srk_tool::both_ways(std::vector<station::line> const &Lines, std::size_t const Index, std::string const &Entry, std::vector<standing_signal> const &Standing, bool &Hand, bool &Own) const
@@ -2885,16 +3467,16 @@ bool srk_tool::both_ways(std::vector<station::line> const &Lines, std::size_t co
 	auto const &Line{Lines[Index]};
 	auto along{false};
 	auto wrong{false};
-	auto mixed{false};
+	auto disc{false};
 	for (auto const &signal : Standing)
 	{
 		double distance{0.0};
 		along = along || block_along(Line, signal, distance);
 		wrong = wrong || block_along(Line, signal, distance, true);
-		mixed = mixed || wrong_disc(Lines, Index, signal);
+		disc = disc || wrong_disc(Lines, Index, signal);
 	}
 	// block signals for the wrong-track trains, or none of either but a warning disc for them: the mixed block
-	Own = Line.number > 0 && (wrong || (false == along && false == mixed));
+	Own = Line.number > 0 && (wrong || (false == along && false == disc));
 	Hand = false;
 	if (m_record >= 0)
 		if (auto const set{m_records[m_record].ways.find(Entry)}; set != m_records[m_record].ways.end())
@@ -2909,8 +3491,7 @@ std::string srk_tool::km_line(station::line const &Line) const
 {
 	auto const described{line_of_open()};
 	auto const out{station::point_on(Line, std::min(2000.0, Line.length() * 0.5)).point};
-	double km{0.0};
-	if (false == kilometrage::km_at(described, out, km))
+	if (double km{0.0}; false == kilometrage::km_at(described, out, km))
 		if (auto const found{kilometrage::line_at(out)}; false == found.empty())
 			return found;
 	return described;
@@ -2975,7 +3556,12 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		row.station = line.station;
 		row.position = Standing[owners[line.entry]].position;
 		row.travel = travel_of(Standing[owners[line.entry]].yaw);
-		row.block = block_of(line, row.entry, Standing, heads, row.why, row.own, row.own_why, row.blocks);
+		auto const block{block_of(line, row.entry, Standing, heads)};
+		row.block = block.kind;
+		row.why = block.why;
+		row.own = block.own;
+		row.own_why = block.own_why;
+		row.blocks = block.blocks;
 		row.braking = line_braking(line);
 		row.km_number = km_line(line);
 		row.rising = km_rising(line, row.km_number);
@@ -3216,11 +3802,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	for (std::size_t index = 0; index < lines.size(); ++index)
 	{
 		auto const &line{lines[index]};
-		auto why{block_reason::single};
-		auto own{block_kind::semi};
-		auto own_why{block_reason::single};
-		std::size_t blocks{0};
-		auto const kind{block_of(line, entries[line.entry].name, standing, heads, why, own, own_why, blocks)};
+		auto const kind{block_of(line, entries[line.entry].name, standing, heads).kind};
 		aspects[index] = kind == block_kind::four ? 4 : 3;
 		auto hand{false};
 		auto own_both{false};

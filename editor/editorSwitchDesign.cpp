@@ -17,10 +17,14 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <numbers>
 #include <sstream>
+#include <string_view>
 
 namespace switch_design
 {
@@ -28,7 +32,7 @@ namespace switch_design
 namespace
 {
 
-double constexpr kPi{3.14159265358979323846};
+double constexpr kPi{std::numbers::pi};
 double constexpr kMinRadius{10.0};
 double constexpr kTransitionStep{5.0};
 double constexpr kLink{1.0};
@@ -36,7 +40,9 @@ double constexpr kTipStep{0.01};
 double constexpr kHalfGauge{0.7175};
 double constexpr kSecantAngle{25.0 / 60.0};
 double constexpr kSecantLead{0.6};
-double constexpr kCutTips[][2]{{190.0, 1.2483}, {300.0, 1.5}, {500.0, 2.165}, {760.0, 2.633}, {1200.0, 3.3347}};
+std::array<std::array<double, 2>, 5> constexpr kCutTips{{{190.0, 1.2483}, {300.0, 1.5}, {500.0, 2.165}, {760.0, 2.633}, {1200.0, 3.3347}}};
+double constexpr kNear{0.02}; // m, what the tables round a tangent by
+double constexpr kFlattest{5000.0}; // m, an arc this flat is a straight
 
 glm::dvec2 heading_of(double const Angle)
 {
@@ -51,6 +57,14 @@ glm::dvec3 spatial(glm::dvec2 const &Plan)
 double curvature_of(double const Radius)
 {
 	return Radius != 0.0 ? 1.0 / Radius : 0.0;
+}
+
+// the weight of a sample of Simpson's rule over the samples, the first and the last one 1
+double simpson_weight(int const Sample, int const Samples)
+{
+	if (Sample == 0 || Sample == Samples)
+		return 1.0;
+	return Sample % 2 == 1 ? 4.0 : 2.0;
 }
 
 segment_data piece(glm::dvec2 const &From, glm::dvec2 const &To, double const Heading0, double const Heading1, double const Handle0, double const Handle1, double const Radius)
@@ -121,8 +135,7 @@ struct walker
 			glm::dvec2 offset{0.0};
 			for (int j = 0; j <= samples; ++j)
 			{
-				auto const weight{j == 0 || j == samples ? 1.0 : (j % 2 == 1 ? 4.0 : 2.0)};
-				offset += heading_of(heading_at(s0 + step * j / samples)) * weight;
+				offset += heading_of(heading_at(s0 + step * j / samples)) * simpson_weight(j, samples);
 			}
 			offset *= step / (3.0 * samples);
 			auto const h0{heading_at(s0)};
@@ -144,7 +157,7 @@ void mirror(segment_data &Path)
 
 void shift(segment_data &Path, double const Along)
 {
-	Path.transform([&](glm::dvec3 const &Point) { return Point + glm::dvec3{0.0, 0.0, Along}; }, [](glm::dvec3 const &Vector) { return Vector; });
+	Path.transform([Along](glm::dvec3 const &Point) { return Point + glm::dvec3{0.0, 0.0, Along}; }, [](glm::dvec3 const &Vector) { return Vector; });
 }
 
 segment_data straight_path(double const From, double const To)
@@ -183,7 +196,7 @@ std::string word(std::string const &Text)
 	if (Text.empty())
 		return "-";
 	auto result{Text};
-	std::replace(result.begin(), result.end(), ' ', '_');
+	std::ranges::replace(result, ' ', '_');
 	return result;
 }
 
@@ -192,7 +205,7 @@ std::string unword(std::string const &Text)
 	if (Text == "-")
 		return {};
 	auto result{Text};
-	std::replace(result.begin(), result.end(), '_', ' ');
+	std::ranges::replace(result, '_', ' ');
 	return result;
 }
 
@@ -221,14 +234,412 @@ bool read_parts(std::istream &Input, std::vector<part> &Parts)
 	return false == Input.fail();
 }
 
+// a value of an own template read after its keyword; false for a word that's no keyword or parts that can't be read
+bool read_value(std::istream &Input, std::string_view const Keyword, design &Entry)
+{
+	if (Keyword == "type")
+		Input >> Entry.type;
+	else if (Keyword == "rail")
+	{
+		Input >> Entry.rail;
+		if (Entry.rail.empty())
+			Entry.rail = "-";
+	}
+	else if (Keyword == "main")
+		Input >> Entry.main;
+	else if (Keyword == "stagger")
+		Input >> Entry.stagger;
+	else if (Keyword == "lead")
+		Input >> Entry.lead;
+	else if (Keyword == "entry")
+		Input >> Entry.entry;
+	else if (Keyword == "lead2")
+		Input >> Entry.lead2;
+	else if (Keyword == "entry2")
+		Input >> Entry.entry2;
+	else if (Keyword == "tip")
+		Input >> Entry.tip;
+	else if (Keyword == "tip2")
+		Input >> Entry.tip2;
+	else if (Keyword == "heel")
+		Input >> Entry.heel;
+	else if (Keyword == "throw")
+		Input >> Entry.bladethrow;
+	else if (Keyword == "a")
+		Input >> Entry.a;
+	else if (Keyword == "b")
+		Input >> Entry.b;
+	else if (Keyword == "parts")
+		return read_parts(Input, Entry.parts);
+	else if (Keyword == "parts2")
+		return read_parts(Input, Entry.parts2);
+	else
+		return false;
+	return true;
+}
+
+// how far along the main track the diverging one has gone the gap off it, the tracks of a symmetric switch turning both; the
+// pre-blade stretch when it doesn't get that far
+double parted_at(std::vector<part> const &Parts, double const Lead, bool const Symmetric, double const Gap)
+{
+	glm::dvec2 at{0.0, Lead};
+	auto heading{0.0};
+	auto apart{0.0};
+	for (auto const &part : Parts)
+	{
+		auto const k1{curvature_of(part.radius1)};
+		auto const k2{curvature_of(part.radius2)};
+		auto const steps{std::max(1, static_cast<int>(std::ceil(part.length / kTipStep)))};
+		auto const step{part.length / steps};
+		for (int i = 0; i < steps; ++i)
+		{
+			auto const k{k1 + (k2 - k1) * (i + 0.5) / steps};
+			auto const next{at + heading_of(heading + 0.5 * k * step) * step};
+			heading += k * step;
+			auto const nextapart{(Symmetric ? 2.0 : 1.0) * (next.x + kHalfGauge * (1.0 - std::cos(heading)))};
+			if (nextapart >= Gap)
+				return glm::mix(at.y, next.y, std::clamp((Gap - apart) / std::max(nextapart - apart, 1e-12), 0.0, 1.0));
+			at = next;
+			apart = nextapart;
+		}
+	}
+	return Lead;
+}
+
+// the parts, the pre-blade stretch and the angle of the blade a switch is checked or fitted with
+std::string checked_design(design const &Design, bool const Twofold, bool const Mirrored)
+{
+	auto error{checked(Design.parts)};
+	if (error.empty() && Twofold && false == Mirrored && false == Design.parts2.empty())
+		error = checked(Design.parts2);
+	if (error.empty() && false == (Design.lead >= 0.0 && Design.lead <= 30.0))
+		error = "The pre-blade stretch has to be between 0 and 30 m";
+	if (error.empty() && false == (Design.entry >= 0.0 && Design.entry <= 5.0))
+		error = "The angle of the blade has to be between 0 and 5 degrees";
+	return error;
+}
+
+// the paths of a double switch put into the shape, the first switch made already; the reason in Error when the second one can't
+// be made, the shape left as far as it got then
+void build_twofold(design const &Design, path const &First, bool const Mirrored, shape &Result, std::string &Error)
+{
+	auto const reach{First.whole.points[segment_data::point::end].z};
+	if (Design.stagger < 1.0 || Design.stagger > reach - 1.0)
+	{
+		Error = "The second switch has to start at least 1 m along the main track and 1 m before the end of the diverging track";
+		return;
+	}
+	auto const lead2{Design.lead2 >= 0.0 && false == Mirrored ? Design.lead2 : Design.lead};
+	auto const entry2{Design.entry2 >= 0.0 && false == Mirrored ? Design.entry2 : Design.entry};
+	auto const &parts2{Design.parts2.empty() || Mirrored ? Design.parts : Design.parts2};
+	auto const tip2{blade_tip(parts2, lead2, entry2, Design.tip2 >= 0.0 && false == Mirrored ? Design.tip2 : Design.tip, false)};
+	if (lead2 > 30.0 || entry2 > 5.0)
+	{
+		Error = "The pre-blade stretch of the second switch has to be at most 30 m and the angle of its blade at most 5 degrees";
+		return;
+	}
+	auto second{diverging(parts2, lead2, entry2, tip2)};
+	if (second.angle <= 1e-4 || second.angle >= kPi / 4.0)
+	{
+		Error = "The diverging track of the second switch has to leave to the side at an angle between 0 and 45 degrees";
+		return;
+	}
+	if (Design.type == "Rpd" || Mirrored)
+		mirror(second.whole);
+	shift(second.whole, Design.stagger);
+	auto const secondend{second.whole.points[segment_data::point::end].z};
+	Result.length = Design.main > 0.0 ? Design.main : std::max(reach, secondend);
+	if (Result.length < Design.stagger + 1.0)
+	{
+		Error = "The main track ends less than 1 m after the start of the second switch";
+		return;
+	}
+	Result.b = Design.b > 0.0 ? Design.b : reach - Result.a;
+	Result.stagger = Design.stagger;
+	Result.tip2 = Design.stagger + tip2;
+	Result.radius = std::min(First.radius, second.radius > 0.0 ? second.radius : First.radius);
+	// the simulation joins switches only to plain tracks, so a short one lies between the two
+	auto const link{std::min(kLink, Design.stagger * 0.5)};
+	Result.paths = {straight_path(0.0, Design.stagger - link), First.whole, straight_path(Design.stagger, Result.length), second.whole, straight_path(Design.stagger - link, Design.stagger)};
+}
+
+// the tangents of a switch being fitted: the sharpest radius, the angle, a and b, the tangent of the arc alone, the longer and the
+// shorter of a and b
+struct switch_tangents
+{
+	double radius;
+	double angle;
+	double a;
+	double b;
+	double tangent;
+	double longer;
+	double shorter;
+};
+
+// what the diverging track is fitted with: its parts, the pre-blade stretch and the angle of the blade in radians
+struct fitted_track
+{
+	std::vector<part> parts;
+	double lead{0.0};
+	double entry{0.0};
+};
+
+// two arcs leaving the main track tangentially: with the longer tangent L and the shorter S, the flatter arc turning first by t,
+// (R1 - R) sin t = L + S cos angle - R sin angle and (R1 - R) (1 - cos t) = S sin angle - R (1 - cos angle). none when they don't
+// make the tangents
+std::vector<part> two_arcs_parts(switch_tangents const &Given)
+{
+	auto const radius{Given.radius};
+	auto const angle{Given.angle};
+	std::vector<part> parts;
+	auto const along{Given.longer + Given.shorter * std::cos(angle) - radius * std::sin(angle)};
+	if (auto const off{Given.shorter * std::sin(angle) - radius * (1.0 - std::cos(angle))}; std::abs(Given.a - Given.b) > kNear && along > 0.0 && off > 0.0)
+	{
+		auto const turn{2.0 * std::atan2(off, along)};
+		auto const flatter{radius + along / std::sin(turn)};
+		if (turn < angle && flatter <= kFlattest)
+		{
+			parts = {{flatter * turn, flatter, flatter}, {radius * (angle - turn), radius, radius}};
+			if (Given.a < Given.b)
+				std::swap(parts[0], parts[1]);
+		}
+	}
+	return parts;
+}
+
+// an arc, a straight and an arc of the first radius given: turned by t on the first arc, L sin t + (R1 - R) (1 - cos t) =
+// b sin angle - R (1 - cos angle) and L cos t + (R1 - R) sin t = a + b cos angle - R sin angle. false with the reason in Error when
+// a and b are too short for it
+bool arc_straight_arc_parts(switch_tangents const &Given, double const First, std::vector<part> &Parts, std::string &Error)
+{
+	auto const radius{Given.radius};
+	auto const angle{Given.angle};
+	auto const a{Given.a};
+	auto const b{Given.b};
+	auto const first{First > 0.0 ? First : radius};
+	auto const more{first - radius};
+	auto const ahead{a + b * std::cos(angle) - radius * std::sin(angle)};
+	auto const aside{b * std::sin(angle) - radius * (1.0 - std::cos(angle))};
+	auto const rest = [&](double const Turn) { return ahead * std::tan(Turn) + more * (1.0 - 1.0 / std::cos(Turn)) - aside; };
+	auto const straight_of = [&](double const Turn) { return (ahead - more * std::sin(Turn)) / std::cos(Turn); };
+	if (ahead <= 0.0 || aside <= 0.0 || rest(angle) < 0.0)
+	{
+		Error = format(STR_C("a and b too short for an arc, a straight and an arc at R %.0f m: the tangent of the arc alone is %.3f m"), radius, Given.tangent);
+		return false;
+	}
+	auto low{0.0};
+	auto high{angle};
+	for (int i = 0; i < 60; ++i)
+	{
+		auto const middle{(low + high) * 0.5};
+		(rest(middle) > 0.0 ? high : low) = middle;
+	}
+	auto const turn{(low + high) * 0.5};
+	auto const straight{straight_of(turn)};
+	if (straight < 0.0)
+	{
+		Error = format(STR_C("a and b too short for an arc, a straight and an arc at R %.0f m: the tangent of the arc alone is %.3f m"), radius, Given.tangent);
+		return false;
+	}
+	Parts = {{first * turn, first, first}, {straight, 0.0, 0.0}, {radius * (angle - turn), radius, radius}};
+	return true;
+}
+
+// the end of the transition of the length from a straight and the arc from it up to the angle: the tangent along the main track
+// and the other one along the diverging track
+void transition_reach(double const Radius, double const Angle, double const Length, double &Tangent, double &Other)
+{
+	double x{0.0};
+	double z{0.0};
+	int constexpr kSteps{200};
+	for (int i = 0; i < kSteps; ++i)
+	{
+		auto const s{(i + 0.5) * Length / kSteps};
+		auto const turned{s * s / (2.0 * Radius * std::max(Length, 1e-9))};
+		x += std::sin(turned) * Length / kSteps;
+		z += std::cos(turned) * Length / kSteps;
+	}
+	auto const from{Length / (2.0 * Radius)};
+	x += Radius * (std::cos(from) - std::cos(Angle));
+	z += Radius * (std::sin(Angle) - std::sin(from));
+	Tangent = z - x / std::tan(Angle);
+	Other = x / std::sin(Angle);
+}
+
+// a transition curve on the side of the longer tangent, its length told by that tangent alone, and the arc from it up to the angle;
+// a straight on the side of the shorter one. false with the reason in Error when that doesn't make the tangents
+bool transition_parts(switch_tangents const &Given, fitted_track &Fit, std::string &Error)
+{
+	auto const radius{Given.radius};
+	auto const angle{Given.angle};
+	auto const longer{Given.longer};
+	auto const shorter{Given.shorter};
+	auto low{0.0};
+	auto high{2.0 * radius * angle * (1.0 - 1e-6)};
+	double tangent_of;
+	double other;
+	for (int i = 0; i < 60; ++i)
+	{
+		auto const middle{(low + high) * 0.5};
+		transition_reach(radius, angle, middle, tangent_of, other);
+		(tangent_of > longer ? high : low) = middle;
+	}
+	auto const length{(low + high) * 0.5};
+	transition_reach(radius, angle, length, tangent_of, other);
+	if (std::abs(tangent_of - longer) > kNear)
+	{
+		Error = format(STR_C("A transition curve at R %.0f doesn't reach the tangent of %.3f m"), radius, longer);
+		return false;
+	}
+	if (shorter < other - kNear)
+	{
+		Error = format(STR_C("The shorter tangent can't be less than %.3f m with this transition curve"), other);
+		return false;
+	}
+	auto const straight{std::max(0.0, shorter - other)};
+	part const arc{radius * angle - length * 0.5, radius, radius};
+	if (Given.a >= Given.b)
+	{
+		Fit.parts = {{length, 0.0, radius}, arc};
+		if (straight > 0.01)
+			Fit.parts.emplace_back(straight, 0.0, 0.0);
+	}
+	else
+	{
+		Fit.parts = {arc, {length, radius, 0.0}};
+		Fit.lead = straight;
+	}
+	return true;
+}
+
+// one arc; a nearer than its tangent: the blade meets the stock rail at an angle, the arc turning the rest of the way, further: a
+// pre-blade stretch before it. false with the reason in Error when b is shorter than the end of the arc
+bool one_arc_parts(switch_tangents const &Given, fitted_track &Fit, std::string &Error)
+{
+	auto const radius{Given.radius};
+	auto const angle{Given.angle};
+	auto const a{Given.a};
+	auto const b{Given.b};
+	auto const tangent{Given.tangent};
+	auto const centre = [&](double const Entry) { return radius * (std::sin(angle) - std::sin(Entry)) - radius * (std::cos(Entry) - std::cos(angle)) / std::tan(angle); };
+	if (a < tangent - kNear)
+	{
+		auto low{0.0};
+		auto high{angle};
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			(centre(middle) > a ? low : high) = middle;
+		}
+		Fit.entry = (low + high) * 0.5;
+	}
+	else if (a > tangent + kNear)
+		Fit.lead = a - tangent;
+	auto const arcend{radius * (std::cos(Fit.entry) - std::cos(angle)) / std::sin(angle)};
+	if (b < arcend - kNear)
+	{
+		Error = format(STR_C("b can't be shorter than the end of the arc, %.3f m"), arcend);
+		return false;
+	}
+	Fit.parts = {{radius * (angle - Fit.entry), radius, radius}};
+	if (b - arcend > 0.01)
+		Fit.parts.emplace_back(b - arcend, 0.0, 0.0);
+	return true;
+}
+
+// the diverging track of the shape as a line in the plan, 16 segments to each of its pieces
+std::vector<glm::dvec2> diverging_line(shape const &Shape)
+{
+	std::vector<glm::dvec2> line;
+	std::vector<segment_data> pieces{Shape.paths[1].pieces};
+	if (pieces.empty())
+		pieces.push_back(Shape.paths[1]);
+	for (auto const &piece : pieces)
+	{
+		geometry::bezier const curve{piece};
+		for (int j = 0; j <= 16; ++j)
+		{
+			auto const at{curve.point(j / 16.0)};
+			line.emplace_back(at.x, at.z);
+		}
+	}
+	return line;
+}
+
+// how far the point is from the nearest segment of the line
+double distance_to_line(std::vector<glm::dvec2> const &Line, glm::dvec2 const &Point)
+{
+	auto nearest{std::numeric_limits<double>::max()};
+	for (std::size_t k = 0; k + 1 < Line.size(); ++k)
+	{
+		auto const run{Line[k + 1] - Line[k]};
+		auto const t{std::clamp(glm::dot(Point - Line[k], run) / std::max(1e-12, glm::dot(run, run)), 0.0, 1.0)};
+		nearest = std::min(nearest, glm::length(Point - (Line[k] + run * t)));
+	}
+	return nearest;
+}
+
+// how far the points are from the diverging track of the design: the mean square, and the worst one in Worst
+double distance_off(design const &Trial, std::vector<glm::dvec2> const &Points, double &Worst)
+{
+	std::string problem;
+	auto const built{build(Trial, problem)};
+	if (built.paths.size() < 2)
+		return std::numeric_limits<double>::max();
+	auto const line{diverging_line(built)};
+	auto sum{0.0};
+	Worst = 0.0;
+	for (auto const &point : Points)
+	{
+		auto const nearest{distance_to_line(line, point)};
+		sum += nearest * nearest;
+		Worst = std::max(Worst, nearest);
+	}
+	return sum / static_cast<double>(std::max<std::size_t>(1, Points.size()));
+}
+
+// the radius the shape of the kind keeps closest to the points with, from a coarse row of them closing in, and the mean square of
+// how far they are in Best; 0 when no radius makes the shape
+double closest_radius(design const &Design, measured const &Found, tangent_fit const Kind, double const First, std::vector<glm::dvec2> const &Points, double &Best)
+{
+	auto low{40.0};
+	auto high{2000.0};
+	auto best_radius{0.0};
+	Best = std::numeric_limits<double>::max();
+	for (int pass = 0; pass < 3; ++pass)
+	{
+		int constexpr kRow{24};
+		for (int i = 0; i <= kRow; ++i)
+		{
+			auto const radius{low * std::pow(high / low, static_cast<double>(i) / kRow)};
+			design trial{Design};
+			std::string problem;
+			double worst;
+			if (false == fit_tangents(trial, radius, Found.ratio, Found.a, Found.b, Kind, problem, First))
+				continue;
+			if (auto const value{distance_off(trial, Points, worst)}; value < Best)
+			{
+				Best = value;
+				best_radius = radius;
+			}
+		}
+		if (best_radius <= 0.0)
+			break;
+		auto const step{std::pow(high / low, 1.0 / kRow)};
+		low = best_radius / step;
+		high = best_radius * step;
+	}
+	return best_radius;
+}
+
 } // namespace
 
-bool double_switch(std::string const &Type)
+bool double_switch(std::string_view const Type)
 {
 	return Type == "Rpd" || Type == "Rpj" || Type == "Rps";
 }
 
-bool symmetric_switch(std::string const &Type)
+bool symmetric_switch(std::string_view const Type)
 {
 	return Type == "Rls";
 }
@@ -256,7 +667,9 @@ path diverging(std::vector<part> const &Parts, double const Lead, double const E
 			auto const k1{curvature_of(part.radius1)};
 			auto const k2{curvature_of(part.radius2)};
 			auto const k{k1 + (k2 - k1) * split / part.length};
-			auto const middle{part.radius1 == part.radius2 ? part.radius1 : (k != 0.0 ? 1.0 / k : 0.0)};
+			auto middle{part.radius1};
+			if (part.radius1 != part.radius2)
+				middle = k != 0.0 ? 1.0 / k : 0.0;
 			lay(split, part.radius1, middle);
 			lay(part.length - split, middle, part.radius2);
 		}
@@ -296,33 +709,10 @@ double blade_tip(std::vector<part> const &Parts, double const Lead, double const
 		return Lead;
 	if (Tip > Lead)
 		return Tip;
-	auto const reach = [&](double const Gap) {
-		glm::dvec2 at{0.0, Lead};
-		auto heading{0.0};
-		auto apart{0.0};
-		for (auto const &part : Parts)
-		{
-			auto const k1{curvature_of(part.radius1)};
-			auto const k2{curvature_of(part.radius2)};
-			auto const steps{std::max(1, static_cast<int>(std::ceil(part.length / kTipStep)))};
-			auto const step{part.length / steps};
-			for (int i = 0; i < steps; ++i)
-			{
-				auto const k{k1 + (k2 - k1) * (i + 0.5) / steps};
-				auto const next{at + heading_of(heading + 0.5 * k * step) * step};
-				heading += k * step;
-				auto const nextapart{(Symmetric ? 2.0 : 1.0) * (next.x + kHalfGauge * (1.0 - std::cos(heading)))};
-				if (nextapart >= Gap)
-					return glm::mix(at.y, next.y, std::clamp((Gap - apart) / std::max(nextapart - apart, 1e-12), 0.0, 1.0));
-				at = next;
-				apart = nextapart;
-			}
-		}
-		return Lead; };
-	return std::max({Lead, reach(track_rails::blade_point), reach(track_rails::blade_nose) - track_rails::blade_planed});
+	return std::max({Lead, parted_at(Parts, Lead, Symmetric, track_rails::blade_point), parted_at(Parts, Lead, Symmetric, track_rails::blade_nose) - track_rails::blade_planed});
 }
 
-double cut_tip(std::string const &Rail, double const Radius)
+double cut_tip(std::string_view const Rail, double const Radius)
 {
 	if (Rail != "60E1" && Rail != "49E1")
 		return 0.0;
@@ -332,7 +722,7 @@ double cut_tip(std::string const &Rail, double const Radius)
 	return 0.0;
 }
 
-std::pair<double, double> secant_blade(std::string const &Rail, double const Radius, double const Ratio)
+std::pair<double, double> secant_blade(std::string_view const Rail, double const Radius, double const Ratio)
 {
 	if (Rail != "S42" || Ratio <= 0.0)
 		return {0.0, 0.0};
@@ -360,15 +750,9 @@ shape build(design const &Design, std::string &Error)
 		Error = "Unknown type of switch";
 		return result;
 	}
-	Error = checked(Design.parts);
 	// both switches of a symmetric double switch have the shape of the first one
 	bool const mirrored{Design.type == "Rps"};
-	if (Error.empty() && twofold && false == mirrored && false == Design.parts2.empty())
-		Error = checked(Design.parts2);
-	if (Error.empty() && false == (Design.lead >= 0.0 && Design.lead <= 30.0))
-		Error = "The pre-blade stretch has to be between 0 and 30 m";
-	if (Error.empty() && false == (Design.entry >= 0.0 && Design.entry <= 5.0))
-		Error = "The angle of the blade has to be between 0 and 5 degrees";
+	Error = checked_design(Design, twofold, mirrored);
 	if (false == Error.empty())
 		return result;
 	auto const tip{blade_tip(Design.parts, Design.lead, Design.entry, Design.tip, symmetric)};
@@ -406,44 +790,7 @@ shape build(design const &Design, std::string &Error)
 		result.paths = {straight_path(0.0, result.length), first.whole};
 		return result;
 	}
-	auto const reach{end.y};
-	if (Design.stagger < 1.0 || Design.stagger > reach - 1.0)
-	{
-		Error = "The second switch has to start at least 1 m along the main track and 1 m before the end of the diverging track";
-		return result;
-	}
-	auto const lead2{Design.lead2 >= 0.0 && false == mirrored ? Design.lead2 : Design.lead};
-	auto const entry2{Design.entry2 >= 0.0 && false == mirrored ? Design.entry2 : Design.entry};
-	auto const &parts2{Design.parts2.empty() || mirrored ? Design.parts : Design.parts2};
-	auto const tip2{blade_tip(parts2, lead2, entry2, Design.tip2 >= 0.0 && false == mirrored ? Design.tip2 : Design.tip, false)};
-	if (lead2 > 30.0 || entry2 > 5.0)
-	{
-		Error = "The pre-blade stretch of the second switch has to be at most 30 m and the angle of its blade at most 5 degrees";
-		return result;
-	}
-	auto second{diverging(parts2, lead2, entry2, tip2)};
-	if (second.angle <= 1e-4 || second.angle >= kPi / 4.0)
-	{
-		Error = "The diverging track of the second switch has to leave to the side at an angle between 0 and 45 degrees";
-		return result;
-	}
-	if (Design.type == "Rpd" || mirrored)
-		mirror(second.whole);
-	shift(second.whole, Design.stagger);
-	auto const secondend{second.whole.points[segment_data::point::end].z};
-	result.length = Design.main > 0.0 ? Design.main : std::max(reach, secondend);
-	if (result.length < Design.stagger + 1.0)
-	{
-		Error = "The main track ends less than 1 m after the start of the second switch";
-		return result;
-	}
-	result.b = Design.b > 0.0 ? Design.b : reach - result.a;
-	result.stagger = Design.stagger;
-	result.tip2 = Design.stagger + tip2;
-	result.radius = std::min(first.radius, second.radius > 0.0 ? second.radius : first.radius);
-	// the simulation joins switches only to plain tracks, so a short one lies between the two
-	auto const link{std::min(kLink, Design.stagger * 0.5)};
-	result.paths = {straight_path(0.0, Design.stagger - link), first.whole, straight_path(Design.stagger, result.length), second.whole, straight_path(Design.stagger - link, Design.stagger)};
+	build_twofold(Design, first, mirrored, result, Error);
 	return result;
 }
 
@@ -489,7 +836,13 @@ bool measure_clicks(std::vector<glm::dvec2> const &Clicks, measured &Result, std
 		for (std::size_t i = 4; i < Clicks.size(); ++i)
 			middle += Clicks[i];
 		middle /= static_cast<double>(Clicks.size() - 4);
-		double uu{0.0}, uv{0.0}, vv{0.0}, uuu{0.0}, vvv{0.0}, uvv{0.0}, vuu{0.0};
+		double uu{0.0};
+		double uv{0.0};
+		double vv{0.0};
+		double uuu{0.0};
+		double vvv{0.0};
+		double uvv{0.0};
+		double vuu{0.0};
 		for (std::size_t i = 4; i < Clicks.size(); ++i)
 		{
 			auto const point{Clicks[i] - middle};
@@ -512,156 +865,30 @@ bool measure_clicks(std::vector<glm::dvec2> const &Clicks, measured &Result, std
 	return true;
 }
 
-bool fit_tangents(design &Design, double const Radius, double const Ratio, double const A, double const B, tangent_fit const Kind, std::string &Error, double const First)
+bool fit_tangents(design &Design, double const Radius, double const Ratio, double const A, double const B, tangent_fit const Kind, std::string &Error, double const First) // NOSONAR: the interface of the template editor, its callers in application/editormodeswitchdesign.cpp
 {
 	if (Radius < 10.0 || Ratio <= 1.0)
 	{
 		Error = "The radius or the angle makes no switch";
 		return false;
 	}
-	double constexpr kNear{0.02}; // m, what the tables round a tangent by
-	double constexpr kFlattest{5000.0}; // m, an arc this flat is a straight
 	auto const angle{std::atan(1.0 / Ratio)};
 	auto const tangent{Radius * std::tan(angle * 0.5)};
 	auto const a{A > 0.0 ? A : tangent};
 	auto const b{B > 0.0 ? B : tangent};
-	std::vector<part> parts;
-	auto lead{0.0};
-	auto entry{0.0};
-	// two arcs leaving the main track tangentially: with the longer tangent L and the shorter S, the flatter arc turning first by t,
-	// (R1 - R) sin t = L + S cos angle - R sin angle and (R1 - R) (1 - cos t) = S sin angle - R (1 - cos angle)
-	auto const longer{std::max(a, b)};
-	auto const shorter{std::min(a, b)};
-	auto const along{longer + shorter * std::cos(angle) - Radius * std::sin(angle)};
-	auto const off{shorter * std::sin(angle) - Radius * (1.0 - std::cos(angle))};
-	if (Kind == tangent_fit::two_arcs && std::abs(a - b) > kNear && along > 0.0 && off > 0.0)
-	{
-		auto const turn{2.0 * std::atan2(off, along)};
-		auto const flatter{Radius + along / std::sin(turn)};
-		if (turn < angle && flatter <= kFlattest)
-		{
-			parts = {{flatter * turn, flatter, flatter}, {Radius * (angle - turn), Radius, Radius}};
-			if (a < b)
-				std::swap(parts[0], parts[1]);
-		}
-	}
-	if (Kind == tangent_fit::arc_straight_arc)
-	{
-		// turned by t on the first arc: L sin t + (R1 - R) (1 - cos t) = b sin angle - R (1 - cos angle) and
-		// L cos t + (R1 - R) sin t = a + b cos angle - R sin angle
-		auto const first{First > 0.0 ? First : Radius};
-		auto const more{first - Radius};
-		auto const ahead{a + b * std::cos(angle) - Radius * std::sin(angle)};
-		auto const aside{b * std::sin(angle) - Radius * (1.0 - std::cos(angle))};
-		auto const rest = [&](double const Turn) { return ahead * std::tan(Turn) + more * (1.0 - 1.0 / std::cos(Turn)) - aside; };
-		auto const straight_of = [&](double const Turn) { return (ahead - more * std::sin(Turn)) / std::cos(Turn); };
-		if (ahead <= 0.0 || aside <= 0.0 || rest(angle) < 0.0)
-		{
-			Error = format(STR_C("a and b too short for an arc, a straight and an arc at R %.0f m: the tangent of the arc alone is %.3f m"), Radius, tangent);
-			return false;
-		}
-		auto low{0.0};
-		auto high{angle};
-		for (int i = 0; i < 60; ++i)
-		{
-			auto const middle{(low + high) * 0.5};
-			(rest(middle) > 0.0 ? high : low) = middle;
-		}
-		auto const turn{(low + high) * 0.5};
-		auto const straight{straight_of(turn)};
-		if (straight < 0.0)
-		{
-			Error = format(STR_C("a and b too short for an arc, a straight and an arc at R %.0f m: the tangent of the arc alone is %.3f m"), Radius, tangent);
-			return false;
-		}
-		parts = {{first * turn, first, first}, {straight, 0.0, 0.0}, {Radius * (angle - turn), Radius, Radius}};
-	}
-	if (Kind == tangent_fit::transition && longer > tangent + kNear)
-	{
-		// the end of the transition of the length and the arc from it up to the angle: the longer tangent told by the length alone
-		auto const reached = [&](double const Length, double &Tangent, double &Other) {
-			double x{0.0};
-			double z{0.0};
-			int constexpr kSteps{200};
-			for (int i = 0; i < kSteps; ++i)
-			{
-				auto const s{(i + 0.5) * Length / kSteps};
-				auto const turned{s * s / (2.0 * Radius * std::max(Length, 1e-9))};
-				x += std::sin(turned) * Length / kSteps;
-				z += std::cos(turned) * Length / kSteps;
-			}
-			auto const from{Length / (2.0 * Radius)};
-			x += Radius * (std::cos(from) - std::cos(angle));
-			z += Radius * (std::sin(angle) - std::sin(from));
-			Tangent = z - x / std::tan(angle);
-			Other = x / std::sin(angle);
-		};
-		auto low{0.0};
-		auto high{2.0 * Radius * angle * (1.0 - 1e-6)};
-		double tangent_of;
-		double other;
-		for (int i = 0; i < 60; ++i)
-		{
-			auto const middle{(low + high) * 0.5};
-			reached(middle, tangent_of, other);
-			(tangent_of > longer ? high : low) = middle;
-		}
-		auto const length{(low + high) * 0.5};
-		reached(length, tangent_of, other);
-		if (std::abs(tangent_of - longer) > kNear)
-		{
-			Error = format(STR_C("A transition curve at R %.0f doesn't reach the tangent of %.3f m"), Radius, longer);
-			return false;
-		}
-		if (shorter < other - kNear)
-		{
-			Error = format(STR_C("The shorter tangent can't be less than %.3f m with this transition curve"), other);
-			return false;
-		}
-		auto const straight{std::max(0.0, shorter - other)};
-		part const arc{Radius * angle - length * 0.5, Radius, Radius};
-		if (a >= b)
-		{
-			parts = {{length, 0.0, Radius}, arc};
-			if (straight > 0.01)
-				parts.push_back({straight, 0.0, 0.0});
-		}
-		else
-		{
-			parts = {arc, {length, Radius, 0.0}};
-			lead = straight;
-		}
-	}
-	if (parts.empty())
-	{
-		// one arc; a nearer than its tangent: the blade meets the stock rail at an angle, the arc turning the rest of the way
-		auto const centre = [&](double const Entry) { return Radius * (std::sin(angle) - std::sin(Entry)) - Radius * (std::cos(Entry) - std::cos(angle)) / std::tan(angle); };
-		if (a < tangent - kNear)
-		{
-			auto low{0.0};
-			auto high{angle};
-			for (int i = 0; i < 60; ++i)
-			{
-				auto const middle{(low + high) * 0.5};
-				(centre(middle) > a ? low : high) = middle;
-			}
-			entry = (low + high) * 0.5;
-		}
-		else if (a > tangent + kNear)
-			lead = a - tangent;
-		auto const arcend{Radius * (std::cos(entry) - std::cos(angle)) / std::sin(angle)};
-		if (b < arcend - kNear)
-		{
-			Error = format(STR_C("b can't be shorter than the end of the arc, %.3f m"), arcend);
-			return false;
-		}
-		parts = {{Radius * (angle - entry), Radius, Radius}};
-		if (b - arcend > 0.01)
-			parts.push_back({b - arcend, 0.0, 0.0});
-	}
-	Design.parts = std::move(parts);
-	Design.lead = lead;
-	Design.entry = glm::degrees(entry);
+	switch_tangents const given{Radius, angle, a, b, tangent, std::max(a, b), std::min(a, b)};
+	fitted_track fit;
+	if (Kind == tangent_fit::two_arcs)
+		fit.parts = two_arcs_parts(given);
+	if (Kind == tangent_fit::arc_straight_arc && false == arc_straight_arc_parts(given, First, fit.parts, Error))
+		return false;
+	if (Kind == tangent_fit::transition && given.longer > tangent + kNear && false == transition_parts(given, fit, Error))
+		return false;
+	if (fit.parts.empty() && false == one_arc_parts(given, fit, Error))
+		return false;
+	Design.parts = std::move(fit.parts);
+	Design.lead = fit.lead;
+	Design.entry = glm::degrees(fit.entry);
 	Design.a = a;
 	Design.b = b;
 	Design.main = a + b;
@@ -681,43 +908,8 @@ bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_f
 	for (std::size_t i = 4; i < Clicks.size(); ++i)
 	{
 		auto const offset{Clicks[i] - Clicks[0]};
-		points.push_back({(main.x * offset.y - main.y * offset.x) * side, glm::dot(main, offset)});
+		points.emplace_back((main.x * offset.y - main.y * offset.x) * side, glm::dot(main, offset));
 	}
-	// how far the points are from the diverging track of the design: the worst and the mean square
-	auto const off = [&](design const &Trial, double &Worst) {
-		std::string problem;
-		auto const shape{build(Trial, problem)};
-		if (shape.paths.size() < 2)
-			return std::numeric_limits<double>::max();
-		std::vector<glm::dvec2> line;
-		std::vector<segment_data> pieces{shape.paths[1].pieces};
-		if (pieces.empty())
-			pieces.push_back(shape.paths[1]);
-		for (auto const &piece : pieces)
-		{
-			geometry::bezier const curve{piece};
-			for (int j = 0; j <= 16; ++j)
-			{
-				auto const at{curve.point(j / 16.0)};
-				line.push_back({at.x, at.z});
-			}
-		}
-		auto sum{0.0};
-		Worst = 0.0;
-		for (auto const &point : points)
-		{
-			auto nearest{std::numeric_limits<double>::max()};
-			for (std::size_t k = 0; k + 1 < line.size(); ++k)
-			{
-				auto const run{line[k + 1] - line[k]};
-				auto const t{std::clamp(glm::dot(point - line[k], run) / std::max(1e-12, glm::dot(run, run)), 0.0, 1.0)};
-				nearest = std::min(nearest, glm::length(point - (line[k] + run * t)));
-			}
-			sum += nearest * nearest;
-			Worst = std::max(Worst, nearest);
-		}
-		return sum / static_cast<double>(std::max<std::size_t>(1, points.size()));
-	};
 	double constexpr kAboutAsClose{0.01}; // m of the mean, what clicking off a photo can't tell apart
 	auto best{std::numeric_limits<double>::max()};
 	design chosen;
@@ -725,33 +917,8 @@ bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_f
 	for (auto const kind : {Kind, tangent_fit::arc_straight_arc, tangent_fit::straights, tangent_fit::transition, tangent_fit::two_arcs})
 	{
 		// the best radius of the shape, from a coarse row of them closing in
-		auto low{40.0};
-		auto high{2000.0};
-		auto best_radius{0.0};
 		auto best_of_kind{std::numeric_limits<double>::max()};
-		for (int pass = 0; pass < 3; ++pass)
-		{
-			int constexpr kRow{24};
-			for (int i = 0; i <= kRow; ++i)
-			{
-				auto const radius{low * std::pow(high / low, static_cast<double>(i) / kRow)};
-				design trial{Design};
-				std::string problem;
-				double worst;
-				if (false == fit_tangents(trial, radius, found.ratio, found.a, found.b, kind, problem, First))
-					continue;
-				if (auto const value{off(trial, worst)}; value < best_of_kind)
-				{
-					best_of_kind = value;
-					best_radius = radius;
-				}
-			}
-			if (best_radius <= 0.0)
-				break;
-			auto const step{std::pow(high / low, 1.0 / kRow)};
-			low = best_radius / step;
-			high = best_radius * step;
-		}
+		auto const best_radius{closest_radius(Design, found, kind, First, points, best_of_kind)};
 		if (best_radius <= 0.0)
 			continue;
 		// the shape asked for keeps its place unless another is clearly closer
@@ -761,7 +928,7 @@ bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_f
 			design trial{Design};
 			std::string problem;
 			fit_tangents(trial, best_radius, found.ratio, found.a, found.b, kind, problem, First);
-			off(trial, Result.worst);
+			distance_off(trial, points, Result.worst);
 			Result.kind = kind;
 			Result.radius = best_radius;
 			trial.main = found.main;
@@ -780,24 +947,102 @@ bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_f
 	return true;
 }
 
+namespace
+{
+
+// a switch of the catalogue as its table gives it: a from the start of the switch to its centre, b on from there along the main
+// track, and along the diverging track where the scheme gives it another length
+struct ordinary
+{
+	char const *name;
+	char const *rail;
+	double radius;
+	double ratio; // at the end of the diverging track; of the two tracks parting, for a symmetric switch
+	double a; // 0: from the geometry
+	double b; // 0: the diverging track curved up to its end
+	double diverging{0.0}; // 0: the same as b
+	bool movable{false};
+	char const *type{"Rz"};
+	bool tangent{false}; // an S42 switch with blades lying tangent to the stock rails, its a too long for blades cutting into them at 25'
+};
+
+// the design of a switch of the catalogue: one arc, with the pre-blade stretch and the angle of the blade its a and b make
+design made_of(ordinary const &Ordinary)
+{
+	design entry;
+	entry.name = Ordinary.name;
+	entry.rail = Ordinary.rail;
+	entry.type = Ordinary.type;
+	entry.movable = Ordinary.movable;
+	auto const symmetric{symmetric_switch(entry.type)};
+	// each track of a symmetric switch turns by a half of the angle between them
+	auto const angle{std::atan(1.0 / Ordinary.ratio) * (symmetric ? 0.5 : 1.0)};
+	auto const radius{Ordinary.radius};
+	auto const tangent{radius * std::tan(angle * 0.5)};
+	auto const a{Ordinary.a > 0.0 ? Ordinary.a : tangent};
+	auto const across = [&](double const Entry) { return radius * (std::cos(Entry) - std::cos(angle)); };
+	// the centre nearer than the tangent of the arc: the blade meets the stock rail at an angle and the arc turns the rest of the way;
+	// further: the diverging track runs along the main one for a while
+	// within a couple of centimetres of the tangent the catalogue only rounds it
+	auto const centre = [&](double const Entry) { return radius * (std::sin(angle) - std::sin(Entry)) - across(Entry) / std::tan(angle); };
+	auto const fit = [&](double const Centre) {
+		auto low{0.0};
+		auto high{angle};
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			(centre(middle) > Centre ? low : high) = middle;
+		}
+		return (low + high) * 0.5; };
+	auto entryangle{0.0};
+	auto lead{a > tangent + 0.02 ? a - tangent : 0.0};
+	if (entry.rail == "S42" && false == Ordinary.tangent)
+	{
+		entryangle = glm::radians(kSecantAngle) * (symmetric ? 0.5 : 1.0);
+		lead = a - centre(entryangle);
+		if (lead <= 0.0)
+		{
+			lead = kSecantLead;
+			entryangle = fit(a - lead);
+		}
+	}
+	else if (a < tangent - 0.02)
+		entryangle = fit(a);
+	else if (auto const cut{cut_tip(entry.rail, radius)}; cut > 0.0 && false == symmetric)
+		entry.tip = lead + cut;
+	entry.entry = glm::degrees(entryangle);
+	entry.lead = lead;
+	entry.a = a;
+	auto const arcend{across(entryangle) / std::sin(angle)};
+	entry.b = Ordinary.b > 0.0 ? Ordinary.b : arcend;
+	entry.parts.emplace_back(radius * (angle - entryangle), radius, radius);
+	if (auto const rest{(Ordinary.diverging > 0.0 ? Ordinary.diverging : entry.b) - arcend}; rest > 0.05)
+		entry.parts.emplace_back(rest, 0.0, 0.0);
+	if (false == symmetric)
+		entry.main = a + entry.b;
+	if (Ordinary.a <= 0.0 || Ordinary.b <= 0.0)
+		entry.note = "(from the geometry)";
+	return entry;
+}
+
+// a double switch of the catalogue: its two switches, where the second one starts on the main track of the first
+struct twofold
+{
+	char const *name;
+	char const *type;
+	char const *rail;
+	ordinary first;
+	ordinary second;
+	double stagger;
+	char const *note;
+};
+
+} // namespace
+
 std::vector<design> catalogue()
 {
-	// the switches of the instruction Id-4 of PKP PLK, tables 8-1 (60E1), 8-2 (49E1) and 8-3 (S42): a from the start of the switch
-	// to its centre, b on from there along the main track, and along the diverging track where the scheme gives it another length
-	struct ordinary
-	{
-		char const *name;
-		char const *rail;
-		double radius;
-		double ratio; // at the end of the diverging track; of the two tracks parting, for a symmetric switch
-		double a; // 0: from the geometry
-		double b; // 0: the diverging track curved up to its end
-		double diverging{0.0}; // 0: the same as b
-		bool movable{false};
-		char const *type{"Rz"};
-		bool tangent{false}; // an S42 switch with blades lying tangent to the stock rails, its a too long for blades cutting into them at 25'
-	};
-	ordinary const ordinaries[] = {
+	// the switches of the instruction Id-4 of PKP PLK, tables 8-1 (60E1), 8-2 (49E1) and 8-3 (S42)
+	auto const ordinaries{std::to_array<ordinary>({
 		{"Rz 60E1-190-1:9", "60E1", 190.0, 9.0, 10.523, 16.615},
 		{"Rz 60E1-300-1:9", "60E1", 300.0, 9.0, 16.615, 16.615},
 		{"Rz 60E1-500-1:12", "60E1", 500.0, 12.0, 20.797, 20.797},
@@ -840,67 +1085,10 @@ std::vector<design> catalogue()
 		{"Rz S42-205-1:7,5 industrial", "S42", 205.0, 7.5, 12.754, 15.436, 15.427},
 		{"Rz S42-300-1:9 industrial", "S42", 300.0, 9.0, 16.615, 16.615, 0.0, false, "Rz", true},
 		{"Rz S42-205-1:9 gauge 1524", "S42", 205.0, 9.0, 10.513, 18.394},
-	};
-	auto const make = [](ordinary const &Ordinary) {
-		design entry;
-		entry.name = Ordinary.name;
-		entry.rail = Ordinary.rail;
-		entry.type = Ordinary.type;
-		entry.movable = Ordinary.movable;
-		auto const symmetric{symmetric_switch(entry.type)};
-		// each track of a symmetric switch turns by a half of the angle between them
-		auto const angle{std::atan(1.0 / Ordinary.ratio) * (symmetric ? 0.5 : 1.0)};
-		auto const radius{Ordinary.radius};
-		auto const tangent{radius * std::tan(angle * 0.5)};
-		auto const a{Ordinary.a > 0.0 ? Ordinary.a : tangent};
-		auto const across = [&](double const Entry) { return radius * (std::cos(Entry) - std::cos(angle)); };
-		// the centre nearer than the tangent of the arc: the blade meets the stock rail at an angle and the arc turns the rest of the way;
-		// further: the diverging track runs along the main one for a while
-		// within a couple of centimetres of the tangent the catalogue only rounds it
-		auto const centre = [&](double const Entry) { return radius * (std::sin(angle) - std::sin(Entry)) - across(Entry) / std::tan(angle); };
-		auto const fit = [&](double const Centre) {
-			auto low{0.0};
-			auto high{angle};
-			for (int i = 0; i < 60; ++i)
-			{
-				auto const middle{(low + high) * 0.5};
-				(centre(middle) > Centre ? low : high) = middle;
-			}
-			return (low + high) * 0.5; };
-		auto entryangle{0.0};
-		auto lead{a > tangent + 0.02 ? a - tangent : 0.0};
-		if (entry.rail == "S42" && false == Ordinary.tangent)
-		{
-			entryangle = glm::radians(kSecantAngle) * (symmetric ? 0.5 : 1.0);
-			lead = a - centre(entryangle);
-			if (lead <= 0.0)
-			{
-				lead = kSecantLead;
-				entryangle = fit(a - lead);
-			}
-		}
-		else if (a < tangent - 0.02)
-			entryangle = fit(a);
-		else if (auto const cut{cut_tip(entry.rail, radius)}; cut > 0.0 && false == symmetric)
-			entry.tip = lead + cut;
-		entry.entry = glm::degrees(entryangle);
-		entry.lead = lead;
-		entry.a = a;
-		auto const arcend{across(entryangle) / std::sin(angle)};
-		entry.b = Ordinary.b > 0.0 ? Ordinary.b : arcend;
-		entry.parts.push_back({radius * (angle - entryangle), radius, radius});
-		auto const rest{(Ordinary.diverging > 0.0 ? Ordinary.diverging : entry.b) - arcend};
-		if (rest > 0.05)
-			entry.parts.push_back({rest, 0.0, 0.0});
-		if (false == symmetric)
-			entry.main = a + entry.b;
-		if (Ordinary.a <= 0.0 || Ordinary.b <= 0.0)
-			entry.note = "(from the geometry)";
-		return entry;
-	};
+	})};
 	std::vector<design> result;
-	for (auto const &ordinary : ordinaries)
-		result.push_back(make(ordinary));
+	for (auto const &listed : ordinaries)
+		result.push_back(made_of(listed));
 	// not of Id-4: the tangents as measured, too long for one arc alone
 	for (auto const &[name, kind] : {std::pair{"Rz S42-140-1:6,6 16/12", tangent_fit::straights}, std::pair{"Rz S42-140-1:6,6 16/12 KP", tangent_fit::transition}, std::pair{"Rz S42-140-1:6,6 16/12 łuk-prosta-łuk", tangent_fit::arc_straight_arc}})
 	{
@@ -920,17 +1108,7 @@ std::vector<design> catalogue()
 	ordinary const r190_66{"", "", 190.0, 6.6, 14.312, 10.910, 14.312};
 	ordinary const r300_9{"", "", 300.0, 9.0, 16.615, 16.615};
 	ordinary const r500_12{"", "", 500.0, 12.0, 20.797, 20.797};
-	struct twofold
-	{
-		char const *name;
-		char const *type;
-		char const *rail;
-		ordinary first;
-		ordinary second;
-		double stagger;
-		char const *note;
-	};
-	twofold const twofolds[] = {
+	auto const twofolds{std::to_array<twofold>({
 		{"Rpd 49E1-190-1:7,5/1:7,5", "Rpd", "49E1", r190_75long, r190_75, 10.523, ""},
 		{"Rpd 49E1-190-1:9/1:7,5", "Rpd", "49E1", r190_9, r190_75, 10.523, ""},
 		{"Rpd 49E1-190-1:9/1:9", "Rpd", "49E1", r190_9, r190_9, 10.523, ""},
@@ -948,14 +1126,15 @@ std::vector<design> catalogue()
 		// the first one as their blades let them, past the heel of the blades of the first one and the short track between the two
 		{"Rps 60E1-300-1:9", "Rps", "60E1", r300_9, r300_9, 14.2, "(designed)"},
 		{"Rps 60E1-500-1:12", "Rps", "60E1", r500_12, r500_12, 18.0, "(designed)"},
-	};
+	})};
 	for (auto const &entry : twofolds)
 	{
 		auto first{entry.first};
 		auto other{entry.second};
-		first.rail = other.rail = entry.rail;
-		auto made{make(first)};
-		auto const second{make(other)};
+		first.rail = entry.rail;
+		other.rail = entry.rail;
+		auto made{made_of(first)};
+		auto const second{made_of(other)};
 		made.name = entry.name;
 		made.rail = entry.rail;
 		made.type = entry.type;
@@ -997,47 +1176,7 @@ std::vector<design> own()
 		entry.name = unword(name);
 		bool good{true};
 		while (good && line >> keyword)
-		{
-			if (keyword == "type")
-				line >> entry.type;
-			else if (keyword == "rail")
-			{
-				line >> entry.rail;
-				if (entry.rail.empty())
-					entry.rail = "-";
-			}
-			else if (keyword == "main")
-				line >> entry.main;
-			else if (keyword == "stagger")
-				line >> entry.stagger;
-			else if (keyword == "lead")
-				line >> entry.lead;
-			else if (keyword == "entry")
-				line >> entry.entry;
-			else if (keyword == "lead2")
-				line >> entry.lead2;
-			else if (keyword == "entry2")
-				line >> entry.entry2;
-			else if (keyword == "tip")
-				line >> entry.tip;
-			else if (keyword == "tip2")
-				line >> entry.tip2;
-			else if (keyword == "heel")
-				line >> entry.heel;
-			else if (keyword == "throw")
-				line >> entry.bladethrow;
-			else if (keyword == "a")
-				line >> entry.a;
-			else if (keyword == "b")
-				line >> entry.b;
-			else if (keyword == "parts")
-				good = read_parts(line, entry.parts);
-			else if (keyword == "parts2")
-				good = read_parts(line, entry.parts2);
-			else
-				good = false;
-			good = good && false == line.fail();
-		}
+			good = read_value(line, keyword, entry) && false == line.fail();
 		if (good && false == entry.name.empty())
 			result.push_back(std::move(entry));
 	}

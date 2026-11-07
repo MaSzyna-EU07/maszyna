@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -25,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include <random>
 #include <set>
 #include <sstream>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 
@@ -518,8 +520,7 @@ bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
 {
 	Speeds.clear();
 	template_text text;
-	std::string error;
-	if (false == read_template(File, text, error))
+	if (std::string error; false == read_template(File, text, error))
 	{
 		return false;
 	}
@@ -541,20 +542,19 @@ bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
 			continue;
 		}
 		int own{0};
-		if (speed(tokens[idx + 1], own) && own != 0 && std::find(Speeds.begin(), Speeds.end(), own) == Speeds.end())
+		if (speed(tokens[idx + 1], own) && own != 0 && std::ranges::find(Speeds, own) == Speeds.end())
 		{
 			Speeds.push_back(own);
 		}
 	}
-	std::sort(Speeds.begin(), Speeds.end());
+	std::ranges::sort(Speeds);
 	return true;
 }
 
 int block_aspects(std::string const &File)
 {
 	template_text text;
-	std::string error;
-	if (false == read_template(File, text, error))
+	if (std::string error; false == read_template(File, text, error))
 	{
 		return 0;
 	}
@@ -660,7 +660,7 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 
 std::string normalized(std::string File)
 {
-	std::replace(File.begin(), File.end(), '\\', '/');
+	std::ranges::replace(File, '\\', '/');
 	return ToLower(File);
 }
 
@@ -887,13 +887,22 @@ struct found_template
 	template_text text;
 };
 
+// the folder was walked into before, Folders: the canonical paths of those walked into so far; one whose canonical path can't be
+// found counts as a new one
+bool walked_before(std::set<std::filesystem::path> &Folders, std::filesystem::path const &Folder)
+{
+	std::error_code status;
+	auto const canonical{std::filesystem::canonical(Folder, status)};
+	return false == static_cast<bool>(status) && false == Folders.emplace(canonical).second;
+}
+
 // reads every template in the scenery directory, until told to stop
 std::vector<found_template> find_templates(std::filesystem::path const &Root, std::atomic<bool> const &Stop)
 {
 	std::vector<found_template> found;
 	std::error_code error;
 	// a folder linked into one of its own subfolders would lead the walk in circles
-	std::set<std::filesystem::path> folders{std::filesystem::canonical(Root, error)};
+	std::set folders{std::filesystem::canonical(Root, error)};
 	// NOTE: on an error the iterator turns into the end one. Folders linked into the scenery folder are a part of it
 	auto const options{std::filesystem::directory_options::skip_permission_denied | std::filesystem::directory_options::follow_directory_symlink};
 	for (std::filesystem::recursive_directory_iterator file{Root, options, error}, end; file != end && false == Stop; file.increment(error))
@@ -901,7 +910,7 @@ std::vector<found_template> find_templates(std::filesystem::path const &Root, st
 		std::error_code status;
 		if (file->is_directory(status))
 		{
-			if (auto const folder{std::filesystem::canonical(file->path(), status)}; false == static_cast<bool>(status) && false == folders.emplace(folder).second)
+			if (walked_before(folders, file->path()))
 			{
 				file.disable_recursion_pending();
 			}
@@ -945,10 +954,11 @@ struct editorIncludeBank::search
 	std::atomic<bool> stop{false};
 	std::future<std::vector<found_template>> result;
 	std::chrono::steady_clock::time_point started{std::chrono::steady_clock::now()};
+	std::jthread worker; // the thread of the search, joined before the rest goes
 
 	~search()
 	{
-		// the result waits for the search to end before it goes
+		// the worker waits for the search to end before the result goes
 		stop = true;
 	}
 };
@@ -971,7 +981,9 @@ void editorIncludeBank::rescan()
 		return;
 	}
 	m_search = std::make_shared<search>();
-	m_search->result = std::async(std::launch::async, find_templates, std::filesystem::path(Global.asCurrentSceneryPath), std::cref(m_search->stop));
+	std::packaged_task<std::vector<found_template>()> task{[Root = std::filesystem::path(Global.asCurrentSceneryPath), &Stop = m_search->stop]() { return find_templates(Root, Stop); }};
+	m_search->result = task.get_future();
+	m_search->worker = std::jthread{std::move(task)};
 }
 
 bool editorIncludeBank::poll()
@@ -1002,7 +1014,7 @@ bool editorIncludeBank::poll()
 	std::sort(std::begin(m_entries), std::end(m_entries), [](include_entry const &Left, include_entry const &Right) { return Left.file < Right.file; });
 	index();
 	WriteLog(format("Editor: %zu templates found in the scenery directory in %.1f s, %zu of them described for the editor", m_entries.size(), seconds,
-	                static_cast<std::size_t>(std::count_if(std::begin(m_entries), std::end(m_entries), [](include_entry const &Entry) { return Entry.described; }))));
+	                static_cast<std::size_t>(std::ranges::count_if(m_entries, [](include_entry const &Entry) { return Entry.described; }))));
 	return true;
 }
 

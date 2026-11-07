@@ -15,9 +15,12 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 
+#include <array>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -45,13 +48,14 @@ class srk_tool final : public editor_tool
 	void boundary_click();
 	// the stations described go to the files of their layers, as "//$s" lines
 	void store();
-
-  private:
-	editor_selection &m_selection;
-	editor_view &m_view;
-	editor_history &m_history;
-	editor_templates &m_templates;
-	editor_signals &m_signals;
+	// a hash of the names taking their views too: the sets of names look them up without a copy
+	struct name_hash
+	{
+		using is_transparent = void;
+		std::size_t operator()(std::string_view const Name) const { return std::hash<std::string_view>{}(Name); }
+	};
+	using name_set = std::unordered_set<std::string, name_hash, std::equal_to<>>;
+	// the parts of the open station and of its survey, public for the helpers of the tool to take them
 	// the block of a line out of the station
 	enum class block_kind
 	{
@@ -67,6 +71,16 @@ class srk_tool final : public editor_tool
 		double_track, // the automatic one on a double-track line
 		single // the semi-automatic one on a single-track line
 	};
+	// the block of a line as found: the one it has and why, the one it would have of its own and why, and the block signals
+	// standing along it
+	struct block_found
+	{
+		block_kind kind{block_kind::semi};
+		block_reason why{block_reason::single};
+		block_kind own{block_kind::semi};
+		block_reason own_why{block_reason::single};
+		std::size_t blocks{0};
+	};
 	// a station described: found again by a switch of it
 	struct record
 	{
@@ -79,8 +93,12 @@ class srk_tool final : public editor_tool
 		std::string km; // of the axis of the station along the line, empty while unknown
 		bool reversed{false}; // the km rise to the left of the schematic, the switches numbered from there
 		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
-		std::map<std::string, block_kind> blocks; // of the lines by their entry signals, as set by hand
-		std::map<std::string, bool> ways; // the automatic block of the lines by their entry signals both ways, as set by hand
+		std::map<std::string, block_kind, std::less<>> blocks; // of the lines by their entry signals, as set by hand
+		std::map<std::string, bool, std::less<>> ways; // the automatic block of the lines by their entry signals both ways, as set by hand
+		// the words of its line after the code of the station
+		void read(std::istringstream &Words);
+		// its line in the file of its layer
+		std::string written() const;
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -90,23 +108,6 @@ class srk_tool final : public editor_tool
 		double centre{0.0};
 		float exaggeration{0.0f}; // 0: fit at the next draw
 	};
-	bool m_open{false};
-	bool m_strip{true}; // the schematic shown, off for the screenshots of the self-tests
-	bool m_loaded{false};
-	bool m_changed{false};
-	std::vector<record> m_records;
-	std::optional<station::layout> m_layout;
-	station::drawing m_plot; // the schematic of the layout as the plot draws it
-	int m_record{-1}; // of the open station, -1 while it has none
-	TTrack *m_anchor{nullptr}; // the switch the open station was found from
-	bool m_reversed{false}; // the switches numbered from the right end of the schematic
-	std::size_t m_history_revision{0};
-	TTrack const *m_picked{nullptr}; // the track selected when the station was looked for
-	view m_view_state;
-	bool m_fit_lines{false}; // the schematic fits the lines out to the next stations too
-	int m_hover{-1}; // path of the layout under the mouse in the schematic
-	bool m_dragging{false};
-	std::vector<std::pair<std::string, std::size_t>> m_found; // the stations of the scenery: a switch and the count of them
 	struct circuit_mark
 	{
 		glm::dvec2 at{0.0}; // in the schematic
@@ -117,16 +118,11 @@ class srk_tool final : public editor_tool
 		bool labelled{true}; // the circuits of the switches go without, named after them
 		glm::dvec2 drawn{0.0}; // in the plot
 	};
-	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
-	std::vector<circuit_mark> m_circuits;
-	std::vector<glm::dvec2> m_ticks; // the joints between the circuits, in the schematic
-	std::vector<glm::dvec2> m_ticks_drawn; // the same in the plot
 	struct joint_mark
 	{
 		glm::dvec3 at{0.0};
 		glm::dvec3 across{0.0}; // of the track there, in the plan
 	};
-	std::vector<joint_mark> m_joints; // the same in the scenery
 	struct signal_mark
 	{
 		glm::dvec2 at{0.0}; // in the schematic
@@ -137,14 +133,6 @@ class srk_tool final : public editor_tool
 		glm::dvec2 drawn{0.0}; // on its track in the plot
 		float side{0.0f}; // 1: it stands to the left of the track in the plot, -1: to the right
 	};
-	std::vector<signal_mark> m_signal_marks;
-	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found
-	std::vector<station::lengths> m_lengths; // of the station tracks, by their numbers
-	bool m_measured{false};
-	bool m_numbered{false}; // the station has tracks numbered by their circuits
-	int m_length_hover{-1}; // of the lengths, the row under the mouse
-	int m_length_canvas{-1}; // of the lengths, of the track under the mouse in the schematic
-	int m_length_shown{-1}; // of the lengths, the one drawn: of the row or the track under the mouse, else of the track selected
 	// how the SHP track resonator of a signal stands
 	enum class shp_state
 	{
@@ -188,9 +176,6 @@ class srk_tool final : public editor_tool
 		bool shp_short{false}; // the tracks before it end short of the place of its resonator
 		shp_state shp_of() const;
 	};
-	std::vector<head_check> m_heads;
-	bool m_heads_known{false}; // the templates found
-	int m_head_hover{-1}; // of the heads, the row under the mouse
 	// a line out of the open station, from an entry signal of it
 	struct line_row
 	{
@@ -250,10 +235,6 @@ class srk_tool final : public editor_tool
 		glm::dvec3 leftover{0.0};
 		glm::dvec2 leftover_travel{0.0, 1.0};
 	};
-	std::vector<line_row> m_lines;
-	std::vector<station::line> m_line_ways; // of the lines listed
-	std::unordered_set<std::string> m_signal_names; // of the signals of the scenery, lowercase: a block signal drawn on one's number takes a letter
-	std::string m_lines_problem; // why the station has no lines listed
 	// what the check of the open station finds wrong: signals no track reads, lines broken off, tracks between the block sections of
 	// a line in none, block sections without a track
 	struct problem
@@ -263,8 +244,6 @@ class srk_tool final : public editor_tool
 		scene::instance_handle signal{0}; // Repair has a track read it again
 		bool lines{false}; // Repair sets the line signals again
 	};
-	std::vector<problem> m_problems;
-	bool m_drawing{false}; // the block boundaries drawn by hand
 	// a block boundary under the mouse while they are drawn: block signals across the line there, or the ones standing taken away
 	struct boundary
 	{
@@ -281,7 +260,6 @@ class srk_tool final : public editor_tool
 		};
 		std::vector<post> posts; // of the block signals
 	};
-	boundary m_boundary;
 	// a block boundary drawn on a line of the automatic block of the open station
 	struct block_edit
 	{
@@ -289,6 +267,53 @@ class srk_tool final : public editor_tool
 		glm::dvec3 point{0.0}; // on its axis
 		bool remove{false}; // the block signals standing there taken away, else placed
 	};
+
+  private:
+	editor_selection &m_selection;
+	editor_view &m_view;
+	editor_history &m_history;
+	editor_templates &m_templates;
+	editor_signals &m_signals;
+	bool m_open{false};
+	bool m_strip{true}; // the schematic shown, off for the screenshots of the self-tests
+	bool m_loaded{false};
+	bool m_changed{false};
+	std::vector<record> m_records;
+	std::optional<station::layout> m_layout;
+	station::drawing m_plot; // the schematic of the layout as the plot draws it
+	int m_record{-1}; // of the open station, -1 while it has none
+	TTrack *m_anchor{nullptr}; // the switch the open station was found from
+	bool m_reversed{false}; // the switches numbered from the right end of the schematic
+	std::size_t m_history_revision{0};
+	TTrack const *m_picked{nullptr}; // the track selected when the station was looked for
+	view m_view_state;
+	bool m_fit_lines{false}; // the schematic fits the lines out to the next stations too
+	int m_hover{-1}; // path of the layout under the mouse in the schematic
+	bool m_dragging{false};
+	std::vector<std::pair<std::string, std::size_t>> m_found; // the stations of the scenery: a switch and the count of them
+	std::vector<int> m_circuit_of; // of each path of the layout, an index into m_circuits, -1 for none
+	std::vector<circuit_mark> m_circuits;
+	std::vector<glm::dvec2> m_ticks; // the joints between the circuits, in the schematic
+	std::vector<glm::dvec2> m_ticks_drawn; // the same in the plot
+	std::vector<joint_mark> m_joints; // the same in the scenery
+	std::vector<signal_mark> m_signal_marks;
+	bool m_signals_known{false}; // the signals standing surveyed, once their templates are found
+	std::vector<station::lengths> m_lengths; // of the station tracks, by their numbers
+	bool m_measured{false};
+	bool m_numbered{false}; // the station has tracks numbered by their circuits
+	int m_length_hover{-1}; // of the lengths, the row under the mouse
+	int m_length_canvas{-1}; // of the lengths, of the track under the mouse in the schematic
+	int m_length_shown{-1}; // of the lengths, the one drawn: of the row or the track under the mouse, else of the track selected
+	std::vector<head_check> m_heads;
+	bool m_heads_known{false}; // the templates found
+	int m_head_hover{-1}; // of the heads, the row under the mouse
+	std::vector<line_row> m_lines;
+	std::vector<station::line> m_line_ways; // of the lines listed
+	name_set m_signal_names; // of the signals of the scenery, lowercase: a block signal drawn on one's number takes a letter
+	std::string m_lines_problem; // why the station has no lines listed
+	std::vector<problem> m_problems;
+	bool m_drawing{false}; // the block boundaries drawn by hand
+	boundary m_boundary;
 	std::string m_status;
 	// the renames Number the switches was clicked for while events aim at the switches by their old names: a second click with
 	// the same ones renames anyway
@@ -300,18 +325,37 @@ class srk_tool final : public editor_tool
 	record &record_of_open();
 	std::string title() const;
 	void render_found();
+	// the parts of the panel of the open station: the fields of its record, its speed and braking distance (true when set), the
+	// steps of its signalling, the resonators, the number of the selected station track and the list of its switches, in its table
+	void render_record_fields(station::layout const &Layout);
+	bool render_braking();
+	void render_steps(station::layout const &Layout);
+	void render_shp();
+	void render_track_number();
+	void render_switch_list(station::layout const &Layout);
 	void render_canvas(float const Height);
 	void fit_view(float const Width, float const Height);
 	void find_all();
 	// the switches numbered along the station and named after its code; one step of the history
 	void number_switches();
+	// the switches can take the names of the numbering, Own: the parts of the station; false with the reason while one can't
+	bool names_allowed(std::vector<std::pair<TTrack *, std::string>> &Names, std::unordered_set<TTrack const *> const &Own);
+	// no event the editor doesn't write aims at the switches renamed, or the same renames were clicked again; false with them listed
+	bool renames_confirmed(std::string const &Code, std::vector<std::pair<TTrack *, std::string>> const &Names);
+	// the objects of the scenery naming the switches renamed, with their values after the new names
+	std::vector<std::pair<scene::instance_handle, std::vector<std::string>>> following_of(std::vector<std::pair<TTrack *, std::string>> const &Names) const;
 	// the station cut at the joints of its track circuits and the circuits named; one step of the history
 	void set_circuits();
+	// the tracks of the open station can be cut at the joints planned and changed; false with the reason while one can't
+	bool circuits_editable(std::vector<station::joint> const &Planned);
 	// the track circuits as the tracks have them, for the schematic
 	void survey();
 	// the signals placed where the station has none and the standing ones named, the circuits before the entry signals set too; one
 	// step of the history
 	void set_signals();
+	// the main signals placed given the templates with the lights their routes need, by the kind chosen in Signals; the ones no
+	// template fits, shown
+	std::vector<std::string> fit_placed(std::vector<signal_order> &Placed, std::string const &Stem);
 	// the signals standing by the station, for the schematic
 	void survey_signals();
 	// the lengths of the station tracks, the signals given by them
@@ -325,13 +369,18 @@ class srk_tool final : public editor_tool
 	// the lights of the signals checked against the routes of their trains and the places of the signals they tell of
 	void check_heads(std::vector<standing_signal> const &Standing);
 	void render_heads();
-	// of a signal in the list: in its tooltip how its template fits, in its row its aspects or its lights
-	static void render_head_fit(head_check const &Head);
+	// the aspects of a signal in its row of the list: by name for a semaphore or a disc described, else its lights
 	static void render_head_aspects(head_check const &Head);
+	// a row of the list of the heads, the speeds shown after the one of the line
+	void render_head_row(std::size_t const Index, double const Line);
 	// the signals given the templates whose lights fit their routes; one step of the history
 	void fit_heads();
 	// the lengths of the station tracks as the list of the tracks gives them, the useful ones each way
 	void render_lengths();
+	// a row of the list of the lengths, Ways: the names of the two ways; the track of a row selected at the middle of its useful
+	// length, the camera over it
+	void render_length_row(std::size_t const Index, std::array<char const *, 2> const &Ways, std::string const &Stem);
+	void show_length(station::lengths const &Track);
 	// the lengths as a table to paste into a spreadsheet, a line a track, the columns parted by tabs
 	std::string lengths_table() const;
 	// of the lengths, the one of the station track the track is a part of, -1 for none
@@ -345,7 +394,7 @@ class srk_tool final : public editor_tool
 	// the block of the line: as set by hand for its entry signal, else the automatic one where block signals stand along it, of four
 	// aspects where one of them has, else on a double-track line, of the aspects of the block signal chosen in Signals, else
 	// the semi-automatic one; Own: the block it has by itself
-	block_kind block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads, block_reason &Why, block_kind &Own, block_reason &Own_why, std::size_t &Blocks) const;
+	block_found block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads) const;
 	// the automatic block of the double-track line both ways: as set by hand for its entry signal, else where block signals stand
 	// along it, when some of them face its wrong-track trains, else on a new line; Own: so by itself
 	bool both_ways(std::vector<station::line> const &Lines, std::size_t Index, std::string const &Entry, std::vector<standing_signal> const &Standing, bool &Hand, bool &Own) const;
@@ -360,6 +409,21 @@ class srk_tool final : public editor_tool
 	// the lines out of the open station, for the panel
 	void survey_lines(std::vector<standing_signal> const &Standing);
 	void render_lines();
+	// the block of the line of the row and of the other track of it set by hand, none: by itself
+	void set_block(line_row const &Row, std::optional<block_kind> const Kind);
+	// the wrong-track running of the line of the row set by hand, none: by itself
+	void set_ways(line_row const &Row, std::optional<bool> const Both);
+	// a row of the table of the lines, the choices of the block of its line and the wrong-track running of all; true when one was
+	// chosen
+	bool render_line_row(std::size_t const Index);
+	bool render_block_choices(line_row const &Row);
+	bool render_wrong_track(bool const Changed);
+	// of the lines, the one whose track the point is nearest within 3 m, At: m out along it; -1 for none
+	int nearest_line(glm::dvec3 const &Point, double &At) const;
+	// the tracks the block boundary drawn goes across, with the distance out along each: the line and the other track of it
+	std::vector<std::pair<std::size_t, double>> boundary_tracks(std::size_t const Best, double const At) const;
+	// the block signals and the joint of the block boundary drawn across a track of a line
+	void boundary_posts(std::size_t const Index, double const Distance);
 	void survey_problems(std::vector<standing_signal> const &Standing);
 	void render_problems();
 	// the signals no track reads read by the tracks they stand by, the lines with tracks in no block section set again; a step of

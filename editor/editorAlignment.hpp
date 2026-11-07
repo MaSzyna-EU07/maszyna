@@ -306,7 +306,7 @@ struct join_end
 
 enum class join_kind
 {
-	none,
+	no_join,
 	straight,
 	arc,
 	curve,
@@ -328,7 +328,7 @@ struct join_request
 
 struct join_result
 {
-	join_kind kind{join_kind::none};
+	join_kind kind{join_kind::no_join};
 	std::vector<segment_data> pieces;
 	double length{0.0};
 	double radius{0.0};
@@ -464,7 +464,7 @@ class stretch_fitter
 	std::optional<request> m_fitting;
 	std::vector<std::pair<std::vector<double>, trace_stretch>> m_results; // the last done first
 	bool m_stop{false};
-	std::thread m_thread;
+	std::jthread m_thread;
 };
 
 }

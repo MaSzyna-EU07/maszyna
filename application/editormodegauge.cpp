@@ -27,10 +27,12 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -509,8 +511,8 @@ void gauge_sketch(gauge::profile const &Profile)
 	auto *draw{ImGui::GetWindowDrawList()};
 	draw->AddRectFilled(low, ImVec2(low.x + width, low.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
 	// ballast, a sleeper and the two rails
-	ImVec2 const ballast[]{at(-2.1, -0.6), at(2.1, -0.6), at(1.55, -0.2), at(-1.55, -0.2)};
-	draw->AddConvexPolyFilled(ballast, 4, IM_COL32(110, 100, 90, 255));
+	std::array<ImVec2, 4> const ballast{at(-2.1, -0.6), at(2.1, -0.6), at(1.55, -0.2), at(-1.55, -0.2)};
+	draw->AddConvexPolyFilled(ballast.data(), static_cast<int>(ballast.size()), IM_COL32(110, 100, 90, 255));
 	draw->AddRectFilled(at(-1.3, -0.2), at(1.3, -0.13), IM_COL32(150, 150, 150, 255));
 	for (double const side : {-0.7175, 0.7175})
 		draw->AddRectFilled(at(side - 0.04, -0.13), at(side + 0.04, 0.0), IM_COL32(210, 210, 215, 255));
@@ -527,7 +529,7 @@ void gauge_sketch(gauge::profile const &Profile)
 	draw->Flags = flags;
 	draw->AddPolyline(points.data(), static_cast<int>(points.size()), accent, ImDrawFlags_Closed, 2.0f);
 	// the height over the top and the widest half at its height
-	auto const widest{std::max_element(Profile.outline.begin(), Profile.outline.end(), [](auto const &A, auto const &B) { return A.half_width < B.half_width; })};
+	auto const widest{std::ranges::max_element(Profile.outline, [](auto const &A, auto const &B) { return A.half_width < B.half_width; })};
 	auto const tall{format("%.2f m", top)};
 	auto const size{ImGui::CalcTextSize(tall.c_str())};
 	draw->AddText(ImVec2(std::round(base.x - size.x * 0.5f), std::round(at(0.0, top).y - size.y - 2.0f)), accent, tall.c_str());
@@ -835,7 +837,7 @@ void gauge_tool::render_gauge_hits()
 		for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
 		{
 			auto const &hit{hits[i]};
-			auto const label{(hit.model.empty() ? STR("(no name)") : hit.model) + "  " + std::to_string(static_cast<int>(std::lround(hit.depth * 100.0))) + " cm##" + std::to_string(i)};
+			auto const label{std::format("{}  {} cm##{}", hit.model.empty() ? STR("(no name)") : hit.model, static_cast<int>(std::lround(hit.depth * 100.0)), i)};
 			if (ImGui::Selectable(label.c_str(), m_gauge.current == i))
 				gauge_focus(i);
 		}

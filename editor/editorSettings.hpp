@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -116,6 +117,11 @@ public:
 	void heights(lay_heights Heights) { m_heights = Heights; }
 
 private:
+	// a line of the settings file for the editor read into it: false when the key is none of its
+	bool load_editor(std::string const &Key, std::string const &Value);
+	// a line of the settings file for a scenery read into them: its WMS layers, its orthophoto origin, its terrain model offset
+	void load_scenery(std::string const &Key, std::string const &Value);
+
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
@@ -131,7 +137,7 @@ private:
 	bool m_track_tools_more{false};
 	bool m_terrain_while_laying{true};
 	terrain_model_settings m_terrain_model;
-	std::map<std::string, std::pair<double, bool>> m_terrain_model_offsets;
+	std::map<std::string, std::pair<double, bool>, std::less<>> m_terrain_model_offsets;
 	int m_top_tracks{0}; // the railway in the top view: whole, without the ballast, the rails alone
 	std::uint32_t m_top_rails{0xffff6e28}; // colour of the rails alone, as ImGui keeps it: ABGR
 	lay_heights m_heights{lay_heights::points};

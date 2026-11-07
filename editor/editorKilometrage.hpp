@@ -109,7 +109,7 @@ struct axis
 	std::vector<std::size_t> astray; // the marks of the line away from its axis
 	std::vector<std::size_t> blocked; // the vias of the line it doesn't run along: no track of theirs, or another via led it elsewhere
 	std::vector<std::pair<TTrack const *, int>> paths; // the paths of the tracks the line runs along, of the track beside too
-	bool runs_along(TTrack const *Track, int const Path) const { return std::find(paths.begin(), paths.end(), std::make_pair(Track, Path)) != paths.end(); }
+	bool runs_along(TTrack const *Track, int const Path) const { return std::ranges::find(paths, std::make_pair(Track, Path)) != paths.end(); }
 	double length() const { return chainage.empty() ? 0.0 : chainage.back(); }
 };
 // the numbers of the lines with marks

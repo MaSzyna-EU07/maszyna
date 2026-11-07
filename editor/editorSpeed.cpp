@@ -147,7 +147,10 @@ std::string explain(verdict const &Verdict, options const &Options)
 	// the numbers are given at the speed set, or at the safe one when none is set
 	auto const speed{Verdict.set > 0.0 ? Verdict.set : Verdict.safe};
 	auto const radius_text = [](double const Radius) {
-		return Radius == 0.0 ? std::string{STR_C("a straight")} : format("R %.0f m%s", std::abs(Radius), Radius < 0.0 ? STR_C(" the other way") : "");
+		if (Radius == 0.0)
+			return std::string{STR_C("a straight")};
+		auto const *const way{Radius < 0.0 ? STR_C(" the other way") : ""};
+		return format("R %.0f m%s", std::abs(Radius), way);
 	};
 	auto const unbalanced = [&](double const Radius, double const Cant) { return (Radius != 0.0 ? speed * speed / (12.96 * Radius) : 0.0) - kGravity * Cant / 1000.0 / gauge; };
 	std::string text;

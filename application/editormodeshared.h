@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -69,7 +70,8 @@ template <typename Value_> inline void fill_from_nearest(std::vector<Value_> &He
     {
         auto const index = queue.front();
         queue.pop_front();
-        auto const ix = index % Side, iz = index / Side;
+        auto const ix = index % Side;
+        auto const iz = index / Side;
         auto const visit = [&](std::size_t const Next) {
             if (Found[Next] != 0)
                 return;
@@ -91,16 +93,16 @@ template <typename Value_> inline void fill_from_nearest(std::vector<Value_> &He
 // the families of the track tools, each with its colour: building the track, equipping it, checking it
 inline ImU32 family_colour(int const Family, float const Alpha = 1.0f)
 {
-	static ImVec4 const colours[]{{0.30f, 0.60f, 0.95f, 1.0f}, {0.95f, 0.66f, 0.22f, 1.0f}, {0.25f, 0.80f, 0.66f, 1.0f}};
-	auto colour{colours[std::clamp(Family, 0, 2)]};
+	static std::array<ImVec4, 3> const colours{{{0.30f, 0.60f, 0.95f, 1.0f}, {0.95f, 0.66f, 0.22f, 1.0f}, {0.25f, 0.80f, 0.66f, 1.0f}}};
+	auto colour{colours[static_cast<std::size_t>(std::clamp(Family, 0, 2))]};
 	colour.w = Alpha;
 	return ImGui::ColorConvertFloat4ToU32(colour);
 }
 
 inline char const *family_name(int const Family)
 {
-	static char const *const names[]{"Building", "Equipment", "Checks"};
-	return STR_C(names[std::clamp(Family, 0, 2)]);
+	static std::array<char const *, 3> const names{"Building", "Equipment", "Checks"};
+	return STR_C(names[static_cast<std::size_t>(std::clamp(Family, 0, 2))]);
 }
 
 // a numbered step of the work in a panel: the number in a circle, its name, a line to the edge of the panel
@@ -113,17 +115,15 @@ inline void step_heading(int const Number, char const *Text)
 	auto const radius{std::round(height * 0.6f)};
 	ImVec2 const centre{at.x + radius, at.y + radius};
 	draw->AddCircleFilled(centre, radius, ImGui::GetColorU32(ImGuiCol_CheckMark), 20);
-	char digit[8];
-	std::snprintf(digit, sizeof(digit), "%d", Number);
-	auto const size{ImGui::CalcTextSize(digit)};
-	draw->AddText(ImVec2(std::round(centre.x - size.x * 0.5f), std::round(centre.y - size.y * 0.5f)), IM_COL32(16, 18, 22, 255), digit);
+	auto const digit{std::to_string(Number)};
+	auto const size{ImGui::CalcTextSize(digit.c_str())};
+	draw->AddText(ImVec2(std::round(centre.x - size.x * 0.5f), std::round(centre.y - size.y * 0.5f)), IM_COL32(16, 18, 22, 255), digit.c_str());
 	ImGui::Dummy(ImVec2(radius * 2.0f, radius * 2.0f));
 	ImGui::SameLine(0.0f, radius * 0.6f);
 	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + radius - height * 0.5f);
 	ImGui::TextUnformatted(Text);
 	auto const end{ImGui::GetItemRectMax().x + radius * 0.6f};
-	auto const edge{ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x};
-	if (edge > end)
+	if (auto const edge{ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x}; edge > end)
 		draw->AddLine(ImVec2(end, centre.y), ImVec2(edge, centre.y), ImGui::GetColorU32(ImGuiCol_Separator));
 	ImGui::Spacing();
 }
@@ -145,7 +145,9 @@ inline bool pill_toggle(char const *Label, ImU32 const Swatch, bool &Value)
 	auto const hovered{ImGui::IsItemHovered()};
 	auto *draw{ImGui::GetWindowDrawList()};
 	ImVec2 const end{at.x + size.x, at.y + size.y};
-	draw->AddRectFilled(at, end, ImGui::GetColorU32(Value ? (hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Header) : (hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg)), height * 0.5f);
+	auto const lit_fill{hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Header};
+	auto const plain_fill{hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg};
+	draw->AddRectFilled(at, end, ImGui::GetColorU32(Value ? lit_fill : plain_fill), height * 0.5f);
 	auto const middle{at.y + height * 0.5f};
 	auto const colour{Value ? Swatch : (Swatch & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 70)};
 	draw->AddLine(ImVec2(at.x + pad, middle), ImVec2(at.x + pad + swatch, middle), colour, std::max(2.0f, height * 0.16f));
@@ -174,11 +176,11 @@ inline bool segmented(char const *Id, int &Value, std::initializer_list<segment_
 	float index{0.0f};
 	for (auto const &option : Options)
 	{
-		auto const left{std::round(at.x + width * index / count)};
-		auto const right{std::round(at.x + width * (index + 1.0f) / count)};
-		ImGui::SetCursorScreenPos(ImVec2(left, at.y));
+		auto const left_edge{std::round(at.x + width * index / count)};
+		auto const right_edge{std::round(at.x + width * (index + 1.0f) / count)};
+		ImGui::SetCursorScreenPos(ImVec2(left_edge, at.y));
 		ImGui::PushID(option.value);
-		if (ImGui::InvisibleButton("##segment", ImVec2(std::max(1.0f, right - left), height)) && Value != option.value)
+		if (ImGui::InvisibleButton("##segment", ImVec2(std::max(1.0f, right_edge - left_edge), height)) && Value != option.value)
 		{
 			Value = option.value;
 			changed = true;
@@ -189,10 +191,10 @@ inline bool segmented(char const *Id, int &Value, std::initializer_list<segment_
 		ImGui::PopID();
 		auto const chosen{Value == option.value};
 		if (chosen || hovered)
-			draw->AddRectFilled(ImVec2(left + 2.0f, at.y + 2.0f), ImVec2(right - 2.0f, at.y + height - 2.0f), chosen ? family_colour(0, 0.8f) : ImGui::GetColorU32(ImGuiCol_FrameBgHovered), rounding - 2.0f);
+			draw->AddRectFilled(ImVec2(left_edge + 2.0f, at.y + 2.0f), ImVec2(right_edge - 2.0f, at.y + height - 2.0f), chosen ? family_colour(0, 0.8f) : ImGui::GetColorU32(ImGuiCol_FrameBgHovered), rounding - 2.0f);
 		auto const text{ImGui::CalcTextSize(option.label)};
-		draw->PushClipRect(ImVec2(left + 4.0f, at.y), ImVec2(right - 4.0f, at.y + height), true);
-		draw->AddText(ImVec2(std::round(std::max(left + 6.0f, (left + right - text.x) * 0.5f)), std::round(at.y + (height - text.y) * 0.5f)), ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled), option.label);
+		draw->PushClipRect(ImVec2(left_edge + 4.0f, at.y), ImVec2(right_edge - 4.0f, at.y + height), true);
+		draw->AddText(ImVec2(std::round(std::max(left_edge + 6.0f, (left_edge + right_edge - text.x) * 0.5f)), std::round(at.y + (height - text.y) * 0.5f)), ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled), option.label);
 		draw->PopClipRect();
 		index += 1.0f;
 	}
@@ -213,9 +215,9 @@ inline bool value_chips(char const *Id, double &Value, std::initializer_list<dou
 	bool first{true};
 	for (auto const value : Values)
 	{
-		char text[32];
-		std::snprintf(text, sizeof(text), Format, value);
-		auto const width{ImGui::CalcTextSize(text).x + ImGui::GetStyle().FramePadding.x * 2.0f};
+		std::array<char, 32> text{};
+		std::snprintf(text.data(), text.size(), Format, value); // NOSONAR: Format is the printf format of the chips each caller passes as a literal
+		auto const width{ImGui::CalcTextSize(text.data()).x + ImGui::GetStyle().FramePadding.x * 2.0f};
 		if (false == first)
 		{
 			ImGui::SameLine(0.0f, gap);
@@ -226,7 +228,7 @@ inline bool value_chips(char const *Id, double &Value, std::initializer_list<dou
 		auto const chosen{std::abs(Value - value) < 1e-6};
 		ImGui::PushStyleColor(ImGuiCol_Button, chosen ? family_colour(0, 0.8f) : ImGui::GetColorU32(ImGuiCol_FrameBg));
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled));
-		if (ImGui::Button(text))
+		if (ImGui::Button(text.data()))
 		{
 			Value = value;
 			changed = true;
@@ -315,7 +317,7 @@ inline void metric_tiles(std::initializer_list<metric_tile> Tiles)
 
 // a choice as a tile: a sketch drawn by Sketch into the box on the left (in the colours of the main line and of what it makes),
 // the name beside it; lit while chosen, true when clicked
-inline bool sketch_tile(char const *Id, char const *Label, bool const Chosen, float const Width, std::function<void(ImDrawList &, ImVec2, ImVec2, ImU32, ImU32)> const &Sketch)
+template <typename Sketch_> inline bool sketch_tile(char const *Id, char const *Label, bool const Chosen, float const Width, Sketch_ const &Sketch)
 {
 	auto const font{ImGui::GetFontSize()};
 	auto const height{std::round(font * 2.4f)};
@@ -326,7 +328,8 @@ inline bool sketch_tile(char const *Id, char const *Label, bool const Chosen, fl
 	auto const accent{family_colour(0)};
 	ImVec2 const bottom{top.x + Width, top.y + height};
 	auto const rounding{std::round(font * 0.35f)};
-	list->AddRectFilled(top, bottom, Chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), rounding);
+	auto const plain_fill{hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg};
+	list->AddRectFilled(top, bottom, Chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(plain_fill), rounding);
 	list->AddRect(top, bottom, Chosen ? accent : ImGui::GetColorU32(ImGuiCol_Border), rounding, 0, Chosen ? 2.0f : 1.0f);
 	auto const pad{std::round(font * 0.4f)};
 	auto const side{std::round(font * 2.2f)};

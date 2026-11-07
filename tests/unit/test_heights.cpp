@@ -18,7 +18,7 @@ segment_data straight(double const From, double const To) {
 
 TEST_CASE("heights: from point to point the tracks meet at one height where a point is clicked just past a joint") {
 	// three tracks of 40 m, the grade breaking 3 m past the first joint and 2 m short of the second one, steeply
-	std::vector<segment_data> pieces{straight(0.0, 40.0), straight(40.0, 80.0), straight(80.0, 120.0)};
+	std::vector pieces{straight(0.0, 40.0), straight(40.0, 80.0), straight(80.0, 120.0)};
 	auto const unknown{std::numeric_limits<double>::quiet_NaN()};
 
 	ground_follow::follow_points(pieces, {{43.0, -5.0, 0.0}, {78.0, 3.0, 0.0}}, {0.0, unknown, 0.0, unknown});
@@ -31,7 +31,7 @@ TEST_CASE("heights: from point to point the tracks meet at one height where a po
 }
 
 TEST_CASE("heights: with no point between the ends the grade is even from one end to the other") {
-	std::vector<segment_data> pieces{straight(0.0, 50.0), straight(50.0, 100.0)};
+	std::vector pieces{straight(0.0, 50.0), straight(50.0, 100.0)};
 	auto const unknown{std::numeric_limits<double>::quiet_NaN()};
 
 	ground_follow::follow_points(pieces, {}, {10.0, unknown, 12.0, unknown});

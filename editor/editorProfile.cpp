@@ -15,10 +15,13 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <set>
-#include <tuple>
+#include <span>
+#include <utility>
+#include <vector>
 
 namespace profile
 {

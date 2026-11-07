@@ -73,7 +73,7 @@ std::filesystem::path user_config_path(const std::string &filename)
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
 
-std::filesystem::path user_cache_path(const std::string &filename)
+std::filesystem::path user_cache_path(const std::filesystem::path &filename)
 {
 	namespace fs = std::filesystem;
 #if defined(_WIN32)

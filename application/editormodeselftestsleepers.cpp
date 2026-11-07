@@ -50,114 +50,157 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/TrackSleepers.h"
 
-editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &command, std::istringstream &words)
+namespace
+{
+
+// the beams the track lays, between two distances along it: their middles, lengths and the way they lie square to
+void selftest_beams(std::istringstream &words)
+{
+	std::string name;
+	double from{-1e9};
+	double to{1e9};
+	words >> name >> from >> to;
+	auto *track{simulation::Paths.find(name)};
+	if (track == nullptr || false == track->m_sleepers3d.active)
+	{
+		WriteLog("SELFTEST beams: no track with beams " + name);
+		return;
+	}
+	std::string text;
+	for (auto const &beam : track_sleepers::place(*track))
+	{
+		auto const middle{0.5 * (beam.from + beam.to)};
+		if (middle.z < from || middle.z > to)
+			continue;
+		text += format(" [%.2f %.2f L%.2f a%.2f%s]", middle.x, middle.z, glm::length(beam.to - beam.from), glm::degrees(std::atan2(beam.along.x, beam.along.z)), beam.plain ? " p" : "");
+	}
+	WriteLog("SELFTEST beams " + name + ":" + text);
+}
+
+// the reaches of the timbers the path of the track shares with other tracks, as the self-test writes them
+std::string zones_text(TTrack const &Track, int const Path)
+{
+	std::string text;
+	for (auto const &[from, to] : track_sleepers::shared_zones(Track, Path))
+		text += format(" %.2f..%.2f", from, to);
+	return text.empty() ? std::string{" none"} : text;
+}
+
+// how far past the joint the timbers shared on the track going on from it reach along that track, which starts or ends at the joint
+double shared_past(TTrack const &Next, bool const Fromstart)
+{
+	auto past{0.0};
+	for (auto const &[from, to] : track_sleepers::shared_zones(Next, 0))
+	{
+		if (Fromstart && from < 0.05)
+			past = to;
+		else if (false == Fromstart && to > Next.Segment->GetLength() - 0.05)
+			past = Next.Segment->GetLength() - from;
+	}
+	return past;
+}
+
+// how far the timbers shared with other tracks reach along the paths of the track and of the tracks joined to its ends
+void selftest_sharedzones(std::istringstream &words)
+{
+	std::string name;
+	words >> name;
+	auto const *track{simulation::Paths.find(name)};
+	if (track == nullptr)
+	{
+		WriteLog("SELFTEST sharedzones: no track " + name);
+		return;
+	}
+	auto const paths{track->eType == tt_Switch ? 2 : 1};
+	for (int path = 0; path < paths; ++path)
+	{
+		auto const length{track->eType == tt_Switch ? track->SwitchExtension->Segments[path]->GetLength() : track->Segment->GetLength()};
+		WriteLog(format("SELFTEST sharedzones %s path %d (%.2f m):%s", name.c_str(), path, length, zones_text(*track, path).c_str()));
+		// the track going on from the end of the path, and how far past the end the shared timbers reach along it
+		auto const *next{track->eType == tt_Switch ? track->SwitchExtension->pNexts[path] : track->trNext};
+		if (next == nullptr || next->eType != tt_Normal || next->Segment == nullptr)
+			continue;
+		glm::dvec3 end;
+		glm::dvec3 start;
+		glm::vec3 angles;
+		(track->eType == tt_Switch ? track->SwitchExtension->Segments[path] : track->Segment)->RaPositionGet(length, end, angles);
+		next->Segment->RaPositionGet(0.0, start, angles);
+		auto const fromstart{glm::length(start - end) < 0.1};
+		auto const past{shared_past(*next, fromstart)};
+		WriteLog(format("SELFTEST sharedzones %s path %d goes on into %s:%s; shared timbers reach %.2f m past the end", name.c_str(), path, next->name().c_str(), zones_text(*next, 0).c_str(), past));
+	}
+}
+
+// the sleepers worked out in the background as in the simulation, to see they come out the same, or back to as they're needed
+void selftest_sleepersbg(std::istringstream &words)
+{
+	int on{1};
+	words >> on;
+	track_sleepers::lay_in_background(on != 0);
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr)
+			track->m_sleepers3d.dirty = true;
+	track_sleepers::unsettle_around(*simulation::Paths.sequence().front());
+	WriteLog(format("SELFTEST sleepersbg %d", on));
+}
+
+void selftest_beamsnear(std::istringstream &words)
+{
+	double x{0.0};
+	double z{0.0};
+	double radius{3.0};
+	words >> x >> z >> radius;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || false == track->m_sleepers3d.active)
+			continue;
+		for (auto const &beam : track_sleepers::place(*track))
+		{
+			if (auto const middle{0.5 * (beam.from + beam.to)}; glm::length(glm::dvec2{middle.x - x, middle.z - z}) > radius)
+				continue;
+			WriteLog(format("SELFTEST beam %s: %.2f %.2f -> %.2f %.2f, %.2f m, along %.1f deg%s", track->name().c_str(), beam.from.x, beam.from.z, beam.to.x, beam.to.z, glm::length(beam.to - beam.from), glm::degrees(std::atan2(beam.along.x, beam.along.z)), beam.plain ? " plain" : ""));
+		}
+	}
+}
+
+void selftest_sleepercheck()
+{
+	auto const start{std::chrono::steady_clock::now()};
+	auto const result{track_sleepers::check()};
+	WriteLog(format("SELFTEST sleepercheck: %zu beams, %zu overlaps, %zu gaps, %zu bare rails, %zu too long (longest %.2f m), widest spacing %.2f m at %s; %zu shared off one plane, %zu switch panels off one plane, %zu ends clipped, %zu beams dropped, slowest cluster %.1f ms of %zu tracks; digest %016llx; in %.1f ms",
+	    result.beams, result.overlaps, result.gaps, result.bare, result.toolong, result.longest, result.widest, result.widestat.c_str(), result.offplane, result.panels, result.clipped, result.dropped, result.slowest, result.biggest, static_cast<unsigned long long>(result.digest),
+	    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()));
+	for (auto const &example : result.examples)
+		WriteLog("SELFTEST sleepercheck " + example);
+}
+
+} // namespace
+
+editor_mode::selftest_result editor_mode::selftest_sleepers(std::string const &command, std::istringstream &words) // NOSONAR: the signature is the one of every group in the self-test dispatch table
 {
 	if (command == "beams")
 	{
-		// the beams the track lays, between two distances along it: their middles, lengths and the way they lie square to
-		std::string name;
-		double from{-1e9}, to{1e9};
-		words >> name >> from >> to;
-		auto *track{simulation::Paths.find(name)};
-		if (track == nullptr || false == track->m_sleepers3d.active)
-		{
-			WriteLog("SELFTEST beams: no track with beams " + name);
-			return selftest_result::handled;
-		}
-		std::string text;
-		for (auto const &beam : track_sleepers::place(*track))
-		{
-			auto const middle{0.5 * (beam.from + beam.to)};
-			if (middle.z < from || middle.z > to)
-				continue;
-			text += format(" [%.2f %.2f L%.2f a%.2f%s]", middle.x, middle.z, glm::length(beam.to - beam.from), glm::degrees(std::atan2(beam.along.x, beam.along.z)), beam.plain ? " p" : "");
-		}
-		WriteLog("SELFTEST beams " + name + ":" + text);
+		selftest_beams(words);
 		return selftest_result::handled;
 	}
 	if (command == "sharedzones")
 	{
-		// how far the timbers shared with other tracks reach along the paths of the track and of the tracks joined to its ends
-		std::string name;
-		words >> name;
-		auto *track{simulation::Paths.find(name)};
-		if (track == nullptr)
-		{
-			WriteLog("SELFTEST sharedzones: no track " + name);
-			return selftest_result::handled;
-		}
-		auto const zones_text = [](TTrack const &Track, int const Path) {
-			std::string text;
-			for (auto const &zone : track_sleepers::shared_zones(Track, Path))
-				text += format(" %.2f..%.2f", zone.first, zone.second);
-			return text.empty() ? std::string{" none"} : text;
-		};
-		auto const paths{track->eType == tt_Switch ? 2 : 1};
-		for (int path = 0; path < paths; ++path)
-		{
-			auto const length{track->eType == tt_Switch ? track->SwitchExtension->Segments[path]->GetLength() : track->Segment->GetLength()};
-			WriteLog(format("SELFTEST sharedzones %s path %d (%.2f m):%s", name.c_str(), path, length, zones_text(*track, path).c_str()));
-			// the track going on from the end of the path, and how far past the end the shared timbers reach along it
-			auto *next{track->eType == tt_Switch ? track->SwitchExtension->pNexts[path] : track->trNext};
-			if (next == nullptr || next->eType != tt_Normal || next->Segment == nullptr)
-				continue;
-			glm::dvec3 end, start, unused;
-			glm::vec3 angles;
-			(track->eType == tt_Switch ? track->SwitchExtension->Segments[path] : track->Segment)->RaPositionGet(length, end, angles);
-			next->Segment->RaPositionGet(0.0, start, angles);
-			auto const fromstart{glm::length(start - end) < 0.1};
-			auto past{0.0};
-			for (auto const &zone : track_sleepers::shared_zones(*next, 0))
-			{
-				if (fromstart && zone.first < 0.05)
-					past = zone.second;
-				else if (false == fromstart && zone.second > next->Segment->GetLength() - 0.05)
-					past = next->Segment->GetLength() - zone.first;
-			}
-			WriteLog(format("SELFTEST sharedzones %s path %d goes on into %s:%s; shared timbers reach %.2f m past the end", name.c_str(), path, next->name().c_str(), zones_text(*next, 0).c_str(), past));
-		}
+		selftest_sharedzones(words);
 		return selftest_result::handled;
 	}
 	if (command == "sleepersbg")
 	{
-		// the sleepers worked out in the background as in the simulation, to see they come out the same, or back to as they're needed
-		int on{1};
-		words >> on;
-		track_sleepers::lay_in_background(on != 0);
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr)
-				track->m_sleepers3d.dirty = true;
-		track_sleepers::unsettle_around(*simulation::Paths.sequence().front());
-		WriteLog(format("SELFTEST sleepersbg %d", on));
+		selftest_sleepersbg(words);
 		return selftest_result::handled;
 	}
 	if (command == "beamsnear")
 	{
-		double x{0.0}, z{0.0}, radius{3.0};
-		words >> x >> z >> radius;
-		for (auto *track : simulation::Paths.sequence())
-		{
-			if (track == nullptr || track->m_editorremoved || false == track->m_sleepers3d.active)
-				continue;
-			for (auto const &beam : track_sleepers::place(*track))
-			{
-				auto const middle{0.5 * (beam.from + beam.to)};
-				if (glm::length(glm::dvec2{middle.x - x, middle.z - z}) > radius)
-					continue;
-				WriteLog(format("SELFTEST beam %s: %.2f %.2f -> %.2f %.2f, %.2f m, along %.1f deg%s", track->name().c_str(), beam.from.x, beam.from.z, beam.to.x, beam.to.z, glm::length(beam.to - beam.from), glm::degrees(std::atan2(beam.along.x, beam.along.z)), beam.plain ? " plain" : ""));
-			}
-		}
+		selftest_beamsnear(words);
 		return selftest_result::handled;
 	}
 	if (command == "sleepercheck")
 	{
-		auto const start{std::chrono::steady_clock::now()};
-		auto const result{track_sleepers::check()};
-		WriteLog(format("SELFTEST sleepercheck: %zu beams, %zu overlaps, %zu gaps, %zu bare rails, %zu too long (longest %.2f m), widest spacing %.2f m at %s; %zu shared off one plane, %zu switch panels off one plane, %zu ends clipped, %zu beams dropped, slowest cluster %.1f ms of %zu tracks; digest %016llx; in %.1f ms",
-		    result.beams, result.overlaps, result.gaps, result.bare, result.toolong, result.longest, result.widest, result.widestat.c_str(), result.offplane, result.panels, result.clipped, result.dropped, result.slowest, result.biggest, static_cast<unsigned long long>(result.digest),
-		    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()));
-		for (auto const &example : result.examples)
-			WriteLog("SELFTEST sleepercheck " + example);
+		selftest_sleepercheck();
 		return selftest_result::handled;
 	}
 	return selftest_result::unhandled;

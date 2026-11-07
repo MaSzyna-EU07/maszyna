@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include "utilities/translation.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 
@@ -39,6 +40,115 @@ bool rail(TTrack const &Track)
 std::string speed_text(double const Speed)
 {
 	return Speed > 0.0 ? format("%.0f", Speed) : std::string{STR_C("(none)")};
+}
+
+// the thresholds the paths are checked against, in a tree node
+void render_thresholds(speed_check::options &Options)
+{
+	if (false == ImGui::TreeNode(STR_C("Thresholds")))
+		return;
+	if (begin_fields("##speedlimits", 0.6f))
+	{
+		auto const limit = [](char const *Label, char const *Id, double &Value, char const *Format) {
+			field_row(Label);
+			ImGui::InputDouble(Id, &Value, 0.0, 0.0, Format);
+		};
+		limit("Unbalanced acceleration (m/s2)", "##speedunbalanced", Options.norms.unbalanced, "%.2f");
+		limit("Switch branches (m/s2)", "##speedbranch", Options.branch_unbalanced, "%.2f");
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Unbalanced acceleration allowed on the diverging tracks of the switches, which have no cant.\n0.65 m/s2 gives 40 km/h for R 190 m and 100 km/h for R 1200 m"));
+		limit("Cant change rate (mm/s)", "##speedcantrate", Options.norms.cant_rate, "%.0f");
+		limit("Cant ramp 1:(k*V), k", "##speedramp", Options.norms.ramp_factor, "%.1f");
+		limit("Unbalanced acc. change rate (m/s3)", "##speedjerk", Options.norms.jerk, "%.2f");
+		limit("Reference length (m)", "##speedreference", Options.reference_length, "%.0f");
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Length over which an abrupt change of the curvature or the cant is felt,\nabout the length of a car. Shorter: stricter for the curves without the transitions"));
+		ImGui::EndTable();
+	}
+	Options.norms.unbalanced = std::max(0.05, Options.norms.unbalanced);
+	Options.branch_unbalanced = std::max(0.05, Options.branch_unbalanced);
+	Options.norms.cant_rate = std::max(1.0, Options.norms.cant_rate);
+	Options.norms.ramp_factor = std::max(1.0, Options.norms.ramp_factor);
+	Options.norms.jerk = std::max(0.01, Options.norms.jerk);
+	Options.reference_length = std::clamp(Options.reference_length, 2.0, 200.0);
+	ImGui::TextDisabled("%s", STR_C("Change the thresholds, then Check again"));
+	ImGui::TreePop();
+}
+
+// of the paths listed, the ones above the speed their geometry allows
+std::vector<int> violated_of(std::vector<int> const &Listed, std::vector<speed_check::verdict> const &Results, speed_check::options const &Options)
+{
+	std::vector<int> violated;
+	for (auto const index : Listed)
+		if (Results[index].violated(Options))
+			violated.push_back(index);
+	return violated;
+}
+
+// the headers of the columns of the list of the paths checked
+void result_headers(float const NameWidth)
+{
+	ImGui::Columns(6, "speedcolumns", false);
+	ImGui::SetColumnWidth(0, NameWidth + 8.0f);
+	for (auto const *header : {"Path", "Limit", "Safe", "Suggested", "Cause", "R / cant"})
+	{
+		ImGui::TextDisabled("%s", STR_C(header));
+		ImGui::NextColumn();
+	}
+	ImGui::Columns(1);
+}
+
+// the columns of a row of the list after the name of the path
+void result_cells(speed_check::verdict const &Verdict, speed_check::options const &Options)
+{
+	ImGui::NextColumn();
+	ImGui::TextUnformatted(speed_text(Verdict.set).c_str());
+	ImGui::NextColumn();
+	ImGui::TextUnformatted(Verdict.safe >= Options.top ? STR_C("any") : format("%.0f", Verdict.safe).c_str());
+	ImGui::NextColumn();
+	ImGui::TextUnformatted(Verdict.safe >= Options.top ? "-" : format("%.0f", speed_check::suggested(Verdict.safe)).c_str());
+	ImGui::NextColumn();
+	ImGui::TextUnformatted(STR_C(speed_check::describe(Verdict.why)));
+	ImGui::NextColumn();
+	if (Verdict.radius > 0.0)
+		ImGui::Text(STR_C("%.0f m / %.0f mm"), Verdict.radius, Verdict.cant);
+	else
+		ImGui::TextUnformatted("-");
+	ImGui::NextColumn();
+}
+
+// a row of the list of the paths checked, Selected: the index of the path chosen; Focus takes the index of the path when its name is clicked
+template <typename Focus_>
+void result_row(speed_check::verdict const &Verdict, speed_check::options const &Options, int const Index, int const &Selected, Focus_ const &Focus)
+{
+	bool const violated{Verdict.violated(Options)};
+	bool const bad{violated || Verdict.warned(Options)};
+	auto const colour{violated ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f)};
+	auto name{name_of(*Verdict.track)};
+	if (Verdict.track->eType == tt_Switch)
+		name += Verdict.path == 0 ? STR_C(" (main)") : STR_C(" (branch)");
+	if (bad)
+		ImGui::PushStyleColor(ImGuiCol_Text, colour);
+	if (ImGui::Selectable((name + "##speed" + std::to_string(Index)).c_str(), Selected == Index, ImGuiSelectableFlags_SpanAllColumns))
+		Focus(Index);
+	if (ImGui::IsItemHovered())
+	{
+		if (bad)
+			ImGui::PopStyleColor();
+		ImGui::SetTooltip("%s", speed_check::explain(Verdict, Options).c_str());
+		if (bad)
+			ImGui::PushStyleColor(ImGuiCol_Text, colour);
+	}
+	result_cells(Verdict, Options);
+	if (bad)
+		ImGui::PopStyleColor();
+}
+
+// what the check found about the path chosen, true when the button setting its safe speed was clicked
+bool result_details(speed_check::verdict const &Verdict, speed_check::options const &Options)
+{
+	ImGui::TextWrapped("%s", speed_check::explain(Verdict, Options).c_str());
+	return (Verdict.violated(Options) || Verdict.warned(Options)) && ImGui::Button(STR_C("Set the safe speed on this path"));
 }
 
 } // namespace
@@ -228,36 +338,7 @@ void speed_tool::render_options()
 		ImGui::PopStyleColor(2);
 		item_tooltip("Looks at the radius and the cant, the cant ramps, the curves without the transitions and the switch branches");
 	}
-	if (ImGui::TreeNode(STR_C("Thresholds")))
-	{
-		auto &options{state.options};
-		if (begin_fields("##speedlimits", 0.6f))
-		{
-			auto const limit = [](char const *Label, char const *Id, double &Value, char const *Format) {
-				field_row(Label);
-				ImGui::InputDouble(Id, &Value, 0.0, 0.0, Format);
-			};
-			limit("Unbalanced acceleration (m/s2)", "##speedunbalanced", options.norms.unbalanced, "%.2f");
-			limit("Switch branches (m/s2)", "##speedbranch", options.branch_unbalanced, "%.2f");
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("Unbalanced acceleration allowed on the diverging tracks of the switches, which have no cant.\n0.65 m/s2 gives 40 km/h for R 190 m and 100 km/h for R 1200 m"));
-			limit("Cant change rate (mm/s)", "##speedcantrate", options.norms.cant_rate, "%.0f");
-			limit("Cant ramp 1:(k*V), k", "##speedramp", options.norms.ramp_factor, "%.1f");
-			limit("Unbalanced acc. change rate (m/s3)", "##speedjerk", options.norms.jerk, "%.2f");
-			limit("Reference length (m)", "##speedreference", options.reference_length, "%.0f");
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("Length over which an abrupt change of the curvature or the cant is felt,\nabout the length of a car. Shorter: stricter for the curves without the transitions"));
-			ImGui::EndTable();
-		}
-		options.norms.unbalanced = std::max(0.05, options.norms.unbalanced);
-		options.branch_unbalanced = std::max(0.05, options.branch_unbalanced);
-		options.norms.cant_rate = std::max(1.0, options.norms.cant_rate);
-		options.norms.ramp_factor = std::max(1.0, options.norms.ramp_factor);
-		options.norms.jerk = std::max(0.01, options.norms.jerk);
-		options.reference_length = std::clamp(options.reference_length, 2.0, 200.0);
-		ImGui::TextDisabled("%s", STR_C("Change the thresholds, then Check again"));
-		ImGui::TreePop();
-	}
+	render_thresholds(state.options);
 	if (false == state.status.empty())
 		ImGui::TextWrapped("%s", state.status.c_str());
 	if (state.results.empty())
@@ -267,17 +348,14 @@ void speed_tool::render_options()
 	auto const *const within{STR_C("Within their limits too")};
 	auto const checkbox{ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(within).x};
 	ImGui::SetNextItemWidth(std::max(120.0f, ImGui::GetContentRegionAvail().x - checkbox - ImGui::GetStyle().ItemSpacing.x));
-	char const *const limits[]{STR_C("All the paths"), STR_C("With a speed limit set"), STR_C("Without a speed limit")};
-	ImGui::Combo("##speedlimits", &state.limits, limits, IM_ARRAYSIZE(limits));
+	std::array<char const *, 3> const limits{STR_C("All the paths"), STR_C("With a speed limit set"), STR_C("Without a speed limit")};
+	ImGui::Combo("##speedlimits", &state.limits, limits.data(), static_cast<int>(limits.size()));
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Paths without a speed limit of their own run at the line speed,\nthose are listed whenever the geometry limits the speed at all"));
 	ImGui::SameLine();
 	ImGui::Checkbox(within, &state.show_all);
 	auto const listed{speed_listed()};
-	std::vector<int> violated;
-	for (auto const index : listed)
-		if (state.results[index].violated(state.options))
-			violated.push_back(index);
+	auto const violated{violated_of(listed, state.results, state.options)};
 	if (false == violated.empty())
 	{
 		if (ImGui::Button(format(STR_P("Set the safe speed on %zu track", "Set the safe speed on %zu tracks", static_cast<long long>(violated.size())), violated.size()).c_str(), ImVec2(-FLT_MIN, 0.0f)))
@@ -289,14 +367,7 @@ void speed_tool::render_options()
 			                  "When the main track needs a limit of its own, the lower of the two applies to both"));
 	}
 	auto const namewidth{std::max(120.0f, ImGui::GetContentRegionAvail().x * 0.3f)};
-	ImGui::Columns(6, "speedcolumns", false);
-	ImGui::SetColumnWidth(0, namewidth + 8.0f);
-	for (auto const *header : {"Path", "Limit", "Safe", "Suggested", "Cause", "R / cant"})
-	{
-		ImGui::TextDisabled("%s", STR_C(header));
-		ImGui::NextColumn();
-	}
-	ImGui::Columns(1);
+	result_headers(namewidth);
 	bool const chosen{state.selected >= 0 && state.selected < static_cast<int>(state.results.size())};
 	auto const details{chosen ? ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() * 5.0f : 0.0f};
 	ImGui::BeginChild("speedresults", ImVec2(0.0f, -details), true);
@@ -308,51 +379,12 @@ void speed_tool::render_options()
 		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 		{
 			auto const index{listed[row]};
-			auto const &verdict{state.results[index]};
-			bool const violated{verdict.violated(state.options)};
-			bool const bad{violated || verdict.warned(state.options)};
-			auto const colour{violated ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f)};
-			auto name{name_of(*verdict.track)};
-			if (verdict.track->eType == tt_Switch)
-				name += verdict.path == 0 ? STR_C(" (main)") : STR_C(" (branch)");
-			if (bad)
-				ImGui::PushStyleColor(ImGuiCol_Text, colour);
-			if (ImGui::Selectable((name + "##speed" + std::to_string(index)).c_str(), state.selected == index, ImGuiSelectableFlags_SpanAllColumns))
-				speed_focus(index);
-			if (ImGui::IsItemHovered())
-			{
-				if (bad)
-					ImGui::PopStyleColor();
-				ImGui::SetTooltip("%s", speed_check::explain(verdict, state.options).c_str());
-				if (bad)
-					ImGui::PushStyleColor(ImGuiCol_Text, colour);
-			}
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(speed_text(verdict.set).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(verdict.safe >= state.options.top ? STR_C("any") : format("%.0f", verdict.safe).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(verdict.safe >= state.options.top ? "-" : format("%.0f", speed_check::suggested(verdict.safe)).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(STR_C(speed_check::describe(verdict.why)));
-			ImGui::NextColumn();
-			if (verdict.radius > 0.0)
-				ImGui::Text(STR_C("%.0f m / %.0f mm"), verdict.radius, verdict.cant);
-			else
-				ImGui::TextUnformatted("-");
-			ImGui::NextColumn();
-			if (bad)
-				ImGui::PopStyleColor();
+			result_row(state.results[index], state.options, index, state.selected, [this](int const Index) { speed_focus(Index); });
 		}
 	ImGui::Columns(1);
 	ImGui::EndChild();
-	if (chosen)
-	{
-		auto const &verdict{state.results[state.selected]};
-		ImGui::TextWrapped("%s", speed_check::explain(verdict, state.options).c_str());
-		if ((verdict.violated(state.options) || verdict.warned(state.options)) && ImGui::Button(STR_C("Set the safe speed on this path")))
-			speed_apply({state.selected}, true);
-	}
+	if (chosen && result_details(state.results[state.selected], state.options))
+		speed_apply({state.selected}, true);
 }
 
 void speed_tool::draw_overlay() const

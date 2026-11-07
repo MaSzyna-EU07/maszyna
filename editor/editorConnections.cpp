@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -136,39 +137,50 @@ struct crossing_over
 	double radius{0.0};
 };
 
+// a track of a crossover and the switch laid on it
+struct crossover_track
+{
+	line const *track{nullptr};
+	int index{0}; // of the track among the lines of the connection
+	editor_track::switch_template const *shape{nullptr};
+	bool second{false}; // the switch is made of the template of the other tracks
+};
+
 // the first switch on From diverging towards To and the switch on To facing it, joined by a straight insert when their angles
 // agree, by an aligning curve between straight inserts when they don't, the switch on To then starting as near Target as it can
-crossing_over cross_over(line const &From, int const Fromindex, double const Along, int const Forward, editor_track::switch_template const &Fromshape, bool const Fromsecond, line const &To, int const Toindex,
-                         editor_track::switch_template const &Toshape, bool const Tosecond, double const Target, request const &Request)
+crossing_over cross_over(crossover_track const &From, double const Along, int const Forward, crossover_track const &To, double const Target, request const &Request)
 {
+	auto const &fromline{*From.track};
+	auto const &toline{*To.track};
+	auto const &fromshape{*From.shape};
+	auto const &toshape{*To.shape};
 	crossing_over result;
-	if (false == fits(From, Along, Forward, Fromshape.length))
+	if (false == fits(fromline, Along, Forward, fromshape.length))
 	{
 		result.error = STR_C("A switch of the connection runs off the end of its straight");
 		return result;
 	}
-	glm::dvec2 const direction{From.direction * static_cast<double>(Forward)};
-	auto const origin{From.point(Along)};
-	auto const nearest{To.point(To.along(origin))};
+	glm::dvec2 const direction{fromline.direction * static_cast<double>(Forward)};
+	auto const origin{fromline.point(Along)};
+	auto const nearest{toline.point(toline.along(origin))};
 	auto const side{cross(direction, plan_of(nearest) - plan_of(origin)) > 0.0 ? 1 : -1};
-	result.one = put(From, Fromindex, Along, Forward, side, Fromshape, Fromsecond);
+	result.one = put(fromline, From.index, Along, Forward, side, fromshape, From.second);
 	if (result.one.paths.size() < 2)
 	{
 		result.error = STR_C("The switch template has no diverging track");
 		return result;
 	}
 	auto const diverging{branch_of(result.one.paths)};
-	auto faced{face(diverging.end, diverging.heading, To, Toindex, Toshape)};
+	auto faced{face(diverging.end, diverging.heading, toline, To.index, toshape)};
 	if (faced.valid)
 	{
-		faced.partner.second = Tosecond;
+		faced.partner.second = To.second;
 		result.two = faced.partner;
 		result.straight = true;
 		if (faced.length >= 0.01)
 			result.inserts.push_back(faced.insert);
 		result.straights.push_back(faced.length);
-		auto const curves{faced.length + diverging.tail + branch_of(result.two.paths).tail};
-		if (curves < Request.insert - 1e-3)
+		if (auto const curves{faced.length + diverging.tail + branch_of(result.two.paths).tail}; curves < Request.insert - 1e-3)
 			result.warning = format(STR_C("The straight between the curves of the switches is %.2f m, under %.0f m"), curves, Request.insert);
 		result.valid = true;
 		return result;
@@ -180,8 +192,8 @@ crossing_over cross_over(line const &From, int const Fromindex, double const Alo
 	}
 	auto const forward{faced.partner.forward};
 	auto const otherside{faced.partner.side};
-	auto const radius{Request.radius > 0.0 ? Request.radius : sharper(Fromshape, Toshape)};
-	auto const trial{branch_of(put(To, Toindex, 0.0, forward, otherside, Toshape, Tosecond).paths)};
+	auto const radius{Request.radius > 0.0 ? Request.radius : sharper(fromshape, toshape)};
+	auto const trial{branch_of(put(toline, To.index, 0.0, forward, otherside, toshape, To.second).paths)};
 	auto const into{-trial.heading};
 	auto const turn{signed_angle(diverging.heading, into)};
 	auto const determinant{cross(diverging.heading, into)};
@@ -194,10 +206,10 @@ crossing_over cross_over(line const &From, int const Fromindex, double const Alo
 	auto const offset{plan_of(trial.end) - plan_of(diverging.end)};
 	auto const reach{cross(offset, into) / determinant};
 	auto const after{cross(diverging.heading, offset) / determinant};
-	auto const reachrate{cross(To.direction, into) / determinant};
-	auto const afterrate{cross(diverging.heading, To.direction) / determinant};
-	auto low{forward > 0 ? 0.0 : Toshape.length};
-	auto high{forward > 0 ? To.length - Toshape.length : To.length};
+	auto const reachrate{cross(toline.direction, into) / determinant};
+	auto const afterrate{cross(diverging.heading, toline.direction) / determinant};
+	auto low{forward > 0 ? 0.0 : toshape.length};
+	auto high{forward > 0 ? toline.length - toshape.length : toline.length};
 	auto const bound = [&](double const Value, double const Rate, double const Need) {
 		if (std::abs(Rate) < 1e-12)
 		{
@@ -221,7 +233,7 @@ crossing_over cross_over(line const &From, int const Fromindex, double const Alo
 		result.error = format(STR_C("The aligning curve R %.0f m with %.0f m straights doesn't fit between the switches"), radius, Request.insert);
 		return result;
 	}
-	result.two = put(To, Toindex, std::clamp(Target, low, std::max(low, high)), forward, otherside, Toshape, Tosecond);
+	result.two = put(toline, To.index, std::clamp(Target, low, std::max(low, high)), forward, otherside, toshape, To.second);
 	auto const arrived{branch_of(result.two.paths)};
 	auto const link{editor_track::link_branch({diverging.end, diverging.heading, diverging.grade, 0.0}, radius, {arrived.end, -arrived.heading, -arrived.grade, 0.0}, 1e-4, Request.insert, false)};
 	if (false == link.valid || link.pieces.empty() || link.trim != 0.0 || link.reverse)
@@ -276,16 +288,17 @@ bool overlapping(std::vector<placed> const &Switches, std::vector<line> const &L
 
 char const *word(kind const Kind)
 {
+	using enum kind;
 	switch (Kind)
 	{
-	case kind::double_crossover: return "double_crossover";
-	case kind::scissors: return "scissors";
-	case kind::ladder: return "ladder";
+	case double_crossover: return "double_crossover";
+	case scissors: return "scissors";
+	case ladder: return "ladder";
 	default: return "crossover";
 	}
 }
 
-bool parse(std::string const &Word, kind &Kind)
+bool parse(std::string_view const Word, kind &Kind)
 {
 	for (int i = 0; i < kind_count; ++i)
 		if (Word == word(static_cast<kind>(i)))
@@ -334,8 +347,7 @@ facing face(glm::dvec3 const &End, glm::dvec2 const &Heading, line const &To, in
 		return result;
 	}
 	auto const diverging{branch_of(trial.paths)};
-	auto const mismatch{signed_angle(Heading, -diverging.heading)};
-	if (std::abs(mismatch) > kStraightTolerance)
+	if (auto const mismatch{signed_angle(Heading, -diverging.heading)}; std::abs(mismatch) > kStraightTolerance)
 	{
 		result.partner = trial;
 		result.error = format(STR_C("The diverging tracks meet at %.2f deg, a straight insert can't join them"), glm::degrees(std::abs(mismatch)));
@@ -367,167 +379,328 @@ facing face(glm::dvec3 const &End, glm::dvec2 const &Heading, line const &To, in
 	return result;
 }
 
-result plan(request const &Request)
+namespace
+{
+
+bool usable(editor_track::switch_template const &Shape)
+{
+	return false == Shape.double_slip && false == Shape.twofold() && Shape.length > 0.5;
+}
+
+// the starting track and the other ones
+std::vector<line> lines_of(request const &Request)
+{
+	std::vector<line> lines{Request.from};
+	lines.insert(lines.end(), Request.to.begin(), Request.to.end());
+	return lines;
+}
+
+// the offsets of the tracks of the fan from the starting track, Side: the side they lie on. returns: false where they aren't
+// parallel, on one side and at least 1 m apart
+bool fan_offsets(request const &Request, glm::dvec2 const &Travel, glm::dvec3 const &Origin, int &Side, std::vector<double> &Offsets)
+{
+	auto const &first{Request.to.front()};
+	Side = cross(Travel, plan_of(first.point(first.along(Origin))) - plan_of(Origin)) > 0.0 ? 1 : -1;
+	for (auto const &fan : Request.to)
+	{
+		auto const offset{Side * cross(Travel, plan_of(fan.point(fan.along(Origin))) - plan_of(Origin))};
+		if (offset < 1.0 || (false == Offsets.empty() && offset < Offsets.back() + 1.0) || std::abs(cross(fan.direction, Request.from.direction)) > 1e-3)
+			return false;
+		Offsets.push_back(offset);
+	}
+	return true;
+}
+
+// the offsets of the tracks of a ladder from the starting track, by the spacings given. returns: what is wrong with them,
+// nullptr when nothing
+char const *spaced_offsets(std::vector<double> const &Spacings, std::vector<double> &Offsets)
+{
+	double sum{0.0};
+	for (auto const spacing : Spacings)
+	{
+		if (spacing < 1.0)
+			return STR_C("The spacings of the tracks of a ladder have to be at least 1 m");
+		sum += spacing;
+		Offsets.push_back(sum);
+	}
+	if (Offsets.empty())
+		return STR_C("Give the spacings of the tracks of the ladder");
+	return nullptr;
+}
+
+// the track the switches of a ladder lie along, on from the diverging track of its first switch
+struct ladder_track
+{
+	glm::dvec2 travel{0.0, 1.0}; // along the starting track, the way the connection goes
+	glm::dvec3 origin{0.0}; // on the starting track, at the start of the first switch
+	int side{1}; // of the starting track the fan lies on
+	branch track; // the diverging track of the first switch
+	glm::dvec3 step{0.0}; // a metre along the ladder track
+	double climb{0.0}; // away from the starting track, a metre along the ladder track
+	int back{1}; // the side of the switches along it
+	double radius{0.0}; // of the curves onto the tracks of the fan
+};
+
+glm::dvec3 rung(ladder_track const &Ladder, double const Along)
+{
+	return Ladder.track.end + Ladder.step * Along;
+}
+
+// away from the starting track, towards the fan
+double lateral(ladder_track const &Ladder, glm::dvec3 const &Point)
+{
+	return Ladder.side * cross(Ladder.travel, plan_of(Point) - plan_of(Ladder.origin));
+}
+
+// the curve from the heading onto the tracks of the fan, none where it needn't turn
+std::vector<segment_data> settle(ladder_track const &Ladder, glm::dvec3 const &Point, glm::dvec2 const &Heading, double const Grade)
+{
+	auto const turn{signed_angle(Heading, Ladder.travel)};
+	if (std::abs(turn) > kStraightTolerance)
+		return geometry::arc_pieces(Point, Heading, Grade, Ladder.radius, std::abs(turn), turn > 0.0 ? 1 : -1);
+	return {};
+}
+
+// the track of the fan from the end of the curve of the ladder on to where it starts, a new one where there is none. returns:
+// false where it starts back within the ladder, the error in the result
+bool lead_onto_fan(result &Out, request const &Request, glm::dvec2 const &Travel, std::size_t const Index, glm::dvec3 const &Fanstart)
+{
+	if (Index >= Request.to.size())
+	{
+		Out.inserts.push_back(straight(Fanstart, Fanstart + glm::dvec3{Travel.x, Request.from.grade * Request.forward, Travel.y} * std::max(1.0, Request.stub)));
+		return true;
+	}
+	auto const &fan{Request.to[Index]};
+	auto end{fan.start};
+	auto ahead{glm::dot(Travel, plan_of(fan.start) - plan_of(Fanstart))};
+	auto const other{fan.point(fan.length)};
+	if (auto const further{glm::dot(Travel, plan_of(other) - plan_of(Fanstart))}; further < ahead)
+	{
+		end = other;
+		ahead = further;
+	}
+	if (ahead < -0.01)
+	{
+		Out.error = format(STR_C("Track %d of the fan reaches into the ladder, it has to start %.2f m further on"), static_cast<int>(Index + 1), -ahead);
+		return false;
+	}
+	if (ahead >= 0.01)
+		Out.inserts.push_back(straight(Fanstart, end));
+	return true;
+}
+
+// the switch of the ladder leading onto the track of the fan at the offset, or the curve at the end of the ladder onto the last
+// one, with the straight insert before them and the track of the fan. Reached: along the ladder track, the end of the switches
+// laid so far. returns: false where it can't be laid, the error in the result
+bool lay_rung(result &Out, request const &Request, ladder_track const &Ladder, std::size_t const Index, double const Offset, bool const Last, double &Reached)
+{
+	std::vector<segment_data> paths;
+	std::vector<segment_data> bend;
+	glm::dvec3 landing{0.0};
+	if (false == Last)
+	{
+		paths = editor_track::place_switch(Request.second, rung(Ladder, 0.0), Ladder.track.heading, Ladder.back, Ladder.track.grade);
+		auto const diverging{branch_of(paths)};
+		bend = settle(Ladder, diverging.end, diverging.heading, diverging.grade);
+		landing = bend.empty() ? diverging.end : bend.back().points[segment_data::point::end];
+	}
+	else
+	{
+		bend = settle(Ladder, rung(Ladder, 0.0), Ladder.track.heading, Ladder.track.grade);
+		landing = bend.empty() ? rung(Ladder, 0.0) : bend.back().points[segment_data::point::end];
+	}
+	auto const along{(Offset - lateral(Ladder, landing)) / Ladder.climb};
+	if (along < Reached - 1e-3)
+	{
+		Out.error = format(STR_C("Track %d of the fan is %.2f m too close to the previous one for these switches"), static_cast<int>(Index + 1), (Reached - along) * Ladder.climb);
+		return false;
+	}
+	auto const shift{Ladder.step * along};
+	if (along - Reached >= 0.01)
+	{
+		Out.inserts.push_back(straight(rung(Ladder, Reached), rung(Ladder, along)));
+		Out.straights.push_back(along - Reached);
+	}
+	for (auto &path : paths)
+		path.translate(shift);
+	for (auto &piece : bend)
+		piece.translate(shift);
+	if (false == Last)
+	{
+		placed rungswitch;
+		rungswitch.line = -1;
+		rungswitch.along = along;
+		rungswitch.side = Ladder.back;
+		rungswitch.second = true;
+		rungswitch.paths = paths;
+		Out.switches.push_back(rungswitch);
+		Reached = along + Request.second.length;
+	}
+	if (false == bend.empty())
+		Out.radius = Ladder.radius;
+	Out.inserts.insert(Out.inserts.end(), bend.begin(), bend.end());
+	return lead_onto_fan(Out, Request, Ladder.travel, Index, landing + shift);
+}
+
+// a ladder of switches leading onto the tracks of a fan, or onto new ones by the spacings given
+result plan_ladder(request const &Request)
 {
 	result out;
-	auto const usable = [](editor_track::switch_template const &Shape) { return false == Shape.double_slip && false == Shape.twofold() && Shape.length > 0.5; };
-	if (false == usable(Request.first) || false == usable(Request.second))
-	{
-		out.error = STR_C("A connection is made of ordinary switches, not of slips, crossings or double switches");
-		return out;
-	}
 	auto const &from{Request.from};
-	glm::dvec2 const travel{from.direction * static_cast<double>(Request.forward)};
-	auto const origin{from.point(Request.along)};
-	std::vector<line> lines{from};
-	lines.insert(lines.end(), Request.to.begin(), Request.to.end());
-
-	if (Request.type == kind::ladder)
+	ladder_track ladder;
+	ladder.travel = from.direction * static_cast<double>(Request.forward);
+	ladder.origin = from.point(Request.along);
+	ladder.side = Request.side >= 0 ? 1 : -1;
+	std::vector<double> offsets;
+	if (false == Request.to.empty())
 	{
-		auto side{Request.side >= 0 ? 1 : -1};
-		std::vector<double> offsets;
-		if (false == Request.to.empty())
+		if (false == fan_offsets(Request, ladder.travel, ladder.origin, ladder.side, offsets))
 		{
-			auto const &first{Request.to.front()};
-			side = cross(travel, plan_of(first.point(first.along(origin))) - plan_of(origin)) > 0.0 ? 1 : -1;
-			for (auto const &fan : Request.to)
-			{
-				auto const offset{side * cross(travel, plan_of(fan.point(fan.along(origin))) - plan_of(origin))};
-				if (offset < 1.0 || (false == offsets.empty() && offset < offsets.back() + 1.0) || std::abs(cross(fan.direction, from.direction)) > 1e-3)
-				{
-					out.error = STR_C("The tracks of a fan have to be parallel, on one side and at least 1 m apart");
-					return out;
-				}
-				offsets.push_back(offset);
-			}
-		}
-		else
-		{
-			double sum{0.0};
-			for (auto const spacing : Request.spacings)
-			{
-				if (spacing < 1.0)
-				{
-					out.error = STR_C("The spacings of the tracks of a ladder have to be at least 1 m");
-					return out;
-				}
-				offsets.push_back(sum += spacing);
-			}
-			if (offsets.empty())
-			{
-				out.error = STR_C("Give the spacings of the tracks of the ladder");
-				return out;
-			}
-		}
-		if (false == fits(from, Request.along, Request.forward, Request.first.length))
-		{
-			out.error = STR_C("A switch of the connection runs off the end of its straight");
+			out.error = STR_C("The tracks of a fan have to be parallel, on one side and at least 1 m apart");
 			return out;
 		}
-		auto const start{put(from, 0, Request.along, Request.forward, side, Request.first, false)};
-		auto const ladder{branch_of(start.paths)};
-		auto const climb{side * cross(travel, ladder.heading)};
-		if (climb < 1e-4)
-		{
-			out.error = STR_C("The switch template has no diverging track");
-			return out;
-		}
-		out.switches.push_back(start);
-		auto const lateral = [&](glm::dvec3 const &Point) { return side * cross(travel, plan_of(Point) - plan_of(origin)); };
-		glm::dvec3 const step{ladder.heading.x, ladder.grade, ladder.heading.y};
-		auto const rung = [&](double const Along) { return ladder.end + step * Along; };
-		auto const back{cross(ladder.heading, travel) > 0.0 ? 1 : -1};
-		auto const radius{Request.radius > 0.0 ? Request.radius : sharper(Request.second, Request.second)};
-		auto const settle = [&](glm::dvec3 const &Point, glm::dvec2 const &Heading, double const Grade) {
-			auto const turn{signed_angle(Heading, travel)};
-			return std::abs(turn) > kStraightTolerance ? geometry::arc_pieces(Point, Heading, Grade, radius, std::abs(turn), turn > 0.0 ? 1 : -1) : std::vector<segment_data>{};
-		};
-		double reached{0.0};
-		for (std::size_t i = 0; i < offsets.size(); ++i)
-		{
-			bool const last{i + 1 == offsets.size()};
-			std::vector<segment_data> paths;
-			std::vector<segment_data> bend;
-			glm::dvec3 landing{0.0};
-			if (false == last)
-			{
-				paths = editor_track::place_switch(Request.second, rung(0.0), ladder.heading, back, ladder.grade);
-				auto const diverging{branch_of(paths)};
-				bend = settle(diverging.end, diverging.heading, diverging.grade);
-				landing = bend.empty() ? diverging.end : bend.back().points[segment_data::point::end];
-			}
-			else
-			{
-				bend = settle(rung(0.0), ladder.heading, ladder.grade);
-				landing = bend.empty() ? rung(0.0) : bend.back().points[segment_data::point::end];
-			}
-			auto const along{(offsets[i] - lateral(landing)) / climb};
-			if (along < reached - 1e-3)
-			{
-				out.error = format(STR_C("Track %d of the fan is %.2f m too close to the previous one for these switches"), static_cast<int>(i + 1), (reached - along) * climb);
-				return out;
-			}
-			auto const shift{step * along};
-			if (along - reached >= 0.01)
-			{
-				out.inserts.push_back(straight(rung(reached), rung(along)));
-				out.straights.push_back(along - reached);
-			}
-			for (auto &path : paths)
-				path.translate(shift);
-			for (auto &piece : bend)
-				piece.translate(shift);
-			if (false == last)
-			{
-				placed rungswitch;
-				rungswitch.line = -1;
-				rungswitch.along = along;
-				rungswitch.side = back;
-				rungswitch.second = true;
-				rungswitch.paths = paths;
-				out.switches.push_back(rungswitch);
-				reached = along + Request.second.length;
-			}
-			if (false == bend.empty())
-				out.radius = radius;
-			out.inserts.insert(out.inserts.end(), bend.begin(), bend.end());
-			auto const fanstart{landing + shift};
-			if (i < Request.to.size())
-			{
-				auto const &fan{Request.to[i]};
-				auto end{fan.start};
-				auto ahead{glm::dot(travel, plan_of(fan.start) - plan_of(fanstart))};
-				auto const other{fan.point(fan.length)};
-				if (auto const further{glm::dot(travel, plan_of(other) - plan_of(fanstart))}; further < ahead)
-				{
-					end = other;
-					ahead = further;
-				}
-				if (ahead < -0.01)
-				{
-					out.error = format(STR_C("Track %d of the fan reaches into the ladder, it has to start %.2f m further on"), static_cast<int>(i + 1), -ahead);
-					return out;
-				}
-				if (ahead >= 0.01)
-					out.inserts.push_back(straight(fanstart, end));
-			}
-			else
-				out.inserts.push_back(straight(fanstart, fanstart + glm::dvec3{travel.x, from.grade * Request.forward, travel.y} * std::max(1.0, Request.stub)));
-		}
-		out.fan = offsets;
-		out.spacing = offsets.front();
-		out.valid = true;
+	}
+	else if (auto const *error{spaced_offsets(Request.spacings, offsets)}; error != nullptr)
+	{
+		out.error = error;
 		return out;
 	}
+	if (false == fits(from, Request.along, Request.forward, Request.first.length))
+	{
+		out.error = STR_C("A switch of the connection runs off the end of its straight");
+		return out;
+	}
+	auto const start{put(from, 0, Request.along, Request.forward, ladder.side, Request.first, false)};
+	ladder.track = branch_of(start.paths);
+	ladder.climb = ladder.side * cross(ladder.travel, ladder.track.heading);
+	if (ladder.climb < 1e-4)
+	{
+		out.error = STR_C("The switch template has no diverging track");
+		return out;
+	}
+	out.switches.push_back(start);
+	ladder.step = glm::dvec3{ladder.track.heading.x, ladder.track.grade, ladder.track.heading.y};
+	ladder.back = cross(ladder.track.heading, ladder.travel) > 0.0 ? 1 : -1;
+	ladder.radius = Request.radius > 0.0 ? Request.radius : sharper(Request.second, Request.second);
+	double reached{0.0};
+	for (std::size_t i = 0; i < offsets.size(); ++i)
+		if (false == lay_rung(out, Request, ladder, i, offsets[i], i + 1 == offsets.size(), reached))
+			return out;
+	out.fan = offsets;
+	out.spacing = offsets.front();
+	out.valid = true;
+	return out;
+}
 
+// the second crossover of a double crossover, after the first one on the other track, or before it on the starting track
+void plan_double_crossover(result &Out, request const &Request, crossing_over const &One)
+{
+	auto const &from{Request.from};
+	auto const &to{Request.to.front()};
+	glm::dvec2 const travel{from.direction * static_cast<double>(Request.forward)};
+	auto const towards{glm::dot(to.direction, travel) > 0.0 ? 1 : -1};
+	auto const span{glm::dot(travel, plan_of(start_of(One.two)) - plan_of(start_of(One.one)))};
+	crossing_over two;
+	if (false == Request.together)
+	{
+		auto const along{One.two.along + towards * std::max(0.0, Request.gap)};
+		two = cross_over({&to, 1, &Request.second, true}, along, towards, {&from, 0, &Request.first, false}, from.along(to.point(along)) + Request.forward * span, Request);
+	}
+	else
+	{
+		auto const along{Request.along - Request.forward * std::max(0.0, Request.gap)};
+		two = cross_over({&from, 0, &Request.first, false}, along, -Request.forward, {&to, 1, &Request.second, true}, to.along(from.point(along)) - towards * span, Request);
+	}
+	if (false == two.valid)
+	{
+		Out.error = two.error;
+		return;
+	}
+	take(Out, One, true);
+	take(Out, two, true);
+	if (overlapping(Out.switches, lines_of(Request)))
+	{
+		Out.error = STR_C("The switches of the two crossovers overlap, the gap between them has to be longer");
+		return;
+	}
+	Out.valid = true;
+}
+
+// the crossing between the inserts of a scissors crossover, P: the ends of the insert of the first crossover, Q: of the second one
+void cross_inserts(result &Out, crossing_over const &One, glm::dvec2 const &Travel, std::array<glm::dvec3, 4> const &Ends)
+{
+	auto const &[p1, p2, q1, q2]{Ends};
+	auto const first{plan_of(p2 - p1)};
+	auto const second{plan_of(q2 - q1)};
+	auto const determinant{cross(first, second)};
+	auto const sine{std::abs(cross(glm::normalize(Travel), glm::length(first) > 1e-9 ? glm::normalize(first) : Travel))};
+	auto const shortfall{(2.0 * kCrossingHalf - One.straights.front()) * sine};
+	if (std::abs(determinant) < 1e-9 || glm::length(first) < 2.0 * kCrossingHalf || glm::length(second) < 2.0 * kCrossingHalf)
+	{
+		Out.error = format(STR_C("The tracks are too close for the crossing of a scissors crossover: %.2f m more spacing is needed"), std::max(0.01, shortfall));
+		return;
+	}
+	auto const fraction{cross(plan_of(q1) - plan_of(p1), second) / determinant};
+	auto const meeting{plan_of(p1) + first * fraction};
+	if (auto const half{std::min({glm::distance(meeting, plan_of(p1)), glm::distance(meeting, plan_of(p2)), glm::distance(meeting, plan_of(q1)), glm::distance(meeting, plan_of(q2))})}; half < kCrossingHalf)
+	{
+		Out.error = format(STR_C("The tracks are too close for the crossing of a scissors crossover: %.2f m more spacing is needed"), std::max(0.01, shortfall));
+		return;
+	}
+	Out.crossing = true;
+	Out.ends = Ends;
+	Out.centre = {meeting.x, p1.y + (p2.y - p1.y) * fraction, meeting.y};
+	auto const unitone{glm::normalize(first)};
+	auto unittwo{glm::normalize(second)};
+	if (glm::dot(unitone, unittwo) < 0.0)
+		unittwo = -unittwo;
+	Out.angle = std::atan2(std::abs(cross(unitone, unittwo)), glm::dot(unitone, unittwo));
+	Out.valid = true;
+}
+
+// the second crossover of a scissors crossover, around the same centre as the first one, and the crossing of their inserts
+void plan_scissors(result &Out, request const &Request, crossing_over const &One)
+{
+	auto const &from{Request.from};
+	auto const &to{Request.to.front()};
+	if (false == One.straight || std::abs(cross(from.direction, to.direction)) > 1e-4)
+	{
+		Out.error = STR_C("A scissors crossover needs parallel tracks and switches of the same angle");
+		return;
+	}
+	auto const p1{branch_of(One.one.paths).end};
+	auto const p2{branch_of(One.two.paths).end};
+	auto const middle{(p1 + p2) * 0.5};
+	auto const two{cross_over({&from, 0, &Request.first, false}, 2.0 * from.along(middle) - Request.along, -Request.forward, {&to, 1, &Request.second, true}, 0.0, Request)};
+	if (false == two.valid || false == two.straight)
+	{
+		Out.error = two.valid ? std::string{STR_C("A scissors crossover needs parallel tracks and switches of the same angle")} : two.error;
+		return;
+	}
+	take(Out, One, false);
+	take(Out, two, false);
+	if (overlapping(Out.switches, lines_of(Request)))
+	{
+		Out.error = STR_C("The tracks are too close for a scissors crossover with these switches, its switches overlap");
+		return;
+	}
+	glm::dvec2 const travel{from.direction * static_cast<double>(Request.forward)};
+	cross_inserts(Out, One, travel, {p1, p2, branch_of(two.one.paths).end, branch_of(two.two.paths).end});
+}
+
+// a crossover between the starting track and the other one, or two of them as a double or a scissors crossover
+result plan_crossover(request const &Request)
+{
+	result out;
 	if (Request.to.empty())
 	{
 		out.error = STR_C("Drag onto the other track");
 		return out;
 	}
+	auto const &from{Request.from};
 	auto const &to{Request.to.front()};
-	out.spacing = std::abs(to.lateral(origin));
-	auto const one{cross_over(from, 0, Request.along, Request.forward, Request.first, false, to, 1, Request.second, true, Request.target, Request)};
+	out.spacing = std::abs(to.lateral(from.point(Request.along)));
+	auto const one{cross_over({&from, 0, &Request.first, false}, Request.along, Request.forward, {&to, 1, &Request.second, true}, Request.target, Request)};
 	if (false == one.valid)
 	{
 		out.error = one.error;
@@ -538,89 +711,27 @@ result plan(request const &Request)
 	{
 		take(out, one, true);
 		out.valid = true;
-		return out;
 	}
-	auto const towards{glm::dot(to.direction, travel) > 0.0 ? 1 : -1};
-	auto const span{glm::dot(travel, plan_of(start_of(one.two)) - plan_of(start_of(one.one)))};
-	if (Request.type == kind::double_crossover)
-	{
-		crossing_over two;
-		if (false == Request.together)
-		{
-			auto const along{one.two.along + towards * std::max(0.0, Request.gap)};
-			two = cross_over(to, 1, along, towards, Request.second, true, from, 0, Request.first, false, from.along(to.point(along)) + Request.forward * span, Request);
-		}
-		else
-		{
-			auto const along{Request.along - Request.forward * std::max(0.0, Request.gap)};
-			two = cross_over(from, 0, along, -Request.forward, Request.first, false, to, 1, Request.second, true, to.along(from.point(along)) - towards * span, Request);
-		}
-		if (false == two.valid)
-		{
-			out.error = two.error;
-			return out;
-		}
-		take(out, one, true);
-		take(out, two, true);
-		if (overlapping(out.switches, lines))
-		{
-			out.error = STR_C("The switches of the two crossovers overlap, the gap between them has to be longer");
-			return out;
-		}
-		out.valid = true;
-		return out;
-	}
-	if (false == one.straight || std::abs(cross(from.direction, to.direction)) > 1e-4)
-	{
-		out.error = STR_C("A scissors crossover needs parallel tracks and switches of the same angle");
-		return out;
-	}
-	auto const p1{branch_of(one.one.paths).end};
-	auto const p2{branch_of(one.two.paths).end};
-	auto const middle{(p1 + p2) * 0.5};
-	auto const two{cross_over(from, 0, 2.0 * from.along(middle) - Request.along, -Request.forward, Request.first, false, to, 1, Request.second, true, 0.0, Request)};
-	if (false == two.valid || false == two.straight)
-	{
-		out.error = two.valid ? std::string{STR_C("A scissors crossover needs parallel tracks and switches of the same angle")} : two.error;
-		return out;
-	}
-	take(out, one, false);
-	take(out, two, false);
-	if (overlapping(out.switches, lines))
-	{
-		out.error = STR_C("The tracks are too close for a scissors crossover with these switches, its switches overlap");
-		return out;
-	}
-	auto const q1{branch_of(two.one.paths).end};
-	auto const q2{branch_of(two.two.paths).end};
-	auto const first{plan_of(p2 - p1)};
-	auto const second{plan_of(q2 - q1)};
-	auto const determinant{cross(first, second)};
-	auto const sine{std::abs(cross(glm::normalize(travel), glm::length(first) > 1e-9 ? glm::normalize(first) : travel))};
-	auto const shortfall{(2.0 * kCrossingHalf - one.straights.front()) * sine};
-	if (std::abs(determinant) < 1e-9 || glm::length(first) < 2.0 * kCrossingHalf || glm::length(second) < 2.0 * kCrossingHalf)
-	{
-		out.error = format(STR_C("The tracks are too close for the crossing of a scissors crossover: %.2f m more spacing is needed"), std::max(0.01, shortfall));
-		return out;
-	}
-	auto const fraction{cross(plan_of(q1) - plan_of(p1), second) / determinant};
-	auto const meeting{plan_of(p1) + first * fraction};
-	auto const half{std::min({glm::distance(meeting, plan_of(p1)), glm::distance(meeting, plan_of(p2)), glm::distance(meeting, plan_of(q1)), glm::distance(meeting, plan_of(q2))})};
-	if (half < kCrossingHalf)
-	{
-		out.error = format(STR_C("The tracks are too close for the crossing of a scissors crossover: %.2f m more spacing is needed"), std::max(0.01, shortfall));
-		return out;
-	}
-	out.crossing = true;
-	out.ends = {p1, p2, q1, q2};
-	out.centre = {meeting.x, p1.y + (p2.y - p1.y) * fraction, meeting.y};
-	auto const unitone{glm::normalize(first)};
-	auto unittwo{glm::normalize(second)};
-	if (glm::dot(unitone, unittwo) < 0.0)
-		unittwo = -unittwo;
-	out.angle = std::atan2(std::abs(cross(unitone, unittwo)), glm::dot(unitone, unittwo));
-	out.valid = true;
+	else if (Request.type == kind::double_crossover)
+		plan_double_crossover(out, Request, one);
+	else
+		plan_scissors(out, Request, one);
 	return out;
+}
+
+} // namespace
+
+result plan(request const &Request)
+{
+	if (false == usable(Request.first) || false == usable(Request.second))
+	{
+		result out;
+		out.error = STR_C("A connection is made of ordinary switches, not of slips, crossings or double switches");
+		return out;
+	}
+	if (Request.type == kind::ladder)
+		return plan_ladder(Request);
+	return plan_crossover(Request);
 }
 
 } // namespace connection

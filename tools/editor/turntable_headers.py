@@ -63,12 +63,8 @@ def examine(path, relative):
     return {'raw': raw, 'text': text, 'encoding': encoding, 'header': header, 'described': False, 'length': length, 'angles': angles}, ''
 
 
-def main():
-    chosen = options(sys.argv, __doc__)
-    if chosen is None:
-        return 1
-    data, writing, target = chosen
-    folder = os.path.join(data, FOLDER)
+def scan(folder):
+    """the turntable templates under the folder, sorted, and the templates left out with the reason"""
     done = []
     skipped = []
     for root, _, files in os.walk(folder):
@@ -82,6 +78,11 @@ def main():
             elif reason:
                 skipped.append((relative, reason))
     done.sort()
+    return done, skipped
+
+
+def report(done, skipped):
+    """prints each template found and each one left out"""
     for file, info in done:
         if info['described']:
             print('%-40s already described' % file)
@@ -89,6 +90,16 @@ def main():
             print('%-40s %d m, positions %s' % (file, info['length'], ' '.join('%g' % a for a in info['angles'])))
     for file, reason in skipped:
         print('skipped %s: %s' % (file, reason))
+
+
+def main():
+    chosen = options(sys.argv, __doc__)
+    if chosen is None:
+        return 1
+    data, writing, target = chosen
+    folder = os.path.join(data, FOLDER)
+    done, skipped = scan(folder)
+    report(done, skipped)
     fresh = [(file, info) for file, info in done if not info['described']]
     print('%d described now, %d already described, %d skipped' % (len(fresh), len(done) - len(fresh), len(skipped)))
     if writing and fresh:

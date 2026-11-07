@@ -23,15 +23,21 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 #include <algorithm>
+#include <array>
 #include <string>
+#include <string_view>
 
 // the name of the template in the language of the editor: the words of the catalogue translated, the kind of a slip or
 // a crossing left out where its type says it
 std::string switch_name_translated(std::string Title)
 {
-	auto const replace = [&](std::string const &From, std::string const &To) {
-		for (auto at{Title.find(From)}; at != std::string::npos; at = Title.find(From, at + To.size()))
+	auto const replace = [&Title](std::string_view const From, std::string_view const To) {
+		auto at{Title.find(From)};
+		while (at != std::string::npos)
+		{
 			Title.replace(at, From.size(), To);
+			at = Title.find(From, at + To.size());
+		}
 	};
 	for (auto const *redundant : {" single slip", " double slip", " crossing"})
 		replace(redundant, "");
@@ -61,7 +67,8 @@ bool kind_tile(char const *Id, char const *Label, int const Picture, bool const 
 	auto const accent{family_colour(0)};
 	ImVec2 const bottom{top.x + Width, top.y + height};
 	auto const rounding{std::round(font * 0.35f)};
-	list->AddRectFilled(top, bottom, Chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), rounding);
+	auto const frame{hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg};
+	list->AddRectFilled(top, bottom, Chosen ? (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 46) : ImGui::GetColorU32(frame), rounding);
 	list->AddRect(top, bottom, Chosen ? accent : ImGui::GetColorU32(ImGuiCol_Border), rounding, 0, Chosen ? 2.0f : 1.0f);
 	auto const pad{std::round(font * 0.4f)};
 	auto const w{std::round(font * 2.2f)};
@@ -140,18 +147,18 @@ std::string editor_mode::switch_template_label(editor_track::switch_template con
 
 editor_mode::switch_kind editor_mode::current_switch_kind() const
 {
+	using enum switch_kind;
 	auto const &tool{m_switch};
 	if (tool.connection >= 0 && false == tool.recognised)
-		return switch_kind::connection;
+		return connection;
 	if (tool.armed >= 0 && tool.armed < static_cast<int>(tool.templates.size()) && tool.templates[tool.armed].double_slip)
-		return tool.templates[tool.armed].type == "Skrz" ? switch_kind::crossing : switch_kind::slip;
-	return switch_kind::single;
+		return tool.templates[tool.armed].type == "Skrz" ? crossing : slip;
+	return single;
 }
 
 bool editor_mode::switch_kind_offered(switch_kind const Kind) const
 {
-	auto const &templates{m_switch.templates};
-	return std::any_of(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(Kind)); });
+	return std::ranges::any_of(m_switch.templates, [Kind](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(Kind)); });
 }
 
 void editor_mode::choose_switch_kind(switch_kind const Kind)
@@ -175,6 +182,7 @@ void editor_mode::choose_switch_kind(switch_kind const Kind)
 
 void editor_mode::render_switch_ui()
 {
+	using enum switch_kind;
 	auto &tool{m_switch};
 	auto const kind{current_switch_kind()};
 
@@ -185,22 +193,22 @@ void editor_mode::render_switch_ui()
 		char const *label;
 		char const *tooltip;
 	};
-	choice const choices[] = {{switch_kind::single, "Switch", "A switch in a straight or a curve"},
-	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"},
-	                          {switch_kind::crossing, "Crossing", "A crossing of two straights"}};
+	std::array<choice, 3> const choices{{{single, "Switch", "A switch in a straight or a curve"},
+	                                     {slip, "Slip switch", "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"},
+	                                     {crossing, "Crossing", "A crossing of two straights"}}};
 	{
 		auto const gap{std::round(ImGui::GetFontSize() * 0.4f)};
 		auto const width{std::floor((ImGui::GetContentRegionAvail().x - gap) * 0.5f)};
 		int shown{0};
 		for (auto const &entry : choices)
 		{
-			if (entry.kind != switch_kind::single && false == switch_kind_offered(entry.kind))
+			if (entry.kind != single && false == switch_kind_offered(entry.kind))
 				continue;
 			if (shown % 2 == 1)
 				ImGui::SameLine(0.0f, gap);
 			else if (shown > 0)
 				ImGui::Dummy(ImVec2(0.0f, gap * 0.25f));
-			if (kind_tile(entry.label, STR_C(entry.label), static_cast<int>(&entry - choices), kind == entry.kind, width) && kind != entry.kind)
+			if (kind_tile(entry.label, STR_C(entry.label), static_cast<int>(&entry - choices.data()), kind == entry.kind, width) && kind != entry.kind)
 				choose_switch_kind(entry.kind);
 			item_tooltip(entry.tooltip);
 			++shown;
@@ -210,14 +218,14 @@ void editor_mode::render_switch_ui()
 	std::vector<std::pair<char const *, char const *>> how;
 	switch (kind)
 	{
-	case switch_kind::slip:
+	case slip:
 		how = {{"Drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Drag at a crossing", "of two straights at the skos of the slip: it goes there"}, {"Drag on a curve", "bent into it, in a side track only (11.4 pkt 4b)"}};
 		break;
-	case switch_kind::crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
-	case switch_kind::connection:
+	case crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
+	case connection:
 		how = {{"Drag", "from a straight onto the other track"}, {"Shift+wheel", "the kind"}, {"Ctrl+wheel", "R of the aligning curve"}};
-		if (tool.connection == static_cast<int>(connection::kind::double_crossover))
-			how.push_back({"Alt+wheel", "where they meet"});
+		if (tool.connection == static_cast<int>(::connection::kind::double_crossover))
+			how.emplace_back("Alt+wheel", "where they meet");
 		break;
 	default:
 		how = {{"Drag on a track", "along: the direction, sideways: the side"},
@@ -229,16 +237,16 @@ void editor_mode::render_switch_ui()
 
 	// the templates of the kind: by the speed, by the skos for the rail of the selected track, all of them under; the lengths and the
 	// rest of the label in the tooltip
-	ImGui::TextDisabled("%s", STR_C(kind == switch_kind::connection ? "The first switch" : "Template"));
+	ImGui::TextDisabled("%s", STR_C(kind == connection ? "The first switch" : "Template"));
 	auto const rail{editor_track::rail_of(selected_track())};
 	if (false == rail.empty())
 	{
 		ImGui::SameLine();
 		ImGui::TextDisabled(STR_C("rail of the track %s"), rail.c_str());
 	}
-	else if (auto *track{selected_track()}; track != nullptr && (track->iCategoryFlag & 15) == 1 && track->m_profile1.first.empty())
+	else if (auto const *track{selected_track()}; track != nullptr && (track->iCategoryFlag & 15) == 1 && track->m_profile1.first.empty())
 		render_rail_profile_hint(*track);
-	if (auto const picked{render_template_picker("##place", [&](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }, rail, tool.armed, false)}; picked >= 0)
+	if (auto const picked{render_template_picker("##place", [kind](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }, rail, tool.armed, false)}; picked >= 0)
 	{
 		tool.last = picked;
 		tool.armed = picked;
@@ -247,32 +255,7 @@ void editor_mode::render_switch_ui()
 	ImGui::PushID("switchmore");
 	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		if (kind == switch_kind::single || kind == switch_kind::connection)
-			render_connection_options();
-		// the name and the drive of the next switch; a crossing has no moving parts
-		if (kind != switch_kind::crossing)
-		{
-			if (begin_fields("##switchnamefields", 0.3f))
-			{
-				field_row("Name##switchname");
-				ImGui::InputTextWithHint("##switchname", switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
-				item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
-				ImGui::EndTable();
-			}
-			if (render_switch_drive_choice())
-				if (auto *track{selected_track()}; track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved)
-					apply_switch_drive_choice(*track);
-		}
-		if (ImGui::Button(STR_C("Collect from the scenery")))
-		{
-			tool.templates = editor_track::standard_switch_templates();
-			auto const found{editor_track::find_switch_templates()};
-			tool.templates.insert(tool.templates.end(), found.begin(), found.end());
-			tool.collected = true;
-			arm_switch();
-		}
-		item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
-		render_switch_timbers();
+		render_switch_settings(kind);
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
@@ -286,6 +269,40 @@ void editor_mode::render_switch_ui()
 	if (ImGui::Button(STR_C("Template editor...")))
 		m_switch_designer.open = true;
 	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
+}
+
+// the more settings of the kind placed: the options of a connection, the name and the drive of the next switch, the templates
+// collected from the scenery and the timbers
+void editor_mode::render_switch_settings(switch_kind const Kind)
+{
+	using enum switch_kind;
+	auto &tool{m_switch};
+	if (Kind == single || Kind == connection)
+		render_connection_options();
+	// the name and the drive of the next switch; a crossing has no moving parts
+	if (Kind != crossing)
+	{
+		if (begin_fields("##switchnamefields", 0.3f))
+		{
+			field_row("Name##switchname");
+			ImGui::InputTextWithHint("##switchname", switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
+			item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
+			ImGui::EndTable();
+		}
+		if (render_switch_drive_choice())
+			if (auto *track{selected_track()}; track != nullptr && track->eType == tt_Switch && false == track->m_editorremoved)
+				apply_switch_drive_choice(*track);
+	}
+	if (ImGui::Button(STR_C("Collect from the scenery")))
+	{
+		tool.templates = editor_track::standard_switch_templates();
+		auto const found{editor_track::find_switch_templates()};
+		tool.templates.insert(tool.templates.end(), found.begin(), found.end());
+		tool.collected = true;
+		arm_switch();
+	}
+	item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
+	render_switch_timbers();
 }
 
 // the timbers of all the switches and crossings of the scenery at once: a button for each model of timbers of the scenery data
@@ -314,12 +331,12 @@ std::size_t editor_mode::set_switch_timbers(std::string const &Model)
 		if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 15) == 1 && (track->eType == tt_Switch || false == track->m_crossings.empty())
 		    && track->m_timber_model_name != Model)
 			tracks.push_back(track);
-	return tracks_apply(tracks, [&](TTrack &Track) { Track.m_timber_model_name = Model; return true; }, true, "Timber model");
+	return tracks_apply(tracks, [&Model](TTrack &Track) { Track.m_timber_model_name = Model; return true; }, true, "Timber model");
 }
 
 // a track with no rail profile, as the sceneries of the older editors have them: the templates of all the rails are offered.
 // the profile set at once on all the tracks laid with the same rails and no profile, so a scenery is put right in a few clicks
-void editor_mode::render_rail_profile_hint(TTrack &Track)
+void editor_mode::render_rail_profile_hint(TTrack const &Track)
 {
 	ImGui::SameLine();
 	ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", STR_C("Track with no rail profile"));
@@ -336,14 +353,14 @@ void editor_mode::render_rail_profile_hint(TTrack &Track)
 		if (other != nullptr && same(*other))
 			tracks.push_back(other);
 	ImGui::TextUnformatted(format(STR_C("Tracks with the rails %s and no profile: %d"), editor_track::material_name(material).c_str(), static_cast<int>(tracks.size())).c_str());
-	static std::pair<char const *, char const *> const profiles[] = {{"S60 (60E1)", "s60"}, {"S49 (49E1)", "s49"}, {"S42", "s42"}};
+	static std::array<std::pair<char const *, char const *>, 3> const profiles{{{"S60 (60E1)", "s60"}, {"S49 (49E1)", "s49"}, {"S42", "s42"}}};
 	for (auto const &[label, name] : profiles)
 	{
 		if (&label != &profiles[0].first)
 			ImGui::SameLine();
 		if (false == ImGui::Button(label))
 			continue;
-		auto const changed{tracks_apply(tracks, [&](TTrack &Other) { Other.rail_profile(name); return true; }, true, "Rail profile")};
+		auto const changed{tracks_apply(tracks, [&name](TTrack &Other) { Other.rail_profile(name); return true; }, true, "Rail profile")};
 		m_switch.status = format(STR_C("Rail profile %s set on %d tracks"), label, static_cast<int>(changed));
 		ImGui::CloseCurrentPopup();
 	}

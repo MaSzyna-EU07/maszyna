@@ -5083,22 +5083,9 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 		while (first != Last)
 		{
 
-			auto const *cell = first->second;
-
-			if (false == cell->m_shapestranslucent.empty() && false == distant(cell))
+			if (auto const *cell = first->second; false == cell->m_shapestranslucent.empty() && false == distant(cell))
 			{
-				// since all shapes of the cell share center point we can optimize out a few calls here
-				::glPushMatrix();
-				auto const originoffset{cell->m_area.center - m_renderpass.pass_camera.position()};
-				::glTranslated(originoffset.x, originoffset.y, originoffset.z);
-				// render
-				// NOTE: we can reuse the method used to draw opaque geometry
-				for (auto const &shape : cell->m_shapestranslucent)
-				{
-					Render(shape, false);
-				}
-				// post-render cleanup
-				::glPopMatrix();
+				Render_Alpha_shapes(*cell);
 			}
 
 			++first;
@@ -5141,31 +5128,50 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 		while (first != Last)
 		{
 
-			auto const *cell = first->second;
-
-			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())) && false == distant(cell))
+			if (auto const *cell = first->second; (false == cell->m_traction.empty() || (false == cell->m_lines.empty())) && false == distant(cell))
 			{
-				// since all shapes of the cell share center point we can optimize out a few calls here
-				::glPushMatrix();
-				auto const originoffset{cell->m_area.center - m_renderpass.pass_camera.position()};
-				::glTranslated(originoffset.x, originoffset.y, originoffset.z);
-				Bind_Material(null_handle);
-				// render
-				for (auto *traction : cell->m_traction)
-				{
-					Render_Alpha(traction);
-				}
-				for (auto &lines : cell->m_lines)
-				{
-					Render_Alpha(lines);
-				}
-				// post-render cleanup
-				::glPopMatrix();
+				Render_Alpha_wires(*cell);
 			}
 
 			++first;
 		}
 	}
+}
+
+void opengl33_renderer::Render_Alpha_shapes(scene::basic_cell const &Cell)
+{
+	// since all shapes of the cell share center point we can optimize out a few calls here
+	::glPushMatrix();
+	auto const originoffset{Cell.m_area.center - m_renderpass.pass_camera.position()};
+	::glTranslated(originoffset.x, originoffset.y, originoffset.z);
+	// render
+	// NOTE: we can reuse the method used to draw opaque geometry
+	for (auto const &shape : Cell.m_shapestranslucent)
+	{
+		Render(shape, false);
+	}
+	// post-render cleanup
+	::glPopMatrix();
+}
+
+void opengl33_renderer::Render_Alpha_wires(scene::basic_cell const &Cell)
+{
+	// since all shapes of the cell share center point we can optimize out a few calls here
+	::glPushMatrix();
+	auto const originoffset{Cell.m_area.center - m_renderpass.pass_camera.position()};
+	::glTranslated(originoffset.x, originoffset.y, originoffset.z);
+	Bind_Material(null_handle);
+	// render
+	for (auto *traction : Cell.m_traction)
+	{
+		Render_Alpha(traction);
+	}
+	for (auto &lines : Cell.m_lines)
+	{
+		Render_Alpha(lines);
+	}
+	// post-render cleanup
+	::glPopMatrix();
 }
 
 void opengl33_renderer::Render_Alpha(TAnimModel *Instance)

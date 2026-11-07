@@ -717,8 +717,7 @@ void ui_layer::render_menu_contents()
 		}
 		if(EditorModeFlag){
 			ImGui::MenuItem(STR_C("Scene Hierarchy"), nullptr, &m_editor_hierarchy);
-			bool change_history_enabled = editor_mode::change_history();
-			if (ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
+			if (bool change_history_enabled = editor_mode::change_history(); ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
 			{
 				editor_mode::set_change_history(change_history_enabled);
 			}

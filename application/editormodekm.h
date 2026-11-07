@@ -17,12 +17,16 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <vector>
 
+struct ImDrawList;
+class screen_projection;
+
 // the kilometrage of the lines: the points of a line where its km is known and where it jumps, the km of the rest from them
 class km_tool final : public editor_tool
 {
   public:
-	km_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates)
-	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}
+	// the selection isn't kept: the tool works on the track clicked
+	km_tool(editor_selection &, editor_view &View, editor_history &History, editor_templates &Templates)
+	    : m_view{View}, m_history{History}, m_templates{Templates}
 	{
 	}
 	void update() override;
@@ -37,7 +41,6 @@ class km_tool final : public editor_tool
 	std::string readout(glm::dvec3 const &Point) const;
 
   private:
-	editor_selection &m_selection;
 	editor_view &m_view;
 	editor_history &m_history;
 	editor_templates &m_templates;
@@ -99,4 +102,20 @@ class km_tool final : public editor_tool
 	glm::dvec2 rising() const;
 	// warnings of a jump at the point: Id-1 § 19 wants none on a curve nor at a station
 	std::string jump_warning(glm::dvec3 const &Point) const;
+	// the parts of the options: the point picked, the way through a station, the points of a line
+	void render_point();
+	void render_way_through();
+	void render_line(std::string const &Line, std::vector<kilometrage::mark> const &Marks);
+	void render_line_vias(std::string const &Line, kilometrage::axis const &Axis);
+	void render_line_marks(std::string const &Line, kilometrage::axis const &Axis, std::vector<kilometrage::mark> const &Marks);
+	void render_anchor_row(kilometrage::axis const &Axis, std::vector<kilometrage::mark> const &Marks, std::size_t const Index);
+	// the parts of the overlay: a hectometre of an axis, a point of the km
+	static void draw_tick(screen_projection const &Projection, ImDrawList *List, glm::dvec3 const &Camera, tick const &Tick);
+	void draw_mark(screen_projection const &Projection, ImDrawList *List, glm::dvec3 const &Camera, std::size_t const Index) const;
+	// the commands of the self-test
+	void selftest_pick(std::istringstream &Words);
+	void selftest_set(std::istringstream &Words);
+	void selftest_via(std::istringstream &Words);
+	void selftest_list();
+	void selftest_at(std::istringstream &Words) const;
 };

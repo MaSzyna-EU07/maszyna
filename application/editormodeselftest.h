@@ -39,7 +39,7 @@ inline std::size_t &frames_slow()
 
 inline std::string one_line(std::string Text)
 {
-	std::replace(Text.begin(), Text.end(), '\n', ';');
+	std::ranges::replace(Text, '\n', ';');
 	return Text;
 }
 

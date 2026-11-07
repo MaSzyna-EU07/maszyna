@@ -55,4 +55,4 @@ class editorTrackPresets
 	int m_nextid{1};
 };
 
-extern editorTrackPresets EditorTrackPresets;
+extern editorTrackPresets EditorTrackPresets; // NOSONAR: the one store of the presets, changed while the editor runs

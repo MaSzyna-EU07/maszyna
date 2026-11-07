@@ -30,7 +30,7 @@ template <typename T> constexpr T sq(T v)
 std::filesystem::path user_config_path(const std::string &filename);
 // the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
 // %LOCALAPPDATA%\MaSzyna\cache, ~/Library/Caches/MaSzyna, $XDG_CACHE_HOME/MaSzyna or ~/.cache/MaSzyna; empty as user_config_path
-std::filesystem::path user_cache_path(const std::string &filename);
+std::filesystem::path user_cache_path(const std::filesystem::path &filename);
 
 // TODO: Shouldn't this be in globals?
 namespace paths

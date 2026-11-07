@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "editor/editorTrack.hpp"
@@ -30,7 +31,7 @@ enum class kind
 };
 int constexpr kind_count{4};
 char const *word(kind const Kind);
-bool parse(std::string const &Word, kind &Kind);
+bool parse(std::string_view const Word, kind &Kind);
 
 struct line
 {

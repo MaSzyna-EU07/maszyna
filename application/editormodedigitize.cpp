@@ -24,9 +24,11 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "world/Track.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <set>
+#include <string_view>
 
 namespace
 {
@@ -47,7 +49,7 @@ double constexpr kInsertLongest{150.0};
 double constexpr kSpacingLeast{2.5};
 double constexpr kSpacingMost{15.0};
 // radii of the diverging track the switches are made with; a measured one this close to one of them is taken for it
-double constexpr kNominalRadii[]{150.0, 190.0, 205.0, 230.0, 265.0, 300.0, 500.0, 760.0, 1200.0};
+std::array constexpr kNominalRadii{150.0, 190.0, 205.0, 230.0, 265.0, 300.0, 500.0, 760.0, 1200.0};
 double constexpr kNominalNear{0.04};
 
 double nominal_radius(double const Radius)
@@ -81,8 +83,7 @@ glm::dvec2 heading(segment_data const &Path, bool const End)
 {
 	auto const parts{parts_of(Path)};
 	bezier const curve{End ? *parts.back() : *parts.front()};
-	auto const direction{plan_of(curve.first(End ? 1.0 : 0.0))};
-	if (glm::length(direction) > 1e-9)
+	if (auto const direction{plan_of(curve.first(End ? 1.0 : 0.0))}; glm::length(direction) > 1e-9)
 		return glm::normalize(direction);
 	auto const chord{plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
 	return glm::length(chord) > 1e-9 ? glm::normalize(chord) : glm::dvec2{0.0, 1.0};
@@ -128,7 +129,7 @@ switch_size size_of(segment_data const &Main, segment_data const &Branch)
 }
 
 // the template of the catalogue the size is of: the rail of the track and a movable nose decide between the same shapes
-int matching(std::vector<editor_track::switch_template> const &Templates, std::vector<std::pair<int, switch_size>> const &Sizes, switch_size const &Size, std::string const &Rail, bool const Movable)
+int matching(std::vector<editor_track::switch_template> const &Templates, std::vector<std::pair<int, switch_size>> const &Sizes, switch_size const &Size, std::string_view const Rail, bool const Movable)
 {
 	int best{-1};
 	auto score{std::numeric_limits<double>::max()};
@@ -192,18 +193,154 @@ bool slip_part(TTrack const &Switch)
 	return towards_switch(Switch, Switch.m_paths[0].points[segment_data::point::end]) && towards_switch(Switch, Switch.m_paths[1].points[segment_data::point::end]);
 }
 
-} // namespace
-
-void editor_mode::digitize_switches(digitize_report &Report, bool const Write)
+// the sizes of the plain single switches of the catalogue, with their places in it
+std::vector<std::pair<int, switch_size>> template_sizes(std::vector<editor_track::switch_template> const &Templates)
 {
-	auto const templates{editor_track::standard_switch_templates()};
 	std::vector<std::pair<int, switch_size>> sizes;
-	for (int i = 0; i < static_cast<int>(templates.size()); ++i)
+	for (int i = 0; i < static_cast<int>(Templates.size()); ++i)
 	{
-		auto const &shape{templates[i]};
+		auto const &shape{Templates[i]};
 		if (shape.source == nullptr && false == shape.double_slip && false == shape.twofold())
 			sizes.emplace_back(i, size_of(shape.local[0], shape.local[1]));
 	}
+	return sizes;
+}
+
+// the switch of no template of the catalogue kept with the size measured from its shape
+void record_measured(TTrack const &Track, editor_track::switch_template const &Shape)
+{
+	switch_store::record entry;
+	entry.kind = "switch";
+	entry.name = Track.name();
+	entry.parts = {entry.name};
+	entry.radius = Shape.radius;
+	entry.ratio = Shape.ratio;
+	entry.source = "measured";
+	auto const rail{editor_track::rail_of(&Track)};
+	entry.rail = rail.empty() ? std::string{"-"} : rail;
+	switch_store::place(entry, Track);
+	switch_store::classify(entry, Track);
+	switch_store::put(entry, alignment_store::layer_of(Track));
+}
+
+// the next step of the insert of a crossover from the point of the track: the other switch it reaches there, or else the plain
+// track it goes on over, with the end of that track at the point
+struct insert_step
+{
+	TTrack *second{nullptr};
+	TTrack *next{nullptr};
+	editor_track::point_ref at;
+};
+
+insert_step insert_step_from(TTrack const &From, glm::dvec3 const &Point, TTrack const *First, std::vector<TTrack *> const &Insert)
+{
+	insert_step step;
+	for (auto const &[other, ref] : editor_track::connected_points(From, Point))
+	{
+		if (other == nullptr || other == &From || other->m_editorremoved || std::ranges::find(Insert, other) != Insert.end())
+			continue;
+		if (usable_switch(other) && other != First && ref.path == 1 && ref.kind == editor_track::point_kind::end)
+		{
+			step.second = other;
+			break;
+		}
+		if (other->eType == tt_Normal && other->m_paths.size() == 1)
+		{
+			step.next = other;
+			step.at = ref;
+		}
+	}
+	return step;
+}
+
+// the insert of a crossover: the plain tracks from the end of the diverging track of the first switch up to the end of the
+// diverging track of another switch
+struct crossover_insert
+{
+	std::vector<TTrack *> tracks;
+	TTrack *second{nullptr}; // the other switch, null when the tracks reach none
+	double length{0.0};
+	bool direct{false}; // the diverging tracks meet without an insert between them
+};
+
+crossover_insert insert_of(TTrack const &First)
+{
+	crossover_insert insert;
+	auto *from{&First};
+	auto point{First.m_paths[1].points[segment_data::point::end]};
+	while (insert.second == nullptr && insert.length <= kInsertLongest)
+	{
+		auto const step{insert_step_from(*from, point, &First, insert.tracks)};
+		if (step.second != nullptr)
+		{
+			insert.second = step.second;
+			insert.direct = insert.tracks.empty();
+			break;
+		}
+		if (step.next == nullptr)
+			break;
+		insert.tracks.push_back(step.next);
+		insert.length += path_length(step.next->m_paths.front());
+		point = far_end(step.next->m_paths.front(), step.at.kind);
+		from = step.next;
+	}
+	return insert;
+}
+
+// the crossover of the two switches facing each other kept, when it's of a kind that can be and the switches have their types;
+// Report counts it as kept already, recorded or left out
+void digitize_crossover(auto &Report, bool const Write, TTrack const &First, TTrack const &Second, crossover_insert const &Insert, double const Spacing)
+{
+	auto const note = [&Report, &First, &Second](std::string const &Why) { Report.notes.push_back(name_of(First) + " + " + name_of(Second) + ": " + Why); };
+	if (false == switch_store::connections(First).empty())
+	{
+		++Report.crossovers_known;
+		return;
+	}
+	if (Insert.direct || Insert.tracks.size() != 1)
+	{
+		++Report.crossovers_odd;
+		note(Insert.direct ? STR("the diverging tracks meet without an insert between them") : format(STR_C("the insert is made of %zu paths"), Insert.tracks.size()));
+		return;
+	}
+	auto const one{switch_store::named(First)};
+	auto const other{switch_store::named(Second)};
+	if (Write && (false == one.has_value() || false == other.has_value()))
+	{
+		++Report.crossovers_odd;
+		note(STR("a switch of it has no type kept"));
+		return;
+	}
+	if (one.has_value() && other.has_value() && (std::abs(one->radius - other->radius) > kNominalNear * one->radius || std::abs(one->ratio - other->ratio) > kNominalNear * one->ratio))
+	{
+		++Report.crossovers_odd;
+		note(format(STR_C("the switches differ: %s and %s"), switch_store::label(*one).c_str(), switch_store::label(*other).c_str()));
+		return;
+	}
+	if (Write)
+	{
+		auto entry{*one};
+		entry.kind = "connection";
+		entry.name = First.name();
+		entry.parts = {First.name(), Second.name()};
+		entry.number = "-";
+		switch_store::place(entry, First);
+		switch_store::classify(entry, First);
+		entry.type = connection::word(connection::kind::crossover);
+		entry.a = Spacing;
+		entry.b = Insert.length;
+		switch_store::put(entry, alignment_store::layer_of(First));
+		WriteLog(format("Editor: digitizing - crossover %s + %s kept, %s, spacing %.2f m, insert %.2f m", First.name().c_str(), Second.name().c_str(), switch_store::label(entry).c_str(), Spacing, Insert.length), logtype::generic);
+	}
+	++Report.crossovers_recorded;
+}
+
+} // namespace
+
+void editor_mode::digitize_switches(digitize_report &Report, bool const Write) const
+{
+	auto const templates{editor_track::standard_switch_templates()};
+	auto const sizes{template_sizes(templates)};
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (false == usable_switch(track))
@@ -254,124 +391,34 @@ void editor_mode::digitize_switches(digitize_report &Report, bool const Write)
 		if (Write && found >= 0)
 			record_switch(*track, shape);
 		else if (Write)
-		{
-			switch_store::record entry;
-			entry.kind = "switch";
-			entry.name = track->name();
-			entry.parts = {entry.name};
-			entry.radius = shape.radius;
-			entry.ratio = shape.ratio;
-			entry.source = "measured";
-			auto const rail{editor_track::rail_of(track)};
-			entry.rail = rail.empty() ? std::string{"-"} : rail;
-			switch_store::place(entry, *track);
-			switch_store::classify(entry, *track);
-			switch_store::put(entry, alignment_store::layer_of(*track));
-		}
+			record_measured(*track, shape);
 		++Report.recorded;
 	}
 }
 
-void editor_mode::digitize_crossovers(digitize_report &Report, bool const Write)
+void editor_mode::digitize_crossovers(digitize_report &Report, bool const Write) const
 {
 	std::set<std::pair<TTrack const *, TTrack const *>> seen;
 	for (auto *first : simulation::Paths.sequence())
 	{
 		if (false == usable_switch(first) || slip_part(*first))
 			continue;
-		auto const &branch{first->m_paths[1]};
-		auto const end{branch.points[segment_data::point::end]};
-		// the insert: plain tracks from the end of the diverging track up to the end of the diverging track of another switch
-		std::vector<TTrack *> insert;
-		TTrack *second{nullptr};
-		auto *from{static_cast<TTrack const *>(first)};
-		auto point{end};
-		double length{0.0};
-		bool direct{false};
-		while (second == nullptr && length <= kInsertLongest)
-		{
-			TTrack *next{nullptr};
-			editor_track::point_ref at;
-			for (auto const &[other, ref] : editor_track::connected_points(*from, point))
-			{
-				if (other == nullptr || other == from || other->m_editorremoved || std::find(insert.begin(), insert.end(), other) != insert.end())
-					continue;
-				if (usable_switch(other) && other != first && ref.path == 1 && ref.kind == editor_track::point_kind::end)
-				{
-					second = other;
-					direct = insert.empty();
-					break;
-				}
-				if (other->eType == tt_Normal && other->m_paths.size() == 1)
-				{
-					next = other;
-					at = ref;
-				}
-			}
-			if (second != nullptr || next == nullptr)
-				break;
-			insert.push_back(next);
-			length += path_length(next->m_paths.front());
-			point = far_end(next->m_paths.front(), at.kind);
-			from = next;
-		}
+		auto const insert{insert_of(*first)};
+		auto const *second{insert.second};
 		if (second == nullptr || slip_part(*second))
 			continue;
-		if (seen.count({second, first}) > 0)
+		if (seen.contains({second, first}))
 			continue;
 		seen.insert({first, second});
 		// the two switches face each other from two tracks side by side
 		auto const along{heading(first->m_paths[0], false)};
-		auto const back{heading(second->m_paths[0], false)};
-		if (glm::dot(along, back) > -0.9)
+		if (auto const back{heading(second->m_paths[0], false)}; glm::dot(along, back) > -0.9)
 			continue;
 		auto const spacing{std::abs(geometry::cross(along, plan_of(second->m_paths[0].points[segment_data::point::start] - first->m_paths[0].points[segment_data::point::start])))};
 		if (spacing < kSpacingLeast || spacing > kSpacingMost)
 			continue;
 		++Report.crossovers;
-		auto const name = [](TTrack const *Track) { return name_of(*Track); };
-		auto const note = [&](std::string const &Why) { Report.notes.push_back(name(first) + " + " + name(second) + ": " + Why); };
-		if (false == switch_store::connections(*first).empty())
-		{
-			++Report.crossovers_known;
-			continue;
-		}
-		if (direct || insert.size() != 1)
-		{
-			++Report.crossovers_odd;
-			note(direct ? STR("the diverging tracks meet without an insert between them") : format(STR_C("the insert is made of %zu paths"), insert.size()));
-			continue;
-		}
-		auto const one{switch_store::named(*first)};
-		auto const other{switch_store::named(*second)};
-		if (Write && (false == one.has_value() || false == other.has_value()))
-		{
-			++Report.crossovers_odd;
-			note(STR("a switch of it has no type kept"));
-			continue;
-		}
-		if (one.has_value() && other.has_value() && (std::abs(one->radius - other->radius) > kNominalNear * one->radius || std::abs(one->ratio - other->ratio) > kNominalNear * one->ratio))
-		{
-			++Report.crossovers_odd;
-			note(format(STR_C("the switches differ: %s and %s"), switch_store::label(*one).c_str(), switch_store::label(*other).c_str()));
-			continue;
-		}
-		if (Write)
-		{
-			auto entry{*one};
-			entry.kind = "connection";
-			entry.name = first->name();
-			entry.parts = {first->name(), second->name()};
-			entry.number = "-";
-			switch_store::place(entry, *first);
-			switch_store::classify(entry, *first);
-			entry.type = connection::word(connection::kind::crossover);
-			entry.a = spacing;
-			entry.b = length;
-			switch_store::put(entry, alignment_store::layer_of(*first));
-			WriteLog(format("Editor: digitizing - crossover %s + %s kept, %s, spacing %.2f m, insert %.2f m", first->name().c_str(), second->name().c_str(), switch_store::label(entry).c_str(), spacing, length), logtype::generic);
-		}
-		++Report.crossovers_recorded;
+		digitize_crossover(Report, Write, *first, *second, insert, spacing);
 	}
 }
 

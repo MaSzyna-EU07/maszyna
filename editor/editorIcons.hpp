@@ -50,7 +50,7 @@ enum class icon
 	infra,
 	gauge,
 	turntable,
-	parallel,
+	parallel, // NOSONAR: a scoped enumerator, only ever named as icon::parallel, so it hides nothing
 	station,
 	kilometrage,
 	more,

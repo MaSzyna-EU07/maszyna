@@ -11,10 +11,18 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/editortool.h"
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+class screen_projection;
+struct ImDrawList;
+namespace kilometrage
+{
+struct axis;
+}
 
 // hectometre posts along the line, at every 100 m of the kilometrage
 class hekto_tool final : public editor_tool
@@ -57,6 +65,16 @@ class hekto_tool final : public editor_tool
 		bool outside{false}; // its number belongs past the ends of the line
 		int place{-1}; // of the posts, the one with its number nearest to it
 	};
+	// how the posts are put along the line, as set in the panel
+	struct hekto_settings
+	{
+		int side{1}; // 1: to the right of the growing kilometrage, -1: to the left, 0: alternately
+		double offset{3.0}; // m from the axis
+		int style{0}; // nowy, stary, zgnity, mixed
+		int turn{0}; // degrees added to the rotation
+		double reach{10000.0}; // m each way
+		double tolerance{5.0}; // m along the line, for the posts standing
+	};
 	struct hekto_state
 	{
 		TTrack *track{nullptr}; // the line runs through it
@@ -67,12 +85,7 @@ class hekto_tool final : public editor_tool
 		std::string line; // of the kilometrage set for the line in the Kilometrage tool the posts follow, empty for the one given here
 		std::string line_set; // the line the Kilometrage tool sets the kilometrage of at the point, empty for none
 		bool own_km{false}; // the kilometrage given here, even where the line has one set
-		int side{1}; // 1: to the right of the growing kilometrage, -1: to the left, 0: alternately
-		double offset{3.0}; // m from the axis
-		int style{0}; // nowy, stary, zgnity, mixed
-		int turn{0}; // degrees added to the rotation
-		double reach{10000.0}; // m each way
-		double tolerance{5.0}; // m along the line, for the posts standing
+		hekto_settings settings;
 		bool dirty{true};
 		std::size_t history{0};
 		editor_track::route route;
@@ -85,10 +98,26 @@ class hekto_tool final : public editor_tool
 	};
 	hekto_state m_hekto;
 	void hekto_update();
+	// the posts standing along the line, up to its length from the start
+	void hekto_find_standing(double const Length);
+	// the post put beside the line where its chainage is, on the ground, and added to the posts
+	void hekto_put(hekto_post &Post);
+	// the posts of the hectometres of the kilometrage of the line, the jumps in it too
+	void hekto_posts_of_axis(kilometrage::axis const &Axis, double const Length);
+	// the posts of the kilometrage given at the point
+	void hekto_posts_of_km(double const Length);
+	// each post standing with the place of its number nearest to it, the duplicates and the posts standing wrong marked
+	void hekto_match_standing();
 	void hekto_read_kilometrage();
 	void hekto_place();
 	void hekto_fix();
 	void hekto_remove_duplicates();
+	void hekto_render_kilometrage();
+	void hekto_render_settings();
+	void hekto_render_results();
+	void hekto_render_wrong(std::ptrdiff_t const Wrong, std::ptrdiff_t const Duplicates);
+	// the posts standing wrong and the duplicates, with lines to where they belong
+	void hekto_draw_found(screen_projection const &Projection, ImDrawList *Drawlist, glm::dvec3 const &Camera) const;
 };
 
 // fouling point markers (W17) where the tracks meeting at a switch are the spacing apart
@@ -153,4 +182,11 @@ class fouling_tool final : public editor_tool
 	};
 	fouling_state m_fouling;
 	void fouling_update();
+	// the fouling point of the switch: where its branch is the spacing away from its main track, none where it isn't
+	std::optional<fouling_point> fouling_point_at(TTrack &Track) const;
+	// the markers standing: each goes to the nearest fouling point, the others are left alone
+	void fouling_match_markers();
+	void fouling_render_results();
+	void fouling_render_list(std::ptrdiff_t const Missing, std::ptrdiff_t const Wrong);
+	void fouling_render_settings();
 };

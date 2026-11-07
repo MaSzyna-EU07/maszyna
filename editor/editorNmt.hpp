@@ -98,7 +98,7 @@ class editor_nmt
 
 	mutable std::mutex m_mutex;
 	std::condition_variable m_wake;
-	std::vector<std::thread> m_workers;
+	std::vector<std::jthread> m_workers;
 	std::deque<key> m_queue;
 	std::set<key> m_queued;
 	std::map<key, std::shared_ptr<square const>> m_squares;

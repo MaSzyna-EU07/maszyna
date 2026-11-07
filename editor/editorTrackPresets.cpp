@@ -14,10 +14,12 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <memory>
 #include <sstream>
 
-editorTrackPresets EditorTrackPresets;
+editorTrackPresets EditorTrackPresets; // NOSONAR: the one store of the presets, changed while the editor runs
 
 // file layout:
 //   preset <name>
@@ -36,7 +38,7 @@ fs::path presets_path()
 	return p.empty() ? fs::path("eu07_editor_track_presets.txt") : p;
 }
 
-std::string trimmed(std::string Text)
+std::string trimmed(std::string const &Text)
 {
 	auto const first = Text.find_first_not_of(" \t");
 	if (first == std::string::npos)
@@ -48,7 +50,7 @@ std::string trimmed(std::string Text)
 // one value per line in the file
 std::string single_line(std::string Text)
 {
-	std::replace_if(Text.begin(), Text.end(), [](char const Character) { return Character == '\r' || Character == '\n' || Character == '\t'; }, ' ');
+	std::ranges::replace_if(Text, [](char const Character) { return Character == '\r' || Character == '\n' || Character == '\t'; }, ' ');
 	return trimmed(Text);
 }
 
@@ -68,8 +70,7 @@ bool editorTrackPresets::load()
 	m_presets.clear();
 
 	const fs::path path = presets_path();
-	std::error_code ec;
-	if (!fs::exists(path, ec))
+	if (std::error_code ec; !fs::exists(path, ec))
 		return false;
 
 	std::ifstream stream(path, std::ios_base::in | std::ios_base::binary);
@@ -155,14 +156,14 @@ bool editorTrackPresets::save() const
 
 editor_track_preset const *editorTrackPresets::find(int const Id) const
 {
-	auto const lookup = std::find_if(m_presets.begin(), m_presets.end(), [Id](auto const &Preset) { return Preset.id == Id; });
-	return lookup != m_presets.end() ? &(*lookup) : nullptr;
+	auto const lookup = std::ranges::find_if(m_presets, [Id](auto const &Preset) { return Preset.id == Id; });
+	return lookup != m_presets.end() ? std::to_address(lookup) : nullptr;
 }
 
 editor_track_preset *editorTrackPresets::find_(int const Id)
 {
-	auto const lookup = std::find_if(m_presets.begin(), m_presets.end(), [Id](auto const &Preset) { return Preset.id == Id; });
-	return lookup != m_presets.end() ? &(*lookup) : nullptr;
+	auto const lookup = std::ranges::find_if(m_presets, [Id](auto const &Preset) { return Preset.id == Id; });
+	return lookup != m_presets.end() ? std::to_address(lookup) : nullptr;
 }
 
 int editorTrackPresets::create(std::string const &Name, std::string const &From, std::vector<std::pair<std::string, std::string>> const &Values, std::vector<std::string> const &Groups)
@@ -180,7 +181,7 @@ int editorTrackPresets::create(std::string const &Name, std::string const &From,
 
 void editorTrackPresets::remove(int const Id)
 {
-	auto const lookup = std::find_if(m_presets.begin(), m_presets.end(), [Id](auto const &Preset) { return Preset.id == Id; });
+	auto const lookup = std::ranges::find_if(m_presets, [Id](auto const &Preset) { return Preset.id == Id; });
 	if (lookup == m_presets.end())
 		return;
 	m_presets.erase(lookup);
@@ -224,10 +225,14 @@ std::string editorTrackPresets::unique_name(std::string const &Base, int const I
 	if (base.empty())
 		base = "New preset";
 	auto const taken = [&](std::string const &Name) {
-		return std::any_of(m_presets.begin(), m_presets.end(), [&](auto const &Preset) { return Preset.id != IgnoreId && Preset.name == Name; });
+		return std::ranges::any_of(m_presets, [&](auto const &Preset) { return Preset.id != IgnoreId && Preset.name == Name; });
 	};
 	auto name = base;
-	for (int suffix = 2; taken(name); ++suffix)
-		name = base + " " + std::to_string(suffix);
+	int suffix{2};
+	while (taken(name))
+	{
+		name = std::format("{} {}", base, suffix);
+		++suffix;
+	}
 	return name;
 }

@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -281,7 +282,7 @@ inline bool square_touches(std::vector<glm::dvec2> const &Polygon, double const 
 {
 	if (Polygon.size() < 3)
 		return false;
-	glm::dvec2 const corners[]{{West, South}, {West + Size, South}, {West + Size, South + Size}, {West, South + Size}};
+	std::array<glm::dvec2, 4> const corners{glm::dvec2{West, South}, glm::dvec2{West + Size, South}, glm::dvec2{West + Size, South + Size}, glm::dvec2{West, South + Size}};
 	for (auto const &corner : corners)
 		if (point_in_polygon(Polygon, corner))
 			return true;
@@ -296,8 +297,8 @@ inline bool square_touches(std::vector<glm::dvec2> const &Polygon, double const 
 		return ((side(A, B, C) > 0.0) != (side(A, B, D) > 0.0)) && ((side(C, D, A) > 0.0) != (side(C, D, B) > 0.0));
 	};
 	for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
-		for (int k = 0; k < 4; ++k)
-			if (crossing(Polygon[j], Polygon[i], corners[k], corners[(k + 1) % 4]))
+		for (std::size_t k = 0; k < corners.size(); ++k)
+			if (crossing(Polygon[j], Polygon[i], corners[k], corners[(k + 1) % corners.size()]))
 				return true;
 	return false;
 }

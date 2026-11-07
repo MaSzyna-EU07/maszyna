@@ -41,6 +41,8 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <set>
 #include <sstream>
+#include <string_view>
+#include <system_error>
 
 namespace
 {
@@ -127,6 +129,41 @@ bool same_piece(segment_data const &A, segment_data const &B)
 	return std::abs(A.rolls[0] - B.rolls[0]) < 1e-3f && std::abs(A.rolls[1] - B.rolls[1]) < 1e-3f;
 }
 
+// the variants of a texture a parameter makes a part of the name of: of the textures in the folder named from Start to Suffix,
+// what's between them
+std::set<std::string> texture_variants(std::string const &Folder, std::string const &Start, std::string const &Suffix)
+{
+	std::set<std::string> variants;
+	std::error_code error;
+	for (std::filesystem::directory_iterator entry{Folder, error}, end; entry != end; entry.increment(error))
+	{
+		std::string stem;
+		try
+		{
+			stem = ToLower(entry->path().stem().string());
+		}
+		catch (std::system_error const &)
+		{
+			continue;
+		}
+		if (stem.size() > Start.size() + Suffix.size() && stem.compare(0, Start.size(), Start) == 0 && (Suffix.empty() || stem.compare(stem.size() - Suffix.size(), Suffix.size(), ToLower(Suffix)) == 0))
+			variants.insert(stem.substr(Start.size(), stem.size() - Start.size() - Suffix.size()));
+	}
+	return variants;
+}
+
+// the track the model is bent along, among those by it
+void bend_track_combo(std::vector<std::pair<TTrack *, double>> const &Tracks, int &Track)
+{
+	auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", name_of(*Entry.first).c_str(), Entry.second); };
+	if (false == ImGui::BeginCombo("##bendtrack", label(Tracks[Track]).c_str()))
+		return;
+	for (int i = 0; i < static_cast<int>(Tracks.size()); ++i)
+		if (ImGui::Selectable(label(Tracks[i]).c_str(), i == Track))
+			Track = i;
+	ImGui::EndCombo();
+}
+
 } // namespace
 
 void editor_mode::sweep_scan_models()
@@ -153,7 +190,7 @@ void editor_mode::sweep_scan_models()
 					continue;
 				name = std::filesystem::relative(entry->path(), "models", status).generic_string();
 			}
-			catch (std::exception const &)
+			catch (std::system_error const &)
 			{
 				continue;
 			}
@@ -167,15 +204,15 @@ void editor_mode::sweep_scan_models()
 	if (EditorIncludes.scanned() && tool.revision != EditorIncludes.revision())
 	{
 		tool.revision = EditorIncludes.revision();
-		std::erase_if(tool.models, [](std::string const &Model) { return Model.ends_with(".inc"); });
+		std::erase_if(tool.models, [](std::string_view const Model) { return Model.ends_with(".inc"); });
 		for (auto const &entry : EditorIncludes.entries())
 			tool.models.push_back(entry.file);
 		changed = true;
 	}
 	if (false == changed)
 		return;
-	std::sort(tool.models.begin(), tool.models.end());
-	tool.models.erase(std::unique(tool.models.begin(), tool.models.end()), tool.models.end());
+	std::ranges::sort(tool.models);
+	tool.models.erase(std::ranges::unique(tool.models).begin(), tool.models.end());
 }
 
 void editor_mode::sweep_curve()
@@ -804,22 +841,7 @@ void editor_mode::render_sweep_ui()
 				auto const slash{prefix.rfind('/')};
 				auto const folder{std::string{"textures/"} + prefix.substr(0, slash)};
 				auto const start{prefix.substr(slash + 1)};
-				std::set<std::string> variants;
-				std::error_code error;
-				for (std::filesystem::directory_iterator entry{folder, error}, end; entry != end; entry.increment(error))
-				{
-					std::string stem;
-					try
-					{
-						stem = ToLower(entry->path().stem().string());
-					}
-					catch (std::exception const &)
-					{
-						continue;
-					}
-					if (stem.size() > start.size() + suffix.size() && stem.compare(0, start.size(), start) == 0 && (suffix.empty() || stem.compare(stem.size() - suffix.size(), suffix.size(), ToLower(suffix)) == 0))
-						variants.insert(stem.substr(start.size(), stem.size() - start.size() - suffix.size()));
-				}
+				auto const variants{texture_variants(folder, start, suffix)};
 				tool.parameter_choices[id - 1].assign(variants.begin(), variants.end());
 			}
 		}
@@ -849,8 +871,8 @@ void editor_mode::render_sweep_ui()
 			ImGui::PushID(static_cast<int>(i));
 			auto const label{i < tool.parameter_labels.size() ? tool.parameter_labels[i] : "p" + std::to_string(i + 1)};
 			field_row(label.c_str(), false);
-			auto const *choices{i < tool.parameter_choices.size() && false == tool.parameter_choices[i].empty() ? &tool.parameter_choices[i] : nullptr};
-			if (choices != nullptr && ImGui::BeginCombo("##parameter", tool.parameters[i].data()))
+			if (auto const *choices{i < tool.parameter_choices.size() && false == tool.parameter_choices[i].empty() ? &tool.parameter_choices[i] : nullptr};
+			    choices != nullptr && ImGui::BeginCombo("##parameter", tool.parameters[i].data()))
 			{
 				for (auto const &choice : *choices)
 					if (ImGui::Selectable(choice.c_str(), choice == tool.parameters[i].data()))
@@ -970,19 +992,19 @@ void editor_mode::render_sweep_ui()
 			ImGui::EndTable();
 		}
 		auto const platform{settings.platform};
-		auto const toggled{toggle_chips("sweepflags", {{STR_C("Edge to the track"), &settings.face, "The model is turned so its -x side faces the track, the way the platforms and the walls of the scenery are made"},
-		                                               {STR_C("Turned around"), &settings.flip},
-		                                               {STR_C("Mirrored"), &settings.mirror},
-		                                               {STR_C("Leans with the cant"), &settings.tilt},
-		                                               {STR_C("Gauge widening in the curves"), &settings.widen,
-		                                                "The offset grows by the widening of the gauge below the platforms: 3.75/R in the curves of R >= 250 m,\n"
-		                                                "more in the sharper ones, and on the inner side of a canted curve by the cant times the height of the edge / 1.5;\n"
-		                                                "it begins 20 m (inner side) and 26 m (outer side) ahead of the curve, as in the gauge check"},
-		                                               {STR_C("Platform"), &settings.platform,
-		                                                "Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
-		                                                "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
-		                                                "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"}})};
-		if (toggled >= 0)
+		if (auto const toggled{toggle_chips("sweepflags", {{STR_C("Edge to the track"), &settings.face, "The model is turned so its -x side faces the track, the way the platforms and the walls of the scenery are made"},
+		                                                   {STR_C("Turned around"), &settings.flip},
+		                                                   {STR_C("Mirrored"), &settings.mirror},
+		                                                   {STR_C("Leans with the cant"), &settings.tilt},
+		                                                   {STR_C("Gauge widening in the curves"), &settings.widen,
+		                                                    "The offset grows by the widening of the gauge below the platforms: 3.75/R in the curves of R >= 250 m,\n"
+		                                                    "more in the sharper ones, and on the inner side of a canted curve by the cant times the height of the edge / 1.5;\n"
+		                                                    "it begins 20 m (inner side) and 26 m (outer side) ahead of the curve, as in the gauge check"},
+		                                                   {STR_C("Platform"), &settings.platform,
+		                                                    "Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
+		                                                    "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
+		                                                    "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"}})};
+		    toggled >= 0)
 			changed = true;
 		if (settings.platform && false == platform)
 			platform_edge(settings, tool.model, 0.0);
@@ -1507,8 +1529,7 @@ double editor_mode::bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point)
 	auto const stretch{Sweep.distance_at(Sweep.end()) - from};
 	glm::dvec3 low;
 	glm::dvec3 high;
-	glm::dvec3 shift;
-	if (false == Sweep.bounds(low, high, shift))
+	if (glm::dvec3 shift; false == Sweep.bounds(low, high, shift))
 		return from;
 	switch (m_bend.along_anchor)
 	{
@@ -1585,8 +1606,7 @@ glm::dvec3 editor_mode::bend_marker(sweep_node const &Sweep) const
 {
 	glm::dvec3 low;
 	glm::dvec3 high;
-	glm::dvec3 shift;
-	if (false == Sweep.bounds(low, high, shift))
+	if (glm::dvec3 shift; false == Sweep.bounds(low, high, shift))
 		return glm::dvec3{0.0};
 	auto const &state{Sweep.definition()};
 	auto const from{Sweep.distance_at(Sweep.start())};
@@ -1646,44 +1666,90 @@ void editor_mode::bend_pick(glm::dvec3 const &Point)
 	tool.status = format(STR_C("Reference point %.2f %.2f %.2f in the model"), tool.point.x, tool.point.y, tool.point.z);
 }
 
+void editor_mode::render_bend_anchors(bool &Changed)
+{
+	auto &tool{m_bend};
+	std::array<char const *, 5> const alongs{STR_C("start"), STR_C("model origin"), STR_C("middle"), STR_C("end"), STR_C("picked point")};
+	std::array<char const *, 5> const sides{STR_C("model origin"), STR_C("side facing the track"), STR_C("far side"), STR_C("middle"), STR_C("picked point")};
+	std::array<char const *, 5> const heights{STR_C("model origin"), STR_C("bottom"), STR_C("top"), STR_C("top of the edge by the track"), STR_C("picked point")};
+	ImGui::TextDisabled("%s", STR_C("Reference point"));
+	if (begin_fields("##bendanchors", 0.35f))
+	{
+		field_row("Along the track");
+		Changed |= ImGui::Combo("##bendalong", &tool.along_anchor, alongs.data(), static_cast<int>(alongs.size()));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Reference point: the model bends about it, the line through it keeps its length, the offsets are its place"));
+		field_row("Across");
+		Changed |= ImGui::Combo("##bendacross", &tool.side_anchor, sides.data(), static_cast<int>(sides.size()));
+		field_row("Up");
+		Changed |= ImGui::Combo("##bendup", &tool.height_anchor, heights.data(), static_cast<int>(heights.size()));
+		if (tool.along_anchor == 4 || tool.side_anchor == 4 || tool.height_anchor == 4)
+		{
+			glm::vec3 point{tool.point};
+			field_row("Point (x, y, z of the model)");
+			if (ImGui::DragFloat3("##bendpoint", &point.x, 0.01f, 0.0f, 0.0f, "%.3f"))
+			{
+				tool.point = glm::dvec3(point);
+				Changed = true;
+			}
+		}
+		ImGui::EndTable();
+	}
+	if (ImGui::Button(tool.picking ? STR_C("Click the point on the model...") : STR_C("Pick the point on the model"), ImVec2(-FLT_MIN, 0.0f)))
+		tool.picking = false == tool.picking;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The next click in the view sets the reference point where it lands on the model"));
+}
+
+void editor_mode::render_bend_source(bend_source const &Source, void const *Key)
+{
+	auto &tool{m_bend};
+	tool.track = std::clamp(tool.track, 0, static_cast<int>(tool.tracks.size()) - 1);
+	if (begin_fields("##bendsource", 0.35f))
+	{
+		field_row("Track");
+		bend_track_combo(tool.tracks, tool.track);
+		ImGui::EndTable();
+	}
+	auto const bend{ImGui::Button(STR_C("Bend it along the track  (B)"))};
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The model stays where it stands and bends with the track; Ctrl+Z gives it back"));
+	ImGui::PushID("bendmore");
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		if (begin_fields("##bendaxis", 0.35f))
+		{
+			field_row("Axis of the model along the track");
+			segmented("bendaxis", tool.axis, {{0, STR_C("the one nearest the track")}, {1, "z"}, {2, "x"}});
+			ImGui::EndTable();
+		}
+		toggle_chips("bendturned", {{STR_C("Turned around"), &tool.turned}});
+		if (platform_model(Source.file))
+			platform_distance();
+		bool anchored{false};
+		render_bend_anchors(anchored);
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
+	auto const signature{format("%p %d %d %d %d %d %d %.4f %.4f %.4f %.3f", Key, tool.track, tool.axis, tool.turned ? 1 : 0, tool.along_anchor, tool.side_anchor, tool.height_anchor, tool.point.x, tool.point.y, tool.point.z, EditorSettings.platform_edge())};
+	if (signature != tool.signature)
+	{
+		tool.signature = signature;
+		tool.marker_valid = false;
+		sweep_node::state state;
+		std::vector<TTrack *> tracks;
+		bend_definition(Source, *tool.tracks[tool.track].first, state, tracks);
+	}
+	if (bend)
+		bend_selection();
+}
+
 void editor_mode::render_bend()
 {
 	auto &tool{m_bend};
 	if (tool.edited != nullptr && tool.edited->m_editorremoved)
 		tool.edited = nullptr;
 	ImGui::PushID("bend");
-	char const *alongs[] = {STR_C("start"), STR_C("model origin"), STR_C("middle"), STR_C("end"), STR_C("picked point")};
-	char const *sides[] = {STR_C("model origin"), STR_C("side facing the track"), STR_C("far side"), STR_C("middle"), STR_C("picked point")};
-	char const *heights[] = {STR_C("model origin"), STR_C("bottom"), STR_C("top"), STR_C("top of the edge by the track"), STR_C("picked point")};
-	auto anchors = [&](bool &Changed) {
-		ImGui::TextDisabled("%s", STR_C("Reference point"));
-		if (begin_fields("##bendanchors", 0.35f))
-		{
-			field_row("Along the track");
-			Changed |= ImGui::Combo("##bendalong", &tool.along_anchor, alongs, IM_ARRAYSIZE(alongs));
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("Reference point: the model bends about it, the line through it keeps its length, the offsets are its place"));
-			field_row("Across");
-			Changed |= ImGui::Combo("##bendacross", &tool.side_anchor, sides, IM_ARRAYSIZE(sides));
-			field_row("Up");
-			Changed |= ImGui::Combo("##bendup", &tool.height_anchor, heights, IM_ARRAYSIZE(heights));
-			if (tool.along_anchor == 4 || tool.side_anchor == 4 || tool.height_anchor == 4)
-			{
-				glm::vec3 point{tool.point};
-				field_row("Point (x, y, z of the model)");
-				if (ImGui::DragFloat3("##bendpoint", &point.x, 0.01f, 0.0f, 0.0f, "%.3f"))
-				{
-					tool.point = glm::dvec3(point);
-					Changed = true;
-				}
-			}
-			ImGui::EndTable();
-		}
-		if (ImGui::Button(tool.picking ? STR_C("Click the point on the model...") : STR_C("Pick the point on the model"), ImVec2(-FLT_MIN, 0.0f)))
-			tool.picking = false == tool.picking;
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("The next click in the view sets the reference point where it lands on the model"));
-	};
 
 	if (auto *sweep{tool.edited})
 	{
@@ -1769,7 +1835,7 @@ void editor_mode::render_bend()
 			auto const side{tool.side_anchor}, height{tool.height_anchor};
 			auto const point{tool.point};
 			bool anchored{false};
-			anchors(anchored);
+			render_bend_anchors(anchored);
 			if (anchored && (side != tool.side_anchor || height != tool.height_anchor || point != tool.point))
 			{
 				bend_reanchor(state, tool.side_anchor, tool.height_anchor, tool.point);
@@ -1829,53 +1895,7 @@ void editor_mode::render_bend()
 			if (tool.tracks.empty())
 				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), STR_C("No track within %.0f m of the model"), kBendReach);
 			else
-			{
-				tool.track = std::clamp(tool.track, 0, static_cast<int>(tool.tracks.size()) - 1);
-				auto const label = [](std::pair<TTrack *, double> const &Entry) { return format("%s  (%.1f m)", name_of(*Entry.first).c_str(), Entry.second); };
-				if (begin_fields("##bendsource", 0.35f))
-				{
-					field_row("Track");
-					if (ImGui::BeginCombo("##bendtrack", label(tool.tracks[tool.track]).c_str()))
-					{
-						for (int i = 0; i < static_cast<int>(tool.tracks.size()); ++i)
-							if (ImGui::Selectable(label(tool.tracks[i]).c_str(), i == tool.track))
-								tool.track = i;
-						ImGui::EndCombo();
-					}
-					ImGui::EndTable();
-				}
-				auto const bend{ImGui::Button(STR_C("Bend it along the track  (B)"))};
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s", STR_C("The model stays where it stands and bends with the track; Ctrl+Z gives it back"));
-				ImGui::PushID("bendmore");
-				if (ImGui::TreeNode(STR_C("More settings")))
-				{
-					if (begin_fields("##bendaxis", 0.35f))
-					{
-						field_row("Axis of the model along the track");
-						segmented("bendaxis", tool.axis, {{0, STR_C("the one nearest the track")}, {1, "z"}, {2, "x"}});
-						ImGui::EndTable();
-					}
-					toggle_chips("bendturned", {{STR_C("Turned around"), &tool.turned}});
-					if (platform_model(source.file))
-						platform_distance();
-					bool anchored{false};
-					anchors(anchored);
-					ImGui::TreePop();
-				}
-				ImGui::PopID();
-				auto const signature{format("%p %d %d %d %d %d %d %.4f %.4f %.4f %.3f", key, tool.track, tool.axis, tool.turned ? 1 : 0, tool.along_anchor, tool.side_anchor, tool.height_anchor, tool.point.x, tool.point.y, tool.point.z, EditorSettings.platform_edge())};
-				if (signature != tool.signature)
-				{
-					tool.signature = signature;
-					tool.marker_valid = false;
-					sweep_node::state state;
-					std::vector<TTrack *> tracks;
-					bend_definition(source, *tool.tracks[tool.track].first, state, tracks);
-				}
-				if (bend)
-					bend_selection();
-			}
+				render_bend_source(source, key);
 		}
 		else
 		{

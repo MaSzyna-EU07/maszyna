@@ -453,6 +453,41 @@ std::uint64_t grid_key(int const X, int const Z)
 {
 	return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(X)) << 32) | static_cast<std::uint32_t>(Z);
 }
+
+// the nearest place on the axis of a modifier found so far
+struct axis_hit
+{
+	double distance{0.0};
+	double formation{0.0};
+	double halfwidth{0.0};
+	bool found{false};
+};
+
+// the pieces of the axis listed in one cell of the grid, the hit moved to the nearest of them closer than it
+void nearest_in_cell(std::vector<std::pair<std::uint64_t, std::uint32_t>> const &Grid, std::uint64_t const Key, modifier const &Modifier, glm::dvec2 const &Point, axis_hit &Hit)
+{
+	auto const &points{Modifier.points};
+	for (auto it{std::ranges::lower_bound(Grid, std::make_pair(Key, std::uint32_t{0}))}; it != Grid.end() && it->first == Key; ++it)
+	{
+		auto const i{it->second};
+		auto const &a{points[i].position};
+		auto const &b{points[i + 1].position};
+		auto const run{b - a};
+		auto const length{glm::dot(run, run)};
+		auto const along{length > 1e-12 ? glm::dot(Point - a, run) / length : 0.0};
+		if ((Modifier.open_start && i == 0 && along < 0.0) || (Modifier.open_end && i + 2 == points.size() && along > 1.0))
+			continue;
+		auto const t{std::clamp(along, 0.0, 1.0)};
+		auto const offset{glm::length(Point - (a + run * t))};
+		if (offset < Hit.distance)
+		{
+			Hit.distance = offset;
+			Hit.formation = points[i].formation + (points[i + 1].formation - points[i].formation) * t;
+			Hit.halfwidth = points[i].half_width + (points[i + 1].half_width - points[i].half_width) * t;
+			Hit.found = true;
+		}
+	}
+}
 } // namespace
 
 modifier_shape::modifier_shape(modifier const &Modifier) : m_modifier(Modifier)
@@ -494,42 +529,19 @@ std::optional<modifier_shape::effect> modifier_shape::evaluate(double const X, d
 {
 	if (m_grid.empty() || X < m_min.x || X > m_max.x || Z < m_min.y || Z > m_max.y)
 		return std::nullopt;
-	auto const &points{m_modifier.points};
 	auto const reach{m_widest + m_modifier.reach};
-	auto distance{reach};
-	double formation{0.0}, halfwidth{0.0};
-	bool found{false};
+	axis_hit hit{reach};
 	auto const x0{static_cast<int>(std::floor((X - reach) / m_cell))}, x1{static_cast<int>(std::floor((X + reach) / m_cell))};
 	auto const z0{static_cast<int>(std::floor((Z - reach) / m_cell))}, z1{static_cast<int>(std::floor((Z + reach) / m_cell))};
 	glm::dvec2 const point{X, Z};
 	for (auto x = x0; x <= x1; ++x)
 		for (auto z = z0; z <= z1; ++z)
-		{
-			auto const key{grid_key(x, z)};
-			auto it{std::lower_bound(m_grid.begin(), m_grid.end(), std::make_pair(key, std::uint32_t{0}))};
-			for (; it != m_grid.end() && it->first == key; ++it)
-			{
-				auto const i{it->second};
-				auto const &a{points[i].position};
-				auto const &b{points[i + 1].position};
-				auto const run{b - a};
-				auto const length{glm::dot(run, run)};
-				auto const along{length > 1e-12 ? glm::dot(point - a, run) / length : 0.0};
-				if ((m_modifier.open_start && i == 0 && along < 0.0) || (m_modifier.open_end && i + 2 == points.size() && along > 1.0))
-					continue;
-				auto const t{std::clamp(along, 0.0, 1.0)};
-				auto const offset{glm::length(point - (a + run * t))};
-				if (offset < distance)
-				{
-					distance = offset;
-					formation = points[i].formation + (points[i + 1].formation - points[i].formation) * t;
-					halfwidth = points[i].half_width + (points[i + 1].half_width - points[i].half_width) * t;
-					found = true;
-				}
-			}
-		}
-	if (false == found)
+			nearest_in_cell(m_grid, grid_key(x, z), m_modifier, point, hit);
+	if (false == hit.found)
 		return std::nullopt;
+	auto const distance{hit.distance};
+	auto const formation{hit.formation};
+	auto const halfwidth{hit.halfwidth};
 	// the formation under the axis, slopes from its edges down or up to the ground, the bends rounded off
 	auto const slope{std::max(0.1, m_modifier.slope)};
 	auto const rounding{std::max(0.0, m_modifier.rounding)};

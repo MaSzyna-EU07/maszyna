@@ -24,7 +24,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 #include <algorithm>
+#include <format>
 #include <map>
+#include <optional>
+#include <ranges>
 #include <sstream>
 
 namespace
@@ -83,15 +86,109 @@ connection::line line_through(TTrack const &Switch)
 	return result;
 }
 
+// the tracks of the cells of the sections within the radius of the point, in the order the sections and their cells hold them
+std::vector<TTrack *> tracks_around(glm::dvec3 const &Point, float const Radius)
+{
+	std::vector<TTrack *> tracks;
+	for (auto const *section : simulation::Region->sections(Point, Radius))
+		for (auto const &cell : section->m_cells)
+			tracks.insert(tracks.end(), cell.m_paths.begin(), cell.m_paths.end());
+	return tracks;
+}
+
+// a plain track straight within the tolerance, none of the ones left out
+bool plain_straight(TTrack const &Track, std::vector<TTrack const *> const &Exclude, editor_track::straight_tolerance const &Tolerance)
+{
+	return Track.eType == tt_Normal && false == Track.m_editorremoved && false == Track.m_paths.empty() && std::ranges::find(Exclude, &Track) == Exclude.end() && editor_track::is_straight(Track, Tolerance);
+}
+
+// a double or a scissors crossover the one dragged makes with a crossover there: how far it is from it, whether their switches meet on
+// the starting track
+struct partner_fit
+{
+	double gap{0.0};
+	bool together{false};
+	bool scissors{false};
+};
+
+// the fit with the crossover from the switch on the line to the opposite one, of the one dragged Forward from the press along the line;
+// none if they run the same way
+std::optional<partner_fit> fit_with_crossover(TTrack const &Switch, TTrack const &Opposite, connection::line const &Line, double const Forward, double const Press)
+{
+	auto const &main{Switch.m_paths.front()};
+	auto const way{glm::dot(plan_of(main.points[segment_data::point::end] - main.points[segment_data::point::start]), Line.direction) >= 0.0 ? 1.0 : -1.0};
+	if (way == Forward)
+		return std::nullopt;
+	// along this track in the way the crossover there runs from it to the other one: its switch here starts at 0, the one on
+	// the other track at Span; the one dragged, turned the other way, crosses it from 0 to twice that
+	auto const span{way * (Line.along(Opposite.m_paths.front().points[segment_data::point::start]) - Line.along(main.points[segment_data::point::start]))};
+	auto const at{way * (Press - Line.along(main.points[segment_data::point::start]))};
+	if (span <= 0.0)
+		return std::nullopt;
+	partner_fit fit;
+	if (at < 0.0)
+	{
+		fit.gap = -at;
+		fit.together = true;
+	}
+	else if (at > 2.0 * span)
+		fit.gap = at - 2.0 * span;
+	else
+		fit.gap = 0.0;
+	fit.scissors = at >= 0.0 && at <= 2.0 * span;
+	return fit;
+}
+
+// the tracks laid, changed and taken out for a connection which doesn't fit, back as they were
+void take_back_laid(std::vector<std::pair<TTrack *, editor_track::state>> const &States, std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Removed)
+{
+	for (auto *track : Created)
+		editor_track::retire(*track);
+	for (auto const &[track, saved] : std::views::reverse(States))
+	{
+		editor_track::apply(*track, saved);
+		editor_track::commit({track});
+	}
+	for (auto *track : Removed)
+	{
+		editor_track::revive(*track);
+		editor_track::commit({track});
+	}
+	if (auto before{switch_store::take_changes()})
+		switch_store::restore(std::move(*before));
+	if (auto before{alignment_store::take_changes()})
+		alignment_store::restore(std::move(*before));
+}
+
+// the ends of the paths of the switches
+std::vector<glm::dvec3> switch_ends(std::vector<TTrack *> const &Switches)
+{
+	std::vector<glm::dvec3> ends;
+	for (auto const *track : Switches)
+		for (auto const &path : track->m_paths)
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				ends.push_back(path.points[index]);
+	return ends;
+}
+
+// the ends of the insert at the heights of the ends of the switches they meet
+void meet_switch_ends(segment_data &Insert, std::vector<glm::dvec3> const &Ends)
+{
+	for (auto const index : {segment_data::point::start, segment_data::point::end})
+		if (auto const end{std::ranges::find_if(Ends, [&Insert, index](glm::dvec3 const &End) { return plan_distance(Insert.points[index], End) < 0.05; })}; end != Ends.end())
+			Insert.points[index].y = end->y;
+}
+
 } // namespace
 
 char const *editor_mode::connection_name(int const Kind)
 {
+	using enum connection::kind;
 	switch (static_cast<connection::kind>(Kind))
 	{
-	case connection::kind::double_crossover: return STR_C("Double crossover");
-	case connection::kind::scissors: return STR_C("Scissors crossover");
-	case connection::kind::ladder: return STR_C("Switch ladder");
+	case double_crossover: return STR_C("Double crossover");
+	case scissors: return STR_C("Scissors crossover");
+	case ladder: return STR_C("Switch ladder");
 	default: return STR_C("Crossover");
 	}
 }
@@ -100,44 +197,38 @@ editor_track::straight editor_mode::straight_near(glm::dvec3 const &Point, std::
 {
 	TTrack *found{nullptr};
 	auto best{Reach};
-	for (auto *section : simulation::Region->sections(Point, static_cast<float>(std::max(40.0, Reach))))
-		for (auto const &cell : section->m_cells)
-			for (auto *track : cell.m_paths)
-			{
-				if (track->eType != tt_Normal || track->m_editorremoved || track->m_paths.empty() || std::find(Exclude.begin(), Exclude.end(), track) != Exclude.end() || false == editor_track::is_straight(*track, m_straights.tolerance))
-					continue;
-				auto const &path{track->m_paths.front()};
-				auto const a{plan_of(path.points[segment_data::point::start])};
-				auto const segment{plan_of(path.points[segment_data::point::end]) - a};
-				auto const t{std::clamp(glm::dot(plan_of(Point) - a, segment) / std::max(1e-9, glm::dot(segment, segment)), 0.0, 1.0)};
-				auto const distance{glm::distance(plan_of(Point), a + segment * t)};
-				if (distance < best)
-				{
-					best = distance;
-					found = track;
-				}
-			}
+	for (auto *track : tracks_around(Point, static_cast<float>(std::max(40.0, Reach))))
+	{
+		if (false == plain_straight(*track, Exclude, m_straights.tolerance))
+			continue;
+		auto const &path{track->m_paths.front()};
+		auto const a{plan_of(path.points[segment_data::point::start])};
+		auto const segment{plan_of(path.points[segment_data::point::end]) - a};
+		auto const t{std::clamp(glm::dot(plan_of(Point) - a, segment) / std::max(1e-9, glm::dot(segment, segment)), 0.0, 1.0)};
+		if (auto const distance{glm::distance(plan_of(Point), a + segment * t)}; distance < best)
+		{
+			best = distance;
+			found = track;
+		}
+	}
 	return found != nullptr ? editor_track::find_straight(*found, m_straights.tolerance) : editor_track::straight{};
 }
 
 editor_track::straight editor_mode::straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const
 {
-	for (auto *section : simulation::Region->sections(Point, 40.f))
-		for (auto const &cell : section->m_cells)
-			for (auto *track : cell.m_paths)
-			{
-				if (track->eType != tt_Normal || track->m_editorremoved || track->m_paths.empty() || false == editor_track::is_straight(*track, m_straights.tolerance))
-					continue;
-				auto const &path{track->m_paths.front()};
-				auto const a{plan_of(path.points[segment_data::point::start])};
-				auto const segment{plan_of(path.points[segment_data::point::end]) - a};
-				auto const length{glm::length(segment)};
-				if (length < 1e-6 || std::abs(cross(segment / length, Direction)) > 1e-3 || std::abs(cross(segment / length, plan_of(Point) - a)) > 0.02)
-					continue;
-				auto const t{glm::dot(plan_of(Point) - a, segment) / (length * length)};
-				if (t >= -1e-6 && t <= 1.0 + 1e-6)
-					return editor_track::find_straight(*track, m_straights.tolerance);
-			}
+	for (auto *track : tracks_around(Point, 40.f))
+	{
+		if (track->eType != tt_Normal || track->m_editorremoved || track->m_paths.empty() || false == editor_track::is_straight(*track, m_straights.tolerance))
+			continue;
+		auto const &path{track->m_paths.front()};
+		auto const a{plan_of(path.points[segment_data::point::start])};
+		auto const segment{plan_of(path.points[segment_data::point::end]) - a};
+		auto const length{glm::length(segment)};
+		if (length < 1e-6 || std::abs(cross(segment / length, Direction)) > 1e-3 || std::abs(cross(segment / length, plan_of(Point) - a)) > 0.02)
+			continue;
+		if (auto const t{glm::dot(plan_of(Point) - a, segment) / (length * length)}; t >= -1e-6 && t <= 1.0 + 1e-6)
+			return editor_track::find_straight(*track, m_straights.tolerance);
+	}
 	return {};
 }
 
@@ -165,8 +256,7 @@ bool editor_mode::plan_connection(connection::request &Request, connection::resu
 	glm::dvec2 const travel{line.direction * static_cast<double>(Request.forward)};
 	Request.side = cross(travel, offset) >= 0.0 ? 1 : -1;
 	std::vector<TTrack const *> const exclude(line.tracks.begin(), line.tracks.end());
-	auto const other{straight_near(tool.mouse, exclude, 8.0)};
-	if (false == other.tracks.empty())
+	if (auto const other{straight_near(tool.mouse, exclude, 8.0)}; false == other.tracks.empty())
 	{
 		auto const target{connection::of(other)};
 		if (Request.type != connection::kind::ladder)
@@ -176,40 +266,47 @@ bool editor_mode::plan_connection(connection::request &Request, connection::resu
 		}
 		else if (std::abs(cross(target.direction, line.direction)) < 1e-3)
 		{
-			auto const side{cross(travel, plan_of(target.point(target.along(tool.point)) - tool.point)) > 0.0 ? 1.0 : -1.0};
-			auto const lateral = [&](glm::dvec3 const &Point) { return side * cross(travel, plan_of(Point - tool.point)); };
-			auto const outermost{lateral(target.point(target.along(tool.point)))};
-			std::map<long, std::pair<double, TTrack *>> fan;
-			auto const better = [](double const One, double const Two) { return (One < 0.0) != (Two < 0.0) ? One >= 0.0 : std::abs(One) < std::abs(Two); };
-			auto const centre{(tool.point + tool.mouse) * 0.5};
-			for (auto *section : simulation::Region->sections(centre, static_cast<float>(glm::length(offset) * 0.5 + 200.0)))
-				for (auto const &cell : section->m_cells)
-					for (auto *track : cell.m_paths)
-					{
-						if (track->eType != tt_Normal || track->m_editorremoved || track->m_paths.empty() || std::find(exclude.begin(), exclude.end(), track) != exclude.end() || false == editor_track::is_straight(*track, m_straights.tolerance))
-							continue;
-						auto const &path{track->m_paths.front()};
-						auto const a{path.points[segment_data::point::start]};
-						auto const b{path.points[segment_data::point::end]};
-						auto const direction{plan_of(b - a)};
-						if (glm::length(direction) < 1e-6 || std::abs(cross(glm::normalize(direction), line.direction)) > 1e-3)
-							continue;
-						auto const distance{lateral(a)};
-						auto const along1{glm::dot(travel, plan_of(a - tool.point))};
-						auto const along2{glm::dot(travel, plan_of(b - tool.point))};
-						if (distance < 1.0 || distance > outermost + 0.05 || std::max(along1, along2) <= 0.0)
-							continue;
-						auto const nearer{std::min(along1, along2)};
-						auto &entry{fan[std::lround(distance * 20.0)]};
-						if (entry.second == nullptr || better(nearer, entry.first))
-							entry = {nearer, track};
-					}
-			for (auto const &entry : fan)
-				Request.to.push_back(connection::of(editor_track::find_straight(*entry.second.second, m_straights.tolerance)));
+			auto const fan{ladder_lines(target, travel, exclude)};
+			Request.to.insert(Request.to.end(), fan.begin(), fan.end());
 		}
 	}
 	Result = connection::plan(Request);
 	return Result.valid;
+}
+
+std::vector<connection::line> editor_mode::ladder_lines(connection::line const &Target, glm::dvec2 const &Travel, std::vector<TTrack const *> const &Exclude) const
+{
+	auto const &tool{m_switch};
+	glm::dvec2 const offset{plan_of(tool.mouse - tool.point)};
+	auto const side{cross(Travel, plan_of(Target.point(Target.along(tool.point)) - tool.point)) > 0.0 ? 1.0 : -1.0};
+	auto const lateral = [&tool, &Travel, side](glm::dvec3 const &Point) { return side * cross(Travel, plan_of(Point - tool.point)); };
+	auto const outermost{lateral(Target.point(Target.along(tool.point)))};
+	std::map<long, std::pair<double, TTrack *>> fan;
+	auto const better = [](double const One, double const Two) { return (One < 0.0) != (Two < 0.0) ? One >= 0.0 : std::abs(One) < std::abs(Two); };
+	auto const centre{(tool.point + tool.mouse) * 0.5};
+	for (auto *track : tracks_around(centre, static_cast<float>(glm::length(offset) * 0.5 + 200.0)))
+	{
+		if (false == plain_straight(*track, Exclude, m_straights.tolerance))
+			continue;
+		auto const &path{track->m_paths.front()};
+		auto const a{path.points[segment_data::point::start]};
+		auto const b{path.points[segment_data::point::end]};
+		if (auto const direction{plan_of(b - a)}; glm::length(direction) < 1e-6 || std::abs(cross(glm::normalize(direction), tool.line.direction)) > 1e-3)
+			continue;
+		auto const distance{lateral(a)};
+		auto const along1{glm::dot(Travel, plan_of(a - tool.point))};
+		auto const along2{glm::dot(Travel, plan_of(b - tool.point))};
+		if (distance < 1.0 || distance > outermost + 0.05 || std::max(along1, along2) <= 0.0)
+			continue;
+		auto const nearer{std::min(along1, along2)};
+		auto &entry{fan[std::lround(distance * 20.0)]};
+		if (entry.second == nullptr || better(nearer, entry.first))
+			entry = {nearer, track};
+	}
+	std::vector<connection::line> lines;
+	for (auto const &[nearer, track] : std::views::values(fan))
+		lines.push_back(connection::of(editor_track::find_straight(*track, m_straights.tolerance)));
+	return lines;
 }
 
 void editor_mode::recognise_connection()
@@ -223,28 +320,19 @@ void editor_mode::recognise_connection()
 	tool.partner = nullptr;
 	if (false == tool.placing || tool.free || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.templates[tool.armed].double_slip || tool.templates[tool.armed].twofold())
 		return;
-	auto const mark = [&](connection::kind const Kind) {
+	auto const mark = [&tool](connection::kind const Kind) {
 		tool.connection = static_cast<int>(Kind);
 		tool.recognised = true;
 	};
 	// let go at a free end, the switch joins it
-	auto const own{tool.curved ? std::vector<TTrack const *>(tool.frame_tracks.begin(), tool.frame_tracks.end()) : std::vector<TTrack const *>(tool.line.tracks.begin(), tool.line.tracks.end())};
-	if (editor_track::find_free_end(nullptr, ::track_mode::kRailCategory, tool.mouse, ::track_mode::kLaySnapRadius, own).track != nullptr)
+	if (auto const own{tool.curved ? std::vector<TTrack const *>(tool.frame_tracks.begin(), tool.frame_tracks.end()) : std::vector<TTrack const *>(tool.line.tracks.begin(), tool.line.tracks.end())};
+	    editor_track::find_free_end(nullptr, ::track_mode::kRailCategory, tool.mouse, ::track_mode::kLaySnapRadius, own).track != nullptr)
 		return;
 	if (tool.curved)
 	{
 		// along a curve a crossover only, let go on the track running beside it
-		if (tool.frame.size() < 2 || plan_distance(sample_at(tool.frame, nearest_station(tool.frame, tool.mouse)).position, tool.mouse) < kOffTrack)
-			return;
-		for (auto *section : simulation::Region->sections(tool.mouse, 40.f))
-			for (auto const &cell : section->m_cells)
-				for (auto *track : cell.m_paths)
-					if (track->eType == tt_Normal && false == track->m_editorremoved && false == track->m_paths.empty() && std::find(tool.frame_tracks.begin(), tool.frame_tracks.end(), track) == tool.frame_tracks.end() &&
-					    plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, tool.mouse)), tool.mouse) < kOntoTrack)
-					{
-						mark(connection::kind::crossover);
-						return;
-					}
+		if (let_go_beside_curve())
+			mark(connection::kind::crossover);
 		return;
 	}
 	if (tool.line.tracks.empty())
@@ -258,52 +346,7 @@ void editor_mode::recognise_connection()
 		return;
 	auto const otherline{connection::of(other)};
 	mark(connection::kind::crossover);
-	// a crossover between the two tracks turned the other way: behind the press, or past it on the other track, a double crossover
-	// with it; over it a scissors one
-	auto const forward{glm::dot(plan_of(tool.mouse - tool.point), line.direction) >= 0.0 ? 1.0 : -1.0};
-	auto const press{line.along(tool.point)};
-	auto nearest{kDoubleGap};
-	for (auto *section : simulation::Region->sections(tool.point, 200.f))
-		for (auto const &cell : section->m_cells)
-			for (auto *track : cell.m_paths)
-			{
-				if (track->eType != tt_Switch || track->m_editorremoved || track->m_paths.size() < 2 || false == on_line(*track, line))
-					continue;
-				auto const crossover{crossover_of(*track)};
-				if (false == crossover.has_value())
-					continue;
-				auto const *opposite{crossover->first == track ? crossover->second : crossover->first};
-				if (false == on_line(*opposite, otherline))
-					continue;
-				auto const &main{track->m_paths.front()};
-				auto const way{glm::dot(plan_of(main.points[segment_data::point::end] - main.points[segment_data::point::start]), line.direction) >= 0.0 ? 1.0 : -1.0};
-				if (way == forward)
-					continue;
-				// along this track in the way the crossover there runs from it to the other one: its switch here starts at 0, the one on
-				// the other track at Span; the one dragged, turned the other way, crosses it from 0 to twice that
-				auto const span{way * (line.along(opposite->m_paths.front().points[segment_data::point::start]) - line.along(main.points[segment_data::point::start]))};
-				auto const at{way * (press - line.along(main.points[segment_data::point::start]))};
-				if (span <= 0.0)
-					continue;
-				double gap;
-				bool together{false};
-				if (at < 0.0)
-				{
-					gap = -at;
-					together = true;
-				}
-				else if (at > 2.0 * span)
-					gap = at - 2.0 * span;
-				else
-					gap = 0.0;
-				if (gap >= nearest)
-					continue;
-				nearest = gap;
-				tool.partner = track;
-				tool.connection = static_cast<int>(at >= 0.0 && at <= 2.0 * span ? connection::kind::scissors : connection::kind::double_crossover);
-				tool.connection_together = together;
-				tool.connection_gap = gap;
-			}
+	recognise_partner(line, otherline);
 	if (tool.partner != nullptr)
 		return;
 	// across tracks running parallel between the two, a ladder onto all of them
@@ -315,6 +358,44 @@ void editor_mode::recognise_connection()
 		plan_connection(request, plan);
 		if (request.to.size() < 2)
 			tool.connection = static_cast<int>(connection::kind::crossover);
+	}
+}
+
+bool editor_mode::let_go_beside_curve() const
+{
+	auto const &tool{m_switch};
+	if (tool.frame.size() < 2 || plan_distance(sample_at(tool.frame, nearest_station(tool.frame, tool.mouse)).position, tool.mouse) < kOffTrack)
+		return false;
+	return std::ranges::any_of(tracks_around(tool.mouse, 40.f), [&tool](TTrack const *Track) {
+		return Track->eType == tt_Normal && false == Track->m_editorremoved && false == Track->m_paths.empty() && std::ranges::find(tool.frame_tracks, Track) == tool.frame_tracks.end() &&
+		       plan_distance(editor_track::point_at(*Track, editor_track::nearest_parameter(*Track, tool.mouse)), tool.mouse) < kOntoTrack;
+	});
+}
+
+void editor_mode::recognise_partner(connection::line const &Line, connection::line const &Otherline)
+{
+	auto &tool{m_switch};
+	auto const forward{glm::dot(plan_of(tool.mouse - tool.point), Line.direction) >= 0.0 ? 1.0 : -1.0};
+	auto const press{Line.along(tool.point)};
+	auto nearest{kDoubleGap};
+	for (auto *track : tracks_around(tool.point, 200.f))
+	{
+		if (track->eType != tt_Switch || track->m_editorremoved || track->m_paths.size() < 2 || false == on_line(*track, Line))
+			continue;
+		auto const crossover{crossover_of(*track)};
+		if (false == crossover.has_value())
+			continue;
+		auto const *opposite{crossover->first == track ? crossover->second : crossover->first};
+		if (false == on_line(*opposite, Otherline))
+			continue;
+		auto const fit{fit_with_crossover(*track, *opposite, Line, forward, press)};
+		if (false == fit.has_value() || fit->gap >= nearest)
+			continue;
+		nearest = fit->gap;
+		tool.partner = track;
+		tool.connection = static_cast<int>(fit->scissors ? connection::kind::scissors : connection::kind::double_crossover);
+		tool.connection_together = fit->together;
+		tool.connection_gap = fit->gap;
 	}
 }
 
@@ -464,6 +545,44 @@ void editor_mode::insert_connection()
 	lay_planned_connection(request, plan, tool.line.tracks.front());
 }
 
+TTrack *editor_mode::lay_connection_switch(connection::placed const &Entry, connection::request const &Request, TTrack const &Style, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created,
+                                           std::vector<TTrack *> &Removed, char const *&Problem)
+{
+	auto const &shape{Entry.second ? Request.second : Request.first};
+	auto const name{switch_name_for_new()};
+	auto const before{Created.size()};
+	auto const start{Entry.paths[0].points[segment_data::point::start]};
+	auto const end{Entry.paths[0].points[segment_data::point::end]};
+	if (Entry.line >= 0)
+	{
+		auto const &target{Entry.line == 0 ? Request.from : Request.to[Entry.line - 1]};
+		auto const found{straight_through((start + end) * 0.5, target.direction)};
+		if (found.tracks.empty())
+		{
+			Problem = STR_C("A switch of the connection goes where its track isn't a plain straight");
+			return nullptr;
+		}
+		auto const forward{glm::dot(found.direction, plan_of(end - start)) > 0.0 ? 1 : -1};
+		if (false == place_switch_on_straight(found, shape, nullptr, found.along(start), forward, Entry.side, false, States, Created, Removed, name))
+			return nullptr;
+	}
+	else
+	{
+		auto const made{create_switch_set(shape, Entry.paths, Style, name)};
+		if (made.empty())
+			return nullptr;
+		Created.insert(Created.end(), made.begin(), made.end());
+	}
+	auto const made{std::ranges::find_if(Created | std::views::drop(static_cast<std::ptrdiff_t>(before)), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
+	// in the plan: the height is the track's there, which needn't keep to one grade as the line of the plan does
+	if (made == Created.end() || plan_distance((*made)->m_paths.front().points[segment_data::point::start], start) > 0.01)
+	{
+		Problem = STR_C("A switch of the connection doesn't fit where it was planned, its straight is too short");
+		return nullptr;
+	}
+	return *made;
+}
+
 bool editor_mode::lay_planned_connection(connection::request const &Request, connection::result const &Plan, TTrack *Style)
 {
 	auto &tool{m_switch};
@@ -473,23 +592,8 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
 	auto *style{Style};
-	auto const fail = [&](std::string const &Reason) {
-		for (auto *track : created)
-			editor_track::retire(*track);
-		for (auto entry{states.rbegin()}; entry != states.rend(); ++entry)
-		{
-			editor_track::apply(*entry->first, entry->second);
-			editor_track::commit({entry->first});
-		}
-		for (auto *track : removed)
-		{
-			editor_track::revive(*track);
-			editor_track::commit({track});
-		}
-		if (auto before{switch_store::take_changes()})
-			switch_store::restore(std::move(*before));
-		if (auto before{alignment_store::take_changes()})
-			alignment_store::restore(std::move(*before));
+	auto const fail = [this, &tool, &states, &created, &removed](std::string const &Reason) {
+		take_back_laid(states, created, removed);
 		straight_refresh();
 		tool.status = Reason;
 		ui()->set_status(Reason, true);
@@ -497,63 +601,26 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 	std::vector<TTrack *> switches;
 	for (auto const &entry : plan.switches)
 	{
-		auto const &shape{entry.second ? request.second : request.first};
-		auto const name{switch_name_for_new()};
-		auto const before{created.size()};
-		auto const start{entry.paths[0].points[segment_data::point::start]};
-		auto const end{entry.paths[0].points[segment_data::point::end]};
-		if (entry.line >= 0)
+		char const *problem{nullptr};
+		auto *made{lay_connection_switch(entry, request, *style, states, created, removed, problem)};
+		if (made == nullptr)
 		{
-			auto const &target{entry.line == 0 ? request.from : request.to[entry.line - 1]};
-			auto const found{straight_through((start + end) * 0.5, target.direction)};
-			if (found.tracks.empty())
-			{
-				fail(STR_C("A switch of the connection goes where its track isn't a plain straight"));
-				return false;
-			}
-			auto const forward{glm::dot(found.direction, plan_of(end - start)) > 0.0 ? 1 : -1};
-			if (false == place_switch_on_straight(found, shape, nullptr, found.along(start), forward, entry.side, false, states, created, removed, name))
-			{
+			// the reason the switch tool gave, or the one it didn't fit for
+			if (problem != nullptr)
+				fail(problem);
+			else
 				fail(tool.status);
-				return false;
-			}
-		}
-		else
-		{
-			auto const made{create_switch_set(shape, entry.paths, *style, name)};
-			if (made.empty())
-			{
-				fail(tool.status);
-				return false;
-			}
-			created.insert(created.end(), made.begin(), made.end());
-		}
-		auto const made{std::find_if(created.begin() + static_cast<std::ptrdiff_t>(before), created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
-		// in the plan: the height is the track's there, which needn't keep to one grade as the line of the plan does
-		if (made == created.end() || plan_distance((*made)->m_paths.front().points[segment_data::point::start], start) > 0.01)
-		{
-			fail(STR_C("A switch of the connection doesn't fit where it was planned, its straight is too short"));
 			return false;
 		}
-		switches.push_back(*made);
+		switches.push_back(made);
 		advance_switch_name();
 	}
 	// the inserts meet the switches at the heights they were put at
-	std::vector<glm::dvec3> ends;
-	for (auto const *track : switches)
-		for (auto const &path : track->m_paths)
-			for (auto const index : {segment_data::point::start, segment_data::point::end})
-				ends.push_back(path.points[index]);
+	auto const ends{switch_ends(switches)};
 	std::vector<TTrack *> inserts;
 	for (auto insert : plan.inserts)
 	{
-		for (auto const index : {segment_data::point::start, segment_data::point::end})
-			for (auto const &end : ends)
-				if (plan_distance(insert.points[index], end) < 0.05)
-				{
-					insert.points[index].y = end.y;
-					break;
-				}
+		meet_switch_ends(insert, ends);
 		if (auto *track{editor_track::create_path(*style, insert)})
 			inserts.push_back(track);
 	}
@@ -602,7 +669,7 @@ void editor_mode::render_connection_options()
 		if (ImGui::Selectable(STR_C("The same as the first one"), tool.connection_second < 0))
 			tool.connection_second = -1;
 		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-			if (usable_in_connection(tool.templates[i]) && ImGui::Selectable((switch_template_label(tool.templates[i]) + "##connectionsecond" + std::to_string(i)).c_str(), tool.connection_second == i))
+			if (usable_in_connection(tool.templates[i]) && ImGui::Selectable(std::format("{}##connectionsecond{}", switch_template_label(tool.templates[i]), i).c_str(), tool.connection_second == i))
 				tool.connection_second = i;
 		ImGui::EndCombo();
 	}

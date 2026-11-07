@@ -18,11 +18,12 @@ http://mozilla.org/MPL/2.0/.
 #include "stb/stb_image.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
+#include <format>
 
 namespace
 {
@@ -40,6 +41,100 @@ std::string const kMapService{"https://mapy.geoportal.gov.pl/wss/ext/OSM/BaseMap
 double seconds()
 {
 	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// the letters and the signs around the numbers out, as of "52.2297° N, 21.0122° E" or "X: 456787 Y: 579897"
+std::string numerals_of(std::string const &Text)
+{
+	std::string text;
+	for (unsigned char const letter : Text)
+		text += std::isdigit(letter) || letter == '.' || letter == ',' || letter == '-' ? static_cast<char>(letter) : ' ';
+	return text;
+}
+
+// the words between the spaces, without the commas around them
+std::vector<std::string> words_of(std::string const &Text)
+{
+	std::vector<std::string> words;
+	for (std::size_t at{0}; at < Text.size();)
+	{
+		auto const begin{Text.find_first_not_of(" ,", at)};
+		if (begin == std::string::npos)
+			break;
+		auto end{Text.find(' ', begin)};
+		if (end == std::string::npos)
+			end = Text.size();
+		auto word{Text.substr(begin, end - begin)};
+		while (false == word.empty() && word.back() == ',')
+			word.pop_back();
+		words.push_back(word);
+		at = end;
+	}
+	return words;
+}
+
+// one word: the comma parts the numbers, or the numbers and their decimals
+std::vector<std::string> numbers_of_word(std::string const &Word)
+{
+	std::vector<std::string> parts;
+	for (std::size_t at{0};;)
+	{
+		auto const comma{Word.find(',', at)};
+		parts.push_back(Word.substr(at, comma == std::string::npos ? std::string::npos : comma - at));
+		if (comma == std::string::npos)
+			break;
+		at = comma + 1;
+	}
+	if (parts.size() == 2)
+		return parts;
+	if (parts.size() == 4)
+		return {parts[0] + "." + parts[1], parts[2] + "." + parts[3]};
+	return {};
+}
+
+// the two numbers of the words, with a comma for the decimal point taken as well
+std::vector<std::string> numbers_of(std::vector<std::string> const &Words)
+{
+	if (Words.size() == 1)
+		return numbers_of_word(Words[0]);
+	if (Words.size() != 2)
+		return {};
+	std::vector<std::string> numbers;
+	for (auto word : Words)
+	{
+		std::ranges::replace(word, ',', '.');
+		numbers.push_back(word);
+	}
+	return numbers;
+}
+
+bool latitude_of_poland(double const Value)
+{
+	return Value >= 48.0 && Value <= 56.0;
+}
+
+bool longitude_of_poland(double const Value)
+{
+	return Value >= 13.0 && Value <= 25.0;
+}
+
+// the image the map service sent as rows of rgba pixels; false when it isn't one
+bool decode(std::vector<std::uint8_t> const &Data, int &Width, int &Height, std::vector<std::uint8_t> &Pixels)
+{
+	int w{0};
+	int h{0};
+	int components{0};
+	// the texture loader turns the stb flip on for the whole process only once it loads its first texture: this thread
+	// keeps the north edge in the first row whatever it is by then
+	stbi_set_flip_vertically_on_load_thread(0);
+	auto *pixels{stbi_load_from_memory(Data.data(), static_cast<int>(Data.size()), &w, &h, &components, 4)};
+	if (pixels == nullptr)
+		return false;
+	Width = w;
+	Height = h;
+	Pixels.assign(pixels, pixels + static_cast<std::size_t>(w) * h * 4);
+	stbi_image_free(pixels);
+	return true;
 }
 
 } // namespace
@@ -94,52 +189,10 @@ bool in_poland(glm::dvec2 const &Point)
 
 bool parse_place(std::string const &Text, glm::dvec2 &Point)
 {
-	// the letters and the signs around the numbers out, as of "52.2297° N, 21.0122° E" or "X: 456787 Y: 579897"
-	std::string text;
-	for (unsigned char const letter : Text)
-		text += std::isdigit(letter) || letter == '.' || letter == ',' || letter == '-' ? static_cast<char>(letter) : ' ';
-	std::vector<std::string> words;
-	for (std::size_t at{0}; at < text.size();)
-	{
-		auto const begin{text.find_first_not_of(" ,", at)};
-		if (begin == std::string::npos)
-			break;
-		auto end{text.find(' ', begin)};
-		if (end == std::string::npos)
-			end = text.size();
-		auto word{text.substr(begin, end - begin)};
-		while (false == word.empty() && word.back() == ',')
-			word.pop_back();
-		words.push_back(word);
-		at = end;
-	}
-	std::vector<std::string> numbers;
-	if (words.size() == 1)
-	{
-		// one word: the comma parts the numbers, or the numbers and their decimals
-		std::vector<std::string> parts;
-		for (std::size_t at{0};;)
-		{
-			auto const comma{words[0].find(',', at)};
-			parts.push_back(words[0].substr(at, comma == std::string::npos ? std::string::npos : comma - at));
-			if (comma == std::string::npos)
-				break;
-			at = comma + 1;
-		}
-		if (parts.size() == 2)
-			numbers = parts;
-		else if (parts.size() == 4)
-			numbers = {parts[0] + "." + parts[1], parts[2] + "." + parts[3]};
-	}
-	else if (words.size() == 2)
-		for (auto word : words)
-		{
-			std::replace(word.begin(), word.end(), ',', '.');
-			numbers.push_back(word);
-		}
+	auto const numbers{numbers_of(words_of(numerals_of(Text)))};
 	if (numbers.size() != 2)
 		return false;
-	double values[2];
+	std::array<double, 2> values{};
 	for (int i = 0; i < 2; ++i)
 	{
 		char *end{nullptr};
@@ -147,11 +200,9 @@ bool parse_place(std::string const &Text, glm::dvec2 &Point)
 		if (end == numbers[i].c_str() || *end != '\0')
 			return false;
 	}
-	auto const latitude = [](double const Value) { return Value >= 48.0 && Value <= 56.0; };
-	auto const longitude = [](double const Value) { return Value >= 13.0 && Value <= 25.0; };
-	if (latitude(values[0]) && longitude(values[1]))
+	if (latitude_of_poland(values[0]) && longitude_of_poland(values[1]))
 		Point = to_puwg(values[0], values[1]);
-	else if (longitude(values[0]) && latitude(values[1]))
+	else if (longitude_of_poland(values[0]) && latitude_of_poland(values[1]))
 		Point = to_puwg(values[1], values[0]);
 	else if (values[0] > 1000.0 && values[1] > 1000.0)
 		Point = {values[1], values[0]};
@@ -283,30 +334,16 @@ void editor_map::request(glm::vec2 const &Size)
 	glm::dvec2 const half{width * 0.5 * m_scale, height * 0.5 * m_scale};
 	auto const low{m_centre - half};
 	auto const high{m_centre + half};
-	char bbox[160];
-	std::snprintf(bbox, sizeof(bbox), "%.1f,%.1f,%.1f,%.1f", low.x, low.y, high.x, high.y);
-	auto const url{kMapService + "?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=osm&STYLES=&SRS=EPSG:2180&BBOX=" + bbox + "&WIDTH=" + std::to_string(width) + "&HEIGHT=" + std::to_string(height) + "&FORMAT=image/png"};
-	m_request = std::async(std::launch::async, [url, low, high]() {
+	auto const url{std::format("{}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=osm&STYLES=&SRS=EPSG:2180&BBOX={:.1f},{:.1f},{:.1f},{:.1f}&WIDTH={}&HEIGHT={}&FORMAT=image/png", kMapService, low.x, low.y, high.x, high.y, width, height)};
+	m_request = std::async(std::launch::async, [url, low, high]() { // NOSONAR: the destructor waits on this future, which with GCC joins the worker; a std::thread would need a joinable member in editor_map, a detached one outlives the map
 		image result;
 		result.low = low;
 		result.high = high;
 		std::vector<std::uint8_t> data;
 		if (false == editor_http_get(url, data, result.error))
 			return result;
-		int w{0}, h{0}, components{0};
-		// the texture loader turns the stb flip on for the whole process only once it loads its first texture: this thread
-		// keeps the north edge in the first row whatever it is by then
-		stbi_set_flip_vertically_on_load_thread(0);
-		auto *pixels{stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &components, 4)};
-		if (pixels == nullptr)
-		{
+		if (false == decode(data, result.width, result.height, result.pixels))
 			result.error = STR("The map service sent no image");
-			return result;
-		}
-		result.width = w;
-		result.height = h;
-		result.pixels.assign(pixels, pixels + static_cast<std::size_t>(w) * h * 4);
-		stbi_image_free(pixels);
 		return result;
 	});
 }

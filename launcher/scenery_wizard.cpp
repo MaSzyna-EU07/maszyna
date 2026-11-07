@@ -23,8 +23,10 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <sstream>
+#include <string>
 
 namespace
 {
@@ -113,55 +115,62 @@ void ui::scenerywizard_panel::render_form()
 
 	if (ImGui::TreeNode(STR_C("More settings")))
 	{
-		ImGui::BeginDisabled(false == m_realistic);
-		ImGui::TextUnformatted(STR_C("Centre of the scenery, PUWG 1992"));
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("PUWG 1992: the coordinate system of the maps of Poland, in km"));
-		double east{m_map.point().x / 1000.0};
-		double north{m_map.point().y / 1000.0};
-		ImGui::SetNextItemWidth(130.f);
-		auto changed{ImGui::InputDouble(STR_C("E, km##east"), &east, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)};
-		ImGui::SetNextItemWidth(130.f);
-		changed |= ImGui::InputDouble(STR_C("N, km##north"), &north, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue);
-		if (changed)
-		{
-			pick({east * 1000.0, north * 1000.0});
-			m_map.show(m_map.point(), 1000.0);
-		}
-		ImGui::SetNextItemWidth(-90.f);
-		auto const entered{ImGui::InputTextWithHint("##latlon", STR_C("latitude, longitude"), m_latlon, sizeof(m_latlon), ImGuiInputTextFlags_EnterReturnsTrue)};
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Show")) || entered)
-		{
-			std::string text{m_latlon};
-			std::replace(text.begin(), text.end(), ',', ' ');
-			std::istringstream words(text);
-			double latitude{0.0}, longitude{0.0};
-			if (words >> latitude >> longitude && latitude > 45.0 && latitude < 58.0 && longitude > 10.0 && longitude < 28.0)
-			{
-				pick(editor_geo::to_puwg(latitude, longitude));
-				m_map.show(m_map.point());
-				m_status.clear();
-			}
-			else
-				m_status = STR("Give the latitude and the longitude in degrees, e.g. 52.2297, 21.0122");
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Degrees, as given by the online maps; the map moves there"));
-		if (m_map.picked())
-		{
-			auto const degrees{editor_geo::to_degrees(m_map.point())};
-			ImGui::TextDisabled(STR_C("%.5f N, %.5f E"), degrees.x, degrees.y);
-		}
-		ImGui::Spacing();
-		ImGui::TextWrapped("%s", STR_C("The scenery keeps the centre as its geographic reference (//$g PUWG1992): the orthophoto of the editor lies under it, in place."));
-		ImGui::EndDisabled();
+		render_settings();
 		ImGui::TreePop();
 	}
 	ImGui::Spacing();
 	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 	ImGui::TextWrapped("%s", STR_C("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
 	ImGui::PopStyleColor();
+}
+
+// the centre of the scenery typed in, in PUWG 1992 or in degrees
+void ui::scenerywizard_panel::render_settings()
+{
+	ImGui::BeginDisabled(false == m_realistic);
+	ImGui::TextUnformatted(STR_C("Centre of the scenery, PUWG 1992"));
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("PUWG 1992: the coordinate system of the maps of Poland, in km"));
+	double east{m_map.point().x / 1000.0};
+	double north{m_map.point().y / 1000.0};
+	ImGui::SetNextItemWidth(130.f);
+	auto changed{ImGui::InputDouble(STR_C("E, km##east"), &east, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)};
+	ImGui::SetNextItemWidth(130.f);
+	changed |= ImGui::InputDouble(STR_C("N, km##north"), &north, 0.0, 0.0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue);
+	if (changed)
+	{
+		pick({east * 1000.0, north * 1000.0});
+		m_map.show(m_map.point(), 1000.0);
+	}
+	ImGui::SetNextItemWidth(-90.f);
+	auto const entered{ImGui::InputTextWithHint("##latlon", STR_C("latitude, longitude"), m_latlon, sizeof(m_latlon), ImGuiInputTextFlags_EnterReturnsTrue)};
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Show")) || entered)
+	{
+		std::string text{m_latlon};
+		std::replace(text.begin(), text.end(), ',', ' ');
+		std::istringstream words(text);
+		double latitude{0.0};
+		double longitude{0.0};
+		if (words >> latitude >> longitude && latitude > 45.0 && latitude < 58.0 && longitude > 10.0 && longitude < 28.0)
+		{
+			pick(editor_geo::to_puwg(latitude, longitude));
+			m_map.show(m_map.point());
+			m_status.clear();
+		}
+		else
+			m_status = STR("Give the latitude and the longitude in degrees, e.g. 52.2297, 21.0122");
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Degrees, as given by the online maps; the map moves there"));
+	if (m_map.picked())
+	{
+		auto const degrees{editor_geo::to_degrees(m_map.point())};
+		ImGui::TextDisabled(STR_C("%.5f N, %.5f E"), degrees.x, degrees.y);
+	}
+	ImGui::Spacing();
+	ImGui::TextWrapped("%s", STR_C("The scenery keeps the centre as its geographic reference (//$g PUWG1992): the orthophoto of the editor lies under it, in place."));
+	ImGui::EndDisabled();
 }
 
 bool ui::scenerywizard_panel::create_scenery()
@@ -178,8 +187,7 @@ bool ui::scenerywizard_panel::create_scenery()
 	auto const now{std::time(nullptr)};
 	char date[32];
 	std::strftime(date, sizeof(date), "%Y-%m-%d", std::localtime(&now));
-	char reference[96];
-	std::snprintf(reference, sizeof(reference), "//$g PUWG1992 %.3f %.3f", m_map.point().x / 1000.0, m_map.point().y / 1000.0);
+	auto reference{std::format("//$g PUWG1992 {:.3f} {:.3f}", m_map.point().x / 1000.0, m_map.point().y / 1000.0)};
 	if (m_realistic)
 	{
 		// the orthophoto on; it's shown as the settings of the editor have it, its origin is the one of //$g
@@ -187,7 +195,7 @@ bool ui::scenerywizard_panel::create_scenery()
 		output << "//$o " << editor_orthophoto::mark(editor_orthophoto::config{}, true, false) << "\r\n";
 	}
 	else
-		std::snprintf(reference, sizeof(reference), "fictional");
+		reference = "fictional";
 	if (m_title[0] != '\0')
 		output << "// " << m_title << "\r\n";
 	output << "// created in the editor " << date << "\r\n\r\n";

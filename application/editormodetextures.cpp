@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <system_error>
 
 namespace
 {
@@ -134,12 +135,11 @@ void editor_mode::render_texture_browser()
 				extension = lowercase(path.extension().string());
 				stem = path.stem().string();
 			}
-			catch (std::exception const &)
+			catch (std::system_error const &)
 			{
 				continue;
 			}
-			std::error_code status;
-			if (entry->is_directory(status))
+			if (std::error_code status; entry->is_directory(status))
 			{
 				browser.folders.push_back(name);
 				continue;

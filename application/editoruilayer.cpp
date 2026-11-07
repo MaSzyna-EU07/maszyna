@@ -206,6 +206,25 @@ void autohide_vertical_text(ImDrawList *List, ImVec2 const Position, ImU32 const
 	}
 }
 
+// the line of the status bar: the outcome of the last operation, and the selected node at its right end
+void status_line(std::string const &Status, bool const Error, scene::basic_node const *Node)
+{
+	if (false == Status.empty())
+	{
+		if (Error)
+			ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", Status.c_str());
+		else
+			ImGui::TextUnformatted(Status.c_str());
+	}
+	if (Node != nullptr)
+	{
+		auto const name{Node->name().empty() ? std::string{STR_C("(no name)")} : Node->name()};
+		auto const label{std::string{STR_C("Selected:")} + " " + name};
+		ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - ImGui::CalcTextSize(label.c_str()).x - ImGui::GetStyle().ItemSpacing.x * 2.0f));
+		ImGui::TextUnformatted(label.c_str());
+	}
+}
+
 } // namespace
 
 std::size_t editor_ui::autohide_group_of(unsigned int const Window)
@@ -641,20 +660,7 @@ void editor_ui::render_()
 	{
 		if (ImGui::BeginMenuBar())
 		{
-			if (false == m_layerspanel.status.empty())
-			{
-				if (m_layerspanel.status_error)
-					ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_layerspanel.status.c_str());
-				else
-					ImGui::TextUnformatted(m_layerspanel.status.c_str());
-			}
-			if (m_node != nullptr)
-			{
-				auto const name{m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name()};
-				auto const label{std::string{STR_C("Selected:")} + " " + name};
-				ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - ImGui::CalcTextSize(label.c_str()).x - ImGui::GetStyle().ItemSpacing.x * 2.0f));
-				ImGui::TextUnformatted(label.c_str());
-			}
+			status_line(m_layerspanel.status, m_layerspanel.status_error, m_node);
 			ImGui::EndMenuBar();
 		}
 	}
@@ -1066,9 +1072,8 @@ void editor_ui::set_notice(std::string const &Notice)
 {
 	if (Notice.empty() || ImGui::GetCurrentContext() == nullptr)
 		return;
-	auto &status{m_layerspanel.status};
 	// the status of the operation it follows, told a moment ago, stays above it
-	if (ImGui::GetTime() - m_statustime < 1.0 && false == status.empty())
+	if (auto &status{m_layerspanel.status}; ImGui::GetTime() - m_statustime < 1.0 && false == status.empty())
 		status += "\n" + Notice;
 	else
 	{
@@ -1081,7 +1086,7 @@ void editor_ui::set_notice(std::string const &Notice)
 	m_refusalnotice = true;
 }
 
-void editor_ui::render_refusal()
+void editor_ui::render_refusal() const
 {
 	auto const age{ImGui::GetTime() - m_refusaltime};
 	auto const shown{m_refusalnotice ? 7.0 : 4.0};

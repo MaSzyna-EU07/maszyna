@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "world/Segment.h"
@@ -52,8 +53,8 @@ struct design
 	bool movable{false}; // the frog with a movable nose
 };
 
-bool double_switch(std::string const &Type);
-bool symmetric_switch(std::string const &Type);
+bool double_switch(std::string_view Type);
+bool symmetric_switch(std::string_view Type);
 
 // diverging track of the chain of parts from the start, with the first direction along +z and turning to +x
 struct path
@@ -65,10 +66,10 @@ struct path
 path diverging(std::vector<part> const &Parts, double Lead = 0.0, double Entry = 0.0, double Tip = 0.0);
 double blade_tip(std::vector<part> const &Parts, double Lead, double Entry, double Tip, bool Symmetric);
 // the tip of a blade with a cut tip from the start of its curve, as the tables of the rail give it, 0: none for the radius
-double cut_tip(std::string const &Rail, double Radius);
+double cut_tip(std::string_view Rail, double Radius);
 // the pre-blade stretch and the angle in radians of blades cutting into the stock rails, as the ordinary switch of the catalogue
 // with the same rail, radius and ratio has them; 0 and 0 for blades tangent to them
-std::pair<double, double> secant_blade(std::string const &Rail, double Radius, double Ratio);
+std::pair<double, double> secant_blade(std::string_view Rail, double Radius, double Ratio);
 
 // the paths of the switch in its own space: the main and the diverging track of the first switch, then of the second one of a
 // double switch and the plain track joining the two; empty with the reason in Error when the design can't make a switch

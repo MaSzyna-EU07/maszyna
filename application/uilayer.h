@@ -144,7 +144,7 @@ protected:
 	// items of the windows menu which belong to the ui of a mode, after the common ones
 	virtual void render_windows_menu() {}
 	// items of the tools menu which belong to the ui of a mode, after the common ones
-	virtual void render_tools_menu() {}
+	virtual void render_tools_menu() { /* none of its own unless the ui of a mode adds them */ }
 	// colours this ui is drawn in, see imgui_colors()
 	virtual int palette() const
 	{

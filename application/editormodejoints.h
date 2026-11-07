@@ -65,13 +65,17 @@ class joints_tool final : public editor_tool
 		std::vector<TTrack *> queue;
 		std::size_t next{0};
 		// the places of the tracks compared with the terrain model, in runs of one path each, once the model under them is in
-		std::vector<nmt_place> places;
-		std::vector<std::pair<std::size_t, std::size_t>> runs;
-		std::size_t run_next{0};
-		bool model_waiting{false};
-		bool model_asked{false};
-		double model_polled{0.0};
-		bool model_unplaced{false};
+		struct model_pass
+		{
+			std::vector<nmt_place> places;
+			std::vector<std::pair<std::size_t, std::size_t>> runs;
+			std::size_t run_next{0};
+			bool waiting{false};
+			bool asked{false};
+			double polled{0.0};
+			bool unplaced{false};
+		};
+		model_pass terrain;
 		std::vector<joint_issue> issues;
 		int filter{-1};
 		int selected{-1};
@@ -92,9 +96,19 @@ class joints_tool final : public editor_tool
 	void live_update();
 	void joints_start();
 	void joints_check(TTrack &Track, std::vector<joint_issue> &Issues, std::set<std::pair<end_key, end_key>> &Seen, bool const Open) const;
+	// the joints at one end of a path of the track, or the free end
+	void joints_at(TTrack &Track, editor_track::point_ref const &Point, std::vector<joint_issue> &Issues, std::set<std::pair<end_key, end_key>> &Seen, bool const Open) const;
 	// the paths lying off the terrain model by more than the threshold. returns: false while the model under them is coming
 	bool joints_model();
 	void joints_focus(int const Index);
-	bool joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed);
+	bool joint_fix(joint_issue &Issue, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Changed) const;
 	void joints_fix(std::vector<int> const &Indices);
+	// parts of the panel: the check under way or its button, the thresholds, the faults found and their rows
+	void render_run();
+	void render_thresholds();
+	void render_results();
+	void render_rows(std::vector<int> const &Listed);
+	editor_selftest_result selftest_model(std::istringstream &Words);
+	editor_selftest_result selftest_live();
+	editor_selftest_result selftest_joints(std::istringstream &Words);
 };

@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <optional>
 
 namespace
@@ -174,8 +175,7 @@ std::vector<segment_data> editor_track::stretched(segment_data const &Path, bool
 		auto const arcradius{original / std::abs(turn)};
 		int const side{turn > 0.0 ? 1 : -1};
 		auto const arc{arc_pieces(start, direction, grade, arcradius, std::abs(turn), side)};
-		bool const circular{std::abs(turn) > 1e-4 && plan_distance(arc.back().points[segment_data::point::end], end) < 0.05 && plan_distance(arc.front().points[segment_data::point::start], start) < 1e-6};
-		if (false == circular)
+		if (bool const circular{std::abs(turn) > 1e-4 && plan_distance(arc.back().points[segment_data::point::end], end) < 0.05 && plan_distance(arc.front().points[segment_data::point::start], start) < 1e-6}; false == circular)
 			return scaled(path, Atend, Length, original);
 		pieces = arc_pieces(start, direction, grade, arcradius, std::min(Length / arcradius, glm::radians(330.0)), side);
 		radius = path.radius;
@@ -183,7 +183,7 @@ std::vector<segment_data> editor_track::stretched(segment_data const &Path, bool
 	spread_rolls(pieces, path, original, radius);
 	if (false == Atend)
 	{
-		std::reverse(pieces.begin(), pieces.end());
+		std::ranges::reverse(pieces);
 		for (auto &piece : pieces)
 			piece = reversed(piece);
 	}
@@ -334,9 +334,9 @@ std::optional<editor_track::drive_spot> editor_track::drive_spot_of(TTrack const
 	if (glm::length(heading) < 1e-9)
 		return std::nullopt;
 	heading = glm::normalize(heading);
-	glm::dvec2 const right{-heading.y, heading.x};
+	glm::dvec2 const rightward{-heading.y, heading.x};
 	drive_spot spot;
-	spot.rightswitch = glm::dot(plan_of(diverging.points[segment_data::point::end] - start), right) > 0.0;
+	spot.rightswitch = glm::dot(plan_of(diverging.points[segment_data::point::end] - start), rightward) > 0.0;
 	spot.location = curve.point(at);
 	auto const yaw{glm::degrees(std::atan2(heading.x, heading.y))};
 	spot.yaw = yaw < 0.0 ? yaw + 360.0 : yaw;
@@ -423,14 +423,34 @@ double editor_track::diverging_speed(double const Radius)
 namespace
 {
 
-double constexpr kPi{3.14159265358979323846};
+double constexpr kPi{std::numbers::pi};
 double constexpr kHalfPi{0.5 * kPi};
 double constexpr kReverseNoInsert{106.5};
 
 glm::dvec2 unit_chord(glm::dvec2 const &Heading, double const Angle)
 {
-	glm::dvec2 const left{-Heading.y, Heading.x};
-	return Heading * std::sin(std::abs(Angle)) + left * ((Angle > 0.0 ? 1.0 : -1.0) * (1.0 - std::cos(Angle)));
+	glm::dvec2 const leftward{-Heading.y, Heading.x};
+	return Heading * std::sin(std::abs(Angle)) + leftward * ((Angle > 0.0 ? 1.0 : -1.0) * (1.0 - std::cos(Angle)));
+}
+
+// the angle between Low and High the residual changes its sign at, by halving the span 60 times; LowValue: the residual at Low,
+// Radius: as the residual leaves it at the last halving
+template <typename Residual_>
+double bisect(Residual_ const &Residual, double Low, double High, double LowValue, double &Radius)
+{
+	for (int k = 0; k < 60; ++k)
+	{
+		auto const middle{0.5 * (Low + High)};
+		auto const value{Residual(middle, Radius)};
+		if ((value > 0.0) == (LowValue > 0.0))
+		{
+			Low = middle;
+			LowValue = value;
+		}
+		else
+			High = middle;
+	}
+	return 0.5 * (Low + High);
 }
 
 struct reverse_fit
@@ -461,22 +481,7 @@ std::optional<reverse_fit> fit_reverse(glm::dvec2 const &Offset, glm::dvec2 cons
 		auto const now{residual(first, radius)};
 		if (usable(previous) && usable(first) && (before > 0.0) != (now > 0.0))
 		{
-			auto low{previous};
-			auto high{first};
-			auto lowvalue{before};
-			for (int k = 0; k < 60; ++k)
-			{
-				auto const middle{0.5 * (low + high)};
-				auto const value{residual(middle, radius)};
-				if ((value > 0.0) == (lowvalue > 0.0))
-				{
-					low = middle;
-					lowvalue = value;
-				}
-				else
-					high = middle;
-			}
-			auto const root{0.5 * (low + high)};
+			auto const root{bisect(residual, previous, first, before, radius)};
 			residual(root, radius);
 			if (radius >= 1.0 && (false == best.has_value() || radius > best->radius))
 				best = reverse_fit{radius, root, Turn - root};
@@ -485,6 +490,119 @@ std::optional<reverse_fit> fit_reverse(glm::dvec2 const &Offset, glm::dvec2 cons
 		before = now;
 	}
 	return best;
+}
+
+// the link made of two arcs turning the opposite ways, with the insert between them where the arcs alone would turn too sharply
+// for the speed; false where none fits
+bool reverse_link(editor_track::branch_link &Result, std::vector<std::pair<double, int>> &Arcs, glm::dvec2 const &Offset, glm::dvec2 const &Tangent, double const Turn, double const Insert)
+{
+	auto fit{fit_reverse(Offset, Tangent, Turn, 0.0)};
+	if (false == fit.has_value() || 2.0 / fit->radius > 1.0 / kReverseNoInsert)
+	{
+		fit = fit_reverse(Offset, Tangent, Turn, Insert);
+		Result.insert = Insert;
+	}
+	if (false == fit.has_value())
+		return false;
+	Result.reverse = true;
+	Result.radius = fit->radius;
+	Result.before = 0.0;
+	Result.after = 0.0;
+	Result.shortfall = 0.0;
+	Arcs = {{std::abs(fit->first), fit->first > 0.0 ? 1 : -1}, {std::abs(fit->second), fit->second > 0.0 ? 1 : -1}};
+	return true;
+}
+
+// a straight path between the points of the plan, level
+segment_data plan_line(glm::dvec2 const &A, glm::dvec2 const &B)
+{
+	segment_data path;
+	path.points[segment_data::point::start] = {A.x, 0.0, A.y};
+	path.points[segment_data::point::end] = {B.x, 0.0, B.y};
+	return path;
+}
+
+// the pieces of the link in the plan: the straight before, the arcs with the inserts between them, the straight after
+void lay_link(editor_track::branch_link &Result, std::vector<std::pair<double, int>> const &Arcs, glm::dvec2 const &Start, glm::dvec2 const &Tangent, glm::dvec2 const &Target)
+{
+	auto cursor{Start};
+	auto heading{Tangent};
+	if (Result.before >= 0.01)
+	{
+		Result.pieces.push_back(plan_line(cursor, cursor + Tangent * Result.before));
+		cursor += Tangent * Result.before;
+	}
+	for (std::size_t i = 0; i < Arcs.size(); ++i)
+	{
+		auto const [angle, side]{Arcs[i]};
+		if (i > 0 && Result.insert >= 0.01)
+		{
+			Result.pieces.push_back(plan_line(cursor, cursor + heading * Result.insert));
+			cursor += heading * Result.insert;
+		}
+		auto const pieces{arc_pieces({cursor.x, 0.0, cursor.y}, heading, 0.0, Result.radius, angle, side)};
+		Result.pieces.insert(Result.pieces.end(), pieces.begin(), pieces.end());
+		cursor = plan_of(pieces.back().points[segment_data::point::end]);
+		heading = turned(heading, side * angle);
+	}
+	if (Result.after >= 0.01)
+		Result.pieces.push_back(plan_line(cursor, Target));
+	else if (Result.trim == 0.0 && false == Result.pieces.empty())
+		Result.pieces.back().points[segment_data::point::end] = {Target.x, 0.0, Target.y};
+}
+
+// the heights of the pieces of the link from the grade at one end to the grade at the other, the roll changed evenly along them
+void lift_link(editor_track::branch_link &Result, editor_track::branch_end const &From, editor_track::branch_end const &To)
+{
+	auto const height1{To.position.y + To.grade * Result.trim};
+	ground_follow::follow(Result.pieces, {From.position.y, From.grade, height1, To.grade}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
+	std::vector<double> lengths;
+	double total{0.0};
+	for (auto const &piece : Result.pieces)
+		total += lengths.emplace_back(bezier{piece}.plan_length());
+	double chainage{0.0};
+	for (std::size_t i = 0; i < Result.pieces.size(); ++i)
+	{
+		auto const from{From.roll + (To.roll - From.roll) * chainage / std::max(total, 1e-6)};
+		chainage += lengths[i];
+		auto const to{From.roll + (To.roll - From.roll) * chainage / std::max(total, 1e-6)};
+		Result.pieces[i].rolls = {static_cast<float>(from), static_cast<float>(to)};
+	}
+}
+
+// the piece of the path at the end, the path itself where it has no pieces
+segment_data const &end_piece(segment_data const &Path, bool const Atend)
+{
+	if (Path.pieces.empty())
+		return Path;
+	return Atend ? Path.pieces.back() : Path.pieces.front();
+}
+
+// the bend the path ends with at the end, as it goes on beyond it
+std::optional<editor_track::bend> bend_of(segment_data const &Path, bool const Atend)
+{
+	editor_track::bend result;
+	auto const sign{Atend ? 1.0 : -1.0};
+	result.roll = Atend ? static_cast<double>(Path.rolls[1]) : -static_cast<double>(Path.rolls[0]);
+	if (false == has_controls(Path))
+	{
+		auto const chord{plan_of(Path.points[segment_data::point::end] - Path.points[segment_data::point::start])};
+		if (glm::length(chord) < 1e-9)
+			return std::nullopt;
+		result.direction = glm::normalize(chord) * sign;
+		return result;
+	}
+	// on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends, R 300.9 at
+	// the end of the diverging track of a switch of R 300
+	bezier const curve{end_piece(Path, Atend)};
+	auto const first{curve.first(Atend ? 1.0 : 0.0)};
+	auto const second{curve.second(Atend ? 1.0 : 0.0)};
+	auto const speed{std::hypot(first.x, first.z)};
+	if (speed < 1e-9)
+		return std::nullopt;
+	result.curvature = sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed);
+	result.direction = {sign * first.x / speed, sign * first.z / speed};
+	return result;
 }
 
 } // namespace
@@ -532,28 +650,11 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 	if (std::abs(turn) > glm::radians(170.0))
 		return result;
 	std::vector<std::pair<double, int>> arcs;
-	auto const reverse = [&]() {
-		auto fit{fit_reverse(offset, tangent, turn, 0.0)};
-		if (false == fit.has_value() || 2.0 / fit->radius > 1.0 / kReverseNoInsert)
-		{
-			fit = fit_reverse(offset, tangent, turn, Insert);
-			result.insert = Insert;
-		}
-		if (false == fit.has_value())
-			return false;
-		result.reverse = true;
-		result.radius = fit->radius;
-		result.before = 0.0;
-		result.after = 0.0;
-		result.shortfall = 0.0;
-		arcs = {{std::abs(fit->first), fit->first > 0.0 ? 1 : -1}, {std::abs(fit->second), fit->second > 0.0 ? 1 : -1}};
-		return true;
-	};
 	if (std::abs(turn) <= Kink)
 	{
 		auto const lateral{cross(tangent, offset)};
 		result.after = glm::dot(tangent, offset);
-		if (std::abs(lateral) >= 0.005 && false == reverse())
+		if (std::abs(lateral) >= 0.005 && false == reverse_link(result, arcs, offset, tangent, turn, Insert))
 			return result;
 	}
 	else
@@ -569,7 +670,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 			arcs = {{std::abs(turn), turn > 0.0 ? 1 : -1}};
 			result.radius = Radius;
 		}
-		else if (false == reverse())
+		else if (false == reverse_link(result, arcs, offset, tangent, turn, Insert))
 		{
 			result.radius = Radius;
 			result.shortfall = std::max(0.01, -result.before);
@@ -581,53 +682,9 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 		result.trim = -result.after;
 		result.after = 0.0;
 	}
-	auto const line = [](glm::dvec2 const &A, glm::dvec2 const &B) {
-		segment_data path;
-		path.points[segment_data::point::start] = {A.x, 0.0, A.y};
-		path.points[segment_data::point::end] = {B.x, 0.0, B.y};
-		return path;
-	};
-	auto cursor{start};
-	auto heading{tangent};
-	if (result.before >= 0.01)
-	{
-		result.pieces.push_back(line(cursor, cursor + tangent * result.before));
-		cursor += tangent * result.before;
-	}
-	for (std::size_t i = 0; i < arcs.size(); ++i)
-	{
-		auto const [angle, side]{arcs[i]};
-		if (i > 0 && result.insert >= 0.01)
-		{
-			result.pieces.push_back(line(cursor, cursor + heading * result.insert));
-			cursor += heading * result.insert;
-		}
-		auto const pieces{arc_pieces({cursor.x, 0.0, cursor.y}, heading, 0.0, result.radius, angle, side)};
-		result.pieces.insert(result.pieces.end(), pieces.begin(), pieces.end());
-		cursor = plan_of(pieces.back().points[segment_data::point::end]);
-		heading = turned(heading, side * angle);
-	}
-	if (result.after >= 0.01)
-		result.pieces.push_back(line(cursor, target));
-	else if (result.trim == 0.0 && false == result.pieces.empty())
-		result.pieces.back().points[segment_data::point::end] = {target.x, 0.0, target.y};
+	lay_link(result, arcs, start, tangent, target);
 	if (false == result.pieces.empty())
-	{
-		auto const height1{To.position.y + To.grade * result.trim};
-		ground_follow::follow(result.pieces, {From.position.y, From.grade, height1, To.grade}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
-		std::vector<double> lengths;
-		double total{0.0};
-		for (auto const &piece : result.pieces)
-			total += lengths.emplace_back(bezier{piece}.plan_length());
-		double chainage{0.0};
-		for (std::size_t i = 0; i < result.pieces.size(); ++i)
-		{
-			auto const from{From.roll + (To.roll - From.roll) * chainage / std::max(total, 1e-6)};
-			chainage += lengths[i];
-			auto const to{From.roll + (To.roll - From.roll) * chainage / std::max(total, 1e-6)};
-			result.pieces[i].rolls = {static_cast<float>(from), static_cast<float>(to)};
-		}
-	}
+		lift_link(result, From, To);
 	result.landing = result.pieces.empty() ? From.position : result.pieces.back().points[segment_data::point::end];
 	result.valid = true;
 	return result;
@@ -635,7 +692,7 @@ editor_track::branch_link editor_track::link_branch(branch_end const &From, doub
 
 void editor_track::edit::capture(TTrack &Track)
 {
-	if (std::find(changed.begin(), changed.end(), &Track) != changed.end())
+	if (std::ranges::find(changed, &Track) != changed.end())
 		return;
 	states.emplace_back(&Track, editor_track::capture(Track));
 	changed.push_back(&Track);
@@ -669,28 +726,7 @@ std::optional<editor_track::bend> editor_track::bend_at(TTrack const &Neighbour,
 		{
 			if (glm::distance(path.points[atend ? segment_data::point::end : segment_data::point::start], Joint) > 0.05)
 				continue;
-			bend result;
-			auto const sign{atend ? 1.0 : -1.0};
-			result.roll = atend ? static_cast<double>(path.rolls[1]) : -static_cast<double>(path.rolls[0]);
-			if (false == has_controls(path))
-			{
-				auto const chord{plan_of(path.points[segment_data::point::end] - path.points[segment_data::point::start])};
-				if (glm::length(chord) < 1e-9)
-					return std::nullopt;
-				result.direction = glm::normalize(chord) * sign;
-				return result;
-			}
-			// on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends, R 300.9 at
-			// the end of the diverging track of a switch of R 300
-			bezier const curve{path.pieces.empty() ? path : atend ? path.pieces.back() : path.pieces.front()};
-			auto const first{curve.first(atend ? 1.0 : 0.0)};
-			auto const second{curve.second(atend ? 1.0 : 0.0)};
-			auto const speed{std::hypot(first.x, first.z)};
-			if (speed < 1e-9)
-				return std::nullopt;
-			result.curvature = sign * (first.x * second.z - first.z * second.x) / (speed * speed * speed);
-			result.direction = {sign * first.x / speed, sign * first.z / speed};
-			return result;
+			return bend_of(path, atend);
 		}
 	return std::nullopt;
 }

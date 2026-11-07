@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/editortool.h"
 
+#include <array>
 #include <memory>
 #include <set>
 #include <string>
@@ -44,11 +45,11 @@ class vehicle_tool final : public editor_tool
 	struct vehicle_state
 	{
 		std::shared_ptr<ui::vehicles_bank> bank;
-		char search[64]{};
+		std::array<char, 64> search{};
 		bool controllable_only{true};
 		std::shared_ptr<ui::vehicle_desc> vehicle;
 		std::shared_ptr<ui::skin_set> skin;
-		int driver{0}; // 0: a driver, to be driven; 1: nobody, parked
+		int crew{0}; // 0: a driver, to be driven; 1: nobody, parked
 		TTrack *track{nullptr};
 		glm::dvec3 point{0.0};
 		std::string placed;
@@ -65,7 +66,7 @@ class vehicle_tool final : public editor_tool
 		std::set<ui::skin_set const *> minis; // skins whose side view was asked for
 		int facing{1};
 		bool write{true};
-		char timetable[64]{"none"};
+		std::array<char, 64> timetable{"none"};
 		double velocity{0.0};
 		struct trainset
 		{
@@ -77,4 +78,11 @@ class vehicle_tool final : public editor_tool
 	};
 	vehicle_state m_vehicle;
 	bool place();
+	// the parts of the options: the list to pick a vehicle from, the train, how it's put on the track, the trainsets to write
+	void render_vehicle_list(int &Loads, float const Line);
+	void render_train(int &Loads, float const Line);
+	void render_train_picture(int &Loads, float const Height);
+	void render_picked_vehicle();
+	void render_placing();
+	void render_trainsets();
 };
