@@ -1620,12 +1620,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// why the switch can't take another template here, empty when it can
 	std::string template_change_blocked(TTrack const &Switch) const;
 	// the template of the catalogue a slip or a crossing was laid of, of the rail before the others; -1 if none
-	int slip_template_index(switch_store::record const &Record, std::string const &Rail) const;
+	int slip_template_index(switch_store::record const &Record, std::string_view const Rail) const;
 	// the switch of the template of the index in place: its start and its side kept, the tracks it joins following; a switch of a
 	// crossover takes the crossover with it, laid again, a slip or a crossing is laid again where its tracks cross. One step of the
 	// history; the status says how it went
 	bool change_switch_template(TTrack &Switch, int const Index);
-	bool change_slip_template(TTrack &Part, int const Index);
+	bool change_slip_template(TTrack const &Part, int const Index);
 	// the switch, or the double switch it's a part of, given the shape in place, straight or bent into the curve it lies in; Flip:
 	// the diverging track to the other side. Notes: for the user
 	bool apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
@@ -2086,7 +2086,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the side a slip dragged out on a straight with no track crossing it brings its crossing track to: the one through the quarter of
 	// the cursor
 	int lone_slip_side() const;
-	bool replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape);
+	bool replace_double_slip(TTrack const &Part, editor_track::switch_template const &Shape);
 	// Bend: what a path of the slip laid out as on straights turns into where it's bent into a curve
 	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd",
 	                                        std::function<segment_data(segment_data const &)> const &Bend = {});
@@ -2115,7 +2115,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	segment_data bent_slip_path(curved_slip const &Plan, segment_data const &Path) const;
 	// the two tracks through the slip and its slip curves, each from end to end, bent: the first track, the slip curve leaving it at its
 	// start, the second track, the other slip curve of a double slip
-	std::vector<segment_data> curved_slip_lines(curved_slip const &Plan, std::string const &Type) const;
+	std::vector<segment_data> curved_slip_lines(curved_slip const &Plan, std::string_view const Type) const;
 	// the straights of both tracks from the ends of the slip out to the joints of the template, bent
 	std::vector<segment_data> curved_slip_reaches(curved_slip const &Plan) const;
 	switch_curve::slip_report curved_slip_report(curved_slip const &Plan, std::string const &Type) const;

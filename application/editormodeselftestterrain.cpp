@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
 #include <array>
+#include <bit>
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -302,7 +303,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				under.emplace_back(off, place.position, name);
 		}
 		std::ranges::sort(offs);
-		auto const quantile = [&](double const Q) { return offs.empty() ? 0.0 : offs[static_cast<std::size_t>(Q * (offs.size() - 1))]; };
+		auto const quantile = [&](double const Q) { return offs.empty() ? 0.0 : offs[static_cast<std::size_t>(Q * static_cast<double>(offs.size() - 1))]; };
 		WriteLog(format("SELFTEST nmtcheck: %zu places, %zu without terrain, %zu on bridges or in tunnels; ground less formation: 5%% %.2f, median %.2f, 95%% %.2f m; over the top of the ballast %zu, more than 0.3 m under the formation %zu; modifiers %zu",
 		                places, without, bridges, quantile(0.05), quantile(0.5), quantile(0.95), over.size(), under.size(), m_streamer.manifest().modifiers.size()));
 		for (auto *list : {&over, &under})
@@ -616,9 +617,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		double value{1.0};
 		int mode{0};
 		words >> x >> z >> radius >> value >> mode;
-		auto const changed{command == "terrainsculpt" ? m_streamer.sculpt(x, z, radius, value)
-		                   : command == "terrainlevel" ? m_streamer.level(x, z, radius, value, 1.0, mode)
-		                                               : m_streamer.paint(x, z, radius, 1.0, static_cast<std::uint16_t>(value))};
+		bool changed{false};
+		if (command == "terrainsculpt")
+			changed = m_streamer.sculpt(x, z, radius, value);
+		else if (command == "terrainlevel")
+			changed = m_streamer.level(x, z, radius, value, 1.0, mode);
+		else
+			changed = m_streamer.paint(x, z, radius, 1.0, static_cast<std::uint16_t>(value));
 		forget_ground();
 		WriteLog(format("SELFTEST %s %.1f %.1f: %s", command.c_str(), x, z, changed ? "changed" : "nothing changed"));
 		return selftest_result::handled;
@@ -1003,10 +1008,15 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		words >> file;
 		std::ofstream stream{file};
 		stream << std::fixed << std::setprecision(4);
+		auto const grade_mark = [this](TTrack const &Track) {
+			if (grade_hand(Track))
+				return 'h';
+			return grade_fitted(Track) ? 'f' : 'n';
+		};
 		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
 				for (auto const &path : track->m_paths)
-					stream << track->name() << ' ' << (grade_hand(*track) ? 'h' : grade_fitted(*track) ? 'f' : 'n') << ' ' << path.points[segment_data::point::start].y << ' ' << path.points[segment_data::point::end].y << '\n';
+					stream << track->name() << ' ' << grade_mark(*track) << ' ' << path.points[segment_data::point::start].y << ' ' << path.points[segment_data::point::end].y << '\n';
 		WriteLog("SELFTEST trackheights: " + file);
 		return selftest_result::handled;
 	}
@@ -1018,9 +1028,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::ofstream stream{file, std::ios::app};
 		stream << std::fixed << std::setprecision(4);
 		stream << "R " << m_profile.samples.size() << ' ' << m_profile.line.points.size() << ' ' << m_profile.departure << '\n';
-		for (std::size_t i = 0; i < m_profile.samples.size(); ++i)
+		for (auto const &sample : m_profile.samples)
 		{
-			auto const &sample{m_profile.samples[i]};
 			double model{std::numeric_limits<double>::quiet_NaN()};
 			if (double height; m_nmt.height(sample.position.x, sample.position.z, height))
 				model = height + m_nmt_state.offset + (sample.span < m_profile.route.spans.size() && m_profile.route.spans[sample.span].track != nullptr ? m_profile.route.spans[sample.span].track->rail_height() : 0.0);
@@ -1056,11 +1065,16 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			auto const found{m_nmt_state.grade_lines.find(grade_line_key(Track))};
 			return found != m_nmt_state.grade_lines.end() ? found->second : -100;
 		};
+		auto const grade_mark = [this](TTrack const &Track) {
+			if (grade_hand(Track))
+				return 'h';
+			return grade_fitted(Track) ? 'f' : 'n';
+		};
 		std::unordered_set<TTrack const *> route;
 		for (auto const &span : m_profile.route.spans)
 		{
 			route.insert(span.track);
-			stream << "T " << span.track->name() << ' ' << line_of(*span.track) << ' ' << (grade_hand(*span.track) ? 'h' : grade_fitted(*span.track) ? 'f' : 'n') << '\n';
+			stream << "T " << span.track->name() << ' ' << line_of(*span.track) << ' ' << grade_mark(*span.track) << '\n';
 		}
 		struct spot
 		{
@@ -1246,13 +1260,12 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::vector<editor_terrain *> chunks;
 		m_streamer.collect(chunks);
 		std::ranges::sort(chunks, [](editor_terrain const *A, editor_terrain const *B) { return A->key() < B->key(); });
-		std::uint64_t hash{1469598103934665603ull};
+		std::uint64_t hash{1469598103934665603ULL};
 		for (auto const *chunk : chunks)
 			for (auto const height : chunk->heights())
 			{
-				std::uint32_t bits;
-				std::memcpy(&bits, &height, sizeof(bits));
-				hash = (hash ^ bits) * 1099511628211ull;
+				auto const bits{std::bit_cast<std::uint32_t>(height)};
+				hash = (hash ^ bits) * 1099511628211ULL;
 			}
 		WriteLog(format("SELFTEST terrainhash: %zu chunks, %016llx", chunks.size(), static_cast<unsigned long long>(hash)));
 		return selftest_result::handled;

@@ -23,9 +23,12 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 #include <algorithm>
+#include <array>
+#include <format>
 #include <map>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -81,7 +84,15 @@ std::string skos_of(editor_track::switch_template const &Template)
 // the skos the speed is usually laid with
 double usual_ratio(double const Speed)
 {
-	return Speed <= 50.0 ? 9.0 : Speed <= 60.0 ? 12.0 : Speed <= 80.0 ? 14.0 : Speed <= 100.0 ? 18.5 : 26.5;
+	if (Speed <= 50.0)
+		return 9.0;
+	if (Speed <= 60.0)
+		return 12.0;
+	if (Speed <= 80.0)
+		return 14.0;
+	if (Speed <= 100.0)
+		return 18.5;
+	return 26.5;
 }
 
 // the name in a list of the templates of one rail and skos: the radius and the speed, the type where it isn't Rz, what tells it
@@ -89,7 +100,7 @@ double usual_ratio(double const Speed)
 std::string row_name(editor_track::switch_template const &Template)
 {
 	if (Template.source != nullptr)
-		return Template.title() + "  (" + std::to_string(Template.count) + "x)";
+		return std::format("{}  ({}x)", Template.title(), Template.count);
 	if (Template.own)
 		return Template.title() + (Template.radius > 0.0 ? format("  R %.0f, %.0f km/h", Template.radius, speed_of(Template)) : std::string{});
 	auto const words{words_of(Template)};
@@ -108,6 +119,24 @@ std::string row_name(editor_track::switch_template const &Template)
 	return name.empty() ? switch_name_translated(Template.title()) : name;
 }
 
+// the type of a slip or a crossing as the tooltip names it
+char const *slip_type_name(std::string_view const Type)
+{
+	if (Type == "Rkp")
+		return STR_C("Single slip (Rkp)");
+	if (Type == "Rkpd")
+		return STR_C("Double slip (Rkpd)");
+	return STR_C("Crossing (Skrz)");
+}
+
+// the skos the glyph of a template is drawn with: its own, else the one of its radius and length, else 1:9
+double glyph_ratio(editor_track::switch_template const &Template)
+{
+	if (Template.ratio > 0.0)
+		return Template.ratio;
+	return Template.radius > 0.0 && Template.length > 0.0 ? 2.0 * Template.radius / Template.length : 9.0;
+}
+
 std::string template_tooltip(editor_track::switch_template const &Template)
 {
 	if (Template.source != nullptr)
@@ -116,7 +145,7 @@ std::string template_tooltip(editor_track::switch_template const &Template)
 	if (Template.double_slip)
 	{
 		text += "\n";
-		text += Template.type == "Rkp" ? STR_C("Single slip (Rkp)") : Template.type == "Rkpd" ? STR_C("Double slip (Rkpd)") : STR_C("Crossing (Skrz)");
+		text += slip_type_name(Template.type);
 		text += "\n" + format(STR_C("a %.3f m from the middle of the crossing to the joint"), Template.a) + "\n";
 		if (Template.type == "Skrz")
 			text += STR_C("Drag at a crossing of two straights");
@@ -139,7 +168,7 @@ void template_glyph(ImDrawList &Draw, ImVec2 const Low, ImVec2 const High, edito
 {
 	auto const line{ImGui::GetColorU32(ImGuiCol_TextDisabled)};
 	auto const made{Chosen ? IM_COL32(255, 255, 255, 255) : IM_COL32(120, 200, 255, 255)};
-	auto const ratio{Template.ratio > 0.0 ? Template.ratio : Template.radius > 0.0 && Template.length > 0.0 ? 2.0 * Template.radius / Template.length : 9.0};
+	auto const ratio{glyph_ratio(Template)};
 	auto const slope{static_cast<float>(std::min(0.9, 3.0 / ratio))};
 	auto const width{High.x - Low.x};
 	auto const middle{std::round((Low.y + High.y) * 0.5f)};
@@ -180,7 +209,7 @@ bool template_row(int const Index, editor_track::switch_template const &Template
 float list_height(int const Rows, int const Headers)
 {
 	auto const row{std::round(ImGui::GetTextLineHeight() * 1.3f) + ImGui::GetStyle().ItemSpacing.y};
-	return std::min(std::round(ImGui::GetFontSize() * 18.0f), (Rows + 0.5f) * row + Headers * ImGui::GetTextLineHeightWithSpacing() + 8.0f);
+	return std::min(std::round(ImGui::GetFontSize() * 18.0f), (static_cast<float>(Rows) + 0.5f) * row + static_cast<float>(Headers) * ImGui::GetTextLineHeightWithSpacing() + 8.0f);
 }
 
 } // namespace
@@ -233,7 +262,7 @@ int editor_mode::switch_template_index(TTrack const &Switch) const
 	return matching_template(*known, known->kind != "connection", movable);
 }
 
-int editor_mode::slip_template_index(switch_store::record const &Record, std::string const &Rail) const
+int editor_mode::slip_template_index(switch_store::record const &Record, std::string_view const Rail) const
 {
 	auto const &templates{m_switch.templates};
 	int found{-1};
@@ -254,7 +283,10 @@ std::string editor_mode::template_change_blocked(TTrack const &Switch) const
 {
 	auto const slip{slip_of(Switch)};
 	if (auto const crossing{slip.has_value() ? std::nullopt : crossing_record(Switch)}; slip.has_value() || crossing.has_value())
-		return (slip.has_value() ? slip->record : *crossing).main_radius != 0.0 ? STR_C("A slip bent into a curve: delete it and lay it again of another template") : std::string{};
+	{
+		auto const &record{slip.has_value() ? slip->record : *crossing};
+		return record.main_radius != 0.0 ? STR_C("A slip bent into a curve: delete it and lay it again of another template") : std::string{};
+	}
 	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2 || Switch.m_editorremoved)
 		return STR_C("Not a switch");
 	if (false == switch_store::connections(Switch).empty() && false == crossover_of(Switch).has_value())
@@ -262,7 +294,7 @@ std::string editor_mode::template_change_blocked(TTrack const &Switch) const
 	return {};
 }
 
-bool editor_mode::change_slip_template(TTrack &Part, int const Index)
+bool editor_mode::change_slip_template(TTrack const &Part, int const Index)
 {
 	auto &tool{m_switch};
 	auto const &shape{tool.templates[Index]};
@@ -313,8 +345,8 @@ bool editor_mode::change_slip_template(TTrack &Part, int const Index)
 	};
 	if (throughs.size() != 2)
 		return undo(STR_C("The tracks of the slip can't be laid crossing in its place"));
-	glm::dvec2 directions[2];
-	glm::dvec3 starts[2];
+	std::array<glm::dvec2, 2> directions;
+	std::array<glm::dvec3, 2> starts;
 	for (int i = 0; i < 2; ++i)
 	{
 		auto const &path{throughs[i]->m_paths.front()};
@@ -581,7 +613,11 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 	if (ImGui::TreeNode(STR_C("All templates")))
 	{
 		auto const whole_group = [](editor_track::switch_template const &Template) {
-			return Template.source != nullptr ? std::string{STR("From the scenery")} : Template.own ? std::string{STR("Own templates")} : "PLK " + (Template.rail == "-" ? std::string{} : Template.rail);
+			if (Template.source != nullptr)
+				return std::string{STR("From the scenery")};
+			if (Template.own)
+				return std::string{STR("Own templates")};
+			return "PLK " + (Template.rail == "-" ? std::string{} : Template.rail);
 		};
 		std::vector<std::string> wholes;
 		int rows{0};

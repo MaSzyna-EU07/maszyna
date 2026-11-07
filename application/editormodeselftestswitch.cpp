@@ -48,6 +48,46 @@ http://mozilla.org/MPL/2.0/.
 #include <sstream>
 #include "application/editormodeselftest.h"
 
+#include <format>
+#include <string_view>
+
+namespace
+{
+
+// the height of the last point clicked, 0 before the first
+double last_point_height(std::vector<glm::dvec3> const &Points)
+{
+	return Points.empty() ? 0.0 : Points.back().y;
+}
+
+// the end of the track a step along it from the side given goes on to: of a switch, the one of its path
+int joined_end(TTrack const &Track, int const Side, int const Path, bool const Switched)
+{
+	if (Switched)
+		return Side > 0 ? Track.SwitchExtension->iNextDirection[Path] : Track.SwitchExtension->iPrevDirection[Path];
+	return Side > 0 ? Track.iNextDirection : Track.iPrevDirection;
+}
+
+// the path of the next track a step goes on along: of a switch, the one of the end joined, else the one set; -1 of a plain track
+int path_entered(TTrack const &Next, int const Joined)
+{
+	if (Next.eType != tt_Switch)
+		return -1;
+	return (Joined & 1) ? Joined >> 1 : Next.SwitchExtension->CurrentIndex;
+}
+
+// a track as the log of the links names it
+std::string link_name(TTrack const *Track)
+{
+	if (Track == nullptr)
+		return "-";
+	if (Track->name().empty())
+		return "(noname)";
+	return Track->name();
+}
+
+} // namespace
+
 editor_mode::selftest_result editor_mode::selftest_switch(std::string const &command, std::istringstream &words)
 {
 	// each switch: the tips of its blades and its drive from the joint before them; drivetips moves the drives there first
@@ -76,7 +116,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 					auto const gap = [&](double const At) {
 						auto const &gauge{shape.gauge};
 						auto const next{std::ranges::find_if(gauge, [&](glm::dvec2 const &Sample) { return Sample.x >= At; })};
-						return next == gauge.end() ? (gauge.empty() ? -1.0 : gauge.back().y) : next->y;
+						if (next != gauge.end())
+							return next->y;
+						return gauge.empty() ? -1.0 : gauge.back().y;
 					};
 					text += format(", path %d %s side %d gaps", path, shape.valid ? "shaped" : "not shaped", track->SwitchExtension->RightSwitch == (path == 0) ? 1 : -1);
 					for (auto const at : {0.354, 1.0, 1.248, 2.0, 4.0, 6.0, 8.0, 9.4})
@@ -196,7 +238,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			point.y = 5000.0;
 			std::vector<char> found;
 			auto const ground{ground_heights({point}, true, &found)};
-			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+			point.y = found[0] != 0 ? ground[0] : last_point_height(m_lay.points);
 			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
 			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
 			lay_click();
@@ -212,7 +254,13 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		std::string word;
 		int sub{0};
 		words >> word >> sub;
-		auto const kind{word == "slip" ? switch_kind::slip : word == "crossing" ? switch_kind::crossing : word == "connection" ? switch_kind::connection : switch_kind::single};
+		auto kind{switch_kind::single};
+		if (word == "slip")
+			kind = switch_kind::slip;
+		else if (word == "crossing")
+			kind = switch_kind::crossing;
+		else if (word == "connection")
+			kind = switch_kind::connection;
 		m_switch.connection_kind = sub;
 		choose_switch_kind(kind);
 		WriteLog(format("SELFTEST switchkind %s: kind %d, connection %d, armed %d", word.c_str(), static_cast<int>(current_switch_kind()), m_switch.connection, m_switch.armed));
@@ -327,8 +375,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		if (drag)
 		{
 			recognise_connection();
+			auto const crossover{tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}};
 			WriteLog(std::string{"SELFTEST connection drag: "} + (tool.connection < 0 ? "a switch" : connection::word(static_cast<connection::kind>(tool.connection))) + (tool.partner != nullptr ? " with " + tool.partner->name() : std::string{}) +
-			         (tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}));
+			         crossover);
 			if (tool.connection >= 0 && false == tool.curved)
 			{
 				connection::request request;
@@ -448,20 +497,22 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		std::string text{"SELFTEST pathwalk:"};
 		int path{-1};
-		for (int step = 0; step < steps && track != nullptr; ++step)
+		int step{0};
+		while (step < steps && track != nullptr)
 		{
-			text += " " + track->name() + (path >= 0 ? "[" + std::to_string(path) + "]" : std::string{}) + (direction > 0 ? ">" : "<");
+			text += std::format(" {}{}{}", track->name(), path >= 0 ? std::format("[{}]", path) : std::string{}, direction > 0 ? ">" : "<");
 			auto const side{direction > 0 ? 1 : -1};
 			auto const switched{track->eType == tt_Switch && path >= 0};
-			auto const joined{switched ? (side > 0 ? track->SwitchExtension->iNextDirection[path] : track->SwitchExtension->iPrevDirection[path]) : (side > 0 ? track->iNextDirection : track->iPrevDirection)};
+			auto const joined{joined_end(*track, side, path, switched)};
 			auto *next{track->Connected(side, direction, switched ? path : -1)};
 			if (next == nullptr)
 			{
 				text += " END";
 				break;
 			}
-			path = next->eType == tt_Switch ? ((joined & 1) ? joined >> 1 : next->SwitchExtension->CurrentIndex) : -1;
+			path = path_entered(*next, joined);
 			track = next;
+			++step;
 		}
 		WriteLog(text);
 		return selftest_result::handled;
@@ -533,7 +584,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		words >> name;
 		scan_switch_drives();
 		std::string files;
-		for (auto const &standing : standing_templates([](std::string const &File) { return File.find("napedy/") != std::string::npos; }))
+		for (auto const &standing : standing_templates([](std::string_view const File) { return File.find("napedy/") != std::string_view::npos; }))
 			if (false == standing.values.empty() && standing.values[0] == name)
 			{
 				files += " " + standing.file;
@@ -1057,7 +1108,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	}
 	if (command == "switchlinks")
 	{
-		auto const name_of = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+		auto const name_of = [](TTrack const *Track) { return link_name(Track); };
 		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
