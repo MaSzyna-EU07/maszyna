@@ -1313,7 +1313,8 @@ gfx::userdata_array const &vulkan14_renderer::UserData(gfx::geometry_handle cons
 
 int vulkan14_renderer::Primitive(gfx::geometry_handle const &Geometry) const
 {
-	return static_cast<int>(m_geometry.type(Geometry));
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
 }
 
 // materials and their programs: the materials are read as for the opengl renderer, their programs are made of vertex.vert and

@@ -196,7 +196,7 @@ namespace gl
 
     static_assert(sizeof(scene_ubs) == 928 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
 
-    const size_t MAX_PARAMS = 4;
+    const size_t MAX_PARAMS = 3;
 
     struct model_ubs
     {

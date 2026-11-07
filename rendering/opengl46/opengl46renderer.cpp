@@ -3161,7 +3161,8 @@ gfx::userdata_array const &opengl46_renderer::UserData(const gfx::geometry_handl
 
 int opengl46_renderer::Primitive(gfx::geometry_handle const &Geometry) const
 {
-	return static_cast<int>(m_geometry.type(Geometry));
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
 }
 
 // material methods
