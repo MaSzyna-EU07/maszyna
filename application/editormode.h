@@ -2991,10 +2991,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_bend_set(std::istringstream &words);
 	selftest_result selftest_bend_probe() const;
 	selftest_result selftest_track(std::string const &command, std::istringstream &words);
-	// the track commands of the self-test by the group: the lineside sweeps, the routes and their traces, the alignments, the
+	// the track commands of the self-test by the group: the lineside sweeps, the routes, their traces, the alignments, the
 	// grade lines, the checks of the tracks; and those of them with more to them
 	selftest_result selftest_track_sweep(std::string const &command, std::istringstream &words);
 	selftest_result selftest_track_routes(std::string const &command, std::istringstream &words);
+	selftest_result selftest_track_traces(std::string const &command, std::istringstream &words);
 	selftest_result selftest_track_alignment(std::string const &command, std::istringstream &words);
 	selftest_result selftest_track_profiles(std::string const &command, std::istringstream &words);
 	selftest_result selftest_track_checks(std::string const &command, std::istringstream &words);

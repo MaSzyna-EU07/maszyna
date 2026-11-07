@@ -283,6 +283,21 @@ struct roll_end
 	double roll; // along the direction leaving the joint
 };
 
+// the ends of the path of the track within the radius of the point added, each with its cant told along the direction leaving the joint
+void add_roll_ends(std::vector<roll_end> &Ends, TTrack const &Track, std::size_t const Path, glm::dvec3 const &Point, double const Radius)
+{
+	auto const &path{Track.m_paths[Path]};
+	for (auto const last : {false, true})
+	{
+		auto const &at{path.points[last ? segment_data::point::end : segment_data::point::start]};
+		if (geometry::plan_distance(at, Point) > Radius)
+			continue;
+		// the roll of the path told along it; leaving the joint from its end the direction is the other way
+		auto const roll{static_cast<double>(path.rolls[last ? 1 : 0])};
+		Ends.emplace_back(&Track, Path, last, at, last ? -roll : roll);
+	}
+}
+
 // the ends of the paths within the radius of the point, each with its cant told along the direction leaving the joint
 std::vector<roll_end> roll_ends(glm::dvec3 const &Point, double const Radius)
 {
@@ -292,18 +307,7 @@ std::vector<roll_end> roll_ends(glm::dvec3 const &Point, double const Radius)
 		if (track == nullptr || track->m_editorremoved)
 			continue;
 		for (std::size_t i = 0; i < track->m_paths.size(); ++i)
-		{
-			auto const &path{track->m_paths[i]};
-			for (auto const last : {false, true})
-			{
-				auto const &at{path.points[last ? segment_data::point::end : segment_data::point::start]};
-				if (geometry::plan_distance(at, Point) > Radius)
-					continue;
-				// the roll of the path told along it; leaving the joint from its end the direction is the other way
-				auto const roll{static_cast<double>(path.rolls[last ? 1 : 0])};
-				ends.emplace_back(track, i, last, at, last ? -roll : roll);
-			}
-		}
+			add_roll_ends(ends, *track, i, Point, Radius);
 	}
 	return ends;
 }
@@ -418,7 +422,7 @@ void selftest_sweep_profile(std::istringstream &words)
 
 editor_mode::selftest_result editor_mode::selftest_track(std::string const &command, std::istringstream &words)
 {
-	for (auto const group : {&editor_mode::selftest_track_sweep, &editor_mode::selftest_track_routes, &editor_mode::selftest_track_alignment, &editor_mode::selftest_track_profiles, &editor_mode::selftest_track_checks})
+	for (auto const group : {&editor_mode::selftest_track_sweep, &editor_mode::selftest_track_routes, &editor_mode::selftest_track_traces, &editor_mode::selftest_track_alignment, &editor_mode::selftest_track_profiles, &editor_mode::selftest_track_checks})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
 	return selftest_result::unhandled;
@@ -548,20 +552,6 @@ editor_mode::selftest_result editor_mode::selftest_track_routes(std::string cons
 		WriteLog(format("SELFTEST routeplain: valid %d", m_route.result.valid ? 1 : 0));
 		return selftest_result::handled;
 	}
-	// points along the curves of the design as it is now, every Spacing metres from 20 m before the first curve to 20 m past the last,
-	// shifted across by up to Noise to and fro, as the trace takes them
-	if (command == "tracesample")
-		return selftest_track_trace_sample(words);
-	if (command == "traceradii" || command == "traceclick" || command == "traceundo")
-		return selftest_track_trace_step(command, words);
-	if (command == "traceend")
-	{
-		int keep{1};
-		words >> keep;
-		route_trace_end(keep != 0);
-		WriteLog(format("SELFTEST traceend: active %d, valid %d, ", m_route.trace.active ? 1 : 0, m_route.result.valid ? 1 : 0) + m_route.status + " " + m_route.error);
-		return selftest_result::handled;
-	}
 	if (command == "routekm")
 	{
 		double km{0.0};
@@ -576,6 +566,25 @@ editor_mode::selftest_result editor_mode::selftest_track_routes(std::string cons
 		else
 			route_take_stored(m_route.departed);
 		WriteLog("SELFTEST " + command + ": " + m_route.status + " " + m_route.error);
+		return selftest_result::handled;
+	}
+	return selftest_result::unhandled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_track_traces(std::string const &command, std::istringstream &words)
+{
+	// points along the curves of the design as it is now, every Spacing metres from 20 m before the first curve to 20 m past the last,
+	// shifted across by up to Noise to and fro, as the trace takes them
+	if (command == "tracesample")
+		return selftest_track_trace_sample(words);
+	if (command == "traceradii" || command == "traceclick" || command == "traceundo")
+		return selftest_track_trace_step(command, words);
+	if (command == "traceend")
+	{
+		int keep{1};
+		words >> keep;
+		route_trace_end(keep != 0);
+		WriteLog(format("SELFTEST traceend: active %d, valid %d, ", m_route.trace.active ? 1 : 0, m_route.result.valid ? 1 : 0) + m_route.status + " " + m_route.error);
 		return selftest_result::handled;
 	}
 	return selftest_result::unhandled;
