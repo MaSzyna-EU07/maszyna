@@ -1380,7 +1380,7 @@ void editor_mode::track_captured(TTrack const &Track)
 {
 	m_build_tools->sweep.sweeps_captured(Track);
 	switch_drive_captured(Track);
-	grade_line_captured(Track);
+	m_build_tools->grade_lines.grade_line_captured(Track);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
@@ -1427,7 +1427,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 	m_joints.tracks_committed(Tracks);
 	m_build_tools->sweep.sweeps_committed(Tracks);
 	switch_drives_committed(Tracks);
-	grade_lines_committed(Tracks);
+	m_build_tools->grade_lines.grade_lines_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	infra_load();
@@ -1552,13 +1552,13 @@ void editor_mode::track_retired(TTrack &Track)
 
 void editor_mode::track_renamed(TTrack const &Track, std::string const &Old)
 {
-	grade_line_renamed(Track, Old);
+	m_build_tools->grade_lines.grade_line_renamed(Track, Old);
 }
 
 void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data const &First)
 {
 	m_build_tools->sweep.sweeps_split(Original, Created);
-	grade_line_split(Original, Created);
+	m_build_tools->grade_lines.grade_line_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
 	auto const length{infra::plan_length(First)};

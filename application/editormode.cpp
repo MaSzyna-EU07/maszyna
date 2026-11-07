@@ -1692,7 +1692,7 @@ bool editor_mode::update()
         if (m_nmt_state.grade_lines_dirty)
         {
             m_nmt_state.grade_lines_dirty = false;
-            grade_lines_store();
+            m_build_tools->grade_lines.grade_lines_store();
         }
         m_nmt_state.grade_line_replaced.clear();
         m_srk.update();
@@ -1701,8 +1701,8 @@ bool editor_mode::update()
         steps.step("srk km");
         draw_track_hints();
         draw_empty_scenery_hint();
-        draw_profile_overlay();
-        draw_grade_line_pick();
+        m_build_tools->profile_window.draw_profile_overlay();
+        m_build_tools->grade_lines.draw_grade_line_pick();
         draw_infra_overlay();
         m_speed.draw_overlay();
         m_joints.draw_overlay();
@@ -3254,7 +3254,7 @@ bool editor_mode::save()
     }
 
     if (m_profile.changed)
-        profile_store();
+        m_build_tools->library.profile_store();
     switch_store::tidy();
     switch_store::settle();
     infra_store();

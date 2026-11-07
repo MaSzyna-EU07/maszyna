@@ -468,39 +468,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_share_grades();
 	// its steps, with what they share (application/editormodenmt.cpp)
 	struct nmt_grade_share;
-	void grade_lines_load();
-	void grade_lines_store();
-	bool on_route_grade_line(TTrack const &Track);
-	std::vector<TTrack *> const &grade_line_beside();
-	std::size_t grade_line_follow(std::vector<editor_track::route_sample> const &Before);
-	void grade_line_take_off(bool const Off);
 	// the grade line the route shares, by most of its paths; -1 when it shares none
 	int route_grade_line();
-	// the plain tracks from switch to switch the track is one of, a switch by itself; Alone: the track only
-	static std::vector<TTrack *> grade_line_run(TTrack &Track, bool const Alone);
 	// the run of the track clicked onto the grade line of the route by hand, or off it if it's on it; a route sharing none makes one with it
 	void grade_line_pick(TTrack &Track, bool const Alone);
-	// the run put on the grade line of the route of the number; below 0, the route sharing none, a new line is made of the route and the run
-	void grade_line_put_on(std::vector<TTrack *> const &Run, std::unordered_set<TTrack const *> const &Route, int const Number);
-	// all the tracks of the grade line, wherever they are, for the view while they're picked
-	std::vector<TTrack const *> const &grade_line_members(int const Number);
-	void draw_grade_line_pick();
-	// a piece split off a track lies on the grade line the track does
-	void grade_line_split(TTrack const &Original, TTrack const &Created);
-	// a track changed keeps its grade line under the key it has after it; a new one between two tracks of a line, a switch put into one, lies on it
-	void grade_line_captured(TTrack const &Track);
-	void grade_lines_committed(std::vector<TTrack *> const &Tracks);
-	// of the new tracks committed, the ones lying where a track of a line lay before the change, and the ones between two tracks of a
-	// line, take it; each one taken is set to nullptr. Whether any was
-	bool grade_lines_take_replaced(std::vector<TTrack *> &Fresh);
-	bool grade_lines_take_joined(std::vector<TTrack *> &Fresh);
-	// the lines of the tracks joined to the track at the point, each with whether one of those is on it by hand
-	std::map<int, bool> grade_lines_at(TTrack const &Track, glm::dvec3 const &Point) const;
-	// the line of the tracks joined at both ends of the first path of the track, -1 if none, -2 if more than one; and whether they're
-	// on it by hand at both ends
-	std::pair<int, bool> grade_line_between(TTrack const &Track) const;
-	void grade_line_renamed(TTrack const &Track, std::string const &Old);
-	void render_profile_grade_line();
 	// the tracks laid since the step of the history hidden in the ground, told over the 3d view with the way to fit the ground to them
 	void nmt_check_buried(std::size_t const From);
 	void render_nmt_buried();
@@ -2057,7 +2028,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_cursor_ring(glm::dvec3 const &Point) const;
 	static std::string grade_line_key(TTrack const &Track);
 	static std::string grade_line_key(std::string const &Name, TTrack const &Track);
-	static void move_path_heights(segment_data &Path, double const First, double const Second, std::function<void(segment_data &)> const &After = {});
 	bool m_track_window_open{false};
 	// the inspector is pinned to the right edge of the screen, the profile strip to the bottom one, both resized from the inner edge
 	void render_track_inspector();
@@ -2982,85 +2952,22 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	profile_state m_profile;
 	std::vector<stored_profile> m_profiles;
 	bool m_profiles_loaded{false};
-	void profile_library_load();
 	void profile_library_mark(std::vector<scene::layer_handle> Layers);
-	// the last step takes the kept grade lines back to the library given, as they were before it changed them
-	void profiles_to_history(std::vector<stored_profile> Library);
-	// the kept grade lines back to the library given, the step changing them given up before it went to the history
-	void profiles_restore(std::vector<stored_profile> Library);
-	std::map<std::pair<std::string, std::uint64_t>, fitted_mark> m_fitted; // by the name and the shape: scenery files have names used twice
-	bool m_fitted_loaded{false};
-	void fitted_load();
-	void fitted_set(std::span<TTrack *const> const Tracks, bool const Hand = false);
-	bool grade_fitted(TTrack const &Track);
-	bool grade_hand(TTrack const &Track); // its grade line was edited with the profile tool, and it wasn't changed since
 	bool nmt_stays(TTrack const &Track); // this putting of the tracks onto the terrain leaves it as it is
-	static std::uint64_t fitted_shape(TTrack const &Track);
-	int profile_find(bool &Reversed) const;
 	bool profile_restore();
-	bool profile_restore_parts();
-	// the route a kept design was laid over, as it runs now; none when its paths moved or are gone
-	std::optional<editor_track::route> profile_stored_route(stored_profile const &Entry, TTrack **From = nullptr, TTrack **To = nullptr) const;
-	// the kept designs over the tracks moved, as by the grade lines shared, laid anew onto them where they part from them; returns how
-	// many were, how many couldn't be without an error and are left as they were
-	std::pair<std::size_t, std::size_t> profile_refit_stored(std::unordered_set<TTrack const *> const &Moved);
-	void profile_store();
-	void profile_forget();
-	void profile_open_stored(std::size_t const Index);
-	void profile_edited();
 	// the radii of its neighbours were for the breaks of the grade it made, they follow the limits after it
 	void profile_remove_point(int const Index);
 	void render_profile_body();
 	void render_profile_strip();
-	void render_profile_tabs();
-	void render_profile_header();
-	void render_profile_empty();
-	void render_profile_toolbar();
-	void render_profile_points();
-	void render_profile_source();
-	bool render_profile_parameters();
-	void render_profile_issues();
 	void profile_open(TTrack *From, TTrack *To);
 	void profile_open_run(TTrack &Track);
-	void profile_take(editor_track::route Route, TTrack *From, TTrack *To);
-	void profile_open_selection(std::vector<TTrack *> const &Tracks);
-	void profile_follow_selection();
-	void profile_resample();
-	// the ground of the terrain model under the route, as it was measured before any earthworks
-	void profile_sample_model();
-	void profile_recognize();
-	void profile_fit_ground();
 	// depth of the foot of the ballast under the rail top, and its distance from the axis
 	static std::pair<double, double> profile_ballast(TTrack const &Track);
-	// false for a track with no trackbed of its own, as the switches of the older sceneries whose bed is an include
-	static bool profile_own_bed(TTrack const &Track);
-	void profile_shape_ground();
-	std::pair<int, int> profile_generate_ground(std::vector<std::pair<double, double>> const &Beds, double const Reach);
-	void profile_restore_ground();
-	void render_profile_earthworks();
 	void profile_check();
 	// Terrain: the heightmap terrain follows the tracks changed. Bridges: stretches of the route over a bridge or a viaduct, the
 	// paths over them cut off at their ends and set to the bridge environment
 	void profile_apply(bool const Terrain = false, std::vector<profile::departure> const &Bridges = {}, double const Fewest = 0.0);
-	// the terrain under the tracks changed by the last Edits steps of the history which changed tracks
-	void profile_follow_terrain(std::size_t const Edits);
-	void profile_fit_view();
-	// the camera to the part of the route the plot shows; the plot to the part of the route the camera shows, its zoom kept
-	void profile_frame_view();
-	void profile_to_camera();
 	void profile_after_undo();
-	void profile_follow_edits();
-	struct profile_view;
-	void render_profile_canvas(float const Height);
-	void profile_fit_exaggeration(profile_view const &View);
-	void profile_navigate(profile_view const &View, bool const Hovered);
-	bool profile_canvas_edit(profile_view const &View, bool const Hovered);
-	void draw_profile_canvas(profile_view const &View, ImDrawList &Draw) const;
-	void profile_canvas_tooltip() const;
-	void render_profile_point();
-	// the fields of the point Index of the grade line: true where one was changed
-	bool render_profile_point_fields(int const Index, bool const End, bool const Locked);
-	void draw_profile_overlay() const;
 
 	infra_window m_infra;
 	std::vector<infra::binding> m_bindings;
@@ -3130,6 +3037,30 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	scene::instance_handle current_instance() const override;
 	void drop_node_selection() override;
 	bool right_button_held() const override;
+	profile_state &vertical_profile() override;
+	std::vector<stored_profile> &stored_profiles() override;
+	bool &profiles_loaded() override;
+	nmt_state &terrain_state() override;
+	terrain_streamer &ground_streamer() override;
+	float const &terrain_spacing() const override;
+	int const &track_edits() const override;
+	// the last step takes the kept grade lines back to the library given, as they were before it changed them
+	void profiles_to_history(std::vector<stored_profile> Library) override;
+	void history_take_profiles(std::vector<stored_profile> Library) override;
+	std::vector<TTrack *> tracks_edited(std::size_t const Edits) const override;
+	void terrain_step_joined() override;
+	TCamera &view_camera() override;
+	void release_focus() override;
+	void forget_ground_cache() override;
+	bool terrain_ready() override;
+	void open_terrain_workspace(bool const Open) override;
+	std::size_t shape_tracks_on_terrain(std::vector<TTrack *> const *Only) override;
+	void join_last_history_steps() override;
+	std::vector<TTrack *> selected_track_list() override;
+	TTrack *grade_line_pick_aimed(int &Index) const override;
+	bool tracks_editable_for(std::vector<TTrack *> const &Tracks, std::string &Reason) const override;
+	std::size_t follow_crossovers_of(std::vector<editor_track::route_sample> const &Before) override;
+	void render_ground_conversion_panel() override;
 	// build services: end
 
 

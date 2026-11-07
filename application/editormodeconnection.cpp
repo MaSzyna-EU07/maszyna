@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editoruilayer.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -454,7 +455,7 @@ void editor_mode::insert_partner_connection()
 	auto const release{opposite->m_paths.front().points[segment_data::point::start]};
 	std::vector<std::string> const names{here->name(), opposite->name()};
 	// the crossover there taken out, then laid again with the other one, one step of the history
-	profile_library_load();
+	m_build_tools->library.profile_library_load();
 	auto library{m_profiles};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;

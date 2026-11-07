@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -1244,7 +1245,7 @@ void editor_mode::route_take_out_crossovers(std::vector<TTrack *> const &Switche
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
 	// the designs of the outer tracks come down with the lifts taken back, an undo puts them back
-	profile_library_load();
+	m_build_tools->library.profile_library_load();
 	auto library{m_profiles};
 	bool lifted{false};
 	for (auto const *switchtrack : Switches)

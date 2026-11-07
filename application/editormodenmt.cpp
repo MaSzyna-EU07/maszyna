@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
@@ -601,8 +602,8 @@ std::vector<editor_mode::nmt_place> editor_mode::nmt_track_places(double const S
 	// the others
 	std::vector<double> depths;
 	for (auto const *track : simulation::Paths.sequence())
-		if (track != nullptr && rail(*track) && profile_own_bed(*track))
-			depths.push_back(profile_ballast(*track).first);
+		if (track != nullptr && rail(*track) && profile_editor::profile_own_bed(*track))
+			depths.push_back(profile_editor::profile_ballast(*track).first);
 	std::ranges::nth_element(depths, depths.begin() + depths.size() / 2);
 	auto const usual{depths.empty() ? 0.0 : depths[depths.size() / 2]};
 	for (auto *track : simulation::Paths.sequence())
@@ -613,8 +614,8 @@ std::vector<editor_mode::nmt_place> editor_mode::nmt_track_places(double const S
 		for (std::size_t path = 0; path < track->m_paths.size(); ++path)
 		{
 			auto const *source{ballast_source(*track, path)};
-			auto [depth, half_width]{profile_ballast(*source)};
-			if (false == profile_own_bed(*source))
+			auto [depth, half_width]{profile_editor::profile_ballast(*source)};
+			if (false == profile_editor::profile_own_bed(*source))
 				depth = usual;
 			places_along(*track, path, Step, rails, depth, half_width, result);
 		}
@@ -1643,7 +1644,7 @@ void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 			if (track != nullptr && rail(*track))
 			{
 				++rails;
-				if (grade_fitted(*track))
+				if (m_build_tools->library.grade_fitted(*track))
 					++done;
 			}
 		if (rails == 1)
@@ -1751,9 +1752,9 @@ void editor_mode::render_nmt_all_tracks(bool const Terrain_panel)
 		{
 			++all;
 			++named[track->name()];
-			if (false == grade_fitted(*track))
+			if (false == m_build_tools->library.grade_fitted(*track))
 				++unfitted;
-			else if (grade_hand(*track))
+			else if (m_build_tools->library.grade_hand(*track))
 				++hand;
 		}
 	if (false == placed)
@@ -1820,7 +1821,7 @@ void editor_mode::render_nmt_all_anew(std::size_t const All, std::size_t const H
 	// which they are, a few after the putting onto the terrain: the ones it couldn't fit
 	if (ImGui::SmallButton(format(STR_P("Show the %zu track not fitted", "Show the %zu tracks not fitted", Unfitted), Unfitted).c_str()))
 	{
-		auto const those{rails_where([this](TTrack const &Track) { return false == grade_fitted(Track); })};
+		auto const those{rails_where([this](TTrack const &Track) { return false == m_build_tools->library.grade_fitted(Track); })};
 		if (false == those.empty())
 		{
 			select_tracks(those);
@@ -1855,9 +1856,9 @@ void editor_mode::nmt_show(nmt_state::finding const &Finding, bool const Profile
 	show_track_tab(track_tab::profile);
 	auto const alive = [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; };
 	if (alive(Finding.from) && alive(Finding.to))
-		profile_open(Finding.from, Finding.to);
+		m_build_tools->profile_edit.profile_open(Finding.from, Finding.to);
 	else if (track != nullptr)
-		profile_open_run(*track);
+		m_build_tools->profile_edit.profile_open_run(*track);
 }
 
 void editor_mode::render_nmt_result()
@@ -2964,7 +2965,7 @@ std::size_t editor_mode::nmt_level_turntables()
 bool editor_mode::nmt_stays(TTrack const &Track)
 {
 	auto const &state{m_nmt_state};
-	return (state.unfitted && grade_fitted(Track)) || (false == state.redo_hand && grade_hand(Track));
+	return (state.unfitted && m_build_tools->library.grade_fitted(Track)) || (false == state.redo_hand && m_build_tools->library.grade_hand(Track));
 }
 
 void editor_mode::nmt_auto_start(bool const Unfitted)
@@ -3161,7 +3162,7 @@ struct editor_mode::nmt_line_fit
 		profile.error.clear();
 		from = route.spans.front().track;
 		to = route.spans.back().track;
-		editor.profile_take(std::move(route), from, to);
+		editor.m_build_tools->profile_edit.profile_take(std::move(route), from, to);
 		if (false == profile.error.empty() || profile.samples.empty())
 		{
 			editor.nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, profile.error.empty() ? STR("The line has no profile") : profile.error);
@@ -4626,7 +4627,7 @@ struct editor_mode::nmt_grade_share
 	{
 		for (auto const *track : tracks)
 		{
-			auto const line_key{grade_line_key(*track)};
+			auto const line_key{grade_line_tool::grade_line_key(*track)};
 			if (auto const found{state.grade_lines.find(line_key)}; found != state.grade_lines.end() && found->second >= 0 && state.grade_lines_hand.contains(line_key))
 				held[track] = found->second;
 		}
@@ -4694,7 +4695,7 @@ struct editor_mode::nmt_grade_share
 				add_chords(length, *other);
 			}
 		auto const [lonely, where]{lonely_places(run)};
-		auto const found{state.grade_lines.find(grade_line_key(Track))};
+		auto const found{state.grade_lines.find(grade_line_tool::grade_line_key(Track))};
 		WriteLog(format("Editor: NMT share, %s: %s in a run of %zu tracks over %.0f m from %s, apart %d, line %d, %zu places with nothing beside:%s", Stage, Track.name().c_str(), members, length,
 		                run->name().c_str(), apart.contains(run) ? 1 : 0, found != state.grade_lines.end() ? found->second : -100, lonely, where.c_str()),
 		         logtype::generic);
@@ -4730,7 +4731,7 @@ struct editor_mode::nmt_grade_share
 	// who was taken off a grade line by hand stays off them
 	bool taken_off(TTrack const &Track) const
 	{
-		auto const found{state.grade_lines.find(grade_line_key(Track))};
+		auto const found{state.grade_lines.find(grade_line_tool::grade_line_key(Track))};
 		return found != state.grade_lines.end() && (found->second == nmt_state::grade_line_off || found->second <= nmt_state::grade_line_off_number);
 	}
 
@@ -4947,12 +4948,12 @@ struct editor_mode::nmt_grade_share
 		for (auto const *track : tracks)
 		{
 			auto const line{line_of(*track, sizes, numbers, kept, next)};
-			state.grade_lines[grade_line_key(*track)] = line;
+			state.grade_lines[grade_line_tool::grade_line_key(*track)] = line;
 		}
 		WriteLog(format("Editor: NMT - %zu grade lines shared, %zu of them put by hand, their tracks further apart tied at %zu places", numbers.size() + kept.size(), kept.size(), hand_pairs), logtype::generic);
 		explain("lines");
 		++state.grade_lines_changes;
-		editor.grade_lines_store();
+		editor.m_build_tools->grade_lines.grade_lines_store();
 	}
 
 	// the joints of the runs of the tracks named by a selftest: the height before and the move, held or not
@@ -5048,7 +5049,7 @@ struct editor_mode::nmt_grade_share
 			edit.capture(*track);
 			moved.push_back(track);
 			for (auto &path : track->m_paths)
-				move_path_heights(path, move_of(path.points[segment_data::point::start]), move_of(path.points[segment_data::point::end]), [this, track](segment_data &Part) { settle(*track, Part); });
+				grade_line_tool::move_path_heights(path, move_of(path.points[segment_data::point::start]), move_of(path.points[segment_data::point::end]), [this, track](segment_data &Part) { settle(*track, Part); });
 		}
 	}
 
@@ -5152,13 +5153,13 @@ struct editor_mode::nmt_grade_share
 
 	void commit()
 	{
-		editor.profile_library_load();
+		editor.m_build_tools->library.profile_library_load();
 		auto library{editor.m_profiles};
 		editor_track::commit(moved);
 		editor.push_track_snapshot(std::move(edit.states), {});
-		editor.fitted_set(moved);
+		editor.m_build_tools->library.fitted_set(moved);
 		// the designs of the lines fitted one by one go with the tracks they moved
-		auto const [refitted, failed]{editor.profile_refit_stored({moved.begin(), moved.end()})};
+		auto const [refitted, failed]{editor.m_build_tools->library.profile_refit_stored({moved.begin(), moved.end()})};
 		if (refitted > 0)
 			editor.profiles_to_history(std::move(library));
 		WriteLog(format("Editor: NMT - %zu designs laid anew onto the tracks moved, %zu left as they were", refitted, failed), logtype::generic);
@@ -5181,7 +5182,7 @@ struct editor_mode::nmt_grade_share
 		for (int i = 0; i < nodes; ++i)
 			joint_terms(i);
 		find_runs();
-		editor.grade_lines_load();
+		editor.m_build_tools->grade_lines.grade_lines_load();
 		find_held();
 		find_alone();
 		take_off();
