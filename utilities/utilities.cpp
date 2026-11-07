@@ -16,6 +16,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <charconv>
+#include <cstddef>
 #include <ranges>
 #include <format>
 //#ifndef WIN32
@@ -352,6 +353,23 @@ std::string win1250_to_utf8(const std::string &Input)
 	return output;
 }
 
+namespace
+{
+
+// the length of a utf-8 sequence by its lead byte; 1 of a byte which doesn't lead one
+std::size_t utf8_length(std::byte const Lead)
+{
+	if ((Lead & std::byte{0xE0}) == std::byte{0xC0})
+		return 2;
+	if ((Lead & std::byte{0xF0}) == std::byte{0xE0})
+		return 3;
+	if ((Lead & std::byte{0xF8}) == std::byte{0xF0})
+		return 4;
+	return 1;
+}
+
+} // namespace
+
 // counterpart of win1250_to_utf8(). characters outside of the supported set are replaced with question marks
 std::string utf8_to_win1250(std::string const &Text)
 {
@@ -368,7 +386,7 @@ std::string utf8_to_win1250(std::string const &Text)
 			output += Text[idx++];
 			continue;
 		}
-		auto const length{std::min<std::size_t>((lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1, Text.size() - idx)};
+		auto const length{std::min<std::size_t>(utf8_length(static_cast<std::byte>(lead)), Text.size() - idx)};
 		auto const lookup{charmap.find(Text.substr(idx, length))};
 		output += (lookup != charmap.end() ? lookup->second : '?');
 		idx += length;

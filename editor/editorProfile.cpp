@@ -471,7 +471,8 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 			++i;
 		auto const last{std::min(i, count - 1)};
 		std::vector<char> keep(count, 0);
-		keep[first] = keep[last] = 1;
+		keep[last] = 1;
+		keep[first] = 1;
 		std::vector<std::pair<std::size_t, std::size_t>> stack{{first, last}};
 		while (false == stack.empty())
 		{
@@ -678,7 +679,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	for (std::size_t k = 0; k < nodes; ++k)
 	{
 		auto const radius{least(node(k))};
-		sag_max[k] = crest_max[k] = step / (radius * 1.001);
+		crest_max[k] = step / (radius * 1.001);
+		sag_max[k] = crest_max[k];
 		// a sharper one keeps its curve off the switches
 		if (radius < switch_crest)
 			for (auto const &zone : Context.switches)
@@ -705,7 +707,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	for (std::size_t first = 0; first < bounds.size();)
 	{
 		auto last{first + 1};
-		while (last < bounds.size() && bounds[last].cell + bounds[last].part - bounds[first].cell - bounds[first].part <= 1.0)
+		while (last < bounds.size() && static_cast<double>(bounds[last].cell) + bounds[last].part - static_cast<double>(bounds[first].cell) - bounds[first].part <= 1.0)
 			++last;
 		auto low{-std::numeric_limits<double>::max()};
 		auto high{std::numeric_limits<double>::max()};
@@ -735,7 +737,19 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	std::vector followed(count, 0.0);
 	auto const close_to{Options.follow_tolerance > 0.0 ? std::max(0.005, Options.follow_tolerance) : tolerance};
 	auto const own = [&](std::size_t const I) { return followed[I] > 0.0 ? close_to : told(I); };
-	auto const reach = [&](std::size_t const I) { return followed[I] > 0.0 ? followed[I] : I < Reaches.size() && Reaches[I] > 0.0 ? std::max(0.005, Reaches[I]) : told(I); };
+	auto const reach = [&](std::size_t const I) {
+		if (followed[I] > 0.0)
+			return followed[I];
+		return I < Reaches.size() && Reaches[I] > 0.0 ? std::max(0.005, Reaches[I]) : told(I);
+	};
+	// which side of the ground the line is at a point, by how far it's off: 1 above, -1 below, 0 within its reach or followed
+	auto const side_of = [&](std::size_t const I, double const Off) {
+		if (followed[I] > 0.0)
+			return 0;
+		if (Off > reach(I))
+			return 1;
+		return Off < -reach(I) ? -1 : 0;
+	};
 	for (auto const &hump : Options.humps)
 		for (std::size_t i = 0; i < count; ++i)
 			if (std::isfinite(Ground[i]) && told(i) >= tolerance && Chainages[i] >= hump.from && Chainages[i] <= hump.to)
@@ -943,7 +957,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			if (false == std::isfinite(Ground[i]) || told(i) < tolerance)
 				continue;
 			auto const off{x[cell[i]] * (1.0 - part[i]) + x[cell[i] + 1] * part[i] - Ground[i]};
-			auto const now{followed[i] > 0.0 ? 0 : off > reach(i) ? 1 : off < -reach(i) ? -1 : 0};
+			auto const now{side_of(i, off)};
 			if (now != side)
 			{
 				close();
@@ -973,24 +987,27 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			std::size_t behind{0};
 			int way{0};
 			double most{0.0};
+			// the ground rising from the point a chord behind too steeply for a bank; the point behind brought up first
+			auto const steep_from = [&](std::size_t const I) {
+				while (behind + 1 < stretch.size() && std::abs(Chainages[I] - Chainages[stretch[behind + 1]]) >= chord)
+					++behind;
+				if (stretch.empty())
+					return false;
+				auto const along{std::abs(Chainages[I] - Chainages[stretch[behind]])};
+				return along >= chord && std::abs(Ground[I] - Ground[stretch[behind]]) / along > Options.follow_steepest / 1000.0;
+			};
 			for (std::size_t index = 0; index < count; ++index)
 			{
 				auto const i{Atend ? count - 1 - index : index};
 				if (false == std::isfinite(Ground[i]) || told(i) < tolerance)
 					continue;
-				// the ground coming to an end short of the end of the line: what's past it isn't ground, the line ends on a structure
-				if (stretch.empty() && std::abs(Chainages[i] - Chainages[Atend ? count - 1 : 0]) > chord)
-					break;
 				auto const off{x[cell[i]] * (1.0 - part[i]) + x[cell[i] + 1] * part[i] - Ground[i]};
-				auto const now{followed[i] > 0.0 ? 0 : off > reach(i) ? 1 : off < -reach(i) ? -1 : 0};
-				if (now == 0 || (way != 0 && now != way))
+				auto const now{side_of(i, off)};
+				// the ground coming to an end short of the end of the line: what's past it isn't ground, the line ends on a structure;
+				// the ground parting the other way, or rising too steeply for a bank
+				if ((stretch.empty() && std::abs(Chainages[i] - Chainages[Atend ? count - 1 : 0]) > chord) || now == 0 || (way != 0 && now != way) || steep_from(i))
 					break;
 				way = now;
-				while (behind + 1 < stretch.size() && std::abs(Chainages[i] - Chainages[stretch[behind + 1]]) >= chord)
-					++behind;
-				if (false == stretch.empty())
-					if (auto const along{std::abs(Chainages[i] - Chainages[stretch[behind]])}; along >= chord && std::abs(Ground[i] - Ground[stretch[behind]]) / along > Options.follow_steepest / 1000.0)
-						break;
 				most = std::max(most, std::abs(off));
 				stretch.push_back(i);
 			}

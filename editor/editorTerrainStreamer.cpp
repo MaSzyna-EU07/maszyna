@@ -1883,9 +1883,9 @@ bool terrain_streamer::save(std::string *Error)
 				taken.insert(key);
 			}
 		}
-		for (auto const &entry : m_chunks)
-			if (heightmap::pack_of(entry.first) == packkey && taken.count(entry.first) == 0)
-				chunks.push_back(entry.second->shared());
+		for (auto const &[chunk_key, chunk] : m_chunks)
+			if (heightmap::pack_of(chunk_key) == packkey && taken.count(chunk_key) == 0)
+				chunks.push_back(chunk->shared());
 		{
 			std::lock_guard<std::mutex> lock{m_filemutex};
 			if (chunks.empty())

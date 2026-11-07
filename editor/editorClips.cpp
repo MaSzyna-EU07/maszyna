@@ -120,7 +120,7 @@ std::uint64_t clip::texture(double const Seconds)
 		total += delay;
 	if (total <= 0)
 		return 0;
-	auto time{static_cast<long long>(std::floor(Seconds * 1000.0)) % total};
+	auto time{static_cast<long long>(std::floor(Seconds * 1000.0)) % total}; // NOSONAR: total is above zero, the return above sees to it
 	int index{0};
 	while (index + 1 < static_cast<int>(frames.delays.size()) && time >= frames.delays[index])
 		time -= frames.delays[index++];
