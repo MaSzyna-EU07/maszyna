@@ -1943,9 +1943,24 @@ void srk_tool::load()
 		}
 }
 
+namespace
+{
+
+// the block in the words of a record: sbl4, sbl or sbl3, semi for any other
+srk_tool::block_kind block_named(std::string_view const Kind)
+{
+	using enum srk_tool::block_kind;
+	if (Kind == "sbl4")
+		return four;
+	if (Kind == "sbl" || Kind == "sbl3")
+		return three;
+	return semi;
+}
+
+} // namespace
+
 void srk_tool::record::read(std::istringstream &Words)
 {
-	using enum block_kind;
 	std::string word;
 	while (Words >> word)
 	{
@@ -1959,14 +1974,7 @@ void srk_tool::record::read(std::istringstream &Words)
 			Words >> braking;
 		else if (word == "blocks" && Words >> word)
 			for (auto const &[signal, kind] : pairs_of(word))
-			{
-				auto value{semi};
-				if (kind == "sbl4")
-					value = four;
-				else if (kind == "sbl" || kind == "sbl3")
-					value = three;
-				blocks[signal] = value;
-			}
+				blocks[signal] = block_named(kind);
 		else if (word == "ways" && Words >> word)
 			for (auto const &[signal, both] : pairs_of(word))
 				ways[signal] = both == "2";
@@ -3663,22 +3671,66 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 	}
 }
 
+namespace
+{
+
+// whether a point is by the station open or by one of the lines out of it
+bool near_open(station::layout const &Layout, std::vector<station::line> const &Ways, glm::dvec3 const &Point)
+{
+	if (gap_to(Layout, Point) <= 8.0)
+		return true;
+	return std::ranges::any_of(Ways, [&](station::line const &Line) {
+		double gap{0.0};
+		auto const distance{station::distance_on(Line, Point, gap)};
+		return gap <= 8.0 && distance > -50.0 && distance < Line.length() + 1.0;
+	});
+}
+
+// how far beyond the end of a line, broken off, the tracks go on in its way: to the first free end ahead of it; none where none is
+std::optional<double> tracks_beyond(station::line const &Line)
+{
+	auto const plan = [](glm::dvec3 const &Point) { return glm::dvec2{Point.x, Point.z}; };
+	auto const end{Line.points.back()};
+	auto const step{plan(Line.points.back() - Line.points[Line.points.size() - 2])};
+	if (glm::length(step) <= 1e-9)
+		return std::nullopt;
+	auto const way{glm::normalize(step)};
+	std::vector<TTrack const *> own(Line.tracks.begin(), Line.tracks.end());
+	for (auto const &target : editor_track::free_ends(nullptr, 1, end, kGapReach, own))
+	{
+		auto const ahead{plan(target.position - end)};
+		auto const along{glm::dot(ahead, way)};
+		if (auto const direction{plan(target.direction)}; along < 5.0 || along < glm::length(ahead) * 0.8 || glm::length(direction) < 1e-9 || std::abs(glm::dot(glm::normalize(direction), way)) < 0.7)
+			continue;
+		return glm::length(ahead);
+	}
+	return std::nullopt;
+}
+
+// the names of the track circuits of the scenery, in lower case
+std::unordered_set<std::string, string_hash, std::equal_to<>> scenery_circuits()
+{
+	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
+	for (auto const *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		for (auto const *isolated : track->Isolated)
+			if (isolated != nullptr)
+				circuits.insert(ToLower(isolated->asName));
+	}
+	return circuits;
+}
+
+} // namespace
+
 void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 {
 	m_problems.clear();
 	if (false == m_layout.has_value())
 		return;
 	auto const stem{stem_of_open()};
-	auto const plan = [](glm::dvec3 const &Point) { return glm::dvec2{Point.x, Point.z}; };
-	auto const by_open = [&](glm::dvec3 const &Point) {
-		if (gap_to(*m_layout, Point) <= 8.0)
-			return true;
-		return std::ranges::any_of(m_line_ways, [&](station::line const &Line) {
-			double gap{0.0};
-			auto const distance{station::distance_on(Line, Point, gap)};
-			return gap <= 8.0 && distance > -50.0 && distance < Line.length() + 1.0;
-		});
-	};
+	auto const by_open = [this](glm::dvec3 const &Point) { return near_open(*m_layout, m_line_ways, Point); };
 	for (auto const &signal : Standing)
 		if (false == signal.read.empty() && signal.track == nullptr && by_open(signal.position))
 			m_problems.emplace_back(format(STR_C("Signal %s: no track reads it"), signal_shown(signal.name, stem).c_str()), signal.position, signal.instance);
@@ -3686,36 +3738,15 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 	{
 		auto const &row{m_lines[index]};
 		auto const &line{m_line_ways[index]};
-		if (false == row.station && line.points.size() > 1 && line.length() < kLineLimit - 50.0)
-		{
-			// the tracks go on beyond a gap: one missing, deleted maybe
-			auto const end{line.points.back()};
-			auto const step{plan(line.points.back() - line.points[line.points.size() - 2])};
-			if (glm::length(step) > 1e-9)
-			{
-				auto const way{glm::normalize(step)};
-				std::vector<TTrack const *> own(line.tracks.begin(), line.tracks.end());
-				for (auto const &target : editor_track::free_ends(nullptr, 1, end, kGapReach, own))
-				{
-					auto const ahead{plan(target.position - end)};
-					auto const along{glm::dot(ahead, way)};
-					if (auto const direction{plan(target.direction)}; along < 5.0 || along < glm::length(ahead) * 0.8 || glm::length(direction) < 1e-9 || std::abs(glm::dot(glm::normalize(direction), way)) < 0.7)
-						continue;
-					m_problems.emplace_back(format(STR_C("The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"), row.entry.c_str(), line.length(), glm::length(ahead)), end);
-					break;
-				}
-			}
-		}
+		// the tracks go on beyond a gap: one missing, deleted maybe
+		auto const broken{false == row.station && line.points.size() > 1 && line.length() < kLineLimit - 50.0};
+		if (auto const beyond{broken ? tracks_beyond(line) : std::nullopt}; beyond.has_value())
+			m_problems.emplace_back(format(STR_C("The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"), row.entry.c_str(), line.length(), *beyond), line.points.back());
 		for (auto const &[bare_from, bare_to] : row.bare)
 			m_problems.push_back({format(STR_C("The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"), row.entry.c_str(), bare_to - bare_from, bare_from), station::point_on(line, (bare_from + bare_to) * 0.5).point, 0, true});
 	}
 	// the block sections their controls switch, the tracks gone
-	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
-	for (auto const *track : simulation::Paths.sequence())
-		if (track != nullptr && false == track->m_editorremoved)
-			for (auto const *isolated : track->Isolated)
-				if (isolated != nullptr)
-					circuits.insert(ToLower(isolated->asName));
+	auto const circuits{scenery_circuits()};
 	for (auto const &block_control : m_templates.standing_templates([](std::string_view const File) { return File == kControl; }))
 		if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])) && by_open(block_control.location))
 			m_problems.emplace_back(format(STR_C("Block section %s has no track"), block_control.values[0].c_str()), block_control.location);
@@ -4475,6 +4506,26 @@ void srk_tool::set_lines(block_edit const *Edit)
 		m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
 }
 
+namespace
+{
+
+// a mark of a signal put in the plot by the nearest point of the schematic within 6 m of where it stands: onto that point, to its side
+template <typename Mark>
+void mark_drawn(Mark &Signal, station::layout const &Layout, station::drawing const &Plot)
+{
+	auto nearest{6.0};
+	for (std::size_t path = 0; path < Layout.paths.size(); ++path)
+		for (std::size_t k = 0; k < Layout.paths[path].schematic.size(); ++k)
+			if (auto const &point{Layout.paths[path].schematic[k]}; glm::distance(point, Signal.at) < nearest)
+			{
+				nearest = glm::distance(point, Signal.at);
+				Signal.drawn = Plot.paths[path][k];
+				Signal.side = Signal.at.y > point.y ? 1.0f : -1.0f;
+			}
+}
+
+} // namespace
+
 void srk_tool::survey_signals()
 {
 	m_signal_marks.clear();
@@ -4512,15 +4563,7 @@ void srk_tool::survey_signals()
 		// in the plot on the track it stands by, to its side
 		auto &mark{m_signal_marks.back()};
 		mark.drawn = m_plot.at(at);
-		auto nearest{6.0};
-		for (std::size_t path = 0; path < m_layout->paths.size(); ++path)
-			for (std::size_t k = 0; k < m_layout->paths[path].schematic.size(); ++k)
-				if (auto const &point{m_layout->paths[path].schematic[k]}; glm::distance(point, at) < nearest)
-				{
-					nearest = glm::distance(point, at);
-					mark.drawn = m_plot.paths[path][k];
-					mark.side = at.y > point.y ? 1.0f : -1.0f;
-				}
+		mark_drawn(mark, *m_layout, m_plot);
 		if (signal.kind != "main" && signal.kind != "shunt")
 			continue;
 		station::signal stop;
@@ -4593,10 +4636,121 @@ double srk_tool::braking_of_open() const
 	return set > 0 ? static_cast<double>(set) : braking_distance(speed_of_open());
 }
 
+namespace
+{
+
+// a signal a route leads to added to the order of the heads checked: where it isn't in it yet, isn't a main signal and has routes
+void order_taken(int const Index, std::vector<station::post> const &Posts, std::vector<int> const &Routes_of, std::vector<char> &Checked, std::vector<std::size_t> &Order)
+{
+	if (Index < 0 || 0 != Checked[Index] || Posts[Index].kind == station::signal::role::entry || Routes_of[Index] < 0)
+		return;
+	Checked[Index] = 1;
+	Order.push_back(static_cast<std::size_t>(Index));
+}
+
+// the order the heads are checked in: the signals of the station, Own, those their routes lead to, then those whose routes lead to any
+// of these. Found: the routes of the signals, Routes_of: of each post, an index into Found
+std::vector<std::size_t> heads_order(std::vector<station::post> const &Posts, std::vector<char> const &Own, std::vector<std::vector<station::route>> const &Found, std::vector<int> const &Routes_of)
+{
+	std::vector<char> checked(Own);
+	std::vector<std::size_t> order;
+	for (std::size_t index = 0; index < Posts.size(); ++index)
+		if (Own[index])
+			order.push_back(index);
+	// the order grows while it's gone through
+	std::size_t at{0};
+	while (at < order.size())
+	{
+		for (auto const &route : Found[Routes_of[order[at]]])
+			for (auto const index : {route.warning, route.next})
+				order_taken(index, Posts, Routes_of, checked, order);
+		++at;
+	}
+	for (auto grown{true}; grown;)
+	{
+		grown = false;
+		for (std::size_t index = 0; index < Posts.size(); ++index)
+		{
+			if (checked[index] || Routes_of[index] < 0 || Posts[index].kind == station::signal::role::entry)
+				continue;
+			auto const &routes{Found[Routes_of[index]]};
+			if (std::ranges::none_of(routes, [&](station::route const &Route) { return Route.next >= 0 && checked[Route.next]; }))
+				continue;
+			checked[index] = 1;
+			order.push_back(index);
+			grown = true;
+		}
+	}
+	return order;
+}
+
+// how far before a signal its SHP resonator is wanted, Kind: of its post, Own: it's a signal of the station. Before the block signals
+// and the warning discs; before the entry signals of the station facing into it, at the main signals with a route to a signal no warning
+// disc tells of; left as it is for the others
+void shp_wanted(srk_tool::head_check &Check, station::layout const &Layout, station::signal::role const Kind, bool const Own)
+{
+	glm::dvec3 const travel{Check.travel.x, 0.0, Check.travel.y};
+	if (Kind != station::signal::role::entry)
+		Check.shp = kShpBefore;
+	else if (Own)
+	{
+		auto const along{station::project(Layout, Check.position).x};
+		auto const ahead{station::project(Layout, Check.position + travel * 10.0).x};
+		if ((along < Layout.from && ahead > along) || (along > Layout.to && ahead < along))
+			Check.shp = kShpBefore;
+		else if (std::ranges::any_of(Check.routes, [](station::route const &Route) { return Route.next >= 0 && Route.warning < 0; }))
+			Check.shp = 0.0;
+	}
+}
+
+// the problems of a warning disc: no main signal ahead of it to tell of, one nearer than the braking distance
+void warning_problems(srk_tool::head_check &Check, double const Braking)
+{
+	for (std::size_t k = 0; k < Check.routes.size(); ++k)
+	{
+		auto const &route{Check.routes[k]};
+		if (route.next < 0)
+			Check.problems.push_back(format(STR_C("No main signal within %.0f m ahead of it to tell of"), route.length));
+		else if (route.length < Braking - 1.0)
+			Check.problems.push_back(format(STR_C("It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"), route.length, Check.nexts[k].c_str(), Braking));
+	}
+}
+
+// the problems of a block signal, Template: its own, if known: the block sections shorter than the braking distance, than half of it in
+// the 4-aspect block
+void block_problems(srk_tool::head_check &Check, signal_head const *Template, double const Braking)
+{
+	for (std::size_t k = 0; k < Check.routes.size(); ++k)
+	{
+		auto const &route{Check.routes[k]};
+		if (route.next < 0 || route.warning >= 0)
+			continue;
+		if (Template != nullptr && Template->aspects == 4)
+		{
+			if (route.length < Braking * 0.5 - 1.0)
+				Check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"), Check.nexts[k].c_str(), route.length, Braking));
+		}
+		else if (route.length < Braking - 1.0)
+			Check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"), Check.nexts[k].c_str(), route.length, Braking));
+	}
+}
+
+// whether a head, Template: its own, shows what it needs, the template it's best changed to and whether that one shows less beyond
+void head_fitted(srk_tool::head_check &Check, std::vector<signal_head> const &Heads, std::string_view const Kind, signal_head const &Template, head_need const &Need)
+{
+	Check.fits = shows(Template, Need);
+	auto const best{best_head(Heads, Kind, Template.mount, Template.name, Template.aspects, Need, Template.arms > 0)};
+	if (best < 0)
+		return;
+	Check.fit = Heads[best].file;
+	Check.more = Check.fits && surplus(Heads[best], Need) < surplus(Template, Need);
+}
+
+} // namespace
+
 void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 {
 	using enum station::signal::role;
-	using role = station::signal::role;
 	m_heads.clear();
 	std::vector<signal_head> heads;
 	m_heads_known = m_layout.has_value() && m_signals.signal_heads(heads, false);
@@ -4630,39 +4784,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	std::vector routes_of(posts.size(), -1);
 	for (std::size_t k = 0; k < from.size(); ++k)
 		routes_of[from[k]] = static_cast<int>(k);
-	std::vector<char> checked(own);
-	std::vector<std::size_t> order;
-	for (std::size_t index = 0; index < posts.size(); ++index)
-		if (own[index])
-			order.push_back(index);
-	// the order grows while it's gone through
-	std::size_t at{0};
-	while (at < order.size())
-	{
-		for (auto const &route : found[routes_of[order[at]]])
-			for (auto const index : {route.warning, route.next})
-				if (index >= 0 && 0 == checked[index] && posts[index].kind != entry && routes_of[index] >= 0)
-				{
-					checked[index] = 1;
-					order.push_back(static_cast<std::size_t>(index));
-				}
-		++at;
-	}
-	for (auto grown{true}; grown;)
-	{
-		grown = false;
-		for (std::size_t index = 0; index < posts.size(); ++index)
-		{
-			if (checked[index] || routes_of[index] < 0 || posts[index].kind == entry)
-				continue;
-			auto const &routes{found[routes_of[index]]};
-			if (std::ranges::none_of(routes, [&](station::route const &Route) { return Route.next >= 0 && checked[Route.next]; }))
-				continue;
-			checked[index] = 1;
-			order.push_back(index);
-			grown = true;
-		}
-	}
+	auto const order{heads_order(posts, own, found, routes_of)};
 	std::unordered_map<std::string, std::size_t, string_hash, std::equal_to<>> by_file;
 	for (std::size_t index = 0; index < heads.size(); ++index)
 		by_file.try_emplace(heads[index].file, index);
@@ -4697,17 +4819,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			check.own = template_of->speeds;
 		}
 		glm::dvec3 const travel{check.travel.x, 0.0, check.travel.y};
-		if (post.kind != entry)
-			check.shp = kShpBefore;
-		else if (own[index])
-		{
-			auto const along{station::project(layout, signal.position).x};
-			auto const ahead{station::project(layout, signal.position + travel * 10.0).x};
-			if ((along < layout.from && ahead > along) || (along > layout.to && ahead < along))
-				check.shp = kShpBefore;
-			else if (std::ranges::any_of(check.routes, [](station::route const &Route) { return Route.next >= 0 && Route.warning < 0; }))
-				check.shp = 0.0;
-		}
+		shp_wanted(check, layout, post.kind, own[index] != 0);
 		if (check.shp >= 0.0)
 		{
 			auto const way{station::approach(*post.track, post.point, post.facing, check.shp + kShpWindow)};
@@ -4716,14 +4828,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		}
 		if (post.kind == warning)
 		{
-			for (std::size_t k = 0; k < check.routes.size(); ++k)
-			{
-				auto const &route{check.routes[k]};
-				if (route.next < 0)
-					check.problems.push_back(format(STR_C("No main signal within %.0f m ahead of it to tell of"), route.length));
-				else if (route.length < braking - 1.0)
-					check.problems.push_back(format(STR_C("It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"), route.length, check.nexts[k].c_str(), braking));
-			}
+			warning_problems(check, braking);
 			// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows. One not
 			// described so may as well, it is offered the one described as a hint and the fitting leaves it be. A disc with lights isn't
 			// checked, nor one whose template isn't among the scanned, its mount not known
@@ -4749,29 +4854,9 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		check.shortened = need.shortened;
 		check.indicator = need.indicator;
 		if (false == main)
-			for (std::size_t k = 0; k < check.routes.size(); ++k)
-			{
-				auto const &route{check.routes[k]};
-				if (route.next < 0 || route.warning >= 0)
-					continue;
-				if (template_of != nullptr && template_of->aspects == 4)
-				{
-					if (route.length < braking * 0.5 - 1.0)
-						check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"), check.nexts[k].c_str(), route.length, braking));
-				}
-				else if (route.length < braking - 1.0)
-					check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"), check.nexts[k].c_str(), route.length, braking));
-			}
+			block_problems(check, template_of, braking);
 		if (template_of != nullptr)
-		{
-			check.fits = shows(*template_of, need);
-			auto const best{best_head(heads, signal.kind, template_of->mount, template_of->name, template_of->aspects, need, template_of->arms > 0)};
-			if (best >= 0)
-			{
-				check.fit = heads[best].file;
-				check.more = check.fits && surplus(heads[best], need) < surplus(*template_of, need);
-			}
-		}
+			head_fitted(check, heads, signal.kind, *template_of, need);
 		m_heads.push_back(std::move(check));
 	}
 	std::ranges::stable_sort(m_heads, [&](head_check const &A, head_check const &B) {
@@ -4814,6 +4899,174 @@ void srk_tool::fit_heads()
 		m_status = format(STR_P("%zu signal got what it needs, Ctrl+Z takes it back", "%zu signals got what they need, Ctrl+Z takes it back", changed), changed);
 }
 
+namespace
+{
+
+using event_names = std::unordered_set<std::string, string_hash, std::equal_to<>>;
+
+// where the SHP resonator of a signal is placed
+struct shp_placing
+{
+	std::string signal; // shown
+	std::string name; // of the resonator, its event is <name>_shp
+	TTrack *track{nullptr}; // the trains run into its event on, where a joint of the tracks lies
+	TTrack *cut{nullptr}; // the track cut at the point, else
+	int facing{1}; // the trains run on the track, 1: towards the end of its path
+	glm::dvec3 point{0.0};
+	glm::dvec3 way{0.0, 0.0, 1.0};
+	glm::dvec3 inside{0.0}; // of the track the trains run into, a metre on from the point
+};
+
+// the names of the events of the tracks of the scenery, in lower case
+event_names scenery_events()
+{
+	event_names taken;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		for (int list = 0; list < 6; ++list)
+			for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+				taken.insert(ToLower(event_name));
+	}
+	return taken;
+}
+
+// where the SHP resonator of a head which misses it goes, a name not taken yet given to it, Taken: the names of the events taken;
+// none, the problem added to Problems, where it can't go
+std::optional<shp_placing> shp_place(srk_tool::head_check const &Head, std::vector<standing_signal> const &Standing, event_names &Taken, std::vector<std::string> &Problems)
+{
+	if (Head.shp_of() == srk_tool::shp_state::beyond)
+	{
+		Problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), Head.name.c_str(), Head.shp));
+		return std::nullopt;
+	}
+	auto const found{std::ranges::find_if(Standing, [&](standing_signal const &Signal) { return Signal.instance == Head.instance; })};
+	if (found == Standing.end())
+		return std::nullopt;
+	auto const post{post_of(*found)};
+	if (post.track == nullptr)
+	{
+		Problems.push_back(format(STR_C("%s stands by no track"), Head.name.c_str()));
+		return std::nullopt;
+	}
+	auto const way{station::approach(*post.track, post.point, post.facing, Head.shp + kShpTolerance + 1.0)};
+	if (way.empty() || way.back().distance < Head.shp - kShpTolerance)
+	{
+		Problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), Head.name.c_str(), Head.shp));
+		return std::nullopt;
+	}
+	auto joint{false};
+	auto const best{resonator_at(way, Head.shp, joint)};
+	if (best < 0)
+	{
+		Problems.push_back(format(STR_C("%s: no plain track within %.0f m of the place of its SHP resonator"), Head.name.c_str(), kShpTolerance));
+		return std::nullopt;
+	}
+	auto const &at{way[best]};
+	if (std::string reason; false == scene::Layers.editable(at.track, &reason) || (false == joint && false == editor_track::can_edit_geometry(*at.track, reason)))
+	{
+		Problems.push_back(format(STR_C("%s can't be changed: %s"), name_of(*at.track).c_str(), reason.c_str()));
+		return std::nullopt;
+	}
+	if (false == at.track->Dynamics.empty())
+	{
+		Problems.push_back(format(STR_C("%s: vehicles stand on %s"), Head.name.c_str(), name_of(*at.track).c_str()));
+		return std::nullopt;
+	}
+	shp_placing entry;
+	auto name{found->name + "_rez"};
+	for (int number = 2; Taken.contains(ToLower(name) + "_shp") && number < 100; ++number)
+		name = std::format("{}_rez{}", found->name, number);
+	Taken.insert(ToLower(name) + "_shp");
+	entry.signal = Head.name;
+	entry.name = name;
+	entry.facing = at.facing;
+	entry.point = at.point;
+	entry.way = at.way;
+	if (joint)
+		entry.track = at.track;
+	else
+	{
+		entry.cut = at.track;
+		entry.inside = best > 0 ? way[best - 1].point : at.point + at.way;
+	}
+	return entry;
+}
+
+// the tracks changed placing the SHP resonators: how they were before, the pieces cut off them
+struct shp_edit
+{
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::vector<TTrack *> created;
+	std::unordered_set<TTrack const *> captured;
+	std::unordered_map<TTrack const *, std::vector<TTrack *>> pieces; // of each track cut, itself and the pieces cut off it
+
+	// how a track is before it's changed, kept the first time only
+	void capture(TTrack *Track)
+	{
+		if (captured.insert(Track).second)
+			before.emplace_back(Track, editor_track::capture(*Track));
+	}
+
+	// the piece of a track nearest a point; the track itself where it isn't cut
+	TTrack *piece_at(TTrack *Track, glm::dvec3 const &Point) const
+	{
+		auto found{pieces.find(Track)};
+		if (found == pieces.end())
+			return Track;
+		TTrack *nearest{Track};
+		auto gap{std::numeric_limits<double>::max()};
+		for (auto *piece : found->second)
+			if (auto const distance{glm::distance(editor_track::point_at(*piece, editor_track::nearest_parameter(*piece, Point)), Point)}; distance < gap)
+			{
+				gap = distance;
+				nearest = piece;
+			}
+		return nearest;
+	}
+
+	// the tracks cut at the places of the resonators which aren't at a joint; how many are cut
+	std::size_t cut(std::vector<shp_placing> const &Places)
+	{
+		std::size_t cuts{0};
+		for (auto const &entry : Places)
+		{
+			if (entry.cut == nullptr)
+				continue;
+			auto *track{piece_at(entry.cut, entry.point)};
+			if (end_gap(*track, entry.point) <= 0.3)
+				continue;
+			capture(track);
+			auto *piece{editor_track::split_path(*track, editor_track::nearest_parameter(*track, entry.point))};
+			if (piece == nullptr)
+				continue;
+			created.push_back(piece);
+			captured.insert(piece);
+			auto &list{pieces[entry.cut]};
+			if (list.empty())
+				list.push_back(entry.cut);
+			list.push_back(piece);
+			++cuts;
+		}
+		return cuts;
+	}
+};
+
+// the resonator of a signal as placed: below the place of its event, turned against the trains
+template_item resonator_item(shp_placing const &Entry)
+{
+	template_item item;
+	item.file = kResonator;
+	item.location = Entry.point - glm::dvec3{0.0, kResonatorDrop, 0.0};
+	auto const yaw{geometry::heading_of({Entry.way.x, Entry.way.z}) + 180.0};
+	item.yaw = yaw >= 360.0 ? yaw - 360.0 : yaw;
+	item.values["name"] = Entry.name;
+	return item;
+}
+
+} // namespace
+
 void srk_tool::set_shp()
 {
 	m_status.clear();
@@ -4828,157 +5081,43 @@ void srk_tool::set_shp()
 	std::vector<standing_signal> standing;
 	m_signals.standing_signals(standing, true);
 	check_heads(standing);
-	std::unordered_set<std::string, string_hash, std::equal_to<>> taken;
-	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && false == track->m_editorremoved)
-			for (int list = 0; list < 6; ++list)
-				for (auto const &[event_name, event_target] : editor_track::events(*track, list))
-					taken.insert(ToLower(event_name));
-	struct placing
-	{
-		std::string signal; // shown
-		std::string name; // of the resonator, its event is <name>_shp
-		TTrack *track{nullptr}; // the trains run into its event on, where a joint of the tracks lies
-		TTrack *cut{nullptr}; // the track cut at the point, else
-		int facing{1}; // the trains run on the track, 1: towards the end of its path
-		glm::dvec3 point{0.0};
-		glm::dvec3 way{0.0, 0.0, 1.0};
-		glm::dvec3 inside{0.0}; // of the track the trains run into, a metre on from the point
-	};
-	std::vector<placing> places;
+	auto taken{scenery_events()};
+	std::vector<shp_placing> places;
 	std::vector<std::string> problems;
 	for (auto const &head : m_heads)
 	{
 		if (head.shp_of() != shp_state::missing && head.shp_of() != shp_state::beyond)
 			continue;
-		if (head.shp_of() == shp_state::beyond)
-		{
-			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
-			continue;
-		}
-		auto const found{std::ranges::find_if(standing, [&](standing_signal const &Signal) { return Signal.instance == head.instance; })};
-		if (found == standing.end())
-			continue;
-		auto const post{post_of(*found)};
-		if (post.track == nullptr)
-		{
-			problems.push_back(format(STR_C("%s stands by no track"), head.name.c_str()));
-			continue;
-		}
-		auto const way{station::approach(*post.track, post.point, post.facing, head.shp + kShpTolerance + 1.0)};
-		if (way.empty() || way.back().distance < head.shp - kShpTolerance)
-		{
-			problems.push_back(format(STR_C("%s: the tracks before it end short of %.0f m"), head.name.c_str(), head.shp));
-			continue;
-		}
-		auto joint{false};
-		auto const best{resonator_at(way, head.shp, joint)};
-		if (best < 0)
-		{
-			problems.push_back(format(STR_C("%s: no plain track within %.0f m of the place of its SHP resonator"), head.name.c_str(), kShpTolerance));
-			continue;
-		}
-		auto const &at{way[best]};
-		if (std::string reason; false == scene::Layers.editable(at.track, &reason) || (false == joint && false == editor_track::can_edit_geometry(*at.track, reason)))
-		{
-			problems.push_back(format(STR_C("%s can't be changed: %s"), name_of(*at.track).c_str(), reason.c_str()));
-			continue;
-		}
-		if (false == at.track->Dynamics.empty())
-		{
-			problems.push_back(format(STR_C("%s: vehicles stand on %s"), head.name.c_str(), name_of(*at.track).c_str()));
-			continue;
-		}
-		placing entry;
-		auto name{found->name + "_rez"};
-		for (int number = 2; taken.contains(ToLower(name) + "_shp") && number < 100; ++number)
-			name = std::format("{}_rez{}", found->name, number);
-		taken.insert(ToLower(name) + "_shp");
-		entry.signal = head.name;
-		entry.name = name;
-		entry.facing = at.facing;
-		entry.point = at.point;
-		entry.way = at.way;
-		if (joint)
-			entry.track = at.track;
-		else
-		{
-			entry.cut = at.track;
-			entry.inside = best > 0 ? way[best - 1].point : at.point + at.way;
-		}
-		places.push_back(std::move(entry));
+		if (auto entry{shp_place(head, standing, taken, problems)}; entry.has_value())
+			places.push_back(std::move(*entry));
 	}
 	if (places.empty())
 	{
 		m_status = problems.empty() ? STR_C("The signals have their SHP resonators already") : problems.front();
 		return;
 	}
-	std::vector<std::pair<TTrack *, editor_track::state>> before;
-	std::vector<TTrack *> created;
-	std::unordered_set<TTrack const *> captured;
-	std::unordered_map<TTrack const *, std::vector<TTrack *>> pieces; // of each track cut, itself and the pieces cut off it
-	auto const piece_at = [&](TTrack *Track, glm::dvec3 const &Point) {
-		auto found{pieces.find(Track)};
-		if (found == pieces.end())
-			return Track;
-		TTrack *nearest{Track};
-		auto gap{std::numeric_limits<double>::max()};
-		for (auto *piece : found->second)
-			if (auto const distance{glm::distance(editor_track::point_at(*piece, editor_track::nearest_parameter(*piece, Point)), Point)}; distance < gap)
-			{
-				gap = distance;
-				nearest = piece;
-			}
-		return nearest;
-	};
-	std::size_t cuts{0};
-	for (auto const &entry : places)
-	{
-		if (entry.cut == nullptr)
-			continue;
-		auto *track{piece_at(entry.cut, entry.point)};
-		if (end_gap(*track, entry.point) <= 0.3)
-			continue;
-		if (captured.insert(track).second)
-			before.emplace_back(track, editor_track::capture(*track));
-		if (auto *piece{editor_track::split_path(*track, editor_track::nearest_parameter(*track, entry.point))})
-		{
-			created.push_back(piece);
-			captured.insert(piece);
-			auto &list{pieces[entry.cut]};
-			if (list.empty())
-				list.push_back(entry.cut);
-			list.push_back(piece);
-			++cuts;
-		}
-	}
+	shp_edit edit;
+	auto const cuts{edit.cut(places)};
 	signal_changes changes;
 	for (auto const &entry : places)
 	{
-		auto *track{entry.track != nullptr ? piece_at(entry.track, entry.point) : piece_at(entry.cut, entry.inside)};
+		auto *track{entry.track != nullptr ? edit.piece_at(entry.track, entry.point) : edit.piece_at(entry.cut, entry.inside)};
 		// the trains run into the track at the point: at the start of its path running towards its end
 		if (glm::distance(track->m_paths.front().points[entry.facing > 0 ? segment_data::point::start : segment_data::point::end], entry.point) > 1.0)
 		{
 			problems.push_back(format(STR_C("%s: the track couldn't be cut at the place of its SHP resonator"), entry.signal.c_str()));
 			continue;
 		}
-		if (captured.insert(track).second)
-			before.emplace_back(track, editor_track::capture(*track));
+		edit.capture(track);
 		editor_track::events(*track, entry.facing > 0 ? 2 : 1).emplace_back(ToLower(entry.name) + "_shp", nullptr);
 		std::string missing;
 		editor_track::bind_events(*track, missing);
 		track->mark_dirty();
-		template_item item;
-		item.file = kResonator;
-		item.location = entry.point - glm::dvec3{0.0, kResonatorDrop, 0.0};
-		auto const yaw{geometry::heading_of({entry.way.x, entry.way.z}) + 180.0};
-		item.yaw = yaw >= 360.0 ? yaw - 360.0 : yaw;
-		item.values["name"] = entry.name;
-		changes.others.push_back(std::move(item));
+		changes.others.push_back(resonator_item(entry));
 	}
 	std::string error;
 	auto const placed{changes.others.size()};
-	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
+	m_signals.signal_batch(changes, std::move(edit.before), std::move(edit.created), error);
 	if (false == error.empty())
 	{
 		m_status = format(STR_C("The SHP resonators couldn't be placed: %s. Ctrl+Z takes back the tracks cut"), error.c_str());
@@ -4988,6 +5127,70 @@ void srk_tool::set_shp()
 	for (auto const &problem : problems)
 		m_status += "\n" + problem;
 }
+
+namespace
+{
+
+// a mark of a track circuit put on its track, on the point of it nearest the middle of its points: there in the schematic, in the
+// scenery and in the plot
+template <typename Mark>
+void circuit_placed(Mark &Circuit, int const Index, station::layout const &Layout, std::vector<int> const &Circuit_of, station::drawing const &Plot)
+{
+	auto nearest{std::numeric_limits<double>::max()};
+	glm::dvec2 on{Circuit.at};
+	for (std::size_t path = 0; path < Layout.paths.size(); ++path)
+	{
+		if (Circuit_of[path] != Index)
+			continue;
+		for (std::size_t k = 0; k < Layout.paths[path].schematic.size(); ++k)
+			if (auto const distance{glm::distance(Layout.paths[path].schematic[k], Circuit.at)}; distance < nearest)
+			{
+				nearest = distance;
+				on = Layout.paths[path].schematic[k];
+				Circuit.world = Layout.paths[path].points[k];
+				Circuit.drawn = Plot.paths[path][k];
+			}
+	}
+	Circuit.at = on;
+}
+
+// the name of a track circuit as the plot shows it: bpd_it3 as It3, bpd_ita, Entry: before the entry signal A, as ItA
+void circuit_shown(std::string &Text, std::string const &Stem, bool const Entry)
+{
+	if (false == Stem.empty() && Text.compare(0, Stem.size(), Stem) == 0)
+		Text.erase(0, Stem.size());
+	if (false == Text.empty())
+		Text.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(Text.front())));
+	if (Entry && Text.size() > 2)
+		std::transform(Text.begin() + 2, Text.end(), Text.begin() + 2, [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+}
+
+// an end of a path of the layout: where, its way out, the circuit of the path, where in the plot
+struct circuit_end
+{
+	glm::dvec3 point;
+	glm::dvec3 way;
+	int circuit;
+	glm::dvec2 drawn;
+};
+
+// both ends of each path of the layout of two points or more
+std::vector<circuit_end> circuit_ends(station::layout const &Layout, std::vector<int> const &Circuit_of, station::drawing const &Plot)
+{
+	std::vector<circuit_end> ends;
+	for (std::size_t index = 0; index < Layout.paths.size(); ++index)
+	{
+		auto const &points{Layout.paths[index].points};
+		if (points.size() < 2)
+			continue;
+		auto const circuit{Circuit_of[index]};
+		ends.emplace_back(points.front(), points[1] - points.front(), circuit, Plot.paths[index].front());
+		ends.emplace_back(points.back(), points.back() - points[points.size() - 2], circuit, Plot.paths[index].back());
+	}
+	return ends;
+}
+
+} // namespace
 
 void srk_tool::survey()
 {
@@ -5032,48 +5235,12 @@ void srk_tool::survey()
 	{
 		auto &mark{m_circuits[index]};
 		mark.at /= std::max(1.0, weights[index]);
-		// on its track, nearest the middle of its points
-		auto nearest{std::numeric_limits<double>::max()};
-		glm::dvec2 on{mark.at};
-		for (std::size_t path = 0; path < layout.paths.size(); ++path)
-			if (m_circuit_of[path] == static_cast<int>(index))
-				for (std::size_t k = 0; k < layout.paths[path].schematic.size(); ++k)
-					if (auto const distance{glm::distance(layout.paths[path].schematic[k], mark.at)}; distance < nearest)
-					{
-						nearest = distance;
-						on = layout.paths[path].schematic[k];
-						mark.world = layout.paths[path].points[k];
-						mark.drawn = m_plot.paths[path][k];
-					}
-		mark.at = on;
+		circuit_placed(mark, static_cast<int>(index), layout, m_circuit_of, m_plot);
 		auto const entry{entry_circuit(mark.text, stem)};
-		// bpd_it3 shown as It3
-		if (false == stem.empty() && mark.text.compare(0, stem.size(), stem) == 0)
-			mark.text.erase(0, stem.size());
-		if (false == mark.text.empty())
-			mark.text.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(mark.text.front())));
-		// bpd_ita, before the entry signal A, as ItA
-		if (entry && mark.text.size() > 2)
-			std::transform(mark.text.begin() + 2, mark.text.end(), mark.text.begin() + 2, [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+		circuit_shown(mark.text, stem, entry);
 	}
 	// the joints: the ends where paths of different circuits meet
-	struct end
-	{
-		glm::dvec3 point;
-		glm::dvec3 way;
-		int circuit;
-		glm::dvec2 drawn;
-	};
-	std::vector<end> ends;
-	for (std::size_t index = 0; index < layout.paths.size(); ++index)
-	{
-		auto const &points{layout.paths[index].points};
-		if (points.size() < 2)
-			continue;
-		auto const circuit{m_circuit_of[index]};
-		ends.emplace_back(points.front(), points[1] - points.front(), circuit, m_plot.paths[index].front());
-		ends.emplace_back(points.back(), points.back() - points[points.size() - 2], circuit, m_plot.paths[index].back());
-	}
+	auto const ends{circuit_ends(layout, m_circuit_of, m_plot)};
 	m_joints.clear();
 	for (std::size_t i = 0; i < ends.size(); ++i)
 		for (std::size_t j = i + 1; j < ends.size(); ++j)
@@ -5611,21 +5778,6 @@ std::size_t sections_checked(std::vector<standing_template> const &Controls, std
 		}
 	}
 	return bad;
-}
-
-// the names of the track circuits of the scenery, in lower case
-std::unordered_set<std::string, string_hash, std::equal_to<>> scenery_circuits()
-{
-	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
-	for (auto const *track : simulation::Paths.sequence())
-	{
-		if (track == nullptr || track->m_editorremoved)
-			continue;
-		for (auto const *isolated : track->Isolated)
-			if (isolated != nullptr)
-				circuits.insert(ToLower(isolated->asName));
-	}
-	return circuits;
 }
 
 // the points of the paths of the schematic as drawn: on the rows or between them, the bends, the steps back along x
