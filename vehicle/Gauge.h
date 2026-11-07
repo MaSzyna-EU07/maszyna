@@ -55,6 +55,13 @@ public:
     void AssignBool(bool *bValue);
     void UpdateValue();
     void AssignState( bool const *State );
+    // the value shown is value * scale + offset
+    float offset() const {
+        return m_offset; }
+    void offset( float const Offset ) {
+        m_offset = Offset; }
+    float scale() const {
+        return m_scale; }
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
     TGaugeType type() const;

@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include "hamulce.h"
 #include "scripting/ladderlogic.h"
+#include "vehicle/odometer.h"
 
 class cParser;
 /*
@@ -1963,6 +1964,7 @@ class TMoverParameters
 	int SoundFlag = 0; /*!o patrz stale sound_ */
 	int AIFlag{0}; // HACK: events of interest for consist owner
 	double DistCounter = 0.0; /*! licznik kilometrow */
+	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
 	double Vel = 0.0; // moduł prędkości w [km/h], używany przez AI
