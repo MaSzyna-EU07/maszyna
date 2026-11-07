@@ -616,7 +616,11 @@ track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixe
 	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
 	auto const metres{ortho_metres_per_pixel()};
 	auto const hover{metres >= kLinesFrom ? kFarHoverPixels : kHoverPixels};
-	double best{Pixels > 0.0f ? Pixels * Pixels : Only != nullptr ? std::numeric_limits<double>::max() : hover * hover};
+	double best{hover * hover};
+	if (Pixels > 0.0f)
+		best = Pixels * Pixels;
+	else if (Only != nullptr)
+		best = std::numeric_limits<double>::max();
 	glm::dvec3 origin;
 	glm::dvec3 direction;
 	projection.ray(io.MousePos, origin, direction);
@@ -689,7 +693,11 @@ void editor_mode::draw_track_lines() const
 	screen_projection const projection;
 	glm::dvec2 const centre{Global.pCamera.Pos.x, Global.pCamera.Pos.z};
 	auto const reach{Global.EditorOrtho ? 0.5 * metres * std::hypot(static_cast<double>(io.DisplaySize.x), static_cast<double>(io.DisplaySize.y)) : kColouredReach};
-	auto const width{rails ? std::max(2.0f, static_cast<float>(0.07 / metres)) : colouring == track_colouring::plain ? 1.5f : 3.0f};
+	auto width{3.0f};
+	if (rails)
+		width = std::max(2.0f, static_cast<float>(0.07 / metres));
+	else if (colouring == track_colouring::plain)
+		width = 1.5f;
 	auto const railcolour{EditorSettings.top_rails()};
 	std::vector<glm::dvec3> points;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
@@ -793,7 +801,7 @@ void editor_mode::draw_track_labels() const
 	};
 	// the paths joined in a row with the one given, both ways, as long as each next one belongs with it; each with the flag of being
 	// gone along from its start
-	auto const row = [&](TTrack &Track, std::function<bool(TTrack const &, bool)> const &Belongs) {
+	auto const row = [&](TTrack &Track, auto const &Belongs) {
 		std::deque<std::pair<TTrack *, bool>> run{{&Track, true}};
 		auto const known = [&](TTrack const *Other) { return std::ranges::any_of(run, [&](auto const &Member) { return Member.first == Other; }); };
 		for (auto const throughend : {true, false})
@@ -803,9 +811,7 @@ void editor_mode::draw_track_labels() const
 			while (plain(current) && false == known(current) && false == labelled.contains(current))
 			{
 				auto const entersatstart{current->trPrev == previous};
-				if (false == entersatstart && current->trNext != previous)
-					break;
-				if (false == Belongs(*current, throughend == entersatstart))
+				if ((false == entersatstart && current->trNext != previous) || false == Belongs(*current, throughend == entersatstart))
 					break;
 				if (throughend)
 					run.emplace_back(current, entersatstart);
@@ -959,13 +965,14 @@ void editor_mode::draw_track_labels() const
 			{
 				auto const y{From.y + cell * static_cast<float>(down)};
 				auto const x{From.x + cell * static_cast<float>(across)};
-				int column, row;
-				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, row))
-					count += covered[static_cast<std::size_t>(row) * columns + column];
+				int column{0};
+				int line{0};
+				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, line))
+					count += covered[static_cast<std::size_t>(line) * columns + column];
 			}
 		return count;
 	};
-	float constexpr kRings[]{0.0f, 26.0f, 42.0f, 62.0f, 86.0f, 116.0f, 150.0f};
+	constexpr std::array kRings{0.0f, 26.0f, 42.0f, 62.0f, 86.0f, 116.0f, 150.0f};
 	int constexpr kDirections{16};
 	for (auto const &label : labels)
 	{
@@ -1017,16 +1024,20 @@ void editor_mode::draw_track_legend() const
 {
 	if (m_track_colouring == track_colouring::plain)
 		return;
-	auto const &bands{m_track_colouring == track_colouring::radius ? kRadiusBands : m_track_colouring == track_colouring::speed ? kSpeedBands : kGradeBands};
+	auto const *bands{&kGradeBands};
+	if (m_track_colouring == track_colouring::radius)
+		bands = &kRadiusBands;
+	else if (m_track_colouring == track_colouring::speed)
+		bands = &kSpeedBands;
 	std::vector<std::pair<ImU32, std::string>> rows;
-	for (auto const &band : bands)
+	for (auto const &band : *bands)
 		rows.emplace_back(band.colour, band.label);
 	if (m_track_colouring == track_colouring::radius)
 		rows.emplace_back(kUncoloured, STR("straight"));
 	else if (m_track_colouring == track_colouring::speed)
 		rows.emplace_back(kUncoloured, STR("no limit"));
-	char const *const titles[]{"", "By the radius", "By the speed", "By the grade"};
-	std::string const title{STR_C(titles[static_cast<int>(m_track_colouring)])};
+	static constexpr std::array<char const *, 4> titles{"", "By the radius", "By the speed", "By the grade"};
+	std::string const title{STR_C(titles[static_cast<std::size_t>(m_track_colouring)])};
 	auto const line{ImGui::GetTextLineHeightWithSpacing()};
 	auto const swatch{ImGui::GetTextLineHeight()};
 	float width{ImGui::CalcTextSize(title.c_str()).x};
@@ -1041,11 +1052,11 @@ void editor_mode::draw_track_legend() const
 	drawlist->AddRectFilled(from, to, IM_COL32(0, 0, 0, 170), 4.0f);
 	ImVec2 at{from.x + pad, from.y + pad};
 	drawlist->AddText(at, IM_COL32(255, 255, 255, 235), title.c_str());
-	for (auto const &row : rows)
+	for (auto const &[colour, text] : rows)
 	{
 		at.y += line;
-		drawlist->AddRectFilled(ImVec2(at.x, at.y + 2.0f), ImVec2(at.x + swatch, at.y + swatch - 2.0f), row.first, 2.0f);
-		drawlist->AddText(ImVec2(at.x + swatch + 6.0f, at.y), IM_COL32(235, 235, 235, 235), row.second.c_str());
+		drawlist->AddRectFilled(ImVec2(at.x, at.y + 2.0f), ImVec2(at.x + swatch, at.y + swatch - 2.0f), colour, 2.0f);
+		drawlist->AddText(ImVec2(at.x + swatch + 6.0f, at.y), IM_COL32(235, 235, 235, 235), text.c_str());
 	}
 }
 
@@ -1253,7 +1264,12 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		// a box from the empty ground is the route by itself, a click on a track adds it to the route or takes it out
 		intent.track = m_hover.track;
 		intent.index = m_hover.track == nullptr ? 1 : 0;
-		return make(kind::box, m_hover.track == nullptr ? "Drag: the route over the tracks in a box" : track_selected(m_hover.track) ? "Click: take it out of the route, drag: a box" : "Click: add it to the route, drag: a box");
+		char const *box_hint{"Click: add it to the route, drag: a box"};
+		if (m_hover.track == nullptr)
+			box_hint = "Drag: the route over the tracks in a box";
+		else if (track_selected(m_hover.track))
+			box_hint = "Click: take it out of the route, drag: a box";
+		return make(kind::box, box_hint);
 	}
 	if (m_track_tab == track_tab::straights)
 	{
@@ -1810,8 +1826,8 @@ void editor_mode::render_track_context()
 		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_track_style.from.c_str());
 	if (ImGui::BeginMenu(STR_C("Select alike")))
 	{
-		char const *const keys[] = {"rails", "trackbed", "speed", "environment", "circuits"};
-		char const *const labels[] = {"The same rails", "The same trackbed", "The same speed", "The same environment", "The same track circuits"};
+		static constexpr std::array<char const *, 5> keys{"rails", "trackbed", "speed", "environment", "circuits"};
+		static constexpr std::array<char const *, 5> labels{"The same rails", "The same trackbed", "The same speed", "The same environment", "The same track circuits"};
 		for (std::size_t i = 0; i < std::size(keys); ++i)
 			if (ImGui::MenuItem(STR_C(labels[i])))
 			{
@@ -2254,8 +2270,8 @@ void editor_mode::render_track_spread_ui()
 	auto const gap{std::round(ImGui::GetFontSize() * 0.3f)};
 	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f)};
 	auto const at = [](ImVec2 const Low, ImVec2 const High, float const X, float const Y) { return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y); };
-	char const *const labels[]{STR_C("Up to a switch"), STR_C("Main track on"), STR_C("Everything joined")};
-	char const *const tooltips[]{"Stop before the switches", "Through the switches, along their main track", "Through everything joined"};
+	std::array<char const *, 3> const labels{STR_C("Up to a switch"), STR_C("Main track on"), STR_C("Everything joined")};
+	static constexpr std::array<char const *, 3> tooltips{"Stop before the switches", "Through the switches, along their main track", "Through everything joined"};
 	for (int i = 0; i < 3; ++i)
 	{
 		if (i > 0)

@@ -65,7 +65,7 @@ std::optional<std::vector<switch_end_move>> switch_end_moves(TTrack const &Track
 	return ends;
 }
 
-std::string switch_rejoin(TTrack &Track, std::vector<editor_track::joint> const &Joints, std::vector<bool> const &Handled, editor_track::edit &Edit)
+std::string switch_rejoin(TTrack const &Track, std::vector<editor_track::joint> const &Joints, std::vector<bool> const &Handled, editor_track::edit &Edit)
 {
 	std::vector<editor_track::joint> following;
 	std::string loose;
@@ -492,7 +492,7 @@ void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::e
 				origin += *before - *after;
 		}
 		auto const layer{record.layer};
-		auto const source{record.source};
+		auto const source{record.source}; // NOSONAR: a copy, the record goes with forget() before it's stored again
 		auto const fit{record.fit};
 		alignment_store::forget(static_cast<int>(i));
 		alignment_store::store(design, result, origin, layer, source, fit);
@@ -620,7 +620,7 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 		switch_end_move move;
 	};
 	std::vector<outer_end> ends;
-	auto const outer = [&](TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, bool const Atstart) {
+	if (auto const outer = [&](TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, bool const Atstart) {
 		if (false == online || glm::distance(From, To) < 0.005 || axis->lateral(To) > m_straights.tolerance.offset)
 			return true;
 		auto const target{axis->along(To)};
@@ -632,7 +632,7 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 		ends.push_back({&Track, {From, To, Atstart ? axis->along(From) - target : target - axis->along(From)}});
 		return true;
 	};
-	if (false == outer(*Set.first, Set.first->m_paths.front().points[segment_data::point::start], Paths[0].points[segment_data::point::start], true) ||
+	    false == outer(*Set.first, Set.first->m_paths.front().points[segment_data::point::start], Paths[0].points[segment_data::point::start], true) ||
 	    false == outer(*Set.second, Set.second->m_paths.front().points[segment_data::point::end], Paths[2].points[segment_data::point::end], false))
 		return false;
 	std::ranges::stable_sort(ends, [](outer_end const &A, outer_end const &B) { return A.move.shift > B.move.shift; });
@@ -725,9 +725,9 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 			{
 				if (false == outside(other) || std::ranges::find(Slide.movers, other) != Slide.movers.end())
 					continue;
-				auto const free{other->eType == tt_Normal && other->m_paths.size() == 1 &&
-				                editor_track::connected_points(*other, editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start})).empty()};
-				if (false == free)
+				if (auto const free{other->eType == tt_Normal && other->m_paths.size() == 1 &&
+				                    editor_track::connected_points(*other, editor_track::point_position(*other, {point.path, point.kind == editor_track::point_kind::start ? editor_track::point_kind::end : editor_track::point_kind::start})).empty()};
+				    false == free)
 				{
 					Reason = STR_C("The crossing track of the slip is joined on beyond it: the slip stays where the two tracks cross");
 					return false;
@@ -754,8 +754,8 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 				}
 	Slide.joints = joints;
 	// the straights of its first track before it and past it give and take the length, a metre of them kept at least
-	double room[2]{1e4, 1e4};
-	bool straight[2]{true, true};
+	std::array room{1e4, 1e4};
+	std::array straight{true, true};
 	for (std::size_t end = 0; end < 2; ++end)
 		for (auto const *track : Slide.movers)
 			for (auto const &[other, point] : editor_track::connected_points(*track, joints[end]))

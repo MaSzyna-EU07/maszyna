@@ -36,10 +36,12 @@ http:
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <functional>
 #include <iterator>
 #include <set>
@@ -47,6 +49,34 @@ http:
 #include "application/editormodetrackshared.h"
 
 using namespace track_mode;
+
+namespace
+{
+
+// the tab whose card shows: that of the paths with the window closed, that of the straights for the route
+editor_track_tab card_tab(bool const Open, editor_track_tab const Tab)
+{
+	if (false == Open)
+		return editor_track_tab::path;
+	if (Tab == editor_track_tab::route)
+		return editor_track_tab::straights;
+	return Tab;
+}
+
+// a point clicked along a curve laid, by how far the curve strays from it: green within 10 cm, amber within 30 cm, red beyond, the
+// colour of the grips where it's not known
+ImU32 lay_point_colour(double const Off)
+{
+	if (Off < 0.0)
+		return overlay_color::grip;
+	if (Off <= 0.1)
+		return IM_COL32(90, 220, 110, 255);
+	if (Off <= 0.3)
+		return IM_COL32(255, 200, 60, 255);
+	return IM_COL32(255, 90, 70, 255);
+}
+
+} // namespace
 
 
 TTrack *editor_mode::selected_track() const
@@ -802,7 +832,7 @@ void editor_mode::render_track_guide()
 {
 	// a card of the tool in use: what it is for, and how the mouse and the keys drive it, drawn
 	auto const &modes{track_modes()};
-	auto const tab{false == m_track_window_open ? track_tab::path : m_track_tab == track_tab::route ? track_tab::straights : m_track_tab};
+	auto const tab{card_tab(m_track_window_open, m_track_tab)};
 	auto const found{std::ranges::find_if(modes, [&](track_mode const &Mode) { return Mode.tab == tab; })};
 	auto const family{found != modes.end() ? found->family : 0};
 	auto const accent{family_colour(family)};
@@ -976,7 +1006,7 @@ void editor_mode::render_track_name(TTrack &Track)
 		if (edit.uses.cells > 0 || edit.uses.includes > 0)
 			notes.push_back(format(STR_C("The new name goes to %d memory cell(s) and %d include(s), the drives of a switch among them"), edit.uses.cells, edit.uses.includes));
 		if (warned)
-			notes.push_back(STR_C("The events listed below work until the scenery is loaded again; then they need the new name in their files"));
+			notes.emplace_back(STR_C("The events listed below work until the scenery is loaded again; then they need the new name in their files"));
 		if (false == notes.empty() && ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", lines_of(notes).c_str());
 	}
@@ -1330,13 +1360,13 @@ void editor_mode::render_path_events(TTrack &Track)
 		m_track_event[0] = '\0';
 		m_track_events_missing.clear();
 	}
-	auto const count{[&]() {
+	if (auto const count{[&]() {
 		std::size_t total{0};
 		for (int list = 0; list < 6; ++list)
 			total += editor_track::events(*track, list).size();
 		return total;
-	}()};
-	if (false == ImGui::CollapsingHeader(format("%s (%zu)###trackevents", STR_C("Events"), count).c_str()))
+	    }()};
+	    false == ImGui::CollapsingHeader(format("%s (%zu)###trackevents", STR_C("Events"), count).c_str()))
 		return;
 	auto const before{editor_track::capture(*track)};
 	auto const changed = [&](editor_track::state const &Before) {
@@ -1691,8 +1721,12 @@ void editor_mode::delete_selected_track()
 		{
 			// kept in the scenery as a crossing
 			std::string base;
-			for (int i = 1; base.empty() || switch_store::has(base); ++i)
-				base = "editor_skrz" + std::to_string(i);
+			int number{1};
+			while (base.empty() || switch_store::has(base))
+			{
+				base = std::format("editor_skrz{}", number);
+				++number;
+			}
 			record_slip(created, "crossing", "Skrz", 0.0, slip->record.ratio > 0.0 ? std::atan(1.0 / slip->record.ratio) : 0.0, base);
 			ui()->set_status(STR_C("The slip is replaced by its two tracks crossing, Shift+Del removes all of it"), false);
 		}
@@ -1796,11 +1830,14 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_switch.placing && m_switch.curved && current_switch_kind() == slip)
 		hints = {{"Drag", "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
-		hints = m_switch.connection >= 0 && m_switch.recognised ?
-		            std::vector<key_hint>{{"Let go", connection_name(m_switch.connection)}, {"Ctrl+wheel", "R of the aligning curve"}, {"Esc", "cancel"}} :
-		        m_switch.connection >= 0 && false == m_switch.curved ?
-		            std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}} :
-		            std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Drag onto the track beside", "a crossover there"}, {"Esc", "cancel"}};
+	{
+		if (m_switch.connection >= 0 && m_switch.recognised)
+			hints = std::vector<key_hint>{{"Let go", connection_name(m_switch.connection)}, {"Ctrl+wheel", "R of the aligning curve"}, {"Esc", "cancel"}};
+		else if (m_switch.connection >= 0 && false == m_switch.curved)
+			hints = std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}};
+		else
+			hints = std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Drag onto the track beside", "a crossover there"}, {"Esc", "cancel"}};
+	}
 	else if (m_track_tab == track_tab::lay)
 		hints = {{"LMB", "start, on the ground or at a free end"}};
 	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
@@ -2195,8 +2232,8 @@ std::string editor_mode::track_shaping(bool const Joined) const
 {
 	if (false == Joined)
 	{
-		char const *const names[]{"Arc, then straight", "Straight, then arc", "Arc through the cursor", "Straight"};
-		auto text{std::string{STR_C(names[static_cast<int>(m_track_layout)])}};
+		static constexpr std::array<char const *, 4> names{"Arc, then straight", "Straight, then arc", "Arc through the cursor", "Straight"};
+		auto text{std::string{STR_C(names[static_cast<std::size_t>(m_track_layout)])}};
 		if (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc)
 			text += format("   R %.0f m", m_lay.radius);
 		// the shape follows the mode of laying, Tab switching it where the laying goes on
@@ -2204,8 +2241,8 @@ std::string editor_mode::track_shaping(bool const Joined) const
 		       STR(", Ctrl+Shift+wheel: speed");
 	}
 	auto const &join{m_join_last};
-	char const *const kinds[]{"", "straight", "arc", "curve", "reverse curve", "free curve"};
-	std::string text{STR_C(kinds[static_cast<int>(join.kind)])};
+	static constexpr std::array<char const *, 6> kinds{"", "straight", "arc", "curve", "reverse curve", "free curve"};
+	std::string text{STR_C(kinds[static_cast<std::size_t>(join.kind)])};
 	if (join.radius > 0.0)
 		text += format("   R %.0f m", join.radius) + (m_join_radius > 0.0 ? std::string{} : std::string{" "} + STR("(auto)"));
 	if (join.cant > 0.0)
@@ -2256,12 +2293,12 @@ void editor_mode::draw_empty_scenery_hint()
 	auto const big{font * 1.25f};
 	list->AddText(nullptr, big, ImVec2(top.x + pad + icon + pad * 0.6f, std::round(top.y + pad + (icon - big) * 0.5f)), ImGui::GetColorU32(ImGuiCol_Text), title);
 	auto y{top.y + pad + icon + pad * 0.5f};
-	for (auto const &row : rows)
+	for (auto const &[keys, label] : rows)
 	{
-		auto const text{STR_C(row.second)};
+		auto const text{STR_C(label)};
 		auto const size{ImGui::CalcTextSize(text, nullptr, false, wrap)};
 		auto const line{std::max(picture, size.y)};
-		gesture_draw(*list, ImVec2(top.x + pad, std::round(y + (line - picture) * 0.5f)), picture, gesture_picture(row.first), ImGui::GetColorU32(ImGuiCol_Text));
+		gesture_draw(*list, ImVec2(top.x + pad, std::round(y + (line - picture) * 0.5f)), picture, gesture_picture(keys), ImGui::GetColorU32(ImGuiCol_Text));
 		list->AddText(nullptr, 0.0f, ImVec2(top.x + pad + column, std::round(y + (line - size.y) * 0.5f)), ImGui::GetColorU32(ImGuiCol_Text, 0.85f), text, nullptr, wrap);
 		y += line + pad * 0.45f;
 	}
@@ -2313,7 +2350,7 @@ void editor_mode::draw_track_hints()
 	drawlist->AddRectFilled(from, to, fade(IM_COL32(0, 0, 0, 160)), 4.0f);
 	auto x{left};
 	auto const &modes{track_modes()};
-	auto const tab{false == m_track_window_open ? track_tab::path : m_track_tab == track_tab::route ? track_tab::straights : m_track_tab};
+	auto const tab{card_tab(m_track_window_open, m_track_tab)};
 	auto const found{std::ranges::find_if(modes, [&](track_mode const &Mode) { return Mode.tab == tab; })};
 	auto const family{(family_colour(found != modes.end() ? found->family : 0) & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 235)};
 	x += chip(ImVec2(x, y), mode.c_str(), fade(family), fade(IM_COL32(255, 255, 255, 255)));
@@ -2490,10 +2527,12 @@ void editor_mode::draw_build_overlay() const
 			return;
 		std::array<ImVec2, 24> outline;
 		auto seen{true};
-		for (std::size_t i = 0; i < outline.size() && seen; ++i)
+		for (std::size_t i = 0; i < outline.size(); ++i)
 		{
 			auto const angle{2.0 * glm::pi<double>() * static_cast<double>(i) / outline.size()};
 			seen = projection.project(Point + glm::dvec3{std::cos(angle), 0.0, std::sin(angle)} * (0.5 * kRailAxes), outline[i]);
+			if (false == seen)
+				break;
 		}
 		auto const dot{false == seen || std::hypot(outline[0].x - centre.x, outline[0].y - centre.y) < 4.0f};
 		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 170), 4.0f}, std::pair{Color, 2.0f}})
@@ -2615,8 +2654,18 @@ void editor_mode::draw_build_overlay() const
 		else
 			for (auto const &piece : switch_preview())
 				drawpath(piece, overlay_color::invalid);
-		auto const text{valid ? connection_readout(plan) : plan.error.empty() ? std::string{STR_C("Drag onto the other track")} : plan.error};
-		connection_label(text, valid ? (plan.warning.empty() ? overlay_color::highlight : overlay_color::warning) : overlay_color::invalid);
+		std::string text;
+		ImU32 colour{overlay_color::invalid};
+		if (valid)
+		{
+			text = connection_readout(plan);
+			colour = plan.warning.empty() ? overlay_color::highlight : overlay_color::warning;
+		}
+		else if (plan.error.empty())
+			text = STR_C("Drag onto the other track");
+		else
+			text = plan.error;
+		connection_label(text, colour);
 	}
 	else if (auto const *selected{selected_track()}; false == m_switch.placing && m_track_tab == track_tab::turnout && m_switch.connection < 0 && m_switch.armed >= 0 && m_switch.armed < static_cast<int>(m_switch.templates.size()) &&
 	                                                 m_switch.templates[m_switch.armed].double_slip && selected != nullptr && selected == m_straights.current_for && false == m_straights.current.tracks.empty() &&
@@ -2894,7 +2943,7 @@ void editor_mode::draw_build_overlay() const
 			if (i < lay.modes.size() && lay.modes[i] == lay_mode::curve)
 			{
 				auto const off{departure(lay.points[i])};
-				auto const colour{off < 0.0 ? overlay_color::grip : off <= 0.1 ? IM_COL32(90, 220, 110, 255) : off <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255)};
+				auto const colour{lay_point_colour(off)};
 				drawlist->AddCircleFilled(screen, 4.5f, colour);
 				drawlist->AddCircle(screen, 4.5f, IM_COL32(0, 0, 0, 170), 12, 1.5f);
 				continue;
@@ -2906,7 +2955,7 @@ void editor_mode::draw_build_overlay() const
 		if (ImVec2 cursor; lay.mode == lay_mode::curve && false == lay.points.empty() && lay.mouse_snap.track == nullptr && projection.project(lay.mouse, cursor))
 		{
 			auto const off{departure(lay.mouse)};
-			drawlist->AddCircle(cursor, 6.0f, off < 0.0 ? overlay_color::grip : off <= 0.1 ? IM_COL32(90, 220, 110, 255) : off <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255), 16, 2.0f);
+			drawlist->AddCircle(cursor, 6.0f, lay_point_colour(off), 16, 2.0f);
 		}
 		ImVec2 screen;
 		if (lay.mouse_snap.track != nullptr && projection.project(lay.mouse_snap.position, screen))
