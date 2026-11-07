@@ -974,8 +974,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		auto const saved_radius{m_lay.radius};
 		auto const saved_layout{m_track_layout};
 		char const *kinds[]{"point-end", "point-points-end", "end-end", "end-points-end", "end-points-point", "point-points-beside"};
-		std::map<std::string, int> tally;
-		std::map<std::string, int> refused;
+		std::map<std::string, int, std::less<>> tally;
+		std::map<std::string, int, std::less<>> refused;
 		int failed_shown{0};
 		for (int index = 0; index < count; ++index)
 		{

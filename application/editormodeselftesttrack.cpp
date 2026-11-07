@@ -724,9 +724,9 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		if (corridor > 0.0)
 			m_infra.corridor = static_cast<float>(corridor);
 		infra_recognize();
-		std::map<std::string, int> kinds;
-		std::map<std::string, int> groups;
-		std::map<std::string, std::pair<int, std::string>> unknown;
+		std::map<std::string, int, std::less<>> kinds;
+		std::map<std::string, int, std::less<>> groups;
+		std::map<std::string, std::pair<int, std::string>, std::less<>> unknown;
 		for (auto const &candidate : m_infra.candidates)
 		{
 			auto const &binding{candidate.binding};
@@ -774,7 +774,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				std::vector<double> heights;
 				std::vector<double> turns;
 			};
-			std::map<std::string, use> uses;
+			std::map<std::string, use, std::less<>> uses;
 			for (auto const &candidate : m_infra.candidates)
 			{
 				auto const &binding{candidate.binding};

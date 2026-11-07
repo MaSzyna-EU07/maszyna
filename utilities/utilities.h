@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/parser.h"
 
+#include <string_view>
+
 /*rozne takie duperele do operacji na stringach w paszczalu, pewnie w delfi sa lepsze*/
 /*konwersja zmiennych na stringi, funkcje matematyczne, logiczne, lancuchowe, I/O etc*/
 
@@ -24,6 +26,14 @@ template <typename T> constexpr T sq(T v)
 {
 	return v * v;
 }
+
+// the hash of a text taking a string_view as well as a string: an unordered set or map of strings with it and std::equal_to<>
+// looks a view or a literal up without a copy
+struct string_hash
+{
+	using is_transparent = void;
+	std::size_t operator()(std::string_view const Text) const noexcept { return std::hash<std::string_view>{}(Text); }
+};
 
 // returns the per-user config path for `filename` (platform-specific dir),
 // or an empty path if the home/appdata env var is unavailable

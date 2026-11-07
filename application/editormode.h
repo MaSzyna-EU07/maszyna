@@ -378,7 +378,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::size_t foreign{0}; // chunks not made ahead: the terrain beside isn't of the model
 		std::optional<double> ahead; // how much the terrain made ahead lies over the model
 		std::set<TTrack *> changed; // tracks whose formations are to follow them
-		std::set<std::string> gone; // names of the tracks removed, whose formations go with them
+		std::set<std::string, std::less<>> gone; // names of the tracks removed, whose formations go with them
 		double changed_time{0.0};
 		bool restoring{false}; // the history is taken back or forward: the terrain comes back with it
 		std::size_t shaped{0};
@@ -389,8 +389,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		static int constexpr grade_line_steep{-2};
 		static int constexpr grade_line_off{-3}; // taken off a grade line by hand, stays on its own when the lines are worked out again
 		static int constexpr grade_line_off_number{-10}; // this and below: taken off the grade line of this number less this
-		std::map<std::string, int> grade_lines; // of each track the number of the grade line it shares, or one of those above
-		std::set<std::string> grade_lines_hand; // the tracks put on their grade line by hand: they stay on it when the lines are worked out again
+		std::map<std::string, int, std::less<>> grade_lines; // of each track the number of the grade line it shares, or one of those above
+		std::set<std::string, std::less<>> grade_lines_hand; // the tracks put on their grade line by hand: they stay on it when the lines are worked out again
 		bool grade_lines_loaded{false};
 		bool grade_lines_dirty{false}; // the edits of the tracks carried their lines on: stored once, with the next frame
 		std::unordered_map<TTrack const *, std::string> grade_line_keys; // of the tracks changed, the key each had last, to carry its line on to the next
@@ -1350,8 +1350,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int crossovers_odd{0};
 		int found{0};
 		int bound{0};
-		std::map<std::string, int> types; // of the catalogue
-		std::map<std::string, int> shapes; // measured
+		std::map<std::string, int, std::less<>> types; // of the catalogue
+		std::map<std::string, int, std::less<>> shapes; // measured
 		std::vector<std::string> notes;
 	};
 	// the switches without a type kept get the one of the catalogue they are of, or the size measured from their shape
@@ -2599,7 +2599,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		// ticked at first by their groups: speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and
 		// sound, frogs, sleeper placement
 		track_groups groups{false, false, false, false, true, true, true, true, false, true, true};
-		std::map<std::string, bool> ticks; // changed by hand, by the keys of the properties
+		std::map<std::string, bool, std::less<>> ticks; // changed by hand, by the keys of the properties
 		bool picking{false}; // the next click on a track in the view takes its properties
 		bool reveal{false};  // its section of the inspector opens, a track having been taken
 	};

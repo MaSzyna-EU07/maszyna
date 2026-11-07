@@ -1177,7 +1177,7 @@ void editor_mode::infra_adopt(TTrack &Track)
 		m_point_objects_revision = revision;
 		m_point_objects_count = scene::Layers.instance_count();
 		m_point_objects.clear();
-		std::unordered_map<std::string, TTrack *> readers;
+		std::unordered_map<std::string, TTrack *, string_hash, std::equal_to<>> readers;
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
 				for (int list = 0; list < 6; ++list)

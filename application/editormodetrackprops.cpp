@@ -728,7 +728,7 @@ using value_counts = std::vector<std::pair<std::string, int>>;
 // values of the property over the tracks it applies to, each with the number of the tracks having it, the most common first
 value_counts values_of(track_property const &Property, std::vector<TTrack *> const &Tracks)
 {
-	std::map<std::string, int> counted;
+	std::map<std::string, int, std::less<>> counted;
 	for (auto const *track : Tracks)
 		if (track != nullptr && false == track->m_editorremoved && Property.applies(*track))
 			++counted[Property.get(*track)];
@@ -1031,7 +1031,7 @@ void editor_mode::textures_index()
 	if (m_texture_indexed)
 		return;
 	m_texture_indexed = true;
-	std::map<std::string, bool> found; // the name, whether there's a .mat of it
+	std::map<std::string, bool, std::less<>> found; // the name, whether there's a .mat of it
 	std::filesystem::path const root{paths::textures};
 	auto const options{std::filesystem::directory_options::follow_directory_symlink | std::filesystem::directory_options::skip_permission_denied};
 	std::error_code error;
@@ -1119,7 +1119,7 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	};
 	// those in use first, then every other one of the folder
 	std::vector<texture_use const *> used;
-	std::set<std::string> usednames;
+	std::set<std::string, std::less<>> usednames;
 	for (auto const &use : m_texture_used)
 	{
 		auto const name{lowered(use.name)};
@@ -1944,7 +1944,7 @@ void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
 std::vector<TTrack *> editor_mode::similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const
 {
 	auto const &property{properties()[Property]};
-	std::set<std::string> wanted;
+	std::set<std::string, std::less<>> wanted;
 	for (auto const *track : Tracks)
 		if (track != nullptr && property.applies(*track))
 			wanted.insert(property.get(*track));

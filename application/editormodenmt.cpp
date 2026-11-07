@@ -898,7 +898,7 @@ bool formation_of(heightmap::modifier const &Modifier, std::string const &Track)
 }
 
 // the formations of the tracks of the names no longer in the scenery
-std::vector<std::string> formations_gone(std::set<std::string> const &Gone, std::vector<heightmap::modifier> const &Modifiers)
+std::vector<std::string> formations_gone(std::set<std::string, std::less<>> const &Gone, std::vector<heightmap::modifier> const &Modifiers)
 {
 	std::vector<std::string> dropped;
 	for (auto const &name : Gone)

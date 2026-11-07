@@ -362,7 +362,7 @@ bool editor_mode::signal_scan(bool const Wait)
 	for (int i = 0; i < kKindCount; ++i)
 	{
 		tool.chosen[i] = -1;
-		std::unordered_map<std::string, int> sizes;
+		std::unordered_map<std::string, int, string_hash, std::equal_to<>> sizes;
 		for (auto const &item : tool.templates)
 			if (item.kind == kKinds[i])
 				++sizes[group_of(item.mount, item.lamps, item.arms)];
@@ -1064,13 +1064,13 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 	if (gone.empty())
 		return;
 	// what the step moved onto the tracks left isn't lost
-	std::unordered_set<std::string> carried;
+	std::unordered_set<std::string, string_hash, std::equal_to<>> carried;
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (int list = 0; list < 6; ++list)
 				for (auto const &event : editor_track::events(*track, list))
 					carried.insert(ToLower(event.first));
-	std::unordered_set<std::string> circuits;
+	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
 	for (auto const *track : Kept)
 		if (track != nullptr && false == track->m_editorremoved)
 			for (auto const *isolated : track->Isolated)
@@ -1121,7 +1121,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 	// not the signals standing as last listed, nor the templates once found: the step taken may hold one of them; looked for once an event
 	// waits
 	std::vector<signal_standing> signals;
-	std::unordered_map<std::string, signal_standing const *> readers;
+	std::unordered_map<std::string, signal_standing const *, string_hash, std::equal_to<>> readers;
 	auto known{false};
 	auto const reader_of = [&](std::string const &Name) -> signal_standing const * {
 		if (false == known)

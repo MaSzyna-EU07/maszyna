@@ -356,7 +356,7 @@ std::string win1250_to_utf8(const std::string &Input)
 std::string utf8_to_win1250(std::string const &Text)
 {
 	// polish letters, as utf-8 sequences; the same set win1250_to_utf8() handles
-	static std::unordered_map<std::string, char> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
+	static std::unordered_map<std::string, char, string_hash, std::equal_to<>> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
 	                                                           {"\xC5\x9A", '\x8C'}, {"\xC5\xB9", '\x8F'}, {"\xC5\xBB", '\xAF'}, {"\xC4\x85", '\xB9'}, {"\xC4\x87", '\xE6'}, {"\xC4\x99", '\xEA'},
 	                                                           {"\xC5\x82", '\xB3'}, {"\xC5\x84", '\xF1'}, {"\xC3\xB3", '\xF3'}, {"\xC5\x9B", '\x9C'}, {"\xC5\xBA", '\x9F'}, {"\xC5\xBC", '\xBF'}};
 	std::string output;

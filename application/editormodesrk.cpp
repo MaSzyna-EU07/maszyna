@@ -871,7 +871,7 @@ struct disc_check
 
 // Mains: for each route of the disc the semaphore described with its arms it leads to, none for the other routes. File: the template
 // of the disc, Template: its head, none when it isn't among the scanned
-disc_check check_disc(std::vector<signal_head> const &Heads, std::unordered_map<std::string, std::size_t> const &By_file, std::vector<signal_head const *> const &Mains, signal_head const *Template, std::string const &File, std::string const &Mount)
+disc_check check_disc(std::vector<signal_head> const &Heads, std::unordered_map<std::string, std::size_t, string_hash, std::equal_to<>> const &By_file, std::vector<signal_head const *> const &Mains, signal_head const *Template, std::string const &File, std::string const &Mount)
 {
 	disc_check result;
 	auto const described{Template != nullptr && false == Template->repeats.empty()};
@@ -3704,7 +3704,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 			m_problems.push_back({format(STR_C("The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"), row.entry.c_str(), bare_to - bare_from, bare_from), station::point_on(line, (bare_from + bare_to) * 0.5).point, 0, true});
 	}
 	// the block sections their controls switch, the tracks gone
-	std::unordered_set<std::string> circuits;
+	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
 	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (auto const *isolated : track->Isolated)
@@ -4100,7 +4100,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 				used[k] = 1;
 			}
 	// a number another signal of the scenery has already gets a letter
-	std::unordered_set<std::string> taken;
+	std::unordered_set<std::string, string_hash, std::equal_to<>> taken;
 	for (std::size_t k = 0; k < standing.size(); ++k)
 		if (0 == used[k])
 			taken.insert(ToLower(standing[k].name));
@@ -4420,7 +4420,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			changes.others.push_back(std::move(item));
 		}
 		// those of the sections gone from the lines set taken away with them
-		std::unordered_set<std::string> named;
+		std::unordered_set<std::string, string_hash, std::equal_to<>> named;
 		for (auto const &found : sections)
 			named.insert(found.name);
 		for (auto const &standing_control : controls)
@@ -4638,7 +4638,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			grown = true;
 		}
 	}
-	std::unordered_map<std::string, std::size_t> by_file;
+	std::unordered_map<std::string, std::size_t, string_hash, std::equal_to<>> by_file;
 	for (std::size_t index = 0; index < heads.size(); ++index)
 		by_file.emplace(heads[index].file, index);
 	// the semaphore described with its arms a route leads to, none for a route to another signal or to none
@@ -5554,7 +5554,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		set_circuits();
 		WriteLog("SELFTEST srkcircuits: " + m_status);
 		refresh();
-		std::map<std::string, std::pair<std::size_t, double>> found;
+		std::map<std::string, std::pair<std::size_t, double>, std::less<>> found;
 		for (auto const &path : m_layout->paths)
 			if (false == path.track->Isolated.empty())
 			{
@@ -5856,7 +5856,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		// srkfit lines|station|from=<m> to=<m>: the schematic fitting the lines out, the station, or the chainage between
 		std::string word;
 		std::string mode;
-		std::map<std::string, std::string> bounds;
+		std::map<std::string, std::string, std::less<>> bounds;
 		while (Words >> word)
 			if (auto const equals{word.find('=')}; equals != std::string::npos)
 				bounds[word.substr(0, equals)] = word.substr(equals + 1);
@@ -5888,7 +5888,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		// one name
 		std::vector<standing_signal> standing;
 		m_signals.standing_signals(standing, true);
-		std::unordered_map<std::string, int> names;
+		std::unordered_map<std::string, int, string_hash, std::equal_to<>> names;
 		for (auto const &signal : standing)
 			++names[ToLower(signal.name)];
 		std::size_t bad{0};
@@ -5898,7 +5898,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				++bad;
 				WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
 			}
-		std::unordered_map<std::string, int> sections;
+		std::unordered_map<std::string, int, string_hash, std::equal_to<>> sections;
 		auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
 		for (auto const &block_control : controls)
 		{
@@ -5927,7 +5927,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				++unread;
 				WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
 			}
-		std::unordered_set<std::string> circuits;
+		std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
 				for (auto const *isolated : track->Isolated)
