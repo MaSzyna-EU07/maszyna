@@ -514,6 +514,7 @@ bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
 } // anonymous namespace
 
 int TAnimModel::s_instanceable_total = 0;
+unsigned int TAnimModel::s_instanceable_revoked = 0;
 int TAnimModel::s_classified_total = 0;
 int TAnimModel::s_rejected_no_pmodel = 0;
 int TAnimModel::s_rejected_lights = 0;
@@ -551,6 +552,7 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		m_animlist.push_back(tmp);
 		// containers are added by events after the instance was loaded and bucketed;
 		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
+		if( m_instanceable ) { ++s_instanceable_revoked; }
 		m_instanceable = false;
 		return tmp;
     }
@@ -780,6 +782,7 @@ void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
 
     m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
     // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
+    if( m_instanceable ) { ++s_instanceable_revoked; }
     m_instanceable = false;
 }
 
