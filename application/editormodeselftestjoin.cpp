@@ -389,7 +389,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		for (double length{0.0}; words >> length;)
 		{
 			auto const ground = [](double const X) { return 130.0 + 4.0 * std::sin(X / 180.0) + 1.5 * std::sin(X / 37.0) + 0.2 * std::sin(X / 6.0); };
-			auto const bed = [&](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) {
+			auto const bed = [&ground](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) {
 				std::vector<double> heights;
 				for (auto const &point : Points)
 					heights.push_back(ground(point.x));

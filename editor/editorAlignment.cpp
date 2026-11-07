@@ -4495,7 +4495,7 @@ void fit_curve(design &Design, std::size_t const Vertex, std::vector<glm::dvec2>
 	// curve begun short after a free end and running out long into the straight after it is one curve, not a sharp arc with a flat
 	// one after it
 	auto const apart{Points.size() >= 4};
-	auto const shaped = [&](std::vector<double> const &Parameters, design &Trial) {
+	auto const shaped = [&Design, &speed, &deflection, &Vertex](std::vector<double> const &Parameters, design &Trial) {
 		Trial = Design;
 		auto const radius{std::exp(std::clamp(Parameters[0], std::log(kTraceRadiusMin), std::log(kTraceRadiusMax)))};
 		auto const longest{longest_transition(speed, radius, Trial.norms)};
@@ -4512,7 +4512,7 @@ void fit_curve(design &Design, std::size_t const Vertex, std::vector<glm::dvec2>
 		curve.transition_in = in;
 		curve.transition_out = out;
 	};
-	residuals_of const residuals{[&](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
+	residuals_of const residuals{[&shaped, &Points](std::vector<double> const &Parameters, std::vector<double> &Residuals) {
 		design trial;
 		shaped(Parameters, trial);
 		return stretch_residuals(trial, Points, Residuals);

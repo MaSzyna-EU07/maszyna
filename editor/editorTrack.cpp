@@ -681,7 +681,7 @@ void editor_track::rotate_y(TTrack &Track, glm::dvec3 const &Pivot, double const
 	auto const rotate = [&](glm::dvec3 const &Vector) { return glm::dvec3{Vector.x * c + Vector.z * s, Vector.y, -Vector.x * s + Vector.z * c}; };
 
 	for (auto &path : Track.m_paths)
-		path.transform([&](glm::dvec3 const &Point) { return Pivot + rotate(Point - Pivot); }, rotate);
+		path.transform([&Pivot, &rotate](glm::dvec3 const &Point) { return Pivot + rotate(Point - Pivot); }, rotate);
 }
 
 glm::dvec3 editor_track::pivot(TTrack const &Track)
@@ -2968,7 +2968,7 @@ std::optional<editor_track::switch_template> editor_track::template_of_switch(TT
 		auto const &path{Track->m_paths[i]};
 		auto &local{entry.local[i]};
 		local = path;
-		local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
+		local.transform([&origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
 	}
 	if (glm::length(plan_of(entry.local[1].points[segment_data::point::start])) > kSamePoint)
 		return std::nullopt;
@@ -3027,7 +3027,7 @@ std::vector<segment_data> editor_track::place_switch(switch_template const &Temp
 	};
 	auto const put = [&](segment_data const &Local) {
 		segment_data path{Local};
-		path.transform([&](glm::dvec3 const &Point) { return Origin + vector(Point); }, vector);
+		path.transform([&Origin, &vector](glm::dvec3 const &Point) { return Origin + vector(Point); }, vector);
 		if (Side < 0)
 		{
 			path.rolls = {-Local.rolls[0], -Local.rolls[1]};

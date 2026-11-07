@@ -891,7 +891,7 @@ void editor_mode::draw_track_labels() const
 		{
 			// the straights in line: the next one parallel to this one, a bend between them is the end of the row
 			auto const along{heading(*track)};
-			run = row(*track, [&](TTrack const &Other, bool) {
+			run = row(*track, [this, &heading, &along](TTrack const &Other, bool) {
 				auto const other{heading(Other)};
 				return editor_track::is_straight(Other, m_straights.tolerance) && glm::length(along) > 1e-6 && glm::length(other) > 1e-6 &&
 				       std::abs(geometry::cross(glm::normalize(along), glm::normalize(other))) < 0.002;
@@ -901,7 +901,7 @@ void editor_mode::draw_track_labels() const
 		{
 			// the pieces of a curve turning the same way: one turning the other way starts a curve of its own
 			auto const side{own_turn(*track, true)};
-			run = row(*track, [&](TTrack const &Other, bool const Forward) { return false == editor_track::is_straight(Other, m_straights.tolerance) && own_turn(Other, Forward) * side >= 0.0; });
+			run = row(*track, [this, &side, &own_turn](TTrack const &Other, bool const Forward) { return false == editor_track::is_straight(Other, m_straights.tolerance) && own_turn(Other, Forward) * side >= 0.0; });
 		}
 		double length{0.0};
 		for (auto const &[row_track, forward] : run)
@@ -2261,7 +2261,7 @@ void editor_mode::render_track_spread_ui()
 		if (i > 0)
 			ImGui::SameLine(0.0f, gap);
 		ImGui::PushID(i);
-		if (sketch_tile("##spreadstop", labels[i], spread.stop == i, width, [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
+		if (sketch_tile("##spreadstop", labels[i], spread.stop == i, width, [&at, &i](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32 Made) {
 			    auto const dim{(Line & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 70)};
 			    List.AddLine(at(Low, High, 0.0f, 0.75f), at(Low, High, 1.0f, 0.75f), dim, 2.0f);
 			    List.AddBezierQuadratic(at(Low, High, 0.45f, 0.75f), at(Low, High, 0.7f, 0.75f), at(Low, High, 1.0f, 0.15f), dim, 2.0f);

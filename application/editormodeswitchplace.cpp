@@ -928,7 +928,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		auto &local{shape.local[i]};
 		local = path;
 		auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), perpendicular) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-		local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
+		local.transform([&origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
 		if (side < 0.0)
 		{
 			local.rolls = {-local.rolls[0], -local.rolls[1]};
@@ -2521,7 +2521,7 @@ void editor_mode::insert_curved_slip(int const Direction, int const Side)
 	// the curve taken out up to the joints of the template, the straights of both tracks laid out there
 	cut_curve(candidates, tool.frame, sample_at(tool.frame, plan.middle - plan.reach).position, sample_at(tool.frame, plan.middle + plan.reach).position, states, created, removed);
 	auto const parts{build_double_slip(plan.points[0], plan.points[1], plan.points[2], plan.points[3], plan.crossing, 0.0, plan.first, plan.second, plan.angle, plan.curve, style, shape.type,
-	                                   [&](segment_data const &Path) { return bent_slip_path(plan, Path); })};
+	                                   [this, &plan](segment_data const &Path) { return bent_slip_path(plan, Path); })};
 	std::vector<TTrack *> made{parts};
 	for (auto const &path : curved_slip_reaches(plan))
 		if (auto *straight{editor_track::create_path(style, path)})

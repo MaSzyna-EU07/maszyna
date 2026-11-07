@@ -1021,7 +1021,7 @@ void editor_mode::render_extend_ui()
 	auto const width{std::floor((ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f)};
 	auto const at = [](ImVec2 const Low, ImVec2 const High, float const X, float const Y) { return ImVec2(Low.x + (High.x - Low.x) * X, Low.y + (High.y - Low.y) * Y); };
 	auto const piece = [&](char const *Id, char const *Label, int const Bend) {
-		return sketch_tile(Id, Label, false, width, [&](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32) {
+		return sketch_tile(Id, Label, false, width, [&at, &Bend](ImDrawList &List, ImVec2 Low, ImVec2 High, ImU32 Line, ImU32) {
 			List.AddLine(at(Low, High, 0.0f, 0.5f), at(Low, High, 0.4f, 0.5f), Line, 2.0f);
 			List.AddCircleFilled(at(Low, High, 0.4f, 0.5f), 2.5f, IM_COL32(230, 90, 70, 255));
 			if (Bend == 0)
@@ -1513,7 +1513,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				base.start = in.end;
 				base.start_direction = in.direction;
 				easedstart = std::make_pair(in.end, in.direction);
-				std::erase_if(fitted_points, [&](glm::dvec2 const &Point) { return glm::distance(Point, plan_of(entry)) <= in.length; });
+				std::erase_if(fitted_points, [&entry, &in](glm::dvec2 const &Point) { return glm::distance(Point, plan_of(entry)) <= in.length; });
 			}
 		}
 		base.end_curved = reaching && design.end_curved && cross(entering, leaving) * design.end_turn > 1e-9;
@@ -1525,7 +1525,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				base.end = out.end;
 				base.end_direction = -out.direction;
 				easedend = std::make_pair(out.end, -out.direction);
-				std::erase_if(fitted_points, [&](glm::dvec2 const &Point) { return glm::distance(Point, plan_of(exit)) <= out.length; });
+				std::erase_if(fitted_points, [&exit, &out](glm::dvec2 const &Point) { return glm::distance(Point, plan_of(exit)) <= out.length; });
 			}
 		}
 		{

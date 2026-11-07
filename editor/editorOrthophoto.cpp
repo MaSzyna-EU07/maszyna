@@ -138,7 +138,7 @@ fs::path cache_root()
 	if (root.empty())
 		root = fs::path{".cache"} / "geoportal";
 	static std::once_flag moved;
-	std::call_once(moved, [&]() {
+	std::call_once(moved, [&root]() {
 		auto const old{user_config_path(".cache")};
 		std::error_code ec;
 		if (old.empty() || false == fs::exists(old, ec))
@@ -1715,7 +1715,7 @@ void editor_orthophoto::worker()
 				return best;
 			};
 			auto const prefetching = [&]() { return false == m_prefetch_paused && m_prefetch_next < m_prefetch.size(); };
-			m_wakeup.wait(lock, [&]() { return m_stop.load() || nearest() != m_queue.end() || prefetching(); });
+			m_wakeup.wait(lock, [this, &nearest, &prefetching]() { return m_stop.load() || nearest() != m_queue.end() || prefetching(); });
 			if (m_stop)
 				return;
 			if (auto const best{nearest()}; best != m_queue.end())
@@ -1764,7 +1764,7 @@ void editor_orthophoto::worker()
 		std::string error;
 		tile_request const request{current.key.first, current.key.second, current.level, current.src.year, current.src.hires};
 		// a job of the same tile queued since: the tile wants another image now
-		stop_check const superseded = [&]() {
+		stop_check const superseded = [this, &current]() {
 			std::scoped_lock lock(m_mutex);
 			return std::ranges::any_of(m_queue, [&](job const &Job) { return Job.key == current.key; });
 		};

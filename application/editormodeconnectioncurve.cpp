@@ -1092,8 +1092,8 @@ bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vec
 	profile_take(route, route.spans.front().track, route.spans.back().track);
 	auto const before{m_profile.line};
 	editor_track::apply_profile(
-	    route, [&](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) - lowered.at(Chainage); },
-	    [&](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) - lowered.grade(Chainage); }, breaks, States, Created);
+	    route, [&samples, &lowered](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) - lowered.at(Chainage); },
+	    [&samples, &lowered](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) - lowered.grade(Chainage); }, breaks, States, Created);
 	// the design of the outer track down with it, the corners of the ramps left out where the line runs on straight through them
 	profile_take(route, route.spans.front().track, route.spans.back().track);
 	std::vector<profile::pvi> points;
@@ -1295,8 +1295,8 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 		std::vector<std::pair<TTrack *, editor_track::state>> states;
 		std::vector<TTrack *> created;
 		editor_track::apply_profile(
-		    route, [&](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) + change(Chainage); },
-		    [&](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) + (change(Chainage + 0.5) - change(Chainage - 0.5)); }, breaks, states, created);
+		    route, [&samples, &change](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) + change(Chainage); },
+		    [&samples, &change](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) + (change(Chainage + 0.5) - change(Chainage - 0.5)); }, breaks, states, created);
 		profile_library_load();
 		auto library{m_profiles};
 		push_track_snapshot(std::move(states), std::move(created));

@@ -952,7 +952,7 @@ std::size_t editor_mode::track_property_apply(int const Property, std::vector<TT
 	std::size_t same{0};
 	std::size_t occupied{0};
 	std::size_t nomodel{0};
-	auto const changed{tracks_apply(targets, [&](TTrack &Track) {
+	auto const changed{tracks_apply(targets, [&property, &Text, &key, &occupied, &nomodel, &same](TTrack &Track) {
 		if (property.set(Track, Text))
 			return true;
 		if (key == "circuits" && false == Track.Dynamics.empty() && property.get(Track) != Text)
@@ -1648,7 +1648,7 @@ std::optional<std::size_t> editor_mode::apply_track_values(std::vector<std::pair
 		}
 	if (pasted.empty())
 		return std::nullopt;
-	return tracks_apply(Tracks, [&](TTrack &Track) {
+	return tracks_apply(Tracks, [&pasted](TTrack &Track) {
 		bool any{false};
 		for (auto const &[property, value] : pasted)
 			if (property->applies(Track))

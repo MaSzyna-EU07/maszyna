@@ -111,7 +111,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 			return "move";
 		return {};
 	};
-	auto const key = [&](std::string const &Word) {
+	auto const key = [](std::string const &Word) {
 		if (Word.size() == 1 && (std::isupper(static_cast<unsigned char>(Word[0])) || std::isdigit(static_cast<unsigned char>(Word[0]))))
 			return true;
 		if (Word.size() >= 2 && Word[0] == 'F' && std::isdigit(static_cast<unsigned char>(Word[1])))

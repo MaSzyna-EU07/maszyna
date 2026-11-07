@@ -1221,7 +1221,7 @@ void editor_mode::render_turnout_ui()
 		};
 		auto paths{double_paths(*set)};
 		for (auto &path : paths)
-			path.transform([&](glm::dvec3 const &Point) { return origin + mirror(Point - origin); }, mirror);
+			path.transform([&origin, &mirror](glm::dvec3 const &Point) { return origin + mirror(Point - origin); }, mirror);
 		std::string status;
 		if (false == move_double_paths(*set, paths, status))
 			ui()->set_status(status, true);
@@ -1258,7 +1258,7 @@ void editor_mode::render_turnout_ui()
 				auto &local{own.local[i]};
 				local = track->m_paths[i];
 				auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), normal) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-				local.transform([&](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
+				local.transform([&origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
 				if (side < 0)
 				{
 					local.rolls = {-local.rolls[0], -local.rolls[1]};

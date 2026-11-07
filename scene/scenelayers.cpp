@@ -926,7 +926,7 @@ void node_layers::scan(layer_handle const Layer)
 		end = (end == std::string::npos ? content.size() : end + 1);
 		auto const first{content.find_first_not_of(" \t", begin)};
 		// the text after the mark, if the line starts with it
-		auto const marked_text = [&](std::string_view const Mark, std::string &Text) {
+		auto const marked_text = [&content, &first, &end](std::string_view const Mark, std::string &Text) {
 			auto const length{Mark.size()};
 			if (content.compare(first, length, Mark) != 0 || (first + length < end && content[first + length] != ' ' && content[first + length] != '\t' && content[first + length] != '\r' && content[first + length] != '\n'))
 			{

@@ -1754,14 +1754,14 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	// read from it is off it by, and isn't cut
 	bool const edit_only{state.changed && false == state.fitting};
 	auto const read_line{state.line_read};
-	auto const changed_at = [&](double const Chainage) { return profile::elevation(line, Chainage) - profile::elevation(read_line, Chainage); };
+	auto const changed_at = [&line, &read_line](double const Chainage) { return profile::elevation(line, Chainage) - profile::elevation(read_line, Chainage); };
 	if (edit_only)
-		std::erase_if(cuts, [&](double const Cut) {
+		std::erase_if(cuts, [&changed_at](double const Cut) {
 			double constexpr kCutNear{1.0}; // m
 			double constexpr kNoChange{0.001}; // m
 			return std::abs(changed_at(Cut - kCutNear)) < kNoChange && std::abs(changed_at(Cut + kCutNear)) < kNoChange;
 		});
-	auto const height_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage); };
+	auto const height_at = [&edit_only, &before, &changed_at, &line](double const Chainage) { return edit_only ? editor_track::sampled_elevation(before, Chainage) + changed_at(Chainage) : profile::elevation(line, Chainage); };
 	auto const grade_at = [&](double const Chainage) { return edit_only ? editor_track::sampled_grade(before, Chainage) + profile::grade(line, Chainage) - profile::grade(read_line, Chainage) : profile::grade(line, Chainage); };
 	// the paths are cut only at the breaks they can't go over keeping to the line within a hair: one cut there, by a joint, or by
 	// another cut, would leave a sliver of a track, the line applied again leaving more of them by the first, the ballast mapped
@@ -2971,10 +2971,10 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		}
 		polyline([&](std::size_t const I) { return state.terrain[I]; }, kTerrain, 1.5f);
 		// the formation under the grade line, which is what meets the ground
-		polyline([&](std::size_t const I) { return profile::elevation(state.line, samples[I].chainage) - (I < state.beds.size() ? state.beds[I] : 0.0); }, kFormation, 1.0f);
+		polyline([&state, &samples](std::size_t const I) { return profile::elevation(state.line, samples[I].chainage) - (I < state.beds.size() ? state.beds[I] : 0.0); }, kFormation, 1.0f);
 	}
 	if (state.show_model && state.model.size() == samples.size())
-		polyline([&](std::size_t const I) { return state.model[I]; }, kModel, 1.5f);
+		polyline([&state](std::size_t const I) { return state.model[I]; }, kModel, 1.5f);
 	if (state.show_track)
 		polyline([&](std::size_t const I) { return samples[I].position.y; }, kTrack, 1.5f);
 

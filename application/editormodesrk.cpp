@@ -5626,7 +5626,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		std::unordered_set<TTrack const *> inside;
 		if (false == station_tracks(tracks, inside))
 			return editor_selftest_result::handled;
-		auto const plan{station::signals(*m_layout, tracks, [&](TTrack const &Track) { return inside.contains(&Track); })};
+		auto const plan{station::signals(*m_layout, tracks, [&inside](TTrack const &Track) { return inside.contains(&Track); })};
 		std::vector<standing_signal> standing;
 		m_signals.standing_signals(standing, true);
 		for (auto const &line : station::lines_out(*m_layout, plan, kLineLimit))

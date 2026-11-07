@@ -1124,7 +1124,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 
 	// then the simplest design which keeps within half the tolerance of the line found: a point is dropped, or two bending the
 	// same way become one, as long as that departs the least and adds no fault
-	auto const errors = [&](line const &Line) {
+	auto const errors = [&Context](line const &Line) {
 		auto completed{Line};
 		complete(completed, Context);
 		auto const found{check(completed, Context)};
@@ -1293,7 +1293,7 @@ std::vector<double> breaks(line const &Line)
 
 std::vector<double> fewest_breaks(line const &Line, std::vector<double> Joints, double const Tolerance)
 {
-	return fewest_breaks(breaks(Line), std::move(Joints), Tolerance, [&](double const Chainage) { return elevation(Line, Chainage); }, [&](double const Chainage) { return grade(Line, Chainage); });
+	return fewest_breaks(breaks(Line), std::move(Joints), Tolerance, [&Line](double const Chainage) { return elevation(Line, Chainage); }, [&Line](double const Chainage) { return grade(Line, Chainage); });
 }
 
 std::vector<double> fewest_breaks(std::vector<double> const &Breaks, std::vector<double> Joints, double const Tolerance, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade)

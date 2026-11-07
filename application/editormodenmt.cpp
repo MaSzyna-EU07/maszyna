@@ -3810,7 +3810,7 @@ bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
 	auto loose{std::exchange(state.loose, {})};
 	auto turntables{std::exchange(state.turntables, nmt_turntables())};
 	auto const departures{state.departures};
-	auto const applied{nmt_fit_line(*last, [&](TTrack const *Other) { return false == laid.contains(Other); }, true)};
+	auto const applied{nmt_fit_line(*last, [&laid](TTrack const *Other) { return false == laid.contains(Other); }, true)};
 	auto const error{m_profile.error};
 	state.laid = std::move(fitted_lines);
 	state.paths = std::move(paths);
@@ -4201,7 +4201,7 @@ void editor_mode::nmt_share_grades()
 	// level and across the track, not past its end - the next piece of a line isn't beside it
 	auto const nearest_of = [&](place const &Here, cells const &Cells, double const Reach, auto const &Taken) {
 		std::array<std::pair<double, place const *>, 2> sides{std::pair{Reach, nullptr}, std::pair{Reach, nullptr}};
-		around(Cells, Here.position, Reach, [&](place const &Other) {
+		around(Cells, Here.position, Reach, [&Here, &Taken, &sides](place const &Other) {
 			if (Other.track == Here.track || Other.first == Here.first || Other.first == Here.second || Other.second == Here.first || Other.second == Here.second || false == Taken(Other))
 				return;
 			glm::dvec2 const offset{Other.position.x - Here.position.x, Other.position.z - Here.position.z};
@@ -4217,7 +4217,7 @@ void editor_mode::nmt_share_grades()
 	std::unordered_set<TTrack const *> apart;
 	// the nearest track on each side, of the ones not held apart
 	auto const nearest_sides = [&](place const &Here) {
-		return nearest_of(Here, places, kApart, [&](place const &Other) { return false == apart.contains(runs.root(Other.track)) || held.contains(Other.track); });
+		return nearest_of(Here, places, kApart, [&apart, &runs, &held](place const &Other) { return false == apart.contains(runs.root(Other.track)) || held.contains(Other.track); });
 	};
 	// two places side by side at one height: the joints of each move as the places lie between them
 	auto const side_by_side = [&](place const &Here, place const &Other) {
@@ -4331,12 +4331,12 @@ void editor_mode::nmt_share_grades()
 	std::size_t hand_pairs{0};
 	if (false == held.empty())
 	{
-		auto const held_places{cells_of(all, kHandApart, [&](place const &Here) { return held.contains(Here.track); })};
+		auto const held_places{cells_of(all, kHandApart, [&held](place const &Here) { return held.contains(Here.track); })};
 		for (auto const &[cell, those] : held_places)
 			for (auto const *here : those)
 			{
 				auto const line{held.at(here->track)};
-				for (auto const &[distance, other] : nearest_of(*here, held_places, kHandApart, [&](place const &Other) { return held.at(Other.track) == line; }))
+				for (auto const &[distance, other] : nearest_of(*here, held_places, kHandApart, [&held, &line](place const &Other) { return held.at(Other.track) == line; }))
 				{
 					// the ones side by side are tied already
 					if (other == nullptr || distance < kApart)
@@ -4360,7 +4360,7 @@ void editor_mode::nmt_share_grades()
 	joined_sets<stretch, std::map<stretch, stretch>> timbered;
 	std::vector<char> on_surface(timber_all.size(), 0);
 	for (auto const &here : timber_all)
-		around(timber_places, here.position, kApart, [&](place const &Other) {
+		around(timber_places, here.position, kApart, [&here, &on_timbers, &on_surface, &timbered, &stretch_of](place const &Other) {
 			if (Other.track <= here.track || (here.track->eType != tt_Switch && Other.track->eType != tt_Switch))
 				return;
 			if (glm::dvec2 const offset{Other.position.x - here.position.x, Other.position.z - here.position.z}; glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, here.along)) > 0.6 * kSpacing || std::abs(Other.position.y - here.position.y) > kLevel)
@@ -4524,7 +4524,7 @@ void editor_mode::nmt_share_grades()
 		// a switch on common timbers lies straight between its ends, no vertical curve taking it off their surface; the other paths where
 		// the grades at their ends, which average to the grade from end to end on a vertical curve, are far from it: the ends were brought
 		// to the tracks adjoining with the grades left as they were, and the path waves between them
-		auto const settle = [&](segment_data &Part) {
+		auto const settle = [&track, &timbered_tracks, &straightened](segment_data &Part) {
 			auto &points{Part.points};
 			if (points[segment_data::point::control1] == glm::dvec3{} && points[segment_data::point::control2] == glm::dvec3{})
 				return;
@@ -4745,7 +4745,7 @@ void editor_mode::nmt_auto_step()
 		auto *track{state.left_to_fit.front()};
 		auto const name{track->name()};
 		auto const known{simulation::Paths.sequence().size()};
-		if (nmt_fit_line(*track, [&](TTrack const *Other) { return fitted.contains(Other); }, false))
+		if (nmt_fit_line(*track, [&fitted](TTrack const *Other) { return fitted.contains(Other); }, false))
 			++state.lines;
 		else
 			++state.refused;

@@ -2280,7 +2280,7 @@ bool editor_mode::render_route_vertex(int const Index)
 			changed = true;
 		};
 		if (ImGui::SmallButton(STR_C("Apply recommended for V")))
-			reshape([&] { route_recommend(vertex); });
+			reshape([this, &vertex] { route_recommend(vertex); });
 		if (ImGui::IsItemHovered())
 		{
 			auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
@@ -2291,7 +2291,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		{
 			ImGui::SameLine();
 			if (ImGui::SmallButton(STR_C("Transitions for these cants")))
-				reshape([&] { alignment::norm_transitions(vertex, design.speed, design.norms); });
+				reshape([&vertex, &design] { alignment::norm_transitions(vertex, design.speed, design.norms); });
 			item_tooltip("The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones");
 			mark(part::whole, 0);
 		}
