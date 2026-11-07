@@ -1629,6 +1629,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the switch, or the double switch it's a part of, given the shape in place, straight or bent into the curve it lies in; Flip:
 	// the diverging track to the other side. Notes: for the user
 	bool apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
+	// the same along the straight, the start and the direction of the switch kept; and bent into the curve it lies in, its start kept
+	// where it is along the curve
+	bool reapply_straight_switch(TTrack &First, std::optional<double_switch> const &Set, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
+	bool reapply_bent_switch(TTrack &First, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
 	// the template to choose: the speeds on the diverging track as chips, the templates of the rail by their skos, all the others
 	// folded under. Fits: those of the kind wanted; Rail: of the track, empty when it doesn't tell; Popup: inside a combo, with no
 	// windows of its own. Gives the index picked, -1 while none is
@@ -1636,6 +1640,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the template of the selected switch, slip or crossing, changed with a pick: in a combo for the inspector, else in full; nothing
 	// for another track
 	void render_switch_template(TTrack &Track, bool const Combo);
+	// what a switch, a slip or a crossing is offered the templates by: those that fit it, its rail, the template it has, its record
+	struct template_offer
+	{
+		TTrack const *first{nullptr}; // of a double switch, its first switch
+		std::optional<switch_store::record> known;
+		std::function<bool(editor_track::switch_template const &)> fits;
+		std::string rail;
+		int current{-1};
+	};
+	// what the track is offered the templates by; false for a track that isn't a switch, a slip or a crossing
+	bool template_offer_of(TTrack const &Track, template_offer &Offer) const;
+	// the name of the template the track has, or of its own shape
+	std::string offered_name(template_offer const &Offer) const;
+	// the template in a combo of the inspector: the one picked, -1 while none is
+	int render_template_combo(template_offer const &Offer, std::string const &Blocked);
 	std::string connection_readout(connection::result const &Plan) const;
 	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
