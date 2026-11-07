@@ -350,6 +350,8 @@ class srk_tool final : public editor_tool
 	bool circuits_editable(std::vector<station::joint> const &Planned);
 	// the track circuits as the tracks have them, for the schematic
 	void survey();
+	// the joints of the circuits, where paths of different ones meet
+	void survey_joints(station::layout const &Layout);
 	// the signals placed where the station has none and the standing ones named, the circuits before the entry signals set too; one
 	// step of the history
 	void set_signals();
@@ -396,6 +398,8 @@ class srk_tool final : public editor_tool
 	editor_selftest_result selftest_heads(std::istringstream &Words);
 	editor_selftest_result selftest_shp(std::istringstream &Words);
 	editor_selftest_result selftest_block(std::istringstream &Words);
+	// the ways of the block it sets
+	void selftest_ways(std::string const &Entry, std::string const &Ways);
 	editor_selftest_result selftest_boundary(std::istringstream &Words);
 	editor_selftest_result selftest_fit(std::istringstream &Words);
 	editor_selftest_result selftest_draw(std::istringstream &Words);

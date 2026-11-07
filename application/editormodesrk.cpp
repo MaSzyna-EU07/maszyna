@@ -329,32 +329,41 @@ struct head_need
 	bool indicator{false};
 };
 
+// a speed the head shows, added once
+void add_speed(std::vector<int> &Speeds, int const Speed)
+{
+	if (Speed > 0 && std::ranges::find(Speeds, Speed) == Speeds.end())
+		Speeds.push_back(Speed);
+}
+
+// the lower speed of a route shorter than the braking distance, Slower, where it's below the one the head shows, Limit: the indicator
+// above 100 km/h
+void add_shortened(head_need &Need, int const Slower, double const Limit)
+{
+	if (Slower >= Limit)
+		return;
+	if (Slower > 100)
+		Need.indicator = true;
+	else
+	{
+		add_speed(Need.speeds, Slower);
+		Need.shortened = Need.shortened == 0 ? Slower : std::min(Need.shortened, Slower);
+	}
+}
+
 head_need need_of(std::vector<station::route> const &Routes, bool const Main, double const Line, double const Braking)
 {
 	head_need need;
 	need.white = Main;
-	auto const add = [&](int const Speed) {
-		if (Speed > 0 && std::ranges::find(need.speeds, Speed) == need.speeds.end())
-			need.speeds.push_back(Speed);
-	};
 	for (auto const &route : Routes)
 	{
 		auto const shown{Main ? shown_speed(route.speed, Line) : 0};
-		add(shown);
+		add_speed(need.speeds, shown);
 		auto const told{route.next >= 0 && route.warning < 0};
 		need.informs = need.informs || told;
 		if (false == Main || false == told || route.length >= Braking)
 			continue;
-		auto const slower{shortened_speed(route.length)};
-		if (slower >= (shown > 0 ? shown : Line))
-			continue;
-		if (slower > 100)
-			need.indicator = true;
-		else
-		{
-			add(slower);
-			need.shortened = need.shortened == 0 ? slower : std::min(need.shortened, slower);
-		}
+		add_shortened(need, shortened_speed(route.length), shown > 0 ? shown : Line);
 	}
 	std::ranges::sort(need.speeds);
 	return need;
@@ -3549,6 +3558,18 @@ bool other_block_at(std::vector<srk_tool::line_row> const &Lines, std::vector<st
 
 // the signals of the other block along the lines, Ways: their tracks, but where a line shares its track with a line of that block:
 // how many, the first of them
+// whether the signal stands along the line of the row, Index, and is one of the other block
+bool leftover_signal(std::vector<srk_tool::line_row> const &Lines, std::vector<station::line> const &Ways, std::size_t const Index, standing_signal const &Signal)
+{
+	auto const &row{Lines[Index]};
+	auto const automatic{row.block != srk_tool::block_kind::semi};
+	if (Signal.kind != (automatic ? "warning" : "block") || false == on_line(Ways[Index], Signal.position))
+		return false;
+	if (automatic && false == row.both && wrong_disc(Ways, Index, Signal))
+		return false;
+	return false == other_block_at(Lines, Ways, automatic, Signal.position);
+}
+
 void leftovers_found(std::vector<srk_tool::line_row> &Lines, std::vector<station::line> const &Ways, std::vector<standing_signal> const &Standing)
 {
 	using enum srk_tool::block_kind;
@@ -3557,16 +3578,9 @@ void leftovers_found(std::vector<srk_tool::line_row> &Lines, std::vector<station
 		auto &row{Lines[index]};
 		if (row.legacy || (row.number == 0 && row.block != semi))
 			continue;
-		auto const automatic{row.block != semi};
 		for (auto const &signal : Standing)
 		{
-			if (signal.kind != (automatic ? "warning" : "block") || false == on_line(Ways[index], signal.position))
-				continue;
-			if (automatic && false == row.both && wrong_disc(Ways, index, signal))
-				continue;
-			if (other_block_at(Lines, Ways, automatic, signal.position))
-				continue;
-			if (row.leftovers++ > 0)
+			if (false == leftover_signal(Lines, Ways, index, signal) || row.leftovers++ > 0)
 				continue;
 			row.leftover = signal.position;
 			row.leftover_travel = travel_of(signal.yaw);
@@ -4828,6 +4842,33 @@ bool listed_before(srk_tool::head_check const &A, srk_tool::head_check const &B,
 	return geometry::plan_distance(A.position, Middle) < geometry::plan_distance(B.position, Middle);
 }
 
+// what the template of the head has taken onto its check: its lamps, its arms, the names of its aspects, its speeds; nothing for none
+void take_template(auto &Check, signal_head const *Template)
+{
+	if (Template == nullptr)
+		return;
+	Check.lamps = Template->lamps;
+	Check.arms = Template->arms;
+	Check.aspect_names = Template->aspect_names;
+	Check.own = Template->speeds;
+}
+
+// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows. One not
+// described so may as well, it is offered the one described as a hint and the fitting leaves it be. A disc with lights isn't
+// checked, nor one whose template isn't among the scanned, its mount not known
+void disc_fitted(auto &Check, std::vector<signal_head> const &Heads, head_files const &By_file, std::vector<standing_signal> const &Standing, std::vector<std::size_t> const &Owners, signal_head const *Template,
+                 std::string const &Mount)
+{
+	auto const described{Template != nullptr && false == Template->repeats.empty()};
+	if (Mount.empty() || false == (described || Template == nullptr || Template->lamps.empty()))
+		return;
+	auto disc{check_disc(Heads, By_file, semaphores_ahead(Check.routes, Heads, By_file, Standing, Owners), Template, Check.file, Mount)};
+	Check.told = disc.told;
+	Check.unsaid = disc.unsaid;
+	Check.fits = disc.fits;
+	Check.fit = std::move(disc.fit);
+}
+
 } // namespace
 
 void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
@@ -4872,13 +4913,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		check.nexts = nexts_shown(check.routes, Standing, owners, stem);
 		auto const known{by_file.find(signal.file)};
 		auto const *template_of{known != by_file.end() ? &heads[known->second] : nullptr};
-		if (template_of != nullptr)
-		{
-			check.lamps = template_of->lamps;
-			check.arms = template_of->arms;
-			check.aspect_names = template_of->aspect_names;
-			check.own = template_of->speeds;
-		}
+		take_template(check, template_of);
 		glm::dvec3 const travel{check.travel.x, 0.0, check.travel.y};
 		shp_wanted(check, layout, post.kind, own[index] != 0);
 		if (check.shp >= 0.0)
@@ -4890,18 +4925,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		if (post.kind == warning)
 		{
 			warning_problems(check, braking);
-			// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows. One not
-			// described so may as well, it is offered the one described as a hint and the fitting leaves it be. A disc with lights isn't
-			// checked, nor one whose template isn't among the scanned, its mount not known
-			auto const described{template_of != nullptr && false == template_of->repeats.empty()};
-			if (auto const mount{m_signals.signal_mount("warning", signal.file)}; false == mount.empty() && (described || template_of == nullptr || template_of->lamps.empty()))
-			{
-				auto disc{check_disc(heads, by_file, semaphores_ahead(check.routes, heads, by_file, Standing, owners), template_of, signal.file, mount)};
-				check.told = disc.told;
-				check.unsaid = disc.unsaid;
-				check.fits = disc.fits;
-				check.fit = std::move(disc.fit);
-			}
+			disc_fitted(check, heads, by_file, Standing, owners, template_of, m_signals.signal_mount("warning", signal.file));
 			m_heads.push_back(std::move(check));
 			continue;
 		}
@@ -5118,6 +5142,22 @@ template_item resonator_item(shp_placing const &Entry)
 	return item;
 }
 
+// the resonator placed: the track cut at its place reads its event; false where the track couldn't be cut there
+bool resonator_placed(shp_edit &Edit, shp_placing const &Entry, signal_changes &Changes)
+{
+	auto *track{Entry.track != nullptr ? Edit.piece_at(Entry.track, Entry.point) : Edit.piece_at(Entry.cut, Entry.inside)};
+	// the trains run into the track at the point: at the start of its path running towards its end
+	if (glm::distance(track->m_paths.front().points[Entry.facing > 0 ? segment_data::point::start : segment_data::point::end], Entry.point) > 1.0)
+		return false;
+	Edit.capture(track);
+	editor_track::events(*track, Entry.facing > 0 ? 2 : 1).emplace_back(ToLower(Entry.name) + "_shp", nullptr);
+	std::string missing;
+	editor_track::bind_events(*track, missing);
+	track->mark_dirty();
+	Changes.others.push_back(resonator_item(Entry));
+	return true;
+}
+
 } // namespace
 
 void srk_tool::set_shp()
@@ -5153,21 +5193,8 @@ void srk_tool::set_shp()
 	auto const cuts{edit.cut(places)};
 	signal_changes changes;
 	for (auto const &entry : places)
-	{
-		auto *track{entry.track != nullptr ? edit.piece_at(entry.track, entry.point) : edit.piece_at(entry.cut, entry.inside)};
-		// the trains run into the track at the point: at the start of its path running towards its end
-		if (glm::distance(track->m_paths.front().points[entry.facing > 0 ? segment_data::point::start : segment_data::point::end], entry.point) > 1.0)
-		{
+		if (false == resonator_placed(edit, entry, changes))
 			problems.push_back(format(STR_C("%s: the track couldn't be cut at the place of its SHP resonator"), entry.signal.c_str()));
-			continue;
-		}
-		edit.capture(track);
-		editor_track::events(*track, entry.facing > 0 ? 2 : 1).emplace_back(ToLower(entry.name) + "_shp", nullptr);
-		std::string missing;
-		editor_track::bind_events(*track, missing);
-		track->mark_dirty();
-		changes.others.push_back(resonator_item(entry));
-	}
 	std::string error;
 	auto const placed{changes.others.size()};
 	m_signals.signal_batch(changes, std::move(edit.before), std::move(edit.created), error);
@@ -5292,20 +5319,25 @@ void srk_tool::survey()
 		auto const entry{entry_circuit(mark.text, stem)};
 		circuit_shown(mark.text, stem, entry);
 	}
-	// the joints: the ends where paths of different circuits meet
-	auto const ends{circuit_ends(layout, m_circuit_of, m_plot)};
+	survey_joints(layout);
+	survey_signals();
+}
+
+// the joints: the ends where paths of different circuits meet
+void srk_tool::survey_joints(station::layout const &Layout)
+{
+	auto const ends{circuit_ends(Layout, m_circuit_of, m_plot)};
 	m_joints.clear();
 	for (std::size_t i = 0; i < ends.size(); ++i)
 		for (std::size_t j = i + 1; j < ends.size(); ++j)
 			if (ends[i].circuit != ends[j].circuit && (ends[i].circuit >= 0 || ends[j].circuit >= 0) && glm::distance(ends[i].point, ends[j].point) < 0.05 &&
 			    std::ranges::none_of(m_joints, [&](joint_mark const &Joint) { return glm::distance(Joint.at, ends[i].point) < 0.05; }))
 			{
-				m_ticks.push_back(station::project(layout, ends[i].point));
+				m_ticks.push_back(station::project(Layout, ends[i].point));
 				m_ticks_drawn.push_back(ends[i].drawn);
 				glm::dvec2 const way{glm::normalize(glm::dvec2{ends[i].way.x, ends[i].way.z} + glm::dvec2{1e-12, 0.0})};
 				m_joints.emplace_back(ends[i].point, glm::dvec3{-way.y, 0.0, way.x});
 			}
-	survey_signals();
 }
 
 void srk_tool::fit_view(float const Width, float const Height)
@@ -5896,6 +5928,69 @@ std::string schematic_listed(Schematic const &Plan, Drawn const &Points)
 	return schematic;
 }
 
+// the signals standing along a line out and its circuits, by the distance out, as the self-test lists them
+std::string line_listed(station::line const &Line, std::vector<standing_signal> const &Standing)
+{
+	std::vector<std::pair<double, std::string>> along;
+	for (auto const &signal : Standing)
+	{
+		double gap{0.0};
+		auto const distance{station::distance_on(Line, signal.position, gap)};
+		if (gap < 4.5 && distance < Line.length())
+			along.emplace_back(distance, format("%s(%s,%s)", signal.name.c_str(), signal.kind.c_str(), signal.linked.c_str()));
+	}
+	std::string last;
+	for (std::size_t i = 1; i < Line.points.size(); ++i)
+	{
+		auto const *track{Line.tracks[Line.owners[i]]};
+		auto const name{track->Isolated.empty() ? std::string{"-"} : track->Isolated.front()->asName};
+		if (name != last)
+			along.emplace_back(Line.distances[i], "[" + name + "]");
+		last = name;
+	}
+	std::ranges::sort(along);
+	std::string list;
+	for (auto const &[distance, text] : along)
+		list += format(" %.0f:%s", distance, text.c_str());
+	return list;
+}
+
+// the block of the name a self-test gives: sbl4, sbl, else the semi-automatic one
+srk_tool::block_kind block_named(std::string const &Kind)
+{
+	if (Kind == "sbl4")
+		return srk_tool::block_kind::four;
+	if (Kind == "sbl")
+		return srk_tool::block_kind::three;
+	return srk_tool::block_kind::semi;
+}
+
+// the signals named more than once logged by the self-test, how many names
+std::size_t duplicates_logged(auto const &Names)
+{
+	std::size_t bad{0};
+	for (auto const &[name, count] : Names)
+		if (count > 1)
+		{
+			++bad;
+			WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
+		}
+	return bad;
+}
+
+// the signals whose event no track reads logged by the self-test, how many
+std::size_t unread_logged(std::vector<standing_signal> const &Standing)
+{
+	std::size_t unread{0};
+	for (auto const &signal : Standing)
+		if (false == signal.read.empty() && signal.track == nullptr)
+		{
+			++unread;
+			WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
+		}
+	return unread;
+}
+
 } // namespace
 
 editor_selftest_result srk_tool::selftest_open(std::istringstream &Words)
@@ -6051,27 +6146,7 @@ editor_selftest_result srk_tool::selftest_lines(std::istringstream & /*Words*/)
 	m_signals.standing_signals(standing, true);
 	for (auto const &line : station::lines_out(*m_layout, plan, kLineLimit))
 	{
-		std::vector<std::pair<double, std::string>> along;
-		for (auto const &signal : standing)
-		{
-			double gap{0.0};
-			auto const distance{station::distance_on(line, signal.position, gap)};
-			if (gap < 4.5 && distance < line.length())
-				along.emplace_back(distance, format("%s(%s,%s)", signal.name.c_str(), signal.kind.c_str(), signal.linked.c_str()));
-		}
-		std::string last;
-		for (std::size_t i = 1; i < line.points.size(); ++i)
-		{
-			auto const *track{line.tracks[line.owners[i]]};
-			auto const name{track->Isolated.empty() ? std::string{"-"} : track->Isolated.front()->asName};
-			if (name != last)
-				along.emplace_back(line.distances[i], "[" + name + "]");
-			last = name;
-		}
-		std::ranges::sort(along);
-		std::string list;
-		for (auto const &[distance, text] : along)
-			list += format(" %.0f:%s", distance, text.c_str());
+		auto const list{line_listed(line, standing)};
 		WriteLog(format("SELFTEST srklines %s track %d %s %.0f m%s:", plan[line.entry].name.c_str(), line.number, line.inbound ? "in" : "out", line.length(), line.station ? " to a station" : "") + list);
 	}
 	return editor_selftest_result::handled;
@@ -6200,35 +6275,32 @@ editor_selftest_result srk_tool::selftest_block(std::istringstream &Words)
 		if (kind->second == "auto")
 			record_of_open().blocks.erase(entry->second);
 		else
-		{
-			auto block{block_kind::semi};
-			if (kind->second == "sbl4")
-				block = block_kind::four;
-			else if (kind->second == "sbl")
-				block = block_kind::three;
-			record_of_open().blocks[entry->second] = block;
-		}
+			record_of_open().blocks[entry->second] = block_named(kind->second);
 		m_changed = true;
 	}
 	if (auto const ways{values.find("ways")}; entry != values.end() && ways != values.end())
-	{
-		auto const row{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry->second; })};
-		std::vector<std::string> entries{entry->second};
-		if (row != m_lines.end() && row->partner >= 0 && row->partner < static_cast<int>(m_lines.size()))
-			entries.push_back(m_lines[row->partner].entry);
-		for (auto const &name : entries)
-			if (ways->second == "auto")
-				record_of_open().ways.erase(name);
-			else
-				record_of_open().ways[name] = ways->second == "2";
-		m_changed = true;
-	}
+		selftest_ways(entry->second, ways->second);
 	survey_signals();
 	if (false == m_lines_problem.empty())
 		WriteLog("SELFTEST srkblock: " + m_lines_problem);
 	for (auto const &row : m_lines)
 		WriteLog(row_logged(row));
 	return editor_selftest_result::handled;
+}
+
+// the ways the self-test gives the block of the line out beyond the entry signal, and of the other track of the line: 2, 1 or auto
+void srk_tool::selftest_ways(std::string const &Entry, std::string const &Ways)
+{
+	auto const row{std::ranges::find_if(m_lines, [&Entry](line_row const &Row) { return Row.entry == Entry; })};
+	std::vector<std::string> entries{Entry};
+	if (row != m_lines.end() && row->partner >= 0 && row->partner < static_cast<int>(m_lines.size()))
+		entries.push_back(m_lines[row->partner].entry);
+	for (auto const &name : entries)
+		if (Ways == "auto")
+			record_of_open().ways.erase(name);
+		else
+			record_of_open().ways[name] = Ways == "2";
+	m_changed = true;
 }
 
 editor_selftest_result srk_tool::selftest_boundary(std::istringstream &Words)
@@ -6305,22 +6377,10 @@ editor_selftest_result srk_tool::selftest_check(std::istringstream & /*Words*/)
 	std::unordered_map<std::string, int, string_hash, std::equal_to<>> names;
 	for (auto const &signal : standing)
 		++names[ToLower(signal.name)];
-	std::size_t bad{0};
-	for (auto const &[name, count] : names)
-		if (count > 1)
-		{
-			++bad;
-			WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
-		}
+	std::size_t bad{duplicates_logged(names)};
 	auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
 	bad += sections_checked(controls, names);
-	std::size_t unread{0};
-	for (auto const &signal : standing)
-		if (false == signal.read.empty() && signal.track == nullptr)
-		{
-			++unread;
-			WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
-		}
+	auto const unread{unread_logged(standing)};
 	auto const circuits{scenery_circuits()};
 	std::size_t bare{0};
 	for (auto const &block_control : controls)
