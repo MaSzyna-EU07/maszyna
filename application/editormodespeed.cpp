@@ -151,6 +151,70 @@ bool result_details(speed_check::verdict const &Verdict, speed_check::options co
 	return (Verdict.violated(Options) || Verdict.warned(Options)) && ImGui::Button(STR_C("Set the safe speed on this path"));
 }
 
+
+// every path of the track
+template <typename Queue>
+void queue_paths(Queue &Paths, TTrack *Track)
+{
+	for (int i = 0; i < static_cast<int>(Track->m_paths.size()); ++i)
+		Paths.emplace_back(Track, i);
+}
+
+// the paths of the line through the track and of the switches at its ends; of the track alone where it lies on no line
+template <typename Queue>
+void queue_line(Queue &Paths, TTrack *Track)
+{
+	editor_track::chain line;
+	std::string error;
+	if (Track->eType != tt_Normal || false == editor_track::find_run(*Track, kSpeedLineReach, line, error))
+	{
+		queue_paths(Paths, Track);
+		return;
+	}
+	for (auto *member : line.tracks)
+		queue_paths(Paths, member);
+	// the switches at the ends of the line too
+	for (auto *end : {line.tracks.front(), line.tracks.back()})
+		for (auto *neighbour : editor_track::neighbours(*end))
+			if (neighbour->eType == tt_Switch && rail(*neighbour) && std::ranges::none_of(Paths, [&](auto const &Entry) { return Entry.first == neighbour; }))
+				queue_paths(Paths, neighbour);
+}
+
+// the speed limits a track is to get: km/h for the path, and the diverging track of a switch, -1: none
+struct speed_change
+{
+	TTrack *track;
+	std::array<double, 2> limits;
+};
+
+// the limit of the path of the verdict lowered to the safe speed given, the state of its track kept before its first change
+void lower_limit(speed_check::verdict const &Verdict, double const Safe, std::vector<speed_change> &Changes, std::vector<std::pair<TTrack *, editor_track::state>> &States)
+{
+	auto existing{std::ranges::find_if(Changes, [&Verdict](speed_change const &Change) { return Change.track == Verdict.track; })};
+	if (existing == Changes.end())
+	{
+		Changes.push_back({Verdict.track, {speed_check::path_velocity(*Verdict.track, 0), speed_check::path_velocity(*Verdict.track, 1)}});
+		States.emplace_back(Verdict.track, editor_track::capture(*Verdict.track));
+		existing = std::prev(Changes.end());
+	}
+	auto &limit{existing->limits[Verdict.track->eType == tt_Switch ? std::clamp(Verdict.path, 0, 1) : 0]};
+	auto const speed{speed_check::suggested(Safe)};
+	limit = limit > 0.0 ? std::min(limit, speed) : speed;
+}
+
+// the button setting the safe speed on the tracks listed over it, with what it does told
+template <typename Apply>
+void render_safe_speed_button(std::size_t const Count, Apply const &Lower)
+{
+	if (ImGui::Button(format(STR_P("Set the safe speed on %zu track", "Set the safe speed on %zu tracks", static_cast<long long>(Count)), Count).c_str(), ImVec2(-FLT_MIN, 0.0f)))
+		Lower();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip(STR_C("Lowers the speed limit of each listed path to its safe speed, rounded down to 10 km/h (5 km/h below 40).\n"
+		                  "The limits of the switch branches are only warnings and aren't applied here, the button of a single path does.\n"
+		                  "A switch has one velocity for both its tracks: negative limits only the diverging one, the main one keeping no limit.\n"
+		                  "When the main track needs a limit of its own, the lower of the two applies to both"));
+}
+
 } // namespace
 
 void speed_tool::speed_start()
@@ -162,10 +226,6 @@ void speed_tool::speed_start()
 	state.selected = -1;
 	state.status.clear();
 	state.options.norms = m_design.route_norms();
-	auto const add = [&](TTrack *Track) {
-		for (int i = 0; i < static_cast<int>(Track->m_paths.size()); ++i)
-			state.queue.emplace_back(Track, i);
-	};
 	if (state.scope == 0)
 	{
 		auto *track{m_selection.selected_track()};
@@ -174,28 +234,13 @@ void speed_tool::speed_start()
 			state.status = STR_C("Select a track first");
 			return;
 		}
-		editor_track::chain line;
-		std::string error;
-		if (track->eType == tt_Normal && editor_track::find_run(*track, kSpeedLineReach, line, error))
-		{
-			for (auto *member : line.tracks)
-				add(member);
-			// the switches at the ends of the line too
-			for (auto *end : {line.tracks.front(), line.tracks.back()})
-				for (auto *neighbour : editor_track::neighbours(*end))
-					if (neighbour->eType == tt_Switch && rail(*neighbour) && std::none_of(state.queue.begin(), state.queue.end(), [&](auto const &Entry) { return Entry.first == neighbour; }))
-						add(neighbour);
-		}
-		else
-		{
-			add(track);
-		}
+		queue_line(state.queue, track);
 	}
 	else
 	{
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && rail(*track))
-				add(track);
+				queue_paths(state.queue, track);
 	}
 	state.history = m_history.history_revision();
 }
@@ -262,13 +307,8 @@ void speed_tool::speed_focus(int const Index)
 void speed_tool::speed_apply(std::vector<int> const &Indices, bool const Branches)
 {
 	auto &state{m_speed};
-	struct change
-	{
-		TTrack *track;
-		double limits[2]; // km/h for the path, and the diverging track of a switch, -1: none
-	};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
-	std::vector<change> changes;
+	std::vector<speed_change> changes;
 	std::size_t locked{0};
 	for (auto const index : Indices)
 	{
@@ -281,16 +321,7 @@ void speed_tool::speed_apply(std::vector<int> const &Indices, bool const Branche
 			++locked;
 			continue;
 		}
-		auto existing{std::find_if(changes.begin(), changes.end(), [&](change const &Change) { return Change.track == verdict.track; })};
-		if (existing == changes.end())
-		{
-			changes.push_back({verdict.track, {speed_check::path_velocity(*verdict.track, 0), speed_check::path_velocity(*verdict.track, 1)}});
-			states.emplace_back(verdict.track, editor_track::capture(*verdict.track));
-			existing = std::prev(changes.end());
-		}
-		auto &limit{existing->limits[verdict.track->eType == tt_Switch ? std::clamp(verdict.path, 0, 1) : 0]};
-		auto const speed{speed_check::suggested(safe)};
-		limit = limit > 0.0 ? std::min(limit, speed) : speed;
+		lower_limit(verdict, safe, changes, states);
 	}
 	auto const skipped{locked > 0 ? format(STR_C(", %zu in the files which can't be changed are left as they are"), locked) : std::string{}};
 	if (changes.empty())
@@ -357,15 +388,7 @@ void speed_tool::render_options()
 	auto const listed{speed_listed()};
 	auto const violated{violated_of(listed, state.results, state.options)};
 	if (false == violated.empty())
-	{
-		if (ImGui::Button(format(STR_P("Set the safe speed on %zu track", "Set the safe speed on %zu tracks", static_cast<long long>(violated.size())), violated.size()).c_str(), ImVec2(-FLT_MIN, 0.0f)))
-			speed_apply(violated, false);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(STR_C("Lowers the speed limit of each listed path to its safe speed, rounded down to 10 km/h (5 km/h below 40).\n"
-			                  "The limits of the switch branches are only warnings and aren't applied here, the button of a single path does.\n"
-			                  "A switch has one velocity for both its tracks: negative limits only the diverging one, the main one keeping no limit.\n"
-			                  "When the main track needs a limit of its own, the lower of the two applies to both"));
-	}
+		render_safe_speed_button(violated.size(), [this, &violated] { speed_apply(violated, false); });
 	auto const namewidth{std::max(120.0f, ImGui::GetContentRegionAvail().x * 0.3f)};
 	result_headers(namewidth);
 	bool const chosen{state.selected >= 0 && state.selected < static_cast<int>(state.results.size())};
