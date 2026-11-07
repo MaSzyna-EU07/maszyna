@@ -28,7 +28,9 @@ http:
 #include "utilities/Logs.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <deque>
 #include <map>
@@ -106,15 +108,18 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 				continue;
 			// measured on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends,
 			// R 300.9 at the end of the diverging track of a switch of R 300
-			auto const &end{path.pieces.empty() ? path : atend ? path.pieces.back() : path.pieces.front()};
-			auto const tangent{glm::normalize(path_tangent(end, atend))};
+			auto const *end{&path};
+			if (false == path.pieces.empty())
+				end = atend ? &path.pieces.back() : &path.pieces.front();
+			auto const tangent{glm::normalize(path_tangent(*end, atend))};
 			auto const along{Leaving != atend};
+			auto const at{atend ? 1.0 : 0.0};
 			Direction = along ? tangent : -tangent;
-			Radius = path_radius(end, atend ? 1.0 : 0.0);
+			Radius = path_radius(*end, at);
 			// the side it turns to as the chain runs, the path gone against its points turning the other way
 			Turn = 0;
 			if (Radius > 0.0)
-				Turn = (bezier{end}.plan_curvature(atend ? 1.0 : 0.0) > 0.0) == along ? 1 : -1;
+				Turn = (bezier{*end}.plan_curvature(at) > 0.0) == along ? 1 : -1;
 			return true;
 		}
 	}
@@ -578,7 +583,7 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks, bool const Draggi
 		track->mark_dirty();
 	for (auto *track : affected)
 	{
-		auto const vehicles{track->Dynamics};
+		auto const vehicles{track->Dynamics}; // NOSONAR: a copy, the vehicles moved may leave the track and change its list
 		for (auto *vehicle : vehicles)
 			vehicle->Move(0.000001);
 	}
@@ -829,7 +834,7 @@ surface_foot foot_on(segment_data const &Path, glm::dvec3 const &Position)
 	auto high{std::min(samples, nearest + 1) / static_cast<double>(samples)};
 	for (int i = 0; i < 40; ++i)
 	{
-		auto const a{low + (high - low) / 3.0};
+		auto const a{low + (high - low) / 3.0}; // NOSONAR: std::lerp may round otherwise, the search would go another way
 		auto const b{high - (high - low) / 3.0};
 		if (distance(a) < distance(b))
 			high = b;
@@ -2113,11 +2118,13 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		int sign{0};
 		while (i < count && false == straight[i])
 		{
-			int const current{turns[i] > 1e-9 ? 1 : turns[i] < -1e-9 ? -1 : 0};
-			// a reverse curve: the next one starts here
-			if (current != 0 && sign != 0 && current != sign)
-				break;
-			if (i > first && (eases(i - 1, true) || eases(i, false)))
+			int current{0};
+			if (turns[i] > 1e-9)
+				current = 1;
+			else if (turns[i] < -1e-9)
+				current = -1;
+			// a reverse curve: the next one starts here; or the curve eases into a straight
+			if ((current != 0 && sign != 0 && current != sign) || (i > first && (eases(i - 1, true) || eases(i, false))))
 				break;
 			if (current != 0)
 				sign = current;
@@ -2128,8 +2135,10 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		auto start{first};
 		double turned{0.0};
 		double part{1.0};
-		for (auto k = first; k + 1 < i && part < parts; ++k)
+		for (auto k = first; k + 1 < i; ++k)
 		{
+			if (part >= parts)
+				break;
 			turned += std::abs(turns[k]);
 			if (turned >= total * part / parts)
 			{
@@ -2769,7 +2778,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 		// the pieces named after the path: name_1, name_2...
 		auto const original{span.track->name()};
 		int number{0};
-		auto const next_name = [&]() { return original.empty() || original == "none" ? std::string{} : original + "_" + std::to_string(++number); };
+		auto const next_name = [&]() { return original.empty() || original == "none" ? std::string{} : std::format("{}_{}", original, ++number); };
 		if (span.forward)
 		{
 			auto *piece{span.track};
@@ -3197,7 +3206,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		double middle;
 		double half;
 	};
-	slipping const slips[] = {
+	auto const slips{std::to_array<slipping>({
 		{"Rkp", "60E1-190-1:9", 190.0, 0.0, 16.615},
 		{"Rkp", "49E1-190-1:9", 190.0, 0.0, 16.615},
 		{"Rkp", "49E1-190-1:6,6", 190.0, -1.0, 17.396},
@@ -3216,10 +3225,10 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"Rkpd", "S42-230-1:9,51", 230.0, 0.0, 18.642},
 		{"Rkpd", "S42-230-1:9,51 Ia", 230.0, 0.0, 18.342},
 		{"Rkpd", "S42-265-1:10", 265.0, 0.0, 19.192},
-	};
-	auto const ratio_of = [](std::string const &Name) {
+	})};
+	auto const ratio_of = [](std::string_view const Name) {
 		auto const at{Name.find("1:")};
-		auto number{Name.substr(at + 2)};
+		std::string number{Name.substr(at + 2)};
 		std::ranges::replace(number, ',', '.');
 		return std::stod(number);
 	};
@@ -3243,7 +3252,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		char const *name;
 		double half;
 	};
-	crossing const crossings[] = {
+	auto const crossings{std::to_array<crossing>({
 		{"60E1-1:9", 16.615},
 		{"60E1-1:4,444", 10.907},
 		{"49E1-1:2,9008", 6.904},
@@ -3264,7 +3273,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"S42-1:7", 12.932},
 		{"S42-1:9", 17.591},
 		{"S42-1:10", 19.192},
-	};
+	})};
 	for (auto const &entry : crossings)
 	{
 		switch_template plain;
@@ -3282,10 +3291,18 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 namespace
 {
 
+// the word is a number as a whole
+bool whole_number_text(std::string const &Word)
+{
+	char *end{nullptr};
+	std::strtod(Word.c_str(), &end);
+	return end != Word.c_str() && *end == '\0';
+}
+
 // definition of a path in the scenery text, up to its points: type, length, parameters, environment and textures
 void write_header(std::ostream &Text, char const *Type, double const Length, double const Sound, TTrack const &Style, material_handle const Second)
 {
-	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
+	static constexpr std::array<char const *, 6> environments{"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
 	auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
 	Text << Type << ' ' << Length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Sound << ' ' << Style.iQualityFlag << ' ' << (Style.iDamageFlag & 127) << ' ' << environment << ' ';
 	if (Style.m_visible)
@@ -3880,8 +3897,10 @@ void editor_track::rebuild_geometry(TTrack &Track)
 	for (auto *crossing : Track.m_crossings)
 		if (std::ranges::find(crossings, crossing) == crossings.end())
 			crossings.push_back(crossing);
-	for (std::size_t i = 0, count = crossings.size(); i < count; ++i)
-		for (auto *neighbour : neighbours(*crossings[i]))
+	// the neighbours of the crossings found so far, not of those they add
+	auto const found{crossings};
+	for (auto const *crossing : found)
+		for (auto *neighbour : neighbours(*crossing))
 			if (std::ranges::find(crossings, neighbour) == crossings.end())
 				crossings.push_back(neighbour);
 	for (auto *crossing : crossings)
@@ -3896,21 +3915,19 @@ std::string editor_track::switch_template::title() const
 	std::vector<std::string> all;
 	for (std::string word; words >> word;)
 		all.push_back(word);
-	for (std::size_t i = 0; i < all.size(); ++i)
+	std::size_t i{0};
+	while (i < all.size())
 	{
 		if (all[i].front() == '(')
 			break;
-		auto const number = [](std::string const &Word) {
-			char *end{nullptr};
-			std::strtod(Word.c_str(), &end);
-			return end != Word.c_str() && *end == '\0';
-		};
-		if ((all[i] == "a" || all[i] == "b") && i + 1 < all.size() && number(all[i + 1]))
+		// a and b with their lengths left out
+		if ((all[i] == "a" || all[i] == "b") && i + 1 < all.size() && whole_number_text(all[i + 1]))
 		{
-			++i;
+			i += 2;
 			continue;
 		}
 		kept.push_back(all[i]);
+		++i;
 	}
 	std::string result;
 	for (auto const &word : kept)
