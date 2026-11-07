@@ -149,6 +149,117 @@ char const *slip_prefix(std::string_view const Type)
 	return "editor_dks";
 }
 
+// the part of the Chain between its switches which holds the Track; the chain itself where none does
+editor_track::chain part_holding(editor_track::chain const &Chain, TTrack const *Track)
+{
+	for (auto const &part : editor_track::chain_parts(Chain))
+		if (std::ranges::find(part.tracks, Track) != part.tracks.end())
+			return part;
+	return Chain;
+}
+
+// what's told of a switch laid free, Name, on from the track From or with none; Radius: of the curve it's bent into where it is,
+// One_sided: whether it's bent so
+std::string free_switch_text(std::string const &Name, TTrack const *From, double const Radius, bool const One_sided)
+{
+	if (Radius > 0.0)
+		return format(STR_C("Switch %s laid on from %s bent into R %.0f m, %s"), Name.c_str(), From->name().c_str(), Radius, One_sided ? STR_C("one-sided") : STR_C("two-sided"));
+	if (From != nullptr)
+		return format(STR_C("Switch %s laid on from %s, its other ends free: lay on from them"), Name.c_str(), From->name().c_str());
+	return format(STR_C("Switch %s laid with no track, its ends free: lay on from them"), Name.c_str());
+}
+
+// what's told of the drives placed at the switches of a slip or a double switch, Kind, the names of the switches Driven; empty where
+// there's nothing to tell
+std::string slip_drives_text(std::string const &Kind, std::vector<std::string> const &Driven)
+{
+	if (Kind == "slip")
+	{
+		if (Driven.empty())
+			return {};
+		auto const names{joined_names(Driven)};
+		return format(STR_C("Slip with drives at its switches %s: the events of the name of a switch with + and - switch it, also in the map"), names.c_str());
+	}
+	if (Driven.size() != 2)
+		return {};
+	return format(STR_C("Double switch %s + %s with drives: events %s+, %s- and %s+, %s- switch them, also in the map"), Driven[0].c_str(), Driven[1].c_str(), Driven[0].c_str(), Driven[0].c_str(), Driven[1].c_str(), Driven[1].c_str());
+}
+
+// the straight plain track nearest the Ground in the plan, nearer than Best, other than the Own one; none where there's none
+TTrack *nearest_straight_track(glm::dvec3 const &Ground, TTrack const *Own, double const Best, editor_track::straight_tolerance const &Tolerance)
+{
+	TTrack *target{nullptr};
+	auto best{Best};
+	for (auto *track : tracks_around(Ground, 40.f))
+	{
+		if (track == Own || track->eType != tt_Normal || track->m_editorremoved || false == editor_track::is_straight(*track, Tolerance))
+			continue;
+		if (auto const distance{off_chord(*track, Ground)}; distance < best)
+		{
+			best = distance;
+			target = track;
+		}
+	}
+	return target;
+}
+
+// the paths of the switch Own as its template holds them: across its main track from the Origin, to the Side its diverging track goes,
+// and along the Axis of it
+void crossover_locals(editor_track::switch_template &Shape, TTrack const &Own, glm::dvec3 const &Origin, glm::dvec2 const &Axis, double const Side)
+{
+	glm::dvec2 const perpendicular{-Axis.y, Axis.x};
+	for (auto const i : {0, 1})
+	{
+		auto const &path{Own.m_paths[i]};
+		auto &local{Shape.local[i]};
+		local = path;
+		auto const tolocal = [&perpendicular, &Axis, Side](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), perpendicular) * Side, Vector.y, glm::dot(plan_of(Vector), Axis)}; };
+		local.transform([&Origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - Origin); }, tolocal);
+		if (Side < 0.0)
+		{
+			local.rolls = {-local.rolls[0], -local.rolls[1]};
+			for (auto &piece : local.pieces)
+				piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
+		}
+	}
+}
+
+// a crossover onto a track parallel to the switch at the Origin of its main track, the other switch facing its Frog and the Tangent of
+// its diverging track there on the straight Line, of the Shape of the switch; false where it can't face it
+template <typename Crossover_plan>
+bool parallel_crossover(Crossover_plan &Plan, glm::dvec3 const &Frog, glm::dvec2 const &Tangent, editor_track::straight const &Line, editor_track::switch_template const &Shape, glm::dvec3 const &Origin)
+{
+	auto const faced{connection::face(Frog, Tangent, connection::of(Line), 1, Shape)};
+	if (false == faced.valid)
+		return false;
+	Plan.along = faced.partner.along;
+	Plan.direction = faced.partner.forward;
+	Plan.side = faced.partner.side;
+	Plan.paths = faced.partner.paths;
+	Plan.inserts.clear();
+	if (faced.length >= 0.01)
+		Plan.inserts.push_back(faced.insert);
+	Plan.connection.valid = true;
+	Plan.connection.spacing = std::abs(connection::of(Line).lateral(Origin));
+	Plan.connection.straights = {faced.length};
+	return true;
+}
+
+// the way a switch on a straight going Direction goes, Forward, and the side its diverging track goes to, Side, for a drag by Offset from
+// where it was pressed
+void oriented(glm::dvec2 const &Offset, glm::dvec2 const &Direction, int &Forward, int &Side)
+{
+	Forward = glm::dot(Offset, Direction) >= 0.0 ? 1 : -1;
+	Side = cross(Direction * static_cast<double>(Forward), Offset) >= 0.0 ? 1 : -1;
+}
+
+// whether a switch Length long, Along a straight Line_length long and going Forward from there, lies all on it
+bool on_straight(double const Along, int const Forward, double const Length, double const Line_length)
+{
+	auto const begin{Forward > 0 ? Along : Along - Length};
+	return begin >= -1e-6 && begin + Length <= Line_length + 1e-6;
+}
+
 } // namespace
 
 std::vector<double> editor_mode::switch_memo_key() const
@@ -348,55 +459,7 @@ bool editor_mode::start_switch_placement()
 	tool.free = false;
 	tool.status.clear();
 	if (current_straight().tracks.empty())
-	{
-		auto *track{selected};
-		// the track that takes no switch blinks
-		auto const refuse = [&](std::string const &Text) {
-			tool.status = refused(Text);
-			flash_switch_problem(Text, track->m_paths, {{ground, ""}});
-			return false;
-		};
-		// a slip is bent into the curve, in a side track only, a crossing goes only where two straights cross
-		if (tool.templates[tool.armed].double_slip && tool.templates[tool.armed].type == "Skrz")
-			return refuse(STR_C("A crossing goes only where two straights cross"));
-		editor_track::curve curve;
-		editor_track::chain chain;
-		std::string error;
-		if (false == editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
-			return refuse(STR_C("The selected track is neither a recognized straight nor a curve"));
-		if (false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
-			return refuse(error.empty() ? std::string{STR_C("The curve can't be followed")} : error);
-		for (auto const &part : editor_track::chain_parts(chain))
-			if (std::ranges::find(part.tracks, track) != part.tracks.end())
-			{
-				chain = part;
-				break;
-			}
-		tool.frame = sample_chain(chain);
-		tool.frame_tracks = chain.tracks;
-		// a crossover along the curve goes on onto the straights past its ends, its first switch drawn so as it's dragged
-		if (tool.connection >= 0)
-		{
-			std::vector<curve_sample> frame;
-			std::vector<TTrack *> tracks;
-			if (curve_of(*track, m_straights.tolerance, m_route.design.norms.gauge, frame, tracks, kCrossoverStraights))
-			{
-				tool.frame = std::move(frame);
-				tool.frame_tracks = std::move(tracks);
-			}
-		}
-		if (tool.frame.size() < 2)
-			return false;
-		tool.curved = true;
-		tool.along = nearest_station(tool.frame, ground);
-		tool.pressed = tool.along;
-		tool.point = sample_at(tool.frame, tool.along).position;
-		if (plan_distance(tool.point, ground) > kSwitchReach)
-			return false;
-		tool.mouse = ground;
-		tool.placing = true;
-		return true;
-	}
+		return start_curved_switch_placement(*selected, ground);
 	auto const &line{current_straight()};
 	auto const cursor{cursor_on_straight(line)};
 	auto const along{std::clamp(line.along(cursor), 0.0, line.length)};
@@ -424,6 +487,69 @@ bool editor_mode::start_switch_placement()
 	return true;
 }
 
+bool editor_mode::start_curved_switch_placement(TTrack &Track, glm::dvec3 const &Ground)
+{
+	auto &tool{m_switch};
+	// the track that takes no switch blinks
+	auto const refuse = [this, &tool, &Track, &Ground](std::string const &Text) {
+		tool.status = refused(Text);
+		flash_switch_problem(Text, Track.m_paths, {{Ground, ""}});
+		return false;
+	};
+	// a slip is bent into the curve, in a side track only, a crossing goes only where two straights cross
+	if (tool.templates[tool.armed].double_slip && tool.templates[tool.armed].type == "Skrz")
+		return refuse(STR_C("A crossing goes only where two straights cross"));
+	editor_track::curve curve;
+	editor_track::chain chain;
+	std::string error;
+	if (false == editor_track::find_curve(Track, m_straights.tolerance, m_route.design.norms.gauge, curve))
+		return refuse(STR_C("The selected track is neither a recognized straight nor a curve"));
+	if (false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
+		return refuse(error.empty() ? std::string{STR_C("The curve can't be followed")} : error);
+	chain = part_holding(chain, &Track);
+	tool.frame = sample_chain(chain);
+	tool.frame_tracks = chain.tracks;
+	// a crossover along the curve goes on onto the straights past its ends, its first switch drawn so as it's dragged
+	if (tool.connection >= 0)
+	{
+		std::vector<curve_sample> frame;
+		std::vector<TTrack *> tracks;
+		if (curve_of(Track, m_straights.tolerance, m_route.design.norms.gauge, frame, tracks, kCrossoverStraights))
+		{
+			tool.frame = std::move(frame);
+			tool.frame_tracks = std::move(tracks);
+		}
+	}
+	if (tool.frame.size() < 2)
+		return false;
+	tool.curved = true;
+	tool.along = nearest_station(tool.frame, Ground);
+	tool.pressed = tool.along;
+	tool.point = sample_at(tool.frame, tool.along).position;
+	if (plan_distance(tool.point, Ground) > kSwitchReach)
+		return false;
+	tool.mouse = Ground;
+	tool.placing = true;
+	return true;
+}
+
+void editor_mode::finish_connection_placement()
+{
+	auto &tool{m_switch};
+	if (tool.partner != nullptr)
+		insert_partner_connection();
+	else if (false == tool.curved)
+		insert_connection();
+	else
+		insert_curved_connection();
+	if (tool.recognised)
+	{
+		tool.connection = -1;
+		tool.recognised = false;
+		tool.partner = nullptr;
+	}
+}
+
 void editor_mode::finish_switch_placement()
 {
 	auto &tool{m_switch};
@@ -435,18 +561,7 @@ void editor_mode::finish_switch_placement()
 	}
 	if (tool.connection >= 0)
 	{
-		if (tool.partner != nullptr)
-			insert_partner_connection();
-		else if (false == tool.curved)
-			insert_connection();
-		else
-			insert_curved_connection();
-		if (tool.recognised)
-		{
-			tool.connection = -1;
-			tool.recognised = false;
-			tool.partner = nullptr;
-		}
+		finish_connection_placement();
 		return;
 	}
 	switch_link plan;
@@ -631,11 +746,7 @@ void editor_mode::insert_free_switch()
 	push_track_snapshot(std::move(states), std::move(created), {});
 	straight_refresh();
 	switch_placed(made);
-	auto text{tool.free_end.track != nullptr ? format(STR_C("Switch %s laid on from %s, its other ends free: lay on from them"), made.front()->name().c_str(), tool.free_end.track->name().c_str())
-	                                         : format(STR_C("Switch %s laid with no track, its ends free: lay on from them"), made.front()->name().c_str())};
-	if (bent && bend.radius > 0.0)
-		text = format(STR_C("Switch %s laid on from %s bent into R %.0f m, %s"), made.front()->name().c_str(), tool.free_end.track->name().c_str(), bend.radius,
-		              bend.side == bend.turn ? STR_C("one-sided") : STR_C("two-sided"));
+	auto text{free_switch_text(made.front()->name(), tool.free_end.track, bent ? bend.radius : 0.0, bend.side == bend.turn)};
 	if (linked)
 		text += "\n" + link_summary(bend.target, bend.link, editor_track::branch_radius(bend.paths[bend.diverging ? 1 : 0]));
 	else if (bent && false == bend.problem.empty())
@@ -672,22 +783,14 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 				join_last_steps();
 				driven.push_back(track->name());
 			}
-		// a slip has a drive at each of its switches
-		if (known->kind == "slip")
+		if (auto const text{slip_drives_text(known->kind, driven)}; false == text.empty())
 		{
-			if (false == driven.empty())
-			{
-				auto const names{joined_names(driven)};
-				m_switch.status = format(STR_C("Slip with drives at its switches %s: the events of the name of a switch with + and - switch it, also in the map"), names.c_str());
-				ui()->set_status(m_switch.status, false);
-			}
-			return;
-		}
-		if (driven.size() == 2)
-		{
-			m_switch.status = format(STR_C("Double switch %s + %s with drives: events %s+, %s- and %s+, %s- switch them, also in the map"), driven[0].c_str(), driven[1].c_str(), driven[0].c_str(), driven[0].c_str(), driven[1].c_str(), driven[1].c_str());
+			m_switch.status = text;
 			ui()->set_status(m_switch.status, false);
 		}
+		// a slip has a drive at each of its switches
+		if (known->kind == "slip")
+			return;
 		advance_switch_name();
 		return;
 	}
@@ -778,6 +881,75 @@ double straight_height(editor_track::straight const &Line, double const Distance
 	return Line.start.y + Line.grade * Distance;
 }
 
+// the paths of the tracks of the straight
+std::vector<segment_data> line_paths(editor_track::straight const &Line)
+{
+	std::vector<segment_data> paths;
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+		paths.push_back(Line.tracks[i]->m_paths[Line.paths[i]]);
+	return paths;
+}
+
+// a track of a straight: from where to where along it it goes, whether its path runs the way of the straight
+struct straight_span
+{
+	TTrack *track;
+	int path;
+	double from;
+	double to;
+	bool forward;
+};
+
+// the tracks of the straight in the order they go along it
+std::vector<straight_span> spans_along(editor_track::straight const &Line)
+{
+	std::vector<straight_span> spans;
+	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
+	{
+		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
+		auto const a{Line.along(path.points[segment_data::point::start])};
+		auto const b{Line.along(path.points[segment_data::point::end])};
+		spans.emplace_back(Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b);
+	}
+	std::ranges::sort(spans, [](straight_span const &A, straight_span const &B) { return A.from < B.from; });
+	return spans;
+}
+
+// the first and the last of the Spans overlapping From to To; -1 for both where none does
+std::pair<int, int> overlapping(std::vector<straight_span> const &Spans, double const From, double const To)
+{
+	int first{-1};
+	int last{-1};
+	for (int i = 0; i < static_cast<int>(Spans.size()); ++i)
+		if (Spans[i].to > From + 1e-3 && Spans[i].from < To - 1e-3)
+		{
+			if (first < 0)
+				first = i;
+			last = i;
+		}
+	return {first, last};
+}
+
+// the point of the straight at the Distance along it, at the height of its track there
+glm::dvec3 straight_point(editor_track::straight const &Line, double const Distance)
+{
+	auto result{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * Distance};
+	result.y = straight_height(Line, Distance);
+	return result;
+}
+
+// Count straight pieces of the straight one after another from Start to End along it, added to the Pieces
+void straight_pieces(editor_track::straight const &Line, double const Start, double const End, std::size_t const Count, std::vector<segment_data> &Pieces)
+{
+	for (std::size_t i = 0; i < Count; ++i)
+	{
+		segment_data path;
+		path.points[segment_data::point::start] = straight_point(Line, Start + (End - Start) * static_cast<double>(i) / static_cast<double>(Count));
+		path.points[segment_data::point::end] = straight_point(Line, Start + (End - Start) * static_cast<double>(i + 1) / static_cast<double>(Count));
+		Pieces.push_back(path);
+	}
+}
+
 } // namespace
 
 bool editor_mode::cut_straight(editor_track::straight const &Line, double const From, double const To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack **Style)
@@ -787,40 +959,11 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	if (std::string reason; false == tracks_editable(Line.tracks, reason))
 	{
 		m_switch.status = refused(reason);
-		std::vector<segment_data> paths;
-		for (std::size_t i = 0; i < Line.tracks.size(); ++i)
-			paths.push_back(Line.tracks[i]->m_paths[Line.paths[i]]);
-		flash_switch_problem(reason, std::move(paths));
+		flash_switch_problem(reason, line_paths(Line));
 		return false;
 	}
-	struct span
-	{
-		TTrack *track;
-		int path;
-		double from;
-		double to;
-		bool forward;
-	};
-	std::vector<span> spans;
-	for (std::size_t i = 0; i < Line.tracks.size(); ++i)
-	{
-		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
-		auto const a{Line.along(path.points[segment_data::point::start])};
-		auto const b{Line.along(path.points[segment_data::point::end])};
-		spans.emplace_back(Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b);
-	}
-	std::ranges::sort(spans, [](span const &A, span const &B) { return A.from < B.from; });
-	int first{-1};
-	int last{-1};
-	for (int i = 0; i < static_cast<int>(spans.size()); ++i)
-	{
-		if (spans[i].to > from + 1e-3 && spans[i].from < to - 1e-3)
-		{
-			if (first < 0)
-				first = i;
-			last = i;
-		}
-	}
+	auto const spans{spans_along(Line)};
+	auto const [first, last]{overlapping(spans, from, to)};
 	if (first < 0)
 		return false;
 	editor_track::chain chain;
@@ -837,11 +980,6 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	auto const after{std::max(0.0, spans[last].to - to)};
 	bool const hasbefore{before > 0.01};
 	bool const hasafter{after > 0.01};
-	auto const point = [&](double const Distance) {
-		auto result{Line.start + glm::dvec3{Line.direction.x, 0.0, Line.direction.y} * Distance};
-		result.y = straight_height(Line, Distance);
-		return result;
-	};
 	if (false == hasbefore && false == hasafter)
 	{
 		for (auto *track : chain.tracks)
@@ -856,19 +994,10 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	else if (hasbefore)
 		countbefore = count;
 	std::vector<segment_data> pieces;
-	auto const straight = [&](double const Start, double const End, std::size_t const Count) {
-		for (std::size_t i = 0; i < Count; ++i)
-		{
-			segment_data path;
-			path.points[segment_data::point::start] = point(Start + (End - Start) * static_cast<double>(i) / static_cast<double>(Count));
-			path.points[segment_data::point::end] = point(Start + (End - Start) * static_cast<double>(i + 1) / static_cast<double>(Count));
-			pieces.push_back(path);
-		}
-	};
 	if (hasbefore)
-		straight(spans[first].from, from, countbefore);
+		straight_pieces(Line, spans[first].from, from, countbefore, pieces);
 	if (hasafter)
-		straight(to, spans[last].to, count - countbefore);
+		straight_pieces(Line, to, spans[last].to, count - countbefore, pieces);
 	for (auto *track : chain.tracks)
 		States.emplace_back(track, editor_track::capture(*track));
 	auto const relaid{editor_track::relay(chain, pieces)};
@@ -980,19 +1109,8 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 		return false;
 
 	auto const &ground{tool.mouse};
-	TTrack *target{nullptr};
 	// laying straights the end goes on as a straight, unless it's let go on the track
-	double best{m_track_layout == track_layout::straight ? 1.5 : 8.0};
-	for (auto *track : tracks_around(ground, 40.f))
-	{
-		if (track == &own || track->eType != tt_Normal || track->m_editorremoved || false == editor_track::is_straight(*track, m_straights.tolerance))
-			continue;
-		if (auto const distance{off_chord(*track, ground)}; distance < best)
-		{
-			best = distance;
-			target = track;
-		}
-	}
+	auto *const target{nearest_straight_track(ground, &own, m_track_layout == track_layout::straight ? 1.5 : 8.0, m_straights.tolerance)};
 	if (target == nullptr)
 		return false;
 	Plan.target = editor_track::find_straight(*target, m_straights.tolerance);
@@ -1006,39 +1124,11 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	editor_track::switch_template shape;
 	shape.source = tool.track;
 	shape.length = glm::dot(plan_of(main.points[segment_data::point::end] - origin), axis);
-	for (auto const i : {0, 1})
-	{
-		auto const &path{own.m_paths[i]};
-		auto &local{shape.local[i]};
-		local = path;
-		auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), perpendicular) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-		local.transform([&origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
-		if (side < 0.0)
-		{
-			local.rolls = {-local.rolls[0], -local.rolls[1]};
-			for (auto &piece : local.pieces)
-				piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
-		}
-	}
+	crossover_locals(shape, own, origin, axis, side);
 	Plan.shape = shape;
 	Plan.connection = {};
 	if (is_parallel)
-	{
-		auto const faced{connection::face(frog, tangent, connection::of(line), 1, shape)};
-		if (false == faced.valid)
-			return false;
-		Plan.along = faced.partner.along;
-		Plan.direction = faced.partner.forward;
-		Plan.side = faced.partner.side;
-		Plan.paths = faced.partner.paths;
-		Plan.inserts.clear();
-		if (faced.length >= 0.01)
-			Plan.inserts.push_back(faced.insert);
-		Plan.connection.valid = true;
-		Plan.connection.spacing = std::abs(connection::of(line).lateral(origin));
-		Plan.connection.straights = {faced.length};
-		return true;
-	}
+		return parallel_crossover(Plan, frog, tangent, line, shape, origin);
 	// onto a track at an angle, the switch facing it with an aligning curve between the two: a crossover planned from the
 	// switch there, the other switch near where the end is let go
 	double constexpr reach{2000.0};
@@ -1096,11 +1186,6 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 	auto const &line{tool.line};
 	std::vector<TTrack const *> const exclude(line.tracks.begin(), line.tracks.end());
 	auto const category{line.tracks.front()->iCategoryFlag & 15};
-	auto const orient = [&](glm::dvec3 const &Toward) {
-		glm::dvec2 const offset{plan_of(Toward - tool.point)};
-		Plan.forward = glm::dot(offset, line.direction) >= 0.0 ? 1 : -1;
-		Plan.side = cross(line.direction * static_cast<double>(Plan.forward), offset) >= 0.0 ? 1 : -1;
-	};
 	auto const place = [&](double const Along) {
 		auto const point{line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * Along};
 		return editor_track::place_switch(shape, point, line.direction * static_cast<double>(Plan.forward), Plan.side, line.grade * Plan.forward);
@@ -1111,10 +1196,10 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 	if (Plan.target.track == nullptr)
 		Plan.target = editor_track::find_free_end(nullptr, category, tool.mouse, kLaySnapRadius, exclude);
 	if (Plan.target.track != nullptr)
-		orient(Plan.target.position);
+		oriented(plan_of(Plan.target.position - tool.point), line.direction, Plan.forward, Plan.side);
 	else
 	{
-		orient(tool.mouse);
+		oriented(plan_of(tool.mouse - tool.point), line.direction, Plan.forward, Plan.side);
 		auto const paths{place(tool.along)};
 		if (paths.size() < 2)
 			return false;
@@ -1144,9 +1229,8 @@ bool editor_mode::plan_switch_link(switch_link &Plan) const
 	if (auto const shift{editor_track::branch_shift(branch_start(paths[1]), line.direction * static_cast<double>(Plan.forward), editor_track::branch_radius(paths[1]), branch_target(Plan.target), kink)}; shift.has_value())
 	{
 		auto const along{snapped + *shift * Plan.forward};
-		auto const begin{Plan.forward > 0 ? along : along - shape.length};
 		Plan.moved = std::abs(*shift);
-		if (begin >= -1e-6 && begin + shape.length <= line.length + 1e-6 && plan(along) && false == Plan.link.reverse)
+		if (on_straight(along, Plan.forward, shape.length, line.length) && plan(along) && false == Plan.link.reverse)
 			return true;
 	}
 	Plan.moved = 0.0;
@@ -1291,9 +1375,274 @@ segment_data slip_arc(editor_track::slip_curve const &Curve, glm::dvec3 const &S
 	return path;
 }
 
+// the crossing of the straight Line with the rail track of the Category nearest the Point, whatever that track is
+crossing_hit nearest_crossing(editor_track::straight const &Line, glm::dvec3 const &Point, int const Category)
+{
+	crossing_hit hit;
+	for (auto *track : tracks_around(Point, 300.f))
+	{
+		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != Category || std::ranges::find(Line.tracks, track) != Line.tracks.end())
+			continue;
+		for (auto const &path : track->m_paths)
+			closer_crossing(Line, Point, *track, path, hit);
+	}
+	return hit;
+}
+
+// a double slip laid out of straights within 25 m of the Point, nearer it than the Nearest crossing at Best and the nearest such: the one
+// to replace; none where there's none
+TTrack *slip_to_replace(glm::dvec3 const &Point, TTrack const *Nearest, double const Best)
+{
+	TTrack *slip{nullptr};
+	double closest{25.0};
+	auto const bent = [](TTrack const &Track) {
+		auto const known{switch_store::named(Track)};
+		return known.has_value() && known->main_radius != 0.0;
+	};
+	for (auto *track : tracks_around(Point, 40.f))
+		if (track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < closest && false == bent(*track))
+		{
+			closest = glm::distance(plan_of(track->location()), plan_of(Point));
+			slip = track;
+		}
+	if (slip != nullptr && (Nearest == nullptr || closest < Best))
+		return slip;
+	return nullptr;
+}
+
+// the curves of a slip of the Shape for the tracks crossing at the Angle into the Plan, as long as the straights have room for them,
+// Available from the crossing, and how far it goes out from there; false where they haven't, Plan.problem telling. Gauged on the first
+// track of the Line
+template <typename Slip_plan>
+bool slip_shaped(Slip_plan &Plan, editor_track::straight const &Line, editor_track::switch_template const &Shape, double const Angle, double const Available)
+{
+	bool const plain{Shape.type == "Skrz"};
+	auto const *gauged{Line.tracks.front()};
+	auto const [blade_lead, blade_entry]{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
+	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, Angle, 0.5 * std::abs(gauged->fTrackWidth) + gauged->rail_dimensions().head + 0.002, blade_lead, blade_entry)};
+	curve.tip = switch_design::cut_tip(Shape.rail, curve.radius);
+	auto half{plain ? Shape.a : curve.tangent()};
+	if (plain && half > Available)
+	{
+		half = Available;
+		if (half < 2.0)
+		{
+			Plan.problem = STR_C("Not enough straight track around the crossing");
+			return false;
+		}
+	}
+	else if (half > Available)
+	{
+		curve = curve.scaled(Available / half);
+		half = Available;
+		if (curve.radius < 50.0)
+		{
+			Plan.problem = STR_C("Not enough straight track around the crossing");
+			return false;
+		}
+		Plan.note = format(STR_C("R reduced to %d m, the straights end %d m from the crossing"), static_cast<int>(curve.radius), static_cast<int>(Available));
+	}
+	Plan.curve = curve;
+	Plan.half = half;
+	return true;
+}
+
+// a slip of the Shape dragged out on the straight Line by the Point where no track crosses it, into the Plan; false where no Side is
+// given or the straight hasn't room for it
+template <typename Slip_plan>
+bool lone_slip(Slip_plan &Plan, editor_track::straight const &Line, glm::dvec3 const &Point, editor_track::switch_template const &Shape, int const Side)
+{
+	Plan.lone = true;
+	Plan.problem = STR_C("No track crosses the selected straight under the cursor");
+	if (Side == 0 || Line.tracks.empty())
+		return false;
+	// no track crossing here: the slip brings the crossing one along, at its own angle, ahead to the side given, its ends free
+	auto const angle{std::atan(1.0 / (Shape.ratio > 0.0 ? Shape.ratio : 9.0))};
+	auto const first{Line.direction};
+	auto const direction{turned(first, static_cast<double>(Side) * angle)};
+	auto const alongfirst{std::clamp(glm::dot(plan_of(Point) - plan_of(Line.start), first), 0.0, Line.length)};
+	auto const crossing_point{plan_of(Line.start) + first * alongfirst};
+	if (false == slip_shaped(Plan, Line, Shape, angle, std::min(alongfirst, Line.length - alongfirst) - 0.5))
+		return false;
+	Plan.problem.clear();
+	auto const half{Plan.half};
+	auto const height = [&Line](double const Along) { return Line.start.y + Line.grade * Along; };
+	auto const at = [](glm::dvec2 const &Planar, double const Height) { return glm::dvec3{Planar.x, Height, Planar.y}; };
+	Plan.crossing = crossing_point;
+	Plan.first = first;
+	Plan.direction = direction;
+	Plan.angle = angle;
+	Plan.alongfirst = alongfirst;
+	Plan.points = {at(crossing_point - first * half, height(alongfirst - half)), at(crossing_point + first * half, height(alongfirst + half)), at(crossing_point - direction * half, height(alongfirst - half * std::cos(angle))),
+	               at(crossing_point + direction * half, height(alongfirst + half * std::cos(angle)))};
+	// the straights of both tracks out to the joints of the template, past the frogs of the diamond, as far as the line has room
+	auto const reach{std::max(half, std::min(Shape.a, std::min(alongfirst, Line.length - alongfirst) - 0.5))};
+	Plan.reach = reach;
+	Plan.ends = {at(crossing_point - first * reach, height(alongfirst - reach)), at(crossing_point + first * reach, height(alongfirst + reach)), at(crossing_point - direction * reach, height(alongfirst - reach * std::cos(angle))),
+	             at(crossing_point + direction * reach, height(alongfirst + reach * std::cos(angle)))};
+	return true;
+}
+
+// a change given up: the tracks Created retired, the ones changed put back as they were in the States, the Removed ones revived
+void edit_undone(std::vector<TTrack *> const &Created, std::vector<std::pair<TTrack *, editor_track::state>> const &States, std::vector<TTrack *> const &Removed)
+{
+	for (auto *track : Created)
+		editor_track::retire(*track);
+	for (auto const &[changed_track, changed_state] : States)
+	{
+		editor_track::apply(*changed_track, changed_state);
+		editor_track::commit({changed_track});
+	}
+	for (auto *track : Removed)
+	{
+		editor_track::revive(*track);
+		editor_track::commit({track});
+	}
+}
+
+// the four switches of the double slip with the names of the Base, _a to _d; none where one of them is missing
+std::optional<std::array<TTrack *, 4>> slip_switches(std::string const &Base)
+{
+	std::array<TTrack *, 4> switches{};
+	for (int i = 0; i < 4; ++i)
+	{
+		switches[i] = simulation::Paths.find(Base + "_" + static_cast<char>('a' + i));
+		if (switches[i] == nullptr || switches[i]->m_editorremoved || switches[i]->eType != tt_Switch || switches[i]->m_paths.size() < 2)
+			return std::nullopt;
+	}
+	return switches;
+}
+
+// an end of a double slip: its switch, where it is, the way into the slip there, the track joined on there
+struct slip_end
+{
+	TTrack *track;
+	glm::dvec3 point;
+	glm::dvec2 inward;
+	TTrack *outer;
+};
+
+// the straight path of a switch: the last one with no controls, else its first one
+segment_data const &straight_path_of(TTrack const &Track)
+{
+	segment_data const *straight{nullptr};
+	for (auto const &path : Track.m_paths)
+		if (path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{})
+			straight = &path;
+	if (straight == nullptr)
+		straight = &Track.m_paths.front();
+	return *straight;
+}
+
+// the ends of the double slip of the Switches; the short tracks inside it added to its Parts
+std::vector<slip_end> slip_ends(std::array<TTrack *, 4> const &Switches, std::vector<TTrack *> &Parts)
+{
+	std::vector<slip_end> ends;
+	for (auto *track : Switches)
+	{
+		auto const &straight{straight_path_of(*track)};
+		auto const start{straight.points[segment_data::point::start]};
+		ends.emplace_back(track, start, glm::normalize(plan_of(straight.points[segment_data::point::end] - start)), track->SwitchExtension->pPrevs[0]);
+		for (auto *inner : track->SwitchExtension->pNexts)
+			if (inner != nullptr && inner->eType == tt_Normal && std::ranges::find(Parts, inner) == Parts.end() && inner->Length() < 5.0)
+				Parts.push_back(inner);
+	}
+	return ends;
+}
+
+// the Ends of a double slip in the order A, B across from it, then C and D of the other track; none where no end lies across from A
+std::optional<std::array<int, 4>> slip_order(std::vector<slip_end> const &Ends)
+{
+	int partner{-1};
+	for (int i = 1; i < 4; ++i)
+		if (glm::dot(Ends[0].inward, Ends[i].inward) < -0.999)
+			partner = i;
+	if (partner < 0)
+		return std::nullopt;
+	std::vector<int> others;
+	for (int i = 1; i < 4; ++i)
+		if (i != partner)
+			others.push_back(i);
+	if (glm::dot(Ends[0].inward, Ends[others[0]].inward) < 0.0)
+		std::swap(others[0], others[1]);
+	return std::array{0, partner, others[0], others[1]};
+}
+
+// how far from the Crossing a double slip laid again goes out along its tracks: Full as its curves of the Radius want, as far as the
+// straights past its Ends go on, less a half metre; as far as it went, Oldhalf, where one of them isn't straight. Status tells the radius
+// it's reduced to
+double slip_half(std::array<slip_end const *, 4> const &Ends, glm::dvec2 const &Crossing, double const Full, double const Oldhalf, double const Radius, editor_track::straight_tolerance const &Tolerance, std::string &Status)
+{
+	auto half{Full};
+	if (half <= Oldhalf)
+		return half;
+	for (auto const *e : Ends)
+	{
+		if (e->outer == nullptr || false == editor_track::is_straight(*e->outer, Tolerance))
+		{
+			half = Oldhalf;
+			auto const radius{Radius * half / Full};
+			Status = format(STR_C("R limited to %d m, a neighbouring track isn't straight"), static_cast<int>(radius));
+			return half;
+		}
+		auto const line{editor_track::find_straight(*e->outer, Tolerance)};
+		auto const reach{std::abs(glm::dot(plan_of(line.end) - Crossing, -e->inward))};
+		auto const reachstart{std::abs(glm::dot(plan_of(line.start) - Crossing, -e->inward))};
+		if (std::max(reach, reachstart) - 0.5 < half)
+		{
+			half = std::min(half, std::max(reach, reachstart) - 0.5);
+			auto const radius{Radius * half / Full};
+			Status = format(STR_C("R reduced to %d m to fit the straights"), static_cast<int>(radius));
+		}
+	}
+	return half;
+}
+
+// the Parts with the tracks Created which aren't among them after them
+std::vector<TTrack *> with_created(std::vector<TTrack *> const &Parts, std::vector<TTrack *> const &Created)
+{
+	std::vector<TTrack *> tracks(Parts.begin(), Parts.end());
+	for (auto *track : Created)
+		if (std::ranges::find(tracks, track) == tracks.end())
+			tracks.push_back(track);
+	return tracks;
+}
+
+// the sample of a frame at T along the Curve of the Path, the track run Forward or back: at the Position there, the Station along the
+// frame
+template <typename Sample>
+Sample frame_sample(segment_data const &Path, bezier const &Curve, bool const Forward, double const T, glm::dvec3 const &Position, double const Station)
+{
+	auto const derivative{Forward ? Curve.first(T) : -Curve.first(T)};
+	Sample sample;
+	sample.station = Station;
+	sample.position = Position;
+	sample.tangent = glm::normalize(plan_of(derivative));
+	auto const roll{Path.rolls[0] + (Path.rolls[1] - Path.rolls[0]) * T};
+	sample.roll = static_cast<float>(Forward ? roll : -roll);
+	sample.radius = Path.radius;
+	return sample;
+}
+
+// how far a switch from First, Length long, is drawn to the joint of the Joints nearest one of its ends within Reach of it; nothing where
+// no joint is that near
+double joint_pull(std::vector<double> const &Joints, double const First, double const Length, double const Reach)
+{
+	auto nearest{Reach};
+	auto shift{0.0};
+	for (auto const joint : Joints)
+		for (auto const end : {First, First + Length})
+			if (auto const off{std::abs(joint - end)}; off > 1e-4 && off < nearest)
+			{
+				nearest = off;
+				shift = joint - end;
+			}
+	return shift;
+}
+
 } // namespace
 
-std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type, std::function<segment_data(segment_data const &)> const &Bend)
+std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack const &Style, std::string const &Type, std::function<segment_data(segment_data const &)> const &Bend)
 {
 	auto const at = [](glm::dvec2 const &Planar, double const Y) { return glm::dvec3{Planar.x, Y, Planar.y}; };
 	// the ends of the two diagonals at the crossing are kept apart further than the simulation joins the ends, 2 cm
@@ -1378,104 +1727,21 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 	Plan = slip_plan{};
 	// the crossing of the straight with the rail track nearest the cursor, whatever that track is: the slip goes there or
 	// nowhere, never to another crossing around
-	crossing_hit hit;
 	auto const category{Line.tracks.empty() ? 1 : Line.tracks.front()->iCategoryFlag & 15};
-	for (auto *track : tracks_around(Point, 300.f))
-	{
-		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 15) != category || std::ranges::find(Line.tracks, track) != Line.tracks.end())
-			continue;
-		for (auto const &path : track->m_paths)
-			closer_crossing(Line, Point, *track, path, hit);
-	}
+	auto const hit{nearest_crossing(Line, Point, category)};
 	auto *const nearest{hit.track};
 	auto const crossing{hit.position};
 	auto const best{hit.distance};
 	// a double slip nearer the cursor than any crossing is replaced by the one chosen, one bent into a curve isn't: it's laid out of
 	// straights
-	if (Shape.type == "Rkpd")
+	if (auto *const slip{Shape.type == "Rkpd" ? slip_to_replace(Point, nearest, best) : nullptr}; slip != nullptr)
 	{
-		TTrack *slip{nullptr};
-		double closest{25.0};
-		auto const bent = [](TTrack const &Track) {
-			auto const known{switch_store::named(Track)};
-			return known.has_value() && known->main_radius != 0.0;
-		};
-		for (auto *track : tracks_around(Point, 40.f))
-			if (track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < closest && false == bent(*track))
-			{
-				closest = glm::distance(plan_of(track->location()), plan_of(Point));
-				slip = track;
-			}
-		if (slip != nullptr && (nearest == nullptr || closest < best))
-		{
-			Plan.replaces = slip;
-			return true;
-		}
-	}
-	// the curves of the slip for the angle of the tracks crossing, as long as the straights have room for them
-	bool const plain{Shape.type == "Skrz"};
-	auto const shaped = [&](double const Angle, double const Available) {
-		auto const *gauged{Line.tracks.front()};
-		auto const [blade_lead, blade_entry]{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
-		auto curve{editor_track::slip_of(Shape.radius, Shape.middle, Angle, 0.5 * std::abs(gauged->fTrackWidth) + gauged->rail_dimensions().head + 0.002, blade_lead, blade_entry)};
-		curve.tip = switch_design::cut_tip(Shape.rail, curve.radius);
-		auto half{plain ? Shape.a : curve.tangent()};
-		if (plain && half > Available)
-		{
-			half = Available;
-			if (half < 2.0)
-			{
-				Plan.problem = STR_C("Not enough straight track around the crossing");
-				return false;
-			}
-		}
-		else if (half > Available)
-		{
-			curve = curve.scaled(Available / half);
-			half = Available;
-			if (curve.radius < 50.0)
-			{
-				Plan.problem = STR_C("Not enough straight track around the crossing");
-				return false;
-			}
-			Plan.note = format(STR_C("R reduced to %d m, the straights end %d m from the crossing"), static_cast<int>(curve.radius), static_cast<int>(Available));
-		}
-		Plan.curve = curve;
-		Plan.half = half;
+		Plan.replaces = slip;
 		return true;
-	};
+	}
 	if (nearest == nullptr)
-	{
-		Plan.lone = true;
-		Plan.problem = STR_C("No track crosses the selected straight under the cursor");
-		if (Side == 0 || Line.tracks.empty())
-			return false;
-		// no track crossing here: the slip brings the crossing one along, at its own angle, ahead to the side given, its ends free
-		auto const angle{std::atan(1.0 / (Shape.ratio > 0.0 ? Shape.ratio : 9.0))};
-		auto const first{Line.direction};
-		auto const direction{turned(first, static_cast<double>(Side) * angle)};
-		auto const alongfirst{std::clamp(glm::dot(plan_of(Point) - plan_of(Line.start), first), 0.0, Line.length)};
-		auto const crossing_point{plan_of(Line.start) + first * alongfirst};
-		if (false == shaped(angle, std::min(alongfirst, Line.length - alongfirst) - 0.5))
-			return false;
-		Plan.problem.clear();
-		auto const half{Plan.half};
-		auto const height = [&](double const Along) { return Line.start.y + Line.grade * Along; };
-		auto const at = [&](glm::dvec2 const &Planar, double const Height) { return glm::dvec3{Planar.x, Height, Planar.y}; };
-		Plan.crossing = crossing_point;
-		Plan.first = first;
-		Plan.direction = direction;
-		Plan.angle = angle;
-		Plan.alongfirst = alongfirst;
-		Plan.points = {at(crossing_point - first * half, height(alongfirst - half)), at(crossing_point + first * half, height(alongfirst + half)), at(crossing_point - direction * half, height(alongfirst - half * std::cos(angle))),
-		               at(crossing_point + direction * half, height(alongfirst + half * std::cos(angle)))};
-		// the straights of both tracks out to the joints of the template, past the frogs of the diamond, as far as the line has room
-		auto const reach{std::max(half, std::min(Shape.a, std::min(alongfirst, Line.length - alongfirst) - 0.5))};
-		Plan.reach = reach;
-		Plan.ends = {at(crossing_point - first * reach, height(alongfirst - reach)), at(crossing_point + first * reach, height(alongfirst + reach)), at(crossing_point - direction * reach, height(alongfirst - reach * std::cos(angle))),
-		             at(crossing_point + direction * reach, height(alongfirst + reach * std::cos(angle)))};
-		return true;
-	}
+		return lone_slip(Plan, Line, Point, Shape, Side);
+	bool const plain{Shape.type == "Skrz"};
 	if (nearest->eType != tt_Normal)
 	{
 		Plan.problem = STR_C("The track crossing here is a switch: a slip goes only where two straights cross");
@@ -1509,7 +1775,7 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 	}
 	auto const alongfirst{glm::dot(crossing - plan_of(Line.start), Line.direction)};
 	auto const alongsecond{glm::dot(crossing - plan_of(second.start), second.direction)};
-	if (auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5}; false == shaped(angle, available))
+	if (auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5}; false == slip_shaped(Plan, Line, Shape, angle, available))
 		return false;
 	auto const half{Plan.half};
 	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
@@ -1596,18 +1862,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	auto const secondline{other != nullptr ? editor_track::find_straight(*other, m_straights.tolerance) : editor_track::straight{}};
 	if (auto const secondalong{other != nullptr ? glm::dot(crossing - plan_of(secondline.start), secondline.direction) : 0.0}; other != nullptr && (secondline.tracks.empty() || false == cut_straight(secondline, secondalong - half, secondalong + half, states, created, removed, nullptr)))
 	{
-		for (auto *track : created)
-			editor_track::retire(*track);
-		for (auto const &[changed_track, changed_state] : states)
-		{
-			editor_track::apply(*changed_track, changed_state);
-			editor_track::commit({changed_track});
-		}
-		for (auto *track : removed)
-		{
-			editor_track::revive(*track);
-			editor_track::commit({track});
-		}
+		edit_undone(created, states, removed);
 		return false;
 	}
 	auto &styled{style != nullptr ? *style : *Line.tracks.front()};
@@ -1649,58 +1904,25 @@ bool editor_mode::replace_double_slip(TTrack const &Part, editor_track::switch_t
 {
 	auto &state{m_straights};
 	auto const base{Part.name().substr(0, Part.name().size() - 2)};
-	std::array<TTrack *, 4> switches{};
-	for (int i = 0; i < 4; ++i)
+	auto const found{slip_switches(base)};
+	if (false == found.has_value())
 	{
-		switches[i] = simulation::Paths.find(base + "_" + static_cast<char>('a' + i));
-		if (switches[i] == nullptr || switches[i]->m_editorremoved || switches[i]->eType != tt_Switch || switches[i]->m_paths.size() < 2)
-		{
-			state.status = refused(STR_C("The double slip isn't complete, it can't be replaced"));
-			return false;
-		}
+		state.status = refused(STR_C("The double slip isn't complete, it can't be replaced"));
+		return false;
 	}
-	struct end
-	{
-		TTrack *track;
-		glm::dvec3 point;
-		glm::dvec2 inward;
-		TTrack *outer;
-	};
-	std::vector<end> ends;
+	auto const &switches{*found};
 	std::vector<TTrack *> parts(switches.begin(), switches.end());
-	for (auto *track : switches)
-	{
-		segment_data const *straight{nullptr};
-		for (auto const &path : track->m_paths)
-			if (path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{})
-				straight = &path;
-		if (straight == nullptr)
-			straight = &track->m_paths.front();
-		auto const start{straight->points[segment_data::point::start]};
-		ends.emplace_back(track, start, glm::normalize(plan_of(straight->points[segment_data::point::end] - start)), track->SwitchExtension->pPrevs[0]);
-		for (auto *inner : track->SwitchExtension->pNexts)
-			if (inner != nullptr && inner->eType == tt_Normal && std::ranges::find(parts, inner) == parts.end() && inner->Length() < 5.0)
-				parts.push_back(inner);
-	}
-	int partner{-1};
-	for (int i = 1; i < 4; ++i)
-		if (glm::dot(ends[0].inward, ends[i].inward) < -0.999)
-			partner = i;
-	if (partner < 0)
+	auto const ends{slip_ends(switches, parts)};
+	auto const sequence{slip_order(ends)};
+	if (false == sequence.has_value())
 	{
 		state.status = refused(STR_C("The double slip geometry isn't recognized"));
 		return false;
 	}
-	auto const &a{ends[0]};
-	auto const &b{ends[partner]};
-	std::vector<int> others;
-	for (int i = 1; i < 4; ++i)
-		if (i != partner)
-			others.push_back(i);
-	if (glm::dot(ends[0].inward, ends[others[0]].inward) < 0.0)
-		std::swap(others[0], others[1]);
-	auto const &c{ends[others[0]]};
-	auto const &d{ends[others[1]]};
+	auto const &a{ends[(*sequence)[0]]};
+	auto const &b{ends[(*sequence)[1]]};
+	auto const &c{ends[(*sequence)[2]]};
+	auto const &d{ends[(*sequence)[3]]};
 	auto const first{a.inward};
 	auto direction{c.inward};
 	auto const determinant{cross(first, direction)};
@@ -1719,40 +1941,18 @@ bool editor_mode::replace_double_slip(TTrack const &Part, editor_track::switch_t
 	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, angle, 0.5 * std::abs(switches[0]->fTrackWidth) + switches[0]->rail_dimensions().head + 0.002, blade_lead, blade_entry)};
 	curve.tip = switch_design::cut_tip(Shape.rail, curve.radius);
 	auto const full{curve.tangent()};
-	auto half{full};
 	auto const height{(a.point.y + b.point.y) * 0.5};
 
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
-	if (half > oldhalf)
-	{
-		for (auto const *e : {&a, &b, &c, &d})
-		{
-			if (e->outer == nullptr || false == editor_track::is_straight(*e->outer, m_straights.tolerance))
-			{
-				half = oldhalf;
-				auto const radius{curve.radius * half / full};
-				state.status = format(STR_C("R limited to %d m, a neighbouring track isn't straight"), static_cast<int>(radius));
-				break;
-			}
-			auto const line{editor_track::find_straight(*e->outer, m_straights.tolerance)};
-			auto const reach{std::abs(glm::dot(plan_of(line.end) - crossing, -e->inward))};
-			auto const reachstart{std::abs(glm::dot(plan_of(line.start) - crossing, -e->inward))};
-			if (std::max(reach, reachstart) - 0.5 < half)
-			{
-				half = std::min(half, std::max(reach, reachstart) - 0.5);
-				auto const radius{curve.radius * half / full};
-				state.status = format(STR_C("R reduced to %d m to fit the straights"), static_cast<int>(radius));
-			}
-		}
-	}
+	auto const half{slip_half({&a, &b, &c, &d}, crossing, full, oldhalf, curve.radius, m_straights.tolerance, state.status)};
 	for (auto *track : parts)
 		editor_track::retire(*track);
 	removed.insert(removed.end(), parts.begin(), parts.end());
 	TTrack *style{a.outer != nullptr && a.outer->eType == tt_Normal ? a.outer : switches[0]};
 	std::array<glm::dvec3, 4> points;
-	std::array<end const *, 4> order{&a, &b, &c, &d};
+	std::array<slip_end const *, 4> const order{&a, &b, &c, &d};
 	for (int i = 0; i < 4; ++i)
 	{
 		auto const &e{*order[i]};
@@ -1761,12 +1961,7 @@ bool editor_mode::replace_double_slip(TTrack const &Part, editor_track::switch_t
 		points[i] = {target.x, e.point.y, target.y};
 		if (half < oldhalf - 0.01)
 		{
-			auto *filler{editor_track::create_path(*style, [&] {
-				segment_data path;
-				path.points[segment_data::point::start] = points[i];
-				path.points[segment_data::point::end] = e.point;
-				return path;
-			}())};
+			auto *filler{editor_track::create_path(*style, straight_path(points[i], e.point))};
 			created.push_back(filler);
 		}
 		else if (half > oldhalf + 0.01 && e.outer != nullptr)
@@ -1778,25 +1973,26 @@ bool editor_mode::replace_double_slip(TTrack const &Part, editor_track::switch_t
 		}
 	}
 	auto const parts2{build_double_slip(points[0], points[1], points[2], points[3], crossing, height, first, direction, angle, curve.scaled(half / full), *style)};
-	std::vector<TTrack *> commitlist(parts2.begin(), parts2.end());
-	for (auto *track : created)
-		if (std::ranges::find(commitlist, track) == commitlist.end())
-			commitlist.push_back(track);
-	editor_track::commit(commitlist);
+	editor_track::commit(with_created(parts2, created));
 	created.insert(created.end(), parts2.begin(), parts2.end());
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 	straight_refresh();
+	slip_drives_renewed(switches, parts2);
+	return true;
+}
+
+void editor_mode::slip_drives_renewed(std::array<TTrack *, 4> const &Old, std::vector<TTrack *> const &New)
+{
 	// the drives of the switches replaced go with them, the new ones get theirs
 	std::vector<scene::instance_handle> drives;
-	for (auto const *track : switches)
+	for (auto const *track : Old)
 		if (auto const drive{find_switch_drive(*track)})
 			drives.push_back(drive->standing.instance);
 	if (false == drives.empty() && remove_templates(drives) > 0)
 		join_last_steps();
-	for (auto *track : parts2)
+	for (auto *track : New)
 		if (track != nullptr && track->eType == tt_Switch && place_switch_drive(*track))
 			join_last_steps();
-	return true;
 }
 
 std::vector<editor_mode::curve_sample> editor_mode::sample_chain(editor_track::chain const &Chain)
@@ -1817,17 +2013,9 @@ std::vector<editor_mode::curve_sample> editor_mode::sample_chain(editor_track::c
 		{
 			auto const t{forward ? static_cast<double>(k) / steps : 1.0 - static_cast<double>(k) / steps};
 			auto const position{curve.point(t)};
-			auto const derivative{forward ? curve.first(t) : -curve.first(t)};
 			if (false == result.empty())
 				station += plan_distance(position, result.back().position);
-			curve_sample sample;
-			sample.station = station;
-			sample.position = position;
-			sample.tangent = glm::normalize(plan_of(derivative));
-			auto const roll{path.rolls[0] + (path.rolls[1] - path.rolls[0]) * t};
-			sample.roll = static_cast<float>(forward ? roll : -roll);
-			sample.radius = path.radius;
-			result.push_back(sample);
+			result.push_back(frame_sample<curve_sample>(path, curve, forward, t, position, station));
 		}
 	}
 	return result;
@@ -1915,26 +2103,17 @@ double editor_mode::curved_switch_start(int const Direction, std::string *What) 
 	// as on a straight, an end of the switch within half a metre of a joint of the tracks goes right onto it: no path of a few centimetres
 	// left beside it, no gap at it
 	constexpr double kJointPull{0.5};
-	auto nearest{kJointPull};
-	auto shift{0.0};
 	auto const first{Direction > 0 ? start : start - length};
 	// the switch drawn to the joint, if it's nearer an end of the switch than any joint before it
-	auto const pull_to = [&](double const Joint) {
-		for (auto const end : {first, first + length})
-			if (auto const off{std::abs(Joint - end)}; off > 1e-4 && off < nearest)
-			{
-				nearest = off;
-				shift = Joint - end;
-			}
-	};
+	std::vector<double> joints;
 	for (auto const *track : tool.frame_tracks)
 	{
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 			continue;
 		for (auto const index : {segment_data::point::start, segment_data::point::end})
-			pull_to(nearest_station(tool.frame, track->m_paths.front().points[index]));
+			joints.push_back(nearest_station(tool.frame, track->m_paths.front().points[index]));
 	}
-	if (shift != 0.0)
+	if (auto const shift{joint_pull(joints, first, length, kJointPull)}; shift != 0.0)
 	{
 		start += shift;
 		what = STR("The switch drawn to the joint of the tracks");
@@ -2031,6 +2210,222 @@ std::vector<switch_curve::track_point> plan_points(segment_data const &Path)
 	for (auto const &piece : Path.pieces)
 		add(piece);
 	return points;
+}
+
+// a cut this near a joint isn't made: no path of a few centimetres, the end of the track there goes onto the end of the switch instead
+constexpr double kJointSnap{0.05};
+
+// a track of the scenery changed in the Edit: its state before kept once for Ctrl+Z, none for one made in it
+void capture_once(editor_track::edit &Edit, TTrack &Track)
+{
+	if (std::ranges::find(Edit.created, &Track) == Edit.created.end())
+		Edit.capture(Track);
+}
+
+// the track of the Candidates the Point falls on split there, unless the point is at a joint of it; the piece split off added to them
+void split_at(std::vector<TTrack *> &Candidates, glm::dvec3 const &Point, editor_track::edit &Edit)
+{
+	for (auto *candidate : std::vector<TTrack *>(Candidates))
+	{
+		if (candidate->m_editorremoved || candidate->eType != tt_Normal)
+			continue;
+		auto const t{editor_track::nearest_parameter(*candidate, Point)};
+		if (auto const found{editor_track::point_at(*candidate, t)}; plan_distance(found, Point) > 0.05)
+			continue;
+		auto const &own{candidate->m_paths.front()};
+		if (auto const atjoint{std::min(plan_distance(own.points[segment_data::point::start], Point), plan_distance(own.points[segment_data::point::end], Point)) < kJointSnap}; false == atjoint && t > 0.002 && t < 0.998)
+		{
+			capture_once(Edit, *candidate);
+			if (auto *second{editor_track::split_path(*candidate, t)})
+			{
+				Edit.created.push_back(second);
+				Candidates.push_back(second);
+			}
+		}
+		return;
+	}
+}
+
+// the Candidates lying from From to To along a frame by the middle of each, Station_of telling where a point is along it, retired
+template <typename Station_of>
+void retired_between(std::vector<TTrack *> const &Candidates, double const From, double const To, Station_of const &Station, editor_track::edit &Edit)
+{
+	for (auto *candidate : Candidates)
+	{
+		if (candidate->m_editorremoved)
+			continue;
+		auto const middle{editor_track::point_at(*candidate, 0.5)};
+		if (auto const where{Station(middle)}; where > From + 0.01 && where < To - 0.01)
+		{
+			editor_track::retire(*candidate);
+			Edit.removed.push_back(candidate);
+		}
+	}
+}
+
+// the ends of the Candidates a few centimetres off the Target moved onto it, the tracks moved added to the Snapped
+void snap_ends_to(std::vector<TTrack *> const &Candidates, glm::dvec3 const &Target, editor_track::edit &Edit, std::vector<TTrack *> &Snapped)
+{
+	for (auto *candidate : Candidates)
+	{
+		if (candidate->m_editorremoved || candidate->eType != tt_Normal)
+			continue;
+		for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
+		{
+			if (auto const off{plan_distance(candidate->m_paths.front().points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], Target)}; off < 1e-4 || off > kJointSnap)
+				continue;
+			capture_once(Edit, *candidate);
+			editor_track::move_point(*candidate, {0, kind}, Target);
+			if (std::ranges::find(Snapped, candidate) == Snapped.end())
+				Snapped.push_back(candidate);
+		}
+	}
+}
+
+// the end of the Path touching the end of a switch, its end if Atend, moved onto the end of the switch, Switchend, heading the way the
+// switch leaves it, Outward
+void end_onto(segment_data &Path, bool const Atend, glm::dvec3 const &Switchend, glm::dvec2 const &Outward)
+{
+	auto &point{Path.points[Atend ? segment_data::point::end : segment_data::point::start]};
+	auto &control_point{Path.points[Atend ? segment_data::point::control2 : segment_data::point::control1]};
+	auto const other{Path.points[Atend ? segment_data::point::start : segment_data::point::end]};
+	auto const handle{glm::length(plan_of(control_point)) > 1e-6 ? glm::length(plan_of(control_point)) : plan_distance(point, other) / 3.0};
+	// into the track from the end touching the switch
+	auto const into{Outward * (Atend ? -1.0 : 1.0) * handle};
+	point = {Switchend.x, point.y, Switchend.z};
+	control_point = {into.x, control_point.y, into.y};
+}
+
+// the track going on along the line from the end of a switch bent up to the frog, its Main track, where the curve goes on at Ending: its
+// end there moved onto the end of the switch, heading as the switch leaves it. Tells how far off the curve that is and how much it's
+// turned against the curve going on there, Heading; empty where no track goes on there
+std::string track_fitted_on(segment_data const &Main, glm::dvec3 const &Ending, glm::dvec2 const &Heading, editor_track::edit &Edit)
+{
+	auto const &last{Main.pieces.empty() ? Main : Main.pieces.back()};
+	auto const switchend{Main.points[segment_data::point::end]};
+	auto const outward{-editor_track::end_direction(last, editor_track::point_kind::end)};
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty() ||
+		    std::ranges::find(Edit.removed, track) != Edit.removed.end())
+			continue;
+		auto const &path{track->m_paths.front()};
+		auto const atend{plan_distance(path.points[segment_data::point::end], Ending) < 0.05};
+		if (false == atend && plan_distance(path.points[segment_data::point::start], Ending) >= 0.05)
+			continue;
+		capture_once(Edit, *track);
+		auto &own{track->m_paths.front()};
+		end_onto(own, atend, switchend, outward);
+		if (false == own.pieces.empty())
+			end_onto(atend ? own.pieces.back() : own.pieces.front(), atend, switchend, outward);
+		editor_track::commit({track});
+		auto const turn{glm::degrees(std::acos(std::clamp(glm::dot(outward, glm::normalize(Heading)), -1.0, 1.0)))};
+		return "\n" + format(STR_C("Track %s going on from the switch fitted to its end, which leaves the curve straight over the frog: %.1f cm off it, turned by %.2f deg"), track->name().c_str(),
+		                     100.0 * plan_distance(switchend, Ending), turn);
+	}
+	return {};
+}
+
+// gentler than this a free switch isn't bent, the drag giving the side as along the straight
+constexpr double kStraighter{12000.0};
+
+// the Curvature of a free switch from Start along Heading into the straight of the free end Target is at, positive to the left: one
+// curve from the start of the switch, none where the two hardly turn, Curvature as it was where they meet behind
+double curvature_into(glm::dvec3 const &Start, glm::dvec2 const &Heading, editor_track::snap_target const &Target, double const Curvature)
+{
+	auto const into{glm::normalize(plan_of(Target.direction))};
+	auto const turn{geometry::signed_angle(Heading, into)};
+	auto const determinant{cross(Heading, into)};
+	if (std::abs(turn) <= glm::radians(0.3))
+		return 0.0;
+	if (std::abs(determinant) > 1e-9)
+	{
+		// how far ahead the two straights meet
+		auto const ahead{cross(plan_of(Target.position - Start), into) / determinant};
+		if (ahead > 0.0)
+			return std::copysign(std::tan(0.5 * std::abs(turn)) / ahead, turn);
+	}
+	return Curvature;
+}
+
+// the Curvature drawn to the radii a designer takes, the nearest one within 5 %, else to 10 m; none sharper than 100 m nor than half the
+// Radius of the switch
+double typical_curvature(double const Curvature, double const Radius)
+{
+	constexpr auto kRadii{std::to_array({10000.0, 8000.0, 6000.0, 5000.0, 4000.0, 3500.0, 3000.0, 2500.0, 2000.0, 1800.0, 1500.0, 1400.0, 1200.0, 1100.0, 1000.0, 900.0, 800.0, 700.0, 600.0, 500.0, 400.0, 300.0})};
+	auto const radius{1.0 / std::abs(Curvature)};
+	auto chosen{std::round(radius / 10.0) * 10.0};
+	auto closest{0.05};
+	for (auto const typical : kRadii)
+		if (auto const off{std::abs(radius / typical - 1.0)}; off < closest)
+		{
+			closest = off;
+			chosen = typical;
+		}
+	return std::copysign(1.0 / std::max(chosen, std::max(100.0, 0.5 * Radius)), Curvature);
+}
+
+// the curvature a free switch from Start along Heading is bent with, positive to the left, Toward: from the start to the cursor or the
+// free end it's at, Along: how far ahead that is. Of the circle going on along the free end through the cursor, or into the straight of
+// the free end, one curve from the start of the switch; with its diverging track into it, the switch bent so that the diverging track
+// turns as much, its curve of the Radius taken off, Bend.side then the way it turns. None where it's hardly bent with no free end to go
+// into
+template <typename Free_bend>
+std::optional<double> bend_curvature(Free_bend &Bend, glm::dvec3 const &Start, glm::dvec2 const &Heading, glm::dvec2 const &Toward, double const Along, double const Radius)
+{
+	auto const lateral{cross(Heading, Toward)};
+	auto curvature{2.0 * lateral / (Along * Along + lateral * lateral)};
+	if (Bend.target.track != nullptr && glm::length(plan_of(Bend.target.direction)) > 1e-9)
+	{
+		curvature = curvature_into(Start, Heading, Bend.target, curvature);
+		// the main track turning the other way where the curve is gentler than the one of the switch, the same way where it's sharper
+		if (Bend.diverging)
+		{
+			auto const way{curvature >= 0.0 ? 1 : -1};
+			curvature = way * (std::abs(curvature) - 1.0 / Radius);
+			Bend.side = way;
+		}
+	}
+	if (std::abs(curvature) < 1.0 / kStraighter)
+	{
+		if (Bend.target.track == nullptr)
+			return std::nullopt;
+		return 0.0;
+	}
+	if (Bend.target.track == nullptr)
+		return typical_curvature(curvature, Radius);
+	return curvature;
+}
+
+// the side the diverging track of a free switch bent with the Curvature goes to: as the drag gives it, Side, where it isn't bent, else
+// to the inside of the curve the switch Turns along where it's One_sided, to the outside where not
+int bend_side(double const Curvature, int const Side, bool const One_sided, int const Turn)
+{
+	if (Curvature == 0.0)
+		return Side;
+	return One_sided ? Turn : -Turn;
+}
+
+// the curve a free switch is bent into, from Start along Heading at the Grade with the Curvature, Reach along it, a little past its end,
+// into the frame Into; Radius: of the curve
+template <typename Frame>
+void bend_frame(Frame &Into, glm::dvec3 const &Start, glm::dvec2 const &Heading, double const Grade, double const Curvature, double const Reach, double const Radius)
+{
+	using sample_type = typename Frame::value_type;
+	glm::dvec2 const normal{-Heading.y, Heading.x};
+	int const steps{std::max(8, static_cast<int>(std::ceil(Reach / 0.5)))};
+	for (int i = 0; i <= steps; ++i)
+	{
+		auto const station{Reach * i / steps};
+		auto const angle{Curvature * station};
+		auto const planar{Curvature == 0.0 ? plan_of(Start) + Heading * station : plan_of(Start) + (Heading * std::sin(angle) + normal * (1.0 - std::cos(angle))) / Curvature};
+		sample_type sample;
+		sample.station = station;
+		sample.position = {planar.x, Start.y + Grade * station, planar.y};
+		sample.tangent = glm::normalize(Heading * std::cos(angle) + normal * std::sin(angle));
+		sample.radius = static_cast<float>(Radius);
+		Into.push_back(sample);
+	}
 }
 
 } // namespace
@@ -2151,78 +2546,21 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	auto const from{Direction > 0 ? station : station - shape.length};
 	auto const to{from + shape.length};
 	editor_track::edit edit;
-	// a track of the scenery changed: its state before kept once for Ctrl+Z, none for one made here
-	auto const keep = [&](TTrack &Track) {
-		if (std::ranges::find(edit.created, &Track) == edit.created.end())
-			edit.capture(Track);
-	};
 	auto const frogged{frog_zone(shape).has_value()};
 	std::vector<TTrack *> candidates{tool.frame_tracks};
-	// a cut this near a joint isn't made: no path of a few centimetres, the end of the track there goes onto the end of the switch instead
-	constexpr double kJointSnap{0.05};
 	// the track the cut falls on split there, unless the cut is at a joint of it
-	auto const cut_at = [&](double const Cut) {
-		auto const point{sample_at(tool.frame, Cut).position};
-		for (auto *candidate : std::vector<TTrack *>(candidates))
-		{
-			if (candidate->m_editorremoved || candidate->eType != tt_Normal)
-				continue;
-			auto const t{editor_track::nearest_parameter(*candidate, point)};
-			if (auto const found{editor_track::point_at(*candidate, t)}; plan_distance(found, point) > 0.05)
-				continue;
-			auto const &own{candidate->m_paths.front()};
-			if (auto const atjoint{std::min(plan_distance(own.points[segment_data::point::start], point), plan_distance(own.points[segment_data::point::end], point)) < kJointSnap}; false == atjoint && t > 0.002 && t < 0.998)
-			{
-				keep(*candidate);
-				if (auto *second{editor_track::split_path(*candidate, t)})
-				{
-					edit.created.push_back(second);
-					candidates.push_back(second);
-				}
-			}
-			break;
-		}
-	};
 	for (auto const cut : {from, to})
-		cut_at(cut);
-	for (auto *candidate : candidates)
-	{
-		if (candidate->m_editorremoved)
-			continue;
-		auto const middle{editor_track::point_at(*candidate, 0.5)};
-		auto const where{nearest_station(tool.frame, middle)};
-		if (where > from + 0.01 && where < to - 0.01)
-		{
-			editor_track::retire(*candidate);
-			edit.removed.push_back(candidate);
-		}
-	}
+		split_at(candidates, sample_at(tool.frame, cut).position, edit);
+	retired_between(candidates, from, to, [&frame = tool.frame](glm::dvec3 const &Point) { return nearest_station(frame, Point); }, edit);
 	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
 	// a joint a few centimetres off an end of the switch, not cut there: the end of the track left beside it goes right onto the end of
 	// the switch, so the two join and no gap is left; the end of one bent up to the frog is fitted to it further on
 	std::vector<TTrack *> snapped;
-	// the ends of the tracks a few centimetres off the point moved onto it
-	auto const snap_to = [&](glm::dvec3 const &Target) {
-		for (auto *candidate : candidates)
-		{
-			if (candidate->m_editorremoved || candidate->eType != tt_Normal)
-				continue;
-			for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
-			{
-				if (auto const off{plan_distance(candidate->m_paths.front().points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], Target)}; off < 1e-4 || off > kJointSnap)
-					continue;
-				keep(*candidate);
-				editor_track::move_point(*candidate, {0, kind}, Target);
-				if (std::ranges::find(snapped, candidate) == snapped.end())
-					snapped.push_back(candidate);
-			}
-		}
-	};
 	for (auto const index : {segment_data::point::start, segment_data::point::end})
 	{
 		if (index == segment_data::point::end && frogged)
 			continue;
-		snap_to(paths.front().points[index]);
+		snap_ends_to(candidates, paths.front().points[index], edit, snapped);
 	}
 	editor_track::commit(snapped);
 	auto const report{curved_switch_report(paths, tool.frame, station, Direction)};
@@ -2232,41 +2570,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	if (frogged)
 	{
 		auto const endsample{sample_at(tool.frame, station + Direction * shape.length)};
-		auto const &ending{endsample.position};
-		auto const &main{paths.front()};
-		auto const &last{main.pieces.empty() ? main : main.pieces.back()};
-		auto const switchend{main.points[segment_data::point::end]};
-		auto const outward{-editor_track::end_direction(last, editor_track::point_kind::end)};
-		for (auto *track : simulation::Paths.sequence())
-		{
-			if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty() ||
-			    std::ranges::find(edit.removed, track) != edit.removed.end())
-				continue;
-			auto const &path{track->m_paths.front()};
-			auto const atend{plan_distance(path.points[segment_data::point::end], ending) < 0.05};
-			if (false == atend && plan_distance(path.points[segment_data::point::start], ending) >= 0.05)
-				continue;
-			keep(*track);
-			auto const reshape = [&](segment_data &Path) {
-				auto &point{Path.points[atend ? segment_data::point::end : segment_data::point::start]};
-				auto &control_point{Path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
-				auto const other{Path.points[atend ? segment_data::point::start : segment_data::point::end]};
-				auto const handle{glm::length(plan_of(control_point)) > 1e-6 ? glm::length(plan_of(control_point)) : plan_distance(point, other) / 3.0};
-				// into the track from the end touching the switch
-				auto const into{outward * (atend ? -1.0 : 1.0) * handle};
-				point = {switchend.x, point.y, switchend.z};
-				control_point = {into.x, control_point.y, into.y};
-			};
-			auto &own{track->m_paths.front()};
-			reshape(own);
-			if (false == own.pieces.empty())
-				reshape(atend ? own.pieces.back() : own.pieces.front());
-			editor_track::commit({track});
-			auto const turn{glm::degrees(std::acos(std::clamp(glm::dot(outward, glm::normalize(endsample.tangent * static_cast<double>(Direction))), -1.0, 1.0)))};
-			fitted = "\n" + format(STR_C("Track %s going on from the switch fitted to its end, which leaves the curve straight over the frog: %.1f cm off it, turned by %.2f deg"), track->name().c_str(),
-			                100.0 * plan_distance(switchend, ending), turn);
-			break;
-		}
+		fitted = track_fitted_on(paths.front(), endsample.position, endsample.tangent * static_cast<double>(Direction), edit);
 	}
 	auto const made{create_switch_set(shape, paths, *tool.frame_tracks.front(), switch_name_for_new())};
 	edit.created.insert(edit.created.end(), made.begin(), made.end());
@@ -2339,97 +2643,35 @@ bool editor_mode::free_switch_bend_now(free_bend &Bend) const
 	if (along < shape.length)
 		return false;
 	Bend.diverging = Bend.target.track != nullptr && io.KeyShift;
-	// the curvature, positive to the left: of the circle going on along the free end through the cursor, or into the straight of the
-	// free end it is at, one curve from the start of the switch
-	auto const lateral{cross(heading, toward)};
-	auto curvature{2.0 * lateral / (along * along + lateral * lateral)};
-	if (Bend.target.track != nullptr && glm::length(plan_of(Bend.target.direction)) > 1e-9)
-	{
-		auto const into{glm::normalize(plan_of(Bend.target.direction))};
-		auto const turn{geometry::signed_angle(heading, into)};
-		auto const determinant{cross(heading, into)};
-		if (std::abs(turn) <= glm::radians(0.3))
-			curvature = 0.0;
-		else if (std::abs(determinant) > 1e-9)
-		{
-			// how far ahead the two straights meet
-			auto const ahead{cross(plan_of(Bend.target.position - start), into) / determinant};
-			if (ahead > 0.0)
-				curvature = std::copysign(std::tan(0.5 * std::abs(turn)) / ahead, turn);
-		}
-		// the diverging track into it: the switch bent so that its diverging track turns as much, the main track the other way where the
-		// curve is gentler than the one of the switch, the same way where it's sharper
-		if (Bend.diverging)
-		{
-			auto const way{curvature >= 0.0 ? 1 : -1};
-			curvature = way * (std::abs(curvature) - 1.0 / shape.radius);
-			Bend.side = way;
-		}
-	}
-	// gentler than this it isn't bent, the drag giving the side as along the straight
-	constexpr double kStraighter{12000.0};
-	if (std::abs(curvature) < 1.0 / kStraighter)
-	{
-		if (Bend.target.track == nullptr)
-			return false;
-		curvature = 0.0;
-	}
-	else if (Bend.target.track == nullptr)
-	{
-		// to the radii a designer takes, the nearest one within 5 %, else to 10 m
-		constexpr auto kRadii{std::to_array({10000.0, 8000.0, 6000.0, 5000.0, 4000.0, 3500.0, 3000.0, 2500.0, 2000.0, 1800.0, 1500.0, 1400.0, 1200.0, 1100.0, 1000.0, 900.0, 800.0, 700.0, 600.0, 500.0, 400.0, 300.0})};
-		auto const radius{1.0 / std::abs(curvature)};
-		auto chosen{std::round(radius / 10.0) * 10.0};
-		auto closest{0.05};
-		for (auto const typical : kRadii)
-			if (auto const off{std::abs(radius / typical - 1.0)}; off < closest)
-			{
-				closest = off;
-				chosen = typical;
-			}
-		curvature = std::copysign(1.0 / std::max(chosen, std::max(100.0, 0.5 * shape.radius)), curvature);
-	}
-	Bend.radius = curvature != 0.0 ? 1.0 / std::abs(curvature) : 0.0;
-	Bend.turn = curvature >= 0.0 ? 1 : -1;
+	auto const curvature{bend_curvature(Bend, start, heading, toward, along, shape.radius)};
+	if (false == curvature.has_value())
+		return false;
+	Bend.radius = *curvature != 0.0 ? 1.0 / std::abs(*curvature) : 0.0;
+	Bend.turn = *curvature >= 0.0 ? 1 : -1;
 	if (false == Bend.diverging)
-	{
-		if (curvature == 0.0)
-			Bend.side = side;
-		else
-			Bend.side = tool.one_sided ? Bend.turn : -Bend.turn;
-	}
+		Bend.side = bend_side(*curvature, side, tool.one_sided, Bend.turn);
 	// the curve it's bent into, a little past its end
-	glm::dvec2 const normal{-heading.y, heading.x};
-	auto const reach{shape.length + 2.0};
-	int const steps{std::max(8, static_cast<int>(std::ceil(reach / 0.5)))};
-	for (int i = 0; i <= steps; ++i)
-	{
-		auto const station{reach * i / steps};
-		auto const angle{curvature * station};
-		auto const planar{curvature == 0.0 ? plan_of(start) + heading * station : plan_of(start) + (heading * std::sin(angle) + normal * (1.0 - std::cos(angle))) / curvature};
-		curve_sample sample;
-		sample.station = station;
-		sample.position = {planar.x, start.y + grade * station, planar.y};
-		sample.tangent = glm::normalize(heading * std::cos(angle) + normal * std::sin(angle));
-		sample.radius = static_cast<float>(Bend.radius);
-		Bend.frame.push_back(sample);
-	}
+	bend_frame(Bend.frame, start, heading, grade, *curvature, shape.length + 2.0, Bend.radius);
 	Bend.paths = curved_switch_paths(shape, Bend.frame, 0.0, 1, Bend.side);
 	if (Bend.paths.size() < 2)
 		return false;
 	Bend.report = curved_switch_report(Bend.paths, Bend.frame, 0.0, 1);
 	if (Bend.target.track != nullptr)
-	{
-		// the track into it goes on with the curve of the one it leaves, then straight, or with reverse curves
-		auto const &branch{Bend.paths[Bend.diverging ? 1 : 0]};
-		auto const radius{editor_track::branch_radius(branch)};
-		auto speed{design_speed(tool.free_end.track, Bend.target.track)};
-		if (Bend.diverging)
-			speed = std::min(editor_track::diverging_speed(radius), speed);
-		Bend.link = editor_track::link_branch(branch_start(branch), radius > 0.5 ? radius : kStraighter, branch_target(Bend.target), glm::radians(m_joints.kink_angle() * 0.5), editor_track::reverse_insert(speed), stretchable(Bend.target));
-		Bend.problem = link_problem(Bend.target, Bend.link);
-	}
+		free_bend_link(Bend);
 	return true;
+}
+
+void editor_mode::free_bend_link(free_bend &Bend) const
+{
+	auto const &tool{m_switch};
+	// the track into it goes on with the curve of the one it leaves, then straight, or with reverse curves
+	auto const &branch{Bend.paths[Bend.diverging ? 1 : 0]};
+	auto const radius{editor_track::branch_radius(branch)};
+	auto speed{design_speed(tool.free_end.track, Bend.target.track)};
+	if (Bend.diverging)
+		speed = std::min(editor_track::diverging_speed(radius), speed);
+	Bend.link = editor_track::link_branch(branch_start(branch), radius > 0.5 ? radius : kStraighter, branch_target(Bend.target), glm::radians(m_joints.kink_angle() * 0.5), editor_track::reverse_insert(speed), stretchable(Bend.target));
+	Bend.problem = link_problem(Bend.target, Bend.link);
 }
 
 bool editor_mode::plan_curved_slip(editor_track::switch_template const &Shape, int const Direction, int const Side, curved_slip &Plan) const

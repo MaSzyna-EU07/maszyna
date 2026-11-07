@@ -1914,7 +1914,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_switch_timbers();
 	void render_rail_profile_hint(TTrack const &Track);
 	bool start_switch_placement();
+	// start_switch_placement on a Track which isn't on a straight: into the curve it's in, pressed at the Ground
+	bool start_curved_switch_placement(TTrack &Track, glm::dvec3 const &Ground);
 	void finish_switch_placement();
+	// finish_switch_placement for a connection of two switches
+	void finish_connection_placement();
 	// a switch with no track under it: a press on the ground starts it at the free end of a track within reach, none with no free end near
 	editor_track::snap_target free_switch_end(glm::dvec3 const &Ground) const;
 	bool free_switch_offered() const;
@@ -1939,6 +1943,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// false where it isn't bent: near the switch, along the straight, or not from a free end
 	bool free_switch_bend(free_bend &Bend) const;
 	bool free_switch_bend_now(free_bend &Bend) const;
+	// the track into the free end the switch bent from a free end, Bend, is dragged to
+	void free_bend_link(free_bend &Bend) const;
 	// laid on from an end of a switch: what the norms say of the change of the curvature from that switch to the tracks of this one
 	std::vector<std::string> free_switch_exits(std::vector<segment_data> const &Paths) const;
 	std::vector<segment_data> free_switch_paths() const;
@@ -2095,8 +2101,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the cursor
 	int lone_slip_side() const;
 	bool replace_double_slip(TTrack const &Part, editor_track::switch_template const &Shape);
+	// the drives of the four switches of a double slip replaced, Old, taken out, the switches of the New one given theirs
+	void slip_drives_renewed(std::array<TTrack *, 4> const &Old, std::vector<TTrack *> const &New);
 	// Bend: what a path of the slip laid out as on straights turns into where it's bent into a curve
-	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd",
+	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack const &Style, std::string const &Type = "Rkpd",
 	                                        std::function<segment_data(segment_data const &)> const &Bend = {});
 	// a slip switch bent into a curve of a side track (ST-T1-A6 11.4 pkt 4b): laid out on the tangent to the curve at its crossing, where
 	// it was pressed, and bent onto the curve as a switch laid into it is, its crossing track coming along with its ends free. Direction
