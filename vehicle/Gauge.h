@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "audio/sound.h"
+#include "vehicle/gaugescale.h"
 
 enum class TGaugeAnimation {
     // typ ruchu
@@ -74,11 +75,14 @@ private:
 // types
     struct scratch_data {
         std::optional< std::array<float, 6> > soundproofing;
+        std::vector<gauge_scale::point> scaletable; // as read, in the units of the config
     };
 // methods
     // imports member data pair from the config file
     bool
         Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad );
+    static bool
+        Load_scaletable( cParser &Input, TGauge::scratch_data &Scratchpad );
     float
         GetScaledValue() const;
     void
@@ -95,6 +99,8 @@ private:
     float m_endscale { -1.f }; // scale applied to the value at the end of accepted value range
     float m_endvalue { -1.f }; // end value of accepted value range
     bool m_interpolatescale { false };
+    std::vector<gauge_scale::point> m_scaletable; // optional non-uniform scale, sorted by value; replaces scale and offset
+
     char m_datatype; // typ zmiennej parametru: f-float, d-double, i-int
     union {
         // wskaźnik na parametr pokazywany przez animację
