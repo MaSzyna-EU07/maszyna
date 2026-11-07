@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 //---------------------------------------------------------------------------
 // Q: 20160805 - odlaczenie pliku fizyki .pas od kompilacji
+#include <array>
 #include <map>
+#include <optional>
 #include "hamulce.h"
 #include "scripting/ladderlogic.h"
 
@@ -322,6 +324,21 @@ enum light
 	highbeamlight_left = 1 << 9,
 	/// <summary>High-beam headlight, right.</summary>
 	highbeamlight_right = 1 << 10
+};
+
+/// <summary>The cab interior light a position of the light preset selector sets (eu07/maszyna#529).</summary>
+struct lights_preset_cablight
+{
+	/// <summary>Bits of the optional third column of a LightsList row.</summary>
+	enum flag
+	{
+		/// <summary>The cab light is on.</summary>
+		light_on = 1 << 0,
+		/// <summary>The cab light is dimmed.</summary>
+		light_dimmed = 1 << 1
+	};
+	bool light{false};
+	bool dim{false};
 };
 
 /// <summary>Door operation method (who controls them and how) — mutually exclusive.</summary>
@@ -1703,6 +1720,13 @@ class TMoverParameters
 	int LightsDefPos = 1;
 	bool LightsWrap = false;
 	int Lights[2][18]; // pozycje świateł, przód - tył, 1 .. 16 (17 do lightsset)
+	// the cab interior light each light preset sets, from the optional third column of LightsList (bits of
+	// lights_preset_cablight::flag); -1: the preset leaves the cab light as it is (eu07/maszyna#529)
+	std::array<int, 18> LightsCabLight{[] {
+		std::array<int, 18> positions;
+		positions.fill(-1);
+		return positions;
+	}()};
 	int ScndInMain{0}; /*zaleznosc bocznika od nastawnika*/
 	bool MBrake = false; /*Czy jest hamulec reczny*/
 	double maxTachoSpeed = {0.0}; // maksymalna predkosc na tarczce predkosciomierza analogowego
@@ -2602,6 +2626,8 @@ class TMoverParameters
 	bool LoadFIZ_Text(std::string const &Text); // the same, from text in the .fiz format
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
 	std::string EngineDescription(int what) const;
+	// the cab interior light the light preset at given position (1-based, as LightsPos) sets, if it sets one
+	std::optional<lights_preset_cablight> LightsPresetCabLight(int Position) const;
 
   private:
 	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above

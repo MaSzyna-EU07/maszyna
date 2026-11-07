@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 
+#include <charconv>
 #include <cmath>
 #include <format>
 //---------------------------------------------------------------------------
@@ -9493,8 +9494,36 @@ bool TMoverParameters::readLightsList(std::string const &Input)
 		return false;
 	}
 	parser >> Lights[0][idx] >> Lights[1][idx];
+	// optional third column: the cab interior light the preset sets (eu07/maszyna#529). anything but a whole number
+	// (some rows carry stray notes after the two columns) leaves the cab light to its own switch
+	LightsCabLight[idx] = -1;
+	if (true == parser.getTokens(1, false))
+	{
+		std::string cablight;
+		parser >> cablight;
+		int flags{-1};
+		auto const [end, error]{std::from_chars(cablight.data(), cablight.data() + cablight.size(), flags)};
+		if (error == std::errc{} && end == cablight.data() + cablight.size() && flags >= 0)
+		{
+			LightsCabLight[idx] = flags;
+		}
+	}
 
 	return true;
+}
+
+std::optional<lights_preset_cablight> TMoverParameters::LightsPresetCabLight(int const Position) const
+{
+	if (Position < 1 || Position > static_cast<int>(LightsCabLight.size()))
+	{
+		return std::nullopt;
+	}
+	auto const flags{LightsCabLight[Position - 1]};
+	if (flags < 0)
+	{
+		return std::nullopt;
+	}
+	return lights_preset_cablight{(flags & lights_preset_cablight::light_on) != 0, (flags & lights_preset_cablight::light_dimmed) != 0};
 }
 
 bool TMoverParameters::readCompressorList(std::string const &Input)

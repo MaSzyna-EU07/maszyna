@@ -189,6 +189,8 @@ class TTrain {
     // sets cabin controls based on current state of the vehicle
     // NOTE: we can get rid of this function once we have per-cab persistent state
     void set_cab_controls( int const Cab );
+    // sets the cab interior light as the selected light preset says, if it says anything (eu07/maszyna#529)
+    void set_cab_light_from_lights_preset();
     // initializes a gauge matching provided label. returns: true if the label was found, false otherwise
     bool initialize_gauge(cParser &Parser, std::string const &Label, int const Cabindex);
     // initializes a button matching provided label. returns: true if the label was found, false otherwise

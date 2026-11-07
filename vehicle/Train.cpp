@@ -5153,6 +5153,39 @@ void TTrain::OnCommand_universalrelayreset(TTrain *Train, command_data const &Co
 	}
 }
 
+// the cab interior light set by the light preset just selected, if the preset sets one (eu07/maszyna#529).
+// the cab light switch (cablight_sw:) is bound to the light state and follows it by itself
+void TTrain::set_cab_light_from_lights_preset()
+{
+	auto const cablight{mvOccupied->LightsPresetCabLight(mvOccupied->LightsPos)};
+	if (false == cablight.has_value())
+	{
+		return;
+	}
+	auto const set{[&cablight](TCab &Cab) {
+		Cab.bLight = cablight->light;
+		Cab.bLightDim = cablight->dim;
+	}};
+	if (false == DynamicObject->JointCabs)
+	{
+		// vehicles with separate cabs get separate lighting switch states
+		set(Cabine[iCabn]);
+	}
+	else
+	{
+		// joint virtual cabs share lighting switch states
+		for (auto &cab : Cabine)
+		{
+			set(cab);
+		}
+	}
+	// the dimmer switch is driven by commands only, move it along
+	if (ggCabLightDimButton.SubModel != nullptr)
+	{
+		ggCabLightDimButton.UpdateValue(cablight->dim ? 1.f : 0.f);
+	}
+}
+
 void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data const &Command)
 {
 
@@ -5174,6 +5207,7 @@ void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data cons
 		Train->mvOccupied->LightsPos = false == restartcycle ? Train->mvOccupied->LightsPos + 1 : 1; // wrap mode
 
 		Train->Dynamic()->SetLights();
+		Train->set_cab_light_from_lights_preset();
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
@@ -5211,6 +5245,7 @@ void TTrain::OnCommand_lightspresetactivateprevious(TTrain *Train, command_data 
 		Train->mvOccupied->LightsPos = false == restartcycle ? Train->mvOccupied->LightsPos - 1 : Train->mvOccupied->LightsPosNo; // wrap mode
 
 		Train->Dynamic()->SetLights();
+		Train->set_cab_light_from_lights_preset();
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
