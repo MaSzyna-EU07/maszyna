@@ -42,7 +42,9 @@ http:
 #include <cstring>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <set>
+#include <utility>
 #include "application/editormodetrackshared.h"
 
 using namespace track_mode;
@@ -904,6 +906,20 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	return result.pieces;
 }
 
+namespace
+{
+
+// the ends of a piece laid between two switches put at the heights of the ends of their paths they meet
+void heights_met(segment_data &Piece, TTrack const *First, TTrack const *Second)
+{
+	for (auto const index : {segment_data::point::start, segment_data::point::end})
+		for (auto const *track : {First, Second})
+			if (auto const &end{track->m_paths.back().points[segment_data::point::end]}; geometry::plan_distance(Piece.points[index], end) < 0.05)
+				Piece.points[index].y = end.y;
+}
+
+} // namespace
+
 void editor_mode::finish_extend()
 {
 	if (auto const &io{ImGui::GetIO()}; glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_extend.pressed) < kDragPixels)
@@ -944,11 +960,7 @@ void editor_mode::finish_extend()
 		{
 			if (glm::distance(piece.points[segment_data::point::start], piece.points[segment_data::point::end]) <= 0.01)
 				continue;
-			// meeting the two switches at the heights they're at
-			for (auto const index : {segment_data::point::start, segment_data::point::end})
-				for (auto const *track : {origin, placed})
-					if (auto const &end{track->m_paths.back().points[segment_data::point::end]}; geometry::plan_distance(piece.points[index], end) < 0.05)
-						piece.points[index].y = end.y;
+			heights_met(piece, origin, placed);
 			if (auto *insert{editor_track::create_path(*origin, piece)})
 				inserts.push_back(insert);
 		}
@@ -1101,10 +1113,9 @@ bool editor_mode::track_wheel(double const Offset)
 		else if (io.KeyCtrl)
 		{
 			static constexpr std::array radii{0.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0};
-			int index{0};
-			for (int i = 0; i < static_cast<int>(std::size(radii)); ++i)
-				if (radii[i] <= tool.connection_radius + 1e-6)
-					index = i;
+			// the last of the radii, rising, up to the one set
+			auto const below{std::ranges::count_if(radii, [&tool](double const Radius) { return Radius <= tool.connection_radius + 1e-6; })};
+			int const index{std::max(0, static_cast<int>(below) - 1)};
 			tool.connection_radius = radii[std::clamp(index + step, 0, static_cast<int>(std::size(radii)) - 1)];
 		}
 		else if (false == tool.recognised)
@@ -2240,6 +2251,29 @@ void editor_mode::lay_back()
 	tool.start = {};
 }
 
+namespace
+{
+
+// the skew of a line to its reference track, Relative, snapped to the nearest of the skews 1:n either way where nearer than Angle:
+// Angle, Ratio its n
+void skew_ratio_snap(double const Relative, double &Angle, double &Ratio)
+{
+	auto const pi{glm::pi<double>()};
+	std::array<std::pair<double, double>, 4> const turns{{{0.0, -1.0}, {0.0, 1.0}, {pi, -1.0}, {pi, 1.0}}}; // the base, the side
+	for (auto const n : kSkewRatios)
+		for (auto const &[base, side] : turns)
+		{
+			auto const candidate{base + side * std::atan(1.0 / n)};
+			if (std::abs(std::remainder(Relative - candidate, 2.0 * glm::pi<double>())) < std::abs(std::remainder(Relative - Angle, 2.0 * glm::pi<double>())))
+			{
+				Angle = candidate;
+				Ratio = n;
+			}
+		}
+}
+
+} // namespace
+
 glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const
 {
 	Label.clear();
@@ -2259,17 +2293,7 @@ glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Lab
 		auto const relative{signed_angle(reference, offset / length)};
 		angle = std::round(relative / step) * step;
 		double ratio{0.0};
-		for (auto const n : kSkewRatios)
-			for (auto const base : {0.0, glm::pi<double>()})
-				for (auto const side : {-1.0, 1.0})
-				{
-					auto const candidate{base + side * std::atan(1.0 / n)};
-					if (std::abs(std::remainder(relative - candidate, 2.0 * glm::pi<double>())) < std::abs(std::remainder(relative - angle, 2.0 * glm::pi<double>())))
-					{
-						angle = candidate;
-						ratio = n;
-					}
-				}
+		skew_ratio_snap(relative, angle, ratio);
 		auto const name{name_of(*axis)};
 		auto const degrees{glm::degrees(std::abs(std::remainder(angle, glm::pi<double>())))};
 		if (ratio > 0.0)
@@ -2283,43 +2307,74 @@ glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Lab
 	return {last.x + heading.x, Mouse.y, last.z + heading.y};
 }
 
+namespace
+{
+
+// a leg of a line laid, in the plan, the reference tracks of its skew looked for along it: where it starts, its way and length, how far
+// off its start they're looked for, how straight a straight track is
+struct skew_leg
+{
+	glm::dvec2 from{0.0};
+	glm::dvec2 way{0.0};
+	double length{0.0};
+	double reach{0.0};
+	editor_track::straight_tolerance tolerance{};
+};
+
+// how far along the leg a plain straight rail track is met: where the leg crosses it, else how far the start of the leg is from it
+// within the reach, the highest double for neither; none for another track
+std::optional<double> skew_distance(TTrack const *Track, skew_leg const &Leg)
+{
+	if (Track == nullptr || Track->eType != tt_Normal || Track->m_editorremoved || (Track->iCategoryFlag & 15) != kRailCategory || Track->m_paths.size() != 1 ||
+	    false == editor_track::is_straight(*Track, Leg.tolerance))
+		return std::nullopt;
+	auto const &path{Track->m_paths.front()};
+	auto const a{plan_of(path.points[segment_data::point::start])};
+	auto const axis{plan_of(path.points[segment_data::point::end]) - a};
+	auto const span{glm::length(axis)};
+	if (span < 1.0)
+		return std::nullopt;
+	auto const along{std::clamp(glm::dot(Leg.from - a, axis) / span, 0.0, span)};
+	auto distance{glm::distance(Leg.from, a + axis / span * along)};
+	if (distance > Leg.reach)
+		distance = std::numeric_limits<double>::max();
+	if (auto const determinant{cross(Leg.way, axis)}; Leg.length > 1.0 && std::abs(determinant) > 1e-9)
+	{
+		auto const t{cross(a - Leg.from, axis) / determinant};
+		auto const u{cross(a - Leg.from, Leg.way) / determinant};
+		if (t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0)
+			distance = std::min(distance, t * Leg.length);
+	}
+	return distance;
+}
+
+// the reference track of the skew of the leg among the paths of a cell, when nearer than Best: Nearest, Best its distance
+template <typename Cell>
+void skew_scan(Cell const &In, skew_leg const &Leg, double &Best, TTrack const *&Nearest)
+{
+	for (auto const *track : In.m_directories.paths)
+		if (auto const distance{skew_distance(track, Leg)}; distance.has_value() && *distance < Best)
+		{
+			Best = *distance;
+			Nearest = track;
+		}
+}
+
+} // namespace
+
 TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const
 {
-	auto const from{plan_of(From)};
-	auto const leg{plan_of(To) - from};
-	auto const length{glm::length(leg)};
+	skew_leg leg;
+	leg.from = plan_of(From);
+	leg.way = plan_of(To) - leg.from;
+	leg.length = glm::length(leg.way);
+	leg.reach = Reach;
+	leg.tolerance = m_straights.tolerance;
 	TTrack const *nearest{nullptr};
 	auto best{std::numeric_limits<double>::max()};
-	for (auto const *section : simulation::Region->sections((From + To) * 0.5, static_cast<float>(std::min(0.5 * length + Reach, 2000.0))))
+	for (auto const *section : simulation::Region->sections((From + To) * 0.5, static_cast<float>(std::min(0.5 * leg.length + Reach, 2000.0))))
 		for (auto const &cell : section->m_cells)
-			for (auto *track : cell.m_directories.paths)
-			{
-				if (track == nullptr || track->eType != tt_Normal || track->m_editorremoved || (track->iCategoryFlag & 15) != kRailCategory || track->m_paths.size() != 1 ||
-				    false == editor_track::is_straight(*track, m_straights.tolerance))
-					continue;
-				auto const &path{track->m_paths.front()};
-				auto const a{plan_of(path.points[segment_data::point::start])};
-				auto const axis{plan_of(path.points[segment_data::point::end]) - a};
-				auto const span{glm::length(axis)};
-				if (span < 1.0)
-					continue;
-				auto const along{std::clamp(glm::dot(from - a, axis) / span, 0.0, span)};
-				auto distance{glm::distance(from, a + axis / span * along)};
-				if (distance > Reach)
-					distance = std::numeric_limits<double>::max();
-				if (auto const determinant{cross(leg, axis)}; length > 1.0 && std::abs(determinant) > 1e-9)
-				{
-					auto const t{cross(a - from, axis) / determinant};
-					auto const u{cross(a - from, leg) / determinant};
-					if (t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0)
-						distance = std::min(distance, t * length);
-				}
-				if (distance < best)
-				{
-					best = distance;
-					nearest = track;
-				}
-			}
+			skew_scan(cell, leg, best, nearest);
 	return nearest;
 }
 
