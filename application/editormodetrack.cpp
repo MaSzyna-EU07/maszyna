@@ -263,12 +263,14 @@ void editor_mode::draw_track_overlay() const
 
 void editor_mode::commit_track_drag(bool const Force)
 {
-	if (false == m_track_dirty || m_track_drag.empty())
+	// on letting go the rest of what follows the dragged tracks is yet to come, even with all of the drag committed
+	if ((false == m_track_dirty && false == (Force && m_track_drag_on_the_way)) || m_track_drag.empty())
 		return;
 	auto const now = std::chrono::steady_clock::now();
 	if (false == Force && now - m_track_last_commit < std::chrono::milliseconds(100))
 		return;
-	editor_track::commit(m_track_drag);
+	editor_track::commit(m_track_drag, false == Force);
+	m_track_drag_on_the_way = false == Force;
 	m_track_dirty = false;
 	m_track_last_commit = now;
 }

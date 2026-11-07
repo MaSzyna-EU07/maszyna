@@ -3394,15 +3394,12 @@ bool TDynamicObject::Update(double dt, double dt1)
 				&& MoverParameters->eimc[eimc_p_abed] < 0.001)
 				FzadED = 0; //pętla bezpieczeństwa - bez ED
             auto const FzadPN = Fzad - FrED * MoverParameters->MED_FrED_factor;
-            //np = 0;
-            // BUG: likely memory leak, allocation per inner loop, deleted only once outside
-            // TODO: sort this shit out
-			bool* PrzekrF = new bool[np];
+			std::vector<bool> PrzekrF( np );
 			float nPrzekrF = 0;
 			bool test = true;
-			float* FzED = new float[np];
-			float* FzEP = new float[np];
-			float* FmaxEP = new float[np];
+			std::vector<float> FzED( np );
+			std::vector<float> FzEP( np );
+			std::vector<float> FmaxEP( np );
 			// 3. ustaw pojazdom sile hamowania ED
             //   - proporcjonalnie do mozliwosci
 
@@ -3561,11 +3558,6 @@ bool TDynamicObject::Update(double dt, double dt1)
 
 			}
 
-			delete[] PrzekrF;
-			delete[] FzED;
-			delete[] FzEP;
-			delete[] FmaxEP;
-
 			MED_oldFED = FzadED;
         }
 
@@ -3676,33 +3668,32 @@ bool TDynamicObject::Update(double dt, double dt1)
                             1 :
                             ctOwner->Vehicle()->DirectionGet() == DirectionGet() ? 1 : -1 ) };
                     for( auto &axle : m_axlesounds ) {
-                        if( axle_passed_joint( axle, dDOMoveLen, directioninconsist ) ) {
-                            if( MoverParameters->Vel > 0.1 ) {
-                                // NOTE: for combined clatter sound we supply 1/100th of actual value, as the sound module converts does the opposite, converting received (typically) 0-1 values to 0-100 range
-                                auto const frequency = true == axle.clatter.is_combined() ? MoverParameters->Vel * 0.01 : 1.0;
-                                axle.clatter
-                                    .pitch( frequency )
-                                    .gain( volume )
-                                    .play();
-								// crude bump simulation, drop down on even axles, move back up on
-								// the odd ones
-								// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
-								double const headroom = std::clamp(
-								    MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ),
-								    0.0, MoverParameters->Vmax );
-								double const jolt = headroom * .05f * ( MyTrack->iDamageFlag * 0.25f );
-								if (MyTrack->eType == tt_Normal)
-								{
-									MoverParameters->AccVert += std::clamp( jolt, 0.0, 4.0 );
-								}
-								else if (MyTrack->eType == tt_Switch)
-								{
-									double const accHorizontal = std::clamp( jolt, 0.0, 1.0 ) * ((axleindex % 2) != 0 ? 1 : -1);
-									MoverParameters->AccS += accHorizontal;
-									MoverParameters->AccN += accHorizontal;
-									MoverParameters->AccVert += std::clamp( jolt, 0.0, 2.0 );
-								}
-                            }
+                        if( axle_passed_joint( axle, dDOMoveLen, directioninconsist )
+                         && MoverParameters->Vel > 0.1 ) {
+                            // NOTE: for combined clatter sound we supply 1/100th of actual value, as the sound module converts does the opposite, converting received (typically) 0-1 values to 0-100 range
+                            auto const frequency = true == axle.clatter.is_combined() ? MoverParameters->Vel * 0.01 : 1.0;
+                            axle.clatter
+                                .pitch( frequency )
+                                .gain( volume )
+                                .play();
+							// crude bump simulation, drop down on even axles, move back up on
+							// the odd ones
+							// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
+							double const headroom = std::clamp(
+							    MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ),
+							    0.0, MoverParameters->Vmax );
+							double const jolt = headroom * .05f * ( MyTrack->iDamageFlag * 0.25f );
+							if (MyTrack->eType == tt_Normal)
+							{
+								MoverParameters->AccVert += std::clamp( jolt, 0.0, 4.0 );
+							}
+							else if (MyTrack->eType == tt_Switch)
+							{
+								double const accHorizontal = std::clamp( jolt, 0.0, 1.0 ) * ((axleindex % 2) != 0 ? 1 : -1);
+								MoverParameters->AccS += accHorizontal;
+								MoverParameters->AccN += accHorizontal;
+								MoverParameters->AccVert += std::clamp( jolt, 0.0, 2.0 );
+							}
                         }
                         ++axleindex;
                     }
@@ -4163,6 +4154,8 @@ bool TDynamicObject::Update(double dt, double dt1)
 
 
     // mirrors
+    auto const mirrorleft { dMirrorMoveL };
+    auto const mirrorright { dMirrorMoveR };
     if( MoverParameters->Vel > MoverParameters->MirrorVelClose
 		|| MoverParameters->CabActive == 0 && activation::mirrors
 		|| MoverParameters->MirrorForbidden ) {
@@ -4193,6 +4186,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 dMirrorMoveR + 1.0 * dt1 );
         }
     }
+    play_mirror_sounds( side::left, m_mirrormotion[ side::left ].update( dMirrorMoveL - mirrorleft ) );
+    play_mirror_sounds( side::right, m_mirrormotion[ side::right ].update( dMirrorMoveR - mirrorright ) );
 
     // compartment lights
     // if the vehicle has a controller, we base the light state on state of the controller otherwise we check the vehicle itself
@@ -4838,12 +4833,13 @@ void TDynamicObject::RenderSounds() {
 
     // horns
     {
-        // for moving vehicle combine regular horn activation flag with emergency brake horn activation flag, if the brake is active
-        auto const warningsignal { (
-            MoverParameters->Vel > 0.5 && MoverParameters->AlarmChainFlag ?
+        // for moving vehicle combine regular horn activation flag with emergency brake horn activation flag, if the brake is active;
+        // the horns without the air or the voltage they need stay silent
+        auto const warningsignal { MoverParameters->SoundingHorns(
+            ( MoverParameters->Vel > 0.5 && MoverParameters->AlarmChainFlag ?
                 MoverParameters->EmergencyBrakeWarningSignal :
                 0 )
-            | MoverParameters->WarningSignal };
+            | MoverParameters->WarningSignal ) };
 
         if( TestFlag( warningsignal, 1 ) ) {
             sHorn1.play( sound_flags::exclusive | sound_flags::looping );
@@ -4871,7 +4867,7 @@ void TDynamicObject::RenderSounds() {
 #endif
      && ( // compound test whether the vehicle belongs to user-driven consist (as these don't emit outer noise in cab view)
             FreeFlyModeFlag ? true : // in external view all vehicles emit outer noise
-            // Global.pWorld->train() == nullptr ? true : // (can skip this check, with no player train the external view is a given)
+            simulation::Train == nullptr ? true : // no player train, e.g. it went through a portal and the view isn't switched yet
             ctOwner == nullptr ? true : // standalone vehicle, can't be part of user-driven train
             ctOwner != simulation::Train->Dynamic()->ctOwner ? true : // confirmed isn't a part of the user-driven train
             Global.CabWindowOpen ? true : // sticking head out we get to hear outer noise
@@ -6376,6 +6372,19 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     }
                 }
 
+                else if( token == "mirroropen:" || token == "mirrorclose:" ) {
+                    sound_source soundtemplate { sound_placement::general };
+                    soundtemplate.deserialize( parser, sound_type::single );
+                    soundtemplate.owner( this );
+                    for( auto &mirror : m_mirrorsounds ) {
+                        // apply configuration to all defined mirrors, but preserve their individual offsets
+                        auto &sound { token == "mirroropen:" ? mirror.unfold : mirror.fold };
+                        auto const mirroroffset { sound.offset() };
+                        sound = soundtemplate;
+                        sound.offset( mirroroffset );
+                    }
+                }
+
                 else if( token == "doorstepclose:" ) {
                     sound_source soundtemplate { sound_placement::general };
                     soundtemplate.deserialize( parser, sound_type::single );
@@ -6586,6 +6595,27 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                             doorspeaker_sounds {
                                 { 0.f, 3.f, offset },
                                 {} } );
+                    }
+                }
+
+                else if( token == "mirrors:" ) {
+                    // a list of offsets along vehicle's z-axis of the mirror pairs, one at each cab; followed with "end"
+                    while( (token = parser.getToken<std::string>()) != ""
+                        && token != "end" ) {
+                        // vehicle faces +Z in 'its' space, as for the doors negative value means ahead of centre
+                        auto const offset { std::atof( token.c_str() ) * -1.f };
+                        mirror_sounds mirror;
+                        mirror.end = offset >= 0.f ? end::front : end::rear;
+                        for( auto const mirrorside : { side::left, side::right } ) {
+                            auto const location { glm::vec3 {
+                                MoverParameters->Dim.W * ( mirrorside == side::left ? 0.5f : -0.5f ),
+                                MoverParameters->Dim.H * 0.5f,
+                                offset } };
+                            mirror.placement = mirrorside;
+                            mirror.unfold.offset( location );
+                            mirror.fold.offset( location );
+                            m_mirrorsounds.emplace_back( mirror );
+                        }
                     }
                 }
 
@@ -7807,7 +7837,29 @@ int TDynamicObject::RouteWish(TTrack *tr)
     return Mechanik ? Mechanik->CrossRoute(tr) : 0; // wg AI albo prosto
 };
 
-void TDynamicObject::DestinationSet(std::string to, std::string numer) {
+void TDynamicObject::play_mirror_sounds( side const Side, mirror_moves::event const Event ) {
+
+    if( Event == mirror_moves::event::none ) { return; }
+    // as UpdateMirror(), only the mirrors of the occupied cab move
+    if( MoverParameters->CabOccupied == 0 ) { return; }
+    auto const cabend { MoverParameters->CabOccupied > 0 ? end::front : end::rear };
+    for( auto &mirror : m_mirrorsounds ) {
+        if( mirror.placement != Side || mirror.end != cabend ) { continue; }
+        auto &sound { Event == mirror_moves::event::unfolding ? mirror.unfold : mirror.fold };
+        auto &other { Event == mirror_moves::event::unfolding ? mirror.fold : mirror.unfold };
+        other.stop();
+        sound.play( sound_flags::exclusive );
+    }
+}
+
+void TDynamicObject::DestinationClear() {
+
+    if( false == DestinationSign.has_light ) { return; } // physical destination signs remain up until manually changed
+    // update_destinations() shows the blank sign in place of the missing destination
+    DestinationSign.destination = null_handle;
+}
+
+void TDynamicObject::DestinationSet(std::string const &to, std::string const &numer) {
     // ustawienie stacji docelowej oraz wymiennej tekstury 4, jeśli istnieje plik
     // w zasadzie, to każdy wagon mógłby mieć inną stację docelową
     // zwłaszcza w towarowych, pod kątem zautomatyzowania maewrów albo pracy górki
@@ -7836,6 +7888,15 @@ void TDynamicObject::DestinationSet(std::string to, std::string numer) {
     if( DestinationSign.script.empty() ) { return; } // no script so no way to make the texture
     if( numer == "none" )                { return; } // blank or incomplete/malformed timetable, don't bother
 
+    auto const trainname { [this]() -> std::string {
+        if( ctOwner != nullptr ) { return ctOwner->TrainName(); }
+        if( Mechanik != nullptr ) { return Mechanik->TrainName(); }
+        return "none"; } }; // shouldn't get here but, eh
+    auto const instance { [this]() -> std::string {
+        if( DestinationSign.instancing == "name" ) { return MoverParameters->Name; }
+        if( DestinationSign.instancing == "type" ) { return MoverParameters->TypeName; }
+        return "none"; } };
+
     std::string signrequest {
           "make:"
         + DestinationSign.script
@@ -7847,17 +7908,10 @@ void TDynamicObject::DestinationSet(std::string to, std::string numer) {
                 ctOwner->Vehicle()->MoverParameters->Name ) // owned vehicle, safer to point to owner as carriages can have identical names
         // basic instancing string
         // NOTE: underscore doesn't have any magic meaning for the time being, it's just less likely to conflict with regular dictionary keys
-        + "&_id1=" + (
-            ctOwner != nullptr ? ctOwner->TrainName() :
-            Mechanik != nullptr ? Mechanik->TrainName() :
-            "none" ) }; // shouldn't get here but, eh
+        + "&_id1=" + trainname() };
     // TBD, TODO: replace instancing with support for variables in extra parameters string?
     if( false == DestinationSign.instancing.empty() ) {
-        signrequest +=
-            "&_id2=" + (
-                DestinationSign.instancing == "name" ? MoverParameters->Name :
-                DestinationSign.instancing == "type" ? MoverParameters->TypeName :
-                "none" );
+        signrequest += "&_id2=" + instance();
     }
     // optionl extra parameters
     if( false == DestinationSign.parameters.empty() ) {
@@ -8042,12 +8096,12 @@ TDynamicObject::update_shake( double const Timedelta ) {
             shakevector *= 0;
 
         auto const iVel { std::min( GetVelocity(), 150.0 ) };
-        // an uneven track shakes the cab by itself, in place of the sway drawn from the curve and the jolts drawn at random
-        auto const uneven { MyTrack != nullptr && MyTrack->is_uneven() };
+        // an uneven track shakes the cab by itself, in place of the sway drawn from the curve and the jolts drawn at random, as far as it does
+        auto const replaced { track_uneven::replaced_shake( MyTrack != nullptr ? MyTrack->uneven_underway() : track_uneven::amounts {} ) };
         if( iVel > 0.5 ) {
             // acceleration-driven base shake
 			shakevector += glm::dvec3(
-                uneven ? 0.0 : -MoverParameters->AccN * Timedelta * 5.0 * Global.ShakingMultiplierRL, // highlight side sway
+                replaced.sway ? 0.0 : -MoverParameters->AccN * Timedelta * 5.0 * Global.ShakingMultiplierRL, // highlight side sway
                 -MoverParameters->AccVert * Timedelta * Global.ShakingMultiplierUD,
                 -MoverParameters->AccSVBased * Timedelta * 1.5 * Global.ShakingMultiplierBF); // accent acceleration/deceleration
             // unevenness of the track under the outer axles
@@ -8060,7 +8114,7 @@ TDynamicObject::update_shake( double const Timedelta ) {
 
         auto shake { 1.25 * ShakeSpring.ComputateForces( shakevector, ShakeState.offset ) };
 
-        if( false == uneven && LocalRandom( iVel ) > 25.0 ) {
+        if( false == replaced.jolts && LocalRandom( iVel ) > 25.0 ) {
             // extra shake at increased velocity
             shake += ShakeSpring.ComputateForces(
                 glm::dvec3(
@@ -8087,14 +8141,14 @@ TDynamicObject::update_shake( double const Timedelta ) {
 }
 
 bool
-TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction ) {
+TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction ) const {
 
-    // by the outer axle on its side of the vehicle: the two can be on different tracks
-    auto const &outer { Axle.offset >= 0.0 ? Axle0 : Axle1 };
-    auto const railphase { outer.RailPhase( Axle.offset - std::copysign( 0.5 * fAxleDist, Axle.offset ) ) };
-    if( railphase >= 0.0 ) {
+    // from the follower on its side of the vehicle, as the two can be on different tracks. They stand fAxleDist apart, at the bogie pivots, and
+    // the offset of the axle is the place of its wheel set, so the two of a bogie come out half of ADist to either side of the pivot
+    auto const &follower { Axle.offset >= 0.0 ? Axle0 : Axle1 };
+    if( auto const railphase { follower.RailPhase( Axle.offset - std::copysign( 0.5 * fAxleDist, Axle.offset ) ) }; railphase >= 0.0 ) {
         // the rails under the axle, which aren't always those under the track the vehicle is on
-        auto const passed { Axle.atjoints && std::abs( railphase - Axle.distance ) > 0.5 * outer.GetTrack()->fSoundDistance };
+        auto const passed { Axle.atjoints && std::abs( railphase - Axle.distance ) > 0.5 * follower.GetTrack()->fSoundDistance };
         Axle.distance = railphase;
         Axle.atjoints = true;
         return passed;

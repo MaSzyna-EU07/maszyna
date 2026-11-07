@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -42,6 +43,18 @@ inline amounts least( amounts const &Left, amounts const &Right ) {
     return { std::min( Left.up, Right.up ), std::min( Left.side, Right.side ), std::min( Left.cross, Right.cross ) };
 }
 
+// which of the other sources of the cab shake the ride on a track stands in for
+struct shake_sources {
+    bool sway { false }; // from the lateral acceleration
+    bool jolts { false }; // drawn at random
+};
+
+// sideways only with something going sideways. Cross level turns the body, and the dips at the joints come and go: neither makes up for any of them
+inline shake_sources replaced_shake( amounts const &Amount ) {
+
+    return { Amount.side > 0.0, Amount.up > 0.0 || Amount.side > 0.0 };
+}
+
 struct wave {
     double x;
     double z;
@@ -51,18 +64,20 @@ struct wave {
 
 // the numbers of an entry like "uneven 14;35", negative where left out
 template <std::size_t Count>
-std::array<float, Count> read_fields( std::string const &Text ) {
+std::array<float, Count> read_fields( std::string_view const Text ) {
 
     std::array<float, Count> result;
     result.fill( -1.f );
-    std::size_t start { 0 };
-    for( std::size_t index = 0; index < Count && start < Text.size(); ++index ) {
-        auto const end { std::min( Text.find( ';', start ), Text.size() ) };
-        auto value { 0.f };
-        if( end > start && std::from_chars( Text.data() + start, Text.data() + end, value ).ec == std::errc {} ) {
-            result[ index ] = std::clamp( value, 0.f, most );
+    auto rest { Text };
+    for( auto &field : result ) {
+        auto const end { std::min( rest.find( ';' ), rest.size() ) };
+        if( auto value { 0.f }; end > 0 && std::from_chars( rest.data(), rest.data() + end, value ).ec == std::errc {} ) {
+            field = std::clamp( value, 0.f, most );
         }
-        start = end + 1;
+        if( end == rest.size() ) {
+            break;
+        }
+        rest.remove_prefix( end + 1 );
     }
     return result;
 }
@@ -100,7 +115,7 @@ struct attribute {
 };
 
 // a plain track: value;up;side;cross;dip. A switch: p1-p2;p3-p4;up of p1-p2;side of p1-p2;up of p3-p4;side of p3-p4
-inline attribute read_attribute( std::string const &Text, bool const Switch ) {
+inline attribute read_attribute( std::string_view const Text, bool const Switch ) {
 
     auto const fields { read_fields<6>( Text ) };
     attribute result;
@@ -136,15 +151,15 @@ inline std::string write_attribute( attribute const &Values, bool const Switch )
 // what a path comes to from the values: what's not given takes the first value, p3-p4 those of p1-p2. Cross level on plain tracks only
 inline amounts declared( attribute const &Values, bool const Plain, int const Path ) {
 
+    auto const given = []( float const Part, double const Otherwise ) {
+        return Part >= 0.f ? static_cast<double>( Part ) : Otherwise; };
     amounts result {
-        Values.up >= 0.f ? Values.up : Values.value,
-        Values.side >= 0.f ? Values.side : Values.value,
-        false == Plain ? 0.f : Values.cross >= 0.f ? Values.cross : Values.value };
+        given( Values.up, Values.value ),
+        given( Values.side, Values.value ),
+        Plain ? given( Values.cross, Values.value ) : 0.0 };
     if( Path == 1 ) {
-        auto const branch = [ &Values ]( float const Part, double const Straight ) -> double {
-            return Part >= 0.f ? Part : Values.branch >= 0.f ? Values.branch : Straight; };
-        result.up = branch( Values.branchup, result.up );
-        result.side = branch( Values.branchside, result.side );
+        result.up = given( Values.branchup, given( Values.branch, result.up ) );
+        result.side = given( Values.branchside, given( Values.branch, result.side ) );
     }
     return result;
 }
@@ -160,8 +175,9 @@ wave_set<Count> make_waves( double const Turn, std::array<double, Count> const &
     wave_set<Count> result {};
     for( std::size_t i = 0; i < Count; ++i ) {
         auto const number { glm::two_pi<double>() / Lengths[ i ] };
-        auto const heading { Turn + golden * i };
-        result[ i ] = { number * std::cos( heading ), number * std::sin( heading ), golden * ( i + 1 ) * ( 1.0 + 3.0 * Turn ), Shares[ i ] };
+        auto const place { static_cast<double>( i ) };
+        auto const heading { Turn + golden * place };
+        result[ i ] = { number * std::cos( heading ), number * std::sin( heading ), golden * ( place + 1.0 ) * ( 1.0 + 3.0 * Turn ), Shares[ i ] };
     }
     return result;
 }
@@ -246,7 +262,10 @@ inline glm::dvec3 across_of( glm::dvec3 const &Direction, glm::dvec3 const &Chor
 // the cant where two paths meet, theirs turned to the way of this one: a switch takes that of a plain track, alike ones meet halfway
 inline float joint_roll( float const Own, float const Their, bool const Switch, bool const Theirswitch ) {
 
-    return Switch == Theirswitch ? 0.5f * ( Own + Their ) : Switch ? Their : Own;
+    if( Switch == Theirswitch ) {
+        return 0.5f * ( Own + Their );
+    }
+    return Switch ? Their : Own;
 }
 
 // each component the same way

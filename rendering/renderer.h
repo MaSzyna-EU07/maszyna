@@ -96,7 +96,10 @@ public:
     virtual auto Replace_Indexed( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool { return false; }
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
-    virtual void Erase( gfx::geometry_handle const &Geometry ) {}
+    // empties specified chunk, its handle stays valid to be filled again
+    virtual void Erase( gfx::geometry_handle const & /*Geometry*/ ) {
+        // a renderer which keeps no chunks of its own has none to empty
+    }
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
@@ -111,6 +114,7 @@ public:
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
     // the same material with its highlights damped, for faces which aren't polished like the surfaces they are cut from. backends which can't make one give back the material itself
     virtual auto Matte_Material( material_handle const Material ) -> material_handle { return Material; }
+    // the same material with its texture tinted by the colour, as far as the userdata of the vertices says. backends which can't make one give back the material itself
     virtual auto Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) -> material_handle { return Material; }
     // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of the user data
     // of the vertices (world/TrackBlend.h). backends which can't make one give back the material itself
@@ -147,7 +151,10 @@ public:
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
-    virtual void Forget_Node( scene::basic_node const *Node ) {}
+    // a node deleted from the scene is no longer given as picked
+    virtual void Forget_Node( scene::basic_node const * /*Node*/ ) {
+        // a renderer which keeps no node picked has none to forget
+    }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
     virtual auto Mouse_Hit() const -> bool { return true; }

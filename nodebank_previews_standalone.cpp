@@ -295,9 +295,9 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 	std::thread logservice(LogService);
 
 	auto const finish = [&](int const Result) {
-		// give the log service time to write out what's left
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		// the log service writes out what's left before it stops
 		Global.applicationQuitOrder = true;
+		StopLogService();
 		logservice.join();
 		return Result;
 	};

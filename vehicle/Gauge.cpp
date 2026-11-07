@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Gauge.h"
+#include "vehicle/gaugepositions.h"
 #include "utilities/parser.h"
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
@@ -302,42 +303,37 @@ bool
 TGauge::UpdateValue( float fNewDesired ) {
 
     auto const desiredtimes100 = static_cast<int>( std::round( 100.0 * fNewDesired ) );
-    if( desiredtimes100 == static_cast<int>( std::round( 100.0 * m_targetvalue ) ) ) {
+    auto const previoustimes100 = static_cast<int>( std::round( 100.0 * m_targetvalue ) );
+    if( desiredtimes100 == previoustimes100 ) {
         return true;
     }
     m_targetvalue = fNewDesired;
-    // if there's any sound associated with new requested value, play it
-    // check value-specific table first...
-    if( auto const fullinteger { desiredtimes100 % 100 == 0 }; fullinteger ) {
-        // filter out values other than full integers
-        auto const lookup = m_soundfxvalues.find( desiredtimes100 / 100 );
-        if( lookup != m_soundfxvalues.end() ) {
-            lookup->second.play();
-            return true;
-        }
-    }
-    else {
+    if( desiredtimes100 % 100 != 0 ) {
         // toggle the control to continous range/exclusive sound mode from now on
         m_soundtype = sound_flags::exclusive;
     }
+    // if there's any sound associated with a position reached on the way to the new requested value, play it
+    // check value-specific table first...
+    if( auto const reached = gauge_positions::last_reached( m_soundfxvalues, previoustimes100, desiredtimes100 );
+        reached != m_soundfxvalues.end() ) {
+        reached->second.play();
+        return true;
+    }
     // ...and if there isn't any, fall back on the basic set...
     // HACK: crude way to discern controls with continuous and quantized value range
-    if( auto const currentvalue = GetValue(); currentvalue < fNewDesired ) {
+    auto const currentvalue = GetValue();
+    if( currentvalue < fNewDesired && false == m_soundfxincrease.empty() ) {
         // shift up
-        if( false == m_soundfxincrease.empty() ) {
-            m_soundfxincrease.play( m_soundtype );
-            return true;
-        }
+        m_soundfxincrease.play( m_soundtype );
+        return true;
     }
-    else if( currentvalue > fNewDesired ) {
+    if( currentvalue > fNewDesired && false == m_soundfxdecrease.empty() ) {
         // shift down
-        if( false == m_soundfxdecrease.empty() ) {
-            m_soundfxdecrease.play( m_soundtype );
-            return true;
-        }
+        m_soundfxdecrease.play( m_soundtype );
+        return true;
     }
     return false; // no suitable sound was found
-};
+}
 
 void TGauge::PutValue(float fNewDesired)
 { // McZapkie-281102: natychmiastowe wpisanie wartosci

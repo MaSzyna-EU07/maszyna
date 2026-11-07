@@ -145,6 +145,8 @@ public:
     // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
     material_handle
         create_matte( material_handle const Material );
+    // copy of provided material with its texture tinted to the colour as far as the userdata of the vertices says. returns: handle to
+    // the copy, made once per material and colour; the material itself when its shader can't tint it
     material_handle
         create_tinted( material_handle const Material, glm::vec3 const &Colour );
     // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of
@@ -177,6 +179,9 @@ private:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle
         find_in_databank( std::string const &Materialname ) const;
+    // the matte and tinted copies of the materials changed with the weather or the season made again from them, under their handles
+    void
+        update_variants( bool const Weather );
     // how the material is lit, of the materials a track blends: 0 as mat_default, 1 normalmap, 2 sunlessnormalmap,
     // 3 shadowlessnormalmap, 4 more for their _specgloss, 9 parallax; -1 where it can't be blended
     int

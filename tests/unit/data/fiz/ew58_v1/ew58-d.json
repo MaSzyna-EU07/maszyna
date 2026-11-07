@@ -1,0 +1,20 @@
+{
+  "_source": "pkp/ew58_v1/ew58-d.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "42200", "Mred": "1800", "Vmax": "120", "PWR": "2", "SandCap": "0", "Type": "ezt", "HeatingP": "18"},
+  "Load": {"MaxLoad": "220", "LoadQ": "pieces", "LoadAccepted": "Passengers,Pantstate", "OverLoadFactor": "2", "LoadSpeed": "6", "UnLoadSpeed": "6"},
+  "Dimensions": {"L": "21.7", "H": "4.12", "W": "2.96", "Cx": "0.1"},
+  "Wheels": {"D": "0.92", "AIM": "2000", "Tw": "1.435", "Axle": "2'2'", "Ad": "2.75", "Bd": "15.6", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "EP1", "NBpA": "4", "MBF": "85.0", "MaxBP": "3.8", "BCN": "4", "BCR": "0.1143", "BCD": "0.08", "BCM": "12.156", "HiPP": "5", "LoPP": "3.5", "Vv": "0.3", "MinCP": "7.0", "MaxCP": "8.0", "CompressorSpeed": "0.013", "TareMaxBP": "2.4", "BVV": "150", "BM": "P10-Bg", "BCS": "1.5", "BSA": "16.00", "BRE": "0.83"},
+  "Doors": {"OpenCtrl": "DriverCtrl", "CloseCtrl": "DriverCtrl", "OpenSpeed": "0.35", "CloseSpeed": "0.35", "DoorCloseDelay": "0.5", "DoorMaxShiftL": "0.53", "DoorMaxShiftR": "0.53", "DoorOpenMethod": "Shift", "DoorClosureWarning": "Yes"},
+  "BuffCoupl": {"ControlType": "ew58", "CType": "Automatic", "kB": "4200", "DmaxB": "0.05", "FmaxB": "1740", "kC": "6800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "-127"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "MaxBPMass": "68", "BCPN": "1", "BDelay1": "15", "BDelay2": "4", "ASB": "Manual", "LocalBrake": "ManualBrake", "DynamicBrake": "Passive", "MCPN": "4", "SCPN": "9", "SCIM": "1", "AutoRelay": "Yes", "IniCDelay": "0.0", "SCDelay": "0.8", "CoupledCtrl": "No", "BrakeDelays": "R", "rows": [
+    ["-1","0.5","0.0","6","ElectroPneumatic"],
+    ["0","-1","-1","0","ElectroPneumatic"],
+    ["1","-1","0.35","4","ElectroPneumatic"]
+  ]},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "155"},
+  "Power": {"EnginePower": "CurrentCollector", "CollectorsNo": "2", "MaxVoltage": "3600", "MaxCurrent": "1200", "MinH": "0.38", "MaxH": "2.4", "CSW": "1.4", "MinPress": "3.5", "PhysicalLayout": "3"},
+  "DCEMUED": {"CouplerCheck": "3", "EP_max_Vel": "48"},
+  "Switches": {"Pantograph": "Continous"}
+}

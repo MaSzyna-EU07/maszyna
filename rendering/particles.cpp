@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "simulation/simulationenvironment.h"
 #include "utilities/Logs.h"
+#include "vehicle/smoke.h"
 
 
 void
@@ -169,53 +170,32 @@ smoke_source::bind( TAnimModel const *Node ) {
 void
 smoke_source::accumulate_spawns( double const Timedelta, bool const Onlydespawn ) {
 
-    m_spawncount = (
-        ( ( false == Global.Smoke ) || ( true == Onlydespawn ) ) ?
-            0.f :
-            std::min<float>(
-                static_cast<float>(m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity )),
-                static_cast<float>(m_max_particles) ) );
-    // consider special spawn rate cases
+    auto const spawning { ( true == Global.Smoke ) && ( false == Onlydespawn ) };
+
     if( m_ownertype == owner_type::vehicle ) {
 
-		if (Global.AirTemperature <= 5.f || m_owner.vehicle->MoverParameters->dizel_heat.Ts < 45.f)
-		{
-			m_emitter.color = glm::vec3{128, 128, 128};
-		}
-
-		if (m_owner.vehicle->MoverParameters->dizel_spinup == true)
-		{
-			m_spawncount =
-			    ((false == Global.Smoke) || (true == Onlydespawn)) ?
-			        0.f :
-			        std::min<float>(
-			            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-			   static_cast<float>(m_spawncount +(m_spawnrate * Timedelta * Global.SmokeFidelity * (((m_owner.vehicle->MoverParameters->enrot) / 4 ) * 0.01))), static_cast<float>(m_max_particles));
-		}
-		else
-		{
-			if (m_owner.vehicle->MoverParameters->DirAbsolute == 0 ||
-			    m_owner.vehicle->MoverParameters->Im == 0)
-			{
-				m_spawncount =
-				    ((false == Global.Smoke) || (true == Onlydespawn)) ?
-				        0.f :
-				        std::min<float>(
-				            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-				            static_cast<float>(m_spawncount + (m_spawnrate * Timedelta * Global.SmokeFidelity * ((((m_owner.vehicle->MoverParameters->DElist[m_owner.vehicle->MoverParameters->MainCtrlPosNo].RPM -m_owner.vehicle->MoverParameters->enrot) /60) *0.02) *(m_owner.vehicle->MoverParameters->EnginePower * 0.005)))), static_cast<float>(m_max_particles));
-			}
-			else
-			{
-
-				m_spawncount =
-				    ((false == Global.Smoke) || (true == Onlydespawn)) ?
-				        0.f :
-				        std::min<float>(
-				            // m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity ),
-				            static_cast<float>(m_spawncount + (m_spawnrate * Timedelta * Global.SmokeFidelity * ((((m_owner.vehicle->MoverParameters->DElist[m_owner.vehicle->MoverParameters->MainCtrlPosNo].RPM -m_owner.vehicle->MoverParameters->enrot) /60) * (sqrt(m_owner.vehicle->MoverParameters->Im) * 0.01) * 0.02) *(m_owner.vehicle->MoverParameters->EnginePower * 0.005)))), static_cast<float>(m_max_particles));
-			}
-		}
-	}
+        auto const &mover { *m_owner.vehicle->MoverParameters };
+        if( Global.AirTemperature <= 5.f || mover.dizel_heat.Ts < 45.f ) {
+            m_emitter.color = glm::vec3{ 128, 128, 128 };
+        }
+        // a vehicle taken off the tracks (gone through a portal, or waiting in the pool of the road traffic) puffs no more,
+        // the particles it already let out fade away as usual
+        m_spawncount = (
+            ( true == spawning ) ?
+                smoke::vehicle_spawn_count(
+                    mover, m_owner.vehicle->bEnabled,
+                    { m_spawncount, m_spawnrate, Global.SmokeFidelity, static_cast<float>( m_max_particles ) },
+                    Timedelta ) :
+                0.f );
+    }
+    else {
+        m_spawncount = (
+            ( true == spawning ) ?
+                std::min<float>(
+                    static_cast<float>(m_spawncount + ( m_spawnrate * Timedelta * Global.SmokeFidelity )),
+                    static_cast<float>(m_max_particles) ) :
+                0.f );
+    }
 }
 
 // updates state of owned particles
