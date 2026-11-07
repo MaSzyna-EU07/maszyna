@@ -301,13 +301,23 @@ track_property &add(std::vector<track_property> &List, char const *Key, field co
 	return property;
 }
 
-// a number kept in a member of the track, Least the lowest value it takes
-void add_float(std::vector<track_property> &List, char const *Key, int const Part, int const Group, char const *Label, char const *Tooltip, float TTrack::*Member, int const Digits, float const Least, bool const Rebuild)
+// a number kept in a member of the track: the member, the digits it's shown with, the lowest value it takes, whether the geometry of the
+// track is made again after a change
+struct float_member
+{
+	float TTrack::*member;
+	int digits;
+	float least;
+	bool rebuild;
+};
+
+// a number kept in a member of the track
+void add_float(std::vector<track_property> &List, char const *Key, int const Part, int const Group, char const *Label, char const *Tooltip, float_member const &Number)
 {
 	auto &property{add(List, Key, field::number, Part, Group, Label, Tooltip)};
-	property.rebuild = Rebuild;
-	property.get = [Member, Digits](TTrack const &Track) { return decimal(Track.*Member, Digits); };
-	property.set = [Member, Digits, Least](TTrack &Track, std::string const &Text) {
+	property.rebuild = Number.rebuild;
+	property.get = [Member = Number.member, Digits = Number.digits](TTrack const &Track) { return decimal(Track.*Member, Digits); };
+	property.set = [Member = Number.member, Digits = Number.digits, Least = Number.least](TTrack &Track, std::string_view const Text) {
 		double value;
 		if (false == parse_number(Text, value))
 			return false;
@@ -319,22 +329,27 @@ void add_float(std::vector<track_property> &List, char const *Key, int const Par
 	};
 }
 
-std::vector<track_property> make_properties()
-{
-	std::vector<track_property> list;
-	auto const any = [](TTrack const &) { return true; };
-	float const lowest{std::numeric_limits<float>::lowest()};
+// the lowest value of a number which can go either way
+constexpr float kLowest{std::numeric_limits<float>::lowest()};
 
-	// traffic
+// a property every track has, the hidden ones too
+bool any_track(TTrack const &)
+{
+	return true;
+}
+
+// the speed, the environment and the overhead line, of the traffic
+void add_traffic(std::vector<track_property> &List)
+{
 	{
-		auto &property{add(list, "speed", field::number, section::traffic, group::speed, "Speed (km/h)", "Speed limit of the track for the AI drivers and the timetable.\nEmpty or -1: no limit of its own")};
-		property.applies = any;
+		auto &property{add(List, "speed", field::number, section::traffic, group::speed, "Speed (km/h)", "Speed limit of the track for the AI drivers and the timetable.\nEmpty or -1: no limit of its own")};
+		property.applies = any_track;
 		property.empty = "no limit";
 		property.get = [](TTrack const &Track) {
 			auto const velocity{editor_track::velocity(Track)};
 			return velocity < 0.0 ? std::string{} : decimal(velocity, 1);
 		};
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double velocity{-1.0};
 			if (false == words_of(Text).empty() && false == parse_number(Text, velocity))
 				return false;
@@ -347,11 +362,11 @@ std::vector<track_property> make_properties()
 		};
 	}
 	{
-		auto &property{add(list, "environment", field::choice, section::traffic, group::surroundings, "Environment", "Surroundings of the track, they affect the sound of the passing vehicles")};
-		property.applies = any;
+		auto &property{add(List, "environment", field::choice, section::traffic, group::surroundings, "Environment", "Surroundings of the track, they affect the sound of the passing vehicles")};
+		property.applies = any_track;
 		property.choices = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
 		property.get = [](TTrack const &Track) { return std::to_string(std::clamp(static_cast<int>(Track.eEnvironment), 0, 5)); };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double index;
 			if (false == parse_number(Text, index) || index < 0.0 || index > 5.0 || static_cast<int>(index) == static_cast<int>(Track.eEnvironment))
 				return false;
@@ -359,30 +374,33 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
+	auto &property{add(List, "overhead", field::choice, section::traffic, group::overhead_line, "Overhead line", "State of the overhead line over the track: the trains coast through a section with no current,\nor lower the pantographs and keep to the speed limit given")};
+	property.applies = any_track;
+	property.more = true;
+	property.choices = {"Normal", "No current, coasting", "Pantographs lowered, speed limit"};
+	property.get = [](TTrack const &Track) { return std::string{overhead_choice(Track.fOverhead)}; };
+	property.set = [](TTrack &Track, std::string_view const Text) {
+		double index;
+		if (false == parse_number(Text, index) || index < 0.0 || index > 2.0)
+			return false;
+		auto const mode{static_cast<int>(index)};
+		auto const overhead{overhead_of(mode, Track.fOverhead)};
+		if (overhead == Track.fOverhead)
+			return false;
+		editor_track::overhead(Track, overhead);
+		return true;
+	};
+}
+
+// the speed with the pantographs lowered and the track circuits, of the traffic
+void add_traffic_more(std::vector<track_property> &List)
+{
 	{
-		auto &property{add(list, "overhead", field::choice, section::traffic, group::overhead_line, "Overhead line", "State of the overhead line over the track: the trains coast through a section with no current,\nor lower the pantographs and keep to the speed limit given")};
-		property.applies = any;
-		property.more = true;
-		property.choices = {"Normal", "No current, coasting", "Pantographs lowered, speed limit"};
-		property.get = [](TTrack const &Track) { return std::string{overhead_choice(Track.fOverhead)}; };
-		property.set = [](TTrack &Track, std::string const &Text) {
-			double index;
-			if (false == parse_number(Text, index) || index < 0.0 || index > 2.0)
-				return false;
-			auto const mode{static_cast<int>(index)};
-			auto const overhead{overhead_of(mode, Track.fOverhead)};
-			if (overhead == Track.fOverhead)
-				return false;
-			editor_track::overhead(Track, overhead);
-			return true;
-		};
-	}
-	{
-		auto &property{add(list, "overheadspeed", field::number, section::traffic, group::overhead_line, "Speed with the pantographs lowered (km/h)", "Speed limit of the trains with the pantographs lowered")};
+		auto &property{add(List, "overheadspeed", field::number, section::traffic, group::overhead_line, "Speed with the pantographs lowered (km/h)", "Speed limit of the trains with the pantographs lowered")};
 		property.more = true;
 		property.applies = [](TTrack const &Track) { return Track.fOverhead > 0.f; };
 		property.get = [](TTrack const &Track) { return decimal(Track.fOverhead, 0); };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double limit;
 			if (false == parse_number(Text, limit))
 				return false;
@@ -393,32 +411,33 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	{
-		auto &property{add(list, "circuits", field::text, section::traffic, group::circuits, "Track circuits", "Names of the track circuits (isolated) the track belongs to, separated by spaces.\nA name which doesn't exist yet makes a new circuit. Tracks with vehicles on them keep theirs")};
-		property.applies = any;
-		property.more = true;
-		property.empty = "no circuits";
-		property.get = [](TTrack const &Track) {
-			std::string text;
-			for (auto const *isolated : Track.Isolated)
-				text += (text.empty() ? "" : " ") + isolated->asName;
-			return text;
-		};
-		property.set = [get = property.get](TTrack &Track, std::string const &Text) {
-			auto const names{words_of(Text)};
-			std::string joined;
-			for (auto const &name : names)
-				joined += (joined.empty() ? "" : " ") + name;
-			if (false == Track.Dynamics.empty() || joined == get(Track))
-				return false;
-			editor_track::isolated(Track, names);
-			return true;
-		};
-	}
+	auto &property{add(List, "circuits", field::text, section::traffic, group::circuits, "Track circuits", "Names of the track circuits (isolated) the track belongs to, separated by spaces.\nA name which doesn't exist yet makes a new circuit. Tracks with vehicles on them keep theirs")};
+	property.applies = any_track;
+	property.more = true;
+	property.empty = "no circuits";
+	property.get = [](TTrack const &Track) {
+		std::string text;
+		for (auto const *isolated : Track.Isolated)
+			text += (text.empty() ? "" : " ") + isolated->asName;
+		return text;
+	};
+	property.set = [get = property.get](TTrack &Track, std::string_view const Text) {
+		auto const names{words_of(Text)};
+		std::string joined;
+		for (auto const &name : names)
+			joined += (joined.empty() ? "" : " ") + name;
+		if (false == Track.Dynamics.empty() || joined == get(Track))
+			return false;
+		editor_track::isolated(Track, names);
+		return true;
+	};
+}
 
-	// look
+// the textures of the rails, of both paths of a switch and of its path 2
+void add_rails(std::vector<track_property> &List)
+{
 	{
-		auto &property{add(list, "rails", field::texture, section::look, group::rails, "Rails", "Texture of the rails; of both paths of a switch, those of its path 2 can then be set apart.\nA material dragged from the texture browser can be dropped here")};
+		auto &property{add(List, "rails", field::texture, section::look, group::rails, "Rails", "Texture of the rails; of both paths of a switch, those of its path 2 can then be set apart.\nA material dragged from the texture browser can be dropped here")};
 		property.rebuild = true;
 		property.texture = 0;
 		property.empty = "No texture";
@@ -433,38 +452,41 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	{
-		// a switch keeps the rails of its path 2 in its second texture, its trackbed is m_material3
-		auto &property{add(list, "rails2", field::texture, section::look, group::rails, "Rails of path 2",
-		                   "Texture of the rails of path 2 of the switch, from p3 to p4, usually the diverging track.\nPath 1, from p1 to p2, keeps the texture of the rails above.\nA material dragged from the texture browser can be dropped here")};
-		property.rebuild = true;
-		property.late = true; // after the rails, which set both paths
-		property.texture = 0;
-		property.empty = "No texture";
-		property.applies = [](TTrack const &Track) { return Track.m_visible && Track.eType == tt_Switch; };
-		property.get = [](TTrack const &Track) { return editor_track::material_name(Track.m_material2); };
-		property.set = [](TTrack &Track, std::string const &Text) {
-			auto const material{editor_track::fetch_material(Text)};
-			if (Track.eType != tt_Switch || material == Track.m_material2)
-				return false;
-			Track.m_material2 = material;
-			return true;
-		};
-	}
+	// a switch keeps the rails of its path 2 in its second texture, its trackbed is m_material3
+	auto &property{add(List, "rails2", field::texture, section::look, group::rails, "Rails of path 2",
+	                   "Texture of the rails of path 2 of the switch, from p3 to p4, usually the diverging track.\nPath 1, from p1 to p2, keeps the texture of the rails above.\nA material dragged from the texture browser can be dropped here")};
+	property.rebuild = true;
+	property.late = true; // after the rails, which set both paths
+	property.texture = 0;
+	property.empty = "No texture";
+	property.applies = [](TTrack const &Track) { return Track.m_visible && Track.eType == tt_Switch; };
+	property.get = [](TTrack const &Track) { return editor_track::material_name(Track.m_material2); };
+	property.set = [](TTrack &Track, std::string const &Text) {
+		auto const material{editor_track::fetch_material(Text)};
+		if (Track.eType != tt_Switch || material == Track.m_material2)
+			return false;
+		Track.m_material2 = material;
+		return true;
+	};
+}
+
+// the profile of the rails and the texture of the trackbed
+void add_rail_profile(std::vector<track_property> &List)
+{
 	{
 		// the profiles of the rails the game has (models/tory/railprofile_*), the first: none, the default shape
 		static constexpr auto profiles{std::to_array<char const *>({"", "s60", "uic60", "s49", "s42", "s39", "s30pn", "s30din", "s24", "s20", "s18", "s14", "s10", "r-65", "ri60n", "lk1"})};
-		auto &property{add(list, "railprofile", field::choice, section::look, group::rails, "Rail profile",
+		auto &property{add(List, "railprofile", field::choice, section::look, group::rails, "Rail profile",
 		                   "Shape of the rails, the railprofile of the track. It also picks the switch templates of the rail: S60 60E1, S49 49E1.\nNo profile: the default shape, and the templates of all the rails are offered")};
 		property.rebuild = true;
 		property.more = true;
 		property.applies = [](TTrack const &Track) { return Track.m_visible && (Track.iCategoryFlag & 15) == 1; };
 		property.choices = {"No profile", "S60 (60E1)", "UIC60", "S49 (49E1)", "S42", "S39", "S30 PN", "S30 DIN", "S24", "S20", "S18", "S14", "S10", "R65", "Ri60N", "LK1"};
 		property.get = [](TTrack const &Track) {
-			auto const at{std::ranges::find_if(profiles, [&](char const *Name) { return Track.m_profile1.first == Name; })};
+			auto const at{std::ranges::find_if(profiles, [&Track](char const *Name) { return Track.m_profile1.first == Name; })};
 			return at != std::end(profiles) ? std::to_string(at - std::begin(profiles)) : Track.m_profile1.first;
 		};
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double index;
 			if (false == parse_number(Text, index) || index < 0.0 || index >= static_cast<double>(std::size(profiles)))
 				return false;
@@ -475,26 +497,48 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
+	auto &property{add(List, "trackbed", field::texture, section::look, group::trackbed, "Trackbed", "Texture of the trackbed (ballast) under the rails.\nA material dragged from the texture browser can be dropped here")};
+	property.rebuild = true;
+	property.texture = 1;
+	property.empty = "No texture";
+	property.applies = [](TTrack const &Track) { return Track.m_visible && (Track.eType != tt_Switch || Track.SwitchExtension != nullptr); };
+	property.get = [](TTrack const &Track) { return editor_track::material_name(bed_of(Track)); };
+	property.set = [](TTrack &Track, std::string const &Text) {
+		auto const material{editor_track::fetch_material(Text)};
+		if (material == bed_of(Track))
+			return false;
+		if (Track.eType == tt_Switch)
+			Track.SwitchExtension->m_material3 = material;
+		else
+			Track.m_material2 = material;
+		return true;
+	};
+}
+
+// a measure of the blades of a switch, kept in a Member of its extension
+void add_blades(std::vector<track_property> &List, char const *Key, char const *Label, char const *Tooltip, double TSwitchExtension::*Member)
+{
+	auto &property{add(List, Key, field::number, section::look, group::frogs, Label, Tooltip)};
+	property.rebuild = true;
+	property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
+	property.get = [Member](TTrack const &Track) { return decimal(( *Track.SwitchExtension ).*Member, 3); };
+	property.set = [Member](TTrack const &Track, std::string_view const Text) {
+		double value;
+		if (false == parse_number(Text, value))
+			return false;
+		value = std::max(0.0, value);
+		if (decimal(value, 3) == decimal(( *Track.SwitchExtension ).*Member, 3))
+			return false;
+		( *Track.SwitchExtension ).*Member = value;
+		return true;
+	};
+}
+
+// the frog and the blades of a switch
+void add_frogs(std::vector<track_property> &List)
+{
 	{
-		auto &property{add(list, "trackbed", field::texture, section::look, group::trackbed, "Trackbed", "Texture of the trackbed (ballast) under the rails.\nA material dragged from the texture browser can be dropped here")};
-		property.rebuild = true;
-		property.texture = 1;
-		property.empty = "No texture";
-		property.applies = [](TTrack const &Track) { return Track.m_visible && (Track.eType != tt_Switch || Track.SwitchExtension != nullptr); };
-		property.get = [](TTrack const &Track) { return editor_track::material_name(bed_of(Track)); };
-		property.set = [](TTrack &Track, std::string const &Text) {
-			auto const material{editor_track::fetch_material(Text)};
-			if (material == bed_of(Track))
-				return false;
-			if (Track.eType == tt_Switch)
-				Track.SwitchExtension->m_material3 = material;
-			else
-				Track.m_material2 = material;
-			return true;
-		};
-	}
-	{
-		auto &property{add(list, "frogs", field::check, section::look, group::frogs, "Frog and check rails made from the rails", "Cuts the rails of the switch at its frog and lays wing rails and check rails.\nOff for a switch whose include has its own model of them")};
+		auto &property{add(List, "frogs", field::check, section::look, group::frogs, "Frog and check rails made from the rails", "Cuts the rails of the switch at its frog and lays wing rails and check rails.\nOff for a switch whose include has its own model of them")};
 		property.rebuild = true;
 		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.off = false == Global.Frogs;
@@ -508,7 +552,7 @@ std::vector<track_property> make_properties()
 		};
 	}
 	{
-		auto &property{add(list, "movablenose", field::check, section::look, group::frogs, "Movable nose", "The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails")};
+		auto &property{add(List, "movablenose", field::check, section::look, group::frogs, "Movable nose", "The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails")};
 		property.rebuild = true;
 		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.off = false == Global.Frogs;
@@ -521,32 +565,19 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
+	add_blades(List, "bladeheel", "Blade heel (m)", "Where the moving blades end, from the start of the switch, as the template of the switch gives it.\n0: as long as the flangeway of 58 mm behind them needs", &TSwitchExtension::m_bladeheel);
+	add_blades(List, "bladethrow", "Blade throw (m)", "How far the tips of the blades move over between the two paths.\n0: the usual 0.160 m", &TSwitchExtension::m_bladethrow);
+}
+
+// the shape of the trackbed, the sleeper model and whether it's laid
+void add_trackbed(std::vector<track_property> &List)
+{
+	add_float(List, "texlength", section::look_bed, group::trackbed_shape, "Texture length (m)", "Length after which the texture of the rails and the trackbed repeats", {&TTrack::fTexLength, 2, 0.01f, true});
 	{
-		auto const blades = [&](char const *Key, char const *Label, char const *Tooltip, double TSwitchExtension::*Member) {
-			auto &property{add(list, Key, field::number, section::look, group::frogs, Label, Tooltip)};
-			property.rebuild = true;
-			property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
-			property.get = [Member](TTrack const &Track) { return decimal(( *Track.SwitchExtension ).*Member, 3); };
-			property.set = [Member](TTrack const &Track, std::string const &Text) {
-				double value;
-				if (false == parse_number(Text, value))
-					return false;
-				value = std::max(0.0, value);
-				if (decimal(value, 3) == decimal(( *Track.SwitchExtension ).*Member, 3))
-					return false;
-				( *Track.SwitchExtension ).*Member = value;
-				return true;
-			};
-		};
-		blades("bladeheel", "Blade heel (m)", "Where the moving blades end, from the start of the switch, as the template of the switch gives it.\n0: as long as the flangeway of 58 mm behind them needs", &TSwitchExtension::m_bladeheel);
-		blades("bladethrow", "Blade throw (m)", "How far the tips of the blades move over between the two paths.\n0: the usual 0.160 m", &TSwitchExtension::m_bladethrow);
-	}
-	add_float(list, "texlength", section::look_bed, group::trackbed_shape, "Texture length (m)", "Length after which the texture of the rails and the trackbed repeats", &TTrack::fTexLength, 2, 0.01f, true);
-	{
-		auto &property{add(list, "bedheight", field::number, section::look_bed, group::trackbed_shape, "Trackbed height (m)", "Height of the trackbed edge below the rail top")};
+		auto &property{add(List, "bedheight", field::number, section::look_bed, group::trackbed_shape, "Trackbed height (m)", "Height of the trackbed edge below the rail top")};
 		property.rebuild = true;
 		property.get = [](TTrack const &Track) { return decimal(editor_track::texture_height(Track), 3); };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double height;
 			if (false == parse_number(Text, height) || decimal(height, 3) == decimal(editor_track::texture_height(Track), 3))
 				return false;
@@ -554,10 +585,10 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	add_float(list, "bedwidth", section::look_bed, group::trackbed_shape, "Trackbed width (m)", "Width of the trackbed outside of the rail", &TTrack::fTexWidth, 3, lowest, true);
-	add_float(list, "bedslope", section::look_bed, group::trackbed_shape, "Trackbed slope (m)", "Horizontal reach of the slope at the outer edge of the trackbed", &TTrack::fTexSlope, 3, lowest, true);
+	add_float(List, "bedwidth", section::look_bed, group::trackbed_shape, "Trackbed width (m)", "Width of the trackbed outside of the rail", {&TTrack::fTexWidth, 3, kLowest, true});
+	add_float(List, "bedslope", section::look_bed, group::trackbed_shape, "Trackbed slope (m)", "Horizontal reach of the slope at the outer edge of the trackbed", {&TTrack::fTexSlope, 3, kLowest, true});
 	{
-		auto &property{add(list, "sleepermodel", field::text, section::look_sleepers, group::sleepers, "Sleeper model", "Path of the .e3d model, as in the scenery file")};
+		auto &property{add(List, "sleepermodel", field::text, section::look_sleepers, group::sleepers, "Sleeper model", "Path of the .e3d model, as in the scenery file")};
 		property.rebuild = true;
 		property.empty = "no model";
 		property.get = [](TTrack const &Track) { return Track.m_sleeper_model_name; };
@@ -572,25 +603,83 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
+	auto &property{add(List, "sleepers", field::check, section::look_sleepers, group::sleepers, "Sleeper models", "Repeats the model along the track, the sleepers in place of the drawn trackbed.\nOnly on the tracks with a sleeper model")};
+	property.rebuild = true;
+	property.late = true;
+	property.get = [](TTrack const &Track) { return std::string{Track.m_sleeper_enabled ? "1" : "0"}; };
+	property.set = [](TTrack &Track, std::string_view const Text) {
+		auto const enabled{Text == "1"};
+		if (enabled == Track.m_sleeper_enabled || (enabled && Track.m_sleeper_model_name.empty()))
+			return false;
+		Track.m_sleeper_enabled = enabled;
+		return true;
+	};
+}
+
+// the choices of the Models of the pack, the first leaving the one of eu07.ini
+std::vector<char const *> model_choices(std::vector<std::string> const &Models)
+{
+	std::vector<char const *> result{"(as in eu07.ini)"};
+	for (auto const &model : Models)
+		result.push_back(model.c_str());
+	return result;
+}
+
+// the choice of the model of the Name among the Models of the pack, 0: none of them
+int model_index(std::vector<std::string> const &Models, std::string const &Name)
+{
+	auto const found{std::ranges::find(Models, Name)};
+	return found == Models.end() ? 0 : static_cast<int>(found - Models.begin()) + 1;
+}
+
+// the model of the sleepers of the track running alone, of the Models of sleepers of the pack
+void add_sleeper_pack(std::vector<track_property> &List, std::vector<std::string> const &Models)
+{
+	auto &property{add(List, "sleeperpack", field::choice, section::look_sleepers, group::sleepers, "Sleeper model from the pack", "Model of the sleepers of the track running alone, of the models of sleepers in the scenery data, laid as 3D sleepers\nin place of the one set with sleepers3dplain in eu07.ini. (as in eu07.ini): the one set there")};
+	property.rebuild = true;
+	property.choices = model_choices(Models);
+	property.get = [&Models](TTrack const &Track) { return std::to_string(Track.m_sleeper_enabled ? model_index(Models, Track.m_sleeper_model_name) : 0); };
+	property.set = [&Models](TTrack &Track, std::string_view const Text) {
+		double index;
+		if (false == parse_number(Text, index) || index < 0.0 || index > static_cast<double>(Models.size()))
+			return false;
+		auto const model{index < 1.0 ? std::string{} : Models[static_cast<std::size_t>(index) - 1]};
+		if (model == (Track.m_sleeper_enabled ? Track.m_sleeper_model_name : std::string{}))
+			return false;
+		Track.m_sleeper_model_name = model;
+		Track.m_sleeper_enabled = (false == model.empty());
+		return true;
+	};
+}
+
+// the model of the timbers under a switch or a crossing, of the Models of timbers of the pack
+void add_timber_model(std::vector<track_property> &List, std::vector<std::string> const &Models)
+{
+	auto &property{add(List, "timbermodel", field::choice, section::look_sleepers, group::sleepers, "Timber model", "Model of the timbers under the switch or the crossing the track is part of, of the models of timbers in the scenery data,\nin place of the one set with sleepers3d in eu07.ini. It's put together from its submodels begin, main and end to the length of each timber")};
+	property.rebuild = true;
+	property.choices = model_choices(Models);
+	property.get = [&Models](TTrack const &Track) { return std::to_string(model_index(Models, Track.m_timber_model_name)); };
+	property.set = [&Models](TTrack &Track, std::string_view const Text) {
+		double index;
+		if (false == parse_number(Text, index) || index < 0.0 || index > static_cast<double>(Models.size()))
+			return false;
+		auto const model{index < 1.0 ? std::string{} : Models[static_cast<std::size_t>(index) - 1]};
+		if (model == Track.m_timber_model_name)
+			return false;
+		Track.m_timber_model_name = model;
+		return true;
+	};
+}
+
+// the skins of the sleepers and of the timbers, and their models of the pack
+void add_sleeper_models(std::vector<track_property> &List)
+{
 	{
-		auto &property{add(list, "sleepers", field::check, section::look_sleepers, group::sleepers, "Sleeper models", "Repeats the model along the track, the sleepers in place of the drawn trackbed.\nOnly on the tracks with a sleeper model")};
-		property.rebuild = true;
-		property.late = true;
-		property.get = [](TTrack const &Track) { return std::string{Track.m_sleeper_enabled ? "1" : "0"}; };
-		property.set = [](TTrack &Track, std::string const &Text) {
-			auto const enabled{Text == "1"};
-			if (enabled == Track.m_sleeper_enabled || (enabled && Track.m_sleeper_model_name.empty()))
-				return false;
-			Track.m_sleeper_enabled = enabled;
-			return true;
-		};
-	}
-	{
-		auto &property{add(list, "sleeperskin", field::text, section::look_sleepers, group::sleepers, "Sleeper skin", "Replaceable skin of the model, empty: the one of the model")};
+		auto &property{add(List, "sleeperskin", field::text, section::look_sleepers, group::sleepers, "Sleeper skin", "Replaceable skin of the model, empty: the one of the model")};
 		property.rebuild = true;
 		property.empty = "of the model";
 		property.get = [](TTrack const &Track) { return Track.m_sleeper_skin_name; };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			auto const words{words_of(Text)};
 			auto skin{words.empty() ? std::string{} : words.front()};
 			if (skin == "none")
@@ -601,85 +690,45 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
+	// the models of sleepers and timbers of the scenery data, chosen by the name; the first choice leaves the one of eu07.ini
+	static std::vector<std::string> sleepermodels;
+	static std::vector<std::string> timbermodels;
+	if (sleepermodels.empty())
 	{
-		// the models of sleepers and timbers of the scenery data, chosen by the name; the first choice leaves the one of eu07.ini
-		static std::vector<std::string> sleepermodels;
-		static std::vector<std::string> timbermodels;
-		if (sleepermodels.empty())
-		{
-			for (auto const &model : track_sleepers::pack_models())
-				(model.timber ? timbermodels : sleepermodels).push_back(model.name);
-		}
-		auto const choices = [](std::vector<std::string> const &Models) {
-			std::vector<char const *> result{"(as in eu07.ini)"};
-			for (auto const &model : Models)
-				result.push_back(model.c_str());
-			return result;
-		};
-		auto const index_of = [](std::vector<std::string> const &Models, std::string const &Name) {
-			auto const found{std::ranges::find(Models, Name)};
-			return found == Models.end() ? 0 : static_cast<int>(found - Models.begin()) + 1;
-		};
-		{
-			auto &property{add(list, "sleeperpack", field::choice, section::look_sleepers, group::sleepers, "Sleeper model from the pack", "Model of the sleepers of the track running alone, of the models of sleepers in the scenery data, laid as 3D sleepers\nin place of the one set with sleepers3dplain in eu07.ini. (as in eu07.ini): the one set there")};
-			property.rebuild = true;
-			property.choices = choices(sleepermodels);
-			property.get = [index_of](TTrack const &Track) { return std::to_string(Track.m_sleeper_enabled ? index_of(sleepermodels, Track.m_sleeper_model_name) : 0); };
-			property.set = [](TTrack &Track, std::string const &Text) {
-				double index;
-				if (false == parse_number(Text, index) || index < 0.0 || index > static_cast<double>(sleepermodels.size()))
-					return false;
-				auto const model{index < 1.0 ? std::string{} : sleepermodels[static_cast<std::size_t>(index) - 1]};
-				if (model == (Track.m_sleeper_enabled ? Track.m_sleeper_model_name : std::string{}))
-					return false;
-				Track.m_sleeper_model_name = model;
-				Track.m_sleeper_enabled = (false == model.empty());
-				return true;
-			};
-		}
-		{
-			auto &property{add(list, "timbermodel", field::choice, section::look_sleepers, group::sleepers, "Timber model", "Model of the timbers under the switch or the crossing the track is part of, of the models of timbers in the scenery data,\nin place of the one set with sleepers3d in eu07.ini. It's put together from its submodels begin, main and end to the length of each timber")};
-			property.rebuild = true;
-			property.choices = choices(timbermodels);
-			property.get = [index_of](TTrack const &Track) { return std::to_string(index_of(timbermodels, Track.m_timber_model_name)); };
-			property.set = [](TTrack &Track, std::string const &Text) {
-				double index;
-				if (false == parse_number(Text, index) || index < 0.0 || index > static_cast<double>(timbermodels.size()))
-					return false;
-				auto const model{index < 1.0 ? std::string{} : timbermodels[static_cast<std::size_t>(index) - 1]};
-				if (model == Track.m_timber_model_name)
-					return false;
-				Track.m_timber_model_name = model;
-				return true;
-			};
-		}
-		{
-			auto &property{add(list, "timberskin", field::text, section::look_sleepers, group::sleepers, "Timber skin", "Replaceable skin of the timber model, empty: the one of the model")};
-			property.rebuild = true;
-			property.empty = "of the model";
-			property.get = [](TTrack const &Track) { return Track.m_timber_skin_name; };
-			property.set = [](TTrack &Track, std::string const &Text) {
-				auto const words{words_of(Text)};
-				auto skin{words.empty() ? std::string{} : words.front()};
-				if (skin == "none")
-					skin.clear();
-				if (skin == Track.m_timber_skin_name)
-					return false;
-				Track.m_timber_skin_name = skin;
-				return true;
-			};
-		}
+		for (auto const &model : track_sleepers::pack_models())
+			(model.timber ? timbermodels : sleepermodels).push_back(model.name);
 	}
-	add_float(list, "sleeperspacing", section::look_sleepers, group::sleeper_placement, "Sleeper spacing (m)", "Distance between the sleepers along the track", &TTrack::m_sleeper_frequency, 3, 0.1f, true);
+	add_sleeper_pack(List, sleepermodels);
+	add_timber_model(List, timbermodels);
+	auto &property{add(List, "timberskin", field::text, section::look_sleepers, group::sleepers, "Timber skin", "Replaceable skin of the timber model, empty: the one of the model")};
+	property.rebuild = true;
+	property.empty = "of the model";
+	property.get = [](TTrack const &Track) { return Track.m_timber_skin_name; };
+	property.set = [](TTrack &Track, std::string_view const Text) {
+		auto const words{words_of(Text)};
+		auto skin{words.empty() ? std::string{} : words.front()};
+		if (skin == "none")
+			skin.clear();
+		if (skin == Track.m_timber_skin_name)
+			return false;
+		Track.m_timber_skin_name = skin;
+		return true;
+	};
+}
+
+// the spacing and the shifts of the sleepers, and of the trackbed under them
+void add_sleeper_placement(std::vector<track_property> &List)
+{
+	add_float(List, "sleeperspacing", section::look_sleepers, group::sleeper_placement, "Sleeper spacing (m)", "Distance between the sleepers along the track", {&TTrack::m_sleeper_frequency, 3, 0.1f, true});
 	constexpr std::array<std::array<char const *, 3>, 3> offsets{{{"sleeperside", "Sleeper shift sideways (m)", "Shift of each model sideways, to the right of the track"},
 	                                                              {"sleeperalong", "Sleeper shift along (m)", "Shift of each model along the track"},
 	                                                              {"sleeperup", "Sleeper shift up (m)", "Shift of each model up"}}};
 	for (int axis = 0; axis < 3; ++axis)
 	{
-		auto &property{add(list, offsets[axis][0], field::number, section::look_sleepers, group::sleeper_placement, offsets[axis][1], offsets[axis][2])};
+		auto &property{add(List, offsets[axis][0], field::number, section::look_sleepers, group::sleeper_placement, offsets[axis][1], offsets[axis][2])};
 		property.rebuild = true;
 		property.get = [axis](TTrack const &Track) { return decimal(Track.m_sleeper_offset[axis], 3); };
-		property.set = [axis](TTrack &Track, std::string const &Text) {
+		property.set = [axis](TTrack &Track, std::string_view const Text) {
 			double offset;
 			if (false == parse_number(Text, offset) || decimal(offset, 3) == decimal(Track.m_sleeper_offset[axis], 3))
 				return false;
@@ -687,66 +736,80 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	add_float(list, "bedshift", section::look_sleepers, group::sleeper_placement, "Trackbed shift (m)", "Vertical shift of the drawn trackbed under the sleepers, negative lowers it", &TTrack::m_sleeper_ballast_z, 3, lowest, true);
+	add_float(List, "bedshift", section::look_sleepers, group::sleeper_placement, "Trackbed shift (m)", "Vertical shift of the drawn trackbed under the sleepers, negative lowers it", {&TTrack::m_sleeper_ballast_z, 3, kLowest, true});
+}
 
-	// ride and sound
-	add_float(list, "friction", section::ride, group::ride_sound, "Friction", "Friction coefficient of the rails, 0.15 for the dry rails; lower values make the wheels slip", &TTrack::fFriction, 3, 0.f, false);
-	list.back().applies = any;
+// a plain track or a switch of a railway, which is uneven
+bool railway_track(TTrack const &Track)
+{
+	return (Track.eType == tt_Normal || Track.eType == tt_Switch) && (Track.iCategoryFlag & 15) == 1;
+}
+
+// a component of the unevenness set apart from it, in a Member of it, on the tracks Applying; empty or negative: the unevenness
+template <typename Applies>
+void add_uneven_component(std::vector<track_property> &List, char const *Key, char const *Label, char const *Tooltip, float track_uneven::attribute::*Member, Applies const &Applying)
+{
+	auto &component_property{add(List, Key, field::number, section::ride, group::ride_sound, Label, Tooltip)};
+	component_property.applies = Applying;
+	component_property.rebuild = true;
+	component_property.empty = "as the unevenness";
+	component_property.get = [Member](TTrack const &Track) { return Track.m_uneven.*Member < 0.f ? std::string{} : decimal(Track.m_uneven.*Member, 1); };
+	component_property.set = [Member](TTrack &Track, std::string_view const Text) {
+		double value{-1.0};
+		if (false == words_of(Text).empty() && false == parse_number(Text, value))
+			return false;
+		auto const clamped{value < 0.0 ? -1.f : std::min(static_cast<float>(value), track_uneven::most)};
+		if (decimal(clamped, 1) == decimal(Track.m_uneven.*Member, 1))
+			return false;
+		Track.m_uneven.*Member = clamped;
+		return true;
+	};
+}
+
+// the friction, the sound distance and the unevenness with its components, of the ride
+void add_ride(std::vector<track_property> &List)
+{
+	add_float(List, "friction", section::ride, group::ride_sound, "Friction", "Friction coefficient of the rails, 0.15 for the dry rails; lower values make the wheels slip", {&TTrack::fFriction, 3, 0.f, false});
+	List.back().applies = any_track;
 	// the rails dip at the joints of an uneven track, every sound distance
-	add_float(list, "sounddistance", section::ride, group::ride_sound, "Sound distance (m)", "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default", &TTrack::fSoundDistance, 1, -1.f, true);
-	list.back().applies = any;
+	add_float(List, "sounddistance", section::ride, group::ride_sound, "Sound distance (m)", "Distance between the rail joints, sets the rhythm of the wheel clatter; -1: the default", {&TTrack::fSoundDistance, 1, -1.f, true});
+	List.back().applies = any_track;
+	auto &property{add(List, "uneven", field::number, section::ride, group::ride_sound, "Unevenness (mm)",
+	    "Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values")};
+	property.applies = railway_track;
+	property.rebuild = true;
+	property.get = [](TTrack const &Track) { return decimal(Track.m_uneven.value, 1); };
+	property.set = [](TTrack &Track, std::string_view const Text) {
+		double value;
+		if (false == parse_number(Text, value))
+			return false;
+		auto const clamped{std::clamp(static_cast<float>(value), 0.f, track_uneven::most)};
+		if (decimal(clamped, 1) == decimal(Track.m_uneven.value, 1))
+			return false;
+		Track.m_uneven.value = clamped;
+		return true;
+	};
+	auto const plain = [](TTrack const &Track) { return railway_track(Track) && Track.eType == tt_Normal; };
+	auto const turnout = [](TTrack const &Track) { return railway_track(Track) && Track.eType == tt_Switch; };
+	char const *const apart{"Set apart from the unevenness, mm. Empty: the unevenness"};
+	add_uneven_component(List, "unevenup", "Up and down (mm)", apart, &track_uneven::attribute::up, railway_track);
+	add_uneven_component(List, "unevenside", "Sideways (mm)", apart, &track_uneven::attribute::side, railway_track);
+	add_uneven_component(List, "unevencross", "Cross level (mm)", apart, &track_uneven::attribute::cross, plain);
+	add_uneven_component(List, "unevenbranch", "Diverging path (mm)", apart, &track_uneven::attribute::branch, turnout);
+	add_uneven_component(List, "unevenbranchup", "Diverging, up and down (mm)", apart, &track_uneven::attribute::branchup, turnout);
+	add_uneven_component(List, "unevenbranchside", "Diverging, sideways (mm)", apart, &track_uneven::attribute::branchside, turnout);
+	add_uneven_component(List, "jointdip", "Dip at rail joints (mm)", "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Empty: 0.4 of the unevenness",
+	    &track_uneven::attribute::dip, plain);
+}
+
+// the quality, the damage and the gauge, of the ride
+void add_ride_rest(std::vector<track_property> &List)
+{
 	{
-		auto const railway = [](TTrack const &Track) { return (Track.eType == tt_Normal || Track.eType == tt_Switch) && (Track.iCategoryFlag & 15) == 1; };
-		auto &property{add(list, "uneven", field::number, section::ride, group::ride_sound, "Unevenness (mm)",
-		    "Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values")};
-		property.applies = railway;
-		property.rebuild = true;
-		property.get = [](TTrack const &Track) { return decimal(Track.m_uneven.value, 1); };
-		property.set = [](TTrack &Track, std::string const &Text) {
-			double value;
-			if (false == parse_number(Text, value))
-				return false;
-			auto const clamped{std::clamp(static_cast<float>(value), 0.f, track_uneven::most)};
-			if (decimal(clamped, 1) == decimal(Track.m_uneven.value, 1))
-				return false;
-			Track.m_uneven.value = clamped;
-			return true;
-		};
-		// a component set apart from the unevenness, empty or negative: the unevenness
-		auto const component = [&](char const *Key, char const *Label, char const *Tooltip, float track_uneven::attribute::*Member, std::function<bool(TTrack const &)> Applies) {
-			auto &component_property{add(list, Key, field::number, section::ride, group::ride_sound, Label, Tooltip)};
-			component_property.applies = std::move(Applies);
-			component_property.rebuild = true;
-			component_property.empty = "as the unevenness";
-			component_property.get = [Member](TTrack const &Track) { return Track.m_uneven.*Member < 0.f ? std::string{} : decimal(Track.m_uneven.*Member, 1); };
-			component_property.set = [Member](TTrack &Track, std::string const &Text) {
-				double value{-1.0};
-				if (false == words_of(Text).empty() && false == parse_number(Text, value))
-					return false;
-				auto const clamped{value < 0.0 ? -1.f : std::min(static_cast<float>(value), track_uneven::most)};
-				if (decimal(clamped, 1) == decimal(Track.m_uneven.*Member, 1))
-					return false;
-				Track.m_uneven.*Member = clamped;
-				return true;
-			};
-		};
-		auto const plain = [railway](TTrack const &Track) { return railway(Track) && Track.eType == tt_Normal; };
-		auto const turnout = [railway](TTrack const &Track) { return railway(Track) && Track.eType == tt_Switch; };
-		char const *const apart{"Set apart from the unevenness, mm. Empty: the unevenness"};
-		component("unevenup", "Up and down (mm)", apart, &track_uneven::attribute::up, railway);
-		component("unevenside", "Sideways (mm)", apart, &track_uneven::attribute::side, railway);
-		component("unevencross", "Cross level (mm)", apart, &track_uneven::attribute::cross, plain);
-		component("unevenbranch", "Diverging path (mm)", apart, &track_uneven::attribute::branch, turnout);
-		component("unevenbranchup", "Diverging, up and down (mm)", apart, &track_uneven::attribute::branchup, turnout);
-		component("unevenbranchside", "Diverging, sideways (mm)", apart, &track_uneven::attribute::branchside, turnout);
-		component("jointdip", "Dip at rail joints (mm)", "Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Empty: 0.4 of the unevenness",
-		    &track_uneven::attribute::dip, plain);
-	}
-	{
-		auto &property{add(list, "quality", field::number, section::ride, group::ride_sound, "Quality", "Quality of the track, 20 is the nominal one; lower values give a rougher ride")};
-		property.applies = any;
+		auto &property{add(List, "quality", field::number, section::ride, group::ride_sound, "Quality", "Quality of the track, 20 is the nominal one; lower values give a rougher ride")};
+		property.applies = any_track;
 		property.get = [](TTrack const &Track) { return std::to_string(Track.iQualityFlag); };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double quality;
 			if (false == parse_number(Text, quality) || static_cast<int>(quality) == Track.iQualityFlag)
 				return false;
@@ -755,10 +818,10 @@ std::vector<track_property> make_properties()
 		};
 	}
 	{
-		auto &property{add(list, "damage", field::number, section::ride, group::ride_sound, "Damage flags", "0: track in order; any value adds jolts, 128: the vehicles derail on the track")};
-		property.applies = any;
+		auto &property{add(List, "damage", field::number, section::ride, group::ride_sound, "Damage flags", "0: track in order; any value adds jolts, 128: the vehicles derail on the track")};
+		property.applies = any_track;
 		property.get = [](TTrack const &Track) { return std::to_string(Track.iDamageFlag); };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			double damage;
 			if (false == parse_number(Text, damage) || static_cast<int>(damage) == Track.iDamageFlag)
 				return false;
@@ -766,8 +829,26 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	add_float(list, "gauge", section::ride, group::ride_sound, "Gauge (m)", "Gauge of the track, 1.435 m for the standard gauge", &TTrack::fTrackWidth, 3, 0.01f, true);
-	list.back().applies = any;
+	add_float(List, "gauge", section::ride, group::ride_sound, "Gauge (m)", "Gauge of the track, 1.435 m for the standard gauge", {&TTrack::fTrackWidth, 3, 0.01f, true});
+	List.back().applies = any_track;
+}
+
+std::vector<track_property> make_properties()
+{
+	std::vector<track_property> list;
+	// traffic
+	add_traffic(list);
+	add_traffic_more(list);
+	// look
+	add_rails(list);
+	add_rail_profile(list);
+	add_frogs(list);
+	add_trackbed(list);
+	add_sleeper_models(list);
+	add_sleeper_placement(list);
+	// ride and sound
+	add_ride(list);
+	add_ride_rest(list);
 	return list;
 }
 
@@ -900,6 +981,97 @@ std::string preset_summary(editor_track_preset const &Preset)
 	return text;
 }
 
+// what's told of the What changed on Changed tracks, Locked of them in the files which can't be changed
+std::string applied_status(char const *What, std::size_t const Changed, std::size_t const Locked)
+{
+	auto status{Changed == 0 ? format(STR_C("%s: nothing to change"), STR_C(What)) : format(STR_P("%s: changed on %d track, Ctrl+Z takes it back", "%s: changed on %d tracks, Ctrl+Z takes it back", static_cast<long long>(Changed)), STR_C(What), static_cast<int>(Changed))};
+	if (Locked > 0)
+		status += format(STR_C(", %zu in the files which can't be changed are left as they are"), Locked);
+	return status;
+}
+
+// the Tracks the Property is given to, and the number of the others, which don't have it
+std::pair<std::vector<TTrack *>, std::size_t> property_targets(track_property const &Property, std::vector<TTrack *> const &Tracks)
+{
+	std::vector<TTrack *> targets;
+	std::size_t without{0};
+	for (auto *track : Tracks)
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		if (false == Property.off && Property.applies(*track))
+			targets.push_back(track);
+		else
+			++without;
+	}
+	return {targets, without};
+}
+
+// why the first of the Tracks which can't be changed can't be
+std::string locked_reason(std::vector<TTrack *> const &Tracks)
+{
+	std::string reason;
+	for (auto const *track : Tracks)
+		if (false == scene::Layers.editable(track, &reason))
+			break;
+	return reason;
+}
+
+// an Entry of the folder of the textures put among the Found ones by its name relative to the Root, with whether it's a material; the
+// folders of the normal maps left out, they go with their textures, and the names with spaces, which can't be put in a scenery file
+void index_texture(std::filesystem::recursive_directory_iterator &Entry, std::filesystem::path const &Root, std::map<std::string, bool, std::less<>> &Found)
+{
+	std::error_code ignored;
+	if (Entry->is_directory(ignored))
+	{
+		// the normal maps go with their textures, not on a track by themselves
+		if (lowered(Entry->path().filename().string()) == "normals")
+			Entry.disable_recursion_pending();
+		return;
+	}
+	auto const extension{lowered(Entry->path().extension().string())};
+	auto const material{extension == ".mat"};
+	if (false == material && false == texture_extension(extension))
+		return;
+	auto path{Entry->path().lexically_relative(Root)};
+	path.replace_extension();
+	auto const name{path.generic_string()};
+	// names with spaces can't be put in a scenery file
+	if (name.find(' ') != std::string::npos)
+		return;
+	auto &known{Found[name]};
+	known = known || material;
+}
+
+// the face of a tile of the texture of the Name at Low, Tile wide: its Image or a frame, its name in two lines under it and the Count of
+// the tracks of the scenery having it
+void draw_tile_face(std::string const &Name, int const Count, ImVec2 const Low, float const Tile, std::uint64_t const Image)
+{
+	auto *drawlist{ImGui::GetWindowDrawList()};
+	if (Image != 0)
+		drawlist->AddImage(static_cast<ImTextureID>(Image), Low, ImVec2(Low.x + Tile, Low.y + Tile), ImVec2(0, 1), ImVec2(1, 0));
+	else
+		drawlist->AddRect(Low, ImVec2(Low.x + Tile, Low.y + Tile), ImGui::GetColorU32(ImGuiCol_Border));
+	auto const slash{Name.find_last_of('/')};
+	auto const [line1, line2]{two_lines(slash == std::string::npos ? Name : Name.substr(slash + 1), Tile)};
+	drawlist->AddText(ImVec2(Low.x, Low.y + Tile), ImGui::GetColorU32(ImGuiCol_Text), line1.c_str());
+	drawlist->AddText(ImVec2(Low.x, Low.y + Tile + ImGui::GetTextLineHeight()), ImGui::GetColorU32(ImGuiCol_Text), line2.c_str());
+	if (Count <= 0)
+		return;
+	// how many tracks of the scenery have it
+	auto const badge{format("%d", Count)};
+	auto const size{ImGui::CalcTextSize(badge.c_str())};
+	drawlist->AddRectFilled(Low, ImVec2(Low.x + size.x + 6.0f, Low.y + size.y + 2.0f), IM_COL32(0, 0, 0, 190), 3.0f);
+	drawlist->AddText(ImVec2(Low.x + 3.0f, Low.y + 1.0f), IM_COL32(255, 220, 120, 255), badge.c_str());
+}
+
+// a value of the property Property told short: of a texture its name without the folder
+std::string brief_value(int const Property, std::string const &Text)
+{
+	auto const slash{properties()[Property].kind == field::texture ? Text.find_last_of('/') : std::string::npos};
+	return slash == std::string::npos ? Text : Text.substr(slash + 1);
+}
+
 } // namespace
 
 std::vector<TTrack *> editor_mode::selected_tracks()
@@ -960,16 +1132,11 @@ std::size_t editor_mode::tracks_apply(std::vector<TTrack *> const &Tracks, std::
 		++m_track_values.generation;
 	}
 	if (Tracks.size() > 1 || locked > 0)
-	{
-		auto status{changed.empty() ? format(STR_C("%s: nothing to change"), STR_C(What)) : format(STR_P("%s: changed on %d track, Ctrl+Z takes it back", "%s: changed on %d tracks, Ctrl+Z takes it back", static_cast<long long>(changed.size())), STR_C(What), static_cast<int>(changed.size()))};
-		if (locked > 0)
-			status += format(STR_C(", %zu in the files which can't be changed are left as they are"), locked);
-		ui()->set_status(status, locked > 0);
-	}
+		ui()->set_status(applied_status(What, changed.size(), locked), locked > 0);
 	return changed.size();
 }
 
-int editor_mode::track_property_index(std::string const &Key) const
+int editor_mode::track_property_index(std::string_view const Key) const
 {
 	auto const &list{properties()};
 	for (std::size_t i = 0; i < list.size(); ++i)
@@ -982,17 +1149,7 @@ std::size_t editor_mode::track_property_apply(int const Property, std::vector<TT
 {
 	auto const &property{properties()[Property]};
 	std::string const key{property.key};
-	std::vector<TTrack *> targets;
-	std::size_t without{0};
-	for (auto *track : Tracks)
-	{
-		if (track == nullptr || track->m_editorremoved)
-			continue;
-		if (false == property.off && property.applies(*track))
-			targets.push_back(track);
-		else
-			++without;
-	}
+	auto const [targets, without]{property_targets(property, Tracks)};
 	auto const tell = [&](std::string const &Outcome, bool const Refused) {
 		m_track_outcome = {Property, Outcome, Refused, tracks_signature(Tracks), m_history.size(), ImGui::GetTime()};
 		ui()->set_status(format("%s: %s", STR_C(property.label), Outcome.c_str()), Refused);
@@ -1029,13 +1186,7 @@ std::size_t editor_mode::track_property_apply(int const Property, std::vector<TT
 	also(occupied, STR_P("%d track has vehicles on it", "%d tracks have vehicles on them", static_cast<long long>(occupied)));
 	also(nomodel, STR_P("%d track has no sleeper model", "%d tracks have no sleeper model", static_cast<long long>(nomodel)));
 	if (locked > 0)
-	{
-		std::string reason;
-		for (auto const *track : targets)
-			if (false == scene::Layers.editable(track, &reason))
-				break;
-		outcome += "; " + format(STR_P("%d track can't be changed: %s", "%d tracks can't be changed: %s", static_cast<long long>(locked)), static_cast<int>(locked), reason.c_str());
-	}
+		outcome += "; " + format(STR_P("%d track can't be changed: %s", "%d tracks can't be changed: %s", static_cast<long long>(locked)), static_cast<int>(locked), locked_reason(targets).c_str());
 	tell(outcome, locked > 0 || occupied > 0 || nomodel > 0);
 	return changed;
 }
@@ -1091,28 +1242,9 @@ void editor_mode::textures_index()
 	std::error_code error;
 	for (std::filesystem::recursive_directory_iterator entry{root, options, error}, end; false == static_cast<bool>(error) && entry != end; entry.increment(error))
 	{
-		std::error_code ignored;
 		try
 		{
-			if (entry->is_directory(ignored))
-			{
-				// the normal maps go with their textures, not on a track by themselves
-				if (lowered(entry->path().filename().string()) == "normals")
-					entry.disable_recursion_pending();
-				continue;
-			}
-			auto const extension{lowered(entry->path().extension().string())};
-			auto const material{extension == ".mat"};
-			if (false == material && false == texture_extension(extension))
-				continue;
-			auto path{entry->path().lexically_relative(root)};
-			path.replace_extension();
-			auto const name{path.generic_string()};
-			// names with spaces can't be put in a scenery file
-			if (name.find(' ') != std::string::npos)
-				continue;
-			auto &known{found[name]};
-			known = known || material;
+			index_texture(entry, root, found);
 		}
 		catch (std::system_error const &)
 		{
@@ -1168,8 +1300,8 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	ImGui::SetNextItemWidth(-FLT_MIN);
 	auto const entered{ImGui::InputTextWithHint("##filter", STR_C("find a texture"), filter.data(), filter.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
 	auto const words{words_of(lowered(filter.data()))};
-	auto const matches = [&](std::string const &Lowered) {
-		return std::ranges::all_of(words, [&](std::string const &Word) { return Lowered.find(Word) != std::string::npos; });
+	auto const matches = [&words](std::string const &Lowered) {
+		return std::ranges::all_of(words, [&Lowered](std::string const &Word) { return Lowered.find(Word) != std::string::npos; });
 	};
 	// those in use first, then every other one of the folder
 	std::vector<texture_use const *> used;
@@ -1181,28 +1313,40 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 		if (matches(name))
 			used.push_back(&use);
 	}
-	std::vector<texture_index_entry const *> files;
+	std::vector<std::string const *> files;
 	for (auto const &entry : m_texture_index)
 		if (false == usednames.contains(entry.lowered) && matches(entry.lowered))
-			files.push_back(&entry);
+			files.push_back(&entry.name);
 	std::string first;
 	if (false == used.empty())
 		first = used.front()->name;
 	else if (false == files.empty())
-		first = files.front()->name;
+		first = *files.front();
 	if (entered && false == words.empty() && false == first.empty())
 	{
 		Chosen = first;
 		return true;
 	}
 
+	texture_preview(Offer, Current, first, false == words.empty(), Mixed);
+	auto picked{texture_tiles(Offer, used, files, lowered(Current), Mixed, Chosen)};
+	if (Offer.none_entry != nullptr && ImGui::Selectable(Offer.none_entry, false == Mixed && (Current == Offer.none_name || Current == "none")))
+	{
+		Chosen = Offer.none_name;
+		picked = true;
+	}
+	return picked;
+}
+
+void editor_mode::texture_preview(texture_offer const &Offer, std::string const &Current, std::string const &First, bool const Searching, bool const Mixed)
+{
 	// large: the tile under the mouse, or what Enter would choose, or the current texture
 	auto const current{lowered(Current)};
 	std::string shown;
 	if (false == m_texture_hovered.empty())
 		shown = m_texture_hovered;
-	else if (false == words.empty())
-		shown = first;
+	else if (Searching)
+		shown = First;
 	else if (false == Mixed)
 		shown = Current;
 	m_texture_hovered.clear();
@@ -1218,29 +1362,35 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	ImGui::SameLine();
 	ImGui::BeginGroup();
 	ImGui::PushTextWrapPos(0.0f);
-	if (shown.empty() && false == words.empty())
+	if (shown.empty() && Searching)
 		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
 	else if (shown.empty() && Mixed)
 		ImGui::TextDisabled("%s", STR_C("The selected tracks have different ones"));
 	else if (shown.empty() || shown == "none")
 		ImGui::TextUnformatted(Offer.none_entry != nullptr ? Offer.none_entry : STR_C("No texture"));
 	else
-	{
-		ImGui::TextUnformatted(shown.c_str());
-		auto const use{std::ranges::find_if(m_texture_used, [&](texture_use const &Use) { return Use.name == shown; })};
-		auto const isset{false == Mixed && lowered(shown) == current};
-		if (use != m_texture_used.end())
-			ImGui::TextDisabled("%s", use->note.c_str());
-		else if (false == isset)
-			ImGui::TextDisabled("%s", STR_C("From the textures folder, not used here yet"));
-		if (isset)
-			ImGui::TextDisabled("%s", STR_C("Set now"));
-		if (false == words.empty() && shown == first)
-			ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", STR_C("Enter chooses this one"));
-	}
+		texture_notes(shown, First, current, Searching, Mixed);
 	ImGui::PopTextWrapPos();
 	ImGui::EndGroup();
+}
 
+void editor_mode::texture_notes(std::string const &Shown, std::string const &First, std::string const &Current, bool const Searching, bool const Mixed) const
+{
+	ImGui::TextUnformatted(Shown.c_str());
+	auto const use{std::ranges::find_if(m_texture_used, [&Shown](texture_use const &Use) { return Use.name == Shown; })};
+	auto const isset{false == Mixed && lowered(Shown) == Current};
+	if (use != m_texture_used.end())
+		ImGui::TextDisabled("%s", use->note.c_str());
+	else if (false == isset)
+		ImGui::TextDisabled("%s", STR_C("From the textures folder, not used here yet"));
+	if (isset)
+		ImGui::TextDisabled("%s", STR_C("Set now"));
+	if (Searching && Shown == First)
+		ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", STR_C("Enter chooses this one"));
+}
+
+bool editor_mode::texture_tiles(texture_offer const &Offer, std::vector<texture_use const *> const &Used, std::vector<std::string const *> const &Files, std::string const &Current, bool const Mixed, std::string &Chosen)
+{
 	// the tiles, a click chooses
 	auto const tile{std::round(ImGui::GetFontSize() * 6.0f)};
 	auto const label{ImGui::GetTextLineHeight() * 2.0f};
@@ -1249,66 +1399,49 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	ImGui::BeginChild("##tiles", ImVec2(0.0f, std::round((tile + label + spacing.y) * 4.5f)), ImGuiChildFlags_Borders);
 	auto const columns{std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + spacing.x) / (tile + spacing.x)))};
 	int column{0};
-	auto const draw_tile = [&](std::string const &Name, int const Count) {
+	auto const draw_tile = [this, &column, columns, tile, label, Mixed, &Current, &Chosen, &picked](std::string const &Name, int const Count) {
 		if (column++ % columns != 0)
 			ImGui::SameLine();
-		ImGui::PushID(Name.c_str());
-		auto const low{ImGui::GetCursorScreenPos()};
-		if (ImGui::Selectable("##tile", false == Mixed && lowered(Name) == current, ImGuiSelectableFlags_None, ImVec2(tile, tile + label)))
+		if (texture_tile(Name, Count, tile, label, false == Mixed && lowered(Name) == Current))
 		{
 			Chosen = Name;
 			picked = true;
 		}
-		if (ImGui::IsItemHovered())
-			m_texture_hovered = Name;
-		if (ImGui::IsItemVisible())
-		{
-			auto *drawlist{ImGui::GetWindowDrawList()};
-			if (auto const image{texture_image(m_texture_used, Name)}; image != 0)
-				drawlist->AddImage(static_cast<ImTextureID>(image), low, ImVec2(low.x + tile, low.y + tile), ImVec2(0, 1), ImVec2(1, 0));
-			else
-				drawlist->AddRect(low, ImVec2(low.x + tile, low.y + tile), ImGui::GetColorU32(ImGuiCol_Border));
-			auto const slash{Name.find_last_of('/')};
-			auto const [line1, line2]{two_lines(slash == std::string::npos ? Name : Name.substr(slash + 1), tile)};
-			drawlist->AddText(ImVec2(low.x, low.y + tile), ImGui::GetColorU32(ImGuiCol_Text), line1.c_str());
-			drawlist->AddText(ImVec2(low.x, low.y + tile + ImGui::GetTextLineHeight()), ImGui::GetColorU32(ImGuiCol_Text), line2.c_str());
-			if (Count > 0)
-			{
-				// how many tracks of the scenery have it
-				auto const badge{format("%d", Count)};
-				auto const size{ImGui::CalcTextSize(badge.c_str())};
-				drawlist->AddRectFilled(low, ImVec2(low.x + size.x + 6.0f, low.y + size.y + 2.0f), IM_COL32(0, 0, 0, 190), 3.0f);
-				drawlist->AddText(ImVec2(low.x + 3.0f, low.y + 1.0f), IM_COL32(255, 220, 120, 255), badge.c_str());
-			}
-		}
-		ImGui::PopID();
 	};
-	if (false == used.empty())
+	if (false == Used.empty())
 	{
 		ImGui::TextDisabled("%s", Offer.title);
-		for (auto const *use : used)
+		for (auto const *use : Used)
 			draw_tile(use->name, use->count);
 	}
-	if (false == files.empty())
+	if (false == Files.empty())
 	{
 		ImGui::TextDisabled("%s", STR_C("In the textures folder:"));
 		// thousands of them: only the rows in sight are drawn
 		ImGuiListClipper clipper;
-		clipper.Begin((static_cast<int>(files.size()) + columns - 1) / columns, tile + label + spacing.y);
-		clipped_rows(clipper, [&](int const Row) {
+		clipper.Begin((static_cast<int>(Files.size()) + columns - 1) / columns, tile + label + spacing.y);
+		clipped_rows(clipper, [&column, columns, &Files, &draw_tile](int const Row) {
 			column = 0;
-			for (int i = Row * columns; i < (Row + 1) * columns && i < static_cast<int>(files.size()); ++i)
-				draw_tile(files[i]->name, 0);
+			for (int i = Row * columns; i < (Row + 1) * columns && i < static_cast<int>(Files.size()); ++i)
+				draw_tile(*Files[i], 0);
 		});
 	}
-	if (used.empty() && files.empty())
+	if (Used.empty() && Files.empty())
 		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
 	ImGui::EndChild();
-	if (Offer.none_entry != nullptr && ImGui::Selectable(Offer.none_entry, false == Mixed && (Current == Offer.none_name || Current == "none")))
-	{
-		Chosen = Offer.none_name;
-		picked = true;
-	}
+	return picked;
+}
+
+bool editor_mode::texture_tile(std::string const &Name, int const Count, float const Tile, float const Label, bool const Current)
+{
+	ImGui::PushID(Name.c_str());
+	auto const low{ImGui::GetCursorScreenPos()};
+	auto const picked{ImGui::Selectable("##tile", Current, ImGuiSelectableFlags_None, ImVec2(Tile, Tile + Label))};
+	if (ImGui::IsItemHovered())
+		m_texture_hovered = Name;
+	if (ImGui::IsItemVisible())
+		draw_tile_face(Name, Count, low, Tile, texture_image(m_texture_used, Name));
+	ImGui::PopID();
 	return picked;
 }
 
@@ -1368,233 +1501,15 @@ bool editor_mode::texture_field(char const *Label, float const Width, char *Buff
 
 void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 {
-	auto const &list{properties()};
 	auto &cache{m_track_values};
 	// the values are gathered again when the selection or the tracks change, for a large selection not on every frame
 	auto const signature{tracks_signature(Tracks)};
 	if (auto const stale{cache.signature != signature || cache.generation_seen != cache.generation || cache.history != m_history.size() || Tracks.size() <= kLargeSelection || ImGui::GetFrameCount() - cache.frame > 15}; stale)
-	{
-		cache.signature = signature;
-		cache.generation_seen = cache.generation;
-		cache.history = m_history.size();
-		cache.frame = ImGui::GetFrameCount();
-		cache.values.assign(list.size(), {});
-		cache.applies.assign(list.size(), 0);
-		for (std::size_t i = 0; i < list.size(); ++i)
-		{
-			auto values{values_of(list[i], Tracks)};
-			std::size_t applies{0};
-			for (auto const &[text, count] : values)
-				applies += static_cast<std::size_t>(count);
-			cache.applies[i] = applies;
-			cache.values[i] = std::move(values);
-		}
-		cache.unsaved = static_cast<std::size_t>(std::ranges::count_if(Tracks, [](TTrack const *Track) { return Track != nullptr && Track->dirty(); }));
-	}
+		property_values_gather(Tracks, signature);
 
 	// the lines under the rows come and go with no mouse button held: rows moved under a click would give it to another row
 	if (false == ImGui::IsAnyMouseDown())
-	{
-		m_track_notes.clear();
-		auto const &edit{m_track_field};
-		auto const typing{edit.property >= 0 && edit.initial != edit.text.data()};
-		if (typing)
-		{
-			auto const count{cache.applies[edit.property]};
-			m_track_notes.emplace_back(edit.property, format(STR_P("Enter or leaving the field sets it on %d track, Esc gives up", "Enter or leaving the field sets it on %d tracks, Esc gives up", static_cast<long long>(count)), static_cast<int>(count)), track_note::kind::typing);
-		}
-		auto const &outcome{m_track_outcome};
-		if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == signature && outcome.history == m_history.size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
-			m_track_notes.emplace_back(outcome.property, outcome.text, outcome.refused ? track_note::kind::refused : track_note::kind::done);
-	}
-	// the tooltip of a row would cover the line under it
-	auto const row_help = [&](std::size_t const Index) {
-		if (std::ranges::none_of(m_track_notes, [&](track_note const &Note) { return Note.property == static_cast<int>(Index); }))
-			row_tooltip(list[Index], cache.values[Index], cache.applies[Index], Tracks.size());
-	};
-
-	auto const row_label = [&](std::size_t const Index) {
-		auto const &property{list[Index]};
-		ImGui::TableNextRow();
-		ImGui::TableSetColumnIndex(0);
-		ImGui::AlignTextToFramePadding();
-		auto const partial{cache.applies[Index] < Tracks.size()};
-		auto const several{cache.values[Index].size() > 1};
-		ImGui::PushTextWrapPos(0.0f);
-		if (several)
-			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.45f, 1.0f), "%s", STR_C(property.label));
-		else
-			ImGui::TextUnformatted(STR_C(property.label));
-		ImGui::PopTextWrapPos();
-		if (partial)
-		{
-			ImGui::SameLine(0.0f, 4.0f);
-			ImGui::TextDisabled("(%d)", static_cast<int>(cache.applies[Index]));
-		}
-		row_help(Index);
-		ImGui::TableSetColumnIndex(1);
-		ImGui::SetNextItemWidth(-FLT_MIN);
-	};
-
-	auto const text_row = [&](std::size_t const Index) {
-		auto const &property{list[Index]};
-		auto const &values{cache.values[Index]};
-		auto &edit{m_track_field};
-		auto const editing{edit.property == static_cast<int>(Index)};
-		std::array<char, 256> shown{};
-		if (values.size() == 1)
-			text_into(shown, values.front().first == "none" ? std::string_view{} : std::string_view{values.front().first});
-		auto *buffer{editing ? edit.text.data() : shown.data()};
-		std::string hint;
-		if (values.size() > 1)
-			hint = format(STR_C("different (%d)"), static_cast<int>(values.size()));
-		else if (property.empty != nullptr)
-			hint = STR_C(property.empty);
-		// a number clicked is typed anew, the digits wouldn't add up to what's meant going after the old ones
-		ImGui::InputTextWithHint("##value", hint.c_str(), buffer, shown.size(), property.kind == field::number ? ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_AutoSelectAll : 0);
-		if (ImGui::IsItemActivated())
-		{
-			// the field left for this one, lower down, is drawn after it: it would find its place here taken and what was typed lost
-			std::string const text{buffer};
-			track_field_finish();
-			edit.property = static_cast<int>(Index);
-			edit.tracks = Tracks;
-			edit.initial = text;
-			text_into(edit.text, text);
-		}
-		if (edit.property == static_cast<int>(Index))
-			edit.frame = ImGui::GetFrameCount();
-		row_help(Index);
-		if (ImGui::IsItemDeactivated() && edit.property == static_cast<int>(Index))
-			track_field_finish();
-	};
-
-	auto const choice_row = [&](std::size_t const Index) {
-		auto const &property{list[Index]};
-		auto const &values{cache.values[Index]};
-		auto const current{values.size() == 1 ? std::atoi(values.front().first.c_str()) : -1};
-		if (auto const preview{current >= 0 && current < static_cast<int>(property.choices.size()) ? std::string{STR_C(property.choices[current])} : format(STR_C("different (%d)"), static_cast<int>(values.size()))}; ImGui::BeginCombo("##value", preview.c_str()))
-		{
-			for (int i = 0; i < static_cast<int>(property.choices.size()); ++i)
-				if (ImGui::Selectable(STR_C(property.choices[i]), i == current))
-					track_property_apply(static_cast<int>(Index), Tracks, std::to_string(i));
-			ImGui::EndCombo();
-		}
-		row_help(Index);
-	};
-
-	auto const check_row = [&](std::size_t const Index) {
-		auto const &values{cache.values[Index]};
-		auto const mixed_values{values.size() > 1};
-		bool value{false == mixed_values && values.front().first == "1"};
-		if (mixed_values)
-			ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
-		if (ImGui::Checkbox("##value", &value))
-			track_property_apply(static_cast<int>(Index), Tracks, value ? "1" : "0");
-		if (mixed_values)
-			ImGui::PopItemFlag();
-		row_help(Index);
-	};
-
-	auto const texture_row = [&](std::size_t const Index) {
-		auto const &property{list[Index]};
-		auto const &values{cache.values[Index]};
-		auto const mixed_choice{values.size() > 1};
-		auto const common{mixed_choice ? std::string{} : values.front().first};
-		auto const preview{mixed_choice ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : common == "none" ? std::string{STR_C(property.empty)} : common};
-		auto const side{ImGui::GetFrameHeight()};
-		if (false == mixed_choice)
-		{
-			if (auto const image{material_image(editor_track::fetch_material(common))}; image != 0)
-			{
-				ImGui::Image(static_cast<ImTextureID>(image), ImVec2(side, side), ImVec2(0, 1), ImVec2(1, 0));
-				if (ImGui::IsItemHovered())
-				{
-					auto const big{std::round(ImGui::GetFontSize() * 14.0f)};
-					ImGui::BeginTooltip();
-					ImGui::Image(static_cast<ImTextureID>(image), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
-					ImGui::TextUnformatted(common.c_str());
-					ImGui::EndTooltip();
-				}
-				ImGui::SameLine(0.0f, 4.0f);
-			}
-		}
-		ImGui::SetNextItemWidth(-FLT_MIN);
-		ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
-		if (ImGui::BeginCombo("##value", preview.c_str(), ImGuiComboFlags_HeightLargest))
-		{
-			if (std::string chosen; track_texture_picker(property.texture, common, mixed_choice, chosen))
-			{
-				track_property_apply(static_cast<int>(Index), Tracks, chosen);
-				ImGui::CloseCurrentPopup();
-			}
-			ImGui::EndCombo();
-		}
-		row_help(Index);
-		if (std::string dropped; material_drop(dropped))
-			track_property_apply(static_cast<int>(Index), Tracks, dropped);
-	};
-
-	auto const any_in = [&](int const Part, bool const More) {
-		for (std::size_t i = 0; i < list.size(); ++i)
-			if (list[i].part == Part && list[i].more == More && cache.applies[i] > 0)
-				return true;
-		return false;
-	};
-	auto const rows = [&](int const Part, bool const More) {
-		if (false == any_in(Part, More))
-			return;
-		if (false == ImGui::BeginTable(format("##trackprops%d%d", Part, More ? 1 : 0).c_str(), 2, ImGuiTableFlags_SizingStretchProp))
-			return;
-		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.45f);
-		ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.55f);
-		for (std::size_t i = 0; i < list.size(); ++i)
-		{
-			if (list[i].part != Part || list[i].more != More || cache.applies[i] == 0)
-				continue;
-			ImGui::PushID(list[i].key);
-			ImGui::BeginDisabled(list[i].off);
-			row_label(i);
-			using enum field;
-			switch (list[i].kind)
-			{
-			case choice: choice_row(i); break;
-			case check: check_row(i); break;
-			case texture: texture_row(i); break;
-			default: text_row(i); break;
-			}
-			ImGui::EndDisabled();
-			if (list[i].off && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-				ImGui::SetTooltip("%s", STR_C("Turned on with frogs yes in eu07.ini"));
-			ImGui::PopID();
-			for (auto const &note : m_track_notes)
-				if (note.property == static_cast<int>(i))
-				{
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(1);
-					ImGui::PushTextWrapPos(0.0f);
-					ImVec4 color{1.0f, 0.75f, 0.3f, 1.0f};
-					if (note.type == track_note::kind::typing)
-						color = ImVec4(0.55f, 0.8f, 1.0f, 1.0f);
-					else if (note.type == track_note::kind::done)
-						color = ImVec4(0.45f, 0.9f, 0.45f, 1.0f);
-					ImGui::TextColored(color, "%s", note.text.c_str());
-					ImGui::PopTextWrapPos();
-				}
-		}
-		ImGui::EndTable();
-	};
-	auto const more = [&](char const *Id, int const Part) {
-		if (false == any_in(Part, true))
-			return;
-		ImGui::PushID(Id);
-		if (ImGui::TreeNode(STR_C("More settings")))
-		{
-			rows(Part, true);
-			ImGui::TreePop();
-		}
-		ImGui::PopID();
-	};
+		property_notes(signature);
 
 	// whether what's set here is in the file yet; the same height either way, the rows don't move
 	if (cache.unsaved > 0)
@@ -1610,26 +1525,272 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 
 	if (ImGui::CollapsingHeader(STR_C("Traffic"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		rows(section::traffic, false);
-		more("traffic", section::traffic);
+		property_rows(section::traffic, false, Tracks);
+		property_more_rows("traffic", section::traffic, Tracks);
 	}
-	if ((any_in(section::look, false) || any_in(section::look, true) || any_in(section::look_bed, false) || any_in(section::look_sleepers, false)) && ImGui::CollapsingHeader(STR_C("Look"), ImGuiTreeNodeFlags_DefaultOpen))
-	{
-		rows(section::look, false);
-		more("look", section::look);
-		if (any_in(section::look_bed, false) && ImGui::TreeNode(STR_C("Shape of the trackbed")))
-		{
-			rows(section::look_bed, false);
-			ImGui::TreePop();
-		}
-		if (any_in(section::look_sleepers, false) && ImGui::TreeNode(STR_C("Sleeper models")))
-		{
-			rows(section::look_sleepers, false);
-			ImGui::TreePop();
-		}
-	}
+	if ((property_rows_any(section::look, false) || property_rows_any(section::look, true) || property_rows_any(section::look_bed, false) || property_rows_any(section::look_sleepers, false)) && ImGui::CollapsingHeader(STR_C("Look"), ImGuiTreeNodeFlags_DefaultOpen))
+		property_look_rows(Tracks);
 	if (ImGui::CollapsingHeader(STR_C("Ride and sound")))
-		rows(section::ride, false);
+		property_rows(section::ride, false, Tracks);
+}
+
+void editor_mode::property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature)
+{
+	auto const &list{properties()};
+	auto &cache{m_track_values};
+	cache.signature = Signature;
+	cache.generation_seen = cache.generation;
+	cache.history = m_history.size();
+	cache.frame = ImGui::GetFrameCount();
+	cache.values.assign(list.size(), {});
+	cache.applies.assign(list.size(), 0);
+	for (std::size_t i = 0; i < list.size(); ++i)
+	{
+		auto values{values_of(list[i], Tracks)};
+		std::size_t applies{0};
+		for (auto const &[text, count] : values)
+			applies += static_cast<std::size_t>(count);
+		cache.applies[i] = applies;
+		cache.values[i] = std::move(values);
+	}
+	cache.unsaved = static_cast<std::size_t>(std::ranges::count_if(Tracks, [](TTrack const *Track) { return Track != nullptr && Track->dirty(); }));
+}
+
+void editor_mode::property_notes(std::size_t const Signature)
+{
+	m_track_notes.clear();
+	auto const &edit{m_track_field};
+	auto const typing{edit.property >= 0 && edit.initial != edit.text.data()};
+	if (typing)
+	{
+		auto const count{m_track_values.applies[edit.property]};
+		m_track_notes.emplace_back(edit.property, format(STR_P("Enter or leaving the field sets it on %d track, Esc gives up", "Enter or leaving the field sets it on %d tracks, Esc gives up", static_cast<long long>(count)), static_cast<int>(count)), track_note::kind::typing);
+	}
+	auto const &outcome{m_track_outcome};
+	if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == Signature && outcome.history == m_history.size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
+		m_track_notes.emplace_back(outcome.property, outcome.text, outcome.refused ? track_note::kind::refused : track_note::kind::done);
+}
+
+void editor_mode::property_row_help(std::size_t const Index, std::size_t const Selected) const
+{
+	// the tooltip of a row would cover the line under it
+	if (std::ranges::none_of(m_track_notes, [Index](track_note const &Note) { return Note.property == static_cast<int>(Index); }))
+		row_tooltip(properties()[Index], m_track_values.values[Index], m_track_values.applies[Index], Selected);
+}
+
+void editor_mode::property_row_label(std::size_t const Index, std::size_t const Selected) const
+{
+	auto const &property{properties()[Index]};
+	auto const &cache{m_track_values};
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(0);
+	ImGui::AlignTextToFramePadding();
+	auto const partial{cache.applies[Index] < Selected};
+	auto const several{cache.values[Index].size() > 1};
+	ImGui::PushTextWrapPos(0.0f);
+	if (several)
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.45f, 1.0f), "%s", STR_C(property.label));
+	else
+		ImGui::TextUnformatted(STR_C(property.label));
+	ImGui::PopTextWrapPos();
+	if (partial)
+	{
+		ImGui::SameLine(0.0f, 4.0f);
+		ImGui::TextDisabled("(%d)", static_cast<int>(cache.applies[Index]));
+	}
+	property_row_help(Index, Selected);
+	ImGui::TableSetColumnIndex(1);
+	ImGui::SetNextItemWidth(-FLT_MIN);
+}
+
+void editor_mode::property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+{
+	auto const &property{properties()[Index]};
+	auto const &values{m_track_values.values[Index]};
+	auto &edit{m_track_field};
+	auto const editing{edit.property == static_cast<int>(Index)};
+	std::array<char, 256> shown{};
+	if (values.size() == 1)
+		text_into(shown, values.front().first == "none" ? std::string_view{} : std::string_view{values.front().first});
+	auto *buffer{editing ? edit.text.data() : shown.data()};
+	std::string hint;
+	if (values.size() > 1)
+		hint = format(STR_C("different (%d)"), static_cast<int>(values.size()));
+	else if (property.empty != nullptr)
+		hint = STR_C(property.empty);
+	// a number clicked is typed anew, the digits wouldn't add up to what's meant going after the old ones
+	ImGui::InputTextWithHint("##value", hint.c_str(), buffer, shown.size(), property.kind == field::number ? ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_AutoSelectAll : 0);
+	if (ImGui::IsItemActivated())
+	{
+		// the field left for this one, lower down, is drawn after it: it would find its place here taken and what was typed lost
+		std::string const text{buffer};
+		track_field_finish();
+		edit.property = static_cast<int>(Index);
+		edit.tracks = Tracks;
+		edit.initial = text;
+		text_into(edit.text, text);
+	}
+	if (edit.property == static_cast<int>(Index))
+		edit.frame = ImGui::GetFrameCount();
+	property_row_help(Index, Tracks.size());
+	if (ImGui::IsItemDeactivated() && edit.property == static_cast<int>(Index))
+		track_field_finish();
+}
+
+void editor_mode::property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+{
+	auto const &property{properties()[Index]};
+	auto const &values{m_track_values.values[Index]};
+	auto const current{values.size() == 1 ? std::atoi(values.front().first.c_str()) : -1};
+	if (auto const preview{current >= 0 && current < static_cast<int>(property.choices.size()) ? std::string{STR_C(property.choices[current])} : format(STR_C("different (%d)"), static_cast<int>(values.size()))}; ImGui::BeginCombo("##value", preview.c_str()))
+	{
+		for (int i = 0; i < static_cast<int>(property.choices.size()); ++i)
+			if (ImGui::Selectable(STR_C(property.choices[i]), i == current))
+				track_property_apply(static_cast<int>(Index), Tracks, std::to_string(i));
+		ImGui::EndCombo();
+	}
+	property_row_help(Index, Tracks.size());
+}
+
+void editor_mode::property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+{
+	auto const &values{m_track_values.values[Index]};
+	auto const mixed_values{values.size() > 1};
+	bool value{false == mixed_values && values.front().first == "1"};
+	if (mixed_values)
+		ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+	if (ImGui::Checkbox("##value", &value))
+		track_property_apply(static_cast<int>(Index), Tracks, value ? "1" : "0");
+	if (mixed_values)
+		ImGui::PopItemFlag();
+	property_row_help(Index, Tracks.size());
+}
+
+void editor_mode::property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+{
+	auto const &property{properties()[Index]};
+	auto const &values{m_track_values.values[Index]};
+	auto const mixed_choice{values.size() > 1};
+	auto const common{mixed_choice ? std::string{} : values.front().first};
+	auto const preview{mixed_choice ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : common == "none" ? std::string{STR_C(property.empty)} : common};
+	auto const side{ImGui::GetFrameHeight()};
+	if (auto const image{mixed_choice ? 0 : material_image(editor_track::fetch_material(common))}; image != 0)
+	{
+		ImGui::Image(static_cast<ImTextureID>(image), ImVec2(side, side), ImVec2(0, 1), ImVec2(1, 0));
+		if (ImGui::IsItemHovered())
+		{
+			auto const big{std::round(ImGui::GetFontSize() * 14.0f)};
+			ImGui::BeginTooltip();
+			ImGui::Image(static_cast<ImTextureID>(image), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
+			ImGui::TextUnformatted(common.c_str());
+			ImGui::EndTooltip();
+		}
+		ImGui::SameLine(0.0f, 4.0f);
+	}
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+	if (ImGui::BeginCombo("##value", preview.c_str(), ImGuiComboFlags_HeightLargest))
+	{
+		if (std::string chosen; track_texture_picker(property.texture, common, mixed_choice, chosen))
+		{
+			track_property_apply(static_cast<int>(Index), Tracks, chosen);
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndCombo();
+	}
+	property_row_help(Index, Tracks.size());
+	if (std::string dropped; material_drop(dropped))
+		track_property_apply(static_cast<int>(Index), Tracks, dropped);
+}
+
+bool editor_mode::property_rows_any(int const Part, bool const More) const
+{
+	auto const &list{properties()};
+	for (std::size_t i = 0; i < list.size(); ++i)
+		if (list[i].part == Part && list[i].more == More && m_track_values.applies[i] > 0)
+			return true;
+	return false;
+}
+
+void editor_mode::property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks)
+{
+	if (false == property_rows_any(Part, More))
+		return;
+	if (false == ImGui::BeginTable(format("##trackprops%d%d", Part, More ? 1 : 0).c_str(), 2, ImGuiTableFlags_SizingStretchProp))
+		return;
+	auto const &list{properties()};
+	ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+	ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+	for (std::size_t i = 0; i < list.size(); ++i)
+	{
+		if (list[i].part != Part || list[i].more != More || m_track_values.applies[i] == 0)
+			continue;
+		ImGui::PushID(list[i].key);
+		ImGui::BeginDisabled(list[i].off);
+		property_row_label(i, Tracks.size());
+		using enum field;
+		switch (list[i].kind)
+		{
+		case choice: property_choice_row(i, Tracks); break;
+		case check: property_check_row(i, Tracks); break;
+		case texture: property_texture_row(i, Tracks); break;
+		default: property_text_row(i, Tracks); break;
+		}
+		ImGui::EndDisabled();
+		if (list[i].off && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("%s", STR_C("Turned on with frogs yes in eu07.ini"));
+		ImGui::PopID();
+		property_row_notes(i);
+	}
+	ImGui::EndTable();
+}
+
+void editor_mode::property_row_notes(std::size_t const Index) const
+{
+	for (auto const &note : m_track_notes)
+	{
+		if (note.property != static_cast<int>(Index))
+			continue;
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(1);
+		ImGui::PushTextWrapPos(0.0f);
+		ImVec4 color{1.0f, 0.75f, 0.3f, 1.0f};
+		if (note.type == track_note::kind::typing)
+			color = ImVec4(0.55f, 0.8f, 1.0f, 1.0f);
+		else if (note.type == track_note::kind::done)
+			color = ImVec4(0.45f, 0.9f, 0.45f, 1.0f);
+		ImGui::TextColored(color, "%s", note.text.c_str());
+		ImGui::PopTextWrapPos();
+	}
+}
+
+void editor_mode::property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks)
+{
+	if (false == property_rows_any(Part, true))
+		return;
+	ImGui::PushID(Id);
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		property_rows(Part, true, Tracks);
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
+}
+
+void editor_mode::property_look_rows(std::vector<TTrack *> const &Tracks)
+{
+	property_rows(section::look, false, Tracks);
+	property_more_rows("look", section::look, Tracks);
+	if (property_rows_any(section::look_bed, false) && ImGui::TreeNode(STR_C("Shape of the trackbed")))
+	{
+		property_rows(section::look_bed, false, Tracks);
+		ImGui::TreePop();
+	}
+	if (property_rows_any(section::look_sleepers, false) && ImGui::TreeNode(STR_C("Sleeper models")))
+	{
+		property_rows(section::look_sleepers, false, Tracks);
+		ImGui::TreePop();
+	}
 }
 
 void editor_mode::copy_track_style(TTrack const &Track)
@@ -1754,9 +1915,33 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	auto const &presets{EditorTrackPresets.presets()};
 	if (EditorTrackPresets.find(panel.selected) == nullptr)
 		panel.selected = presets.empty() ? 0 : presets.front().id;
-	auto const single{Tracks.size() == 1};
-	auto const *selected{EditorTrackPresets.find(panel.selected)};
+	auto const none{EditorTrackPresets.find(panel.selected) == nullptr};
+	render_preset_combo();
+	auto const width{button_width(2)};
+	render_preset_new(Tracks, none, width);
 
+	// pointers to the presets don't outlive a change of their list
+	auto const *selected{EditorTrackPresets.find(panel.selected)};
+	if (selected == nullptr)
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("A preset keeps the properties of a track: its rails, trackbed, sleepers... to put them on other tracks,\nwith the choice of what it overwrites"));
+		ImGui::PopTextWrapPos();
+		ImGui::TreePop();
+		return;
+	}
+	auto const id{selected->id};
+	render_preset_name(id);
+	render_preset_groups(id);
+	render_preset_update(Tracks, id, width);
+	ImGui::TreePop();
+}
+
+void editor_mode::render_preset_combo()
+{
+	auto &panel{m_track_presets};
+	auto const &presets{EditorTrackPresets.presets()};
+	auto const *selected{EditorTrackPresets.find(panel.selected)};
 	ImGui::SetNextItemWidth(-FLT_MIN);
 	if (ImGui::BeginCombo("##trackpreset", selected != nullptr ? selected->name.c_str() : STR_C("No presets yet")))
 	{
@@ -1771,16 +1956,20 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	}
 	if (selected != nullptr && ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", preset_summary(*selected).c_str());
+}
 
-	auto const width{button_width(2)};
-	ImGui::BeginDisabled(selected == nullptr);
-	if (ImGui::Button(format(STR_P("Apply on %d track", "Apply on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str(), ImVec2(width, 0.0f)))
+void editor_mode::render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width)
+{
+	auto &panel{m_track_presets};
+	auto const single{Tracks.size() == 1};
+	ImGui::BeginDisabled(None);
+	if (ImGui::Button(format(STR_P("Apply on %d track", "Apply on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str(), ImVec2(Width, 0.0f)))
 		apply_track_preset(panel.selected, Tracks);
 	ImGui::EndDisabled();
 	item_tooltip("Puts the values of the preset on the selected tracks, of what it overwrites; Ctrl+Z takes them back.\nTools in the menu applies the presets too");
 	ImGui::SameLine();
 	ImGui::BeginDisabled(false == single);
-	if (ImGui::Button(STR_C("New from the track"), ImVec2(width, 0.0f)))
+	if (ImGui::Button(STR_C("New from the track"), ImVec2(Width, 0.0f)))
 	{
 		// rails, trackbed, its shape, sleepers, frogs and sleeper placement at first, the look of the track
 		std::array<bool, group_count> groups{};
@@ -1793,24 +1982,15 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 		ImGui::SetTooltip("%s", STR_C(single ? "Saves the properties of this track as a new preset" : "Select one track to save its properties as a preset"));
+}
 
-	// pointers to the presets don't outlive a change of their list
-	selected = EditorTrackPresets.find(panel.selected);
-	if (selected == nullptr)
+void editor_mode::render_preset_name(int const Id)
+{
+	auto &panel{m_track_presets};
+	if (panel.nameid != Id)
 	{
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("A preset keeps the properties of a track: its rails, trackbed, sleepers... to put them on other tracks,\nwith the choice of what it overwrites"));
-		ImGui::PopTextWrapPos();
-		ImGui::TreePop();
-		return;
-	}
-	auto const id{selected->id};
-
-	// the name
-	if (panel.nameid != id)
-	{
-		text_into(panel.name, selected->name);
-		panel.nameid = id;
+		text_into(panel.name, EditorTrackPresets.find(Id)->name);
+		panel.nameid = Id;
 	}
 	ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Rename")).x - ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
 	auto const entered{ImGui::InputText("##presetname", panel.name.data(), panel.name.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
@@ -1818,11 +1998,14 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Rename")) || entered)
 	{
-		EditorTrackPresets.rename(id, panel.name.data());
+		EditorTrackPresets.rename(Id, panel.name.data());
 		panel.nameid = 0; // reload, the name could have been adjusted to stay unique
-		selected = EditorTrackPresets.find(id);
 	}
+}
 
+void editor_mode::render_preset_groups(int const Id)
+{
+	auto const *selected{EditorTrackPresets.find(Id)};
 	// what it overwrites, of the groups it has values of
 	ImGui::TextDisabled("%s", STR_C("Overwrites:"));
 	// its own id scope: the group checkboxes share their labels with the sections of the properties
@@ -1842,44 +2025,46 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 		++column;
 	}
 	ImGui::PopID();
-	if (changed)
-	{
-		// the groups it has no values of are kept as they were, for a track they're taken again from
-		auto kept{groups_of(*selected)};
-		for (int group = 0; group < group_count; ++group)
-			if (available[group])
-				kept[group] = groups[group];
-		EditorTrackPresets.set_groups(id, group_keys(kept));
-		selected = EditorTrackPresets.find(id);
-	}
+	if (false == changed)
+		return;
+	// the groups it has no values of are kept as they were, for a track they're taken again from
+	auto kept{groups_of(*selected)};
+	for (int group = 0; group < group_count; ++group)
+		if (available[group])
+			kept[group] = groups[group];
+	EditorTrackPresets.set_groups(Id, group_keys(kept));
+}
 
+void editor_mode::render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width)
+{
+	auto &panel{m_track_presets};
+	auto const single{Tracks.size() == 1};
+	auto const *selected{EditorTrackPresets.find(Id)};
 	ImGui::BeginDisabled(false == single);
-	if (ImGui::Button(STR_C("Update from the track"), ImVec2(width, 0.0f)))
+	if (ImGui::Button(STR_C("Update from the track"), ImVec2(Width, 0.0f)))
 	{
-		EditorTrackPresets.update(id, name_of(*Tracks.front()), values_of_track(*Tracks.front()));
+		EditorTrackPresets.update(Id, name_of(*Tracks.front()), values_of_track(*Tracks.front()));
 		ui()->set_status(format(STR_C("Preset \"%s\" takes the properties of %s now"), selected->name.c_str(), name_of(*Tracks.front()).c_str()), false);
 	}
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 		ImGui::SetTooltip("%s", STR_C(single ? "The preset takes the properties of this track in place of the ones it had; what it overwrites stays" : "Select one track to take its properties into the preset"));
 	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Delete"), ImVec2(width, 0.0f)))
+	if (ImGui::Button(STR_C("Delete"), ImVec2(Width, 0.0f)))
 		ImGui::OpenPopup("##deletepreset");
-	if (ImGui::BeginPopup("##deletepreset"))
+	if (false == ImGui::BeginPopup("##deletepreset"))
+		return;
+	ImGui::Text(STR_C("Delete preset \"%s\"?"), selected->name.c_str());
+	if (ImGui::Button(STR_C("Delete##confirm")))
 	{
-		ImGui::Text(STR_C("Delete preset \"%s\"?"), selected->name.c_str());
-		if (ImGui::Button(STR_C("Delete##confirm")))
-		{
-			EditorTrackPresets.remove(id);
-			panel.selected = 0;
-			ImGui::CloseCurrentPopup();
-		}
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Cancel")))
-			ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
+		EditorTrackPresets.remove(Id);
+		panel.selected = 0;
+		ImGui::CloseCurrentPopup();
 	}
-	ImGui::TreePop();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Cancel")))
+		ImGui::CloseCurrentPopup();
+	ImGui::EndPopup();
 }
 
 void editor_mode::render_track_presets_menu()
@@ -1934,81 +2119,85 @@ void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
 		ImGui::PopTextWrapPos();
 	}
 	else
-	{
-		ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), STR_C("From %s:"), style.from.c_str());
-		ImGui::SameLine();
-		if (auto const room{ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Forget")).x - ImGui::GetStyle().FramePadding.x * 2.0f}; room > 0.0f)
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + room);
-		auto forget{ImGui::SmallButton(STR_C("Forget"))};
-		item_tooltip("Forgets the track taken");
-		auto const lines{track_style_lines(Tracks)};
-		if (lines.empty())
-		{
-			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextDisabled(STR_C("The selected tracks have all of it as %s has"), style.from.c_str());
-			ImGui::PopTextWrapPos();
-		}
-		// a property each: the tick, then how it changes, the text a part of the tick
-		auto const brief = [&](int const Property, std::string const &Text) {
-			auto const slash{properties()[Property].kind == field::texture ? Text.find_last_of('/') : std::string::npos};
-			return slash == std::string::npos ? Text : Text.substr(slash + 1);
-		};
-		ImGui::PushID("taken");
-		int ticked{0};
-		for (auto const &line : lines)
-		{
-			auto const &property{properties()[line.property]};
-			ImGui::PushID(property.key);
-			auto take{track_style_takes(property.key)};
-			if (ImGui::Checkbox("##take", &take))
-				style.ticks[property.key] = take;
-			auto const help = [&]() {
-				if (false == ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-					return;
-				ImGui::BeginTooltip();
-				ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-				ImGui::TextUnformatted(STR_C(property.tooltip));
-				ImGui::Separator();
-				ImGui::Text(STR_C("Now: %s\nOn %s: %s"), line.now.c_str(), style.from.c_str(), line.taken.c_str());
-				ImGui::Text(STR_P("Changes %d selected track", "Changes %d selected tracks", static_cast<long long>(line.differ)), static_cast<int>(line.differ));
-				ImGui::PopTextWrapPos();
-				ImGui::EndTooltip();
-			};
-			help();
-			ImGui::SameLine();
-			auto text{format("%s: %s -> %s", STR_C(property.label), brief(line.property, line.now).c_str(), brief(line.property, line.taken).c_str())};
-			if (line.differ < Tracks.size())
-				text += format(STR_C("  (%d of %d)"), static_cast<int>(line.differ), static_cast<int>(Tracks.size()));
-			ImGui::PushTextWrapPos(0.0f);
-			if (take)
-				ImGui::TextUnformatted(text.c_str());
-			else
-				ImGui::TextDisabled("%s", text.c_str());
-			ImGui::PopTextWrapPos();
-			if (ImGui::IsItemClicked())
-				style.ticks[property.key] = false == take;
-			help();
-			ticked += take ? 1 : 0;
-			ImGui::PopID();
-		}
-		ImGui::PopID();
-		if (false == lines.empty())
-		{
-			ImGui::BeginDisabled(ticked == 0);
-			if (ImGui::Button(format(STR_P("Set on %d track", "Set on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str(), ImVec2(-FLT_MIN, 0.0f)))
-				paste_track_style(Tracks);
-			ImGui::EndDisabled();
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-				ImGui::SetTooltip("%s", STR_C(ticked == 0 ? "Tick what's to be set first" : "Sets what's ticked on the selected tracks, in one step of the undo; Ctrl+Shift+V does the same"));
-		}
-		if (forget)
-		{
-			style.from.clear();
-			style.values.clear();
-		}
-	}
+		render_style_taken(Tracks);
 	ImGui::Spacing();
 	render_track_presets(Tracks);
+}
+
+void editor_mode::render_style_taken(std::vector<TTrack *> const &Tracks)
+{
+	auto &style{m_track_style};
+	ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), STR_C("From %s:"), style.from.c_str());
+	ImGui::SameLine();
+	if (auto const room{ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Forget")).x - ImGui::GetStyle().FramePadding.x * 2.0f}; room > 0.0f)
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + room);
+	auto forget{ImGui::SmallButton(STR_C("Forget"))};
+	item_tooltip("Forgets the track taken");
+	auto const lines{track_style_lines(Tracks)};
+	if (lines.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled(STR_C("The selected tracks have all of it as %s has"), style.from.c_str());
+		ImGui::PopTextWrapPos();
+	}
+	// a property each: the tick, then how it changes, the text a part of the tick
+	ImGui::PushID("taken");
+	int ticked{0};
+	for (auto const &line : lines)
+		ticked += render_style_line(line.property, line.now, line.taken, line.differ, Tracks.size()) ? 1 : 0;
+	ImGui::PopID();
+	if (false == lines.empty())
+	{
+		ImGui::BeginDisabled(ticked == 0);
+		if (ImGui::Button(format(STR_P("Set on %d track", "Set on %d tracks", static_cast<long long>(Tracks.size())), static_cast<int>(Tracks.size())).c_str(), ImVec2(-FLT_MIN, 0.0f)))
+			paste_track_style(Tracks);
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip("%s", STR_C(ticked == 0 ? "Tick what's to be set first" : "Sets what's ticked on the selected tracks, in one step of the undo; Ctrl+Shift+V does the same"));
+	}
+	if (forget)
+	{
+		style.from.clear();
+		style.values.clear();
+	}
+}
+
+bool editor_mode::render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected)
+{
+	auto &style{m_track_style};
+	auto const &property{properties()[Property]};
+	ImGui::PushID(property.key);
+	auto take{track_style_takes(property.key)};
+	if (ImGui::Checkbox("##take", &take))
+		style.ticks[property.key] = take;
+	auto const help = [&property, &Now, &Taken, Differ, &style]() {
+		if (false == ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+			return;
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+		ImGui::TextUnformatted(STR_C(property.tooltip));
+		ImGui::Separator();
+		ImGui::Text(STR_C("Now: %s\nOn %s: %s"), Now.c_str(), style.from.c_str(), Taken.c_str());
+		ImGui::Text(STR_P("Changes %d selected track", "Changes %d selected tracks", static_cast<long long>(Differ)), static_cast<int>(Differ));
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+	};
+	help();
+	ImGui::SameLine();
+	auto text{format("%s: %s -> %s", STR_C(property.label), brief_value(Property, Now).c_str(), brief_value(Property, Taken).c_str())};
+	if (Differ < Selected)
+		text += format(STR_C("  (%d of %d)"), static_cast<int>(Differ), static_cast<int>(Selected));
+	ImGui::PushTextWrapPos(0.0f);
+	if (take)
+		ImGui::TextUnformatted(text.c_str());
+	else
+		ImGui::TextDisabled("%s", text.c_str());
+	ImGui::PopTextWrapPos();
+	if (ImGui::IsItemClicked())
+		style.ticks[property.key] = false == take;
+	help();
+	ImGui::PopID();
+	return take;
 }
 
 std::vector<TTrack *> editor_mode::similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const
@@ -2061,30 +2250,7 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		TTrack *alone{nullptr};
 		ImGuiListClipper clipper;
 		clipper.Begin(static_cast<int>(Tracks.size()));
-		clipped_rows(clipper, [&](int const i) {
-			auto *track{Tracks[i]};
-			ImGui::PushID(i);
-			if (ImGui::SmallButton("x"))
-				removed = track;
-			item_tooltip("Takes the track out of the selection");
-			ImGui::SameLine();
-			if (ImGui::Selectable(name_of(*track).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
-			{
-				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-					alone = track;
-				else
-					focus_track(*track, 0, bezier{track->m_paths.front()}.point(0.5));
-			}
-			if (ImGui::IsItemHovered())
-			{
-				m_track_list_hover = track;
-				m_track_list_hover_frame = ImGui::GetFrameCount();
-				ImGui::SetTooltip("%s", STR_C("Click: look at it, double click: select only this one"));
-			}
-			ImGui::SameLine(column);
-			ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*track)), track->Length());
-			ImGui::PopID();
-		});
+		clipped_rows(clipper, [this, &Tracks, column, &removed, &alone](int const i) { render_selected_track_row(Tracks[i], i, column, removed, alone); });
 		ImGui::EndChild();
 		ImGui::TreePop();
 		if (removed != nullptr)
@@ -2092,6 +2258,31 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		else if (alone != nullptr)
 			select_tracks({alone});
 	}
+}
+
+void editor_mode::render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone)
+{
+	ImGui::PushID(Index);
+	if (ImGui::SmallButton("x"))
+		Removed = Track;
+	item_tooltip("Takes the track out of the selection");
+	ImGui::SameLine();
+	if (ImGui::Selectable(name_of(*Track).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
+	{
+		if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+			Alone = Track;
+		else
+			focus_track(*Track, 0, bezier{Track->m_paths.front()}.point(0.5));
+	}
+	if (ImGui::IsItemHovered())
+	{
+		m_track_list_hover = Track;
+		m_track_list_hover_frame = ImGui::GetFrameCount();
+		ImGui::SetTooltip("%s", STR_C("Click: look at it, double click: select only this one"));
+	}
+	ImGui::SameLine(Column);
+	ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*Track)), Track->Length());
+	ImGui::PopID();
 }
 
 void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
@@ -2120,125 +2311,147 @@ void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 	if (ImGui::Button(STR_C("Alike..."), ImVec2(width, 0.0f)))
 		ImGui::OpenPopup("##similar");
 	item_tooltip("Selects the tracks of the whole scenery which have the same rails, trackbed, speed... as the selected ones");
-	if (ImGui::BeginPopup("##similar"))
+	render_similar_popup(Tracks);
+}
+
+void editor_mode::render_similar_popup(std::vector<TTrack *> const &Tracks)
+{
+	if (false == ImGui::BeginPopup("##similar"))
+		return;
+	constexpr std::array<char const *, 6> keys{"rails", "trackbed", "speed", "environment", "circuits", "overhead"};
+	constexpr std::array<char const *, 6> labels{"The same rails", "The same trackbed", "The same speed", "The same environment", "The same track circuits", "The same overhead line"};
+	if (ImGui::IsWindowAppearing())
 	{
-		constexpr std::array<char const *, 6> keys{"rails", "trackbed", "speed", "environment", "circuits", "overhead"};
-		constexpr std::array<char const *, 6> labels{"The same rails", "The same trackbed", "The same speed", "The same environment", "The same track circuits", "The same overhead line"};
-		if (ImGui::IsWindowAppearing())
-		{
-			m_track_similar.clear();
-			for (auto const *key : keys)
-				m_track_similar.push_back(similar_tracks(track_property_index(key), Tracks));
-		}
-		for (std::size_t i = 0; i < keys.size() && i < m_track_similar.size(); ++i)
-		{
-			auto const &found{m_track_similar[i]};
-			if (ImGui::MenuItem(STR_C(labels[i]), tracks_count(found.size()).c_str(), false, false == found.empty()))
-			{
-				select_tracks(found);
-				ui()->set_status(format(STR_C("%s: %s selected in the scenery"), STR_C(labels[i]), tracks_count(found.size()).c_str()), false);
-			}
-		}
-		ImGui::EndPopup();
+		m_track_similar.clear();
+		for (auto const *key : keys)
+			m_track_similar.push_back(similar_tracks(track_property_index(key), Tracks));
 	}
+	for (std::size_t i = 0; i < keys.size() && i < m_track_similar.size(); ++i)
+	{
+		auto const &found{m_track_similar[i]};
+		if (ImGui::MenuItem(STR_C(labels[i]), tracks_count(found.size()).c_str(), false, false == found.empty()))
+		{
+			select_tracks(found);
+			ui()->set_status(format(STR_C("%s: %s selected in the scenery"), STR_C(labels[i]), tracks_count(found.size()).c_str()), false);
+		}
+	}
+	ImGui::EndPopup();
 }
 
 editor_mode::selftest_result editor_mode::selftest_props(std::string const &Command, std::istringstream &Words)
 {
 	if (Command == "tracksel")
-	{
-		std::vector<TTrack *> tracks;
-		for (std::string name; Words >> name;)
-			if (auto *track{simulation::Paths.find(name)}; track != nullptr)
-				tracks.push_back(track);
-		select_tracks(tracks);
-		WriteLog(format("SELFTEST tracksel: %zu tracks selected", selected_tracks().size()));
-		return selftest_result::handled;
-	}
+		return selftest_tracksel(Words);
 	if (Command == "trackprop")
-	{
-		std::string key;
-		Words >> key;
-		std::string value;
-		std::getline(Words, value);
-		value = words_of(value).empty() ? std::string{} : value.substr(value.find_first_not_of(' '));
-		auto const index{track_property_index(key)};
-		if (index < 0)
-		{
-			WriteLog("SELFTEST trackprop: no property " + key);
-			return selftest_result::handled;
-		}
-		auto const changed{track_property_apply(index, selected_tracks(), value)};
-		WriteLog(format("SELFTEST trackprop %s=\"%s\": %zu changed: %s", key.c_str(), value.c_str(), changed, m_track_outcome.text.c_str()));
-		return selftest_result::handled;
-	}
+		return selftest_trackprop(Words);
 	if (Command == "trackprops")
-	{
-		auto const tracks{selected_tracks()};
-		for (auto const &property : properties())
-		{
-			auto const values{values_of(property, tracks)};
-			std::string text;
-			for (auto const &[value, count] : values)
-				text += format(" [%s]x%d", value.c_str(), count);
-			WriteLog(format("SELFTEST trackprops %s:%s", property.key, text.c_str()));
-		}
-		for (auto const &note : m_track_notes)
-			WriteLog(format("SELFTEST trackprops note %s: %s", properties()[note.property].key, note.text.c_str()));
-		WriteLog(format("SELFTEST trackprops unsaved: %zu", m_track_values.unsaved));
-		return selftest_result::handled;
-	}
+		return selftest_trackprops();
 	if (Command == "trackstyle")
+		return selftest_trackstyle(Words);
+	if (Command == "tracksimilar")
+		return selftest_tracksimilar(Words);
+	return selftest_result::unhandled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_tracksel(std::istringstream &Words)
+{
+	std::vector<TTrack *> tracks;
+	for (std::string name; Words >> name;)
+		if (auto *track{simulation::Paths.find(name)}; track != nullptr)
+			tracks.push_back(track);
+	select_tracks(tracks);
+	WriteLog(format("SELFTEST tracksel: %zu tracks selected", selected_tracks().size()));
+	return selftest_result::handled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_trackprop(std::istringstream &Words)
+{
+	std::string key;
+	Words >> key;
+	std::string value;
+	std::getline(Words, value);
+	value = words_of(value).empty() ? std::string{} : value.substr(value.find_first_not_of(' '));
+	auto const index{track_property_index(key)};
+	if (index < 0)
 	{
-		std::string action;
-		Words >> action;
-		if (action == "copy")
-		{
-			std::string name;
-			Words >> name;
-			if (auto const *track{name.empty() ? selected_track() : simulation::Paths.find(name)}; track != nullptr)
-				copy_track_style(*track);
-			WriteLog(format("SELFTEST trackstyle copy: %zu values from %s", m_track_style.values.size(), m_track_style.from.c_str()));
-		}
-		else if (action == "groups")
-		{
-			// the groups ticked, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement
-			m_track_style.groups.fill(false);
-			m_track_style.ticks.clear();
-			for (int group; Words >> group;)
-				tick_group(m_track_style.groups, group);
-		}
-		else if (action == "tick")
-		{
-			std::string key;
-			int tick{1};
-			Words >> key >> tick;
-			m_track_style.ticks[key] = tick != 0;
-		}
-		else if (action == "paste")
-			WriteLog(format("SELFTEST trackstyle paste: %zu changed", paste_track_style(selected_tracks())));
-		else if (action == "panel")
-			m_track_style.reveal = true;
-		else if (action == "list")
-		{
-			auto const lines{track_style_lines(selected_tracks())};
-			WriteLog(format("SELFTEST trackstyle list: %zu lines from %s", lines.size(), m_track_style.from.c_str()));
-			for (auto const &line : lines)
-			{
-				auto const &property{properties()[line.property]};
-				WriteLog(format("SELFTEST trackstyle line %s [%s] %s -> %s (%zu)", property.key, track_style_takes(property.key) ? "x" : " ", line.now.c_str(), line.taken.c_str(), line.differ));
-			}
-		}
+		WriteLog("SELFTEST trackprop: no property " + key);
 		return selftest_result::handled;
 	}
-	if (Command == "tracksimilar")
+	auto const changed{track_property_apply(index, selected_tracks(), value)};
+	WriteLog(format("SELFTEST trackprop %s=\"%s\": %zu changed: %s", key.c_str(), value.c_str(), changed, m_track_outcome.text.c_str()));
+	return selftest_result::handled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_trackprops()
+{
+	auto const tracks{selected_tracks()};
+	for (auto const &property : properties())
+	{
+		auto const values{values_of(property, tracks)};
+		std::string text;
+		for (auto const &[value, count] : values)
+			text += format(" [%s]x%d", value.c_str(), count);
+		WriteLog(format("SELFTEST trackprops %s:%s", property.key, text.c_str()));
+	}
+	for (auto const &note : m_track_notes)
+		WriteLog(format("SELFTEST trackprops note %s: %s", properties()[note.property].key, note.text.c_str()));
+	WriteLog(format("SELFTEST trackprops unsaved: %zu", m_track_values.unsaved));
+	return selftest_result::handled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_trackstyle(std::istringstream &Words)
+{
+	std::string action;
+	Words >> action;
+	if (action == "copy")
+	{
+		std::string name;
+		Words >> name;
+		if (auto const *track{name.empty() ? selected_track() : simulation::Paths.find(name)}; track != nullptr)
+			copy_track_style(*track);
+		WriteLog(format("SELFTEST trackstyle copy: %zu values from %s", m_track_style.values.size(), m_track_style.from.c_str()));
+	}
+	else if (action == "groups")
+	{
+		// the groups ticked, as their numbers: 0 speed ... 9 frogs, 10 sleeper placement
+		m_track_style.groups.fill(false);
+		m_track_style.ticks.clear();
+		for (int group; Words >> group;)
+			tick_group(m_track_style.groups, group);
+	}
+	else if (action == "tick")
 	{
 		std::string key;
-		Words >> key;
-		if (auto const index{track_property_index(key)}; index >= 0)
-			select_tracks(similar_tracks(index, selected_tracks()));
-		WriteLog(format("SELFTEST tracksimilar %s: %zu selected", key.c_str(), selected_tracks().size()));
-		return selftest_result::handled;
+		int tick{1};
+		Words >> key >> tick;
+		m_track_style.ticks[key] = tick != 0;
 	}
-	return selftest_result::unhandled;
+	else if (action == "paste")
+		WriteLog(format("SELFTEST trackstyle paste: %zu changed", paste_track_style(selected_tracks())));
+	else if (action == "panel")
+		m_track_style.reveal = true;
+	else if (action == "list")
+		selftest_trackstyle_list();
+	return selftest_result::handled;
+}
+
+void editor_mode::selftest_trackstyle_list()
+{
+	auto const lines{track_style_lines(selected_tracks())};
+	WriteLog(format("SELFTEST trackstyle list: %zu lines from %s", lines.size(), m_track_style.from.c_str()));
+	for (auto const &line : lines)
+	{
+		auto const &property{properties()[line.property]};
+		WriteLog(format("SELFTEST trackstyle line %s [%s] %s -> %s (%zu)", property.key, track_style_takes(property.key) ? "x" : " ", line.now.c_str(), line.taken.c_str(), line.differ));
+	}
+}
+
+editor_mode::selftest_result editor_mode::selftest_tracksimilar(std::istringstream &Words)
+{
+	std::string key;
+	Words >> key;
+	if (auto const index{track_property_index(key)}; index >= 0)
+		select_tracks(similar_tracks(index, selected_tracks()));
+	WriteLog(format("SELFTEST tracksimilar %s: %zu selected", key.c_str(), selected_tracks().size()));
+	return selftest_result::handled;
 }

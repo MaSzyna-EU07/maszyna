@@ -2573,7 +2573,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the model of the timbers, with the fastenings where it has them, set on all the switches and crossings of the scenery, in one
 	// step of the undo; empty: the one of eu07.ini. returns: the tracks changed
 	std::size_t set_switch_timbers(std::string const &Model);
-	int track_property_index(std::string const &Key) const;
+	int track_property_index(std::string_view const Key) const;
 	std::size_t track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text);
 	void track_field_finish();
 	void track_field_settle();
@@ -2598,6 +2598,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void textures_index();
 	// the picker of a texture, in an open combo. returns: true when one is chosen, its name in Chosen
 	bool texture_picker(texture_offer const &Offer, std::string const &Current, bool const Mixed, std::string &Chosen);
+	// the large image of the picker: the tile under the mouse, what Enter would choose or the current texture, with its notes
+	void texture_preview(texture_offer const &Offer, std::string const &Current, std::string const &First, bool const Searching, bool const Mixed);
+	// the notes next to the large image of a texture: where it's used, whether it's set now, whether Enter chooses it
+	void texture_notes(std::string const &Shown, std::string const &First, std::string const &Current, bool const Searching, bool const Mixed) const;
+	// the tiles of the picker, those in use and those of the folder. returns: true when one is clicked, its name in Chosen
+	bool texture_tiles(texture_offer const &Offer, std::vector<texture_use const *> const &Used, std::vector<std::string const *> const &Files, std::string const &Current, bool const Mixed, std::string &Chosen);
+	// one tile of the picker. returns: true when it's clicked
+	bool texture_tile(std::string const &Name, int const Count, float const Tile, float const Label, bool const Current);
 	// the same, of a texture of the rails (Kind 0) or of the trackbed (1)
 	bool track_texture_picker(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen);
 	// image of the texture of the name, 0 while there's none
@@ -2613,9 +2621,40 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the textures of the palette and of the water of the terrain; None: the entry for no texture of its own, nullptr: there's none
 	texture_offer terrain_texture_offer(char const *None);
 	void render_track_properties(std::vector<TTrack *> const &Tracks);
+	// the values of the properties over the tracks gathered again when the selection or the tracks changed
+	void property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature);
+	// the notes on the values of the properties made again when the selection or the tracks changed
+	void property_notes(std::size_t const Signature);
+	// the tooltip of a row of the properties
+	void property_row_help(std::size_t const Index, std::size_t const Selected) const;
+	// the label of a row of the properties, marked when the selected tracks differ in it
+	void property_row_label(std::size_t const Index, std::size_t const Selected) const;
+	// the rows of the properties by their kind: a text, a choice, a tick, a texture
+	void property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	void property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	void property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	void property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
+	// whether any property of the part is shown, More: of those under "more"
+	bool property_rows_any(int const Part, bool const More) const;
+	// the rows of the properties of the part
+	void property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks);
+	// the notes under a row of the properties
+	void property_row_notes(std::size_t const Index) const;
+	// the rows under "more" of the part, in a tree node of the id
+	void property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks);
+	// the rows of the look of the track
+	void property_look_rows(std::vector<TTrack *> const &Tracks);
 	void render_track_set_header(std::vector<TTrack *> const &Tracks);
+	// a row of the list of the selected tracks: Removed or Alone set to the track when it's taken out or kept alone
+	void render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone);
 	void render_track_select_tools(std::vector<TTrack *> const &Tracks);
+	// the popup selecting the tracks of the scenery alike the selected ones
+	void render_similar_popup(std::vector<TTrack *> const &Tracks);
 	void render_track_style(std::vector<TTrack *> const &Tracks);
+	// what the track taken changes on the selected tracks, each with a tick, and the button setting it
+	void render_style_taken(std::vector<TTrack *> const &Tracks);
+	// a line of what the track taken changes: its tick and how it changes. returns: true when it's ticked
+	bool render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected);
 	void copy_track_style(TTrack const &Track);
 	std::size_t paste_track_style(std::vector<TTrack *> const &Tracks);
 	// which groups of the properties are pasted or put on the tracks by a preset, in the order of the groups of editormodetrackprops.cpp
@@ -2625,6 +2664,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::optional<std::size_t> apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What);
 	// presets of the properties of the tracks (editorTrackPresets), made from a track and put on the selected ones
 	void render_track_presets(std::vector<TTrack *> const &Tracks);
+	// the combo choosing the preset
+	void render_preset_combo();
+	// the buttons applying the preset and making a new one from the track
+	void render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width);
+	// the name of the preset of the id, renamed by Enter or the button
+	void render_preset_name(int const Id);
+	// the ticks of what the preset of the id overwrites
+	void render_preset_groups(int const Id);
+	// the buttons updating the preset of the id from the track and deleting it
+	void render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width);
 	void render_track_presets_menu();
 	std::size_t apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks);
 	std::vector<TTrack *> similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const;
@@ -3095,6 +3144,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void selftest_signal_probe();
 	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
+	// the commands of selftest_props, one each
+	selftest_result selftest_tracksel(std::istringstream &words);
+	selftest_result selftest_trackprop(std::istringstream &words);
+	selftest_result selftest_trackprops();
+	selftest_result selftest_trackstyle(std::istringstream &words);
+	void selftest_trackstyle_list();
+	selftest_result selftest_tracksimilar(std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
