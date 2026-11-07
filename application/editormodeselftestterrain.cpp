@@ -52,6 +52,108 @@ http://mozilla.org/MPL/2.0/.
 #include <sstream>
 #include "application/editormodeselftest.h"
 
+#include <ostream>
+#include <ranges>
+
+namespace
+{
+
+// each item kept in the square of the plan given and in the eight around it, the squares by their columns
+template <typename Cells, typename Visit>
+void each_in_cells_around(Cells const &Of, std::pair<int, int> const &Cell, Visit &&Seen)
+{
+	for (int dx = -1; dx <= 1; ++dx)
+		for (int dz = -1; dz <= 1; ++dz)
+			if (auto const other{Of.find({Cell.first + dx, Cell.second + dz})}; other != Of.end())
+				std::ranges::for_each(other->second, [&Seen](auto const &Item) { Seen(Item); });
+}
+
+// the track nearest the point in plan, nearer than the reach, but not a turntable: none where none is
+TTrack *nearest_not_table(glm::dvec3 const &Point, double const Reach)
+{
+	TTrack *closest{nullptr};
+	auto nearest{Reach};
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || track->eType == tt_Table)
+			continue;
+		if (auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, Point)), Point)}; distance < nearest)
+		{
+			nearest = distance;
+			closest = track;
+		}
+	}
+	return closest;
+}
+
+// how many ends of the paths of the track lie within 10 cm of the point in plan
+int ends_at(TTrack const &Track, glm::dvec3 const &Point)
+{
+	int ends{0};
+	for (auto const &path : Track.m_paths)
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			ends += glm::length(glm::dvec2{path.points[index].x - Point.x, path.points[index].z - Point.z}) <= 0.1 ? 1 : 0;
+	return ends;
+}
+
+// the route found from the track to the other, against the start and the middle of a design: none where none is found
+std::string route_text(TTrack *From, TTrack *To, glm::dvec3 const &Start, glm::dvec3 const &Middle)
+{
+	editor_track::route route;
+	if (std::string error; false == editor_track::find_route(From, To, route, error))
+		return format(" [%s > %s: none]", From->name().c_str(), To->name().c_str());
+	auto const samples{editor_track::sample_route(route, 1.0)};
+	auto const middle{editor_track::sampled_position(samples, route.length * 0.5)};
+	return format(" [%s > %s: %zu spans %.1f m, start %.2f, middle %.2f]", From->name().c_str(), To->name().c_str(), route.spans.size(), route.length, glm::length(glm::dvec2{samples.front().position.x - Start.x, samples.front().position.z - Start.z}),
+	              glm::length(glm::dvec2{middle.x - Middle.x, middle.z - Middle.z}));
+}
+
+// the routes from the track to each supported track with an end at the end of a design, once for each end of each of the two there
+std::string routes_from(TTrack *Track, glm::dvec3 const &Start, glm::dvec3 const &End, glm::dvec3 const &Middle)
+{
+	std::string routes;
+	for (auto *other : simulation::Paths.sequence())
+		if (other != nullptr && other != Track && false == other->m_editorremoved && editor_track::is_supported(*other))
+			for (int ends = ends_at(*other, End); ends > 0; --ends)
+				routes += route_text(Track, other, Start, Middle);
+	return routes;
+}
+
+// the routes between the supported tracks with an end at the start of a design and the ones with an end at its end
+std::string design_routes(glm::dvec3 const &Start, glm::dvec3 const &End, glm::dvec3 const &Middle)
+{
+	std::string routes;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved && editor_track::is_supported(*track))
+			for (int ends = ends_at(*track, Start); ends > 0; --ends)
+				routes += routes_from(track, Start, End, Middle);
+	return routes;
+}
+
+// the zones of the switches within 5 m of the chainage
+template <typename Zones>
+std::string switch_zones(Zones const &Of, double const Chainage)
+{
+	std::string zone;
+	for (auto const &one : Of)
+		if (Chainage >= one.from - 5.0 && Chainage <= one.to + 5.0)
+			zone += format(" [%.1f..%.1f %s]", one.from, one.to, one.name.c_str());
+	return zone;
+}
+
+// seven points along the path, each in plan and in height
+void stream_points(std::ostream &Stream, segment_data const &Path)
+{
+	geometry::bezier const curve{Path};
+	for (int i = 0; i <= 6; ++i)
+	{
+		auto const point{curve.point(i / 6.0)};
+		Stream << ' ' << point.x << ' ' << point.z << ' ' << point.y;
+	}
+}
+
+} // namespace
+
 editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &command, std::istringstream &words)
 {
 	if (command == "orthophoto")
@@ -345,8 +447,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			++all;
 			auto const length{geometry::bezier{track->m_paths.front()}.plan_length()};
 			for (auto const [i, limit] : {std::pair{0, 1.0}, std::pair{1, 3.0}, std::pair{2, 6.0}})
-				if (length < limit)
-					++counts[i];
+				counts[i] += length < limit ? 1 : 0;
 		}
 		WriteLog(format("SELFTEST shorttracks %s: %d plain tracks, under 1 m %d, under 3 m %d, under 6 m %d", label.c_str(), all, counts[0], counts[1], counts[2]));
 		return selftest_result::handled;
@@ -363,54 +464,71 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	{
 		// each turntable: the height of its rails and of the model in its pit; of each track running up to it the heights out along
 		// its line from the rim, the model there under the rails beside them, and how far from the rim the line keeps level
+		auto const included_of = [this](std::string const &Name) {
+			std::string included;
+			for (auto const &item : standing_templates([](std::string const &) { return true; }))
+				if (false == item.values.empty() && ToLower(item.values.front()) == Name)
+					included += format(" %s at %.3f %.3f %.3f", item.file.c_str(), item.location.x, item.location.y, item.location.z);
+			return included;
+		};
+		// the model under the rails at the first sample within half a metre of the chainage, where it has it there
+		auto const model_at = [this](auto const &Samples, double const Chainage, double const Rails) {
+			auto const sample{std::ranges::find_if(Samples, [&](auto const &Sample) { return std::abs(Sample.chainage - Chainage) < 0.51; })};
+			if (double model; sample != Samples.end() && m_nmt.height(sample->position.x, sample->position.z, model))
+				return format(" (model %.2f)", model + m_nmt_state.offset + Rails);
+			return std::string{};
+		};
+		// the heights out along the track from the rim, with the model beside them
+		auto const heights_out = [&model_at](auto const &Samples, auto const &Chainage_at, auto const &Height_at, double const Length, double const Rails) {
+			std::string text;
+			for (auto const off : {0.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0})
+			{
+				if (off > Length)
+					break;
+				text += format(" %.0f m %.3f", off, Height_at(off));
+				text += model_at(Samples, Chainage_at(off), Rails);
+			}
+			return text;
+		};
+		// how far from the rim the track keeps within a centimetre of the height
+		auto const level_for = [](auto const &Height_at, double const Length, double const Height) {
+			double level{0.0};
+			for (int k = 0; k * 0.5 <= Length; ++k)
+				if (std::abs(Height_at(k * 0.5) - Height) <= 0.01)
+					level = k * 0.5;
+				else
+					break;
+			return level;
+		};
+		// a track running up to the table: out along its line from the rim
+		auto const log_end = [&](auto const &Table, auto const Track, auto const Path, auto const Atend) {
+			auto route{editor_track::run_route(*Track, 80.0, Path)};
+			auto const samples{editor_track::sample_route(route, 1.0)};
+			if (samples.size() < 2)
+				return;
+			auto const &points{Table.table->m_paths.front().points};
+			auto const &rim{Track->m_paths[Path].points[Atend ? segment_data::point::end : segment_data::point::start]};
+			auto const reversed{geometry::plan_distance(samples.back().position, rim) < geometry::plan_distance(samples.front().position, rim)};
+			auto const length{samples.back().chainage - samples.front().chainage};
+			auto const chainage_at = [&](double const Off) { return reversed ? samples.back().chainage - Off : samples.front().chainage + Off; };
+			auto const height_at = [&](double const Off) { return editor_track::sampled_elevation(samples, chainage_at(Off)); };
+			auto const text{heights_out(samples, chainage_at, height_at, length, static_cast<double>(Track->rail_height()))};
+			// level off the rim within a centimetre
+			auto const level{level_for(height_at, length, points[segment_data::point::start].y)};
+			WriteLog(format("SELFTEST turntable %s track %s: at the rim %.3f m, %+.2f per mille over its first 5 m, level within 1 cm of the table for %.1f m; out along it%s", Table.table->name().c_str(), Track->name().c_str(), rim.y,
+			                1000.0 * (height_at(std::min(5.0, length)) - height_at(0.0)) / std::max(1e-6, std::min(5.0, length)), level, text.c_str()));
+		};
 		for (auto const &table : nmt_turntables())
 		{
 			auto const &points{table.table->m_paths.front().points};
 			double pit{std::numeric_limits<double>::quiet_NaN()};
 			if (double height; m_nmt.height(table.centre.x, table.centre.z, height))
 				pit = height + m_nmt_state.offset;
-			std::string included;
-			for (auto const &item : standing_templates([](std::string const &) { return true; }))
-				if (false == item.values.empty() && ToLower(item.values.front()) == table.table->name())
-					included += format(" %s at %.3f %.3f %.3f", item.file.c_str(), item.location.x, item.location.y, item.location.z);
+			auto const included{included_of(table.table->name())};
 			WriteLog(format("SELFTEST turntable %s: rails %.3f .. %.3f m, rim %.2f m, the model in the pit %.2f m, %zu tracks run up to it; its include%s", table.table->name().c_str(), points[segment_data::point::start].y,
 			                points[segment_data::point::end].y, table.rim, pit, table.ends.size(), included.empty() ? " none" : included.c_str()));
 			for (auto const &[track, path, atend] : table.ends)
-			{
-				auto route{editor_track::run_route(*track, 80.0, path)};
-				auto const samples{editor_track::sample_route(route, 1.0)};
-				if (samples.size() < 2)
-					continue;
-				auto const &rim{track->m_paths[path].points[atend ? segment_data::point::end : segment_data::point::start]};
-				auto const reversed{geometry::plan_distance(samples.back().position, rim) < geometry::plan_distance(samples.front().position, rim)};
-				auto const length{samples.back().chainage - samples.front().chainage};
-				auto const chainage_at = [&](double const Off) { return reversed ? samples.back().chainage - Off : samples.front().chainage + Off; };
-				auto const height_at = [&](double const Off) { return editor_track::sampled_elevation(samples, chainage_at(Off)); };
-				auto const rails{static_cast<double>(track->rail_height())};
-				std::string text;
-				for (auto const off : {0.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0})
-				{
-					if (off > length)
-						break;
-					text += format(" %.0f m %.3f", off, height_at(off));
-					for (auto const &sample : samples)
-						if (std::abs(sample.chainage - chainage_at(off)) < 0.51)
-						{
-							if (double model; m_nmt.height(sample.position.x, sample.position.z, model))
-								text += format(" (model %.2f)", model + m_nmt_state.offset + rails);
-							break;
-						}
-				}
-				// level off the rim within a centimetre
-				double level{0.0};
-				for (int k = 0; k * 0.5 <= length; ++k)
-					if (std::abs(height_at(k * 0.5) - points[segment_data::point::start].y) <= 0.01)
-						level = k * 0.5;
-					else
-						break;
-				WriteLog(format("SELFTEST turntable %s track %s: at the rim %.3f m, %+.2f per mille over its first 5 m, level within 1 cm of the table for %.1f m; out along it%s", table.table->name().c_str(), track->name().c_str(), rim.y,
-				                1000.0 * (height_at(std::min(5.0, length)) - height_at(0.0)) / std::max(1e-6, std::min(5.0, length)), level, text.c_str()));
-			}
+				log_end(table, track, path, atend);
 		}
 		return selftest_result::handled;
 	}
@@ -429,16 +547,16 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::size_t done{0};
 		std::string names;
 		for (auto const *track : simulation::Paths.sequence())
-			if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 1) != 0)
-			{
-				++rails;
-				if (grade_fitted(*track))
-				{
-					++done;
-					if (names.size() < 200)
-						names += " " + track->name();
-				}
-			}
+		{
+			if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0)
+				continue;
+			++rails;
+			if (false == grade_fitted(*track))
+				continue;
+			++done;
+			if (names.size() < 200)
+				names += " " + track->name();
+		}
 		std::size_t written{0};
 		for (auto const layer : scene::Layers.marked_layers("//$t"))
 			written += scene::Layers.marked(layer, "//$t").size();
@@ -453,6 +571,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		double step{250.0};
 		words >> name >> step;
 		auto const places{nmt_track_places(step)};
+		// the model at the point, none where it has none
+		auto const model_beside = [this](glm::dvec3 const &Point) {
+			double side{std::numeric_limits<double>::quiet_NaN()};
+			if (double height; m_nmt.height(Point.x, Point.z, height))
+				side = height + m_nmt_state.offset;
+			return side;
+		};
 		for (std::size_t i = 0; i + 1 < places.size(); ++i)
 		{
 			auto const &place{places[i]};
@@ -474,12 +599,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				model = height + m_nmt_state.offset;
 			std::string text{format("SELFTEST nmtprobe %s at %.0f %.0f: rail top %.2f, ballast top %.2f, foot %.2f, model %.2f; ground/model at axis, -2, 2, -3.5, 3.5, -6, 6 m:", place.track->name().c_str(), place.position.x, place.position.z, place.position.y, place.crown, place.formation, model)};
 			for (std::size_t k = 0; k < points.size(); ++k)
-			{
-				double side{std::numeric_limits<double>::quiet_NaN()};
-				if (double height; m_nmt.height(points[k].x, points[k].z, height))
-					side = height + m_nmt_state.offset;
-				text += (found[k] != 0 ? format(" %.2f", ground[k]) : std::string{" -"}) + format("/%.2f", side);
-			}
+				text += (found[k] != 0 ? format(" %.2f", ground[k]) : std::string{" -"}) + format("/%.2f", model_beside(points[k]));
 			WriteLog(text);
 		}
 		return selftest_result::handled;
@@ -545,24 +665,27 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::size_t edges{0};
 		double worst{0.0};
 		glm::dvec2 where{0.0};
+		// the step of the terrain across the edge of two chunks at the corner, along it in 32 pieces: the greatest of all kept
+		auto const edge_steps = [&](glm::dvec2 const &Corner, int const Dx, int const Dz) {
+			for (int i = 0; i <= 32; ++i)
+			{
+				auto const along{heightmap::chunk_size * i / 32.0};
+				glm::dvec2 const point{Corner.x + (Dx == 0 ? along : 0.0), Corner.y + (Dz == 0 ? along : 0.0)};
+				glm::dvec2 const inside{Dx * 0.01, Dz * 0.01};
+				if (double a, b; m_streamer.height_at(point.x - inside.x, point.y - inside.y, a) && m_streamer.height_at(point.x + inside.x, point.y + inside.y, b) && std::abs(a - b) > worst)
+				{
+					worst = std::abs(a - b);
+					where = point;
+				}
+			}
+		};
 		for (auto const &[key_x, key_z] : keys)
 			for (auto const [dx, dz] : {std::pair{1, 0}, std::pair{0, 1}})
 			{
 				if (false == keys.contains({key_x + dx, key_z + dz}))
 					continue;
 				++edges;
-				auto const corner{heightmap::chunk_corner({key_x + dx, key_z + dz})};
-				for (int i = 0; i <= 32; ++i)
-				{
-					auto const along{heightmap::chunk_size * i / 32.0};
-					glm::dvec2 const point{corner.x + (dx == 0 ? along : 0.0), corner.y + (dz == 0 ? along : 0.0)};
-					glm::dvec2 const inside{dx * 0.01, dz * 0.01};
-					if (double a, b; m_streamer.height_at(point.x - inside.x, point.y - inside.y, a) && m_streamer.height_at(point.x + inside.x, point.y + inside.y, b) && std::abs(a - b) > worst)
-					{
-						worst = std::abs(a - b);
-						where = point;
-					}
-				}
+				edge_steps(heightmap::chunk_corner({key_x + dx, key_z + dz}), dx, dz);
 			}
 		WriteLog(format("SELFTEST terrainseams: %zu chunks, %zu edges, the greatest step %.3f m at %.1f %.1f", keys.size(), edges, worst, where.x, where.y));
 		return selftest_result::handled;
@@ -585,20 +708,25 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::size_t held{0};
 		std::size_t gone{0};
 		std::size_t retired{0};
+		// a model a cell holds: gone from the scene, or about to be destroyed
+		auto const count_model = [&](TAnimModel const *Instance) {
+			++held;
+			if (false == alive.contains(Instance))
+				++gone;
+			else if (std::ranges::any_of(m_retired, [&](std::pair<TAnimModel *, int> const &Retired) { return Retired.first == Instance; }))
+				++retired;
+		};
+		// the models of both kinds a cell holds
+		auto const count_cell = [&count_model](auto const &Cell) {
+			for (auto const *sequence : {&Cell.m_instancesopaque, &Cell.m_instancetranslucent})
+				std::ranges::for_each(*sequence, count_model);
+		};
 		for (auto const *section : simulation::Region->m_sections)
 		{
 			if (section == nullptr)
 				continue;
 			for (auto const &cell : section->m_cells)
-				for (auto const *sequence : {&cell.m_instancesopaque, &cell.m_instancetranslucent})
-					for (auto const *instance : *sequence)
-					{
-						++held;
-						if (false == alive.contains(instance))
-							++gone;
-						else if (std::ranges::any_of(m_retired, [&](std::pair<TAnimModel *, int> const &Retired) { return Retired.first == instance; }))
-							++retired;
-					}
+				count_cell(cell);
 		}
 		WriteLog(format("SELFTEST danglers: %zu held, %zu gone, %zu retired, %zu waiting", held, gone, retired, m_retired.size()));
 		return selftest_result::handled;
@@ -788,43 +916,50 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::map<std::pair<int, int>, std::vector<place>> places;
 		auto const cell_of = [&](glm::dvec3 const &Point) { return std::pair<int, int>{static_cast<int>(std::floor(Point.x / kTimbers)), static_cast<int>(std::floor(Point.z / kTimbers))}; };
 		std::vector<place> all;
+		// how far the rails of a track are off the model: the most, where, the sum and of how many places
+		struct fit_tally
+		{
+			double worst{0.0};
+			glm::dvec3 worst_at{0.0};
+			double sum{0.0};
+			int counted{0};
+		};
+		// the places of the path kept, and the rails at them against the model taken into the tally
+		auto const tally_path = [&](TTrack const *Track, segment_data const &Path, fit_tally &Tally) {
+			geometry::bezier const curve{Path};
+			auto const places_on{std::max(1, static_cast<int>(geometry::chord_length(Path) / kStep))};
+			for (int i = 0; i <= places_on; ++i)
+			{
+				auto const share{static_cast<double>(i) / places_on};
+				auto const point{curve.point(share)};
+				auto const tangent{geometry::plan_of(curve.first(share))};
+				place const here{point, glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, Track};
+				all.push_back(here);
+				places[cell_of(point)].push_back(here);
+				double height;
+				if (false == m_nmt.height(point.x, point.z, height))
+					continue;
+				auto const off{point.y - (height + m_nmt_state.offset + Track->rail_height())};
+				++Tally.counted;
+				Tally.sum += off;
+				if (std::abs(off) > std::abs(Tally.worst))
+				{
+					Tally.worst = off;
+					Tally.worst_at = point;
+				}
+			}
+		};
 		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || (track->iCategoryFlag & 15) != 1 || track->eType == tt_Table)
 				continue;
 			auto const found{m_nmt_state.grade_lines.find(grade_line_key(*track))};
 			auto const line{found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own};
-			double worst{0.0};
-			glm::dvec3 worst_at{0.0};
-			double sum{0.0};
-			int counted{0};
+			fit_tally tally;
 			for (auto const &path : track->m_paths)
-			{
-				geometry::bezier const curve{path};
-				auto const places_on{std::max(1, static_cast<int>(geometry::chord_length(path) / kStep))};
-				for (int i = 0; i <= places_on; ++i)
-				{
-					auto const share{static_cast<double>(i) / places_on};
-					auto const point{curve.point(share)};
-					auto const tangent{geometry::plan_of(curve.first(share))};
-					place const here{point, glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, track};
-					all.push_back(here);
-					places[cell_of(point)].push_back(here);
-					if (double height; m_nmt.height(point.x, point.z, height))
-					{
-						auto const off{point.y - (height + m_nmt_state.offset + track->rail_height())};
-						++counted;
-						sum += off;
-						if (std::abs(off) > std::abs(worst))
-						{
-							worst = off;
-							worst_at = point;
-						}
-					}
-				}
-			}
-			if (counted > 0)
-				stream << "T " << track->name() << ' ' << (track->eType == tt_Switch ? 's' : 'n') << ' ' << line << ' ' << worst << ' ' << sum / counted << ' ' << worst_at.x << ' ' << worst_at.z << ' ' << worst_at.y << ' ' << counted << '\n';
+				tally_path(track, path, tally);
+			if (tally.counted > 0)
+				stream << "T " << track->name() << ' ' << (track->eType == tt_Switch ? 's' : 'n') << ' ' << line << ' ' << tally.worst << ' ' << tally.sum / tally.counted << ' ' << tally.worst_at.x << ' ' << tally.worst_at.z << ' ' << tally.worst_at.y << ' ' << tally.counted << '\n';
 			if (track->eType == tt_Switch && track->m_paths.size() >= 2)
 			{
 				geometry::bezier const main{track->m_paths[0]};
@@ -848,24 +983,21 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			double apart{0.0};
 		};
 		std::map<std::pair<std::string, std::string>, pair_worst> pairs;
+		// the place with the places of the other tracks on common timbers with it, a switch among the two
+		auto const pairs_near = [&](place const &Here) {
+			each_in_cells_around(places, cell_of(Here.position), [&](place const &Other) {
+				if (Other.track == Here.track || (Here.track->eType != tt_Switch && Other.track->eType != tt_Switch) || Here.track->name() > Other.track->name())
+					return;
+				glm::dvec2 const offset{Other.position.x - Here.position.x, Other.position.z - Here.position.z};
+				if (glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, Here.along)) > 0.6 * kStep || std::abs(Other.position.y - Here.position.y) > 2.0)
+					return;
+				auto &worst{pairs[{Here.track->name(), Other.track->name()}]};
+				if (auto const difference{std::abs(Other.position.y - Here.position.y)}; difference >= worst.difference)
+					worst = {difference, Here.position, glm::length(offset)};
+			});
+		};
 		for (auto const &here : all)
-		{
-			auto const [cell_x, cell_z]{cell_of(here.position)};
-			for (int dx = -1; dx <= 1; ++dx)
-				for (int dz = -1; dz <= 1; ++dz)
-					if (auto const found{places.find({cell_x + dx, cell_z + dz})}; found != places.end())
-						for (auto const &other : found->second)
-						{
-							if (other.track == here.track || (here.track->eType != tt_Switch && other.track->eType != tt_Switch) || here.track->name() > other.track->name())
-								continue;
-							glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
-							if (glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, here.along)) > 0.6 * kStep || std::abs(other.position.y - here.position.y) > 2.0)
-								continue;
-							auto &worst{pairs[{here.track->name(), other.track->name()}]};
-							if (auto const difference{std::abs(other.position.y - here.position.y)}; difference >= worst.difference)
-								worst = {difference, here.position, glm::length(offset)};
-						}
-		}
+			pairs_near(here);
 		for (auto const &[names, worst] : pairs)
 			stream << "K " << names.first << ' ' << names.second << ' ' << worst.difference << ' ' << worst.apart << ' ' << worst.at.x << ' ' << worst.at.z << '\n';
 		for (auto const &place : m_nmt_state.surface_places)
@@ -916,9 +1048,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			profile_edited();
 			profile_apply(false);
 			WriteLog("SELFTEST gradeline bump: " + state.status + " " + state.error);
-			for (auto const &issue : state.issues)
-				if (issue.error)
-					WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
+			for (auto const &issue : state.issues | std::views::filter([](auto const &Issue) { return Issue.error; }))
+				WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
 		}
 		if (action == "lift")
 		{
@@ -927,9 +1058,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			profile_check();
 			profile_apply(false);
 			WriteLog("SELFTEST gradeline lift: " + state.status + " " + state.error);
-			for (auto const &issue : state.issues)
-				if (issue.error)
-					WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
+			for (auto const &issue : state.issues | std::views::filter([](auto const &Issue) { return Issue.error; }))
+				WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
 		}
 		else if (action == "off" || action == "on")
 			grade_line_take_off(action == "off");
@@ -969,18 +1099,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			int alone{0};
 			words >> z >> alone;
 			glm::dvec3 const point{value, 0.0, z};
-			TTrack *closest{nullptr};
-			auto nearest{10.0};
-			for (auto *track : simulation::Paths.sequence())
-			{
-				if (track == nullptr || track->m_editorremoved || track->m_paths.empty() || track->eType == tt_Table)
-					continue;
-				if (auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; distance < nearest)
-				{
-					nearest = distance;
-					closest = track;
-				}
-			}
+			auto *const closest{nearest_not_table(point, 10.0)};
 			if (closest != nullptr)
 				grade_line_pick(*closest, alone != 0);
 			auto const number{route_grade_line()};
@@ -1013,10 +1132,14 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				return 'h';
 			return grade_fitted(Track) ? 'f' : 'n';
 		};
+		// the heights of the ends of each path of the track
+		auto const heights_of = [&](TTrack const &Track) {
+			for (auto const &path : Track.m_paths)
+				stream << Track.name() << ' ' << grade_mark(Track) << ' ' << path.points[segment_data::point::start].y << ' ' << path.points[segment_data::point::end].y << '\n';
+		};
 		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
-				for (auto const &path : track->m_paths)
-					stream << track->name() << ' ' << grade_mark(*track) << ' ' << path.points[segment_data::point::start].y << ' ' << path.points[segment_data::point::end].y << '\n';
+				heights_of(*track);
 		WriteLog("SELFTEST trackheights: " + file);
 		return selftest_result::handled;
 	}
@@ -1083,18 +1206,44 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			TTrack const *track;
 		};
 		std::vector<spot> spots;
+		// the spots of the paths of the track, a metre or so apart
+		auto const spots_of = [&spots](TTrack const *Track) {
+			for (auto const &path : Track->m_paths)
+			{
+				geometry::bezier const curve{path};
+				auto const count{std::max(1, static_cast<int>(geometry::plan_distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 1.0))};
+				for (int i = 0; i <= count; ++i)
+				{
+					auto const tangent{geometry::plan_of(curve.first(static_cast<double>(i) / count))};
+					spots.emplace_back(curve.point(static_cast<double>(i) / count), glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, Track);
+				}
+			}
+		};
 		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved && false == route.contains(track))
-				for (auto const &path : track->m_paths)
+				spots_of(track);
+		// the spots of the other tracks beside the sample, running its way: the nearest on each side within 6 m
+		auto const sides_of = [&spots](auto const &Here, glm::dvec2 const &Along, std::array<spot const *, 2> &Sides, std::array<double, 2> &Across) {
+			for (auto const &other : spots)
+			{
+				glm::dvec2 const offset{other.position.x - Here.position.x, other.position.z - Here.position.z};
+				if (std::abs(glm::dot(offset, Along)) > 0.6 || std::abs(glm::dot(Along, other.along)) < 0.985)
+					continue;
+				auto const side{Along.x * offset.y - Along.y * offset.x};
+				if (auto const k{side > 0.0 ? 0 : 1}; std::abs(side) < Across[k])
 				{
-					geometry::bezier const curve{path};
-					auto const count{std::max(1, static_cast<int>(geometry::plan_distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 1.0))};
-					for (int i = 0; i <= count; ++i)
-					{
-						auto const tangent{geometry::plan_of(curve.first(static_cast<double>(i) / count))};
-						spots.emplace_back(curve.point(static_cast<double>(i) / count), glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, track);
-					}
+					Across[k] = std::abs(side);
+					Sides[k] = &other;
 				}
+			}
+		};
+		// a side of the sample to the file: the track there, its line, how far off and how much higher, or none
+		auto const stream_side = [&](spot const *Side, double const Across, double const Height) {
+			if (Side != nullptr)
+				stream << " | " << Side->track->name() << ' ' << line_of(*Side->track) << ' ' << Across << ' ' << Side->position.y - Height;
+			else
+				stream << " | -";
+		};
 		auto const &samples{m_profile.samples};
 		for (std::size_t i = 0; i + 1 < samples.size(); i += 5)
 		{
@@ -1102,25 +1251,11 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			auto const along{glm::normalize(geometry::plan_of(samples[i + 1].position - here.position))};
 			std::array<spot const *, 2> sides{nullptr, nullptr};
 			std::array<double, 2> across{6.0, 6.0};
-			for (auto const &other : spots)
-			{
-				glm::dvec2 const offset{other.position.x - here.position.x, other.position.z - here.position.z};
-				if (std::abs(glm::dot(offset, along)) > 0.6 || std::abs(glm::dot(along, other.along)) < 0.985)
-					continue;
-				auto const side{along.x * offset.y - along.y * offset.x};
-				if (auto const k{side > 0.0 ? 0 : 1}; std::abs(side) < across[k])
-				{
-					across[k] = std::abs(side);
-					sides[k] = &other;
-				}
-			}
+			sides_of(here, along, sides, across);
 			auto const *track{here.span < m_profile.route.spans.size() ? m_profile.route.spans[here.span].track : nullptr};
 			stream << "B " << here.chainage << ' ' << here.position.y << ' ' << (track != nullptr ? track->name() : std::string{"-"}) << ' ' << (track != nullptr ? line_of(*track) : -100);
 			for (int k = 0; k < 2; ++k)
-				if (sides[k] != nullptr)
-					stream << " | " << sides[k]->track->name() << ' ' << line_of(*sides[k]->track) << ' ' << across[k] << ' ' << sides[k]->position.y - here.position.y;
-				else
-					stream << " | -";
+				stream_side(sides[k], across[k], here.position.y);
 			stream << '\n';
 		}
 		WriteLog("SELFTEST besidedump: " + file);
@@ -1134,68 +1269,44 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::size_t failing{0};
 		std::size_t retaken{0};
 		auto const count{m_profiles.size()};
+		// the design leaving the track by more than what it's read again from it for: where it's off most, and the switches about there
+		auto const log_off = [this](double const Departure, TTrack const *From, TTrack const *To) {
+			double worst{0.0};
+			std::size_t at{0};
+			for (std::size_t k = 0; k < m_profile.samples.size(); ++k)
+				if (auto const off{std::abs(profile::elevation(m_profile.line, m_profile.samples[k].chainage) - m_profile.samples[k].position.y)}; off > worst)
+				{
+					worst = off;
+					at = k;
+				}
+			if (m_profile.samples.empty())
+				return;
+			auto const zone{switch_zones(m_profile.context.switches, m_profile.samples[at].chainage)};
+			WriteLog(format("SELFTEST profileaudit off: %s .. %s, %.0f m, %.3f m off at %.1f on %s, kept departure %.3f;%s %s", From->name().c_str(), To->name().c_str(), m_profile.route.length, worst, m_profile.samples[at].chainage,
+			                m_profile.route.spans[m_profile.samples[at].span].track->name().c_str(), Departure, zone.c_str(), m_profile.status.c_str()));
+		};
 		for (std::size_t i = 0; i < count; ++i)
 		{
 			auto const entry{m_profiles[i]};
 			TTrack *from{nullptr};
 			TTrack *to{nullptr};
-			if (false == profile_stored_route(entry, &from, &to).has_value())
-			{
-				if (++gone <= 5)
-				{
-					// what the route between the ends found is against the design
-					std::string routes;
-					for (auto *track : simulation::Paths.sequence())
-						if (track != nullptr && false == track->m_editorremoved && editor_track::is_supported(*track))
-							for (auto const &path : track->m_paths)
-								for (auto const index : {segment_data::point::start, segment_data::point::end})
-									if (glm::length(glm::dvec2{path.points[index].x - entry.start.x, path.points[index].z - entry.start.z}) <= 0.1)
-										for (auto *other : simulation::Paths.sequence())
-											if (other != nullptr && other != track && false == other->m_editorremoved && editor_track::is_supported(*other))
-												for (auto const &end : other->m_paths)
-													for (auto const last : {segment_data::point::start, segment_data::point::end})
-														if (glm::length(glm::dvec2{end.points[last].x - entry.end.x, end.points[last].z - entry.end.z}) <= 0.1)
-														{
-															editor_track::route route;
-															if (std::string error; false == editor_track::find_route(track, other, route, error))
-															{
-																routes += format(" [%s > %s: none]", track->name().c_str(), other->name().c_str());
-																continue;
-															}
-															auto const samples{editor_track::sample_route(route, 1.0)};
-															auto const middle{editor_track::sampled_position(samples, route.length * 0.5)};
-															routes += format(" [%s > %s: %zu spans %.1f m, start %.2f, middle %.2f]", track->name().c_str(), other->name().c_str(), route.spans.size(), route.length, glm::length(glm::dvec2{samples.front().position.x - entry.start.x, samples.front().position.z - entry.start.z}), glm::length(glm::dvec2{middle.x - entry.middle.x, middle.z - entry.middle.z}));
-														}
-					WriteLog(format("SELFTEST profileaudit: no route for the design of %.1f m from %.2f %.2f %.2f to %.2f %.2f %.2f;%s", entry.length, entry.start.x, entry.start.y, entry.start.z, entry.end.x, entry.end.y, entry.end.z, routes.c_str()));
-				}
+			auto const stored{profile_stored_route(entry, &from, &to).has_value()};
+			// what the route between the ends found is against the design
+			if (false == stored && ++gone <= 5)
+				WriteLog(format("SELFTEST profileaudit: no route for the design of %.1f m from %.2f %.2f %.2f to %.2f %.2f %.2f;%s", entry.length, entry.start.x, entry.start.y, entry.start.z, entry.end.x, entry.end.y, entry.end.z,
+				                design_routes(entry.start, entry.end, entry.middle).c_str()));
+			if (false == stored)
 				continue;
-			}
 			profile_open_stored(i);
 			// the design leaves the track by more than what it's read again from it for
 			if (m_profile.departure > 0.02)
 			{
 				++retaken;
-				double worst{0.0};
-				std::size_t at{0};
-				for (std::size_t k = 0; k < m_profile.samples.size(); ++k)
-					if (auto const off{std::abs(profile::elevation(m_profile.line, m_profile.samples[k].chainage) - m_profile.samples[k].position.y)}; off > worst)
-					{
-						worst = off;
-						at = k;
-					}
-				std::string zone;
-				if (false == m_profile.samples.empty())
-					for (auto const &one : m_profile.context.switches)
-						if (m_profile.samples[at].chainage >= one.from - 5.0 && m_profile.samples[at].chainage <= one.to + 5.0)
-							zone += format(" [%.1f..%.1f %s]", one.from, one.to, one.name.c_str());
-				if (false == m_profile.samples.empty())
-					WriteLog(format("SELFTEST profileaudit off: %s .. %s, %.0f m, %.3f m off at %.1f on %s, kept departure %.3f;%s %s", from->name().c_str(), to->name().c_str(), m_profile.route.length, worst, m_profile.samples[at].chainage,
-					                m_profile.route.spans[m_profile.samples[at].span].track->name().c_str(), entry.departure, zone.c_str(), m_profile.status.c_str()));
+				log_off(entry.departure, from, to);
 			}
 			std::string errors;
-			for (auto const &issue : m_profile.issues)
-				if (issue.error)
-					errors += " | " + issue.text;
+			for (auto const &issue : m_profile.issues | std::views::filter([](auto const &Issue) { return Issue.error; }))
+				errors += " | " + issue.text;
 			if (false == errors.empty())
 			{
 				++failing;
@@ -1219,13 +1330,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			auto const line{found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own};
 			for (auto const &path : track->m_paths)
 			{
-				geometry::bezier const curve{path};
 				stream << track->name() << ' ' << line << ' ' << (track->eType == tt_Switch ? 's' : 'n');
-				for (int i = 0; i <= 6; ++i)
-				{
-					auto const point{curve.point(i / 6.0)};
-					stream << ' ' << point.x << ' ' << point.z << ' ' << point.y;
-				}
+				stream_points(stream, path);
 				stream << '\n';
 			}
 		}
@@ -1287,6 +1393,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			}
 		auto const found{m_streamer.height_at(x, z, height)};
 		std::string grid;
+		// the weights of the layers of the chunk at a sample of the paint
+		auto const weights_of = [](auto const &Data, int const Ix, int const Iz) {
+			std::string text;
+			for (std::size_t slot = 0; slot < Data.layer_count(); ++slot)
+				text += format(" %d", Data.weight(slot, std::clamp(Ix, 0, Data.paint), std::clamp(Iz, 0, Data.paint)));
+			return text;
+		};
 		if (chunk != nullptr)
 		{
 			auto const &data{chunk->data()};
@@ -1304,8 +1417,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				auto const ix{static_cast<int>(std::lround((x - corner.x) / heightmap::chunk_size * data.paint))};
 				auto const iz{static_cast<int>(std::lround((z - corner.y) / heightmap::chunk_size * data.paint))};
 				grid += ", weights";
-				for (std::size_t slot = 0; slot < data.layer_count(); ++slot)
-					grid += format(" %d", data.weight(slot, std::clamp(ix, 0, data.paint), std::clamp(iz, 0, data.paint)));
+				grid += weights_of(data, ix, iz);
 			}
 		}
 		WriteLog(format("SELFTEST terrainprobe %.1f %.1f: %s %.3f, %zu chunks, materials %s%s", x, z, found ? "height" : "no terrain", height, m_streamer.resident(), materials.c_str(), grid.c_str()));
@@ -1314,16 +1426,20 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "terrainconvert")
 	{
 		load_ground_files();
+		// the box the triangles of the file lie in
+		auto const bounds_of = [this](auto const &Source, glm::dvec3 &Low, glm::dvec3 &High) {
+			for (auto index = Source.first; index < Source.first + Source.count; ++index)
+				for (auto const &vertex : m_ground_conversion.triangles[index])
+				{
+					Low = glm::min(Low, vertex);
+					High = glm::max(High, vertex);
+				}
+		};
 		for (auto const &source : m_ground_conversion.files)
 		{
 			glm::dvec3 low{1e30};
 			glm::dvec3 high{-1e30};
-			for (auto index = source.first; index < source.first + source.count; ++index)
-				for (auto const &vertex : m_ground_conversion.triangles[index])
-				{
-					low = glm::min(low, vertex);
-					high = glm::max(high, vertex);
-				}
+			bounds_of(source, low, high);
 			WriteLog("SELFTEST terrain file " + source.file + (source.text ? " (text): " : " (binary): ") + source.message +
 			         format(", from %.1f %.1f %.1f to %.1f %.1f %.1f", low.x, low.y, low.z, high.x, high.y, high.z));
 		}
