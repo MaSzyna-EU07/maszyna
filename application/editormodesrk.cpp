@@ -4425,45 +4425,45 @@ struct srk_tool::lines_plan : lines_set
 	}
 };
 
-void srk_tool::set_lines(block_edit const *Edit)
+// the changes of set_lines(): the tracks cut where the sections meet and named, the signals placed, the block sections switched
+struct srk_tool::lines_change : lines_plan
 {
-	m_status.clear();
-	lines_plan work{*this, Edit};
-	if (false == work.gather())
-		return;
-	work.classify();
-	if (false == work.target() || false == work.km_known())
-		return;
-	work.plan_lines();
-	work.match_standing();
-	work.name_letters();
-	work.build_sections();
-	using planned_signal = lines_plan::planned_signal;
-	using section = lines_plan::section;
-	auto const &standing{work.standing};
-	auto const &lines{work.lines};
-	auto const &entry_standing{work.entry_standing};
-	auto const &heads{work.heads};
-	auto const &controls{work.controls};
-	auto const &automatic{work.automatic};
-	auto const &aspects{work.aspects};
-	auto const &processed{work.processed};
-	auto const &planned{work.planned};
-	auto const &gone{work.gone};
-	auto const &sections{work.sections};
-	auto const &relinked{work.relinked};
+	struct cut
+	{
+		TTrack *track{nullptr};
+		glm::dvec3 point{0.0};
+	};
+
+	std::string disc_mount;
+	std::vector<cut> cuts;
+	std::vector<std::pair<TTrack *, editor_track::state>> before;
+	std::vector<TTrack *> created;
+	std::unordered_set<TTrack const *> captured;
+	std::unordered_map<TTrack const *, std::vector<TTrack *>> pieces; // of each track cut, itself and the pieces cut off it
+	signal_changes changes;
+	std::size_t blocks{0};
+	std::size_t discs{0};
+	std::size_t swapped{0};
+	std::size_t renamed{0};
+	std::size_t removed{0};
+	bool controlled{false};
+
+	using lines_plan::lines_plan;
+
 	// the template of a signal placed: of a block signal by the aspects of its line, of the warning disc by the entry signal it tells
 	// of, of the mount of the disc chosen
-	auto const disc_mount{m_signals.signal_mount("warning", {})};
-	auto const template_of = [&](planned_signal const &Signal) {
+	std::string template_of(planned_signal const &Signal) const
+	{
 		if (Signal.kind == station::signal::role::block)
 			return block_template(heads, {}, aspects[Signal.line], Signal.wrong);
 		auto const &entry{standing[entry_standing[lines[Signal.line].entry]]};
 		auto const main{std::ranges::find_if(heads, [&entry](signal_head const &Head) { return Head.file == entry.file; })};
 		return disc_template(heads, main != heads.end() ? std::to_address(main) : nullptr, disc_mount);
-	};
-	// a template for each signal placed, before any track is cut for them
+	}
+	// a template for each signal placed, before any track is cut for them; false with the reason where one is missing
+	bool templates_ready()
 	{
+		disc_mount = tool.m_signals.signal_mount("warning", {});
 		std::vector<signal_order> wanted;
 		for (auto const &signal : planned)
 			if (signal.match < 0)
@@ -4473,20 +4473,15 @@ void srk_tool::set_lines(block_edit const *Edit)
 				wanted.back().kind = block ? "block" : "warning";
 				wanted.back().file = template_of(signal);
 			}
-		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
+		if (auto const missing{tool.m_signals.signal_templates_missing(wanted)}; false == missing.empty())
 		{
-			m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
-			return;
+			tool.m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
+			return false;
 		}
+		return true;
 	}
-	// the tracks cut where the sections meet, all of it checked before any is
-	struct cut
+	bool add_cut(station::line const &Line, double const Distance)
 	{
-		TTrack *track{nullptr};
-		glm::dvec3 point{0.0};
-	};
-	std::vector<cut> cuts;
-	auto const add_cut = [&](station::line const &Line, double const Distance) {
 		auto const at{station::point_on(Line, Distance)};
 		if (at.track == nullptr || std::ranges::any_of(cuts, [&](cut const &Cut) { return glm::distance(Cut.point, at.point) < 0.5; }))
 			return true;
@@ -4494,27 +4489,29 @@ void srk_tool::set_lines(block_edit const *Edit)
 			return true;
 		if (std::string reason; false == editor_track::can_edit_geometry(*at.track, reason))
 		{
-			m_status = format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str());
+			tool.m_status = format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str());
 			return false;
 		}
 		cuts.emplace_back(at.track, at.point);
 		return true;
-	};
-	for (auto const &found : sections)
-		if (false == add_cut(lines[found.line], found.from) || false == add_cut(lines[found.line], found.to))
-			return;
-	for (auto const &line : lines)
-		for (auto const *part : line.tracks)
-			if (std::string reason; false == scene::Layers.editable(part, &reason) && std::ranges::any_of(sections, [&](section const &Found) { return &lines[Found.line] == &line; }))
-			{
-				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
-				return;
-			}
-	std::vector<std::pair<TTrack *, editor_track::state>> before;
-	std::vector<TTrack *> created;
-	std::unordered_set<TTrack const *> captured;
-	std::unordered_map<TTrack const *, std::vector<TTrack *>> pieces; // of each track cut, itself and the pieces cut off it
-	auto const piece_at = [&](TTrack *Track, glm::dvec3 const &Point) {
+	}
+	// the tracks cut where the sections meet, all of it checked before any is; false with the reason where one can't be
+	bool cuts_checked()
+	{
+		for (auto const &found : sections)
+			if (false == add_cut(lines[found.line], found.from) || false == add_cut(lines[found.line], found.to))
+				return false;
+		for (auto const &line : lines)
+			for (auto const *part : line.tracks)
+				if (std::string reason; false == scene::Layers.editable(part, &reason) && std::ranges::any_of(sections, [&](section const &Found) { return &lines[Found.line] == &line; }))
+				{
+					tool.m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
+					return false;
+				}
+		return true;
+	}
+	TTrack *piece_at(TTrack *Track, glm::dvec3 const &Point) const
+	{
 		auto found{pieces.find(Track)};
 		if (found == pieces.end())
 			return Track;
@@ -4530,32 +4527,42 @@ void srk_tool::set_lines(block_edit const *Edit)
 			}
 		}
 		return best;
-	};
-	for (auto const &entry : cuts)
+	}
+	void split_tracks()
 	{
-		auto *track{piece_at(entry.track, entry.point)};
-		auto const parameter{editor_track::nearest_parameter(*track, entry.point)};
-		if (auto const &ends_of{track->m_paths.front().points}; std::min(glm::distance(entry.point, ends_of[segment_data::point::start]), glm::distance(entry.point, ends_of[segment_data::point::end])) <= 0.3)
-			continue;
-		if (captured.insert(track).second)
-			before.emplace_back(track, editor_track::capture(*track));
-		if (auto *piece{editor_track::split_path(*track, parameter)})
+		for (auto const &entry : cuts)
 		{
-			created.push_back(piece);
-			captured.insert(piece);
-			auto &list{pieces[entry.track]};
-			if (list.empty())
-				list.push_back(entry.track);
-			list.push_back(piece);
+			auto *track{piece_at(entry.track, entry.point)};
+			auto const parameter{editor_track::nearest_parameter(*track, entry.point)};
+			if (auto const &ends_of{track->m_paths.front().points}; std::min(glm::distance(entry.point, ends_of[segment_data::point::start]), glm::distance(entry.point, ends_of[segment_data::point::end])) <= 0.3)
+				continue;
+			if (captured.insert(track).second)
+				before.emplace_back(track, editor_track::capture(*track));
+			if (auto *piece{editor_track::split_path(*track, parameter)})
+				keep_piece(entry.track, piece);
 		}
 	}
-	// the sections named, each track by its middle
-	for (std::size_t index = 0; index < lines.size(); ++index)
+	void keep_piece(TTrack *Track, TTrack *Piece)
 	{
-		if (false == processed[index])
-			continue;
+		created.push_back(Piece);
+		captured.insert(Piece);
+		auto &list{pieces[Track]};
+		if (list.empty())
+			list.push_back(Track);
+		list.push_back(Piece);
+	}
+	// the sections named, each track by its middle
+	void name_sections()
+	{
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			if (processed[index])
+				for (auto *part : line_parts(index))
+					name_part(index, part);
+	}
+	std::vector<TTrack *> line_parts(std::size_t const Index) const
+	{
 		std::vector<TTrack *> parts;
-		for (auto *track : lines[index].tracks)
+		for (auto *track : lines[Index].tracks)
 		{
 			auto const found{pieces.find(track)};
 			if (found == pieces.end())
@@ -4563,111 +4570,127 @@ void srk_tool::set_lines(block_edit const *Edit)
 			else
 				parts.insert(parts.end(), found->second.begin(), found->second.end());
 		}
-		for (auto *part : parts)
-		{
-			double gap{0.0};
-			auto const distance{station::distance_on(lines[index], editor_track::point_at(*part, 0.5), gap)};
-			if (gap > 1.0)
-				continue;
-			auto const found{std::ranges::find_if(sections, [&](section const &Section) { return Section.line == index && distance > Section.from && distance < Section.to; })};
-			if (found == sections.end() || (part->Isolated.size() == 1 && ToLower(part->Isolated.front()->asName) == found->name))
-				continue;
-			if (captured.insert(part).second)
-				before.emplace_back(part, editor_track::capture(*part));
-			editor_track::isolated(*part, {found->name});
-		}
+		return parts;
+	}
+	void name_part(std::size_t const Index, TTrack *Part)
+	{
+		double gap{0.0};
+		auto const distance{station::distance_on(lines[Index], editor_track::point_at(*Part, 0.5), gap)};
+		if (gap > 1.0)
+			return;
+		auto const found{std::ranges::find_if(sections, [&](section const &Section) { return Section.line == Index && distance > Section.from && distance < Section.to; })};
+		if (found == sections.end() || (Part->Isolated.size() == 1 && ToLower(Part->Isolated.front()->asName) == found->name))
+			return;
+		if (captured.insert(Part).second)
+			before.emplace_back(Part, editor_track::capture(*Part));
+		editor_track::isolated(*Part, {found->name});
 	}
 	// the signals placed on the track the trains run on up to them
-	signal_changes changes;
-	std::size_t blocks{0};
-	std::size_t discs{0};
-	std::size_t swapped{0};
-	std::size_t renamed{0};
-	for (auto const &signal : planned)
+	void make_changes()
 	{
-		auto const block{signal.kind == station::signal::role::block};
-		if (signal.match >= 0)
-		{
-			auto const &found{standing[signal.match]};
-			if (auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(signal.linked)}; ToLower(found.name) != ToLower(signal.name) || relink)
-				changes.renamed.emplace_back(found.instance, signal.name, signal.plate, relink ? signal.linked : std::string{});
-			if (ToLower(found.name) != ToLower(signal.name))
-				++renamed;
-			// of the aspects of its line
-			if (auto const head{std::ranges::find_if(heads, [&](signal_head const &Head) { return Head.file == found.file; })}; block && head != heads.end() && head->aspects != 0 && (head->aspects != aspects[signal.line] || (head->lean == "right") != signal.wrong))
-				if (auto const other{block_template(heads, found.file, aspects[signal.line], signal.wrong)}; false == other.empty() && other != found.file)
-				{
-					changes.files.emplace_back(found.instance, other);
-					++swapped;
-				}
-			continue;
-		}
-		auto const &line{lines[signal.line]};
+		for (auto const &signal : planned)
+			if (signal.match >= 0)
+				change_standing(signal);
+			else
+				place_signal(signal);
+		for (auto const &[index, linked] : relinked)
+			changes.renamed.emplace_back(standing[index].instance, standing[index].name, std::string{}, linked);
+		for (std::size_t k = 0; k < standing.size(); ++k)
+			if (gone[k])
+				changes.removed.push_back(standing[k].instance);
+		removed = changes.removed.size();
+	}
+	void change_standing(planned_signal const &Signal)
+	{
+		auto const block{Signal.kind == station::signal::role::block};
+		auto const &found{standing[Signal.match]};
+		if (auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(Signal.linked)}; ToLower(found.name) != ToLower(Signal.name) || relink)
+			changes.renamed.emplace_back(found.instance, Signal.name, Signal.plate, relink ? Signal.linked : std::string{});
+		if (ToLower(found.name) != ToLower(Signal.name))
+			++renamed;
+		// of the aspects of its line
+		if (auto const head{std::ranges::find_if(heads, [&](signal_head const &Head) { return Head.file == found.file; })}; block && head != heads.end() && head->aspects != 0 && (head->aspects != aspects[Signal.line] || (head->lean == "right") != Signal.wrong))
+			if (auto const other{block_template(heads, found.file, aspects[Signal.line], Signal.wrong)}; false == other.empty() && other != found.file)
+			{
+				changes.files.emplace_back(found.instance, other);
+				++swapped;
+			}
+	}
+	void place_signal(planned_signal const &Signal)
+	{
+		auto const block{Signal.kind == station::signal::role::block};
+		auto const &line{lines[Signal.line]};
 		// its trains run in, the wrong-track ones of an outbound track too; a wrong-track one stands on the outside, on their left
-		auto const inbound{line.inbound != signal.wrong};
-		auto const at{station::point_on(line, signal.distance)};
-		auto const approach{station::point_on(line, signal.distance + (inbound ? 1.0 : -1.0))};
+		auto const inbound{line.inbound != Signal.wrong};
+		auto const at{station::point_on(line, Signal.distance)};
+		auto const approach{station::point_on(line, Signal.distance + (inbound ? 1.0 : -1.0))};
 		signal_order order;
 		order.track = piece_at(approach.track, approach.point);
 		order.point = at.point;
 		order.facing = inbound == approach.outward ? -1 : 1;
-		order.side = signal.wrong ? -order.facing : order.facing;
+		order.side = Signal.wrong ? -order.facing : order.facing;
 		order.kind = block ? "block" : "warning";
-		order.file = template_of(signal);
-		order.name = signal.name;
-		order.plate = signal.plate;
-		order.linked = signal.linked;
+		order.file = template_of(Signal);
+		order.name = Signal.name;
+		order.plate = Signal.plate;
+		order.linked = Signal.linked;
 		changes.placed.push_back(std::move(order));
 		++(block ? blocks : discs);
 	}
-	for (auto const &[index, linked] : relinked)
-		changes.renamed.emplace_back(standing[index].instance, standing[index].name, std::string{}, linked);
-	for (std::size_t k = 0; k < standing.size(); ++k)
-		if (gone[k])
-			changes.removed.push_back(standing[k].instance);
-	auto const removed{changes.removed.size()};
 	// the block signals switched by the sections they guard, the wrong-track one the 7th, or the one guard twice
-	include_info control_info;
-	std::string missing;
-	auto const controlled{editor_includes::load(kControl, control_info, missing)};
-	if (controlled)
+	void set_controls()
 	{
+		include_info control_info;
+		std::string missing;
+		controlled = editor_includes::load(kControl, control_info, missing);
+		if (false == controlled)
+			return;
 		for (auto const &found : sections)
+			control_section(found);
+		drop_controls();
+	}
+	void control_section(section const &Found)
+	{
+		auto const already{std::ranges::find_if(controls, [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == Found.name; })};
+		if (Found.guard.empty() && Found.wrong_guard.empty())
 		{
-			auto const already{std::ranges::find_if(controls, [&](standing_template const &Control) { return false == Control.values.empty() && ToLower(Control.values[0]) == found.name; })};
-			if (found.guard.empty() && found.wrong_guard.empty())
-			{
-				// guarded by station signals only, once its wrong-track signal is gone
-				if (already != controls.end())
-					changes.removed.push_back(already->instance);
-				continue;
-			}
-			std::array<std::string, 2> const guards_of{found.guard.empty() ? found.wrong_guard : found.guard, found.wrong_guard.empty() ? found.guard : found.wrong_guard};
+			// guarded by station signals only, once its wrong-track signal is gone
 			if (already != controls.end())
-			{
-				auto values{already->values};
-				values.resize(std::max<std::size_t>(values.size(), 7));
-				auto differ{false};
-				for (std::size_t k = 0; k < guards_of.size(); ++k)
-					if (ToLower(values[5 + k]) != ToLower(guards_of[k]))
-					{
-						values[5 + k] = guards_of[k];
-						differ = true;
-					}
-				if (differ)
-					changes.values.emplace_back(already->instance, std::move(values));
-				continue;
-			}
-			template_item item;
-			item.file = kControl;
-			item.location = found.start;
-			item.described = true;
-			item.values["name"] = found.name;
-			item.values["#6"] = guards_of[0];
-			item.values["#7"] = guards_of[1];
-			changes.others.push_back(std::move(item));
+				changes.removed.push_back(already->instance);
+			return;
 		}
-		// those of the sections gone from the lines set taken away with them
+		std::array<std::string, 2> const guards_of{Found.guard.empty() ? Found.wrong_guard : Found.guard, Found.wrong_guard.empty() ? Found.guard : Found.wrong_guard};
+		if (already != controls.end())
+		{
+			change_guards(*already, guards_of);
+			return;
+		}
+		template_item item;
+		item.file = kControl;
+		item.location = Found.start;
+		item.described = true;
+		item.values["name"] = Found.name;
+		item.values["#6"] = guards_of[0];
+		item.values["#7"] = guards_of[1];
+		changes.others.push_back(std::move(item));
+	}
+	void change_guards(standing_template const &Control, std::array<std::string, 2> const &Guards)
+	{
+		auto values{Control.values};
+		values.resize(std::max<std::size_t>(values.size(), 7));
+		auto differ{false};
+		for (std::size_t k = 0; k < Guards.size(); ++k)
+			if (ToLower(values[5 + k]) != ToLower(Guards[k]))
+			{
+				values[5 + k] = Guards[k];
+				differ = true;
+			}
+		if (differ)
+			changes.values.emplace_back(Control.instance, std::move(values));
+	}
+	// those of the sections gone from the lines set taken away with them
+	void drop_controls()
+	{
 		std::unordered_set<std::string, string_hash, std::equal_to<>> named;
 		for (auto const &found : sections)
 			named.insert(found.name);
@@ -4675,40 +4698,67 @@ void srk_tool::set_lines(block_edit const *Edit)
 		{
 			if (standing_control.values.empty() || named.contains(ToLower(standing_control.values[0])))
 				continue;
-			for (std::size_t index = 0; index < lines.size(); ++index)
-			{
-				double gap{0.0};
-				auto const distance{station::distance_on(lines[index], standing_control.location, gap)};
-				if (processed[index] && automatic[index] != 2 && gap < 4.5 && distance > 0.0 && distance < lines[index].length())
-				{
-					changes.removed.push_back(standing_control.instance);
-					break;
-				}
-			}
+			if (control_on_lines(standing_control))
+				changes.removed.push_back(standing_control.instance);
 		}
 	}
-	if (changes.placed.empty() && changes.renamed.empty() && changes.others.empty() && changes.values.empty() && changes.files.empty() && changes.removed.empty() && before.empty() && created.empty())
+	bool control_on_lines(standing_template const &Control) const
 	{
-		m_status = STR_C("The lines are set already");
-		return;
+		for (std::size_t index = 0; index < lines.size(); ++index)
+		{
+			double gap{0.0};
+			if (auto const distance{station::distance_on(lines[index], Control.location, gap)}; processed[index] && automatic[index] != 2 && gap < 4.5 && distance > 0.0 && distance < lines[index].length())
+				return true;
+		}
+		return false;
 	}
-	std::string error;
-	auto const touched{false == before.empty() || false == created.empty()};
-	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
-	if (false == error.empty())
+	void finish()
 	{
-		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
-		return;
+		if (changes.placed.empty() && changes.renamed.empty() && changes.others.empty() && changes.values.empty() && changes.files.empty() && changes.removed.empty() && before.empty() && created.empty())
+		{
+			tool.m_status = STR_C("The lines are set already");
+			return;
+		}
+		std::string error;
+		auto const touched{false == before.empty() || false == created.empty()};
+		tool.m_signals.signal_batch(changes, std::move(before), std::move(created), error);
+		if (false == error.empty())
+		{
+			tool.m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
+			return;
+		}
+		tool.m_status = format(STR_P("%zu block signal placed", "%zu block signals placed", blocks), blocks) + ", " + format(STR_P("%zu warning disc", "%zu warning discs", discs), discs) + ", " +
+						format(STR_P("%zu renamed", "%zu renamed", renamed), renamed) + ", " + format(STR_P("%zu block section", "%zu block sections", sections.size()), sections.size());
+		if (removed > 0)
+			tool.m_status += ", " + format(STR_P("%zu signal taken away", "%zu signals taken away", removed), removed);
+		if (swapped > 0)
+			tool.m_status += ", " + format(STR_P("%zu given the template of the aspects of its line", "%zu given the templates of the aspects of their lines", swapped), swapped);
+		tool.m_status += ". " + STR("Ctrl+Z takes it back");
+		if (false == controlled && std::ranges::any_of(sections, [](section const &Found) { return false == Found.guard.empty(); }))
+			tool.m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
 	}
-	m_status = format(STR_P("%zu block signal placed", "%zu block signals placed", blocks), blocks) + ", " + format(STR_P("%zu warning disc", "%zu warning discs", discs), discs) + ", " +
-	           format(STR_P("%zu renamed", "%zu renamed", renamed), renamed) + ", " + format(STR_P("%zu block section", "%zu block sections", sections.size()), sections.size());
-	if (removed > 0)
-		m_status += ", " + format(STR_P("%zu signal taken away", "%zu signals taken away", removed), removed);
-	if (swapped > 0)
-		m_status += ", " + format(STR_P("%zu given the template of the aspects of its line", "%zu given the templates of the aspects of their lines", swapped), swapped);
-	m_status += ". " + STR("Ctrl+Z takes it back");
-	if (false == controlled && std::ranges::any_of(sections, [](section const &Found) { return false == Found.guard.empty(); }))
-		m_status += "\n" + format(STR_C("%s isn't in the scenery folder: the block signals won't change their lights"), kControl);
+};
+
+void srk_tool::set_lines(block_edit const *Edit)
+{
+	m_status.clear();
+	lines_change work{*this, Edit};
+	if (false == work.gather())
+		return;
+	work.classify();
+	if (false == work.target() || false == work.km_known())
+		return;
+	work.plan_lines();
+	work.match_standing();
+	work.name_letters();
+	work.build_sections();
+	if (false == work.templates_ready() || false == work.cuts_checked())
+		return;
+	work.split_tracks();
+	work.name_sections();
+	work.make_changes();
+	work.set_controls();
+	work.finish();
 }
 
 namespace
