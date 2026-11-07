@@ -1131,6 +1131,7 @@ class TSecuritySystem
 	bool is_sifa = false; // Sifa-like pedal device, with inverted input for convenient keyboard usage
 	bool separate_acknowledge = false; // cabsignal reset button is separate from vigilance
 	bool cabsignal_lock = false;
+	bool vigilance_suspended = false; // the vigilance device switched off by the vehicle, as by the SM42's shunt mode
 
 	double vigilance_timer = 0.0;
 	double alert_timer = 0.0;
@@ -1155,6 +1156,7 @@ class TSecuritySystem
 	void update(double dt, double Vel, bool pwr, int cab);
 	void set_cabsignal();
 	void set_cabsignal_lock(bool);
+	void set_vigilance_suspended(bool Suspended);
 	bool is_blinking() const;
 	bool is_vigilance_blinking() const;
 	bool is_cabsignal_blinking() const;

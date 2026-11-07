@@ -152,11 +152,22 @@ void TSecuritySystem::update(double dt, double vel, bool pwr, int cab)
 	velocity = vel;
 	cabactive = cab;
 
-	if (vigilance_enabled && velocity > AwareMinSpeed)
-		vigilance_timer += dt;
+	if (vigilance_suspended)
+	{
+		// the vigilance device is switched off: neither the alerter nor the button held too long, its alarm gone with it
+		vigilance_timer = 0.0;
+		press_timer = 0.0;
+		if (!cabsignal_active)
+			alert_timer = 0.0;
+	}
+	else
+	{
+		if (vigilance_enabled && velocity > AwareMinSpeed)
+			vigilance_timer += dt;
 
-	if (pressed && (!is_sifa || velocity > AwareMinSpeed))
-		press_timer += dt;
+		if (pressed && (!is_sifa || velocity > AwareMinSpeed))
+			press_timer += dt;
+	}
 
 	if (vigilance_timer > AwareDelay || press_timer > MaxHoldTime || cabsignal_active)
 		alert_timer += dt;
@@ -229,6 +240,11 @@ bool TSecuritySystem::radiostop_available() const
 void TSecuritySystem::set_cabsignal_lock(bool v)
 {
 	cabsignal_lock = v;
+}
+
+void TSecuritySystem::set_vigilance_suspended(bool const Suspended)
+{
+	vigilance_suspended = Suspended;
 }
 
 bool TSecuritySystem::is_engine_blocked() const
@@ -3142,6 +3158,8 @@ void TMoverParameters::SecuritySystemReset(void) // zbijanie czuwaka/SHP
 void TMoverParameters::SecuritySystemCheck(double dt)
 {
 	bool isPower = Power24vIsAvailable || Power110vIsAvailable;
+	// the shunt mode of the SM42/SP42 switches their vigilance device (CA) off (eu07/maszyna#457)
+	SecuritySystem.set_vigilance_suspended(EngineType == TEngineType::DieselElectric && ShuntMode);
 	SecuritySystem.update(dt, Vel, isPower, CabActive);
 
 	if (!Battery || !Radio)

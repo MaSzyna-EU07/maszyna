@@ -227,3 +227,38 @@ TEST_CASE("cab: the lamps and the buzzer of the security system left unattended"
 	CHECK(security.radiostop_available());
 	scenario.check();
 }
+
+TEST_CASE("cab: the SM42's vigilance device switched off in the shunt mode") {
+	// eu07/maszyna#457: the shunt mode of the SM42 switches its vigilance device (CA) off, it alerts again
+	// once the shunt mode is off
+	scenario scenario{"cab/sm42 vigilance in shunt mode", motion() + brakes(), test::track{}};
+	scenario.add("sm42_v1/6d1", 1);
+	REQUIRE(scenario.start_up());
+	auto &sm42{scenario.cab()};
+	auto const &security{sm42.SecuritySystem};
+	REQUIRE(sm42.CurrentSwitch(true));
+	REQUIRE(sm42.ShuntMode);
+	scenario.get_going();
+	sm42.AnPos = 0.3;
+	sm42.IncMainCtrl(1);
+	scenario.act("unattended in shunt mode");
+	bool blinked{false};
+	for (int i = 0; i < 120; ++i) {
+		scenario.train().run(1.0, scenario.line());
+		blinked |= security.is_blinking();
+	}
+	CHECK(sm42.Vel > 1.0);
+	CHECK_FALSE(blinked);
+	CHECK(sm42.PipePress > 3.5);
+	scenario.act("shunt mode off");
+	scenario.notch_back(0);
+	REQUIRE(sm42.CurrentSwitch(false));
+	sm42.IncMainCtrl(1);
+	scenario.act("unattended");
+	for (int i = 0; i < 120; ++i) {
+		scenario.train().run(1.0, scenario.line());
+		blinked |= security.is_vigilance_blinking();
+	}
+	CHECK(blinked);
+	scenario.check();
+}
