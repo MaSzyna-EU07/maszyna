@@ -80,9 +80,9 @@ void CSkyDome::Generate() {
             float const x = std::cos( longitude );
             float const y = std::sin( longitude );
 /*
-            m_vertices.emplace_back( float3( x * zr, y * zr - offset, z ) * radius );
+            m_vertices.emplace_back( glm::vec3( x * zr, y * zr - offset, z ) * radius );
             // we aren't using normals, but the code is left here in case it's ever needed
-//            m_normals.emplace_back( float3( x * zr, -y * zr, -z ) );
+//            m_normals.emplace_back( glm::vec3( x * zr, -y * zr, -z ) );
 */
             // cartesian to opengl swap: -x, -z, -y
             m_vertices.emplace_back( glm::vec3( -x * zr, -z - offset, -y * zr ) * radius );

@@ -19,3 +19,25 @@ template <typename T> inline glm::vec<3, T> RotateY(const glm::vec<3, T> &v, T a
 
 	return glm::vec<3, T>(c * v.x + s * v.z, v.y, c * v.z - s * v.x);
 }
+
+inline glm::quat SafeNormalize(const glm::quat &q)
+{
+	const float len2 = glm::dot(q, q);
+
+	if (len2 == 0.0f)
+		return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+	return glm::normalize(q);
+}
+
+inline void InitialRotateMatrix(glm::mat4 &matrix)
+{
+	for (int i = 0; i < 4; ++i)
+	{
+		matrix[i][0] = -matrix[i][0]; // zmiana znaku X
+
+		const float f = matrix[i][1];
+		matrix[i][1] = matrix[i][2];
+		matrix[i][2] = f; // zamiana Y i Z
+	}
+}

@@ -11,7 +11,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "vehicle/Camera.h"
-#include "utilities/Float3d.h"
 #include "rendering/light.h"
 #include "utilities/utilities.h"
 #include "utilities/motiontelemetry.h"
