@@ -6,6 +6,7 @@
 
 // the line contactors interlocked with the fans of the traction motors (eu07/maszyna#460): on the ET42 the fans of a
 // section run off its own converter, and with them switched off the line contactors of that section don't close.
+// the louvres of the fans of the ET22 open with the air of the main reservoir (eu07/maszyna#451)
 
 using test::definition;
 using test::vehicle;
@@ -107,4 +108,19 @@ TEST_CASE("line contactors interlock: the ET42 section with its fans switched of
 	test::drive(driven, line, 2.0);
 	CHECK_FALSE(rear.StLinFlag);
 	CHECK(front.StLinFlag);
+}
+
+TEST_CASE("louvres: closed until the main reservoir reaches the pressure that opens them") {
+	vehicle et22{definition::fiz("et22_v3/201e-w")};
+	CHECK(et22->LouvresOpenPressure == doctest::Approx(5.0)); // by default
+	et22->Compressor = 4.9;
+	CHECK(et22->LouvresClosed());
+	et22->Compressor = 5.0;
+	CHECK_FALSE(et22->LouvresClosed());
+
+	vehicle given{definition::fiz("et22_v3/201e-w").set("Cntrl", "LouvresOpenPressure", 4.0)};
+	given->Compressor = 4.5;
+	CHECK_FALSE(given->LouvresClosed());
+	given->Compressor = 3.9;
+	CHECK(given->LouvresClosed());
 }

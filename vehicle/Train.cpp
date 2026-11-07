@@ -9112,6 +9112,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaEngineOverheat.Turn(mvControlled->dizel_heat.engine_is_hot);
 		btLampkaMotorBlowers.Turn(mvControlled->MotorBlowers[end::front].is_active && mvControlled->MotorBlowers[end::rear].is_active);
 		btLampkaCoolingFans.Turn(mvControlled->RventRot > 1.0);
+		btLampkaLouvresClosed.Turn(mvControlled->LouvresClosed());
 		btLampkaTempomat.Turn(mvOccupied->SpeedCtrlUnit.IsActive);
 		btLampkaDistanceCounter.Turn(m_distancecounter >= 0.f);
 		// universal devices state indicators
@@ -9198,6 +9199,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaMalfunction.Turn(false);
 		btLampkaMotorBlowers.Turn(false);
 		btLampkaCoolingFans.Turn(false);
+		btLampkaLouvresClosed.Turn(false);
 		btLampkaTempomat.Turn(false);
 		btLampkaDistanceCounter.Turn(false);
 		// universal devices state indicators
@@ -11213,6 +11215,7 @@ void TTrain::clear_cab_controls()
 	btLampkaMalfunctionB.Clear();
 	btLampkaMotorBlowers.Clear();
 	btLampkaCoolingFans.Clear();
+	btLampkaLouvresClosed.Clear();
 	btLampkaTempomat.Clear();
 	btLampkaDistanceCounter.Clear();
 
@@ -11577,6 +11580,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-vent_trim:", btLampkaWentZaluzje},
 	    {"i-motorblowers:", btLampkaMotorBlowers},
 	    {"i-coolingfans:", btLampkaCoolingFans},
+	    {"i-louvresclosed:", btLampkaLouvresClosed},
 	    {"i-tempomat:", btLampkaTempomat},
 	    {"i-distancecounter:", btLampkaDistanceCounter},
 	    {"i-trainheating:", btLampkaOgrzewanieSkladu},

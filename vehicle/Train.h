@@ -815,6 +815,7 @@ public: // reszta może by?publiczna
     TButton btLampkaMalfunctionB;
     TButton btLampkaMotorBlowers;
     TButton btLampkaCoolingFans;
+    TButton btLampkaLouvresClosed; // ET22, the pneumatic louvres of the motor fans not open yet
     TButton btLampkaTempomat;
     TButton btLampkaDistanceCounter;
 

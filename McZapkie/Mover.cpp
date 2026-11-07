@@ -11022,6 +11022,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = interlocks.find(extract_value("LineContactorsInterlock", line));
 		LineContactorsInterlock = lookup != interlocks.end() ? lookup->second : line_contactors_interlock::none;
 	}
+	extract_value(LouvresOpenPressure, "LouvresOpenPressure", line, "");
 	// compartment lights
 	{
 		auto lookup = starts.find(extract_value("CompartmentLightsStart", line));

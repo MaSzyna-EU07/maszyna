@@ -2163,6 +2163,7 @@ class TMoverParameters
 	bool StLinFlag = false; /*!o styczniki liniowe*/
 	bool StLinSwitchOff{false}; // state of the button forcing motor connectors open
 	line_contactors_interlock LineContactorsInterlock{line_contactors_interlock::none}; // what else the line contactors need to close
+	double LouvresOpenPressure{5.0}; // main reservoir pressure [bar] at which the pneumatic louvres of the motor fans open (ET22)
 	bool ResistorsFlag = false; /*!o jazda rezystorowa*/
 	double RventRot = 0.0; /*!s obroty wentylatorow rozruchowych*/
 	double PantographVoltage{0.0}; // voltage supplied to pantographs
@@ -2476,6 +2477,11 @@ class TMoverParameters
 	bool LineContactorsLampLit() const
 	{
 		return false == StLinFlag && MainCircuitLampsEnabled();
+	}
+	// whether the pneumatic louvres of the motor fans are still closed, the main reservoir short of the pressure that opens them
+	bool LouvresClosed() const
+	{
+		return Compressor < LouvresOpenPressure;
 	}
 	// whether the devices the line contactors are interlocked with (LineContactorsInterlock) let them close
 	bool LineContactorsInterlockReleased() const;
