@@ -156,7 +156,7 @@ std::vector<TTrack *> cluster_of(TTrack *First, Movable const &Moves)
 
 editor_mode::gizmo_operation editor_mode::track_gizmo_operation(TTrack const &Track, bool const Pointmode) const
 {
-	using enum gizmo_operation;
+	using enum rail_state::gizmo_operation;
 	if (m_gizmo_op == translate || (Pointmode && false == editor_track::is_end(m_track_point.kind)))
 		return m_gizmo_op;
 	if (m_gizmo_op == rotate)
@@ -735,7 +735,7 @@ void editor_mode::track_gizmo_moved_point(TTrack &Track, glm::dvec3 const &Posit
 
 void editor_mode::render_track_gizmo()
 {
-	using enum editor_mode::gizmo_operation;
+	using enum rail_state::gizmo_operation;
 	auto *track = selected_track();
 	if (track == nullptr || false == editable(*track))
 	{
