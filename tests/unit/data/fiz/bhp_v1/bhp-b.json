@@ -1,0 +1,15 @@
+{
+  "_source": "pkp/bhp_v1/bhp-b.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "36000", "Vmax": "120", "HeatingP": "37.5", "LightP": "0.56"},
+  "Load": {"LoadAccepted": "Passengers,Luggage", "MaxLoad": "110", "LoadQ": "pieces", "OverLoadFactor": "2", "LoadSpeed": "3", "UnLoadSpeed": "4"},
+  "Dimensions": {"L": "19.75", "H": "4.750", "W": "2.720", "Cx": "0.4"},
+  "Wheels": {"D": "0.94", "AIM": "300", "Tw": "1.435", "Axle": "2'3'", "Ad": "3.0", "Bd": "17", "Rmin": "80", "BearingType": "Roll"},
+  "BuffCoupl1": {"CType": "Articulated", "AllowedFlag": "83", "PowerFlag": "256"},
+  "BuffCoupl2": {"CType": "Screw", "kB": "9200", "DmaxB": "0.11", "FmaxB": "320", "kC": "4500", "DmaxC": "0.1", "FmaxC": "850", "beta": "0.58", "AllowedFlag": "67"},
+  "Brake": {"BrakeValve": "ESt3AL2", "Size": "100", "MBF": "144", "MaxBP": "3.8", "TareMaxBP": "2.5", "BCN": "2", "BCR": "0.1403", "BCD": "0.14", "BCM": "10.38", "NBpA": "4", "BM": "P10-Bgu", "BCS": "2.7", "BSA": "5.00", "BVV": "100", "BRE": "0.85"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "LocalBrake": "ManualBrake", "BrakeDelays": "P", "MaxBPMass": "55", "rows": []},
+  "Doors": {"OpenCtrl": "Passenger", "CloseCtrl": "Mixed", "OpenSpeed": "0.55", "CloseSpeed": "0.75", "DoorMaxShiftL": "0.65", "DoorMaxShiftR": "0.65", "DoorOpenMethod": "Shift"},
+  "Clima": {"Heating": "PowerCable", "HPowerTrans": "ElectricPower", "HMaxVoltage": "3000", "AlterHeating": "PowerCable", "AlterHPowerTrans": "SteamPower", "AlterHSteamPress": "0.45"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "WheelsDriven", "LMaxVoltage": "24", "AlterLight": "Accu", "AlterLMaxVoltage": "24", "AlterLCap": "375", "AlterLRS": "Generator"}
+}

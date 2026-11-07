@@ -474,6 +474,9 @@ std::unordered_map<std::string, vr_openvr::button_bindings> vr_openvr::m_buttonb
     { "oilpump_sw:", {
         user_command::oilpumptoggle,
         user_command::none } },
+    { "oilfuelpump_sw:", {
+        user_command::oilfuelpumptoggle,
+        user_command::none } },
     { "motorblowersfront_sw:", {
         user_command::motorblowerstogglefront,
         user_command::none } },

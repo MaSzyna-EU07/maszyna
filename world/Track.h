@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "world/Segment.h"
+#include "world/TrackUneven.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
 #include "utilities/Names.h"
@@ -187,6 +188,7 @@ public:
 
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
+    bool m_tributary { false }; // loaded as a tributary: a river of its first path, the second one kept to be written back
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
     std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;
@@ -238,6 +240,7 @@ public:
     TEnvironmentType eEnvironment = e_flat; // dźwięk i oświetlenie
     int iAction = 0; // czy modyfikowany eventami (specjalna obsługa przy skanowaniu)
     float fOverhead = -1.0; // można normalnie pobierać prąd (0 dla jazdy bezprądowej po danym odcinku, >0-z opuszczonym i ograniczeniem prędkości)
+    track_uneven::attribute m_uneven; // plain tracks and switches
 private:
     double fVelocity = -1.0; // ograniczenie prędkości // prędkość dla AI (powyżej rośnie prawdopowobieństwo wykolejenia)
 public:
@@ -339,6 +342,29 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
+    // a switch has two paths, any other track the one
+    int path_count() const;
+    TSegment *path_segment( int const Path ) const;
+    TTrack *path_neighbour( int const Path, int const End ) const;
+    // the unevenness the track declares, on a path of a switch
+    track_uneven::amounts uneven_declared( int const Path = 0 ) const;
+    bool is_uneven() const;
+    // the unevenness along what the vehicles take now: the path set on a switch, with what the switches joined and the tracks by them allow
+    track_uneven::amounts uneven_underway();
+    // the unevenness at a distance along a path, meeting the tracks joined at its ends
+    track_uneven::amounts uneven_at( double const Distance, int const Path = 0 );
+    // how much of the displacement a point of the profile at the depth takes
+    double uneven_bed_share( double const Depth ) const;
+    // closes the gaps and steps of cant between the ends of joined paths
+    void share_joints();
+    double joint_depth() const; // mm
+    double joint_dip( double const Distance ); // m
+    // distance from the rail joint behind; negative: the track has no joints that dip
+    double rail_phase( double const Distance );
+    // whether the rail joints are elsewhere than the geometry of the track has them
+    bool rail_joints_moved();
+    // the uneven tracks whose values go by the switches among the given: all the switches joined to those, and the tracks they meet
+    static std::vector<TTrack *> switch_followers( std::vector<TTrack *> const &Tracks );
     void ConnectionsLog();
     bool DoubleSlip() const;
     static void fetch_default_profiles();
@@ -357,6 +383,8 @@ private:
     void deserialize_( std::istream &Input );
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
     void export_as_text_( std::ostream &Output ) const;
+    // the keyword the track is written with, by its type and for a plain one by what runs on it
+    char const *type_keyword() const;
     // locates specified profile in the profile database, potentially loading it from a file
     static std::pair<std::string, int> fetch_track_rail_profile( std::string const &Profile );
     // loads content of specified file and converts it into a vertex array
@@ -370,6 +398,33 @@ private:
     void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
+    // rail joints run on across joined tracks, however the line is cut into them, so the clatter keeps its rhythm
+    struct rail_run {
+        double origin { 0.0 }; // position along the run of Point1
+        double way { 1.0 }; // direction of the path along the run
+        int stamp { -1 };
+    };
+    void settle_rail_run();
+    rail_run m_railrun;
+    rail_run m_drawnrun; // as the geometry has it; stamp -1: it has no joints that dip
+    // the value along each path of a switch: the lowest of that path in the switches joined, 0 next to a track with none.
+    // And at the ends of the paths, by what meets there: the other path at the common end, the path of a switch joined
+    struct switch_stray {
+        std::array<track_uneven::amounts, 2> paths;
+        std::array<std::array<track_uneven::amounts, 2>, 2> ends;
+        int stamp { -1 };
+    };
+    switch_stray m_switchstray;
+    switch_stray const &switch_uneven();
+    void settle_switch_stray();
+    void settle_switch_ends();
+    // the lowest value of the paths ending at the point
+    track_uneven::amounts switch_paths_at( glm::dvec3 const &Point ) const;
+    // what a plain track comes to at its end, where it meets the other one
+    track_uneven::amounts uneven_met( TTrack *Other, glm::dvec3 const &Point ) const;
+    // the value of a switch where a track joined to it meets it
+    track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point );
+    static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above. Once per change: a run is walked again after each
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
     /// <summary>
