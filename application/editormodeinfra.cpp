@@ -1185,132 +1185,193 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 	m_infra_buffer.push_back(infra_state_of(Binding));
 }
 
+namespace
+{
+
+// the point object of the include, of the group it falls in and with the path which reads it: the signals and the warning discs, the
+// SHP resonators, the controls of the block sections, the signs and the posts; false where it's none of them. Signal_of: the template
+// of a signal of a file, none for another one
+template <typename Object, typename Signals, typename Classes>
+bool point_object_at(scene::instance_handle const Handle, reader_map const &Readers, Signals const &Signal_of, Classes const &Rules, Object &Result)
+{
+	include_place place;
+	if (false == include_place_of(Handle, place) || place.values.empty() || false == scene::Layers.removable(Handle))
+		return false;
+	Result.include = Handle;
+	Result.location = include_location(place);
+	auto const file{ToLower(place.file)};
+	auto const *signal{Signal_of(place.file)};
+	std::string read;
+	bool skipped{false};
+	if (signal != nullptr)
+	{
+		Result.group = infra::category::signal;
+		read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
+	}
+	else if (file == kResonatorFile)
+	{
+		Result.group = infra::category::equipment;
+		read = place.values.front() + "_shp";
+	}
+	else if (file == kControlFile)
+		Result.group = infra::category::logic;
+	else
+	{
+		auto const named{infra::category_named(place.category)};
+		Result.group = named.has_value() ? *named : infra::classify(place.file + ' ' + place.description, Rules);
+		skipped = Result.group != infra::category::signal && Result.group != infra::category::sign;
+	}
+	if (skipped)
+		return false;
+	if (auto const reader{read.empty() ? Readers.end() : Readers.find(ToLower(read))}; reader != Readers.end())
+		Result.reader = reader->second;
+	return true;
+}
+
+// the objects no path reads by the cells of the plan they lie in
+using adopt_cell = std::pair<long long, long long>;
+using adopt_cells = std::map<adopt_cell, std::vector<std::size_t>>;
+
+long long adopt_cell_key(double const Value)
+{
+	auto constexpr cell{200.0};
+	return static_cast<long long>(std::floor(Value / cell));
+}
+
+// the path taken for the nearest of the objects of the cell of the plan it's nearer than the path before
+template <typename Object>
+void adopt_in_cell(TTrack &Path, track_area const &Area, std::vector<std::size_t> const &In, std::vector<Object> &Objects, std::vector<double> &Nearest)
+{
+	for (auto const i : In)
+	{
+		auto &object{Objects[i]};
+		if (plan_distance(object.location, Area.centre) > Area.radius + Nearest[i])
+			continue;
+		infra::station station;
+		bool interior;
+		auto const distance{infra::project(Path, object.location, station, interior)};
+		if (distance < Nearest[i] && beside(station, object.location, interior))
+		{
+			Nearest[i] = distance;
+			object.nearest = &Path;
+		}
+	}
+}
+
+// the same for the cells within reach of the path
+template <typename Object>
+void adopt_around(TTrack &Path, adopt_cells const &Cells, std::vector<Object> &Objects, std::vector<double> &Nearest)
+{
+	auto const area{area_of(Path)};
+	auto const reach{area.radius + kAdoptReach};
+	for (auto x = adopt_cell_key(area.centre.x - reach); x <= adopt_cell_key(area.centre.x + reach); ++x)
+		for (auto z = adopt_cell_key(area.centre.z - reach); z <= adopt_cell_key(area.centre.z + reach); ++z)
+			if (auto const found{Cells.find({x, z})}; found != Cells.end())
+				adopt_in_cell(Path, area, found->second, Objects, Nearest);
+}
+
+// the path nearest to each object no path reads, the objects by cells of the plan
+template <typename Object>
+void adopt_nearest(std::vector<Object> &Objects)
+{
+	adopt_cells cells;
+	for (std::size_t i = 0; i < Objects.size(); ++i)
+		if (Objects[i].reader == nullptr)
+			cells[{adopt_cell_key(Objects[i].location.x), adopt_cell_key(Objects[i].location.z)}].push_back(i);
+	std::vector nearest(Objects.size(), kAdoptReach);
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (cells.empty() || track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
+			continue;
+		adopt_around(*track, cells, Objects, nearest);
+	}
+}
+
+// the rules for the names of the files, each one edited in place, the default ones taken back by a button
+void render_name_rules(std::vector<infra::rule> &Rules)
+{
+	ImGui::TextDisabled("%s", STR_C("Parts of the names, separated by spaces; the first rule which matches decides"));
+	for (std::size_t i = 0; i < Rules.size(); ++i)
+	{
+		auto &rule{Rules[i]};
+		char buffer[512];
+		std::snprintf(buffer, sizeof(buffer), "%s", rule.keywords.c_str());
+		ImGui::SetNextItemWidth(360.f);
+		if (ImGui::InputText(std::format("{}##rule{}", STR_C(infra::name(rule.group)), i).c_str(), buffer, sizeof(buffer)))
+			rule.keywords = buffer;
+	}
+	if (ImGui::SmallButton(STR_C("Default rules")))
+		Rules = infra::default_rules();
+	ImGui::TextDisabled("%s", STR_C("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
+	                                "traction is always the catenary, memory cells and event launchers the logic"));
+}
+
+} // namespace
+
+void editor_mode::point_objects_gather()
+{
+	m_point_objects.clear();
+	reader_map readers;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			add_readers(readers, *track);
+	static auto const rules{infra::default_rules()};
+	auto const signal_of = [this](std::string const &File) { return signal_template_of(File); };
+	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+		if (point_object object; point_object_at(handle, readers, signal_of, rules, object))
+			m_point_objects.push_back(std::move(object));
+	adopt_nearest(m_point_objects);
+}
+
+// the object taken by the track: of the line of the track, read by it or by a path of its run, else nearest to it; not one of the
+// track alongside
+void editor_mode::infra_adopt_object(TTrack &Track, point_object const &Object)
+{
+	infra::binding binding;
+	binding.type = infra::kind::include;
+	binding.include = Object.include;
+	if (infra_find(binding) != nullptr)
+		return;
+	if (Object.reader != nullptr && Object.reader != &Track)
+	{
+		auto const spans{editor_track::run_route(*Object.reader, 250.0).spans};
+		if (std::ranges::none_of(spans, [&](auto const &Span) { return Span.track == &Track; }))
+			return;
+	}
+	if (Object.reader == nullptr && Object.nearest != &Track)
+		return;
+	infra::station station;
+	if (bool interior; infra::project(Track, Object.location, station, interior) > kAdoptReach || false == beside(station, Object.location, interior))
+		return;
+	std::vector<glm::dvec3> points;
+	std::optional<double> yaw;
+	if (false == object_points(binding, points, yaw) || points.empty())
+		return;
+	binding.group = Object.group;
+	binding.anchors.push_back(infra::make_anchor(station, points.front()));
+	binding.turns = yaw.has_value() && Object.group != infra::category::logic;
+	if (binding.turns)
+		binding.yaw = turn_of(binding, *yaw);
+	binding.label = object_label(binding);
+	binding.adopted = true;
+	binding.measured = points.front();
+	m_bindings.push_back(std::move(binding));
+}
+
 void editor_mode::infra_adopt(TTrack &Track)
 {
 	if (auto const revision{history_revision()}; revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
 	{
 		m_point_objects_revision = revision;
 		m_point_objects_count = scene::Layers.instance_count();
-		m_point_objects.clear();
-		reader_map readers;
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && false == track->m_editorremoved)
-				add_readers(readers, *track);
-		static auto const rules{infra::default_rules()};
-		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
-		{
-			include_place place;
-			if (false == include_place_of(handle, place) || place.values.empty() || false == scene::Layers.removable(handle))
-				continue;
-			point_object object;
-			object.include = handle;
-			object.location = include_location(place);
-			auto const file{ToLower(place.file)};
-			auto const *signal{signal_template_of(place.file)};
-			std::string read;
-			bool skipped{false};
-			if (signal != nullptr)
-			{
-				object.group = infra::category::signal;
-				read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
-			}
-			else if (file == kResonatorFile)
-			{
-				object.group = infra::category::equipment;
-				read = place.values.front() + "_shp";
-			}
-			else if (file == kControlFile)
-				object.group = infra::category::logic;
-			else
-			{
-				auto const named{infra::category_named(place.category)};
-				object.group = named.has_value() ? *named : infra::classify(place.file + ' ' + place.description, rules);
-				skipped = object.group != infra::category::signal && object.group != infra::category::sign;
-			}
-			if (skipped)
-				continue;
-			if (auto const reader{read.empty() ? readers.end() : readers.find(ToLower(read))}; reader != readers.end())
-				object.reader = reader->second;
-			m_point_objects.push_back(std::move(object));
-		}
-		// the path nearest to each one no path reads, the objects by cells of the plan
-		auto constexpr cell{200.0};
-		auto const key = [&](double const Value) { return static_cast<long long>(std::floor(Value / cell)); };
-		std::map<std::pair<long long, long long>, std::vector<std::size_t>> cells;
-		for (std::size_t i = 0; i < m_point_objects.size(); ++i)
-			if (m_point_objects[i].reader == nullptr)
-				cells[{key(m_point_objects[i].location.x), key(m_point_objects[i].location.z)}].push_back(i);
-		std::vector nearest(m_point_objects.size(), kAdoptReach);
-		// the path taken for the nearest of the objects of the cell of the plan it's nearer than the path before
-		auto const adopt_cell = [&](TTrack &Path, track_area const &Area, std::pair<long long, long long> const &Cell) {
-			auto const found{cells.find(Cell)};
-			if (found == cells.end())
-				return;
-			for (auto const i : found->second)
-			{
-				auto &object{m_point_objects[i]};
-				if (plan_distance(object.location, Area.centre) > Area.radius + nearest[i])
-					continue;
-				infra::station station;
-				bool interior;
-				auto const distance{infra::project(Path, object.location, station, interior)};
-				if (distance < nearest[i] && beside(station, object.location, interior))
-				{
-					nearest[i] = distance;
-					object.nearest = &Path;
-				}
-			}
-		};
-		// the same for the cells within reach of the path
-		auto const adopt_around = [&](TTrack &Path) {
-			auto const area{area_of(Path)};
-			auto const reach{area.radius + kAdoptReach};
-			for (auto x = key(area.centre.x - reach); x <= key(area.centre.x + reach); ++x)
-				for (auto z = key(area.centre.z - reach); z <= key(area.centre.z + reach); ++z)
-					adopt_cell(Path, area, {x, z});
-		};
-		for (auto *track : simulation::Paths.sequence())
-		{
-			if (cells.empty() || track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
-				continue;
-			adopt_around(*track);
-		}
+		point_objects_gather();
 	}
 	auto const area{area_of(Track)};
 	for (auto const &object : m_point_objects)
 	{
 		if (plan_distance(object.location, area.centre) > area.radius + kAdoptReach)
 			continue;
-		infra::binding binding;
-		binding.type = infra::kind::include;
-		binding.include = object.include;
-		if (infra_find(binding) != nullptr)
-			continue;
-		// of the line of the track: read by it or by a path of its run, else nearest to it; not one of the track alongside
-		if (object.reader != nullptr && object.reader != &Track)
-		{
-			auto const spans{editor_track::run_route(*object.reader, 250.0).spans};
-			if (std::ranges::none_of(spans, [&](auto const &Span) { return Span.track == &Track; }))
-				continue;
-		}
-		if (object.reader == nullptr && object.nearest != &Track)
-			continue;
-		infra::station station;
-		if (bool interior; infra::project(Track, object.location, station, interior) > kAdoptReach || false == beside(station, object.location, interior))
-			continue;
-		std::vector<glm::dvec3> points;
-		std::optional<double> yaw;
-		if (false == object_points(binding, points, yaw) || points.empty())
-			continue;
-		binding.group = object.group;
-		binding.anchors.push_back(infra::make_anchor(station, points.front()));
-		binding.turns = yaw.has_value() && object.group != infra::category::logic;
-		if (binding.turns)
-			binding.yaw = turn_of(binding, *yaw);
-		binding.label = object_label(binding);
-		binding.adopted = true;
-		binding.measured = points.front();
-		m_bindings.push_back(std::move(binding));
+		infra_adopt_object(Track, object);
 	}
 }
 
@@ -1670,20 +1731,7 @@ void editor_mode::render_infra_search()
 		state.corridor = std::clamp(state.corridor, 0.5f, 50.f);
 		if (ImGui::TreeNode(STR_C("Rules for names of the files")))
 		{
-			ImGui::TextDisabled("%s", STR_C("Parts of the names, separated by spaces; the first rule which matches decides"));
-			for (std::size_t i = 0; i < state.rules.size(); ++i)
-			{
-				auto &rule{state.rules[i]};
-				char buffer[512];
-				std::snprintf(buffer, sizeof(buffer), "%s", rule.keywords.c_str());
-				ImGui::SetNextItemWidth(360.f);
-				if (ImGui::InputText(std::format("{}##rule{}", STR_C(infra::name(rule.group)), i).c_str(), buffer, sizeof(buffer)))
-					rule.keywords = buffer;
-			}
-			if (ImGui::SmallButton(STR_C("Default rules")))
-				state.rules = infra::default_rules();
-			ImGui::TextDisabled("%s", STR_C("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
-			                          "traction is always the catenary, memory cells and event launchers the logic"));
+			render_name_rules(state.rules);
 			ImGui::TreePop();
 		}
 		ImGui::TreePop();

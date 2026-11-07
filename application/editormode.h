@@ -3332,6 +3332,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t m_point_objects_revision{static_cast<std::size_t>(-1)};
 	std::size_t m_point_objects_count{0};
 	void infra_adopt(TTrack &Track);
+	// its steps: the point objects gathered again, one of them taken by the track
+	void point_objects_gather();
+	void infra_adopt_object(TTrack &Track, point_object const &Object);
 	int infra_bound_count() const; // by the infra tool, not the ones a change of their track took along
 	std::set<std::pair<scene::basic_node const *, scene::instance_handle>> m_infra_carried; // the objects their tracks moved since the tool cleared it
 	std::string infra_carried_note(); // a line of the status telling how many, empty for none; clears them
