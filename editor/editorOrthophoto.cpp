@@ -429,7 +429,8 @@ std::optional<bool> load_hires(http_client &Client, tile_request const &Request,
 
 // returns false on failure (to be retried later); Empty is set when the place has no imagery. Superseded: the tile wants another image
 // now, the large one downloaded isn't decoded for nothing
-bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, stop_check const &Stop, stop_check const &Superseded)
+template <typename Stop_check, typename Superseded_check>
+bool load_tile(http_client &Client, tile_request const &Request, image &Out, bool &Empty, std::string &Error, Stop_check const &Stop, Superseded_check const &Superseded)
 {
 	Empty = false;
 	if (auto const hires{Request.hires && Request.level >= hires_pixels ? load_hires(Client, Request, Out, Error, Stop, Superseded) : std::nullopt}; hires.has_value())
@@ -1265,6 +1266,24 @@ void heights_guessed(std::vector<float> &Heights, int const Samples, glm::dvec2 
 				Heights[static_cast<std::size_t>(j) * Samples + i] = static_cast<float>(y);
 }
 
+// the heights of the points along the edges of the same grid, taken from the tiles beside it, a little outwards: Sampled(x, z, y) gives
+// the height of a place, false where none of them has it
+template <typename Sampler>
+void heights_from_edges(std::vector<float> &Heights, int const Samples, glm::dvec2 const &Corner, double const Step, Sampler const &Sampled)
+{
+	double constexpr outward{0.01};
+	for (int j = 0; j < Samples; ++j)
+		for (int i = 0; i < Samples; ++i)
+		{
+			if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
+				continue;
+			auto const x{Corner.x - i * Step + edge_nudge(i, ground_grid, outward)};
+			auto const z{Corner.y - j * Step + edge_nudge(j, ground_grid, outward)};
+			if (float y; Sampled(x, z, y))
+				Heights[static_cast<std::size_t>(j) * Samples + i] = y;
+		}
+}
+
 } // namespace
 
 void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
@@ -1352,19 +1371,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
 		heights_guessed(heights, samples, corner, step, m_guess);
 		if (std::ranges::count(heights, no_height) == static_cast<std::ptrdiff_t>(heights.size()))
-		{
-			double constexpr outward{0.01};
-			for (int j = 0; j < samples; ++j)
-				for (int i = 0; i < samples; ++i)
-				{
-					if (i != 0 && i != ground_grid && j != 0 && j != ground_grid)
-						continue;
-					auto const x{corner.x - i * step + edge_nudge(i, ground_grid, outward)};
-					auto const z{corner.y - j * step + edge_nudge(j, ground_grid, outward)};
-					if (float y; sampled_height(Key, x, z, y))
-						heights[static_cast<std::size_t>(j) * samples + i] = y;
-				}
-		}
+			heights_from_edges(heights, samples, corner, step, [this, &Key](double const X, double const Z, float &Y) { return sampled_height(Key, X, Z, Y); });
 		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
 		Tile.guessed = true;
 		missing = std::ranges::count(heights, no_height);

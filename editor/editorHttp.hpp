@@ -31,7 +31,7 @@ class client
 	client(client const &) = delete;
 	client &operator=(client const &) = delete;
 
-	bool get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop);
+	bool get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop) const;
 
   private:
 	struct platform;

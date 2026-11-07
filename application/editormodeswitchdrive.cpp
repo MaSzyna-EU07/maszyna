@@ -108,6 +108,19 @@ std::optional<std::string> pose_value(std::string_view const Role, glm::dvec3 co
 	return std::nullopt;
 }
 
+// the values of the parameters of a drive, with those of its place and its turn set from the spot by its switch, Local: the place in
+// the frame of the include
+void posed_values(std::vector<include_parameter> const &Parameters, std::vector<std::string> &Values, glm::dvec3 const &Local, editor_track::drive_spot const &Spot)
+{
+	for (auto const &parameter : Parameters)
+	{
+		if (parameter.id < 1 || parameter.id > static_cast<int>(Values.size()))
+			continue;
+		if (auto const value{pose_value(parameter.role, Local, Spot)})
+			Values[parameter.id - 1] = *value;
+	}
+}
+
 double angle_value(std::vector<std::string> const &Values, std::size_t const Index)
 {
 	double value{0.0};
@@ -209,13 +222,7 @@ void editor_mode::switch_drives_committed(std::span<TTrack *const> const Tracks)
 			continue;
 		auto const local{spot->location + glm::dvec3{0.0, m_switch.drives[found->second.family].heights[found->second.index], 0.0} - included.context.offset};
 		auto values{drive.values};
-		for (auto const &parameter : info.parameters)
-		{
-			if (parameter.id < 1 || parameter.id > static_cast<int>(values.size()))
-				continue;
-			if (auto const value{pose_value(parameter.role, local, *spot)})
-				values[parameter.id - 1] = *value;
-		}
+		posed_values(info.parameters, values, local, *spot);
 		auto const directive{editor_includes::compose_directive(*included.file, values)};
 		if (directive != scene::Layers.directive(drive.instance))
 			set_include_directive(drive.instance, directive);
@@ -461,6 +468,24 @@ void written_changed(std::filesystem::path const &Path, std::string const &Conte
 	}
 }
 
+// the keys written for this scenery under another name, the file it was copied from, give way to those in File: with both included
+// each key would stand twice. their files stay on the disk, for the scenery they were made for
+void other_nose_files_dropped(std::string const &File)
+{
+	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
+	{
+		auto const layer{static_cast<scene::layer_handle>(handle)};
+		if (false == scene::Layers.listed(layer) || scene::Layers.layer(layer).removed)
+			continue;
+		auto name{scene::Layers.layer(layer).name};
+		std::ranges::replace(name, '\\', '/');
+		if (auto const lower{ToLower(name)}; lower == ToLower(File) || lower.ends_with("/" + ToLower(File)) || false == lower.ends_with("_dzioby.scm"))
+			continue;
+		if (nose_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
+			WriteLog("Editor: " + name + " left out of the scenery, the keys by the movable noses are in " + File + " now");
+	}
+}
+
 } // namespace
 
 bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
@@ -494,20 +519,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	if (auto const exists{std::filesystem::exists(path, error)}; noses == 0 && false == exists)
 		return false;
 	written_changed(path, std::string{kNoseHeader} + "\r\n" + text.str());
-	// the keys written for this scenery under another name, the file it was copied from, give way to these: with both included
-	// each key would stand twice. their files stay on the disk, for the scenery they were made for
-	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
-	{
-		auto const layer{static_cast<scene::layer_handle>(handle)};
-		if (false == scene::Layers.listed(layer) || scene::Layers.layer(layer).removed)
-			continue;
-		auto name{scene::Layers.layer(layer).name};
-		std::ranges::replace(name, '\\', '/');
-		if (auto const lower{ToLower(name)}; lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_dzioby.scm"))
-			continue;
-		if (nose_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
-			WriteLog("Editor: " + name + " left out of the scenery, the keys by the movable noses are in " + file + " now");
-	}
+	other_nose_files_dropped(file);
 	if (m_nose_included || layer_of_file(file))
 		return false;
 	Rootstatements.push_back("include " + file + " end");

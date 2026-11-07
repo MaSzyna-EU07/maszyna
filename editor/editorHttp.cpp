@@ -52,7 +52,7 @@ client::~client()
 		::WinHttpCloseHandle(m_platform->session);
 }
 
-bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
+bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop) const
 {
 	Out.clear();
 	if (m_platform->session == nullptr)
@@ -152,7 +152,7 @@ client::~client()
 		::curl_easy_cleanup(m_platform->curl);
 }
 
-bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop)
+bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &Stop) const
 {
 	Out.clear();
 	if (m_platform->curl == nullptr)
@@ -203,7 +203,7 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 client::client() = default;
 client::~client() = default;
 
-bool client::get(std::string const &, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &)
+bool client::get(std::string const &, std::vector<std::uint8_t> &Out, std::string &Error, stop_check const &) const
 {
 	Out.clear();
 	Error = "no http client in this build";
