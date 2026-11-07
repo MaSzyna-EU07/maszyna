@@ -1423,7 +1423,7 @@ void editor_mode::track_captured(TTrack const &Track)
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
-	nmt_track_changed(Tracks);
+	m_build_tools->nmt_build.nmt_track_changed(Tracks);
 	m_joints.tracks_committed(Tracks);
 	m_build_tools->sweep.sweeps_committed(Tracks);
 	switch_drives_committed(Tracks);
@@ -1546,7 +1546,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 
 void editor_mode::track_retired(TTrack &Track)
 {
-	nmt_track_gone(Track);
+	m_build_tools->nmt_build.nmt_track_gone(Track);
 	tracks_committed({});
 }
 

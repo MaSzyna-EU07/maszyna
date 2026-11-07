@@ -364,158 +364,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_map m_nmt_map;
 	std::vector<nmt_place> nmt_track_places(double const Step) const override;
 	void nmt_locate() override;
-	void nmt_fit();
-	void nmt_finish_fit();
-	// the terrain under the tracks, the tracks left as they are: the model drawn to each of them, its relief kept
-	void nmt_under_start();
-	void nmt_under_anchors();
-	// added to the height of the model at the place: the offset of the scenery, drawn to the tracks near them
-	double nmt_offset_at(double const X, double const Z) const;
-	std::vector<heightmap::chunk_key> nmt_keys_around() const;
-	std::vector<heightmap::chunk_key> nmt_keys_along_tracks() const;
-	// the chunk reaches within the band of the track at the place, in the download area
-	bool nmt_key_in_band(heightmap::chunk_key const &Key, nmt_place const &Place) const;
-	// only the chunks there are none of yet: a chunk there is, made from the model or by hand, edited or not, is never made anew.
-	// Reshape: the formations of the tracks laid anew as the tracks lie now, as when they moved
-	void nmt_make(std::vector<heightmap::chunk_key> const &Keys, bool const Reshape = false);
-	enum class nmt_chunk
-	{
-		waiting, // for its squares of the model
-		made,
-		empty // the model has no data there
-	};
-	// Offset: the heights of the model go up or down by it in the whole chunk, in place of the offsets of the fit
-	nmt_chunk add_chunk_from_nmt(heightmap::chunk_key const &Key, std::optional<double> const Offset = std::nullopt);
-	// a chunk there with its ground level all over, as made where there was no ground and no model: none of the shape of the land
-	bool nmt_flat_chunk(heightmap::chunk_key const &Key) const;
-	// how much the terrain lies over the model at the points: none where there's too little terrain at them, nor where it
-	// doesn't follow the model (Foreign), as one made by hand
-	std::optional<double> nmt_terrain_offset(std::vector<glm::dvec2> const &Points, bool &Foreign) const;
-	// the same along the edges the chunk shares with the chunks beside it in memory
-	std::optional<double> nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const;
-	// the terrain beside the formation of the track is the one made from the model; Waiting: its squares of the model aren't in yet
-	// the tracks changed by hand are told to the terrain: their formations laid anew, of the tracks removed taken away, a
-	// track laid onto the terrain of the model given its own, once the mouse lets go; in the step of the history of the change
-	void nmt_track_changed(std::vector<TTrack *> const &Tracks);
-	void nmt_track_gone(TTrack const &Track);
-	void nmt_follow_tracks();
-	// the height the ground will have where the terrain is made ahead of the track laid and isn't there yet
-	bool nmt_ahead(double const X, double const Z, double &Height) const;
 	// the same, else the height of the model with the offset of the scenery where its square is in: the ground where there's no
 	// terrain made yet, as under the base map of the top view
 	bool nmt_ground(double const X, double const Z, double &Height) const;
-	// the squares of the model under the rectangle are in, none of them waiting to be asked for again
-	bool nmt_ready(glm::dvec2 const &Min, glm::dvec2 const &Max);
-	// Only: the paths of these tracks are shaped anew, the modifiers of those removed taken away; null: all of them. the number
-	// of the modifiers laid
-	std::size_t nmt_shape_tracks(std::vector<TTrack *> const *Only = nullptr);
-	void nmt_update();
-	// a few of the chunks waiting made, those whose model is in: Made counts them and the ones given up, Apart those ahead no
-	// terrain of the model touches, Changed takes the ones made
-	void nmt_make_pending(int &Made, std::size_t &Apart, std::vector<heightmap::chunk_key> &Changed);
-	// the chunks made told of, the ground gathered again under them; once none waits, the formations and the photos led onto them
-	void nmt_made(std::vector<heightmap::chunk_key> const &Changed);
-	void nmt_grow();
-	void render_nmt_ui();
-	// step 1 of it, where the scenery lies, the place to change shown once it's there; false while it's nowhere yet
-	bool render_nmt_location(bool const Busy);
-	// step 2 of it with no tracks yet: the model as it is loaded around the camera
-	void render_nmt_load(bool const Busy);
-	// the settings of it under the steps; Tracks: the scenery has tracks, the band along them and the height offset shown
-	void render_nmt_settings(bool const Tracks, bool const Busy);
-	// where the scenery lies: the map to click on, the place typed; true once it's placed
-	bool render_nmt_place(bool const Moving, bool const Button);
-	// the work under way: what's left of it and the button to stop it; Compact: one line, for the 3d view
-	void render_nmt_progress(bool const Compact);
-	// the formations of the tracks led into the terrain, down or up to it, or taken out of it; one step of the history each
-	void nmt_pull_terrain(std::vector<TTrack *> const &Tracks);
-	void nmt_restore_terrain(std::span<TTrack *const> const Tracks);
 	// the terrain of the selected tracks in the panel of the tracks
 	void render_track_terrain(std::vector<TTrack *> const &Tracks);
-	// all the tracks of the scenery onto the terrain model, or it under them: step 2 of the terrain model (Terrain_panel), and in
-	// the panel of the tracks
-	void render_nmt_all_tracks(bool const Terrain_panel);
-	// the part of it putting all the tracks onto the terrain anew, Hand of them set by hand, Unfitted not fitted yet
-	void render_nmt_all_anew(std::size_t const All, std::size_t const Hand, std::size_t const Unfitted, bool const Ready);
-	// what the last putting of the tracks onto the terrain did, and the places it found to be looked at, each to be shown
-	void render_nmt_result();
-	// the list of the places found, in the Order of them, the bad ones and the doubtful in their colours
-	void render_nmt_findings(std::vector<std::size_t> const &Order, ImVec4 const &Bad, ImVec4 const &Doubt);
-	// a line from From to To being put onto the terrain kept to be looked at: the place of it to show and what's wrong there
-	void nmt_note(nmt_state::finding::kind const What, TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Where, std::string Text, double const Size = 0.0);
-	// the place found shown in the 3d view with the track there selected; Profile: the profile of its line opened too
-	void nmt_show(nmt_state::finding const &Finding, bool const Profile);
-	// the chunks waiting for the terrain model and the tiles of the imagery asked for outlined where they will be, so it's seen
-	// what's on its way
-	void draw_nmt_pending() const;
-	// the download area: a polygon drawn on the map, the boundary of what the orthophoto and the terrain model download in the
-	// background, none of them asking for anything outside it (application/editormodenmt.cpp)
-	void area_start();
-	// Keep: the area drawn taken, else the one before stays
-	void area_finish(bool const Keep);
-	// a press of the left button while drawing: a point added, or the one under the cursor taken to drag, Shift: removed
-	void area_click(bool const Shift);
-	void area_update();
-	// a point of the area (x, z) where it's drawn: over the map of the top view, on the ground in the 3d view
-	glm::dvec3 area_point(glm::dvec2 const &Point) const;
-	void draw_download_area() const;
-	void render_download_area_ui(editor_orthophoto::statistics const &Stats);
-	// the chunk of the terrain (x, z) touches the area, or there's none
-	bool in_download_area(glm::dvec2 const &Low, glm::dvec2 const &High) const;
-	// over the 3d view while the terrain panel isn't seen
-	void render_nmt_banner();
-	// the grade lines fitted, the tracks nearly parallel under 5.1 m apart brought onto one, a track going away from them fading back onto its own
-	void nmt_share_grades();
-	// its steps, with what they share (application/editormodenmt.cpp)
-	struct nmt_grade_share;
 	// the grade line the route shares, by most of its paths; -1 when it shares none
 	int route_grade_line();
 	// the run of the track clicked onto the grade line of the route by hand, or off it if it's on it; a route sharing none makes one with it
 	void grade_line_pick(TTrack &Track, bool const Alone);
-	// the tracks laid since the step of the history hidden in the ground, told over the 3d view with the way to fit the ground to them
-	void nmt_check_buried(std::size_t const From);
-	void render_nmt_buried();
-	// what to do first, in the middle of the view of a scenery with no tracks nor terrain
-	void render_empty_scenery_hint() const;
-	// the 3d camera under the ground, as after the view from above or the terrain model made under it, lifted over it
-	void camera_above_ground() const;
-	bool nmt_busy() const;
-	// the terrain made so far stays, what's waiting is dropped, the grade lines not fitted yet are left
-	void nmt_stop();
-	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
-	void nmt_offer();
-	void render_nmt_prompt();
-	// the place picked in the terrain window: the terrain model and the orthophoto take it
-	void nmt_place_scenery(glm::dvec2 const &Point);
-	void nmt_accept_offer();
-	// the whole scenery: tracks, includes and models, moved up or down as one undo step
-	std::size_t nmt_join_ends();
-	// the turntables as they lie, each with the ends of the tracks running up to it on its rim
-	std::vector<nmt_state::turntable> nmt_turntables() const;
-	// each turntable level at the height of the tracks running up to it, its include with it, before the grade lines are fitted:
-	// at the height of the ones fitted already, else of the terrain model beside its rim; the number of them moved
-	std::size_t nmt_level_turntables();
-	// Unfitted: only the tracks whose grade line isn't fitted yet, the scenery left at its height
-	void nmt_auto_start(bool const Unfitted = false);
-	void nmt_auto_step();
-	// its steps: the model fetched and offset to the tracks, then one line fitted
-	void nmt_auto_fetch();
-	bool nmt_auto_offset();
-	bool nmt_fit_next_line();
-	// the grade line of the line of tracks through the track fitted to the terrain model and applied; false if it couldn't be.
-	// The line runs over the tracks not Fitted, the ones fitted stay as they are and the line meets them. Where the model falls
-	// away under the line by the abutments the tracks go over on a bridge; Laid: the tracks just laid, the formation fills it and
-	// they are cut only where they can't follow the line otherwise
-	bool nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)> const &Fitted, bool const Laid);
-	// its steps, with what they share (application/editormodenmt.cpp)
-	struct nmt_line_fit;
-	// the tracks laid in one go since the history step From put onto the terrain model as one line, as the tracks go onto the
-	// terrain: the track ending at End then the one the laying goes on from
-	bool nmt_fit_laid(std::size_t const From, glm::dvec3 const End);
-	// the tracks laid one after another on one straight or one arc, cut by the grade lines fitted before, made one again
-	void nmt_merge_laid(std::unordered_set<TTrack const *> &Laid);
-	// the points of the paths of the track about a metre apart, in squares of the plan
-	static void nmt_sample_paths(TTrack const &Track, std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> &Points);
 	// the tool of the terrain the left mouse button works
 	enum class terrain_tool
 	{
@@ -768,14 +625,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string m_orthophoto_mark;
 	std::vector<std::string> m_orthophoto_area_mark; // the lines of the download area as the scenery keeps them
 	// the download area being drawn on the map: its points in the world (x, z), the one dragged
-	struct area_drawing
-	{
-		bool active{false};
-		std::vector<glm::dvec2> points;
-		int dragged{-1};
-	};
 	area_drawing m_area_drawing;
-	std::vector<glm::dvec2> m_nmt_prefetched; // the download area the terrain model was given
 	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
@@ -2953,7 +2803,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<stored_profile> m_profiles;
 	bool m_profiles_loaded{false};
 	void profile_library_mark(std::vector<scene::layer_handle> Layers);
-	bool nmt_stays(TTrack const &Track); // this putting of the tracks onto the terrain leaves it as it is
 	bool profile_restore();
 	// the radii of its neighbours were for the breaks of the grade it made, they follow the limits after it
 	void profile_remove_point(int const Index);
@@ -3061,6 +2910,35 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool tracks_editable_for(std::vector<TTrack *> const &Tracks, std::string &Reason) const override;
 	std::size_t follow_crossovers_of(std::vector<editor_track::route_sample> const &Before) override;
 	void render_ground_conversion_panel() override;
+	editor_orthophoto &orthophoto() override;
+	std::vector<std::unique_ptr<editor_orthophoto>> &imagery_layers() override;
+	editor_map &terrain_map() override;
+	area_drawing &area_state() override;
+	bool &area_paused() override;
+	lay_tool &lay_state() override;
+	extend_tool &extend_state() override;
+	int &terrain_add_count() override;
+	bool &terrain_open() override;
+	float &terrain_base_height() override;
+	bool &orthophoto_chosen() override;
+	glm::dvec2 &orthophoto_origin_edit() override;
+	terrain_streamer::change const *terrain_step_marked() override;
+	void terrain_step_join_tracks(terrain_streamer::change const *Top) override;
+	void terrain_step() override;
+	std::vector<TTrack *> const &select_grown_track_set(std::vector<TTrack *> const &Tracks) override;
+	std::vector<TTrack const *> tracks_made_since(std::size_t const From) const override;
+	bool terrain_is_work_area() const override;
+	std::size_t history_size() const override;
+	void join_last_step() override;
+	void join_history_from(std::size_t const Step) override;
+	void raise_model_joined(TAnimModel &Model, double const Rise) override;
+	void forget_ground_area(glm::dvec2 const &Min, glm::dvec2 const &Max) override;
+	void select_track_list(std::vector<TTrack *> const &Tracks) override;
+	void select_track_node(scene::basic_node *Node) override;
+	void toggle_orthographic() override;
+	bool orthophoto_settings_shown() const override;
+	void save_imagery_settings() override;
+	glm::dvec3 cursor_ground_point() const override;
 	// build services: end
 
 

@@ -626,7 +626,7 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
-		if (nmt_ground(X, Z, Height))
+		if (m_build_tools->nmt_build.nmt_ground(X, Z, Height))
 			return true;
 		// asked for, the tile goes onto it once it comes
 		if (m_nmt.placed())
@@ -1018,7 +1018,7 @@ void editor_mode::terrain_history_step()
     if (false == m_streamer.active())
         return;
     // the terrain loaded from the model is taken back as a whole
-    if (nmt_busy() && false == m_history_busy)
+    if (m_build_tools->nmt_build.nmt_busy() && false == m_history_busy)
         return;
     if (m_streamer.recording())
     {
@@ -1611,16 +1611,16 @@ bool editor_mode::update()
     steps.step("orthophoto");
     update_wms_layers();
     steps.step("wms");
-    nmt_update();
+    m_build_tools->nmt_build.nmt_update();
     keep_nmt_settings();
     steps.step("nmt");
     // what's drawn over the 3d view stays in it, the docks around it are see-through a little
     auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
     background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
     draw_orthophoto();
-    draw_nmt_pending();
-    area_update();
-    draw_download_area();
+    m_build_tools->nmt_window.draw_nmt_pending();
+    m_build_tools->download_area.area_update();
+    m_build_tools->download_area.draw_download_area();
     steps.step("imagery");
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
@@ -1740,10 +1740,10 @@ bool editor_mode::update()
     render_open_scenery_popup();
     render_shortcuts_window();
     render_first_steps();
-    render_nmt_prompt();
-    render_nmt_banner();
-    render_nmt_buried();
-    render_empty_scenery_hint();
+    m_build_tools->nmt_window.render_nmt_prompt();
+    m_build_tools->nmt_window.render_nmt_banner();
+    m_build_tools->nmt_window.render_nmt_buried();
+    m_build_tools->nmt_window.render_empty_scenery_hint();
     render_switch_designer();
     render_environment_window();
     draw_selection_overlay();
@@ -1835,7 +1835,7 @@ void editor_mode::render_terrain_ui()
         ImGui::TextUnformatted(STR_C("The scenery has no terrain yet"));
         // the terrain model makes the terrain itself
         if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
-            render_nmt_ui();
+            m_build_tools->nmt_window.render_nmt_ui();
         ImGui::Spacing();
         ImGui::TextDisabled("%s", STR_C("Or without the real ground:"));
         if (ImGui::Button(STR_C("Make an empty, flat terrain")))
@@ -1845,10 +1845,10 @@ void editor_mode::render_terrain_ui()
         return;
     }
     // the real terrain first, open: the tracks put onto it from there
-    if (nmt_busy())
+    if (m_build_tools->nmt_build.nmt_busy())
         ImGui::SetNextItemOpen(true);
     if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
-        render_nmt_ui();
+        m_build_tools->nmt_window.render_nmt_ui();
 
     // the tools are chosen in the toolbar, here are their settings
     if (ImGui::CollapsingHeader(STR_C("Chunks"), m_terrain_tool == terrain_tool::chunks ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -2588,7 +2588,7 @@ void editor_mode::render_orthophoto_ui()
     }
 
     ImGui::Separator();
-    render_download_area_ui(stats);
+    m_build_tools->download_area.render_download_area_ui(stats);
     ImGui::Separator();
 
     if (ImGui::TreeNode(STR_C("More settings")))
@@ -6713,7 +6713,7 @@ void editor_mode::toggle_ortho()
     {
         Camera.Angle.x = m_ortho_pitch;
         ortho_pan_stop();
-        camera_above_ground();
+        m_build_tools->nmt_window.camera_above_ground();
     }
 }
 
@@ -7290,7 +7290,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // the download area being drawn given up, the one before stays
         if (is_press(Action) && m_area_drawing.active)
         {
-            area_finish(false);
+            m_build_tools->download_area.area_finish(false);
             break;
         }
         if (is_press(Action))
@@ -7378,7 +7378,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && m_area_drawing.active)
         {
             if (m_area_drawing.points.size() >= 3)
-                area_finish(true);
+                m_build_tools->download_area.area_finish(true);
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
@@ -7492,7 +7492,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     if (m_area_drawing.active && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         if (is_press(Action))
-            area_click(Global.shiftState);
+            m_build_tools->download_area.area_click(Global.shiftState);
         else
             m_area_drawing.dragged = -1;
         m_input.mouse.button(Button, Action);

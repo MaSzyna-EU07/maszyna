@@ -642,7 +642,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain_model(std::string_vie
 	if (command == "nmtfit")
 	{
 		// the heights of the terrain model fitted to the tracks, as the button of the terrain panel does
-		nmt_fit();
+		m_build_tools->nmt_build.nmt_fit();
 		WriteLog("SELFTEST nmtfit: " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
@@ -651,7 +651,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain_model(std::string_vie
 	if (command == "nmtunder")
 	{
 		// the terrain under the tracks, the tracks left as they are, as the button of the terrain panel does
-		nmt_under_start();
+		m_build_tools->nmt_build.nmt_under_start();
 		WriteLog("SELFTEST nmtunder: " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
@@ -670,7 +670,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain_model(std::string_vie
 		// nmtwait waits for the end
 		std::string which;
 		words >> which;
-		nmt_auto_start(which == "unfitted");
+		m_build_tools->nmt_auto.nmt_auto_start(which == "unfitted");
 		WriteLog("SELFTEST nmtauto " + which + ": " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
@@ -707,7 +707,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtmake(std::istringstream &w
 	words >> where >> band;
 	if (band > 0.0)
 		m_nmt_state.band = band;
-	nmt_make(where == "around" ? nmt_keys_around() : nmt_keys_along_tracks());
+	m_build_tools->nmt_build.nmt_make(where == "around" ? m_build_tools->nmt_build.nmt_keys_around() : m_build_tools->nmt_build.nmt_keys_along_tracks());
 	WriteLog("SELFTEST nmtmake " + where + ": " + m_nmt_state.status);
 	return selftest_result::handled;
 }
@@ -737,7 +737,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtoffer(std::istringstream &
 	if (north > 0.0 && east > 0.0 && m_nmt_state.prompt)
 	{
 		m_nmt_map.pick({east, north});
-		nmt_accept_offer();
+		m_build_tools->nmt_window.nmt_accept_offer();
 		WriteLog("SELFTEST nmtoffer taken: " + m_nmt_state.status);
 	}
 	return selftest_result::handled;
@@ -757,7 +757,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtgrow(std::istringstream &w
 	else if (chosen == "chosen")
 		m_lay.points.clear();
 	m_nmt_state.grow_time = -10.0;
-	nmt_grow();
+	m_build_tools->nmt_build.nmt_grow();
 	m_lay.active = active;
 	m_lay.points = points;
 	WriteLog(format("SELFTEST nmtgrow: %zu chunks waiting, grown %d", m_nmt_state.pending.size(), m_nmt_state.grown ? 1 : 0));
@@ -806,7 +806,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtcheck(std::istringstream &
 	std::size_t without{0};
 	std::size_t bridges{0};
 	std::vector<double> offs;
-	for (auto const &place : nmt_track_places(step))
+	for (auto const &place : m_build_tools->nmt_build.nmt_track_places(step))
 	{
 		if (false == place.shapes)
 		{
@@ -880,7 +880,7 @@ editor_mode::selftest_result editor_mode::selftest_turntables() const
 {
 	// each turntable: the height of its rails and of the model in its pit; of each track running up to it the heights out along
 	// its line from the rim, the model there under the rails beside them, and how far from the rim the line keeps level
-	for (auto const &table : nmt_turntables())
+	for (auto const &table : m_build_tools->nmt_auto.nmt_turntables())
 	{
 		auto const &points{table.table->m_paths.front().points};
 		double pit{std::numeric_limits<double>::quiet_NaN()};
@@ -959,7 +959,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtprobe(std::istringstream &
 	std::string name;
 	double step{250.0};
 	words >> name >> step;
-	auto const places{nmt_track_places(step)};
+	auto const places{m_build_tools->nmt_build.nmt_track_places(step)};
 	for (std::size_t i = 0; i + 1 < places.size(); ++i)
 	{
 		auto const &place{places[i]};
@@ -981,9 +981,9 @@ editor_mode::selftest_result editor_mode::selftest_trackterrain(std::istringstre
 		if (auto *track{simulation::Paths.find(name)})
 			tracks.push_back(track);
 	if (action == "pull")
-		nmt_pull_terrain(tracks);
+		m_build_tools->nmt_build.nmt_pull_terrain(tracks);
 	else
-		nmt_restore_terrain(tracks);
+		m_build_tools->nmt_build.nmt_restore_terrain(tracks);
 	WriteLog(format("SELFTEST trackterrain %s %zu tracks: %s, %zu modifiers", action.c_str(), tracks.size(), m_nmt_state.status.c_str(), m_streamer.modifiers().size()));
 	return selftest_result::handled;
 }

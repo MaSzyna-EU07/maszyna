@@ -229,7 +229,7 @@ void editor_mode::open_terrain_workspace(bool const Open)
 
 std::size_t editor_mode::shape_tracks_on_terrain(std::vector<TTrack *> const *Only)
 {
-	return nmt_shape_tracks(Only);
+	return m_build_tools->nmt_build.nmt_shape_tracks(Only);
 }
 
 void editor_mode::join_last_history_steps()
@@ -263,4 +263,163 @@ std::size_t editor_mode::follow_crossovers_of(std::vector<editor_track::route_sa
 void editor_mode::render_ground_conversion_panel()
 {
 	render_ground_conversion();
+}
+
+editor_orthophoto &editor_mode::orthophoto()
+{
+	return m_orthophoto;
+}
+
+std::vector<std::unique_ptr<editor_orthophoto>> &editor_mode::imagery_layers()
+{
+	return m_wms;
+}
+
+editor_map &editor_mode::terrain_map()
+{
+	return m_nmt_map;
+}
+
+area_drawing &editor_mode::area_state()
+{
+	return m_area_drawing;
+}
+
+bool &editor_mode::area_paused()
+{
+	return m_area_paused;
+}
+
+lay_tool &editor_mode::lay_state()
+{
+	return m_lay;
+}
+
+extend_tool &editor_mode::extend_state()
+{
+	return m_extend;
+}
+
+int &editor_mode::terrain_add_count()
+{
+	return m_terrain_add_count;
+}
+
+bool &editor_mode::terrain_open()
+{
+	return m_terrain_open;
+}
+
+float &editor_mode::terrain_base_height()
+{
+	return m_terrain_baseheight;
+}
+
+bool &editor_mode::orthophoto_chosen()
+{
+	return m_orthophoto_chosen;
+}
+
+glm::dvec2 &editor_mode::orthophoto_origin_edit()
+{
+	return m_orthophoto_origin_edit;
+}
+
+terrain_streamer::change const *editor_mode::terrain_step_marked()
+{
+	terrain_history_step();
+	return m_history.empty() ? nullptr : m_history.back().terrain.get();
+}
+
+void editor_mode::terrain_step_join_tracks(terrain_streamer::change const *Top)
+{
+	terrain_history_step();
+	auto const count{m_history.size()};
+	if (auto const of_tracks = [](EditorSnapshot const &Step) { return Step.action == EditorSnapshot::Action::TrackEdit || (Step.action == EditorSnapshot::Action::Terrain && Step.joined); };
+	    count >= 2 && m_history.back().action == EditorSnapshot::Action::Terrain && m_history.back().terrain.get() != Top && of_tracks(m_history[count - 2]))
+		m_history.back().joined = true;
+}
+
+void editor_mode::terrain_step()
+{
+	terrain_history_step();
+}
+
+std::vector<TTrack *> const &editor_mode::select_grown_track_set(std::vector<TTrack *> const &Tracks)
+{
+	m_track_set = Tracks;
+	track_set_grow();
+	select_tracks(m_track_set);
+	return m_track_set;
+}
+
+std::vector<TTrack const *> editor_mode::tracks_made_since(std::size_t const From) const
+{
+	std::vector<TTrack const *> made;
+	for (auto step{From}; step < m_history.size(); ++step)
+		made.insert(made.end(), m_history[step].created.begin(), m_history[step].created.end());
+	return made;
+}
+
+bool editor_mode::terrain_is_work_area() const
+{
+	return current_work_area() == work_area::terrain;
+}
+
+std::size_t editor_mode::history_size() const
+{
+	return m_history.size();
+}
+
+void editor_mode::join_last_step()
+{
+	m_history.back().joined = true;
+}
+
+void editor_mode::join_history_from(std::size_t const Step)
+{
+	for (auto step{Step}; step < m_history.size(); ++step)
+		m_history[step].joined = true;
+}
+
+void editor_mode::raise_model_joined(TAnimModel &Model, double const Rise)
+{
+	push_snapshot(&Model, EditorSnapshot::Action::Move);
+	m_history.back().joined = true;
+	m_editor.translate(&Model, Model.location() + glm::dvec3{0.0, Rise, 0.0}, true);
+}
+
+void editor_mode::forget_ground_area(glm::dvec2 const &Min, glm::dvec2 const &Max)
+{
+	forget_ground_in(Min, Max);
+}
+
+void editor_mode::select_track_list(std::vector<TTrack *> const &Tracks)
+{
+	select_tracks(Tracks);
+}
+
+void editor_mode::select_track_node(scene::basic_node *Node)
+{
+	select_track(Node);
+}
+
+void editor_mode::toggle_orthographic()
+{
+	toggle_ortho();
+}
+
+bool editor_mode::orthophoto_settings_shown() const
+{
+	return orthophoto_settings_open();
+}
+
+void editor_mode::save_imagery_settings()
+{
+	save_orthophoto_settings();
+}
+
+glm::dvec3 editor_mode::cursor_ground_point() const
+{
+	return cursor_ground();
 }

@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "editor/editorSettings.hpp"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
@@ -1327,7 +1328,7 @@ void editor_mode::finish_extend()
 		ui()->set_status(lines_of(warnings), true);
 	m_node = created.back();
 	ui()->set_node(m_node);
-	nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
+	m_build_tools->nmt_auto.nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
 	m_nmt_state.laying = false;
 	straight_refresh();
 }
@@ -2569,10 +2570,10 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	lay_notes(created, pieces, End, plan, eased, error, style);
 	m_node = created.back();
 	ui()->set_node(m_node);
-	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
+	if (m_build_tools->nmt_auto.nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
-	nmt_check_buried(tool.history);
+	m_build_tools->nmt_window.nmt_check_buried(tool.history);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.modes.clear();

@@ -17,11 +17,14 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormoderoutestate.h"
 #include "application/editormodestraightsstate.h"
 #include "application/editormodesweepstate.h"
+#include "editor/editorGeoMap.hpp"
+#include "editor/editorOrthophoto.hpp"
 #include "editor/editorTerrainStreamer.hpp"
 #include "scene/scenenode.h"
 #include "vehicle/Camera.h"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 
 class editor_ui;
 class TTrack;
+class TAnimModel;
 
 // what the road window needs from the editor: its state, the ground under the roads, its history and the material fields
 class editor_road_services
@@ -119,8 +123,68 @@ class editor_profile_services
 	~editor_profile_services() = default;
 };
 
+// what the terrain model and the download area need from the editor: the imagery, the map, the state of the terrain
+// and of the laying, the camera and the steps of the history
+class editor_nmt_services
+{
+  public:
+	// the orthophoto of the scenery and the layers of the imagery over it
+	virtual editor_orthophoto &orthophoto() = 0;
+	virtual std::vector<std::unique_ptr<editor_orthophoto>> &imagery_layers() = 0;
+	// the map the place of the terrain model is picked on
+	virtual editor_map &terrain_map() = 0;
+	virtual area_drawing &area_state() = 0;
+	// the download of the area held by the button
+	virtual bool &area_paused() = 0;
+	// the track laid through the points clicked, and the free end lengthened
+	virtual lay_tool &lay_state() = 0;
+	virtual extend_tool &extend_state() = 0;
+	// the heightmap terrain: chunks along a side added around the camera, whether it's the field of work, the height of the
+	// // chunks made where there's no ground
+	virtual int &terrain_add_count() = 0;
+	virtual bool &terrain_open() = 0;
+	virtual float &terrain_base_height() = 0;
+	// the orthophoto chosen by hand, and its origin being typed in (northing, easting)
+	virtual bool &orthophoto_chosen() = 0;
+	virtual glm::dvec2 &orthophoto_origin_edit() = 0;
+	// the terrain taken into the history before the tracks shape it; what the last step of the history keeps of it
+	virtual terrain_streamer::change const *terrain_step_marked() = 0;
+	// the terrain the tracks shaped taken into the history, undone with the change of the tracks: unless the last step still
+	// // keeps the Top marked before
+	virtual void terrain_step_join_tracks(terrain_streamer::change const *Top) = 0;
+	// the change of the terrain made so far, a step of the history
+	virtual void terrain_step() = 0;
+	// the tracks joined to the Tracks added to them by the rules of the spread, all of them selected; the set
+	virtual std::vector<TTrack *> const &select_grown_track_set(std::vector<TTrack *> const &Tracks) = 0;
+	// the tracks the steps of the history from the one given on made, in the order they were made
+	virtual std::vector<TTrack const *> tracks_made_since(std::size_t const From) const = 0;
+	// the terrain is the field of work
+	virtual bool terrain_is_work_area() const = 0;
+	// the steps of the history; the last one, or each from the one given on, undone together with the one before
+	virtual std::size_t history_size() const = 0;
+	virtual void join_last_step() = 0;
+	virtual void join_history_from(std::size_t const Step) = 0;
+	// the model moved up by Rise, a step of the history undone with the one before
+	virtual void raise_model_joined(TAnimModel &Model, double const Rise) = 0;
+	// forgets what's known about the ground within the bounds, after the terrain there changed
+	virtual void forget_ground_area(glm::dvec2 const &Min, glm::dvec2 const &Max) = 0;
+	// the tracks selected as the set, or the one track selected
+	virtual void select_track_list(std::vector<TTrack *> const &Tracks) = 0;
+	virtual void select_track_node(scene::basic_node *Node) = 0;
+	// the view switched between the perspective and the one from above
+	virtual void toggle_orthographic() = 0;
+	// the settings of the orthophoto and of the imagery: whether they're open, and kept
+	virtual bool orthophoto_settings_shown() const = 0;
+	virtual void save_imagery_settings() = 0;
+	// the point of the ground under the cursor, or of the level of the sea where there's none
+	virtual glm::dvec3 cursor_ground_point() const = 0;
+
+  protected:
+	~editor_nmt_services() = default;
+};
+
 // what the build tools (laying track, routes, straights, roads, sweeps, vertical profiles and grade lines, the terrain model, connections and the infrastructure) need from the editor beyond the interfaces of editortool.h; editor_mode implements it
-class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services
+class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services
 {
   public:
 	// the panels of the editor

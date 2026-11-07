@@ -214,3 +214,19 @@ struct nmt_state : nmt_fit_state, nmt_settings_state, nmt_growing_state, nmt_for
 	std::array<char, 96> place{}; // typed: degrees or PUWG 1992
 	int shown{-1}; // the frame the terrain panel showed how far the work got
 };
+
+// the download area being drawn on the map: its points in the world (x, z), the one dragged
+struct area_drawing
+{
+	bool active{false};
+	std::vector<glm::dvec2> points;
+	int dragged{-1};
+};
+
+// a chunk of the heightmap terrain made from the terrain model
+enum class nmt_chunk
+{
+	waiting, // for its squares of the model
+	made,
+	empty // the model has no data there
+};
