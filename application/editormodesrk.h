@@ -142,6 +142,37 @@ class srk_tool final : public editor_tool
 		off, // farther from its place than allowed
 		placed
 	};
+	// what the routes of the trains of a signal need it to show
+	struct head_needs
+	{
+		std::vector<station::route> routes;
+		std::vector<std::string> nexts; // of the routes, the signals they end at, shown
+		std::vector<int> speeds; // km/h, the lower ones it must show: 40, 60, 100
+		bool informs{false}; // it must tell the next signal shows stop
+		bool white{false}; // it must give the substitute signal
+		int shortened{0}; // km/h, it slows the trains to, the next signal nearer than the braking distance: Ie-4 § 8 ust. 5
+		bool indicator{false}; // a W21 "14" beside it, for 140 km/h so
+	};
+	// how the template of a signal fits what it needs, and what's wrong with its place
+	struct head_fit
+	{
+		bool told{false}; // a shaped warning disc before a semaphore described: the events it repeats checked
+		bool unsaid{false}; // of those, its template doesn't say what it repeats: the one described offered, the fitting leaves it be
+		bool fits{true}; // its template shows all of it
+		bool more{false}; // its template has more than it needs
+		std::string fit; // the template that fits best, empty for none
+		std::vector<std::string> problems; // of its place
+	};
+	// the SHP track resonator a signal needs and the one standing
+	struct head_resonator
+	{
+		// m before it the SHP track resonator belongs, -1 for none: 200 m before an entry signal, a block signal and a warning disc,
+		// at an exit signal onto a line of the automatic block
+		double shp{-1.0};
+		double shp_found{-1.0}; // m before it the trains run into the event of the SHP resonator standing, -1 for none
+		bool shp_short{false}; // the tracks before it end short of the place of its resonator
+		shp_state shp_of() const;
+	};
 	// a signal of the station or of its lines, its lights as the routes of its trains need them: Ie-1, Ie-4 § 8
 	struct head_check
 	{
@@ -156,29 +187,74 @@ class srk_tool final : public editor_tool
 		std::vector<std::string> aspect_names; // of its template, from its description
 		std::vector<int> own; // the speeds of its template
 		bool station{false}; // stands by the station, not out on a line
-		std::vector<station::route> routes;
-		std::vector<std::string> nexts; // of the routes, the signals they end at, shown
-		std::vector<int> speeds; // km/h, the lower ones it must show: 40, 60, 100
-		bool informs{false}; // it must tell the next signal shows stop
-		bool white{false}; // it must give the substitute signal
-		int shortened{0}; // km/h, it slows the trains to, the next signal nearer than the braking distance: Ie-4 § 8 ust. 5
-		bool indicator{false}; // a W21 "14" beside it, for 140 km/h so
-		bool told{false}; // a shaped warning disc before a semaphore described: the events it repeats checked
-		bool unsaid{false}; // of those, its template doesn't say what it repeats: the one described offered, the fitting leaves it be
-		bool fits{true}; // its template shows all of it
-		bool more{false}; // its template has more than it needs
-		std::string fit; // the template that fits best, empty for none
-		std::vector<std::string> problems; // of its place
-		// m before it the SHP track resonator belongs, -1 for none: 200 m before an entry signal, a block signal and a warning disc,
-		// at an exit signal onto a line of the automatic block
-		double shp{-1.0};
-		double shp_found{-1.0}; // m before it the trains run into the event of the SHP resonator standing, -1 for none
-		bool shp_short{false}; // the tracks before it end short of the place of its resonator
-		shp_state shp_of() const;
+		head_needs needs;
+		head_fit fitting;
+		head_resonator resonator;
 	};
 	// a line out of the open station, from an entry signal of it
 	struct line_row
 	{
+		struct run
+		{
+			double from{0.0}; // out along the line
+			double to{0.0};
+			std::string name;
+			double km_from{0.0};
+			double km_to{0.0};
+		};
+		struct post
+		{
+			double distance{0.0}; // out along the line
+			std::string name; // shown
+			bool wrong{false}; // facing the wrong-track trains
+			double km{0.0};
+		};
+		// the block of the line: the one it has, the one it has by itself, the wrong-track running and the braking distance
+		struct line_block
+		{
+			block_kind block{block_kind::semi};
+			block_reason why{block_reason::single}; // the block it has, so
+			block_kind own{block_kind::semi}; // the block it has by itself, unless set by hand
+			block_reason own_why{block_reason::single};
+			// the automatic block both ways: at each block boundary a block signal of each track either way, the wrong-track one with N
+			bool both{false};
+			bool both_hand{false}; // so set by hand
+			bool own_both{false}; // so by itself
+			// block signals stand along it, none switched by block sections of the editor: it keeps the block of the scenery as it stands
+			bool legacy{false};
+			double braking{0.0}; // m, the braking distance on it
+		};
+		// the kilometrage the line runs along
+		struct line_km
+		{
+			std::string km_number; // the line of the kilometrage it runs along
+			bool rising{true}; // its trains run towards the higher km
+			bool km_known{false}; // the km out along it are known
+		};
+		// in the schematic, straightened: the chainage of the entry signal, 1 or -1 the way out along the chainage, the offset of the
+		// track there
+		struct line_place
+		{
+			double chainage{0.0};
+			double outward{1.0};
+			double offset{0.0};
+		};
+		// what stands along the line: its signals and its track circuits
+		struct line_along
+		{
+			std::size_t blocks{0}; // the block signals standing along it
+			// the block boundaries of the same facing its trains, the joints they turn them to stop at, out along it, with the signal shown
+			std::vector<std::pair<double, std::string>> stops;
+			std::vector<std::pair<double, std::string>> wrong; // the block signals facing its wrong-track trains, out along it, shown
+			std::vector<run> sections; // the track circuits along it, out from the station
+			std::vector<std::pair<double, double>> bare; // out along it, tracks between its block sections in none, of the automatic block
+			std::vector<post> posts; // the block signals along it
+			// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
+			// semi-automatic one, the first of them
+			std::size_t leftovers{0};
+			glm::dvec3 leftover{0.0};
+			glm::dvec2 leftover_travel{0.0, 1.0};
+		};
 		std::string entry; // the entry signal, shown
 		glm::dvec3 position{0.0}; // of the entry signal
 		glm::dvec2 travel{0.0, 1.0}; // the trains it faces run, in the plan
@@ -188,52 +264,10 @@ class srk_tool final : public editor_tool
 		double length{0.0}; // to the entry signal of the next station, or to the end of the tracks
 		std::string next; // the entry signal of the next station facing out along it, shown; empty for none
 		bool station{false}; // ends at the next station rather than at the end of the tracks
-		std::size_t blocks{0}; // the block signals standing along it
-		// the block boundaries of the same facing its trains, the joints they turn them to stop at, out along it, with the signal shown
-		std::vector<std::pair<double, std::string>> stops;
-		std::vector<std::pair<double, std::string>> wrong; // the block signals facing its wrong-track trains, out along it, shown
-		block_kind block{block_kind::semi};
-		block_reason why{block_reason::single}; // the block it has, so
-		block_kind own{block_kind::semi}; // the block it has by itself, unless set by hand
-		block_reason own_why{block_reason::single};
-		// the automatic block both ways: at each block boundary a block signal of each track either way, the wrong-track one with N
-		bool both{false};
-		bool both_hand{false}; // so set by hand
-		bool own_both{false}; // so by itself
-		// block signals stand along it, none switched by block sections of the editor: it keeps the block of the scenery as it stands
-		bool legacy{false};
-		double braking{0.0}; // m, the braking distance on it
-		std::string km_number; // the line of the kilometrage it runs along
-		bool rising{true}; // its trains run towards the higher km
-		bool km_known{false}; // the km out along it are known
-		// in the schematic, straightened: the chainage of the entry signal, 1 or -1 the way out along the chainage, the offset of the
-		// track there
-		double chainage{0.0};
-		double outward{1.0};
-		double offset{0.0};
-		struct run
-		{
-			double from{0.0}; // out along the line
-			double to{0.0};
-			std::string name;
-			double km_from{0.0};
-			double km_to{0.0};
-		};
-		std::vector<run> sections; // the track circuits along it, out from the station
-		std::vector<std::pair<double, double>> bare; // out along it, tracks between its block sections in none, of the automatic block
-		struct post
-		{
-			double distance{0.0}; // out along the line
-			std::string name; // shown
-			bool wrong{false}; // facing the wrong-track trains
-			double km{0.0};
-		};
-		std::vector<post> posts; // the block signals along it
-		// the signals of the other block standing along it: warning discs on a line of the automatic block, block signals on one of the
-		// semi-automatic one, the first of them
-		std::size_t leftovers{0};
-		glm::dvec3 leftover{0.0};
-		glm::dvec2 leftover_travel{0.0, 1.0};
+		line_block blocking;
+		line_km km;
+		line_place drawn;
+		line_along along;
 	};
 	// what the check of the open station finds wrong: signals no track reads, lines broken off, tracks between the block sections of
 	// a line in none, block sections without a track
