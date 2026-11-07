@@ -3204,6 +3204,12 @@ bool TController::DecBrake() {
                 // a position short of the first one brakes no weaker than that
                 deltaAcc = -AccDesired * BrakeAccFactor() - ( fBrake_a0[ 0 ] + 4 * std::max( 0.0, BrakeCtrlPosition - pos_diff ) * fBrake_a1[ 0 ] );
             }
+            if( ( BrakeCtrlPosition > 0.0 )
+             && ( uphill_stop_hold() ) ) {
+                // any release now raises the pipe, and a long train releases more than the handle is moved back, too late
+                // to apply again before the train stands: keep the brake as it is, and the locomotive brake with it
+                break;
+            }
 		    if (deltaAcc < 0 && /*GBH mvOccupied->BrakeCtrlPosR*/ BrakeCtrlPosition > 0) {
 			    OK = /*mvOccupied->*/ BrakeLevelAdd(-0.25);
 			    // if ((deltaAcc < 5 * fBrake_a1[0]) && (mvOccupied->BrakeCtrlPosR >= 1.2))
@@ -7341,8 +7347,15 @@ TController::pick_optimal_speed( double const Range ) {
             AccDesired = std::min( AccDesired, EU07_AI_NOACCELERATION );
         }
         else if( ( vel < 0.0 )
-              || ( ( vel < 5.0 ) && ( AccDesired < 0.0 ) ) ) {
-            AccDesired = std::min( AccDesired, fAccGravity - 0.15 );
+              || ( ( vel < 5.0 ) && ( AccDesired < 0.0 ) )
+              // rolling to a stand on the gradient alone, the brake has to be on its way before the train stops:
+              // once the time left to the stand is no longer than half of what the brake takes to apply, apply it; any
+              // sooner and the brake takes off more of the distance than the stop was planned with
+              || ( ( BrakeSystem == TBrakeSystem::Pneumatic )
+                && ( vel / 3.6 / -fAccGravity <= 0.5 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) ) ) {
+            // the gradient alone already slows the train down nearly this much; ask for enough on top of it that
+            // the brake is applied for sure, not held back by the margin against small corrections
+            AccDesired = std::min( AccDesired, fAccGravity - std::max( 0.15, fBrake_a0[ 0 ] ) - brake_increase_margin() );
         }
     }
 
@@ -7651,6 +7664,7 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
                                             ( VelNext * VelNext - vel * vel ) / ( 25.92 * stoppingroom ) );
                                     if( ( fAccGravity < -0.025 )
                                      && ( AccDesired >= fAccGravity - 0.001 ) // no brake needed at all
+                                     && ( false == uphill_brake_committed( vel ) )
                                      && ( ActualProximityDist - uphill_stopping_distance( vel, fAccGravity ) > stopping_margin() ) ) {
                                         // uphill the gradient alone would bring the train to a stand short of the
                                         // middle of the stopping window; keep it rolling at the present speed until that changes,
@@ -7726,6 +7740,7 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
                                 }
                                 else if( ( fAccGravity < -0.025 )
                                       && ( ( OrderCurrentGet() & Obey_train ) != 0 )
+                                      && ( false == uphill_brake_committed( vel ) )
                                       && ( ActualProximityDist - uphill_stopping_distance( vel, fAccGravity ) > brakingpointoffset ) ) {
                                     // uphill the gradient alone slows the train down more than it is asked to;
                                     // keep it rolling at the present speed until that changes
@@ -8177,6 +8192,35 @@ TController::brake_increase_margin() const {
     return fBrake_a1[ 0 ];
 }
 
+// a train coming to a stand with at least part of it on an up gradient: a long train brake released now cannot be
+// applied again before the train stops and starts to roll back, so the train brake is not released any further, and the
+// locomotive brake, which acts at once, helps to hold the train
+bool
+TController::uphill_stop_hold() const {
+
+    return (
+        ( BrakeSystem == TBrakeSystem::Pneumatic ) && is_train() && ( ( OrderCurrentGet() & Obey_train ) != 0 )
+     && ( VelNext == 0.0 )
+     && ( ActualProximityDist <= fMaxProximityDist )
+     && ( fAccGravity < -0.005 )
+     && ( std::abs( DirectionalVel() ) < 10.0 )
+     // not while the train is to be driven on
+     && ( AccDesired <= 0.0 ) );
+}
+
+// uphill with the train brake applied, the gradient brings a slow train to a stand sooner than the brake of the consist
+// can be released: letting the train roll on (or pulling up) at this speed only releases the brake for nothing, and the
+// train stands with the brake on its way off instead
+bool
+TController::uphill_brake_committed( double const Velocity ) const {
+
+    return (
+        ( BrakeSystem == TBrakeSystem::Pneumatic )
+     && ( BrakeCtrlPosition > 0.0 )
+     && ( fAccGravity < -0.025 )
+     && ( Velocity / 3.6 / -fAccGravity < brake_response_horizon( mvOccupied, BrakeSystem, -1.0, fBrake_a0[ 0 ] ) ) );
+}
+
 void TController::control_braking_force() {
 
     // don't touch the brakes when compressing buffers during coupling/uncoupling
@@ -8276,6 +8320,17 @@ void TController::control_braking_force() {
 			cue_action(driver_hint::brakingforcedecrease,
 			           (mvOccupied->BrakeDelayFlag > bdelay_G ? mvOccupied->BrakeDelay[0] : mvOccupied->BrakeDelay[2]) / 3.0 * 0.5); // Ra: tymczasowo, bo przeżyna S1
 		}
+        // uphill, the locomotive brake acts at once while the train brake of a long train takes many seconds to apply:
+        // put it on as the train comes to a stand, and at once if the train has started to roll back
+        if( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake )
+         && ( mvOccupied->LocalBrakePosA < 1.0 )
+         && ( ( uphill_stop_hold() && ( std::abs( velocity ) < 3.0 )
+             // a train that has slowed down short of where it is to stop and is to pull up further does not get it
+             && ( VelDesired <= std::abs( velocity ) + 0.5 )
+             && ( ActualProximityDist - uphill_stopping_distance( std::abs( velocity ), fAccGravity ) <= stopping_margin() ) )
+           || ( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( fAccGravity < -0.005 ) && ( velocity < -0.1 ) && ( AccDesired <= 0.0 ) ) ) ) {
+            cue_action( driver_hint::independentbrakeapply );
+        }
         // stop-gap measure to ensure cars actually brake to stop even when above calculactions go awry
         // instead of releasing the brakes and creeping into obstacle at 1-2 km/h
         if( is_car() && VelDesired == 0.0 && velocity > VelDesired && ActualProximityDist <= fMinProximityDist && mvOccupied->LocalBrakePosA < 0.01 ) {

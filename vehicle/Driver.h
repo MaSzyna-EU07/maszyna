@@ -312,6 +312,8 @@ private:
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
     double brake_increase_margin() const;
+    bool uphill_stop_hold() const;
+    bool uphill_brake_committed( double const Velocity ) const;
 
     void update_timers( double const dt );
     void update_logs( double const dt );
