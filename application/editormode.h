@@ -23,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodekm.h"
 #include "application/editormodevehicle.h"
 #include "application/editortool.h"
+#include "application/editormodebuildservices.h"
+#include "application/editormoderailservices.h"
 #include "scene/sceneeditor.h"
 #include "scene/scenenode.h"
 #include "editor/editorTerrain.hpp"
@@ -69,14 +71,23 @@ class TAnimModel;
 // a tool of a field of work of the editor, a button in the toolbar and over the 3d view
 struct editor_tool_button;
 class TTrack;
+struct build_tools;
+struct rail_tools;
 
-class editor_mode : public application_mode, private editor_track::observer, private editor_services
+class editor_mode : public application_mode, private editor_track::observer, private editor_services, private editor_build_services, private editor_rail_services
 {
 
   public:
 	// constructors
 	editor_mode();
 	~editor_mode() override;
+
+	// the rail tools (editormoderailtools.h), made by make_rail_tools()
+	std::unique_ptr<rail_tools> m_rail_tools;
+	void make_rail_tools();
+	// rail services: overrides
+	// rail services: end
+
 	// methods
 	// initializes internal data structures of the mode. returns: true on success, false otherwise
 	bool init() override;
@@ -3823,6 +3834,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	srk_tool m_srk{*this, *this, *this, *this, *this};
 	km_tool m_km{*this, *this, *this, *this};
 	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km};
+
+	// the build tools (editormodebuildtools.h), made by make_build_tools()
+	std::unique_ptr<build_tools> m_build_tools;
+	void make_build_tools();
+	// build services: overrides
+	// build services: end
+
 
 	void infra_rebase();
 	void render_infra_search();

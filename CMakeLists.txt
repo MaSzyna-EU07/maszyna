@@ -239,6 +239,8 @@ set(SOURCES
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
 "application/editormodesrk.cpp"
+"application/editormodebuildtools.cpp"
+"application/editormoderailtools.cpp"
 "application/editormodekm.cpp"
 "application/editormodejoints.cpp"
 "application/editormodeparallel.cpp"

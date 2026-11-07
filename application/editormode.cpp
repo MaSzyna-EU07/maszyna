@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <regex>
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
+#include "application/editormoderailtools.h"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
 #include "scene/scenenodegroups.h"
@@ -610,6 +612,8 @@ editor_mode::editor_mode() {
 	road_select(nullptr);
 	ground_sources(m_orthophoto);
 	ui()->set_base_layers([this]() { render_base_layers(); });
+	make_build_tools();
+	make_rail_tools();
 	editor_track::observe(this);
  }
 
