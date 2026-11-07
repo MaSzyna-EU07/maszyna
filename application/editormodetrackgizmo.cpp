@@ -156,7 +156,7 @@ std::vector<TTrack *> cluster_of(TTrack *First, Movable const &Moves)
 
 editor_mode::gizmo_operation editor_mode::track_gizmo_operation(TTrack const &Track, bool const Pointmode) const
 {
-	using enum gizmo_operation;
+	using enum rail_state::gizmo_operation;
 	if (m_gizmo_op == translate || (Pointmode && false == editor_track::is_end(m_track_point.kind)))
 		return m_gizmo_op;
 	if (m_gizmo_op == rotate)
@@ -295,7 +295,7 @@ void editor_mode::track_gizmo_control(TTrack &Track, glm::dvec3 Control)
 	if (drag.fixed != glm::dvec3{})
 		Control = drag.fixed * std::max(0.5, glm::dot(Control, drag.fixed));
 	if (glm::length(Control) < 0.5)
-		Control = glm::length(Control) > 1e-9 ? glm::normalize(Control) * 0.5 : drag.axis * 0.5;
+		Control = glm::length(Control) > 1e-9 ? glm::normalize(Control) * 0.5 : drag.grab.axis * 0.5;
 	editor_track::move_point(Track, drag.point, editor_track::point_position(Track, editor_track::end_of(drag.point)) + Control);
 	editor_track::align_controls(Track, drag.point, drag.partners);
 	track_gizmo_conform(Track);
@@ -469,30 +469,30 @@ void editor_mode::track_gizmo_measure_rotation(TTrack &Track, bool const Pointmo
 {
 	auto &drag{m_track_gizmo_drag};
 	auto const frame{track_gizmo_frame(Track, Pointmode, gizmo_operation::rotate)};
-	drag.basis = glm::dmat3(glm::mat3(frame));
-	drag.pivot = glm::dvec3{GfxRenderer->Camera_Position()} + glm::dvec3(frame[3]);
+	drag.tilt.basis = glm::dmat3(glm::mat3(frame));
+	drag.tilt.pivot = glm::dvec3{GfxRenderer->Camera_Position()} + glm::dvec3(frame[3]);
 	double along{0.0};
 	for (auto const &path : Track.m_paths)
 	{
-		drag.chainages.push_back(along);
-		drag.lengths.push_back(bezier{path}.plan_length());
-		along += drag.lengths.back();
+		drag.chain.chainages.push_back(along);
+		drag.chain.lengths.push_back(bezier{path}.plan_length());
+		along += drag.chain.lengths.back();
 	}
 	auto const end{editor_track::switch_main(Track, editor_track::end_of(drag.point))};
 	if (Track.eType == tt_Switch && false == Track.m_paths.empty())
 	{
-		drag.pivot_chainage = editor_track::switch_station(Track, drag.pivot);
-		drag.roll0 = end.valid() && end.kind == editor_track::point_kind::end ? Track.m_paths[0].rolls[1] : Track.m_paths[0].rolls[0];
+		drag.chain.pivot_chainage = editor_track::switch_station(Track, drag.tilt.pivot);
+		drag.tilt.roll0 = end.valid() && end.kind == editor_track::point_kind::end ? Track.m_paths[0].rolls[1] : Track.m_paths[0].rolls[0];
 	}
-	else if (end.valid() && end.path < static_cast<int>(drag.chainages.size()))
+	else if (end.valid() && end.path < static_cast<int>(drag.chain.chainages.size()))
 	{
-		drag.pivot_chainage = drag.chainages[end.path] + (end.kind == editor_track::point_kind::end ? drag.lengths[end.path] : 0.0);
-		drag.roll0 = end.kind == editor_track::point_kind::start ? Track.m_paths[end.path].rolls[0] : Track.m_paths[end.path].rolls[1];
+		drag.chain.pivot_chainage = drag.chain.chainages[end.path] + (end.kind == editor_track::point_kind::end ? drag.chain.lengths[end.path] : 0.0);
+		drag.tilt.roll0 = end.kind == editor_track::point_kind::start ? Track.m_paths[end.path].rolls[0] : Track.m_paths[end.path].rolls[1];
 	}
 	else
 	{
-		drag.pivot_chainage = along * 0.5;
-		drag.roll0 = Track.m_paths.empty() ? 0.0 : Track.m_paths.front().rolls[0];
+		drag.chain.pivot_chainage = along * 0.5;
+		drag.tilt.roll0 = Track.m_paths.empty() ? 0.0 : Track.m_paths.front().rolls[0];
 	}
 }
 
@@ -501,17 +501,17 @@ void editor_mode::track_gizmo_measure(TTrack &Track, bool const Pointmode, gizmo
 	auto &drag{m_track_gizmo_drag};
 	if (drag.on_control)
 	{
-		drag.origin = editor_track::point_position(Track, m_track_point);
+		drag.grab.origin = editor_track::point_position(Track, m_track_point);
 		auto const lever{editor_track::control_vector(Track, m_track_point)};
 		drag.length = glm::length(lever);
-		drag.axis = drag.length > 1e-9 ? lever / drag.length : glm::dvec3{0.0, 0.0, 1.0};
+		drag.grab.axis = drag.length > 1e-9 ? lever / drag.length : glm::dvec3{0.0, 0.0, 1.0};
 	}
 	else if (auto const end{Operation == gizmo_operation::scale ? editor_track::stretch_end(Track, drag.point) : std::nullopt})
 	{
 		drag.path = end->path;
 		drag.atend = end->atend;
 		drag.paths = Track.m_paths;
-		std::tie(drag.origin, drag.axis) = editor_track::end_axis(Track.m_paths[drag.path], drag.atend);
+		std::tie(drag.grab.origin, drag.grab.axis) = editor_track::end_axis(Track.m_paths[drag.path], drag.atend);
 		drag.length = bezier{Track.m_paths[drag.path]}.plan_length();
 	}
 	drag.stretch = drag.length;
@@ -575,7 +575,7 @@ void editor_mode::track_gizmo_turn_direction(TTrack &Track, double const Angle)
 		track_gizmo_control(Track, {plan.x, lever.y, plan.y});
 		return;
 	}
-	editor_track::rotate_y(Track, drag.pivot, step);
+	editor_track::rotate_y(Track, drag.tilt.pivot, step);
 	editor_track::follow(Track, m_track_joints);
 	m_track_dirty = true;
 }
@@ -586,24 +586,24 @@ void editor_mode::track_gizmo_turn_grade(TTrack &Track, double const Angle)
 	auto target{-std::tan(std::clamp(Angle, -1.4, 1.4))};
 	if (Global.ctrlState)
 		target = snapped_grade(target);
-	auto const step{target - drag.grade};
+	auto const step{target - drag.tilt.grade};
 	if (std::abs(step) < 1e-9)
 		return;
-	drag.grade = target;
+	drag.tilt.grade = target;
 	if (drag.on_control)
 	{
 		auto const lever{editor_track::control_vector(Track, drag.point)};
 		auto const run{glm::length(plan_of(lever))};
-		auto const along{glm::dot(level(lever), drag.basis[2])};
+		auto const along{glm::dot(level(lever), drag.tilt.basis[2])};
 		track_gizmo_control(Track, {lever.x, lever.y + step * run * (along >= 0.0 ? 1.0 : -1.0), lever.z});
 		return;
 	}
 	auto const count{editor_track::driven_paths(Track)};
-	for (std::size_t i = 0; i < count && i < drag.chainages.size(); ++i)
+	for (std::size_t i = 0; i < count && i < drag.chain.chainages.size(); ++i)
 	{
 		auto &path{Track.m_paths[i]};
-		auto const from{drag.chainages[i] - drag.pivot_chainage};
-		auto const to{from + drag.lengths[i]};
+		auto const from{drag.chain.chainages[i] - drag.chain.pivot_chainage};
+		auto const to{from + drag.chain.lengths[i]};
 		path.points[segment_data::point::start].y += step * from;
 		path.points[segment_data::point::end].y += step * to;
 		auto &control1{path.points[segment_data::point::control1]};
@@ -624,11 +624,11 @@ void editor_mode::track_gizmo_turn_cant(TTrack &Track, double const Angle)
 	auto const canted{editor_track::switch_main(Track, end)};
 	auto target{glm::degrees(drag.point.kind == editor_track::point_kind::control2 ? -Angle : Angle)};
 	if (Global.ctrlState)
-		target = snapped_cant(drag.roll0, target);
-	auto const step{static_cast<float>(target - drag.roll)};
+		target = snapped_cant(drag.tilt.roll0, target);
+	auto const step{static_cast<float>(target - drag.tilt.roll)};
 	if (std::abs(step) < 1e-6f)
 		return;
-	drag.roll = target;
+	drag.tilt.roll = target;
 	for (int i = 0; i < static_cast<int>(Track.m_paths.size()); ++i)
 	{
 		auto &path{Track.m_paths[i]};
@@ -666,7 +666,7 @@ void editor_mode::track_gizmo_length(TTrack &Track, double Length)
 	if (drag.on_control)
 	{
 		drag.stretch = Length;
-		track_gizmo_control(Track, drag.axis * Length);
+		track_gizmo_control(Track, drag.grab.axis * Length);
 	}
 	else if (drag.path >= 0)
 		track_gizmo_stretch(Track, Length);
@@ -696,7 +696,7 @@ void editor_mode::track_gizmo_end(TTrack &Track)
 void editor_mode::track_gizmo_rotated(TTrack &Track)
 {
 	auto &drag{m_track_gizmo_drag};
-	auto const turn{glm::transpose(drag.basis) * glm::dmat3(glm::mat3(m_track_gizmo))};
+	auto const turn{glm::transpose(drag.tilt.basis) * glm::dmat3(glm::mat3(m_track_gizmo))};
 	std::array<double, 3> const angles{std::atan2(turn[1][2], turn[1][1]), std::atan2(turn[2][0], turn[0][0]), std::atan2(turn[0][1], turn[0][0])};
 	if (drag.ring < 0)
 	{
@@ -712,9 +712,9 @@ void editor_mode::track_gizmo_scaled(TTrack &Track)
 {
 	auto const &drag{m_track_gizmo_drag};
 	double along{0.0};
-	if (false == mouse_along(drag.origin, drag.axis, along))
+	if (false == mouse_along(drag.grab.origin, drag.grab.axis, along))
 		return;
-	auto length{drag.length + along - drag.grabbed};
+	auto length{drag.length + along - drag.grab.grabbed};
 	if (Global.ctrlState && m_gizmo_snap > 0.0f)
 		length = std::round(length / m_gizmo_snap) * m_gizmo_snap;
 	track_gizmo_length(Track, length);
@@ -735,7 +735,7 @@ void editor_mode::track_gizmo_moved_point(TTrack &Track, glm::dvec3 const &Posit
 
 void editor_mode::render_track_gizmo()
 {
-	using enum editor_mode::gizmo_operation;
+	using enum rail_state::gizmo_operation;
 	auto *track = selected_track();
 	if (track == nullptr || false == editable(*track))
 	{
@@ -772,8 +772,8 @@ void editor_mode::render_track_gizmo()
 	if (false == m_track_gizmo_using)
 	{
 		track_gizmo_begin(*track, pointmode, operation);
-		if (operation == scale && false == mouse_along(drag.origin, drag.axis, drag.grabbed))
-			drag.grabbed = 0.0;
+		if (operation == scale && false == mouse_along(drag.grab.origin, drag.grab.axis, drag.grab.grabbed))
+			drag.grab.grabbed = 0.0;
 	}
 	if (operation == rotate)
 		track_gizmo_rotated(*track);

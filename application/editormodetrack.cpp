@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormoderailtools.h"
 #include "editor/editorSettings.hpp"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
@@ -885,11 +886,11 @@ void editor_mode::render_track_inspector()
 {
 	auto const &io{ImGui::GetIO()};
 	m_profile.open = m_track_window_open && m_track_tab == track_tab::profile;
-	m_speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
+	m_rail_tools->speed.set_open(m_track_window_open && m_track_tab == track_tab::speed);
 	m_infra.open = m_track_window_open && m_track_tab == track_tab::infra;
 	m_joints.set_open(m_track_window_open && m_track_tab == track_tab::joints);
-	m_srk.set_open(m_track_window_open && m_track_tab == track_tab::srk);
-	m_km.set_open(m_track_window_open && m_track_tab == track_tab::kilometrage);
+	m_rail_tools->srk.set_open(m_track_window_open && m_track_tab == track_tab::srk);
+	m_rail_tools->km.set_open(m_track_window_open && m_track_tab == track_tab::kilometrage);
 	if (false == m_track_window_open || m_track_tab != track_tab::lineside)
 	{
 		m_sweep.open = false;
@@ -920,7 +921,7 @@ void editor_mode::render_track_inspector()
 		{
 			switch (m_track_tab)
 			{
-			case track_tab::speed: m_speed.render_options(); break;
+			case track_tab::speed: m_rail_tools->speed.render_options(); break;
 			case track_tab::joints: m_joints.render_options(); break;
 			default: render_infra_body(); break;
 			}
@@ -931,7 +932,7 @@ void editor_mode::render_track_inspector()
 	m_profile.strip_top = -1.0f;
 	if (m_track_tab == track_tab::profile && m_track_window_open)
 		render_profile_strip();
-	m_srk.render_windows();
+	m_rail_tools->srk.render_windows();
 }
 
 void editor_mode::render_track_tool_options()
@@ -974,9 +975,9 @@ void editor_mode::render_track_tool_options()
 	case track_tab::lineside: render_lineside_ui(); break;
 	case track_tab::srk:
 		render_signal_selected();
-		m_srk.render_options();
+		m_rail_tools->srk.render_options();
 		break;
-	case track_tab::kilometrage: m_km.render_options(); break;
+	case track_tab::kilometrage: m_rail_tools->km.render_options(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
 		render_track_set_ui();
@@ -988,7 +989,7 @@ void editor_mode::render_track_tool_options()
 
 void editor_mode::render_track_selection()
 {
-	track_field_settle();
+	m_rail_tools->track_sheet.track_field_settle();
 	auto const tracks{selected_tracks()};
 	if (tracks.empty())
 	{
@@ -1013,13 +1014,13 @@ void editor_mode::render_track_selection()
 	auto const sheet{m_track_tab == track_tab::path || m_track_tab == track_tab::turnout};
 	if (tracks.size() >= 2)
 	{
-		render_track_set_header(tracks);
+		m_rail_tools->track_sheet.render_track_set_header(tracks);
 		if (false == sheet)
 			return;
-		render_track_select_tools(tracks);
+		m_rail_tools->track_sheet.render_track_select_tools(tracks);
 		render_track_terrain(tracks);
-		render_track_properties(tracks);
-		render_track_style(tracks);
+		m_rail_tools->track_sheet.render_track_properties(tracks);
+		m_rail_tools->track_style.render_track_style(tracks);
 		ImGui::Spacing();
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.15f, 1.0f));
 		if (ImGui::Button(format(STR_P("Delete %d track", "Delete %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())).c_str()))
@@ -1692,10 +1693,10 @@ void editor_mode::render_path_ui()
 	if (geometry)
 		render_switch_template(*track, true);
 	std::vector const tracks{track};
-	render_track_select_tools(tracks);
+	m_rail_tools->track_sheet.render_track_select_tools(tracks);
 	render_track_terrain(tracks);
-	render_track_properties(tracks);
-	render_track_style(tracks);
+	m_rail_tools->track_sheet.render_track_properties(tracks);
+	m_rail_tools->track_style.render_track_style(tracks);
 	render_path_events(*track);
 	// the shape is given by dragging in the view, the numbers are for the exact values
 	if (m_track_tab != track_tab::path)
@@ -2195,7 +2196,7 @@ void editor_mode::srk_key_hints(std::vector<key_hint> &Hints) const
 		Hints = {{"Drag along", "moves the signal along the track"}, {"Drag over the track", "to the other side"}, {"Release", "done"}, {"Esc", "cancel"}};
 	else if (m_signal.placing)
 		Hints = {{"Drag along", "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (false == m_srk.drawing())
+	else if (false == m_rail_tools->srk.drawing())
 	{
 		if (signal_armed() != nullptr)
 			Hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Esc", "stops placing"}};
@@ -2495,9 +2496,9 @@ std::string editor_mode::gizmo_readout(TTrack const &Track) const
 		return text;
 	}
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-		return format(STR_C("grade changed by %+.1f per mille"), 1000.0 * drag.grade);
+		return format(STR_C("grade changed by %+.1f per mille"), 1000.0 * drag.tilt.grade);
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
-		return format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
+		return format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)), 1500.0 * (std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)) - std::sin(glm::radians(drag.tilt.roll0))));
 	if (drag.operation == gizmo_operation::rotate)
 		return format(STR_C("turned %+.2f deg"), glm::degrees(drag.angle));
 	if (m_track_point.valid() && m_track_point.path < static_cast<int>(Track.m_paths.size()))
@@ -2521,9 +2522,9 @@ std::string editor_mode::control_readout(TTrack const &Track) const
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 1)
 		text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-		text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
+		text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.tilt.basis[2]) >= 0.0 ? 1.0 : -1.0));
 	if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
-		text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
+		text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)), 1500.0 * (std::sin(glm::radians(drag.tilt.roll0 + drag.tilt.roll)) - std::sin(glm::radians(drag.tilt.roll0))));
 	if (drag.fixed != glm::dvec3{})
 		text += "\n" + STR("along the switch");
 	return text;

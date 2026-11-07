@@ -82,12 +82,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_mode();
 	~editor_mode() override;
 
-	// the rail tools (editormoderailtools.h), made by make_rail_tools()
-	std::unique_ptr<rail_tools> m_rail_tools;
-	void make_rail_tools();
-	// rail services: overrides
-	// rail services: end
-
 	// methods
 	// initializes internal data structures of the mode. returns: true on success, false otherwise
 	bool init() override;
@@ -120,6 +114,38 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static bool settings_open() { return m_settings_open; }
 	static void set_settings_open(bool enabled) { m_settings_open = enabled; }
   private:
+	// the rail tools (editormoderailtools.h), made by make_rail_tools()
+	std::unique_ptr<rail_tools> m_rail_tools;
+	void make_rail_tools();
+	// rail services: overrides
+	void switch_templates_refresh(std::string const &Arm) override;
+	void arm_switch_tool() override;
+	glm::dvec3 cursor_on_ground() const override;
+	glm::dvec3 cursor_on_level(double const Height) const override;
+	void draw_ring(glm::dvec3 const &Point) const override;
+	bool orthophoto_shown() const override;
+	void open_orthophoto_window() override;
+	void show_status(std::string const &Text, bool const Warning) override;
+	std::size_t history_size() const override;
+	void save_scenery() override;
+	bool pick_track_texture(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen) override;
+	bool take_dropped_material(std::string &Name) override;
+	std::vector<TTrack *> selected_track_list() override;
+	void select_track_list(std::vector<TTrack *> const &Tracks) override;
+	void grow_selection(std::vector<TTrack *> const &From) override;
+	void toggle_in_selection(TTrack &Track) override;
+	// rail services: end
+	// the state of the rail tools the other tools read too (editormoderailstate.h)
+	using gizmo_operation = rail_state::gizmo_operation;
+	using track_gizmo_drag = rail_state::track_gizmo_drag;
+	using turntable_template = rail_state::turntable_template;
+	using turntable_fit = rail_state::turntable_fit;
+	using turntable_tool = rail_state::turntable_tool;
+	using signal_template = rail_state::signal_template;
+	using signal_spot = rail_state::signal_spot;
+	using signal_standing = rail_state::signal_standing;
+	using signal_tool = rail_state::signal_tool;
+
 	// types
 	struct editormode_input
 	{
@@ -1033,7 +1059,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void restore_array_snapshot(EditorSnapshot Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 
 	// ImGuizmo-based transform gizmo for the selected node
-	enum class gizmo_operation { translate, rotate, scale };
 	void render_gizmo();
 	// gizmo settings, drawn in the toolset window
 	void render_gizmo_options();
@@ -1119,48 +1144,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 m_track_pivot{0.0};
 	glm::mat4 m_track_gizmo{1.0f};
 	bool m_track_gizmo_using{false};
-	struct track_gizmo_drag
-	{
-		gizmo_operation operation{gizmo_operation::translate};
-		bool on_control{false};
-		double angle{0.0};
-		int path{-1};
-		bool atend{true};
-		std::size_t pieces{1};
-		std::vector<segment_data> paths;
-		editor_track::point_ref point;
-		glm::dvec3 origin{0.0};
-		glm::dvec3 axis{0.0};
-		double grabbed{0.0};
-		double length{0.0};
-		double stretch{0.0};
-		std::vector<std::pair<TTrack *, editor_track::point_ref>> partners;
-		glm::dvec3 fixed{0.0};
-		std::vector<std::pair<TTrack *, std::vector<int>>> held;
-		std::vector<TTrack *> extra;
-		int ring{-1};
-		glm::dmat3 basis{1.0};
-		glm::dvec3 pivot{0.0};
-		double grade{0.0};
-		double roll{0.0};
-		double roll0{0.0};
-		double pivot_chainage{0.0};
-		std::vector<double> chainages;
-		std::vector<double> lengths;
-		struct switch_joint
-		{
-			TTrack *track{nullptr};
-			editor_track::point_ref own;
-			editor_track::point_ref theirs;
-			glm::dvec3 point{0.0};
-			glm::dvec3 tangent{0.0};
-			double roll{0.0};
-			bool moved{false};
-			std::vector<std::pair<TTrack *, std::vector<segment_data>>> cluster;
-			std::vector<std::pair<TTrack *, std::vector<editor_track::joint>>> joints;
-		};
-		std::vector<switch_joint> switches;
-	};
 	track_gizmo_drag m_track_gizmo_drag;
 	gizmo_operation track_gizmo_operation(TTrack const &Track, bool const Pointmode) const;
 	glm::mat4 track_gizmo_frame(TTrack const &Track, bool const Pointmode, gizmo_operation const Operation) const;
@@ -1867,56 +1850,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void advance_switch_name();
 	void join_last_steps();
 	bool render_switch_drive_choice();
-	struct turntable_template
-	{
-		std::string file;
-		std::string name;
-		double length{0.0};
-		int angles{0};
-		int positions{0};
-		int track{0};
-		int yaw{0};
-		std::vector<double> fixed;
-	};
-	struct turntable_fit
-	{
-		editor_track::snap_target end;
-		double heading{0.0};
-		double radius{0.0};
-		double length{0.0};
-		std::vector<segment_data> pieces;
-		std::string issue;
-		bool chosen{true};
-		TTrack *replaces{nullptr};
-	};
-	struct turntable_tool
-	{
-		std::vector<turntable_template> templates;
-		int revision{-1}; // of the include bank the templates were read from
-		int chosen{-1};
-		char name[64]{};
-		bool placing{false};
-		glm::dvec3 centre{0.0};
-		double yaw{0.0};
-		glm::vec2 pressed{0.f};
-		editor_track::snap_target snap;
-		TTrack *table{nullptr};
-		scene::instance_handle include{0};
-		int kind{-1};
-		double length{0.0};
-		double table_yaw{0.0};
-		std::vector<double> exits;
-		float reach{80.f};
-		float radius{150.f};
-		float stub{25.f};
-		float step{0.f};
-		std::vector<turntable_fit> fits;
-		int hovered{-1};
-		double heading{0.0};
-		double exit_length{0.0};
-		std::string status;
-		std::string error;
-	};
 	turntable_tool m_turntable;
 	bool scan_turntables(bool Wait = true);
 	std::string turntable_name_for_new() const;
@@ -2437,49 +2370,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int m_lineside_tab{0};
 	void render_lineside_ui();
 	void arm_switch();
-	// the window of the switch templates: the catalogue and the own ones, made of straights, arcs and transition curves
-	struct switch_designer
-	{
-		bool open{false};
-		bool loaded{false};
-		std::vector<switch_design::design> catalogue;
-		std::vector<switch_design::design> own;
-		bool from_catalogue{true};
-		int selected{-1};
-		bool dirty{false};
-		bool stretched{true};
-		double quick_radius{300.0};
-		double quick_ratio{9.0};
-		double quick_a{0.0};
-		double quick_b{0.0};
-		int fit_kind{3}; // of switch_design::tangent_fit
-		double quick_first{0.0}; // the radius of the first arc of an arc, a straight and an arc, 0: the R
-		bool picking{false}; // the switch clicked off the view, the orthophoto under it
-		std::vector<glm::dvec3> clicks;
-		bool on_view{true}; // the template shown in the view where its first points were clicked
-		switch_design::design measured; // what the points clicked so far make
-		bool measured_ready{false};
-		std::string measured_text;
-		int pointed{-1}; // the value under the mouse, its dimension shown on the drawing
-		int pointed_test{-1};
-		double blade_length{5.0};
-		double blade_gap{0.15};
-		std::string status;
-	};
-	switch_designer m_switch_designer;
-	void switch_designs_load();
-	// the list of the switch tool built again with the own templates, keeping the armed one or arming the one whose label starts with Arm
-	void switch_templates_refresh(std::string const &Arm = {});
-	void render_switch_designer();
-	void render_switch_designer_list();
-	void render_switch_designer_clicking();
-	void render_switch_designer_edit();
-	bool render_switch_designer_quick(switch_design::design &Entry, int &Pointing);
-	void render_switch_designer_actions(switch_design::design const &Entry, bool const Editable, bool const Buildable);
-	void switch_designer_click(glm::dvec3 const &Point);
-	void switch_designer_measure();
-	void switch_designer_finish();
-	void draw_switch_designer_clicks() const;
 	void draw_cursor_ring(glm::dvec3 const &Point) const;
 	static std::string grade_line_key(TTrack const &Track);
 	static std::string grade_line_key(std::string const &Name, TTrack const &Track);
@@ -2783,15 +2673,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the set when there's one, the selected track otherwise
 	std::vector<TTrack *> selected_tracks();
 	void select_tracks(std::vector<TTrack *> const &Tracks);
-	// changes each track which can be changed, in one step of the undo; false from Change: the track stays as it was
-	std::size_t tracks_apply(std::vector<TTrack *> const &Tracks, std::function<bool(TTrack &)> const &Change, bool const Rebuild, char const *What);
 	// the model of the timbers, with the fastenings where it has them, set on all the switches and crossings of the scenery, in one
 	// step of the undo; empty: the one of eu07.ini. returns: the tracks changed
 	std::size_t set_switch_timbers(std::string const &Model);
-	int track_property_index(std::string_view const Key) const;
-	std::size_t track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text);
-	void track_field_finish();
-	void track_field_settle();
 	void track_textures_scan();
 	// a texture in use, offered first in the picker
 	struct texture_use
@@ -2835,111 +2719,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<texture_use> road_textures_used() const;
 	// the textures of the palette and of the water of the terrain; None: the entry for no texture of its own, nullptr: there's none
 	texture_offer terrain_texture_offer(char const *None);
-	void render_track_properties(std::vector<TTrack *> const &Tracks);
-	// the values of the properties over the tracks gathered again when the selection or the tracks changed
-	void property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature);
-	// the notes on the values of the properties made again when the selection or the tracks changed
-	void property_notes(std::size_t const Signature);
-	// the tooltip of a row of the properties
-	void property_row_help(std::size_t const Index, std::size_t const Selected) const;
-	// the label of a row of the properties, marked when the selected tracks differ in it
-	void property_row_label(std::size_t const Index, std::size_t const Selected) const;
-	// the rows of the properties by their kind: a text, a choice, a tick, a texture
-	void property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	void property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	void property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	void property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	// whether any property of the part is shown, More: of those under "more"
-	bool property_rows_any(int const Part, bool const More) const;
-	// the rows of the properties of the part
-	void property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks);
-	// the notes under a row of the properties
-	void property_row_notes(std::size_t const Index) const;
-	// the rows under "more" of the part, in a tree node of the id
-	void property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks);
-	// the rows of the look of the track
-	void property_look_rows(std::vector<TTrack *> const &Tracks);
-	void render_track_set_header(std::vector<TTrack *> const &Tracks);
-	// a row of the list of the selected tracks: Removed or Alone set to the track when it's taken out or kept alone
-	void render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone);
-	void render_track_select_tools(std::vector<TTrack *> const &Tracks);
-	// the popup selecting the tracks of the scenery alike the selected ones
-	void render_similar_popup(std::vector<TTrack *> const &Tracks);
-	void render_track_style(std::vector<TTrack *> const &Tracks);
-	// what the track taken changes on the selected tracks, each with a tick, and the button setting it
-	void render_style_taken(std::vector<TTrack *> const &Tracks);
-	// a line of what the track taken changes: its tick and how it changes. returns: true when it's ticked
-	bool render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected);
-	void copy_track_style(TTrack const &Track);
-	std::size_t paste_track_style(std::vector<TTrack *> const &Tracks);
-	// which groups of the properties are pasted or put on the tracks by a preset, in the order of the groups of editormodetrackprops.cpp
-	using track_groups = std::array<bool, 11>;
-	// the values of the properties of the chosen groups put on the tracks, in one step of the undo. returns: the number of the
-	// tracks changed, none when no value is of the chosen groups
-	std::optional<std::size_t> apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What);
-	// presets of the properties of the tracks (editorTrackPresets), made from a track and put on the selected ones
-	void render_track_presets(std::vector<TTrack *> const &Tracks);
-	// the combo choosing the preset
-	void render_preset_combo();
-	// the buttons applying the preset and making a new one from the track
-	void render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width);
-	// the name of the preset of the id, renamed by Enter or the button
-	void render_preset_name(int const Id);
-	// the ticks of what the preset of the id overwrites
-	void render_preset_groups(int const Id);
-	// the buttons updating the preset of the id from the track and deleting it
-	void render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width);
-	void render_track_presets_menu();
-	std::size_t apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks);
-	std::vector<TTrack *> similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const;
-	// values of the properties over the selected tracks, each with the number of the tracks having it
-	struct track_values
-	{
-		std::size_t signature{0};
-		int generation{0};
-		int generation_seen{-1};
-		std::size_t history{0};
-		int frame{-100};
-		std::vector<std::vector<std::pair<std::string, int>>> values;
-		std::vector<std::size_t> applies;
-		std::size_t unsaved{0}; // of the tracks, changed since the file was written
-	};
-	track_values m_track_values;
-	// how the last value given in the sheet went: on how many tracks, and why not on the others
-	struct track_outcome
-	{
-		int property{-1};
-		std::string text;
-		bool refused{false}; // some tracks couldn't take it
-		std::size_t signature{0}; // of the tracks it was given to
-		std::size_t history{0};
-		double time{0.0};
-	};
-	track_outcome m_track_outcome;
-	// the lines under the rows of the sheet
-	struct track_note
-	{
-		enum class kind
-		{
-			typing,
-			done,
-			refused
-		};
-		int property{-1};
-		std::string text;
-		kind type{kind::done};
-	};
-	std::vector<track_note> m_track_notes;
-	// the field being typed in, with the tracks it was started on
-	struct track_field
-	{
-		int property{-1};
-		std::vector<TTrack *> tracks;
-		std::array<char, 256> text{};
-		std::string initial;
-		int frame{0};
-	};
-	track_field m_track_field;
 	std::array<std::vector<texture_use>, 2> m_track_textures; // of the rails, of the trackbed
 	std::vector<texture_use> m_texture_used; // the ones in use the open picker offers
 	std::array<char, 128> m_texture_filter{};
@@ -2952,39 +2731,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<texture_index_entry> m_texture_index; // sorted by the name
 	bool m_texture_indexed{false};
 	std::string m_texture_hovered; // the tile under the mouse in the picker, shown large above them
-	// properties taken from a track, to be set on the selected ones
-	struct track_style
-	{
-		std::string from;
-		std::vector<std::pair<std::string, std::string>> values;
-		// ticked at first by their groups: speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and
-		// sound, frogs, sleeper placement
-		track_groups groups{false, false, false, false, true, true, true, true, false, true, true};
-		std::map<std::string, bool, std::less<>> ticks; // changed by hand, by the keys of the properties
-		bool picking{false}; // the next click on a track in the view takes its properties
-		bool reveal{false};  // its section of the inspector opens, a track having been taken
-	};
-	track_style m_track_style;
-	// a property of the track taken which the selected ones have otherwise
-	struct track_style_line
-	{
-		int property{-1};
-		std::string now;       // as the selected tracks have it, or how many values they have
-		std::string taken;     // as the track taken has it
-		std::size_t differ{0}; // of the selected tracks, the ones it changes
-	};
-	std::vector<track_style_line> track_style_lines(std::vector<TTrack *> const &Tracks) const;
-	bool track_style_takes(std::string const &Key) const;
-	struct track_presets_panel
-	{
-		int selected{0}; // id of the preset chosen in the inspector
-		int nameid{0}; // the preset whose name is in the field
-		std::array<char, 128> name{};
-	};
-	track_presets_panel m_track_presets;
-	std::vector<std::vector<TTrack *>> m_track_similar;
-	TTrack const *m_track_list_hover{nullptr}; // in the list of the selected tracks
-	int m_track_list_hover_frame{-1};
 	using template_item = ::template_item;
 	using standing_template = ::standing_template;
 	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
@@ -3042,78 +2788,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void select_signal(scene::instance_handle const Instance) override;
 	void render_signal_templates() override;
 
-	struct signal_template
-	{
-		std::string file;
-		std::string name;
-		std::string description;
-		std::string kind;
-		std::string mount;
-		std::string lamps;
-		std::string lean;
-		std::string read;
-		int parameters{0};
-		bool plate{false};
-		bool linked{false};
-		std::vector<int> speeds;
-		int aspects{0}; // of a block signal, 3 or 4
-		int arms{0}; // of a semaphore, 1 or 2, from its description
-		// the aspects its description lists, by name (Sr1, Od2...) with the event giving each; empty for a template not described so
-		std::vector<std::pair<std::string, std::string>> aspect_events;
-		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
-		std::vector<std::pair<std::string, std::string>> repeats;
-	};
-	struct signal_spot
-	{
-		TTrack *track{nullptr};
-		int path{0};
-		glm::dvec3 axis{0.0};
-		glm::dvec2 travel{0.0, 1.0};
-		int side{1};
-		int list{2};
-		double offset{0.0};
-		glm::dvec3 position{0.0};
-		double yaw{0.0};
-	};
-	struct signal_standing
-	{
-		standing_template include;
-		int kind{-1};
-		std::string name;
-		std::string read;
-		TTrack *track{nullptr};
-		int list{0};
-	};
-	struct signal_tool
-	{
-		std::vector<signal_template> templates;
-		int revision{-1};
-		int kind{0};
-		std::array<int, 7> chosen{-1, -1, -1, -1, -1, -1, -1};
-		bool armed{false}; // a click by a track places the chosen template
-		char filter[64]{};
-		char name[64]{"A"};
-		char plate[64]{};
-		char linked[64]{"none"};
-		float height{0.0f};
-		bool placing{false};
-		signal_spot press;
-		glm::vec2 pressed{0.f};
-		int facing{0};
-		std::vector<signal_standing> standing;
-		std::size_t standing_history{static_cast<std::size_t>(-1)};
-		std::size_t standing_redo{static_cast<std::size_t>(-1)};
-		double standing_time{-1.0};
-		int hover{-1};
-		scene::instance_handle selected{0};
-		bool moving{false};
-		glm::dvec2 grab{0.0};
-		signal_spot home;
-		bool home_valid{false};
-		signal_spot moved;
-		bool moved_valid{false};
-		std::string status;
-	};
 	signal_tool m_signal;
 	bool signal_scan(bool Wait = true);
 	signal_template const *signal_current() const;
@@ -3404,8 +3078,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_switch_drives(std::string const &command, std::istringstream &words);
 	selftest_result selftest_blade_tips(std::string const &command);
 	selftest_result selftest_curvedswitch(std::istringstream &words);
-	selftest_result selftest_designer(std::istringstream &words);
-	selftest_result selftest_designerpick(std::istringstream &words);
 	selftest_result selftest_release();
 	selftest_result selftest_hover(std::istringstream &words);
 	selftest_result selftest_layhold(std::istringstream &words);
@@ -3531,14 +3203,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_audit(std::size_t const Index, std::size_t &Gone, std::size_t &Retaken, std::size_t &Failing);
 	selftest_result selftest_profileaudit();
 	selftest_result selftest_gradelines(std::istringstream &words) const;
-	selftest_result selftest_props(std::string const &command, std::istringstream &words);
-	// the commands of selftest_props, one each
-	selftest_result selftest_tracksel(std::istringstream &words);
-	selftest_result selftest_trackprop(std::istringstream &words);
-	selftest_result selftest_trackprops();
-	selftest_result selftest_trackstyle(std::istringstream &words);
-	void selftest_trackstyle_list();
-	selftest_result selftest_tracksimilar(std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
 	// monkey <seed> <steps>: the random steps written into the script after this line
 	selftest_result selftest_monkey_run(std::istringstream &words);
@@ -3825,15 +3489,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_infra_body();
 
 	gauge_tool m_gauge{*this, *this, *this, *this};
-	speed_tool m_speed{*this, *this, *this, *this};
 	joints_tool m_joints{*this, *this, *this, *this};
 	vehicle_tool m_vehicle{*this, *this};
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
-	srk_tool m_srk{*this, *this, *this, *this, *this};
-	km_tool m_km{*this, *this, *this, *this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel};
 
 	// the build tools (editormodebuildtools.h), made by make_build_tools()
 	std::unique_ptr<build_tools> m_build_tools;

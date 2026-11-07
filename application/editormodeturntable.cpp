@@ -279,11 +279,11 @@ bool editor_mode::scan_turntables(bool const Wait)
 		EditorIncludes.wait();
 	else
 		EditorIncludes.start();
-	if (false == EditorIncludes.scanned() || tool.revision == EditorIncludes.revision())
+	if (false == EditorIncludes.scanned() || tool.bank.revision == EditorIncludes.revision())
 		return false;
-	tool.revision = EditorIncludes.revision();
-	auto const chosen{tool.chosen >= 0 && tool.chosen < static_cast<int>(tool.templates.size()) ? tool.templates[tool.chosen].file : std::string{}};
-	tool.templates.clear();
+	tool.bank.revision = EditorIncludes.revision();
+	auto const chosen{tool.bank.chosen >= 0 && tool.bank.chosen < static_cast<int>(tool.bank.templates.size()) ? tool.bank.templates[tool.bank.chosen].file : std::string{}};
+	tool.bank.templates.clear();
 	for (auto const &entry : EditorIncludes.entries())
 	{
 		include_info info;
@@ -304,13 +304,13 @@ bool editor_mode::scan_turntables(bool const Wait)
 			item.fixed = fixed_angles(entry.file);
 		if (item.track == 0 || item.yaw == 0 || (item.angles == 0 && item.fixed.empty()))
 			continue;
-		tool.templates.push_back(std::move(item));
+		tool.bank.templates.push_back(std::move(item));
 	}
-	std::stable_sort(tool.templates.begin(), tool.templates.end(), [](turntable_template const &A, turntable_template const &B) { return (A.angles > 0) != (B.angles > 0) ? A.angles > 0 : A.name < B.name; });
-	auto const kept{std::ranges::find_if(tool.templates, [&chosen](turntable_template const &Template) { return Template.file == chosen; })};
-	tool.chosen = -1;
-	if (false == tool.templates.empty())
-		tool.chosen = kept != tool.templates.end() ? static_cast<int>(kept - tool.templates.begin()) : 0;
+	std::stable_sort(tool.bank.templates.begin(), tool.bank.templates.end(), [](turntable_template const &A, turntable_template const &B) { return (A.angles > 0) != (B.angles > 0) ? A.angles > 0 : A.name < B.name; });
+	auto const kept{std::ranges::find_if(tool.bank.templates, [&chosen](turntable_template const &Template) { return Template.file == chosen; })};
+	tool.bank.chosen = -1;
+	if (false == tool.bank.templates.empty())
+		tool.bank.chosen = kept != tool.bank.templates.end() ? static_cast<int>(kept - tool.bank.templates.begin()) : 0;
 	// the turntable read before points at the templates of before
 	tool.table = nullptr;
 	return true;
@@ -318,8 +318,8 @@ bool editor_mode::scan_turntables(bool const Wait)
 
 std::string editor_mode::turntable_name_for_new() const
 {
-	if (m_turntable.name[0] != '\0')
-		return ToLower(m_turntable.name);
+	if (m_turntable.bank.name[0] != '\0')
+		return ToLower(m_turntable.bank.name.data());
 	for (int i = 1;; ++i)
 	{
 		auto const name{"obr" + std::to_string(i)};
@@ -363,15 +363,15 @@ bool editor_mode::turntable_read(TTrack *Table)
 		if (included.removed || included.dead || included.file == nullptr)
 			continue;
 		auto const file{editor_includes::normalized(*included.file)};
-		auto const kind{std::ranges::find_if(tool.templates, [&file](turntable_template const &Template) { return editor_includes::normalized(Template.file) == file; })};
-		if (kind == tool.templates.end())
+		auto const kind{std::ranges::find_if(tool.bank.templates, [&file](turntable_template const &Template) { return editor_includes::normalized(Template.file) == file; })};
+		if (kind == tool.bank.templates.end())
 			continue;
 		std::string target;
 		std::vector<std::string> values;
 		if (false == editor_includes::parse_directive(scene::Layers.directive(handle), target, values) || kind->track > static_cast<int>(values.size()) || ToLower(values[kind->track - 1]) != Table->name())
 			continue;
 		tool.include = handle;
-		tool.kind = static_cast<int>(kind - tool.templates.begin());
+		tool.kind = static_cast<int>(kind - tool.bank.templates.begin());
 		if (double yaw; kind->yaw <= static_cast<int>(values.size()) && numeric(values[kind->yaw - 1], yaw))
 			tool.table_yaw = yaw;
 		if (kind->angles > 0)
@@ -402,7 +402,7 @@ std::vector<double> editor_mode::turntable_lines() const
 double editor_mode::turntable_snap(double const Heading) const
 {
 	auto const &tool{m_turntable};
-	auto const fixed{tool.kind >= 0 && tool.templates[tool.kind].angles == 0};
+	auto const fixed{tool.kind >= 0 && tool.bank.templates[tool.kind].angles == 0};
 	std::optional<double> nearest;
 	for (auto const line : turntable_lines())
 		for (auto const heading : {line, line + 180.0})
@@ -410,7 +410,7 @@ double editor_mode::turntable_snap(double const Heading) const
 				nearest = heading;
 	if (nearest.has_value() && (fixed || std::abs(circular(*nearest - Heading)) < 1.0))
 		return circular(*nearest);
-	auto const step{tool.step > 0.f ? static_cast<double>(tool.step) : 0.1};
+	auto const step{tool.shape.step > 0.f ? static_cast<double>(tool.shape.step) : 0.1};
 	return circular(tool.table_yaw + std::round(circular(Heading - tool.table_yaw) / step) * step);
 }
 
@@ -422,7 +422,7 @@ bool editor_mode::turntable_exit_at(glm::dvec3 const &Ground, double &Heading, d
 	auto const centre{turntable_centre()};
 	auto const rim{tool.length * 0.5};
 	auto const distance{plan_distance(Ground, centre)};
-	if (distance < rim + 1.0 || distance > rim + tool.reach)
+	if (distance < rim + 1.0 || distance > rim + tool.shape.reach)
 		return false;
 	Heading = turntable_snap(heading_of(plan_of(Ground - centre)));
 	Length = std::max(5.0, std::round((distance - rim) * 2.0) * 0.5);
@@ -485,15 +485,15 @@ bool editor_mode::turntable_fit_end(editor_track::snap_target const &End, turnta
 		return Candidate.radius > best->radius + 1e-6;
 	};
 	auto const solve = [&]() {
-		auto const fixed{tool.kind >= 0 && tool.templates[tool.kind].angles == 0};
+		auto const fixed{tool.kind >= 0 && tool.bank.templates[tool.kind].angles == 0};
 		if (fixed)
 		{
 			for (auto const line : turntable_lines())
 				for (auto const heading : {line, line + 180.0})
 				{
 					auto const radial{heading_vector(heading)};
-					for (int i = 0; tool.radius * std::pow(0.9, i) >= kMinimumRadius; ++i)
-						if (auto const candidate{connect(radial, tool.radius * std::pow(0.9, i))})
+					for (int i = 0; tool.shape.radius * std::pow(0.9, i) >= kMinimumRadius; ++i)
+						if (auto const candidate{connect(radial, tool.shape.radius * std::pow(0.9, i))})
 						{
 							if (better(*candidate))
 								best = candidate;
@@ -509,9 +509,9 @@ bool editor_mode::turntable_fit_end(editor_track::snap_target const &End, turnta
 		}
 		else
 		{
-			for (int r = 0; tool.radius * std::pow(0.9, r) >= kMinimumRadius && false == best.has_value(); ++r)
+			for (int r = 0; tool.shape.radius * std::pow(0.9, r) >= kMinimumRadius && false == best.has_value(); ++r)
 			{
-				auto const radius{tool.radius * std::pow(0.9, r)};
+				auto const radius{tool.shape.radius * std::pow(0.9, r)};
 				auto const gap = [&](double const S) {
 					auto const vertex{e - t * S};
 					auto const radial{vertex - c};
@@ -617,7 +617,7 @@ void editor_mode::turntable_find_fits()
 		return;
 	auto const centre{turntable_centre()};
 	auto const rim{tool.length * 0.5};
-	for (auto const &end : editor_track::free_ends(nullptr, 1, centre, rim + tool.reach, {tool.table}))
+	for (auto const &end : editor_track::free_ends(nullptr, 1, centre, rim + tool.shape.reach, {tool.table}))
 	{
 		if (std::abs(plan_distance(end.position, centre) - rim) <= kRimTolerance)
 			continue;
@@ -627,7 +627,7 @@ void editor_mode::turntable_find_fits()
 		tool.fits.push_back(std::move(fit));
 	}
 	std::sort(tool.fits.begin(), tool.fits.end(), [](turntable_fit const &A, turntable_fit const &B) { return A.end.distance < B.end.distance; });
-	tool.status = tool.fits.empty() ? format(STR_C("No free ends within %.0f m of the rim"), tool.reach) : std::string{};
+	tool.status = tool.fits.empty() ? format(STR_C("No free ends within %.0f m of the rim"), tool.shape.reach) : std::string{};
 }
 
 std::vector<scene::instance_handle> editor_mode::turntable_includes(TTrack const &Table)
@@ -641,10 +641,10 @@ std::vector<scene::instance_handle> editor_mode::turntable_includes(TTrack const
 		auto const &included{scene::Layers.instance(handle)};
 		if (included.removed || included.dead || included.file == nullptr)
 			continue;
-		auto const kind{std::ranges::find_if(m_turntable.templates, [&included](turntable_template const &Template) { return editor_includes::normalized(Template.file) == editor_includes::normalized(*included.file); })};
+		auto const kind{std::ranges::find_if(m_turntable.bank.templates, [&included](turntable_template const &Template) { return editor_includes::normalized(Template.file) == editor_includes::normalized(*included.file); })};
 		std::string target;
 		std::vector<std::string> values;
-		if (kind != m_turntable.templates.end() && editor_includes::parse_directive(scene::Layers.directive(handle), target, values) && kind->track <= static_cast<int>(values.size()) && ToLower(values[kind->track - 1]) == Table.name())
+		if (kind != m_turntable.bank.templates.end() && editor_includes::parse_directive(scene::Layers.directive(handle), target, values) && kind->track <= static_cast<int>(values.size()) && ToLower(values[kind->track - 1]) == Table.name())
 			result.push_back(handle);
 	}
 	return result;
@@ -685,7 +685,7 @@ void editor_mode::turntable_store_exits()
 		turntable_read(tool.table);
 		return;
 	}
-	auto const &kind{tool.templates[tool.kind]};
+	auto const &kind{tool.bank.templates[tool.kind]};
 	if (kind.angles == 0)
 	{
 		turntable_read(tool.table);
@@ -727,9 +727,9 @@ void editor_mode::turntable_place(glm::dvec3 const &Centre, double const Yaw)
 	auto &tool{m_turntable};
 	scan_turntables();
 	tool.error.clear();
-	if (tool.chosen < 0 || tool.chosen >= static_cast<int>(tool.templates.size()))
+	if (tool.bank.chosen < 0 || tool.bank.chosen >= static_cast<int>(tool.bank.templates.size()))
 		return;
-	auto const &kind{tool.templates[tool.chosen]};
+	auto const &kind{tool.bank.templates[tool.bank.chosen]};
 	auto const name{turntable_name_for_new()};
 	if (simulation::Paths.find(name) != nullptr)
 	{
@@ -741,7 +741,7 @@ void editor_mode::turntable_place(glm::dvec3 const &Centre, double const Yaw)
 	segment_data path;
 	path.points[segment_data::point::start] = {Centre.x + direction.x * rim, Centre.y, Centre.z + direction.y * rim};
 	path.points[segment_data::point::end] = {Centre.x - direction.x * rim, Centre.y, Centre.z - direction.y * rim};
-	auto *table{editor_track::create_turntable(path, tool.snap.track, name)};
+	auto *table{editor_track::create_turntable(path, tool.place.snap.track, name)};
 	editor_track::commit({table});
 	push_track_snapshot({}, {table});
 	template_item item;
@@ -753,7 +753,7 @@ void editor_mode::turntable_place(glm::dvec3 const &Centre, double const Yaw)
 	std::string error;
 	if (place_templates({item}, error) == 0)
 		tool.error = error;
-	tool.name[0] = '\0';
+	tool.bank.name[0] = '\0';
 	m_node = table;
 	m_track_point = {};
 	ui()->set_node(m_node);
@@ -770,9 +770,9 @@ void editor_mode::turntable_press(track_intent const &Intent)
 	{
 	case kind::turntable_place:
 		tool.placing = true;
-		tool.pressed = {io.MousePos.x, io.MousePos.y};
-		tool.snap = Intent.snap;
-		tool.centre = Intent.position;
+		tool.place.pressed = {io.MousePos.x, io.MousePos.y};
+		tool.place.snap = Intent.snap;
+		tool.place.centre = Intent.position;
 		return;
 	case kind::turntable_exit:
 	{
@@ -812,27 +812,27 @@ void editor_mode::turntable_finish_placement()
 		return;
 	tool.placing = false;
 	scan_turntables();
-	if (tool.chosen < 0)
+	if (tool.bank.chosen < 0)
 		return;
-	auto const rim{tool.templates[tool.chosen].length * 0.5};
+	auto const rim{tool.bank.templates[tool.bank.chosen].length * 0.5};
 	auto const &io{ImGui::GetIO()};
-	auto const dragged{glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - tool.pressed) >= kDragPixels};
-	if (tool.snap.track != nullptr && false == dragged)
+	auto const dragged{glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - tool.place.pressed) >= kDragPixels};
+	if (tool.place.snap.track != nullptr && false == dragged)
 	{
-		auto const into{glm::normalize(plan_of(tool.snap.direction))};
-		glm::dvec3 const centre{tool.snap.position.x - into.x * rim, tool.snap.position.y, tool.snap.position.z - into.y * rim};
-		tool.yaw = heading_of(into);
-		turntable_place(centre, tool.yaw);
+		auto const into{glm::normalize(plan_of(tool.place.snap.direction))};
+		glm::dvec3 const centre{tool.place.snap.position.x - into.x * rim, tool.place.snap.position.y, tool.place.snap.position.z - into.y * rim};
+		tool.place.yaw = heading_of(into);
+		turntable_place(centre, tool.place.yaw);
 		return;
 	}
-	tool.snap = {};
+	tool.place.snap = {};
 	if (dragged)
 	{
-		auto const cursor{cursor_level(tool.centre.y)};
-		if (plan_distance(cursor, tool.centre) > 0.5)
-			tool.yaw = std::round(heading_of(plan_of(cursor - tool.centre)) * 10.0) / 10.0;
+		auto const cursor{cursor_level(tool.place.centre.y)};
+		if (plan_distance(cursor, tool.place.centre) > 0.5)
+			tool.place.yaw = std::round(heading_of(plan_of(cursor - tool.place.centre)) * 10.0) / 10.0;
 	}
-	turntable_place(tool.centre, tool.yaw);
+	turntable_place(tool.place.centre, tool.place.yaw);
 }
 
 editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground, bool const Shift)
@@ -855,7 +855,7 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 		auto const centre{turntable_centre()};
 		auto const rim{tool.length * 0.5};
 		auto const end{snap_free_end(Ground, mouse, nullptr, 1, {tool.table})};
-		if (end.track != nullptr && std::abs(plan_distance(end.position, centre) - rim) > kRimTolerance && plan_distance(end.position, centre) <= rim + tool.reach)
+		if (end.track != nullptr && std::abs(plan_distance(end.position, centre) - rim) > kRimTolerance && plan_distance(end.position, centre) <= rim + tool.shape.reach)
 		{
 			intent.snap = end;
 			intent.track = end.track;
@@ -884,7 +884,7 @@ editor_mode::track_intent editor_mode::turntable_intent(glm::dvec3 const &Ground
 		}
 	}
 	scan_turntables(false);
-	if (tool.chosen < 0)
+	if (tool.bank.chosen < 0)
 		return intent;
 	if (false == Shift)
 	{
@@ -914,7 +914,7 @@ void editor_mode::render_turntable_ui()
 		ImGui::Text(STR_C("Turntable %s, bridge %.1f m"), table.name().c_str(), tool.length);
 		if (tool.kind >= 0)
 		{
-			auto const &kind{tool.templates[tool.kind]};
+			auto const &kind{tool.bank.templates[tool.kind]};
 			ImGui::TextDisabled("%s", kind.name.c_str());
 			ImGui::TextDisabled(kind.angles > 0 ? STR_C("(positions set by the tracks around, up to %d)") : STR_C("(%d positions fixed by the template)"), kind.angles > 0 ? kind.positions : static_cast<int>(kind.fixed.size()));
 		}
@@ -950,7 +950,7 @@ void editor_mode::render_turntable_ui()
 		ImGui::PushID("turntablemore");
 		if (ImGui::TreeNode(STR_C("More settings")))
 		{
-			render_lead_settings(tool.reach, tool.radius, tool.step, tool.kind < 0 || tool.templates[tool.kind].angles > 0);
+			render_lead_settings(tool.shape.reach, tool.shape.radius, tool.shape.step, tool.kind < 0 || tool.bank.templates[tool.kind].angles > 0);
 			ImGui::TreePop();
 		}
 		ImGui::PopID();
@@ -1015,20 +1015,20 @@ void editor_mode::render_turntable_ui()
 		if (selected != nullptr && selected->eType == tt_Table)
 			ImGui::TextColored(warncolour, "%s", STR_C("This turntable can't be read"));
 		ImGui::TextUnformatted(STR_C("New turntable"));
-		if (tool.templates.empty() && EditorIncludes.searching())
+		if (tool.bank.templates.empty() && EditorIncludes.searching())
 			ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
-		else if (tool.templates.empty())
+		else if (tool.bank.templates.empty())
 			ImGui::TextColored(warncolour, "%s", STR_C("No turntables: no template is described with category: turntable and its turntable: {length}"));
-		for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+		for (int i = 0; i < static_cast<int>(tool.bank.templates.size()); ++i)
 		{
-			auto const &kind{tool.templates[i]};
+			auto const &kind{tool.bank.templates[i]};
 			// the name, and under it the size and the positions
 			auto const details{kind.angles > 0 ? format(STR_C("%.0f m, up to %d positions set by the tracks"), kind.length, kind.positions)
 			                                   : format(STR_C("%.0f m, %d fixed positions"), kind.length, static_cast<int>(kind.fixed.size()))};
 			auto const line{ImGui::GetTextLineHeight()};
 			auto const at{ImGui::GetCursorScreenPos()};
-			if (ImGui::Selectable(std::format("##turntable{}", i).c_str(), tool.chosen == i, ImGuiSelectableFlags_None, ImVec2(0.0f, line * 2.0f + 2.0f)))
-				tool.chosen = i;
+			if (ImGui::Selectable(std::format("##turntable{}", i).c_str(), tool.bank.chosen == i, ImGuiSelectableFlags_None, ImVec2(0.0f, line * 2.0f + 2.0f)))
+				tool.bank.chosen = i;
 			auto *list{ImGui::GetWindowDrawList()};
 			list->AddText(ImVec2(at.x + 4.0f, at.y), ImGui::GetColorU32(ImGuiCol_Text), kind.name.c_str());
 			list->AddText(ImVec2(at.x + 4.0f, at.y + line + 1.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled), details.c_str());
@@ -1038,7 +1038,7 @@ void editor_mode::render_turntable_ui()
 		if (begin_fields("##turntablenamefields", 0.3f))
 		{
 			field_row("Name##turntablename");
-			ImGui::InputTextWithHint("##turntablename", turntable_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CharsNoBlank);
+			ImGui::InputTextWithHint("##turntablename", turntable_name_for_new().c_str(), tool.bank.name.data(), tool.bank.name.size(), ImGuiInputTextFlags_CharsNoBlank);
 			ImGui::EndTable();
 		}
 		gesture_rows({{"Drag", "from where the centre goes, turning the bridge"}, {"LMB on a free end", "the turntable lines up with it, at its end"}, {"Shift+LMB", "no lining up"}});
@@ -1112,11 +1112,11 @@ void editor_mode::draw_turntable_overlay() const
 	}
 	case kind::turntable_place:
 	{
-		if (tool.chosen < 0 || tool.chosen >= static_cast<int>(tool.templates.size()))
+		if (tool.bank.chosen < 0 || tool.bank.chosen >= static_cast<int>(tool.bank.templates.size()))
 			break;
-		auto const rim{tool.templates[tool.chosen].length * 0.5};
+		auto const rim{tool.bank.templates[tool.bank.chosen].length * 0.5};
 		auto centre{intent.position};
-		auto yaw{tool.yaw};
+		auto yaw{tool.place.yaw};
 		if (intent.snap.track != nullptr)
 		{
 			auto const into{glm::normalize(plan_of(intent.snap.direction))};
@@ -1130,18 +1130,18 @@ void editor_mode::draw_turntable_overlay() const
 	}
 	default: break;
 	}
-	if (tool.placing && tool.chosen >= 0 && tool.chosen < static_cast<int>(tool.templates.size()))
+	if (tool.placing && tool.bank.chosen >= 0 && tool.bank.chosen < static_cast<int>(tool.bank.templates.size()))
 	{
-		auto const rim{tool.templates[tool.chosen].length * 0.5};
-		auto const cursor{cursor_level(tool.centre.y)};
+		auto const rim{tool.bank.templates[tool.bank.chosen].length * 0.5};
+		auto const cursor{cursor_level(tool.place.centre.y)};
 		auto const &io{ImGui::GetIO()};
-		auto const dragged{glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - tool.pressed) >= kDragPixels};
-		auto centre{tool.centre};
-		auto yaw{tool.yaw};
-		if (tool.snap.track != nullptr && false == dragged)
+		auto const dragged{glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - tool.place.pressed) >= kDragPixels};
+		auto centre{tool.place.centre};
+		auto yaw{tool.place.yaw};
+		if (tool.place.snap.track != nullptr && false == dragged)
 		{
-			auto const into{glm::normalize(plan_of(tool.snap.direction))};
-			centre = {tool.snap.position.x - into.x * rim, tool.snap.position.y, tool.snap.position.z - into.y * rim};
+			auto const into{glm::normalize(plan_of(tool.place.snap.direction))};
+			centre = {tool.place.snap.position.x - into.x * rim, tool.place.snap.position.y, tool.place.snap.position.z - into.y * rim};
 			yaw = heading_of(into);
 		}
 		else if (dragged && plan_distance(cursor, centre) > 0.5)
@@ -1187,8 +1187,8 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 			auto const &included{scene::Layers.instance(handle)};
 			if (included.removed || included.dead || included.file == nullptr)
 				continue;
-			auto const kind{std::ranges::find_if(m_turntable.templates, [&included](turntable_template const &Template) { return editor_includes::normalized(Template.file) == editor_includes::normalized(*included.file); })};
-			if (kind == m_turntable.templates.end() || kind->angles == 0)
+			auto const kind{std::ranges::find_if(m_turntable.bank.templates, [&included](turntable_template const &Template) { return editor_includes::normalized(Template.file) == editor_includes::normalized(*included.file); })};
+			if (kind == m_turntable.bank.templates.end() || kind->angles == 0)
 				continue;
 			std::string target;
 			std::vector<std::string> values;

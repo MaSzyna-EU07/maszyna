@@ -601,7 +601,7 @@ editor_mode::editor_mode() {
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
-	ui()->set_tools_menu([this]() { render_track_presets_menu(); });
+	ui()->set_tools_menu([this]() { m_rail_tools->track_style.render_track_presets_menu(); });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_view_menu();
@@ -1686,7 +1686,7 @@ bool editor_mode::update()
         draw_track_intent();
         draw_tape();
         steps.step("track drawn");
-        m_speed.update();
+        m_rail_tools->speed.update();
         steps.step("speed");
         m_joints.update();
         steps.step("joints");
@@ -1696,19 +1696,19 @@ bool editor_mode::update()
             grade_lines_store();
         }
         m_nmt_state.grade_line_replaced.clear();
-        m_srk.update();
+        m_rail_tools->srk.update();
         kilometrage::follow(m_track_edits);
-        m_km.update();
+        m_rail_tools->km.update();
         steps.step("srk km");
         draw_track_hints();
         draw_empty_scenery_hint();
         draw_profile_overlay();
         draw_grade_line_pick();
         draw_infra_overlay();
-        m_speed.draw_overlay();
+        m_rail_tools->speed.draw_overlay();
         m_joints.draw_overlay();
-        m_srk.draw_overlay();
-        m_km.draw_overlay();
+        m_rail_tools->srk.draw_overlay();
+        m_rail_tools->km.draw_overlay();
         steps.step("overlays");
     }
     else
@@ -1745,7 +1745,7 @@ bool editor_mode::update()
     render_nmt_banner();
     render_nmt_buried();
     render_empty_scenery_hint();
-    render_switch_designer();
+    m_rail_tools->switch_designer.render_windows();
     render_environment_window();
     draw_selection_overlay();
     render_context_menu();
@@ -3259,7 +3259,7 @@ bool editor_mode::save()
     switch_store::tidy();
     switch_store::settle();
     infra_store();
-    m_srk.store();
+    m_rail_tools->srk.store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});
@@ -5967,7 +5967,7 @@ char const *editor_mode::tutorial_of_tool()
 	switch (m_track_tab)
 	{
 	case track_tab::turnout:
-		return undone({m_switch_designer.open ? "Switch templates" : "Switches"});
+		return undone({m_rail_tools->switch_designer.is_open() ? "Switch templates" : "Switches"});
 	case track_tab::profile:
 		return undone({"The grade line"});
 	case track_tab::route:
@@ -7195,15 +7195,15 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // the selected track, or the one under the cursor when there are more of them
         auto const *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
         if (Key == GLFW_KEY_C && from != nullptr)
-            copy_track_style(*from);
+            m_rail_tools->track_style.copy_track_style(*from);
         else if (Key == GLFW_KEY_C)
             ui()->set_status(STR_C("Select one track, or point at one, to take its properties"), true);
-        else if (m_track_style.values.empty())
+        else if (false == m_rail_tools->track_style.taken())
             ui()->set_status(STR_C("Take the properties of a track first: Ctrl+Shift+C"), true);
         else if (tracks.empty())
             ui()->set_status(STR_C("Select the tracks to set the properties on"), true);
         else
-            paste_track_style(tracks);
+            m_rail_tools->track_style.paste_track_style(tracks);
         return;
     }
 
@@ -7283,9 +7283,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
             break;
         // the switch being clicked off the view given up
-        if (is_press(Action) && m_switch_designer.open && m_switch_designer.picking)
+        if (is_press(Action) && m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking())
         {
-            m_switch_designer.picking = false;
+            m_rail_tools->switch_designer.stop_picking();
             break;
         }
         // the download area being drawn given up, the one before stays
@@ -7307,8 +7307,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
                 lay_escape();
-            else if (m_track_style.picking)
-                m_track_style.picking = false;
+            else if (m_rail_tools->track_style.picking())
+                m_rail_tools->track_style.stop_picking();
             else if (m_profile.picking)
                 m_profile.picking = false;
             else if (track_busy())
@@ -7345,13 +7345,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
 
     case GLFW_KEY_BACKSPACE:
         // the switch being clicked off the view: the last point taken back
-        if (m_switch_designer.open && m_switch_designer.picking)
+        if (m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking())
         {
-            if (is_press(Action) && false == m_switch_designer.clicks.empty())
-            {
-                m_switch_designer.clicks.pop_back();
-                switch_designer_measure();
-            }
+            if (is_press(Action))
+                m_rail_tools->switch_designer.click_back();
             break;
         }
         // the download area: the last point taken back
@@ -7480,11 +7477,11 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     }
 
     // a switch being clicked off the view for the template editor takes the left button
-    if (m_switch_designer.open && m_switch_designer.picking && Button == GLFW_MOUSE_BUTTON_LEFT)
+    if (m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking() && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         // on the terrain under the cursor, then on the level of the first point: no track or ballast in the view catches the point
         if (is_press(Action))
-            switch_designer_click(m_switch_designer.clicks.empty() ? cursor_terrain(std::as_const(*this).cursor_ground().y) : cursor_level(m_switch_designer.clicks.front().y));
+            m_rail_tools->switch_designer.click(m_rail_tools->switch_designer.clicks().empty() ? cursor_terrain(std::as_const(*this).cursor_ground().y) : cursor_level(m_rail_tools->switch_designer.clicks().front().y));
         m_input.mouse.button(Button, Action);
         return;
     }

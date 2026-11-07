@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormoderailtools.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -745,7 +746,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	using kind = track_intent::kind;
 	track_intent intent;
 	// a switch being clicked off the view for the template editor takes the mouse: no tool offers anything meanwhile
-	if (ImGui::GetIO().WantCaptureMouse || (m_switch_designer.open && m_switch_designer.picking))
+	if (ImGui::GetIO().WantCaptureMouse || (m_rail_tools->switch_designer.is_open() && m_rail_tools->switch_designer.is_picking()))
 		return intent;
 	glm::dvec3 const ground{cursor_ground()};
 	intent.position = ground;
@@ -790,13 +791,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
-	if (m_track_tab == track_tab::srk && m_srk.drawing())
+	if (m_track_tab == track_tab::srk && m_rail_tools->srk.drawing())
 	{
 		bool valid{false};
 		intent.track = m_hover.track;
 		intent.path = m_hover.path;
 		intent.position = m_hover.track != nullptr ? m_hover.point : ground;
-		intent.action = m_srk.boundary_hover(intent.position, valid);
+		intent.action = m_rail_tools->srk.boundary_hover(intent.position, valid);
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
@@ -804,7 +805,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	{
 		if (auto const hit{signal_hit()}; hit >= 0)
 		{
-			auto const &standing{m_signal.standing[hit]};
+			auto const &standing{m_signal.known.standing[hit]};
 			intent.index = hit;
 			intent.position = standing.include.location;
 			intent.action = format(STR_C("Click: select the signal %s, drag: move it along the track"), standing.name.c_str());
@@ -838,11 +839,11 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.path = m_hover.path;
 		intent.position = m_hover.point;
 		make(kind::kilometrage, "Click: a point of the km here");
-		if (auto const km{m_km.readout(m_hover.point)}; false == km.empty())
+		if (auto const km{m_rail_tools->km.readout(m_hover.point)}; false == km.empty())
 			intent.action = km + "\n" + intent.action;
 		return intent;
 	}
-	if (m_track_style.picking && (m_track_tab == track_tab::path || m_track_tab == track_tab::turnout))
+	if (m_rail_tools->track_style.picking() && (m_track_tab == track_tab::path || m_track_tab == track_tab::turnout))
 	{
 		intent.track = m_hover.track;
 		if (m_hover.track != nullptr)
@@ -1180,7 +1181,7 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::box: start_track_box(Intent.index == 1); return;
 	case kind::pick_style:
 		if (Intent.track != nullptr)
-			copy_track_style(*Intent.track);
+			m_rail_tools->track_style.copy_track_style(*Intent.track);
 		return;
 	case kind::grade_line_pick:
 		if (Intent.track != nullptr)
@@ -1243,9 +1244,9 @@ void editor_mode::track_press(track_intent const &Intent)
 	}
 	case kind::kilometrage:
 		if (Intent.track != nullptr)
-			m_km.pick(*Intent.track, Intent.position);
+			m_rail_tools->km.pick(*Intent.track, Intent.position);
 		return;
-	case kind::srk_boundary: m_srk.boundary_click(); return;
+	case kind::srk_boundary: m_rail_tools->srk.boundary_click(); return;
 	case kind::fouling:
 		if (Intent.path == 1)
 			m_fouling.fix(Intent.index);
@@ -1470,13 +1471,13 @@ void editor_mode::render_track_context()
 		ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), STR_P("one of %d selected tracks", "one of %d selected tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size()));
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Take its properties"), "Ctrl+Shift+C"))
-		copy_track_style(*track);
+		m_rail_tools->track_style.copy_track_style(*track);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The inspector lists what they change on the selected tracks, From another track or a preset"));
-	if (auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}}; ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, false == m_track_style.values.empty()))
-		paste_track_style(tracks);
-	if (false == m_track_style.values.empty() && ImGui::IsItemHovered())
-		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_track_style.from.c_str());
+	if (auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}}; ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, m_rail_tools->track_style.taken()))
+		m_rail_tools->track_style.paste_track_style(tracks);
+	if (m_rail_tools->track_style.taken() && ImGui::IsItemHovered())
+		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_rail_tools->track_style.taken_from().c_str());
 	if (ImGui::BeginMenu(STR_C("Select alike")))
 	{
 		static constexpr std::array<char const *, 5> keys{"rails", "trackbed", "speed", "environment", "circuits"};
@@ -1484,7 +1485,7 @@ void editor_mode::render_track_context()
 		for (std::size_t i = 0; i < std::size(keys); ++i)
 			if (ImGui::MenuItem(STR_C(labels[i])))
 			{
-				auto const found{similar_tracks(track_property_index(keys[i]), {track})};
+				auto const found{m_rail_tools->track_sheet.similar_tracks(m_rail_tools->track_sheet.track_property_index(keys[i]), {track})};
 				select_tracks(found);
 				ui()->set_status(format(STR_P("%s: %d track selected in the scenery", "%s: %d tracks selected in the scenery", static_cast<long long>(found.size())), STR_C(labels[i]), static_cast<int>(found.size())), false);
 			}
@@ -1528,7 +1529,7 @@ void editor_mode::render_track_context()
 	if (ImGui::MenuItem(STR_C("Speed check of the line"), "V"))
 	{
 		show_track_tab(track_tab::speed);
-		m_speed.check_line();
+		m_rail_tools->speed.check_line();
 	}
 	ImGui::Separator();
 	if (ImGui::MenuItem(track_selected(track) ? STR_C("Take out of the selection") : STR_C("Add to the selection"), STR_C("Shift+LMB")))
@@ -1999,7 +2000,7 @@ void editor_mode::draw_track_set() const
 		drawlist->AddRectFilled(from, io.MousePos, IM_COL32(255, 160, 40, 40));
 		drawlist->AddRect(from, io.MousePos, IM_COL32(255, 160, 40, 220), 0.0f, 0, 1.5f);
 	}
-	if (auto const *listed{m_track_list_hover_frame >= ImGui::GetFrameCount() - 1 ? m_track_list_hover : nullptr}; listed != nullptr && false == listed->m_editorremoved)
+	if (auto const *listed{m_rail_tools->track_sheet.list_hover()}; listed != nullptr && false == listed->m_editorremoved)
 		for (auto const &path : listed->m_paths)
 		{
 			bezier const curve{path};

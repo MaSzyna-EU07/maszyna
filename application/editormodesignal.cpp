@@ -846,7 +846,7 @@ bool editor_mode::signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const
 
 std::string editor_mode::signal_intent_label(signal_template const &Template, signal_spot const &Spot) const
 {
-	auto const name{m_signal.name[0] != '\0' ? std::string{m_signal.name} : std::string{"?"}};
+	auto const name{m_signal.labels.name[0] != '\0' ? std::string{m_signal.labels.name.data()} : std::string{"?"}};
 	auto const right{glm::dot(right_of(Spot.travel), plan_of(Spot.position) - plan_of(Spot.axis)) >= 0.0};
 	auto const where{right ? STR(" on the right of the trains") : STR(" on the left of the trains")};
 	auto variant{signal_variant(Template, Spot)};
@@ -863,13 +863,13 @@ void editor_mode::signal_refresh(bool const Force)
 	auto &tool{m_signal};
 	auto const scanned{signal_scan(false)};
 	auto const now{ImGui::GetTime()};
-	if (false == Force && false == scanned && tool.standing_history == m_history.size() && tool.standing_redo == g_redo.size() && now - tool.standing_time < kRefreshPeriod)
+	if (false == Force && false == scanned && tool.known.standing_history == m_history.size() && tool.known.standing_redo == g_redo.size() && now - tool.known.standing_time < kRefreshPeriod)
 		return;
-	tool.standing_history = m_history.size();
-	tool.standing_redo = g_redo.size();
-	tool.standing_time = now;
-	tool.standing = signal_standing_now();
-	if (tool.selected != 0 && std::none_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; }))
+	tool.known.standing_history = m_history.size();
+	tool.known.standing_redo = g_redo.size();
+	tool.known.standing_time = now;
+	tool.known.standing = signal_standing_now();
+	if (tool.selected != 0 && std::none_of(tool.known.standing.begin(), tool.known.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; }))
 		tool.selected = 0;
 }
 
@@ -880,9 +880,9 @@ int editor_mode::signal_hit() const
 	auto best{kSignalPick * kSignalPick};
 	int result{-1};
 	glm::dvec3 const camera{Global.pCamera.Pos};
-	for (int i = 0; i < static_cast<int>(m_signal.standing.size()); ++i)
+	for (int i = 0; i < static_cast<int>(m_signal.known.standing.size()); ++i)
 	{
-		auto const &location{m_signal.standing[i].include.location};
+		auto const &location{m_signal.known.standing[i].include.location};
 		if (glm::distance(location, camera) > kSignalRange)
 			continue;
 		ImVec2 foot, head;
@@ -912,13 +912,13 @@ void editor_mode::signal_press(track_intent const &Intent)
 	tool.status.clear();
 	if (Intent.what == track_intent::kind::signal_move)
 	{
-		if (Intent.index < 0 || Intent.index >= static_cast<int>(tool.standing.size()))
+		if (Intent.index < 0 || Intent.index >= static_cast<int>(tool.known.standing.size()))
 			return;
-		auto const &standing{tool.standing[Intent.index]};
-		tool.grab = plan_of(standing.include.location) - plan_of(cursor_level(standing.include.location.y));
-		tool.home_valid = signal_standing_spot(standing, tool.home);
+		auto const &standing{tool.known.standing[Intent.index]};
+		tool.drag.grab = plan_of(standing.include.location) - plan_of(cursor_level(standing.include.location.y));
+		tool.drag.home_valid = signal_standing_spot(standing, tool.drag.home);
 		tool.moving = true;
-		tool.moved_valid = false;
+		tool.drag.moved_valid = false;
 		signal_select(standing.include.instance);
 		return;
 	}
@@ -963,22 +963,22 @@ void editor_mode::signal_move_update()
 	auto const *found{signal_standing_of(tool.selected)};
 	if (found == nullptr)
 	{
-		tool.moved_valid = false;
+		tool.drag.moved_valid = false;
 		return;
 	}
 	auto const &location{found->include.location};
 	auto const cursor{cursor_level(location.y)};
-	glm::dvec3 const held{cursor.x + tool.grab.x, location.y, cursor.z + tool.grab.y};
+	glm::dvec3 const held{cursor.x + tool.drag.grab.x, location.y, cursor.z + tool.drag.grab.y};
 	// the track under the cursor; off every track, as it is when the signal is dragged beside its track, the track the
 	// signal stands by
 	auto *track{m_hover.track};
 	auto path{m_hover.path};
-	if (track == nullptr && tool.home_valid)
+	if (track == nullptr && tool.drag.home_valid)
 	{
-		track = tool.home.track;
-		path = tool.home.path;
+		track = tool.drag.home.track;
+		path = tool.drag.home.path;
 	}
-	tool.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.moved);
+	tool.drag.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.drag.moved);
 }
 
 std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() const
@@ -1013,7 +1013,7 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 
 editor_mode::signal_standing const *editor_mode::signal_standing_of(scene::instance_handle const Instance) const
 {
-	auto const &standing{m_signal.standing};
+	auto const &standing{m_signal.known.standing};
 	auto const found{std::ranges::find_if(standing, [&](signal_standing const &Standing) { return Standing.include.instance == Instance; })};
 	return found != standing.end() ? std::to_address(found) : nullptr;
 }
@@ -1083,14 +1083,14 @@ void editor_mode::signal_release()
 	tool.moving = false;
 	if (auto const &mouse{ImGui::GetIO().MousePos}; glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
 		return;
-	if (false == tool.moved_valid)
+	if (false == tool.drag.moved_valid)
 	{
 		tool.status = refused(STR_C("Drop the signal by a track"));
 		return;
 	}
-	tool.moved_valid = false;
+	tool.drag.moved_valid = false;
 	if (auto const *found{signal_standing_of(tool.selected)})
-		signal_move_to(*found, tool.moved, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"));
+		signal_move_to(*found, tool.drag.moved, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"));
 }
 
 bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread)
@@ -1312,7 +1312,7 @@ std::string editor_mode::signal_next_name(std::string const &Name) const
 bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &Template)
 {
 	auto &tool{m_signal};
-	std::string name{tool.name};
+	std::string name{tool.labels.name.data()};
 	if (name.empty() || name.find_first_of(" \t\";") != std::string::npos)
 	{
 		tool.status = refused(STR_C("Give the signal a name without spaces first"));
@@ -1320,7 +1320,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	}
 	signal_refresh(true);
 	auto const taken = [&](std::string const &Name) {
-		return std::ranges::any_of(tool.standing, [&](signal_standing const &Standing) { return ToLower(Standing.name) == ToLower(Name); });
+		return std::ranges::any_of(tool.known.standing, [&](signal_standing const &Standing) { return ToLower(Standing.name) == ToLower(Name); });
 	};
 	for (int guard = 0; taken(name) && guard < 1000; ++guard)
 		name = signal_next_name(name);
@@ -1332,9 +1332,9 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	item.described = true;
 	item.values["name"] = name;
 	if (Template.plate)
-		item.values["#6"] = plate_for(tool.plate, name);
+		item.values["#6"] = plate_for(tool.labels.plate.data(), name);
 	if (Template.linked)
-		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
+		item.values["#7"] = tool.labels.linked[0] != '\0' ? std::string{tool.labels.linked.data()} : std::string{"none"};
 	if (std::string error; place_templates({item}, error, output_layer("srk")) == 0)
 	{
 		tool.status = refused(STR_C("The signal couldn't be placed: ") + error);
@@ -1364,7 +1364,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 		m_history.back().instances = std::move(snap.instances);
 		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s, Ctrl+Z takes it back. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.list), read.c_str(), path.c_str());
 	}
-	std::snprintf(tool.name, sizeof(tool.name), "%s", signal_next_name(name).c_str());
+	std::snprintf(tool.labels.name.data(), tool.labels.name.size(), "%s", signal_next_name(name).c_str());
 	signal_refresh(true);
 	signal_select(instance);
 	first_step_done(first_step::signal);
@@ -1637,7 +1637,7 @@ bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool c
 	if (m_signal.templates.empty())
 		return false;
 	signal_refresh(true);
-	for (auto const &standing : m_signal.standing)
+	for (auto const &standing : m_signal.known.standing)
 	{
 		if (standing.kind < 0)
 			continue;
@@ -1891,8 +1891,8 @@ void editor_mode::render_signal_palette()
 {
 	auto &tool{m_signal};
 	ImGui::SetNextItemWidth(-1.0f);
-	ImGui::InputTextWithHint("##signalfilter", STR_C("filter: name, w24, sbl..."), tool.filter, sizeof(tool.filter));
-	auto const filter{ToLower(tool.filter)};
+	ImGui::InputTextWithHint("##signalfilter", STR_C("filter: name, w24, sbl..."), tool.filter.data(), tool.filter.size());
+	auto const filter{ToLower(tool.filter.data())};
 	auto const *current{signal_current()};
 	std::vector<std::vector<int>> groups;
 	std::vector<std::string> keys;
@@ -1993,7 +1993,7 @@ void editor_mode::render_signal_palette()
 			read = current->kind == "warning" || current->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it");
 		else
 		{
-			auto const name{tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}};
+			auto const name{tool.labels.name[0] != '\0' ? std::string{tool.labels.name.data()} : std::string{"?"}};
 			read = format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(current->read, {name}).c_str());
 		}
 		ImGui::SetTooltip("%s\n%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"), read.c_str());
@@ -2201,21 +2201,21 @@ void editor_mode::render_signal_ui()
 	if (begin_fields("##signalnames", 0.3f))
 	{
 		field_row("Name");
-		ImGui::InputText("##signalname", tool.name, sizeof(tool.name));
+		ImGui::InputText("##signalname", tool.labels.name.data(), tool.labels.name.size());
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
 		ImGui::EndTable();
 	}
 	// the field of the plate of the signal: true while it's typed in, or while it names no texture there is
 	auto const plate_field = [&]() {
-		auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
+		auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.labels.name.data()).c_str())};
 		field_row("Plate");
-		ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
+		ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.labels.plate.data(), tool.labels.plate.size());
 		auto const typing{ImGui::IsItemActive()};
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
 		auto const &plates{plate_textures()};
-		auto const typed{ToLower(tool.plate)};
+		auto const typed{ToLower(tool.labels.plate.data())};
 		auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
 		if (false == exists)
 			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
@@ -2232,7 +2232,7 @@ void editor_mode::render_signal_ui()
 			if (armed != nullptr && armed->linked)
 			{
 				field_row("Linked signal");
-				ImGui::InputText("##linked", tool.linked, sizeof(tool.linked));
+				ImGui::InputText("##linked", tool.labels.linked.data(), tool.labels.linked.size());
 				item_tooltip("(p7) of the template: the warning signal a semaphore drives, the previous block signal, \"none\" for no link");
 			}
 			auto offset{static_cast<float>(EditorSettings.signal_offset())};
@@ -2255,7 +2255,7 @@ void editor_mode::render_signal_ui()
 		if (missing)
 		{
 			auto const &plates{plate_textures()};
-			auto const typed{ToLower(tool.plate)};
+			auto const typed{ToLower(tool.labels.plate.data())};
 			int shown{0};
 			for (auto const &plate : plates)
 			{
@@ -2264,7 +2264,7 @@ void editor_mode::render_signal_ui()
 				if (shown % 6 != 0)
 					ImGui::SameLine();
 				if (ImGui::SmallButton(plate.c_str()))
-					std::snprintf(tool.plate, sizeof(tool.plate), "%s", plate.c_str());
+					std::snprintf(tool.labels.plate.data(), tool.labels.plate.size(), "%s", plate.c_str());
 				if (++shown >= 18)
 					break;
 			}
@@ -2298,9 +2298,9 @@ void editor_mode::draw_signal_overlay() const
 		drawlist->AddTriangleFilled(ImVec2(b.x + unit.x * 9.0f, b.y + unit.y * 9.0f), ImVec2(b.x + side.x * 6.0f, b.y + side.y * 6.0f), ImVec2(b.x - side.x * 6.0f, b.y - side.y * 6.0f), Colour);
 	};
 	auto const mast = [&](glm::dvec3 const &Foot, ImU32 const Colour, float const Width) { projection.line(drawlist, Foot, Foot + glm::dvec3{0.0, kSignalHead, 0.0}, Colour, Width); };
-	for (int i = 0; i < static_cast<int>(tool.standing.size()); ++i)
+	for (int i = 0; i < static_cast<int>(tool.known.standing.size()); ++i)
 	{
-		auto const &standing{tool.standing[i]};
+		auto const &standing{tool.known.standing[i]};
 		auto const &location{standing.include.location};
 		if (glm::distance(location, camera) > kSignalRange)
 			continue;
@@ -2334,8 +2334,8 @@ void editor_mode::draw_signal_overlay() const
 	};
 	if (tool.placing)
 		preview(tool.press, overlay_color::grip);
-	else if (tool.moving && tool.moved_valid)
-		preview(tool.moved, overlay_color::selected);
+	else if (tool.moving && tool.drag.moved_valid)
+		preview(tool.drag.moved, overlay_color::selected);
 	else if (m_intent.what == track_intent::kind::signal_place && m_hover.track != nullptr)
 	{
 		if (auto const *armed{signal_armed()}; armed != nullptr)
