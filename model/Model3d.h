@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "model/material.h"
 #include "gl/query.h"
 
+#include <string_view>
+
 #define EU07_USE_GEOMETRYINDEXING
 
 // Ra: specjalne typy submodeli, poza tym GL_TRIANGLES itp.
@@ -159,7 +161,12 @@ public: // chwilowo
     // text display (TP_TEXT) data, filled on first use
     std::unordered_map<char32_t, TSubModel *> m_letters; // sub-models of the available characters, by unicode code point
     bool m_lettersready { false }; // whether the character lookup was built yet
-    std::unordered_map<std::string, std::vector<TSubModel *>> m_textlayouts; // sub-models of consecutive characters, for each text shown
+    // transparent hasher, so the text layouts can be looked up with any string type without a temporary std::string
+    struct text_hash {
+        using is_transparent = void;
+        std::size_t operator()( std::string_view const Text ) const noexcept { return std::hash<std::string_view>{}( Text ); }
+    };
+    std::unordered_map<std::string, std::vector<TSubModel *>, text_hash, std::equal_to<>> m_textlayouts; // sub-models of consecutive characters, for each text shown
     TSubModel *Parent{ nullptr }; // nadrzędny, np. do wymnażania macierzy
     int iVisible { 1 }; // roboczy stan widoczności
     float fVisible { 1.f }; // visibility level

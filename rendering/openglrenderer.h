@@ -65,6 +65,7 @@ public:
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
     // adds supplied vertex data at the end of specified chunk
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	void Erase( gfx::geometry_handle const &Geometry ) override;
     // provides direct access to index data of specfied chunk
     gfx::index_array const &
         Indices( gfx::geometry_handle const &Geometry ) const override;
@@ -103,6 +104,8 @@ public:
         Pick_Control() const override { return m_pickcontrolitem; }
     scene::basic_node const *
         Pick_Node() const override { return m_picksceneryitem; }
+    void
+        Forget_Node( scene::basic_node const *Node ) override;
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
     glm::mat4
@@ -234,6 +237,9 @@ private:
         Render( TModel3d *Model, material_data const *Material, float const Squaredistance );
     void
         Render( TSubModel *Submodel );
+    // opaque characters of a text display
+    void
+        Render_text( TSubModel *Submodel );
     void
         Render( TTrack *Track );
     void
