@@ -30,10 +30,12 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include "utilities/translation.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <functional>
 #include <map>
 #include <set>
@@ -1657,7 +1659,7 @@ void editor_mode::render_infra_search()
 				char buffer[512];
 				std::snprintf(buffer, sizeof(buffer), "%s", rule.keywords.c_str());
 				ImGui::SetNextItemWidth(360.f);
-				if (ImGui::InputText((std::string{STR_C(infra::name(rule.group))} + "##rule" + std::to_string(i)).c_str(), buffer, sizeof(buffer)))
+				if (ImGui::InputText(std::format("{}##rule{}", STR_C(infra::name(rule.group)), i).c_str(), buffer, sizeof(buffer)))
 					rule.keywords = buffer;
 			}
 			if (ImGui::SmallButton(STR_C("Default rules")))
@@ -1711,8 +1713,8 @@ void editor_mode::render_infra_candidates()
 
 	if (state.read > 0 || state.unread > 0)
 	{
-		std::string const labels[]{format("%s (%d)", STR_C("All"), static_cast<int>(candidates.size())), format("%s (%d)", STR_C("Read by a path"), state.read),
-		                           format("%s (%d)", STR_C("Nearer to another path"), state.overruled), format("%s (%d)", STR_C("Not read"), state.unread)};
+		std::array<std::string, 4> const labels{format("%s (%d)", STR_C("All"), static_cast<int>(candidates.size())), format("%s (%d)", STR_C("Read by a path"), state.read),
+		                                        format("%s (%d)", STR_C("Nearer to another path"), state.overruled), format("%s (%d)", STR_C("Not read"), state.unread)};
 		choice_chips("infrafilter", state.filter,
 		             {{0, labels[0].c_str()},
 		              {1, labels[1].c_str(),

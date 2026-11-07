@@ -1169,7 +1169,11 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	for (auto const &entry : m_texture_index)
 		if (false == usednames.contains(entry.lowered) && matches(entry.lowered))
 			files.push_back(&entry);
-	std::string const first{false == used.empty() ? used.front()->name : false == files.empty() ? files.front()->name : std::string{}};
+	std::string first;
+	if (false == used.empty())
+		first = used.front()->name;
+	else if (false == files.empty())
+		first = files.front()->name;
 	if (entered && false == words.empty() && false == first.empty())
 	{
 		Chosen = first;
@@ -1178,7 +1182,13 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 
 	// large: the tile under the mouse, or what Enter would choose, or the current texture
 	auto const current{lowered(Current)};
-	auto const shown{false == m_texture_hovered.empty() ? m_texture_hovered : false == words.empty() ? first : Mixed ? std::string{} : Current};
+	std::string shown;
+	if (false == m_texture_hovered.empty())
+		shown = m_texture_hovered;
+	else if (false == words.empty())
+		shown = first;
+	else if (false == Mixed)
+		shown = Current;
 	m_texture_hovered.clear();
 	auto const big{std::round(ImGui::GetFontSize() * 10.0f)};
 	auto const corner{ImGui::GetCursorScreenPos()};
@@ -1421,7 +1431,11 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		if (values.size() == 1)
 			text_into(shown, values.front().first == "none" ? std::string_view{} : std::string_view{values.front().first});
 		auto *buffer{editing ? edit.text.data() : shown.data()};
-		auto const hint{values.size() > 1 ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : property.empty != nullptr ? std::string{STR_C(property.empty)} : std::string{}};
+		std::string hint;
+		if (values.size() > 1)
+			hint = format(STR_C("different (%d)"), static_cast<int>(values.size()));
+		else if (property.empty != nullptr)
+			hint = STR_C(property.empty);
 		// a number clicked is typed anew, the digits wouldn't add up to what's meant going after the old ones
 		ImGui::InputTextWithHint("##value", hint.c_str(), buffer, shown.size(), property.kind == field::number ? ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_AutoSelectAll : 0);
 		if (ImGui::IsItemActivated())

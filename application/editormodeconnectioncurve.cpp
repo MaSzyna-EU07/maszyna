@@ -1200,8 +1200,8 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 	auto const changedroute{state.route};
 	auto *changedfrom{state.from};
 	auto *changedto{state.to};
-	auto const after{state.samples};
-	auto const changedline{state.line};
+	auto const after{state.samples}; // NOSONAR: a copy, profile_take() below lays other routes into the state
+	auto const changedline{state.line}; // NOSONAR: a copy, as above
 	if (Before.size() < 2 || after.size() < 2)
 		return 0;
 	double constexpr follow{25.0};
@@ -1363,11 +1363,7 @@ bool editor_mode::lay_crossover(int const Shape, glm::dvec3 const &Press, glm::d
 {
 	auto &tool{m_switch};
 	tool.keep_names = Names;
-	struct forget_names
-	{
-		std::vector<std::string> &names;
-		~forget_names() { names.clear(); }
-	} const forget{tool.keep_names};
+	names_forgotten const forget{tool.keep_names};
 	// the plain path the press falls on
 	TTrack *closest{nullptr};
 	auto nearest{Reach};
