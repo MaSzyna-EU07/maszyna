@@ -3055,6 +3055,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 bend_marker(sweep_node const &Sweep) const;
 	void restore_bend(EditorSnapshot &Snapshot, bool const Undo);
 	void render_bend();
+	// the bent model edited: where it lies by the track, how long, bent or repeated, and the rest of its settings
+	void render_bend_edited(sweep_node &Sweep);
+	bool render_bend_place(sweep_node &Sweep, sweep_node::state &State, double const Stretch) const;
+	bool render_bend_lengths(sweep_node &Sweep, sweep_node::state &State, double const Own, float const Half) const;
+	bool render_bend_more(sweep_node::state &State);
+	void render_bend_finish(sweep_node &Sweep, float const Half);
+	// no bent model edited: the model selected to be bent, the bent ones by the track or near the camera to pick
+	void render_bend_choice();
+	void render_bend_listed(TTrack const *Track);
 	// the reference point of the model bent: where along the track, across and up it lies
 	void render_bend_anchors(bool &Changed);
 	// a model chosen to be bent, the tracks by it found: the track to bend it along and how

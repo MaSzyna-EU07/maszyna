@@ -164,6 +164,35 @@ void bend_track_combo(std::vector<std::pair<TTrack *, double>> const &Tracks, in
 	ImGui::EndCombo();
 }
 
+
+// the step of the copies of a model repeated along the track
+bool bend_step_field(sweep_node::state &State)
+{
+	bool changed{false};
+	if (begin_fields("##bendstep", 0.5f))
+	{
+		field_row("Copy every (m, 0: its length)");
+		changed = ImGui::InputDouble("##bendevery", &State.step, 0.0, 0.0, "%.2f");
+		ImGui::EndTable();
+	}
+	State.step = std::max(0.0, State.step);
+	return changed;
+}
+
+// the bent models near the camera, each with how far it is
+std::vector<std::pair<sweep_node *, double>> sweeps_by_camera()
+{
+	std::vector<std::pair<sweep_node *, double>> listed;
+	for (auto *sweep : simulation::Sweeps.sequence())
+		if (sweep != nullptr && false == sweep->m_editorremoved)
+		{
+			auto const distance{glm::distance(sweep->location(), glm::dvec3{Global.pCamera.Pos})};
+			if (distance < 0.5 * (sweep->end() - sweep->start()) + 300.0)
+				listed.emplace_back(sweep, distance);
+		}
+	return listed;
+}
+
 } // namespace
 
 void editor_mode::sweep_scan_models()
@@ -1752,199 +1781,225 @@ void editor_mode::render_bend()
 	ImGui::PushID("bend");
 
 	if (auto *sweep{tool.edited})
-	{
-		auto state{sweep->definition()};
-		glm::dvec3 low;
-		glm::dvec3 high;
-		glm::dvec3 shift;
-		auto const measured{sweep->bounds(low, high, shift)};
-		auto const own{measured ? high.x - low.x : 0.0};
-		auto const from{sweep->distance_at(sweep->start())};
-		auto const stretch{sweep->distance_at(sweep->end()) - from};
-		ImGui::Text("%s  %s", sweep->name().c_str(), state.model.c_str());
-		if (own > 0.0)
-			ImGui::TextDisabled(STR_C("%.2f m along the reference line, %d copies (the model is %.2f m)"), stretch, copies_of(*sweep, own), own);
-		bool changed{false};
-		tool.side_anchor = state.side_anchor;
-		tool.height_anchor = state.height_anchor;
-		tool.point = state.point;
-		if (begin_fields("##bendplace", 0.5f))
-		{
-			field_row("From the track axis (m, + right)");
-			changed |= ImGui::InputDouble("##bendlateral", &state.lateral, 0.05, 0.5, "%.3f");
-			double overhead{state.height - kRailTop};
-			field_row("Over the rail head (m)");
-			if (ImGui::InputDouble("##bendheight", &overhead, 0.01, 0.1, "%.3f"))
-			{
-				state.height = overhead + kRailTop;
-				changed = true;
-			}
-			double along{sweep->distance_at(bend_fixed(*sweep, state.point))};
-			field_row("Along the track (m)");
-			if (ImGui::InputDouble("##bendalongat", &along, 0.1, 1.0, "%.2f"))
-			{
-				bend_stretch(*sweep, along, stretch, state.point, state);
-				changed = true;
-			}
-			double length{stretch};
-			field_row("Length (m)");
-			if (ImGui::InputDouble("##bendlength", &length, 0.5, 5.0, "%.2f") && length > 0.1)
-			{
-				bend_stretch(*sweep, bend_fixed(*sweep, state.point), length, state.point, state);
-				changed = true;
-			}
-			ImGui::EndTable();
-		}
-		auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
-		ImGui::BeginDisabled(own <= 0.0);
-		if (ImGui::Button(STR_C("As long as the model"), ImVec2(half, 0.0f)))
-		{
-			bend_stretch(*sweep, bend_fixed(*sweep, state.point), own, state.point, state);
-			changed = true;
-		}
-		ImGui::EndDisabled();
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Along the whole track"), ImVec2(-FLT_MIN, 0.0f)))
-		{
-			state.from = 0.0;
-			state.to = -1.0;
-			changed = true;
-		}
-		int mode{state.bend ? 0 : 1};
-		changed |= segmented("bendmode", mode, {{0, STR_C("Bent"), "One model stretched and bent along the curve of the track"}, {1, STR_C("Repeated"), "Copies of the model one after another, each one straight"}});
-		state.bend = mode == 0;
-		auto const every = [&] {
-			if (begin_fields("##bendstep", 0.5f))
-			{
-				field_row("Copy every (m, 0: its length)");
-				changed |= ImGui::InputDouble("##bendevery", &state.step, 0.0, 0.0, "%.2f");
-				ImGui::EndTable();
-			}
-			state.step = std::max(0.0, state.step);
-		};
-		if (false == state.bend)
-			every();
-		if (state.platform && platform_distance())
-		{
-			state.lateral = std::copysign(EditorSettings.platform_edge(), state.lateral);
-			changed = true;
-		}
-		ImGui::PushID("bendmore");
-		if (ImGui::TreeNode(STR_C("More settings")))
-		{
-			auto const side{tool.side_anchor}, height{tool.height_anchor};
-			auto const point{tool.point};
-			bool anchored{false};
-			render_bend_anchors(anchored);
-			if (anchored && (side != tool.side_anchor || height != tool.height_anchor || point != tool.point))
-			{
-				bend_reanchor(state, tool.side_anchor, tool.height_anchor, tool.point);
-				changed = true;
-			}
-			if (state.bend)
-				every();
-			auto const platform{state.platform};
-			changed |= toggle_chips("bendflags", {{STR_C("Turned around"), &state.flip},
-			                                      {STR_C("Mirrored"), &state.mirror},
-			                                      {STR_C("Leans with the cant"), &state.tilt},
-			                                      {STR_C("Gauge widening in the curves"), &state.widen,
-			                                       "The offset grows by the widening of the gauge below the platforms: 3.75/R in the curves of R >= 250 m,\n"
-			                                       "more in the sharper ones, and on the inner side of a canted curve by the cant times the height of the edge / 1.5;\n"
-			                                       "it begins 20 m (inner side) and 26 m (outer side) ahead of the curve, as in the gauge check"},
-			                                      {STR_C("Platform"), &state.platform,
-			                                       "Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
-			                                       "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
-			                                       "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"}}) >= 0;
-			if (state.platform && false == platform)
-			{
-				bend_reanchor(state, 1, 3, state.point);
-				platform_edge(state, state.model, kRailTop);
-			}
-			ImGui::TreePop();
-		}
-		ImGui::PopID();
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"));
-		ImGui::PopTextWrapPos();
-		if (changed)
-			bend_edit(state);
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.24f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.30f, 1.0f));
-		auto const done{ImGui::Button(STR_C("Done"), ImVec2(half, ImGui::GetFrameHeight() * 1.3f))};
-		ImGui::PopStyleColor(2);
-		if (done)
-			tool.edited = nullptr;
-		ImGui::SameLine();
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.15f, 1.0f));
-		auto const removed{ImGui::Button(STR_C("Delete"), ImVec2(-FLT_MIN, ImGui::GetFrameHeight() * 1.3f))};
-		ImGui::PopStyleColor();
-		if (removed)
-		{
-			sweep_delete(*sweep);
-			tool.edited = nullptr;
-		}
-	}
+		render_bend_edited(*sweep);
 	else
-	{
-		bend_source source;
-		if (bend_source_of_selection(source))
-		{
-			void const *key{source.model != nullptr ? static_cast<void const *>(source.model) : reinterpret_cast<void const *>(static_cast<std::uintptr_t>(source.instance))};
-			bend_find_tracks(glm::dvec3(source.transform[3]), key);
-			ImGui::Text("%s", source.file.c_str());
-			if (tool.tracks.empty())
-				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), STR_C("No track within %.0f m of the model"), kBendReach);
-			else
-				render_bend_source(source, key);
-		}
-		else
-		{
-			tool.marker_valid = false;
-			tool.picking = false;
-			ImGui::TextDisabled("%s", STR_C("Select a model by a track, or click a bent one"));
-		}
-		auto *track{selected_track()};
-		auto const nearby{track != nullptr ? sweeps_near(*track) : std::vector<sweep_node *>{}};
-		std::vector<std::pair<sweep_node *, double>> listed;
-		if (track != nullptr)
-			for (auto *sweep : nearby)
-				listed.emplace_back(sweep, 0.0);
-		else
-			for (auto *sweep : simulation::Sweeps.sequence())
-				if (sweep != nullptr && false == sweep->m_editorremoved)
-				{
-					auto const distance{glm::distance(sweep->location(), glm::dvec3{Global.pCamera.Pos})};
-					if (distance < 0.5 * (sweep->end() - sweep->start()) + 300.0)
-						listed.emplace_back(sweep, distance);
-				}
-		if (false == listed.empty())
-		{
-			ImGui::Separator();
-			ImGui::TextDisabled("%s", track != nullptr ? STR_C("Bent models by this track:") : STR_C("Bent models nearby:"));
-			for (auto const &entry : listed)
-			{
-				auto *sweep{entry.first};
-				ImGui::PushID(sweep);
-				if (ImGui::Selectable(format("%s  %s, %.0f m", sweep->name().c_str(), sweep->definition().model.c_str(), sweep->end() - sweep->start()).c_str(), false))
-				{
-					tool.edited = sweep;
-					tool.picking = false;
-				}
-				ImGui::PopID();
-			}
-		}
-		if (track != nullptr && ImGui::TreeNodeEx(STR_C("New model along the selected track")))
-		{
-			m_sweep.open = true;
-			render_sweep_ui();
-			ImGui::TreePop();
-		}
-		else
-			m_sweep.open = false;
-	}
+		render_bend_choice();
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
 	ImGui::PopID();
+}
+
+void editor_mode::render_bend_edited(sweep_node &Sweep)
+{
+	auto &tool{m_bend};
+	auto state{Sweep.definition()};
+	glm::dvec3 low;
+	glm::dvec3 high;
+	glm::dvec3 shift;
+	auto const measured{Sweep.bounds(low, high, shift)};
+	auto const own{measured ? high.x - low.x : 0.0};
+	auto const from{Sweep.distance_at(Sweep.start())};
+	auto const stretch{Sweep.distance_at(Sweep.end()) - from};
+	ImGui::Text("%s  %s", Sweep.name().c_str(), state.model.c_str());
+	if (own > 0.0)
+		ImGui::TextDisabled(STR_C("%.2f m along the reference line, %d copies (the model is %.2f m)"), stretch, copies_of(Sweep, own), own);
+	bool changed{false};
+	tool.side_anchor = state.side_anchor;
+	tool.height_anchor = state.height_anchor;
+	tool.point = state.point;
+	changed |= render_bend_place(Sweep, state, stretch);
+	auto const half{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
+	changed |= render_bend_lengths(Sweep, state, own, half);
+	int mode{state.bend ? 0 : 1};
+	changed |= segmented("bendmode", mode, {{0, STR_C("Bent"), "One model stretched and bent along the curve of the track"}, {1, STR_C("Repeated"), "Copies of the model one after another, each one straight"}});
+	state.bend = mode == 0;
+	if (false == state.bend)
+		changed |= bend_step_field(state);
+	if (state.platform && platform_distance())
+	{
+		state.lateral = std::copysign(EditorSettings.platform_edge(), state.lateral);
+		changed = true;
+	}
+	changed |= render_bend_more(state);
+	ImGui::PushTextWrapPos(0.0f);
+	ImGui::TextDisabled("%s", STR_C("In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"));
+	ImGui::PopTextWrapPos();
+	if (changed)
+		bend_edit(state);
+	render_bend_finish(Sweep, half);
+}
+
+bool editor_mode::render_bend_place(sweep_node &Sweep, sweep_node::state &State, double const Stretch) const
+{
+	if (false == begin_fields("##bendplace", 0.5f))
+		return false;
+	bool changed{false};
+	field_row("From the track axis (m, + right)");
+	changed |= ImGui::InputDouble("##bendlateral", &State.lateral, 0.05, 0.5, "%.3f");
+	double overhead{State.height - kRailTop};
+	field_row("Over the rail head (m)");
+	if (ImGui::InputDouble("##bendheight", &overhead, 0.01, 0.1, "%.3f"))
+	{
+		State.height = overhead + kRailTop;
+		changed = true;
+	}
+	double along{Sweep.distance_at(bend_fixed(Sweep, State.point))};
+	field_row("Along the track (m)");
+	if (ImGui::InputDouble("##bendalongat", &along, 0.1, 1.0, "%.2f"))
+	{
+		bend_stretch(Sweep, along, Stretch, State.point, State);
+		changed = true;
+	}
+	double length{Stretch};
+	field_row("Length (m)");
+	if (ImGui::InputDouble("##bendlength", &length, 0.5, 5.0, "%.2f") && length > 0.1)
+	{
+		bend_stretch(Sweep, bend_fixed(Sweep, State.point), length, State.point, State);
+		changed = true;
+	}
+	ImGui::EndTable();
+	return changed;
+}
+
+bool editor_mode::render_bend_lengths(sweep_node &Sweep, sweep_node::state &State, double const Own, float const Half) const
+{
+	bool changed{false};
+	ImGui::BeginDisabled(Own <= 0.0);
+	if (ImGui::Button(STR_C("As long as the model"), ImVec2(Half, 0.0f)))
+	{
+		bend_stretch(Sweep, bend_fixed(Sweep, State.point), Own, State.point, State);
+		changed = true;
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Along the whole track"), ImVec2(-FLT_MIN, 0.0f)))
+	{
+		State.from = 0.0;
+		State.to = -1.0;
+		changed = true;
+	}
+	return changed;
+}
+
+bool editor_mode::render_bend_more(sweep_node::state &State)
+{
+	auto &tool{m_bend};
+	bool changed{false};
+	ImGui::PushID("bendmore");
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		auto const side{tool.side_anchor};
+		auto const height{tool.height_anchor};
+		auto const point{tool.point};
+		bool anchored{false};
+		render_bend_anchors(anchored);
+		if (anchored && (side != tool.side_anchor || height != tool.height_anchor || point != tool.point))
+		{
+			bend_reanchor(State, tool.side_anchor, tool.height_anchor, tool.point);
+			changed = true;
+		}
+		if (State.bend)
+			changed |= bend_step_field(State);
+		auto const platform{State.platform};
+		changed |= toggle_chips("bendflags", {{STR_C("Turned around"), &State.flip},
+		                                      {STR_C("Mirrored"), &State.mirror},
+		                                      {STR_C("Leans with the cant"), &State.tilt},
+		                                      {STR_C("Gauge widening in the curves"), &State.widen,
+		                                       "The offset grows by the widening of the gauge below the platforms: 3.75/R in the curves of R >= 250 m,\n"
+		                                       "more in the sharper ones, and on the inner side of a canted curve by the cant times the height of the edge / 1.5;\n"
+		                                       "it begins 20 m (inner side) and 26 m (outer side) ahead of the curve, as in the gauge check"},
+		                                      {STR_C("Platform"), &State.platform,
+		                                       "Puts the edge facing the track at the distance chosen from its axis, set back by the widening of the gauge in the curves.\n"
+		                                       "Stands on the plane of the rail heads carried on to its edge: lower on the inner side of a canted curve,\n"
+		                                       "higher on the outer one; on the inner side also set back by the cant times the height of the edge / 1.5"}}) >= 0;
+		if (State.platform && false == platform)
+		{
+			bend_reanchor(State, 1, 3, State.point);
+			platform_edge(State, State.model, kRailTop);
+		}
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
+	return changed;
+}
+
+void editor_mode::render_bend_finish(sweep_node &Sweep, float const Half)
+{
+	auto &tool{m_bend};
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.24f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.30f, 1.0f));
+	auto const done{ImGui::Button(STR_C("Done"), ImVec2(Half, ImGui::GetFrameHeight() * 1.3f))};
+	ImGui::PopStyleColor(2);
+	if (done)
+		tool.edited = nullptr;
+	ImGui::SameLine();
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.15f, 1.0f));
+	auto const removed{ImGui::Button(STR_C("Delete"), ImVec2(-FLT_MIN, ImGui::GetFrameHeight() * 1.3f))};
+	ImGui::PopStyleColor();
+	if (removed)
+	{
+		sweep_delete(Sweep);
+		tool.edited = nullptr;
+	}
+}
+
+void editor_mode::render_bend_choice()
+{
+	auto &tool{m_bend};
+	bend_source source;
+	if (bend_source_of_selection(source))
+	{
+		void const *key{source.model != nullptr ? static_cast<void const *>(source.model) : reinterpret_cast<void const *>(static_cast<std::uintptr_t>(source.instance))};
+		bend_find_tracks(glm::dvec3(source.transform[3]), key);
+		ImGui::Text("%s", source.file.c_str());
+		if (tool.tracks.empty())
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), STR_C("No track within %.0f m of the model"), kBendReach);
+		else
+			render_bend_source(source, key);
+	}
+	else
+	{
+		tool.marker_valid = false;
+		tool.picking = false;
+		ImGui::TextDisabled("%s", STR_C("Select a model by a track, or click a bent one"));
+	}
+	auto *track{selected_track()};
+	render_bend_listed(track);
+	if (track != nullptr && ImGui::TreeNodeEx(STR_C("New model along the selected track")))
+	{
+		m_sweep.open = true;
+		render_sweep_ui();
+		ImGui::TreePop();
+	}
+	else
+		m_sweep.open = false;
+}
+
+void editor_mode::render_bend_listed(TTrack const *Track)
+{
+	auto &tool{m_bend};
+	auto const nearby{Track != nullptr ? sweeps_near(*Track) : std::vector<sweep_node *>{}};
+	std::vector<std::pair<sweep_node *, double>> listed;
+	if (Track != nullptr)
+		for (auto *sweep : nearby)
+			listed.emplace_back(sweep, 0.0);
+	else
+		listed = sweeps_by_camera();
+	if (listed.empty())
+		return;
+	ImGui::Separator();
+	ImGui::TextDisabled("%s", Track != nullptr ? STR_C("Bent models by this track:") : STR_C("Bent models nearby:"));
+	for (auto const &entry : listed)
+	{
+		auto *sweep{entry.first};
+		ImGui::PushID(sweep);
+		if (ImGui::Selectable(format("%s  %s, %.0f m", sweep->name().c_str(), sweep->definition().model.c_str(), sweep->end() - sweep->start()).c_str(), false))
+		{
+			tool.edited = sweep;
+			tool.picking = false;
+		}
+		ImGui::PopID();
+	}
 }
 
 void editor_mode::draw_bend_overlay() const
