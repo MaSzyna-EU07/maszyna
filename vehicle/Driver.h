@@ -314,6 +314,7 @@ private:
     double brake_increase_margin() const;
     bool uphill_stop_hold() const;
     bool uphill_brake_committed( double const Velocity ) const;
+    void control_uphill_start();
 
     void update_timers( double const dt );
     void update_logs( double const dt );
@@ -408,6 +409,8 @@ private:
     double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
+    bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    double fUphillStartTime = 0.0; // when the uphill start began
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
