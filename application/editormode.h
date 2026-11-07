@@ -1641,12 +1641,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
 	void record_connection(connection::kind const Kind, std::vector<TTrack *> const &Switches, connection::result const &Plan, editor_track::switch_template const &Shape) const;
 	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason) const;
-	bool switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
+	bool switch_vacate(TTrack const &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
 	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);
 	std::optional<switch_branch> take_switch_branch(TTrack const &Track, editor_track::joint const &Joint, std::size_t const Index) const;
 	// for the path of the switch the line leaves, as it'll lie
 	bool plan_switch_branch(segment_data const &Path, editor_track::joint const &Joint, switch_branch &Branch) const;
-	void lay_switch_branch(switch_branch const &Branch, editor_track::edit &Edit);
+	void lay_switch_branch(switch_branch const &Branch, editor_track::edit &Edit) const;
 	// of the joints off the main straight of the switch, the neighbours in Skip left out
 	std::vector<switch_branch> switch_branches(TTrack const &Track, std::vector<editor_track::joint> const &Joints, std::vector<TTrack const *> const &Skip = {}) const;
 	// for the paths the switch has now; the joints of the branches which can be laid are handled, the others are left out. Gives the notes for the user
@@ -1655,7 +1655,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool double_room(double_switch const &Set, double &Low, double &High, double &Length, std::string &Reason);
 	bool move_double_paths(double_switch const &Set, std::vector<segment_data> const &Paths, std::string &Status);
 	bool slide_switch(TTrack &Track, double const Distance);
-	bool switch_slides(TTrack const &Track) const;
+	bool switch_slides(TTrack &Track) const;
 	// a slip slid along its first track: the slip and the tracks its crossing track goes on into with their ends free move whole, the
 	// straights of its first track before it and past it give and take the length. Low and High: how far back and on it may go
 	struct slip_slide
@@ -1673,14 +1673,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool slide_slip(slip_set const &Slip, double const Distance);
 	// a switch bent into a curve, its main track going on into a plain track at each end: the curve the three make, the two tracks,
 	// where the switch starts on it; false for any other
-	bool bent_switch_frame(TTrack const &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const;
+	bool bent_switch_frame(TTrack &Track, std::vector<curve_sample> &Frame, std::array<TTrack *, 2> &Sides, double &Station) const;
 	// the paths of the switch moved along the curve by the distance, shaped as the curve is there
 	std::vector<segment_data> bent_switch_paths(TTrack const &Track, std::vector<curve_sample> const &Frame, double const Station, double const Distance) const;
 	bool slide_bent_switch(TTrack &Track, double const Distance);
 	// the switch bent into a curve given the paths, along the curve of the bent_switch_frame: the tracks next to it laid along it up to
 	// its new ends, one taken up whole going, the curve past the diverging track following. Notes: for the user
 	bool lay_bent_switch(TTrack &Track, std::vector<curve_sample> const &Frame, std::array<TTrack *, 2> const &Sides, std::vector<segment_data> const &Paths, std::string &Notes);
+	// a track next to a bent switch, its Path, laid along the Frame up to the new End of the switch on it, the station there; Joint: the
+	// old end of the switch it joined, Corner: the new one it's laid right up to
+	static segment_data side_along_frame(segment_data const &Path, std::vector<curve_sample> const &Frame, double const End, glm::dvec3 const &Joint, glm::dvec3 const &Corner);
 	void switch_slide_start(TTrack &Track);
+	// switch_slide_start for a slip, false for a track which isn't one
+	bool switch_slide_start_slip(TTrack const &Track);
+	// switch_slide_start for a switch bent into a curve, false for any other
+	bool switch_slide_start_bent(TTrack &Track);
 	void switch_slide_update();
 	void switch_slide_finish();
 	void mouse_left_release();
