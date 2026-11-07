@@ -6294,7 +6294,7 @@ TController::control_security_system( double const Timedelta ) {
         }
     }
     if( iEngineActive
-     && false == mvOccupied->Radio
+     && ( false == mvOccupied->Radio || false == mvOccupied->RadioFuse )
      && false == mvOccupied->RadioStopFlag ) {
         // otherwise if it's safe to do so, turn the radio back on
         // arbitrary 5 sec delay before switching radio back on

@@ -669,6 +669,15 @@ std::unordered_map<std::string, vr_openvr::button_bindings> vr_openvr::m_buttonb
     { "radiooff_sw:", {
         user_command::radiodisable,
         user_command::none } },
+    { "radiofuse_sw:", {
+        user_command::radiofusetoggle,
+        user_command::none } },
+    { "radiofuseon_sw:", {
+        user_command::radiofuseenable,
+        user_command::none } },
+    { "radiofuseoff_sw:", {
+        user_command::radiofusedisable,
+        user_command::none } },
     { "radiochannel_sw:", {
         user_command::radiochannelincrease,
         user_command::radiochanneldecrease } },

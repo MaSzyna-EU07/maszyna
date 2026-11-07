@@ -1590,6 +1590,9 @@ class TMoverParameters
 	double EpForce = 0.0; /*Poziom zadanej sily EP*/
 	bool Signalling = false; /*Czy jest zalaczona sygnalizacja hamowania ostatniego wagonu*/
 	bool Radio = false; /*Czy jest zalaczony radiotelefon*/
+	// the cut-off in the radio's power supply: a fuse in the cabinet, a lever on the desk or the switch on the radio's power
+	// supply (eu07/maszyna#438). Closed unless the driver opens it, so vehicles without such a switch work as before
+	bool RadioFuse = true;
 	float NominalBatteryVoltage = 0.f; /*Winger - baterie w elektrykach*/
 	TDimension Dim; /*wymiary*/
 	double Cx = 0.0; /*wsp. op. aerodyn.*/
@@ -2473,10 +2476,10 @@ class TMoverParameters
 		auto const oilmanual{OilPump.start_type != start_t::automatic};
 		return (fuelmanual || oilmanual) && (false == fuelmanual || FuelPump.is_enabled) && (false == oilmanual || OilPump.is_enabled);
 	}
-	// whether the radio is switched on and has the low voltage to work
+	// whether the radio is switched on, its power supply isn't cut off and it has the low voltage to work
 	bool RadioPowered() const
 	{
-		return Radio && (Power24vIsAvailable || Power110vIsAvailable);
+		return Radio && RadioFuse && (Power24vIsAvailable || Power110vIsAvailable);
 	}
 	/*obrot kol uwzgledniajacy poslizg*/
 	double ComputeRotatingWheel(double WForce, double dt, double n) const;

@@ -485,6 +485,9 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::radiovolumeincrease, &TTrain::OnCommand_radiovolumeincrease},
     {user_command::radiovolumedecrease, &TTrain::OnCommand_radiovolumedecrease},
     {user_command::radiovolumeset, &TTrain::OnCommand_radiovolumeset},
+    {user_command::radiofusetoggle, &TTrain::OnCommand_radiofusetoggle},
+    {user_command::radiofuseenable, &TTrain::OnCommand_radiofuseenable},
+    {user_command::radiofusedisable, &TTrain::OnCommand_radiofusedisable},
     {user_command::cabchangeforward, &TTrain::OnCommand_cabchangeforward},
     {user_command::cabchangebackward, &TTrain::OnCommand_cabchangebackward},
     {user_command::generictoggle0, &TTrain::OnCommand_generictoggle},
@@ -785,6 +788,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 		}
 	}
 	dict->insert("radio", mvOccupied->Radio);
+	dict->insert("radio_fuse", mvOccupied->RadioFuse);
 	dict->insert("radio_channel", RadioChannel());
 	dict->insert("radio_volume", m_radiovolume);
 	dict->insert("door_lock", mvOccupied->Doors.lock_enabled);
@@ -8032,6 +8036,41 @@ void TTrain::OnCommand_radiodisable(TTrain *Train, command_data const &Command)
 	}
 }
 
+// the cut-off in the radio's power supply (eu07/maszyna#438); opening it works like switching the radio off, the
+// radio-stop flag included
+void TTrain::OnCommand_radiofusetoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+
+	if (Train->mvOccupied->RadioFuse)
+	{
+		OnCommand_radiofusedisable(Train, Command);
+	}
+	else
+	{
+		OnCommand_radiofuseenable(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_radiofuseenable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action == GLFW_PRESS)
+	{
+		Train->mvOccupied->RadioFuse = true;
+	}
+}
+
+void TTrain::OnCommand_radiofusedisable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action == GLFW_PRESS)
+	{
+		Train->mvOccupied->RadioFuse = false;
+	}
+}
+
 void TTrain::OnCommand_radiochannelincrease(TTrain *Train, command_data const &Command)
 {
 
@@ -9053,9 +9092,9 @@ bool TTrain::Update(double const Deltatime)
 		// KURS90
 		btLampkaMaxSila.Turn(abs(mvControlled->Im) >= 350);
 		btLampkaPrzekrMaxSila.Turn(abs(mvControlled->Im) >= 450);
-		btLampkaRadio.Turn(mvOccupied->Radio);
+		btLampkaRadio.Turn(mvOccupied->Radio && mvOccupied->RadioFuse);
 		btLampkaRadioMessage.Turn(radio_message_played);
-		btLampkaRadioStop.Turn(mvOccupied->Radio && mvOccupied->RadioStopFlag);
+		btLampkaRadioStop.Turn(mvOccupied->Radio && mvOccupied->RadioFuse && mvOccupied->RadioStopFlag);
 		btLampkaHamulecReczny.Turn(mvOccupied->ManualBrakePos > 0);
 		// NBMX wrzesien 2003 - drzwi oraz sygnał odjazdu
 		if (DynamicObject->Mechanik != nullptr)
@@ -11962,6 +12001,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	    {"pantfrontoff_sw:", &mvPantographUnit->Pantographs[end::front].valve.is_disabled},
 	    {"pantrearoff_sw:", &mvPantographUnit->Pantographs[end::rear].valve.is_disabled},
 	    {"radio_sw:", &mvOccupied->Radio},
+	    {"radiofuse_sw:", &mvOccupied->RadioFuse},
 	    {"cablight_sw:", &Cabine[iCabn].bLight},
 	    {"springbraketoggle_bt:", &mvOccupied->SpringBrake.Activate},
 	    {"couplingdisconnect_sw:", &m_couplingdisconnect},
