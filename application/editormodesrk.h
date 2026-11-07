@@ -385,6 +385,26 @@ class srk_tool final : public editor_tool
 	std::string lengths_table() const;
 	// of the lengths, the one of the station track the track is a part of, -1 for none
 	int length_of(TTrack const *Track) const;
+	// the self-test commands, each in a function of its own: srkopen in selftest_open()
+	editor_selftest_result selftest_open(std::istringstream &Words);
+	editor_selftest_result selftest_number(std::istringstream &Words);
+	editor_selftest_result selftest_circuits(std::istringstream &Words);
+	editor_selftest_result selftest_track(std::istringstream &Words);
+	editor_selftest_result selftest_signals(std::istringstream &Words);
+	editor_selftest_result selftest_lines(std::istringstream &Words);
+	editor_selftest_result selftest_lengths(std::istringstream &Words);
+	editor_selftest_result selftest_heads(std::istringstream &Words);
+	editor_selftest_result selftest_shp(std::istringstream &Words);
+	editor_selftest_result selftest_block(std::istringstream &Words);
+	editor_selftest_result selftest_boundary(std::istringstream &Words);
+	editor_selftest_result selftest_fit(std::istringstream &Words);
+	editor_selftest_result selftest_draw(std::istringstream &Words);
+	editor_selftest_result selftest_check(std::istringstream &Words);
+	editor_selftest_result selftest_fix(std::istringstream &Words);
+	editor_selftest_result selftest_drawing(std::istringstream &Words);
+	editor_selftest_result selftest_strip(std::istringstream &Words);
+	editor_selftest_result selftest_stations(std::istringstream &Words);
+	editor_selftest_result selftest_set(std::istringstream &Words);
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
 	void set_lines(block_edit const *Edit = nullptr);

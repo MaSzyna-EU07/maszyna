@@ -5521,596 +5521,640 @@ void srk_tool::render_windows()
 	ImGui::End();
 }
 
+editor_selftest_result srk_tool::selftest_open(std::istringstream &Words)
+{
+	// srkopen track=<name>: the station of the track, as a click on it opens it
+	auto const values{selftest_values(Words)};
+	auto const found{values.find("track")};
+	auto *track{found != values.end() ? simulation::Paths.find(found->second) : nullptr};
+	m_open = true;
+	load();
+	if (track == nullptr)
+	{
+		WriteLog("SELFTEST srkopen: no such track");
+		return editor_selftest_result::handled;
+	}
+	open(*track);
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkopen: " + m_status);
+		return editor_selftest_result::handled;
+	}
+	auto const &layout{*m_layout};
+	std::unordered_set<TTrack const *> tracks;
+	std::size_t approach{0};
+	for (auto const &path : layout.paths)
+		if (path.approach)
+			++approach;
+		else
+			tracks.insert(path.track);
+	WriteLog(format("SELFTEST srkopen %s: %zu switches, %zu tracks, %zu paths out, axis %.0f m, switches over %.0f..%.0f, offsets %.1f..%.1f, km %s, record %d", m_anchor->name().c_str(), layout.switches.size(), tracks.size(), approach,
+	                layout.chainage.back(), layout.from, layout.to, layout.low, layout.high, layout.kilometrage ? format("%.3f", layout.km).c_str() : "-", m_record));
+	WriteLog(format("SELFTEST srkopen lines %zu, main %zu tracks, second %zu tracks", layout.lines.size(), layout.main.size(), layout.second.size()));
+	for (auto const *switch_track : layout.switches)
+	{
+		auto const at{station::project(layout, switch_track->m_paths.front().points[segment_data::point::start])};
+		WriteLog(format("SELFTEST srkopen switch %s at %.1f offset %.1f", switch_track->name().c_str(), at.x, at.y));
+	}
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_number(std::istringstream &Words)
+{
+	// srknumber [from=right]: the switches of the open station numbered
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srknumber: no station open");
+		return editor_selftest_result::handled;
+	}
+	auto const values{selftest_values(Words)};
+	auto const from{values.find("from")};
+	m_reversed = from != values.end() && from->second == "right";
+	number_switches();
+	std::string circuit_list;
+	for (auto const &unit : station::numbering(*m_layout, m_reversed))
+		for (auto const *part : unit.parts)
+		{
+			auto const record{switch_store::named(*part)};
+			circuit_list += ' ' + part->name() + '/' + (record ? record->number : std::string{"?"});
+		}
+	WriteLog("SELFTEST srknumber: " + m_status);
+	WriteLog("SELFTEST srknumber names:" + circuit_list);
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_circuits(std::istringstream & /*Words*/)
+{
+	// srkcircuits: the open station cut into its track circuits
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkcircuits: no station open");
+		return editor_selftest_result::handled;
+	}
+	set_circuits();
+	WriteLog("SELFTEST srkcircuits: " + m_status);
+	refresh();
+	std::map<std::string, std::pair<std::size_t, double>, std::less<>> found;
+	for (auto const &path : m_layout->paths)
+		if (false == path.track->Isolated.empty())
+		{
+			auto &[joints, metres]{found[path.track->Isolated.front()->asName]};
+			++joints;
+			metres += path.length;
+		}
+	std::string list;
+	for (auto const &[name, entry] : found)
+		list += format(" %s:%zu/%.0f", name.c_str(), entry.first, entry.second);
+	WriteLog(format("SELFTEST srkcircuits %zu named, %zu joints:", found.size(), m_ticks.size()) + list);
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_track(std::istringstream &Words)
+{
+	// srktrack circuit=<name> number=<number>: the station track of the circuit renumbered
+	auto const values{selftest_values(Words)};
+	auto const circuit{values.find("circuit")};
+	auto const number{values.find("number")};
+	TTrack const *found{nullptr};
+	if (m_layout.has_value() && circuit != values.end())
+		for (auto const &path : m_layout->paths)
+			if (false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == circuit->second)
+				found = path.track;
+	if (found == nullptr || number == values.end())
+	{
+		WriteLog("SELFTEST srktrack: no station open, or no such circuit");
+		return editor_selftest_result::handled;
+	}
+	renumber_track(*found, number->second);
+	WriteLog("SELFTEST srktrack: " + m_status);
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_signals(std::istringstream & /*Words*/)
+{
+	// srksignals: the signals of the open station set
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srksignals: no station open");
+		return editor_selftest_result::handled;
+	}
+	set_signals();
+	WriteLog("SELFTEST srksignals: " + m_status);
+	refresh();
+	std::string list;
+	for (auto const &mark : m_signal_marks)
+	{
+		// and the joint nearest to it, in the plan
+		auto nearest{std::numeric_limits<double>::max()};
+		for (auto const &joint : m_joints)
+			nearest = std::min(nearest, glm::distance(glm::dvec2{joint.at.x, joint.at.z}, glm::dvec2{mark.head.x, mark.head.z}));
+		list += format(" %s@%.0f/%.1f%s~%.1f", mark.text.c_str(), mark.at.x, mark.at.y, mark.ahead ? ">" : "<", nearest);
+	}
+	WriteLog(format("SELFTEST srksignals %zu:", m_signal_marks.size()) + list);
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_lines(std::istringstream & /*Words*/)
+{
+	// srklines: the signals of the lines out of the open station set
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srklines: no station open");
+		return editor_selftest_result::handled;
+	}
+	set_lines();
+	WriteLog("SELFTEST srklines: " + m_status);
+	refresh();
+	std::vector<station::numbered> tracks;
+	std::unordered_set<TTrack const *> inside;
+	if (false == station_tracks(tracks, inside))
+		return editor_selftest_result::handled;
+	auto const plan{station::signals(*m_layout, tracks, [&inside](TTrack const &Track) { return inside.contains(&Track); })};
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	for (auto const &line : station::lines_out(*m_layout, plan, kLineLimit))
+	{
+		std::vector<std::pair<double, std::string>> along;
+		for (auto const &signal : standing)
+		{
+			double gap{0.0};
+			auto const distance{station::distance_on(line, signal.position, gap)};
+			if (gap < 4.5 && distance < line.length())
+				along.emplace_back(distance, format("%s(%s,%s)", signal.name.c_str(), signal.kind.c_str(), signal.linked.c_str()));
+		}
+		std::string last;
+		for (std::size_t i = 1; i < line.points.size(); ++i)
+		{
+			auto const *track{line.tracks[line.owners[i]]};
+			auto const name{track->Isolated.empty() ? std::string{"-"} : track->Isolated.front()->asName};
+			if (name != last)
+				along.emplace_back(line.distances[i], "[" + name + "]");
+			last = name;
+		}
+		std::ranges::sort(along);
+		std::string list;
+		for (auto const &[distance, text] : along)
+			list += format(" %.0f:%s", distance, text.c_str());
+		WriteLog(format("SELFTEST srklines %s track %d %s %.0f m%s:", plan[line.entry].name.c_str(), line.number, line.inbound ? "in" : "out", line.length(), line.station ? " to a station" : "") + list);
+	}
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_lengths(std::istringstream &Words)
+{
+	// srklengths [show=<number>]: the lengths of the station tracks of the open station, the one shown drawn
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srklengths: no station open");
+		return editor_selftest_result::handled;
+	}
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	refresh();
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srklengths: the station is gone");
+		return editor_selftest_result::handled;
+	}
+	auto const values{selftest_values(Words)};
+	auto const show{values.find("show")};
+	auto const code = [](station::limit const &Limit) {
+		static constexpr std::array<char const *, 6> kinds{"S", "J", "F", "St", "B", "X"};
+		return std::string{kinds[static_cast<std::size_t>(Limit.what)]} + ":" + Limit.name + format("@%.1f", Limit.along);
+	};
+	for (auto const &track : m_lengths)
+	{
+		WriteLog(format("SELFTEST srklengths %s: right %.1f (%s .. %s), left %.1f (%s .. %s), construction %.1f", track.number.c_str(), track.ways[0].length, code(track.ways[0].rear).c_str(), code(track.ways[0].head).c_str(), track.ways[1].length,
+		                code(track.ways[1].rear).c_str(), code(track.ways[1].head).c_str(), track.construction));
+	}
+	WriteLog(format("SELFTEST srklengths: %zu tracks", m_lengths.size()));
+	if (auto const copy{values.find("copy")}; copy != values.end() && copy->second == "1")
+		WriteLog("SELFTEST srklengths table:\n" + lengths_table());
+	// the track shown selected
+	for (auto const &path : m_layout->paths)
+		if (show != values.end() && false == path.track->Isolated.empty() && track_of(path.track->Isolated.front()->asName, stem_of_open()) == show->second)
+		{
+			m_selection.set_current_node(path.track);
+			m_picked = path.track;
+			break;
+		}
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_heads(std::istringstream &Words)
+{
+	// srkheads [braking=<m>] [fit=1]: the lights of the signals of the open station checked, fitted
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkheads: no station open");
+		return editor_selftest_result::handled;
+	}
+	auto const values{selftest_values(Words)};
+	if (auto const braking{values.find("braking")}; braking != values.end())
+	{
+		record_of_open().braking = std::atoi(braking->second.c_str());
+		m_changed = true;
+	}
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	std::vector<signal_head> heads;
+	m_signals.signal_heads(heads, true);
+	refresh();
+	if (auto const fit{values.find("fit")}; fit != values.end() && fit->second == "1" && m_layout.has_value())
+	{
+		fit_heads();
+		WriteLog("SELFTEST srkheads fit: " + m_status);
+		refresh();
+	}
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkheads: the station is gone");
+		return editor_selftest_result::handled;
+	}
+	WriteLog(format("SELFTEST srkheads: speed %.0f (set %.0f), braking %.0f, %zu checked, templates %zu", speed_of_open(), set_speed_of_open(), braking_of_open(), m_heads.size(), heads.size()));
+	auto const list = [](std::vector<int> const &Speeds) {
+		std::string text;
+		for (auto const speed : Speeds)
+			text += std::format("{}{}", text.empty() ? "" : "/", speed);
+		return text.empty() ? std::string{"-"} : text;
+	};
+	for (auto const &head : m_heads)
+	{
+		std::string routes;
+		for (std::size_t k = 0; k < head.routes.size(); ++k)
+		{
+			auto const &route{head.routes[k]};
+			routes += format(" %s:%.0f:%.0f%s%s", route.next >= 0 ? head.nexts[k].c_str() : route.ended ? "end" : "none", route.length, route.speed, route.warning >= 0 ? ":to" : "", route.turnouts.empty() ? "" : format(":%zut", route.turnouts.size()).c_str());
+		}
+		WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d told=%d%s fit=%s shp=%.0f/%.0f routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
+		                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.told ? 1 : 0, head.unsaid ? "(unsaid)" : "", head.fit.empty() ? "-" : head.fit.c_str(), head.shp, head.shp_found, routes.c_str(), head.problems.size()));
+		for (auto const &problem : head.problems)
+			WriteLog("SELFTEST srkheads   " + problem);
+	}
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_shp(std::istringstream & /*Words*/)
+{
+	// srkshp: the SHP resonators of the open station placed, the signals listed with them
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkshp: no station open");
+		return editor_selftest_result::handled;
+	}
+	set_shp();
+	WriteLog("SELFTEST srkshp: " + m_status);
+	refresh();
+	if (false == m_layout.has_value())
+		return editor_selftest_result::handled;
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	check_heads(standing);
+	for (auto const &head : m_heads)
+		if (head.shp >= 0.0)
+			WriteLog(format("SELFTEST srkshp %s %s wanted %.0f found %.0f", head.name.c_str(), head.kind.c_str(), head.shp, head.shp_found));
+	for (auto const &include : m_templates.standing_templates([](std::string_view const File) { return File == kResonator; }))
+		WriteLog(format("SELFTEST srkshp resonator %s at %.2f %.2f %.2f yaw %.1f", include.values.empty() ? "-" : include.values.front().c_str(), include.location.x, include.location.y, include.location.z, include.yaw));
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_block(std::istringstream &Words)
+{
+	// srkblock entry=<A> [kind=sbl|sbl4|semi|auto] [ways=1|2|auto]: the block of the line out beyond the entry signal, both ways or
+	// not with the other track of the line, the lines listed
+	if (m_history.history_revision() != m_history_revision)
+		refresh();
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkblock: no station open");
+		return editor_selftest_result::handled;
+	}
+	auto const values{selftest_values(Words)};
+	auto const entry{values.find("entry")};
+	if (auto const kind{values.find("kind")}; entry != values.end() && kind != values.end())
+	{
+		if (kind->second == "auto")
+			record_of_open().blocks.erase(entry->second);
+		else
+		{
+			auto block{block_kind::semi};
+			if (kind->second == "sbl4")
+				block = block_kind::four;
+			else if (kind->second == "sbl")
+				block = block_kind::three;
+			record_of_open().blocks[entry->second] = block;
+		}
+		m_changed = true;
+	}
+	if (auto const ways{values.find("ways")}; entry != values.end() && ways != values.end())
+	{
+		auto const row{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry->second; })};
+		std::vector<std::string> entries{entry->second};
+		if (row != m_lines.end() && row->partner >= 0 && row->partner < static_cast<int>(m_lines.size()))
+			entries.push_back(m_lines[row->partner].entry);
+		for (auto const &name : entries)
+			if (ways->second == "auto")
+				record_of_open().ways.erase(name);
+			else
+				record_of_open().ways[name] = ways->second == "2";
+		m_changed = true;
+	}
+	survey_signals();
+	if (false == m_lines_problem.empty())
+		WriteLog("SELFTEST srkblock: " + m_lines_problem);
+	auto const listed = [](std::vector<std::pair<double, std::string>> const &Stops) {
+		std::string text;
+		for (auto const &[distance, name] : Stops)
+			text += format(" %s@%.0f", name.c_str(), distance);
+		return text;
+	};
+	for (auto const &row : m_lines)
+		WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d own %d ways %d%s leftovers %zu legacy %d stops%s wrong%s", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks,
+		                row.block == block_kind::four ? "sbl4" : row.block == block_kind::three ? "sbl" : "semi", static_cast<int>(row.why), static_cast<int>(row.own), row.both ? 2 : 1, row.both_hand ? " hand" : "", row.leftovers, row.legacy ? 1 : 0, listed(row.stops).c_str(), listed(row.wrong).c_str()));
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_boundary(std::istringstream &Words)
+{
+	// srkboundary entry=<A> at=<m>|stop=<n> [nudge=<m>]: a click while drawing the block boundaries, on the line beyond the entry
+	// signal at the distance out or at a block signal standing along it, nudge metres aside
+	if (m_history.history_revision() != m_history_revision)
+		refresh();
+	auto const values{selftest_values(Words)};
+	auto const entry{values.contains("entry") ? values.at("entry") : std::string{}};
+	auto at{values.contains("at") ? std::atof(values.at("at").c_str()) : 0.0};
+	auto const nudge{values.contains("nudge") ? std::atof(values.at("nudge").c_str()) : 0.0};
+	auto const found{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry; })};
+	if (false == m_layout.has_value() || found == m_lines.end())
+	{
+		WriteLog("SELFTEST srkboundary: no line beyond " + entry);
+		return editor_selftest_result::handled;
+	}
+	if (values.contains("stop") && false == found->stops.empty())
+		at = found->stops[static_cast<std::size_t>(std::abs(std::atoi(values.at("stop").c_str()))) % found->stops.size()].first;
+	auto const place{station::point_on(m_line_ways[found - m_lines.begin()], at)};
+	m_drawing = true;
+	bool valid{false};
+	auto const label{boundary_hover(place.point + glm::dvec3{-place.way.z, 0.0, place.way.x} * nudge, valid)};
+	WriteLog(format("SELFTEST srkboundary %s at %.0f: %s%s", entry.c_str(), at, valid ? "" : "(refused) ", label.c_str()));
+	if (valid)
+	{
+		boundary_click();
+		WriteLog("SELFTEST srkboundary: " + m_status);
+	}
+	m_drawing = false;
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_fit(std::istringstream &Words)
+{
+	// srkfit lines|station|from=<m> to=<m>: the schematic fitting the lines out, the station, or the chainage between
+	std::string word;
+	std::string mode;
+	std::map<std::string, std::string, std::less<>> bounds;
+	while (Words >> word)
+		if (auto const equals{word.find('=')}; equals != std::string::npos)
+			bounds[word.substr(0, equals)] = word.substr(equals + 1);
+		else
+			mode = word;
+	m_fit_lines = mode == "lines";
+	m_view_state.exaggeration = 0.0f;
+	if (bounds.contains("from") && bounds.contains("to") && m_layout.has_value())
+	{
+		fit_view(1000.0f, 400.0f);
+		m_view_state.from = std::atof(bounds.at("from").c_str());
+		m_view_state.to = std::atof(bounds.at("to").c_str());
+	}
+	WriteLog("SELFTEST srkfit " + mode);
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_draw(std::istringstream &Words)
+{
+	// srkdraw on|off: the block boundaries drawn by hand, or not
+	std::string word;
+	Words >> word;
+	m_drawing = word != "off";
+	WriteLog(std::string{"SELFTEST srkdraw "} + (m_drawing ? "on" : "off"));
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_check(std::istringstream & /*Words*/)
+{
+	// srkcheck: the block sections of the scenery checked: each switched by a block signal standing, none twice, no two signals of
+	// one name
+	std::vector<standing_signal> standing;
+	m_signals.standing_signals(standing, true);
+	std::unordered_map<std::string, int, string_hash, std::equal_to<>> names;
+	for (auto const &signal : standing)
+		++names[ToLower(signal.name)];
+	std::size_t bad{0};
+	for (auto const &[name, count] : names)
+		if (count > 1)
+		{
+			++bad;
+			WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
+		}
+	std::unordered_map<std::string, int, string_hash, std::equal_to<>> sections;
+	auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
+	for (auto const &block_control : controls)
+	{
+		if (block_control.values.size() < 6)
+		{
+			++bad;
+			WriteLog("SELFTEST srkcheck: a block section without its signal");
+			continue;
+		}
+		if (++sections[ToLower(block_control.values[0])] > 1)
+		{
+			++bad;
+			WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " twice");
+		}
+		for (std::size_t index = 5; index < block_control.values.size() && index < 7; ++index)
+			if (false == names.contains(ToLower(block_control.values[index])))
+			{
+				++bad;
+				WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " switched by " + block_control.values[index] + ", which doesn't stand");
+			}
+	}
+	std::size_t unread{0};
+	for (auto const &signal : standing)
+		if (false == signal.read.empty() && signal.track == nullptr)
+		{
+			++unread;
+			WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
+		}
+	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
+	for (auto *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			for (auto const *isolated : track->Isolated)
+				if (isolated != nullptr)
+					circuits.insert(ToLower(isolated->asName));
+	std::size_t bare{0};
+	for (auto const &block_control : controls)
+		if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])))
+		{
+			++bare;
+			WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " without a track");
+		}
+	bad += unread + bare;
+	if (m_layout.has_value())
+	{
+		survey_signals();
+		for (auto const &problem : m_problems)
+			WriteLog(format("SELFTEST srkcheck: open station: %s at %.1f %.1f%s%s", problem.text.c_str(), problem.at.x, problem.at.z, problem.signal != 0 ? " (signal)" : "", problem.lines ? " (lines)" : ""));
+	}
+	WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu unread, %zu without a track, %zu problems of the open station, %zu bad", standing.size(), controls.size(), unread, bare, m_problems.size(), bad));
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_fix(std::istringstream & /*Words*/)
+{
+	// srkfix: the Repair of the check of the open station
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkfix: no station open");
+		return editor_selftest_result::handled;
+	}
+	survey_signals();
+	auto const before{m_problems.size()};
+	fix_problems();
+	WriteLog(format("SELFTEST srkfix: %zu problems before, status %s", before, m_status.c_str()));
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_drawing(std::istringstream &Words)
+{
+	// srkdrawing [track=<circuit>]: the schematic as the plot draws it: the rows of the tracks, the shortened chainage, the points
+	// on the rows, on slants, the corners; the points of the paths of the circuit, offset > row
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkdrawing: no station open");
+		return editor_selftest_result::handled;
+	}
+	auto const &layout{*m_layout};
+	std::map<int, std::string> rows;
+	for (auto const &run : m_plot.runs)
+		if (false == run.paths.empty())
+			rows[run.row] += format(" %s@%.1f", layout.paths[run.paths.front()].track->name().c_str(), run.offset);
+	std::string list;
+	for (auto const &[row, names] : rows)
+		list += format(" |%d:", row) + names;
+	WriteLog(format("SELFTEST srkdrawing tracks %zu, rows %zu, spacing %.2f", m_plot.runs.size(), rows.size(), m_plot.spacing));
+	WriteLog("SELFTEST srkdrawing rows" + list);
+	WriteLog(format("SELFTEST srkdrawing switches over %.0f..%.0f m drawn %.0f..%.0f, back %.1f..%.1f", layout.from, layout.to, m_plot.x(layout.from), m_plot.x(layout.to), m_plot.chainage(m_plot.x(layout.from)), m_plot.chainage(m_plot.x(layout.to))));
+	std::size_t on_rows{0};
+	std::size_t between{0};
+	std::size_t bends{0};
+	std::size_t backwards{0};
+	for (std::size_t index = 0; index < layout.paths.size(); ++index)
+	{
+		if (layout.paths[index].approach)
+			continue;
+		auto const &points{m_plot.paths[index]};
+		for (auto const &point : points)
+		{
+			auto const row_at{point.y / station::row_height};
+			if (std::abs(row_at - std::round(row_at)) < 1e-6)
+				++on_rows;
+			else
+				++between;
+		}
+		for (std::size_t k = 2; k < points.size(); ++k)
+		{
+			auto const a{points[k - 1] - points[k - 2]};
+			auto const b{points[k] - points[k - 1]};
+			if (std::abs(a.x) > 1e-6 && std::abs(b.x) > 1e-6 && (std::abs(a.y) > 1e-6 || std::abs(b.y) > 1e-6) && std::abs(a.y / a.x - b.y / b.x) > 1e-3)
+				++bends;
+		}
+		for (std::size_t k = 1; k < points.size(); ++k)
+			if ((points[k].x - points[k - 1].x) * (layout.paths[index].schematic[k].x - layout.paths[index].schematic[k - 1].x) < 0.0)
+				++backwards;
+	}
+	WriteLog(format("SELFTEST srkdrawing points on rows %zu, between %zu, bends %zu, x backwards %zu", on_rows, between, bends, backwards));
+	if (auto const values{selftest_values(Words)}; values.contains("track"))
+		for (std::size_t index = 0; index < layout.paths.size(); ++index)
+			if (auto const &path{layout.paths[index]}; false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == values.at("track"))
+			{
+				std::string schematic;
+				for (std::size_t k = 0; k < path.schematic.size(); k += 4)
+					schematic += format(" %.0f/%.2f>%.2f", path.schematic[k].x, path.schematic[k].y, m_plot.paths[index][k].y / station::row_height);
+				WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + schematic);
+			}
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_strip(std::istringstream &Words)
+{
+	// srkstrip shown=0: the schematic hidden, the 3d view whole for a screenshot
+	auto const values{selftest_values(Words)};
+	auto const shown{values.find("shown")};
+	m_strip = shown == values.end() || shown->second != "0";
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_stations(std::istringstream & /*Words*/)
+{
+	load();
+	find_all();
+	WriteLog(format("SELFTEST srkstations: %zu", m_found.size()));
+	for (auto const &[name, count] : m_found)
+		WriteLog(format("SELFTEST srkstations %s: %zu switches", name.c_str(), count));
+	return editor_selftest_result::handled;
+}
+
+editor_selftest_result srk_tool::selftest_set(std::istringstream &Words)
+{
+	// srkset code=<code> line=<line> name=<words joined by _>
+	if (false == m_layout.has_value())
+	{
+		WriteLog("SELFTEST srkset: no station open");
+		return editor_selftest_result::handled;
+	}
+	auto const values{selftest_values(Words)};
+	auto &entry{record_of_open()};
+	if (auto const code{values.find("code")}; code != values.end())
+		entry.code = code->second;
+	if (auto const line{values.find("line")}; line != values.end())
+		entry.line = line->second;
+	if (auto const name{values.find("name")}; name != values.end())
+	{
+		entry.name = name->second;
+		std::ranges::replace(entry.name, '_', ' ');
+	}
+	if (auto const km{values.find("km")}; km != values.end())
+		entry.km = km->second;
+	m_changed = true;
+	WriteLog("SELFTEST srkset: " + title());
+	return editor_selftest_result::handled;
+}
+
 editor_selftest_result srk_tool::selftest(std::string const &Command, std::istringstream &Words)
 {
-	if (Command == "srkopen")
-	{
-		// srkopen track=<name>: the station of the track, as a click on it opens it
-		auto const values{selftest_values(Words)};
-		auto const found{values.find("track")};
-		auto *track{found != values.end() ? simulation::Paths.find(found->second) : nullptr};
-		m_open = true;
-		load();
-		if (track == nullptr)
-		{
-			WriteLog("SELFTEST srkopen: no such track");
-			return editor_selftest_result::handled;
-		}
-		open(*track);
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkopen: " + m_status);
-			return editor_selftest_result::handled;
-		}
-		auto const &layout{*m_layout};
-		std::unordered_set<TTrack const *> tracks;
-		std::size_t approach{0};
-		for (auto const &path : layout.paths)
-			if (path.approach)
-				++approach;
-			else
-				tracks.insert(path.track);
-		WriteLog(format("SELFTEST srkopen %s: %zu switches, %zu tracks, %zu paths out, axis %.0f m, switches over %.0f..%.0f, offsets %.1f..%.1f, km %s, record %d", m_anchor->name().c_str(), layout.switches.size(), tracks.size(), approach,
-		                layout.chainage.back(), layout.from, layout.to, layout.low, layout.high, layout.kilometrage ? format("%.3f", layout.km).c_str() : "-", m_record));
-		WriteLog(format("SELFTEST srkopen lines %zu, main %zu tracks, second %zu tracks", layout.lines.size(), layout.main.size(), layout.second.size()));
-		for (auto const *switch_track : layout.switches)
-		{
-			auto const at{station::project(layout, switch_track->m_paths.front().points[segment_data::point::start])};
-			WriteLog(format("SELFTEST srkopen switch %s at %.1f offset %.1f", switch_track->name().c_str(), at.x, at.y));
-		}
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srknumber")
-	{
-		// srknumber [from=right]: the switches of the open station numbered
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srknumber: no station open");
-			return editor_selftest_result::handled;
-		}
-		auto const values{selftest_values(Words)};
-		auto const from{values.find("from")};
-		m_reversed = from != values.end() && from->second == "right";
-		number_switches();
-		std::string circuit_list;
-		for (auto const &unit : station::numbering(*m_layout, m_reversed))
-			for (auto const *part : unit.parts)
-			{
-				auto const record{switch_store::named(*part)};
-				circuit_list += ' ' + part->name() + '/' + (record ? record->number : std::string{"?"});
-			}
-		WriteLog("SELFTEST srknumber: " + m_status);
-		WriteLog("SELFTEST srknumber names:" + circuit_list);
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkcircuits")
-	{
-		// srkcircuits: the open station cut into its track circuits
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkcircuits: no station open");
-			return editor_selftest_result::handled;
-		}
-		set_circuits();
-		WriteLog("SELFTEST srkcircuits: " + m_status);
-		refresh();
-		std::map<std::string, std::pair<std::size_t, double>, std::less<>> found;
-		for (auto const &path : m_layout->paths)
-			if (false == path.track->Isolated.empty())
-			{
-				auto &[joints, metres]{found[path.track->Isolated.front()->asName]};
-				++joints;
-				metres += path.length;
-			}
-		std::string list;
-		for (auto const &[name, entry] : found)
-			list += format(" %s:%zu/%.0f", name.c_str(), entry.first, entry.second);
-		WriteLog(format("SELFTEST srkcircuits %zu named, %zu joints:", found.size(), m_ticks.size()) + list);
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srktrack")
-	{
-		// srktrack circuit=<name> number=<number>: the station track of the circuit renumbered
-		auto const values{selftest_values(Words)};
-		auto const circuit{values.find("circuit")};
-		auto const number{values.find("number")};
-		TTrack const *found{nullptr};
-		if (m_layout.has_value() && circuit != values.end())
-			for (auto const &path : m_layout->paths)
-				if (false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == circuit->second)
-					found = path.track;
-		if (found == nullptr || number == values.end())
-		{
-			WriteLog("SELFTEST srktrack: no station open, or no such circuit");
-			return editor_selftest_result::handled;
-		}
-		renumber_track(*found, number->second);
-		WriteLog("SELFTEST srktrack: " + m_status);
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srksignals")
-	{
-		// srksignals: the signals of the open station set
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srksignals: no station open");
-			return editor_selftest_result::handled;
-		}
-		set_signals();
-		WriteLog("SELFTEST srksignals: " + m_status);
-		refresh();
-		std::string list;
-		for (auto const &mark : m_signal_marks)
-		{
-			// and the joint nearest to it, in the plan
-			auto nearest{std::numeric_limits<double>::max()};
-			for (auto const &joint : m_joints)
-				nearest = std::min(nearest, glm::distance(glm::dvec2{joint.at.x, joint.at.z}, glm::dvec2{mark.head.x, mark.head.z}));
-			list += format(" %s@%.0f/%.1f%s~%.1f", mark.text.c_str(), mark.at.x, mark.at.y, mark.ahead ? ">" : "<", nearest);
-		}
-		WriteLog(format("SELFTEST srksignals %zu:", m_signal_marks.size()) + list);
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srklines")
-	{
-		// srklines: the signals of the lines out of the open station set
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srklines: no station open");
-			return editor_selftest_result::handled;
-		}
-		set_lines();
-		WriteLog("SELFTEST srklines: " + m_status);
-		refresh();
-		std::vector<station::numbered> tracks;
-		std::unordered_set<TTrack const *> inside;
-		if (false == station_tracks(tracks, inside))
-			return editor_selftest_result::handled;
-		auto const plan{station::signals(*m_layout, tracks, [&inside](TTrack const &Track) { return inside.contains(&Track); })};
-		std::vector<standing_signal> standing;
-		m_signals.standing_signals(standing, true);
-		for (auto const &line : station::lines_out(*m_layout, plan, kLineLimit))
-		{
-			std::vector<std::pair<double, std::string>> along;
-			for (auto const &signal : standing)
-			{
-				double gap{0.0};
-				auto const distance{station::distance_on(line, signal.position, gap)};
-				if (gap < 4.5 && distance < line.length())
-					along.emplace_back(distance, format("%s(%s,%s)", signal.name.c_str(), signal.kind.c_str(), signal.linked.c_str()));
-			}
-			std::string last;
-			for (std::size_t i = 1; i < line.points.size(); ++i)
-			{
-				auto const *track{line.tracks[line.owners[i]]};
-				auto const name{track->Isolated.empty() ? std::string{"-"} : track->Isolated.front()->asName};
-				if (name != last)
-					along.emplace_back(line.distances[i], "[" + name + "]");
-				last = name;
-			}
-			std::ranges::sort(along);
-			std::string list;
-			for (auto const &[distance, text] : along)
-				list += format(" %.0f:%s", distance, text.c_str());
-			WriteLog(format("SELFTEST srklines %s track %d %s %.0f m%s:", plan[line.entry].name.c_str(), line.number, line.inbound ? "in" : "out", line.length(), line.station ? " to a station" : "") + list);
-		}
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srklengths")
-	{
-		// srklengths [show=<number>]: the lengths of the station tracks of the open station, the one shown drawn
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srklengths: no station open");
-			return editor_selftest_result::handled;
-		}
-		std::vector<standing_signal> standing;
-		m_signals.standing_signals(standing, true);
-		refresh();
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srklengths: the station is gone");
-			return editor_selftest_result::handled;
-		}
-		auto const values{selftest_values(Words)};
-		auto const show{values.find("show")};
-		auto const code = [](station::limit const &Limit) {
-			static constexpr std::array<char const *, 6> kinds{"S", "J", "F", "St", "B", "X"};
-			return std::string{kinds[static_cast<std::size_t>(Limit.what)]} + ":" + Limit.name + format("@%.1f", Limit.along);
-		};
-		for (auto const &track : m_lengths)
-		{
-			WriteLog(format("SELFTEST srklengths %s: right %.1f (%s .. %s), left %.1f (%s .. %s), construction %.1f", track.number.c_str(), track.ways[0].length, code(track.ways[0].rear).c_str(), code(track.ways[0].head).c_str(), track.ways[1].length,
-			                code(track.ways[1].rear).c_str(), code(track.ways[1].head).c_str(), track.construction));
-		}
-		WriteLog(format("SELFTEST srklengths: %zu tracks", m_lengths.size()));
-		if (auto const copy{values.find("copy")}; copy != values.end() && copy->second == "1")
-			WriteLog("SELFTEST srklengths table:\n" + lengths_table());
-		// the track shown selected
-		for (auto const &path : m_layout->paths)
-			if (show != values.end() && false == path.track->Isolated.empty() && track_of(path.track->Isolated.front()->asName, stem_of_open()) == show->second)
-			{
-				m_selection.set_current_node(path.track);
-				m_picked = path.track;
-				break;
-			}
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkheads")
-	{
-		// srkheads [braking=<m>] [fit=1]: the lights of the signals of the open station checked, fitted
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkheads: no station open");
-			return editor_selftest_result::handled;
-		}
-		auto const values{selftest_values(Words)};
-		if (auto const braking{values.find("braking")}; braking != values.end())
-		{
-			record_of_open().braking = std::atoi(braking->second.c_str());
-			m_changed = true;
-		}
-		std::vector<standing_signal> standing;
-		m_signals.standing_signals(standing, true);
-		std::vector<signal_head> heads;
-		m_signals.signal_heads(heads, true);
-		refresh();
-		if (auto const fit{values.find("fit")}; fit != values.end() && fit->second == "1" && m_layout.has_value())
-		{
-			fit_heads();
-			WriteLog("SELFTEST srkheads fit: " + m_status);
-			refresh();
-		}
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkheads: the station is gone");
-			return editor_selftest_result::handled;
-		}
-		WriteLog(format("SELFTEST srkheads: speed %.0f (set %.0f), braking %.0f, %zu checked, templates %zu", speed_of_open(), set_speed_of_open(), braking_of_open(), m_heads.size(), heads.size()));
-		auto const list = [](std::vector<int> const &Speeds) {
-			std::string text;
-			for (auto const speed : Speeds)
-				text += std::format("{}{}", text.empty() ? "" : "/", speed);
-			return text.empty() ? std::string{"-"} : text;
-		};
-		for (auto const &head : m_heads)
-		{
-			std::string routes;
-			for (std::size_t k = 0; k < head.routes.size(); ++k)
-			{
-				auto const &route{head.routes[k]};
-				routes += format(" %s:%.0f:%.0f%s%s", route.next >= 0 ? head.nexts[k].c_str() : route.ended ? "end" : "none", route.length, route.speed, route.warning >= 0 ? ":to" : "", route.turnouts.empty() ? "" : format(":%zut", route.turnouts.size()).c_str());
-			}
-			WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d told=%d%s fit=%s shp=%.0f/%.0f routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
-			                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.told ? 1 : 0, head.unsaid ? "(unsaid)" : "", head.fit.empty() ? "-" : head.fit.c_str(), head.shp, head.shp_found, routes.c_str(), head.problems.size()));
-			for (auto const &problem : head.problems)
-				WriteLog("SELFTEST srkheads   " + problem);
-		}
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkshp")
-	{
-		// srkshp: the SHP resonators of the open station placed, the signals listed with them
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkshp: no station open");
-			return editor_selftest_result::handled;
-		}
-		set_shp();
-		WriteLog("SELFTEST srkshp: " + m_status);
-		refresh();
-		if (false == m_layout.has_value())
-			return editor_selftest_result::handled;
-		std::vector<standing_signal> standing;
-		m_signals.standing_signals(standing, true);
-		check_heads(standing);
-		for (auto const &head : m_heads)
-			if (head.shp >= 0.0)
-				WriteLog(format("SELFTEST srkshp %s %s wanted %.0f found %.0f", head.name.c_str(), head.kind.c_str(), head.shp, head.shp_found));
-		for (auto const &include : m_templates.standing_templates([](std::string_view const File) { return File == kResonator; }))
-			WriteLog(format("SELFTEST srkshp resonator %s at %.2f %.2f %.2f yaw %.1f", include.values.empty() ? "-" : include.values.front().c_str(), include.location.x, include.location.y, include.location.z, include.yaw));
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkblock")
-	{
-		// srkblock entry=<A> [kind=sbl|sbl4|semi|auto] [ways=1|2|auto]: the block of the line out beyond the entry signal, both ways or
-		// not with the other track of the line, the lines listed
-		if (m_history.history_revision() != m_history_revision)
-			refresh();
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkblock: no station open");
-			return editor_selftest_result::handled;
-		}
-		auto const values{selftest_values(Words)};
-		auto const entry{values.find("entry")};
-		if (auto const kind{values.find("kind")}; entry != values.end() && kind != values.end())
-		{
-			if (kind->second == "auto")
-				record_of_open().blocks.erase(entry->second);
-			else
-			{
-				auto block{block_kind::semi};
-				if (kind->second == "sbl4")
-					block = block_kind::four;
-				else if (kind->second == "sbl")
-					block = block_kind::three;
-				record_of_open().blocks[entry->second] = block;
-			}
-			m_changed = true;
-		}
-		if (auto const ways{values.find("ways")}; entry != values.end() && ways != values.end())
-		{
-			auto const row{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry->second; })};
-			std::vector<std::string> entries{entry->second};
-			if (row != m_lines.end() && row->partner >= 0 && row->partner < static_cast<int>(m_lines.size()))
-				entries.push_back(m_lines[row->partner].entry);
-			for (auto const &name : entries)
-				if (ways->second == "auto")
-					record_of_open().ways.erase(name);
-				else
-					record_of_open().ways[name] = ways->second == "2";
-			m_changed = true;
-		}
-		survey_signals();
-		if (false == m_lines_problem.empty())
-			WriteLog("SELFTEST srkblock: " + m_lines_problem);
-		auto const listed = [](std::vector<std::pair<double, std::string>> const &Stops) {
-			std::string text;
-			for (auto const &[distance, name] : Stops)
-				text += format(" %s@%.0f", name.c_str(), distance);
-			return text;
-		};
-		for (auto const &row : m_lines)
-			WriteLog(format("SELFTEST srkblock %s track %d %s to %s %.0f m blocks %zu: %s why %d own %d ways %d%s leftovers %zu legacy %d stops%s wrong%s", row.entry.c_str(), row.number, row.inbound ? "in" : "out", row.next.empty() ? "-" : row.next.c_str(), row.length, row.blocks,
-			                row.block == block_kind::four ? "sbl4" : row.block == block_kind::three ? "sbl" : "semi", static_cast<int>(row.why), static_cast<int>(row.own), row.both ? 2 : 1, row.both_hand ? " hand" : "", row.leftovers, row.legacy ? 1 : 0, listed(row.stops).c_str(), listed(row.wrong).c_str()));
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkboundary")
-	{
-		// srkboundary entry=<A> at=<m>|stop=<n> [nudge=<m>]: a click while drawing the block boundaries, on the line beyond the entry
-		// signal at the distance out or at a block signal standing along it, nudge metres aside
-		if (m_history.history_revision() != m_history_revision)
-			refresh();
-		auto const values{selftest_values(Words)};
-		auto const entry{values.contains("entry") ? values.at("entry") : std::string{}};
-		auto at{values.contains("at") ? std::atof(values.at("at").c_str()) : 0.0};
-		auto const nudge{values.contains("nudge") ? std::atof(values.at("nudge").c_str()) : 0.0};
-		auto const found{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry; })};
-		if (false == m_layout.has_value() || found == m_lines.end())
-		{
-			WriteLog("SELFTEST srkboundary: no line beyond " + entry);
-			return editor_selftest_result::handled;
-		}
-		if (values.contains("stop") && false == found->stops.empty())
-			at = found->stops[static_cast<std::size_t>(std::abs(std::atoi(values.at("stop").c_str()))) % found->stops.size()].first;
-		auto const place{station::point_on(m_line_ways[found - m_lines.begin()], at)};
-		m_drawing = true;
-		bool valid{false};
-		auto const label{boundary_hover(place.point + glm::dvec3{-place.way.z, 0.0, place.way.x} * nudge, valid)};
-		WriteLog(format("SELFTEST srkboundary %s at %.0f: %s%s", entry.c_str(), at, valid ? "" : "(refused) ", label.c_str()));
-		if (valid)
-		{
-			boundary_click();
-			WriteLog("SELFTEST srkboundary: " + m_status);
-		}
-		m_drawing = false;
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkfit")
-	{
-		// srkfit lines|station|from=<m> to=<m>: the schematic fitting the lines out, the station, or the chainage between
-		std::string word;
-		std::string mode;
-		std::map<std::string, std::string, std::less<>> bounds;
-		while (Words >> word)
-			if (auto const equals{word.find('=')}; equals != std::string::npos)
-				bounds[word.substr(0, equals)] = word.substr(equals + 1);
-			else
-				mode = word;
-		m_fit_lines = mode == "lines";
-		m_view_state.exaggeration = 0.0f;
-		if (bounds.contains("from") && bounds.contains("to") && m_layout.has_value())
-		{
-			fit_view(1000.0f, 400.0f);
-			m_view_state.from = std::atof(bounds.at("from").c_str());
-			m_view_state.to = std::atof(bounds.at("to").c_str());
-		}
-		WriteLog("SELFTEST srkfit " + mode);
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkdraw")
-	{
-		// srkdraw on|off: the block boundaries drawn by hand, or not
-		std::string word;
-		Words >> word;
-		m_drawing = word != "off";
-		WriteLog(std::string{"SELFTEST srkdraw "} + (m_drawing ? "on" : "off"));
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkcheck")
-	{
-		// srkcheck: the block sections of the scenery checked: each switched by a block signal standing, none twice, no two signals of
-		// one name
-		std::vector<standing_signal> standing;
-		m_signals.standing_signals(standing, true);
-		std::unordered_map<std::string, int, string_hash, std::equal_to<>> names;
-		for (auto const &signal : standing)
-			++names[ToLower(signal.name)];
-		std::size_t bad{0};
-		for (auto const &[name, count] : names)
-			if (count > 1)
-			{
-				++bad;
-				WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
-			}
-		std::unordered_map<std::string, int, string_hash, std::equal_to<>> sections;
-		auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
-		for (auto const &block_control : controls)
-		{
-			if (block_control.values.size() < 6)
-			{
-				++bad;
-				WriteLog("SELFTEST srkcheck: a block section without its signal");
-				continue;
-			}
-			if (++sections[ToLower(block_control.values[0])] > 1)
-			{
-				++bad;
-				WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " twice");
-			}
-			for (std::size_t index = 5; index < block_control.values.size() && index < 7; ++index)
-				if (false == names.contains(ToLower(block_control.values[index])))
-				{
-					++bad;
-					WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " switched by " + block_control.values[index] + ", which doesn't stand");
-				}
-		}
-		std::size_t unread{0};
-		for (auto const &signal : standing)
-			if (false == signal.read.empty() && signal.track == nullptr)
-			{
-				++unread;
-				WriteLog("SELFTEST srkcheck: signal " + signal.name + " read by no track, its event " + signal.read);
-			}
-		std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && false == track->m_editorremoved)
-				for (auto const *isolated : track->Isolated)
-					if (isolated != nullptr)
-						circuits.insert(ToLower(isolated->asName));
-		std::size_t bare{0};
-		for (auto const &block_control : controls)
-			if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])))
-			{
-				++bare;
-				WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " without a track");
-			}
-		bad += unread + bare;
-		if (m_layout.has_value())
-		{
-			survey_signals();
-			for (auto const &problem : m_problems)
-				WriteLog(format("SELFTEST srkcheck: open station: %s at %.1f %.1f%s%s", problem.text.c_str(), problem.at.x, problem.at.z, problem.signal != 0 ? " (signal)" : "", problem.lines ? " (lines)" : ""));
-		}
-		WriteLog(format("SELFTEST srkcheck: %zu signals, %zu block sections, %zu unread, %zu without a track, %zu problems of the open station, %zu bad", standing.size(), controls.size(), unread, bare, m_problems.size(), bad));
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkfix")
-	{
-		// srkfix: the Repair of the check of the open station
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkfix: no station open");
-			return editor_selftest_result::handled;
-		}
-		survey_signals();
-		auto const before{m_problems.size()};
-		fix_problems();
-		WriteLog(format("SELFTEST srkfix: %zu problems before, status %s", before, m_status.c_str()));
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkdrawing")
-	{
-		// srkdrawing [track=<circuit>]: the schematic as the plot draws it: the rows of the tracks, the shortened chainage, the points
-		// on the rows, on slants, the corners; the points of the paths of the circuit, offset > row
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkdrawing: no station open");
-			return editor_selftest_result::handled;
-		}
-		auto const &layout{*m_layout};
-		std::map<int, std::string> rows;
-		for (auto const &run : m_plot.runs)
-			if (false == run.paths.empty())
-				rows[run.row] += format(" %s@%.1f", layout.paths[run.paths.front()].track->name().c_str(), run.offset);
-		std::string list;
-		for (auto const &[row, names] : rows)
-			list += format(" |%d:", row) + names;
-		WriteLog(format("SELFTEST srkdrawing tracks %zu, rows %zu, spacing %.2f", m_plot.runs.size(), rows.size(), m_plot.spacing));
-		WriteLog("SELFTEST srkdrawing rows" + list);
-		WriteLog(format("SELFTEST srkdrawing switches over %.0f..%.0f m drawn %.0f..%.0f, back %.1f..%.1f", layout.from, layout.to, m_plot.x(layout.from), m_plot.x(layout.to), m_plot.chainage(m_plot.x(layout.from)), m_plot.chainage(m_plot.x(layout.to))));
-		std::size_t on_rows{0};
-		std::size_t between{0};
-		std::size_t bends{0};
-		std::size_t backwards{0};
-		for (std::size_t index = 0; index < layout.paths.size(); ++index)
-		{
-			if (layout.paths[index].approach)
-				continue;
-			auto const &points{m_plot.paths[index]};
-			for (auto const &point : points)
-			{
-				auto const row_at{point.y / station::row_height};
-				if (std::abs(row_at - std::round(row_at)) < 1e-6)
-					++on_rows;
-				else
-					++between;
-			}
-			for (std::size_t k = 2; k < points.size(); ++k)
-			{
-				auto const a{points[k - 1] - points[k - 2]};
-				auto const b{points[k] - points[k - 1]};
-				if (std::abs(a.x) > 1e-6 && std::abs(b.x) > 1e-6 && (std::abs(a.y) > 1e-6 || std::abs(b.y) > 1e-6) && std::abs(a.y / a.x - b.y / b.x) > 1e-3)
-					++bends;
-			}
-			for (std::size_t k = 1; k < points.size(); ++k)
-				if ((points[k].x - points[k - 1].x) * (layout.paths[index].schematic[k].x - layout.paths[index].schematic[k - 1].x) < 0.0)
-					++backwards;
-		}
-		WriteLog(format("SELFTEST srkdrawing points on rows %zu, between %zu, bends %zu, x backwards %zu", on_rows, between, bends, backwards));
-		if (auto const values{selftest_values(Words)}; values.contains("track"))
-			for (std::size_t index = 0; index < layout.paths.size(); ++index)
-				if (auto const &path{layout.paths[index]}; false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == values.at("track"))
-				{
-					std::string schematic;
-					for (std::size_t k = 0; k < path.schematic.size(); k += 4)
-						schematic += format(" %.0f/%.2f>%.2f", path.schematic[k].x, path.schematic[k].y, m_plot.paths[index][k].y / station::row_height);
-					WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + schematic);
-				}
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkstrip")
-	{
-		// srkstrip shown=0: the schematic hidden, the 3d view whole for a screenshot
-		auto const values{selftest_values(Words)};
-		auto const shown{values.find("shown")};
-		m_strip = shown == values.end() || shown->second != "0";
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkstations")
-	{
-		load();
-		find_all();
-		WriteLog(format("SELFTEST srkstations: %zu", m_found.size()));
-		for (auto const &[name, count] : m_found)
-			WriteLog(format("SELFTEST srkstations %s: %zu switches", name.c_str(), count));
-		return editor_selftest_result::handled;
-	}
-	if (Command == "srkset")
-	{
-		// srkset code=<code> line=<line> name=<words joined by _>
-		if (false == m_layout.has_value())
-		{
-			WriteLog("SELFTEST srkset: no station open");
-			return editor_selftest_result::handled;
-		}
-		auto const values{selftest_values(Words)};
-		auto &entry{record_of_open()};
-		if (auto const code{values.find("code")}; code != values.end())
-			entry.code = code->second;
-		if (auto const line{values.find("line")}; line != values.end())
-			entry.line = line->second;
-		if (auto const name{values.find("name")}; name != values.end())
-		{
-			entry.name = name->second;
-			std::ranges::replace(entry.name, '_', ' ');
-		}
-		if (auto const km{values.find("km")}; km != values.end())
-			entry.km = km->second;
-		m_changed = true;
-		WriteLog("SELFTEST srkset: " + title());
-		return editor_selftest_result::handled;
-	}
+	using command = editor_selftest_result (srk_tool::*)(std::istringstream &);
+	static constexpr std::array<std::pair<std::string_view, command>, 19> commands{{
+		{"srkopen", &srk_tool::selftest_open},
+		{"srknumber", &srk_tool::selftest_number},
+		{"srkcircuits", &srk_tool::selftest_circuits},
+		{"srktrack", &srk_tool::selftest_track},
+		{"srksignals", &srk_tool::selftest_signals},
+		{"srklines", &srk_tool::selftest_lines},
+		{"srklengths", &srk_tool::selftest_lengths},
+		{"srkheads", &srk_tool::selftest_heads},
+		{"srkshp", &srk_tool::selftest_shp},
+		{"srkblock", &srk_tool::selftest_block},
+		{"srkboundary", &srk_tool::selftest_boundary},
+		{"srkfit", &srk_tool::selftest_fit},
+		{"srkdraw", &srk_tool::selftest_draw},
+		{"srkcheck", &srk_tool::selftest_check},
+		{"srkfix", &srk_tool::selftest_fix},
+		{"srkdrawing", &srk_tool::selftest_drawing},
+		{"srkstrip", &srk_tool::selftest_strip},
+		{"srkstations", &srk_tool::selftest_stations},
+		{"srkset", &srk_tool::selftest_set},
+	}};
+	for (auto const &[name, run] : commands)
+		if (Command == name)
+			return (this->*run)(Words);
 	return editor_selftest_result::unhandled;
 }
