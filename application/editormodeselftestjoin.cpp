@@ -126,6 +126,138 @@ int ring_named(std::string_view const Axis)
 	return 1;
 }
 
+// how far the far end of the second path of the switch is off the first as far along it, in its plane or on the vertical curve it lies
+// on: a second path reaching past the end of the first against the grade the first ends with
+double off_plane(TTrack const &Switch)
+{
+	geometry::bezier const main{Switch.m_paths[0]};
+	geometry::bezier const branch{Switch.m_paths[1]};
+	auto const chord{geometry::plan_of(main.point(1.0) - main.point(0.0))};
+	auto const along{glm::dot(geometry::plan_of(branch.point(1.0) - main.point(0.0)), chord) / std::max(1e-9, glm::dot(chord, chord))};
+	auto const last{main.first(1.0)};
+	return branch.point(1.0).y - (main.point(std::clamp(along, 0.0, 1.0)).y + std::max(0.0, along - 1.0) * glm::length(chord) * last.y / std::max(1e-6, std::hypot(last.x, last.z)));
+}
+
+// each item kept in the square of the plan given and in the eight around it, the squares by their columns
+template <typename Cells, typename Visit>
+void each_in_cells_around(Cells const &Of, std::pair<int, int> const &Cell, Visit &&Seen)
+{
+	for (int dx = -1; dx <= 1; ++dx)
+		for (int dz = -1; dz <= 1; ++dz)
+			if (auto const other{Of.find({Cell.first + dx, Cell.second + dz})}; other != Of.end())
+				std::ranges::for_each(other->second, [&Seen](auto const &Item) { Seen(Item); });
+}
+
+// the end of a path of the track nearest the point given, if nearer than the nearest so far: then the nearest and the point set to it
+void nearer_end(TTrack const &Track, glm::dvec3 const &Given, double &Nearest, glm::dvec3 &Point)
+{
+	for (auto const &path : Track.m_paths)
+		for (auto const index : {segment_data::point::start, segment_data::point::end})
+			if (auto const distance{geometry::plan_distance(path.points[index], Given)}; distance < Nearest)
+			{
+				Nearest = distance;
+				Point = path.points[index];
+			}
+}
+
+// the free end 30 to 600 m from the point which is nearest the distance from it, none where none is
+editor_track::snap_target end_in_band(glm::dvec3 const &First, double const Distance)
+{
+	editor_track::snap_target end;
+	double best{1e9};
+	for (auto const &candidate : editor_track::free_ends(nullptr, 1, First, 600.0, {}))
+		if (auto const apart{geometry::plan_distance(candidate.position, First)}; apart >= 30.0 && std::abs(apart - Distance) < best)
+		{
+			best = std::abs(apart - Distance);
+			end = candidate;
+		}
+	return end;
+}
+
+// the line the pieces make, every metre or so, with its headings, and the widest gap and the sharpest kink between the pieces
+void trace_pieces(std::vector<segment_data> const &Pieces, std::vector<glm::dvec2> &Line, std::vector<glm::dvec2> &Headings, double &Gap, double &Kink)
+{
+	for (std::size_t p = 0; p < Pieces.size(); ++p)
+	{
+		geometry::bezier const curve{Pieces[p]};
+		if (p > 0)
+		{
+			geometry::bezier const before{Pieces[p - 1]};
+			Gap = std::max(Gap, glm::distance(before.point(1.0), curve.point(0.0)));
+			Kink = std::max(Kink, glm::degrees(std::abs(geometry::signed_angle(geometry::plan_of(before.first(1.0)), geometry::plan_of(curve.first(0.0))))));
+		}
+		auto const span{curve.plan_length()};
+		auto const steps{std::max(2, static_cast<int>(std::ceil(span / 1.0)))};
+		for (int k = p == 0 ? 0 : 1; k <= steps; ++k)
+		{
+			auto const t{curve.parameter(span * k / steps)};
+			Line.push_back(geometry::plan_of(curve.point(t)));
+			Headings.push_back(geometry::plan_of(curve.first(t)));
+		}
+	}
+}
+
+// how much the line turns all along, and the least radius it turns at: 1e9 where it turns at none
+std::pair<double, double> turning_of(std::vector<glm::dvec2> const &Line, std::vector<glm::dvec2> const &Headings)
+{
+	double turning{0.0};
+	double sharpest{1e9};
+	for (std::size_t k = 1; k < Headings.size(); ++k)
+	{
+		auto const angle{std::abs(geometry::signed_angle(Headings[k - 1], Headings[k]))};
+		turning += angle;
+		if (auto const step{glm::distance(Line[k - 1], Line[k])}; angle > 1e-6 && step > 1e-6)
+			sharpest = std::min(sharpest, step / angle);
+	}
+	return {turning, sharpest};
+}
+
+// the faults named in the text counted
+void count_faults(std::map<std::string, int, std::less<>> &Tally, std::string const &Faults)
+{
+	for (auto const *fault : {"start joint", "end joint", "pieces", "loop", "turning", "R "})
+		if (Faults.find(fault) != std::string::npos)
+			++Tally[fault];
+}
+
+// the track of the name, where there is one, added to the tracks
+void add_named(std::vector<TTrack *> &Tracks, std::string const &Name)
+{
+	if (auto *each{simulation::Paths.find(Name)}; each != nullptr)
+		Tracks.push_back(each);
+}
+
+// the paths of the track logged, their points and controls
+void log_gizmo_paths(TTrack const &Each)
+{
+	for (int i = 0; i < static_cast<int>(Each.m_paths.size()); ++i)
+	{
+		auto const &path{Each.m_paths[i]};
+		auto const &a{path.points[segment_data::point::start]};
+		auto const &b{path.points[segment_data::point::end]};
+		auto const &c1{path.points[segment_data::point::control1]};
+		auto const &c2{path.points[segment_data::point::control2]};
+		WriteLog(format("SELFTEST gizmo path %s[%d] %.3f %.3f %.3f -> %.3f %.3f %.3f, c1 %.3f %.3f %.3f, c2 %.3f %.3f %.3f, L %.3f, R %.1f, rolls %.2f %.2f", Each.name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z,
+		                geometry::bezier{path}.plan_length(), path.radius, path.rolls[0], path.rolls[1]));
+	}
+}
+
+// the joints at the end of the path of the track logged: the kink and the gap to each path joined there
+void log_gizmo_joints(TTrack &Track, int const Path, editor_track::point_kind const Kind)
+{
+	geometry::bezier const own{Track.m_paths[Path]};
+	bool const start{Kind == editor_track::point_kind::start};
+	auto const out{start ? -own.first(0.0) : own.first(1.0)};
+	for (auto const &[partner_track, partner_point] : editor_track::partners(Track, {Path, Kind}))
+	{
+		geometry::bezier const theirs{partner_track->m_paths[partner_point.path]};
+		auto const in{partner_point.kind == editor_track::point_kind::start ? theirs.first(0.0) : -theirs.first(1.0)};
+		auto const angle{glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(out), glm::normalize(in)), -1.0, 1.0)))};
+		auto const gap{glm::distance(editor_track::point_position(Track, {Path, Kind}), editor_track::point_position(*partner_track, partner_point))};
+		WriteLog(format("SELFTEST gizmo joint %s[%d].%s - %s[%d]: kink %.4f deg, gap %.4f m", Track.name().c_str(), Path, start ? "start" : "end", partner_track->name().c_str(), partner_point.path, angle, gap));
+	}
+}
+
 } // namespace
 
 editor_mode::selftest_result editor_mode::selftest_join(std::string const &command, std::istringstream &words)
@@ -271,75 +403,73 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				for (int tenth = 0; tenth < 10; ++tenth)
 					clearance(curve.point(0.05 + 0.1 * tenth), isswitch ? switch_low : track_low, isswitch ? switch_high : track_high);
 			}
-			if (isswitch && track->m_paths.size() >= 2)
+			// the far end of the second path against the first as far along it, in its plane or on the vertical curve it lies on
+			if (auto const off{isswitch && track->m_paths.size() >= 2 ? off_plane(*track) : 0.0}; std::abs(off) > 0.03)
 			{
-				// the far end of the second path against the first as far along it, in its plane or on the vertical curve it lies on
-				geometry::bezier const main{track->m_paths[0]};
-				geometry::bezier const branch{track->m_paths[1]};
-				auto const chord{geometry::plan_of(main.point(1.0) - main.point(0.0))};
-				auto const along{glm::dot(geometry::plan_of(branch.point(1.0) - main.point(0.0)), chord) / std::max(1e-9, glm::dot(chord, chord))};
-				auto const last{main.first(1.0)};
-				// a second path reaching past the end of the first against the grade the first ends with
-				auto const off{branch.point(1.0).y - (main.point(std::clamp(along, 0.0, 1.0)).y + std::max(0.0, along - 1.0) * glm::length(chord) * last.y / std::max(1e-6, std::hypot(last.x, last.z)))};
-				if (std::abs(off) > 0.03)
-				{
-					++faults;
-					WriteLog(format("SELFTEST fitcheck %s FAULT switch %s off its plane by %.3f m", label.c_str(), track->name().c_str(), off));
-				}
+				++faults;
+				WriteLog(format("SELFTEST fitcheck %s FAULT switch %s off its plane by %.3f m", label.c_str(), track->name().c_str(), off));
 			}
 		}
 		int joints{0};
 		double worst_step{0.0};
 		double worst_kink{0.0};
+		// the two ends, where they meet as a joint of two tracks: its step and its break of the grade
+		auto const joint_of = [&](joint_end const &A, joint_end const &B) {
+			if (A.track == B.track || geometry::plan_distance(A.point, B.point) >= 0.05)
+				return;
+			++joints;
+			auto const step{std::abs(A.point.y - B.point.y)};
+			// the same grade seen from the other side has the other sign
+			auto const kink{std::abs(A.grade + B.grade) * 1000.0};
+			worst_step = std::max(worst_step, step);
+			worst_kink = std::max(worst_kink, kink);
+			if (step > 0.01 || kink > 3.0)
+			{
+				++faults;
+				WriteLog(format("SELFTEST fitcheck %s FAULT joint %s / %s at %.1f %.1f: step %.3f m, grade break %.1f permille", label.c_str(), A.track->name().c_str(), B.track->name().c_str(), A.point.x, A.point.z, step, kink));
+			}
+		};
 		for (std::size_t a = 0; a < ends.size(); ++a)
 			for (std::size_t b = a + 1; b < ends.size(); ++b)
-				if (ends[a].track != ends[b].track && geometry::plan_distance(ends[a].point, ends[b].point) < 0.05)
-				{
-					++joints;
-					auto const step{std::abs(ends[a].point.y - ends[b].point.y)};
-					// the same grade seen from the other side has the other sign
-					auto const kink{std::abs(ends[a].grade + ends[b].grade) * 1000.0};
-					worst_step = std::max(worst_step, step);
-					worst_kink = std::max(worst_kink, kink);
-					if (step > 0.01 || kink > 3.0)
-					{
-						++faults;
-						WriteLog(format("SELFTEST fitcheck %s FAULT joint %s / %s at %.1f %.1f: step %.3f m, grade break %.1f permille", label.c_str(), ends[a].track->name().c_str(), ends[b].track->name().c_str(), ends[a].point.x, ends[a].point.z, step, kink));
-					}
-				}
+				joint_of(ends[a], ends[b]);
 		// the tracks side by side under 5.1 m apart against one grade line, tracks over 2 m apart in height lying on another level
 		std::map<std::pair<int, int>, std::vector<std::tuple<glm::dvec3, glm::dvec2, TTrack const *>>> beside;
+		// the places of the paths of the track, every 5 m or so
+		auto const places_of = [&beside](TTrack const *Track) {
+			for (auto const &path : Track->m_paths)
+			{
+				geometry::bezier const curve{path};
+				auto const places{std::max(1, static_cast<int>(geometry::chord_length(path) / 5.0))};
+				for (int i = 0; i < places; ++i)
+				{
+					auto const place{curve.point((i + 0.5) / places)};
+					beside[{static_cast<int>(std::floor(place.x / 10.0)), static_cast<int>(std::floor(place.z / 10.0))}].emplace_back(place, geometry::plan_of(curve.first((i + 0.5) / places)), Track);
+				}
+			}
+		};
 		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty() && (track->iCategoryFlag & 15) == 1)
-				for (auto const &path : track->m_paths)
-				{
-					geometry::bezier const curve{path};
-					auto const places{std::max(1, static_cast<int>(geometry::chord_length(path) / 5.0))};
-					for (int i = 0; i < places; ++i)
-					{
-						auto const place{curve.point((i + 0.5) / places)};
-						beside[{static_cast<int>(std::floor(place.x / 10.0)), static_cast<int>(std::floor(place.z / 10.0))}].emplace_back(place, geometry::plan_of(curve.first((i + 0.5) / places)), track);
-					}
-				}
+				places_of(track);
 		double beside_worst{0.0};
 		std::size_t beside_pairs{0};
 		std::size_t beside_off{0};
+		// the place with the places of the other tracks beside it, running the same way
+		auto const pairs_of = [&](std::pair<int, int> const &Cell, glm::dvec3 const &Place, glm::dvec2 const &Way, TTrack const *Track) {
+			each_in_cells_around(beside, Cell, [&](auto const &Next) {
+				auto const &[next_place, next_way, next_track]{Next};
+				if (next_track == Track || geometry::plan_distance(next_place, Place) >= 5.1 || std::abs(glm::dot(Way, next_way)) < 0.985 * glm::length(Way) * glm::length(next_way))
+					return;
+				auto const difference{std::abs(next_place.y - Place.y)};
+				if (difference > 2.0)
+					return;
+				++beside_pairs;
+				beside_off += difference > 0.05 ? 1 : 0;
+				beside_worst = std::max(beside_worst, difference);
+			});
+		};
 		for (auto const &[cell, places] : beside)
 			for (auto const &[place, way, track] : places)
-				for (int dx = -1; dx <= 1; ++dx)
-					for (int dz = -1; dz <= 1; ++dz)
-						if (auto const other{beside.find({cell.first + dx, cell.second + dz})}; other != beside.end())
-							for (auto const &[next_place, next_way, next_track] : other->second)
-							{
-								if (next_track == track || geometry::plan_distance(next_place, place) >= 5.1 || std::abs(glm::dot(way, next_way)) < 0.985 * glm::length(way) * glm::length(next_way))
-									continue;
-								auto const difference{std::abs(next_place.y - place.y)};
-								if (difference > 2.0)
-									continue;
-								++beside_pairs;
-								beside_off += difference > 0.05 ? 1 : 0;
-								beside_worst = std::max(beside_worst, difference);
-							}
+				pairs_of(cell, place, way, track);
 		WriteLog(format("SELFTEST fitcheck %s beside: %zu pairs of places under 5.1 m apart, %zu over 5 cm apart in height, worst %.3f m", label.c_str(), beside_pairs, beside_off, beside_worst));
 		WriteLog(format("SELFTEST fitcheck %s: %d switches, %d joints, %d faults, worst step %.3f m, grade break %.1f permille; rails over the ground: tracks %.2f..%.2f m, switches %.2f..%.2f m", label.c_str(), switches, joints, faults, worst_step, worst_kink, track_low, track_high, switch_low, switch_high));
 		return selftest_result::handled;
@@ -404,13 +534,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		auto const given{point};
 		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
-				for (auto const &path : track->m_paths)
-					for (auto const index : {segment_data::point::start, segment_data::point::end})
-						if (auto const distance{geometry::plan_distance(path.points[index], given)}; distance < nearest)
-						{
-							nearest = distance;
-							point = path.points[index];
-						}
+				nearer_end(*track, given, nearest, point);
 		struct meeting
 		{
 			TTrack const *track;
@@ -421,26 +545,30 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			glm::dvec2 out;
 		};
 		std::vector<meeting> meetings;
+		// the end of the path of the track, where it meets the point
+		auto const meet = [&](TTrack const *Track, int const I, bool const Atend) {
+			auto const &path{Track->m_paths[I]};
+			if (geometry::plan_distance(path.points[Atend ? segment_data::point::end : segment_data::point::start], point) > 0.05)
+				return;
+			geometry::bezier const curve{path};
+			auto const first{curve.first(Atend ? 1.0 : 0.0)};
+			auto const second{curve.second(Atend ? 1.0 : 0.0)};
+			auto const speed{std::hypot(first.x, first.z)};
+			if (speed < 1e-9)
+				return;
+			auto const curvature{(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
+			glm::dvec2 const along{first.x / speed, first.z / speed};
+			meetings.emplace_back(Track, I, Atend, Atend ? -curvature : curvature, static_cast<double>(Atend ? path.rolls[1] : path.rolls[0]), Atend ? -along : along);
+		};
 		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved)
 				continue;
 			for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
-				for (auto const atend : {false, true})
-				{
-					auto const &path{track->m_paths[i]};
-					if (geometry::plan_distance(path.points[atend ? segment_data::point::end : segment_data::point::start], point) > 0.05)
-						continue;
-					geometry::bezier const curve{path};
-					auto const first{curve.first(atend ? 1.0 : 0.0)};
-					auto const second{curve.second(atend ? 1.0 : 0.0)};
-					auto const speed{std::hypot(first.x, first.z)};
-					if (speed < 1e-9)
-						continue;
-					auto const curvature{(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
-					glm::dvec2 const along{first.x / speed, first.z / speed};
-					meetings.emplace_back(track, i, atend, atend ? -curvature : curvature, static_cast<double>(atend ? path.rolls[1] : path.rolls[0]), atend ? -along : along);
-				}
+			{
+				meet(track, i, false);
+				meet(track, i, true);
+			}
 		}
 		if (meetings.empty())
 		{
@@ -550,8 +678,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				if (curve.vertex == static_cast<int>(k))
 				{
 					text += format(", %s R %.1f", curve.spirals ? "spirals" : "arc", curve.radius);
-					for (auto const radius : curve.radii)
-						text += format("/%.1f", radius);
+					std::ranges::for_each(curve.radii, [&text](auto const Radius) { text += format("/%.1f", Radius); });
 					text += format(", L %.1f/%.1f, cant %.0f, deflection %.3f deg, tangents %.1f/%.1f, arc %.1f m, norms %d", curve.transition_in, curve.transition_out, curve.cant, glm::degrees(curve.deflection), curve.tangent_in, curve.tangent_out, curve.arc_length,
 					               alignment::meets_norms(curve, plan.design) ? 1 : 0);
 				}
@@ -626,6 +753,15 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		std::vector<glm::dvec2> along;
 		std::vector<glm::dvec2> across;
 		auto next{spacing};
+		// a point of the walk kept where it has come the spacing on from the one before, across it the way it heads there
+		auto const keep_point = [&](auto const &Angle, double const At) {
+			if (false == (chainage >= next - 1e-6))
+				return;
+			auto const now{Angle(At)};
+			along.push_back(position);
+			across.push_back({-std::sin(now), std::cos(now)});
+			next += spacing;
+		};
 		for (auto const &[from, to, length] : segments)
 		{
 			auto const steps{std::max(1, static_cast<int>(std::ceil(length / 0.05)))};
@@ -637,13 +773,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				auto const middle{angle((i + 0.5) * step)};
 				position += glm::dvec2{std::cos(middle), std::sin(middle)} * step;
 				chainage += step;
-				if (chainage >= next - 1e-6)
-				{
-					auto const now{angle((i + 1) * step)};
-					along.push_back(position);
-					across.push_back({-std::sin(now), std::cos(now)});
-					next += spacing;
-				}
+				keep_point(angle, (i + 1) * step);
 			}
 			heading = angle(length);
 		}
@@ -664,9 +794,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			lay_point(shifted(position + out * 60.0, side, 0));
 			lay_switch_mode();
 			lay_point(shifted(position + out * 30.0, side, 1));
+			// a point along the walk clicked, unless it's within the reach of the snap of the end
+			auto const lay_off_end = [&](std::size_t const I) {
+				if (glm::distance(along[I], glm::dvec2{end.position.x, end.position.z}) > 3.5)
+					lay_point(shifted(along[I], across[I], static_cast<int>(I)));
+			};
 			for (auto i{along.size()}; i-- > 0;)
-				if (glm::distance(along[i], glm::dvec2{end.position.x, end.position.z}) > 3.5)
-					lay_point(shifted(along[i], across[i], static_cast<int>(i)));
+				lay_off_end(i);
 			lay_point(end.position);
 			WriteLog(format("SELFTEST laywalk into: %zu points, %s", m_lay.points.size(), m_lay.status.c_str()));
 		}
@@ -903,20 +1037,22 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			for (int k = 1; k <= count; ++k)
 				lay_point(along(spacing * k, shift(k)));
 			auto chainage{spacing * count};
-			for (int leg = 1; leg <= legs; ++leg)
-			{
+			// the cursor of a leg of the drag: moving on, then held where it got
+			auto const drag_leg = [&](int const Leg) {
 				for (int i = 0; i < moves; ++i)
 				{
 					chainage += step;
 					drag.cursor.push_back(along(chainage, 0.3 * shift(i)));
-					drag.legs.push_back(leg);
+					drag.legs.push_back(Leg);
 				}
 				for (int i = 0; i < holds; ++i)
 				{
 					drag.cursor.push_back(drag.cursor.back());
-					drag.legs.push_back(-leg);
+					drag.legs.push_back(-Leg);
 				}
-			}
+			};
+			for (int leg = 1; leg <= legs; ++leg)
+				drag_leg(leg);
 			WriteLog(format("SELFTEST laydrag %s: %zu points clicked, %zu frames, %s", m_lay.whole ? "whole" : "as fitted", m_lay.points.size(), drag.cursor.size(), m_lay.status.c_str()));
 			drag.started = true;
 			drag.shown = signature();
@@ -1052,6 +1188,29 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>{0, std::max(0, Count - 1)}(random); };
 		auto const turned = [](glm::dvec2 const &Direction, double const Angle) { return glm::dvec2{Direction.x * std::cos(Angle) - Direction.y * std::sin(Angle), Direction.x * std::sin(Angle) + Direction.y * std::cos(Angle)}; };
 		auto const lifted = [](glm::dvec2 const &Point, double const Height) { return glm::dvec3{Point.x, Height, Point.y}; };
+		// the end the line from a free end goes to: the end drawn, else the nearest end 30 to 600 m off; none for a line to a point
+		auto const end_for = [](int const Kind, editor_track::snap_target const &Target, editor_track::snap_target const &Start, glm::dvec3 const &First, double const Distance) {
+			if (Kind == 4)
+				return editor_track::snap_target{};
+			auto const reach{geometry::plan_distance(Target.position, First)};
+			if ((Target.track == Start.track && Target.point == Start.point) || reach < 30.0 || reach > 600.0)
+				return end_in_band(First, Distance);
+			return Target;
+		};
+		// the points clicked between the first and the last: at the shares of the way given, off it across by the shares of the chord
+		auto const add_inner = [&lifted](std::vector<glm::dvec3> &Points, glm::dvec3 const &First, glm::dvec3 const &Last, std::vector<double> const &Along, std::array<double, 3> const &Across, int const Inner) {
+			auto const chord{geometry::plan_of(Last - First)};
+			glm::dvec2 const side{-chord.y, chord.x};
+			for (int k = 0; k < Inner; ++k)
+				Points.push_back(lifted(geometry::plan_of(First) + chord * Along[k] + side * Across[k], First.y + (Last.y - First.y) * Along[k]));
+		};
+		// the points clicked, each with its mode
+		auto const clicked_of = [](std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes) {
+			std::string clicked;
+			for (std::size_t k = 0; k < Points.size(); ++k)
+				clicked += format(" %.1f,%.1f%s", Points[k].x, Points[k].z, Modes[k] == lay_mode::curve ? "c" : "s");
+			return clicked;
+		};
 		auto const plan_way = [](editor_track::snap_target const &End) { return glm::normalize(geometry::plan_of(End.direction) + glm::dvec2{1e-12, 0.0}); };
 		auto const ends{editor_track::free_ends(nullptr, 1, glm::dvec3{0.0}, 1e7, {})};
 		if (ends.empty())
@@ -1099,23 +1258,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				start = other;
 				first = start.position;
 				heading = -plan_way(start);
-				if (kind != 4)
-				{
-					auto const reach{geometry::plan_distance(target.position, first)};
-					if ((target.track == start.track && target.point == start.point) || reach < 30.0 || reach > 600.0)
-					{
-						// the nearest end in that band instead, any else as the point
-						double best{1e9};
-						for (auto const &candidate : editor_track::free_ends(nullptr, 1, first, 600.0, {}))
-							if (auto const apart{geometry::plan_distance(candidate.position, first)}; apart >= 30.0 && std::abs(apart - distance) < best)
-							{
-								best = std::abs(apart - distance);
-								end = candidate;
-							}
-					}
-					else
-						end = target;
-				}
+				// the nearest end in that band instead, any else as the point
+				end = end_for(kind, target, start, first, distance);
 				last = end.track != nullptr ? end.position : lifted(geometry::plan_of(first) + turned(heading, bearing) * distance, first.y);
 			}
 			else
@@ -1129,26 +1273,21 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			{
 				std::vector<double> along(shares.begin(), shares.begin() + inner);
 				std::ranges::sort(along);
-				auto const chord{geometry::plan_of(last - first)};
-				glm::dvec2 const side{-chord.y, chord.x};
-				for (int k = 0; k < inner; ++k)
-					points.push_back(lifted(geometry::plan_of(first) + chord * along[k] + side * across[k], first.y + (last.y - first.y) * along[k]));
-				// a point clicked just before the free end, a little to the side of the way into it
-				if (near_end && end.track != nullptr)
-				{
-					auto const way{plan_way(end)};
-					points.back() = lifted(geometry::plan_of(last) - way * near_back + glm::dvec2{-way.y, way.x} * near_side, last.y);
-				}
+				add_inner(points, first, last, along, across, inner);
+			}
+			// a point clicked just before the free end, a little to the side of the way into it
+			if ((kind == 1 || kind == 3 || kind == 4 || kind == 5) && near_end && end.track != nullptr)
+			{
+				auto const way{plan_way(end)};
+				points.back() = lifted(geometry::plan_of(last) - way * near_back + glm::dvec2{-way.y, way.x} * near_side, last.y);
 			}
 			// clicked beside the free end: the nearest one within the reach of the snap is the one joined, as the cursor finds it
 			if (kind == 5)
-			{
-				auto const clicked{lifted(geometry::plan_of(target.position) + beside, target.position.y)};
-				end = editor_track::find_free_end(nullptr, 1, clicked, ::track_mode::kLaySnapRadius, {});
-				if (end.track == nullptr)
-					continue;
+				end = editor_track::find_free_end(nullptr, 1, lifted(geometry::plan_of(target.position) + beside, target.position.y), ::track_mode::kLaySnapRadius, {});
+			if (kind == 5 && end.track == nullptr)
+				continue;
+			if (kind == 5)
 				last = end.position;
-			}
 			points.push_back(last);
 			std::vector<lay_mode> modes;
 			for (std::size_t k = 0; k < points.size(); ++k)
@@ -1172,33 +1311,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			std::vector<glm::dvec2> headings;
 			double inner_gap{0.0};
 			double inner_kink{0.0};
-			for (std::size_t p = 0; p < pieces.size(); ++p)
-			{
-				geometry::bezier const curve{pieces[p]};
-				if (p > 0)
-				{
-					geometry::bezier const before{pieces[p - 1]};
-					inner_gap = std::max(inner_gap, glm::distance(before.point(1.0), curve.point(0.0)));
-					inner_kink = std::max(inner_kink, glm::degrees(std::abs(geometry::signed_angle(geometry::plan_of(before.first(1.0)), geometry::plan_of(curve.first(0.0))))));
-				}
-				auto const span{curve.plan_length()};
-				auto const steps{std::max(2, static_cast<int>(std::ceil(span / 1.0)))};
-				for (int k = p == 0 ? 0 : 1; k <= steps; ++k)
-				{
-					auto const t{curve.parameter(span * k / steps)};
-					line.push_back(geometry::plan_of(curve.point(t)));
-					headings.push_back(geometry::plan_of(curve.first(t)));
-				}
-			}
-			double turning{0.0};
-			double sharpest{1e9};
-			for (std::size_t k = 1; k < headings.size(); ++k)
-			{
-				auto const angle{std::abs(geometry::signed_angle(headings[k - 1], headings[k]))};
-				turning += angle;
-				if (auto const step{glm::distance(line[k - 1], line[k])}; angle > 1e-6 && step > 1e-6)
-					sharpest = std::min(sharpest, step / angle);
-			}
+			trace_pieces(pieces, line, headings, inner_gap, inner_kink);
+			auto const [turning, sharpest]{turning_of(line, headings)};
 			auto const net{std::abs(geometry::signed_angle(headings.front(), headings.back()))};
 			// the line crossing itself, the stretches next to each other left out
 			auto const loop{crosses_itself(line)};
@@ -1227,14 +1341,10 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				++tally["clean"];
 				continue;
 			}
-			for (auto const *fault : {"start joint", "end joint", "pieces", "loop", "turning", "R "})
-				if (faults.find(fault) != std::string::npos)
-					++tally[fault];
+			count_faults(tally, faults);
 			if (failed_shown++ < 40 || only >= 0)
 			{
-				std::string clicked;
-				for (std::size_t k = 0; k < points.size(); ++k)
-					clicked += format(" %.1f,%.1f%s", points[k].x, points[k].z, modes[k] == lay_mode::curve ? "c" : "s");
+				auto const clicked{clicked_of(points, modes)};
 				auto const to{end.track != nullptr ? end_name(*end.track) : std::string{"-"}};
 				WriteLog(format("SELFTEST laymonkey case %d %s:%s from %s to %s, layout %d R %.0f, %zu pieces %.1f m, points%s; %s", index, kind_name.c_str(), faults.c_str(), from_end ? end_name(*start.track).c_str() : "-",
 				                to.c_str(), layout, radius, pieces.size(), length, clicked.c_str(), error.c_str()));
@@ -1312,6 +1422,19 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				return glm::dot(geometry::plan_of(A->m_paths.front().points[segment_data::point::start] - origin), along) < glm::dot(geometry::plan_of(B->m_paths.front().points[segment_data::point::start] - origin), along);
 			});
 		}
+		// how far the foot of the ballast hangs over the ground and lies under it along the path, every two metres
+		auto const ballast_of = [&](geometry::bezier const &Curve, TTrack const *Track) {
+			auto const count{std::max(1, static_cast<int>(std::ceil(Curve.plan_length() / 2.0)))};
+			for (int k = 0; k <= count; ++k)
+			{
+				auto const t{Curve.parameter(Curve.plan_length() * k / count)};
+				auto const target{bed_heights({Curve.point(t) + glm::dvec3{0.0, 50.0, 0.0}}, {geometry::plan_of(Curve.first(t))}, Track).front()};
+				if (std::isnan(target))
+					continue;
+				hanging = std::max(hanging, Curve.point(t).y - target);
+				buried = std::max(buried, target - Curve.point(t).y);
+			}
+		};
 		for (auto const *track : laid)
 		{
 			auto const &path{track->m_paths.front()};
@@ -1327,16 +1450,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			heading = glm::normalize(geometry::plan_of(curve.first(1.0)));
 			previous = b;
 			first = false;
-			auto const count{std::max(1, static_cast<int>(std::ceil(curve.plan_length() / 2.0)))};
-			for (int k = 0; k <= count; ++k)
-			{
-				auto const t{curve.parameter(curve.plan_length() * k / count)};
-				auto const target{bed_heights({curve.point(t) + glm::dvec3{0.0, 50.0, 0.0}}, {geometry::plan_of(curve.first(t))}, track).front()};
-				if (std::isnan(target))
-					continue;
-				hanging = std::max(hanging, curve.point(t).y - target);
-				buried = std::max(buried, target - curve.point(t).y);
-			}
+			ballast_of(curve, track);
 			++paths;
 		}
 		WriteLog(format("SELFTEST layclicks %d paths, ballast foot over the ground up to %.3f m, under it up to %.3f m", paths, hanging, buried));
@@ -1363,8 +1477,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		{
 			m_track_set.clear();
 			for (std::string name; words >> name;)
-				if (auto *each{simulation::Paths.find(name)}; each != nullptr)
-					m_track_set.push_back(each);
+				add_named(m_track_set, name);
 			m_track_set_pivot = track_set_centre();
 			WriteLog(format("SELFTEST gizmo set: %zu tracks, centre %.3f %.3f", m_track_set.size(), m_track_set_pivot.x, m_track_set_pivot.z));
 		}
@@ -1460,32 +1573,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			for (auto *neighbour : editor_track::neighbours(*track))
 				shown.push_back(neighbour);
 			WriteLog(format("SELFTEST gizmo %s prev %s next %s", track->name().c_str(), track->trPrev != nullptr ? track->trPrev->name().c_str() : "-", track->trNext != nullptr ? track->trNext->name().c_str() : "-"));
-			for (auto *each : shown)
-				for (int i = 0; i < static_cast<int>(each->m_paths.size()); ++i)
-				{
-					auto const &path{each->m_paths[i]};
-					auto const &a{path.points[segment_data::point::start]};
-					auto const &b{path.points[segment_data::point::end]};
-					auto const &c1{path.points[segment_data::point::control1]};
-					auto const &c2{path.points[segment_data::point::control2]};
-					WriteLog(format("SELFTEST gizmo path %s[%d] %.3f %.3f %.3f -> %.3f %.3f %.3f, c1 %.3f %.3f %.3f, c2 %.3f %.3f %.3f, L %.3f, R %.1f, rolls %.2f %.2f", each->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z,
-					                geometry::bezier{path}.plan_length(), path.radius, path.rolls[0], path.rolls[1]));
-				}
+			for (auto const *each : shown)
+				log_gizmo_paths(*each);
 			for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
-				for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
-				{
-					geometry::bezier const own{track->m_paths[i]};
-					bool const start{kind == editor_track::point_kind::start};
-					auto const out{start ? -own.first(0.0) : own.first(1.0)};
-					for (auto const &[partner_track, partner_point] : editor_track::partners(*track, {i, kind}))
-					{
-						geometry::bezier const theirs{partner_track->m_paths[partner_point.path]};
-						auto const in{partner_point.kind == editor_track::point_kind::start ? theirs.first(0.0) : -theirs.first(1.0)};
-						auto const angle{glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(out), glm::normalize(in)), -1.0, 1.0)))};
-						auto const gap{glm::distance(editor_track::point_position(*track, {i, kind}), editor_track::point_position(*partner_track, partner_point))};
-						WriteLog(format("SELFTEST gizmo joint %s[%d].%s - %s[%d]: kink %.4f deg, gap %.4f m", track->name().c_str(), i, start ? "start" : "end", partner_track->name().c_str(), partner_point.path, angle, gap));
-					}
-				}
+			{
+				log_gizmo_joints(*track, i, editor_track::point_kind::start);
+				log_gizmo_joints(*track, i, editor_track::point_kind::end);
+			}
 		}
 		return selftest_result::handled;
 	}
