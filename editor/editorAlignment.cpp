@@ -3541,21 +3541,6 @@ double ramped_cant(double const Cant, double const Length, double const Speed, l
 	return cant < 5.0 ? 0.0 : std::floor(cant / 5.0) * 5.0;
 }
 
-// the transitions and the cant of the norms for the radii of the vertex, at the speed its sharpest arc allows
-void recommended_curve(vertex &Vertex, double const Speed, limits const &Norms)
-{
-	auto sharpest{std::max(1.0, Vertex.radius)};
-	if (Vertex.compound)
-		for (auto const &arc : Vertex.arcs)
-			sharpest = std::min(sharpest, std::max(1.0, arc.radius));
-	auto const allowed{std::max(1.0, std::min(Speed, speed_limit(sharpest, Norms)))};
-	auto const recommended{recommend(allowed, sharpest, Norms)};
-	Vertex.transition_in = recommended.transition;
-	Vertex.transition_out = recommended.transition;
-	Vertex.cant = ramped_cant(recommended.cant, recommended.transition, allowed, Norms);
-	recommend_between(Vertex, Speed, Norms);
-}
-
 // a curve a bend can be eased with, and how far it reaches along the straights either side of it
 struct corner_shape
 {

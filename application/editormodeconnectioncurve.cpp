@@ -46,10 +46,6 @@ namespace
 double constexpr kRampShare{0.9};
 double constexpr kOtherReach{10.0}; // m, from the release to the other track
 double constexpr kStraightReach{track_mode::kCrossoverStraights};
-// of a line across a crossover from the route: it takes the change of the heights of the route in full up to the first distance from
-// it, less and less on to the second one
-double constexpr kFollow{25.0}; // m
-double constexpr kLeave{50.0}; // m
 
 // the first curved track the straight track leads to along its straight through its end or its start, nearer than Nearest, with how
 // far it lies in Distance; none when the straight ends before
@@ -217,32 +213,6 @@ void snap_paths(std::vector<segment_data> &Paths, std::vector<TTrack *> const &C
 		Paths.front().pieces.back().points[segment_data::point::end] = end;
 }
 
-// the points of the grade line the line runs on straight through left out
-void drop_straight_through(std::vector<profile::pvi> &Points)
-{
-	for (std::size_t k = 1; k + 1 < Points.size();)
-	{
-		auto const in{(Points[k].elevation - Points[k - 1].elevation) / std::max(1e-6, Points[k].chainage - Points[k - 1].chainage)};
-		auto const out{(Points[k + 1].elevation - Points[k].elevation) / std::max(1e-6, Points[k + 1].chainage - Points[k].chainage)};
-		if (std::abs(out - in) < 1e-7)
-			Points.erase(Points.begin() + static_cast<std::ptrdiff_t>(k));
-		else
-			++k;
-	}
-}
-
-// the switch joined to a track not taken out at the start and at the end of its main track
-bool joined_at_both_ends(TTrack const &Part)
-{
-	for (auto const which : {segment_data::point::start, segment_data::point::end})
-	{
-		auto const joined{editor_track::connected_points(Part, Part.m_paths.front().points[which])};
-		if (std::ranges::none_of(joined, [&Part](auto const &Entry) { return Entry.first != &Part && Entry.first != nullptr && false == Entry.first->m_editorremoved; }))
-			return false;
-	}
-	return true;
-}
-
 // the names kept for the switches laid next, forgotten however the laying ends
 class names_forgotten
 {
@@ -257,93 +227,6 @@ class names_forgotten
   private:
 	std::vector<std::string> &m_names;
 };
-
-// the track is a part of the route itself, or a line followed already
-bool route_or_done(TTrack const *Track, editor_track::route const &Route, std::vector<TTrack const *> const &Done)
-{
-	return std::ranges::any_of(Route.spans, [Track](auto const &Span) { return Span.track == Track; }) || std::ranges::find(Done, Track) != Done.end();
-}
-
-// how much the route went up beside each sample of the other line, by the weight of how far the sample is from the route, and that
-// distance; true when any of them changes
-bool line_changes(std::vector<editor_track::route_sample> const &Samples, std::vector<editor_track::route_sample> const &After, std::vector<editor_track::route_sample> const &Before, std::vector<double> &Changes, std::vector<double> &Distances)
-{
-	bool any{false};
-	for (std::size_t i = 0; i < Samples.size(); ++i)
-	{
-		auto const chainage{chainage_on(After, Samples[i].position, Distances[i])};
-		auto const weight{std::clamp((kLeave - Distances[i]) / (kLeave - kFollow), 0.0, 1.0)};
-		Changes[i] = weight * (editor_track::sampled_elevation(After, chainage) - editor_track::sampled_elevation(Before, chainage));
-		any = any || std::abs(Changes[i]) > 0.001;
-	}
-	return any;
-}
-
-// the change of the other line at the chainage, between the ones of its samples
-double change_along(std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes, double const Chainage)
-{
-	auto const at{std::clamp(Chainage, Samples.front().chainage, Samples.back().chainage)};
-	auto const next{std::ranges::lower_bound(Samples, at, {}, &editor_track::route_sample::chainage)};
-	if (next == Samples.begin())
-		return Changes.front();
-	if (next == Samples.end())
-		return Changes.back();
-	auto const i{static_cast<std::size_t>(std::distance(Samples.begin(), next))};
-	auto const f{(at - Samples[i - 1].chainage) / std::max(1e-9, Samples[i].chainage - Samples[i - 1].chainage)};
-	return Changes[i - 1] + (Changes[i] - Changes[i - 1]) * f;
-}
-
-// where the grade line of the route breaks, the other line breaks too, and where it starts and stops running beside the route
-std::vector<double> line_breaks(std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Distances, std::vector<editor_track::route_sample> const &After, std::vector<profile::pvi> const &Points, double const Length)
-{
-	std::vector<double> breaks;
-	for (auto const &point : Points)
-	{
-		auto const at{editor_track::sampled_position(After, point.chainage)};
-		double best_here{std::numeric_limits<double>::max()};
-		double chainage{0.0};
-		for (auto const &sample : Samples)
-			if (auto const distance{plan_distance(sample.position, at)}; distance < best_here)
-			{
-				best_here = distance;
-				chainage = sample.chainage;
-			}
-		if (best_here < kFollow && chainage > 0.5 && chainage < Length - 0.5)
-			breaks.push_back(chainage);
-	}
-	for (std::size_t i = 1; i < Samples.size(); ++i)
-		for (auto const bound : {kFollow, kLeave})
-			if ((Distances[i - 1] < bound) != (Distances[i] < bound) && Samples[i].chainage > 0.5 && Samples[i].chainage < Length - 0.5)
-				breaks.push_back(Samples[i].chainage);
-	std::ranges::sort(breaks);
-	breaks.erase(std::ranges::unique(breaks, [](double const A, double const B) { return std::abs(A - B) < 1.0; }).begin(), breaks.end());
-	return breaks;
-}
-
-// the design of the other line changed by as much as the line, its points and the breaks, none closer than half a metre to the one
-// before
-std::vector<profile::pvi> changed_design(profile::line const &Designed, std::vector<double> const &Breaks, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes)
-{
-	std::vector<profile::pvi> points;
-	for (auto point : Designed.points)
-	{
-		point.elevation += change_along(Samples, Changes, point.chainage);
-		points.push_back(point);
-	}
-	for (auto const chainage : Breaks)
-	{
-		profile::pvi point;
-		point.chainage = chainage;
-		point.elevation = profile::elevation(Designed, chainage) + change_along(Samples, Changes, chainage);
-		points.push_back(point);
-	}
-	std::ranges::sort(points, [](auto const &Left, auto const &Right) { return Left.chainage < Right.chainage; });
-	std::vector<profile::pvi> line;
-	for (auto const &point : points)
-		if (line.empty() || point.chainage - line.back().chainage >= 0.5)
-			line.push_back(point);
-	return line;
-}
 
 // the lift of the outer track along its line: from First at the chainage From to Second at To in a straight line, down to none over
 // the ramps beyond them

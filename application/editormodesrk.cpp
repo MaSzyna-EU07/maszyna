@@ -913,18 +913,6 @@ name_set guarded(std::vector<standing_template> const &Controls)
 	return result;
 }
 
-// the template of the events of a block section
-bool is_control(std::string_view const File)
-{
-	return File == kControl;
-}
-
-// the template of an SHP track resonator
-bool is_resonator(std::string_view const File)
-{
-	return File == kResonator;
-}
-
 // a block signal standing by the track of the line facing its trains, or Wrong: its wrong-track ones, Distance: how far out along it
 bool faces_along(station::line const &Line, standing_signal const &Signal, double &Distance, bool const Wrong = false)
 {
