@@ -350,6 +350,7 @@ private:
     void adjust_desired_speed_for_obstacles();
     void adjust_desired_speed_for_limits();
     void set_velocity_for_uncoupling();
+    bool increase_train_brake();
     void hold_train_coming_to_stand_uphill();
     void adjust_desired_speed_for_final_approach( double const Vel );
     void adjust_desired_speed_for_target_speed( double const Range );

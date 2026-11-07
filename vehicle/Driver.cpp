@@ -2934,6 +2934,75 @@ bool TController::ReleaseEngine() {
 // defined further down, with the braking demand it is used for
 static double brake_response_horizon( TMoverParameters const *Vehicle, TBrakeSystem const Brakesystem, double const Acceleration, double const Brakea0 );
 
+// one step more of the train brake, sized from the consist brake table against the deceleration asked for
+bool
+TController::increase_train_brake() {
+
+    // dodane dla towarowego
+    float pos_corr = 0;
+
+    TDynamicObject *d;
+    d = pVehicles[0]; // pojazd na czele składu
+    while (d)
+    { // przeliczanie dodatkowego potrzebnego spadku ciśnienia
+        if( ( d->MoverParameters->Hamulec->GetBrakeStatus() & b_dmg ) == 0 ) {
+            pos_corr -= ( std::min( 5.0, d->MoverParameters->Hamulec->GetCRP() ) - 5.0 ) * d->MoverParameters->TotalMass;
+        }
+        d = d->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
+    }
+    pos_corr = pos_corr / fMass * 2.5;
+
+    if (mvOccupied->BrakeHandle == TBrakeHandle::FV4a)
+    {
+        pos_corr += mvOccupied->Handle->GetCP()*0.2;
+
+    }
+    double deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
+
+    if( deltaAcc > brake_increase_margin() )
+    {
+        if( /*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition < 0.1 ) {
+            auto const OK { /*mvOccupied->*/BrakeLevelAdd( BrakingInitialLevel ) }; //GBH
+            // HACK: stronger braking to overcome SA134 engine behaviour
+            if( is_dmu()
+             && VelNext == 0.0
+             && fBrakeDist < 200.0 ) {
+                BrakeLevelAdd(
+                    fBrakeDist / ActualProximityDist < 0.8 ?
+                        0.5 :
+                        1.0 );
+            }
+            return OK;
+        }
+        auto const OK { /*mvOccupied->*/BrakeLevelAdd( BrakingLevelIncrease ) }; //GBH
+        // brake harder if the acceleration is much higher than desired
+        /*if( ( deltaAcc > 2 * fBrake_a1[ 0 ] )
+         && ( mvOccupied->BrakeCtrlPosR + BrakingLevelIncrease <= 5.0 ) ) {
+            mvOccupied->BrakeLevelAdd( BrakingLevelIncrease );
+        }  GBH */
+        if( deltaAcc > 2 * fBrake_a1[0]
+         && BrakeCtrlPosition + BrakingLevelIncrease <= 5.0 ) {
+            /*mvOccupied->*/BrakeLevelAdd( BrakingLevelIncrease );
+        }
+        return OK;
+    }
+    if( BrakeCtrlPosition > 0.0
+     && AccDesired < 0.0 // only while braking is asked for, not when called for a train slipping back while starting
+     && ( fBrakeHeldTime > (
+             mvOccupied->BrakeDelayFlag > bdelay_G ?
+                 mvOccupied->BrakeDelay[ 1 ] :
+                 mvOccupied->BrakeDelay[ 3 ] )
+       // a train falling further behind needs no full fill time to be seen not to get enough
+       || ( ( fShortfall > 0.02 )
+         && ( fBrakeHeldTime > brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) ) ) ) {
+        // the table says the present position is enough, but the brake has had its full fill
+        // time since the handle last moved and the train is still not slowing down as asked:
+        // believe the train rather than the table
+        return BrakeLevelAdd( BrakingLevelIncrease );
+    }
+    return false;
+}
+
 bool TController::IncBrake()
 { // zwiększenie hamowania
     auto OK { false };
@@ -3025,70 +3094,7 @@ bool TController::IncBrake()
                         OK = false;
                 }
                 else {
-                    // dodane dla towarowego
-					float pos_corr = 0;
-
-					TDynamicObject *d;
-					d = pVehicles[0]; // pojazd na czele składu
-					while (d)
-					{ // przeliczanie dodatkowego potrzebnego spadku ciśnienia
-                        if( ( d->MoverParameters->Hamulec->GetBrakeStatus() & b_dmg ) == 0 ) {
-                            pos_corr -= ( std::min( 5.0, d->MoverParameters->Hamulec->GetCRP() ) - 5.0 ) * d->MoverParameters->TotalMass;
-                        }
-						d = d->Next(); // kolejny pojazd, podłączony od tyłu (licząc od czoła)
-					}
-					pos_corr = pos_corr / fMass * 2.5;
-
-					if (mvOccupied->BrakeHandle == TBrakeHandle::FV4a)
-					{
-						pos_corr += mvOccupied->Handle->GetCP()*0.2;
-
-					}
-					double deltaAcc = -AccDesired*BrakeAccFactor() - (fBrake_a0[0] + 4.0 * (/*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition - 1 - pos_corr)*fBrake_a1[0]);
-
-                    if( deltaAcc > brake_increase_margin() )
-					{
-                        if( /*GBH mvOccupied->BrakeCtrlPosR*/BrakeCtrlPosition < 0.1 ) {
-                            OK = /*mvOccupied->*/BrakeLevelAdd( BrakingInitialLevel ); //GBH
-                            // HACK: stronger braking to overcome SA134 engine behaviour
-                            if( is_dmu()
-                             && VelNext == 0.0
-                             && fBrakeDist < 200.0 ) {
-                                BrakeLevelAdd(
-                                    fBrakeDist / ActualProximityDist < 0.8 ?
-                                        0.5 :
-                                        1.0 );
-                            }
-                        }
-						else {
-                            OK = /*mvOccupied->*/BrakeLevelAdd( BrakingLevelIncrease ); //GBH
-                            // brake harder if the acceleration is much higher than desired
-                            /*if( ( deltaAcc > 2 * fBrake_a1[ 0 ] )
-                             && ( mvOccupied->BrakeCtrlPosR + BrakingLevelIncrease <= 5.0 ) ) {
-                                mvOccupied->BrakeLevelAdd( BrakingLevelIncrease );
-                            }  GBH */
-                            if( deltaAcc > 2 * fBrake_a1[0]
-                             && BrakeCtrlPosition + BrakingLevelIncrease <= 5.0 ) {
-                                /*mvOccupied->*/BrakeLevelAdd( BrakingLevelIncrease );
-							}
-						}
-                    }
-                    else if( BrakeCtrlPosition > 0.0
-                          && AccDesired < 0.0 // only while braking is asked for, not when called for a train slipping back while starting
-                          && ( fBrakeHeldTime > (
-                                  mvOccupied->BrakeDelayFlag > bdelay_G ?
-                                      mvOccupied->BrakeDelay[ 1 ] :
-                                      mvOccupied->BrakeDelay[ 3 ] )
-                            // a train falling further behind needs no full fill time to be seen not to get enough
-                            || ( ( fShortfall > 0.02 )
-                              && ( fBrakeHeldTime > brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) ) ) ) {
-                        // the table says the present position is enough, but the brake has had its full fill
-                        // time since the handle last moved and the train is still not slowing down as asked:
-                        // believe the train rather than the table
-                        OK = BrakeLevelAdd( BrakingLevelIncrease );
-                    }
-                    else
-                        OK = false;
+                    OK = increase_train_brake();
                 }
             }
             if( /*GBH mvOccupied->BrakeCtrlPos*/
@@ -5964,9 +5970,7 @@ TController::determine_consist_state() {
                     // once in motion a brake down to 0.4 bar counts as released (UIC), even if its distributor
                     // is still in the lap position while the brake pipe recharges
                     ( isbraking && bp > 0.4 ) || vehicle->Fb > 10000.0 ) { // 10 kN
-                if( false == heldforstart ) {
-                    Ready = false;
-                }
+                Ready = heldforstart; // ready all the same only when the power goes on against the brake on purpose
             }
             // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
             if( bp >= 0.4 && (AIControllFlag || Global.AITrainman && mvOccupied->Vel < EU07_AI_NOMOVEMENT && !is_emu() && !is_dmu()) && BrakeCtrlPosition == gbh_RP // jest pozycja jazdy
@@ -8196,12 +8200,12 @@ bool TController::is_too_fast_uphill() const {
 void TController::control_uphill_start() {
 
     auto const velocity { DirectionalVel() };
-    auto const uphill {
-        ( BrakeSystem == TBrakeSystem::Pneumatic )
-     && is_train()
-     && ( false == is_emu() ) && ( false == is_dmu() ) // a multiple unit has no locomotive to hold a train behind it
-     && ( fAccGravity < -0.01 ) };
-    if( false == uphill ) {
+    if( auto const uphill {
+            ( BrakeSystem == TBrakeSystem::Pneumatic )
+         && is_train()
+         && ( false == is_emu() ) && ( false == is_dmu() ) // a multiple unit has no locomotive to hold a train behind it
+         && ( fAccGravity < -0.01 ) };
+        false == uphill ) {
         bUphillStart = false;
         return;
     }
@@ -8227,7 +8231,7 @@ void TController::control_uphill_start() {
         cue_action( driver_hint::independentbrakerelease );
     }
     auto tractiveforce { 0.0 };
-    for( auto *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
         tractiveforce += std::max( 0.0, vehicle->MoverParameters->Ft );
     }
     auto const holdingforce { fMass * -fAccGravity };
