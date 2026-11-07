@@ -2699,6 +2699,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_signal_ui();
 	void render_signal_palette();
 	void render_signal_selected();
+	// of the signal selected: its template and another one for it, the aspects it can be set to; true when it got another one
+	bool render_signal_template(signal_standing const &Found, signal_template const &Item);
+	// the list of the templates the signal can take instead, Across those of another mount too: the file picked, empty for none
+	std::string signal_swap_combo(signal_template const &Item, bool const Across) const;
+	void render_signal_aspects(signal_standing const &Found, signal_template const &Item);
 	void draw_signal_overlay() const;
 	std::string signal_intent_label(signal_template const &Template, signal_spot const &Spot) const;
 	std::string signal_variant(signal_template const &Template, signal_spot const &Spot) const;

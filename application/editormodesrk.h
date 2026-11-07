@@ -325,6 +325,9 @@ class srk_tool final : public editor_tool
 	// the lights of the signals checked against the routes of their trains and the places of the signals they tell of
 	void check_heads(std::vector<standing_signal> const &Standing);
 	void render_heads();
+	// of a signal in the list: in its tooltip how its template fits, in its row its aspects or its lights
+	static void render_head_fit(head_check const &Head);
+	static void render_head_aspects(head_check const &Head);
 	// the signals given the templates whose lights fit their routes; one step of the history
 	void fit_heads();
 	// the lengths of the station tracks as the list of the tracks gives them, the useful ones each way
