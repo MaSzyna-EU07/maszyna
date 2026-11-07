@@ -466,8 +466,7 @@ bool load_service(http_client &Client, editor_orthophoto::config const &Source, 
 	url += "SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG:2180&FORMAT=image/png&TRANSPARENT=TRUE&LAYERS=" + url_encoded(Source.layers) + "&STYLES=" + std::string(count - 1, ',') +
 	       "&WIDTH=" + std::to_string(Request.level) + "&HEIGHT=" + std::to_string(Request.level) + "&BBOX=" + std::to_string(east) + "," + std::to_string(north) + "," + std::to_string(east + size) + "," +
 	       std::to_string(north + size);
-	std::vector<std::uint8_t> data;
-	if (!fetch(Client, url, {}, data, Error, Stop) || !decode(data, Out, Error))
+	if (std::vector<std::uint8_t> data; !fetch(Client, url, {}, data, Error, Stop) || !decode(data, Out, Error))
 		return false;
 	for (std::size_t i = 3; i < Out.rgba.size(); i += 4)
 		if (Out.rgba[i] != 0)
@@ -628,8 +627,7 @@ std::string xml_text(std::string const &Text)
 			out += Text[i];
 			continue;
 		}
-		auto const entity{Text.substr(i + 1, end - i - 1)};
-		if (entity == "amp")
+		if (auto const entity{Text.substr(i + 1, end - i - 1)}; entity == "amp")
 			out += '&';
 		else if (entity == "lt")
 			out += '<';

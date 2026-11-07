@@ -425,8 +425,7 @@ void editor_mode::digitize_all(int *Kept, int *Failed)
 		if (alignment_store::on_track(*track).has_value())
 			continue;
 		editor_track::chain chain;
-		std::string error;
-		if (false == editor_track::find_run(*track, kDrawnReach, chain, error) || chain.tracks.empty())
+		if (std::string error; false == editor_track::find_run(*track, kDrawnReach, chain, error) || chain.tracks.empty())
 		{
 			visited.insert(track);
 			continue;
@@ -756,8 +755,7 @@ void editor_mode::route_lay()
 			auto *start{end_at(route.chain.start)};
 			auto *finish{end_at(route.chain.end)};
 			editor_track::chain refreshed;
-			std::string error;
-			if (start != nullptr && finish != nullptr && editor_track::find_chain(start, finish, refreshed, error, true))
+			if (std::string error; start != nullptr && finish != nullptr && editor_track::find_chain(start, finish, refreshed, error, true))
 			{
 				route.from = start;
 				route.to = finish;
@@ -823,8 +821,7 @@ void editor_mode::route_lay()
 		std::string error;
 		auto const found{editor_track::find_chain(from, to, chain, error, true)};
 		auto const startoff{found && startextension > 0.0 ? plan_distance(chain.start, route.result.start) : 0.0};
-		auto const endoff{found && endextension > 0.0 ? plan_distance(chain.end, route.result.end) : 0.0};
-		if (false == found || startoff > 5.0 || endoff > 5.0)
+		if (auto const endoff{found && endextension > 0.0 ? plan_distance(chain.end, route.result.end) : 0.0}; false == found || startoff > 5.0 || endoff > 5.0)
 		{
 			auto const startrun{editor_track::straight_beyond(before, false, m_straights.tolerance)};
 			auto const endrun{editor_track::straight_beyond(before, true, m_straights.tolerance)};
@@ -867,8 +864,7 @@ void editor_mode::route_lay()
 	if (startextension > 0.0 || endextension > 0.0)
 	{
 		route_bind_ends();
-		auto &vertices{route.design.vertices};
-		if (vertices.size() >= 2)
+		if (auto &vertices{route.design.vertices}; vertices.size() >= 2)
 		{
 			vertices.front().offset += startextension;
 			vertices.back().offset += endextension;
@@ -953,8 +949,7 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 		auto const angle{signed_angle(direction, plan(first.direction))};
 		// where the other end of the main track goes, set against the line
 		auto const moved{plan_of(first.position) + turned(plan_of(exit - entry), angle)};
-		auto const departure{glm::distance(moved, plan_of(last.position))};
-		if (departure > 0.02)
+		if (auto const departure{glm::distance(moved, plan_of(last.position))}; departure > 0.02)
 		{
 			route.error = format(STR_C("The switch %s would leave the designed line by %.2f m at its other end: it lies in a curve of the design. "
 			                     "Move the vertices so that the switch falls on a straight"),
@@ -975,11 +970,9 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 	for (std::size_t k = 0; k <= Chain.switches.size(); ++k)
 	{
 		auto const first{k == 0 ? std::size_t{0} : Chain.switches[k - 1].before};
-		auto const last{k == Chain.switches.size() ? Chain.tracks.size() : Chain.switches[k].before};
-		if (last > first && part < parts.size())
+		if (auto const last{k == Chain.switches.size() ? Chain.tracks.size() : Chain.switches[k].before}; last > first && part < parts.size())
 		{
-			auto const inner{alignment::breaks_at(result, editor_track::chain_joints(parts[part]), k == 0 ? 0.0 : ends[2 * k - 1], k == Chain.switches.size() ? result.length : ends[2 * k])};
-			if (last - first > 1 && inner.size() + 1 == last - first)
+			if (auto const inner{alignment::breaks_at(result, editor_track::chain_joints(parts[part]), k == 0 ? 0.0 : ends[2 * k - 1], k == Chain.switches.size() ? result.length : ends[2 * k])}; last - first > 1 && inner.size() + 1 == last - first)
 				for (std::size_t j = 0; j < last - first; ++j)
 				{
 					if (j > 0)
@@ -1373,8 +1366,7 @@ void editor_mode::draw_route_overlay() const
 	{
 		auto const &point{atend ? end : start};
 		auto const direction{atend ? design.end_direction : design.start_direction};
-		ImVec2 screen;
-		if (projection.project(point, screen))
+		if (ImVec2 screen; projection.project(point, screen))
 			drawlist->AddRectFilled(ImVec2(screen.x - 5.0f, screen.y - 5.0f), ImVec2(screen.x + 5.0f, screen.y + 5.0f), IM_COL32(70, 140, 255, 255));
 		auto const arrow{glm::dvec3{direction.x, 0.0, direction.y} * (atend ? 15.0 : -15.0)};
 		projection.line(drawlist, point, point + arrow, IM_COL32(70, 140, 255, 255), 2.0f);
@@ -2005,8 +1997,7 @@ bool editor_mode::render_route_parameters()
 	changed |= value_chips("designspeeds", design.speed, {60.0, 80.0, 100.0, 120.0, 160.0, 200.0}, "%.0f");
 	design.speed = std::max(1.0, design.speed);
 	ImGui::TextDisabled("%s", STR_C("Transition curve"));
-	int shape = static_cast<int>(design.shape);
-	if (segmented("transitionshape", shape,
+	if (int shape = static_cast<int>(design.shape); segmented("transitionshape", shape,
 	              {{static_cast<int>(alignment::transition_shape::cubic_parabola), STR_C("Cubic parabola"), "The usual one on the Polish lines"},
 	               {static_cast<int>(alignment::transition_shape::clothoid), STR_C("Clothoid"), "Curvature growing linearly with the length"}}))
 	{
@@ -2411,8 +2402,7 @@ void editor_mode::render_route_result()
 
 editor_track::straight const &editor_mode::current_straight()
 {
-	auto *track{selected_track()};
-	if (track != m_straights.current_for)
+	if (auto *track{selected_track()}; track != m_straights.current_for)
 	{
 		m_straights.current_for = track;
 		m_straights.handle = -1;

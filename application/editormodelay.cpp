@@ -342,8 +342,7 @@ glm::dvec3 editor_mode::cursor_ground() const
 	if (GfxRenderer->Mouse_Hit())
 		return ground;
 	screen_projection const projection;
-	glm::dvec3 level;
-	if (projection.on_level(ImGui::GetIO().MousePos, 0.0, level))
+	if (glm::dvec3 level; projection.on_level(ImGui::GetIO().MousePos, 0.0, level))
 		return level;
 	return {ground.x, 0.0, ground.z};
 }
@@ -437,8 +436,7 @@ bool editor_mode::switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point)
 	auto *selected{selected_track()};
 	if (m_track_tab != track_tab::turnout || m_switch.armed < 0 || selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
 		return false;
-	auto const &line{current_straight()};
-	if (false == line.tracks.empty())
+	if (auto const &line{current_straight()}; false == line.tracks.empty())
 	{
 		auto const along{std::clamp(line.along(Ground), 0.0, line.length)};
 		Point = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * along;
@@ -475,13 +473,11 @@ bool editor_mode::handle_drag_step(glm::dvec3 &Position, TTrack const *Ground)
 		drag = {};
 		return false;
 	}
-	glm::vec2 const mouse{io.MousePos.x, io.MousePos.y};
-	if (false == drag.moved && glm::length(mouse - drag.from) < kDragPixels)
+	if (glm::vec2 const mouse{io.MousePos.x, io.MousePos.y}; false == drag.moved && glm::length(mouse - drag.from) < kDragPixels)
 		return false;
 	drag.moved = true;
 	screen_projection const projection;
-	glm::dvec3 level;
-	if (projection.on_level(io.MousePos, drag.height, level) && (Global.editor_tracks || glm::distance(level, glm::dvec3{Global.pCamera.Pos}) <= static_cast<double>(kMaxPlacementDistance)))
+	if (glm::dvec3 level; projection.on_level(io.MousePos, drag.height, level) && (Global.editor_tracks || glm::distance(level, glm::dvec3{Global.pCamera.Pos}) <= static_cast<double>(kMaxPlacementDistance)))
 	{
 		drag.position = level + drag.offset;
 		if (Ground != nullptr && false == io.KeyShift)
@@ -528,8 +524,7 @@ void editor_mode::point_drag_update()
 	{
 		if (glm::length(mouse - drag.from) < kDragPixels)
 			return;
-		std::string reason;
-		if (false == editor_track::can_edit_geometry(*track, reason))
+		if (std::string reason; false == editor_track::can_edit_geometry(*track, reason))
 		{
 			ui()->set_status(reason, true);
 			drag = {};
@@ -544,8 +539,7 @@ void editor_mode::point_drag_update()
 		{
 			for (auto const &connection : editor_track::connected_points(*track, editor_track::point_position(*track, m_track_point)))
 			{
-				std::string neighbourreason;
-				if (false == editor_track::can_edit_geometry(*connection.first, neighbourreason))
+				if (std::string neighbourreason; false == editor_track::can_edit_geometry(*connection.first, neighbourreason))
 					continue;
 				m_track_drag_points.emplace_back(connection);
 				if (std::ranges::find(m_track_drag, connection.first) == m_track_drag.end())
@@ -684,12 +678,10 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	m_eased_last.reset();
 	std::vector<segment_data> result;
 	auto const &tool{m_extend};
-	editor_track::snap_target target;
-	if (extend_snap(target))
+	if (editor_track::snap_target target; extend_snap(target))
 	{
 		editor_track::branch_link link;
-		std::string reason;
-		if (plan_branch_link(link, reason))
+		if (std::string reason; plan_branch_link(link, reason))
 		{
 			m_join_last = {};
 			return link.pieces;
@@ -1000,8 +992,7 @@ void editor_mode::extend_add(int const Side)
 
 void editor_mode::render_extend_ui()
 {
-	extend_tool tool;
-	if (false == chosen_free_end(tool))
+	if (extend_tool tool; false == chosen_free_end(tool))
 		return;
 	if (false == ImGui::CollapsingHeader(STR_C("Continue from the free end")))
 		return;
@@ -1093,8 +1084,7 @@ bool editor_mode::track_wheel(double const Offset)
 	}
 	if ((false == io.KeyCtrl && false == io.KeyShift) || Offset == 0.0)
 		return false;
-	bool const laying{m_lay.active && false == m_lay.points.empty()};
-	if (false == m_extend.active && false == laying)
+	if (bool const laying{m_lay.active && false == m_lay.points.empty()}; false == m_extend.active && false == laying)
 		return false;
 	int const step{wheel_step(Offset, false == io.KeyCtrl)};
 	if (step == 0)
@@ -1209,8 +1199,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		if (Joint.track == nullptr || Joint.track->eType != tt_Normal)
 			return editor_track::easing{};
 		auto result{editor_track::ease_out_of(*Joint.track, Joint.position, grade * Sign, design.speed, design.norms)};
-		auto const own{Sign * curvature_at(shape, Chainage)};
-		if (std::abs(own - result.curvature) <= 0.05 * std::abs(result.curvature))
+		if (auto const own{Sign * curvature_at(shape, Chainage)}; std::abs(own - result.curvature) <= 0.05 * std::abs(result.curvature))
 			result.pieces.clear();
 		return result;
 	};
@@ -1684,8 +1673,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 						return std::nullopt;
 					}
 					auto const minus{fit->rms > kClose ? fitted_heading(rotated(-step)) : std::nullopt};
-					auto const plus{fit->rms > kClose ? fitted_heading(rotated(step)) : std::nullopt};
-					if (minus.has_value() && plus.has_value())
+					if (auto const plus{fit->rms > kClose ? fitted_heading(rotated(step)) : std::nullopt}; minus.has_value() && plus.has_value())
 					{
 						auto const centre{fit->rms};
 						auto angle{0.0};
@@ -1961,8 +1949,7 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 	m_fits_waiting = true;
 	m_stretch_fitter.ask({key, Base, Points, Radii, Straights, Going});
 	std::vector<double> last;
-	auto const header{std::size_t{19}};
-	if (Meanwhile && m_stretch_fitter.latest(last, fit) && last.size() >= header + 2 && key.size() >= header + 2 && std::equal(key.begin(), key.begin() + 4, last.begin()) &&
+	if (auto const header{std::size_t{19}}; Meanwhile && m_stretch_fitter.latest(last, fit) && last.size() >= header + 2 && key.size() >= header + 2 && std::equal(key.begin(), key.begin() + 4, last.begin()) &&
 	    std::equal(key.begin() + 8, key.begin() + header, last.begin() + 8))
 	{
 		auto const common{std::min(last.size(), key.size()) - 2};
@@ -2133,8 +2120,7 @@ void editor_mode::lay_enter()
 	lay_trim();
 	if (tool.points.empty())
 		return;
-	auto const end{tool.mouse_snap};
-	if (end.track != nullptr && glm::distance(end.position, tool.points.front()) > 1.0)
+	if (auto const end{tool.mouse_snap}; end.track != nullptr && glm::distance(end.position, tool.points.front()) > 1.0)
 	{
 		tool.points.push_back(end.position);
 		tool.modes.push_back(tool.mode);
@@ -2443,8 +2429,7 @@ void editor_mode::render_lay_ui()
 	tool.piece_length = std::clamp(tool.piece_length, 5.0, 1000.0);
 	ImGui::PopItemWidth();
 	ImGui::TextDisabled("%s", STR_C("Look of the new track"));
-	int source{tool.copy_selected ? 1 : 0};
-	if (segmented("laylook", source,
+	if (int source{tool.copy_selected ? 1 : 0}; segmented("laylook", source,
 	              {{0, STR_C("These textures"), "The rails and the trackbed chosen below.\nA track started or finished at a free end always takes them from the track it joins"},
 	               {1, STR_C("Like the selected one"), "Takes the textures and the other parameters from the selected track.\nA track started or finished at a free end always takes them from the track it joins"}}))
 		tool.copy_selected = source == 1;
@@ -2479,8 +2464,7 @@ void editor_mode::render_lay_ui()
 			ImGui::SetNextItemWidth(-FLT_MIN);
 			ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
 			auto const slash{Value.find_last_of('/')};
-			auto const preview{Value.empty() || Value == "none" ? std::string{STR_C("No texture")} : slash == std::string::npos ? Value : Value.substr(slash + 1)};
-			if (ImGui::BeginCombo("##texture", preview.c_str(), ImGuiComboFlags_HeightLargest))
+			if (auto const preview{Value.empty() || Value == "none" ? std::string{STR_C("No texture")} : slash == std::string::npos ? Value : Value.substr(slash + 1)}; ImGui::BeginCombo("##texture", preview.c_str(), ImGuiComboFlags_HeightLargest))
 			{
 				if (std::string chosen; track_texture_picker(Kind, Value, false, chosen))
 				{

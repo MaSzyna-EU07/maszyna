@@ -572,8 +572,7 @@ int block_aspects(std::string const &File)
 void suggest(std::string const &File, include_info &Info)
 {
 	template_text text;
-	std::string error;
-	if (false == read_template(File, text, error))
+	if (std::string error; false == read_template(File, text, error))
 	{
 		return;
 	}

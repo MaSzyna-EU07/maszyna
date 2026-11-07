@@ -3336,8 +3336,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		tolerances.push_back(kModel);
 		reaches.push_back(kModel);
 		double distance;
-		auto const beside{nearest(sample.position, distance)};
-		if (no_ground[i] == 0 && distance < kReach && (false == std::isfinite(model[i]) || std::abs(beside - model[i]) <= kLevel) && false == on_other_level(sample.chainage, beside))
+		if (auto const beside{nearest(sample.position, distance)}; no_ground[i] == 0 && distance < kReach && (false == std::isfinite(model[i]) || std::abs(beside - model[i]) <= kLevel) && false == on_other_level(sample.chainage, beside))
 		{
 			chainages.push_back(sample.chainage);
 			ground.push_back(beside);
@@ -3718,8 +3717,7 @@ void editor_mode::nmt_merge_laid(std::unordered_set<TTrack const *> &Laid)
 			auto const &second{next->m_paths.front()};
 			if (glm::distance(first.points[segment_data::point::end], second.points[segment_data::point::start]) > 1e-3)
 				continue;
-			auto const length{geometry::bezier(first).plan_length() + geometry::bezier(second).plan_length()};
-			if (length > geometry::longest_path)
+			if (auto const length{geometry::bezier(first).plan_length() + geometry::bezier(second).plan_length()}; length > geometry::longest_path)
 				continue;
 			auto path{first};
 			path.pieces.clear();
@@ -3797,8 +3795,7 @@ bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
 			continue;
 		auto const &points{track->m_paths.front().points};
 		auto const a{geometry::plan_of(points[segment_data::point::start])};
-		auto const b{geometry::plan_of(points[segment_data::point::end])};
-		if (std::max(a.x, b.x) < low.x || std::min(a.x, b.x) > high.x || std::max(a.y, b.y) < low.y || std::min(a.y, b.y) > high.y)
+		if (auto const b{geometry::plan_of(points[segment_data::point::end])}; std::max(a.x, b.x) < low.x || std::min(a.x, b.x) > high.x || std::max(a.y, b.y) < low.y || std::min(a.y, b.y) > high.y)
 			continue;
 		nmt_sample_paths(*track, around);
 	}
@@ -3943,8 +3940,7 @@ double rise_out(segment_data const &Path, bool const Atend)
 {
 	auto const &points{Path.points};
 	auto const control{points[Atend ? segment_data::point::control2 : segment_data::point::control1]};
-	auto const along{glm::length(geometry::plan_of(control))};
-	if (along > 1e-6)
+	if (auto const along{glm::length(geometry::plan_of(control))}; along > 1e-6)
 		return control.y / along;
 	auto const length{geometry::plan_distance(points[segment_data::point::start], points[segment_data::point::end])};
 	return (points[segment_data::point::end].y - points[segment_data::point::start].y) * (Atend ? -1.0 : 1.0) / std::max(1e-9, length);
@@ -4359,8 +4355,7 @@ void editor_mode::nmt_share_grades()
 		around(timber_places, here.position, kApart, [&](place const &Other) {
 			if (Other.track <= here.track || (here.track->eType != tt_Switch && Other.track->eType != tt_Switch))
 				return;
-			glm::dvec2 const offset{Other.position.x - here.position.x, Other.position.z - here.position.z};
-			if (glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, here.along)) > 0.6 * kSpacing || std::abs(Other.position.y - here.position.y) > kLevel)
+			if (glm::dvec2 const offset{Other.position.x - here.position.x, Other.position.z - here.position.z}; glm::length(offset) >= kTimbers || std::abs(glm::dot(offset, here.along)) > 0.6 * kSpacing || std::abs(Other.position.y - here.position.y) > kLevel)
 				return;
 			++on_timbers;
 			on_surface[here.index] = on_surface[Other.index] = 1;
@@ -4617,9 +4612,8 @@ void editor_mode::nmt_share_grades()
 			else
 			{
 				auto const bend_first{(6.0 * chord - 4.0 * first - 2.0 * last) / length};
-				auto const bend_last{(-6.0 * chord + 2.0 * first + 4.0 * last) / length};
 				// the ends can't be met by one bend: only what a curve is needed for is taken off them, the rest stays at the joints
-				if (bend_first * bend_last < 0.0 || std::min(bend_first, bend_last) < -1.0 / kCrest)
+				if (auto const bend_last{(-6.0 * chord + 2.0 * first + 4.0 * last) / length}; bend_first * bend_last < 0.0 || std::min(bend_first, bend_last) < -1.0 / kCrest)
 				{
 					first = least_bare(first);
 					last = least_bare(last);
@@ -4737,8 +4731,7 @@ void editor_mode::nmt_auto_step()
 				}
 			return false;
 		};
-		auto const next{std::ranges::find_if(state.left, touches)};
-		if (next != state.left.end())
+		if (auto const next{std::ranges::find_if(state.left, touches)}; next != state.left.end())
 			std::rotate(state.left.begin(), next, next + 1);
 		auto *track{state.left.front()};
 		auto const name{track->name()};

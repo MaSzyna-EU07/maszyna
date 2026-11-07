@@ -1004,8 +1004,7 @@ void editor_mode::track_field_finish()
 void editor_mode::track_field_settle()
 {
 	// a field left without being drawn again, the selection gone or folded away: what was typed is taken as it is
-	auto const &edit{m_track_field};
-	if (edit.property < 0 || edit.frame + 1 >= ImGui::GetFrameCount())
+	if (auto const &edit{m_track_field}; edit.property < 0 || edit.frame + 1 >= ImGui::GetFrameCount())
 		return;
 	track_field_finish();
 }
@@ -1278,8 +1277,7 @@ bool editor_mode::texture_field(char const *Label, float const Width, std::strin
 	ImGui::SetNextItemWidth(Width);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
 	auto const slash{Value.find_last_of('/')};
-	auto const preview{none ? std::string{Offer.none != nullptr ? Offer.none : ""} : slash == std::string::npos ? Value : Value.substr(slash + 1)};
-	if (ImGui::BeginCombo(Label, preview.c_str(), ImGuiComboFlags_HeightLargest))
+	if (auto const preview{none ? std::string{Offer.none != nullptr ? Offer.none : ""} : slash == std::string::npos ? Value : Value.substr(slash + 1)}; ImGui::BeginCombo(Label, preview.c_str(), ImGuiComboFlags_HeightLargest))
 	{
 		if (std::string chosen; texture_picker(Offer, Value, false, chosen))
 		{
@@ -1312,8 +1310,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 	auto &cache{m_track_values};
 	// the values are gathered again when the selection or the tracks change, for a large selection not on every frame
 	auto const signature{tracks_signature(Tracks)};
-	auto const stale{cache.signature != signature || cache.generation_seen != cache.generation || cache.history != m_history.size() || Tracks.size() <= kLargeSelection || ImGui::GetFrameCount() - cache.frame > 15};
-	if (stale)
+	if (auto const stale{cache.signature != signature || cache.generation_seen != cache.generation || cache.history != m_history.size() || Tracks.size() <= kLargeSelection || ImGui::GetFrameCount() - cache.frame > 15}; stale)
 	{
 		cache.signature = signature;
 		cache.generation_seen = cache.generation;
@@ -1410,8 +1407,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		auto const &property{list[Index]};
 		auto const &values{cache.values[Index]};
 		auto const current{values.size() == 1 ? std::atoi(values.front().first.c_str()) : -1};
-		auto const preview{current >= 0 && current < static_cast<int>(property.choices.size()) ? std::string{STR_C(property.choices[current])} : format(STR_C("different (%d)"), static_cast<int>(values.size()))};
-		if (ImGui::BeginCombo("##value", preview.c_str()))
+		if (auto const preview{current >= 0 && current < static_cast<int>(property.choices.size()) ? std::string{STR_C(property.choices[current])} : format(STR_C("different (%d)"), static_cast<int>(values.size()))}; ImGui::BeginCombo("##value", preview.c_str()))
 		{
 			for (int i = 0; i < static_cast<int>(property.choices.size()); ++i)
 				if (ImGui::Selectable(STR_C(property.choices[i]), i == current))
@@ -2171,8 +2167,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 	{
 		std::string key;
 		Words >> key;
-		auto const index{track_property_index(key)};
-		if (index >= 0)
+		if (auto const index{track_property_index(key)}; index >= 0)
 			select_tracks(similar_tracks(index, selected_tracks()));
 		WriteLog(format("SELFTEST tracksimilar %s: %zu selected", key.c_str(), selected_tracks().size()));
 		return selftest_result::handled;

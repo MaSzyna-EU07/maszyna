@@ -75,8 +75,7 @@ std::string switch_rejoin(TTrack &Track, std::vector<editor_track::joint> const 
 		if (Handled[i] || joint.other->m_editorremoved)
 			continue;
 		auto const &theirs{joint.other->m_paths[joint.theirs.path]};
-		auto const shift{glm::distance(editor_track::point_position(Track, joint.own), editor_track::point_position(*joint.other, joint.theirs))};
-		if (shift > 0.3 * bezier{theirs}.plan_length())
+		if (auto const shift{glm::distance(editor_track::point_position(Track, joint.own), editor_track::point_position(*joint.other, joint.theirs))}; shift > 0.3 * bezier{theirs}.plan_length())
 		{
 			loose += (loose.empty() ? "" : ", ") + name_of(*joint.other);
 			continue;
@@ -216,8 +215,7 @@ bool editor_mode::switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec
 	if (Shift > 0.0)
 	{
 		auto const a{Line.along(From)};
-		auto const b{Line.along(To)};
-		if (cut_straight(Line, std::min(a, b), std::max(a, b), Edit.states, Edit.created, Edit.removed, nullptr))
+		if (auto const b{Line.along(To)}; cut_straight(Line, std::min(a, b), std::max(a, b), Edit.states, Edit.created, Edit.removed, nullptr))
 			return true;
 		Status = STR_C("The switch would overlap another switch, move it onto plain track");
 		return false;
@@ -459,8 +457,7 @@ void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::e
 			design.end_direction = -outward;
 			design.end_grade = -Branch.laid.start_grade;
 		}
-		auto const &corners{record.result.vertices};
-		if (vertices.size() >= 2 && corners.size() == vertices.size())
+		if (auto const &corners{record.result.vertices}; vertices.size() >= 2 && corners.size() == vertices.size())
 		{
 			// the corner moves along its other leg to the line from the switch
 			auto const corner{corners[k]};
@@ -474,8 +471,7 @@ void editor_mode::lay_switch_branch(switch_branch const &Branch, editor_track::e
 			vertices[k].offset = offset;
 		}
 		// the curve next to the switch takes the shape it was laid with
-		auto const &shape{Branch.laid.vertices.front()};
-		if (shape.compound || vertices[k].compound)
+		if (auto const &shape{Branch.laid.vertices.front()}; shape.compound || vertices[k].compound)
 			vertices[k] = scaled(vertices[k], Branch.factor);
 		else
 		{
@@ -573,8 +569,7 @@ std::string editor_mode::plan_switch_branches(TTrack const &Track, std::vector<e
 	for (auto branch{Branches.begin()}; branch != Branches.end();)
 	{
 		auto const &joint{Joints[branch->joint]};
-		std::string reason;
-		if (false == plan_switch_branch(Track.m_paths[joint.own.path], joint, *branch) || false == tracks_editable(branch->part.tracks, reason))
+		if (std::string reason; false == plan_switch_branch(Track.m_paths[joint.own.path], joint, *branch) || false == tracks_editable(branch->part.tracks, reason))
 		{
 			notes += (notes.empty() ? "" : "\n") + format(STR_C("The curve past the end of the switch can't keep to it, %s follows the switch on its own"), name_of(*joint.other).c_str());
 			branch = Branches.erase(branch);
@@ -780,8 +775,7 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 bool editor_mode::slide_slip(slip_set const &Slip, double const Distance)
 {
 	slip_slide slide;
-	std::string reason;
-	if (false == slip_room(Slip, slide, reason))
+	if (std::string reason; false == slip_room(Slip, slide, reason))
 	{
 		m_switch.status = refused(reason);
 		ui()->set_status(m_switch.status, true);
@@ -1219,8 +1213,7 @@ void editor_mode::draw_switch_slide() const
 	auto const &slide{m_switch.slide};
 	if (false == slide.active || slide.track == nullptr || slide.track->m_paths.size() < 2)
 		return;
-	auto const &mouse{ImGui::GetIO().MousePos};
-	if (glm::length(glm::vec2{mouse.x, mouse.y} - slide.pressed) <= kDragPixels)
+	if (auto const &mouse{ImGui::GetIO().MousePos}; glm::length(glm::vec2{mouse.x, mouse.y} - slide.pressed) <= kDragPixels)
 		return;
 	auto paths{slide.frame.empty() ? editor_track::slid(*slide.track, slide.distance) : bent_switch_paths(*slide.track, slide.frame, slide.station, slide.distance)};
 	if (paths.empty())

@@ -1132,8 +1132,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 														if (glm::length(glm::dvec2{end.points[last].x - entry.end.x, end.points[last].z - entry.end.z}) <= 0.1)
 														{
 															editor_track::route route;
-															std::string error;
-															if (false == editor_track::find_route(track, other, route, error))
+															if (std::string error; false == editor_track::find_route(track, other, route, error))
 															{
 																routes += format(" [%s > %s: none]", track->name().c_str(), other->name().c_str());
 																continue;

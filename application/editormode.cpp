@@ -2053,8 +2053,7 @@ void editor_mode::render_terrain_ui()
         for (std::size_t i = 0; i < water.size(); ++i)
         {
             ImGui::PushID(static_cast<int>(i));
-            auto const material = water[i].material.empty() ? std::string(STR_C("default material")) : water[i].material;
-            if (ImGui::Selectable(format(STR_C("%s, %.2f m, %zu points, %s"), water[i].name.c_str(), water[i].level, water[i].outline.size(), material.c_str()).c_str(), static_cast<int>(i) == m_water_selected))
+            if (auto const material = water[i].material.empty() ? std::string(STR_C("default material")) : water[i].material; ImGui::Selectable(format(STR_C("%s, %.2f m, %zu points, %s"), water[i].name.c_str(), water[i].level, water[i].outline.size(), material.c_str()).c_str(), static_cast<int>(i) == m_water_selected))
                 m_water_selected = static_cast<int>(i);
             // a texture dropped on an entry becomes the material of that water
             std::string name;
@@ -3348,8 +3347,7 @@ void editor_mode::set_include_directive(scene::instance_handle const Instance, s
 {
     m_drives_standing.reset();
     std::string file;
-    std::vector<std::string> values;
-    if (scene::Layers.tracked(Instance) && editor_includes::parse_directive(Directive, file, values) && scene::Layers.instance(Instance).file != nullptr &&
+    if (std::vector<std::string> values; scene::Layers.tracked(Instance) && editor_includes::parse_directive(Directive, file, values) && scene::Layers.instance(Instance).file != nullptr &&
         editor_includes::normalized(file) == editor_includes::normalized(*scene::Layers.instance(Instance).file))
         file.clear();
     if (false == scene::Layers.modify(Instance, Directive, file))
@@ -3910,8 +3908,7 @@ void editor_mode::render_base_layers()
 
     // the orthophoto at the bottom, its settings opened here from the map menu too
     ImGui::PushID("orthophoto");
-    bool enabled{m_orthophoto.enabled()};
-    if (ImGui::Checkbox("##visible", &enabled))
+    if (bool enabled{m_orthophoto.enabled()}; ImGui::Checkbox("##visible", &enabled))
         choose_orthophoto(enabled);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
@@ -4083,8 +4080,7 @@ void editor_mode::update_wms_layers()
     for (std::size_t i = 0; i < m_wms.size(); ++i)
     {
         auto &layer{*m_wms[i]};
-        auto config{layer.settings()};
-        if (config.north != base.north || config.east != base.east || config.radius != base.radius || config.drape != base.drape || config.lift != base.lift || config.height != base.height ||
+        if (auto config{layer.settings()}; config.north != base.north || config.east != base.east || config.radius != base.radius || config.drape != base.drape || config.lift != base.lift || config.height != base.height ||
             config.opacity != stored[i].opacity)
         {
             config.north = base.north;
@@ -6287,8 +6283,7 @@ void editor_mode::render_gizmo_options()
         m_track_tab != track_tab::lineside)
         return;
     auto &enabled{ui()->mode() == nodebank_panel::TRACK ? m_track_gizmo_on : m_gizmo_enabled};
-    int op{enabled ? static_cast<int>(m_gizmo_op) : -1};
-    if (segmented("gizmo", op,
+    if (int op{enabled ? static_cast<int>(m_gizmo_op) : -1}; segmented("gizmo", op,
                   {{-1, STR_C("Off"), "The gizmo hidden: the selected things won't move by chance"},
                    {static_cast<int>(gizmo_operation::translate), STR_C("Translate (Q)"), "Arrows which move the selected thing"},
                    {static_cast<int>(gizmo_operation::rotate), STR_C("Rotate (W)"), "Rings which turn the selected thing"},
@@ -6720,8 +6715,7 @@ void editor_mode::update_camera(double const Deltatime)
 
     // a camera at no finite place, as a zoom or a framing aimed at a broken path could put it, draws nothing sane and can
     // stall the graphics card: it goes back to where it last was
-    auto const number = [](auto const &Vector) { return false == glm::any(glm::isnan(Vector)) && false == glm::any(glm::isinf(Vector)); };
-    if (number(Camera.Pos) && number(Camera.Angle))
+    if (auto const number = [](auto const &Vector) { return false == glm::any(glm::isnan(Vector)) && false == glm::any(glm::isinf(Vector)); }; number(Camera.Pos) && number(Camera.Angle))
     {
         m_camera_finite_pos = Camera.Pos;
         m_camera_finite_angle = Camera.Angle;
@@ -7782,8 +7776,7 @@ void editor_mode::render_top_tracks_choice(bool const Combo)
     if (chosen < 2)
         return;
     ImGui::SameLine();
-    auto colour{ImGui::ColorConvertU32ToFloat4(EditorSettings.top_rails())};
-    if (ImGui::ColorEdit3("##toprails", &colour.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
+    if (auto colour{ImGui::ColorConvertU32ToFloat4(EditorSettings.top_rails())}; ImGui::ColorEdit3("##toprails", &colour.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel))
     {
         EditorSettings.top_rails(ImGui::ColorConvertFloat4ToU32(ImVec4(colour.x, colour.y, colour.z, 1.0f)));
         EditorSettings.save();

@@ -999,8 +999,7 @@ void editor_mode::draw_track_labels() const
 		if (best == std::numeric_limits<float>::max())
 			continue;
 		taken.emplace_back(from, to);
-		ImVec2 const middle{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
-		if (std::hypot(middle.x - nearest.x, middle.y - nearest.y) > 1.0f)
+		if (ImVec2 const middle{(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f}; std::hypot(middle.x - nearest.x, middle.y - nearest.y) > 1.0f)
 		{
 			ImVec2 const end{std::clamp(at.x, from.x, to.x), std::clamp(at.y, from.y, to.y)};
 			auto const lead{(label.colour & 0x00ffffffu) | (170u << 24)};
@@ -1112,8 +1111,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.snap = lay.mouse_snap;
 			intent.track = lay.mouse_snap.track;
 			intent.position = lay.mouse_snap.position;
-			auto const diverging{lay.mouse_snap.track->eType == tt_Switch && lay.mouse_snap.point == editor_track::point_ref{1, editor_track::point_kind::end}};
-			if (lay.points.empty() && diverging && m_track_layout != track_layout::straight)
+			if (auto const diverging{lay.mouse_snap.track->eType == tt_Switch && lay.mouse_snap.point == editor_track::point_ref{1, editor_track::point_kind::end}}; lay.points.empty() && diverging && m_track_layout != track_layout::straight)
 				return make(kind::lay_end, "Click: start from this free end, drag: the curve of the switch goes on");
 			return make(kind::lay_end, lay.points.empty() ? "Click: start from this free end, drag: lead a track out of it" : "Click: join this end and lay");
 		}
@@ -1154,8 +1152,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		}
 		if (auto const *armed{signal_armed()}; armed != nullptr)
 		{
-			signal_spot spot;
-			if (m_hover.track != nullptr && signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
+			if (signal_spot spot; m_hover.track != nullptr && signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
 			{
 				intent.track = m_hover.track;
 				intent.path = m_hover.path;
@@ -1333,8 +1330,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.path = m_hover.path;
 		intent.position = m_hover.point;
 		// one bent into a curve slides along the curve
-		auto const bent{m_hover.track->eType == tt_Switch && m_hover.track->m_paths.size() == 2 && geometry::has_controls(m_hover.track->m_paths.front())};
-		if (bent)
+		if (auto const bent{m_hover.track->eType == tt_Switch && m_hover.track->m_paths.size() == 2 && geometry::has_controls(m_hover.track->m_paths.front())}; bent)
 			return make(kind::switch_slide, m_track_tab == track_tab::path ? "Click: select this switch, drag: slide it along the curve" : "Click: edit this switch, drag: slide it along the curve");
 		return make(kind::switch_slide, m_track_tab == track_tab::path ? "Click: select this switch, drag: slide it along the straight" : "Click: edit this switch, drag: slide it along the straight");
 	}
@@ -1806,8 +1802,7 @@ void editor_mode::render_track_context()
 		copy_track_style(*track);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The inspector lists what they change on the selected tracks, From another track or a preset"));
-	auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}};
-	if (ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, false == m_track_style.values.empty()))
+	if (auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}}; ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, false == m_track_style.values.empty()))
 		paste_track_style(tracks);
 	if (false == m_track_style.values.empty() && ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_track_style.from.c_str());
@@ -2333,8 +2328,7 @@ void editor_mode::draw_track_set() const
 		drawlist->AddRectFilled(from, io.MousePos, IM_COL32(255, 160, 40, 40));
 		drawlist->AddRect(from, io.MousePos, IM_COL32(255, 160, 40, 220), 0.0f, 0, 1.5f);
 	}
-	auto const *listed{m_track_list_hover_frame >= ImGui::GetFrameCount() - 1 ? m_track_list_hover : nullptr};
-	if (listed != nullptr && false == listed->m_editorremoved)
+	if (auto const *listed{m_track_list_hover_frame >= ImGui::GetFrameCount() - 1 ? m_track_list_hover : nullptr}; listed != nullptr && false == listed->m_editorremoved)
 		for (auto const &path : listed->m_paths)
 		{
 			bezier const curve{path};

@@ -943,8 +943,7 @@ void node_layers::scan(layer_handle const Layer)
 			std::string text;
 			char const *taken{nullptr};
 			bool moved{false};
-			auto const mark{std::ranges::find_if(editormarks, [&](char const *Mark) { return marked_text(Mark, text); })};
-			if (mark != editormarks.end())
+			if (auto const mark{std::ranges::find_if(editormarks, [&](char const *Mark) { return marked_text(Mark, text); })}; mark != editormarks.end())
 			{
 				taken = (editor_line(*mark, text) ? *mark : nullptr);
 			}

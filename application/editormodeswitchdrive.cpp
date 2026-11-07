@@ -486,8 +486,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 			continue;
 		auto name{scene::Layers.layer(layer).name};
 		std::ranges::replace(name, '\\', '/');
-		auto const lower{ToLower(name)};
-		if (lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_dzioby.scm"))
+		if (auto const lower{ToLower(name)}; lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_dzioby.scm"))
 			continue;
 		if (nose_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
 			WriteLog("Editor: " + name + " left out of the scenery, the keys by the movable noses are in " + file + " now");

@@ -182,8 +182,7 @@ bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vec
 				return radius > 0.0 ? 1.0 / radius : 0.0;
 			};
 			auto const start{curvature_at(0.0)};
-			auto const end{curvature_at(1.0)};
-			if (std::abs(start - end) <= 0.1 * std::max(start, end))
+			if (auto const end{curvature_at(1.0)}; std::abs(start - end) <= 0.1 * std::max(start, end))
 				Pieces.push_back({length, curvature_at(0.5), curvature_at(0.5)});
 			else
 				Pieces.push_back({length, start, end});
@@ -842,8 +841,7 @@ surface_foot foot_on(segment_data const &Path, glm::dvec3 const &Position)
 	foot.base = curve.point(foot.t);
 	auto const tangent{curve.first(foot.t)};
 	auto const plan{plan_of(tangent)};
-	auto const run{glm::length(plan)};
-	if (run > 1e-9)
+	if (auto const run{glm::length(plan)}; run > 1e-9)
 	{
 		foot.direction = plan / run;
 		foot.grade = tangent.y / run;
@@ -962,8 +960,7 @@ void editor_track::settle_controls(TTrack &Track, std::vector<int> const &Paths)
 		auto const axis{chord / length};
 		auto const &control1{path.points[segment_data::point::control1]};
 		auto const &control2{path.points[segment_data::point::control2]};
-		auto const off = [&](glm::dvec3 const &Control) { return glm::length(Control - axis * glm::dot(Control, axis)); };
-		if (glm::dot(control1, axis) <= 0.0 || glm::dot(control2, axis) >= 0.0 || off(control1) > 1e-3 || off(control2) > 1e-3)
+		if (auto const off = [&](glm::dvec3 const &Control) { return glm::length(Control - axis * glm::dot(Control, axis)); }; glm::dot(control1, axis) <= 0.0 || glm::dot(control2, axis) >= 0.0 || off(control1) > 1e-3 || off(control2) > 1e-3)
 			continue;
 		path.points[segment_data::point::control1] = glm::dvec3{};
 		path.points[segment_data::point::control2] = glm::dvec3{};
@@ -1934,8 +1931,7 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 				continue;
 			}
 			inside = inside || straight;
-			auto const radius{2.0 / (piece.from + piece.to)};
-			if (false == designedarcs.empty() && between < 1e-6 && std::abs(designedarcs.back().radius - radius) <= 0.02 * radius)
+			if (auto const radius{2.0 / (piece.from + piece.to)}; false == designedarcs.empty() && between < 1e-6 && std::abs(designedarcs.back().radius - radius) <= 0.02 * radius)
 				designedarcs.back().turn += piece.length / radius;
 			else
 				designedarcs.push_back({radius, piece.length / radius, designedarcs.empty() ? 0.0 : between});
@@ -2051,8 +2047,7 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		for (auto i = First; i <= Last; ++i)
 			run.emplace_back(Chain.tracks[i], Chain.forward[i]);
 		analyse_curve(run, Gauge, vertex.shape);
-		auto &shape{vertex.shape};
-		if (false == shape.designed.has_value() && false == shape.compound && shape.reversals == 0)
+		if (auto &shape{vertex.shape}; false == shape.designed.has_value() && false == shape.compound && shape.reversals == 0)
 		{
 			auto const pieces = [&](double const Length, bool const Fromstart) {
 				std::size_t count{0};

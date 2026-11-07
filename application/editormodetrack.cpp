@@ -1520,8 +1520,7 @@ void editor_mode::render_path_ui()
 				auto const kind{m_track_point.kind};
 				if (editor_track::is_end(kind))
 				{
-					auto position = path.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end];
-					if (ImGui::DragScalarN("x, y, z##point", ImGuiDataType_Double, glm::value_ptr(position), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(position))
+					if (auto position = path.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end]; ImGui::DragScalarN("x, y, z##point", ImGuiDataType_Double, glm::value_ptr(position), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(position))
 						editor_track::move_point(*track, m_track_point, position);
 					item_tooltip("Drag to move, Ctrl+click to type the value");
 					finish_edit(rebuild::geometry);
@@ -1529,8 +1528,7 @@ void editor_mode::render_path_ui()
 				else
 				{
 					auto &vector{path.points[kind == editor_track::point_kind::control1 ? segment_data::point::control1 : segment_data::point::control2]};
-					auto typed{vector};
-					if (ImGui::DragScalarN(STR_C("vector##point"), ImGuiDataType_Double, glm::value_ptr(typed), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(typed) && glm::length(typed) < 1e5)
+					if (auto typed{vector}; ImGui::DragScalarN(STR_C("vector##point"), ImGuiDataType_Double, glm::value_ptr(typed), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(typed) && glm::length(typed) < 1e5)
 						vector = typed;
 					item_tooltip("Control vector, relative to its end; zero for a straight");
 					finish_edit(rebuild::geometry);

@@ -1615,8 +1615,7 @@ void terrain_streamer::modifier(heightmap::modifier Modifier)
 {
 	remember_manifest();
 	auto bounds{Modifier.bounds()};
-	auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Modifier.name; })};
-	if (existing != m_manifest.modifiers.end())
+	if (auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Modifier.name; })}; existing != m_manifest.modifiers.end())
 	{
 		// the ground it changed before is led anew as well
 		auto const old{existing->bounds()};

@@ -69,8 +69,7 @@ std::vector<double> editor_mode::switch_memo_key() const
 
 std::vector<segment_data> editor_mode::switch_preview() const
 {
-	auto key{switch_memo_key()};
-	if (false == m_switch_memo.fresh(key))
+	if (auto key{switch_memo_key()}; false == m_switch_memo.fresh(key))
 		m_switch_memo.keep(std::move(key), switch_preview_now());
 	return m_switch_memo.result;
 }
@@ -690,8 +689,7 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 {
 	auto const from{From};
 	auto const to{To};
-	std::string reason;
-	if (false == tracks_editable(Line.tracks, reason))
+	if (std::string reason; false == tracks_editable(Line.tracks, reason))
 	{
 		m_switch.status = refused(reason);
 		std::vector<segment_data> paths;
@@ -881,8 +879,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	auto const side{lateral > 0.0 ? 1.0 : -1.0};
 	auto const &control{(diverging.pieces.empty() ? diverging : diverging.pieces.back()).points[segment_data::point::control2]};
 	auto const tangent{glm::normalize(control != glm::dvec3{} ? -plan_of(control) : plan_of(frog - origin))};
-	auto const angle{std::atan2(std::abs(cross(axis, tangent)), glm::dot(axis, tangent))};
-	if (angle < 1e-4)
+	if (auto const angle{std::atan2(std::abs(cross(axis, tangent)), glm::dot(axis, tangent))}; angle < 1e-4)
 		return false;
 
 	auto const ground{tool.mouse};
@@ -1318,8 +1315,7 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 					{
 						auto const next{straight ? plan_of(path.points[segment_data::point::end]) : plan_of(curve.point(static_cast<double>(i) / pieces))};
 						auto const segment{next - previous};
-						auto const determinant{cross(Line.direction, segment)};
-						if (std::abs(determinant) > 1e-9)
+						if (auto const determinant{cross(Line.direction, segment)}; std::abs(determinant) > 1e-9)
 						{
 							auto const offset{previous - plan_of(Line.start)};
 							auto const along{cross(offset, segment) / determinant};
@@ -1457,8 +1453,7 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 	}
 	auto const alongfirst{glm::dot(crossing - plan_of(Line.start), Line.direction)};
 	auto const alongsecond{glm::dot(crossing - plan_of(second.start), second.direction)};
-	auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5};
-	if (false == shaped(angle, available))
+	if (auto const available{std::min({alongfirst, Line.length - alongfirst, alongsecond, second.length - alongsecond}) - 0.5}; false == shaped(angle, available))
 		return false;
 	auto const half{Plan.half};
 	auto const heightfirst = [&](double const Along) { return Line.start.y + Line.grade * Along; };
@@ -1543,8 +1538,7 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	if (false == cut_straight(Line, alongfirst - reach, alongfirst + reach, states, created, removed, &style))
 		return false;
 	auto const secondline{other != nullptr ? editor_track::find_straight(*other, m_straights.tolerance) : editor_track::straight{}};
-	auto const secondalong{other != nullptr ? glm::dot(crossing - plan_of(secondline.start), secondline.direction) : 0.0};
-	if (other != nullptr && (secondline.tracks.empty() || false == cut_straight(secondline, secondalong - half, secondalong + half, states, created, removed, nullptr)))
+	if (auto const secondalong{other != nullptr ? glm::dot(crossing - plan_of(secondline.start), secondline.direction) : 0.0}; other != nullptr && (secondline.tracks.empty() || false == cut_straight(secondline, secondalong - half, secondalong + half, states, created, removed, nullptr)))
 	{
 		for (auto *track : created)
 			editor_track::retire(*track);
@@ -1893,8 +1887,7 @@ double editor_mode::curved_switch_start(int const Direction, std::string *What) 
 		what = STR("The switch drawn to the joint of the tracks");
 	}
 	// a start which would put the switch off the curve isn't one
-	auto const total{tool.frame.back().station};
-	if (Direction > 0 ? start < 0.0 || start > total - length : start < length || start > total)
+	if (auto const total{tool.frame.back().station}; Direction > 0 ? start < 0.0 || start > total - length : start < length || start > total)
 		return tool.pressed;
 	if (What != nullptr)
 		*What = what;
@@ -1934,8 +1927,7 @@ std::vector<segment_data> split_along(segment_data const &Path, double const Alo
 	for (auto const &piece : pieces)
 	{
 		auto const &start{piece.points[segment_data::point::start]};
-		auto const &end{piece.points[segment_data::point::end]};
-		if (start.z > Along - 1e-3 || end.z < Along + 1e-3)
+		if (auto const &end{piece.points[segment_data::point::end]}; start.z > Along - 1e-3 || end.z < Along + 1e-3)
 		{
 			result.push_back(piece);
 			continue;
@@ -2081,8 +2073,7 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 		auto const &local{locals[i]};
 		auto path{frame_path(local, Frame, Station, Direction, Side, frog)};
 		// the tracks of a switch bent up to the frog in pieces: the bent one and the straight one over the frog
-		auto const pieces{frog.has_value() && i < 2 ? split_along(local, *frog) : local.pieces};
-		if (pieces.size() >= 2 || false == local.pieces.empty())
+		if (auto const pieces{frog.has_value() && i < 2 ? split_along(local, *frog) : local.pieces}; pieces.size() >= 2 || false == local.pieces.empty())
 			for (auto const &piece : pieces)
 				path.pieces.push_back(frame_path(piece, Frame, Station, Direction, Side, frog));
 		// the main tracks follow the curve they are laid into
@@ -2124,12 +2115,10 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 			if (candidate->m_editorremoved || candidate->eType != tt_Normal)
 				continue;
 			auto const t{editor_track::nearest_parameter(*candidate, point)};
-			auto const found{editor_track::point_at(*candidate, t)};
-			if (plan_distance(found, point) > 0.05)
+			if (auto const found{editor_track::point_at(*candidate, t)}; plan_distance(found, point) > 0.05)
 				continue;
 			auto const &own{candidate->m_paths.front()};
-			auto const atjoint{std::min(plan_distance(own.points[segment_data::point::start], point), plan_distance(own.points[segment_data::point::end], point)) < kJointSnap};
-			if (false == atjoint && t > 0.002 && t < 0.998)
+			if (auto const atjoint{std::min(plan_distance(own.points[segment_data::point::start], point), plan_distance(own.points[segment_data::point::end], point)) < kJointSnap}; false == atjoint && t > 0.002 && t < 0.998)
 			{
 				keep(*candidate);
 				if (auto *second{editor_track::split_path(*candidate, t)})
@@ -2168,8 +2157,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 				continue;
 			for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
 			{
-				auto const off{plan_distance(candidate->m_paths.front().points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], target)};
-				if (off < 1e-4 || off > kJointSnap)
+				if (auto const off{plan_distance(candidate->m_paths.front().points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], target)}; off < 1e-4 || off > kJointSnap)
 					continue;
 				keep(*candidate);
 				editor_track::move_point(*candidate, {0, kind}, target);
@@ -2256,8 +2244,7 @@ std::vector<std::string> editor_mode::free_switch_exits(std::vector<segment_data
 
 bool editor_mode::free_switch_bend(free_bend &Bend) const
 {
-	auto key{switch_memo_key()};
-	if (false == m_bend_memo.fresh(key))
+	if (auto key{switch_memo_key()}; false == m_bend_memo.fresh(key))
 	{
 		free_bend bend;
 		auto const bent{free_switch_bend_now(bend)};

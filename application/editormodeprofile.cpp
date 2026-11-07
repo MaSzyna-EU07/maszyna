@@ -531,8 +531,7 @@ bool editor_mode::profile_restore_parts()
 			{
 				if (sample.chainage < low - 0.25 || sample.chainage > high + 0.25)
 					continue;
-				auto const designed{profile::elevation(entry.line, std::clamp(local(sample.chainage), 0.0, entry.length))};
-				if (std::abs(designed - sample.position.y) <= kStale)
+				if (auto const designed{profile::elevation(entry.line, std::clamp(local(sample.chainage), 0.0, entry.length))}; std::abs(designed - sample.position.y) <= kStale)
 					continue;
 				if (false == stale.empty() && sample.chainage - stale.back().second <= kStaleMargin)
 					stale.back().second = sample.chainage;
@@ -735,8 +734,7 @@ std::optional<editor_track::route> editor_mode::profile_stored_route(stored_prof
 				return false == samples.empty() && std::abs(Route.length - Entry.length) <= 0.5 && plan_distance(samples.front().position, Entry.start) <= 0.1 && plan_distance(editor_track::sampled_position(samples, Route.length * 0.5), Entry.middle) <= 0.5;
 			};
 			editor_track::route route;
-			std::string error;
-			if ((false == editor_track::find_route(from, to, route, error) || false == fits(route)) && (false == editor_track::find_route_along(from, to, Entry.length, Entry.middle, route) || false == fits(route)))
+			if (std::string error; (false == editor_track::find_route(from, to, route, error) || false == fits(route)) && (false == editor_track::find_route_along(from, to, Entry.length, Entry.middle, route) || false == fits(route)))
 				continue;
 			if (From != nullptr)
 				*From = from;
@@ -941,8 +939,7 @@ void editor_mode::profile_follow_selection()
 	state.followed = tracks;
 	if (tracks.empty())
 		return;
-	auto const on_route{std::ranges::any_of(state.route.spans, [&](editor_track::route_span const &Span) { return Span.track == tracks.front(); })};
-	if (tracks.size() == 1 && on_route)
+	if (auto const on_route{std::ranges::any_of(state.route.spans, [&](editor_track::route_span const &Span) { return Span.track == tracks.front(); })}; tracks.size() == 1 && on_route)
 		return;
 	if (state.changed)
 		profile_store();
@@ -1827,8 +1824,7 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 		if (false == gap.closed)
 			state.status += format("\n  %s -> %s: %+.3f m", name(gap.track).c_str(), name(gap.neighbour).c_str(), gap.gap);
 	// the tracks on the other side of the crossovers of the route go up and down with it
-	auto const followed{follow_crossovers(before)};
-	if (followed > 0)
+	if (auto const followed{follow_crossovers(before)}; followed > 0)
 		state.status += format(STR_C("\nThe tracks across %zu crossover(s) followed the change"), followed);
 	// a line fitted to the terrain model goes by itself: the ones sharing its grade line are worked out after them all
 	if (auto const beside{state.fitting ? std::size_t{0} : grade_line_follow(before)}; beside > 0)

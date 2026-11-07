@@ -133,8 +133,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 		for (std::size_t plus; (plus = word.find('+', from)) != std::string::npos && plus > from; from = plus + 1)
 			parts.push_back(word.substr(from, plus - from));
 		parts.push_back(word.substr(from));
-		bool const all{std::ranges::all_of(parts, [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })};
-		if (false == all || (parts.size() == 1 && words.empty() == false && words.back().what == gesture_word::kind::text && false == key(parts[0]) && mouse(parts[0]).empty()))
+		if (bool const all{std::ranges::all_of(parts, [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })}; false == all || (parts.size() == 1 && words.empty() == false && words.back().what == gesture_word::kind::text && false == key(parts[0]) && mouse(parts[0]).empty()))
 		{
 			text += (text.empty() ? "" : " ") + word;
 			continue;

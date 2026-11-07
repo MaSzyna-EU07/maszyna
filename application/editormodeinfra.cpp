@@ -807,8 +807,7 @@ void editor_mode::infra_store()
 	for (auto const &binding : m_bindings)
 	{
 		std::vector<glm::dvec3> points;
-		std::optional<double> yaw;
-		if (binding.adopted || binding.anchors.empty() || false == object_points(binding, points, yaw))
+		if (std::optional<double> yaw; binding.adopted || binding.anchors.empty() || false == object_points(binding, points, yaw))
 			continue;
 		auto layer{scene::Layers.resolve(binding.anchors.front().at.track->layer())};
 		if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
@@ -1173,8 +1172,7 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 
 void editor_mode::infra_adopt(TTrack &Track)
 {
-	auto const revision{history_revision()};
-	if (revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
+	if (auto const revision{history_revision()}; revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
 	{
 		m_point_objects_revision = revision;
 		m_point_objects_count = scene::Layers.instance_count();
@@ -1279,8 +1277,7 @@ void editor_mode::infra_adopt(TTrack &Track)
 		if (object.reader == nullptr && object.nearest != &Track)
 			continue;
 		infra::station station;
-		bool interior;
-		if (infra::project(Track, object.location, station, interior) > kAdoptReach || false == beside(station, object.location, interior))
+		if (bool interior; infra::project(Track, object.location, station, interior) > kAdoptReach || false == beside(station, object.location, interior))
 			continue;
 		std::vector<glm::dvec3> points;
 		std::optional<double> yaw;

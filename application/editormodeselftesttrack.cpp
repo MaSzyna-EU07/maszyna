@@ -204,8 +204,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			if (track != nullptr)
 				name = track->name();
 		}
-		editor_track::curve curve;
-		if (track != nullptr && editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
+		if (editor_track::curve curve; track != nullptr && editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
 		{
 			std::string arcs;
 			for (auto const &arc : curve.arcs)
@@ -452,8 +451,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				auto const e{alignment_store::describe(records[found->record].result.elements[found->element])};
 				text += format("alignment %d element %d %s R %.3f -> %.3f, offset %.4f", found->record, found->element, e.kind.c_str(), e.radius_start, e.radius_end, found->offset);
 			}
-			editor_track::curve curve;
-			if (editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
+			if (editor_track::curve curve; editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve))
 				text += format(" | curve R %.3f L %.3f / %.3f cant %.1f compound %d arcs %zu %s", curve.radius, curve.transition_in, curve.transition_out, curve.cant, curve.compound ? 1 : 0, curve.arcs.size(), curve.designed.has_value() ? "designed" : "recognized");
 			WriteLog(text);
 		}
@@ -571,8 +569,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		{
 			int index{-1};
 			words >> index;
-			auto &points{state.line.points};
-			if (index <= 0 || index + 1 >= static_cast<int>(points.size()) || points[index].joint)
+			if (auto &points{state.line.points}; index <= 0 || index + 1 >= static_cast<int>(points.size()) || points[index].joint)
 			{
 				WriteLog(format("SELFTEST vprofiledel: point %d can't be taken out", index));
 				return selftest_result::handled;
@@ -642,8 +639,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		auto *track{simulation::Paths.find(name)};
 		editor_track::curve curve;
 		editor_track::chain chain;
-		std::string error;
-		if (track == nullptr || false == editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
+		if (std::string error; track == nullptr || false == editor_track::find_curve(*track, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
 		{
 			WriteLog("SELFTEST backwardcurve: no curve at " + name);
 			return selftest_result::handled;

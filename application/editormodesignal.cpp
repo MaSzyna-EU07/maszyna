@@ -681,8 +681,7 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 		{
 			bezier const curve{Track->m_paths[p]};
 			auto const low{glm::min(glm::min(plan_of(curve.p0), plan_of(curve.p1)), glm::min(plan_of(curve.p2), plan_of(curve.p3)))};
-			auto const high{glm::max(glm::max(plan_of(curve.p0), plan_of(curve.p1)), glm::max(plan_of(curve.p2), plan_of(curve.p3)))};
-			if (glm::length(glm::max(glm::max(low - plan_of(location), plan_of(location) - high), glm::dvec2{0.0})) >= best)
+			if (auto const high{glm::max(glm::max(plan_of(curve.p0), plan_of(curve.p1)), glm::max(plan_of(curve.p2), plan_of(curve.p3)))}; glm::length(glm::max(glm::max(low - plan_of(location), plan_of(location) - high), glm::dvec2{0.0})) >= best)
 				continue;
 			auto const distance{geometry::plan_distance(curve.point(nearest_on(*Track, p, location)), location)};
 			if (distance < best)
@@ -700,8 +699,7 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 	if (track == nullptr)
 		return false;
 	auto const axis{bezier{track->m_paths[path]}.point(nearest_on(*track, path, location))};
-	auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(Standing.include.yaw))) >= 0.0 ? 1 : -1};
-	if (false == signal_drop_at(Standing, *track, path, location, side, Spot))
+	if (auto const side{glm::dot(plan_of(location) - plan_of(axis), right_of(travel_of(Standing.include.yaw))) >= 0.0 ? 1 : -1}; false == signal_drop_at(Standing, *track, path, location, side, Spot))
 		return false;
 	Spot.offset = geometry::plan_distance(location, axis);
 	Spot.position = location;
@@ -722,8 +720,7 @@ void editor_mode::signal_release()
 	if (false == tool.moving)
 		return;
 	tool.moving = false;
-	auto const &mouse{ImGui::GetIO().MousePos};
-	if (glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
+	if (auto const &mouse{ImGui::GetIO().MousePos}; glm::length(glm::vec2{mouse.x, mouse.y} - tool.pressed) <= kDragStart)
 		return;
 	if (false == tool.moved_valid)
 	{
@@ -747,8 +744,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	auto const &included{scene::Layers.instance(instance)};
 	auto file{*included.file};
 	signal_spot before;
-	auto const *item{signal_template_of(Standing.include.file)};
-	if (item != nullptr && signal_standing_spot(Standing, before) && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
+	if (auto const *item{signal_template_of(Standing.include.file)}; item != nullptr && signal_standing_spot(Standing, before) && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
 		file = signal_variant(*item, Spot);
 	auto values{Standing.include.values};
 	auto const local{Spot.position - included.context.offset};
@@ -978,8 +974,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 		item.values["#6"] = plate_for(tool.plate, name);
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
-	std::string error;
-	if (place_templates({item}, error, output_layer("srk")) == 0)
+	if (std::string error; place_templates({item}, error, output_layer("srk")) == 0)
 	{
 		tool.status = refused(STR_C("The signal couldn't be placed: ") + error);
 		return false;
@@ -1238,11 +1233,9 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 			// or one without a circuit
 			for (auto *track : candidates)
 			{
-				auto const made{std::ranges::find(Created, track) != Created.end()};
-				if ((false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, old, 2.0))
+				if (auto const made{std::ranges::find(Created, track) != Created.end()}; (false == made && false == track->Isolated.empty()) || false == plan_overlaps(*track, old, 2.0))
 					continue;
-				auto const same{track->Isolated.size() == record.circuits.size() && std::equal(record.circuits.begin(), record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })};
-				if (same)
+				if (auto const same{track->Isolated.size() == record.circuits.size() && std::equal(record.circuits.begin(), record.circuits.end(), track->Isolated.begin(), [](std::string const &Name, TIsolated const *Isolated) { return Isolated != nullptr && ToLower(Isolated->asName) == ToLower(Name); })}; same)
 					continue;
 				std::size_t on{0};
 				std::size_t all{0};
@@ -1530,8 +1523,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 	{
 		auto const before{scene::Layers.directive(instance)};
 		std::string file;
-		std::vector<std::string> standing;
-		if (false == editor_includes::parse_directive(before, file, standing))
+		if (std::vector<std::string> standing; false == editor_includes::parse_directive(before, file, standing))
 			continue;
 		if (auto const directive{editor_includes::compose_directive(file, values)}; directive != before)
 		{
@@ -1592,8 +1584,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		auto const *standing{signal_standing_of(instance)};
 		auto const *item{standing != nullptr ? signal_template_of(standing->include.file) : nullptr};
 		std::string file;
-		std::vector<std::string> values;
-		if (item != nullptr && false == item->read.empty() && editor_includes::parse_directive(scene::Layers.directive(instance), file, values))
+		if (std::vector<std::string> values; item != nullptr && false == item->read.empty() && editor_includes::parse_directive(scene::Layers.directive(instance), file, values))
 		{
 			std::vector<std::pair<TTrack *, editor_track::state>> states;
 			signal_detach_events(editor_includes::substitute(item->read, values), states);
@@ -1750,8 +1741,7 @@ void editor_mode::render_signal_palette()
 			auto const &item{tool.templates[i]};
 			if (item.kind != current->kind || group_of(item.mount, item.lamps, item.arms) != key)
 				continue;
-			auto const label{item.name + (item.lean == "left" ? std::string{"  \xE2\x86\x96"} : item.lean == "right" ? std::string{"  \xE2\x86\x97"} : std::string{}) + "##" + item.file};
-			if (ImGui::Selectable(label.c_str(), &item == current))
+			if (auto const label{item.name + (item.lean == "left" ? std::string{"  \xE2\x86\x96"} : item.lean == "right" ? std::string{"  \xE2\x86\x97"} : std::string{}) + "##" + item.file}; ImGui::Selectable(label.c_str(), &item == current))
 				tool.chosen[tool.kind] = i;
 			if (ImGui::IsItemHovered() && false == item.description.empty())
 				ImGui::SetTooltip("%s\n%s", item.description.c_str(), item.file.c_str());

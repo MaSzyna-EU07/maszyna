@@ -3604,8 +3604,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		for (std::size_t k = 0; k < line.points.size() && k < line.distances.size() && k < line.owners.size(); ++k)
 		{
 			auto const *track{line.owners[k] < line.tracks.size() ? line.tracks[line.owners[k]] : nullptr};
-			auto const name{track == nullptr || track->Isolated.empty() ? std::string{} : track->Isolated.front()->asName};
-			if (row.sections.empty() || row.sections.back().name != name)
+			if (auto const name{track == nullptr || track->Isolated.empty() ? std::string{} : track->Isolated.front()->asName}; row.sections.empty() || row.sections.back().name != name)
 				row.sections.push_back({line.distances[k], line.distances[k], name});
 			row.sections.back().to = line.distances[k];
 			if (k > 0 && row.sections.size() > 1 && row.sections.back().from == line.distances[k])
@@ -3689,8 +3688,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 				{
 					auto const ahead{plan(target.position - end)};
 					auto const along{glm::dot(ahead, way)};
-					auto const direction{plan(target.direction)};
-					if (along < 5.0 || along < glm::length(ahead) * 0.8 || glm::length(direction) < 1e-9 || std::abs(glm::dot(glm::normalize(direction), way)) < 0.7)
+					if (auto const direction{plan(target.direction)}; along < 5.0 || along < glm::length(ahead) * 0.8 || glm::length(direction) < 1e-9 || std::abs(glm::dot(glm::normalize(direction), way)) < 0.7)
 						continue;
 					m_problems.push_back({format(STR_C("The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"), row.entry.c_str(), line.length(), glm::length(ahead)), end});
 					break;
@@ -3810,8 +3808,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		auto switched{false};
 		for (std::size_t k = 0; k < standing.size(); ++k)
 		{
-			double distance{0.0};
-			if (block_along(line, standing[k], distance, true))
+			if (double distance{0.0}; block_along(line, standing[k], distance, true))
 				wrong[index].push_back(k);
 			else if (block_along(line, standing[k], distance))
 				along[index].push_back(k);
@@ -4009,8 +4006,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		}
 		// the warning disc of the entry signal, the braking distance before it: of the semi-automatic block, or of the mixed one where
 		// it's the entry signal of the wrong-track trains, on the outside of the line facing them
-		auto const mixed{automatic[index] == 1 && line.number > 0 && false == line.inbound && false == both[index] && Edit == nullptr};
-		if (automatic[index] == 0 || mixed)
+		if (auto const mixed{automatic[index] == 1 && line.number > 0 && false == line.inbound && false == both[index] && Edit == nullptr}; automatic[index] == 0 || mixed)
 		{
 			auto const distance{std::min(braking(index), end.distance - 100.0)};
 			if (distance >= 400.0)
@@ -4241,11 +4237,9 @@ void srk_tool::set_lines(block_edit const *Edit)
 		auto const at{station::point_on(Line, Distance)};
 		if (at.track == nullptr || std::ranges::any_of(cuts, [&](cut const &Cut) { return glm::distance(Cut.point, at.point) < 0.5; }))
 			return true;
-		auto const &ends_of{at.track->m_paths.front().points};
-		if (std::min(glm::distance(at.point, ends_of[segment_data::point::start]), glm::distance(at.point, ends_of[segment_data::point::end])) <= 0.3)
+		if (auto const &ends_of{at.track->m_paths.front().points}; std::min(glm::distance(at.point, ends_of[segment_data::point::start]), glm::distance(at.point, ends_of[segment_data::point::end])) <= 0.3)
 			return true;
-		std::string reason;
-		if (false == editor_track::can_edit_geometry(*at.track, reason))
+		if (std::string reason; false == editor_track::can_edit_geometry(*at.track, reason))
 		{
 			m_status = format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str());
 			return false;
@@ -4288,8 +4282,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	{
 		auto *track{piece_at(entry.track, entry.point)};
 		auto const parameter{editor_track::nearest_parameter(*track, entry.point)};
-		auto const &ends_of{track->m_paths.front().points};
-		if (std::min(glm::distance(entry.point, ends_of[segment_data::point::start]), glm::distance(entry.point, ends_of[segment_data::point::end])) <= 0.3)
+		if (auto const &ends_of{track->m_paths.front().points}; std::min(glm::distance(entry.point, ends_of[segment_data::point::start]), glm::distance(entry.point, ends_of[segment_data::point::end])) <= 0.3)
 			continue;
 		if (captured.insert(track).second)
 			before.emplace_back(track, editor_track::capture(*track));
@@ -4343,14 +4336,12 @@ void srk_tool::set_lines(block_edit const *Edit)
 		if (signal.match >= 0)
 		{
 			auto const &found{standing[signal.match]};
-			auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(signal.linked)};
-			if (ToLower(found.name) != ToLower(signal.name) || relink)
+			if (auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(signal.linked)}; ToLower(found.name) != ToLower(signal.name) || relink)
 				changes.renamed.push_back({found.instance, signal.name, signal.plate, relink ? signal.linked : std::string{}});
 			if (ToLower(found.name) != ToLower(signal.name))
 				++renamed;
 			// of the aspects of its line
-			auto const head{std::ranges::find_if(heads, [&](signal_head const &Head) { return Head.file == found.file; })};
-			if (block && head != heads.end() && head->aspects != 0 && (head->aspects != aspects[signal.line] || (head->lean == "right") != signal.wrong))
+			if (auto const head{std::ranges::find_if(heads, [&](signal_head const &Head) { return Head.file == found.file; })}; block && head != heads.end() && head->aspects != 0 && (head->aspects != aspects[signal.line] || (head->lean == "right") != signal.wrong))
 				if (auto const other{block_template(heads, found.file, aspects[signal.line], signal.wrong)}; false == other.empty() && other != found.file)
 				{
 					changes.files.emplace_back(found.instance, other);
@@ -4798,8 +4789,7 @@ void srk_tool::set_shp()
 	if (false == m_layout.has_value())
 		return;
 	include_info resonator;
-	std::string unreadable;
-	if (false == editor_includes::load(kResonator, resonator, unreadable))
+	if (std::string unreadable; false == editor_includes::load(kResonator, resonator, unreadable))
 	{
 		m_status = format(STR_C("%s isn't in the scenery folder: the SHP resonators can't be placed"), kResonator);
 		return;
@@ -4858,8 +4848,7 @@ void srk_tool::set_shp()
 			continue;
 		}
 		auto const &at{way[best]};
-		std::string reason;
-		if (false == scene::Layers.editable(at.track, &reason) || (false == joint && false == editor_track::can_edit_geometry(*at.track, reason)))
+		if (std::string reason; false == scene::Layers.editable(at.track, &reason) || (false == joint && false == editor_track::can_edit_geometry(*at.track, reason)))
 		{
 			problems.push_back(format(STR_C("%s can't be changed: %s"), name_of(*at.track).c_str(), reason.c_str()));
 			continue;
@@ -5427,8 +5416,7 @@ void srk_tool::render_canvas(float const Height)
 		auto const &row{m_lines[line_hover]};
 		ImGui::BeginTooltip();
 		ImGui::TextUnformatted((format(STR_C("The line out beyond the entry signal %s"), row.entry.c_str()) + ", " + (row.number == 0 ? std::string{STR_C("single track")} : format(STR_C("track %d"), row.number))).c_str());
-		auto const run{std::ranges::find_if(row.sections, [&](line_row::run const &Run) { return line_at >= Run.from && line_at <= Run.to; })};
-		if (run != row.sections.end())
+		if (auto const run{std::ranges::find_if(row.sections, [&](line_row::run const &Run) { return line_at >= Run.from && line_at <= Run.to; })}; run != row.sections.end())
 		{
 			ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(circuit_colour(run->name)), STR_C("Block section %s, %.2f km"), run->name.c_str(), (run->to - std::max(0.0, run->from)) / 1000.0);
 			if (row.km_known)
@@ -5456,12 +5444,10 @@ void srk_tool::render_windows()
 	auto const height{std::clamp((high.y - low.y) * 0.4f, 220.0f, std::max(220.0f, high.y - low.y - 80.0f))};
 	ImGui::SetNextWindowPos(ImVec2(low.x, high.y - height), ImGuiCond_Appearing);
 	ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Appearing);
-	auto const name{std::string{STR_C("Station schematic")} + "  " + title() + "###srkstrip"};
-	if (ImGui::Begin(name.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+	if (auto const name{std::string{STR_C("Station schematic")} + "  " + title() + "###srkstrip"}; ImGui::Begin(name.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
 	{
 		auto const position{ImGui::GetWindowPos()};
-		auto const size{ImGui::GetWindowSize()};
-		if (false == ImGui::IsWindowDocked() && (position.y + size.y > io.DisplaySize.y + 1.0f || position.x + 80.0f > io.DisplaySize.x || position.x + size.x < 80.0f))
+		if (auto const size{ImGui::GetWindowSize()}; false == ImGui::IsWindowDocked() && (position.y + size.y > io.DisplaySize.y + 1.0f || position.x + 80.0f > io.DisplaySize.x || position.x + size.x < 80.0f))
 			ImGui::SetWindowPos(ImVec2(std::clamp(position.x, 0.0f, std::max(0.0f, io.DisplaySize.x - size.x)), std::max(0.0f, std::min(position.y, io.DisplaySize.y - size.y))));
 		if (ImGui::Button(STR_C("Fit")))
 		{
@@ -5793,8 +5779,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		}
 		auto const values{selftest_values(Words)};
 		auto const entry{values.find("entry")};
-		auto const kind{values.find("kind")};
-		if (entry != values.end() && kind != values.end())
+		if (auto const kind{values.find("kind")}; entry != values.end() && kind != values.end())
 		{
 			if (kind->second == "auto")
 				record_of_open().blocks.erase(entry->second);

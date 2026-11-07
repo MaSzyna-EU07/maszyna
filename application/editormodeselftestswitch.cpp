@@ -129,8 +129,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		designer.from_catalogue = list != "own";
 		designer.selected = index;
 		switch_designs_load();
-		auto const &list_of{designer.from_catalogue ? designer.catalogue : designer.own};
-		if (designer.open && index >= 0 && index < static_cast<int>(list_of.size()))
+		if (auto const &list_of{designer.from_catalogue ? designer.catalogue : designer.own}; designer.open && index >= 0 && index < static_cast<int>(list_of.size()))
 		{
 			std::string problem;
 			auto const shape{switch_design::build(list_of[index], problem)};
@@ -175,8 +174,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	}
 	if (command == "hover")
 	{
-		glm::dvec3 at{0.0};
-		if (words >> at.x >> at.z)
+		if (glm::dvec3 at{0.0}; words >> at.x >> at.z)
 			m_cursor_override = at;
 		else
 			m_cursor_override.reset();
@@ -483,8 +481,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	{
 		std::string name;
 		words >> name;
-		auto const *track{simulation::Paths.find(name)};
-		if (track != nullptr && track->eType == tt_Switch && track->SwitchExtension != nullptr)
+		if (auto const *track{simulation::Paths.find(name)}; track != nullptr && track->eType == tt_Switch && track->SwitchExtension != nullptr)
 			WriteLog(format("SELFTEST blades %s: %.3f of %.3f", name.c_str(), track->SwitchExtension->fOffset, track->SwitchExtension->fDesiredOffset));
 		return selftest_result::handled;
 	}
@@ -737,8 +734,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		{
 			editor_track::curve curve;
 			editor_track::chain chain;
-			std::string error;
-			if (false == editor_track::find_curve(*nearest, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
+			if (std::string error; false == editor_track::find_curve(*nearest, m_straights.tolerance, m_route.design.norms.gauge, curve) || false == editor_track::find_chain(curve.from, curve.to, chain, error, true))
 			{
 				WriteLog("SELFTEST switchcurve: no curve");
 				return selftest_result::handled;
@@ -926,8 +922,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			words >> word;
 			std::vector<curve_sample> frame;
 			std::array<TTrack *, 2> sides;
-			double station{0.0};
-			if ((word == "back" || word == "ahead") && bent_switch_frame(*track, frame, sides, station))
+			if (double station{0.0}; (word == "back" || word == "ahead") && bent_switch_frame(*track, frame, sides, station))
 				distance = word == "back" ? -station : frame.back().station - station - (nearest_station(frame, track->m_paths.front().points[segment_data::point::end]) - station);
 			else
 				distance = std::atof(word.c_str());
