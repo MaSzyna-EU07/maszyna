@@ -4,6 +4,9 @@
   "time": "10:34",
   "track_friction": 0.03,
   "fragment": "td_red_signal_moving.scn",
+  "test_config": [
+    "test.fail_if_stop_overran no"
+  ],
   "vars": {
     "velocity": "30",
     "consist": [
