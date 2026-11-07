@@ -47,6 +47,12 @@ struct include_info
 	std::string signal_lamps;
 	std::string signal_lean;
 	std::string signal_read;
+	int signal_arms{0}; // of a semaphore: 1 or 2, 0 for a signal with lights or a disc
+	// the aspects the signal shows, each by its name in the signalling instruction (Sr1, S2, Od1...) with its event, the part after
+	// "(p1)_", in the order of the description. empty where the description doesn't list them
+	std::vector<std::pair<std::string, std::string>> signal_aspects;
+	// of a warning disc: its event for each speed class of the signal after it (stop, vmax, 100, 60, 40)
+	std::vector<std::pair<std::string, std::string>> signal_repeats;
 	std::vector<include_parameter> parameters;
 
 	// description of specified parameter, created if there's none

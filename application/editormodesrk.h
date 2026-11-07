@@ -164,6 +164,8 @@ class srk_tool final : public editor_tool
 		glm::dvec2 travel{0.0, 1.0};
 		std::string file; // of its template
 		std::string lamps;
+		int arms{0}; // of a semaphore described with its arms: its aspects checked by name, not by lights
+		std::vector<std::string> aspect_names; // of its template, from its description
 		std::vector<int> own; // the speeds of its template
 		bool station{false}; // stands by the station, not out on a line
 		std::vector<station::route> routes;
@@ -173,6 +175,8 @@ class srk_tool final : public editor_tool
 		bool white{false}; // it must give the substitute signal
 		int shortened{0}; // km/h, it slows the trains to, the next signal nearer than the braking distance: Ie-4 § 8 ust. 5
 		bool indicator{false}; // a W21 "14" beside it, for 140 km/h so
+		bool told{false}; // a shaped warning disc before a semaphore described: the events it repeats checked
+		bool unsaid{false}; // of those, its template doesn't say what it repeats: the one described offered, the fitting leaves it be
 		bool fits{true}; // its template shows all of it
 		bool more{false}; // its template has more than it needs
 		std::string fit; // the template that fits best, empty for none

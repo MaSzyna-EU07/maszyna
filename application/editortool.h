@@ -117,6 +117,10 @@ struct signal_head
 	bool chosen{false}; // chosen for its kind among the templates of the signals, placed by hand and with the signalling
 	int aspects{0}; // of a block signal: 3, or 4 with the warning two signals ahead
 	std::string lean; // its head leans towards the track: left, standing on the right of it, right, or none
+	int arms{0}; // of a semaphore, 1 or 2: its aspects are the names below, not its lights
+	std::vector<std::string> aspect_names; // the aspects its description lists: Sr1, Sr2, Sr3, Sz...; empty where it lists none
+	// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
+	std::vector<std::pair<std::string, std::string>> repeats;
 };
 // one step of the history of the signalling: signals placed, standing ones renamed, other templates placed with them, the values
 // of standing ones replaced
@@ -222,6 +226,8 @@ class editor_signals
 	virtual std::string signal_templates_missing(std::vector<signal_order> const &Orders) = 0;
 	// the signal templates with lights, false while they are still being looked for
 	virtual bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) = 0;
+	// the mount of the signal template given, with none of the one chosen for the kind; empty for none
+	virtual std::string signal_mount(std::string const &Kind, std::string const &File) = 0;
 	// the signals given which no track reads, read again by the track they stand by: one step of the history. returns: how many
 	virtual std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) = 0;
 	// the signal picked, its card at the top of the panel

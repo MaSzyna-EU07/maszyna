@@ -262,6 +262,21 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 			Info.signal_lamps = signal["lamps"].as<std::string>("");
 			Info.signal_lean = signal["lean"].as<std::string>("");
 			Info.signal_read = signal["read"].as<std::string>("");
+			Info.signal_arms = signal["arms"].as<int>(0);
+			// a name with its event, in the order written: a value that isn't one is left out
+			auto const pairs = [](YAML::Node const &Map, std::vector<std::pair<std::string, std::string>> &Pairs) {
+				if (false == Map.IsDefined() || false == Map.IsMap())
+					return;
+				for (auto const &entry : Map)
+				{
+					auto const name{entry.first.as<std::string>("")};
+					auto const event{entry.second.IsScalar() ? entry.second.as<std::string>("") : std::string{}};
+					if (false == name.empty() && false == event.empty())
+						Pairs.emplace_back(name, event);
+				}
+			};
+			pairs(signal["aspects"], Info.signal_aspects);
+			pairs(signal["repeats"], Info.signal_repeats);
 		}
 		if (auto const table{document["turntable"]}; table.IsDefined() && table.IsMap())
 		{
@@ -327,7 +342,7 @@ include_parameter &include_info::parameter(int const Id)
 namespace editor_includes
 {
 
-std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text"};
+std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text", "link"};
 
 bool load(std::string const &File, include_info &Info, std::string &Error)
 {

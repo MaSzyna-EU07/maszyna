@@ -50,6 +50,79 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_signal(std::string const &command, std::istringstream &words)
 {
+	if (command == "signaltemplates")
+	{
+		// signaltemplates [file=<template>]: the templates of the signals with what their descriptions give, the one named chosen
+		// for its kind in the palette, not placed
+		auto values{selftest_values(words)};
+		show_track_tab(track_tab::srk);
+		signal_scan(true);
+		auto &tool{m_signal};
+		static char const *const kinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
+		for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
+		{
+			auto const &item{tool.templates[k]};
+			std::string aspects, repeats;
+			for (auto const &[name, event] : item.aspect_events)
+				aspects += (aspects.empty() ? "" : " ") + name + "=" + event;
+			for (auto const &[speed, event] : item.repeats)
+				repeats += (repeats.empty() ? "" : " ") + speed + "=" + event;
+			if (item.arms > 0 || false == item.aspect_events.empty() || false == item.repeats.empty() || values["all"] == "1")
+				WriteLog(format("SELFTEST signaltemplates %s: %s %s lamps=%s arms=%d aspects=[%s] repeats=[%s] linked=%d read=%s", item.file.c_str(), item.kind.c_str(), item.mount.c_str(), item.lamps.empty() ? "-" : item.lamps.c_str(), item.arms, aspects.c_str(), repeats.c_str(), item.linked ? 1 : 0,
+				                item.read.empty() ? "-" : item.read.c_str()));
+			if (values.count("file") && item.file == values["file"])
+				for (int i = 0; i < 7; ++i)
+					if (item.kind == kinds[i])
+					{
+						tool.kind = i;
+						tool.chosen[i] = k;
+					}
+		}
+		std::vector<signal_head> heads;
+		signal_heads(heads, true);
+		std::string known;
+		for (auto const &head : heads)
+			if (head.arms > 0 || false == head.repeats.empty())
+				known += " " + head.name + (head.chosen ? "*" : "");
+		WriteLog(format("SELFTEST signaltemplates: %zu templates, %zu for the signalling, of them by arms or repeats:", tool.templates.size(), heads.size()) + known);
+		// what the signalling places of each kind, with no template asked for
+		std::string placed;
+		for (int i = 0; i < 7; ++i)
+		{
+			signal_order order;
+			order.kind = kinds[i];
+			auto const *item{signal_template_for(order)};
+			auto const *chosen{tool.chosen[i] >= 0 ? &tool.templates[tool.chosen[i]] : nullptr};
+			placed += format(" %s=%s(chosen %s)", kinds[i], item != nullptr ? item->file.c_str() : "-", chosen != nullptr ? chosen->file.c_str() : "-");
+		}
+		WriteLog("SELFTEST signaltemplates placed by the signalling:" + placed);
+		return selftest_result::handled;
+	}
+	if (command == "signalaspect")
+	{
+		// signalaspect name=<signal> aspect=<name>: the signal set to the aspect its description lists, in the editor
+		auto values{selftest_values(words)};
+		show_track_tab(track_tab::srk);
+		signal_scan(true);
+		signal_refresh(true);
+		auto const found{std::find_if(m_signal.standing.begin(), m_signal.standing.end(), [&](signal_standing const &Standing) { return Standing.name == values["name"]; })};
+		auto const *item{found != m_signal.standing.end() ? signal_template_of(found->include.file) : nullptr};
+		std::pair<std::string, std::string> const *event{nullptr};
+		if (item != nullptr)
+			for (auto const &aspect : item->aspect_events)
+				if (aspect.first == values["aspect"])
+					event = &aspect;
+		if (event == nullptr)
+		{
+			WriteLog("SELFTEST signalaspect: no signal " + values["name"] + " with the aspect " + values["aspect"]);
+			return selftest_result::handled;
+		}
+		signal_select(found->include.instance);
+		select_include(found->include.instance);
+		auto const shown{signal_show_aspect(found->include.instance, event->first, event->second)};
+		WriteLog(std::string{"SELFTEST signalaspect "} + values["name"] + " " + values["aspect"] + (shown ? ": " : ": failed, ") + m_signal.status);
+		return selftest_result::handled;
+	}
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")
 	{
 		auto values{selftest_values(words)};

@@ -83,6 +83,8 @@ class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
         return pSubModel ? pSubModel->pName : ""; };
     void SetRotateAnim( glm::vec3 vNewRotateAngles, double fNewRotateSpeed);
     void SetTranslateAnim( glm::dvec3 vNewTranslate, double fNewSpeed);
+    // the rotation and the shift set brought to their ends at once, for the editor which shows them with the time stopped
+    void Finish();
     void AnimSetVMD(double fNewSpeed);
     void PrepareModel();
     void UpdateModel();

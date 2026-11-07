@@ -10,7 +10,7 @@ import os
 import re
 import sys
 
-from editor_headers import body_lines, decode, load, sidecar, write
+from editor_headers import LINEMARK, body_lines, decode, load, sidecar, write
 
 FAMILIES = [
     (re.compile(r'^ss[dow]?\d'), 'main'),
@@ -48,9 +48,56 @@ def statements(words, keyword):
     return out
 
 
+GUESSED = ('kind', 'mount', 'lamps', 'lean', 'read')
+
+
+def flow_items(inner):
+    """The key: value pieces of a YAML flow map written on one line, its nested maps and quoted strings kept whole."""
+    items, depth, quote, start = [], 0, '', 0
+    for idx, char in enumerate(inner):
+        if quote:
+            if char == quote and inner[idx - 1] != '\\':
+                quote = ''
+        elif char in '"\'':
+            quote = char
+        elif char in '{[':
+            depth += 1
+        elif char in '}]':
+            depth -= 1
+        elif char == ',' and depth == 0:
+            items.append(inner[start:idx].strip())
+            start = idx + 1
+    if inner[start:].strip():
+        items.append(inner[start:].strip())
+    return items
+
+
+def kept_of(text, file=''):
+    """What a description written before has that the guesses mustn't replace: the keys of its signal map other than the guessed
+    ones (arms, aspects, repeats...), its description, its parameters from 6 on, by id. Only a signal map written on one line is
+    kept; one written as a block is told of, its keys are lost"""
+    lines = [line[len(LINEMARK):].strip() for line in text.splitlines() if line.startswith(LINEMARK)]
+    signal, description, params = [], None, {}
+    for line in lines:
+        if line.startswith('signal:'):
+            inner = line[len('signal:'):].strip()
+            if inner.startswith('{') and inner.endswith('}'):
+                signal = [item for item in flow_items(inner[1:-1]) if item.split(':', 1)[0].strip() not in GUESSED]
+            else:
+                print('WARNING %s: its signal map isn\'t written on one line as {...}, its keys written by hand aren\'t kept' % (file or '?'), file=sys.stderr)
+        elif line.startswith('description:'):
+            description = line[len('description:'):].strip()
+        elif line.startswith('- {id:'):
+            found = re.match(r'- \{id:\s*(\d+)', line)
+            if found and int(found.group(1)) >= 6:
+                params[int(found.group(1))] = line[2:]
+    return signal, description, params
+
+
 def examine(path, file):
     raw = load(path)
     text, encoding = decode(raw, 'utf-8')
+    kept_signal, kept_description, kept_params = kept_of(text, file)
     lines = body_lines(text)
     body = '\n'.join(lines)
     words = tokens(body)
@@ -145,10 +192,10 @@ def examine(path, file):
         "{id: 5, role: rot.y}",
     ]
     if count >= 6:
-        params.append("{id: 6, role: texture, label: Plate, default: 0_nothing}" if 'tabl/(p6)' in body.lower() else "{id: 6, role: text, label: Symbol, default: none}")
+        params.append(kept_params.get(6) or ("{id: 6, role: texture, label: Plate, default: 0_nothing}" if 'tabl/(p6)' in body.lower() else "{id: 6, role: text, label: Symbol, default: none}"))
     for id in range(7, count + 1):
         label = 'Linked signal' if id == 7 else 'Parameter %d' % id
-        params.append("{id: %d, role: text, label: %s, default: none}" % (id, label))
+        params.append(kept_params.get(id) or "{id: %d, role: text, label: %s, default: none}" % (id, label))
 
     signal = ['kind: ' + kind, 'mount: ' + mount]
     if lamps:
@@ -157,12 +204,16 @@ def examine(path, file):
         signal.append('lean: ' + lean)
     if read:
         signal.append('read: "' + read + '"')
+    # the keys written by hand stay: the arms, the aspects, the events a disc repeats
+    signal += kept_signal
     header = [
         'version: 1',
         'name: ' + file[:-4],
         'category: signal',
     ]
-    if description:
+    if kept_description:
+        header.append('description: ' + kept_description)
+    elif description:
         header.append('description: "' + description.replace('\\', '\\\\').replace('"', '\\"') + '"')
     header.append('signal: {' + ', '.join(signal) + '}')
     header.append('params:')

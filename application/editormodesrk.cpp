@@ -317,8 +317,24 @@ bool has_speed(std::vector<int> const &Speeds, int const Speed)
 // the template has the lights the need takes, by its chambers: an orange one to tell the next signal shows stop, a lower orange one
 // for a lower speed, a strip for 60 and 100 by the speeds its events set, Ie-1 § 7, two orange ones to show a lower speed with the
 // next signal at stop
+bool has_aspect(signal_head const &Head, char const *Name)
+{
+	return std::find(Head.aspect_names.begin(), Head.aspect_names.end(), Name) != Head.aspect_names.end();
+}
+
+// a semaphore, by the aspects of its description: Sr1 and Sr2, Sr3 of the second arm for any lower speed, 40 km/h being the one it
+// gives, Sz on a main signal. It tells nothing of the next signal, a warning disc does that
+bool shows_arms(signal_head const &Head, head_need const &Need)
+{
+	if (false == has_aspect(Head, "Sr1") || false == has_aspect(Head, "Sr2") || (Need.white && false == has_aspect(Head, "Sz")))
+		return false;
+	return Need.speeds.empty() || has_aspect(Head, "Sr3");
+}
+
 bool shows(signal_head const &Head, head_need const &Need)
 {
+	if (Head.arms > 0)
+		return shows_arms(Head, Need);
 	auto const &lamps{Head.lamps};
 	auto const count = [&](char const Lamp) { return std::count(lamps.begin(), lamps.end(), Lamp); };
 	if (count('z') == 0 || count('c') == 0 || (Need.white && count('b') == 0))
@@ -335,6 +351,8 @@ bool shows(signal_head const &Head, head_need const &Need)
 // the more lights and strips beyond the need, the more
 int surplus(signal_head const &Head, head_need const &Need)
 {
+	if (Head.arms > 0)
+		return Head.arms * 4 + (has_aspect(Head, "Sz") && false == Need.white ? 1 : 0);
 	auto result{static_cast<int>(Head.lamps.size()) * 4};
 	for (auto const speed : {60, 100})
 		if (has_speed(Head.speeds, speed) && false == has_speed(Need.speeds, speed))
@@ -343,15 +361,15 @@ int surplus(signal_head const &Head, head_need const &Need)
 }
 
 // of the templates of the kind and the mount that fit the need, the one with the least beyond it, the most like the one named;
-// -1 for none
-int best_head(std::vector<signal_head> const &Heads, std::string const &Kind, std::string const &Mount, std::string const &Like, int const Aspects, head_need const &Need)
+// -1 for none. A semaphore is swapped for a semaphore only, a signal with lights for one with lights
+int best_head(std::vector<signal_head> const &Heads, std::string const &Kind, std::string const &Mount, std::string const &Like, int const Aspects, head_need const &Need, bool const Arms)
 {
 	auto best{-1};
 	std::tuple<int, int, std::size_t> score;
 	for (int index = 0; index < static_cast<int>(Heads.size()); ++index)
 	{
 		auto const &head{Heads[index]};
-		if (head.kind != Kind || head.mount != Mount || head.aspects != Aspects || false == shows(head, Need))
+		if (head.kind != Kind || head.mount != Mount || head.aspects != Aspects || (head.arms > 0) != Arms || false == shows(head, Need))
 			continue;
 		std::size_t common{0};
 		while (common < head.name.size() && common < Like.size() && head.name[common] == Like[common])
@@ -364,6 +382,17 @@ int best_head(std::vector<signal_head> const &Heads, std::string const &Kind, st
 		}
 	}
 	return best;
+}
+
+// the aspects a semaphore needs for it: Sr1, Sr2, Sr3 for a lower speed, Sz on a main signal
+std::string need_arms_text(head_need const &Need)
+{
+	std::string text{"Sr1, Sr2"};
+	if (false == Need.speeds.empty())
+		text += ", Sr3 (" + format(STR_C("%s km/h"), "40") + ")";
+	if (Need.white)
+		text += ", Sz";
+	return text;
 }
 
 // the lights of the need in words: green, two orange, red, white; 40, 60 km/h with an orange strip
@@ -658,6 +687,68 @@ std::string block_template(std::vector<signal_head> const &Heads, std::string co
 		{
 			rank = score;
 			best = &head;
+		}
+	}
+	return best != nullptr ? best->file : std::string{};
+}
+
+// what a warning disc tells of the semaphore after it: stop, the highest speed and, with a second arm, 40 km/h
+std::vector<std::string> disc_classes(signal_head const &Main)
+{
+	std::vector<std::string> classes{"stop", "vmax"};
+	if (has_aspect(Main, "Sr3"))
+		classes.push_back("40");
+	return classes;
+}
+
+// of the events a disc repeats, how many apart for the classes given; -1 when it has no event for one of them
+int disc_apart(signal_head const &Disc, std::vector<std::string> const &Classes)
+{
+	std::vector<std::string> events;
+	for (auto const &type : Classes)
+	{
+		auto const found{std::find_if(Disc.repeats.begin(), Disc.repeats.end(), [&](auto const &Repeat) { return Repeat.first == type; })};
+		if (found == Disc.repeats.end() || found->second.empty())
+			return -1;
+		events.push_back(found->second);
+	}
+	std::sort(events.begin(), events.end());
+	return static_cast<int>(std::unique(events.begin(), events.end()) - events.begin());
+}
+
+// the disc tells apart all the semaphore after it shows
+bool disc_tells(signal_head const &Disc, signal_head const &Main)
+{
+	auto const classes{disc_classes(Main)};
+	return disc_apart(Disc, classes) == static_cast<int>(classes.size());
+}
+
+// the warning disc of a semaphore, of the discs described with the events they repeat: one telling apart what the semaphore does,
+// stop, the highest speed and, with a second arm, 40 km/h, with the fewest aspects, of the mount given, any for none. Empty for the
+// chosen disc: before a signal with lights, before a semaphore not described, with no disc described so
+std::string disc_template(std::vector<signal_head> const &Heads, signal_head const *Main, std::string const &Mount)
+{
+	if (Main == nullptr || Main->arms == 0)
+		return {};
+	auto const classes{disc_classes(*Main)};
+	signal_head const *chosen{nullptr};
+	for (auto const &head : Heads)
+		if (head.kind == "warning" && head.chosen)
+			chosen = &head;
+	signal_head const *best{nullptr};
+	std::tuple<int, std::size_t, int, std::size_t> rank;
+	for (auto const &head : Heads)
+	{
+		if (head.kind != "warning" || head.repeats.empty() || (false == Mount.empty() && head.mount != Mount))
+			continue;
+		auto const apart{disc_apart(head, classes)};
+		if (apart < 0)
+			continue;
+		std::tuple<int, std::size_t, int, std::size_t> const score{-apart, head.aspect_names.size(), &head == chosen ? 0 : 1, head.file.size()};
+		if (best == nullptr || score < rank)
+		{
+			best = &head;
+			rank = score;
 		}
 	}
 	return best != nullptr ? best->file : std::string{};
@@ -1871,13 +1962,33 @@ void srk_tool::render_heads()
 					need.speeds = head.speeds;
 					need.informs = head.informs;
 					need.white = head.white;
-					ImGui::TextUnformatted(format(STR_C("Needs: %s"), need_text(need).c_str()).c_str());
+					ImGui::TextUnformatted(format(STR_C("Needs: %s"), (head.arms > 0 ? need_arms_text(need) : need_text(need)).c_str()).c_str());
 				}
 				if (head.shortened > 0)
 					ImGui::TextColored(kDoubtful, "%s", format(STR_C("The next signal stands nearer than the braking distance: with it at stop this one slows the trains to %d km/h, Ie-4 § 8 ust. 5"), head.shortened).c_str());
 				if (head.indicator)
 					ImGui::TextColored(kDoubtful, "%s", STR_C("Give it a W21 indicator \"14\": 140 km/h with the next signal at stop, Ie-4 § 8 ust. 5"));
-				if (head.lamps.empty() && head.kind != "warning")
+				if (head.arms > 0)
+				{
+					// a semaphore described with its arms and its aspects
+					if (false == head.fits && head.fit.empty())
+						ImGui::TextColored(kWrong, "%s", STR_C("No semaphore of its mount has these aspects"));
+					else if (false == head.fits)
+						ImGui::TextColored(kDoubtful, "%s", format(STR_C("Its arms don't show all of it: %s does"), head.fit.c_str()).c_str());
+					else if (head.more)
+						ImGui::TextDisabled("%s", format(STR_C("It has more than it needs: %s would do. The fitting leaves it be: events written by hand may use its aspects"), head.fit.c_str()).c_str());
+				}
+				else if (head.told)
+				{
+					// a shaped warning disc before a semaphore described, by the events it repeats; one not described only offered the one
+					if (head.unsaid)
+						ImGui::TextDisabled("%s", format(STR_C("Its template doesn't say what it tells, so it isn't checked: %s says so and tells all its semaphore shows. The fitting leaves it be, swap it by hand if you like"), head.fit.c_str()).c_str());
+					else if (false == head.fits && head.fit.empty())
+						ImGui::TextColored(kWrong, "%s", STR_C("No disc of its mount tells all its semaphore shows"));
+					else if (false == head.fits)
+						ImGui::TextColored(kDoubtful, "%s", format(STR_C("It doesn't tell apart all its semaphore shows: %s does"), head.fit.c_str()).c_str());
+				}
+				else if (head.lamps.empty() && head.kind != "warning")
 					ImGui::TextDisabled("%s", STR_C("A semaphore with arms: its lights aren't checked"));
 				else if (false == head.fits && head.fit.empty())
 					ImGui::TextColored(kWrong, "%s", STR_C("No template of its kind and mount has these lights"));
@@ -1910,15 +2021,25 @@ void srk_tool::render_heads()
 			else
 				ImGui::TextDisabled("-");
 			ImGui::TableNextColumn();
-			if (head.lamps.empty())
+			if (head.arms > 0 || (head.lamps.empty() && false == head.aspect_names.empty()))
+			{
+				// a semaphore or a disc described: its aspects by name
+				std::string names;
+				for (auto const &name : head.aspect_names)
+					names += (names.empty() ? "" : " ") + name;
+				ImGui::TextUnformatted(names.c_str());
+			}
+			else if (head.lamps.empty())
 				ImGui::TextDisabled("%s", head.kind == "warning" ? STR_C("disc") : STR_C("arms"));
 			else
 				lamp_row(head.lamps, head.own);
 			ImGui::TableNextColumn();
-			if (head.lamps.empty())
+			if (head.lamps.empty() && head.arms == 0 && false == head.told)
 				ImGui::TextDisabled("-");
+			else if (head.unsaid)
+				ImGui::TextDisabled("%s", STR_C("not described"));
 			else if (false == head.fits)
-				ImGui::TextColored(head.fit.empty() ? kWrong : kDoubtful, "%s", head.fit.empty() ? STR_C("no template") : STR_C("lights missing"));
+				ImGui::TextColored(head.fit.empty() ? kWrong : kDoubtful, "%s", head.fit.empty() ? STR_C("no template") : head.arms > 0 || head.told ? STR_C("aspects missing") : STR_C("lights missing"));
 			else if (head.more)
 				ImGui::TextDisabled("%s", STR_C("more than needed"));
 			else
@@ -2584,7 +2705,7 @@ void srk_tool::set_signals()
 			if (order.kind != "main")
 				continue;
 			auto const need{need_of(found[next++], true, line, braking_of_open())};
-			if (auto const best{best_head(heads, "main", chosen->mount, chosen->name, 0, need)}; best >= 0)
+			if (auto const best{best_head(heads, "main", chosen->mount, chosen->name, 0, need, chosen->arms > 0)}; best >= 0)
 				order.file = heads[best].file;
 			else
 				unfit.push_back(signal_shown(order.name, stem));
@@ -2602,7 +2723,7 @@ void srk_tool::set_signals()
 		std::string names;
 		for (auto const &name : unfit)
 			names += (names.empty() ? "" : ", ") + name;
-		m_status += "\n" + format(STR_C("No template has the lights %s need, they got the one chosen in Signals: see Signal heads"), names.c_str());
+		m_status += "\n" + format(STR_C("No template has what %s need, they got the one chosen in Signals: see Signal heads"), names.c_str());
 	}
 }
 
@@ -3443,6 +3564,16 @@ void srk_tool::set_lines(block_edit const *Edit)
 			sections.push_back(std::move(found));
 		}
 	}
+	// the template of a signal placed: of a block signal by the aspects of its line, of the warning disc by the entry signal it tells
+	// of, of the mount of the disc chosen
+	auto const disc_mount{m_signals.signal_mount("warning", {})};
+	auto const template_of = [&](planned_signal const &Signal) {
+		if (Signal.kind == station::signal::role::block)
+			return block_template(heads, {}, aspects[Signal.line], Signal.wrong);
+		auto const &entry{standing[entry_standing[lines[Signal.line].entry]]};
+		auto const main{std::find_if(heads.begin(), heads.end(), [&](signal_head const &Head) { return Head.file == entry.file; })};
+		return disc_template(heads, main != heads.end() ? &*main : nullptr, disc_mount);
+	};
 	// a template for each signal placed, before any track is cut for them
 	{
 		std::vector<signal_order> wanted;
@@ -3452,7 +3583,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 				auto const block{signal.kind == station::signal::role::block};
 				wanted.emplace_back();
 				wanted.back().kind = block ? "block" : "warning";
-				wanted.back().file = block ? block_template(heads, {}, aspects[signal.line], signal.wrong) : std::string{};
+				wanted.back().file = template_of(signal);
 			}
 		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
 		{
@@ -3599,7 +3730,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		order.facing = inbound == approach.outward ? -1 : 1;
 		order.side = signal.wrong ? -order.facing : order.facing;
 		order.kind = block ? "block" : "warning";
-		order.file = block ? block_template(heads, {}, aspects[signal.line], signal.wrong) : std::string{};
+		order.file = template_of(signal);
 		order.name = signal.name;
 		order.plate = signal.plate;
 		order.linked = signal.linked;
@@ -3895,6 +4026,8 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		if (template_of != nullptr)
 		{
 			check.lamps = template_of->lamps;
+			check.arms = template_of->arms;
+			check.aspect_names = template_of->aspect_names;
 			check.own = template_of->speeds;
 		}
 		glm::dvec3 const travel{check.travel.x, 0.0, check.travel.y};
@@ -3925,6 +4058,40 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 				else if (route.length < braking - 1.0)
 					check.problems.push_back(format(STR_C("It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"), route.length, check.nexts[k].c_str(), braking));
 			}
+			// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows. One not
+			// described so may as well, it is offered the one described as a hint and the fitting leaves it be. A disc with lights isn't
+			// checked, nor one whose template isn't among the scanned, its mount not known
+			auto const described{template_of != nullptr && false == template_of->repeats.empty()};
+			auto const mount{m_signals.signal_mount("warning", signal.file)};
+			if (false == mount.empty() && (described || template_of == nullptr || template_of->lamps.empty()))
+			{
+				for (auto const &route : check.routes)
+				{
+					auto const ahead{route.next >= 0 ? by_file.find(Standing[owners[route.next]].file) : by_file.end()};
+					if (ahead == by_file.end() || heads[ahead->second].arms == 0)
+						continue;
+					auto const &main{heads[ahead->second]};
+					auto fit{disc_template(heads, &main, mount)};
+					if (auto const offered{by_file.find(fit)}; fit == signal.file || offered == by_file.end() || false == disc_tells(heads[offered->second], main))
+						fit.clear();
+					if (false == described)
+					{
+						if (fit.empty())
+							continue;
+						check.told = true;
+						check.unsaid = true;
+						if (check.fit.empty())
+							check.fit = fit;
+						continue;
+					}
+					check.told = true;
+					if (disc_tells(*template_of, main))
+						continue;
+					check.fits = false;
+					if (check.fit.empty())
+						check.fit = fit;
+				}
+			}
 			m_heads.push_back(std::move(check));
 			continue;
 		}
@@ -3952,7 +4119,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		if (template_of != nullptr)
 		{
 			check.fits = shows(*template_of, need);
-			auto const best{best_head(heads, signal.kind, template_of->mount, template_of->name, template_of->aspects, need)};
+			auto const best{best_head(heads, signal.kind, template_of->mount, template_of->name, template_of->aspects, need, template_of->arms > 0)};
 			if (best >= 0)
 			{
 				check.fit = heads[best].file;
@@ -3974,12 +4141,13 @@ void srk_tool::fit_heads()
 {
 	m_status.clear();
 	signal_changes changes;
+	// a semaphore described having what it needs keeps its arms, for the events written by hand to the aspects of a second one
 	for (auto const &head : m_heads)
-		if (false == head.fit.empty() && head.fit != head.file && (false == head.fits || head.more))
+		if (false == head.fit.empty() && head.fit != head.file && (false == head.fits || (head.more && head.arms == 0)))
 			changes.files.emplace_back(head.instance, head.fit);
 	if (changes.files.empty())
 	{
-		m_status = std::any_of(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return false == Head.fits; }) ? STR_C("No template has the lights the signals marked need") : STR_C("The lights of the signals fit already");
+		m_status = std::any_of(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return false == Head.fits; }) ? STR_C("No template has what the signals marked need") : STR_C("The signals have what they need already");
 		return;
 	}
 	std::string error;
@@ -3995,9 +4163,9 @@ void srk_tool::fit_heads()
 	for (auto const &head : m_heads)
 		changed += static_cast<std::size_t>(std::count_if(standing.begin(), standing.end(), [&](standing_signal const &Signal) { return Signal.instance == head.instance && Signal.file != head.file; }));
 	if (changed == 0)
-		m_status = STR_C("The lights of the signals fit already");
+		m_status = STR_C("The signals have what they need already");
 	else
-		m_status = format(STR_P("%zu signal got the lights it needs, Ctrl+Z takes it back", "%zu signals got the lights they need, Ctrl+Z takes it back", changed), changed);
+		m_status = format(STR_P("%zu signal got what it needs, Ctrl+Z takes it back", "%zu signals got what they need, Ctrl+Z takes it back", changed), changed);
 }
 
 void srk_tool::set_shp()
@@ -4956,8 +5124,8 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				auto const &route{head.routes[k]};
 				routes += format(" %s:%.0f:%.0f%s%s", route.next >= 0 ? head.nexts[k].c_str() : route.ended ? "end" : "none", route.length, route.speed, route.warning >= 0 ? ":to" : "", route.turnouts.empty() ? "" : format(":%zut", route.turnouts.size()).c_str());
 			}
-			WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d fit=%s shp=%.0f/%.0f routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
-			                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.fit.empty() ? "-" : head.fit.c_str(), head.shp, head.shp_found, routes.c_str(), head.problems.size()));
+			WriteLog(format("SELFTEST srkheads %s %s%s %s lamps=%s own=%s need=%s%s%s short=%d%s fits=%d more=%d told=%d%s fit=%s shp=%.0f/%.0f routes%s problems=%zu", head.name.c_str(), head.kind.c_str(), head.station ? "" : "(line)", head.file.c_str(), head.lamps.c_str(), list(head.own).c_str(), list(head.speeds).c_str(), head.informs ? "+inform" : "",
+			                head.white ? "+white" : "", head.shortened, head.indicator ? " w21" : "", head.fits ? 1 : 0, head.more ? 1 : 0, head.told ? 1 : 0, head.unsaid ? "(unsaid)" : "", head.fit.empty() ? "-" : head.fit.c_str(), head.shp, head.shp_found, routes.c_str(), head.problems.size()));
 			for (auto const &problem : head.problems)
 				WriteLog("SELFTEST srkheads   " + problem);
 		}
