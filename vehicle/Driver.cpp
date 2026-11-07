@@ -7638,13 +7638,13 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
     }
     // allow to coast at reasonably low speed
     auto const brakingdistance { fBrakeDist * braking_distance_multiplier( VelNext ) };
-    auto const slowdowndistance { (
-        mvOccupied->CategoryFlag == 2 ? // cars can stop on a dime, for bigger vehicles we enforce some minimal braking distance
-            brakingdistance :
-            std::max(
-                (OrderCurrentGet() & Connect) == 0 ? 100.0 : 25.0,
-                brakingdistance ) ) };
-    if( brakingdistance + std::max(slowdowndistance, fMaxProximityDist) < ActualProximityDist - fMaxProximityDist ) {
+    if( auto const slowdowndistance { (
+            mvOccupied->CategoryFlag == 2 ? // cars can stop on a dime, for bigger vehicles we enforce some minimal braking distance
+                brakingdistance :
+                std::max(
+                    (OrderCurrentGet() & Connect) == 0 ? 100.0 : 25.0,
+                    brakingdistance ) ) };
+        brakingdistance + std::max(slowdowndistance, fMaxProximityDist) < ActualProximityDist - fMaxProximityDist ) {
         // don't slow down prematurely; as long as we have room to come to a full stop at a safe distance, we're good
         return;
     }
