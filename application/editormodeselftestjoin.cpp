@@ -1379,7 +1379,9 @@ monkey_case draw_case(std::mt19937 &Random, std::vector<editor_track::snap_targe
 	constexpr std::array<double, 5> radii{150.0, 300.0, 500.0, 1000.0, 2000.0};
 	drawn.radius = radii[pick(5)];
 	drawn.distance = std::exp(uniform(std::log(10.0), std::log(400.0)));
-	drawn.bearing = std::clamp(uniform(-1.0, 1.0) * uniform(0.0, 1.0) * glm::pi<double>(), -2.97, 2.97);
+	// drawn one after the other: the factors of one product would be drawn in an order the compiler picks
+	auto const swing{uniform(-1.0, 1.0)};
+	drawn.bearing = std::clamp(swing * uniform(0.0, 1.0) * glm::pi<double>(), -2.97, 2.97);
 	drawn.inner = 1 + pick(3);
 	drawn.shares = {uniform(0.1, 0.9), uniform(0.1, 0.9), uniform(0.1, 0.9)};
 	drawn.across = {uniform(-0.25, 0.25), uniform(-0.25, 0.25), uniform(-0.25, 0.25)};
