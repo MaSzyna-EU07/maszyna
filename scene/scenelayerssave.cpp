@@ -27,6 +27,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
+#include <array>
+#include <ctime>
 #include <format>
 #include <map>
 #include <optional>
@@ -331,6 +333,170 @@ bool read_file(std::string const &Path, std::string &Content)
 	return true;
 }
 
+// how the placement of a model instance or memory cell differs from the one its definition was loaded with
+struct placement_change
+{
+	glm::dvec3 location{0.0};
+	bool moved{false};
+	bool rotated{false};
+	bool scaled{false};
+	bool renamed{false};
+	glm::vec3 angles{0.f};
+	glm::vec3 scale{1.f};
+	std::string track; // the track of a memory cell
+};
+
+// writes the changed placement into the definition text of a model instance, or of a memory cell
+bool patch_placement(std::string &Text, std::string const &Name, bool const Model, node_source const &Source, placement_change const &Change, std::string &Error)
+{
+	if (false == Model)
+	{
+		return patch_memcell(Text, Change.moved ? std::optional<glm::dvec3>{Source.context.to_local(Change.location)} : std::nullopt, Change.track, Error);
+	}
+	model_placement placement;
+	placement.rotation = Source.context.rotation;
+	if (Change.moved)
+	{
+		placement.location = Source.context.to_local(Change.location);
+	}
+	if (Change.rotated)
+	{
+		placement.angles = Change.angles;
+	}
+	if (Change.scaled)
+	{
+		placement.scale = Change.scale / Source.context.scale;
+	}
+	if (Change.renamed)
+	{
+		placement.name = (Name.empty() ? "none" : Name);
+	}
+	return patch_model(Text, placement, Error);
+}
+
+// text of a track definition, in the coordinates of the file it goes to
+std::string path_text(TTrack &Path, glm::dvec3 const &Offset)
+{
+	auto const paths{Path.m_paths};
+	for (auto &path : Path.m_paths)
+		path.translate(-Offset);
+	std::string text;
+	Path.export_as_text(text);
+	Path.m_paths = paths;
+	text.erase(text.find_last_not_of(" \t\r\n") + 1);
+	return text;
+}
+
+// text of a road definition, likewise. the lanes aren't saved, they're generated from the definition of the road
+std::string road_text(road_node &Road, glm::dvec3 const &Offset)
+{
+	auto const definition{Road.definition()};
+	auto local{definition};
+	local.axis.points[segment_data::point::start] -= Offset;
+	local.axis.points[segment_data::point::end] -= Offset;
+	Road.define(local);
+	std::string text;
+	Road.export_as_text(text);
+	Road.define(definition);
+	text.erase(text.find_last_not_of(" \t\r\n") + 1);
+	return text;
+}
+
+// text of a definition of models laid along a curve, likewise
+std::string sweep_text(sweep_node &Sweep, glm::dvec3 const &Offset)
+{
+	auto const definition{Sweep.definition()};
+	auto local{definition};
+	for (auto &piece : local.pieces)
+	{
+		piece.points[segment_data::point::start] -= Offset;
+		piece.points[segment_data::point::end] -= Offset;
+	}
+	Sweep.define(local);
+	std::string text;
+	Sweep.export_as_text(text);
+	Sweep.define(definition);
+	text.erase(text.find_last_not_of(" \t\r\n") + 1);
+	return text;
+}
+
+// text of a road junction definition, likewise
+std::string junction_text(junction_node &Junction, glm::dvec3 const &Offset)
+{
+	auto const definition{Junction.definition()};
+	auto local{definition};
+	local.centre -= Offset;
+	for (auto &arm : local.arms)
+	{
+		arm.position -= Offset;
+	}
+	Junction.define(local);
+	std::string text;
+	Junction.export_as_text(text);
+	Junction.define(definition);
+	text.erase(text.find_last_not_of(" \t\r\n") + 1);
+	return text;
+}
+
+// text of a level crossing or a traffic point of the roads, likewise
+std::string roadpoint_text(roadpoint_node &Point, glm::dvec3 const &Offset)
+{
+	auto const definition{Point.definition()};
+	auto local{definition};
+	local.position -= Offset;
+	Point.define(local);
+	std::string text;
+	Point.export_as_text(text);
+	Point.define(definition);
+	text.erase(text.find_last_not_of(" \t\r\n") + 1);
+	return text;
+}
+
+// adds the lines at the end of the text, each on a line of its own
+void append_lines(std::string &Text, std::vector<std::string> const &Lines, std::string const &Eol)
+{
+	for (auto const &line : Lines)
+	{
+		ensure_newline(Text, Eol);
+		Text += line + Eol;
+	}
+}
+
+// the message of a save which went through: the files it wrote, and the copies it kept of those which lost their ground
+std::string saved_message(save_result const &Result)
+{
+	if (Result.files.empty())
+	{
+		return STR_C("No changes to save");
+	}
+	std::string files;
+	for (auto const &file : Result.files)
+	{
+		files += file + (&file != &Result.files.back() ? ", " : "");
+	}
+	auto message{format(STR_C("Saved: %s"), files.c_str())};
+	for (auto const &backup : Result.backups)
+	{
+		message += format(STR_C(". Backup before the ground was taken out: %s"), std::filesystem::path(backup).filename().string().c_str());
+	}
+	return message;
+}
+
+// the names of the first five nodes whose changes couldn't be written
+std::string unwritten_names(std::vector<std::string> const &Unwritten)
+{
+	std::string names;
+	for (std::size_t i = 0; i < std::min<std::size_t>(Unwritten.size(), 5); ++i)
+	{
+		names += (i > 0 ? ", " : "") + Unwritten[i];
+	}
+	if (Unwritten.size() > 5)
+	{
+		names += ", ...";
+	}
+	return names;
+}
+
 } // namespace
 
 // changes to make in the text of a single scenery file
@@ -432,10 +598,43 @@ struct node_layers::composition
 			instances.emplace_back(place);
 		}
 	}
+	// adds what the editor adds to the file: at the end, or ahead of the scenario initialization where the text holds it. that
+	// one is meant to be followed by nothing but the vehicles, so the additions take whole lines ahead of it, with the
+	// initialization left at the start of a line the way it was
+	void add(composition &Added, std::string const &Eol)
+	{
+		if (false == init.valid())
+		{
+			ensure_newline(text, Eol);
+			append(Added);
+			return;
+		}
+		ensure_newline(Added.text, Eol);
+		auto location{init.begin};
+		while (location > 0 && (text[location - 1] == ' ' || text[location - 1] == '\t'))
+		{
+			--location;
+		}
+		if (location == 0 || text[location - 1] == '\n')
+		{
+			insert(location, Added);
+		}
+		else
+		{
+			composition separated;
+			separated.text = Eol;
+			separated.append(Added);
+			insert(init.begin, separated);
+		}
+	}
 };
 
 struct node_layers::save_state
 {
+	explicit save_state(node_layers &Layers) : layers{Layers} {}
+
+	node_layers &layers; // the layers being saved
+	layer_handle const root{1}; // the scenario file
 	std::map<layer_handle, std::string> content; // original text of the files
 	std::map<layer_handle, file_patch> patches;
 	std::map<layer_handle, std::vector<basic_node const *>> nodes; // unchanged nodes defined in each file
@@ -443,6 +642,174 @@ struct node_layers::save_state
 	std::map<layer_handle, std::vector<instance_handle>> instances; // unchanged includes of templates in each file
 	std::string eol{"\r\n"};
 	std::string error;
+	// what the save works out on its way to the files, see node_layers::save()
+	using definitions = std::vector<std::pair<basic_node const *, std::string>>;
+	std::set<basic_node const *> rewritten; // nodes whose definitions are written anew or taken out of their files
+	std::map<layer_handle, definitions> created; // new definitions, by target layer
+	std::set<basic_node const *> relocated; // models written anew along with their group, or out of a dissolved one
+	std::vector<std::string> unwritten; // changes which can't be written, as their definition stands for more than one node
+	std::vector<basic_node *> saved; // nodes whose current state the files receive
+	std::vector<basic_node const *> dropped; // nodes taken out of the files
+	std::map<layer_handle, std::vector<std::string>> markedtext; // editor data in the comment lines, by target layer
+	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
+	std::map<layer_handle, std::vector<layer_handle>> appended; // merged layers placed at the end of their target
+	std::set<layer_handle> absorbed; // merged layers which cease to exist as files
+	std::set<layer_handle> detached; // layers whose include directives are replaced
+	std::vector<layer_handle> outputs; // files to write
+	std::vector<layer_handle> composed; // the files to write, with the merged layers whose text travels with them
+	std::map<layer_handle, composition> texts; // new text of the files to write
+	std::vector<layer_handle> written; // files whose new text waits in a temporary file
+
+	bool load(layer_handle Layer);
+	bool is_output(layer_handle Layer) const;
+	void push_edit(layer_handle Layer, source_span const &Span, std::string Text, basic_node const *Node);
+	// the changes in the scene, as changes to make in the files
+	bool collect_changes();
+	bool process_nodes();
+	bool process(basic_node const *Node, TAnimModel const *Model);
+	placement_change change_of(basic_node const *Node, TAnimModel const *Model, node_source const &Source) const;
+	bool rewrite_placement(basic_node const *Node, TAnimModel const *Model, node_source const &Source);
+	bool placed_definition(TAnimModel const *Model, layer_handle Target, std::string &Text);
+	bool relocate_groups();
+	bool relocate_group(group_handle Group);
+	bool relocate(TAnimModel const *Model, layer_handle Target, definitions &Output);
+	bool patch_attached();
+	bool save_paths();
+	bool save_path(TTrack *Path);
+	void mark_lines();
+	void replace_marked(layer_handle Markedlayer, std::string const &Mark, std::vector<std::string> const &Lines);
+	void move_marked(layer_handle Markedlayer, std::vector<marked_line> const &Lines);
+	bool place_templates();
+	bool place_template(std::size_t Index);
+	bool change_layers();
+	bool change_layer(layer_handle Candidate);
+	void merge_layer(layer_handle Candidate, bool Hassite);
+	bool include_created(layer_handle Candidate);
+	// the new text of the files
+	void list_outputs(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Statements);
+	bool load_composed();
+	void track_unchanged();
+	bool compose_outputs(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Statements);
+	bool compose_output(layer_handle Output, std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Statements);
+	bool compose_merged(layer_handle Output, std::string const &Eol, composition &Added);
+	void add_definitions(layer_handle Output, std::string const &Eol, composition &Added) const;
+	// the files themselves
+	bool write_temporary();
+	bool write_temporary(layer_handle Output);
+	void drop_temporary() const;
+	bool back_up_ground(std::vector<std::string> &Backups);
+	bool back_up(layer_handle Output, char const *Stamp, std::vector<std::string> &Backups);
+	bool replace_files(save_result &Result);
+	bool replace_file(layer_handle Output, std::vector<layer_handle> const &Replaced);
+	void restore(std::vector<layer_handle> const &Replaced) const;
+	// the bookkeeping, brought in line with the files
+	void update_bookkeeping();
+	void update_nodes(layer_handle Output);
+	void update_includes(layer_handle Output);
+	bool retire_layers();
+	void forget_changes();
+	void drop_terrain_cache(bool Removedterrain);
+
+	// saves the nodes of one kind which are defined by what they hold: their definitions are written anew when they changed,
+	// taken out of their files when removed, added to the files of their layers when they were created in the editor
+	template <typename Sequence_, typename Text_>
+	bool save_defined(Sequence_ const &Sequence, Text_ const &Text)
+	{
+		for (auto *node : Sequence)
+		{
+			if (false == save_defined_node(node, Text))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+	template <typename Node_, typename Text_>
+	bool save_defined_node(Node_ *Node, Text_ const &Text)
+	{
+		if (Node == nullptr || Node->from_template())
+		{
+			return true;
+		}
+		auto const nodelayer{layers.resolve(Node->layer())};
+		if (false == is_output(nodelayer))
+		{
+			return true;
+		}
+		auto const lookup{layers.m_sources.find(Node)};
+		if (lookup == layers.m_sources.end())
+		{
+			if (Node->m_editorremoved || false == Node->dirty())
+			{
+				return true;
+			}
+			created[nodelayer].emplace_back(Node, Text(*Node, layers.layer(nodelayer).context_insert().offset));
+			saved.push_back(Node);
+			return true;
+		}
+		auto const &source{lookup->second};
+		if ((false == Node->m_editorremoved && false == Node->dirty()) || false == layers.writable(source.layer))
+		{
+			return true;
+		}
+		if (false == load(source.layer))
+		{
+			return false;
+		}
+		if (Node->m_editorremoved)
+		{
+			dropped.push_back(Node);
+			push_edit(source.layer, source.span, {}, nullptr);
+		}
+		else
+		{
+			push_edit(source.layer, source.span, Text(*Node, source.context.offset), Node);
+			saved.push_back(Node);
+		}
+		rewritten.emplace(Node);
+		return true;
+	}
+	// rewrites the definition of a node the editor moved along with the track it belongs to, with Patch
+	template <typename Patch_>
+	bool patch_node(basic_node *Node, Patch_ const &Patch)
+	{
+		auto const lookup{layers.m_sources.find(Node)};
+		if (lookup == layers.m_sources.end() || false == Node->dirty())
+		{
+			return true;
+		}
+		auto const &source{lookup->second};
+		if (false == is_output(layers.resolve(source.layer)))
+		{
+			return true;
+		}
+		if (false == layers.writable(source.layer))
+		{
+			unwritten.push_back(Node->name());
+			return true;
+		}
+		if (false == load(source.layer))
+		{
+			return false;
+		}
+		auto const &filetext{content[source.layer]};
+		if (source.span.end > static_cast<std::streamoff>(filetext.size()))
+		{
+			error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layers.layer(source.layer).name + "\"";
+			return false;
+		}
+		auto text{filetext.substr(static_cast<std::size_t>(source.span.begin), static_cast<std::size_t>(source.span.end - source.span.begin))};
+		std::string patcherror;
+		if (false == Patch(text, source, patcherror))
+		{
+			error = patcherror + " of \"" + Node->name() + "\" in file \"" + layers.layer(source.layer).name + "\"";
+			return false;
+		}
+		push_edit(source.layer, source.span, std::move(text), Node);
+		rewritten.emplace(Node);
+		saved.push_back(Node);
+		return true;
+	}
 };
 
 // produces text of specified file with the changes applied
@@ -633,6 +1000,1053 @@ bool node_layers::compose(save_state &State, layer_handle const Layer, compositi
 	return true;
 }
 
+// loads text of specified layer file, if it wasn't loaded yet
+bool node_layers::save_state::load(layer_handle const Layer)
+{
+	if (layers.layer(Layer).created || content.count(Layer) != 0)
+	{
+		return true;
+	}
+	std::error_code fault;
+	auto const filepath{std::filesystem::path(layers.path(Layer))};
+	auto const filesize{std::filesystem::file_size(filepath, fault)};
+	auto const filetime{fault ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(filepath, fault)};
+	std::string filetext;
+	if (fault || false == read_file(layers.path(Layer), filetext))
+	{
+		error = "can't read file \"" + layers.layer(Layer).name + "\"";
+		return false;
+	}
+	if (filesize != layers.layer(Layer).filesize || filetime != layers.layer(Layer).filetime || filetext.size() != filesize)
+	{
+		// locations of the definitions are no longer valid
+		error = "file \"" + layers.layer(Layer).name + "\" was changed outside of the editor since the scenery was loaded";
+		return false;
+	}
+	content.emplace(Layer, std::move(filetext));
+	return true;
+}
+
+// a layer is saved if it's still a part of the scenery, as a file of its own
+bool node_layers::save_state::is_output(layer_handle const Layer) const
+{
+	return layers.listed(Layer) && false == layers.layer(Layer).removed && false == layers.layer(Layer).binary;
+}
+
+void node_layers::save_state::push_edit(layer_handle const Layer, source_span const &Span, std::string Text, basic_node const *Node)
+{
+	file_patch::edit edit;
+	edit.begin = Span.begin;
+	edit.end = Span.end;
+	edit.length = Text.size();
+	edit.text = std::move(Text);
+	edit.node = Node;
+	patches[Layer].edits.emplace_back(std::move(edit));
+}
+
+// changed, created and deleted nodes, the editor data in the comment lines, the includes of templates and the layer changes
+bool node_layers::save_state::collect_changes()
+{
+	if (false == (process_nodes() && relocate_groups() && patch_attached() && save_paths() && save_defined(simulation::Roads.sequence(), &road_text) &&
+	              save_defined(simulation::Sweeps.sequence(), &sweep_text) && save_defined(simulation::Junctions.sequence(), &junction_text) &&
+	              save_defined(simulation::Roadpoints.sequence(), &roadpoint_text)))
+	{
+		return false;
+	}
+	for (auto const &erased : layers.m_erased)
+	{
+		push_edit(erased.first, erased.second, {}, nullptr);
+	}
+	mark_lines();
+	return place_templates() && change_layers();
+}
+
+// changed and deleted model instances and memory cells
+bool node_layers::save_state::process_nodes()
+{
+	for (auto const *instance : simulation::Instances.sequence())
+	{
+		if (instance != nullptr && false == process(instance, instance))
+		{
+			return false;
+		}
+	}
+	for (auto const *memorycell : simulation::Memory.sequence())
+	{
+		if (memorycell != nullptr && false == process(memorycell, nullptr))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::process(basic_node const *Node, TAnimModel const *Model)
+{
+	auto const nodelayer{layers.resolve(Node->layer())};
+	if (false == is_output(nodelayer))
+	{
+		return true;
+	}
+	if (Model != nullptr && Groups.relocating(Node))
+	{
+		// written anew along with its group, below
+		return true;
+	}
+	if (auto const lookup{layers.m_sources.find(Node)}; lookup != layers.m_sources.end())
+	{
+		// defined in a scenery file. rewrite the placement in its definition if it's no longer the one it was loaded with
+		return rewrite_placement(Node, Model, lookup->second);
+	}
+	if (Model != nullptr && false == Node->from_template())
+	{
+		// created in the editor. the definition is added to the layer file, with the placement in effect at the place it goes to
+		std::string text;
+		if (false == placed_definition(Model, nodelayer, text))
+		{
+			return false;
+		}
+		created[nodelayer].emplace_back(Node, std::move(text));
+	}
+	return true;
+}
+
+placement_change node_layers::save_state::change_of(basic_node const *Node, TAnimModel const *Model, node_source const &Source) const
+{
+	placement_change change;
+	change.location = Node->location();
+	change.angles = (Model != nullptr ? Model->Angles() : glm::vec3{0.f});
+	change.scale = (Model != nullptr ? Model->Scale() : glm::vec3{1.f});
+	change.moved = glm::distance(change.location, Source.location) > 1e-4;
+	change.rotated = false == glm::all(glm::epsilonEqual(change.angles, Source.angles, 1e-3f));
+	change.scaled = false == glm::all(glm::epsilonEqual(change.scale, Source.scale, 1e-4f));
+	change.renamed = Model != nullptr && layers.m_renamed.find(Node) != layers.m_renamed.end();
+	auto const *cell{Model == nullptr ? static_cast<TMemCell const *>(Node) : nullptr};
+	if (cell != nullptr && cell->Track != nullptr)
+	{
+		change.track = cell->Track->name();
+	}
+	return change;
+}
+
+bool node_layers::save_state::rewrite_placement(basic_node const *Node, TAnimModel const *Model, node_source const &Source)
+{
+	if (false == layers.writable(Source.layer))
+	{
+		// the editor doesn't let these be changed, as one definition stands for more than one node
+		return true;
+	}
+	auto const change{change_of(Node, Model, Source)};
+	if (false == (change.moved || change.rotated || change.scaled || change.renamed || (false == change.track.empty() && Node->dirty()))) // NOSONAR
+	{
+		return true;
+	}
+	if (false == load(Source.layer))
+	{
+		return false;
+	}
+	auto const &filetext{content[Source.layer]};
+	if (Source.span.end > static_cast<std::streamoff>(filetext.size()))
+	{
+		error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layers.layer(Source.layer).name + "\""; // NOSONAR
+		return false;
+	}
+	auto text{filetext.substr(static_cast<std::size_t>(Source.span.begin), static_cast<std::size_t>(Source.span.end - Source.span.begin))};
+	std::string patcherror;
+	if (false == patch_placement(text, Node->name(), Model != nullptr, Source, change, patcherror))
+	{
+		error = patcherror + " of \"" + Node->name() + "\" in file \"" + layers.layer(Source.layer).name + "\""; // NOSONAR
+		return false;
+	}
+	if (text.size() == static_cast<std::size_t>(Source.span.end - Source.span.begin) && filetext.compare(static_cast<std::size_t>(Source.span.begin), text.size(), text) == 0)
+	{
+		return true;
+	}
+	push_edit(Source.layer, Source.span, std::move(text), Node);
+	rewritten.emplace(Node);
+	return true;
+}
+
+// the definition of a model instance written anew in the file of specified layer, with the placement in effect at the place it goes to
+bool node_layers::save_state::placed_definition(TAnimModel const *Model, layer_handle const Target, std::string &Text)
+{
+	Model->export_as_text(Text);
+	Text.erase(Text.find_last_not_of(" \t\r\n") + 1);
+	auto const &context{layers.layer(Target).context_insert()};
+	if (context.matches(layer_context()))
+	{
+		return true;
+	}
+	model_placement placement;
+	placement.rotation = context.rotation;
+	placement.location = context.to_local(Model->location());
+	placement.angles = Model->Angles();
+	placement.scale = Model->Scale() / context.scale;
+	std::string patcherror;
+	if (patch_model(Text, placement, patcherror))
+	{
+		return true;
+	}
+	error = patcherror + " of \"" + Model->name() + "\"";
+	return false;
+}
+
+// models grouped or ungrouped in the editor: their definitions are taken out of where they are and written anew, a group
+// as one block between group and endgroup in the layer of its first model, a model of a dissolved group on its own
+bool node_layers::save_state::relocate_groups()
+{
+	for (auto const *node : Groups.loose())
+	{
+		auto const *model{dynamic_cast<TAnimModel const *>(node)};
+		if (model == nullptr || model->from_template() || false == is_output(layers.resolve(node->layer())))
+		{
+			continue;
+		}
+		if (false == relocate(model, layers.resolve(node->layer()), created[layers.resolve(node->layer())]))
+		{
+			return false;
+		}
+	}
+	for (auto const group : Groups.rewritten())
+	{
+		if (false == relocate_group(group))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::relocate_group(group_handle const Group)
+{
+	auto const &members{Groups.group(Group).nodes};
+	if (members.empty() || false == is_output(layers.resolve(members.front()->layer())))
+	{
+		return true;
+	}
+	auto const target{layers.resolve(members.front()->layer())};
+	auto &output{created[target]};
+	// NOTE: lines with no node are written as they are, without a place in the bookkeeping
+	output.emplace_back(nullptr, "group");
+	for (auto const *node : members)
+	{
+		auto const *model{dynamic_cast<TAnimModel const *>(node)};
+		if (model == nullptr || model->from_template())
+		{
+			continue;
+		}
+		if (false == relocate(model, target, output))
+		{
+			return false;
+		}
+	}
+	output.emplace_back(nullptr, "endgroup");
+	return true;
+}
+
+bool node_layers::save_state::relocate(TAnimModel const *Model, layer_handle const Target, definitions &Output)
+{
+	if (auto const lookup{layers.m_sources.find(Model)}; lookup != layers.m_sources.end())
+	{
+		auto const &source{lookup->second};
+		if (false == layers.writable(source.layer))
+		{
+			// one definition stands for more than one node, it stays where it is
+			return true;
+		}
+		if (false == load(source.layer))
+		{
+			return false;
+		}
+		push_edit(source.layer, source.span, {}, nullptr);
+		rewritten.emplace(Model);
+	}
+	std::string text;
+	if (false == placed_definition(Model, Target, text))
+	{
+		return false;
+	}
+	Output.emplace_back(Model, std::move(text));
+	relocated.emplace(Model);
+	return true;
+}
+
+// traction and event launchers are rewritten when the editor moved them along with the track they belong to
+bool node_layers::save_state::patch_attached()
+{
+	for (auto *traction : simulation::Traction.sequence())
+	{
+		if (traction != nullptr &&
+		    false == patch_node(traction, [traction](std::string &Text, node_source const &Source, std::string &Error) { return patch_traction(Text, *traction, Source.context.offset, Error); }))
+		{
+			return false;
+		}
+	}
+	for (auto *launcher : simulation::Events.launchers())
+	{
+		if (launcher != nullptr &&
+		    false == patch_node(launcher, [launcher](std::string &Text, node_source const &Source, std::string &Error) { return patch_launcher(Text, Source.context.to_local(launcher->location()), Error); }))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::save_paths()
+{
+	for (auto *path : simulation::Paths.sequence())
+	{
+		if (false == save_path(path))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::save_path(TTrack *Path)
+{
+	if (Path == nullptr || (Path->iCategoryFlag & 0x80) != 0 || Path->m_road != nullptr || Path->from_template())
+	{
+		return true;
+	}
+	auto const nodelayer{layers.resolve(Path->layer())};
+	if (false == is_output(nodelayer))
+	{
+		return true;
+	}
+	auto const lookup{layers.m_sources.find(Path)};
+	if (lookup == layers.m_sources.end())
+	{
+		if (Path->m_editorremoved || false == Path->dirty())
+		{
+			return true;
+		}
+		// a file included more than once would get a copy of the new path at every inclusion
+		auto const target{layers.writable(nodelayer) ? nodelayer : root};
+		created[target].emplace_back(Path, path_text(*Path, layers.layer(target).context_insert().offset));
+		saved.push_back(Path);
+		return true;
+	}
+	auto const &source{lookup->second};
+	if (false == Path->m_editorremoved && false == Path->dirty())
+	{
+		return true;
+	}
+	if (false == layers.writable(source.layer))
+	{
+		unwritten.push_back(Path->name().empty() ? std::string{STR_C("(no name)")} : Path->name());
+		return true;
+	}
+	if (false == load(source.layer))
+	{
+		return false;
+	}
+	if (Path->m_editorremoved)
+	{
+		push_edit(source.layer, source.span, {}, nullptr);
+		dropped.push_back(Path);
+	}
+	else
+	{
+		push_edit(source.layer, source.span, path_text(*Path, source.context.offset), Path);
+		saved.push_back(Path);
+	}
+	rewritten.emplace(Path);
+	return true;
+}
+
+// editor data in the comment lines: the old lines go, the new ones are added to the file like new definitions
+void node_layers::save_state::mark_lines()
+{
+	for (auto const &marking : layers.m_marking)
+	{
+		replace_marked(marking.first.first, marking.first.second, marking.second);
+	}
+	// the lines read from the letters the marks had before go to the mark they have now, also those the editor didn't change
+	for (auto const &[markedlayer, lines] : layers.m_marked)
+	{
+		move_marked(markedlayer, lines);
+	}
+}
+
+void node_layers::save_state::replace_marked(layer_handle const Markedlayer, std::string const &Mark, std::vector<std::string> const &Lines)
+{
+	if (auto const lookup{layers.m_marked.find(Markedlayer)}; lookup != layers.m_marked.end())
+	{
+		for (auto const &line : lookup->second)
+		{
+			if (line.mark == Mark)
+			{
+				push_edit(Markedlayer, line.span, {}, nullptr);
+			}
+		}
+	}
+	auto const target{layers.resolve(Markedlayer)};
+	if (Lines.empty() || false == is_output(target))
+	{
+		return;
+	}
+	for (auto const &text : Lines)
+	{
+		markedtext[target].push_back(Mark + ' ' + text);
+	}
+}
+
+void node_layers::save_state::move_marked(layer_handle const Markedlayer, std::vector<marked_line> const &Lines)
+{
+	auto const target{layers.resolve(Markedlayer)};
+	if (layers.layer(Markedlayer).dead || false == is_output(target) || false == layers.writable(Markedlayer))
+	{
+		return;
+	}
+	for (auto const &line : Lines)
+	{
+		if (line.moved && false == layers.m_marking.contains({Markedlayer, line.mark}))
+		{
+			push_edit(Markedlayer, line.span, {}, nullptr);
+			markedtext[target].push_back(line.mark + ' ' + line.text);
+		}
+	}
+}
+
+// includes of templates
+bool node_layers::save_state::place_templates()
+{
+	for (std::size_t idx = 0; idx < layers.m_instances.size(); ++idx)
+	{
+		if (false == place_template(idx))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::place_template(std::size_t const Index)
+{
+	auto const &included{layers.m_instances[Index]};
+	if (included.dead)
+	{
+		return true;
+	}
+	if (included.span.valid())
+	{
+		if (included.removed)
+		{
+			push_edit(included.layer, included.span, {}, nullptr);
+		}
+		else if (false == included.directive.empty())
+		{
+			// changed in the editor, the new directive takes the place of the one in the file
+			file_patch::edit edit;
+			edit.begin = included.span.begin;
+			edit.end = included.span.end;
+			edit.length = included.directive.size();
+			edit.text = included.directive;
+			edit.instance = static_cast<instance_handle>(Index + 1);
+			patches[included.layer].edits.emplace_back(std::move(edit));
+		}
+		return true;
+	}
+	if (included.removed || included.directive.empty())
+	{
+		return true;
+	}
+	auto const target{layers.resolve(included.layer)};
+	if (false == is_output(target))
+	{
+		return true;
+	}
+	if (false == included.context.matches(layers.layer(target).context_insert()))
+	{
+		// shouldn't happen, merge of layers is refused when it'd lead to this
+		error = format(STR_C("include \"%s\" was placed for different origin, rotation or scale than its layer file receives it with"), included.file->c_str());
+		return false;
+	}
+	placed[target].emplace_back(static_cast<instance_handle>(Index + 1));
+	return true;
+}
+
+// layer changes
+bool node_layers::save_state::change_layers()
+{
+	for (std::size_t idx = 0; idx < layers.m_layers.size(); ++idx)
+	{
+		if (false == change_layer(static_cast<layer_handle>(idx + 1)))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::change_layer(layer_handle const Candidate)
+{
+	auto const &source{layers.layer(Candidate)};
+	if (source.dead)
+	{
+		return true;
+	}
+	auto const hassite{false == source.created && source.sites.size() == 1 && false == source.sites.front().fixed && source.sites.front().span.valid()};
+	if (source.merged != null_handle)
+	{
+		merge_layer(Candidate, hassite);
+	}
+	else if (source.removed)
+	{
+		if (hassite)
+		{
+			push_edit(source.sites.front().parent, source.sites.front().span, {}, nullptr);
+			detached.emplace(Candidate);
+		}
+	}
+	else if (source.created)
+	{
+		return include_created(Candidate);
+	}
+	return true;
+}
+
+void node_layers::save_state::merge_layer(layer_handle const Candidate, bool const Hassite)
+{
+	auto const &source{layers.layer(Candidate)};
+	auto const target{layers.resolve(Candidate)};
+	absorbed.emplace(Candidate);
+	if (false == Hassite)
+	{
+		appended[target].emplace_back(Candidate);
+		return;
+	}
+	file_patch::edit edit;
+	edit.begin = source.sites.front().span.begin;
+	edit.end = source.sites.front().span.end;
+	if (layers.resolve(source.sites.front().parent) == target)
+	{
+		edit.inlined = Candidate;
+	}
+	else
+	{
+		appended[target].emplace_back(Candidate);
+	}
+	patches[source.sites.front().parent].edits.emplace_back(std::move(edit));
+	detached.emplace(Candidate);
+}
+
+// include directive for a file created in the editor, on a line of its own
+bool node_layers::save_state::include_created(layer_handle const Candidate)
+{
+	auto const &source{layers.layer(Candidate)};
+	auto const parent{source.parent};
+	auto const directive{"include " + source.name + " end"};
+	file_patch::edit edit;
+	edit.site = Candidate;
+	edit.length = directive.size();
+	auto const anchor{source.anchor};
+	if (layers.valid(anchor) && layers.layer(anchor).sites.size() == 1 && layers.layer(anchor).sites.front().parent == parent && layers.layer(anchor).sites.front().span.valid())
+	{
+		edit.begin = layers.layer(anchor).sites.front().span.end;
+		edit.end = edit.begin;
+		edit.text = eol + directive;
+		edit.lead = eol.size();
+	}
+	else
+	{
+		// NOTE: negative location stands for the place the file receives additions at
+		edit.begin = -1;
+		edit.end = -1;
+		if (false == layers.layer(parent).created)
+		{
+			if (false == load(parent))
+			{
+				return false;
+			}
+			// dropped by compose() if the text ahead ends with a line break already
+			edit.text = eol;
+			edit.lead = eol.size();
+		}
+		edit.text += directive + eol;
+	}
+	patches[parent].edits.emplace_back(std::move(edit));
+	return true;
+}
+
+// files to write
+void node_layers::save_state::list_outputs(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements,
+                                           std::map<layer_handle, std::vector<std::string>> const &Statements)
+{
+	for (std::size_t idx = 0; idx < layers.m_layers.size(); ++idx)
+	{
+		auto const candidate{static_cast<layer_handle>(idx + 1)};
+		if (false == is_output(candidate))
+		{
+			continue;
+		}
+		if (layers.layer(candidate).created || patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
+		    markedtext.contains(candidate) || Statements.contains(candidate) || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())))
+		{
+			outputs.emplace_back(candidate);
+		}
+	}
+}
+
+// text of the merged layers travels with the file they end up in, but changes made to it are still theirs
+bool node_layers::save_state::load_composed()
+{
+	composed = outputs;
+	composed.insert(std::end(composed), std::begin(absorbed), std::end(absorbed));
+	for (auto const candidate : composed)
+	{
+		if (false == load(candidate))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+// what is defined in the loaded files and isn't rewritten moves along with the text
+void node_layers::save_state::track_unchanged()
+{
+	for (auto const &source : layers.m_sources)
+	{
+		if (content.count(source.second.layer) != 0 && rewritten.count(source.first) == 0)
+		{
+			nodes[source.second.layer].emplace_back(source.first);
+		}
+	}
+	for (std::size_t idx = 0; idx < layers.m_layers.size(); ++idx)
+	{
+		auto const candidate{static_cast<layer_handle>(idx + 1)};
+		auto const &included{layers.layer(candidate)};
+		if (included.dead || included.created || detached.count(candidate) != 0 || included.sites.size() != 1 || included.sites.front().fixed || false == included.sites.front().span.valid())
+		{
+			continue;
+		}
+		includes[included.sites.front().parent].emplace_back(candidate);
+	}
+	for (std::size_t idx = 0; idx < layers.m_instances.size(); ++idx)
+	{
+		auto const &included{layers.m_instances[idx]};
+		if (false == included.dead && false == included.removed && included.directive.empty() && included.span.valid() && content.count(included.layer) != 0)
+		{
+			instances[included.layer].emplace_back(static_cast<instance_handle>(idx + 1));
+		}
+	}
+}
+
+bool node_layers::save_state::compose_outputs(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements,
+                                              std::map<layer_handle, std::vector<std::string>> const &Statements)
+{
+	for (auto const output : outputs)
+	{
+		if (false == compose_output(output, Rootstatements, Trailingstatements, Statements))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::compose_output(layer_handle const Output, std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements,
+                                             std::map<layer_handle, std::vector<std::string>> const &Statements)
+{
+	auto &text{texts[Output]};
+	auto const fileeol{detect_eol(content.count(Output) != 0 ? content[Output] : std::string{}, eol)};
+	if (layers.layer(Output).created)
+	{
+		// NOTE: the parser treats an empty file as a missing one
+		text.text = (layers.layer(Output).header.empty() ? std::string{"// scenery layer created in the editor"} : layers.layer(Output).header) + fileeol;
+	}
+	composition body;
+	if (false == layers.compose(*this, Output, body, 0))
+	{
+		return false;
+	}
+	text.append(body);
+	// what the editor adds to the file
+	composition added;
+	if (false == compose_merged(Output, fileeol, added))
+	{
+		return false;
+	}
+	add_definitions(Output, fileeol, added);
+	if (auto const lookup{markedtext.find(Output)}; lookup != markedtext.end())
+	{
+		append_lines(added.text, lookup->second, fileeol);
+	}
+	if (Output == root)
+	{
+		append_lines(added.text, Rootstatements, fileeol);
+	}
+	if (auto const lookup{Statements.find(Output)}; lookup != Statements.end())
+	{
+		append_lines(added.text, lookup->second, fileeol);
+	}
+	if (Output == root && false == Trailingstatements.empty())
+	{
+		composition trailing;
+		for (auto const &statement : Trailingstatements)
+			trailing.text += statement + fileeol;
+		ensure_newline(text.text, fileeol);
+		text.append(trailing);
+	}
+	if (false == added.text.empty())
+	{
+		text.add(added, fileeol);
+	}
+	return true;
+}
+
+// the merged layers placed at the end of the file
+bool node_layers::save_state::compose_merged(layer_handle const Output, std::string const &Eol, composition &Added)
+{
+	auto const lookup{appended.find(Output)};
+	if (lookup == appended.end())
+	{
+		return true;
+	}
+	for (auto const merged : lookup->second)
+	{
+		composition mergedtext;
+		if (false == layers.compose(*this, merged, mergedtext, 0))
+		{
+			return false;
+		}
+		ensure_newline(Added.text, Eol);
+		Added.append(mergedtext);
+	}
+	return true;
+}
+
+// the definitions created in the editor and the include directives placed in it
+void node_layers::save_state::add_definitions(layer_handle const Output, std::string const &Eol, composition &Added) const
+{
+	if (auto const lookup{created.find(Output)}; lookup != created.end())
+	{
+		for (auto const &definition : lookup->second)
+		{
+			ensure_newline(Added.text, Eol);
+			auto const offset{static_cast<std::streamoff>(Added.text.size())};
+			if (definition.first != nullptr)
+			{
+				Added.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
+			}
+			Added.text += definition.second + Eol;
+		}
+	}
+	if (auto const lookup{placed.find(Output)}; lookup != placed.end())
+	{
+		for (auto const included : lookup->second)
+		{
+			auto const &directive{layers.instance(included).directive};
+			ensure_newline(Added.text, Eol);
+			auto const offset{static_cast<std::streamoff>(Added.text.size())};
+			Added.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
+			Added.text += directive + Eol;
+		}
+	}
+}
+
+// new content goes to temporary files first, so a failure half way through doesn't leave the scenery with only a part of the changes
+bool node_layers::save_state::write_temporary()
+{
+	for (auto const output : outputs)
+	{
+		auto const lookup{content.find(output)};
+		if (lookup != content.end() && lookup->second == texts[output].text)
+		{
+			continue;
+		}
+		if (false == write_temporary(output))
+		{
+			return false;
+		}
+		written.emplace_back(output);
+	}
+	return true;
+}
+
+bool node_layers::save_state::write_temporary(layer_handle const Output)
+{
+	std::error_code fault;
+	auto const filepath{std::filesystem::path(layers.path(Output))};
+	if (filepath.has_parent_path())
+	{
+		std::filesystem::create_directories(filepath.parent_path(), fault);
+	}
+	std::ofstream file{layers.path(Output) + ".tmp", std::ios_base::binary | std::ios_base::trunc};
+	file << texts[Output].text;
+	file.close();
+	if (false == file.fail())
+	{
+		return true;
+	}
+	drop_temporary();
+	std::filesystem::remove(layers.path(Output) + ".tmp", fault);
+	error = format(STR_C("can't write file \"%s\""), layers.layer(Output).name.c_str());
+	return false;
+}
+
+// the temporary files written so far go
+void node_layers::save_state::drop_temporary() const
+{
+	std::error_code fault;
+	for (auto const leftover : written)
+	{
+		std::filesystem::remove(layers.path(leftover) + ".tmp", fault);
+	}
+}
+
+// a file which loses its ground to the terrain of the editor keeps a copy of itself each time, whatever was saved before.
+// without the copy nothing is replaced
+bool node_layers::save_state::back_up_ground(std::vector<std::string> &Backups)
+{
+	auto const now{std::time(nullptr)};
+	std::array<char, 32> stamp{};
+	std::strftime(stamp.data(), stamp.size(), "%Y%m%d-%H%M%S", std::localtime(&now));
+	for (auto const output : written)
+	{
+		if (false == back_up(output, stamp.data(), Backups))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool node_layers::save_state::back_up(layer_handle const Output, char const *Stamp, std::vector<std::string> &Backups)
+{
+	auto const filepath{layers.path(Output)};
+	bool const losesground{std::ranges::any_of(layers.m_shapes, [Output](shape_source const &Shape) { return Shape.erased && Shape.layer == Output; })};
+	std::error_code fault;
+	if (false == losesground || false == std::filesystem::exists(filepath, fault))
+	{
+		return true;
+	}
+	auto const backup{filepath + ".bak-" + Stamp + "-przed-terenem-edytora"};
+	std::error_code copyerror;
+	if (false == std::filesystem::copy_file(filepath, backup, std::filesystem::copy_options::overwrite_existing, copyerror))
+	{
+		drop_temporary();
+		error = format(STR_C("can't make a backup of file \"%s\": %s"), layers.layer(Output).name.c_str(), copyerror.message().c_str());
+		return false;
+	}
+	WriteLog("Scenery save: the triangles of the ground go from \"" + layers.layer(Output).name + "\", its previous content is kept in \"" + backup + "\"");
+	Backups.emplace_back(backup);
+	return true;
+}
+
+// the temporary files take the place of the scenery files
+bool node_layers::save_state::replace_files(save_result &Result)
+{
+	std::vector<layer_handle> replaced;
+	for (auto const output : written)
+	{
+		if (false == replace_file(output, replaced))
+		{
+			Result.files.clear();
+			return false;
+		}
+		replaced.emplace_back(output);
+		Result.files.emplace_back(layers.layer(output).name);
+	}
+	return true;
+}
+
+bool node_layers::save_state::replace_file(layer_handle const Output, std::vector<layer_handle> const &Replaced)
+{
+	auto const filepath{layers.path(Output)};
+	std::error_code fault;
+	// the first save of a file leaves its original content next to it
+	if (false == layers.layer(Output).editormade && std::filesystem::exists(filepath, fault) && false == std::filesystem::exists(filepath + ".bak", fault))
+	{
+		std::filesystem::copy_file(filepath, filepath + ".bak", fault);
+	}
+	std::filesystem::rename(filepath + ".tmp", filepath, fault);
+	if (false == static_cast<bool>(fault))
+	{
+		return true;
+	}
+	// e.g. the file is held open by another program. take back what was done so far: the scenery files
+	// have to stay in step with each other, and with what we know about them
+	auto const cause{fault.message()};
+	restore(Replaced);
+	drop_temporary();
+	error = format(STR_C("can't replace file \"%s\": %s"), layers.layer(Output).name.c_str(), cause.c_str());
+	return false;
+}
+
+void node_layers::save_state::restore(std::vector<layer_handle> const &Replaced) const
+{
+	std::error_code fault;
+	for (auto const restored : Replaced)
+	{
+		auto const lookup{content.find(restored)};
+		if (lookup != content.end())
+		{
+			std::ofstream{layers.path(restored), std::ios_base::binary | std::ios_base::trunc} << lookup->second;
+			layers.stat(restored);
+		}
+		else
+		{
+			std::filesystem::remove(layers.path(restored), fault);
+		}
+	}
+}
+
+// the scenery files now match the scene, update the bookkeeping to reflect it
+void node_layers::save_state::update_bookkeeping()
+{
+	Groups.saved();
+	for (auto const output : outputs)
+	{
+		update_nodes(output);
+		update_includes(output);
+	}
+	auto removedterrain{retire_layers()};
+	forget_changes();
+	removedterrain |= layers.m_shapeserased;
+	layers.m_shapeserased = false;
+	drop_terrain_cache(removedterrain);
+}
+
+void node_layers::save_state::update_nodes(layer_handle const Output)
+{
+	for (auto const &place : texts[Output].nodes)
+	{
+		auto &source{layers.m_sources[place.node]};
+		auto const isnew{source.layer == null_handle};
+		source.layer = Output;
+		source.span = place.span;
+		// a definition written anew elsewhere is in the placement of the place it went to, as a new one is
+		if (isnew || relocated.count(place.node) != 0)
+		{
+			source.context = layers.layer(Output).context_insert();
+		}
+		if (isnew || place.rewritten)
+		{
+			auto const *model{dynamic_cast<TAnimModel const *>(place.node)};
+			source.location = place.node->location();
+			source.angles = (model != nullptr ? model->Angles() : glm::vec3{0.f});
+			source.scale = (model != nullptr ? model->Scale() : glm::vec3{1.f});
+		}
+	}
+}
+
+void node_layers::save_state::update_includes(layer_handle const Output)
+{
+	for (auto const &place : texts[Output].instances)
+	{
+		auto &included{layers.m_instances[place.instance - 1]};
+		included.layer = Output;
+		included.span = place.span;
+		included.directive.clear();
+	}
+	for (auto const &place : texts[Output].sites)
+	{
+		auto &included{layers.layer(place.layer)};
+		if (included.sites.empty())
+		{
+			// directive of a layer created in the editor
+			included.sites.emplace_back();
+		}
+		included.sites.front().parent = Output;
+		included.sites.front().span = place.span;
+		included.parent = Output;
+	}
+	// the mark of the scenario initialization moved along with the text around it, or came with the text of a merged layer
+	auto &savedlayer{layers.layer(Output)};
+	if (false == savedlayer.init.valid() && texts[Output].init.valid())
+	{
+		for (std::size_t idx = 0; idx < layers.m_layers.size(); ++idx)
+		{
+			if (layers.m_layers[idx].init.valid() && layers.m_layers[idx].merged != null_handle && layers.resolve(static_cast<layer_handle>(idx + 1)) == Output)
+			{
+				savedlayer.context_init = layers.m_layers[idx].context_init;
+			}
+		}
+	}
+	savedlayer.init = texts[Output].init;
+}
+
+// the merged and removed layers are no longer a part of the scenery. returns: true if a removed one had ground in it
+bool node_layers::save_state::retire_layers()
+{
+	auto removedterrain{false};
+	for (std::size_t idx = 0; idx < layers.m_layers.size(); ++idx)
+	{
+		auto &retired{layers.layer(static_cast<layer_handle>(idx + 1))};
+		if (retired.dead)
+		{
+			continue;
+		}
+		if (retired.merged != null_handle || retired.removed)
+		{
+			removedterrain |= retired.removed && (retired.items[static_cast<std::size_t>(layer_item::shape)] + retired.items[static_cast<std::size_t>(layer_item::lines)] > 0);
+			retired.dead = true;
+			retired.sites.clear();
+		}
+		retired.created = false;
+		retired.anchor = null_handle;
+	}
+	return removedterrain;
+}
+
+// the changes the files received are no longer pending
+void node_layers::save_state::forget_changes()
+{
+	for (auto const output : written)
+	{
+		layers.stat(output);
+		layers.scan(output);
+	}
+	// the lines of the merged layers are now in the files of their targets, read again with them: all of them, the ones the
+	// editor didn't change too, or the next save would write the lines moved off the letters of the starters twice
+	for (auto marked{layers.m_marked.begin()}; marked != layers.m_marked.end();)
+	{
+		marked = (layers.resolve(marked->first) != marked->first ? layers.m_marked.erase(marked) : std::next(marked));
+	}
+	layers.m_marking.clear();
+	for (auto &included : layers.m_instances)
+	{
+		// removed includes are gone from the files now
+		included.dead = included.dead || included.removed;
+	}
+	layers.m_erased.clear();
+	layers.m_renamed.clear();
+	// the shapes of the rewritten files are somewhere else in them now
+	std::erase_if(layers.m_shapes, [this](shape_source const &Shape) { return std::ranges::find(composed, Shape.layer) != std::end(composed); });
+	for (auto *node : saved)
+	{
+		node->m_dirty = false;
+	}
+	for (auto const *node : dropped)
+	{
+		layers.m_sources.erase(node);
+	}
+}
+
+// the binary terrain file still holds geometry of a dropped layer, have it rebuilt on the next load
+void node_layers::save_state::drop_terrain_cache(bool const Removedterrain)
+{
+	if (false == Removedterrain)
+	{
+		return;
+	}
+	auto terrainfile{layers.layer(root).name};
+	while (false == terrainfile.empty() && terrainfile.front() == '$')
+	{
+		terrainfile.erase(0, 1);
+	}
+	erase_extension(terrainfile);
+	if (std::error_code fault; std::filesystem::remove(Global.asCurrentSceneryPath + terrainfile + ".sbt", fault))
+	{
+		WriteLog("Scenery save: binary terrain file removed, it'll be generated again on the next load");
+	}
+}
+
 // writes changes made in the editor to the scenery files
 save_result node_layers::save(std::vector<std::string> const &Rootstatements, std::vector<std::string> const &Trailingstatements, std::map<layer_handle, std::vector<std::string>> const &Statements)
 {
@@ -642,1286 +2056,49 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		result.message = STR_C("The scenery wasn't opened for editing, there are no layers to save");
 		return result;
 	}
-	auto const root{layer_handle{1}};
-	save_state state;
-	auto const fail = [&](std::string const &Message) {
+	save_state state{*this};
+	auto const fail = [&result](std::string const &Message) {
 		result.message = format(STR_C("Scenery not saved: %s"), Message.c_str());
 		ErrorLog(result.message);
 		return result;
 	};
-	// loads text of specified layer file, if it wasn't loaded yet
-	auto const load = [&](layer_handle const Layer) {
-		if (layer(Layer).created || state.content.count(Layer) != 0)
-		{
-			return true;
-		}
-		std::error_code error;
-		auto const filepath{std::filesystem::path(path(Layer))};
-		auto const filesize{std::filesystem::file_size(filepath, error)};
-		auto const filetime{error ? std::filesystem::file_time_type{} : std::filesystem::last_write_time(filepath, error)};
-		std::string content;
-		if (error || false == read_file(path(Layer), content))
-		{
-			state.error = "can't read file \"" + layer(Layer).name + "\"";
-			return false;
-		}
-		if (filesize != layer(Layer).filesize || filetime != layer(Layer).filetime || content.size() != filesize)
-		{
-			// locations of the definitions are no longer valid
-			state.error = "file \"" + layer(Layer).name + "\" was changed outside of the editor since the scenery was loaded";
-			return false;
-		}
-		state.content.emplace(Layer, std::move(content));
-		return true;
-	};
-	// a layer is saved if it's still a part of the scenery, as a file of its own
-	auto const is_output = [&](layer_handle const Layer) { return listed(Layer) && false == layer(Layer).removed && false == layer(Layer).binary; };
-
-	if (false == load(root))
+	if (false == state.load(state.root))
 	{
 		return fail(state.error);
 	}
-	state.eol = detect_eol(state.content[root], "\r\n");
-
-	// changed and deleted nodes
-	std::set<basic_node const *> rewritten;
-	std::map<layer_handle, std::vector<std::pair<basic_node const *, std::string>>> created; // new definitions, by target layer
-	auto const process = [&](basic_node const *Node, TAnimModel const *Model) {
-		auto const nodelayer{resolve(Node->layer())};
-		if (false == is_output(nodelayer))
-		{
-			return true;
-		}
-		if (Model != nullptr && Groups.relocating(Node))
-		{
-			// written anew along with its group, below
-			return true;
-		}
-		auto const location{Node->location()};
-		auto const angles{Model != nullptr ? Model->Angles() : glm::vec3{0.f}};
-		auto const scale{Model != nullptr ? Model->Scale() : glm::vec3{1.f}};
-		auto const lookup{m_sources.find(Node)};
-		std::string error;
-		if (lookup != m_sources.end())
-		{
-			// defined in a scenery file. rewrite the placement in its definition if it's no longer the one it was loaded with
-			auto const &source{lookup->second};
-			if (false == writable(source.layer))
-			{
-				// the editor doesn't let these be changed, as one definition stands for more than one node
-				return true;
-			}
-			auto const moved{glm::distance(location, source.location) > 1e-4};
-			auto const rotated{false == glm::all(glm::epsilonEqual(angles, source.angles, 1e-3f))};
-			auto const scaled{false == glm::all(glm::epsilonEqual(scale, source.scale, 1e-4f))};
-			auto const renamed{Model != nullptr && m_renamed.find(Node) != m_renamed.end()};
-			auto const *cell{Model == nullptr ? static_cast<TMemCell const *>(Node) : nullptr};
-			auto const track{cell != nullptr && cell->Track != nullptr ? cell->Track->name() : std::string{}};
-			if (false == (moved || rotated || scaled || renamed || (false == track.empty() && Node->dirty()))) // NOSONAR
-			{
-				return true;
-			}
-			if (false == load(source.layer))
-			{
-				return false;
-			}
-			auto const &content{state.content[source.layer]};
-			if (source.span.end > static_cast<std::streamoff>(content.size()))
-			{
-				state.error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layer(source.layer).name + "\""; // NOSONAR
-				return false;
-			}
-			auto text{content.substr(static_cast<std::size_t>(source.span.begin), static_cast<std::size_t>(source.span.end - source.span.begin))};
-			auto patched{false};
-			if (Model != nullptr)
-			{
-				model_placement placement;
-				placement.rotation = source.context.rotation;
-				if (moved)
-				{
-					placement.location = source.context.to_local(location);
-				}
-				if (rotated)
-				{
-					placement.angles = angles;
-				}
-				if (scaled)
-				{
-					placement.scale = scale / source.context.scale;
-				}
-				if (renamed)
-				{
-					placement.name = (Node->name().empty() ? "none" : Node->name());
-				}
-				patched = patch_model(text, placement, error);
-			}
-			else
-			{
-				patched = patch_memcell(text, moved ? std::optional<glm::dvec3>{source.context.to_local(location)} : std::nullopt, track, error);
-			}
-			if (false == patched)
-			{
-				state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\""; // NOSONAR
-				return false;
-			}
-			if (text.size() == static_cast<std::size_t>(source.span.end - source.span.begin) && content.compare(static_cast<std::size_t>(source.span.begin), text.size(), text) == 0)
-			{
-				return true;
-			}
-			file_patch::edit edit;
-			edit.begin = source.span.begin;
-			edit.end = source.span.end;
-			edit.length = text.size();
-			edit.text = std::move(text);
-			edit.node = Node;
-			state.patches[source.layer].edits.emplace_back(std::move(edit));
-			rewritten.emplace(Node);
-		}
-		else if (Model != nullptr && false == Node->from_template())
-		{
-			// created in the editor. the definition is added to the layer file, with the placement in effect at the place it goes to
-			std::string text;
-			Node->export_as_text(text);
-			text.erase(text.find_last_not_of(" \t\r\n") + 1);
-			auto const &context{layer(nodelayer).context_insert()};
-			if (false == context.matches(layer_context()))
-			{
-				model_placement placement;
-				placement.rotation = context.rotation;
-				placement.location = context.to_local(location);
-				placement.angles = angles;
-				placement.scale = scale / context.scale;
-				if (false == patch_model(text, placement, error))
-				{
-					state.error = error + " of \"" + Node->name() + "\"";
-					return false;
-				}
-			}
-			created[nodelayer].emplace_back(Node, std::move(text));
-		}
-		return true;
-	};
-	for (auto const *instance : simulation::Instances.sequence())
+	state.eol = detect_eol(state.content[state.root], "\r\n");
+	if (false == state.collect_changes())
 	{
-		if (instance != nullptr && false == process(instance, instance))
-		{
-			return fail(state.error);
-		}
+		return fail(state.error);
 	}
-	for (auto const *memorycell : simulation::Memory.sequence())
+	state.list_outputs(Rootstatements, Trailingstatements, Statements);
+	if (false == state.load_composed())
 	{
-		if (memorycell != nullptr && false == process(memorycell, nullptr))
-		{
-			return fail(state.error);
-		}
+		return fail(state.error);
 	}
-	// models grouped or ungrouped in the editor: their definitions are taken out of where they are and written anew, a group
-	// as one block between group and endgroup in the layer of its first model, a model of a dissolved group on its own
-	std::set<basic_node const *> relocated;
-	auto const relocate = [&](TAnimModel const *Model, layer_handle const Target, std::vector<std::pair<basic_node const *, std::string>> &Output) {
-		if (auto const lookup{m_sources.find(Model)}; lookup != m_sources.end())
-		{
-			auto const &source{lookup->second};
-			if (false == writable(source.layer))
-			{
-				// one definition stands for more than one node, it stays where it is
-				return true;
-			}
-			if (false == load(source.layer))
-			{
-				return false;
-			}
-			file_patch::edit edit;
-			edit.begin = source.span.begin;
-			edit.end = source.span.end;
-			state.patches[source.layer].edits.emplace_back(std::move(edit));
-			rewritten.emplace(Model);
-		}
-		std::string text;
-		Model->export_as_text(text);
-		text.erase(text.find_last_not_of(" \t\r\n") + 1);
-		auto const &context{layer(Target).context_insert()};
-		if (false == context.matches(layer_context()))
-		{
-			model_placement placement;
-			placement.rotation = context.rotation;
-			placement.location = context.to_local(Model->location());
-			placement.angles = Model->Angles();
-			placement.scale = Model->Scale() / context.scale;
-			std::string error;
-			if (false == patch_model(text, placement, error))
-			{
-				state.error = error + " of \"" + Model->name() + "\"";
-				return false;
-			}
-		}
-		Output.emplace_back(Model, std::move(text));
-		relocated.emplace(Model);
-		return true;
-	};
-	for (auto *node : Groups.loose())
+	state.track_unchanged();
+	if (false == state.compose_outputs(Rootstatements, Trailingstatements, Statements))
 	{
-		auto const *model{dynamic_cast<TAnimModel const *>(node)};
-		if (model == nullptr || model->from_template() || false == is_output(resolve(node->layer())))
-		{
-			continue;
-		}
-		if (false == relocate(model, resolve(node->layer()), created[resolve(node->layer())]))
-		{
-			return fail(state.error);
-		}
+		return fail(state.error);
 	}
-	for (auto const group : Groups.rewritten())
+	// with everything worked out it's safe to touch the files
+	if (false == state.write_temporary() || false == state.back_up_ground(result.backups) || false == state.replace_files(result))
 	{
-		auto const &nodes{Groups.group(group).nodes};
-		if (nodes.empty() || false == is_output(resolve(nodes.front()->layer())))
-		{
-			continue;
-		}
-		auto const target{resolve(nodes.front()->layer())};
-		auto &output{created[target]};
-		// NOTE: lines with no node are written as they are, without a place in the bookkeeping
-		output.emplace_back(nullptr, "group");
-		for (auto const *node : nodes)
-		{
-			auto const *model{dynamic_cast<TAnimModel const *>(node)};
-			if (model == nullptr || model->from_template())
-			{
-				continue;
-			}
-			if (false == relocate(model, target, output))
-			{
-				return fail(state.error);
-			}
-		}
-		output.emplace_back(nullptr, "endgroup");
-	}
-	auto const push_edit = [&](layer_handle const Layer, source_span const &Span, std::string Text, basic_node const *Node) {
-		file_patch::edit edit;
-		edit.begin = Span.begin;
-		edit.end = Span.end;
-		edit.length = Text.size();
-		edit.text = std::move(Text);
-		edit.node = Node;
-		state.patches[Layer].edits.emplace_back(std::move(edit));
-	};
-	// changes which can't be written, as their definition stands for more than one node
-	std::vector<std::string> unwritten;
-	// traction and event launchers are rewritten when the editor moved them along with the track they belong to
-	std::vector<basic_node *> patchednodes;
-	auto const patch_node = [&](basic_node *Node, auto const &Patch) {
-		auto const lookup{m_sources.find(Node)};
-		if (lookup == m_sources.end() || false == Node->dirty())
-		{
-			return true;
-		}
-		auto const &source{lookup->second};
-		if (false == is_output(resolve(source.layer)))
-		{
-			return true;
-		}
-		if (false == writable(source.layer))
-		{
-			unwritten.push_back(Node->name());
-			return true;
-		}
-		if (false == load(source.layer))
-		{
-			return false;
-		}
-		auto const &content{state.content[source.layer]};
-		if (source.span.end > static_cast<std::streamoff>(content.size()))
-		{
-			state.error = "definition of \"" + Node->name() + "\" is out of bounds of file \"" + layer(source.layer).name + "\"";
-			return false;
-		}
-		auto text{content.substr(static_cast<std::size_t>(source.span.begin), static_cast<std::size_t>(source.span.end - source.span.begin))};
-		std::string error;
-		if (false == Patch(text, source, error))
-		{
-			state.error = error + " of \"" + Node->name() + "\" in file \"" + layer(source.layer).name + "\"";
-			return false;
-		}
-		push_edit(source.layer, source.span, std::move(text), Node);
-		rewritten.emplace(Node);
-		patchednodes.push_back(Node);
-		return true;
-	};
-	for (auto *traction : simulation::Traction.sequence())
-	{
-		if (traction != nullptr &&
-		    false == patch_node(traction, [&](std::string &Text, node_source const &Source, std::string &Error) { return patch_traction(Text, *traction, Source.context.offset, Error); }))
-		{
-			return fail(state.error);
-		}
-	}
-	for (auto *launcher : simulation::Events.launchers())
-	{
-		if (launcher != nullptr &&
-		    false == patch_node(launcher, [&](std::string &Text, node_source const &Source, std::string &Error) { return patch_launcher(Text, Source.context.to_local(launcher->location()), Error); }))
-		{
-			return fail(state.error);
-		}
-	}
-	std::vector<TTrack *> savedpaths;
-	std::vector<TTrack const *> droppedpaths;
-	auto const path_text = [](TTrack &Path, glm::dvec3 const &Offset) {
-		auto const paths{Path.m_paths};
-		for (auto &path : Path.m_paths)
-			path.translate(-Offset);
-		std::string text;
-		Path.export_as_text(text);
-		Path.m_paths = paths;
-		text.erase(text.find_last_not_of(" \t\r\n") + 1);
-		return text;
-	};
-	for (auto *path : simulation::Paths.sequence())
-	{
-		if (path == nullptr || (path->iCategoryFlag & 0x80) != 0 || path->m_road != nullptr || path->from_template())
-		{
-			continue;
-		}
-		auto const nodelayer{resolve(path->layer())};
-		if (false == is_output(nodelayer))
-		{
-			continue;
-		}
-		auto const lookup{m_sources.find(path)};
-		if (lookup == m_sources.end())
-		{
-			if (path->m_editorremoved || false == path->dirty())
-			{
-				continue;
-			}
-			// a file included more than once would get a copy of the new path at every inclusion
-			auto const target{writable(nodelayer) ? nodelayer : root};
-			created[target].emplace_back(path, path_text(*path, layer(target).context_insert().offset));
-			savedpaths.push_back(path);
-			continue;
-		}
-		auto const &source{lookup->second};
-		if (false == path->m_editorremoved && false == path->dirty())
-		{
-			continue;
-		}
-		if (false == writable(source.layer))
-		{
-			unwritten.push_back(path->name().empty() ? std::string{STR_C("(no name)")} : path->name());
-			continue;
-		}
-		if (false == load(source.layer))
-		{
-			return fail(state.error);
-		}
-		if (path->m_editorremoved)
-		{
-			push_edit(source.layer, source.span, {}, nullptr);
-			droppedpaths.push_back(path);
-		}
-		else
-		{
-			push_edit(source.layer, source.span, path_text(*path, source.context.offset), path);
-			savedpaths.push_back(path);
-		}
-		rewritten.emplace(path);
-	}
-	// roads. the lanes aren't saved, they're generated from the definition of the road
-	std::vector<road_node *> savedroads;
-	std::vector<road_node const *> droppedroads;
-	auto const road_text = [](road_node &Road, glm::dvec3 const &Offset) {
-		auto const definition{Road.definition()};
-		auto local{definition};
-		local.axis.points[segment_data::point::start] -= Offset;
-		local.axis.points[segment_data::point::end] -= Offset;
-		Road.define(local);
-		std::string text;
-		Road.export_as_text(text);
-		Road.define(definition);
-		text.erase(text.find_last_not_of(" \t\r\n") + 1);
-		return text;
-	};
-	for (auto *road : simulation::Roads.sequence())
-	{
-		if (road == nullptr || road->from_template())
-		{
-			continue;
-		}
-		auto const nodelayer{resolve(road->layer())};
-		if (false == is_output(nodelayer))
-		{
-			continue;
-		}
-		auto const lookup{m_sources.find(road)};
-		if (lookup == m_sources.end())
-		{
-			if (road->m_editorremoved || false == road->dirty())
-			{
-				continue;
-			}
-			created[nodelayer].emplace_back(road, road_text(*road, layer(nodelayer).context_insert().offset));
-			savedroads.push_back(road);
-			continue;
-		}
-		auto const &source{lookup->second};
-		if ((false == road->m_editorremoved && false == road->dirty()) || false == writable(source.layer))
-		{
-			continue;
-		}
-		if (false == load(source.layer))
-		{
-			return fail(state.error);
-		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
-		if (road->m_editorremoved)
-		{
-			droppedroads.push_back(road);
-		}
-		else
-		{
-			edit.text = road_text(*road, source.context.offset);
-			edit.length = edit.text.size();
-			edit.node = road;
-			savedroads.push_back(road);
-		}
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
-		rewritten.emplace(road);
-	}
-	// models laid along curves, likewise
-	std::vector<sweep_node *> savedsweeps;
-	std::vector<sweep_node const *> droppedsweeps;
-	auto const sweep_text = [](sweep_node &Sweep, glm::dvec3 const &Offset) {
-		auto const definition{Sweep.definition()};
-		auto local{definition};
-		for (auto &piece : local.pieces)
-		{
-			piece.points[segment_data::point::start] -= Offset;
-			piece.points[segment_data::point::end] -= Offset;
-		}
-		Sweep.define(local);
-		std::string text;
-		Sweep.export_as_text(text);
-		Sweep.define(definition);
-		text.erase(text.find_last_not_of(" \t\r\n") + 1);
-		return text;
-	};
-	for (auto *sweep : simulation::Sweeps.sequence())
-	{
-		if (sweep == nullptr || sweep->from_template())
-		{
-			continue;
-		}
-		auto const nodelayer{resolve(sweep->layer())};
-		if (false == is_output(nodelayer))
-		{
-			continue;
-		}
-		auto const lookup{m_sources.find(sweep)};
-		if (lookup == m_sources.end())
-		{
-			if (sweep->m_editorremoved || false == sweep->dirty())
-			{
-				continue;
-			}
-			created[nodelayer].emplace_back(sweep, sweep_text(*sweep, layer(nodelayer).context_insert().offset));
-			savedsweeps.push_back(sweep);
-			continue;
-		}
-		auto const &source{lookup->second};
-		if ((false == sweep->m_editorremoved && false == sweep->dirty()) || false == writable(source.layer))
-		{
-			continue;
-		}
-		if (false == load(source.layer))
-		{
-			return fail(state.error);
-		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
-		if (sweep->m_editorremoved)
-		{
-			droppedsweeps.push_back(sweep);
-		}
-		else
-		{
-			edit.text = sweep_text(*sweep, source.context.offset);
-			edit.length = edit.text.size();
-			edit.node = sweep;
-			savedsweeps.push_back(sweep);
-		}
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
-		rewritten.emplace(sweep);
-	}
-	// road junctions, likewise
-	std::vector<junction_node *> savedjunctions;
-	std::vector<junction_node const *> droppedjunctions;
-	auto const junction_text = [](junction_node &Junction, glm::dvec3 const &Offset) {
-		auto const definition{Junction.definition()};
-		auto local{definition};
-		local.centre -= Offset;
-		for (auto &arm : local.arms)
-		{
-			arm.position -= Offset;
-		}
-		Junction.define(local);
-		std::string text;
-		Junction.export_as_text(text);
-		Junction.define(definition);
-		text.erase(text.find_last_not_of(" \t\r\n") + 1);
-		return text;
-	};
-	for (auto *junction : simulation::Junctions.sequence())
-	{
-		if (junction == nullptr || junction->from_template())
-		{
-			continue;
-		}
-		auto const nodelayer{resolve(junction->layer())};
-		if (false == is_output(nodelayer))
-		{
-			continue;
-		}
-		auto const lookup{m_sources.find(junction)};
-		if (lookup == m_sources.end())
-		{
-			if (junction->m_editorremoved || false == junction->dirty())
-			{
-				continue;
-			}
-			created[nodelayer].emplace_back(junction, junction_text(*junction, layer(nodelayer).context_insert().offset));
-			savedjunctions.push_back(junction);
-			continue;
-		}
-		auto const &source{lookup->second};
-		if ((false == junction->m_editorremoved && false == junction->dirty()) || false == writable(source.layer))
-		{
-			continue;
-		}
-		if (false == load(source.layer))
-		{
-			return fail(state.error);
-		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
-		if (junction->m_editorremoved)
-		{
-			droppedjunctions.push_back(junction);
-		}
-		else
-		{
-			edit.text = junction_text(*junction, source.context.offset);
-			edit.length = edit.text.size();
-			edit.node = junction;
-			savedjunctions.push_back(junction);
-		}
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
-		rewritten.emplace(junction);
-	}
-	// level crossings and traffic points of the roads
-	std::vector<roadpoint_node *> savedroadpoints;
-	std::vector<roadpoint_node const *> droppedroadpoints;
-	auto const roadpoint_text = [](roadpoint_node &Point, glm::dvec3 const &Offset) {
-		auto const definition{Point.definition()};
-		auto local{definition};
-		local.position -= Offset;
-		Point.define(local);
-		std::string text;
-		Point.export_as_text(text);
-		Point.define(definition);
-		text.erase(text.find_last_not_of(" \t\r\n") + 1);
-		return text;
-	};
-	for (auto *point : simulation::Roadpoints.sequence())
-	{
-		if (point == nullptr || point->from_template())
-		{
-			continue;
-		}
-		auto const nodelayer{resolve(point->layer())};
-		if (false == is_output(nodelayer))
-		{
-			continue;
-		}
-		auto const lookup{m_sources.find(point)};
-		if (lookup == m_sources.end())
-		{
-			if (point->m_editorremoved || false == point->dirty())
-			{
-				continue;
-			}
-			created[nodelayer].emplace_back(point, roadpoint_text(*point, layer(nodelayer).context_insert().offset));
-			savedroadpoints.push_back(point);
-			continue;
-		}
-		auto const &source{lookup->second};
-		if ((false == point->m_editorremoved && false == point->dirty()) || false == writable(source.layer))
-		{
-			continue;
-		}
-		if (false == load(source.layer))
-		{
-			return fail(state.error);
-		}
-		file_patch::edit edit;
-		edit.begin = source.span.begin;
-		edit.end = source.span.end;
-		if (point->m_editorremoved)
-		{
-			droppedroadpoints.push_back(point);
-		}
-		else
-		{
-			edit.text = roadpoint_text(*point, source.context.offset);
-			edit.length = edit.text.size();
-			edit.node = point;
-			savedroadpoints.push_back(point);
-		}
-		state.patches[source.layer].edits.emplace_back(std::move(edit));
-		rewritten.emplace(point);
-	}
-	for (auto const &erased : m_erased)
-	{
-		file_patch::edit edit;
-		edit.begin = erased.second.begin;
-		edit.end = erased.second.end;
-		state.patches[erased.first].edits.emplace_back(std::move(edit));
-	}
-
-	// editor data in the comment lines: the old lines go, the new ones are added to the file like new definitions
-	std::map<layer_handle, std::vector<std::string>> markedtext;
-	for (auto const &marking : m_marking)
-	{
-		auto const markedlayer{marking.first.first};
-		auto const &mark{marking.first.second};
-		if (auto const lookup{m_marked.find(markedlayer)}; lookup != m_marked.end())
-		{
-			for (auto const &line : lookup->second)
-			{
-				if (line.mark == mark)
-				{
-					push_edit(markedlayer, line.span, {}, nullptr);
-				}
-			}
-		}
-		auto const target{resolve(markedlayer)};
-		if (marking.second.empty() || false == is_output(target))
-		{
-			continue;
-		}
-		for (auto const &text : marking.second)
-		{
-			markedtext[target].push_back(mark + ' ' + text);
-		}
-	}
-
-	// the lines read from the letters the marks had before go to the mark they have now, also those the editor didn't change
-	for (auto const &[markedlayer, lines] : m_marked)
-	{
-		auto const target{resolve(markedlayer)};
-		if (layer(markedlayer).dead || false == is_output(target) || false == writable(markedlayer))
-		{
-			continue;
-		}
-		for (auto const &line : lines)
-		{
-			if (line.moved && false == m_marking.contains({markedlayer, line.mark}))
-			{
-				push_edit(markedlayer, line.span, {}, nullptr);
-				markedtext[target].push_back(line.mark + ' ' + line.text);
-			}
-		}
-	}
-
-	// includes of templates
-	std::map<layer_handle, std::vector<instance_handle>> placed; // directives made in the editor, by target layer
-	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
-	{
-		auto const &included{m_instances[idx]};
-		if (included.dead)
-		{
-			continue;
-		}
-		if (included.span.valid())
-		{
-			if (included.removed)
-			{
-				file_patch::edit edit;
-				edit.begin = included.span.begin;
-				edit.end = included.span.end;
-				state.patches[included.layer].edits.emplace_back(std::move(edit));
-			}
-			else if (false == included.directive.empty())
-			{
-				// changed in the editor, the new directive takes the place of the one in the file
-				file_patch::edit edit;
-				edit.begin = included.span.begin;
-				edit.end = included.span.end;
-				edit.length = included.directive.size();
-				edit.text = included.directive;
-				edit.instance = static_cast<instance_handle>(idx + 1);
-				state.patches[included.layer].edits.emplace_back(std::move(edit));
-			}
-		}
-		else if (false == included.removed && false == included.directive.empty())
-		{
-			auto const target{resolve(included.layer)};
-			if (false == is_output(target))
-			{
-				continue;
-			}
-			if (false == included.context.matches(layer(target).context_insert()))
-			{
-				// shouldn't happen, merge of layers is refused when it'd lead to this
-				return fail(format(STR_C("include \"%s\" was placed for different origin, rotation or scale than its layer file receives it with"), included.file->c_str()));
-			}
-			placed[target].emplace_back(static_cast<instance_handle>(idx + 1));
-		}
-	}
-
-	// layer changes
-	std::map<layer_handle, std::vector<layer_handle>> appended; // merged layers placed at the end of their target
-	std::set<layer_handle> absorbed; // merged layers which cease to exist as files
-	std::set<layer_handle> detached; // layers whose include directives are replaced
-	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
-	{
-		auto const candidate{static_cast<layer_handle>(idx + 1)};
-		auto const &source{layer(candidate)};
-		if (source.dead)
-		{
-			continue;
-		}
-		auto const hassite{false == source.created && source.sites.size() == 1 && false == source.sites.front().fixed && source.sites.front().span.valid()};
-		if (source.merged != null_handle)
-		{
-			auto const target{resolve(candidate)};
-			absorbed.emplace(candidate);
-			if (hassite)
-			{
-				file_patch::edit edit;
-				edit.begin = source.sites.front().span.begin;
-				edit.end = source.sites.front().span.end;
-				if (resolve(source.sites.front().parent) == target)
-				{
-					edit.inlined = candidate;
-				}
-				else
-				{
-					appended[target].emplace_back(candidate);
-				}
-				state.patches[source.sites.front().parent].edits.emplace_back(std::move(edit));
-				detached.emplace(candidate);
-			}
-			else
-			{
-				appended[target].emplace_back(candidate);
-			}
-		}
-		else if (source.removed)
-		{
-			if (hassite)
-			{
-				file_patch::edit edit;
-				edit.begin = source.sites.front().span.begin;
-				edit.end = source.sites.front().span.end;
-				state.patches[source.sites.front().parent].edits.emplace_back(std::move(edit));
-				detached.emplace(candidate);
-			}
-		}
-		else if (source.created)
-		{
-			// include directive for the new file, on a line of its own
-			auto const parent{source.parent};
-			auto const directive{"include " + source.name + " end"};
-			file_patch::edit edit;
-			edit.site = candidate;
-			edit.length = directive.size();
-			if (valid(source.anchor) && layer(source.anchor).sites.size() == 1 && layer(source.anchor).sites.front().parent == parent && layer(source.anchor).sites.front().span.valid())
-			{
-				edit.begin = edit.end = layer(source.anchor).sites.front().span.end;
-				edit.text = state.eol + directive;
-				edit.lead = state.eol.size();
-			}
-			else
-			{
-				// NOTE: negative location stands for the place the file receives additions at
-				edit.begin = edit.end = -1;
-				if (false == layer(parent).created)
-				{
-					if (false == load(parent))
-					{
-						return fail(state.error);
-					}
-					// dropped by compose() if the text ahead ends with a line break already
-					edit.text = state.eol;
-					edit.lead = state.eol.size();
-				}
-				edit.text += directive + state.eol;
-			}
-			state.patches[parent].edits.emplace_back(std::move(edit));
-		}
-	}
-
-	// files to write
-	std::vector<layer_handle> outputs;
-	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
-	{
-		auto const candidate{static_cast<layer_handle>(idx + 1)};
-		if (false == is_output(candidate))
-		{
-			continue;
-		}
-		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
-		    markedtext.contains(candidate) || Statements.contains(candidate) || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())))
-		{
-			outputs.emplace_back(candidate);
-		}
-	}
-	// text of the merged layers travels with the file they end up in, but changes made to it are still theirs
-	std::vector<layer_handle> composed{outputs};
-	composed.insert(std::end(composed), std::begin(absorbed), std::end(absorbed));
-	for (auto const candidate : composed)
-	{
-		if (false == load(candidate))
-		{
-			return fail(state.error);
-		}
-	}
-	// what is defined in these files and isn't rewritten moves along with the text
-	for (auto const &source : m_sources)
-	{
-		if (state.content.count(source.second.layer) != 0 && rewritten.count(source.first) == 0)
-		{
-			state.nodes[source.second.layer].emplace_back(source.first);
-		}
-	}
-	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
-	{
-		auto const candidate{static_cast<layer_handle>(idx + 1)};
-		auto const &included{layer(candidate)};
-		if (included.dead || included.created || detached.count(candidate) != 0 || included.sites.size() != 1 || included.sites.front().fixed || false == included.sites.front().span.valid())
-		{
-			continue;
-		}
-		state.includes[included.sites.front().parent].emplace_back(candidate);
-	}
-	for (std::size_t idx = 0; idx < m_instances.size(); ++idx)
-	{
-		auto const &included{m_instances[idx]};
-		if (false == included.dead && false == included.removed && included.directive.empty() && included.span.valid() && state.content.count(included.layer) != 0)
-		{
-			state.instances[included.layer].emplace_back(static_cast<instance_handle>(idx + 1));
-		}
-	}
-
-	std::map<layer_handle, composition> texts;
-	for (auto const output : outputs)
-	{
-		auto &text{texts[output]};
-		auto const eol{detect_eol(state.content.count(output) != 0 ? state.content[output] : std::string{}, state.eol)};
-		if (layer(output).created)
-		{
-			// NOTE: the parser treats an empty file as a missing one
-			text.text = (layer(output).header.empty() ? std::string{"// scenery layer created in the editor"} : layer(output).header) + eol;
-		}
-		composition body;
-		if (false == compose(state, output, body, 0))
-		{
-			return fail(state.error);
-		}
-		text.append(body);
-		// what the editor adds to the file
-		composition added;
-		if (auto const lookup{appended.find(output)}; lookup != appended.end())
-		{
-			for (auto const merged : lookup->second)
-			{
-				composition mergedtext;
-				if (false == compose(state, merged, mergedtext, 0))
-				{
-					return fail(state.error);
-				}
-				ensure_newline(added.text, eol);
-				added.append(mergedtext);
-			}
-		}
-		if (auto const lookup{created.find(output)}; lookup != created.end())
-		{
-			for (auto const &definition : lookup->second)
-			{
-				ensure_newline(added.text, eol);
-				auto const offset{static_cast<std::streamoff>(added.text.size())};
-				if (definition.first != nullptr)
-				{
-					added.nodes.push_back({definition.first, {offset, offset + static_cast<std::streamoff>(definition.second.size())}, true});
-				}
-				added.text += definition.second + eol;
-			}
-		}
-		if (auto const lookup{placed.find(output)}; lookup != placed.end())
-		{
-			for (auto const included : lookup->second)
-			{
-				auto const &directive{instance(included).directive};
-				ensure_newline(added.text, eol);
-				auto const offset{static_cast<std::streamoff>(added.text.size())};
-				added.instances.push_back({included, {offset, offset + static_cast<std::streamoff>(directive.size())}});
-				added.text += directive + eol;
-			}
-		}
-		if (auto const lookup{markedtext.find(output)}; lookup != markedtext.end())
-		{
-			for (auto const &line : lookup->second)
-			{
-				ensure_newline(added.text, eol);
-				added.text += line + eol;
-			}
-		}
-		if (output == root)
-		{
-			for (auto const &statement : Rootstatements)
-			{
-				ensure_newline(added.text, eol);
-				added.text += statement + eol;
-			}
-		}
-		if (auto const lookup{Statements.find(output)}; lookup != Statements.end())
-		{
-			for (auto const &statement : lookup->second)
-			{
-				ensure_newline(added.text, eol);
-				added.text += statement + eol;
-			}
-		}
-		if (output == root && false == Trailingstatements.empty())
-		{
-			composition trailing;
-			for (auto const &statement : Trailingstatements)
-				trailing.text += statement + eol;
-			ensure_newline(text.text, eol);
-			text.append(trailing);
-		}
-		if (added.text.empty())
-		{
-			continue;
-		}
-		if (false == text.init.valid())
-		{
-			ensure_newline(text.text, eol);
-			text.append(added);
-			continue;
-		}
-		// the scenario initialization is meant to be followed by nothing but the vehicles, so the additions go ahead
-		// of it. they take whole lines, with the initialization left at the start of a line the way it was
-		ensure_newline(added.text, eol);
-		auto location{text.init.begin};
-		while (location > 0 && (text.text[location - 1] == ' ' || text.text[location - 1] == '\t'))
-		{
-			--location;
-		}
-		if (location == 0 || text.text[location - 1] == '\n')
-		{
-			text.insert(location, added);
-		}
-		else
-		{
-			composition separated;
-			separated.text = eol;
-			separated.append(added);
-			text.insert(text.init.begin, separated);
-		}
-	}
-
-	// with everything worked out it's safe to touch the files. new content goes to temporary files first,
-	// so a failure half way through doesn't leave the scenery with only a part of the changes
-	std::error_code error;
-	std::vector<layer_handle> written;
-	for (auto const output : outputs)
-	{
-		auto const lookup{state.content.find(output)};
-		if (lookup != state.content.end() && lookup->second == texts[output].text)
-		{
-			continue;
-		}
-		auto const filepath{std::filesystem::path(path(output))};
-		if (filepath.has_parent_path())
-		{
-			std::filesystem::create_directories(filepath.parent_path(), error);
-		}
-		std::ofstream file{path(output) + ".tmp", std::ios_base::binary | std::ios_base::trunc};
-		file << texts[output].text;
-		file.close();
-		if (file.fail())
-		{
-			for (auto const leftover : written)
-			{
-				std::filesystem::remove(path(leftover) + ".tmp", error);
-			}
-			std::filesystem::remove(path(output) + ".tmp", error);
-			return fail(format(STR_C("can't write file \"%s\""), layer(output).name.c_str()));
-		}
-		written.emplace_back(output);
-	}
-	// a file which loses its ground to the terrain of the editor keeps a copy of itself each time, whatever was saved before.
-	// without the copy nothing is replaced
-	{
-		auto const now{std::time(nullptr)};
-		char stamp[32];
-		std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
-		for (auto const output : written)
-		{
-			auto const filepath{path(output)};
-			bool const losesground{std::any_of(std::begin(m_shapes), std::end(m_shapes), [&](shape_source const &Shape) { return Shape.erased && Shape.layer == output; })};
-			if (false == losesground || false == std::filesystem::exists(filepath, error))
-			{
-				continue;
-			}
-			auto const backup{filepath + ".bak-" + stamp + "-przed-terenem-edytora"};
-			std::error_code copyerror;
-			if (false == std::filesystem::copy_file(filepath, backup, std::filesystem::copy_options::overwrite_existing, copyerror))
-			{
-				for (auto const leftover : written)
-				{
-					std::filesystem::remove(path(leftover) + ".tmp", error);
-				}
-				return fail(format(STR_C("can't make a backup of file \"%s\": %s"), layer(output).name.c_str(), copyerror.message().c_str()));
-			}
-			WriteLog("Scenery save: the triangles of the ground go from \"" + layer(output).name + "\", its previous content is kept in \"" + backup + "\"");
-			result.backups.emplace_back(backup);
-		}
-	}
-	std::vector<layer_handle> replaced;
-	for (auto const output : written)
-	{
-		auto const filepath{path(output)};
-		// the first save of a file leaves its original content next to it
-		if (false == layer(output).editormade && std::filesystem::exists(filepath, error) && false == std::filesystem::exists(filepath + ".bak", error))
-		{
-			std::filesystem::copy_file(filepath, filepath + ".bak", error);
-		}
-		std::filesystem::rename(filepath + ".tmp", filepath, error);
-		if (error)
-		{
-			// e.g. the file is held open by another program. take back what was done so far: the scenery files
-			// have to stay in step with each other, and with what we know about them
-			auto const cause{error.message()};
-			for (auto const restored : replaced)
-			{
-				auto const lookup{state.content.find(restored)};
-				if (lookup != state.content.end())
-				{
-					std::ofstream{path(restored), std::ios_base::binary | std::ios_base::trunc} << lookup->second;
-					stat(restored);
-				}
-				else
-				{
-					std::filesystem::remove(path(restored), error);
-				}
-			}
-			for (auto const leftover : written)
-			{
-				std::filesystem::remove(path(leftover) + ".tmp", error);
-			}
-			result.files.clear();
-			return fail(format(STR_C("can't replace file \"%s\": %s"), layer(output).name.c_str(), cause.c_str()));
-		}
-		replaced.emplace_back(output);
-		result.files.emplace_back(layer(output).name);
+		return fail(state.error);
 	}
 	for (auto const &file : result.files)
 	{
 		WriteLog("Scenery save: file \"" + file + "\" updated");
 	}
-
-	// the scenery files now match the scene, update the bookkeeping to reflect it
-	Groups.saved();
-	auto removedterrain{false};
-	for (auto const output : outputs)
-	{
-		for (auto const &place : texts[output].nodes)
-		{
-			auto &source{m_sources[place.node]};
-			auto const isnew{source.layer == null_handle};
-			source.layer = output;
-			source.span = place.span;
-			// a definition written anew elsewhere is in the placement of the place it went to, as a new one is
-			if (isnew || relocated.count(place.node) != 0)
-			{
-				source.context = layer(output).context_insert();
-			}
-			if (isnew || place.rewritten)
-			{
-				auto const *model{dynamic_cast<TAnimModel const *>(place.node)};
-				source.location = place.node->location();
-				source.angles = (model != nullptr ? model->Angles() : glm::vec3{0.f});
-				source.scale = (model != nullptr ? model->Scale() : glm::vec3{1.f});
-			}
-		}
-		for (auto const &place : texts[output].instances)
-		{
-			auto &included{m_instances[place.instance - 1]};
-			included.layer = output;
-			included.span = place.span;
-			included.directive.clear();
-		}
-		for (auto const &place : texts[output].sites)
-		{
-			auto &included{layer(place.layer)};
-			if (included.sites.empty())
-			{
-				// directive of a layer created in the editor
-				included.sites.emplace_back();
-			}
-			included.sites.front().parent = output;
-			included.sites.front().span = place.span;
-			included.parent = output;
-		}
-		// the mark of the scenario initialization moved along with the text around it, or came with the text of a merged layer
-		auto &saved{layer(output)};
-		if (false == saved.init.valid() && texts[output].init.valid())
-		{
-			for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
-			{
-				if (m_layers[idx].init.valid() && m_layers[idx].merged != null_handle && resolve(static_cast<layer_handle>(idx + 1)) == output)
-				{
-					saved.context_init = m_layers[idx].context_init;
-				}
-			}
-		}
-		saved.init = texts[output].init;
-	}
-	for (std::size_t idx = 0; idx < m_layers.size(); ++idx)
-	{
-		auto const candidate{static_cast<layer_handle>(idx + 1)};
-		auto &saved{layer(candidate)};
-		if (saved.dead)
-		{
-			continue;
-		}
-		if (saved.merged != null_handle || saved.removed)
-		{
-			removedterrain |= saved.removed && (saved.items[static_cast<std::size_t>(layer_item::shape)] + saved.items[static_cast<std::size_t>(layer_item::lines)] > 0);
-			saved.dead = true;
-			saved.sites.clear();
-		}
-		saved.created = false;
-		saved.anchor = null_handle;
-	}
-	for (auto const output : written)
-	{
-		stat(output);
-		scan(output);
-	}
-	// the lines of the merged layers are now in the files of their targets, read again with them: all of them, the ones the
-	// editor didn't change too, or the next save would write the lines moved off the letters of the starters twice
-	for (auto marked{m_marked.begin()}; marked != m_marked.end();)
-	{
-		marked = (resolve(marked->first) != marked->first ? m_marked.erase(marked) : std::next(marked));
-	}
-	m_marking.clear();
-	for (auto &included : m_instances)
-	{
-		// removed includes are gone from the files now
-		included.dead = included.dead || included.removed;
-	}
-	m_erased.clear();
-	m_renamed.clear();
-	// the shapes of the rewritten files are somewhere else in them now
-	m_shapes.erase(std::remove_if(std::begin(m_shapes), std::end(m_shapes), [&](shape_source const &Shape) { return std::find(std::begin(composed), std::end(composed), Shape.layer) != std::end(composed); }), std::end(m_shapes));
-	for (auto *path : savedpaths)
-	{
-		path->m_dirty = false;
-	}
-	for (auto *node : patchednodes)
-	{
-		node->m_dirty = false;
-	}
-	for (auto const *path : droppedpaths)
-	{
-		m_sources.erase(path);
-	}
-	for (auto *road : savedroads)
-	{
-		road->m_dirty = false;
-	}
-	for (auto const *road : droppedroads)
-	{
-		m_sources.erase(road);
-	}
-	for (auto *sweep : savedsweeps)
-	{
-		sweep->m_dirty = false;
-	}
-	for (auto const *sweep : droppedsweeps)
-	{
-		m_sources.erase(sweep);
-	}
-	for (auto *junction : savedjunctions)
-	{
-		junction->m_dirty = false;
-	}
-	for (auto const *junction : droppedjunctions)
-	{
-		m_sources.erase(junction);
-	}
-	for (auto *point : savedroadpoints)
-	{
-		point->m_dirty = false;
-	}
-	for (auto const *point : droppedroadpoints)
-	{
-		m_sources.erase(point);
-	}
-	removedterrain |= m_shapeserased;
-	m_shapeserased = false;
-	if (removedterrain)
-	{
-		// binary terrain file still holds geometry of the dropped layer, have it rebuilt on the next load
-		auto terrainfile{layer(root).name};
-		while (false == terrainfile.empty() && terrainfile.front() == '$')
-		{
-			terrainfile.erase(0, 1);
-		}
-		erase_extension(terrainfile);
-		if (std::filesystem::remove(Global.asCurrentSceneryPath + terrainfile + ".sbt", error))
-		{
-			WriteLog("Scenery save: binary terrain file removed, it'll be generated again on the next load");
-		}
-	}
+	state.update_bookkeeping();
 
 	result.success = true;
-	if (result.files.empty())
+	result.message = saved_message(result);
+	if (false == state.unwritten.empty())
 	{
-		result.message = STR_C("No changes to save");
-	}
-	else
-	{
-		std::string files;
-		for (auto const &file : result.files)
-		{
-			files += file + (&file != &result.files.back() ? ", " : "");
-		}
-		result.message = format(STR_C("Saved: %s"), files.c_str());
-		for (auto const &backup : result.backups)
-		{
-			result.message += format(STR_C(". Backup before the ground was taken out: %s"), std::filesystem::path(backup).filename().string().c_str());
-		}
-	}
-	if (false == unwritten.empty())
-	{
-		std::string names;
-		for (std::size_t i = 0; i < std::min<std::size_t>(unwritten.size(), 5); ++i)
-		{
-			names += (i > 0 ? ", " : "") + unwritten[i];
-		}
-		if (unwritten.size() > 5)
-		{
-			names += ", ...";
-		}
-		WriteLog(std::format("Scenery save: {} changed nodes not saved, their files are included with parameters or more than once: {}", unwritten.size(), names), logtype::generic);
-		auto const warning{format(STR_C("Changed nodes left unsaved (their files are included with parameters or more than once): %zu, %s"), unwritten.size(), names.c_str())};
+		auto const names{unwritten_names(state.unwritten)};
+		WriteLog(std::format("Scenery save: {} changed nodes not saved, their files are included with parameters or more than once: {}", state.unwritten.size(), names), logtype::generic);
+		auto const warning{format(STR_C("Changed nodes left unsaved (their files are included with parameters or more than once): %zu, %s"), state.unwritten.size(), names.c_str())};
 		result.message = result.files.empty() ? warning : result.message + ". " + warning;
 	}
 	return result;
