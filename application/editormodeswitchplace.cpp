@@ -712,7 +712,7 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 		auto const &path{Line.tracks[i]->m_paths[Line.paths[i]]};
 		auto const a{Line.along(path.points[segment_data::point::start])};
 		auto const b{Line.along(path.points[segment_data::point::end])};
-		spans.push_back({Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b});
+		spans.emplace_back(Line.tracks[i], Line.paths[i], std::min(a, b), std::max(a, b), a < b);
 	}
 	std::ranges::sort(spans, [](span const &A, span const &B) { return A.from < B.from; });
 	int first{-1};
@@ -1621,7 +1621,7 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 		if (straight == nullptr)
 			straight = &track->m_paths.front();
 		auto const start{straight->points[segment_data::point::start]};
-		ends.push_back({track, start, glm::normalize(plan_of(straight->points[segment_data::point::end] - start)), track->SwitchExtension->pPrevs[0]});
+		ends.emplace_back(track, start, glm::normalize(plan_of(straight->points[segment_data::point::end] - start)), track->SwitchExtension->pPrevs[0]);
 		for (int i = 0; i < 2; ++i)
 		{
 			auto *inner{track->SwitchExtension->pNexts[i]};

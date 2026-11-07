@@ -1761,7 +1761,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			if (m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
 			else if (m_lay.mouse_snap.track != nullptr && curve)
-				hints.push_back({"Ctrl+wheel", "radius"});
+				hints.emplace_back("Ctrl+wheel", "radius");
 			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "stop laying"},
 			                           {"Backspace", "take back the point"}, {"Esc", "stop laying"}});
 		}
@@ -1778,7 +1778,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		if (editor_track::snap_target target; extend_snap(target))
 			hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
 		else if (m_track_layout != track_layout::straight)
-			hints.push_back({"Ctrl+wheel", "radius"});
+			hints.emplace_back("Ctrl+wheel", "radius");
 		hints.insert(hints.end(), {{"Release", "build"}, {"Esc", "cancel"}});
 	}
 	else if (m_switch.placing && m_switch.free)
@@ -1807,7 +1807,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		case switch_kind::crossing:
 			hints = {{"Press+drag at a crossing", "of two straights"}, {"Press+drag on a straight", "with nothing crossing it: the slip with its crossing track, which goes through the quarter of the cursor"}};
 			if (current_switch_kind() == switch_kind::slip)
-				hints.push_back({"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"});
+				hints.emplace_back("Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)");
 			break;
 		default:
 			hints = {{"Press+drag on a track", "a switch on it: along its direction, sideways its side"}, {"Press+drag from a free end", "a switch going on from the end of a track"}, {"LMB on a track", "selects it"}};
@@ -1943,15 +1943,15 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	if (All)
 	{
 		if (gizmo && m_gizmo_snap > 0.0f)
-			hints.push_back({"Ctrl", format(STR_C("gizmo snaps by %.2f m"), m_gizmo_snap)});
-		hints.push_back({"K", "split the path under the cursor, a break of the grade at the height of the ground"});
+			hints.emplace_back("Ctrl", format(STR_C("gizmo snaps by %.2f m"), m_gizmo_snap));
+		hints.emplace_back("K", "split the path under the cursor, a break of the grade at the height of the ground");
 		hints.push_back({"O", "top view"});
-		hints.push_back({"Esc", "back to Select"});
+		hints.emplace_back("Esc", "back to Select");
 		if (Global.EditorOrtho)
 			hints.push_back({"Hold the wheel", "pans the view"});
 		hints.push_back({"Ctrl+Z", "undo"});
 		hints.push_back({"Ctrl+Y", "redo"});
-		hints.push_back({"L T G N I B P V J", "tools: lay, switch, plan, parallel, signalling, objects, profile, speed, joints"});
+		hints.emplace_back("L T G N I B P V J", "tools: lay, switch, plan, parallel, signalling, objects, profile, speed, joints");
 	}
 	for (auto &hint : hints)
 	{

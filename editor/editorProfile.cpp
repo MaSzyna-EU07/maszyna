@@ -695,7 +695,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	{
 		auto const at{std::clamp((bound.chainage - origin) / step, 0.0, static_cast<double>(nodes - 1))};
 		auto const cell{std::min(nodes - 2, static_cast<std::size_t>(at))};
-		bounds.push_back({cell, at - static_cast<double>(cell), std::min(bound.low, bound.high), std::max(bound.low, bound.high), bound.yielding});
+		bounds.emplace_back(cell, at - static_cast<double>(cell), std::min(bound.low, bound.high), std::max(bound.low, bound.high), bound.yielding);
 	}
 	// the bounds which contradict each other about one place, as of two crossovers into lines fitted apart in height, hold as far
 	// as both can: the line keeps between them. Held both, it would tear itself apart over them
@@ -1035,7 +1035,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	for (;;)
 	{
 		result = unset;
-		result.points.push_back({origin, x[0]});
+		result.points.emplace_back(origin, x[0]);
 		std::vector<double> rooms{0.0};
 		std::vector<double> lengths{0.0};
 		// the first node of the bend of each point and the one past its last
@@ -1063,7 +1063,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			lengths.push_back(node(k - 1) - node(first) + step);
 			runs.emplace_back(first, k);
 		}
-		result.points.push_back({node(nodes - 1), x[nodes - 1]});
+		result.points.emplace_back(node(nodes - 1), x[nodes - 1]);
 		rooms.push_back(0.0);
 		lengths.push_back(0.0);
 		runs.emplace_back(nodes, nodes);

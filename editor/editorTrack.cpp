@@ -183,9 +183,9 @@ bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vec
 			};
 			auto const start{curvature_at(0.0)};
 			if (auto const end{curvature_at(1.0)}; std::abs(start - end) <= 0.1 * std::max(start, end))
-				Pieces.push_back({length, curvature_at(0.5), curvature_at(0.5)});
+				Pieces.emplace_back(length, curvature_at(0.5), curvature_at(0.5));
 			else
-				Pieces.push_back({length, start, end});
+				Pieces.emplace_back(length, start, end);
 			continue;
 		}
 		designed = true;
@@ -201,7 +201,7 @@ bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vec
 				continue;
 			auto const [start, end]{element_curvatures(element)};
 			auto const at = [&](double const Chainage) { return element.length > 1e-9 ? start + (end - start) * (Chainage - element.chainage) / element.length : start; };
-			own.push_back({to - from, at(from), at(to)});
+			own.emplace_back(to - from, at(from), at(to));
 		}
 		// the design running against the run
 		if (last->chainage < first->chainage)
@@ -1934,7 +1934,7 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			if (auto const radius{2.0 / (piece.from + piece.to)}; false == designedarcs.empty() && between < 1e-6 && std::abs(designedarcs.back().radius - radius) <= 0.02 * radius)
 				designedarcs.back().turn += piece.length / radius;
 			else
-				designedarcs.push_back({radius, piece.length / radius, designedarcs.empty() ? 0.0 : between});
+				designedarcs.emplace_back(radius, piece.length / radius, designedarcs.empty() ? 0.0 : between);
 			between = 0.0;
 		}
 		if (false == designedarcs.empty() && false == inside)
@@ -1963,9 +1963,9 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			Curve.arcs.clear();
 			if (Curve.compound)
 			{
-				Curve.arcs.push_back({shape.radius, shape.share, 0.0});
+				Curve.arcs.emplace_back(shape.radius, shape.share, 0.0);
 				for (auto const &arc : shape.arcs)
-					Curve.arcs.push_back({arc.radius, arc.share, arc.transition});
+					Curve.arcs.emplace_back(arc.radius, arc.share, arc.transition);
 			}
 		}
 	}
@@ -2399,12 +2399,12 @@ bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Lengt
 					if (std::abs(after - Length) > kSlack)
 						continue;
 					for (auto const &done : way)
-						Route.spans.push_back({std::get<0>(done.node), std::get<1>(done.node), std::get<2>(done.node)});
-					Route.spans.push_back({track, std::get<1>(node), std::get<2>(node)});
+						Route.spans.emplace_back(std::get<0>(done.node), std::get<1>(done.node), std::get<2>(done.node));
+					Route.spans.emplace_back(track, std::get<1>(node), std::get<2>(node));
 					return true;
 				}
 				on_way.insert(track);
-				way.push_back({node, after, route_next(node)});
+				way.emplace_back(node, after, route_next(node));
 			}
 		}
 	return false;
@@ -2456,7 +2456,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum,
 	for (auto node = behind.rbegin(); node != behind.rend(); ++node)
 		if (std::none_of(ahead.begin(), ahead.end(), [&](route_node const &Other) { return std::get<0>(Other) == std::get<0>(*node); }))
 			result.spans.push_back({std::get<0>(*node), std::get<1>(*node), false == std::get<2>(*node)});
-	result.spans.push_back({&Track, own, true});
+	result.spans.emplace_back(&Track, own, true);
 	for (auto const &node : ahead)
 		result.spans.push_back({std::get<0>(node), std::get<1>(node), std::get<2>(node)});
 	return result;
@@ -2820,7 +2820,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 	if (false == Route.spans.empty())
 		for (auto const &[span, atend] : {std::pair{Route.spans.front(), false == Route.spans.front().forward}, std::pair{Route.spans.back(), Route.spans.back().forward}})
 			if (auto *neighbour{neighbour_at(*span.track, span.path, atend)}; neighbour != nullptr && false == on_route(neighbour))
-				joints.push_back({span.track, span.path, atend, neighbour});
+				joints.emplace_back(span.track, span.path, atend, neighbour);
 	std::vector<TTrack *> changed;
 	for (auto const &span : Route.spans)
 	{

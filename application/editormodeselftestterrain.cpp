@@ -294,9 +294,9 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			offs.push_back(off);
 			auto const name{place.track->name().empty() ? std::string{"(noname)"} : place.track->name()};
 			if (height > place.crown + 0.02)
-				over.push_back({height - place.crown, place.position, name});
+				over.emplace_back(height - place.crown, place.position, name);
 			else if (off < -0.3)
-				under.push_back({off, place.position, name});
+				under.emplace_back(off, place.position, name);
 		}
 		std::ranges::sort(offs);
 		auto const quantile = [&](double const Q) { return offs.empty() ? 0.0 : offs[static_cast<std::size_t>(Q * (offs.size() - 1))]; };
@@ -1069,7 +1069,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 					for (int i = 0; i <= count; ++i)
 					{
 						auto const tangent{geometry::plan_of(curve.first(static_cast<double>(i) / count))};
-						spots.push_back({curve.point(static_cast<double>(i) / count), glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, track});
+						spots.emplace_back(curve.point(static_cast<double>(i) / count), glm::length(tangent) > 1e-9 ? glm::normalize(tangent) : glm::dvec2{1.0, 0.0}, track);
 					}
 				}
 		auto const &samples{m_profile.samples};

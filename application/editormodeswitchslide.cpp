@@ -59,7 +59,7 @@ std::optional<std::vector<switch_end_move>> switch_end_moves(TTrack const &Track
 			Status = STR_C("The switch would run into another switch or past the end of the straight");
 			return std::nullopt;
 		}
-		ends.push_back({from, to, index == segment_data::point::start ? axis->along(from) - target : target - axis->along(from)});
+		ends.emplace_back(from, to, index == segment_data::point::start ? axis->along(from) - target : target - axis->along(from));
 	}
 	std::ranges::stable_sort(ends, [](switch_end_move const &A, switch_end_move const &B) { return A.shift > B.shift; });
 	return ends;
@@ -1100,7 +1100,7 @@ void editor_mode::switch_slide_start(TTrack &Track)
 		for (std::size_t i = 0; i < joints.size(); ++i)
 			if (joints[i].own.path == 1)
 				if (auto branch{take_switch_branch(Track, joints[i], i)})
-					slide.branches.push_back({joints[i], 1, std::move(*branch)});
+					slide.branches.emplace_back(joints[i], 1, std::move(*branch));
 		return;
 	}
 	auto const set{double_of(Track)};
@@ -1147,7 +1147,7 @@ void editor_mode::switch_slide_start(TTrack &Track)
 		for (auto &branch : switch_branches(*member, joints, skip))
 		{
 			auto const &joint{joints[branch.joint]};
-			slide.branches.push_back({joint, offset + static_cast<std::size_t>(joint.own.path), std::move(branch)});
+			slide.branches.emplace_back(joint, offset + static_cast<std::size_t>(joint.own.path), std::move(branch));
 		}
 	}
 }

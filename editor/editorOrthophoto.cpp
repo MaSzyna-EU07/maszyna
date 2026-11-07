@@ -1193,7 +1193,7 @@ std::vector<editor_orthophoto::area_square> editor_orthophoto::area_squares() co
 	for (auto const &key : m_area_tiles)
 	{
 		glm::dvec2 const corner = tile_corner(key);
-		result.push_back({corner - glm::dvec2{tile_size}, corner, m_prefetch_cached.count(key) > 0 ? 1 : m_prefetch_failed.count(key) > 0 ? 2 : 0});
+		result.emplace_back(corner - glm::dvec2{tile_size}, corner, m_prefetch_cached.count(key) > 0 ? 1 : m_prefetch_failed.count(key) > 0 ? 2 : 0);
 	}
 	return result;
 }

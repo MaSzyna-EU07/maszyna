@@ -836,7 +836,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 						continue;
 					// the roll of the path told along it; leaving the joint from its end the direction is the other way
 					auto const roll{static_cast<double>(path.rolls[last ? 1 : 0])};
-					ends.push_back({track, i, last, at, last ? -roll : roll});
+					ends.emplace_back(track, i, last, at, last ? -roll : roll);
 				}
 			}
 		}

@@ -1029,7 +1029,7 @@ void editor_mode::profile_resample()
 				continue;
 			}
 			auto const label{switch_store::label(*found)};
-			context.switches.push_back({span.from, span.to, found->number != "-" ? found->number + ' ' + label : label});
+			context.switches.emplace_back(span.from, span.to, found->number != "-" ? found->number + ' ' + label : label);
 			open = found;
 		}
 		else if (span.track->eType != tt_Normal)
@@ -1055,7 +1055,7 @@ void editor_mode::profile_resample()
 				// the stretches of a switch on the route are its own zone already
 				auto const inside{std::any_of(context.switches.begin(), context.switches.begin() + static_cast<std::ptrdiff_t>(before), [&](auto const &Zone) { return a >= Zone.from - 0.5 && b <= Zone.to + 0.5; })};
 				if (false == inside && b - a > 0.1)
-					context.switches.push_back({a, b, STR("shared timbers")});
+					context.switches.emplace_back(a, b, STR("shared timbers"));
 			}
 		}
 		std::ranges::sort(context.switches, [](auto const &Left, auto const &Right) { return Left.from < Right.from; });

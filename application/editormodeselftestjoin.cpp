@@ -183,8 +183,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 					auto const first{curve.first(T)};
 					return Sign * first.y / std::max(1e-6, std::hypot(first.x, first.z));
 				};
-				ends.push_back({track, index, curve.point(0.0), grade_at(0.0, 1.0)});
-				ends.push_back({track, index, curve.point(1.0), grade_at(1.0, -1.0)});
+				ends.emplace_back(track, index, curve.point(0.0), grade_at(0.0, 1.0));
+				ends.emplace_back(track, index, curve.point(1.0), grade_at(1.0, -1.0));
 				for (int tenth = 0; tenth < 10; ++tenth)
 					clearance(curve.point(0.05 + 0.1 * tenth), isswitch ? switch_low : track_low, isswitch ? switch_high : track_high);
 			}
@@ -235,7 +235,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 					for (int i = 0; i < places; ++i)
 					{
 						auto const place{curve.point((i + 0.5) / places)};
-						beside[{static_cast<int>(std::floor(place.x / 10.0)), static_cast<int>(std::floor(place.z / 10.0))}].push_back({place, geometry::plan_of(curve.first((i + 0.5) / places)), track});
+						beside[{static_cast<int>(std::floor(place.x / 10.0)), static_cast<int>(std::floor(place.z / 10.0))}].emplace_back(place, geometry::plan_of(curve.first((i + 0.5) / places)), track);
 					}
 				}
 		double beside_worst{0.0};
@@ -281,8 +281,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
 				continue;
 			auto const &path{track->m_paths.front()};
-			ends.push_back({track, path.points[segment_data::point::start], path.rolls[0]});
-			ends.push_back({track, path.points[segment_data::point::end], -path.rolls[1]});
+			ends.emplace_back(track, path.points[segment_data::point::start], path.rolls[0]);
+			ends.emplace_back(track, path.points[segment_data::point::end], -path.rolls[1]);
 			auto const length{std::max(0.01, geometry::chord_length(path))};
 			if (auto const ramp{std::abs(mm(path.rolls[1]) - mm(path.rolls[0])) / length}; ramp > steepest)
 			{
@@ -355,7 +355,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 						continue;
 					auto const curvature{(first.x * second.z - first.z * second.x) / (speed * speed * speed)};
 					glm::dvec2 const along{first.x / speed, first.z / speed};
-					meetings.push_back({track, i, atend, atend ? -curvature : curvature, static_cast<double>(atend ? path.rolls[1] : path.rolls[0]), atend ? -along : along});
+					meetings.emplace_back(track, i, atend, atend ? -curvature : curvature, static_cast<double>(atend ? path.rolls[1] : path.rolls[0]), atend ? -along : along);
 				}
 		}
 		if (meetings.empty())

@@ -4374,7 +4374,7 @@ editor_mode::texture_offer editor_mode::terrain_texture_offer(char const *None)
                 auto const add = [&](std::string const &Name, char const *Note) {
                     if (Name.empty() || Name == "none" || std::ranges::any_of(list, [&](texture_use const &Use) { return Use.name == Name; }))
                         return;
-                    list.push_back({null_handle, Name, 0, Note});
+                    list.emplace_back(null_handle, Name, 0, Note);
                 };
                 for (auto const &layer : m_streamer.manifest().layers)
                     add(layer.material, STR_C("In the palette of the terrain"));

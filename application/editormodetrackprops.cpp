@@ -1021,7 +1021,7 @@ void editor_mode::track_textures_scan()
 		list.clear();
 		for (auto const &[material, count] : counted)
 			if (material != null_handle)
-				list.push_back({material, editor_track::material_name(material), count, format(STR_C("In this scenery: %s"), tracks_count(static_cast<std::size_t>(count)).c_str())});
+				list.emplace_back(material, editor_track::material_name(material), count, format(STR_C("In this scenery: %s"), tracks_count(static_cast<std::size_t>(count)).c_str()));
 		std::ranges::stable_sort(list, [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
 	}
 }
@@ -1068,7 +1068,7 @@ void editor_mode::textures_index()
 	m_texture_index.clear();
 	m_texture_index.reserve(found.size());
 	for (auto const &[name, material] : found)
-		m_texture_index.push_back({name, lowered(name), material});
+		m_texture_index.emplace_back(name, lowered(name), material);
 }
 
 std::uint64_t editor_mode::track_texture_image(int const Kind, std::string const &Name)
@@ -1343,7 +1343,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		}
 		auto const &outcome{m_track_outcome};
 		if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == signature && outcome.history == m_history.size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
-			m_track_notes.push_back({outcome.property, outcome.text, outcome.refused ? track_note::kind::refused : track_note::kind::done});
+			m_track_notes.emplace_back(outcome.property, outcome.text, outcome.refused ? track_note::kind::refused : track_note::kind::done);
 	}
 	// the tooltip of a row would cover the line under it
 	auto const row_help = [&](std::size_t const Index) {
@@ -1600,7 +1600,7 @@ std::vector<editor_mode::track_style_line> editor_mode::track_style_lines(std::v
 				differ += static_cast<std::size_t>(count);
 		if (differ == 0)
 			continue;
-		lines.push_back({index, values.size() == 1 ? shown_value(property, values.front().first) : format(STR_C("different (%d)"), static_cast<int>(values.size())), shown_value(property, value), differ});
+		lines.emplace_back(index, values.size() == 1 ? shown_value(property, values.front().first) : format(STR_C("different (%d)"), static_cast<int>(values.size())), shown_value(property, value), differ);
 	}
 	return lines;
 }

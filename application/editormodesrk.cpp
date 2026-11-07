@@ -3573,12 +3573,12 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			if (block_along(line, signal, distance, true))
 			{
 				row.wrong.emplace_back(distance, signal_shown(signal.name, stem));
-				row.posts.push_back({distance, signal_shown(signal.name, stem), true, km_along(line, row.km_number, distance)});
+				row.posts.emplace_back(distance, signal_shown(signal.name, stem), true, km_along(line, row.km_number, distance));
 			}
 			if (false == block_along(line, signal, distance))
 				continue;
 			row.stops.emplace_back(distance + station::signal_drop * out_of(line), signal_shown(signal.name, stem));
-			row.posts.push_back({distance, signal_shown(signal.name, stem), false, km_along(line, row.km_number, distance)});
+			row.posts.emplace_back(distance, signal_shown(signal.name, stem), false, km_along(line, row.km_number, distance));
 			switched = switched || guards.count(ToLower(signal.name)) > 0;
 		}
 		// the warning discs: of the semi-automatic block, of the wrong-track trains of the mixed one
@@ -3589,7 +3589,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			if (signal.kind == "warning" && (mixed || (row.block == block_kind::semi && faces_along(line, signal, distance))))
 			{
 				faces_along(line, signal, distance, mixed);
-				row.posts.push_back({distance, signal_shown(signal.name, stem), mixed, km_along(line, row.km_number, distance)});
+				row.posts.emplace_back(distance, signal_shown(signal.name, stem), mixed, km_along(line, row.km_number, distance));
 			}
 		}
 		std::ranges::sort(row.stops);
@@ -3605,7 +3605,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		{
 			auto const *track{line.owners[k] < line.tracks.size() ? line.tracks[line.owners[k]] : nullptr};
 			if (auto const name{track == nullptr || track->Isolated.empty() ? std::string{} : track->Isolated.front()->asName}; row.sections.empty() || row.sections.back().name != name)
-				row.sections.push_back({line.distances[k], line.distances[k], name});
+				row.sections.emplace_back(line.distances[k], line.distances[k], name);
 			row.sections.back().to = line.distances[k];
 			if (k > 0 && row.sections.size() > 1 && row.sections.back().from == line.distances[k])
 				row.sections[row.sections.size() - 2].to = line.distances[k];
@@ -3670,7 +3670,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 	};
 	for (auto const &signal : Standing)
 		if (false == signal.read.empty() && signal.track == nullptr && by_open(signal.position))
-			m_problems.push_back({format(STR_C("Signal %s: no track reads it"), signal_shown(signal.name, stem).c_str()), signal.position, signal.instance});
+			m_problems.emplace_back(format(STR_C("Signal %s: no track reads it"), signal_shown(signal.name, stem).c_str()), signal.position, signal.instance);
 	for (std::size_t index = 0; index < m_lines.size() && index < m_line_ways.size(); ++index)
 	{
 		auto const &row{m_lines[index]};
@@ -3690,7 +3690,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 					auto const along{glm::dot(ahead, way)};
 					if (auto const direction{plan(target.direction)}; along < 5.0 || along < glm::length(ahead) * 0.8 || glm::length(direction) < 1e-9 || std::abs(glm::dot(glm::normalize(direction), way)) < 0.7)
 						continue;
-					m_problems.push_back({format(STR_C("The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"), row.entry.c_str(), line.length(), glm::length(ahead)), end});
+					m_problems.emplace_back(format(STR_C("The line out of %s breaks off %.0f m beyond it, the tracks go on %.0f m farther"), row.entry.c_str(), line.length(), glm::length(ahead)), end);
 					break;
 				}
 			}
@@ -3707,7 +3707,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 					circuits.insert(ToLower(isolated->asName));
 	for (auto const &control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
 		if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0 && by_open(control.location))
-			m_problems.push_back({format(STR_C("Block section %s has no track"), control.values[0].c_str()), control.location});
+			m_problems.emplace_back(format(STR_C("Block section %s has no track"), control.values[0].c_str()), control.location);
 }
 
 void srk_tool::render_problems()
@@ -4143,9 +4143,9 @@ void srk_tool::set_lines(block_edit const *Edit)
 		std::vector<stop> order{{0.0, standing[entry_standing[line.entry]].name, -1, static_cast<int>(entry_standing[line.entry])}};
 		for (std::size_t i = 0; i < planned.size(); ++i)
 			if (planned[i].line == index && false == planned[i].wrong)
-				order.push_back({planned[i].distance, planned[i].name, static_cast<int>(i), planned[i].match});
+				order.emplace_back(planned[i].distance, planned[i].name, static_cast<int>(i), planned[i].match);
 		if (ends[index].signal >= 0)
-			order.push_back({ends[index].distance, standing[ends[index].signal].name, -1, ends[index].signal});
+			order.emplace_back(ends[index].distance, standing[ends[index].signal].name, -1, ends[index].signal);
 		std::ranges::sort(order, [](stop const &A, stop const &B) { return A.distance < B.distance; });
 		if (line.inbound)
 			std::ranges::reverse(order);
@@ -4244,7 +4244,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			m_status = format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str());
 			return false;
 		}
-		cuts.push_back({at.track, at.point});
+		cuts.emplace_back(at.track, at.point);
 		return true;
 	};
 	for (auto const &found : sections)
@@ -4337,7 +4337,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		{
 			auto const &found{standing[signal.match]};
 			if (auto const relink{block && false == found.linked.empty() && ToLower(found.linked) != ToLower(signal.linked)}; ToLower(found.name) != ToLower(signal.name) || relink)
-				changes.renamed.push_back({found.instance, signal.name, signal.plate, relink ? signal.linked : std::string{}});
+				changes.renamed.emplace_back(found.instance, signal.name, signal.plate, relink ? signal.linked : std::string{});
 			if (ToLower(found.name) != ToLower(signal.name))
 				++renamed;
 			// of the aspects of its line
@@ -4368,7 +4368,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		++(block ? blocks : discs);
 	}
 	for (auto const &[index, linked] : relinked)
-		changes.renamed.push_back({standing[index].instance, standing[index].name, std::string{}, linked});
+		changes.renamed.emplace_back(standing[index].instance, standing[index].name, std::string{}, linked);
 	for (std::size_t k = 0; k < standing.size(); ++k)
 		if (gone[k])
 			changes.removed.push_back(standing[k].instance);
@@ -4491,7 +4491,7 @@ void srk_tool::survey_signals()
 		auto const at{station::project(*m_layout, signal.position)};
 		auto const ahead{station::project(*m_layout, signal.position + glm::dvec3{travel.x, 0.0, travel.y} * 5.0)};
 		auto const unfit{std::ranges::any_of(m_heads, [&](head_check const &Head) { return Head.instance == signal.instance && (false == Head.fits || false == Head.problems.empty()); })};
-		m_signal_marks.push_back({at, ahead.x > at.x, signal_shown(signal.name, stem), signal.position + glm::dvec3{0.0, signal.kind == "shunt" ? 3.0 : 7.0, 0.0}, unfit});
+		m_signal_marks.emplace_back(at, ahead.x > at.x, signal_shown(signal.name, stem), signal.position + glm::dvec3{0.0, signal.kind == "shunt" ? 3.0 : 7.0, 0.0}, unfit);
 		// in the plot on the track it stands by, to its side
 		auto &mark{m_signal_marks.back()};
 		mark.drawn = m_plot.at(at);
@@ -5040,8 +5040,8 @@ void srk_tool::survey()
 		if (points.size() < 2)
 			continue;
 		auto const circuit{m_circuit_of[index]};
-		ends.push_back({points.front(), points[1] - points.front(), circuit, m_plot.paths[index].front()});
-		ends.push_back({points.back(), points.back() - points[points.size() - 2], circuit, m_plot.paths[index].back()});
+		ends.emplace_back(points.front(), points[1] - points.front(), circuit, m_plot.paths[index].front());
+		ends.emplace_back(points.back(), points.back() - points[points.size() - 2], circuit, m_plot.paths[index].back());
 	}
 	m_joints.clear();
 	for (std::size_t i = 0; i < ends.size(); ++i)
@@ -5052,7 +5052,7 @@ void srk_tool::survey()
 				m_ticks.push_back(station::project(layout, ends[i].point));
 				m_ticks_drawn.push_back(ends[i].drawn);
 				glm::dvec2 const way{glm::normalize(glm::dvec2{ends[i].way.x, ends[i].way.z} + glm::dvec2{1e-12, 0.0})};
-				m_joints.push_back({ends[i].point, glm::dvec3{-way.y, 0.0, way.x}});
+				m_joints.emplace_back(ends[i].point, glm::dvec3{-way.y, 0.0, way.x});
 			}
 	survey_signals();
 }

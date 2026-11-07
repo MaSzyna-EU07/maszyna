@@ -122,7 +122,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 	std::string text;
 	auto const flush = [&]() {
 		if (false == text.empty())
-			words.push_back({gesture_word::kind::text, text});
+			words.emplace_back(gesture_word::kind::text, text);
 		text.clear();
 	};
 	std::istringstream stream{Keys};
@@ -142,11 +142,11 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 		for (std::size_t index = 0; index < parts.size(); ++index)
 		{
 			if (index > 0)
-				words.push_back({gesture_word::kind::plus, "+"});
+				words.emplace_back(gesture_word::kind::plus, "+");
 			if (auto const part{mouse(parts[index])}; false == part.empty())
-				words.push_back({gesture_word::kind::mouse, part});
+				words.emplace_back(gesture_word::kind::mouse, part);
 			else
-				words.push_back({gesture_word::kind::key, parts[index]});
+				words.emplace_back(gesture_word::kind::key, parts[index]);
 		}
 	}
 	flush();

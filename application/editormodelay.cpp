@@ -799,7 +799,10 @@ std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, g
 			if (atend)
 				std::ranges::reverse(pieces);
 			for (auto const &piece : pieces)
-				back.push_back({bezier{piece}.plan_length(), atend ? curvature_at(piece, 1.0) : -curvature_at(piece, 0.0), atend ? curvature_at(piece, 0.0) : -curvature_at(piece, 1.0)});
+			{
+				std::array<double, 3> const piece_curve{bezier{piece}.plan_length(), atend ? curvature_at(piece, 1.0) : -curvature_at(piece, 0.0), atend ? curvature_at(piece, 0.0) : -curvature_at(piece, 1.0)};
+				back.push_back(piece_curve);
+			}
 		}
 	// the curve the switch ends with, and the straight of a straight frog after it
 	double straight{0.0};
@@ -819,10 +822,16 @@ std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, g
 	std::vector<std::array<double, 3>> line;
 	if (switched == From)
 		for (auto const &piece : Pieces)
-			line.push_back({bezier{piece}.plan_length(), curvature_at(piece, 0.0), curvature_at(piece, 1.0)});
+		{
+			std::array<double, 3> const piece_curve{bezier{piece}.plan_length(), curvature_at(piece, 0.0), curvature_at(piece, 1.0)};
+			line.push_back(piece_curve);
+		}
 	else
 		for (auto piece{Pieces.rbegin()}; piece != Pieces.rend(); ++piece)
-			line.push_back({bezier{*piece}.plan_length(), -curvature_at(*piece, 1.0), -curvature_at(*piece, 0.0)});
+		{
+			std::array<double, 3> const piece_curve{bezier{*piece}.plan_length(), -curvature_at(*piece, 1.0), -curvature_at(*piece, 0.0)};
+			line.push_back(piece_curve);
+		}
 	// no faster than the diverging track of the switch lets
 	auto const speed{std::min(design_speed(From, To), editor_track::diverging_speed(1.0 / std::abs(*curvature)))};
 	return switch_curve::check_exit(*curvature, straight, line, speed, laying_norms().gauge).warnings;
@@ -1400,7 +1409,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					alignment::vertex curve;
 					curve.radius = radius;
 					curve.cant = design.start_cant;
-					bends.push_back({lifted(from + *along * (radius * std::tan(0.5 * sweep)), anchor.y), curve, false});
+					bends.emplace_back(lifted(from + *along * (radius * std::tan(0.5 * sweep)), anchor.y), curve, false);
 					anchor = lifted(centre + glm::normalize(outward) * radius, Points[1].y);
 					along = turned(*along, side * sweep);
 					i = last;
@@ -1789,7 +1798,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				return from_straight();
 			}
 			for (auto const &vertex : fit.vertices)
-				bends.push_back({lifted(vertex.position, entry.y), vertex, false});
+				bends.emplace_back(lifted(vertex.position, entry.y), vertex, false);
 			if (fit.vertices.empty())
 			{
 				// a straight: the two lines are one

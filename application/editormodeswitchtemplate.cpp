@@ -503,7 +503,7 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 			int pick{static_cast<int>(std::ranges::find(rails, tool.rail_pick) - rails.begin())};
 			std::vector<segment_option> options;
 			for (std::size_t i = 0; i < rails.size(); ++i)
-				options.push_back({static_cast<int>(i), rails[i].c_str()});
+				options.emplace_back(static_cast<int>(i), rails[i].c_str());
 			ImGui::SameLine();
 			if (choice_chips("##rails", pick, options))
 				tool.rail_pick = rails[pick];
@@ -545,7 +545,7 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 		std::vector<segment_option> options;
 		auto label{labels.begin()};
 		for (auto const &[value, index] : speeds)
-			options.push_back({value, (label++)->c_str()});
+			options.emplace_back(value, (label++)->c_str());
 		if (choice_chips("##speeds", speed, options))
 			picked = speeds[speed];
 	}

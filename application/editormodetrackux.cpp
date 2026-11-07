@@ -879,7 +879,7 @@ void editor_mode::draw_track_labels() const
 			auto text{name_of(*track)};
 			if (auto const record{switch_store::of(*track)})
 				text += "  " + switch_store::label(*record);
-			labels.push_back({0, 0.0, first.point(0.0), text, IM_COL32(255, 220, 120, 255)});
+			labels.emplace_back(0, 0.0, first.point(0.0), text, IM_COL32(255, 220, 120, 255));
 			continue;
 		}
 		if (labelled.contains(track) || false == plain(track))
@@ -931,22 +931,22 @@ void editor_mode::draw_track_labels() const
 		auto const middle{along_row(length * 0.5)};
 		if (straight)
 		{
-			labels.push_back({2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225)});
+			labels.emplace_back(2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225));
 			continue;
 		}
 		// a track bent by hand, as an S between two points dragged, has no radius to read: its length alone
 		editor_track::curve shape;
 		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5 && shape.radius <= 50000.0)
 		{
-			labels.push_back({1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240)});
+			labels.emplace_back(1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240));
 			// the tracks of the transition curves told apart from the arc, each transition by a label of its own in its middle; two
 			// meeting at the radius are both of the curve
 			for (auto const &[transition, at] : {std::pair{shape.transition_in, shape.transition_in * 0.5}, std::pair{shape.transition_out, length - shape.transition_out * 0.5}})
 				if (transition >= 0.5 && transition < length)
-					labels.push_back({2, -transition, along_row(at), format(STR_C("transition L %.0f m"), transition), IM_COL32(150, 205, 255, 235)});
+					labels.emplace_back(2, -transition, along_row(at), format(STR_C("transition L %.0f m"), transition), IM_COL32(150, 205, 255, 235));
 		}
 		else
-			labels.push_back({2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240)});
+			labels.emplace_back(2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240));
 	}
 	std::ranges::sort(labels, [](track_label const &A, track_label const &B) { return A.rank != B.rank ? A.rank < B.rank : A.order < B.order; });
 	// each label where it reads best: beside its track if it's free there, else moved out to the nearest room, a line leading back

@@ -3054,7 +3054,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		(atend ? profile.context.end_joined : profile.context.start_joined) = true;
 		(atend ? profile.context.end_elevation : profile.context.start_elevation) = height;
 		(atend ? profile.context.end_grade : profile.context.start_grade) = 0.0;
-		profile.context.switches.push_back({from, from + level, table->table->name()});
+		profile.context.switches.emplace_back(from, from + level, table->table->name());
 		for (int metre = 0; from + metre <= from + level + 1e-6; ++metre)
 			options.bounds.push_back({from + metre, height - kJoin, height + kJoin, false});
 		WriteLog(format("Editor: NMT line %s runs up to turntable %s level at %.2f m over %.1f m", Track.name().c_str(), table->table->name().c_str(), height, level), logtype::generic);
@@ -3064,12 +3064,12 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	};
 	auto const length_of =[](TTrack const &Track, int const Path) { return Track.eType == tt_Switch ? Track.SwitchExtension->Segments[Path]->GetLength() : Track.Segment->GetLength(); };
 	std::vector<editor_track::route_span> exits;
-	exits.push_back({profile.route.spans.front().track, profile.route.spans.front().path, false == profile.route.spans.front().forward});
-	exits.push_back({profile.route.spans.back().track, profile.route.spans.back().path, profile.route.spans.back().forward});
+	exits.emplace_back(profile.route.spans.front().track, profile.route.spans.front().path, false == profile.route.spans.front().forward);
+	exits.emplace_back(profile.route.spans.back().track, profile.route.spans.back().path, profile.route.spans.back().forward);
 	for (auto const &span : profile.route.spans)
 		if (span.track->eType == tt_Switch && span.track->m_paths.size() >= 2)
 			for (auto const outward : {true, false})
-				exits.push_back({span.track, 1 - span.path, outward});
+				exits.emplace_back(span.track, 1 - span.path, outward);
 	// a switch entered at the far end of a path has the far end of its other path on its plane as high, when as far along it
 	auto const frog_beside = [](TTrack const &Switch, int const Path) {
 		if (Switch.m_paths.size() < 2)
@@ -3093,7 +3093,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 				if (geometry::plan_distance(profile.samples[i].position, exit) < geometry::plan_distance(profile.samples[nearest].position, exit))
 					nearest = i;
 			auto const climbing{Bending * Between / (4.0 * profile.line.norms.radius_min)};
-			options.bounds.push_back({profile.samples[nearest].chainage, Height - kJoin - climbing, Height + kJoin + climbing, climbing >= kClimbing});
+			options.bounds.emplace_back(profile.samples[nearest].chainage, Height - kJoin - climbing, Height + kJoin + climbing, climbing >= kClimbing);
 		};
 		// the tracks it leads into, the nearest first, through both paths of a switch met at its start and across the frog of one
 		// met at the end of a path, onto the end of its other path
@@ -3128,7 +3128,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 					continue;
 				}
 				auto const length{length_of(*next.track, next.path)};
-				open.push_back({next, step.between + length, step.bending + (next.track->eType == tt_Switch ? 0.0 : length)});
+				open.emplace_back(next, step.between + length, step.bending + (next.track->eType == tt_Switch ? 0.0 : length));
 				if (false == next.forward && next.track->eType == tt_Switch && frog_beside(*next.track, next.path))
 					open.push_back({{next.track, 1 - next.path, true}, step.between, step.bending});
 			}
@@ -3311,7 +3311,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		auto const above{sides && before > found.height + kOtherSide && after > found.height + kOtherSide};
 		auto const below{sides && before < found.height - kOtherSide && after < found.height - kOtherSide};
 		if (above || below)
-			other_levels.push_back({found.track, found.chainage, std::max(reach, kNear / found.sine), found.height});
+			other_levels.emplace_back(found.track, found.chainage, std::max(reach, kNear / found.sine), found.height);
 		if (above)
 			continue;
 		if (below)
@@ -3322,10 +3322,10 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			for (std::size_t i = 0; i < count; ++i)
 				if (std::abs(sampled[i] - found.chainage) <= reach && model[i] > std::max(before, after) + kOtherSide)
 					model[i] = std::numeric_limits<double>::quiet_NaN();
-			crossing_holds.push_back({found.chainage, std::min(found.height - kUnder, std::max(before, after)), kRail, kUnderReach});
+			crossing_holds.emplace_back(found.chainage, std::min(found.height - kUnder, std::max(before, after)), kRail, kUnderReach);
 			continue;
 		}
-		crossing_holds.push_back({found.chainage, found.height, kCrossingHeight, kLevel});
+		crossing_holds.emplace_back(found.chainage, found.height, kCrossingHeight, kLevel);
 	}
 	for (std::size_t i = 0; i < count; ++i)
 	{
@@ -3407,7 +3407,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		auto const from{std::max(-half, first - 1.5)};
 		auto const to{std::min(half, last + 1.5)};
 		if (from < to)
-			profile.context.switches.push_back({found.chainage + from, found.chainage + to, found.track->name()});
+			profile.context.switches.emplace_back(found.chainage + from, found.chainage + to, found.track->name());
 	}
 	for (auto const &hold : crossing_holds)
 	{
@@ -3447,7 +3447,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			}
 		}
 		if (from < to)
-			profile.context.switches.push_back({from, to, other->name()});
+			profile.context.switches.emplace_back(from, to, other->name());
 	}
 	std::ranges::sort(profile.context.switches, [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
 	auto settings{profile.line};
@@ -3565,7 +3565,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	for (auto const &stretch : spans)
 		for (std::size_t i = 0; i < count; ++i)
 			if (sampled[i] >= stretch.from && sampled[i] <= stretch.to)
-				m_nmt_state.bridged[{static_cast<int>(std::floor(plan[i].x / kPlanCell)), static_cast<int>(std::floor(plan[i].y / kPlanCell))}].push_back({plan[i].x, heights[i], plan[i].y});
+				m_nmt_state.bridged[{static_cast<int>(std::floor(plan[i].x / kPlanCell)), static_cast<int>(std::floor(plan[i].y / kPlanCell))}].emplace_back(plan[i].x, heights[i], plan[i].y);
 	// told in the panel too: the line refused and why, the path which didn't take it, the worst place where it parts from the model
 	// other than over a bridge found
 	auto const place_at = [&](double const Chainage) {
@@ -4094,8 +4094,8 @@ void editor_mode::nmt_share_grades()
 			auto const length{glm::length(chord)};
 			if (a == b || length < 1e-3)
 				continue;
-			links[a].push_back({b, length, chord / length, rise_out(path, false)});
-			links[b].push_back({a, length, -chord / length, rise_out(path, true)});
+			links[a].emplace_back(b, length, chord / length, rise_out(path, false));
+			links[b].emplace_back(a, length, -chord / length, rise_out(path, true));
 			// the joints of a switch keep its heights: a track ending there meets it
 			if (track->eType == tt_Switch)
 			{
@@ -4393,7 +4393,7 @@ void editor_mode::nmt_share_grades()
 			auto const middle{sums[surface].sum / sums[surface].count};
 			auto const level{nodes + 3 * surface};
 			terms.push_back({{here.first, here.second, level, level + 1, level + 2}, {1.0 - here.share, here.share, -1.0, -(here.position.x - middle.x) / kSurfaceScale, -(here.position.z - middle.z) / kSurfaceScale}, middle.y - here.position.y, 1.0 / (kOnTimbers * kOnTimbers)});
-			state.surface_places.push_back({here.track, here.path, here.share, surface});
+			state.surface_places.emplace_back(here.track, here.path, here.share, surface);
 		}
 	for (std::size_t surface = 0; surface < sums.size(); ++surface)
 		for (int k = 0; k < 3; ++k)

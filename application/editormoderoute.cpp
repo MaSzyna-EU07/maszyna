@@ -783,7 +783,7 @@ void editor_mode::route_lay()
 				else
 				{
 					left += (left.empty() ? "" : ", ") + crossover.name;
-					route.crossovers_out.push_back({crossover.shape, crossover.press, crossover.release, crossover.name, crossover.names});
+					route.crossovers_out.emplace_back(crossover.shape, crossover.press, crossover.release, crossover.name, crossover.names);
 				}
 			}
 			show_track_tab(tab);
@@ -956,7 +956,7 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 			                     name(passage.track).c_str(), departure);
 			return false;
 		}
-		placements.push_back({passage.track, from, length, entry, angle});
+		placements.emplace_back(passage.track, from, length, entry, angle);
 		ends.push_back(from);
 		ends.push_back(from + length);
 	}
@@ -2179,7 +2179,7 @@ bool editor_mode::render_route_vertex(int const Index)
 	{
 		changed = true;
 		if (vertex.compound && vertex.arcs.empty())
-			vertex.arcs.push_back({std::max(10.0, std::round(vertex.radius * 0.6 / 10.0) * 10.0), 0.0, 1.0});
+			vertex.arcs.emplace_back(std::max(10.0, std::round(vertex.radius * 0.6 / 10.0) * 10.0), 0.0, 1.0);
 	}
 	if (false == vertex.spirals)
 		item_tooltip("Curve made of arcs of different radii, each one its own path, joined with transitions");
@@ -2253,7 +2253,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		if (ImGui::SmallButton(STR_C("Add a radius")))
 		{
 			auto const last{vertex.arcs.empty() ? vertex.radius : vertex.arcs.back().radius};
-			vertex.arcs.push_back({std::max(10.0, std::round(last * 0.8 / 10.0) * 10.0), 0.0, 1.0});
+			vertex.arcs.emplace_back(std::max(10.0, std::round(last * 0.8 / 10.0) * 10.0), 0.0, 1.0);
 			changed = true;
 		}
 		item_tooltip("Another arc after the last one, the angle of the curve is shared out by the shares");

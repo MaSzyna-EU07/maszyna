@@ -1391,7 +1391,7 @@ bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool c
 		std::vector<std::string> values;
 		auto const *item{signal_template_of(standing.include.file)};
 		auto const linked{item != nullptr && item->linked && editor_includes::parse_directive(scene::Layers.directive(standing.include.instance), file, values) && values.size() > 6};
-		Signals.push_back({standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw, linked ? values[6] : std::string{}});
+		Signals.emplace_back(standing.include.instance, standing.name, kKinds[standing.kind], standing.include.location, standing.include.yaw, linked ? values[6] : std::string{});
 		auto &signal{Signals.back()};
 		signal.file = standing.include.file;
 		signal.track = standing.track;
@@ -1947,7 +1947,7 @@ void editor_mode::render_signal_ui()
 		if (std::ranges::any_of(tool.templates, [&](signal_template const &Item) { return Item.kind == kKinds[k]; }))
 		{
 			labels.push_back(STR(kKindLabels[k]));
-			kinds.push_back({k, labels.back().c_str()});
+			kinds.emplace_back(k, labels.back().c_str());
 		}
 	if (false == kinds.empty() && std::ranges::none_of(kinds, [&](segment_option const &Option) { return Option.value == tool.kind; }))
 		tool.kind = kinds.front().value;
