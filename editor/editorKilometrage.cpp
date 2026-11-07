@@ -731,14 +731,14 @@ std::optional<axis> build(std::string_view const Line)
 // a via read from the scenery file of the layer, after its keyword: kept unless the line is broken
 void read_via(std::istringstream &Line, scene::layer_handle const Layer, scene::layer_context const &Context)
 {
-	via entry;
-	entry.layer = Layer;
-	glm::dvec3 point{0.0};
-	Line >> entry.line >> point.x >> point.y >> point.z;
-	if (Line.fail() || entry.line.empty())
+	via entry_via;
+	entry_via.layer = Layer;
+	glm::dvec3 via_point{0.0};
+	Line >> entry_via.line >> via_point.x >> via_point.y >> via_point.z;
+	if (Line.fail() || entry_via.line.empty())
 		return;
-	entry.point = Context.to_world(point);
-	kept().vias.push_back(std::move(entry));
+	entry_via.point = Context.to_world(via_point);
+	kept().vias.push_back(std::move(entry_via));
 }
 
 // a mark read from the scenery file of the layer, after its keyword: kept unless the line is broken

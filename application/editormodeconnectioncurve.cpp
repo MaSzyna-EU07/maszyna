@@ -300,15 +300,15 @@ std::vector<double> line_breaks(std::vector<editor_track::route_sample> const &S
 	for (auto const &point : Points)
 	{
 		auto const at{editor_track::sampled_position(After, point.chainage)};
-		double best{std::numeric_limits<double>::max()};
+		double best_here{std::numeric_limits<double>::max()};
 		double chainage{0.0};
 		for (auto const &sample : Samples)
-			if (auto const distance{plan_distance(sample.position, at)}; distance < best)
+			if (auto const distance{plan_distance(sample.position, at)}; distance < best_here)
 			{
-				best = distance;
+				best_here = distance;
 				chainage = sample.chainage;
 			}
-		if (best < kFollow && chainage > 0.5 && chainage < Length - 0.5)
+		if (best_here < kFollow && chainage > 0.5 && chainage < Length - 0.5)
 			breaks.push_back(chainage);
 	}
 	for (std::size_t i = 1; i < Samples.size(); ++i)

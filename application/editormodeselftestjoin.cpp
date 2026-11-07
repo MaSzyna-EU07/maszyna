@@ -803,8 +803,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				lay_switch_mode();
 			glm::dvec2 const start{x, z};
 			glm::dvec2 const direction{std::cos(glm::radians(heading)), std::sin(glm::radians(heading))};
-			glm::dvec2 const left{-direction.y, direction.x};
-			auto const centre{start + left * radius};
+			glm::dvec2 const leftward{-direction.y, direction.x};
+			auto const centre{start + leftward * radius};
 			auto const along = [&](double const Chainage, double const Shift) {
 				auto const angle{Chainage / radius};
 				auto const radial{geometry::turned(start - centre, angle)};
@@ -1351,9 +1351,9 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		}
 		else if (action == "control")
 		{
-			glm::dvec3 control{0.0};
-			words >> control.x >> control.y >> control.z;
-			track_gizmo_control(*track, control);
+			glm::dvec3 control_point{0.0};
+			words >> control_point.x >> control_point.y >> control_point.z;
+			track_gizmo_control(*track, control_point);
 			track_gizmo_switches(*track);
 		}
 		else if (action == "offset")

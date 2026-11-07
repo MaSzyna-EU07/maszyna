@@ -696,8 +696,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	for (auto const &bound : Options.bounds)
 	{
 		auto const at{std::clamp((bound.chainage - origin) / step, 0.0, static_cast<double>(nodes - 1))};
-		auto const cell{std::min(nodes - 2, static_cast<std::size_t>(at))};
-		bounds.emplace_back(cell, at - static_cast<double>(cell), std::min(bound.low, bound.high), std::max(bound.low, bound.high), bound.yielding);
+		auto const cell_index{std::min(nodes - 2, static_cast<std::size_t>(at))};
+		bounds.emplace_back(cell_index, at - static_cast<double>(cell_index), std::min(bound.low, bound.high), std::max(bound.low, bound.high), bound.yielding);
 	}
 	// the bounds which contradict each other about one place, as of two crossovers into lines fitted apart in height, hold as far
 	// as both can: the line keeps between them. Held both, it would tear itself apart over them
@@ -882,17 +882,17 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 				for (std::size_t k = 0; k < nodes; ++k)
 					descent += gradient[k] * direction[k];
 				std::vector<double> trial(nodes);
-				auto length{1.0};
-				for (;; length *= 0.5)
+				auto step_length{1.0};
+				for (;; step_length *= 0.5)
 				{
 					for (std::size_t k = 0; k < nodes; ++k)
-						trial[k] = x[k] + length * direction[k];
-					if (cost(trial, false) <= current + 1e-4 * length * descent || length < 1e-6)
+						trial[k] = x[k] + step_length * direction[k];
+					if (cost(trial, false) <= current + 1e-4 * step_length * descent || step_length < 1e-6)
 						break;
 				}
 				auto moved{0.0};
 				for (std::size_t k = 0; k < nodes; ++k)
-					moved = std::max(moved, std::abs(length * direction[k]));
+					moved = std::max(moved, std::abs(step_length * direction[k]));
 				x = std::move(trial);
 				current = cost(x, true);
 				if (moved < 1e-5)
@@ -1055,22 +1055,22 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 				++k;
 				continue;
 			}
-			auto const first{k};
+			auto const run_first{k};
 			auto const sign{change(k) > 0.0};
 			double sum{0.0};
 			double moment{0.0};
-			for (; k + 1 < nodes && bends(k) && (change(k) > 0.0) == sign && (k == first || false == splits.contains(k)); ++k)
+			for (; k + 1 < nodes && bends(k) && (change(k) > 0.0) == sign && (k == run_first || false == splits.contains(k)); ++k)
 			{
 				sum += change(k);
 				moment += change(k) * node(k);
 			}
 			auto const at{moment / sum};
-			pvi point{at, x[first] + (x[first] - x[first - 1]) / step * (at - node(first))};
-			auto const room{std::min(at - node(first) + step * 0.5, node(k - 1) + step * 0.5 - at)};
+			pvi point{at, x[run_first] + (x[run_first] - x[run_first - 1]) / step * (at - node(run_first))};
+			auto const room{std::min(at - node(run_first) + step * 0.5, node(k - 1) + step * 0.5 - at)};
 			result.points.push_back(point);
 			rooms.push_back(room);
-			lengths.push_back(node(k - 1) - node(first) + step);
-			runs.emplace_back(first, k);
+			lengths.push_back(node(k - 1) - node(run_first) + step);
+			runs.emplace_back(run_first, k);
 		}
 		result.points.emplace_back(node(nodes - 1), x[nodes - 1]);
 		rooms.push_back(0.0);
@@ -1110,10 +1110,10 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 		auto split{false};
 		for (std::size_t i = 1; i + 1 < result.points.size(); ++i)
 		{
-			auto const [first, past]{runs[i]};
-			if (past - first < 2 || departure(result, node(first - 1), node(past)) <= 0.5)
+			auto const [run_start, past]{runs[i]};
+			if (past - run_start < 2 || departure(result, node(run_start - 1), node(past)) <= 0.5)
 				continue;
-			auto middle{first + 1};
+			auto middle{run_start + 1};
 			while (middle + 1 < past && node(middle) < result.points[i].chainage)
 				++middle;
 			split = splits.insert(middle).second || split;

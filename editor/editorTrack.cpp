@@ -767,7 +767,7 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		if (joint.own.path >= static_cast<int>(Track.m_paths.size()) || joint.theirs.path >= static_cast<int>(joint.other->m_paths.size()))
 			continue;
 		auto &path{joint.other->m_paths[joint.theirs.path]};
-		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto &control_point{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
 		auto const fixed{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::end : segment_data::point::start]};
 		auto const before{plan_of(path.points[point_index(joint.theirs.kind)] - fixed)};
@@ -782,7 +782,7 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 				continue;
 		}
 		auto const moved{turned(plan_of(joint.control), angle)};
-		control = {moved.x, joint.control.y, moved.y};
+		control_point = {moved.x, joint.control.y, moved.y};
 	}
 }
 
@@ -794,8 +794,8 @@ void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &J
 			continue;
 		geometry::bezier const own{Track.m_paths[joint.own.path]};
 		auto const outward{joint.own.kind == point_kind::start ? -own.first(0.0) : own.first(1.0)};
-		auto &control{joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
-		control.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control));
+		auto &control_point{joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		control_point.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control_point));
 	}
 }
 
@@ -1003,10 +1003,10 @@ void editor_track::align_controls(TTrack const &Track, point_ref const &Control,
 	{
 		auto &path{partner_track->m_paths[partner_point.path]};
 		bool const start{partner_point.kind == point_kind::start};
-		auto &control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
-		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
+		auto &control_point{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto const length{control_point != glm::dvec3{} ? glm::length(control_point) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
 		auto const same{partner_track == &Track && partner_point.kind == end_of(Control).kind};
-		control = (same ? direction : -direction) * length;
+		control_point = (same ? direction : -direction) * length;
 	}
 }
 
@@ -1915,7 +1915,7 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 	{
 		std::vector<curve::arc_part> designedarcs;
 		double in{0.0};
-		double between{0.0};
+		double between_here{0.0};
 		auto inside{false}; // a straight between two arcs: no curve of one vertex
 		auto straight{false};
 		for (auto const &piece : pieces)
@@ -1928,21 +1928,21 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			}
 			if (false == even)
 			{
-				(designedarcs.empty() ? in : between) += piece.length;
+				(designedarcs.empty() ? in : between_here) += piece.length;
 				continue;
 			}
 			inside = inside || straight;
-			if (auto const radius{2.0 / (piece.from + piece.to)}; false == designedarcs.empty() && between < 1e-6 && std::abs(designedarcs.back().radius - radius) <= 0.02 * radius)
+			if (auto const radius{2.0 / (piece.from + piece.to)}; false == designedarcs.empty() && between_here < 1e-6 && std::abs(designedarcs.back().radius - radius) <= 0.02 * radius)
 				designedarcs.back().turn += piece.length / radius;
 			else
-				designedarcs.emplace_back(radius, piece.length / radius, designedarcs.empty() ? 0.0 : between);
-			between = 0.0;
+				designedarcs.emplace_back(radius, piece.length / radius, designedarcs.empty() ? 0.0 : between_here);
+			between_here = 0.0;
 		}
 		if (false == designedarcs.empty() && false == inside)
 		{
 			Curve.laid = true;
 			Curve.transition_in = in;
-			Curve.transition_out = between;
+			Curve.transition_out = between_here;
 			Curve.radius = designedarcs.front().radius;
 			Curve.compound = designedarcs.size() > 1;
 			Curve.arcs.clear();
@@ -2051,14 +2051,14 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		if (auto &shape{vertex.shape}; false == shape.designed.has_value() && false == shape.compound && shape.reversals == 0)
 		{
 			auto const pieces = [&](double const Length, bool const Fromstart) {
-				std::size_t count{0};
+				std::size_t taken{0};
 				double covered{0.0};
-				while (covered < Length - 1e-6 && count <= Last - First)
+				while (covered < Length - 1e-6 && taken <= Last - First)
 				{
-					covered += Chain.tracks[Fromstart ? First + count : Last - count]->Length();
-					++count;
+					covered += Chain.tracks[Fromstart ? First + taken : Last - taken]->Length();
+					++taken;
 				}
-				return count;
+				return taken;
 			};
 			auto const in{shape.transition_in > 0.0 ? pieces(shape.transition_in, true) : 0};
 			auto const out{shape.transition_out > 0.0 ? pieces(shape.transition_out, false) : 0};
@@ -2626,8 +2626,8 @@ void cone_heights(segment_data &Path, segment_data const &Along)
 		auto const on{along.point(t)};
 		auto direction{plan_of(along.first(t))};
 		direction = glm::length(direction) > 1e-9 ? glm::normalize(direction) : glm::dvec2{1.0, 0.0};
-		glm::dvec2 const left{-direction.y, direction.x};
-		auto const lateral{glm::dot(plan_of(Point) - plan_of(on), left)};
+		glm::dvec2 const leftward{-direction.y, direction.x};
+		auto const lateral{glm::dot(plan_of(Point) - plan_of(on), leftward)};
 		auto const roll{glm::radians(static_cast<double>(Along.rolls[0] + (Along.rolls[1] - Along.rolls[0]) * t))};
 		return on.y - lateral * std::tan(roll);
 	};

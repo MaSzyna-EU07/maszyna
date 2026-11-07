@@ -639,12 +639,12 @@ void hekto_tool::hekto_match_standing()
 			auto const &post{tool.posts[i]};
 			if (post.hectometres != found.hectometres)
 				continue;
-			auto const distance{plan_distance(found.post.location, post.position)};
-			if (found.place < 0 || distance < found.distance)
+			auto const post_distance{plan_distance(found.post.location, post.position)};
+			if (found.place < 0 || post_distance < found.distance)
 			{
 				found.outside = false;
 				found.place = i;
-				found.distance = distance;
+				found.distance = post_distance;
 				found.expected = post.chainage;
 				found.error = found.chainage - post.chainage;
 			}

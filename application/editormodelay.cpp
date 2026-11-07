@@ -1540,8 +1540,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 			std::optional<alignment::trace_stretch> fitted;
 			std::optional<alignment::trace_stretch> going;
 			if (base.start_curved && false == reaching && false == headed && false == fitted_points.empty())
-				if (auto const along{traced_stretch(base, fitted_points, tool.radii, tool.straights_between, true, &exact, true)}; along.has_value() && along->valid)
-					going = along;
+				if (auto const traced_along{traced_stretch(base, fitted_points, tool.radii, tool.straights_between, true, &exact, true)}; traced_along.has_value() && traced_along->valid)
+					going = traced_along;
 			// from a switch the curve goes on at its radius; where that doesn't keep to the points, m, and they show a straight right at the
 			// switch, as the switch goes on with one, the curve fitted from it beginning a few metres on at least, not a curve of another
 			// radius right there, and keeping to them much closer, that one
@@ -1723,8 +1723,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					{
 						// the circle through the last three points
 						auto const before{fitted_points[count - 2] - fitted_points[count - 3]};
-						auto const turn{std::abs(cross(before, chord))};
-						auto const circle{turn > 1e-12 ? glm::length(before) * glm::length(chord) * glm::length(before + chord) / (2.0 * turn) : std::numeric_limits<double>::max()};
+						auto const chord_turn{std::abs(cross(before, chord))};
+						auto const circle{chord_turn > 1e-12 ? glm::length(before) * glm::length(chord) * glm::length(before + chord) / (2.0 * chord_turn) : std::numeric_limits<double>::max()};
 						if (circle < kFlatter * end_radius(fit->vertices.back()))
 							return std::nullopt;
 					}
@@ -1756,7 +1756,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					if (tool.whole && m_turned_last > 0.0)
 						angle = std::min(kMost, m_turned_last);
 					auto waited{false};
-					for (int i = 0; i < 8; ++i)
+					for (int attempt = 0; attempt < 8; ++attempt)
 					{
 						bool again{true};
 						auto const trial{fit_to(turned(angle), false, again)};
@@ -1765,10 +1765,10 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 							waited = true;
 							break;
 						}
-						if (auto const left{short_of(*trial, turned(angle))}; left.has_value() && *left >= 0.0)
+						if (auto const remaining{short_of(*trial, turned(angle))}; remaining.has_value() && *remaining >= 0.0)
 						{
 							low = angle;
-							lowshort = *left;
+							lowshort = *remaining;
 							best = trial;
 							bestangle = angle;
 							if (lowshort <= 0.5)

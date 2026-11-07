@@ -1138,7 +1138,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 		return found != readers.end() ? found->second : nullptr;
 	};
 	std::vector<std::string> taken;
-	std::vector<std::string> left;
+	std::vector<std::string> remaining;
 	std::size_t taken_events{0};
 	std::size_t left_events{0};
 	std::vector<std::string> taken_circuits;
@@ -1224,7 +1224,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 			else if (record.fresh)
 			{
 				if (standing != nullptr)
-					left.push_back(standing->name);
+					remaining.push_back(standing->name);
 				else
 					++left_events;
 			}
@@ -1281,7 +1281,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 	std::string note;
 	if (auto const got{parts(taken, taken_events, taken_circuits)}; false == got.empty())
 		note = format(STR_C("Taken over from the deleted track: %s"), got.c_str());
-	if (auto const lost{parts(left, left_events, left_circuits)}; false == lost.empty())
+	if (auto const lost{parts(remaining, left_events, left_circuits)}; false == lost.empty())
 		note += (note.empty() ? "" : "\n") +
 		        format(STR_P("The deleted track carried %s: a track laid in its place takes it over, Ctrl+Z brings it back", "The deleted tracks carried %s: tracks laid in their place take it over, Ctrl+Z brings them back", static_cast<long long>(std::max<std::size_t>(deleted, 1))), lost.c_str());
 	if (false == note.empty())

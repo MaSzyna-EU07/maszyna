@@ -518,14 +518,14 @@ bool editor_mode::profile_restore_parts()
 				}
 			if (false == at.has_value())
 				continue;
-			auto left{*at};
-			auto right{*at};
-			while (left > 0 && on(left - 1))
-				--left;
-			while (right + 1 < spans.size() && on(right + 1))
-				++right;
-			low = std::max(low, spans[left].from);
-			high = std::min(high, spans[right].to);
+			auto lower{*at};
+			auto upper{*at};
+			while (lower > 0 && on(lower - 1))
+				--lower;
+			while (upper + 1 < spans.size() && on(upper + 1))
+				++upper;
+			low = std::max(low, spans[lower].from);
+			high = std::min(high, spans[upper].to);
 		}
 		auto const inside = [&](double const Chainage) { return Chainage > 0.25 && Chainage < length - 0.25 && Chainage >= low - 0.25 && Chainage <= high + 0.25; };
 		// where the track was changed since the design was applied to it, by the gizmo or by dragging its points, the track holds:
@@ -1032,16 +1032,16 @@ void editor_mode::profile_resample()
 	std::optional<switch_store::record> open;
 	for (auto const &span : state.route.spans)
 	{
-		if (auto const found{switch_store::named(*span.track)})
+		if (auto const named{switch_store::named(*span.track)})
 		{
-			if (open.has_value() && open->name == found->name && span.from - context.switches.back().to <= std::max(found->a + found->b, context.switches.back().to - context.switches.back().from))
+			if (open.has_value() && open->name == named->name && span.from - context.switches.back().to <= std::max(named->a + named->b, context.switches.back().to - context.switches.back().from))
 			{
 				context.switches.back().to = span.to;
 				continue;
 			}
-			auto const label{switch_store::label(*found)};
-			context.switches.emplace_back(span.from, span.to, found->number != "-" ? found->number + ' ' + label : label);
-			open = found;
+			auto const label{switch_store::label(*named)};
+			context.switches.emplace_back(span.from, span.to, named->number != "-" ? named->number + ' ' + label : label);
+			open = named;
 		}
 		else if (span.track->eType != tt_Normal)
 		{
@@ -1080,9 +1080,9 @@ void editor_mode::profile_resample()
 	auto const inherits = [&](bool const Joined, double const Elevation, double const Grade) {
 		if (false == Joined || adjoining == nullptr || adjoining->eType != tt_Switch)
 			return std::string{};
-		auto const found{switch_store::named(*adjoining)};
+		auto const adjoining_switch{switch_store::named(*adjoining)};
 		auto const point{entered ? "P1" : path == 0 ? "P2" : "P4"};
-		return format(STR_C("Grade line from the switch %s (%s): %.2f m, %+.2f per mille"), (found ? switch_store::label(*found) : adjoining->name()).c_str(), point, Elevation, Grade * 1000.0);
+		return format(STR_C("Grade line from the switch %s (%s): %.2f m, %+.2f per mille"), (adjoining_switch ? switch_store::label(*adjoining_switch) : adjoining->name()).c_str(), point, Elevation, Grade * 1000.0);
 	};
 	context.start_joined = editor_track::adjoining_grade(state.route, false, context.start_grade, &adjoining, &path, &entered);
 	state.start_inherits = inherits(context.start_joined, context.start_elevation, context.start_grade);
@@ -1703,8 +1703,8 @@ void editor_mode::profile_frame_view()
 	chord = glm::length(chord) > 1e-6 ? glm::normalize(chord) : glm::dvec3{1.0, 0.0, 0.0};
 	glm::dvec3 const up{0.0, 1.0, 0.0};
 	auto const look{glm::normalize(glm::cross(up, chord) + glm::dvec3{0.0, -0.4, 0.0})};
-	auto const right{glm::normalize(glm::cross(look, up))};
-	auto const above{glm::cross(right, look)};
+	auto const side{glm::normalize(glm::cross(look, up))};
+	auto const above{glm::cross(side, look)};
 	auto const tangent{std::tan(glm::radians(static_cast<double>(Global.FieldOfView) / std::max(0.01, static_cast<double>(Global.ZoomFactor))) * 0.5)};
 	auto const across{tangent * width / screen.y};
 	auto const upward{tangent * height / screen.y};
@@ -1713,11 +1713,11 @@ void editor_mode::profile_frame_view()
 	{
 		auto const offset{point - centre};
 		auto const depth{glm::dot(offset, look)};
-		distance = std::max({distance, std::abs(glm::dot(offset, right)) * margin / across - depth, std::abs(glm::dot(offset, above)) * margin / upward - depth});
+		distance = std::max({distance, std::abs(glm::dot(offset, side)) * margin / across - depth, std::abs(glm::dot(offset, above)) * margin / upward - depth});
 	}
 	distance = std::min(distance, 8000.0);
 	auto const pixel{2.0 * distance * tangent / screen.y};
-	fly_to(centre - right * (shift.x * pixel) + above * (shift.y * pixel), look, distance, 0.35);
+	fly_to(centre - side * (shift.x * pixel) + above * (shift.y * pixel), look, distance, 0.35);
 }
 
 void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departure> const &Bridges, double const Fewest)
@@ -2097,10 +2097,10 @@ void editor_mode::render_profile_header()
 	// apply at the right end, as far as there's room
 	auto const label{std::string{STR_C("Apply to the scenery")} + (state.departure > 0.0005 ? "  *" : "")};
 	auto const button{ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f};
-	auto const right{ImGui::GetWindowContentRegionMax().x - button};
+	auto const right_edge{ImGui::GetWindowContentRegionMax().x - button};
 	ImGui::SameLine(0.0f, ImGui::GetFontSize());
-	if (ImGui::GetCursorPosX() < right)
-		ImGui::SetCursorPosX(right);
+	if (ImGui::GetCursorPosX() < right_edge)
+		ImGui::SetCursorPosX(right_edge);
 	ImGui::BeginDisabled(errors > 0);
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.68f, 0.3f, 1.0f));
@@ -2133,14 +2133,14 @@ void editor_mode::render_profile_empty()
 	auto const detail{std::string{STR_C("The grade line of its whole line shows here; Shift+LMB on more tracks or Shift+drag a box: the route from one end of them to the other. Drag the points of the line up and down, then apply it to the scenery.")}};
 	auto const wrap{std::min(available.x - 40.0f, 560.0f)};
 	auto const top{ImGui::GetCursorScreenPos().y + std::max(0.0f, available.y * 0.5f - mouse - line * 2.0f)};
-	auto const left{ImGui::GetCursorScreenPos().x + std::max(0.0f, (available.x - wrap) * 0.5f)};
-	gesture_mouse(*draw, ImVec2(left, top), mouse, "LMB");
+	auto const left_edge{ImGui::GetCursorScreenPos().x + std::max(0.0f, (available.x - wrap) * 0.5f)};
+	gesture_mouse(*draw, ImVec2(left_edge, top), mouse, "LMB");
 	auto *font{ui_layer::font_bold != nullptr ? ui_layer::font_bold : ImGui::GetFont()};
 	auto const big{ui_layer::font_bold != nullptr ? ui_layer::font_bold->FontSize : ImGui::GetFontSize() * 1.2f};
-	auto const textleft{left + mouse * 0.68f + line};
+	auto const textleft{left_edge + mouse * 0.68f + line};
 	draw->AddText(font, big, ImVec2(textleft, top + line * 0.2f), ImGui::GetColorU32(ImGuiCol_Text), headline.c_str());
-	draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(textleft, top + big + line * 0.6f), ImGui::GetColorU32(ImGuiCol_TextDisabled), detail.c_str(), nullptr, wrap - (textleft - left));
-	auto const detailsize{ImGui::CalcTextSize(detail.c_str(), nullptr, false, wrap - (textleft - left))};
+	draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(textleft, top + big + line * 0.6f), ImGui::GetColorU32(ImGuiCol_TextDisabled), detail.c_str(), nullptr, wrap - (textleft - left_edge));
+	auto const detailsize{ImGui::CalcTextSize(detail.c_str(), nullptr, false, wrap - (textleft - left_edge))};
 	ImGui::SetCursorScreenPos(ImVec2(textleft, std::max(top + mouse, top + big + line * 0.6f + detailsize.y) + line));
 	if (selected != nullptr)
 	{
@@ -2883,29 +2883,29 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 	}
 	for (auto const &zone : state.context.switches)
 	{
-		auto const left{View.x_of(zone.from)};
-		auto const right{std::max(View.x_of(zone.to), left + 2.0f)};
+		auto const left_x{View.x_of(zone.from)};
+		auto const right_x{std::max(View.x_of(zone.to), left_x + 2.0f)};
 		if (zone.name == STR("shared timbers"))
 		{
 			// the timbers shared with another track, past a switch or at a crossing: drawn with their bounds, nothing
 			// breaks the grade over them
-			Draw.PushClipRect(ImVec2(left, plottop), ImVec2(right, plotbottom), true);
+			Draw.PushClipRect(ImVec2(left_x, plottop), ImVec2(right_x, plotbottom), true);
 			auto const height{plotbottom - plottop};
-			for (int k = 0; left - height + 8.0f * static_cast<float>(k) < right; ++k)
+			for (int k = 0; left_x - height + 8.0f * static_cast<float>(k) < right_x; ++k)
 			{
-				auto const x{left - height + 8.0f * static_cast<float>(k)};
+				auto const x{left_x - height + 8.0f * static_cast<float>(k)};
 				Draw.AddLine(ImVec2(x, plotbottom), ImVec2(x + height, plottop), kShared, 1.5f);
 			}
 			Draw.PopClipRect();
-			Draw.AddLine(ImVec2(left, plottop), ImVec2(left, plotbottom), kSharedEdge, 1.0f);
-			Draw.AddLine(ImVec2(right, plottop), ImVec2(right, plotbottom), kSharedEdge, 1.0f);
-			if (right - left > 4.0f)
-				Draw.AddText(ImVec2(left + 2.0f, plotbottom - 32.0f), kSharedEdge, zone.name.c_str());
+			Draw.AddLine(ImVec2(left_x, plottop), ImVec2(left_x, plotbottom), kSharedEdge, 1.0f);
+			Draw.AddLine(ImVec2(right_x, plottop), ImVec2(right_x, plotbottom), kSharedEdge, 1.0f);
+			if (right_x - left_x > 4.0f)
+				Draw.AddText(ImVec2(left_x + 2.0f, plotbottom - 32.0f), kSharedEdge, zone.name.c_str());
 			continue;
 		}
-		Draw.AddRectFilled(ImVec2(left, plottop), ImVec2(right, plotbottom), kSwitch);
-		if (right - left > 20.0f || View.across < 0.5)
-			Draw.AddText(ImVec2(left + 2.0f, plotbottom - 16.0f), kSwitchLabel, zone.name.c_str());
+		Draw.AddRectFilled(ImVec2(left_x, plottop), ImVec2(right_x, plotbottom), kSwitch);
+		if (right_x - left_x > 20.0f || View.across < 0.5)
+			Draw.AddText(ImVec2(left_x + 2.0f, plotbottom - 16.0f), kSwitchLabel, zone.name.c_str());
 	}
 	// the ends which inherit the grade line from a switch, said where they are
 	if (false == state.start_inherits.empty())

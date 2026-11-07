@@ -276,7 +276,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::vector<finding> over;
 		std::vector<finding> under;
 		std::size_t places{0};
-		std::size_t none{0};
+		std::size_t without{0};
 		std::size_t bridges{0};
 		std::vector<double> offs;
 		for (auto const &place : nmt_track_places(step))
@@ -290,7 +290,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			double height{0.0};
 			if (false == m_streamer.height_at(place.position.x, place.position.z, height))
 			{
-				++none;
+				++without;
 				continue;
 			}
 			auto const off{height - place.formation};
@@ -304,7 +304,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::ranges::sort(offs);
 		auto const quantile = [&](double const Q) { return offs.empty() ? 0.0 : offs[static_cast<std::size_t>(Q * (offs.size() - 1))]; };
 		WriteLog(format("SELFTEST nmtcheck: %zu places, %zu without terrain, %zu on bridges or in tunnels; ground less formation: 5%% %.2f, median %.2f, 95%% %.2f m; over the top of the ballast %zu, more than 0.3 m under the formation %zu; modifiers %zu",
-		                places, none, bridges, quantile(0.05), quantile(0.5), quantile(0.95), over.size(), under.size(), m_streamer.manifest().modifiers.size()));
+		                places, without, bridges, quantile(0.05), quantile(0.5), quantile(0.95), over.size(), under.size(), m_streamer.manifest().modifiers.size()));
 		for (auto *list : {&over, &under})
 		{
 			std::ranges::sort(*list, [](finding const &A, finding const &B) { return std::abs(A.off) > std::abs(B.off); });
@@ -1221,7 +1221,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "nmtstate")
 	{
 		// how far the tracks going onto the terrain are
-		WriteLog(format("SELFTEST nmtstate stage %d, lines %zu, refused %zu, left %zu, squares waiting %zu: %s", static_cast<int>(m_nmt_state.stage), m_nmt_state.lines, m_nmt_state.refused, m_nmt_state.left.size(), m_nmt.waiting(), m_nmt_state.status.c_str()));
+		WriteLog(format("SELFTEST nmtstate stage %d, lines %zu, refused %zu, left %zu, squares waiting %zu: %s", static_cast<int>(m_nmt_state.stage), m_nmt_state.lines, m_nmt_state.refused, m_nmt_state.left_to_fit.size(), m_nmt.waiting(), m_nmt_state.status.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "trackterrain")

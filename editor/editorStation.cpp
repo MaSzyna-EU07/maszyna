@@ -499,10 +499,10 @@ fit fit_of(std::vector<std::pair<double, double>> const &Marks, double const Len
 	for (auto const &[chainage, km] : Marks)
 		origins.push_back(km - (Reversed ? Length - chainage : chainage));
 	std::ranges::nth_element(origins, origins.begin() + origins.size() / 2);
-	fit result{0, origins[origins.size() / 2]};
+	fit best_fit{0, origins[origins.size() / 2]};
 	for (auto const origin : origins)
-		result.agree += std::abs(origin - result.origin) <= kAgree ? 1 : 0;
-	return result;
+		best_fit.agree += std::abs(origin - best_fit.origin) <= kAgree ? 1 : 0;
+	return best_fit;
 }
 
 // the chainage runs with the km of the switches, when they have one and most of them agree on it
@@ -574,15 +574,15 @@ void add_lines(layout &Layout, std::vector<chain> const &Exits, options const &O
 {
 	for (auto const &line : Exits)
 	{
-		double length{0.0};
+		double line_length{0.0};
 		Layout.lines.emplace_back();
 		for (auto *track : line.tracks)
 		{
-			if (length >= Options.approach)
+			if (line_length >= Options.approach)
 				break;
 			add_paths(Layout, *track, true);
 			Layout.lines.back().push_back(track);
-			length += plan_length(*track, 0);
+			line_length += plan_length(*track, 0);
 		}
 	}
 }

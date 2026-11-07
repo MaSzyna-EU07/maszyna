@@ -46,28 +46,28 @@ inline float gesture_mouse(ImDrawList &List, ImVec2 const At, float const Height
 	ImVec2 const wheel_high{middle + wheel * 0.5f, At.y + Height * 0.36f};
 	List.AddRectFilled(wheel_low, wheel_high, (Part == "MMB" || Part == "wheel") ? kGestureLit : ImGui::GetColorU32(ImGuiCol_WindowBg), wheel * 0.5f);
 	List.AddRect(wheel_low, wheel_high, line, wheel * 0.5f, 0, thickness * 0.8f);
-	auto right{high.x};
+	auto right_edge{high.x};
 	auto const arrow{Height * 0.16f};
 	if (Part == "wheel")
 	{
-		auto const x{right + arrow * 1.6f};
+		auto const x{right_edge + arrow * 1.6f};
 		List.AddTriangleFilled(ImVec2(x - arrow, At.y + arrow * 1.8f), ImVec2(x + arrow, At.y + arrow * 1.8f), ImVec2(x, At.y + arrow * 0.3f), kGestureLit);
 		List.AddTriangleFilled(ImVec2(x - arrow, high.y - arrow * 1.8f), ImVec2(x + arrow, high.y - arrow * 1.8f), ImVec2(x, high.y - arrow * 0.3f), kGestureLit);
-		right = x + arrow;
+		right_edge = x + arrow;
 	}
 	if (Part == "move")
 	{
 		auto const reach{Height * 0.42f};
-		ImVec2 const centre{right + arrow * 0.8f + reach, At.y + Height * 0.5f};
+		ImVec2 const centre{right_edge + arrow * 0.8f + reach, At.y + Height * 0.5f};
 		List.AddLine(ImVec2(centre.x - reach + arrow, centre.y), ImVec2(centre.x + reach - arrow, centre.y), kGestureLit, thickness);
 		List.AddLine(ImVec2(centre.x, centre.y - reach + arrow), ImVec2(centre.x, centre.y + reach - arrow), kGestureLit, thickness);
 		List.AddTriangleFilled(ImVec2(centre.x - reach, centre.y), ImVec2(centre.x - reach + arrow * 1.4f, centre.y - arrow), ImVec2(centre.x - reach + arrow * 1.4f, centre.y + arrow), kGestureLit);
 		List.AddTriangleFilled(ImVec2(centre.x + reach, centre.y), ImVec2(centre.x + reach - arrow * 1.4f, centre.y + arrow), ImVec2(centre.x + reach - arrow * 1.4f, centre.y - arrow), kGestureLit);
 		List.AddTriangleFilled(ImVec2(centre.x, centre.y - reach), ImVec2(centre.x + arrow, centre.y - reach + arrow * 1.4f), ImVec2(centre.x - arrow, centre.y - reach + arrow * 1.4f), kGestureLit);
 		List.AddTriangleFilled(ImVec2(centre.x, centre.y + reach), ImVec2(centre.x - arrow, centre.y + reach - arrow * 1.4f), ImVec2(centre.x + arrow, centre.y + reach - arrow * 1.4f), kGestureLit);
-		right = centre.x + reach;
+		right_edge = centre.x + reach;
 	}
-	return right - At.x;
+	return right_edge - At.x;
 }
 
 // a key cap with its name; the width it took
@@ -91,7 +91,7 @@ struct gesture_word
 		mouse,
 		key,
 		plus,
-		text
+		caption
 	} what;
 	std::string text;
 };
@@ -122,7 +122,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 	std::string text;
 	auto const flush = [&]() {
 		if (false == text.empty())
-			words.emplace_back(gesture_word::kind::text, text);
+			words.emplace_back(gesture_word::kind::caption, text);
 		text.clear();
 	};
 	std::istringstream stream{Keys};
@@ -133,7 +133,7 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 		for (std::size_t plus; (plus = word.find('+', from)) != std::string::npos && plus > from; from = plus + 1)
 			parts.push_back(word.substr(from, plus - from));
 		parts.push_back(word.substr(from));
-		if (bool const all{std::ranges::all_of(parts, [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })}; false == all || (parts.size() == 1 && words.empty() == false && words.back().what == gesture_word::kind::text && false == key(parts[0]) && mouse(parts[0]).empty()))
+		if (bool const all{std::ranges::all_of(parts, [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })}; false == all || (parts.size() == 1 && words.empty() == false && words.back().what == gesture_word::kind::caption && false == key(parts[0]) && mouse(parts[0]).empty()))
 		{
 			text += (text.empty() ? "" : " ") + word;
 			continue;
@@ -159,7 +159,7 @@ inline std::vector<gesture_word> gesture_picture(std::string const &Keys)
 	using enum gesture_word::kind;
 	std::vector<gesture_word> words;
 	for (auto const &word : gesture_words(Keys))
-		if (word.what != text && (word.what != plus || (false == words.empty() && words.back().what != plus)))
+		if (word.what != caption && (word.what != plus || (false == words.empty() && words.back().what != plus)))
 			words.push_back(word);
 	while (false == words.empty() && words.back().what == plus)
 		words.pop_back();
@@ -187,7 +187,7 @@ inline float gesture_draw(ImDrawList &List, ImVec2 const At, float const Height,
 		case mouse: x += gesture_mouse(List, place, Height, word.text) + gap; break;
 		case key: x += gesture_key(List, place, Height, word.text) + gap; break;
 		case plus:
-		case text:
+		case caption:
 		{
 			auto const size{ImGui::CalcTextSize(word.text.c_str())};
 			List.AddText(ImVec2(place.x, std::round(At.y + (Height - size.y) * 0.5f)), word.what == plus ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : Text, word.text.c_str());

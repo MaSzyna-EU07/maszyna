@@ -199,7 +199,7 @@ void editor_mode::track_gizmo_hold()
 	drag.held.clear();
 	for (auto *track : m_track_drag)
 	{
-		if (drag.operation == gizmo_operation::scale && false == drag.control && track == selected_track())
+		if (drag.operation == gizmo_operation::scale && false == drag.on_control && track == selected_track())
 			continue;
 		auto held{editor_track::hold_controls(*track)};
 		if (false == held.empty())
@@ -499,7 +499,7 @@ void editor_mode::track_gizmo_measure_rotation(TTrack &Track, bool const Pointmo
 void editor_mode::track_gizmo_measure(TTrack &Track, bool const Pointmode, gizmo_operation const Operation)
 {
 	auto &drag{m_track_gizmo_drag};
-	if (drag.control)
+	if (drag.on_control)
 	{
 		drag.origin = editor_track::point_position(Track, m_track_point);
 		auto const lever{editor_track::control_vector(Track, m_track_point)};
@@ -531,7 +531,7 @@ void editor_mode::track_gizmo_begin(TTrack &Track, bool const Pointmode, gizmo_o
 	m_track_snap = {};
 	drag = {};
 	drag.operation = Operation;
-	drag.control = controlmode;
+	drag.on_control = controlmode;
 	drag.point = Pointmode ? m_track_point : editor_track::point_ref{};
 	bool const whole{false == Pointmode || (false == controlmode && Operation != gizmo_operation::translate)};
 	if (whole && m_track_drag_connected)
@@ -568,7 +568,7 @@ void editor_mode::track_gizmo_turn_direction(TTrack &Track, double const Angle)
 	if (std::abs(step) < 1e-9)
 		return;
 	drag.angle += step;
-	if (drag.control)
+	if (drag.on_control)
 	{
 		auto const lever{editor_track::control_vector(Track, drag.point)};
 		auto const plan{turned(plan_of(lever), -step)};
@@ -590,7 +590,7 @@ void editor_mode::track_gizmo_turn_grade(TTrack &Track, double const Angle)
 	if (std::abs(step) < 1e-9)
 		return;
 	drag.grade = target;
-	if (drag.control)
+	if (drag.on_control)
 	{
 		auto const lever{editor_track::control_vector(Track, drag.point)};
 		auto const run{glm::length(plan_of(lever))};
@@ -647,7 +647,7 @@ void editor_mode::track_gizmo_turn_cant(TTrack &Track, double const Angle)
 
 void editor_mode::track_gizmo_turn(TTrack &Track, int const Axis, double const Angle)
 {
-	if (auto const &drag{m_track_gizmo_drag}; drag.control && drag.fixed != glm::dvec3{})
+	if (auto const &drag{m_track_gizmo_drag}; drag.on_control && drag.fixed != glm::dvec3{})
 		return;
 	if (Axis == 1)
 		track_gizmo_turn_direction(Track, Angle);
@@ -660,10 +660,10 @@ void editor_mode::track_gizmo_turn(TTrack &Track, int const Axis, double const A
 void editor_mode::track_gizmo_length(TTrack &Track, double Length)
 {
 	auto &drag{m_track_gizmo_drag};
-	Length = std::max(drag.control ? 0.5 : 1.0, Length);
+	Length = std::max(drag.on_control ? 0.5 : 1.0, Length);
 	if (std::abs(Length - drag.stretch) < 1e-6)
 		return;
-	if (drag.control)
+	if (drag.on_control)
 	{
 		drag.stretch = Length;
 		track_gizmo_control(Track, drag.axis * Length);

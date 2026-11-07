@@ -877,8 +877,8 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	if (std::abs(lateral) < 0.01)
 		return false;
 	auto const side{lateral > 0.0 ? 1.0 : -1.0};
-	auto const &control{(diverging.pieces.empty() ? diverging : diverging.pieces.back()).points[segment_data::point::control2]};
-	auto const tangent{glm::normalize(control != glm::dvec3{} ? -plan_of(control) : plan_of(frog - origin))};
+	auto const &control_point{(diverging.pieces.empty() ? diverging : diverging.pieces.back()).points[segment_data::point::control2]};
+	auto const tangent{glm::normalize(control_point != glm::dvec3{} ? -plan_of(control_point) : plan_of(frog - origin))};
 	if (auto const angle{std::atan2(std::abs(cross(axis, tangent)), glm::dot(axis, tangent))}; angle < 1e-4)
 		return false;
 
@@ -915,9 +915,9 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	auto const &line{Plan.target};
 	if (line.tracks.empty())
 		return false;
-	auto const parallel{std::abs(cross(line.direction, axis)) <= std::sin(glm::radians(1.0))};
+	auto const is_parallel{std::abs(cross(line.direction, axis)) <= std::sin(glm::radians(1.0))};
 	// the track the switch is on, going on past it
-	if (parallel && std::abs(connection::of(line).lateral(origin)) < 1.0)
+	if (is_parallel && std::abs(connection::of(line).lateral(origin)) < 1.0)
 		return false;
 	editor_track::switch_template shape;
 	shape.source = tool.track;
@@ -938,7 +938,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	}
 	Plan.shape = shape;
 	Plan.connection = {};
-	if (parallel)
+	if (is_parallel)
 	{
 		auto const faced{connection::face(frog, tangent, connection::of(line), 1, shape)};
 		if (false == faced.valid)
@@ -1399,25 +1399,25 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 		auto const first{Line.direction};
 		auto const direction{turned(first, static_cast<double>(Side) * angle)};
 		auto const alongfirst{std::clamp(glm::dot(plan_of(Point) - plan_of(Line.start), first), 0.0, Line.length)};
-		auto const crossing{plan_of(Line.start) + first * alongfirst};
+		auto const crossing_point{plan_of(Line.start) + first * alongfirst};
 		if (false == shaped(angle, std::min(alongfirst, Line.length - alongfirst) - 0.5))
 			return false;
 		Plan.problem.clear();
 		auto const half{Plan.half};
 		auto const height = [&](double const Along) { return Line.start.y + Line.grade * Along; };
 		auto const at = [&](glm::dvec2 const &Planar, double const Height) { return glm::dvec3{Planar.x, Height, Planar.y}; };
-		Plan.crossing = crossing;
+		Plan.crossing = crossing_point;
 		Plan.first = first;
 		Plan.direction = direction;
 		Plan.angle = angle;
 		Plan.alongfirst = alongfirst;
-		Plan.points = {at(crossing - first * half, height(alongfirst - half)), at(crossing + first * half, height(alongfirst + half)), at(crossing - direction * half, height(alongfirst - half * std::cos(angle))),
-		               at(crossing + direction * half, height(alongfirst + half * std::cos(angle)))};
+		Plan.points = {at(crossing_point - first * half, height(alongfirst - half)), at(crossing_point + first * half, height(alongfirst + half)), at(crossing_point - direction * half, height(alongfirst - half * std::cos(angle))),
+		               at(crossing_point + direction * half, height(alongfirst + half * std::cos(angle)))};
 		// the straights of both tracks out to the joints of the template, past the frogs of the diamond, as far as the line has room
 		auto const reach{std::max(half, std::min(Shape.a, std::min(alongfirst, Line.length - alongfirst) - 0.5))};
 		Plan.reach = reach;
-		Plan.ends = {at(crossing - first * reach, height(alongfirst - reach)), at(crossing + first * reach, height(alongfirst + reach)), at(crossing - direction * reach, height(alongfirst - reach * std::cos(angle))),
-		             at(crossing + direction * reach, height(alongfirst + reach * std::cos(angle)))};
+		Plan.ends = {at(crossing_point - first * reach, height(alongfirst - reach)), at(crossing_point + first * reach, height(alongfirst + reach)), at(crossing_point - direction * reach, height(alongfirst - reach * std::cos(angle))),
+		             at(crossing_point + direction * reach, height(alongfirst + reach * std::cos(angle)))};
 		return true;
 	}
 	if (nearest->eType != tt_Normal)
@@ -1584,9 +1584,9 @@ int editor_mode::lone_slip_side() const
 	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
 	auto const &first{tool.line.direction};
 	// the crossing track through the quarter the cursor is in: ahead to the left or behind to the right turns it to the left
-	auto const left{cross(first, offset) >= 0.0};
+	auto const on_left{cross(first, offset) >= 0.0};
 	auto const ahead{glm::dot(first, offset) >= 0.0};
-	return left == ahead ? 1 : -1;
+	return on_left == ahead ? 1 : -1;
 }
 
 bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape)
@@ -1907,8 +1907,8 @@ std::optional<double> frog_zone(editor_track::switch_template const &Shape)
 	auto const &diverging{Shape.local[1]};
 	auto const &last{diverging.pieces.empty() ? diverging : diverging.pieces.back()};
 	auto const &end{last.points[segment_data::point::end]};
-	auto const &control{last.points[segment_data::point::control2]};
-	auto direction{control != glm::dvec3{} ? -plan_of(control) : plan_of(end - last.points[segment_data::point::start])};
+	auto const &control_point{last.points[segment_data::point::control2]};
+	auto direction{control_point != glm::dvec3{} ? -plan_of(control_point) : plan_of(end - last.points[segment_data::point::start])};
 	if (glm::length(direction) < 1e-9)
 		return std::nullopt;
 	direction = glm::normalize(direction);
@@ -2191,13 +2191,13 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 			keep(*track);
 			auto const reshape = [&](segment_data &Path) {
 				auto &point{Path.points[atend ? segment_data::point::end : segment_data::point::start]};
-				auto &control{Path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
+				auto &control_point{Path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
 				auto const other{Path.points[atend ? segment_data::point::start : segment_data::point::end]};
-				auto const handle{glm::length(plan_of(control)) > 1e-6 ? glm::length(plan_of(control)) : plan_distance(point, other) / 3.0};
+				auto const handle{glm::length(plan_of(control_point)) > 1e-6 ? glm::length(plan_of(control_point)) : plan_distance(point, other) / 3.0};
 				// into the track from the end touching the switch
 				auto const into{outward * (atend ? -1.0 : 1.0) * handle};
 				point = {switchend.x, point.y, switchend.z};
-				control = {into.x, control.y, into.y};
+				control_point = {into.x, control_point.y, into.y};
 			};
 			auto &own{track->m_paths.front()};
 			reshape(own);
@@ -2429,18 +2429,18 @@ segment_data editor_mode::bent_slip_path(curved_slip const &Plan, segment_data c
 {
 	auto const &frame{m_switch.frame};
 	// in the plan of a template: x across the tangent, to the left of the way the slip goes along the curve, z along it from the crossing
-	glm::dvec2 const left{-Plan.first.y, Plan.first.x};
+	glm::dvec2 const leftward{-Plan.first.y, Plan.first.x};
 	auto const local = [&](segment_data const &Piece) {
 		auto result{Piece};
 		result.pieces.clear();
 		for (auto const index : {segment_data::point::start, segment_data::point::end})
 		{
 			auto const offset{plan_of(Piece.points[index]) - Plan.crossing};
-			result.points[index] = {glm::dot(offset, left), Piece.points[index].y, glm::dot(offset, Plan.first)};
+			result.points[index] = {glm::dot(offset, leftward), Piece.points[index].y, glm::dot(offset, Plan.first)};
 		}
 		for (auto const index : {segment_data::point::control1, segment_data::point::control2})
 			if (auto const &handle{Piece.points[index]}; handle != glm::dvec3{})
-				result.points[index] = {glm::dot(plan_of(handle), left), handle.y, glm::dot(plan_of(handle), Plan.first)};
+				result.points[index] = {glm::dot(plan_of(handle), leftward), handle.y, glm::dot(plan_of(handle), Plan.first)};
 		return result;
 	};
 	auto const bent = [&](segment_data const &Piece) {

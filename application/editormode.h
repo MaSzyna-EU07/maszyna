@@ -415,14 +415,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		{
 			idle,
 			fetching, // the model under the tracks
-			fitting // the grade lines, a few each frame
+			fitting_lines // the grade lines, a few each frame
 		};
 		automatic stage{automatic::idle};
 		std::vector<nmt_place> probes; // places of the tracks whose model is waited for
 		std::size_t probes_kept{0}; // the last of the probes, on tracks fitted already: they tell the offset the model had
 		std::size_t tracks{0}; // rail tracks when the grade lines began, and the paths the grade lines split off since
 		std::size_t split{0};
-		std::vector<TTrack *> left; // tracks whose grade line is still to be fitted
+		std::vector<TTrack *> left_to_fit; // tracks whose grade line is still to be fitted
 		std::vector<TTrack *> done; // tracks of the lines fitted already: the lines fitted later end on them and don't change them
 		// the rail tops of the lines fitted already, in squares of the plan: the tracks of a station lie in one plane, a line laid
 		// near them takes their height for its ground too, the more closely the nearer it is, and a line crossing one of them
@@ -1089,7 +1089,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	struct track_gizmo_drag
 	{
 		gizmo_operation operation{gizmo_operation::translate};
-		bool control{false};
+		bool on_control{false};
 		double angle{0.0};
 		int path{-1};
 		bool atend{true};
@@ -1222,7 +1222,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 				whole,
 				entry,
 				exit,
-				arc, // of the radius `arc`, the first one 0
+				radius_arc, // of the radius `arc`, the first one 0
 				between // the transition leading into the arc of the radius `arc`
 			};
 			int vertex{-1};
@@ -2494,7 +2494,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	{
 		char const *title; // the heading of the ones in use
 		std::function<std::vector<texture_use>()> used; // gathered when the picker opens
-		char const *none; // the entry for no texture, nullptr: there's none
+		char const *none_entry; // the entry for no texture, nullptr: there's none
 		char const *none_name; // the name that entry gives
 	};
 	// every texture and material under the folder of the textures, read on the first use of the picker

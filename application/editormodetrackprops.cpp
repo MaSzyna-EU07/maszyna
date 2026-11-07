@@ -446,10 +446,10 @@ std::vector<track_property> make_properties()
 		property.off = false == Global.Frogs;
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_frogs ? "1" : "0"}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
-			auto const frogs{Text == "1"};
-			if (frogs == Track.SwitchExtension->m_frogs)
+			auto const on{Text == "1"};
+			if (on == Track.SwitchExtension->m_frogs)
 				return false;
-			Track.SwitchExtension->m_frogs = frogs;
+			Track.SwitchExtension->m_frogs = on;
 			return true;
 		};
 	}
@@ -660,12 +660,12 @@ std::vector<track_property> make_properties()
 		};
 		// a component set apart from the unevenness, empty or negative: the unevenness
 		auto const component = [&](char const *Key, char const *Label, char const *Tooltip, float track_uneven::attribute::*Member, std::function<bool(TTrack const &)> Applies) {
-			auto &property{add(list, Key, field::number, section::ride, group::ride_sound, Label, Tooltip)};
-			property.applies = std::move(Applies);
-			property.rebuild = true;
-			property.empty = "as the unevenness";
-			property.get = [Member](TTrack const &Track) { return Track.m_uneven.*Member < 0.f ? std::string{} : decimal(Track.m_uneven.*Member, 1); };
-			property.set = [Member](TTrack &Track, std::string const &Text) {
+			auto &component_property{add(list, Key, field::number, section::ride, group::ride_sound, Label, Tooltip)};
+			component_property.applies = std::move(Applies);
+			component_property.rebuild = true;
+			component_property.empty = "as the unevenness";
+			component_property.get = [Member](TTrack const &Track) { return Track.m_uneven.*Member < 0.f ? std::string{} : decimal(Track.m_uneven.*Member, 1); };
+			component_property.set = [Member](TTrack &Track, std::string const &Text) {
 				double value{-1.0};
 				if (false == words_of(Text).empty() && false == parse_number(Text, value))
 					return false;
@@ -1159,7 +1159,7 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	else if (shown.empty() && Mixed)
 		ImGui::TextDisabled("%s", STR_C("The selected tracks have different ones"));
 	else if (shown.empty() || shown == "none")
-		ImGui::TextUnformatted(Offer.none != nullptr ? Offer.none : STR_C("No texture"));
+		ImGui::TextUnformatted(Offer.none_entry != nullptr ? Offer.none_entry : STR_C("No texture"));
 	else
 	{
 		ImGui::TextUnformatted(shown.c_str());
@@ -1242,7 +1242,7 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	if (used.empty() && files.empty())
 		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
 	ImGui::EndChild();
-	if (Offer.none != nullptr && ImGui::Selectable(Offer.none, false == Mixed && (Current == Offer.none_name || Current == "none")))
+	if (Offer.none_entry != nullptr && ImGui::Selectable(Offer.none_entry, false == Mixed && (Current == Offer.none_name || Current == "none")))
 	{
 		Chosen = Offer.none_name;
 		picked = true;
@@ -1253,10 +1253,10 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 bool editor_mode::texture_field(char const *Label, float const Width, std::string &Value, texture_offer const &Offer)
 {
 	bool changed{false};
-	auto const none{Value.empty() || Value == "none"};
+	auto const is_none{Value.empty() || Value == "none"};
 	auto const side{ImGui::GetFrameHeight()};
 	auto const corner{ImGui::GetCursorScreenPos()};
-	if (auto const image{none ? 0 : texture_image({}, Value)}; image != 0)
+	if (auto const image{is_none ? 0 : texture_image({}, Value)}; image != 0)
 	{
 		ImGui::Image(static_cast<ImTextureID>(image), ImVec2(side, side), ImVec2(0, 1), ImVec2(1, 0));
 		if (ImGui::IsItemHovered())
@@ -1277,7 +1277,7 @@ bool editor_mode::texture_field(char const *Label, float const Width, std::strin
 	ImGui::SetNextItemWidth(Width);
 	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
 	auto const slash{Value.find_last_of('/')};
-	if (auto const preview{none ? std::string{Offer.none != nullptr ? Offer.none : ""} : slash == std::string::npos ? Value : Value.substr(slash + 1)}; ImGui::BeginCombo(Label, preview.c_str(), ImGuiComboFlags_HeightLargest))
+	if (auto const preview{is_none ? std::string{Offer.none_entry != nullptr ? Offer.none_entry : ""} : slash == std::string::npos ? Value : Value.substr(slash + 1)}; ImGui::BeginCombo(Label, preview.c_str(), ImGuiComboFlags_HeightLargest))
 	{
 		if (std::string chosen; texture_picker(Offer, Value, false, chosen))
 		{
@@ -1357,9 +1357,9 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		ImGui::TableSetColumnIndex(0);
 		ImGui::AlignTextToFramePadding();
 		auto const partial{cache.applies[Index] < Tracks.size()};
-		auto const mixed{cache.values[Index].size() > 1};
+		auto const several{cache.values[Index].size() > 1};
 		ImGui::PushTextWrapPos(0.0f);
-		if (mixed)
+		if (several)
 			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.45f, 1.0f), "%s", STR_C(property.label));
 		else
 			ImGui::TextUnformatted(STR_C(property.label));
@@ -1420,13 +1420,13 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 	auto const check_row = [&](std::size_t const Index) {
 		auto const &property{list[Index]};
 		auto const &values{cache.values[Index]};
-		auto const mixed{values.size() > 1};
-		bool value{false == mixed && values.front().first == "1"};
-		if (mixed)
+		auto const mixed_values{values.size() > 1};
+		bool value{false == mixed_values && values.front().first == "1"};
+		if (mixed_values)
 			ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
 		if (ImGui::Checkbox("##value", &value))
 			track_property_apply(static_cast<int>(Index), Tracks, value ? "1" : "0");
-		if (mixed)
+		if (mixed_values)
 			ImGui::PopItemFlag();
 		row_help(Index);
 	};
@@ -1434,11 +1434,11 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 	auto const texture_row = [&](std::size_t const Index) {
 		auto const &property{list[Index]};
 		auto const &values{cache.values[Index]};
-		auto const mixed{values.size() > 1};
-		auto const common{mixed ? std::string{} : values.front().first};
-		auto const preview{mixed ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : common == "none" ? std::string{STR_C(property.empty)} : common};
+		auto const mixed_choice{values.size() > 1};
+		auto const common{mixed_choice ? std::string{} : values.front().first};
+		auto const preview{mixed_choice ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : common == "none" ? std::string{STR_C(property.empty)} : common};
 		auto const side{ImGui::GetFrameHeight()};
-		if (false == mixed)
+		if (false == mixed_choice)
 		{
 			if (auto const image{material_image(editor_track::fetch_material(common))}; image != 0)
 			{
@@ -1458,7 +1458,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
 		if (ImGui::BeginCombo("##value", preview.c_str(), ImGuiComboFlags_HeightLargest))
 		{
-			if (std::string chosen; track_texture_picker(property.texture, common, mixed, chosen))
+			if (std::string chosen; track_texture_picker(property.texture, common, mixed_choice, chosen))
 			{
 				track_property_apply(static_cast<int>(Index), Tracks, chosen);
 				ImGui::CloseCurrentPopup();

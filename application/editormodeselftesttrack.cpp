@@ -175,8 +175,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		start.track = track;
 		start.point = {0, atend ? editor_track::point_kind::end : editor_track::point_kind::start};
 		start.position = path.points[atend ? segment_data::point::end : segment_data::point::start];
-		auto const &control{path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
-		start.direction = glm::normalize(control != glm::dvec3{} ? control : path.points[atend ? segment_data::point::start : segment_data::point::end] - start.position);
+		auto const &control_point{path.points[atend ? segment_data::point::control2 : segment_data::point::control1]};
+		start.direction = glm::normalize(control_point != glm::dvec3{} ? control_point : path.points[atend ? segment_data::point::start : segment_data::point::end] - start.position);
 		m_lay.points = {start.position};
 		m_lay.start = start;
 		for (glm::dvec3 point{0.0, start.position.y, 0.0}; words >> point.x >> point.z;)
@@ -958,11 +958,11 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 					if (neighbour == nullptr || neighbour->m_paths.empty() || std::ranges::find(moved, neighbour) != moved.end())
 						continue;
 					auto const &other{neighbour->m_paths.front()};
-					for (auto const kind : {editor_track::point_kind::start, editor_track::point_kind::end})
-						if (glm::distance(other.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], end) < 0.01)
+					for (auto const end_kind : {editor_track::point_kind::start, editor_track::point_kind::end})
+						if (glm::distance(other.points[end_kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end], end) < 0.01)
 						{
 							states.emplace_back(neighbour, editor_track::capture(*neighbour));
-							editor_track::move_point(*neighbour, {0, kind}, end + offset);
+							editor_track::move_point(*neighbour, {0, end_kind}, end + offset);
 							moved.push_back(neighbour);
 							break;
 						}

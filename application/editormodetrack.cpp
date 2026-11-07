@@ -811,7 +811,7 @@ void editor_mode::render_track_guide()
 	auto *list{ImGui::GetWindowDrawList()};
 	auto const top{ImGui::GetCursorScreenPos()};
 	auto const width{ImGui::GetContentRegionAvail().x};
-	auto const right{top.x + width};
+	auto const right_edge{top.x + width};
 	list->ChannelsSplit(2);
 	list->ChannelsSetCurrent(1);
 	ImGui::BeginGroup();
@@ -837,9 +837,9 @@ void editor_mode::render_track_guide()
 	{
 		auto const height{std::round(font * 1.35f)};
 		auto const cap{std::max(std::round(ImGui::CalcTextSize(found->key).x + height * 0.6f), height)};
-		gesture_key(*list, ImVec2(right - pad - cap, row.y + std::round((iconside - height) * 0.5f)), height, found->key);
+		gesture_key(*list, ImVec2(right_edge - pad - cap, row.y + std::round((iconside - height) * 0.5f)), height, found->key);
 	}
-	ImGui::PushTextWrapPos(right - pad - ImGui::GetWindowPos().x);
+	ImGui::PushTextWrapPos(right_edge - pad - ImGui::GetWindowPos().x);
 	if (found != modes.end())
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -891,8 +891,8 @@ void editor_mode::render_track_guide()
 	auto const bottom{ImGui::GetItemRectMax().y};
 	list->ChannelsSetCurrent(0);
 	auto const rounding{std::round(font * 0.35f)};
-	list->AddRectFilled(top, ImVec2(right, bottom), (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 28), rounding);
-	list->AddRect(top, ImVec2(right, bottom), (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 70), rounding);
+	list->AddRectFilled(top, ImVec2(right_edge, bottom), (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 28), rounding);
+	list->AddRect(top, ImVec2(right_edge, bottom), (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 70), rounding);
 	list->AddRectFilled(top, ImVec2(top.x + 4.0f, bottom), accent, rounding, ImDrawFlags_RoundCornersLeft);
 	list->ChannelsMerge();
 	if (false == m_track_mode_notice.empty())
@@ -1090,15 +1090,15 @@ void editor_mode::render_turnout_ui()
 		auto const base{top.y + pad + (room - static_cast<float>(high_across - low_across) * scale) * 0.5f - static_cast<float>(low_across) * scale};
 		auto const screen = [&](glm::dvec2 const &Point) { return ImVec2(top.x + pad + static_cast<float>(Point.x) * scale, base + static_cast<float>(Point.y) * scale); };
 		// the diverging tracks first, the main ones over them
-		for (auto const main : {false, true})
+		for (auto const main_line : {false, true})
 			for (auto const &line : lines)
 			{
-				if ((std::abs(line.back().y - line.front().y) < 0.05) != main)
+				if ((std::abs(line.back().y - line.front().y) < 0.05) != main_line)
 					continue;
 				std::vector<ImVec2> drawn;
 				for (auto const &point : line)
 					drawn.push_back(screen(point));
-				list->AddPolyline(drawn.data(), static_cast<int>(drawn.size()), main ? IM_COL32(235, 235, 235, 255) : IM_COL32(255, 210, 60, 255), 0, 2.0f);
+				list->AddPolyline(drawn.data(), static_cast<int>(drawn.size()), main_line ? IM_COL32(235, 235, 235, 255) : IM_COL32(255, 210, 60, 255), 0, 2.0f);
 			}
 		// the point of the blades, and the angle at the end of the diverging track
 		list->AddCircleFilled(screen(glm::dvec2{0.0, 0.0}), 3.0f, IM_COL32(230, 80, 230, 255));
@@ -1331,10 +1331,10 @@ void editor_mode::render_path_events(TTrack &Track)
 		m_track_events_missing.clear();
 	}
 	auto const count{[&]() {
-		std::size_t count{0};
+		std::size_t total{0};
 		for (int list = 0; list < 6; ++list)
-			count += editor_track::events(*track, list).size();
-		return count;
+			total += editor_track::events(*track, list).size();
+		return total;
 	}()};
 	if (false == ImGui::CollapsingHeader(format("%s (%zu)###trackevents", STR_C("Events"), count).c_str()))
 		return;
@@ -1621,10 +1621,10 @@ void editor_mode::move_thrown_switches()
 			continue;
 		}
 		auto &extension{*track->SwitchExtension};
-		auto const left{extension.fDesiredOffset - extension.fOffset};
+		auto const offset_left{extension.fDesiredOffset - extension.fOffset};
 		auto const step{elapsed * std::max(extension.fOffsetSpeed, 0.01f)};
-		auto const done{std::abs(left) <= step};
-		extension.fOffset = done ? extension.fDesiredOffset : extension.fOffset + std::copysign(step, left);
+		auto const done{std::abs(offset_left) <= step};
+		extension.fOffset = done ? extension.fDesiredOffset : extension.fOffset + std::copysign(step, offset_left);
 		// the blades laid again where they are; the animation of the cell, if it has the switch, finds it over and lets it go
 		track->RaAnimate();
 		thrown = done ? m_thrown_switches.erase(thrown) : std::next(thrown);
@@ -2149,14 +2149,14 @@ std::string editor_mode::track_readout() const
 	if (m_track_gizmo_using && track != nullptr)
 	{
 		auto const &drag{m_track_gizmo_drag};
-		if (drag.control)
+		if (drag.on_control)
 		{
-			auto const control{editor_track::point_position(*track, m_track_point) - editor_track::point_position(*track, editor_track::end_of(m_track_point))};
-			auto text{format(STR_C("control %.2f m   azimuth %.2f deg"), glm::length(control), azimuth(glm::dvec3{0.0}, control))};
+			auto const control_point{editor_track::point_position(*track, m_track_point) - editor_track::point_position(*track, editor_track::end_of(m_track_point))};
+			auto text{format(STR_C("control %.2f m   azimuth %.2f deg"), glm::length(control_point), azimuth(glm::dvec3{0.0}, control_point))};
 			if (drag.operation == gizmo_operation::rotate && drag.ring == 1)
 				text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
 			if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-				text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control) * (glm::dot(level(control), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
+				text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
 			if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
 				text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
 			if (drag.fixed != glm::dvec3{})

@@ -3590,11 +3590,11 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		for (auto const &signal : Standing)
 		{
 			double distance{0.0};
-			auto const mixed{row.block != semi && wrong_disc(lines, static_cast<std::size_t>(&line - lines.data()), signal)};
-			if (signal.kind == "warning" && (mixed || (row.block == semi && faces_along(line, signal, distance))))
+			auto const mixed_lines{row.block != semi && wrong_disc(lines, static_cast<std::size_t>(&line - lines.data()), signal)};
+			if (signal.kind == "warning" && (mixed_lines || (row.block == semi && faces_along(line, signal, distance))))
 			{
-				faces_along(line, signal, distance, mixed);
-				row.posts.emplace_back(distance, signal_shown(signal.name, stem), mixed, km_along(line, row.km_number, distance));
+				faces_along(line, signal, distance, mixed_lines);
+				row.posts.emplace_back(distance, signal_shown(signal.name, stem), mixed_lines, km_along(line, row.km_number, distance));
 			}
 		}
 		std::ranges::sort(row.stops);
@@ -3710,9 +3710,9 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 			for (auto const *isolated : track->Isolated)
 				if (isolated != nullptr)
 					circuits.insert(ToLower(isolated->asName));
-	for (auto const &control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
-		if (false == control.values.empty() && false == circuits.contains(ToLower(control.values[0])) && by_open(control.location))
-			m_problems.emplace_back(format(STR_C("Block section %s has no track"), control.values[0].c_str()), control.location);
+	for (auto const &block_control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
+		if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])) && by_open(block_control.location))
+			m_problems.emplace_back(format(STR_C("Block section %s has no track"), block_control.values[0].c_str()), block_control.location);
 }
 
 void srk_tool::render_problems()
@@ -3991,9 +3991,9 @@ void srk_tool::set_lines(block_edit const *Edit)
 				if (line.station || end.signal >= 0)
 				{
 					// as many on both tracks of the line, where both have the automatic block
-					auto const paired{line.partner >= 0 && line.partner < static_cast<int>(lines.size()) && automatic[line.partner] == 1};
-					auto const reach{paired ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
-					auto const other{paired ? braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0) : least};
+					auto const has_partner{line.partner >= 0 && line.partner < static_cast<int>(lines.size()) && automatic[line.partner] == 1};
+					auto const reach{has_partner ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
+					auto const other{has_partner ? braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0) : least};
 					auto const sections{std::max(1.0, std::floor(reach / std::max(least, other)))};
 					for (int k = 1; k < sections; ++k)
 						places.push_back(end.distance * k / sections);
@@ -4379,9 +4379,9 @@ void srk_tool::set_lines(block_edit const *Edit)
 			changes.removed.push_back(standing[k].instance);
 	auto const removed{changes.removed.size()};
 	// the block signals switched by the sections they guard, the wrong-track one the 7th, or the one guard twice
-	include_info control;
+	include_info control_info;
 	std::string missing;
-	auto const controlled{editor_includes::load(kControl, control, missing)};
+	auto const controlled{editor_includes::load(kControl, control_info, missing)};
 	if (controlled)
 	{
 		for (auto const &found : sections)
@@ -5138,13 +5138,13 @@ void srk_tool::render_canvas(float const Height)
 	}
 	// the plot draws the generalized schematic: its x shortens the chainage between the switches, its height puts the tracks on rows
 	auto const plot_x = [&](double const X) { return corner.x + static_cast<float>((X - view.from) / across); };
-	auto const plot_y = [&](double const Height) { return corner.y + size.y * 0.5f - static_cast<float>((Height - view.centre) / vertical); };
+	auto const plot_y = [&](double const Elevation) { return corner.y + size.y * 0.5f - static_cast<float>((Elevation - view.centre) / vertical); };
 	auto const x_of = [&](double const Chainage) { return plot_x(m_plot.x(Chainage)); };
 	auto const screen_of = [&](glm::dvec2 const &Point) { return ImVec2(plot_x(Point.x), plot_y(Point.y)); };
 	auto const chainage_at = [&](float const Mouse) { return m_plot.chainage(view.from + (Mouse - corner.x) * across); };
 	auto const drawn_of = [&](std::size_t const Index) -> std::vector<glm::dvec2> const & {
-		static std::vector<glm::dvec2> const none;
-		return Index < m_plot.paths.size() ? m_plot.paths[Index] : none;
+		static std::vector<glm::dvec2> const nothing;
+		return Index < m_plot.paths.size() ? m_plot.paths[Index] : nothing;
 	};
 
 	// the path under the mouse
@@ -5308,9 +5308,9 @@ void srk_tool::render_canvas(float const Height)
 				line.push_back(at);
 			}
 			draw->AddPolyline(line.data(), static_cast<int>(line.size()), kUseful, ImDrawFlags_None, 2.0f);
-			auto const &rear{line.front()};
+			auto const &rear_end{line.front()};
 			auto const &head{line.back()};
-			draw->AddLine(ImVec2(rear.x, rear.y - 4.0f), ImVec2(rear.x, rear.y + 4.0f), kUseful, 2.0f);
+			draw->AddLine(ImVec2(rear_end.x, rear_end.y - 4.0f), ImVec2(rear_end.x, rear_end.y + 4.0f), kUseful, 2.0f);
 			auto const way_x{head.x >= line[line.size() > 1 ? line.size() - 2 : 0].x ? 1.0f : -1.0f};
 			draw->AddTriangleFilled(ImVec2(head.x - 7.0f * way_x, head.y - 4.5f), ImVec2(head.x - 7.0f * way_x, head.y + 4.5f), ImVec2(head.x + 1.0f * way_x, head.y), kUseful);
 			auto const &middle{line[line.size() / 2]};
@@ -5513,10 +5513,10 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		WriteLog(format("SELFTEST srkopen %s: %zu switches, %zu tracks, %zu paths out, axis %.0f m, switches over %.0f..%.0f, offsets %.1f..%.1f, km %s, record %d", m_anchor->name().c_str(), layout.switches.size(), tracks.size(), approach,
 		                layout.chainage.back(), layout.from, layout.to, layout.low, layout.high, layout.kilometrage ? format("%.3f", layout.km).c_str() : "-", m_record));
 		WriteLog(format("SELFTEST srkopen lines %zu, main %zu tracks, second %zu tracks", layout.lines.size(), layout.main.size(), layout.second.size()));
-		for (auto const *track : layout.switches)
+		for (auto const *switch_track : layout.switches)
 		{
-			auto const at{station::project(layout, track->m_paths.front().points[segment_data::point::start])};
-			WriteLog(format("SELFTEST srkopen switch %s at %.1f offset %.1f", track->name().c_str(), at.x, at.y));
+			auto const at{station::project(layout, switch_track->m_paths.front().points[segment_data::point::start])};
+			WriteLog(format("SELFTEST srkopen switch %s at %.1f offset %.1f", switch_track->name().c_str(), at.x, at.y));
 		}
 		return editor_selftest_result::handled;
 	}
@@ -5532,15 +5532,15 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const from{values.find("from")};
 		m_reversed = from != values.end() && from->second == "right";
 		number_switches();
-		std::string list;
+		std::string circuit_list;
 		for (auto const &unit : station::numbering(*m_layout, m_reversed))
 			for (auto const *part : unit.parts)
 			{
 				auto const record{switch_store::named(*part)};
-				list += ' ' + part->name() + '/' + (record ? record->number : std::string{"?"});
+				circuit_list += ' ' + part->name() + '/' + (record ? record->number : std::string{"?"});
 			}
 		WriteLog("SELFTEST srknumber: " + m_status);
-		WriteLog("SELFTEST srknumber names:" + list);
+		WriteLog("SELFTEST srknumber names:" + circuit_list);
 		return editor_selftest_result::handled;
 	}
 	if (Command == "srkcircuits")
@@ -5856,19 +5856,19 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		// srkfit lines|station|from=<m> to=<m>: the schematic fitting the lines out, the station, or the chainage between
 		std::string word;
 		std::string mode;
-		std::map<std::string, std::string> range;
+		std::map<std::string, std::string> bounds;
 		while (Words >> word)
 			if (auto const equals{word.find('=')}; equals != std::string::npos)
-				range[word.substr(0, equals)] = word.substr(equals + 1);
+				bounds[word.substr(0, equals)] = word.substr(equals + 1);
 			else
 				mode = word;
 		m_fit_lines = mode == "lines";
 		m_view_state.exaggeration = 0.0f;
-		if (range.contains("from") && range.contains("to") && m_layout.has_value())
+		if (bounds.contains("from") && bounds.contains("to") && m_layout.has_value())
 		{
 			fit_view(1000.0f, 400.0f);
-			m_view_state.from = std::atof(range.at("from").c_str());
-			m_view_state.to = std::atof(range.at("to").c_str());
+			m_view_state.from = std::atof(bounds.at("from").c_str());
+			m_view_state.to = std::atof(bounds.at("to").c_str());
 		}
 		WriteLog("SELFTEST srkfit " + mode);
 		return editor_selftest_result::handled;
@@ -5900,24 +5900,24 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			}
 		std::unordered_map<std::string, int> sections;
 		auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
-		for (auto const &control : controls)
+		for (auto const &block_control : controls)
 		{
-			if (control.values.size() < 6)
+			if (block_control.values.size() < 6)
 			{
 				++bad;
 				WriteLog("SELFTEST srkcheck: a block section without its signal");
 				continue;
 			}
-			if (++sections[ToLower(control.values[0])] > 1)
+			if (++sections[ToLower(block_control.values[0])] > 1)
 			{
 				++bad;
-				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " twice");
+				WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " twice");
 			}
-			for (std::size_t index = 5; index < control.values.size() && index < 7; ++index)
-				if (false == names.contains(ToLower(control.values[index])))
+			for (std::size_t index = 5; index < block_control.values.size() && index < 7; ++index)
+				if (false == names.contains(ToLower(block_control.values[index])))
 				{
 					++bad;
-					WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " switched by " + control.values[index] + ", which doesn't stand");
+					WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " switched by " + block_control.values[index] + ", which doesn't stand");
 				}
 		}
 		std::size_t unread{0};
@@ -5995,8 +5995,8 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			auto const &points{m_plot.paths[index]};
 			for (auto const &point : points)
 			{
-				auto const rows{point.y / station::row_height};
-				if (std::abs(rows - std::round(rows)) < 1e-6)
+				auto const row_at{point.y / station::row_height};
+				if (std::abs(row_at - std::round(row_at)) < 1e-6)
 					++on_rows;
 				else
 					++between;

@@ -337,12 +337,12 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				WriteLog("SELFTEST connection drag plan: " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
 				for (auto const &entry : plan.switches)
 				{
-					auto const &start{entry.paths[0].points[segment_data::point::start]};
+					auto const &start_point{entry.paths[0].points[segment_data::point::start]};
 					auto const &end{entry.paths[0].points[segment_data::point::end]};
-					WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d: %.3f %.3f -> %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, start.x, start.z, end.x, end.z));
+					WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d: %.3f %.3f -> %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, start_point.x, start_point.z, end.x, end.z));
 				}
-				for (auto const &line : request.to)
-					WriteLog(format("SELFTEST connection to the line from %.3f %.3f, %.1f m", line.start.x, line.start.z, line.length));
+				for (auto const &wanted : request.to)
+					WriteLog(format("SELFTEST connection to the line from %.3f %.3f, %.1f m", wanted.start.x, wanted.start.z, wanted.length));
 			}
 			finish_switch_placement();
 			WriteLog("SELFTEST connection built: " + tool.status);
@@ -367,16 +367,16 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST connection " + kindword + ": " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
 		for (auto const &entry : plan.switches)
 		{
-			auto const &start{entry.paths[0].points[segment_data::point::start]};
+			auto const &first_point{entry.paths[0].points[segment_data::point::start]};
 			auto const &end{entry.paths[1].points[segment_data::point::end]};
-			WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d%s: %.3f %.3f %.3f -> branch end %.3f %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, entry.second ? " (second)" : "", start.x, start.y, start.z, end.x, end.y,
+			WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d%s: %.3f %.3f %.3f -> branch end %.3f %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, entry.second ? " (second)" : "", first_point.x, first_point.y, first_point.z, end.x, end.y,
 			                end.z));
 		}
 		for (auto const &insert : plan.inserts)
 		{
-			auto const &start{insert.points[segment_data::point::start]};
+			auto const &start_point{insert.points[segment_data::point::start]};
 			auto const &end{insert.points[segment_data::point::end]};
-			WriteLog(format("SELFTEST connection insert %.3f %.3f %.3f -> %.3f %.3f %.3f, %.3f m, R %.1f", start.x, start.y, start.z, end.x, end.y, end.z, geometry::bezier{insert}.plan_length(), std::abs(insert.radius)));
+			WriteLog(format("SELFTEST connection insert %.3f %.3f %.3f -> %.3f %.3f %.3f, %.3f m, R %.1f", start_point.x, start_point.y, start_point.z, end.x, end.y, end.z, geometry::bezier{insert}.plan_length(), std::abs(insert.radius)));
 		}
 		if (command == "connectionplan" || false == valid)
 		{
@@ -583,8 +583,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		auto const direction{glm::normalize(glm::dvec2{forward.x, forward.z})};
 		auto const lateral{across.x * -direction.y + across.z * direction.x};
 		auto const cone{-lateral * std::tan(glm::radians(static_cast<double>(path.rolls[0])))};
-		auto const control{path.points[segment_data::point::control1]};
-		auto const grade{control.y / std::hypot(control.x, control.z)};
+		auto const control_point{path.points[segment_data::point::control1]};
+		auto const grade{control_point.y / std::hypot(control_point.x, control_point.z)};
 		WriteLog(format("SELFTEST drivetilt %s: angles %.3f %.3f %.3f, +x rises %.4f (cone %.4f), +z rises %.4f (grade %.4f), origin %.3f %.3f %.3f, points %.3f", name.c_str(), model->Angles().x, model->Angles().y, model->Angles().z, across.y, cone, forward.y, grade,
 		                model->location().x, model->location().y, model->location().z, path.points[segment_data::point::start].y));
 		return selftest_result::handled;

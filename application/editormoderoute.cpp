@@ -773,7 +773,7 @@ void editor_mode::route_lay()
 			}
 			join_last_steps();
 			std::string back;
-			std::string left;
+			std::string left_side;
 			for (auto const &crossover : crossovers)
 			{
 				// the new line moved sideways: the press onto it, the release onto the other line
@@ -784,15 +784,15 @@ void editor_mode::route_lay()
 				}
 				else
 				{
-					left += (left.empty() ? "" : ", ") + crossover.name;
+					left_side += (left_side.empty() ? "" : ", ") + crossover.name;
 					route.crossovers_out.emplace_back(crossover.shape, crossover.press, crossover.release, crossover.name, crossover.names);
 				}
 			}
 			show_track_tab(tab);
 			if (false == back.empty())
 				route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
-			if (false == left.empty())
-				route.status += "\n" + format(STR_C("Crossovers taken out which don't fit the new line, lay them again: %s"), left.c_str());
+			if (false == left_side.empty())
+				route.status += "\n" + format(STR_C("Crossovers taken out which don't fit the new line, lay them again: %s"), left_side.c_str());
 			return;
 		}
 	}
@@ -1169,7 +1169,7 @@ std::vector<std::size_t> editor_mode::route_focused() const
 		{
 		case part::entry: if (i == own.front() && start == 0.0 && end > 0.0) found.push_back(i); break;
 		case part::exit: if (i == own.back() && end == 0.0 && start > 0.0) found.push_back(i); break;
-		case part::arc: if (arc < radii.size() && radii[arc] > 0.0 && same(start, 1.0 / radii[arc]) && same(end, start)) found.push_back(i); break;
+		case part::radius_arc: if (arc < radii.size() && radii[arc] > 0.0 && same(start, 1.0 / radii[arc]) && same(end, start)) found.push_back(i); break;
 		case part::between:
 			if (arc >= 1 && arc < radii.size() && radii[arc] > 0.0 && radii[arc - 1] > 0.0 && same(start, 1.0 / radii[arc - 1]) && same(end, 1.0 / radii[arc]))
 				found.push_back(i);
@@ -1293,9 +1293,9 @@ void editor_mode::draw_route_overlay() const
 			if (ramp.cant < 0.5)
 				continue;
 			auto const colour{ramp.own ? IM_COL32(255, 170, 40, 255) : IM_COL32(255, 170, 40, 120)};
-			for (auto const end : {ramp.from, ramp.to})
+			for (auto const ramp_end : {ramp.from, ramp.to})
 			{
-				auto const station{alignment::evaluate(result, end)};
+				auto const station{alignment::evaluate(result, ramp_end)};
 				glm::dvec3 const across{-station.direction.z * 2.0, 0.0, station.direction.x * 2.0};
 				projection.line(drawlist, station.position - across, station.position + across, colour, 3.0f);
 			}
@@ -1337,7 +1337,7 @@ void editor_mode::draw_route_overlay() const
 				case part::entry: name = format(STR_C("W%d  transition in %.0f m"), focus.vertex + 1, first.length); break;
 				case part::exit: name = format(STR_C("W%d  transition out %.0f m"), focus.vertex + 1, last.length); break;
 				case part::between: name = format(STR_C("W%d  transition R%d-R%d %.0f m"), focus.vertex + 1, focus.arc, focus.arc + 1, first.length); break;
-				case part::arc:
+				case part::radius_arc:
 					if (compound && arc < report->radii.size())
 						name = format(STR_C("W%d  R%d %.0f m  cant %.0f mm"), focus.vertex + 1, focus.arc + 1, report->radii[arc], arc < report->cants.size() ? report->cants[arc] : report->cant);
 					else
@@ -1713,24 +1713,24 @@ bool editor_mode::render_route_band()
 		return Element.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : Element.kind == alignment::element_kind::arc ? overlay_color::grip : IM_COL32(255, 140, 30, 255);
 	};
 	double peak{0.0};
-	bool left{false};
-	bool right{false};
+	bool on_left{false};
+	bool on_right{false};
 	for (auto const &element : result.elements)
 	{
 		auto const [from, to]{ends(element)};
 		peak = std::max({peak, std::abs(from), std::abs(to)});
-		left |= from > 1e-9 || to > 1e-9;
-		right |= from < -1e-9 || to < -1e-9;
+		on_left |= from > 1e-9 || to > 1e-9;
+		on_right |= from < -1e-9 || to < -1e-9;
 	}
 	auto const line{ImGui::GetTextLineHeight()};
 	auto const inner_left{top.x + pad};
 	auto const inner_width{width - 2.0f * pad};
 	auto const plot_top{top.y + pad * 0.5f + line};
 	auto const plot_bottom{bottom.y - pad * 0.5f - line};
-	auto const both{left && right};
+	auto const both{on_left && on_right};
 	auto const axis{both ? std::round((plot_top + plot_bottom) * 0.5f) : plot_bottom};
 	// the curves to one side only grow upwards
-	auto const flip{(false == both && right) ? -1.0f : 1.0f};
+	auto const flip{(false == both && on_right) ? -1.0f : 1.0f};
 	auto const dragging{band.vertex >= 0};
 	auto const metres{dragging ? band.metres : inner_width / static_cast<float>(result.length)};
 	auto const curvature{dragging ? band.curvature : (peak > 0.0 ? (axis - plot_top) * 0.85f / static_cast<float>(peak) : 0.0f)};
@@ -2140,7 +2140,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		ImGui::SetNextItemWidth(half);
 		auto const edited{ImGui::DragScalar(Id, ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format)};
 		// the radius is the user's own, the curve no longer fitted after it
-		settled |= What != part::arc && ImGui::IsItemDeactivatedAfterEdit();
+		settled |= What != part::radius_arc && ImGui::IsItemDeactivatedAfterEdit();
 		mark(What, 0);
 		auto const low{ImGui::GetItemRectMin()};
 		auto const high{ImGui::GetItemRectMax()};
@@ -2162,7 +2162,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		item_tooltip("The curve begins right at the end of the fragment, at the curvature of the track adjoining there, where it turns the same way; its radius is the one "
 		             "which begins it there, the transition at that end goes between the two curves");
 	}
-	changed |= field("##radius", vertex.radius, 5.0f, vertex.compound ? STR_C("R1 %.0f m") : STR_C("R %.0f m"), overlay_color::grip, "Radius of the arc: drag sideways, or a double click to type it", part::arc);
+	changed |= field("##radius", vertex.radius, 5.0f, vertex.compound ? STR_C("R1 %.0f m") : STR_C("R %.0f m"), overlay_color::grip, "Radius of the arc: drag sideways, or a double click to type it", part::radius_arc);
 	ImGui::SameLine();
 	changed |= field("##cant", vertex.cant, 1.0f, STR_C("cant %.0f mm"), IM_COL32(240, 170, 60, 255),
 	                 vertex.compound ? "Height of the outer rail above the inner one on the sharpest arc; the arcs with no cant of their own get it in proportion to their curvature"
@@ -2199,7 +2199,7 @@ bool editor_mode::render_route_vertex(int const Index)
 			auto value{static_cast<std::size_t>(Arc) < cants.size() ? cants[Arc] : std::max(0.0, Cant)};
 			auto edited{ImGui::DragScalar(format(STR_C("Cant of R%d (mm)"), Arc + 1).c_str(), ImGuiDataType_Double, &value, 1.0f, nullptr, nullptr, "%.0f")};
 			settled |= ImGui::IsItemDeactivatedAfterEdit();
-			mark(part::arc, Arc);
+			mark(part::radius_arc, Arc);
 			if (edited)
 				Cant = std::max(0.0, value);
 			item_tooltip("The cant of this arc, ramped along the transition curves to the arcs either side of it; until it's set here, the cant of the curve in proportion to the curvature of the arc");
@@ -2216,7 +2216,7 @@ bool editor_mode::render_route_vertex(int const Index)
 			return edited;
 		};
 		changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), 1).c_str(), ImGuiDataType_Double, &vertex.share, 0.01f, nullptr, nullptr, "%.2f");
-		mark(part::arc, 0);
+		mark(part::radius_arc, 0);
 		ImGui::SameLine();
 		ImGui::TextDisabled("%.0f%%", percent(vertex.share));
 		changed |= arc_cant(0, vertex.first_cant);
@@ -2227,17 +2227,17 @@ bool editor_mode::render_route_vertex(int const Index)
 			ImGui::PushID(k);
 			ImGui::Separator();
 			changed |= ImGui::DragScalar(format(STR_C("Radius R%d (m)"), k + 2).c_str(), ImGuiDataType_Double, &arc.radius, 5.0f, nullptr, nullptr, "%.0f");
-			mark(part::arc, k + 1);
+			mark(part::radius_arc, k + 1);
 			ImGui::SameLine();
 			if (ImGui::SmallButton("x"))
 				removed = k;
 			item_tooltip("Takes this radius out of the curve");
-			mark(part::arc, k + 1);
+			mark(part::radius_arc, k + 1);
 			changed |= ImGui::DragScalar(format(STR_C("Transition R%d-R%d (m)"), k + 1, k + 2).c_str(), ImGuiDataType_Double, &arc.transition, 1.0f, nullptr, nullptr, "%.0f");
 			settled |= ImGui::IsItemDeactivatedAfterEdit();
 			mark(part::between, k + 1);
 			changed |= ImGui::DragScalar(format(STR_C("Share of R%d"), k + 2).c_str(), ImGuiDataType_Double, &arc.share, 0.01f, nullptr, nullptr, "%.2f");
-			mark(part::arc, k + 1);
+			mark(part::radius_arc, k + 1);
 			ImGui::SameLine();
 			ImGui::TextDisabled("%.0f%%", percent(arc.share));
 			changed |= arc_cant(k + 1, arc.cant);

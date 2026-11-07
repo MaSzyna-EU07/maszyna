@@ -681,9 +681,9 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 	std::string loose;
 	for (std::size_t k = 0; k < 2; ++k)
 	{
-		auto const left{switch_rejoin(*switches[k], joints[k], handled[k], edit)};
-		if (false == left.empty())
-			loose += (loose.empty() ? "" : ", ") + left;
+		auto const rejoin_problem{switch_rejoin(*switches[k], joints[k], handled[k], edit)};
+		if (false == rejoin_problem.empty())
+			loose += (loose.empty() ? "" : ", ") + rejoin_problem;
 	}
 	editor_track::commit(edit.changed);
 	for (auto const &set : branches)

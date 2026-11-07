@@ -866,9 +866,9 @@ void editor_mode::draw_track_labels() const
 					{
 						auto const t{static_cast<float>(step) / steps};
 						int column;
-						int row;
-						if (cell_of(previous.x + (at.x - previous.x) * t, previous.y + (at.y - previous.y) * t, column, row))
-							covered[static_cast<std::size_t>(row) * columns + column] = 1;
+						int cell_row;
+						if (cell_of(previous.x + (at.x - previous.x) * t, previous.y + (at.y - previous.y) * t, column, cell_row))
+							covered[static_cast<std::size_t>(cell_row) * columns + column] = 1;
 					}
 				}
 				previous = at;
@@ -914,18 +914,18 @@ void editor_mode::draw_track_labels() const
 		// the point of the row so far along it; the label in its middle
 		auto const along_row = [&](double const Distance) {
 			glm::dvec3 point{first.point(0.5)};
-			auto left{Distance};
+			auto remaining{Distance};
 			for (auto const &[member, forward] : run)
 			{
 				bezier const piece{member->m_paths.front()};
 				auto const span{piece.plan_length()};
-				if (left <= span || &member == &run.back().first)
+				if (remaining <= span || &member == &run.back().first)
 				{
-					auto const share{std::clamp(span > 1e-6 ? left / span : 0.5, 0.0, 1.0)};
+					auto const share{std::clamp(span > 1e-6 ? remaining / span : 0.5, 0.0, 1.0)};
 					point = piece.point(forward ? share : 1.0 - share);
 					break;
 				}
-				left -= span;
+				remaining -= span;
 			}
 			return point;
 		};
@@ -1680,14 +1680,14 @@ void editor_mode::draw_track_intent() const
 		auto const velocity{editor_track::velocity(*track)};
 		details += velocity > 0.0 ? format("   V %.0f km/h", velocity) : std::string{};
 		double nearest{std::numeric_limits<double>::max()};
-		double at{0.0};
+		double along_curve{0.0};
 		for (int k = 0; k <= 64; ++k)
 			if (auto const distance{geometry::plan_distance(curve.point(k / 64.0), m_hover.point)}; distance < nearest)
 			{
 				nearest = distance;
-				at = k / 64.0;
+				along_curve = k / 64.0;
 			}
-		auto const tangent{curve.first(at)};
+		auto const tangent{curve.first(along_curve)};
 		if (auto const run{glm::length(plan_of(tangent))}; run > 1e-9)
 			details += "\n" + format(STR_C("grade %+.1f per mille"), tangent.y / run * 1000.0);
 		auto const roll{std::max(std::abs(path.rolls[0]), std::abs(path.rolls[1]))};
@@ -1739,14 +1739,14 @@ void editor_mode::split_track_at(TTrack &Track, glm::dvec3 const &Point)
 		auto const &path{Track.m_paths.front()};
 		auto const joint{path.points[segment_data::point::end]};
 		auto const height{bed_height(joint, geometry::plan_of(geometry::bezier{path}.first(1.0)), &Track)};
-		auto const none{std::numeric_limits<double>::quiet_NaN()};
+		auto const no_value{std::numeric_limits<double>::quiet_NaN()};
 		auto const unknown = [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); };
 		for (auto *part : {&Track, created})
 		{
 			std::vector<segment_data> pieces{part->m_paths.front()};
 			auto &points{pieces.front().points};
 			points[part == &Track ? segment_data::point::end : segment_data::point::start].y = height;
-			ground_follow::follow(pieces, {points[segment_data::point::start].y, none, points[segment_data::point::end].y, none}, unknown);
+			ground_follow::follow(pieces, {points[segment_data::point::start].y, no_value, points[segment_data::point::end].y, no_value}, unknown);
 			part->m_paths.front() = pieces.front();
 		}
 		editor_track::commit({&Track, created});
