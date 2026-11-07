@@ -3364,7 +3364,7 @@ bool TController::IncSpeed()
 			                            mvOccupied->Vel <= (IsCargoTrain ? 40 : 30) + (seriesmodefieldshunting ? 5 : 0) - (fAccGravity < -0.025 ? 10 : 0));
 			// when not in series mode use the first available parallel mode configuration until 50/60 km/h for passenger/cargo train
 			// (if there's only one parallel mode configuration it'll be used regardless of current speed)
-			auto const usefieldshunting = mvControlling->StLinFlag && mvControlling->RList[mvControlling->MainCtrlPos].R < 0.01 &&
+			auto const usefieldshunting = mvControlling->StLinFlag && mvControlling->RList[mvControlling->MainCtrlPos].R < 0.01 && false == mvControlling->IsScndCtrlLockedByMainCtrl() &&
 			                              (useseriesmode ? mvControlling->RList[mvControlling->MainCtrlPos].Bn == 1 :
 			                               true == sufficientacceleration && true == sufficienttractionforce && mvOccupied->Vel <= (IsCargoTrain ? 60 : 50) + (parallelmodefieldshunting ? 5 : 0) ?
 			                                               mvControlling->RList[mvControlling->MainCtrlPos].Bn > 1 :

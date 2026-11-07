@@ -2751,7 +2751,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 	{
 		//     if (RList[MainCtrlPos].R=0) and (MainCtrlPos>0) and (ScndCtrlPos<ScndCtrlPosNo) and
 		//     (not CoupledCtrl) then
-		if (ScndCtrlPos < ScndCtrlPosNo && !CoupledCtrl)
+		if (ScndCtrlPos < ScndCtrlPosNo && !CoupledCtrl && !IsScndCtrlLockedByMainCtrl())
 		{
 			// TBD, TODO: refactor this validation as part of relay check routine (currently in tractionforce()
 			// TBD, TODO: diesel electric engine utilize scndctrlactualpos like the other types?
@@ -2870,6 +2870,12 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 	}
 
 	return OK;
+}
+
+bool TMoverParameters::IsScndCtrlLockedByMainCtrl() const
+{
+	// ET21, ET22, EP09: the field shunting engages only on the resistance-free positions of the master controller (eu07/maszyna#402)
+	return ScndCtrlResistiveLock && (IsMainCtrlNoPowerPos() || RList[MainCtrlPos].R >= 0.01);
 }
 
 int TMoverParameters::GetVirtualScndPos() const
@@ -10897,6 +10903,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
 
 	extract_value(ScndS, "ScndS", line, ""); // brak pozycji rownoleglej przy niskiej nastawie PSR
+	extract_value(ScndCtrlResistiveLock, "ScndCtrlResistiveLock", line, ""); // bocznikowanie tylko na pozycjach bezoporowych
 
 	extract_value(InitialCtrlDelay, "IniCDelay", line, "");
 	extract_value(CtrlDelay, "SCDelay", line, "");

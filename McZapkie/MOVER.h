@@ -1943,6 +1943,7 @@ class TMoverParameters
 	double MirrorVelClose{5.0};
 	bool MirrorForbidden{false}; /*czy jest pozwolenie na otworzenie lusterek (przycisk)*/
 	bool ScndS = false; /*Czy jest bocznikowanie na szeregowej*/
+	bool ScndCtrlResistiveLock{false}; // the shunt controller can't be moved up while the master controller is at zero or on a resistive position (ScndCtrlResistiveLock=Yes in Cntrl.)
 	bool SpeedCtrl = false; /*czy jest tempomat*/
 	speed_control SpeedCtrlUnit; /*parametry tempomatu*/
 	double SpeedCtrlButtons[10]{30, 40, 50, 60, 70, 80, 90, 100, 110, 120}; /*przyciski prędkości*/
@@ -2372,6 +2373,8 @@ class TMoverParameters
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);
 	int GetVirtualScndPos() const;
+	// whether ScndCtrlResistiveLock keeps the shunt controller from being moved up at the current master controller position
+	bool IsScndCtrlLockedByMainCtrl() const;
 	bool IsScndCtrlNoPowerPos() const;
 	bool IsScndCtrlMaxPowerPos() const;
 
