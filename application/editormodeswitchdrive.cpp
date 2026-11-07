@@ -430,15 +430,42 @@ bool editor_mode::render_switch_drive_choice()
 }
 
 // a key by the movable nose of each switch with a drive, the frog is far from the drive at the start of the switch
-bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
+namespace
+{
+
+// the name of the scenery file without its folder and its extension; empty without the layers
+std::string scenery_root()
 {
 	if (scene::Layers.empty())
-		return false;
+		return {};
 	std::string root{scene::Layers.layer(scene::layer_handle{1}).name};
 	if (auto const slash{root.find_last_of("/\\")}; slash != std::string::npos)
 		root.erase(0, slash + 1);
 	if (auto const dot{root.rfind('.')}; dot != std::string::npos)
 		root.erase(dot);
+	return root;
+}
+
+// a file written where what it holds differs
+void written_changed(std::filesystem::path const &Path, std::string const &Content)
+{
+	std::string current;
+	{
+		std::ifstream input{Path, std::ios_base::binary};
+		current.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+	}
+	if (current != Content)
+	{
+		std::ofstream output{Path, std::ios_base::binary | std::ios_base::trunc};
+		output << Content;
+	}
+}
+
+} // namespace
+
+bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
+{
+	auto const root{scenery_root()};
 	if (root.empty())
 		return false;
 	auto const file{root + "_dzioby.scm"};
@@ -466,17 +493,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	std::error_code error;
 	if (auto const exists{std::filesystem::exists(path, error)}; noses == 0 && false == exists)
 		return false;
-	auto const content{std::string{kNoseHeader} + "\r\n" + text.str()};
-	std::string current;
-	{
-		std::ifstream input{path, std::ios_base::binary};
-		current.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-	}
-	if (current != content)
-	{
-		std::ofstream output{path, std::ios_base::binary | std::ios_base::trunc};
-		output << content;
-	}
+	written_changed(path, std::string{kNoseHeader} + "\r\n" + text.str());
 	// the keys written for this scenery under another name, the file it was copied from, give way to these: with both included
 	// each key would stand twice. their files stay on the disk, for the scenery they were made for
 	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
