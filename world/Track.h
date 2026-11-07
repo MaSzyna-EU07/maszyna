@@ -339,7 +339,7 @@ public:
     track_rails::switch_frog frog() const;
     track_rails::switch_blade const &blade( int const Path ) const;
     double blades_throw() const; // how far the tips of the blades move over between the two paths
-    std::vector<track_rails::rail_crossing> rail_crossings( bool const Joined = true );
+    std::vector<track_rails::rail_crossing> rail_crossings( bool const Joined = true ) const;
     track_rails::rail_size rail_dimensions() const;
     // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
     track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings ) const;

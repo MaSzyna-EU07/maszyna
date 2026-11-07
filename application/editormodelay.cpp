@@ -71,7 +71,7 @@ glm::dvec2 heading_at_end(std::vector<glm::dvec2> const &Points)
 		return chord;
 	auto const centre{first + glm::dvec2{ac.y * glm::dot(ab, ab) - ab.y * glm::dot(ac, ac), ab.x * glm::dot(ac, ac) - ac.x * glm::dot(ab, ab)} / twice};
 	auto const radial{Points[count - 1] - centre};
-	glm::dvec2 tangent{-radial.y, radial.x};
+	glm::dvec2 const tangent{-radial.y, radial.x};
 	return glm::dot(tangent, chord) < 0.0 ? -tangent : tangent;
 }
 

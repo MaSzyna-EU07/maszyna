@@ -1102,7 +1102,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 				moment += change(k) * node(k);
 			}
 			auto const at{moment / sum};
-			pvi point{at, x[run_first] + (x[run_first] - x[run_first - 1]) / step * (at - node(run_first))};
+			pvi const point{at, x[run_first] + (x[run_first] - x[run_first - 1]) / step * (at - node(run_first))};
 			auto const room{std::min(at - node(run_first) + step * 0.5, node(k - 1) + step * 0.5 - at)};
 			result.points.push_back(point);
 			rooms.push_back(room);

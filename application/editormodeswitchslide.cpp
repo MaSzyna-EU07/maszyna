@@ -163,7 +163,7 @@ void lift(std::vector<segment_data> &Pieces, double const Rise)
 
 } // namespace
 
-bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::string &Reason)
+bool editor_mode::switch_room(TTrack &Track, double &Low, double &High, std::string &Reason) const
 {
 	Low = 0.0;
 	High = 0.0;

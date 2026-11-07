@@ -325,7 +325,7 @@ void vee_fill( std::vector<track_rails::rail_fill> &Fills, double const At, doub
     }
     std::vector<glm::dvec2> line { { apex, edge + sign * reach }, { end, edge + sign * ( gap + reach ) } };
     knots::sort( line );
-    std::vector<glm::dvec2> fixed { { fill.from, flat - sign * seam }, { fill.to, flat - sign * seam } };
+    std::vector<glm::dvec2> const fixed { { fill.from, flat - sign * seam }, { fill.to, flat - sign * seam } };
     fill.outer = ( Outwards ? line : fixed );
     fill.inner = ( Outwards ? fixed : line );
     Fills.push_back( fill );

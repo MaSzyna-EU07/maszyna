@@ -453,7 +453,7 @@ TEST_CASE("alignment: an arc of a compound curve with no cant gets a longer tran
 
 	auto const departure = [&](alignment::design const &Design) {
 		double sum{0.0};
-		std::vector<glm::dvec2> plan(points.begin(), points.end());
+		std::vector<glm::dvec2> const plan(points.begin(), points.end());
 		for (auto const &projection : alignment::project(alignment::compute(Design), plan))
 			sum += projection.offset * projection.offset;
 		return std::sqrt(sum / static_cast<double>(points.size()));

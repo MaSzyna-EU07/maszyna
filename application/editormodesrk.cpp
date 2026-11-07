@@ -3714,7 +3714,7 @@ std::optional<double> tracks_beyond(station::line const &Line)
 	if (glm::length(step) <= 1e-9)
 		return std::nullopt;
 	auto const way{glm::normalize(step)};
-	std::vector<TTrack const *> own(Line.tracks.begin(), Line.tracks.end());
+	std::vector<TTrack const *> const own(Line.tracks.begin(), Line.tracks.end());
 	for (auto const &target : editor_track::free_ends(nullptr, 1, end, kGapReach, own))
 	{
 		auto const ahead{plan(target.position - end)};

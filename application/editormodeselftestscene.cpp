@@ -671,7 +671,7 @@ editor_mode::selftest_result editor_mode::selftest_model_box() const
 		WriteLog("SELFTEST modelbox: no model selected");
 		return selftest_result::handled;
 	}
-	scene::node_data data;
+	scene::node_data const data{};
 	sweep_node probe{data};
 	sweep_node::state state;
 	state.model = source.file;

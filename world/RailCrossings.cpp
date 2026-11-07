@@ -1091,7 +1091,7 @@ void blade_bends( switch_blade &Blade ) {
 
 } // namespace
 
-std::vector<track_rails::rail_crossing> TTrack::rail_crossings( bool const Joined ) {
+std::vector<track_rails::rail_crossing> TTrack::rail_crossings( bool const Joined ) const {
 
     if( false == cut_rails( *this ) || simulation::Region == nullptr ) {
         return {};

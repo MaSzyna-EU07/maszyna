@@ -1240,7 +1240,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			auto const bearing{std::clamp(uniform(-1.0, 1.0) * uniform(0.0, 1.0) * glm::pi<double>(), -2.97, 2.97)};
 			auto const inner{1 + pick(3)};
 			std::array<double, 3> shares{uniform(0.1, 0.9), uniform(0.1, 0.9), uniform(0.1, 0.9)};
-			std::array<double, 3> across{uniform(-0.25, 0.25), uniform(-0.25, 0.25), uniform(-0.25, 0.25)};
+			std::array<double, 3> const across{uniform(-0.25, 0.25), uniform(-0.25, 0.25), uniform(-0.25, 0.25)};
 			std::array<int, 5> modes_drawn{pick(2), pick(2), pick(2), pick(2), pick(2)};
 			auto const near_end{uniform(0.0, 1.0) < 0.3};
 			auto const near_back{uniform(1.0, 15.0)};

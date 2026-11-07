@@ -193,7 +193,7 @@ material_handle TTrack::rail_material( int const Path ) const {
 
 glm::vec2 TTrack::tread_band() const {
 
-    glm::vec2 band { 0.45f, 0.55f };
+    glm::vec2 const band { 0.45f, 0.55f };
     if( m_profiles.empty() ) {
         return band;
     }

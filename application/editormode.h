@@ -1640,7 +1640,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	editor_track::straight straight_near(glm::dvec3 const &Point, std::vector<TTrack const *> const &Exclude, double const Reach) const;
 	editor_track::straight straight_through(glm::dvec3 const &Point, glm::dvec2 const &Direction) const;
 	void record_connection(connection::kind const Kind, std::vector<TTrack *> const &Switches, connection::result const &Plan, editor_track::switch_template const &Shape) const;
-	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason);
+	bool switch_room(TTrack &Track, double &Low, double &High, std::string &Reason) const;
 	bool switch_vacate(TTrack &Track, glm::dvec3 const &From, glm::dvec3 const &To, double const Shift, editor_track::straight const &Line, editor_track::edit &Edit, std::string &Status);
 	bool move_switch_paths(TTrack &Track, std::vector<segment_data> const &Paths, std::string &Status);
 	std::optional<switch_branch> take_switch_branch(TTrack const &Track, editor_track::joint const &Joint, std::size_t const Index) const;

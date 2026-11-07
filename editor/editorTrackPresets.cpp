@@ -34,7 +34,7 @@ namespace fs = std::filesystem;
 
 fs::path presets_path()
 {
-	fs::path p = user_config_path("eu07_editor_track_presets.txt");
+	fs::path const p = user_config_path("eu07_editor_track_presets.txt");
 	return p.empty() ? fs::path("eu07_editor_track_presets.txt") : p;
 }
 

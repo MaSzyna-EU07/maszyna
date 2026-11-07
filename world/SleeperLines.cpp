@@ -310,7 +310,7 @@ void cut_long( std::vector<band> const &Bands, std::vector<piece> &Pieces ) {
         if( ours < left->overhangmin || theirs < right->overhangmin ) {
             ++faults().clipped;
         }
-        piece second { right->from - theirs, whole.to, true, right->from, whole.coreto, nullptr };
+        piece const second { right->from - theirs, whole.to, true, right->from, whole.coreto, nullptr };
         whole.to = left->to + ours;
         whole.coreto = left->to;
         whole.clipped = true;

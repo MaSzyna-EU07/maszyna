@@ -66,7 +66,7 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
             if( pCurrentTrack == nullptr ) {
                 break;
             }
-            int i = JoinedEnd( end );
+            int const i = JoinedEnd( end );
             if( i & 1 ) {
                 // coming from the frog end the axle runs on its path whichever way the switch is set. Where the blades are shaped
                 // it gets trailed through only where the wheels get to them, or to the nose of a movable frog; elsewhere as it
