@@ -1735,6 +1735,31 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 	return result;
 }
 
+namespace
+{
+
+// the track a run goes on to through the main path of a switch, come from Previous; Atstart: it comes in at the start of the path.
+// None where it comes from neither end of the main path, or from both
+TTrack *switch_beyond(TTrack const &Switch, TTrack const *Previous, bool &Atstart)
+{
+	auto const &extension{*Switch.SwitchExtension};
+	Atstart = extension.pPrevs[0] == Previous;
+	if (Atstart == (extension.pNexts[0] == Previous))
+		return nullptr;
+	return Atstart ? extension.pNexts[0] : extension.pPrevs[0];
+}
+
+// a track added to a run of a curve: at its end, Throughend, entered at the start of its path, Atstart, else at its beginning
+void run_added(std::deque<std::pair<TTrack *, bool>> &Run, bool const Throughend, TTrack *Track, bool const Atstart)
+{
+	if (Throughend)
+		Run.emplace_back(Track, Atstart);
+	else
+		Run.emplace_front(Track, false == Atstart);
+}
+
+} // namespace
+
 bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve)
 {
 	Curve = {};
@@ -1768,19 +1793,14 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 		TTrack *current{throughend ? Track.trNext : Track.trPrev};
 		while (current != nullptr && false == known(current))
 		{
-			if (current->eType == tt_Switch && has_switch_paths(*current) && is_supported(*current) && false == current->m_editorremoved)
+			auto const passing{current->eType == tt_Switch && has_switch_paths(*current) && is_supported(*current) && false == current->m_editorremoved};
+			bool atstart{false};
+			auto *beyond{passing ? switch_beyond(*current, previous, atstart) : nullptr};
+			if (passing && (false == curved(beyond) || known(beyond) || reversing(*current, throughend == atstart)))
+				break;
+			if (passing)
 			{
-				auto const &extension{*current->SwitchExtension};
-				bool const atstart{extension.pPrevs[0] == previous};
-				if (atstart == (extension.pNexts[0] == previous))
-					break;
-				auto *beyond{atstart ? extension.pNexts[0] : extension.pPrevs[0]};
-				if (false == curved(beyond) || known(beyond) || reversing(*current, throughend == atstart))
-					break;
-				if (throughend)
-					run.emplace_back(current, atstart);
-				else
-					run.emplace_front(current, false == atstart);
+				run_added(run, throughend, current, atstart);
 				previous = current;
 				current = beyond;
 				continue;
@@ -1790,10 +1810,7 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 			auto const entersatstart{current->trPrev == previous};
 			if (reversing(*current, throughend == entersatstart))
 				break;
-			if (throughend)
-				run.emplace_back(current, entersatstart);
-			else
-				run.emplace_front(current, false == entersatstart);
+			run_added(run, throughend, current, entersatstart);
 			previous = current;
 			current = entersatstart ? current->trNext : current->trPrev;
 		}
@@ -1990,8 +2007,7 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			if (Curve.compound)
 			{
 				Curve.arcs.emplace_back(shape.radius, shape.share, 0.0);
-				for (auto const &arc : shape.arcs)
-					Curve.arcs.emplace_back(arc.radius, arc.share, arc.transition);
+				std::ranges::for_each(shape.arcs, [&Curve](auto const &Arc) { Curve.arcs.emplace_back(Arc.radius, Arc.share, Arc.transition); });
 			}
 		}
 	}
@@ -2951,8 +2967,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 			if (std::abs(path.rolls[0]) > 1e-3f || std::abs(path.rolls[1]) > 1e-3f)
 			{
 				cone_heights(span.track->m_paths[i], path);
-				for (auto &piece : span.track->m_paths[i].pieces)
-					cone_heights(piece, path);
+				std::ranges::for_each(span.track->m_paths[i].pieces, [&path](segment_data &Piece) { cone_heights(Piece, path); });
 				continue;
 			}
 			plane_heights(span.track->m_paths[i], path.points[segment_data::point::start], start_direction(path), grade);
