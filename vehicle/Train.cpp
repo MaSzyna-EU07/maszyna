@@ -716,7 +716,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("pant_compressor", mvPantographUnit->PantCompFlag);
 	dict->insert("lights_front", mvOccupied->iLights[end::front]);
 	dict->insert("lights_rear", mvOccupied->iLights[end::rear]);
-	dict->insert("off_from_dimmer", mvOccupied->dimPositions[mvOccupied->modernDimmerPosition].isOff);
+	dict->insert("off_from_dimmer", mvOccupied->currentDimPosition().isOff);
 	dict->insert("lights_compartments", mvOccupied->CompartmentLights.is_active || mvOccupied->CompartmentLights.is_disabled);
 	if (Dynamic()->Mechanik)
 	{
@@ -5897,14 +5897,9 @@ void TTrain::OnCommand_modernlightdimmerincrease(TTrain *Train, command_data con
 	if (Command.action == GLFW_PRESS)
 	{
 		// update modern dimmer state
-
-		auto &dimPos = Train->mvOccupied->modernDimmerPosition;
-		if (auto dimCount = Train->mvOccupied->dimPositions.size(); dimPos + 1 < dimCount)
-			dimPos++;
-		else if (Train->mvOccupied->modernDimmerCanCycle)
-			dimPos = 0; // return to 0
-		else
-			return; // już na minimum i nie można cyklicznie
+		if (false == Train->mvOccupied->stepDimmerPosition(1))
+			return; // już na maksimum i nie można cyklicznie
+		auto const dimPos = Train->mvOccupied->modernDimmerPosition;
 		// update lightning
 		// Train->Dynamic()->SetLights();
 		Train->Dynamic()->SetLightDimmings();
@@ -5921,18 +5916,9 @@ void TTrain::OnCommand_modernlightdimmerdecrease(TTrain *Train, command_data con
 
 	if (Command.action == GLFW_PRESS)
 	{
-		auto &dimPos = Train->mvOccupied->modernDimmerPosition;
-		auto dimCount = Train->mvOccupied->dimPositions.size();
-
-		if (dimCount == 0)
-			return;
-
-		if (dimPos > 0)
-			dimPos--;
-		else if (Train->mvOccupied->modernDimmerCanCycle)
-			dimPos = static_cast<int>(dimCount - 1); // ostatnia pozycja
-		else
+		if (false == Train->mvOccupied->stepDimmerPosition(-1))
 			return; // już na minimum i nie można cyklicznie
+		auto const dimPos = Train->mvOccupied->modernDimmerPosition;
 
 		// Train->Dynamic()->SetLights();
 		Train->Dynamic()->SetLightDimmings();
@@ -6173,7 +6159,7 @@ void TTrain::OnCommand_headlightsdimenable(TTrain *Train, command_data const &Co
 
 		Train->DynamicObject->DimHeadlights = true;
 		*/
-		Train->DynamicObject->MoverParameters->modernDimmerPosition = 1; // ustawiamy modern dimmer na flage przyciemnienia
+		Train->DynamicObject->MoverParameters->modernDimmerPosition = Train->DynamicObject->MoverParameters->clampDimmerPosition(1); // ustawiamy modern dimmer na flage przyciemnienia
 		Train->DynamicObject->SetLightDimmings();
 	}
 }

@@ -2286,6 +2286,14 @@ class TMoverParameters
 	// bool modernContainOffPos{true};
 	bool enableModernDimmer{false};
 	bool modernDimmerCanCycle{false};
+	// the given dimmer position brought into the DimmerList, to its first or last entry; 0 for an empty list
+	int clampDimmerPosition(int Position) const;
+	// the entry of the current dimmer position, or a plain one (not off, not dimmed, no high beam) when the
+	// position is outside the DimmerList: the .fiz can give a short or an empty list, or a DefaultPos past its end
+	dimPosition currentDimPosition() const;
+	// moves the dimmer by Step positions within the DimmerList, around to its other end when it can cycle;
+	// a position outside the list is brought into it first. false when the dimmer doesn't move
+	bool stepDimmerPosition(int Step);
 
 	// Barwa reflektora
 	int refR{255}; // Czerwony
