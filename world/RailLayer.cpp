@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/TrackRails.h"
 #include "rendering/renderer.h"
+#include <algorithm>
+#include <ranges>
 
 namespace track_rails {
 
@@ -140,12 +142,9 @@ bool is_ear( std::vector<glm::dvec2> const &Polygon, std::vector<std::size_t> co
 // the first corner of what's left of the outline that is an ear; the count of the corners: none is
 std::size_t find_ear( std::vector<glm::dvec2> const &Polygon, std::vector<std::size_t> const &Remaining, double const Orientation ) {
 
-    for( std::size_t j = 0; j < Remaining.size(); ++j ) {
-        if( is_ear( Polygon, Remaining, j, Orientation ) ) {
-            return j;
-        }
-    }
-    return Remaining.size();
+    auto const corners { std::views::iota( std::size_t { 0 }, Remaining.size() ) };
+    auto const found { std::ranges::find_if( corners, [ & ]( std::size_t const Corner ) { return is_ear( Polygon, Remaining, Corner, Orientation ); } ) };
+    return ( found != corners.end() ? *found : Remaining.size() );
 }
 
 std::vector<std::array<std::size_t, 3>> ear_clip( std::vector<glm::dvec2> const &Polygon ) {

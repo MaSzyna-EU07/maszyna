@@ -249,7 +249,7 @@ bool editor_mode::plan_connection(connection::request &Request, connection::resu
 	Request.gap = tool.connection_gap;
 	Request.together = tool.connection_together;
 	Request.stub = tool.connection_stub;
-	Request.spacings = spacings_of(tool.connection_spacings);
+	Request.spacings = spacings_of(tool.connection_spacings.c_str());
 	Request.along = tool.along;
 	glm::dvec2 const offset{plan_of(tool.mouse - tool.point)};
 	Request.forward = glm::dot(offset, line.direction) >= 0.0 ? 1 : -1;

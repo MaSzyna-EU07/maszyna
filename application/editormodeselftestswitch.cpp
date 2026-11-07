@@ -48,6 +48,149 @@ http://mozilla.org/MPL/2.0/.
 #include <sstream>
 #include "application/editormodeselftest.h"
 
+#include <format>
+#include <string_view>
+
+namespace
+{
+
+// the height of the last point clicked, 0 before the first
+double last_point_height(std::vector<glm::dvec3> const &Points)
+{
+	return Points.empty() ? 0.0 : Points.back().y;
+}
+
+// the end of the track a step along it from the side given goes on to: of a switch, the one of its path
+int joined_end(TTrack const &Track, int const Side, int const Path, bool const Switched)
+{
+	if (Switched)
+		return Side > 0 ? Track.SwitchExtension->iNextDirection[Path] : Track.SwitchExtension->iPrevDirection[Path];
+	return Side > 0 ? Track.iNextDirection : Track.iPrevDirection;
+}
+
+// the path of the next track a step goes on along: of a switch, the one of the end joined, else the one set; -1 of a plain track
+int path_entered(TTrack const &Next, int const Joined)
+{
+	if (Next.eType != tt_Switch)
+		return -1;
+	return (Joined & 1) ? Joined >> 1 : Next.SwitchExtension->CurrentIndex;
+}
+
+// a track as the log of the links names it
+std::string link_name(TTrack const *Track)
+{
+	if (Track == nullptr)
+		return "-";
+	if (Track->name().empty())
+		return "(noname)";
+	return Track->name();
+}
+
+// the tips and the heels of the blades of the switch shaped, as the log of the drives has them
+std::string blade_spans(TTrack const &Track)
+{
+	std::string text;
+	for (int path = 0; path < 2; ++path)
+		if (auto const &shape{Track.blade(path)}; shape.valid)
+			text += format(", blade %d %.3f - %.3f m", path, shape.tip, shape.heel);
+	return text;
+}
+
+// how far apart the rail of each blade of the slip and the one it lies at are along the path, where the blades are shaped
+std::string slip_gaps(TTrack const &Track)
+{
+	std::string text;
+	for (int path = 0; path < 2; ++path)
+	{
+		auto const &shape{Track.blade(path)};
+		auto const gap = [&](double const At) {
+			auto const &gauge{shape.gauge};
+			auto const next{std::ranges::find_if(gauge, [&](glm::dvec2 const &Sample) { return Sample.x >= At; })};
+			if (next != gauge.end())
+				return next->y;
+			return gauge.empty() ? -1.0 : gauge.back().y;
+		};
+		text += format(", path %d %s side %d gaps", path, shape.valid ? "shaped" : "not shaped", Track.SwitchExtension->RightSwitch == (path == 0) ? 1 : -1);
+		for (auto const at : {0.354, 1.0, 1.248, 2.0, 4.0, 6.0, 8.0, 9.4})
+			text += format(" %.1f:%.4f", at, gap(at));
+	}
+	return text;
+}
+
+// the plain track nearest the point in plan, nearer than the reach, and how near it is: none and the reach where none is
+std::pair<TTrack *, double> nearest_plain(glm::dvec3 const &Point, double const Reach)
+{
+	TTrack *nearest{nullptr};
+	auto best{Reach};
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
+			continue;
+		if (auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, Point)), Point)}; distance < best)
+		{
+			best = distance;
+			nearest = track;
+		}
+	}
+	return {nearest, best};
+}
+
+// the share along the curve, by two thousandths, of its point nearest the point in plan
+double nearest_share(geometry::bezier const &Curve, glm::dvec3 const &Point)
+{
+	double best{std::numeric_limits<double>::max()};
+	double along{0.0};
+	for (int k = 0; k <= 2000; ++k)
+		if (auto const distance{geometry::plan_distance(Curve.point(k / 2000.0), Point)}; distance < best)
+		{
+			best = distance;
+			along = k / 2000.0;
+		}
+	return along;
+}
+
+// the values of a drive standing after its name, in brackets
+std::string drive_values(std::vector<std::string> const &Values)
+{
+	std::string text;
+	for (std::size_t i = 1; i < Values.size(); ++i)
+		text += (i == 1 ? " (" : " ") + Values[i] + (i + 1 == Values.size() ? ")" : "");
+	return text;
+}
+
+// the paths of a switch of the catalogue, the track of the parts named, logged
+void log_slip_paths(std::string const &Name, TTrack const &Track)
+{
+	for (std::size_t i = 0; i < Track.m_paths.size(); ++i)
+	{
+		auto const &path{Track.m_paths[i]};
+		auto const &a{path.points[segment_data::point::start]};
+		auto const &b{path.points[segment_data::point::end]};
+		WriteLog(format("SELFTEST switchcurve slip path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f, R %.1f, %zu pieces, rolls %.2f %.2f", Name.c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, static_cast<double>(path.radius), path.pieces.size(),
+		                static_cast<double>(path.rolls[0]), static_cast<double>(path.rolls[1])));
+	}
+}
+
+// the widest gap and the sharpest kink between the pieces of the path and at its ends, taken into the ones so far
+void piece_joints(segment_data const &Path, double &Gap, double &Kink)
+{
+	for (std::size_t i = 0; i + 1 < Path.pieces.size(); ++i)
+	{
+		auto const &one{Path.pieces[i]};
+		auto const &two{Path.pieces[i + 1]};
+		Gap = std::max(Gap, glm::distance(one.points[segment_data::point::end], two.points[segment_data::point::start]));
+		geometry::bezier const a{one};
+		geometry::bezier const b{two};
+		auto const ta{glm::normalize(geometry::plan_of(a.first(1.0)))};
+		auto const tb{glm::normalize(geometry::plan_of(b.first(0.0)))};
+		Kink = std::max(Kink, std::abs(geometry::signed_angle(ta, tb)));
+	}
+	if (false == Path.pieces.empty())
+		Gap = std::max({Gap, glm::distance(Path.pieces.front().points[segment_data::point::start], Path.points[segment_data::point::start]), glm::distance(Path.pieces.back().points[segment_data::point::end], Path.points[segment_data::point::end])});
+}
+
+} // namespace
+
 editor_mode::selftest_result editor_mode::selftest_switch(std::string const &command, std::istringstream &words)
 {
 	// each switch: the tips of its blades and its drive from the joint before them; drivetips moves the drives there first
@@ -61,27 +204,14 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				continue;
 			auto const start{track->m_paths[0].points[segment_data::point::start]};
 			std::string text{format("SELFTEST drive of %s: blades from %.3f m", track->name().c_str(), editor_track::blade_tip_of(*track))};
-			for (int path = 0; path < 2; ++path)
-				if (auto const &shape{track->blade(path)}; shape.valid)
-					text += format(", blade %d %.3f - %.3f m", path, shape.tip, shape.heel);
+			text += blade_spans(*track);
 			if (auto const found{find_switch_drive(*track)})
 				text += format(", drive %.3f m from the joint", geometry::plan_distance(found->standing.location, start));
 			else
 				text += ", no drive";
 			// how far apart the rail of the blade and the one it lies at are along the path, where the blades of a slip are shaped
 			if (track->DoubleSlip())
-				for (int path = 0; path < 2; ++path)
-				{
-					auto const &shape{track->blade(path)};
-					auto const gap = [&](double const At) {
-						auto const &gauge{shape.gauge};
-						auto const next{std::ranges::find_if(gauge, [&](glm::dvec2 const &Sample) { return Sample.x >= At; })};
-						return next == gauge.end() ? (gauge.empty() ? -1.0 : gauge.back().y) : next->y;
-					};
-					text += format(", path %d %s side %d gaps", path, shape.valid ? "shaped" : "not shaped", track->SwitchExtension->RightSwitch == (path == 0) ? 1 : -1);
-					for (auto const at : {0.354, 1.0, 1.248, 2.0, 4.0, 6.0, 8.0, 9.4})
-						text += format(" %.1f:%.4f", at, gap(at));
-				}
+				text += slip_gaps(*track);
 			WriteLog(text);
 		}
 		return selftest_result::handled;
@@ -158,8 +288,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			if (false == designer.from_catalogue && designer.selected >= 0 && designer.selected < static_cast<int>(designer.own.size()))
 			{
 				auto text{std::string{"SELFTEST designerpick parts"}};
-				for (auto const &part : designer.own[designer.selected].parts)
-					text += format(" %.3f/R%.1f..%.1f", part.length, part.radius1, part.radius2);
+				std::ranges::for_each(designer.own[designer.selected].parts, [&text](auto const &Part) { text += format(" %.3f/R%.1f..%.1f", Part.length, Part.radius1, Part.radius2); });
 				WriteLog(text + format(", lead %.3f", designer.own[designer.selected].lead));
 			}
 		}
@@ -196,7 +325,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			point.y = 5000.0;
 			std::vector<char> found;
 			auto const ground{ground_heights({point}, true, &found)};
-			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+			point.y = found[0] != 0 ? ground[0] : last_point_height(m_lay.points);
 			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
 			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
 			lay_click();
@@ -212,7 +341,13 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		std::string word;
 		int sub{0};
 		words >> word >> sub;
-		auto const kind{word == "slip" ? switch_kind::slip : word == "crossing" ? switch_kind::crossing : word == "connection" ? switch_kind::connection : switch_kind::single};
+		auto kind{switch_kind::single};
+		if (word == "slip")
+			kind = switch_kind::slip;
+		else if (word == "crossing")
+			kind = switch_kind::crossing;
+		else if (word == "connection")
+			kind = switch_kind::connection;
 		m_switch.connection_kind = sub;
 		choose_switch_kind(kind);
 		WriteLog(format("SELFTEST switchkind %s: kind %d, connection %d, armed %d", word.c_str(), static_cast<int>(current_switch_kind()), m_switch.connection, m_switch.armed));
@@ -249,7 +384,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			{
 				std::string value;
 				words >> value;
-				std::snprintf(tool.connection_spacings, sizeof(tool.connection_spacings), "%s", value.c_str());
+				tool.connection_spacings = value.substr(0, 63); // as long as the field it was typed in took
 			}
 		}
 		show_track_tab(track_tab::turnout);
@@ -280,22 +415,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				closest = distance;
 				start = track;
 			}
+		// along a curve: the track nearest to the press
 		if (start == nullptr)
-		{
-			// along a curve: the track nearest to the press
-			auto best{3.0};
-			for (auto *track : simulation::Paths.sequence())
-			{
-				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
-					continue;
-				auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, at)), at)};
-				if (distance < best)
-				{
-					best = distance;
-					start = track;
-				}
-			}
-		}
+			start = nearest_plain(at, 3.0).first;
 		if (start == nullptr)
 		{
 			WriteLog("SELFTEST connection: no track at the start");
@@ -319,31 +441,32 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				if (entry.kind == "connection")
 				{
 					std::string parts;
-					for (auto const &part : entry.parts)
-						parts += ' ' + part;
+					std::ranges::for_each(entry.parts, [&parts](auto const &Part) { parts += ' ' + Part; });
 					WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
 				}
+		};
+		auto const log_drag_plan = [&]() {
+			connection::request request;
+			connection::result plan;
+			auto const valid{tool.partner != nullptr ? plan_partner_connection(request, plan) : plan_connection(request, plan)};
+			WriteLog("SELFTEST connection drag plan: " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
+			for (auto const &entry : plan.switches)
+			{
+				auto const &start_point{entry.paths[0].points[segment_data::point::start]};
+				auto const &end{entry.paths[0].points[segment_data::point::end]};
+				WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d: %.3f %.3f -> %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, start_point.x, start_point.z, end.x, end.z));
+			}
+			for (auto const &wanted : request.to)
+				WriteLog(format("SELFTEST connection to the line from %.3f %.3f, %.1f m", wanted.start.x, wanted.start.z, wanted.length));
 		};
 		if (drag)
 		{
 			recognise_connection();
+			auto const crossover{tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}};
 			WriteLog(std::string{"SELFTEST connection drag: "} + (tool.connection < 0 ? "a switch" : connection::word(static_cast<connection::kind>(tool.connection))) + (tool.partner != nullptr ? " with " + tool.partner->name() : std::string{}) +
-			         (tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}));
+			         crossover);
 			if (tool.connection >= 0 && false == tool.curved)
-			{
-				connection::request request;
-				connection::result plan;
-				auto const valid{tool.partner != nullptr ? plan_partner_connection(request, plan) : plan_connection(request, plan)};
-				WriteLog("SELFTEST connection drag plan: " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
-				for (auto const &entry : plan.switches)
-				{
-					auto const &start_point{entry.paths[0].points[segment_data::point::start]};
-					auto const &end{entry.paths[0].points[segment_data::point::end]};
-					WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d: %.3f %.3f -> %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, start_point.x, start_point.z, end.x, end.z));
-				}
-				for (auto const &wanted : request.to)
-					WriteLog(format("SELFTEST connection to the line from %.3f %.3f, %.1f m", wanted.start.x, wanted.start.z, wanted.length));
-			}
+				log_drag_plan();
 			finish_switch_placement();
 			WriteLog("SELFTEST connection built: " + tool.status);
 			log_records();
@@ -405,14 +528,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		{
 			auto const t{i * 0.125};
 			auto const point{other.point(t)};
-			double best{std::numeric_limits<double>::max()};
-			double along{0.0};
-			for (int k = 0; k <= 2000; ++k)
-				if (auto const distance{geometry::plan_distance(main.point(k / 2000.0), point)}; distance < best)
-				{
-					best = distance;
-					along = k / 2000.0;
-				}
+			auto const along{nearest_share(main, point)};
 			auto const base{main.point(along)};
 			auto const direction{glm::normalize(geometry::plan_of(main.first(along)))};
 			auto const lateral{(point.x - base.x) * -direction.y + (point.z - base.z) * direction.x};
@@ -448,20 +564,22 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		std::string text{"SELFTEST pathwalk:"};
 		int path{-1};
-		for (int step = 0; step < steps && track != nullptr; ++step)
+		int step{0};
+		while (step < steps && track != nullptr)
 		{
-			text += " " + track->name() + (path >= 0 ? "[" + std::to_string(path) + "]" : std::string{}) + (direction > 0 ? ">" : "<");
+			text += std::format(" {}{}{}", track->name(), path >= 0 ? std::format("[{}]", path) : std::string{}, direction > 0 ? ">" : "<");
 			auto const side{direction > 0 ? 1 : -1};
 			auto const switched{track->eType == tt_Switch && path >= 0};
-			auto const joined{switched ? (side > 0 ? track->SwitchExtension->iNextDirection[path] : track->SwitchExtension->iPrevDirection[path]) : (side > 0 ? track->iNextDirection : track->iPrevDirection)};
+			auto const joined{joined_end(*track, side, path, switched)};
 			auto *next{track->Connected(side, direction, switched ? path : -1)};
 			if (next == nullptr)
 			{
 				text += " END";
 				break;
 			}
-			path = next->eType == tt_Switch ? ((joined & 1) ? joined >> 1 : next->SwitchExtension->CurrentIndex) : -1;
+			path = path_entered(*next, joined);
 			track = next;
+			++step;
 		}
 		WriteLog(text);
 		return selftest_result::handled;
@@ -533,12 +651,11 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		words >> name;
 		scan_switch_drives();
 		std::string files;
-		for (auto const &standing : standing_templates([](std::string const &File) { return File.find("napedy/") != std::string::npos; }))
+		for (auto const &standing : standing_templates([](std::string_view const File) { return File.find("napedy/") != std::string_view::npos; }))
 			if (false == standing.values.empty() && standing.values[0] == name)
 			{
 				files += " " + standing.file;
-				for (std::size_t i = 1; i < standing.values.size(); ++i)
-					files += (i == 1 ? " (" : " ") + standing.values[i] + (i + 1 == standing.values.size() ? ")" : "");
+				files += drive_values(standing.values);
 			}
 		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 			if (scene::Layers.tracked(handle) && scene::Layers.instance(handle).file != nullptr && scene::Layers.instance(handle).file->find("napedy") != std::string::npos)
@@ -665,15 +782,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		std::ranges::replace(label, '_', ' ');
 		auto const templates{editor_track::standard_switch_templates()};
 		auto const found{std::ranges::find_if(templates, [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
-		TTrack *nearest{nullptr};
-		double distance{1e9};
-		for (auto *track : simulation::Paths.sequence())
-			if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Normal && false == track->m_paths.empty())
-				if (auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; d < distance)
-				{
-					distance = d;
-					nearest = track;
-				}
+		auto *const nearest{nearest_plain(point, 1e9).first};
 		if (found == templates.end() || nearest == nullptr)
 		{
 			WriteLog("SELFTEST switchproblem: no template " + label + " or no track");
@@ -730,6 +839,29 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			return selftest_result::handled;
 		}
 		tool.status.clear();
+		// the tracks of the curve and their ends along it, where the frame has them and where they are
+		auto const log_frame = [&tool]() {
+			for (auto const *track : tool.frame_tracks)
+				for (auto const index : {segment_data::point::start, segment_data::point::end})
+				{
+					auto const &at{track->m_paths.front().points[index]};
+					auto const station{nearest_station(tool.frame, at)};
+					auto const framed{sample_at(tool.frame, station).position};
+					WriteLog(format("SELFTEST switchcurve frame %s.%s: station %.3f, at %.3f %.3f, frame %.3f %.3f", track->name().c_str(), index == segment_data::point::start ? "start" : "end", station, at.x, at.z, framed.x, framed.z));
+				}
+		};
+		// the slip made, its parts and their paths
+		auto const log_slip = [](TTrack const *Part) {
+			if (Part == nullptr || false == Part->DoubleSlip())
+				return;
+			auto const known{switch_store::named(*Part)};
+			if (false == known.has_value())
+				return;
+			WriteLog(format("SELFTEST switchcurve slip %s: %s, %zu parts", known->name.c_str(), switch_store::label(*known).c_str(), known->parts.size()));
+			for (auto const &name : known->parts)
+				if (auto const *track{simulation::Paths.find(name)})
+					log_slip_paths(name, *track);
+		};
 		if (command == "switchcurve")
 		{
 			editor_track::curve curve;
@@ -749,35 +881,13 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				std::string what;
 				tool.along = curved_switch_start(direction, &what);
 				WriteLog(format("SELFTEST switchcurve start %.3f, pressed %.3f%s", tool.along, tool.pressed, what.empty() ? "" : (": " + what).c_str()));
-				// the tracks of the curve and their ends along it, where the frame has them and where they are
-				for (auto const *track : tool.frame_tracks)
-					for (auto const index : {segment_data::point::start, segment_data::point::end})
-					{
-						auto const &at{track->m_paths.front().points[index]};
-						auto const station{nearest_station(tool.frame, at)};
-						auto const framed{sample_at(tool.frame, station).position};
-						WriteLog(format("SELFTEST switchcurve frame %s.%s: station %.3f, at %.3f %.3f, frame %.3f %.3f", track->name().c_str(), index == segment_data::point::start ? "start" : "end", station, at.x, at.z, framed.x, framed.z));
-					}
+				log_frame();
 			}
 			// a slip bent into the curve with its crossing track, its paths and its record logged
 			if (tool.templates[tool.armed].double_slip)
 			{
 				insert_curved_slip(direction, side);
-				if (auto const *part{selected_track()}; part != nullptr && part->DoubleSlip())
-					if (auto const known{switch_store::named(*part)})
-					{
-						WriteLog(format("SELFTEST switchcurve slip %s: %s, %zu parts", known->name.c_str(), switch_store::label(*known).c_str(), known->parts.size()));
-						for (auto const &name : known->parts)
-							if (auto const *track{simulation::Paths.find(name)})
-								for (std::size_t i = 0; i < track->m_paths.size(); ++i)
-								{
-									auto const &path{track->m_paths[i]};
-									auto const &a{path.points[segment_data::point::start]};
-									auto const &b{path.points[segment_data::point::end]};
-									WriteLog(format("SELFTEST switchcurve slip path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f, R %.1f, %zu pieces, rolls %.2f %.2f", name.c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, static_cast<double>(path.radius), path.pieces.size(),
-									                static_cast<double>(path.rolls[0]), static_cast<double>(path.rolls[1])));
-								}
-					}
+				log_slip(selected_track());
 			}
 			else
 				insert_curved_switch(direction, side);
@@ -824,25 +934,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			tool.collected = true;
 			tool.armed = -1;
 			tool.connection = -1;
-			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
-				if (tool.templates[i].label.rfind(label, 0) == 0)
-				{
-					tool.armed = i;
-					break;
-				}
-			TTrack *nearest{nullptr};
-			double distance{1e9};
-			for (auto *track : simulation::Paths.sequence())
-			{
-				if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty())
-					continue;
-				auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)};
-				if (d < distance)
-				{
-					distance = d;
-					nearest = track;
-				}
-			}
+			if (auto const named{std::ranges::find_if(tool.templates, [&label](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })}; named != tool.templates.end())
+				tool.armed = static_cast<int>(std::distance(tool.templates.begin(), named));
+			auto *const nearest{nearest_plain(point, 1e9).first};
 			if (tool.armed < 0 || nearest == nullptr)
 			{
 				WriteLog("SELFTEST switchlink: no template " + label + " or no path");
@@ -1007,11 +1101,11 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				continue;
 			if (false == name.empty() ? track->name() != name : track->m_paths[1].pieces.empty())
 				continue;
+			if (command == "switchbreak" && track->m_paths[1].pieces.size() < 2)
+				continue;
 			if (command == "switchbreak")
 			{
 				auto &pieces{track->m_paths[1].pieces};
-				if (pieces.size() < 2)
-					continue;
 				pieces[0].points[segment_data::point::end].x += 0.3;
 				editor_track::commit({track});
 				WriteLog(format("SELFTEST switchbreak %s: path 2 %.3f m, %zu pieces in use, %zu kept", track->name().c_str(), track->SwitchExtension->Segments[1]->GetLength(), track->SwitchExtension->Segments[1]->PieceCount(), pieces.size()));
@@ -1057,7 +1151,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	}
 	if (command == "switchlinks")
 	{
-		auto const name_of = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
+		auto const name_of = [](TTrack const *Track) { return link_name(Track); };
 		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
@@ -1081,19 +1175,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			for (auto const &path : paths)
 			{
 				pieces += path.pieces.size();
-				for (std::size_t i = 0; i + 1 < path.pieces.size(); ++i)
-				{
-					auto const &one{path.pieces[i]};
-					auto const &two{path.pieces[i + 1]};
-					gap = std::max(gap, glm::distance(one.points[segment_data::point::end], two.points[segment_data::point::start]));
-					geometry::bezier const a{one};
-					geometry::bezier const b{two};
-					auto const ta{glm::normalize(geometry::plan_of(a.first(1.0)))};
-					auto const tb{glm::normalize(geometry::plan_of(b.first(0.0)))};
-					kink = std::max(kink, std::abs(geometry::signed_angle(ta, tb)));
-				}
-				if (false == path.pieces.empty())
-					gap = std::max({gap, glm::distance(path.pieces.front().points[segment_data::point::start], path.points[segment_data::point::start]), glm::distance(path.pieces.back().points[segment_data::point::end], path.points[segment_data::point::end])});
+				piece_joints(path, gap, kink);
 			}
 			std::string ends;
 			for (auto const &path : paths)

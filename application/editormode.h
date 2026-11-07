@@ -488,7 +488,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool offered{false}; // the terrain was offered to the scenery begun without it
 		bool prompt{false}; // the offer is shown
 		bool moving{false}; // the place being picked again
-		char place[96]{}; // typed: degrees or PUWG 1992
+		std::array<char, 96> place{}; // typed: degrees or PUWG 1992
 		int shown{-1}; // the frame the terrain panel showed how far the work got
 	};
 	editor_nmt m_nmt;
@@ -905,7 +905,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::optional<editor_orthophoto::service_info> info;
 		std::string service; // the address the capabilities were read of
 		std::vector<char> ticked;
-	} m_wms_adding;
+	};
+	wms_adding m_wms_adding;
 	// the orthophoto and the WMS layers of the user's at the bottom of the layers window, with their settings
 	void render_base_layers();
 	void render_wms_adding();
@@ -924,7 +925,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool active{false};
 		std::vector<glm::dvec2> points;
 		int dragged{-1};
-	} m_area_drawing;
+	};
+	area_drawing m_area_drawing;
 	std::vector<glm::dvec2> m_nmt_prefetched; // the download area the terrain model was given
 	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
@@ -1075,7 +1077,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<std::pair<glm::dvec3, glm::dvec3>> before; // ends of the first path of each moving track
 		std::map<int, std::vector<TTrack *>> on; // the kept alignments and the moving paths on them
 		std::set<int> whole; // the kept alignments all of whose paths move
-	} m_record_watch;
+	};
+	record_watch m_record_watch;
 	void records_watch_begin();
 	void records_watch_end();
 	editor_track::point_ref m_track_point;
@@ -1213,7 +1216,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			ImVec2 press{0.0f, 0.0f};
 			float metres{1.0f}; // pixels of a metre and of a unit of the curvature, kept as the drag goes
 			float curvature{1.0f};
-		} band;
+		};
+		curvature_band band;
 		// the part of a curve whose field the mouse is over in the panel, or which is being edited there, shown in the view
 		struct curve_focus
 		{
@@ -1229,7 +1233,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			part what{part::whole};
 			int arc{0};
 			bool held{false}; // by a field being edited, the mouse over the others doesn't move it
-		} focus;
+		};
+		curve_focus focus;
 		// the points clicked when the fragment was laid, kept with its design: the curves keep to them as their transitions and cants
 		// change, while hold is on
 		std::vector<glm::dvec3> clicks;
@@ -1252,7 +1257,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			alignment::design before; // taken back by Esc
 			double rms{0.0};
 			double worst{0.0};
-		} trace;
+		};
+		trace_state trace;
 	};
 	void render_route_ui();
 	bool render_route_band();
@@ -1559,7 +1565,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double connection_radius{0.0};
 		double connection_gap{6.0};
 		bool connection_together{false};
-		char connection_spacings[64]{"4.75;4.75;5.0"};
+		std::string connection_spacings{"4.75;4.75;5.0"};
 		double connection_stub{25.0};
 		// the connection a switch dragged makes, as where it's let go tells it, in connection then: let go on the other track a
 		// crossover, across the tracks between them a ladder; by a crossover there already turned the other way a double crossover
@@ -1614,12 +1620,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// why the switch can't take another template here, empty when it can
 	std::string template_change_blocked(TTrack const &Switch) const;
 	// the template of the catalogue a slip or a crossing was laid of, of the rail before the others; -1 if none
-	int slip_template_index(switch_store::record const &Record, std::string const &Rail) const;
+	int slip_template_index(switch_store::record const &Record, std::string_view const Rail) const;
 	// the switch of the template of the index in place: its start and its side kept, the tracks it joins following; a switch of a
 	// crossover takes the crossover with it, laid again, a slip or a crossing is laid again where its tracks cross. One step of the
 	// history; the status says how it went
 	bool change_switch_template(TTrack &Switch, int const Index);
-	bool change_slip_template(TTrack &Part, int const Index);
+	bool change_slip_template(TTrack const &Part, int const Index);
 	// the switch, or the double switch it's a part of, given the shape in place, straight or bent into the curve it lies in; Flip:
 	// the diverging track to the other side. Notes: for the user
 	bool apply_switch_template(TTrack &Switch, editor_track::switch_template const &Shape, bool const Flip, std::string &Notes);
@@ -1677,6 +1683,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void switch_slide_start(TTrack &Track);
 	void switch_slide_update();
 	void switch_slide_finish();
+	void mouse_left_release();
 	void draw_switch_slide() const;
 	// reads the drives from the include bank once it changes; Wait: for the templates being looked for. true if it read them
 	bool scan_switch_drives(bool Wait = true);
@@ -2080,7 +2087,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the side a slip dragged out on a straight with no track crossing it brings its crossing track to: the one through the quarter of
 	// the cursor
 	int lone_slip_side() const;
-	bool replace_double_slip(TTrack &Part, editor_track::switch_template const &Shape);
+	bool replace_double_slip(TTrack const &Part, editor_track::switch_template const &Shape);
 	// Bend: what a path of the slip laid out as on straights turns into where it's bent into a curve
 	std::vector<TTrack *> build_double_slip(glm::dvec3 const &PointA, glm::dvec3 const &PointB, glm::dvec3 const &PointC, glm::dvec3 const &PointD, glm::dvec2 const &Crossing, double const Height, glm::dvec2 const &First, glm::dvec2 const &Second, double const Angle, editor_track::slip_curve const &Curve, TTrack &Style, std::string const &Type = "Rkpd",
 	                                        std::function<segment_data(segment_data const &)> const &Bend = {});
@@ -2109,7 +2116,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	segment_data bent_slip_path(curved_slip const &Plan, segment_data const &Path) const;
 	// the two tracks through the slip and its slip curves, each from end to end, bent: the first track, the slip curve leaving it at its
 	// start, the second track, the other slip curve of a double slip
-	std::vector<segment_data> curved_slip_lines(curved_slip const &Plan, std::string const &Type) const;
+	std::vector<segment_data> curved_slip_lines(curved_slip const &Plan, std::string_view const Type) const;
 	// the straights of both tracks from the ends of the slip out to the joints of the template, bent
 	std::vector<segment_data> curved_slip_reaches(curved_slip const &Plan) const;
 	switch_curve::slip_report curved_slip_report(curved_slip const &Plan, std::string const &Type) const;
@@ -2612,13 +2619,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string taken;     // as the track taken has it
 		std::size_t differ{0}; // of the selected tracks, the ones it changes
 	};
-	std::vector<track_style_line> track_style_lines(std::vector<TTrack *> const &Tracks);
+	std::vector<track_style_line> track_style_lines(std::vector<TTrack *> const &Tracks) const;
 	bool track_style_takes(std::string const &Key) const;
 	struct track_presets_panel
 	{
 		int selected{0}; // id of the preset chosen in the inspector
 		int nameid{0}; // the preset whose name is in the field
-		char name[128]{};
+		std::array<char, 128> name{};
 	};
 	track_presets_panel m_track_presets;
 	std::vector<std::vector<TTrack *>> m_track_similar;

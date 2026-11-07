@@ -36,13 +36,18 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <functional>
 #include <limits>
 #include <map>
 #include <set>
+#include <span>
 #include <sstream>
+#include <string_view>
+#include <system_error>
 
 namespace
 {
@@ -73,8 +78,9 @@ std::string decimal(double const Value, int const Digits)
 	return text == "-0" ? std::string{"0"} : text;
 }
 
-bool parse_number(std::string Text, double &Value)
+bool parse_number(std::string_view const Typed, double &Value)
 {
+	std::string Text{Typed};
 	std::ranges::replace(Text, ',', '.');
 	auto const *start{Text.c_str()};
 	char *end{nullptr};
@@ -86,9 +92,9 @@ bool parse_number(std::string Text, double &Value)
 	return *end == '\0' && std::isfinite(Value);
 }
 
-std::vector<std::string> words_of(std::string const &Text)
+std::vector<std::string> words_of(std::string_view const Text)
 {
-	std::istringstream stream{Text};
+	std::istringstream stream{std::string{Text}};
 	std::vector<std::string> words;
 	for (std::string word; stream >> word;)
 		words.push_back(word);
@@ -137,9 +143,50 @@ std::string lowered(std::string Text)
 	return Text;
 }
 
-bool texture_extension(std::string const &Extension)
+bool texture_extension(std::string_view const Extension)
 {
 	return Extension == ".dds" || Extension == ".tga" || Extension == ".png" || Extension == ".bmp" || Extension == ".jpg" || Extension == ".ktx" || Extension == ".tex";
+}
+
+// each row of a list the clipper finds in sight drawn
+template <typename Draw>
+void clipped_rows(ImGuiListClipper &Clipper, Draw &&Row)
+{
+	while (Clipper.Step())
+		for (int row = Clipper.DisplayStart; row < Clipper.DisplayEnd; ++row)
+			Row(row);
+}
+
+// a byte continuing a character of UTF-8, not starting one
+bool utf8_continuation(char const Byte)
+{
+	return (static_cast<std::byte>(Byte) & std::byte{0xC0}) == std::byte{0x80};
+}
+
+// the text copied into a field of the given size, cut to it and ended with a zero
+void text_into(std::span<char> const Field, std::string_view const Text)
+{
+	*std::format_to_n(Field.data(), static_cast<std::ptrdiff_t>(Field.size()) - 1, "{}", Text).out = '\0';
+}
+
+// the choice of the overhead line of a track: 0 normal, 1 no current, 2 the pantographs lowered
+char const *overhead_choice(float const Overhead)
+{
+	if (Overhead < 0.f)
+		return "0";
+	if (Overhead == 0.f)
+		return "1";
+	return "2";
+}
+
+// the overhead line of a track as the choice of it sets it; the speed with the pantographs lowered kept when it has one
+float overhead_of(int const Mode, float const Overhead)
+{
+	if (Mode == 0)
+		return -1.f;
+	if (Mode == 1)
+		return 0.f;
+	return Overhead > 0.f ? Overhead : 40.f;
 }
 
 // a name in two lines under a tile: as much as fits, then the rest; the end, where the names differ, is kept when the rest is too long
@@ -150,7 +197,7 @@ std::pair<std::string, std::string> two_lines(std::string const &Text, float con
 	std::size_t split{0};
 	while (split < Text.size() && ImGui::CalcTextSize(Text.c_str(), Text.c_str() + split + 1).x <= Width)
 		++split;
-	while (split > 0 && (static_cast<unsigned char>(Text[split]) & 0xC0) == 0x80)
+	while (split > 0 && utf8_continuation(Text[split]))
 		--split;
 	auto rest{Text.substr(split)};
 	if (ImGui::CalcTextSize(rest.c_str()).x > Width)
@@ -158,7 +205,7 @@ std::pair<std::string, std::string> two_lines(std::string const &Text, float con
 		while (rest.size() > 1 && ImGui::CalcTextSize(("..." + rest).c_str()).x > Width)
 		{
 			rest.erase(0, 1);
-			while (false == rest.empty() && (static_cast<unsigned char>(rest.front()) & 0xC0) == 0x80)
+			while (false == rest.empty() && utf8_continuation(rest.front()))
 				rest.erase(0, 1);
 		}
 		rest = "..." + rest;
@@ -209,9 +256,16 @@ enum group : int
 	group_count
 };
 
-char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
+constexpr std::array<char const *, group_count> kGroupLabels{"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
 // the groups as the presets keep them in their file, by names which don't change with the order of the groups
-char const *const kGroupKeys[group_count] = {"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement"};
+constexpr std::array<char const *, group_count> kGroupKeys{"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement"};
+
+// the group of the properties of the number ticked, a number of none left alone
+void tick_group(std::span<bool> const Groups, int const Group)
+{
+	if (Group >= 0 && Group < group_count)
+		Groups[Group] = true;
+}
 
 struct track_property
 {
@@ -310,13 +364,13 @@ std::vector<track_property> make_properties()
 		property.applies = any;
 		property.more = true;
 		property.choices = {"Normal", "No current, coasting", "Pantographs lowered, speed limit"};
-		property.get = [](TTrack const &Track) { return std::string{Track.fOverhead < 0.f ? "0" : Track.fOverhead == 0.f ? "1" : "2"}; };
+		property.get = [](TTrack const &Track) { return std::string{overhead_choice(Track.fOverhead)}; };
 		property.set = [](TTrack &Track, std::string const &Text) {
 			double index;
 			if (false == parse_number(Text, index) || index < 0.0 || index > 2.0)
 				return false;
 			auto const mode{static_cast<int>(index)};
-			auto const overhead{mode == 0 ? -1.f : mode == 1 ? 0.f : Track.fOverhead > 0.f ? Track.fOverhead : 40.f};
+			auto const overhead{overhead_of(mode, Track.fOverhead)};
 			if (overhead == Track.fOverhead)
 				return false;
 			editor_track::overhead(Track, overhead);
@@ -399,7 +453,7 @@ std::vector<track_property> make_properties()
 	}
 	{
 		// the profiles of the rails the game has (models/tory/railprofile_*), the first: none, the default shape
-		static char const *const profiles[] = {"", "s60", "uic60", "s49", "s42", "s39", "s30pn", "s30din", "s24", "s20", "s18", "s14", "s10", "r-65", "ri60n", "lk1"};
+		static constexpr auto profiles{std::to_array<char const *>({"", "s60", "uic60", "s49", "s42", "s39", "s30pn", "s30din", "s24", "s20", "s18", "s14", "s10", "r-65", "ri60n", "lk1"})};
 		auto &property{add(list, "railprofile", field::choice, section::look, group::rails, "Rail profile",
 		                   "Shape of the rails, the railprofile of the track. It also picks the switch templates of the rail: S60 60E1, S49 49E1.\nNo profile: the default shape, and the templates of all the rails are offered")};
 		property.rebuild = true;
@@ -445,7 +499,7 @@ std::vector<track_property> make_properties()
 		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.off = false == Global.Frogs;
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_frogs ? "1" : "0"}; };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack const &Track, std::string_view const Text) {
 			auto const on{Text == "1"};
 			if (on == Track.SwitchExtension->m_frogs)
 				return false;
@@ -459,7 +513,7 @@ std::vector<track_property> make_properties()
 		property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 		property.off = false == Global.Frogs;
 		property.get = [](TTrack const &Track) { return std::string{Track.SwitchExtension->m_movablenose ? "1" : "0"}; };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack const &Track, std::string_view const Text) {
 			auto const movable{Text == "1"};
 			if (movable == Track.SwitchExtension->m_movablenose)
 				return false;
@@ -473,7 +527,7 @@ std::vector<track_property> make_properties()
 			property.rebuild = true;
 			property.applies = [](TTrack const &Track) { return Track.eType == tt_Switch && Track.SwitchExtension != nullptr; };
 			property.get = [Member](TTrack const &Track) { return decimal(( *Track.SwitchExtension ).*Member, 3); };
-			property.set = [Member](TTrack &Track, std::string const &Text) {
+			property.set = [Member](TTrack const &Track, std::string const &Text) {
 				double value;
 				if (false == parse_number(Text, value))
 					return false;
@@ -507,7 +561,7 @@ std::vector<track_property> make_properties()
 		property.rebuild = true;
 		property.empty = "no model";
 		property.get = [](TTrack const &Track) { return Track.m_sleeper_model_name; };
-		property.set = [](TTrack &Track, std::string const &Text) {
+		property.set = [](TTrack &Track, std::string_view const Text) {
 			auto const words{words_of(Text)};
 			auto const model{words.empty() ? std::string{} : words.front()};
 			if (model == Track.m_sleeper_model_name)
@@ -617,9 +671,9 @@ std::vector<track_property> make_properties()
 		}
 	}
 	add_float(list, "sleeperspacing", section::look_sleepers, group::sleeper_placement, "Sleeper spacing (m)", "Distance between the sleepers along the track", &TTrack::m_sleeper_frequency, 3, 0.1f, true);
-	char const *const offsets[][3] = {{"sleeperside", "Sleeper shift sideways (m)", "Shift of each model sideways, to the right of the track"},
-	                                  {"sleeperalong", "Sleeper shift along (m)", "Shift of each model along the track"},
-	                                  {"sleeperup", "Sleeper shift up (m)", "Shift of each model up"}};
+	constexpr std::array<std::array<char const *, 3>, 3> offsets{{{"sleeperside", "Sleeper shift sideways (m)", "Shift of each model sideways, to the right of the track"},
+	                                                              {"sleeperalong", "Sleeper shift along (m)", "Shift of each model along the track"},
+	                                                              {"sleeperup", "Sleeper shift up (m)", "Shift of each model up"}}};
 	for (int axis = 0; axis < 3; ++axis)
 	{
 		auto &property{add(list, offsets[axis][0], field::number, section::look_sleepers, group::sleeper_placement, offsets[axis][1], offsets[axis][2])};
@@ -726,7 +780,7 @@ std::vector<track_property> const &properties()
 using value_counts = std::vector<std::pair<std::string, int>>;
 
 // values of the property over the tracks it applies to, each with the number of the tracks having it, the most common first
-value_counts values_of(track_property const &Property, std::vector<TTrack *> const &Tracks)
+value_counts values_of(track_property const &Property, std::span<TTrack *const> const Tracks)
 {
 	std::map<std::string, int, std::less<>> counted;
 	for (auto const *track : Tracks)
@@ -757,7 +811,7 @@ std::string tracks_count(std::size_t const Count)
 	return format(STR_P("%d track", "%d tracks", static_cast<long long>(Count)), static_cast<int>(Count));
 }
 
-std::size_t tracks_signature(std::vector<TTrack *> const &Tracks)
+std::size_t tracks_signature(std::span<TTrack *const> const Tracks)
 {
 	std::size_t signature{Tracks.size()};
 	for (auto const *track : Tracks)
@@ -1060,7 +1114,7 @@ void editor_mode::textures_index()
 			auto &known{found[name]};
 			known = known || material;
 		}
-		catch (std::exception const &)
+		catch (std::system_error const &)
 		{
 			continue;
 		}
@@ -1131,7 +1185,11 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	for (auto const &entry : m_texture_index)
 		if (false == usednames.contains(entry.lowered) && matches(entry.lowered))
 			files.push_back(&entry);
-	std::string const first{false == used.empty() ? used.front()->name : false == files.empty() ? files.front()->name : std::string{}};
+	std::string first;
+	if (false == used.empty())
+		first = used.front()->name;
+	else if (false == files.empty())
+		first = files.front()->name;
 	if (entered && false == words.empty() && false == first.empty())
 	{
 		Chosen = first;
@@ -1140,7 +1198,13 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 
 	// large: the tile under the mouse, or what Enter would choose, or the current texture
 	auto const current{lowered(Current)};
-	auto const shown{false == m_texture_hovered.empty() ? m_texture_hovered : false == words.empty() ? first : Mixed ? std::string{} : Current};
+	std::string shown;
+	if (false == m_texture_hovered.empty())
+		shown = m_texture_hovered;
+	else if (false == words.empty())
+		shown = first;
+	else if (false == Mixed)
+		shown = Current;
 	m_texture_hovered.clear();
 	auto const big{std::round(ImGui::GetFontSize() * 10.0f)};
 	auto const corner{ImGui::GetCursorScreenPos()};
@@ -1231,13 +1295,11 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 		// thousands of them: only the rows in sight are drawn
 		ImGuiListClipper clipper;
 		clipper.Begin((static_cast<int>(files.size()) + columns - 1) / columns, tile + label + spacing.y);
-		while (clipper.Step())
-			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
-			{
-				column = 0;
-				for (int i = row * columns; i < (row + 1) * columns && i < static_cast<int>(files.size()); ++i)
-					draw_tile(files[i]->name, 0);
-			}
+		clipped_rows(clipper, [&](int const Row) {
+			column = 0;
+			for (int i = Row * columns; i < (Row + 1) * columns && i < static_cast<int>(files.size()); ++i)
+				draw_tile(files[i]->name, 0);
+		});
 	}
 	if (used.empty() && files.empty())
 		ImGui::TextDisabled("%s", STR_C("No texture of this name"));
@@ -1300,7 +1362,7 @@ bool editor_mode::texture_field(char const *Label, float const Width, char *Buff
 	std::string value{Buffer};
 	if (false == texture_field(Label, Width, value, Offer))
 		return false;
-	std::snprintf(Buffer, Size, "%s", value.c_str());
+	text_into({Buffer, Size}, value);
 	return true;
 }
 
@@ -1381,9 +1443,13 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		auto const editing{edit.property == static_cast<int>(Index)};
 		std::array<char, 256> shown{};
 		if (values.size() == 1)
-			std::snprintf(shown.data(), shown.size(), "%s", values.front().first == "none" ? "" : values.front().first.c_str());
+			text_into(shown, values.front().first == "none" ? std::string_view{} : std::string_view{values.front().first});
 		auto *buffer{editing ? edit.text.data() : shown.data()};
-		auto const hint{values.size() > 1 ? format(STR_C("different (%d)"), static_cast<int>(values.size())) : property.empty != nullptr ? std::string{STR_C(property.empty)} : std::string{}};
+		std::string hint;
+		if (values.size() > 1)
+			hint = format(STR_C("different (%d)"), static_cast<int>(values.size()));
+		else if (property.empty != nullptr)
+			hint = STR_C(property.empty);
 		// a number clicked is typed anew, the digits wouldn't add up to what's meant going after the old ones
 		ImGui::InputTextWithHint("##value", hint.c_str(), buffer, shown.size(), property.kind == field::number ? ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_AutoSelectAll : 0);
 		if (ImGui::IsItemActivated())
@@ -1394,7 +1460,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			edit.property = static_cast<int>(Index);
 			edit.tracks = Tracks;
 			edit.initial = text;
-			std::snprintf(edit.text.data(), edit.text.size(), "%s", text.c_str());
+			text_into(edit.text, text);
 		}
 		if (edit.property == static_cast<int>(Index))
 			edit.frame = ImGui::GetFrameCount();
@@ -1418,7 +1484,6 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 	};
 
 	auto const check_row = [&](std::size_t const Index) {
-		auto const &property{list[Index]};
 		auto const &values{cache.values[Index]};
 		auto const mixed_values{values.size() > 1};
 		bool value{false == mixed_values && values.front().first == "1"};
@@ -1581,7 +1646,7 @@ bool editor_mode::track_style_takes(std::string const &Key) const
 	return index >= 0 && style.groups[properties()[index].group];
 }
 
-std::vector<editor_mode::track_style_line> editor_mode::track_style_lines(std::vector<TTrack *> const &Tracks)
+std::vector<editor_mode::track_style_line> editor_mode::track_style_lines(std::vector<TTrack *> const &Tracks) const
 {
 	std::vector<track_style_line> lines;
 	auto const &list{properties()};
@@ -1739,16 +1804,16 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	// the name
 	if (panel.nameid != id)
 	{
-		std::snprintf(panel.name, sizeof(panel.name), "%s", selected->name.c_str());
+		text_into(panel.name, selected->name);
 		panel.nameid = id;
 	}
 	ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(STR_C("Rename")).x - ImGui::GetStyle().FramePadding.x * 2 - ImGui::GetStyle().ItemSpacing.x);
-	auto const entered{ImGui::InputText("##presetname", panel.name, IM_ARRAYSIZE(panel.name), ImGuiInputTextFlags_EnterReturnsTrue)};
+	auto const entered{ImGui::InputText("##presetname", panel.name.data(), panel.name.size(), ImGuiInputTextFlags_EnterReturnsTrue)};
 	ImGui::PopItemWidth();
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Rename")) || entered)
 	{
-		EditorTrackPresets.rename(id, panel.name);
+		EditorTrackPresets.rename(id, panel.name.data());
 		panel.nameid = 0; // reload, the name could have been adjusted to stay unique
 		selected = EditorTrackPresets.find(id);
 	}
@@ -1991,32 +2056,30 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		TTrack *alone{nullptr};
 		ImGuiListClipper clipper;
 		clipper.Begin(static_cast<int>(Tracks.size()));
-		while (clipper.Step())
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+		clipped_rows(clipper, [&](int const i) {
+			auto *track{Tracks[i]};
+			ImGui::PushID(i);
+			if (ImGui::SmallButton("x"))
+				removed = track;
+			item_tooltip("Takes the track out of the selection");
+			ImGui::SameLine();
+			if (ImGui::Selectable(name_of(*track).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
 			{
-				auto *track{Tracks[i]};
-				ImGui::PushID(i);
-				if (ImGui::SmallButton("x"))
-					removed = track;
-				item_tooltip("Takes the track out of the selection");
-				ImGui::SameLine();
-				if (ImGui::Selectable(name_of(*track).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
-				{
-					if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-						alone = track;
-					else
-						focus_track(*track, 0, bezier{track->m_paths.front()}.point(0.5));
-				}
-				if (ImGui::IsItemHovered())
-				{
-					m_track_list_hover = track;
-					m_track_list_hover_frame = ImGui::GetFrameCount();
-					ImGui::SetTooltip("%s", STR_C("Click: look at it, double click: select only this one"));
-				}
-				ImGui::SameLine(column);
-				ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*track)), track->Length());
-				ImGui::PopID();
+				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+					alone = track;
+				else
+					focus_track(*track, 0, bezier{track->m_paths.front()}.point(0.5));
 			}
+			if (ImGui::IsItemHovered())
+			{
+				m_track_list_hover = track;
+				m_track_list_hover_frame = ImGui::GetFrameCount();
+				ImGui::SetTooltip("%s", STR_C("Click: look at it, double click: select only this one"));
+			}
+			ImGui::SameLine(column);
+			ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*track)), track->Length());
+			ImGui::PopID();
+		});
 		ImGui::EndChild();
 		ImGui::TreePop();
 		if (removed != nullptr)
@@ -2054,15 +2117,15 @@ void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 	item_tooltip("Selects the tracks of the whole scenery which have the same rails, trackbed, speed... as the selected ones");
 	if (ImGui::BeginPopup("##similar"))
 	{
-		char const *const keys[] = {"rails", "trackbed", "speed", "environment", "circuits", "overhead"};
-		char const *const labels[] = {"The same rails", "The same trackbed", "The same speed", "The same environment", "The same track circuits", "The same overhead line"};
+		constexpr std::array<char const *, 6> keys{"rails", "trackbed", "speed", "environment", "circuits", "overhead"};
+		constexpr std::array<char const *, 6> labels{"The same rails", "The same trackbed", "The same speed", "The same environment", "The same track circuits", "The same overhead line"};
 		if (ImGui::IsWindowAppearing())
 		{
 			m_track_similar.clear();
 			for (auto const *key : keys)
 				m_track_similar.push_back(similar_tracks(track_property_index(key), Tracks));
 		}
-		for (std::size_t i = 0; i < std::size(keys) && i < m_track_similar.size(); ++i)
+		for (std::size_t i = 0; i < keys.size() && i < m_track_similar.size(); ++i)
 		{
 			auto const &found{m_track_similar[i]};
 			if (ImGui::MenuItem(STR_C(labels[i]), tracks_count(found.size()).c_str(), false, false == found.empty()))
@@ -2138,8 +2201,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 			m_track_style.groups.fill(false);
 			m_track_style.ticks.clear();
 			for (int group; Words >> group;)
-				if (group >= 0 && group < group_count)
-					m_track_style.groups[group] = true;
+				tick_group(m_track_style.groups, group);
 		}
 		else if (action == "tick")
 		{
