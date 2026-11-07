@@ -3544,7 +3544,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		return;
 	std::vector<signal_head> heads;
 	m_signals.signal_heads(heads, false);
-	auto const guards{guarded(m_templates.standing_templates([](std::string const &File) { return File == kControl; }))};
+	auto const guards{guarded(m_templates.standing_templates([](std::string_view const File) { return File == kControl; }))};
 	auto const stem{stem_of_open()};
 	auto const on_line = [](station::line const &Line, glm::dvec3 const &Point) {
 		double gap{0.0};
@@ -3647,9 +3647,15 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			if (automatic && false == row.both && wrong_disc(m_line_ways, index, signal))
 				continue;
 			auto shared{false};
-			for (std::size_t other = 0; other < m_lines.size() && false == shared; ++other)
+			for (std::size_t other = 0; other < m_lines.size(); ++other)
+			{
 				shared = (m_lines[other].block != semi) != automatic && on_line(m_line_ways[other], signal.position);
-			if (shared || row.leftovers++ > 0)
+				if (shared)
+					break;
+			}
+			if (shared)
+				continue;
+			if (row.leftovers++ > 0)
 				continue;
 			row.leftover = signal.position;
 			row.leftover_travel = travel_of(signal.yaw);
@@ -3710,7 +3716,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 			for (auto const *isolated : track->Isolated)
 				if (isolated != nullptr)
 					circuits.insert(ToLower(isolated->asName));
-	for (auto const &block_control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
+	for (auto const &block_control : m_templates.standing_templates([](std::string_view const File) { return File == kControl; }))
 		if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])) && by_open(block_control.location))
 			m_problems.emplace_back(format(STR_C("Block section %s has no track"), block_control.values[0].c_str()), block_control.location);
 }
@@ -3730,7 +3736,7 @@ void srk_tool::render_problems()
 	{
 		auto const &problem{m_problems[index]};
 		ImGui::PushStyleColor(ImGuiCol_Text, problem.signal != 0 || problem.lines ? kDoubtful : kWrong);
-		if (ImGui::Selectable((problem.text + "##srkproblem" + std::to_string(index)).c_str()))
+		if (ImGui::Selectable(std::format("{}##srkproblem{}", problem.text, index).c_str()))
 			m_view.fly_to(problem.at + glm::dvec3{0.0, 4.0, 0.0}, glm::normalize(glm::dvec3{0.3, -0.5, 0.8}), 60.0);
 		ImGui::PopStyleColor();
 	}
@@ -3788,7 +3794,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		return;
 	std::vector<signal_head> heads;
 	m_signals.signal_heads(heads, true);
-	auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
+	auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
 	auto const guards{guarded(controls)};
 	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
 		auto const way{station::point_on(Line, Distance).way};
@@ -4039,13 +4045,15 @@ void srk_tool::set_lines(block_edit const *Edit)
 				continue;
 			// not where the line shares its track with one of the other block
 			auto shared{false};
-			for (std::size_t other = 0; other < lines.size() && false == shared; ++other)
+			for (std::size_t other = 0; other < lines.size(); ++other)
 			{
 				if ((automatic[other] == 0) == (automatic[index] == 0))
 					continue;
 				double gap{0.0};
 				auto const distance{station::distance_on(lines[other], standing[k].position, gap)};
 				shared = gap < 4.5 && distance > 50.0 && distance < lines[other].length() - 1.0;
+				if (shared)
+					break;
 			}
 			double gap{0.0};
 			auto const distance{station::distance_on(line, standing[k].position, gap)};
@@ -4180,8 +4188,12 @@ void srk_tool::set_lines(block_edit const *Edit)
 				// the station signal the wrong-track trains come to: after the last wrong-track block signal, after none once it's gone
 				auto const &had{standing[here.standing].linked};
 				auto dropped{false};
-				for (std::size_t k = 0; k < standing.size() && false == dropped; ++k)
+				for (std::size_t k = 0; k < standing.size(); ++k)
+				{
 					dropped = gone[k] && ToLower(standing[k].name) == ToLower(had);
+					if (dropped)
+						break;
+				}
 				if (ToLower(had) != ToLower(wrong_linked) && (wrong_before >= 0 || dropped))
 					relinked.emplace_back(here.standing, wrong_linked);
 			}
@@ -4193,7 +4205,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			auto const &low{ascending ? before : here};
 			auto const &high{ascending ? here : before};
 			section found;
-			found.name = ToLower(section_tag(low.name, line.number) + "-" + section_tag(high.name, line.number) + "@lk" + numbers[index] + "." + std::to_string(line.number));
+			found.name = ToLower(std::format("{}-{}@lk{}.{}", section_tag(low.name, line.number), section_tag(high.name, line.number), numbers[index], line.number));
 			found.line = index;
 			found.from = std::min(joint_of(before), joint_of(here));
 			found.to = std::max(joint_of(before), joint_of(here));
@@ -4238,7 +4250,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		glm::dvec3 point{0.0};
 	};
 	std::vector<cut> cuts;
-	auto const add_cut = [&](station::line const &Line, double const Distance) -> bool {
+	auto const add_cut = [&](station::line const &Line, double const Distance) {
 		auto const at{station::point_on(Line, Distance)};
 		if (at.track == nullptr || std::ranges::any_of(cuts, [&](cut const &Cut) { return glm::distance(Cut.point, at.point) < 0.5; }))
 			return true;
@@ -4564,7 +4576,15 @@ double srk_tool::speed_of_open() const
 	if (auto const speed{set_speed_of_open()}; speed > 0.0)
 		return speed;
 	auto const set{m_record >= 0 ? m_records[m_record].braking : 0};
-	return set <= 0 ? 160.0 : set <= 400 ? 60.0 : set <= 700 ? 100.0 : set <= 1000 ? 140.0 : 160.0;
+	if (set <= 0)
+		return 160.0;
+	if (set <= 400)
+		return 60.0;
+	if (set <= 700)
+		return 100.0;
+	if (set <= 1000)
+		return 140.0;
+	return 160.0;
 }
 
 double srk_tool::braking_of_open() const
@@ -4615,7 +4635,10 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	for (std::size_t index = 0; index < posts.size(); ++index)
 		if (own[index])
 			order.push_back(index);
-	for (std::size_t at = 0; at < order.size(); ++at)
+	// the order grows while it's gone through
+	std::size_t at{0};
+	while (at < order.size())
+	{
 		for (auto const &route : found[routes_of[order[at]]])
 			for (auto const index : {route.warning, route.next})
 				if (index >= 0 && 0 == checked[index] && posts[index].kind != entry && routes_of[index] >= 0)
@@ -4623,6 +4646,8 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 					checked[index] = 1;
 					order.push_back(static_cast<std::size_t>(index));
 				}
+		++at;
+	}
 	for (auto grown{true}; grown;)
 	{
 		grown = false;
@@ -4640,7 +4665,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	}
 	std::unordered_map<std::string, std::size_t, string_hash, std::equal_to<>> by_file;
 	for (std::size_t index = 0; index < heads.size(); ++index)
-		by_file.emplace(heads[index].file, index);
+		by_file.try_emplace(heads[index].file, index);
 	// the semaphore described with its arms a route leads to, none for a route to another signal or to none
 	auto const semaphore_at = [&heads, &by_file, &Standing, &owners](station::route const &Route) {
 		auto const ahead{Route.next >= 0 ? by_file.find(Standing[owners[Route.next]].file) : by_file.end()};
@@ -4803,7 +4828,7 @@ void srk_tool::set_shp()
 	std::vector<standing_signal> standing;
 	m_signals.standing_signals(standing, true);
 	check_heads(standing);
-	std::unordered_set<std::string> taken;
+	std::unordered_set<std::string, string_hash, std::equal_to<>> taken;
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (int list = 0; list < 6; ++list)
@@ -4867,7 +4892,7 @@ void srk_tool::set_shp()
 		placing entry;
 		auto name{found->name + "_rez"};
 		for (int number = 2; taken.contains(ToLower(name) + "_shp") && number < 100; ++number)
-			name = found->name + "_rez" + std::to_string(number);
+			name = std::format("{}_rez{}", found->name, number);
 		taken.insert(ToLower(name) + "_shp");
 		entry.signal = head.name;
 		entry.name = name;
@@ -4990,7 +5015,7 @@ void srk_tool::survey()
 		auto found{std::ranges::find_if(m_circuits, [&](circuit_mark const &Mark) { return Mark.text == name; })};
 		if (found == m_circuits.end())
 		{
-			found = m_circuits.insert(m_circuits.end(), {glm::dvec2{0.0}, glm::dvec3{0.0}, name, circuit_colour(name)});
+			found = m_circuits.emplace(m_circuits.end(), glm::dvec2{0.0}, glm::dvec3{0.0}, name, circuit_colour(name));
 			found->labelled = stem.empty() || name.compare(0, stem.size() + 2, stem + "iz") != 0;
 			weights.push_back(0.0);
 		}
@@ -5096,7 +5121,10 @@ void srk_tool::fit_view(float const Width, float const Height)
 				high = std::max(high, point.y);
 			}
 	if (low > high)
-		low = high = 0.0;
+	{
+		low = 0.0;
+		high = 0.0;
+	}
 	view.centre = (low + high) * 0.5;
 	auto const across{(view.to - view.from) / std::max(1.0f, Width)};
 	auto const vertical{(high - low + 2.0 * station::row_height) / std::max(1.0f, Height * 0.85f)};
@@ -5254,7 +5282,14 @@ void srk_tool::render_canvas(float const Height)
 			draw_path(index, kApproach, 2.0f);
 	for (std::size_t index = 0; index < layout.paths.size(); ++index)
 		if (auto const &path{layout.paths[index]}; false == path.approach || m_circuit_of[index] >= 0)
-			draw_path(index, m_circuit_of[index] >= 0 ? m_circuits[m_circuit_of[index]].colour : is_switch(*path.track) ? kSwitch : kPlain, 2.5f);
+		{
+			ImU32 colour{kPlain};
+			if (m_circuit_of[index] >= 0)
+				colour = m_circuits[m_circuit_of[index]].colour;
+			else if (is_switch(*path.track))
+				colour = kSwitch;
+			draw_path(index, colour, 2.5f);
+		}
 	for (auto const &tick : m_ticks_drawn)
 	{
 		auto const at{screen_of(tick)};
@@ -5267,9 +5302,8 @@ void srk_tool::render_canvas(float const Height)
 		auto const &row{m_lines[index]};
 		auto const y{plot_y(m_plot.at({row.chainage, row.offset}).y)};
 		draw->AddLine(ImVec2(line_x(row, 0.0), y), ImVec2(line_x(row, row.length), y), kApproach, 2.0f);
-		for (std::size_t k = 0; k < row.sections.size(); ++k)
+		for (auto const &run : row.sections)
 		{
-			auto const &run{row.sections[k]};
 			auto const lit{static_cast<int>(index) == line_hover && line_at >= run.from && line_at <= run.to};
 			draw->AddLine(ImVec2(line_x(row, std::max(0.0, run.from)), y), ImVec2(line_x(row, run.to), y), lit ? kHovered : circuit_colour(run.name), lit ? 4.0f : 2.5f);
 			for (auto const end : {run.from, run.to})
@@ -5311,7 +5345,8 @@ void srk_tool::render_canvas(float const Height)
 			auto const &rear_end{line.front()};
 			auto const &head{line.back()};
 			draw->AddLine(ImVec2(rear_end.x, rear_end.y - 4.0f), ImVec2(rear_end.x, rear_end.y + 4.0f), kUseful, 2.0f);
-			auto const way_x{head.x >= line[line.size() > 1 ? line.size() - 2 : 0].x ? 1.0f : -1.0f};
+			auto const behind{line.size() > 1 ? line.size() - 2 : 0};
+			auto const way_x{head.x >= line[behind].x ? 1.0f : -1.0f};
 			draw->AddTriangleFilled(ImVec2(head.x - 7.0f * way_x, head.y - 4.5f), ImVec2(head.x - 7.0f * way_x, head.y + 4.5f), ImVec2(head.x + 1.0f * way_x, head.y), kUseful);
 			auto const &middle{line[line.size() / 2]};
 			useful.emplace_back(format("%.0f m", part.length), ImVec2(middle.x, way == 0 ? middle.y - ImGui::GetTextLineHeight() - 3.0f : middle.y + 3.0f));
@@ -5404,7 +5439,12 @@ void srk_tool::render_canvas(float const Height)
 		auto const along{chainage_at(io.MousePos.x)};
 		ImGui::BeginTooltip();
 		ImGui::TextUnformatted(path.track->name().empty() ? STR_C("(no name)") : path.track->name().c_str());
-		ImGui::TextDisabled("%s, %.1f m", is_switch(*path.track) ? STR_C("switch") : path.approach ? STR_C("line out of the station") : STR_C("track"), path.length);
+		char const *kind{STR_C("track")};
+		if (is_switch(*path.track))
+			kind = STR_C("switch");
+		else if (path.approach)
+			kind = STR_C("line out of the station");
+		ImGui::TextDisabled("%s, %.1f m", kind, path.length);
 		if (layout.kilometrage)
 			ImGui::TextDisabled("km %.3f", station::km_of(layout, along));
 		if (false == path.track->Isolated.empty())
@@ -5675,12 +5715,11 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const values{selftest_values(Words)};
 		auto const show{values.find("show")};
 		auto const code = [](station::limit const &Limit) {
-			char const *const kinds[] = {"S", "J", "F", "St", "B", "X"};
-			return std::string{kinds[static_cast<int>(Limit.what)]} + ":" + Limit.name + format("@%.1f", Limit.along);
+			static constexpr std::array<char const *, 6> kinds{"S", "J", "F", "St", "B", "X"};
+			return std::string{kinds[static_cast<std::size_t>(Limit.what)]} + ":" + Limit.name + format("@%.1f", Limit.along);
 		};
-		for (std::size_t index = 0; index < m_lengths.size(); ++index)
+		for (auto const &track : m_lengths)
 		{
-			auto const &track{m_lengths[index]};
 			WriteLog(format("SELFTEST srklengths %s: right %.1f (%s .. %s), left %.1f (%s .. %s), construction %.1f", track.number.c_str(), track.ways[0].length, code(track.ways[0].rear).c_str(), code(track.ways[0].head).c_str(), track.ways[1].length,
 			                code(track.ways[1].rear).c_str(), code(track.ways[1].head).c_str(), track.construction));
 		}
@@ -5731,7 +5770,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const list = [](std::vector<int> const &Speeds) {
 			std::string text;
 			for (auto const speed : Speeds)
-				text += (text.empty() ? "" : "/") + std::to_string(speed);
+				text += std::format("{}{}", text.empty() ? "" : "/", speed);
 			return text.empty() ? std::string{"-"} : text;
 		};
 		for (auto const &head : m_heads)
@@ -5768,7 +5807,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		for (auto const &head : m_heads)
 			if (head.shp >= 0.0)
 				WriteLog(format("SELFTEST srkshp %s %s wanted %.0f found %.0f", head.name.c_str(), head.kind.c_str(), head.shp, head.shp_found));
-		for (auto const &include : m_templates.standing_templates([](std::string const &File) { return File == kResonator; }))
+		for (auto const &include : m_templates.standing_templates([](std::string_view const File) { return File == kResonator; }))
 			WriteLog(format("SELFTEST srkshp resonator %s at %.2f %.2f %.2f yaw %.1f", include.values.empty() ? "-" : include.values.front().c_str(), include.location.x, include.location.y, include.location.z, include.yaw));
 		return editor_selftest_result::handled;
 	}
@@ -5790,7 +5829,14 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			if (kind->second == "auto")
 				record_of_open().blocks.erase(entry->second);
 			else
-				record_of_open().blocks[entry->second] = kind->second == "sbl4" ? block_kind::four : kind->second == "sbl" ? block_kind::three : block_kind::semi;
+			{
+				auto block{block_kind::semi};
+				if (kind->second == "sbl4")
+					block = block_kind::four;
+				else if (kind->second == "sbl")
+					block = block_kind::three;
+				record_of_open().blocks[entry->second] = block;
+			}
 			m_changed = true;
 		}
 		if (auto const ways{values.find("ways")}; entry != values.end() && ways != values.end())
@@ -5899,7 +5945,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				WriteLog(format("SELFTEST srkcheck: %d signals named %s", count, name.c_str()));
 			}
 		std::unordered_map<std::string, int, string_hash, std::equal_to<>> sections;
-		auto const controls{m_templates.standing_templates([](std::string const &File) { return File == kControl; })};
+		auto const controls{m_templates.standing_templates([](std::string_view const File) { return File == kControl; })};
 		for (auto const &block_control : controls)
 		{
 			if (block_control.values.size() < 6)
@@ -5934,11 +5980,11 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 					if (isolated != nullptr)
 						circuits.insert(ToLower(isolated->asName));
 		std::size_t bare{0};
-		for (auto const &control : controls)
-			if (false == control.values.empty() && false == circuits.contains(ToLower(control.values[0])))
+		for (auto const &block_control : controls)
+			if (false == block_control.values.empty() && false == circuits.contains(ToLower(block_control.values[0])))
 			{
 				++bare;
-				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " without a track");
+				WriteLog("SELFTEST srkcheck: block section " + block_control.values[0] + " without a track");
 			}
 		bad += unread + bare;
 		if (m_layout.has_value())
@@ -6017,10 +6063,10 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			for (std::size_t index = 0; index < layout.paths.size(); ++index)
 				if (auto const &path{layout.paths[index]}; false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == values.at("track"))
 				{
-					std::string list;
+					std::string schematic;
 					for (std::size_t k = 0; k < path.schematic.size(); k += 4)
-						list += format(" %.0f/%.2f>%.2f", path.schematic[k].x, path.schematic[k].y, m_plot.paths[index][k].y / station::row_height);
-					WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + list);
+						schematic += format(" %.0f/%.2f>%.2f", path.schematic[k].x, path.schematic[k].y, m_plot.paths[index][k].y / station::row_height);
+					WriteLog(format("SELFTEST srkdrawing %s/%d:", path.track->name().c_str(), path.index) + schematic);
 				}
 		return editor_selftest_result::handled;
 	}
