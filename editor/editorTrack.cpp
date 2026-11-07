@@ -28,7 +28,9 @@ http:
 #include "utilities/Logs.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <deque>
 #include <map>
@@ -93,6 +95,25 @@ double path_radius(segment_data const &Path, double const T)
 	return curvature > 1e-7 ? 1.0 / curvature : 0.0;
 }
 
+// the way, the radius and the side of the turn of a path at its end, Atend: the end, Leaving: the chain leaves the path there
+void direction_at(segment_data const &Path, bool const Atend, bool const Leaving, glm::dvec3 &Direction, double &Radius, int &Turn)
+{
+	// measured on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends,
+	// R 300.9 at the end of the diverging track of a switch of R 300
+	auto const *end{&Path};
+	if (false == Path.pieces.empty())
+		end = Atend ? &Path.pieces.back() : &Path.pieces.front();
+	auto const tangent{glm::normalize(path_tangent(*end, Atend))};
+	auto const along{Leaving != Atend};
+	auto const at{Atend ? 1.0 : 0.0};
+	Direction = along ? tangent : -tangent;
+	Radius = path_radius(*end, at);
+	// the side it turns to as the chain runs, the path gone against its points turning the other way
+	Turn = 0;
+	if (Radius > 0.0)
+		Turn = (bezier{*end}.plan_curvature(at) > 0.0) == along ? 1 : -1;
+}
+
 bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool const Leaving, glm::dvec3 &Direction, double &Radius, int &Turn)
 {
 	if (Neighbour == nullptr)
@@ -104,17 +125,7 @@ bool adjoining_direction(TTrack const *Neighbour, glm::dvec3 const &Joint, bool 
 			auto const &point{path.points[atend ? segment_data::point::end : segment_data::point::start]};
 			if (glm::distance(point, Joint) > kSamePoint)
 				continue;
-			// measured on the piece at the end where the path has them: the path only approximates them, its curvature off at its ends,
-			// R 300.9 at the end of the diverging track of a switch of R 300
-			auto const &end{path.pieces.empty() ? path : atend ? path.pieces.back() : path.pieces.front()};
-			auto const tangent{glm::normalize(path_tangent(end, atend))};
-			auto const along{Leaving != atend};
-			Direction = along ? tangent : -tangent;
-			Radius = path_radius(end, atend ? 1.0 : 0.0);
-			// the side it turns to as the chain runs, the path gone against its points turning the other way
-			Turn = 0;
-			if (Radius > 0.0)
-				Turn = (bezier{end}.plan_curvature(atend ? 1.0 : 0.0) > 0.0) == along ? 1 : -1;
+			direction_at(path, atend, Leaving, Direction, Radius, Turn);
 			return true;
 		}
 	}
@@ -158,6 +169,38 @@ std::pair<double, double> element_curvatures(alignment::element const &Element)
 
 // the pieces of a curve along the run of its paths: of the elements of the stored design a path lies along, of the path itself where
 // it lies along none, its curvature as at its middle where it barely changes along it. False where no path lies along a design
+// a path along the run as one piece of the curve, Forward: along it, of its Length: its curvature as at its middle where it barely
+// changes along it
+curve_piece path_piece(segment_data const &Path, bool const Forward, double const Length)
+{
+	auto const curvature_at = [&](double const T) {
+		auto const radius{path_radius(Path, Forward ? T : 1.0 - T)};
+		return radius > 0.0 ? 1.0 / radius : 0.0;
+	};
+	auto const start{curvature_at(0.0)};
+	if (auto const end{curvature_at(1.0)}; std::abs(start - end) <= 0.1 * std::max(start, end))
+		return {Length, curvature_at(0.5), curvature_at(0.5)};
+	else
+		return {Length, start, end};
+}
+
+// the pieces of the curve of the elements of a design between two chainages
+std::vector<curve_piece> element_pieces(std::vector<alignment::element> const &Elements, double const Low, double const High)
+{
+	std::vector<curve_piece> own;
+	for (auto const &element : Elements)
+	{
+		auto const from{std::max(Low, element.chainage)};
+		auto const to{std::min(High, element.chainage + element.length)};
+		if (to - from < 1e-6)
+			continue;
+		auto const [start, end]{element_curvatures(element)};
+		auto const at = [&](double const Chainage) { return element.length > 1e-9 ? start + (end - start) * (Chainage - element.chainage) / element.length : start; };
+		own.emplace_back(to - from, at(from), at(to));
+	}
+	return own;
+}
+
 bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vector<curve_piece> &Pieces)
 {
 	Pieces.clear();
@@ -177,32 +220,14 @@ bool designed_pieces(std::vector<std::pair<TTrack *, bool>> const &Run, std::vec
 		}
 		if (false == first.has_value() || false == last.has_value() || first->record != last->record || std::abs(last->chainage - first->chainage) < 1e-3)
 		{
-			auto const curvature_at = [&](double const T) {
-				auto const radius{path_radius(path, forward ? T : 1.0 - T)};
-				return radius > 0.0 ? 1.0 / radius : 0.0;
-			};
-			auto const start{curvature_at(0.0)};
-			if (auto const end{curvature_at(1.0)}; std::abs(start - end) <= 0.1 * std::max(start, end))
-				Pieces.emplace_back(length, curvature_at(0.5), curvature_at(0.5));
-			else
-				Pieces.emplace_back(length, start, end);
+			Pieces.push_back(path_piece(path, forward, length));
 			continue;
 		}
 		designed = true;
 		auto const &elements{alignment_store::records()[static_cast<std::size_t>(first->record)].result.elements};
 		auto const low{std::min(first->chainage, last->chainage)};
 		auto const high{std::max(first->chainage, last->chainage)};
-		std::vector<curve_piece> own;
-		for (auto const &element : elements)
-		{
-			auto const from{std::max(low, element.chainage)};
-			auto const to{std::min(high, element.chainage + element.length)};
-			if (to - from < 1e-6)
-				continue;
-			auto const [start, end]{element_curvatures(element)};
-			auto const at = [&](double const Chainage) { return element.length > 1e-9 ? start + (end - start) * (Chainage - element.chainage) / element.length : start; };
-			own.emplace_back(to - from, at(from), at(to));
-		}
+		auto own{element_pieces(elements, low, high)};
 		// the design running against the run
 		if (last->chainage < first->chainage)
 		{
@@ -578,7 +603,7 @@ void editor_track::commit(std::vector<TTrack *> const &Tracks, bool const Draggi
 		track->mark_dirty();
 	for (auto *track : affected)
 	{
-		auto const vehicles{track->Dynamics};
+		auto const vehicles{track->Dynamics}; // NOSONAR: a copy, the vehicles moved may leave the track and change its list
 		for (auto *vehicle : vehicles)
 			vehicle->Move(0.000001);
 	}
@@ -829,7 +854,7 @@ surface_foot foot_on(segment_data const &Path, glm::dvec3 const &Position)
 	auto high{std::min(samples, nearest + 1) / static_cast<double>(samples)};
 	for (int i = 0; i < 40; ++i)
 	{
-		auto const a{low + (high - low) / 3.0};
+		auto const a{low + (high - low) / 3.0}; // NOSONAR: std::lerp may round otherwise, the search would go another way
 		auto const b{high - (high - low) / 3.0};
 		if (distance(a) < distance(b))
 			high = b;
@@ -1710,6 +1735,31 @@ std::vector<editor_track::straight> editor_track::find_straights(double const Mi
 	return result;
 }
 
+namespace
+{
+
+// the track a run goes on to through the main path of a switch, come from Previous; Atstart: it comes in at the start of the path.
+// None where it comes from neither end of the main path, or from both
+TTrack *switch_beyond(TTrack const &Switch, TTrack const *Previous, bool &Atstart)
+{
+	auto const &extension{*Switch.SwitchExtension};
+	Atstart = extension.pPrevs[0] == Previous;
+	if (Atstart == (extension.pNexts[0] == Previous))
+		return nullptr;
+	return Atstart ? extension.pNexts[0] : extension.pPrevs[0];
+}
+
+// a track added to a run of a curve: at its end, Throughend, entered at the start of its path, Atstart, else at its beginning
+void run_added(std::deque<std::pair<TTrack *, bool>> &Run, bool const Throughend, TTrack *Track, bool const Atstart)
+{
+	if (Throughend)
+		Run.emplace_back(Track, Atstart);
+	else
+		Run.emplace_front(Track, false == Atstart);
+}
+
+} // namespace
+
 bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance, double const Gauge, curve &Curve)
 {
 	Curve = {};
@@ -1743,19 +1793,14 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 		TTrack *current{throughend ? Track.trNext : Track.trPrev};
 		while (current != nullptr && false == known(current))
 		{
-			if (current->eType == tt_Switch && has_switch_paths(*current) && is_supported(*current) && false == current->m_editorremoved)
+			auto const passing{current->eType == tt_Switch && has_switch_paths(*current) && is_supported(*current) && false == current->m_editorremoved};
+			bool atstart{false};
+			auto *beyond{passing ? switch_beyond(*current, previous, atstart) : nullptr};
+			if (passing && (false == curved(beyond) || known(beyond) || reversing(*current, throughend == atstart)))
+				break;
+			if (passing)
 			{
-				auto const &extension{*current->SwitchExtension};
-				bool const atstart{extension.pPrevs[0] == previous};
-				if (atstart == (extension.pNexts[0] == previous))
-					break;
-				auto *beyond{atstart ? extension.pNexts[0] : extension.pPrevs[0]};
-				if (false == curved(beyond) || known(beyond) || reversing(*current, throughend == atstart))
-					break;
-				if (throughend)
-					run.emplace_back(current, atstart);
-				else
-					run.emplace_front(current, false == atstart);
+				run_added(run, throughend, current, atstart);
 				previous = current;
 				current = beyond;
 				continue;
@@ -1765,10 +1810,7 @@ bool editor_track::find_curve(TTrack &Track, straight_tolerance const &Tolerance
 			auto const entersatstart{current->trPrev == previous};
 			if (reversing(*current, throughend == entersatstart))
 				break;
-			if (throughend)
-				run.emplace_back(current, entersatstart);
-			else
-				run.emplace_front(current, false == entersatstart);
+			run_added(run, throughend, current, entersatstart);
 			previous = current;
 			current = entersatstart ? current->trNext : current->trPrev;
 		}
@@ -1965,8 +2007,7 @@ bool editor_track::analyse_curve(std::vector<std::pair<TTrack *, bool>> const &R
 			if (Curve.compound)
 			{
 				Curve.arcs.emplace_back(shape.radius, shape.share, 0.0);
-				for (auto const &arc : shape.arcs)
-					Curve.arcs.emplace_back(arc.radius, arc.share, arc.transition);
+				std::ranges::for_each(shape.arcs, [&Curve](auto const &Arc) { Curve.arcs.emplace_back(Arc.radius, Arc.share, Arc.transition); });
 			}
 		}
 	}
@@ -2113,11 +2154,13 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		int sign{0};
 		while (i < count && false == straight[i])
 		{
-			int const current{turns[i] > 1e-9 ? 1 : turns[i] < -1e-9 ? -1 : 0};
-			// a reverse curve: the next one starts here
-			if (current != 0 && sign != 0 && current != sign)
-				break;
-			if (i > first && (eases(i - 1, true) || eases(i, false)))
+			int current{0};
+			if (turns[i] > 1e-9)
+				current = 1;
+			else if (turns[i] < -1e-9)
+				current = -1;
+			// a reverse curve: the next one starts here; or the curve eases into a straight
+			if ((current != 0 && sign != 0 && current != sign) || (i > first && (eases(i - 1, true) || eases(i, false))))
 				break;
 			if (current != 0)
 				sign = current;
@@ -2128,8 +2171,10 @@ std::vector<editor_track::line_vertex> editor_track::recognize_line(chain const 
 		auto start{first};
 		double turned{0.0};
 		double part{1.0};
-		for (auto k = first; k + 1 < i && part < parts; ++k)
+		for (auto k = first; k + 1 < i; ++k)
 		{
+			if (part >= parts)
+				break;
 			turned += std::abs(turns[k]);
 			if (turned >= total * part / parts)
 			{
@@ -2335,6 +2380,43 @@ bool editor_track::find_route(TTrack *From, TTrack *To, route &Route, std::strin
 	return true;
 }
 
+namespace
+{
+
+double constexpr kRouteSlack{1.0}; // m, of a route found along a length
+double constexpr kRouteMiddle{2.0}; // m, the length along a path being measured on its curve only roughly
+
+// how long a way of a route found along a Length is past the path of a node, Before: up to it; below 0 when the way can't go on along
+// it: longer than the route, or passing the half of it away from the Middle
+double way_past(route_node const &Node, double const Before, double const Length, glm::dvec3 const &Middle)
+{
+	auto const half{Length * 0.5};
+	bezier const curve{std::get<0>(Node)->m_paths[std::get<1>(Node)]};
+	auto const own{curve.plan_length(16)};
+	auto const after{Before + own};
+	if (after > Length + kRouteSlack)
+		return -1.0;
+	if (Before <= half && after >= half && own > 1e-6)
+	{
+		auto const share{(half - Before) / own};
+		if (geometry::plan_distance(curve.point(std::get<2>(Node) ? share : 1.0 - share), Middle) > kRouteMiddle + own * 0.02)
+			return -1.0;
+	}
+	return after;
+}
+
+// the starts of the ways from a track: each of its paths, both ways
+std::vector<route_node> route_starts(TTrack *From)
+{
+	std::vector<route_node> starts;
+	for (int i = 0; i < static_cast<int>(From->m_paths.size()); ++i)
+		for (auto const forward : {true, false})
+			starts.emplace_back(From, i, forward);
+	return starts;
+}
+
+} // namespace
+
 bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Middle, route &Route)
 {
 	Route = {};
@@ -2342,26 +2424,8 @@ bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Lengt
 		return false;
 	// depth first, a way given up as it gets longer than the route, or passes the half of it away from the middle; a line of some
 	// thousand paths is walked without the depth of calls
-	double constexpr kSlack{1.0}; // m
-	double constexpr kMiddle{2.0}; // m, the length along a path being measured on its curve only roughly
 	std::size_t constexpr kMost{200000}; // paths walked
 	std::size_t walked{0};
-	auto const half{Length * 0.5};
-	// how long the way is past the path, below 0 when the way can't go on along it
-	auto const along = [&](route_node const &Node, double const Before) {
-		bezier const curve{std::get<0>(Node)->m_paths[std::get<1>(Node)]};
-		auto const own{curve.plan_length(16)};
-		auto const after{Before + own};
-		if (after > Length + kSlack)
-			return -1.0;
-		if (Before <= half && after >= half && own > 1e-6)
-		{
-			auto const share{(half - Before) / own};
-			if (geometry::plan_distance(curve.point(std::get<2>(Node) ? share : 1.0 - share), Middle) > kMiddle + own * 0.02)
-				return -1.0;
-		}
-		return after;
-	};
 	struct step
 	{
 		route_node node;
@@ -2369,67 +2433,82 @@ bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Lengt
 		std::vector<route_node> next;
 		std::size_t index{0};
 	};
-	for (int i = 0; i < static_cast<int>(From->m_paths.size()); ++i)
-		for (auto const forward : {true, false})
+	for (auto const &first : route_starts(From))
+	{
+		auto const length{way_past(first, 0.0, Length, Middle)};
+		if (length < 0.0)
+			continue;
+		std::vector<step> way{{first, length, route_next(first)}};
+		std::unordered_set<TTrack const *> on_way{From};
+		while (false == way.empty() && walked < kMost)
 		{
-			route_node const first{From, i, forward};
-			auto const length{along(first, 0.0)};
-			if (length < 0.0)
-				continue;
-			std::vector<step> way{{first, length, route_next(first)}};
-			std::unordered_set<TTrack const *> on_way{From};
-			while (false == way.empty() && walked < kMost)
+			auto &top{way.back()};
+			if (top.index >= top.next.size())
 			{
-				auto &top{way.back()};
-				if (top.index >= top.next.size())
-				{
-					on_way.erase(std::get<0>(top.node));
-					way.pop_back();
-					continue;
-				}
-				auto const node{top.next[top.index++]};
-				auto *track{std::get<0>(node)};
-				if (on_way.contains(track))
-					continue;
-				++walked;
-				auto const after{along(node, top.after)};
-				if (after < 0.0)
-					continue;
-				if (track == To)
-				{
-					if (std::abs(after - Length) > kSlack)
-						continue;
-					for (auto const &done : way)
-						Route.spans.emplace_back(std::get<0>(done.node), std::get<1>(done.node), std::get<2>(done.node));
-					Route.spans.emplace_back(track, std::get<1>(node), std::get<2>(node));
-					return true;
-				}
-				on_way.insert(track);
-				way.emplace_back(node, after, route_next(node));
+				on_way.erase(std::get<0>(top.node));
+				way.pop_back();
+				continue;
 			}
+			auto const node{top.next[top.index++]};
+			auto *track{std::get<0>(node)};
+			if (on_way.contains(track))
+				continue;
+			++walked;
+			auto const after{way_past(node, top.after, Length, Middle)};
+			if (after < 0.0 || (track == To && std::abs(after - Length) > kRouteSlack))
+				continue;
+			if (track == To)
+			{
+				std::ranges::for_each(way, [&Route](step const &Done) { Route.spans.emplace_back(std::get<0>(Done.node), std::get<1>(Done.node), std::get<2>(Done.node)); });
+				Route.spans.emplace_back(track, std::get<1>(node), std::get<2>(node));
+				return true;
+			}
+			on_way.insert(track);
+			way.emplace_back(node, after, route_next(node));
 		}
+	}
 	return false;
 }
+
+namespace
+{
+
+// whether a path of a track turns between its ends
+bool path_bends(TTrack const &Of, int const Path)
+{
+	bezier const curve{Of.m_paths[Path]};
+	auto const from{plan_of(curve.first(0.0))};
+	auto const to{plan_of(curve.first(1.0))};
+	return glm::length(from) > 1e-9 && glm::length(to) > 1e-9 && std::abs(std::atan2(from.x * to.y - from.y * to.x, glm::dot(from, to))) > 0.002;
+}
+
+// the path a run goes along through a track: its first path, the main one; but where that one bends and another runs straight, as in
+// the quarters of a double slip, straight on
+int main_path(TTrack const &Of)
+{
+	for (int i = 1; i < static_cast<int>(Of.m_paths.size()); ++i)
+		if (path_bends(Of, 0) && false == path_bends(Of, i))
+			return i;
+	return 0;
+}
+
+// of the paths a run can go on along, the last one along the main path of its track; the first where none is
+route_node main_candidate(std::vector<route_node> const &Candidates)
+{
+	auto chosen{Candidates.front()};
+	for (auto const &candidate : Candidates)
+		if (std::get<1>(candidate) == main_path(*std::get<0>(candidate)))
+			chosen = candidate;
+	return chosen;
+}
+
+} // namespace
 
 editor_track::route editor_track::run_route(TTrack &Track, double const Maximum, int const Path)
 {
 	route result;
 	if (false == is_supported(Track))
 		return result;
-	// through a switch the run goes along its first path, the main one; but where that one bends and the other runs straight,
-	// as in the quarters of a double slip, straight on
-	auto const bends = [](TTrack const &Of, int const Path) {
-		bezier const curve{Of.m_paths[Path]};
-		auto const from{plan_of(curve.first(0.0))};
-		auto const to{plan_of(curve.first(1.0))};
-		return glm::length(from) > 1e-9 && glm::length(to) > 1e-9 && std::abs(std::atan2(from.x * to.y - from.y * to.x, glm::dot(from, to))) > 0.002;
-	};
-	auto const main_of = [&](TTrack const &Of) {
-		for (int i = 1; i < static_cast<int>(Of.m_paths.size()); ++i)
-			if (bends(Of, 0) && false == bends(Of, i))
-				return i;
-		return 0;
-	};
 	auto const walk = [&](route_node Node) {
 		std::vector<route_node> nodes;
 		double length{0.0};
@@ -2438,10 +2517,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum,
 			auto candidates{route_next(Node)};
 			if (candidates.empty())
 				break;
-			auto chosen{candidates.front()};
-			for (auto const &candidate : candidates)
-				if (std::get<1>(candidate) == main_of(*std::get<0>(candidate)))
-					chosen = candidate;
+			auto const chosen{main_candidate(candidates)};
 			auto *track{std::get<0>(chosen)};
 			if (track == &Track || std::any_of(nodes.begin(), nodes.end(), [&](route_node const &Other) { return std::get<0>(Other) == track; }))
 				break;
@@ -2451,7 +2527,7 @@ editor_track::route editor_track::run_route(TTrack &Track, double const Maximum,
 		}
 		return nodes;
 	};
-	auto const own{Path >= 0 && Path < static_cast<int>(Track.m_paths.size()) ? Path : main_of(Track)};
+	auto const own{Path >= 0 && Path < static_cast<int>(Track.m_paths.size()) ? Path : main_path(Track)};
 	auto const ahead{walk({&Track, own, true})};
 	auto const behind{walk({&Track, own, false})};
 	for (auto node = behind.rbegin(); node != behind.rend(); ++node)
@@ -2489,6 +2565,46 @@ double editor_track::route_speed(route const &Route)
 	return 100.0;
 }
 
+namespace
+{
+
+// the curves of a path sampled along: its pieces, or itself where it has none; the other way round where the route runs against it
+std::vector<segment_data const *> path_parts(segment_data const &Path, bool const Forward)
+{
+	std::vector<segment_data const *> parts;
+	if (Path.pieces.empty())
+		parts.push_back(&Path);
+	else
+		for (auto const &piece : Path.pieces)
+			parts.push_back(&piece);
+	if (false == Forward)
+		std::ranges::reverse(parts);
+	return parts;
+}
+
+// a sample of a route on a curve of a path, Part, at T: its position, cant, way, grade and curvature, Forward: the route runs along
+// the curve
+editor_track::route_sample curve_sample(bezier const &Curve, segment_data const &Part, double const T, bool const Forward, glm::dvec3 const &Position)
+{
+	auto derivative{Curve.first(T)};
+	if (false == Forward)
+		derivative = -derivative;
+	auto const second{Curve.second(T)};
+	auto const planar{std::hypot(derivative.x, derivative.z)};
+	editor_track::route_sample sample;
+	sample.position = Position;
+	sample.cant = 1.5 * std::sin(std::abs(glm::radians(Part.rolls[0] + (Part.rolls[1] - Part.rolls[0]) * T)));
+	if (planar > 1e-9)
+	{
+		sample.direction = plan_of(derivative) / planar;
+		sample.grade = derivative.y / planar;
+		sample.curvature = (derivative.x * second.z - derivative.z * second.x) / (planar * planar * planar);
+	}
+	return sample;
+}
+
+} // namespace
+
 std::vector<editor_track::route_sample> editor_track::sample_route(route &Route, double const Step)
 {
 	std::vector<route_sample> samples;
@@ -2498,14 +2614,7 @@ std::vector<editor_track::route_sample> editor_track::sample_route(route &Route,
 		auto &span{Route.spans[i]};
 		auto const &path{span.track->m_paths[span.path]};
 		// a path made of several curves is sampled along them, its own curve only stands in for them in older versions
-		std::vector<segment_data const *> parts;
-		if (path.pieces.empty())
-			parts.push_back(&path);
-		else
-			for (auto const &piece : path.pieces)
-				parts.push_back(&piece);
-		if (false == span.forward)
-			std::ranges::reverse(parts);
+		auto const parts{path_parts(path, span.forward)};
 		span.from = chainage;
 		for (auto const *part : parts)
 		{
@@ -2518,22 +2627,9 @@ std::vector<editor_track::route_sample> editor_track::sample_route(route &Route,
 				auto const position{curve.point(t)};
 				chainage += glm::distance(previous, plan_of(position));
 				previous = plan_of(position);
-				auto derivative{curve.first(t)};
-				if (false == span.forward)
-					derivative = -derivative;
-				auto const second{curve.second(t)};
-				auto const planar{std::hypot(derivative.x, derivative.z)};
-				route_sample sample;
+				auto sample{curve_sample(curve, *part, t, span.forward, position)};
 				sample.chainage = chainage;
-				sample.position = position;
 				sample.span = i;
-				sample.cant = 1.5 * std::sin(std::abs(glm::radians(part->rolls[0] + (part->rolls[1] - part->rolls[0]) * t)));
-				if (planar > 1e-9)
-				{
-					sample.direction = plan_of(derivative) / planar;
-					sample.grade = derivative.y / planar;
-					sample.curvature = (derivative.x * second.z - derivative.z * second.x) / (planar * planar * planar);
-				}
 				samples.push_back(sample);
 			}
 		}
@@ -2769,7 +2865,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 		// the pieces named after the path: name_1, name_2...
 		auto const original{span.track->name()};
 		int number{0};
-		auto const next_name = [&]() { return original.empty() || original == "none" ? std::string{} : original + "_" + std::to_string(++number); };
+		auto const next_name = [&]() { return original.empty() || original == "none" ? std::string{} : std::format("{}_{}", original, ++number); };
 		if (span.forward)
 		{
 			auto *piece{span.track};
@@ -2871,8 +2967,7 @@ std::vector<editor_track::height_gap> editor_track::apply_profile(route &Route, 
 			if (std::abs(path.rolls[0]) > 1e-3f || std::abs(path.rolls[1]) > 1e-3f)
 			{
 				cone_heights(span.track->m_paths[i], path);
-				for (auto &piece : span.track->m_paths[i].pieces)
-					cone_heights(piece, path);
+				std::ranges::for_each(span.track->m_paths[i].pieces, [&path](segment_data &Piece) { cone_heights(Piece, path); });
 				continue;
 			}
 			plane_heights(span.track->m_paths[i], path.points[segment_data::point::start], start_direction(path), grade);
@@ -3197,7 +3292,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		double middle;
 		double half;
 	};
-	slipping const slips[] = {
+	auto const slips{std::to_array<slipping>({
 		{"Rkp", "60E1-190-1:9", 190.0, 0.0, 16.615},
 		{"Rkp", "49E1-190-1:9", 190.0, 0.0, 16.615},
 		{"Rkp", "49E1-190-1:6,6", 190.0, -1.0, 17.396},
@@ -3216,10 +3311,10 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"Rkpd", "S42-230-1:9,51", 230.0, 0.0, 18.642},
 		{"Rkpd", "S42-230-1:9,51 Ia", 230.0, 0.0, 18.342},
 		{"Rkpd", "S42-265-1:10", 265.0, 0.0, 19.192},
-	};
-	auto const ratio_of = [](std::string const &Name) {
+	})};
+	auto const ratio_of = [](std::string_view const Name) {
 		auto const at{Name.find("1:")};
-		auto number{Name.substr(at + 2)};
+		std::string number{Name.substr(at + 2)};
 		std::ranges::replace(number, ',', '.');
 		return std::stod(number);
 	};
@@ -3243,7 +3338,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		char const *name;
 		double half;
 	};
-	crossing const crossings[] = {
+	auto const crossings{std::to_array<crossing>({
 		{"60E1-1:9", 16.615},
 		{"60E1-1:4,444", 10.907},
 		{"49E1-1:2,9008", 6.904},
@@ -3264,7 +3359,7 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		{"S42-1:7", 12.932},
 		{"S42-1:9", 17.591},
 		{"S42-1:10", 19.192},
-	};
+	})};
 	for (auto const &entry : crossings)
 	{
 		switch_template plain;
@@ -3282,10 +3377,18 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 namespace
 {
 
+// the word is a number as a whole
+bool whole_number_text(std::string const &Word)
+{
+	char *end{nullptr};
+	std::strtod(Word.c_str(), &end);
+	return end != Word.c_str() && *end == '\0';
+}
+
 // definition of a path in the scenery text, up to its points: type, length, parameters, environment and textures
 void write_header(std::ostream &Text, char const *Type, double const Length, double const Sound, TTrack const &Style, material_handle const Second)
 {
-	char const *environments[] = {"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
+	static constexpr std::array<char const *, 6> environments{"flat", "mountains", "canyon", "tunnel", "bridge", "bank"};
 	auto const environment{Style.eEnvironment >= e_flat && Style.eEnvironment <= e_bank ? environments[Style.eEnvironment] : "flat"};
 	Text << Type << ' ' << Length << ' ' << Style.fTrackWidth << ' ' << Style.fFriction << ' ' << Sound << ' ' << Style.iQualityFlag << ' ' << (Style.iDamageFlag & 127) << ' ' << environment << ' ';
 	if (Style.m_visible)
@@ -3880,8 +3983,10 @@ void editor_track::rebuild_geometry(TTrack &Track)
 	for (auto *crossing : Track.m_crossings)
 		if (std::ranges::find(crossings, crossing) == crossings.end())
 			crossings.push_back(crossing);
-	for (std::size_t i = 0, count = crossings.size(); i < count; ++i)
-		for (auto *neighbour : neighbours(*crossings[i]))
+	// the neighbours of the crossings found so far, not of those they add
+	auto const found{crossings};
+	for (auto const *crossing : found)
+		for (auto *neighbour : neighbours(*crossing))
 			if (std::ranges::find(crossings, neighbour) == crossings.end())
 				crossings.push_back(neighbour);
 	for (auto *crossing : crossings)
@@ -3896,21 +4001,19 @@ std::string editor_track::switch_template::title() const
 	std::vector<std::string> all;
 	for (std::string word; words >> word;)
 		all.push_back(word);
-	for (std::size_t i = 0; i < all.size(); ++i)
+	std::size_t i{0};
+	while (i < all.size())
 	{
 		if (all[i].front() == '(')
 			break;
-		auto const number = [](std::string const &Word) {
-			char *end{nullptr};
-			std::strtod(Word.c_str(), &end);
-			return end != Word.c_str() && *end == '\0';
-		};
-		if ((all[i] == "a" || all[i] == "b") && i + 1 < all.size() && number(all[i + 1]))
+		// a and b with their lengths left out
+		if ((all[i] == "a" || all[i] == "b") && i + 1 < all.size() && whole_number_text(all[i + 1]))
 		{
-			++i;
+			i += 2;
 			continue;
 		}
 		kept.push_back(all[i]);
+		++i;
 	}
 	std::string result;
 	for (auto const &word : kept)

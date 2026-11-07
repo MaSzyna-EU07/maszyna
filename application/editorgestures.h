@@ -12,10 +12,12 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -25,7 +27,7 @@ http://mozilla.org/MPL/2.0/.
 ImU32 const kGestureLit{IM_COL32(90, 175, 255, 255)};
 
 // the mouse with the part used lit: LMB, RMB, MMB, wheel (with arrows), move (with arrows); the width it took
-inline float gesture_mouse(ImDrawList &List, ImVec2 const At, float const Height, std::string const &Part)
+inline float gesture_mouse(ImDrawList &List, ImVec2 const At, float const Height, std::string_view const Part)
 {
 	auto const width{std::round(Height * 0.68f)};
 	auto const line{ImGui::GetColorU32(ImGuiCol_Text)};
@@ -92,35 +94,80 @@ struct gesture_word
 		key,
 		plus,
 		caption
-	} what;
+	};
+	kind what;
 	std::string text;
 };
+
+// the part of the mouse a word of a gesture names: LMB, RMB, MMB, wheel or move; empty for none
+inline std::string gesture_mouse_part(std::string const &Word)
+{
+	if (Word == "LMB" || Word == "click" || Word == "Click" || Word == "Press")
+		return "LMB";
+	if (Word == "RMB" || Word == "MMB" || Word == "wheel")
+		return Word;
+	if (Word == "Wheel")
+		return "wheel";
+	if (Word == "Drag" || Word == "drag" || Word == "move")
+		return "move";
+	return {};
+}
+
+// the word names a key: a capital letter, a digit, F1 to F12 or one of the keys named in full
+inline bool gesture_key_word(std::string const &Word)
+{
+	static constexpr std::array<char const *, 12> keys{"Ctrl", "Shift", "Alt", "Esc", "Del", "Enter", "Backspace", "Tab", "Space", "Home", "End", "PrtScr"};
+	if (Word.size() == 1 && (std::isupper(static_cast<unsigned char>(Word[0])) || std::isdigit(static_cast<unsigned char>(Word[0]))))
+		return true;
+	if (Word.size() >= 2 && Word[0] == 'F' && std::isdigit(static_cast<unsigned char>(Word[1])))
+		return true;
+	return std::ranges::find_if(keys, [&Word](char const *Key) { return Word == Key; }) != keys.end();
+}
+
+// the word split at its "+" signs, the keys and the buttons pressed together: Ctrl+Shift+LMB
+inline std::vector<std::string> gesture_parts(std::string const &Word)
+{
+	std::vector<std::string> parts;
+	std::size_t from{0};
+	auto plus{Word.find('+', from)};
+	while (plus != std::string::npos && plus > from)
+	{
+		parts.push_back(Word.substr(from, plus - from));
+		from = plus + 1;
+		plus = Word.find('+', from);
+	}
+	parts.push_back(Word.substr(from));
+	return parts;
+}
+
+// the parts of a word are drawn: each names a key or a part of the mouse, and the word doesn't go on with the text before it
+inline bool gesture_drawn(std::vector<std::string> const &Parts, std::vector<gesture_word> const &Words)
+{
+	if (false == std::ranges::all_of(Parts, [](std::string const &Part) { return false == gesture_mouse_part(Part).empty() || gesture_key_word(Part); }))
+		return false;
+	return false == (Parts.size() == 1 && false == Words.empty() && Words.back().what == gesture_word::kind::caption && false == gesture_key_word(Parts[0]) && gesture_mouse_part(Parts[0]).empty());
+}
+
+// the words of the parts of a word drawn: the parts of the mouse and the keys, "+" between them
+inline void gesture_add_parts(std::vector<gesture_word> &Words, std::vector<std::string> const &Parts)
+{
+	for (std::size_t index = 0; index < Parts.size(); ++index)
+	{
+		if (index > 0)
+			Words.emplace_back(gesture_word::kind::plus, "+");
+		if (auto const part{gesture_mouse_part(Parts[index])}; false == part.empty())
+			Words.emplace_back(gesture_word::kind::mouse, part);
+		else
+			Words.emplace_back(gesture_word::kind::key, Parts[index]);
+	}
+}
 
 // "Ctrl+wheel", "Shift+click x4", "Drag a point", "Q W E": the keys and the parts of the mouse it names, the rest as text
 inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 {
-	static char const *const keys[]{"Ctrl", "Shift", "Alt", "Esc", "Del", "Enter", "Backspace", "Tab", "Space", "Home", "End", "PrtScr"};
-	auto const mouse = [](std::string const &Word) -> std::string {
-		if (Word == "LMB" || Word == "click" || Word == "Click" || Word == "Press")
-			return "LMB";
-		if (Word == "RMB" || Word == "MMB" || Word == "wheel")
-			return Word;
-		if (Word == "Wheel")
-			return "wheel";
-		if (Word == "Drag" || Word == "drag" || Word == "move")
-			return "move";
-		return {};
-	};
-	auto const key = [](std::string const &Word) {
-		if (Word.size() == 1 && (std::isupper(static_cast<unsigned char>(Word[0])) || std::isdigit(static_cast<unsigned char>(Word[0]))))
-			return true;
-		if (Word.size() >= 2 && Word[0] == 'F' && std::isdigit(static_cast<unsigned char>(Word[1])))
-			return true;
-		return std::ranges::find_if(keys, [&](char const *Key) { return Word == Key; }) != std::end(keys);
-	};
 	std::vector<gesture_word> words;
 	std::string text;
-	auto const flush = [&]() {
+	auto const flush = [&words, &text]() {
 		if (false == text.empty())
 			words.emplace_back(gesture_word::kind::caption, text);
 		text.clear();
@@ -128,26 +175,14 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 	std::istringstream stream{Keys};
 	for (std::string word; stream >> word;)
 	{
-		std::vector<std::string> parts;
-		std::size_t from{0};
-		for (std::size_t plus; (plus = word.find('+', from)) != std::string::npos && plus > from; from = plus + 1)
-			parts.push_back(word.substr(from, plus - from));
-		parts.push_back(word.substr(from));
-		if (bool const all{std::ranges::all_of(parts, [&](std::string const &Part) { return false == mouse(Part).empty() || key(Part); })}; false == all || (parts.size() == 1 && words.empty() == false && words.back().what == gesture_word::kind::caption && false == key(parts[0]) && mouse(parts[0]).empty()))
+		auto const parts{gesture_parts(word)};
+		if (false == gesture_drawn(parts, words))
 		{
 			text += (text.empty() ? "" : " ") + word;
 			continue;
 		}
 		flush();
-		for (std::size_t index = 0; index < parts.size(); ++index)
-		{
-			if (index > 0)
-				words.emplace_back(gesture_word::kind::plus, "+");
-			if (auto const part{mouse(parts[index])}; false == part.empty())
-				words.emplace_back(gesture_word::kind::mouse, part);
-			else
-				words.emplace_back(gesture_word::kind::key, parts[index]);
-		}
+		gesture_add_parts(words, parts);
 	}
 	flush();
 	return words;
@@ -199,17 +234,27 @@ inline float gesture_draw(ImDrawList &List, ImVec2 const At, float const Height,
 	return std::max(0.0f, x - gap);
 }
 
+// the room the arrows beside the mouse take: up and down by the wheel, all four ways by a move
+inline float gesture_mouse_arrows(float const Height, std::string_view const Part)
+{
+	auto const arrow{Height * 0.16f};
+	if (Part == "wheel")
+		return arrow * 2.6f;
+	if (Part == "move")
+		return arrow * 0.8f + Height * 0.84f;
+	return 0.0f;
+}
+
 inline float gesture_width(float const Height, std::vector<gesture_word> const &Words)
 {
 	auto const gap{std::round(Height * 0.2f)};
-	auto const arrow{Height * 0.16f};
 	float x{0.0f};
 	for (auto const &word : Words)
 	{
 		switch (word.what)
 		{
 		case gesture_word::kind::mouse:
-			x += std::round(Height * 0.68f) + (word.text == "wheel" ? arrow * 2.6f : word.text == "move" ? arrow * 0.8f + Height * 0.84f : 0.0f);
+			x += std::round(Height * 0.68f) + gesture_mouse_arrows(Height, word.text);
 			break;
 		case gesture_word::kind::key: x += std::max(std::round(ImGui::CalcTextSize(word.text.c_str()).x + Height * 0.6f), Height); break;
 		default: x += ImGui::CalcTextSize(word.text.c_str()).x; break;

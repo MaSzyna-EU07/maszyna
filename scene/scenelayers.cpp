@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <sstream>
 #include <string_view>
 
@@ -1152,7 +1153,7 @@ bool node_layers::modify(instance_handle const Instance, std::string const &Dire
 	m_instances[Instance - 1].directive = Directive;
 	if (false == File.empty())
 	{
-		m_instances[Instance - 1].file = &(*m_templates.emplace(File).first);
+		m_instances[Instance - 1].file = std::to_address(m_templates.emplace(File).first);
 	}
 	return true;
 }

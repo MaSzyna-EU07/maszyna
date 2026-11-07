@@ -43,6 +43,7 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -272,7 +273,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		words >> index;
 		if (index < 0 || index >= static_cast<int>(m_route.design.vertices.size()))
 		{
-			WriteLog("SELFTEST " + command + ": no vertex " + std::to_string(index));
+			WriteLog(std::format("SELFTEST {}: no vertex {}", command, index));
 			return selftest_result::handled;
 		}
 		auto &vertex{m_route.design.vertices[index]};
@@ -333,7 +334,12 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		{
 			auto const station{alignment::evaluate(result, first + count * spacing)};
 			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
-			auto const shift{noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)};
+			auto factor{0.2};
+			if (count % 3 == 0)
+				factor = 1.0;
+			else if (count % 3 == 1)
+				factor = -0.6;
+			auto const shift{noise * factor};
 			m_route.trace.points.push_back(station.position + glm::normalize(across) * shift);
 		}
 		auto const &middle{m_route.trace.points.empty() ? glm::dvec3{0.0} : m_route.trace.points[m_route.trace.points.size() / 2]};
@@ -599,9 +605,15 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		{
 			auto const off{sample.position.y - profile::elevation(state.line, sample.chainage)};
 			if (off < low)
-				low = off, at_low = sample.chainage;
+			{
+				low = off;
+				at_low = sample.chainage;
+			}
 			if (off > high)
-				high = off, at_high = sample.chainage;
+			{
+				high = off;
+				at_high = sample.chainage;
+			}
 		}
 		WriteLog(format("SELFTEST %s: route %.1f m, %zu samples, track against the line %.3f at %.1f .. %+.3f at %.1f; points%s%s", command.c_str(), state.route.length, state.samples.size(), low, at_low, high, at_high, points.c_str(), issues.c_str()));
 		return selftest_result::handled;
@@ -692,7 +704,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		}
 		m_node = chosen;
 		ui()->set_node(m_node);
-		auto const deleted{chosen->name()};
+		auto const deleted{chosen->name()}; // NOSONAR: a copy, the track and its name go before the name is logged
 		delete_selected_track();
 		WriteLog("SELFTEST " + command + ": " + deleted + " deleted");
 		return selftest_result::handled;
@@ -898,7 +910,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		glm::dvec3 point{0.0};
 		double radius{100.0};
 		words >> point.x >> point.z >> radius;
-		for (auto *track : simulation::Paths.sequence())
+		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 				continue;
@@ -970,7 +982,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			editor_track::translate(*chosen, offset);
 			editor_track::commit(moved);
 			push_track_snapshot(std::move(states), {});
-			WriteLog("SELFTEST nudgekind: " + chosen->name() + " moved with " + std::to_string(moved.size() - 1) + " joined ends");
+			WriteLog(std::format("SELFTEST nudgekind: {} moved with {} joined ends", chosen->name(), moved.size() - 1));
 		}
 		return selftest_result::handled;
 	}

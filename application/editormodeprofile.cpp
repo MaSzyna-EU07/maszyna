@@ -292,10 +292,10 @@ void editor_mode::profiles_restore(std::vector<stored_profile> Library)
 std::uint64_t editor_mode::fitted_shape(TTrack const &Track)
 {
 	// the points of the paths to a centimetre: what's read back from the files is the same shape
-	std::uint64_t hash{1469598103934665603ull};
+	std::uint64_t hash{1469598103934665603ULL};
 	auto const add = [&](std::int64_t const Value) {
 		for (int i = 0; i < 8; ++i)
-			hash = (hash ^ static_cast<std::uint64_t>((Value >> (8 * i)) & 0xff)) * 1099511628211ull;
+			hash = (hash ^ static_cast<std::uint64_t>((Value >> (8 * i)) & 0xff)) * 1099511628211ULL;
 	};
 	for (auto const &path : Track.m_paths)
 		for (auto const &point : path.points)
@@ -613,11 +613,11 @@ bool editor_mode::profile_restore_parts()
 		line.push_back(point);
 	}
 	if (line.empty() || line.front().chainage > 0.5)
-		line.insert(line.begin(), profile::pvi{0.0, start.value_or(samples.front().position.y)});
+		line.emplace(line.begin(), 0.0, start.value_or(samples.front().position.y));
 	else
 		line.front().chainage = 0.0;
 	if (line.back().chainage < length - 0.5)
-		line.push_back(profile::pvi{length, end.value_or(samples.back().position.y)});
+		line.emplace_back(length, end.value_or(samples.back().position.y));
 	else
 		line.back().chainage = length;
 	line.front().radius = 0.0;
@@ -1081,7 +1081,11 @@ void editor_mode::profile_resample()
 		if (false == Joined || adjoining == nullptr || adjoining->eType != tt_Switch)
 			return std::string{};
 		auto const adjoining_switch{switch_store::named(*adjoining)};
-		auto const point{entered ? "P1" : path == 0 ? "P2" : "P4"};
+		char const *point{"P4"};
+		if (entered)
+			point = "P1";
+		else if (path == 0)
+			point = "P2";
 		return format(STR_C("Grade line from the switch %s (%s): %.2f m, %+.2f per mille"), (adjoining_switch ? switch_store::label(*adjoining_switch) : adjoining->name()).c_str(), point, Elevation, Grade * 1000.0);
 	};
 	context.start_joined = editor_track::adjoining_grade(state.route, false, context.start_grade, &adjoining, &path, &entered);
@@ -1141,7 +1145,9 @@ void editor_mode::profile_sample_model()
 void editor_mode::profile_recognize()
 {
 	auto &state{m_profile};
-	std::vector<double> chainages, elevations, grades;
+	std::vector<double> chainages;
+	std::vector<double> elevations;
+	std::vector<double> grades;
 	for (auto const &sample : state.samples)
 	{
 		chainages.push_back(sample.chainage);

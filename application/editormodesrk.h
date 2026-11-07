@@ -385,6 +385,26 @@ class srk_tool final : public editor_tool
 	std::string lengths_table() const;
 	// of the lengths, the one of the station track the track is a part of, -1 for none
 	int length_of(TTrack const *Track) const;
+	// the self-test commands, each in a function of its own: srkopen in selftest_open()
+	editor_selftest_result selftest_open(std::istringstream &Words);
+	editor_selftest_result selftest_number(std::istringstream &Words);
+	editor_selftest_result selftest_circuits(std::istringstream &Words);
+	editor_selftest_result selftest_track(std::istringstream &Words);
+	editor_selftest_result selftest_signals(std::istringstream &Words);
+	editor_selftest_result selftest_lines(std::istringstream &Words);
+	editor_selftest_result selftest_lengths(std::istringstream &Words);
+	editor_selftest_result selftest_heads(std::istringstream &Words);
+	editor_selftest_result selftest_shp(std::istringstream &Words);
+	editor_selftest_result selftest_block(std::istringstream &Words);
+	editor_selftest_result selftest_boundary(std::istringstream &Words);
+	editor_selftest_result selftest_fit(std::istringstream &Words);
+	editor_selftest_result selftest_draw(std::istringstream &Words);
+	editor_selftest_result selftest_check(std::istringstream &Words);
+	editor_selftest_result selftest_fix(std::istringstream &Words);
+	editor_selftest_result selftest_drawing(std::istringstream &Words);
+	editor_selftest_result selftest_strip(std::istringstream &Words);
+	editor_selftest_result selftest_stations(std::istringstream &Words);
+	editor_selftest_result selftest_set(std::istringstream &Words);
 	// the signals of the lines out of the station: on a double-track line the block signals to the next station and the block
 	// sections between them, on a single-track one a warning disc before the entry signal; one step of the history
 	void set_lines(block_edit const *Edit = nullptr);
@@ -406,6 +426,11 @@ class srk_tool final : public editor_tool
 	bool km_rising(station::line const &Line, std::string const &Number) const;
 	// m, the braking distance at the highest speed out along the line, at 160 km/h while its tracks have none, unless set by hand
 	double line_braking(station::line const &Line) const;
+	// the signals along a line, Row: of it, Line: one of Lines: its stops, its posts, the block signals facing its wrong-track trains,
+	// the warning discs; whether a stop is switched by a block section of the editor, Guards: the signals switched so
+	bool line_signals(line_row &Row, station::line const &Line, std::vector<station::line> const &Lines, std::vector<standing_signal> const &Standing, name_set const &Guards, std::string const &Stem) const;
+	// the track circuits along a line, Row: of it, with their km; the stretches in none between them
+	std::vector<std::pair<double, double>> line_sections(line_row &Row, station::line const &Line) const;
 	// the lines out of the open station, for the panel
 	void survey_lines(std::vector<standing_signal> const &Standing);
 	void render_lines();

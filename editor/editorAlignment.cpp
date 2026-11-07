@@ -3631,7 +3631,9 @@ std::optional<curve_report> settled_end(design &Single, bool const From, double 
 	auto const &norms{Single.norms};
 	auto &shape{Single.vertices.front()};
 	std::optional<curve_report> made;
-	for (int pass = 0; pass < 6; ++pass)
+	auto settled{false};
+	int pass{0};
+	while (pass < 6 && false == settled)
 	{
 		auto const allowed{std::max(1.0, std::min(Speed, speed_limit(shape.radius, norms)))};
 		auto const recommended{recommend(allowed, shape.radius, norms)};
@@ -3648,8 +3650,8 @@ std::optional<curve_report> settled_end(design &Single, bool const From, double 
 		auto const previous{shape.radius};
 		made = laid.curves.front();
 		shape.radius = made->radius;
-		if (std::abs(shape.radius - previous) < 0.01)
-			break;
+		settled = std::abs(shape.radius - previous) < 0.01;
+		++pass;
 	}
 	return made;
 }
@@ -4431,22 +4433,28 @@ struct curved_fit
 
 	// a curve of another radius than the adjoining one, from too few points to show the transition between them: one as long as the norms
 	// ask for at the speed the sharper of them allows, rather than the curvature jumping at the joint
+	// one step of lengthen_between(): false where the transition is long enough already or no longer one fits
+	bool lengthened_between(std::vector<double> &Best, double const Speed, double const Adjoiningcant)
+	{
+		lay(Best);
+		auto const allowed{std::max(1.0, std::min(Speed, speed_limit(std::min(radius, adjoining), plan.norms)))};
+		auto const needed{std::min(between_curves(allowed, 1.0 / adjoining, Adjoiningcant, 1.0 / radius, 0.0, plan.norms), 0.9 * longest)};
+		if (length_of(Best[0]) >= needed - 0.5)
+			return false;
+		auto const between{parameter_of(needed)};
+		std::vector out{Best[1]};
+		if (least_squares(out, [this, between](std::vector<double> const &Parameters, std::vector<double> &Residuals) { return residuals({between, Parameters[0]}, Residuals); }) ==
+		    std::numeric_limits<double>::max())
+			return false;
+		Best = {between, out[0]};
+		return true;
+	}
+
 	void lengthen_between(std::vector<double> &Best, double const Speed, double const Adjoiningcant)
 	{
 		for (int pass = 0; pass < 2; ++pass)
-		{
-			lay(Best);
-			auto const allowed{std::max(1.0, std::min(Speed, speed_limit(std::min(radius, adjoining), plan.norms)))};
-			auto const needed{std::min(between_curves(allowed, 1.0 / adjoining, Adjoiningcant, 1.0 / radius, 0.0, plan.norms), 0.9 * longest)};
-			if (length_of(Best[0]) >= needed - 0.5)
+			if (false == lengthened_between(Best, Speed, Adjoiningcant))
 				return;
-			auto const between{parameter_of(needed)};
-			std::vector out{Best[1]};
-			if (least_squares(out, [this, between](std::vector<double> const &Parameters, std::vector<double> &Residuals) { return residuals({between, Parameters[0]}, Residuals); }) ==
-			    std::numeric_limits<double>::max())
-				return;
-			Best = {between, out[0]};
-		}
 	}
 };
 

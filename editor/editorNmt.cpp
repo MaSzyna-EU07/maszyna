@@ -500,18 +500,20 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 	auto const url{std::format("{}?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage&COVERAGE={}&CRS=EPSG:2180&RESPONSE_CRS=EPSG:2180&BBOX={:.0f},{:.0f},{:.0f},{:.0f}&WIDTH={}&HEIGHT={}&FORMAT=GEOTIFF",
 	                           service, coverage, east, north, east + pixels, north + pixels, pixels, pixels)};
 	std::vector<std::uint8_t> data;
+	auto fetched{false};
 	for (int attempt = 0; attempt < 3; ++attempt)
 	{
-		if (client.get(url, data, Error, stop) && editor_geotiff::read(data, *result, no_data - 1.f))
-		{
-			write_file(file, data);
-			Error.clear();
-			return result;
-		}
-		if (stop() || outside_coverage(data, Error, *result))
+		fetched = client.get(url, data, Error, stop) && editor_geotiff::read(data, *result, no_data - 1.f);
+		if (fetched || stop() || outside_coverage(data, Error, *result))
 			break;
 		if (Error.empty())
 			Error = STRN("The service gave no terrain model");
+	}
+	if (fetched)
+	{
+		write_file(file, data);
+		Error.clear();
+		return result;
 	}
 	WriteLog(std::format("Editor: NMT square {},{} not fetched: {}", Key.first, Key.second, Error), logtype::generic);
 	result->failed = true;
