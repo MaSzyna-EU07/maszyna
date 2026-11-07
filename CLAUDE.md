@@ -84,6 +84,21 @@ Write new code so that it doesn't raise the rules that keep coming up:
 The project is C++20 (`CMAKE_CXX_STANDARD 20`), so no C++23 library addition is available on any compiler. That rules out
 `std::ranges::to`, `views::zip`, `views::enumerate`, `ranges::contains`, `std::print` and `std::expected`.
 
+## Renderers: the move to OpenGL 4.6 and Vulkan
+
+The renderers on `master` are to be replaced. `feat/gl46-migration` (PR #216, a draft with milestone 27.04, to be merged after the
+26.11 release) replaces the OpenGL 3.3 renderer with an OpenGL 4.6 core one and adds a Vulkan 1.4 renderer beside it. It also
+removes the legacy OpenGL 2.1, the OpenGL ES / ANGLE and the NVRHI (`betterRenderer/`) paths.
+
+- `betterRenderer/` will be removed. Don't put work into it.
+- On that branch, of the `rendering/opengl*` files only `openglcamera.*` and `openglmatrixstack.*` stay. The whole
+  `rendering/opengl33*` family and the rest of the legacy `rendering/opengl*` go, and the new renderers are in
+  `rendering/opengl46/`, `rendering/vulkan14/` and `rendering/common/`. The shared `rendering/renderer.*`, `geometrybank.*`,
+  `particles.*` and the like stay. The shaders move from `shaders/` to `shaders/ogl46/` and `shaders/vk14/`.
+- So a change on `master` to the code that goes away, or to the shaders, may be pointless. Keep it to fixes and to what a feature
+  on `master` needs in order to be drawn at all. For such a change, say in the PR where `feat/gl46-migration` has the counterpart,
+  or that the branch already carries the change.
+
 ## Building, testing and running
 
 - The unit tests (`tests/unit`) run at the end of the build, which prints `Unit tests: N/N passed` and fails on any failed case.
