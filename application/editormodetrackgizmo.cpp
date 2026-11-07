@@ -735,6 +735,7 @@ void editor_mode::track_gizmo_moved_point(TTrack &Track, glm::dvec3 const &Posit
 
 void editor_mode::render_track_gizmo()
 {
+	using enum editor_mode::gizmo_operation;
 	auto *track = selected_track();
 	if (track == nullptr || false == editable(*track))
 	{
@@ -752,13 +753,13 @@ void editor_mode::render_track_gizmo()
 		m_track_gizmo = track_gizmo_frame(*track, pointmode, operation);
 
 	glm::mat4 delta(1.0f);
-	auto gizmo{operation == gizmo_operation::scale ? ImGuizmo::SCALE_Z : ImGuizmo::TRANSLATE};
-	if (operation == gizmo_operation::rotate)
+	auto gizmo{operation == scale ? ImGuizmo::SCALE_Z : ImGuizmo::TRANSLATE};
+	if (operation == rotate)
 		gizmo = ImGuizmo::ROTATE_X | ImGuizmo::ROTATE_Y | ImGuizmo::ROTATE_Z;
-	ImGuizmo::AllowAxisFlip(operation != gizmo_operation::scale);
+	ImGuizmo::AllowAxisFlip(operation != scale);
 	if (m_point_drag.active)
 		ImGuizmo::Enable(false);
-	frame.manipulate(gizmo, m_track_gizmo, operation == gizmo_operation::translate ? m_gizmo_snap : 0.0f, &delta, operation == gizmo_operation::translate ? ImGuizmo::WORLD : ImGuizmo::LOCAL);
+	frame.manipulate(gizmo, m_track_gizmo, operation == translate ? m_gizmo_snap : 0.0f, &delta, operation == translate ? ImGuizmo::WORLD : ImGuizmo::LOCAL);
 	ImGuizmo::Enable(true);
 	ImGuizmo::AllowAxisFlip(true);
 
@@ -771,12 +772,12 @@ void editor_mode::render_track_gizmo()
 	if (false == m_track_gizmo_using)
 	{
 		track_gizmo_begin(*track, pointmode, operation);
-		if (operation == gizmo_operation::scale && false == mouse_along(drag.origin, drag.axis, drag.grabbed))
+		if (operation == scale && false == mouse_along(drag.origin, drag.axis, drag.grabbed))
 			drag.grabbed = 0.0;
 	}
-	if (operation == gizmo_operation::rotate)
+	if (operation == rotate)
 		track_gizmo_rotated(*track);
-	else if (operation == gizmo_operation::scale)
+	else if (operation == scale)
 		track_gizmo_scaled(*track);
 	else if (controlmode)
 		track_gizmo_control(*track, frame.camera + glm::dvec3(m_track_gizmo[3]) - editor_track::point_position(*track, editor_track::end_of(m_track_point)));

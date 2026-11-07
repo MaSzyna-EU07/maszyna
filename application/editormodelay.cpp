@@ -433,7 +433,7 @@ void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::ve
 
 bool editor_mode::switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point)
 {
-	auto *selected{selected_track()};
+	auto const *selected{selected_track()};
 	if (m_track_tab != track_tab::turnout || m_switch.armed < 0 || selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
 		return false;
 	if (auto const &line{current_straight()}; false == line.tracks.empty())
@@ -491,7 +491,7 @@ bool editor_mode::handle_drag_step(glm::dvec3 &Position, TTrack const *Ground)
 
 void editor_mode::point_drag_start(editor_track::point_ref const &Point)
 {
-	auto *track{selected_track()};
+	auto const *track{selected_track()};
 	m_track_point = Point;
 	m_point_drag = {};
 	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()))
@@ -573,8 +573,8 @@ void editor_mode::point_drag_update()
 			position = m_track_snap.position;
 	}
 	editor_track::move_point(*track, m_track_point, position);
-	for (auto const &connection : m_track_drag_points)
-		editor_track::move_point(*connection.first, connection.second, position);
+	for (auto const &[joined, joined_point] : m_track_drag_points)
+		editor_track::move_point(*joined, joined_point, position);
 	m_track_dirty = true;
 	commit_track_drag(false);
 }
@@ -944,7 +944,7 @@ void editor_mode::finish_extend()
 		return;
 	}
 	auto const pieces{extend_pieces()};
-	auto *style{m_extend.track};
+	auto const *style{m_extend.track};
 	m_extend.active = false;
 	if (pieces.empty() || style == nullptr)
 		return;
@@ -1981,12 +1981,13 @@ void editor_mode::lay_trim()
 
 void editor_mode::lay_switch_mode()
 {
+	using enum editor_mode::lay_mode;
 	auto &tool{m_lay};
-	tool.mode = tool.mode == lay_mode::straights ? lay_mode::curve : lay_mode::straights;
-	m_track_layout = tool.mode == lay_mode::curve ? track_layout::arc_straight : track_layout::straight;
-	if (tool.mode == lay_mode::curve)
+	tool.mode = tool.mode == straights ? curve : straights;
+	m_track_layout = tool.mode == curve ? track_layout::arc_straight : track_layout::straight;
+	if (tool.mode == curve)
 		first_step_done(first_step::trace);
-	tool.status = tool.mode == lay_mode::curve ? STR("Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights")
+	tool.status = tool.mode == curve ? STR("Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights")
 	                                           : STR("Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo");
 	tool.status_time = ImGui::GetTime();
 }
@@ -2183,7 +2184,7 @@ void editor_mode::lay_escape()
 
 void editor_mode::lay_after_history(bool const Undo)
 {
-	auto &tool{m_lay};
+	auto const &tool{m_lay};
 	if (tool.points.empty())
 		return;
 	if (false == Undo)
@@ -2257,7 +2258,7 @@ TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 con
 	auto const length{glm::length(leg)};
 	TTrack const *nearest{nullptr};
 	auto best{std::numeric_limits<double>::max()};
-	for (auto *section : simulation::Region->sections((From + To) * 0.5, static_cast<float>(std::min(0.5 * length + Reach, 2000.0))))
+	for (auto const *section : simulation::Region->sections((From + To) * 0.5, static_cast<float>(std::min(0.5 * length + Reach, 2000.0))))
 		for (auto const &cell : section->m_cells)
 			for (auto *track : cell.m_directories.paths)
 			{
@@ -2415,7 +2416,7 @@ void editor_mode::render_lay_ui()
 			}
 		}
 	}
-	if (auto *track{selected_track()}; track != nullptr)
+	if (auto const *track{selected_track()}; track != nullptr)
 	{
 		std::string reason;
 		if (editor_track::can_edit_geometry(*track, reason))

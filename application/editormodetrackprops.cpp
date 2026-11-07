@@ -1322,8 +1322,8 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		{
 			auto values{values_of(list[i], Tracks)};
 			std::size_t applies{0};
-			for (auto const &value : values)
-				applies += static_cast<std::size_t>(value.second);
+			for (auto const &[text, count] : values)
+				applies += static_cast<std::size_t>(count);
 			cache.applies[i] = applies;
 			cache.values[i] = std::move(values);
 		}
@@ -2128,7 +2128,7 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 		{
 			std::string name;
 			Words >> name;
-			if (auto *track{name.empty() ? selected_track() : simulation::Paths.find(name)}; track != nullptr)
+			if (auto const *track{name.empty() ? selected_track() : simulation::Paths.find(name)}; track != nullptr)
 				copy_track_style(*track);
 			WriteLog(format("SELFTEST trackstyle copy: %zu values from %s", m_track_style.values.size(), m_track_style.from.c_str()));
 		}

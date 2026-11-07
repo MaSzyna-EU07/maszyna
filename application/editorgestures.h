@@ -228,9 +228,9 @@ inline void gesture_rows(std::vector<std::pair<char const *, char const *>> cons
 	auto const pad{std::round(font * 0.6f)};
 	std::vector<std::vector<gesture_word>> pictures;
 	float column{0.0f};
-	for (auto const &row : Rows)
+	for (auto const &[keys, label] : Rows)
 	{
-		pictures.push_back(gesture_picture(row.first));
+		pictures.push_back(gesture_picture(keys));
 		column = std::max(column, gesture_width(size, pictures.back()));
 	}
 	for (std::size_t i = 0; i < Rows.size(); ++i)

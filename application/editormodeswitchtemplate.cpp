@@ -621,7 +621,7 @@ void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 	auto const slip{slip_of(Track)};
 	auto const crossing{slip.has_value() ? std::nullopt : crossing_record(Track)};
 	auto const set{double_of(Track)};
-	auto *first{set.has_value() ? set->first : &Track};
+	auto const *first{set.has_value() ? set->first : &Track};
 	std::optional<switch_store::record> known;
 	std::function<bool(editor_track::switch_template const &)> fits;
 	auto rail{editor_track::rail_of(first)};

@@ -58,7 +58,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		words >> name >> step;
 		if (name == "-")
 			name.clear();
-		auto *sweep{name.empty() ? m_sweep.edited : simulation::Sweeps.find(name)};
+		auto const *sweep{name.empty() ? m_sweep.edited : simulation::Sweeps.find(name)};
 		if (sweep == nullptr)
 		{
 			WriteLog("SELFTEST probe: nothing laid");
@@ -91,9 +91,9 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			if (station < sweep->start() || station > sweep->end())
 				continue;
 			double top{-1000.0};
-			for (auto const &point : entry.points)
-				if (point.first < entry.edge + 0.15)
-					top = std::max(top, point.second);
+			for (auto const &[across, top_here] : entry.points)
+				if (across < entry.edge + 0.15)
+					top = std::max(top, top_here);
 			auto const at{sweep->frame_at(station)};
 			auto const head{0.18 + sweep_node::rail_head(at.roll, definition.lateral)};
 			WriteLog(format("SELFTEST probe %s at %.0f m: edge %.3f m from the axis, its top %.3f m over the rail head (cant %.1f deg, gauge widening %.3f m, cant part %.3f m)", sweep->name().c_str(), station, entry.edge, top - head, at.roll,
@@ -106,7 +106,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		std::string name;
 		double station{0.0};
 		words >> name >> station;
-		auto *sweep{simulation::Sweeps.find(name)};
+		auto const *sweep{simulation::Sweeps.find(name)};
 		if (sweep == nullptr)
 		{
 			WriteLog("SELFTEST profile: no such sweep");
@@ -123,9 +123,9 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 					continue;
 				auto const axis{sweep->frame_at(at)};
 				auto const height{vertex.position.y - axis.position.y - 0.18 - sweep_node::rail_head(axis.roll, definition.lateral)};
-				auto &column{columns.try_emplace(static_cast<int>(std::floor(lateral / 0.1)), std::numeric_limits<double>::max(), -std::numeric_limits<double>::max()).first->second};
-				column.first = std::min(column.first, height);
-				column.second = std::max(column.second, height);
+				auto &[low, high]{columns.try_emplace(static_cast<int>(std::floor(lateral / 0.1)), std::numeric_limits<double>::max(), -std::numeric_limits<double>::max()).first->second};
+				low = std::min(low, height);
+				high = std::max(high, height);
 			}
 		std::string text;
 		for (auto const &[index, column] : columns)
@@ -744,9 +744,9 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			}
 			else
 				file = infra::name(binding.type);
-			auto &entry{unknown[std::string{infra::name(binding.type)} + " " + file]};
-			++entry.first;
-			entry.second = format("%.1f m", candidate.offset);
+			auto &[seen, offset_text]{unknown[std::string{infra::name(binding.type)} + " " + file]};
+			++seen;
+			offset_text = format("%.1f m", candidate.offset);
 		}
 		std::string text;
 		for (auto const &[name, count] : kinds)
@@ -877,7 +877,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		{
 			double nearest{std::numeric_limits<double>::max()};
 			double rise{0.0};
-			for (auto *track : simulation::Paths.sequence())
+			for (auto const *track : simulation::Paths.sequence())
 			{
 				if (track == nullptr || track == end.track || track->m_editorremoved)
 					continue;

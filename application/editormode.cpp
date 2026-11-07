@@ -2558,7 +2558,7 @@ void editor_mode::render_orthophoto_ui()
                 ground_tiles.clear();
                 forget_ground_shapes();
                 m_orthophoto.refit();
-                for (auto &layer : m_wms)
+                for (auto const &layer : m_wms)
                     layer->refit();
             }
             if (ImGui::IsItemHovered())
@@ -4053,7 +4053,7 @@ void editor_mode::update_wms_layers()
         same = m_wms[i]->settings().service == stored[i].url && m_wms[i]->settings().layers == stored[i].layers;
     if (false == same)
     {
-        for (auto &layer : m_wms)
+        for (auto const &layer : m_wms)
         {
             layer->enabled(false);
             layer->detach_scene();
@@ -6860,7 +6860,7 @@ void editor_mode::exit()
     m_fill_last.clear();
     m_orthophoto.cancel_pending();
     m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
-    for (auto &layer : m_wms)
+    for (auto const &layer : m_wms)
     {
         layer->cancel_pending();
         layer->detach_scene();
@@ -7053,7 +7053,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             if (Key == GLFW_KEY_C)
             {
                 // the selected track, or the one under the cursor when there are more of them
-                auto *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
+                auto const *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
                 if (from != nullptr)
                     copy_track_style(*from);
                 else

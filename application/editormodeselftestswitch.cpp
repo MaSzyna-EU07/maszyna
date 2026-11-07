@@ -434,7 +434,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		double direction{1.0};
 		int steps{8};
 		words >> point.x >> point.z >> direction >> steps;
-		TTrack *track{nullptr};
+		TTrack const *track{nullptr};
 		double nearest{1e9};
 		for (auto *candidate : simulation::Paths.sequence())
 		{
@@ -977,7 +977,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		auto const before{current(*track)};
 		auto const done{change_switch_template(*track, static_cast<int>(found - tool.templates.begin()))};
 		// a slip laid again is of new parts, the first of them selected; a part of a crossing may be left beside it a plain track
-		auto *again{selected_track()};
+		auto const *again{selected_track()};
 		if (again == nullptr)
 			again = simulation::Paths.find(name);
 		auto const after{again != nullptr ? current(*again) : -1};
@@ -1058,7 +1058,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	if (command == "switchlinks")
 	{
 		auto const name_of = [](TTrack const *Track) { return Track == nullptr ? std::string{"-"} : Track->name().empty() ? std::string{"(noname)"} : Track->name(); };
-		for (auto *track : simulation::Paths.sequence())
+		for (auto const *track : simulation::Paths.sequence())
 		{
 			if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch || track->SwitchExtension == nullptr)
 				continue;

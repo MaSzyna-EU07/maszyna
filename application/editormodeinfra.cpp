@@ -1181,9 +1181,9 @@ void editor_mode::infra_adopt(TTrack &Track)
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved)
 				for (int list = 0; list < 6; ++list)
-					for (auto const &event : editor_track::events(*track, list))
-						if (false == event.first.empty())
-							readers.emplace(ToLower(event.first), track);
+					for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+						if (false == event_name.empty())
+							readers.emplace(ToLower(event_name), track);
 		static auto const rules{infra::default_rules()};
 		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 		{

@@ -1407,7 +1407,7 @@ bool editor_mode::lay_crossover(int const Shape, glm::dvec3 const &Press, glm::d
 		return false;
 	// both switches joined to their tracks at the start and at the end of the main track, else the line under them moved
 	// and it's taken back
-	for (auto *track : std::vector<TTrack *>{m_node != nullptr ? dynamic_cast<TTrack *>(m_node) : nullptr})
+	for (auto const *track : std::vector<TTrack *>{m_node != nullptr ? dynamic_cast<TTrack *>(m_node) : nullptr})
 		if (auto const crossover{track != nullptr ? crossover_of(*track) : std::nullopt})
 			for (auto *part : {crossover->first, crossover->second})
 				for (auto const which : {segment_data::point::start, segment_data::point::end})

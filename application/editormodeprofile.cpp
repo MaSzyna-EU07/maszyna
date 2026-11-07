@@ -544,10 +544,10 @@ bool editor_mode::profile_restore_parts()
 				else
 					stale.emplace_back(sample.chainage, sample.chainage);
 			}
-			for (auto &stretch : stale)
+			for (auto &[from, to] : stale)
 			{
-				stretch.first = std::max(low, stretch.first - kStaleMargin);
-				stretch.second = std::min(high, stretch.second + kStaleMargin);
+				from = std::max(low, from - kStaleMargin);
+				to = std::min(high, to + kStaleMargin);
 			}
 		}
 		auto const changed = [&](double const Chainage) { return std::ranges::any_of(stale, [&](auto const &Stretch) { return Chainage >= Stretch.first - 0.25 && Chainage <= Stretch.second + 0.25; }); };
@@ -558,13 +558,13 @@ bool editor_mode::profile_restore_parts()
 			if (inside(point.chainage) && false == taken(point.chainage) && false == changed(point.chainage))
 				points.push_back(point);
 		}
-		for (auto const &stretch : stale)
+		for (auto const &[stretch_from, stretch_to] : stale)
 		{
 			std::vector<double> chainages;
 			std::vector<double> elevations;
 			std::vector<double> grades;
 			for (auto const &sample : samples)
-				if (sample.chainage >= stretch.first - 1e-6 && sample.chainage <= stretch.second + 1e-6)
+				if (sample.chainage >= stretch_from - 1e-6 && sample.chainage <= stretch_to + 1e-6)
 				{
 					chainages.push_back(sample.chainage);
 					elevations.push_back(sample.position.y);
@@ -1059,10 +1059,10 @@ void editor_mode::profile_resample()
 			if (length < 1e-6)
 				continue;
 			auto const scale{(span.to - span.from) / length};
-			for (auto const &zone : track_sleepers::shared_zones(*span.track, span.path))
+			for (auto const &[zone_from, zone_to] : track_sleepers::shared_zones(*span.track, span.path))
 			{
-				auto const a{span.forward ? span.from + zone.first * scale : span.to - zone.second * scale};
-				auto const b{span.forward ? span.from + zone.second * scale : span.to - zone.first * scale};
+				auto const a{span.forward ? span.from + zone_from * scale : span.to - zone_to * scale};
+				auto const b{span.forward ? span.from + zone_to * scale : span.to - zone_from * scale};
 				// the stretches of a switch on the route are its own zone already
 				auto const inside{std::any_of(context.switches.begin(), context.switches.begin() + static_cast<std::ptrdiff_t>(before), [&](auto const &Zone) { return a >= Zone.from - 0.5 && b <= Zone.to + 0.5; })};
 				if (false == inside && b - a > 0.1)
@@ -1858,8 +1858,8 @@ void editor_mode::profile_follow_terrain(std::size_t const Edits)
 		if (step->action != EditorSnapshot::Action::TrackEdit)
 			continue;
 		++found;
-		for (auto const &entry : step->tracks)
-			tracks.push_back(entry.first);
+		for (auto const &[track, step_state] : step->tracks)
+			tracks.push_back(track);
 		tracks.insert(tracks.end(), step->created.begin(), step->created.end());
 		tracks.insert(tracks.end(), step->removed.begin(), step->removed.end());
 	}
@@ -2123,7 +2123,7 @@ void editor_mode::render_profile_header()
 
 void editor_mode::render_profile_empty()
 {
-	auto &state{m_profile};
+	auto const &state{m_profile};
 	auto *selected{selected_track()};
 	auto const available{ImGui::GetContentRegionAvail()};
 	auto *draw{ImGui::GetWindowDrawList()};
@@ -2630,10 +2630,10 @@ void editor_mode::render_profile_canvas(float const Height)
 		auto const y{corner.y + size.y + 4.0f};
 		draw->AddRectFilled(ImVec2(corner.x, corner.y + size.y), ImVec2(corner.x + size.x, corner.y + size.y + hintrow), IM_COL32(14, 15, 19, 255));
 		draw->PushClipRect(ImVec2(corner.x, corner.y + size.y), ImVec2(corner.x + size.x, corner.y + size.y + hintrow), true);
-		for (auto const &hint : hints)
+		for (auto const &[keys, label] : hints)
 		{
-			auto const words{gesture_words(hint.first)};
-			auto const text{STR(hint.second)};
+			auto const words{gesture_words(keys)};
+			auto const text{STR(label)};
 			if (x + gesture_width(height, words) + 6.0f + ImGui::CalcTextSize(text.c_str()).x > corner.x + size.x - 6.0f)
 				break;
 			x += gesture_draw(*draw, ImVec2(x, y), height, words, kLabel) + 6.0f;

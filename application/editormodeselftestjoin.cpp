@@ -1397,13 +1397,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 					geometry::bezier const own{track->m_paths[i]};
 					bool const start{kind == editor_track::point_kind::start};
 					auto const out{start ? -own.first(0.0) : own.first(1.0)};
-					for (auto const &partner : editor_track::partners(*track, {i, kind}))
+					for (auto const &[partner_track, partner_point] : editor_track::partners(*track, {i, kind}))
 					{
-						geometry::bezier const theirs{partner.first->m_paths[partner.second.path]};
-						auto const in{partner.second.kind == editor_track::point_kind::start ? theirs.first(0.0) : -theirs.first(1.0)};
+						geometry::bezier const theirs{partner_track->m_paths[partner_point.path]};
+						auto const in{partner_point.kind == editor_track::point_kind::start ? theirs.first(0.0) : -theirs.first(1.0)};
 						auto const angle{glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(out), glm::normalize(in)), -1.0, 1.0)))};
-						auto const gap{glm::distance(editor_track::point_position(*track, {i, kind}), editor_track::point_position(*partner.first, partner.second))};
-						WriteLog(format("SELFTEST gizmo joint %s[%d].%s - %s[%d]: kink %.4f deg, gap %.4f m", track->name().c_str(), i, start ? "start" : "end", partner.first->name().c_str(), partner.second.path, angle, gap));
+						auto const gap{glm::distance(editor_track::point_position(*track, {i, kind}), editor_track::point_position(*partner_track, partner_point))};
+						WriteLog(format("SELFTEST gizmo joint %s[%d].%s - %s[%d]: kink %.4f deg, gap %.4f m", track->name().c_str(), i, start ? "start" : "end", partner_track->name().c_str(), partner_point.path, angle, gap));
 					}
 				}
 		}

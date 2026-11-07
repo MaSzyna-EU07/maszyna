@@ -757,7 +757,7 @@ bool editor_mode::slip_room(slip_set const &Slip, slip_slide &Slide, std::string
 	double room[2]{1e4, 1e4};
 	bool straight[2]{true, true};
 	for (std::size_t end = 0; end < 2; ++end)
-		for (auto *track : Slide.movers)
+		for (auto const *track : Slide.movers)
 			for (auto const &[other, point] : editor_track::connected_points(*track, joints[end]))
 			{
 				if (std::ranges::find(Slide.movers, other) != Slide.movers.end() || Slide.ends[end].first != nullptr)
@@ -1138,7 +1138,7 @@ void editor_mode::switch_slide_start(TTrack &Track)
 		}
 	}
 	std::vector<TTrack const *> const skip(members.begin(), members.end());
-	for (auto *member : members)
+	for (auto const *member : members)
 	{
 		if (member->eType != tt_Switch)
 			continue;

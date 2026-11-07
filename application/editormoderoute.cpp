@@ -587,7 +587,7 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	}
 	auto const &records{alignment_store::records()};
 	std::set<int> covered;
-	for (auto *track : Chain.tracks)
+	for (auto const *track : Chain.tracks)
 		if (auto const found{alignment_store::on_track(*track)})
 			covered.insert(found->record);
 	double origin{0.0};
@@ -699,7 +699,7 @@ void editor_mode::route_lay()
 		std::vector<TTrack const *> seen;
 		// a line which ends on a switch of a crossover would be laid again only up to it, the crossover left on a kink
 		for (auto const &end : {chain.start, chain.end})
-			for (auto *track : chain.tracks)
+			for (auto const *track : chain.tracks)
 				for (auto const &[other, point] : editor_track::connected_points(*track, end))
 					if (other != nullptr && other->eType == tt_Switch && crossover_of(*other).has_value())
 					{
@@ -709,7 +709,7 @@ void editor_mode::route_lay()
 		std::vector<TTrack *> switches;
 		for (auto const &passage : chain.switches)
 			switches.push_back(passage.track);
-		for (auto *switchtrack : switches)
+		for (auto const *switchtrack : switches)
 		{
 			auto const crossover{crossover_of(*switchtrack)};
 			if (false == crossover.has_value() || std::ranges::find(seen, crossover->first) != seen.end())
@@ -730,7 +730,7 @@ void editor_mode::route_lay()
 			profile_library_load();
 			auto library{m_profiles};
 			bool lifted{false};
-			for (auto *switchtrack : switches)
+			for (auto const *switchtrack : switches)
 				if (auto const crossover{crossover_of(*switchtrack)})
 				{
 					TTrack *first{nullptr};
@@ -1897,8 +1897,8 @@ bool editor_mode::render_route_band()
 	// the labels: the radius over its plateau, the transition lengths along the axis, the km of the ends at the bottom
 	std::vector<std::pair<float, float>> taken;
 	auto const place = [&](float const Left, float const Right) {
-		for (auto const &range : taken)
-			if (Left < range.second + 4.0f && Right > range.first - 4.0f)
+		for (auto const &[low, high] : taken)
+			if (Left < high + 4.0f && Right > low - 4.0f)
 				return false;
 		taken.emplace_back(Left, Right);
 		return true;

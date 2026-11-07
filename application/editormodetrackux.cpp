@@ -798,7 +798,7 @@ void editor_mode::draw_track_labels() const
 		auto const known = [&](TTrack const *Other) { return std::ranges::any_of(run, [&](auto const &Member) { return Member.first == Other; }); };
 		for (auto const throughend : {true, false})
 		{
-			TTrack *previous{&Track};
+			TTrack const *previous{&Track};
 			TTrack *current{throughend ? Track.trNext : Track.trPrev};
 			while (plain(current) && false == known(current) && false == labelled.contains(current))
 			{
@@ -904,10 +904,10 @@ void editor_mode::draw_track_labels() const
 			run = row(*track, [&](TTrack const &Other, bool const Forward) { return false == editor_track::is_straight(Other, m_straights.tolerance) && own_turn(Other, Forward) * side >= 0.0; });
 		}
 		double length{0.0};
-		for (auto const &member : run)
+		for (auto const &[row_track, forward] : run)
 		{
-			labelled.insert(member.first);
-			length += bezier{member.first->m_paths.front()}.plan_length();
+			labelled.insert(row_track);
+			length += bezier{row_track->m_paths.front()}.plan_length();
 		}
 		if (length < 0.5)
 			continue;
@@ -1030,8 +1030,8 @@ void editor_mode::draw_track_legend() const
 	auto const line{ImGui::GetTextLineHeightWithSpacing()};
 	auto const swatch{ImGui::GetTextLineHeight()};
 	float width{ImGui::CalcTextSize(title.c_str()).x};
-	for (auto const &row : rows)
-		width = std::max(width, swatch + 6.0f + ImGui::CalcTextSize(row.second.c_str()).x);
+	for (auto const &[colour, text] : rows)
+		width = std::max(width, swatch + 6.0f + ImGui::CalcTextSize(text.c_str()).x);
 	auto const pad{8.0f};
 	// in the bottom right corner, over the profile strip when it's open
 	auto const bottom{m_profile.strip_top > editor_ui::view_min().y + 4.0f * line ? std::min(editor_ui::view_max().y, m_profile.strip_top) : editor_ui::view_max().y};
@@ -2448,19 +2448,19 @@ void editor_mode::track_set_turn(double const Angle)
 	if (std::abs(step) < 1e-9)
 		return;
 	drag.angle += step;
-	for (auto &entry : m_track_set_joints)
-		editor_track::rotate_y(*entry.first, m_track_set_pivot, step);
-	for (auto &entry : m_track_set_joints)
+	for (auto &[track, joints] : m_track_set_joints)
+		editor_track::rotate_y(*track, m_track_set_pivot, step);
+	for (auto const &entry : m_track_set_joints)
 		editor_track::follow(*entry.first, entry.second);
 	m_track_dirty = true;
 }
 
 void editor_mode::track_set_move(glm::dvec3 const &Offset)
 {
-	for (auto &entry : m_track_set_joints)
+	for (auto &[track, joints] : m_track_set_joints)
 	{
-		editor_track::translate(*entry.first, Offset);
-		editor_track::follow(*entry.first, entry.second);
+		editor_track::translate(*track, Offset);
+		editor_track::follow(*track, joints);
 	}
 	m_track_dirty = true;
 }

@@ -1023,7 +1023,7 @@ void km_tool::selftest_pick(std::istringstream &Words)
 	// kmpick track=<name> [at=<0..1>]: a click on the track
 	auto const values{selftest_values(Words)};
 	auto const found{values.find("track")};
-	auto *track{found != values.end() ? simulation::Paths.find(found->second) : nullptr};
+	auto const *track{found != values.end() ? simulation::Paths.find(found->second) : nullptr};
 	if (track == nullptr)
 	{
 		WriteLog("SELFTEST kmpick: no such track");

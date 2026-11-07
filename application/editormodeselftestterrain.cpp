@@ -427,7 +427,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::size_t rails{0};
 		std::size_t done{0};
 		std::string names;
-		for (auto *track : simulation::Paths.sequence())
+		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 1) != 0)
 			{
 				++rails;
@@ -544,13 +544,13 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::size_t edges{0};
 		double worst{0.0};
 		glm::dvec2 where{0.0};
-		for (auto const &key : keys)
+		for (auto const &[key_x, key_z] : keys)
 			for (auto const [dx, dz] : {std::pair{1, 0}, std::pair{0, 1}})
 			{
-				if (false == keys.contains({key.first + dx, key.second + dz}))
+				if (false == keys.contains({key_x + dx, key_z + dz}))
 					continue;
 				++edges;
-				auto const corner{heightmap::chunk_corner({key.first + dx, key.second + dz})};
+				auto const corner{heightmap::chunk_corner({key_x + dx, key_z + dz})};
 				for (int i = 0; i <= 32; ++i)
 				{
 					auto const along{heightmap::chunk_size * i / 32.0};
@@ -845,10 +845,10 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::map<std::pair<std::string, std::string>, pair_worst> pairs;
 		for (auto const &here : all)
 		{
-			auto const cell{cell_of(here.position)};
+			auto const [cell_x, cell_z]{cell_of(here.position)};
 			for (int dx = -1; dx <= 1; ++dx)
 				for (int dz = -1; dz <= 1; ++dz)
-					if (auto const found{places.find({cell.first + dx, cell.second + dz})}; found != places.end())
+					if (auto const found{places.find({cell_x + dx, cell_z + dz})}; found != places.end())
 						for (auto const &other : found->second)
 						{
 							if (other.track == here.track || (here.track->eType != tt_Switch && other.track->eType != tt_Switch) || here.track->name() > other.track->name())

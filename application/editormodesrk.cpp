@@ -2605,16 +2605,18 @@ bool srk_tool::render_line_row(std::size_t const Index)
 
 bool srk_tool::render_block_choices(line_row const &Row)
 {
+	using enum srk_tool::block_reason;
+	using enum srk_tool::block_kind;
 	auto changed{false};
-	if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind_text(Row.own), reason_text(Row.own_why)).c_str(), Row.why != block_reason::hand))
+	if (ImGui::Selectable(format(STR_C("Auto: %s, %s"), kind_text(Row.own), reason_text(Row.own_why)).c_str(), Row.why != hand))
 	{
 		set_block(Row, std::nullopt);
 		changed = true;
 	}
-	for (auto const automatic : {block_kind::three, block_kind::four})
+	for (auto const automatic : {three, four})
 	{
 		ImGui::BeginDisabled(Row.number == 0);
-		if (ImGui::Selectable(automatic == block_kind::three ? STR_C("Automatic block, 3 aspects (SBL)") : STR_C("Automatic block, 4 aspects (SBL)"), Row.why == block_reason::hand && Row.block == automatic))
+		if (ImGui::Selectable(automatic == three ? STR_C("Automatic block, 3 aspects (SBL)") : STR_C("Automatic block, 4 aspects (SBL)"), Row.why == hand && Row.block == automatic))
 		{
 			set_block(Row, automatic);
 			changed = true;
@@ -2623,12 +2625,12 @@ bool srk_tool::render_block_choices(line_row const &Row)
 		if (Row.number == 0)
 			item_tooltip("Placed on a double-track line only: on a single track the block signals would face both ways, the editor leaves those standing as they are");
 		else
-			item_tooltip(automatic == block_kind::three ? "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance" :
+			item_tooltip(automatic == three ? "A block signal tells of the next one, Ie-1: red, orange for the next at stop, green. The block sections no shorter than the braking distance" :
 			                                              "A block signal tells of the next two, Ie-1: red, orange for the next at stop, green flashing for the one after it at stop, green. The block sections no shorter than half the braking distance, two of them no shorter than it");
 	}
-	if (ImGui::Selectable(STR_C("Semi-automatic block"), Row.why == block_reason::hand && Row.block == block_kind::semi))
+	if (ImGui::Selectable(STR_C("Semi-automatic block"), Row.why == hand && Row.block == semi))
 	{
-		set_block(Row, block_kind::semi);
+		set_block(Row, semi);
 		changed = true;
 	}
 	return changed;
@@ -2779,6 +2781,7 @@ void srk_tool::boundary_click()
 
 void srk_tool::render_lengths()
 {
+	using enum station::limit::kind;
 	if (m_lengths.empty())
 	{
 		if (stem_of_open().empty())
@@ -3423,6 +3426,7 @@ bool srk_tool::lines_of_open(std::vector<standing_signal> const &Standing, std::
 
 srk_tool::block_found srk_tool::block_of(station::line const &Line, std::string const &Entry, std::vector<standing_signal> const &Standing, std::vector<signal_head> const &Heads) const
 {
+	using enum srk_tool::block_reason;
 	block_found found;
 	auto four{false};
 	for (auto const &signal : Standing)
@@ -3438,18 +3442,18 @@ srk_tool::block_found srk_tool::block_of(station::line const &Line, std::string 
 	if (found.blocks > 0)
 	{
 		found.own = four ? block_kind::four : block_kind::three;
-		found.own_why = block_reason::standing;
+		found.own_why = standing;
 	}
 	else if (Line.number > 0)
 	{
 		auto const chosen{std::ranges::find_if(Heads, [](signal_head const &Head) { return Head.kind == "block" && Head.chosen; })};
 		found.own = chosen != Heads.end() && chosen->aspects == 4 ? block_kind::four : block_kind::three;
-		found.own_why = block_reason::double_track;
+		found.own_why = double_track;
 	}
 	else
 	{
 		found.own = block_kind::semi;
-		found.own_why = block_reason::single;
+		found.own_why = single;
 	}
 	found.kind = found.own;
 	found.why = found.own_why;
@@ -3457,7 +3461,7 @@ srk_tool::block_found srk_tool::block_of(station::line const &Line, std::string 
 		if (auto const set{m_records[m_record].blocks.find(Entry)}; set != m_records[m_record].blocks.end())
 		{
 			found.kind = set->second;
-			found.why = block_reason::hand;
+			found.why = hand;
 		}
 	return found;
 }
@@ -3529,6 +3533,7 @@ double srk_tool::line_braking(station::line const &Line) const
 
 void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 {
+	using enum srk_tool::block_kind;
 	m_lines.clear();
 	m_line_ways.clear();
 	m_lines_problem.clear();
@@ -3585,8 +3590,8 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 		for (auto const &signal : Standing)
 		{
 			double distance{0.0};
-			auto const mixed{row.block != block_kind::semi && wrong_disc(lines, static_cast<std::size_t>(&line - lines.data()), signal)};
-			if (signal.kind == "warning" && (mixed || (row.block == block_kind::semi && faces_along(line, signal, distance))))
+			auto const mixed{row.block != semi && wrong_disc(lines, static_cast<std::size_t>(&line - lines.data()), signal)};
+			if (signal.kind == "warning" && (mixed || (row.block == semi && faces_along(line, signal, distance))))
 			{
 				faces_along(line, signal, distance, mixed);
 				row.posts.emplace_back(distance, signal_shown(signal.name, stem), mixed, km_along(line, row.km_number, distance));
@@ -3621,7 +3626,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			run.km_to = km_along(line, row.km_number, run.to);
 		}
 		row.legacy = false == row.stops.empty() && false == switched;
-		if (false == row.legacy && row.block != block_kind::semi)
+		if (false == row.legacy && row.block != semi)
 			row.bare = std::move(bare);
 		auto const next{next_entry(line, Standing, row.length)};
 		row.next = next >= 0 ? signal_shown(Standing[next].name, stem) : std::string{};
@@ -3632,9 +3637,9 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 	for (std::size_t index = 0; index < m_lines.size(); ++index)
 	{
 		auto &row{m_lines[index]};
-		if (row.legacy || (row.number == 0 && row.block != block_kind::semi))
+		if (row.legacy || (row.number == 0 && row.block != semi))
 			continue;
-		auto const automatic{row.block != block_kind::semi};
+		auto const automatic{row.block != semi};
 		for (auto const &signal : Standing)
 		{
 			if (signal.kind != (automatic ? "warning" : "block") || false == on_line(m_line_ways[index], signal.position))
@@ -3643,7 +3648,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 				continue;
 			auto shared{false};
 			for (std::size_t other = 0; other < m_lines.size() && false == shared; ++other)
-				shared = (m_lines[other].block != block_kind::semi) != automatic && on_line(m_line_ways[other], signal.position);
+				shared = (m_lines[other].block != semi) != automatic && on_line(m_line_ways[other], signal.position);
 			if (shared || row.leftovers++ > 0)
 				continue;
 			row.leftover = signal.position;
@@ -3695,12 +3700,12 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 				}
 			}
 		}
-		for (auto const &bare : row.bare)
-			m_problems.push_back({format(STR_C("The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"), row.entry.c_str(), bare.second - bare.first, bare.first), station::point_on(line, (bare.first + bare.second) * 0.5).point, 0, true});
+		for (auto const &[bare_from, bare_to] : row.bare)
+			m_problems.push_back({format(STR_C("The line out of %s: %.0f m of tracks %.0f m beyond the signal are in no block section"), row.entry.c_str(), bare_to - bare_from, bare_from), station::point_on(line, (bare_from + bare_to) * 0.5).point, 0, true});
 	}
 	// the block sections their controls switch, the tracks gone
 	std::unordered_set<std::string> circuits;
-	for (auto *track : simulation::Paths.sequence())
+	for (auto const *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (auto const *isolated : track->Isolated)
 				if (isolated != nullptr)
@@ -4251,7 +4256,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		if (false == add_cut(lines[found.line], found.from) || false == add_cut(lines[found.line], found.to))
 			return;
 	for (auto const &line : lines)
-		for (auto *part : line.tracks)
+		for (auto const *part : line.tracks)
 			if (std::string reason; false == scene::Layers.editable(part, &reason) && std::ranges::any_of(sections, [&](section const &Found) { return &lines[Found.line] == &line; }))
 			{
 				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
@@ -4570,6 +4575,7 @@ double srk_tool::braking_of_open() const
 
 void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 {
+	using enum station::signal::role;
 	using role = station::signal::role;
 	m_heads.clear();
 	std::vector<signal_head> heads;
@@ -4595,9 +4601,9 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	std::vector<char> own(posts.size(), 0);
 	for (std::size_t index = 0; index < posts.size(); ++index)
 	{
-		if (posts[index].kind == role::entry && gap_to(layout, posts[index].point) <= 8.0)
+		if (posts[index].kind == entry && gap_to(layout, posts[index].point) <= 8.0)
 			own[index] = 1;
-		if (own[index] || posts[index].kind == role::block || posts[index].kind == role::warning)
+		if (own[index] || posts[index].kind == block || posts[index].kind == warning)
 			from.push_back(index);
 	}
 	auto const found{station::routes(posts, from, route_reach(braking))};
@@ -4612,7 +4618,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	for (std::size_t at = 0; at < order.size(); ++at)
 		for (auto const &route : found[routes_of[order[at]]])
 			for (auto const index : {route.warning, route.next})
-				if (index >= 0 && 0 == checked[index] && posts[index].kind != role::entry && routes_of[index] >= 0)
+				if (index >= 0 && 0 == checked[index] && posts[index].kind != entry && routes_of[index] >= 0)
 				{
 					checked[index] = 1;
 					order.push_back(static_cast<std::size_t>(index));
@@ -4622,7 +4628,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		grown = false;
 		for (std::size_t index = 0; index < posts.size(); ++index)
 		{
-			if (checked[index] || routes_of[index] < 0 || posts[index].kind == role::entry)
+			if (checked[index] || routes_of[index] < 0 || posts[index].kind == entry)
 				continue;
 			auto const &routes{found[routes_of[index]]};
 			if (std::ranges::none_of(routes, [&](station::route const &Route) { return Route.next >= 0 && checked[Route.next]; }))
@@ -4666,7 +4672,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			check.own = template_of->speeds;
 		}
 		glm::dvec3 const travel{check.travel.x, 0.0, check.travel.y};
-		if (post.kind != role::entry)
+		if (post.kind != entry)
 			check.shp = kShpBefore;
 		else if (own[index])
 		{
@@ -4683,7 +4689,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			check.shp_found = shp_before(way, signal.position, travel, triggers, check.shp);
 			check.shp_short = way.empty() || way.back().distance < check.shp - kShpTolerance;
 		}
-		if (post.kind == role::warning)
+		if (post.kind == warning)
 		{
 			for (std::size_t k = 0; k < check.routes.size(); ++k)
 			{
@@ -4710,7 +4716,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			m_heads.push_back(std::move(check));
 			continue;
 		}
-		auto const main{post.kind == role::entry};
+		auto const main{post.kind == entry};
 		auto const need{need_of(check.routes, main, line, braking)};
 		check.speeds = need.speeds;
 		check.informs = need.informs;
@@ -4801,8 +4807,8 @@ void srk_tool::set_shp()
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (int list = 0; list < 6; ++list)
-				for (auto const &event : editor_track::events(*track, list))
-					taken.insert(ToLower(event.first));
+				for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+					taken.insert(ToLower(event_name));
 	struct placing
 	{
 		std::string signal; // shown
@@ -5552,9 +5558,9 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		for (auto const &path : m_layout->paths)
 			if (false == path.track->Isolated.empty())
 			{
-				auto &entry{found[path.track->Isolated.front()->asName]};
-				++entry.first;
-				entry.second += path.length;
+				auto &[joints, metres]{found[path.track->Isolated.front()->asName]};
+				++joints;
+				metres += path.length;
 			}
 		std::string list;
 		for (auto const &[name, entry] : found)

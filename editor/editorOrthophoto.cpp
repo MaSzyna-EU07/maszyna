@@ -871,10 +871,10 @@ void editor_orthophoto::restart_prefetch()
 	// a service of the user's is asked for no tile ahead
 	if (m_enabled && can_download() && m_config.service.empty())
 		keys.assign(m_area_tiles.begin(), m_area_tiles.end());
-	auto const centre{m_camera_tile};
+	auto const [centre_x, centre_y]{m_camera_tile};
 	auto const distance = [&](tile_key const &Key) {
-		auto const dx{static_cast<long long>(Key.first) - centre.first};
-		auto const dy{static_cast<long long>(Key.second) - centre.second};
+		auto const dx{static_cast<long long>(Key.first) - centre_x};
+		auto const dy{static_cast<long long>(Key.second) - centre_y};
 		return dx * dx + dy * dy;
 	};
 	std::ranges::sort(keys, [&](tile_key const &A, tile_key const &B) { return distance(A) < distance(B); });
@@ -932,14 +932,13 @@ void editor_orthophoto::ground_arrived()
 {
 	if (!m_height)
 		return;
-	for (auto &entry : m_tiles)
+	for (auto &[key, t] : m_tiles)
 	{
-		auto &t{entry.second};
 		if (!t.grounded || !t.guessed)
 			continue;
 		// the middle and the corners: a chunk of the terrain is much larger than a tile, it covers some of these when it comes. A tile
 		// lying flat, with nothing to go by, also goes onto the model once it's in
-		glm::dvec2 const corner = tile_corner(entry.first);
+		glm::dvec2 const corner = tile_corner(key);
 		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
 			if (double y; m_height(corner.x - u * tile_size, corner.y - v * tile_size, y) || (t.heights.empty() && m_guess && m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y)))
 			{
@@ -1162,11 +1161,11 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 std::pair<std::size_t, std::size_t> editor_orthophoto::grounded() const
 {
 	std::pair<std::size_t, std::size_t> result{0, 0};
-	for (auto const &entry : m_tiles)
-		if (entry.second.grounded && false == entry.second.heights.empty())
+	for (auto const &[key, tile] : m_tiles)
+		if (tile.grounded && false == tile.heights.empty())
 		{
 			++result.first;
-			if (entry.second.guessed)
+			if (tile.guessed)
 				++result.second;
 		}
 	return result;
@@ -1177,10 +1176,10 @@ std::vector<std::pair<glm::dvec2, glm::dvec2>> editor_orthophoto::waiting() cons
 	std::vector<std::pair<glm::dvec2, glm::dvec2>> result;
 	if (false == m_enabled)
 		return result;
-	for (auto const &entry : m_tiles)
-		if (entry.second.level == 0 && entry.second.requested > 0 && false == entry.second.empty)
+	for (auto const &[key, tile] : m_tiles)
+		if (tile.level == 0 && tile.requested > 0 && false == tile.empty)
 		{
-			glm::dvec2 const corner = tile_corner(entry.first);
+			glm::dvec2 const corner = tile_corner(key);
 			result.emplace_back(corner - glm::dvec2{tile_size}, corner);
 		}
 	return result;

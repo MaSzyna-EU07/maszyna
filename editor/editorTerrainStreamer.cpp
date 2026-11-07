@@ -868,8 +868,8 @@ std::string terrain_streamer::stats() const
 
 void terrain_streamer::collect(std::vector<editor_terrain *> &Out) const
 {
-	for (auto const &entry : m_chunks)
-		Out.push_back(entry.second.get());
+	for (auto const &[key, chunk] : m_chunks)
+		Out.push_back(chunk.get());
 }
 
 editor_terrain *terrain_streamer::terrain_at(double X, double Z) const
@@ -1220,9 +1220,9 @@ bool terrain_streamer::restore_stitching(double X, double Z, double Radius, doub
 std::size_t terrain_streamer::touched_up() const
 {
 	std::size_t count{0};
-	for (auto const &entry : m_chunks)
+	for (auto const &[key, chunk] : m_chunks)
 	{
-		auto const &adjust{entry.second->data().adjust};
+		auto const &adjust{chunk->data().adjust};
 		count += static_cast<std::size_t>(std::count_if(adjust.begin(), adjust.end(), [](float const Value) { return Value != 0.f; }));
 	}
 	return count;
@@ -1618,9 +1618,9 @@ void terrain_streamer::modifier(heightmap::modifier Modifier)
 	if (auto const existing{std::find_if(m_manifest.modifiers.begin(), m_manifest.modifiers.end(), [&](heightmap::modifier const &Item) { return Item.name == Modifier.name; })}; existing != m_manifest.modifiers.end())
 	{
 		// the ground it changed before is led anew as well
-		auto const old{existing->bounds()};
-		bounds.first = glm::min(bounds.first, old.first);
-		bounds.second = glm::max(bounds.second, old.second);
+		auto const [old_low, old_high]{existing->bounds()};
+		bounds.first = glm::min(bounds.first, old_low);
+		bounds.second = glm::max(bounds.second, old_high);
 		*existing = std::move(Modifier);
 	}
 	else
@@ -1852,9 +1852,9 @@ bool terrain_streamer::save(std::string *Error)
 
 	// the packs holding changed chunks are written whole
 	std::set<heightmap::pack_key> packs;
-	for (auto const &entry : m_chunks)
-		if (entry.second->modified())
-			packs.insert(heightmap::pack_of(entry.first));
+	for (auto const &[key, chunk] : m_chunks)
+		if (chunk->modified())
+			packs.insert(heightmap::pack_of(key));
 	for (auto const &key : m_removed)
 		packs.insert(heightmap::pack_of(key));
 

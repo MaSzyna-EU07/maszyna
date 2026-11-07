@@ -397,7 +397,7 @@ loose_end const *loose_match(loose_cells const &Cells, std::pair<int, int> const
 std::vector<std::pair<loose_end, loose_end>> loose_pairs()
 {
 	loose_cells cells;
-	for (auto *track : simulation::Paths.sequence())
+	for (auto const *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || false == rail(*track) || track->Length() < 0.01)
 			continue;
@@ -2029,7 +2029,7 @@ void editor_mode::draw_nmt_pending() const
 
 void editor_mode::area_start()
 {
-	auto &drawing{m_area_drawing};
+	auto const &drawing{m_area_drawing};
 	drawing = {};
 	drawing.active = true;
 	// the area there is taken up to be changed
@@ -4147,10 +4147,10 @@ void editor_mode::nmt_share_grades()
 		return result;
 	};
 	auto const around = [&](cells const &Cells, glm::dvec3 const &Point, double const Size, auto const &Each) {
-		auto const cell{cell_at(Point, Size)};
+		auto const [cell_x, cell_z]{cell_at(Point, Size)};
 		for (int dx = -1; dx <= 1; ++dx)
 			for (int dz = -1; dz <= 1; ++dz)
-				if (auto const found{Cells.find({cell.first + dx, cell.second + dz})}; found != Cells.end())
+				if (auto const found{Cells.find({cell_x + dx, cell_z + dz})}; found != Cells.end())
 					for (auto const *other : found->second)
 						Each(*other);
 	};
@@ -4697,7 +4697,7 @@ void editor_mode::nmt_auto_step()
 		state.levelled = nmt_level_turntables();
 		// the longest tracks first: the main lines lead, the sidings join them
 		state.left.clear();
-		for (auto *track : simulation::Paths.sequence())
+		for (auto const *track : simulation::Paths.sequence())
 			if (track != nullptr && rail(*track) && track->eType != tt_Table && false == nmt_stays(*track))
 				state.left.push_back(track);
 		std::ranges::sort(state.left, [](TTrack *Left, TTrack *Right) { return Left->Length() > Right->Length(); });

@@ -999,13 +999,13 @@ void editor_track::align_controls(TTrack const &Track, point_ref const &Control,
 	if (glm::length(own) < 1e-6)
 		return;
 	auto const direction{glm::normalize(own)};
-	for (auto const &partner : Partners)
+	for (auto const &[partner_track, partner_point] : Partners)
 	{
-		auto &path{partner.first->m_paths[partner.second.path]};
-		bool const start{partner.second.kind == point_kind::start};
+		auto &path{partner_track->m_paths[partner_point.path]};
+		bool const start{partner_point.kind == point_kind::start};
 		auto &control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
 		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
-		auto const same{partner.first == &Track && partner.second.kind == end_of(Control).kind};
+		auto const same{partner_track == &Track && partner_point.kind == end_of(Control).kind};
 		control = (same ? direction : -direction) * length;
 	}
 }
@@ -3843,7 +3843,7 @@ void editor_track::retire(TTrack &Track)
 	for (auto *track : affected)
 		rebuild_geometry(*track);
 	auto crossings{Track.m_crossings};
-	for (auto *crossing : Track.m_crossings)
+	for (auto const *crossing : Track.m_crossings)
 		for (auto *neighbour : neighbours(*crossing))
 			if (std::ranges::find(crossings, neighbour) == crossings.end())
 				crossings.push_back(neighbour);
@@ -3872,7 +3872,7 @@ void editor_track::add_followers(std::vector<TTrack *> &Tracks)
 void editor_track::rebuild_geometry(TTrack &Track)
 {
 	auto const rebuild = [](TTrack &Path) {
-		auto &section{simulation::Region->section(Path.location())};
+		auto const &section{simulation::Region->section(Path.location())};
 		Path.rebuild_geometry(section.m_geometrycreated ? section.m_geometrybank : gfx::geometrybank_handle{});
 	};
 	auto crossings{Track.m_crossings};

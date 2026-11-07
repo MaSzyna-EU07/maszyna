@@ -887,7 +887,7 @@ bool editor_mode::plan_crossover(crossover_plan &Plan) const
 	// laying straights the end goes on as a straight, unless it's let go on the track
 	double best{m_track_layout == track_layout::straight ? 1.5 : 8.0};
 	auto const sections{simulation::Region->sections(ground, 40.f)};
-	for (auto *section : sections)
+	for (auto const *section : sections)
 	{
 		for (auto const &cell : section->m_cells)
 		{
@@ -1299,7 +1299,7 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 	glm::dvec2 crossing{0.0};
 	double best{kSlipReach};
 	auto const category{Line.tracks.empty() ? 1 : Line.tracks.front()->iCategoryFlag & 15};
-	for (auto *section : simulation::Region->sections(Point, 300.f))
+	for (auto const *section : simulation::Region->sections(Point, 300.f))
 		for (auto const &cell : section->m_cells)
 			for (auto *track : cell.m_paths)
 			{
@@ -1342,7 +1342,7 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 			auto const known{switch_store::named(Track)};
 			return known.has_value() && known->main_radius != 0.0;
 		};
-		for (auto *section : simulation::Region->sections(Point, 40.f))
+		for (auto const *section : simulation::Region->sections(Point, 40.f))
 			for (auto const &cell : section->m_cells)
 				for (auto *track : cell.m_paths)
 					if (track->eType == tt_Switch && false == track->m_editorremoved && track->DoubleSlip() && glm::distance(plan_of(track->location()), plan_of(Point)) < closest && false == bent(*track))
@@ -1360,8 +1360,8 @@ bool editor_mode::plan_double_slip(editor_track::straight const &Line, glm::dvec
 	bool const plain{Shape.type == "Skrz"};
 	auto const shaped = [&](double const Angle, double const Available) {
 		auto const *gauged{Line.tracks.front()};
-		auto const blade{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
-		auto curve{editor_track::slip_of(Shape.radius, Shape.middle, Angle, 0.5 * std::abs(gauged->fTrackWidth) + gauged->rail_dimensions().head + 0.002, blade.first, blade.second)};
+		auto const [blade_lead, blade_entry]{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
+		auto curve{editor_track::slip_of(Shape.radius, Shape.middle, Angle, 0.5 * std::abs(gauged->fTrackWidth) + gauged->rail_dimensions().head + 0.002, blade_lead, blade_entry)};
 		curve.tip = switch_design::cut_tip(Shape.rail, curve.radius);
 		auto half{plain ? Shape.a : curve.tangent()};
 		if (plain && half > Available)
@@ -1542,10 +1542,10 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	{
 		for (auto *track : created)
 			editor_track::retire(*track);
-		for (auto const &entry : states)
+		for (auto const &[changed_track, changed_state] : states)
 		{
-			editor_track::apply(*entry.first, entry.second);
-			editor_track::commit({entry.first});
+			editor_track::apply(*changed_track, changed_state);
+			editor_track::commit({changed_track});
 		}
 		for (auto *track : removed)
 		{
@@ -1662,8 +1662,8 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 		return false;
 	}
 	auto const oldhalf{glm::distance(plan_of(a.point), crossing)};
-	auto const blade{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
-	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, angle, 0.5 * std::abs(switches[0]->fTrackWidth) + switches[0]->rail_dimensions().head + 0.002, blade.first, blade.second)};
+	auto const [blade_lead, blade_entry]{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
+	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, angle, 0.5 * std::abs(switches[0]->fTrackWidth) + switches[0]->rail_dimensions().head + 0.002, blade_lead, blade_entry)};
 	curve.tip = switch_design::cut_tip(Shape.rail, curve.radius);
 	auto const full{curve.tangent()};
 	auto radius{curve.radius};
@@ -2383,8 +2383,8 @@ bool editor_mode::plan_curved_slip(editor_track::switch_template const &Shape, i
 		return false;
 	auto const *gauged{tool.frame_tracks.front()};
 	auto const angle{std::atan(1.0 / (Shape.ratio > 0.0 ? Shape.ratio : 9.0))};
-	auto const blade{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
-	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, angle, 0.5 * std::abs(gauged->fTrackWidth) + gauged->rail_dimensions().head + 0.002, blade.first, blade.second)};
+	auto const [blade_lead, blade_entry]{switch_design::secant_blade(Shape.rail, Shape.radius, Shape.ratio)};
+	auto curve{editor_track::slip_of(Shape.radius, Shape.middle, angle, 0.5 * std::abs(gauged->fTrackWidth) + gauged->rail_dimensions().head + 0.002, blade_lead, blade_entry)};
 	curve.tip = switch_design::cut_tip(Shape.rail, curve.radius);
 	auto const half{curve.tangent()};
 	auto const total{tool.frame.back().station};

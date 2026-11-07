@@ -301,8 +301,8 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 
 	// what the tracks removed carried goes to the ones laid in their place, now or later, in the step which lays them
 	std::vector<TTrack *> changed;
-	for (auto const &entry : States)
-		changed.push_back(entry.first);
+	for (auto const &[track, state] : States)
+		changed.push_back(track);
 	auto kept{Created};
 	kept.insert(kept.end(), changed.begin(), changed.end());
 	orphans_register(Removed, kept);
@@ -372,8 +372,8 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 
 	++m_track_edits;
 	std::vector<TTrack *> tracks;
-	for (auto const &entry : Snapshot.tracks)
-		tracks.emplace_back(entry.first);
+	for (auto const &[snapshot_track, snapshot_state] : Snapshot.tracks)
+		tracks.emplace_back(snapshot_track);
 	m_infra_suspended = true;
 	EditorSnapshot current{Snapshot};
 	current.tracks.clear();
@@ -430,16 +430,16 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 	// names passed round among the tracks: a track whose name another one gets back gives it up first. The drives the step
 	// put back have the names of their switches already
 	std::vector<scene::instance_handle> restored;
-	for (auto const &entry : Snapshot.directives)
-		restored.push_back(entry.first);
-	for (auto const &entry : Snapshot.tracks)
-		if (entry.second.name != entry.first->name() && std::ranges::any_of(Snapshot.tracks, [&](auto const &Other) { return Other.first != entry.first && Other.second.name == entry.first->name(); }))
-			editor_track::rename(*entry.first, entry.first->name() + "~", restored);
-	for (auto const &entry : Snapshot.tracks)
-		if (entry.second.name != entry.first->name())
-			editor_track::rename(*entry.first, entry.second.name, restored);
-	for (auto const &entry : Snapshot.tracks)
-		editor_track::apply(*entry.first, entry.second);
+	for (auto const &[handle, directive] : Snapshot.directives)
+		restored.push_back(handle);
+	for (auto const &[snapshot_track, snapshot_state] : Snapshot.tracks)
+		if (snapshot_state.name != snapshot_track->name() && std::ranges::any_of(Snapshot.tracks, [&](auto const &Other) { return Other.first != snapshot_track && Other.second.name == snapshot_track->name(); }))
+			editor_track::rename(*snapshot_track, snapshot_track->name() + "~", restored);
+	for (auto const &[snapshot_track, snapshot_state] : Snapshot.tracks)
+		if (snapshot_state.name != snapshot_track->name())
+			editor_track::rename(*snapshot_track, snapshot_state.name, restored);
+	for (auto const &[snapshot_track, snapshot_state] : Snapshot.tracks)
+		editor_track::apply(*snapshot_track, snapshot_state);
 	editor_track::commit(tracks);
 	for (auto const &entry : Snapshot.infra)
 		infra_restore_state(entry);
@@ -788,7 +788,7 @@ void editor_mode::render_track_selection()
 		item_tooltip("Deletes the selected tracks (Del); Ctrl+Z brings them back");
 		return;
 	}
-	auto *track{tracks.front()};
+	auto const *track{tracks.front()};
 	if (false == sheet)
 	{
 		ImGui::TextUnformatted(name_of(*track).c_str());
@@ -1068,7 +1068,7 @@ void editor_mode::render_turnout_ui()
 		double far_along{0.0};
 		double low_across{0.0};
 		double high_across{0.0};
-		for (auto *each : switches)
+		for (auto const *each : switches)
 			for (auto const &path : each->m_paths)
 			{
 				geometry::bezier const curve{path};
@@ -1643,7 +1643,7 @@ void editor_mode::delete_selected_track()
 	}
 	if (auto const set{double_of(*track)})
 	{
-		for (auto *part : {set->first, set->link, set->second})
+		for (auto const *part : {set->first, set->link, set->second})
 			if (false == part->Dynamics.empty())
 			{
 				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
@@ -1743,6 +1743,7 @@ void editor_mode::delete_selected_track()
 
 std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) const
 {
+	using enum editor_mode::switch_kind;
 	std::vector<key_hint> hints;
 	bool gizmo{false};
 	auto const *selected{selected_track()};
@@ -1792,7 +1793,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		                                                                   {"At a free end", "the main track leads into it, with Shift the diverging one"},
 		                                                                   {"Esc", "cancel"}}
 		                                           : std::vector<key_hint>{{"Drag along", "the direction of the main track, held from 4 m on"}, {"Drag sideways", "side of the diverging track"}, {"Back to the start", "the direction free again"}, {"Esc", "cancel"}};
-	else if (m_switch.placing && m_switch.curved && current_switch_kind() == switch_kind::slip)
+	else if (m_switch.placing && m_switch.curved && current_switch_kind() == slip)
 		hints = {{"Drag", "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"}, {"Esc", "cancel"}};
 	else if (m_switch.placing)
 		hints = m_switch.connection >= 0 && m_switch.recognised ?
@@ -1806,11 +1807,11 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	{
 		switch (current_switch_kind())
 		{
-		case switch_kind::connection: hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
-		case switch_kind::slip:
-		case switch_kind::crossing:
+		case connection: hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
+		case slip:
+		case crossing:
 			hints = {{"Press+drag at a crossing", "of two straights"}, {"Press+drag on a straight", "with nothing crossing it: the slip with its crossing track, which goes through the quarter of the cursor"}};
-			if (current_switch_kind() == switch_kind::slip)
+			if (current_switch_kind() == slip)
 				hints.emplace_back("Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)");
 			break;
 		default:
@@ -1826,7 +1827,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	}
 	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
 		hints = {{"List in the panel", "the type of the switch"}, {"LMB on a track", "another track"}};
-	else if (m_track_tab == track_tab::turnout && current_switch_kind() == switch_kind::slip)
+	else if (m_track_tab == track_tab::turnout && current_switch_kind() == slip)
 		hints = {{"Press+drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Press+drag at a crossing", "of two straights at the skos of the slip"}, {"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"}};
 	else if (m_track_tab == track_tab::turnout)
 		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"Press+drag on another track", "a switch on it"}};
@@ -2242,8 +2243,8 @@ void editor_mode::draw_empty_scenery_hint()
 	auto const column{std::round(picture * 5.0f)};
 	auto const wrap{width - 2.0f * pad - column};
 	float height{pad + font * 2.4f + pad * 0.5f};
-	for (auto const &row : rows)
-		height += std::max(picture, ImGui::CalcTextSize(STR_C(row.second), nullptr, false, wrap).y) + pad * 0.45f;
+	for (auto const &[keys, text] : rows)
+		height += std::max(picture, ImGui::CalcTextSize(STR_C(text), nullptr, false, wrap).y) + pad * 0.45f;
 	height += pad * 0.6f;
 	ImVec2 const top{std::round((low.x + high.x - width) * 0.5f), std::round((low.y + high.y - height) * 0.5f)};
 	ImVec2 const bottom{top.x + width, top.y + height};

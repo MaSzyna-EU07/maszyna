@@ -626,9 +626,9 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 		if (track == nullptr || track->m_editorremoved)
 			continue;
 		for (int list = 0; list < 6; ++list)
-			for (auto const &event : editor_track::events(*track, list))
-				if (false == event.first.empty())
-					readers.emplace(ToLower(event.first), std::make_pair(track, list));
+			for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+				if (false == event_name.empty())
+					readers.emplace(ToLower(event_name), std::make_pair(track, list));
 	}
 	for (auto const &include : found)
 	{
@@ -1022,8 +1022,8 @@ void editor_mode::signal_detach_events(std::string const &Read, std::vector<std:
 			continue;
 		bool carries{false};
 		for (int list = 0; list < 6 && false == carries; ++list)
-			for (auto const &event : editor_track::events(*track, list))
-				carries = carries || ToLower(event.first) == name;
+			for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+				carries = carries || ToLower(event_name) == name;
 		if (false == carries)
 			continue;
 		if (std::none_of(States.begin(), States.end(), [&](auto const &State) { return State.first == track; }))
@@ -1043,8 +1043,8 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 {
 	auto const carries = [](TTrack &Track) {
 		for (int list = 0; list < 6; ++list)
-			for (auto const &event : editor_track::events(Track, list))
-				if (false == event.first.empty())
+			for (auto const &[event_name, event_target] : editor_track::events(Track, list))
+				if (false == event_name.empty())
 					return true;
 		return false == Track.Isolated.empty();
 	};
@@ -1071,7 +1071,7 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 				for (auto const &event : editor_track::events(*track, list))
 					carried.insert(ToLower(event.first));
 	std::unordered_set<std::string> circuits;
-	for (auto *track : Kept)
+	for (auto const *track : Kept)
 		if (track != nullptr && false == track->m_editorremoved)
 			for (auto const *isolated : track->Isolated)
 				if (isolated != nullptr)
@@ -1116,8 +1116,8 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (int list = 0; list < 6; ++list)
-				for (auto const &event : editor_track::events(*track, list))
-					carried.insert(ToLower(event.first));
+				for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+					carried.insert(ToLower(event_name));
 	// not the signals standing as last listed, nor the templates once found: the step taken may hold one of them; looked for once an event
 	// waits
 	std::vector<signal_standing> signals;
@@ -1355,8 +1355,8 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 			continue;
 		bool carries{false};
 		for (int list = 0; list < 6 && false == carries; ++list)
-			for (auto const &event : editor_track::events(*track, list))
-				carries = carries || ToLower(event.first) == name;
+			for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+				carries = carries || ToLower(event_name) == name;
 		if (false == carries)
 			continue;
 		if (std::none_of(Snapshot.tracks.begin(), Snapshot.tracks.end(), [&](auto const &State) { return State.first == track; }))

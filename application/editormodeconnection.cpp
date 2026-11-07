@@ -311,6 +311,7 @@ std::vector<connection::line> editor_mode::ladder_lines(connection::line const &
 
 void editor_mode::recognise_connection()
 {
+	using enum connection::kind;
 	auto &tool{m_switch};
 	// a connection chosen by a script stays as it was chosen
 	if (false == tool.recognised && tool.connection >= 0)
