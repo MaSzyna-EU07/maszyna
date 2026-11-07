@@ -1001,7 +1001,7 @@ void editor_mode::insert_curved_connection()
 }
 
 // the crossover laid along a curve the switch is a part of: its record, its two switches and the insert between them
-std::optional<editor_mode::curved_crossover> editor_mode::crossover_of(TTrack const &Switch) const
+std::optional<curved_crossover> editor_mode::crossover_of(TTrack const &Switch) const
 {
 	if (Switch.eType != tt_Switch || Switch.m_editorremoved)
 		return std::nullopt;

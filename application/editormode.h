@@ -887,77 +887,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_event_list(TTrack &Track, int const List, bool const Editable, editor_track::state const &Before);
 	std::string m_track_mode_notice;
 	void render_route_ui();
-	bool render_route_band();
-	route_band_view route_band_layout(ImVec2 const Top, ImVec2 const Size) const;
-	static std::vector<route_band_view::role> route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs);
-	// the element under the mouse and what of it a drag changes, Arcs the number of the arcs of each curve
-	void route_band_pick(route_band_view &View, std::vector<route_band_view::role> const &Roles, std::vector<int> const &Arcs) const;
-	// a drag in the band begun, gone on or let go of; whether it changed the design
-	bool route_band_drag(route_band_view const &View, bool const Active);
-	// the radius the drag of an arc in the band asks for
-	double route_band_radius(route_band_view const &View) const;
-	bool route_band_wheel(route_band_view const &View);
-	void draw_route_band(route_band_view const &View, ImDrawList *List) const;
-	void draw_route_band_labels(route_band_view const &View, ImDrawList *List) const;
-	void draw_band_radius(route_band_view const &View, ImDrawList *List, alignment::element const &Element) const;
-	// the length of the transition along the axis, or with the km at the bottom where none taken there is too close
-	static void draw_band_length(route_band_view const &View, ImDrawList *List, alignment::element const &Element, std::vector<std::pair<float, float>> &Taken);
-	void draw_route_band_value(route_band_view const &View, ImDrawList *List) const;
-	void route_band_tooltip(route_band_view const &View, std::vector<int> const &Arcs) const;
-	bool render_route_parameters();
-	bool render_route_vertices();
-	bool render_route_vertex(int const Index);
-	// the part of the curve of the vertex the field just drawn is of in focus while it's edited or the mouse is over it
-	void route_mark(int const Index, route_design::curve_focus::part const What, int const Arc);
-	// the name of the curve of the vertex with where it lies along the line, a button to show it, how far it is from the points clicked
-	bool route_vertex_heading(int const Index);
-	bool route_vertex_clicks(int const Index);
-	bool route_vertex_curved_ends(int const Index);
-	// the radius, the cant and the transitions of the curve, two fields Half the panel wide in a row; Settled when an edit is done
-	bool route_vertex_fields(int const Index, float const Half, bool &Settled);
-	// the arcs of a compound curve, with their shares in the Total and their Cants as they are
-	bool route_vertex_arcs(int const Index, bool &Settled);
-	bool route_vertex_arc(int const Index, int const K, double const Total, std::vector<double> const &Cants, bool &Settled, int &Removed);
-	bool route_arc_cant(int const Index, int const Arc, double &Cant, std::vector<double> const &Cants, bool &Settled);
-	// the cant and the transitions as the norms recommend them, the radii fitted to the points clicked again after
-	bool route_vertex_reshape(int const Index);
-	bool route_vertex_ramps(int const Index, float const Half);
-	// the cant ramp in, or Out, of the curve, as the line has it laid
-	bool route_cant_ramp(int const Index, bool const Out, alignment::result::cant_ramp const *Ramp, float const Half);
-	bool route_vertex_details(int const Index);
-	void render_route_result();
-	void render_route_trace();
-	// the camera over the stretch of the line between the chainages, a curve seen whole
-	void route_show_curve(double const From, double const To);
-	// the departures of the points clicked from the line and the curves they belong to, measured again when the line changed
-	void route_measure_clicks();
-	// the points clicked along the curve of the vertex, in the plan, the bends of straights left out
-	std::vector<glm::dvec2> route_clicks_of(int const Vertex) const;
-	// the radii of the curve of the vertex fitted again to the points clicked along it, its transitions and cants as they are
-	bool route_hold_clicks(int const Vertex);
-	// the elements of the part of the curve in focus in the panel, in their order along the line
-	std::vector<std::size_t> route_focused() const;
-	// the element of the curve in focus, one of its Own elements, is of the part in focus; Radii those of the arcs of the curve
-	bool route_focus_takes(std::size_t const Element, std::vector<std::size_t> const &Own, std::vector<double> const &Radii) const;
 	void route_trace_start();
 	void route_trace_fit();
 	void route_trace_end(bool const Keep);
 	int route_trace_hit() const;
 	glm::dvec3 route_trace_cursor() const;
-	void route_reset();
 	void route_bind_ends();
-	bool route_from_curve(TTrack &Track);
-	bool route_from_line(TTrack &Track);
-	// the first curve of the design and the last one going on from the curves of the tracks adjoining, where they turn their way: a
-	// curve cut by a switch bent into it, say. Lays the design
-	void route_curved_ends();
-	// the first curve of the design, or the last one, goes on from the curve of the track adjoining at that end
-	bool route_goes_on(bool const Atend) const;
 	alignment::vertex route_vertex_of(editor_track::curve const &Curve) const;
 	bool route_load(TTrack &Track);
-	void route_read_stored(TTrack &Track);
-	// the note on what reading the design kept did to the status: the line digitized whole or in parts, the paths Left out of it
-	std::string route_stored_note(bool const Digitized, int const Parts, int const Skipped, std::string const &Failure, bool const Left) const;
 	void route_take_stored(int const Index);
 	void record_switch(TTrack const &Track, editor_track::switch_template const &Shape) const;
 	void record_double(TTrack const &First, TTrack const &Second, editor_track::switch_template const &Shape) const;
@@ -997,22 +934,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> create_switch_set(editor_track::switch_template const &Shape, std::vector<segment_data> const &Paths, TTrack const *Style, std::string const &Name);
 	void record_slip(std::span<TTrack *const> const Parts, std::string_view const Kind, std::string_view const Type, double const Radius, double const Angle, std::string_view const Base, double const Middle = 0.0) const;
 	void render_switch_record(TTrack const &Track) const;
-	void route_store();
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true) override;
-	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr) const;
-	// the vertices of the design recognized from the paths of the chain in the shape of its transitions; false where two straights meet
-	// with no curve, why and at which path given
-	bool digitize_vertices(editor_track::chain const &Chain, alignment::design &Design, std::string *Reason, TTrack **Culprit) const;
-	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
 	// the lines kept, the paths left out
 	void digitize_all(int *Kept = nullptr, int *Failed = nullptr);
-	// the switches without a type kept get the one of the catalogue they are of, or the size measured from their shape
-	void digitize_switches(digitize_report &Report, bool const Write) const;
-	// two switches facing each other from two tracks, their diverging tracks joined by a plain one, are kept as a crossover
-	void digitize_crossovers(digitize_report &Report, bool const Write) const;
 	// the lines, the switches, the crossovers and the objects along the tracks at one go; without Write only counts them
 	std::string digitize_scenery(bool const Write);
-	void render_route_stored();
 	void route_update()
 	{
 		m_route.design.norms.checked = true;
@@ -1020,41 +946,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		++m_route.revision;
 	}
 	void route_apply();
-	void route_lay();
-	// the crossovers on the switches of the chain taken out, the line laid again and the crossovers laid back onto it; false when
-	// there are none to take out, true when the line is done with, laid or refused
-	bool route_lay_crossovers(editor_track::chain const &Chain);
-	// the switch of a crossover a track of the chain joins at an end of the chain, none when there's no such
-	TTrack const *route_end_crossover(editor_track::chain const &Chain) const;
-	// the crossovers on the switches, each one once, with where they go back
-	std::vector<route_design::crossover_out> route_crossovers_on(std::vector<TTrack *> const &Switches);
-	void route_take_out_crossovers(std::vector<TTrack *> const &Switches);
-	// the crossovers laid back onto the new line, those which don't fit it kept to be laid later; the status tells which
-	void route_crossovers_back(std::vector<route_design::crossover_out> const &Crossovers, editor_track_tab const Tab);
-	// the adjoining straights cut where the curve takes them over, the chain found again between its new ends From and To; false
-	// when that fails, what was done taken back
-	bool route_cut_straights(editor_track::chain &Chain, TTrack *&From, TTrack *&To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created);
-	// the crossovers taken out before laid again where they fit the lines now
-	void route_crossovers_again();
-	// the ends of the design bound to the line laid, its first vertex and its last one moved in by what the curve took over of the
-	// straights there
-	void route_extend_ends(double const Startextension, double const Endextension);
-	bool route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last);
-	void route_recommend(alignment::vertex &Vertex) const;
-	void draw_route_overlay() const;
-	// the line designed in its colours, with what the panel points at along it
-	void draw_route_line(screen_projection const &Projection, ImDrawList *Drawlist) const;
-	// the part of the curve in focus in the panel lit up, its Focused elements, and named
-	void draw_route_focus(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<std::size_t> const &Focused) const;
-	// the name of the part of the curve in focus, its first element and its last one that long; empty when the line has no such curve
-	std::string route_focus_name(double const Firstlength, double const Lastlength) const;
-	// the vertex and the grip of its curve, with its radii
-	void draw_route_vertex(screen_projection const &Projection, ImDrawList *Drawlist, int const Index) const;
-	void draw_route_clicks(screen_projection const &Projection, ImDrawList *Drawlist) const;
-	void draw_route_traced(screen_projection const &Projection, ImDrawList *Drawlist) const;
-	void render_route_gizmo();
-	// the grip of a curve dragged to the point: the radius of the curve passing through it
-	void route_drag_grip(glm::dvec3 const &Moved);
 	glm::dvec3 route_vertex_position(int const Vertex) const;
 	bool route_active() const;
 	route_design m_route;
@@ -1611,13 +1502,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static bool curve_of(TTrack &Track, editor_track::straight_tolerance const &Tolerance, double const Gauge, std::vector<curve_sample> &Frame, std::vector<TTrack *> &Tracks, double const Beyond = 0.0);
 	static void cut_curve(std::vector<TTrack *> &Candidates, std::vector<curve_sample> const &Frame, glm::dvec3 const &First, glm::dvec3 const &Second, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed);
 	void insert_curved_connection();
-	struct curved_crossover
-	{
-		switch_store::record record;
-		TTrack *first{nullptr};
-		TTrack *second{nullptr};
-		TTrack *insert{nullptr};
-	};
 	// the single crossover the switch is a part of, along a curve or straights
 	std::optional<curved_crossover> crossover_of(TTrack const &Switch) const;
 	bool take_out_crossover(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second);
@@ -2833,7 +2717,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void point_objects_gather();
 	void infra_adopt_object(TTrack &Track, point_object const &Object);
 	int infra_bound_count() const; // by the infra tool, not the ones a change of their track took along
-	std::set<std::pair<scene::basic_node const *, scene::instance_handle>> m_infra_carried; // the objects their tracks moved since the tool cleared it
 	std::string infra_carried_note(); // a line of the status telling how many, empty for none; clears them
 	void infra_load();
 	void infra_store();
@@ -2939,6 +2822,27 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool orthophoto_settings_shown() const override;
 	void save_imagery_settings() override;
 	glm::dvec3 cursor_ground_point() const override;
+	route_design &route_state() override;
+	straights_state &straight_lines() override;
+	bool &route_dragging() override;
+	infra_window &infra_state() override;
+	void route_recompute() override;
+	alignment::limits lay_norms() const override;
+	void undo_last_step() override;
+	std::string refusal(std::string Text) override;
+	void records_into_history() override;
+	void record_switch_shape(TTrack const &Track, editor_track::switch_template const &Shape) const override;
+	std::optional<curved_crossover> crossover_at(TTrack const &Switch) const override;
+	bool lay_crossover_at(int const Shape, glm::dvec3 const &Press, glm::dvec3 const &Release, double const Reach, std::vector<std::string> const &Names) override;
+	int infra_bound_total() const override;
+	std::string infra_carried_status() override;
+	void infra_recognise_objects() override;
+	void infra_bind_chosen_objects() override;
+	glm::dvec3 cursor_at_level(double const Height) const override;
+	bool handle_drag_moved(glm::dvec3 &Position, TTrack const *Ground) override;
+	bool take_out_crossover_at(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second) override;
+	int crossover_template_of(switch_store::record const &Record) override;
+	void neighbour_straights_found() override;
 	// build services: end
 
 
@@ -2949,7 +2853,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_infra_overlay() const;
 
 	bool m_route_dragging{false};
-	alignment::design m_route_drag_from;
 	float m_track_snap_radius{1.0f};
 	bool m_track_align_tangent{true};
 	bool m_track_drag_connected{true};

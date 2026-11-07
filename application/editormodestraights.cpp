@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -781,7 +782,7 @@ void editor_mode::render_straights_ui()
 void editor_mode::render_straight_ui()
 {
 	auto &state{m_straights};
-	auto const &line{current_straight()};
+	auto const &line{m_build_tools->designer.current_straight()};
 	if (line.tracks.empty())
 	{
 		if (false == state.status.empty())
@@ -874,14 +875,14 @@ void editor_mode::render_straight_exact(editor_track::straight const &Line)
 
 bool editor_mode::straights_active()
 {
-	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights && false == current_straight().tracks.empty();
+	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights && false == m_build_tools->designer.current_straight().tracks.empty();
 }
 
 int editor_mode::straight_handle_hit()
 {
 	if (false == straights_active())
 		return -1;
-	auto const &line{current_straight()};
+	auto const &line{m_build_tools->designer.current_straight()};
 	std::array<glm::dvec3, 3> const handles{line.start, line.end, (line.start + line.end) * 0.5};
 	screen_projection const projection;
 	float best = kHandleRadius * kHandleRadius;
@@ -956,7 +957,7 @@ void editor_mode::render_straight_gizmo()
 		typed_turn();
 		return;
 	}
-	auto const &line{state.dragging ? state.drag_line : current_straight()};
+	auto const &line{state.dragging ? state.drag_line : m_build_tools->designer.current_straight()};
 	if (state.handle < 0 || line.tracks.empty())
 	{
 		state.dragging = false;
@@ -1064,7 +1065,7 @@ void editor_mode::end_straight_drag()
 		state.dragging = false;
 		state.drag_lines.clear();
 		if (m_route.result.valid)
-			route_apply();
+			m_build_tools->designer.route_apply();
 		straight_refresh();
 		return;
 	}
@@ -1105,7 +1106,7 @@ void editor_mode::cancel_track_tools()
 	if (m_route_dragging)
 	{
 		m_route_dragging = false;
-		m_route.design = m_route_drag_from;
+		m_route.design = m_build_tools->shared.route_drag_from;
 		route_update();
 	}
 	if (m_point_drag.active)
@@ -1141,7 +1142,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 {
 	auto &state{m_straights};
 	state.status.clear();
-	m_infra_carried.clear();
+	m_build_tools->shared.infra_carried.clear();
 	auto line{Line};
 	auto spans{straight_spans(line)};
 	auto run{reshaped_run(spans, From, To, (std::max(From, 0.0) + std::min(To, line.length)) * 0.5)};
@@ -1183,7 +1184,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 
 	m_route.from = spans[run.first].track;
 	m_route.to = spans[run.last].track;
-	route_reset();
+	m_build_tools->designer.route_reset();
 	if (m_route.chain.tracks.empty() || false == m_route.chain.switches.empty())
 	{
 		if (false == m_route.chain.switches.empty())
@@ -1198,7 +1199,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	for (auto &vertex : m_route.design.vertices)
 	{
 		vertex.radius = Radius;
-		route_recommend(vertex);
+		m_build_tools->designer.route_recommend(vertex);
 		if (false == state.auto_transitions)
 		{
 			vertex.transition_in = state.transition;
@@ -1223,7 +1224,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	{
 		auto changed{created};
 		std::ranges::copy(std::views::keys(states), std::back_inserter(changed));
-		digitize_drawn(changed);
+		m_build_tools->route_relay.digitize_drawn(changed);
 	}
 	push_track_snapshot(std::move(states), std::move(created));
 	std::string error;
@@ -1255,7 +1256,7 @@ bool editor_mode::place_straight_tool()
 		add_detour_point();
 		return true;
 	}
-	auto const &line{current_straight()};
+	auto const &line{m_build_tools->designer.current_straight()};
 	if (line.tracks.empty())
 		return false;
 	glm::dvec3 const ground{cursor_ground()};
@@ -1380,7 +1381,7 @@ void editor_mode::add_detour_point()
 	auto &state{m_straights};
 	if (state.detour.empty())
 	{
-		auto const &line{current_straight()};
+		auto const &line{m_build_tools->designer.current_straight()};
 		if (line.tracks.empty())
 			return;
 		state.detour_line = line;
@@ -1424,7 +1425,7 @@ void editor_mode::apply_detour()
 
 	m_route.from = spans[run.first].track;
 	m_route.to = spans[run.last].track;
-	route_reset();
+	m_build_tools->designer.route_reset();
 	if (m_route.chain.tracks.empty())
 		return;
 	auto &design{m_route.design};
@@ -1436,7 +1437,7 @@ void editor_mode::apply_detour()
 	};
 	alignment::vertex vertex;
 	vertex.radius = radius;
-	route_recommend(vertex);
+	m_build_tools->designer.route_recommend(vertex);
 	if (false == state.auto_transitions)
 	{
 		vertex.transition_out = state.transition;
@@ -1467,7 +1468,7 @@ void editor_mode::apply_detour()
 	route_update();
 	if (false == m_route.result.valid)
 		return;
-	route_apply();
+	m_build_tools->designer.route_apply();
 	straight_refresh();
 }
 
@@ -1495,7 +1496,7 @@ bool editor_mode::start_curve_fit(editor_track::straight const &Line, int const 
 	auto const other_end = [](editor_track::curve const &Curve, glm::dvec3 const &Joint) { return editor_track::touches(*Curve.from, Joint) ? Curve.to : Curve.from; };
 	m_route.from = state.fit_has_before ? other_end(state.fit_before, Line.start) : own_end(Line.start);
 	m_route.to = state.fit_has_after ? other_end(state.fit_after, Line.end) : own_end(Line.end);
-	route_reset();
+	m_build_tools->designer.route_reset();
 	if (m_route.chain.tracks.empty())
 		return false;
 	return true;
@@ -1516,7 +1517,7 @@ void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &En
 	auto const make = [&](editor_track::curve const &Curve, double const Offset) {
 		alignment::vertex vertex;
 		vertex.radius = Curve.radius > 0.0 ? std::round(Curve.radius) : 1000.0;
-		route_recommend(vertex);
+		m_build_tools->designer.route_recommend(vertex);
 		if (Curve.transition_in > 0.0)
 			vertex.transition_in = std::round(Curve.transition_in);
 		if (Curve.transition_out > 0.0)

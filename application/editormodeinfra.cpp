@@ -892,8 +892,8 @@ infra::binding *editor_mode::infra_find(infra::binding const &Binding)
 
 std::string editor_mode::infra_carried_note()
 {
-	auto const count{m_infra_carried.size()};
-	m_infra_carried.clear();
+	auto const count{m_build_tools->shared.infra_carried.size()};
+	m_build_tools->shared.infra_carried.clear();
 	return count > 0 ? format(STR_P("\n%zu object by the tracks moved sideways with them", "\n%zu objects by the tracks moved sideways with them", count), count) : std::string{};
 }
 
@@ -1528,7 +1528,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 		moved.lost = false;
 		binding = std::move(moved);
 		infra_move(binding);
-		m_infra_carried.emplace(binding.node, binding.include);
+		m_build_tools->shared.infra_carried.emplace(binding.node, binding.include);
 		if (binding.adopted)
 		{
 			std::vector<glm::dvec3> points;

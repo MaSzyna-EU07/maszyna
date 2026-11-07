@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "editor/editorSettings.hpp"
 #include "editor/editorGeometry.hpp"
 #include "application/application.h"
@@ -453,7 +454,7 @@ editor_mode::selftest_result editor_mode::selftest_join_or_lay_to(std::string co
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*tool.track, piece));
 	editor_track::commit(created);
-	digitize_drawn(created);
+	m_build_tools->route_relay.digitize_drawn(created);
 	if (false == created.empty())
 		push_track_snapshot({}, created);
 	constexpr std::array<char const *, 6> kinds{"none", "straight", "arc", "curve", "reverse curve", "free curve"};

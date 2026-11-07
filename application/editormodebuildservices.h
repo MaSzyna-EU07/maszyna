@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -183,8 +184,58 @@ class editor_nmt_services
 	~editor_nmt_services() = default;
 };
 
+// what the designed line, its crossovers and the digitization need from the editor: the state of the line and of the straights,
+// the records, the crossovers and the objects along the tracks
+class editor_route_services
+{
+  public:
+	// the line designed, and the straights of the paths
+	virtual route_design &route_state() = 0;
+	virtual straights_state &straight_lines() = 0;
+	// the gizmo of a vertex of the line is dragged
+	virtual bool &route_dragging() = 0;
+	// the objects along the tracks and their bindings
+	virtual infra_window &infra_state() = 0;
+	// the result of the line computed anew from its design
+	virtual void route_recompute() = 0;
+	// the norms the track is laid to
+	virtual alignment::limits lay_norms() const = 0;
+	// the last step of the history undone
+	virtual void undo_last_step() = 0;
+	// the reason a change was refused shown in the status; the text
+	virtual std::string refusal(std::string Text) = 0;
+	// the records of the switches changed taken into the last step of the history
+	virtual void records_into_history() = 0;
+	// the switch recorded with the shape given
+	virtual void record_switch_shape(TTrack const &Track, editor_track::switch_template const &Shape) const = 0;
+	// the single crossover the switch is a part of, along a curve or straights
+	virtual std::optional<curved_crossover> crossover_at(TTrack const &Switch) const = 0;
+	// a crossover of the shape laid between the points pressed and released
+	virtual bool lay_crossover_at(int const Shape, glm::dvec3 const &Press, glm::dvec3 const &Release, double const Reach, std::vector<std::string> const &Names) = 0;
+	// the objects along the tracks: how many the infra tool bound, the line of the status on those the tracks moved, the
+	// // objects recognised and the chosen ones bound
+	virtual int infra_bound_total() const = 0;
+	virtual std::string infra_carried_status() = 0;
+	virtual void infra_recognise_objects() = 0;
+	virtual void infra_bind_chosen_objects() = 0;
+	// the point under the cursor on the level of the height given
+	virtual glm::dvec3 cursor_at_level(double const Height) const = 0;
+	// a step of the drag of a handle. Ground: the handle goes onto the ground, at the height of the ballast of the track, unless
+	// // Shift is held
+	virtual bool handle_drag_moved(glm::dvec3 &Position, TTrack const *Ground) = 0;
+	// the crossover taken out of the tracks
+	virtual bool take_out_crossover_at(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second) = 0;
+	// the template a crossover was laid of, -1 if it's not among the templates
+	virtual int crossover_template_of(switch_store::record const &Record) = 0;
+	// the straights beside the one shown found anew
+	virtual void neighbour_straights_found() = 0;
+
+  protected:
+	~editor_route_services() = default;
+};
+
 // what the build tools (laying track, routes, straights, roads, sweeps, vertical profiles and grade lines, the terrain model, connections and the infrastructure) need from the editor beyond the interfaces of editortool.h; editor_mode implements it
-class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services
+class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services, public editor_route_services
 {
   public:
 	// the panels of the editor

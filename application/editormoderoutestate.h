@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "editor/editorAlignment.hpp"
+#include "editor/editorSwitchStore.hpp"
 #include "editor/editorTrack.hpp"
 #include "imgui/imgui.h"
 
@@ -179,4 +180,13 @@ struct digitize_report
 	std::map<std::string, int, std::less<>> types; // of the catalogue
 	std::map<std::string, int, std::less<>> shapes; // measured
 	std::vector<std::string> notes;
+};
+
+// the single crossover a switch is a part of, along a curve or straights
+struct curved_crossover
+{
+	switch_store::record record;
+	TTrack *first{nullptr};
+	TTrack *second{nullptr};
+	TTrack *insert{nullptr};
 };

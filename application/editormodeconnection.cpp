@@ -627,7 +627,7 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 			inserts.push_back(track);
 	}
 	editor_track::commit(inserts);
-	digitize_drawn(inserts);
+	m_build_tools->route_relay.digitize_drawn(inserts);
 	created.insert(created.end(), inserts.begin(), inserts.end());
 	if (plan.crossing)
 	{

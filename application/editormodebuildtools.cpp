@@ -423,3 +423,108 @@ glm::dvec3 editor_mode::cursor_ground_point() const
 {
 	return cursor_ground();
 }
+
+route_design &editor_mode::route_state()
+{
+	return m_route;
+}
+
+straights_state &editor_mode::straight_lines()
+{
+	return m_straights;
+}
+
+bool &editor_mode::route_dragging()
+{
+	return m_route_dragging;
+}
+
+infra_window &editor_mode::infra_state()
+{
+	return m_infra;
+}
+
+void editor_mode::route_recompute()
+{
+	route_update();
+}
+
+alignment::limits editor_mode::lay_norms() const
+{
+	return laying_norms();
+}
+
+void editor_mode::undo_last_step()
+{
+	undo_last();
+}
+
+std::string editor_mode::refusal(std::string Text)
+{
+	return refused(std::move(Text));
+}
+
+void editor_mode::records_into_history()
+{
+	records_to_history();
+}
+
+void editor_mode::record_switch_shape(TTrack const &Track, editor_track::switch_template const &Shape) const
+{
+	record_switch(Track, Shape);
+}
+
+std::optional<curved_crossover> editor_mode::crossover_at(TTrack const &Switch) const
+{
+	return crossover_of(Switch);
+}
+
+bool editor_mode::lay_crossover_at(int const Shape, glm::dvec3 const &Press, glm::dvec3 const &Release, double const Reach, std::vector<std::string> const &Names)
+{
+	return lay_crossover(Shape, Press, Release, Reach, Names);
+}
+
+int editor_mode::infra_bound_total() const
+{
+	return infra_bound_count();
+}
+
+std::string editor_mode::infra_carried_status()
+{
+	return infra_carried_note();
+}
+
+void editor_mode::infra_recognise_objects()
+{
+	infra_recognize();
+}
+
+void editor_mode::infra_bind_chosen_objects()
+{
+	infra_bind_chosen();
+}
+
+glm::dvec3 editor_mode::cursor_at_level(double const Height) const
+{
+	return cursor_level(Height);
+}
+
+bool editor_mode::handle_drag_moved(glm::dvec3 &Position, TTrack const *Ground)
+{
+	return handle_drag_step(Position, Ground);
+}
+
+bool editor_mode::take_out_crossover_at(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second)
+{
+	return take_out_crossover(Crossover, States, Created, Removed, First, Second);
+}
+
+int editor_mode::crossover_template_of(switch_store::record const &Record)
+{
+	return crossover_template(Record);
+}
+
+void editor_mode::neighbour_straights_found()
+{
+	find_neighbour_straights();
+}

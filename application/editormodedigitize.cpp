@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "editor/editorAlignmentStore.hpp"
@@ -358,7 +359,7 @@ editor_track::switch_template shape_of(auto &Report, std::vector<editor_track::s
 
 } // namespace
 
-void editor_mode::digitize_switches(digitize_report &Report, bool const Write) const
+void route_relay_tool::digitize_switches(digitize_report &Report, bool const Write) const
 {
 	auto const templates{editor_track::standard_switch_templates()};
 	auto const sizes{template_sizes(templates)};
@@ -396,14 +397,14 @@ void editor_mode::digitize_switches(digitize_report &Report, bool const Write) c
 			continue;
 		}
 		if (Write && found >= 0)
-			record_switch(*track, shape);
+			m_build.record_switch_shape(*track, shape);
 		else if (Write)
 			record_measured(*track, shape);
 		++Report.recorded;
 	}
 }
 
-void editor_mode::digitize_crossovers(digitize_report &Report, bool const Write) const
+void route_relay_tool::digitize_crossovers(digitize_report &Report, bool const Write) const
 {
 	std::set<std::pair<TTrack const *, TTrack const *>> seen;
 	for (auto *first : simulation::Paths.sequence())
@@ -429,7 +430,7 @@ void editor_mode::digitize_crossovers(digitize_report &Report, bool const Write)
 	}
 }
 
-std::string editor_mode::digitize_scenery(bool const Write)
+std::string route_relay_tool::digitize_scenery(bool const Write)
 {
 	digitize_report report;
 	if (Write)
@@ -441,11 +442,11 @@ std::string editor_mode::digitize_scenery(bool const Write)
 		switch_store::settle();
 		auto const scope{m_infra.scope};
 		m_infra.scope = 3;
-		infra_recognize();
+		m_build.infra_recognise_objects();
 		report.found = static_cast<int>(m_infra.candidates.size());
-		auto const before{infra_bound_count()};
-		infra_bind_chosen();
-		report.bound = infra_bound_count() - before;
+		auto const before{m_build.infra_bound_total()};
+		m_build.infra_bind_chosen_objects();
+		report.bound = m_build.infra_bound_total() - before;
 		m_infra.scope = scope;
 	}
 	auto text{format(STR_C("Switches: %d, kept already %d, of the catalogue %d, measured %d, parts of slips %d, odd %d"), report.switches, report.known, report.designed, report.measured, report.slips, report.odd)};
@@ -473,6 +474,13 @@ std::string editor_mode::digitize_scenery(bool const Write)
 	for (std::size_t i = 0; i < std::min<std::size_t>(report.notes.size(), 30); ++i)
 		WriteLog("Editor: digitizing - " + report.notes[i], logtype::generic);
 	if (Write)
-		ui()->set_status(text, report.odd + report.crossovers_odd + report.lines_failed > 0);
+		m_build.build_ui()->set_status(text, report.odd + report.crossovers_odd + report.lines_failed > 0);
 	return text;
+}
+
+// what the rest of the editor calls, kept on editor_mode: done by the build tools
+
+std::string editor_mode::digitize_scenery(bool const Write)
+{
+	return m_build_tools->route_relay.digitize_scenery(Write);
 }

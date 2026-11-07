@@ -1640,8 +1640,8 @@ bool editor_mode::update()
         draw_track_lines();
     if (selected_track())
         draw_track_overlay();
-    if (route_active())
-        draw_route_overlay();
+    if (m_build_tools->designer.route_active())
+        m_build_tools->route_view.draw_route_overlay();
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
         draw_straights_overlay();
     steps.step("track lines");
@@ -6446,9 +6446,9 @@ void editor_mode::render_gizmo()
         return;
     }
 
-    if (route_active())
+    if (m_build_tools->designer.route_active())
     {
-        render_route_gizmo();
+        m_build_tools->route_view.render_route_gizmo();
         return;
     }
 
@@ -7302,8 +7302,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         {
             if (m_tape.active)
                 m_tape = {};
-            else if (m_route.trace.active && route_active())
-                route_trace_end(false);
+            else if (m_route.trace.active && m_build_tools->designer.route_active())
+                m_build_tools->route_view.route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
                 lay_escape();
             else if (m_track_style.picking)
@@ -7365,10 +7365,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_fill_points.pop_back();
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
             lay_back();
-        if (is_press(Action) && m_route.trace.active && route_active() && !m_route.trace.points.empty())
+        if (is_press(Action) && m_route.trace.active && m_build_tools->designer.route_active() && !m_route.trace.points.empty())
         {
             m_route.trace.points.pop_back();
-            route_trace_fit();
+            m_build_tools->route_view.route_trace_fit();
         }
         break;
 
@@ -7383,8 +7383,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
             lay_enter();
-        if (is_press(Action) && m_route.trace.active && route_active())
-            route_trace_end(true);
+        if (is_press(Action) && m_route.trace.active && m_build_tools->designer.route_active())
+            m_build_tools->route_view.route_trace_end(true);
         break;
 
     case GLFW_KEY_K:

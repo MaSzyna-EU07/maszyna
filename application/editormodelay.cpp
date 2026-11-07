@@ -836,7 +836,7 @@ bool editor_mode::switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point)
 	auto const *selected{selected_track()};
 	if (m_track_tab != track_tab::turnout || m_switch.armed < 0 || selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
 		return false;
-	if (auto const &line{current_straight()}; false == line.tracks.empty())
+	if (auto const &line{m_build_tools->designer.current_straight()}; false == line.tracks.empty())
 	{
 		auto const along{std::clamp(line.along(Ground), 0.0, line.length)};
 		Point = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * along;
