@@ -76,6 +76,213 @@ ImU32 lay_point_colour(double const Off)
 	return IM_COL32(255, 90, 70, 255);
 }
 
+// the own shape of the Track, a switch on a straight, for a template of its own: its paths in the frame of the switch at the Origin,
+// along the Axis and across it by the Normal, mirrored to the other Side
+editor_track::switch_template mirrored_template(TTrack *Track, glm::dvec3 const &Origin, glm::dvec2 const &Axis, glm::dvec2 const &Normal, int const Side)
+{
+	editor_track::switch_template own;
+	own.source = Track;
+	for (int i = 0; i < 2; ++i)
+	{
+		auto &local{own.local[i]};
+		local = Track->m_paths[i];
+		auto const tolocal = [&Normal, &Axis, Side](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), Normal) * Side, Vector.y, glm::dot(plan_of(Vector), Axis)}; };
+		local.transform([&Origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - Origin); }, tolocal);
+		if (Side >= 0)
+			continue;
+		local.rolls = {-local.rolls[0], -local.rolls[1]};
+		for (auto &piece : local.pieces)
+			piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
+	}
+	return own;
+}
+
+// all three coordinates of the Point are numbers
+bool all_finite(glm::dvec3 const &Point)
+{
+	return std::isfinite(Point.x) && std::isfinite(Point.y) && std::isfinite(Point.z);
+}
+
+// the events on all six lists of the Track
+std::size_t events_count(TTrack &Track)
+{
+	std::size_t total{0};
+	for (int list = 0; list < 6; ++list)
+		total += editor_track::events(Track, list).size();
+	return total;
+}
+
+// the Hints of the keys with the gizmo hidden: it has no handles to drag, Q, W and E bring it out; only the ends of the track are there to
+// drag, the control vectors come out with it
+template <typename Hint> void gizmo_hidden(std::vector<Hint> &Hints)
+{
+	auto const named = [](char const *Key) { return [Key](Hint const &Each) { return std::string_view{Each.key} == Key; }; };
+	auto const handles{std::ranges::find_if(Hints, named("Gizmo"))};
+	if (auto const keys{std::ranges::find_if(Hints, named("Q W E"))}; keys != Hints.end())
+	{
+		keys->action = "bring out the gizmo: move, turn, lengthen, bend by the control vectors";
+		if (handles != Hints.end())
+			Hints.erase(handles);
+	}
+	else if (handles != Hints.end())
+		*handles = {"Q W E", "bring out the gizmo: move, turn, lengthen, bend by the control vectors"};
+	if (auto const points{std::ranges::find_if(Hints, named("Drag a point"))}; points != Hints.end())
+		*points = {"Drag an end", "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"};
+}
+
+// the azimuth from From to To in degrees, 0 to 360
+double azimuth_of(glm::dvec3 const &From, glm::dvec3 const &To)
+{
+	auto const degrees{glm::degrees(std::atan2(To.x - From.x, To.z - From.z))};
+	return degrees < 0.0 ? degrees + 360.0 : degrees;
+}
+
+// of a list of warnings only the first one by the cursor, the panel lists them all
+std::string first_line_of(std::string const &Lines)
+{
+	auto const end{Lines.find('\n')};
+	if (end == std::string::npos)
+		return Lines;
+	auto const more{static_cast<std::size_t>(std::count(Lines.begin() + end, Lines.end(), '\n'))};
+	return Lines.substr(0, end) + "\n" + format(STR_P("and %zu more, in the panel", "and %zu more, in the panel", static_cast<long long>(more)), more);
+}
+
+// the plan length of the Pieces together and the smallest of their radii, 0 where all of them are straight
+std::pair<double, double> length_and_radius(std::vector<segment_data> const &Pieces)
+{
+	double length{0.0};
+	double radius{0.0};
+	for (auto const &piece : Pieces)
+	{
+		length += bezier{piece}.plan_length();
+		if (piece.radius != 0.0f && (radius == 0.0 || std::abs(piece.radius) < radius))
+			radius = std::abs(piece.radius);
+	}
+	return {length, radius};
+}
+
+// the axes of the two rails of a track apart
+constexpr double kRailAxes{1.5};
+
+// a rail of the Curve on the Side of its axis, -1 or 1, at the height of the curve, as lines of 24 steps in the Colour
+void draw_rail(screen_projection const &Projection, ImDrawList *Drawlist, bezier const &Curve, double const Side, ImU32 const Colour, float const Width)
+{
+	auto const rail_at = [&Curve, Side](double const T) {
+		auto const tangent{plan_of(Curve.first(T))};
+		if (glm::length(tangent) < 1e-9)
+			return Curve.point(T);
+		auto const across{glm::normalize(glm::dvec2{-tangent.y, tangent.x}) * (Side * 0.5 * kRailAxes)};
+		return Curve.point(T) + glm::dvec3{across.x, 0.0, across.y};
+	};
+	auto previous{rail_at(0.0)};
+	for (int i = 1; i <= 24; ++i)
+	{
+		auto const next{rail_at(i / 24.0)};
+		Projection.line(Drawlist, previous, next, Colour, Width);
+		previous = next;
+	}
+}
+
+// the track being laid as its two rails: their axes 1.5 m apart, the gauge and the head of a rail, at the height of the Path
+void draw_overlay_rails(screen_projection const &Projection, ImDrawList *Drawlist, segment_data const &Path, ImU32 const Color)
+{
+	for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 170), 4.0f}, std::pair{Color, 2.0f}})
+		for (auto const &piece : Path.pieces.empty() ? std::vector<segment_data>{Path} : Path.pieces)
+		{
+			bezier const curve{piece};
+			for (auto const side : {-1.0, 1.0})
+				draw_rail(Projection, Drawlist, curve, side, colour, width);
+		}
+}
+
+// a circle on the ground as wide as the rails are apart, around the Point; a few pixels across at least, seen from far
+void draw_track_width(screen_projection const &Projection, ImDrawList *Drawlist, glm::dvec3 const &Point, ImU32 const Color)
+{
+	ImVec2 centre;
+	if (false == Projection.project(Point, centre))
+		return;
+	std::array<ImVec2, 24> outline;
+	auto seen{true};
+	for (std::size_t i = 0; i < outline.size(); ++i)
+	{
+		auto const angle{2.0 * glm::pi<double>() * static_cast<double>(i) / outline.size()};
+		seen = Projection.project(Point + glm::dvec3{std::cos(angle), 0.0, std::sin(angle)} * (0.5 * kRailAxes), outline[i]);
+		if (false == seen)
+			break;
+	}
+	auto const dot{false == seen || std::hypot(outline[0].x - centre.x, outline[0].y - centre.y) < 4.0f};
+	for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 170), 4.0f}, std::pair{Color, 2.0f}})
+	{
+		if (dot)
+			Drawlist->AddCircle(centre, 4.0f, colour, 16, width);
+		else
+			Drawlist->AddPolyline(outline.data(), static_cast<int>(outline.size()), colour, ImDrawFlags_Closed, width);
+	}
+}
+
+// the Lines told of a switch bent, each in its colour, in a box beside the Point
+void draw_readout_box(screen_projection const &Projection, ImDrawList *Drawlist, glm::dvec3 const &Point, std::vector<std::pair<std::string, ImU32>> const &Lines)
+{
+	ImVec2 screen;
+	if (false == Projection.project(Point, screen))
+		return;
+	auto const wrap{460.0f};
+	auto height{0.0f};
+	auto width{0.0f};
+	for (auto const &[text, colour] : Lines)
+	{
+		auto const size{ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap)};
+		height += size.y + 2.0f;
+		width = std::max(width, size.x);
+	}
+	ImVec2 corner{screen.x + 24.0f, screen.y + 24.0f};
+	Drawlist->AddRectFilled({corner.x - 6.0f, corner.y - 4.0f}, {corner.x + width + 6.0f, corner.y + height + 4.0f}, IM_COL32(10, 20, 30, 215), 4.0f);
+	for (auto const &[text, colour] : Lines)
+	{
+		Drawlist->AddText(ImGui::GetFont(), ImGui::GetFontSize(), corner, colour, text.c_str(), nullptr, wrap);
+		corner.y += ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap).y + 2.0f;
+	}
+}
+
+// the lines told of a switch Bent at a free end: the radii of its tracks, the track into the free end the cursor is at or why it isn't
+// laid into it, the warnings; the free end ringed
+template <typename Bend> std::vector<std::pair<std::string, ImU32>> bend_readout(screen_projection const &Projection, ImDrawList *Drawlist, Bend const &Bent)
+{
+	std::vector<std::pair<std::string, ImU32>> lines;
+	if (Bent.radius > 0.0)
+		lines.emplace_back(format(Bent.side == Bent.turn ? STR_C("one-sided: main R %.0f m, diverging R %.0f m") : STR_C("two-sided: main R %.0f m, diverging R %.0f m"), Bent.radius, editor_track::branch_radius(Bent.paths[1])),
+		                   IM_COL32(255, 170, 40, 255));
+	if (Bent.target.track != nullptr)
+	{
+		auto const &branch{Bent.paths[Bent.diverging ? 1 : 0]};
+		if (Bent.problem.empty())
+			lines.emplace_back(link_summary(Bent.target, Bent.link, editor_track::branch_radius(branch)), IM_COL32(255, 60, 255, 255));
+		else
+			lines.emplace_back(Bent.problem, overlay_color::invalid);
+		ImVec2 screen;
+		if (Projection.project(Bent.target.position, screen))
+			Drawlist->AddCircle(screen, 14.0f, Bent.problem.empty() ? IM_COL32(255, 60, 255, 255) : overlay_color::invalid, 20, 3.0f);
+	}
+	for (auto const &warning : Bent.report.warnings)
+		lines.emplace_back(warning, overlay_color::invalid);
+	return lines;
+}
+
+// the width of a hint of the keys Shown at the bottom: its picture of the Words, Picture high, its key in a chip unless the picture is all
+// keys, its action
+template <typename Hint> float hint_width(Hint const &Shown, std::vector<gesture_word> const &Words, float const Picture, float const Pad)
+{
+	auto const chip_width{Shown.raw != nullptr && gesture_keys_only(Shown.raw) ? 0.0f : ImGui::CalcTextSize(Shown.key).x + 2.0f * Pad + 5.0f};
+	auto const picture_width{Words.empty() ? 0.0f : gesture_width(Picture, Words) + 5.0f};
+	return picture_width + chip_width + ImGui::CalcTextSize(Shown.action.c_str()).x;
+}
+
+// a radius counted positive the way the line turns, the other way with a minus
+std::string radius_text(double const Curvature)
+{
+	return std::abs(Curvature) < 2e-5 ? std::string{STR_C("straight")} : format("%.0f m", 1.0 / Curvature);
+}
+
 } // namespace
 
 
@@ -371,7 +578,7 @@ void editor_mode::push_kilometrage_snapshot()
 	g_redo.clear();
 }
 
-void editor_mode::restore_kilometrage(EditorSnapshot &Snapshot)
+void editor_mode::restore_kilometrage(EditorSnapshot &Snapshot) const
 {
 	if (false == Snapshot.kilometrage.has_value())
 		return;
@@ -558,12 +765,7 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 		break;
 	case track_tab::route:
 		if (track != nullptr && std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) == m_route.chain.tracks.end())
-		{
-			if (track->eType != tt_Normal || false == editor_track::is_supported(*track))
-				m_track_mode_notice = STR_C("Switches aren't a part of a line: LMB on a plain path");
-			else if (false == route_load(*track))
-				m_track_mode_notice = m_route.error.empty() ? std::string{STR_C("The curve can't be read from this path, edit it as a single path")} : m_route.error;
-		}
+			open_route_on(*track);
 		break;
 	case track_tab::profile:
 		if (track != nullptr && m_profile.route.spans.empty())
@@ -579,6 +781,14 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 	default:
 		break;
 	}
+}
+
+void editor_mode::open_route_on(TTrack &Track)
+{
+	if (Track.eType != tt_Normal || false == editor_track::is_supported(Track))
+		m_track_mode_notice = STR_C("Switches aren't a part of a line: LMB on a plain path");
+	else if (false == route_load(Track))
+		m_track_mode_notice = m_route.error.empty() ? std::string{STR_C("The curve can't be read from this path, edit it as a single path")} : m_route.error;
 }
 
 void editor_mode::arm_switch()
@@ -1162,49 +1372,9 @@ void editor_mode::render_turnout_ui()
 		if (angle > 1e-6)
 			ImGui::Text(STR_C("Angle 1:%.2f (%.4f deg), R in the entry %.0f m"), 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
 	}
-	auto const drive_ui = [&](TTrack &Switch) {
-		ImGui::PushID(&Switch);
-		if (set.has_value())
-			ImGui::TextUnformatted(Switch.name().c_str());
-		if (false == EditorIncludes.scanned())
-			ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
-		else if (auto const drive{find_switch_drive(Switch, false)})
-		{
-			auto const family{drive->family};
-			auto const variant{drive->index};
-			if (begin_fields("##standingdrive", 0.3f))
-			{
-				field_row("Drive##standing");
-				if (ImGui::BeginCombo("##standing", m_switch.drives[family].name.c_str()))
-				{
-					for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
-						if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
-							replace_switch_drive(Switch, i, false);
-					ImGui::EndCombo();
-				}
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s\n%s", STR_C("Puts another drive in place of the drive of this switch, on the same side"), format(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str()).c_str());
-				ImGui::EndTable();
-			}
-			int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
-			if (segmented("standingside", side, {{0, STR_C("diverging side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"},
-			                                     {1, STR_C("other side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"}}))
-				flip_switch_drive(Switch);
-		}
-		else if ((simulation::Events.FindEvent(Switch.name() + "+") != nullptr && simulation::Events.FindEvent(Switch.name() + "-") != nullptr) || (m_track_name.track == &Switch && m_track_name.uses.includes > 0))
-			ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str());
-		else
-		{
-			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
-			render_switch_drive_choice();
-			if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
-				place_switch_drive(Switch);
-		}
-		ImGui::PopID();
-	};
-	drive_ui(*track);
+	render_switch_drive(*track, set.has_value());
 	if (set.has_value())
-		drive_ui(*set->second);
+		render_switch_drive(*set->second, true);
 	{
 		bool frogs{track->SwitchExtension->m_frogs};
 		bool movable{track->SwitchExtension->m_movablenose};
@@ -1281,22 +1451,7 @@ void editor_mode::render_turnout_ui()
 		else
 		{
 			// its own shape, mirrored
-			editor_track::switch_template own;
-			own.source = track;
-			for (int i = 0; i < 2; ++i)
-			{
-				auto &local{own.local[i]};
-				local = track->m_paths[i];
-				auto const tolocal = [&](glm::dvec3 const &Vector) { return glm::dvec3{glm::dot(plan_of(Vector), normal) * side, Vector.y, glm::dot(plan_of(Vector), axis)}; };
-				local.transform([&origin, &tolocal](glm::dvec3 const &Point) { return tolocal(Point - origin); }, tolocal);
-				if (side < 0)
-				{
-					local.rolls = {-local.rolls[0], -local.rolls[1]};
-					for (auto &piece : local.pieces)
-						piece.rolls = {-piece.rolls[0], -piece.rolls[1]};
-				}
-			}
-			done = apply_switch_template(*track, own, true, notes);
+			done = apply_switch_template(*track, mirrored_template(track, origin, axis, normal, side), true, notes);
 		}
 		if (false == notes.empty())
 			ui()->set_status(notes, false == done);
@@ -1325,30 +1480,81 @@ void editor_mode::render_turnout_ui()
 		else if (false == set.has_value())
 		{
 			// one bent into a curve slides along it, the tracks next to it keeping a metre; its curve found only while the settings are open
-			std::vector<curve_sample> bentframe;
-			std::array<TTrack *, 2> bentsides{};
-			double bentstation{0.0};
-			if (bent_switch_frame(*track, bentframe, bentsides, bentstation))
-			{
-				auto const along{nearest_station(bentframe, track->m_paths.front().points[segment_data::point::end]) - bentstation};
-				auto const back{std::max(0.0, bentstation)};
-				auto const ahead{std::max(0.0, bentframe.back().station - bentstation - along)};
-				ImGui::PushItemWidth(100.0f);
-				ImGui::InputDouble("##switchslide", &tool.slide_typed, 0.0, 0.0, "%.2f m");
-				ImGui::PopItemWidth();
-				ImGui::SameLine();
-				if (ImGui::Button(STR_C("Slide along the curve")))
-					slide_switch(*track, std::clamp(tool.slide_typed, -back, ahead));
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s\n%s", STR_C("Moves the switch along the curve it's bent into by the distance typed, + towards the frog; the tracks of the curve on both sides get shorter or longer, one taken up whole goes and the switch joins what it joined, P4 of another switch say. Dragging the switch with the mouse does the same"),
-					                  format(STR_C("Room on the curve: %.2f m back, %.2f m ahead"), back, ahead).c_str());
-			}
+			render_bent_switch_slide(*track);
 		}
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
 	ImGui::Separator();
 	ImGui::TextDisabled("%s", STR_C("The textures, the speed and the other properties of the switch are in the inspector"));
+}
+
+void editor_mode::render_switch_drive(TTrack &Switch, bool const Named)
+{
+	ImGui::PushID(&Switch);
+	if (Named)
+		ImGui::TextUnformatted(Switch.name().c_str());
+	if (false == EditorIncludes.scanned())
+		ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+	else if (auto const drive{find_switch_drive(Switch, false)})
+		render_standing_drive(Switch, drive->family, drive->index);
+	else if ((simulation::Events.FindEvent(Switch.name() + "+") != nullptr && simulation::Events.FindEvent(Switch.name() + "-") != nullptr) || (m_track_name.track == &Switch && m_track_name.uses.includes > 0))
+		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str());
+	else
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
+		render_switch_drive_choice();
+		if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
+			place_switch_drive(Switch);
+	}
+	ImGui::PopID();
+}
+
+void editor_mode::render_standing_drive(TTrack &Switch, int const Family, int const Variant)
+{
+	if (begin_fields("##standingdrive", 0.3f))
+	{
+		field_row("Drive##standing");
+		render_drive_combo(Switch, Family);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s\n%s", STR_C("Puts another drive in place of the drive of this switch, on the same side"), format(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str()).c_str());
+		ImGui::EndTable();
+	}
+	int side{((Variant >> 1) == (Variant & 1)) ? 0 : 1};
+	if (segmented("standingside", side, {{0, STR_C("diverging side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"},
+	                                     {1, STR_C("other side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"}}))
+		flip_switch_drive(Switch);
+}
+
+void editor_mode::render_drive_combo(TTrack const &Switch, int const Family)
+{
+	if (false == ImGui::BeginCombo("##standing", m_switch.drives[Family].name.c_str()))
+		return;
+	for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
+		if (ImGui::Selectable(m_switch.drives[i].name.c_str(), Family == i) && i != Family)
+			replace_switch_drive(Switch, i, false);
+	ImGui::EndCombo();
+}
+
+void editor_mode::render_bent_switch_slide(TTrack &Track)
+{
+	std::vector<curve_sample> bentframe;
+	std::array<TTrack *, 2> bentsides{};
+	double bentstation{0.0};
+	if (false == bent_switch_frame(Track, bentframe, bentsides, bentstation))
+		return;
+	auto const along{nearest_station(bentframe, Track.m_paths.front().points[segment_data::point::end]) - bentstation};
+	auto const back{std::max(0.0, bentstation)};
+	auto const ahead{std::max(0.0, bentframe.back().station - bentstation - along)};
+	ImGui::PushItemWidth(100.0f);
+	ImGui::InputDouble("##switchslide", &m_switch.slide_typed, 0.0, 0.0, "%.2f m");
+	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Slide along the curve")))
+		slide_switch(Track, std::clamp(m_switch.slide_typed, -back, ahead));
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s\n%s", STR_C("Moves the switch along the curve it's bent into by the distance typed, + towards the frog; the tracks of the curve on both sides get shorter or longer, one taken up whole goes and the switch joins what it joined, P4 of another switch say. Dragging the switch with the mouse does the same"),
+		                  format(STR_C("Room on the curve: %.2f m back, %.2f m ahead"), back, ahead).c_str());
 }
 
 void editor_mode::render_path_events(TTrack &Track)
@@ -1360,52 +1566,15 @@ void editor_mode::render_path_events(TTrack &Track)
 		m_track_event[0] = '\0';
 		m_track_events_missing.clear();
 	}
-	if (auto const count{[&]() {
-		std::size_t total{0};
-		for (int list = 0; list < 6; ++list)
-			total += editor_track::events(*track, list).size();
-		return total;
-	    }()};
-	    false == ImGui::CollapsingHeader(format("%s (%zu)###trackevents", STR_C("Events"), count).c_str()))
+	if (auto const count{events_count(*track)}; false == ImGui::CollapsingHeader(format("%s (%zu)###trackevents", STR_C("Events"), count).c_str()))
 		return;
 	auto const before{editor_track::capture(*track)};
-	auto const changed = [&](editor_track::state const &Before) {
-		push_track_snapshot({{track, Before}});
-		track->mark_dirty();
-	};
 	ImGui::TextDisabled("%s", STR_C("What the track sets off as the vehicles run on it"));
 	item_tooltip("event0: a vehicle with a crew stands on the path, event1: runs along it towards its start, event2: towards its end.\n"
 	             "eventall0/1/2: the same for any vehicle");
 	auto const editable_events{track->Dynamics.empty()};
 	for (int list = 0; list < 6; ++list)
-	{
-		auto &events{editor_track::events(*track, list)};
-		for (std::size_t i = 0; i < events.size(); ++i)
-		{
-			auto const &event{events[i]};
-			// bound by the name of the path, not written in the file
-			if (event.first.empty())
-			{
-				ImGui::TextDisabled(STR_C("%s  %s (by the name of the path)"), editor_track::event_keyword(list), event.second != nullptr ? STR_C("auto") : "?");
-				continue;
-			}
-			ImGui::PushID(list * 1000 + static_cast<int>(i));
-			if (ImGui::SmallButton("x") && editable_events)
-			{
-				events.erase(events.begin() + i);
-				editor_track::bind_events(*track, m_track_events_missing);
-				changed(before);
-				ImGui::PopID();
-				break;
-			}
-			ImGui::SameLine();
-			if (event.second == nullptr)
-				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("%s  %s (no such event)"), editor_track::event_keyword(list), event.first.c_str());
-			else
-				ImGui::Text("%s  %s", editor_track::event_keyword(list), event.first.c_str());
-			ImGui::PopID();
-		}
-	}
+		render_event_list(*track, list, editable_events, before);
 	ImGui::PushItemWidth(100.0f);
 	ImGui::Combo("##eventlist", &m_track_event_list, "event0\0event1\0event2\0eventall0\0eventall1\0eventall2\0");
 	ImGui::PopItemWidth();
@@ -1424,13 +1593,45 @@ void editor_mode::render_path_events(TTrack &Track)
 		{
 			editor_track::events(*track, m_track_event_list).emplace_back(m_track_event.data(), nullptr);
 			editor_track::bind_events(*track, m_track_events_missing);
-			changed(before);
+			push_track_snapshot({{track, before}});
+			track->mark_dirty();
 			m_track_event[0] = '\0';
 		}
 	}
 	item_tooltip("Name of the event to add to the chosen list. An event which doesn't exist is kept, and reported");
 	if (false == m_track_events_missing.empty())
 		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No such events: %s"), m_track_events_missing.c_str());
+}
+
+void editor_mode::render_event_list(TTrack &Track, int const List, bool const Editable, editor_track::state const &Before)
+{
+	auto &events{editor_track::events(Track, List)};
+	for (std::size_t i = 0; i < events.size(); ++i)
+	{
+		auto const &event{events[i]};
+		// bound by the name of the path, not written in the file
+		if (event.first.empty())
+		{
+			ImGui::TextDisabled(STR_C("%s  %s (by the name of the path)"), editor_track::event_keyword(List), event.second != nullptr ? STR_C("auto") : "?");
+			continue;
+		}
+		ImGui::PushID(List * 1000 + static_cast<int>(i));
+		if (ImGui::SmallButton("x") && Editable)
+		{
+			events.erase(events.begin() + i);
+			editor_track::bind_events(Track, m_track_events_missing);
+			push_track_snapshot({{&Track, Before}});
+			Track.mark_dirty();
+			ImGui::PopID();
+			return;
+		}
+		ImGui::SameLine();
+		if (event.second == nullptr)
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("%s  %s (no such event)"), editor_track::event_keyword(List), event.first.c_str());
+		else
+			ImGui::Text("%s  %s", editor_track::event_keyword(List), event.first.c_str());
+		ImGui::PopID();
+	}
 }
 
 void editor_mode::render_path_ui()
@@ -1501,23 +1702,6 @@ void editor_mode::render_path_ui()
 		return;
 
 	auto const before = editor_track::capture(*track);
-	enum class rebuild { none, parameters, geometry };
-	auto const finish_edit = [&](rebuild const Rebuild) {
-		if (ImGui::IsItemActivated())
-			m_track_field_before = before;
-		if (ImGui::IsItemDeactivatedAfterEdit())
-		{
-			push_track_snapshot({{track, m_track_field_before}});
-			switch (Rebuild)
-			{
-			case rebuild::geometry: editor_track::commit({track}); break;
-			case rebuild::parameters: editor_track::commit_parameters(*track); break;
-			default: track->mark_dirty(); break;
-			}
-		}
-	};
-
-	auto const finite = [](glm::dvec3 const &Point) { return std::isfinite(Point.x) && std::isfinite(Point.y) && std::isfinite(Point.z); };
 	if (ImGui::CollapsingHeader(track->eType == tt_Switch ? STR_C("Geometry of the paths") : STR_C("Geometry")))
 	{
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
@@ -1525,17 +1709,7 @@ void editor_mode::render_path_ui()
 			ImGui::PushID(i);
 			if (track->m_paths.size() > 1)
 				ImGui::TextDisabled(STR_C("Path %d"), i + 1);
-			for (auto const kind : kPointKinds)
-			{
-				editor_track::point_ref const point{i, kind};
-				if (kind != editor_track::point_kind::start)
-					ImGui::SameLine();
-				std::string label = point_label(kind);
-				if (editor_track::is_end(kind))
-					label += editor_track::is_connected(*track, point) ? " (+)" : " (-)";
-				if (ImGui::Selectable(label.c_str(), m_track_point == point, 0, ImVec2(90.0f, 0.0f)))
-					m_track_point = (m_track_point == point ? editor_track::point_ref{} : point);
-			}
+			render_path_points(*track, i);
 			item_tooltip("(+) joined with another track, (-) a free end");
 
 			auto &path = track->m_paths[i];
@@ -1549,54 +1723,8 @@ void editor_mode::render_path_ui()
 				continue;
 			}
 			ImGui::PushItemWidth(-110.0f);
-			if (m_track_point.valid() && m_track_point.path == i)
-			{
-				auto const kind{m_track_point.kind};
-				if (editor_track::is_end(kind))
-				{
-					if (auto position = path.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end]; ImGui::DragScalarN("x, y, z##point", ImGuiDataType_Double, glm::value_ptr(position), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(position))
-						editor_track::move_point(*track, m_track_point, position);
-					item_tooltip("Drag to move, Ctrl+click to type the value");
-					finish_edit(rebuild::geometry);
-				}
-				else
-				{
-					auto &vector{path.points[kind == editor_track::point_kind::control1 ? segment_data::point::control1 : segment_data::point::control2]};
-					if (auto typed{vector}; ImGui::DragScalarN(STR_C("vector##point"), ImGuiDataType_Double, glm::value_ptr(typed), 3, 0.01f, nullptr, nullptr, "%.3f") && finite(typed) && glm::length(typed) < 1e5)
-						vector = typed;
-					item_tooltip("Control vector, relative to its end; zero for a straight");
-					finish_edit(rebuild::geometry);
-				}
-			}
-			if (ImGui::TreeNode(STR_C("Cant and radius")))
-			{
-				if (begin_fields("##cantradius", 0.3f))
-				{
-					field_row("Cant (mm)");
-					auto const lift = [](float const Roll) { return static_cast<float>(1500.0 * std::sin(glm::radians(static_cast<double>(Roll)))); };
-					auto const roll = [](float const Lift) { return static_cast<float>(glm::degrees(std::asin(std::clamp(static_cast<double>(Lift) / 1500.0, -1.0, 1.0)))); };
-					if (std::array<float, 2> cants{lift(path.rolls[0]), lift(path.rolls[1])}; ImGui::DragFloat2("##roll", cants.data(), 0.5f, -388.0f, 388.0f, "%.0f") && std::isfinite(cants[0]) && std::isfinite(cants[1]))
-						path.rolls = {roll(cants[0]), roll(cants[1])};
-					item_tooltip("Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path");
-					finish_edit(rebuild::geometry);
-					field_row("Radius");
-					if (auto radius{path.radius}; ImGui::InputFloat("##radius", &radius, 0.0f, 0.0f, "%.1f") && std::isfinite(radius))
-						path.radius = radius;
-					item_tooltip("Radius stored with the path in the scenery; the shape itself comes from the control vectors");
-					finish_edit(rebuild::geometry);
-					ImGui::EndTable();
-				}
-				if (ImGui::Button(STR_C("Straighten"), ImVec2(-FLT_MIN, 0.0f)))
-				{
-					push_track_snapshot({{track, before}});
-					path.points[segment_data::point::control1] = glm::dvec3{};
-					path.points[segment_data::point::control2] = glm::dvec3{};
-					path.radius = 0.0f;
-					editor_track::commit({track});
-				}
-				item_tooltip("Removes the control vectors and the radius, the path becomes a straight between its ends");
-				ImGui::TreePop();
-			}
+			render_point_fields(*track, i, before);
+			render_cant_radius(*track, path, before);
 			ImGui::PopItemWidth();
 			ImGui::PopID();
 		}
@@ -1616,11 +1744,92 @@ void editor_mode::render_path_ui()
 	}
 }
 
+void editor_mode::path_field_done(TTrack &Track, editor_track::state const &Before)
+{
+	if (ImGui::IsItemActivated())
+		m_track_field_before = Before;
+	if (ImGui::IsItemDeactivatedAfterEdit())
+	{
+		push_track_snapshot({{&Track, m_track_field_before}});
+		editor_track::commit({&Track});
+	}
+}
+
+void editor_mode::render_path_points(TTrack const &Track, int const Index)
+{
+	for (auto const kind : kPointKinds)
+	{
+		editor_track::point_ref const point{Index, kind};
+		if (kind != editor_track::point_kind::start)
+			ImGui::SameLine();
+		std::string label = point_label(kind);
+		if (editor_track::is_end(kind))
+			label += editor_track::is_connected(Track, point) ? " (+)" : " (-)";
+		if (ImGui::Selectable(label.c_str(), m_track_point == point, 0, ImVec2(90.0f, 0.0f)))
+			m_track_point = (m_track_point == point ? editor_track::point_ref{} : point);
+	}
+}
+
+void editor_mode::render_point_fields(TTrack &Track, int const Index, editor_track::state const &Before)
+{
+	if (false == m_track_point.valid() || m_track_point.path != Index)
+		return;
+	auto &path = Track.m_paths[Index];
+	auto const kind{m_track_point.kind};
+	if (editor_track::is_end(kind))
+	{
+		if (auto position = path.points[kind == editor_track::point_kind::start ? segment_data::point::start : segment_data::point::end]; ImGui::DragScalarN("x, y, z##point", ImGuiDataType_Double, glm::value_ptr(position), 3, 0.01f, nullptr, nullptr, "%.3f") && all_finite(position))
+			editor_track::move_point(Track, m_track_point, position);
+		item_tooltip("Drag to move, Ctrl+click to type the value");
+		path_field_done(Track, Before);
+	}
+	else
+	{
+		auto &vector{path.points[kind == editor_track::point_kind::control1 ? segment_data::point::control1 : segment_data::point::control2]};
+		if (auto typed{vector}; ImGui::DragScalarN(STR_C("vector##point"), ImGuiDataType_Double, glm::value_ptr(typed), 3, 0.01f, nullptr, nullptr, "%.3f") && all_finite(typed) && glm::length(typed) < 1e5)
+			vector = typed;
+		item_tooltip("Control vector, relative to its end; zero for a straight");
+		path_field_done(Track, Before);
+	}
+}
+
+void editor_mode::render_cant_radius(TTrack &Track, segment_data &Path, editor_track::state const &Before)
+{
+	if (false == ImGui::TreeNode(STR_C("Cant and radius")))
+		return;
+	if (begin_fields("##cantradius", 0.3f))
+	{
+		field_row("Cant (mm)");
+		auto const lift = [](float const Roll) { return static_cast<float>(1500.0 * std::sin(glm::radians(static_cast<double>(Roll)))); };
+		auto const roll = [](float const Lift) { return static_cast<float>(glm::degrees(std::asin(std::clamp(static_cast<double>(Lift) / 1500.0, -1.0, 1.0)))); };
+		if (std::array<float, 2> cants{lift(Path.rolls[0]), lift(Path.rolls[1])}; ImGui::DragFloat2("##roll", cants.data(), 0.5f, -388.0f, 388.0f, "%.0f") && std::isfinite(cants[0]) && std::isfinite(cants[1]))
+			Path.rolls = {roll(cants[0]), roll(cants[1])};
+		item_tooltip("Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path");
+		path_field_done(Track, Before);
+		field_row("Radius");
+		if (auto radius{Path.radius}; ImGui::InputFloat("##radius", &radius, 0.0f, 0.0f, "%.1f") && std::isfinite(radius))
+			Path.radius = radius;
+		item_tooltip("Radius stored with the path in the scenery; the shape itself comes from the control vectors");
+		path_field_done(Track, Before);
+		ImGui::EndTable();
+	}
+	if (ImGui::Button(STR_C("Straighten"), ImVec2(-FLT_MIN, 0.0f)))
+	{
+		push_track_snapshot({{&Track, Before}});
+		Path.points[segment_data::point::control1] = glm::dvec3{};
+		Path.points[segment_data::point::control2] = glm::dvec3{};
+		Path.radius = 0.0f;
+		editor_track::commit({&Track});
+	}
+	item_tooltip("Removes the control vectors and the radius, the path becomes a straight between its ends");
+	ImGui::TreePop();
+}
+
 
 
 // the designs kept for the lines the tracks deleted lay along cut down to the tracks left, in the same step of the undo history: what
 // the status tells of it
-std::string editor_mode::designs_trimmed(std::vector<TTrack *> const &Removed)
+std::string editor_mode::designs_trimmed(std::vector<TTrack *> const &Removed) const
 {
 	auto const cut{alignment_store::trim(Removed)};
 	return cut > 0 ? std::string{STR_P("The design kept for the line is cut down to the tracks left along it", "The designs kept for the lines are cut down to the tracks left along them", static_cast<long long>(cut))} : std::string{};
@@ -1673,73 +1882,13 @@ void editor_mode::delete_selected_track()
 	}
 	if (auto const set{double_of(*track)})
 	{
-		for (auto const *part : {set->first, set->link, set->second})
-			if (false == part->Dynamics.empty())
-			{
-				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
-				return;
-			}
-		if (auto const known{switch_store::named(*set->first)})
-			switch_store::forget(known->name);
-		auto main{set->first->m_paths.front()};
-		main.points[segment_data::point::end] = set->second->m_paths.front().points[segment_data::point::end];
-		auto const velocity{speed_check::path_velocity(*set->first, 0)};
-		for (auto *part : {set->first, set->link, set->second})
-			editor_track::retire(*part);
-		std::vector<TTrack *> created;
-		if (false == Global.shiftState)
-		{
-			auto *straight{editor_track::create_path(*set->first, main)};
-			editor_track::velocity(*straight, velocity);
-			editor_track::commit({straight});
-			created.push_back(straight);
-			ui()->set_status(STR_C("The double switch is replaced by its main track, Shift+Del removes all of it"), false);
-		}
-		if (auto const note{designs_trimmed({set->first, set->link, set->second})}; false == note.empty())
-			ui()->set_status(note, false);
-		push_track_snapshot({}, created, {set->first, set->link, set->second});
-		drives_deleted({set->first, set->second});
-		if (std::ranges::any_of(m_route.chain.tracks, [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
-			m_route = {};
-		m_node = nullptr;
-		ui()->set_node(nullptr);
-		m_track_point = {};
-		straight_refresh();
+		delete_double_switch(*set);
 		return;
 	}
 	// a slip goes whole, its two tracks left crossing in its place unless Shift asks for all of it
 	if (auto const slip{slip_of(*track)})
 	{
-		for (auto const *part : slip->parts)
-			if (false == part->Dynamics.empty())
-			{
-				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
-				return;
-			}
-		auto const created{slip_taken_out(*slip, false == Global.shiftState)};
-		if (false == Global.shiftState)
-		{
-			// kept in the scenery as a crossing
-			std::string base;
-			int number{1};
-			while (base.empty() || switch_store::has(base))
-			{
-				base = std::format("editor_skrz{}", number);
-				++number;
-			}
-			record_slip(created, "crossing", "Skrz", 0.0, slip->record.ratio > 0.0 ? std::atan(1.0 / slip->record.ratio) : 0.0, base);
-			ui()->set_status(STR_C("The slip is replaced by its two tracks crossing, Shift+Del removes all of it"), false);
-		}
-		if (auto const note{designs_trimmed(slip->parts)}; false == note.empty())
-			ui()->set_status(note, false);
-		push_track_snapshot({}, created, slip->parts);
-		drives_deleted(slip->switches);
-		if (std::ranges::any_of(m_route.chain.tracks, [&](TTrack const *Each) { return std::ranges::find(slip->parts, Each) != slip->parts.end(); }))
-			m_route = {};
-		m_node = nullptr;
-		ui()->set_node(nullptr);
-		m_track_point = {};
-		straight_refresh();
+		delete_slip(*slip);
 		return;
 	}
 	// retired first, so the infrastructure it carried and moves elsewhere is in the same undo step
@@ -1775,213 +1924,86 @@ void editor_mode::delete_selected_track()
 	straight_refresh();
 }
 
+void editor_mode::delete_double_switch(double_switch const &Set)
+{
+	for (auto const *part : {Set.first, Set.link, Set.second})
+		if (false == part->Dynamics.empty())
+		{
+			ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
+			return;
+		}
+	if (auto const known{switch_store::named(*Set.first)})
+		switch_store::forget(known->name);
+	auto main{Set.first->m_paths.front()};
+	main.points[segment_data::point::end] = Set.second->m_paths.front().points[segment_data::point::end];
+	auto const velocity{speed_check::path_velocity(*Set.first, 0)};
+	for (auto *part : {Set.first, Set.link, Set.second})
+		editor_track::retire(*part);
+	std::vector<TTrack *> created;
+	if (false == Global.shiftState)
+	{
+		auto *straight{editor_track::create_path(*Set.first, main)};
+		editor_track::velocity(*straight, velocity);
+		editor_track::commit({straight});
+		created.push_back(straight);
+		ui()->set_status(STR_C("The double switch is replaced by its main track, Shift+Del removes all of it"), false);
+	}
+	if (auto const note{designs_trimmed({Set.first, Set.link, Set.second})}; false == note.empty())
+		ui()->set_status(note, false);
+	push_track_snapshot({}, created, {Set.first, Set.link, Set.second});
+	drives_deleted({Set.first, Set.second});
+	if (std::ranges::any_of(m_route.chain.tracks, [&Set](TTrack const *Each) { return Each == Set.first || Each == Set.link || Each == Set.second; }))
+		m_route = {};
+	m_node = nullptr;
+	ui()->set_node(nullptr);
+	m_track_point = {};
+	straight_refresh();
+}
+
+void editor_mode::delete_slip(slip_set const &Slip)
+{
+	for (auto const *part : Slip.parts)
+		if (false == part->Dynamics.empty())
+		{
+			ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
+			return;
+		}
+	auto const created{slip_taken_out(Slip, false == Global.shiftState)};
+	if (false == Global.shiftState)
+	{
+		// kept in the scenery as a crossing
+		std::string base;
+		int number{1};
+		while (base.empty() || switch_store::has(base))
+		{
+			base = std::format("editor_skrz{}", number);
+			++number;
+		}
+		record_slip(created, "crossing", "Skrz", 0.0, Slip.record.ratio > 0.0 ? std::atan(1.0 / Slip.record.ratio) : 0.0, base);
+		ui()->set_status(STR_C("The slip is replaced by its two tracks crossing, Shift+Del removes all of it"), false);
+	}
+	if (auto const note{designs_trimmed(Slip.parts)}; false == note.empty())
+		ui()->set_status(note, false);
+	push_track_snapshot({}, created, Slip.parts);
+	drives_deleted(Slip.switches);
+	if (std::ranges::any_of(m_route.chain.tracks, [&Slip](TTrack const *Each) { return std::ranges::find(Slip.parts, Each) != Slip.parts.end(); }))
+		m_route = {};
+	m_node = nullptr;
+	ui()->set_node(nullptr);
+	m_track_point = {};
+	straight_refresh();
+}
+
 std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) const
 {
-	using enum editor_mode::switch_kind;
 	std::vector<key_hint> hints;
 	bool gizmo{false};
 	auto const *selected{selected_track()};
-	if (m_lay.active)
-	{
-		bool const curve{m_lay.mode == lay_mode::curve};
-		auto const *tab{curve ? "back to the bends of straights" : "trace a curve on the photo"};
-		if (m_lay.points.empty())
-			hints = {{"LMB", "start, on the ground or at a free end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
-		else if (m_lay.points.size() > 1)
-		{
-			// the points clicked are no track until Enter: it comes right after the click, where the bar at the bottom shows it
-			hints = {{"LMB", curve ? "a point along the middle of the curve, which ends at the last one" : "a bend of the straights, eased with a large curve"}, {"Enter", "lay the points clicked"},
-			         {"Backspace", "take back the point"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"},
-			         {"Esc", "twice: drop the points not laid"}};
-		}
-		else
-		{
-			hints = {{"LMB", curve ? "a point along the middle of the curve, which ends at the last one" : "a bend of the straights, eased with a large curve"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}};
-			if (m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr)
-				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
-			else if (m_lay.mouse_snap.track != nullptr && curve)
-				hints.emplace_back("Ctrl+wheel", "radius");
-			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "stop laying"},
-			                           {"Backspace", "take back the point"}, {"Esc", "stop laying"}});
-		}
-	}
-	else if (false == m_straights.detour.empty())
-	{
-		char const *const steps[] = {"leave the axis", "shifted", "start back", "back on the axis"};
-		auto const step{std::min<std::size_t>(m_straights.detour.size(), 3)};
-		hints = {{m_straights.tool == 2 ? "LMB" : "Shift+click", format(STR_C("point %zu of 4: %s"), step + 1, STR_C(steps[step]))}, {"Esc", "cancel"}};
-	}
-	else if (m_extend.active)
-	{
-		hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}};
-		if (editor_track::snap_target target; extend_snap(target))
-			hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
-		else if (m_track_layout != track_layout::straight)
-			hints.emplace_back("Ctrl+wheel", "radius");
-		hints.insert(hints.end(), {{"Release", "build"}, {"Esc", "cancel"}});
-	}
-	else if (m_switch.placing && m_switch.free)
-		hints = m_switch.free_end.track != nullptr ? std::vector<key_hint>{{"Drag sideways", "side of the diverging track"},
-		                                                                   {"Drag on past its end", "bends the main track toward the cursor"},
-		                                                                   {"Tab", "the diverging track the other way or the same way"},
-		                                                                   {"At a free end", "the main track leads into it, with Shift the diverging one"},
-		                                                                   {"Esc", "cancel"}}
-		                                           : std::vector<key_hint>{{"Drag along", "the direction of the main track, held from 4 m on"}, {"Drag sideways", "side of the diverging track"}, {"Back to the start", "the direction free again"}, {"Esc", "cancel"}};
-	else if (m_switch.placing && m_switch.curved && current_switch_kind() == slip)
-		hints = {{"Drag", "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"}, {"Esc", "cancel"}};
-	else if (m_switch.placing)
-	{
-		if (m_switch.connection >= 0 && m_switch.recognised)
-			hints = std::vector<key_hint>{{"Let go", connection_name(m_switch.connection)}, {"Ctrl+wheel", "R of the aligning curve"}, {"Esc", "cancel"}};
-		else if (m_switch.connection >= 0 && false == m_switch.curved)
-			hints = std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}};
-		else
-			hints = std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Drag onto the track beside", "a crossover there"}, {"Esc", "cancel"}};
-	}
-	else if (m_track_tab == track_tab::lay)
-		hints = {{"LMB", "start, on the ground or at a free end"}};
-	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
-	{
-		switch (current_switch_kind())
-		{
-		case connection: hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
-		case slip:
-		case crossing:
-			hints = {{"Press+drag at a crossing", "of two straights"}, {"Press+drag on a straight", "with nothing crossing it: the slip with its crossing track, which goes through the quarter of the cursor"}};
-			if (current_switch_kind() == slip)
-				hints.emplace_back("Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)");
-			break;
-		default:
-			hints = {{"Press+drag on a track", "a switch on it: along its direction, sideways its side"}, {"Press+drag from a free end", "a switch going on from the end of a track"}, {"LMB on a track", "selects it"}};
-			break;
-		}
-		if (selected != nullptr)
-		{
-			hints.push_back({"Gizmo", "move the selected switch"});
-			hints.push_back({"Del", "remove the switch, its main track stays"});
-			gizmo = true;
-		}
-	}
-	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
-		hints = {{"List in the panel", "the type of the switch"}, {"LMB on a track", "another track"}};
-	else if (m_track_tab == track_tab::turnout && current_switch_kind() == slip)
-		hints = {{"Press+drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Press+drag at a crossing", "of two straights at the skos of the slip"}, {"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"}};
-	else if (m_track_tab == track_tab::turnout)
-		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"Press+drag on another track", "a switch on it"}};
-	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())
-		hints = {{"LMB on a track", "the grade line of its whole line"}, {"Shift+LMB on more tracks", "the route between the outermost ones"}, {"Shift+drag a box", "the route over the tracks in it"}};
-	else if (m_track_tab == track_tab::profile && m_profile.picking)
-		hints = {{"LMB on a track", "the stretch from switch to switch onto the common grade line"}, {"LMB on a blue one", "off it"}, {"Shift+LMB", "the track only"}, {"Esc", "done"}};
-	else if (m_track_tab == track_tab::profile)
-		hints = {{"Drag a point", "changes the grade"}, {"Double click", "adds a point"}, {"LMB on another track", "its whole line"}, {"Shift+LMB on more tracks", "the route between the outermost ones"}, {"Shift+drag a box", "the route over the tracks in it"}, {"Apply", "writes the heights into the tracks"}};
-	else if (m_track_window_open && m_track_tab == track_tab::speed)
-		hints = {{"LMB on a row", "show the path"}};
-	else if (m_track_window_open && m_track_tab == track_tab::lineside)
-		hints = {{"LMB on a track", "the line the objects go along"}};
-	else if (m_track_window_open && m_track_tab == track_tab::parallel)
-		hints = {{"LMB on a track", "the new track goes beside it"}, {"Click on a side in the panel", "the side of the new track"}};
-	else if (m_track_window_open && m_track_tab == track_tab::srk && m_signal.moving)
-		hints = {{"Drag along", "moves the signal along the track"}, {"Drag over the track", "to the other side"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (m_track_window_open && m_track_tab == track_tab::srk && m_signal.placing)
-		hints = {{"Drag along", "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (m_track_window_open && m_track_tab == track_tab::srk && false == m_srk.drawing())
-	{
-		if (signal_armed() != nullptr)
-			hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Esc", "stops placing"}};
-		else
-			hints = {{"LMB on a switch", "opens its station"}, {"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
-		if (m_signal.selected != 0 && m_signal.selected == m_instance)
-			hints.push_back({"Del", "removes the selected signal with its event"});
-	}
-	else if (m_track_window_open && m_track_tab == track_tab::turntable && m_turntable.placing)
-		hints = {{"Drag", "turns the bridge"}, {"Release", "places the turntable"}, {"Esc", "cancel"}};
-	else if (m_track_window_open && m_track_tab == track_tab::turntable && m_turntable.table != nullptr)
-		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
-	else if (m_track_window_open && m_track_tab == track_tab::turntable)
-		hints = {{"LMB", "places a new turntable"}};
-	else if (m_track_window_open && m_track_tab == track_tab::srk)
-		hints = {{"LMB on a switch", "opens its station"}};
-	else if (m_track_window_open && m_track_tab == track_tab::kilometrage)
-		hints = {{"LMB on a track", "a point of the km there"}, {"Mouse over a track", "its km by the cursor"}};
-	else if (m_track_window_open && m_track_tab == track_tab::joints)
-		hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
-	else if (m_track_window_open && m_track_tab == track_tab::infra)
-		hints = {{"LMB", "select a path"}};
-	else if (m_track_tab == track_tab::straights && m_straights.tool == 1)
-		hints = {{"Press+drag on the straight", "breaks it there and turns the rest"}, {"Esc", "cancel"}};
-	else if (m_track_tab == track_tab::straights && m_straights.tool == 2)
-		hints = {{"LMB on the straight", "point 1 of 4: leave the axis"}, {"Esc", "cancel"}};
-	else if (m_track_tab == track_tab::straights && m_straights.dragging && m_straights.handle == 2)
-	{
-		auto const offer{straight_parallel_offer(m_straights.drag_line, m_straights.preview_start - m_straights.drag_line.start)};
-		if (offer.snaps)
-			hints = {{"Release", format(STR_C("parallel at %.2f m"), offer.spacing)}, {"Esc", "cancel"}};
-		else if (offer.nearby)
-			hints = {{"Near another straight", format(STR_C("snap at %.2f m  (%.1f°)"), offer.spacing, offer.angle)}, {"Esc", "cancel"}};
-		else
-			hints = {{"Close to another straight", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
-	}
-	else if (m_track_tab == track_tab::straights && m_straights.current.tracks.empty())
-		hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
-	else if (m_track_tab == track_tab::straights)
-	{
-		hints = {{"Drag an end", "the curves at it follow"}, {"Drag the middle", "shifts sideways, snaps parallel"}, {"Ctrl+drag", "breaks the straight"}, {"Shift+click x4", "shifts a piece around an obstacle"}, {"Alt+click", "adds another straight to move together"}};
-	}
-	else if (m_track_tab == track_tab::route && m_route.chain.tracks.empty())
-		hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
-	else if (m_track_tab == track_tab::route)
-		hints = {{"Drag a vertex", "the curve follows"}, {"Drag the radius grip", "changes the radius"}, {"Drag in the curvature band", "R up and down, transitions sideways"}, {"Apply", "writes the design into the tracks"}, {"Esc", "release the vertex"}};
-	else if (selected == nullptr)
-		hints = {{"LMB on a track", "selects it"}, {"Drag on the ground", "selects the tracks in a box"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"RMB on a track", "what can be done with it"}, {"L", "lay a new track"}};
-	else if (m_track_tab == track_tab::path && m_track_set.size() >= 2 && in_track_set(selected))
-	{
-		hints = {{"Inspector", "the properties of all of them at once"}, {"Gizmo", "moves them together"}, {"Shift+LMB", "adds or takes out a track"}, {"Ctrl+Shift+V", "sets what's ticked of the track taken"}, {"Esc", "deselects"}, {"Del", "deletes them"}};
-		gizmo = true;
-	}
-	else if (m_point_drag.moved)
-		hints = {{"Drag", "moves the point, level"}, {"Over a free end", "the end joins it"}, {"Release", "done"}, {"Esc", "cancel"}};
-	else if (m_track_point.valid())
-	{
-		char const *action{"moves the point along the axes"};
-		if (false == editor_track::is_end(m_track_point.kind) && m_gizmo_op == gizmo_operation::rotate)
-			action = "turns the control vector sideways or up, cant at its end, the joined track keeps the tangent";
-		else if (false == editor_track::is_end(m_track_point.kind) && m_gizmo_op == gizmo_operation::scale)
-			action = "length of the control vector";
-		else if (false == editor_track::is_end(m_track_point.kind))
-			action = "moves the control point, the joined track keeps the tangent";
-		else if (m_gizmo_op == gizmo_operation::rotate)
-			action = "rings about the point: direction, grade, cant; the joined tracks follow";
-		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, true) == gizmo_operation::scale)
-			action = "lengthens the track at this end, the curve keeps its radius";
-		hints = {{"Drag a point", "moves it, an end onto the ground (Shift: keeps its height), dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Esc", "releases the point"}};
-		gizmo = true;
-	}
-	else
-	{
-		char const *action{"moves the whole track"};
-		if (m_gizmo_op == gizmo_operation::rotate)
-			action = "rings: direction, grade, cant; the joined tracks follow";
-		else if (m_gizmo_op == gizmo_operation::scale && selected != nullptr && track_gizmo_operation(*selected, false) == gizmo_operation::scale)
-			action = "lengthens the track at its free end, the curve keeps its radius";
-		hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", action}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"L", "new track, also from a free end"}, {"Esc", "deselects"}, {"Del", "deletes the track"}};
-		gizmo = true;
-	}
-	// the gizmo hidden has no handles to drag: Q, W and E bring it out
+	if (false == tool_key_hints(hints) && false == tab_key_hints(hints, selected, gizmo) && false == window_key_hints(hints) && false == plan_key_hints(hints))
+		gizmo = selection_key_hints(hints, selected);
 	if (gizmo && false == m_track_gizmo_on)
 	{
-		auto const named = [](char const *Key) { return [Key](key_hint const &Hint) { return std::string_view{Hint.key} == Key; }; };
-		auto const handles{std::ranges::find_if(hints, named("Gizmo"))};
-		if (auto const keys{std::ranges::find_if(hints, named("Q W E"))}; keys != hints.end())
-		{
-			keys->action = "bring out the gizmo: move, turn, lengthen, bend by the control vectors";
-			if (handles != hints.end())
-				hints.erase(handles);
-		}
-		else if (handles != hints.end())
-			*handles = {"Q W E", "bring out the gizmo: move, turn, lengthen, bend by the control vectors"};
-		// with it hidden only the ends of the track are there to drag, the control vectors come out with it
-		if (auto const points{std::ranges::find_if(hints, named("Drag a point"))}; points != hints.end())
-			*points = {"Drag an end", "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"};
+		gizmo_hidden(hints);
 		gizmo = false;
 	}
 	if (auto const *meaning{typed_meaning()}; meaning != nullptr)
@@ -2008,155 +2030,432 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	return hints;
 }
 
+bool editor_mode::tool_key_hints(std::vector<key_hint> &Hints) const
+{
+	using enum editor_mode::switch_kind;
+	if (m_lay.active)
+		lay_key_hints(Hints);
+	else if (false == m_straights.detour.empty())
+	{
+		char const *const steps[] = {"leave the axis", "shifted", "start back", "back on the axis"};
+		auto const step{std::min<std::size_t>(m_straights.detour.size(), 3)};
+		Hints = {{m_straights.tool == 2 ? "LMB" : "Shift+click", format(STR_C("point %zu of 4: %s"), step + 1, STR_C(steps[step]))}, {"Esc", "cancel"}};
+	}
+	else if (m_extend.active)
+	{
+		Hints = {{"Drag", "lays the shape to the cursor, to a free end: joins it"}};
+		if (editor_track::snap_target target; extend_snap(target))
+			Hints.insert(Hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
+		else if (m_track_layout != track_layout::straight)
+			Hints.emplace_back("Ctrl+wheel", "radius");
+		Hints.insert(Hints.end(), {{"Release", "build"}, {"Esc", "cancel"}});
+	}
+	else if (m_switch.placing && m_switch.free)
+		Hints = m_switch.free_end.track != nullptr ? std::vector<key_hint>{{"Drag sideways", "side of the diverging track"},
+		                                                                   {"Drag on past its end", "bends the main track toward the cursor"},
+		                                                                   {"Tab", "the diverging track the other way or the same way"},
+		                                                                   {"At a free end", "the main track leads into it, with Shift the diverging one"},
+		                                                                   {"Esc", "cancel"}}
+		                                           : std::vector<key_hint>{{"Drag along", "the direction of the main track, held from 4 m on"}, {"Drag sideways", "side of the diverging track"}, {"Back to the start", "the direction free again"}, {"Esc", "cancel"}};
+	else if (m_switch.placing && m_switch.curved && current_switch_kind() == slip)
+		Hints = {{"Drag", "the crossing track ahead through the quarter of the cursor, the slip curve of a single slip on its side"}, {"Esc", "cancel"}};
+	else if (m_switch.placing)
+		placing_key_hints(Hints);
+	else
+		return false;
+	return true;
+}
+
+void editor_mode::lay_key_hints(std::vector<key_hint> &Hints) const
+{
+	bool const curve{m_lay.mode == lay_mode::curve};
+	auto const *tab{curve ? "back to the bends of straights" : "trace a curve on the photo"};
+	if (m_lay.points.empty())
+		Hints = {{"LMB", "start, on the ground or at a free end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
+	else if (m_lay.points.size() > 1)
+	{
+		// the points clicked are no track until Enter: it comes right after the click, where the bar at the bottom shows it
+		Hints = {{"LMB", curve ? "a point along the middle of the curve, which ends at the last one" : "a bend of the straights, eased with a large curve"}, {"Enter", "lay the points clicked"},
+		         {"Backspace", "take back the point"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"},
+		         {"Esc", "twice: drop the points not laid"}};
+	}
+	else
+	{
+		Hints = {{"LMB", curve ? "a point along the middle of the curve, which ends at the last one" : "a bend of the straights, eased with a large curve"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}};
+		if (m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr)
+			Hints.insert(Hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
+		else if (m_lay.mouse_snap.track != nullptr && curve)
+			Hints.emplace_back("Ctrl+wheel", "radius");
+		Hints.insert(Hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "stop laying"},
+		                           {"Backspace", "take back the point"}, {"Esc", "stop laying"}});
+	}
+}
+
+void editor_mode::placing_key_hints(std::vector<key_hint> &Hints) const
+{
+	if (m_switch.connection >= 0 && m_switch.recognised)
+		Hints = std::vector<key_hint>{{"Let go", connection_name(m_switch.connection)}, {"Ctrl+wheel", "R of the aligning curve"}, {"Esc", "cancel"}};
+	else if (m_switch.connection >= 0 && false == m_switch.curved)
+		Hints = std::vector<key_hint>{{"Drag onto the other track", "the connection there"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}, {"Alt+wheel", "where a double crossover meets"}, {"Esc", "cancel"}};
+	else
+		Hints = std::vector<key_hint>{{"Drag along", "direction of the switch"}, {"Drag sideways", "side of the diverging track"}, {"Drag onto the track beside", "a crossover there"}, {"Esc", "cancel"}};
+}
+
+bool editor_mode::tab_key_hints(std::vector<key_hint> &Hints, TTrack const *Selected, bool &Gizmo) const
+{
+	using enum editor_mode::switch_kind;
+	if (m_track_tab == track_tab::lay)
+		Hints = {{"LMB", "start, on the ground or at a free end"}};
+	else if (m_track_tab == track_tab::turnout && (selected_track() == nullptr || selected_track()->eType == tt_Switch))
+		Gizmo = turnout_key_hints(Hints, Selected);
+	else if (m_track_tab == track_tab::turnout && m_switch.armed < 0)
+		Hints = {{"List in the panel", "the type of the switch"}, {"LMB on a track", "another track"}};
+	else if (m_track_tab == track_tab::turnout && current_switch_kind() == slip)
+		Hints = {{"Press+drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Press+drag at a crossing", "of two straights at the skos of the slip"}, {"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"}};
+	else if (m_track_tab == track_tab::turnout)
+		Hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"Press+drag on another track", "a switch on it"}};
+	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())
+		Hints = {{"LMB on a track", "the grade line of its whole line"}, {"Shift+LMB on more tracks", "the route between the outermost ones"}, {"Shift+drag a box", "the route over the tracks in it"}};
+	else if (m_track_tab == track_tab::profile && m_profile.picking)
+		Hints = {{"LMB on a track", "the stretch from switch to switch onto the common grade line"}, {"LMB on a blue one", "off it"}, {"Shift+LMB", "the track only"}, {"Esc", "done"}};
+	else if (m_track_tab == track_tab::profile)
+		Hints = {{"Drag a point", "changes the grade"}, {"Double click", "adds a point"}, {"LMB on another track", "its whole line"}, {"Shift+LMB on more tracks", "the route between the outermost ones"}, {"Shift+drag a box", "the route over the tracks in it"}, {"Apply", "writes the heights into the tracks"}};
+	else
+		return false;
+	return true;
+}
+
+bool editor_mode::turnout_key_hints(std::vector<key_hint> &Hints, TTrack const *Selected) const
+{
+	using enum editor_mode::switch_kind;
+	switch (current_switch_kind())
+	{
+	case connection: Hints = {{"Press on a straight", "and drag onto the other track"}, {"Shift+wheel", "another kind"}, {"Ctrl+wheel", "R of the aligning curve"}}; break;
+	case slip:
+	case crossing:
+		Hints = {{"Press+drag at a crossing", "of two straights"}, {"Press+drag on a straight", "with nothing crossing it: the slip with its crossing track, which goes through the quarter of the cursor"}};
+		if (current_switch_kind() == slip)
+			Hints.emplace_back("Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)");
+		break;
+	default:
+		Hints = {{"Press+drag on a track", "a switch on it: along its direction, sideways its side"}, {"Press+drag from a free end", "a switch going on from the end of a track"}, {"LMB on a track", "selects it"}};
+		break;
+	}
+	if (Selected == nullptr)
+		return false;
+	Hints.push_back({"Gizmo", "move the selected switch"});
+	Hints.push_back({"Del", "remove the switch, its main track stays"});
+	return true;
+}
+
+bool editor_mode::window_key_hints(std::vector<key_hint> &Hints) const
+{
+	if (false == m_track_window_open)
+		return false;
+	switch (m_track_tab)
+	{
+	case track_tab::speed:
+		Hints = {{"LMB on a row", "show the path"}};
+		break;
+	case track_tab::lineside:
+		Hints = {{"LMB on a track", "the line the objects go along"}};
+		break;
+	case track_tab::parallel:
+		Hints = {{"LMB on a track", "the new track goes beside it"}, {"Click on a side in the panel", "the side of the new track"}};
+		break;
+	case track_tab::srk:
+		srk_key_hints(Hints);
+		break;
+	case track_tab::turntable:
+		if (m_turntable.placing)
+			Hints = {{"Drag", "turns the bridge"}, {"Release", "places the turntable"}, {"Esc", "cancel"}};
+		else if (m_turntable.table != nullptr)
+			Hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
+		else
+			Hints = {{"LMB", "places a new turntable"}};
+		break;
+	case track_tab::kilometrage:
+		Hints = {{"LMB on a track", "a point of the km there"}, {"Mouse over a track", "its km by the cursor"}};
+		break;
+	case track_tab::joints:
+		Hints = {{"LMB on a row", "show the place"}, {"Fix", "joins the ends, aligns them"}};
+		break;
+	case track_tab::infra:
+		Hints = {{"LMB", "select a path"}};
+		break;
+	default:
+		return false;
+	}
+	return true;
+}
+
+void editor_mode::srk_key_hints(std::vector<key_hint> &Hints) const
+{
+	if (m_signal.moving)
+		Hints = {{"Drag along", "moves the signal along the track"}, {"Drag over the track", "to the other side"}, {"Release", "done"}, {"Esc", "cancel"}};
+	else if (m_signal.placing)
+		Hints = {{"Drag along", "the trains it faces run that way"}, {"Release", "done"}, {"Esc", "cancel"}};
+	else if (false == m_srk.drawing())
+	{
+		if (signal_armed() != nullptr)
+			Hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Esc", "stops placing"}};
+		else
+			Hints = {{"LMB on a switch", "opens its station"}, {"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
+		if (m_signal.selected != 0 && m_signal.selected == m_instance)
+			Hints.push_back({"Del", "removes the selected signal with its event"});
+	}
+	else
+		Hints = {{"LMB on a switch", "opens its station"}};
+}
+
+bool editor_mode::plan_key_hints(std::vector<key_hint> &Hints) const
+{
+	if (m_track_tab == track_tab::straights)
+		straights_key_hints(Hints);
+	else if (m_track_tab == track_tab::route && m_route.chain.tracks.empty())
+		Hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
+	else if (m_track_tab == track_tab::route)
+		Hints = {{"Drag a vertex", "the curve follows"}, {"Drag the radius grip", "changes the radius"}, {"Drag in the curvature band", "R up and down, transitions sideways"}, {"Apply", "writes the design into the tracks"}, {"Esc", "release the vertex"}};
+	else
+		return false;
+	return true;
+}
+
+void editor_mode::straights_key_hints(std::vector<key_hint> &Hints) const
+{
+	if (m_straights.tool == 1)
+		Hints = {{"Press+drag on the straight", "breaks it there and turns the rest"}, {"Esc", "cancel"}};
+	else if (m_straights.tool == 2)
+		Hints = {{"LMB on the straight", "point 1 of 4: leave the axis"}, {"Esc", "cancel"}};
+	else if (m_straights.dragging && m_straights.handle == 2)
+	{
+		auto const offer{straight_parallel_offer(m_straights.drag_line, m_straights.preview_start - m_straights.drag_line.start)};
+		if (offer.snaps)
+			Hints = {{"Release", format(STR_C("parallel at %.2f m"), offer.spacing)}, {"Esc", "cancel"}};
+		else if (offer.nearby)
+			Hints = {{"Near another straight", format(STR_C("snap at %.2f m  (%.1f°)"), offer.spacing, offer.angle)}, {"Esc", "cancel"}};
+		else
+			Hints = {{"Close to another straight", "snaps parallel at 4.00 / 4.50 / 4.75 m"}, {"Esc", "cancel"}};
+	}
+	else if (m_straights.current.tracks.empty())
+		Hints = {{"LMB on a straight", "its ends and the middle to drag"}, {"LMB on a curve", "its vertex and radius to drag"}};
+	else
+		Hints = {{"Drag an end", "the curves at it follow"}, {"Drag the middle", "shifts sideways, snaps parallel"}, {"Ctrl+drag", "breaks the straight"}, {"Shift+click x4", "shifts a piece around an obstacle"}, {"Alt+click", "adds another straight to move together"}};
+}
+
+bool editor_mode::selection_key_hints(std::vector<key_hint> &Hints, TTrack const *Selected) const
+{
+	if (Selected == nullptr)
+	{
+		Hints = {{"LMB on a track", "selects it"}, {"Drag on the ground", "selects the tracks in a box"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"RMB on a track", "what can be done with it"}, {"L", "lay a new track"}};
+		return false;
+	}
+	if (m_track_tab == track_tab::path && m_track_set.size() >= 2 && in_track_set(Selected))
+	{
+		Hints = {{"Inspector", "the properties of all of them at once"}, {"Gizmo", "moves them together"}, {"Shift+LMB", "adds or takes out a track"}, {"Ctrl+Shift+V", "sets what's ticked of the track taken"}, {"Esc", "deselects"}, {"Del", "deletes them"}};
+		return true;
+	}
+	if (m_point_drag.moved)
+	{
+		Hints = {{"Drag", "moves the point, level"}, {"Over a free end", "the end joins it"}, {"Release", "done"}, {"Esc", "cancel"}};
+		return false;
+	}
+	if (m_track_point.valid())
+		Hints = {{"Drag a point", "moves it, an end onto the ground (Shift: keeps its height), dropped on a free end joins it"}, {"Gizmo", point_gizmo_action(Selected)}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Esc", "releases the point"}};
+	else
+		Hints = {{"Drag a point", "moves it, an end dropped on a free end joins it"}, {"Gizmo", track_gizmo_action(Selected)}, {"Q W E", "gizmo: move, turn, lengthen"}, {"Shift+LMB", "adds a track to the selection, drag: a box"}, {"L", "new track, also from a free end"}, {"Esc", "deselects"}, {"Del", "deletes the track"}};
+	return true;
+}
+
+char const *editor_mode::point_gizmo_action(TTrack const *Selected) const
+{
+	if (false == editor_track::is_end(m_track_point.kind) && m_gizmo_op == gizmo_operation::rotate)
+		return "turns the control vector sideways or up, cant at its end, the joined track keeps the tangent";
+	if (false == editor_track::is_end(m_track_point.kind) && m_gizmo_op == gizmo_operation::scale)
+		return "length of the control vector";
+	if (false == editor_track::is_end(m_track_point.kind))
+		return "moves the control point, the joined track keeps the tangent";
+	if (m_gizmo_op == gizmo_operation::rotate)
+		return "rings about the point: direction, grade, cant; the joined tracks follow";
+	if (m_gizmo_op == gizmo_operation::scale && Selected != nullptr && track_gizmo_operation(*Selected, true) == gizmo_operation::scale)
+		return "lengthens the track at this end, the curve keeps its radius";
+	return "moves the point along the axes";
+}
+
+char const *editor_mode::track_gizmo_action(TTrack const *Selected) const
+{
+	if (m_gizmo_op == gizmo_operation::rotate)
+		return "rings: direction, grade, cant; the joined tracks follow";
+	if (m_gizmo_op == gizmo_operation::scale && Selected != nullptr && track_gizmo_operation(*Selected, false) == gizmo_operation::scale)
+		return "lengthens the track at its free end, the curve keeps its radius";
+	return "moves the whole track";
+}
+
 // values of the change in progress, shown next to the cursor
 std::string editor_mode::track_readout() const
 {
 	if (m_tape.active)
 		return tape_readout();
-	auto const name = [](TTrack const *Track) { return name_of(*Track); };
-	auto const azimuth = [](glm::dvec3 const &From, glm::dvec3 const &To) {
-		auto const degrees{glm::degrees(std::atan2(To.x - From.x, To.z - From.z))};
-		return degrees < 0.0 ? degrees + 360.0 : degrees;
-	};
 	if (m_extend.active)
-	{
-		double length{0.0};
-		double radius{0.0};
-		auto const pieces{extend_preview()};
-		for (auto const &piece : pieces)
-		{
-			length += bezier{piece}.plan_length();
-			if (piece.radius != 0.0f && (radius == 0.0 || std::abs(piece.radius) < radius))
-				radius = std::abs(piece.radius);
-		}
-		if (m_eased_last.has_value() && false == m_eased_last->pieces.empty())
-			radius = m_eased_last->radius;
-		editor_track::snap_target target;
-		auto const snapped{extend_snap(target) && target.track != nullptr};
-		editor_track::branch_link link;
-		std::string reason;
-		if (plan_branch_link(link, reason))
-			return link_summary(target, link, editor_track::branch_radius(m_extend.track->m_paths[1]));
-		if (snapped && pieces.empty())
-			return format(STR_C("no track fits to the end of %s"), name(target.track).c_str());
-		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) + speed_of(radius, laying_norms()) : format("L %.2f m   %s", length, STR_C("straight"))};
-		if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
-			text += "\n" + eased;
-		text += "\n" + design_speed_of(m_extend.track, snapped ? target.track : nullptr);
-		if (auto const vertical{vertical_of(pieces)}; false == vertical.empty())
-			text += "\n" + vertical;
-		if (snapped)
-			text += "\n" + format(STR_C("joins %s"), name(target.track).c_str());
-		for (auto const &warning : switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces))
-			text += "\n" + warning;
-		if (false == reason.empty())
-			text += "\n" + reason;
-		return text + "\n" + track_shaping(snapped);
-	}
+		return extend_readout();
 	if (m_lay.active)
-	{
-		auto const &lay{m_lay};
-		// of a list of warnings only the first one by the cursor, the panel lists them all
-		auto const first_of = [](std::string const &Lines) {
-			auto const end{Lines.find('\n')};
-			if (end == std::string::npos)
-				return Lines;
-			auto const more{static_cast<std::size_t>(std::count(Lines.begin() + end, Lines.end(), '\n'))};
-			return Lines.substr(0, end) + "\n" + format(STR_P("and %zu more, in the panel", "and %zu more, in the panel", static_cast<long long>(more)), more);
-		};
-		std::string text;
-		if (lay.points.empty())
-			text = lay.mouse_snap.track != nullptr ? std::string{STR_C("goes on from this end of the track")} : std::string{STR_C("start")};
-		else if (false == lay.preview.empty() && lay.plan.shape.valid)
-		{
-			// the curve the cursor makes now: of the last bend, or the one traced
-			auto const &plan{lay.plan};
-			text = format("L %.1f m", lay.preview_length);
-			if (false == plan.shape.curves.empty())
-			{
-				auto const &curve{plan.shape.curves.back()};
-				text += "   " + curve_label(curve, laying_norms());
-				if (false == alignment::meets_norms(curve, plan.design))
-					text += "\n" + STR("this curve doesn't meet the norms, it's laid all the same");
-				// the curves next to the free ends going on from the curves of their tracks: the first and the last one
-				if (auto const on{curve_goes_on(plan.shape.curves.front())}; false == on.empty())
-					text += "\n" + on;
-				if (auto const on{curve_goes_on(curve)}; plan.shape.curves.size() > 1 && false == on.empty())
-					text += "\n" + on;
-			}
-			if (lay.mode == lay_mode::curve && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
-			{
-				auto const &trace{plan.traces.back()};
-				text += "\n" + format(STR_C("%zu points, departure %.0f cm, at most %.0f cm"), trace.points.size(), trace.rms * 100.0, trace.worst * 100.0);
-			}
-			auto const [from, to]{laying_ends()};
-			text += "\n" + design_speed_of(from, to);
-			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
-				text += "\n" + vertical;
-		}
-		else if (false == lay.preview.empty())
-		{
-			double radius{0.0};
-			bool straight{false};
-			for (auto const &piece : lay.preview)
-			{
-				auto const r{piece_plan_radius(piece)};
-				if (r < 0.5)
-					straight = true;
-				else if (radius == 0.0 || r < radius)
-					radius = r;
-			}
-			if (m_eased_last.has_value() && false == m_eased_last->pieces.empty())
-				radius = m_eased_last->radius;
-			if (radius > 0.0)
-				text = (straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius)) + speed_of(radius, laying_norms());
-			else
-				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
-			if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
-				text += "\n" + eased;
-			{
-				auto const [from, to]{laying_ends()};
-				text += "\n" + design_speed_of(from, to);
-			}
-			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
-				text += "\n" + vertical;
-		}
-		for (auto const &warning : switch_exit_warnings(lay.start.track, lay.points.empty() ? lay.mouse : lay.points.front(), lay.mouse_snap.track, lay.mouse_snap.position, lay.preview))
-			text += "\n" + warning;
-		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
-			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());
-		if (false == lay.preview_error.empty())
-			text += "\n" + first_of(lay.preview_error);
-		if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
-			text += "\n" + track_shaping(lay.start.track != nullptr);
-		// the bends are laid by default, the bar at the bottom tells of Tab: only the curve traced is named
-		if (lay.mode == lay_mode::curve)
-			text += "\n" + std::string{STR_C("Curve traced, Tab: the bends of straights")};
-		if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
-			text += "\n" + (lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), azimuth(lay.points.back(), lay.mouse)) : lay.skew);
-		// the warning of the first Esc leads, where it's read first
-		if (ImGui::GetTime() - lay.escape_time < 3.0)
-			text = lay.status + "\n" + text;
-		else if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
-			text += "\n" + first_of(lay.status);
-		return text;
-	}
+		return lay_readout();
 	auto const &state{m_straights};
 	if (state.tool_placed && state.tool_mouse)
+		return straight_tool_readout();
+	if (state.dragging)
+		return straight_drag_readout();
+	if (m_track_set_using && m_track_gizmo_drag.operation == gizmo_operation::rotate)
+		return format(STR_C("turned %+.2f deg"), glm::degrees(m_track_gizmo_drag.angle));
+	if (auto const *track{selected_track()}; m_track_gizmo_using && track != nullptr)
+		return gizmo_readout(*track);
+	return {};
+}
+
+std::string editor_mode::extend_readout() const
+{
+	auto const pieces{extend_preview()};
+	auto const [length, smallest]{length_and_radius(pieces)};
+	auto const radius{m_eased_last.has_value() && false == m_eased_last->pieces.empty() ? m_eased_last->radius : smallest};
+	editor_track::snap_target target;
+	auto const snapped{extend_snap(target) && target.track != nullptr};
+	editor_track::branch_link link;
+	std::string reason;
+	if (plan_branch_link(link, reason))
+		return link_summary(target, link, editor_track::branch_radius(m_extend.track->m_paths[1]));
+	if (snapped && pieces.empty())
+		return format(STR_C("no track fits to the end of %s"), name_of(*target.track).c_str());
+	auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) + speed_of(radius, laying_norms()) : format("L %.2f m   %s", length, STR_C("straight"))};
+	if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
+		text += "\n" + eased;
+	text += "\n" + design_speed_of(m_extend.track, snapped ? target.track : nullptr);
+	if (auto const vertical{vertical_of(pieces)}; false == vertical.empty())
+		text += "\n" + vertical;
+	if (snapped)
+		text += "\n" + format(STR_C("joins %s"), name_of(*target.track).c_str());
+	for (auto const &warning : switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces))
+		text += "\n" + warning;
+	if (false == reason.empty())
+		text += "\n" + reason;
+	return text + "\n" + track_shaping(snapped);
+}
+
+std::string editor_mode::lay_readout() const
+{
+	auto const &lay{m_lay};
+	auto text{lay_shape_text()};
+	for (auto const &warning : switch_exit_warnings(lay.start.track, lay.points.empty() ? lay.mouse : lay.points.front(), lay.mouse_snap.track, lay.mouse_snap.position, lay.preview))
+		text += "\n" + warning;
+	if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
+		text += "\n" + format(STR_C("joins %s"), name_of(*lay.mouse_snap.track).c_str());
+	if (false == lay.preview_error.empty())
+		text += "\n" + first_line_of(lay.preview_error);
+	if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
+		text += "\n" + track_shaping(lay.start.track != nullptr);
+	// the bends are laid by default, the bar at the bottom tells of Tab: only the curve traced is named
+	if (lay.mode == lay_mode::curve)
+		text += "\n" + std::string{STR_C("Curve traced, Tab: the bends of straights")};
+	if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
+		text += "\n" + (lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), azimuth_of(lay.points.back(), lay.mouse)) : lay.skew);
+	// the warning of the first Esc leads, where it's read first
+	if (ImGui::GetTime() - lay.escape_time < 3.0)
+		text = lay.status + "\n" + text;
+	else if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
+		text += "\n" + first_line_of(lay.status);
+	return text;
+}
+
+std::string editor_mode::lay_shape_text() const
+{
+	auto const &lay{m_lay};
+	if (lay.points.empty())
+		return lay.mouse_snap.track != nullptr ? std::string{STR_C("goes on from this end of the track")} : std::string{STR_C("start")};
+	if (false == lay.preview.empty() && lay.plan.shape.valid)
+		return lay_plan_text();
+	if (false == lay.preview.empty())
+		return lay_pieces_text();
+	return {};
+}
+
+std::string editor_mode::lay_plan_text() const
+{
+	// the curve the cursor makes now: of the last bend, or the one traced
+	auto const &lay{m_lay};
+	auto const &plan{lay.plan};
+	auto text{format("L %.1f m", lay.preview_length)};
+	if (false == plan.shape.curves.empty())
 	{
-		auto const &line{state.tool_line};
-		auto const offset{plan_of(state.tool_handle - state.tool_point)};
-		if (state.tool == 1)
-		{
-			if (glm::length(offset) < 1e-3)
-				return {};
-			auto const turn{glm::degrees(signed_angle(line.direction, glm::normalize(offset)))};
-			return format(STR_C("turn %+.3f deg   R %.0f m"), turn, straight_tool_radius(line));
-		}
-		glm::dvec2 const normal{-line.direction.y, line.direction.x};
-		return format(STR_C("shift %+.3f m   over %.2f m"), glm::dot(offset, normal), glm::dot(offset, line.direction));
+		auto const &curve{plan.shape.curves.back()};
+		text += "   " + curve_label(curve, laying_norms());
+		if (false == alignment::meets_norms(curve, plan.design))
+			text += "\n" + STR("this curve doesn't meet the norms, it's laid all the same");
+		// the curves next to the free ends going on from the curves of their tracks: the first and the last one
+		if (auto const on{curve_goes_on(plan.shape.curves.front())}; false == on.empty())
+			text += "\n" + on;
+		if (auto const on{curve_goes_on(curve)}; plan.shape.curves.size() > 1 && false == on.empty())
+			text += "\n" + on;
 	}
-	if (state.dragging && state.fitting)
+	if (lay.mode == lay_mode::curve && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
+	{
+		auto const &trace{plan.traces.back()};
+		text += "\n" + format(STR_C("%zu points, departure %.0f cm, at most %.0f cm"), trace.points.size(), trace.rms * 100.0, trace.worst * 100.0);
+	}
+	auto const [from, to]{laying_ends()};
+	text += "\n" + design_speed_of(from, to);
+	if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
+		text += "\n" + vertical;
+	return text;
+}
+
+std::string editor_mode::lay_pieces_text() const
+{
+	auto const &lay{m_lay};
+	double radius{0.0};
+	bool straight{false};
+	for (auto const &piece : lay.preview)
+	{
+		auto const r{piece_plan_radius(piece)};
+		if (r < 0.5)
+			straight = true;
+		else if (radius == 0.0 || r < radius)
+			radius = r;
+	}
+	if (m_eased_last.has_value() && false == m_eased_last->pieces.empty())
+		radius = m_eased_last->radius;
+	std::string text;
+	if (radius > 0.0)
+		text = (straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius)) + speed_of(radius, laying_norms());
+	else
+		text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
+	if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
+		text += "\n" + eased;
+	auto const [from, to]{laying_ends()};
+	text += "\n" + design_speed_of(from, to);
+	if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
+		text += "\n" + vertical;
+	return text;
+}
+
+std::string editor_mode::straight_tool_readout() const
+{
+	auto const &state{m_straights};
+	auto const &line{state.tool_line};
+	auto const offset{plan_of(state.tool_handle - state.tool_point)};
+	if (state.tool == 1)
+	{
+		if (glm::length(offset) < 1e-3)
+			return {};
+		auto const turn{glm::degrees(signed_angle(line.direction, glm::normalize(offset)))};
+		return format(STR_C("turn %+.3f deg   R %.0f m"), turn, straight_tool_radius(line));
+	}
+	glm::dvec2 const normal{-line.direction.y, line.direction.x};
+	return format(STR_C("shift %+.3f m   over %.2f m"), glm::dot(offset, normal), glm::dot(offset, line.direction));
+}
+
+std::string editor_mode::straight_drag_readout() const
+{
+	auto const &state{m_straights};
+	if (state.fitting)
 	{
 		auto const &result{m_route.result};
 		if (false == result.valid)
@@ -2166,70 +2465,68 @@ std::string editor_mode::track_readout() const
 			text += format(STR_C("   deflection %.3f deg"), glm::degrees(curve.deflection));
 		return text;
 	}
-	if (state.dragging)
+	auto const &grabbed{state.drag_line};
+	if (state.handle == 2)
 	{
-		auto const &grabbed{state.drag_line};
-		if (state.handle == 2)
-		{
-			glm::dvec2 const normal{-grabbed.direction.y, grabbed.direction.x};
-			auto const offset{state.preview_start - grabbed.start};
-			auto text{format(STR_C("shift %+.3f m"), glm::dot(plan_of(offset), normal))};
-			auto const offer{straight_parallel_offer(grabbed, offset)};
-			if (offer.snaps)
-				text += "\n" + format(STR_C("parallel  %.2f m"), offer.spacing);
-			else if (offer.nearby)
-				text += "\n" + format(STR_C("close: %.2f m  %.1f°"), offer.spacing, offer.angle);
-			return text;
-		}
-		return format(STR_C("L %.3f m (%+.3f)   azimuth %.4f deg"), plan_distance(state.preview_start, state.preview_end), plan_distance(state.preview_start, state.preview_end) - grabbed.length,
-		              azimuth(state.preview_start, state.preview_end));
+		glm::dvec2 const normal{-grabbed.direction.y, grabbed.direction.x};
+		auto const offset{state.preview_start - grabbed.start};
+		auto text{format(STR_C("shift %+.3f m"), glm::dot(plan_of(offset), normal))};
+		auto const offer{straight_parallel_offer(grabbed, offset)};
+		if (offer.snaps)
+			text += "\n" + format(STR_C("parallel  %.2f m"), offer.spacing);
+		else if (offer.nearby)
+			text += "\n" + format(STR_C("close: %.2f m  %.1f°"), offer.spacing, offer.angle);
+		return text;
 	}
-	if (m_track_set_using && m_track_gizmo_drag.operation == gizmo_operation::rotate)
-		return format(STR_C("turned %+.2f deg"), glm::degrees(m_track_gizmo_drag.angle));
-	auto const *track{selected_track()};
-	if (m_track_gizmo_using && track != nullptr)
+	return format(STR_C("L %.3f m (%+.3f)   azimuth %.4f deg"), plan_distance(state.preview_start, state.preview_end), plan_distance(state.preview_start, state.preview_end) - grabbed.length,
+	              azimuth_of(state.preview_start, state.preview_end));
+}
+
+std::string editor_mode::gizmo_readout(TTrack const &Track) const
+{
+	auto const &drag{m_track_gizmo_drag};
+	if (drag.on_control)
+		return control_readout(Track);
+	if (drag.operation == gizmo_operation::scale && drag.path >= 0)
 	{
-		auto const &drag{m_track_gizmo_drag};
-		if (drag.on_control)
-		{
-			auto const control_point{editor_track::point_position(*track, m_track_point) - editor_track::point_position(*track, editor_track::end_of(m_track_point))};
-			auto text{format(STR_C("control %.2f m   azimuth %.2f deg"), glm::length(control_point), azimuth(glm::dvec3{0.0}, control_point))};
-			if (drag.operation == gizmo_operation::rotate && drag.ring == 1)
-				text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
-			if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-				text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
-			if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
-				text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
-			if (drag.fixed != glm::dvec3{})
-				text += "\n" + STR("along the switch");
-			return text;
-		}
-		if (drag.operation == gizmo_operation::scale && drag.path >= 0)
-		{
-			auto text{format("L %.3f m (%+.3f)", drag.stretch, drag.stretch - drag.length)};
-			if (drag.path < static_cast<int>(drag.paths.size()) && std::abs(drag.paths[drag.path].radius) > 0.5f)
-				text += format("   R %.1f m", std::abs(drag.paths[drag.path].radius));
-			return text;
-		}
-		if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
-			return format(STR_C("grade changed by %+.1f per mille"), 1000.0 * drag.grade);
-		if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
-			return format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
-		if (drag.operation == gizmo_operation::rotate)
-			return format(STR_C("turned %+.2f deg"), glm::degrees(drag.angle));
-		if (m_track_point.valid() && m_track_point.path < static_cast<int>(track->m_paths.size()))
-		{
-			auto const &path{track->m_paths[m_track_point.path]};
-			auto text{format("L %.3f m", bezier{path}.plan_length())};
-			if (path.radius != 0.0f)
-				text += format("   R %.1f m", std::abs(path.radius));
-			if (m_track_snap.track != nullptr)
-				text += "\n" + format(STR_C("joins %s"), name(m_track_snap.track).c_str());
-			return text;
-		}
-		return format(STR_C("moved %.3f m"), glm::distance(editor_track::pivot(*track), m_track_pivot));
+		auto text{format("L %.3f m (%+.3f)", drag.stretch, drag.stretch - drag.length)};
+		if (drag.path < static_cast<int>(drag.paths.size()) && std::abs(drag.paths[drag.path].radius) > 0.5f)
+			text += format("   R %.1f m", std::abs(drag.paths[drag.path].radius));
+		return text;
 	}
-	return {};
+	if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
+		return format(STR_C("grade changed by %+.1f per mille"), 1000.0 * drag.grade);
+	if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
+		return format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
+	if (drag.operation == gizmo_operation::rotate)
+		return format(STR_C("turned %+.2f deg"), glm::degrees(drag.angle));
+	if (m_track_point.valid() && m_track_point.path < static_cast<int>(Track.m_paths.size()))
+	{
+		auto const &path{Track.m_paths[m_track_point.path]};
+		auto text{format("L %.3f m", bezier{path}.plan_length())};
+		if (path.radius != 0.0f)
+			text += format("   R %.1f m", std::abs(path.radius));
+		if (m_track_snap.track != nullptr)
+			text += "\n" + format(STR_C("joins %s"), name_of(*m_track_snap.track).c_str());
+		return text;
+	}
+	return format(STR_C("moved %.3f m"), glm::distance(editor_track::pivot(Track), m_track_pivot));
+}
+
+std::string editor_mode::control_readout(TTrack const &Track) const
+{
+	auto const &drag{m_track_gizmo_drag};
+	auto const control_point{editor_track::point_position(Track, m_track_point) - editor_track::point_position(Track, editor_track::end_of(m_track_point))};
+	auto text{format(STR_C("control %.2f m   azimuth %.2f deg"), glm::length(control_point), azimuth_of(glm::dvec3{0.0}, control_point))};
+	if (drag.operation == gizmo_operation::rotate && drag.ring == 1)
+		text += format(STR_C("   turned %+.2f deg"), glm::degrees(drag.angle));
+	if (drag.operation == gizmo_operation::rotate && drag.ring == 0)
+		text += format(STR_C("   grade %+.1f per mille"), 1000.0 * grade_of(control_point) * (glm::dot(level(control_point), drag.basis[2]) >= 0.0 ? 1.0 : -1.0));
+	if (drag.operation == gizmo_operation::rotate && drag.ring == 2)
+		text += "   " + format(STR_C("cant %.0f mm (%+.0f mm)"), 1500.0 * std::sin(glm::radians(drag.roll0 + drag.roll)), 1500.0 * (std::sin(glm::radians(drag.roll0 + drag.roll)) - std::sin(glm::radians(drag.roll0))));
+	if (drag.fixed != glm::dvec3{})
+		text += "\n" + STR("along the switch");
+	return text;
 }
 
 std::string editor_mode::track_shaping(bool const Joined) const
@@ -2260,7 +2557,7 @@ std::string editor_mode::track_shaping(bool const Joined) const
 	return text + "\n" + STR("Ctrl+wheel: radius, Shift+wheel: another shape") + STR(", Ctrl+Shift+wheel: speed");
 }
 
-void editor_mode::draw_empty_scenery_hint()
+void editor_mode::draw_empty_scenery_hint() const
 {
 	if (m_terrain_open || (m_track_tab != track_tab::path && m_track_tab != track_tab::lay) || (m_lay.active && false == m_lay.points.empty()) || m_first_steps_open || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 		return;
@@ -2326,11 +2623,6 @@ void editor_mode::draw_track_hints()
 	std::vector<std::vector<gesture_word>> pictures;
 	for (auto const &hint : hints)
 		pictures.push_back(gesture_picture(hint.raw != nullptr ? hint.raw : hint.key));
-	auto const picture_width = [&](std::size_t const Index) { return pictures[Index].empty() ? 0.0f : gesture_width(picture, pictures[Index]) + 5.0f; };
-	auto const width_of = [&](std::size_t const Index) {
-		auto const chip_width{hints[Index].raw != nullptr && gesture_keys_only(hints[Index].raw) ? 0.0f : ImGui::CalcTextSize(hints[Index].key).x + 2.0f * pad + 5.0f};
-		return picture_width(Index) + chip_width + ImGui::CalcTextSize(hints[Index].action.c_str()).x;
-	};
 
 	auto const mode{track_mode_name()};
 	auto const left{editor_ui::view_min().x + margin};
@@ -2339,7 +2631,7 @@ void editor_mode::draw_track_hints()
 	std::size_t shown{0};
 	for (; shown < std::min<std::size_t>(hints.size(), 3); ++shown)
 	{
-		auto const next{width + gap + width_of(shown)};
+		auto const next{width + gap + hint_width(hints[shown], pictures[shown], picture, pad)};
 		if (next > available)
 			break;
 		width = next;
@@ -2369,6 +2661,12 @@ void editor_mode::draw_track_hints()
 		x += ImGui::CalcTextSize(hints[i].action.c_str()).x;
 	}
 
+	draw_track_readout();
+}
+
+void editor_mode::draw_track_readout() const
+{
+	ImGuiIO const &io = ImGui::GetIO();
 	auto readout{track_readout()};
 	if (auto const *meaning{typed_meaning()}; meaning != nullptr && false == m_typed.empty())
 		readout += (readout.empty() ? "" : "\n") + std::string{"= "} + m_typed + "_   " + STR(meaning);
@@ -2498,61 +2796,26 @@ void editor_mode::draw_build_overlay() const
 				}
 			}
 	};
-	// the track being laid as its two rails: their axes 1.5 m apart, the gauge and the head of a rail, at the height of the path
-	auto const kRailAxes{1.5};
-	auto const drawrails = [&](segment_data const &Path, ImU32 const Color) {
-		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 170), 4.0f}, std::pair{Color, 2.0f}})
-			for (auto const &piece : Path.pieces.empty() ? std::vector<segment_data>{Path} : Path.pieces)
-			{
-				bezier const curve{piece};
-				auto const rail_at = [&](double const T, double const Side) {
-					auto const tangent{plan_of(curve.first(T))};
-					if (glm::length(tangent) < 1e-9)
-						return curve.point(T);
-					auto const across{glm::normalize(glm::dvec2{-tangent.y, tangent.x}) * (Side * 0.5 * kRailAxes)};
-					return curve.point(T) + glm::dvec3{across.x, 0.0, across.y};
-				};
-				for (auto const side : {-1.0, 1.0})
-				{
-					auto previous{rail_at(0.0, side)};
-					for (int i = 1; i <= 24; ++i)
-					{
-						auto const next{rail_at(i / 24.0, side)};
-						projection.line(drawlist, previous, next, colour, width);
-						previous = next;
-					}
-				}
-			}
+	// the paths of a track or of a switch, all of them in the Color
+	auto const drawpaths = [&drawpath](auto const &Paths, ImU32 const Color) {
+		for (auto const &path : Paths)
+			drawpath(path, Color);
 	};
-	// a circle on the ground as wide as the rails are apart, around the point; a few pixels across at least, seen from far
-	auto const drawwidth = [&](glm::dvec3 const &Point, ImU32 const Color) {
-		ImVec2 centre;
-		if (false == projection.project(Point, centre))
-			return;
-		std::array<ImVec2, 24> outline;
-		auto seen{true};
-		for (std::size_t i = 0; i < outline.size(); ++i)
+	// two tracks crossing, from the Ends taken in pairs
+	auto const drawcrossing = [&drawpath](auto const &Ends, ImU32 const Color) {
+		for (int i = 0; i < 4; i += 2)
 		{
-			auto const angle{2.0 * glm::pi<double>() * static_cast<double>(i) / outline.size()};
-			seen = projection.project(Point + glm::dvec3{std::cos(angle), 0.0, std::sin(angle)} * (0.5 * kRailAxes), outline[i]);
-			if (false == seen)
-				break;
-		}
-		auto const dot{false == seen || std::hypot(outline[0].x - centre.x, outline[0].y - centre.y) < 4.0f};
-		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 170), 4.0f}, std::pair{Color, 2.0f}})
-		{
-			if (dot)
-				drawlist->AddCircle(centre, 4.0f, colour, 16, width);
-			else
-				drawlist->AddPolyline(outline.data(), static_cast<int>(outline.size()), colour, ImDrawFlags_Closed, width);
+			segment_data path;
+			path.points[segment_data::point::start] = Ends[i];
+			path.points[segment_data::point::end] = Ends[i + 1];
+			drawpath(path, Color);
 		}
 	};
 	// a slip is selected whole: all its tracks with the one picked
 	if (auto const *selected{selected_track()}; selected != nullptr && false == m_switch.slide.active)
 		if (auto const slip{slip_of(*selected)})
 			for (auto const *part : slip->parts)
-				for (auto const &path : part->m_paths)
-					drawpath(path, overlay_color::highlight);
+				drawpaths(part->m_paths, overlay_color::highlight);
 	// none while a point is dragged: there is nothing to split then
 	if (m_track_tab == track_tab::path && false == m_lay.active && false == m_track_gizmo_using && false == m_point_drag.active && false == m_handle_drag.active)
 		if (auto const spot{split_spot()}; spot.track != nullptr)
@@ -2570,6 +2833,15 @@ void editor_mode::draw_build_overlay() const
 	auto const in_reach = [&](glm::dvec3 const &Point) { return Global.EditorOrtho || glm::distance(Point, eye) <= kDotsRange; };
 	// far out the joints of the pieces would cover the tracks, only the free ends are told
 	auto const joints{false == Global.EditorOrtho || display.y <= 0.0f || 2.0 * static_cast<double>(Global.EditorOrthoExtent) / display.y <= 1.0};
+	// the ends of a path as dots, those on the screen
+	auto const drawjoints = [&in_reach, &projection, drawlist, &display](segment_data const &Path) {
+		for (auto const point : {segment_data::point::start, segment_data::point::end})
+		{
+			ImVec2 screen;
+			if (in_reach(Path.points[point]) && projection.project(Path.points[point], screen) && screen.x >= 0.0f && screen.y >= 0.0f && screen.x <= display.x && screen.y <= display.y)
+				drawlist->AddCircleFilled(screen, 3.5f, kJointColor);
+		}
+	};
 	for (auto const *track : simulation::Paths.sequence())
 	{
 		if (false == joints)
@@ -2577,12 +2849,7 @@ void editor_mode::draw_build_overlay() const
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())
 			continue;
 		for (auto const &path : track->m_paths)
-			for (auto const point : {segment_data::point::start, segment_data::point::end})
-			{
-				ImVec2 screen;
-				if (in_reach(path.points[point]) && projection.project(path.points[point], screen) && screen.x >= 0.0f && screen.y >= 0.0f && screen.x <= display.x && screen.y <= display.y)
-					drawlist->AddCircleFilled(screen, 3.5f, kJointColor);
-			}
+			drawjoints(path);
 	}
 	// the ends joined to nothing, where a train would run off
 	for (auto const &point : free_end_points(eye, Global.EditorOrtho ? std::max(kDotsRange, static_cast<double>(Global.EditorOrthoExtent) * 2.0) : kDotsRange))
@@ -2642,18 +2909,11 @@ void editor_mode::draw_build_overlay() const
 		if (valid)
 		{
 			for (auto const &entry : plan.switches)
-				for (auto const &path : entry.paths)
-					drawpath(path, overlay_color::marked);
+				drawpaths(entry.paths, overlay_color::marked);
 			for (auto const &insert : plan.inserts)
 				drawpath(insert, overlay_color::grip);
 			if (plan.crossing)
-				for (int i = 0; i < 4; i += 2)
-				{
-					segment_data path;
-					path.points[segment_data::point::start] = plan.ends[i];
-					path.points[segment_data::point::end] = plan.ends[i + 1];
-					drawpath(path, overlay_color::grip);
-				}
+				drawcrossing(plan.ends, overlay_color::grip);
 		}
 		else
 			for (auto const &piece : switch_preview())
@@ -2700,13 +2960,7 @@ void editor_mode::draw_build_overlay() const
 			}
 			else if (valid)
 			{
-				for (int i = 0; i < 4; i += 2)
-				{
-					segment_data path;
-					path.points[segment_data::point::start] = plan.points[i];
-					path.points[segment_data::point::end] = plan.points[i + 1];
-					drawpath(path, overlay_color::marked);
-				}
+				drawcrossing(plan.points, overlay_color::marked);
 				marker = {plan.crossing.x, line.start.y + line.grade * plan.alongfirst, plan.crossing.y};
 				colour = overlay_color::highlight;
 				text = plan.note.empty() ? std::string{STR_C("Press and drag: it goes here")} : plan.note;
@@ -2727,30 +2981,6 @@ void editor_mode::draw_build_overlay() const
 		// moved back onto the straight or into the curve, or too long for it: what's in the way blinks
 		if (auto const problem{switch_drag_problem()})
 			draw_switch_problem(*problem);
-		// the lines told of a switch bent, in a box beside the point
-		auto const readout_at = [&](glm::dvec3 const &Point, std::vector<std::pair<std::string, ImU32>> const &Lines) {
-			ImVec2 screen;
-			if (false == projection.project(Point, screen))
-				return;
-			auto const wrap{460.0f};
-			auto height{0.0f};
-			auto width{0.0f};
-			for (auto const &[text, colour] : Lines)
-			{
-				auto const size{ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap)};
-				height += size.y + 2.0f;
-				width = std::max(width, size.x);
-			}
-			ImVec2 corner{screen.x + 24.0f, screen.y + 24.0f};
-			drawlist->AddRectFilled({corner.x - 6.0f, corner.y - 4.0f}, {corner.x + width + 6.0f, corner.y + height + 4.0f}, IM_COL32(10, 20, 30, 215), 4.0f);
-			for (auto const &[text, colour] : Lines)
-			{
-				drawlist->AddText(ImGui::GetFont(), ImGui::GetFontSize(), corner, colour, text.c_str(), nullptr, wrap);
-				corner.y += ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap).y + 2.0f;
-			}
-		};
-		// a radius counted positive the way the line turns, the other way with a minus
-		auto const radius = [](double const Curvature) { return std::abs(Curvature) < 2e-5 ? std::string{STR_C("straight")} : format("%.0f m", 1.0 / Curvature); };
 		// laid on from a free end: bent, the radius of the main track and the way of the diverging one, the track into the free end the
 		// cursor is at, the norms; from an end of a switch, the change of the curvature from it
 		if (m_switch.free && preview.size() >= 2)
@@ -2758,83 +2988,28 @@ void editor_mode::draw_build_overlay() const
 			// few lines: the radii, the track into the free end, the warnings; what the keys do the bar at the bottom tells
 			std::vector<std::pair<std::string, ImU32>> lines;
 			if (free_bend bend; free_switch_bend(bend))
-			{
-				if (bend.radius > 0.0)
-					lines.emplace_back(format(bend.side == bend.turn ? STR_C("one-sided: main R %.0f m, diverging R %.0f m") : STR_C("two-sided: main R %.0f m, diverging R %.0f m"), bend.radius, editor_track::branch_radius(bend.paths[1])),
-					                   IM_COL32(255, 170, 40, 255));
-				if (bend.target.track != nullptr)
-				{
-					auto const &branch{bend.paths[bend.diverging ? 1 : 0]};
-					if (bend.problem.empty())
-						lines.emplace_back(link_summary(bend.target, bend.link, editor_track::branch_radius(branch)), IM_COL32(255, 60, 255, 255));
-					else
-						lines.emplace_back(bend.problem, overlay_color::invalid);
-					ImVec2 screen;
-					if (projection.project(bend.target.position, screen))
-						drawlist->AddCircle(screen, 14.0f, bend.problem.empty() ? IM_COL32(255, 60, 255, 255) : overlay_color::invalid, 20, 3.0f);
-				}
-				for (auto const &warning : bend.report.warnings)
-					lines.emplace_back(warning, overlay_color::invalid);
-			}
+				lines = bend_readout(projection, drawlist, bend);
 			for (auto const &warning : free_switch_exits(preview))
 				lines.emplace_back(warning, overlay_color::invalid);
 			if (false == lines.empty())
-				readout_at(m_switch.point, lines);
+				draw_readout_box(projection, drawlist, m_switch.point, lines);
 		}
 		// into a curve: the ends of the cant ramps, what the start was drawn to, the radii at the ends of the switch and the norms
 		if (auto const &tool{m_switch}; tool.curved && tool.connection < 0 && preview.size() >= 2)
 		{
+			auto const drawramp = [&projection, drawlist](curve_sample const &Sample) {
+				glm::dvec3 const across{-Sample.tangent.y * 2.5, 0.0, Sample.tangent.x * 2.5};
+				projection.line(drawlist, Sample.position - across, Sample.position + across, IM_COL32(255, 170, 40, 255), 3.0f);
+				ImVec2 screen;
+				if (projection.project(Sample.position + across, screen))
+					drawlist->AddText({screen.x + 4.0f, screen.y - 7.0f}, IM_COL32(255, 170, 40, 255), STR_C("ramp"));
+			};
 			auto const points{frame_points(tool.frame)};
 			for (auto const end : switch_curve::ramp_ends(points))
-			{
-				auto const sample{sample_at(tool.frame, end)};
-				glm::dvec3 const across{-sample.tangent.y * 2.5, 0.0, sample.tangent.x * 2.5};
-				projection.line(drawlist, sample.position - across, sample.position + across, IM_COL32(255, 170, 40, 255), 3.0f);
-				ImVec2 screen;
-				if (projection.project(sample.position + across, screen))
-					drawlist->AddText({screen.x + 4.0f, screen.y - 7.0f}, IM_COL32(255, 170, 40, 255), STR_C("ramp"));
-			}
-			int forward;
-			int side;
-			curved_switch_pose(forward, side);
-			std::string snapped;
-			std::vector<std::string> notes;
-			std::vector<std::string> warnings;
-			std::vector<std::pair<std::string, ImU32>> lines;
-			double station;
-			if (auto const &shape{tool.templates[tool.armed]}; shape.double_slip)
-			{
-				// a slip bent: the radii of its tracks and its slip curves, its middle where the station is
-				curved_slip plan;
-				plan_curved_slip(shape, forward, side, plan);
-				snapped = plan.snapped;
-				station = plan.middle;
-				auto const report{curved_slip_report(plan, shape.type)};
-				for (auto const &line : slip_report_lines(report))
-					lines.emplace_back(line, IM_COL32(255, 255, 255, 235));
-				notes = report.notes;
-				warnings = report.warnings;
-			}
-			else
-			{
-				station = curved_switch_start(forward, &snapped);
-				auto const report{curved_switch_report(preview, m_switch.frame, station, forward)};
-				if (report.curved)
-				{
-					lines.emplace_back(format(STR_C("main track R %s at the start, %s at the end"), radius(report.main_start).c_str(), radius(report.main_end).c_str()), IM_COL32(255, 255, 255, 235));
-					lines.emplace_back(format(STR_C("diverging track R %s at the start, %s at the end"), radius(report.branch_start).c_str(), radius(report.branch_end).c_str()), IM_COL32(255, 255, 255, 235));
-				}
-				lines.emplace_back(format(STR_C("cant %.0f mm at the start, %.0f mm at the end"), report.cant_start, report.cant_end), IM_COL32(255, 255, 255, 235));
-				notes = report.notes;
-				warnings = report.warnings;
-			}
-			if (false == snapped.empty())
-				lines.emplace(lines.begin(), snapped, IM_COL32(255, 170, 40, 255));
-			for (auto const &note : notes)
-				lines.emplace_back(note, IM_COL32(170, 200, 230, 235));
-			for (auto const &warning : warnings)
-				lines.emplace_back(warning, overlay_color::invalid);
-			readout_at(sample_at(tool.frame, station).position, lines);
+				drawramp(sample_at(tool.frame, end));
+			double station{0.0};
+			auto const lines{curved_switch_lines(preview, station)};
+			draw_readout_box(projection, drawlist, sample_at(tool.frame, station).position, lines);
 		}
 		switch_link plan;
 		auto const linked{plan_switch_link(plan)};
@@ -2859,7 +3034,7 @@ void editor_mode::draw_build_overlay() const
 			return piece_plan_radius(Path) < 0.5 ? IM_COL32(255, 255, 255, 230) : overlay_color::marked;
 		};
 		for (auto const &piece : lay.preview)
-			drawrails(piece, piece_colour(piece));
+			draw_overlay_rails(projection, drawlist, piece, piece_colour(piece));
 		auto const label_at = [&](glm::dvec3 const &Point, std::string const &Text, ImU32 const Colour) {
 			ImVec2 screen;
 			if (false == projection.project(Point, screen))
@@ -2878,8 +3053,7 @@ void editor_mode::draw_build_overlay() const
 		}
 		// the curves of the line laid by the points: the bends eased, the curves traced, in the colour of a warning where they don't meet
 		// the norms; the length of the straights between them
-		if (plan.shape.valid)
-		{
+		auto const label_design = [&label_at, &plan, this]() {
 			for (auto const &curve : plan.shape.curves)
 				if (curve.vertex >= 0 && curve.vertex < static_cast<int>(plan.shape.vertex_chainages.size()))
 					label_at(alignment::evaluate(plan.shape, plan.shape.vertex_chainages[curve.vertex]).position, curve_label(curve, laying_norms()),
@@ -2887,7 +3061,9 @@ void editor_mode::draw_build_overlay() const
 			for (auto const &e : plan.shape.elements)
 				if (e.kind == alignment::element_kind::straight && e.length >= 20.0)
 					label_at(alignment::evaluate(plan.shape, e.chainage + e.length * 0.5).position, format(STR_C("straight %.0f m"), e.length), overlay_color::highlight);
-		}
+		};
+		if (plan.shape.valid)
+			label_design();
 		for (std::size_t i = 0, n = plan.shape.valid ? 0 : lay.preview.size(); i < n;)
 		{
 			auto const radius{piece_plan_radius(lay.preview[i])};
@@ -2945,7 +3121,7 @@ void editor_mode::draw_build_overlay() const
 			// the start of the line as wide as the track
 			if (i == 0)
 			{
-				drawwidth(lay.points[i], overlay_color::grip);
+				draw_track_width(projection, drawlist, lay.points[i], overlay_color::grip);
 				continue;
 			}
 			if (i < lay.modes.size() && lay.modes[i] == lay_mode::curve)
@@ -2990,4 +3166,49 @@ void editor_mode::draw_build_overlay() const
 	if ((m_point_drag.moved || (m_track_gizmo_using && m_track_point.valid())) && editor_track::is_end(m_track_point.kind) && m_track_drag_points.empty())
 		if (auto const *track{selected_track()}; track != nullptr)
 			draw_free_ends(track, track->iCategoryFlag & 15, std::vector<TTrack const *>(m_track_drag.begin(), m_track_drag.end()));
+}
+
+std::vector<std::pair<std::string, ImU32>> editor_mode::curved_switch_lines(std::vector<segment_data> const &Preview, double &Station) const
+{
+	auto const &tool{m_switch};
+	int forward{0};
+	int side{0};
+	curved_switch_pose(forward, side);
+	std::string snapped;
+	std::vector<std::string> notes;
+	std::vector<std::string> warnings;
+	std::vector<std::pair<std::string, ImU32>> lines;
+	if (auto const &shape{tool.templates[tool.armed]}; shape.double_slip)
+	{
+		// a slip bent: the radii of its tracks and its slip curves, its middle where the station is
+		curved_slip plan;
+		plan_curved_slip(shape, forward, side, plan);
+		snapped = plan.snapped;
+		Station = plan.middle;
+		auto const report{curved_slip_report(plan, shape.type)};
+		for (auto const &line : slip_report_lines(report))
+			lines.emplace_back(line, IM_COL32(255, 255, 255, 235));
+		notes = report.notes;
+		warnings = report.warnings;
+	}
+	else
+	{
+		Station = curved_switch_start(forward, &snapped);
+		auto const report{curved_switch_report(Preview, m_switch.frame, Station, forward)};
+		if (report.curved)
+		{
+			lines.emplace_back(format(STR_C("main track R %s at the start, %s at the end"), radius_text(report.main_start).c_str(), radius_text(report.main_end).c_str()), IM_COL32(255, 255, 255, 235));
+			lines.emplace_back(format(STR_C("diverging track R %s at the start, %s at the end"), radius_text(report.branch_start).c_str(), radius_text(report.branch_end).c_str()), IM_COL32(255, 255, 255, 235));
+		}
+		lines.emplace_back(format(STR_C("cant %.0f mm at the start, %.0f mm at the end"), report.cant_start, report.cant_end), IM_COL32(255, 255, 255, 235));
+		notes = report.notes;
+		warnings = report.warnings;
+	}
+	if (false == snapped.empty())
+		lines.emplace(lines.begin(), snapped, IM_COL32(255, 170, 40, 255));
+	for (auto const &note : notes)
+		lines.emplace_back(note, IM_COL32(170, 200, 230, 235));
+	for (auto const &warning : warnings)
+		lines.emplace_back(warning, overlay_color::invalid);
+	return lines;
 }
