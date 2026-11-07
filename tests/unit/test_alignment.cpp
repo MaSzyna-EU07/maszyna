@@ -810,55 +810,78 @@ std::string arcs_text(alignment::vertex const &Vertex) {
 		arcs += std::format(" [R {:f} L {:f} share {:f}]", arc.radius, arc.transition, arc.share);
 	return arcs;
 }
+
+// draws the random numbers of the test in the order it asks for them
+struct draws {
+	std::mt19937 &random;
+	double uniform(double const Low, double const High) const { return std::uniform_real_distribution<double>(Low, High)(random); }
+	int pick(int const Count) const { return std::uniform_int_distribution<int>(0, Count - 1)(random); }
+};
+
+// a line of two straights with a compound curve between them, its arcs and transitions drawn at random, some of no length
+alignment::design random_compound(draws const &Draw) {
+	auto design{straights({600.0 + Draw.uniform(0.0, 800.0), 600.0 + Draw.uniform(0.0, 800.0)}, {Draw.uniform(20.0, 110.0) * pi / 180.0}, 100.0)};
+	design.transition_pieces = 1 + Draw.pick(2);
+	design.arc_piece_angle = Draw.pick(2) == 0 ? 10.0 : 2.0;
+	auto &vertex{design.vertices.front()};
+	vertex.radius = Draw.uniform(300.0, 1500.0);
+	vertex.transition_in = Draw.pick(4) == 0 ? 0.0 : Draw.uniform(0.0, 200.0);
+	vertex.transition_out = Draw.pick(4) == 0 ? 0.0 : Draw.uniform(0.0, 200.0);
+	vertex.cant = Draw.pick(3) == 0 ? 0.0 : Draw.uniform(0.0, 150.0);
+	vertex.compound = true;
+	vertex.share = Draw.pick(5) == 0 ? 0.0 : Draw.uniform(0.0, 1.5);
+	for (int i = 0, count = 1 + Draw.pick(2); i < count; ++i) {
+		// drawn one by one in the order of the fields of the arc
+		auto const radius{Draw.uniform(300.0, 1500.0)};
+		auto const transition{Draw.pick(3) == 0 ? 0.0 : Draw.uniform(0.0, 120.0)};
+		auto const share{Draw.pick(5) == 0 ? 0.0 : Draw.uniform(0.0, 0.5)};
+		vertex.arcs.emplace_back(radius, transition, share);
+	}
+	return design;
+}
+
+// the joints of Count paths along the line, as the plan lays them over the paths there, some moved a little off their even places
+std::vector<glm::dvec2> random_joints(alignment::result const &Line, std::size_t const Count, draws const &Draw) {
+	std::vector<glm::dvec2> joints;
+	for (std::size_t i = 1; i < Count; ++i) {
+		auto const at{alignment::evaluate(Line, Line.length * i / Count + (Draw.pick(2) == 0 ? 0.0 : Draw.uniform(-3.0, 3.0)))};
+		joints.emplace_back(at.position.x, at.position.z);
+	}
+	return joints;
+}
+
+// a piece of no length among the paths laid of Count, told with the curve it's of; whether there's one
+bool tell_short(std::vector<segment_data> const &Paths, alignment::design const &Design, std::size_t const Count) {
+	double length{0.0};
+	auto const i{short_piece(Paths, length)};
+	if (false == i.has_value())
+		return false;
+	auto const &vertex{Design.vertices.front()};
+	auto const arcs{arcs_text(vertex)};
+	MESSAGE("piece " << *i << " of " << Paths.size() << ": " << length << " m; R " << vertex.radius << " L " << vertex.transition_in << " / " << vertex.transition_out << " cant " << vertex.cant << " share " << vertex.share << arcs << ", count " << Count << ", pieces " << Design.transition_pieces << " angle " << Design.arc_piece_angle);
+	return true;
+}
 } // namespace
 
 TEST_CASE("alignment: the pieces of a compound curve are never of no length, whatever its arcs and transitions") {
 	std::mt19937 random{20261025}; // NOSONAR: seeded on purpose, so that the test draws the same curves each run; nothing secret is drawn
-	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>(Low, High)(random); };
-	auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>(0, Count - 1)(random); };
+	draws const draw{random};
 	int bad{0};
 	int valid{0};
 	for (int run = 0; run < 4000; ++run) {
 		if (bad >= 5)
 			break;
-		auto design{straights({600.0 + uniform(0.0, 800.0), 600.0 + uniform(0.0, 800.0)}, {uniform(20.0, 110.0) * pi / 180.0}, 100.0)};
-		design.transition_pieces = 1 + pick(2);
-		design.arc_piece_angle = pick(2) == 0 ? 10.0 : 2.0;
-		auto &vertex{design.vertices.front()};
-		vertex.radius = uniform(300.0, 1500.0);
-		vertex.transition_in = pick(4) == 0 ? 0.0 : uniform(0.0, 200.0);
-		vertex.transition_out = pick(4) == 0 ? 0.0 : uniform(0.0, 200.0);
-		vertex.cant = pick(3) == 0 ? 0.0 : uniform(0.0, 150.0);
-		vertex.compound = true;
-		vertex.share = pick(5) == 0 ? 0.0 : uniform(0.0, 1.5);
-		for (int i = 0, count = 1 + pick(2); i < count; ++i) {
-			// drawn one by one in the order of the fields of the arc
-			auto const radius{uniform(300.0, 1500.0)};
-			auto const transition{pick(3) == 0 ? 0.0 : uniform(0.0, 120.0)};
-			auto const share{pick(5) == 0 ? 0.0 : uniform(0.0, 0.5)};
-			vertex.arcs.emplace_back(radius, transition, share);
-		}
+		auto const design{random_compound(draw)};
 		auto const line{alignment::compute(design)};
 		if (false == line.valid)
 			continue;
 		++valid;
 		// as the plan lays them over the paths there, each kept between the joints it had, or all over again
-		std::vector<glm::dvec2> joints;
-		auto const count{static_cast<std::size_t>(10 + pick(80))};
-		for (std::size_t i = 1; i < count; ++i) {
-			auto const at{alignment::evaluate(line, line.length * i / count + (pick(2) == 0 ? 0.0 : uniform(-3.0, 3.0)))};
-			joints.emplace_back(at.position.x, at.position.z);
-		}
+		auto const count{static_cast<std::size_t>(10 + draw.pick(80))};
+		auto const joints{random_joints(line, count, draw)};
 		std::vector<std::size_t> intervals;
-		for (auto const &paths : {alignment::pieces_at(line, design, count, joints, intervals), alignment::pieces(line, design, count)}) {
-			double length{0.0};
-			auto const i{short_piece(paths, length)};
-			if (false == i.has_value())
-				continue;
-			++bad;
-			auto const arcs{arcs_text(vertex)};
-			MESSAGE("piece " << *i << " of " << paths.size() << ": " << length << " m; R " << vertex.radius << " L " << vertex.transition_in << " / " << vertex.transition_out << " cant " << vertex.cant << " share " << vertex.share << arcs << ", count " << count << ", pieces " << design.transition_pieces << " angle " << design.arc_piece_angle);
-		}
+		for (auto const &paths : {alignment::pieces_at(line, design, count, joints, intervals), alignment::pieces(line, design, count)})
+			bad += tell_short(paths, design, count) ? 1 : 0;
 	}
 	MESSAGE(valid << " valid designs");
 	CHECK(bad == 0);
