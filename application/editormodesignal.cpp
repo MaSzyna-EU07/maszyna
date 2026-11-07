@@ -33,8 +33,10 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <limits>
 #include <map>
+#include <memory>
 #include <ranges>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -193,7 +195,7 @@ std::vector<std::string> const &plate_textures()
 		{
 			stem = ToLower(file->path().stem().string());
 		}
-		catch (std::exception const &)
+		catch (std::system_error const &)
 		{
 			continue;
 		}
@@ -303,6 +305,49 @@ std::string listed(std::vector<std::string> const &Names)
 	for (auto const &name : Names)
 		text += (text.empty() ? "" : ", ") + name;
 	return text;
+}
+
+// the list of the events of a track as the trains read it the other way round: of the one direction that of the other, the one of
+// both directions kept
+int list_turned(int const List)
+{
+	if (List % 3 == 0)
+		return List;
+	return List + (List % 3 == 1 ? 1 : -1);
+}
+
+// which way a signal faces the track it stands by, by the list of the events it's read by: 1 along, -1 against, 0 both or no track
+int facing_of(bool const On_track, int const List)
+{
+	if (false == On_track)
+		return 0;
+	if (List % 3 == 2)
+		return 1;
+	if (List % 3 == 1)
+		return -1;
+	return 0;
+}
+
+// the background of a tile of the signal types
+ImU32 tile_colour(bool const Armed, bool const Chosen, bool const Hovered)
+{
+	if (Armed)
+		return IM_COL32(45, 110, 60, 255);
+	if (Chosen)
+		return IM_COL32(60, 90, 140, 255);
+	if (Hovered)
+		return IM_COL32(60, 60, 60, 255);
+	return IM_COL32(40, 40, 40, 255);
+}
+
+// the arrow after the name of a variant whose head leans to one side
+std::string lean_arrow(std::string_view const Lean)
+{
+	if (Lean == "left")
+		return "  \xE2\x86\x96";
+	if (Lean == "right")
+		return "  \xE2\x86\x97";
+	return {};
 }
 
 } // namespace
@@ -657,7 +702,7 @@ editor_mode::signal_standing const *editor_mode::signal_standing_of(scene::insta
 {
 	auto const &standing{m_signal.standing};
 	auto const found{std::ranges::find_if(standing, [&](signal_standing const &Standing) { return Standing.include.instance == Instance; })};
-	return found != standing.end() ? &*found : nullptr;
+	return found != standing.end() ? std::to_address(found) : nullptr;
 }
 
 bool editor_mode::signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const
@@ -769,7 +814,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 		editor_track::bind_events(*Spot.track, missing);
 		Spot.track->mark_dirty();
 	}
-	auto const name{Standing.name};
+	auto const name{Standing.name}; // NOSONAR: a copy, signal_refresh() below makes the list it's of anew
 	auto const node{Standing.include.file};
 	set_include_directive(instance, editor_includes::compose_directive(file, values));
 	if (states.empty())
@@ -833,7 +878,7 @@ bool editor_mode::signal_swap(scene::instance_handle const Instance, std::string
 	auto const *standing{signal_standing_of(Instance)};
 	if (standing == nullptr)
 		return false;
-	auto const name{standing->name};
+	auto const name{standing->name}; // NOSONAR: a copy, signal_refresh() below makes the list it's of anew
 	auto const before{standing->include.file};
 	signal_changes changes;
 	changes.files.emplace_back(Instance, File);
@@ -1068,8 +1113,8 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (int list = 0; list < 6; ++list)
-				for (auto const &event : editor_track::events(*track, list))
-					carried.insert(ToLower(event.first));
+				for (auto const &[event_name, event_target] : editor_track::events(*track, list))
+					carried.insert(ToLower(event_name));
 	std::unordered_set<std::string, string_hash, std::equal_to<>> circuits;
 	for (auto const *track : Kept)
 		if (track != nullptr && false == track->m_editorremoved)
@@ -1082,9 +1127,9 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 		record.track = track;
 		record.fresh = true;
 		for (int list = 0; list < 6; ++list)
-			for (auto const &event : editor_track::events(*track, list))
+			for (auto const &[event_name, event_target] : editor_track::events(*track, list))
 			{
-				auto const name{ToLower(event.first)};
+				auto const name{ToLower(event_name)};
 				if (false == name.empty() && carried.count(name) == 0 && std::ranges::none_of(record.events, [&](auto const &Event) { return Event.first == name; }))
 					record.events.emplace_back(name, list);
 			}
@@ -1112,7 +1157,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 				candidates.push_back(track);
 	if (candidates.empty() && std::ranges::none_of(m_orphans, [](orphan_record const &Record) { return Record.fresh; }))
 		return;
-	std::unordered_set<std::string> carried;
+	std::unordered_set<std::string, string_hash, std::equal_to<>> carried;
 	for (auto *track : simulation::Paths.sequence())
 		if (track != nullptr && false == track->m_editorremoved)
 			for (int list = 0; list < 6; ++list)
@@ -1123,7 +1168,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 	std::vector<signal_standing> signals;
 	std::unordered_map<std::string, signal_standing const *, string_hash, std::equal_to<>> readers;
 	auto known{false};
-	auto const reader_of = [&](std::string const &Name) -> signal_standing const * {
+	auto const reader_of = [&](std::string const &Name) {
 		if (false == known)
 		{
 			known = true;
@@ -1132,7 +1177,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 			signals = signal_standing_now();
 			for (auto const &standing : signals)
 				if (false == standing.read.empty())
-					readers.emplace(ToLower(standing.read), &standing);
+					readers.try_emplace(ToLower(standing.read), &standing);
 		}
 		auto const found{readers.find(Name)};
 		return found != readers.end() ? found->second : nullptr;
@@ -1196,7 +1241,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 				{
 					// laid the other way round, the trains running towards its end read it at its start
 					auto const reversed{glm::dot(forward_at(*best, best_path, best_parameter), old_forward) < 0.0};
-					auto target{reversed && list % 3 != 0 ? list + (list % 3 == 1 ? 1 : -1) : list};
+					auto target{reversed ? list_turned(list) : list};
 					if (by_signal)
 					{
 						auto const &location{standing->include.location};
@@ -1398,7 +1443,7 @@ bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool c
 		auto &signal{Signals.back()};
 		signal.file = standing.include.file;
 		signal.track = standing.track;
-		signal.facing = standing.track == nullptr ? 0 : standing.list % 3 == 2 ? 1 : standing.list % 3 == 1 ? -1 : 0;
+		signal.facing = facing_of(standing.track != nullptr, standing.list);
 		signal.read = standing.read;
 	}
 	return true;
@@ -1561,9 +1606,13 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		{
 			auto &value{after[id - 1]};
 			auto const role{role_of(info, id)};
-			for (int old = 1; old <= static_cast<int>(values.size()) && value.empty(); ++old)
+			int old{1};
+			while (old <= static_cast<int>(values.size()) && value.empty())
+			{
 				if (role != "free" && role != "text" && role_of(had, old) == role)
 					value = values[old - 1];
+				++old;
+			}
 			if (id == 7 && variant->linked)
 				value = item->linked && values.size() > 6 ? values[6] : std::string{"none"};
 			if (value.empty() && id == 6 && variant->plate)
@@ -1709,7 +1758,7 @@ void editor_mode::render_signal_palette()
 		}
 		auto const hovered{ImGui::IsItemHovered()};
 		auto const armed{chosen && tool.armed};
-		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), armed ? IM_COL32(45, 110, 60, 255) : chosen ? IM_COL32(60, 90, 140, 255) : hovered ? IM_COL32(60, 60, 60, 255) : IM_COL32(40, 40, 40, 255), 4.0f);
+		draw->AddRectFilled(origin, ImVec2(origin.x + tile.x, origin.y + tile.y), tile_colour(armed, chosen, hovered), 4.0f);
 		// a semaphore with the arms of the one chosen on its tile
 		auto const &shown{chosen ? *current : first};
 		draw_signal_icon(draw, origin, ImVec2(tile.x, tile.y - 14.0f), first.mount, first.lamps, chosen ? overlay_color::selected : IM_COL32(120, 120, 120, 255), shown.arms);
@@ -1744,7 +1793,7 @@ void editor_mode::render_signal_palette()
 			auto const &item{tool.templates[i]};
 			if (item.kind != current->kind || group_of(item.mount, item.lamps, item.arms) != key)
 				continue;
-			if (auto const label{item.name + (item.lean == "left" ? std::string{"  \xE2\x86\x96"} : item.lean == "right" ? std::string{"  \xE2\x86\x97"} : std::string{}) + "##" + item.file}; ImGui::Selectable(label.c_str(), &item == current))
+			if (auto const label{item.name + lean_arrow(item.lean) + "##" + item.file}; ImGui::Selectable(label.c_str(), &item == current))
 				tool.chosen[tool.kind] = i;
 			if (ImGui::IsItemHovered() && false == item.description.empty())
 				ImGui::SetTooltip("%s\n%s", item.description.c_str(), item.file.c_str());
@@ -1753,8 +1802,14 @@ void editor_mode::render_signal_palette()
 	}
 	if (ImGui::IsItemHovered())
 	{
-		auto const read{current->read.empty() ? std::string{current->kind == "warning" || current->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it")}
-		                                      : format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(current->read, {tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}}).c_str())};
+		std::string read;
+		if (current->read.empty())
+			read = current->kind == "warning" || current->kind == "repeater" ? STR_C("The train doesn't read it: it repeats what the signal ahead of it shows") : STR_C("The train doesn't read it");
+		else
+		{
+			auto const name{tool.name[0] != '\0' ? std::string{tool.name} : std::string{"?"}};
+			read = format(STR_C("The train reads it by %s on the path it stands by"), editor_includes::substitute(current->read, {name}).c_str());
+		}
 		ImGui::SetTooltip("%s\n%s", STR_C("Variant of the chosen type. A head leaning to one side is swapped for its counterpart leaning towards the track on the other side"), read.c_str());
 	}
 	if (current->arms > 0)

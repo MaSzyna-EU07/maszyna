@@ -48,8 +48,85 @@ http://mozilla.org/MPL/2.0/.
 #include <random>
 #include <sstream>
 #include <array>
+#include <string>
+#include <string_view>
+#include <vector>
 #include "application/editormodeselftest.h"
 #include "application/editormodetrackshared.h"
+
+namespace
+{
+
+// the height of the last point clicked, 0 before the first
+double last_point_height(std::vector<glm::dvec3> const &Points)
+{
+	return Points.empty() ? 0.0 : Points.back().y;
+}
+
+// the share of the noise of the points of a test line, by the number of the point: one way, the other, a little
+double noise_share(int const Count)
+{
+	if (Count % 3 == 0)
+		return 1.0;
+	if (Count % 3 == 1)
+		return -0.6;
+	return 0.2;
+}
+
+// a track an end of a test line is on, as the log names it
+std::string end_name(TTrack const &Track)
+{
+	return Track.name() + (Track.eType == tt_Switch ? " (switch)" : "");
+}
+
+// the point of a path as the self-tests name it: c1, c2, end, anything else the start
+editor_track::point_kind point_kind_named(std::string_view const Name)
+{
+	using enum editor_track::point_kind;
+	if (Name == "c1")
+		return control1;
+	if (Name == "c2")
+		return control2;
+	if (Name == "end")
+		return end;
+	return start;
+}
+
+// whether the stretch of a line from the point A crosses one from the point B
+bool stretches_cross(std::vector<glm::dvec2> const &Line, std::size_t const A, std::size_t const B)
+{
+	auto const r{Line[A + 1] - Line[A]};
+	auto const s{Line[B + 1] - Line[B]};
+	auto const denominator{r.x * s.y - r.y * s.x};
+	if (std::abs(denominator) < 1e-12)
+		return false;
+	auto const q{Line[B] - Line[A]};
+	auto const t{(q.x * s.y - q.y * s.x) / denominator};
+	auto const u{(q.x * r.y - q.y * r.x) / denominator};
+	return t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9;
+}
+
+// whether a line crosses itself, the stretches next to each other left out
+bool crosses_itself(std::vector<glm::dvec2> const &Line)
+{
+	for (std::size_t a = 0; a + 1 < Line.size(); ++a)
+		for (std::size_t b = a + 3; b + 1 < Line.size(); ++b)
+			if (stretches_cross(Line, a, b))
+				return true;
+	return false;
+}
+
+// the ring of the gizmo turning about the axis named
+int ring_named(std::string_view const Axis)
+{
+	if (Axis == "x")
+		return 0;
+	if (Axis == "z")
+		return 2;
+	return 1;
+}
+
+} // namespace
 
 editor_mode::selftest_result editor_mode::selftest_join(std::string const &command, std::istringstream &words)
 {
@@ -68,7 +145,10 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			words >> radius >> variant >> transitions;
 			// of the ends, for sceneries far above zero
 			if (words >> height)
-				a.y = b.y = height;
+			{
+				b.y = height;
+				a.y = height;
+			}
 		}
 		auto const from{editor_track::find_free_end(nullptr, 1, a, 3.0, {})};
 		extend_tool tool;
@@ -111,7 +191,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		digitize_drawn(created);
 		if (false == created.empty())
 			push_track_snapshot({}, created);
-		char const *const kinds[]{"none", "straight", "arc", "curve", "reverse curve", "free curve"};
+		constexpr std::array<char const *, 6> kinds{"none", "straight", "arc", "curve", "reverse curve", "free curve"};
 		auto const &join{m_join_last};
 		WriteLog(format("SELFTEST %s: %s, %zu paths, R %.1f m, cant %.0f mm, transitions %.1f m, V %.0f km/h, variants %d%s", command.c_str(), kinds[static_cast<int>(join.kind)], pieces.size(), join.radius, join.cant,
 		                join.transition, join.speed, join.variants, error.empty() ? "" : (", " + error).c_str()));
@@ -415,7 +495,12 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 	{
 		std::string which;
 		words >> which;
-		EditorSettings.heights(which == "points" ? editorSettings::lay_heights::points : which == "level" ? editorSettings::lay_heights::level : editorSettings::lay_heights::fitted);
+		auto heights{editorSettings::lay_heights::fitted};
+		if (which == "points")
+			heights = editorSettings::lay_heights::points;
+		else if (which == "level")
+			heights = editorSettings::lay_heights::level;
+		EditorSettings.heights(heights);
 		WriteLog("SELFTEST layheights: " + which);
 		return selftest_result::handled;
 	}
@@ -438,7 +523,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		Point.y = 5000.0;
 		std::vector<char> found;
 		auto const ground{ground_heights({Point}, true, &found)};
-		Point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+		Point.y = found[0] != 0 ? ground[0] : last_point_height(m_lay.points);
 		m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, Point, 3.0, {});
 		m_lay.mouse = m_lay.mouse_snap.track != nullptr ? Point : lay_bed(Point);
 		lay_click();
@@ -565,7 +650,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		glm::dvec2 const out{std::cos(heading), std::sin(heading)};
 		glm::dvec2 const side{-out.y, out.x};
 		auto const shifted = [&](glm::dvec2 const &Point, glm::dvec2 const &Across, int const Count) {
-			auto const shift{noise * (Count % 3 == 0 ? 1.0 : Count % 3 == 1 ? -0.6 : 0.2)};
+			auto const shift{noise * noise_share(Count)};
 			return glm::dvec3{Point.x + Across.x * shift, 0.0, Point.y + Across.y * shift};
 		};
 		WriteLog(format("SELFTEST laywalk %s from %s[%d]: %.3f %.3f heading %.4f, k %.6f, line %.1f m to %.3f %.3f heading %.4f, %zu points along it", way.c_str(), end.track->name().c_str(), end.point.path, end.position.x, end.position.z, std::atan2(bend->direction.y, bend->direction.x),
@@ -690,7 +775,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			alignment::vertex vertex;
 			vertex.radius = Radius;
 			auto const recommended{alignment::recommend(std::min(truth.speed, alignment::speed_limit(Radius, truth.norms)), Radius, truth.norms)};
-			vertex.transition_in = vertex.transition_out = recommended.transition;
+			vertex.transition_out = recommended.transition;
+			vertex.transition_in = vertex.transition_out;
 			vertex.cant = recommended.cant;
 			vertex.offset = 400.0;
 			return vertex;
@@ -811,7 +897,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				auto const point{centre + radial * (1.0 + Shift / radius)};
 				return glm::dvec3{point.x, 0.0, point.y};
 			};
-			auto const shift = [&](int const Count) { return noise * (Count % 3 == 0 ? 1.0 : Count % 3 == 1 ? -0.6 : 0.2); };
+			auto const shift = [&](int const Count) { return noise * noise_share(Count); };
 			lay_point({start.x, 0.0, start.y});
 			lay_switch_mode();
 			for (int k = 1; k <= count; ++k)
@@ -863,7 +949,10 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				                drag.shown[3], m_lay.preview_error.c_str()));
 			}
 			drag.leg = leg;
-			drag.leg_changes = drag.leg_partial = drag.leg_frames = drag.leg_last = 0;
+			drag.leg_last = 0;
+			drag.leg_frames = 0;
+			drag.leg_partial = 0;
+			drag.leg_changes = 0;
 		};
 		if (leg != drag.leg)
 			close_leg();
@@ -973,7 +1062,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		auto const saved_start{m_lay.start};
 		auto const saved_radius{m_lay.radius};
 		auto const saved_layout{m_track_layout};
-		char const *kinds[]{"point-end", "point-points-end", "end-end", "end-points-end", "end-points-point", "point-points-beside"};
+		constexpr std::array<char const *, 6> kinds{"point-end", "point-points-end", "end-end", "end-points-end", "end-points-point", "point-points-beside"};
 		std::map<std::string, int, std::less<>> tally;
 		std::map<std::string, int, std::less<>> refused;
 		int failed_shown{0};
@@ -984,7 +1073,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			auto const &target{ends[pick(static_cast<int>(ends.size()))]};
 			auto const &other{ends[pick(static_cast<int>(ends.size()))]};
 			auto const layout{pick(4)};
-			double const radii[]{150.0, 300.0, 500.0, 1000.0, 2000.0};
+			constexpr std::array<double, 5> radii{150.0, 300.0, 500.0, 1000.0, 2000.0};
 			auto const radius{radii[pick(5)]};
 			auto const distance{std::exp(uniform(std::log(10.0), std::log(400.0)))};
 			auto const bearing{std::clamp(uniform(-1.0, 1.0) * uniform(0.0, 1.0) * glm::pi<double>(), -2.97, 2.97)};
@@ -1112,24 +1201,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			}
 			auto const net{std::abs(geometry::signed_angle(headings.front(), headings.back()))};
 			// the line crossing itself, the stretches next to each other left out
-			bool loop{false};
-			for (std::size_t a = 0; a + 1 < line.size() && false == loop; ++a)
-				for (std::size_t b = a + 3; b + 1 < line.size(); ++b)
-				{
-					auto const r{line[a + 1] - line[a]};
-					auto const s{line[b + 1] - line[b]};
-					auto const denominator{r.x * s.y - r.y * s.x};
-					if (std::abs(denominator) < 1e-12)
-						continue;
-					auto const q{line[b] - line[a]};
-					auto const t{(q.x * s.y - q.y * s.x) / denominator};
-					auto const u{(q.x * r.y - q.y * r.x) / denominator};
-					if (t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9)
-					{
-						loop = true;
-						break;
-					}
-				}
+			auto const loop{crosses_itself(line)};
 			geometry::bezier const head{pieces.front()};
 			geometry::bezier const tail{pieces.back()};
 			auto const start_gap{from_end ? glm::distance(head.point(0.0), start.position) : 0.0};
@@ -1163,8 +1235,9 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				std::string clicked;
 				for (std::size_t k = 0; k < points.size(); ++k)
 					clicked += format(" %.1f,%.1f%s", points[k].x, points[k].z, modes[k] == lay_mode::curve ? "c" : "s");
-				WriteLog(format("SELFTEST laymonkey case %d %s:%s from %s to %s, layout %d R %.0f, %zu pieces %.1f m, points%s; %s", index, kind_name.c_str(), faults.c_str(), from_end ? (start.track->name() + (start.track->eType == tt_Switch ? " (switch)" : "")).c_str() : "-",
-				                end.track != nullptr ? (end.track->name() + (end.track->eType == tt_Switch ? " (switch)" : "")).c_str() : "-", layout, radius, pieces.size(), length, clicked.c_str(), error.c_str()));
+				auto const to{end.track != nullptr ? end_name(*end.track) : std::string{"-"}};
+				WriteLog(format("SELFTEST laymonkey case %d %s:%s from %s to %s, layout %d R %.0f, %zu pieces %.1f m, points%s; %s", index, kind_name.c_str(), faults.c_str(), from_end ? end_name(*start.track).c_str() : "-",
+				                to.c_str(), layout, radius, pieces.size(), length, clicked.c_str(), error.c_str()));
 			}
 		}
 		m_lay.start = saved_start;
@@ -1192,7 +1265,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			point.y = 5000.0;
 			std::vector<char> found;
 			auto const ground{ground_heights({point}, true, &found)};
-			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
+			point.y = found[0] != 0 ? ground[0] : last_point_height(m_lay.points);
 			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
 			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
 			WriteLog(format("SELFTEST layclicks ground %.3f, track %.3f", point.y, m_lay.mouse.y));
@@ -1279,6 +1352,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog("SELFTEST gizmo: nothing selected");
 			return selftest_result::handled;
 		}
+		auto const operation_named = [](std::string_view const Name) {
+			if (Name == "rotate")
+				return gizmo_operation::rotate;
+			if (Name == "scale")
+				return gizmo_operation::scale;
+			return gizmo_operation::translate;
+		};
 		if (action == "set")
 		{
 			m_track_set.clear();
@@ -1303,7 +1383,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			std::string operation;
 			words >> operation;
 			choose_work_area(work_area::tracks);
-			m_gizmo_op = operation == "rotate" ? gizmo_operation::rotate : operation == "scale" ? gizmo_operation::scale : gizmo_operation::translate;
+			m_gizmo_op = operation_named(operation);
 			// as the key of the operation does, the gizmo hidden in the tracks is brought out
 			m_track_gizmo_on = true;
 			int path{-1};
@@ -1311,7 +1391,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			words >> path >> kind;
 			m_track_point = {};
 			if (path >= 0)
-				m_track_point = {path, kind == "c1" ? editor_track::point_kind::control1 : kind == "c2" ? editor_track::point_kind::control2 : kind == "end" ? editor_track::point_kind::end : editor_track::point_kind::start};
+				m_track_point = {path, point_kind_named(kind)};
 		}
 		else if (action == "begin")
 		{
@@ -1321,8 +1401,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			words >> operation >> path >> kind;
 			m_track_point = {};
 			if (path >= 0)
-				m_track_point = {path, kind == "c1" ? editor_track::point_kind::control1 : kind == "c2" ? editor_track::point_kind::control2 : kind == "end" ? editor_track::point_kind::end : editor_track::point_kind::start};
-			auto const wanted{operation == "rotate" ? gizmo_operation::rotate : operation == "scale" ? gizmo_operation::scale : gizmo_operation::translate};
+				m_track_point = {path, point_kind_named(kind)};
+			auto const wanted{operation_named(operation)};
 			auto const previous{m_gizmo_op};
 			m_gizmo_op = wanted;
 			auto const chosen{track_gizmo_operation(*track, m_track_point.valid())};
@@ -1336,7 +1416,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			double degrees{0.0};
 			std::string axis{"y"};
 			words >> degrees >> axis;
-			m_track_gizmo_drag.ring = axis == "x" ? 0 : axis == "z" ? 2 : 1;
+			m_track_gizmo_drag.ring = ring_named(axis);
 			track_gizmo_turn(*track, m_track_gizmo_drag.ring, glm::radians(degrees));
 			track_gizmo_switches(*track);
 			WriteLog(format("SELFTEST gizmo turn %s: %s", axis.c_str(), track_readout().c_str()));
