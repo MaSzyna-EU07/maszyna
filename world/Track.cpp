@@ -515,11 +515,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     else if (str == "tributary")
     {
-        eType = tt_Tributary;
+        // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
+        // second one kept and written back
+        ErrorLog(std::format("Bad track: tributary \"{}\" in file \"{}\" (line {}) is drawn and run on as a river of its first path", m_name, parser->Name(), parser->Line()));
+        eType = tt_Normal;
         iCategoryFlag = 4;
+        m_tributary = true;
     }
     else
-        eType = tt_Unknown;
+        eType = tt_Unknown; // left out by the loader
     if (Global.iWriteLogEnabled & 4)
         WriteLog(str);
     parser->getTokens(4);
@@ -604,6 +608,11 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         default: {
             break;
         }
+    }
+    if( m_tributary ) {
+        // the second path of a tributary, kept to be written back
+        m_paths.emplace_back();
+        m_paths.back().deserialize( *parser, pOrigin );
     }
 
     // optional attributes
@@ -830,6 +839,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
     }
 
+    if( CurrentSegment() == nullptr ) {
+        // of an unknown type, no path of it is made
+        return;
+    }
     update_location();
     // sleeper transforms are baked later in create_geometry(), once the owning cell has
     // assigned this track its m_origin (otherwise the local-space matrices would be relative
@@ -2676,17 +2689,6 @@ TTrack::deserialize_( std::istream &Input ) {
 
 namespace {
 
-// the type of a plain track as the scenery file names it, by its category
-char const *normal_track_kind( int const Category ) {
-
-    switch( Category & 15 ) {
-    case 1: return "normal";
-    case 2: return "road";
-    case 4: return "river";
-    default: return "none";
-    }
-}
-
 // a piece of a path as the scenery file has it: its points, the roll at its start after the first one, the roll at its end and its radius
 void export_piece_as_text( std::ostream &Output, segment_data const &Piece ) {
 
@@ -2706,20 +2708,37 @@ void export_piece_as_text( std::ostream &Output, segment_data const &Piece ) {
 
 } // namespace
 
+// the keyword the track is written with, by its type and for a plain one by what runs on it
+char const *
+TTrack::type_keyword() const {
+
+    if( eType == tt_Normal && m_tributary ) {
+        return "tributary";
+    }
+    if( eType == tt_Normal ) {
+        switch( iCategoryFlag ) {
+            case 1: { return "normal"; }
+            case 2: { return "road"; }
+            case 4: { return "river"; }
+            default: { return "none"; }
+        }
+    }
+    switch( eType ) {
+        case tt_Switch: { return "switch"; }
+        case tt_Cross: { return "cross"; }
+        case tt_Table: { return "turn"; }
+        case tt_Tributary: { return "tributary"; }
+        default: { return "none"; }
+    }
+}
+
 // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
 void
 TTrack::export_as_text_( std::ostream &Output ) const {
     // header
     Output << "track ";
     // type
-    Output << (
-            eType == tt_Normal ? normal_track_kind( iCategoryFlag ) :
-            eType == tt_Switch ? "switch" :
-            eType == tt_Cross ? "cross" :
-            eType == tt_Table ? "turn" :
-            eType == tt_Tributary ? "tributary" :
-            "none" )
-            << ' ';
+    Output << type_keyword() << ' ';
     // basic attributes
     Output
         << Length() << ' '
