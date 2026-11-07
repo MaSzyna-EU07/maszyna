@@ -598,6 +598,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_nmt_banner();
 	// the grade lines fitted, the tracks nearly parallel under 5.1 m apart brought onto one, a track going away from them fading back onto its own
 	void nmt_share_grades();
+	// its steps, with what they share (application/editormodenmt.cpp)
+	struct nmt_grade_share;
 	void grade_lines_load();
 	void grade_lines_store();
 	bool on_route_grade_line(TTrack const &Track);
