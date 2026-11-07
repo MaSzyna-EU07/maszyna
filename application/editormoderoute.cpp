@@ -690,7 +690,8 @@ void editor_mode::route_lay()
 		struct again
 		{
 			int shape;
-			glm::dvec3 press, release;
+			glm::dvec3 press;
+			glm::dvec3 release;
 			std::string name;
 			std::vector<std::string> names; // of the switches at the press and at the release
 		};
@@ -771,7 +772,8 @@ void editor_mode::route_lay()
 				return;
 			}
 			join_last_steps();
-			std::string back, left;
+			std::string back;
+			std::string left;
 			for (auto const &crossover : crossovers)
 			{
 				// the new line moved sideways: the press onto it, the release onto the other line
@@ -908,7 +910,8 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 	struct placement
 	{
 		TTrack *track;
-		double from, length; // chainage along the new line
+		double from; // chainage along the new line
+		double length;
 		glm::dvec3 entry; // of the main track, where the chain comes in
 		double angle;
 	};
@@ -1710,7 +1713,8 @@ bool editor_mode::render_route_band()
 		return Element.kind == alignment::element_kind::straight ? IM_COL32(255, 255, 255, 230) : Element.kind == alignment::element_kind::arc ? overlay_color::grip : IM_COL32(255, 140, 30, 255);
 	};
 	double peak{0.0};
-	bool left{false}, right{false};
+	bool left{false};
+	bool right{false};
 	for (auto const &element : result.elements)
 	{
 		auto const [from, to]{ends(element)};

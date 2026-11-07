@@ -288,7 +288,10 @@ bool plan_overlaps(TTrack const &A, TTrack const &B, double const Margin)
 			}
 		}
 	};
-	glm::dvec2 low_a, high_a, low_b, high_b;
+	glm::dvec2 low_a;
+	glm::dvec2 high_a;
+	glm::dvec2 low_b;
+	glm::dvec2 high_b;
 	box(A, low_a, high_a);
 	box(B, low_b, high_b);
 	return low_a.x - Margin <= high_b.x && low_b.x - Margin <= high_a.x && low_a.y - Margin <= high_b.y && low_b.y - Margin <= high_a.y;

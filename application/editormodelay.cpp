@@ -1356,7 +1356,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	};
 	// the straights meet where the two lines cross, ahead of both points
 	auto const meeting = [](glm::dvec2 const &From, glm::dvec2 const &Along, glm::dvec2 const &To, glm::dvec2 const &Arriving, glm::dvec2 &Point) {
-		double t, u;
+		double t;
+		double u;
 		if (false == geometry::lines_cross(From, Along, To, Arriving, t, u) || t <= 0.0 || u <= 0.0)
 			return false;
 		Point = From + Along * t;

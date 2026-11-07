@@ -324,7 +324,8 @@ bool editor_mode::change_slip_template(TTrack &Part, int const Index)
 			return undo(STR_C("The tracks of the slip can't be laid crossing in its place"));
 		directions[i] = glm::normalize(directions[i]);
 	}
-	double along{0.0}, alongother{0.0};
+	double along{0.0};
+	double alongother{0.0};
 	if (false == geometry::lines_cross(plan_of(starts[0]), directions[0], plan_of(starts[1]), directions[1], along, alongother))
 		return undo(STR_C("The tracks of the slip don't cross"));
 	auto const middle{plan_of(starts[0]) + directions[0] * along};

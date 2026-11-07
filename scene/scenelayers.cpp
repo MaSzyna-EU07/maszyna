@@ -882,7 +882,9 @@ bool editor_line(std::string_view const Mark, std::string const &Text)
 		// "on 0" or "on 1", the origin after it (older builds put the settings of the imagery there, from the year on); a trainset
 		// described as "on ..." isn't the editor's
 		std::istringstream words{Text};
-		std::string on, state, next;
+		std::string on;
+		std::string state;
+		std::string next;
 		return words >> on >> state && on == "on" && (state == "0" || state == "1") && (false == static_cast<bool>(words >> next) || next == "origin" || next == "year");
 	}
 	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 7> const words{{

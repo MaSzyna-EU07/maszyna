@@ -3181,9 +3181,13 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		return sides;
 	};
 	auto const count{profile.samples.size()};
-	std::vector<double> sampled(count), model(count, std::numeric_limits<double>::quiet_NaN());
+	std::vector<double> sampled(count);
+	std::vector<double> model(count, std::numeric_limits<double>::quiet_NaN());
 	std::vector<glm::dvec2> plan(count);
-	std::vector<double> chainages, ground, tolerances, reaches;
+	std::vector<double> chainages;
+	std::vector<double> ground;
+	std::vector<double> tolerances;
+	std::vector<double> reaches;
 	// where the line crosses another track at an angle, with no joint with it, the model shows the formation of the one on top and tells
 	// nothing of the other: there it's no ground of the line, the height comes from the terrain on both sides, a line low there going under
 	double constexpr kCrossedNear{2.0}; // m
@@ -3895,14 +3899,17 @@ std::vector<double> grade_moves(std::vector<grade_term> const &Terms, int const 
 				Out[one.at[k]] += one.by[k] * sum;
 		}
 	};
-	std::vector<double> moves(Unknowns, 0.0), residual(Unknowns, 0.0), diagonal(Unknowns, 0.0);
+	std::vector<double> moves(Unknowns, 0.0);
+	std::vector<double> residual(Unknowns, 0.0);
+	std::vector<double> diagonal(Unknowns, 0.0);
 	for (auto const &one : Terms)
 		for (int k = 0; k < 5 && one.at[k] >= 0; ++k)
 		{
 			residual[one.at[k]] += one.weight * one.by[k] * one.value;
 			diagonal[one.at[k]] += one.weight * one.by[k] * one.by[k];
 		}
-	std::vector<double> direction(Unknowns), product(Unknowns);
+	std::vector<double> direction(Unknowns);
+	std::vector<double> product(Unknowns);
 	auto rho{0.0};
 	for (int i = 0; i < Unknowns; ++i)
 	{
@@ -4247,7 +4254,8 @@ void editor_mode::nmt_share_grades()
 	{
 		// a run beside the others nearly all along stays with them: the switches at its ends often lie a few tens of metres off theirs
 		double constexpr kAwayShare{0.25};
-		std::unordered_map<TTrack const *, double> alone, whole;
+		std::unordered_map<TTrack const *, double> alone;
+		std::unordered_map<TTrack const *, double> whole;
 		for (auto const &here : all)
 			if (here.track->eType == tt_Normal)
 			{
@@ -4653,7 +4661,8 @@ void editor_mode::nmt_auto_step()
 		// the scenery stays at its own heights, the terrain model meets it: offset by how far the tracks lie from it, so the lines
 		// fitted one after another meet at heights near their own; the grade lines then follow the model so offset
 		// the places of the tracks fitted already, the last ones, apart
-		std::vector<double> differences, kept;
+		std::vector<double> differences;
+		std::vector<double> kept;
 		auto const first_kept{state.probes.size() - std::min(state.probes_kept, state.probes.size())};
 		for (std::size_t i = 0; i < state.probes.size(); ++i)
 			if (double height; m_nmt.height(state.probes[i].position.x, state.probes[i].position.z, height))

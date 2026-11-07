@@ -1191,7 +1191,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		struct crossover_out
 		{
 			int shape{-1};
-			glm::dvec3 press{0.0}, release{0.0};
+			glm::dvec3 press{0.0};
+			glm::dvec3 release{0.0};
 			std::string name;
 			std::vector<std::string> names; // of the switches at the press and at the release
 		};
@@ -3028,7 +3029,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool model_waiting{false}; // squares of the model under the route still to come
 		double model_polled{0.0};
 		// what the joined ends take their height and grade from, when it's a switch: shown on the plot
-		std::string start_inherits, end_inherits;
+		std::string start_inherits;
+		std::string end_inherits;
 		// depth of the formation under the grade line, the rail top, of the track of each sample: the formation, not the rails,
 		// lies on the ground
 		std::vector<double> beds;

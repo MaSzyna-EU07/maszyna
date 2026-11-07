@@ -315,7 +315,10 @@ void editor_mode::fitted_load()
 		for (auto const &text : scene::Layers.marked(layer, kFittedMark))
 		{
 			std::istringstream line{text};
-			std::string keyword, name, shape, kind;
+			std::string keyword;
+			std::string name;
+			std::string shape;
+			std::string kind;
 			line >> keyword >> name >> shape;
 			if (keyword == "fitted" && false == line.fail())
 			{
@@ -453,7 +456,8 @@ bool editor_mode::profile_restore_parts()
 	std::size_t parts{0};
 	std::size_t retaken{0};
 	// the ends of this route inside a kept design take their heights from it
-	std::optional<double> start, end;
+	std::optional<double> start;
+	std::optional<double> end;
 	// the newer designs first: where two lie over the same stretch, the one kept later is the one meant
 	std::vector<std::pair<double, double>> covered;
 	auto const taken = [&](double const Chainage) { return std::ranges::any_of(covered, [&](auto const &Stretch) { return Chainage > Stretch.first + 0.25 && Chainage < Stretch.second - 0.25; }); };
@@ -461,12 +465,14 @@ bool editor_mode::profile_restore_parts()
 	{
 		auto const &entry{*entries};
 		// the design laid over this route at least in part: one of its ends on it, the route running on towards the other
-		double a{0.0}, b{0.0};
+		double a{0.0};
+		double b{0.0};
 		auto const first{locate(entry.start, a)};
 		auto const last{locate(entry.end, b)};
 		if (false == first && false == last)
 			continue;
-		double origin, direction;
+		double origin;
+		double direction;
 		double scale{1.0};
 		if (first && last)
 		{
@@ -554,7 +560,9 @@ bool editor_mode::profile_restore_parts()
 		}
 		for (auto const &stretch : stale)
 		{
-			std::vector<double> chainages, elevations, grades;
+			std::vector<double> chainages;
+			std::vector<double> elevations;
+			std::vector<double> grades;
 			for (auto const &sample : samples)
 				if (sample.chainage >= stretch.first - 1e-6 && sample.chainage <= stretch.second + 1e-6)
 				{
@@ -663,7 +671,8 @@ void editor_mode::profile_store()
 	for (auto i{m_profiles.size()}; i-- > 0;)
 	{
 		auto const &old{m_profiles[i]};
-		double a{0.0}, b{0.0};
+		double a{0.0};
+		double b{0.0};
 		if (old.length + 0.5 < entry.length && sampled_chainage(state.samples, old.start, a) && sampled_chainage(state.samples, old.end, b) && std::abs(std::abs(b - a) - old.length) <= 1.5)
 		{
 			layers.push_back(old.layer);
@@ -758,7 +767,8 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 	auto &state{m_profile};
 	auto const show_model{state.show_model};
 	state.show_model = false;
-	std::size_t refitted{0}, failed{0};
+	std::size_t refitted{0};
+	std::size_t failed{0};
 	std::vector<scene::layer_handle> layers;
 	for (auto &entry : m_profiles)
 	{
@@ -778,7 +788,8 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 		auto const before{state.departure};
 		// the tracks are no ground with structures to go past: the line keeps to all of them, as steep as they are, as sharply bent as
 		// on a hump the line was fitted to
-		std::vector<double> chainages, heights;
+		std::vector<double> chainages;
+		std::vector<double> heights;
 		for (auto const &sample : samples)
 		{
 			chainages.push_back(sample.chainage);

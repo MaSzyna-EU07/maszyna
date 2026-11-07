@@ -167,7 +167,10 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 				High = std::max(High, Point.y - ground);
 			}
 		};
-		double track_low{1e9}, track_high{-1e9}, switch_low{1e9}, switch_high{-1e9};
+		double track_low{1e9};
+		double track_high{-1e9};
+		double switch_low{1e9};
+		double switch_high{-1e9};
 		int switches{0};
 		int faults{0};
 		for (auto const *track : simulation::Paths.sequence())
@@ -239,7 +242,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 					}
 				}
 		double beside_worst{0.0};
-		std::size_t beside_pairs{0}, beside_off{0};
+		std::size_t beside_pairs{0};
+		std::size_t beside_off{0};
 		for (auto const &[cell, places] : beside)
 			for (auto const &[place, way, track] : places)
 				for (int dx = -1; dx <= 1; ++dx)
@@ -651,9 +655,17 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 	// last one and two on the straight after it, every Spacing metres, shifted across by up to Noise
 	if (command == "laysample")
 	{
-		double x{0.0}, z{0.0}, heading{0.0}, spacing{20.0}, noise{0.0}, deflection{30.0}, radius{1000.0};
+		double x{0.0};
+		double z{0.0};
+		double heading{0.0};
+		double spacing{20.0};
+		double noise{0.0};
+		double deflection{30.0};
+		double radius{1000.0};
 		words >> x >> z >> heading >> spacing >> noise >> deflection >> radius;
-		double apart{0.0}, second{0.0}, secondradius{0.0};
+		double apart{0.0};
+		double second{0.0};
+		double secondradius{0.0};
 		auto const two{static_cast<bool>(words >> apart >> second >> secondradius)};
 		alignment::design truth;
 		truth.norms = laying_norms();
@@ -767,8 +779,18 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		if (false == drag.started)
 		{
 			drag = {};
-			int whole{1}, count{6}, moves{20}, holds{40}, legs{4};
-			double x{0.0}, z{0.0}, heading{0.0}, radius{600.0}, spacing{20.0}, step{0.5}, noise{0.0};
+			int whole{1};
+			int count{6};
+			int moves{20};
+			int holds{40};
+			int legs{4};
+			double x{0.0};
+			double z{0.0};
+			double heading{0.0};
+			double radius{600.0};
+			double spacing{20.0};
+			double step{0.5};
+			double noise{0.0};
 			words >> whole >> x >> z >> heading >> radius >> spacing >> count >> step >> moves >> holds >> legs >> noise;
 			choose_work_area(work_area::tracks);
 			show_track_tab(track_tab::lay);

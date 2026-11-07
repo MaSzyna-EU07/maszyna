@@ -273,8 +273,11 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			glm::dvec3 at;
 			std::string track;
 		};
-		std::vector<finding> over, under;
-		std::size_t places{0}, none{0}, bridges{0};
+		std::vector<finding> over;
+		std::vector<finding> under;
+		std::size_t places{0};
+		std::size_t none{0};
+		std::size_t bridges{0};
 		std::vector<double> offs;
 		for (auto const &place : nmt_track_places(step))
 		{
@@ -421,7 +424,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			m_fitted.clear();
 			m_fitted_loaded = false;
 		}
-		std::size_t rails{0}, done{0};
+		std::size_t rails{0};
+		std::size_t done{0};
 		std::string names;
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved && (track->iCategoryFlag & 1) != 0)
@@ -482,7 +486,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "nmtoffer")
 	{
 		// the offer of the terrain to a scenery begun from nothing: logged, and taken with the place given, if any
-		double north{0.0}, east{0.0};
+		double north{0.0};
+		double east{0.0};
 		words >> north >> east;
 		WriteLog(format("SELFTEST nmtoffer: shown %d", m_nmt_state.prompt ? 1 : 0));
 		if (north > 0.0 && east > 0.0 && m_nmt_state.prompt)
@@ -576,7 +581,9 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	{
 		// models the cells hold which aren't in the scene any more, or are about to be destroyed
 		std::set<TAnimModel const *> const alive{simulation::Instances.sequence().begin(), simulation::Instances.sequence().end()};
-		std::size_t held{0}, gone{0}, retired{0};
+		std::size_t held{0};
+		std::size_t gone{0};
+		std::size_t retired{0};
 		for (auto const *section : simulation::Region->m_sections)
 		{
 			if (section == nullptr)
@@ -619,7 +626,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "terrainmodifier")
 	{
 		heightmap::modifier modifier;
-		heightmap::corridor_point a, b;
+		heightmap::corridor_point a;
+		heightmap::corridor_point b;
 		double formation{0.0};
 		double halfwidth{3.5};
 		words >> modifier.name >> a.position.x >> a.position.y >> b.position.x >> b.position.y >> formation >> halfwidth;
@@ -870,7 +878,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "gradeline")
 	{
 		// the word after the action is its number, or the name of a track
-		std::string action, word;
+		std::string action;
+		std::string word;
 		words >> action >> word;
 		double const value{std::atof(word.c_str())};
 		auto &state{m_profile};
@@ -1107,7 +1116,9 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	{
 		// every design kept in the scenery opened as the profile opens it: how many have errors, how many were read from the track again
 		profile_library_load();
-		std::size_t gone{0}, failing{0}, retaken{0};
+		std::size_t gone{0};
+		std::size_t failing{0};
+		std::size_t retaken{0};
 		auto const count{m_profiles.size()};
 		for (std::size_t i = 0; i < count; ++i)
 		{

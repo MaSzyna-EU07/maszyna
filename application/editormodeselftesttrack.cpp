@@ -478,7 +478,9 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 	if (command == "vprofilezoom")
 	{
 		// the plot of the open profile from one chainage to another, the heights exaggerated as given (0: fitted)
-		double from{0.0}, to{100.0}, exaggeration{0.0};
+		double from{0.0};
+		double to{100.0};
+		double exaggeration{0.0};
 		words >> from >> to >> exaggeration;
 		m_profile.view_from = from;
 		m_profile.view_to = to;
@@ -589,7 +591,10 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		std::string issues;
 		for (auto const &issue : state.issues)
 			issues += std::string{issue.error ? " | error: " : " | "} + issue.text;
-		double low{0.0}, high{0.0}, at_low{0.0}, at_high{0.0};
+		double low{0.0};
+		double high{0.0};
+		double at_low{0.0};
+		double at_high{0.0};
 		for (auto const &sample : state.samples)
 		{
 			auto const off{sample.position.y - profile::elevation(state.line, sample.chainage)};
@@ -719,7 +724,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		if (corridor > 0.0)
 			m_infra.corridor = static_cast<float>(corridor);
 		infra_recognize();
-		std::map<std::string, int> kinds, groups;
+		std::map<std::string, int> kinds;
+		std::map<std::string, int> groups;
 		std::map<std::string, std::pair<int, std::string>> unknown;
 		for (auto const &candidate : m_infra.candidates)
 		{
@@ -764,7 +770,9 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 			{
 				std::string kind;
 				std::string group;
-				std::vector<double> offsets, heights, turns;
+				std::vector<double> offsets;
+				std::vector<double> heights;
+				std::vector<double> turns;
 			};
 			std::map<std::string, use> uses;
 			for (auto const &candidate : m_infra.candidates)
@@ -840,7 +848,8 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				}
 			}
 		}
-		std::size_t joints{0}, wrong{0};
+		std::size_t joints{0};
+		std::size_t wrong{0};
 		for (std::size_t a = 0; a < ends.size(); ++a)
 			for (std::size_t b = a + 1; b < ends.size(); ++b)
 			{

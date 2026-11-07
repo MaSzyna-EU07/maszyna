@@ -1065,7 +1065,9 @@ void editor_mode::render_turnout_ui()
 		std::vector<TTrack *> switches{track};
 		if (set.has_value())
 			switches.push_back(set->second);
-		double far_along{0.0}, low_across{0.0}, high_across{0.0};
+		double far_along{0.0};
+		double low_across{0.0};
+		double high_across{0.0};
 		for (auto *each : switches)
 			for (auto const &path : each->m_paths)
 			{
@@ -1271,7 +1273,9 @@ void editor_mode::render_turnout_ui()
 	}
 	if (flips)
 		item_tooltip("Mirrors the switch: the diverging track goes to the other side");
-	double low{0.0}, high{0.0}, reach{length};
+	double low{0.0};
+	double high{0.0};
+	double reach{length};
 	auto const slides{switch_slides(*track) && (set.has_value() ? switch_slides(*set->second) && double_room(*set, low, high, reach, m_switch.status) : switch_room(*track, low, high, m_switch.status))};
 	ImGui::PushID("turnout");
 	if (ImGui::TreeNode(STR_C("More settings")))

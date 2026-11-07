@@ -865,7 +865,8 @@ void editor_mode::draw_track_labels() const
 					for (int step = 0; step <= steps; ++step)
 					{
 						auto const t{static_cast<float>(step) / steps};
-						int column, row;
+						int column;
+						int row;
 						if (cell_of(previous.x + (at.x - previous.x) * t, previous.y + (at.y - previous.y) * t, column, row))
 							covered[static_cast<std::size_t>(row) * columns + column] = 1;
 					}
@@ -976,7 +977,8 @@ void editor_mode::draw_track_labels() const
 		auto const height{size.y + 4.0f};
 		ImVec2 const nearest{at.x, at.y - 10.0f - height * 0.5f};
 		auto best{std::numeric_limits<float>::max()};
-		ImVec2 from, to;
+		ImVec2 from;
+		ImVec2 to;
 		for (auto const ring : kRings)
 			for (int k = 0; k < (ring > 0.0f ? kDirections : 1); ++k)
 			{

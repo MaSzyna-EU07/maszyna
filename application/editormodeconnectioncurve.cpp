@@ -1153,9 +1153,12 @@ bool editor_mode::slide_curved_connection(TTrack const &Switch, double const Dis
 	if (false == take_out_crossover(*crossover, states, created, removed, first, second))
 		return false;
 	// the new places of the press and of the release, along the two curves, or the two straights
-	std::vector<curve_sample> firstframe, secondframe;
-	std::vector<TTrack *> firsttracks, secondtracks;
-	glm::dvec3 press, release;
+	std::vector<curve_sample> firstframe;
+	std::vector<curve_sample> secondframe;
+	std::vector<TTrack *> firsttracks;
+	std::vector<TTrack *> secondtracks;
+	glm::dvec3 press;
+	glm::dvec3 release;
 	if (curve_of(*first, m_straights.tolerance, m_route.design.norms.gauge, firstframe, firsttracks, kStraightReach) && curve_of(*second, m_straights.tolerance, m_route.design.norms.gauge, secondframe, secondtracks, kStraightReach))
 	{
 		auto const towards{nearest_station(firstframe, firstend) >= nearest_station(firstframe, firststart) ? 1.0 : -1.0};

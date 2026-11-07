@@ -13,7 +13,10 @@
 namespace {
 
 struct ground_of_line {
-	std::vector<double> chainages, heights, tolerances, reaches;
+	std::vector<double> chainages;
+	std::vector<double> heights;
+	std::vector<double> tolerances;
+	std::vector<double> reaches;
 };
 
 ground_of_line read_ground(std::string const &Name) {
@@ -23,7 +26,10 @@ ground_of_line read_ground(std::string const &Name) {
 		if (row.empty() || row.front() == '#')
 			continue;
 		std::istringstream values{row};
-		std::string chainage, height, tolerance, reach;
+		std::string chainage;
+		std::string height;
+		std::string tolerance;
+		std::string reach;
 		values >> chainage >> height >> tolerance >> reach;
 		result.chainages.push_back(std::strtod(chainage.c_str(), nullptr));
 		result.heights.push_back(std::strtod(height.c_str(), nullptr));
@@ -54,7 +60,8 @@ route_dump read_route(std::string const &Name) {
 		values >> kind;
 		auto &context{result.context};
 		if (kind == "S") {
-			double chainage{0.0}, height{0.0};
+			double chainage{0.0};
+			double height{0.0};
 			values >> chainage >> height;
 			result.ground.chainages.push_back(chainage);
 			result.ground.heights.push_back(height);

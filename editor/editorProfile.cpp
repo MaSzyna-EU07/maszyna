@@ -498,7 +498,8 @@ line recognize(std::vector<double> const &Chainages, std::vector<double> const &
 				stack.push_back({index, b});
 			}
 		}
-		auto const low{Chainages[first]}, high{Chainages[last]};
+		auto const low{Chainages[first]};
+		auto const high{Chainages[last]};
 		result.points.erase(std::remove_if(result.points.begin() + 1, result.points.end() - 1, [&](pvi const &Point) { return Point.chainage >= low - 0.5 && Point.chainage <= high + 0.5; }), result.points.end() - 1);
 		for (auto k = first; k <= last; ++k)
 			if (keep[k] != 0 && k > 0 && k + 1 < count)
@@ -672,7 +673,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	auto const least = [&](double const Chainage) { return Options.hump_radius > 0.0 && on_hump(Chainage) ? std::min(required, std::ceil(Options.hump_radius / 10.0) * 10.0) : required; };
 	auto const on_switch = [&](double const From, double const To) { return std::ranges::any_of(Context.switches, [&](auto const &Zone) { return Zone.to > From && Zone.from < To; }); };
 	auto const sharpest{step / (required * 1.001)};
-	std::vector<double> sag_max(nodes), crest_max(nodes);
+	std::vector<double> sag_max(nodes);
+	std::vector<double> crest_max(nodes);
 	for (std::size_t k = 0; k < nodes; ++k)
 	{
 		auto const radius{least(node(k))};
@@ -766,7 +768,10 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	// its tolerance times the root of the spread, the size of a change of grade is rounded off within the flat
 	auto spread{256.0};
 	auto flat{sharpest};
-	std::vector<double> gradient(nodes), diagonal(nodes), first(nodes), second(nodes);
+	std::vector<double> gradient(nodes);
+	std::vector<double> diagonal(nodes);
+	std::vector<double> first(nodes);
+	std::vector<double> second(nodes);
 	auto const cost = [&](std::vector<double> const &Line, bool const Derivatives) {
 		if (Derivatives)
 		{
@@ -842,7 +847,10 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	};
 	// the step of Newton, the band factored as L D L^T with two diagonals below the main one
 	auto const newton = [&]() {
-		std::vector<double> d(nodes), l1(nodes, 0.0), l2(nodes, 0.0), z(nodes);
+		std::vector<double> d(nodes);
+		std::vector<double> l1(nodes, 0.0);
+		std::vector<double> l2(nodes, 0.0);
+		std::vector<double> z(nodes);
 		for (std::size_t i = 0; i < nodes; ++i)
 		{
 			d[i] = diagonal[i] - (i >= 1 ? l1[i - 1] * l1[i - 1] * d[i - 1] : 0.0) - (i >= 2 ? l2[i - 2] * l2[i - 2] * d[i - 2] : 0.0);
@@ -1049,7 +1057,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 			}
 			auto const first{k};
 			auto const sign{change(k) > 0.0};
-			double sum{0.0}, moment{0.0};
+			double sum{0.0};
+			double moment{0.0};
 			for (; k + 1 < nodes && bends(k) && (change(k) > 0.0) == sign && (k == first || false == splits.contains(k)); ++k)
 			{
 				sum += change(k);
