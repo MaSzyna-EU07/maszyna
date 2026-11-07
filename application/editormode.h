@@ -2691,6 +2691,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t remove_templates(std::vector<scene::instance_handle> const &Instances) override;
 	bool standing_signals(std::vector<standing_signal> &Signals, bool const Wait) override;
 	std::size_t signal_batch(signal_changes const &Changes, std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::string &Error) override;
+	// the parts of a batch of signal changes, on its state defined where it's used: the signals placed, renamed, given other values or
+	// another template, taken away; the step of the batch put into the history
+	struct signal_batch_state;
+	void signal_batch_place(signal_changes const &Changes, std::vector<template_item> &Items, signal_batch_state &Batch, std::string &Error);
+	void signal_batch_rename(signal_rename const &Rename, bool const Temporary, signal_batch_state &Batch);
+	void signal_batch_values(signal_changes const &Changes, signal_batch_state &Batch);
+	void signal_batch_file(scene::instance_handle const Instance, std::string const &Wanted, signal_batch_state &Batch);
+	std::vector<scene::instance_handle> signal_batch_remove(signal_changes const &Changes, std::unordered_set<TTrack const *> const &Created, signal_batch_state &Batch);
+	void signal_batch_commit(signal_batch_state &Batch, std::vector<TTrack *> Created, std::vector<scene::instance_handle> Instances);
 	std::string signal_templates_missing(std::vector<signal_order> const &Orders) override;
 	bool signal_heads(std::vector<signal_head> &Heads, bool const Wait) override;
 	std::string signal_mount(std::string const &Kind, std::string const &File) override;
@@ -2824,9 +2833,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	};
 	std::vector<orphan_record> m_orphans;
 	std::string m_orphan_note; // shown by the cursor after the step which made it
-	void orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept);
+	void orphans_register(std::span<TTrack *const> const Removed, std::span<TTrack *const> const Kept);
 	// Created: made by the step, their circuits the ones of the tracks they were made from; Changed: the others it changed
-	void orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed);
+	void orphans_take_over(std::span<TTrack *const> const Created, std::span<TTrack *const> const Changed);
+	// the state of the taking over, defined where it's used; the signal reading the event of the name, nullptr for none; the event
+	// of the old track put onto the candidate lying in its place, false where none lies there; a record taken over as far as it goes
+	struct orphan_takeover;
+	signal_standing const *orphan_reader(orphan_takeover &Takeover, std::string const &Name);
+	bool orphan_take_event(orphan_takeover &Takeover, TTrack const &Old, std::string const &Name, int const List, signal_standing const *Standing) const;
+	void orphan_take_record(orphan_takeover &Takeover, orphan_record &Record);
 
 	// a model laid along the track: bent to follow it, or repeated along it
 	struct sweep_tool
