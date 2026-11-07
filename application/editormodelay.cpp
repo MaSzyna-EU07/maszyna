@@ -2474,7 +2474,7 @@ void editor_mode::lay_trim()
 
 void editor_mode::lay_switch_mode()
 {
-	using enum editor_mode::lay_mode;
+	using enum lay_mode;
 	auto &tool{m_lay};
 	tool.mode = tool.mode == straights ? curve : straights;
 	m_track_layout = tool.mode == curve ? track_layout::arc_straight : track_layout::straight;

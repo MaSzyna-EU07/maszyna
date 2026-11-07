@@ -1220,7 +1220,7 @@ TTrack const *editor_mode::route_end_crossover(editor_track::chain const &Chain)
 	return nullptr;
 }
 
-std::vector<editor_mode::route_design::crossover_out> editor_mode::route_crossovers_on(std::vector<TTrack *> const &Switches)
+std::vector<route_design::crossover_out> editor_mode::route_crossovers_on(std::vector<TTrack *> const &Switches)
 {
 	std::vector<route_design::crossover_out> crossovers;
 	std::vector<TTrack const *> seen;
@@ -2043,7 +2043,7 @@ bool editor_mode::render_route_band()
 	return changed;
 }
 
-editor_mode::route_band_view editor_mode::route_band_layout(ImVec2 const Top, ImVec2 const Size) const
+route_band_view editor_mode::route_band_layout(ImVec2 const Top, ImVec2 const Size) const
 {
 	auto const &result{m_route.result};
 	auto const &band{m_route.band};
@@ -2083,7 +2083,7 @@ editor_mode::route_band_view editor_mode::route_band_layout(ImVec2 const Top, Im
 
 // what of its vertex each element is: an arc, the arcs of a compound curve counted from the first one, which are elements of an even
 // curvature as an arc is, or a transition, in from the straight, out to it, or between two arcs, which goes on from the arc before it
-std::vector<editor_mode::route_band_view::role> editor_mode::route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs)
+std::vector<route_band_view::role> editor_mode::route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs)
 {
 	auto const count{static_cast<int>(Result.elements.size())};
 	std::vector<route_band_view::role> roles(static_cast<std::size_t>(count));

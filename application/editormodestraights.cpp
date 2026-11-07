@@ -755,14 +755,14 @@ void editor_mode::render_straights_ui()
 		ImGui::Text(STR_C("%zu straights"), state.found.size());
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(-FLT_MIN);
-		ImGui::InputTextWithHint("##straightfilter", STR_C("path name"), state.filter, sizeof(state.filter));
+		ImGui::InputTextWithHint("##straightfilter", STR_C("path name"), state.filter.data(), state.filter.size());
 		ImGui::BeginChild("##straights", ImVec2(0.0f, 160.0f), true);
 		for (int i = 0; i < static_cast<int>(state.found.size()); ++i)
 		{
 			auto const &line{state.found[i]};
 			if (line.tracks.empty())
 				continue;
-			if (state.filter[0] != '\0' && std::ranges::none_of(line.tracks, [&state](TTrack const *Track) { return Track->name().find(state.filter) != std::string::npos; }))
+			if (state.filter[0] != '\0' && std::ranges::none_of(line.tracks, [&state](TTrack const *Track) { return Track->name().find(state.filter.data()) != std::string::npos; }))
 				continue;
 			auto const label{std::format("{}.  {}##straight{}", i + 1, describe(line), i)};
 			if (ImGui::Selectable(label.c_str(), state.listed == i))

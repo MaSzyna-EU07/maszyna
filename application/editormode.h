@@ -1065,124 +1065,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the events of the list List of the Track, one taken off with x where they're Editable; the state Before for the undo history
 	void render_event_list(TTrack &Track, int const List, bool const Editable, editor_track::state const &Before);
 	std::string m_track_mode_notice;
-	struct route_design
-	{
-		TTrack *from{nullptr};
-		TTrack *to{nullptr};
-		editor_track::chain chain;
-		std::string error;
-		std::string status;
-		alignment::design design;
-		alignment::result result;
-		int vertex{-1};
-		int grip{-1};
-		bool single{true}; // one curve between its straights, instead of the whole line
-		bool relaying{false}; // the crossovers of the line were taken out, they go back once it's laid
-		// crossovers taken out with a line which didn't fit it laid again, tried again as the other lines are laid
-		struct crossover_out
-		{
-			int shape{-1};
-			glm::dvec3 press{0.0};
-			glm::dvec3 release{0.0};
-			std::string name;
-			std::vector<std::string> names; // of the switches at the press and at the release
-		};
-		std::vector<crossover_out> crossovers_out;
-		double origin{0.0}; // km of the start, m
-		int designed{0}; // vertices whose parameters came from the alignment kept in the scenery
-		int departed{-1}; // alignment kept in the scenery near the fragment, which its paths no longer follow
-		double departure{0.0};
-		// the band of the curvature in the panel: the element under the mouse, the point of it, and what's dragged in it
-		struct curvature_band
-		{
-			int hot{-1};
-			double at{-1.0};
-			int vertex{-1};
-			int part{0}; // 1 the radius, 2 the transition in, 3 the transition out, 4 the transition between two arcs of a compound curve
-			int arc{0}; // the arc of a compound curve the radius is of, 0 the first; of a transition between arcs the one after it
-			double value{0.0};
-			ImVec2 press{0.0f, 0.0f};
-			float metres{1.0f}; // pixels of a metre and of a unit of the curvature, kept as the drag goes
-			float curvature{1.0f};
-		};
-		curvature_band band;
-		// the part of a curve whose field the mouse is over in the panel, or which is being edited there, shown in the view
-		struct curve_focus
-		{
-			enum class part
-			{
-				whole,
-				entry,
-				exit,
-				radius_arc, // of the radius `arc`, the first one 0
-				between // the transition leading into the arc of the radius `arc`
-			};
-			int vertex{-1};
-			part what{part::whole};
-			int arc{0};
-			bool held{false}; // by a field being edited, the mouse over the others doesn't move it
-		};
-		curve_focus focus;
-		// the points clicked when the fragment was laid, kept with its design: the curves keep to them as their transitions and cants
-		// change, while hold is on
-		std::vector<glm::dvec3> clicks;
-		bool hold{true};
-		struct click_state
-		{
-			double offset{0.0}; // from the line, m
-			int vertex{-1}; // whose curve it's a point of
-			bool corner{false}; // a bend of straights clicked, the vertex itself rather than a point of its curve
-		};
-		std::vector<click_state> click_states; // as the line was at the revision measured
-		int revision{0}; // of the result, counted as it's computed
-		int measured{-1};
-		// points clicked along the middle of the track seen on the orthophoto, the radii of the curves and their shares fitted to them after each click
-		struct trace_state
-		{
-			bool active{false};
-			int radii{0}; // 0: as many as the points need, up to three
-			std::vector<glm::dvec3> points;
-			alignment::design before; // taken back by Esc
-			double rms{0.0};
-			double worst{0.0};
-		};
-		trace_state trace;
-	};
 	void render_route_ui();
-	// the band of the curvature in the panel as it's drawn: where it lies, its plot with the axis of no curvature, how many pixels a
-	// metre and a unit of the curvature take, and the element under the mouse with what of it a drag changes
-	struct route_band_view
-	{
-		// what of its vertex an element is: part 1 an arc, the arc of a compound curve counted from 0, 2 the transition in, 3 the
-		// transition out, 4 the transition into the arc
-		struct role
-		{
-			int part{0};
-			int arc{0};
-		};
-		float font{0.0f};
-		float pad{0.0f};
-		float line{0.0f}; // of the text
-		ImVec2 top{0.0f, 0.0f};
-		ImVec2 bottom{0.0f, 0.0f};
-		float inner_left{0.0f};
-		float inner_width{0.0f};
-		float plot_top{0.0f};
-		float plot_bottom{0.0f};
-		float axis{0.0f};
-		bool both{false}; // curves to both sides
-		float flip{1.0f};
-		float metres{1.0f};
-		float curvature{0.0f};
-		bool dragging{false};
-		ImVec2 mouse{0.0f, 0.0f};
-		int under{-1};
-		int part{0};
-		int arc{0};
-		float x_of(double const Chainage) const { return inner_left + static_cast<float>(Chainage) * metres; }
-		float y_of(double const K) const { return axis - flip * static_cast<float>(K) * curvature; }
-		float label_y() const { return bottom.y - pad * 0.25f - line; }
-	};
 	bool render_route_band();
 	route_band_view route_band_layout(ImVec2 const Top, ImVec2 const Size) const;
 	static std::vector<route_band_view::role> route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs);
@@ -1302,29 +1185,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
 	// the lines kept, the paths left out
 	void digitize_all(int *Kept = nullptr, int *Failed = nullptr);
-	// what the digitization of the scenery did, or would do
-	struct digitize_report
-	{
-		int lines{0};
-		int lines_failed{0};
-		int switches{0};
-		int known{0}; // kept in the scenery already
-		int designed{0}; // of a template of the catalogue
-		int measured{0};
-		int slips{0};
-		int unnamed{0}; // no record finds them
-		int odd{0};
-		int recorded{0};
-		int crossovers{0};
-		int crossovers_known{0};
-		int crossovers_recorded{0};
-		int crossovers_odd{0};
-		int found{0};
-		int bound{0};
-		std::map<std::string, int, std::less<>> types; // of the catalogue
-		std::map<std::string, int, std::less<>> shapes; // measured
-		std::vector<std::string> notes;
-	};
 	// the switches without a type kept get the one of the catalogue they are of, or the size measured from their shape
 	void digitize_switches(digitize_report &Report, bool const Write) const;
 	// two switches facing each other from two tracks, their diverging tracks joined by a plain one, are kept as a crossover
@@ -1378,52 +1238,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool route_active() const;
 	route_design m_route;
 
-	struct straights_state
-	{
-		editor_track::straight_tolerance tolerance;
-		double minimum_length{50.0};
-		std::vector<editor_track::straight> found;
-		int listed{-1};
-		TTrack *current_for{nullptr};
-		editor_track::straight current;
-		std::vector<editor_track::straight> neighbours;
-		std::vector<double> spacings{3.5, 4.0, 4.5, 4.75, 5.0, 5.5, 6.0};
-		char filter[32]{};
-		int handle{-1};
-		bool dragging{false};
-		editor_track::straight drag_line;
-		std::vector<editor_track::straight> set;
-		std::vector<editor_track::straight> drag_lines;
-		bool fitting{false};
-		editor_track::curve fit_before;
-		editor_track::curve fit_after;
-		bool fit_has_before{false};
-		bool fit_has_after{false};
-		std::vector<std::pair<TTrack *, editor_track::state>> drag_states;
-		std::size_t drag_step{0};
-		glm::dvec3 preview_start{0.0};
-		glm::dvec3 preview_end{0.0};
-		glm::dvec3 edit_start{0.0};
-		glm::dvec3 edit_end{0.0};
-		double edit_length{0.0};
-		double edit_azimuth{0.0};
-		double distance{4.0};
-		double curve_radius{0.0};
-		bool auto_transitions{true};
-		double transition{0.0};
-		int tool{0};
-		int tool_before{0};
-		bool tool_mouse{false};
-		std::vector<glm::dvec3> detour;
-		editor_track::straight detour_line;
-		glm::dvec3 detour_mouse{0.0};
-		bool tool_placed{false};
-		double tool_at{0.0};
-		glm::dvec3 tool_point{0.0};
-		glm::dvec3 tool_handle{0.0};
-		editor_track::straight tool_line;
-		std::string status;
-	};
 	void render_straights_ui();
 	void draw_straights_overlay() const;
 	editor_track::straight const &current_straight();
@@ -1790,103 +1604,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void turntable_store_exits();
 	void render_turntable_ui();
 	void draw_turntable_overlay() const;
-	struct extend_tool
-	{
-		bool active{false};
-		TTrack *track{nullptr};
-		glm::dvec3 point{0.0};
-		glm::dvec2 direction{0.0, 1.0};
-		double grade{0.0};
-		glm::dvec3 mouse{0.0};
-		int path{0};
-		bool atend{true};
-		editor_track::snap_target origin;
-		editor_track::snap_target snap;
-		glm::vec2 pressed{0.f};
-		std::vector<TTrack *> line;
-	};
 	extend_tool m_extend;
-	// what a point clicked while laying is: a bend of the straights, eased with a large curve, or a point along the middle of a curve
-	// seen on the photo, the curve ending at the last of these
-	enum class lay_mode
-	{
-		straights,
-		curve
-	};
-	// a curve traced on the photo as it's laid, how far the points clicked along it are from it
-	struct lay_trace
-	{
-		std::vector<glm::dvec3> points;
-		std::vector<double> offsets;
-		double rms{0.0};
-		double worst{0.0};
-		std::size_t curves{0};
-	};
-	// the line the points clicked make: its design, the bends among its vertices, the curves traced
-	struct lay_line_plan
-	{
-		alignment::design design;
-		alignment::result shape;
-		std::vector<char> corners;
-		std::vector<lay_trace> traces;
-		// the straights of a fixed direction the next bend slides along: from a free end, out of a curve traced
-		std::vector<std::pair<glm::dvec3, glm::dvec3>> guides;
-		// where the grade breaks from point to point: the bends kept as such, at the heights clicked; a curve traced, or bends made
-		// one curve, goes at one grade from end to end
-		std::vector<glm::dvec3> knots;
-	};
-	// lays new track through the clicked points, with no path needed to start from
-	struct lay_tool
-	{
-		bool active{false};
-		std::vector<glm::dvec3> points;
-		std::vector<lay_mode> modes; // of the points, as each was clicked
-		lay_mode mode{lay_mode::straights};
-		int radii{0}; // of a curve traced: 0 as many as the points need, up to three
-		bool straights_between{true}; // a curve traced may be two with a straight between them
-		lay_line_plan plan; // of the line shown
-		editor_track::snap_target start; // free end the track starts from, if any
-		glm::dvec3 mouse{0.0};
-		editor_track::snap_target mouse_snap;
-		std::vector<segment_data> preview;
-		std::string preview_error;
-		double preview_length{0.0};
-		// the line worked out whole last, all its fits done: shown while the one of the cursor now still waits for them on the thread,
-		// so that the curves don't jump from one fit to the next as each comes
-		struct worked_out
-		{
-			std::vector<segment_data> preview;
-			std::string error;
-			double length{0.0};
-			lay_line_plan plan;
-			std::optional<alignment::lay_result> eased;
-			alignment::join_result join;
-			std::vector<glm::dvec3> points; // the ones clicked it was worked out for
-		};
-		std::optional<worked_out> shown;
-		// the cursor the line is being worked out for, kept till all its fits are done: what it was worked out from
-		struct settling_cursor
-		{
-			glm::dvec3 mouse{0.0};
-			editor_track::snap_target snap;
-			std::vector<glm::dvec3> points;
-			std::vector<lay_mode> modes;
-			lay_mode mode{lay_mode::straights};
-			int edits{0};
-		};
-		std::optional<settling_cursor> settling;
-		bool whole{true}; // false: each fit shown as it comes, as before, for a selftest to compare
-		double radius{500.0};
-		double piece_length{100.0};
-		bool copy_selected{false};
-		editor_track::path_style style;
-		bool own_speed{false}; // the speed of the style also where the track goes on from one with its own, the new tracks given it
-		std::string status;
-		double status_time{-100.0};
-		std::string skew; // what Alt turned the straight to
-		double escape_time{-100.0}; // when Esc was pressed over points not laid: the second Esc drops them
-		std::size_t history{0}; // the step of the history the track laid last was begun at
-	};
 	lay_tool m_lay;
 	alignment::limits laying_norms() const;
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
@@ -3344,43 +3062,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool render_profile_point_fields(int const Index, bool const End, bool const Locked);
 	void draw_profile_overlay() const;
 
-	// infrastructure along the track: objects bound to the paths follow their changes. bindings are kept in the
-	// scenery files as "//$b" comment lines
-	struct infra_candidate
-	{
-		infra::binding binding;
-		double offset{0.0}; // sideways from the axis
-		std::string reason;
-		bool chosen{false};
-		bool bound{false};
-		TTrack *reader{nullptr};
-		std::string event; // of that path
-		std::string cell;
-		bool loose{false};
-		TTrack *nearer{nullptr};
-		glm::dvec3 nearer_foot{0.0};
-		bool unread{false};
-	};
-	struct infra_window
-	{
-		bool open{false};
-		int scope{1}; // 0: the selected path, 1: the line through it, 2: the route of the vertical profile
-		float reach{1500.0f};
-		float corridor{8.0f};
-		bool follow{true};
-		bool show{true};
-		std::vector<infra::rule> rules{infra::default_rules()};
-		std::vector<TTrack *> tracks; // of the scope
-		std::vector<infra_candidate> candidates;
-		int filter{0};
-		int read{0};
-		int overruled{0};
-		int unread{0};
-		int elsewhere{0};
-		int hovered{-1};
-		std::string status;
-		std::string error;
-	};
 	infra_window m_infra;
 	std::vector<infra::binding> m_bindings;
 	std::vector<std::pair<scene::layer_handle, std::string>> m_bindings_unresolved; // lines kept as they are
@@ -3388,16 +3069,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
 	std::vector<std::pair<scene::instance_handle, std::string>> m_drive_buffer;
 	bool m_infra_suspended{false};
-	// the point objects which go with a path: the signals and the warning discs it reads, the SHP resonators, and the controls of the
-	// block sections, the signs and the posts by the path nearest to them
-	struct point_object
-	{
-		scene::instance_handle include{0};
-		glm::dvec3 location{0.0};
-		TTrack *reader{nullptr};
-		TTrack *nearest{nullptr}; // of one no path reads
-		infra::category group{infra::category::other};
-	};
 	std::vector<point_object> m_point_objects;
 	std::size_t m_point_objects_revision{static_cast<std::size_t>(-1)};
 	std::size_t m_point_objects_count{0};
