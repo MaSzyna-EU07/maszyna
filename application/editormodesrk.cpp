@@ -4746,6 +4746,72 @@ void head_fitted(srk_tool::head_check &Check, std::vector<signal_head> const &He
 	Check.more = Check.fits && surplus(Heads[best], Need) < surplus(Template, Need);
 }
 
+using head_files = std::unordered_map<std::string, std::size_t, string_hash, std::equal_to<>>;
+
+// the posts of the signals which stand by a track within the reach of a line of a point; Owners: of each, the index of its signal
+std::vector<station::post> posts_near(std::vector<standing_signal> const &Standing, glm::dvec3 const &Middle, std::vector<std::size_t> &Owners)
+{
+	std::vector<station::post> posts;
+	for (std::size_t k = 0; k < Standing.size(); ++k)
+	{
+		if (auto const within{geometry::plan_distance(Standing[k].position, Middle) <= kLineLimit}; false == within)
+			continue;
+		if (auto const post{post_of(Standing[k])}; post.track != nullptr)
+		{
+			posts.push_back(post);
+			Owners.push_back(k);
+		}
+	}
+	return posts;
+}
+
+// the signals the routes are found from: the main signals of the station, marked in Own, the block signals and the warning discs of
+// the lines in and out of it
+std::vector<std::size_t> signals_from(std::vector<station::post> const &Posts, station::layout const &Layout, std::vector<char> &Own)
+{
+	using enum station::signal::role;
+	std::vector<std::size_t> from;
+	for (std::size_t index = 0; index < Posts.size(); ++index)
+	{
+		if (Posts[index].kind == entry && gap_to(Layout, Posts[index].point) <= 8.0)
+			Own[index] = 1;
+		if (Own[index] || Posts[index].kind == block || Posts[index].kind == warning)
+			from.push_back(index);
+	}
+	return from;
+}
+
+// the names of the signals the routes lead to, shown; empty for a route to none
+std::vector<std::string> nexts_shown(std::vector<station::route> const &Routes, std::vector<standing_signal> const &Standing, std::vector<std::size_t> const &Owners, std::string_view const Stem)
+{
+	std::vector<std::string> nexts;
+	for (auto const &route : Routes)
+		nexts.push_back(route.next >= 0 ? signal_shown(Standing[Owners[route.next]].name, Stem) : std::string{});
+	return nexts;
+}
+
+// the semaphores described with their arms the routes lead to, none for a route to another signal or to none
+std::vector<signal_head const *> semaphores_ahead(std::vector<station::route> const &Routes, std::vector<signal_head> const &Heads, head_files const &By_file, std::vector<standing_signal> const &Standing, std::vector<std::size_t> const &Owners)
+{
+	std::vector<signal_head const *> mains;
+	for (auto const &route : Routes)
+	{
+		auto const ahead{route.next >= 0 ? By_file.find(Standing[Owners[route.next]].file) : By_file.end()};
+		mains.push_back(ahead != By_file.end() && Heads[ahead->second].arms > 0 ? &Heads[ahead->second] : nullptr);
+	}
+	return mains;
+}
+
+// whether a head is listed before another: those of the station first, by their chainage, the others by how far from its middle
+bool listed_before(srk_tool::head_check const &A, srk_tool::head_check const &B, station::layout const &Layout, glm::dvec3 const &Middle)
+{
+	if (A.station != B.station)
+		return A.station;
+	if (A.station)
+		return station::project(Layout, A.position).x < station::project(Layout, B.position).x;
+	return geometry::plan_distance(A.position, Middle) < geometry::plan_distance(B.position, Middle);
+}
+
 } // namespace
 
 void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
@@ -4761,38 +4827,18 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 	auto const line{speed_of_open()};
 	auto const braking{braking_of_open()};
 	auto const middle{axis_point(layout, (layout.from + layout.to) * 0.5)};
-	std::vector<station::post> posts;
 	std::vector<std::size_t> owners;
-	for (std::size_t k = 0; k < Standing.size(); ++k)
-		if (geometry::plan_distance(Standing[k].position, middle) <= kLineLimit)
-			if (auto const post{post_of(Standing[k])}; post.track != nullptr)
-			{
-				posts.push_back(post);
-				owners.push_back(k);
-			}
-	// the main signals of the station, the block signals and the warning discs of the lines in and out of it
-	std::vector<std::size_t> from;
+	auto const posts{posts_near(Standing, middle, owners)};
 	std::vector<char> own(posts.size(), 0);
-	for (std::size_t index = 0; index < posts.size(); ++index)
-	{
-		if (posts[index].kind == entry && gap_to(layout, posts[index].point) <= 8.0)
-			own[index] = 1;
-		if (own[index] || posts[index].kind == block || posts[index].kind == warning)
-			from.push_back(index);
-	}
+	auto const from{signals_from(posts, layout, own)};
 	auto const found{station::routes(posts, from, route_reach(braking))};
 	std::vector routes_of(posts.size(), -1);
 	for (std::size_t k = 0; k < from.size(); ++k)
 		routes_of[from[k]] = static_cast<int>(k);
 	auto const order{heads_order(posts, own, found, routes_of)};
-	std::unordered_map<std::string, std::size_t, string_hash, std::equal_to<>> by_file;
+	head_files by_file;
 	for (std::size_t index = 0; index < heads.size(); ++index)
 		by_file.try_emplace(heads[index].file, index);
-	// the semaphore described with its arms a route leads to, none for a route to another signal or to none
-	auto const semaphore_at = [&heads, &by_file, &Standing, &owners](station::route const &Route) {
-		auto const ahead{Route.next >= 0 ? by_file.find(Standing[owners[Route.next]].file) : by_file.end()};
-		return ahead != by_file.end() && heads[ahead->second].arms > 0 ? &heads[ahead->second] : nullptr;
-	};
 	auto const triggers{shp_triggers()};
 	for (auto const index : order)
 	{
@@ -4807,8 +4853,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		check.file = signal.file;
 		check.station = own[index] != 0;
 		check.routes = found[routes_of[index]];
-		for (auto const &route : check.routes)
-			check.nexts.push_back(route.next >= 0 ? signal_shown(Standing[owners[route.next]].name, stem) : std::string{});
+		check.nexts = nexts_shown(check.routes, Standing, owners, stem);
 		auto const known{by_file.find(signal.file)};
 		auto const *template_of{known != by_file.end() ? &heads[known->second] : nullptr};
 		if (template_of != nullptr)
@@ -4835,9 +4880,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			auto const described{template_of != nullptr && false == template_of->repeats.empty()};
 			if (auto const mount{m_signals.signal_mount("warning", signal.file)}; false == mount.empty() && (described || template_of == nullptr || template_of->lamps.empty()))
 			{
-				std::vector<signal_head const *> mains;
-				std::ranges::transform(check.routes, std::back_inserter(mains), semaphore_at);
-				auto disc{check_disc(heads, by_file, mains, template_of, signal.file, mount)};
+				auto disc{check_disc(heads, by_file, semaphores_ahead(check.routes, heads, by_file, Standing, owners), template_of, signal.file, mount)};
 				check.told = disc.told;
 				check.unsaid = disc.unsaid;
 				check.fits = disc.fits;
@@ -4859,13 +4902,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			head_fitted(check, heads, signal.kind, *template_of, need);
 		m_heads.push_back(std::move(check));
 	}
-	std::ranges::stable_sort(m_heads, [&](head_check const &A, head_check const &B) {
-		if (A.station != B.station)
-			return A.station;
-		if (A.station)
-			return station::project(layout, A.position).x < station::project(layout, B.position).x;
-		return geometry::plan_distance(A.position, middle) < geometry::plan_distance(B.position, middle);
-	});
+	std::ranges::stable_sort(m_heads, [&layout, &middle](head_check const &A, head_check const &B) { return listed_before(A, B, layout, middle); });
 }
 
 void srk_tool::fit_heads()
