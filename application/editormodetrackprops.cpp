@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editormodeshared.h"
+#include "application/editormodetrackstyle.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorTrackPresets.hpp"
@@ -1099,7 +1100,7 @@ void editor_mode::select_tracks(std::vector<TTrack *> const &Tracks)
 	ui()->set_node(m_node);
 }
 
-std::size_t editor_mode::tracks_apply(std::vector<TTrack *> const &Tracks, std::function<bool(TTrack &)> const &Change, bool const Rebuild, char const *What)
+std::size_t track_sheet_tool::tracks_apply(std::vector<TTrack *> const &Tracks, std::function<bool(TTrack &)> const &Change, bool const Rebuild, char const *What)
 {
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> changed;
@@ -1121,7 +1122,7 @@ std::size_t editor_mode::tracks_apply(std::vector<TTrack *> const &Tracks, std::
 	}
 	if (false == changed.empty())
 	{
-		push_track_snapshot(std::move(states));
+		m_history.push_track_snapshot(std::move(states));
 		for (auto *track : changed)
 		{
 			if (Rebuild)
@@ -1132,11 +1133,11 @@ std::size_t editor_mode::tracks_apply(std::vector<TTrack *> const &Tracks, std::
 		++m_track_values.generation;
 	}
 	if (Tracks.size() > 1 || locked > 0)
-		ui()->set_status(applied_status(What, changed.size(), locked), locked > 0);
+		m_rail.show_status(applied_status(What, changed.size(), locked), locked > 0);
 	return changed.size();
 }
 
-int editor_mode::track_property_index(std::string_view const Key) const
+int track_sheet_tool::track_property_index(std::string_view const Key) const
 {
 	auto const &list{properties()};
 	for (std::size_t i = 0; i < list.size(); ++i)
@@ -1145,14 +1146,14 @@ int editor_mode::track_property_index(std::string_view const Key) const
 	return -1;
 }
 
-std::size_t editor_mode::track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text)
+std::size_t track_sheet_tool::track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text)
 {
 	auto const &property{properties()[Property]};
 	std::string const key{property.key};
 	auto const [targets, without]{property_targets(property, Tracks)};
 	auto const tell = [&](std::string const &Outcome, bool const Refused) {
-		m_track_outcome = {Property, Outcome, Refused, tracks_signature(Tracks), m_history.size(), ImGui::GetTime()};
-		ui()->set_status(format("%s: %s", STR_C(property.label), Outcome.c_str()), Refused);
+		m_track_outcome = {Property, Outcome, Refused, tracks_signature(Tracks), m_rail.history_size(), ImGui::GetTime()};
+		m_rail.show_status(format("%s: %s", STR_C(property.label), Outcome.c_str()), Refused);
 	};
 	// only the speed takes an empty field, for no limit
 	if (double number; property.kind == field::number && false == parse_number(Text, number) && (property.empty == nullptr || false == words_of(Text).empty()))
@@ -1191,7 +1192,7 @@ std::size_t editor_mode::track_property_apply(int const Property, std::vector<TT
 	return changed;
 }
 
-void editor_mode::track_field_finish()
+void track_sheet_tool::track_field_finish()
 {
 	// what was typed goes on the tracks the field was started on
 	auto &edit{m_track_field};
@@ -1206,7 +1207,7 @@ void editor_mode::track_field_finish()
 		track_property_apply(property, tracks, typed);
 }
 
-void editor_mode::track_field_settle()
+void track_sheet_tool::track_field_settle()
 {
 	// a field left without being drawn again, the selection gone or folded away: what was typed is taken as it is
 	if (auto const &edit{m_track_field}; edit.property < 0 || edit.frame + 1 >= ImGui::GetFrameCount())
@@ -1499,12 +1500,12 @@ bool editor_mode::texture_field(char const *Label, float const Width, char *Buff
 	return true;
 }
 
-void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::render_track_properties(std::vector<TTrack *> const &Tracks)
 {
 	auto &cache{m_track_values};
 	// the values are gathered again when the selection or the tracks change, for a large selection not on every frame
 	auto const signature{tracks_signature(Tracks)};
-	if (auto const stale{cache.signature != signature || cache.generation_seen != cache.generation || cache.history != m_history.size() || Tracks.size() <= kLargeSelection || ImGui::GetFrameCount() - cache.frame > 15}; stale)
+	if (auto const stale{cache.signature != signature || cache.generation_seen != cache.generation || cache.history != m_rail.history_size() || Tracks.size() <= kLargeSelection || ImGui::GetFrameCount() - cache.frame > 15}; stale)
 		property_values_gather(Tracks, signature);
 
 	// the lines under the rows come and go with no mouse button held: rows moved under a click would give it to another row
@@ -1517,7 +1518,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), STR_P("Not saved to the file: %d track", "Not saved to the file: %d tracks", static_cast<long long>(cache.unsaved)), static_cast<int>(cache.unsaved));
 		ImGui::SameLine();
 		if (ImGui::SmallButton(format("%s##tracksheet", STR_C("Save")).c_str()))
-			save();
+			m_rail.save_scenery();
 		item_tooltip("Saves the scenery, as Ctrl+S does");
 	}
 	else
@@ -1534,13 +1535,13 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 		property_rows(section::ride, false, Tracks);
 }
 
-void editor_mode::property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature)
+void track_sheet_tool::property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature)
 {
 	auto const &list{properties()};
 	auto &cache{m_track_values};
 	cache.signature = Signature;
 	cache.generation_seen = cache.generation;
-	cache.history = m_history.size();
+	cache.history = m_rail.history_size();
 	cache.frame = ImGui::GetFrameCount();
 	cache.values.assign(list.size(), {});
 	cache.applies.assign(list.size(), 0);
@@ -1556,7 +1557,7 @@ void editor_mode::property_values_gather(std::vector<TTrack *> const &Tracks, st
 	cache.unsaved = static_cast<std::size_t>(std::ranges::count_if(Tracks, [](TTrack const *Track) { return Track != nullptr && Track->dirty(); }));
 }
 
-void editor_mode::property_notes(std::size_t const Signature)
+void track_sheet_tool::property_notes(std::size_t const Signature)
 {
 	m_track_notes.clear();
 	auto const &edit{m_track_field};
@@ -1567,18 +1568,18 @@ void editor_mode::property_notes(std::size_t const Signature)
 		m_track_notes.emplace_back(edit.property, format(STR_P("Enter or leaving the field sets it on %d track, Esc gives up", "Enter or leaving the field sets it on %d tracks, Esc gives up", static_cast<long long>(count)), static_cast<int>(count)), track_note::kind::typing);
 	}
 	auto const &outcome{m_track_outcome};
-	if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == Signature && outcome.history == m_history.size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
+	if (outcome.property >= 0 && (false == typing || outcome.property != edit.property) && outcome.signature == Signature && outcome.history == m_rail.history_size() && ImGui::GetTime() - outcome.time < kOutcomeSeconds)
 		m_track_notes.emplace_back(outcome.property, outcome.text, outcome.refused ? track_note::kind::refused : track_note::kind::done);
 }
 
-void editor_mode::property_row_help(std::size_t const Index, std::size_t const Selected) const
+void track_sheet_tool::property_row_help(std::size_t const Index, std::size_t const Selected) const
 {
 	// the tooltip of a row would cover the line under it
 	if (std::ranges::none_of(m_track_notes, [Index](track_note const &Note) { return Note.property == static_cast<int>(Index); }))
 		row_tooltip(properties()[Index], m_track_values.values[Index], m_track_values.applies[Index], Selected);
 }
 
-void editor_mode::property_row_label(std::size_t const Index, std::size_t const Selected) const
+void track_sheet_tool::property_row_label(std::size_t const Index, std::size_t const Selected) const
 {
 	auto const &property{properties()[Index]};
 	auto const &cache{m_track_values};
@@ -1603,7 +1604,7 @@ void editor_mode::property_row_label(std::size_t const Index, std::size_t const 
 	ImGui::SetNextItemWidth(-FLT_MIN);
 }
 
-void editor_mode::property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
 {
 	auto const &property{properties()[Index]};
 	auto const &values{m_track_values.values[Index]};
@@ -1637,7 +1638,7 @@ void editor_mode::property_text_row(std::size_t const Index, std::vector<TTrack 
 		track_field_finish();
 }
 
-void editor_mode::property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
 {
 	auto const &property{properties()[Index]};
 	auto const &values{m_track_values.values[Index]};
@@ -1652,7 +1653,7 @@ void editor_mode::property_choice_row(std::size_t const Index, std::vector<TTrac
 	property_row_help(Index, Tracks.size());
 }
 
-void editor_mode::property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
 {
 	auto const &values{m_track_values.values[Index]};
 	auto const mixed_values{values.size() > 1};
@@ -1666,7 +1667,7 @@ void editor_mode::property_check_row(std::size_t const Index, std::vector<TTrack
 	property_row_help(Index, Tracks.size());
 }
 
-void editor_mode::property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks)
 {
 	auto const &property{properties()[Index]};
 	auto const &values{m_track_values.values[Index]};
@@ -1691,7 +1692,7 @@ void editor_mode::property_texture_row(std::size_t const Index, std::vector<TTra
 	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
 	if (ImGui::BeginCombo("##value", preview.c_str(), ImGuiComboFlags_HeightLargest))
 	{
-		if (std::string chosen; track_texture_picker(property.texture, common, mixed_choice, chosen))
+		if (std::string chosen; m_rail.pick_track_texture(property.texture, common, mixed_choice, chosen))
 		{
 			track_property_apply(static_cast<int>(Index), Tracks, chosen);
 			ImGui::CloseCurrentPopup();
@@ -1699,11 +1700,11 @@ void editor_mode::property_texture_row(std::size_t const Index, std::vector<TTra
 		ImGui::EndCombo();
 	}
 	property_row_help(Index, Tracks.size());
-	if (std::string dropped; material_drop(dropped))
+	if (std::string dropped; m_rail.take_dropped_material(dropped))
 		track_property_apply(static_cast<int>(Index), Tracks, dropped);
 }
 
-bool editor_mode::property_rows_any(int const Part, bool const More) const
+bool track_sheet_tool::property_rows_any(int const Part, bool const More) const
 {
 	auto const &list{properties()};
 	for (std::size_t i = 0; i < list.size(); ++i)
@@ -1712,7 +1713,7 @@ bool editor_mode::property_rows_any(int const Part, bool const More) const
 	return false;
 }
 
-void editor_mode::property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks)
 {
 	if (false == property_rows_any(Part, More))
 		return;
@@ -1745,7 +1746,7 @@ void editor_mode::property_rows(int const Part, bool const More, std::vector<TTr
 	ImGui::EndTable();
 }
 
-void editor_mode::property_row_notes(std::size_t const Index) const
+void track_sheet_tool::property_row_notes(std::size_t const Index) const
 {
 	for (auto const &note : m_track_notes)
 	{
@@ -1764,7 +1765,7 @@ void editor_mode::property_row_notes(std::size_t const Index) const
 	}
 }
 
-void editor_mode::property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks)
 {
 	if (false == property_rows_any(Part, true))
 		return;
@@ -1777,7 +1778,7 @@ void editor_mode::property_more_rows(char const *Id, int const Part, std::vector
 	ImGui::PopID();
 }
 
-void editor_mode::property_look_rows(std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::property_look_rows(std::vector<TTrack *> const &Tracks)
 {
 	property_rows(section::look, false, Tracks);
 	property_more_rows("look", section::look, Tracks);
@@ -1793,39 +1794,38 @@ void editor_mode::property_look_rows(std::vector<TTrack *> const &Tracks)
 	}
 }
 
-void editor_mode::copy_track_style(TTrack const &Track)
+void track_style_tool::copy_track_style(TTrack const &Track)
 {
 	auto &style{m_track_style};
 	style.from = name_of(Track);
 	style.values = values_of_track(Track);
 	style.picking = false;
 	style.reveal = true;
-	ui()->set_status(format(STR_C("Taken from %s: the inspector lists what it changes on the selected tracks, Ctrl+Shift+V sets what's ticked"), style.from.c_str()), false);
+	m_rail.show_status(format(STR_C("Taken from %s: the inspector lists what it changes on the selected tracks, Ctrl+Shift+V sets what's ticked"), style.from.c_str()), false);
 }
 
-bool editor_mode::track_style_takes(std::string const &Key) const
+bool track_style_tool::track_style_takes(std::string const &Key) const
 {
 	auto const &style{m_track_style};
 	if (auto const tick{style.ticks.find(Key)}; tick != style.ticks.end())
 		return tick->second;
-	auto const index{track_property_index(Key)};
+	auto const index{m_sheet.track_property_index(Key)};
 	return index >= 0 && style.groups[properties()[index].group];
 }
 
-std::vector<editor_mode::track_style_line> editor_mode::track_style_lines(std::vector<TTrack *> const &Tracks) const
+std::vector<track_style_tool::track_style_line> track_style_tool::track_style_lines(std::vector<TTrack *> const &Tracks) const
 {
 	std::vector<track_style_line> lines;
 	auto const &list{properties()};
-	auto const &cache{m_track_values};
 	// the values of the selected tracks gathered for the sheet, when it was drawn for them
-	auto const known{cache.signature == tracks_signature(Tracks) && cache.values.size() == list.size()};
+	auto const *known{m_sheet.known_values(tracks_signature(Tracks), list.size())};
 	for (auto const &[key, value] : m_track_style.values)
 	{
-		auto const index{track_property_index(key)};
+		auto const index{m_sheet.track_property_index(key)};
 		if (index < 0 || list[index].off)
 			continue;
 		auto const &property{list[index]};
-		auto const values{known ? cache.values[index] : values_of(property, Tracks)};
+		auto const values{known != nullptr ? (*known)[index] : values_of(property, Tracks)};
 		std::size_t differ{0};
 		for (auto const &[other, count] : values)
 			if (other != value)
@@ -1837,7 +1837,7 @@ std::vector<editor_mode::track_style_line> editor_mode::track_style_lines(std::v
 	return lines;
 }
 
-std::size_t editor_mode::paste_track_style(std::vector<TTrack *> const &Tracks)
+std::size_t track_style_tool::paste_track_style(std::vector<TTrack *> const &Tracks)
 {
 	auto const &style{m_track_style};
 	if (style.values.empty() || Tracks.empty())
@@ -1851,15 +1851,15 @@ std::size_t editor_mode::paste_track_style(std::vector<TTrack *> const &Tracks)
 	auto const changed{apply_track_values(ticked, all, Tracks, "From another track")};
 	if (false == changed.has_value())
 	{
-		ui()->set_status(STR_C("Nothing is ticked to be set"), true);
+		m_rail.show_status(STR_C("Nothing is ticked to be set"), true);
 		return 0;
 	}
 	if (Tracks.size() == 1)
-		ui()->set_status(*changed > 0 ? format(STR_C("Set as on %s, Ctrl+Z takes it back"), style.from.c_str()) : std::string{STR_C("The track has these properties already")}, false);
+		m_rail.show_status(*changed > 0 ? format(STR_C("Set as on %s, Ctrl+Z takes it back"), style.from.c_str()) : std::string{STR_C("The track has these properties already")}, false);
 	return *changed;
 }
 
-std::optional<std::size_t> editor_mode::apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What)
+std::optional<std::size_t> track_style_tool::apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What)
 {
 	static_assert(group_count == std::tuple_size_v<track_groups>, "a choice for each group of the pasted properties");
 	auto const &list{properties()};
@@ -1868,7 +1868,7 @@ std::optional<std::size_t> editor_mode::apply_track_values(std::vector<std::pair
 	for (auto const late : {false, true})
 		for (auto const &[key, value] : Values)
 		{
-			auto const index{track_property_index(key)};
+			auto const index{m_sheet.track_property_index(key)};
 			if (index < 0)
 				continue;
 			auto const &property{list[index]};
@@ -1879,7 +1879,7 @@ std::optional<std::size_t> editor_mode::apply_track_values(std::vector<std::pair
 		}
 	if (pasted.empty())
 		return std::nullopt;
-	return tracks_apply(Tracks, [&pasted](TTrack &Track) {
+	return m_sheet.tracks_apply(Tracks, [&pasted](TTrack &Track) {
 		bool any{false};
 		for (auto const &[property, value] : pasted)
 			if (property->applies(Track))
@@ -1888,7 +1888,7 @@ std::optional<std::size_t> editor_mode::apply_track_values(std::vector<std::pair
 	}, rebuild, What);
 }
 
-std::size_t editor_mode::apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks)
+std::size_t track_style_tool::apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks)
 {
 	auto const *preset{EditorTrackPresets.find(Id)};
 	if (preset == nullptr || Tracks.empty())
@@ -1897,17 +1897,17 @@ std::size_t editor_mode::apply_track_preset(int const Id, std::vector<TTrack *> 
 	auto const changed{apply_track_values(preset->values, groups_of(*preset), Tracks, "Applied a track preset")};
 	if (false == changed.has_value())
 	{
-		ui()->set_status(format(STR_C("The preset \"%s\" overwrites nothing: choose what it overwrites"), name.c_str()), true);
+		m_rail.show_status(format(STR_C("The preset \"%s\" overwrites nothing: choose what it overwrites"), name.c_str()), true);
 		return 0;
 	}
 	if (*changed > 0)
-		ui()->set_status(format(STR_P("Preset \"%s\" applied on %d track, Ctrl+Z takes it back", "Preset \"%s\" applied on %d tracks, Ctrl+Z takes it back", static_cast<long long>(*changed)), name.c_str(), static_cast<int>(*changed)), false);
+		m_rail.show_status(format(STR_P("Preset \"%s\" applied on %d track, Ctrl+Z takes it back", "Preset \"%s\" applied on %d tracks, Ctrl+Z takes it back", static_cast<long long>(*changed)), name.c_str(), static_cast<int>(*changed)), false);
 	else
-		ui()->set_status(STR_C("The tracks have the properties of the preset already"), false);
+		m_rail.show_status(STR_C("The tracks have the properties of the preset already"), false);
 	return *changed;
 }
 
-void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
+void track_style_tool::render_track_presets(std::vector<TTrack *> const &Tracks)
 {
 	if (Tracks.empty() || false == ImGui::TreeNode(STR_C("Presets")))
 		return;
@@ -1937,7 +1937,7 @@ void editor_mode::render_track_presets(std::vector<TTrack *> const &Tracks)
 	ImGui::TreePop();
 }
 
-void editor_mode::render_preset_combo()
+void track_style_tool::render_preset_combo()
 {
 	auto &panel{m_track_presets};
 	auto const &presets{EditorTrackPresets.presets()};
@@ -1958,7 +1958,7 @@ void editor_mode::render_preset_combo()
 		ImGui::SetTooltip("%s", preset_summary(*selected).c_str());
 }
 
-void editor_mode::render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width)
+void track_style_tool::render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width)
 {
 	auto &panel{m_track_presets};
 	auto const single{Tracks.size() == 1};
@@ -1977,14 +1977,14 @@ void editor_mode::render_preset_new(std::vector<TTrack *> const &Tracks, bool co
 			groups[group] = true;
 		panel.selected = EditorTrackPresets.create(STR_C("New preset"), name_of(*Tracks.front()), values_of_track(*Tracks.front()), group_keys(groups));
 		panel.nameid = 0;
-		ui()->set_status(format(STR_C("Properties of %s saved as a preset: give it a name and choose what it overwrites"), name_of(*Tracks.front()).c_str()), false);
+		m_rail.show_status(format(STR_C("Properties of %s saved as a preset: give it a name and choose what it overwrites"), name_of(*Tracks.front()).c_str()), false);
 	}
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 		ImGui::SetTooltip("%s", STR_C(single ? "Saves the properties of this track as a new preset" : "Select one track to save its properties as a preset"));
 }
 
-void editor_mode::render_preset_name(int const Id)
+void track_style_tool::render_preset_name(int const Id)
 {
 	auto &panel{m_track_presets};
 	if (panel.nameid != Id)
@@ -2003,7 +2003,7 @@ void editor_mode::render_preset_name(int const Id)
 	}
 }
 
-void editor_mode::render_preset_groups(int const Id)
+void track_style_tool::render_preset_groups(int const Id)
 {
 	auto const *selected{EditorTrackPresets.find(Id)};
 	// what it overwrites, of the groups it has values of
@@ -2035,7 +2035,7 @@ void editor_mode::render_preset_groups(int const Id)
 	EditorTrackPresets.set_groups(Id, group_keys(kept));
 }
 
-void editor_mode::render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width)
+void track_style_tool::render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width)
 {
 	auto &panel{m_track_presets};
 	auto const single{Tracks.size() == 1};
@@ -2044,7 +2044,7 @@ void editor_mode::render_preset_update(std::vector<TTrack *> const &Tracks, int 
 	if (ImGui::Button(STR_C("Update from the track"), ImVec2(Width, 0.0f)))
 	{
 		EditorTrackPresets.update(Id, name_of(*Tracks.front()), values_of_track(*Tracks.front()));
-		ui()->set_status(format(STR_C("Preset \"%s\" takes the properties of %s now"), selected->name.c_str(), name_of(*Tracks.front()).c_str()), false);
+		m_rail.show_status(format(STR_C("Preset \"%s\" takes the properties of %s now"), selected->name.c_str(), name_of(*Tracks.front()).c_str()), false);
 	}
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -2067,14 +2067,14 @@ void editor_mode::render_preset_update(std::vector<TTrack *> const &Tracks, int 
 	ImGui::EndPopup();
 }
 
-void editor_mode::render_track_presets_menu()
+void track_style_tool::render_track_presets_menu()
 {
 	if (false == ImGui::BeginMenu(STR_C("Track presets")))
 		return;
 	auto const &presets{EditorTrackPresets.presets()};
 	if (presets.empty())
 		ImGui::TextDisabled("%s", STR_C("No presets: save one in the inspector of a track, From another track or a preset, Presets"));
-	auto const tracks{selected_tracks()};
+	auto const tracks{m_rail.selected_track_list()};
 	int chosen{0};
 	for (auto const &preset : presets)
 	{
@@ -2088,7 +2088,7 @@ void editor_mode::render_track_presets_menu()
 		apply_track_preset(chosen, tracks);
 }
 
-void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
+void track_style_tool::render_track_style(std::vector<TTrack *> const &Tracks)
 {
 	auto &style{m_track_style};
 	if (style.reveal)
@@ -2124,7 +2124,7 @@ void editor_mode::render_track_style(std::vector<TTrack *> const &Tracks)
 	render_track_presets(Tracks);
 }
 
-void editor_mode::render_style_taken(std::vector<TTrack *> const &Tracks)
+void track_style_tool::render_style_taken(std::vector<TTrack *> const &Tracks)
 {
 	auto &style{m_track_style};
 	ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), STR_C("From %s:"), style.from.c_str());
@@ -2162,7 +2162,7 @@ void editor_mode::render_style_taken(std::vector<TTrack *> const &Tracks)
 	}
 }
 
-bool editor_mode::render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected)
+bool track_style_tool::render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected)
 {
 	auto &style{m_track_style};
 	auto const &property{properties()[Property]};
@@ -2200,7 +2200,7 @@ bool editor_mode::render_style_line(int const Property, std::string const &Now, 
 	return take;
 }
 
-std::vector<TTrack *> editor_mode::similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const
+std::vector<TTrack *> track_sheet_tool::similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const
 {
 	auto const &property{properties()[Property]};
 	std::set<std::string, std::less<>> wanted;
@@ -2216,7 +2216,19 @@ std::vector<TTrack *> editor_mode::similar_tracks(int const Property, std::vecto
 	return found;
 }
 
-void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
+std::vector<std::vector<std::pair<std::string, int>>> const *track_sheet_tool::known_values(std::size_t const Signature, std::size_t const Count) const
+{
+	if (m_track_values.signature != Signature || m_track_values.values.size() != Count)
+		return nullptr;
+	return &m_track_values.values;
+}
+
+TTrack const *track_sheet_tool::list_hover() const
+{
+	return m_track_list_hover_frame >= ImGui::GetFrameCount() - 1 ? m_track_list_hover : nullptr;
+}
+
+void track_sheet_tool::render_track_set_header(std::vector<TTrack *> const &Tracks)
 {
 	double length{0.0};
 	int switches{0};
@@ -2232,7 +2244,7 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + room);
 	if (ImGui::SmallButton(STR_C("Deselect")))
 	{
-		select_tracks({});
+		m_rail.select_track_list({});
 		return;
 	}
 	item_tooltip("Clears the selection (Esc)");
@@ -2254,13 +2266,13 @@ void editor_mode::render_track_set_header(std::vector<TTrack *> const &Tracks)
 		ImGui::EndChild();
 		ImGui::TreePop();
 		if (removed != nullptr)
-			track_set_toggle(*removed);
+			m_rail.toggle_in_selection(*removed);
 		else if (alone != nullptr)
-			select_tracks({alone});
+			m_rail.select_track_list({alone});
 	}
 }
 
-void editor_mode::render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone)
+void track_sheet_tool::render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone)
 {
 	ImGui::PushID(Index);
 	if (ImGui::SmallButton("x"))
@@ -2272,7 +2284,7 @@ void editor_mode::render_selected_track_row(TTrack *Track, int const Index, floa
 		if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 			Alone = Track;
 		else
-			focus_track(*Track, 0, bezier{Track->m_paths.front()}.point(0.5));
+			m_view.focus_track(*Track, 0, bezier{Track->m_paths.front()}.point(0.5));
 	}
 	if (ImGui::IsItemHovered())
 	{
@@ -2285,7 +2297,7 @@ void editor_mode::render_selected_track_row(TTrack *Track, int const Index, floa
 	ImGui::PopID();
 }
 
-void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 {
 	auto const single{Tracks.size() == 1};
 	auto const open{ImGui::CollapsingHeader(format("%s  (?)###trackselect%d", STR_C("Selection"), single ? 1 : 2).c_str(), single ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
@@ -2301,10 +2313,7 @@ void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 	auto const width{button_width(2)};
 	if (ImGui::Button(STR_C("+ Joined"), ImVec2(width, 0.0f)))
 	{
-		if (m_track_set.empty() && false == Tracks.empty())
-			m_track_set = Tracks;
-		track_set_grow();
-		select_tracks(m_track_set);
+		m_rail.grow_selection(Tracks);
 	}
 	item_tooltip("Adds the tracks joined to the selection, by the rules of the spread in the tool options");
 	ImGui::SameLine();
@@ -2314,7 +2323,7 @@ void editor_mode::render_track_select_tools(std::vector<TTrack *> const &Tracks)
 	render_similar_popup(Tracks);
 }
 
-void editor_mode::render_similar_popup(std::vector<TTrack *> const &Tracks)
+void track_sheet_tool::render_similar_popup(std::vector<TTrack *> const &Tracks)
 {
 	if (false == ImGui::BeginPopup("##similar"))
 		return;
@@ -2331,14 +2340,14 @@ void editor_mode::render_similar_popup(std::vector<TTrack *> const &Tracks)
 		auto const &found{m_track_similar[i]};
 		if (ImGui::MenuItem(STR_C(labels[i]), tracks_count(found.size()).c_str(), false, false == found.empty()))
 		{
-			select_tracks(found);
-			ui()->set_status(format(STR_C("%s: %s selected in the scenery"), STR_C(labels[i]), tracks_count(found.size()).c_str()), false);
+			m_rail.select_track_list(found);
+			m_rail.show_status(format(STR_C("%s: %s selected in the scenery"), STR_C(labels[i]), tracks_count(found.size()).c_str()), false);
 		}
 	}
 	ImGui::EndPopup();
 }
 
-editor_mode::selftest_result editor_mode::selftest_props(std::string const &Command, std::istringstream &Words)
+editor_selftest_result track_sheet_tool::selftest(std::string const &Command, std::istringstream &Words)
 {
 	if (Command == "tracksel")
 		return selftest_tracksel(Words);
@@ -2346,25 +2355,23 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 		return selftest_trackprop(Words);
 	if (Command == "trackprops")
 		return selftest_trackprops();
-	if (Command == "trackstyle")
-		return selftest_trackstyle(Words);
 	if (Command == "tracksimilar")
 		return selftest_tracksimilar(Words);
-	return selftest_result::unhandled;
+	return editor_selftest_result::unhandled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_tracksel(std::istringstream &Words)
+editor_selftest_result track_sheet_tool::selftest_tracksel(std::istringstream &Words)
 {
 	std::vector<TTrack *> tracks;
 	for (std::string name; Words >> name;)
 		if (auto *track{simulation::Paths.find(name)}; track != nullptr)
 			tracks.push_back(track);
-	select_tracks(tracks);
-	WriteLog(format("SELFTEST tracksel: %zu tracks selected", selected_tracks().size()));
-	return selftest_result::handled;
+	m_rail.select_track_list(tracks);
+	WriteLog(format("SELFTEST tracksel: %zu tracks selected", m_rail.selected_track_list().size()));
+	return editor_selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_trackprop(std::istringstream &Words)
+editor_selftest_result track_sheet_tool::selftest_trackprop(std::istringstream &Words)
 {
 	std::string key;
 	Words >> key;
@@ -2375,16 +2382,16 @@ editor_mode::selftest_result editor_mode::selftest_trackprop(std::istringstream 
 	if (index < 0)
 	{
 		WriteLog("SELFTEST trackprop: no property " + key);
-		return selftest_result::handled;
+		return editor_selftest_result::handled;
 	}
-	auto const changed{track_property_apply(index, selected_tracks(), value)};
+	auto const changed{track_property_apply(index, m_rail.selected_track_list(), value)};
 	WriteLog(format("SELFTEST trackprop %s=\"%s\": %zu changed: %s", key.c_str(), value.c_str(), changed, m_track_outcome.text.c_str()));
-	return selftest_result::handled;
+	return editor_selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_trackprops()
+editor_selftest_result track_sheet_tool::selftest_trackprops()
 {
-	auto const tracks{selected_tracks()};
+	auto const tracks{m_rail.selected_track_list()};
 	for (auto const &property : properties())
 	{
 		auto const values{values_of(property, tracks)};
@@ -2396,10 +2403,17 @@ editor_mode::selftest_result editor_mode::selftest_trackprops()
 	for (auto const &note : m_track_notes)
 		WriteLog(format("SELFTEST trackprops note %s: %s", properties()[note.property].key, note.text.c_str()));
 	WriteLog(format("SELFTEST trackprops unsaved: %zu", m_track_values.unsaved));
-	return selftest_result::handled;
+	return editor_selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_trackstyle(std::istringstream &Words)
+editor_selftest_result track_style_tool::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "trackstyle")
+		return selftest_trackstyle(Words);
+	return editor_selftest_result::unhandled;
+}
+
+editor_selftest_result track_style_tool::selftest_trackstyle(std::istringstream &Words)
 {
 	std::string action;
 	Words >> action;
@@ -2407,7 +2421,7 @@ editor_mode::selftest_result editor_mode::selftest_trackstyle(std::istringstream
 	{
 		std::string name;
 		Words >> name;
-		if (auto const *track{name.empty() ? selected_track() : simulation::Paths.find(name)}; track != nullptr)
+		if (auto const *track{name.empty() ? m_selection.selected_track() : simulation::Paths.find(name)}; track != nullptr)
 			copy_track_style(*track);
 		WriteLog(format("SELFTEST trackstyle copy: %zu values from %s", m_track_style.values.size(), m_track_style.from.c_str()));
 	}
@@ -2427,17 +2441,17 @@ editor_mode::selftest_result editor_mode::selftest_trackstyle(std::istringstream
 		m_track_style.ticks[key] = tick != 0;
 	}
 	else if (action == "paste")
-		WriteLog(format("SELFTEST trackstyle paste: %zu changed", paste_track_style(selected_tracks())));
+		WriteLog(format("SELFTEST trackstyle paste: %zu changed", paste_track_style(m_rail.selected_track_list())));
 	else if (action == "panel")
 		m_track_style.reveal = true;
 	else if (action == "list")
 		selftest_trackstyle_list();
-	return selftest_result::handled;
+	return editor_selftest_result::handled;
 }
 
-void editor_mode::selftest_trackstyle_list()
+void track_style_tool::selftest_trackstyle_list()
 {
-	auto const lines{track_style_lines(selected_tracks())};
+	auto const lines{track_style_lines(m_rail.selected_track_list())};
 	WriteLog(format("SELFTEST trackstyle list: %zu lines from %s", lines.size(), m_track_style.from.c_str()));
 	for (auto const &line : lines)
 	{
@@ -2446,12 +2460,12 @@ void editor_mode::selftest_trackstyle_list()
 	}
 }
 
-editor_mode::selftest_result editor_mode::selftest_tracksimilar(std::istringstream &Words)
+editor_selftest_result track_sheet_tool::selftest_tracksimilar(std::istringstream &Words)
 {
 	std::string key;
 	Words >> key;
 	if (auto const index{track_property_index(key)}; index >= 0)
-		select_tracks(similar_tracks(index, selected_tracks()));
-	WriteLog(format("SELFTEST tracksimilar %s: %zu selected", key.c_str(), selected_tracks().size()));
-	return selftest_result::handled;
+		m_rail.select_track_list(similar_tracks(index, m_rail.selected_track_list()));
+	WriteLog(format("SELFTEST tracksimilar %s: %zu selected", key.c_str(), m_rail.selected_track_list().size()));
+	return editor_selftest_result::handled;
 }

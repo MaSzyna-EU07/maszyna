@@ -125,6 +125,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_ring(glm::dvec3 const &Point) const override;
 	bool orthophoto_shown() const override;
 	void open_orthophoto_window() override;
+	void show_status(std::string const &Text, bool const Warning) override;
+	std::size_t history_size() const override;
+	void save_scenery() override;
+	bool pick_track_texture(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen) override;
+	bool take_dropped_material(std::string &Name) override;
+	std::vector<TTrack *> selected_track_list() override;
+	void select_track_list(std::vector<TTrack *> const &Tracks) override;
+	void grow_selection(std::vector<TTrack *> const &From) override;
+	void toggle_in_selection(TTrack &Track) override;
 	// rail services: end
 
 	// types
@@ -2747,15 +2756,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the set when there's one, the selected track otherwise
 	std::vector<TTrack *> selected_tracks();
 	void select_tracks(std::vector<TTrack *> const &Tracks);
-	// changes each track which can be changed, in one step of the undo; false from Change: the track stays as it was
-	std::size_t tracks_apply(std::vector<TTrack *> const &Tracks, std::function<bool(TTrack &)> const &Change, bool const Rebuild, char const *What);
 	// the model of the timbers, with the fastenings where it has them, set on all the switches and crossings of the scenery, in one
 	// step of the undo; empty: the one of eu07.ini. returns: the tracks changed
 	std::size_t set_switch_timbers(std::string const &Model);
-	int track_property_index(std::string_view const Key) const;
-	std::size_t track_property_apply(int const Property, std::vector<TTrack *> const &Tracks, std::string const &Text);
-	void track_field_finish();
-	void track_field_settle();
 	void track_textures_scan();
 	// a texture in use, offered first in the picker
 	struct texture_use
@@ -2799,111 +2802,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<texture_use> road_textures_used() const;
 	// the textures of the palette and of the water of the terrain; None: the entry for no texture of its own, nullptr: there's none
 	texture_offer terrain_texture_offer(char const *None);
-	void render_track_properties(std::vector<TTrack *> const &Tracks);
-	// the values of the properties over the tracks gathered again when the selection or the tracks changed
-	void property_values_gather(std::vector<TTrack *> const &Tracks, std::size_t const Signature);
-	// the notes on the values of the properties made again when the selection or the tracks changed
-	void property_notes(std::size_t const Signature);
-	// the tooltip of a row of the properties
-	void property_row_help(std::size_t const Index, std::size_t const Selected) const;
-	// the label of a row of the properties, marked when the selected tracks differ in it
-	void property_row_label(std::size_t const Index, std::size_t const Selected) const;
-	// the rows of the properties by their kind: a text, a choice, a tick, a texture
-	void property_text_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	void property_choice_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	void property_check_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	void property_texture_row(std::size_t const Index, std::vector<TTrack *> const &Tracks);
-	// whether any property of the part is shown, More: of those under "more"
-	bool property_rows_any(int const Part, bool const More) const;
-	// the rows of the properties of the part
-	void property_rows(int const Part, bool const More, std::vector<TTrack *> const &Tracks);
-	// the notes under a row of the properties
-	void property_row_notes(std::size_t const Index) const;
-	// the rows under "more" of the part, in a tree node of the id
-	void property_more_rows(char const *Id, int const Part, std::vector<TTrack *> const &Tracks);
-	// the rows of the look of the track
-	void property_look_rows(std::vector<TTrack *> const &Tracks);
-	void render_track_set_header(std::vector<TTrack *> const &Tracks);
-	// a row of the list of the selected tracks: Removed or Alone set to the track when it's taken out or kept alone
-	void render_selected_track_row(TTrack *Track, int const Index, float const Column, TTrack *&Removed, TTrack *&Alone);
-	void render_track_select_tools(std::vector<TTrack *> const &Tracks);
-	// the popup selecting the tracks of the scenery alike the selected ones
-	void render_similar_popup(std::vector<TTrack *> const &Tracks);
-	void render_track_style(std::vector<TTrack *> const &Tracks);
-	// what the track taken changes on the selected tracks, each with a tick, and the button setting it
-	void render_style_taken(std::vector<TTrack *> const &Tracks);
-	// a line of what the track taken changes: its tick and how it changes. returns: true when it's ticked
-	bool render_style_line(int const Property, std::string const &Now, std::string const &Taken, std::size_t const Differ, std::size_t const Selected);
-	void copy_track_style(TTrack const &Track);
-	std::size_t paste_track_style(std::vector<TTrack *> const &Tracks);
-	// which groups of the properties are pasted or put on the tracks by a preset, in the order of the groups of editormodetrackprops.cpp
-	using track_groups = std::array<bool, 11>;
-	// the values of the properties of the chosen groups put on the tracks, in one step of the undo. returns: the number of the
-	// tracks changed, none when no value is of the chosen groups
-	std::optional<std::size_t> apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What);
-	// presets of the properties of the tracks (editorTrackPresets), made from a track and put on the selected ones
-	void render_track_presets(std::vector<TTrack *> const &Tracks);
-	// the combo choosing the preset
-	void render_preset_combo();
-	// the buttons applying the preset and making a new one from the track
-	void render_preset_new(std::vector<TTrack *> const &Tracks, bool const None, float const Width);
-	// the name of the preset of the id, renamed by Enter or the button
-	void render_preset_name(int const Id);
-	// the ticks of what the preset of the id overwrites
-	void render_preset_groups(int const Id);
-	// the buttons updating the preset of the id from the track and deleting it
-	void render_preset_update(std::vector<TTrack *> const &Tracks, int const Id, float const Width);
-	void render_track_presets_menu();
-	std::size_t apply_track_preset(int const Id, std::vector<TTrack *> const &Tracks);
-	std::vector<TTrack *> similar_tracks(int const Property, std::vector<TTrack *> const &Tracks) const;
-	// values of the properties over the selected tracks, each with the number of the tracks having it
-	struct track_values
-	{
-		std::size_t signature{0};
-		int generation{0};
-		int generation_seen{-1};
-		std::size_t history{0};
-		int frame{-100};
-		std::vector<std::vector<std::pair<std::string, int>>> values;
-		std::vector<std::size_t> applies;
-		std::size_t unsaved{0}; // of the tracks, changed since the file was written
-	};
-	track_values m_track_values;
-	// how the last value given in the sheet went: on how many tracks, and why not on the others
-	struct track_outcome
-	{
-		int property{-1};
-		std::string text;
-		bool refused{false}; // some tracks couldn't take it
-		std::size_t signature{0}; // of the tracks it was given to
-		std::size_t history{0};
-		double time{0.0};
-	};
-	track_outcome m_track_outcome;
-	// the lines under the rows of the sheet
-	struct track_note
-	{
-		enum class kind
-		{
-			typing,
-			done,
-			refused
-		};
-		int property{-1};
-		std::string text;
-		kind type{kind::done};
-	};
-	std::vector<track_note> m_track_notes;
-	// the field being typed in, with the tracks it was started on
-	struct track_field
-	{
-		int property{-1};
-		std::vector<TTrack *> tracks;
-		std::array<char, 256> text{};
-		std::string initial;
-		int frame{0};
-	};
-	track_field m_track_field;
 	std::array<std::vector<texture_use>, 2> m_track_textures; // of the rails, of the trackbed
 	std::vector<texture_use> m_texture_used; // the ones in use the open picker offers
 	std::array<char, 128> m_texture_filter{};
@@ -2916,39 +2814,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<texture_index_entry> m_texture_index; // sorted by the name
 	bool m_texture_indexed{false};
 	std::string m_texture_hovered; // the tile under the mouse in the picker, shown large above them
-	// properties taken from a track, to be set on the selected ones
-	struct track_style
-	{
-		std::string from;
-		std::vector<std::pair<std::string, std::string>> values;
-		// ticked at first by their groups: speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and
-		// sound, frogs, sleeper placement
-		track_groups groups{false, false, false, false, true, true, true, true, false, true, true};
-		std::map<std::string, bool, std::less<>> ticks; // changed by hand, by the keys of the properties
-		bool picking{false}; // the next click on a track in the view takes its properties
-		bool reveal{false};  // its section of the inspector opens, a track having been taken
-	};
-	track_style m_track_style;
-	// a property of the track taken which the selected ones have otherwise
-	struct track_style_line
-	{
-		int property{-1};
-		std::string now;       // as the selected tracks have it, or how many values they have
-		std::string taken;     // as the track taken has it
-		std::size_t differ{0}; // of the selected tracks, the ones it changes
-	};
-	std::vector<track_style_line> track_style_lines(std::vector<TTrack *> const &Tracks) const;
-	bool track_style_takes(std::string const &Key) const;
-	struct track_presets_panel
-	{
-		int selected{0}; // id of the preset chosen in the inspector
-		int nameid{0}; // the preset whose name is in the field
-		std::array<char, 128> name{};
-	};
-	track_presets_panel m_track_presets;
-	std::vector<std::vector<TTrack *>> m_track_similar;
-	TTrack const *m_track_list_hover{nullptr}; // in the list of the selected tracks
-	int m_track_list_hover_frame{-1};
 	using template_item = ::template_item;
 	using standing_template = ::standing_template;
 	// includes of the templates whose file names the test accepts, with the location in p2..p4 and the rotation in p5
@@ -3493,14 +3358,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_audit(std::size_t const Index, std::size_t &Gone, std::size_t &Retaken, std::size_t &Failing);
 	selftest_result selftest_profileaudit();
 	selftest_result selftest_gradelines(std::istringstream &words) const;
-	selftest_result selftest_props(std::string const &command, std::istringstream &words);
-	// the commands of selftest_props, one each
-	selftest_result selftest_tracksel(std::istringstream &words);
-	selftest_result selftest_trackprop(std::istringstream &words);
-	selftest_result selftest_trackprops();
-	selftest_result selftest_trackstyle(std::istringstream &words);
-	void selftest_trackstyle_list();
-	selftest_result selftest_tracksimilar(std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
 	// monkey <seed> <steps>: the random steps written into the script after this line
 	selftest_result selftest_monkey_run(std::istringstream &words);

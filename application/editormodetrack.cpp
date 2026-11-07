@@ -989,7 +989,7 @@ void editor_mode::render_track_tool_options()
 
 void editor_mode::render_track_selection()
 {
-	track_field_settle();
+	m_rail_tools->track_sheet.track_field_settle();
 	auto const tracks{selected_tracks()};
 	if (tracks.empty())
 	{
@@ -1014,13 +1014,13 @@ void editor_mode::render_track_selection()
 	auto const sheet{m_track_tab == track_tab::path || m_track_tab == track_tab::turnout};
 	if (tracks.size() >= 2)
 	{
-		render_track_set_header(tracks);
+		m_rail_tools->track_sheet.render_track_set_header(tracks);
 		if (false == sheet)
 			return;
-		render_track_select_tools(tracks);
+		m_rail_tools->track_sheet.render_track_select_tools(tracks);
 		render_track_terrain(tracks);
-		render_track_properties(tracks);
-		render_track_style(tracks);
+		m_rail_tools->track_sheet.render_track_properties(tracks);
+		m_rail_tools->track_style.render_track_style(tracks);
 		ImGui::Spacing();
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.15f, 1.0f));
 		if (ImGui::Button(format(STR_P("Delete %d track", "Delete %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())).c_str()))
@@ -1693,10 +1693,10 @@ void editor_mode::render_path_ui()
 	if (geometry)
 		render_switch_template(*track, true);
 	std::vector const tracks{track};
-	render_track_select_tools(tracks);
+	m_rail_tools->track_sheet.render_track_select_tools(tracks);
 	render_track_terrain(tracks);
-	render_track_properties(tracks);
-	render_track_style(tracks);
+	m_rail_tools->track_sheet.render_track_properties(tracks);
+	m_rail_tools->track_style.render_track_style(tracks);
 	render_path_events(*track);
 	// the shape is given by dragging in the view, the numbers are for the exact values
 	if (m_track_tab != track_tab::path)

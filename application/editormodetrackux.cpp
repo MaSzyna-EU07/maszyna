@@ -843,7 +843,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.action = km + "\n" + intent.action;
 		return intent;
 	}
-	if (m_track_style.picking && (m_track_tab == track_tab::path || m_track_tab == track_tab::turnout))
+	if (m_rail_tools->track_style.picking() && (m_track_tab == track_tab::path || m_track_tab == track_tab::turnout))
 	{
 		intent.track = m_hover.track;
 		if (m_hover.track != nullptr)
@@ -1181,7 +1181,7 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::box: start_track_box(Intent.index == 1); return;
 	case kind::pick_style:
 		if (Intent.track != nullptr)
-			copy_track_style(*Intent.track);
+			m_rail_tools->track_style.copy_track_style(*Intent.track);
 		return;
 	case kind::grade_line_pick:
 		if (Intent.track != nullptr)
@@ -1471,13 +1471,13 @@ void editor_mode::render_track_context()
 		ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), STR_P("one of %d selected tracks", "one of %d selected tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size()));
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Take its properties"), "Ctrl+Shift+C"))
-		copy_track_style(*track);
+		m_rail_tools->track_style.copy_track_style(*track);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The inspector lists what they change on the selected tracks, From another track or a preset"));
-	if (auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}}; ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, false == m_track_style.values.empty()))
-		paste_track_style(tracks);
-	if (false == m_track_style.values.empty() && ImGui::IsItemHovered())
-		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_track_style.from.c_str());
+	if (auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}}; ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, m_rail_tools->track_style.taken()))
+		m_rail_tools->track_style.paste_track_style(tracks);
+	if (m_rail_tools->track_style.taken() && ImGui::IsItemHovered())
+		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_rail_tools->track_style.taken_from().c_str());
 	if (ImGui::BeginMenu(STR_C("Select alike")))
 	{
 		static constexpr std::array<char const *, 5> keys{"rails", "trackbed", "speed", "environment", "circuits"};
@@ -1485,7 +1485,7 @@ void editor_mode::render_track_context()
 		for (std::size_t i = 0; i < std::size(keys); ++i)
 			if (ImGui::MenuItem(STR_C(labels[i])))
 			{
-				auto const found{similar_tracks(track_property_index(keys[i]), {track})};
+				auto const found{m_rail_tools->track_sheet.similar_tracks(m_rail_tools->track_sheet.track_property_index(keys[i]), {track})};
 				select_tracks(found);
 				ui()->set_status(format(STR_P("%s: %d track selected in the scenery", "%s: %d tracks selected in the scenery", static_cast<long long>(found.size())), STR_C(labels[i]), static_cast<int>(found.size())), false);
 			}
@@ -2000,7 +2000,7 @@ void editor_mode::draw_track_set() const
 		drawlist->AddRectFilled(from, io.MousePos, IM_COL32(255, 160, 40, 40));
 		drawlist->AddRect(from, io.MousePos, IM_COL32(255, 160, 40, 220), 0.0f, 0, 1.5f);
 	}
-	if (auto const *listed{m_track_list_hover_frame >= ImGui::GetFrameCount() - 1 ? m_track_list_hover : nullptr}; listed != nullptr && false == listed->m_editorremoved)
+	if (auto const *listed{m_rail_tools->track_sheet.list_hover()}; listed != nullptr && false == listed->m_editorremoved)
 		for (auto const &path : listed->m_paths)
 		{
 			bezier const curve{path};

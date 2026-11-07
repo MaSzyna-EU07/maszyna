@@ -601,7 +601,7 @@ editor_mode::editor_mode() {
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
-	ui()->set_tools_menu([this]() { render_track_presets_menu(); });
+	ui()->set_tools_menu([this]() { m_rail_tools->track_style.render_track_presets_menu(); });
 	ui()->set_menu_options([this]() {
 		render_object_menu();
 		render_view_menu();
@@ -7195,15 +7195,15 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // the selected track, or the one under the cursor when there are more of them
         auto const *from{tracks.size() == 1 ? tracks.front() : m_hover.track};
         if (Key == GLFW_KEY_C && from != nullptr)
-            copy_track_style(*from);
+            m_rail_tools->track_style.copy_track_style(*from);
         else if (Key == GLFW_KEY_C)
             ui()->set_status(STR_C("Select one track, or point at one, to take its properties"), true);
-        else if (m_track_style.values.empty())
+        else if (false == m_rail_tools->track_style.taken())
             ui()->set_status(STR_C("Take the properties of a track first: Ctrl+Shift+C"), true);
         else if (tracks.empty())
             ui()->set_status(STR_C("Select the tracks to set the properties on"), true);
         else
-            paste_track_style(tracks);
+            m_rail_tools->track_style.paste_track_style(tracks);
         return;
     }
 
@@ -7307,8 +7307,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
                 lay_escape();
-            else if (m_track_style.picking)
-                m_track_style.picking = false;
+            else if (m_rail_tools->track_style.picking())
+                m_rail_tools->track_style.stop_picking();
             else if (m_profile.picking)
                 m_profile.picking = false;
             else if (track_busy())
