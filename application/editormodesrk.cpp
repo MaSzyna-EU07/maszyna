@@ -3579,7 +3579,7 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 				continue;
 			row.stops.emplace_back(distance + station::signal_drop * out_of(line), signal_shown(signal.name, stem));
 			row.posts.emplace_back(distance, signal_shown(signal.name, stem), false, km_along(line, row.km_number, distance));
-			switched = switched || guards.count(ToLower(signal.name)) > 0;
+			switched = switched || guards.contains(ToLower(signal.name));
 		}
 		// the warning discs: of the semi-automatic block, of the wrong-track trains of the mixed one
 		for (auto const &signal : Standing)
@@ -3706,7 +3706,7 @@ void srk_tool::survey_problems(std::vector<standing_signal> const &Standing)
 				if (isolated != nullptr)
 					circuits.insert(ToLower(isolated->asName));
 	for (auto const &control : m_templates.standing_templates([](std::string const &File) { return File == kControl; }))
-		if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0 && by_open(control.location))
+		if (false == control.values.empty() && false == circuits.contains(ToLower(control.values[0])) && by_open(control.location))
 			m_problems.emplace_back(format(STR_C("Block section %s has no track"), control.values[0].c_str()), control.location);
 }
 
@@ -3793,7 +3793,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	// single-track line its signals facing both ways on a track, or with block signals the block sections of the editor don't switch,
 	// 0: the semi-automatic one
 	std::vector<char> automatic(lines.size(), 0);
-	std::vector<int> aspects(lines.size(), 3);
+	std::vector aspects(lines.size(), 3);
 	std::vector<char> both(lines.size(), 0); // the automatic block both ways
 	std::vector<std::vector<std::size_t>> along(lines.size()); // the block signals standing along each line facing its trains
 	std::vector<std::vector<std::size_t>> wrong(lines.size()); // and facing its wrong-track trains
@@ -3814,7 +3814,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 				along[index].push_back(k);
 			else
 				continue;
-			switched = switched || guards.count(ToLower(standing[k].name)) > 0;
+			switched = switched || guards.contains(ToLower(standing[k].name));
 		}
 		if (kind != block_kind::semi)
 			automatic[index] = line.number > 0 && (along[index].empty() || switched) ? 1 : 2;
@@ -3922,7 +3922,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			{
 				double distance{0.0};
 				block_along(line, standing[k], distance, true);
-				if (0 == gone[k] && 0 == paired.count(k) && std::abs(distance - Wanted) < nearest)
+				if (0 == gone[k] && false == paired.contains(k) && std::abs(distance - Wanted) < nearest)
 				{
 					nearest = std::abs(distance - Wanted);
 					found = static_cast<int>(k);
@@ -4001,7 +4001,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			}
 			// the wrong-track ones of no boundary taken away
 			for (auto const k : wrong[index])
-				if (0 == paired.count(k))
+				if (false == paired.contains(k))
 					gone[k] = 1;
 		}
 		// the warning disc of the entry signal, the braking distance before it: of the semi-automatic block, or of the mixed one where
@@ -4110,7 +4110,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 				continue;
 			auto const base{wrong_track && signal.twin >= 0 ? planned[signal.twin].name + "N" : signal.name};
 			signal.name = base;
-			for (char letter = 'a'; taken.count(ToLower(signal.name)) > 0 && letter <= 'z'; ++letter)
+			for (char letter = 'a'; taken.contains(ToLower(signal.name)) && letter <= 'z'; ++letter)
 				signal.name = base + letter;
 			taken.insert(ToLower(signal.name));
 			signal.plate = signal.name;
@@ -4420,7 +4420,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			named.insert(found.name);
 		for (auto const &standing_control : controls)
 		{
-			if (standing_control.values.empty() || named.count(ToLower(standing_control.values[0])) > 0)
+			if (standing_control.values.empty() || named.contains(ToLower(standing_control.values[0])))
 				continue;
 			for (std::size_t index = 0; index < lines.size(); ++index)
 			{
@@ -4601,7 +4601,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			from.push_back(index);
 	}
 	auto const found{station::routes(posts, from, route_reach(braking))};
-	std::vector<int> routes_of(posts.size(), -1);
+	std::vector routes_of(posts.size(), -1);
 	for (std::size_t k = 0; k < from.size(); ++k)
 		routes_of[from[k]] = static_cast<int>(k);
 	std::vector<char> checked(own);
@@ -4860,7 +4860,7 @@ void srk_tool::set_shp()
 		}
 		placing entry;
 		auto name{found->name + "_rez"};
-		for (int number = 2; taken.count(ToLower(name) + "_shp") > 0 && number < 100; ++number)
+		for (int number = 2; taken.contains(ToLower(name) + "_shp") && number < 100; ++number)
 			name = found->name + "_rez" + std::to_string(number);
 		taken.insert(ToLower(name) + "_shp");
 		entry.signal = head.name;
@@ -5620,7 +5620,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		std::unordered_set<TTrack const *> inside;
 		if (false == station_tracks(tracks, inside))
 			return editor_selftest_result::handled;
-		auto const plan{station::signals(*m_layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
+		auto const plan{station::signals(*m_layout, tracks, [&](TTrack const &Track) { return inside.contains(&Track); })};
 		std::vector<standing_signal> standing;
 		m_signals.standing_signals(standing, true);
 		for (auto const &line : station::lines_out(*m_layout, plan, kLineLimit))
@@ -5821,16 +5821,16 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		if (m_history.history_revision() != m_history_revision)
 			refresh();
 		auto const values{selftest_values(Words)};
-		auto const entry{values.count("entry") > 0 ? values.at("entry") : std::string{}};
-		auto at{values.count("at") > 0 ? std::atof(values.at("at").c_str()) : 0.0};
-		auto const nudge{values.count("nudge") > 0 ? std::atof(values.at("nudge").c_str()) : 0.0};
+		auto const entry{values.contains("entry") ? values.at("entry") : std::string{}};
+		auto at{values.contains("at") ? std::atof(values.at("at").c_str()) : 0.0};
+		auto const nudge{values.contains("nudge") ? std::atof(values.at("nudge").c_str()) : 0.0};
 		auto const found{std::ranges::find_if(m_lines, [&](line_row const &Row) { return Row.entry == entry; })};
 		if (false == m_layout.has_value() || found == m_lines.end())
 		{
 			WriteLog("SELFTEST srkboundary: no line beyond " + entry);
 			return editor_selftest_result::handled;
 		}
-		if (values.count("stop") > 0 && false == found->stops.empty())
+		if (values.contains("stop") && false == found->stops.empty())
 			at = found->stops[static_cast<std::size_t>(std::abs(std::atoi(values.at("stop").c_str()))) % found->stops.size()].first;
 		auto const place{station::point_on(m_line_ways[found - m_lines.begin()], at)};
 		m_drawing = true;
@@ -5858,7 +5858,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				mode = word;
 		m_fit_lines = mode == "lines";
 		m_view_state.exaggeration = 0.0f;
-		if (range.count("from") > 0 && range.count("to") > 0 && m_layout.has_value())
+		if (range.contains("from") && range.contains("to") && m_layout.has_value())
 		{
 			fit_view(1000.0f, 400.0f);
 			m_view_state.from = std::atof(range.at("from").c_str());
@@ -5908,7 +5908,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " twice");
 			}
 			for (std::size_t index = 5; index < control.values.size() && index < 7; ++index)
-				if (names.count(ToLower(control.values[index])) == 0)
+				if (false == names.contains(ToLower(control.values[index])))
 				{
 					++bad;
 					WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " switched by " + control.values[index] + ", which doesn't stand");
@@ -5929,7 +5929,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 						circuits.insert(ToLower(isolated->asName));
 		std::size_t bare{0};
 		for (auto const &control : controls)
-			if (false == control.values.empty() && circuits.count(ToLower(control.values[0])) == 0)
+			if (false == control.values.empty() && false == circuits.contains(ToLower(control.values[0])))
 			{
 				++bare;
 				WriteLog("SELFTEST srkcheck: block section " + control.values[0] + " without a track");
@@ -6007,7 +6007,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 					++backwards;
 		}
 		WriteLog(format("SELFTEST srkdrawing points on rows %zu, between %zu, bends %zu, x backwards %zu", on_rows, between, bends, backwards));
-		if (auto const values{selftest_values(Words)}; values.count("track"))
+		if (auto const values{selftest_values(Words)}; values.contains("track"))
 			for (std::size_t index = 0; index < layout.paths.size(); ++index)
 				if (auto const &path{layout.paths[index]}; false == path.track->Isolated.empty() && path.track->Isolated.front()->asName == values.at("track"))
 				{

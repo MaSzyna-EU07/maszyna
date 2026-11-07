@@ -1089,7 +1089,7 @@ void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::ve
 					record.events.emplace_back(name, list);
 			}
 		for (auto const *isolated : track->Isolated)
-			if (isolated != nullptr && circuits.count(ToLower(isolated->asName)) == 0)
+			if (isolated != nullptr && false == circuits.contains(ToLower(isolated->asName)))
 				record.circuits.push_back(isolated->asName);
 		if (record.events.empty() && record.circuits.empty())
 			continue;
@@ -1157,7 +1157,7 @@ void editor_mode::orphans_take_over(std::vector<TTrack *> const &Created, std::v
 		deleted += record.fresh ? 1 : 0;
 		for (auto const &[name, list] : record.events)
 		{
-			if (carried.count(name) > 0)
+			if (carried.contains(name))
 				continue;
 			auto const *standing{reader_of(name)};
 			auto got{false};

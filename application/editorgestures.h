@@ -156,11 +156,12 @@ inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 // the mouse and the keys of a gesture only, its words left to the text beside it
 inline std::vector<gesture_word> gesture_picture(std::string const &Keys)
 {
+	using enum gesture_word::kind;
 	std::vector<gesture_word> words;
 	for (auto const &word : gesture_words(Keys))
-		if (word.what != gesture_word::kind::text && (word.what != gesture_word::kind::plus || (false == words.empty() && words.back().what != gesture_word::kind::plus)))
+		if (word.what != text && (word.what != plus || (false == words.empty() && words.back().what != plus)))
 			words.push_back(word);
-	while (false == words.empty() && words.back().what == gesture_word::kind::plus)
+	while (false == words.empty() && words.back().what == plus)
 		words.pop_back();
 	return words;
 }
@@ -180,15 +181,16 @@ inline float gesture_draw(ImDrawList &List, ImVec2 const At, float const Height,
 	for (auto const &word : Words)
 	{
 		ImVec2 const place{At.x + x, At.y};
+		using enum gesture_word::kind;
 		switch (word.what)
 		{
-		case gesture_word::kind::mouse: x += gesture_mouse(List, place, Height, word.text) + gap; break;
-		case gesture_word::kind::key: x += gesture_key(List, place, Height, word.text) + gap; break;
-		case gesture_word::kind::plus:
-		case gesture_word::kind::text:
+		case mouse: x += gesture_mouse(List, place, Height, word.text) + gap; break;
+		case key: x += gesture_key(List, place, Height, word.text) + gap; break;
+		case plus:
+		case text:
 		{
 			auto const size{ImGui::CalcTextSize(word.text.c_str())};
-			List.AddText(ImVec2(place.x, std::round(At.y + (Height - size.y) * 0.5f)), word.what == gesture_word::kind::plus ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : Text, word.text.c_str());
+			List.AddText(ImVec2(place.x, std::round(At.y + (Height - size.y) * 0.5f)), word.what == plus ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : Text, word.text.c_str());
 			x += size.x + gap;
 			break;
 		}

@@ -538,8 +538,8 @@ std::vector<hump> humps(std::vector<double> const &Chainages, std::vector<double
 	auto const origin{Chainages.front()};
 	auto const end{Chainages[count - 1]};
 	auto const cells{static_cast<std::ptrdiff_t>(std::lround((end - origin) / spacing)) + 1};
-	std::vector<double> level(cells, 0.0);
-	std::vector<int> taken(cells, 0);
+	std::vector level(cells, 0.0);
+	std::vector taken(cells, 0);
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		if (false == std::isfinite(Ground[i]) || (i < Tolerances.size() && Tolerances[i] > 0.0 && Tolerances[i] < Tolerance))
@@ -732,7 +732,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	auto const tolerance{std::max(0.01, Options.tolerance)};
 	auto const told = [&](std::size_t const I) { return I < Tolerances.size() && Tolerances[I] > 0.0 ? std::max(0.005, Tolerances[I]) : tolerance; };
 	// the ground the line follows however far it parts, and as closely as asked, where it parted longer than a structure would
-	std::vector<double> followed(count, 0.0);
+	std::vector followed(count, 0.0);
 	auto const close_to{Options.follow_tolerance > 0.0 ? std::max(0.005, Options.follow_tolerance) : tolerance};
 	auto const own = [&](std::size_t const I) { return followed[I] > 0.0 ? close_to : told(I); };
 	auto const reach = [&](std::size_t const I) { return followed[I] > 0.0 ? followed[I] : I < Reaches.size() && Reaches[I] > 0.0 ? std::max(0.005, Reaches[I]) : told(I); };
@@ -848,8 +848,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	// the step of Newton, the band factored as L D L^T with two diagonals below the main one
 	auto const newton = [&]() {
 		std::vector<double> d(nodes);
-		std::vector<double> l1(nodes, 0.0);
-		std::vector<double> l2(nodes, 0.0);
+		std::vector l1(nodes, 0.0);
+		std::vector l2(nodes, 0.0);
 		std::vector<double> z(nodes);
 		for (std::size_t i = 0; i < nodes; ++i)
 		{
@@ -1021,7 +1021,7 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	if (end_fixed && std::abs((x[nodes - 1] - x[nodes - 2]) / step - Context.end_grade) > significant)
 		result.join_end = false;
 	// the design keeps within half the tolerance of the line found, the one of the ground agreeing with it
-	std::vector<double> limit(nodes, tolerance);
+	std::vector limit(nodes, tolerance);
 	for (std::size_t i = 0; i < count; ++i)
 		if (std::isfinite(Ground[i]) && std::abs(Ground[i] - (x[cell[i]] * (1.0 - part[i]) + x[cell[i] + 1] * part[i])) <= reach(i))
 			for (auto const k : {cell[i], cell[i] + 1})
@@ -1044,8 +1044,8 @@ line fit_ground(std::vector<double> const &Chainages, std::vector<double> const 
 	{
 		result = unset;
 		result.points.emplace_back(origin, x[0]);
-		std::vector<double> rooms{0.0};
-		std::vector<double> lengths{0.0};
+		std::vector rooms{0.0};
+		std::vector lengths{0.0};
 		// the first node of the bend of each point and the one past its last
 		std::vector<std::pair<std::size_t, std::size_t>> runs{{0, 0}};
 		for (std::size_t k = 1; k + 1 < nodes;)

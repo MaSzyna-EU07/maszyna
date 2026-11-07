@@ -507,7 +507,7 @@ bool editor_mode::profile_restore_parts()
 			for (auto const &span : own->spans)
 				paths.emplace(span.track, span.path);
 			auto const &spans{state.route.spans};
-			auto const on = [&](std::size_t const Index) { return paths.count({spans[Index].track, spans[Index].path}) > 0; };
+			auto const on = [&](std::size_t const Index) { return paths.contains({spans[Index].track, spans[Index].path}); };
 			auto const anchor{first ? a : b};
 			std::optional<std::size_t> at;
 			for (std::size_t i = 0; i < spans.size(); ++i)
@@ -795,8 +795,8 @@ std::pair<std::size_t, std::size_t> editor_mode::profile_refit_stored(std::unord
 			chainages.push_back(sample.chainage);
 			heights.push_back(sample.position.y);
 		}
-		std::vector<double> const tolerances(samples.size(), kTolerance * 0.5);
-		std::vector<double> const reaches(samples.size(), kReach);
+		std::vector const tolerances(samples.size(), kTolerance * 0.5);
+		std::vector const reaches(samples.size(), kReach);
 		profile::ground_fit options;
 		options.tolerance = kTolerance;
 		options.grade_max = kSteepest;

@@ -1245,8 +1245,8 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 		if (samples.size() < 2)
 			continue;
 		// the change of each point of the other line
-		std::vector<double> changes(samples.size(), 0.0);
-		std::vector<double> distances(samples.size(), 0.0);
+		std::vector changes(samples.size(), 0.0);
+		std::vector distances(samples.size(), 0.0);
 		bool any{false};
 		for (std::size_t i = 0; i < samples.size(); ++i)
 		{

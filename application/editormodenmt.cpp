@@ -3182,7 +3182,7 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 	};
 	auto const count{profile.samples.size()};
 	std::vector<double> sampled(count);
-	std::vector<double> model(count, std::numeric_limits<double>::quiet_NaN());
+	std::vector model(count, std::numeric_limits<double>::quiet_NaN());
 	std::vector<glm::dvec2> plan(count);
 	std::vector<double> chainages;
 	std::vector<double> ground;
@@ -3899,9 +3899,9 @@ std::vector<double> grade_moves(std::vector<grade_term> const &Terms, int const 
 				Out[one.at[k]] += one.by[k] * sum;
 		}
 	};
-	std::vector<double> moves(Unknowns, 0.0);
-	std::vector<double> residual(Unknowns, 0.0);
-	std::vector<double> diagonal(Unknowns, 0.0);
+	std::vector moves(Unknowns, 0.0);
+	std::vector residual(Unknowns, 0.0);
+	std::vector diagonal(Unknowns, 0.0);
 	for (auto const &one : Terms)
 		for (int k = 0; k < 5 && one.at[k] >= 0; ++k)
 		{

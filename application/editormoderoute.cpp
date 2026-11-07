@@ -420,7 +420,7 @@ void editor_mode::digitize_all(int *Kept, int *Failed)
 	std::string first;
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty() || false == editor_track::is_supported(*track) || visited.count(track) > 0)
+		if (track == nullptr || track->m_editorremoved || track->eType != tt_Normal || track->m_paths.empty() || false == editor_track::is_supported(*track) || visited.contains(track))
 			continue;
 		if (alignment_store::on_track(*track).has_value())
 			continue;
@@ -1037,7 +1037,7 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 		auto joints{editor_track::joints(*place.track)};
 		std::erase_if(joints, [&](editor_track::joint const &Joint) { return std::ranges::find(Chain.tracks, Joint.other) != Chain.tracks.end(); });
 		remember(place.track);
-		std::vector<TTrack *> changed{place.track};
+		std::vector changed{place.track};
 		for (auto const &joint : joints)
 		{
 			remember(joint.other);
@@ -1747,7 +1747,7 @@ bool editor_mode::render_route_band()
 		int arc{0};
 	};
 	std::vector<role> roles(static_cast<std::size_t>(count));
-	std::vector<int> arcs(design.vertices.size(), 0);
+	std::vector arcs(design.vertices.size(), 0);
 	{
 		int vertex{-1};
 		int arc{-1};

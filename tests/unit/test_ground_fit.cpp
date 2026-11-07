@@ -96,8 +96,8 @@ profile::line refit(ground_of_line const &Ground, profile::context const &Contex
 	auto context{Context};
 	if (context.length <= 0.0)
 		context.length = Ground.chainages.back();
-	std::vector<double> const tolerances(Ground.chainages.size(), 0.005);
-	std::vector<double> const reaches(Ground.chainages.size(), 100.0);
+	std::vector const tolerances(Ground.chainages.size(), 0.005);
+	std::vector const reaches(Ground.chainages.size(), 100.0);
 	profile::ground_fit options;
 	options.tolerance = 0.01;
 	options.grade_max = 50.0;

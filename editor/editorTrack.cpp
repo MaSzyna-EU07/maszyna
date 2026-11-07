@@ -969,10 +969,11 @@ void editor_track::settle_controls(TTrack &Track, std::vector<int> const &Paths)
 
 editor_track::point_ref editor_track::end_of(point_ref const &Control)
 {
+	using enum editor_track::point_kind;
 	switch (Control.kind)
 	{
-	case point_kind::control1: return {Control.path, point_kind::start};
-	case point_kind::control2: return {Control.path, point_kind::end};
+	case control1: return {Control.path, start};
+	case control2: return {Control.path, end};
 	default: return Control;
 	}
 }

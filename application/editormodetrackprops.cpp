@@ -1129,7 +1129,7 @@ bool editor_mode::texture_picker(texture_offer const &Offer, std::string const &
 	}
 	std::vector<texture_index_entry const *> files;
 	for (auto const &entry : m_texture_index)
-		if (usednames.count(entry.lowered) == 0 && matches(entry.lowered))
+		if (false == usednames.contains(entry.lowered) && matches(entry.lowered))
 			files.push_back(&entry);
 	std::string const first{false == used.empty() ? used.front()->name : false == files.empty() ? files.front()->name : std::string{}};
 	if (entered && false == words.empty() && false == first.empty())
@@ -1490,11 +1490,12 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			ImGui::PushID(list[i].key);
 			ImGui::BeginDisabled(list[i].off);
 			row_label(i);
+			using enum field;
 			switch (list[i].kind)
 			{
-			case field::choice: choice_row(i); break;
-			case field::check: check_row(i); break;
-			case field::texture: texture_row(i); break;
+			case choice: choice_row(i); break;
+			case check: check_row(i); break;
+			case texture: texture_row(i); break;
 			default: text_row(i); break;
 			}
 			ImGui::EndDisabled();
@@ -1951,7 +1952,7 @@ std::vector<TTrack *> editor_mode::similar_tracks(int const Property, std::vecto
 	if (wanted.empty())
 		return found;
 	for (auto *track : simulation::Paths.sequence())
-		if (track != nullptr && rail(*track) && property.applies(*track) && wanted.count(property.get(*track)) > 0)
+		if (track != nullptr && rail(*track) && property.applies(*track) && wanted.contains(property.get(*track)))
 			found.push_back(track);
 	return found;
 }

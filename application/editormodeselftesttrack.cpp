@@ -950,7 +950,7 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		else
 		{
 			std::vector<std::pair<TTrack *, editor_track::state>> states{{chosen, editor_track::capture(*chosen)}};
-			std::vector<TTrack *> moved{chosen};
+			std::vector moved{chosen};
 			auto const &path{chosen->m_paths.front()};
 			for (auto const &end : {path.points[segment_data::point::start], path.points[segment_data::point::end]})
 				for (auto *neighbour : {chosen->trPrev, chosen->trNext})

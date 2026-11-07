@@ -1227,7 +1227,7 @@ void editor_mode::infra_adopt(TTrack &Track)
 		for (std::size_t i = 0; i < m_point_objects.size(); ++i)
 			if (m_point_objects[i].reader == nullptr)
 				cells[{key(m_point_objects[i].location.x), key(m_point_objects[i].location.z)}].push_back(i);
-		std::vector<double> nearest(m_point_objects.size(), kAdoptReach);
+		std::vector nearest(m_point_objects.size(), kAdoptReach);
 		for (auto *track : simulation::Paths.sequence())
 		{
 			if (cells.empty() || track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))

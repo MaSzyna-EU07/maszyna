@@ -1120,7 +1120,7 @@ void editor_mode::switch_slide_start(TTrack &Track)
 	slide.track = &first;
 	slide.pressed = {mouse.x, mouse.y};
 	slide.grip = axis->along(cursor_level(axis->origin.y));
-	std::vector<TTrack *> members{&first};
+	std::vector members{&first};
 	if (set.has_value())
 		members = {set->first, set->link, set->second};
 	for (auto *member : members)

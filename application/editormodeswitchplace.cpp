@@ -2462,7 +2462,7 @@ std::vector<segment_data> editor_mode::curved_slip_lines(curved_slip const &Plan
 	auto const &[a, b, c, d]{Plan.points};
 	auto const side{cross(Plan.first, Plan.second) > 0.0 ? 1.0 : -1.0};
 	auto const whole{Plan.curve.length()};
-	std::vector<segment_data> lines{bent_slip_path(Plan, straight_path(a, b)), bent_slip_path(Plan, slip_arc(Plan.curve, a, Plan.first, side, d, 0.0, whole)), bent_slip_path(Plan, straight_path(c, d))};
+	std::vector lines{bent_slip_path(Plan, straight_path(a, b)), bent_slip_path(Plan, slip_arc(Plan.curve, a, Plan.first, side, d, 0.0, whole)), bent_slip_path(Plan, straight_path(c, d))};
 	if (Type != "Rkp")
 		lines.push_back(bent_slip_path(Plan, slip_arc(Plan.curve, c, Plan.second, -side, b, 0.0, whole)));
 	return lines;
@@ -2481,7 +2481,7 @@ std::vector<segment_data> editor_mode::curved_slip_reaches(curved_slip const &Pl
 switch_curve::slip_report editor_mode::curved_slip_report(curved_slip const &Plan, std::string const &Type) const
 {
 	auto const lines{curved_slip_lines(Plan, Type)};
-	std::vector<std::vector<switch_curve::track_point>> curves{plan_points(lines[1])};
+	std::vector curves(1, plan_points(lines[1]));
 	if (lines.size() > 3)
 		curves.push_back(plan_points(lines[3]));
 	return switch_curve::check_slip({plan_points(lines[0]), plan_points(lines[2])}, curves, frame_points(m_switch.frame), Plan.middle - Plan.direction * Plan.half, Plan.middle + Plan.direction * Plan.half);
@@ -2491,7 +2491,7 @@ std::vector<std::string> editor_mode::slip_report_lines(switch_curve::slip_repor
 {
 	// a radius counted positive the way the line turns, the other way with a minus
 	auto const radius = [](double const Curvature) { return std::abs(Curvature) < 2e-5 ? std::string{STR_C("straight")} : format("%.0f m", 1.0 / Curvature); };
-	std::vector<std::string> lines{format(STR_C("tracks through the slip R %s and %s"), radius(Report.first).c_str(), radius(Report.second).c_str())};
+	std::vector lines{format(STR_C("tracks through the slip R %s and %s"), radius(Report.first).c_str(), radius(Report.second).c_str())};
 	std::string curves;
 	for (auto const curvature : Report.curves)
 		curves += (curves.empty() ? "" : ", ") + radius(curvature);

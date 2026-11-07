@@ -1062,7 +1062,7 @@ void editor_mode::render_turnout_ui()
 			return glm::dvec2{glm::dot(relative, axis), glm::dot(relative, normal)};
 		};
 		std::vector<std::vector<glm::dvec2>> lines;
-		std::vector<TTrack *> switches{track};
+		std::vector switches{track};
 		if (set.has_value())
 			switches.push_back(set->second);
 		double far_along{0.0};
@@ -1460,7 +1460,7 @@ void editor_mode::render_path_ui()
 	// the template of a switch, a slip or a crossing, another one picked in place
 	if (geometry)
 		render_switch_template(*track, true);
-	std::vector<TTrack *> const tracks{track};
+	std::vector const tracks{track};
 	render_track_select_tools(tracks);
 	render_track_terrain(tracks);
 	render_track_properties(tracks);

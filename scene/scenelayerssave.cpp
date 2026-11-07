@@ -1326,7 +1326,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		}
 		for (auto const &line : lines)
 		{
-			if (line.moved && m_marking.count({markedlayer, line.mark}) == 0)
+			if (line.moved && false == m_marking.contains({markedlayer, line.mark}))
 			{
 				push_edit(markedlayer, line.span, {}, nullptr);
 				markedtext[target].push_back(line.mark + ' ' + line.text);
@@ -1473,7 +1473,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			continue;
 		}
 		if (layer(candidate).created || state.patches.count(candidate) != 0 || appended.count(candidate) != 0 || created.count(candidate) != 0 || placed.count(candidate) != 0 ||
-		    markedtext.count(candidate) != 0 || Statements.count(candidate) != 0 || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())))
+		    markedtext.contains(candidate) || Statements.contains(candidate) || (candidate == root && (false == Rootstatements.empty() || false == Trailingstatements.empty())))
 		{
 			outputs.emplace_back(candidate);
 		}

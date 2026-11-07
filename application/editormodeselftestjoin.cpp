@@ -1376,7 +1376,7 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			track_gizmo_end(*track);
 		else if (action == "show")
 		{
-			std::vector<TTrack *> shown{track};
+			std::vector shown{track};
 			for (auto *neighbour : editor_track::neighbours(*track))
 				shown.push_back(neighbour);
 			WriteLog(format("SELFTEST gizmo %s prev %s next %s", track->name().c_str(), track->trPrev != nullptr ? track->trPrev->name().c_str() : "-", track->trNext != nullptr ? track->trNext->name().c_str() : "-"));

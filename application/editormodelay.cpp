@@ -1485,7 +1485,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		}
 		else
 		{
-			std::vector<glm::dvec2> chain{plan_of(entry)};
+			std::vector chain{plan_of(entry)};
 			chain.insert(chain.end(), traced.begin(), traced.end());
 			leaving = heading_at_end(chain);
 			if (false == apart(leaving))

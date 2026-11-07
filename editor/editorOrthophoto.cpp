@@ -597,7 +597,7 @@ editor_orthophoto::~editor_orthophoto()
 {
 	// the scene geometry is left alone: on shutdown the region may already be gone
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_stop = true;
 		m_queue.clear();
 	}
@@ -808,7 +808,7 @@ void editor_orthophoto::enabled(bool State)
 		release_tile(entry.second);
 	m_tiles.clear();
 	++m_generation; // results still in flight are now stale
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::scoped_lock lock(m_mutex);
 	m_done.clear();
 }
 
@@ -850,7 +850,7 @@ void editor_orthophoto::area(std::vector<glm::dvec2> Polygon)
 	if (false == m_area.empty())
 	{
 		// the jobs for the tiles outside it forgotten, the tiles shown let go by the next update
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		std::erase_if(m_queue, [&](job const &Job) { return 0 == m_area_tiles.count(Job.key); });
 	}
 	restart_prefetch();
@@ -859,7 +859,7 @@ void editor_orthophoto::area(std::vector<glm::dvec2> Polygon)
 void editor_orthophoto::area_paused(bool const Paused)
 {
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_prefetch_paused = Paused;
 	}
 	m_wakeup.notify_all();
@@ -879,7 +879,7 @@ void editor_orthophoto::restart_prefetch()
 	};
 	std::ranges::sort(keys, [&](tile_key const &A, tile_key const &B) { return distance(A) < distance(B); });
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_prefetch = std::move(keys);
 		m_prefetch_next = 0;
 		m_prefetch_failed.clear();
@@ -961,7 +961,7 @@ void editor_orthophoto::detach_scene()
 void editor_orthophoto::cancel_pending()
 {
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_queue.clear();
 	}
 	// jobs already picked up by a worker still deliver their result, which is accepted if the tile is still wanted
@@ -977,7 +977,7 @@ void editor_orthophoto::clear_cache()
 	m_tiles.clear();
 	++m_generation;
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_done.clear();
 	}
 	std::error_code ec;
@@ -993,7 +993,7 @@ void editor_orthophoto::retry_failed()
 	}
 	// the tiles of the area which failed taken again
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		for (auto const &key : m_prefetch_failed)
 			m_prefetch.push_back(key);
 		m_prefetch_failed.clear();
@@ -1009,7 +1009,7 @@ editor_orthophoto::statistics editor_orthophoto::stats() const
 	out.uploads = m_uploads;
 	out.stale = m_stale;
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		out.area_cached = static_cast<int>(m_prefetch_cached.size());
 		out.area_failed = static_cast<int>(m_prefetch_failed.size());
 		out.area_paused = m_prefetch_paused;
@@ -1091,7 +1091,7 @@ void editor_orthophoto::release_tile(tile &Tile)
 void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha)
 {
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
 		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires, m_config.service, m_config.layers}, m_generation.load()});
 	}
@@ -1189,7 +1189,7 @@ std::vector<std::pair<glm::dvec2, glm::dvec2>> editor_orthophoto::waiting() cons
 std::vector<editor_orthophoto::area_square> editor_orthophoto::area_squares() const
 {
 	std::vector<area_square> result;
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::scoped_lock lock(m_mutex);
 	for (auto const &key : m_area_tiles)
 	{
 		glm::dvec2 const corner = tile_corner(key);
@@ -1562,7 +1562,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	{
 		result done;
 		{
-			std::lock_guard<std::mutex> lock(m_mutex);
+			std::scoped_lock lock(m_mutex);
 			if (m_done.empty())
 				break;
 			// a 4K tile only in a frame of its own: two in one frame would stall it twice as long
@@ -1582,7 +1582,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	if (centre != m_camera_tile)
 	{
 		m_camera_tile = centre;
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_focus = centre;
 	}
 	int const radius = m_config.radius;
@@ -1613,7 +1613,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 	}
 	if (evicted)
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return distance(Job.key) > radius; }), m_queue.end());
 	}
 
@@ -1623,7 +1623,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		{
 			tile_key const key{centre.first + dx, centre.second + dy};
 			// outside the download area: nothing asked for, nothing shown
-			if (false == m_area.empty() && 0 == m_area_tiles.count(key))
+			if (false == m_area.empty() && false == m_area_tiles.contains(key))
 			{
 				if (auto const found{m_tiles.find(key)}; found != m_tiles.end())
 				{
@@ -1702,7 +1702,7 @@ void editor_orthophoto::worker()
 				for (auto it = m_queue.begin(); it != m_queue.end(); ++it)
 				{
 					// a 4K image is 64 MB decoded: that many at most at once, the standard tiles by all the workers
-					if (m_running.count(it->key) > 0 || (it->level >= hires_pixels && m_running_hires >= camera_workers))
+					if (m_running.contains(it->key) || (it->level >= hires_pixels && m_running_hires >= camera_workers))
 						continue;
 					long long const dx = it->key.first - m_focus.first;
 					long long const dy = it->key.second - m_focus.second;
@@ -1744,7 +1744,7 @@ void editor_orthophoto::worker()
 				return;
 			if (!ok)
 				ErrorLog("Editor orthophoto: tile " + std::to_string(prefetch->second) + "_" + std::to_string(prefetch->first) + " of the download area failed: " + error);
-			std::lock_guard<std::mutex> lock(m_mutex);
+			std::scoped_lock lock(m_mutex);
 			if (prefetchgeneration == m_prefetch_generation)
 			{
 				if (ok)
@@ -1766,7 +1766,7 @@ void editor_orthophoto::worker()
 		tile_request const request{current.key.first, current.key.second, current.level, current.src.year, current.src.hires};
 		// a job of the same tile queued since: the tile wants another image now
 		stop_check const superseded = [&]() {
-			std::lock_guard<std::mutex> lock(m_mutex);
+			std::scoped_lock lock(m_mutex);
 			return std::ranges::any_of(m_queue, [&](job const &Job) { return Job.key == current.key; });
 		};
 		if (current.src.service.empty())
@@ -1790,7 +1790,7 @@ void editor_orthophoto::worker()
 		out.pixels = std::move(picture.rgba);
 
 		{
-			std::lock_guard<std::mutex> lock(m_mutex);
+			std::scoped_lock lock(m_mutex);
 			m_done.push_back(std::move(out));
 			m_running.erase(current.key);
 			if (current.level >= hires_pixels)
