@@ -1159,9 +1159,16 @@ void apply_test_mode_settings()
 	Global.minframetime = std::chrono::duration<float>(0.0f);
 	Global.extra_viewports.clear();
 	Global.headtrack_conf.joy.clear();
-	// a test runs on its own
+	// a test runs on its own: no network, and no input from outside (eu07/maszyna#541)
 	Global.network_servers.clear();
 	Global.network_client.reset();
+	Global.InputGamepad = false;
+	Global.InputMouse = false;
+	Global.uart_conf.enable = false;
+	Global.motiontelemetry_conf.enable = false;
+#ifdef WITH_ZMQ
+	Global.zmq_address.clear();
+#endif
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
 	if (!Global.random_seed)
 		Global.random_seed = seed_of("test");
@@ -1431,7 +1438,9 @@ int eu07_application::init_glfw()
 #ifdef _WIN32
 	// setup wrapper for base glfw window proc, to handle copydata messages
 	Hwnd = glfwGetWin32Window(mainwindow);
-	BaseWindowProc = (WNDPROC)::SetWindowLongPtr(Hwnd, GWLP_WNDPROC, (LONG_PTR)WndProc);
+	// commands sent by other programs are input from outside, which a test doesn't take
+	if (false == Global.test.enabled)
+		BaseWindowProc = (WNDPROC)::SetWindowLongPtr(Hwnd, GWLP_WNDPROC, (LONG_PTR)WndProc);
 	// switch off the topmost flag
 	::SetWindowPos(Hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 #endif
@@ -1445,13 +1454,18 @@ void eu07_application::init_callbacks()
 	auto *window{m_windows.front()};
 	glfwSetWindowSizeCallback(window, window_resize_callback);
 	glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
+	glfwSetWindowFocusCallback(window, focus_callback);
+	glfwSetCursorEnterCallback(window, cursor_enter_callback);
+	if (Global.test.enabled)
+	{
+		// a test takes no input: keys and clicks sent to its hidden window would change the run
+		return;
+	}
 	glfwSetCursorPosCallback(window, cursor_pos_callback);
 	glfwSetMouseButtonCallback(window, mouse_button_callback);
 	glfwSetKeyCallback(window, key_callback);
 	glfwSetScrollCallback(window, scroll_callback);
 	glfwSetCharCallback(window, char_callback);
-	glfwSetWindowFocusCallback(window, focus_callback);
-	glfwSetCursorEnterCallback(window, cursor_enter_callback);
 }
 
 int eu07_application::init_ogl()
