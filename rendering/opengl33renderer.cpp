@@ -31,6 +31,14 @@ int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of r
 
 namespace {
 
+// the top view of the editor shows everything this close to the camera, the corners of the screen included
+float
+editor_ortho_reach()
+{
+	auto const aspect{Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	return Global.EditorOrthoExtent * std::sqrt(1.f + aspect * aspect) + 500.f;
+}
+
 float
 editor_track_view_range(float const Range, bool const Apply)
 {
@@ -38,16 +46,35 @@ editor_track_view_range(float const Range, bool const Apply)
 		return Range;
 	float extra = 50000.0f;
 	if (Global.EditorOrtho)
-		extra = Global.EditorOrthoExtent * 3.0f;
+		extra = editor_ortho_reach();
 	return Range > extra ? Range : extra;
 }
 
+// the top view of the editor may leave the ballast of the railway out, for the ground under the tracks to show
 bool
-editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
+editor_ballast_hidden(TTrack const *Track, bool const Colour)
+{
+	return Colour && EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 0 && (Track->iCategoryFlag & 15) == 1;
+}
+
+// ...or the sleepers and the timbers of the switches too, the rails alone as on a plan
+bool
+editor_sleepers_hidden()
+{
+	return EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 1;
+}
+
+// far off the camera the tracks of the editor are drawn alone, the terrain, the models and the rest only as far as the
+// scenery reaches in the game; the top view measures it off its centre on the ground, its camera being high above it
+bool
+editor_far_tracks_only(bool const Apply, scene::bounding_area const &Area, glm::dvec3 const &Camera, double const SceneryLimit)
 {
 	if (false == Apply)
 		return false;
-	double nearest = glm::length(Cell->m_area.center - Camera) - static_cast<double>(Cell->m_area.radius);
+	auto offset{Area.center - Camera};
+	if (Global.EditorOrtho)
+		offset.y = 0.0;
+	double nearest = glm::length(offset) - static_cast<double>(Area.radius);
 	if (nearest < 0.0)
 		nearest = 0.0;
 	return nearest > SceneryLimit;
@@ -1435,6 +1462,8 @@ bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float c
 bool opengl33_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
+    // the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+    if( EditorModeFlag && Global.EditorOrtho ) { return false; }
 
     if( m_environmentupdateface >= 6 ) {
         // no update in progress, check whether it's time for another one
@@ -2613,6 +2642,11 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 		break;
 	}
 
+	// the ground of the sections far off, the terrain of the editor among it, isn't drawn with the tracks reaching there
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery)};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
+
 	while (First != Last)
 	{
 
@@ -2627,7 +2661,7 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 		case rendermode::shadows:
         case rendermode::pickscenery:
 		{
-			if (false == section->m_shapes.empty())
+			if (false == section->m_shapes.empty() && false == editor_far_tracks_only(far_paths, section->m_area, camera, scenery_limit))
 			{
 				// since all shapes of the section share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -2720,7 +2754,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		auto *cell = First->second;
 		// przeliczenia animacji torów w sektorze
 		cell->RaAnimate(m_framestamp);
-		bool const tracks_only{editor_far_tracks_only(far_paths, cell, camera, scenery_limit)};
+		bool const tracks_only{editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit)};
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -2830,7 +2864,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		case rendermode::color:
         case rendermode::shadows:
         {
-			if (editor_far_tracks_only(far_paths, cell, camera, scenery_limit))
+			if (editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit))
 				break;
             // TBD, TODO: refactor in to a method to reuse in branch below?
 			// opaque parts of instanced models -- accumulate this cell's buckets
@@ -2912,7 +2946,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         }
         case rendermode::pickscenery:
 		{
-			if (editor_far_tracks_only(far_paths, cell, camera, scenery_limit))
+			if (editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit))
 				break;
 			// opaque parts of instanced models
 			// same procedure like with regular render, but each node receives custom colour used for picking.
@@ -4616,6 +4650,10 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			continue;
 		}
+		if (track->eType == tt_Normal && editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
+		{
+			continue;
+		}
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -4676,6 +4714,10 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			continue;
 		}
 		if (false == track->m_visible)
+		{
+			continue;
+		}
+		if (editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
 		{
 			continue;
 		}
@@ -4746,6 +4788,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	switch( m_renderpass.draw_mode ) {
 	case rendermode::color:
 	case rendermode::reflections: {
+		if( editor_sleepers_hidden() ) { break; }
 		for( auto first { First }; first != Last; ++first ) {
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }
@@ -4911,6 +4954,11 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 {
 
 	// NOTE: this method is launched only during color pass therefore we don't bother with mode test here
+	// the cells far off with the tracks alone drawn there have nothing translucent drawn either
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
+	auto const distant = [&](scene::basic_cell const *Cell) { return editor_far_tracks_only(far_paths, Cell->m_area, camera, scenery_limit); };
 	// first pass draws elements which we know are located in section banks, to reduce vbo switching
 	{
 		auto first{First};
@@ -4919,7 +4967,7 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 
 			auto const *cell = first->second;
 
-			if (false == cell->m_shapestranslucent.empty())
+			if (false == cell->m_shapestranslucent.empty() && false == distant(cell))
 			{
 				// since all shapes of the cell share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -4945,6 +4993,11 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 		{
 
 			auto const *cell = first->second;
+			if (distant(cell))
+			{
+				++first;
+				continue;
+			}
 
 			// translucent parts of instanced models
 			for (auto *instance : cell->m_instancetranslucent)
@@ -4972,7 +5025,7 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 
 			auto const *cell = first->second;
 
-			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())))
+			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())) && false == distant(cell))
 			{
 				// since all shapes of the cell share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -5681,6 +5734,13 @@ void opengl33_renderer::Pick_Control_Callback(std::function<void(TSubModel const
 void opengl33_renderer::Pick_Node_Callback(std::function<void(scene::basic_node *)> callback)
 {
 	m_node_pick_requests.push_back(callback);
+}
+
+void opengl33_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+		m_picksceneryitem = nullptr;
+	std::ranges::replace_if(m_picksceneryitems, [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
 }
 
 glm::dvec3 opengl33_renderer::Update_Mouse_Position()

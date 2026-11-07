@@ -73,6 +73,24 @@ std::filesystem::path user_config_path(const std::string &filename)
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
 
+std::filesystem::path user_cache_path(const std::string &filename)
+{
+	namespace fs = std::filesystem;
+#if defined(_WIN32)
+	if (const char *local = std::getenv("LOCALAPPDATA"))
+		return fs::path(local) / "MaSzyna" / "cache" / filename;
+#elif defined(__APPLE__)
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / "Library" / "Caches" / "MaSzyna" / filename;
+#else
+	if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache != nullptr && *cache != '\0')
+		return fs::path(cache) / "MaSzyna" / filename;
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / ".cache" / "MaSzyna" / filename;
+#endif
+	return {};
+}
+
 // zwraca różnicę czasu
 // jeśli pierwsza jest aktualna, a druga rozkładowa, to ujemna oznacza opóżnienie
 // na dłuższą metę trzeba uwzględnić datę, jakby opóżnienia miały przekraczać 12h (towarowych)
@@ -469,6 +487,26 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 bool FileExists(std::string const &Filename)
 {
 	return std::filesystem::exists(Filename);
+}
+
+std::string FileCased(std::filesystem::path const &Filename)
+{
+	std::error_code error;
+	if (std::filesystem::exists(Filename, error))
+		return Filename.string();
+#ifdef _WIN32
+	// the names there are found in any case already: no folder to go through for every file missing, nor names outside of the
+	// code page to throw on
+	return {};
+#else
+	// only the name of the file itself, a folder named in another case isn't found
+	auto const directory{Filename.has_parent_path() ? Filename.parent_path() : std::filesystem::path{"."}};
+	auto const wanted{ToLower(Filename.filename().string())};
+	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
+		if (ToLower(entry->path().filename().string()) == wanted)
+			return Filename.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
+	return {};
+#endif
 }
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)

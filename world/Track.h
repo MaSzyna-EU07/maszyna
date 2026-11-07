@@ -217,6 +217,7 @@ public:
 
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
+    bool m_tributary { false }; // loaded as a tributary: a river of its first path, the second one kept to be written back
     std::vector<TTrack *> m_crossings; // tracks whose rails cross the rails of this one, found when its geometry was made
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
     std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
@@ -438,6 +439,8 @@ private:
     void deserialize_( std::istream &Input );
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
     void export_as_text_( std::ostream &Output ) const;
+    // the keyword the track is written with, by its type and for a plain one by what runs on it
+    char const *type_keyword() const;
     // locates specified profile in the profile database, potentially loading it from a file
     static std::pair<std::string, int> fetch_track_rail_profile( std::string const &Profile );
     // loads content of specified file and converts it into a vertex array

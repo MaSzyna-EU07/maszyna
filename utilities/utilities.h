@@ -28,6 +28,9 @@ template <typename T> constexpr T sq(T v)
 // returns the per-user config path for `filename` (platform-specific dir),
 // or an empty path if the home/appdata env var is unavailable
 std::filesystem::path user_config_path(const std::string &filename);
+// the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
+// %LOCALAPPDATA%\MaSzyna\cache, ~/Library/Caches/MaSzyna, $XDG_CACHE_HOME/MaSzyna or ~/.cache/MaSzyna; empty as user_config_path
+std::filesystem::path user_cache_path(const std::string &filename);
 
 // TODO: Shouldn't this be in globals?
 namespace paths
@@ -217,6 +220,9 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
+// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
+// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+std::string FileCased(std::filesystem::path const &Filename);
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 

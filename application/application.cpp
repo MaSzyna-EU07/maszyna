@@ -81,6 +81,8 @@ void focus_callback(GLFWwindow *window, int focus)
 
 void cursor_enter_callback(GLFWwindow *window, int entered)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_enter_callback(entered);
 }
 
@@ -97,6 +99,8 @@ void window_resize_callback(GLFWwindow *, int w, int h)
 
 void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_pos_callback(x, y);
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
@@ -104,22 +108,30 @@ void cursor_pos_callback(GLFWwindow *window, double x, double y)
 
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_mouse_button(button, action, mods);
 }
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_scroll(xoffset, yoffset);
 }
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 
 	Application.on_key(key, scancode, action, mods);
 }
 
 void char_callback(GLFWwindow *window, unsigned int c)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_char(c);
 }
 
@@ -271,7 +283,11 @@ void eu07_application::DiscordRPCService()
 		}
 
 		if (currentMode != mode::driver)
+		{
+			// the editor and the other modes: nothing to tell, without spinning a core on it
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			continue;
+		}
 
 		// Discord RPC updater
 		if (simulation::is_ready)
@@ -691,21 +707,32 @@ void eu07_application::release_python_lock()
 void eu07_application::exit()
 {
 	Global.applicationQuitOrder = true;
+	// each step of the closing in the log, to tell from it where a closing that hangs stops
+	auto const closing{std::chrono::steady_clock::now()};
+	auto const step = [closing](char const *What) {
+		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
+	};
+	step("the sleepers laid in the background");
 	// the sleepers laid in the background read the scenery, which goes below
 	track_sleepers::stop_background();
+	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
 
+	step("the renderer");
 	GfxRenderer->Shutdown();
 	m_network.reset();
 
 	//    SafeDelete( simulation::Train );
+	step("the scenery");
 	SafeDelete(simulation::Region);
 
+	step("the ui and the python workers");
 	ui_layer::shutdown();
 
 	// the python workers detach their GL context on the way out, so they have to be done before the windows they use are destroyed
 	m_taskqueue.exit();
+	step("the windows");
 	for (auto *window : m_windows)
 	{
 		glfwDestroyWindow(window);
@@ -716,6 +743,8 @@ void eu07_application::exit()
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
 
+	step("done");
+	StopLogService();
 	auto it = Global.threads.find("LogService");
 	if (it != Global.threads.end())
 	{
@@ -956,7 +985,8 @@ GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int wi
 	if (keep_ownership)
 		m_windows.emplace_back(childwindow);
 
-	glfwFocusWindow(m_windows.front()); // restore focus to main window
+	if (glfwGetWindowAttrib(m_windows.front(), GLFW_VISIBLE))
+		glfwFocusWindow(m_windows.front()); // restore focus to main window
 
 	return childwindow;
 }
@@ -1318,7 +1348,9 @@ int eu07_application::init_glfw()
 		Global.bFullScreen = true;
 	}
 
-	auto *mainwindow = window(-1, true, Global.window_size.x, Global.window_size.y, Global.bFullScreen ? monitor : nullptr, true, false);
+	// a selftest of the editor run while the computer is in use for something else draws into a window never shown nor focused
+	bool const shown{selftest_script("EU07_EDITOR_SELFTEST_HIDDEN") == nullptr};
+	auto *mainwindow = window(-1, shown, Global.window_size.x, Global.window_size.y, Global.bFullScreen && shown ? monitor : nullptr, true, false);
 
 	if (mainwindow == nullptr)
 	{
