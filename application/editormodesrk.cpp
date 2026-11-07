@@ -3962,34 +3962,9 @@ struct srk_tool::lines_set
 	}
 };
 
-void srk_tool::set_lines(block_edit const *Edit)
+// the signals planned along the lines set, the standing ones they take, the block sections between them
+struct srk_tool::lines_plan : lines_set
 {
-	m_status.clear();
-	lines_set work{*this, Edit};
-	if (false == work.gather())
-		return;
-	work.classify();
-	if (false == work.target() || false == work.km_known())
-		return;
-	auto const &stem{work.stem};
-	auto const &standing{work.standing};
-	auto const &lines{work.lines};
-	auto const &entries{work.entries};
-	auto const &entry_standing{work.entry_standing};
-	auto const &heads{work.heads};
-	auto const &controls{work.controls};
-	auto const &automatic{work.automatic};
-	auto const &aspects{work.aspects};
-	auto const &both{work.both};
-	auto const &along{work.along};
-	auto const &wrong{work.wrong};
-	auto const &processed{work.processed};
-	auto const edited{work.edited};
-	auto const drawn{work.drawn};
-	auto const facing_out = [&](station::line const &Line, standing_signal const &Signal, double const Distance) {
-		auto const way{station::point_on(Line, Distance).way};
-		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
-	};
 	struct planned_signal
 	{
 		station::signal::role kind{station::signal::role::block};
@@ -4008,195 +3983,311 @@ void srk_tool::set_lines(block_edit const *Edit)
 		int signal{-1}; // the entry signal of the next station standing, of the standing signals
 		double distance{0.0}; // out to it, or to where the signals of the line end
 	};
+	// a block section of a track of a double-track line, between the signals in the order the trains pass them
+	struct section
+	{
+		std::string name;
+		std::size_t line{0};
+		double from{0.0};
+		double to{0.0};
+		std::string guard; // the block signal at its start, empty for a station one
+		std::string wrong_guard; // the one at its end facing the wrong-track trains, empty for none
+		glm::dvec3 start{0.0};
+	};
+	// a signal along a track of a line, in the order its trains pass them
+	struct stop
+	{
+		double distance{0.0};
+		std::string name;
+		int signal{-1}; // of the planned ones, -1 for a station signal
+		int standing{-1};
+	};
+	// a line planned: the least block section of it, the drop of a signal before its joint, the wrong-track ones standing paired
+	// with a boundary
+	struct line_work
+	{
+		std::size_t index{0};
+		double least{0.0};
+		double drop{0.0};
+		std::unordered_set<std::size_t> paired;
+	};
+	using candidate = std::tuple<double, std::size_t, std::size_t>;
+	using name_taken = std::unordered_set<std::string, string_hash, std::equal_to<>>;
+
 	std::vector<planned_signal> planned;
-	std::vector<far_end> ends(lines.size());
+	std::vector<far_end> ends;
 	// the lines of the kilometrage the lines out run along, at a junction another one than the line of the station
 	std::vector<std::string> numbers;
-	for (auto const &line : lines)
-		numbers.push_back(km_line(line));
-	auto const km_on = [&](std::size_t const Index, double const Distance) { return km_along(lines[Index], numbers[Index], Distance); };
-	auto const rising = [&](std::size_t const Index) { return km_rising(lines[Index], numbers[Index]); };
-	auto const braking = [&](std::size_t const Index) { return line_braking(lines[Index]); };
-	for (std::size_t index = 0; index < lines.size(); ++index)
-		ends[index].signal = next_entry(lines[index], standing, ends[index].distance);
 	// the standing signals taken away: of a boundary drawn away, of the other block left along a line
-	std::vector<char> gone(standing.size(), 0);
-	for (std::size_t index = 0; index < lines.size(); ++index)
+	std::vector<char> gone;
+	std::vector<char> used; // the standing ones taken: gone, of a station or by a signal planned
+	std::vector<section> sections;
+	std::vector<std::pair<std::size_t, std::string>> relinked; // standing station signals, the block signal before each
+
+	using lines_set::lines_set;
+
+	double km_on(std::size_t const Index, double const Distance) const
 	{
-		if (false == processed[index])
-			continue;
-		auto const &line{lines[index]};
-		auto const &end{ends[index]};
-		auto const &entry{entries[line.entry]};
-		auto const least{braking(index) * (aspects[index] == 4 ? 0.5 : 1.0)};
+		return tool.km_along(lines[Index], numbers[Index], Distance);
+	}
+	bool rising(std::size_t const Index) const
+	{
+		return tool.km_rising(lines[Index], numbers[Index]);
+	}
+	double braking(std::size_t const Index) const
+	{
+		return tool.line_braking(lines[Index]);
+	}
+	static double facing_out(station::line const &Line, standing_signal const &Signal, double const Distance)
+	{
+		auto const way{station::point_on(Line, Distance).way};
+		return glm::dot(travel_of(Signal.yaw), glm::dvec2{way.x, way.z});
+	}
+
+	void plan_lines()
+	{
+		ends.resize(lines.size());
+		for (auto const &line : lines)
+			numbers.push_back(tool.km_line(line));
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			ends[index].signal = next_entry(lines[index], standing, ends[index].distance);
+		gone.assign(standing.size(), 0);
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			if (processed[index])
+				plan_line(index);
+	}
+	void plan_line(std::size_t const Index)
+	{
+		auto const &line{lines[Index]};
 		// the block signal of a boundary facing its trains before the joint, the wrong-track one beyond it
-		auto const drop{station::signal_drop * out_of(line)};
-		auto const plan = [&](double const Distance, std::string const &Name, int const Match, bool const Wrong) {
-			planned_signal signal;
-			signal.name = Name;
-			signal.plate = Match >= 0 ? std::string{} : Name;
-			signal.line = index;
-			signal.distance = Distance;
-			signal.match = Match;
-			signal.kept = Match >= 0;
-			signal.wrong = Wrong;
-			planned.push_back(std::move(signal));
-			return static_cast<int>(planned.size() - 1);
-		};
-		std::unordered_set<std::size_t> paired;
-		auto const nearest_wrong = [&](double const Wanted, double &At) {
-			int found{-1};
-			auto nearest{kWrongTrack};
-			for (auto const k : wrong[index])
-			{
-				double distance{0.0};
-				block_along(line, standing[k], distance, true);
-				if (0 == gone[k] && false == paired.contains(k) && std::abs(distance - Wanted) < nearest)
-				{
-					nearest = std::abs(distance - Wanted);
-					found = static_cast<int>(k);
-					At = distance;
-				}
-			}
-			return found;
-		};
-		// the wrong-track one: the one standing beyond the joint, else a new one there; none of one way only
-		auto const add_wrong = [&](int const Normal) {
-			auto at{planned[Normal].distance + 2.0 * drop};
-			auto const match{nearest_wrong(at, at)};
-			if (match >= 0)
-				paired.insert(static_cast<std::size_t>(match));
-			if (false == both[index])
-			{
-				if (match >= 0)
-					gone[match] = 1;
-				return;
-			}
-			auto const twin{plan(at, match >= 0 ? standing[match].name : planned[Normal].name + "N", match, true)};
-			planned[twin].twin = Normal;
-			planned[Normal].twin = twin;
-		};
-		if (automatic[index] == 1)
-		{
-			// the boundary drawn, the joint on the line drawn on and across on its other track
-			std::optional<double> boundary;
-			if (static_cast<int>(index) == edited)
-				boundary = drawn;
-			else if (edited >= 0)
-				if (double gap{0.0}; true)
-					if (auto const across{station::distance_on(line, station::point_on(lines[edited], drawn).point, gap)}; gap < 12.0)
-						boundary = across;
-			if (false == along[index].empty() || boundary.has_value())
-			{
-				// the block signals standing kept as they stand, the boundary drawn added or the ones standing at it taken away
-				for (auto const k : along[index])
-				{
-					double distance{0.0};
-					block_along(line, standing[k], distance);
-					if (boundary.has_value() && Edit->remove && std::abs(distance + drop - *boundary) < kBoundaryReach)
-					{
-						gone[k] = 1;
-						auto at{distance + 2.0 * drop};
-						if (auto const twin{nearest_wrong(at, at)}; twin >= 0)
-							gone[twin] = 1;
-						continue;
-					}
-					add_wrong(plan(distance, standing[k].name, static_cast<int>(k), false));
-				}
-				if (boundary.has_value() && false == Edit->remove)
-					add_wrong(plan(*boundary - drop, station::block_number(km_on(index, *boundary - drop), line.number, rising(index)), -1, false));
-			}
-			else
-			{
-				// the block signals, Ie-4 § 51: the sections no shorter than the braking distance, half of it with four aspects, and no
-				// longer than twice it, the line to the next station parted evenly, towards the end of the tracks a little over the
-				// least each
-				std::vector<double> places;
-				if (line.station || end.signal >= 0)
-				{
-					// as many on both tracks of the line, where both have the automatic block
-					auto const has_partner{line.partner >= 0 && line.partner < static_cast<int>(lines.size()) && automatic[line.partner] == 1};
-					auto const reach{has_partner ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
-					double other{least};
-					if (has_partner)
-						other = braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0);
-					auto const sections{std::max(1.0, std::floor(reach / std::max(least, other)))};
-					for (int k = 1; k < sections; ++k)
-						places.push_back(end.distance * k / sections);
-				}
-				else
-					for (int k = 1; least * kBlockShare * k <= end.distance - 100.0; ++k)
-						places.push_back(least * kBlockShare * k);
-				for (auto const distance : places)
-					add_wrong(plan(distance, station::block_number(km_on(index, distance), line.number, rising(index)), -1, false));
-			}
-			// the wrong-track ones of no boundary taken away
-			for (auto const k : wrong[index])
-				if (false == paired.contains(k))
-					gone[k] = 1;
-		}
-		// the warning disc of the entry signal, the braking distance before it: of the semi-automatic block, or of the mixed one where
-		// it's the entry signal of the wrong-track trains, on the outside of the line facing them
-		if (auto const mixed{automatic[index] == 1 && line.number > 0 && false == line.inbound && false == both[index] && Edit == nullptr}; automatic[index] == 0 || mixed)
-		{
-			auto const distance{std::min(braking(index), end.distance - 100.0)};
-			if (distance >= 400.0)
-			{
-				planned_signal signal;
-				signal.kind = station::signal::role::warning;
-				signal.name = stem + "to" + ToLower(entry.name);
-				signal.plate = "to" + ToLower(entry.name);
-				signal.line = index;
-				signal.distance = distance;
-				signal.wrong = mixed;
-				planned.push_back(std::move(signal));
-			}
-		}
+		line_work work{Index, braking(Index) * (aspects[Index] == 4 ? 0.5 : 1.0), station::signal_drop * out_of(line), {}};
+		if (automatic[Index] == 1)
+			plan_block(work);
+		plan_disc(Index);
 		// the signals of the other block left along the line: the warning discs of a line of the automatic block, the block signals of
 		// one of the semi-automatic one
-		if (Edit != nullptr || automatic[index] == 2)
-			continue;
+		if (edit != nullptr || automatic[Index] == 2)
+			return;
+		drop_other_block(Index);
+	}
+	int plan(std::size_t const Index, double const Distance, std::string const &Name, int const Match, bool const Wrong)
+	{
+		planned_signal signal;
+		signal.name = Name;
+		signal.plate = Match >= 0 ? std::string{} : Name;
+		signal.line = Index;
+		signal.distance = Distance;
+		signal.match = Match;
+		signal.kept = Match >= 0;
+		signal.wrong = Wrong;
+		planned.push_back(std::move(signal));
+		return static_cast<int>(planned.size() - 1);
+	}
+	int nearest_wrong(line_work const &Work, double const Wanted, double &At) const
+	{
+		int found{-1};
+		auto nearest{kWrongTrack};
+		for (auto const k : wrong[Work.index])
+		{
+			double distance{0.0};
+			block_along(lines[Work.index], standing[k], distance, true);
+			if (0 == gone[k] && false == Work.paired.contains(k) && std::abs(distance - Wanted) < nearest)
+			{
+				nearest = std::abs(distance - Wanted);
+				found = static_cast<int>(k);
+				At = distance;
+			}
+		}
+		return found;
+	}
+	// the wrong-track one: the one standing beyond the joint, else a new one there; none of one way only
+	void add_wrong(line_work &Work, int const Normal)
+	{
+		auto at{planned[Normal].distance + 2.0 * Work.drop};
+		auto const match{nearest_wrong(Work, at, at)};
+		if (match >= 0)
+			Work.paired.insert(static_cast<std::size_t>(match));
+		if (false == both[Work.index])
+		{
+			if (match >= 0)
+				gone[match] = 1;
+			return;
+		}
+		auto const twin{plan(Work.index, at, match >= 0 ? standing[match].name : planned[Normal].name + "N", match, true)};
+		planned[twin].twin = Normal;
+		planned[Normal].twin = twin;
+	}
+	void plan_block(line_work &Work)
+	{
+		auto const boundary{boundary_on(Work.index)};
+		if (false == along[Work.index].empty() || boundary.has_value())
+			plan_standing(Work, boundary);
+		else
+			plan_even(Work);
+		// the wrong-track ones of no boundary taken away
+		for (auto const k : wrong[Work.index])
+			if (false == Work.paired.contains(k))
+				gone[k] = 1;
+	}
+	// the boundary drawn, the joint on the line drawn on and across on its other track
+	std::optional<double> boundary_on(std::size_t const Index) const
+	{
+		if (static_cast<int>(Index) == edited)
+			return drawn;
+		if (edited < 0)
+			return std::nullopt;
+		double gap{0.0};
+		if (auto const across{station::distance_on(lines[Index], station::point_on(lines[edited], drawn).point, gap)}; gap < 12.0)
+			return across;
+		return std::nullopt;
+	}
+	// the block signals standing kept as they stand, the boundary drawn added or the ones standing at it taken away
+	void plan_standing(line_work &Work, std::optional<double> const &Boundary)
+	{
+		auto const index{Work.index};
+		auto const &line{lines[index]};
+		for (auto const k : along[index])
+		{
+			double distance{0.0};
+			block_along(line, standing[k], distance);
+			if (Boundary.has_value() && edit->remove && std::abs(distance + Work.drop - *Boundary) < kBoundaryReach)
+			{
+				gone[k] = 1;
+				auto at{distance + 2.0 * Work.drop};
+				if (auto const twin{nearest_wrong(Work, at, at)}; twin >= 0)
+					gone[twin] = 1;
+				continue;
+			}
+			add_wrong(Work, plan(index, distance, standing[k].name, static_cast<int>(k), false));
+		}
+		if (Boundary.has_value() && false == edit->remove)
+			add_wrong(Work, plan(index, *Boundary - Work.drop, station::block_number(km_on(index, *Boundary - Work.drop), line.number, rising(index)), -1, false));
+	}
+	void plan_even(line_work &Work)
+	{
+		auto const index{Work.index};
+		auto const &line{lines[index]};
+		for (auto const distance : even_places(Work))
+			add_wrong(Work, plan(index, distance, station::block_number(km_on(index, distance), line.number, rising(index)), -1, false));
+	}
+	// the block signals, Ie-4 § 51: the sections no shorter than the braking distance, half of it with four aspects, and no longer than
+	// twice it, the line to the next station parted evenly, towards the end of the tracks a little over the least each
+	std::vector<double> even_places(line_work const &Work) const
+	{
+		auto const &line{lines[Work.index]};
+		auto const &end{ends[Work.index]};
+		auto const least{Work.least};
+		std::vector<double> places;
+		if (line.station || end.signal >= 0)
+		{
+			// as many on both tracks of the line, where both have the automatic block
+			auto const has_partner{line.partner >= 0 && line.partner < static_cast<int>(lines.size()) && automatic[line.partner] == 1};
+			auto const reach{has_partner ? (end.distance + ends[line.partner].distance) * 0.5 : end.distance};
+			double other{least};
+			if (has_partner)
+				other = braking(line.partner) * (aspects[line.partner] == 4 ? 0.5 : 1.0);
+			auto const parts{std::max(1.0, std::floor(reach / std::max(least, other)))};
+			for (int k = 1; k < parts; ++k)
+				places.push_back(end.distance * k / parts);
+		}
+		else
+			for (int k = 1; least * kBlockShare * k <= end.distance - 100.0; ++k)
+				places.push_back(least * kBlockShare * k);
+		return places;
+	}
+	// the warning disc of the entry signal, the braking distance before it: of the semi-automatic block, or of the mixed one where it's
+	// the entry signal of the wrong-track trains, on the outside of the line facing them
+	void plan_disc(std::size_t const Index)
+	{
+		auto const &line{lines[Index]};
+		auto const mixed{automatic[Index] == 1 && line.number > 0 && false == line.inbound && false == both[Index] && edit == nullptr};
+		if (automatic[Index] != 0 && false == mixed)
+			return;
+		if (auto const distance{std::min(braking(Index), ends[Index].distance - 100.0)}; distance >= 400.0)
+		{
+			auto const &entry{entries[line.entry]};
+			planned_signal signal;
+			signal.kind = station::signal::role::warning;
+			signal.name = stem + "to" + ToLower(entry.name);
+			signal.plate = "to" + ToLower(entry.name);
+			signal.line = Index;
+			signal.distance = distance;
+			signal.wrong = mixed;
+			planned.push_back(std::move(signal));
+		}
+	}
+	void drop_other_block(std::size_t const Index)
+	{
+		auto const &line{lines[Index]};
 		for (std::size_t k = 0; k < standing.size(); ++k)
 		{
-			if (automatic[index] == 1 ? standing[k].kind != "warning" : std::ranges::find(along[index], k) == along[index].end())
+			if (automatic[Index] == 1 ? standing[k].kind != "warning" : std::ranges::find(along[Index], k) == along[Index].end())
 				continue;
 			// the one of the wrong-track trains of the mixed block kept
-			if (automatic[index] == 1 && false == both[index] && wrong_disc(lines, index, standing[k]))
+			if (automatic[Index] == 1 && false == both[Index] && wrong_disc(lines, Index, standing[k]))
 				continue;
-			// not where the line shares its track with one of the other block
-			auto shared{false};
-			for (std::size_t other = 0; other < lines.size(); ++other)
-			{
-				if ((automatic[other] == 0) == (automatic[index] == 0))
-					continue;
-				double gap{0.0};
-				auto const distance{station::distance_on(lines[other], standing[k].position, gap)};
-				shared = gap < 4.5 && distance > 50.0 && distance < lines[other].length() - 1.0;
-				if (shared)
-					break;
-			}
+			auto const shared{shared_track(Index, standing[k])};
 			double gap{0.0};
 			auto const distance{station::distance_on(line, standing[k].position, gap)};
 			if (false == shared && gap < 4.5 && distance > 50.0 && distance < line.length() - 1.0)
 				gone[k] = 1;
 		}
 	}
-	// the standing ones by their places, then by their names
-	std::vector<char> used(gone);
-	for (auto const &signal : planned)
-		if (signal.match >= 0)
-			used[signal.match] = 1;
-	for (auto const index : entry_standing)
-		used[index] = 1;
-	for (auto const &end : ends)
-		if (end.signal >= 0)
-			used[end.signal] = 1;
-	std::vector<std::tuple<double, std::size_t, std::size_t>> candidates;
-	for (std::size_t i = 0; i < planned.size(); ++i)
+	// where the line shares its track with one of the other block
+	bool shared_track(std::size_t const Index, standing_signal const &Signal) const
 	{
-		auto const &signal{planned[i]};
-		if (signal.match >= 0)
-			continue;
+		for (std::size_t other = 0; other < lines.size(); ++other)
+		{
+			if ((automatic[other] == 0) == (automatic[Index] == 0))
+				continue;
+			double gap{0.0};
+			if (auto const distance{station::distance_on(lines[other], Signal.position, gap)}; gap < 4.5 && distance > 50.0 && distance < lines[other].length() - 1.0)
+				return true;
+		}
+		return false;
+	}
+
+	// the standing ones by their places, then by their names
+	void match_standing()
+	{
+		used = gone;
+		for (auto const &signal : planned)
+			if (signal.match >= 0)
+				used[signal.match] = 1;
+		for (auto const index : entry_standing)
+			used[index] = 1;
+		for (auto const &end : ends)
+			if (end.signal >= 0)
+				used[end.signal] = 1;
+		auto candidates{match_candidates()};
+		std::ranges::sort(candidates);
+		for (auto const &[score, i, k] : candidates)
+			if (planned[i].match < 0 && 0 == used[k])
+			{
+				planned[i].match = static_cast<int>(k);
+				used[k] = 1;
+				double gap{0.0};
+				planned[i].distance = station::distance_on(lines[planned[i].line], standing[k].position, gap);
+			}
+		for (auto &signal : planned)
+			for (std::size_t k = 0; k < standing.size() && signal.match < 0; ++k)
+				if (0 == used[k] && ToLower(standing[k].name) == ToLower(signal.name))
+				{
+					signal.match = static_cast<int>(k);
+					used[k] = 1;
+				}
+	}
+	std::vector<candidate> match_candidates() const
+	{
+		std::vector<candidate> candidates;
+		for (std::size_t i = 0; i < planned.size(); ++i)
+			if (planned[i].match < 0)
+				signal_candidates(i, candidates);
+		return candidates;
+	}
+	void signal_candidates(std::size_t const Index, std::vector<candidate> &Candidates) const
+	{
+		auto const &signal{planned[Index]};
 		auto const &line{lines[signal.line]};
 		auto const kind{signal.kind == station::signal::role::block ? "block" : "warning"};
 		auto const reach{signal.kind == station::signal::role::block ? 300.0 : 400.0};
@@ -4208,134 +4299,159 @@ void srk_tool::set_lines(block_edit const *Edit)
 			auto const distance{station::distance_on(line, standing[k].position, gap)};
 			auto const facing{facing_out(line, standing[k], distance)};
 			if (gap < 4.5 && std::abs(distance - signal.distance) < reach && (line.inbound != signal.wrong ? -facing : facing) > 0.87)
-				candidates.emplace_back(std::abs(distance - signal.distance) + gap * 10.0, i, k);
+				Candidates.emplace_back(std::abs(distance - signal.distance) + gap * 10.0, Index, k);
 		}
 	}
-	std::ranges::sort(candidates);
-	for (auto const &[score, i, k] : candidates)
-		if (planned[i].match < 0 && 0 == used[k])
-		{
-			planned[i].match = static_cast<int>(k);
-			used[k] = 1;
-			double gap{0.0};
-			planned[i].distance = station::distance_on(lines[planned[i].line], standing[k].position, gap);
-		}
-	for (auto &signal : planned)
-		for (std::size_t k = 0; k < standing.size() && signal.match < 0; ++k)
-			if (0 == used[k] && ToLower(standing[k].name) == ToLower(signal.name))
-			{
-				signal.match = static_cast<int>(k);
-				used[k] = 1;
-			}
 	// a number another signal of the scenery has already gets a letter
-	std::unordered_set<std::string, string_hash, std::equal_to<>> taken;
-	for (std::size_t k = 0; k < standing.size(); ++k)
-		if (0 == used[k])
-			taken.insert(ToLower(standing[k].name));
-	for (auto const &signal : planned)
-		if (signal.kept)
-			taken.insert(ToLower(signal.name));
-	// the wrong-track ones after their twins: 523N beside 523
-	for (auto const wrong_track : {false, true})
-		for (auto &signal : planned)
-		{
-			if (signal.kind != station::signal::role::block || signal.kept || signal.wrong != wrong_track)
-				continue;
-			auto const base{wrong_track && signal.twin >= 0 ? planned[signal.twin].name + "N" : signal.name};
-			signal.name = base;
-			for (char letter = 'a'; taken.contains(ToLower(signal.name)) && letter <= 'z'; ++letter)
-				signal.name = base + letter;
-			taken.insert(ToLower(signal.name));
-			signal.plate = signal.name;
-		}
+	void name_letters()
+	{
+		name_taken taken;
+		for (std::size_t k = 0; k < standing.size(); ++k)
+			if (0 == used[k])
+				taken.insert(ToLower(standing[k].name));
+		for (auto const &signal : planned)
+			if (signal.kept)
+				taken.insert(ToLower(signal.name));
+		// the wrong-track ones after their twins: 523N beside 523
+		for (auto const wrong_track : {false, true})
+			for (std::size_t i = 0; i < planned.size(); ++i)
+				if (planned[i].kind == station::signal::role::block && false == planned[i].kept && planned[i].wrong == wrong_track)
+					letter_name(i, taken);
+	}
+	void letter_name(std::size_t const Index, name_taken &Taken)
+	{
+		auto &signal{planned[Index]};
+		auto const base{signal.wrong && signal.twin >= 0 ? planned[signal.twin].name + "N" : signal.name};
+		signal.name = base;
+		for (char letter = 'a'; Taken.contains(ToLower(signal.name)) && letter <= 'z'; ++letter)
+			signal.name = base + letter;
+		Taken.insert(ToLower(signal.name));
+		signal.plate = signal.name;
+	}
+
 	// the block sections of each track of a double-track line, between the signals in the order the trains pass them
-	struct section
+	void build_sections()
 	{
-		std::string name;
-		std::size_t line{0};
-		double from{0.0};
-		double to{0.0};
-		std::string guard; // the block signal at its start, empty for a station one
-		std::string wrong_guard; // the one at its end facing the wrong-track trains, empty for none
-		glm::dvec3 start{0.0};
-	};
-	std::vector<section> sections;
-	std::vector<std::pair<std::size_t, std::string>> relinked; // standing station signals, the block signal before each
-	for (std::size_t index = 0; index < lines.size(); ++index)
+		for (std::size_t index = 0; index < lines.size(); ++index)
+			if (automatic[index] == 1 && processed[index])
+				sections_of(index);
+	}
+	void sections_of(std::size_t const Index)
 	{
-		auto const &line{lines[index]};
-		if (automatic[index] != 1 || false == processed[index])
-			continue;
-		struct stop
+		auto const order{stops_of(Index)};
+		for (std::size_t i = 0; i < order.size(); ++i)
 		{
-			double distance{0.0};
-			std::string name;
-			int signal{-1}; // of the planned ones, -1 for a station signal
-			int standing{-1};
-		};
+			link_stop(order, i);
+			if (i > 0)
+				sections.push_back(section_between(Index, order, i));
+		}
+	}
+	std::vector<stop> stops_of(std::size_t const Index) const
+	{
+		auto const &line{lines[Index]};
 		std::vector<stop> order{{0.0, standing[entry_standing[line.entry]].name, -1, static_cast<int>(entry_standing[line.entry])}};
 		for (std::size_t i = 0; i < planned.size(); ++i)
-			if (planned[i].line == index && false == planned[i].wrong)
+			if (planned[i].line == Index && false == planned[i].wrong)
 				order.emplace_back(planned[i].distance, planned[i].name, static_cast<int>(i), planned[i].match);
-		if (ends[index].signal >= 0)
-			order.emplace_back(ends[index].distance, standing[ends[index].signal].name, -1, ends[index].signal);
+		if (ends[Index].signal >= 0)
+			order.emplace_back(ends[Index].distance, standing[ends[Index].signal].name, -1, ends[Index].signal);
 		std::ranges::sort(order, [](stop const &A, stop const &B) { return A.distance < B.distance; });
 		if (line.inbound)
 			std::ranges::reverse(order);
-		// the joints the trains pass the signals to: on beyond a block signal, in towards the station from an entry one
-		auto const joint_of = [&](stop const &Stop) {
-			if (Stop.signal >= 0)
-				return Stop.distance + (line.inbound ? -station::signal_drop : station::signal_drop);
-			return Stop.distance + (Stop.distance > 0.0 ? station::signal_drop : -station::signal_drop);
-		};
-		// the wrong-track one of a stop, the wrong-track trains pass them the other way
-		auto const twin_of = [&](std::size_t const At) { return At < order.size() && order[At].signal >= 0 ? planned[order[At].signal].twin : -1; };
-		for (std::size_t i = 0; i < order.size(); ++i)
-		{
-			auto const &here{order[i]};
-			auto const block_before{i > 0 && order[i - 1].signal >= 0};
-			auto const linked{block_before ? order[i - 1].name : std::string{"none"}};
-			if (here.signal >= 0)
-				planned[here.signal].linked = linked;
-			else if (block_before && here.standing >= 0 && false == standing[here.standing].linked.empty() && ToLower(standing[here.standing].linked) != ToLower(linked))
-				relinked.emplace_back(here.standing, linked);
-			auto const wrong_before{twin_of(i + 1)};
-			auto const wrong_linked{wrong_before >= 0 ? planned[wrong_before].name : std::string{"none"}};
-			if (auto const twin{twin_of(i)}; twin >= 0)
-				planned[twin].linked = wrong_linked;
-			else if (i == 0 && here.signal < 0 && here.standing >= 0 && false == standing[here.standing].linked.empty())
-			{
-				// the station signal the wrong-track trains come to: after the last wrong-track block signal, after none once it's gone
-				auto const &had{standing[here.standing].linked};
-				auto dropped{false};
-				for (std::size_t k = 0; k < standing.size(); ++k)
-				{
-					dropped = gone[k] && ToLower(standing[k].name) == ToLower(had);
-					if (dropped)
-						break;
-				}
-				if (ToLower(had) != ToLower(wrong_linked) && (wrong_before >= 0 || dropped))
-					relinked.emplace_back(here.standing, wrong_linked);
-			}
-			if (i == 0)
-				continue;
-			auto const &before{order[i - 1]};
-			// the lower km first, as on the lines of PKP PLK: 2411-2571@LK2.1
-			auto const ascending{rising(index)};
-			auto const &low{ascending ? before : here};
-			auto const &high{ascending ? here : before};
-			section found;
-			found.name = ToLower(std::format("{}-{}@lk{}.{}", section_tag(low.name, line.number), section_tag(high.name, line.number), numbers[index], line.number));
-			found.line = index;
-			found.from = std::min(joint_of(before), joint_of(here));
-			found.to = std::max(joint_of(before), joint_of(here));
-			found.guard = before.signal >= 0 ? before.name : std::string{};
-			if (auto const twin{twin_of(i)}; twin >= 0)
-				found.wrong_guard = planned[twin].name;
-			found.start = station::point_on(line, before.distance).point;
-			sections.push_back(std::move(found));
-		}
+		return order;
 	}
+	// the joints the trains pass the signals to: on beyond a block signal, in towards the station from an entry one
+	double joint_of(std::size_t const Index, stop const &Stop) const
+	{
+		if (Stop.signal >= 0)
+			return Stop.distance + (lines[Index].inbound ? -station::signal_drop : station::signal_drop);
+		return Stop.distance + (Stop.distance > 0.0 ? station::signal_drop : -station::signal_drop);
+	}
+	// the wrong-track one of a stop, the wrong-track trains pass them the other way
+	int twin_of(std::vector<stop> const &Order, std::size_t const At) const
+	{
+		return At < Order.size() && Order[At].signal >= 0 ? planned[Order[At].signal].twin : -1;
+	}
+	void link_stop(std::vector<stop> const &Order, std::size_t const At)
+	{
+		auto const &here{Order[At]};
+		auto const block_before{At > 0 && Order[At - 1].signal >= 0};
+		auto const linked{block_before ? Order[At - 1].name : std::string{"none"}};
+		if (here.signal >= 0)
+			planned[here.signal].linked = linked;
+		else if (block_before && here.standing >= 0 && false == standing[here.standing].linked.empty() && ToLower(standing[here.standing].linked) != ToLower(linked))
+			relinked.emplace_back(here.standing, linked);
+		auto const wrong_before{twin_of(Order, At + 1)};
+		auto const wrong_linked{wrong_before >= 0 ? planned[wrong_before].name : std::string{"none"}};
+		if (auto const twin{twin_of(Order, At)}; twin >= 0)
+			planned[twin].linked = wrong_linked;
+		else if (At == 0 && here.signal < 0 && here.standing >= 0 && false == standing[here.standing].linked.empty())
+			relink_wrong(here, wrong_before, wrong_linked);
+	}
+	// the station signal the wrong-track trains come to: after the last wrong-track block signal, after none once it's gone
+	void relink_wrong(stop const &Here, int const WrongBefore, std::string const &WrongLinked)
+	{
+		auto const &had{standing[Here.standing].linked};
+		auto const dropped{dropped_named(had)};
+		if (ToLower(had) != ToLower(WrongLinked) && (WrongBefore >= 0 || dropped))
+			relinked.emplace_back(Here.standing, WrongLinked);
+	}
+	bool dropped_named(std::string const &Name) const
+	{
+		for (std::size_t k = 0; k < standing.size(); ++k)
+			if (gone[k] && ToLower(standing[k].name) == ToLower(Name))
+				return true;
+		return false;
+	}
+	section section_between(std::size_t const Index, std::vector<stop> const &Order, std::size_t const At) const
+	{
+		auto const &line{lines[Index]};
+		auto const &here{Order[At]};
+		auto const &previous{Order[At - 1]};
+		// the lower km first, as on the lines of PKP PLK: 2411-2571@LK2.1
+		auto const ascending{rising(Index)};
+		auto const &low{ascending ? previous : here};
+		auto const &high{ascending ? here : previous};
+		section found;
+		found.name = ToLower(std::format("{}-{}@lk{}.{}", section_tag(low.name, line.number), section_tag(high.name, line.number), numbers[Index], line.number));
+		found.line = Index;
+		found.from = std::min(joint_of(Index, previous), joint_of(Index, here));
+		found.to = std::max(joint_of(Index, previous), joint_of(Index, here));
+		found.guard = previous.signal >= 0 ? previous.name : std::string{};
+		if (auto const twin{twin_of(Order, At)}; twin >= 0)
+			found.wrong_guard = planned[twin].name;
+		found.start = station::point_on(line, previous.distance).point;
+		return found;
+	}
+};
+
+void srk_tool::set_lines(block_edit const *Edit)
+{
+	m_status.clear();
+	lines_plan work{*this, Edit};
+	if (false == work.gather())
+		return;
+	work.classify();
+	if (false == work.target() || false == work.km_known())
+		return;
+	work.plan_lines();
+	work.match_standing();
+	work.name_letters();
+	work.build_sections();
+	using planned_signal = lines_plan::planned_signal;
+	using section = lines_plan::section;
+	auto const &standing{work.standing};
+	auto const &lines{work.lines};
+	auto const &entry_standing{work.entry_standing};
+	auto const &heads{work.heads};
+	auto const &controls{work.controls};
+	auto const &automatic{work.automatic};
+	auto const &aspects{work.aspects};
+	auto const &processed{work.processed};
+	auto const &planned{work.planned};
+	auto const &gone{work.gone};
+	auto const &sections{work.sections};
+	auto const &relinked{work.relinked};
 	// the template of a signal placed: of a block signal by the aspects of its line, of the warning disc by the entry signal it tells
 	// of, of the mount of the disc chosen
 	auto const disc_mount{m_signals.signal_mount("warning", {})};
