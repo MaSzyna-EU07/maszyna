@@ -3285,6 +3285,57 @@ msgstr "Szacowana liczba obiektów: %.0f"
 msgid "Fill area"
 msgstr "Wypełnij obszar"
 
+msgid "LMB: add outline point   Backspace: remove last point   Enter: fill and finish   Esc: drop the outline"
+msgstr "LPM: dodaj punkt obrysu   Backspace: usuń ostatni punkt   Enter: wypełnij i zakończ   Esc: porzuć obrys"
+
+msgid "Changing: %s"
+msgstr "Zmieniasz: %s"
+
+msgid "Fill area (Enter)"
+msgstr "Wypełnij obszar (Enter)"
+
+msgid "Fill again (Enter)"
+msgstr "Wypełnij od nowa (Enter)"
+
+msgid "Undo last fill"
+msgstr "Cofnij ostatnie wypełnienie"
+
+msgid "Area %zu"
+msgstr "Obszar %zu"
+
+msgid "%s: placed %zu of %zu objects"
+msgstr "%s: postawiono %zu z %zu obiektów"
+
+msgid "%s left as it was"
+msgstr "%s zostaje bez zmian"
+
+msgid "%s picked up: change the outline or the settings, Enter fills it anew, Esc leaves it as it was"
+msgstr "%s do zmiany: popraw obrys albo ustawienia, Enter wypełnia od nowa, Esc zostawia bez zmian"
+
+msgid "%s removed with its %zu objects"
+msgstr "Usunięto %s razem z obiektami (%zu)"
+
+msgid "%s back as it was, %zu objects"
+msgstr "%s przywrócony, obiektów: %zu"
+
+msgid "Filled areas: %zu"
+msgstr "Wypełnione obszary: %zu"
+
+msgid "None yet. Enter fills the outline and puts the area here, to be changed later"
+msgstr "Jeszcze żadnego. Enter wypełnia obrys i dopisuje obszar tutaj, do późniejszej zmiany"
+
+msgid "ha"
+msgstr "ha"
+
+msgid "Change"
+msgstr "Zmień"
+
+msgid "Its outline and settings back in the tool: move the points, change the models or the density, Enter fills it anew"
+msgstr "Obrys i ustawienia wracają do narzędzia: przesuń punkty, zmień modele albo gęstość, Enter wypełnia od nowa"
+
+msgid "The area and its models removed; Undo last fill brings them back"
+msgstr "Usuwa obszar i jego modele; Cofnij ostatnie wypełnienie przywraca je"
+
 msgid "Copies of the selected model, set out in a row"
 msgstr "Kopie zaznaczonego modelu, ustawione w rzędzie"
 
