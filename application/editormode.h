@@ -662,6 +662,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// away under the line by the abutments the tracks go over on a bridge; Laid: the tracks just laid, the formation fills it and
 	// they are cut only where they can't follow the line otherwise
 	bool nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)> const &Fitted, bool const Laid);
+	// its steps, with what they share (application/editormodenmt.cpp)
+	struct nmt_line_fit;
 	// the tracks laid in one go since the history step From put onto the terrain model as one line, as the tracks go onto the
 	// terrain: the track ending at End then the one the laying goes on from
 	bool nmt_fit_laid(std::size_t const From, glm::dvec3 const End);

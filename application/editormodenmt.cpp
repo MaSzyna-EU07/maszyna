@@ -2973,40 +2973,175 @@ void editor_mode::nmt_auto_start(bool const Unfitted)
 	state.status = STR("Fetching the terrain model under the tracks...");
 }
 
-bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)> const &Fitted, bool const Laid)
+// the fitting of the grade line of nmt_fit_line in its steps: the line of tracks taken, its ends joined, the ground under it gathered,
+// the line fitted to it and applied, and what came of it told
+struct editor_mode::nmt_line_fit
 {
-	auto &profile{m_profile};
-	auto const &fitted{Fitted};
-	// the line runs over the tracks not fitted yet around the track: the ones fitted stay as they are
-	auto route{editor_track::run_route(Track, profile.run_length)};
-	auto const at{std::ranges::find_if(route.spans, [&](auto const &Span) { return Span.track == &Track; })};
-	auto const middle{geometry::bezier{Track.m_paths.front()}.point(0.5)};
-	if (at == route.spans.end())
+	profile_state &profile;
+	editor_mode &editor;
+	TTrack &track;
+	std::function<bool(TTrack const *)> const &fitted;
+	bool laid;
+
+	// the ground of the line: the terrain model on its axis, the top of the ballast with the rails on it, and the rail tops of
+	// the lines fitted already beside it on the same level as the model here, which tell its height the more closely the
+	// nearer they are. What doesn't agree with the line, a bridge over it, the ground under a viaduct, the fit lets go of by
+	// itself
+	static double constexpr kModel{0.15}; // m, the tolerance of the model
+	static double constexpr kRail{0.02}; // m, of a rail top next to the line, growing by kSpread a metre of the distance
+	static double constexpr kSpread{0.01};
+	static double constexpr kLevel{0.5}; // m, a rail top farther from the model or from the line lies on another level
+	static double constexpr kSameLevel{1.0}; // m, tracks authored closer in height lie on one level, farther one over the other
+	static double constexpr kReach{50.0};
+	// an end of the line, or the other path of a switch of it, which leads through the tracks not fitted yet into a line fitted
+	// already, as at a crossover, ties the two where it leaves the line: there the line keeps to the height of the other, on
+	// along its grade over the tracks between, give or take what the plain tracks among these can climb with curves of the least
+	// radius. A switch lies in its plane and climbs nothing. Where they can climb more than a little, the curves of the norms of
+	// the line come first: what it can't keep to, the tracks between take over
+	static double constexpr kJoin{0.002}; // m
+	static double constexpr kClimbing{0.05}; // m
+	static double constexpr kFarthest{200.0};
+	// the lines fitted already close beside it on its level, as authored, are ground it never lets go of, however far they are
+	// off: side by side the tracks lie on one formation, in one plane, as near as the curves of the norms let them. The nearest
+	// on each side. Where they run so near that the timbers carry both, at a switch, a crossover, they are at one height, on
+	// any vertical curve the timbers lie on
+	static double constexpr kNear{8.0}; // m between the axes
+	static double constexpr kHeld{5.0}; // m, the reach of their rail tops
+	static double constexpr kTimbers{2.65}; // m between the axes, about the length of a sleeper
+	static double constexpr kTimbered{0.005}; // m
+	// the stretches of the line about a track it crosses on another level, as the model tells it further on: the rails at the height
+	// of that track are nothing to the line there, however near and however the file has them
+	static double constexpr kOtherSide{2.0}; // m
+	// where the line crosses another track at an angle, with no joint with it, the model shows the formation of the one on top and tells
+	// nothing of the other: there it's no ground of the line, the height comes from the terrain on both sides, a line low there going under
+	static double constexpr kCrossedNear{2.0}; // m
+	static double constexpr kCrossedSine{0.5}; // 30 degrees
+	static double constexpr kCrossedReach{20.0}; // m along the line on both sides, about what the formation with its slopes takes
+	// a path which the line crosses on its level, as authored, makes a crossing with it: over it the two lie in one plane, the
+	// grade doesn't break nor does a vertical curve reach; the line crosses a line fitted already at its height, the rail tops
+	// of the two at one
+	static double constexpr kCrossing{0.75}; // m, the nearest the samples of the two come, a metre apart
+	static double constexpr kCrossed{0.035}; // the sine of the least angle the axes cross at
+	static double constexpr kGauge{1.435}; // m
+	// the height of a crossing of a line fitted already is ground the line keeps to as closely as to the switches beside, though
+	// not past the curves of the norms: where an end fitted another way is too near, as near as they let it
+	static double constexpr kCrossingHeight{0.005}; // m
+	// the switches of the tracks beside, the ones of the crossovers above all, lie on bearers common with this track or close
+	// to it: no break of the grade on them either, so the tracks of the station stay in one plane
+	static double constexpr kShared{7.0}; // m, about the spacing of the tracks
+	// where the model falls away under the line by the abutments, the line goes over on a bridge or a viaduct: its paths there
+	// are cut off and set to the bridge, the formation is laid up to it, the ground under it stays as the model has it
+	static double constexpr kBridged{1.0}; // m
+	static double constexpr kAbutment{100.0}; // per mille
+	// spans a few metres apart are one bridge on its piers; what is shorter than that is a culvert under the embankment
+	static double constexpr kPier{5.0}; // m
+	static double constexpr kCulvert{3.0}; // m
+	static double constexpr kFewest{0.03}; // m, how far a path just laid may part from the line before it's cut
+
+	// the tracks it leads into from an exit of the line, through the tracks not fitted yet
+	struct exit_walk
 	{
-		nmt_note(nmt_state::finding::kind::refused, &Track, &Track, Track.Length(), middle, STR("No line of tracks runs over the track"));
-		return false;
-	}
-	auto first{at};
-	while (first != route.spans.begin() && false == fitted(std::prev(first)->track))
-		--first;
-	auto last{at};
-	while (std::next(last) != route.spans.end() && false == fitted(std::next(last)->track))
-		++last;
-	route.spans = {first, std::next(last)};
-	profile.open = true;
-	profile.status.clear();
-	profile.error.clear();
-	auto *from{route.spans.front().track};
-	auto *to{route.spans.back().track};
-	profile_take(std::move(route), from, to);
-	if (false == profile.error.empty() || profile.samples.empty())
+		editor_track::route_span span;
+		double between{0.0}; // m, over the tracks not fitted yet
+		double bending{0.0}; // m, of these the plain tracks
+	};
+	// a track the line crosses on another level, where the model tells it
+	struct other_level
 	{
-		nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, profile.error.empty() ? STR("The line has no profile") : profile.error);
-		return false;
+		TTrack const *track;
+		double chainage;
+		double reach; // m along the line on both sides
+		double height;
+	};
+	// where the line crosses a path on its level
+	struct crossing
+	{
+		double chainage;
+		double height;
+		double sine;
+		double distance;
+		TTrack const *track;
+		glm::dvec2 at; // where the axes meet
+		glm::dvec2 along; // the way of the line there
+	};
+	// the height a crossing holds the line to
+	struct crossing_hold
+	{
+		double chainage;
+		double height;
+		double tolerance;
+		double reach;
+	};
+
+	glm::dvec3 middle{0.0};
+	TTrack *from{nullptr};
+	TTrack *to{nullptr};
+	profile::ground_fit options;
+	std::vector<other_level> other_levels;
+	std::vector<crossing_hold> crossing_holds;
+	// the samples of the line: where along it and in the plan, the model under them, the ones crossing let go of the ground
+	std::size_t count{0};
+	std::vector<double> sampled;
+	std::vector<double> model;
+	std::vector<glm::dvec2> plan;
+	std::vector<char> no_ground;
+	// the ground the line is fitted to, with how closely and how far along each height holds it
+	std::vector<double> chainages;
+	std::vector<double> ground;
+	std::vector<double> tolerances;
+	std::vector<double> reaches;
+	// the line fitted and what it made: the samples as authored, the heights of the line at them, the bridges, how it parts from
+	// the model, where the paths keep off it most
+	profile::line fitted_line;
+	std::vector<editor_track::route_sample> authored;
+	std::vector<double> heights;
+	std::vector<profile::departure> bridges;
+	std::vector<profile::departure> parted;
+	std::vector<profile::departure> spans;
+	bool applied{false};
+	std::size_t agreeing{0};
+	std::size_t modelled{0};
+	double off{0.0};
+	std::size_t off_at{0};
+
+	// the line of the tracks not fitted yet around the track taken into the profile; false, told, where there's none or it has no
+	// profile
+	bool take_line()
+	{
+		// the line runs over the tracks not fitted yet around the track: the ones fitted stay as they are
+		auto route{editor_track::run_route(track, profile.run_length)};
+		auto const at{std::ranges::find_if(route.spans, [this](auto const &Span) { return Span.track == &track; })};
+		middle = geometry::bezier{track.m_paths.front()}.point(0.5);
+		if (at == route.spans.end())
+		{
+			editor.nmt_note(nmt_state::finding::kind::refused, &track, &track, track.Length(), middle, STR("No line of tracks runs over the track"));
+			return false;
+		}
+		auto first{at};
+		while (first != route.spans.begin() && false == fitted(std::prev(first)->track))
+			--first;
+		auto last{at};
+		while (std::next(last) != route.spans.end() && false == fitted(std::next(last)->track))
+			++last;
+		route.spans = {first, std::next(last)};
+		profile.open = true;
+		profile.status.clear();
+		profile.error.clear();
+		from = route.spans.front().track;
+		to = route.spans.back().track;
+		editor.profile_take(std::move(route), from, to);
+		if (false == profile.error.empty() || profile.samples.empty())
+		{
+			editor.nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, profile.error.empty() ? STR("The line has no profile") : profile.error);
+			return false;
+		}
+		return true;
 	}
+
 	// an end which goes on into a line fitted already keeps its height and grade; any other end is free, the tracks past it are
 	// fitted later and meet this line then
-	auto const joint = [&](bool const Atend, double &Height) {
+	bool joint(bool const Atend, double &Height) const
+	{
 		double grade;
 		TTrack *adjoining{nullptr};
 		int path{0};
@@ -3018,54 +3153,64 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		auto const &finish{points[segment_data::point::end]};
 		Height = geometry::plan_distance(start, end) < geometry::plan_distance(finish, end) ? start.y : finish.y;
 		return true;
-	};
-	profile.context.start_joined = profile.context.start_joined && joint(false, profile.context.start_elevation);
-	profile.context.end_joined = profile.context.end_joined && joint(true, profile.context.end_elevation);
-	auto const on_route = [&](TTrack const *Other) { return std::ranges::any_of(profile.route.spans, [&](auto const &Span) { return Span.track == Other; }); };
+	}
+
+	bool on_route(TTrack const *Other) const
+	{
+		return std::ranges::any_of(profile.route.spans, [&](auto const &Span) { return Span.track == Other; });
+	}
+
 	// an end on a switch which meets a switch fitted already unlinked, laid apart in height, takes it over as if it went on into it
-	auto const partner_of = [&](editor_track::route_span const &Span, bool const Atend) -> std::optional<loose_end> {
-		auto const found{m_nmt_state.loose.find({Span.track, Span.path, Atend})};
-		if (found == m_nmt_state.loose.end() || on_route(std::get<0>(found->second)))
+	std::optional<loose_end> partner_of(editor_track::route_span const &Span, bool const Atend) const
+	{
+		auto const found{editor.m_nmt_state.loose.find({Span.track, Span.path, Atend})};
+		if (found == editor.m_nmt_state.loose.end() || on_route(std::get<0>(found->second)))
 			return std::nullopt;
 		auto const end{end_of(*std::get<0>(found->second), std::get<1>(found->second), std::get<2>(found->second))};
 		if (glm::length(geometry::plan_of(end.outward)) < 1e-6)
 			return std::nullopt;
 		return end;
-	};
-	auto const loose_into = [&](editor_track::route_span const &Span, bool const Atend) {
+	}
+
+	std::optional<loose_end> loose_into(editor_track::route_span const &Span, bool const Atend) const
+	{
 		auto const end{partner_of(Span, Atend)};
 		return end.has_value() && fitted(end->track) ? end : std::nullopt;
-	};
+	}
+
 	// rising off the end met, into the route at its start and against it at its end
-	auto const rising = [](loose_end const &End) { return End.outward.y / glm::length(geometry::plan_of(End.outward)); };
-	if (false == profile.context.start_joined)
-		if (auto const end{loose_into(profile.route.spans.front(), false == profile.route.spans.front().forward)})
-		{
-			profile.context.start_joined = true;
-			profile.context.start_elevation = end->point.y;
-			profile.context.start_grade = rising(*end);
-		}
-	if (false == profile.context.end_joined)
-		if (auto const end{loose_into(profile.route.spans.back(), profile.route.spans.back().forward)})
-		{
-			profile.context.end_joined = true;
-			profile.context.end_elevation = end->point.y;
-			profile.context.end_grade = -rising(*end);
-		}
-	// the ground of the line: the terrain model on its axis, the top of the ballast with the rails on it, and the rail tops of
-	// the lines fitted already beside it on the same level as the model here, which tell its height the more closely the
-	// nearer they are. What doesn't agree with the line, a bridge over it, the ground under a viaduct, the fit lets go of by
-	// itself
-	double constexpr kModel{0.15}; // m, the tolerance of the model
-	double constexpr kRail{0.02}; // m, of a rail top next to the line, growing by kSpread a metre of the distance
-	double constexpr kSpread{0.01};
-	double constexpr kLevel{0.5}; // m, a rail top farther from the model or from the line lies on another level
-	double constexpr kSameLevel{1.0}; // m, tracks authored closer in height lie on one level, farther one over the other
-	double constexpr kReach{50.0};
-	auto const nearest = [&](glm::dvec3 const &Point, double &Distance) {
+	static double rising(loose_end const &End)
+	{
+		return End.outward.y / glm::length(geometry::plan_of(End.outward));
+	}
+
+	// the ends of the line joined to the lines fitted already they go on into, linked or met unlinked
+	void join_ends()
+	{
+		profile.context.start_joined = profile.context.start_joined && joint(false, profile.context.start_elevation);
+		profile.context.end_joined = profile.context.end_joined && joint(true, profile.context.end_elevation);
+		if (false == profile.context.start_joined)
+			if (auto const end{loose_into(profile.route.spans.front(), false == profile.route.spans.front().forward)})
+			{
+				profile.context.start_joined = true;
+				profile.context.start_elevation = end->point.y;
+				profile.context.start_grade = rising(*end);
+			}
+		if (false == profile.context.end_joined)
+			if (auto const end{loose_into(profile.route.spans.back(), profile.route.spans.back().forward)})
+			{
+				profile.context.end_joined = true;
+				profile.context.end_elevation = end->point.y;
+				profile.context.end_grade = -rising(*end);
+			}
+	}
+
+	// the height of the rail top of the lines fitted already nearest the point, and how far it is
+	double nearest_laid(glm::dvec3 const &Point, double &Distance) const
+	{
 		Distance = std::numeric_limits<double>::max();
 		double height{0.0};
-		each_around(m_nmt_state.laid, Point, [&](auto const &Kept) {
+		each_around(editor.m_nmt_state.laid, Point, [&Point, &Distance, &height](auto const &Kept) {
 			if (auto const distance{glm::length(glm::dvec2{Kept.position.x - Point.x, Kept.position.z - Point.z})}; distance < Distance)
 			{
 				Distance = distance;
@@ -3073,51 +3218,47 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			}
 		});
 		return height;
-	};
-	// an end of the line, or the other path of a switch of it, which leads through the tracks not fitted yet into a line fitted
-	// already, as at a crossover, ties the two where it leaves the line: there the line keeps to the height of the other, on
-	// along its grade over the tracks between, give or take what the plain tracks among these can climb with curves of the least
-	// radius. A switch lies in its plane and climbs nothing. Where they can climb more than a little, the curves of the norms of
-	// the line come first: what it can't keep to, the tracks between take over
-	double constexpr kJoin{0.002}; // m
-	double constexpr kClimbing{0.05}; // m
-	double constexpr kFarthest{200.0};
-	profile::ground_fit options;
+	}
+
 	// an end on the rim of a turntable runs up to it level at its height, as far as kRunUp off it or half the line, which turns to
 	// the ground only past that, not at the edge of the pit; the model in the pit isn't its ground
-	auto const first_chainage{profile.samples.front().chainage};
-	auto const last_chainage{profile.samples.back().chainage};
-	for (auto const atend : {false, true})
+	void run_up_turntables()
 	{
-		auto const &span{atend ? profile.route.spans.back() : profile.route.spans.front()};
-		auto const end{end_of(*span.track, span.path, atend ? span.forward : false == span.forward)};
-		auto const table{std::ranges::find_if(m_nmt_state.turntables, [&](nmt_state::turntable const &Table) { return on_rim(end, Table.centre, Table.rim); })};
-		if (table == m_nmt_state.turntables.end())
-			continue;
-		auto const height{table->centre.y};
-		auto const level{std::min(kRunUp, 0.5 * (last_chainage - first_chainage))};
-		auto const level_from{atend ? last_chainage - level : first_chainage};
-		(atend ? profile.context.end_joined : profile.context.start_joined) = true;
-		(atend ? profile.context.end_elevation : profile.context.start_elevation) = height;
-		(atend ? profile.context.end_grade : profile.context.start_grade) = 0.0;
-		profile.context.switches.emplace_back(level_from, level_from + level, table->table->name());
-		for (int metre = 0; level_from + metre <= level_from + level + 1e-6; ++metre)
-			options.bounds.push_back({level_from + metre, height - kJoin, height + kJoin, false});
-		WriteLog(format("Editor: NMT line %s runs up to turntable %s level at %.2f m over %.1f m", Track.name().c_str(), table->table->name().c_str(), height, level), logtype::generic);
+		auto const first_chainage{profile.samples.front().chainage};
+		auto const last_chainage{profile.samples.back().chainage};
+		for (auto const atend : {false, true})
+		{
+			auto const &span{atend ? profile.route.spans.back() : profile.route.spans.front()};
+			auto const end{end_of(*span.track, span.path, atend ? span.forward : false == span.forward)};
+			auto const table{std::ranges::find_if(editor.m_nmt_state.turntables, [&](nmt_state::turntable const &Table) { return on_rim(end, Table.centre, Table.rim); })};
+			if (table == editor.m_nmt_state.turntables.end())
+				continue;
+			auto const height{table->centre.y};
+			auto const level{std::min(kRunUp, 0.5 * (last_chainage - first_chainage))};
+			auto const level_from{atend ? last_chainage - level : first_chainage};
+			(atend ? profile.context.end_joined : profile.context.start_joined) = true;
+			(atend ? profile.context.end_elevation : profile.context.start_elevation) = height;
+			(atend ? profile.context.end_grade : profile.context.start_grade) = 0.0;
+			profile.context.switches.emplace_back(level_from, level_from + level, table->table->name());
+			for (int metre = 0; level_from + metre <= level_from + level + 1e-6; ++metre)
+				options.bounds.push_back({level_from + metre, height - kJoin, height + kJoin, false});
+			WriteLog(format("Editor: NMT line %s runs up to turntable %s level at %.2f m over %.1f m", track.name().c_str(), table->table->name().c_str(), height, level), logtype::generic);
+		}
 	}
-	auto const in_pit =[&](glm::dvec3 const &Point) {
-		return std::ranges::any_of(m_nmt_state.turntables, [&](nmt_state::turntable const &Table) { return geometry::plan_distance(Point, Table.centre) < Table.rim + kPitWall; });
-	};
-	auto const length_of =[](TTrack const &Track, int const Path) { return Track.eType == tt_Switch ? Track.SwitchExtension->Segments[Path]->GetLength() : Track.Segment->GetLength(); };
-	std::vector<editor_track::route_span> exits;
-	exits.emplace_back(profile.route.spans.front().track, profile.route.spans.front().path, false == profile.route.spans.front().forward);
-	exits.emplace_back(profile.route.spans.back().track, profile.route.spans.back().path, profile.route.spans.back().forward);
-	for (auto const &span : profile.route.spans)
-		if (span.track->eType == tt_Switch && span.track->m_paths.size() >= 2)
-			for (auto const outward : {true, false})
-				exits.emplace_back(span.track, 1 - span.path, outward);
+
+	bool in_pit(glm::dvec3 const &Point) const
+	{
+		return std::ranges::any_of(editor.m_nmt_state.turntables, [&](nmt_state::turntable const &Table) { return geometry::plan_distance(Point, Table.centre) < Table.rim + kPitWall; });
+	}
+
+	static double length_of(TTrack const &Of, int const Path)
+	{
+		return Of.eType == tt_Switch ? Of.SwitchExtension->Segments[Path]->GetLength() : Of.Segment->GetLength();
+	}
+
 	// a switch entered at the far end of a path has the far end of its other path on its plane as high, when as far along it
-	auto const frog_beside = [](TTrack const &Switch, int const Path) {
+	static bool frog_beside(TTrack const &Switch, int const Path)
+	{
 		if (Switch.m_paths.size() < 2)
 			return false;
 		auto const &entered{Switch.m_paths[Path].points};
@@ -3129,84 +3270,83 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			return false;
 		auto const ahead = [&](glm::dvec3 const &Point) { return glm::dot(geometry::plan_of(Point - origin), glm::normalize(along)); };
 		return std::abs(ahead(entered[segment_data::point::end]) - ahead(other[segment_data::point::end])) <= 0.5;
-	};
-	for (auto const &exiting : exits)
+	}
+
+	// the ends of the line and the other paths of its switches, the way out of the line at each
+	std::vector<editor_track::route_span> exits() const
 	{
-		auto const &exit{exiting.track->m_paths[exiting.path].points[exiting.forward ? segment_data::point::end : segment_data::point::start]};
-		auto const bind = [&](double const Height, double const Between, double const Bending) {
-			std::size_t nearest_sample{0};
-			for (std::size_t i = 1; i < profile.samples.size(); ++i)
-				if (geometry::plan_distance(profile.samples[i].position, exit) < geometry::plan_distance(profile.samples[nearest_sample].position, exit))
-					nearest_sample = i;
-			auto const climbing{Bending * Between / (4.0 * profile.line.norms.radius_min)};
-			options.bounds.emplace_back(profile.samples[nearest_sample].chainage, Height - kJoin - climbing, Height + kJoin + climbing, climbing >= kClimbing);
-		};
-		// the tracks it leads into, the nearest first, through both paths of a switch met at its start and across the frog of one
-		// met at the end of a path, onto the end of its other path
-		struct walk
+		std::vector<editor_track::route_span> all;
+		all.emplace_back(profile.route.spans.front().track, profile.route.spans.front().path, false == profile.route.spans.front().forward);
+		all.emplace_back(profile.route.spans.back().track, profile.route.spans.back().path, profile.route.spans.back().forward);
+		for (auto const &span : profile.route.spans)
+			if (span.track->eType == tt_Switch && span.track->m_paths.size() >= 2)
+				for (auto const outward : {true, false})
+					all.emplace_back(span.track, 1 - span.path, outward);
+		return all;
+	}
+
+	// the line bound at the sample nearest the exit to the height given, give or take what the tracks between can climb
+	void bind(glm::dvec3 const &Exit, double const Height, double const Between, double const Bending)
+	{
+		std::size_t nearest_sample{0};
+		for (std::size_t i = 1; i < profile.samples.size(); ++i)
+			if (geometry::plan_distance(profile.samples[i].position, Exit) < geometry::plan_distance(profile.samples[nearest_sample].position, Exit))
+				nearest_sample = i;
+		auto const climbing{Bending * Between / (4.0 * profile.line.norms.radius_min)};
+		options.bounds.emplace_back(profile.samples[nearest_sample].chainage, Height - kJoin - climbing, Height + kJoin + climbing, climbing >= kClimbing);
+	}
+
+	// on from the step into the track next: bound where it's fitted already, else walked on, over the frog too
+	void go_on(std::vector<exit_walk> &Open, glm::dvec3 const &Exit, exit_walk const &Step, editor_track::route_span const &Next, double const Grade)
+	{
+		auto const &points{Next.track->m_paths[Next.path].points};
+		auto const entry{points[Next.forward ? segment_data::point::start : segment_data::point::end].y};
+		if (fitted(Next.track))
 		{
-			editor_track::route_span span;
-			double between{0.0}; // m, over the tracks not fitted yet
-			double bending{0.0}; // m, of these the plain tracks
-		};
-		std::vector<walk> open{{exiting, 0.0, 0.0}};
+			bind(Exit, entry - Grade * Step.between, Step.between, Step.bending);
+			return;
+		}
+		auto const length{length_of(*Next.track, Next.path)};
+		Open.emplace_back(Next, Step.between + length, Step.bending + (Next.track->eType == tt_Switch ? 0.0 : length));
+		if (false == Next.forward && Next.track->eType == tt_Switch && frog_beside(*Next.track, Next.path))
+			Open.push_back({{Next.track, 1 - Next.path, true}, Step.between, Step.bending});
+	}
+
+	// the tracks the exit leads into, the nearest first, through both paths of a switch met at its start and across the frog of one
+	// met at the end of a path, onto the end of its other path
+	void walk_exit(editor_track::route_span const &Exiting)
+	{
+		auto const &exit{Exiting.track->m_paths[Exiting.path].points[Exiting.forward ? segment_data::point::end : segment_data::point::start]};
+		std::vector<exit_walk> open{{Exiting, 0.0, 0.0}};
 		std::set<std::tuple<TTrack const *, int, bool>> seen;
-		// on from the step into the track next: bound where it's fitted already, else walked on, over the frog too
-		auto const go_on = [&](walk const &Step, auto const &Next, auto const Grade) {
-			auto const &points{Next.track->m_paths[Next.path].points};
-			auto const entry{points[Next.forward ? segment_data::point::start : segment_data::point::end].y};
-			if (fitted(Next.track))
-			{
-				bind(entry - Grade * Step.between, Step.between, Step.bending);
-				return;
-			}
-			auto const length{length_of(*Next.track, Next.path)};
-			open.emplace_back(Next, Step.between + length, Step.bending + (Next.track->eType == tt_Switch ? 0.0 : length));
-			if (false == Next.forward && Next.track->eType == tt_Switch && frog_beside(*Next.track, Next.path))
-				open.push_back({{Next.track, 1 - Next.path, true}, Step.between, Step.bending});
-		};
 		while (false == open.empty())
 		{
-			auto const nearest_step{std::ranges::min_element(open, [](walk const &A, walk const &B) { return A.between < B.between; })};
+			auto const nearest_step{std::ranges::min_element(open, [](exit_walk const &A, exit_walk const &B) { return A.between < B.between; })};
 			auto const step{*nearest_step}; // NOSONAR: a copy, the step is erased from the list right after
 			open.erase(nearest_step);
 			if (step.between >= kFarthest || false == seen.insert({step.span.track, step.span.path, step.span.forward}).second)
 				continue;
 			auto onward{editor_track::continuations(step.span)};
-			std::erase_if(onward, [&](editor_track::continuation const &Next) { return on_route(Next.span.track); });
+			std::erase_if(onward, [this](editor_track::continuation const &Next) { return on_route(Next.span.track); });
 			// met unlinked, laid apart in height: on as if linked
 			if (auto const end{onward.empty() ? partner_of(step.span, step.span.forward) : std::nullopt})
 				onward.push_back({{end->track, end->path, false == end->atend}, -rising(*end)});
 			for (auto const &[next, grade] : onward)
-				go_on(step, next, grade);
+				go_on(open, exit, step, next, grade);
 		}
 	}
-	// the lines fitted already close beside it on its level, as authored, are ground it never lets go of, however far they are
-	// off: side by side the tracks lie on one formation, in one plane, as near as the curves of the norms let them. The nearest
-	// on each side. Where they run so near that the timbers carry both, at a switch, a crossover, they are at one height, on
-	// any vertical curve the timbers lie on
-	double constexpr kNear{8.0}; // m between the axes
-	double constexpr kHeld{5.0}; // m, the reach of their rail tops
-	double constexpr kTimbers{2.65}; // m between the axes, about the length of a sleeper
-	double constexpr kTimbered{0.005}; // m
-	// the stretches of the line about a track it crosses on another level, as the model tells it further on: the rails at the height
-	// of that track are nothing to the line there, however near and however the file has them
-	double constexpr kOtherSide{2.0}; // m
-	struct other_level
+
+	bool on_other_level(double const Chainage, double const Height) const
 	{
-		TTrack const *track;
-		double chainage;
-		double reach; // m along the line on both sides
-		double height;
-	};
-	std::vector<other_level> other_levels;
-	auto const on_other_level = [&](double const Chainage, double const Height) {
 		return std::ranges::any_of(other_levels, [&](other_level const &Other) { return std::abs(Chainage - Other.chainage) <= Other.reach && std::abs(Height - Other.height) < kOtherSide; });
-	};
-	auto const alongside = [&](editor_track::route_sample const &Sample) {
+	}
+
+	// the nearest rail top of the lines fitted already on each side of the sample, on its level, nearer than kNear
+	std::array<std::pair<double, nmt_state::laid_point const *>, 2> alongside(editor_track::route_sample const &Sample) const
+	{
 		std::array<std::pair<double, nmt_state::laid_point const *>, 2> sides{std::pair{kNear, nullptr}, std::pair{kNear, nullptr}};
 		auto const along{glm::normalize(Sample.direction)};
-		each_around(m_nmt_state.laid, Sample.position, [&](auto const &Point) {
+		each_around(editor.m_nmt_state.laid, Sample.position, [this, &Sample, &along, &sides](auto const &Point) {
 			glm::dvec2 const offset{Point.position.x - Sample.position.x, Point.position.z - Sample.position.z};
 			auto const across{along.x * offset.y - along.y * offset.x};
 			if (std::abs(glm::dot(offset, along)) > 1.0 || std::abs(across) >= kNear || std::abs(Point.was - Sample.position.y) > kSameLevel || on_other_level(Sample.chainage, Point.position.y))
@@ -3216,82 +3356,76 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 				side = {std::abs(across), &Point};
 		});
 		return sides;
-	};
-	auto const count{profile.samples.size()};
-	std::vector<double> sampled(count);
-	std::vector model(count, std::numeric_limits<double>::quiet_NaN());
-	std::vector<glm::dvec2> plan(count);
-	std::vector<double> chainages;
-	std::vector<double> ground;
-	std::vector<double> tolerances;
-	std::vector<double> reaches;
-	// where the line crosses another track at an angle, with no joint with it, the model shows the formation of the one on top and tells
-	// nothing of the other: there it's no ground of the line, the height comes from the terrain on both sides, a line low there going under
-	double constexpr kCrossedNear{2.0}; // m
-	double constexpr kCrossedSine{0.5}; // 30 degrees
-	double constexpr kCrossedReach{20.0}; // m along the line on both sides, about what the formation with its slopes takes
-	std::vector<char> crossed(count, 0);
-	for (std::size_t i = 0; i < count; ++i)
-	{
-		auto const &sample{profile.samples[i]};
-		auto const along{glm::normalize(sample.direction)};
-		if (any_around(m_nmt_state.paths, sample.position, [&](auto const &Point) {
-			    return false == on_route(Point.track) && glm::length(glm::dvec2{Point.position.x - sample.position.x, Point.position.z - sample.position.z}) < kCrossedNear && std::abs(along.x * glm::normalize(Point.direction).y - along.y * glm::normalize(Point.direction).x) > kCrossedSine;
-		    }))
-			crossed[i] = 1;
 	}
-	std::vector<char> no_ground(count, 0);
+
+	// whether the sample crosses another track at an angle, with no joint with it
+	bool crosses_track(editor_track::route_sample const &Sample) const
+	{
+		auto const along{glm::normalize(Sample.direction)};
+		return any_around(editor.m_nmt_state.paths, Sample.position, [this, &Sample, &along](auto const &Point) {
+			return false == on_route(Point.track) && glm::length(glm::dvec2{Point.position.x - Sample.position.x, Point.position.z - Sample.position.z}) < kCrossedNear && std::abs(along.x * glm::normalize(Point.direction).y - along.y * glm::normalize(Point.direction).x) > kCrossedSine;
+		});
+	}
+
 	// the samples within reach of a crossing along the line let go of the ground
-	auto const no_ground_about = [&](double const Chainage) {
+	void no_ground_about(double const Chainage)
+	{
 		for (std::size_t j = 0; j < count; ++j)
 			if (std::abs(profile.samples[j].chainage - Chainage) <= kCrossedReach)
 				no_ground[j] = 1;
-	};
-	for (std::size_t i = 0; i < count; ++i)
-		if (crossed[i] != 0)
-			no_ground_about(profile.samples[i].chainage);
-	for (std::size_t i = 0; i < count; ++i)
-	{
-		auto const &sample{profile.samples[i]};
-		auto const *track{sample.span < profile.route.spans.size() ? profile.route.spans[sample.span].track : nullptr};
-		sampled[i] = sample.chainage;
-		plan[i] = {sample.position.x, sample.position.z};
-		if (double height; no_ground[i] == 0 && track != nullptr && shapes_ground(*track) && false == in_pit(sample.position) && m_nmt.height(sample.position.x, sample.position.z, height))
-			model[i] = height + m_nmt_state.offset + track->rail_height();
 	}
-	// a path which the line crosses on its level, as authored, makes a crossing with it: over it the two lie in one plane, the
-	// grade doesn't break nor does a vertical curve reach; the line crosses a line fitted already at its height, the rail tops
-	// of the two at one
-	double constexpr kCrossing{0.75}; // m, the nearest the samples of the two come, a metre apart
-	double constexpr kCrossed{0.035}; // the sine of the least angle the axes cross at
-	double constexpr kGauge{1.435}; // m
-	struct crossing
+
+	// the track of the sample; none past the spans of the route
+	TTrack const *track_of(editor_track::route_sample const &Sample) const
 	{
-		double chainage;
-		double height;
-		double sine;
-		double distance;
-		TTrack const *track;
-		glm::dvec2 at; // where the axes meet
-		glm::dvec2 along; // the way of the line there
-	};
-	auto const crossings_of = [&](std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> const &Points) {
+		return Sample.span < profile.route.spans.size() ? profile.route.spans[Sample.span].track : nullptr;
+	}
+
+	// the samples of the line where it is, the terrain model under them, the ones about a crossing let go of
+	void sample_model()
+	{
+		count = profile.samples.size();
+		sampled.resize(count);
+		model.assign(count, std::numeric_limits<double>::quiet_NaN());
+		plan.resize(count);
+		std::vector<char> crossed(count, 0);
+		for (std::size_t i = 0; i < count; ++i)
+			if (crosses_track(profile.samples[i]))
+				crossed[i] = 1;
+		no_ground.assign(count, 0);
+		for (std::size_t i = 0; i < count; ++i)
+			if (crossed[i] != 0)
+				no_ground_about(profile.samples[i].chainage);
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			auto const &sample{profile.samples[i]};
+			auto const *sample_track{track_of(sample)};
+			sampled[i] = sample.chainage;
+			plan[i] = {sample.position.x, sample.position.z};
+			if (double height; no_ground[i] == 0 && sample_track != nullptr && shapes_ground(*sample_track) && false == in_pit(sample.position) && editor.m_nmt.height(sample.position.x, sample.position.z, height))
+				model[i] = height + editor.m_nmt_state.offset + sample_track->rail_height();
+		}
+	}
+
+	// the crossings of the line with the paths of the points given, each told by its nearest samples
+	std::vector<crossing> crossings_of(std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> const &Points) const
+	{
 		std::vector<crossing> found;
 		auto const across = [](glm::dvec2 const &A, glm::dvec2 const &B) { return A.x * B.y - A.y * B.x; };
 		for (auto const &sample : profile.samples)
 		{
-			auto const *track{profile.route.spans[sample.span].track};
+			auto const *sample_track{profile.route.spans[sample.span].track};
 			auto const along{glm::normalize(sample.direction)};
 			each_around(Points, sample.position, [&](auto const &Point) {
 				glm::dvec2 const offset{Point.position.x - sample.position.x, Point.position.z - sample.position.z};
 				auto const other{glm::normalize(Point.direction)};
 				auto const sine{across(along, other)};
-				if (Point.track == track || glm::length(offset) > kCrossing || std::abs(Point.was - sample.position.y) > kSameLevel || std::abs(sine) < kCrossed)
+				if (Point.track == sample_track || glm::length(offset) > kCrossing || std::abs(Point.was - sample.position.y) > kSameLevel || std::abs(sine) < kCrossed)
 					return;
 				// where the axes meet
 				auto const here{across(offset, other) / sine};
 				auto const there{across(offset, along) / sine};
-				found.push_back({sample.chainage + here, Point.position.y + there * Point.grade + Point.rails - track->rail_height(), std::abs(sine), glm::length(offset), Point.track, glm::dvec2{sample.position.x, sample.position.z} + along * here, along});
+				found.push_back({sample.chainage + here, Point.position.y + there * Point.grade + Point.rails - sample_track->rail_height(), std::abs(sine), glm::length(offset), Point.track, glm::dvec2{sample.position.x, sample.position.z} + along * here, along});
 			});
 		}
 		// the nearest samples of each crossing tell it
@@ -3305,158 +3439,150 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			else if (one.distance < result.back().distance)
 				result.back() = one;
 		return result;
-	};
-	// the height of a crossing of a line fitted already is ground the line keeps to as closely as to the switches beside, though
-	// not past the curves of the norms: where an end fitted another way is too near, as near as they let it
-	double constexpr kCrossingHeight{0.005}; // m
-	struct crossing_hold
-	{
-		double chainage;
-		double height;
-		double tolerance;
-		double reach;
-	};
-	std::vector<crossing_hold> crossing_holds;
+	}
+
 	// the model within reach of the chainage, where it's higher than the height given, let go of
-	auto const model_below = [&](double const Chainage, double const Reach, double const Highest) {
+	void model_below(double const Chainage, double const Reach, double const Highest)
+	{
 		for (std::size_t i = 0; i < count; ++i)
 			if (std::abs(sampled[i] - Chainage) <= Reach && model[i] > Highest)
 				model[i] = std::numeric_limits<double>::quiet_NaN();
-	};
-	for (auto const &found : crossings_of(m_nmt_state.laid))
+	}
+
+	// the model nearest the reach off the chainage the way given, none where it has none
+	double terrain_towards(double const Chainage, double const Reach, int const Way) const
+	{
+		auto const last_index{static_cast<std::ptrdiff_t>(count) - 1};
+		auto const from_index{std::min(last_index, static_cast<std::ptrdiff_t>(std::distance(sampled.begin(), std::ranges::lower_bound(sampled, Chainage + Way * Reach))))};
+		for (auto index{from_index}; index >= 0 && index <= last_index; index += Way)
+			if (std::isfinite(model[index]))
+				return model[index];
+		return std::numeric_limits<double>::quiet_NaN();
+	}
+
+	// the crossing of a line fitted already held to, or the track crossed taken for one on another level
+	void hold_crossing(crossing const &Found)
 	{
 		// the ground on both sides well below the track crossed, or well above it: one goes under the other, however the file has them,
 		// which often lays both at one height. It's read past the formation of the track crossed, which takes the longer stretch of the
 		// line the lower the angle: nearer the model shows that formation, or the cutting under it, and tells nothing of this line
 		double constexpr kFormation{10.0}; // m to the side of the axis of the track crossed
 		double constexpr kFormationReach{150.0}; // m along the line at most
-		auto const reach{std::clamp(kFormation / found.sine, kCrossedReach, kFormationReach)};
-		auto const terrain_towards = [&](int const Way) {
-			auto const last_index{static_cast<std::ptrdiff_t>(count) - 1};
-			auto const from{std::min(last_index, static_cast<std::ptrdiff_t>(std::distance(sampled.begin(), std::ranges::lower_bound(sampled, found.chainage + Way * reach))))};
-			for (auto index{from}; index >= 0 && index <= last_index; index += Way)
-				if (std::isfinite(model[index]))
-					return model[index];
-			return std::numeric_limits<double>::quiet_NaN();
-		};
-		auto const before{terrain_towards(-1)};
-		auto const after{terrain_towards(1)};
+		auto const reach{std::clamp(kFormation / Found.sine, kCrossedReach, kFormationReach)};
+		auto const before{terrain_towards(Found.chainage, reach, -1)};
+		auto const after{terrain_towards(Found.chainage, reach, 1)};
 		auto const sides{std::isfinite(before) && std::isfinite(after)};
-		auto const above{sides && before > found.height + kOtherSide && after > found.height + kOtherSide};
-		auto const below{sides && before < found.height - kOtherSide && after < found.height - kOtherSide};
+		auto const above{sides && before > Found.height + kOtherSide && after > Found.height + kOtherSide};
+		auto const below{sides && before < Found.height - kOtherSide && after < Found.height - kOtherSide};
 		if (above || below)
-			other_levels.emplace_back(found.track, found.chainage, std::max(reach, kNear / found.sine), found.height);
+			other_levels.emplace_back(Found.track, Found.chainage, std::max(reach, kNear / Found.sine), Found.height);
 		if (above)
-			continue;
+			return;
 		if (below)
 		{
 			// under it far enough for a train and what carries the track above, whatever the model has of the formation of that track
 			double constexpr kUnder{6.0}; // m, rail to rail
 			double constexpr kUnderReach{30.0}; // m, the ground the line lets go of for it
-			model_below(found.chainage, reach, std::max(before, after) + kOtherSide);
-			crossing_holds.emplace_back(found.chainage, std::min(found.height - kUnder, std::max(before, after)), kRail, kUnderReach);
-			continue;
+			model_below(Found.chainage, reach, std::max(before, after) + kOtherSide);
+			crossing_holds.emplace_back(Found.chainage, std::min(Found.height - kUnder, std::max(before, after)), kRail, kUnderReach);
+			return;
 		}
-		crossing_holds.emplace_back(found.chainage, found.height, kCrossingHeight, kLevel);
+		crossing_holds.emplace_back(Found.chainage, Found.height, kCrossingHeight, kLevel);
 	}
+
+	// a height of the ground kept, with how closely and how far along it holds the line
+	void keep_ground(double const Chainage, double const Height, double const Tolerance, double const Reach)
+	{
+		chainages.push_back(Chainage);
+		ground.push_back(Height);
+		tolerances.push_back(Tolerance);
+		reaches.push_back(Reach);
+	}
+
 	// the rail tops of the lines fitted already beside the sample, held to
-	auto const hold_beside = [&](editor_track::route_sample const &Sample, auto const &Track) {
+	void hold_beside(editor_track::route_sample const &Sample, TTrack const &Of)
+	{
 		for (auto const &[apart, point] : alongside(Sample))
 			if (point != nullptr)
-			{
-				chainages.push_back(Sample.chainage);
-				ground.push_back(point->position.y + point->rails - Track.rail_height());
-				tolerances.push_back(apart < kTimbers ? kTimbered : std::max(kRail, kSpread * apart));
-				reaches.push_back(kHeld);
-			}
-	};
-	for (std::size_t i = 0; i < count; ++i)
+				keep_ground(Sample.chainage, point->position.y + point->rails - Of.rail_height(), apart < kTimbers ? kTimbered : std::max(kRail, kSpread * apart), kHeld);
+	}
+
+	// a line fitted already crossing it or beside it on another level, one track going under the other, as authored: the difference
+	// stays, whatever the model has there, which knows nothing of the cutting or of the bridge
+	void hold_other_level(editor_track::route_sample const &Sample, TTrack const *Of)
 	{
-		auto const &sample{profile.samples[i]};
-		auto const *track{sample.span < profile.route.spans.size() ? profile.route.spans[sample.span].track : nullptr};
-		chainages.push_back(sample.chainage);
-		ground.push_back(model[i]);
-		tolerances.push_back(kModel);
-		reaches.push_back(kModel);
-		double distance;
-		if (auto const beside{nearest(sample.position, distance)}; no_ground[i] == 0 && distance < kReach && (false == std::isfinite(model[i]) || std::abs(beside - model[i]) <= kLevel) && false == on_other_level(sample.chainage, beside))
-		{
-			chainages.push_back(sample.chainage);
-			ground.push_back(beside);
-			tolerances.push_back(std::max(kRail, kSpread * distance));
-			reaches.push_back(kLevel);
-		}
-		if (track != nullptr && no_ground[i] == 0)
-			hold_beside(sample, *track);
-		// a line fitted already crossing it or beside it on another level, one track going under the other, as authored: the difference
-		// stays, whatever the model has there, which knows nothing of the cutting or of the bridge
 		double constexpr kOtherLevel{2.5}; // m in the plan
 		double constexpr kOtherFarthest{25.0}; // m in height, more isn't a track it has anything to do with
 		double constexpr kOtherReach{30.0}; // m, the ground the line lets go of for it
 		auto closest{kOtherLevel};
 		nmt_state::laid_point const *other{nullptr};
-		each_around(m_nmt_state.laid, sample.position, [&](auto const &Point) {
-			auto const levels{std::abs(Point.was - sample.position.y)};
-			auto const sample_distance{glm::length(glm::dvec2{Point.position.x - sample.position.x, Point.position.z - sample.position.z})};
-			if (Point.track != track && levels > kSameLevel && levels <= kOtherFarthest && sample_distance < closest && false == on_other_level(sample.chainage, Point.position.y))
+		each_around(editor.m_nmt_state.laid, Sample.position, [this, &Sample, Of, &closest, &other](auto const &Point) {
+			auto const levels{std::abs(Point.was - Sample.position.y)};
+			auto const sample_distance{glm::length(glm::dvec2{Point.position.x - Sample.position.x, Point.position.z - Sample.position.z})};
+			if (Point.track != Of && levels > kSameLevel && levels <= kOtherFarthest && sample_distance < closest && false == on_other_level(Sample.chainage, Point.position.y))
 			{
 				closest = sample_distance;
 				other = &Point;
 			}
 		});
 		if (other != nullptr)
-		{
-			chainages.push_back(sample.chainage);
-			ground.push_back(other->position.y + (sample.position.y - other->was));
-			tolerances.push_back(kRail);
-			reaches.push_back(kOtherReach);
-		}
+			keep_ground(Sample.chainage, other->position.y + (Sample.position.y - other->was), kRail, kOtherReach);
 	}
-	if (std::ranges::none_of(ground, [](double const Height) { return std::isfinite(Height); }))
+
+	// the ground under the sample: the model, the nearest line fitted already, the ones beside it, one on another level
+	void gather_sample(std::size_t const I)
 	{
-		nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, STR("The terrain model has no data under the line"));
-		return false;
+		auto const &sample{profile.samples[I]};
+		auto const *sample_track{track_of(sample)};
+		keep_ground(sample.chainage, model[I], kModel, kModel);
+		double distance;
+		if (auto const beside{nearest_laid(sample.position, distance)}; no_ground[I] == 0 && distance < kReach && (false == std::isfinite(model[I]) || std::abs(beside - model[I]) <= kLevel) && false == on_other_level(sample.chainage, beside))
+			keep_ground(sample.chainage, beside, std::max(kRail, kSpread * distance), kLevel);
+		if (sample_track != nullptr && no_ground[I] == 0)
+			hold_beside(sample, *sample_track);
+		hold_other_level(sample, sample_track);
 	}
+
 	// no farther than the path crossed has rails: the middle of a double slip, a few metres crossed at a low angle, keeps to
 	// itself, the switches about it have zones of their own
-	for (auto const &found : crossings_of(m_nmt_state.paths))
+	void zone_crossing(crossing const &Found)
 	{
 		// a track going over or under isn't crossed on the rails
-		if (std::ranges::any_of(other_levels, [&](other_level const &Other) { return Other.track == found.track; }))
-			continue;
-		auto const half{std::min(30.0, kGauge / found.sine + 1.5)};
+		if (std::ranges::any_of(other_levels, [&](other_level const &Other) { return Other.track == Found.track; }))
+			return;
+		auto const half{std::min(30.0, kGauge / Found.sine + 1.5)};
 		auto first_along{std::numeric_limits<double>::max()};
 		auto last_along{std::numeric_limits<double>::lowest()};
-		for (auto const &path : found.track->m_paths)
+		for (auto const &path : Found.track->m_paths)
 			for (auto const end : {segment_data::point::start, segment_data::point::end})
 			{
-				auto const along{glm::dot(glm::dvec2{path.points[end].x, path.points[end].z} - found.at, found.along)};
+				auto const along{glm::dot(glm::dvec2{path.points[end].x, path.points[end].z} - Found.at, Found.along)};
 				first_along = std::min(first_along, along);
 				last_along = std::max(last_along, along);
 			}
 		auto const span_from{std::max(-half, first_along - 1.5)};
 		auto const span_to{std::min(half, last_along + 1.5)};
 		if (span_from < span_to)
-			profile.context.switches.emplace_back(found.chainage + span_from, found.chainage + span_to, found.track->name());
+			profile.context.switches.emplace_back(Found.chainage + span_from, Found.chainage + span_to, Found.track->name());
 	}
-	for (auto const &hold : crossing_holds)
+
+	// the heights of the crossings put among the ground, in the order of the chainage
+	void insert_crossing_holds()
 	{
-		auto const insert_at{static_cast<std::size_t>(std::distance(chainages.begin(), std::ranges::upper_bound(chainages, hold.chainage)))};
-		chainages.insert(chainages.begin() + insert_at, hold.chainage);
-		ground.insert(ground.begin() + insert_at, hold.height);
-		tolerances.insert(tolerances.begin() + insert_at, hold.tolerance);
-		reaches.insert(reaches.begin() + insert_at, hold.reach);
+		for (auto const &hold : crossing_holds)
+		{
+			auto const insert_at{static_cast<std::size_t>(std::distance(chainages.begin(), std::ranges::upper_bound(chainages, hold.chainage)))};
+			chainages.insert(chainages.begin() + insert_at, hold.chainage);
+			ground.insert(ground.begin() + insert_at, hold.height);
+			tolerances.insert(tolerances.begin() + insert_at, hold.tolerance);
+			reaches.insert(reaches.begin() + insert_at, hold.reach);
+		}
 	}
-	// the switches of the tracks beside, the ones of the crossovers above all, lie on bearers common with this track or close
-	// to it: no break of the grade on them either, so the tracks of the station stay in one plane
-	double constexpr kShared{7.0}; // m, about the spacing of the tracks
-	for (auto *other : simulation::Paths.sequence())
+
+	// the switch of a track beside, off the line, kept as a zone of it where both its ends are near it
+	void zone_shared_switch(TTrack const &Other)
 	{
-		if (other == nullptr || other->eType != tt_Switch || other->m_paths.empty() || false == rail(*other))
-			continue;
-		if (std::ranges::any_of(profile.route.spans, [&](auto const &Span) { return Span.track == other; }))
-			continue;
-		auto const &points{other->m_paths.front().points};
+		auto const &points{Other.m_paths.front().points};
 		double low_end{std::numeric_limits<double>::max()};
 		double high_end{std::numeric_limits<double>::lowest()};
 		for (auto const end : {segment_data::point::start, segment_data::point::end})
@@ -3469,75 +3595,119 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 			}
 		}
 		if (low_end < high_end)
-			profile.context.switches.emplace_back(low_end, high_end, other->name());
+			profile.context.switches.emplace_back(low_end, high_end, Other.name());
 	}
-	std::ranges::sort(profile.context.switches, [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
-	auto settings{profile.line};
-	settings.join_start = true;
-	settings.join_end = true;
-	settings.speed = editor_track::route_speed(profile.route);
-	// the grades as steep as the ground has them, up to 50 per mille whatever the norms of the line; the vertical curves of the norms,
-	// sharper only on a hump of a marshalling yard
-	options.tolerance = kModel;
-	options.grade_max = 50.0;
-	options.follow_length = 60.0;
-	options.follow_height = 4.0;
-	options.follow_steepest = 100.0;
-	options.follow_tolerance = 0.05;
-	options.humps = profile::humps(chainages, ground, profile.context, kModel, tolerances);
-	options.hump_radius = 300.0;
-	for (auto const &hump : options.humps)
-		profile.context.humps.push_back({hump.from, hump.to, {}});
-	auto line{profile::fit_ground(chainages, ground, profile.context, settings, options, tolerances, reaches)};
-	if (line.points.size() < 2)
+
+	// the switches of the tracks beside kept as zones of the line, all of them in order
+	void zone_shared_switches()
 	{
-		nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, STR("No grade line fits the terrain model under the line"));
-		return false;
+		for (auto const *other : simulation::Paths.sequence())
+		{
+			if (other == nullptr || other->eType != tt_Switch || other->m_paths.empty() || false == rail(*other))
+				continue;
+			if (on_route(other))
+				continue;
+			zone_shared_switch(*other);
+		}
+		std::ranges::sort(profile.context.switches, [](auto const &Left, auto const &Right) { return Left.from < Right.from; });
 	}
-	profile.line = std::move(line);
-	profile.selected = -1;
-	profile_check();
-	auto const fitted_line{profile.line};
-	auto const authored{profile.samples};
-	// where the model falls away under the line by the abutments, the line goes over on a bridge or a viaduct: its paths there
-	// are cut off and set to the bridge, the formation is laid up to it, the ground under it stays as the model has it
-	double constexpr kBridged{1.0}; // m
-	double constexpr kAbutment{100.0}; // per mille
-	// spans a few metres apart are one bridge on its piers; what is shorter than that is a culvert under the embankment
-	double constexpr kPier{5.0}; // m
-	double constexpr kCulvert{3.0}; // m
-	double constexpr kFewest{0.03}; // m, how far a path just laid may part from the line before it's cut
-	std::vector<double> heights(count);
-	for (std::size_t i = 0; i < count; ++i)
-		heights[i] = profile::elevation(fitted_line, sampled[i]);
-	std::vector<profile::departure> bridges;
-	for (auto const &stretch : Laid ? std::vector<profile::departure>{} : profile::bridged(sampled, heights, model, kBridged, kAbutment))
-		if (false == bridges.empty() && stretch.from - bridges.back().to < kPier)
+
+	// the ground of the line gathered: the model, the lines fitted already, the crossings, the zones of the switches; false, told,
+	// where the model has nothing under it
+	bool gather_ground()
+	{
+		sample_model();
+		for (auto const &found : crossings_of(editor.m_nmt_state.laid))
+			hold_crossing(found);
+		for (std::size_t i = 0; i < count; ++i)
+			gather_sample(i);
+		if (std::ranges::none_of(ground, [](double const Height) { return std::isfinite(Height); }))
 		{
-			bridges.back().to = stretch.to;
-			bridges.back().depth = std::min(bridges.back().depth, stretch.depth);
+			editor.nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, STR("The terrain model has no data under the line"));
+			return false;
 		}
-		else
-			bridges.push_back(stretch);
-	std::erase_if(bridges, [&](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; });
-	profile.fitting = true;
-	profile_apply(false, bridges, Laid ? kFewest : 0.0);
-	profile.fitting = false;
-	auto const applied{profile.error.empty()};
-	// where the line parts from the model: under it a gap, a bridge or a viaduct, over it a wall or a structure above the track
-	auto const parted{profile::departures(fitted_line, sampled, model, 2.0 * kModel)};
-	if (false == parted.empty())
-		++m_nmt_state.departures;
-	std::size_t agreeing{0};
-	std::size_t modelled{0};
-	for (std::size_t i = 0; i < count; ++i)
-		if (std::isfinite(model[i]))
+		for (auto const &found : crossings_of(editor.m_nmt_state.paths))
+			zone_crossing(found);
+		insert_crossing_holds();
+		zone_shared_switches();
+		return true;
+	}
+
+	// the grade line fitted to the ground and taken into the profile; false, told, where none fits
+	bool fit()
+	{
+		auto settings{profile.line};
+		settings.join_start = true;
+		settings.join_end = true;
+		settings.speed = editor_track::route_speed(profile.route);
+		// the grades as steep as the ground has them, up to 50 per mille whatever the norms of the line; the vertical curves of the norms,
+		// sharper only on a hump of a marshalling yard
+		options.tolerance = kModel;
+		options.grade_max = 50.0;
+		options.follow_length = 60.0;
+		options.follow_height = 4.0;
+		options.follow_steepest = 100.0;
+		options.follow_tolerance = 0.05;
+		options.humps = profile::humps(chainages, ground, profile.context, kModel, tolerances);
+		options.hump_radius = 300.0;
+		for (auto const &hump : options.humps)
+			profile.context.humps.push_back({hump.from, hump.to, {}});
+		auto line{profile::fit_ground(chainages, ground, profile.context, settings, options, tolerances, reaches)};
+		if (line.points.size() < 2)
 		{
-			++modelled;
-			agreeing += std::abs(profile::elevation(fitted_line, sampled[i]) - model[i]) <= kModel ? 1 : 0;
+			editor.nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, middle, STR("No grade line fits the terrain model under the line"));
+			return false;
 		}
-	// how soon past a switch or its shared timbers the grade changes, the nearest break or start of a curve of the line
-	if (applied)
+		profile.line = std::move(line);
+		profile.selected = -1;
+		editor.profile_check();
+		return true;
+	}
+
+	// the stretches the line goes over on a bridge: where the model falls away under it by the abutments, a few metres apart one
+	// bridge, none shorter than a culvert; none for the tracks just laid
+	std::vector<profile::departure> bridges_under() const
+	{
+		std::vector<profile::departure> found;
+		for (auto const &stretch : laid ? std::vector<profile::departure>{} : profile::bridged(sampled, heights, model, kBridged, kAbutment))
+			if (false == found.empty() && stretch.from - found.back().to < kPier)
+			{
+				found.back().to = stretch.to;
+				found.back().depth = std::min(found.back().depth, stretch.depth);
+			}
+			else
+				found.push_back(stretch);
+		std::erase_if(found, [](profile::departure const &Bridge) { return Bridge.to - Bridge.from < kCulvert; });
+		return found;
+	}
+
+	// the line applied to the paths, the bridges cut off; where it parts from the model and how much of it lies on it
+	void apply()
+	{
+		fitted_line = profile.line;
+		authored = profile.samples;
+		heights.resize(count);
+		for (std::size_t i = 0; i < count; ++i)
+			heights[i] = profile::elevation(fitted_line, sampled[i]);
+		bridges = bridges_under();
+		profile.fitting = true;
+		editor.profile_apply(false, bridges, laid ? kFewest : 0.0);
+		profile.fitting = false;
+		applied = profile.error.empty();
+		// where the line parts from the model: under it a gap, a bridge or a viaduct, over it a wall or a structure above the track
+		parted = profile::departures(fitted_line, sampled, model, 2.0 * kModel);
+		if (false == parted.empty())
+			++editor.m_nmt_state.departures;
+		for (std::size_t i = 0; i < count; ++i)
+			if (std::isfinite(model[i]))
+			{
+				++modelled;
+				agreeing += std::abs(profile::elevation(fitted_line, sampled[i]) - model[i]) <= kModel ? 1 : 0;
+			}
+	}
+
+	// how soon past a switch or its shared timbers the grade changes, the nearest break or start of a curve of the line, logged
+	void log_grade_change() const
 	{
 		auto const breaks{profile::breaks(profile.line)};
 		double nearest_gap{std::numeric_limits<double>::max()};
@@ -3545,7 +3715,11 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		for (auto const &zone : profile.context.switches)
 			for (auto const break_at : breaks)
 			{
-				auto const gap{break_at >= zone.to ? break_at - zone.to : break_at <= zone.from ? zone.from - break_at : -1.0};
+				auto gap{-1.0};
+				if (break_at >= zone.to)
+					gap = break_at - zone.to;
+				else if (break_at <= zone.from)
+					gap = zone.from - break_at;
 				if (gap >= 0.0 && gap < nearest_gap)
 				{
 					nearest_gap = gap;
@@ -3555,115 +3729,161 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		if (false == where.empty())
 			WriteLog(format("Editor: NMT line %s .. %s: the grade changes %s", from->name().c_str(), to->name().c_str(), where.c_str()), logtype::generic);
 	}
-	// where the paths didn't take the line
-	double off{0.0};
-	std::size_t off_at{0};
-	if (applied)
-		for (std::size_t i = 0; i < profile.samples.size(); ++i)
-			if (auto const departure{std::abs(profile.samples[i].position.y - profile::elevation(profile.line, profile.samples[i].chainage))}; departure > off)
-			{
-				off = departure;
-				off_at = i;
-			}
-	if (off > 0.05)
+
+	// where the paths didn't take the line, the farthest they keep off it, logged
+	void find_off()
 	{
-		auto const &sample{profile.samples[off_at]};
-		auto const *track{profile.route.spans[sample.span].track};
-		WriteLog(format("Editor: NMT line %s: the path %s (%s, %.0f m) is off the line by %.3f m at %.0f m", Track.name().c_str(), track->name().c_str(), track->eType == tt_Switch ? "switch" : "track", track->Length(), off, sample.chainage), logtype::generic);
-	}
-	// the tracks of the route the hump lies over taken for ones on a hump
-	auto const on_hump = [&](auto const &Hump) {
-		for (auto const &span : profile.route.spans)
-			if (span.from < Hump.to && span.to > Hump.from)
-				m_nmt_state.on_hump.insert(span.track);
-	};
-	if (applied)
-		for (auto const &hump : options.humps)
-			on_hump(hump);
-	if (applied)
-		for (auto const &sample : profile.samples)
+		if (applied)
+			for (std::size_t i = 0; i < profile.samples.size(); ++i)
+				if (auto const departure{std::abs(profile.samples[i].position.y - profile::elevation(profile.line, profile.samples[i].chainage))}; departure > off)
+				{
+					off = departure;
+					off_at = i;
+				}
+		if (off > 0.05)
 		{
-			auto const *track{sample.span < profile.route.spans.size() ? profile.route.spans[sample.span].track : nullptr};
-			m_nmt_state.laid[{static_cast<int>(std::floor(sample.position.x / kPlanCell)), static_cast<int>(std::floor(sample.position.z / kPlanCell))}].emplace_back(
-			    sample.position, sample.direction, sample.grade, editor_track::sampled_elevation(authored, sample.chainage), track != nullptr ? static_cast<double>(track->rail_height()) : 0.0, track);
+			auto const &sample{profile.samples[off_at]};
+			auto const *off_track{profile.route.spans[sample.span].track};
+			WriteLog(format("Editor: NMT line %s: the path %s (%s, %.0f m) is off the line by %.3f m at %.0f m", track.name().c_str(), off_track->name().c_str(), off_track->eType == tt_Switch ? "switch" : "track", off_track->Length(), off, sample.chainage),
+			         logtype::generic);
 		}
-	auto const spans{applied ? bridges : std::vector<profile::departure>{}};
-	for (auto const &stretch : spans)
-		for (std::size_t i = 0; i < count; ++i)
-			if (sampled[i] >= stretch.from && sampled[i] <= stretch.to)
-				m_nmt_state.bridged[{static_cast<int>(std::floor(plan[i].x / kPlanCell)), static_cast<int>(std::floor(plan[i].y / kPlanCell))}].emplace_back(plan[i].x, heights[i], plan[i].y);
-	// told in the panel too: the line refused and why, the path which didn't take it, the worst place where it parts from the model
-	// other than over a bridge found
-	auto const place_at = [&](double const Chainage) {
-		return std::ranges::min_element(profile.samples, [&](auto const &A, auto const &B) { return std::abs(A.chainage - Chainage) < std::abs(B.chainage - Chainage); })->position;
-	};
-	if (false == applied)
+	}
+
+	// what the line applied leaves for the lines fitted after it: the tracks of its humps, its rail tops, the places of its bridges
+	void keep_applied()
 	{
-		auto why{profile.error};
-		for (auto const &issue : profile.issues)
-			if (issue.error)
+		// the tracks of the route the hump lies over taken for ones on a hump
+		auto const on_hump = [this](auto const &Hump) {
+			for (auto const &span : profile.route.spans)
+				if (span.from < Hump.to && span.to > Hump.from)
+					editor.m_nmt_state.on_hump.insert(span.track);
+		};
+		if (applied)
+			for (auto const &hump : options.humps)
+				on_hump(hump);
+		if (applied)
+			for (auto const &sample : profile.samples)
 			{
-				why += (why.empty() ? "" : ": ") + issue.text;
-				break;
+				auto const *sample_track{track_of(sample)};
+				editor.m_nmt_state.laid[{static_cast<int>(std::floor(sample.position.x / kPlanCell)), static_cast<int>(std::floor(sample.position.z / kPlanCell))}].emplace_back(
+				    sample.position, sample.direction, sample.grade, editor_track::sampled_elevation(authored, sample.chainage), sample_track != nullptr ? static_cast<double>(sample_track->rail_height()) : 0.0, sample_track);
 			}
-		nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, place_at(0.5 * profile.route.length), why);
+		spans = applied ? bridges : std::vector<profile::departure>{};
+		for (auto const &stretch : spans)
+			for (std::size_t i = 0; i < count; ++i)
+				if (sampled[i] >= stretch.from && sampled[i] <= stretch.to)
+					editor.m_nmt_state.bridged[{static_cast<int>(std::floor(plan[i].x / kPlanCell)), static_cast<int>(std::floor(plan[i].y / kPlanCell))}].emplace_back(plan[i].x, heights[i], plan[i].y);
 	}
-	else if (off > 0.05)
+
+	// the place of the sample nearest the chainage
+	glm::dvec3 place_at(double const Chainage) const
 	{
-		auto const &sample{profile.samples[off_at]};
-		nmt_note(nmt_state::finding::kind::off, from, to, profile.route.length, sample.position, format(STR_C("The path %s keeps off the line by %.2f m"), profile.route.spans[sample.span].track->name().c_str(), off), off);
+		return std::ranges::min_element(profile.samples, [&](auto const &A, auto const &B) { return std::abs(A.chainage - Chainage) < std::abs(B.chainage - Chainage); })->position;
 	}
-	if (applied)
+
+	// told in the panel too: the line refused and why, the path which didn't take it
+	void note_refused_or_off() const
 	{
-		// a ditch or a culvert of a few metres under the line, a few decimetres of the model, is no news: what's long and deep is
+		if (false == applied)
+		{
+			auto why{profile.error};
+			if (auto const issue{std::ranges::find_if(profile.issues, [](auto const &Issue) { return Issue.error; })}; issue != profile.issues.end())
+				why += (why.empty() ? "" : ": ") + issue->text;
+			editor.nmt_note(nmt_state::finding::kind::refused, from, to, profile.route.length, place_at(0.5 * profile.route.length), why);
+		}
+		else if (off > 0.05)
+		{
+			auto const &sample{profile.samples[off_at]};
+			editor.nmt_note(nmt_state::finding::kind::off, from, to, profile.route.length, sample.position, format(STR_C("The path %s keeps off the line by %.2f m"), profile.route.spans[sample.span].track->name().c_str(), off), off);
+		}
+	}
+
+	// told in the panel too: the worst place where the line applied parts from the model other than over a bridge found. A ditch or a
+	// culvert of a few metres under the line, a few decimetres of the model, is no news: what's long and deep is
+	void note_parted() const
+	{
 		double constexpr kTold{0.5}; // m
 		double constexpr kToldLength{10.0}; // m
 		profile::departure const *worst{nullptr};
 		for (auto const &stretch : parted)
 			if (std::abs(stretch.depth) >= kTold && stretch.to - stretch.from >= kToldLength &&
-			    false == std::ranges::any_of(spans, [&](profile::departure const &Bridge) { return stretch.depth < 0.0 && stretch.from < Bridge.to && stretch.to > Bridge.from; }) &&
-			    (worst == nullptr || std::abs(stretch.depth) > std::abs(worst->depth)))
+			    false == std::ranges::any_of(spans, [&](profile::departure const &Bridge) { return stretch.depth < 0.0 && stretch.from < Bridge.to && stretch.to > Bridge.from; }) && (worst == nullptr || std::abs(stretch.depth) > std::abs(worst->depth)))
 				worst = &stretch;
-		if (worst != nullptr)
-			nmt_note(nmt_state::finding::kind::parted, from, to, profile.route.length, place_at(0.5 * (worst->from + worst->to)),
-			         worst->depth < 0.0 ? format(STR_C("Over a dip of the model %.1f m deep along %.0f m: a bridge, a culvert or the model off"), -worst->depth, worst->to - worst->from)
-			                            : format(STR_C("Under the model by %.1f m along %.0f m: a cutting, a wall or the model off"), worst->depth, worst->to - worst->from),
-			         std::abs(worst->depth));
+		if (worst == nullptr)
+			return;
+		std::string text;
+		if (worst->depth < 0.0)
+			text = format(STR_C("Over a dip of the model %.1f m deep along %.0f m: a bridge, a culvert or the model off"), -worst->depth, worst->to - worst->from);
+		else
+			text = format(STR_C("Under the model by %.1f m along %.0f m: a cutting, a wall or the model off"), worst->depth, worst->to - worst->from);
+		editor.nmt_note(nmt_state::finding::kind::parted, from, to, profile.route.length, place_at(0.5 * (worst->from + worst->to)), text, std::abs(worst->depth));
 	}
+
 	// the line in the log: how much of it lies on the model, where it parts from it, its grades, why it wasn't applied, its
 	// course in the plan
-	std::string text{format("Editor: NMT line %s: %s .. %s, %.0f m, on the model within %.2f m over %.1f%%, parts from it", applied ? "applied" : "refused", from->name().c_str(), to->name().c_str(), profile.route.length, kModel,
-	                        100.0 * static_cast<double>(agreeing) / static_cast<double>(std::max<std::size_t>(1, modelled)))};
-	for (auto const &stretch : parted)
-		text += format(" %s %.0f..%.0f %.1f m", stretch.depth < 0.0 ? "under" : "over", stretch.from, stretch.to, std::abs(stretch.depth));
-	if (false == spans.empty())
+	void log_line() const
 	{
-		text += ", bridged";
-		for (auto const &stretch : spans)
-			text += format(" %.0f..%.0f", stretch.from, stretch.to);
+		std::string text{format("Editor: NMT line %s: %s .. %s, %.0f m, on the model within %.2f m over %.1f%%, parts from it", applied ? "applied" : "refused", from->name().c_str(), to->name().c_str(), profile.route.length, kModel,
+		                        100.0 * static_cast<double>(agreeing) / static_cast<double>(std::max<std::size_t>(1, modelled)))};
+		for (auto const &stretch : parted)
+			text += format(" %s %.0f..%.0f %.1f m", stretch.depth < 0.0 ? "under" : "over", stretch.from, stretch.to, std::abs(stretch.depth));
+		if (false == spans.empty())
+		{
+			text += ", bridged";
+			for (auto const &stretch : spans)
+				text += format(" %.0f..%.0f", stretch.from, stretch.to);
+		}
+		for (auto const &hump : options.humps)
+			text += format(", a hump %.0f..%.0f, its crest at %.0f %.1f m high", hump.from, hump.to, hump.crest, hump.height);
+		text += ", grades";
+		for (std::size_t i = 1; i < fitted_line.points.size(); ++i)
+		{
+			auto const &a{fitted_line.points[i - 1]};
+			auto const &b{fitted_line.points[i]};
+			text += format(" %+.2f/%.0f", 1000.0 * (b.elevation - a.elevation) / std::max(1e-6, b.chainage - a.chainage), b.chainage - a.chainage);
+		}
+		if (false == applied)
+		{
+			text += "; " + profile.error;
+			for (auto const &issue : profile.issues)
+				if (issue.error)
+					text += " | " + issue.text;
+		}
+		text += "; plan";
+		for (std::size_t i = 0; i < profile.samples.size(); i += 10)
+			text += format(" %.1f,%.1f", profile.samples[i].position.x, profile.samples[i].position.z);
+		text += format(" %.1f,%.1f", profile.samples.back().position.x, profile.samples.back().position.z);
+		WriteLog(text, logtype::generic);
 	}
-	for (auto const &hump : options.humps)
-		text += format(", a hump %.0f..%.0f, its crest at %.0f %.1f m high", hump.from, hump.to, hump.crest, hump.height);
-	text += ", grades";
-	for (std::size_t i = 1; i < fitted_line.points.size(); ++i)
+
+	// the steps one after another; whether the line was applied
+	bool run()
 	{
-		auto const &a{fitted_line.points[i - 1]};
-		auto const &b{fitted_line.points[i]};
-		text += format(" %+.2f/%.0f", 1000.0 * (b.elevation - a.elevation) / std::max(1e-6, b.chainage - a.chainage), b.chainage - a.chainage);
+		if (false == take_line())
+			return false;
+		join_ends();
+		run_up_turntables();
+		for (auto const &exiting : exits())
+			walk_exit(exiting);
+		if (false == gather_ground() || false == fit())
+			return false;
+		apply();
+		if (applied)
+			log_grade_change();
+		find_off();
+		keep_applied();
+		note_refused_or_off();
+		if (applied)
+			note_parted();
+		log_line();
+		return applied;
 	}
-	if (false == applied)
-	{
-		text += "; " + profile.error;
-		for (auto const &issue : profile.issues)
-			if (issue.error)
-				text += " | " + issue.text;
-	}
-	text += "; plan";
-	for (std::size_t i = 0; i < profile.samples.size(); i += 10)
-		text += format(" %.1f,%.1f", profile.samples[i].position.x, profile.samples[i].position.z);
-	text += format(" %.1f,%.1f", profile.samples.back().position.x, profile.samples.back().position.z);
-	WriteLog(text, logtype::generic);
-	return applied;
+};
+
+bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)> const &Fitted, bool const Laid)
+{
+	nmt_line_fit fit{m_profile, *this, Track, Fitted, Laid};
+	return fit.run();
 }
 
 void editor_mode::nmt_sample_paths(TTrack const &Track, std::map<std::pair<int, int>, std::vector<nmt_state::laid_point>> &Points)
