@@ -213,6 +213,53 @@ std::string const *replaced_under(TTrack const &Track, std::vector<std::pair<std
 	return nullptr;
 }
 
+// the moves of the ends of the paths of the tracks beside the route, by what it changed by abreast of them: true where one of them moves
+bool beside_moves(std::vector<TTrack *> const &Beside, std::set<point_key> const &Ends, std::vector<editor_track::route_sample> const &After, std::vector<editor_track::route_sample> const &Before, std::map<point_key, double> &Moves)
+{
+	auto any{false};
+	for (auto const *track : Beside)
+		for (auto const &path : track->m_paths)
+			if (path_moves(path, Ends, After, Before, Moves))
+				any = true;
+	return any;
+}
+
+// an end of a path of the track moves
+bool track_moves(TTrack const &Track, std::map<point_key, double> const &Moves)
+{
+	return std::ranges::any_of(Track.m_paths, [&Moves](auto const &Path) { return Moves.contains(key_of(Path.points[segment_data::point::start])) || Moves.contains(key_of(Path.points[segment_data::point::end])); });
+}
+
+// whatever lies on common timbers with the route and the tracks beside it, on a grade line or not, goes with them: those stay on one
+// surface
+template <typename Places>
+void add_on_timbers(Places const &All, std::unordered_set<TTrack const *> const &Route, std::vector<TTrack *> &Beside)
+{
+	std::unordered_set<TTrack const *> taken{Route};
+	taken.insert(Beside.begin(), Beside.end());
+	std::unordered_set<int> surfaces;
+	for (auto const &place : All)
+		if (taken.contains(place.track))
+			surfaces.insert(place.surface);
+	for (auto const &place : All)
+		if (surfaces.contains(place.surface) && taken.insert(place.track).second && false == place.track->m_editorremoved)
+			Beside.push_back(const_cast<TTrack *>(place.track)); // NOSONAR: the places point to the tracks of the simulation, none of which is a const object
+}
+
+// the button picking the tracks of the common grade line, or ending it
+void render_pick_button(bool &Picking, bool const Shared)
+{
+	if (Picking)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.55f, 0.1f, 1.0f));
+		if (ImGui::Button(STR_C("Click the tracks in the view, Esc: done"), ImVec2(-FLT_MIN, 0.0f)))
+			Picking = false;
+		ImGui::PopStyleColor();
+	}
+	else if (ImGui::Button(Shared ? STR_C("Put tracks on it or take them off...") : STR_C("Make a common grade line..."), ImVec2(-FLT_MIN, 0.0f)))
+		Picking = true;
+}
+
 } // namespace
 
 // the ends of the path up or down by these, what's between them in proportion; After is given the path and each of its pieces then
@@ -354,15 +401,7 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 			state.beside.push_back(track);
 	}
 	// and whatever lies on common timbers with them, on a grade line or not: those stay on one surface
-	std::unordered_set<TTrack const *> taken{route};
-	taken.insert(state.beside.begin(), state.beside.end());
-	std::unordered_set<int> surfaces;
-	for (auto const &place : m_nmt_state.surface_places)
-		if (taken.contains(place.track))
-			surfaces.insert(place.surface);
-	for (auto const &place : m_nmt_state.surface_places)
-		if (surfaces.contains(place.surface) && taken.insert(place.track).second && false == place.track->m_editorremoved)
-			state.beside.push_back(const_cast<TTrack *>(place.track)); // NOSONAR: the places point to the tracks of the simulation, none of which is a const object
+	add_on_timbers(m_nmt_state.surface_places, route, state.beside);
 	return state.beside;
 }
 
@@ -383,12 +422,7 @@ std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sampl
 	std::unordered_set<TTrack const *> route;
 	route_ends_of(state.route, route_ends, route);
 	std::map<point_key, double> moves;
-	auto any{false};
-	for (auto const *track : beside)
-		for (auto const &path : track->m_paths)
-			if (path_moves(path, route_ends, after, Before, moves))
-				any = true;
-	if (false == any)
+	if (false == beside_moves(beside, route_ends, after, Before, moves))
 		return 0;
 	// the tracks going on from them off the grade line take the change in over a length, however short each of them is
 	std::unordered_set<TTrack const *> const members(beside.begin(), beside.end());
@@ -403,7 +437,7 @@ std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sampl
 	{
 		if (track == nullptr || track->m_editorremoved || route.contains(track))
 			continue;
-		if (false == std::ranges::any_of(track->m_paths, [&moves](auto const &Path) { return moves.contains(key_of(Path.points[segment_data::point::start])) || moves.contains(key_of(Path.points[segment_data::point::end])); }))
+		if (false == track_moves(*track, moves))
 			continue;
 		edit.capture(*track);
 		moved.push_back(track);
@@ -820,15 +854,7 @@ void editor_mode::render_profile_grade_line()
 		ImGui::TextUnformatted(format(STR_C("Common grade line %d, %zu tracks on it"), number + 1, grade_line_members(number).size()).c_str());
 	else
 		ImGui::TextDisabled("%s", STR_C("The route shares no grade line with other tracks"));
-	if (state.picking)
-	{
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.55f, 0.1f, 1.0f));
-		if (ImGui::Button(STR_C("Click the tracks in the view, Esc: done"), ImVec2(-FLT_MIN, 0.0f)))
-			state.picking = false;
-		ImGui::PopStyleColor();
-	}
-	else if (ImGui::Button(shared > 0 ? STR_C("Put tracks on it or take them off...") : STR_C("Make a common grade line..."), ImVec2(-FLT_MIN, 0.0f)))
-		state.picking = true;
+	render_pick_button(state.picking, shared > 0);
 	item_tooltip("Then click the tracks in the view: a click puts the stretch from switch to switch on the common grade line of the route, on a blue one takes it off; Shift+click the track only.\nWhat's set by hand stays when the lines are worked out again from the terrain model; there needn't be one");
 	if (shared > 0)
 	{
