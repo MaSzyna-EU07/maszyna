@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
+#include <format>
 #include <map>
 #include <optional>
 #include <set>
@@ -1919,7 +1920,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		{
 			names += ", ...";
 		}
-		WriteLog("Scenery save: " + std::to_string(unwritten.size()) + " changed nodes not saved, their files are included with parameters or more than once: " + names, logtype::generic);
+		WriteLog(std::format("Scenery save: {} changed nodes not saved, their files are included with parameters or more than once: {}", unwritten.size(), names), logtype::generic);
 		auto const warning{format(STR_C("Changed nodes left unsaved (their files are included with parameters or more than once): %zu, %s"), unwritten.size(), names.c_str())};
 		result.message = result.files.empty() ? warning : result.message + ". " + warning;
 	}
