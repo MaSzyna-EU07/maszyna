@@ -78,11 +78,21 @@ void add_unique(std::vector<TTrack *> &Tracks, TTrack *Track)
 // simulator takes for a straight
 double const kBentOff{0.025};
 
-// a path the simulator draws straight, its first control vector lying along the chord, though the second one is dragged off it: the
+// whether the simulator draws the path bent: it takes one with its first control vector within 2 cm of a third of the chord for a
+// straight
+bool drawn_bent(segment_data const &Path)
+{
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	return (control1 != glm::dvec3{} || control2 != glm::dvec3{}) && false == TTrack::straightened(Path.points[segment_data::point::start], control1, Path.points[segment_data::point::end]);
+}
+
+// a path the simulator would draw straight, its first control vector lying along the chord, though the second one is off it: the
 // first one made longer by just past the tolerance, so the bend is drawn, saved and read back as one. Its direction is kept, so is
-// the tangent at the start and the joint there; the path moves along itself by under a centimetre. The second one back along the
-// chord, the first one goes back to a third of it
-void keep_bent(TTrack const &Track, segment_data &Path)
+// the tangent at the start and the joint there; the path moves along itself by under a centimetre. Called where an edit sets the
+// second vector, or keeps a path drawn bent so. Undo: the second one back along the chord, a first one made longer here goes back to
+// a third of the chord, its direction kept too
+void keep_bent(TTrack const &Track, segment_data &Path, bool const Undo)
 {
 	if (Track.eType == tt_Cross)
 		return;
@@ -97,11 +107,9 @@ void keep_bent(TTrack const &Track, segment_data &Path)
 	auto const axis{chord / length};
 	if (glm::length(control2 - axis * glm::dot(control2, axis)) < 0.02)
 	{
-		// along the chord, within the tolerance or as long as made here: back to the third
-		auto const along{glm::dot(control1, axis)};
-		auto const across{glm::length(control1 - axis * along)};
-		if (across < 0.02 && along > length / 3.0 - 0.02 && along < length / 3.0 + kBentOff + 0.005)
-			control1 = chord / 3.0;
+		auto const third{glm::normalize(control1) * (length / 3.0)};
+		if (Undo && std::abs(glm::length(control1) - (length / 3.0 + kBentOff)) < 0.005 && TTrack::straightened(start, third, end))
+			control1 = third;
 		return;
 	}
 	if (TTrack::straightened(start, control1, end))
@@ -675,6 +683,11 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 	case point_kind::start:
 	case point_kind::end:
 	{
+		// the paths drawn bent are kept so, a new chord can bring a first control vector back within the tolerance; the ones drawn
+		// straight are left to the simulator as they are
+		std::vector<bool> bent;
+		for (auto const &each : Track.m_paths)
+			bent.push_back(drawn_bent(each));
 		auto &point{path.points[point_index(Point.kind)]};
 		auto const oldposition{point};
 		point = Position;
@@ -686,23 +699,23 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 				if (glm::distance(otherpath.points[index], oldposition) < kSamePoint)
 					otherpath.points[index] = Position;
 		}
-		// a new chord can bring a first control vector made longer back within the tolerance
-		for (auto &each : Track.m_paths)
-			keep_bent(Track, each);
+		for (std::size_t index = 0; index < Track.m_paths.size(); ++index)
+			if (bent[index])
+				keep_bent(Track, Track.m_paths[index], false);
 		break;
 	}
 	case point_kind::control1:
 	{
 		auto control{Position - path.points[segment_data::point::start]};
 		path.points[segment_data::point::control1] = (glm::length(control) < 0.01 ? glm::dvec3{} : control);
-		keep_bent(Track, path);
+		keep_bent(Track, path, false);
 		break;
 	}
 	case point_kind::control2:
 	{
 		auto control{Position - path.points[segment_data::point::end]};
 		path.points[segment_data::point::control2] = (glm::length(control) < 0.01 ? glm::dvec3{} : control);
-		keep_bent(Track, path);
+		keep_bent(Track, path, true);
 		break;
 	}
 	}
@@ -809,6 +822,7 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		auto &path{joint.other->m_paths[joint.theirs.path]};
 		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
+		bool const bent{drawn_bent(path)};
 		auto const fixed{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::end : segment_data::point::start]};
 		auto const before{plan_of(path.points[point_index(joint.theirs.kind)] - fixed)};
 		auto const target{point_position(Track, joint.own)};
@@ -823,6 +837,9 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		}
 		auto const moved{turned(plan_of(joint.control), angle)};
 		control = {moved.x, joint.control.y, moved.y};
+		// the second vector turned with the track it follows, or a path drawn bent: kept bent
+		if (bent || joint.theirs.kind == point_kind::end)
+			keep_bent(*joint.other, path, false);
 	}
 }
 
@@ -834,8 +851,12 @@ void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &J
 			continue;
 		geometry::bezier const own{Track.m_paths[joint.own.path]};
 		auto const outward{joint.own.kind == point_kind::start ? -own.first(0.0) : own.first(1.0)};
-		auto &control{joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto &path{joint.other->m_paths[joint.theirs.path]};
+		bool const bent{drawn_bent(path)};
+		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 		control.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control));
+		if (bent || joint.theirs.kind == point_kind::end)
+			keep_bent(*joint.other, path, false);
 	}
 }
 
@@ -1047,8 +1068,10 @@ void editor_track::align_controls(TTrack const &Track, point_ref const &Control,
 		auto &control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
 		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
 		auto const same{partner.first == &Track && partner.second.kind == end_of(Control).kind};
+		bool const bent{drawn_bent(path)};
 		control = (same ? direction : -direction) * length;
-		keep_bent(*partner.first, path);
+		if (bent || false == start)
+			keep_bent(*partner.first, path, false);
 	}
 }
 
@@ -1130,9 +1153,10 @@ std::vector<editor_track::snap_target> editor_track::free_ends(TTrack const *Sel
 
 void editor_track::snap_point(TTrack &Track, point_ref const &Point, snap_target const &Target, bool const Aligntangent)
 {
-	if (Target.track == nullptr || false == editor_track::is_end(Point.kind))
+	if (Target.track == nullptr || false == editor_track::is_end(Point.kind) || Point.path < 0 || Point.path >= static_cast<int>(Track.m_paths.size()))
 		return;
 
+	bool const bent{drawn_bent(Track.m_paths[Point.path])};
 	move_point(Track, Point, Target.position);
 	if (false == Aligntangent)
 		return;
@@ -1143,7 +1167,9 @@ void editor_track::snap_point(TTrack &Track, point_ref const &Point, snap_target
 	auto &control{path.points[Point.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 	auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(start, end) / 3.0};
 	control = -Target.direction * length;
-	keep_bent(Track, path);
+	// the end turned to the neighbour's tangent, or a path drawn bent: kept bent
+	if (bent || Point.kind == point_kind::end)
+		keep_bent(Track, path, false);
 }
 
 std::string editor_track::material_name(material_handle const Material)
