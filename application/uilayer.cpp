@@ -288,6 +288,11 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	if (Global.test.enabled)
+	{
+		// a test leaves the player's window layout alone (imgui.ini in the game folder), runs in parallel included
+		m_imguiio->IniFilename = nullptr;
+	}
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = ImGuiKey_None;
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = ImGuiKey_None;
 	// imgui.ini is read with the first frame, which may be of another mode than the editor
