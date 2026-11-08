@@ -37,10 +37,11 @@ With `--test` the simulator:
   line on stdout and in the log. A command line it can't take, or a start that fails, ends
   the same way with the `error` code.
 
-On Windows the simulator is a windowed program, so `cmd` and PowerShell don't wait for it nor
-show its output by themselves: run it with `start /wait eu07 --test ... > result.txt` and read
-`%errorlevel%` in `cmd`, or `(Start-Process eu07 '--test ...' -Wait -PassThru -RedirectStandardOutput result.txt).ExitCode`
-in PowerShell. Scripts (Python's `subprocess`, bash) wait for it as for any other program.
+On Windows the simulator is a windowed program, which the `cmd` prompt and PowerShell don't wait
+for. In a `.bat` file `eu07 --test ... > result.txt` waits and sets `%errorlevel%`; at the prompt
+`start /wait eu07 --test ...` waits too but doesn't pass the output on. In PowerShell use
+`(Start-Process eu07 '--test ...' -Wait -PassThru -RedirectStandardOutput result.txt).ExitCode`.
+Scripts (Python's `subprocess`, bash) wait for it as for any other program.
 
 A scenery reports its result to the memory cell `__test.result`, which the simulator creates
 (in every run, so a test scenery loads normally too). Write value 1 to it for a pass and 0
