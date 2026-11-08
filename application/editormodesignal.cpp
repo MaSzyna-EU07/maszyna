@@ -98,6 +98,7 @@ char const *mount_label(std::string_view const Mount)
 double constexpr kGaugeSlack{0.01}; // m, an entry into the gauge this shallow is let be
 double constexpr kGaugeMargin{0.03}; // m, kept from the outline by a signal taken off it
 int constexpr kGaugeSteps{4}; // of taking a signal off the gauges, between two tracks too close it can't keep out of both
+double constexpr kGaugeLevel{2.0}; // m, of a track from the foot of the signal, beyond it the signal isn't taken aside from it
 
 // the models of the include standing around the place
 std::vector<TAnimModel *> include_models(scene::instance_handle const Instance, glm::dvec3 const &Location)
@@ -825,8 +826,9 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	auto const &included{scene::Layers.instance(instance)};
 	auto file{*included.file};
 	signal_spot before;
+	auto const stood{signal_standing_spot(Standing, before)};
 	auto const *item{signal_template_of(Standing.include.file)};
-	if (item != nullptr && signal_standing_spot(Standing, before) && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
+	if (item != nullptr && stood && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
 		file = signal_variant(*item, Spot);
 	auto values{Standing.include.values};
 	auto const local{Spot.position - included.context.offset};
@@ -847,15 +849,16 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 		std::string missing;
 		editor_track::bind_events(*Spot.reader, missing);
 		Spot.reader->mark_dirty();
-		// the reads picked by hand stay where they were; turned, the signal is read by the other list of each of them
+		// the reads picked by hand stay where they were, all but the one the signal got by the track it stood by, which goes with it;
+		// turned, the signal is read by the other list of each of them
 		auto const turned{glm::dot(travel_of(Standing.include.yaw), travel_of(Spot.yaw)) < 0.0};
-		for (std::size_t i = 1; i < Standing.reads.size(); ++i)
+		for (std::size_t i = 0; i < Standing.reads.size(); ++i)
 		{
 			auto [track, list] = Standing.reads[i];
-			if (false == track->Dynamics.empty())
+			if (stood ? track == before.reader && list == before.reader_list : i == 0)
 				continue;
-			if (turned && (list == 1 || list == 2))
-				list = 3 - list;
+			if (turned && list % 3 != 0)
+				list = list % 3 == 1 ? list + 1 : list - 1;
 			if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == track; }))
 				states.emplace_back(track, editor_track::capture(*track));
 			auto &events{editor_track::events(*track, list)};
@@ -914,8 +917,8 @@ double editor_mode::signal_off_gauge(scene::instance_handle const Instance, std:
 {
 	auto const offset{scene::Layers.instance(Instance).context.offset};
 	auto const given{Values};
+	auto const start{Local};
 	gauge_tool::gauge_hit first;
-	double shift{0.0};
 	for (int step = 0;; ++step)
 	{
 		auto const location{Local + offset};
@@ -923,7 +926,7 @@ double editor_mode::signal_off_gauge(scene::instance_handle const Instance, std:
 		if (step == 0)
 			first = Hit;
 		if (Hit.depth <= kGaugeSlack || Hit.track == nullptr || Hit.track->m_paths.empty())
-			return shift;
+			return geometry::plan_distance(Local, start);
 		if (step == kGaugeSteps)
 		{
 			// no room for it: it stays where it was put, the status tells the gauge it enters
@@ -936,12 +939,14 @@ double editor_mode::signal_off_gauge(scene::instance_handle const Instance, std:
 		auto const &track{*Hit.track};
 		auto const path{std::clamp(Hit.path, 0, static_cast<int>(track.m_paths.size()) - 1)};
 		auto const axis{bezier{track.m_paths[path]}.point(nearest_on(track, path, location))};
+		// a track on another level, under a bridge or over it, isn't left by a step aside: the signal stays, the gauge told
+		if (std::abs(axis.y - location.y) > kGaugeLevel)
+			return geometry::plan_distance(Local, start);
 		auto const normal{right_of(Hit.direction)};
 		auto const side{glm::dot(plan_of(location) - plan_of(axis), normal) >= 0.0 ? 1.0 : -1.0};
 		auto const away{normal * (side * (Hit.depth + kGaugeMargin))};
 		Local.x += away.x;
 		Local.z += away.y;
-		shift += Hit.depth + kGaugeMargin;
 		Values[1] = editor_includes::number(Local.x);
 		Values[2] = editor_includes::number(Local.y);
 		Values[3] = editor_includes::number(Local.z);
@@ -2251,10 +2256,11 @@ void editor_mode::render_signal_selected()
 	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
 	// the gauge of the tracks around, measured again after each change
 	auto &gauge{m_signal.gauge};
-	if (gauge.instance != instance || gauge.history != history_revision())
+	if (gauge.instance != instance || gauge.history != history_revision() || gauge.location != found->include.location)
 	{
 		gauge.instance = instance;
 		gauge.history = history_revision();
+		gauge.location = found->include.location;
 		gauge.hit = signal_gauge(instance);
 	}
 	if (gauge.hit.depth > kGaugeSlack && gauge.hit.track != nullptr)
@@ -2608,7 +2614,7 @@ void editor_mode::draw_signal_overlay() const
 			preview(spot, overlay_color::marked, false == template_armed->read.empty());
 	}
 	// the deepest place of the selected signal in the gauge of a track
-	if (auto const &gauge{tool.gauge}; tool.selected != 0 && gauge.instance == tool.selected && gauge.hit.depth > kGaugeSlack && gauge.hit.track != nullptr)
+	if (auto const &gauge{tool.gauge}; tool.selected != 0 && gauge.instance == tool.selected && gauge.history == history_revision() && gauge.hit.depth > kGaugeSlack && gauge.hit.track != nullptr)
 	{
 		ImU32 const warning{IM_COL32(255, 70, 50, 255)};
 		ImVec2 at;

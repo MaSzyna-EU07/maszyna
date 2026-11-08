@@ -2693,6 +2693,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		{
 			scene::instance_handle instance{0};
 			std::size_t history{static_cast<std::size_t>(-1)};
+			glm::dvec3 location{0.0}; // of the signal, which follows a dragged track without a new step of the history
 			gauge_tool::gauge_hit hit;
 		} gauge;
 		std::string status;

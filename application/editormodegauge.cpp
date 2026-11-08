@@ -589,12 +589,12 @@ gauge_tool::gauge_hit gauge_tool::gauge_models(std::vector<TAnimModel *> const &
 	std::vector<gauge_line> lines;
 	for (auto *track : simulation::Paths.sequence())
 	{
-		if (track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track) || outline_of(choice, *track) == nullptr)
+		if (track == nullptr || track->m_editorremoved)
 			continue;
 		auto const close{std::any_of(Models.begin(), Models.end(), [&](TAnimModel const *Model) {
 			return Model != nullptr && geometry::plan_distance(Model->location(), track->location()) <= static_cast<double>(Model->radius() + track->radius()) + 6.0;
 		})};
-		if (false == close)
+		if (false == close || false == editor_track::is_supported(*track) || outline_of(choice, *track) == nullptr)
 			continue;
 		for (int path = 0; path < static_cast<int>(track->m_paths.size()); ++path)
 		{
