@@ -154,11 +154,12 @@ void TSecuritySystem::update(double dt, double vel, bool pwr, int cab)
 
 	if (vigilance_suspended)
 	{
-		// the vigilance device is switched off: neither the alerter nor the button held too long, its alarm gone with it
-		vigilance_timer = 0.0;
-		press_timer = 0.0;
-		if (!cabsignal_active)
-			alert_timer = 0.0;
+		// the vigilance device is switched off: no time counts towards a new alarm, of the alerter or of the button held
+		// too long. an alarm already on, with the emergency braking it leads to, stays until it's acknowledged as usual
+		if (vigilance_timer <= AwareDelay)
+			vigilance_timer = 0.0;
+		if (press_timer <= MaxHoldTime)
+			press_timer = 0.0;
 	}
 	else
 	{
@@ -242,9 +243,9 @@ void TSecuritySystem::set_cabsignal_lock(bool v)
 	cabsignal_lock = v;
 }
 
-void TSecuritySystem::set_vigilance_suspended(bool const Suspended)
+void TSecuritySystem::set_shunt_mode(bool const State)
 {
-	vigilance_suspended = Suspended;
+	vigilance_suspended = State && AwareOffInShuntMode;
 }
 
 bool TSecuritySystem::is_engine_blocked() const
@@ -276,6 +277,7 @@ void TSecuritySystem::load(std::string const &line, double Vmax)
 	extract_value(radiostop_enabled, "RadioStop", line, "");
 	extract_value(MagnetLocation, "MagnetLocation", line, "");
 	extract_value(CabDependent, "CabDependent", line, "");
+	extract_value(AwareOffInShuntMode, "AwareOffInShuntMode", line, "");
 }
 
 double TableInterpolation(std::map<double, double> &Map, double Parameter)
@@ -3158,8 +3160,8 @@ void TMoverParameters::SecuritySystemReset(void) // zbijanie czuwaka/SHP
 void TMoverParameters::SecuritySystemCheck(double dt)
 {
 	bool isPower = Power24vIsAvailable || Power110vIsAvailable;
-	// the shunt mode of the SM42/SP42 switches their vigilance device (CA) off (eu07/maszyna#457)
-	SecuritySystem.set_vigilance_suspended(EngineType == TEngineType::DieselElectric && ShuntMode);
+	// the shunt mode of the SM42 switches its vigilance device (CA) off, on the vehicles with AwareOffInShuntMode=Yes (eu07/maszyna#457)
+	SecuritySystem.set_shunt_mode(ShuntMode);
 	SecuritySystem.update(dt, Vel, isPower, CabActive);
 
 	if (!Battery || !Radio)
