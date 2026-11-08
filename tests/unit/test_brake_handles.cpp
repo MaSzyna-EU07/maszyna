@@ -131,9 +131,10 @@ TEST_CASE("brake handles: the overload and the high pressure buttons of the MHZ 
 		real.record(trace);
 		REQUIRE(real->Handle != nullptr);
 		auto &handle{*real->Handle};
-		auto const at{[&trace, &real](std::string const &Event, double Position, double Seconds) {
+		auto &mover{real.mover()};
+		auto const at{[&trace, &real, &mover](std::string const &Event, double Position, double Seconds) {
 			trace.mark(Event);
-			real->BrakeLevelSet(Position);
+			mover.BrakeLevelSet(Position);
 			test::drive(test::driving(real), {}, Seconds);
 		}};
 		at("running", handle.GetPos(bh_RP), 60.0);
@@ -196,8 +197,9 @@ TEST_CASE("brake handles: the positions of the Knorr St113 EP brake") {
 	auto &cab{unit[0]};
 	REQUIRE(cab->Handle != nullptr);
 	auto &handle{*cab->Handle};
-	auto const ep_at{[&unit, &cab, &handle](double Position) {
-		cab->BrakeLevelSet(Position);
+	auto &mover{cab.mover()};
+	auto const ep_at{[&unit, &mover, &handle](double Position) {
+		mover.BrakeLevelSet(Position);
 		unit.run(0.1);
 		return handle.GetEP();
 	}};
