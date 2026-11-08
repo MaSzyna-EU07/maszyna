@@ -142,6 +142,10 @@ std::vector<int> choose(std::vector<vehicle> const &Consist) {
 			}
 			case train_setting::freight_g:
 			default: {
+				// NOTE: Cw-1 §19.9 wants the brake of a vehicle without G (a passenger car with P and R only) cut out in a
+				// train braked on G. It's put on P instead, as before: a brake cut out by the inspector would have to be
+				// remembered and put back when the train is made up again, and the simulator has no such record yet.
+				// The same goes for the vehicles kept on G in the long locomotive setting above (freight_gp)
 				settings.emplace_back(pick(item.delays, bdelay_G, bdelay_P));
 				break;
 			}
