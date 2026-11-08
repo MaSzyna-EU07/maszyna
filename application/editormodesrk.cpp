@@ -1281,14 +1281,19 @@ void srk_tool::render_found()
 
 void srk_tool::render_options()
 {
+	m_length_hover = -1;
+	m_head_hover = -1;
 	if (false == m_layout.has_value())
 	{
-		ImGui::TextDisabled("%s", STR_C("The signalling of a station: its schematic, the numbers of the switches and the tracks, the track circuits and the signals"));
+		static char const *const intro[]{
+		    "The station: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits",
+		    "The signals of a whole station placed at once, named after its code, and what its signalling lacks: the lights of its signals, the SHP resonators, the lengths of its tracks. LMB on a switch opens the station",
+		    "The block of the lines out of a station, its block signals and warning discs: LMB on a switch opens the station"};
+		ImGui::TextDisabled("%s", STR_C(intro[static_cast<int>(m_part)]));
 		if (false == m_status.empty())
 			ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
 		ImGui::Spacing();
 		render_found();
-		m_signals.render_signal_templates();
 		return;
 	}
 	auto const &layout{*m_layout};
@@ -1300,7 +1305,61 @@ void srk_tool::render_options()
 	metric_tiles({{format("%zu", layout.switches.size()), STR_C("switches"), kSwitch},
 	              {format("%zu", tracks.size() - layout.switches.size()), STR_C("tracks"), kPlain},
 	              {format("%.0f m", layout.to - layout.from), STR_C("length"), ImGui::GetColorU32(ImGuiCol_Text)}});
-	render_problems();
+	switch (m_part)
+	{
+	case part::station: render_station(); break;
+	case part::signals: render_station_signals(); break;
+	case part::lines: render_line_block(); break;
+	}
+	if (false == m_status.empty())
+		ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
+	ImGui::Spacing();
+	if (ImGui::Button(STR_C("Another station"), ImVec2(-1.0f, 0.0f)))
+	{
+		m_layout.reset();
+		m_anchor = nullptr;
+		m_record = -1;
+		m_hover = -1;
+	}
+	item_tooltip("Leaves this station; LMB on a switch opens another one");
+}
+
+void srk_tool::render_summary(bool const Line)
+{
+	// what the Station tool set for it, which this one goes by
+	auto const *entry{m_record >= 0 ? &m_records[m_record] : nullptr};
+	auto const code{entry != nullptr ? entry->code : std::string{}};
+	auto const line{line_of_open()};
+	double km{0.0};
+	auto const known{km_of_open((m_layout->from + m_layout->to) * 0.5, km)};
+	auto const value = [](bool const Set, std::string const &Text, bool const Needed) {
+		if (Set)
+			ImGui::TextUnformatted(Text.c_str());
+		else if (Needed)
+			ImGui::TextColored(kWrong, "%s", STR_C("not set"));
+		else
+			ImGui::TextDisabled("%s", STR_C("not set"));
+	};
+	if (begin_fields("##srksummary"))
+	{
+		field_row("Code");
+		value(false == code.empty(), code, false);
+		field_row("Line");
+		value(false == line.empty(), line, Line);
+		field_row("Km");
+		value(known, format("%.3f", km), Line);
+		field_row("Braking distance");
+		ImGui::Text("%.0f m", braking_of_open());
+		ImGui::EndTable();
+	}
+	if (ImGui::SmallButton(STR_C("Change in the Station tool")))
+		m_view.show_track_tab(editor_track_tab::station);
+	item_tooltip("The name, the code, the line, the km and the braking distance of the station are set in the Station tool");
+}
+
+void srk_tool::render_station()
+{
+	auto const &layout{*m_layout};
 	if (begin_fields("##srkstation"))
 	{
 		auto const text = [&](char const *Label, char const *Id, std::string const &Value, char const *Hint, auto const &Set) {
@@ -1394,17 +1453,80 @@ void srk_tool::render_options()
 	             "Ie-4 gives it, in the middle of a link too short for both. Each switch gets bpd_iz<number>, each station track "
 	             "bpd_it<number>: 1 and 2 the main tracks, track 1 on the right along the km, the odd ones beyond it, the even ones on the "
 	             "other side. Run again after changes, it keeps the numbers the tracks have. One step of undo");
-	step_heading(3, STR_C("Signals"));
-	if (ImGui::Button(STR_C("Set the signals"), ImVec2(-1.0f, 0.0f)))
+	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
+		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
+		{
+			field_row("Track number");
+			std::array<char, 16> buffer{};
+			number.copy(buffer.data(), buffer.size() - 1);
+			if (ImGui::InputText("##srktracknumber", buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
+				renumber_track(*selected, buffer.data());
+			item_tooltip("The number of the selected station track: type another one and its track circuits are renamed, bpd_it7a, bpd_it7b. One step of undo");
+			ImGui::EndTable();
+		}
+	ImGui::Spacing();
+	if (ImGui::CollapsingHeader(format("%s (%zu)###srkswitches", STR_C("Switches"), layout.switches.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		render_switches();
+}
+
+void srk_tool::render_switches()
+{
+	auto const &layout{*m_layout};
+	if (false == ImGui::BeginTable("##srkswitchlist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (layout.switches.size() + 1.5f)))))
+		return;
+	ImGui::TableSetupScrollFreeze(0, 1);
+	ImGui::TableSetupColumn(STR_C("Switch"), ImGuiTableColumnFlags_WidthStretch, 0.35f);
+	ImGui::TableSetupColumn(STR_C("Type"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
+	ImGui::TableSetupColumn(STR_C("km"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
+	ImGui::TableHeadersRow();
+	auto *selected{m_selection.selected_track()};
+	for (std::size_t index = 0; index < layout.switches.size(); ++index)
+	{
+		auto *track{layout.switches[index]};
+		auto const start{track->m_paths.front().points[segment_data::point::start]};
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn();
+		if (ImGui::Selectable((track->name() + "##srksw" + std::to_string(index)).c_str(), track == selected, ImGuiSelectableFlags_SpanAllColumns))
+		{
+			m_selection.set_current_node(track);
+			m_picked = track;
+			m_view.focus_track(*track, 0, start);
+		}
+		ImGui::TableNextColumn();
+		auto const record{switch_store::named(*track)};
+		ImGui::TextUnformatted(record ? switch_store::label(*record).c_str() : track->eType == tt_Switch ? STR_C("switch") : track->eType == tt_Cross ? STR_C("crossing") : STR_C("turntable"));
+		ImGui::TableNextColumn();
+		auto const along{station::project(layout, start).x};
+		if (layout.kilometrage)
+			ImGui::Text("%.3f", station::km_of(layout, along));
+		else
+			ImGui::Text("%.0f m", along);
+	}
+	ImGui::EndTable();
+}
+
+void srk_tool::render_station_signals()
+{
+	render_summary(false);
+	if (main_button(STR_C("Set the signals"), ImVec2(-1.0f, tall_button_height())))
 		set_signals();
 	item_tooltip("Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on "
 	             "each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; "
 	             "an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, "
 	             "P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets "
-	             "its name, none is doubled. Each kind with its template chosen in Signals below. One step of undo");
-	step_heading(4, STR_C("Lines"));
+	             "its name, none is doubled. Each kind with the template chosen for it below. One step of undo");
+	m_signals.render_signal_templates({"main", "shunt"});
+	// what the signals placed lack, checked again after each change
+	ImGui::Spacing();
+	if (ImGui::CollapsingHeader(format("%s###srkcheck", STR_C("Signalling check")).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+		render_check();
+}
+
+void srk_tool::render_line_block()
+{
+	render_summary(true);
 	render_lines();
-	if (ImGui::Button(STR_C("Set the line signals"), ImVec2(-1.0f, 0.0f)))
+	if (main_button(STR_C("Set the line signals"), ImVec2(-1.0f, tall_button_height())))
 		set_lines();
 	item_tooltip("Places the signals of the lines out of the station, from its entry signals on, by the block chosen for each line above. "
 	             "The automatic block: block signals evenly to the entry signals of the next station, a section no shorter than the braking "
@@ -1413,7 +1535,13 @@ void srk_tool::render_options()
 	             "distance before the entry signal. The braking distance after the speed of the line, as Ie-4 gives it: 400 m up to 60 km/h, "
 	             "700 m up to 100, 1000 m up to 140, 1300 m above. Needs the line and the km of the station. Run it at the next station too, it "
 	             "keeps what stands. One step of undo");
-	step_heading(5, STR_C("SHP"));
+	m_signals.render_signal_templates({"block", "warning"});
+}
+
+void srk_tool::render_check()
+{
+	render_problems();
+	ImGui::SeparatorText(STR_C("SHP"));
 	std::array<std::size_t, 5> states{};
 	for (auto const &head : m_heads)
 		++states[static_cast<std::size_t>(head.shp_of())];
@@ -1438,73 +1566,12 @@ void srk_tool::render_options()
 		                          (nowhere > 0 ? ", " + format(STR_P("%zu with the tracks ending short of the place of its resonator", "%zu with the tracks ending short of the places of their resonators", nowhere), nowhere) : std::string{})).c_str());
 		ImGui::PopStyleColor();
 	}
-	if (auto const *selected{m_selection.selected_track()}; selected != nullptr && false == selected->Isolated.empty())
-		if (auto const number{track_of(selected->Isolated.front()->asName, stem_of_open())}; false == number.empty() && begin_fields("##srktrack"))
-		{
-			field_row("Track number");
-			std::array<char, 16> buffer{};
-			number.copy(buffer.data(), buffer.size() - 1);
-			if (ImGui::InputText("##srktracknumber", buffer.data(), buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
-				renumber_track(*selected, buffer.data());
-			item_tooltip("The number of the selected station track: type another one and its track circuits are renamed, bpd_it7a, bpd_it7b. One step of undo");
-			ImGui::EndTable();
-		}
-	if (false == m_status.empty())
-		ImGui::TextColored(kDoubtful, "%s", m_status.c_str());
-	m_signals.render_signal_templates();
 	ImGui::Spacing();
-	m_length_hover = -1;
 	if (ImGui::CollapsingHeader(format("%s (%zu)###srklengths", STR_C("Track lengths"), m_lengths.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 		render_lengths();
 	ImGui::Spacing();
-	m_head_hover = -1;
 	if (ImGui::CollapsingHeader(format("%s (%zu)###srkheads", STR_C("Signal heads"), static_cast<std::size_t>(std::count_if(m_heads.begin(), m_heads.end(), [](head_check const &Head) { return Head.station; }))).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
 		render_heads();
-	ImGui::Spacing();
-	if (ImGui::CollapsingHeader(format("%s (%zu)###srkswitches", STR_C("Switches"), layout.switches.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-	{
-		if (ImGui::BeginTable("##srkswitchlist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(320.0f, ImGui::GetTextLineHeightWithSpacing() * (layout.switches.size() + 1.5f)))))
-		{
-			ImGui::TableSetupScrollFreeze(0, 1);
-			ImGui::TableSetupColumn(STR_C("Switch"), ImGuiTableColumnFlags_WidthStretch, 0.35f);
-			ImGui::TableSetupColumn(STR_C("Type"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
-			ImGui::TableSetupColumn(STR_C("km"), ImGuiTableColumnFlags_WidthStretch, 0.2f);
-			ImGui::TableHeadersRow();
-			auto *selected{m_selection.selected_track()};
-			for (std::size_t index = 0; index < layout.switches.size(); ++index)
-			{
-				auto *track{layout.switches[index]};
-				auto const start{track->m_paths.front().points[segment_data::point::start]};
-				ImGui::TableNextRow();
-				ImGui::TableNextColumn();
-				if (ImGui::Selectable((track->name() + "##srksw" + std::to_string(index)).c_str(), track == selected, ImGuiSelectableFlags_SpanAllColumns))
-				{
-					m_selection.set_current_node(track);
-					m_picked = track;
-					m_view.focus_track(*track, 0, start);
-				}
-				ImGui::TableNextColumn();
-				auto const record{switch_store::named(*track)};
-				ImGui::TextUnformatted(record ? switch_store::label(*record).c_str() : track->eType == tt_Switch ? STR_C("switch") : track->eType == tt_Cross ? STR_C("crossing") : STR_C("turntable"));
-				ImGui::TableNextColumn();
-				auto const along{station::project(layout, start).x};
-				if (layout.kilometrage)
-					ImGui::Text("%.3f", station::km_of(layout, along));
-				else
-					ImGui::Text("%.0f m", along);
-			}
-			ImGui::EndTable();
-		}
-	}
-	ImGui::Spacing();
-	if (ImGui::Button(STR_C("Another station"), ImVec2(-1.0f, 0.0f)))
-	{
-		m_layout.reset();
-		m_anchor = nullptr;
-		m_record = -1;
-		m_hover = -1;
-	}
-	item_tooltip("Leaves this station; LMB on a switch opens another one");
 }
 
 void srk_tool::render_lines()
@@ -4919,6 +4986,9 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const found{values.find("track")};
 		auto *track{found != values.end() ? simulation::Paths.find(found->second) : nullptr};
 		m_open = true;
+		// a tool of the station shown, so it stays open
+		if (auto const tab{m_view.current_track_tab()}; tab != editor_track_tab::station && tab != editor_track_tab::station_signals && tab != editor_track_tab::line_block)
+			m_view.show_track_tab(editor_track_tab::station);
 		load();
 		if (track == nullptr)
 		{

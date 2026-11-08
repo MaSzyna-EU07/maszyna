@@ -1620,7 +1620,7 @@ bool editor_mode::update()
         draw_switch_slide();
         if (m_track_tab == track_tab::turntable)
             draw_turntable_overlay();
-        if (m_track_tab == track_tab::srk)
+        if (m_track_tab == track_tab::signals)
         {
             signal_refresh();
             signal_move_update();
@@ -5766,7 +5766,7 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	     tutorial_template_sketch},
 	    {"Signals and posts",
 	     nullptr,
-	     {{"I", "Turns Signalling on. Click a kind of signal in its Signals list; it shows the signals this scenery has"},
+	     {{"I", "Turns Signals on. Click a kind of signal in its list; it shows the signals this scenery has"},
 	      {"LMB", "Click beside a track: the signal stands on that side"},
 	      {"LMB + move", "Press beside the track and drag along it: the signal faces the trains going the way you dragged"},
 	      {"LMB + move", "Drag a signal that already stands: it slides along its track"},
@@ -5895,7 +5895,7 @@ char const *editor_mode::tutorial_of_tool()
 	case track_tab::route:
 	case track_tab::straights:
 		return undone({"Correcting a curve"});
-	case track_tab::srk:
+	case track_tab::signals:
 		return undone({"Signals and posts"});
 	default:
 		return "";
@@ -6063,7 +6063,7 @@ void editor_mode::render_tutorial_trial(tutorial_lesson const &Lesson)
 		button = {STR_C("The profile tool (P)"), track_tab::profile, track_tab::profile};
 		break;
 	case trial::signals:
-		button = {STR_C("The signalling tool (I)"), track_tab::srk, track_tab::srk};
+		button = {STR_C("The signals tool (I)"), track_tab::signals, track_tab::signals};
 		break;
 	case trial::plan:
 		button = {STR_C("The plan tool (G)"), track_tab::straights, track_tab::route};
@@ -6307,7 +6307,7 @@ void editor_mode::render_gizmo_options()
         ImGui::SameLine();
         render_top_tracks_choice(true);
     }
-    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::srk &&
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::signals &&
         m_track_tab != track_tab::lineside)
         return;
     auto &enabled{ui()->mode() == nodebank_panel::TRACK ? m_track_gizmo_on : m_gizmo_enabled};
@@ -6568,7 +6568,7 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
 
     // in the signal tool a press on the mast drags the signal along its track: the gizmo, whose up axis runs along the
     // mast, gives way over a signal and while one is dragged
-    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::srk && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
+    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::signals && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
     ImGuizmo::Enable(false == yield);
     ImGuizmo::Manipulate(glm::value_ptr(View), glm::value_ptr(Projection), static_cast<ImGuizmo::OPERATION>(operation), mode, glm::value_ptr(matrix), nullptr, snap);
     ImGuizmo::Enable(true);
@@ -7218,9 +7218,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 cancel_track_tools();
                 m_straights.tool = 0;
             }
-            else if (m_track_tab == track_tab::srk && m_signal.picking_read)
+            else if (m_track_tab == track_tab::signals && m_signal.picking_read)
                 m_signal.picking_read = false;
-            else if (m_track_tab == track_tab::srk && m_signal.armed)
+            else if (m_track_tab == track_tab::signals && m_signal.armed)
                 m_signal.armed = false;
             else if (m_track_tab == track_tab::path && m_track_set.size() >= 2)
                 select_tracks({});

@@ -13669,3 +13669,70 @@ msgstr "Sygnalizator na bramownicy nie bierze wskaźnika z listy"
 
 msgid "Signal %s has the indicator %s already"
 msgstr "Sygnalizator %s ma już wskaźnik %s"
+
+msgid "Station"
+msgstr "Stacja"
+
+msgid "Station signals"
+msgstr "Sygnalizatory stacji"
+
+msgid "Line block"
+msgstr "Blokada liniowa"
+
+
+msgid "Signals placed by hand from the templates in the panel: LMB by a track places the one chosen, a signal dragged slides along its track, LMB on one selects it"
+msgstr "Sygnalizatory stawiane ręcznie z szablonów w panelu: LPM przy torze stawia wybrany, przeciągnięty sygnalizator przesuwa się wzdłuż swojego toru, LPM na nim go zaznacza"
+
+msgid "A station of the scenery: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits"
+msgstr "Stacja scenerii: LPM na rozjeździe rozkłada ją w schemat. Jej nazwa i skrót, numery rozjazdów i torów, obwody torowe"
+
+
+msgid "The block of the lines out of a station: its block signals, warning discs and block sections"
+msgstr "Blokada linii wychodzących ze stacji: semafory SBL, tarcze ostrzegawcze i odstępy blokowe"
+
+
+msgid "The station: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits"
+msgstr "Stacja: LPM na rozjeździe rozkłada ją w schemat. Jej nazwa i skrót, numery rozjazdów i torów, obwody torowe"
+
+msgid "The block of the lines out of a station, its block signals and warning discs: LMB on a switch opens the station"
+msgstr "Blokada linii wychodzących ze stacji, jej semafory SBL i tarcze ostrzegawcze: LPM na rozjeździe otwiera stację"
+
+
+msgid "not set"
+msgstr "nie ustawiono"
+
+msgid "Change in the Station tool"
+msgstr "Zmień w narzędziu Stacja"
+
+msgid "The name, the code, the line, the km and the braking distance of the station are set in the Station tool"
+msgstr "Nazwę, skrót, linię, kilometr i drogę hamowania stacji ustawia się w narzędziu Stacja"
+
+msgid "Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is doubled. Each kind with the template chosen for it below. One step of undo"
+msgstr "Stawia semafory stacji jak na liniach PKP PLK i nazywa je od jej skrótu: wjazdowy 300 m przed stacją na każdej linii, A, B... od początku km, Z, Y... od końca, a odcinek od 15 m za nim do stacji to bpd_ita; wyjazdowy 15 m przed stykiem na końcu każdego toru, z którego wyprawia się pociągi, F1, G2 w stronę początku, R1, P2 w stronę końca; tarcza manewrowa Tm1, Tm2... na końcu krótszego toru. Semafor, który już stoi w miejscu któregoś z nich, dostaje tylko jego nazwę, nic się nie dubluje. Każdy rodzaj szablonem wybranym dla niego niżej. Jeden krok cofania"
+
+msgid "Templates"
+msgstr "Szablony"
+
+msgid "The template the signals of this kind are placed with; the Signals tool places it too"
+msgstr "Szablon, którym stawia się sygnalizatory tego rodzaju; narzędzie Sygnalizatory też go stawia"
+
+msgid "The signals tool (I)"
+msgstr "Narzędzie Sygnalizatory (I)"
+
+msgid "Turns Signals on. Click a kind of signal in its list; it shows the signals this scenery has"
+msgstr "Włącza narzędzie Sygnalizatory. Kliknij rodzaj sygnalizatora na jego liście; są na niej sygnalizatory dostępne w tej scenerii"
+
+msgid "LMB on a track of a line"
+msgstr "LPM na torze linii"
+
+msgid "a block boundary there, or on one: away"
+msgstr "stawia tam granicę odstępu, na istniejącej: usuwa ją"
+
+msgid "The signals of a whole station placed at once, named after its code, and what its signalling lacks: the lights of its signals, the SHP resonators, the lengths of its tracks. LMB on a switch opens the station"
+msgstr "Sygnalizatory całej stacji stawiane naraz i nazywane od jej skrótu oraz czego brakuje jej SRK: komory sygnalizatorów, rezonatory SHP, długości torów. LPM na rozjeździe otwiera stację"
+
+msgid "The signals of a whole station placed at once, named after its code, and what its signalling lacks: LMB on a switch opens the station"
+msgstr "Sygnalizatory całej stacji stawiane naraz i nazywane od jej skrótu oraz czego brakuje jej SRK: LPM na rozjeździe otwiera stację"
+
+msgid "Signalling check"
+msgstr "Kontrola SRK"

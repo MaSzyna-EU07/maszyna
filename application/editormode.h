@@ -2130,8 +2130,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 12> const &track_modes();
+	static std::array<track_mode, 15> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
+	// a tool of the station: they share its schematic
+	bool srk_tab() const { return m_track_tab == track_tab::station || m_track_tab == track_tab::station_signals || m_track_tab == track_tab::line_block; }
 	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
@@ -2609,7 +2611,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string signal_mount(std::string const &Kind, std::string const &File) override;
 	std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) override;
 	void select_signal(scene::instance_handle const Instance) override;
-	void render_signal_templates() override;
+	void render_signal_templates(std::vector<std::string> const &Kinds) override;
 
 	struct signal_template
 	{

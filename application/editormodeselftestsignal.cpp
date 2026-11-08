@@ -57,7 +57,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		// signaltemplates [file=<template>]: the templates of the signals with what their descriptions give, the one named chosen
 		// for its kind in the palette, not placed
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::srk);
+		show_track_tab(track_tab::signals);
 		signal_scan(true);
 		auto &tool{m_signal};
 		static std::array<char const *, 8> constexpr kinds{"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
@@ -104,7 +104,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 	{
 		// signalaspect name=<signal> aspect=<name>: the signal set to the aspect its description lists, in the editor
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::srk);
+		show_track_tab(track_tab::signals);
 		signal_scan(true);
 		signal_refresh(true);
 		auto const found{std::ranges::find_if(m_signal.standing, [&values](signal_standing const &Standing) { return Standing.name == values["name"]; })};
@@ -133,7 +133,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 	    command == "signalindicatordrop" || command == "signalgizmo")
 	{
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::srk);
+		show_track_tab(track_tab::signals);
 		signal_scan();
 		signal_refresh(true);
 		auto &tool{m_signal};

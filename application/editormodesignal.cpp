@@ -2834,13 +2834,46 @@ void editor_mode::select_signal(scene::instance_handle const Instance)
 	signal_select(Instance);
 }
 
-void editor_mode::render_signal_templates()
+void editor_mode::render_signal_templates(std::vector<std::string> const &Kinds)
 {
-	ImGui::Spacing();
-	if (ImGui::CollapsingHeader(format("%s###srksignals", STR_C("Signals")).c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-		render_signal_ui();
-	else
-		m_signal.armed = false;
+	auto &tool{m_signal};
+	signal_scan(false);
+	ImGui::SeparatorText(STR_C("Templates"));
+	if (tool.templates.empty())
+	{
+		ImGui::TextWrapped("%s", EditorIncludes.searching() ? STR_C("Looking for the templates...") : STR_C("No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."));
+		return;
+	}
+	if (false == begin_fields("##signalkinds", 0.4f))
+		return;
+	auto const shown = [](signal_template const &Template) { return Template.lamps.empty() ? Template.name : Template.name + "  " + Template.lamps; };
+	for (int k = 0; k < kKindCount; ++k)
+	{
+		if (false == Kinds.empty() && std::find(Kinds.begin(), Kinds.end(), kKinds[k]) == Kinds.end())
+			continue;
+		field_row(kKindLabels[k]);
+		auto const index{tool.chosen[k]};
+		auto const *current{index >= 0 && index < static_cast<int>(tool.templates.size()) ? &tool.templates[index] : nullptr};
+		ImGui::PushID(k);
+		ImGui::SetNextItemWidth(-1.0f);
+		if (ImGui::BeginCombo("##kindtemplate", current != nullptr ? shown(*current).c_str() : STR_C("none"), ImGuiComboFlags_HeightLarge))
+		{
+			for (int i = 0; i < static_cast<int>(tool.templates.size()); ++i)
+			{
+				auto const &item{tool.templates[i]};
+				if (item.kind != kKinds[k])
+					continue;
+				if (ImGui::Selectable((shown(item) + "##" + item.file).c_str(), i == index))
+					tool.chosen[k] = i;
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s\n%s", item.description.empty() ? item.name.c_str() : item.description.c_str(), item.file.c_str());
+			}
+			ImGui::EndCombo();
+		}
+		item_tooltip("The template the signals of this kind are placed with; the Signals tool places it too");
+		ImGui::PopID();
+	}
+	ImGui::EndTable();
 }
 
 void editor_mode::render_signal_ui()

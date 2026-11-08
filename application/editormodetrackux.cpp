@@ -654,7 +654,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
-	if (m_track_tab == track_tab::srk && m_srk.drawing())
+	if (m_track_tab == track_tab::line_block && m_srk.drawing())
 	{
 		bool valid{false};
 		intent.track = m_hover.track;
@@ -664,7 +664,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
-	if (m_track_tab == track_tab::srk)
+	if (m_track_tab == track_tab::signals)
 	{
 		// the path to read the selected signal picked
 		if (m_signal.picking_read)

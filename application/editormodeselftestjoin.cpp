@@ -872,9 +872,14 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 	{
 		std::string key;
 		words >> key;
+		// by its key, or by its name with _ for the spaces: the tools without a key
 		for (auto const &mode : track_modes())
-			if (key == mode.key)
+		{
+			std::string name{mode.label};
+			std::replace(name.begin(), name.end(), ' ', '_');
+			if ((mode.key != nullptr && key == mode.key) || key == name)
 				show_track_tab(mode.tab);
+		}
 		WriteLog(format("SELFTEST tracktab %s: %s", key.c_str(), track_mode_name().c_str()));
 		return selftest_result::handled;
 	}

@@ -22,10 +22,17 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 #include <vector>
 
-// the signalling of a station (SRK): the station found from a switch of it, its schematic, its name and code
+// the signalling of a station (SRK): the station found from a switch of it, its schematic, its name and code. Three tools of the
+// toolbar share it, each showing a part of it
 class srk_tool final : public editor_tool
 {
   public:
+	enum class part
+	{
+		station, // its name, code, line and km, the numbers of the switches, the track circuits
+		signals, // the signals of the station placed at once, and what they lack
+		lines // the block of the lines out of it
+	};
 	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_signals &Signals)
 	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_signals{Signals}
 	{
@@ -36,9 +43,14 @@ class srk_tool final : public editor_tool
 	void render_windows() override;
 	void forget(scene::basic_node const *Node) override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
-	void set_open(bool const Open) { m_open = Open; }
+	void set_open(bool const Open, part const Part)
+	{
+		m_open = Open;
+		if (Open)
+			m_part = Part;
+	}
 	// the block boundaries drawn by hand on the lines out of the open station
-	bool drawing() const { return m_open && m_drawing && m_layout.has_value(); }
+	bool drawing() const { return m_open && m_part == part::lines && m_drawing && m_layout.has_value(); }
 	// what a click at the point of a track does while the block boundaries are drawn, for the label at the mouse; Valid: it does
 	// something
 	std::string boundary_hover(glm::dvec3 const &Point, bool &Valid);
@@ -91,6 +103,7 @@ class srk_tool final : public editor_tool
 		float exaggeration{0.0f}; // 0: fit at the next draw
 	};
 	bool m_open{false};
+	part m_part{part::station};
 	bool m_strip{true}; // the schematic shown, off for the screenshots of the self-tests
 	bool m_loaded{false};
 	bool m_changed{false};
@@ -300,6 +313,13 @@ class srk_tool final : public editor_tool
 	record &record_of_open();
 	std::string title() const;
 	void render_found();
+	// the station as the Station tool set it, for the other tools; Line: the line and the km needed
+	void render_summary(bool const Line);
+	void render_station();
+	void render_switches();
+	void render_station_signals();
+	void render_line_block();
+	void render_check();
 	void render_canvas(float const Height);
 	void fit_view(float const Width, float const Height);
 	void find_all();
