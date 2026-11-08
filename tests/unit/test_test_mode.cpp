@@ -1,0 +1,195 @@
+#include "stdafx.h"
+#include "doctest.h"
+
+#include "simulation/simulationtestrules.h"
+
+#include <vector>
+
+// the test mode of the simulator (eu07 --test, eu07/maszyna#541): its command line and end conditions
+
+namespace {
+
+using simulation::test_result;
+
+simulation::test_command_line parse(std::vector<char const *> Arguments)
+{
+	Arguments.insert(Arguments.begin(), "eu07");
+	return simulation::parse_test_command_line(Arguments);
+}
+
+// a frame of the default 0.03 s
+simulation::test_frame frame(bool const Atrest, std::optional<double> const Reported = std::nullopt, std::string_view const Reason = {})
+{
+	return simulation::test_frame{0.03, Reported, Reason, Atrest};
+}
+
+// runs frames until the test ends or Seconds of simulation time go by
+std::optional<simulation::test_verdict> run(simulation::test_progress &Progress, simulation::test_limits const &Limits, double const Seconds,
+                                            simulation::test_frame const &Frame)
+{
+	while (Progress.time < Seconds)
+	{
+		if (auto verdict{simulation::evaluate_frame(Progress, Frame, Limits)})
+			return verdict;
+	}
+	return std::nullopt;
+}
+
+} // namespace
+
+TEST_CASE("test mode: seconds on the command line are a number, not negative")
+{
+	CHECK(simulation::parse_seconds("240") == 240.0);
+	CHECK(simulation::parse_seconds("0.5") == 0.5);
+	CHECK(simulation::parse_seconds("0") == 0.0);
+	CHECK_FALSE(simulation::parse_seconds("").has_value());
+	CHECK_FALSE(simulation::parse_seconds("-1").has_value());
+	CHECK_FALSE(simulation::parse_seconds("60s").has_value());
+	CHECK_FALSE(simulation::parse_seconds("abc").has_value());
+	CHECK_FALSE(simulation::parse_seconds("inf").has_value());
+	CHECK_FALSE(simulation::parse_seconds("nan").has_value());
+}
+
+TEST_CASE("test mode: the command line")
+{
+	SUBCASE("without --test there is no test")
+	{
+		auto const commandline{parse({"-s", "td.scn", "-v", "ep07-424"})};
+		CHECK_FALSE(commandline.enabled);
+		CHECK(commandline.error.empty());
+	}
+	SUBCASE("--test and its limit, in any order")
+	{
+		auto const commandline{parse({"-s", "td.scn", "--test-timeout", "240", "--test"})};
+		CHECK(commandline.enabled);
+		CHECK(commandline.timeout == 240.0);
+		CHECK(commandline.error.empty());
+	}
+	SUBCASE("a limit not given stays unset")
+	{
+		auto const commandline{parse({"--test", "-s", "td.scn"})};
+		CHECK_FALSE(commandline.timeout.has_value());
+	}
+	SUBCASE("a limit which isn't a number is an error, not a limit turned off")
+	{
+		auto const commandline{parse({"--test", "-s", "td.scn", "--test-timeout", "4m"})};
+		CHECK(commandline.enabled);
+		CHECK_FALSE(commandline.timeout.has_value());
+		CHECK(commandline.error == "--test-timeout needs a number of seconds");
+	}
+	SUBCASE("a limit without its value is an error")
+	{
+		auto const commandline{parse({"--test", "-s", "td.scn", "--test-timeout"})};
+		CHECK(commandline.error == "--test-timeout needs a number of seconds");
+	}
+	SUBCASE("values of other options aren't taken for options")
+	{
+		auto const commandline{parse({"-s", "--test", "-ini", "--test-timeout", "-v", "--test", "-seed", "--test"})};
+		CHECK_FALSE(commandline.enabled);
+		CHECK(commandline.error.empty());
+	}
+	SUBCASE("the scenery of -edit is optional")
+	{
+		CHECK(parse({"-edit", "--test", "-s", "td.scn"}).enabled);
+		CHECK_FALSE(parse({"-edit", "td.scn"}).enabled);
+	}
+}
+
+TEST_CASE("test mode: the end conditions")
+{
+	simulation::test_limits limits;
+	simulation::test_progress progress;
+
+	SUBCASE("nothing happens, nothing ends")
+	{
+		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false), limits).has_value());
+		CHECK(progress.time == doctest::Approx(0.03));
+		CHECK(progress.resttime == 0.0);
+	}
+	SUBCASE("a cell nobody wrote to says nothing")
+	{
+		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false, -1.0), limits).has_value());
+		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false, 2.0), limits).has_value());
+		CHECK_FALSE(progress.passrequested);
+	}
+	SUBCASE("0 fails at once, with the text of the cell")
+	{
+		auto const verdict{simulation::evaluate_frame(progress, frame(false, 0.0, "wrong_track"), limits)};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::fail);
+		CHECK(verdict->reason == "__test.result set to 0 (wrong_track)");
+	}
+	SUBCASE("1 passes once every vehicle has stood for a second")
+	{
+		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false, 1.0), limits).has_value());
+		CHECK(progress.passrequested);
+		// still moving: the pass waits
+		CHECK_FALSE(run(progress, limits, 30.0, frame(false, 1.0)).has_value());
+		auto const stoppedat{progress.time};
+		auto const verdict{run(progress, limits, 60.0, frame(true, 1.0))};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::pass);
+		CHECK(progress.time - stoppedat == doctest::Approx(simulation::pass_settle_time).epsilon(0.05));
+	}
+	SUBCASE("the pass stays requested when the cell changes back")
+	{
+		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false, 1.0), limits).has_value());
+		auto const verdict{run(progress, limits, 60.0, frame(true, -1.0))};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::pass);
+	}
+	SUBCASE("1 with test.no_movement_before_pass no passes at once")
+	{
+		limits.no_movement_before_pass = false;
+		auto const verdict{simulation::evaluate_frame(progress, frame(false, 1.0, "reached_the_stop"), limits)};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::pass);
+		CHECK(verdict->reason == "__test.result set to 1 (reached_the_stop)");
+	}
+	SUBCASE("standing still without a result ends after test.standstill")
+	{
+		limits.standstill = 120.0;
+		auto const verdict{run(progress, limits, 1000.0, frame(true))};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::standstill);
+		CHECK(progress.time == doctest::Approx(120.0).epsilon(0.001));
+	}
+	SUBCASE("a move starts the standstill over")
+	{
+		limits.standstill = 120.0;
+		CHECK_FALSE(run(progress, limits, 100.0, frame(true)).has_value());
+		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false), limits).has_value());
+		CHECK(progress.resttime == 0.0);
+		CHECK_FALSE(run(progress, limits, 200.0, frame(true)).has_value());
+	}
+	SUBCASE("test.pass_on_standstill makes the standstill a pass")
+	{
+		limits.standstill = 10.0;
+		limits.pass_on_standstill = true;
+		auto const verdict{run(progress, limits, 1000.0, frame(true))};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::pass);
+	}
+	SUBCASE("test.standstill 0 never ends the test")
+	{
+		limits.standstill = 0.0;
+		limits.timeout = 0.0;
+		CHECK_FALSE(run(progress, limits, 5000.0, frame(true)).has_value());
+	}
+	SUBCASE("no result by test.timeout")
+	{
+		limits.timeout = 240.0;
+		auto const verdict{run(progress, limits, 1000.0, frame(false))};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::timeout);
+		CHECK(verdict->reason == "no result after 240 s");
+		CHECK(progress.time == doctest::Approx(240.0).epsilon(0.001));
+	}
+	SUBCASE("a result in the last frame wins over the timeout")
+	{
+		limits.timeout = 0.03;
+		auto const verdict{simulation::evaluate_frame(progress, frame(false, 0.0), limits)};
+		REQUIRE(verdict.has_value());
+		CHECK(verdict->result == test_result::fail);
+	}
+}

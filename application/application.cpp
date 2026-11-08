@@ -34,14 +34,9 @@ http://mozilla.org/MPL/2.0/.
 #ifdef _WIN32
 #include "Console.h"
 #endif
-#include <algorithm>
-#include <charconv>
 #include <chrono>
-#include <cmath>
 #include <format>
-#include <optional>
-#include <span>
-#include <string_view>
+#include <vector>
 #include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
@@ -1199,16 +1194,6 @@ void apply_test_mode_settings()
 		Global.random_seed = seed_of("test");
 }
 
-// seconds given on the command line: a number, not negative. returns nothing for anything else
-std::optional<double> parse_seconds(std::string_view const Text)
-{
-	auto const *const last{Text.data() + Text.size()};
-	double value{0.0};
-	if (auto const [parsed, status]{std::from_chars(Text.data(), last, value)}; status != std::errc{} || parsed != last || false == std::isfinite(value) || value < 0.0)
-		return std::nullopt;
-	return value;
-}
-
 } // namespace
 
 int eu07_application::init_settings(int Argc, char *Argv[])
@@ -1228,7 +1213,18 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 	// a test run is known before the rest of the command line is read, so a command line it can't take
 	// ends with the error code of the test, not with 0, which would pass it
-	Global.test.enabled = std::ranges::any_of(std::span(Argv, static_cast<std::size_t>(Argc)), [](char const *Argument) { return std::string_view(Argument) == "--test"; });
+	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
+	Global.test.enabled = testcommandline.enabled;
+	if (false == testcommandline.error.empty())
+	{
+		simulation::test().conclude(simulation::test_result::error, testcommandline.error);
+		return -1;
+	}
+	if (testcommandline.timeout.has_value())
+	{
+		Global.test.timeout = *testcommandline.timeout;
+		Global.test.timeout_from_command_line = true;
+	}
 
 	// process command line arguments
 	bool sceneryfromcommandline{false};
@@ -1278,20 +1274,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 		else if (token == "--test")
 		{
-			// integration test: the scenery runs unattended and the exit code is the result (eu07/maszyna#541)
-			Global.test.enabled = true;
+			// integration test: the scenery runs unattended and the exit code is the result (eu07/maszyna#541),
+			// taken from the command line above
 		}
 		else if (token == "--test-timeout")
 		{
-			auto const timeout{i + 1 < Argc ? parse_seconds(Argv[++i]) : std::nullopt};
-			if (false == timeout.has_value())
-			{
-				// a typo would otherwise turn the timeout off
-				simulation::test().conclude(simulation::test_result::error, "--test-timeout needs a number of seconds");
-				return -1;
-			}
-			Global.test.timeout = *timeout;
-			Global.test.timeout_from_command_line = true;
+			// taken from the command line above, with its value
+			++i;
 		}
 		else if (token == "-ini")
 		{
