@@ -464,6 +464,7 @@ set(CORE_SOURCES
 "scripting/ladderlogic.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
+"vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
