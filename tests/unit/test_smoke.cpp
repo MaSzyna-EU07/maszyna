@@ -116,8 +116,8 @@ TEST_CASE("smoke: a real diesel smokes only once its engine has fired, SmokeDela
 		CAPTURE(path);
 		test::track const track{};
 		{
-			// the default delay
-			test::vehicle locomotive{test::definition::fiz(path)};
+			// SmokeDelay set in the .fiz of the locomotive
+			test::vehicle locomotive{test::definition{test::definition::fiz(path)}.set("Engine", "SmokeDelay", 2)};
 			REQUIRE(locomotive->dizel_SmokeDelay == doctest::Approx(2.0));
 			auto const driven{test::driving(locomotive)};
 			REQUIRE(start_engine(driven, track));
@@ -131,15 +131,6 @@ TEST_CASE("smoke: a real diesel smokes only once its engine has fired, SmokeDela
 			CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
 		}
 		{
-			// SmokeDelay=0: smoke as soon as the starter turns, as before
-			test::vehicle locomotive{test::definition{test::definition::fiz(path)}.set("Engine", "SmokeDelay", 0)};
-			REQUIRE(locomotive->dizel_SmokeDelay == 0.0);
-			auto const driven{test::driving(locomotive)};
-			REQUIRE(start_engine(driven, track));
-			CHECK(locomotive->dizel_FiringCountdown == 0.0);
-			CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
-		}
-		{
 			// a longer delay from the .fiz
 			test::vehicle locomotive{test::definition{test::definition::fiz(path)}.set("Engine", "SmokeDelay", 5)};
 			auto const driven{test::driving(locomotive)};
@@ -149,5 +140,22 @@ TEST_CASE("smoke: a real diesel smokes only once its engine has fired, SmokeDela
 			test::drive(driven, track, 3.0);
 			CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
 		}
+	}
+}
+
+TEST_CASE("smoke: without SmokeDelay in its .fiz a diesel smokes as soon as the starter turns, as before (#523)") {
+	for (auto const *path : {"sm42_v1/6d1", "st44_v2/m62-1151"}) {
+		CAPTURE(path);
+		test::track const track{};
+		// a locomotive which has the delay, loaded first, doesn't hand it on to the next one: the value is the vehicle's own
+		test::vehicle delayed{test::definition{test::definition::fiz(path)}.set("Engine", "SmokeDelay", 3)};
+		REQUIRE(delayed->dizel_SmokeDelay == doctest::Approx(3.0));
+		test::vehicle locomotive{test::definition::fiz(path)};
+		REQUIRE(locomotive->dizel_SmokeDelay == 0.0);
+		CHECK(delayed->dizel_SmokeDelay == doctest::Approx(3.0));
+		auto const driven{test::driving(locomotive)};
+		REQUIRE(start_engine(driven, track));
+		CHECK(locomotive->dizel_FiringCountdown == 0.0);
+		CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
 	}
 }

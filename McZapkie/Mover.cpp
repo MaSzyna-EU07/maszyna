@@ -11370,7 +11370,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		extract_value(OilPump.pressure_minimum, "OilMinPressure", Input, "");
 		extract_value(OilPump.pressure_maximum, "OilMaxPressure", Input, "");
 		// the time the starter turns the engine before it fires and smokes (eu07/maszyna#523)
-		extract_value(dizel_SmokeDelay, "SmokeDelay", Input, "");
+		extract_value(dizel_SmokeDelay, "SmokeDelay", Input, "0");
 		dizel_SmokeDelay = std::max(0.0, dizel_SmokeDelay);
 		// engine cooling factore
 		extract_value(dizel_heat.kw, "HeatKW", Input, "");
