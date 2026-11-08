@@ -13,11 +13,19 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <thread>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace odometer {
 
@@ -25,6 +33,14 @@ namespace {
 
 bool valid(double const Km) {
 	return std::isfinite(Km) && Km >= 0.0;
+}
+
+int process_id() {
+#ifdef _WIN32
+	return _getpid();
+#else
+	return static_cast<int>(getpid());
+#endif
 }
 
 // number making up all of the text, surrounding whitespace aside
@@ -51,13 +67,16 @@ void reading::begin(double const Km, origin const Source) {
 	km = Km;
 	start = Km;
 	source = Source;
+	guess = Km;
 }
 
 void reading::seed(double const Km) {
 	if (source != origin::guessed || false == valid(Km))
 		return;
-	km += Km - start;
-	start = Km;
+	auto const shift{Km - guess};
+	km += shift;
+	start += shift;
+	guess = Km;
 	source = origin::counter;
 }
 
@@ -81,45 +100,69 @@ std::size_t store::read(std::istream &Input) {
 		auto const separator{line.find_first_of(" \t")};
 		if (separator == std::string::npos)
 			continue;
-		auto const km{parse_number(line.substr(0, separator))};
+		auto number{line.substr(0, separator)};
+		auto const guessed{false == number.empty() && number.front() == '~'};
+		if (guessed)
+			number.erase(0, 1);
+		auto const km{parse_number(number)};
 		auto const name{line.substr(separator + 1)};
 		if (false == km.has_value() || name.empty())
 			continue;
-		m_states[name] = *km;
+		m_states[name] = state{*km, guessed};
 		++count;
 	}
 	return count;
 }
 
 void store::write(std::ostream &Output) const {
-	Output << "# odometer states of the vehicles: <km> <vehicle name>\n";
+	Output << "# odometer states of the vehicles: <km> <vehicle name>, ~<km> for one counted from a made up state\n";
 	Output << std::fixed << std::setprecision(4);
-	for (auto const &[name, km] : m_states)
-		Output << km << ' ' << name << '\n';
+	for (auto const &[name, state] : m_states)
+		Output << (state.guessed ? "~" : "") << state.km << ' ' << name << '\n';
 }
 
 std::optional<double> store::find(std::string const &Vehicle) const {
 	auto const lookup{m_states.find(Vehicle)};
 	if (lookup == m_states.end())
 		return std::nullopt;
-	return lookup->second;
+	return lookup->second.km;
+}
+
+bool store::guessed(std::string const &Vehicle) const {
+	auto const lookup{m_states.find(Vehicle)};
+	return lookup != m_states.end() && lookup->second.guessed;
+}
+
+bool store::newer(state const &Left, state const &Right) {
+	if (Left.guessed != Right.guessed)
+		return Right.guessed;
+	return Left.km > Right.km;
 }
 
 void store::record(std::string const &Vehicle, reading const &Odometer) {
 	if (Vehicle.empty() || false == valid(Odometer.km))
 		return;
+	state const recorded{Odometer.km, Odometer.source == origin::guessed};
 	auto const lookup{m_states.find(Vehicle)};
 	if (lookup == m_states.end()) {
 		if (false == Odometer.moved())
 			return;
-		m_states.emplace(Vehicle, Odometer.km);
+		m_states.emplace(Vehicle, recorded);
 		m_modified = true;
 		return;
 	}
-	if (lookup->second == Odometer.km)
+	if (false == newer(recorded, lookup->second))
 		return;
-	lookup->second = Odometer.km;
+	lookup->second = recorded;
 	m_modified = true;
+}
+
+void store::merge(store const &Other) {
+	for (auto const &[name, other] : Other.m_states) {
+		auto const [lookup, added] {m_states.try_emplace(name, other)};
+		if (false == added && newer(other, lookup->second))
+			lookup->second = other;
+	}
 }
 
 std::optional<double> read_legacy(std::istream &Input) {
@@ -154,7 +197,14 @@ double guessed_state(std::string const &Vehicle) {
 reading starting_state(store const &States, std::string const &Vehicle, std::filesystem::path const &Vehicledirectory) {
 	reading result;
 	if (auto const saved{States.find(Vehicle)}; saved.has_value()) {
-		result.begin(*saved, origin::saved);
+		if (States.guessed(Vehicle)) {
+			// the vehicle ran with a made up state before any cab with a known one loaded it (as the AI's or loose
+			// stock); the made up part of it stays replaceable
+			result.begin(*saved, origin::guessed);
+			result.guess = std::min(*saved, guessed_state(Vehicle));
+		} else {
+			result.begin(*saved, origin::saved);
+		}
 	} else if (auto const legacy{legacy_state(Vehicledirectory, Vehicle)}; legacy.has_value()) {
 		result.begin(*legacy, origin::legacy);
 	} else {
@@ -190,36 +240,59 @@ store &states() {
 	return odometers;
 }
 
-bool save() {
-	auto &odometers{states()};
-	if (false == odometers.modified())
+bool save(store &States, std::filesystem::path const &File) {
+	if (false == States.modified())
 		return true;
-	auto const path{file()};
 	std::error_code error;
-	if (path.has_parent_path())
-		std::filesystem::create_directories(path.parent_path(), error);
-	// written aside first, a crash in the middle of a write doesn't lose the states
-	auto temporary{path};
-	temporary += ".tmp";
+	if (File.has_parent_path())
+		std::filesystem::create_directories(File.parent_path(), error);
+	// other simulations on the machine (multiplayer, parallel runs) keep their states in the same file: what they
+	// saved since this one read it is merged in, not overwritten
+	{
+		std::ifstream input{File, std::ios::binary};
+		if (input.is_open()) {
+			store saved;
+			saved.read(input);
+			States.merge(saved);
+		}
+	}
+	// written aside first, a crash in the middle of a write doesn't lose the states. the file aside is this process'
+	// own, the other simulations write theirs
+	auto temporary{File};
+	temporary += "." + std::to_string(process_id()) + ".tmp";
 	{
 		std::ofstream output{temporary, std::ios::binary | std::ios::trunc};
 		if (false == output.is_open()) {
 			ErrorLog("Failed to save the odometer states to \"" + temporary.string() + "\"");
 			return false;
 		}
-		odometers.write(output);
+		States.write(output);
 		if (false == output.good()) {
+			output.close();
+			std::filesystem::remove(temporary, error);
 			ErrorLog("Failed to save the odometer states to \"" + temporary.string() + "\"");
 			return false;
 		}
 	}
-	std::filesystem::rename(temporary, path, error);
+	// the file can't be replaced while another simulation is reading it, that takes a moment
+	for (auto attempt{0};; ++attempt) {
+		std::filesystem::rename(temporary, File, error);
+		if (false == static_cast<bool>(error) || attempt == 4)
+			break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
 	if (error) {
-		ErrorLog("Failed to save the odometer states to \"" + path.string() + "\": " + error.message());
+		ErrorLog("Failed to save the odometer states to \"" + File.string() + "\": " + error.message());
+		std::error_code ignored;
+		std::filesystem::remove(temporary, ignored);
 		return false;
 	}
-	odometers.saved();
+	States.saved();
 	return true;
+}
+
+bool save() {
+	return save(states(), file());
 }
 
 } // namespace odometer

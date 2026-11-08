@@ -200,3 +200,163 @@ TEST_CASE("odometer: the cab's counter offset replaces only a guessed state, the
 		CHECK(reading.source == source);
 	}
 }
+
+TEST_CASE("odometer: a state counted from a made up one is saved as such, the cab's counter still replaces it") {
+	scratch_directory directory{"odometer_guessed"};
+	auto const guess{odometer::guessed_state("EU07-424")};
+	// the vehicle runs 30 km with no cab loaded (the AI's, loose stock)
+	odometer::store first;
+	auto ai{odometer::starting_state(first, "EU07-424", directory.path)};
+	REQUIRE(ai.source == odometer::origin::guessed);
+	ai.run(30000.0);
+	first.record("EU07-424", ai);
+	std::stringstream file;
+	first.write(file);
+	CHECK(file.str().find("\n~") != std::string::npos);
+
+	odometer::store second;
+	REQUIRE(second.read(file) == 1);
+	CHECK(second.guessed("EU07-424"));
+	CHECK(second.find("EU07-424").value() == doctest::Approx(guess + 30.0));
+	auto player{odometer::starting_state(second, "EU07-424", directory.path)};
+	CHECK(player.source == odometer::origin::guessed);
+	CHECK(player.km == doctest::Approx(guess + 30.0));
+
+	SUBCASE("a cab whose counter has an offset loads it: the offset replaces the made up state, the 30 km kept") {
+		player.run(2000.0);
+		player.seed(101532.0);
+		CHECK(player.source == odometer::origin::counter);
+		CHECK(player.start == doctest::Approx(101562.0));
+		CHECK(player.km == doctest::Approx(101564.0));
+		// recorded as known, also when the counter shows less than the made up state did
+		second.record("EU07-424", player);
+		CHECK_FALSE(second.guessed("EU07-424"));
+		CHECK(second.find("EU07-424").value() == doctest::Approx(101564.0));
+		odometer::reading low;
+		low.begin(10.0, odometer::origin::counter);
+		odometer::store replaced;
+		std::stringstream guessedfile{"~400000 SM42-001\n"};
+		replaced.read(guessedfile);
+		replaced.record("SM42-001", low);
+		CHECK(replaced.find("SM42-001").value() == 10.0);
+		CHECK_FALSE(replaced.guessed("SM42-001"));
+		CHECK(replaced.modified());
+	}
+	SUBCASE("it runs with no cab again: it stays guessed") {
+		player.run(1000.0);
+		second.record("EU07-424", player);
+		CHECK(second.guessed("EU07-424"));
+		CHECK(second.find("EU07-424").value() == doctest::Approx(guess + 31.0));
+	}
+}
+
+TEST_CASE("odometer: the store reads the marker of a made up state, and skips it malformed") {
+	std::stringstream file{"~300 guessed one\n"
+	                       "~ nothing\n"
+	                       "~abc name\n"
+	                       "~-5 negative\n"
+	                       "~~5 twice\n"
+	                       "400 known\n"};
+	odometer::store store;
+	CHECK(store.read(file) == 2);
+	CHECK(store.find("guessed one").value() == 300.0);
+	CHECK(store.guessed("guessed one"));
+	CHECK_FALSE(store.guessed("known"));
+	CHECK_FALSE(store.guessed("missing"));
+}
+
+TEST_CASE("odometer: a recorded state is replaced only by a newer one") {
+	std::stringstream file{"500 known\n~600 guessed\n"};
+	odometer::store store;
+	store.read(file);
+	// a vehicle of this simulation counting from less than another simulation saved meanwhile
+	store.record("known", run(400.0, 50000.0));
+	CHECK(store.find("known").value() == 500.0);
+	CHECK_FALSE(store.modified());
+	// a larger one does, also when the vehicle hasn't run in this session
+	store.record("known", run(900.0, 0.0));
+	CHECK(store.find("known").value() == 900.0);
+	CHECK(store.modified());
+	// a guessed state doesn't replace a known one, even a larger one
+	odometer::reading guessed;
+	guessed.begin(5000.0, odometer::origin::guessed);
+	guessed.run(1000.0);
+	store.record("known", guessed);
+	CHECK(store.find("known").value() == 900.0);
+	CHECK_FALSE(store.guessed("known"));
+	// a larger guessed one replaces a guessed one
+	store.record("guessed", guessed);
+	CHECK(store.find("guessed").value() == doctest::Approx(5001.0));
+	CHECK(store.guessed("guessed"));
+}
+
+TEST_CASE("odometer: two simulations saving one file keep each other's states") {
+	scratch_directory directory{"odometer_merge"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, "1000 shared\n~20000 both guessed\n50 untouched\n");
+	auto const load = [&path]() {
+		odometer::store store;
+		std::ifstream input{path, std::ios::binary};
+		store.read(input);
+		return store;
+	};
+	auto first{load()};
+	auto second{load()};
+	auto const guessed = [](double const Km, double const Metres) {
+		odometer::reading reading;
+		reading.begin(Km, odometer::origin::guessed);
+		reading.run(Metres);
+		return reading;
+	};
+
+	// both run the shared vehicle, as two multiplayer simulations of the same train do, the first one further
+	first.record("shared", run(1000.0, 5000.0));
+	first.record("first only", run(70.0, 1000.0));
+	first.record("both guessed", guessed(20000.0, 3000.0));
+	second.record("shared", run(1000.0, 2000.0));
+	second.record("second only", run(80.0, 1000.0));
+	second.record("both guessed", guessed(20000.0, 1000.0));
+
+	REQUIRE(odometer::save(first, path));
+	CHECK_FALSE(first.modified());
+	REQUIRE(odometer::save(second, path));
+
+	auto const saved{load()};
+	CHECK(saved.size() == 5);
+	// the larger state of the shared vehicle, not the sum of the two: they counted the same run
+	CHECK(saved.find("shared").value() == doctest::Approx(1005.0));
+	CHECK(saved.find("first only").value() == doctest::Approx(71.0));
+	CHECK(saved.find("second only").value() == doctest::Approx(81.0));
+	CHECK(saved.find("both guessed").value() == doctest::Approx(20003.0));
+	CHECK(saved.guessed("both guessed"));
+	CHECK(saved.find("untouched").value() == 50.0);
+	// the second one now knows the states the first one saved, for the vehicles it loads later
+	CHECK(second.find("first only").value() == doctest::Approx(71.0));
+
+	SUBCASE("a known state saved by one replaces a guessed one of the other") {
+		odometer::reading seeded;
+		seeded.begin(100.0, odometer::origin::counter);
+		first.record("both guessed", seeded);
+		REQUIRE(odometer::save(first, path));
+		second.record("both guessed", guessed(20003.0, 5000.0));
+		REQUIRE(odometer::save(second, path));
+		auto const after{load()};
+		CHECK(after.find("both guessed").value() == 100.0);
+		CHECK_FALSE(after.guessed("both guessed"));
+		CHECK(after.find("second only").value() == doctest::Approx(81.0));
+	}
+	SUBCASE("nothing but the file is left in the directory") {
+		std::size_t files{0};
+		for (auto const &entry : std::filesystem::directory_iterator{directory.path}) {
+			CAPTURE(entry.path().string());
+			CHECK(entry.path().filename() == path.filename());
+			++files;
+		}
+		CHECK(files == 1);
+	}
+	SUBCASE("a store with nothing recorded since doesn't write") {
+		write_file(path, "1 replaced by hand\n");
+		REQUIRE(odometer::save(second, path));
+		CHECK(load().size() == 1);
+	}
+}

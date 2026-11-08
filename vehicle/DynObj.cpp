@@ -8890,6 +8890,11 @@ vehicle_table::erase_disabled() {
             ++vehicleiter;
         }
         else {
+            // the distance the vehicle ran goes in the odometer store now, it doesn't depend on the vehicle being
+            // kept on the list until the next save (eu07/maszyna#72)
+            if( vehicle->MoverParameters != nullptr ) {
+                odometer::states().record( vehicle->name(), vehicle->MoverParameters->Odometer );
+            }
             if( vehicle->MyTrack != nullptr
              && true == vehicle->MyTrack->RemoveDynamicObject(vehicle) ) {
                 vehicle->MyTrack = nullptr;
