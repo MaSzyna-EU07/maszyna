@@ -20,4 +20,5 @@ struct build_shared
 {
 	alignment::design route_drag_from; // the design of the line as the drag of its gizmo began, taken back when the drag is cancelled
 	std::set<std::pair<scene::basic_node const *, scene::instance_handle>> infra_carried; // the objects their tracks moved since the tool cleared it
+	bool fits_waiting{false}; // a fit the line asked the thread for isn't done yet: the line is one of the fits meanwhile
 };

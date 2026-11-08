@@ -1207,8 +1207,8 @@ editor_mode::selftest_result editor_mode::selftest_laydrag(std::istringstream &w
 		m_lay.whole = setup.whole != 0;
 		m_lay.active = true;
 		lay_cancel();
-		m_stretch_cache.clear();
-		m_turned_last = 0.0;
+		m_build_tools->tracer.forget_stretches();
+		m_build_tools->tracer.forget_turn();
 		if (m_lay.mode != lay_mode::straights)
 			lay_switch_mode();
 		selftest_lay_point({setup.x, 0.0, setup.z});
@@ -1226,7 +1226,7 @@ editor_mode::selftest_result editor_mode::selftest_laydrag(std::istringstream &w
 	// the line shown now is the one worked out the frame before, for the cursor set then
 	auto const now{preview_signature(m_lay.preview_length, m_lay.preview)};
 	auto const changed{signature_changed(now, drag.shown)};
-	auto const partial{m_fits_waiting && (false == m_lay.whole || false == m_lay.shown.has_value())};
+	auto const partial{m_build_tools->shared.fits_waiting && (false == m_lay.whole || false == m_lay.shown.has_value())};
 	drag.shown = now;
 	auto const leg{drag.legs[drag.frame - 1]};
 	if (leg != drag.leg)
@@ -1908,9 +1908,9 @@ void editor_mode::selftest_lay_report(std::string const &Label)
 	lay_line_plan plan;
 	std::string error;
 	// timed as the first frame the points are clicked in, the fits kept for them dropped
-	m_stretch_cache.clear();
+	m_build_tools->tracer.forget_stretches();
 	auto const started{std::chrono::steady_clock::now()};
-	auto const made{m_lay.points.size() >= 2 && lay_line(m_lay.points, m_lay.modes, {}, plan, error)};
+	auto const made{m_lay.points.size() >= 2 && m_build_tools->tracer.lay_line(m_lay.points, m_lay.modes, {}, plan, error)};
 	auto const took{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()};
 	WriteLog(format("SELFTEST layplan %s: %s, %zu points, %zu vertices, L %.2f m, %.1f ms %s", Label.c_str(), made ? "valid" : "invalid", m_lay.points.size(), plan.design.vertices.size(), plan.shape.length, took, error.c_str()));
 	if (false == made)

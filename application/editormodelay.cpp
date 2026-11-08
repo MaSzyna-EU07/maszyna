@@ -645,11 +645,11 @@ void editor_mode::lay_settle()
 void editor_mode::lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End)
 {
 	auto &lay{m_lay};
-	m_fits_waiting = false;
+	m_build_tools->shared.fits_waiting = false;
 	m_follow_preview = true;
 	lay.preview = lay_pieces(Points, Modes, End, lay.preview_length, lay.preview_error, &lay.plan);
 	m_follow_preview = false;
-	if (false == m_fits_waiting || false == lay.whole)
+	if (false == m_build_tools->shared.fits_waiting || false == lay.whole)
 	{
 		lay.shown = lay_tool::worked_out{lay.preview, lay.preview_error, lay.preview_length, lay.plan, m_eased_last, m_join_last, lay.points};
 		lay.settling.reset();
@@ -1573,7 +1573,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		return lay_to_end(Points, End, Length, Error);
 	m_join_last = {};
 	lay_line_plan plan;
-	if (false == lay_line(Points, Modes, End, plan, Error))
+	if (false == m_build_tools->tracer.lay_line(Points, Modes, End, plan, Error))
 		return {};
 	auto const &design{plan.design};
 	auto const &shape{plan.shape};
@@ -1591,7 +1591,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	if ((false == in.pieces.empty() || false == out.pieces.empty()) && editor_track::eases_room(in, out, Points.front(), design.start_direction, Points.back(), design.end_direction))
 	{
 		auto easeddesign{eased_design(design, shape, in, out, End.track == nullptr)};
-		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {}, bends_fit())};
+		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {}, m_build_tools->tracer.bends_fit())};
 		if (easedshape.valid)
 		{
 			Length = editor_track::eased_length(in, easedshape.length, out);
@@ -1678,7 +1678,7 @@ void editor_mode::lay_heights(std::vector<segment_data> &Pieces, std::vector<glm
 		lead_cant(Pieces, editor_track::joint_roll(*End.track, End.point), Plan.design.norms.gauge, false);
 }
 
-bool editor_mode::traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd)
+bool lay_tracer::traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd)
 {
 	if (Points.size() < (AtEnd ? 3u : 2u))
 		return false;
@@ -1687,7 +1687,7 @@ bool editor_mode::traced_from(std::vector<glm::dvec3> const &Points, std::vector
 }
 
 // a stretch of the points clicked along a curve, as lay_line fits a curve to it
-struct editor_mode::lay_stretch
+struct lay_tracer::lay_stretch
 {
 	lay_trace trace;
 	std::vector<glm::dvec2> traced;
@@ -1714,7 +1714,7 @@ struct editor_mode::lay_stretch
 };
 
 // the state lay_line works the line out in: the points, the straight it goes on along, the bends so far
-struct editor_mode::lay_line_state
+struct lay_tracer::lay_line_state
 {
 	// a bend of the line: a corner of straights, or a vertex of a curve fitted
 	struct bend_point
@@ -2019,14 +2019,14 @@ struct editor_mode::lay_line_state
 	}
 };
 
-bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining) const
+bool lay_tracer::lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining) const
 {
 	auto const &tool{m_lay};
 	Plan = {};
 	auto &design{Plan.design};
-	design.norms = laying_norms();
+	design.norms = m_build.lay_norms();
 	design.shape = m_route.design.shape;
-	design.speed = design_speed(tool.start.track, End.track);
+	design.speed = m_build.lay_design_speed(tool.start.track, End.track);
 	design.start = Points.front();
 	auto const joined{End.track != nullptr && glm::length(plan_of(End.direction)) > 1e-6};
 	// from a free end on a curve, or to one, the curve laid next to it turning its way goes on from its curvature: it begins right at the
@@ -2049,7 +2049,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 }
 
 // the points clicked gone through, a stretch of them clicked along a curve at a time, the others bends of straights
-bool editor_mode::lay_line_points(lay_line_state &State) const
+bool lay_tracer::lay_line_points(lay_line_state &State) const
 {
 	auto const &design{State.design};
 	std::size_t i{1};
@@ -2086,7 +2086,7 @@ bool editor_mode::lay_line_points(lay_line_state &State) const
 
 // the curve fitted to the points from First to before Last clicked along it, Reaching: to the free end the line finishes at; Fromend:
 // right from the one it starts at
-bool editor_mode::lay_line_stretch(lay_line_state &State, std::size_t const First, std::size_t const Last, bool const Reaching, bool const Fromend) const
+bool lay_tracer::lay_line_stretch(lay_line_state &State, std::size_t const First, std::size_t const Last, bool const Reaching, bool const Fromend) const
 {
 	lay_stretch stretch;
 	stretch.last = Last;
@@ -2110,7 +2110,7 @@ bool editor_mode::lay_line_stretch(lay_line_state &State, std::size_t const Firs
 
 // the curve of the stretch: going on from the curve of the free end, into the one of the free end it finishes at, or fitted to the points,
 // its end turned to reach the last one; the bends of the line given its vertices
-bool editor_mode::lay_stretch_fit(lay_line_state &State, lay_stretch &Stretch) const
+bool lay_tracer::lay_stretch_fit(lay_line_state &State, lay_stretch &Stretch) const
 {
 	// a curve going on from the curve of the free end the line starts at: fitted as its curvature runs from that of the end to the
 	// last point, where it ends on the straight it comes out to; between the straights only where no such curve follows the points
@@ -2170,7 +2170,7 @@ bool editor_mode::lay_stretch_fit(lay_line_state &State, lay_stretch &Stretch) c
 }
 
 // the curve of the stretch fitted to its points, leaving its end that way; none while it's still being fitted
-std::optional<alignment::trace_stretch> editor_mode::stretch_fit_to(lay_stretch const &Stretch, glm::dvec2 const &Leaving, bool const Meanwhile, bool &Exact) const
+std::optional<alignment::trace_stretch> lay_tracer::stretch_fit_to(lay_stretch const &Stretch, glm::dvec2 const &Leaving, bool const Meanwhile, bool &Exact) const
 {
 	auto const &tool{m_lay};
 	auto trial{Stretch.base};
@@ -2179,7 +2179,7 @@ std::optional<alignment::trace_stretch> editor_mode::stretch_fit_to(lay_stretch 
 }
 
 // the curve going on from the curve of the free end the line starts at, nullopt where none goes on or follows the points
-std::optional<alignment::trace_stretch> editor_mode::stretch_going(lay_line_state &State, lay_stretch &Stretch) const
+std::optional<alignment::trace_stretch> lay_tracer::stretch_going(lay_line_state &State, lay_stretch &Stretch) const
 {
 	auto const &tool{m_lay};
 	std::optional<alignment::trace_stretch> going;
@@ -2205,7 +2205,7 @@ std::optional<alignment::trace_stretch> editor_mode::stretch_going(lay_line_stat
 
 // whether a curve fitted from a straight right at the switch keeps to the points much closer than the one going on at its radius, Going,
 // the straight a few metres long at least
-bool editor_mode::straight_first_closer(lay_stretch const &Stretch, alignment::trace_stretch const &Going) const
+bool lay_tracer::straight_first_closer(lay_stretch const &Stretch, alignment::trace_stretch const &Going) const
 {
 	auto const &tool{m_lay};
 	auto straight{Stretch.base};
@@ -2215,7 +2215,7 @@ bool editor_mode::straight_first_closer(lay_stretch const &Stretch, alignment::t
 }
 
 // the curve into the curve of the free end the line finishes at, fitted from that end back, nullopt where none follows the points
-std::optional<alignment::trace_stretch> editor_mode::stretch_into(lay_stretch &Stretch) const
+std::optional<alignment::trace_stretch> lay_tracer::stretch_into(lay_stretch &Stretch) const
 {
 	auto const &tool{m_lay};
 	auto const &base{Stretch.base};
@@ -2241,7 +2241,7 @@ std::optional<alignment::trace_stretch> editor_mode::stretch_into(lay_stretch &S
 }
 
 // the end of the curve fitted turned to reach the last point: onto the straight clicked after it, else by bisection
-void editor_mode::stretch_end_turn(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted) const
+void lay_tracer::stretch_end_turn(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted) const
 {
 	auto const ending{end_radius(Fitted->vertices.back())};
 	// the last two points clicked on the straight after the curve, as the mode asks for: the straight goes through them, the curve
@@ -2267,7 +2267,7 @@ void editor_mode::stretch_end_turn(lay_stretch &Stretch, std::optional<alignment
 
 // the curve fitted with the heading of the last two points clicked on the straight after it, and that heading; nullopt where they don't
 // show a straight after the curve, or while its fit is still on the thread, Waiting then
-std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> editor_mode::clicked_straight(lay_stretch const &Stretch, bool &Waiting) const
+std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> lay_tracer::clicked_straight(lay_stretch const &Stretch, bool &Waiting) const
 {
 	auto const &points{Stretch.fitted_points};
 	auto const count{points.size()};
@@ -2300,7 +2300,7 @@ std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> editor_mode::clic
 }
 
 // the curve of the stretch fitted leaving its end with the heading, nullopt where none fits, or while it's on the thread, Waiting then
-std::optional<alignment::trace_stretch> editor_mode::heading_fit(lay_stretch const &Stretch, glm::dvec2 const &Heading, bool &Waiting) const
+std::optional<alignment::trace_stretch> lay_tracer::heading_fit(lay_stretch const &Stretch, glm::dvec2 const &Heading, bool &Waiting) const
 {
 	bool again{true};
 	auto const fit{stretch_fit_to(Stretch, Heading, false, again)};
@@ -2313,7 +2313,7 @@ std::optional<alignment::trace_stretch> editor_mode::heading_fit(lay_stretch con
 
 // the heading of the two points, Chorded, turned a step either way and to the bottom of the closeness of the curve to the points, Fit
 // and Heading receiving the closest one
-void editor_mode::closest_heading(lay_stretch const &Stretch, glm::dvec2 const &Chorded, double const Step, std::optional<alignment::trace_stretch> &Fit, glm::dvec2 &Heading, bool &Waiting) const
+void lay_tracer::closest_heading(lay_stretch const &Stretch, glm::dvec2 const &Chorded, double const Step, std::optional<alignment::trace_stretch> &Fit, glm::dvec2 &Heading, bool &Waiting) const
 {
 	auto const rotated = [&Chorded](double const Angle) { return geometry::turned(Chorded, Angle); };
 	// none for points clicked as closely as this: their heading is good as it is
@@ -2348,7 +2348,7 @@ void editor_mode::closest_heading(lay_stretch const &Stretch, glm::dvec2 const &
 
 // the line leaving the last point turning more, by bisection, as far as a curve still reaches the point; First: how far short of it
 // the curve fitted ends, Ending: the radius it ends with
-void editor_mode::turn_to_point(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted, double const First, double const Ending) const
+void lay_tracer::turn_to_point(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted, double const First, double const Ending) const
 {
 	auto const turn{cross(Stretch.entering, Stretch.leaving) >= 0.0 ? 1.0 : -1.0};
 	auto const from{Stretch.leaving};
@@ -2380,7 +2380,7 @@ void editor_mode::turn_to_point(lay_stretch &Stretch, std::optional<alignment::t
 }
 
 // the end of the line, its way, the last bends: false where it can't end
-bool editor_mode::lay_line_close(lay_line_state &State) const
+bool lay_tracer::lay_line_close(lay_line_state &State) const
 {
 	auto &design{State.design};
 	auto &plan{State.plan};
@@ -2424,7 +2424,7 @@ bool editor_mode::lay_line_close(lay_line_state &State) const
 	return true;
 }
 
-std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile,
+std::optional<alignment::trace_stretch> lay_tracer::traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile,
                                                                    bool *Exact, bool const Going) const
 {
 	if (Exact != nullptr)
@@ -2443,7 +2443,7 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 			cache.pop_back();
 	};
 	alignment::trace_stretch fit;
-	if (false == m_follow_preview)
+	if (false == m_build.following_preview())
 	{
 		fit = Going ? alignment::fit_going_on(Base, Points) : alignment::fit_trace_stretch(Base, Points, Radii, Straights);
 		keep(fit);

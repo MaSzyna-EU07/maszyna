@@ -1324,48 +1324,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the parts of it: the track from a point to a free end, the second point; the heights of the pieces and the cant at the free ends
 	std::vector<segment_data> lay_to_end(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
 	void lay_heights(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan const &Plan) const;
-	// Adjoining: the curve next to a free end on a curve goes on from its curvature, where it turns its way; else from a straight there
-	bool lay_line(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error, bool const Adjoining = true) const;
-	// the parts of it, on its state and a stretch of points along a curve, defined where they're used: the points gone through, the curve
-	// fitted to a stretch of them, the line closed at its end; the fit of a stretch leaving that way, going on from the curve of the free
-	// end, from a straight at a switch, into the curve of the free end at the end, its end turned onto the straight clicked after it or
-	// to reach the last point
-	struct lay_line_state;
-	struct lay_stretch;
-	bool lay_line_points(lay_line_state &State) const;
-	bool lay_line_stretch(lay_line_state &State, std::size_t const First, std::size_t const Last, bool const Reaching, bool const Fromend) const;
-	bool lay_stretch_fit(lay_line_state &State, lay_stretch &Stretch) const;
-	bool lay_line_close(lay_line_state &State) const;
-	std::optional<alignment::trace_stretch> stretch_fit_to(lay_stretch const &Stretch, glm::dvec2 const &Leaving, bool const Meanwhile, bool &Exact) const;
-	std::optional<alignment::trace_stretch> stretch_going(lay_line_state &State, lay_stretch &Stretch) const;
-	bool straight_first_closer(lay_stretch const &Stretch, alignment::trace_stretch const &Going) const;
-	std::optional<alignment::trace_stretch> stretch_into(lay_stretch &Stretch) const;
-	void stretch_end_turn(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted) const;
-	std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> clicked_straight(lay_stretch const &Stretch, bool &Waiting) const;
-	std::optional<alignment::trace_stretch> heading_fit(lay_stretch const &Stretch, glm::dvec2 const &Heading, bool &Waiting) const;
-	void closest_heading(lay_stretch const &Stretch, glm::dvec2 const &Chorded, double const Step, std::optional<alignment::trace_stretch> &Fit, glm::dvec2 &Heading, bool &Waiting) const;
-	void turn_to_point(lay_stretch &Stretch, std::optional<alignment::trace_stretch> &Fitted, double const First, double const Ending) const;
-	// whether the points next to the start of the line, or to its end, AtEnd, a free end joined there, are clicked along a curve
-	static bool traced_from(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, bool const AtEnd);
-	// the curves of a stretch traced, the ones fitted lately kept for the same points
-	// none while the stretch the cursor moves along is still being fitted; Meanwhile: the fit done last of the same points but the one
-	// at the cursor until then
-	// Exact receives whether the fit is the one of these points, not one shown meanwhile; Going: the curve going on from the curve of the
-	// free end Base starts at, alignment::fit_going_on
-	std::optional<alignment::trace_stretch> traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile = true,
-	                                                       bool *Exact = nullptr, bool const Going = false) const;
-	// the curve through a row of bends clicked close along one, by traced_stretch
-	alignment::stretch_fit bends_fit() const
-	{
-		return [this](alignment::design const &Base, std::vector<glm::dvec2> const &Points) { return traced_stretch(Base, Points, 0, false, false); };
-	}
-	mutable std::vector<std::pair<std::vector<double>, alignment::trace_stretch>> m_stretch_cache;
-	// the stretch the cursor moves along is fitted on a thread, the frames drawn meanwhile with the fit done last
-	mutable alignment::stretch_fitter m_stretch_fitter;
-	// a fit the line asked the thread for isn't done yet: the line is one of the fits meanwhile
-	mutable bool m_fits_waiting{false};
-	// how much more the curve at the cursor was turned last to reach it, the first one tried for the next line
-	mutable double m_turned_last{0.0};
 	void render_switch_ui();
 	void render_switch_settings(switch_kind const Kind);
 	void render_switch_timbers();
@@ -2818,6 +2776,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void track_tab_set(editor_track_tab const Tab) override;
 	std::vector<double> typed_numbers() const override;
 	void typed_turn_taken() override;
+	bool following_preview() const override;
+	void follow_preview_set(bool const Following) override;
+	double lay_design_speed(TTrack const *From, TTrack const *To) const override;
 	// build services: end
 
 

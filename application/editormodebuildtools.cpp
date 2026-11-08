@@ -563,3 +563,18 @@ void editor_mode::typed_turn_taken()
 {
 	typed_turn();
 }
+
+bool editor_mode::following_preview() const
+{
+	return m_follow_preview;
+}
+
+void editor_mode::follow_preview_set(bool const Following)
+{
+	m_follow_preview = Following;
+}
+
+double editor_mode::lay_design_speed(TTrack const *From, TTrack const *To) const
+{
+	return design_speed(From, To);
+}

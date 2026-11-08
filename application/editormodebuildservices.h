@@ -255,8 +255,23 @@ class editor_straights_services
 	~editor_straights_services() = default;
 };
 
+// what laying the track through the points clicked and lengthening a free end need from the editor: the ground the pieces
+// follow, the free ends snapped to, the switches placed at the end of a line
+class editor_lay_services
+{
+  public:
+	// the pieces of the preview follow the ground meanwhile, on the thread, not to the end
+	virtual bool following_preview() const = 0;
+	virtual void follow_preview_set(bool const Following) = 0;
+	// the speed the line is designed for between the tracks it goes from and to
+	virtual double lay_design_speed(TTrack const *From, TTrack const *To) const = 0;
+
+  protected:
+	~editor_lay_services() = default;
+};
+
 // what the build tools (laying track, routes, straights, roads, sweeps, vertical profiles and grade lines, the terrain model, connections and the infrastructure) need from the editor beyond the interfaces of editortool.h; editor_mode implements it
-class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services, public editor_route_services, public editor_straights_services
+class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services, public editor_route_services, public editor_straights_services, public editor_lay_services
 {
   public:
 	// the panels of the editor
