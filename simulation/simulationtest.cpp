@@ -157,8 +157,14 @@ void test_manager::signal_passed_at_danger(std::string_view const Vehicle, std::
 
 void test_manager::finish(test_result const Result, std::string_view const Reason)
 {
+	if (conclude(Result, Reason))
+		Application.queue_quit(true);
+}
+
+bool test_manager::conclude(test_result const Result, std::string_view const Reason)
+{
 	if (m_finished || false == Global.test.enabled)
-		return;
+		return false;
 	m_finished = true;
 	m_result = Result;
 
@@ -170,8 +176,7 @@ void test_manager::finish(test_result const Result, std::string_view const Reaso
 	// the process has no console of its own; whoever started it with a redirected output gets the verdict there too
 	std::fprintf(stdout, "%s\n", line.c_str());
 	std::fflush(stdout);
-
-	Application.queue_quit(true);
+	return true;
 }
 
 } // namespace simulation
