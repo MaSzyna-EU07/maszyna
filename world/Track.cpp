@@ -2248,17 +2248,6 @@ double TTrack::nose_throw() const {
     return ( fMaxOffset > 0.f ? std::clamp( static_cast<double>( SwitchExtension->fOffset / fMaxOffset ), 0.0, 1.0 ) : nose_set() );
 }
 
-double TTrack::trailing_point( int const Path ) const {
-
-    if( SwitchExtension->m_movablenose ) {
-        // the nose set the other way stands in the way of the wheels before they get to the blades
-        if( auto const frog { this->frog() }; frog.valid ) {
-            return frog.at[ Path ];
-        }
-    }
-    return track_rails::blade_length( *this, Path );
-}
-
 namespace {
 
 // the switch run through against the way it's set: the event of that queued, the blades pushed over, a vehicle derailed at a movable nose

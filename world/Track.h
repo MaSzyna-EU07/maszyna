@@ -312,7 +312,6 @@ public:
     inline TTrack *CurrentPrev() const {
         return trPrev; };
     TTrack *Connected(int s, double &d, int const Path = -1) const; // Path: of a switch, the one to leave by whichever way it is set
-    double trailing_point( int const Path ) const; // where along the path the wheels coming from the frog end push the blades over
     int nose_set() const; // the path the movable nose of the frog lies for, following the blades
     double nose_throw() const; // how far the movable nose of the frog went over to the second path, following the blades
     material_handle rail_material( int const Path ) const;
