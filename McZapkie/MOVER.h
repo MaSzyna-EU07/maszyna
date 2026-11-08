@@ -2094,7 +2094,7 @@ class TMoverParameters
 	double MainsInitTimeCountdown{0.0}; // current state of main circuit initialization, remaining time (in seconds) until it's ready
 	start_t MainsStart{start_t::manual};
 	// config, .fiz Cntrl.PantRequiresMain: the line breaker closes without traction voltage and holds without it, and the
-	// pantographs rise and stay up only while it's closed (Czech locomotives); off, the pantographs come first and the line
+	// pantographs rise and stay up only while it's closed (EU05, EP05, ČD 181 family); off, the pantographs come first and the line
 	// breaker needs their voltage
 	bool PantographsRequireMains{false};
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
