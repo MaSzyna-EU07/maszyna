@@ -87,11 +87,6 @@ bool drawn_bent(segment_data const &Path)
 	return (control1 != glm::dvec3{} || control2 != glm::dvec3{}) && false == TTrack::straightened(Path.points[segment_data::point::start], control1, Path.points[segment_data::point::end]);
 }
 
-// a path the simulator would draw straight, its first control vector lying along the chord, though the second one is off it: the
-// first one made longer by just past the tolerance, so the bend is drawn, saved and read back as one. Its direction is kept, so is
-// the tangent at the start and the joint there; the path moves along itself by under a centimetre. Called where an edit sets the
-// second vector, or keeps a path drawn bent so. Undo: the second one back along the chord, a first one made longer here goes back to
-// a third of the chord, its direction kept too
 // how far a second control vector stands off the chord of the path, sideways and in height; off by this much it bends the path
 double off_chord(segment_data const &Path, glm::dvec3 const &Control2)
 {
@@ -111,6 +106,11 @@ bool took_off_chord(double const Before, segment_data const &Path)
 	return Before < kOffChord && off_chord(Path, Path.points[segment_data::point::control2]) >= kOffChord;
 }
 
+// a path the simulator would draw straight, its first control vector lying along the chord, though the second one is off it: the
+// first one made longer by just past the tolerance, so the bend is drawn, saved and read back as one. Its direction is kept, so is
+// the tangent at the start and the joint there; the path moves along itself by under a centimetre. Called where an edit sets the
+// second vector, or keeps a path drawn bent so. Undo: the second one back along the chord, a first one made longer here goes back to
+// a third of the chord, its direction kept too
 void keep_bent(TTrack const &Track, segment_data &Path, bool const Undo)
 {
 	if (Track.eType == tt_Cross)
