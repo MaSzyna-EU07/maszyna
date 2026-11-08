@@ -2733,8 +2733,9 @@ class TMoverParameters
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
 	// the parts of update_doors()
-	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol) const;
-	void move_door(basic_door &door, double Deltatime) const;
+	// not const: the door they change is one of Doors.instances
+	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol);
+	void move_door(basic_door &door, double Deltatime);
 	bool door_open_request(basic_door const &door, bool localopencontrol, bool remoteopencontrol) const;
 	bool door_close_request(basic_door const &door, bool localclosecontrol, bool remoteclosecontrol) const;
 	bool doors_powered() const;

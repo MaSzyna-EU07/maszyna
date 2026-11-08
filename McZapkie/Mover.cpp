@@ -9273,7 +9273,7 @@ void TMoverParameters::update_doors(double const Deltatime)
 }
 
 // the permit, the state and the requests of a door, and whether it and its step open or close
-void TMoverParameters::update_door_requests(basic_door &door, bool const localopencontrol, bool const remoteopencontrol, bool const localclosecontrol, bool const remoteclosecontrol) const
+void TMoverParameters::update_door_requests(basic_door &door, bool const localopencontrol, bool const remoteopencontrol, bool const localclosecontrol, bool const remoteclosecontrol)
 {
 	// revoke permit if...
 	door.open_permit = true == door.open_permit // ...we already have one...
@@ -9360,7 +9360,7 @@ float TMoverParameters::door_open_duration(basic_door const &door, bool const lo
 }
 
 // a door and its step moved as they open or close
-void TMoverParameters::move_door(basic_door &door, double const Deltatime) const
+void TMoverParameters::move_door(basic_door &door, double const Deltatime)
 {
 	// doors
 	if (true == door.is_opening)
