@@ -2920,7 +2920,7 @@ bool editor_mode::save()
         double offset{0.0};
         header >> keyword >> timetable >> track >> offset;
         if (auto *path{simulation::Paths.find(track)}; path != nullptr && simulation::Vehicles.find("wmb10-6457") == nullptr)
-            simulation::State.insert_trainset("wmb10-6457", path, offset, trailing[1] + "\n");
+            simulation::State.insert_trainset("wmb10-6457", path, offset, 0, trailing[1] + "\n");
     }
     if (result.success && terrainadded)
     {
