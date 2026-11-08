@@ -59,6 +59,13 @@ void every_position(vehicle &Vehicle, test::trace &Trace) {
 	hold(Vehicle, Trace, "running", handle.GetPos(bh_RP), 60.0);
 }
 
+// the handle put to the given position and the vehicle driven from its cab for Seconds, marked in the trace
+void driven_at(vehicle &Vehicle, test::trace &Trace, std::string const &Event, double Position, double Seconds) {
+	Trace.mark(Event);
+	Vehicle->BrakeLevelSet(Position);
+	test::drive(test::driving(Vehicle), {}, Seconds);
+}
+
 } // namespace
 
 TEST_CASE("brake handles: every position of the driver's handle of every real vehicle") {
@@ -131,25 +138,19 @@ TEST_CASE("brake handles: the overload and the high pressure buttons of the MHZ 
 		real.record(trace);
 		REQUIRE(real->Handle != nullptr);
 		auto &handle{*real->Handle};
-		auto &mover{real.mover()};
-		auto const at{[&trace, &real, &mover](std::string const &Event, double Position, double Seconds) {
-			trace.mark(Event);
-			mover.BrakeLevelSet(Position);
-			test::drive(test::driving(real), {}, Seconds);
-		}};
-		at("running", handle.GetPos(bh_RP), 60.0);
+		driven_at(real, trace, "running", handle.GetPos(bh_RP), 60.0);
 		auto const running{real->PipePress};
 		handle.SetUniversalFlag(TUniversalBrake::ub_Overload);
-		at("overload button", handle.GetPos(bh_RP), 30.0);
+		driven_at(real, trace, "overload button", handle.GetPos(bh_RP), 30.0);
 		handle.SetUniversalFlag(0);
 		auto const overloaded{real->PipePress};
-		at("overload decaying", handle.GetPos(bh_RP), 240.0);
+		driven_at(real, trace, "overload decaying", handle.GetPos(bh_RP), 240.0);
 		auto const decayed{real->PipePress};
 		handle.SetUniversalFlag(TUniversalBrake::ub_HighPressure);
-		at("high pressure button, filling stroke", handle.GetPos(bh_FS), 10.0);
+		driven_at(real, trace, "high pressure button, filling stroke", handle.GetPos(bh_FS), 10.0);
 		auto const filled{real->PipePress};
 		handle.SetUniversalFlag(0);
-		at("running", handle.GetPos(bh_RP), 120.0);
+		driven_at(real, trace, "running", handle.GetPos(bh_RP), 120.0);
 		CHECK(running == doctest::Approx(5.0).epsilon(0.01));
 		CHECK(overloaded > running + 0.3);
 		CHECK(decayed < overloaded);
@@ -189,6 +190,14 @@ double ep_brake(test::consist &Unit, double Position, double Seconds) {
 	return cab->BrakePress;
 }
 
+// the EP force the St113 handle of the cab car gives in the given position
+double ep_at(test::consist &Unit, double Position) {
+	auto &cab{Unit[0]};
+	cab->BrakeLevelSet(Position);
+	Unit.run(0.1);
+	return cab->Handle->GetEP();
+}
+
 } // namespace
 
 TEST_CASE("brake handles: the positions of the Knorr St113 EP brake") {
@@ -197,20 +206,14 @@ TEST_CASE("brake handles: the positions of the Knorr St113 EP brake") {
 	auto &cab{unit[0]};
 	REQUIRE(cab->Handle != nullptr);
 	auto &handle{*cab->Handle};
-	auto &mover{cab.mover()};
-	auto const ep_at{[&unit, &mover, &handle](double Position) {
-		mover.BrakeLevelSet(Position);
-		unit.run(0.1);
-		return handle.GetEP();
-	}};
 	// the keys: Num 6 running, Num 8 the first position on, Num 5 the middle of the handle
 	CHECK(handle.GetPos(bh_RP) == doctest::Approx(0.0));
-	CHECK(ep_at(0.0) == doctest::Approx(-1.0)); // EP release
-	CHECK(ep_at(1.0) == doctest::Approx(1.0)); // EP brake
-	CHECK(ep_at(cab->BrakeCtrlPosNo / 2) == doctest::Approx(0.0)); // lap, Num 5
-	CHECK(ep_at(handle.GetPos(bh_FB)) == doctest::Approx(0.0));
-	CHECK(ep_at(handle.GetPos(bh_EPR)) == doctest::Approx(-1.0));
-	CHECK(ep_at(handle.GetPos(bh_EPB)) == doctest::Approx(1.0));
+	CHECK(ep_at(unit, 0.0) == doctest::Approx(-1.0)); // EP release
+	CHECK(ep_at(unit, 1.0) == doctest::Approx(1.0)); // EP brake
+	CHECK(ep_at(unit, cab->BrakeCtrlPosNo / 2) == doctest::Approx(0.0)); // lap, Num 5
+	CHECK(ep_at(unit, handle.GetPos(bh_FB)) == doctest::Approx(0.0));
+	CHECK(ep_at(unit, handle.GetPos(bh_EPR)) == doctest::Approx(-1.0));
+	CHECK(ep_at(unit, handle.GetPos(bh_EPB)) == doctest::Approx(1.0));
 }
 
 TEST_CASE("brake handles: the Knorr St113 EP brake needs the control of the cab powered") {
