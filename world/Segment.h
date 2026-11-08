@@ -9,8 +9,13 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <array>
+#include <optional>
+#include <utility>
+
 #include "utilities/Classes.h"
 #include "rendering/geometrybank.h"
+#include "world/TrackUneven.h"
 #include <glm/glm.hpp>
 
 struct map_colored_paths {
@@ -47,6 +52,15 @@ class TSegment
     glm::dvec3 Point2;
     float fRoll1 { 0.f };
     float fRoll2 { 0.f }; // przechyłka na końcach
+    // how the path sits among the others
+    struct setting {
+        std::array<float, 2> designrolls { 0.f, 0.f }; // as entered; fRoll1 and fRoll2 can differ at a joint
+        bool uneven { false }; // see TrackUneven.h
+        int path { 0 }; // which path of a switch
+        // where the path meets the next one: the middle of their ends and their common vector across
+        std::array<std::optional<std::pair<glm::dvec3, glm::dvec3>>, 2> joints;
+    };
+    setting m_setting;
     double fLength { -1.0 }; // długość policzona
     std::vector<double> fTsBuffer; // wartości parametru krzywej t dla równych odcinków s
     std::vector<double> fTsSlope; // nachylenie dt/du (= dt/ds * fStep) w tych samych punktach
@@ -66,6 +80,11 @@ class TSegment
 	double FastGetTFromS(double const s) const;
 	glm::dvec3 RaInterpolate(double const t) const;
 	glm::dvec3 RaInterpolate0(double const t) const;
+
+    // moves a lofted vertex with the unevenness of the track
+    void settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const;
+    // displacement of a point by the unevenness, at a distance along the path
+    glm::dvec3 stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const;
 
 public:
     bool bCurve = false;
@@ -106,6 +125,24 @@ public:
 	/// <param name="position">Calculated position</param>
 	/// <param name="rotation">Calculated rotation</param>
 	void RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const;
+    // call before Init, it sets the density of the geometry
+    void
+        set_uneven( bool const Uneven, int const Path = 0 ) {
+            m_setting.uneven = Uneven;
+            m_setting.path = Path; }
+    // a point of the path and the unit vector across it in the plan
+    void
+        plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
+    float
+        design_roll( int const End ) const {
+            return m_setting.designrolls[ End ]; }
+    void
+        set_joint( int const End, std::optional<std::pair<glm::dvec3, glm::dvec3>> const &Joint, float const Roll ) {
+            m_setting.joints[ End ] = Joint;
+            ( End == 0 ? fRoll1 : fRoll2 ) = Roll; }
+    // second derivative of the displacement along the path; times speed squared: acceleration of an axle
+    glm::dvec3
+        uneven_bend( double const Distance ) const;
 	glm::dvec3 FastGetPoint(double const t) const;
     inline
     glm::dvec3

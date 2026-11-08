@@ -311,6 +311,8 @@ private:
         double DirectionalVel() const {
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
+    double brake_increase_margin() const;
+
     void update_timers( double const dt );
     void update_logs( double const dt );
     void determine_consist_state();
@@ -358,7 +360,14 @@ private:
     void control_motor_connectors();
     void control_tractive_force();
     void increase_tractive_force();
+    bool is_too_fast_uphill() const;
     void control_braking_force();
+    // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
+    // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
+    double stopping_margin() const {
+        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && !IsAtPassengerStop ?
+            fMinProximityDist + 3.5 :
+            0.5 * fMinProximityDist; }
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
     void check_route_behind( double const Range );
@@ -393,6 +402,11 @@ private:
     double AccDesired = 0.0; // przyspieszenie, jakie ma utrzymywać (<0:nie przyspieszaj,<-0.1:hamuj)
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
+    double fBrakeHeldTime = 0.0; // czas od ostatniego przestawienia kranu hamulca zasadniczego
+    double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
+    double fShortfallTime = 0.0; // when that was checked
+    int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
+    double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
     double VelLimit = -1.0; // predkość zadawana przez event jednokierunkowego ograniczenia prędkości // -1: brak ograniczenia prędkości

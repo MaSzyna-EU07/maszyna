@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
 
+#include <cmath>
 #include <format>
 //---------------------------------------------------------------------------
 
@@ -51,8 +52,13 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 		double sum = m1 + m2;
 		double w1 = (m2 * v2 * 2.0 + v1 * (m1 - m2)) / sum;
 		double w2 = (m1 * v1 * 2.0 + v2 * (m2 - m1)) / sum;
-		v1 = w1 * std::sqrt(1.0 - beta); // niejawna zmiana predkosci wskutek zderzenia
-		v2 = w2 * std::sqrt(1.0 - beta);
+		// the collision changes the velocities directly: the bounce loses energy in the velocities relative to the
+		// centre of mass only, the pair keeps its momentum. scaling the velocities themselves braked the vehicles
+		// down with every step their couplers spent stretched or pressed in all the way (eu07/maszyna#553)
+		auto const centre{(m1 * v1 + m2 * v2) / sum};
+		auto const restitution{std::sqrt(1.0 - beta)};
+		v1 = std::lerp(centre, w1, restitution);
+		v2 = std::lerp(centre, w2, restitution);
 		return m1 * (w2 - w1) * (1 - beta);
 	}
 }
@@ -5281,6 +5287,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 double TMoverParameters::BrakeForceR(double ratio, double velocity) const
 {
 	double press = 0;
+	ratio = Hamulec->GetBrakeRatio(ratio);
 	if (MBPM > 2)
 	{
 		press = MaxBrakePress[1] + (MaxBrakePress[3] - MaxBrakePress[1]) * std::min(1.0, (TotalMass - Mass) / (MBPM - Mass));
@@ -5296,8 +5303,8 @@ double TMoverParameters::BrakeForceR(double ratio, double velocity) const
 			press = MaxBrakePress[3];
 			if (DynamicBrakeType == dbrake_automatic)
 				ratio = ratio + (1.5 - ratio) * std::min(1.0, Vel * 0.02);
-			if (BrakeDelayFlag & bdelay_R && BrakeMethod % 128 != bp_Cosid && BrakeMethod % 128 != bp_D1 && BrakeMethod % 128 != bp_D2 && Power < 1 && velocity < 40)
-				ratio = ratio / 2;
+			if (BrakeDelayFlag & bdelay_R && BrakeMethod % 128 != bp_Cosid && BrakeMethod % 128 != bp_D1 && BrakeMethod % 128 != bp_D2 && Power < 1)
+				ratio *= Hamulec->GetRapidRatio(velocity);
 			if (TrainType == dt_DMU && velocity < 30.0)
 			{
 				ratio -= 0.3;
@@ -7267,13 +7274,12 @@ bool TMoverParameters::AutoRelayShuntStep(bool const ARFASI2)
 bool TMoverParameters::AutoRelayMainStep(bool const ARFASI)
 {
 	bool OK = false;
-	if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
-	{
-		return false; // nie poprawiamy przy konwersji
-		// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
-	}
+	// running backwards, the motors don't get joined in more branches than allowed (the series connection
+	// alone, usually); the camshaft still goes back down from there (eu07/maszyna#393: it stayed where it
+	// was, the line contactors closed, whatever the driver did with the master controller)
+	auto const backwardslimit{DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed};
 	// main bez samoczynnego rozruchu
-	if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
+	if (false == backwardslimit && MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
 	    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
 	        (TrainType == dt_ET22 && DelayCtrlFlag)))
 	{
@@ -11314,12 +11320,15 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		        coupler->beta = 0.55;
 		*/
 		thiscoupler->SpringKC = 4500 * 1000;
-		thiscoupler->DmaxC = 0.05;
 		thiscoupler->FmaxC = 850 * 1000;
 		thiscoupler->SpringKB = 9200 * 1000;
-		thiscoupler->DmaxB = 0.05;
 		thiscoupler->FmaxB = 320 * 1000;
 		thiscoupler->beta = 0.55;
+		// the spring force is taken up to Dmax only, past it the vehicles collide (CollisionDetect()); so the joint
+		// carries the full FmaxC either way before it gives. with 0.05 m it carried 225 kN, short of what a loaded
+		// articulated wagon in a freight train takes, which then collided at every step (eu07/maszyna#553)
+		thiscoupler->DmaxC = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKC);
+		thiscoupler->DmaxB = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKB);
 	}
 
 	if (Index == 0)

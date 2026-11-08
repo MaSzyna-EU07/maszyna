@@ -59,16 +59,26 @@ public:
     virtual auto Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) -> bool = 0;
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
+    // empties specified chunk, its handle stays valid to be filled again
+    virtual void Erase( gfx::geometry_handle const & /*Geometry*/ ) {
+        // a renderer which keeps no chunks of its own has none to empty
+    }
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
 	virtual auto Vertices( gfx::geometry_handle const &Geometry ) const ->gfx::vertex_array const & = 0;
 	// provides direct access to vertex user data of specfied chunk
 	virtual auto UserData( gfx::geometry_handle const &Geometry ) const ->gfx::userdata_array const & = 0;
+	// kind of geometry of specified chunk, -1 when the renderer doesn't tell
+	virtual auto Primitive( gfx::geometry_handle const &Geometry ) const -> int { return -1; }
     // material methods
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
+    // the same material with its highlights damped, for faces which aren't polished like the surfaces they are cut from. backends which can't make one give back the material itself
+    virtual auto Matte_Material( material_handle const Material ) -> material_handle { return Material; }
+    // the same material with its texture tinted by the colour, as far as the userdata of the vertices says. backends which can't make one give back the material itself
+    virtual auto Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) -> material_handle { return Material; }
     // heightmap terrain: material of a chunk blending the materials of up to 8 layers by their weights.
     // Weights: (Samples + 1)^2 values per layer, planar, rows of growing z, the weights of a sample adding up to 255; null with a single layer.
     // Placement: corner of the chunk (x, z) in the texture coordinates of its mesh, and the size of the chunk.
@@ -90,6 +100,10 @@ public:
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
+    // a node deleted from the scene is no longer given as picked
+    virtual void Forget_Node( scene::basic_node const * /*Node*/ ) {
+        // a renderer which keeps no node picked has none to forget
+    }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
     virtual auto Mouse_Hit() const -> bool { return true; }
