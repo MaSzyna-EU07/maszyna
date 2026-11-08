@@ -27,11 +27,16 @@ Where no GCC is at hand, read the new code for what MSVC lets through and GCC do
 The same behaviour needs portable code. Don't rely on the order arguments are evaluated in, on the signedness of `char`, on the size of
 `wchar_t`, or on `long` being 32 bits.
 
-## SonarCloud: every remark on the changed code gets fixed
+## SonarCloud: the PR passes the quality gate
 
-SonarCloud (`sonar.yml`, `sonar-project.properties`) analyses each PR. A PR counts as finished only when every remark Sonar raises on
-the code it changes is fixed. That means the code smells too, not just the bugs, the vulnerabilities and the quality gate. The analysis
-runs on the GCC build, so a PR that fails to build with GCC gets no analysis at all.
+SonarCloud (`sonar.yml`, `sonar-project.properties`) analyses each PR. A PR has to pass Sonar's quality gate. The gate rates the new
+code: reliability, security and maintainability have to be A, duplication is at most 3% and the security hotspots are reviewed.
+Any bug or vulnerability on the new code lowers its rating below A, so each one gets fixed (or gets a NOSONAR when it is a false
+positive). Code smells count only together, through the maintainability rating, so a single one rarely fails the gate, but many in a
+large PR can. A hotspot is reviewed by marking it in SonarCloud as safe or fixed, which is the user's step there, not a reason to
+rewrite the code. A remark that doesn't fail the gate doesn't have to be fixed. Leave large restructurings that only answer such a
+remark (splitting a class or a file, rewriting a working algorithm) out of the PR. The analysis runs on the GCC build, so a PR that
+fails to build with GCC gets no analysis at all, and so it doesn't pass the gate.
 
 Fixing a remark must not change what the code does:
 
@@ -41,7 +46,7 @@ Fixing a remark must not change what the code does:
 - `// NOSONAR: <reason>` is only for a real false positive, or where a fix would change behaviour. Use it rarely, always with the
   reason.
 
-Write new code so that it doesn't raise the rules that keep coming up:
+To keep the gate passing, write new code so that it doesn't raise the rules that keep coming up:
 
 - **S134** (nesting deeper than 3 `if` / `for` / `while` / `switch` / `try`) and **S3776** (cognitive complexity over 25):
   - use early `continue` / `return`;

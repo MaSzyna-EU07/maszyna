@@ -1,0 +1,31 @@
+{
+  "description": "Test mode, pass: EU07 on td.scn with no route set stops before the exit signal stacja1_j; event0 of the track there reports the pass, and the test ends as passed once the train stands.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_red_signal_pass.scn",
+  "track_events": {
+    "tor1k": "event0 test_pass"
+  },
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "expect": "pass",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 5,
+      "within": 150
+    },
+    {
+      "type": "stops",
+      "moving_speed": 5,
+      "stop_speed": 0.5,
+      "hold": 0.5
+    },
+    {
+      "type": "distance",
+      "max": 150
+    }
+  ]
+}
