@@ -21,6 +21,15 @@ http://mozilla.org/MPL/2.0/.
 namespace editor_http
 {
 
+#if defined(_WIN32) || defined(EU07_WITH_CURL)
+namespace
+{
+// the most a response is read into memory: a map or tiles of a service the user typed may be any size
+std::size_t constexpr kLargest{64u * 1024u * 1024u};
+char const *const kTooLarge{"the response is over 64 MB"};
+} // namespace
+#endif
+
 struct client::platform
 {
 #if defined(_WIN32)
@@ -61,14 +70,20 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 		return false;
 	}
 
-	std::wstring const url(Url.begin(), Url.end()); // the requests are plain ascii
+	// the address as the user typed or pasted it, in utf-8
+	std::wstring url;
+	if (auto const size{::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Url.data(), static_cast<int>(Url.size()), nullptr, 0)}; size > 0)
+	{
+		url.resize(static_cast<std::size_t>(size));
+		::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Url.data(), static_cast<int>(Url.size()), url.data(), size);
+	}
 	URL_COMPONENTS parts{};
 	parts.dwStructSize = sizeof(parts);
 	parts.dwSchemeLength = static_cast<DWORD>(-1);
 	parts.dwHostNameLength = static_cast<DWORD>(-1);
 	parts.dwUrlPathLength = static_cast<DWORD>(-1);
 	parts.dwExtraInfoLength = static_cast<DWORD>(-1);
-	if (!::WinHttpCrackUrl(url.c_str(), 0, 0, &parts))
+	if (url.empty() || !::WinHttpCrackUrl(url.c_str(), 0, 0, &parts))
 	{
 		Error = "invalid url";
 		return false;
@@ -115,6 +130,13 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 		}
 		if (available == 0)
 			break;
+		if (Out.size() + available > kLargest)
+		{
+			Error = kTooLarge;
+			close();
+			Out.clear();
+			return false;
+		}
 		std::size_t const offset = Out.size();
 		Out.resize(offset + available);
 		DWORD received{0};
@@ -161,9 +183,20 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 		return false;
 	}
 
+	struct sink
+	{
+		std::vector<std::uint8_t> *out;
+		bool over{false};
+	} received{&Out};
 	auto const write = +[](char *Data, std::size_t Size, std::size_t Count, void *User) -> std::size_t {
-		auto *out = static_cast<std::vector<std::uint8_t> *>(User);
-		out->insert(out->end(), Data, Data + Size * Count);
+		auto *into = static_cast<sink *>(User);
+		if (into->out->size() + Size * Count > kLargest)
+		{
+			// fewer bytes taken than given stops the transfer
+			into->over = true;
+			return 0;
+		}
+		into->out->insert(into->out->end(), Data, Data + Size * Count);
 		return Size * Count;
 	};
 	auto const progress = +[](void *User, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int { return (*static_cast<stop_check const *>(User))() ? 1 : 0; };
@@ -172,12 +205,22 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	::curl_easy_setopt(m_platform->curl, CURLOPT_URL, Url.c_str());
 	::curl_easy_setopt(m_platform->curl, CURLOPT_USERAGENT, "MaSzyna-editor");
 	::curl_easy_setopt(m_platform->curl, CURLOPT_FOLLOWLOCATION, 1L);
+	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXREDIRS, 10L);
+	// http kept for the services the user types; nothing else, also where a redirect leads
+#if LIBCURL_VERSION_NUM >= 0x075500
+	::curl_easy_setopt(m_platform->curl, CURLOPT_PROTOCOLS_STR, "https,http");
+	::curl_easy_setopt(m_platform->curl, CURLOPT_REDIR_PROTOCOLS_STR, "https,http");
+#else
+	::curl_easy_setopt(m_platform->curl, CURLOPT_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+	::curl_easy_setopt(m_platform->curl, CURLOPT_REDIR_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+#endif
+	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(kLargest));
 	::curl_easy_setopt(m_platform->curl, CURLOPT_NOSIGNAL, 1L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_CONNECTTIMEOUT, 10L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_LOW_SPEED_TIME, 20L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEFUNCTION, write);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEDATA, &Out);
+	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEDATA, &received);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_NOPROGRESS, 0L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_XFERINFOFUNCTION, progress);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_XFERINFODATA, const_cast<stop_check *>(&Stop));
@@ -185,7 +228,8 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	CURLcode const code = ::curl_easy_perform(m_platform->curl);
 	if (code != CURLE_OK)
 	{
-		Error = ::curl_easy_strerror(code);
+		Error = (received.over || code == CURLE_FILESIZE_EXCEEDED ? kTooLarge : ::curl_easy_strerror(code));
+		Out.clear();
 		return false;
 	}
 	long status{0};
