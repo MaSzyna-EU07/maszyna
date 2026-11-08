@@ -1491,7 +1491,6 @@ ImGuiIO::ImGuiIO()
     ConfigViewportsNoDecoration = true;
     ConfigViewportsNoDefaultParent = false;
     ConfigViewportsNoAutoDetach = false;
-    ConfigTooltipsWrapWidth = 0.0f;
 
     // Miscellaneous options
     MouseDrawCursor = false;
@@ -1509,6 +1508,7 @@ ImGuiIO::ImGuiIO()
     ConfigWindowsCopyContentsWithCtrlC = false;
     ConfigScrollbarScrollByPage = true;
     ConfigMemoryCompactTimer = 60.0f;
+    ConfigTooltipsWrapWidth = 0.0f;
     ConfigDebugIsDebuggerPresent = false;
     ConfigDebugHighlightIdConflicts = true;
     ConfigDebugHighlightIdConflictsShowItemPicker = true;
@@ -16383,9 +16383,11 @@ static void ImGui::WindowSelectViewport(ImGuiWindow* window)
     }
 
     // Fallback: merge in default viewport if z-order matches, otherwise create a new viewport
+    // MaSzyna addition: with io.ConfigViewportsNoAutoDetach the tooltips and popups stay in the main viewport here too
     if (window->Viewport == NULL)
         if (!UpdateTryMergeWindowIntoHostViewport(window, main_viewport))
-            window->Viewport = WindowStaysInHostViewport(window, main_viewport) ? main_viewport : AddUpdateViewport(window, window->ID, window->Pos, window->Size, ImGuiViewportFlags_None);
+            window->Viewport = (WindowStaysInHostViewport(window, main_viewport) || (g.IO.ConfigViewportsNoAutoDetach && (flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip))))
+                ? main_viewport : AddUpdateViewport(window, window->ID, window->Pos, window->Size, ImGuiViewportFlags_None);
 
     // Mark window as allowed to protrude outside of its viewport and into the current monitor
     if (!lock_viewport)
