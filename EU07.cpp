@@ -164,20 +164,25 @@ int main(int argc, char *argv[])
 		{
 			ErrorLog("Critical error, memory allocation failure: " + std::string(Error.what()));
 		}
-#ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
+#ifndef _WIN32
+			// outside a test the error ends the program as it always did there, uncaught
+			if (false == Global.test.enabled)
+				throw;
+#endif
 			ErrorLog(std::format("Critical error: {}", Error.what()));
 			// in test mode nobody is there to close the box, the exit code tells of the error
 			simulation::test().conclude(simulation::test_result::error, std::format("critical error: {}", Error.what()));
+#ifdef _WIN32
 			if (false == Global.test.enabled)
 			{
 				std::string msg = "Simulator crash occured :(\n";
 				msg += Error.what();
 				MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
 			}
-		}
 #endif
+		}
 	}
 #ifndef _WIN32
 	fflush(stdout);
