@@ -13758,8 +13758,8 @@ msgstr "Odległość masztu od osi toru, przy którym stoi, w rzucie"
 msgid "To the switch ahead"
 msgstr "Do rozjazdu przed nim"
 
-msgid "Along the track the trains it faces run: to the start of the first switch they run onto, or to the fouling point of one they run onto from behind, where the axes of its tracks are 3.50 m apart, more in a curve under 250 m by the widening of the gauge, a W17 marker there or not. Dragged or placed the signal goes to 50, 100, 150 m... from it when that near, Alt keeps it where it is"
-msgstr "Wzdłuż toru, po którym jadą pociągi, do których jest zwrócony: do początku pierwszego rozjazdu, na który wjeżdżają od ostrza, albo do ukresu rozjazdu, na który wjeżdżają od strony krzyżownicy, tam gdzie osie jego torów są 3,50 m od siebie, w łuku poniżej 250 m więcej o poszerzenie skrajni, czy stoi tam W17, czy nie. Przeciągany albo stawiany sygnalizator przeskakuje na 50, 100, 150 m... od niego, gdy jest blisko, Alt zostawia go tam, gdzie jest"
+msgid "Along the track the trains it faces run: to the start of the first switch they run onto, or to the fouling point of one they run onto from behind, where the axes of its tracks are 3.50 m apart, more in a curve under 250 m by the widening of the gauge and on a cant by the leaning of the cars, a W17 marker there or not. Dragged or placed the signal goes to 50, 100, 150 m... from it when that near, Alt keeps it where it is"
+msgstr "Wzdłuż toru, po którym jadą pociągi, do których jest zwrócony: do początku pierwszego rozjazdu, na który wjeżdżają od ostrza, albo do ukresu rozjazdu, na który wjeżdżają od strony krzyżownicy, tam gdzie osie jego torów są 3,50 m od siebie, w łuku poniżej 250 m więcej o poszerzenie skrajni, a na przechyłce o wychylenie wagonów, czy stoi tam W17, czy nie. Przeciągany albo stawiany sygnalizator przeskakuje na 50, 100, 150 m... od niego, gdy jest blisko, Alt zostawia go tam, gdzie jest"
 
 msgid "%.2f m from the axis"
 msgstr "%.2f m od osi"
@@ -13770,5 +13770,5 @@ msgstr "Sygnalizatory / obiekty wzdłuż toru"
 msgid "the axes %.2f m apart there"
 msgstr "osie %.2f m od siebie"
 
-msgid "Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6)"
-msgstr "Nominalnie 3,50 m (Standardy techniczne PLK, tom II, 6.5). Gdy tor leży tam w łuku o promieniu poniżej 250 m,\nposzerzenie skrajni od promienia po stronie drugiego toru dolicza się samo, przy obu torach w łuku suma obu (6.6)"
+msgid "Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6),\nand the leaning of the cars on the cant towards a track on the inner side of the curve, taken 3.05 m up (Ie-1, bD)"
+msgstr "Nominalnie 3,50 m (Standardy techniczne PLK, tom II, 6.5). Gdy tor leży tam w łuku o promieniu poniżej 250 m,\nposzerzenie skrajni od promienia po stronie drugiego toru dolicza się samo, przy obu torach w łuku suma obu (6.6),\ni wychylenie wagonów na przechyłce w stronę toru po wewnętrznej stronie łuku, liczone 3,05 m nad główką szyny (Ie-1, bD)"

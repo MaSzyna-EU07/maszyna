@@ -108,40 +108,52 @@ double radius_at(std::vector<glm::dvec3> const &Line, std::size_t const Index, g
 	return radius;
 }
 
-double widening_at(std::vector<glm::dvec3> const &Line, std::size_t const Index, glm::dvec3 const &Other)
+double widening_at(std::vector<glm::dvec3> const &Line, std::size_t const Index, glm::dvec3 const &Other, double const Cant)
 {
 	bool inner{false};
 	auto const radius{radius_at(Line, Index, Other, inner)};
-	return radius > 0.0 ? gauge::curve_widening(radius, inner) : 0.0;
+	if (radius <= 0.0)
+		return 0.0;
+	return gauge::curve_widening(radius, inner) + (inner ? gauge::cant_widening(Cant, kLeanHeight) : 0.0);
 }
 
-bool find(std::vector<glm::dvec3> const &Main, std::vector<glm::dvec3> const &Branch, double const Nominal, place &Place)
+bool find(std::vector<glm::dvec3> const &Main, std::vector<glm::dvec3> const &Branch, double const Nominal, place &Place, std::vector<double> const &MainCant, std::vector<double> const &BranchCant)
 {
 	if (Main.size() < 2 || Branch.size() < 2)
 		return false;
-	// how far the axes are apart at a point of the branch over what they have to be there, below 0 short of the fouling point
-	auto const excess = [&](std::size_t const I, double &Wanted) {
+	auto const cant_of = [](std::vector<double> const &Cant, std::size_t const I) { return I < Cant.size() ? Cant[I] : 0.0; };
+	// how far the axes are apart at a point of the branch over what they have to be there, below 0 short of the fouling point;
+	// Lean: how much of what they have to be is from the cant
+	auto const excess = [&](std::size_t const I, double &Wanted, double &Lean) {
 		double distance;
 		std::size_t segment;
 		auto const foot{nearest_on(Main, Branch[I], distance, segment)};
-		Wanted = Nominal + widening_at(Branch, I, foot) + widening_at(Main, segment, Branch[I]);
+		auto const branch{widening_at(Branch, I, foot)};
+		auto const main{widening_at(Main, segment, Branch[I])};
+		auto const leaning{widening_at(Branch, I, foot, cant_of(BranchCant, I)) - branch + widening_at(Main, segment, Branch[I], cant_of(MainCant, segment)) - main};
+		Lean = leaning;
+		Wanted = Nominal + branch + main + leaning;
 		return distance - Wanted;
 	};
 	double previouswanted;
-	auto previous{excess(0, previouswanted)};
+	double previouslean;
+	auto previous{excess(0, previouswanted, previouslean)};
 	for (std::size_t i = 1; i < Branch.size(); ++i)
 	{
 		double wanted;
-		auto const now{excess(i, wanted)};
+		double lean;
+		auto const now{excess(i, wanted, lean)};
 		if (now < 0.0)
 		{
 			previous = now;
 			previouswanted = wanted;
+			previouslean = lean;
 			continue;
 		}
 		auto const f{previous < 0.0 ? previous / (previous - now) : 1.0};
 		Place.branch = glm::mix(Branch[i - 1], Branch[i], f);
 		Place.spacing = previouswanted + (wanted - previouswanted) * f;
+		Place.cant = previouslean + (lean - previouslean) * f;
 		double distance;
 		std::size_t segment;
 		Place.main = nearest_on(Main, Place.branch, distance, segment);

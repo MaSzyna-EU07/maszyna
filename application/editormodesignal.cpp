@@ -796,7 +796,8 @@ track_trace::danger editor_mode::signal_danger(signal_spot const &Spot) const
 
 void editor_mode::signal_snap(signal_spot &Spot, signal_template const &Template) const
 {
-	if (Global.altState)
+	// the keys as ImGui has them: Global.altState misses the ones it holds
+	if (ImGui::GetIO().KeyAlt)
 		return;
 	auto const danger{signal_danger(Spot)};
 	if (danger.what == track_trace::danger::kind::none || danger.distance < kSnapStep - kSnapReach)
@@ -2799,9 +2800,9 @@ void editor_mode::render_signal_selected()
 			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", text.c_str());
 		else
 			ImGui::TextWrapped("%s", text.c_str());
+		item_tooltip("Along the track the trains it faces run: to the start of the first switch they run onto, or to the fouling point of one they run onto from behind, where the axes of its tracks are 3.50 m apart, more in a curve under 250 m by the widening of the gauge and on a cant by the leaning of the cars, a W17 marker there or not. Dragged or placed the signal goes to 50, 100, 150 m... from it when that near, Alt keeps it where it is");
 		if (metre.danger.what == track_trace::danger::kind::fouling)
 			ImGui::TextDisabled("%s", format(STR_C("the axes %.2f m apart there"), metre.danger.spacing).c_str());
-		item_tooltip("Along the track the trains it faces run: to the start of the first switch they run onto, or to the fouling point of one they run onto from behind, where the axes of its tracks are 3.50 m apart, more in a curve under 250 m by the widening of the gauge, a W17 marker there or not. Dragged or placed the signal goes to 50, 100, 150 m... from it when that near, Alt keeps it where it is");
 		ImGui::EndTable();
 	}
 	auto const instance{found->include.instance};

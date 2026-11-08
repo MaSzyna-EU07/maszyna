@@ -26,9 +26,8 @@ double constexpr kFoulingSpacing{3.5};
 
 // points along the track from the end of a path on, the way a train goes: through a switch along its main track
 std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit);
-
-// the nearest point of the polyline in the plan; Distance: to it
-glm::dvec3 nearest_on(std::vector<glm::dvec3> const &Line, glm::dvec3 const &Point, double &Distance);
+// and Cant: the raise of the outer rail at each point, m
+std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit, std::vector<double> &Cant);
 
 // the parameter of the point of a path nearest the point given in the plan
 double parameter_of(TTrack const &Track, int const Path, glm::dvec3 const &Point);

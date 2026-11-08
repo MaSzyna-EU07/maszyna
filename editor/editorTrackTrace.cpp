@@ -69,7 +69,7 @@ next_track next_of(TTrack &Track, glm::dvec3 const &Exit)
 // path it lies on. Enter is told of each track run onto, with the distance to the end of it run onto; it stops the walk
 // returning false
 void walk(TTrack &Track, int const Path, double const From, bool const Forward, double const Limit, std::vector<glm::dvec3> &Points, std::vector<double> &Along, std::vector<std::pair<TTrack *, int>> &Paths,
-          std::function<bool(TTrack &, int, bool, double)> const &Enter)
+          std::function<bool(TTrack &, int, bool, double)> const &Enter, std::vector<double> *Cant = nullptr)
 {
 	auto *track{&Track};
 	auto path{Path};
@@ -83,12 +83,20 @@ void walk(TTrack &Track, int const Path, double const From, bool const Forward, 
 		auto const count{std::clamp(static_cast<int>(curve.plan_length() * span), 2, 400)};
 		for (int k = Points.empty() ? 0 : 1; k <= count; ++k)
 		{
-			auto const point{curve.point(forward ? from + span * k / count : from - span * k / count)};
+			auto const t{forward ? from + span * k / count : from - span * k / count};
+			auto const point{curve.point(t)};
 			if (false == Points.empty())
 				length += plan_distance(Points.back(), point);
 			Points.push_back(point);
 			Along.push_back(length);
 			Paths.emplace_back(track, path);
+			// the raise of the outer rail, from the roll of the path there, as the gauge of the editor takes it
+			if (Cant != nullptr)
+			{
+				auto const &rolls{track->m_paths[path].rolls};
+				auto const roll{static_cast<double>(rolls[0]) + static_cast<double>(rolls[1] - rolls[0]) * t};
+				Cant->push_back(1.5 * std::sin(std::abs(glm::radians(roll))));
+			}
 		}
 		auto const next{next_of(*track, Points.back())};
 		if (next.track == nullptr || (Enter && false == Enter(*next.track, next.path, next.start, length)))
@@ -126,32 +134,18 @@ double along_on(std::vector<glm::dvec3> const &Line, std::vector<double> const &
 
 std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit)
 {
+	std::vector<double> cant;
+	return trace(Track, Path, Forward, Limit, cant);
+}
+
+std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit, std::vector<double> &Cant)
+{
 	std::vector<glm::dvec3> points;
 	std::vector<double> along;
 	std::vector<std::pair<TTrack *, int>> paths;
-	walk(Track, Path, Forward ? 0.0 : 1.0, Forward, Limit, points, along, paths, {});
+	Cant.clear();
+	walk(Track, Path, Forward ? 0.0 : 1.0, Forward, Limit, points, along, paths, {}, &Cant);
 	return points;
-}
-
-glm::dvec3 nearest_on(std::vector<glm::dvec3> const &Line, glm::dvec3 const &Point, double &Distance)
-{
-	Distance = std::numeric_limits<double>::max();
-	glm::dvec3 result{Point};
-	auto const point{plan_of(Point)};
-	for (std::size_t i = 1; i < Line.size(); ++i)
-	{
-		auto const a{plan_of(Line[i - 1])};
-		auto const ab{plan_of(Line[i]) - a};
-		auto const length2{glm::dot(ab, ab)};
-		auto const t{length2 > 1e-12 ? std::clamp(glm::dot(point - a, ab) / length2, 0.0, 1.0) : 0.0};
-		auto const distance{glm::length(point - (a + ab * t))};
-		if (distance < Distance)
-		{
-			Distance = distance;
-			result = glm::mix(Line[i - 1], Line[i], t);
-		}
-	}
-	return result;
 }
 
 double parameter_of(TTrack const &Track, int const Path, glm::dvec3 const &Point)
@@ -185,8 +179,12 @@ bool fouling_of(TTrack &Switch, double const Spacing, double const Limit, foulin
 {
 	if (Switch.m_paths.size() < 2)
 		return false;
+	std::vector<double> maincant;
+	std::vector<double> branchcant;
+	auto const main{trace(Switch, 0, true, Limit, maincant)};
+	auto const branch{trace(Switch, 1, true, Limit, branchcant)};
 	::fouling::place place;
-	if (false == ::fouling::find(trace(Switch, 0, true, Limit), trace(Switch, 1, true, Limit), Spacing, place))
+	if (false == ::fouling::find(main, branch, Spacing, place, maincant, branchcant))
 		return false;
 	Point.main = place.main;
 	Point.branch = place.branch;
@@ -212,7 +210,8 @@ glm::dvec3 danger::at(double const Distance, std::pair<TTrack *, int> &Path) con
 	}
 	auto const i{static_cast<std::size_t>(found - along.begin())};
 	auto const span{along[i] - along[i - 1]};
-	Path = paths[i];
+	// a segment lies on the track of its farther end: ahead the one after it, behind, where the line runs reversed, the one before
+	Path = Distance < 0.0 ? paths[i - 1] : paths[i];
 	return glm::mix(line[i - 1], line[i], span > 1e-9 ? (Distance - along[i - 1]) / span : 1.0);
 }
 
@@ -262,16 +261,24 @@ danger danger_ahead(TTrack &Track, int const Path, glm::dvec3 const &Point, bool
 	};
 	// on a switch the train runs towards its start, its own fouling point, once the track ahead is known
 	auto own{Track.eType == tt_Switch && Track.m_paths.size() >= 2 && false == Forward};
+	// a switch run onto from behind: its fouling point once its path is walked too, it may lie on it
+	std::pair<TTrack *, int> pending{nullptr, 0};
+	auto const settle = [&]() {
+		if (pending.first != nullptr)
+			trailing(*pending.first, pending.second);
+		pending.first = nullptr;
+	};
 	walk(Track, path, from, Forward, Limit, ahead, along, paths, [&](TTrack &Next, int const NextPath, bool const Start, double const At) {
 		if (std::exchange(own, false))
 			trailing(Track, path);
+		settle();
 		if (At > best + kFoulingReach)
 			return false;
 		if (Next.eType != tt_Switch || Next.m_paths.size() < 2)
 			return true;
 		if (false == Start)
 		{
-			trailing(Next, NextPath);
+			pending = {&Next, NextPath};
 			return true;
 		}
 		// run onto at its start: nothing farther is nearer
@@ -287,6 +294,7 @@ danger danger_ahead(TTrack &Track, int const Path, glm::dvec3 const &Point, bool
 	});
 	if (own)
 		trailing(Track, path);
+	settle();
 	result.line.insert(result.line.end(), ahead.begin(), ahead.end());
 	result.along.insert(result.along.end(), along.begin(), along.end());
 	result.paths.insert(result.paths.end(), paths.begin(), paths.end());

@@ -34,6 +34,9 @@ TEST_CASE("the widening of the gauge from the radius is that of table 1 of the s
 	CHECK(gauge::curve_widening(250.0, true) == 0.0);
 	CHECK(gauge::curve_widening(300.0, false) == 0.0);
 	CHECK(gauge::curve_widening(0.0, false) == 0.0);
+	// the table ends at 150 m: the sharper curves get its value there
+	CHECK(gauge::curve_widening(40.0, true) == doctest::Approx(50.0 / 150.0 - 0.185));
+	CHECK(gauge::curve_widening(100.0, false) == doctest::Approx(60.0 / 150.0 - 0.225));
 }
 
 TEST_CASE("a straight branch at 1:9 off a straight track fouls it where the axes are 3.50 m apart") {
@@ -71,6 +74,24 @@ TEST_CASE("both tracks in curves under 250 m: the widenings of both are summed, 
 	// the branch there that far from the axis of the main track, the circle about (200, 0)
 	auto const off{200.0 - std::hypot(place.branch.x - 200.0, place.branch.z)};
 	CHECK(off == doctest::Approx(wanted).epsilon(0.003));
+}
+
+TEST_CASE("the cars of a track on a cant lean towards the other track lying on the inner side of its curve, at any radius") {
+	std::vector<double> const cant(200, 0.1);
+	auto const lean{0.1 * fouling::kLeanHeight / 1.5};
+	CHECK(gauge::cant_widening(0.1, fouling::kLeanHeight) == doctest::Approx(lean));
+	fouling::place place;
+	// the branch inside the curve of the main track, on its inner side: the main track on the cant leans towards it
+	REQUIRE(fouling::find(axis(200.0), axis(180.0), fouling::kNominal, place, cant, {}));
+	CHECK(place.spacing == doctest::Approx(3.5 + (50.0 / 200.0 - 0.185) + lean + (60.0 / 180.0 - 0.225)).epsilon(0.001));
+	CHECK(place.cant == doctest::Approx(lean).epsilon(0.001));
+	// the branch on the cant leans away from the main track, on the outer side of its curve: nothing for it
+	REQUIRE(fouling::find(axis(0.0), axis(200.0), fouling::kNominal, place, {}, cant));
+	CHECK(place.spacing == doctest::Approx(3.5 + 60.0 / 200.0 - 0.225).epsilon(0.001));
+	CHECK(place.cant == doctest::Approx(0.0));
+	// from 250 m up no widening from the radius, but the cars lean on the cant all the same
+	REQUIRE(fouling::find(axis(300.0), axis(260.0), fouling::kNominal, place, cant, {}));
+	CHECK(place.spacing == doctest::Approx(3.5 + lean).epsilon(0.001));
 }
 
 TEST_CASE("a straight branch off a track curving away from it: the widening on the outer side of the curve of the main track") {

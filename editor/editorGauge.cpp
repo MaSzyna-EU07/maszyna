@@ -41,14 +41,23 @@ side_widening upper_widening(double const Radius)
 	return {std::max(0.0, 50.0 / Radius - 0.185), std::max(0.0, 60.0 / Radius - 0.225)};
 }
 
+// m of the radius table 1 goes down to
+double constexpr kTableLowest{150.0};
+
 } // namespace
 
 double curve_widening(double const Radius, bool const Inner)
 {
 	if (Radius <= 0.0)
 		return 0.0;
-	auto const widening{upper_widening(Radius)};
+	// the table goes down to 150 m, the sharper curves of the trams aren't in it: they get its value of 150 m
+	auto const widening{upper_widening(std::max(Radius, kTableLowest))};
 	return Inner ? widening.inner : widening.outer;
+}
+
+double cant_widening(double const Cant, double const Height)
+{
+	return std::max(0.0, Cant) * Height / 1.5;
 }
 
 namespace
