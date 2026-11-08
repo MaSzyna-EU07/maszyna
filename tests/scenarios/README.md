@@ -13,7 +13,7 @@ The runner drives the simulator's test mode (eu07/maszyna#541), which works with
 runner too and is meant for scenery authors as well:
 
 ```
-eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [-seed <number|word>] [-ini <settings file>]
+eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [--test-wall-timeout <seconds>] [-seed <number|word>] [-ini <settings file>]
 ```
 
 With `--test` the simulator:
@@ -70,7 +70,7 @@ The test ends with the first of these:
 | 0 | pass | `__test.result` was set to 1 and then every vehicle stood still for 1 s, so a train still moving towards a signal at stop has to stop first (with `test.no_movement_before_pass no` the pass ends the test at once). Also the standstill end with `test.pass_on_standstill yes` |
 | 10 | fail | `__test.result` was set to 0; ends at once |
 | 11 | signal passed at danger | a train went past a signal showing stop (`SetVelocity 0 0`; `SetVelocity 0 x` on automatic block, which may be passed after a stop, doesn't count); ends at once, unless `test.fail_if_stop_overran no` |
-| 12 | timeout | `test.timeout` seconds of simulation time went by (default 3600) |
+| 12 | timeout | `test.timeout` seconds of simulation time went by (default 3600), or `test.wall_timeout` seconds of real time since the start (see below) |
 | 13 | standstill | every vehicle stood still for `test.standstill` seconds (default 300) and nothing reported a result. Trains waiting at a station or for a signal count as standing, so the limit has to be longer than such waits |
 | 14 | error | the run could not start: no `-s`, the scenery failed to load or has no vehicles, or the simulator threw |
 
@@ -84,6 +84,7 @@ The limits go in a `config` block of the scenery:
 ```
 config
 test.timeout 600
+test.wall_timeout 900
 test.standstill 120
 test.pass_on_standstill no
 test.fail_if_stop_overran yes
@@ -94,12 +95,22 @@ endconfig
 | key | default | meaning |
 | --- | --- | --- |
 | `test.timeout` | 3600 | seconds of simulation time before the test ends as `timeout`; 0 = never |
+| `test.wall_timeout` | `test.timeout` + 600 | seconds of real time since the start before the test ends as `timeout`; 0 = never |
 | `test.standstill` | 300 | seconds with every vehicle still and no result before the test ends as `standstill`; 0 = never |
 | `test.pass_on_standstill` | no | the standstill end passes the test instead |
 | `test.fail_if_stop_overran` | yes | a signal passed at danger ends the test; with `no` it's only logged |
 | `test.no_movement_before_pass` | yes | a pass waits until every vehicle stands still; with `no` it ends the test at once |
 
-`--test-timeout` on the command line wins over `test.timeout` of the scenery.
+`--test-timeout` and `--test-wall-timeout` on the command line win over `test.timeout` and
+`test.wall_timeout` of the scenery and the settings files.
+
+`test.wall_timeout` is a watchdog in real time, for a run that hangs or crawls: when the
+simulator still runs that many seconds after its start, loading included, it says `test: timeout`
+and quits with the timeout code, whatever it is doing at the moment, with no dialog. Not given,
+it is `test.timeout` + 600 s: ten minutes for the loading, and a simulation that runs at least as
+fast as real time is never cut short by it. With `test.timeout 0` there is no watchdog unless
+`test.wall_timeout` is given; `test.wall_timeout 0` turns it off. A test that has ended but whose
+simulator doesn't close is ended by the watchdog too, with its own result.
 
 A signal is passed at danger when the head of a train goes past a signal which its driver
 has in its speed table, showing stop. So it's the driver's view that counts: a train without
@@ -120,7 +131,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 15 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. All 16 cases
   take about 30 s with `-j 4`, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -138,13 +149,15 @@ For each case the runner:
    added, and the case's `.scn` fragment added: its trainsets after `FirstInit`, everything
    else (the case's `test_config`, event launchers standing in for keys the scenery expects a
    player to press, extra events) before it,
-2. starts the simulator with `--test -s autotest_<case>.scn -ini out/<case>/autotest.ini`,
-   plus `--test-timeout <duration>` when the case gives a `duration`; the extra ini turns on
+2. starts the simulator with `--test -s autotest_<case>.scn -ini out/<case>/autotest.ini
+   --test-wall-timeout <timeout>`, plus `--test-timeout <duration>` when the case gives a
+   `duration`; the extra ini turns on
    `physicslog` and writes the logs to `logs/log (autotest_<case>) <date>.txt` rather than the
    shared `log.txt` (`multiplelogs`),
 3. waits until the simulator quits by itself. It gives up early when the log reports
-   `Bad vehicle` / `Bad trainset`, when the scenario has loaded and no physicslog appeared, or
-   after the case's `timeout` of wall-clock time,
+   `Bad vehicle` / `Bad trainset`, or when the scenario has loaded and no physicslog appeared.
+   After the case's `timeout` of wall-clock time the simulator ends itself with the timeout code;
+   one that doesn't is killed 30 s later,
 4. compares the result from the exit code with the case's `expect`, then runs the checks on
    the physicslog.
 
@@ -167,9 +180,9 @@ scenery is newer.
 | `test_config` | lines of a `config` block added to the scenery, e.g. `["test.timeout 90"]` |
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
-| `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`. Default `timeout` for a case with `duration`, else `pass` |
+| `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
-| `timeout` | wall-clock seconds before giving up, loading included |
+| `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
 | `fail_on_errors` | fail when `errors.txt` is not empty (default `false`) |
 | `checks` | list of checks, below |
 
@@ -190,7 +203,8 @@ on `tor1k`, the track in front of the signal.
 
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
-`test.timeout`) and `test_mode_standstill` (exit 13, from `test.standstill`).
+`test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
+`test_mode_wall_timeout` (exit 12 from the real time watchdog, which ends it while it loads).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
 

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "utilities/motiontelemetry.h"
 #include <map>
+#include <optional>
 
 #ifdef WITH_UART
 #include "utilities/uart.h"
@@ -95,6 +96,8 @@ struct global_settings {
         bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
         bool no_movement_before_pass{ true }; // a pass waits until every vehicle stands still; with false it ends the test at once
         bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
+        std::optional<double> wall_timeout; // [s] of real time since the start; none = test.timeout + time for the loading, 0 = no limit
+        bool wall_timeout_from_command_line{ false }; // --test-wall-timeout given, the scenery doesn't override it
     };
     test_settings test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap

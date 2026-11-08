@@ -81,7 +81,7 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 		{
 			result.enabled = true;
 		}
-		else if (option == "--test-timeout")
+		else if (option == "--test-timeout" || option == "--test-wall-timeout")
 		{
 			auto const seconds{option_seconds(Arguments, i)};
 			if (false == seconds.has_value())
@@ -91,7 +91,10 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 					result.error = std::format("{} needs a number of seconds", option);
 				continue;
 			}
-			result.timeout = seconds;
+			if (option == "--test-timeout")
+				result.timeout = seconds;
+			else
+				result.wall_timeout = seconds;
 		}
 		else if (takes_value(option))
 		{
@@ -104,6 +107,13 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 		}
 	}
 	return result;
+}
+
+double wall_clock_limit(std::optional<double> const Given, double const Simulationtimeout)
+{
+	if (Given.has_value())
+		return *Given;
+	return Simulationtimeout > 0.0 ? Simulationtimeout + wall_timeout_loading_allowance : 0.0;
 }
 
 std::optional<test_verdict> evaluate_frame(test_progress &Progress, test_frame const &Frame, test_limits const &Limits)

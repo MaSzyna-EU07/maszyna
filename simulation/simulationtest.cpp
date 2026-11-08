@@ -27,8 +27,19 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <format>
 #include <memory>
+
+namespace {
+
+// [s] of real time since the start of the simulator
+double elapsed_wall_time()
+{
+	return std::chrono::duration<double>(std::chrono::steady_clock::now() - Global.startTimestamp).count();
+}
+
+} // namespace
 
 namespace simulation {
 
@@ -77,6 +88,8 @@ void apply_test_mode_settings()
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
 	if (!Global.random_seed)
 		Global.random_seed = seed_of("test");
+	// the real time limit, which the scenery may set too
+	test().watch_wall_clock(wall_clock_limit(Global.test.wall_timeout, Global.test.timeout));
 }
 
 void test_manager::init_result_cell() const
@@ -94,7 +107,10 @@ void test_manager::start()
 	if (m_started)
 		return;
 	m_started = true;
-	m_progress = test_progress {};
+	{
+		std::scoped_lock lock { m_lock };
+		m_progress = test_progress {};
+	}
 	if (simulation::Vehicles.sequence().empty())
 	{
 		// most likely the scenery wasn't found, or it isn't a test scenery
@@ -103,7 +119,9 @@ void test_manager::start()
 	}
 	// a pause set by the scenery or the settings would never be lifted, nobody is there to press the key
 	Global.iPause = 0;
-	WriteLog(std::format("test: started, timeout {:.0f} s, standstill {:.0f} s{}{}{}", Global.test.timeout, Global.test.standstill,
+	auto const walllimit { m_walllimit.load() };
+	WriteLog(std::format("test: started, timeout {:.0f} s, real time limit {}, standstill {:.0f} s{}{}{}", Global.test.timeout,
+	                     walllimit > 0.0 ? std::format("{:.0f} s", walllimit) : std::string("none"), Global.test.standstill,
 	                     Global.test.pass_on_standstill ? ", standstill passes" : "",
 	                     Global.test.fail_if_stop_overran ? "" : ", signals passed at danger allowed",
 	                     Global.test.no_movement_before_pass ? "" : ", pass without waiting for a stop"));
@@ -122,14 +140,21 @@ void test_manager::update(double const Deltatime)
 		frame.reason = cell->Text();
 	}
 
-	auto const requestedbefore { m_progress.passrequested };
-	auto const verdict { evaluate_frame(m_progress, frame, test_limits { Global.test.timeout, Global.test.standstill, Global.test.pass_on_standstill, Global.test.no_movement_before_pass }) };
+	auto const limits { test_limits { Global.test.timeout, Global.test.standstill, Global.test.pass_on_standstill, Global.test.no_movement_before_pass } };
+	std::optional<test_verdict> verdict;
+	auto passrequested { false };
+	{
+		std::scoped_lock lock { m_lock };
+		auto const requestedbefore { m_progress.passrequested };
+		verdict = evaluate_frame(m_progress, frame, limits);
+		passrequested = m_progress.passrequested && false == requestedbefore;
+	}
 	if (verdict.has_value())
 	{
 		finish(verdict->result, verdict->reason);
 		return;
 	}
-	if (m_progress.passrequested && false == requestedbefore)
+	if (passrequested)
 	{
 		WriteLog(std::format("test: pass requested at {:.1f} s{}, waiting for every vehicle to stop", m_progress.time,
 		                     frame.reason.empty() ? std::string() : std::format(" ({})", frame.reason)));
@@ -160,10 +185,11 @@ void test_manager::finish(test_result const Result, std::string_view const Reaso
 
 bool test_manager::conclude(test_result const Result, std::string_view const Reason)
 {
+	std::scoped_lock lock { m_lock };
 	if (m_finished || false == Global.test.enabled)
 		return false;
-	m_finished = true;
 	m_result = Result;
+	m_finished = true;
 
 	auto const line { std::format("test: {} (exit code {}) after {:.1f} s of simulation time: {}", to_string(Result), static_cast<int>(Result), m_progress.time, Reason) };
 	if (Result == test_result::pass)
@@ -174,6 +200,41 @@ bool test_manager::conclude(test_result const Result, std::string_view const Rea
 	std::fprintf(stdout, "%s\n", line.c_str());
 	std::fflush(stdout);
 	return true;
+}
+
+int test_manager::exit_code() const
+{
+	std::scoped_lock lock { m_lock };
+	return static_cast<int>(m_finished ? m_result : test_result::error);
+}
+
+void test_manager::watch_wall_clock(double const Limit)
+{
+	m_walllimit = Limit;
+	if (Limit <= 0.0 || m_watchdog.joinable())
+		return;
+	m_watchdog = std::jthread([this](std::stop_token const &Stop) {
+		while (false == Stop.stop_requested())
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			check_wall_clock(elapsed_wall_time());
+		}
+	});
+}
+
+void test_manager::check_wall_clock(double const Elapsed)
+{
+	auto const limit { m_walllimit.load() };
+	if (limit <= 0.0 || Elapsed < limit)
+		return;
+	// the run hangs, or is too slow: it ends here, whatever the main thread is doing. a run whose test has ended
+	// but which doesn't close ends with its result
+	if (false == conclude(test_result::timeout, std::format("still running after {:.0f} s of real time (test.wall_timeout)", limit)))
+		ErrorLog(std::format("test: the simulator was still running {:.0f} s of real time after the start, ended", limit));
+	// what was logged last gets written, unless the log is held up by a hung thread
+	StopLogService();
+	std::this_thread::sleep_for(std::chrono::milliseconds(250));
+	std::_Exit(exit_code());
 }
 
 } // namespace simulation

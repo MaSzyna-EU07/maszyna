@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string_view>
 
 // the rules of the test mode (eu07 --test, eu07/maszyna#541) which need nothing of the running simulation: the exit
-// codes, the command line and the end conditions. kept apart so the unit tests can check them
+// codes, the command line, the end conditions and the real time limit. kept apart so the unit tests can check them
 namespace simulation {
 
 // exit codes of a test run; public, scripts and CI read them. none of them is a code a process commonly ends with
@@ -25,7 +25,7 @@ enum class test_result : int {
 	pass = 0, // __test.result set to 1, then every vehicle came to rest (or test.pass_on_standstill)
 	fail = 10, // __test.result set to 0
 	signal_passed_at_danger = 11, // a train went past a stop signal (SetVelocity 0 0), unless test.fail_if_stop_overran no
-	timeout = 12, // test.timeout seconds of simulation time went by without a result
+	timeout = 12, // test.timeout seconds of simulation time, or test.wall_timeout seconds of real time went by
 	standstill = 13, // every vehicle stood still for test.standstill seconds without a result
 	error = 14, // the run could not start (a bad command line, the scenery failed to load) or the simulator threw
 };
@@ -42,6 +42,7 @@ struct test_verdict {
 struct test_command_line {
 	bool enabled{false}; // --test
 	std::optional<double> timeout; // --test-timeout <seconds of simulation time>
+	std::optional<double> wall_timeout; // --test-wall-timeout <seconds of real time>
 	std::string error; // what's wrong with them; empty if nothing
 };
 
@@ -51,6 +52,14 @@ std::optional<double> parse_seconds(std::string_view Text);
 // picks the test mode options out of a command line (the first argument is the program). the values of the other
 // options are skipped, so a scenery named like an option isn't taken for one; options it doesn't know are left alone
 test_command_line parse_test_command_line(std::span<char const *const> Arguments);
+
+// time allowed for loading the scenery, on top of the simulation time, when the real time limit isn't given [s]
+inline constexpr double wall_timeout_loading_allowance{600.0};
+
+// the real time limit of a test run [s], 0 = none: the one given, else the simulation time limit plus time for the
+// loading, so a simulation that runs at least as fast as real time is never cut short. no simulation time limit
+// (test.timeout 0) means none in real time either, unless given
+double wall_clock_limit(std::optional<double> Given, double Simulationtimeout);
 
 // the limits and switches the end conditions go by
 struct test_limits {

@@ -80,17 +80,19 @@ TEST_CASE("test mode: the command line")
 		CHECK_FALSE(commandline.enabled);
 		CHECK(commandline.error.empty());
 	}
-	SUBCASE("--test and its limit, in any order")
+	SUBCASE("--test and its limits, in any order")
 	{
-		auto const commandline{parse({"-s", "td.scn", "--test-timeout", "240", "--test"})};
+		auto const commandline{parse({"--test-wall-timeout", "900", "-s", "td.scn", "--test", "--test-timeout", "240"})};
 		CHECK(commandline.enabled);
 		CHECK(commandline.timeout == 240.0);
+		CHECK(commandline.wall_timeout == 900.0);
 		CHECK(commandline.error.empty());
 	}
 	SUBCASE("a limit not given stays unset")
 	{
 		auto const commandline{parse({"--test", "-s", "td.scn"})};
 		CHECK_FALSE(commandline.timeout.has_value());
+		CHECK_FALSE(commandline.wall_timeout.has_value());
 	}
 	SUBCASE("a limit which isn't a number is an error, not a limit turned off")
 	{
@@ -101,12 +103,17 @@ TEST_CASE("test mode: the command line")
 	}
 	SUBCASE("a limit without its value is an error")
 	{
-		auto const commandline{parse({"--test", "-s", "td.scn", "--test-timeout"})};
+		auto const commandline{parse({"--test", "-s", "td.scn", "--test-wall-timeout"})};
+		CHECK(commandline.error == "--test-wall-timeout needs a number of seconds");
+	}
+	SUBCASE("the first error is the one told")
+	{
+		auto const commandline{parse({"--test", "--test-timeout", "x", "--test-wall-timeout", "y"})};
 		CHECK(commandline.error == "--test-timeout needs a number of seconds");
 	}
 	SUBCASE("values of other options aren't taken for options")
 	{
-		auto const commandline{parse({"-s", "--test", "-ini", "--test-timeout", "-v", "--test", "-seed", "--test"})};
+		auto const commandline{parse({"-s", "--test", "-ini", "--test-timeout", "-v", "--test-wall-timeout", "-seed", "--test"})};
 		CHECK_FALSE(commandline.enabled);
 		CHECK(commandline.error.empty());
 	}
@@ -114,6 +121,25 @@ TEST_CASE("test mode: the command line")
 	{
 		CHECK(parse({"-edit", "--test", "-s", "td.scn"}).enabled);
 		CHECK_FALSE(parse({"-edit", "td.scn"}).enabled);
+	}
+}
+
+TEST_CASE("test mode: the real time limit")
+{
+	SUBCASE("given, it is the limit, 0 turns it off")
+	{
+		CHECK(simulation::wall_clock_limit(120.0, 3600.0) == 120.0);
+		CHECK(simulation::wall_clock_limit(0.0, 3600.0) == 0.0);
+	}
+	SUBCASE("not given, it is the simulation time limit and time for the loading")
+	{
+		CHECK(simulation::wall_clock_limit(std::nullopt, 240.0) == 240.0 + simulation::wall_timeout_loading_allowance);
+		CHECK(simulation::wall_clock_limit(std::nullopt, 3600.0) == 3600.0 + simulation::wall_timeout_loading_allowance);
+	}
+	SUBCASE("no simulation time limit, no real time limit unless given")
+	{
+		CHECK(simulation::wall_clock_limit(std::nullopt, 0.0) == 0.0);
+		CHECK(simulation::wall_clock_limit(300.0, 0.0) == 300.0);
 	}
 }
 

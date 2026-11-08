@@ -61,6 +61,10 @@ EXIT_RESULTS = {
     13: "standstill",
     14: "error",
 }
+# the timeout of the simulator's real time watchdog (test.wall_timeout) has the timeout code too; told
+# apart by its verdict, so a run that hung doesn't pass a case that expects the simulation time to run out
+WALL_TIMEOUT = "wall_timeout"
+RESULTS = (*EXIT_RESULTS.values(), WALL_TIMEOUT)
 
 # settings layered over the game's eu07.ini for a test run (test mode doesn't read the player's own
 # in %APPDATA%); the window ones only matter
@@ -226,6 +230,8 @@ FATAL_LOG_LINES = ("Bad vehicle:", "Bad trainset:")
 # time" in the log is not the end of loading (the trainsets after FirstInit still follow),
 # and with several simulators loading at once the first rows took well over 15 s
 STARTUP_TIMEOUT = 120.0
+# wall seconds past a case's timeout before the runner kills a simulator that didn't end itself
+KILL_GRACE = 30.0
 
 
 @dataclass
@@ -246,7 +252,8 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
     if watch:
         cmd = [str(exe), "-s", scenery, "-v", "ghostview", "-ini", str(ini)]
     else:
-        cmd = [str(exe), "--test", "-s", scenery, "-ini", str(ini)]
+        # the simulator's own watchdog ends a run that takes too long, with the timeout code and its verdict
+        cmd = [str(exe), "--test", "-s", scenery, "-ini", str(ini), "--test-wall-timeout", f"{timeout:g}"]
         if duration is not None:
             cmd += ["--test-timeout", f"{duration:g}"]
     say("  $ " + " ".join(f'"{c}"' if " " in c else c for c in cmd), progress=True)
@@ -272,8 +279,9 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
                 break
             if watch and sim_t >= duration:
                 break
-            if wall > timeout:
-                result.failure = f"timed out after {timeout:.0f}s before {duration}s of simulation"
+            # in test mode a little later than the simulator's own limit, for a run that can't even end itself
+            if wall > timeout + (0 if watch else KILL_GRACE):
+                result.failure = f"timed out after {wall:.0f}s before {duration}s of simulation"
                 break
             if not result.rows:
                 result.logs = find_logs(game_dir, scenery, since)
@@ -506,8 +514,8 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     # a case that only records `duration` seconds ends on the test timeout; one that says
     # how the test ends (a pass event, a signal passed at danger...) expects that result
     expect = case.get("expect", "timeout" if duration is not None else "pass")
-    if expect not in EXIT_RESULTS.values():
-        sys.exit(f"{name}: expect must be one of {', '.join(EXIT_RESULTS.values())}")
+    if expect not in RESULTS:
+        sys.exit(f"{name}: expect must be one of {', '.join(RESULTS)}")
     if watch and duration is None:
         sys.exit(f"{name}: --watch needs a case with duration")
     result = run_simulator(exe, game_dir, scenery, ini, physicslog,
@@ -530,8 +538,11 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
         if result.verdict:
             say(f"  {result.verdict}")
         got = EXIT_RESULTS.get(result.exit_code) if result.exit_code is not None else None
+        if got == "timeout" and "of real time" in result.verdict:
+            got = WALL_TIMEOUT
         passed = got == expect
-        say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}, expected {expect}")
+        watchdog = ", from the real time watchdog" if got == WALL_TIMEOUT else ""
+        say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}{watchdog}, expected {expect}")
         ok &= passed
     if result.failure:
         say(f"  FAIL  {result.failure}")

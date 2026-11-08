@@ -1166,6 +1166,11 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		Global.test.timeout = *testcommandline.timeout;
 		Global.test.timeout_from_command_line = true;
 	}
+	if (testcommandline.wall_timeout.has_value())
+	{
+		Global.test.wall_timeout = testcommandline.wall_timeout;
+		Global.test.wall_timeout_from_command_line = true;
+	}
 
 	fs::path iniPath = user_config_path("eu07.ini");
 
@@ -1231,7 +1236,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			// integration test: the scenery runs unattended and the exit code is the result (eu07/maszyna#541),
 			// taken from the command line above
 		}
-		else if (token == "--test-timeout")
+		else if (token == "--test-timeout" || token == "--test-wall-timeout")
 		{
 			// taken from the command line above, with its value
 			++i;
@@ -1253,7 +1258,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]"
 			          << " [-ini settingsfile]"
-			          << " [--test [--test-timeout seconds]]" << std::endl;
+			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds]]" << std::endl;
 			simulation::test().conclude(simulation::test_result::error, std::format("unknown command line argument {}", token));
 			return -1;
 		}

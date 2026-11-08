@@ -11,7 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "simulation/simulationtestrules.h"
 
+#include <atomic>
+#include <mutex>
 #include <string_view>
+#include <thread>
 
 // integration test mode (eu07 --test -s <scenery>, eu07/maszyna#541): the scenery runs unattended in a tight
 // fixed-step loop and the simulator quits with an exit code saying how the test went
@@ -38,16 +41,26 @@ public:
 	// ends the test with given result, without closing the application: for the ways out that close it anyway
 	// (a bad command line, a failed start, an exception). returns false if the test had already ended
 	bool conclude(test_result Result, std::string_view Reason);
+	// (re)sets the real time limit of the run [s] since the start of the simulator, 0 = none. the first limit
+	// starts the watchdog, which ends a run still going at the limit with the timeout code, whatever it's doing
+	void watch_wall_clock(double Limit);
 
 	bool finished() const { return m_finished; }
 	// exit code of the process: the result, or error while the test hasn't finished
-	int exit_code() const { return static_cast<int>(m_finished ? m_result : test_result::error); }
+	int exit_code() const;
 
 private:
+	// the watchdog's check, at Elapsed seconds of real time since the start of the simulator
+	void check_wall_clock(double Elapsed);
+
+	// the watchdog may end the test from its own thread
+	mutable std::mutex m_lock;
 	bool m_started { false };
-	bool m_finished { false };
+	std::atomic<bool> m_finished { false };
 	test_result m_result { test_result::error };
 	test_progress m_progress;
+	std::atomic<double> m_walllimit { 0.0 }; // [s] since the start of the simulator, 0 = none
+	std::jthread m_watchdog;
 };
 
 // the test of the run
