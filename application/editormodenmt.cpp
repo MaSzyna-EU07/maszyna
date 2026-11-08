@@ -3903,8 +3903,12 @@ void editor_mode::nmt_share_grades()
 			std::string where;
 			for (auto const &here : all)
 				if (runs.root(here.track) == run && here.track->eType == tt_Normal)
-					if (auto const sides{nearest_sides(here)}; sides[0].second == nullptr && sides[1].second == nullptr && ++lonely <= 40)
-						where += format(" %s(%.0f,%.0f,%.2f)", here.track->name().c_str(), here.position.x, here.position.z, here.position.y);
+					if (auto const sides{nearest_sides(here)}; sides[0].second == nullptr && sides[1].second == nullptr)
+					{
+						++lonely;
+						if (lonely <= 40)
+							where += format(" %s(%.0f,%.0f,%.2f)", here.track->name().c_str(), here.position.x, here.position.z, here.position.y);
+					}
 			auto const found{state.grade_lines.find(grade_line_key(*track))};
 			WriteLog(format("Editor: NMT share, %s: %s in a run of %zu tracks over %.0f m from %s, apart %d, line %d, %zu places with nothing beside:%s", Stage, track->name().c_str(), members, length,
 			                run->name().c_str(), apart.contains(run) ? 1 : 0, found != state.grade_lines.end() ? found->second : -100, lonely, where.c_str()),

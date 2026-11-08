@@ -774,8 +774,14 @@ editor_selftest_result joints_tool::selftest(std::string const &Command, std::is
 		started = false;
 		std::size_t count{0};
 		for (auto const &issue : m_joints.issues)
-			if (issue.type == joint_issue::kind::model && count++ < 40)
-				WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
+		{
+			if (issue.type != joint_issue::kind::model)
+				continue;
+			if (count == 40)
+				break;
+			++count;
+			WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
+		}
 		WriteLog("SELFTEST jointsmodel: " + m_joints.status);
 		return editor_selftest_result::handled;
 	}

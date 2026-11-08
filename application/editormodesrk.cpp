@@ -3059,7 +3059,10 @@ void srk_tool::survey_lines(std::vector<standing_signal> const &Standing)
 			auto shared{false};
 			for (std::size_t other = 0; other < m_lines.size() && false == shared; ++other)
 				shared = (m_lines[other].block != block_kind::semi) != automatic && on_line(m_line_ways[other], signal.position);
-			if (shared || row.leftovers++ > 0)
+			if (shared)
+				continue;
+			++row.leftovers;
+			if (row.leftovers > 1)
 				continue;
 			row.leftover = signal.position;
 			row.leftover_travel = travel_of(signal.yaw);

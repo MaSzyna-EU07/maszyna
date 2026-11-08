@@ -1268,8 +1268,14 @@ editor_selftest_result fouling_tool::selftest(std::string const &Command, std::i
 		WriteLog("SELFTEST fouling: " + tool.status);
 		int shown{0};
 		for (auto const &found : tool.found)
-			if (found.wrong && shown++ < 5)
-				WriteLog(format("SELFTEST fouling: %s %.2f m off, %+.3f m high", found.marker.file.c_str(), found.error, found.height_error));
+		{
+			if (false == found.wrong)
+				continue;
+			if (shown == 5)
+				break;
+			++shown;
+			WriteLog(format("SELFTEST fouling: %s %.2f m off, %+.3f m high", found.marker.file.c_str(), found.error, found.height_error));
+		}
 		if (values["place"] == "one")
 		{
 			// the first fouling point without a marker alone, as a click on it in the view
