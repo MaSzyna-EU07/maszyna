@@ -4609,29 +4609,34 @@ void opengl33_renderer::Render(TTrack *Track)
 // those of the other tracks, unless the track lies where the light differs
 void opengl33_renderer::Render_cuts(TTrack *Track, material_handle &Batchmaterial)
 {
-	std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence *>> parts{{Track->m_materialcut1, &Track->GeometryCut1}, {Track->m_materialcut2, &Track->GeometryCut2}};
-	for (auto &tread : Track->GeometryTreads)
+	// most tracks have none, the frogs and the blades off or the track plain: nothing to go through
+	if (Track->GeometryCut1.empty() && Track->GeometryCut2.empty() && Track->GeometryTreads.empty())
 	{
-		parts.emplace_back(tread.material, &tread.geometry);
-		parts.emplace_back(tread.matte, &tread.cuts);
+		return;
 	}
-	for (auto const &[material, geometry] : parts)
-	{
-		if ((material == null_handle) || geometry->empty())
+	auto const part = [this, Track, &Batchmaterial](material_handle const Material, TTrack::geometryhandle_sequence &Geometry) {
+		if ((Material == null_handle) || Geometry.empty())
 		{
-			continue;
+			return;
 		}
 		if (Track->eEnvironment != e_flat)
 		{
 			flush_path_batch(Batchmaterial);
 			setup_environment_light(Track->eEnvironment);
-			Bind_Material(material);
-			draw(std::begin(*geometry), std::end(*geometry));
+			Bind_Material(Material);
+			draw(std::begin(Geometry), std::end(Geometry));
 			setup_environment_light();
-			continue;
+			return;
 		}
-		begin_path_batch(Batchmaterial, material);
-		m_pathbatch.insert(std::end(m_pathbatch), std::begin(*geometry), std::end(*geometry));
+		begin_path_batch(Batchmaterial, Material);
+		m_pathbatch.insert(std::end(m_pathbatch), std::begin(Geometry), std::end(Geometry));
+	};
+	part(Track->m_materialcut1, Track->GeometryCut1);
+	part(Track->m_materialcut2, Track->GeometryCut2);
+	for (auto &tread : Track->GeometryTreads)
+	{
+		part(tread.material, tread.geometry);
+		part(tread.matte, tread.cuts);
 	}
 }
 
