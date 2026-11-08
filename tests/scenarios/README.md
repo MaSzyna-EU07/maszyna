@@ -19,6 +19,9 @@ eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [-seed <number|word>] [-
 With `--test` the simulator:
 
 - needs `-s`; `-v` is ignored and every train is driven by AI (ghostview),
+- reads the settings of the game folder's `eu07.ini` and of the files given with `-ini` (in that
+  order), not the player's own `eu07.ini` in `%APPDATA%\MaSzyna` (`~/.config/MaSzyna` on Linux),
+  so a test runs the same for whoever runs it,
 - draws nothing: the null renderer loads the 3D models (the physics needs some of their
   data) but no textures, and the window stays hidden,
 - has no sound, no network, no python, no pause (not even one set by the scenery), and

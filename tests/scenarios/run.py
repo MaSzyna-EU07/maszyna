@@ -62,7 +62,8 @@ EXIT_RESULTS = {
     14: "error",
 }
 
-# settings layered over the user's eu07.ini for a test run; the window ones only matter
+# settings layered over the game's eu07.ini for a test run (test mode doesn't read the player's own
+# in %APPDATA%); the window ones only matter
 # with --watch, test mode keeps its window hidden and turns the sound off by itself
 TEST_INI = """\
 fullscreen no

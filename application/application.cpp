@@ -1200,17 +1200,6 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
 
-	fs::path iniPath = user_config_path("eu07.ini");
-
-	if (!iniPath.empty() && fs::exists(iniPath))
-	{
-		Global.LoadIniFile(iniPath.string().c_str());
-	}
-	else
-	{
-		Global.LoadIniFile("eu07.ini");
-	}
-
 	// a test run is known before the rest of the command line is read, so a command line it can't take
 	// ends with the error code of the test, not with 0, which would pass it
 	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
@@ -1224,6 +1213,19 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 		Global.test.timeout = *testcommandline.timeout;
 		Global.test.timeout_from_command_line = true;
+	}
+
+	fs::path iniPath = user_config_path("eu07.ini");
+
+	// a test reads the settings of the game folder only (and those given with -ini), not the player's own
+	// (%APPDATA%/MaSzyna, ~/.config/MaSzyna), so it runs the same for whoever runs it
+	if (false == Global.test.enabled && !iniPath.empty() && fs::exists(iniPath))
+	{
+		Global.LoadIniFile(iniPath.string().c_str());
+	}
+	else
+	{
+		Global.LoadIniFile("eu07.ini");
 	}
 
 	// process command line arguments
