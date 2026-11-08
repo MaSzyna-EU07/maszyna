@@ -315,6 +315,7 @@ private:
     bool uphill_stop_hold() const;
     bool uphill_brake_committed( double const Velocity ) const;
     void control_uphill_start();
+    std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
     void update_logs( double const dt );
