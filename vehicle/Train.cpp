@@ -9108,7 +9108,16 @@ bool TTrain::Update(double const Deltatime)
 			btLampkaDoorLeft.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::left : side::right]);
 			btLampkaDoorRight.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::right : side::left]);
 		}
-		btLampkaBlokadaDrzwi.Turn(mvOccupied->Doors.is_locked);
+		if (Global.DoorClosureSignal && DynamicObject->Mechanik != nullptr)
+		{
+			// door closure signalling (SOD) of the whole consist: lit with all doors closed and locked, blinking with
+			// them closed but released, dark with a door open
+			btLampkaBlokadaDrzwi.Turn(door_closure_lamp(DynamicObject->Mechanik->DoorClosure, simulation::Time.data().wSecond % 2 < 1));
+		}
+		else
+		{
+			btLampkaBlokadaDrzwi.Turn(mvOccupied->Doors.is_locked);
+		}
 		btLampkaDoorLockOff.Turn(false == mvOccupied->Doors.lock_enabled);
 		btLampkaDepartureSignal.Turn(mvControlled->DepartureSignal);
 		btLampkaNapNastHam.Turn(mvControlled->DirActive != 0 && mvOccupied->EpFuse); // napiecie na nastawniku hamulcowym

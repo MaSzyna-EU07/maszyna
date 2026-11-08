@@ -506,6 +506,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "doorclosuresignal")
+    {
+        ParseOne(Parser, DoorClosureSignal);
+        return true;
+    }
+
     if (token == "movelight")
     {
         ParseOne(Parser, fMoveLight, 1, false);
@@ -1573,6 +1579,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "skyenabled", asSky );
     export_as_text( Output, "defaultext", szDefaultExt );
     export_as_text( Output, "newaircouplers", bnewAirCouplers );
+    export_as_text( Output, "doorclosuresignal", DoorClosureSignal );
     export_as_text( Output, "anisotropicfiltering", AnisotropicFiltering );
     export_as_text( Output, "usevbo", bUseVBO );
     export_as_text( Output, "feedbackmode", iFeedbackMode );

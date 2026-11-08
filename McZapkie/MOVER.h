@@ -261,6 +261,22 @@ enum class range_t
 	/// <summary>Affects the entire consist.</summary>
 	consist
 };
+/// <summary>State of the door closure signalling (SOD) of a vehicle or a consist, ordered from the least to the most
+/// severe: the state of a consist is the most severe state of its vehicles.</summary>
+enum class door_closure_t
+{
+	/// <summary>No doors worked by the crew: the vehicle doesn't take part in the signalling.</summary>
+	none,
+	/// <summary>All doors closed and locked: they can't be opened.</summary>
+	locked,
+	/// <summary>All doors closed, but released: a permit is given, or no lock holds them shut.</summary>
+	released,
+	/// <summary>A door is open, or not fully closed yet.</summary>
+	open
+};
+/// <summary>Whether the door closure signalling lamp is lit: steadily for locked doors, in the lit phase of the
+/// blinking for released ones, never with a door open or with no doors signalled.</summary>
+bool door_closure_lamp(door_closure_t const State, bool const BlinkLit);
 /// <summary>Possible settings for an enable/disable input pair (mutually exclusive).</summary>
 enum class operation_t
 {
@@ -2593,6 +2609,7 @@ class TMoverParameters
 	bool LockDoors(bool const State, range_t const Notify = range_t::consist);
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
+	door_closure_t door_closure() const; // state of the door closure signalling of this vehicle
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);
