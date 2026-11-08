@@ -823,6 +823,7 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
 		bool const bent{drawn_bent(path)};
+		auto const was{control};
 		auto const fixed{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::end : segment_data::point::start]};
 		auto const before{plan_of(path.points[point_index(joint.theirs.kind)] - fixed)};
 		auto const target{point_position(Track, joint.own)};
@@ -837,8 +838,9 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		}
 		auto const moved{turned(plan_of(joint.control), angle)};
 		control = {moved.x, joint.control.y, moved.y};
-		// the second vector turned with the track it follows, or a path drawn bent: kept bent
-		if (bent || joint.theirs.kind == point_kind::end)
+		// a path drawn bent, or its second vector turned with the track it follows, is kept bent; a neighbour whose second vector is
+		// written back as it was isn't touched
+		if (bent || (joint.theirs.kind == point_kind::end && glm::distance(control, was) > 1e-6))
 			keep_bent(*joint.other, path, false);
 	}
 }
@@ -854,8 +856,10 @@ void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &J
 		auto &path{joint.other->m_paths[joint.theirs.path]};
 		bool const bent{drawn_bent(path)};
 		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto const was{control};
 		control.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control));
-		if (bent || joint.theirs.kind == point_kind::end)
+		// as in follow: only where the second vector took another grade
+		if (bent || (joint.theirs.kind == point_kind::end && glm::distance(control, was) > 1e-6))
 			keep_bent(*joint.other, path, false);
 	}
 }
