@@ -2066,18 +2066,18 @@ void bind_switch( TTrack &Switch ) {
     Switch.iPrevDirection = extension.iPrevDirection[ state ];
 }
 
-// the free end of a path of the switch joined to the end of another switch in the same point, and that one joined back to it; whether
-// it was
-bool join_switch_end( TTrack &Switch, int const Path, int const End ) {
+// the free end of a path of the switch joined to the end of another switch in the same point, and that one joined back to it; the
+// other switch, none: not joined
+TTrack const *join_switch_end( TTrack &Switch, int const Path, int const End ) {
 
     auto &own { *Switch.SwitchExtension };
     if( ( End ? own.pNexts[ Path ] : own.pPrevs[ Path ] ) != nullptr || own.Segments[ Path ] == nullptr ) {
-        return false;
+        return nullptr;
     }
     auto const point { End ? own.Segments[ Path ]->FastGetPoint_1() : own.Segments[ Path ]->FastGetPoint_0() };
     auto const [ other, endpoint ] { simulation::Region->find_path( point, &Switch ) };
     if( other == nullptr || other == &Switch || other->eType != tt_Switch || other->SwitchExtension == nullptr || endpoint < 2 || endpoint > 5 ) {
-        return false;
+        return nullptr;
     }
     auto &theirs { *other->SwitchExtension };
     if( End == 0 ) {
@@ -2103,20 +2103,22 @@ bool join_switch_end( TTrack &Switch, int const Path, int const End ) {
         theirs.iNextDirection[ theirpath ] = ours;
     }
     bind_switch( *other );
-    return true;
+    return other;
 }
 
 } // namespace
 
-int TTrack::join_switches()
+std::vector<TTrack const *> TTrack::join_switches()
 {
+    std::vector<TTrack const *> joined;
     if( eType != tt_Switch || SwitchExtension == nullptr || simulation::Region == nullptr ) {
-        return 0;
+        return joined;
     }
-    auto joined { 0 };
     for( int path = 0; path < 2; ++path ) {
         for( int end = 0; end < 2; ++end ) {
-            joined += ( join_switch_end( *this, path, end ) ? 1 : 0 );
+            if( auto const *other { join_switch_end( *this, path, end ) }; other != nullptr ) {
+                joined.push_back( other );
+            }
         }
     }
     bind_switch( *this );
@@ -4093,21 +4095,21 @@ path_table::InitTracks() {
         }
     }
 
-    // the plain tracks are joined to the switches above, a switch right after another one only here, once they are. Such ends were
-    // left open before, so each one joined is told in the log
-    auto switchjoins { 0 };
+    // the plain tracks are joined to the switches above, a switch right after another one only here, once they are. Such joints were
+    // left open before, so each one is told in the log, with both switches
+    auto switchjoints { 0 };
     for( auto *track : m_items ) {
         if( track->eType != tt_Switch ) {
             continue;
         }
-        if( auto const joined { track->join_switches() }; joined > 0 ) {
-            switchjoins += joined;
+        for( auto const *other : track->join_switches() ) {
+            ++switchjoints;
             auto const &location { track->location() };
-            WriteLog( std::format( "Track \"{}\" at {:.1f} {:.1f}: {} end(s) joined directly to another switch", track->name(), location.x, location.z, joined ) );
+            WriteLog( std::format( "Switch \"{}\" at {:.1f} {:.1f} joined directly to switch \"{}\"", track->name(), location.x, location.z, other->name() ) );
         }
     }
-    if( switchjoins > 0 ) {
-        WriteLog( std::format( "Switches joined directly to other switches: {} ends, left open before", switchjoins ) );
+    if( switchjoints > 0 ) {
+        WriteLog( std::format( "Switches joined directly to other switches: {} joints, left open before", switchjoints ) );
     }
 
     if( Global.CreateSwitchTrackbeds ) {
