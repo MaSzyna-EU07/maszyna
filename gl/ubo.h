@@ -214,7 +214,7 @@ namespace gl
         Ubs.camera_lo = glm::vec4{glm::vec3{Place - high}, 0.f};
     }
 
-    const size_t MAX_PARAMS = 3;
+    const size_t MAX_PARAMS = 4;
 
     struct model_ubs
     {

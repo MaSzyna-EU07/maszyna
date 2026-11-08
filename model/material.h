@@ -145,6 +145,8 @@ public:
     // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
     material_handle
         create_matte( material_handle const Material );
+    // copy of provided material with its texture tinted to the colour as far as the userdata of the vertices says. returns: handle to
+    // the copy, made once per material and colour; the material itself when its shader can't tint it
     material_handle
         create_tinted( material_handle const Material, glm::vec3 const &Colour );
     // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of
@@ -187,6 +189,9 @@ private:
     // the blending materials made again in their places, after the materials changed their textures
     void
         rebuild_blends();
+    // the matte and tinted copies of the materials changed with the weather or the season made again from them, under their handles
+    void
+        update_variants( bool const Weather );
     public:
     // checks whether specified file exists. returns name of the located file, or empty string.
     static std::pair<std::string, std::string>

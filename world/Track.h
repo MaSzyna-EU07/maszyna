@@ -415,6 +415,12 @@ public:
     // the unevenness the track declares, on a path of a switch
     track_uneven::amounts uneven_declared( int const Path = 0 ) const;
     bool is_uneven() const;
+    // the unevenness along what the vehicles take now: the path set on a switch, with what the switches joined and the tracks by them allow
+    track_uneven::amounts uneven_underway() const;
+    // whether the rail joints are elsewhere than the geometry of the track has them
+    bool rail_joints_moved() const;
+    // the uneven tracks whose values go by the switches among the given: all the switches joined to those, and the tracks they meet
+    static std::vector<TTrack *> switch_followers( std::vector<TTrack *> const &Tracks );
     // the unevenness at a distance along a path, meeting the tracks joined at its ends
     track_uneven::amounts uneven_at( double const Distance, int const Path = 0 ) const;
     // how much of the displacement a point of the profile at the depth takes
@@ -465,6 +471,7 @@ private:
     };
     void settle_rail_run() const;
     mutable rail_run m_railrun;
+    rail_run m_drawnrun; // as the geometry has it; stamp -1: it has no joints that dip
     // the value along each path of a switch: the lowest of that path in the switches joined, 0 next to a track with none.
     // And at the ends of the paths, by what meets there: the other path at the common end, the path of a switch joined
     struct switch_stray {

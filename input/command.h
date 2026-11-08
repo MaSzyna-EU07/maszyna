@@ -410,6 +410,7 @@ enum class user_command
 	fmradiotuneincrease,
 	fmradiotunedecrease,
 	fmradiotuneset,
+	oilfuelpumptoggle,
 	none = -1
 };
 

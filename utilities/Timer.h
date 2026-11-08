@@ -25,6 +25,9 @@ double GetDeltaRenderTime();
 
 void set_delta_override(double v);
 
+// every frame advances the clocks by this many seconds, whatever the real time; 0 = real time (test mode)
+void set_fixed_step(double v);
+
 void ResetTimers();
 
 void UpdateTimers(bool pause);

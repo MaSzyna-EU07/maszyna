@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/Track.h"
+#include <algorithm>
+#include <vector>
 
 // The part of TTrack that goes with the unevenness of a track and with what it meets at its ends: joined tracks and switches.
 // The rules themselves are in TrackUneven.h, here they get applied to the tracks.
@@ -259,6 +261,39 @@ double TTrack::rail_phase( double const Distance ) const {
         settle_rail_run();
     }
     return track_uneven::rail_phase( m_railrun.origin + m_railrun.way * Distance, fSoundDistance );
+}
+
+track_uneven::amounts TTrack::uneven_underway() const {
+
+    return is_switch( this ) ? switch_uneven().paths[ SwitchExtension->CurrentIndex ] : uneven_declared();
+}
+
+bool TTrack::rail_joints_moved() const {
+
+    return m_drawnrun.stamp != -1
+        && rail_phase( 0.0 ) >= 0.0
+        && ( m_railrun.origin != m_drawnrun.origin || m_railrun.way != m_drawnrun.way );
+}
+
+std::vector<TTrack *> TTrack::switch_followers( std::vector<TTrack *> const &Tracks ) {
+
+    std::vector<TTrack *> followers;
+    auto const follow = [ &followers ]( TTrack const *Track ) {
+        // the tracks are the editor's to change, the group of a switch only names them
+        auto *track { const_cast<TTrack *>( Track ) }; // NOSONAR: the group of a switch gives the tracks as const, they are changeable here
+        if( track != nullptr && track->is_uneven() && std::ranges::find( followers, track ) == followers.end() ) {
+            followers.push_back( track );
+        } };
+    for( auto const *track : Tracks ) {
+        if( false == is_switch( track ) ) {
+            continue;
+        }
+        for( auto const *member : switch_group( *track ) ) {
+            follow( member );
+            std::ranges::for_each( joined_to_switch( *member ), follow );
+        }
+    }
+    return followers;
 }
 
 void TTrack::settle_rail_run() const {

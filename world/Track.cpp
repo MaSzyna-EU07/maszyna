@@ -1531,6 +1531,7 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
     ++s_layoutstamp;
+    m_drawnrun = {};
 
     track_rails::forget();
     auto const erase = [ this ]( gfx::geometry_handle const &Chunk ) {
@@ -1575,6 +1576,9 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         SwitchExtension->m_nosethrow = ( Bank != null_handle ? nose_throw() : -1.0 );
     }
     share_joints();
+    if( rail_phase( 0.0 ) >= 0.0 ) {
+        m_drawnrun = m_railrun;
+    }
     m_sleepers3d.active = track_sleepers::lays( *this );
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).

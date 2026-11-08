@@ -42,6 +42,18 @@ inline amounts least( amounts const &Left, amounts const &Right ) {
     return { std::min( Left.up, Right.up ), std::min( Left.side, Right.side ), std::min( Left.cross, Right.cross ) };
 }
 
+// which of the other sources of the cab shake the ride on a track stands in for
+struct shake_sources {
+    bool sway { false }; // from the lateral acceleration
+    bool jolts { false }; // drawn at random
+};
+
+// sideways only with something going sideways. Cross level turns the body, and the dips at the joints come and go: neither makes up for any of them
+inline shake_sources replaced_shake( amounts const &Amount ) {
+
+    return { Amount.side > 0.0, Amount.up > 0.0 || Amount.side > 0.0 };
+}
+
 struct wave {
     double x;
     double z;

@@ -17,6 +17,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
+
+#include <cmath>
+#include <format>
 //---------------------------------------------------------------------------
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.
@@ -50,8 +53,13 @@ double ComputeCollision(double &v1, double &v2, double m1, double m2, double bet
 		double sum = m1 + m2;
 		double w1 = (m2 * v2 * 2.0 + v1 * (m1 - m2)) / sum;
 		double w2 = (m1 * v1 * 2.0 + v2 * (m2 - m1)) / sum;
-		v1 = w1 * std::sqrt(1.0 - beta); // niejawna zmiana predkosci wskutek zderzenia
-		v2 = w2 * std::sqrt(1.0 - beta);
+		// the collision changes the velocities directly: the bounce loses energy in the velocities relative to the
+		// centre of mass only, the pair keeps its momentum. scaling the velocities themselves braked the vehicles
+		// down with every step their couplers spent stretched or pressed in all the way (eu07/maszyna#553)
+		auto const centre{(m1 * v1 + m2 * v2) / sum};
+		auto const restitution{std::sqrt(1.0 - beta)};
+		v1 = std::lerp(centre, w1, restitution);
+		v2 = std::lerp(centre, w2, restitution);
 		return m1 * (w2 - w1) * (1 - beta);
 	}
 }
@@ -1178,6 +1186,56 @@ double TMoverParameters::EngineMaxRPM() const
 }
 
 // *************************************************************************************************
+// prędkość zbliżania się stykających się końców pojazdów przy zderzeniu, w km/h
+// *************************************************************************************************
+double TMoverParameters::CollisionVelocity(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	auto const velocitydifference{CouplerVelocityDifference(End, Other, OtherEnd)};
+	// the front end closes in on the other vehicle when this one moves forward faster, the rear end when it's slower
+	return (End == end::front ? velocitydifference : -velocitydifference) * 3.6; // m/s -> km/h
+}
+
+double TMoverParameters::CouplerVelocityDifference(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	// V runs along the vehicle's own axis, towards its front; the other vehicle's velocity is turned around when the
+	// vehicles face each other (touch with the same ends)
+	return V - Other.V * DirPatch(End, OtherEnd);
+}
+
+bool TMoverParameters::AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const
+{
+	return false == Global.crash_damage || CollisionVelocity(End, Other, OtherEnd) <= SafeCollisionVelocity;
+}
+
+int TMoverParameters::SoundingHorns(int const Signal) const
+{
+	auto const supplied{[this](horn_supply const Supply) {
+		if (Supply == horn_supply::electric)
+		{
+			return Power24vIsAvailable || Power110vIsAvailable;
+		}
+		if (VeselVolume > 0.0)
+		{
+			return Compressor >= HornMinPressure;
+		}
+		// a vehicle without a main reservoir of its own takes the air from the main pipe, a vehicle without either
+		// (a road vehicle, say) has no air to check
+		auto const mainpipe{((Couplers[end::front].AllowedFlag | Couplers[end::rear].AllowedFlag) & coupling::mainhose) != 0};
+		return false == mainpipe || ScndPipePress >= HornMinPressure;
+	}};
+	auto horns{0};
+	if (supplied(HornSupply))
+	{
+		horns |= Signal & (1 | 2);
+	}
+	if (supplied(Horn3Supply))
+	{
+		horns |= Signal & 4;
+	}
+	return horns;
+}
+
+// *************************************************************************************************
 // Q: 20160716
 // Wykrywanie kolizji
 // *************************************************************************************************
@@ -1193,8 +1251,11 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const otherend{Neighbours[End].vehicle_end};
 	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
+	// the velocities along this vehicle's axis: the other vehicle's one is turned around when the vehicles face each
+	// other (touch with the same ends), as in CouplerForce()
+	auto const otherdirection{DirPatch(End, otherend)};
 	auto velocity{V};
-	auto othervehiclevelocity{othervehicle->V};
+	auto othervehiclevelocity{othervehicle->V * otherdirection};
 	// calculate collision force and new velocities for involved vehicles
 	auto const VirtualCoupling{(thiscoupler.CouplingFlag == coupling::faux)};
 	auto CCF{0.0};
@@ -1225,28 +1286,25 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 			damage_coupler(End);
 		}
 
-		if (thiscoupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out))
-		{ // HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
-			auto const safevelocitylimit{15.0};
-			auto const velocitydifference{glm::length(glm::angleAxis(Rot.Rz, glm::dvec3{0, 1, 0}) * V - glm::angleAxis(othervehicle->Rot.Rz, glm::dvec3{0, 1, 0}) * othervehicle->V) *
-			                              3.6}; // m/s -> km/h
+		// HACK: limit excessive speed derailment checks to vehicles which aren't part of the same consist
+		auto const outsideconsist{thiscoupler.CouplingFlag == coupling::faux || true == TestFlag(othervehicle->DamageFlag, dtrain_out)};
+		auto const velocitydifference{outsideconsist ? CollisionVelocity(End, *othervehicle, otherend) : 0.0};
 
-			if (velocitydifference > safevelocitylimit)
+		if (velocitydifference > SafeCollisionVelocity)
+		{
+			// HACK: crude estimation for potential derail, will take place with velocity difference > 15 km/h adjusted for vehicle mass ratio
+			if (false == TestFlag(DamageFlag, dtrain_out) || false == TestFlag(othervehicle->DamageFlag, dtrain_out))
 			{
-				// HACK: crude estimation for potential derail, will take place with velocity difference > 15 km/h adjusted for vehicle mass ratio
-				if (false == TestFlag(DamageFlag, dtrain_out) || false == TestFlag(othervehicle->DamageFlag, dtrain_out))
-				{
-					WriteLog("Bad driving: " + Name + " and " + othervehicle->Name + " collided with velocity " + to_string(velocitydifference, 0) + " km/h");
-				}
+				WriteLog("Bad driving: " + Name + " and " + othervehicle->Name + " collided with velocity " + to_string(velocitydifference, 0) + " km/h");
+			}
 
-				if (velocitydifference > safevelocitylimit * (TotalMass / othervehicle->TotalMass))
-				{
-					Derail(COLLISION);
-				}
-				if (velocitydifference > safevelocitylimit * (othervehicle->TotalMass / TotalMass))
-				{
-					othervehicle->Derail(COLLISION);
-				}
+			if (velocitydifference > SafeCollisionVelocity * (TotalMass / othervehicle->TotalMass))
+			{
+				Derail(COLLISION);
+			}
+			if (velocitydifference > SafeCollisionVelocity * (othervehicle->TotalMass / TotalMass))
+			{
+				othervehicle->Derail(COLLISION);
 			}
 		}
 	}
@@ -1255,21 +1313,15 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	if (false == TestFlag(DamageFlag, dtrain_out))
 	{
 		auto const accelerationchange{(velocity - V) / dt};
-		//       if( accelerationchange / AccS < 1.0 ) {
-		// HACK: prevent excessive vehicle pinball cases
 		AccS += accelerationchange;
-		//           AccS = std::clamp( AccS, -2.0, 2.0 );
 		V = velocity;
-		//        }
 	}
 	if (false == TestFlag(othervehicle->DamageFlag, dtrain_out))
 	{
-		auto const othervehicleaccelerationchange{(othervehiclevelocity - othervehicle->V) / dt};
-		//        if( othervehicleaccelerationchange / othervehicle->AccS < 1.0 ) {
-		// HACK: prevent excessive vehicle pinball cases
+		auto const othervehiclenewvelocity{othervehiclevelocity * otherdirection}; // back along the other vehicle's axis
+		auto const othervehicleaccelerationchange{(othervehiclenewvelocity - othervehicle->V) / dt};
 		othervehicle->AccS += othervehicleaccelerationchange;
-		othervehicle->V = othervehiclevelocity;
-		//        }
+		othervehicle->V = othervehiclenewvelocity;
 	}
 }
 
@@ -4336,7 +4388,10 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 	}
 
-	auto const compressorpower{(CompressorPower == 0 ? Mains : CompressorPower == 3 ? Mains : Power110vIsAvailable)};
+	// the main circuit, also for a compressor driven by the engine, otherwise the low voltage
+	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? Mains : Power110vIsAvailable};
+	CompressorPowerTime = compressorpower ? CompressorPowerTime + dt : 0.0;
+	auto const compressorready{compressorpower && CompressorPowerTime >= CompressorStartDelay};
 	// TBD: split CompressorAllow into separate enable/disable flags, inherit compressor from basic_device
 	auto const compressorenable{CompressorAllowLocal && (CompressorStart == start_t::automatic || CompressorAllow)};
 	auto const compressordisable{false == compressorenable};
@@ -4358,7 +4413,7 @@ void TMoverParameters::CompressorCheck(double dt)
 
 	auto const compressorflag{CompressorFlag};
 	CompressorFlag =
-	    compressorpower && false == compressordisable && (false == governorlock || CompressorPower == 3) && (CompressorFlag || (compressorenable && LastSwitchingTime > CtrlDelay));
+	    compressorready && false == compressordisable && (false == governorlock || CompressorPower == 3) && (CompressorFlag || (compressorenable && LastSwitchingTime > CtrlDelay));
 
 	if (CompressorFlag && CompressorFlag != compressorflag)
 	{
@@ -4392,30 +4447,23 @@ void TMoverParameters::CompressorCheck(double dt)
 	{
 		// vent some air out if there's no governor lock to stop the compressor from exceeding acceptable pressure level
 		SetFlag(SoundFlag, sound::relay | sound::loud);
-		CompressedVolume *= false == governorlockispresent ? 0.80 : // arbitrary amount
-            CompressorTankValve ? MinCompressorF / MaxCompressorF : // drop to mincompressor level
-            0.999; // HACK: drop a tiny bit so the sound doesn't trigger repeatedly
+		auto ventedfraction{0.999}; // HACK: drop a tiny bit so the sound doesn't trigger repeatedly
+		if (false == governorlockispresent)
+		{
+			ventedfraction = 0.80; // arbitrary amount
+		}
+		else if (CompressorTankValve)
+		{
+			ventedfraction = MinCompressorF / MaxCompressorF; // drop to mincompressor level
+		}
+		CompressedVolume *= ventedfraction;
 		if (false == governorlockispresent || CompressorTankValve)
 		{
 			CompressorGovernorLock = false;
 		}
 	}
 
-	// tymczasowo tylko obciążenie sprężarki, tak z 5A na sprężarkę
-	// TODO: draw power from proper high- or low voltage circuit
-	if (CompressorPower == 3)
-	{
-		// diesel-powered compressor doesn't draw power
-	}
-	else
-	{
-		// TODO: drain power from 110v circuit
-		/*
-		            if( compressorowner != nullptr ) {
-		                compressorowner->TotalCurrent += 0.0015 * compressorowner->PantographVoltage;
-		            }
-		*/
-	}
+	// a compressor not driven by the engine doesn't draw power (some 5 A) from the high- or low voltage circuit yet
 }
 
 // *************************************************************************************************
@@ -5033,7 +5081,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		}
 		else
 		{
-			EngineVoltage *= DirAbsolute; // DirActive*CabActive;
+			EngineVoltage *= DirAbsolute; // the reverser of the active cab, relative to the couplers
 		}
 	} // bo nie dzialalo
 	else
@@ -5056,6 +5104,14 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	    && std::abs(Fwheels) > TotalMassxg * Adhesive(RunningTrack.friction))
 	{
 		SlippingWheels = true;
+	}
+	if (true == SlippingWheels && Vel < 0.1 // the same crude trap: (nearly) stopped vehicle...
+	    && std::abs(nrot * M_PI * WheelDiameter - V) < 0.1 / 3.6) // ...with wheels turning at its speed, i.e. locked wheels at the end of a skid
+	{
+		// locked wheels never pass the rotation speed test below once the vehicle stops, and a skidding vehicle
+		// keeps its braking force capped by the sliding adhesion, so the rest of the consist could push it around
+		SlippingWheels = false;
+		nrot = V / M_PI / WheelDiameter;
 	}
 	double temp_nrot = nrot;
 	if (true == SlippingWheels)
@@ -5113,9 +5169,10 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	FTotal = FTrain - Sign(V) * FStand;
 }
 
-double TMoverParameters::BrakeForceR(double ratio, double velocity)
+double TMoverParameters::BrakeForceR(double ratio, double velocity) const
 {
 	double press = 0;
+	ratio = Hamulec->GetBrakeRatio(ratio);
 	if (MBPM > 2)
 	{
 		press = MaxBrakePress[1] + (MaxBrakePress[3] - MaxBrakePress[1]) * std::min(1.0, (TotalMass - Mass) / (MBPM - Mass));
@@ -5131,8 +5188,8 @@ double TMoverParameters::BrakeForceR(double ratio, double velocity)
 			press = MaxBrakePress[3];
 			if (DynamicBrakeType == dbrake_automatic)
 				ratio = ratio + (1.5 - ratio) * std::min(1.0, Vel * 0.02);
-			if (BrakeDelayFlag & bdelay_R && BrakeMethod % 128 != bp_Cosid && BrakeMethod % 128 != bp_D1 && BrakeMethod % 128 != bp_D2 && Power < 1 && velocity < 40)
-				ratio = ratio / 2;
+			if (BrakeDelayFlag & bdelay_R && BrakeMethod % 128 != bp_Cosid && BrakeMethod % 128 != bp_D1 && BrakeMethod % 128 != bp_D2 && Power < 1)
+				ratio *= Hamulec->GetRapidRatio(velocity);
 			if (TrainType == dt_DMU && velocity < 30.0)
 			{
 				ratio -= 0.3;
@@ -5311,7 +5368,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 
 	auto const newdistance{initialdistance + 10.0 * distancedelta};
 
-	auto const dV{V - othervehicle->V * DirPatch(End, otherend)};
+	auto const dV{CouplerVelocityDifference(End, *othervehicle, otherend)};
 	auto const absdV{std::abs(dV)};
 
 	// potentially generate sounds on clash or stretch
@@ -5424,25 +5481,23 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 					couplingtype &= ~coupling::control;
 				}
 
-				if (Attach(End, otherend, othervehicle, couplingtype))
-				{
-					// HACK: we're reusing sound enum to mark whether vehicle was connected to another
-					SetFlag(AIFlag, sound::attachcoupler);
-					thiscoupler.AutomaticCouplingAllowed = false;
-					othercoupler.AutomaticCouplingAllowed = false;
-				}
-				/*
-				                    coupler.CouplingFlag = ( coupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag );
-				                    SetFlag( coupler.sounds, sound::attachcoupler );
-				*/
+				// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
+				auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};
+				auto const caught{safe && Attach(End, otherend, othervehicle, couplingtype)};
+				// HACK: we're reusing sound enum to mark whether vehicle was connected to another
+				AIFlag |= (caught ? sound::attachcoupler : 0);
+				// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
+				thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
+				othercoupler.AutomaticCouplingAllowed = safe && false == caught;
 			}
 		}
 	}
 
 	if (thiscoupler.CouplingFlag != coupling::faux)
 	{
-		// uzgadnianie prawa Newtona
-		othervehicle->Couplers[1 - End].CForce = -CF;
+		// uzgadnianie prawa Newtona, on the coupler of the other vehicle this one is coupled with, along that vehicle's
+		// axis: turned around once more when the vehicles face each other
+		othervehicle->Couplers[otherend].CForce = -CF * DirPatch(End, otherend);
 	}
 
 	return CF;
@@ -6875,13 +6930,12 @@ bool TMoverParameters::AutoRelayCheck(void)
 			}
 			else
 			{ // zmieniaj mainctrlactualpos
-				if (DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed)
-				{
-					return false; // nie poprawiamy przy konwersji
-					// return ARC;// bbylo exit; //Ra: to powoduje, że EN57 nie wyłącza się przy IminLo
-				}
+				// running backwards, the motors don't get joined in more branches than allowed (the series connection
+				// alone, usually); the camshaft still goes back down from there (eu07/maszyna#393: it stayed where it
+				// was, the line contactors closed, whatever the driver did with the master controller)
+				auto const backwardslimit{DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed};
 				// main bez samoczynnego rozruchu
-				if (MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
+				if (false == backwardslimit && MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
 				    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
 				        (TrainType == dt_ET22 && DelayCtrlFlag)))
 				{
@@ -8669,6 +8723,48 @@ bool TMoverParameters::signal_departure(bool const State, range_t const Notify)
 	}
 
 	return true;
+}
+
+// state of the door closure signalling (SOD) of this vehicle: open while a door isn't fully closed, released while
+// the closed doors can be opened (a permit given, or, for doors that need none, no lock engaged), locked otherwise.
+// doors the crew doesn't close (autonomous) aren't signalled, the same as for the door lights of the consist
+door_closure_t TMoverParameters::door_closure() const
+{
+	if (Doors.range == 0.f || Doors.close_control == control_t::autonomous)
+	{
+		return door_closure_t::none;
+	}
+	if (std::ranges::any_of(Doors.instances, [](basic_door const &Door) { return false == Door.is_closed; }))
+	{
+		return door_closure_t::open;
+	}
+	if (Doors.is_locked)
+	{
+		return door_closure_t::locked;
+	}
+	if (Doors.permit_needed && std::ranges::none_of(Doors.instances, [](basic_door const &Door) { return Door.open_permit; }))
+	{
+		return door_closure_t::locked;
+	}
+	return door_closure_t::released;
+}
+
+bool TMoverParameters::door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const
+{
+	return Doors.closure_signal ? door_closure_lamp(Consist, BlinkLit) : Doors.is_locked;
+}
+
+bool door_closure_lamp(door_closure_t const State, bool const BlinkLit)
+{
+	switch (State)
+	{
+	case door_closure_t::locked:
+		return true;
+	case door_closure_t::released:
+		return BlinkLit;
+	default:
+		return false;
+	}
 }
 
 // automatic door controller update
@@ -10469,7 +10565,10 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 		P2FTrans = 0;
 	}
 
-	CntrlPipePress = 5 + 0.001 * (Random(10) - Random(10)); // Ra 2014-07: trochę niedokładności
+	// Ra 2014-07: trochę niedokładności
+	// the draws are sequenced: the order of the operands of '-' is unspecified, and GCC and MSVC draw them the other way round
+	auto const firstdraw{Random(10)};
+	CntrlPipePress = 5 + 0.001 * (Random(10) - firstdraw);
 	extract_value(CntrlPipePress, "HiPP", line, "");
 	HighPipePress = CntrlPipePress;
 	LowPipePress = std::min(HighPipePress, 3.5);
@@ -10508,6 +10607,7 @@ void TMoverParameters::LoadFIZ_Brake(std::string const &line)
 		auto lookup = compressorpowers.find(extract_value("CompressorPower", line));
 		CompressorPower = lookup != compressorpowers.end() ? lookup->second : 1;
 	}
+	extract_value(CompressorStartDelay, "CompressorStartDelay", line, "");
 
 	if (true == extract_value(AirLeakRate, "AirLeakRate", line, ""))
 	{
@@ -10558,6 +10658,8 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	extract_value(Doors.auto_include_remote, "DoorAutoCloseRemote", line, "");
 	// operation permit
 	extract_value(Doors.permit_needed, "DoorNeedPermit", line, "");
+	// the door closure lamp (SOD) of the cab signals the doors of the whole consist
+	extract_value(Doors.closure_signal, "DoorClosureSignal", line, "");
 	{
 		auto permitpresets = Split(extract_value("DoorPermitList", line), '|');
 		for (auto const &permit : permitpresets)
@@ -10686,12 +10788,15 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		        coupler->beta = 0.55;
 		*/
 		thiscoupler->SpringKC = 4500 * 1000;
-		thiscoupler->DmaxC = 0.05;
 		thiscoupler->FmaxC = 850 * 1000;
 		thiscoupler->SpringKB = 9200 * 1000;
-		thiscoupler->DmaxB = 0.05;
 		thiscoupler->FmaxB = 320 * 1000;
 		thiscoupler->beta = 0.55;
+		// the spring force is taken up to Dmax only, past it the vehicles collide (CollisionDetect()); so the joint
+		// carries the full FmaxC either way before it gives. with 0.05 m it carried 225 kN, short of what a loaded
+		// articulated wagon in a freight train takes, which then collided at every step (eu07/maszyna#553)
+		thiscoupler->DmaxC = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKC);
+		thiscoupler->DmaxB = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKB);
 	}
 
 	if (Index == 0)
@@ -10724,7 +10829,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		for (int idx = 0; idx < 4; ++idx)
 		{
 
-			extract_value(BrakeDelay[idx], "BDelay" + std::to_string(idx + 1), line, "");
+			extract_value(BrakeDelay[idx], std::format("BDelay{}", idx + 1), line, "");
 		}
 		// brakedelays, brakedelayflag
 		{
@@ -10819,6 +10924,16 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 
 	// maksymalna predkosc dostepna na tarczce predkosciomierza
 	extract_value(maxTachoSpeed, "MaxTachoSpeed", line, "");
+
+	// horns
+	{
+		using enum horn_supply;
+		std::map<std::string, horn_supply, std::less<>> const hornsupplies{{"Pneumatic", air}, {"Electric", electric}};
+		auto lookup = hornsupplies.find(extract_value("HornType", line));
+		HornSupply = lookup != hornsupplies.end() ? lookup->second : air;
+		lookup = hornsupplies.find(extract_value("Horn3Type", line));
+		Horn3Supply = lookup != hornsupplies.end() ? lookup->second : HornSupply;
+	}
 
 	// dynamicbrake
 	{
@@ -10979,14 +11094,15 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	// ground relay
 	{
 		auto lookup = starts.find(extract_value("GroundRelayStart", line));
-		GroundRelayStart = lookup != starts.end() ? lookup->second : TrainType == dt_EZT ? start_t::automatic : start_t::manual;
+		auto const defaultstart{TrainType == dt_EZT ? start_t::automatic : start_t::manual};
+		GroundRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 	// converter overload relay
 	{
 		auto lookup = starts.find(extract_value("ConverterOverloadRelayStart", line));
-		ConverterOverloadRelayStart = lookup != starts.end() ? lookup->second :
-		                                                        TrainType == dt_EZT ? start_t::converter : // relay activates when converter is switched off
-		                                                                               start_t::manual;
+		// the relay of a multiple unit activates when the converter is switched off
+		auto const defaultstart{TrainType == dt_EZT ? start_t::converter : start_t::manual};
+		ConverterOverloadRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 }
 
@@ -11379,6 +11495,7 @@ void TMoverParameters::LoadFIZ_Switches(std::string const &Input)
 	extract_value(PantSwitchType, "Pantograph", Input, "");
 	extract_value(ConvSwitchType, "Converter", Input, "");
 	extract_value(StLinSwitchType, "MotorConnectors", Input, "");
+	HeatingSwitchImpulse = ToLower(extract_value("TrainHeating", Input)) == "impulse";
 	// because people can't make up their minds whether it's "impulse" or "Impulse"...
 	PantSwitchType = ToLower(PantSwitchType);
 	ConvSwitchType = ToLower(ConvSwitchType);

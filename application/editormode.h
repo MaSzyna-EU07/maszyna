@@ -1067,6 +1067,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void track_gizmo_length(TTrack &Track, double Length);
 	void track_gizmo_end(TTrack &Track);
 	bool m_track_dirty{false};
+	bool m_track_drag_on_the_way{false}; // committed, but not as the end of the drag
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before;
 	// the event to add to the path, typed
