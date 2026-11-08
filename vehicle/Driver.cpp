@@ -2084,9 +2084,7 @@ void TController::AutoRewident()
     // 1. Zebranie informacji o składzie pociągu, od czoła do końca
     std::vector<brake_setting::vehicle> consist;
     for (auto const *d = pVehicles[0]; d != nullptr; d = d->Next()) {
-        auto const *mover{d->MoverParameters};
-        // a locomotive has Power > 1, though it may be a dead one at the end of the train
-        consist.emplace_back(mover->BrakeDelays, mover->Power >= 1.0, mover->Dim.L, mover->TotalMass);
+        consist.emplace_back(brake_setting::describe(*d->MoverParameters, d == pVehicle));
     }
     // 2. Określenie typu pociągu i nastaw: by the brake instruction Cw-1 (eu07/maszyna#350), or as the releases before it did
     auto const settings{Global.AIBrakeSettingCw1 ? brake_setting::choose(consist) : brake_setting::choose_legacy(consist)};
@@ -2099,9 +2097,8 @@ void TController::AutoRewident()
             // don't touch human-controlled vehicle, but others are free game
             continue;
         }
-        if (*setting != 0) {
-            d->MoverParameters->BrakeDelaySwitch(*setting);
-        }
+        // the setting, a brake cut out in a train on G (Cw-1 §19.9) or put back when the train no longer needs it cut out
+        brake_setting::apply(*d->MoverParameters, *setting);
         // potentially release manual brake
         d->MoverParameters->DecManualBrakeLevel( ManualBrakePosNo );
         d->MoverParameters->SpringBrake.Activate = false;
@@ -2145,7 +2142,10 @@ void TController::AutoRewident()
         double const velstep = mvOccupied->Vmax * 0.5 / BrakeAccTableSize;
         auto *d = pVehicles[0]; // pojazd na czele składu
 	    while (d) {
-            for( int i = 0; i < BrakeAccTableSize; ++i ) {
+            // a vehicle with its brake cut out (by the inspector above or for a reason of its own) adds its mass only;
+            // the inspector of the earlier releases counted its brake in
+            auto const brakes{false == Global.AIBrakeSettingCw1 || false == brake_setting::is_cut_out(*d->MoverParameters)};
+            for( int i = 0; i < BrakeAccTableSize && brakes; ++i ) {
                 fBrake_a0[ i + 1 ] += d->MoverParameters->BrakeForceR( 0.25, velstep*( 1 + 2 * i ) );
                 fBrake_a1[ i + 1 ] += d->MoverParameters->BrakeForceR( 1.00, velstep*( 1 + 2 * i ) );
 		    }

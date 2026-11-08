@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/brakesetting.h"
 
+#include "McZapkie/MOVER.h"
 #include "McZapkie/hamulce.h"
 
 #include <algorithm>
@@ -48,6 +49,7 @@ struct wagon_counts {
 	int r{0}; // with R: passenger cars of fast trains
 	int g{0}; // with G but no R: freight wagons
 	int p{0}; // the rest: passenger cars with P only
+	int r_cut_out{0}; // of those with R, the ones with their brake cut out
 	double length{0.0}; // [m]
 	double mass{0.0}; // [kg]
 
@@ -60,6 +62,9 @@ struct wagon_counts {
 			mass += item.mass;
 			if (has(item.delays, bdelay_R)) {
 				++r;
+				if (item.cut_out) {
+					++r_cut_out;
+				}
 			}
 			else if (has(item.delays, bdelay_G)) {
 				++g;
@@ -95,9 +100,11 @@ train_setting choose_train_setting(std::vector<vehicle> const &Consist) {
 		return train_setting::light_engine;
 	}
 	if (counts.passenger()) {
-		// wagons without R run on P, and there may be no more than three of them, fewer than those on R
-		auto const pwagons{counts.g + counts.p};
-		return pwagons <= passenger_r_max_p_wagons && counts.r > pwagons ? train_setting::passenger_r : train_setting::passenger_p;
+		// wagons without R run on P, and a wagon with its brake cut out counts as one on P (Cw-1 §18.3). there may
+		// be no more than three of them, fewer than those on R
+		auto const pwagons{counts.g + counts.p + counts.r_cut_out};
+		auto const rwagons{counts.r - counts.r_cut_out};
+		return pwagons <= passenger_r_max_p_wagons && rwagons > pwagons ? train_setting::passenger_r : train_setting::passenger_p;
 	}
 	if (counts.length > freight_p_max_length || counts.mass > freight_p_max_mass) {
 		return train_setting::freight_g;
@@ -135,18 +142,27 @@ std::vector<int> choose(std::vector<vehicle> const &Consist) {
 				break;
 			}
 			case train_setting::freight_gp: {
-				// the wagons are counted from the head of the train, past any locomotive in the middle of it
+				// the wagons are counted from the head of the train, past any locomotive in the middle of it.
+				// the train runs on P (Cw-1 §19.3b), so §19.9 doesn't apply: a vehicle without G among the ones
+				// kept on G brakes on P like the rest of the train, rather than being cut out
 				auto const ong{item.powered || wagonsfromhead <= freight_gp_wagons_on_g};
 				settings.emplace_back(ong ? pick(item.delays, bdelay_G, bdelay_P) : pick(item.delays, bdelay_P, bdelay_G));
 				break;
 			}
 			case train_setting::freight_g:
 			default: {
-				// NOTE: Cw-1 §19.9 wants the brake of a vehicle without G (a passenger car with P and R only) cut out in a
-				// train braked on G. It's put on P instead, as before: a brake cut out by the inspector would have to be
-				// remembered and put back when the train is made up again, and the simulator has no such record yet.
-				// The same goes for the vehicles kept on G in the long locomotive setting above (freight_gp)
-				settings.emplace_back(pick(item.delays, bdelay_G, bdelay_P));
+				if (has(item.delays, bdelay_G)) {
+					settings.emplace_back(bdelay_G);
+				}
+				else if (item.powered || item.driven || item.delays == 0) {
+					// a locomotive, or the vehicle the train is driven from, keeps a working brake: on P. a vehicle
+					// which tells no settings at all is left alone
+					settings.emplace_back(pick(item.delays, bdelay_P, bdelay_P));
+				}
+				else {
+					// a wagon without G (a passenger car with P and R) has its brake cut out (Cw-1 §19.9)
+					settings.emplace_back(cut_out);
+				}
 				break;
 			}
 		}
@@ -215,6 +231,49 @@ std::vector<int> choose_legacy(std::vector<vehicle> const &Consist) {
 		}
 	}
 	return settings;
+}
+
+bool is_cut_out(TMoverParameters const &Vehicle) {
+	return (Vehicle.Hamulec->GetBrakeStatus() & b_dmg) == b_dmg;
+}
+
+vehicle describe(TMoverParameters const &Vehicle, bool const Driven) {
+	vehicle described;
+	described.delays = Vehicle.BrakeDelays;
+	// a locomotive has Power > 1, though it may be a dead one at the end of the train
+	described.powered = Vehicle.Power >= 1.0;
+	described.length = Vehicle.Dim.L;
+	described.mass = Vehicle.TotalMass;
+	described.cut_out = is_cut_out(Vehicle) && false == Vehicle.BrakeCutOutByInspector;
+	described.driven = Driven;
+	return described;
+}
+
+void apply(TMoverParameters &Vehicle, int const Setting) {
+	auto &brake{*Vehicle.Hamulec};
+	if (Vehicle.BrakeCutOutByInspector && false == is_cut_out(Vehicle)) {
+		// someone put the brake back in the meantime, it's theirs now
+		Vehicle.BrakeCutOutByInspector = false;
+	}
+	if (Setting == cut_out) {
+		if (false == is_cut_out(Vehicle)) {
+			// close the cut-out cock and empty the brake with the releaser, as the scenery's '0' does: the
+			// distributor, cut off the brake pipe, has no air left to brake with and lets the cylinders go
+			brake.ForceEmptiness();
+			brake.SetBrakeStatus(brake.GetBrakeStatus() | b_dmg);
+			Vehicle.BrakeCutOutByInspector = true;
+		}
+		// a brake cut out already, by the inspector or for a reason of its own, stays as it is
+		return;
+	}
+	if (Vehicle.BrakeCutOutByInspector) {
+		// open the cut-out cock: the distributor charges from the brake pipe again
+		brake.SetBrakeStatus(brake.GetBrakeStatus() & ~b_dmg);
+		Vehicle.BrakeCutOutByInspector = false;
+	}
+	if (Setting != 0) {
+		Vehicle.BrakeDelaySwitch(Setting);
+	}
 }
 
 } // namespace brake_setting

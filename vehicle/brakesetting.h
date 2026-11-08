@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <vector>
 
+class TMoverParameters;
+
 // the brake setting (G/P/R/Mg) the virtual wagon inspector (TController::AutoRewident) chooses for every
 // vehicle of a train, by the rules of the brake instruction Cw-1 (Mw56), §18 and §19 (eu07/maszyna#350)
 namespace brake_setting {
@@ -21,6 +23,8 @@ struct vehicle {
 	bool powered{false}; // a locomotive or a powered unit, as opposed to a wagon
 	double length{0.0}; // [m]
 	double mass{0.0}; // with its load [kg]
+	bool cut_out{false}; // the brake is cut out for a reason of its own (damage, the scenario, the player)
+	bool driven{false}; // the vehicle the train is driven from: its brake is never cut out
 };
 
 // the kind of train the inspector takes the consist for, and how it sets the brakes
@@ -36,6 +40,9 @@ enum class train_setting {
 // how many wagons next to the locomotive stay on G in a freight_gp train
 inline constexpr int freight_gp_wagons_on_g{5};
 
+// the setting choose() gives a vehicle whose brake is to be cut out (Cw-1 §19.9)
+inline constexpr int cut_out{-1};
+
 // the train setting by Cw-1. Consist runs from the head of the train to its rear
 train_setting choose_train_setting(std::vector<vehicle> const &Consist);
 
@@ -47,11 +54,28 @@ constexpr bool passenger(train_setting const Setting) {
 
 // the brake setting (bdelay_*) for every vehicle of Consist, in the same order, by Cw-1. a vehicle
 // without the setting the train needs gets the other one of G and P it has, and 0 (left as it is)
-// when it has neither. Cw-1 §19.9 would have the brake of such a vehicle cut out instead
+// when it has neither. In a train on G (freight_g) a wagon without G gets cut_out instead: its brake
+// is to be cut out (Cw-1 §19.9). A locomotive and the vehicle the train is driven from keep their
+// brake working, on P
 std::vector<int> choose(std::vector<vehicle> const &Consist);
 
 // the inspector of the releases before eu07/maszyna#350, kept for ai.brakesetting.cw1 no. the settings
 // are requests: a vehicle which doesn't have the one asked for keeps its own
 std::vector<int> choose_legacy(std::vector<vehicle> const &Consist);
+
+// the brake of the vehicle is cut out (b_dmg), whoever did it
+bool is_cut_out(TMoverParameters const &Vehicle);
+
+// what choose() needs to know of the vehicle. a brake the inspector cut out itself doesn't count as
+// cut out: the inspector decides about it anew
+vehicle describe(TMoverParameters const &Vehicle, bool Driven);
+
+// the inspector puts the vehicle on Setting, as choose() gives it. cut_out cuts the brake out the way
+// the scenery's '0' does: b_dmg, which cuts the distributor off the brake pipe (as the cab's cut-out,
+// trainbrakeoperationtoggle, does), and its reservoirs emptied, so the brake releases and stays off.
+// The vehicle remembers the inspector did it. Any other setting first puts back a brake the inspector
+// cut out (it charges from the brake pipe again), then sets the vehicle to it (0: leaves the setting
+// as it is). A brake cut out by anyone else stays cut out
+void apply(TMoverParameters &Vehicle, int Setting);
 
 } // namespace brake_setting
