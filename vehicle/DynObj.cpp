@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "model/MdlMngr.h"
 #include "model/Model3d.h"
+#include "vehicle/doorwings.h"
 #include "rendering/renderer.h"
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
@@ -557,20 +558,52 @@ void TDynamicObject::UpdateAxle(TAnim *pAnim)
     pAnim->smAnimated->future_transform = glm::rotate((float)glm::radians(m_future_wheels_angle[wheel_id]), glm::vec3(1.0f, 0.0f, 0.0f));
 };
 
+namespace {
+
+// the position of the door the animated wing belongs to: its shift or angle from closed
+float door_position( TMoverParameters const &Mover, TAnim const *Animation ) {
+
+    return Mover.Doors.instances[ (
+        door_wings::on_right_side( Animation->iNumber ) ?
+            side::right :
+            side::left ) ].position;
+}
+
+// the wing in the main model, and its namesake in the low poly interior; either can be missing
+std::array<TSubModel *, 2> wing_parts( TAnim const *Animation ) {
+
+    return { Animation->smAnimated, Animation->smInterior };
+}
+
+// folding door: the smaller wing turns, the larger wing (its child) the other way, the step (child of that) under it
+void fold_wing( TSubModel *Wing, door_wings::fold_angles const &Angles ) {
+
+    if( Wing == nullptr ) { return; }
+    // skrzydło mniejsze
+    Wing->SetRotate( float3( 0, 0, 1 ), Angles.smaller );
+    // skrzydło większe
+    auto *larger { Wing->ChildGet() };
+    if( larger == nullptr ) { return; }
+    larger->SetRotate( float3( 0, 0, 1 ), Angles.larger );
+    // podnóżek?
+    auto *step { larger->ChildGet() };
+    if( step == nullptr ) { return; }
+    step->SetRotate( float3( 0, 1, 0 ), Angles.step );
+}
+
+} // namespace
+
 // animacja drzwi - przesuw
 void TDynamicObject::UpdateDoorTranslate(TAnim *pAnim) {
+
     if( pAnim->smAnimated == nullptr ) { return; }
 
-    auto const &door { MoverParameters->Doors.instances[ (
-        ( pAnim->iNumber & 1 ) == 0 ?
-            side::right :
-            side::left ) ] };
-
-    pAnim->smAnimated->SetTranslate(
-        glm::vec3{
-            0.0,
-            0.0,
-            door.position } );
+    auto const shift { door_wings::slide( door_position( *MoverParameters, pAnim ) ) };
+    for( auto *wing : wing_parts( pAnim ) ) {
+        if( wing != nullptr ) {
+            wing->SetTranslate( shift );
+        }
+    }
 };
 
 // animacja drzwi - obrót
@@ -578,14 +611,12 @@ void TDynamicObject::UpdateDoorRotate(TAnim *pAnim) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
-    auto const &door { MoverParameters->Doors.instances[ (
-        ( pAnim->iNumber & 1 ) == 0 ?
-            side::right :
-            side::left ) ] };
-
-    pAnim->smAnimated->SetRotate(
-        float3(1, 0, 0),
-        door.position );
+    auto const angle { door_position( *MoverParameters, pAnim ) };
+    for( auto *wing : wing_parts( pAnim ) ) {
+        if( wing != nullptr ) {
+            wing->SetRotate( float3( 1, 0, 0 ), angle );
+        }
+    }
 };
 
 // animacja drzwi - obrót
@@ -593,31 +624,10 @@ void TDynamicObject::UpdateDoorFold(TAnim *pAnim) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
-    auto const &door { MoverParameters->Doors.instances[ (
-        ( pAnim->iNumber & 1 ) == 0 ?
-            side::right :
-            side::left ) ] };
-
-    // skrzydło mniejsze
-    pAnim->smAnimated->SetRotate(
-        float3(0, 0, 1),
-        door.position);
-
-    // skrzydło większe
-    auto *sm = pAnim->smAnimated->ChildGet();
-    if( sm == nullptr ) { return; }
-
-    sm->SetRotate(
-        float3(0, 0, 1),
-        -door.position - door.position);
-
-    // podnóżek?
-    sm = sm->ChildGet();
-    if( sm == nullptr ) { return; }
-
-    sm->SetRotate(
-        float3(0, 1, 0),
-        door.position);
+    auto const angles { door_wings::fold( door_position( *MoverParameters, pAnim ) ) };
+    for( auto *wing : wing_parts( pAnim ) ) {
+        fold_wing( wing, angles );
+    }
 };
 
 // animacja drzwi - odskokprzesuw
@@ -625,20 +635,12 @@ void TDynamicObject::UpdateDoorPlug(TAnim *pAnim) {
 
     if( pAnim->smAnimated == nullptr ) { return; }
 
-    auto const &door { MoverParameters->Doors.instances[ (
-        ( pAnim->iNumber & 1 ) == 0 ?
-            side::right :
-            side::left ) ] };
-
-    pAnim->smAnimated->SetTranslate(
-        glm::vec3{
-            std::min(
-                door.position * 2.f,
-                MoverParameters->Doors.range_out ),
-            0.0,
-            std::max(
-                0.f,
-                door.position - MoverParameters->Doors.range_out * 0.5f ) } );
+    auto const shift { door_wings::plug( door_position( *MoverParameters, pAnim ), MoverParameters->Doors.range_out ) };
+    for( auto *wing : wing_parts( pAnim ) ) {
+        if( wing != nullptr ) {
+            wing->SetTranslate( shift );
+        }
+    }
 }
 
 void TDynamicObject::UpdatePant(TAnim *pAnim)
@@ -2417,6 +2419,8 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
         for( auto const &nameprefix : nameprefixes ) {
             init_sections( mdLowPolyInt, nameprefix, MoverParameters->CompartmentLights.start_type == start_t::manual );
         }
+        // the inside of the door wings, if the interior has them
+        init_interior_doors();
     }
     // destination sign
     if( mdModel ) {
@@ -2559,6 +2563,26 @@ TDynamicObject::init_sections( TModel3d const *Model, std::string const &Namepre
           || sectionindex < 2 ); // chain can start from prefix00 or prefix01
 
     return sectioncount;
+}
+
+// a door wing of the main model is seen from the outside, lit as the exterior. its namesake in the low poly interior,
+// if the model has one, follows its moves and is lit with the interior, by its compartment section if it's in one
+void
+TDynamicObject::init_interior_doors() {
+
+    if( mdLowPolyInt == nullptr ) { return; }
+
+    for( auto &animation : pAnimations ) {
+        // the door animation is only set up for a wing found in the main model
+        if( false == door_wings::is_wing( animation.iFlags ) ) { continue; }
+        if( ( animation.yUpdate == nullptr ) || ( animation.smAnimated == nullptr ) ) { continue; }
+
+        auto *interiorwing { mdLowPolyInt->GetFromName( animation.smAnimated->pName ) };
+        if( ( interiorwing == nullptr ) || ( interiorwing == animation.smAnimated ) ) { continue; }
+
+        interiorwing->WillBeAnimated();
+        animation.smInterior = interiorwing;
+    }
 }
 
 bool
