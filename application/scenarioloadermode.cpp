@@ -54,8 +54,8 @@ bool scenarioloader_mode::update() {
 		try {
 			state = simulation::State.deserialize_begin(Global.SceneryFile);
 		}
-		// the file it can't read, as the parser and the scenery opening it report it
-		catch (std::runtime_error const &e) {
+		// the file it can't read, as the opening of the scenery reports it
+		catch (invalid_scenery_exception const &e) {
 			ErrorLog(std::format("Bad init: scenario \"{}\" couldn't be opened ({})", Global.SceneryFile, e.what()));
 			state.reset();
 			Global.SceneryFile.clear();
