@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <exception>
 #include <optional>
 #include <span>
 #include <string>
@@ -52,6 +53,10 @@ std::optional<double> parse_seconds(std::string_view Text);
 // picks the test mode options out of a command line (the first argument is the program). the values of the other
 // options are skipped, so a scenery named like an option isn't taken for one; options it doesn't know are left alone
 test_command_line parse_test_command_line(std::span<char const *const> Arguments);
+
+// what ended a test run that the simulator didn't end itself: the exception caught (or being handled when the
+// program was terminated), or nothing
+std::string describe_exception(std::exception_ptr const &Exception);
 
 // time allowed for loading the scenery, on top of the simulation time, when the real time limit isn't given [s]
 inline constexpr double wall_timeout_loading_allowance{600.0};

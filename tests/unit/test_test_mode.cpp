@@ -4,6 +4,9 @@
 #include "simulation/simulationtestrules.h"
 
 #include <array>
+#include <exception>
+#include <new>
+#include <stdexcept>
 #include <vector>
 
 // the test mode of the simulator (eu07 --test, eu07/maszyna#541): its exit codes, command line and end conditions
@@ -117,10 +120,13 @@ TEST_CASE("test mode: the command line")
 		CHECK_FALSE(commandline.enabled);
 		CHECK(commandline.error.empty());
 	}
-	SUBCASE("the scenery of -edit is optional")
+	SUBCASE("-edit takes no option for its scenery, which is optional")
 	{
+		// a scenery after -edit or none: the option after it is read either way
 		CHECK(parse({"-edit", "--test", "-s", "td.scn"}).enabled);
-		CHECK_FALSE(parse({"-edit", "td.scn"}).enabled);
+		CHECK(parse({"-edit", "td.scn", "--test"}).enabled);
+		// -edit leaves -s alone, which takes --test for its scenery, as the simulator reads it
+		CHECK_FALSE(parse({"-edit", "-s", "--test"}).enabled);
 	}
 }
 
@@ -239,5 +245,24 @@ TEST_CASE("test mode: the end conditions")
 		auto const verdict{simulation::evaluate_frame(progress, frame(false, 0.0), limits)};
 		REQUIRE(verdict.has_value());
 		CHECK(verdict->result == test_result::fail);
+	}
+}
+
+TEST_CASE("test mode: what ended a run the simulator didn't end")
+{
+	SUBCASE("an exception says what it was")
+	{
+		CHECK(simulation::describe_exception(std::make_exception_ptr(std::runtime_error("no scenery"))) == "critical error: no scenery");
+		// e.g. std::stof on a token of a scenery which isn't a number
+		CHECK(simulation::describe_exception(std::make_exception_ptr(std::invalid_argument("stof"))) == "critical error: stof");
+		CHECK(simulation::describe_exception(std::make_exception_ptr(std::bad_alloc())).starts_with("critical error: "));
+	}
+	SUBCASE("something thrown which isn't a std::exception")
+	{
+		CHECK(simulation::describe_exception(std::make_exception_ptr(42)) == "critical error: an exception of unknown type");
+	}
+	SUBCASE("terminated without an exception")
+	{
+		CHECK(simulation::describe_exception(nullptr) == "the simulator was terminated");
 	}
 }

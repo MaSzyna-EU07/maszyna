@@ -23,7 +23,10 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include <cstdlib>
-#include <format>
+#include <exception>
+#include <string_view>
+#include <thread>
+#include <vector>
 #ifdef WITHDUMPGEN
 #ifdef _WIN32
 #include <Windows.h>
@@ -94,8 +97,43 @@ namespace
 void finish_log()
 {
 	StopLogService();
-	if (auto const logservice{Global.threads.find("LogService")}; logservice != Global.threads.end() && logservice->second.joinable())
+	if (auto const logservice{Global.threads.find("LogService")};
+	    logservice != Global.threads.end() && logservice->second.joinable() && logservice->second.get_id() != std::this_thread::get_id())
 		logservice->second.join();
+}
+
+// ends a test run with its verdict on the standard output and in the exit code. a test the simulator didn't end
+// (a failed start, an exception) ends with the error and Reason
+[[noreturn]] void end_test_run(std::string_view const Reason)
+{
+	simulation::test().conclude(simulation::test_result::error, Reason);
+	finish_log();
+	fflush(stdout);
+	fflush(stderr);
+	// skip destructors, there are ordering errors which causes segfaults
+	std::_Exit(simulation::test().exit_code());
+}
+
+// a test run (--test): whatever stops it, it ends with its verdict. any other run never gets here and ends as
+// it always has
+[[noreturn]] void run_test(int argc, char *argv[])
+{
+	// for what doesn't reach the catch below: an exception leaving a noexcept function, or on Linux one leaving
+	// a thread (on Windows the handler is the main thread's only)
+	std::set_terminate([] { end_test_run(simulation::describe_exception(std::current_exception())); });
+	try
+	{
+		if (Application.init(argc, argv) == 0)
+		{
+			Application.run();
+			Application.exit();
+		}
+	}
+	catch (...)
+	{
+		end_test_run(simulation::describe_exception(std::current_exception()));
+	}
+	end_test_run("the simulator stopped before the test ended");
 }
 
 } // namespace
@@ -149,6 +187,11 @@ int main(int argc, char *argv[])
 		fflush(stderr);
 		std::_Exit(result);
 	}
+	// unattended test run of a scenery, which says its result in the exit code (eu07/maszyna#541)
+	else if (simulation::parse_test_command_line(std::vector<char const *>(argv, argv + argc)).enabled)
+	{
+		run_test(argc, argv);
+	}
 	else
 	{
 		try
@@ -164,37 +207,18 @@ int main(int argc, char *argv[])
 		{
 			ErrorLog("Critical error, memory allocation failure: " + std::string(Error.what()));
 		}
+#ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
-#ifndef _WIN32
-			// outside a test the error ends the program as it always did there, uncaught
-			if (false == Global.test.enabled)
-				throw;
-#endif
-			ErrorLog(std::format("Critical error: {}", Error.what()));
-			// in test mode nobody is there to close the box, the exit code tells of the error
-			simulation::test().conclude(simulation::test_result::error, std::format("critical error: {}", Error.what()));
-#ifdef _WIN32
-			if (false == Global.test.enabled)
-			{
-				std::string msg = "Simulator crash occured :(\n";
-				msg += Error.what();
-				MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
-			}
-#endif
+			std::string msg = "Simulator crash occured :(\n";
+			msg += Error.what();
+			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
 		}
+#endif
 	}
 #ifndef _WIN32
 	fflush(stdout);
 	fflush(stderr);
 #endif
-	if (Global.test.enabled)
-	{
-		// a run that stopped before its test ended (a failed start, an exception) says so like any other end
-		simulation::test().conclude(simulation::test_result::error, "the simulator stopped before the test ended");
-		finish_log();
-	}
-	// skip destructors, there are ordering errors which causes segfaults
-	// a test run (--test) says its result in the exit code
-	std::_Exit(Global.test.enabled ? simulation::test().exit_code() : 0);
+	std::_Exit(0); // skip destructors, there are ordering errors which causes segfaults
 }

@@ -433,8 +433,12 @@ int eu07_application::init(int Argc, char *Argv[])
 
 	#if WITH_DISCORD_RPC
 	// Run DiscordRPC service
-	std::thread sDiscordRPC(&eu07_application::DiscordRPCService, this);
-	Global.threads.emplace("DiscordRPC", std::move(sDiscordRPC));
+	// not for a test run: it would show the test scenery as the player's presence, and hold up the closing
+	if (false == Global.test.enabled)
+	{
+		std::thread sDiscordRPC(&eu07_application::DiscordRPCService, this);
+		Global.threads.emplace("DiscordRPC", std::move(sDiscordRPC));
+	}
 	#endif
 
 	if (!init_network())

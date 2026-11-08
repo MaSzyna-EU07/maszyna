@@ -100,13 +100,26 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 		{
 			++i;
 		}
-		else if (option == "-edit" && i + 1 < Arguments.size() && Arguments[i + 1][0] != '-')
-		{
-			// the scenery to edit is optional
-			++i;
-		}
 	}
 	return result;
+}
+
+std::string describe_exception(std::exception_ptr const &Exception)
+{
+	if (nullptr == Exception)
+		return "the simulator was terminated";
+	try
+	{
+		std::rethrow_exception(Exception);
+	}
+	catch (std::exception const &Error)
+	{
+		return std::format("critical error: {}", Error.what());
+	}
+	catch (...)
+	{
+		return "critical error: an exception of unknown type";
+	}
 }
 
 double wall_clock_limit(std::optional<double> const Given, double const Simulationtimeout)

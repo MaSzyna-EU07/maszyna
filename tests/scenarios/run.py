@@ -137,6 +137,11 @@ def fill_vars(fragment: str, values: dict, keep=frozenset()) -> str:
     return re.sub(r"\{\{(\w+)\}\}", value, fragment)
 
 
+def scenery_cache(game_dir: Path, case_name: str) -> Path:
+    """The simulator's geometry cache of the case scenery."""
+    return game_dir / "scenery" / f"autotest_{case_name}.sbt"
+
+
 def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> str:
     """Writes the case scenery into the game's scenery dir and returns its file name."""
     scenery_dir = game_dir / "scenery"
@@ -174,7 +179,7 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     # the simulator caches the scenery's static geometry in <name>.sbt and reads it instead of
     # the terrain in the .scn (tracks, events and trainsets always come from the .scn), so
     # drop the cache once the base scenery has changed
-    cache = scenery_dir / f"autotest_{case_name}.sbt"
+    cache = scenery_cache(game_dir, case_name)
     if cache.exists() and cache.stat().st_mtime < (scenery_dir / case["base_scenery"]).stat().st_mtime:
         cache.unlink()
     return name
@@ -548,6 +553,11 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
         watchdog = ", from the real time watchdog" if got == WALL_TIMEOUT else ""
         say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}{watchdog}, expected {expect}")
         ok &= passed
+    # a run cut short (the real time watchdog, an error, a crash, or closed by us) could have been writing
+    # the scenery's geometry cache; the simulator checks only the header of it, so the next runs would read
+    # a truncated one. it is written again on the next run
+    if result.failure or (not watch and got in (None, "error", WALL_TIMEOUT)):
+        scenery_cache(game_dir, name).unlink(missing_ok=True)
     if result.failure:
         say(f"  FAIL  {result.failure}")
         ok = False

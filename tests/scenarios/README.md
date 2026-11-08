@@ -31,7 +31,8 @@ With `--test` the simulator:
   motion telemetry is off,
 - gives nothing to the outside either: no keyboard leds, LPT or PoKeys (`feedbackmode`), no
   messages to a multiplayer server (`multiplayer`), no program run at the end (`execonexit`),
-  no console window of its own (`showsystemconsole`), and the game's `imgui.ini` stays as it is,
+  no console window of its own (`showsystemconsole`), no Discord presence, and the game's `imgui.ini`
+  stays as it is,
 - keeps all of the above whatever the `config` block of the scenery says: the settings of the
   test mode are applied again after it,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
@@ -39,8 +40,9 @@ With `--test` the simulator:
 - seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
   runs of a scenery come out the same (the physicslogs of two runs are byte for byte equal),
 - quits when the test ends, and says how it ended in the exit code and in a `test: ...`
-  line on stdout and in the log. A command line it can't take, or a start that fails, ends
-  the same way with the `error` code. That line is all there is on stdout: the log goes to
+  line on stdout and in the log. A command line it can't take, a start that fails, or an
+  exception thrown by the simulator (of any type, on Linux too) ends the same way, with the
+  `error` code. That line is all there is on stdout: the log goes to
   the log file only (`debuglog` doesn't print it on the console in test mode).
 
 On Windows the simulator is a windowed program, which the `cmd` prompt and PowerShell don't wait
@@ -167,7 +169,8 @@ For each case the runner:
 The lead vehicle is named `autotest_<case>`, so every case has its own physicslog and log
 files and cases can run in parallel. The `autotest_*` sceneries (and the simulator's `.sbt`
 geometry cache of them) stay in the game's `scenery/` dir; the cache is dropped when the base
-scenery is newer.
+scenery is newer, and after a run cut short (`wall_timeout`, `error`, a crash, or killed by run.py),
+which could have been writing it.
 
 ## Writing a case
 
