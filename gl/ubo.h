@@ -706,6 +706,16 @@ namespace gl
     // of the step of the simulation (water_ubs) and the texture unit of the mask of the wipers the map is baked from. the storage
     // point is used by nothing else, bound with the colour passes
     const GLuint WATER_SSBO_BINDING = 16;
+    // the drops and the rivulets of the cells of the glasses with rain (mat_rain_windscreen, rain_cells.comp, rain_cells.glsl): worked
+    // out once a frame for every cell, so a glass only reads them. RAIN_CELLS_COUNT uvec4, as rain_cells.glsl lays them out
+    const GLuint RAIN_CELLS_SSBO_BINDING = 18;
+    const size_t RAIN_DROP_CELLS = 512;
+    const size_t RAIN_RIV_CELLS = 128;
+    const size_t RAIN_RIV_LAYERS = 5;
+    // the cells (the first pass of rain_cells.comp), then the reach of the drops into the quarters of each drop cell (the second)
+    const size_t RAIN_MASK_BASE = RAIN_DROP_CELLS * RAIN_DROP_CELLS + RAIN_RIV_LAYERS * RAIN_RIV_CELLS * RAIN_RIV_CELLS;
+    const size_t RAIN_CELLS_COUNT = RAIN_MASK_BASE + RAIN_DROP_CELLS * RAIN_DROP_CELLS;
+    const size_t RAIN_CELLS_GROUP_SIZE = 64;
     const GLuint WATER_UBO_BINDING = 6;
     const size_t WATER_MASK_TEX = MAX_TEXTURES + HELPER_TEXTURES + 13;
     // the parts of the storage of the water (std430, GLSL water_ssbo), offsets in bytes: the header of every glass (vec4), the

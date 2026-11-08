@@ -1046,6 +1046,8 @@ void vulkan14_renderer::render_scene()
 	auto &scene{ctx.scene};
 	// the water on the windscreens of the cab: a step of its simulation once a frame, before the passes which draw the glasses
 	scene.water.update(Timer::GetDeltaTime());
+	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
+	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), glm::saturate(Global.Overcast - 1.f));
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
@@ -1891,8 +1893,9 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	auto const colourstats{m_renderpass.draw_stats};
 	m_renderpass.draw_stats = {};
 	walk_blending(false);
-	// the conditions of the cab drawn early by the colour pass
-	if ((false == FreeFlyModeFlag) && (Global.Overcast <= 1.0f) && Global.render_cab && simulation::Train)
+	// the cab first, also in the rain: the colour pass draws it after the rain then (the rain inside it hidden), but with its depth here
+	// nothing the cab hides is shaded by the opaque pass (in a station seen from the cab: about a third of the time of the opaque pass)
+	if ((false == FreeFlyModeFlag) && Global.render_cab && simulation::Train)
 	{
 		model_ubs.future = m_cabfuture;
 		auto const *vehicle{simulation::Train->Dynamic()};

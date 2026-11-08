@@ -155,6 +155,7 @@ VkDescriptorType pass_binding_type(std::uint32_t const Binding)
 	case CLUSTER_INDEX_SSBO:
 	case SKY_SSBO:
 	case WATER_SSBO:
+	case RAIN_CELLS_SSBO:
 	case CAB_PROBE_SSBO:
 		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	case ATMOSPHERE_UBO:
@@ -1065,6 +1066,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 	VkDescriptorBufferInfo const weatherblock{ctx.ring.handle(), 0, offsetof(gl::weather_ubs, fog_horizon)};
 	VkDescriptorBufferInfo const horizonblock{scene.weather_horizon.handle(), 0, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES};
 	VkDescriptorBufferInfo const water{scene.water.storage(), 0, VK_WHOLE_SIZE};
+	VkDescriptorBufferInfo const raincells{scene.water.rain_cells(), 0, VK_WHOLE_SIZE};
 	VkDescriptorBufferInfo const cabprobe{scene.cabprobe_bounce.handle(), 0, sizeof(gl::cab_probe_data)};
 	VkDescriptorImageInfo const headlightsinfo{scene.headlights_sampler, scene.headlights_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	std::vector<VkWriteDescriptorSet> writes;
@@ -1100,6 +1102,7 @@ void vulkan14_renderer::write_pass_sets(vk14::instance_cull *Cull)
 		write(handle, WEATHER_UBO, &weatherblock, nullptr);
 		write(handle, WEATHER_HORIZON_UBO, &horizonblock, nullptr);
 		write(handle, WATER_SSBO, &water, nullptr);
+		write(handle, RAIN_CELLS_SSBO, &raincells, nullptr);
 		write(handle, HEADLIGHT_TEX, nullptr, &headlightsinfo);
 		write(handle, SHADOW_TEX, nullptr, image(ctx.sampling.shadow, views[SHADOW_TEX]));
 		write(handle, ENV_TEX, nullptr, image(ctx.sampling.clamp_linear, views[ENV_TEX]));
