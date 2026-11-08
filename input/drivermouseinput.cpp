@@ -597,6 +597,18 @@ drivermouse_input::default_bindings() {
         { "main_on_bt:",{
             linebreakerclose,
             none } },
+        { "mainb_off_bt:", {
+            linebreakeropenb,
+            none } },
+        { "mainb_on_bt:", {
+            linebreakercloseb,
+            none } },
+        { "mainc_off_bt:", {
+            linebreakeropenc,
+            none } },
+        { "mainc_on_bt:", {
+            linebreakerclosec,
+            none } },
         { "security_reset_bt:", {
             alerteracknowledge,
             none } },
@@ -773,6 +785,12 @@ drivermouse_input::default_bindings() {
             none } }, // TODO: dedicated converter shutdown command
         { "main_sw:", {
             linebreakertoggle,
+            none } },
+        { "mainb_sw:", {
+            linebreakertoggleb,
+            none } },
+        { "mainc_sw:", {
+            linebreakertogglec,
             none } },
         { "radio_sw:", {
             radiotoggle,

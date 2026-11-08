@@ -495,6 +495,18 @@ std::unordered_map<std::string, vr_openvr::button_bindings> vr_openvr::m_buttonb
     { "main_on_bt:",{
         user_command::linebreakerclose,
         user_command::none } },
+    { "mainb_off_bt:", {
+        user_command::linebreakeropenb,
+        user_command::none } },
+    { "mainb_on_bt:", {
+        user_command::linebreakercloseb,
+        user_command::none } },
+    { "mainc_off_bt:", {
+        user_command::linebreakeropenc,
+        user_command::none } },
+    { "mainc_on_bt:", {
+        user_command::linebreakerclosec,
+        user_command::none } },
     { "security_reset_bt:", {
         user_command::alerteracknowledge,
         user_command::none } },
@@ -659,6 +671,12 @@ std::unordered_map<std::string, vr_openvr::button_bindings> vr_openvr::m_buttonb
         user_command::none } }, // TODO: dedicated converter shutdown command
     { "main_sw:", {
         user_command::linebreakertoggle,
+        user_command::none } },
+    { "mainb_sw:", {
+        user_command::linebreakertoggleb,
+        user_command::none } },
+    { "mainc_sw:", {
+        user_command::linebreakertogglec,
         user_command::none } },
     { "radio_sw:", {
         user_command::radiotoggle,

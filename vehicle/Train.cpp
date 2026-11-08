@@ -337,6 +337,12 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::linebreakertoggle, &TTrain::OnCommand_linebreakertoggle},
     {user_command::linebreakeropen, &TTrain::OnCommand_linebreakeropen},
     {user_command::linebreakerclose, &TTrain::OnCommand_linebreakerclose},
+    {user_command::linebreakertoggleb, &TTrain::OnCommand_linebreakertoggleremote},
+    {user_command::linebreakeropenb, &TTrain::OnCommand_linebreakeropenremote},
+    {user_command::linebreakercloseb, &TTrain::OnCommand_linebreakercloseremote},
+    {user_command::linebreakertogglec, &TTrain::OnCommand_linebreakertoggleremote},
+    {user_command::linebreakeropenc, &TTrain::OnCommand_linebreakeropenremote},
+    {user_command::linebreakerclosec, &TTrain::OnCommand_linebreakercloseremote},
     {user_command::fuelpumptoggle, &TTrain::OnCommand_fuelpumptoggle},
     {user_command::fuelpumpenable, &TTrain::OnCommand_fuelpumpenable},
     {user_command::fuelpumpdisable, &TTrain::OnCommand_fuelpumpdisable},
@@ -3718,7 +3724,7 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 			return;
 		} // already in the desired state
 
-		if (true == Train->mvControlled->MainSwitch(false))
+		if (true == Train->mvControlled->MainSwitch(false, Train->mvControlled->MainSwitchRange()))
 		{
 			Train->m_linebreakerstate = 0;
 		}
@@ -3793,10 +3799,154 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 		if (Train->m_linebreakerstate == 2 && Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
 		{
 			// try to finalize state change of the line breaker, set the state based on the outcome
-			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true) ? 1 : 0;
+			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true, Train->mvControlled->MainSwitchRange()) ? 1 : 0;
 		}
 		// on button release reset the closing timer
 		Train->fMainRelayTimer = 0.0f;
+	}
+}
+
+namespace
+{
+
+// which of the switches of the other vehicles in multiple a command works: 0 the second vehicle's, 1 the third one's
+std::size_t remote_linebreaker_index(user_command const Command)
+{
+	using enum user_command;
+	return (Command == linebreakertogglec || Command == linebreakeropenc || Command == linebreakerclosec) ? 1 : 0;
+}
+
+// the impulse switches of another vehicle's line breaker spring back when let go, whichever way they were pressed
+void release_remote_linebreaker(TTrain::remote_linebreaker &Controls, std::optional<sound_source> &Sound)
+{
+	if (Controls.on_button.SubModel != nullptr)
+	{
+		Controls.on_button.UpdateValue(0.0, Sound);
+	}
+	if (Controls.off_button.SubModel != nullptr)
+	{
+		Controls.off_button.UpdateValue(0.0, Sound);
+	}
+	if (Controls.main_switch.SubModel != nullptr && Controls.main_switch.type() != TGaugeType::toggle)
+	{
+		Controls.main_switch.UpdateValue(0.5, Sound);
+	}
+	Controls.held_without_switch = false;
+}
+
+} // namespace
+
+TMoverParameters *TTrain::remote_engine(std::size_t const Index) const
+{
+	return engine_start::engine(*mvOccupied, *mvControlled, static_cast<int>(Index) + 2);
+}
+
+void TTrain::OnCommand_linebreakertoggleremote(TTrain *Train, command_data const &Command)
+{
+	auto const index{remote_linebreaker_index(Command.command)};
+	auto &controls{Train->m_remotelinebreakers[index]};
+
+	if (Command.action == GLFW_PRESS)
+	{
+		// a two-state switch goes the other way than it stands, an impulse one the other way than the engine is
+		bool close{false};
+		if (controls.main_switch.SubModel != nullptr && controls.main_switch.type() == TGaugeType::toggle)
+		{
+			close = controls.main_switch.GetDesiredValue() < 0.5;
+		}
+		else
+		{
+			auto const *engine{Train->remote_engine(index)};
+			close = engine == nullptr || false == engine_start::remote_switch::is_running(*engine);
+		}
+		if (close)
+		{
+			OnCommand_linebreakercloseremote(Train, Command);
+		}
+		else
+		{
+			OnCommand_linebreakeropenremote(Train, Command);
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		if (controls.on_button.SubModel != nullptr || controls.main_switch.type() != TGaugeType::toggle)
+		{
+			// only impulse switches react to release events
+			release_remote_linebreaker(controls, Train->dsbSwitch);
+		}
+		controls.held_without_switch = false;
+	}
+}
+
+void TTrain::OnCommand_linebreakeropenremote(TTrain *Train, command_data const &Command)
+{
+	auto const index{remote_linebreaker_index(Command.command)};
+	auto &controls{Train->m_remotelinebreakers[index]};
+
+	if (Command.action == GLFW_PRESS)
+	{
+		// visual feedback
+		if (controls.off_button.SubModel != nullptr)
+		{
+			controls.off_button.UpdateValue(1.0, Train->dsbSwitch);
+		}
+		else if (controls.main_switch.SubModel != nullptr)
+		{
+			controls.main_switch.UpdateValue(0.0, Train->dsbSwitch);
+		}
+		controls.held_without_switch = false;
+		if (auto *engine{Train->remote_engine(index)}; engine != nullptr)
+		{
+			engine_start::remote_switch::open(*engine);
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		release_remote_linebreaker(controls, Train->dsbSwitch);
+	}
+}
+
+void TTrain::OnCommand_linebreakercloseremote(TTrain *Train, command_data const &Command)
+{
+	auto const index{remote_linebreaker_index(Command.command)};
+	auto &controls{Train->m_remotelinebreakers[index]};
+
+	if (Command.action == GLFW_PRESS)
+	{
+		// visual feedback; the line breaker closes in the train update, once the switch was held long enough
+		if (controls.on_button.SubModel != nullptr)
+		{
+			controls.on_button.UpdateValue(1.0, Train->dsbSwitch);
+		}
+		else if (controls.main_switch.SubModel != nullptr)
+		{
+			controls.main_switch.UpdateValue(1.0, Train->dsbSwitch);
+		}
+		else
+		{
+			// no switch in the cab, the command alone holds it
+			controls.held_without_switch = true;
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		release_remote_linebreaker(controls, Train->dsbSwitch);
+	}
+}
+
+void TTrain::update_remote_linebreakers(double const Deltatime)
+{
+	for (std::size_t index = 0; index < m_remotelinebreakers.size(); ++index)
+	{
+		auto &controls{m_remotelinebreakers[index]};
+		auto *engine{remote_engine(index)};
+		auto const closeheld{controls.held_without_switch || (controls.main_switch.SubModel != nullptr && controls.main_switch.GetDesiredValue() > 0.95) ||
+		                     (controls.on_button.SubModel != nullptr && controls.on_button.GetDesiredValue() > 0.95)};
+		auto const openheld{controls.off_button.SubModel != nullptr && controls.off_button.GetDesiredValue() > 0.95};
+		// as with the cab's own switch, an electric locomotive's impulse switch closes the line breaker when let go
+		auto const closesonrelease{engine != nullptr && controls.on_button.SubModel != nullptr && engine->EngineType == TEngineType::ElectricSeriesMotor};
+		controls.state.update(engine, closeheld, openheld, Deltatime, closesonrelease);
 	}
 }
 
@@ -8442,8 +8592,10 @@ bool TTrain::Update(double const Deltatime)
 	if (m_linebreakerstate == 2 && (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor))
 	{
 		// try to finalize state change of the line breaker, set the state based on the outcome
-		m_linebreakerstate = mvControlled->MainSwitch(true) ? 1 : 0;
+		m_linebreakerstate = mvControlled->MainSwitch(true, mvControlled->MainSwitchRange()) ? 1 : 0;
 	}
+	// the switches of the other vehicles in multiple
+	update_remote_linebreakers(Deltatime);
 	// door permits
 	for (auto idx = 0; idx < 2; ++idx)
 	{
@@ -9543,6 +9695,12 @@ bool TTrain::Update(double const Deltatime)
 	ggMainOffButton.Update();
 	ggMainOnButton.Update();
 	ggMainButton.Update();
+	for (auto &remotelinebreaker : m_remotelinebreakers)
+	{
+		remotelinebreaker.main_switch.Update();
+		remotelinebreaker.on_button.Update();
+		remotelinebreaker.off_button.Update();
+	}
 	ggSecurityResetButton.Update();
 	ggSHPResetButton.Update();
 	ggReleaserButton.Update();
@@ -11036,6 +11194,13 @@ void TTrain::clear_cab_controls()
 	ggMaxCurrentCtrl.Clear();
 	ggMainOffButton.Clear();
 	ggMainOnButton.Clear();
+	for (auto &remotelinebreaker : m_remotelinebreakers)
+	{
+		remotelinebreaker.main_switch.Clear();
+		remotelinebreaker.on_button.Clear();
+		remotelinebreaker.off_button.Clear();
+		remotelinebreaker.held_without_switch = false;
+	}
 	ggSecurityResetButton.Clear();
 	ggSHPResetButton.Clear();
 	ggReleaserButton.Clear();
@@ -11286,6 +11451,22 @@ void TTrain::set_cab_controls(int const Cab)
 	if (ggMainButton.SubModel != nullptr)
 	{ // instead of single main button there can be on/off pair
 		ggMainButton.PutValue(ggMainButton.type() == TGaugeType::push ? 0.5f : m_linebreakerstate > 0 ? 1.f : 0.f);
+	}
+	// line breakers of the other vehicles in multiple
+	for (std::size_t index = 0; index < m_remotelinebreakers.size(); ++index)
+	{
+		auto &mainswitch{m_remotelinebreakers[index].main_switch};
+		if (mainswitch.SubModel == nullptr)
+		{
+			continue;
+		}
+		if (mainswitch.type() == TGaugeType::push)
+		{
+			mainswitch.PutValue(0.5f);
+			continue;
+		}
+		auto const *engine{remote_engine(index)};
+		mainswitch.PutValue(engine != nullptr && engine_start::remote_switch::is_running(*engine) ? 1.f : 0.f);
 	}
 
 	if (ggModernLightDimSw.SubModel != nullptr)
@@ -11778,6 +11959,12 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"maxcurrent_sw:", ggMaxCurrentCtrl},
 	                                                          {"main_off_bt:", ggMainOffButton},
 	                                                          {"main_on_bt:", ggMainOnButton},
+	                                                          {"mainb_sw:", m_remotelinebreakers[0].main_switch},
+	                                                          {"mainb_off_bt:", m_remotelinebreakers[0].off_button},
+	                                                          {"mainb_on_bt:", m_remotelinebreakers[0].on_button},
+	                                                          {"mainc_sw:", m_remotelinebreakers[1].main_switch},
+	                                                          {"mainc_off_bt:", m_remotelinebreakers[1].off_button},
+	                                                          {"mainc_on_bt:", m_remotelinebreakers[1].on_button},
 	                                                          {"security_reset_bt:", ggSecurityResetButton},
 	                                                          {"shp_reset_bt:", ggSHPResetButton},
 	                                                          {"releaser_bt:", ggReleaserButton},

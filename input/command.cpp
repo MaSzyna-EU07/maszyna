@@ -406,6 +406,12 @@ commanddescription_sequence Commands_descriptions = {
     {"wiperswitchdecrease", command_target::vehicle, command_mode::oneoff},
     {"lightsset", command_target::vehicle, command_mode::oneoff},
     {"oilfuelpumptoggle", command_target::vehicle, command_mode::oneoff},
+    {"linebreakertoggleb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakeropenb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakercloseb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakertogglec", command_target::vehicle, command_mode::oneoff},
+    {"linebreakeropenc", command_target::vehicle, command_mode::oneoff},
+    {"linebreakerclosec", command_target::vehicle, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -791,6 +797,12 @@ std::unordered_map<std::string, user_command> const commandMap = {
 	{"wiperswitchdecrease", user_command::wiperswitchdecrease},
     {"lightsset", user_command::lightsset},
     {"oilfuelpumptoggle", user_command::oilfuelpumptoggle},
+    {"linebreakertoggleb", user_command::linebreakertoggleb},
+    {"linebreakeropenb", user_command::linebreakeropenb},
+    {"linebreakercloseb", user_command::linebreakercloseb},
+    {"linebreakertogglec", user_command::linebreakertogglec},
+    {"linebreakeropenc", user_command::linebreakeropenc},
+    {"linebreakerclosec", user_command::linebreakerclosec},
 	{"none", user_command::none}};
 
 } // namespace simulation

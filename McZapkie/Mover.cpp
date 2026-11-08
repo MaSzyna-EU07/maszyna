@@ -7869,7 +7869,8 @@ bool TMoverParameters::dizel_Update(double dt)
 	{
 		// knock out the engine if the fuel pump isn't feeding it
 		// TBD, TODO: grace period before the engine is starved for fuel and knocked out
-		MainSwitch(false);
+		// an engine started on its own stops on its own
+		MainSwitch(false, MainSwitchRange());
 	}
 
 	bool DU{false};
@@ -8160,7 +8161,8 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 
 	if (enrot <= 0 && false == dizel_spinup)
 	{
-		MainSwitch(false);
+		// a stopped engine doesn't stop those started on their own
+		MainSwitch(false, MainSwitchRange());
 		enrot = 0;
 	}
 
@@ -11158,6 +11160,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 {
 
 	EngineType = LoadFIZ_EngineDecode(extract_value("EngineType", Input));
+	extract_value(JointEngineStart, "JointEngineStart", Input, "");
 
 	if (std::string transmission = extract_value("Trans", Input); false == transmission.empty())
 	{
