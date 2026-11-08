@@ -33,6 +33,9 @@ class srk_tool final : public editor_tool
 	    : m_editor{Selection, View, History, Templates, Signals}
 	{
 	}
+	// its parts keep a reference to it: a copy would leave them on the original
+	srk_tool(srk_tool const &) = delete;
+	srk_tool &operator=(srk_tool const &) = delete;
 	void update() override;
 	void draw_overlay() const override;
 	void render_options() override;

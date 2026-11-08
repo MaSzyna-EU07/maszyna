@@ -2591,9 +2591,18 @@ struct trace_scope
 {
 	std::size_t work{0};
 };
-thread_local trace_scope *active_trace{nullptr};
+// the scope of the fit running on this thread, none while no fit of a traced stretch runs
+trace_scope *&active_trace()
+{
+	thread_local trace_scope *scope{nullptr};
+	return scope;
+}
 // set by the thread of stretch_fitter: the fit it runs is no longer wanted
-thread_local std::atomic<bool> const *trace_abandon{nullptr};
+std::atomic<bool> const *&trace_abandon()
+{
+	thread_local std::atomic<bool> const *abandon{nullptr};
+	return abandon;
+}
 
 // the scope of one fit of a traced stretch, the outermost one counting
 class trace_guard
@@ -2601,15 +2610,15 @@ class trace_guard
   public:
 	trace_guard()
 	{
-		if (active_trace != nullptr)
+		if (active_trace() != nullptr)
 			return;
-		active_trace = &m_scope;
+		active_trace() = &m_scope;
 		m_owner = true;
 	}
 	~trace_guard()
 	{
 		if (m_owner)
-			active_trace = nullptr;
+			active_trace() = nullptr;
 	}
 	trace_guard(trace_guard const &) = delete;
 	trace_guard &operator=(trace_guard const &) = delete;
@@ -2621,14 +2630,14 @@ class trace_guard
 
 void trace_work(std::size_t const Work)
 {
-	if (active_trace != nullptr)
-		active_trace->work += Work;
+	if (active_trace() != nullptr)
+		active_trace()->work += Work;
 }
 
 // the fit running settles for what it has
 bool trace_spent()
 {
-	return active_trace != nullptr && (active_trace->work > kTraceWork || (trace_abandon != nullptr && trace_abandon->load(std::memory_order_relaxed)));
+	return active_trace() != nullptr && (active_trace()->work > kTraceWork || (trace_abandon() != nullptr && trace_abandon()->load(std::memory_order_relaxed)));
 }
 
 // the plan from From to To in chords short enough to keep to the curves, the directions of its ends carried on far, so that a point
@@ -6045,7 +6054,7 @@ bool stretch_fitter::latest(std::vector<double> &Key, trace_stretch &Fit) const
 
 void stretch_fitter::work()
 {
-	trace_abandon = &m_abandon;
+	trace_abandon() = &m_abandon;
 	std::unique_lock lock{m_mutex};
 	for (;;)
 	{
