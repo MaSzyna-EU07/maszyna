@@ -951,42 +951,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	route_design m_route;
 
 	void render_straights_ui();
-	void draw_straights_overlay() const;
 	editor_track::straight const &current_straight();
-	bool straights_active();
-	void render_straight_gizmo();
-	// the drag of the gizmo of the straight: begun on the line, the straights moved to where the gizmo is, ended
-	bool start_straight_drag(editor_track::straight const &Line);
-	void drag_straight(glm::dvec3 const &Handled);
-	void end_straight_drag();
-	void straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End);
-	void straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends);
-	bool in_straight_set(editor_track::straight const &Line) const;
 	bool place_straight_tool();
-	void apply_straight_tool();
 	double straight_tool_radius(editor_track::straight const &Line) const;
-	void straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius);
 	void straight_refresh() override;
-	bool start_curve_fit(editor_track::straight const &Line, int const Handle);
-	void update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End);
 	void add_detour_point();
-	void apply_detour();
 	std::vector<glm::dvec3> detour_outline() const;
-	void find_neighbour_straights();
-	// listed spacing of a neighbouring straight the line can snap to, if it is close enough
-	struct parallel_offer
-	{
-		bool nearby{false};
-		bool snaps{false};
-		double spacing{0.0};
-		double distance{0.0};
-		double angle{0.0}; // deg between the two straights
-		double correction{0.0}; // m along the line normal to reach the spacing
-		editor_track::straight const *neighbour{nullptr};
-	};
 	parallel_offer straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
-	glm::dvec3 snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const;
-	glm::dvec3 snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const;
 	straights_state m_straights;
 
 	struct curve_sample
@@ -1797,8 +1768,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	track_name_edit m_track_name;
 	void render_track_name(TTrack &Track);
 	void render_straight_ui();
-	// the exact values of the straight edited: its ends, its length and its azimuth
-	void render_straight_exact(editor_track::straight const &Line);
 	track_tab m_track_tab{track_tab::path};
 	void delete_selected_track();
 	// the double switch Set deleted, its main track left in its place unless Shift asks for all of it
@@ -1812,7 +1781,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> m_thrown_switches;
 	std::string designs_trimmed(std::vector<TTrack *> const &Removed) const;
 	void start_straight_gesture(int const Tool);
-	void finish_straight_gesture();
 	void toggle_straight_set(TTrack &Track);
 	struct key_hint
 	{
@@ -2843,6 +2811,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool take_out_crossover_at(curved_crossover const &Crossover, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, TTrack *&First, TTrack *&Second) override;
 	int crossover_template_of(switch_store::record const &Record) override;
 	void neighbour_straights_found() override;
+	void focus_on_node(scene::basic_node *Node) override;
+	std::vector<TTrack *> &tracks_dragged() override;
+	void track_drag_moved() override;
+	void track_drag_commit(bool const Force) override;
+	void track_tab_set(editor_track_tab const Tab) override;
+	std::vector<double> typed_numbers() const override;
+	void typed_turn_taken() override;
 	// build services: end
 
 

@@ -1330,7 +1330,7 @@ void editor_mode::finish_extend()
 	ui()->set_node(m_node);
 	m_build_tools->nmt_auto.nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
 	m_nmt_state.laying = false;
-	straight_refresh();
+	m_build_tools->straight_edit.straight_refresh();
 }
 
 // a press let go where it was made: the free end pressed starts the line laid, or is chosen on the selected track
@@ -1372,7 +1372,7 @@ void editor_mode::finish_crossover(crossover_plan const &Plan)
 	// kept as a crossover, so it's taken out, slid and followed as one
 	record_connection(connection::kind::crossover, {origin, placed}, Plan.connection, editor_track::template_of_switch(origin).value_or(Plan.shape));
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
-	straight_refresh();
+	m_build_tools->straight_edit.straight_refresh();
 	if (place_switch_drive(*placed))
 		join_last_steps();
 	advance_switch_name();
@@ -1405,7 +1405,7 @@ void editor_mode::extend_add(int const Side)
 	m_node = created.back();
 	ui()->set_node(m_node);
 	m_track_point = {};
-	straight_refresh();
+	m_build_tools->straight_edit.straight_refresh();
 }
 
 void editor_mode::render_extend_ui()
@@ -2578,7 +2578,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.points.clear();
 	tool.modes.clear();
 	tool.start = {};
-	straight_refresh();
+	m_build_tools->straight_edit.straight_refresh();
 }
 
 // the notes told of the track laid, after its length: the error of the line, a compound curve eased, the curves going on from those of

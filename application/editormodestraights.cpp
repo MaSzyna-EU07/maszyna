@@ -604,7 +604,7 @@ void render_straights_status(auto &State)
 
 } // namespace
 
-void editor_mode::draw_straights_overlay() const
+void straights_editor::draw_straights_overlay() const
 {
 	screen_projection const projection;
 	ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
@@ -638,7 +638,7 @@ void editor_mode::draw_straights_overlay() const
 	}
 }
 
-void editor_mode::find_neighbour_straights()
+void straights_editor::find_neighbour_straights()
 {
 	auto &state{m_straights};
 	state.neighbours.clear();
@@ -655,7 +655,7 @@ void editor_mode::find_neighbour_straights()
 				add_neighbour(state.neighbours, visited, line, track, state.tolerance);
 }
 
-editor_mode::parallel_offer editor_mode::straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const
+parallel_offer straights_editor::straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const
 {
 	parallel_offer offer;
 	glm::dvec2 const normal{-Line.direction.y, Line.direction.x};
@@ -687,7 +687,7 @@ editor_mode::parallel_offer editor_mode::straight_parallel_offer(editor_track::s
 	return offer;
 }
 
-glm::dvec3 editor_mode::snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const
+glm::dvec3 straights_editor::snap_straight_offset(editor_track::straight const &Line, glm::dvec3 const &Offset) const
 {
 	auto const offer{straight_parallel_offer(Line, Offset)};
 	if (false == offer.snaps)
@@ -696,7 +696,7 @@ glm::dvec3 editor_mode::snap_straight_offset(editor_track::straight const &Line,
 	return Offset + glm::dvec3{normal.x, 0.0, normal.y} * offer.correction;
 }
 
-glm::dvec3 editor_mode::snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const
+glm::dvec3 straights_editor::snap_straight_direction(glm::dvec3 const &Pivot, glm::dvec3 const &Moved) const
 {
 	glm::dvec2 const offset{Moved.x - Pivot.x, Moved.z - Pivot.z};
 	auto const length{glm::length(offset)};
@@ -713,7 +713,7 @@ glm::dvec3 editor_mode::snap_straight_direction(glm::dvec3 const &Pivot, glm::dv
 	return Moved;
 }
 
-void editor_mode::render_straights_ui()
+void straights_editor::render_straights_ui()
 {
 	auto &state{m_straights};
 	ImGui::PushTextWrapPos(0.0f);
@@ -769,9 +769,8 @@ void editor_mode::render_straights_ui()
 			if (ImGui::Selectable(label.c_str(), state.listed == i))
 			{
 				state.listed = i;
-				m_node = line.tracks[line.tracks.size() / 2];
-				ui()->set_node(m_node);
-				start_focus(m_node);
+				m_services.set_current_node(line.tracks[line.tracks.size() / 2]);
+				m_build.focus_on_node(line.tracks[line.tracks.size() / 2]);
 			}
 		}
 		ImGui::EndChild();
@@ -779,10 +778,10 @@ void editor_mode::render_straights_ui()
 
 }
 
-void editor_mode::render_straight_ui()
+void straights_editor::render_straight_ui()
 {
 	auto &state{m_straights};
-	auto const &line{m_build_tools->designer.current_straight()};
+	auto const &line{m_designer.current_straight()};
 	if (line.tracks.empty())
 	{
 		if (false == state.status.empty())
@@ -836,7 +835,7 @@ void editor_mode::render_straight_ui()
 		render_straight_exact(line);
 }
 
-void editor_mode::render_straight_exact(editor_track::straight const &Line)
+void straights_editor::render_straight_exact(editor_track::straight const &Line)
 {
 	auto &state{m_straights};
 	if (begin_fields("##straightexact", 0.3f))
@@ -873,16 +872,16 @@ void editor_mode::render_straight_exact(editor_track::straight const &Line)
 	ImGui::EndTable();
 }
 
-bool editor_mode::straights_active()
+bool straights_editor::straights_active()
 {
-	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights && false == m_build_tools->designer.current_straight().tracks.empty();
+	return m_build.build_ui()->mode() == nodebank_panel::TRACK && m_services.current_track_tab() == editor_track_tab::straights && false == m_designer.current_straight().tracks.empty();
 }
 
-int editor_mode::straight_handle_hit()
+int straights_editor::straight_handle_hit()
 {
 	if (false == straights_active())
 		return -1;
-	auto const &line{m_build_tools->designer.current_straight()};
+	auto const &line{m_designer.current_straight()};
 	std::array<glm::dvec3, 3> const handles{line.start, line.end, (line.start + line.end) * 0.5};
 	screen_projection const projection;
 	float best = kHandleRadius * kHandleRadius;
@@ -898,12 +897,12 @@ int editor_mode::straight_handle_hit()
 	return hit;
 }
 
-void editor_mode::straight_refresh()
+void straights_editor::straight_refresh()
 {
 	auto &state{m_straights};
-	state.current_for = selected_track();
+	state.current_for = m_services.selected_track();
 	state.current = state.current_for != nullptr ? editor_track::find_straight(*state.current_for, state.tolerance) : editor_track::straight{};
-	find_neighbour_straights();
+	m_build.neighbour_straights_found();
 	for (auto &line : state.found)
 		if (false == line.tracks.empty())
 			line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
@@ -912,7 +911,7 @@ void editor_mode::straight_refresh()
 			line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
 }
 
-bool editor_mode::in_straight_set(editor_track::straight const &Line) const
+bool straights_editor::in_straight_set(editor_track::straight const &Line) const
 {
 	for (auto const &member : m_straights.set)
 		for (auto const *track : Line.tracks)
@@ -921,43 +920,43 @@ bool editor_mode::in_straight_set(editor_track::straight const &Line) const
 	return false;
 }
 
-void editor_mode::straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
+void straights_editor::straight_apply(editor_track::straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End)
 {
 	straights_apply({Line}, {{Start, End}});
 }
 
-void editor_mode::straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends)
+void straights_editor::straights_apply(std::vector<editor_track::straight> const &Lines, std::vector<std::pair<glm::dvec3, glm::dvec3>> const &Ends)
 {
 	auto &state{m_straights};
 	state.status.clear();
 	if (std::ranges::any_of(Ends, unlaid_ends))
 	{
-		state.status = refused(STR_C("The ends have to be numbers, from 0.1 m to 100 km apart"));
+		state.status = m_build.refusal(STR_C("The ends have to be numbers, from 0.1 m to 100 km apart"));
 		return;
 	}
 	auto const tracks{editor_track::straight_affected(Lines)};
-	if (false == tracks_editable(tracks, state.status))
+	if (false == m_build.tracks_editable_for(tracks, state.status))
 		return;
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	for (auto *track : tracks)
 		states.emplace_back(track, editor_track::capture(*track));
-	push_track_snapshot(std::move(states));
+	m_services.push_track_snapshot(std::move(states));
 	editor_track::move_straights(Lines, Ends);
 	editor_track::commit(tracks);
 	straight_refresh();
 }
 
-void editor_mode::render_straight_gizmo()
+void straights_editor::render_straight_gizmo()
 {
 	auto &state{m_straights};
 	if (state.tool_mouse)
 	{
-		glm::dvec3 const ground{cursor_ground()};
+		glm::dvec3 const ground{m_build.cursor_ground_point()};
 		state.tool_handle = {ground.x, state.tool_handle.y, ground.z};
-		typed_turn();
+		m_build.typed_turn_taken();
 		return;
 	}
-	auto const &line{state.dragging ? state.drag_line : m_build_tools->designer.current_straight()};
+	auto const &line{state.dragging ? state.drag_line : m_designer.current_straight()};
 	if (state.handle < 0 || line.tracks.empty())
 	{
 		state.dragging = false;
@@ -967,7 +966,7 @@ void editor_mode::render_straight_gizmo()
 	std::array<glm::dvec3, 3> const anchors{line.start, line.end, (line.start + line.end) * 0.5};
 	glm::dvec3 handled{anchors[state.handle]};
 	// the ends go onto the ground, the middle moves the line in plan alone
-	bool const held{handle_drag_step(handled, state.handle == 2 ? nullptr : line.tracks.front())};
+	bool const held{m_build.handle_drag_moved(handled, state.handle == 2 ? nullptr : line.tracks.front())};
 	if (held)
 	{
 		if (false == state.dragging && false == start_straight_drag(line))
@@ -980,7 +979,7 @@ void editor_mode::render_straight_gizmo()
 	}
 }
 
-bool editor_mode::start_straight_drag(editor_track::straight const &Line)
+bool straights_editor::start_straight_drag(editor_track::straight const &Line)
 {
 	auto &state{m_straights};
 	std::vector<editor_track::straight> lines;
@@ -996,9 +995,9 @@ bool editor_mode::start_straight_drag(editor_track::straight const &Line)
 	}
 	state.fitting = lines.size() == 1 && start_curve_fit(Line, state.handle);
 	auto const tracks{state.fitting ? std::vector<TTrack *>{} : editor_track::straight_affected(lines)};
-	if (false == tracks_editable(tracks, state.status))
+	if (false == m_build.tracks_editable_for(tracks, state.status))
 	{
-		refused(state.status);
+		m_build.refusal(state.status);
 		state.fitting = false;
 		return false;
 	}
@@ -1010,14 +1009,14 @@ bool editor_mode::start_straight_drag(editor_track::straight const &Line)
 		state.drag_states.emplace_back(track, editor_track::capture(*track));
 	if (false == state.fitting)
 	{
-		push_track_snapshot(state.drag_states);
-		state.drag_step = m_history.size();
-		m_track_drag = tracks;
+		m_services.push_track_snapshot(state.drag_states);
+		state.drag_step = m_build.history_size();
+		m_build.tracks_dragged() = tracks;
 	}
 	return true;
 }
 
-void editor_mode::drag_straight(glm::dvec3 const &Handled)
+void straights_editor::drag_straight(glm::dvec3 const &Handled)
 {
 	auto &state{m_straights};
 	auto const &grabbed{state.drag_line};
@@ -1026,7 +1025,7 @@ void editor_mode::drag_straight(glm::dvec3 const &Handled)
 	if (state.handle == 2)
 	{
 		auto offset{snap_straight_offset(grabbed, moved - (grabbed.start + grabbed.end) * 0.5)};
-		if (auto const values{typed_values()}; false == values.empty())
+		if (auto const values{m_build.typed_numbers()}; false == values.empty())
 			offset = glm::dvec3{-grabbed.direction.y, 0.0, grabbed.direction.x} * values[0];
 		transform = [offset](glm::dvec3 const &Point) { return Point + offset; };
 	}
@@ -1035,7 +1034,7 @@ void editor_mode::drag_straight(glm::dvec3 const &Handled)
 		auto const pivot{state.handle == 0 ? grabbed.end : grabbed.start};
 		auto const original{state.handle == 0 ? grabbed.start : grabbed.end};
 		moved = snap_straight_direction(pivot, moved);
-		if (auto const values{typed_values()}; false == values.empty() && values[0] > 0.1)
+		if (auto const values{m_build.typed_numbers()}; false == values.empty() && values[0] > 0.1)
 			moved = typed_reach(pivot, original, moved, values[0]);
 		transform = turn_about(pivot, original, moved);
 	}
@@ -1052,11 +1051,11 @@ void editor_mode::drag_straight(glm::dvec3 const &Handled)
 	for (auto const &[track, saved] : state.drag_states)
 		editor_track::apply(*track, saved);
 	editor_track::move_straights(state.drag_lines, ends);
-	m_track_dirty = true;
-	commit_track_drag(false);
+	m_build.track_drag_moved();
+	m_build.track_drag_commit(false);
 }
 
-void editor_mode::end_straight_drag()
+void straights_editor::end_straight_drag()
 {
 	auto &state{m_straights};
 	if (state.fitting)
@@ -1065,13 +1064,13 @@ void editor_mode::end_straight_drag()
 		state.dragging = false;
 		state.drag_lines.clear();
 		if (m_route.result.valid)
-			m_build_tools->designer.route_apply();
+			m_designer.route_apply();
 		straight_refresh();
 		return;
 	}
-	commit_track_drag(true);
+	m_build.track_drag_commit(true);
 	state.dragging = false;
-	m_track_drag.clear();
+	m_build.tracks_dragged().clear();
 	state.drag_states.clear();
 	state.drag_lines.clear();
 	straight_refresh();
@@ -1096,7 +1095,7 @@ void editor_mode::cancel_track_tools()
 		state.fitting = false;
 		state.drag_states.clear();
 		state.drag_lines.clear();
-		straight_refresh();
+		m_build_tools->straight_edit.straight_refresh();
 	}
 	m_extend.active = false;
 	m_turntable.placing = false;
@@ -1138,11 +1137,11 @@ void editor_mode::cancel_track_tools()
 	state.detour.clear();
 }
 
-void editor_mode::straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius) // NOSONAR: the type of the tail is set by the declaration in editor_mode, which the callers share
+void straights_editor::straight_reshape(editor_track::straight const &Line, double const From, double const To, std::function<glm::dvec3(glm::dvec3 const &)> const &Tail, double const Radius) // NOSONAR: the type of the tail is set by the declaration in straights_editor, which the callers share
 {
 	auto &state{m_straights};
 	state.status.clear();
-	m_build_tools->shared.infra_carried.clear();
+	m_infra_carried.clear();
 	auto line{Line};
 	auto spans{straight_spans(line)};
 	auto run{reshaped_run(spans, From, To, (std::max(From, 0.0) + std::min(To, line.length)) * 0.5)};
@@ -1171,7 +1170,7 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 
 	auto const tail{straight_tail(line, spans, run.last)};
 	auto const tracks{reshaped_tracks(tail, spans, run)};
-	if (false == tracks_editable(tracks, m_straights.status))
+	if (false == m_build.tracks_editable_for(tracks, m_straights.status))
 	{
 		undo_split(splitcreated, splitstates);
 		return;
@@ -1184,14 +1183,14 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 
 	m_route.from = spans[run.first].track;
 	m_route.to = spans[run.last].track;
-	m_build_tools->designer.route_reset();
+	m_designer.route_reset();
 	if (m_route.chain.tracks.empty() || false == m_route.chain.switches.empty())
 	{
 		if (false == m_route.chain.switches.empty())
 			m_route.error = STR_C("The curve would run through a switch");
 		restore_states(states, tracks);
 		undo_split(splitcreated, splitstates);
-		state.status = refused(m_route.error);
+		state.status = m_build.refusal(m_route.error);
 		return;
 	}
 	m_route.design.start_reserve = 0.0;
@@ -1199,19 +1198,19 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	for (auto &vertex : m_route.design.vertices)
 	{
 		vertex.radius = Radius;
-		m_build_tools->designer.route_recommend(vertex);
+		m_designer.route_recommend(vertex);
 		if (false == state.auto_transitions)
 		{
 			vertex.transition_in = state.transition;
 			vertex.transition_out = state.transition;
 		}
 	}
-	route_update();
+	m_build.route_recompute();
 	if (false == m_route.result.valid)
 	{
 		restore_states(states, tracks);
 		undo_split(splitcreated, splitstates);
-		state.status = refused(m_route.result.errors.empty() ? STR_C("The curve can't be fitted") : m_route.result.errors.front());
+		state.status = m_build.refusal(m_route.result.errors.empty() ? STR_C("The curve can't be fitted") : m_route.result.errors.front());
 		return;
 	}
 	std::vector<std::size_t> intervals;
@@ -1224,16 +1223,16 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	{
 		auto changed{created};
 		std::ranges::copy(std::views::keys(states), std::back_inserter(changed));
-		m_build_tools->route_relay.digitize_drawn(changed);
+		m_route_relay.digitize_drawn(changed);
 	}
-	push_track_snapshot(std::move(states), std::move(created));
+	m_services.push_track_snapshot(std::move(states), std::move(created));
 	std::string error;
 	editor_track::find_chain(m_route.from, m_route.to, m_route.chain, error, true);
 	straight_refresh();
-	state.status = STR_C("Done: click a curve to adjust it; Ctrl+Z takes it back") + infra_carried_note();
+	state.status = STR_C("Done: click a curve to adjust it; Ctrl+Z takes it back") + m_build.infra_carried_status();
 }
 
-double editor_mode::straight_tool_radius(editor_track::straight const &Line) const
+double straights_editor::straight_tool_radius(editor_track::straight const &Line) const
 {
 	if (m_straights.curve_radius > 0.0)
 		return m_straights.curve_radius;
@@ -1246,20 +1245,20 @@ double editor_mode::straight_tool_radius(editor_track::straight const &Line) con
 	return std::max(150.0, std::ceil(recommended.radius_min * 1.5 / 50.0) * 50.0);
 }
 
-bool editor_mode::place_straight_tool()
+bool straights_editor::place_straight_tool()
 {
 	auto &state{m_straights};
-	if (ui()->mode() != nodebank_panel::TRACK || m_track_tab != track_tab::straights || state.tool == 0)
+	if (m_build.build_ui()->mode() != nodebank_panel::TRACK || m_services.current_track_tab() != editor_track_tab::straights || state.tool == 0)
 		return false;
 	if (state.tool == 2)
 	{
 		add_detour_point();
 		return true;
 	}
-	auto const &line{m_build_tools->designer.current_straight()};
+	auto const &line{m_designer.current_straight()};
 	if (line.tracks.empty())
 		return false;
-	glm::dvec3 const ground{cursor_ground()};
+	glm::dvec3 const ground{m_build.cursor_ground_point()};
 	auto const along{std::clamp(line.along(ground), 0.0, line.length)};
 	glm::dvec3 const axis{line.direction.x, line.grade, line.direction.y};
 	state.tool_line = line;
@@ -1272,7 +1271,7 @@ bool editor_mode::place_straight_tool()
 	return true;
 }
 
-void editor_mode::apply_straight_tool()
+void straights_editor::apply_straight_tool()
 {
 	auto &state{m_straights};
 	auto const line{state.tool_line};
@@ -1292,7 +1291,7 @@ void editor_mode::apply_straight_tool()
 			speed = std::max(speed, editor_track::velocity(*track));
 		auto transition{state.transition};
 		if (state.auto_transitions)
-			transition = alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition;
+			transition = alignment::recommend(speed > 0.0 ? speed : 100.0, radius, m_build.lay_norms()).transition;
 		auto const reach{radius * std::tan(std::min(std::abs(angle), 3.0) * 0.5) + transition * 0.5 + 10.0};
 		straight_reshape(line, state.tool_at - reach, state.tool_at + reach,
 			[pivot, angle](glm::dvec3 const &Point) {
@@ -1318,7 +1317,7 @@ void editor_mode::apply_straight_tool()
 	state.tool_placed = false;
 }
 
-void editor_mode::start_straight_gesture(int const Tool)
+void straights_editor::start_straight_gesture(int const Tool)
 {
 	auto &state{m_straights};
 	state.tool_before = state.tool;
@@ -1331,7 +1330,7 @@ void editor_mode::start_straight_gesture(int const Tool)
 	state.tool_mouse = true;
 }
 
-void editor_mode::finish_straight_gesture()
+void straights_editor::finish_straight_gesture()
 {
 	auto &state{m_straights};
 	state.tool_mouse = false;
@@ -1340,7 +1339,7 @@ void editor_mode::finish_straight_gesture()
 	state.tool_placed = false;
 }
 
-void editor_mode::toggle_straight_set(TTrack &Track)
+void straights_editor::toggle_straight_set(TTrack &Track)
 {
 	auto &state{m_straights};
 	auto const line{editor_track::find_straight(Track, state.tolerance)};
@@ -1350,12 +1349,11 @@ void editor_mode::toggle_straight_set(TTrack &Track)
 		leave_straight_set(state.set, line);
 	else
 		state.set.push_back(line);
-	m_node = &Track;
-	ui()->set_node(m_node);
-	m_track_tab = track_tab::straights;
+	m_services.set_current_node(&Track);
+	m_build.track_tab_set(editor_track_tab::straights);
 }
 
-std::vector<glm::dvec3> editor_mode::detour_outline() const
+std::vector<glm::dvec3> straights_editor::detour_outline() const
 {
 	auto const &state{m_straights};
 	std::vector<glm::dvec3> result;
@@ -1376,17 +1374,17 @@ std::vector<glm::dvec3> editor_mode::detour_outline() const
 	return result;
 }
 
-void editor_mode::add_detour_point()
+void straights_editor::add_detour_point()
 {
 	auto &state{m_straights};
 	if (state.detour.empty())
 	{
-		auto const &line{m_build_tools->designer.current_straight()};
+		auto const &line{m_designer.current_straight()};
 		if (line.tracks.empty())
 			return;
 		state.detour_line = line;
 	}
-	state.detour.push_back(cursor_ground());
+	state.detour.push_back(m_build.cursor_ground_point());
 	if (state.detour.size() >= 4)
 	{
 		apply_detour();
@@ -1394,7 +1392,7 @@ void editor_mode::add_detour_point()
 	}
 }
 
-void editor_mode::apply_detour()
+void straights_editor::apply_detour()
 {
 	auto &state{m_straights};
 	auto line{editor_track::find_straight(*state.detour_line.tracks.front(), state.tolerance)};
@@ -1413,7 +1411,7 @@ void editor_mode::apply_detour()
 		speed = std::max(speed, editor_track::velocity(*track));
 	auto transition{state.transition};
 	if (state.auto_transitions)
-		transition = alignment::recommend(speed > 0.0 ? speed : 100.0, radius, laying_norms()).transition;
+		transition = alignment::recommend(speed > 0.0 ? speed : 100.0, radius, m_build.lay_norms()).transition;
 	auto const reach{radius * std::tan(slope * 0.5) + transition * 0.5 + 5.0};
 	auto const from{std::max(0.0, stations[0] - reach)};
 	auto const to{std::min(line.length, stations[3] + reach)};
@@ -1425,7 +1423,7 @@ void editor_mode::apply_detour()
 
 	m_route.from = spans[run.first].track;
 	m_route.to = spans[run.last].track;
-	m_build_tools->designer.route_reset();
+	m_designer.route_reset();
 	if (m_route.chain.tracks.empty())
 		return;
 	auto &design{m_route.design};
@@ -1437,7 +1435,7 @@ void editor_mode::apply_detour()
 	};
 	alignment::vertex vertex;
 	vertex.radius = radius;
-	m_build_tools->designer.route_recommend(vertex);
+	m_designer.route_recommend(vertex);
 	if (false == state.auto_transitions)
 	{
 		vertex.transition_out = state.transition;
@@ -1465,14 +1463,14 @@ void editor_mode::apply_detour()
 	auto last_vertex{vertex};
 	last_vertex.offset = std::max(0.1, endalong - stations[3]);
 	design.vertices.push_back(last_vertex);
-	route_update();
+	m_build.route_recompute();
 	if (false == m_route.result.valid)
 		return;
-	m_build_tools->designer.route_apply();
+	m_designer.route_apply();
 	straight_refresh();
 }
 
-bool editor_mode::start_curve_fit(editor_track::straight const &Line, int const Handle)
+bool straights_editor::start_curve_fit(editor_track::straight const &Line, int const Handle)
 {
 	auto &state{m_straights};
 	auto *before{editor_track::outside_neighbour(Line, false)};
@@ -1496,13 +1494,13 @@ bool editor_mode::start_curve_fit(editor_track::straight const &Line, int const 
 	auto const other_end = [](editor_track::curve const &Curve, glm::dvec3 const &Joint) { return editor_track::touches(*Curve.from, Joint) ? Curve.to : Curve.from; };
 	m_route.from = state.fit_has_before ? other_end(state.fit_before, Line.start) : own_end(Line.start);
 	m_route.to = state.fit_has_after ? other_end(state.fit_after, Line.end) : own_end(Line.end);
-	m_build_tools->designer.route_reset();
+	m_designer.route_reset();
 	if (m_route.chain.tracks.empty())
 		return false;
 	return true;
 }
 
-void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End)
+void straights_editor::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &End)
 {
 	auto const &state{m_straights};
 	auto &design{m_route.design};
@@ -1517,7 +1515,7 @@ void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &En
 	auto const make = [&](editor_track::curve const &Curve, double const Offset) {
 		alignment::vertex vertex;
 		vertex.radius = Curve.radius > 0.0 ? std::round(Curve.radius) : 1000.0;
-		m_build_tools->designer.route_recommend(vertex);
+		m_designer.route_recommend(vertex);
 		if (Curve.transition_in > 0.0)
 			vertex.transition_in = std::round(Curve.transition_in);
 		if (Curve.transition_out > 0.0)
@@ -1545,5 +1543,62 @@ void editor_mode::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 const &En
 		design.end_direction = direction;
 		design.end_reserve = 0.0;
 	}
-	route_update();
+	m_build.route_recompute();
+}
+
+// what the rest of the editor calls, kept on editor_mode: done by the build tools
+
+parallel_offer editor_mode::straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const
+{
+	return m_build_tools->straight_edit.straight_parallel_offer(Line, Offset);
+}
+
+void editor_mode::render_straights_ui()
+{
+	m_build_tools->straight_edit.render_straights_ui();
+}
+
+void editor_mode::render_straight_ui()
+{
+	m_build_tools->straight_edit.render_straight_ui();
+}
+
+int editor_mode::straight_handle_hit()
+{
+	return m_build_tools->straight_edit.straight_handle_hit();
+}
+
+void editor_mode::straight_refresh()
+{
+	m_build_tools->straight_edit.straight_refresh();
+}
+
+double editor_mode::straight_tool_radius(editor_track::straight const &Line) const
+{
+	return m_build_tools->straight_edit.straight_tool_radius(Line);
+}
+
+bool editor_mode::place_straight_tool()
+{
+	return m_build_tools->straight_edit.place_straight_tool();
+}
+
+void editor_mode::start_straight_gesture(int const Tool)
+{
+	m_build_tools->straight_edit.start_straight_gesture(Tool);
+}
+
+void editor_mode::toggle_straight_set(TTrack &Track)
+{
+	m_build_tools->straight_edit.toggle_straight_set(Track);
+}
+
+std::vector<glm::dvec3> editor_mode::detour_outline() const
+{
+	return m_build_tools->straight_edit.detour_outline();
+}
+
+void editor_mode::add_detour_point()
+{
+	m_build_tools->straight_edit.add_detour_point();
 }

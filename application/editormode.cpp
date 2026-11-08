@@ -1643,7 +1643,7 @@ bool editor_mode::update()
     if (m_build_tools->designer.route_active())
         m_build_tools->route_view.draw_route_overlay();
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
-        draw_straights_overlay();
+        m_build_tools->straight_edit.draw_straights_overlay();
     steps.step("track lines");
     if (ui()->mode() == nodebank_panel::TRACK)
     {
@@ -6440,9 +6440,9 @@ void editor_mode::render_gizmo_options()
 
 void editor_mode::render_gizmo()
 {
-    if (straights_active())
+    if (m_build_tools->straight_edit.straights_active())
     {
-        render_straight_gizmo();
+        m_build_tools->straight_edit.render_straight_gizmo();
         return;
     }
 
@@ -7441,7 +7441,7 @@ void editor_mode::mouse_left_release()
     m_handle_drag = {};
     m_build_tools->sweep.sweep_release();
     if (m_straights.tool_mouse)
-        finish_straight_gesture();
+        m_build_tools->straight_edit.finish_straight_gesture();
     if (m_extend.active)
         finish_extend();
     if (m_switch.placing)

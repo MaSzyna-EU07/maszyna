@@ -15,12 +15,13 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeprofile.h"
 #include "application/editormoderoad.h"
 #include "application/editormoderoute.h"
+#include "application/editormodestraights.h"
 #include "application/editormodesweep.h"
 
 // the build tools: laying track, routes, straights, roads, sweeps, vertical profiles and grade lines, the terrain model, connections and the infrastructure; owned by editor_mode, made by make_build_tools()
 struct build_tools
 {
-	build_tools(editor_services &Services, editor_build_services &Build) : road{Build}, sweep{Services, Build, bend_state}, bend{Services, Build, bend_state, sweep}, library{Build, profile_edit}, profile_edit{Services, Build, library, grade_lines}, profile_window{Services, Build, library, profile_edit, grade_lines}, grade_lines{Services, Build, library}, nmt_build{Services, Build, nmt_window, download_area, nmt_auto}, nmt_window{Services, Build, nmt_build, nmt_auto, library, profile_edit}, download_area{Services, Build, nmt_build}, nmt_auto{Services, Build, nmt_build, grade_lines, library, nmt_window, profile_edit}, designer{Services, Build, shared, route_relay}, route_relay{Services, Build, designer, library}, route_view{Services, Build, shared, designer}, route_panel{Services, Build, designer, route_relay, route_view} {}
+	build_tools(editor_services &Services, editor_build_services &Build) : road{Build}, sweep{Services, Build, bend_state}, bend{Services, Build, bend_state, sweep}, library{Build, profile_edit}, profile_edit{Services, Build, library, grade_lines}, profile_window{Services, Build, library, profile_edit, grade_lines}, grade_lines{Services, Build, library}, nmt_build{Services, Build, nmt_window, download_area, nmt_auto}, nmt_window{Services, Build, nmt_build, nmt_auto, library, profile_edit}, download_area{Services, Build, nmt_build}, nmt_auto{Services, Build, nmt_build, grade_lines, library, nmt_window, profile_edit}, designer{Services, Build, shared, route_relay}, route_relay{Services, Build, designer, library}, route_view{Services, Build, shared, designer}, route_panel{Services, Build, designer, route_relay, route_view}, straight_edit{Services, Build, shared, designer, route_relay} {}
 	// what the tools share among themselves
 	build_shared shared;
 	road_editor road;
@@ -40,4 +41,5 @@ struct build_tools
 	route_relay_tool route_relay;
 	route_overlay route_view;
 	route_window route_panel;
+	straights_editor straight_edit;
 };

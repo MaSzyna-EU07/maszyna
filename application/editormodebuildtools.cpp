@@ -526,5 +526,40 @@ int editor_mode::crossover_template_of(switch_store::record const &Record)
 
 void editor_mode::neighbour_straights_found()
 {
-	find_neighbour_straights();
+	m_build_tools->straight_edit.find_neighbour_straights();
+}
+
+void editor_mode::focus_on_node(scene::basic_node *Node)
+{
+	start_focus(Node);
+}
+
+std::vector<TTrack *> &editor_mode::tracks_dragged()
+{
+	return m_track_drag;
+}
+
+void editor_mode::track_drag_moved()
+{
+	m_track_dirty = true;
+}
+
+void editor_mode::track_drag_commit(bool const Force)
+{
+	commit_track_drag(Force);
+}
+
+void editor_mode::track_tab_set(editor_track_tab const Tab)
+{
+	m_track_tab = Tab;
+}
+
+std::vector<double> editor_mode::typed_numbers() const
+{
+	return typed_values();
+}
+
+void editor_mode::typed_turn_taken()
+{
+	typed_turn();
 }

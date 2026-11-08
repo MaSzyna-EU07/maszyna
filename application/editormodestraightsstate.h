@@ -105,3 +105,15 @@ struct extend_tool
 	glm::vec2 pressed{0.f};
 	std::vector<TTrack *> line;
 };
+
+// listed spacing of a neighbouring straight the line can snap to, if it is close enough
+struct parallel_offer
+{
+	bool nearby{false};
+	bool snaps{false};
+	double spacing{0.0};
+	double distance{0.0};
+	double angle{0.0}; // deg between the two straights
+	double correction{0.0}; // m along the line normal to reach the spacing
+	editor_track::straight const *neighbour{nullptr};
+};

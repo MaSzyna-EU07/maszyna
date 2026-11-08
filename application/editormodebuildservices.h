@@ -234,8 +234,29 @@ class editor_route_services
 	~editor_route_services() = default;
 };
 
+// what the straights of the paths need from the editor: the camera brought to a track, the drag of the tracks and the tab
+// of the track window
+class editor_straights_services
+{
+  public:
+	// the camera flies smoothly to the node
+	virtual void focus_on_node(scene::basic_node *Node) = 0;
+	// the tracks dragged now; marked moved, and the drag committed, Force: for good
+	virtual std::vector<TTrack *> &tracks_dragged() = 0;
+	virtual void track_drag_moved() = 0;
+	virtual void track_drag_commit(bool const Force) = 0;
+	// the tab of the track window set, nothing else done
+	virtual void track_tab_set(editor_track_tab const Tab) = 0;
+	// the numbers typed during the gesture, and the turn of the straight tool set from them
+	virtual std::vector<double> typed_numbers() const = 0;
+	virtual void typed_turn_taken() = 0;
+
+  protected:
+	~editor_straights_services() = default;
+};
+
 // what the build tools (laying track, routes, straights, roads, sweeps, vertical profiles and grade lines, the terrain model, connections and the infrastructure) need from the editor beyond the interfaces of editortool.h; editor_mode implements it
-class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services, public editor_route_services
+class editor_build_services : public editor_road_services, public editor_sweep_services, public editor_profile_services, public editor_nmt_services, public editor_route_services, public editor_straights_services
 {
   public:
 	// the panels of the editor
