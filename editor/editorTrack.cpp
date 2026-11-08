@@ -3771,8 +3771,7 @@ void editor_track::retire(TTrack &Track)
 	auto affected{adjoining};
 	add_followers(affected);
 	for (auto *track : affected)
-		if (false == track->m_editorremoved)
-			rebuild_geometry(*track);
+		rebuild_geometry(*track);
 	auto crossings{Track.m_crossings};
 	for (auto *crossing : Track.m_crossings)
 		for (auto *neighbour : neighbours(*crossing))

@@ -5658,8 +5658,14 @@ void tutorial_signal_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hig
 	// the track seen from above: sleepers and the two rails
 	auto const middle{at(0.0f, 0.5f).y};
 	auto const gauge{height * 0.07f};
-	for (float x = 0.02f; x < 1.0f; x += 0.025f)
-		List.AddLine(ImVec2(at(x, 0.0f).x, middle - gauge * 1.6f), ImVec2(at(x, 0.0f).x, middle + gauge * 1.6f), IM_COL32(110, 90, 70, 255), 3.0f);
+	{
+		float x{0.02f};
+		while (x < 1.0f)
+		{
+			List.AddLine(ImVec2(at(x, 0.0f).x, middle - gauge * 1.6f), ImVec2(at(x, 0.0f).x, middle + gauge * 1.6f), IM_COL32(110, 90, 70, 255), 3.0f);
+			x += 0.025f;
+		}
+	}
 	List.AddLine(ImVec2(Low.x, middle - gauge), ImVec2(High.x, middle - gauge), IM_COL32(200, 200, 205, 255), 2.0f);
 	List.AddLine(ImVec2(Low.x, middle + gauge), ImVec2(High.x, middle + gauge), IM_COL32(200, 200, 205, 255), 2.0f);
 	auto const line{ImGui::GetTextLineHeight()};

@@ -2056,9 +2056,13 @@ std::size_t editor_mode::nmt_level_turntables()
 			if (state.unfitted && grade_fitted(*track))
 				fitted.push_back(end.point.y);
 			auto const away{geometry::plan_of(end.point - table.centre) / std::max(1e-6, geometry::plan_distance(end.point, table.centre))};
-			for (auto out{kPitWall}; out <= kPitWall + 6.0; out += 1.0)
+			auto out{kPitWall};
+			while (out <= kPitWall + 6.0)
+			{
 				if (double height; m_nmt.height(end.point.x + away.x * out, end.point.z + away.y * out, height))
 					model.push_back(height + state.offset + track->rail_height());
+				out += 1.0;
+			}
 		}
 		auto &heights{fitted.empty() ? model : fitted};
 		if (heights.empty())
@@ -2276,8 +2280,12 @@ bool editor_mode::nmt_fit_line(TTrack &Track, std::function<bool(TTrack const *)
 		(atend ? profile.context.end_elevation : profile.context.start_elevation) = height;
 		(atend ? profile.context.end_grade : profile.context.start_grade) = 0.0;
 		profile.context.switches.push_back({from, from + level, table->table->name()});
-		for (auto at{from}; at <= from + level + 1e-6; at += 1.0)
+		auto at{from};
+		while (at <= from + level + 1e-6)
+		{
 			options.bounds.push_back({at, height - kJoin, height + kJoin, false});
+			at += 1.0;
+		}
 		WriteLog(format("Editor: NMT line %s runs up to turntable %s level at %.2f m over %.1f m", Track.name().c_str(), table->table->name().c_str(), height, level), logtype::generic);
 	}
 	auto const in_pit = [&](glm::dvec3 const &Point) {

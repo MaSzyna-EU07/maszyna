@@ -420,7 +420,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	if (Global.iMultisampling)
 	{
 		m_depth_pointer_rb = std::make_unique<gl::renderbuffer>();
-        m_depth_pointer_rb->alloc(depth_pointer_format, 1, 1);
+        m_depth_pointer_rb->alloc(depth_pointer_format, 3, 3); // the pixel under the cursor and the ones around it
 
 		m_depth_pointer_fb = std::make_unique<gl::framebuffer>();
 		m_depth_pointer_fb->attach(*m_depth_pointer_rb, GL_DEPTH_ATTACHMENT);
@@ -3218,7 +3218,8 @@ gfx::userdata_array const &opengl46_renderer::UserData(const gfx::geometry_handl
 
 int opengl46_renderer::Primitive(gfx::geometry_handle const &Geometry) const
 {
-	return static_cast<int>(m_geometry.type(Geometry));
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
 }
 
 // material methods
@@ -3791,7 +3792,8 @@ void opengl46_renderer::Render_Instances_Indirect()
 	part( m_cullparts.record );
 
 	using command_set = opengl46_instance_cull::command_set;
-	auto const twophase { m_instancecull.two_phase() };
+	// two phases only with the occlusion test, which needs the viewport
+	auto const twophase { useocclusion && m_instancecull.two_phase() };
 	auto const draws { false == m_indirectdraws.empty() };
 	// the depth comes first in the depth pass of the whole scene, which has its state set and leaves the colour to the colour
 	// pass (m_indirectcolourpending), and with the depth prepass of the instances: the colour pass shades only what stays in
@@ -5626,53 +5628,100 @@ void opengl46_renderer::Pick_Node_Callback(std::function<void(scene::basic_node 
 	m_node_pick_requests.push_back(callback);
 }
 
+// the position of the cursor of the editor in the scene: the depth around it read back from an earlier frame, worked out in
+// the view that frame was drawn in (the cursor and the camera may have moved since), and kept in world space
 glm::dvec3 opengl46_renderer::Update_Mouse_Position()
 {
 	if (!m_depth_pointer_pbo->is_busy())
 	{
-		// determine point to examine
-        glm::vec2 mousepos = Global.cursor_pos;
-        mousepos.y = Global.window_size.y - mousepos.y; // cursor coordinates are flipped compared to opengl
+		// the depths asked for before, around where the cursor was then
+		auto const count{m_cursorblocksize.x * m_cursorblocksize.y};
+		std::array<float, 9> depths{};
+		if ((count > 0) && (count <= static_cast<int>(depths.size())) && m_depth_pointer_pbo->read_data(m_cursorblocksize.x, m_cursorblocksize.y, depths.data(), 4))
+		{
+			auto const centre{m_cursorposition - m_cursorblockcorner};
+			auto const depth_at = [&](glm::ivec2 const Pixel) {
+				if ((Pixel.x < 0) || (Pixel.y < 0) || (Pixel.x >= m_cursorblocksize.x) || (Pixel.y >= m_cursorblocksize.y))
+				{
+					return 0.f;
+				}
+				return depths[static_cast<std::size_t>(Pixel.y * m_cursorblocksize.x + Pixel.x)];
+			};
+			float pointdepth{depth_at(centre)};
+			if (m_cursorbiased && (pointdepth > 0.f))
+			{
+				// read in the depth pass of the scene (Render_Scene_Depth()), which draws everything a little farther than it lies
+				// (glPolygonOffset(-1, -1)), so the colour pass passes on the same surface. the slope of the depth grows towards the
+				// horizon, and the ground seen at a grazing angle came out a pixel's worth of ground farther than it lies, metres off
+				// some way from the camera. the slope is taken back as in the vulkan renderer: the pixels next to it on the same triangle
+				// are moved by the same bias, so their difference is the slope; of the two sides the smaller, which is less likely
+				// to lie on another surface, and the larger of the two axes, the one implementations use for m. then the unit, r
+				auto const slope = [&](glm::ivec2 const Step) {
+					auto result{-1.f};
+					for (auto const side : {-1, 1})
+					{
+						auto const other{depth_at(centre + Step * side)};
+						if (other > 0.f)
+						{
+							auto const difference{std::abs(other - pointdepth)};
+							result = (result < 0.f ? difference : std::min(result, difference));
+						}
+					}
+					return std::max(result, 0.f);
+				};
+				pointdepth += std::max(slope({1, 0}), slope({0, 1})) + std::ldexp(1.f, std::ilogb(pointdepth) - 23);
+			}
+			m_mousehit = pointdepth > 0.0f;
+			if (m_mousehit)
+			{
+				auto const offset{glm::unProjectZO(glm::vec3(m_cursorposition, pointdepth), m_cursorview, m_cursorprojection, m_cursorviewport)};
+				m_worldmouseposition = m_cursorcamera + glm::dvec3{offset};
+				m_mouseknown = true;
+			}
+		}
 
-        glm::ivec2 bufferpos;
-        bufferpos = glm::ivec2(mousepos * glm::vec2(Global.gfx_framebuffer_width, Global.gfx_framebuffer_height) / glm::vec2(Global.window_size));
-		bufferpos = glm::clamp(bufferpos, glm::ivec2(0, 0), glm::ivec2(Global.gfx_framebuffer_width - 1, Global.gfx_framebuffer_height - 1));
-
-		float pointdepth = std::numeric_limits<float>::max();
-
-		m_depth_pointer_pbo->read_data(1, 1, &pointdepth, 4);
+		// ask for the depths around where the cursor is now
+		glm::vec2 mousepos = Global.cursor_pos;
+		mousepos.y = Global.window_size.y - mousepos.y; // cursor coordinates are flipped compared to opengl
+		glm::ivec2 const extent{Global.gfx_framebuffer_width, Global.gfx_framebuffer_height};
+		auto bufferpos{glm::ivec2(mousepos * glm::vec2(extent) / glm::max(glm::vec2(Global.window_size), glm::vec2(1.f)))};
+		bufferpos = glm::clamp(bufferpos, glm::ivec2(0, 0), extent - 1);
+		// the pixels around the one under the cursor too, for the slope of the depth there
+		auto const blocksize{glm::clamp(extent, glm::ivec2(1), glm::ivec2(3))};
+		auto const blockcorner{glm::clamp(bufferpos - 1, glm::ivec2(0), extent - blocksize)};
 
 		if (!Global.iMultisampling)
 		{
-			m_depth_pointer_pbo->request_read(bufferpos.x, bufferpos.y, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
+			m_depth_pointer_pbo->request_read(blockcorner.x, blockcorner.y, blocksize.x, blocksize.y, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
 		}
 		else if (Global.gfx_skippipeline)
 		{
-			gl::framebuffer::blit(nullptr, m_depth_pointer_fb.get(), bufferpos.x, bufferpos.y, 1, 1, GL_DEPTH_BUFFER_BIT, 0);
+			gl::framebuffer::blit(nullptr, m_depth_pointer_fb.get(), blockcorner.x, blockcorner.y, blocksize.x, blocksize.y, GL_DEPTH_BUFFER_BIT, 0);
 
 			m_depth_pointer_fb->bind();
-			m_depth_pointer_pbo->request_read(0, 0, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
+			m_depth_pointer_pbo->request_read(0, 0, blocksize.x, blocksize.y, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
 			m_depth_pointer_fb->unbind();
 		}
 		else
 		{
-			gl::framebuffer::blit(m_viewports.front()->msaa_fb.get(), m_depth_pointer_fb.get(), bufferpos.x, bufferpos.y, 1, 1, GL_DEPTH_BUFFER_BIT, 0);
+			gl::framebuffer::blit(m_viewports.front()->msaa_fb.get(), m_depth_pointer_fb.get(), blockcorner.x, blockcorner.y, blocksize.x, blocksize.y, GL_DEPTH_BUFFER_BIT, 0);
 
 			m_depth_pointer_fb->bind();
-			m_depth_pointer_pbo->request_read(0, 0, 1, 1, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
+			m_depth_pointer_pbo->request_read(0, 0, blocksize.x, blocksize.y, 4, GL_DEPTH_COMPONENT, GL_FLOAT);
 			m_viewports.front()->msaa_fb->bind();
 		}
-
-		if (pointdepth != std::numeric_limits<float>::max())
-		{
-			m_mousehit = pointdepth > 0.0f;
-			if (pointdepth > 0.0f)
-				m_worldmousecoordinates = glm::unProjectZO(glm::vec3(bufferpos, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),
-				                                           glm::vec4(0, 0, Global.gfx_framebuffer_width, Global.gfx_framebuffer_height));
-		}
+		// and the view it's drawn in, for when the depths come back
+		m_cursorposition = bufferpos;
+		m_cursorblockcorner = blockcorner;
+		m_cursorblocksize = blocksize;
+		m_cursorbiased = m_scenedepthpass;
+		m_cursorview = glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview()));
+		m_cursorprojection = m_colorpass.pass_camera.projection();
+		m_cursorcamera = m_colorpass.pass_camera.position();
+		m_cursorviewport = glm::vec4(0, 0, extent.x, extent.y);
 	}
 
-	return m_colorpass.pass_camera.position() + glm::dvec3{m_worldmousecoordinates};
+	return m_colorpass.pass_camera.position() + Mouse_Position();
 }
 
 void opengl46_renderer::Update(double const Deltatime)
@@ -6463,7 +6512,8 @@ void opengl46_renderer::Render_local_shadows()
 	// only the light buffers with the lamps read the maps
 	auto const *vehicle{Global.gfx_lights_clustered ? m_locallights.cab_lamp_vehicle() : nullptr};
 	m_localshadows.update_cab(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), m_locallights.cab_lights(), m_framestamp);
-	if (m_localshadows.cab_draws().empty())
+	// without a vehicle there are no draws either
+	if ((vehicle == nullptr) || m_localshadows.cab_draws().empty())
 		return;
 
 	glDebug("render lamp shadows");
@@ -6506,7 +6556,8 @@ void opengl46_renderer::Render_cab_probe()
 	// the lights of the cab light the probe when they're lights of the frame
 	std::vector<gfx::local_lights::cab_light> const nolights;
 	auto const &lights{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_lights() : nolights};
-	if (false == m_cabprobe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lights, m_framestamp))
+	// update_wanted() wants no update without a vehicle, but is called anyway to forget the probe
+	if ((false == m_cabprobe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lights, m_framestamp)) || (vehicle == nullptr))
 		return;
 
 	glDebug("render cab probe");

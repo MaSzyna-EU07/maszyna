@@ -957,7 +957,7 @@ void roadpoint_node::update_crossing(double const Deltatime)
 	auto const closed{control > 0.0 || (control == 0.0 && m_hold > 0.0)};
 	if (closed != m_closed)
 	{
-		WriteLog("Level crossing \"" + m_name + "\" " + (closed ? "closed" : "opened") + (control != 0.0 ? " by memory cell \"" + m_memcell->name() + "\"" : " by the trains") + ", stops: " +
+		WriteLog("Level crossing \"" + m_name + "\" " + (closed ? "closed" : "opened") + (control != 0.0 && m_memcell != nullptr ? " by memory cell \"" + m_memcell->name() + "\"" : " by the trains") + ", stops: " +
 		         std::to_string(m_stops.size()));
 		close(closed);
 	}

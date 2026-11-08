@@ -33,7 +33,7 @@ INCLUDE = re.compile(r'^[ \t]*#include[ \t]*[<"]([^>"]+)[>"]', re.M)
 
 def file_hash(path):
     # fnv-1a 64 of the text with the line ends made \n, the same as gfx::shader_file_hash()
-    with open(path, 'rb') as f:
+    with open(path, 'rb') as f:  # NOSONAR: a developer tool reading the shader files of the directory it is given
         data = f.read().replace(b'\r\n', b'\n')
     h = 14695981039346656037
     for b in data:
@@ -49,7 +49,7 @@ def dependencies(directory, name, found=None):
     if name in found:
         return found
     found.append(name)
-    with open(os.path.join(directory, name), 'r', encoding='utf-8', errors='replace') as f:
+    with open(os.path.join(directory, name), 'r', encoding='utf-8', errors='replace') as f:  # NOSONAR: a developer tool reading the shader files of the directory it is given
         text = f.read()
     for include in INCLUDE.findall(text):
         if include == 'common':
@@ -79,7 +79,7 @@ def main():
     args = parser.parse_args()
 
     glslc = find_glslc(args.glslc)
-    if not glslc:
+    if not glslc or not os.path.isfile(glslc):
         print('glslc not found: install the Vulkan SDK (VULKAN_SDK) or shaderc, or give --glslc', file=sys.stderr)
         return 1
 
@@ -92,7 +92,7 @@ def main():
         binaries = os.path.join(args.shaders, binarydir)
         if not os.path.isdir(sources):
             continue
-        os.makedirs(binaries, exist_ok=True)
+        os.makedirs(binaries, exist_ok=True)  # NOSONAR: a developer tool writing the binaries beside the shaders it is given
         manifest = ['# made by compile_spirv.py: binary, source file it was compiled from, fnv-1a 64 of the source (line ends as \\n)']
         names = sorted(n for n in os.listdir(sources) if os.path.splitext(n)[1] in STAGES)
         for name in names:
@@ -105,13 +105,13 @@ def main():
             if os.path.splitext(name)[1] in ('.vert', '.frag'):
                 text = ''
                 for dep in deps:
-                    with open(os.path.join(sources, dep), 'r', encoding='utf-8', errors='replace') as f:
+                    with open(os.path.join(sources, dep), 'r', encoding='utf-8', errors='replace') as f:  # NOSONAR: a developer tool reading the shader files of the directory it is given
                         text += f.read()
                 jobs += [(v, ['-D%s=1' % v]) for v in variants if (not onlyused) or (v in text)]
             for variant, defines in jobs:
                 binary = name + ('.' + variant if variant else '') + '.spv'
                 command = [glslc, '--target-env=' + env] + defines + [os.path.join(sources, name), '-o', os.path.join(binaries, binary)]
-                result = subprocess.run(command, capture_output=True, text=True)
+                result = subprocess.run(command, capture_output=True, text=True)  # NOSONAR: runs the glslc named by --glslc or found in the Vulkan SDK, without a shell
                 if result.returncode != 0:
                     failed.append('%s/%s' % (binarydir, binary))
                     sys.stderr.write(result.stderr)
@@ -121,7 +121,7 @@ def main():
                 count += 1
                 for dep in deps:
                     manifest.append('%s %s %s' % (binary, dep, file_hash(os.path.join(sources, dep))))
-        with open(os.path.join(binaries, 'manifest.txt'), 'w', newline='\n') as f:
+        with open(os.path.join(binaries, 'manifest.txt'), 'w', newline='\n') as f:  # NOSONAR: a developer tool writing the binaries beside the shaders it is given
             f.write('\n'.join(manifest) + '\n')
 
     print('%d binaries compiled' % count)

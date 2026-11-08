@@ -61,7 +61,7 @@ def described(data, file):
     beside = os.path.join(data, 'editor', 'templates', file)
     if os.path.exists(beside):
         # a description this script wrote may be written again
-        with open(beside, encoding='utf-8', errors='replace') as source:
+        with open(beside, encoding='utf-8', errors='replace') as source:  # NOSONAR: a developer tool reading the data root it is given on its command line
             return 'usage: {' not in source.read()
     try:
         text, _ = decode(load(template))
@@ -74,7 +74,7 @@ def read_tables(tables):
     uses = {}
     for table in tables:
         scenery = os.path.basename(table).replace('use_', '').replace('.tsv', '')
-        with open(table, encoding='utf-8') as source:
+        with open(table, encoding='utf-8') as source:  # NOSONAR: a developer tool reading the tables it is given on its command line
             next(source)
             for row in source:
                 cells = row.rstrip('\n').split('\t')

@@ -179,6 +179,9 @@ private:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle
         find_in_databank( std::string const &Materialname ) const;
+    // the matte and tinted copies of the materials changed with the weather or the season made again from them, under their handles
+    void
+        update_variants( bool const Weather );
     // how the material is lit, of the materials a track blends: 0 as mat_default, 1 normalmap, 2 sunlessnormalmap,
     // 3 shadowlessnormalmap, 4 more for their _specgloss, 9 parallax; -1 where it can't be blended
     int
@@ -189,9 +192,6 @@ private:
     // the blending materials made again in their places, after the materials changed their textures
     void
         rebuild_blends();
-    // the matte and tinted copies of the materials changed with the weather or the season made again from them, under their handles
-    void
-        update_variants( bool const Weather );
     public:
     // checks whether specified file exists. returns name of the located file, or empty string.
     static std::pair<std::string, std::string>

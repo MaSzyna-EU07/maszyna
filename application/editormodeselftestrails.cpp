@@ -167,11 +167,13 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 				if (segment == nullptr)
 					continue;
 				output << "axis " << track->name() << ' ' << path;
-				for (auto at{0.0}; at <= segment->GetLength() + 1e-6; at += 0.25)
+				auto at{0.0};
+				while (at <= segment->GetLength() + 1e-6)
 				{
 					glm::dvec3 spot, across;
 					segment->plan_frame(std::min(at, segment->GetLength()), spot, across);
 					output << format(" %.4f %.4f", spot.x, spot.z);
+					at += 0.25;
 				}
 				output << "\n";
 			}
@@ -379,8 +381,11 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 						auto const lengthb{b->eType == tt_Switch ? b->SwitchExtension->Segments[pb]->GetLength() : b->Segment->GetLength()};
 						auto least{1e9};
 						auto where{0.0};
-						for (auto at{0.0}; at <= length; at += 0.02)
+						auto next_at{0.0};
+						while (next_at <= length)
 						{
+							auto const at{next_at};
+							next_at += 0.02;
 							double d, l;
 							track_rails::rail_offset(*b, pb, sb, track_rails::rail_point(*a, pa, sa, at, head_a), d, l);
 							if (d < 0.0 || d > lengthb || l < -0.3 || l > 0.3)
@@ -429,7 +434,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							continue;
 						++count;
 						std::string hits;
-						for (auto at{from}; at <= to; at += 0.05)
+						auto at{from};
+						while (at <= to)
+						{
 							// the head of the check rail as drawn, 40 mm at the head of the rail of 73.5
 							for (auto const lateral : {-track_rails::check_flangeway, -track_rails::check_flangeway - 0.020 * size.head / 0.0735, -track_rails::check_flangeway - 0.040 * size.head / 0.0735})
 							{
@@ -450,6 +457,8 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 												hits += hit + format(" at %.2f m", at);
 										}
 							}
+							at += 0.05;
+						}
 						if (false == hits.empty())
 							++faults;
 						WriteLog(format("SELFTEST check %s path %d side %+d: %.3f-%.3f m drawn of %.3f-%.3f m%s", name.c_str(), path, side, from, to, check.from, check.to, hits.empty() ? ", clear" : (", over" + hits + " FAULT").c_str()));
@@ -553,8 +562,11 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 								continue;
 							++count;
 							std::string hits;
-							for (auto at{from}; at <= to; at += 0.02)
+							auto next_at{from};
+							while (next_at <= to)
 							{
+								auto const at{next_at};
+								next_at += 0.02;
 								auto const offset{knots::sample(offsets, at, 0.0)};
 								if (offset <= 0.002)
 									continue;
@@ -741,25 +753,31 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							where[Kind] = What;
 						} };
 					// past the last knots of its lines, the lines planing on as they end
-					for (auto s{from}; s <= to + 1e-9; s += 0.02)
 					{
-						auto const l{lines_at(part, s)};
-						for (auto const *line : {l.extents, l.inner})
+						auto s{from};
+						while (s <= to + 1e-9)
 						{
-							if (line->empty())
-								continue;
-							auto const value{knots::sample(*line, s, 0.0)};
-							auto const planing{line == l.extents ? value < ours.size.head - 1e-4 : value > 1e-4};
-							// the lines have knots every 2 cm at most
-							if (planing && (s > line->back().x + 0.025 || s < line->front().x - 0.025))
-								fault(2, format("%s at %.2f m, past its knots %.2f-%.2f m", line == l.extents ? "extents" : "inner", s, line->front().x, line->back().x));
+							auto const l{lines_at(part, s)};
+							for (auto const *line : {l.extents, l.inner})
+							{
+								if (line->empty())
+									continue;
+								auto const value{knots::sample(*line, s, 0.0)};
+								auto const planing{line == l.extents ? value < ours.size.head - 1e-4 : value > 1e-4};
+								// the lines have knots every 2 cm at most
+								if (planing && (s > line->back().x + 0.025 || s < line->front().x - 0.025))
+									fault(2, format("%s at %.2f m, past its knots %.2f-%.2f m", line == l.extents ? "extents" : "inner", s, line->front().x, line->back().x));
+							}
+							s += 0.02;
 						}
 					}
 					// along the part: nothing of the head left, the head jumping in width
 					auto start{from + 0.05};
 					auto end{to - 0.05};
 					if (part.before != nullptr && part.before->startkind == track_rails::rail_end::sharp)
-						for (auto s{from}; s < to; s += 0.02)
+					{
+						auto s{from};
+						while (s < to)
 						{
 							double offset, low, high;
 							head_of(ours, part, s, offset, low, high);
@@ -768,17 +786,23 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 								start = std::max(start, s + 0.04);
 								break;
 							}
+							s += 0.02;
 						}
+					}
 					std::vector<double> stations, widths;
-					for (auto s{std::ceil(start / 0.02) * 0.02}; s <= end; s += 0.02)
 					{
-						double offset, low, high;
-						head_of(ours, part, s, offset, low, high);
-						auto const width{std::max(0.0, high - low)};
-						if (width < 0.001 && false == obtuse_near(part, s))
-							fault(4, format("at %.2f m, %.1f mm left", s, width * 1000.0));
-						stations.push_back(s);
-						widths.push_back(width);
+						auto s{std::ceil(start / 0.02) * 0.02};
+						while (s <= end)
+						{
+							double offset, low, high;
+							head_of(ours, part, s, offset, low, high);
+							auto const width{std::max(0.0, high - low)};
+							if (width < 0.001 && false == obtuse_near(part, s))
+								fault(4, format("at %.2f m, %.1f mm left", s, width * 1000.0));
+							stations.push_back(s);
+							widths.push_back(width);
+							s += 0.02;
+						}
 					}
 					// a step in width well past those around it: a head tapering off steeply at a wide angle aside
 					for (std::size_t i = 1; i < widths.size(); ++i)
@@ -797,8 +821,11 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							auto const &low{theirs.line->low};
 							auto const &high{theirs.line->high};
 							auto distance{-1e9};
-							for (auto s{std::ceil(from / 0.02) * 0.02}; s <= to; s += 0.02)
+							auto next_s{std::ceil(from / 0.02) * 0.02};
+							while (next_s <= to)
 							{
+								auto const s{next_s};
+								next_s += 0.02;
 								double offset, lo, hi;
 								head_of(ours, part, s, offset, lo, hi);
 								if (hi - lo < 2.0 * tolerance)

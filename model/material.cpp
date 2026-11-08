@@ -16,8 +16,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
 #include "utilities/Globals.h"
-#include <algorithm>
-#include <vector>
 
 opengl_material::path_data opengl_material::paths;
 
@@ -678,11 +676,32 @@ variant_of( opengl_material const &Source, std::string const &Suffix ) {
     variant.opacity = Source.opacity;
     variant.selfillum = Source.selfillum;
     variant.shadow_rank = Source.shadow_rank;
+    variant.glossiness = Source.glossiness;
     variant.name = Source.name + Suffix;
     variant.size = Source.size;
     variant.is_good = Source.is_good;
     variant.path = Source.path;
     return variant;
+}
+
+// the params of a shader, as the shader keeps them
+using param_confs = gfx::shader_param_conf;
+
+// whether another param of the shader lies on a component of the named one, which a value set for that one would change too
+bool
+shares_slot( param_confs const &Conf, std::string const &Name ) {
+
+    auto const own { Conf.find( Name ) };
+    if( own == Conf.end() ) {
+        return false;
+    }
+    return std::ranges::any_of(
+        Conf,
+        [ &Name, &own ]( auto const &Entry ) {
+            return Entry.first != Name
+                && Entry.second.location == own->second.location
+                && Entry.second.offset < own->second.offset + own->second.size
+                && own->second.offset < Entry.second.offset + Entry.second.size; } );
 }
 
 // the highlights of a copy of a material damped and its weathering on
@@ -695,11 +714,15 @@ make_matte( opengl_material &Variant ) {
     }
     for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
         auto const entry { Variant.shader->param_conf.find( key ) };
-        if( entry == Variant.shader->param_conf.end() ) {
+        if( entry == Variant.shader->param_conf.end()
+         || shares_slot( Variant.shader->param_conf, key ) ) {
             continue;
         }
-        for( std::size_t i = 0; i < entry->second.size; ++i ) {
-            Variant.params[ entry->second.location ][ entry->second.offset + i ] = value[ static_cast<glm::length_t>( i ) ];
+        auto &slot { Variant.params[ entry->second.location ] };
+        auto const offset { static_cast<glm::length_t>( entry->second.offset ) };
+        auto const size { static_cast<glm::length_t>( entry->second.size ) };
+        for( glm::length_t i = 0; i < size; ++i ) {
+            slot[ offset + i ] = value[ i ];
         }
         std::erase_if(
             Variant.params_state,
@@ -709,9 +732,9 @@ make_matte( opengl_material &Variant ) {
 }
 
 // the colour in the rgb of the slot of the weathering of a copy of a material, which tells the shader to tint by its sign. returns:
-// whether the shader can tint it, the weathering alone in that slot
+// whether the shader can tint it, the weathering and the tint alone in that slot
 bool
-make_tinted( opengl_material &Variant, glm::vec3 const &Colour, float const Glossiness ) {
+make_tinted( opengl_material &Variant, glm::vec3 const &Colour ) {
 
     if( !Variant.shader ) {
         return false;
@@ -719,14 +742,22 @@ make_tinted( opengl_material &Variant, glm::vec3 const &Colour, float const Glos
     auto const &conf { Variant.shader->param_conf };
     auto const weathering { conf.find( "weathering" ) };
     if( weathering == conf.end()
-     || weathering->second.offset != 3
-     || std::ranges::any_of(
-            conf,
-            [ &weathering ]( auto const &Entry ) {
-                return Entry.first != weathering->first && Entry.second.location == weathering->second.location; } ) ) {
+     || weathering->second.offset != 3 ) {
         return false;
     }
-    Variant.glossiness = Glossiness;
+    // the shaders that declare the tint keep it in the rgb of the slot; those that don't, take it from there all the same
+    auto const tint { conf.find( "tint" ) };
+    if( tint != conf.end()
+     && ( tint->second.location != weathering->second.location
+       || tint->second.offset != 0 ) ) {
+        return false;
+    }
+    if( std::ranges::any_of(
+            conf,
+            [ &weathering ]( auto const &Entry ) {
+                return Entry.first != weathering->first && Entry.first != "tint" && Entry.second.location == weathering->second.location; } ) ) {
+        return false;
+    }
     auto const location { weathering->second.location };
     Variant.params[ location ] = glm::vec4{ Colour, -1.f };
     std::erase_if(
@@ -766,7 +797,7 @@ material_manager::create_tinted( material_handle const Material, glm::vec3 const
         return lookup->second;
     }
     auto tinted { variant_of( m_materials[ Material ], ":tinted" ) };
-    if( false == make_tinted( tinted, Colour, m_materials[ Material ].glossiness ) ) {
+    if( false == make_tinted( tinted, Colour ) ) {
         return Material;
     }
     auto const tintedhandle { static_cast<material_handle>( m_materials.size() ) };
@@ -779,7 +810,7 @@ void
 material_manager::update_variants( bool const Weather ) {
 
     // the copies don't update themselves, their names aren't files to read again
-    auto const changed = [ this, Weather ]( material_handle const Source ) {
+    auto const changed = [&]( material_handle const Source ) {
         auto const &source { m_materials[ Source ] };
         return Weather ? source.update_on_weather_change : source.update_on_season_change; };
     for( auto const &[ source, matte ] : m_mattes ) {
@@ -793,7 +824,7 @@ material_manager::update_variants( bool const Weather ) {
         auto const source { std::get<0>( key ) };
         if( changed( source ) ) {
             auto variant { variant_of( m_materials[ source ], ":tinted" ) };
-            make_tinted( variant, glm::vec3 { std::get<1>( key ), std::get<2>( key ), std::get<3>( key ) }, m_materials[ source ].glossiness );
+            make_tinted( variant, glm::vec3 { std::get<1>( key ), std::get<2>( key ), std::get<3>( key ) } );
             m_materials[ tinted ] = std::move( variant );
         }
     }

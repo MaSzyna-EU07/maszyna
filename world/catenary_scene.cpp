@@ -2136,7 +2136,8 @@ catenary_scene_update( std::size_t const Index, catenary::suspension const &Data
     mark_changed( suspension.file );
     if( false == before.empty() && before != Data.umbrella ) {
         drop_parts( suspension );
-        for( auto const index : umbrella_members( before ) ) { reassemble( index ); break; }
+        // parasol składa jego pierwsze podwieszenie
+        if( auto const members { umbrella_members( before ) }; false == members.empty() ) { reassemble( members.front() ); }
     }
     reassemble( Index );
     follow_chains( Index );
@@ -2153,7 +2154,8 @@ catenary_scene_remove( std::size_t const Index ) {
     suspension.removed = true;
     mark_changed( suspension.file );
     if( false == umbrella.empty() ) {
-        for( auto const index : umbrella_members( umbrella ) ) { reassemble( index ); break; }
+        // parasol składa jego pierwsze podwieszenie
+        if( auto const members { umbrella_members( umbrella ) }; false == members.empty() ) { reassemble( members.front() ); }
     }
     // z łańcuchów wypada; łańcuch z jednym podwieszeniem przestaje istnieć
     if( false == suspension.data.name.empty() ) {

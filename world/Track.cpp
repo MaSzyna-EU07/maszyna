@@ -31,6 +31,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
 
+#include <format>
+
 // 101206 Ra: trapezoidalne drogi i tory
 // 110720 Ra: rozprucie zwrotnicy i odcinki izolowane
 
@@ -433,7 +435,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     std::string str;
     size_t i; //,state; //Ra: teraz już nie ma początkowego stanu zwrotnicy we wpisie
     std::string token;
-    bool tributary{false};
 
     parser->getTokens();
     *parser >> str; // typ toru
@@ -475,17 +476,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     else if (str == "tributary")
     {
-        ErrorLog("Bad track: type \"tributary\" of track \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + ") isn't supported, loaded as a river with its first path");
+        // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
+        // second one kept and written back
+        ErrorLog(std::format("Bad track: tributary \"{}\" in file \"{}\" (line {}) is drawn and run on as a river of its first path", m_name, parser->Name(), parser->Line()));
         eType = tt_Normal;
         iCategoryFlag = 4;
-        tributary = true;
+        m_tributary = true;
     }
     else
-    {
-        ErrorLog("Bad track: unknown type \"" + str + "\" of track \"" + m_name + "\" in file \"" + parser->Name() + "\" (line " + std::to_string(parser->Line()) + "), loaded as a normal track");
-        eType = tt_Normal;
-        iCategoryFlag = 1;
-    }
+        eType = tt_Unknown; // left out by the loader
     if (Global.iWriteLogEnabled & 4)
         WriteLog(str);
     parser->getTokens(4);
@@ -558,10 +557,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // all subtypes contain at least one path
     m_paths.emplace_back();
     m_paths.back().deserialize( *parser, pOrigin );
-    if( tributary ) {
-        segment_data ignored;
-        ignored.deserialize( *parser, pOrigin );
-    }
     switch( eType ) {
         case tt_Switch:
         case tt_Cross:
@@ -574,6 +569,11 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         default: {
             break;
         }
+    }
+    if( m_tributary ) {
+        // the second path of a tributary, kept to be written back
+        m_paths.emplace_back();
+        m_paths.back().deserialize( *parser, pOrigin );
     }
 
     // optional attributes
@@ -813,6 +813,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
     }
 
+    if( CurrentSegment() == nullptr ) {
+        // of an unknown type, no path of it is made
+        return;
+    }
     update_location();
     // sleeper transforms are baked later in create_geometry(), once the owning cell has
     // assigned this track its m_origin (otherwise the local-space matrices would be relative
@@ -1530,7 +1534,6 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
-    ++s_layoutstamp;
     m_drawnrun = {};
 
     track_rails::forget();
@@ -1576,10 +1579,10 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         SwitchExtension->m_nosethrow = ( Bank != null_handle ? nose_throw() : -1.0 );
     }
     share_joints();
+    m_sleepers3d.active = track_sleepers::lays( *this );
     if( rail_phase( 0.0 ) >= 0.0 ) {
         m_drawnrun = m_railrun;
     }
-    m_sleepers3d.active = track_sleepers::lays( *this );
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
     // a track laying the 3D sleepers draws its sleeper model with them, the transforms of the model alone wouldn't be drawn
@@ -2652,24 +2655,37 @@ TTrack::deserialize_( std::istream &Input ) {
     // TODO: implement
 }
 
+// the keyword the track is written with, by its type and for a plain one by what runs on it
+char const *
+TTrack::type_keyword() const {
+
+    if( eType == tt_Normal && m_tributary ) {
+        return "tributary";
+    }
+    if( eType == tt_Normal ) {
+        switch( iCategoryFlag & 15 ) {
+            case 1: { return "normal"; }
+            case 2: { return "road"; }
+            case 4: { return "river"; }
+            default: { return "none"; }
+        }
+    }
+    switch( eType ) {
+        case tt_Switch: { return "switch"; }
+        case tt_Cross: { return "cross"; }
+        case tt_Table: { return "turn"; }
+        case tt_Tributary: { return "tributary"; }
+        default: { return "none"; }
+    }
+}
+
 // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
 void
 TTrack::export_as_text_( std::ostream &Output ) const {
     // header
     Output << "track ";
     // type
-    Output << (
-            eType == tt_Normal ? (
-                ( iCategoryFlag & 15 ) == 1 ? "normal" :
-                ( iCategoryFlag & 15 ) == 2 ? "road" :
-                ( iCategoryFlag & 15 ) == 4 ? "river" :
-                "none" ) :
-            eType == tt_Switch ? "switch" :
-            eType == tt_Cross ? "cross" :
-            eType == tt_Table ? "turn" :
-            eType == tt_Tributary ? "tributary" :
-            "none" )
-            << ' ';
+    Output << type_keyword() << ' ';
     // basic attributes
     Output
         << Length() << ' '

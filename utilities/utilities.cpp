@@ -145,15 +145,15 @@ bool ClearFlag(int &Flag, int const Value)
 
 namespace
 {
-thread_local std::mt19937 *t_random_engine{nullptr};
+thread_local std::mt19937 *t_random_engine{nullptr}; // NOSONAR: randomness of the simulation, not of anything security-relevant
 
-std::mt19937 &random_engine()
+std::mt19937 &random_engine() // NOSONAR: randomness of the simulation, not of anything security-relevant
 {
 	return t_random_engine != nullptr ? *t_random_engine : Global.random_engine;
 }
 } // namespace
 
-void set_thread_random_engine(std::mt19937 *Engine)
+void set_thread_random_engine(std::mt19937 *Engine) // NOSONAR: randomness of the simulation, not of anything security-relevant
 {
 	t_random_engine = Engine;
 }

@@ -329,8 +329,9 @@ void windscreen_water::update(double const Seconds)
 			build(*cab);
 		}
 	}
-	if (m_glasscount == 0)
+	if ((vehicle == nullptr) || (m_glasscount == 0))
 	{
+		// no glasses without a cab, which comes with the vehicle
 		return;
 	}
 
