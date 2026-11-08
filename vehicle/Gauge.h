@@ -105,7 +105,7 @@ private:
     float m_endscale { -1.f }; // scale applied to the value at the end of accepted value range
     float m_endvalue { -1.f }; // end value of accepted value range
     bool m_interpolatescale { false };
-    char m_datatype; // typ zmiennej parametru: f-float, d-double, i-int
+    char m_datatype { '\0' }; // typ zmiennej parametru: f-float, d-double, i-int, b-bool; none until one is assigned
     union {
         // wskaźnik na parametr pokazywany przez animację
         float *fData;
