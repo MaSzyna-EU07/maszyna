@@ -882,6 +882,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
     auto speedlimitiscontinuous { true }; // stays true if potential active speed limit is unbroken to the last (relevant) point in scan table
     eSignNext = nullptr;
     IsAtPassengerStop = false;
+    bStopTargetIsPassengerStop = false;
     IsScheduledPassengerStopVisible = false;
     mvOccupied->SecuritySystem.set_cabsignal_lock(false);
     // te flagi są ustawiane tutaj, w razie potrzeby
@@ -1001,6 +1002,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 fAcc = a; // zalecane przyspieszenie (nie musi być uwzględniane przez AI)
                 fNext = v; // istotna jest prędkość na końcu tego odcinka
                 fDist = d; // dlugość odcinka
+                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
             }
 /*
             else if ((fAcc > 0) && (v >= 0) && (v > fNext)) {
@@ -1015,6 +1017,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 fAcc = a;
                 fNext = v;
                 fDist = d;
+                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
             }
             // potentially update our current speed limit
             if( v < VelLimitLastDist.first
@@ -7418,6 +7421,10 @@ TController::adjust_desired_speed_for_obstacles() {
         if( k - vel < 5 ) {
             // porównanie modułów prędkości [km/h]
             // zatroszczyć się trzeba, jeśli tamten nie jedzie znacząco szybciej
+            if( Obstacle.distance < ActualProximityDist ) {
+                // the vehicle ahead, not the stop found by the scan, is what the train is now to stop short of
+                bStopTargetIsPassengerStop = false;
+            }
             ActualProximityDist = std::min<double>(
                 ActualProximityDist,
                 Obstacle.distance );
@@ -7688,9 +7695,14 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
         auto room { brakingroom };
         if( ( AbsAccS <= 0.0 )
          && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
+            // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
+            // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
+            // independent brake, which leaves the train brake handle where it is, kept braking earlier
+            // and earlier the whole way in, to crawl the last tens of metres to the stop point
+            auto const brakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
             room = std::max(
                 0.5 * brakingroom,
-                brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) );
+                brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, brakea0 ) );
         }
         deceleration = shaped_braking_demand(
             velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
