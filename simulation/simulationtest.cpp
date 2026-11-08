@@ -45,19 +45,20 @@ test_manager &test()
 
 std::string_view to_string(test_result const Result)
 {
+	using enum test_result;
 	switch (Result)
 	{
-	case test_result::pass: return "pass";
-	case test_result::fail: return "fail";
-	case test_result::signal_passed_at_danger: return "signal passed at danger";
-	case test_result::timeout: return "timeout";
-	case test_result::standstill: return "standstill";
-	case test_result::error: return "error";
+	case pass: return "pass";
+	case fail: return "fail";
+	case signal_passed_at_danger: return "signal passed at danger";
+	case timeout: return "timeout";
+	case standstill: return "standstill";
+	case error: return "error";
 	}
 	return "unknown";
 }
 
-void test_manager::init_result_cell()
+void test_manager::init_result_cell() const
 {
 	auto cell { std::make_unique<TMemCell>(scene::node_data{0, -1, std::string(result_cell), "memcell"}) };
 	// neither of the reported values, so that a cell nobody wrote to says nothing
@@ -156,8 +157,14 @@ void test_manager::signal_passed_at_danger(std::string_view const Vehicle, std::
 
 void test_manager::finish(test_result const Result, std::string_view const Reason)
 {
+	if (conclude(Result, Reason))
+		Application.queue_quit(true);
+}
+
+bool test_manager::conclude(test_result const Result, std::string_view const Reason)
+{
 	if (m_finished || false == Global.test.enabled)
-		return;
+		return false;
 	m_finished = true;
 	m_result = Result;
 
@@ -169,8 +176,7 @@ void test_manager::finish(test_result const Result, std::string_view const Reaso
 	// the process has no console of its own; whoever started it with a redirected output gets the verdict there too
 	std::fprintf(stdout, "%s\n", line.c_str());
 	std::fflush(stdout);
-
-	Application.queue_quit(true);
+	return true;
 }
 
 } // namespace simulation

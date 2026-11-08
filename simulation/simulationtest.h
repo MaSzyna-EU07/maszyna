@@ -39,15 +39,18 @@ public:
 	static constexpr double frame_step { 0.03 };
 
 	// creates the result cell; called with the other scripting interface cells, before the scenery is read
-	void init_result_cell();
+	void init_result_cell() const;
 	// the simulation is ready: start the clocks
 	void start();
 	// checks the end conditions after a simulation frame of Deltatime seconds
 	void update(double Deltatime);
 	// reported by a driver whose train went past a signal showing stop
 	void signal_passed_at_danger(std::string_view Vehicle, std::string_view Signal);
-	// ends the test with given result; the first call wins
+	// ends the test with given result and closes the application; the first call wins
 	void finish(test_result Result, std::string_view Reason);
+	// ends the test with given result, without closing the application: for the ways out that close it anyway
+	// (a bad command line, a failed start, an exception). returns false if the test had already ended
+	bool conclude(test_result Result, std::string_view Reason);
 
 	bool finished() const { return m_finished; }
 	// exit code of the process: the result, or error while the test hasn't finished

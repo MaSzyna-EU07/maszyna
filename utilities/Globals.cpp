@@ -456,10 +456,10 @@ bool global_settings::ConfigParseInput(cParser& Parser, const std::string& token
     return false;
 }
 
-bool global_settings::ConfigParseTest(cParser& Parser, const std::string& token)
+bool global_settings::ConfigParseTest(cParser& Parser, std::string_view const Token)
 {
     // integration test limits, usually given in the config block of a test scenery
-    if (token == "test.timeout")
+    if (Token == "test.timeout")
     {
         double value{ test.timeout };
         ParseOne(Parser, value);
@@ -468,26 +468,26 @@ bool global_settings::ConfigParseTest(cParser& Parser, const std::string& token)
         return true;
     }
 
-    if (token == "test.standstill")
+    if (Token == "test.standstill")
     {
         ParseOne(Parser, test.standstill);
         test.standstill = std::max(0.0, test.standstill);
         return true;
     }
 
-    if (token == "test.pass_on_standstill")
+    if (Token == "test.pass_on_standstill")
     {
         ParseOne(Parser, test.pass_on_standstill);
         return true;
     }
 
-    if (token == "test.fail_if_stop_overran")
+    if (Token == "test.fail_if_stop_overran")
     {
         ParseOne(Parser, test.fail_if_stop_overran);
         return true;
     }
 
-    if (token == "test.no_movement_before_pass")
+    if (Token == "test.no_movement_before_pass")
     {
         ParseOne(Parser, test.no_movement_before_pass);
         return true;

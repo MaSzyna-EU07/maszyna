@@ -30,8 +30,18 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
+#include "simulation/simulationtest.h"
+#ifdef _WIN32
+#include "Console.h"
+#endif
+#include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <cmath>
 #include <format>
+#include <optional>
+#include <span>
+#include <string_view>
 #include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
@@ -1041,6 +1051,13 @@ void eu07_application::init_debug()
 void eu07_application::init_console()
 {
 #ifdef _WIN32
+	if (Global.test.enabled)
+	{
+		// a test is started by whoever waits for its result, often reading its output: no console of its own
+		// (showsystemconsole) pops up and takes stdout away from them, and a console it was started from isn't hidden
+		return;
+	}
+
 	HWND consoleWnd = ::GetConsoleWindow();
 	const bool hadConsole = consoleWnd != nullptr;
 
@@ -1169,9 +1186,27 @@ void apply_test_mode_settings()
 #ifdef WITH_ZMQ
 	Global.zmq_address.clear();
 #endif
+	// nor anything to the outside: no keyboard leds, LPT or PoKeys desk (feedbackmode), no messages to a
+	// multiplayer server (multiplayer, which also holds some events back for it), no program run at the end
+	Global.iFeedbackMode = 0;
+#ifdef _WIN32
+	Console::ModeSet(Global.iFeedbackMode, Global.iFeedbackPort);
+#endif
+	Global.iMultiplayer = 0;
+	Global.exec_on_exit.clear();
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
 	if (!Global.random_seed)
 		Global.random_seed = seed_of("test");
+}
+
+// seconds given on the command line: a number, not negative. returns nothing for anything else
+std::optional<double> parse_seconds(std::string_view const Text)
+{
+	auto const *const last{Text.data() + Text.size()};
+	double value{0.0};
+	if (auto const [parsed, status]{std::from_chars(Text.data(), last, value)}; status != std::errc{} || parsed != last || false == std::isfinite(value) || value < 0.0)
+		return std::nullopt;
+	return value;
 }
 
 } // namespace
@@ -1190,6 +1225,10 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 		Global.LoadIniFile("eu07.ini");
 	}
+
+	// a test run is known before the rest of the command line is read, so a command line it can't take
+	// ends with the error code of the test, not with 0, which would pass it
+	Global.test.enabled = std::ranges::any_of(std::span(Argv, static_cast<std::size_t>(Argc)), [](char const *Argument) { return std::string_view(Argument) == "--test"; });
 
 	// process command line arguments
 	bool sceneryfromcommandline{false};
@@ -1244,11 +1283,15 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 		else if (token == "--test-timeout")
 		{
-			if (i + 1 < Argc)
+			auto const timeout{i + 1 < Argc ? parse_seconds(Argv[++i]) : std::nullopt};
+			if (false == timeout.has_value())
 			{
-				Global.test.timeout = std::max(0.0, std::atof(Argv[++i]));
-				Global.test.timeout_from_command_line = true;
+				// a typo would otherwise turn the timeout off
+				simulation::test().conclude(simulation::test_result::error, "--test-timeout needs a number of seconds");
+				return -1;
 			}
+			Global.test.timeout = *timeout;
+			Global.test.timeout_from_command_line = true;
 		}
 		else if (token == "-ini")
 		{
@@ -1267,6 +1310,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-seed number|word]"
 			          << " [-ini settingsfile]"
 			          << " [--test [--test-timeout seconds]]" << std::endl;
+			simulation::test().conclude(simulation::test_result::error, std::format("unknown command line argument {}", token));
 			return -1;
 		}
 	}
@@ -1277,7 +1321,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 		if (false == sceneryfromcommandline || Global.SceneryFile.empty())
 		{
-			ErrorLog("test: --test needs a scenery given with -s");
+			simulation::test().conclude(simulation::test_result::error, "--test needs a scenery given with -s");
 			return -1;
 		}
 		apply_test_mode_settings();

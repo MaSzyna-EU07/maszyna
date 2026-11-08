@@ -73,7 +73,9 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
 		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
 
-		MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
+		// in test mode nobody is there to close the box, and the run would wait for it until killed
+		if (false == Global.test.enabled)
+			MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
 		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType, &dumpInfo, nullptr, nullptr);
 
 		CloseHandle(hFile);
@@ -83,6 +85,20 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 }
 
 #endif
+
+namespace
+{
+
+// the log is written by a thread of its own, which the closing of the application stops and waits for. on the ways
+// out that skip the closing (a failed start, an exception) what was logged last would be lost with the process
+void finish_log()
+{
+	StopLogService();
+	if (auto const logservice{Global.threads.find("LogService")}; logservice != Global.threads.end() && logservice->second.joinable())
+		logservice->second.join();
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -153,6 +169,7 @@ int main(int argc, char *argv[])
 		{
 			ErrorLog(std::format("Critical error: {}", Error.what()));
 			// in test mode nobody is there to close the box, the exit code tells of the error
+			simulation::test().conclude(simulation::test_result::error, std::format("critical error: {}", Error.what()));
 			if (false == Global.test.enabled)
 			{
 				std::string msg = "Simulator crash occured :(\n";
@@ -166,6 +183,12 @@ int main(int argc, char *argv[])
 	fflush(stdout);
 	fflush(stderr);
 #endif
+	if (Global.test.enabled)
+	{
+		// a run that stopped before its test ended (a failed start, an exception) says so like any other end
+		simulation::test().conclude(simulation::test_result::error, "the simulator stopped before the test ended");
+		finish_log();
+	}
 	// skip destructors, there are ordering errors which causes segfaults
 	// a test run (--test) says its result in the exit code
 	std::_Exit(Global.test.enabled ? simulation::test().exit_code() : 0);

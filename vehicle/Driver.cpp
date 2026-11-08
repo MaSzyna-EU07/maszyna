@@ -768,7 +768,8 @@ void TController::TableCheck(double fDistance)
         { // aktualizacja rekordów z wyjątkiem ostatniego
             if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
             {
-                if (UpdateSpeedPosition(sSpeedTable[i]))
+                auto const passedbefore { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
+                if (sSpeedTable[i].Update())
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
                         WriteLog( "Speed table for " + OwnerName() + " detected switch change at " + sSpeedTable[ i ].trTrack->name() + " (generating fresh trace)" );
@@ -794,6 +795,8 @@ void TController::TableCheck(double fDistance)
                     // nie kontynuujemy pętli, trzeba doskanować ciąg dalszy
                     break;
                 }
+                // a switch is a track, the update of a signal never ends the loop above
+                CheckSignalPassedAtDanger( sSpeedTable[ i ], passedbefore );
                 if (sSpeedTable[i].iFlags & spTrack) // jeśli odcinek
                 {
                     if( sSpeedTable[ i ].fDist + sSpeedTable[ i ].trTrack->Length() < -fLength ) // a skład wyjechał całą długością poza
@@ -817,8 +820,10 @@ void TController::TableCheck(double fDistance)
 				}
             }
         }
-        // aktualizacja ostatniego; a signal at stop often is the last, the scan doesn't go past it
-        UpdateSpeedPosition(sSpeedTable[iLast]);
+        auto const lastpassedbefore { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
+        sSpeedTable[iLast].Update(); // aktualizacja ostatniego
+        // a signal at stop often is the last, the scan doesn't go past it
+        CheckSignalPassedAtDanger( sSpeedTable[ iLast ], lastpassedbefore );
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
             TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
@@ -843,17 +848,14 @@ bool is_signal_at_stop( TSpeedPos const &Point )
 
 } // namespace
 
-bool TController::UpdateSpeedPosition( TSpeedPos &Point ) const
+void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point, bool const Passedbefore ) const
 {
-    auto const passedbefore { TestFlag( Point.iFlags, spElapsed ) };
-    auto const switchchanged { Point.Update() };
-    if( false == passedbefore
+    if( false == Passedbefore
      && TestFlag( Point.iFlags, spElapsed )
      && is_signal_at_stop( Point )
      && ( mvOccupied->CategoryFlag & 1 ) != 0 ) { // railway only
         simulation::test().signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
     }
-    return switchchanged;
 }
 
 auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
