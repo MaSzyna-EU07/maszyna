@@ -1,0 +1,17 @@
+{
+  "description": "Issue #86, the control case: an EN57-2000 unit without a driver rolls at 4 km/h into a standing one on td.scn. Their automatic couplers catch, nothing collides nor derails; nothing reports a result, so the run ends on the 60 s test timeout.",
+  "base_scenery": "td.scn",
+  "ini": ["crashdamage yes"],
+  "fragment": "td_automatic_coupler_hit.scn",
+  "vars": {
+    "velocity": "4",
+    "offset": "30"
+  },
+  "expect": "timeout",
+  "duration": 60,
+  "timeout": 300,
+  "checks": [
+    { "type": "log_lacks", "pattern": "collided" },
+    { "type": "log_lacks", "pattern": "derailed" }
+  ]
+}

@@ -476,6 +476,29 @@ CHECKS = {
 }
 
 
+def check_log_contains(log, pattern):
+    """A line of the run's log.txt matches the regex, e.g. the "Bad driving" message of a collision."""
+    found = next((line.strip() for line in log.splitlines() if re.search(pattern, line)), None)
+    if found is None:
+        return False, f"no log line matches /{pattern}/"
+    return True, f"log: {found}"
+
+
+def check_log_lacks(log, pattern):
+    """No line of the run's log.txt matches the regex."""
+    found = [line.strip() for line in log.splitlines() if re.search(pattern, line)]
+    if found:
+        return False, f"{len(found)} log line(s) match /{pattern}/, first: {found[0]}"
+    return True, f"no log line matches /{pattern}/"
+
+
+# checks on the text of the run's log.txt rather than on the physicslog rows
+LOG_CHECKS = {
+    "log_contains": check_log_contains,
+    "log_lacks": check_log_lacks,
+}
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -513,7 +536,9 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     vehicle = f"autotest_{name}"
     scenery = build_scenery(case, game_dir, name, vehicle)
     ini = out / "autotest.ini"
-    ini.write_text(TEST_INI.format(timespeed=timespeed), encoding="ascii")
+    # the case's own settings go last, over the common ones
+    ini.write_text(TEST_INI.format(timespeed=timespeed) + "".join(line + "\n" for line in case.get("ini", [])),
+                   encoding="ascii")
     physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
 
     duration = float(case["duration"]) if "duration" in case else None
@@ -566,9 +591,17 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
             say(f"  FAIL  no physicslog for '{vehicle}'")
         return False
 
+    log = read_text(out / "log.txt")
     for check in case.get("checks", []):
         params = {k: v for k, v in check.items() if k != "type"}
-        passed, detail = CHECKS[check["type"]](result.rows, **params)
+        if check["type"] in LOG_CHECKS:
+            # with no log text a log check proves nothing, log_lacks would pass vacuously
+            if log.strip():
+                passed, detail = LOG_CHECKS[check["type"]](log, **params)
+            else:
+                passed, detail = False, "log.txt is missing or empty"
+        else:
+            passed, detail = CHECKS[check["type"]](result.rows, **params)
         say(f"  {'PASS' if passed else 'FAIL'}  {check['type']}: {detail}")
         ok &= passed
 
