@@ -536,10 +536,9 @@ void editor_mode::signal_refresh(bool const Force)
 	auto &tool{m_signal};
 	auto const scanned{signal_scan(false)};
 	auto const now{ImGui::GetTime()};
-	if (false == Force && false == scanned && tool.standing_history == m_history.size() && tool.standing_redo == g_redo.size() && now - tool.standing_time < kRefreshPeriod)
+	if (false == Force && false == scanned && tool.standing_history == history_revision() && now - tool.standing_time < kRefreshPeriod)
 		return;
-	tool.standing_history = m_history.size();
-	tool.standing_redo = g_redo.size();
+	tool.standing_history = history_revision();
 	tool.standing_time = now;
 	tool.standing = signal_standing_now();
 	if (tool.selected != 0 && std::none_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return Standing.include.instance == tool.selected; }))
@@ -833,6 +832,23 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 		std::string missing;
 		editor_track::bind_events(*Spot.reader, missing);
 		Spot.reader->mark_dirty();
+		// the reads picked by hand stay where they were; turned, the signal is read by the other list of each of them
+		auto const turned{glm::dot(travel_of(Standing.include.yaw), travel_of(Spot.yaw)) < 0.0};
+		for (std::size_t i = 1; i < Standing.reads.size(); ++i)
+		{
+			auto [track, list] = Standing.reads[i];
+			if (false == track->Dynamics.empty())
+				continue;
+			if (turned && (list == 1 || list == 2))
+				list = 3 - list;
+			if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == track; }))
+				states.emplace_back(track, editor_track::capture(*track));
+			auto &events{editor_track::events(*track, list)};
+			if (std::none_of(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == ToLower(read); }))
+				events.emplace_back(ToLower(read), nullptr);
+			editor_track::bind_events(*track, missing);
+			track->mark_dirty();
+		}
 	}
 	auto const name{Standing.name};
 	auto const node{Standing.include.file};
@@ -1193,6 +1209,12 @@ bool editor_mode::signal_read_set(signal_standing const &Standing, std::vector<s
 	auto const instance{Standing.include.instance};
 	auto const name{Standing.name};
 	auto const read{ToLower(Standing.read)};
+	auto const same{Reads.size() == Standing.reads.size() && std::all_of(Reads.begin(), Reads.end(), [&](auto const &Read) { return std::find(Standing.reads.begin(), Standing.reads.end(), Read) != Standing.reads.end(); })};
+	if (same)
+	{
+		tool.status = format(STR_C("Signal %s is read so already"), name.c_str());
+		return false;
+	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	signal_detach_events(Standing.read, states);
 	std::string where;
@@ -1243,7 +1265,7 @@ std::string editor_mode::signal_read_label(TTrack const &Track, int const Path, 
 	if (standing == nullptr)
 		return {};
 	auto const list{signal_read_list(*standing, Track, Path)};
-	auto const there{std::find(standing->reads.begin(), standing->reads.end(), std::make_pair(const_cast<TTrack *>(&Track), list)) != standing->reads.end()};
+	auto const there{std::any_of(standing->reads.begin(), standing->reads.end(), [&](auto const &Read) { return Read.first == &Track && Read.second == list; })};
 	if (Add)
 		return format(there ? STR_C("Click: %s no more read by %s of %s") : STR_C("Click: %s read by %s of %s too"), standing->name.c_str(), editor_track::event_keyword(list), name_of(Track).c_str());
 	return format(STR_C("Click: %s read by %s of %s only. Shift+click: one read more or less, Esc: done"), standing->name.c_str(), editor_track::event_keyword(list), name_of(Track).c_str());
@@ -2176,7 +2198,11 @@ bool editor_mode::render_signal_reads(signal_standing const &Found)
 		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
 	auto const picking{tool.picking_read};
 	if (ImGui::Button(picking ? STR_C("Picking a path... (Esc)") : STR_C("Pick the path"), ImVec2(width, 0.0f)))
+	{
 		tool.picking_read = false == picking;
+		if (tool.picking_read)
+			tool.armed = false;
+	}
 	if (picking)
 		ImGui::PopStyleColor();
 	item_tooltip("Click a track in the view: it reads the signal instead, Shift+click: one read more or less. The list is the one of the trains the signal faces");

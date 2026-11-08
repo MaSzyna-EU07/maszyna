@@ -13606,3 +13606,6 @@ msgstr "Odczyt tam, gdzie stawia go edytor: event pociągów, do których jest z
 
 msgid "Click a track to read the signal, Esc: done"
 msgstr "Kliknij tor, który ma odczytywać sygnalizator, Esc: koniec"
+
+msgid "Signal %s is read so already"
+msgstr "Sygnalizator %s już jest tak odczytywany"

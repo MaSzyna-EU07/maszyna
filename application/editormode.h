@@ -2677,7 +2677,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int facing{0};
 		std::vector<signal_standing> standing;
 		std::size_t standing_history{static_cast<std::size_t>(-1)};
-		std::size_t standing_redo{static_cast<std::size_t>(-1)};
 		double standing_time{-1.0};
 		int hover{-1};
 		scene::instance_handle selected{0};
