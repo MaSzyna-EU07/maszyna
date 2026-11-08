@@ -62,13 +62,16 @@ The test ends with the first of these:
 | exit code | result | when |
 | --- | --- | --- |
 | 0 | pass | `__test.result` was set to 1 and then every vehicle stood still for 1 s, so a train still moving towards a signal at stop has to stop first (with `test.no_movement_before_pass no` the pass ends the test at once). Also the standstill end with `test.pass_on_standstill yes` |
-| 1 | fail | `__test.result` was set to 0; ends at once |
-| 2 | signal passed at danger | a train went past a signal showing stop (`SetVelocity 0 0`; `SetVelocity 0 x` on automatic block, which may be passed after a stop, doesn't count); ends at once, unless `test.fail_if_stop_overran no` |
-| 3 | timeout | `test.timeout` seconds of simulation time went by (default 3600) |
-| 4 | standstill | every vehicle stood still for `test.standstill` seconds (default 300) and nothing reported a result. Trains waiting at a station or for a signal count as standing, so the limit has to be longer than such waits |
-| 5 | error | the run could not start: no `-s`, the scenery failed to load or has no vehicles, or the simulator threw |
+| 10 | fail | `__test.result` was set to 0; ends at once |
+| 11 | signal passed at danger | a train went past a signal showing stop (`SetVelocity 0 0`; `SetVelocity 0 x` on automatic block, which may be passed after a stop, doesn't count); ends at once, unless `test.fail_if_stop_overran no` |
+| 12 | timeout | `test.timeout` seconds of simulation time went by (default 3600) |
+| 13 | standstill | every vehicle stood still for `test.standstill` seconds (default 300) and nothing reported a result. Trains waiting at a station or for a signal count as standing, so the limit has to be longer than such waits |
+| 14 | error | the run could not start: no `-s`, the scenery failed to load or has no vehicles, or the simulator threw |
 
-A crash ends with the system's code instead (on Windows e.g. `0xC0000005`, -1073741819).
+A crash ends with the system's code instead (on Windows e.g. `0xC0000005`, -1073741819). The
+codes of the test mode keep clear of the ones a process gets when it goes wrong on its own: 1
+(killed with `TerminateProcess`, or a plain failure of most programs), 3 (`abort()` on Windows),
+126-127 (a shell that can't run the program) and 128 + a signal number (killed, on Linux).
 
 The limits go in a `config` block of the scenery:
 
@@ -180,8 +183,8 @@ and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 on `tor1k`, the track in front of the signal.
 
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
-event), `test_mode_signal_passed_at_danger` (exit 2), `test_mode_timeout` (exit 3, from
-`test.timeout`) and `test_mode_standstill` (exit 4, from `test.standstill`).
+event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
+`test.timeout`) and `test_mode_standstill` (exit 13, from `test.standstill`).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
 

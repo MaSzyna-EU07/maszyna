@@ -3,9 +3,10 @@
 
 #include "simulation/simulationtestrules.h"
 
+#include <array>
 #include <vector>
 
-// the test mode of the simulator (eu07 --test, eu07/maszyna#541): its command line and end conditions
+// the test mode of the simulator (eu07 --test, eu07/maszyna#541): its exit codes, command line and end conditions
 
 namespace {
 
@@ -36,6 +37,27 @@ std::optional<simulation::test_verdict> run(simulation::test_progress &Progress,
 }
 
 } // namespace
+
+TEST_CASE("test mode: the exit codes keep clear of the ones of a killed or aborted process")
+{
+	std::array const results{test_result::pass, test_result::fail, test_result::signal_passed_at_danger, test_result::timeout, test_result::standstill, test_result::error};
+	for (auto const result : results)
+	{
+		auto const code{static_cast<int>(result)};
+		CAPTURE(code);
+		CHECK(code != 1); // TerminateProcess, most programs' failure
+		CHECK(code != 3); // abort() on Windows
+		CHECK(code < 126); // shells, signals on Linux
+		CHECK(simulation::to_string(result) != "unknown");
+	}
+	// the codes are public: scripts and CI read them
+	CHECK(static_cast<int>(test_result::pass) == 0);
+	CHECK(static_cast<int>(test_result::fail) == 10);
+	CHECK(static_cast<int>(test_result::signal_passed_at_danger) == 11);
+	CHECK(static_cast<int>(test_result::timeout) == 12);
+	CHECK(static_cast<int>(test_result::standstill) == 13);
+	CHECK(static_cast<int>(test_result::error) == 14);
+}
 
 TEST_CASE("test mode: seconds on the command line are a number, not negative")
 {

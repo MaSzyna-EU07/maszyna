@@ -18,14 +18,16 @@ http://mozilla.org/MPL/2.0/.
 // codes, the command line and the end conditions. kept apart so the unit tests can check them
 namespace simulation {
 
-// exit codes of a test run; public, scripts and CI read them
+// exit codes of a test run; public, scripts and CI read them. none of them is a code a process commonly ends with
+// when it goes wrong on its own: 1 (killed with TerminateProcess, or a plain failure of most programs), 3 (abort()
+// on Windows), 126-127 (a shell that can't run the program) or 128 + a signal number (killed, on Linux)
 enum class test_result : int {
 	pass = 0, // __test.result set to 1, then every vehicle came to rest (or test.pass_on_standstill)
-	fail = 1, // __test.result set to 0
-	signal_passed_at_danger = 2, // a train went past a stop signal (SetVelocity 0 0), unless test.fail_if_stop_overran no
-	timeout = 3, // test.timeout seconds of simulation time went by without a result
-	standstill = 4, // every vehicle stood still for test.standstill seconds without a result
-	error = 5, // the run could not start (a bad command line, the scenery failed to load) or the simulator threw
+	fail = 10, // __test.result set to 0
+	signal_passed_at_danger = 11, // a train went past a stop signal (SetVelocity 0 0), unless test.fail_if_stop_overran no
+	timeout = 12, // test.timeout seconds of simulation time went by without a result
+	standstill = 13, // every vehicle stood still for test.standstill seconds without a result
+	error = 14, // the run could not start (a bad command line, the scenery failed to load) or the simulator threw
 };
 
 std::string_view to_string(test_result Result);

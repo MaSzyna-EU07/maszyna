@@ -52,14 +52,14 @@ COL_COMMAND = 16  # text, read as None
 COL_WHEELSLIP = 20
 COL_VEHICLE_VELOCITY = 25  # signed vehicle speed, km/h; only in builds which log it
 
-# exit codes of the simulator's test mode (eu07 --test), see simulation/simulationtest.h
+# exit codes of the simulator's test mode (eu07 --test), see simulation/simulationtestrules.h
 EXIT_RESULTS = {
     0: "pass",
-    1: "fail",
-    2: "signal_passed_at_danger",
-    3: "timeout",
-    4: "standstill",
-    5: "error",
+    10: "fail",
+    11: "signal_passed_at_danger",
+    12: "timeout",
+    13: "standstill",
+    14: "error",
 }
 
 # settings layered over the user's eu07.ini for a test run; the window ones only matter
