@@ -73,7 +73,9 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
 		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
 
-		MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
+		// in test mode nobody is there to close the box, and the run would wait for it until killed
+		if (false == Global.test.enabled)
+			MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
 		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType, &dumpInfo, nullptr, nullptr);
 
 		CloseHandle(hFile);
