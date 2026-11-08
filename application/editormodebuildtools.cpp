@@ -486,22 +486,22 @@ bool editor_mode::lay_crossover_at(int const Shape, glm::dvec3 const &Press, glm
 
 int editor_mode::infra_bound_total() const
 {
-	return infra_bound_count();
+	return m_build_tools->binder.infra_bound_count();
 }
 
 std::string editor_mode::infra_carried_status()
 {
-	return infra_carried_note();
+	return m_build_tools->binder.infra_carried_note();
 }
 
 void editor_mode::infra_recognise_objects()
 {
-	infra_recognize();
+	m_build_tools->binder.infra_recognize();
 }
 
 void editor_mode::infra_bind_chosen_objects()
 {
-	infra_bind_chosen();
+	m_build_tools->binder.infra_bind_chosen();
 }
 
 glm::dvec3 editor_mode::cursor_at_level(double const Height) const
@@ -702,4 +702,29 @@ bool editor_mode::texture_picked(int const Kind, std::string const &Current, boo
 bool editor_mode::material_dropped(std::string &Name) const
 {
 	return material_drop(Name);
+}
+
+std::vector<infra::object_state> &editor_mode::infra_states_before()
+{
+	return m_infra_buffer;
+}
+
+std::vector<infra::object_state> const *editor_mode::track_edit_infra() const
+{
+	if (false == m_history.empty() && m_history.back().action == EditorSnapshot::Action::TrackEdit)
+		return &m_history.back().infra;
+	return nullptr;
+}
+
+std::optional<std::string> editor_mode::signal_read_of(std::string const &File) const
+{
+	auto const *signal{signal_template_of(File)};
+	if (signal == nullptr)
+		return std::nullopt;
+	return signal->read;
+}
+
+void editor_mode::include_directive_set(scene::instance_handle Instance, std::string const &Directive)
+{
+	set_include_directive(Instance, Directive);
 }

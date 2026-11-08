@@ -978,7 +978,7 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
 
     if (ui()->node() == node)
         ui()->set_node(nullptr);
-    infra_forget(node);
+    m_build_tools->binder.infra_forget(node);
     for (auto *tool : m_tools)
         tool->forget(node);
 
@@ -1468,8 +1468,8 @@ bool editor_mode::update()
     simulation::State.update_clocks();
     simulation::Environment.update();
     // bindings are matched with the objects by their locations, before anything gets moved
-    if (false == m_bindings_loaded && simulation::is_ready)
-        infra_load();
+    if (false == m_build_tools->binder.bindings_loaded() && simulation::is_ready)
+        m_build_tools->binder.infra_load();
     // the templates are looked for in the background from the start, for the tools to have them at hand
     if (simulation::is_ready)
     {
@@ -1703,7 +1703,7 @@ bool editor_mode::update()
         draw_empty_scenery_hint();
         m_build_tools->profile_window.draw_profile_overlay();
         m_build_tools->grade_lines.draw_grade_line_pick();
-        draw_infra_overlay();
+        m_build_tools->infra_view.draw_infra_overlay();
         m_speed.draw_overlay();
         m_joints.draw_overlay();
         m_srk.draw_overlay();
@@ -3257,7 +3257,7 @@ bool editor_mode::save()
         m_build_tools->library.profile_store();
     switch_store::tidy();
     switch_store::settle();
-    infra_store();
+    m_build_tools->binder.infra_store();
     m_srk.store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {

@@ -764,7 +764,7 @@ void add_readers(reader_map &Readers, TTrack &Track)
 
 } // namespace
 
-void editor_mode::infra_load()
+void infra_binder::infra_load()
 {
 	if (m_bindings_loaded || scene::Layers.empty())
 		return;
@@ -797,18 +797,18 @@ void editor_mode::infra_load()
 	         logtype::generic);
 }
 
-void editor_mode::infra_forget(scene::basic_node const *Node)
+void infra_binder::infra_forget(scene::basic_node const *Node)
 {
 	Live.forget(Node);
 	auto const held = [Node](infra::binding const &Binding) { return Binding.type != infra::kind::include && Binding.node == Node; };
 	std::erase_if(m_bindings, held);
-	std::erase_if(m_infra_buffer, [&](infra::object_state const &State) { return held(State.saved); });
+	std::erase_if(m_build.infra_states_before(), [&](infra::object_state const &State) { return held(State.saved); });
 	for (auto &candidate : m_infra.candidates)
 		if (held(candidate.binding))
 			candidate.binding.node = nullptr;
 }
 
-void editor_mode::infra_store()
+void infra_binder::infra_store()
 {
 	if (false == m_bindings_loaded || scene::Layers.empty())
 		return;
@@ -852,14 +852,14 @@ void editor_mode::infra_store()
 	}
 }
 
-std::vector<TTrack *> editor_mode::infra_scope() const
+std::vector<TTrack *> infra_binder::infra_scope() const
 {
 	std::vector<TTrack *> result;
 	auto const add = [&](TTrack *Track) {
 		if (Track != nullptr && false == Track->m_editorremoved && editor_track::is_supported(*Track) && false == contains(result, Track))
 			result.push_back(Track);
 	};
-	auto *selected{selected_track()};
+	auto *selected{m_services.selected_track()};
 	switch (m_infra.scope)
 	{
 	case 0: add(selected); break;
@@ -882,7 +882,7 @@ std::vector<TTrack *> editor_mode::infra_scope() const
 	return result;
 }
 
-infra::binding *editor_mode::infra_find(infra::binding const &Binding)
+infra::binding *infra_binder::infra_find(infra::binding const &Binding)
 {
 	for (auto &binding : m_bindings)
 		if (binding.same(Binding))
@@ -890,19 +890,19 @@ infra::binding *editor_mode::infra_find(infra::binding const &Binding)
 	return nullptr;
 }
 
-std::string editor_mode::infra_carried_note()
+std::string infra_binder::infra_carried_note()
 {
-	auto const count{m_build_tools->shared.infra_carried.size()};
-	m_build_tools->shared.infra_carried.clear();
+	auto const count{m_infra_carried.size()};
+	m_infra_carried.clear();
 	return count > 0 ? format(STR_P("\n%zu object by the tracks moved sideways with them", "\n%zu objects by the tracks moved sideways with them", count), count) : std::string{};
 }
 
-int editor_mode::infra_bound_count() const
+int infra_binder::infra_bound_count() const
 {
 	return static_cast<int>(std::ranges::count_if(m_bindings, [](infra::binding const &Binding) { return false == Binding.adopted; }));
 }
 
-void editor_mode::infra_recognize()
+void infra_binder::infra_recognize()
 {
 	auto &state{m_infra};
 	infra_load();
@@ -1085,7 +1085,7 @@ void editor_mode::infra_recognize()
 		state.status += format(STR_C("; %d left out: they stand by the scope, but the paths which read them are elsewhere"), state.elsewhere);
 }
 
-void editor_mode::infra_bind_chosen()
+void infra_binder::infra_bind_chosen()
 {
 	auto &state{m_infra};
 	auto count{0};
@@ -1105,7 +1105,7 @@ void editor_mode::infra_bind_chosen()
 	state.status = format(STR_C("%d object(s) bound, they follow the changes of the track. The bindings are kept in the scenery files on save"), count);
 }
 
-void editor_mode::infra_unbind(std::vector<std::size_t> Indices)
+void infra_binder::infra_unbind(std::vector<std::size_t> Indices)
 {
 	std::sort(Indices.begin(), Indices.end());
 	Indices.erase(std::unique(Indices.begin(), Indices.end()), Indices.end());
@@ -1120,7 +1120,7 @@ void editor_mode::infra_unbind(std::vector<std::size_t> Indices)
 	}
 }
 
-infra::object_state editor_mode::infra_state_of(infra::binding const &Binding) const
+infra::object_state infra_binder::infra_state_of(infra::binding const &Binding) const
 {
 	infra::object_state result;
 	result.saved = Binding;
@@ -1146,7 +1146,7 @@ infra::object_state editor_mode::infra_state_of(infra::binding const &Binding) c
 	return result;
 }
 
-void editor_mode::infra_restore_state(infra::object_state const &State)
+void infra_binder::infra_restore_state(infra::object_state const &State)
 {
 	Live.refresh();
 	if (false == alive(State.saved))
@@ -1158,7 +1158,7 @@ void editor_mode::infra_restore_state(infra::object_state const &State)
 	case infra::kind::model: move_model(static_cast<TAnimModel *>(State.saved.node), State.location, State.angles); break;
 	case infra::kind::include:
 		if (false == State.directive.empty() && State.directive != scene::Layers.directive(State.saved.include))
-			set_include_directive(State.saved.include, State.directive);
+			m_build.include_directive_set(State.saved.include, State.directive);
 		break;
 	case infra::kind::traction: move_traction(static_cast<TTraction *>(State.saved.node), State.points); break;
 	case infra::kind::memcell: move_memcell(static_cast<TMemCell *>(State.saved.node), State.location); break;
@@ -1166,9 +1166,9 @@ void editor_mode::infra_restore_state(infra::object_state const &State)
 	}
 }
 
-void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh)
+void infra_binder::infra_buffer(infra::binding const &Binding, bool const Refresh)
 {
-	for (auto &entry : m_infra_buffer)
+	for (auto &entry : m_build.infra_states_before())
 	{
 		if (false == entry.saved.same(Binding))
 			continue;
@@ -1176,22 +1176,22 @@ void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh
 			entry = infra_state_of(Binding);
 		return;
 	}
-	if (false == Refresh && false == m_history.empty() && m_history.back().action == EditorSnapshot::Action::TrackEdit)
+	if (auto const *kept{false == Refresh ? m_build.track_edit_infra() : nullptr}; kept != nullptr)
 	{
 		// a drag keeps a single undo step, which holds the state from before the drag already
-		for (auto const &entry : m_history.back().infra)
+		for (auto const &entry : *kept)
 			if (entry.saved.same(Binding))
 				return;
 	}
-	m_infra_buffer.push_back(infra_state_of(Binding));
+	m_build.infra_states_before().push_back(infra_state_of(Binding));
 }
 
 namespace
 {
 
 // the point object of the include, of the group it falls in and with the path which reads it: the signals and the warning discs, the
-// SHP resonators, the controls of the block sections, the signs and the posts; false where it's none of them. Signal_of: the template
-// of a signal of a file, none for another one
+// SHP resonators, the controls of the block sections, the signs and the posts; false where it's none of them. Signal_of: the path the
+// template of a signal of a file reads it by, none for another file
 template <typename Object, typename Signals, typename Classes>
 bool point_object_at(scene::instance_handle const Handle, reader_map const &Readers, Signals const &Signal_of, Classes const &Rules, Object &Result)
 {
@@ -1201,13 +1201,13 @@ bool point_object_at(scene::instance_handle const Handle, reader_map const &Read
 	Result.include = Handle;
 	Result.location = include_location(place);
 	auto const file{ToLower(place.file)};
-	auto const *signal{Signal_of(place.file)};
+	auto const signal{Signal_of(place.file)};
 	std::string read;
 	bool skipped{false};
-	if (signal != nullptr)
+	if (signal.has_value())
 	{
 		Result.group = infra::category::signal;
-		read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
+		read = signal->empty() ? std::string{} : editor_includes::substitute(*signal, place.values);
 	}
 	else if (file == kResonatorFile)
 	{
@@ -1309,7 +1309,7 @@ void render_name_rules(std::vector<infra::rule> &Rules)
 
 } // namespace
 
-void editor_mode::point_objects_gather()
+void infra_binder::point_objects_gather()
 {
 	m_point_objects.clear();
 	reader_map readers;
@@ -1317,7 +1317,7 @@ void editor_mode::point_objects_gather()
 		if (track != nullptr && false == track->m_editorremoved)
 			add_readers(readers, *track);
 	static auto const rules{infra::default_rules()};
-	auto const signal_of = [this](std::string const &File) { return signal_template_of(File); };
+	auto const signal_of = [this](std::string const &File) { return m_build.signal_read_of(File); };
 	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 		if (point_object object; point_object_at(handle, readers, signal_of, rules, object))
 			m_point_objects.push_back(std::move(object));
@@ -1326,7 +1326,7 @@ void editor_mode::point_objects_gather()
 
 // the object taken by the track: of the line of the track, read by it or by a path of its run, else nearest to it; not one of the
 // track alongside
-void editor_mode::infra_adopt_object(TTrack &Track, point_object const &Object)
+void infra_binder::infra_adopt_object(TTrack &Track, point_object const &Object)
 {
 	infra::binding binding;
 	binding.type = infra::kind::include;
@@ -1359,9 +1359,9 @@ void editor_mode::infra_adopt_object(TTrack &Track, point_object const &Object)
 	m_bindings.push_back(std::move(binding));
 }
 
-void editor_mode::infra_adopt(TTrack &Track)
+void infra_binder::infra_adopt(TTrack &Track)
 {
-	if (auto const revision{history_revision()}; revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
+	if (auto const revision{m_services.history_revision()}; revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
 	{
 		m_point_objects_revision = revision;
 		m_point_objects_count = scene::Layers.instance_count();
@@ -1383,6 +1383,12 @@ void editor_mode::track_captured(TTrack const &Track)
 	m_build_tools->grade_lines.grade_line_captured(Track);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
+	m_build_tools->binder.bindings_captured(Track);
+}
+
+// the bindings of the objects along the track captured before it changes: the objects moved by hand since measured again
+void infra_binder::bindings_captured(TTrack const &Track)
+{
 	infra_load();
 	// the signals and the like of the track follow it, staying where they stand along it
 	// the observer gets the track const, the areas and the stations keep it as the simulation's own: nothing writes through them
@@ -1430,6 +1436,12 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 	m_build_tools->grade_lines.grade_lines_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
+	m_build_tools->binder.bindings_committed(Tracks);
+}
+
+// the objects bound to the tracks committed carried along with them, the ones no track takes over lost or let go
+void infra_binder::bindings_committed(std::vector<TTrack *> const &Tracks)
+{
 	infra_load();
 	if (m_bindings.empty())
 		return;
@@ -1528,7 +1540,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 		moved.lost = false;
 		binding = std::move(moved);
 		infra_move(binding);
-		m_build_tools->shared.infra_carried.emplace(binding.node, binding.include);
+		m_infra_carried.emplace(binding.node, binding.include);
 		if (binding.adopted)
 		{
 			std::vector<glm::dvec3> points;
@@ -1536,7 +1548,7 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 			if (object_points(binding, points, yaw) && false == points.empty())
 				binding.measured = points.front();
 		}
-		for (auto &entry : m_infra_buffer)
+		for (auto &entry : m_build.infra_states_before())
 			if (entry.saved.same(binding))
 				entry.moved = true;
 	}
@@ -1561,6 +1573,12 @@ void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data co
 	m_build_tools->grade_lines.grade_line_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
+	m_build_tools->binder.bindings_split(Original, Created, First);
+}
+
+// the anchors past the end of the first part of the track split go over to the part created
+void infra_binder::bindings_split(TTrack &Original, TTrack &Created, segment_data const &First)
+{
 	auto const length{infra::plan_length(First)};
 	auto const &second{Created.m_paths.front()};
 	for (auto &binding : m_bindings)
@@ -1584,7 +1602,7 @@ void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data co
 		}
 }
 
-void editor_mode::infra_move(infra::binding &Binding)
+void infra_binder::infra_move(infra::binding &Binding)
 {
 	if (Binding.anchors.empty())
 		return;
@@ -1612,7 +1630,7 @@ void editor_mode::infra_move(infra::binding &Binding)
 			place.values[place.yaw] = editor_includes::number(facing());
 		auto const directive{editor_includes::compose_directive(place.file, place.values)};
 		if (directive != scene::Layers.directive(Binding.include))
-			set_include_directive(Binding.include, directive);
+			m_build.include_directive_set(Binding.include, directive);
 		break;
 	}
 	case infra::kind::traction:
@@ -1654,10 +1672,10 @@ void editor_mode::infra_attach(EditorSnapshot &Snapshot)
 	m_infra_buffer.clear();
 }
 
-void editor_mode::render_infra_body()
+void infra_panel::render_infra_body()
 {
 	auto &state{m_infra};
-	infra_load();
+	m_binder.infra_load();
 	Live.refresh();
 
 	auto follow{state.follow};
@@ -1665,18 +1683,18 @@ void editor_mode::render_infra_body()
 	{
 		state.follow = follow;
 		if (follow)
-			infra_rebase();
+			m_binder.infra_rebase();
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip(STR_C("Bound objects keep their chainage along the path, the offset from its axis and the height above the rail top;\n"
 		                  "models and includes turn with the path and stay upright. The move is a part of the undo step of the change."));
 	ImGui::SameLine();
 	ImGui::Checkbox(STR_C("Show in 3D"), &state.show);
-	ImGui::Text(STR_C("Objects bound in the scenery: %d"), infra_bound_count());
-	if (false == m_bindings_unresolved.empty())
+	ImGui::Text(STR_C("Objects bound in the scenery: %d"), m_binder.infra_bound_count());
+	if (false == m_binder.unresolved_bindings().empty())
 	{
 		ImGui::SameLine();
-		ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), STR_C("(%d stored binding(s) not found, kept as they are)"), static_cast<int>(m_bindings_unresolved.size()));
+		ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), STR_C("(%d stored binding(s) not found, kept as they are)"), static_cast<int>(m_binder.unresolved_bindings().size()));
 	}
 
 	ImGui::Separator();
@@ -1690,7 +1708,7 @@ void editor_mode::render_infra_body()
 }
 
 // what changed while the bindings did not follow the track becomes their new starting point
-void editor_mode::infra_rebase()
+void infra_binder::infra_rebase()
 {
 	for (auto &binding : m_bindings)
 	{
@@ -1713,7 +1731,7 @@ void editor_mode::infra_rebase()
 	}
 }
 
-void editor_mode::render_infra_search()
+void infra_panel::render_infra_search()
 {
 	auto &state{m_infra};
 	char const *const scopes[] = {STR_C("Selected path"), STR_C("Line through the selected path"), STR_C("Route of the vertical profile"), STR_C("Whole scenery")};
@@ -1738,11 +1756,11 @@ void editor_mode::render_infra_search()
 		ImGui::TreePop();
 	}
 	if (ImGui::Button(STR_C("Find objects")))
-		infra_recognize();
+		m_binder.infra_recognize();
 
 }
 
-void editor_mode::render_infra_candidates()
+void infra_panel::render_infra_candidates()
 {
 	auto &state{m_infra};
 	auto &candidates{state.candidates};
@@ -1770,7 +1788,7 @@ void editor_mode::render_infra_candidates()
 		chosen += candidate.chosen ? 1 : 0;
 	ImGui::SameLine();
 	if (ImGui::Button(format(STR_C("Bind the chosen (%d)"), chosen).c_str()))
-		infra_bind_chosen();
+		m_binder.infra_bind_chosen();
 	ImGui::SameLine();
 	if (ImGui::SmallButton(STR_C("All")))
 		choose({}, true);
@@ -1828,7 +1846,7 @@ void editor_mode::render_infra_candidates()
 					ImGui::Checkbox("##chosen", &candidate.chosen);
 				ImGui::SameLine();
 				if (ImGui::Selectable(candidate.binding.label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(candidate.binding.label.c_str()).x, 0.f)) && anchor.at.track != nullptr)
-					focus_track(*anchor.at.track, anchor.at.path, anchor.foot);
+					m_services.focus_track(*anchor.at.track, anchor.at.path, anchor.foot);
 				if (ImGui::IsItemHovered())
 				{
 					state.hovered = i;
@@ -1869,23 +1887,23 @@ void editor_mode::render_infra_candidates()
 	ImGui::EndChild();
 }
 
-void editor_mode::render_infra_bound()
+void infra_panel::render_infra_bound()
 {
 	if (ImGui::TreeNode(STR_C("Bound objects along the scope")))
 	{
-		auto const scope{infra_scope()};
+		auto const scope{m_binder.infra_scope()};
 		std::unordered_set<TTrack const *> const tracks(scope.begin(), scope.end());
 		std::vector<std::size_t> along;
-		for (std::size_t i = 0; i < m_bindings.size(); ++i)
-			if (false == m_bindings[i].adopted && std::ranges::any_of(m_bindings[i].anchors, [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
+		for (std::size_t i = 0; i < m_binder.bindings().size(); ++i)
+			if (false == m_binder.bindings()[i].adopted && std::ranges::any_of(m_binder.bindings()[i].anchors, [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
 				along.push_back(i);
-		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), infra_bound_count());
+		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), m_binder.infra_bound_count());
 		if (false == along.empty())
 		{
 			ImGui::SameLine();
 			if (ImGui::SmallButton(STR_C("Unbind all of these")))
 			{
-				infra_unbind(along);
+				m_binder.infra_unbind(along);
 				along.clear();
 			}
 		}
@@ -1898,7 +1916,7 @@ void editor_mode::render_infra_bound()
 			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 			{
 				auto const index{along[row]};
-				auto const &binding{m_bindings[index]};
+				auto const &binding{m_binder.bindings()[index]};
 				ImGui::PushID(static_cast<int>(index));
 				if (ImGui::SmallButton(STR_C("unbind")))
 					unbind = index;
@@ -1911,12 +1929,12 @@ void editor_mode::render_infra_bound()
 		}
 		ImGui::EndChild();
 		if (unbind)
-			infra_unbind({*unbind});
+			m_binder.infra_unbind({*unbind});
 		ImGui::TreePop();
 	}
 }
 
-void editor_mode::draw_infra_overlay() const
+void infra_panel::draw_infra_overlay() const
 {
 	auto const &state{m_infra};
 	if (false == state.open || false == state.show)
@@ -1942,7 +1960,7 @@ void editor_mode::draw_infra_overlay() const
 		if (projection.project(points.front(), screen))
 			drawlist->AddCircleFilled(screen, Size, Colour);
 	};
-	for (auto const &binding : m_bindings)
+	for (auto const &binding : m_binder.bindings())
 		if (false == binding.adopted)
 			draw(binding, binding.lost ? overlay_color::invalid : IM_COL32(90, 230, 110, 220), 3.5f);
 	auto const object = [&](infra_candidate const &Candidate) {
@@ -1994,4 +2012,31 @@ void editor_mode::draw_infra_overlay() const
 		if (candidate.reader != candidate.binding.anchors.front().at.track)
 			outline(candidate.reader, IM_COL32(110, 215, 255, 220), 3.f);
 	}
+}
+
+// what the rest of the editor calls, kept on editor_mode: done by the build tools
+
+infra::binding * editor_mode::infra_find(infra::binding const &Binding)
+{
+	return m_build_tools->binder.infra_find(Binding);
+}
+
+void editor_mode::infra_recognize()
+{
+	m_build_tools->binder.infra_recognize();
+}
+
+infra::object_state editor_mode::infra_state_of(infra::binding const &Binding) const
+{
+	return m_build_tools->binder.infra_state_of(Binding);
+}
+
+void editor_mode::infra_restore_state(infra::object_state const &State)
+{
+	m_build_tools->binder.infra_restore_state(State);
+}
+
+void editor_mode::render_infra_body()
+{
+	m_build_tools->infra_view.render_infra_body();
 }

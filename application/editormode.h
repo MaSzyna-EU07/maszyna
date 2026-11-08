@@ -2563,39 +2563,19 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void profile_after_undo();
 
 	infra_window m_infra;
-	std::vector<infra::binding> m_bindings;
-	std::vector<std::pair<scene::layer_handle, std::string>> m_bindings_unresolved; // lines kept as they are
-	bool m_bindings_loaded{false};
 	std::vector<infra::object_state> m_infra_buffer; // states of the objects before the change in progress
 	std::vector<std::pair<scene::instance_handle, std::string>> m_drive_buffer;
 	bool m_infra_suspended{false};
-	std::vector<point_object> m_point_objects;
-	std::size_t m_point_objects_revision{static_cast<std::size_t>(-1)};
-	std::size_t m_point_objects_count{0};
-	void infra_adopt(TTrack &Track);
-	// its steps: the point objects gathered again, one of them taken by the track
-	void point_objects_gather();
-	void infra_adopt_object(TTrack &Track, point_object const &Object);
-	int infra_bound_count() const; // by the infra tool, not the ones a change of their track took along
-	std::string infra_carried_note(); // a line of the status telling how many, empty for none; clears them
-	void infra_load();
-	void infra_store();
-	void infra_forget(scene::basic_node const *Node);
-	std::vector<TTrack *> infra_scope() const;
 	void infra_recognize();
-	void infra_bind_chosen();
-	void infra_unbind(std::vector<std::size_t> Indices);
 	infra::binding *infra_find(infra::binding const &Binding);
 	infra::object_state infra_state_of(infra::binding const &Binding) const;
 	void infra_restore_state(infra::object_state const &State);
-	void infra_buffer(infra::binding const &Binding, bool const Refresh);
 	// editor_track::observer
 	void track_captured(TTrack const &Track) override;
 	void tracks_committed(std::vector<TTrack *> const &Tracks) override;
 	void track_retired(TTrack &Track) override;
 	void track_split(TTrack &Original, TTrack &Created, segment_data const &First) override;
 	void track_renamed(TTrack const &Track, std::string const &Old) override;
-	void infra_move(infra::binding &Binding);
 	void infra_attach(EditorSnapshot &Snapshot);
 	void render_infra_body();
 
@@ -2737,14 +2717,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::uint64_t texture_image_of(int const Kind, std::string const &Name) override;
 	bool texture_picked(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen) override;
 	bool material_dropped(std::string &Name) const override;
+	std::vector<infra::object_state> &infra_states_before() override;
+	std::vector<infra::object_state> const *track_edit_infra() const override;
+	std::optional<std::string> signal_read_of(std::string const &File) const override;
+	void include_directive_set(scene::instance_handle Instance, std::string const &Directive) override;
 	// build services: end
 
 
-	void infra_rebase();
-	void render_infra_search();
-	void render_infra_candidates();
-	void render_infra_bound();
-	void draw_infra_overlay() const;
 
 	bool m_route_dragging{false};
 	float m_track_snap_radius{1.0f};

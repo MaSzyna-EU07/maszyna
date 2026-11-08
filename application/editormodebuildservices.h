@@ -229,6 +229,14 @@ class editor_route_services
 	virtual int crossover_template_of(switch_store::record const &Record) = 0;
 	// the straights beside the one shown found anew
 	virtual void neighbour_straights_found() = 0;
+	// the states of the objects along the tracks before the change in progress, and the ones the last step of the history keeps
+	// // when it is an edit of the tracks; nullptr when it isn't
+	virtual std::vector<infra::object_state> &infra_states_before() = 0;
+	virtual std::vector<infra::object_state> const *track_edit_infra() const = 0;
+	// the path the template of a signal of the file reads it by, none for a file of no signal template
+	virtual std::optional<std::string> signal_read_of(std::string const &File) const = 0;
+	// the directive of the include written anew
+	virtual void include_directive_set(scene::instance_handle Instance, std::string const &Directive) = 0;
 
   protected:
 	~editor_route_services() = default;
