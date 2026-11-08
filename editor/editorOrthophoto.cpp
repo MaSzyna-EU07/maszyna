@@ -162,7 +162,10 @@ fs::path cache_root()
 			auto const path{root.u8string()};
 			WriteLog("Editor orthophoto: " + std::to_string(count) + " products of the orthophoto moved to " + std::string(path.begin(), path.end()));
 		}
-		fs::remove_all(old, ec);
+		// only what the editor kept there; the folder itself where nothing else is left in it
+		fs::remove_all(old / "geoportal", ec);
+		if (fs::is_empty(old, ec) && !ec)
+			fs::remove(old, ec);
 	});
 	return root;
 }
