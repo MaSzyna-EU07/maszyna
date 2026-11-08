@@ -1491,6 +1491,7 @@ ImGuiIO::ImGuiIO()
     ConfigViewportsNoDecoration = true;
     ConfigViewportsNoDefaultParent = false;
     ConfigViewportsNoAutoDetach = false;
+    ConfigTooltipsWrapWidth = 0.0f;
 
     // Miscellaneous options
     MouseDrawCursor = false;
@@ -12112,7 +12113,14 @@ void ImGui::SetTooltipV(const char* fmt, va_list args)
 {
     if (!BeginTooltipEx(ImGuiTooltipFlags_OverridePrevious, ImGuiWindowFlags_None))
         return;
+    // MaSzyna addition: see io.ConfigTooltipsWrapWidth
+    ImGuiContext& g = *GImGui;
+    const bool wrap = g.IO.ConfigTooltipsWrapWidth > 0.0f;
+    if (wrap)
+        PushTextWrapPos(GetCursorPosX() + g.IO.ConfigTooltipsWrapWidth);
     TextV(fmt, args);
+    if (wrap)
+        PopTextWrapPos();
     EndTooltip();
 }
 
@@ -16393,6 +16401,10 @@ static void ImGui::WindowSelectViewport(ImGuiWindow* window)
                 window->ViewportAllowPlatformMonitorExtend = FindPlatformMonitorForPos((use_mouse_ref && mouse_valid) ? mouse_ref : NavCalcPreferredRefPos());
             else
                 window->ViewportAllowPlatformMonitorExtend = window->Viewport->PlatformMonitor;
+            // MaSzyna addition: see io.ConfigViewportsNoAutoDetach. Over the main viewport they stay inside it: the late creation of a
+            // viewport in Begin() needs the extent of the monitor
+            if (g.IO.ConfigViewportsNoAutoDetach && window->Viewport == main_viewport)
+                window->ViewportAllowPlatformMonitorExtend = -1;
         }
         else if (window->Viewport && window != window->Viewport->Window && window->Viewport->Window && !(flags & ImGuiWindowFlags_ChildWindow) && window->DockNode == NULL)
         {
