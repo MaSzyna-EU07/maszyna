@@ -1311,16 +1311,20 @@ void editor_mode::track_captured(TTrack const &Track)
 	if (m_bindings.empty())
 		return;
 	Live.refresh();
-	for (auto &binding : m_bindings)
+	std::vector<std::size_t> gone;
+	for (std::size_t index = 0; index < m_bindings.size(); ++index)
 	{
+		auto &binding{m_bindings[index]};
 		if (std::none_of(binding.anchors.begin(), binding.anchors.end(), [&](infra::anchor const &Anchor) { return Anchor.at.track == &Track; }) || false == alive(binding))
 			continue;
-		// an object moved by hand since it was bound is measured again, as long as the path is the way it was measured
+		// an object moved by hand since it was bound is measured again, as long as the path is the way it was measured. one of a single
+		// point moved away from the track, off its side, doesn't follow it any more: measured along it, it would be taken back to its end
 		std::vector<glm::dvec3> points;
 		std::optional<double> yaw;
+		auto away{false};
 		if (object_points(binding, points, yaw) && points.size() == binding.anchors.size())
 		{
-			for (std::size_t i = 0; i < points.size(); ++i)
+			for (std::size_t i = 0; i < points.size() && false == away; ++i)
 			{
 				auto &anchor{binding.anchors[i]};
 				if (anchor.at.track != &Track || anchor.at.path >= static_cast<int>(Track.m_paths.size()))
@@ -1331,15 +1335,27 @@ void editor_mode::track_captured(TTrack const &Track)
 				auto placed{anchor};
 				if (glm::distance(infra::place(placed), points[i]) <= 0.01)
 					continue;
-				anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
+				infra::station station;
+				bool interior;
+				if (points.size() == 1 && (infra::project(const_cast<TTrack &>(Track), points[i], station, interior) > kAdoptReach || false == beside(station, points[i], interior)))
+					away = true;
+				else
+					anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
 			}
-			if (binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
+			if (false == away && binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
 				binding.yaw = turn_of(binding, *yaw);
+		}
+		if (away)
+		{
+			WriteLog("Editor: " + binding.label + " moved away from track " + Track.name() + ", it doesn't follow it any more");
+			gone.push_back(index);
+			continue;
 		}
 		if (binding.adopted && false == points.empty())
 			binding.measured = points.front();
 		infra_buffer(binding, true);
 	}
+	infra_unbind(std::move(gone));
 }
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
@@ -1480,6 +1496,7 @@ void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data co
 {
 	sweeps_split(Original, Created);
 	grade_line_split(Original, Created);
+	signal_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
 	auto const length{infra::plan_length(First)};

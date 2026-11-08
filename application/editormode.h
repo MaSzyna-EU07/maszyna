@@ -2643,6 +2643,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double offset{0.0};
 		glm::dvec3 position{0.0};
 		double yaw{0.0};
+		// the path and its list that read the signal: the track it stands by, or past the frog of a switch the track joined to the end
+		// of its path, which only the trains of that path run on
+		TTrack *reader{nullptr};
+		int reader_list{2};
 	};
 	struct signal_standing
 	{
@@ -2658,7 +2662,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<signal_template> templates;
 		int revision{-1};
 		int kind{0};
-		std::array<int, 7> chosen{-1, -1, -1, -1, -1, -1, -1};
+		std::array<int, 8> chosen{-1, -1, -1, -1, -1, -1, -1, -1};
 		bool armed{false}; // a click by a track places the chosen template
 		char filter[64]{};
 		char name[64]{"A"};
@@ -2710,6 +2714,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	signal_standing const *signal_standing_of(scene::instance_handle const Instance) const;
 	bool signal_delete(scene::instance_handle const Instance);
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
+	// a track split in two: the reads of the signals placed since the scenery was opened, not bound yet, go to the piece by the signal
+	void signal_split(TTrack &Original, TTrack &Created);
 	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);
 	void signal_select(scene::instance_handle const Instance);
 	std::string signal_next_name(std::string const &Name) const;

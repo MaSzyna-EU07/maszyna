@@ -3654,6 +3654,12 @@ msgstr "Sygnał zastępczy"
 msgid "Repeater"
 msgstr "Powtarzacz"
 
+msgid "Level crossing disc"
+msgstr "Tarcza ostrzegawcza przejazdowa"
+
+msgid "On this side the signal would stand on the other path of the switch: place it on the outer side"
+msgstr "Z tej strony sygnalizator stałby na drugim torze rozjazdu: postaw go po stronie zewnętrznej"
+
 msgid " on the right of the trains"
 msgstr " po prawej w kierunku jazdy"
 

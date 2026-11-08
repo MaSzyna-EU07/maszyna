@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <ranges>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -56,10 +57,11 @@ double const kSignalReach{10.0};
 // a track laid in the place of a deleted one runs within it of its axis
 double const kOrphanReach{1.0};
 std::size_t const kOrphanRecords{64};
+char const *const kOtherPath{"On this side the signal would stand on the other path of the switch: place it on the outer side"};
 
-char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
-char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater"};
-int const kKindCount{7};
+char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
+char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater", "Level crossing disc"};
+int const kKindCount{8};
 
 int kind_index(std::string const &Kind)
 {
@@ -273,6 +275,41 @@ double plan_gap(TTrack const &Track, glm::dvec3 const &Point, int &Path, double 
 	return best;
 }
 
+// the path and its list that read a signal standing by a path of the track, at the point of its axis, for the trains running along the
+// path (list 2) or against it (list 1). the track itself, but a switch reads its events to the trains of both its paths: past the frog,
+// where the axes of the paths are a gauge apart, the trains of the other path don't pass by the signal any more, so its read goes to the
+// track joined to the far end of its path, run on by the trains of that path only, in the list of the trains running from the switch onto
+// it or from it to the switch. the trains measure the way back to the signal from there
+std::pair<TTrack *, int> reader_at(TTrack &Track, int const Path, glm::dvec3 const &Axis, int const List)
+{
+	if (Track.eType != tt_Switch || Track.m_paths.size() != 2 || Path < 0 || Path > 1)
+		return {&Track, List};
+	auto const other{1 - Path};
+	if (geometry::plan_distance(bezier{Track.m_paths[other]}.point(nearest_on(Track, other, Axis)), Axis) < Track.fTrackWidth)
+		return {&Track, List};
+	auto const &own{Track.m_paths[Path]};
+	auto const &theirs{Track.m_paths[other]};
+	// the toe is the end both paths share
+	auto const toe_at_start{glm::distance(own.points[segment_data::point::start], theirs.points[segment_data::point::start]) < 0.01 ||
+	                        glm::distance(own.points[segment_data::point::start], theirs.points[segment_data::point::end]) < 0.01};
+	auto const heel{own.points[toe_at_start ? segment_data::point::end : segment_data::point::start]};
+	auto const outward{(List == 2) == toe_at_start};
+	for (auto const &[neighbour, point] : editor_track::connected_points(Track, heel))
+		if (neighbour != &Track && neighbour->eType == tt_Normal && false == neighbour->m_editorremoved && false == neighbour->m_paths.empty())
+			return {neighbour, outward == (point.kind == editor_track::point_kind::start) ? 2 : 1};
+	return {&Track, List};
+}
+
+// the foot of a signal by a path of a switch, on the side of its other path, nearer to the axis of that one than it stands off its own:
+// the signal would stand on the other path, in the way of its trains
+bool on_other_path(TTrack const &Track, int const Path, glm::dvec3 const &Foot, double const Offset)
+{
+	if (Track.eType != tt_Switch || Track.m_paths.size() != 2 || Path < 0 || Path > 1 || Offset <= 0.0)
+		return false;
+	auto const other{1 - Path};
+	return geometry::plan_distance(bezier{Track.m_paths[other]}.point(nearest_on(Track, other, Foot)), Foot) < Offset - 0.01;
+}
+
 bool plan_overlaps(TTrack const &A, TTrack const &B, double const Margin)
 {
 	auto const box = [](TTrack const &Track, glm::dvec2 &Low, glm::dvec2 &High) {
@@ -471,6 +508,7 @@ bool editor_mode::signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const
 	Spot.position = {axis.x + across.x, axis.y + kRailTop + (Template.mount == "gantry" ? static_cast<double>(m_signal.height) : 0.0), axis.z + across.y};
 	auto const yaw{heading_of(Spot.travel) + 180.0};
 	Spot.yaw = yaw >= 360.0 ? yaw - 360.0 : yaw;
+	std::tie(Spot.reader, Spot.reader_list) = reader_at(Track, path, axis, Spot.list);
 	return true;
 }
 
@@ -481,11 +519,13 @@ std::string editor_mode::signal_intent_label(signal_template const &Template, si
 	auto const where{right ? STR(" on the right of the trains") : STR(" on the left of the trains")};
 	auto variant{signal_variant(Template, Spot)};
 	variant = variant.substr(0, variant.rfind('.'));
+	if (on_other_path(*Spot.track, Spot.path, Spot.position, Spot.offset))
+		return STR(kOtherPath);
 	if (Template.read.empty())
 		return format(STR_C("Click: %s %s (%s)%s, the train doesn't read it"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
 	auto const event{editor_includes::substitute(Template.read, {name})};
-	auto const path{name_of(*Spot.track)};
-	return format(STR_C("Click: %s %s (%s)%s, read by %s %s of %s"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str(), editor_track::event_keyword(Spot.list), event.c_str(), path.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
+	auto const path{name_of(*Spot.reader)};
+	return format(STR_C("Click: %s %s (%s)%s, read by %s %s of %s"), STR(kKindLabels[kind_index(Template.kind)]).c_str(), name.c_str(), variant.c_str(), where.c_str(), editor_track::event_keyword(Spot.reader_list), event.c_str(), path.c_str()) + "\n" + STR("Drag along: the trains it faces run the way of the drag");
 }
 
 void editor_mode::signal_refresh(bool const Force)
@@ -694,6 +734,17 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 		}
 	};
 	consider(Standing.track);
+	// a signal past the frog of a switch is read by the track joined to its path: it stands by the switch
+	if (Standing.track != nullptr && Standing.track->eType == tt_Normal)
+		for (auto *neighbour : editor_track::neighbours(*Standing.track))
+		{
+			if (neighbour == nullptr || neighbour->eType != tt_Switch)
+				continue;
+			auto const kept{std::make_tuple(track, path, best)};
+			consider(neighbour);
+			if (track == neighbour && reader_at(*neighbour, path, bezier{neighbour->m_paths[path]}.point(nearest_on(*neighbour, path, location)), 2).first != Standing.track)
+				std::tie(track, path, best) = kept;
+		}
 	if (track == nullptr)
 		for (auto *candidate : simulation::Paths.sequence())
 			consider(candidate);
@@ -744,6 +795,11 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 		tool.status = refused(STR_C("This signal is in a file the editor doesn't change, it can't be moved"));
 		return false;
 	}
+	if (on_other_path(*Spot.track, Spot.path, Spot.position, Spot.offset))
+	{
+		tool.status = refused(STR_C(kOtherPath));
+		return false;
+	}
 	auto const &included{scene::Layers.instance(instance)};
 	auto file{*included.file};
 	signal_spot before;
@@ -760,19 +816,25 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	auto const read{next != nullptr && false == next->read.empty() ? editor_includes::substitute(next->read, values) : Standing.read};
 	auto directive{scene::Layers.directive(instance)};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
-	if (false == Standing.read.empty() && Spot.track->Dynamics.empty())
+	if (false == Standing.read.empty() && Spot.reader->Dynamics.empty())
 	{
 		signal_detach_events(Standing.read, states);
-		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == Spot.track; }))
-			states.emplace_back(Spot.track, editor_track::capture(*Spot.track));
-		editor_track::events(*Spot.track, Spot.list).emplace_back(ToLower(read), nullptr);
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == Spot.reader; }))
+			states.emplace_back(Spot.reader, editor_track::capture(*Spot.reader));
+		editor_track::events(*Spot.reader, Spot.reader_list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
-		editor_track::bind_events(*Spot.track, missing);
-		Spot.track->mark_dirty();
+		editor_track::bind_events(*Spot.reader, missing);
+		Spot.reader->mark_dirty();
 	}
 	auto const name{Standing.name};
 	auto const node{Standing.include.file};
 	set_include_directive(instance, editor_includes::compose_directive(file, values));
+	// taken up by the track it stood by, it would be put back by it as that one changes: it is let go, for the track it stands by now
+	infra::binding bound;
+	bound.type = infra::kind::include;
+	bound.include = instance;
+	if (auto const *found{infra_find(bound)}; found != nullptr && found->adopted)
+		infra_unbind({static_cast<std::size_t>(found - m_bindings.data())});
 	if (states.empty())
 	{
 		EditorSnapshot snap;
@@ -961,6 +1023,11 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 		tool.status = refused(STR_C("Give the signal a name without spaces first"));
 		return false;
 	}
+	if (on_other_path(*Spot.track, Spot.path, Spot.position, Spot.offset))
+	{
+		tool.status = refused(STR_C(kOtherPath));
+		return false;
+	}
 	signal_refresh(true);
 	auto const taken = [&](std::string const &Name) {
 		return std::any_of(tool.standing.begin(), tool.standing.end(), [&](signal_standing const &Standing) { return ToLower(Standing.name) == ToLower(Name); });
@@ -987,26 +1054,26 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	auto const instance{m_history.back().instances.front()};
 	auto const *placed{signal_template_of(file)};
 	auto const read{placed != nullptr && false == placed->read.empty() ? editor_includes::substitute(placed->read, {name}) : std::string{}};
-	auto const path{name_of(*Spot.track)};
+	auto const path{name_of(*Spot.reader)};
 	std::string reason;
 	if (read.empty())
 		tool.status = format(STR_C("Signal %s placed (%s), the train doesn't read it, Ctrl+Z takes it back"), name.c_str(), file.c_str());
-	else if (false == Spot.track->Dynamics.empty())
-		tool.status = format(STR_C("Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand, Ctrl+Z takes it back"), name.c_str(), file.c_str(), read.c_str(), editor_track::event_keyword(Spot.list));
-	else if (false == scene::Layers.editable(Spot.track, &reason))
+	else if (false == Spot.reader->Dynamics.empty())
+		tool.status = format(STR_C("Signal %s placed (%s), but vehicles stand on the path: add %s to its %s by hand, Ctrl+Z takes it back"), name.c_str(), file.c_str(), read.c_str(), editor_track::event_keyword(Spot.reader_list));
+	else if (false == scene::Layers.editable(Spot.reader, &reason))
 		tool.status = format(STR_C("Signal %s placed (%s), but the path can't take its event: %s, Ctrl+Z takes it back"), name.c_str(), file.c_str(), reason.c_str());
 	else
 	{
 		auto snap{std::move(m_history.back())};
 		m_history.pop_back();
-		auto const before{editor_track::capture(*Spot.track)};
-		editor_track::events(*Spot.track, Spot.list).emplace_back(ToLower(read), nullptr);
+		auto const before{editor_track::capture(*Spot.reader)};
+		editor_track::events(*Spot.reader, Spot.reader_list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
-		editor_track::bind_events(*Spot.track, missing);
-		Spot.track->mark_dirty();
-		push_track_snapshot({{Spot.track, before}});
+		editor_track::bind_events(*Spot.reader, missing);
+		Spot.reader->mark_dirty();
+		push_track_snapshot({{Spot.reader, before}});
 		m_history.back().instances = std::move(snap.instances);
-		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s, Ctrl+Z takes it back. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.list), read.c_str(), path.c_str());
+		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s, Ctrl+Z takes it back. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.reader_list), read.c_str(), path.c_str());
 	}
 	std::snprintf(tool.name, sizeof(tool.name), "%s", signal_next_name(name).c_str());
 	signal_refresh(true);
@@ -1038,6 +1105,52 @@ void editor_mode::signal_detach_events(std::string const &Read, std::vector<std:
 		std::string missing;
 		editor_track::bind_events(*track, missing);
 		track->mark_dirty();
+	}
+}
+
+void editor_mode::signal_split(TTrack &Original, TTrack &Created)
+{
+	// the bound reads went by the cells they read already, as the split took them; one not bound has no event to tell where it is read
+	auto const waiting = [](TTrack &Track) {
+		for (auto const index : {1, 2, 4, 5})
+			for (auto const &event : editor_track::events(Track, index))
+				if (false == event.first.empty() && event.second == nullptr)
+					return true;
+		return false;
+	};
+	if (false == waiting(Original) && false == waiting(Created))
+		return;
+	if (m_signal.templates.empty())
+		signal_scan(false);
+	std::unordered_map<std::string, glm::dvec3> standing;
+	for (auto const &signal : signal_standing_now())
+		if (false == signal.read.empty())
+			standing.emplace(ToLower(signal.read), signal.include.location);
+	auto const gap = [](TTrack const &Piece, glm::dvec3 const &Point) { return geometry::plan_distance(editor_track::point_at(Piece, editor_track::nearest_parameter(Piece, Point)), Point); };
+	for (auto const index : {1, 2, 4, 5})
+	{
+		auto &own{editor_track::events(Original, index)};
+		auto &theirs{editor_track::events(Created, index)};
+		std::vector<std::pair<std::string, basic_event *>> kept;
+		std::vector<std::pair<std::string, basic_event *>> given;
+		auto const read_at = [&](std::pair<std::string, basic_event *> const &Event) -> glm::dvec3 const * {
+			if (Event.first.empty() || Event.second != nullptr)
+				return nullptr;
+			auto const found{standing.find(ToLower(Event.first))};
+			return found != standing.end() ? &found->second : nullptr;
+		};
+		for (auto const &event : own)
+		{
+			auto const *at{read_at(event)};
+			(at != nullptr && gap(Created, *at) < gap(Original, *at) ? given : kept).push_back(event);
+		}
+		for (auto const &event : theirs)
+		{
+			auto const *at{read_at(event)};
+			(at != nullptr && gap(Original, *at) < gap(Created, *at) ? kept : given).push_back(event);
+		}
+		own = std::move(kept);
+		theirs = std::move(given);
 	}
 }
 
@@ -1303,16 +1416,16 @@ std::size_t editor_mode::signal_reattach(std::vector<scene::instance_handle> con
 		if (standing == nullptr || standing->read.empty() || standing->track != nullptr || simulation::Events.FindEvent(ToLower(standing->read)) == nullptr)
 			continue;
 		signal_spot spot;
-		if (false == signal_standing_spot(*standing, spot) || spot.track == nullptr || false == spot.track->Dynamics.empty())
+		if (false == signal_standing_spot(*standing, spot) || spot.reader == nullptr || false == spot.reader->Dynamics.empty())
 			continue;
-		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.track; }))
-			states.emplace_back(spot.track, editor_track::capture(*spot.track));
-		auto &events{editor_track::events(*spot.track, spot.list)};
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == spot.reader; }))
+			states.emplace_back(spot.reader, editor_track::capture(*spot.reader));
+		auto &events{editor_track::events(*spot.reader, spot.reader_list)};
 		if (std::none_of(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == ToLower(standing->read); }))
 			events.emplace_back(ToLower(standing->read), nullptr);
 		std::string missing;
-		editor_track::bind_events(*spot.track, missing);
-		spot.track->mark_dirty();
+		editor_track::bind_events(*spot.reader, missing);
+		spot.reader->mark_dirty();
 		++attached;
 	}
 	if (states.empty())
@@ -1620,14 +1733,14 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		reads.clear();
 	for (auto const &[spot, read] : reads)
 	{
-		if (read.empty() || false == spot.track->Dynamics.empty() || false == scene::Layers.editable(spot.track))
+		if (read.empty() || false == spot.reader->Dynamics.empty() || false == scene::Layers.editable(spot.reader))
 			continue;
-		if (created.count(spot.track) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &State) { return State.first == spot.track; }))
-			step.tracks.emplace_back(spot.track, editor_track::capture(*spot.track));
-		editor_track::events(*spot.track, spot.list).emplace_back(ToLower(read), nullptr);
+		if (created.count(spot.reader) == 0 && std::none_of(step.tracks.begin(), step.tracks.end(), [&](auto const &State) { return State.first == spot.reader; }))
+			step.tracks.emplace_back(spot.reader, editor_track::capture(*spot.reader));
+		editor_track::events(*spot.reader, spot.reader_list).emplace_back(ToLower(read), nullptr);
 		std::string missing;
-		editor_track::bind_events(*spot.track, missing);
-		spot.track->mark_dirty();
+		editor_track::bind_events(*spot.reader, missing);
+		spot.reader->mark_dirty();
 	}
 	auto const count{instances.size()};
 	instances.insert(instances.end(), removed.begin(), removed.end());

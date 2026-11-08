@@ -60,7 +60,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		show_track_tab(track_tab::srk);
 		signal_scan(true);
 		auto &tool{m_signal};
-		static std::array<char const *, 7> constexpr kinds{"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
+		static std::array<char const *, 8> constexpr kinds{"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
 		for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 		{
 			auto const &item{tool.templates[k]};
@@ -159,8 +159,8 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 				if (&tool.templates[k] == item)
 				{
-					static char const *const kinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
-					for (int i = 0; i < 7; ++i)
+					static char const *const kinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
+					for (int i = 0; i < 8; ++i)
 						if (item->kind == kinds[i])
 						{
 							tool.kind = i;
@@ -291,6 +291,9 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 					auto const bound{std::any_of(list.begin(), list.end(), [&](auto const &Event) { return Event.second != nullptr && ToLower(Event.first) == ToLower(standing.read); })};
 					where = std::string{bound ? "bound, " : "unbound, "} + format("%s of %s, %.3f m from the axis, %s of the trains, %.3f m over the axis, model turned %.1f deg from the travel", editor_track::event_keyword(standing.list), standing.track->name().c_str(), glm::length(offset), cross > 0.0 ? "right" : "left",
 					               standing.include.location.y - axis.y, turn);
+					// the path it stands by, which on a switch past the frog isn't the one reading it
+					if (signal_spot spot; signal_standing_spot(standing, spot) && spot.track != nullptr)
+						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
 				}
 				WriteLog(format("SELFTEST signalprobe %s %s at %.3f %.3f %.3f yaw %.2f read %s: %s", standing.name.c_str(), standing.include.file.c_str(), standing.include.location.x, standing.include.location.y, standing.include.location.z, standing.include.yaw,
 				                standing.read.empty() ? "-" : standing.read.c_str(), where.c_str()));
