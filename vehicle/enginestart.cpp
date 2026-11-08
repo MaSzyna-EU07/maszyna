@@ -24,21 +24,23 @@ bool has_engine(TMoverParameters const &Vehicle) {
 
 // walks from Start through its coupler Side along the control cable, and returns the Number-th vehicle with an engine
 // other than Skipped it meets; Number is lowered by the ones it met when it doesn't get that far
-TMoverParameters *find_along(TMoverParameters const &Start, int Side, TMoverParameters const &Skipped, int &Number) {
+TMoverParameters *find_along(TMoverParameters const &Start, int const Side, TMoverParameters const &Skipped, int &Number) {
 	auto const *vehicle{&Start};
+	auto side{Side};
 	// a train can't loop back on itself, the limit only guards against a broken chain of couplers
 	for (auto steps = 0; steps < 1000; ++steps) {
-		auto const &coupler{vehicle->Couplers[Side]};
+		auto const &coupler{vehicle->Couplers[side]};
 		if (coupler.Connected == nullptr || false == TestFlag(coupler.CouplingFlag, coupling::control)) {
 			return nullptr;
 		}
 		// onwards through the other end of the next vehicle, whichever way round it stands
-		Side = 1 - coupler.ConnectedNr;
+		side = 1 - coupler.ConnectedNr;
 		vehicle = coupler.Connected;
 		if (vehicle == &Skipped || false == has_engine(*vehicle)) {
 			continue;
 		}
-		if (--Number == 0) {
+		--Number;
+		if (Number == 0) {
 			return coupler.Connected;
 		}
 	}
