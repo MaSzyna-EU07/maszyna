@@ -115,7 +115,7 @@ train_setting choose_train_setting(std::vector<vehicle> const &Consist) {
 	return train_setting::freight_p;
 }
 
-std::vector<int> choose(std::vector<vehicle> const &Consist) {
+std::vector<int> choose(std::vector<vehicle> const &Consist, bool const Train) {
 	auto const setting{choose_train_setting(Consist)};
 	std::vector<int> settings;
 	settings.reserve(Consist.size());
@@ -154,9 +154,10 @@ std::vector<int> choose(std::vector<vehicle> const &Consist) {
 				if (has(item.delays, bdelay_G)) {
 					settings.emplace_back(bdelay_G);
 				}
-				else if (item.powered || item.driven || item.delays == 0) {
+				else if (item.powered || item.driven || item.delays == 0 || false == Train) {
 					// a locomotive, or the vehicle the train is driven from, keeps a working brake: on P. a vehicle
-					// which tells no settings at all is left alone
+					// which tells no settings at all is left alone. a consist being shunted isn't a train and §19.9
+					// doesn't apply to it: its wagons keep their brakes, on P
 					settings.emplace_back(pick(item.delays, bdelay_P, bdelay_P));
 				}
 				else {
@@ -249,21 +250,22 @@ vehicle describe(TMoverParameters const &Vehicle, bool const Driven) {
 	return described;
 }
 
-void apply(TMoverParameters &Vehicle, int const Setting) {
+void apply(TMoverParameters &Vehicle, int const Setting, bool const Standstill) {
 	auto &brake{*Vehicle.Hamulec};
 	if (Vehicle.BrakeCutOutByInspector && false == is_cut_out(Vehicle)) {
 		// someone put the brake back in the meantime, it's theirs now
 		Vehicle.BrakeCutOutByInspector = false;
 	}
 	if (Setting == cut_out) {
-		if (false == is_cut_out(Vehicle)) {
+		if (false == is_cut_out(Vehicle) && Standstill) {
 			// close the cut-out cock and empty the brake with the releaser, as the scenery's '0' does: the
 			// distributor, cut off the brake pipe, has no air left to brake with and lets the cylinders go
 			brake.ForceEmptiness();
 			brake.SetBrakeStatus(brake.GetBrakeStatus() | b_dmg);
 			Vehicle.BrakeCutOutByInspector = true;
 		}
-		// a brake cut out already, by the inspector or for a reason of its own, stays as it is
+		// a brake cut out already, by the inspector or for a reason of its own, stays as it is. on the run the
+		// vehicle is left alone, brake and setting, until the inspector looks at the train standing
 		return;
 	}
 	if (Vehicle.BrakeCutOutByInspector) {

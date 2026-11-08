@@ -56,8 +56,10 @@ constexpr bool passenger(train_setting const Setting) {
 // without the setting the train needs gets the other one of G and P it has, and 0 (left as it is)
 // when it has neither. In a train on G (freight_g) a wagon without G gets cut_out instead: its brake
 // is to be cut out (Cw-1 §19.9). A locomotive and the vehicle the train is driven from keep their
-// brake working, on P
-std::vector<int> choose(std::vector<vehicle> const &Consist);
+// brake working, on P. Train tells the AI runs the consist as a train (Obey_train): §19.9 is about
+// trains, so in shunting (or banking) nothing is cut out and a wagon without G brakes on P, which puts
+// back a brake the inspector cut out before
+std::vector<int> choose(std::vector<vehicle> const &Consist, bool Train);
 
 // the inspector of the releases before eu07/maszyna#350, kept for ai.brakesetting.cw1 no. the settings
 // are requests: a vehicle which doesn't have the one asked for keeps its own
@@ -73,9 +75,11 @@ vehicle describe(TMoverParameters const &Vehicle, bool Driven);
 // the inspector puts the vehicle on Setting, as choose() gives it. cut_out cuts the brake out the way
 // the scenery's '0' does: b_dmg, which cuts the distributor off the brake pipe (as the cab's cut-out,
 // trainbrakeoperationtoggle, does), and its reservoirs emptied, so the brake releases and stays off.
-// The vehicle remembers the inspector did it. Any other setting first puts back a brake the inspector
-// cut out (it charges from the brake pipe again), then sets the vehicle to it (0: leaves the setting
-// as it is). A brake cut out by anyone else stays cut out
-void apply(TMoverParameters &Vehicle, int Setting);
+// The vehicle remembers the inspector did it. A brake is cut out only with the train at a standstill
+// (Standstill): on the run the vehicle is left as it is until the inspector looks at the train again
+// standing, rather than losing its brake while moving. Any other setting first puts back a brake the
+// inspector cut out (it charges from the brake pipe again), then sets the vehicle to it (0: leaves the
+// setting as it is). A brake cut out by anyone else stays cut out
+void apply(TMoverParameters &Vehicle, int Setting, bool Standstill);
 
 } // namespace brake_setting

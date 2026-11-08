@@ -18,6 +18,13 @@ constexpr int P{bdelay_P};
 constexpr int R{bdelay_R};
 constexpr int M{bdelay_M};
 
+// how the AI runs the consist the inspector looks at: as a train (Obey_train), or shunting it
+constexpr bool as_train{true};
+constexpr bool shunting{false};
+// whether the train stands, as AutoRewident() tells the inspector
+constexpr bool standstill{true};
+constexpr bool moving{false};
+
 brake_setting::vehicle locomotive(int const Delays = G | P | R) {
 	return {Delays, true, 17.0, 80000.0};
 }
@@ -51,7 +58,7 @@ TEST_CASE("brake setting: the locomotives don't count into the length and mass o
 	auto consist{train(locomotive(), 20, freight_wagon(15.0, 30.0))};
 	consist.insert(consist.begin(), locomotive());
 	CHECK(brake_setting::choose_train_setting(consist) == train_setting::freight_p);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings[0] == G);
 	CHECK(settings[1] == G);
 	for (std::size_t i = 2; i < settings.size(); ++i) {
@@ -66,7 +73,7 @@ TEST_CASE("brake setting: the locomotives don't count into the length and mass o
 TEST_CASE("brake setting: the locomotive and the first five wagons on G, the rest on P (Cw-1 §19.3b)") {
 	auto const consist{train(locomotive(), 12, freight_wagon(15.0, 60.0))};
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_gp);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	REQUIRE(settings.size() == consist.size());
 	for (std::size_t i = 0; i < settings.size(); ++i) {
 		CAPTURE(i);
@@ -79,7 +86,7 @@ TEST_CASE("brake setting: a locomotive in the middle of the train doesn't put fi
 	consist.emplace_back(locomotive());
 	consist.insert(consist.end(), 8, freight_wagon(15.0, 60.0));
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_gp);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings[1] == G);
 	CHECK(settings[5] == G);
 	CHECK(settings[6] == P);
@@ -98,7 +105,7 @@ TEST_CASE("brake setting: a heavy freight train runs on G, a wagon without G has
 	consist.emplace_back(passenger_car(P));
 	consist.emplace_back(passenger_car());
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_g);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	for (std::size_t i = 0; i + 2 < settings.size(); ++i) {
 		CAPTURE(i);
 		CHECK(settings[i] == G);
@@ -118,7 +125,7 @@ TEST_CASE("brake setting: in a train on G a locomotive and the vehicle it's driv
 	consist.emplace_back(locomotive(P | R));
 	consist.emplace_back(0, false, 20.0, 40000.0);
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_g);
-	auto settings{brake_setting::choose(consist)};
+	auto settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings.front() == P);
 	CHECK(settings[settings.size() - 2] == P);
 	CHECK(settings.back() == 0);
@@ -128,7 +135,7 @@ TEST_CASE("brake setting: in a train on G a locomotive and the vehicle it's driv
 	controlcar.driven = true;
 	consist.front() = controlcar;
 	consist.back() = locomotive();
-	settings = brake_setting::choose(consist);
+	settings = brake_setting::choose(consist, as_train);
 	CHECK(settings.front() == P);
 	CHECK(settings.back() == G);
 }
@@ -140,12 +147,29 @@ TEST_CASE("brake setting: in the long locomotive setting a vehicle without G bra
 	consist.insert(consist.end(), 8, freight_wagon(15.0, 60.0));
 	consist.emplace_back(passenger_car());
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_gp);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings[2] == G);
 	CHECK(settings[3] == P);
 	CHECK(settings[4] == G);
 	CHECK(settings[6] == P);
 	CHECK(settings.back() == P);
+}
+
+TEST_CASE("brake setting: a heavy consist being shunted has nothing cut out, a wagon without G brakes on P") {
+	// §19.9 is about trains: the same consist the AI shunts rather than runs as a train
+	auto consist{train(locomotive(), 30, freight_wagon(15.0, 80.0))};
+	consist.emplace_back(passenger_car(P));
+	consist.emplace_back(passenger_car());
+	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_g);
+	auto const settings{brake_setting::choose(consist, shunting)};
+	for (std::size_t i = 0; i + 2 < settings.size(); ++i) {
+		CAPTURE(i);
+		CHECK(settings[i] == G);
+	}
+	CHECK(settings[settings.size() - 2] == P);
+	CHECK(settings.back() == P);
+	// as a train they're cut out
+	CHECK(brake_setting::choose(consist, as_train).back() == brake_setting::cut_out);
 }
 
 TEST_CASE("brake setting: a car with its brake cut out counts as one on P in a passenger train (Cw-1 §18.3)") {
@@ -180,12 +204,13 @@ void charge_and_apply(test::vehicle &Vehicle) {
 	Vehicle.run(20.0);
 }
 
-// the inspector at work on a heavy train on G with the vehicle at its end, as AutoRewident() does it
-int inspect_heavy_train(test::vehicle &Vehicle) {
+// the inspector at work on a heavy train on G with the vehicle at its end, as AutoRewident() does it, the AI
+// running it as a train or shunting it, standing or on the run
+int inspect_heavy_train(test::vehicle &Vehicle, bool const Train = as_train, bool const Standstill = standstill) {
 	auto consist{train(locomotive(), 30, freight_wagon(15.0, 80.0))};
 	consist.emplace_back(brake_setting::describe(Vehicle.mover(), false));
-	auto const setting{brake_setting::choose(consist).back()};
-	brake_setting::apply(Vehicle.mover(), setting);
+	auto const setting{brake_setting::choose(consist, Train).back()};
+	brake_setting::apply(Vehicle.mover(), setting, Standstill);
 	return setting;
 }
 
@@ -193,8 +218,8 @@ int inspect_heavy_train(test::vehicle &Vehicle) {
 int inspect_light_train(test::vehicle &Vehicle) {
 	auto consist{train(locomotive(), 4, freight_wagon())};
 	consist.emplace_back(brake_setting::describe(Vehicle.mover(), false));
-	auto const setting{brake_setting::choose(consist).back()};
-	brake_setting::apply(Vehicle.mover(), setting);
+	auto const setting{brake_setting::choose(consist, as_train).back()};
+	brake_setting::apply(Vehicle.mover(), setting, standstill);
 	return setting;
 }
 
@@ -269,22 +294,96 @@ TEST_CASE("brake setting: the inspector never puts back a brake cut out for anot
 	CHECK(brake_setting::is_cut_out(other.mover()));
 }
 
+TEST_CASE("brake setting: shunting puts back a brake the inspector cut out, and cuts none out") {
+	test::vehicle car{passenger_car_definition()};
+	charge_and_apply(car);
+	// shunted in a heavy consist: nothing is cut out, the car is on P and brakes
+	CHECK(inspect_heavy_train(car, shunting) == P);
+	CHECK(false == brake_setting::is_cut_out(car.mover()));
+	CHECK(car->BrakeDelayFlag == P);
+	CHECK(car->BrakePress > 1.0);
+
+	// cut out when the consist became a train, then shunted again (e.g. left in a yard): the brake is back
+	REQUIRE(inspect_heavy_train(car) == brake_setting::cut_out);
+	REQUIRE(car->BrakeCutOutByInspector);
+	CHECK(inspect_heavy_train(car, shunting) == P);
+	CHECK(false == brake_setting::is_cut_out(car.mover()));
+	CHECK(false == car->BrakeCutOutByInspector);
+	car.hold_brake_pipe(5.0);
+	car.run(300.0);
+	charge_and_apply(car);
+	CHECK(car->BrakePress > 1.0);
+
+	// a brake cut out for a reason of its own stays cut out in shunting too
+	test::vehicle other{passenger_car_definition()};
+	other->Hamulec->SetBrakeStatus(other->Hamulec->GetBrakeStatus() | b_dmg);
+	CHECK(inspect_heavy_train(other, shunting) == P);
+	CHECK(brake_setting::is_cut_out(other.mover()));
+}
+
+TEST_CASE("brake setting: the inspector doesn't cut a brake out on the run, it waits for a standstill") {
+	test::vehicle car{passenger_car_definition()};
+	charge_and_apply(car);
+	REQUIRE(car->BrakePress > 1.0);
+	// the train checked on the run (the order changed mid-run): the car keeps its brake and its setting
+	auto const setting{car->BrakeDelayFlag};
+	CHECK(inspect_heavy_train(car, as_train, moving) == brake_setting::cut_out);
+	CHECK(false == brake_setting::is_cut_out(car.mover()));
+	CHECK(false == car->BrakeCutOutByInspector);
+	CHECK(car->BrakeDelayFlag == setting);
+	car.run(5.0);
+	CHECK(car->BrakePress > 1.0);
+	// the next check, standing, cuts it out
+	CHECK(inspect_heavy_train(car) == brake_setting::cut_out);
+	CHECK(brake_setting::is_cut_out(car.mover()));
+	CHECK(car->BrakeCutOutByInspector);
+	// a brake cut out already stays cut out on the run, and one put back on the run is back
+	CHECK(inspect_heavy_train(car, as_train, moving) == brake_setting::cut_out);
+	CHECK(car->BrakeCutOutByInspector);
+	CHECK(inspect_heavy_train(car, shunting, moving) == P);
+	CHECK(false == brake_setting::is_cut_out(car.mover()));
+	CHECK(false == car->BrakeCutOutByInspector);
+}
+
+TEST_CASE("brake setting: R+Mg brakes as hard as R at speed, the rapid stage of an LSt kept") {
+	// the inspector sets R+Mg (Cw-1 §18.2), the bits of R and Mg together: the valves test the bit of R, not
+	// the whole setting, so the high stage of R at speed stays on with Mg. the EU07's LSt given an Mg here
+	auto const definition{test::definition::fiz("4e_v1/4e").set("Cntrl", "BrakeDelays", "GPR+Mg")};
+	auto const service = [&](int const Setting) {
+		test::reseed_random();
+		test::vehicle real{definition, 160.0};
+		real->DecManualBrakeLevel(ManualBrakePosNo);
+		real->BrakeDelaySwitch(Setting); // false when already set
+		REQUIRE(real->BrakeDelayFlag == Setting);
+		real.hold_brake_pipe(5.0);
+		real.run(60.0);
+		real.hold_brake_pipe(3.5);
+		real.run(10.0);
+		REQUIRE(real->Vel > 100.0);
+		return real->BrakePress;
+	};
+	auto const rapid{service(R)};
+	CHECK(service(R | M) == doctest::Approx(rapid).epsilon(0.01));
+	// and P has no high stage
+	CHECK(service(P) < rapid - 1.0);
+}
+
 TEST_CASE("brake setting: a vehicle without the setting the train needs gets the other one of G and P") {
 	// a light freight train with a wagon which has G only
 	auto consist{train(locomotive(), 4, freight_wagon(15.0, 20.0))};
 	consist.emplace_back(G, false, 15.0, 20000.0);
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::freight_p);
-	CHECK(brake_setting::choose(consist).back() == G);
+	CHECK(brake_setting::choose(consist, as_train).back() == G);
 	// and a vehicle with neither is left alone
 	consist.emplace_back(R, false, 15.0, 20000.0);
-	CHECK(brake_setting::choose(consist).back() == 0);
+	CHECK(brake_setting::choose(consist, as_train).back() == 0);
 }
 
 TEST_CASE("brake setting: a passenger train on R carries at most three cars on P, fewer than those on R (Cw-1 §18.3)") {
 	auto consist{train(locomotive(), 4, passenger_car())};
 	consist.insert(consist.end(), 3, passenger_car(P));
 	CHECK(brake_setting::choose_train_setting(consist) == train_setting::passenger_r);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings[0] == R);
 	CHECK(settings[1] == R);
 	CHECK(settings.back() == P);
@@ -292,7 +391,7 @@ TEST_CASE("brake setting: a passenger train on R carries at most three cars on P
 	// as many cars on P as on R: all on P
 	consist.emplace_back(passenger_car(P));
 	CHECK(brake_setting::choose_train_setting(consist) == train_setting::passenger_p);
-	for (auto const setting : brake_setting::choose(consist)) {
+	for (auto const setting : brake_setting::choose(consist, as_train)) {
 		CHECK(setting == P);
 	}
 	// the inspector of the earlier releases kept such a train on R
@@ -307,14 +406,14 @@ TEST_CASE("brake setting: freight wagons in a passenger train on R count as cars
 	auto consist{train(locomotive(), 6, passenger_car())};
 	consist.emplace_back(freight_wagon());
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::passenger_r);
-	CHECK(brake_setting::choose(consist).back() == P);
+	CHECK(brake_setting::choose(consist, as_train).back() == P);
 }
 
 TEST_CASE("brake setting: cars with a magnetic rail brake run on R+Mg in a train on R (Cw-1 §18.2)") {
 	auto consist{train(locomotive(G | P | R | M), 3, passenger_car(P | R | M))};
 	consist.emplace_back(passenger_car());
 	REQUIRE(brake_setting::choose_train_setting(consist) == train_setting::passenger_r);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings[0] == R); // the locomotive stays on R
 	CHECK(settings[1] == (R | M));
 	CHECK(settings.back() == R);
@@ -323,7 +422,7 @@ TEST_CASE("brake setting: cars with a magnetic rail brake run on R+Mg in a train
 TEST_CASE("brake setting: a light engine runs on R where it has it") {
 	std::vector<brake_setting::vehicle> const consist{locomotive(), locomotive(G | P)};
 	CHECK(brake_setting::choose_train_setting(consist) == train_setting::light_engine);
-	auto const settings{brake_setting::choose(consist)};
+	auto const settings{brake_setting::choose(consist, as_train)};
 	CHECK(settings[0] == R);
 	CHECK(settings[1] == P);
 }
@@ -331,7 +430,7 @@ TEST_CASE("brake setting: a light engine runs on R where it has it") {
 TEST_CASE("brake setting: the inspector of the earlier releases counted the locomotives into the train's mass") {
 	// 300 m and 600 t of wagons: P by Cw-1, the long locomotive setting before
 	auto const consist{train(locomotive(), 20, freight_wagon(15.0, 30.0))};
-	CHECK(brake_setting::choose(consist)[1] == P);
+	CHECK(brake_setting::choose(consist, as_train)[1] == P);
 	CHECK(brake_setting::choose_legacy(consist)[1] == G);
 	CHECK(brake_setting::choose_legacy(consist)[6] == P);
 }

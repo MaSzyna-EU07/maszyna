@@ -2086,8 +2086,12 @@ void TController::AutoRewident()
     for (auto const *d = pVehicles[0]; d != nullptr; d = d->Next()) {
         consist.emplace_back(brake_setting::describe(*d->MoverParameters, d == pVehicle));
     }
-    // 2. Określenie typu pociągu i nastaw: by the brake instruction Cw-1 (eu07/maszyna#350), or as the releases before it did
-    auto const settings{Global.AIBrakeSettingCw1 ? brake_setting::choose(consist) : brake_setting::choose_legacy(consist)};
+    // 2. Określenie typu pociągu i nastaw: by the brake instruction Cw-1 (eu07/maszyna#350), or as the releases before it did.
+    // brakes are cut out (Cw-1 §19.9) only in a train, not in a consist being shunted
+    auto const train{(OrderCurrentGet() & Obey_train) != 0};
+    auto const settings{Global.AIBrakeSettingCw1 ? brake_setting::choose(consist, train) : brake_setting::choose_legacy(consist)};
+    // and only at a standstill: a check on the run (the order changed mid-run) leaves them to the next one
+    auto const standstill{false == (mvOccupied->Vel > EU07_AI_NOMOVEMENT)};
     // a light engine counts as a passenger train for the braking below
     auto const passengertrain{brake_setting::passenger(brake_setting::choose_train_setting(consist))};
     // 3. Nastawianie
@@ -2098,7 +2102,7 @@ void TController::AutoRewident()
             continue;
         }
         // the setting, a brake cut out in a train on G (Cw-1 §19.9) or put back when the train no longer needs it cut out
-        brake_setting::apply(*d->MoverParameters, *setting);
+        brake_setting::apply(*d->MoverParameters, *setting, standstill);
         // potentially release manual brake
         d->MoverParameters->DecManualBrakeLevel( ManualBrakePosNo );
         d->MoverParameters->SpringBrake.Activate = false;
