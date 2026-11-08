@@ -64,6 +64,20 @@ double last_point_height(std::vector<glm::dvec3> const &Points)
 	return Points.empty() ? 0.0 : Points.back().y;
 }
 
+// the cursor of the lay tool aimed at the point at x z as a click there takes it: on the ground there, else at the height of the last
+// point clicked, a free end within 3 m reached, else onto the bed; the point on the ground or at that height returned
+glm::dvec3 aim_lay_cursor(editor_build_services &Build, glm::dvec3 Point)
+{
+	auto &lay{Build.lay_state()};
+	Point.y = 5000.0;
+	std::vector<char> found;
+	auto const ground{Build.ground_heights_at({Point}, true, &found)};
+	Point.y = found[0] != 0 ? ground[0] : last_point_height(lay.points);
+	lay.mouse_snap = editor_track::find_free_end(nullptr, 1, Point, 3.0, {});
+	lay.mouse = lay.mouse_snap.track != nullptr ? Point : Build.lay_bed_point(Point);
+	return Point;
+}
+
 // the share of the noise of the points of a test line, by the number of the point: one way, the other, a little
 double noise_share(int const Count)
 {
@@ -1650,12 +1664,7 @@ struct laid_walk
 // the point clicked by the lay tool at x z, as selftest_lay_point clicks it, the heights and the readout of the line it makes logged
 void editor_mode::selftest_click_logged(glm::dvec3 Point)
 {
-	Point.y = 5000.0;
-	std::vector<char> found;
-	auto const ground{ground_heights({Point}, true, &found)};
-	Point.y = found[0] != 0 ? ground[0] : last_point_height(m_lay.points);
-	m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, Point, 3.0, {});
-	m_lay.mouse = m_lay.mouse_snap.track != nullptr ? Point : lay_bed(Point);
+	Point = aim_lay_cursor(*this, Point);
 	WriteLog(format("SELFTEST layclicks ground %.3f, track %.3f", Point.y, m_lay.mouse.y));
 	if (false == m_lay.points.empty())
 	{
@@ -1892,12 +1901,7 @@ editor_mode::selftest_result editor_mode::selftest_gizmo(std::istringstream &wor
 // the point clicked by the lay tool at x z, on the ground there, a free end within 3 m reached
 void editor_mode::selftest_lay_point(glm::dvec3 Point)
 {
-	Point.y = 5000.0;
-	std::vector<char> found;
-	auto const ground{ground_heights({Point}, true, &found)};
-	Point.y = found[0] != 0 ? ground[0] : last_point_height(m_lay.points);
-	m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, Point, 3.0, {});
-	m_lay.mouse = m_lay.mouse_snap.track != nullptr ? Point : lay_bed(Point);
+	aim_lay_cursor(*this, Point);
 	m_build_tools->lay_input.lay_click();
 }
 
