@@ -580,8 +580,8 @@ TEST_CASE("couplers: an electric and a diesel locomotive don't share their contr
 	}
 	SUBCASE("unless the vehicles make one unit, coupled for good") {
 		auto diesel{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "diesel"}};
-		auto const permanent{scenario_coupling | coupling::permanent};
-		CHECK(scenario_couple(electric, diesel, permanent) == permanent);
+		auto const forgood{scenario_coupling | coupling::permanent};
+		CHECK(scenario_couple(electric, diesel, forgood) == forgood);
 	}
 	SUBCASE("unless the check is turned off") {
 		control_coupling_check_setting const off{false};
@@ -594,30 +594,22 @@ TEST_CASE("couplers: an electric and a diesel locomotive don't share their contr
 TEST_CASE("couplers: locomotives of the same traction and the cars keep their control coupling") {
 	control_coupling_check_setting const check{true};
 
-	SUBCASE("two electric ones") {
-		auto first{vehicle{definition::fiz("ep09_v2/104e"), 0.0, "first"}};
-		auto second{vehicle{definition::fiz("et22_v3/201e-w"), 0.0, "second"}};
-		CHECK(scenario_couple(first, second) == scenario_coupling);
-	}
-	SUBCASE("an electric one of each motor type") {
-		auto first{vehicle{definition::fiz("e6act_v2/e6acta"), 0.0, "first"}};
-		auto second{vehicle{definition::fiz("eu04_v1/eu04-01"), 0.0, "second"}};
-		CHECK(scenario_couple(first, second) == scenario_coupling);
-	}
-	SUBCASE("two diesel ones") {
-		auto first{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "first"}};
-		auto second{vehicle{definition::fiz("wmb10_v1/wmb10"), 0.0, "second"}};
-		CHECK(scenario_couple(first, second) == scenario_coupling);
-	}
-	SUBCASE("a diesel-mechanical and a diesel-electric one") {
-		auto first{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "first"}};
-		auto second{vehicle{definition::fiz("st44_v2/m62-1151"), 0.0, "second"}};
-		CHECK(scenario_couple(first, second) == scenario_coupling);
-	}
-	SUBCASE("an electric multiple unit's motor car and its control trailer") {
-		auto trailer{vehicle{definition::fiz("en57_v1/5bgb"), 0.0, "trailer"}};
-		auto motorcar{vehicle{definition::fiz("en57_v1/6bai"), 0.0, "motorcar"}};
-		CHECK(scenario_couple(trailer, motorcar) == scenario_coupling);
+	SUBCASE("two locomotives or motor cars of the same traction") {
+		// two electric ones, an electric one of each motor type, two diesel ones, a diesel-mechanical and a
+		// diesel-electric one, an electric multiple unit's control trailer and its motor car
+		std::initializer_list<std::pair<char const *, char const *>> const pairs{
+		    {"ep09_v2/104e", "et22_v3/201e-w"},
+		    {"e6act_v2/e6acta", "eu04_v1/eu04-01"},
+		    {"sm03_v1/sm03", "wmb10_v1/wmb10"},
+		    {"sm03_v1/sm03", "st44_v2/m62-1151"},
+		    {"en57_v1/5bgb", "en57_v1/6bai"}};
+		for (auto const &paths : pairs) {
+			CAPTURE(paths.first);
+			CAPTURE(paths.second);
+			auto first{vehicle{definition::fiz(paths.first), 0.0, "first"}};
+			auto second{vehicle{definition::fiz(paths.second), 0.0, "second"}};
+			CHECK(scenario_couple(first, second) == scenario_coupling);
+		}
 	}
 	SUBCASE("a diesel locomotive and a car") {
 		auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
