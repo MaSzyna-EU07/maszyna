@@ -56,10 +56,20 @@ constexpr bool passenger(train_setting const Setting) {
 // without the setting the train needs gets the other one of G and P it has, and 0 (left as it is)
 // when it has neither. In a train on G (freight_g) a wagon without G gets cut_out instead: its brake
 // is to be cut out (Cw-1 §19.9). A locomotive and the vehicle the train is driven from keep their
-// brake working, on P. Train tells the AI runs the consist as a train (Obey_train): §19.9 is about
-// trains, so in shunting (or banking) nothing is cut out and a wagon without G brakes on P, which puts
-// back a brake the inspector cut out before
+// brake working, on P. Train tells the AI runs the consist as a train (runs_as_train()): §19.9 is about
+// trains, so in shunting nothing is cut out and a wagon without G brakes on P, which puts back a brake
+// the inspector cut out before
 std::vector<int> choose(std::vector<vehicle> const &Consist, bool Train);
+
+// the AI runs the consist as a train, rather than shunting it: Obey_train, or Bank, which it drives as a
+// train run too (with the braking of a train). Orders is the order of the AI (TOrders)
+bool runs_as_train(int Orders);
+
+// the train stands for the inspector: slower than the AI takes for a deliberate movement (EU07_AI_MOVEMENT).
+// the AI looks at the train while it still creeps to a stop (at a W4, or switching from shunting to the train
+// run) and as it couples (at the coupling speed), so a stricter threshold would miss those checks; a train
+// really on the run (an order changed mid-run) stays above it
+bool at_standstill(double Velocity);
 
 // the inspector of the releases before eu07/maszyna#350, kept for ai.brakesetting.cw1 no. the settings
 // are requests: a vehicle which doesn't have the one asked for keeps its own

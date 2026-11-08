@@ -2167,11 +2167,12 @@ void TController::AutoRewident()
         consist.emplace_back(brake_setting::describe(*d->MoverParameters, d == pVehicle));
     }
     // 2. Określenie typu pociągu i nastaw: by the brake instruction Cw-1 (eu07/maszyna#350), or as the releases before it did.
-    // brakes are cut out (Cw-1 §19.9) only in a train, not in a consist being shunted
-    auto const train{(OrderCurrentGet() & Obey_train) != 0};
+    // brakes are cut out (Cw-1 §19.9) only in a train (a bank engine's run included), not in a consist being shunted
+    auto const train{brake_setting::runs_as_train(OrderCurrentGet())};
     auto const settings{Global.AIBrakeSettingCw1 ? brake_setting::choose(consist, train) : brake_setting::choose_legacy(consist)};
-    // and only at a standstill: a check on the run (the order changed mid-run) leaves them to the next one
-    auto const standstill{false == (mvOccupied->Vel > EU07_AI_NOMOVEMENT)};
+    // and only at a standstill, the train creeping to a stop or coupling included: a check on the run (the order changed
+    // mid-run) leaves them to the next one
+    auto const standstill{brake_setting::at_standstill(mvOccupied->Vel)};
     // a light engine counts as a passenger train for the braking below
     auto const passengertrain{brake_setting::passenger(brake_setting::choose_train_setting(consist))};
     // 3. Nastawianie

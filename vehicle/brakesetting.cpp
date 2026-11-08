@@ -12,8 +12,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "McZapkie/MOVER.h"
 #include "McZapkie/hamulce.h"
+#include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace brake_setting {
 
@@ -156,8 +158,8 @@ std::vector<int> choose(std::vector<vehicle> const &Consist, bool const Train) {
 				}
 				else if (item.powered || item.driven || item.delays == 0 || false == Train) {
 					// a locomotive, or the vehicle the train is driven from, keeps a working brake: on P. a vehicle
-					// which tells no settings at all is left alone. a consist being shunted isn't a train and §19.9
-					// doesn't apply to it: its wagons keep their brakes, on P
+					// which tells no settings at all is left alone. a consist being shunted isn't a train (a bank
+					// engine's run is) and §19.9 doesn't apply to it: its wagons keep their brakes, on P
 					settings.emplace_back(pick(item.delays, bdelay_P, bdelay_P));
 				}
 				else {
@@ -169,6 +171,14 @@ std::vector<int> choose(std::vector<vehicle> const &Consist, bool const Train) {
 		}
 	}
 	return settings;
+}
+
+bool runs_as_train(int const Orders) {
+	return (Orders & (Obey_train | Bank)) != 0;
+}
+
+bool at_standstill(double const Velocity) {
+	return std::abs(Velocity) < EU07_AI_MOVEMENT;
 }
 
 std::vector<int> choose_legacy(std::vector<vehicle> const &Consist) {

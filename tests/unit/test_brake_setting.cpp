@@ -5,6 +5,7 @@
 #include "McZapkie/hamulce.h"
 #include "vehicle.h"
 #include "vehicle/brakesetting.h"
+#include "vehicle/Driver.h"
 
 // the brake settings the AI wagon inspector (TController::AutoRewident) chooses for a train, by the
 // brake instruction Cw-1 (Mw56) §18 and §19 (eu07/maszyna#350)
@@ -18,7 +19,7 @@ constexpr int P{bdelay_P};
 constexpr int R{bdelay_R};
 constexpr int M{bdelay_M};
 
-// how the AI runs the consist the inspector looks at: as a train (Obey_train), or shunting it
+// how the AI runs the consist the inspector looks at: as a train (Obey_train or Bank), or shunting it
 constexpr bool as_train{true};
 constexpr bool shunting{false};
 // whether the train stands, as AutoRewident() tells the inspector
@@ -343,6 +344,51 @@ TEST_CASE("brake setting: the inspector doesn't cut a brake out on the run, it w
 	CHECK(inspect_heavy_train(car, shunting, moving) == P);
 	CHECK(false == brake_setting::is_cut_out(car.mover()));
 	CHECK(false == car->BrakeCutOutByInspector);
+}
+
+TEST_CASE("brake setting: a train creeping to a stop or coupling counts as standing, one on the run doesn't") {
+	// the AI looks at the train at a W4 and when it switches from shunting to the train run below 1 km/h, and as it
+	// couples at the coupling speed: the inspector takes those for a standstill
+	CHECK(brake_setting::at_standstill(0.0));
+	CHECK(brake_setting::at_standstill(0.04));
+	CHECK(brake_setting::at_standstill(0.9));
+	CHECK(brake_setting::at_standstill(-0.9));
+	CHECK(false == brake_setting::at_standstill(EU07_AI_MOVEMENT));
+	CHECK(false == brake_setting::at_standstill(30.0));
+
+	// checked at 0.9 km/h: the brake is cut out
+	test::vehicle creeping{passenger_car_definition()};
+	charge_and_apply(creeping);
+	CHECK(inspect_heavy_train(creeping, as_train, brake_setting::at_standstill(0.9)) == brake_setting::cut_out);
+	CHECK(brake_setting::is_cut_out(creeping.mover()));
+	CHECK(creeping->BrakeCutOutByInspector);
+	// checked at 30 km/h: the car keeps its brake
+	test::vehicle running{passenger_car_definition()};
+	charge_and_apply(running);
+	CHECK(inspect_heavy_train(running, as_train, brake_setting::at_standstill(30.0)) == brake_setting::cut_out);
+	CHECK(false == brake_setting::is_cut_out(running.mover()));
+	CHECK(false == running->BrakeCutOutByInspector);
+	running.run(5.0);
+	CHECK(running->BrakePress > 1.0);
+}
+
+TEST_CASE("brake setting: a bank engine's run counts as a train, shunting doesn't") {
+	CHECK(brake_setting::runs_as_train(Obey_train));
+	CHECK(brake_setting::runs_as_train(Bank));
+	CHECK(brake_setting::runs_as_train(Obey_train | Connect));
+	CHECK(false == brake_setting::runs_as_train(Shunt));
+	CHECK(false == brake_setting::runs_as_train(Loose_shunt));
+	CHECK(false == brake_setting::runs_as_train(Connect));
+	CHECK(false == brake_setting::runs_as_train(Wait_for_orders));
+
+	// a heavy consist on G banked: the wagon without G has its brake cut out, as in a train
+	test::vehicle car{passenger_car_definition()};
+	charge_and_apply(car);
+	CHECK(inspect_heavy_train(car, brake_setting::runs_as_train(Bank)) == brake_setting::cut_out);
+	CHECK(brake_setting::is_cut_out(car.mover()));
+	// shunted: it's back on P
+	CHECK(inspect_heavy_train(car, brake_setting::runs_as_train(Shunt)) == P);
+	CHECK(false == brake_setting::is_cut_out(car.mover()));
 }
 
 TEST_CASE("brake setting: R+Mg brakes as hard as R at speed, the rapid stage of an LSt kept") {
