@@ -17,8 +17,14 @@ namespace track_rails {
 
 material_handle cut_material( material_handle const Material ) {
 
+#if WITH_EDITOR_SELFTESTS
+    // a switch of the self-tests, the cut faces drawn in the material the rails are unrolled with, for the shots of the tests
     static auto const unrolled { std::getenv( "EU07_EDITOR_UNROLLED" ) != nullptr };
-    return unrolled ? GfxRenderer->Fetch_Material( "editor_unrolled" ) : GfxRenderer->Matte_Material( Material );
+    if( unrolled ) {
+        return GfxRenderer->Fetch_Material( "editor_unrolled" );
+    }
+#endif
+    return GfxRenderer->Matte_Material( Material );
 }
 
 material_handle tint_material( material_handle const Material, glm::vec3 const &Colour ) {
