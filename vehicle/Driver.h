@@ -404,6 +404,7 @@ private:
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
     double fBrakeHeldTime = 0.0; // czas od ostatniego przestawienia kranu hamulca zasadniczego
+    bool bStopTargetIsPassengerStop = false; // the point the train is to stop at, found by the last scan of the route, is a passenger stop
     double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
