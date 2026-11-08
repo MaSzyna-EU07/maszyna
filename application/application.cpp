@@ -31,6 +31,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
+#ifdef _WIN32
+#include "Console.h"
+#endif
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -1048,6 +1051,13 @@ void eu07_application::init_debug()
 void eu07_application::init_console()
 {
 #ifdef _WIN32
+	if (Global.test.enabled)
+	{
+		// a test is started by whoever waits for its result, often reading its output: no console of its own
+		// (showsystemconsole) pops up and takes stdout away from them, and a console it was started from isn't hidden
+		return;
+	}
+
 	HWND consoleWnd = ::GetConsoleWindow();
 	const bool hadConsole = consoleWnd != nullptr;
 
@@ -1176,6 +1186,14 @@ void apply_test_mode_settings()
 #ifdef WITH_ZMQ
 	Global.zmq_address.clear();
 #endif
+	// nor anything to the outside: no keyboard leds, LPT or PoKeys desk (feedbackmode), no messages to a
+	// multiplayer server (multiplayer, which also holds some events back for it), no program run at the end
+	Global.iFeedbackMode = 0;
+#ifdef _WIN32
+	Console::ModeSet(Global.iFeedbackMode, Global.iFeedbackPort);
+#endif
+	Global.iMultiplayer = 0;
+	Global.exec_on_exit.clear();
 	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
 	if (!Global.random_seed)
 		Global.random_seed = seed_of("test");
