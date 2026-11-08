@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 #include "scene/scene.h"
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
@@ -305,6 +306,11 @@ bool driver_mode::update()
 		simulation::Events.update();
 		simulation::Region->update_events();
 		simulation::Lights.update();
+
+		if (Global.test.enabled && simulation::is_ready)
+		{
+			simulation::test().update(deltatime);
+		}
 	}
 
 	// render time routines follow:
@@ -477,6 +483,13 @@ void driver_mode::enter()
 	}
 
 	Timer::ResetTimers();
+
+	if (Global.test.enabled)
+	{
+		// the test runs as fast as it can compute, in steps of fixed length, so that runs on different machines agree
+		Timer::set_fixed_step(simulation::test_manager::frame_step);
+		simulation::test().start();
+	}
 
 	set_picking(!Global.captureonstart);
 

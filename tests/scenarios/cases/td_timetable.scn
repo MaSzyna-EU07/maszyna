@@ -1,0 +1,12 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed:
+// the trainset goes after FirstInit, the launcher before it.
+// the case's consist stands where td.scn keeps its timetable train (track 1 of Stacja1)
+// and gets the same timetable: Stacja1 10:35 -> Przystanek -> Stacja2.
+trainset td/rozklad tdo_n1734 0.0 0.1
+{{consist}}
+endtrainset
+
+// td.scn sets routes from the keyboard (shift+1..4 run events keyctrl01..04). keyctrl04 is the
+// way out of track 1: switch zwr02 and the exit signal stacja1_j at 40.
+// a launcher with a positive time fires once at that hour (HHMM), radius -1 means anywhere.
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end

@@ -1,0 +1,21 @@
+{
+  "description": "EN57 EMU (three cars) on td.scn, AI driver on the td/rozklad timetable: starts from Stacja1, keeps to the speed limit, brakes to a stop at Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\en57_v2 EN57-1000ra EN57RA_GSO_WKM1_KM_NS_N 0 headdriver 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_s dynamic pkp\\en57_v2 EN57-1000s EN57S_WKM1_KM_NS_S 0 nobody 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_rb dynamic pkp\\en57_v2 EN57-1000rb EN57RB_GSO_WKM1_KM_NS 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    { "type": "starts", "min_speed": 20, "within": 150 },
+    { "type": "max_speed", "limit": 90, "tolerance": 3 },
+    { "type": "brakes", "min_pressure": 0.5 },
+    { "type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420 }
+  ]
+}

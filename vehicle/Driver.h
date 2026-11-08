@@ -312,6 +312,7 @@ private:
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
     double brake_increase_margin() const;
+    std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
     void update_logs( double const dt );
@@ -403,6 +404,7 @@ private:
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
     double fBrakeHeldTime = 0.0; // czas od ostatniego przestawienia kranu hamulca zasadniczego
+    bool bStopTargetIsPassengerStop = false; // the point the train is to stop at, found by the last scan of the route, is a passenger stop
     double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
@@ -533,6 +535,9 @@ private:
     bool TableNotFound( basic_event const *Event, double const Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
+    // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
+    // reports the head of the train going past it, if it's a signal showing stop
+    void CheckSignalPassedAtDanger( TSpeedPos const &Point, bool Passedbefore ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
@@ -632,6 +637,7 @@ private:
     bool IsAnyDoorOpen[ 2 ]; // state of door in the consist
 	bool IsAnyDoorOnlyOpen[ 2 ]; // state of door in the consist regardless of step
     bool IsAnyDoorPermitActive[ 2 ]; // state of door permit in the consist
+    door_closure_t DoorClosure{ door_closure_t::none }; // state of the door closure signalling (SOD) of the consist
     bool IsAnyLineBreakerOpen{ false }; // state of line breaker in all powered vehicles under control
     bool IsAnyConverterOverloadRelayOpen{ false }; // state of converter overload relays in all vehicles under control
     bool IsAnyMotorOverloadRelayOpen{ false }; // state of motor overload relays in all vehicles under control

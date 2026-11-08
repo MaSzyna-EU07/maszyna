@@ -46,6 +46,8 @@ bool check_shader_allopts(std::string filename)
 	Global.gfx_skippipeline = false;
 	Global.gfx_extraeffects = true;
 	Global.gfx_shadergamma = true;
+	// the default of the simulator, which compiles the alpha to coverage branches of the shaders
+	Global.iMultisampling = 2;
 	if (!check_shader(filename))
 		suc = false;
 
@@ -56,6 +58,7 @@ bool check_shader_allopts(std::string filename)
 	Global.gfx_skippipeline = true;
 	Global.gfx_extraeffects = false;
 	Global.gfx_shadergamma = false;
+	Global.iMultisampling = 0;
 	if (!check_shader(filename))
 		suc = false;
 

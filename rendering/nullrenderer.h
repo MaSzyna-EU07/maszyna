@@ -35,7 +35,18 @@ private:
         release_() override { /* null implementation, nothing to do */ }
 };
 
+// user interface backend which draws nothing: imgui still builds its frames, so the ui code runs as usual
+class null_imgui_renderer final : public imgui_renderer {
+public:
+    bool Init() override { return true; }
+    void Shutdown() override { /* null implementation, nothing to do */ }
+    // imgui wants its font atlas built before a frame starts; that's done on the cpu, no texture is made of it
+    void BeginFrame() override;
+    void Render() override { /* null implementation, nothing to do */ }
+};
+
 // bare-bones render controller, in lack of anything better yet
+// it's the renderer of the test mode (--test): models are loaded for the physics, textures aren't
 class null_renderer : public gfx_renderer {
 
 public:
@@ -49,7 +60,7 @@ public:
         Init( GLFWwindow *Window ) override { return true; }
     // main draw call. returns false on error
     bool
-        Render() override { return true; }
+        Render() override;
     void
         SwapBuffers() override { /* null implementation, nothing to do */ }
     inline
@@ -105,20 +116,22 @@ public:
     void
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override { /* null implementation, nothing to do */ }
     IMaterial const *
-        Material( material_handle const Material ) const override { return m_materials.at(Material - 1).get(); }
+        Material( material_handle const Material ) const override {
+            return ( Material > 0 && static_cast<std::size_t>( Material ) <= m_materials.size() ? m_materials[ Material - 1 ].get() : IMaterial::null_material() ); }
     // shader methods
     auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override { throw std::runtime_error("not impl"); }
     // texture methods
+    // no textures are loaded; whoever asks gets the null texture
     texture_handle
-        Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override { throw std::runtime_error("not impl"); }
+        Fetch_Texture( std::string const &Filename, bool const Loadnow = true, GLint format_hint = GL_SRGB_ALPHA ) override { return null_handle; }
     void
         Bind_Texture( texture_handle const Texture ) override { /* null implementation, nothing to do */ }
     void
         Bind_Texture( std::size_t const Unit, texture_handle const Texture ) override { /* null implementation, nothing to do */ }
-    opengl_texture &
-        Texture( texture_handle const Texture ) override { throw std::runtime_error("not impl"); }
-    opengl_texture const &
-        Texture( texture_handle const Texture ) const override { throw std::runtime_error("not impl"); }
+    ITexture &
+        Texture( texture_handle const Texture ) override { return *ITexture::null_texture(); }
+    ITexture const &
+        Texture( texture_handle const Texture ) const override { return *ITexture::null_texture(); }
     // utility methods
     void
         Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2  )> Callback ) override { /* null implementation, nothing to do */ }
@@ -152,11 +165,12 @@ public:
 
     imgui_renderer *GetImguiRenderer() override
 	{
-		return nullptr;
+		return &m_imgui;
 	}
 
   private:
     std::string empty_str;
+    null_imgui_renderer m_imgui;
     gfx::geometrybank_manager m_geometry;
     std::vector<std::shared_ptr<opengl_material>> m_materials;
 };
