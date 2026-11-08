@@ -74,12 +74,14 @@ void add_unique(std::vector<TTrack *> &Tracks, TTrack *Track)
 		Tracks.emplace_back(Track);
 }
 
-// how far off the chord a first control vector is put to keep the bend of the second one, past the 2 cm the simulator takes for a straight
+// how much longer than a third of the chord a first control vector is made to keep the bend of the second one, past the 2 cm the
+// simulator takes for a straight
 double const kBentOff{0.025};
 
 // a path the simulator draws straight, its first control vector lying along the chord, though the second one is dragged off it: the
-// first one moved off the chord just past the tolerance, to the side the second one bends to, so the bend is drawn, saved and read back
-// as one; it shifts the path by a centimetre at most. The second one back along the chord, the first one goes back onto it too
+// first one made longer by just past the tolerance, so the bend is drawn, saved and read back as one. Its direction is kept, so is
+// the tangent at the start and the joint there; the path moves along itself by under a centimetre. The second one back along the
+// chord, the first one goes back to a third of it
 void keep_bent(TTrack const &Track, segment_data &Path)
 {
 	if (Track.eType == tt_Cross)
@@ -93,16 +95,17 @@ void keep_bent(TTrack const &Track, segment_data &Path)
 	if (length < 1e-6 || control1 == glm::dvec3{} || control2 == glm::dvec3{})
 		return;
 	auto const axis{chord / length};
-	auto const off{control2 - axis * glm::dot(control2, axis)};
-	auto const side{glm::length(off)};
-	if (side < 0.02)
+	if (glm::length(control2 - axis * glm::dot(control2, axis)) < 0.02)
 	{
-		if (glm::length(control1 - chord / 3.0) <= kBentOff + 1e-6)
+		// along the chord, within the tolerance or as long as made here: back to the third
+		auto const along{glm::dot(control1, axis)};
+		auto const across{glm::length(control1 - axis * along)};
+		if (across < 0.02 && along > length / 3.0 - 0.02 && along < length / 3.0 + kBentOff + 0.005)
 			control1 = chord / 3.0;
 		return;
 	}
 	if (TTrack::straightened(start, control1, end))
-		control1 = chord / 3.0 + off / side * kBentOff;
+		control1 = glm::normalize(control1) * (length / 3.0 + kBentOff);
 }
 
 glm::dvec3 path_tangent(segment_data const &Path, bool const Atend)
@@ -683,6 +686,9 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 				if (glm::distance(otherpath.points[index], oldposition) < kSamePoint)
 					otherpath.points[index] = Position;
 		}
+		// a new chord can bring a first control vector made longer back within the tolerance
+		for (auto &each : Track.m_paths)
+			keep_bent(Track, each);
 		break;
 	}
 	case point_kind::control1:
@@ -1137,6 +1143,7 @@ void editor_track::snap_point(TTrack &Track, point_ref const &Point, snap_target
 	auto &control{path.points[Point.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 	auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(start, end) / 3.0};
 	control = -Target.direction * length;
+	keep_bent(Track, path);
 }
 
 std::string editor_track::material_name(material_handle const Material)
