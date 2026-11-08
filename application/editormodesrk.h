@@ -22,6 +22,14 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 #include <vector>
 
+// the joints of the track circuits a station has by hand, as a step of the history keeps them
+struct srk_hand_joints
+{
+	TTrack const *anchor{nullptr}; // the switch the record of the station is found by
+	std::vector<glm::dvec3> added;
+	std::vector<glm::dvec3> removed;
+};
+
 // the signalling of a station (SRK): the station found from a switch of it, its schematic, its name and code. Three tools of the
 // toolbar share it, each showing a part of it
 class srk_tool final : public editor_tool
@@ -59,6 +67,15 @@ class srk_tool final : public editor_tool
 	void store();
 	// what the last action of the tool came to, once, to be told by the mouse: Refused when it did nothing for want of something
 	bool told(std::string &Status, bool &Refused);
+	// the joints of the track circuits of the open station put, moved and taken away by hand in the scenery
+	bool editing_joints() const { return m_open && m_part == part::station && m_joint_editing && m_layout.has_value(); }
+	// what a click at the point does while the joints are edited, for the label at the mouse; Valid: it does something
+	std::string joint_hover(glm::dvec3 const &Point, bool &Valid);
+	void joint_click();
+	// the joints a station had by hand before the edit just made, for the step of the history it goes into; none once taken
+	std::optional<srk_hand_joints> take_joint_change();
+	// the joints of the station set back as the step of the history had them; the ones it had, for the opposite step
+	srk_hand_joints restore_joints(srk_hand_joints const &Joints);
 
   private:
 	editor_selection &m_selection;
@@ -95,6 +112,8 @@ class srk_tool final : public editor_tool
 		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
 		std::map<std::string, block_kind> blocks; // of the lines by their entry signals, as set by hand
 		std::map<std::string, bool> ways; // the automatic block of the lines by their entry signals both ways, as set by hand
+		std::vector<glm::dvec3> joints_added; // the joints of the track circuits put by hand, on plain tracks
+		std::vector<glm::dvec3> joints_removed; // where the planned joints were taken away by hand
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -305,6 +324,33 @@ class srk_tool final : public editor_tool
 		bool remove{false}; // the block signals standing there taken away, else placed
 	};
 	std::string m_status;
+	bool m_joint_editing{false}; // the joints of the track circuits edited by hand
+	std::optional<glm::dvec3> m_joint_held; // a joint picked up, to be put elsewhere or taken away
+	// what a click does while the joints are edited
+	struct joint_target
+	{
+		enum class kind
+		{
+			none,
+			add, // a new joint at the point
+			pick, // the joint there picked up
+			move, // the joint held put at the point
+			remove, // the joint held taken away
+			drop // the joint held let go, left as it stands
+		};
+		kind what{kind::none};
+		glm::dvec3 point{0.0};
+	};
+	joint_target m_joint_target;
+	std::optional<srk_hand_joints> m_joint_change;
+	// a joint of the track circuits put by hand near the point: on the plain station track nearest, none with Why
+	std::optional<station::joint> hand_joint(glm::dvec3 const &Point, std::string &Why) const;
+	// the joint of the circuits standing nearest the point, within reach
+	std::optional<glm::dvec3> joint_near(glm::dvec3 const &Point) const;
+	// the joints of the open station changed by hand, the circuits set again so; one step of the history
+	void change_joints(std::optional<glm::dvec3> const &Remove, std::optional<glm::dvec3> const &Add);
+	// the hand joints of the open station changed from Before: the circuits set again, the change one step of the history with them
+	void joints_changed(srk_hand_joints const &Before);
 	// the track circuits of the open station set, known again after each change and for its code
 	bool circuits_set();
 	std::size_t m_circuits_revision{static_cast<std::size_t>(-1)};

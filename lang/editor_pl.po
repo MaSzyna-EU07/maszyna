@@ -13784,3 +13784,63 @@ msgstr "Najpierw ustaw izolacje stacji w narzędziu Stacja: semafory stają przy
 
 msgid "Type the code of the station first, in the Station tool: the signals are named after it"
 msgstr "Najpierw wpisz skrót stacji w narzędziu Stacja: od niego biorą się nazwy semaforów"
+
+msgid "A joint stands on a plain track, not in a switch: its circuit is the switch's own"
+msgstr "Styk stoi na zwykłym torze, nie w rozjeździe: rozjazd ma swój własny odcinek"
+
+msgid "Click: a new joint here, the track circuit parted"
+msgstr "Klik: nowy styk tutaj, odcinek izolowany podzielony"
+
+msgid "Click: let the joint go, it stays where it stands"
+msgstr "Klik: puść styk, zostaje tam, gdzie stoi"
+
+msgid "Click: take this joint away, the track circuits either side joined"
+msgstr "Klik: usuń ten styk, odcinki po obu stronach połączone"
+
+msgid "Click: take this joint instead"
+msgstr "Klik: weź zamiast tego ten styk"
+
+msgid "Click: take this joint, then click a track to move it there, or it again to take it away"
+msgstr "Klik: weź ten styk, potem kliknij tor, by go tam przesunąć, albo jego samego, by go usunąć"
+
+msgid "LMB on a track of the station: a joint of the track circuits there"
+msgstr "LPM na torze stacji: styk izolowany w tym miejscu"
+
+msgid "Out on the line, beyond the station: its circuits go by its block, drawn in the Line block tool"
+msgstr "Na szlaku, za stacją: tamtejsze odcinki wynikają z blokady, rysowanej w narzędziu Blokada liniowa"
+
+msgid "Type the code of the station first: its track circuits are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy odcinków izolowanych"
+
+msgid "A joint taken: LMB on a track puts it there, LMB on it again takes it away, elsewhere lets it go"
+msgstr "Styk wzięty: LPM na torze stawia go tam, LPM na nim samym usuwa go, gdzie indziej – puszcza"
+
+msgid "As planned"
+msgstr "Jak w projekcie"
+
+msgid "By hand: %zu put, %zu taken away"
+msgstr "Ręcznie: %zu postawionych, %zu usuniętych"
+
+msgid "Click: the joint moved here, %.1f m from where it stood"
+msgstr "Klik: styk przesunięty tutaj, %.1f m od miejsca, gdzie stał"
+
+msgid "Edit the joints by hand"
+msgstr "Edytuj styki ręcznie"
+
+msgid "LMB on a track: a new joint there; on a joint: take it, to move it or take it away"
+msgstr "LPM na torze: nowy styk w tym miejscu; na styku: weź go, by go przesunąć albo usunąć"
+
+msgid "LMB on a plain track of the station: a new joint of the track circuits there. LMB on a joint: it is taken; then LMB on a track moves it there, LMB on it again takes it away. The circuits are set again at once, and Set the track circuits keeps the joints so changed. One step of undo each"
+msgstr "LPM na zwykłym torze stacji: nowy styk izolowany w tym miejscu. LPM na styku: styk zostaje wzięty; potem LPM na torze przesuwa go tam, LPM na nim samym go usuwa. Odcinki są od razu ustawiane na nowo, a Ustaw izolacje zachowuje tak zmienione styki. Każda zmiana to jeden krok cofania"
+
+msgid "The joints put and taken away by hand forgotten, the circuits set again as planned. One step of undo"
+msgstr "Zapomina styki postawione i usunięte ręcznie, odcinki ustawione znów jak w projekcie. Jeden krok cofania"
+
+msgid "a joint of the track circuits there"
+msgstr "styk izolowany w tym miejscu"
+
+msgid "LMB on a joint"
+msgstr "LPM na styku"
+
+msgid "takes it: then on a track moves it, on it again away"
+msgstr "bierze go: potem na torze przesuwa, na nim samym usuwa"

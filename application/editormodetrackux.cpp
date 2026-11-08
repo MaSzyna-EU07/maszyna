@@ -664,6 +664,16 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
+	if (m_track_tab == track_tab::station && m_srk.editing_joints())
+	{
+		bool valid{false};
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.track != nullptr ? m_hover.point : ground;
+		intent.action = m_srk.joint_hover(intent.position, valid);
+		intent.what = kind::srk_joint;
+		return intent;
+	}
 	// a tool of the station: a track selected opens its station
 	if (srk_tab() && m_hover.track != nullptr)
 	{
@@ -1129,6 +1139,7 @@ void editor_mode::track_press(track_intent const &Intent)
 			m_km.pick(*Intent.track, Intent.position);
 		return;
 	case kind::srk_boundary: m_srk.boundary_click(); return;
+	case kind::srk_joint: m_srk.joint_click(); return;
 	case kind::fouling:
 		if (Intent.path == 1)
 			m_fouling.fix(Intent.index);

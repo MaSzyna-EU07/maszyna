@@ -321,6 +321,7 @@ void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_tra
 	infra_attach(snap);
 	snap.alignments = alignment_store::take_changes();
 	snap.switch_records = switch_store::take_changes();
+	snap.hand_joints = m_srk.take_joint_change();
 	snap.directives.insert(snap.directives.end(), m_drive_buffer.begin(), m_drive_buffer.end());
 	m_drive_buffer.clear();
 	m_history.push_back(std::move(snap));
@@ -408,6 +409,8 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		current.switch_records = switch_store::records();
 		switch_store::restore(*Snapshot.switch_records);
 	}
+	if (Snapshot.hand_joints.has_value())
+		current.hand_joints = m_srk.restore_joints(*Snapshot.hand_joints);
 	Opposite.push_back(std::move(current));
 
 	if (Undo)
@@ -1883,6 +1886,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
 	else if (m_track_window_open && m_track_tab == track_tab::turntable)
 		hints = {{"LMB", "places a new turntable"}};
+	else if (m_track_window_open && m_track_tab == track_tab::station && m_srk.editing_joints())
+		hints = {{"LMB on a track", "a joint of the track circuits there"}, {"LMB on a joint", "takes it: then on a track moves it, on it again away"}};
 	else if (m_track_window_open && srk_tab() && false == m_srk.drawing())
 		hints = {{"LMB on a switch", "opens its station"}};
 	else if (m_track_window_open && m_track_tab == track_tab::line_block)

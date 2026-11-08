@@ -167,6 +167,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<stored_profile> profile_library;
 		std::optional<std::vector<alignment_store::record>> alignments; // the kept horizontal alignments changed too, these were the ones before
 		std::optional<std::vector<switch_store::record>> switch_records; // the kept switches changed too, these were the ones before
+		std::optional<srk_hand_joints> hand_joints; // the joints of a station put by hand changed too, these were the ones before
 		std::optional<kilometrage::state> kilometrage; // the kilometrage before the change (Action::Kilometrage)
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
@@ -2244,7 +2245,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, signal_read, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, signal_read, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary, srk_joint };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
