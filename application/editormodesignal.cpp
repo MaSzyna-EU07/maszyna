@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorSettings.hpp"
+#include "editor/editorTrackTrace.hpp"
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include <glm/gtc/type_ptr.hpp>
@@ -61,6 +62,11 @@ double const kRefreshPeriod{2.0};
 double const kSignalReach{10.0};
 double const kTrackNearer{0.5}; // m another track has to be nearer by to take a signal moved from its own
 double const kOnTrack{1.2}; // m from the axis of a track a signal dropped stands on it rather than by it
+double const kDangerReach{1500.0}; // m ahead of a signal the switch it is measured to is looked for
+double const kSnapStep{50.0}; // m the distance of a signal to the switch ahead of it is rounded to
+double const kSnapReach{2.5}; // m from a round distance a signal dragged or placed goes to it
+ImU32 const kWayColour{IM_COL32(90, 200, 255, 235)};
+double const kWayAside{1.3}; // m from the axis of the track the way of a signal to the switch ahead is drawn, on its side
 // a track laid in the place of a deleted one runs within it of its axis
 double const kOrphanReach{1.0};
 std::size_t const kOrphanRecords{64};
@@ -193,19 +199,19 @@ double lowest_lamp(std::vector<TAnimModel *> const &Models)
 
 double nearest_on(TTrack const &Track, int const Path, glm::dvec3 const &Point)
 {
-	bezier const curve{Track.m_paths[Path]};
-	auto parameter{0.0};
-	auto best{std::numeric_limits<double>::max()};
-	for (int k = 0; k <= 256; ++k)
-	{
-		auto const distance{geometry::plan_distance(curve.point(k / 256.0), Point)};
-		if (distance < best)
-		{
-			best = distance;
-			parameter = k / 256.0;
-		}
-	}
-	return parameter;
+	return track_trace::parameter_of(Track, Path, Point);
+}
+
+// the way to the switch ahead in words: how far, to what of which switch
+std::string danger_text(track_trace::danger const &Danger)
+{
+	using kind = track_trace::danger::kind;
+	if (Danger.what == kind::none || Danger.track == nullptr)
+		return format(STR_C("no switch within %.0f m"), kDangerReach);
+	auto const name{name_of(*Danger.track)};
+	if (Danger.distance < 0.0)
+		return format(STR_C("%.1f m inside the fouling zone of %s"), -Danger.distance, name.c_str());
+	return format(Danger.what == kind::start ? STR_C("%.1f m to the start of %s") : STR_C("%.1f m to the fouling point of %s"), Danger.distance, name.c_str());
 }
 
 glm::dvec2 forward_at(TTrack const &Track, int const Path, double const Parameter)
@@ -716,6 +722,8 @@ void editor_mode::signal_press(track_intent const &Intent)
 		return;
 	if (false == signal_spot_at(*Intent.track, Intent.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, tool.press))
 		return;
+	tool.press_raw = tool.press;
+	signal_snap(tool.press, *armed);
 	tool.placing = true;
 }
 
@@ -727,22 +735,27 @@ void editor_mode::signal_move_update()
 	if (tool.placing)
 	{
 		auto const *armed{signal_armed()};
-		if (armed == nullptr || tool.press.track == nullptr || tool.press.track->m_editorremoved)
+		auto const &raw{tool.press_raw};
+		if (armed == nullptr || raw.track == nullptr || raw.track->m_editorremoved)
 		{
 			tool.placing = false;
 			return;
 		}
 		if (false == dragged)
 			return;
-		auto const cursor{cursor_level(tool.press.axis.y)};
-		auto const forward{tool.press.travel * static_cast<double>(tool.press.list == 2 ? 1 : -1)};
-		auto const along{glm::dot(plan_of(cursor) - plan_of(tool.press.axis), forward)};
+		auto const cursor{cursor_level(raw.axis.y)};
+		auto const forward{raw.travel * static_cast<double>(raw.list == 2 ? 1 : -1)};
+		auto const along{glm::dot(plan_of(cursor) - plan_of(raw.axis), forward)};
 		if (std::abs(along) < kDragTravel)
 			return;
 		tool.facing = along > 0.0 ? 1 : -1;
+		// from where it was pressed each time, so turning it this way and that doesn't walk it along the track
 		signal_spot spot;
-		if (signal_spot_at(*tool.press.track, tool.press.path, tool.press.axis, cursor, tool.facing, tool.press.side, *armed, spot))
+		if (signal_spot_at(*raw.track, raw.path, raw.axis, cursor, tool.facing, raw.side, *armed, spot))
+		{
+			signal_snap(spot, *armed);
 			tool.press = spot;
+		}
 		return;
 	}
 	if (false == tool.moving)
@@ -768,6 +781,53 @@ void editor_mode::signal_move_update()
 		path = tool.home.path;
 	}
 	tool.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.moved);
+	if (auto const *item{signal_template_of(found->include.file)}; tool.moved_valid && item != nullptr)
+		signal_snap(tool.moved, *item);
+}
+
+track_trace::danger editor_mode::signal_danger(signal_spot const &Spot) const
+{
+	if (Spot.track == nullptr || Spot.track->m_editorremoved || Spot.track->m_paths.empty())
+		return {};
+	auto const path{std::clamp(Spot.path, 0, static_cast<int>(Spot.track->m_paths.size()) - 1)};
+	auto const forward{glm::dot(forward_at(*Spot.track, path, track_trace::parameter_of(*Spot.track, path, Spot.axis)), Spot.travel) >= 0.0};
+	return track_trace::danger_ahead(*Spot.track, path, Spot.axis, forward, kDangerReach);
+}
+
+void editor_mode::signal_snap(signal_spot &Spot, signal_template const &Template) const
+{
+	if (Global.altState)
+		return;
+	auto const danger{signal_danger(Spot)};
+	if (danger.what == track_trace::danger::kind::none || danger.distance < kSnapStep - kSnapReach)
+		return;
+	auto const round{std::round(danger.distance / kSnapStep) * kSnapStep};
+	auto const shift{danger.distance - round};
+	if (std::abs(shift) > kSnapReach || std::abs(shift) < 0.005)
+		return;
+	// that much along the track towards the switch, on the side it was
+	std::pair<TTrack *, int> owner{nullptr, 0};
+	auto const axis{danger.at(shift, owner)};
+	if (owner.first == nullptr || owner.first->m_editorremoved || owner.first->m_paths.empty())
+		return;
+	auto const facing{glm::dot(forward_at(*owner.first, owner.second, track_trace::parameter_of(*owner.first, owner.second, axis)), Spot.travel) >= 0.0 ? 1 : -1};
+	signal_spot snapped;
+	if (signal_spot_at(*owner.first, owner.second, axis, axis + (Spot.position - Spot.axis), facing, 0, Template, snapped))
+		Spot = snapped;
+}
+
+editor_mode::signal_metre const &editor_mode::signal_metre_of(signal_standing const &Standing) const
+{
+	auto &metre{m_signal_metre};
+	if (metre.instance == Standing.include.instance && metre.history == history_revision() && metre.location == Standing.include.location && metre.yaw == Standing.include.yaw)
+		return metre;
+	metre.instance = Standing.include.instance;
+	metre.history = history_revision();
+	metre.location = Standing.include.location;
+	metre.yaw = Standing.include.yaw;
+	metre.valid = signal_standing_spot(Standing, metre.spot);
+	metre.danger = metre.valid ? signal_danger(metre.spot) : track_trace::danger{};
+	return metre;
 }
 
 std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() const
@@ -2725,6 +2785,23 @@ void editor_mode::render_signal_selected()
 		ImGui::TextDisabled("%s", STR_C("The train doesn't read it"));
 	else if (render_signal_reads(*found))
 		return;
+	// where it stands: from the axis of its track, along it to the switch ahead
+	if (auto const &metre{signal_metre_of(*found)}; metre.valid && begin_fields("##signalmetre"))
+	{
+		field_row("From the track axis");
+		ImGui::Text("%.2f m", metre.spot.offset);
+		item_tooltip("The distance of the mast from the axis of the track it stands by, in the plan");
+		field_row("To the switch ahead");
+		auto const text{danger_text(metre.danger)};
+		if (metre.danger.what == track_trace::danger::kind::none)
+			ImGui::TextDisabled("%s", text.c_str());
+		else if (metre.danger.distance < 0.0)
+			ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", text.c_str());
+		else
+			ImGui::TextWrapped("%s", text.c_str());
+		item_tooltip("Along the track the trains it faces run: to the start of the first switch they run onto, or to the fouling point of one they run onto from behind, where the axes of its tracks are 3.5 m apart, a W17 marker there or not. Dragged or placed the signal goes to 50, 100, 150 m... from it when that near, Alt keeps it where it is");
+		ImGui::EndTable();
+	}
 	auto const instance{found->include.instance};
 	if (auto const *item{signal_template_of(found->include.file)}; item != nullptr && render_signal_template(*found, *item))
 		return;
@@ -3072,6 +3149,39 @@ void editor_mode::draw_signal_overlay() const
 		plate(closest, Colour, format("%s %s", editor_track::event_keyword(List), name_of(Track).c_str()));
 	};
 	auto const dim = [](ImU32 const Colour) { return (Colour & 0x00FFFFFFu) | (static_cast<ImU32>(160) << IM_COL32_A_SHIFT); };
+	// the way of a signal along its track to the switch ahead, a bar across at the place, how far written there, and its distance from
+	// the axis of the track by its foot
+	auto const way = [&](signal_spot const &Spot, track_trace::danger const &Danger) {
+		plate(Spot.axis + lift, IM_COL32(220, 220, 220, 235), format(STR_C("%.2f m from the axis"), Spot.offset));
+		if (Danger.what == track_trace::danger::kind::none || Danger.line.size() < 2)
+			return;
+		auto const colour{Danger.distance < 0.0 ? overlay_color::invalid : kWayColour};
+		auto const low{std::min(0.0, Danger.distance)};
+		auto const high{std::max(0.0, Danger.distance)};
+		// a dimension line by the track on the side of the signal, off the band of the path reading it
+		auto const sign{glm::dot(right_of(Spot.travel), plan_of(Spot.position) - plan_of(Spot.axis)) >= 0.0 ? 1.0 : -1.0};
+		std::pair<TTrack *, int> unused;
+		auto const across_at = [&](double const Distance) {
+			auto const along{plan_of(Danger.at(Distance + 1.0, unused) - Danger.at(Distance - 1.0, unused))};
+			return glm::length(along) > 1e-6 ? right_of(glm::normalize(along)) : glm::dvec2{0.0};
+		};
+		auto const aside = [&](double const Distance, double const Off) {
+			auto const across{across_at(Distance) * sign * Off};
+			return Danger.at(Distance, unused) + lift + glm::dvec3{across.x, 0.0, across.y};
+		};
+		auto previous{aside(low, kWayAside)};
+		for (auto at{std::floor(low) + 1.0}; at < high; at += 1.0)
+		{
+			auto const next{aside(at, kWayAside)};
+			thick(previous, next, colour, 3.0f);
+			previous = next;
+		}
+		thick(previous, aside(high, kWayAside), colour, 3.0f);
+		// its ends: across the track by the signal, across it all at the place
+		thick(aside(0.0, kWayAside - 0.5), aside(0.0, kWayAside + 0.5), colour, 3.0f);
+		thick(aside(Danger.distance, -2.5), aside(Danger.distance, 2.5), colour, 4.0f);
+		plate(aside(Danger.distance, kWayAside), colour, danger_text(Danger));
+	};
 	for (int i = 0; i < static_cast<int>(tool.standing.size()); ++i)
 	{
 		auto const &standing{tool.standing[i]};
@@ -3089,6 +3199,9 @@ void editor_mode::draw_signal_overlay() const
 			auto const label{standing.name + (unread ? std::string{"  "} + STR(" not read") : std::string{})};
 			drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), colour, label.c_str());
 		}
+		if (selected && false == tool.moving)
+			if (auto const &metre{signal_metre_of(standing)}; metre.valid)
+				way(metre.spot, metre.danger);
 		if (selected || hovered)
 		{
 			arrow(location, travel_of(standing.include.yaw), colour);
@@ -3108,6 +3221,7 @@ void editor_mode::draw_signal_overlay() const
 		arrow(Spot.axis + glm::dvec3{0.0, kRailTop, 0.0}, Spot.travel, Colour);
 		if (Read && Spot.reader != nullptr)
 			reading(*Spot.reader, Spot.reader_list, Spot.position, kReadColour, 6.0f);
+		way(Spot, signal_danger(Spot));
 		ImVec2 head;
 		auto const *armed{signal_armed()};
 		if (armed != nullptr && false == armed->lamps.empty() && projection.project(Spot.position + glm::dvec3{0.0, kSignalHead, 0.0}, head))
@@ -3128,7 +3242,10 @@ void editor_mode::draw_signal_overlay() const
 	{
 		signal_spot spot;
 		if (signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *template_armed, spot))
+		{
+			signal_snap(spot, *template_armed);
 			preview(spot, overlay_color::marked, false == template_armed->read.empty());
+		}
 	}
 	// the deepest place of the selected signal in the gauge of a track
 	if (auto const &gauge{tool.gauge}; tool.selected != 0 && gauge.instance == tool.selected && gauge.history == history_revision() && gauge.hit.depth > kGaugeSlack && gauge.hit.track != nullptr)

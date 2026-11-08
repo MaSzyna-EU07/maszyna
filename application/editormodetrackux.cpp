@@ -664,6 +664,14 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
+	// a tool of the station: a track selected opens its station
+	if (srk_tab() && m_hover.track != nullptr)
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+	}
 	if (m_track_tab == track_tab::signals)
 	{
 		// the path to read the selected signal picked
@@ -698,6 +706,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			signal_spot spot;
 			if (m_hover.track != nullptr && signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
 			{
+				signal_snap(spot, *armed);
 				intent.track = m_hover.track;
 				intent.path = m_hover.path;
 				intent.position = spot.position;
@@ -711,7 +720,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.track = m_hover.track;
 			intent.path = m_hover.path;
 			intent.position = m_hover.point;
-			return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+			return make(kind::select, "Click: select");
 		}
 		return intent;
 	}

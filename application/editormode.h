@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorNmt.hpp"
 #include "editor/editorGeoMap.hpp"
 #include "editor/editorTrack.hpp"
+#include "editor/editorTrackTrace.hpp"
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
@@ -2688,6 +2689,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		float height{0.0f};
 		bool placing{false};
 		signal_spot press;
+		signal_spot press_raw; // where the press was, before it went to a round distance to the switch ahead
 		glm::vec2 pressed{0.f};
 		int facing{0};
 		std::vector<signal_standing> standing;
@@ -2724,6 +2726,23 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string status;
 	};
 	signal_tool m_signal;
+	// the way from the spot of a signal along its track to the switch the trains it faces come to first
+	track_trace::danger signal_danger(signal_spot const &Spot) const;
+	// the spot moved along its track to a round distance to the switch ahead, 50 m, 100 m..., when it's that near one; Alt leaves it
+	void signal_snap(signal_spot &Spot, signal_template const &Template) const;
+	// of the selected signal: the spot it stands at and the way to the switch ahead of it, kept until it or the history changes
+	struct signal_metre
+	{
+		scene::instance_handle instance{0};
+		std::size_t history{static_cast<std::size_t>(-1)};
+		glm::dvec3 location{0.0};
+		double yaw{0.0};
+		bool valid{false};
+		signal_spot spot;
+		track_trace::danger danger;
+	};
+	mutable signal_metre m_signal_metre;
+	signal_metre const &signal_metre_of(signal_standing const &Standing) const;
 	bool signal_scan(bool Wait = true);
 	signal_template const *signal_current() const;
 	signal_template const *signal_armed() const;

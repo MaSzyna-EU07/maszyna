@@ -659,7 +659,7 @@ int resonator_at(std::vector<station::approach_point> const &Way, double const W
 	return best;
 }
 
-// the template of a block signal of the aspects wanted, Like: the one standing, empty for the one chosen in Signals, taken
+// the template of a block signal of the aspects wanted, Like: the one standing, empty for the one chosen in the Templates of the tool, taken
 // where it has them, else the one of their mount with them, its counterpart by the name first, then of its lights; not the first of
 // a line, whose events tell a station signal; Wrong: of a wrong-track one, standing on the left, its head leaning right where one
 // does, a head leaning so only for it; empty for none
@@ -1715,7 +1715,7 @@ void srk_tool::render_lines()
 			                          "warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. "
 			                          "Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where "
 			                          "block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal "
-			                          "chosen in Signals below, else the semi-automatic one");
+			                          "chosen in Templates below, else the semi-automatic one");
 			ImGui::PopID();
 		}
 		ImGui::EndTable();
@@ -2847,7 +2847,7 @@ void srk_tool::set_signals()
 		std::string names;
 		for (auto const &name : unfit)
 			names += (names.empty() ? "" : ", ") + name;
-		m_status += "\n" + format(STR_C("No template has what %s need, they got the one chosen in Signals: see Signal heads"), names.c_str());
+		m_status += "\n" + format(STR_C("No template has what %s need, they got the one chosen in Templates: see Signal heads"), names.c_str());
 	}
 }
 

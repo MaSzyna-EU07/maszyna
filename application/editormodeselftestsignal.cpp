@@ -187,6 +187,14 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				WriteLog("SELFTEST signal: no such track " + values["track"]);
 				return selftest_result::handled;
 			}
+			// snap=1: to a round distance to the switch ahead, as placing it by hand does
+			if (values["snap"] == "1")
+			{
+				auto const before{signal_danger(spot)};
+				signal_snap(spot, *signal_current());
+				auto const after{signal_danger(spot)};
+				WriteLog(format("SELFTEST signal snap: %.2f m -> %.2f m to %s, on %s path %d", before.distance, after.distance, after.track != nullptr ? after.track->name().c_str() : "-", spot.track != nullptr ? spot.track->name().c_str() : "-", spot.path));
+			}
 			auto const placed{signal_place(spot, *signal_current())};
 			WriteLog(format("SELFTEST signal %s: %s", placed ? "placed" : "failed", tool.status.c_str()));
 		}
@@ -404,6 +412,11 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 					}
 					if (signal_spot spot; signal_standing_spot(standing, spot) && spot.track != nullptr)
 						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
+					// the switch ahead of it, as its card shows it
+					if (auto const &metre{signal_metre_of(standing)}; metre.valid)
+						where += format("; offset %.2f m; switch ahead: %s %s %.2f m at %.2f %.2f", metre.spot.offset,
+						                metre.danger.what == track_trace::danger::kind::start ? "start" : metre.danger.what == track_trace::danger::kind::fouling ? "fouling" : "none",
+						                metre.danger.track != nullptr ? metre.danger.track->name().c_str() : "-", metre.danger.distance, metre.danger.point.x, metre.danger.point.z);
 				}
 				// its indicators, over its foot and from its axis, and its lowest lamp
 				for (auto const &mark : standing.indicators)

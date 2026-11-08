@@ -742,8 +742,12 @@ void editor_mode::render_track_tool_options()
 		render_signal_selected();
 		render_signal_ui();
 		break;
-	case track_tab::station:
 	case track_tab::station_signals:
+		// a signal picked from the lists of the check: its card, to set what it lacks right there
+		render_signal_selected();
+		m_srk.render_options();
+		break;
+	case track_tab::station:
 	case track_tab::line_block:
 		m_srk.render_options();
 		break;

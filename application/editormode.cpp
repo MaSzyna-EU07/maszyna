@@ -6182,7 +6182,7 @@ void editor_mode::render_shortcuts_window()
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"H", "Throw the selected switch over to its other path, in the editor only"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
-	      {"I / B", "Signalling / objects along the track"},
+	      {"I / B", "Signals / objects along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},

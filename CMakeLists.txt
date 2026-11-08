@@ -188,6 +188,7 @@ set(SOURCES
 "editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
+"editor/editorTrackTrace.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
 "editor/editorTrackShape.cpp"
