@@ -1112,7 +1112,7 @@ void editor_mode::signal_split(TTrack &Original, TTrack &Created)
 {
 	// the bound reads went by the cells they read already, as the split took them; one not bound has no event to tell where it is read
 	auto const waiting = [](TTrack &Track) {
-		for (auto const index : {1, 2, 4, 5})
+		for (auto const index : {1, 2})
 			for (auto const &event : editor_track::events(Track, index))
 				if (false == event.first.empty() && event.second == nullptr)
 					return true;
@@ -1127,7 +1127,7 @@ void editor_mode::signal_split(TTrack &Original, TTrack &Created)
 		if (false == signal.read.empty())
 			standing.emplace(ToLower(signal.read), signal.include.location);
 	auto const gap = [](TTrack const &Piece, glm::dvec3 const &Point) { return geometry::plan_distance(editor_track::point_at(Piece, editor_track::nearest_parameter(Piece, Point)), Point); };
-	for (auto const index : {1, 2, 4, 5})
+	for (auto const index : {1, 2})
 	{
 		auto &own{editor_track::events(Original, index)};
 		auto &theirs{editor_track::events(Created, index)};

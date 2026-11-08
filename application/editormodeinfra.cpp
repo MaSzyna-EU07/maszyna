@@ -54,6 +54,7 @@ std::string const kBindingMark{"//$b"};
 std::string const kResonatorFile{"rezonator.inc"};
 std::string const kControlFile{"sbl_odstep.inc"};
 double constexpr kAdoptReach{12.0}; // m, of a point object from the axis of its path
+double constexpr kBoundReach{30.0}; // m, of a point object bound by hand, as far as a changed path looks for it
 
 template <typename Type_>
 bool contains(std::vector<Type_> const &Items, Type_ const &Item)
@@ -1336,8 +1337,9 @@ void editor_mode::track_captured(TTrack const &Track)
 				if (glm::distance(infra::place(placed), points[i]) <= 0.01)
 					continue;
 				infra::station station;
-				bool interior;
-				if (points.size() == 1 && (infra::project(const_cast<TTrack &>(Track), points[i], station, interior) > kAdoptReach || false == beside(station, points[i], interior)))
+				bool interior{false};
+				auto const reach{binding.adopted ? kAdoptReach : kBoundReach};
+				if (points.size() == 1 && (infra::project(const_cast<TTrack &>(Track), points[i], station, interior) > reach || false == beside(station, points[i], interior)))
 					away = true;
 				else
 					anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
