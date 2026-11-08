@@ -848,7 +848,6 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 	TTrack *track{nullptr};
 	int path{0};
 	auto best{kSignalReach};
-	auto nearest{0.0}; // m from the axis a track takes it from
 	auto const consider = [&](TTrack *Track) {
 		if (Track == nullptr || Track->m_editorremoved)
 			return;
@@ -860,7 +859,7 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 			if (glm::length(glm::max(glm::max(low - plan_of(location), plan_of(location) - high), glm::dvec2{0.0})) >= best)
 				continue;
 			auto const distance{geometry::plan_distance(curve.point(nearest_on(*Track, p, location)), location)};
-			if (distance < best && distance >= nearest)
+			if (distance < best)
 			{
 				best = distance;
 				track = Track;
@@ -881,19 +880,18 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 				std::tie(track, path, best) = kept;
 		}
 	// moved, by another track: that one if it's the nearer by more than a little, so a signal only turned between two tracks keeps
-	// its own; not one it was dropped onto, its side of it unsure, the gauge would push it anywhere
+	// its own; dropped onto a track it keeps its own too, its side of that one unsure, the gauge would push it anywhere
 	if (track == nullptr || Moved)
 	{
 		auto const kept{std::make_tuple(track, path, best)};
 		if (track != nullptr)
 		{
 			best -= kTrackNearer;
-			nearest = kOnTrack;
 			track = nullptr;
 		}
 		for (auto *candidate : simulation::Paths.sequence())
 			consider(candidate);
-		if (track == nullptr)
+		if (track == nullptr || (std::get<0>(kept) != nullptr && best < kOnTrack))
 			std::tie(track, path, best) = kept;
 	}
 	if (track == nullptr)

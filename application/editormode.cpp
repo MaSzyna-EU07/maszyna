@@ -6536,8 +6536,9 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
 
     // only the axes the template has parameters for can be manipulated. a signal stands on the ground by its track: it is moved in
     // the plan, at the height it has
+    // not waited for: a scan started again while a signal is selected would stop the editor for its whole length
     if (m_include.info.category == "signal")
-        signal_scan(true);
+        signal_scan(false);
     auto const signal{signal_template_of(m_include.target) != nullptr};
     auto operation = 0;
     for (auto axis = 0; axis < 3; ++axis)
