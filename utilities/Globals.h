@@ -115,8 +115,6 @@ struct global_settings {
     std::string Period{}; // time of the day, based on sun position
     bool FullPhysics{ true }; // full calculations performed for each simulation step
     bool bnewAirCouplers{ true };
-    bool DoorClosureSignal{ true }; // door closure signalling lamp (i-door_blocked) shows the doors of the whole consist in three states
-
     float fMoveLight{ 0.f }; // numer dnia w roku albo -1
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight
     double fTimeSpeed{ 1.0 }; // przyspieszenie czasu, zmienna do testów

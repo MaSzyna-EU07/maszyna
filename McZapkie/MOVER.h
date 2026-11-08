@@ -1455,6 +1455,7 @@ class TMoverParameters
 		float auto_velocity{-1.f}; // automatic door closure velocity threshold
 		bool auto_include_remote{false}; // automatic door closure applies also to remote control
 		bool permit_needed{false};
+		bool closure_signal{false}; // the door closure lamp (SOD) of the cab signals the doors of the whole consist in three states
 		std::vector<int> permit_presets; // permit presets selectable with preset switch
 		float voltage{0.f}; // power type required for door movement
 		// ld inputs
@@ -2610,6 +2611,9 @@ class TMoverParameters
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
 	door_closure_t door_closure() const; // state of the door closure signalling of this vehicle
+	// whether the door closure lamp in the cab of this vehicle is lit: with DoorClosureSignal, for the given state of the
+	// consist; without it, for the lock of the vehicle's own doors, as the lamp always worked
+	bool door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const;
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);

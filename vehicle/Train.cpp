@@ -9108,11 +9108,12 @@ bool TTrain::Update(double const Deltatime)
 			btLampkaDoorLeft.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::left : side::right]);
 			btLampkaDoorRight.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::right : side::left]);
 		}
-		if (Global.DoorClosureSignal && DynamicObject->Mechanik != nullptr)
+		if (DynamicObject->Mechanik != nullptr)
 		{
-			// door closure signalling (SOD) of the whole consist: lit with all doors closed and locked, blinking with
-			// them closed but released, dark with a door open
-			btLampkaBlokadaDrzwi.Turn(door_closure_lamp(DynamicObject->Mechanik->DoorClosure, simulation::Time.data().wSecond % 2 < 1));
+			// with DoorClosureSignal in the definition of the cab's vehicle, the door closure signalling (SOD) of the whole
+			// consist: lit with all doors closed and locked, blinking with them closed but released, dark with a door open.
+			// without it, the lock of the vehicle's own doors, as before
+			btLampkaBlokadaDrzwi.Turn(mvOccupied->door_closure_lamp_lit(DynamicObject->Mechanik->DoorClosure, simulation::Time.data().wSecond % 2 < 1));
 		}
 		else
 		{

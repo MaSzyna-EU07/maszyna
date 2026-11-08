@@ -1,11 +1,14 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "scenario.h"
+#include "vehicle.h"
 
 // the door closure signalling (SOD, the i-door_blocked lamp of a cab): the state of each vehicle's doors and of the
 // whole train, the most severe of its vehicles, as the driver gathers it for the lamp (eu07/maszyna#288)
 
 using test::scenario;
+using test::definition;
+using test::vehicle;
 using namespace test::channels;
 
 namespace {
@@ -107,4 +110,49 @@ TEST_CASE("door closure: a locomotive has no doors to signal, its coach does") {
 	scenario.wait(10.0);
 	CHECK(scenario.vehicle(1).door_closure() == door_closure_t::open);
 	CHECK(consist_closure(scenario) == door_closure_t::open);
+}
+
+TEST_CASE("door closure: the signalling is switched on by DoorClosureSignal in the Doors section, off without it") {
+	SUBCASE("without the key") {
+		vehicle wagon{definition::load("wagon")};
+		CHECK_FALSE(wagon->Doors.closure_signal);
+	}
+	SUBCASE("with the key") {
+		vehicle wagon{definition::load("wagon").set("Doors", "DoorClosureSignal", "Yes")};
+		CHECK(wagon->Doors.closure_signal);
+	}
+}
+
+TEST_CASE("door closure: without DoorClosureSignal the lamp shows the lock of the vehicle's own doors, as before") {
+	vehicle wagon{definition::load("wagon")};
+	REQUIRE_FALSE(wagon->Doors.closure_signal);
+	for (auto const locked : {true, false}) {
+		wagon->Doors.is_locked = locked;
+		for (auto const consist : {door_closure_t::none, door_closure_t::locked, door_closure_t::released, door_closure_t::open}) {
+			for (auto const lit : {true, false}) {
+				CAPTURE(locked);
+				CAPTURE(static_cast<int>(consist));
+				CAPTURE(lit);
+				// no blinking at a standstill with the doors closed, whatever the consist does
+				CHECK(wagon->door_closure_lamp_lit(consist, lit) == locked);
+			}
+		}
+	}
+}
+
+TEST_CASE("door closure: with DoorClosureSignal the lamp shows the consist in three states") {
+	vehicle wagon{definition::load("wagon").set("Doors", "DoorClosureSignal", "Yes")};
+	REQUIRE(wagon->Doors.closure_signal);
+	for (auto const locked : {true, false}) {
+		// the vehicle's own lock doesn't matter, the consist does
+		wagon->Doors.is_locked = locked;
+		for (auto const lit : {true, false}) {
+			CAPTURE(locked);
+			CAPTURE(lit);
+			CHECK(wagon->door_closure_lamp_lit(door_closure_t::locked, lit));
+			CHECK(wagon->door_closure_lamp_lit(door_closure_t::released, lit) == lit);
+			CHECK_FALSE(wagon->door_closure_lamp_lit(door_closure_t::open, lit));
+			CHECK_FALSE(wagon->door_closure_lamp_lit(door_closure_t::none, lit));
+		}
+	}
 }
