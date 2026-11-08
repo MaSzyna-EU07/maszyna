@@ -2373,6 +2373,11 @@ class TMoverParameters
 	int EIMCtrlEmergencyPositions() const;
 	// whether the master controller is in its emergency brake position (EIMCtrlType 2 with EIMCtrlMainEmergency)
 	bool IsMainCtrlEmergencyPos() const;
+	// the master controller position sent to the coupled vehicles ("MainCtrl"), the same with and without
+	// EIMCtrlMainEmergency: the Elf's positions without the emergency brake one, which goes as the full braking
+	int MainCtrlPosForCoupled() const;
+	// the master controller position of this vehicle for one received from a coupled vehicle ("MainCtrl")
+	int MainCtrlPosFromCoupled(int Position) const;
 	/*! pomocniczy nastawnik:*/
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);

@@ -2537,7 +2537,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 
 	if (true == OK)
 	{
-		SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
+		SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
 		SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 	}
 
@@ -2662,7 +2662,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); // hmmmm...???!!!
+			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); // hmmmm...???!!!
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
 	}
@@ -2745,6 +2745,17 @@ bool TMoverParameters::IsMainCtrlEmergencyPos() const
 	return MainCtrlPos < EIMCtrlEmergencyPositions();
 }
 
+int TMoverParameters::MainCtrlPosForCoupled() const
+{
+	// the emergency brake itself reaches the train through the brake pipe, vented by the vehicle driven from
+	return std::max(0, MainCtrlPos - EIMCtrlEmergencyPositions());
+}
+
+int TMoverParameters::MainCtrlPosFromCoupled(int const Position) const
+{
+	return Position + EIMCtrlEmergencyPositions();
+}
+
 // *************************************************************************************************
 // Q: 20160710
 // zwiększenie bocznika
@@ -2786,7 +2797,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 			OK = false;
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
+			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
 	}
@@ -2848,7 +2859,7 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 			OK = false;
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
+			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
 	}
@@ -4586,8 +4597,9 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 
 	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
-	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
-	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || IsMainCtrlEmergencyPos() || SecuritySystem.is_braking() ||
+	// the emergency brake (a broken coupler sets AlarmChainFlag instead). the Elf's emergency brake position
+	// vents the pipe only from the vehicle driven from, whatever the controllers of the others show
+	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || (IsMainCtrlEmergencyPos() && IsCabMaster()) || SecuritySystem.is_braking() ||
 		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
 		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
 	{
@@ -10915,8 +10927,10 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(EIMCtrlMainEmergency, "EIMCtrlMainEmergency", line, "");
 	if (auto const elfpositions{4 + EIMCtrlEmergencyPositions()}; EIMCtrlEmergencyPositions() > 0 && MainCtrlPosNo < elfpositions)
 	{
-		// without it the controller would have no power position
-		ErrorLog(std::format("Bad fiz: EIMCtrlMainEmergency needs MCPN={} in {}", elfpositions, TypeName));
+		// the old positions in the file: without the fix-up the controller would have no power position, and the
+		// reverser would stop working at neutral (DirChangeMaxPos read before, in the old positions)
+		MainCtrlMaxDirChangePos += EIMCtrlEmergencyPositions();
+		ErrorLog(std::format("Bad fiz: EIMCtrlMainEmergency needs MCPN={} in {}, DirChangeMaxPos taken as {}", elfpositions, TypeName, MainCtrlMaxDirChangePos));
 		MainCtrlPosNo = elfpositions;
 	}
 
@@ -12256,9 +12270,10 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 
 	if (Command == "MainCtrl")
 	{
-		if (MainCtrlPosNo >= floor(CValue1))
+		// sent as MainCtrlPosForCoupled(), passed on unchanged
+		if (auto const position{MainCtrlPosFromCoupled(static_cast<int>(floor(CValue1)))}; MainCtrlPosNo >= position)
 		{
-			MainCtrlPos = static_cast<int>(floor(CValue1));
+			MainCtrlPos = position;
 			if (DelayCtrlFlag)
 			{
 				if (LastRelayTime >= InitialCtrlDelay && MainCtrlPos == 1)
