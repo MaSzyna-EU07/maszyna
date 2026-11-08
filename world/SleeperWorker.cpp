@@ -77,7 +77,15 @@ std::vector<beam> beams_of( cluster_beams const &Cluster, TTrack const &Track ) 
     return ( beams != Cluster.beams.end() ? beams->second : std::vector<beam> {} );
 }
 
-// the clusters of the tracks coming near worked out in a thread of their own, one after another
+// the clusters of the tracks coming near worked out in a thread of their own, one after another.
+// the thread reads the scene with no lock against the main thread, which runs meanwhile. what it reads mostly doesn't change after
+// the load: the tracks of the cells, the curves of the plain tracks and of both paths of the switches, and the tracks joined to
+// the paths of a switch. the editor, which changes them, stops the thread as it's entered. two things can change while driving:
+// - a switch thrown sets the curve and the ends it's set to anew (Switch()): those aren't read, a switch is taken by both its paths
+//   and the tracks joined to them;
+// - a turntable turned parts from the tracks joined to it and joins them again, and makes its curve anew: it's never laid on, so
+//   its curve isn't read, and the links of the tracks next to it are, by where a line of tracks ends; the line ends at the
+//   turntable whether they're joined at the time or not, so only the link itself is read meanwhile
 class background_worker {
 
 public:

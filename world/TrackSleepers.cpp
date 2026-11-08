@@ -42,11 +42,14 @@ bool bedded( TTrack const &Track ) {
             break;
         }
         case tt_Switch: {
-            // the switch trackbed takes the ballast of a plain track joined to it
+            // the switch trackbed takes the ballast of a plain track joined to it, as it's made at the load, the switch set straight.
+            // the tracks joined to the main path are asked, not the ends the switch is set to now: those change as it's thrown, also
+            // while the beams are worked out in the background
             if( auto const ballast = []( TTrack const *Other ) {
                     return Other != nullptr && Other->eType == tt_Normal && Other->m_material2 != null_handle; };
                 false == Global.CreateSwitchTrackbeds || Track.SwitchExtension == nullptr
-                || ( Track.SwitchExtension->m_material3 == null_handle && false == ballast( Track.trPrev ) && false == ballast( Track.trNext ) ) ) {
+                || ( Track.SwitchExtension->m_material3 == null_handle && false == ballast( Track.SwitchExtension->pPrevs[ 0 ] )
+                     && false == ballast( Track.SwitchExtension->pNexts[ 0 ] ) ) ) {
                 return false;
             }
             break;
