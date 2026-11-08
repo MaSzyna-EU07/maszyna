@@ -168,7 +168,12 @@ scenery is newer.
 the one whose physicslog is checked. Other vehicles of the consist take names made from it,
 e.g. `{{vehicle}}_s`. The td.scn cases share two fragments, `td_timetable.scn` (route set,
 train runs to Przystanek) and `td_red_signal.scn` (no route, exit signal at stop), and differ
-only in `vars.consist`. `td_red_signal_moving.scn` is the red signal one with the train
+only in `vars.consist`. Przystanek is a technical stop in that timetable (`pt`), where the AI
+doesn't wait for the departure time: it sets off as soon as it counts the train as standing at
+the W4, which is below 1 km/h, so the train stands there for a few seconds at most, or doesn't
+quite stop (since the AI braking of #264 the SN61 turns back at 0.4 km/h). The
+timetable cases therefore check that the train comes down to 1 km/h, with no hold, 1380-1420 m
+from the start (every vehicle stops at 1397-1401 m). `td_red_signal_moving.scn` is the red signal one with the train
 starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels when braking
 and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
@@ -189,13 +194,14 @@ the row instead, logged by builds from this branch on.
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
-- `stops` `moving_speed`, `stop_speed`, `hold`: after reaching `moving_speed`, stays at or
-  below `stop_speed` for `hold` seconds.
+- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`: after
+  reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the distances,
+  that stop has to be between them (metres travelled, as in `distance`).
 - `stays_stopped` `moving_speed`, `stop_speed`: after moving off and stopping, never goes
   above `stop_speed` again.
 - `distance` `min`, `max`: total distance travelled. The physicslog has no position, so the
   distance comes from integrating the speed; on td.scn every vehicle's first stop after
-  Stacja1 came out at 1400 m (+-3), and the red signal stop at 140 m.
+  Stacja1 came out at 1400 m (+-4), and the red signal stop at 140 m.
 - `slips` `within`: the lead vehicle's wheels slip or lock at some point (within `within`
   seconds if given), so a slippery rail case does what it's meant to.
 - `slip_clears` `moving_speed`, `stop_speed`, `within` (*vehicle speed*): once stopped after

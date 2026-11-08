@@ -344,7 +344,7 @@ def check_brakes(rows, min_pressure, moving_speed=20):
     return False, f"brake cylinder pressure never reached {min_pressure} bar after moving off"
 
 
-def check_stops(rows, moving_speed, stop_speed, hold):
+def check_stops(rows, moving_speed, stop_speed, hold, min_distance=None, max_distance=None):
     start = _first_moving(rows, moving_speed)
     if start is None:
         return False, f"never reached {moving_speed} km/h"
@@ -356,7 +356,11 @@ def check_stops(rows, moving_speed, stop_speed, hold):
             if stopped_at is None:
                 stopped_at = i
             if r[COL_TIME] - rows[stopped_at][COL_TIME] >= hold:
-                return True, f"came to a stop at t={rows[stopped_at][COL_TIME]:.1f}s after {dist[stopped_at]:.0f} m"
+                where = dist[stopped_at]
+                detail = f"came to a stop at t={rows[stopped_at][COL_TIME]:.1f}s after {where:.0f} m"
+                if (min_distance is not None and where < min_distance) or (max_distance is not None and where > max_distance):
+                    return False, f"{detail}, wanted between {min_distance} and {max_distance} m"
+                return True, detail
         else:
             stopped_at = None
     return False, f"did not stay below {stop_speed} km/h for {hold}s after moving off"
