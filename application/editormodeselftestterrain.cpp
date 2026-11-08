@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "editor/editorSettings.hpp"
 #include "editor/editorGeometry.hpp"
 #include "application/application.h"
@@ -641,7 +642,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain_model(std::string_vie
 	if (command == "nmtfit")
 	{
 		// the heights of the terrain model fitted to the tracks, as the button of the terrain panel does
-		nmt_fit();
+		m_build_tools->terrain.nmt_build.nmt_fit();
 		WriteLog("SELFTEST nmtfit: " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
@@ -650,7 +651,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain_model(std::string_vie
 	if (command == "nmtunder")
 	{
 		// the terrain under the tracks, the tracks left as they are, as the button of the terrain panel does
-		nmt_under_start();
+		m_build_tools->terrain.nmt_build.nmt_under_start();
 		WriteLog("SELFTEST nmtunder: " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
@@ -669,7 +670,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain_model(std::string_vie
 		// nmtwait waits for the end
 		std::string which;
 		words >> which;
-		nmt_auto_start(which == "unfitted");
+		m_build_tools->terrain.nmt_auto.nmt_auto_start(which == "unfitted");
 		WriteLog("SELFTEST nmtauto " + which + ": " + m_nmt_state.status);
 		return selftest_result::handled;
 	}
@@ -706,7 +707,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtmake(std::istringstream &w
 	words >> where >> band;
 	if (band > 0.0)
 		m_nmt_state.band = band;
-	nmt_make(where == "around" ? nmt_keys_around() : nmt_keys_along_tracks());
+	m_build_tools->terrain.nmt_build.nmt_make(where == "around" ? m_build_tools->terrain.nmt_build.nmt_keys_around() : m_build_tools->terrain.nmt_build.nmt_keys_along_tracks());
 	WriteLog("SELFTEST nmtmake " + where + ": " + m_nmt_state.status);
 	return selftest_result::handled;
 }
@@ -736,7 +737,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtoffer(std::istringstream &
 	if (north > 0.0 && east > 0.0 && m_nmt_state.prompt)
 	{
 		m_nmt_map.pick({east, north});
-		nmt_accept_offer();
+		m_build_tools->terrain.nmt_window.nmt_accept_offer();
 		WriteLog("SELFTEST nmtoffer taken: " + m_nmt_state.status);
 	}
 	return selftest_result::handled;
@@ -756,7 +757,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtgrow(std::istringstream &w
 	else if (chosen == "chosen")
 		m_lay.points.clear();
 	m_nmt_state.grow_time = -10.0;
-	nmt_grow();
+	m_build_tools->terrain.nmt_build.nmt_grow();
 	m_lay.active = active;
 	m_lay.points = points;
 	WriteLog(format("SELFTEST nmtgrow: %zu chunks waiting, grown %d", m_nmt_state.pending.size(), m_nmt_state.grown ? 1 : 0));
@@ -805,7 +806,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtcheck(std::istringstream &
 	std::size_t without{0};
 	std::size_t bridges{0};
 	std::vector<double> offs;
-	for (auto const &place : nmt_track_places(step))
+	for (auto const &place : m_build_tools->terrain.nmt_build.nmt_track_places(step))
 	{
 		if (false == place.shapes)
 		{
@@ -879,7 +880,7 @@ editor_mode::selftest_result editor_mode::selftest_turntables() const
 {
 	// each turntable: the height of its rails and of the model in its pit; of each track running up to it the heights out along
 	// its line from the rim, the model there under the rails beside them, and how far from the rim the line keeps level
-	for (auto const &table : nmt_turntables())
+	for (auto const &table : m_build_tools->terrain.nmt_auto.nmt_turntables())
 	{
 		auto const &points{table.table->m_paths.front().points};
 		double pit{std::numeric_limits<double>::quiet_NaN()};
@@ -901,10 +902,7 @@ editor_mode::selftest_result editor_mode::selftest_fittedstate(std::istringstrea
 	std::string reload;
 	words >> reload;
 	if (reload == "reload")
-	{
-		m_fitted.clear();
-		m_fitted_loaded = false;
-	}
+		m_build_tools->profiles.library.fitted_forget();
 	std::size_t rails{0};
 	std::size_t done{0};
 	std::string names;
@@ -913,7 +911,7 @@ editor_mode::selftest_result editor_mode::selftest_fittedstate(std::istringstrea
 		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0)
 			continue;
 		++rails;
-		if (false == grade_fitted(*track))
+		if (false == m_build_tools->profiles.library.grade_fitted(*track))
 			continue;
 		++done;
 		if (names.size() < 200)
@@ -922,7 +920,7 @@ editor_mode::selftest_result editor_mode::selftest_fittedstate(std::istringstrea
 	std::size_t written{0};
 	for (auto const layer : scene::Layers.marked_layers("//$t"))
 		written += scene::Layers.marked(layer, "//$t").size();
-	WriteLog(format("SELFTEST fittedstate: %zu of %zu tracks fitted, %zu marks kept, %zu lines for the files;", done, rails, m_fitted.size(), written) + names);
+	WriteLog(format("SELFTEST fittedstate: %zu of %zu tracks fitted, %zu marks kept, %zu lines for the files;", done, rails, m_build_tools->profiles.library.fitted_count(), written) + names);
 	return selftest_result::handled;
 }
 
@@ -961,7 +959,7 @@ editor_mode::selftest_result editor_mode::selftest_nmtprobe(std::istringstream &
 	std::string name;
 	double step{250.0};
 	words >> name >> step;
-	auto const places{nmt_track_places(step)};
+	auto const places{m_build_tools->terrain.nmt_build.nmt_track_places(step)};
 	for (std::size_t i = 0; i + 1 < places.size(); ++i)
 	{
 		auto const &place{places[i]};
@@ -983,9 +981,9 @@ editor_mode::selftest_result editor_mode::selftest_trackterrain(std::istringstre
 		if (auto *track{simulation::Paths.find(name)})
 			tracks.push_back(track);
 	if (action == "pull")
-		nmt_pull_terrain(tracks);
+		m_build_tools->terrain.nmt_build.nmt_pull_terrain(tracks);
 	else
-		nmt_restore_terrain(tracks);
+		m_build_tools->terrain.nmt_build.nmt_restore_terrain(tracks);
 	WriteLog(format("SELFTEST trackterrain %s %zu tracks: %s, %zu modifiers", action.c_str(), tracks.size(), m_nmt_state.status.c_str(), m_streamer.modifiers().size()));
 	return selftest_result::handled;
 }
@@ -1368,7 +1366,7 @@ void stream_track_fit(std::ostream &Stream, TTrack const &Track, int const Line,
 // the number of the grade line the track shares, or the one of its own
 int editor_mode::track_grade_line(TTrack const &Track) const
 {
-	auto const found{m_nmt_state.grade_lines.find(grade_line_key(Track))};
+	auto const found{m_nmt_state.grade_lines.find(grade_line_tool::grade_line_key(Track))};
 	return found != m_nmt_state.grade_lines.end() ? found->second : nmt_state::grade_line_own;
 }
 
@@ -1419,9 +1417,9 @@ editor_mode::selftest_result editor_mode::selftest_gradeline(std::istringstream 
 		gradeline_bump(words, value);
 	if (false == gradeline_action(action, word, value, words))
 		gradeline_other(action, word, value, words);
-	grade_lines_load();
-	auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(grade_line_key(*state.route.spans.front().track))};
-	WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines, %zu by hand", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size(), m_nmt_state.grade_lines_hand.size()));
+	m_build_tools->profiles.grade_lines.grade_lines_load();
+	auto const found{state.route.spans.empty() ? m_nmt_state.grade_lines.end() : m_nmt_state.grade_lines.find(grade_line_tool::grade_line_key(*state.route.spans.front().track))};
+	WriteLog(format("SELFTEST gradeline %s: route %zu tracks, of line %d, %zu beside, whole %d, %zu tracks on lines, %zu by hand", action.c_str(), state.route.spans.size(), found != m_nmt_state.grade_lines.end() ? found->second : -100, m_build_tools->profiles.grade_lines.grade_line_beside().size(), state.whole_grade_line ? 1 : 0, m_nmt_state.grade_lines.size(), m_nmt_state.grade_lines_hand.size()));
 	return selftest_result::handled;
 }
 
@@ -1437,7 +1435,7 @@ void editor_mode::gradeline_part(std::istringstream &words, double const value)
 	auto const index{std::distance(spans.begin(), at)};
 	auto *first{spans[std::max<std::ptrdiff_t>(0, index - static_cast<std::ptrdiff_t>(value))].track};
 	auto *last{spans[std::min<std::ptrdiff_t>(spans.size() - 1, index + static_cast<std::ptrdiff_t>(value))].track};
-	profile_open(first, last);
+	m_build_tools->profiles.profile_edit.profile_open(first, last);
 }
 
 // a point more in the middle of the route, up by that much, and applied
@@ -1451,8 +1449,8 @@ void editor_mode::gradeline_bump(std::istringstream &words, double const value)
 	point.elevation = profile::elevation(state.line, point.chainage) + value;
 	auto &points{state.line.points};
 	points.insert(std::ranges::lower_bound(points, point.chainage, {}, &profile::pvi::chainage), point);
-	profile_edited();
-	profile_apply(false);
+	m_build_tools->profiles.profile_edit.profile_edited();
+	m_build_tools->profiles.profile_edit.profile_apply(false);
 	WriteLog("SELFTEST gradeline bump: " + state.status + " " + state.error);
 	for (auto const &issue : state.issues | std::views::filter([](auto const &Issue) { return Issue.error; }))
 		WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
@@ -1466,14 +1464,14 @@ bool editor_mode::gradeline_action(std::string const &action, std::string const 
 	{
 		for (auto &point : state.line.points)
 			point.elevation += value;
-		profile_check();
-		profile_apply(false);
+		m_build_tools->profiles.profile_edit.profile_check();
+		m_build_tools->profiles.profile_edit.profile_apply(false);
 		WriteLog("SELFTEST gradeline lift: " + state.status + " " + state.error);
 		for (auto const &issue : state.issues | std::views::filter([](auto const &Issue) { return Issue.error; }))
 			WriteLog(format("SELFTEST gradeline error at %.1f: %s", issue.chainage, issue.text.c_str()));
 	}
 	else if (action == "off" || action == "on")
-		grade_line_take_off(action == "off");
+		m_build_tools->profiles.grade_lines.grade_line_take_off(action == "off");
 	else if (action == "picking")
 		state.picking = value != 0.0;
 	else if (action == "move")
@@ -1486,7 +1484,7 @@ bool editor_mode::gradeline_action(std::string const &action, std::string const 
 		std::vector<TTrack *> tracks;
 		for (auto const &span : state.route.spans)
 			tracks.push_back(span.track);
-		fitted_set(tracks, true);
+		m_build_tools->profiles.library.fitted_set(tracks, true);
 	}
 	else
 		return false;
@@ -1524,8 +1522,8 @@ void editor_mode::gradeline_of(std::string const &action, std::string const &nam
 	auto *track{name == "selected" ? selected_track() : simulation::Paths.find(name)};
 	if (track != nullptr && action == "rename" && false == renamed.empty())
 		editor_track::rename(*track, renamed);
-	grade_lines_load();
-	auto const found{track != nullptr ? m_nmt_state.grade_lines.find(grade_line_key(*track)) : m_nmt_state.grade_lines.end()};
+	m_build_tools->profiles.grade_lines.grade_lines_load();
+	auto const found{track != nullptr ? m_nmt_state.grade_lines.find(grade_line_tool::grade_line_key(*track)) : m_nmt_state.grade_lines.end()};
 	WriteLog(format("SELFTEST gradeline %s %s: %s, line %d%s", action.c_str(), name.c_str(), track != nullptr ? track->name().c_str() : "-", found != m_nmt_state.grade_lines.end() ? found->second : -100,
 	                found != m_nmt_state.grade_lines.end() && m_nmt_state.grade_lines_hand.contains(found->first) ? " by hand" : ""));
 }
@@ -1539,9 +1537,9 @@ void editor_mode::gradeline_pick(double const x, std::istringstream &words)
 	glm::dvec3 const point{x, 0.0, z};
 	auto *const closest{nearest_not_table(point, 10.0)};
 	if (closest != nullptr)
-		grade_line_pick(*closest, alone != 0);
-	auto const number{route_grade_line()};
-	WriteLog(format("SELFTEST gradeline pick %s: %s; the route on line %d of %zu tracks", closest != nullptr ? closest->name().c_str() : "-", m_profile.status.c_str(), number, grade_line_members(number).size()));
+		m_build_tools->profiles.grade_lines.grade_line_pick(*closest, alone != 0);
+	auto const number{m_build_tools->profiles.grade_lines.route_grade_line()};
+	WriteLog(format("SELFTEST gradeline pick %s: %s; the route on line %d of %zu tracks", closest != nullptr ? closest->name().c_str() : "-", m_profile.status.c_str(), number, m_build_tools->profiles.grade_lines.grade_line_members(number).size()));
 }
 
 // the heights of the ends of the paths of all the tracks to the file, for two states of the scenery to be compared, the stay of each
@@ -1552,9 +1550,9 @@ editor_mode::selftest_result editor_mode::selftest_trackheights(std::istringstre
 	std::ofstream stream{file};
 	stream << std::fixed << std::setprecision(4);
 	auto const grade_mark = [this](TTrack const &Track) {
-		if (grade_hand(Track))
+		if (m_build_tools->profiles.library.grade_hand(Track))
 			return 'h';
-		return grade_fitted(Track) ? 'f' : 'n';
+		return m_build_tools->profiles.library.grade_fitted(Track) ? 'f' : 'n';
 	};
 	// the heights of the ends of each path of the track
 	auto const heights_of = [&stream, &grade_mark](TTrack const &Track) {
@@ -1611,7 +1609,7 @@ editor_mode::selftest_result editor_mode::selftest_profiledump(std::istringstrea
 // the number of the grade line the track shares, -100 where it has none
 int editor_mode::beside_line(TTrack const &Track) const
 {
-	auto const found{m_nmt_state.grade_lines.find(grade_line_key(Track))};
+	auto const found{m_nmt_state.grade_lines.find(grade_line_tool::grade_line_key(Track))};
 	return found != m_nmt_state.grade_lines.end() ? found->second : -100;
 }
 
@@ -1652,11 +1650,11 @@ editor_mode::selftest_result editor_mode::selftest_besidedump(std::istringstream
 	words >> file;
 	std::ofstream stream{file, std::ios::app};
 	stream << std::fixed << std::setprecision(3);
-	grade_lines_load();
+	m_build_tools->profiles.grade_lines.grade_lines_load();
 	auto const grade_mark = [this](TTrack const &Track) {
-		if (grade_hand(Track))
+		if (m_build_tools->profiles.library.grade_hand(Track))
 			return 'h';
-		return grade_fitted(Track) ? 'f' : 'n';
+		return m_build_tools->profiles.library.grade_fitted(Track) ? 'f' : 'n';
 	};
 	std::unordered_set<TTrack const *> route;
 	for (auto const &span : m_profile.route.spans)
@@ -1691,14 +1689,14 @@ void editor_mode::profile_audit(std::size_t const Index, std::size_t &Gone, std:
 	auto const entry{m_profiles[Index]};
 	TTrack *from{nullptr};
 	TTrack *to{nullptr};
-	auto const stored{profile_stored_route(entry, &from, &to).has_value()};
+	auto const stored{m_build_tools->profiles.library.profile_stored_route(entry, &from, &to).has_value()};
 	// what the route between the ends found is against the design
 	if (false == stored && ++Gone <= 5)
 		WriteLog(format("SELFTEST profileaudit: no route for the design of %.1f m from %.2f %.2f %.2f to %.2f %.2f %.2f;%s", entry.length, entry.start.x, entry.start.y, entry.start.z, entry.end.x, entry.end.y, entry.end.z,
 		                design_routes(entry.start, entry.end, entry.middle).c_str()));
 	if (false == stored)
 		return;
-	profile_open_stored(Index);
+	m_build_tools->profiles.library.profile_open_stored(Index);
 	// the design leaves the track by more than what it's read again from it for
 	if (m_profile.departure > 0.02)
 	{
@@ -1718,7 +1716,7 @@ void editor_mode::profile_audit(std::size_t const Index, std::size_t &Gone, std:
 editor_mode::selftest_result editor_mode::selftest_profileaudit()
 {
 	// every design kept in the scenery opened as the profile opens it: how many have errors, how many were read from the track again
-	profile_library_load();
+	m_build_tools->profiles.library.profile_library_load();
 	std::size_t gone{0};
 	std::size_t failing{0};
 	std::size_t retaken{0};

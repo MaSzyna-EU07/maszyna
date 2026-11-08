@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -263,7 +264,7 @@ void render_pick_button(bool &Picking, bool const Shared)
 } // namespace
 
 // the ends of the path up or down by these, what's between them in proportion; After is given the path and each of its pieces then
-void editor_mode::move_path_heights(segment_data &Path, double const First, double const Second, std::function<void(segment_data &)> const &After)
+void grade_line_tool::move_path_heights(segment_data &Path, double const First, double const Second, std::function<void(segment_data &)> const &After)
 {
 	auto const origin{Path.points[segment_data::point::start]};
 	auto const chord{geometry::plan_of(Path.points[segment_data::point::end] - origin)};
@@ -290,12 +291,12 @@ void editor_mode::move_path_heights(segment_data &Path, double const First, doub
 
 // a track on a grade line is told by its name and where it starts in the plan: scenery files have names used twice, and the height of a
 // track on the line changes with it
-std::string editor_mode::grade_line_key(TTrack const &Track)
+std::string grade_line_tool::grade_line_key(TTrack const &Track)
 {
 	return grade_line_key(Track.name(), Track);
 }
 
-std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &Track)
+std::string grade_line_tool::grade_line_key(std::string const &Name, TTrack const &Track)
 {
 	if (Track.m_paths.empty())
 		return Name;
@@ -304,7 +305,7 @@ std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &T
 }
 
 // the grade lines shared go to the scenery files as "//$w" comment lines, by those keys
-void editor_mode::grade_lines_load()
+void grade_line_tool::grade_lines_load()
 {
 	auto &state{m_nmt_state};
 	if (state.grade_lines_loaded)
@@ -327,7 +328,7 @@ void editor_mode::grade_lines_load()
 		}
 }
 
-void editor_mode::grade_lines_store()
+void grade_line_tool::grade_lines_store()
 {
 	if (scene::Layers.empty())
 		return;
@@ -356,7 +357,7 @@ void editor_mode::grade_lines_store()
 			scene::Layers.mark(layer, kGradeLineMark, std::move(those));
 }
 
-bool editor_mode::on_route_grade_line(TTrack const &Track)
+bool grade_line_tool::on_route_grade_line(TTrack const &Track)
 {
 	grade_lines_load();
 	auto const &lines{m_nmt_state.grade_lines};
@@ -369,7 +370,7 @@ bool editor_mode::on_route_grade_line(TTrack const &Track)
 	});
 }
 
-std::vector<TTrack *> const &editor_mode::grade_line_beside()
+std::vector<TTrack *> const &grade_line_tool::grade_line_beside()
 {
 	double constexpr kBeside{200.0}; // m from the route, the width of a station; farther it has nothing to do with this one
 	auto &state{m_profile};
@@ -408,7 +409,7 @@ std::vector<TTrack *> const &editor_mode::grade_line_beside()
 // the tracks beside the route on the grade line it shares go up and down with it, by what it changed by abreast of them, however far
 // across the station: a surface on common timbers stays one. Past the ends of the route the change fades from kFollow to kLeave beyond
 // them; a track joined to them from off the grade line takes the change at that end only
-std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sample> const &Before)
+std::size_t grade_line_tool::grade_line_follow(std::vector<editor_track::route_sample> const &Before)
 {
 	auto const &state{m_profile};
 	auto const &after{state.samples};
@@ -447,13 +448,13 @@ std::size_t editor_mode::grade_line_follow(std::vector<editor_track::route_sampl
 	if (moved.empty())
 		return 0;
 	editor_track::commit(moved);
-	push_track_snapshot(std::move(edit.states), {});
-	join_last_steps();
-	fitted_set(moved, true);
+	m_services.push_track_snapshot(std::move(edit.states), {});
+	m_build.join_last_history_steps();
+	m_library.fitted_set(moved, true);
 	return moved.size();
 }
 
-void editor_mode::grade_line_take_off(bool const Off)
+void grade_line_tool::grade_line_take_off(bool const Off)
 {
 	auto &lines{m_nmt_state.grade_lines};
 	std::size_t changed{0};
@@ -481,7 +482,7 @@ void editor_mode::grade_line_take_off(bool const Off)
 	m_profile.status = format(Off ? STR_P("%zu track taken off the common grade line, it goes on its own now", "%zu tracks taken off the common grade line, they go on their own now", changed) : STR_P("%zu track back on the common grade line", "%zu tracks back on the common grade line", changed), changed);
 }
 
-int editor_mode::route_grade_line()
+int grade_line_tool::route_grade_line()
 {
 	grade_lines_load();
 	std::map<int, double> lengths;
@@ -499,7 +500,7 @@ int editor_mode::route_grade_line()
 	return best;
 }
 
-std::vector<TTrack *> editor_mode::grade_line_run(TTrack &Track, bool const Alone)
+std::vector<TTrack *> grade_line_tool::grade_line_run(TTrack &Track, bool const Alone)
 {
 	std::vector run{&Track};
 	if (Alone || Track.eType != tt_Normal)
@@ -522,7 +523,7 @@ std::vector<TTrack *> editor_mode::grade_line_run(TTrack &Track, bool const Alon
 
 // put on by hand, or taken off, the tracks stay so when the lines are worked out again: a map of fiction has no terrain model to tell
 // them by
-void editor_mode::grade_line_pick(TTrack &Track, bool const Alone)
+void grade_line_tool::grade_line_pick(TTrack &Track, bool const Alone)
 {
 	auto &state{m_profile};
 	auto &lines{m_nmt_state.grade_lines};
@@ -561,7 +562,7 @@ void editor_mode::grade_line_pick(TTrack &Track, bool const Alone)
 	grade_lines_store();
 }
 
-void editor_mode::grade_line_put_on(std::vector<TTrack *> const &Run, std::unordered_set<TTrack const *> const &Route, int const Number)
+void grade_line_tool::grade_line_put_on(std::vector<TTrack *> const &Run, std::unordered_set<TTrack const *> const &Route, int const Number)
 {
 	auto &lines{m_nmt_state.grade_lines};
 	auto &hand{m_nmt_state.grade_lines_hand};
@@ -599,7 +600,7 @@ void editor_mode::grade_line_put_on(std::vector<TTrack *> const &Run, std::unord
 	                          changed);
 }
 
-void editor_mode::grade_line_split(TTrack const &Original, TTrack const &Created)
+void grade_line_tool::grade_line_split(TTrack const &Original, TTrack const &Created)
 {
 	grade_lines_load();
 	auto &lines{m_nmt_state.grade_lines};
@@ -616,7 +617,7 @@ void editor_mode::grade_line_split(TTrack const &Original, TTrack const &Created
 	m_nmt_state.grade_lines_dirty = true;
 }
 
-void editor_mode::grade_line_captured(TTrack const &Track)
+void grade_line_tool::grade_line_captured(TTrack const &Track)
 {
 	if (scene::Layers.empty())
 		return;
@@ -631,7 +632,7 @@ void editor_mode::grade_line_captured(TTrack const &Track)
 // track never changed before is new: one lying where a track of a line lay before the change takes its line, so the pieces of it laid
 // anew and a switch put into it; one between two tracks of a line at the ends of its first path lies on it, put on by hand if both of
 // them are, so the link of a crossover between two switches of it
-void editor_mode::grade_lines_committed(std::vector<TTrack *> const &Tracks)
+void grade_line_tool::grade_lines_committed(std::vector<TTrack *> const &Tracks)
 {
 	auto &state{m_nmt_state};
 	if (false == state.grade_lines_loaded)
@@ -677,7 +678,7 @@ void editor_mode::grade_lines_committed(std::vector<TTrack *> const &Tracks)
 	}
 }
 
-bool editor_mode::grade_lines_take_replaced(std::vector<TTrack *> &Fresh)
+bool grade_line_tool::grade_lines_take_replaced(std::vector<TTrack *> &Fresh)
 {
 	auto &state{m_nmt_state};
 	auto &lines{state.grade_lines};
@@ -699,7 +700,7 @@ bool editor_mode::grade_lines_take_replaced(std::vector<TTrack *> &Fresh)
 	return changed;
 }
 
-std::map<int, bool> editor_mode::grade_lines_at(TTrack const &Track, glm::dvec3 const &Point) const
+std::map<int, bool> grade_line_tool::grade_lines_at(TTrack const &Track, glm::dvec3 const &Point) const
 {
 	auto const &lines{m_nmt_state.grade_lines};
 	auto const &hand{m_nmt_state.grade_lines_hand};
@@ -714,7 +715,7 @@ std::map<int, bool> editor_mode::grade_lines_at(TTrack const &Track, glm::dvec3 
 	return found;
 }
 
-std::pair<int, bool> editor_mode::grade_line_between(TTrack const &Track) const
+std::pair<int, bool> grade_line_tool::grade_line_between(TTrack const &Track) const
 {
 	auto const &path{Track.m_paths.front()};
 	auto const start{grade_lines_at(Track, path.points[segment_data::point::start])};
@@ -733,7 +734,7 @@ std::pair<int, bool> editor_mode::grade_line_between(TTrack const &Track) const
 	return {number, byhand};
 }
 
-bool editor_mode::grade_lines_take_joined(std::vector<TTrack *> &Fresh)
+bool grade_line_tool::grade_lines_take_joined(std::vector<TTrack *> &Fresh)
 {
 	auto &state{m_nmt_state};
 	auto changed{false};
@@ -763,7 +764,7 @@ bool editor_mode::grade_lines_take_joined(std::vector<TTrack *> &Fresh)
 	return changed;
 }
 
-void editor_mode::grade_line_renamed(TTrack const &Track, std::string const &Old)
+void grade_line_tool::grade_line_renamed(TTrack const &Track, std::string const &Old)
 {
 	if (Old.empty() || scene::Layers.empty())
 		return;
@@ -785,7 +786,7 @@ void editor_mode::grade_line_renamed(TTrack const &Track, std::string const &Old
 		known->second = to;
 }
 
-std::vector<TTrack const *> const &editor_mode::grade_line_members(int const Number)
+std::vector<TTrack const *> const &grade_line_tool::grade_line_members(int const Number)
 {
 	auto &state{m_profile};
 	std::tuple<int, std::size_t, std::size_t> const of{Number, m_nmt_state.grade_lines_changes, static_cast<std::size_t>(m_track_edits)};
@@ -805,7 +806,7 @@ std::vector<TTrack const *> const &editor_mode::grade_line_members(int const Num
 
 // while they're picked: the tracks of the grade line of the route wherever they are, the run under the mouse in the colour of what a
 // click does with it
-void editor_mode::draw_grade_line_pick()
+void grade_line_tool::draw_grade_line_pick()
 {
 	if (auto const &state{m_profile}; false == state.open || false == state.picking || state.route.spans.empty())
 		return;
@@ -828,15 +829,17 @@ void editor_mode::draw_grade_line_pick()
 	auto const number{route_grade_line()};
 	for (auto const *track : grade_line_members(number))
 		draw(*track, IM_COL32(70, 170, 255, 220), 3.0f);
-	if (m_intent.what != track_intent::kind::grade_line_pick || m_intent.track == nullptr)
+	int index{0};
+	auto *const aimed{m_build.grade_line_pick_aimed(index)};
+	if (aimed == nullptr)
 		return;
-	auto const found{m_nmt_state.grade_lines.find(grade_line_key(*m_intent.track))};
+	auto const found{m_nmt_state.grade_lines.find(grade_line_key(*aimed))};
 	auto const leaving{number >= 0 && found != m_nmt_state.grade_lines.end() && found->second == number};
-	for (auto const *track : grade_line_run(*m_intent.track, m_intent.index == 1))
+	for (auto const *track : grade_line_run(*aimed, index == 1))
 		draw(*track, leaving ? IM_COL32(255, 90, 70, 235) : IM_COL32(90, 230, 110, 235), 5.0f);
 }
 
-void editor_mode::render_profile_grade_line()
+void grade_line_tool::render_profile_grade_line()
 {
 	auto &state{m_profile};
 	grade_lines_load();
@@ -872,4 +875,26 @@ void editor_mode::render_profile_grade_line()
 			grade_line_take_off(false);
 		item_tooltip("The route lies on the common grade line again. Its height doesn't change by this; if it's off the tracks beside, fit it to them with the grade line or by working out the lines anew");
 	}
+}
+
+// what the rest of the editor calls, kept on editor_mode: done by the build tools
+
+std::string editor_mode::grade_line_key(TTrack const &Track)
+{
+	return grade_line_tool::grade_line_key(Track);
+}
+
+std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &Track)
+{
+	return grade_line_tool::grade_line_key(Name, Track);
+}
+
+int editor_mode::route_grade_line()
+{
+	return m_build_tools->profiles.grade_lines.route_grade_line();
+}
+
+void editor_mode::grade_line_pick(TTrack &Track, bool const Alone)
+{
+	m_build_tools->profiles.grade_lines.grade_line_pick(Track, Alone);
 }

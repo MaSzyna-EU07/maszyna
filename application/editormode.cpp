@@ -577,7 +577,7 @@ editor_mode::editor_mode() {
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
 	ui()->set_workspace_bar([this]() { render_workspaces(); });
 	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
-	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
+	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { m_build_tools->road.render_options(); }, [this]() { m_build_tools->road.render_road_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
 	ui()->set_workspace_bank(editor_ui::workspace::terrain, [this]() { render_texture_browser(); }, STR("Textures"));
 	// a node picked in the scene window is selected as if clicked in the view; a double click flies the camera to it
@@ -596,7 +596,7 @@ editor_mode::editor_mode() {
 		ui()->set_node(m_node);
 	});
 	ui()->set_array_options([this]() { render_array(); });
-	ui()->set_bend_options([this]() { render_bend(); });
+	ui()->set_bend_options([this]() { m_build_tools->bend.render_bend(); });
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
@@ -609,7 +609,6 @@ editor_mode::editor_mode() {
 		render_help_menu();
 	});
 	m_roadtool.settings.normalize();
-	road_select(nullptr);
 	ground_sources(m_orthophoto);
 	ui()->set_base_layers([this]() { render_base_layers(); });
 	make_build_tools();
@@ -627,7 +626,7 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
-		if (nmt_ground(X, Z, Height))
+		if (m_build_tools->terrain.nmt_build.nmt_ground(X, Z, Height))
 			return true;
 		// asked for, the tile goes onto it once it comes
 		if (m_nmt.placed())
@@ -979,7 +978,7 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
 
     if (ui()->node() == node)
         ui()->set_node(nullptr);
-    infra_forget(node);
+    m_build_tools->binder.infra_forget(node);
     for (auto *tool : m_tools)
         tool->forget(node);
 
@@ -1019,7 +1018,7 @@ void editor_mode::terrain_history_step()
     if (false == m_streamer.active())
         return;
     // the terrain loaded from the model is taken back as a whole
-    if (nmt_busy() && false == m_history_busy)
+    if (m_build_tools->terrain.nmt_build.nmt_busy() && false == m_history_busy)
         return;
     if (m_streamer.recording())
     {
@@ -1469,8 +1468,8 @@ bool editor_mode::update()
     simulation::State.update_clocks();
     simulation::Environment.update();
     // bindings are matched with the objects by their locations, before anything gets moved
-    if (false == m_bindings_loaded && simulation::is_ready)
-        infra_load();
+    if (false == m_build_tools->binder.bindings_loaded() && simulation::is_ready)
+        m_build_tools->binder.infra_load();
     // the templates are looked for in the background from the start, for the tools to have them at hand
     if (simulation::is_ready)
     {
@@ -1612,16 +1611,16 @@ bool editor_mode::update()
     steps.step("orthophoto");
     update_wms_layers();
     steps.step("wms");
-    nmt_update();
+    m_build_tools->terrain.nmt_build.nmt_update();
     keep_nmt_settings();
     steps.step("nmt");
     // what's drawn over the 3d view stays in it, the docks around it are see-through a little
     auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
     background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
     draw_orthophoto();
-    draw_nmt_pending();
-    area_update();
-    draw_download_area();
+    m_build_tools->terrain.nmt_window.draw_nmt_pending();
+    m_build_tools->terrain.download_area.area_update();
+    m_build_tools->terrain.download_area.draw_download_area();
     steps.step("imagery");
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
@@ -1641,10 +1640,10 @@ bool editor_mode::update()
         draw_track_lines();
     if (selected_track())
         draw_track_overlay();
-    if (route_active())
-        draw_route_overlay();
+    if (m_build_tools->routes.designer.route_active())
+        m_build_tools->routes.route_view.draw_route_overlay();
     if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::straights)
-        draw_straights_overlay();
+        m_build_tools->routes.straight_edit.draw_straights_overlay();
     steps.step("track lines");
     if (ui()->mode() == nodebank_panel::TRACK)
     {
@@ -1693,7 +1692,7 @@ bool editor_mode::update()
         if (m_nmt_state.grade_lines_dirty)
         {
             m_nmt_state.grade_lines_dirty = false;
-            grade_lines_store();
+            m_build_tools->profiles.grade_lines.grade_lines_store();
         }
         m_nmt_state.grade_line_replaced.clear();
         m_rail_tools->srk.update();
@@ -1702,9 +1701,9 @@ bool editor_mode::update()
         steps.step("srk km");
         draw_track_hints();
         draw_empty_scenery_hint();
-        draw_profile_overlay();
-        draw_grade_line_pick();
-        draw_infra_overlay();
+        m_build_tools->profiles.profile_window.draw_profile_overlay();
+        m_build_tools->profiles.grade_lines.draw_grade_line_pick();
+        m_build_tools->infra_view.draw_infra_overlay();
         m_rail_tools->speed.draw_overlay();
         m_joints.draw_overlay();
         m_rail_tools->srk.draw_overlay();
@@ -1713,17 +1712,17 @@ bool editor_mode::update()
     }
     else
     {
-        draw_sweep_overlay();
+        m_build_tools->sweep.draw_overlay();
         m_sweep.open = false;
-        bend_drag_update();
-        draw_bend_overlay();
+        m_build_tools->bend.bend_drag_update();
+        m_build_tools->bend.draw_overlay();
     }
     m_gauge.update();
     m_gauge.render_windows();
 
     // roads: trajectories of the lanes, and the tools of the road window
-    update_road_tool();
-    draw_road_overlay();
+    m_build_tools->road.update();
+    m_build_tools->road.draw_overlay();
     // the roads and the terrain are fields of work, their tools are drawn in the tool options window in place of the edit mode ones
     ui()->set_workspace(m_terrain_open ? editor_ui::workspace::terrain : m_roadtool.window ? editor_ui::workspace::roads : editor_ui::workspace::none);
 
@@ -1741,10 +1740,10 @@ bool editor_mode::update()
     render_open_scenery_popup();
     render_shortcuts_window();
     render_first_steps();
-    render_nmt_prompt();
-    render_nmt_banner();
-    render_nmt_buried();
-    render_empty_scenery_hint();
+    m_build_tools->terrain.nmt_window.render_nmt_prompt();
+    m_build_tools->terrain.nmt_window.render_nmt_banner();
+    m_build_tools->terrain.nmt_window.render_nmt_buried();
+    m_build_tools->terrain.nmt_window.render_empty_scenery_hint();
     m_rail_tools->switch_designer.render_windows();
     render_environment_window();
     draw_selection_overlay();
@@ -1836,7 +1835,7 @@ void editor_mode::render_terrain_ui()
         ImGui::TextUnformatted(STR_C("The scenery has no terrain yet"));
         // the terrain model makes the terrain itself
         if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
-            render_nmt_ui();
+            m_build_tools->terrain.nmt_window.render_nmt_ui();
         ImGui::Spacing();
         ImGui::TextDisabled("%s", STR_C("Or without the real ground:"));
         if (ImGui::Button(STR_C("Make an empty, flat terrain")))
@@ -1846,10 +1845,10 @@ void editor_mode::render_terrain_ui()
         return;
     }
     // the real terrain first, open: the tracks put onto it from there
-    if (nmt_busy())
+    if (m_build_tools->terrain.nmt_build.nmt_busy())
         ImGui::SetNextItemOpen(true);
     if (ImGui::CollapsingHeader(STR_C("Terrain model (NMT)"), ImGuiTreeNodeFlags_DefaultOpen))
-        render_nmt_ui();
+        m_build_tools->terrain.nmt_window.render_nmt_ui();
 
     // the tools are chosen in the toolbar, here are their settings
     if (ImGui::CollapsingHeader(STR_C("Chunks"), m_terrain_tool == terrain_tool::chunks ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -2589,7 +2588,7 @@ void editor_mode::render_orthophoto_ui()
     }
 
     ImGui::Separator();
-    render_download_area_ui(stats);
+    m_build_tools->terrain.download_area.render_download_area_ui(stats);
     ImGui::Separator();
 
     if (ImGui::TreeNode(STR_C("More settings")))
@@ -3255,10 +3254,10 @@ bool editor_mode::save()
     }
 
     if (m_profile.changed)
-        profile_store();
+        m_build_tools->profiles.library.profile_store();
     switch_store::tidy();
     switch_store::settle();
-    infra_store();
+    m_build_tools->binder.infra_store();
     m_rail_tools->srk.store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
@@ -5318,7 +5317,7 @@ void editor_mode::render_edit_menu()
 		m_track_search.focus = true;
 	}
 	if (ImGui::MenuItem(STR_C("Bend the selected along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
-		bend_shortcut();
+		m_build_tools->bend.bend_shortcut();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Bends the selected model, e.g. a platform edge or a fence, along the nearest track; the settings are in the inspector"));
 	ImGui::EndMenu();
@@ -6441,15 +6440,15 @@ void editor_mode::render_gizmo_options()
 
 void editor_mode::render_gizmo()
 {
-    if (straights_active())
+    if (m_build_tools->routes.straight_edit.straights_active())
     {
-        render_straight_gizmo();
+        m_build_tools->routes.straight_edit.render_straight_gizmo();
         return;
     }
 
-    if (route_active())
+    if (m_build_tools->routes.designer.route_active())
     {
-        render_route_gizmo();
+        m_build_tools->routes.route_view.render_route_gizmo();
         return;
     }
 
@@ -6714,7 +6713,7 @@ void editor_mode::toggle_ortho()
     {
         Camera.Angle.x = m_ortho_pitch;
         ortho_pan_stop();
-        camera_above_ground();
+        m_build_tools->terrain.nmt_window.camera_above_ground();
     }
 }
 
@@ -7036,7 +7035,7 @@ void editor_mode::erase_model(TAnimModel *model)
 void editor_mode::delete_selected()
 {
     // what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks
-    if (road_delete())
+    if (m_build_tools->road.road_delete())
         return;
     if (m_instance != 0 && signal_delete(m_instance))
         return;
@@ -7122,7 +7121,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_W: m_gizmo_op = gizmo_operation::rotate; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
         case GLFW_KEY_E: m_gizmo_op = gizmo_operation::scale; m_track_gizmo_on |= ui()->mode() == nodebank_panel::TRACK; break;
         case GLFW_KEY_R: m_gizmo_local = !m_gizmo_local; break;
-        case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && bend_shortcut(); break;
+        case GLFW_KEY_B: handled = ui()->mode() != nodebank_panel::TRACK && m_build_tools->bend.bend_shortcut(); break;
         case GLFW_KEY_F1: m_shortcuts_open = !m_shortcuts_open; break;
         // the fields of work in the order of their row
         case GLFW_KEY_F2: choose_work_area(work_area::surroundings); break;
@@ -7291,22 +7290,22 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // the download area being drawn given up, the one before stays
         if (is_press(Action) && m_area_drawing.active)
         {
-            area_finish(false);
+            m_build_tools->terrain.download_area.area_finish(false);
             break;
         }
         if (is_press(Action))
         {
-            road_cancel();
+            m_build_tools->road.road_cancel();
         }
         // the first Esc drops what is going on in the track mode, the next one goes back to the selection
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)
         {
             if (m_tape.active)
                 m_tape = {};
-            else if (m_route.trace.active && route_active())
-                route_trace_end(false);
+            else if (m_route.trace.active && m_build_tools->routes.designer.route_active())
+                m_build_tools->routes.route_view.route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
-                lay_escape();
+                m_build_tools->laying.lay_input.lay_escape();
             else if (m_rail_tools->track_style.picking())
                 m_rail_tools->track_style.stop_picking();
             else if (m_profile.picking)
@@ -7340,7 +7339,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         // laying: the bends of straights or a curve traced, for the points clicked from now on
         if (is_press(Action) && false == anyModifier && ui()->mode() == nodebank_panel::TRACK && m_lay.active && false == ImGui::GetIO().WantTextInput)
-            lay_switch_mode();
+            m_build_tools->laying.lay_input.lay_switch_mode();
         break;
 
     case GLFW_KEY_BACKSPACE:
@@ -7362,11 +7361,11 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
             m_fill_points.pop_back();
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
-            lay_back();
-        if (is_press(Action) && m_route.trace.active && route_active() && !m_route.trace.points.empty())
+            m_build_tools->laying.lay_input.lay_back();
+        if (is_press(Action) && m_route.trace.active && m_build_tools->routes.designer.route_active() && !m_route.trace.points.empty())
         {
             m_route.trace.points.pop_back();
-            route_trace_fit();
+            m_build_tools->routes.route_view.route_trace_fit();
         }
         break;
 
@@ -7376,23 +7375,23 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && m_area_drawing.active)
         {
             if (m_area_drawing.points.size() >= 3)
-                area_finish(true);
+                m_build_tools->terrain.download_area.area_finish(true);
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
-            lay_enter();
-        if (is_press(Action) && m_route.trace.active && route_active())
-            route_trace_end(true);
+            m_build_tools->laying.lay_input.lay_enter();
+        if (is_press(Action) && m_route.trace.active && m_build_tools->routes.designer.route_active())
+            m_build_tools->routes.route_view.route_trace_end(true);
         break;
 
     case GLFW_KEY_K:
-        if (is_press(Action) && road_split())
+        if (is_press(Action) && m_build_tools->road.road_split())
         {
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
         {
-            auto const under{split_spot()};
+            auto const under{m_build_tools->laying.planner.split_spot()};
             if (under.track != nullptr)
                 split_track_at(*under.track, under.point);
         }
@@ -7437,11 +7436,11 @@ void editor_mode::mouse_left_release()
     finish_track_box();
     point_drag_finish();
     m_handle_drag = {};
-    sweep_release();
+    m_build_tools->sweep.sweep_release();
     if (m_straights.tool_mouse)
-        finish_straight_gesture();
+        m_build_tools->routes.straight_edit.finish_straight_gesture();
     if (m_extend.active)
-        finish_extend();
+        m_build_tools->laying.extender.finish_extend();
     if (m_switch.placing)
     {
         // a press let go with no drag places no switch: the track it took is only selected, the ground with no track there
@@ -7490,7 +7489,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     if (m_area_drawing.active && Button == GLFW_MOUSE_BUTTON_LEFT)
     {
         if (is_press(Action))
-            area_click(Global.shiftState);
+            m_build_tools->terrain.download_area.area_click(Global.shiftState);
         else
             m_area_drawing.dragged = -1;
         m_input.mouse.button(Button, Action);
@@ -7531,23 +7530,23 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             // NOTE: the pick is resolved a few frames later, by then it's known whether the press was meant for the UI
             GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
                 if (viewport_click())
-                    road_click();
+                    m_build_tools->road.road_click();
             });
         }
         m_input.mouse.button(Button, Action);
         return;
     }
 
-    if (Button == GLFW_MOUSE_BUTTON_LEFT && is_press(Action) && false == m_bend.picking && ui()->mode() != nodebank_panel::TRACK && (bend_drag_start(Mods) || bend_click()))
+    if (Button == GLFW_MOUSE_BUTTON_LEFT && is_press(Action) && false == m_build_tools->bend_state.picking && ui()->mode() != nodebank_panel::TRACK && (m_build_tools->bend.bend_drag_start(Mods) || m_build_tools->bend.bend_click()))
     {
         m_input.mouse.button(Button, Action);
         return;
     }
 
-    if (m_bend.picking && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
+    if (m_build_tools->bend_state.picking && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
     {
         if (is_press(Action))
-            bend_pick(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
+            m_build_tools->bend.bend_pick(Global.pCamera.Pos + GfxRenderer->Mouse_Position());
         m_input.mouse.button(Button, Action);
         return;
     }

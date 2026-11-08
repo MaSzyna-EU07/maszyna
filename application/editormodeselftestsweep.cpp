@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "editor/editorSettings.hpp"
 #include "editor/editorGeometry.hpp"
 #include "application/application.h"
@@ -137,7 +138,7 @@ char const *presence_of(TTrack const *Track)
 
 } // namespace
 
-editor_mode::selftest_result editor_mode::selftest_sweep_lay(std::istringstream &words)
+editor_selftest_result sweep_editor::selftest_sweep_lay(std::istringstream &words)
 {
 	auto values{selftest_values(words)};
 	auto &tool{m_sweep};
@@ -156,7 +157,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep_lay(std::istringstream 
 		tool.parameters.emplace_back();
 		copy_text(tool.parameters.back(), parameter);
 	}
-	tool.parameters_for = tool.model;
+	tool.parameters_for = tool.model.data();
 	auto &settings{tool.settings};
 	settings.lateral = std::stod(get("lateral", "0"));
 	settings.height = std::stod(get("height", "0"));
@@ -178,7 +179,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep_lay(std::istringstream 
 		EditorSettings.platform_edge(std::stod(values["edge"]));
 	tool.measured.clear();
 	tool.open = true;
-	sweep_curve();
+	m_build.sweep_curve();
 	sweep_measure();
 	if (values.contains("widen"))
 		settings.widen = get("widen", "0") == "1";
@@ -192,15 +193,15 @@ editor_mode::selftest_result editor_mode::selftest_sweep_lay(std::istringstream 
 	return selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &command, std::istringstream &words)
+editor_selftest_result sweep_editor::selftest(std::string const &Command, std::istringstream &Words)
 {
-	if (command == "sweep")
-		return selftest_sweep_lay(words);
-	if (command == "drag")
+	if (Command == "sweep")
+		return selftest_sweep_lay(Words);
+	if (Command == "drag")
 	{
 		glm::dvec3 from{0.0};
 		glm::dvec3 to{0.0};
-		words >> from.x >> from.z >> to.x >> to.z;
+		Words >> from.x >> from.z >> to.x >> to.z;
 		m_sweep.open = true;
 		if (false == sweep_press_at(from, false))
 		{
@@ -212,6 +213,11 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		WriteLog("SELFTEST drag: " + m_sweep.status);
 		return selftest_result::handled;
 	}
+	return selftest_result::unhandled;
+}
+
+editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &command, std::istringstream &words)
+{
 	if (command == "spread")
 	{
 		std::string name;
@@ -245,7 +251,7 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 	return selftest_bend(command, words);
 }
 
-editor_mode::selftest_result editor_mode::selftest_bend_lay(std::istringstream &words)
+editor_selftest_result bend_editor::selftest_bend_lay(std::istringstream &words)
 {
 	auto values{selftest_values(words)};
 	auto &tool{m_bend};
@@ -258,11 +264,12 @@ editor_mode::selftest_result editor_mode::selftest_bend_lay(std::istringstream &
 	tool.axis = values.contains("axis") ? index_of(values["axis"], {"auto", "z", "x"}) : 0;
 	tool.turned = values["turned"] == "1";
 	bend_source source;
-	if (false == bend_source_of_selection(source))
+	if (false == m_build.bend_source_of_selection(source))
 	{
 		std::string reason;
-		auto const editable{m_node != nullptr && scene::Layers.editable(m_node, &reason)};
-		WriteLog(format("SELFTEST bend: nothing to bend (node %p template %d editable %d %s, instance %d)", static_cast<void *>(m_node), m_node != nullptr && m_node->from_template() ? 1 : 0, editable ? 1 : 0, reason.c_str(), static_cast<int>(m_instance)));
+		auto *const node{m_build.current_node()};
+		auto const editable{node != nullptr && scene::Layers.editable(node, &reason)};
+		WriteLog(format("SELFTEST bend: nothing to bend (node %p template %d editable %d %s, instance %d)", static_cast<void *>(node), node != nullptr && node->from_template() ? 1 : 0, editable ? 1 : 0, reason.c_str(), static_cast<int>(m_build.current_instance())));
 		return selftest_result::handled;
 	}
 	tool.tracks_for = nullptr;
@@ -288,7 +295,7 @@ editor_mode::selftest_result editor_mode::selftest_bend_lay(std::istringstream &
 	return selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_bend_set(std::istringstream &words)
+editor_selftest_result bend_editor::selftest_bend_set(std::istringstream &words)
 {
 	auto values{selftest_values(words)};
 	auto &tool{m_bend};
@@ -325,7 +332,7 @@ editor_mode::selftest_result editor_mode::selftest_bend_set(std::istringstream &
 	return selftest_result::handled;
 }
 
-editor_mode::selftest_result editor_mode::selftest_bend_probe() const
+editor_selftest_result bend_editor::selftest_bend_probe() const
 {
 	auto const *sweep{m_bend.edited};
 	if (sweep == nullptr)
@@ -355,14 +362,24 @@ editor_mode::selftest_result editor_mode::selftest_bend_probe() const
 	return selftest_result::handled;
 }
 
+editor_selftest_result bend_editor::selftest(std::string const &Command, std::istringstream &Words)
+{
+	if (Command == "bend")
+		return selftest_bend_lay(Words);
+	if (Command == "bendset")
+		return selftest_bend_set(Words);
+	if (Command == "bendprobe")
+		return selftest_bend_probe();
+	if (Command == "bendpanel")
+	{
+		m_build.build_ui()->expand_bend();
+		return selftest_result::handled;
+	}
+	return selftest_result::unhandled;
+}
+
 editor_mode::selftest_result editor_mode::selftest_bend(std::string const &command, std::istringstream &words)
 {
-	if (command == "bend")
-		return selftest_bend_lay(words);
-	if (command == "bendset")
-		return selftest_bend_set(words);
-	if (command == "bendprobe")
-		return selftest_bend_probe();
 	if (command == "lineside")
 	{
 		std::string tab;
@@ -376,11 +393,6 @@ editor_mode::selftest_result editor_mode::selftest_bend(std::string const &comma
 			m_fouling.tab().expand = true;
 		else
 			m_parallel.tab().expand = true;
-		return selftest_result::handled;
-	}
-	if (command == "bendpanel")
-	{
-		ui()->expand_bend();
 		return selftest_result::handled;
 	}
 	if (command == "ttincludes")

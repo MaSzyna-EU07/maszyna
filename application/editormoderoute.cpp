@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodebuildtools.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -534,18 +535,18 @@ bool render_vertex_kind(alignment::vertex &Vertex)
 
 } // namespace
 
-bool editor_mode::route_active() const
+bool route_designer::route_active() const
 {
-	return ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::route && false == m_route.chain.tracks.empty();
+	return m_build.build_ui()->mode() == nodebank_panel::TRACK && m_services.current_track_tab() == editor_track_tab::route && false == m_route.chain.tracks.empty();
 }
 
-void editor_mode::route_recommend(alignment::vertex &Vertex) const
+void route_designer::route_recommend(alignment::vertex &Vertex) const
 {
 	auto sharpest{Vertex.radius};
 	if (Vertex.compound)
 		for (auto const &arc : Vertex.arcs)
 			sharpest = std::min(sharpest, arc.radius);
-	auto const recommended{alignment::recommend(m_route.design.speed, sharpest, laying_norms())};
+	auto const recommended{alignment::recommend(m_route.design.speed, sharpest, m_build.lay_norms())};
 	Vertex.cant = recommended.cant;
 	// the cants of the arcs in proportion to their curvature, as the norms recommend them
 	Vertex.first_cant = -1.0;
@@ -553,10 +554,10 @@ void editor_mode::route_recommend(alignment::vertex &Vertex) const
 		arc.cant = -1.0;
 	Vertex.transition_in = recommended.transition;
 	Vertex.transition_out = recommended.transition;
-	alignment::recommend_between(Vertex, m_route.design.speed, laying_norms());
+	alignment::recommend_between(Vertex, m_route.design.speed, m_build.lay_norms());
 }
 
-void editor_mode::route_bind_ends()
+void route_designer::route_bind_ends()
 {
 	auto const &chain{m_route.chain};
 	auto &design{m_route.design};
@@ -574,7 +575,7 @@ void editor_mode::route_bind_ends()
 	design.end_reserve = editor_track::run_reserve(editor_track::straight_beyond(chain, true, m_straights.tolerance));
 }
 
-void editor_mode::route_reset()
+void route_designer::route_reset()
 {
 	auto &route{m_route};
 	route.chain = {};
@@ -624,10 +625,10 @@ void editor_mode::route_reset()
 			route.design.vertices.push_back(vertex);
 		}
 	}
-	route_update();
+	m_build.route_recompute();
 }
 
-bool editor_mode::route_from_curve(TTrack &Track)
+bool route_designer::route_from_curve(TTrack &Track)
 {
 	editor_track::curve curve;
 	if (false == editor_track::find_curve(Track, m_straights.tolerance, m_route.design.norms.gauge, curve))
@@ -659,20 +660,20 @@ bool editor_mode::route_from_curve(TTrack &Track)
 		vertex.compound = false;
 		vertex.reverse_turn = false;
 		design.vertices = {vertex, vertex};
-		route_update();
+		m_build.route_recompute();
 	}
 	m_route.status = format(STR_P("Curve of %zu path, turning %d deg", "Curve of %zu paths, turning %d deg", m_route.chain.tracks.size()), m_route.chain.tracks.size(), static_cast<int>(std::round(glm::degrees(curve.turn))));
 	return true;
 }
 
-void editor_mode::route_curved_ends()
+void route_designer::route_curved_ends()
 {
 	auto &design{m_route.design};
 	design.start_curved = false;
 	design.end_curved = false;
 	if (design.vertices.empty() || m_route.chain.tracks.empty())
 	{
-		route_update();
+		m_build.route_recompute();
 		return;
 	}
 	// a curve beginning right at an end of the fragment at the curvature of the track adjoining there, turning its way, goes on from it,
@@ -682,7 +683,7 @@ void editor_mode::route_curved_ends()
 	auto const count{design.vertices.size()};
 	design.start_curved = route_goes_on(false);
 	design.end_curved = (count > 1 || false == design.start_curved) && route_goes_on(true);
-	route_update();
+	m_build.route_recompute();
 	// a curve read from its paths as going on from the curve adjoining it which the design can't lay along them so, as one whose arc
 	// going on is too short to be read as an arc: read from a straight there, whichever of the two keeps closer to its paths
 	if (false == design.start_curved && false == design.end_curved)
@@ -693,15 +694,15 @@ void editor_mode::route_curved_ends()
 	auto const kept{design};
 	design.start_curved = false;
 	design.end_curved = false;
-	route_update();
+	m_build.route_recompute();
 	if (design_departure(m_route.result, m_route.chain.tracks) >= curved)
 	{
 		design = kept;
-		route_update();
+		m_build.route_recompute();
 	}
 }
 
-bool editor_mode::route_goes_on(bool const Atend) const
+bool route_designer::route_goes_on(bool const Atend) const
 {
 	auto const &design{m_route.design};
 	auto const radius{Atend ? design.end_radius : design.start_radius};
@@ -713,7 +714,7 @@ bool editor_mode::route_goes_on(bool const Atend) const
 	return bend.has_value() && std::abs(std::abs(bend->curvature) - 1.0 / radius) <= 0.1 / radius;
 }
 
-alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve) const
+alignment::vertex route_designer::route_vertex_of(editor_track::curve const &Curve) const
 {
 	if (Curve.designed.has_value())
 		return *Curve.designed;
@@ -728,7 +729,7 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 }
 
 
-bool editor_mode::route_load(TTrack &Track)
+bool route_designer::route_load(TTrack &Track)
 {
 	m_route.designed = 0;
 	if (false == (m_route.single ? route_from_curve(Track) : route_from_line(Track)))
@@ -741,7 +742,7 @@ bool editor_mode::route_load(TTrack &Track)
 }
 
 // the design kept in the scenery for the fragment takes the place of the one read from the paths; its chainage is carried on
-void editor_mode::route_read_stored(TTrack &Track)
+void route_designer::route_read_stored(TTrack &Track)
 {
 	auto &route{m_route};
 	route.departed = -1;
@@ -760,7 +761,7 @@ void editor_mode::route_read_stored(TTrack &Track)
 	std::string failure;
 	if (index < 0 && route.departed < 0 && loose && false == route.single)
 	{
-		parts = digitize_parts(chain, &failure, skipped);
+		parts = m_route_relay.digitize_parts(chain, &failure, skipped);
 		if (parts == 1 && skipped == 0)
 		{
 			alignment_store::settle();
@@ -788,7 +789,7 @@ void editor_mode::route_read_stored(TTrack &Track)
 	route.status += route_stored_note(digitized, parts, skipped, failure, loose && skipped < static_cast<int>(chain.tracks.size()));
 }
 
-std::string editor_mode::route_stored_note(bool const Digitized, int const Parts, int const Skipped, std::string const &Failure, bool const Left) const
+std::string route_designer::route_stored_note(bool const Digitized, int const Parts, int const Skipped, std::string const &Failure, bool const Left) const
 {
 	auto const &route{m_route};
 	auto const failure{Failure.empty() ? std::string{} : " - " + Failure};
@@ -809,7 +810,7 @@ std::string editor_mode::route_stored_note(bool const Digitized, int const Parts
 	return {};
 }
 
-void editor_mode::route_take_stored(int const Index)
+void route_designer::route_take_stored(int const Index)
 {
 	auto &route{m_route};
 	auto const &records{alignment_store::records()};
@@ -832,10 +833,10 @@ void editor_mode::route_take_stored(int const Index)
 	route.origin = stored.origin;
 	route.vertex = -1;
 	route.grip = -1;
-	route_update();
+	m_build.route_recompute();
 }
 
-void editor_mode::render_route_stored()
+void route_designer::render_route_stored()
 {
 	auto &route{m_route};
 	auto km{route.origin / 1000.0};
@@ -871,7 +872,7 @@ void editor_mode::render_route_stored()
 	item_tooltip("The paths stay as they are, the scenery no longer keeps a design for them");
 }
 
-void editor_mode::route_store()
+void route_designer::route_store()
 {
 	auto &route{m_route};
 	if (false == route.result.valid || route.chain.tracks.empty() || scene::Layers.empty())
@@ -881,7 +882,7 @@ void editor_mode::route_store()
 	route.departure = 0.0;
 }
 
-bool editor_mode::digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone)
+bool route_relay_tool::digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone)
 {
 	std::vector<TTrack *> drawn;
 	for (auto *track : Created)
@@ -899,7 +900,7 @@ bool editor_mode::digitize_drawn(std::vector<TTrack *> const &Created, bool cons
 	return false;
 }
 
-void editor_mode::digitize_all(int *Kept, int *Failed)
+void route_relay_tool::digitize_all(int *Kept, int *Failed)
 {
 	std::set<TTrack const *> visited;
 	int kept{0};
@@ -932,12 +933,12 @@ void editor_mode::digitize_all(int *Kept, int *Failed)
 	if (false == first.empty())
 		text += STR_C(", the first: ") + first;
 	WriteLog("Editor: " + text, logtype::generic);
-	ui()->set_status(text, failed > 0);
+	m_build.build_ui()->set_status(text, failed > 0);
 	if (false == m_route.chain.tracks.empty())
-		route_load(*m_route.chain.tracks[m_route.chain.tracks.size() / 2]);
+		m_designer.route_load(*m_route.chain.tracks[m_route.chain.tracks.size() / 2]);
 }
 
-int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped)
+int route_relay_tool::digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped)
 {
 	auto const count{Chain.tracks.size()};
 	if (count == 0 || std::ranges::all_of(Chain.tracks, [](TTrack const *Track) { return alignment_store::on_track(*Track).has_value(); }))
@@ -970,7 +971,7 @@ int editor_mode::digitize_parts(editor_track::chain const &Chain, std::string *R
 	return parts;
 }
 
-bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *Reason, TTrack **Culprit) const
+bool route_relay_tool::digitize_chain(editor_track::chain const &Chain, std::string *Reason, TTrack **Culprit) const
 {
 	if (Chain.tracks.empty() || scene::Layers.empty())
 		return false;
@@ -1015,7 +1016,7 @@ bool editor_mode::digitize_chain(editor_track::chain const &Chain, std::string *
 	return store_digitized(Chain.tracks, design, result, fit);
 }
 
-bool editor_mode::digitize_vertices(editor_track::chain const &Chain, alignment::design &Design, std::string *Reason, TTrack **Culprit) const
+bool route_relay_tool::digitize_vertices(editor_track::chain const &Chain, alignment::design &Design, std::string *Reason, TTrack **Culprit) const
 {
 	Design.vertices.clear();
 	for (auto const &entry : editor_track::recognize_line(Chain, m_straights.tolerance, Design.norms.gauge, Design.shape))
@@ -1028,7 +1029,7 @@ bool editor_mode::digitize_vertices(editor_track::chain const &Chain, alignment:
 				*Culprit = nearest_end(Chain, entry.position);
 			return false;
 		}
-		auto vertex{route_vertex_of(entry.shape)};
+		auto vertex{m_designer.route_vertex_of(entry.shape)};
 		vertex.position = entry.position;
 		Design.vertices.push_back(vertex);
 	}
@@ -1036,7 +1037,7 @@ bool editor_mode::digitize_vertices(editor_track::chain const &Chain, alignment:
 	return true;
 }
 
-bool editor_mode::route_from_line(TTrack &Track)
+bool route_designer::route_from_line(TTrack &Track)
 {
 	auto &route{m_route};
 	editor_track::chain run;
@@ -1078,15 +1079,15 @@ bool editor_mode::route_from_line(TTrack &Track)
 	return true;
 }
 
-void editor_mode::route_apply()
+void route_designer::route_apply()
 {
 	m_route.error.clear();
 	route_lay();
 	if (false == m_route.error.empty())
-		refused(m_route.error);
+		m_build.refusal(m_route.error);
 }
 
-void editor_mode::route_lay()
+void route_designer::route_lay()
 {
 	auto &route{m_route};
 	route.status.clear();
@@ -1104,9 +1105,9 @@ void editor_mode::route_lay()
 	auto involved{chain.tracks};
 	for (auto const &passage : chain.switches)
 		involved.push_back(passage.track);
-	if (false == tracks_editable(involved, route.error))
+	if (false == m_build.tracks_editable_for(involved, route.error))
 		return;
-	if (false == route.relaying && route_lay_crossovers(chain))
+	if (false == route.relaying && m_route_relay.route_lay_crossovers(chain))
 		return;
 
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
@@ -1115,7 +1116,7 @@ void editor_mode::route_lay()
 	auto *to{route.to};
 	auto const startextension{route.result.start_extension};
 	auto const endextension{route.result.end_extension};
-	if ((startextension > 0.0 || endextension > 0.0) && false == route_cut_straights(chain, from, to, states, created))
+	if ((startextension > 0.0 || endextension > 0.0) && false == m_route_relay.route_cut_straights(chain, from, to, states, created))
 		return;
 	for (auto *track : chain.tracks)
 		remember_state(states, track);
@@ -1127,7 +1128,7 @@ void editor_mode::route_lay()
 		editor_track::keep_heights(chain, pieces);
 		relaid = editor_track::relay(chain, pieces, &to, &intervals);
 	}
-	else if (false == route_relay_through_switches(chain, states, relaid, to))
+	else if (false == m_route_relay.route_relay_through_switches(chain, states, relaid, to))
 	{
 		undo_relay(created, states);
 		return;
@@ -1135,7 +1136,7 @@ void editor_mode::route_lay()
 	// the straights were cut along their own direction, the curve ends where the design says: the ends are brought together
 	auto const added{relaid.size()};
 	created.insert(created.end(), relaid.begin(), relaid.end());
-	push_track_snapshot(std::move(states), std::move(created));
+	m_services.push_track_snapshot(std::move(states), std::move(created));
 
 	route.from = from;
 	route.to = to;
@@ -1143,16 +1144,16 @@ void editor_mode::route_lay()
 	if (startextension > 0.0 || endextension > 0.0)
 		route_extend_ends(startextension, endextension);
 	route_store();
-	records_to_history();
+	m_build.records_into_history();
 	route.status = route_laid_note(chain.tracks.size(), added, startextension, endextension);
-	route.status += infra_carried_note();
+	route.status += m_build.infra_carried_status();
 	// the crossovers taken out before which fit the lines now
 	if (false == route.relaying && false == route.crossovers_out.empty())
-		route_crossovers_again();
+		m_route_relay.route_crossovers_again();
 	WriteLog("Editor: route design - " + route.status, logtype::generic);
 }
 
-void editor_mode::route_extend_ends(double const Startextension, double const Endextension)
+void route_designer::route_extend_ends(double const Startextension, double const Endextension)
 {
 	route_bind_ends();
 	if (auto &vertices{m_route.design.vertices}; vertices.size() >= 2)
@@ -1160,12 +1161,12 @@ void editor_mode::route_extend_ends(double const Startextension, double const En
 		vertices.front().offset += Startextension;
 		vertices.back().offset += Endextension;
 	}
-	route_update();
+	m_build.route_recompute();
 }
 
 // the crossovers of the line can't be moved as their switches are: they're taken out, the line laid again, and they go back where
 // they were, onto the new line
-bool editor_mode::route_lay_crossovers(editor_track::chain const &Chain)
+bool route_relay_tool::route_lay_crossovers(editor_track::chain const &Chain)
 {
 	auto &route{m_route};
 	// a line which ends on a switch of a crossover would be laid again only up to it, the crossover left on a kink
@@ -1180,9 +1181,9 @@ bool editor_mode::route_lay_crossovers(editor_track::chain const &Chain)
 	auto const crossovers{route_crossovers_on(switches)};
 	if (crossovers.empty())
 		return false;
-	auto const tab{m_track_tab};
+	auto const tab{m_services.current_track_tab()};
 	route_take_out_crossovers(switches);
-	show_track_tab(tab);
+	m_services.show_track_tab(tab);
 	// the line between the same points again: taking the lift back may have cut its paths
 	auto *start{normal_end_at(route.chain.start)};
 	auto *finish{normal_end_at(route.chain.end)};
@@ -1194,22 +1195,22 @@ bool editor_mode::route_lay_crossovers(editor_track::chain const &Chain)
 		route.chain = refreshed;
 	}
 	route.relaying = true;
-	auto const steps{m_history.size()};
-	route_apply();
+	auto const steps{m_build.history_size()};
+	m_designer.route_apply();
 	route.relaying = false;
-	if (m_history.size() == steps)
+	if (m_build.history_size() == steps)
 	{
-		undo_last();
+		m_build.undo_last_step();
 		return true;
 	}
-	join_last_steps();
+	m_build.join_last_history_steps();
 	route_crossovers_back(crossovers, tab);
 	return true;
 }
 
-TTrack const *editor_mode::route_end_crossover(editor_track::chain const &Chain) const
+TTrack const *route_relay_tool::route_end_crossover(editor_track::chain const &Chain) const
 {
-	auto const crossing = [this](auto const &Joined) { return Joined.first != nullptr && Joined.first->eType == tt_Switch && crossover_of(*Joined.first).has_value(); };
+	auto const crossing = [this](auto const &Joined) { return Joined.first != nullptr && Joined.first->eType == tt_Switch && m_build.crossover_at(*Joined.first).has_value(); };
 	for (auto const &end : {Chain.start, Chain.end})
 		for (auto const *track : Chain.tracks)
 		{
@@ -1220,49 +1221,49 @@ TTrack const *editor_mode::route_end_crossover(editor_track::chain const &Chain)
 	return nullptr;
 }
 
-std::vector<editor_mode::route_design::crossover_out> editor_mode::route_crossovers_on(std::vector<TTrack *> const &Switches)
+std::vector<route_design::crossover_out> route_relay_tool::route_crossovers_on(std::vector<TTrack *> const &Switches)
 {
 	std::vector<route_design::crossover_out> crossovers;
 	std::vector<TTrack const *> seen;
 	for (auto const *switchtrack : Switches)
 	{
-		auto const crossover{crossover_of(*switchtrack)};
+		auto const crossover{m_build.crossover_at(*switchtrack)};
 		if (false == crossover.has_value() || std::ranges::find(seen, crossover->first) != seen.end())
 			continue;
 		seen.push_back(crossover->first);
 		// the press on this line, the release on the other one
 		auto *here{crossover->first == switchtrack ? crossover->first : crossover->second};
 		auto *there{here == crossover->first ? crossover->second : crossover->first};
-		crossovers.push_back({crossover_template(crossover->record), here->m_paths.front().points[segment_data::point::start], there->m_paths.front().points[segment_data::point::start], crossover->first->name(), {here->name(), there->name()}});
+		crossovers.push_back({m_build.crossover_template_of(crossover->record), here->m_paths.front().points[segment_data::point::start], there->m_paths.front().points[segment_data::point::start], crossover->first->name(), {here->name(), there->name()}});
 	}
 	return crossovers;
 }
 
-void editor_mode::route_take_out_crossovers(std::vector<TTrack *> const &Switches)
+void route_relay_tool::route_take_out_crossovers(std::vector<TTrack *> const &Switches)
 {
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
 	// the designs of the outer tracks come down with the lifts taken back, an undo puts them back
-	profile_library_load();
+	m_library.profile_library_load();
 	auto library{m_profiles};
 	bool lifted{false};
 	for (auto const *switchtrack : Switches)
-		if (auto const crossover{crossover_of(*switchtrack)})
+		if (auto const crossover{m_build.crossover_at(*switchtrack)})
 		{
 			TTrack *first{nullptr};
 			TTrack *second{nullptr};
 			lifted = lifted || crossover->record.lifted();
-			take_out_crossover(*crossover, states, created, removed, first, second);
+			m_build.take_out_crossover_at(*crossover, states, created, removed, first, second);
 		}
 	switch_store::follow();
-	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
-	records_to_history();
+	m_services.push_track_snapshot(std::move(states), std::move(created), std::move(removed));
+	m_build.records_into_history();
 	if (lifted)
-		profiles_to_history(std::move(library));
+		m_build.profiles_to_history(std::move(library));
 }
 
-void editor_mode::route_crossovers_back(std::vector<route_design::crossover_out> const &Crossovers, editor_track_tab const Tab)
+void route_relay_tool::route_crossovers_back(std::vector<route_design::crossover_out> const &Crossovers, editor_track_tab const Tab)
 {
 	auto &route{m_route};
 	std::string back;
@@ -1270,9 +1271,9 @@ void editor_mode::route_crossovers_back(std::vector<route_design::crossover_out>
 	for (auto const &crossover : Crossovers)
 	{
 		// the new line moved sideways: the press onto it, the release onto the other line
-		if (lay_crossover(crossover.shape, crossover.press, crossover.release, 30.0, crossover.names))
+		if (m_build.lay_crossover_at(crossover.shape, crossover.press, crossover.release, 30.0, crossover.names))
 		{
-			join_last_steps();
+			m_build.join_last_history_steps();
 			back += (back.empty() ? "" : ", ") + crossover.name;
 		}
 		else
@@ -1281,14 +1282,14 @@ void editor_mode::route_crossovers_back(std::vector<route_design::crossover_out>
 			route.crossovers_out.emplace_back(crossover);
 		}
 	}
-	show_track_tab(Tab);
+	m_services.show_track_tab(Tab);
 	if (false == back.empty())
 		route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
 	if (false == left_side.empty())
 		route.status += "\n" + format(STR_C("Crossovers taken out which don't fit the new line, lay them again: %s"), left_side.c_str());
 }
 
-bool editor_mode::route_cut_straights(editor_track::chain &Chain, TTrack *&From, TTrack *&To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
+bool route_relay_tool::route_cut_straights(editor_track::chain &Chain, TTrack *&From, TTrack *&To, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created)
 {
 	auto &route{m_route};
 	auto const startextension{route.result.start_extension};
@@ -1311,7 +1312,7 @@ bool editor_mode::route_cut_straights(editor_track::chain &Chain, TTrack *&From,
 		route.error = error.empty() ? format(STR_C("The adjoining straights can't be cut at the ends of the curve: the start misses by %.1f m, the end by %.1f m"), startoff, endoff) : error;
 		return false;
 	}
-	if (false == tracks_editable(Chain.tracks, route.error))
+	if (false == m_build.tracks_editable_for(Chain.tracks, route.error))
 	{
 		undo_relay(Created, States);
 		return false;
@@ -1320,27 +1321,27 @@ bool editor_mode::route_cut_straights(editor_track::chain &Chain, TTrack *&From,
 }
 
 
-void editor_mode::route_crossovers_again()
+void route_relay_tool::route_crossovers_again()
 {
 	auto &route{m_route};
-	auto const tab{m_track_tab};
+	auto const tab{m_services.current_track_tab()};
 	std::string back;
 	for (auto out{route.crossovers_out.begin()}; out != route.crossovers_out.end();)
-		if (lay_crossover(out->shape, out->press, out->release, 30.0, out->names))
+		if (m_build.lay_crossover_at(out->shape, out->press, out->release, 30.0, out->names))
 		{
-			join_last_steps();
+			m_build.join_last_history_steps();
 			back += (back.empty() ? "" : ", ") + out->name;
 			out = route.crossovers_out.erase(out);
 		}
 		else
 			++out;
-	show_track_tab(tab);
+	m_services.show_track_tab(tab);
 	if (false == back.empty())
 		route.status += "\n" + format(STR_C("Crossovers laid again on the new line: %s"), back.c_str());
 }
 
 // the switches of the chain are moved as a whole onto the designed line, the regular paths between them re-laid
-bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last)
+bool route_relay_tool::route_relay_through_switches(editor_track::chain const &Chain, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, TTrack *&Last)
 {
 	auto &route{m_route};
 	auto const &result{route.result};
@@ -1395,7 +1396,7 @@ bool editor_mode::route_relay_through_switches(editor_track::chain const &Chain,
 	return true;
 }
 
-glm::dvec3 editor_mode::route_vertex_position(int const Vertex) const
+glm::dvec3 route_designer::route_vertex_position(int const Vertex) const
 {
 	auto const &design{m_route.design};
 	auto const &result{m_route.result};
@@ -1421,7 +1422,7 @@ glm::dvec3 editor_mode::route_vertex_position(int const Vertex) const
 	return {position.x, height, position.y};
 }
 
-bool editor_mode::route_hit(int &Vertex, int &Grip) const
+bool route_designer::route_hit(int &Vertex, int &Grip) const
 {
 	if (false == route_active())
 		return false;
@@ -1451,7 +1452,7 @@ bool editor_mode::route_hit(int &Vertex, int &Grip) const
 	return hit >= 0 || griphit >= 0;
 }
 
-void editor_mode::route_show_curve(double const From, double const To)
+void route_overlay::route_show_curve(double const From, double const To)
 {
 	auto const &result{m_route.result};
 	if (result.elements.empty() || To <= From)
@@ -1469,10 +1470,10 @@ void editor_mode::route_show_curve(double const From, double const To)
 	// from above, leaning a little along the line, the whole curve in sight
 	auto const look{glm::normalize(glm::dvec3{flat.x * 0.45, -1.0, flat.y * 0.45})};
 	auto const extent{std::max(high.x - low.x, high.z - low.z)};
-	fly_to((low + high) * 0.5, look, std::clamp(extent * 1.2, 60.0, 3000.0));
+	m_services.fly_to((low + high) * 0.5, look, std::clamp(extent * 1.2, 60.0, 3000.0));
 }
 
-std::vector<std::size_t> editor_mode::route_focused() const
+std::vector<std::size_t> route_overlay::route_focused() const
 {
 	using part = route_design::curve_focus::part;
 	auto const &focus{m_route.focus};
@@ -1495,7 +1496,7 @@ std::vector<std::size_t> editor_mode::route_focused() const
 	return found.empty() ? own : found;
 }
 
-bool editor_mode::route_focus_takes(std::size_t const Element, std::vector<std::size_t> const &Own, std::vector<double> const &Radii) const
+bool route_overlay::route_focus_takes(std::size_t const Element, std::vector<std::size_t> const &Own, std::vector<double> const &Radii) const
 {
 	using part = route_design::curve_focus::part;
 	auto const &focus{m_route.focus};
@@ -1511,7 +1512,7 @@ bool editor_mode::route_focus_takes(std::size_t const Element, std::vector<std::
 	}
 }
 
-void editor_mode::route_measure_clicks()
+void route_overlay::route_measure_clicks()
 {
 	auto &route{m_route};
 	if (route.measured == route.revision)
@@ -1535,12 +1536,12 @@ void editor_mode::route_measure_clicks()
 			if (state.vertex < 0 || std::abs(result.vertex_chainages[k] - projections[i].chainage) < std::abs(result.vertex_chainages[state.vertex] - projections[i].chainage))
 				state.vertex = k;
 		for (int k = 0; k < count && false == state.corner; ++k)
-			state.corner = plan_distance(route.clicks[i], route_vertex_position(k)) < 0.05;
+			state.corner = plan_distance(route.clicks[i], m_designer.route_vertex_position(k)) < 0.05;
 		route.click_states.push_back(state);
 	}
 }
 
-std::vector<glm::dvec2> editor_mode::route_clicks_of(int const Vertex) const
+std::vector<glm::dvec2> route_overlay::route_clicks_of(int const Vertex) const
 {
 	auto const &route{m_route};
 	std::vector<glm::dvec2> points;
@@ -1554,7 +1555,7 @@ std::vector<glm::dvec2> editor_mode::route_clicks_of(int const Vertex) const
 	return points;
 }
 
-bool editor_mode::route_hold_clicks(int const Vertex)
+bool route_overlay::route_hold_clicks(int const Vertex)
 {
 	auto &route{m_route};
 	route_measure_clicks();
@@ -1570,7 +1571,7 @@ bool editor_mode::route_hold_clicks(int const Vertex)
 	return true;
 }
 
-void editor_mode::draw_route_overlay() const
+void route_overlay::draw_route_overlay() const
 {
 	auto const &route{m_route};
 	auto const &design{route.design};
@@ -1582,7 +1583,7 @@ void editor_mode::draw_route_overlay() const
 
 	std::vector<glm::dvec3> polygon{start};
 	for (int i = 0; i < static_cast<int>(design.vertices.size()); ++i)
-		polygon.push_back(route_vertex_position(i));
+		polygon.push_back(m_designer.route_vertex_position(i));
 	polygon.push_back(end);
 	for (std::size_t i = 0; i + 1 < polygon.size(); ++i)
 		projection.line(drawlist, polygon[i], polygon[i + 1], IM_COL32(255, 210, 60, 150), 1.5f);
@@ -1597,7 +1598,7 @@ void editor_mode::draw_route_overlay() const
 	draw_route_traced(projection, drawlist);
 }
 
-void editor_mode::draw_route_line(screen_projection const &Projection, ImDrawList *Drawlist) const
+void route_overlay::draw_route_line(screen_projection const &Projection, ImDrawList *Drawlist) const
 {
 	auto const &route{m_route};
 	auto const &result{route.result};
@@ -1624,7 +1625,7 @@ void editor_mode::draw_route_line(screen_projection const &Projection, ImDrawLis
 	}
 }
 
-void editor_mode::draw_route_focus(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<std::size_t> const &Focused) const
+void route_overlay::draw_route_focus(screen_projection const &Projection, ImDrawList *Drawlist, std::vector<std::size_t> const &Focused) const
 {
 	auto const &result{m_route.result};
 	for (auto const index : Focused)
@@ -1647,7 +1648,7 @@ void editor_mode::draw_route_focus(screen_projection const &Projection, ImDrawLi
 	}
 }
 
-std::string editor_mode::route_focus_name(double const Firstlength, double const Lastlength) const
+std::string route_overlay::route_focus_name(double const Firstlength, double const Lastlength) const
 {
 	using part = route_design::curve_focus::part;
 	auto const &focus{m_route.focus};
@@ -1672,13 +1673,13 @@ std::string editor_mode::route_focus_name(double const Firstlength, double const
 	}
 }
 
-void editor_mode::draw_route_vertex(screen_projection const &Projection, ImDrawList *Drawlist, int const Index) const
+void route_overlay::draw_route_vertex(screen_projection const &Projection, ImDrawList *Drawlist, int const Index) const
 {
 	auto const &route{m_route};
 	auto const &design{route.design};
 	auto const &result{route.result};
 	ImVec2 screen;
-	if (false == Projection.project(route_vertex_position(Index), screen))
+	if (false == Projection.project(m_designer.route_vertex_position(Index), screen))
 		return;
 	Drawlist->AddCircleFilled(screen, 6.0f, overlay_color::marked);
 	if (Index == route.vertex)
@@ -1695,7 +1696,7 @@ void editor_mode::draw_route_vertex(screen_projection const &Projection, ImDrawL
 }
 
 // the points clicked when the line was laid, in the colours of their departure; how far each is, along the curve in focus
-void editor_mode::draw_route_clicks(screen_projection const &Projection, ImDrawList *Drawlist) const
+void route_overlay::draw_route_clicks(screen_projection const &Projection, ImDrawList *Drawlist) const
 {
 	auto const &route{m_route};
 	for (std::size_t i = 0; i < route.clicks.size() && i < route.click_states.size(); ++i)
@@ -1714,7 +1715,7 @@ void editor_mode::draw_route_clicks(screen_projection const &Projection, ImDrawL
 }
 
 // the points traced on the orthophoto, in the colours of their departure from the curve fitted to them
-void editor_mode::draw_route_traced(screen_projection const &Projection, ImDrawList *Drawlist) const
+void route_overlay::draw_route_traced(screen_projection const &Projection, ImDrawList *Drawlist) const
 {
 	auto const &route{m_route};
 	if (route.trace.points.empty())
@@ -1740,7 +1741,7 @@ void editor_mode::draw_route_traced(screen_projection const &Projection, ImDrawL
 	}
 }
 
-void editor_mode::render_route_trace()
+void route_overlay::render_route_trace()
 {
 	auto &trace{m_route.trace};
 	// the curve is traced on the photo with the laying (Tab), the plan has no button of its own for it
@@ -1776,7 +1777,7 @@ void editor_mode::render_route_trace()
 	ImGui::EndDisabled();
 }
 
-void editor_mode::route_trace_start()
+void route_overlay::route_trace_start()
 {
 	auto &trace{m_route.trace};
 	trace.active = true;
@@ -1787,7 +1788,7 @@ void editor_mode::route_trace_start()
 }
 
 // every point goes to the curve nearest to it along the line, the curves without points keep their shape
-void editor_mode::route_trace_fit()
+void route_overlay::route_trace_fit()
 {
 	auto &route{m_route};
 	auto &trace{route.trace};
@@ -1818,7 +1819,7 @@ void editor_mode::route_trace_fit()
 			design.vertices[k] = fit.fitted;
 	}
 	route.design = design;
-	route_update();
+	m_build.route_recompute();
 	double sum{0.0};
 	for (auto const &projection : alignment::project(route.result, plan))
 	{
@@ -1828,7 +1829,7 @@ void editor_mode::route_trace_fit()
 	trace.rms = std::sqrt(sum / static_cast<double>(plan.size()));
 }
 
-void editor_mode::route_trace_end(bool const Keep)
+void route_overlay::route_trace_end(bool const Keep)
 {
 	auto &trace{m_route.trace};
 	if (false == trace.active)
@@ -1837,26 +1838,26 @@ void editor_mode::route_trace_end(bool const Keep)
 	if (false == Keep)
 	{
 		m_route.design = trace.before;
-		route_update();
+		m_build.route_recompute();
 	}
 	trace = {};
 	if (Keep && traced)
-		route_apply();
+		m_designer.route_apply();
 }
 
 // the photo under the cursor where the depth finds it, else the level of the design there
-glm::dvec3 editor_mode::route_trace_cursor() const
+glm::dvec3 route_overlay::route_trace_cursor() const
 {
 	if (GfxRenderer->Mouse_Hit())
-		return cursor_ground();
+		return m_build.cursor_ground_point();
 	auto const &result{m_route.result};
-	auto point{cursor_level(alignment::elevation(result, result.length * 0.5))};
+	auto point{m_build.cursor_at_level(alignment::elevation(result, result.length * 0.5))};
 	if (auto const projections{alignment::project(result, {plan_of(point)})}; false == projections.empty())
-		point = cursor_level(alignment::elevation(result, projections.front().chainage));
+		point = m_build.cursor_at_level(alignment::elevation(result, projections.front().chainage));
 	return point;
 }
 
-int editor_mode::route_trace_hit() const
+int route_overlay::route_trace_hit() const
 {
 	screen_projection const projection;
 	float best{kHandleRadius * kHandleRadius};
@@ -1870,7 +1871,7 @@ int editor_mode::route_trace_hit() const
 	return hit;
 }
 
-void editor_mode::render_route_gizmo()
+void route_overlay::render_route_gizmo()
 {
 	auto &route{m_route};
 	auto const count{static_cast<int>(route.design.vertices.size())};
@@ -1881,14 +1882,14 @@ void editor_mode::render_route_gizmo()
 		return;
 	}
 
-	auto const position{grip ? alignment::evaluate(route.result, route.result.vertex_chainages[route.grip]).position : route_vertex_position(route.vertex)};
+	auto const position{grip ? alignment::evaluate(route.result, route.result.vertex_chainages[route.grip]).position : m_designer.route_vertex_position(route.vertex)};
 	glm::dvec3 moved{position};
-	if (false == handle_drag_step(moved))
+	if (false == m_build.handle_drag_moved(moved, nullptr))
 	{
 		if (m_route_dragging)
 		{
 			m_route_dragging = false;
-			route_apply();
+			m_designer.route_apply();
 		}
 		return;
 	}
@@ -1911,14 +1912,14 @@ void editor_mode::render_route_gizmo()
 		else
 			vertex.position = point;
 	}
-	route_update();
+	m_build.route_recompute();
 }
 
-void editor_mode::route_drag_grip(glm::dvec3 const &Moved)
+void route_overlay::route_drag_grip(glm::dvec3 const &Moved)
 {
 	auto &route{m_route};
 	auto &vertex{route.design.vertices[route.grip]};
-	auto const corner{route_vertex_position(route.grip)};
+	auto const corner{m_designer.route_vertex_position(route.grip)};
 	auto const distance{plan_distance(Moved, corner)};
 	for (auto const &curve : route.result.curves)
 	{
@@ -1928,10 +1929,10 @@ void editor_mode::route_drag_grip(glm::dvec3 const &Moved)
 		if (secant > 1e-6)
 			vertex.radius = std::max(10.0, std::round(distance / secant));
 	}
-	route_update();
+	m_build.route_recompute();
 }
 
-void editor_mode::render_route_ui()
+void route_window::render_route_ui()
 {
 	auto &route{m_route};
 	if (false == route.error.empty())
@@ -1947,18 +1948,18 @@ void editor_mode::render_route_ui()
 	if (ImGui::Button(reset))
 	{
 		auto *track{route.chain.tracks[route.chain.tracks.size() / 2]};
-		route_load(*track);
+		m_designer.route_load(*track);
 		return;
 	}
 	item_tooltip("Reads the curves of the line from the scenery again, dropping the changes not applied");
 	auto changed{render_route_band()};
-	render_route_trace();
-	render_route_stored();
+	m_route_view.render_route_trace();
+	m_designer.render_route_stored();
 	changed |= render_route_vertices();
 	if (ImGui::CollapsingHeader(STR_C("Design speed and limits")))
 		changed |= render_route_parameters();
 	if (changed)
-		route_update();
+		m_build.route_recompute();
 
 	ImGui::Separator();
 	render_route_result();
@@ -1970,14 +1971,14 @@ void editor_mode::render_route_ui()
 		ImGui::PopTextWrapPos();
 		if (ImGui::Button(STR_C("Digitize all the tracks")))
 		{
-			digitize_all();
+			m_route_relay.digitize_all();
 			return;
 		}
 		item_tooltip("Every line of the scenery not digitized yet is kept in it with its straights, arcs and transition curves, the way the drawn tracks are kept; the paths stay as they are");
 		ImGui::SameLine();
 		if (ImGui::Button(STR_C("Digitize the scenery")))
 		{
-			digitize_scenery(true);
+			m_route_relay.digitize_scenery(true);
 			return;
 		}
 		item_tooltip("All at once: the lines, the switches with their types out of the catalogue (or the size measured from their shape), the crossovers as connections of switches and the signals, signs, poles and catenary bound to the tracks. The paths and the objects stay as they are, the scenery keeps it on save");
@@ -1987,7 +1988,7 @@ void editor_mode::render_route_ui()
 // the curvature along the fragment, the way the designers draw it: straights on the axis, the transitions as ramps,
 // the arcs as plateaus at 1/R, in the colours of the overlay in the view. dragging a plateau changes its radius,
 // dragging a ramp sideways the length of the transition, the wheel does both in steps
-bool editor_mode::render_route_band()
+bool route_window::render_route_band()
 {
 	auto &route{m_route};
 	auto &design{route.design};
@@ -2036,14 +2037,14 @@ bool editor_mode::render_route_band()
 		draw_route_band_value(view, list);
 	ImGui::PopClipRect();
 	if (changed)
-		first_step_done(first_step::plan_band);
+		m_services.first_step_done(editor_first_step::plan_band);
 
 	if (view.part != 0 && false == view.dragging && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		route_band_tooltip(view, arcs);
 	return changed;
 }
 
-editor_mode::route_band_view editor_mode::route_band_layout(ImVec2 const Top, ImVec2 const Size) const
+route_band_view route_window::route_band_layout(ImVec2 const Top, ImVec2 const Size) const
 {
 	auto const &result{m_route.result};
 	auto const &band{m_route.band};
@@ -2083,7 +2084,7 @@ editor_mode::route_band_view editor_mode::route_band_layout(ImVec2 const Top, Im
 
 // what of its vertex each element is: an arc, the arcs of a compound curve counted from the first one, which are elements of an even
 // curvature as an arc is, or a transition, in from the straight, out to it, or between two arcs, which goes on from the arc before it
-std::vector<editor_mode::route_band_view::role> editor_mode::route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs)
+std::vector<route_band_view::role> route_window::route_band_roles(alignment::result const &Result, std::size_t const Vertices, std::vector<int> &Arcs)
 {
 	auto const count{static_cast<int>(Result.elements.size())};
 	std::vector<route_band_view::role> roles(static_cast<std::size_t>(count));
@@ -2122,7 +2123,7 @@ std::vector<editor_mode::route_band_view::role> editor_mode::route_band_roles(al
 	return roles;
 }
 
-void editor_mode::route_band_pick(route_band_view &View, std::vector<route_band_view::role> const &Roles, std::vector<int> const &Arcs) const
+void route_window::route_band_pick(route_band_view &View, std::vector<route_band_view::role> const &Roles, std::vector<int> const &Arcs) const
 {
 	auto const &result{m_route.result};
 	for (int i = 0; i < static_cast<int>(result.elements.size()); ++i)
@@ -2150,7 +2151,7 @@ void editor_mode::route_band_pick(route_band_view &View, std::vector<route_band_
 	}
 }
 
-bool editor_mode::route_band_drag(route_band_view const &View, bool const Active)
+bool route_window::route_band_drag(route_band_view const &View, bool const Active)
 {
 	auto &design{m_route.design};
 	auto &band{m_route.band};
@@ -2191,7 +2192,7 @@ bool editor_mode::route_band_drag(route_band_view const &View, bool const Active
 	return changed;
 }
 
-double editor_mode::route_band_radius(route_band_view const &View) const
+double route_window::route_band_radius(route_band_view const &View) const
 {
 	auto const &band{m_route.band};
 	int turn{1};
@@ -2203,7 +2204,7 @@ double editor_mode::route_band_radius(route_band_view const &View) const
 	return rounded_radius(1.0 / std::max(1e-5, static_cast<double>(k)));
 }
 
-bool editor_mode::route_band_wheel(route_band_view const &View)
+bool route_window::route_band_wheel(route_band_view const &View)
 {
 	if (View.part == 0)
 		return false;
@@ -2219,7 +2220,7 @@ bool editor_mode::route_band_wheel(route_band_view const &View)
 	return true;
 }
 
-void editor_mode::draw_route_band(route_band_view const &View, ImDrawList *List) const
+void route_window::draw_route_band(route_band_view const &View, ImDrawList *List) const
 {
 	auto const &route{m_route};
 	auto const &result{route.result};
@@ -2247,7 +2248,7 @@ void editor_mode::draw_route_band(route_band_view const &View, ImDrawList *List)
 }
 
 // the labels: the radius over its plateau, the transition lengths along the axis, the km of the ends at the bottom
-void editor_mode::draw_route_band_labels(route_band_view const &View, ImDrawList *List) const
+void route_window::draw_route_band_labels(route_band_view const &View, ImDrawList *List) const
 {
 	auto const &route{m_route};
 	auto const &result{route.result};
@@ -2273,7 +2274,7 @@ void editor_mode::draw_route_band_labels(route_band_view const &View, ImDrawList
 	}
 }
 
-void editor_mode::draw_band_radius(route_band_view const &View, ImDrawList *List, alignment::element const &Element) const
+void route_window::draw_band_radius(route_band_view const &View, ImDrawList *List, alignment::element const &Element) const
 {
 	auto const &design{m_route.design};
 	auto const from{View.x_of(Element.chainage)};
@@ -2293,7 +2294,7 @@ void editor_mode::draw_band_radius(route_band_view const &View, ImDrawList *List
 		List->AddText(ImVec2(std::round(middle - size.x * 0.5f), std::round(std::max(View.top.y + 1.0f, y))), element_colour(Element.kind), text.c_str());
 }
 
-void editor_mode::draw_band_length(route_band_view const &View, ImDrawList *List, alignment::element const &Element, std::vector<std::pair<float, float>> &Taken)
+void route_window::draw_band_length(route_band_view const &View, ImDrawList *List, alignment::element const &Element, std::vector<std::pair<float, float>> &Taken)
 {
 	auto const from{View.x_of(Element.chainage)};
 	auto const to{View.x_of(Element.chainage + Element.length)};
@@ -2310,7 +2311,7 @@ void editor_mode::draw_band_length(route_band_view const &View, ImDrawList *List
 		List->AddText(ImVec2(std::round(middle - size.x * 0.5f), View.label_y()), element_colour(Element.kind), text.c_str());
 }
 
-void editor_mode::draw_route_band_value(route_band_view const &View, ImDrawList *List) const
+void route_window::draw_route_band_value(route_band_view const &View, ImDrawList *List) const
 {
 	auto const &band{m_route.band};
 	auto const value{band_value(m_route.design.vertices[band.vertex], band.part, band.arc)};
@@ -2321,7 +2322,7 @@ void editor_mode::draw_route_band_value(route_band_view const &View, ImDrawList 
 	List->AddText(at, IM_COL32(255, 255, 255, 255), text.c_str());
 }
 
-void editor_mode::route_band_tooltip(route_band_view const &View, std::vector<int> const &Arcs) const
+void route_window::route_band_tooltip(route_band_view const &View, std::vector<int> const &Arcs) const
 {
 	auto const part{View.part};
 	auto const arc{View.arc};
@@ -2343,7 +2344,7 @@ void editor_mode::route_band_tooltip(route_band_view const &View, std::vector<in
 	ImGui::EndTooltip();
 }
 
-bool editor_mode::render_route_parameters()
+bool route_window::render_route_parameters()
 {
 	auto &design{m_route.design};
 	bool changed{false};
@@ -2388,12 +2389,12 @@ bool editor_mode::render_route_parameters()
 	return changed;
 }
 
-bool editor_mode::render_route_vertices()
+bool route_window::render_route_vertices()
 {
 	bool changed{false};
 	auto const count{static_cast<int>(m_route.design.vertices.size())};
 	m_route.focus = {};
-	route_measure_clicks();
+	m_route_view.route_measure_clicks();
 	if (false == m_route.clicks.empty())
 	{
 		ImGui::Checkbox(STR_C("Keep to the points clicked"), &m_route.hold);
@@ -2402,7 +2403,7 @@ bool editor_mode::render_route_vertices()
 		if (ImGui::SmallButton(STR_C("Fit all to them")))
 		{
 			for (int i = 0; i < count; ++i)
-				changed |= route_hold_clicks(i);
+				changed |= m_route_view.route_hold_clicks(i);
 		}
 		item_tooltip("The radii of every curve fitted again to the points clicked along it, the transitions and the cants as they are");
 	}
@@ -2415,7 +2416,7 @@ bool editor_mode::render_route_vertices()
 	return changed;
 }
 
-bool editor_mode::render_route_vertex(int const Index)
+bool route_window::render_route_vertex(int const Index)
 {
 	auto &route{m_route};
 	auto &design{route.design};
@@ -2447,11 +2448,11 @@ bool editor_mode::render_route_vertex(int const Index)
 	if (route.focus.vertex != Index && false == route.focus.held && ImGui::IsItemHovered())
 		route.focus = {Index, part::whole, 0, false};
 	if (settled && route.hold)
-		changed |= route_hold_clicks(Index);
+		changed |= m_route_view.route_hold_clicks(Index);
 	return changed;
 }
 
-void editor_mode::route_mark(int const Index, route_design::curve_focus::part const What, int const Arc)
+void route_window::route_mark(int const Index, route_design::curve_focus::part const What, int const Arc)
 {
 	if (ImGui::IsItemActive())
 		m_route.focus = {Index, What, Arc, true};
@@ -2459,7 +2460,7 @@ void editor_mode::route_mark(int const Index, route_design::curve_focus::part co
 		m_route.focus = {Index, What, Arc, false};
 }
 
-bool editor_mode::route_vertex_heading(int const Index)
+bool route_window::route_vertex_heading(int const Index)
 {
 	using part = route_design::curve_focus::part;
 	auto const &route{m_route};
@@ -2485,7 +2486,7 @@ bool editor_mode::route_vertex_heading(int const Index)
 	if (from >= 0.0)
 	{
 		if (ImGui::SmallButton(STR_C("Show in the view")))
-			route_show_curve(from, to);
+			m_route_view.route_show_curve(from, to);
 		item_tooltip("The camera flies over the curve, which is lit up in the view while the mouse is over its fields");
 		route_mark(Index, part::whole, 0);
 	}
@@ -2493,7 +2494,7 @@ bool editor_mode::route_vertex_heading(int const Index)
 }
 
 // how far the curve is from the points clicked along it when it was laid
-bool editor_mode::route_vertex_clicks(int const Index)
+bool route_window::route_vertex_clicks(int const Index)
 {
 	using part = route_design::curve_focus::part;
 	std::size_t clicked{0};
@@ -2522,14 +2523,14 @@ bool editor_mode::route_vertex_clicks(int const Index)
 	ImGui::SameLine();
 	bool changed{false};
 	if (ImGui::SmallButton(STR_C("Fit to them")))
-		changed = route_hold_clicks(Index);
+		changed = m_route_view.route_hold_clicks(Index);
 	item_tooltip("The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are");
 	return changed;
 }
 
 // the first curve, or the last one, may go on from the curve of the track adjoining at that end: it begins right there, its radius
 // the one which begins it there, its entry, or exit, the transition between the two curves
-bool editor_mode::route_vertex_curved_ends(int const Index)
+bool route_window::route_vertex_curved_ends(int const Index)
 {
 	auto &design{m_route.design};
 	bool changed{false};
@@ -2547,7 +2548,7 @@ bool editor_mode::route_vertex_curved_ends(int const Index)
 	return changed;
 }
 
-bool editor_mode::route_vertex_fields(int const Index, float const Half, bool &Settled)
+bool route_window::route_vertex_fields(int const Index, float const Half, bool &Settled)
 {
 	using part = route_design::curve_focus::part;
 	auto &vertex{m_route.design.vertices[Index]};
@@ -2577,7 +2578,7 @@ bool editor_mode::route_vertex_fields(int const Index, float const Half, bool &S
 	return changed;
 }
 
-bool editor_mode::route_vertex_arcs(int const Index, bool &Settled)
+bool route_window::route_vertex_arcs(int const Index, bool &Settled)
 {
 	using part = route_design::curve_focus::part;
 	auto &vertex{m_route.design.vertices[Index]};
@@ -2613,7 +2614,7 @@ bool editor_mode::route_vertex_arcs(int const Index, bool &Settled)
 	return changed;
 }
 
-bool editor_mode::route_vertex_arc(int const Index, int const K, double const Total, std::vector<double> const &Cants, bool &Settled, int &Removed)
+bool route_window::route_vertex_arc(int const Index, int const K, double const Total, std::vector<double> const &Cants, bool &Settled, int &Removed)
 {
 	using part = route_design::curve_focus::part;
 	auto &arc{m_route.design.vertices[Index].arcs[K]};
@@ -2643,7 +2644,7 @@ bool editor_mode::route_vertex_arc(int const Index, int const K, double const To
 }
 
 // the cant of one arc: the one in proportion to the curvature until it's given its own
-bool editor_mode::route_arc_cant(int const Index, int const Arc, double &Cant, std::vector<double> const &Cants, bool &Settled)
+bool route_window::route_arc_cant(int const Index, int const Arc, double &Cant, std::vector<double> const &Cants, bool &Settled)
 {
 	using part = route_design::curve_focus::part;
 	auto value{static_cast<std::size_t>(Arc) < Cants.size() ? Cants[Arc] : std::max(0.0, Cant)};
@@ -2666,7 +2667,7 @@ bool editor_mode::route_arc_cant(int const Index, int const Arc, double &Cant, s
 	return edited;
 }
 
-bool editor_mode::route_vertex_reshape(int const Index)
+bool route_window::route_vertex_reshape(int const Index)
 {
 	using part = route_design::curve_focus::part;
 	auto &route{m_route};
@@ -2678,13 +2679,13 @@ bool editor_mode::route_vertex_reshape(int const Index)
 		for (int pass = 0; pass < 3; ++pass)
 		{
 			Shape();
-			if (false == route.hold || false == route_hold_clicks(Index))
+			if (false == route.hold || false == m_route_view.route_hold_clicks(Index))
 				break;
 		}
 		changed = true;
 	};
 	if (ImGui::SmallButton(STR_C("Apply recommended for V")))
-		reshape([this, &vertex] { route_recommend(vertex); });
+		reshape([this, &vertex] { m_designer.route_recommend(vertex); });
 	if (ImGui::IsItemHovered())
 	{
 		auto const recommended{alignment::recommend(design.speed, vertex.radius, design.norms)};
@@ -2703,7 +2704,7 @@ bool editor_mode::route_vertex_reshape(int const Index)
 }
 
 // the cant ramps at the ends of the curve: along its transitions, or where they're put, off a switch laid on a transition say
-bool editor_mode::route_vertex_ramps(int const Index, float const Half)
+bool route_window::route_vertex_ramps(int const Index, float const Half)
 {
 	if (m_route.design.vertices[Index].spirals || false == ImGui::TreeNode(STR_C("Cant ramps")))
 		return false;
@@ -2717,7 +2718,7 @@ bool editor_mode::route_vertex_ramps(int const Index, float const Half)
 	return changed;
 }
 
-bool editor_mode::route_cant_ramp(int const Index, bool const Out, alignment::result::cant_ramp const *Ramp, float const Half)
+bool route_window::route_cant_ramp(int const Index, bool const Out, alignment::result::cant_ramp const *Ramp, float const Half)
 {
 	using part = route_design::curve_focus::part;
 	auto &vertex{m_route.design.vertices[Index]};
@@ -2760,7 +2761,7 @@ bool editor_mode::route_cant_ramp(int const Index, bool const Out, alignment::re
 	return changed;
 }
 
-bool editor_mode::route_vertex_details(int const Index)
+bool route_window::route_vertex_details(int const Index)
 {
 	if (false == ImGui::TreeNode(STR_C("Details")))
 		return false;
@@ -2777,7 +2778,7 @@ bool editor_mode::route_vertex_details(int const Index)
 	return changed;
 }
 
-void editor_mode::render_route_result()
+void route_window::render_route_result()
 {
 	auto const &route{m_route};
 	auto const &design{route.design};
@@ -2811,8 +2812,8 @@ void editor_mode::render_route_result()
 	{
 		if (main_button(STR_C("Apply to the scenery"), ImVec2(-1.0f, 28.0f)))
 		{
-			route_apply();
-			first_step_done(first_step::plan_apply);
+			m_designer.route_apply();
+			m_services.first_step_done(editor_first_step::plan_apply);
 		}
 	}
 	else
@@ -2823,14 +2824,101 @@ void editor_mode::render_route_result()
 		ImGui::TextUnformatted(route.status.c_str());
 }
 
-editor_track::straight const &editor_mode::current_straight()
+editor_track::straight const &route_designer::current_straight()
 {
-	if (auto *track{selected_track()}; track != m_straights.current_for)
+	if (auto *track{m_services.selected_track()}; track != m_straights.current_for)
 	{
 		m_straights.current_for = track;
 		m_straights.handle = -1;
 		m_straights.current = track != nullptr ? editor_track::find_straight(*track, m_straights.tolerance) : editor_track::straight{};
-		find_neighbour_straights();
+		m_build.neighbour_straights_found();
 	}
 	return m_straights.current;
+}
+
+// what the rest of the editor calls, kept on editor_mode: done by the build tools
+
+bool editor_mode::route_active() const
+{
+	return m_build_tools->routes.designer.route_active();
+}
+
+void editor_mode::route_bind_ends()
+{
+	m_build_tools->routes.designer.route_bind_ends();
+}
+
+alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve) const
+{
+	return m_build_tools->routes.designer.route_vertex_of(Curve);
+}
+
+bool editor_mode::route_load(TTrack &Track)
+{
+	return m_build_tools->routes.designer.route_load(Track);
+}
+
+void editor_mode::route_take_stored(int const Index)
+{
+	m_build_tools->routes.designer.route_take_stored(Index);
+}
+
+void editor_mode::route_apply()
+{
+	m_build_tools->routes.designer.route_apply();
+}
+
+glm::dvec3 editor_mode::route_vertex_position(int const Vertex) const
+{
+	return m_build_tools->routes.designer.route_vertex_position(Vertex);
+}
+
+bool editor_mode::route_hit(int &Vertex, int &Grip) const
+{
+	return m_build_tools->routes.designer.route_hit(Vertex, Grip);
+}
+
+editor_track::straight const & editor_mode::current_straight()
+{
+	return m_build_tools->routes.designer.current_straight();
+}
+
+bool editor_mode::digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone)
+{
+	return m_build_tools->routes.route_relay.digitize_drawn(Created, Alone);
+}
+
+void editor_mode::digitize_all(int *Kept, int *Failed)
+{
+	m_build_tools->routes.route_relay.digitize_all(Kept, Failed);
+}
+
+void editor_mode::route_trace_start()
+{
+	m_build_tools->routes.route_view.route_trace_start();
+}
+
+void editor_mode::route_trace_fit()
+{
+	m_build_tools->routes.route_view.route_trace_fit();
+}
+
+void editor_mode::route_trace_end(bool const Keep)
+{
+	m_build_tools->routes.route_view.route_trace_end(Keep);
+}
+
+glm::dvec3 editor_mode::route_trace_cursor() const
+{
+	return m_build_tools->routes.route_view.route_trace_cursor();
+}
+
+int editor_mode::route_trace_hit() const
+{
+	return m_build_tools->routes.route_view.route_trace_hit();
+}
+
+void editor_mode::render_route_ui()
+{
+	m_build_tools->routes.route_panel.render_route_ui();
 }
