@@ -61,9 +61,9 @@ TEST_CASE("test mode: the exit codes keep clear of the ones of a killed or abort
 
 TEST_CASE("test mode: seconds on the command line are a number, not negative")
 {
-	CHECK(simulation::parse_seconds("240") == 240.0);
-	CHECK(simulation::parse_seconds("0.5") == 0.5);
-	CHECK(simulation::parse_seconds("0") == 0.0);
+	CHECK(simulation::parse_seconds("240").value_or(-1.0) == doctest::Approx(240.0));
+	CHECK(simulation::parse_seconds("0.5").value_or(-1.0) == doctest::Approx(0.5));
+	CHECK(simulation::parse_seconds("0").value_or(-1.0) == doctest::Approx(0.0));
 	CHECK_FALSE(simulation::parse_seconds("").has_value());
 	CHECK_FALSE(simulation::parse_seconds("-1").has_value());
 	CHECK_FALSE(simulation::parse_seconds("60s").has_value());
@@ -84,8 +84,8 @@ TEST_CASE("test mode: the command line")
 	{
 		auto const commandline{parse({"--test-wall-timeout", "900", "-s", "td.scn", "--test", "--test-timeout", "240"})};
 		CHECK(commandline.enabled);
-		CHECK(commandline.timeout == 240.0);
-		CHECK(commandline.wall_timeout == 900.0);
+		CHECK(commandline.timeout.value_or(-1.0) == doctest::Approx(240.0));
+		CHECK(commandline.wall_timeout.value_or(-1.0) == doctest::Approx(900.0));
 		CHECK(commandline.error.empty());
 	}
 	SUBCASE("a limit not given stays unset")
@@ -128,18 +128,18 @@ TEST_CASE("test mode: the real time limit")
 {
 	SUBCASE("given, it is the limit, 0 turns it off")
 	{
-		CHECK(simulation::wall_clock_limit(120.0, 3600.0) == 120.0);
-		CHECK(simulation::wall_clock_limit(0.0, 3600.0) == 0.0);
+		CHECK(simulation::wall_clock_limit(120.0, 3600.0) == doctest::Approx(120.0));
+		CHECK(simulation::wall_clock_limit(0.0, 3600.0) == doctest::Approx(0.0));
 	}
 	SUBCASE("not given, it is the simulation time limit and time for the loading")
 	{
-		CHECK(simulation::wall_clock_limit(std::nullopt, 240.0) == 240.0 + simulation::wall_timeout_loading_allowance);
-		CHECK(simulation::wall_clock_limit(std::nullopt, 3600.0) == 3600.0 + simulation::wall_timeout_loading_allowance);
+		CHECK(simulation::wall_clock_limit(std::nullopt, 240.0) == doctest::Approx(240.0 + simulation::wall_timeout_loading_allowance));
+		CHECK(simulation::wall_clock_limit(std::nullopt, 3600.0) == doctest::Approx(3600.0 + simulation::wall_timeout_loading_allowance));
 	}
 	SUBCASE("no simulation time limit, no real time limit unless given")
 	{
-		CHECK(simulation::wall_clock_limit(std::nullopt, 0.0) == 0.0);
-		CHECK(simulation::wall_clock_limit(300.0, 0.0) == 300.0);
+		CHECK(simulation::wall_clock_limit(std::nullopt, 0.0) == doctest::Approx(0.0));
+		CHECK(simulation::wall_clock_limit(300.0, 0.0) == doctest::Approx(300.0));
 	}
 }
 
@@ -152,7 +152,7 @@ TEST_CASE("test mode: the end conditions")
 	{
 		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false), limits).has_value());
 		CHECK(progress.time == doctest::Approx(0.03));
-		CHECK(progress.resttime == 0.0);
+		CHECK(progress.resttime == doctest::Approx(0.0));
 	}
 	SUBCASE("a cell nobody wrote to says nothing")
 	{
@@ -207,7 +207,7 @@ TEST_CASE("test mode: the end conditions")
 		limits.standstill = 120.0;
 		CHECK_FALSE(run(progress, limits, 100.0, frame(true)).has_value());
 		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false), limits).has_value());
-		CHECK(progress.resttime == 0.0);
+		CHECK(progress.resttime == doctest::Approx(0.0));
 		CHECK_FALSE(run(progress, limits, 200.0, frame(true)).has_value());
 	}
 	SUBCASE("test.pass_on_standstill makes the standstill a pass")
