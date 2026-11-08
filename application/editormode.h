@@ -1290,40 +1290,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	extend_tool m_extend;
 	lay_tool m_lay;
 	alignment::limits laying_norms() const;
-	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
-	// the straight track Alt turns the laid straight to: the nearest one the straight from From to To crosses, or one along From
-	TTrack const *skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const;
 	void lay_after_history(bool const Undo);
-	void lay_back();
-	void lay_escape();
-	std::size_t lay_pending() const; // the points clicked and not laid yet
 	void render_lay_ui();
-	// the parts of it: the points not laid yet, the settings of the mode, the curves of the line shown, the settings folded away, a
-	// texture of the new track
-	void render_lay_pending();
-	void render_lay_shape();
-	void render_lay_curves() const;
-	void render_lay_more();
-	void render_texture_row(int const Kind, char const *Label, std::string &Value, float const Column);
-	void render_lay_status() const;
 	void lay_click();
 	void lay_finish(editor_track::snap_target const &End);
-	// the notes told of the track laid; the compound curve it makes with the tracks of the free ends
-	void lay_notes(std::vector<TTrack *> const &Created, std::vector<segment_data> const &Pieces, editor_track::snap_target const &End, lay_line_plan const &Plan,
-	               std::optional<alignment::lay_result> const &Eased, std::string const &Error, TTrack const *Style);
-	void compound_note(std::vector<TTrack *> const &Created, editor_track::snap_target const &End);
 	void lay_cancel();
-	void lay_enter();
-	// Tab: the bends of straights or the curve traced, for the points clicked from now on
-	void lay_switch_mode();
-	// the points the same in number as their modes, a point with none a bend of straights
-	void lay_trim();
-	// the track through the points clicked, each the way its mode says; End: the free end it finishes at, the last point then
-	std::vector<segment_data> lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
-	                                     lay_line_plan *Plan = nullptr) const;
-	// the parts of it: the track from a point to a free end, the second point; the heights of the pieces and the cant at the free ends
-	std::vector<segment_data> lay_to_end(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const;
-	void lay_heights(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan const &Plan) const;
 	void render_switch_ui();
 	void render_switch_settings(switch_kind const Kind);
 	void render_switch_timbers();
@@ -1552,21 +1523,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void insert_curved_slip(int const Direction, int const Side);
 	bool start_extend(editor_track::snap_target const &End);
 	void finish_extend();
-	// the parts of it: a press let go where it was made; the second switch of a crossover placed
-	void extend_tap();
 	void finish_crossover(crossover_plan const &Plan);
-	std::vector<segment_data> extend_pieces() const;
-	// the track dragged on from the diverging end of a switch, in the radius of its branch; nullopt for any other
-	std::optional<std::vector<segment_data>> extend_branch_pieces() const;
 	// the same for the track shown while it's dragged: its grade line fitted on the thread of the fitter, the frame not waiting for it
 	std::vector<segment_data> extend_preview() const;
 	// the free end of the path as the start of a new track; false if it isn't free or has no direction
 	static bool free_end(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool);
-	// the free end new pieces are added at: the selected point if it's one, else the end, else the start
-	bool chosen_free_end(extend_tool &Tool) const;
-	// adds a straight (Side 0) or a curve to the left (1) or the right (-1) at the free end of the selected track
-	void extend_add(int const Side);
-	void render_extend_ui();
 	using track_layout = editor_track::layout;
 	// the shape dragged from a free end, as the mode of laying has it: a straight in the one of the straights, an arc and a straight in
 	// the one of a curve
@@ -1576,51 +1537,24 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	TTrack const *m_join_track{nullptr};
 	editor_track::point_ref m_join_point;
 	mutable alignment::join_result m_join_last;
-	// the layout laid on from the end of From with the transition curves of the norms; none where it doesn't fit
-	std::optional<alignment::lay_result> eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const;
 	mutable std::optional<alignment::lay_result> m_eased_last;
-	mutable std::optional<std::pair<alignment::lay_request, std::optional<alignment::lay_result>>> m_eased_cache;
 	bool track_wheel(double const Offset);
 	// the parts of it: the connection of a switch dragged out, the speed laid for, the radius of the curve laid or joining
 	void wheel_connection(double const Offset);
-	void wheel_speed(int const Step);
-	void wheel_radius(bool const Joined, int const Step);
-	// a touchpad sends fractions of a notch: a choice moves a step for each whole notch gathered, and only one in a gesture when
-	// Gesture; a pause, another key or the other way starts over
-	struct wheel_state
-	{
-		double rest{0.0};
-		double time{-10.0};
-		int keys{0};
-		bool spent{false};
-	};
-	wheel_state m_wheel;
-	int wheel_step(double const Offset, bool const Gesture);
 	std::string track_shaping(bool const Joined) const;
 	double design_speed(TTrack const *From, TTrack const *To) const;
-	// the track whose speed the design takes, none where it's the one set for the laying
-	TTrack const *speed_track(TTrack const *From, TTrack const *To) const;
 	// the tracks the laying under way goes on from and to
 	std::pair<TTrack const *, TTrack const *> laying_ends() const;
 	std::string design_speed_of(TTrack const *From, TTrack const *To) const;
 	// what ST-T1-A6 says of the sudden changes of the cant deficiency right behind a switch the pieces laid come out of at Start (From),
 	// or go into at End (To): of the end of its curve and the first sudden change of the pieces (9.11, tables 9.15, 9.16)
 	std::vector<std::string> switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const;
-	void give_own_speed(std::vector<TTrack *> const &Created) const;
-	std::vector<segment_data> join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
-	                                      std::string &Error) const;
-	double m_extend_length{25.0};
-	double m_extend_radius{300.0};
 	bool extend_snap(editor_track::snap_target &Target) const;
 	void update_build_tools();
 	// the parts of it: the track and the point the cursor joins, the end of a track dragged on, the switch dragged out, the line being
 	// laid; the cursor taken where it is for the line, or kept where its fits were asked for; the line worked out through the points
 	void join_target(editor_track::snap_target const &Target);
-	void update_extend_drag(glm::vec2 const &Cursor, bool const Pointing);
 	void update_switch_placing();
-	void update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &Cursor, bool const Pointing);
-	void lay_settle();
-	void lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End);
 	void draw_build_overlay() const;
 	// the lines told of the switch or the slip being bent into a curve, the Preview of its paths: what its start was drawn to, the radii,
 	// the cant, the notes and the warnings; the Station they're told at, the middle of a slip or the start of a switch
@@ -2779,6 +2713,30 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool following_preview() const override;
 	void follow_preview_set(bool const Following) override;
 	double lay_design_speed(TTrack const *From, TTrack const *To) const override;
+	double &join_radius_chosen() override;
+	int &join_variant_chosen() override;
+	alignment::join_result &join_result_last() override;
+	std::optional<alignment::lay_result> &eased_result_last() override;
+	std::string &typed_text() override;
+	editor_track::layout &laying_layout() override;
+	double joint_kink() const override;
+	void join_target_aimed(editor_track::snap_target const &Target) override;
+	void tutorial_open_at(char const *Lesson) override;
+	editor_track::point_ref &track_point_chosen() override;
+	glm::dvec3 cursor_on_terrain(double const Height) const override;
+	editor_track::snap_target free_end_snapped(glm::dvec3 const &Near, glm::vec2 const &Screen, TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const override;
+	bool free_end_of(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool) const override;
+	double bed_height_at(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const override;
+	glm::dvec3 lay_bed_point(glm::dvec3 const &Point) const override;
+	glm::dvec3 typed_lay_point(glm::dvec3 const &Mouse) const override;
+	void ground_followed(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const override;
+	bool branch_link_planned(editor_track::branch_link &Link, std::string &Reason) const override;
+	void branch_link_finished(editor_track::branch_link const &Link) override;
+	bool crossover_laid_from_extend() override;
+	track_hover track_hovered(TTrack const *Only, float const Pixels) const override;
+	std::uint64_t texture_image_of(int const Kind, std::string const &Name) override;
+	bool texture_picked(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen) override;
+	bool material_dropped(std::string &Name) const override;
 	// build services: end
 
 

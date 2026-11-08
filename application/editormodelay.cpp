@@ -535,10 +535,10 @@ void editor_mode::update_build_tools()
 	m_straights.detour_mouse = ground;
 	bool const pointing{m_cursor_override.has_value() || ImGui::IsMousePosValid()};
 	if (m_extend.active)
-		update_extend_drag(cursor, pointing);
+		m_build_tools->extender.update_extend_drag(cursor, pointing);
 	if (m_switch.placing)
 		update_switch_placing();
-	update_lay_preview(ground, cursor, pointing);
+	m_build_tools->planner.update_lay_preview(ground, cursor, pointing);
 }
 
 void editor_mode::join_target(editor_track::snap_target const &Target)
@@ -551,14 +551,14 @@ void editor_mode::join_target(editor_track::snap_target const &Target)
 	m_join_variant = 0;
 }
 
-void editor_mode::update_extend_drag(glm::vec2 const &Cursor, bool const Pointing)
+void extend_editor::update_extend_drag(glm::vec2 const &Cursor, bool const Pointing)
 {
 	if (Pointing)
-		m_extend.mouse = cursor_terrain(m_extend.point.y);
-	m_extend.snap = m_extend.track != nullptr ? snap_free_end(m_extend.mouse, Cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
+		m_extend.mouse = m_build.cursor_on_terrain(m_extend.point.y);
+	m_extend.snap = m_extend.track != nullptr ? m_build.free_end_snapped(m_extend.mouse, Cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
 	if (m_extend.snap.track == nullptr)
-		m_extend.mouse.y = EditorSettings.heights() == editorSettings::lay_heights::level ? m_extend.point.y : bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
-	join_target(m_extend.snap);
+		m_extend.mouse.y = EditorSettings.heights() == editorSettings::lay_heights::level ? m_extend.point.y : m_build.bed_height_at(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
+	m_build.join_target_aimed(m_extend.snap);
 }
 
 void editor_mode::update_switch_placing()
@@ -577,7 +577,7 @@ void editor_mode::update_switch_placing()
 	}
 }
 
-void editor_mode::update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &Cursor, bool const Pointing)
+void lay_planner::update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &Cursor, bool const Pointing)
 {
 	auto &lay{m_lay};
 	lay.preview.clear();
@@ -594,18 +594,18 @@ void editor_mode::update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &
 	else if (lay.start.track != nullptr)
 		height = lay.start.position.y;
 	if (Pointing)
-		lay.mouse = typed_lay(cursor_terrain(height));
+		lay.mouse = m_build.typed_lay_point(m_build.cursor_on_terrain(height));
 	auto const oncursor{lap()};
 	lay.skew.clear();
-	if (Pointing && ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
+	if (Pointing && ImGui::GetIO().KeyAlt && m_build.typed_text().empty() && false == lay.points.empty())
 		lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
-	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, Cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	lay.mouse_snap = m_build.typed_text().empty() ? m_build.free_end_snapped(lay.mouse, Cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
 	auto const snapping{lap()};
 	if (lay.mouse_snap.track == nullptr)
-		lay.mouse = lay_bed(lay.mouse);
+		lay.mouse = m_build.lay_bed_point(lay.mouse);
 	auto const bedding{lap()};
 	if (false == m_extend.active)
-		join_target(lay.points.empty() ? editor_track::snap_target{} : lay.mouse_snap);
+		m_build.join_target_aimed(lay.points.empty() ? editor_track::snap_target{} : lay.mouse_snap);
 	lay_trim();
 	lay.plan = {};
 	if (lay.points.empty())
@@ -627,7 +627,7 @@ void editor_mode::update_lay_preview(glm::dvec3 const &Ground, glm::vec2 const &
 		log_slow_lay({oncursor, snapping, bedding, planning}, modes, lay, end.track != nullptr);
 }
 
-void editor_mode::lay_settle()
+void lay_planner::lay_settle()
 {
 	auto &lay{m_lay};
 	// the line worked out last stays shown as long as the points clicked go on from its ones; one through a point taken back doesn't
@@ -642,16 +642,16 @@ void editor_mode::lay_settle()
 		lay.settling = lay_tool::settling_cursor{lay.mouse, lay.mouse_snap, lay.points, lay.modes, lay.mode, m_track_edits};
 }
 
-void editor_mode::lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End)
+void lay_planner::lay_work_out(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End)
 {
 	auto &lay{m_lay};
-	m_build_tools->shared.fits_waiting = false;
-	m_follow_preview = true;
+	m_fits_waiting = false;
+	m_build.follow_preview_set(true);
 	lay.preview = lay_pieces(Points, Modes, End, lay.preview_length, lay.preview_error, &lay.plan);
-	m_follow_preview = false;
-	if (false == m_build_tools->shared.fits_waiting || false == lay.whole)
+	m_build.follow_preview_set(false);
+	if (false == m_fits_waiting || false == lay.whole)
 	{
-		lay.shown = lay_tool::worked_out{lay.preview, lay.preview_error, lay.preview_length, lay.plan, m_eased_last, m_join_last, lay.points};
+		lay.shown = lay_tool::worked_out{lay.preview, lay.preview_error, lay.preview_length, lay.plan, m_build.eased_result_last(), m_build.join_result_last(), lay.points};
 		lay.settling.reset();
 	}
 	else if (lay.shown.has_value())
@@ -662,8 +662,8 @@ void editor_mode::lay_work_out(std::vector<glm::dvec3> const &Points, std::vecto
 		lay.preview_error = shown.error;
 		lay.preview_length = shown.length;
 		lay.plan = shown.plan;
-		m_eased_last = shown.eased;
-		m_join_last = shown.join;
+		m_build.eased_result_last() = shown.eased;
+		m_build.join_result_last() = shown.join;
 	}
 }
 
@@ -695,27 +695,27 @@ bool editor_mode::free_end(TTrack &Track, int const Path, bool const Atend, exte
 	return true;
 }
 
-bool editor_mode::chosen_free_end(extend_tool &Tool) const
+bool extend_editor::chosen_free_end(extend_tool &Tool) const
 {
-	auto *track{selected_track()};
+	auto *track{m_services.selected_track()};
 	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track))
 		return false;
-	if (m_track_point.valid() && editor_track::is_end(m_track_point.kind) && free_end(*track, m_track_point.path, m_track_point.kind == editor_track::point_kind::end, Tool))
+	if (m_build.track_point_chosen().valid() && editor_track::is_end(m_build.track_point_chosen().kind) && m_build.free_end_of(*track, m_build.track_point_chosen().path, m_build.track_point_chosen().kind == editor_track::point_kind::end, Tool))
 		return true;
 	for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		for (auto const atend : {true, false})
-			if (free_end(*track, i, atend, Tool))
+			if (m_build.free_end_of(*track, i, atend, Tool))
 				return true;
 	return false;
 }
 
-bool editor_mode::start_extend(editor_track::snap_target const &End)
+bool extend_editor::start_extend(editor_track::snap_target const &End)
 {
 	auto *track{End.track};
 	if (track == nullptr || (track->eType != tt_Normal && track->eType != tt_Switch) || false == editor_track::is_supported(*track))
 		return false;
 	extend_tool tool;
-	if (false == free_end(*track, End.point.path, End.point.kind == editor_track::point_kind::end, tool))
+	if (false == m_build.free_end_of(*track, End.point.path, End.point.kind == editor_track::point_kind::end, tool))
 		return false;
 	auto const &io{ImGui::GetIO()};
 	m_extend = tool;
@@ -727,7 +727,7 @@ bool editor_mode::start_extend(editor_track::snap_target const &End)
 	return true;
 }
 
-bool editor_mode::extend_snap(editor_track::snap_target &Target) const
+bool extend_editor::extend_snap(editor_track::snap_target &Target) const
 {
 	auto const &tool{m_extend};
 	if (false == tool.active || tool.track == nullptr)
@@ -1011,13 +1011,13 @@ void editor_mode::point_drag_finish()
 	m_track_joints.clear();
 }
 
-std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const
+std::optional<alignment::lay_result> lay_planner::eased_layout(TTrack const *From, glm::dvec3 const &Point, glm::dvec2 const &Direction, glm::dvec3 const &Target, double const Radius) const
 {
-	m_eased_last.reset();
+	m_build.eased_result_last().reset();
 	// from the end of a curved track the line goes on from its curvature: a curve from it, a straight after a transition out of it, never
 	// with a jump of the curvature at the end; at the diverging track of a switch a curve from it, a straight right from its end, as the
 	// switch goes on with a straight
-	if (From == nullptr || (From->eType != tt_Normal && (From->eType != tt_Switch || m_track_layout == track_layout::straight)))
+	if (From == nullptr || (From->eType != tt_Normal && (From->eType != tt_Switch || m_build.laying_layout() == editor_track::layout::straight)))
 		return std::nullopt;
 	auto const end{editor_track::bend_at(*From, Point)};
 	if (false == end.has_value())
@@ -1028,25 +1028,25 @@ std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *Fro
 	request.start.roll = end->roll;
 	request.curvature = end->curvature;
 	request.target = Target;
-	switch (m_track_layout)
+	switch (m_build.laying_layout())
 	{
-	case track_layout::straight: request.kind = alignment::lay_kind::straight; break;
-	case track_layout::arc: request.kind = alignment::lay_kind::arc; break;
-	case track_layout::straight_arc: request.kind = alignment::lay_kind::straight_arc; break;
+	case editor_track::layout::straight: request.kind = alignment::lay_kind::straight; break;
+	case editor_track::layout::arc: request.kind = alignment::lay_kind::arc; break;
+	case editor_track::layout::straight_arc: request.kind = alignment::lay_kind::straight_arc; break;
 	default: request.kind = alignment::lay_kind::arc_straight; break;
 	}
 	request.radius = Radius;
 	request.speed = design_speed(From, nullptr);
 	request.piece_length = m_lay.piece_length;
-	request.norms = laying_norms();
+	request.norms = m_build.lay_norms();
 	// the diverging track of a switch has no cant: the line out of its curve is laid for the speed the curve lets with the unbalanced
 	// acceleration alone, as ease_out_of does
 	if (From->eType == tt_Switch && std::abs(end->curvature) > 1e-9)
 		request.speed = std::min(request.speed, std::sqrt(12.96 * request.norms.unbalanced / std::abs(end->curvature)));
 	if (false == m_eased_cache.has_value() || m_eased_cache->first != request)
 		m_eased_cache.emplace(request, alignment::lay_on(request));
-	m_eased_last = m_eased_cache->second;
-	return m_eased_last;
+	m_build.eased_result_last() = m_eased_cache->second;
+	return m_build.eased_result_last();
 }
 
 namespace
@@ -1088,42 +1088,42 @@ void lead_cant(std::vector<segment_data> &Pieces, double const Roll, double cons
 
 } // namespace
 
-std::vector<segment_data> editor_mode::extend_pieces() const
+std::vector<segment_data> extend_editor::extend_pieces() const
 {
-	m_eased_last.reset();
+	m_build.eased_result_last().reset();
 	auto const &tool{m_extend};
 	if (editor_track::snap_target target; extend_snap(target))
 	{
 		editor_track::branch_link link;
-		if (std::string reason; plan_branch_link(link, reason))
+		if (std::string reason; m_build.branch_link_planned(link, reason))
 		{
-			m_join_last = {};
+			m_build.join_result_last() = {};
 			return link.pieces;
 		}
 		double length;
 		std::string error;
-		return join_pieces(tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}, tool.point, tool.direction, target, length, error);
+		return m_planner.join_pieces(tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}, tool.point, tool.direction, target, length, error);
 	}
-	m_join_last = {};
+	m_build.join_result_last() = {};
 	auto radius{m_lay.radius};
-	if (auto const values{typed_values()}; false == values.empty() && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc) && std::abs(values[0]) >= 1.0)
+	if (auto const values{m_build.typed_numbers()}; false == values.empty() && (m_build.laying_layout() == editor_track::layout::arc_straight || m_build.laying_layout() == editor_track::layout::straight_arc) && std::abs(values[0]) >= 1.0)
 		radius = std::abs(values[0]);
 	if (auto branch{extend_branch_pieces()}; branch.has_value())
 		return std::move(*branch);
-	auto const eased{eased_layout(tool.track, tool.point, tool.direction, tool.mouse, radius)};
-	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
-	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
+	auto const eased{m_planner.eased_layout(tool.track, tool.point, tool.direction, tool.mouse, radius)};
+	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_build.laying_layout(), tool.point, tool.direction, tool.grade, tool.mouse, radius)};
+	m_build.ground_followed(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
 	if (tool.track != nullptr)
-		lead_cant(pieces, -editor_track::joint_roll(*tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}), laying_norms().gauge, true);
+		lead_cant(pieces, -editor_track::joint_roll(*tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}), m_planner.laying_norms().gauge, true);
 	return pieces;
 }
 
 // a track dragged on from the diverging end of a switch goes on in the radius of its branch as far as the cursor turns it: nullopt for
 // any other, or for a branch with no radius; no pieces while it's shorter than half a metre
-std::optional<std::vector<segment_data>> editor_mode::extend_branch_pieces() const
+std::optional<std::vector<segment_data>> extend_editor::extend_branch_pieces() const
 {
 	auto const &tool{m_extend};
-	if (m_track_layout == track_layout::straight || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() < 2 || tool.path != 1 || false == tool.atend)
+	if (m_build.laying_layout() == editor_track::layout::straight || tool.track == nullptr || tool.track->eType != tt_Switch || tool.track->m_paths.size() < 2 || tool.path != 1 || false == tool.atend)
 		return std::nullopt;
 	auto const &diverging{tool.track->m_paths[1]};
 	bezier const curve{diverging};
@@ -1141,7 +1141,7 @@ std::optional<std::vector<segment_data>> editor_mode::extend_branch_pieces() con
 		auto pieces{arc_pieces(tool.point, direction, tool.grade, branch, std::min(angle, glm::pi<double>()), side)};
 		for (auto &piece : pieces)
 			piece.rolls = {diverging.rolls[1], diverging.rolls[1]};
-		follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
+		m_build.ground_followed(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
 		return pieces;
 	}
 	return std::nullopt;
@@ -1158,13 +1158,13 @@ std::vector<segment_data> editor_mode::extend_preview() const
 	    false == m_extend_memo.fresh(key))
 	{
 		m_follow_preview = true;
-		m_extend_memo.keep(std::move(key), extend_pieces());
+		m_extend_memo.keep(std::move(key), m_build_tools->extender.extend_pieces());
 		m_follow_preview = false;
 	}
 	return m_extend_memo.result;
 }
 
-TTrack const *editor_mode::speed_track(TTrack const *From, TTrack const *To) const
+TTrack const *lay_planner::speed_track(TTrack const *From, TTrack const *To) const
 {
 	if (m_lay.own_speed && m_lay.style.velocity > 0.0)
 		return nullptr;
@@ -1175,26 +1175,26 @@ TTrack const *editor_mode::speed_track(TTrack const *From, TTrack const *To) con
 	return result;
 }
 
-double editor_mode::design_speed(TTrack const *From, TTrack const *To) const
+double lay_planner::design_speed(TTrack const *From, TTrack const *To) const
 {
 	if (auto const *track{speed_track(From, To)}; track != nullptr)
 		return editor_track::velocity(*track);
 	return m_lay.style.velocity > 0.0 ? m_lay.style.velocity : 100.0;
 }
 
-std::pair<TTrack const *, TTrack const *> editor_mode::laying_ends() const
+std::pair<TTrack const *, TTrack const *> lay_planner::laying_ends() const
 {
 	if (m_extend.active)
 	{
 		editor_track::snap_target target;
-		return {m_extend.track, extend_snap(target) ? target.track : nullptr};
+		return {m_extend.track, m_extender.extend_snap(target) ? target.track : nullptr};
 	}
 	if (m_lay.active && false == m_lay.points.empty())
 		return {m_lay.start.track, m_lay.points.size() == 1 ? m_lay.mouse_snap.track : nullptr};
 	return {nullptr, nullptr};
 }
 
-std::string editor_mode::design_speed_of(TTrack const *From, TTrack const *To) const
+std::string lay_planner::design_speed_of(TTrack const *From, TTrack const *To) const
 {
 	auto const speed{design_speed(From, To)};
 	if (auto const *track{speed_track(From, To)}; track != nullptr)
@@ -1202,7 +1202,7 @@ std::string editor_mode::design_speed_of(TTrack const *From, TTrack const *To) c
 	return format(STR_C("design speed %.0f km/h, set for the laying"), speed);
 }
 
-std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const
+std::vector<std::string> lay_planner::switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const
 {
 	TTrack const *switched{nullptr};
 	if (From != nullptr && From->eType == tt_Switch)
@@ -1222,10 +1222,10 @@ std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, g
 	auto const line{line_curves(Pieces, switched == From)};
 	// no faster than the diverging track of the switch lets
 	auto const speed{std::min(design_speed(From, To), editor_track::diverging_speed(1.0 / std::abs(*curvature)))};
-	return switch_curve::check_exit(*curvature, straight, line, speed, laying_norms().gauge).warnings;
+	return switch_curve::check_exit(*curvature, straight, line, speed, m_build.lay_norms().gauge).warnings;
 }
 
-void editor_mode::give_own_speed(std::vector<TTrack *> const &Created) const
+void lay_planner::give_own_speed(std::vector<TTrack *> const &Created) const
 {
 	if (false == m_lay.own_speed || m_lay.style.velocity <= 0.0)
 		return;
@@ -1233,7 +1233,7 @@ void editor_mode::give_own_speed(std::vector<TTrack *> const &Created) const
 		editor_track::velocity(*track, m_lay.style.velocity);
 }
 
-std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
+std::vector<segment_data> lay_planner::join_pieces(TTrack const *From, editor_track::point_ref const &Frompoint, glm::dvec3 const &Start, glm::dvec2 const &Direction, editor_track::snap_target const &End, double &Length,
                                                    std::string &Error) const
 {
 	alignment::join_request request;
@@ -1243,12 +1243,12 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	request.end.position = End.position;
 	request.end.direction = plan_of(End.direction);
 	request.end.roll = End.track != nullptr ? editor_track::joint_roll(*End.track, End.point) : 0.0;
-	request.radius = m_join_radius;
-	request.variant = m_join_variant;
+	request.radius = m_build.join_radius_chosen();
+	request.variant = m_build.join_variant_chosen();
 	request.speed = design_speed(From, End.track);
-	request.kink = m_joints.kink_angle() * 0.5;
+	request.kink = m_build.joint_kink() * 0.5;
 	request.shape = m_route.design.shape;
-	request.norms = laying_norms();
+	request.norms = m_build.lay_norms();
 	auto result{alignment::join(request)};
 	if (result.kind != alignment::join_kind::straight && result.kind != alignment::join_kind::arc && glm::length(request.end.direction) > 1e-9)
 	{
@@ -1262,12 +1262,12 @@ std::vector<segment_data> editor_mode::join_pieces(TTrack const *From, editor_tr
 	Length = result.length;
 	std::vector<std::string> notes;
 	for (auto const &warning : result.warnings)
-		if (m_join_radius > 0.0 || std::ranges::find(result.radius_warnings, warning) == result.radius_warnings.end())
+		if (m_build.join_radius_chosen() > 0.0 || std::ranges::find(result.radius_warnings, warning) == result.radius_warnings.end())
 			notes.push_back(warning);
 	if (result.kind == alignment::join_kind::bezier)
 		notes.emplace(notes.begin(), STR_C("No curve fits between the ends, they are joined with a free curve"));
 	Error = lines_of(notes);
-	m_join_last = result;
+	m_build.join_result_last() = result;
 	return result.pieces;
 }
 
@@ -1285,7 +1285,7 @@ void heights_met(segment_data &Piece, TTrack const *First, TTrack const *Second)
 
 } // namespace
 
-void editor_mode::finish_extend()
+void extend_editor::finish_extend()
 {
 	if (auto const &io{ImGui::GetIO()}; glm::length(glm::vec2{io.MousePos.x, io.MousePos.y} - m_extend.pressed) < kDragPixels)
 	{
@@ -1293,20 +1293,16 @@ void editor_mode::finish_extend()
 		return;
 	}
 	std::string reason;
-	if (editor_track::branch_link link; plan_branch_link(link, reason))
+	if (editor_track::branch_link link; m_build.branch_link_planned(link, reason))
 	{
-		finish_branch_link(link);
+		m_build.branch_link_finished(link);
 		return;
 	}
 	if (false == reason.empty())
-		ui()->set_status(reason, true);
-	crossover_plan plan;
+		m_build.build_ui()->set_status(reason, true);
 	editor_track::snap_target target;
-	if (false == extend_snap(target) && plan_crossover(plan))
-	{
-		finish_crossover(plan);
+	if (false == extend_snap(target) && m_build.crossover_laid_from_extend())
 		return;
-	}
 	auto const pieces{extend_pieces()};
 	auto const *style{m_extend.track};
 	m_extend.active = false;
@@ -1317,24 +1313,23 @@ void editor_mode::finish_extend()
 	std::vector<TTrack *> created;
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*style, piece));
-	give_own_speed(created);
+	m_planner.give_own_speed(created);
 	editor_track::commit(created);
-	auto const from{m_history.size()};
-	push_track_snapshot({}, created);
-	first_step_done(first_step::laid);
+	auto const from{m_build.history_size()};
+	m_services.push_track_snapshot({}, created);
+	m_services.first_step_done(editor_first_step::laid);
 	if (target.track != nullptr)
-		first_step_done(first_step::join);
-	if (auto const warnings{switch_exit_warnings(style, pieces.front().points[segment_data::point::start], target.track, target.position, pieces)}; false == warnings.empty())
-		ui()->set_status(lines_of(warnings), true);
-	m_node = created.back();
-	ui()->set_node(m_node);
-	m_build_tools->nmt_auto.nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
+		m_services.first_step_done(editor_first_step::join);
+	if (auto const warnings{m_planner.switch_exit_warnings(style, pieces.front().points[segment_data::point::start], target.track, target.position, pieces)}; false == warnings.empty())
+		m_build.build_ui()->set_status(lines_of(warnings), true);
+	m_services.set_current_node(created.back());
+	m_nmt_auto.nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
 	m_nmt_state.laying = false;
-	m_build_tools->straight_edit.straight_refresh();
+	m_straight_edit.straight_refresh();
 }
 
 // a press let go where it was made: the free end pressed starts the line laid, or is chosen on the selected track
-void editor_mode::extend_tap()
+void extend_editor::extend_tap()
 {
 	m_extend.active = false;
 	if (m_lay.active && m_lay.points.empty() && m_extend.origin.track != nullptr)
@@ -1343,8 +1338,8 @@ void editor_mode::extend_tap()
 		m_lay.start = m_extend.origin;
 		m_lay.points.push_back(m_extend.origin.position);
 	}
-	else if (false == m_lay.active && m_extend.origin.track != nullptr && m_extend.origin.track == selected_track())
-		m_track_point = m_extend.origin.point;
+	else if (false == m_lay.active && m_extend.origin.track != nullptr && m_extend.origin.track == m_services.selected_track())
+		m_build.track_point_chosen() = m_extend.origin.point;
 }
 
 // the second switch of a crossover placed on the straight beside the track dragged on, with the pieces between the two
@@ -1378,7 +1373,7 @@ void editor_mode::finish_crossover(crossover_plan const &Plan)
 	advance_switch_name();
 }
 
-void editor_mode::extend_add(int const Side)
+void extend_editor::extend_add(int const Side)
 {
 	extend_tool tool;
 	if (false == chosen_free_end(tool))
@@ -1401,14 +1396,13 @@ void editor_mode::extend_add(int const Side)
 	for (auto const &piece : pieces)
 		created.push_back(editor_track::create_path(*tool.track, piece));
 	editor_track::commit(created);
-	push_track_snapshot({}, created);
-	m_node = created.back();
-	ui()->set_node(m_node);
-	m_track_point = {};
-	m_build_tools->straight_edit.straight_refresh();
+	m_services.push_track_snapshot({}, created);
+	m_services.set_current_node(created.back());
+	m_build.track_point_chosen() = {};
+	m_straight_edit.straight_refresh();
 }
 
-void editor_mode::render_extend_ui()
+void extend_editor::render_extend_ui()
 {
 	if (extend_tool tool; false == chosen_free_end(tool))
 		return;
@@ -1450,7 +1444,7 @@ void editor_mode::render_extend_ui()
 		extend_add(-1);
 }
 
-int editor_mode::wheel_step(double const Offset, bool const Gesture)
+int lay_planner::wheel_step(double const Offset, bool const Gesture)
 {
 	auto const &io{ImGui::GetIO()};
 	auto const now{ImGui::GetTime()};
@@ -1484,20 +1478,20 @@ bool editor_mode::track_wheel(double const Offset)
 		return false;
 	if (bool const laying{m_lay.active && false == m_lay.points.empty()}; false == m_extend.active && false == laying)
 		return false;
-	int const step{wheel_step(Offset, false == io.KeyCtrl)};
+	int const step{m_build_tools->planner.wheel_step(Offset, false == io.KeyCtrl)};
 	if (step == 0)
 		return true;
 	editor_track::snap_target target;
-	bool const joined{m_extend.active ? extend_snap(target) : m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr};
+	bool const joined{m_extend.active ? m_build_tools->extender.extend_snap(target) : m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr};
 	first_step_done(io.KeyCtrl ? first_step::wheel : first_step::shape);
 	if (io.KeyCtrl && io.KeyShift)
 	{
-		wheel_speed(step);
+		m_build_tools->planner.wheel_speed(step);
 		return true;
 	}
 	if (io.KeyCtrl)
 	{
-		wheel_radius(joined, step);
+		m_build_tools->planner.wheel_radius(joined, step);
 		return true;
 	}
 	if (joined)
@@ -1511,7 +1505,7 @@ void editor_mode::wheel_connection(double const Offset)
 {
 	auto const &io{ImGui::GetIO()};
 	auto &tool{m_switch};
-	int const step{wheel_step(Offset, false == io.KeyCtrl)};
+	int const step{m_build_tools->planner.wheel_step(Offset, false == io.KeyCtrl)};
 	if (step == 0)
 		return;
 	// the kind of a connection a switch dragged makes comes from where it's let go
@@ -1533,7 +1527,7 @@ void editor_mode::wheel_connection(double const Offset)
 }
 
 // the speed the track is laid for, a step of the usual ones up or down from the one it's laid for now
-void editor_mode::wheel_speed(int const Step)
+void lay_planner::wheel_speed(int const Step)
 {
 	static constexpr std::array speeds{20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 120.0, 140.0, 160.0, 200.0, 250.0};
 	auto const [from, to]{laying_ends()};
@@ -1549,31 +1543,31 @@ void editor_mode::wheel_speed(int const Step)
 }
 
 // the radius of the curve laid, Joined: of the curve joining two ends, past the largest one the radius left to the join
-void editor_mode::wheel_radius(bool const Joined, int const Step)
+void lay_planner::wheel_radius(bool const Joined, int const Step)
 {
 	if (false == Joined)
 		m_lay.radius = next_radius(m_lay.radius, Step);
-	else if (m_join_radius <= 0.0)
-		m_join_radius = next_radius(m_join_last.radius > 0.0 ? m_join_last.radius : 500.0, Step);
-	else if (Step > 0 && m_join_radius >= std::end(kWheelRadii)[-1])
-		m_join_radius = 0.0;
+	else if (m_build.join_radius_chosen() <= 0.0)
+		m_build.join_radius_chosen() = next_radius(m_build.join_result_last().radius > 0.0 ? m_build.join_result_last().radius : 500.0, Step);
+	else if (Step > 0 && m_build.join_radius_chosen() >= std::end(kWheelRadii)[-1])
+		m_build.join_radius_chosen() = 0.0;
 	else
-		m_join_radius = next_radius(m_join_radius, Step);
+		m_build.join_radius_chosen() = next_radius(m_build.join_radius_chosen(), Step);
 }
 
-std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
+std::vector<segment_data> lay_planner::lay_pieces(std::vector<glm::dvec3> const &Points, std::vector<lay_mode> const &Modes, editor_track::snap_target const &End, double &Length, std::string &Error,
                                                   lay_line_plan *Plan) const
 {
 	auto const &tool{m_lay};
 	Length = 0.0;
-	m_eased_last.reset();
+	m_build.eased_result_last().reset();
 	if (Points.size() < 2)
 		return {};
 	if (Points.size() == 2 && End.track != nullptr)
 		return lay_to_end(Points, End, Length, Error);
-	m_join_last = {};
+	m_build.join_result_last() = {};
 	lay_line_plan plan;
-	if (false == m_build_tools->tracer.lay_line(Points, Modes, End, plan, Error))
+	if (false == m_tracer.lay_line(Points, Modes, End, plan, Error))
 		return {};
 	auto const &design{plan.design};
 	auto const &shape{plan.shape};
@@ -1591,7 +1585,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	if ((false == in.pieces.empty() || false == out.pieces.empty()) && editor_track::eases_room(in, out, Points.front(), design.start_direction, Points.back(), design.end_direction))
 	{
 		auto easeddesign{eased_design(design, shape, in, out, End.track == nullptr)};
-		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {}, m_build_tools->tracer.bends_fit())};
+		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {}, m_tracer.bends_fit())};
 		if (easedshape.valid)
 		{
 			Length = editor_track::eased_length(in, easedshape.length, out);
@@ -1616,7 +1610,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 
 // the track from a point to a free end, the second point: the curve the join finds from a free end the line starts at, else the shape of
 // the layout laid back from the end
-std::vector<segment_data> editor_mode::lay_to_end(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const
+std::vector<segment_data> lay_planner::lay_to_end(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, double &Length, std::string &Error) const
 {
 	auto const &tool{m_lay};
 	auto const unknown{std::numeric_limits<double>::quiet_NaN()};
@@ -1632,29 +1626,29 @@ std::vector<segment_data> editor_mode::lay_to_end(std::vector<glm::dvec3> const 
 		return join_pieces(tool.start.track, tool.start.point, Points[0], glm::normalize(leaving), End, Length, Error);
 	}
 	// from a point to a free end: the shape of the layout laid back from the end
-	m_join_last = {};
+	m_build.join_result_last() = {};
 	std::vector<segment_data> pieces;
 	if (glm::length(plan_of(End.direction)) > 1e-6)
 	{
 		auto const eased{eased_layout(End.track, End.position, glm::normalize(-plan_of(End.direction)), Points[0], tool.radius)};
 		auto const laid{eased.has_value() && false == eased->pieces.empty()};
-		auto const back{laid ? eased->pieces : editor_track::layout_pieces(m_track_layout, End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
+		auto const back{laid ? eased->pieces : editor_track::layout_pieces(m_build.laying_layout(), End.position, glm::normalize(-plan_of(End.direction)), -grade_of(End.direction), Points[0], tool.radius)};
 		for (auto piece{back.rbegin()}; piece != back.rend(); ++piece)
 			pieces.push_back(reversed(*piece));
-		Error = laid ? narrowed(m_track_layout, tool.radius, eased->radius) : narrowed(pieces, m_track_layout, tool.radius);
-		follow_ground(pieces, Points[0].y, unknown, End.position.y, grade_of(End.direction), End.track);
+		Error = laid ? narrowed(m_build.laying_layout(), tool.radius, eased->radius) : narrowed(pieces, m_build.laying_layout(), tool.radius);
+		m_build.ground_followed(pieces, Points[0].y, unknown, End.position.y, grade_of(End.direction), End.track);
 	}
 	for (auto const &piece : pieces)
 		Length += bezier{piece}.plan_length();
 	if (pieces.empty())
 		Error = STR_C("The track can't be laid through these points");
-	lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), laying_norms().gauge, false);
+	lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), m_build.lay_norms().gauge, false);
 	return pieces;
 }
 
 // the heights of the pieces laid: fitted to the ground, or from point to point through the points clicked; the cant led on from the free
 // ends
-void editor_mode::lay_heights(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan const &Plan) const
+void lay_planner::lay_heights(std::vector<segment_data> &Pieces, std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan const &Plan) const
 {
 	auto const &tool{m_lay};
 	auto const unknown{std::numeric_limits<double>::quiet_NaN()};
@@ -1665,11 +1659,11 @@ void editor_mode::lay_heights(std::vector<segment_data> &Pieces, std::vector<glm
 	else if (End.track != nullptr)
 		style = End.track;
 	else if (tool.copy_selected)
-		style = selected_track();
+		style = m_services.selected_track();
 	auto const grade0{tool.start.track != nullptr ? -grade_of(tool.start.direction) : unknown};
 	auto const grade1{End.track != nullptr ? grade_of(End.direction) : unknown};
 	if (EditorSettings.heights() == editorSettings::lay_heights::fitted)
-		follow_ground(Pieces, Points.front().y, grade0, Points.back().y, grade1, style);
+		m_build.ground_followed(Pieces, Points.front().y, grade0, Points.back().y, grade1, style);
 	else
 		ground_follow::follow_points(Pieces, Plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
 	if (tool.start.track != nullptr)
@@ -2467,30 +2461,30 @@ std::optional<alignment::trace_stretch> lay_tracer::traced_stretch(alignment::de
 	return {};
 }
 
-void editor_mode::lay_trim()
+void lay_planner::lay_trim()
 {
 	auto &tool{m_lay};
 	tool.modes.resize(tool.points.size(), lay_mode::straights);
 }
 
-void editor_mode::lay_switch_mode()
+void lay_controls::lay_switch_mode()
 {
 	using enum lay_mode;
 	auto &tool{m_lay};
 	tool.mode = tool.mode == straights ? curve : straights;
-	m_track_layout = tool.mode == curve ? track_layout::arc_straight : track_layout::straight;
+	m_build.laying_layout() = tool.mode == curve ? editor_track::layout::arc_straight : editor_track::layout::straight;
 	if (tool.mode == curve)
-		first_step_done(first_step::trace);
+		m_services.first_step_done(editor_first_step::trace);
 	tool.status = tool.mode == curve ? STR("Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights")
 	                                           : STR("Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo");
 	tool.status_time = ImGui::GetTime();
 }
 
-void editor_mode::lay_click()
+void lay_controls::lay_click()
 {
 	auto &tool{m_lay};
 	tool.status.clear();
-	lay_trim();
+	m_planner.lay_trim();
 	auto const snap{tool.mouse_snap};
 	if (snap.track != nullptr && false == tool.points.empty() && glm::distance(snap.position, tool.points.front()) > 1.0)
 	{
@@ -2504,7 +2498,7 @@ void editor_mode::lay_click()
 	{
 		tool.start = snap;
 		auto point{snap.track != nullptr ? snap.position : tool.mouse};
-		if (auto const *axis{snap.track == nullptr && ImGui::GetIO().KeyAlt ? skew_reference(point, point, kSkewSeat) : nullptr})
+		if (auto const *axis{snap.track == nullptr && ImGui::GetIO().KeyAlt ? m_planner.skew_reference(point, point, kSkewSeat) : nullptr})
 		{
 			auto const &path{axis->m_paths.front()};
 			auto const &from{path.points[segment_data::point::start]};
@@ -2520,20 +2514,20 @@ void editor_mode::lay_click()
 	auto const &point{tool.mouse};
 	if (plan_distance(point, tool.points.back()) < 1.0)
 		return;
-	m_typed.clear();
+	m_build.typed_text().clear();
 	tool.points.push_back(point);
 	tool.modes.push_back(tool.mode);
 }
 
-void editor_mode::lay_finish(editor_track::snap_target const &End)
+void lay_controls::lay_finish(editor_track::snap_target const &End)
 {
 	auto &tool{m_lay};
-	lay_trim();
+	m_planner.lay_trim();
 	double length;
 	std::string error;
 	lay_line_plan plan;
-	auto const pieces{lay_pieces(tool.points, tool.modes, End, length, error, &plan)};
-	auto const eased{m_eased_last};
+	auto const pieces{m_planner.lay_pieces(tool.points, tool.modes, End, length, error, &plan)};
+	auto const eased{m_build.eased_result_last()};
 	tool.status_time = ImGui::GetTime();
 	if (pieces.empty())
 	{
@@ -2541,17 +2535,17 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		if (End.track != nullptr && false == tool.points.empty())
 		{
 			tool.points.pop_back();
-			lay_trim();
+			m_planner.lay_trim();
 		}
 		return;
 	}
 	auto const *style{tool.start.track != nullptr ? tool.start.track : End.track};
 	if (style == nullptr && tool.copy_selected)
-		style = selected_track();
+		style = m_services.selected_track();
 	// the track laid takes only its heights from the ground: the terrain is shaped under it by the buttons of the terrain model
 	m_nmt_state.laying = true;
 	auto const created{created_tracks(pieces, style, tool.style)};
-	give_own_speed(created);
+	m_planner.give_own_speed(created);
 	editor_track::commit(created);
 	// the scenery keeps the design the tracks were laid by, as it is, for the plan to edit; read from the paths again it wouldn't be
 	// the same, a compound curve with transitions between its arcs least of all. A track laid with no design of the line, between two
@@ -2559,31 +2553,30 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	// with the points clicked, which the plan fits the curves to again when their transitions or cants change
 	if (plan.shape.valid && false == created.empty() && false == scene::Layers.empty())
 		alignment_store::store(plan.design, plan.shape, 0.0, alignment_store::layer_of(*created.front()), "drawn", 0.0, tool.points);
-	tool.history = m_history.size();
-	push_track_snapshot({}, created);
-	first_step_done(first_step::laid);
+	tool.history = m_build.history_size();
+	m_services.push_track_snapshot({}, created);
+	m_services.first_step_done(editor_first_step::laid);
 	if (plan.shape.valid && false == plan.shape.curves.empty())
-		first_step_done(first_step::bend);
+		m_services.first_step_done(editor_first_step::bend);
 	if (End.track != nullptr)
-		first_step_done(first_step::join);
+		m_services.first_step_done(editor_first_step::join);
 	tool.status = format(STR_P("Laid %.1f m of track in %zu piece, Ctrl+Z takes it back", "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back", static_cast<long long>(created.size())), length, created.size());
-	lay_notes(created, pieces, End, plan, eased, error, style);
-	m_node = created.back();
-	ui()->set_node(m_node);
-	if (m_build_tools->nmt_auto.nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
+	m_planner.lay_notes(created, pieces, End, plan, eased, error, style);
+	m_services.set_current_node(created.back());
+	if (m_nmt_auto.nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
-	m_build_tools->nmt_window.nmt_check_buried(tool.history);
+	m_nmt_window.nmt_check_buried(tool.history);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.modes.clear();
 	tool.start = {};
-	m_build_tools->straight_edit.straight_refresh();
+	m_straight_edit.straight_refresh();
 }
 
 // the notes told of the track laid, after its length: the error of the line, a compound curve eased, the curves going on from those of
 // the free ends, the warnings at a switch, a compound curve with no transition, a track which won't be saved
-void editor_mode::lay_notes(std::vector<TTrack *> const &Created, std::vector<segment_data> const &Pieces, editor_track::snap_target const &End, lay_line_plan const &Plan,
+void lay_planner::lay_notes(std::vector<TTrack *> const &Created, std::vector<segment_data> const &Pieces, editor_track::snap_target const &End, lay_line_plan const &Plan,
                             std::optional<alignment::lay_result> const &Eased, std::string const &Error, TTrack const *Style)
 {
 	auto &tool{m_lay};
@@ -2606,7 +2599,7 @@ void editor_mode::lay_notes(std::vector<TTrack *> const &Created, std::vector<se
 }
 
 // the compound curve the track laid makes with the plain tracks of the free ends, told where two of its arcs meet with no transition
-void editor_mode::compound_note(std::vector<TTrack *> const &Created, editor_track::snap_target const &End)
+void lay_planner::compound_note(std::vector<TTrack *> const &Created, editor_track::snap_target const &End)
 {
 	auto &tool{m_lay};
 	std::vector<std::pair<TTrack *, bool>> run;
@@ -2627,15 +2620,15 @@ void editor_mode::compound_note(std::vector<TTrack *> const &Created, editor_tra
 		}
 }
 
-void editor_mode::lay_enter()
+void lay_controls::lay_enter()
 {
 	auto &tool{m_lay};
-	if (false == m_typed.empty())
+	if (false == m_build.typed_text().empty())
 	{
 		lay_click();
 		return;
 	}
-	lay_trim();
+	m_planner.lay_trim();
 	if (tool.points.empty())
 		return;
 	if (auto const end{tool.mouse_snap}; end.track != nullptr && glm::distance(end.position, tool.points.front()) > 1.0)
@@ -2656,7 +2649,7 @@ void editor_mode::lay_enter()
 	lay_finish({});
 }
 
-void editor_mode::lay_cancel()
+void lay_controls::lay_cancel()
 {
 	auto &tool{m_lay};
 	tool.points.clear();
@@ -2667,15 +2660,15 @@ void editor_mode::lay_cancel()
 	tool.status.clear();
 }
 
-std::size_t editor_mode::lay_pending() const
+std::size_t lay_controls::lay_pending() const
 {
 	return m_lay.points.size();
 }
 
-void editor_mode::lay_escape()
+void lay_controls::lay_escape()
 {
 	auto &tool{m_lay};
-	lay_trim();
+	m_planner.lay_trim();
 	// the points clicked are no track yet and nothing brings them back: a slip of Esc only warns, the second one drops them
 	auto const pending{lay_pending()};
 	if (tool.points.size() < 2 || ImGui::GetTime() - tool.escape_time < 3.0)
@@ -2689,7 +2682,7 @@ void editor_mode::lay_escape()
 	tool.status_time = tool.escape_time;
 }
 
-void editor_mode::lay_after_history(bool const Undo)
+void lay_controls::lay_after_history(bool const Undo)
 {
 	auto const &tool{m_lay};
 	if (tool.points.empty())
@@ -2704,10 +2697,10 @@ void editor_mode::lay_after_history(bool const Undo)
 		lay_cancel();
 }
 
-void editor_mode::lay_back()
+void lay_controls::lay_back()
 {
 	auto &tool{m_lay};
-	lay_trim();
+	m_planner.lay_trim();
 	// the points not laid yet, the last one first; the tracks laid go back with Ctrl+Z
 	if (tool.points.size() > 1)
 	{
@@ -2743,7 +2736,7 @@ void skew_ratio_snap(double const Relative, double &Angle, double &Ratio)
 
 } // namespace
 
-glm::dvec3 editor_mode::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const
+glm::dvec3 lay_planner::lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const
 {
 	Label.clear();
 	auto const &last{m_lay.points.back()};
@@ -2831,7 +2824,7 @@ void skew_scan(Cell const &In, skew_leg const &Leg, double &Best, TTrack const *
 
 } // namespace
 
-TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const
+TTrack const *lay_planner::skew_reference(glm::dvec3 const &From, glm::dvec3 const &To, double const Reach) const
 {
 	skew_leg leg;
 	leg.from = plan_of(From);
@@ -2847,22 +2840,22 @@ TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 con
 	return nearest;
 }
 
-track_hover editor_mode::split_spot() const
+track_hover lay_planner::split_spot() const
 {
-	auto const *selected{selected_track()};
-	if (selected == nullptr || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse)
+	auto const *selected{m_services.selected_track()};
+	if (selected == nullptr || m_build.build_ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse)
 		return {};
-	return track_under_cursor(selected, 20.0f);
+	return m_build.track_hovered(selected, 20.0f);
 }
 
-alignment::limits editor_mode::laying_norms() const
+alignment::limits lay_planner::laying_norms() const
 {
 	auto norms{m_route.design.norms};
 	norms.checked = true;
 	return norms;
 }
 
-void editor_mode::render_lay_ui()
+void lay_controls::render_lay_ui()
 {
 	auto &tool{m_lay};
 	// the points clicked are no track until they're laid: said first, with the keys as buttons
@@ -2883,8 +2876,8 @@ void editor_mode::render_lay_ui()
 	ImGui::PopItemWidth();
 	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
 	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
-	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
-		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
+	if (auto const [from, to]{m_planner.laying_ends()}; from != nullptr || to != nullptr)
+		ImGui::TextDisabled("%s", m_planner.design_speed_of(from, to).c_str());
 	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
 	if (int heights{static_cast<int>(EditorSettings.heights())};
 	    segmented("layheights", heights,
@@ -2896,11 +2889,11 @@ void editor_mode::render_lay_ui()
 		EditorSettings.save();
 	}
 	render_lay_curves();
-	if (auto const *track{selected_track()}; track != nullptr)
+	if (auto const *track{m_services.selected_track()}; track != nullptr)
 	{
 		std::string reason;
 		if (editor_track::can_edit_geometry(*track, reason))
-			render_extend_ui();
+			m_extender.render_extend_ui();
 	}
 	if (false == ImGui::TreeNode(STR_C("More settings")))
 	{
@@ -2913,7 +2906,7 @@ void editor_mode::render_lay_ui()
 }
 
 // the points clicked and not laid yet, with the buttons laying them or dropping them
-void editor_mode::render_lay_pending()
+void lay_controls::render_lay_pending()
 {
 	auto &tool{m_lay};
 	auto const pending{lay_pending()};
@@ -2936,7 +2929,7 @@ void editor_mode::render_lay_pending()
 
 // the settings of the mode laid in: the radius of the bends of the straights told, or the radii of the curve traced and how close it
 // keeps to the points
-void editor_mode::render_lay_shape()
+void lay_controls::render_lay_shape()
 {
 	auto &tool{m_lay};
 	if (tool.mode == lay_mode::straights)
@@ -2945,8 +2938,7 @@ void editor_mode::render_lay_shape()
 		ImGui::SameLine();
 		if (ImGui::SmallButton("?##corners"))
 		{
-			m_first_steps_open = true;
-			m_tutorial_goto = "Radius of the curves at the bends";
+			m_build.tutorial_open_at("Radius of the curves at the bends");
 		}
 		item_tooltip("What it is: the lesson of the tutorial");
 		ImGui::PushTextWrapPos(0.0f);
@@ -2978,7 +2970,7 @@ void editor_mode::render_lay_shape()
 }
 
 // the curves of the line shown, those below the norms in the colour of a warning: they're laid all the same
-void editor_mode::render_lay_curves() const
+void lay_controls::render_lay_curves() const
 {
 	auto const &tool{m_lay};
 	auto const &plan{tool.plan};
@@ -2989,7 +2981,7 @@ void editor_mode::render_lay_curves() const
 	for (auto const &curve : plan.shape.curves)
 	{
 		auto const meets{alignment::meets_norms(curve, plan.design)};
-		auto const text{format("%d. %s", curve.vertex + 1, curve_label(curve, laying_norms()).c_str())};
+		auto const text{format("%d. %s", curve.vertex + 1, curve_label(curve, m_planner.laying_norms()).c_str())};
 		if (meets)
 			ImGui::TextUnformatted(text.c_str());
 		else
@@ -3003,7 +2995,7 @@ void editor_mode::render_lay_curves() const
 }
 
 // the settings folded under More settings: the curve of a track dragged from a free end, the longest path, the look of the new track
-void editor_mode::render_lay_more()
+void lay_controls::render_lay_more()
 {
 	auto &tool{m_lay};
 	ImGui::TextDisabled("%s", STR_C("Dragged from a free end, or laid from a point to one"));
@@ -3033,7 +3025,7 @@ void editor_mode::render_lay_more()
 
 // a texture of the new track, Kind: 0 the rails, 1 the trackbed, with its preview, picked from a list or dropped onto it; Column: where
 // the preview begins
-void editor_mode::render_texture_row(int const Kind, char const *Label, std::string &Value, float const Column)
+void lay_controls::render_texture_row(int const Kind, char const *Label, std::string &Value, float const Column)
 {
 	ImGui::PushID(Kind);
 	ImGui::AlignTextToFramePadding();
@@ -3041,7 +3033,7 @@ void editor_mode::render_texture_row(int const Kind, char const *Label, std::str
 	ImGui::SameLine(Column);
 	auto const side{ImGui::GetFrameHeight()};
 	auto const corner{ImGui::GetCursorScreenPos()};
-	if (auto const image{Value.empty() || Value == "none" ? 0 : track_texture_image(Kind, Value)}; image != 0)
+	if (auto const image{Value.empty() || Value == "none" ? 0 : m_build.texture_image_of(Kind, Value)}; image != 0)
 	{
 		ImGui::Image(static_cast<ImTextureID>(image), ImVec2(side, side), ImVec2(0, 1), ImVec2(1, 0));
 		if (ImGui::IsItemHovered())
@@ -3063,7 +3055,7 @@ void editor_mode::render_texture_row(int const Kind, char const *Label, std::str
 	ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetFontSize() * 36.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
 	if (auto const preview{texture_preview_label(Value)}; ImGui::BeginCombo("##texture", preview.c_str(), ImGuiComboFlags_HeightLargest))
 	{
-		if (std::string chosen; track_texture_picker(Kind, Value, false, chosen))
+		if (std::string chosen; m_build.texture_picked(Kind, Value, false, chosen))
 		{
 			Value = chosen;
 			ImGui::CloseCurrentPopup();
@@ -3071,12 +3063,12 @@ void editor_mode::render_texture_row(int const Kind, char const *Label, std::str
 		ImGui::EndCombo();
 	}
 	item_tooltip(Kind == 0 ? "Texture of the rails.\nA material dragged from the texture browser can be dropped here" : "Texture of the trackbed (ballast) under the rails.\nA material dragged from the texture browser can be dropped here");
-	if (std::string dropped; material_drop(dropped))
+	if (std::string dropped; m_build.material_dropped(dropped))
 		Value = dropped;
 	ImGui::PopID();
 }
 
-void editor_mode::render_lay_status() const
+void lay_controls::render_lay_status() const
 {
 	auto const &tool{m_lay};
 	if (scene::Layers.active() == null_handle)
@@ -3085,4 +3077,76 @@ void editor_mode::render_lay_status() const
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", tool.preview_error.c_str());
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
+}
+
+// what the rest of the editor calls, kept on editor_mode: done by the build tools
+
+double editor_mode::design_speed(TTrack const *From, TTrack const *To) const
+{
+	return m_build_tools->planner.design_speed(From, To);
+}
+
+std::pair<TTrack const *, TTrack const *> editor_mode::laying_ends() const
+{
+	return m_build_tools->planner.laying_ends();
+}
+
+std::string editor_mode::design_speed_of(TTrack const *From, TTrack const *To) const
+{
+	return m_build_tools->planner.design_speed_of(From, To);
+}
+
+std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const
+{
+	return m_build_tools->planner.switch_exit_warnings(From, Start, To, End, Pieces);
+}
+
+alignment::limits editor_mode::laying_norms() const
+{
+	return m_build_tools->planner.laying_norms();
+}
+
+track_hover editor_mode::split_spot() const
+{
+	return m_build_tools->planner.split_spot();
+}
+
+void editor_mode::lay_click()
+{
+	m_build_tools->lay_input.lay_click();
+}
+
+void editor_mode::lay_finish(editor_track::snap_target const &End)
+{
+	m_build_tools->lay_input.lay_finish(End);
+}
+
+void editor_mode::lay_cancel()
+{
+	m_build_tools->lay_input.lay_cancel();
+}
+
+void editor_mode::lay_after_history(bool const Undo)
+{
+	m_build_tools->lay_input.lay_after_history(Undo);
+}
+
+void editor_mode::render_lay_ui()
+{
+	m_build_tools->lay_input.render_lay_ui();
+}
+
+bool editor_mode::start_extend(editor_track::snap_target const &End)
+{
+	return m_build_tools->extender.start_extend(End);
+}
+
+bool editor_mode::extend_snap(editor_track::snap_target &Target) const
+{
+	return m_build_tools->extender.extend_snap(Target);
+}
+
+void editor_mode::finish_extend()
+{
+	m_build_tools->extender.finish_extend();
 }

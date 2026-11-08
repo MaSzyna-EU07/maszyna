@@ -7305,7 +7305,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             else if (m_route.trace.active && m_build_tools->designer.route_active())
                 m_build_tools->route_view.route_trace_end(false);
             else if (m_lay.active && false == m_lay.points.empty())
-                lay_escape();
+                m_build_tools->lay_input.lay_escape();
             else if (m_track_style.picking)
                 m_track_style.picking = false;
             else if (m_profile.picking)
@@ -7339,7 +7339,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         // laying: the bends of straights or a curve traced, for the points clicked from now on
         if (is_press(Action) && false == anyModifier && ui()->mode() == nodebank_panel::TRACK && m_lay.active && false == ImGui::GetIO().WantTextInput)
-            lay_switch_mode();
+            m_build_tools->lay_input.lay_switch_mode();
         break;
 
     case GLFW_KEY_BACKSPACE:
@@ -7364,7 +7364,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
             m_fill_points.pop_back();
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
-            lay_back();
+            m_build_tools->lay_input.lay_back();
         if (is_press(Action) && m_route.trace.active && m_build_tools->designer.route_active() && !m_route.trace.points.empty())
         {
             m_route.trace.points.pop_back();
@@ -7382,7 +7382,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
-            lay_enter();
+            m_build_tools->lay_input.lay_enter();
         if (is_press(Action) && m_route.trace.active && m_build_tools->designer.route_active())
             m_build_tools->route_view.route_trace_end(true);
         break;
@@ -7394,7 +7394,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && selected_track() != nullptr)
         {
-            auto const under{split_spot()};
+            auto const under{m_build_tools->planner.split_spot()};
             if (under.track != nullptr)
                 split_track_at(*under.track, under.point);
         }
@@ -7443,7 +7443,7 @@ void editor_mode::mouse_left_release()
     if (m_straights.tool_mouse)
         m_build_tools->straight_edit.finish_straight_gesture();
     if (m_extend.active)
-        finish_extend();
+        m_build_tools->extender.finish_extend();
     if (m_switch.placing)
     {
         // a press let go with no drag places no switch: the track it took is only selected, the ground with no track there

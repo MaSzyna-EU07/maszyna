@@ -451,7 +451,7 @@ void editor_mode::route_recompute()
 
 alignment::limits editor_mode::lay_norms() const
 {
-	return laying_norms();
+	return m_build_tools->planner.laying_norms();
 }
 
 void editor_mode::undo_last_step()
@@ -576,5 +576,130 @@ void editor_mode::follow_preview_set(bool const Following)
 
 double editor_mode::lay_design_speed(TTrack const *From, TTrack const *To) const
 {
-	return design_speed(From, To);
+	return m_build_tools->planner.design_speed(From, To);
+}
+
+double &editor_mode::join_radius_chosen()
+{
+	return m_join_radius;
+}
+
+int &editor_mode::join_variant_chosen()
+{
+	return m_join_variant;
+}
+
+alignment::join_result &editor_mode::join_result_last()
+{
+	return m_join_last;
+}
+
+std::optional<alignment::lay_result> &editor_mode::eased_result_last()
+{
+	return m_eased_last;
+}
+
+std::string &editor_mode::typed_text()
+{
+	return m_typed;
+}
+
+editor_track::layout &editor_mode::laying_layout()
+{
+	return m_track_layout;
+}
+
+double editor_mode::joint_kink() const
+{
+	return m_joints.kink_angle();
+}
+
+void editor_mode::join_target_aimed(editor_track::snap_target const &Target)
+{
+	join_target(Target);
+}
+
+void editor_mode::tutorial_open_at(char const *Lesson)
+{
+	m_first_steps_open = true;
+	m_tutorial_goto = Lesson;
+}
+
+editor_track::point_ref &editor_mode::track_point_chosen()
+{
+	return m_track_point;
+}
+
+glm::dvec3 editor_mode::cursor_on_terrain(double const Height) const
+{
+	return cursor_terrain(Height);
+}
+
+editor_track::snap_target editor_mode::free_end_snapped(glm::dvec3 const &Near, glm::vec2 const &Screen, TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
+{
+	return snap_free_end(Near, Screen, Self, Category, Exclude);
+}
+
+bool editor_mode::free_end_of(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool) const
+{
+	return free_end(Track, Path, Atend, Tool);
+}
+
+double editor_mode::bed_height_at(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const
+{
+	return bed_height(Point, Direction, Style);
+}
+
+glm::dvec3 editor_mode::lay_bed_point(glm::dvec3 const &Point) const
+{
+	return lay_bed(Point);
+}
+
+glm::dvec3 editor_mode::typed_lay_point(glm::dvec3 const &Mouse) const
+{
+	return typed_lay(Mouse);
+}
+
+void editor_mode::ground_followed(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const
+{
+	follow_ground(Pieces, Height0, Grade0, Height1, Grade1, Style);
+}
+
+bool editor_mode::branch_link_planned(editor_track::branch_link &Link, std::string &Reason) const
+{
+	return plan_branch_link(Link, Reason);
+}
+
+void editor_mode::branch_link_finished(editor_track::branch_link const &Link)
+{
+	finish_branch_link(Link);
+}
+
+bool editor_mode::crossover_laid_from_extend()
+{
+	crossover_plan plan;
+	if (false == plan_crossover(plan))
+		return false;
+	finish_crossover(plan);
+	return true;
+}
+
+track_hover editor_mode::track_hovered(TTrack const *Only, float const Pixels) const
+{
+	return track_under_cursor(Only, Pixels);
+}
+
+std::uint64_t editor_mode::texture_image_of(int const Kind, std::string const &Name)
+{
+	return track_texture_image(Kind, Name);
+}
+
+bool editor_mode::texture_picked(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen)
+{
+	return track_texture_picker(Kind, Current, Mixed, Chosen);
+}
+
+bool editor_mode::material_dropped(std::string &Name) const
+{
+	return material_drop(Name);
 }

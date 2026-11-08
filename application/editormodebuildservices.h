@@ -265,6 +265,50 @@ class editor_lay_services
 	virtual void follow_preview_set(bool const Following) = 0;
 	// the speed the line is designed for between the tracks it goes from and to
 	virtual double lay_design_speed(TTrack const *From, TTrack const *To) const = 0;
+	// the radius and the variant of the curve joining a free end chosen by the wheel, 0 for the radius found by itself, and
+	// // the join worked out last
+	virtual double &join_radius_chosen() = 0;
+	virtual int &join_variant_chosen() = 0;
+	virtual alignment::join_result &join_result_last() = 0;
+	// the line with its corners eased worked out last
+	virtual std::optional<alignment::lay_result> &eased_result_last() = 0;
+	// the value typed during a gesture, taken instead of the one the cursor gives
+	virtual std::string &typed_text() = 0;
+	// the shape dragged from a free end, as the mode of laying has it
+	virtual editor_track::layout &laying_layout() = 0;
+	// the angle of the kink the joints of the rails may have
+	virtual double joint_kink() const = 0;
+	// the track and the point the cursor joins, the radius and the variant chosen for another one starting over
+	virtual void join_target_aimed(editor_track::snap_target const &Target) = 0;
+	// the first steps opened at the lesson of the tutorial of this title
+	virtual void tutorial_open_at(char const *Lesson) = 0;
+	// the point of the selected track chosen
+	virtual editor_track::point_ref &track_point_chosen() = 0;
+	// the point under the cursor on the terrain, or on the level of the height given off it
+	virtual glm::dvec3 cursor_on_terrain(double const Height) const = 0;
+	// the free end the point near the cursor snaps to, of a track of the category and not of the ones excluded
+	virtual editor_track::snap_target free_end_snapped(glm::dvec3 const &Near, glm::vec2 const &Screen, TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const = 0;
+	// the free end of the path as the start of a new track; false if it isn't free or has no direction
+	virtual bool free_end_of(TTrack &Track, int const Path, bool const Atend, extend_tool &Tool) const = 0;
+	// the height of the bed of a track of the style at the point: on the ballast over the ground, and the point taken there
+	virtual double bed_height_at(glm::dvec3 const &Point, glm::dvec2 const &Direction, TTrack const *Style) const = 0;
+	virtual glm::dvec3 lay_bed_point(glm::dvec3 const &Point) const = 0;
+	// the point of the line laid the value typed gives instead of the cursor
+	virtual glm::dvec3 typed_lay_point(glm::dvec3 const &Mouse) const = 0;
+	// the heights of the pieces laid over the ground between the heights and the grades at their ends
+	virtual void ground_followed(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const = 0;
+	// the track dragged from a switch onto another switch as the link of the two, and the link laid
+	virtual bool branch_link_planned(editor_track::branch_link &Link, std::string &Reason) const = 0;
+	virtual void branch_link_finished(editor_track::branch_link const &Link) = 0;
+	// the second switch of a crossover placed by the track dragged on from a switch, when it plans one; false when it doesn't
+	virtual bool crossover_laid_from_extend() = 0;
+	// the track under the cursor, only the one given if not null, within the pixels given
+	virtual track_hover track_hovered(TTrack const *Only, float const Pixels) const = 0;
+	// the preview of the texture of a track of the kind, and the texture picked from the previews
+	virtual std::uint64_t texture_image_of(int const Kind, std::string const &Name) = 0;
+	virtual bool texture_picked(int const Kind, std::string const &Current, bool const Mixed, std::string &Chosen) = 0;
+	// the name of a material dropped onto the field just drawn
+	virtual bool material_dropped(std::string &Name) const = 0;
 
   protected:
 	~editor_lay_services() = default;
