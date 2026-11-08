@@ -628,7 +628,7 @@ class TESt : public TBrake
 	/// <param name="BCP">Brake cylinder (or impulse-chamber) pressure for <see cref="BVs"/>.</param>
 	/// <param name="dt">Time step [s].</param>
 	/// <returns>Volume taken into the auxiliary reservoir, 0.96 of it drawn from the brake pipe.</returns>
-	double FillBrakeRes(double BCP, double dt); // napelnianie pomocniczego z rozdzielacza
+	double FillBrakeRes(double BCP, double dt) const; // napelnianie pomocniczego z rozdzielacza
 	/// <summary>Vents the valve, brake and control reservoirs to zero.</summary>
 	void ForceEmptiness() override; // wymuszenie bycia pustym
 

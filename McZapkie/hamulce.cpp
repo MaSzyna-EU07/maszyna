@@ -977,7 +977,7 @@ double TESt::BVs(double const BCP) const
 /// <param name="BCP">Brake cylinder (or impulse-chamber) pressure.</param>
 /// <param name="dt">Time step [s].</param>
 /// <returns>Volume taken into the auxiliary reservoir, 0.96 of it drawn from the brake pipe.</returns>
-double TESt::FillBrakeRes(double const BCP, double const dt)
+double TESt::FillBrakeRes(double const BCP, double const dt) const
 {
 	double const BVP{BrakeRes->P()};
 	double const VVP{ValveRes->P()};

@@ -36,6 +36,7 @@ void hold(vehicle &Vehicle, test::trace &Trace, std::string const &Event, double
 // every position of the driver's handle, recorded in the trace
 void every_position(vehicle &Vehicle, test::trace &Trace) {
 	Vehicle.hold_main_reservoir(std::max(Vehicle->MaxCompressor, 8.0));
+	REQUIRE(Vehicle->Handle != nullptr);
 	auto &handle{*Vehicle->Handle};
 	Vehicle.record(Trace);
 
@@ -97,6 +98,7 @@ TEST_CASE("brake handles: the local brake handle of every real vehicle") {
 		real.hold_main_reservoir(std::max(real->MaxCompressor, 8.0));
 		test::trace trace{"local brake/" + path, handle_channels(), 100};
 		real.record(trace);
+		REQUIRE(real->Handle != nullptr);
 		real->BrakeLevelSet(real->Handle->GetPos(bh_RP));
 		trace.mark("charge");
 		real.run(60.0);
@@ -127,6 +129,7 @@ TEST_CASE("brake handles: the overload and the high pressure buttons of the MHZ 
 		real.hold_main_reservoir(std::max(real->MaxCompressor, 8.0));
 		test::trace trace{"brake handles/buttons/" + name, handle_channels(), 100};
 		real.record(trace);
+		REQUIRE(real->Handle != nullptr);
 		auto &handle{*real->Handle};
 		auto const at{[&trace, &real](std::string const &Event, double Position, double Seconds) {
 			trace.mark(Event);
@@ -167,6 +170,7 @@ void ready_knorr_ep(test::consist &Unit) {
 	Unit.add(definition::fiz("en57_v1/5bgb"));
 	auto &cab{Unit[0]};
 	REQUIRE(cab->BrakeHandle == TBrakeHandle::St113);
+	REQUIRE(cab->Handle != nullptr);
 	cab->BatterySwitch(true);
 	cab->CabActivisation();
 	cab.hold_brake_pipe(5.0);
@@ -190,6 +194,7 @@ TEST_CASE("brake handles: the positions of the Knorr St113 EP brake") {
 	test::consist unit;
 	ready_knorr_ep(unit);
 	auto &cab{unit[0]};
+	REQUIRE(cab->Handle != nullptr);
 	auto &handle{*cab->Handle};
 	auto const ep_at{[&unit, &cab, &handle](double Position) {
 		cab->BrakeLevelSet(Position);

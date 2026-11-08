@@ -3126,6 +3126,14 @@ bool TController::IncBrake()
                     mvOccupied->SwitchEPBrake( 1 ); // to nie chce działać
                 OK = true;
             }
+            else if( ( mvOccupied->Handle->GetPos( bh_EPR ) - mvOccupied->Handle->GetPos( bh_EPN ) < 0.1 )
+                  && ( mvOccupied->EpForce <= 0.0 )
+                  && ( mvOccupied->EPBrakeControlPowered() ) ) {
+                // the handle already in the EP brake position, but the EP brake dropped out with the control's
+                // supply (e.g. the EP fuse off in the running brake test): switch it on again
+                mvOccupied->SwitchEPBrake( 1 );
+                OK = ( mvOccupied->EpForce > 0.0 );
+            }
             else
                 OK = false;
             break;
