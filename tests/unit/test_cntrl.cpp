@@ -67,6 +67,9 @@ TEST_CASE("cntrl: ScndCtrlResistiveLock keeps the field shunting off at zero and
 		REQUIRE(locked->ScndCtrlPosNo > 0);
 		auto const resistancefree{resistance_free_position(locked.mover())};
 		REQUIRE(resistancefree > 1);
+		if (resistancefree <= 1) {
+			continue; // not reached, the REQUIRE above ends the test; tells the static analysis the index below is in range
+		}
 		REQUIRE(locked->RList[resistancefree - 1].R >= 0.01);
 
 		SUBCASE("zero") {
