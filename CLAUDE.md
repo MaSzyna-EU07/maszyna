@@ -30,10 +30,13 @@ The same behaviour needs portable code. Don't rely on the order arguments are ev
 ## SonarCloud: the PR passes the quality gate
 
 SonarCloud (`sonar.yml`, `sonar-project.properties`) analyses each PR. A PR has to pass Sonar's quality gate. The gate rates the new
-code: reliability, security and maintainability have to be A, duplication is at most 3% and the security hotspots are reviewed. A
-remark that doesn't fail the gate doesn't have to be fixed. Leave large restructurings that only answer such a remark (splitting a
-class or a file, rewriting a working algorithm) out of the PR. The analysis runs on the GCC build, so a PR that fails to build with
-GCC gets no analysis at all, and so it doesn't pass the gate.
+code: reliability, security and maintainability have to be A, duplication is at most 3% and the security hotspots are reviewed.
+Any bug or vulnerability on the new code lowers its rating below A, so each one gets fixed (or gets a NOSONAR when it is a false
+positive). Code smells count only together, through the maintainability rating, so a single one rarely fails the gate, but many in a
+large PR can. A hotspot is reviewed by marking it in SonarCloud as safe or fixed, which is the user's step there, not a reason to
+rewrite the code. A remark that doesn't fail the gate doesn't have to be fixed. Leave large restructurings that only answer such a
+remark (splitting a class or a file, rewriting a working algorithm) out of the PR. The analysis runs on the GCC build, so a PR that
+fails to build with GCC gets no analysis at all, and so it doesn't pass the gate.
 
 Fixing a remark must not change what the code does:
 
