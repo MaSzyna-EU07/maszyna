@@ -2413,6 +2413,8 @@ class TMoverParameters
 	bool BrakeReleaser(int state);
 	bool UniversalBrakeButton(int button, int state); /*uniwersalny przycisk hamulca*/
 	bool SwitchEPBrake(int state);
+	// whether the EP brake control of the cab has power: battery, the reverser out of neutral and the EP fuse on
+	bool EPBrakeControlPowered() const;
 	bool AntiSlippingButton(void); /*! reczny wlacznik urzadzen antyposlizgowych*/
 
 	/*funkcje dla ukladow pneumatycznych*/

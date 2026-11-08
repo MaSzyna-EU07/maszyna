@@ -4,6 +4,7 @@
 #include "golden.h"
 #include "real_vehicles.h"
 #include "drive.h"
+#include "consist.h"
 
 #include "McZapkie/hamulce.h"
 
@@ -151,4 +152,106 @@ TEST_CASE("brake handles: the overload and the high pressure buttons of the MHZ 
 		CHECK(filled >= decayed - 0.05);
 		trace.check();
 	}
+}
+
+// eu07/maszyna#134: the Knorr St113 of the EN57-001 releases the EP brake in the running position (bh_RP, Num 6)
+// and applies it one position on (Num 8), short of the lap position (Num 5); the positions are those the keys
+// select, and the EP brake works only with the control of the cab powered: the battery, the reverser out of
+// neutral and the EP fuse on (Ctrl+Z), as the Oerlikon handle's
+namespace {
+
+// the front car of the EN57-001 driven from its cab, with the motor car behind it, which has the battery of the two;
+// air in the reservoirs, the battery on
+void ready_knorr_ep(test::consist &Unit) {
+	Unit.add(definition::fiz("en57_v1/6bai"), 1);
+	Unit.add(definition::fiz("en57_v1/5bgb"));
+	auto &cab{Unit[0]};
+	REQUIRE(cab->BrakeHandle == TBrakeHandle::St113);
+	cab->BatterySwitch(true);
+	cab->CabActivisation();
+	cab.hold_brake_pipe(5.0);
+	cab->BrakeLevelSet(cab->Handle->GetPos(bh_RP));
+	Unit.run(60.0);
+}
+
+// the EP brake button pressed in the given handle position, held for Seconds; the cylinder pressure of the cab car
+double ep_brake(test::consist &Unit, double Position, double Seconds) {
+	auto &cab{Unit[0]};
+	cab->BrakeLevelSet(Position);
+	Unit.run(0.1);
+	cab->SwitchEPBrake(1);
+	Unit.run(Seconds);
+	return cab->BrakePress;
+}
+
+} // namespace
+
+TEST_CASE("brake handles: the positions of the Knorr St113 EP brake") {
+	test::consist unit;
+	ready_knorr_ep(unit);
+	auto &cab{unit[0]};
+	auto &handle{*cab->Handle};
+	auto const ep_at{[&unit, &cab, &handle](double Position) {
+		cab->BrakeLevelSet(Position);
+		unit.run(0.1);
+		return handle.GetEP();
+	}};
+	// the keys: Num 6 running, Num 8 the first position on, Num 5 the middle of the handle
+	CHECK(handle.GetPos(bh_RP) == doctest::Approx(0.0));
+	CHECK(ep_at(0.0) == doctest::Approx(-1.0)); // EP release
+	CHECK(ep_at(1.0) == doctest::Approx(1.0)); // EP brake
+	CHECK(ep_at(cab->BrakeCtrlPosNo / 2) == doctest::Approx(0.0)); // lap, Num 5
+	CHECK(ep_at(handle.GetPos(bh_FB)) == doctest::Approx(0.0));
+	CHECK(ep_at(handle.GetPos(bh_EPR)) == doctest::Approx(-1.0));
+	CHECK(ep_at(handle.GetPos(bh_EPB)) == doctest::Approx(1.0));
+}
+
+TEST_CASE("brake handles: the Knorr St113 EP brake needs the control of the cab powered") {
+	for (std::string const cut : {"reverser in neutral", "EP fuse off", "battery off"}) {
+		CAPTURE(cut);
+		test::consist unit;
+		ready_knorr_ep(unit);
+		auto &cab{unit[0]};
+		cab->DirectionForward();
+		unit.run(1.0);
+		REQUIRE(cab->EPBrakeControlPowered());
+		if (cut == "reverser in neutral") {
+			cab->DirectionBackward();
+		}
+		else if (cut == "EP fuse off") {
+			cab->EpFuseSwitch(false);
+		}
+		else {
+			cab->BatterySwitch(false);
+		}
+		unit.run(1.0);
+		REQUIRE_FALSE(cab->EPBrakeControlPowered());
+		// the button in the EP brake position does nothing
+		CHECK(ep_brake(unit, 1.0, 5.0) < 0.1);
+		CHECK(cab->EpForce == doctest::Approx(0.0));
+		cab->SwitchEPBrake(0);
+	}
+
+	test::consist unit;
+	ready_knorr_ep(unit);
+	auto &cab{unit[0]};
+	cab->DirectionForward();
+	unit.run(1.0);
+	// powered, the EP brake applies
+	auto const applied{ep_brake(unit, 1.0, 2.0)};
+	CHECK(applied > 0.5);
+	// the reverser put to neutral with the button still held: the EP brake drops out and holds what it applied
+	cab->DirectionBackward();
+	unit.run(0.1);
+	CHECK(cab->EpForce == doctest::Approx(0.0));
+	auto const held{cab->BrakePress};
+	unit.run(5.0);
+	CHECK(cab->BrakePress < held + 0.05);
+	CHECK(cab->BrakePress > 0.2);
+	// and doesn't release either, until the control is powered again
+	CHECK(ep_brake(unit, 0.0, 5.0) > 0.2);
+	cab->SwitchEPBrake(0);
+	cab->DirectionForward();
+	unit.run(0.1);
+	CHECK(ep_brake(unit, 0.0, 10.0) < 0.1);
 }
