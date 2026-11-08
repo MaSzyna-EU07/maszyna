@@ -251,3 +251,48 @@ TEST_CASE("engine start: an engine stopping on its own stops the others only whe
 		CHECK(running(second) == (false == joint));
 	}
 }
+
+// a stopped engine stays stopped on its own: only an engine stopping while it ran tells the others, as a joint start's
+// engines stop together; one stopped from another vehicle's switch, or not started at all, doesn't stop those running,
+// whatever the flags of the vehicles in a mixed train
+TEST_CASE("engine start: an engine stopped from its own switch doesn't stop the others when it has spun down") {
+	consist train;
+	// the middle railcar keeps the joint start, as a .fiz without the key does. what a vehicle without the cab relays
+	// goes on away from the cab, so it's the third one that would stop
+	auto &first{train.add(sn61(false), 1).mover()};
+	auto &second{train.add(sn61()).mover()};
+	auto &third{train.add(sn61(false)).mover()};
+	prepare(train);
+	engine_start::remote_switch switchb;
+	engine_start::remote_switch switchc;
+	first.MainSwitch(true, first.MainSwitchRange());
+	hold(train, switchb, engine_start::engine(first, first, 2), 2.0);
+	hold(train, switchc, engine_start::engine(first, first, 3), 2.0);
+	train.run(15.0);
+	REQUIRE(running(first));
+	REQUIRE(running(second));
+	REQUIRE(running(third));
+	// mainb_off
+	CHECK(engine_start::remote_switch::open(second));
+	train.run(30.0);
+	CHECK_FALSE(second.Mains);
+	CHECK(second.enrot == 0.0);
+	CHECK(running(first));
+	CHECK(running(third));
+}
+
+TEST_CASE("engine start: the stopped engine of the cab's vehicle doesn't stop the one started from its switch") {
+	consist train;
+	// the cab's railcar keeps the joint start, its engine stopped
+	auto &first{train.add(sn61(), 1).mover()};
+	auto &second{train.add(sn61(false)).mover()};
+	prepare(train);
+	REQUIRE_FALSE(first.Mains);
+	// mainb_on
+	engine_start::remote_switch switchb;
+	hold(train, switchb, engine_start::engine(first, first, 2), 2.0);
+	train.run(15.0);
+	CHECK(running(second));
+	CHECK_FALSE(first.Mains);
+	CHECK(first.enrot == 0.0);
+}

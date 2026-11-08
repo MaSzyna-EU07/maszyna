@@ -8161,8 +8161,13 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 
 	if (enrot <= 0 && false == dizel_spinup)
 	{
-		// a stopped engine doesn't stop those started on their own
-		MainSwitch(false, MainSwitchRange());
+		// an engine stalling stops those started together with it, once. one already stopped, from its own switch or
+		// another vehicle's, or not started at all, has nothing to stop: it stays quiet, rather than stop every frame
+		// the engines started on their own or from the separate switches (eu07/maszyna#80)
+		if (true == Mains)
+		{
+			MainSwitch(false, MainSwitchRange());
+		}
 		enrot = 0;
 	}
 
