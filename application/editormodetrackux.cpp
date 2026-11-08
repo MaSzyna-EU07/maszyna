@@ -666,6 +666,24 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::srk)
 	{
+		// the path to read the selected signal picked
+		if (m_signal.picking_read)
+		{
+			if (signal_standing_of(m_signal.selected) == nullptr)
+				m_signal.picking_read = false;
+			else
+			{
+				intent.track = m_hover.track;
+				intent.path = m_hover.path;
+				intent.index = shift ? 1 : 0;
+				if (m_hover.track == nullptr)
+					return make(kind::signal_read, "Click a track to read the signal, Esc: done");
+				intent.position = m_hover.point;
+				intent.action = signal_read_label(*m_hover.track, m_hover.path, shift);
+				intent.what = kind::signal_read;
+				return intent;
+			}
+		}
 		if (auto const hit{signal_hit()}; hit >= 0)
 		{
 			auto const &standing{m_signal.standing[hit]};
@@ -1117,6 +1135,10 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::turntable_fit: turntable_press(Intent); return;
 	case kind::signal_place:
 	case kind::signal_move: signal_press(Intent); return;
+	case kind::signal_read:
+		if (Intent.track != nullptr)
+			signal_read_pick(*Intent.track, Intent.path, Intent.index == 1);
+		return;
 	case kind::switch_slide:
 		if (Intent.track != nullptr)
 		{

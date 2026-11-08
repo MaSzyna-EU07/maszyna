@@ -2241,7 +2241,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, signal_read, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -2656,6 +2656,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string read;
 		TTrack *track{nullptr};
 		int list{0};
+		// every path and list having the read, the first of them in track and list
+		std::vector<std::pair<TTrack *, int>> reads;
 	};
 	struct signal_tool
 	{
@@ -2685,6 +2687,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool home_valid{false};
 		signal_spot moved;
 		bool moved_valid{false};
+		// a click on a track gives the read of the signal selected to it
+		bool picking_read{false};
 		std::string status;
 	};
 	signal_tool m_signal;
@@ -2716,12 +2720,22 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
 	// a track split in two: the reads of the signals placed since the scenery was opened, not bound yet, go to the piece by the signal
 	void signal_split(TTrack &Original, TTrack &Created);
+	// the list of a path the trains the signal faces read it from, as they run by the point of the path nearest to it
+	int signal_read_list(signal_standing const &Standing, TTrack const &Track, int const Path) const;
+	// the read of the signal in exactly these lists of these paths, as one step taken back by Ctrl+Z
+	bool signal_read_set(signal_standing const &Standing, std::vector<std::pair<TTrack *, int>> const &Reads);
+	// a click on a track while picking the path that reads the selected signal: its read goes there, or one more there with Add,
+	// or off it with Add when it's there already
+	bool signal_read_pick(TTrack &Track, int const Path, bool const Add);
+	std::string signal_read_label(TTrack const &Track, int const Path, bool const Add) const;
 	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);
 	void signal_select(scene::instance_handle const Instance);
 	std::string signal_next_name(std::string const &Name) const;
 	void render_signal_ui();
 	void render_signal_palette();
 	void render_signal_selected();
+	// the paths reading the signal, each turned the other way or removed, a path picked or the one the editor gives. returns: true when they changed
+	bool render_signal_reads(signal_standing const &Found);
 	// of the signal selected: its template and another one for it, the aspects it can be set to; true when it got another one
 	bool render_signal_template(signal_standing const &Found, signal_template const &Item);
 	// the list of the templates the signal can take instead, Across those of another mount too: the file picked, empty for none

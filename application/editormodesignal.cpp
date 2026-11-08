@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <filesystem>
 #include <functional>
 #include <limits>
@@ -57,6 +58,8 @@ double const kSignalReach{10.0};
 // a track laid in the place of a deleted one runs within it of its axis
 double const kOrphanReach{1.0};
 std::size_t const kOrphanRecords{64};
+// the paths reading a signal, drawn in the view and named in its panel
+ImU32 const kReadColour{IM_COL32(255, 90, 220, 255)};
 char const *const kOtherPath{"On this side the signal would stand on the other path of the switch: place it on the outer side"};
 
 char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
@@ -657,7 +660,7 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 	if (scene::Layers.empty() || m_signal.templates.empty())
 		return standing;
 	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
-	std::unordered_map<std::string, std::pair<TTrack *, int>> readers;
+	std::unordered_map<std::string, std::vector<std::pair<TTrack *, int>>> readers;
 	for (auto *track : simulation::Paths.sequence())
 	{
 		if (track == nullptr || track->m_editorremoved)
@@ -665,7 +668,11 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 		for (int list = 0; list < 6; ++list)
 			for (auto const &event : editor_track::events(*track, list))
 				if (false == event.first.empty())
-					readers.emplace(ToLower(event.first), std::make_pair(track, list));
+				{
+					auto &reads{readers[ToLower(event.first)]};
+					if (std::find(reads.begin(), reads.end(), std::make_pair(track, list)) == reads.end())
+						reads.emplace_back(track, list);
+				}
 	}
 	for (auto const &include : found)
 	{
@@ -681,8 +688,9 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 			signal.read = editor_includes::substitute(item->read, include.values);
 			if (auto const reader{readers.find(ToLower(signal.read))}; reader != readers.end())
 			{
-				signal.track = reader->second.first;
-				signal.list = reader->second.second;
+				signal.reads = reader->second;
+				signal.track = signal.reads.front().first;
+				signal.list = signal.reads.front().second;
 			}
 		}
 		standing.push_back(std::move(signal));
@@ -1152,6 +1160,93 @@ void editor_mode::signal_split(TTrack &Original, TTrack &Created)
 		own = std::move(kept);
 		theirs = std::move(given);
 	}
+}
+
+int editor_mode::signal_read_list(signal_standing const &Standing, TTrack const &Track, int const Path) const
+{
+	if (Track.m_paths.empty())
+		return 2;
+	auto const path{std::clamp(Path, 0, static_cast<int>(Track.m_paths.size()) - 1)};
+	auto const forward{forward_at(Track, path, nearest_on(Track, path, Standing.include.location))};
+	return glm::dot(forward, travel_of(Standing.include.yaw)) >= 0.0 ? 2 : 1;
+}
+
+bool editor_mode::signal_read_set(signal_standing const &Standing, std::vector<std::pair<TTrack *, int>> const &Reads)
+{
+	auto &tool{m_signal};
+	if (Standing.read.empty())
+		return false;
+	for (auto const &[track, list] : Reads)
+	{
+		std::string reason;
+		if (false == track->Dynamics.empty())
+		{
+			tool.status = refused(format(STR_C("Vehicles stand on %s: its events aren't changed with them on it"), name_of(*track).c_str()));
+			return false;
+		}
+		if (false == scene::Layers.editable(track, &reason))
+		{
+			tool.status = refused(format(STR_C("%s can't take the event: %s"), name_of(*track).c_str(), reason.c_str()));
+			return false;
+		}
+	}
+	auto const instance{Standing.include.instance};
+	auto const name{Standing.name};
+	auto const read{ToLower(Standing.read)};
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	signal_detach_events(Standing.read, states);
+	std::string where;
+	for (auto const &[track, list] : Reads)
+	{
+		if (std::none_of(states.begin(), states.end(), [&](auto const &State) { return State.first == track; }))
+			states.emplace_back(track, editor_track::capture(*track));
+		auto &events{editor_track::events(*track, list)};
+		if (std::none_of(events.begin(), events.end(), [&](auto const &Event) { return ToLower(Event.first) == read; }))
+			events.emplace_back(read, nullptr);
+		std::string missing;
+		editor_track::bind_events(*track, missing);
+		track->mark_dirty();
+		where += (where.empty() ? "" : ", ") + format("%s %s", editor_track::event_keyword(list), name_of(*track).c_str());
+	}
+	if (states.empty())
+		return false;
+	push_track_snapshot(std::move(states));
+	signal_refresh(true);
+	signal_select(instance);
+	tool.status = where.empty() ? format(STR_C("Signal %s isn't read by any path now: the trains don't see it, Ctrl+Z takes it back"), name.c_str())
+	                            : format(STR_C("Signal %s read by %s, Ctrl+Z takes it back"), name.c_str(), where.c_str());
+	return true;
+}
+
+bool editor_mode::signal_read_pick(TTrack &Track, int const Path, bool const Add)
+{
+	auto const *standing{signal_standing_of(m_signal.selected)};
+	if (standing == nullptr || standing->read.empty())
+	{
+		m_signal.picking_read = false;
+		return false;
+	}
+	std::pair<TTrack *, int> const read{&Track, signal_read_list(*standing, Track, Path)};
+	auto reads{standing->reads};
+	if (false == Add)
+		reads = {read};
+	else if (auto const found{std::find(reads.begin(), reads.end(), read)}; found != reads.end())
+		reads.erase(found);
+	else
+		reads.push_back(read);
+	return signal_read_set(*standing, reads);
+}
+
+std::string editor_mode::signal_read_label(TTrack const &Track, int const Path, bool const Add) const
+{
+	auto const *standing{signal_standing_of(m_signal.selected)};
+	if (standing == nullptr)
+		return {};
+	auto const list{signal_read_list(*standing, Track, Path)};
+	auto const there{std::find(standing->reads.begin(), standing->reads.end(), std::make_pair(const_cast<TTrack *>(&Track), list)) != standing->reads.end()};
+	if (Add)
+		return format(there ? STR_C("Click: %s no more read by %s of %s") : STR_C("Click: %s read by %s of %s too"), standing->name.c_str(), editor_track::event_keyword(list), name_of(Track).c_str());
+	return format(STR_C("Click: %s read by %s of %s only. Shift+click: one read more or less, Esc: done"), standing->name.c_str(), editor_track::event_keyword(list), name_of(Track).c_str());
 }
 
 void editor_mode::orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept)
@@ -1766,6 +1861,8 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 
 void editor_mode::signal_select(scene::instance_handle const Instance)
 {
+	if (Instance != m_signal.selected)
+		m_signal.picking_read = false;
 	m_signal.selected = Instance;
 	if (Instance != 0)
 		select_include(Instance);
@@ -1824,6 +1921,7 @@ void editor_mode::render_signal_palette()
 			{
 				tool.chosen[tool.kind] = chosen ? tool.chosen[tool.kind] : group.front();
 				tool.armed = true;
+				tool.picking_read = false;
 			}
 		}
 		auto const hovered{ImGui::IsItemHovered()};
@@ -1940,7 +2038,10 @@ void editor_mode::render_signal_palette()
 			tool.armed = false;
 	}
 	else if (main_button(STR_C("Place by a track"), ImVec2(-1.0f, 0.0f)))
+	{
 		tool.armed = true;
+		tool.picking_read = false;
+	}
 	item_tooltip("A click by a track places the chosen signal on that side, a press dragged along it turns it to the trains running that way. The signalling of the station places its signals of each kind with the template chosen here");
 }
 
@@ -2016,10 +2117,8 @@ void editor_mode::render_signal_selected()
 	item_tooltip("Name, plate and the linked signal: in the node properties. Del removes it with its event");
 	if (found->read.empty())
 		ImGui::TextDisabled("%s", STR_C("The train doesn't read it"));
-	else if (found->track != nullptr)
-		ImGui::TextDisabled(STR_C("Read by %s %s of %s"), editor_track::event_keyword(found->list), found->read.c_str(), name_of(*found->track).c_str());
-	else
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No path has %s among its events: the train doesn't see it"), found->read.c_str());
+	else if (render_signal_reads(*found))
+		return;
 	auto const instance{found->include.instance};
 	if (auto const *item{signal_template_of(found->include.file)}; item != nullptr && render_signal_template(*found, *item))
 		return;
@@ -2032,6 +2131,65 @@ void editor_mode::render_signal_selected()
 		signal_turn(instance);
 	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
 	ImGui::Separator();
+}
+
+bool editor_mode::render_signal_reads(signal_standing const &Found)
+{
+	auto &tool{m_signal};
+	if (Found.reads.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), STR_C("No path has %s among its events: the train doesn't see it"), Found.read.c_str());
+	else
+		ImGui::TextDisabled(STR_C("Read by %s on:"), Found.read.c_str());
+	for (std::size_t i = 0; i < Found.reads.size(); ++i)
+	{
+		auto const &[track, list] = Found.reads[i];
+		ImGui::PushID(static_cast<int>(i));
+		auto const &events{editor_track::events(*track, list)};
+		auto const bound{std::any_of(events.begin(), events.end(), [&](auto const &Event) { return Event.second != nullptr && ToLower(Event.first) == ToLower(Found.read); })};
+		ImGui::Bullet();
+		ImGui::SameLine();
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(kReadColour), "%s %s", editor_track::event_keyword(list), name_of(*track).c_str());
+		if (false == bound)
+			item_tooltip("Bound to its event when the scenery is saved and opened again");
+		ImGui::SameLine();
+		auto changed{false};
+		auto reads{Found.reads};
+		if (ImGui::SmallButton(STR_C("Other way")))
+		{
+			reads[i].second = list % 3 == 2 ? list - 1 : list % 3 == 1 ? list + 1 : list;
+			changed = true;
+		}
+		item_tooltip("The trains of the other direction read it on this path: event1 and event2 swapped");
+		ImGui::SameLine();
+		if (ImGui::SmallButton(STR_C("Remove")))
+		{
+			reads.erase(reads.begin() + static_cast<std::ptrdiff_t>(i));
+			changed = true;
+		}
+		item_tooltip("This path doesn't read it any more");
+		ImGui::PopID();
+		if (changed)
+			return signal_read_set(Found, reads);
+	}
+	auto const width{(ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f};
+	if (tool.picking_read)
+		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+	auto const picking{tool.picking_read};
+	if (ImGui::Button(picking ? STR_C("Picking a path... (Esc)") : STR_C("Pick the path"), ImVec2(width, 0.0f)))
+		tool.picking_read = false == picking;
+	if (picking)
+		ImGui::PopStyleColor();
+	item_tooltip("Click a track in the view: it reads the signal instead, Shift+click: one read more or less. The list is the one of the trains the signal faces");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("By the path it stands by"), ImVec2(width, 0.0f)))
+	{
+		signal_spot spot;
+		if (signal_standing_spot(Found, spot) && spot.reader != nullptr)
+			return signal_read_set(Found, {{spot.reader, spot.reader_list}});
+		tool.status = refused(STR_C("No track by the signal to read it"));
+	}
+	item_tooltip("The read where the editor puts it: the event of the trains it faces on the track it stands by, past the frog of a switch on the track behind it");
+	return false;
 }
 
 void editor_mode::select_signal(scene::instance_handle const Instance)
@@ -2176,6 +2334,75 @@ void editor_mode::draw_signal_overlay() const
 		drawlist->AddTriangleFilled(ImVec2(b.x + unit.x * 9.0f, b.y + unit.y * 9.0f), ImVec2(b.x + side.x * 6.0f, b.y + side.y * 6.0f), ImVec2(b.x - side.x * 6.0f, b.y - side.y * 6.0f), Colour);
 	};
 	auto const mast = [&](glm::dvec3 const &Foot, ImU32 const Colour, float const Width) { projection.line(drawlist, Foot, Foot + glm::dvec3{0.0, kSignalHead, 0.0}, Colour, Width); };
+	// a path reading a signal: a thick band along it over the rails, outlined dark to stand out of the ballast, arrows of the way of
+	// the trains reading it along the band, a line from the foot of the signal to the path, the event and the path named on a plate
+	glm::dvec3 const lift{0.0, kRailTop + 0.05, 0.0};
+	ImU32 const outline{IM_COL32(15, 15, 25, 170)};
+	auto const thick = [&](glm::dvec3 const &A, glm::dvec3 const &B, ImU32 const Colour, float const Width) {
+		projection.line(drawlist, A, B, outline, Width + 3.0f);
+		projection.line(drawlist, A, B, Colour, Width);
+	};
+	auto const read_arrow = [&](glm::dvec3 const &From, glm::dvec2 const &Direction, ImU32 const Colour, float const Width) {
+		ImVec2 a;
+		ImVec2 b;
+		if (false == projection.project(From, a) || false == projection.project(glm::dvec3{From.x + Direction.x * 4.0, From.y, From.z + Direction.y * 4.0}, b))
+			return;
+		auto const dx{b.x - a.x};
+		auto const dy{b.y - a.y};
+		auto const size{std::sqrt(dx * dx + dy * dy)};
+		if (size < 1.0f)
+			return;
+		ImVec2 const unit{dx / size, dy / size};
+		ImVec2 const side{-unit.y, unit.x};
+		auto const head{6.0f + Width * 2.0f};
+		ImVec2 const tip{b.x + unit.x * head, b.y + unit.y * head};
+		ImVec2 const left{b.x + side.x * head * 0.7f, b.y + side.y * head * 0.7f};
+		ImVec2 const right{b.x - side.x * head * 0.7f, b.y - side.y * head * 0.7f};
+		drawlist->AddTriangleFilled(tip, left, right, Colour);
+		drawlist->AddTriangle(tip, left, right, outline, 1.5f);
+	};
+	auto const plate = [&](glm::dvec3 const &At, ImU32 const Colour, std::string const &Text) {
+		ImVec2 at;
+		if (false == projection.project(At, at))
+			return;
+		auto *font{ImGui::GetFont()};
+		auto const size{ImGui::GetFontSize() * 1.2f};
+		auto const extent{font->CalcTextSizeA(size, FLT_MAX, 0.0f, Text.c_str())};
+		ImVec2 const corner{at.x + 10.0f, at.y + 8.0f};
+		drawlist->AddRectFilled(ImVec2(corner.x - 4.0f, corner.y - 2.0f), ImVec2(corner.x + extent.x + 4.0f, corner.y + extent.y + 2.0f), IM_COL32(15, 15, 25, 210), 4.0f);
+		drawlist->AddText(font, size, corner, Colour, Text.c_str());
+	};
+	auto const reading = [&](TTrack const &Track, int const List, glm::dvec3 const &Foot, ImU32 const Colour, float const Width) {
+		if (Track.m_paths.empty())
+			return;
+		auto const way{List % 3 == 1 ? -1.0 : 1.0};
+		for (int p = 0; p < static_cast<int>(Track.m_paths.size()); ++p)
+		{
+			bezier const curve{Track.m_paths[p]};
+			auto previous{curve.point(0.0) + lift};
+			for (int k = 1; k <= 32; ++k)
+			{
+				auto const next{curve.point(k / 32.0) + lift};
+				thick(previous, next, Colour, Width);
+				previous = next;
+			}
+			// an arrow each 15 m or so, the way the trains reading it run
+			auto const length{geometry::plan_distance(curve.point(0.0), curve.point(1.0))};
+			auto const count{std::clamp(static_cast<int>(length / 15.0), 1, 12)};
+			for (int k = 0; k < count; ++k)
+			{
+				auto const t{(k + 0.5) / count};
+				read_arrow(curve.point(t) + lift, forward_at(Track, p, t) * way, Colour, Width);
+			}
+		}
+		int path{0};
+		double parameter{0.0};
+		plan_gap(Track, Foot, path, parameter);
+		auto const closest{bezier{Track.m_paths[path]}.point(parameter) + lift};
+		thick(Foot, closest, Colour, std::max(2.0f, Width * 0.5f));
+		plate(closest, Colour, format("%s %s", editor_track::event_keyword(List), name_of(Track).c_str()));
+	};
+	auto const dim = [](ImU32 const Colour) { return (Colour & 0x00FFFFFFu) | (static_cast<ImU32>(160) << IM_COL32_A_SHIFT); };
 	for (int i = 0; i < static_cast<int>(tool.standing.size()); ++i)
 	{
 		auto const &standing{tool.standing[i]};
@@ -2194,12 +2421,24 @@ void editor_mode::draw_signal_overlay() const
 			drawlist->AddText(ImVec2(head.x + 6.0f, head.y - 6.0f), colour, label.c_str());
 		}
 		if (selected || hovered)
+		{
 			arrow(location, travel_of(standing.include.yaw), colour);
+			// not while it is dragged: the read it gets where it is dropped is drawn then
+			if (false == (selected && tool.moving && tool.moved_valid))
+				for (auto const &[track, list] : standing.reads)
+					reading(*track, list, location, selected ? kReadColour : dim(kReadColour), selected ? 7.0f : 4.0f);
+		}
 	}
-	auto const preview = [&](signal_spot const &Spot, ImU32 const Colour) {
+	// the path a click gives the read of the selected signal to
+	if (tool.picking_read && m_intent.what == track_intent::kind::signal_read && m_intent.track != nullptr)
+		if (auto const *picked{signal_standing_of(tool.selected)}; picked != nullptr)
+			reading(*m_intent.track, signal_read_list(*picked, *m_intent.track, m_intent.path), picked->include.location, overlay_color::highlight, 8.0f);
+	auto const preview = [&](signal_spot const &Spot, ImU32 const Colour, bool const Read) {
 		projection.line(drawlist, Spot.axis + glm::dvec3{0.0, kRailTop, 0.0}, Spot.position, Colour, 2.0f);
 		mast(Spot.position, Colour, 3.0f);
 		arrow(Spot.axis + glm::dvec3{0.0, kRailTop, 0.0}, Spot.travel, Colour);
+		if (Read && Spot.reader != nullptr)
+			reading(*Spot.reader, Spot.reader_list, Spot.position, kReadColour, 6.0f);
 		ImVec2 head;
 		auto const *armed{signal_armed()};
 		if (armed != nullptr && false == armed->lamps.empty() && projection.project(Spot.position + glm::dvec3{0.0, kSignalHead, 0.0}, head))
@@ -2210,17 +2449,16 @@ void editor_mode::draw_signal_overlay() const
 				drawlist->AddCircleFilled(ImVec2(head.x, head.y + 1.0f + i * 10.0f), 4.0f, lamp_colour(armed->lamps[i]));
 		}
 	};
+	auto const *template_armed{signal_armed()};
+	auto const *dragged{tool.moving ? signal_standing_of(tool.selected) : nullptr};
 	if (tool.placing)
-		preview(tool.press, overlay_color::grip);
+		preview(tool.press, overlay_color::grip, template_armed != nullptr && false == template_armed->read.empty());
 	else if (tool.moving && tool.moved_valid)
-		preview(tool.moved, overlay_color::selected);
-	else if (m_intent.what == track_intent::kind::signal_place && m_hover.track != nullptr)
+		preview(tool.moved, overlay_color::selected, dragged != nullptr && false == dragged->read.empty());
+	else if (m_intent.what == track_intent::kind::signal_place && m_hover.track != nullptr && template_armed != nullptr)
 	{
-		if (auto const *armed{signal_armed()}; armed != nullptr)
-		{
-			signal_spot spot;
-			if (signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
-				preview(spot, overlay_color::marked);
-		}
+		signal_spot spot;
+		if (signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *template_armed, spot))
+			preview(spot, overlay_color::marked, false == template_armed->read.empty());
 	}
 }

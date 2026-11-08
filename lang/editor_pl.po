@@ -13549,3 +13549,60 @@ msgstr "Jej szablon nie ma opisu tego, co zapowiada, więc nie jest sprawdzana: 
 
 msgid "not described"
 msgstr "bez opisu"
+
+msgid "Vehicles stand on %s: its events aren't changed with them on it"
+msgstr "Na %s stoją pojazdy: jego eventy nie są zmieniane, póki tam stoją"
+
+msgid "%s can't take the event: %s"
+msgstr "%s nie może przyjąć eventu: %s"
+
+msgid "Signal %s isn't read by any path now: the trains don't see it, Ctrl+Z takes it back"
+msgstr "Sygnalizatora %s nie odczytuje teraz żaden tor: pociągi go nie widzą, Ctrl+Z cofa"
+
+msgid "Signal %s read by %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s odczytywany przez %s, Ctrl+Z cofa"
+
+msgid "Click: %s no more read by %s of %s"
+msgstr "Klik: %s już nie odczytywany przez %s toru %s"
+
+msgid "Click: %s read by %s of %s too"
+msgstr "Klik: %s odczytywany także przez %s toru %s"
+
+msgid "Click: %s read by %s of %s only. Shift+click: one read more or less, Esc: done"
+msgstr "Klik: %s odczytywany tylko przez %s toru %s. Shift+klik: jeden odczyt więcej lub mniej, Esc: koniec"
+
+msgid "Read by %s on:"
+msgstr "Odczyt %s na:"
+
+msgid "Bound to its event when the scenery is saved and opened again"
+msgstr "Zwiąże się ze swoim eventem po zapisaniu i ponownym otwarciu scenerii"
+
+msgid "Other way"
+msgstr "W drugą stronę"
+
+msgid "The trains of the other direction read it on this path: event1 and event2 swapped"
+msgstr "Na tym torze odczytują go pociągi z przeciwnego kierunku: event1 i event2 zamienione"
+
+msgid "This path doesn't read it any more"
+msgstr "Ten tor przestaje go odczytywać"
+
+msgid "Picking a path... (Esc)"
+msgstr "Wskazywanie toru... (Esc)"
+
+msgid "Pick the path"
+msgstr "Wskaż tor"
+
+msgid "Click a track in the view: it reads the signal instead, Shift+click: one read more or less. The list is the one of the trains the signal faces"
+msgstr "Kliknij tor w widoku: to on będzie odczytywał sygnalizator, Shift+klik: jeden odczyt więcej lub mniej. Event jest ten pociągów, do których sygnalizator jest zwrócony"
+
+msgid "By the path it stands by"
+msgstr "Według toru, przy którym stoi"
+
+msgid "No track by the signal to read it"
+msgstr "Przy sygnalizatorze nie ma toru, który mógłby go odczytywać"
+
+msgid "The read where the editor puts it: the event of the trains it faces on the track it stands by, past the frog of a switch on the track behind it"
+msgstr "Odczyt tam, gdzie stawia go edytor: event pociągów, do których jest zwrócony, na torze, przy którym stoi, a za krzyżownicą rozjazdu na torze za rozjazdem"
+
+msgid "Click a track to read the signal, Esc: done"
+msgstr "Kliknij tor, który ma odczytywać sygnalizator, Esc: koniec"

@@ -7185,6 +7185,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 cancel_track_tools();
                 m_straights.tool = 0;
             }
+            else if (m_track_tab == track_tab::srk && m_signal.picking_read)
+                m_signal.picking_read = false;
             else if (m_track_tab == track_tab::srk && m_signal.armed)
                 m_signal.armed = false;
             else if (m_track_tab == track_tab::path && m_track_set.size() >= 2)

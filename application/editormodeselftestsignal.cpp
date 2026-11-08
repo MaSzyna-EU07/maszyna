@@ -128,7 +128,8 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		WriteLog(std::string{"SELFTEST signalaspect "} + values["name"] + " " + values["aspect"] + (shown ? ": " : ": failed, ") + m_signal.status);
 		return selftest_result::handled;
 	}
-	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")
+	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap" ||
+	    command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault")
 	{
 		auto values{selftest_values(words)};
 		show_track_tab(track_tab::srk);
@@ -237,6 +238,45 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			else
 				WriteLog("SELFTEST signalselect " + values["name"] + ": " + standing->include.file);
 		}
+		else if (command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault")
+		{
+			// signalread name=<signal> track=<path> [path=<n>] [add=1]: the path picked to read it, as a click (a Shift+click with add)
+			// while picking; signalreadflip and signalreaddrop name=<signal> index=<n>: a read of its list turned the other way or
+			// removed; signalreaddefault name=<signal>: the read where the editor puts it
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			signal_select(standing->include.instance);
+			auto done{false};
+			if (command == "signalread")
+			{
+				auto *track{simulation::Paths.find(values["track"])};
+				tool.picking_read = true;
+				done = track != nullptr && signal_read_pick(*track, values.count("path") ? std::stoi(values["path"]) : 0, values["add"] == "1");
+			}
+			else if (command == "signalreaddefault")
+			{
+				signal_spot spot;
+				done = signal_standing_spot(*standing, spot) && spot.reader != nullptr && signal_read_set(*standing, {{spot.reader, spot.reader_list}});
+			}
+			else
+			{
+				auto reads{standing->reads};
+				auto const index{values.count("index") ? static_cast<std::size_t>(std::stoul(values["index"])) : std::size_t{0}};
+				if (index < reads.size())
+				{
+					if (command == "signalreaddrop")
+						reads.erase(reads.begin() + static_cast<std::ptrdiff_t>(index));
+					else
+						reads[index].second = reads[index].second % 3 == 2 ? reads[index].second - 1 : reads[index].second + 1;
+					done = signal_read_set(*standing, reads);
+				}
+			}
+			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
 		else if (command == "signaldelete")
 		{
 			auto const *standing{standing_named(values["name"])};
@@ -292,6 +332,12 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 					where = std::string{bound ? "bound, " : "unbound, "} + format("%s of %s, %.3f m from the axis, %s of the trains, %.3f m over the axis, model turned %.1f deg from the travel", editor_track::event_keyword(standing.list), standing.track->name().c_str(), glm::length(offset), cross > 0.0 ? "right" : "left",
 					               standing.include.location.y - axis.y, turn);
 					// the path it stands by, which on a switch past the frog isn't the one reading it
+					if (standing.reads.size() > 1)
+					{
+						where += "; also";
+						for (std::size_t r = 1; r < standing.reads.size(); ++r)
+							where += format(" %s of %s", editor_track::event_keyword(standing.reads[r].second), standing.reads[r].first->name().c_str());
+					}
 					if (signal_spot spot; signal_standing_spot(standing, spot) && spot.track != nullptr)
 						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
 				}
