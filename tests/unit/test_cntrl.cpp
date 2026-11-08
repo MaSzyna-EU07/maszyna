@@ -96,12 +96,71 @@ TEST_CASE("cntrl: ScndCtrlResistiveLock keeps the field shunting off at zero and
 				CHECK(locked->ScndCtrlPos == 1);
 			}
 		}
-		SUBCASE("the shunting still goes off on a resistive position") {
+		SUBCASE("the shunt goes down on a resistance-free position") {
+			controllers_at(locked, resistancefree);
+			REQUIRE(locked->IncScndCtrl(1));
+			REQUIRE(locked->IncScndCtrl(1));
+			CHECK(locked->DecScndCtrl(1));
+			CHECK(locked->ScndCtrlPos == 1);
+			CHECK(locked->DecScndCtrl(2));
+			CHECK(locked->ScndCtrlPos == 0);
+		}
+		SUBCASE("the shunt doesn't go down on a resistive position either") {
+			// a state the lock doesn't let arise (see below), set by hand to check the controller alone
+			controllers_at(locked, resistancefree - 1);
+			locked->ScndCtrlPos = 1;
+			CHECK(locked->IsScndCtrlLockedByMainCtrl());
+			CHECK_FALSE(locked->DecScndCtrl(1));
+			CHECK_FALSE(locked->DecScndCtrl(2));
+			CHECK(locked->ScndCtrlPos == 1);
+		}
+		SUBCASE("the master controller taken back from a shunt step drops the shunt") {
+			controllers_at(locked, resistancefree);
+			REQUIRE(locked->IncScndCtrl(1));
+			if (locked->TrainType == dt_ET22) {
+				// the ET22's master controller doesn't turn with the shunt on: the shunt goes off first, as before
+				CHECK_FALSE(locked->DecMainCtrl(1));
+				CHECK(locked->MainCtrlPos == resistancefree);
+				CHECK(locked->DecScndCtrl(1));
+			}
+			CHECK(locked->DecMainCtrl(1));
+			CHECK(locked->MainCtrlPos == resistancefree - 1);
+			CHECK(locked->ScndCtrlPos == 0);
+			// and the master controller goes on down to zero, nothing left locked
+			while (locked->MainCtrlPos > 0 && locked->DecMainCtrl(1)) {
+			}
+			CHECK(locked->MainCtrlPos == 0);
+		}
+		SUBCASE("the master controller set directly (AI, consist) drops the shunt in the next update") {
 			controllers_at(locked, resistancefree);
 			REQUIRE(locked->IncScndCtrl(1));
 			locked->MainCtrlPos = resistancefree - 1;
-			CHECK(locked->DecScndCtrl(1));
+			locked.step();
 			CHECK(locked->ScndCtrlPos == 0);
+			CHECK(locked->MainCtrlPos == resistancefree - 1);
+		}
+		SUBCASE("the master controller moved up from a shunt step onto a resistive position drops the shunt") {
+			// the last series position, followed by the resistive parallel ones
+			auto lastseries{0};
+			for (auto position{resistancefree}; position > 0 && position < locked->MainCtrlPosNo; position = resistance_free_position(locked.mover(), position)) {
+				if (locked->RList[position + 1].R >= 0.01) {
+					lastseries = position;
+					break;
+				}
+			}
+			REQUIRE(lastseries > 0);
+			controllers_at(locked, lastseries);
+			locked->DirActive = 1;
+			REQUIRE(locked->IncScndCtrl(1));
+			if (locked->TrainType == dt_ET22) {
+				CHECK_FALSE(locked->IncMainCtrl(1)); // the ET22's interlock, as before
+				CHECK(locked->ScndCtrlPos == 1);
+			}
+			else {
+				CHECK(locked->IncMainCtrl(1));
+				CHECK(locked->MainCtrlPos == lastseries + 1);
+				CHECK(locked->ScndCtrlPos == 0);
+			}
 		}
 	}
 }
