@@ -6019,6 +6019,7 @@ TController::determine_consist_state() {
     IsAnyDoorOnlyOpen[ side::right ] = IsAnyDoorOnlyOpen[ side::left ] = false;
 	IsAnyDoorOpen[ side::right ] = IsAnyDoorOpen[ side::left ] = false;
     IsAnyDoorPermitActive[ side::right ] = IsAnyDoorPermitActive[ side::left ] = false;
+    auto doorclosure { door_closure_t::none };
     ConsistShade = 0.0;
     auto *p { pVehicles[ end::front ] }; // pojazd na czole składu
     double dy; // składowa styczna grawitacji, w przedziale <0,1>
@@ -6080,12 +6081,14 @@ TController::determine_consist_state() {
                 IsAnyDoorPermitActive[ side::right ] |= rightdoor.open_permit;
                 IsAnyDoorPermitActive[ side::left  ] |= leftdoor.open_permit;
             }
+            doorclosure = std::max( doorclosure, vehicle->door_closure() );
         }
         // measure lighting level
         // TBD: apply weight (multiplier) to partially lit vehicles?
         ConsistShade += p->fShade > 0.0 ? p->fShade : 1.0;
         p = p->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
     }
+    DoorClosure = doorclosure;
     // calculate average amount of received sunlight
     ConsistShade /= iVehicles;
 

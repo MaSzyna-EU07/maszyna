@@ -637,6 +637,7 @@ private:
     bool IsAnyDoorOpen[ 2 ]; // state of door in the consist
 	bool IsAnyDoorOnlyOpen[ 2 ]; // state of door in the consist regardless of step
     bool IsAnyDoorPermitActive[ 2 ]; // state of door permit in the consist
+    door_closure_t DoorClosure{ door_closure_t::none }; // state of the door closure signalling (SOD) of the consist
     bool IsAnyLineBreakerOpen{ false }; // state of line breaker in all powered vehicles under control
     bool IsAnyConverterOverloadRelayOpen{ false }; // state of converter overload relays in all vehicles under control
     bool IsAnyMotorOverloadRelayOpen{ false }; // state of motor overload relays in all vehicles under control
