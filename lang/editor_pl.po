@@ -13609,3 +13609,30 @@ msgstr "Kliknij tor, który ma odczytywać sygnalizator, Esc: koniec"
 
 msgid "Signal %s is read so already"
 msgstr "Sygnalizator %s już jest tak odczytywany"
+
+msgid "It enters the gauge of %s by %.0f cm: there is no room for it here, put it elsewhere or on the other side"
+msgstr "Wchodzi w skrajnię toru %s o %.0f cm: tu się nie zmieści, postaw go gdzie indziej albo po drugiej stronie"
+
+msgid "Moved %.0f cm sideways to keep out of the gauge."
+msgstr "Odsunięty o %.0f cm w bok, poza skrajnię."
+
+msgid "In the gauge of %s by %.0f cm"
+msgstr "Wchodzi w skrajnię toru %s o %.0f cm"
+
+msgid "Move it out of the gauge"
+msgstr "Odsuń ze skrajni"
+
+msgid "Signal %s moved out of the gauge, read by %s %s of %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s odsunięty ze skrajni, pociąg odczytuje go przez %s %s toru %s, Ctrl+Z cofa"
+
+msgid "Signal %s moved out of the gauge, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s odsunięty ze skrajni, Ctrl+Z cofa"
+
+msgid "No track by the signal to take it from"
+msgstr "Przy sygnalizatorze nie ma toru, od którego można go odsunąć"
+
+msgid "Moves the signal sideways, away from the axis of the track whose gauge it enters, as far as it goes in. The gauge is the one chosen in the Gauge window"
+msgstr "Przesuwa sygnalizator w bok, od osi toru, w którego skrajnię wchodzi, o tyle, ile w nią wchodzi. Skrajnia jest ta wybrana w oknie Skrajnia"
+
+msgid "It enters the gauge of %s by %.0f cm: raise the gantry"
+msgstr "Wchodzi w skrajnię toru %s o %.0f cm: podnieś bramkę"

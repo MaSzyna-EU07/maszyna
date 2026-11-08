@@ -174,8 +174,14 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				std::snprintf(tool.plate, sizeof(tool.plate), "%s", values["plate"].c_str());
 			auto const side{values["side"] == "left" ? -1 : 1};
 			auto const facing{values["facing"] == "along" ? 1 : values["facing"] == "against" ? -1 : 0};
+			// offset=<m>: from the axis, for this signal only
+			auto const kept{EditorSettings.signal_offset()};
+			if (values.count("offset"))
+				EditorSettings.signal_offset(std::stod(values["offset"]));
 			signal_spot spot;
-			if (false == spot_on(*signal_current(), facing, side, spot))
+			auto const found{spot_on(*signal_current(), facing, side, spot)};
+			EditorSettings.signal_offset(kept);
+			if (false == found)
 			{
 				WriteLog("SELFTEST signal: no such track " + values["track"]);
 				return selftest_result::handled;
@@ -301,8 +307,11 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		{
 			signal_refresh(true);
 			WriteLog(format("SELFTEST signalprobe: %zu signals", tool.standing.size()));
+			auto const only{ToLower(values["name"])};
 			for (auto const &standing : tool.standing)
 			{
+				if (false == only.empty() && ToLower(standing.name) != only)
+					continue;
 				std::string where{"not read"};
 				if (standing.track != nullptr)
 				{
@@ -341,6 +350,11 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 					if (signal_spot spot; signal_standing_spot(standing, spot) && spot.track != nullptr)
 						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
 				}
+				// the gauge of the tracks around it
+				if (auto const hit{signal_gauge(standing.include.instance)}; hit.depth > 0.0 && hit.track != nullptr)
+					where += format("; in the gauge of %s path %d by %.3f m at %.2f %.2f %.2f", hit.track->name().c_str(), hit.path, hit.depth, hit.point.x, hit.point.y, hit.point.z);
+				else
+					where += "; out of the gauge";
 				WriteLog(format("SELFTEST signalprobe %s %s at %.3f %.3f %.3f yaw %.2f read %s: %s", standing.name.c_str(), standing.include.file.c_str(), standing.include.location.x, standing.include.location.y, standing.include.location.z, standing.include.yaw,
 				                standing.read.empty() ? "-" : standing.read.c_str(), where.c_str()));
 			}

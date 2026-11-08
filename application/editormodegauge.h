@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <vector>
 
+class TAnimModel;
+
 class gauge_tool final : public editor_tool
 {
   public:
@@ -34,6 +36,9 @@ class gauge_tool final : public editor_tool
 	void render_windows() override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
 	bool is_open() const { return m_gauge.open; }
+	// the deepest entry of the models into the outlines of the paths around them, of the outline chosen in the window; a hit of
+	// depth 0 when they keep out of them all
+	gauge_hit gauge_models(std::vector<TAnimModel *> const &Models);
 	void toggle() { m_gauge.open = !m_gauge.open; }
 
   private:

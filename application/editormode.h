@@ -2688,6 +2688,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool moved_valid{false};
 		// a click on a track gives the read of the signal selected to it
 		bool picking_read{false};
+		// the entry of the selected signal into the gauge of the paths around it, measured again as the history or the selection changes
+		struct
+		{
+			scene::instance_handle instance{0};
+			std::size_t history{static_cast<std::size_t>(-1)};
+			gauge_tool::gauge_hit hit;
+		} gauge;
 		std::string status;
 	};
 	signal_tool m_signal;
@@ -2709,6 +2716,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const;
 	bool signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const;
 	bool signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread);
+	// the deepest entry of the models of the signal into the gauge of the paths around it
+	gauge_tool::gauge_hit signal_gauge(scene::instance_handle const Instance);
+	// the signal just placed or moved, at Local in its file, taken across away from the axis of each path whose gauge it enters, a few
+	// times at most, its directive changed with it. returns: the way it went, metres, and in Hit the entry it still makes
+	double signal_off_gauge(scene::instance_handle const Instance, std::string const &File, std::vector<std::string> &Values, glm::dvec3 Local, gauge_tool::gauge_hit &Hit);
+	// a sentence more to the status about it, none when the signal kept out of the gauge where it was put
+	void signal_gauge_note(std::string &Status, double const Shift, gauge_tool::gauge_hit const &Hit, bool const Gantry) const;
 	bool signal_flip(scene::instance_handle const Instance);
 	bool signal_turn(scene::instance_handle const Instance);
 	bool signal_swap(scene::instance_handle const Instance, std::string const &File);

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorSettings.hpp"
+#include "model/AnimModel.h"
 
 #include "rendering/renderer.h"
 #include "scene/scenelayers.h"
@@ -92,6 +93,20 @@ char const *mount_label(std::string_view const Mount)
 	if (Mount == "gantry")
 		return STR_C("gantry");
 	return STR_C("mast");
+}
+
+double constexpr kGaugeSlack{0.01}; // m, an entry into the gauge this shallow is let be
+double constexpr kGaugeMargin{0.03}; // m, kept from the outline by a signal taken off it
+int constexpr kGaugeSteps{4}; // of taking a signal off the gauges, between two tracks too close it can't keep out of both
+
+// the models of the include standing around the place
+std::vector<TAnimModel *> include_models(scene::instance_handle const Instance, glm::dvec3 const &Location)
+{
+	std::vector<TAnimModel *> models;
+	for (auto *model : simulation::Instances.sequence())
+		if (model != nullptr && model->m_instance == Instance && model->visible() && glm::distance(model->location(), Location) < 60.0)
+			models.push_back(model);
+	return models;
 }
 
 double nearest_on(TTrack const &Track, int const Path, glm::dvec3 const &Point)
@@ -853,6 +868,12 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	auto const name{Standing.name};
 	auto const node{Standing.include.file};
 	set_include_directive(instance, editor_includes::compose_directive(file, values));
+	gauge_tool::gauge_hit hit;
+	double shift{0.0};
+	if (next != nullptr && next->mount == "gantry")
+		hit = m_gauge.gauge_models(include_models(instance, Spot.position));
+	else
+		shift = signal_off_gauge(instance, file, values, local, hit);
 	// taken up by the track it stood by, it would be put back by it as that one changes: it is let go, for the track it stands by now
 	infra::binding bound;
 	bound.type = infra::kind::include;
@@ -877,7 +898,70 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	signal_select(instance);
 	auto const *moved{signal_standing_of(instance)};
 	tool.status = moved != nullptr && moved->track != nullptr ? format(Read, name.c_str(), editor_track::event_keyword(moved->list), moved->read.c_str(), name_of(*moved->track).c_str()) : format(Unread, name.c_str());
+	signal_gauge_note(tool.status, shift, hit, next != nullptr && next->mount == "gantry");
 	return true;
+}
+
+gauge_tool::gauge_hit editor_mode::signal_gauge(scene::instance_handle const Instance)
+{
+	auto const *standing{signal_standing_of(Instance)};
+	if (standing == nullptr)
+		return {};
+	return m_gauge.gauge_models(include_models(Instance, standing->include.location));
+}
+
+double editor_mode::signal_off_gauge(scene::instance_handle const Instance, std::string const &File, std::vector<std::string> &Values, glm::dvec3 Local, gauge_tool::gauge_hit &Hit)
+{
+	auto const offset{scene::Layers.instance(Instance).context.offset};
+	auto const given{Values};
+	gauge_tool::gauge_hit first;
+	double shift{0.0};
+	for (int step = 0;; ++step)
+	{
+		auto const location{Local + offset};
+		Hit = m_gauge.gauge_models(include_models(Instance, location));
+		if (step == 0)
+			first = Hit;
+		if (Hit.depth <= kGaugeSlack || Hit.track == nullptr || Hit.track->m_paths.empty())
+			return shift;
+		if (step == kGaugeSteps)
+		{
+			// no room for it: it stays where it was put, the status tells the gauge it enters
+			Values = given;
+			set_include_directive(Instance, editor_includes::compose_directive(File, Values));
+			Hit = first;
+			return 0.0;
+		}
+		// away from the axis of the path whose gauge it enters, as deep as it went in and a little more
+		auto const &track{*Hit.track};
+		auto const path{std::clamp(Hit.path, 0, static_cast<int>(track.m_paths.size()) - 1)};
+		auto const axis{bezier{track.m_paths[path]}.point(nearest_on(track, path, location))};
+		auto const normal{right_of(Hit.direction)};
+		auto const side{glm::dot(plan_of(location) - plan_of(axis), normal) >= 0.0 ? 1.0 : -1.0};
+		auto const away{normal * (side * (Hit.depth + kGaugeMargin))};
+		Local.x += away.x;
+		Local.z += away.y;
+		shift += Hit.depth + kGaugeMargin;
+		Values[1] = editor_includes::number(Local.x);
+		Values[2] = editor_includes::number(Local.y);
+		Values[3] = editor_includes::number(Local.z);
+		set_include_directive(Instance, editor_includes::compose_directive(File, Values));
+	}
+}
+
+void editor_mode::signal_gauge_note(std::string &Status, double const Shift, gauge_tool::gauge_hit const &Hit, bool const Gantry) const
+{
+	std::string note;
+	if (Hit.depth > kGaugeSlack && Hit.track != nullptr)
+		note = Gantry ? format(STR_C("It enters the gauge of %s by %.0f cm: raise the gantry"), name_of(*Hit.track).c_str(), Hit.depth * 100.0)
+		              : format(STR_C("It enters the gauge of %s by %.0f cm: there is no room for it here, put it elsewhere or on the other side"), name_of(*Hit.track).c_str(), Hit.depth * 100.0);
+	else if (Shift > 0.0)
+		note = format(STR_C("Moved %.0f cm sideways to keep out of the gauge."), Shift * 100.0);
+	if (note.empty())
+		return;
+	if (false == Status.empty() && Status.back() != '.')
+		Status += '.';
+	Status += (Status.empty() ? "" : " ") + note;
 }
 
 bool editor_mode::signal_flip(scene::instance_handle const Instance)
@@ -1098,6 +1182,19 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 		push_track_snapshot({{Spot.reader, before}});
 		m_history.back().instances = std::move(snap.instances);
 		tool.status = format(STR_C("Signal %s placed (%s), read by %s %s of %s, Ctrl+Z takes it back. Its logic works after the scenery is saved and opened again"), name.c_str(), file.c_str(), editor_track::event_keyword(Spot.reader_list), read.c_str(), path.c_str());
+	}
+	// out of the gauge of the tracks around at once, in the same step of the undo; a gantry spans the track, it is only measured
+	std::string included;
+	std::vector<std::string> values;
+	if (editor_includes::parse_directive(scene::Layers.directive(instance), included, values) && values.size() > 4)
+	{
+		gauge_tool::gauge_hit hit;
+		double shift{0.0};
+		if (Template.mount == "gantry")
+			hit = m_gauge.gauge_models(include_models(instance, Spot.position));
+		else
+			shift = signal_off_gauge(instance, *scene::Layers.instance(instance).file, values, Spot.position - scene::Layers.instance(instance).context.offset, hit);
+		signal_gauge_note(tool.status, shift, hit, Template.mount == "gantry");
 	}
 	std::snprintf(tool.name, sizeof(tool.name), "%s", signal_next_name(name).c_str());
 	signal_refresh(true);
@@ -2152,6 +2249,29 @@ void editor_mode::render_signal_selected()
 	if (ImGui::Button(STR_C("Turn around"), ImVec2(width, 0.0f)))
 		signal_turn(instance);
 	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
+	// the gauge of the tracks around, measured again after each change
+	auto &gauge{m_signal.gauge};
+	if (gauge.instance != instance || gauge.history != history_revision())
+	{
+		gauge.instance = instance;
+		gauge.history = history_revision();
+		gauge.hit = signal_gauge(instance);
+	}
+	if (gauge.hit.depth > kGaugeSlack && gauge.hit.track != nullptr)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), STR_C("In the gauge of %s by %.0f cm"), name_of(*gauge.hit.track).c_str(), gauge.hit.depth * 100.0);
+		auto const *item{signal_template_of(found->include.file)};
+		if ((item == nullptr || item->mount != "gantry") && ImGui::Button(STR_C("Move it out of the gauge"), ImVec2(-1.0f, 0.0f)))
+		{
+			signal_spot spot;
+			if (signal_standing_spot(*found, spot))
+				signal_move_to(*found, spot, STR_C("Signal %s moved out of the gauge, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved out of the gauge, Ctrl+Z takes it back"));
+			else
+				m_signal.status = refused(STR_C("No track by the signal to take it from"));
+			return;
+		}
+		item_tooltip("Moves the signal sideways, away from the axis of the track whose gauge it enters, as far as it goes in. The gauge is the one chosen in the Gauge window");
+	}
 	ImGui::Separator();
 }
 
@@ -2486,5 +2606,17 @@ void editor_mode::draw_signal_overlay() const
 		signal_spot spot;
 		if (signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *template_armed, spot))
 			preview(spot, overlay_color::marked, false == template_armed->read.empty());
+	}
+	// the deepest place of the selected signal in the gauge of a track
+	if (auto const &gauge{tool.gauge}; tool.selected != 0 && gauge.instance == tool.selected && gauge.hit.depth > kGaugeSlack && gauge.hit.track != nullptr)
+	{
+		ImU32 const warning{IM_COL32(255, 70, 50, 255)};
+		ImVec2 at;
+		if (projection.project(gauge.hit.point, at))
+		{
+			drawlist->AddCircle(at, 9.0f, outline, 0, 5.0f);
+			drawlist->AddCircle(at, 9.0f, warning, 0, 3.0f);
+		}
+		plate(gauge.hit.point, warning, format(STR_C("In the gauge of %s by %.0f cm"), name_of(*gauge.hit.track).c_str(), gauge.hit.depth * 100.0));
 	}
 }
