@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
+#include "simulation/simulationtest.h"
 #include "world/Track.h"
 #include "world/station.h"
 #include "input/keyboardinput.h"
@@ -767,6 +768,7 @@ void TController::TableCheck(double fDistance)
         { // aktualizacja rekordów z wyjątkiem ostatniego
             if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
             {
+                auto const passedbefore { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
                 if (sSpeedTable[i].Update())
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
@@ -793,6 +795,8 @@ void TController::TableCheck(double fDistance)
                     // nie kontynuujemy pętli, trzeba doskanować ciąg dalszy
                     break;
                 }
+                // a switch is a track, the update of a signal never ends the loop above
+                CheckSignalPassedAtDanger( sSpeedTable[ i ], passedbefore );
                 if (sSpeedTable[i].iFlags & spTrack) // jeśli odcinek
                 {
                     if( sSpeedTable[ i ].fDist + sSpeedTable[ i ].trTrack->Length() < -fLength ) // a skład wyjechał całą długością poza
@@ -816,7 +820,10 @@ void TController::TableCheck(double fDistance)
 				}
             }
         }
+        auto const lastpassedbefore { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
         sSpeedTable[iLast].Update(); // aktualizacja ostatniego
+        // a signal at stop often is the last, the scan doesn't go past it
+        CheckSignalPassedAtDanger( sSpeedTable[ iLast ], lastpassedbefore );
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
             TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
@@ -827,7 +834,70 @@ void TController::TableCheck(double fDistance)
     }
 };
 
+namespace {
+
+// the position is a signal showing stop (SetVelocity 0 0). SetVelocity 0 x on automatic block isn't: it may be passed after a stop
+bool is_signal_at_stop( TSpeedPos const &Point )
+{
+    return TestFlag( Point.iFlags, spEvent )
+        && TestFlag( Point.iFlags, spSemaphor )
+        && false == TestFlag( Point.iFlags, spStopOnSBL )
+        && std::abs( Point.fVelNext ) <= 0.0
+        && Point.evEvent != nullptr;
+}
+
+} // namespace
+
+void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point, bool const Passedbefore ) const
+{
+    if( false == Passedbefore
+     && TestFlag( Point.iFlags, spElapsed )
+     && is_signal_at_stop( Point )
+     && ( mvOccupied->CategoryFlag & 1 ) != 0 ) { // railway only
+        simulation::test().signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
+    }
+}
+
 auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
+
+// the margins of the final approach of a train [m], closer than the first of which it stops at once and within the
+// second of which it makes its final approach: at a passenger stop, or at a signal and anything else it stops at
+std::pair<double, double>
+TController::train_proximity_margins( bool const Passengerstop ) const {
+
+    auto minproximity { 0.0 };
+    auto maxproximity { 0.0 };
+    if( Passengerstop ) {
+        // a stop point keeps the margins its W4 parameters (head or middle of the consist,
+        // platform length) were set up against
+        minproximity = std::clamp(  5 + iVehicles, 10, 15 ) + ( IsCargoTrain ? 10.0 : 0.0 );
+        maxproximity = std::clamp( 10 + iVehicles, 15, 40 );
+    }
+    else {
+        // a train stops 8-15 m short of the signal whatever its length; closer than the lower
+        // edge it stops at once, the braking aims at the middle of the window, 3.5 m further out
+        minproximity = 8.0;
+        // the final approach begins far enough out to slow from the coasting speed down to the window,
+        // and at the same distance whether the train is moving or standing, so it does not flip
+        // between creeping closer and holding still when it comes to a stand short of the window
+        maxproximity = 50.0;
+    }
+    if( IsCargoTrain ) {
+        // start the final approach earlier for cargo trains, their brakes react more slowly
+        maxproximity += 10.0;
+    }
+    if( ( Global.FrictionWeatherFactor < 1.f )
+     && ( iVehicles > 1 ) ) {
+        // take into account weather conditions
+        minproximity += 5.0;
+        maxproximity += 5.0;
+    }
+    if( mvOccupied->Vel < 0.1 ) {
+        // jak stanie za daleko, to niech nie dociąga paru metrów
+        maxproximity = std::max( maxproximity, 50.0 );
+    }
+    return { minproximity, maxproximity };
+}
 
 TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fNext, double &fAcc)
 { // ustalenie parametrów, zwraca typ komendy, jeśli sygnał podaje prędkość do jazdy
@@ -843,6 +913,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
     auto speedlimitiscontinuous { true }; // stays true if potential active speed limit is unbroken to the last (relevant) point in scan table
     eSignNext = nullptr;
     IsAtPassengerStop = false;
+    bStopTargetIsPassengerStop = false;
     IsScheduledPassengerStopVisible = false;
     mvOccupied->SecuritySystem.set_cabsignal_lock(false);
     // te flagi są ustawiane tutaj, w razie potrzeby
@@ -962,6 +1033,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 fAcc = a; // zalecane przyspieszenie (nie musi być uwzględniane przez AI)
                 fNext = v; // istotna jest prędkość na końcu tego odcinka
                 fDist = d; // dlugość odcinka
+                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
             }
 /*
             else if ((fAcc > 0) && (v >= 0) && (v > fNext)) {
@@ -976,6 +1048,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 fAcc = a;
                 fNext = v;
                 fDist = d;
+                bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
             }
             // potentially update our current speed limit
             if( v < VelLimitLastDist.first
@@ -1152,14 +1225,20 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 return true;
             }
 
+            // the margins of a passenger stop, whether the train is already making for it or not: the present ones
+            // depend on this very flag, and a check against them would turn it on and off every other scan
+            auto const [ stopminproximity, stopmaxproximity ] {
+                is_train() ?
+                    train_proximity_margins( true ) :
+                    std::pair{ fMinProximityDist, fMaxProximityDist } };
             IsAtPassengerStop = Point.fDist <= passengerstopmaxdistance
 			                    // Ra 2F1I: odległość plus długość pociągu musi być mniejsza od długości
 			                    // peronu, chyba że pociąg jest dłuższy, to wtedy minimalna.
 			                    // jeśli długość peronu ((sSpeedTable[i].evEvent->ValueGet(2)) nie podana,
 			                    // przyjąć odległość fMinProximityDist
 			                    && ((iDrivigFlags & moveStopCloser) != 0 ?
-			                            Point.fDist + fLength + (Point.fMoved - fMinProximityDist * 0.5f) <= std::max(std::abs(Point.evEvent->input_value(2)),
-			                                                                                                          2.0 * fMaxProximityDist + fLength) : // fmaxproximitydist typically equals ~50 m
+			                            Point.fDist + fLength + (Point.fMoved - stopminproximity * 0.5f) <= std::max(std::abs(Point.evEvent->input_value(2)),
+			                                                                                                          2.0 * stopmaxproximity + fLength) :
 			                            Point.fDist < Signaldistance);
 
             if( !eSignNext ) {
@@ -1880,7 +1959,8 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
             << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
             << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
             << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
+            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+            << "VehicleVelocity[km/h]"
             << "\r\n";
         LogFile << std::fixed << std::setprecision( 4 );
 #endif
@@ -4837,7 +4917,9 @@ void TController::PhysicsLog()
             << mvControlling->dizel_heat.Ts << " "
             << mvControlling->dizel_heat.To << " "
             << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2
+            << mvControlling->dizel_heat.temperatura2 << " "
+            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+            << mvOccupied->V * 3.6
             << "\r\n";
 #endif
 #if LOGPRESS == 1
@@ -5937,6 +6019,7 @@ TController::determine_consist_state() {
     IsAnyDoorOnlyOpen[ side::right ] = IsAnyDoorOnlyOpen[ side::left ] = false;
 	IsAnyDoorOpen[ side::right ] = IsAnyDoorOpen[ side::left ] = false;
     IsAnyDoorPermitActive[ side::right ] = IsAnyDoorPermitActive[ side::left ] = false;
+    auto doorclosure { door_closure_t::none };
     ConsistShade = 0.0;
     auto *p { pVehicles[ end::front ] }; // pojazd na czole składu
     double dy; // składowa styczna grawitacji, w przedziale <0,1>
@@ -5998,12 +6081,14 @@ TController::determine_consist_state() {
                 IsAnyDoorPermitActive[ side::right ] |= rightdoor.open_permit;
                 IsAnyDoorPermitActive[ side::left  ] |= leftdoor.open_permit;
             }
+            doorclosure = std::max( doorclosure, vehicle->door_closure() );
         }
         // measure lighting level
         // TBD: apply weight (multiplier) to partially lit vehicles?
         ConsistShade += p->fShade > 0.0 ? p->fShade : 1.0;
         p = p->Next(); // pojazd podłączony z tyłu (patrząc od czoła)
     }
+    DoorClosure = doorclosure;
     // calculate average amount of received sunlight
     ConsistShade /= iVehicles;
 
@@ -6677,47 +6762,9 @@ TController::determine_proximity_ranges() {
         // na jaka odleglosc i z jaka predkoscia ma podjechac do przeszkody
         // jeśli pociąg
         if( is_train() ) {
-            if( IsAtPassengerStop ) {
-                // a stop point keeps the margins its W4 parameters (head or middle of the consist,
-                // platform length) were set up against
-                fMinProximityDist = std::clamp(  5 + iVehicles, 10, 15 );
-                fMaxProximityDist = std::clamp( 10 + iVehicles, 15, 40 );
-                if( IsCargoTrain ) {
-                    fMinProximityDist += 10.0;
-                }
-            }
-            else {
-                // a train stops 8-15 m short of the signal whatever its length; closer than the lower
-                // edge it stops at once, the braking aims at the middle of the window, 3.5 m further out
-                fMinProximityDist = 8.0;
-                // the final approach begins far enough out to slow from the coasting speed down to the window,
-                // and at the same distance whether the train is moving or standing, so it does not flip
-                // between creeping closer and holding still when it comes to a stand short of the window
-                fMaxProximityDist = 50.0;
-            }
-
-            if( IsCargoTrain ) {
-                // start the final approach earlier for cargo trains, their brakes react more slowly
-                fMaxProximityDist += 10.0;
-/*
-                if( IsHeavyCargoTrain ) {
-                    // cargo trains with high braking threshold may require even larger safety margin
-                    fMaxProximityDist += 20.0;
-                }
-*/
-            }
-
-            if (Global.FrictionWeatherFactor < 1.f
-             && iVehicles > 1 ) {
-            // take into account weather conditions
-                fMinProximityDist += 5.0;
-                fMaxProximityDist += 5.0;
-            }
-
-            if( mvOccupied->Vel < 0.1 ) {
-                // jak stanie za daleko, to niech nie dociąga paru metrów
-                fMaxProximityDist = std::max( fMaxProximityDist, 50.0 );
-            }
+            auto const [ minproximity, maxproximity ] { train_proximity_margins( IsAtPassengerStop ) };
+            fMinProximityDist = minproximity;
+            fMaxProximityDist = maxproximity;
 
             if( iDrivigFlags & moveLate ) {
                 // jeśli spóźniony, to gna
@@ -7370,6 +7417,10 @@ TController::adjust_desired_speed_for_obstacles() {
         if( k - vel < 5 ) {
             // porównanie modułów prędkości [km/h]
             // zatroszczyć się trzeba, jeśli tamten nie jedzie znacząco szybciej
+            if( Obstacle.distance < ActualProximityDist ) {
+                // the vehicle ahead, not the stop found by the scan, is what the train is now to stop short of
+                bStopTargetIsPassengerStop = false;
+            }
             ActualProximityDist = std::min<double>(
                 ActualProximityDist,
                 Obstacle.distance );
@@ -7713,9 +7764,14 @@ TController::adjust_desired_speed_for_target_speed( double const Range ) {
                                 auto room { brakingroom };
                                 if( ( AbsAccS <= 0.0 )
                                  && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
+                                    // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
+                                    // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
+                                    // independent brake, which leaves the train brake handle where it is, kept braking earlier
+                                    // and earlier the whole way in, to crawl the last tens of metres to the stop point
+                                    auto const brakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
                                     room = std::max(
                                         0.5 * brakingroom,
-                                        brakingroom - vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) );
+                                        brakingroom - vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, brakea0 ) );
                                 }
                                 deceleration = shaped_braking_demand(
                                     velocity, VelNext, room + 0.1 / 25.92, fAccGravity,

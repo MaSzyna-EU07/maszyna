@@ -9235,6 +9235,48 @@ bool TMoverParameters::signal_departure(bool const State, range_t const Notify)
 	return true;
 }
 
+// state of the door closure signalling (SOD) of this vehicle: open while a door isn't fully closed, released while
+// the closed doors can be opened (a permit given, or, for doors that need none, no lock engaged), locked otherwise.
+// doors the crew doesn't close (autonomous) aren't signalled, the same as for the door lights of the consist
+door_closure_t TMoverParameters::door_closure() const
+{
+	if (Doors.range == 0.f || Doors.close_control == control_t::autonomous)
+	{
+		return door_closure_t::none;
+	}
+	if (std::ranges::any_of(Doors.instances, [](basic_door const &Door) { return false == Door.is_closed; }))
+	{
+		return door_closure_t::open;
+	}
+	if (Doors.is_locked)
+	{
+		return door_closure_t::locked;
+	}
+	if (Doors.permit_needed && std::ranges::none_of(Doors.instances, [](basic_door const &Door) { return Door.open_permit; }))
+	{
+		return door_closure_t::locked;
+	}
+	return door_closure_t::released;
+}
+
+bool TMoverParameters::door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const
+{
+	return Doors.closure_signal ? door_closure_lamp(Consist, BlinkLit) : Doors.is_locked;
+}
+
+bool door_closure_lamp(door_closure_t const State, bool const BlinkLit)
+{
+	switch (State)
+	{
+	case door_closure_t::locked:
+		return true;
+	case door_closure_t::released:
+		return BlinkLit;
+	default:
+		return false;
+	}
+}
+
 // automatic door controller update
 void TMoverParameters::update_doors(double const Deltatime)
 {
@@ -11203,6 +11245,8 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	extract_value(Doors.auto_include_remote, "DoorAutoCloseRemote", line, "");
 	// operation permit
 	extract_value(Doors.permit_needed, "DoorNeedPermit", line, "");
+	// the door closure lamp (SOD) of the cab signals the doors of the whole consist
+	extract_value(Doors.closure_signal, "DoorClosureSignal", line, "");
 	{
 		auto permitpresets = Split(extract_value("DoorPermitList", line), '|');
 		for (auto const &permit : permitpresets)
