@@ -79,7 +79,7 @@ TEST_CASE("gauge scale: two points of the same value make a step") {
 	CHECK(gauge_scale::interpolate(table.points, 1.5f) == doctest::Approx(0.55));
 }
 
-TEST_CASE("main ctrl act: the marker of a diesel locomotive follows its controller (MaSzyna-EU07/maszyna#74)") {
+TEST_CASE("main ctrl act: the marker of a diesel locomotive with a scaletable: follows its controller (MaSzyna-EU07/maszyna#74)") {
 	// nothing sets the actual position of a diesel engine's controller, the marker stayed at 0
 	for (auto const *path : {"st44_v2/m62-1151", "sm42_v1/6d1", "su45_v2/301d"}) {
 		CAPTURE(path);
@@ -89,22 +89,42 @@ TEST_CASE("main ctrl act: the marker of a diesel locomotive follows its controll
 		REQUIRE(locomotive.EIMCtrlType == 0);
 		locomotive.MainCtrlPos = 5;
 		CHECK(locomotive.MainCtrlActualPos == 0);
-		CHECK(main_ctrl_act::position(locomotive) == doctest::Approx(5.0));
+		CHECK(main_ctrl_act::position(locomotive, true) == doctest::Approx(5.0));
 		// one with a controller of the EIM kind keeps its actual position itself
 		locomotive.EIMCtrlType = 2;
-		CHECK(main_ctrl_act::position(locomotive) == doctest::Approx(0.0));
+		CHECK(main_ctrl_act::position(locomotive, true) == doctest::Approx(0.0));
+	}
+}
+
+TEST_CASE("main ctrl act: the marker of a diesel locomotive without a scaletable: stays still, as before") {
+	// the shipped ST43 cabs define mainctrlact: with a linear scale nobody has seen working; it is not opted in
+	for (auto const *path : {"st44_v2/m62-1151", "sm42_v1/6d1", "su45_v2/301d"}) {
+		CAPTURE(path);
+		consist train;
+		auto &locomotive{train.add(definition::fiz(path), 1).mover()};
+		REQUIRE(locomotive.EIMCtrlType == 0);
+		locomotive.MainCtrlPos = 5;
+		locomotive.ScndCtrlPos = 1;
+		for (auto const coupled : {false, true}) {
+			CAPTURE(coupled);
+			locomotive.CoupledCtrl = coupled;
+			CHECK(main_ctrl_act::position(locomotive, false) == doctest::Approx(0.0));
+		}
 	}
 }
 
 TEST_CASE("main ctrl act: the marker of an electric locomotive shows its actual position, as before") {
-	consist train;
-	auto &locomotive{train.add(definition::fiz("et22_v3/201e-w"), 1).mover()};
-	locomotive.MainCtrlPos = 10;
-	locomotive.MainCtrlActualPos = 3;
-	locomotive.ScndCtrlPos = 2;
-	locomotive.ScndCtrlActualPos = 1;
-	locomotive.CoupledCtrl = false;
-	CHECK(main_ctrl_act::position(locomotive) == doctest::Approx(3.0));
-	locomotive.CoupledCtrl = true;
-	CHECK(main_ctrl_act::position(locomotive) == doctest::Approx(4.0));
+	for (auto const scaletable : {false, true}) {
+		CAPTURE(scaletable);
+		consist train;
+		auto &locomotive{train.add(definition::fiz("et22_v3/201e-w"), 1).mover()};
+		locomotive.MainCtrlPos = 10;
+		locomotive.MainCtrlActualPos = 3;
+		locomotive.ScndCtrlPos = 2;
+		locomotive.ScndCtrlActualPos = 1;
+		locomotive.CoupledCtrl = false;
+		CHECK(main_ctrl_act::position(locomotive, scaletable) == doctest::Approx(3.0));
+		locomotive.CoupledCtrl = true;
+		CHECK(main_ctrl_act::position(locomotive, scaletable) == doctest::Approx(4.0));
+	}
 }

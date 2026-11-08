@@ -67,6 +67,9 @@ public:
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::toggle ) ) != 0; }
     bool is_delayed() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::delayed ) ) != 0; }
+    // true if the gauge was given a non-uniform scale (scaletable:)
+    bool has_scaletable() const {
+        return false == m_scaletable.empty(); }
 // members
     TSubModel *SubModel { nullptr }; // McZapkie-310302: zeby mozna bylo sprawdzac czy zainicjowany poprawnie
     TSubModel *SubModelOn { nullptr }; // optional submodel visible when the state input is set

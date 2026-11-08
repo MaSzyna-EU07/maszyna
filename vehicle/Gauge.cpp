@@ -112,6 +112,8 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     Parser.getTokens();
     if( Parser.peek() != "{" ) {
         // old fixed size config
+        // it has no scaletable:, drop the one of an earlier definition of the same control
+        m_scaletable.clear();
         Parser >> submodelname;
         gaugetypename = Parser.getToken<std::string>( true );
         Parser.getTokens( 3, false );

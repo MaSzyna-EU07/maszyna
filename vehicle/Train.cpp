@@ -9337,7 +9337,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 	if (ggMainCtrlAct.SubModel != nullptr)
 	{
-		ggMainCtrlAct.UpdateValue(main_ctrl_act::position(*mvControlled));
+		ggMainCtrlAct.UpdateValue(main_ctrl_act::position(*mvControlled, ggMainCtrlAct.has_scaletable()));
 		ggMainCtrlAct.Update();
 	}
 	if (ggScndCtrl.SubModel != nullptr)
