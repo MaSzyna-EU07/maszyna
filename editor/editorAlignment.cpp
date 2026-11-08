@@ -2580,6 +2580,57 @@ station evaluate(result const &Result, double const Chainage)
 namespace
 {
 
+// the work a fit of a traced stretch may do: the points measured against the chords of the lines it tries, each against each. A fit
+// does a few million of it, the heaviest of the unit tests some 170 million; one through points no curve of the speed suits stops at a
+// few seconds, short of minutes
+constexpr std::size_t kTraceWork{1'000'000'000};
+
+// the fit of a traced stretch running on this thread: the work it has done so far, to stop at kTraceWork. Points no curve of the speed
+// suits ask for curves whose transitions run for kilometres, each try measuring the points against thousands of chords
+struct trace_scope
+{
+	std::size_t work{0};
+};
+thread_local trace_scope *active_trace{nullptr};
+// set by the thread of stretch_fitter: the fit it runs is no longer wanted
+thread_local std::atomic<bool> const *trace_abandon{nullptr};
+
+// the scope of one fit of a traced stretch, the outermost one counting
+class trace_guard
+{
+  public:
+	trace_guard()
+	{
+		if (active_trace != nullptr)
+			return;
+		active_trace = &m_scope;
+		m_owner = true;
+	}
+	~trace_guard()
+	{
+		if (m_owner)
+			active_trace = nullptr;
+	}
+	trace_guard(trace_guard const &) = delete;
+	trace_guard &operator=(trace_guard const &) = delete;
+
+  private:
+	trace_scope m_scope;
+	bool m_owner{false};
+};
+
+void trace_work(std::size_t const Work)
+{
+	if (active_trace != nullptr)
+		active_trace->work += Work;
+}
+
+// the fit running settles for what it has
+bool trace_spent()
+{
+	return active_trace != nullptr && (active_trace->work > kTraceWork || (trace_abandon != nullptr && trace_abandon->load(std::memory_order_relaxed)));
+}
+
 // the plan from From to To in chords short enough to keep to the curves, the directions of its ends carried on far, so that a point
 // past them is measured across the track
 struct plan_line
@@ -2845,7 +2896,7 @@ double least_squares(std::vector<double> &Parameters, Function const &Residuals)
 	std::vector<double> normal;
 	std::vector<double> gradient;
 	int iteration{0};
-	while (iteration < 40 && fit.cost > 1e-12)
+	while (iteration < 40 && fit.cost > 1e-12 && false == trace_spent())
 	{
 		++iteration;
 		normal_equations(residual_jacobian(Parameters, fit.residuals, Residuals, fit.trial), fit.residuals, normal, gradient);
@@ -2924,6 +2975,7 @@ std::pair<double, double> vertex_span(result const &Line, std::size_t const Vert
 // would
 void robust_departures(plan_line const &Line, std::vector<glm::dvec2> const &Points, std::vector<double> &Residuals)
 {
+	trace_work(Line.points.size() * Points.size());
 	Residuals.clear();
 	for (auto const &point : Points)
 	{
@@ -5582,6 +5634,7 @@ trace_stretch fit_going_on(design const &Base, std::vector<glm::dvec2> const &Po
 	trace_stretch fit;
 	if (Points.empty() || false == Base.start_curved || Base.start_radius <= 0.0 || glm::length(Base.start_direction) < 1e-9)
 		return fit;
+	trace_guard const scope;
 	auto const start{plan_of(Base.start)};
 	auto const heading{glm::normalize(Base.start_direction)};
 	auto const side{Base.start_turn > 0 ? 1.0 : -1.0};
@@ -5922,6 +5975,7 @@ trace_stretch fit_trace_stretch(design const &Base, std::vector<glm::dvec2> cons
 {
 	if (Points.empty() || glm::length(Base.start_direction) < 1e-9 || glm::length(Base.end_direction) < 1e-9)
 		return {};
+	trace_guard const scope;
 	stretch_choice choice{Base, Points, Radii, Straights, std::max(1.0, Base.speed), plan_of(Base.start), glm::normalize(Base.start_direction), plan_of(Base.end), glm::normalize(Base.end_direction)};
 	choice.straight_line();
 	// one curve where the straights meet: the radius of a plain arc first, then the radius and the transitions together; the radii of a
@@ -5958,6 +6012,9 @@ void stretch_fitter::ask(request Request)
 		// the cursor moves on: what was asked for long ago waits no more
 		if (constexpr std::size_t kWaiting{8}; m_asked.size() > kWaiting)
 			m_asked.erase(m_asked.begin());
+		// one taking long while the cursor has moved on gives way to the ones asked for since
+		if (constexpr std::chrono::milliseconds kPatience{250}; m_fitting.has_value() && std::chrono::steady_clock::now() - m_fitting_since > kPatience)
+			m_abandon = true;
 		if (false == m_thread.joinable())
 			m_thread = std::jthread{[this]() { work(); }};
 	}
@@ -5988,6 +6045,7 @@ bool stretch_fitter::latest(std::vector<double> &Key, trace_stretch &Fit) const
 
 void stretch_fitter::work()
 {
+	trace_abandon = &m_abandon;
 	std::unique_lock lock{m_mutex};
 	for (;;)
 	{
@@ -5997,14 +6055,20 @@ void stretch_fitter::work()
 		// the one asked for last first: it's what the cursor shows now
 		m_fitting = std::move(m_asked.back());
 		m_asked.pop_back();
+		m_fitting_since = std::chrono::steady_clock::now();
+		m_abandon = false;
 		auto const asked{*m_fitting};
 		lock.unlock();
 		auto fit{asked.going ? fit_going_on(asked.base, asked.points) : fit_trace_stretch(asked.base, asked.points, asked.radii, asked.straights)};
 		lock.lock();
-		constexpr std::size_t kKept{16};
-		m_results.emplace(m_results.begin(), asked.key, std::move(fit));
-		if (m_results.size() > kKept)
-			m_results.pop_back();
+		// one given up is left out: what it settled for isn't its fit
+		if (false == m_abandon)
+		{
+			constexpr std::size_t kKept{16};
+			m_results.emplace(m_results.begin(), asked.key, std::move(fit));
+			if (m_results.size() > kKept)
+				m_results.pop_back();
+		}
 		m_fitting.reset();
 	}
 }

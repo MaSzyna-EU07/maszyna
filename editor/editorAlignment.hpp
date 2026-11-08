@@ -9,6 +9,8 @@ http:
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -462,6 +464,8 @@ class stretch_fitter
 	std::condition_variable m_wake;
 	std::vector<request> m_asked;
 	std::optional<request> m_fitting;
+	std::chrono::steady_clock::time_point m_fitting_since; // when the one fitted now was taken up
+	std::atomic<bool> m_abandon{false}; // the one fitted now asked to stop: it takes long and the cursor has moved on
 	std::vector<std::pair<std::vector<double>, trace_stretch>> m_results; // the last done first
 	bool m_stop{false};
 	std::jthread m_thread;
