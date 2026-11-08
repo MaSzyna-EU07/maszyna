@@ -829,6 +829,45 @@ void TController::TableCheck(double fDistance)
 
 auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
 
+// the margins of the final approach of a train [m], closer than the first of which it stops at once and within the
+// second of which it makes its final approach: at a passenger stop, or at a signal and anything else it stops at
+std::pair<double, double>
+TController::train_proximity_margins( bool const Passengerstop ) const {
+
+    auto minproximity { 0.0 };
+    auto maxproximity { 0.0 };
+    if( Passengerstop ) {
+        // a stop point keeps the margins its W4 parameters (head or middle of the consist,
+        // platform length) were set up against
+        minproximity = std::clamp(  5 + iVehicles, 10, 15 ) + ( IsCargoTrain ? 10.0 : 0.0 );
+        maxproximity = std::clamp( 10 + iVehicles, 15, 40 );
+    }
+    else {
+        // a train stops 8-15 m short of the signal whatever its length; closer than the lower
+        // edge it stops at once, the braking aims at the middle of the window, 3.5 m further out
+        minproximity = 8.0;
+        // the final approach begins far enough out to slow from the coasting speed down to the window,
+        // and at the same distance whether the train is moving or standing, so it does not flip
+        // between creeping closer and holding still when it comes to a stand short of the window
+        maxproximity = 50.0;
+    }
+    if( IsCargoTrain ) {
+        // start the final approach earlier for cargo trains, their brakes react more slowly
+        maxproximity += 10.0;
+    }
+    if( ( Global.FrictionWeatherFactor < 1.f )
+     && ( iVehicles > 1 ) ) {
+        // take into account weather conditions
+        minproximity += 5.0;
+        maxproximity += 5.0;
+    }
+    if( mvOccupied->Vel < 0.1 ) {
+        // jak stanie za daleko, to niech nie dociąga paru metrów
+        maxproximity = std::max( maxproximity, 50.0 );
+    }
+    return { minproximity, maxproximity };
+}
+
 TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fNext, double &fAcc)
 { // ustalenie parametrów, zwraca typ komendy, jeśli sygnał podaje prędkość do jazdy
     // fVelDes - prędkość zadana
@@ -1152,14 +1191,20 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 return true;
             }
 
+            // the margins of a passenger stop, whether the train is already making for it or not: the present ones
+            // depend on this very flag, and a check against them would turn it on and off every other scan
+            auto const [ stopminproximity, stopmaxproximity ] {
+                is_train() ?
+                    train_proximity_margins( true ) :
+                    std::pair{ fMinProximityDist, fMaxProximityDist } };
             IsAtPassengerStop = Point.fDist <= passengerstopmaxdistance
 			                    // Ra 2F1I: odległość plus długość pociągu musi być mniejsza od długości
 			                    // peronu, chyba że pociąg jest dłuższy, to wtedy minimalna.
 			                    // jeśli długość peronu ((sSpeedTable[i].evEvent->ValueGet(2)) nie podana,
 			                    // przyjąć odległość fMinProximityDist
 			                    && ((iDrivigFlags & moveStopCloser) != 0 ?
-			                            Point.fDist + fLength + (Point.fMoved - fMinProximityDist * 0.5f) <= std::max(std::abs(Point.evEvent->input_value(2)),
-			                                                                                                          2.0 * fMaxProximityDist + fLength) : // fmaxproximitydist typically equals ~50 m
+			                            Point.fDist + fLength + (Point.fMoved - stopminproximity * 0.5f) <= std::max(std::abs(Point.evEvent->input_value(2)),
+			                                                                                                          2.0 * stopmaxproximity + fLength) :
 			                            Point.fDist < Signaldistance);
 
             if( !eSignNext ) {
@@ -6677,47 +6722,9 @@ TController::determine_proximity_ranges() {
         // na jaka odleglosc i z jaka predkoscia ma podjechac do przeszkody
         // jeśli pociąg
         if( is_train() ) {
-            if( IsAtPassengerStop ) {
-                // a stop point keeps the margins its W4 parameters (head or middle of the consist,
-                // platform length) were set up against
-                fMinProximityDist = std::clamp(  5 + iVehicles, 10, 15 );
-                fMaxProximityDist = std::clamp( 10 + iVehicles, 15, 40 );
-                if( IsCargoTrain ) {
-                    fMinProximityDist += 10.0;
-                }
-            }
-            else {
-                // a train stops 8-15 m short of the signal whatever its length; closer than the lower
-                // edge it stops at once, the braking aims at the middle of the window, 3.5 m further out
-                fMinProximityDist = 8.0;
-                // the final approach begins far enough out to slow from the coasting speed down to the window,
-                // and at the same distance whether the train is moving or standing, so it does not flip
-                // between creeping closer and holding still when it comes to a stand short of the window
-                fMaxProximityDist = 50.0;
-            }
-
-            if( IsCargoTrain ) {
-                // start the final approach earlier for cargo trains, their brakes react more slowly
-                fMaxProximityDist += 10.0;
-/*
-                if( IsHeavyCargoTrain ) {
-                    // cargo trains with high braking threshold may require even larger safety margin
-                    fMaxProximityDist += 20.0;
-                }
-*/
-            }
-
-            if (Global.FrictionWeatherFactor < 1.f
-             && iVehicles > 1 ) {
-            // take into account weather conditions
-                fMinProximityDist += 5.0;
-                fMaxProximityDist += 5.0;
-            }
-
-            if( mvOccupied->Vel < 0.1 ) {
-                // jak stanie za daleko, to niech nie dociąga paru metrów
-                fMaxProximityDist = std::max( fMaxProximityDist, 50.0 );
-            }
+            auto const [ minproximity, maxproximity ] { train_proximity_margins( IsAtPassengerStop ) };
+            fMinProximityDist = minproximity;
+            fMaxProximityDist = maxproximity;
 
             if( iDrivigFlags & moveLate ) {
                 // jeśli spóźniony, to gna

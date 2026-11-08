@@ -312,6 +312,7 @@ private:
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
     double brake_increase_margin() const;
+    std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
     void update_logs( double const dt );
