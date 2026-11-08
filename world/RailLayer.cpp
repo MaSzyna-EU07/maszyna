@@ -1520,7 +1520,11 @@ void TTrack::rail_layer::piece( gfx::vertex_array const &Shape, rail_piece const
     if( Shape.size() < 2 || false == m_segment.RenderLoftSpan( vertices, m_track.m_origin, Shape, loft ) ) {
         return;
     }
-    cut_faces( vertices, Shape.size(), Piece.capfrom, Piece.capto, m_drawing.bank, sink( Piece.material, true ) );
+    // the cuts of the frogs worn, the ends of the track left open not: no wheel runs over them
+    auto const openfrom { Piece.capfrom && m_openstart && Piece.from <= m_from + 1e-6 };
+    auto const opento { Piece.capto && m_openend && Piece.to >= m_length - 1e-6 };
+    cut_faces( vertices, Shape.size(), Piece.capfrom && false == openfrom, Piece.capto && false == opento, m_drawing.bank, sink( Piece.material, true ) );
+    cut_faces( vertices, Shape.size(), openfrom, opento, m_drawing.bank, sink( Piece.material, true ), false );
     gfx::vertex_array triangles;
     gfx::userdata_array triangleuserdata;
     auto const ring { 2 * Shape.size() };
