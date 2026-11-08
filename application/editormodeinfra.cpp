@@ -1380,7 +1380,7 @@ void editor_mode::track_captured(TTrack const &Track)
 {
 	m_build_tools->sweep.sweeps_captured(Track);
 	switch_drive_captured(Track);
-	m_build_tools->grade_lines.grade_line_captured(Track);
+	m_build_tools->profiles.grade_lines.grade_line_captured(Track);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	m_build_tools->binder.bindings_captured(Track);
@@ -1429,11 +1429,11 @@ void infra_binder::bindings_captured(TTrack const &Track)
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
-	m_build_tools->nmt_build.nmt_track_changed(Tracks);
+	m_build_tools->terrain.nmt_build.nmt_track_changed(Tracks);
 	m_joints.tracks_committed(Tracks);
 	m_build_tools->sweep.sweeps_committed(Tracks);
 	switch_drives_committed(Tracks);
-	m_build_tools->grade_lines.grade_lines_committed(Tracks);
+	m_build_tools->profiles.grade_lines.grade_lines_committed(Tracks);
 	if (m_infra_suspended || false == m_infra.follow)
 		return;
 	m_build_tools->binder.bindings_committed(Tracks);
@@ -1558,19 +1558,19 @@ void infra_binder::bindings_committed(std::vector<TTrack *> const &Tracks)
 
 void editor_mode::track_retired(TTrack &Track)
 {
-	m_build_tools->nmt_build.nmt_track_gone(Track);
+	m_build_tools->terrain.nmt_build.nmt_track_gone(Track);
 	tracks_committed({});
 }
 
 void editor_mode::track_renamed(TTrack const &Track, std::string const &Old)
 {
-	m_build_tools->grade_lines.grade_line_renamed(Track, Old);
+	m_build_tools->profiles.grade_lines.grade_line_renamed(Track, Old);
 }
 
 void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data const &First)
 {
 	m_build_tools->sweep.sweeps_split(Original, Created);
-	m_build_tools->grade_lines.grade_line_split(Original, Created);
+	m_build_tools->profiles.grade_lines.grade_line_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
 	m_build_tools->binder.bindings_split(Original, Created, First);

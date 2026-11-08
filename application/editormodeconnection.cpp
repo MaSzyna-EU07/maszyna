@@ -455,7 +455,7 @@ void editor_mode::insert_partner_connection()
 	auto const release{opposite->m_paths.front().points[segment_data::point::start]};
 	std::vector<std::string> const names{here->name(), opposite->name()};
 	// the crossover there taken out, then laid again with the other one, one step of the history
-	m_build_tools->library.profile_library_load();
+	m_build_tools->profiles.library.profile_library_load();
 	auto library{m_profiles};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
@@ -596,7 +596,7 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 	auto *style{Style};
 	auto const fail = [this, &tool, &states, &created, &removed](std::string const &Reason) {
 		take_back_laid(states, created, removed);
-		m_build_tools->straight_edit.straight_refresh();
+		m_build_tools->routes.straight_edit.straight_refresh();
 		tool.status = Reason;
 		ui()->set_status(Reason, true);
 	};
@@ -627,7 +627,7 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 			inserts.push_back(track);
 	}
 	editor_track::commit(inserts);
-	m_build_tools->route_relay.digitize_drawn(inserts);
+	m_build_tools->routes.route_relay.digitize_drawn(inserts);
 	created.insert(created.end(), inserts.begin(), inserts.end());
 	if (plan.crossing)
 	{
@@ -641,7 +641,7 @@ bool editor_mode::lay_planned_connection(connection::request const &Request, con
 	}
 	record_connection(request.type, switches, plan, request.first);
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
-	m_build_tools->straight_edit.straight_refresh();
+	m_build_tools->routes.straight_edit.straight_refresh();
 	first_step_done(first_step::turnout);
 	m_track_point = {};
 	m_node = switches.front();

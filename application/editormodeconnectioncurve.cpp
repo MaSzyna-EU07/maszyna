@@ -800,9 +800,9 @@ struct editor_mode::curved_laying
 		// the design of the outer track before, kept or read from the track, to go up with it
 		auto *first{Route.spans.front().track};
 		auto *last{Route.spans.back().track};
-		mode.m_build_tools->library.profile_library_load();
+		mode.m_build_tools->profiles.library.profile_library_load();
 		library = mode.m_profiles;
-		mode.m_build_tools->profile_edit.profile_take(Route, first, last);
+		mode.m_build_tools->profiles.profile_edit.profile_take(Route, first, last);
 		auto const before{mode.m_profile.line};
 		std::vector<std::pair<TTrack *, editor_track::state>> raisestates;
 		std::vector<TTrack *> raisecreated;
@@ -814,14 +814,14 @@ struct editor_mode::curved_laying
 		// the raised grade line kept as the design of the outer track, in place of the one it had
 		if (false == Route.spans.empty())
 		{
-			mode.m_build_tools->profile_edit.profile_take(Route, Route.spans.front().track, Route.spans.back().track);
+			mode.m_build_tools->profiles.profile_edit.profile_take(Route, Route.spans.front().track, Route.spans.back().track);
 			if (auto line{raised_design(before, breaks, raise)}; line.size() >= 2)
 			{
 				mode.m_profile.line = before;
 				mode.m_profile.line.points = std::move(line);
 				mode.m_profile.selected = -1;
 				mode.profile_check();
-				mode.m_build_tools->library.profile_store();
+				mode.m_build_tools->profiles.library.profile_store();
 			}
 		}
 		WriteLog(format("Editor: curved crossover - the outer track %s raised by %.3f .. %.3f m from %.1f to %.1f m of its line, ramps %.1f m", outertrack->name().c_str(), raise.first, raise.second, raise.from, raise.to, raise.ramp), logtype::generic);
@@ -977,7 +977,7 @@ struct editor_mode::curved_laying
 			editor_track::commit({track});
 		}
 		if (library.has_value())
-			mode.m_build_tools->library.profiles_restore(std::move(*library));
+			mode.m_build_tools->profiles.library.profiles_restore(std::move(*library));
 		mode.straight_refresh();
 	}
 };
@@ -1073,20 +1073,20 @@ bool editor_mode::take_out_crossover(curved_crossover const &Crossover, std::vec
 		std::swap(lowered.first, lowered.second);
 	}
 	auto const breaks{lowered.breaks(route.length)};
-	m_build_tools->profile_edit.profile_take(route, route.spans.front().track, route.spans.back().track);
+	m_build_tools->profiles.profile_edit.profile_take(route, route.spans.front().track, route.spans.back().track);
 	auto const before{m_profile.line};
 	editor_track::apply_profile(
 	    route, [&samples, &lowered](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) - lowered.at(Chainage); },
 	    [&samples, &lowered](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) - lowered.grade(Chainage); }, breaks, States, Created);
 	// the design of the outer track down with it, the corners of the ramps left out where the line runs on straight through them
-	m_build_tools->profile_edit.profile_take(route, route.spans.front().track, route.spans.back().track);
+	m_build_tools->profiles.profile_edit.profile_take(route, route.spans.front().track, route.spans.back().track);
 	if (auto points{lowered_points(before, lowered)}; points.size() >= 2)
 	{
 		m_profile.line = before;
 		m_profile.line.points = std::move(points);
 		m_profile.selected = -1;
-		m_build_tools->profile_edit.profile_check();
-		m_build_tools->library.profile_store();
+		m_build_tools->profiles.profile_edit.profile_check();
+		m_build_tools->profiles.library.profile_store();
 	}
 	WriteLog(format("Editor: curved crossover - the outer track %s down by %.3f .. %.3f m again", outer->name().c_str(), record.lift, record.lift_end), logtype::generic);
 	return true;
@@ -1117,7 +1117,7 @@ bool editor_mode::slide_curved_connection(TTrack const &Switch, double const Dis
 	TTrack *first{nullptr};
 	TTrack *second{nullptr};
 	// the design of the outer track comes down with the lift taken back, an undo puts both back
-	m_build_tools->library.profile_library_load();
+	m_build_tools->profiles.library.profile_library_load();
 	auto library{m_profiles};
 	if (false == take_out_crossover(*crossover, states, created, removed, first, second))
 		return false;

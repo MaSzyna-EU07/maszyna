@@ -2840,85 +2840,85 @@ editor_track::straight const &route_designer::current_straight()
 
 bool editor_mode::route_active() const
 {
-	return m_build_tools->designer.route_active();
+	return m_build_tools->routes.designer.route_active();
 }
 
 void editor_mode::route_bind_ends()
 {
-	m_build_tools->designer.route_bind_ends();
+	m_build_tools->routes.designer.route_bind_ends();
 }
 
 alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve) const
 {
-	return m_build_tools->designer.route_vertex_of(Curve);
+	return m_build_tools->routes.designer.route_vertex_of(Curve);
 }
 
 bool editor_mode::route_load(TTrack &Track)
 {
-	return m_build_tools->designer.route_load(Track);
+	return m_build_tools->routes.designer.route_load(Track);
 }
 
 void editor_mode::route_take_stored(int const Index)
 {
-	m_build_tools->designer.route_take_stored(Index);
+	m_build_tools->routes.designer.route_take_stored(Index);
 }
 
 void editor_mode::route_apply()
 {
-	m_build_tools->designer.route_apply();
+	m_build_tools->routes.designer.route_apply();
 }
 
 glm::dvec3 editor_mode::route_vertex_position(int const Vertex) const
 {
-	return m_build_tools->designer.route_vertex_position(Vertex);
+	return m_build_tools->routes.designer.route_vertex_position(Vertex);
 }
 
 bool editor_mode::route_hit(int &Vertex, int &Grip) const
 {
-	return m_build_tools->designer.route_hit(Vertex, Grip);
+	return m_build_tools->routes.designer.route_hit(Vertex, Grip);
 }
 
 editor_track::straight const & editor_mode::current_straight()
 {
-	return m_build_tools->designer.current_straight();
+	return m_build_tools->routes.designer.current_straight();
 }
 
 bool editor_mode::digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone)
 {
-	return m_build_tools->route_relay.digitize_drawn(Created, Alone);
+	return m_build_tools->routes.route_relay.digitize_drawn(Created, Alone);
 }
 
 void editor_mode::digitize_all(int *Kept, int *Failed)
 {
-	m_build_tools->route_relay.digitize_all(Kept, Failed);
+	m_build_tools->routes.route_relay.digitize_all(Kept, Failed);
 }
 
 void editor_mode::route_trace_start()
 {
-	m_build_tools->route_view.route_trace_start();
+	m_build_tools->routes.route_view.route_trace_start();
 }
 
 void editor_mode::route_trace_fit()
 {
-	m_build_tools->route_view.route_trace_fit();
+	m_build_tools->routes.route_view.route_trace_fit();
 }
 
 void editor_mode::route_trace_end(bool const Keep)
 {
-	m_build_tools->route_view.route_trace_end(Keep);
+	m_build_tools->routes.route_view.route_trace_end(Keep);
 }
 
 glm::dvec3 editor_mode::route_trace_cursor() const
 {
-	return m_build_tools->route_view.route_trace_cursor();
+	return m_build_tools->routes.route_view.route_trace_cursor();
 }
 
 int editor_mode::route_trace_hit() const
 {
-	return m_build_tools->route_view.route_trace_hit();
+	return m_build_tools->routes.route_view.route_trace_hit();
 }
 
 void editor_mode::render_route_ui()
 {
-	m_build_tools->route_panel.render_route_ui();
+	m_build_tools->routes.route_panel.render_route_ui();
 }

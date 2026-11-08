@@ -1736,7 +1736,7 @@ void editor_mode::render_ground_conversion()
 	{
 		conversion.status = convert_ground();
 		conversion.open = false;
-		m_build_tools->profile_edit.profile_resample();
+		m_build_tools->profiles.profile_edit.profile_resample();
 	}
 	ImGui::EndDisabled();
 	ImGui::SameLine();
@@ -3424,27 +3424,27 @@ void profile_panel::draw_profile_overlay() const
 
 void editor_mode::profile_library_mark(std::vector<scene::layer_handle> Layers)
 {
-	m_build_tools->library.profile_library_mark(Layers);
+	m_build_tools->profiles.library.profile_library_mark(Layers);
 }
 
 bool editor_mode::profile_restore()
 {
-	return m_build_tools->library.profile_restore();
+	return m_build_tools->profiles.library.profile_restore();
 }
 
 void editor_mode::profile_remove_point(int const Index)
 {
-	m_build_tools->profile_edit.profile_remove_point(Index);
+	m_build_tools->profiles.profile_edit.profile_remove_point(Index);
 }
 
 void editor_mode::profile_open(TTrack *From, TTrack *To)
 {
-	m_build_tools->profile_edit.profile_open(From, To);
+	m_build_tools->profiles.profile_edit.profile_open(From, To);
 }
 
 void editor_mode::profile_open_run(TTrack &Track)
 {
-	m_build_tools->profile_edit.profile_open_run(Track);
+	m_build_tools->profiles.profile_edit.profile_open_run(Track);
 }
 
 std::pair<double, double> editor_mode::profile_ballast(TTrack const &Track)
@@ -3454,25 +3454,25 @@ std::pair<double, double> editor_mode::profile_ballast(TTrack const &Track)
 
 void editor_mode::profile_check()
 {
-	m_build_tools->profile_edit.profile_check();
+	m_build_tools->profiles.profile_edit.profile_check();
 }
 
 void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departure> const &Bridges, double const Fewest)
 {
-	m_build_tools->profile_edit.profile_apply(Terrain, Bridges, Fewest);
+	m_build_tools->profiles.profile_edit.profile_apply(Terrain, Bridges, Fewest);
 }
 
 void editor_mode::profile_after_undo()
 {
-	m_build_tools->profile_edit.profile_after_undo();
+	m_build_tools->profiles.profile_edit.profile_after_undo();
 }
 
 void editor_mode::render_profile_body()
 {
-	m_build_tools->profile_window.render_profile_body();
+	m_build_tools->profiles.profile_window.render_profile_body();
 }
 
 void editor_mode::render_profile_strip()
 {
-	m_build_tools->profile_window.render_profile_strip();
+	m_build_tools->profiles.profile_window.render_profile_strip();
 }

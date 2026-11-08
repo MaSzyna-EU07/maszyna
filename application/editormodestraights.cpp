@@ -1095,7 +1095,7 @@ void editor_mode::cancel_track_tools()
 		state.fitting = false;
 		state.drag_states.clear();
 		state.drag_lines.clear();
-		m_build_tools->straight_edit.straight_refresh();
+		m_build_tools->routes.straight_edit.straight_refresh();
 	}
 	m_extend.active = false;
 	m_turntable.placing = false;
@@ -1550,55 +1550,55 @@ void straights_editor::update_curve_fit(glm::dvec3 const &Start, glm::dvec3 cons
 
 parallel_offer editor_mode::straight_parallel_offer(editor_track::straight const &Line, glm::dvec3 const &Offset) const
 {
-	return m_build_tools->straight_edit.straight_parallel_offer(Line, Offset);
+	return m_build_tools->routes.straight_edit.straight_parallel_offer(Line, Offset);
 }
 
 void editor_mode::render_straights_ui()
 {
-	m_build_tools->straight_edit.render_straights_ui();
+	m_build_tools->routes.straight_edit.render_straights_ui();
 }
 
 void editor_mode::render_straight_ui()
 {
-	m_build_tools->straight_edit.render_straight_ui();
+	m_build_tools->routes.straight_edit.render_straight_ui();
 }
 
 int editor_mode::straight_handle_hit()
 {
-	return m_build_tools->straight_edit.straight_handle_hit();
+	return m_build_tools->routes.straight_edit.straight_handle_hit();
 }
 
 void editor_mode::straight_refresh()
 {
-	m_build_tools->straight_edit.straight_refresh();
+	m_build_tools->routes.straight_edit.straight_refresh();
 }
 
 double editor_mode::straight_tool_radius(editor_track::straight const &Line) const
 {
-	return m_build_tools->straight_edit.straight_tool_radius(Line);
+	return m_build_tools->routes.straight_edit.straight_tool_radius(Line);
 }
 
 bool editor_mode::place_straight_tool()
 {
-	return m_build_tools->straight_edit.place_straight_tool();
+	return m_build_tools->routes.straight_edit.place_straight_tool();
 }
 
 void editor_mode::start_straight_gesture(int const Tool)
 {
-	m_build_tools->straight_edit.start_straight_gesture(Tool);
+	m_build_tools->routes.straight_edit.start_straight_gesture(Tool);
 }
 
 void editor_mode::toggle_straight_set(TTrack &Track)
 {
-	m_build_tools->straight_edit.toggle_straight_set(Track);
+	m_build_tools->routes.straight_edit.toggle_straight_set(Track);
 }
 
 std::vector<glm::dvec3> editor_mode::detour_outline() const
 {
-	return m_build_tools->straight_edit.detour_outline();
+	return m_build_tools->routes.straight_edit.detour_outline();
 }
 
 void editor_mode::add_detour_point()
 {
-	m_build_tools->straight_edit.add_detour_point();
+	m_build_tools->routes.straight_edit.add_detour_point();
 }

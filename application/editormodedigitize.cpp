@@ -482,5 +482,5 @@ std::string route_relay_tool::digitize_scenery(bool const Write)
 
 std::string editor_mode::digitize_scenery(bool const Write)
 {
-	return m_build_tools->route_relay.digitize_scenery(Write);
+	return m_build_tools->routes.route_relay.digitize_scenery(Write);
 }

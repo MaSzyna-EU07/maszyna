@@ -5395,20 +5395,20 @@ void nmt_auto_fit::nmt_auto_step()
 
 std::vector<nmt_place> editor_mode::nmt_track_places(double const Step) const
 {
-	return m_build_tools->nmt_build.nmt_track_places(Step);
+	return m_build_tools->terrain.nmt_build.nmt_track_places(Step);
 }
 
 void editor_mode::nmt_locate()
 {
-	m_build_tools->nmt_build.nmt_locate();
+	m_build_tools->terrain.nmt_build.nmt_locate();
 }
 
 bool editor_mode::nmt_ground(double const X, double const Z, double &Height) const
 {
-	return m_build_tools->nmt_build.nmt_ground(X, Z, Height);
+	return m_build_tools->terrain.nmt_build.nmt_ground(X, Z, Height);
 }
 
 void editor_mode::render_track_terrain(std::vector<TTrack *> const &Tracks)
 {
-	m_build_tools->nmt_window.render_track_terrain(Tracks);
+	m_build_tools->terrain.nmt_window.render_track_terrain(Tracks);
 }

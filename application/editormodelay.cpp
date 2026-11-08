@@ -535,10 +535,10 @@ void editor_mode::update_build_tools()
 	m_straights.detour_mouse = ground;
 	bool const pointing{m_cursor_override.has_value() || ImGui::IsMousePosValid()};
 	if (m_extend.active)
-		m_build_tools->extender.update_extend_drag(cursor, pointing);
+		m_build_tools->laying.extender.update_extend_drag(cursor, pointing);
 	if (m_switch.placing)
 		update_switch_placing();
-	m_build_tools->planner.update_lay_preview(ground, cursor, pointing);
+	m_build_tools->laying.planner.update_lay_preview(ground, cursor, pointing);
 }
 
 void editor_mode::join_target(editor_track::snap_target const &Target)
@@ -836,7 +836,7 @@ bool editor_mode::switch_reach(glm::dvec3 const &Ground, glm::dvec3 &Point)
 	auto const *selected{selected_track()};
 	if (m_track_tab != track_tab::turnout || m_switch.armed < 0 || selected == nullptr || selected->eType != tt_Normal || selected->m_paths.empty())
 		return false;
-	if (auto const &line{m_build_tools->designer.current_straight()}; false == line.tracks.empty())
+	if (auto const &line{m_build_tools->routes.designer.current_straight()}; false == line.tracks.empty())
 	{
 		auto const along{std::clamp(line.along(Ground), 0.0, line.length)};
 		Point = line.start + glm::dvec3{line.direction.x, line.grade, line.direction.y} * along;
@@ -1158,7 +1158,7 @@ std::vector<segment_data> editor_mode::extend_preview() const
 	    false == m_extend_memo.fresh(key))
 	{
 		m_follow_preview = true;
-		m_extend_memo.keep(std::move(key), m_build_tools->extender.extend_pieces());
+		m_extend_memo.keep(std::move(key), m_build_tools->laying.extender.extend_pieces());
 		m_follow_preview = false;
 	}
 	return m_extend_memo.result;
@@ -1367,7 +1367,7 @@ void editor_mode::finish_crossover(crossover_plan const &Plan)
 	// kept as a crossover, so it's taken out, slid and followed as one
 	record_connection(connection::kind::crossover, {origin, placed}, Plan.connection, editor_track::template_of_switch(origin).value_or(Plan.shape));
 	push_track_snapshot(std::move(states), std::move(created), std::move(removed));
-	m_build_tools->straight_edit.straight_refresh();
+	m_build_tools->routes.straight_edit.straight_refresh();
 	if (place_switch_drive(*placed))
 		join_last_steps();
 	advance_switch_name();
@@ -1478,20 +1478,20 @@ bool editor_mode::track_wheel(double const Offset)
 		return false;
 	if (bool const laying{m_lay.active && false == m_lay.points.empty()}; false == m_extend.active && false == laying)
 		return false;
-	int const step{m_build_tools->planner.wheel_step(Offset, false == io.KeyCtrl)};
+	int const step{m_build_tools->laying.planner.wheel_step(Offset, false == io.KeyCtrl)};
 	if (step == 0)
 		return true;
 	editor_track::snap_target target;
-	bool const joined{m_extend.active ? m_build_tools->extender.extend_snap(target) : m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr};
+	bool const joined{m_extend.active ? m_build_tools->laying.extender.extend_snap(target) : m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr};
 	first_step_done(io.KeyCtrl ? first_step::wheel : first_step::shape);
 	if (io.KeyCtrl && io.KeyShift)
 	{
-		m_build_tools->planner.wheel_speed(step);
+		m_build_tools->laying.planner.wheel_speed(step);
 		return true;
 	}
 	if (io.KeyCtrl)
 	{
-		m_build_tools->planner.wheel_radius(joined, step);
+		m_build_tools->laying.planner.wheel_radius(joined, step);
 		return true;
 	}
 	if (joined)
@@ -1505,7 +1505,7 @@ void editor_mode::wheel_connection(double const Offset)
 {
 	auto const &io{ImGui::GetIO()};
 	auto &tool{m_switch};
-	int const step{m_build_tools->planner.wheel_step(Offset, false == io.KeyCtrl)};
+	int const step{m_build_tools->laying.planner.wheel_step(Offset, false == io.KeyCtrl)};
 	if (step == 0)
 		return;
 	// the kind of a connection a switch dragged makes comes from where it's let go
@@ -3083,70 +3083,70 @@ void lay_controls::render_lay_status() const
 
 double editor_mode::design_speed(TTrack const *From, TTrack const *To) const
 {
-	return m_build_tools->planner.design_speed(From, To);
+	return m_build_tools->laying.planner.design_speed(From, To);
 }
 
 std::pair<TTrack const *, TTrack const *> editor_mode::laying_ends() const
 {
-	return m_build_tools->planner.laying_ends();
+	return m_build_tools->laying.planner.laying_ends();
 }
 
 std::string editor_mode::design_speed_of(TTrack const *From, TTrack const *To) const
 {
-	return m_build_tools->planner.design_speed_of(From, To);
+	return m_build_tools->laying.planner.design_speed_of(From, To);
 }
 
 std::vector<std::string> editor_mode::switch_exit_warnings(TTrack const *From, glm::dvec3 const &Start, TTrack const *To, glm::dvec3 const &End, std::vector<segment_data> const &Pieces) const
 {
-	return m_build_tools->planner.switch_exit_warnings(From, Start, To, End, Pieces);
+	return m_build_tools->laying.planner.switch_exit_warnings(From, Start, To, End, Pieces);
 }
 
 alignment::limits editor_mode::laying_norms() const
 {
-	return m_build_tools->planner.laying_norms();
+	return m_build_tools->laying.planner.laying_norms();
 }
 
 track_hover editor_mode::split_spot() const
 {
-	return m_build_tools->planner.split_spot();
+	return m_build_tools->laying.planner.split_spot();
 }
 
 void editor_mode::lay_click()
 {
-	m_build_tools->lay_input.lay_click();
+	m_build_tools->laying.lay_input.lay_click();
 }
 
 void editor_mode::lay_finish(editor_track::snap_target const &End)
 {
-	m_build_tools->lay_input.lay_finish(End);
+	m_build_tools->laying.lay_input.lay_finish(End);
 }
 
 void editor_mode::lay_cancel()
 {
-	m_build_tools->lay_input.lay_cancel();
+	m_build_tools->laying.lay_input.lay_cancel();
 }
 
 void editor_mode::lay_after_history(bool const Undo)
 {
-	m_build_tools->lay_input.lay_after_history(Undo);
+	m_build_tools->laying.lay_input.lay_after_history(Undo);
 }
 
 void editor_mode::render_lay_ui()
 {
-	m_build_tools->lay_input.render_lay_ui();
+	m_build_tools->laying.lay_input.render_lay_ui();
 }
 
 bool editor_mode::start_extend(editor_track::snap_target const &End)
 {
-	return m_build_tools->extender.start_extend(End);
+	return m_build_tools->laying.extender.start_extend(End);
 }
 
 bool editor_mode::extend_snap(editor_track::snap_target &Target) const
 {
-	return m_build_tools->extender.extend_snap(Target);
+	return m_build_tools->laying.extender.extend_snap(Target);
 }
 
 void editor_mode::finish_extend()
 {
-	m_build_tools->extender.finish_extend();
+	m_build_tools->laying.extender.finish_extend();
 }

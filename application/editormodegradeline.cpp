@@ -891,10 +891,10 @@ std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &T
 
 int editor_mode::route_grade_line()
 {
-	return m_build_tools->grade_lines.route_grade_line();
+	return m_build_tools->profiles.grade_lines.route_grade_line();
 }
 
 void editor_mode::grade_line_pick(TTrack &Track, bool const Alone)
 {
-	m_build_tools->grade_lines.grade_line_pick(Track, Alone);
+	m_build_tools->profiles.grade_lines.grade_line_pick(Track, Alone);
 }

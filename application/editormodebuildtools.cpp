@@ -229,7 +229,7 @@ void editor_mode::open_terrain_workspace(bool const Open)
 
 std::size_t editor_mode::shape_tracks_on_terrain(std::vector<TTrack *> const *Only)
 {
-	return m_build_tools->nmt_build.nmt_shape_tracks(Only);
+	return m_build_tools->terrain.nmt_build.nmt_shape_tracks(Only);
 }
 
 void editor_mode::join_last_history_steps()
@@ -446,7 +446,7 @@ void editor_mode::route_recompute()
 
 alignment::limits editor_mode::lay_norms() const
 {
-	return m_build_tools->planner.laying_norms();
+	return m_build_tools->laying.planner.laying_norms();
 }
 
 void editor_mode::undo_last_step()
@@ -521,7 +521,7 @@ int editor_mode::crossover_template_of(switch_store::record const &Record)
 
 void editor_mode::neighbour_straights_found()
 {
-	m_build_tools->straight_edit.find_neighbour_straights();
+	m_build_tools->routes.straight_edit.find_neighbour_straights();
 }
 
 void editor_mode::focus_on_node(scene::basic_node *Node)
@@ -571,7 +571,7 @@ void editor_mode::follow_preview_set(bool const Following)
 
 double editor_mode::lay_design_speed(TTrack const *From, TTrack const *To) const
 {
-	return m_build_tools->planner.design_speed(From, To);
+	return m_build_tools->laying.planner.design_speed(From, To);
 }
 
 double &editor_mode::join_radius_chosen()
