@@ -13636,3 +13636,30 @@ msgstr "Przesuwa sygnalizator w bok, od osi toru, w którego skrajnię wchodzi, 
 
 msgid "It enters the gauge of %s by %.0f cm: raise the gantry"
 msgstr "Wchodzi w skrajnię toru %s o %.0f cm: podnieś bramkę"
+
+msgid "A dwarf signal has no mast for an indicator under its lights"
+msgstr "Karzeł nie ma masztu na wskaźnik pod komorami"
+
+msgid "The indicator couldn't be placed: "
+msgstr "Nie udało się postawić wskaźnika: "
+
+msgid "Indicator %s put on signal %s, Ctrl+Z takes it back"
+msgstr "Wskaźnik %s dołożony do sygnalizatora %s, Ctrl+Z cofa"
+
+msgid "Both the signal and the indicator define %s: the scenery keeps one of each, the indicator may not work"
+msgstr "Zarówno sygnalizator, jak i wskaźnik definiują %s: sceneria zostawi po jednym, wskaźnik może nie działać"
+
+msgid "The indicator can't be removed: %s"
+msgstr "Nie można usunąć wskaźnika: %s"
+
+msgid "Indicator removed, Ctrl+Z brings it back"
+msgstr "Wskaźnik usunięty, Ctrl+Z przywraca"
+
+msgid "Indicators on it:"
+msgstr "Wskaźniki na nim:"
+
+msgid "Add an indicator..."
+msgstr "Dołóż wskaźnik..."
+
+msgid "An indicator of the scenery templates described as one, named after the signal: a lit one under its lights below the ones there, a plate at its foot. It moves with the signal"
+msgstr "Wskaźnik spośród szablonów scenerii opisanych jako wskaźnik, nazwany jak sygnalizator: świetlny pod komorami, niżej niż te już tam są, tablica przy stopie masztu. Przesuwa się razem z sygnalizatorem"

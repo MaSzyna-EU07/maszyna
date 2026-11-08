@@ -129,7 +129,8 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		return selftest_result::handled;
 	}
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap" ||
-	    command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault")
+	    command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault" || command == "signalindicator" ||
+	    command == "signalindicatordrop")
 	{
 		auto values{selftest_values(words)};
 		show_track_tab(track_tab::srk);
@@ -244,6 +245,34 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			else
 				WriteLog("SELFTEST signalselect " + values["name"] + ": " + standing->include.file);
 		}
+		else if (command == "signalindicator" || command == "signalindicatordrop")
+		{
+			// signalindicator name=<signal> file=<indicator template>: the indicator put on it; signalindicatordrop name=<signal>
+			// index=<n>: its indicator removed, the highest one 0
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			bool done{false};
+			if (command == "signalindicator")
+			{
+				auto const *item{indicator_template_of(values["file"])};
+				if (item == nullptr)
+				{
+					WriteLog("SELFTEST signalindicator: no indicator template " + values["file"]);
+					return selftest_result::handled;
+				}
+				done = signal_indicator_add(*standing, *item);
+			}
+			else
+			{
+				auto const index{values.count("index") ? std::stoul(values["index"]) : 0ul};
+				done = index < standing->indicators.size() && signal_indicator_remove(standing->indicators[index].instance);
+			}
+			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
 		else if (command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault")
 		{
 			// signalread name=<signal> track=<path> [path=<n>] [add=1]: the path picked to read it, as a click (a Shift+click with add)
@@ -350,6 +379,11 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 					if (signal_spot spot; signal_standing_spot(standing, spot) && spot.track != nullptr)
 						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
 				}
+				// its indicators, over its foot and from its axis, and its lowest lamp
+				for (auto const &mark : standing.indicators)
+					where += format("; indicator %s %.3f m up, %.3f m off", mark.file.c_str(), mark.location.y - standing.include.location.y, geometry::plan_distance(mark.location, standing.include.location));
+				if (auto const lamp{signal_lowest_lamp(standing.include.instance)}; lamp > 0.0)
+					where += format("; lowest lamp %.3f m up", lamp - standing.include.location.y);
 				// the gauge of the tracks around it
 				if (auto const hit{signal_gauge(standing.include.instance)}; hit.depth > 0.0 && hit.track != nullptr)
 					where += format("; in the gauge of %s path %d by %.3f m at %.2f %.2f %.2f", hit.track->name().c_str(), hit.path, hit.depth, hit.point.x, hit.point.y, hit.point.z);

@@ -2632,6 +2632,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
 		std::vector<std::pair<std::string, std::string>> repeats;
 	};
+	// an indicator to put on a signal, a template described as one
+	struct indicator_template
+	{
+		std::string file;
+		std::string name;
+		std::string description;
+		std::string sign;
+		std::string place; // "head": under the lights of the signal, one under another; "foot": by its foot, the place in its model
+		std::vector<std::pair<std::string, std::string>> events;
+	};
 	struct signal_spot
 	{
 		TTrack *track{nullptr};
@@ -2658,10 +2668,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int list{0};
 		// every path and list having the read, the first of them in track and list
 		std::vector<std::pair<TTrack *, int>> reads;
+		// the indicators put on it: named after it, at its foot, the highest first
+		std::vector<standing_template> indicators;
 	};
 	struct signal_tool
 	{
 		std::vector<signal_template> templates;
+		std::vector<indicator_template> indicators;
 		int revision{-1};
 		int kind{0};
 		std::array<int, 8> chosen{-1, -1, -1, -1, -1, -1, -1, -1};
@@ -2717,6 +2730,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const;
 	bool signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const;
 	bool signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread);
+	indicator_template const *indicator_template_of(std::string const &File) const;
+	// the indicator put on the signal, named after it: under its lights below the ones there, or at its foot. returns: false if it can't be
+	bool signal_indicator_add(signal_standing const &Standing, indicator_template const &Indicator);
+	bool signal_indicator_remove(scene::instance_handle const Indicator);
+	// the indicators of the signal moved after it to the place and the frame it has now, at the same place by it as they were, the
+	// directives they had going to Directives
+	void signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);
+	bool render_signal_indicators(signal_standing const &Found);
+	// the height of the lowest lamp of the signal in the world, from the geometry of its lamps; 0 when it has none
+	double signal_lowest_lamp(scene::instance_handle const Instance) const;
 	// the deepest entry of the models of the signal into the gauge of the paths around it
 	gauge_tool::gauge_hit signal_gauge(scene::instance_handle const Instance);
 	// the signal just placed or moved, at Local in its file, taken across away from the axis of each path whose gauge it enters, a few

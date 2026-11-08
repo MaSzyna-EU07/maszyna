@@ -17,6 +17,9 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorSettings.hpp"
 #include "model/AnimModel.h"
+#include "model/Model3d.h"
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "rendering/renderer.h"
 #include "scene/scenelayers.h"
@@ -108,6 +111,82 @@ std::vector<TAnimModel *> include_models(scene::instance_handle const Instance, 
 		if (model != nullptr && model->m_instance == Instance && model->visible() && glm::distance(model->location(), Location) < 60.0)
 			models.push_back(model);
 	return models;
+}
+
+double constexpr kIndicatorStep{0.45}; // m, from one indicator under the lights to the next one down, each 0.42 m high
+double constexpr kIndicatorUnder{0.73}; // m, from the lowest lamp down to the first indicator, as the signals with one built in have it
+double constexpr kIndicatorHead{3.0}; // m, over the foot, of the first indicator of a signal with no lamp found
+double constexpr kIndicatorAhead{0.05}; // m, of an indicator under the lights before the mast
+double constexpr kIndicatorReach{1.0}; // m, in the plan, of an indicator named after a signal from its foot to be counted as its
+
+glm::dmat4 placement_of(TAnimModel const &Instance)
+{
+	auto const angles{Instance.Angles()};
+	auto matrix{glm::translate(glm::dmat4(1.0), Instance.location())};
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0));
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
+	return glm::scale(matrix, glm::dvec3(Instance.Scale()));
+}
+
+// the model of the include with the lights, else the first one
+TAnimModel *main_model(std::vector<TAnimModel *> const &Models)
+{
+	auto const lit{std::find_if(Models.begin(), Models.end(), [](TAnimModel const *Model) { return Model->iNumLights > 0; })};
+	return lit != Models.end() ? *lit : Models.empty() ? nullptr : Models.front();
+}
+
+// the rotation of the signal, of its model
+glm::dmat3 frame_of(std::vector<TAnimModel *> const &Models)
+{
+	auto const *model{main_model(Models)};
+	if (model == nullptr)
+		return glm::dmat3(1.0);
+	auto const angles{model->Angles()};
+	auto matrix{glm::rotate(glm::dmat4(1.0), glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0))};
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
+	return glm::dmat3(matrix);
+}
+
+// the lowest point of the lamps among the submodels, the lamp ones and those under them
+void lamp_points(TSubModel *Submodel, glm::dmat4 const &Matrix, bool const Lamp, std::unordered_set<TSubModel const *> const &Lamps, double &Lowest)
+{
+	for (auto *submodel = Submodel; submodel != nullptr; submodel = submodel->NextGet())
+	{
+		auto matrix{Matrix};
+		if ((submodel->iFlags & 0xC000) && submodel->GetMatrix() != nullptr)
+			matrix *= glm::dmat4(glm::make_mat4(submodel->GetMatrix()->readArray()));
+		auto const lamp{Lamp || Lamps.count(submodel) > 0};
+		if (lamp && submodel->eType == GL_TRIANGLES && submodel->m_geometry.handle != null_handle)
+		{
+			for (auto const &vertex : GfxRenderer->Vertices(submodel->m_geometry.handle))
+				Lowest = std::min(Lowest, (matrix * glm::dvec4(glm::dvec3(vertex.position), 1.0)).y);
+		}
+		else if (lamp)
+			Lowest = std::min(Lowest, matrix[3].y);
+		lamp_points(submodel->ChildGet(), matrix, lamp, Lamps, Lowest);
+	}
+}
+
+// the height of the lowest lamp of the models, in the world; the highest double when they have none
+double lowest_lamp(std::vector<TAnimModel *> const &Models)
+{
+	auto lowest{std::numeric_limits<double>::max()};
+	for (auto *model : Models)
+	{
+		if (model == nullptr || model->iNumLights <= 0 || model->Model() == nullptr || model->Model()->GetSMRoot() == nullptr)
+			continue;
+		std::unordered_set<TSubModel const *> lamps;
+		for (std::size_t i = 0; i < static_cast<std::size_t>(model->iNumLights) && i < model->LightsOn.size(); ++i)
+		{
+			lamps.insert(model->LightsOn[i]);
+			lamps.insert(model->LightsOff[i]);
+		}
+		lamps.erase(nullptr);
+		lamp_points(model->Model()->GetSMRoot(), placement_of(*model), false, lamps, lowest);
+	}
+	return lowest;
 }
 
 double nearest_on(TTrack const &Track, int const Path, glm::dvec3 const &Point)
@@ -375,8 +454,18 @@ bool editor_mode::signal_scan(bool const Wait)
 		if (tool.chosen[i] >= 0 && tool.chosen[i] < static_cast<int>(tool.templates.size()))
 			chosen[i] = tool.templates[tool.chosen[i]].file;
 	tool.templates.clear();
+	tool.indicators.clear();
 	for (auto const &entry : EditorIncludes.entries())
 	{
+		// the indicators, put on a signal named after it: the signal is its first parameter, the description needn't give it
+		if (entry.category == "indicator")
+		{
+			include_info info;
+			std::string error;
+			if (editor_includes::load(entry.file, info, error) && false == info.indicator_sign.empty())
+				tool.indicators.push_back({entry.file, info.name.empty() ? entry.file : info.name, info.description, info.indicator_sign, info.indicator_place == "head" ? std::string{"head"} : std::string{"foot"}, info.indicator_events});
+			continue;
+		}
 		if (entry.category != "signal" || false == entry.complete)
 			continue;
 		include_info info;
@@ -409,6 +498,7 @@ bool editor_mode::signal_scan(bool const Wait)
 			item.aspects = editor_includes::block_aspects(entry.file);
 		tool.templates.push_back(std::move(item));
 	}
+	std::sort(tool.indicators.begin(), tool.indicators.end(), [](indicator_template const &A, indicator_template const &B) { return std::tie(A.sign, A.name) < std::tie(B.sign, B.name); });
 	std::sort(tool.templates.begin(), tool.templates.end(), [](signal_template const &A, signal_template const &B) {
 		return std::make_tuple(kind_index(A.kind), A.lamps.empty(), A.mount != "mast", A.lamps.size(), A.lamps, A.name.size(), A.name) < std::make_tuple(kind_index(B.kind), B.lamps.empty(), B.mount != "mast", B.lamps.size(), B.lamps, B.name.size(), B.name);
 	});
@@ -456,6 +546,15 @@ editor_mode::signal_template const *editor_mode::signal_template_of(std::string 
 {
 	auto const file{ToLower(File)};
 	for (auto const &item : m_signal.templates)
+		if (item.file == file)
+			return &item;
+	return nullptr;
+}
+
+editor_mode::indicator_template const *editor_mode::indicator_template_of(std::string const &File) const
+{
+	auto const file{ToLower(File)};
+	for (auto const &item : m_signal.indicators)
 		if (item.file == file)
 			return &item;
 	return nullptr;
@@ -675,6 +774,7 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 	if (scene::Layers.empty() || m_signal.templates.empty())
 		return standing;
 	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
+	auto const marks{m_signal.indicators.empty() ? std::vector<standing_template>{} : standing_templates([this](std::string const &File) { return indicator_template_of(File) != nullptr; })};
 	std::unordered_map<std::string, std::vector<std::pair<TTrack *, int>>> readers;
 	for (auto *track : simulation::Paths.sequence())
 	{
@@ -708,6 +808,10 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 				signal.list = signal.reads.front().second;
 			}
 		}
+		for (auto const &mark : marks)
+			if (false == mark.values.empty() && ToLower(mark.values.front()) == ToLower(signal.name) && geometry::plan_distance(mark.location, include.location) <= kIndicatorReach)
+				signal.indicators.push_back(mark);
+		std::sort(signal.indicators.begin(), signal.indicators.end(), [](standing_template const &A, standing_template const &B) { return A.location.y > B.location.y; });
 		standing.push_back(std::move(signal));
 	}
 	return standing;
@@ -870,6 +974,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	}
 	auto const name{Standing.name};
 	auto const node{Standing.include.file};
+	auto const held{frame_of(include_models(instance, Standing.include.location))};
 	set_include_directive(instance, editor_includes::compose_directive(file, values));
 	gauge_tool::gauge_hit hit;
 	double shift{0.0};
@@ -877,6 +982,8 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 		hit = m_gauge.gauge_models(include_models(instance, Spot.position));
 	else
 		shift = signal_off_gauge(instance, file, values, local, hit);
+	std::vector<std::pair<scene::instance_handle, std::string>> carried;
+	signal_indicators_follow(Standing, held, carried);
 	// taken up by the track it stood by, it would be put back by it as that one changes: it is let go, for the track it stands by now
 	infra::binding bound;
 	bound.type = infra::kind::include;
@@ -887,6 +994,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	{
 		EditorSnapshot snap;
 		snap.directives.emplace_back(instance, std::move(directive));
+		snap.directives.insert(snap.directives.end(), carried.begin(), carried.end());
 		snap.node_name = node;
 		trim_history();
 		m_history.push_back(std::move(snap));
@@ -896,6 +1004,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	{
 		push_track_snapshot(std::move(states));
 		m_history.back().directives.emplace_back(instance, std::move(directive));
+		m_history.back().directives.insert(m_history.back().directives.end(), carried.begin(), carried.end());
 	}
 	signal_refresh(true);
 	signal_select(instance);
@@ -967,6 +1076,174 @@ void editor_mode::signal_gauge_note(std::string &Status, double const Shift, gau
 	if (false == Status.empty() && Status.back() != '.')
 		Status += '.';
 	Status += (Status.empty() ? "" : " ") + note;
+}
+
+bool editor_mode::signal_indicator_add(signal_standing const &Standing, indicator_template const &Indicator)
+{
+	auto &tool{m_signal};
+	auto const instance{Standing.include.instance};
+	auto const name{Standing.name};
+	auto const signal_file{Standing.include.file};
+	auto const models{include_models(instance, Standing.include.location)};
+	glm::dvec3 location{Standing.include.location};
+	if (Indicator.place == "head")
+	{
+		if (auto const *item{signal_template_of(signal_file)}; item != nullptr && item->mount == "dwarf")
+		{
+			tool.status = refused(STR_C("A dwarf signal has no mast for an indicator under its lights"));
+			return false;
+		}
+		// below the lowest one under the lights, else under the lowest lamp
+		auto height{std::numeric_limits<double>::max()};
+		for (auto const &mark : Standing.indicators)
+			if (auto const *other{indicator_template_of(mark.file)}; other != nullptr && other->place == "head")
+				height = std::min(height, mark.location.y - Standing.include.location.y - kIndicatorStep);
+		if (height == std::numeric_limits<double>::max())
+		{
+			auto const lamp{lowest_lamp(models) - Standing.include.location.y};
+			height = lamp > kIndicatorUnder + 1.0 && lamp < 50.0 ? lamp - kIndicatorUnder : kIndicatorHead;
+		}
+		location += frame_of(models) * glm::dvec3{0.0, height, kIndicatorAhead};
+	}
+	template_item item;
+	item.file = Indicator.file;
+	item.location = location;
+	item.yaw = Standing.include.yaw;
+	item.described = true;
+	item.values["#1"] = name;
+	std::string error;
+	if (place_templates({item}, error, output_layer("srk")) == 0)
+	{
+		tool.status = refused(STR_C("The indicator couldn't be placed: ") + error);
+		return false;
+	}
+	tool.status = format(STR_C("Indicator %s put on signal %s, Ctrl+Z takes it back"), Indicator.name.c_str(), name.c_str());
+	// an event both define the scenery keeps once, the indicator's may be the one lost
+	std::vector<std::string> own;
+	std::vector<std::string> theirs;
+	std::string twice;
+	if (editor_includes::event_names(signal_file, own) && editor_includes::event_names(Indicator.file, theirs))
+		for (auto const &event : theirs)
+			if (std::find(own.begin(), own.end(), event) != own.end())
+				twice += (twice.empty() ? "" : ", ") + editor_includes::substitute(event, {name});
+	if (false == twice.empty())
+		tool.status += ". " + format(STR_C("Both the signal and the indicator define %s: the scenery keeps one of each, the indicator may not work"), twice.c_str());
+	signal_refresh(true);
+	signal_select(instance);
+	return true;
+}
+
+double editor_mode::signal_lowest_lamp(scene::instance_handle const Instance) const
+{
+	auto const *standing{signal_standing_of(Instance)};
+	if (standing == nullptr)
+		return 0.0;
+	auto const lowest{lowest_lamp(include_models(Instance, standing->include.location))};
+	return lowest < std::numeric_limits<double>::max() ? lowest : 0.0;
+}
+
+bool editor_mode::signal_indicator_remove(scene::instance_handle const Indicator)
+{
+	std::string reason;
+	if (false == scene::Layers.tracked(Indicator) || false == scene::Layers.removable(Indicator, &reason))
+	{
+		m_signal.status = refused(format(STR_C("The indicator can't be removed: %s"), reason.c_str()));
+		return false;
+	}
+	auto const selected{m_signal.selected};
+	scene::Layers.removed(Indicator, true);
+	EditorSnapshot snap;
+	snap.instances.push_back(Indicator);
+	trim_history();
+	m_history.push_back(std::move(snap));
+	g_redo.clear();
+	m_signal.status = STR("Indicator removed, Ctrl+Z brings it back");
+	signal_refresh(true);
+	signal_select(selected);
+	return true;
+}
+
+void editor_mode::signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives)
+{
+	if (Standing.indicators.empty())
+		return;
+	auto const instance{Standing.include.instance};
+	std::string file;
+	std::vector<std::string> values;
+	if (false == editor_includes::parse_directive(scene::Layers.directive(instance), file, values) || values.size() < 5)
+		return;
+	auto const &included{scene::Layers.instance(instance)};
+	glm::dvec3 const location{included.context.offset + glm::dvec3{std::strtod(values[1].c_str(), nullptr), std::strtod(values[2].c_str(), nullptr), std::strtod(values[3].c_str(), nullptr)}};
+	auto const after{frame_of(include_models(instance, location))};
+	auto const back{glm::transpose(Before)};
+	for (auto const &mark : Standing.indicators)
+	{
+		if (false == scene::Layers.tracked(mark.instance) || false == scene::Layers.removable(mark.instance))
+			continue;
+		std::string own;
+		std::vector<std::string> placed;
+		auto directive{scene::Layers.directive(mark.instance)};
+		if (false == editor_includes::parse_directive(directive, own, placed) || placed.size() < 5)
+			continue;
+		// at the same place by the signal, in its frame
+		auto const local{location + after * (back * (mark.location - Standing.include.location)) - scene::Layers.instance(mark.instance).context.offset};
+		placed[1] = editor_includes::number(local.x);
+		placed[2] = editor_includes::number(local.y);
+		placed[3] = editor_includes::number(local.z);
+		placed[4] = values[4];
+		set_include_directive(mark.instance, editor_includes::compose_directive(own, placed));
+		Directives.emplace_back(mark.instance, std::move(directive));
+	}
+}
+
+bool editor_mode::render_signal_indicators(signal_standing const &Found)
+{
+	auto const &tool{m_signal};
+	if (tool.indicators.empty())
+		return false;
+	if (false == Found.indicators.empty())
+		ImGui::TextDisabled("%s", STR_C("Indicators on it:"));
+	for (auto const &mark : Found.indicators)
+	{
+		auto const *item{indicator_template_of(mark.file)};
+		ImGui::PushID(static_cast<int>(mark.instance));
+		ImGui::Bullet();
+		ImGui::SameLine();
+		ImGui::TextUnformatted(item != nullptr ? item->name.c_str() : mark.file.c_str());
+		if (item != nullptr && ImGui::IsItemHovered())
+		{
+			std::string events;
+			for (auto const &[shown, event] : item->events)
+				events += "\n" + shown + ": " + Found.name + "_" + event;
+			ImGui::SetTooltip("%s\n%s%s", mark.file.c_str(), item->description.c_str(), events.c_str());
+		}
+		ImGui::SameLine();
+		auto const drop{ImGui::SmallButton(STR_C("Remove"))};
+		ImGui::PopID();
+		if (drop)
+			return signal_indicator_remove(mark.instance);
+	}
+	ImGui::SetNextItemWidth(-1.0f);
+	indicator_template const *chosen{nullptr};
+	if (ImGui::BeginCombo("##indicator", STR_C("Add an indicator...")))
+	{
+		std::string sign;
+		for (auto const &item : tool.indicators)
+		{
+			if (item.sign != sign)
+			{
+				sign = item.sign;
+				ImGui::SeparatorText(sign.c_str());
+			}
+			if (ImGui::Selectable((item.name + "##" + item.file).c_str(), false))
+				chosen = &item;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s\n%s", item.file.c_str(), item.description.c_str());
+		}
+		ImGui::EndCombo();
+	}
+	item_tooltip("An indicator of the scenery templates described as one, named after the signal: a lit one under its lights below the ones there, a plate at its foot. It moves with the signal");
+	return chosen != nullptr && signal_indicator_add(Found, *chosen);
 }
 
 bool editor_mode::signal_flip(scene::instance_handle const Instance)
@@ -1668,6 +1945,11 @@ bool editor_mode::signal_delete(scene::instance_handle const Instance)
 	if (false == editor_includes::parse_directive(scene::Layers.directive(Instance), file, values))
 		return false;
 	auto const read{editor_includes::substitute(item->read, values)};
+	std::vector<scene::instance_handle> marks;
+	if (auto const *standing{signal_standing_of(Instance)}; standing != nullptr)
+		for (auto const &mark : standing->indicators)
+			if (scene::Layers.tracked(mark.instance) && scene::Layers.removable(mark.instance))
+				marks.push_back(mark.instance);
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	signal_detach_events(read, states);
 	if (states.empty())
@@ -1675,6 +1957,12 @@ bool editor_mode::signal_delete(scene::instance_handle const Instance)
 	scene::Layers.removed(Instance, true);
 	push_track_snapshot(std::move(states));
 	m_history.back().instances.push_back(Instance);
+	// its indicators with it
+	for (auto const mark : marks)
+	{
+		scene::Layers.removed(mark, true);
+		m_history.back().instances.push_back(mark);
+	}
 	ui()->set_status(format(STR_C("Signal %s removed with its event %s, Ctrl+Z brings both back"), values.empty() ? "" : values.front().c_str(), read.c_str()));
 	select_include(0);
 	m_signal.selected = 0;
@@ -2254,6 +2542,8 @@ void editor_mode::render_signal_selected()
 	if (ImGui::Button(STR_C("Turn around"), ImVec2(width, 0.0f)))
 		signal_turn(instance);
 	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
+	if (render_signal_indicators(*found))
+		return;
 	// the gauge of the tracks around, measured again after each change
 	auto &gauge{m_signal.gauge};
 	if (gauge.instance != instance || gauge.history != history_revision() || gauge.location != found->include.location)
