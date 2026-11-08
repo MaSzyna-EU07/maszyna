@@ -40,7 +40,8 @@ With `--test` the simulator:
   runs of a scenery come out the same (the physicslogs of two runs are byte for byte equal),
 - quits when the test ends, and says how it ended in the exit code and in a `test: ...`
   line on stdout and in the log. A command line it can't take, or a start that fails, ends
-  the same way with the `error` code.
+  the same way with the `error` code. That line is all there is on stdout: the log goes to
+  the log file only (`debuglog` doesn't print it on the console in test mode).
 
 On Windows the simulator is a windowed program, which the `cmd` prompt and PowerShell don't wait
 for. In a `.bat` file `eu07 --test ... > result.txt` waits and sets `%errorlevel%`; at the prompt

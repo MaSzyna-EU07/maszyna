@@ -322,6 +322,9 @@ int eu07_application::init(int Argc, char *Argv[])
 {
 
 	int result{0};
+	// a test run is known before anything is logged: whoever started it reads its result on the standard output,
+	// which the log isn't written to then (eu07/maszyna#541)
+	Global.test.enabled = simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc)).enabled;
 	// start logging service
 	std::thread sLoggingService(LogService);
 	Global.threads.emplace("LogService", std::move(sLoggingService));
@@ -1150,10 +1153,9 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
 
-	// a test run is known before the rest of the command line is read, so a command line it can't take
-	// ends with the error code of the test, not with 0, which would pass it
+	// a test run is known before the rest of the command line is read (Global.test.enabled, see init()), so a
+	// command line it can't take ends with the error code of the test, not with 0, which would pass it
 	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
-	Global.test.enabled = testcommandline.enabled;
 	if (false == testcommandline.error.empty())
 	{
 		simulation::test().conclude(simulation::test_result::error, testcommandline.error);
@@ -1245,7 +1247,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 		else
 		{
-			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
+			// a test's standard output carries its result only
+			(Global.test.enabled ? std::cerr : std::cout) << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
 			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]"
