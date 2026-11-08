@@ -814,6 +814,8 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
 		str = token;
     }
 
+    // a switch made sets itself straight with Switch(0), which overwrites fVelocity from SwitchExtension->fVelocity; the velocity read
+    // from the scenery is put back after it
     auto const velocity { fVelocity };
     init_segments( true );
     // made with no unevenness, which is read with the attributes and goes onto them by making them again
