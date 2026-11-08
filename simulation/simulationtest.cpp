@@ -15,11 +15,16 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
+#ifdef _WIN32
+#include "Console.h"
+#endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <format>
@@ -31,6 +36,47 @@ test_manager &test()
 {
 	static test_manager instance;
 	return instance;
+}
+
+void apply_test_mode_settings()
+{
+	// nobody watches nor listens: no player vehicle, nothing drawn, no sound, no window in the way
+	Global.editor_session = false;
+	Global.local_start_vehicle = "ghostview";
+	Global.GfxRenderer = "null";
+	Global.NvRenderer = false;
+	Global.bSoundEnabled = false;
+	Global.python_enabled = false;
+	Global.bInactivePause = false;
+	Global.bFullScreen = false;
+	Global.fullscreen_windowed = false;
+	Global.VSync = false;
+	Global.iMultisampling = 0;
+	Global.gfx_usegles = false;
+	Global.minframetime = std::chrono::duration<float>(0.0f);
+	Global.extra_viewports.clear();
+	Global.headtrack_conf.joy.clear();
+	// a test runs on its own: no network, and no input from outside (eu07/maszyna#541)
+	Global.network_servers.clear();
+	Global.network_client.reset();
+	Global.InputGamepad = false;
+	Global.InputMouse = false;
+	Global.uart_conf.enable = false;
+	Global.motiontelemetry_conf.enable = false;
+#ifdef WITH_ZMQ
+	Global.zmq_address.clear();
+#endif
+	// nor anything to the outside: no keyboard leds, LPT or PoKeys desk (feedbackmode), no messages to a
+	// multiplayer server (multiplayer, which also holds some events back for it), no program run at the end
+	Global.iFeedbackMode = 0;
+#ifdef _WIN32
+	Console::ModeSet(Global.iFeedbackMode, Global.iFeedbackPort);
+#endif
+	Global.iMultiplayer = 0;
+	Global.exec_on_exit.clear();
+	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
+	if (!Global.random_seed)
+		Global.random_seed = seed_of("test");
 }
 
 void test_manager::init_result_cell() const

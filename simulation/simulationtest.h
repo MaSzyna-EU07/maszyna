@@ -53,4 +53,9 @@ private:
 // the test of the run
 test_manager &test();
 
+// the settings of the test mode, over whatever the settings files and the scenery say: applied once the command
+// line is read, and again after each config block of the scenery, which could turn the sound, the network or the
+// program run at the end back on
+void apply_test_mode_settings();
+
 } // namespace simulation

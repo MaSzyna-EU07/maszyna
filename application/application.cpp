@@ -31,9 +31,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
-#ifdef _WIN32
-#include "Console.h"
-#endif
 #include <chrono>
 #include <format>
 #include <vector>
@@ -1149,53 +1146,6 @@ void eu07_application::init_files()
 }
 namespace fs = std::filesystem;
 
-namespace
-{
-
-// the settings of the test mode (--test), over whatever the settings files say
-void apply_test_mode_settings()
-{
-	// nobody watches nor listens: no player vehicle, nothing drawn, no sound, no window in the way
-	Global.editor_session = false;
-	Global.local_start_vehicle = "ghostview";
-	Global.GfxRenderer = "null";
-	Global.NvRenderer = false;
-	Global.bSoundEnabled = false;
-	Global.python_enabled = false;
-	Global.bInactivePause = false;
-	Global.bFullScreen = false;
-	Global.fullscreen_windowed = false;
-	Global.VSync = false;
-	Global.iMultisampling = 0;
-	Global.gfx_usegles = false;
-	Global.minframetime = std::chrono::duration<float>(0.0f);
-	Global.extra_viewports.clear();
-	Global.headtrack_conf.joy.clear();
-	// a test runs on its own: no network, and no input from outside (eu07/maszyna#541)
-	Global.network_servers.clear();
-	Global.network_client.reset();
-	Global.InputGamepad = false;
-	Global.InputMouse = false;
-	Global.uart_conf.enable = false;
-	Global.motiontelemetry_conf.enable = false;
-#ifdef WITH_ZMQ
-	Global.zmq_address.clear();
-#endif
-	// nor anything to the outside: no keyboard leds, LPT or PoKeys desk (feedbackmode), no messages to a
-	// multiplayer server (multiplayer, which also holds some events back for it), no program run at the end
-	Global.iFeedbackMode = 0;
-#ifdef _WIN32
-	Console::ModeSet(Global.iFeedbackMode, Global.iFeedbackPort);
-#endif
-	Global.iMultiplayer = 0;
-	Global.exec_on_exit.clear();
-	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
-	if (!Global.random_seed)
-		Global.random_seed = seed_of("test");
-}
-
-} // namespace
-
 int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
@@ -1315,7 +1265,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			simulation::test().conclude(simulation::test_result::error, "--test needs a scenery given with -s");
 			return -1;
 		}
-		apply_test_mode_settings();
+		simulation::apply_test_mode_settings();
 	}
 
 	return 0;

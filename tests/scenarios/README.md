@@ -32,6 +32,8 @@ With `--test` the simulator:
 - gives nothing to the outside either: no keyboard leds, LPT or PoKeys (`feedbackmode`), no
   messages to a multiplayer server (`multiplayer`), no program run at the end (`execonexit`),
   no console window of its own (`showsystemconsole`), and the game's `imgui.ini` stays as it is,
+- keeps all of the above whatever the `config` block of the scenery says: the settings of the
+  test mode are applied again after it,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
   frame (three 10 ms physics steps), whatever the real time, the time speed or the machine,
 - seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
