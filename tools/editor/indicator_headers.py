@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Writes //$e descriptions into the indicators of the signals in scenery/pkp/wskazniki, and makes there the indicators which
-so far came only built into the signal templates: W1 of the warning discs and of the block signals, W18 of the block signals
-and the I, II and III plates of the repeaters. The editor puts them on a signal it places.
+"""Writes //$e descriptions into the indicators of the signals in scenery/pkp/wskazniki, and makes there, as copies, the
+indicators which so far came only built into the signal templates: W1 of the warning discs and of the block signals, W18 of
+the block signals and the I, II and III plates of the repeaters. The templates keep theirs: one of these put on the template
+it was copied from shows twice. The editor puts them on a signal it places.
 
-usage: indicator_headers.py <data root> [--write]
-without --write it only reports what it would write
+usage: indicator_headers.py <data root> [--write] [--sidecar]
+without --write it only reports what it would write; --sidecar writes the descriptions of the lit ones beside the data, in
+editor/templates, the files of the game left as they are. The ones made are new files either way, a replaced one is kept in
+editor_backup first
 """
 
 import os
 import re
 import sys
+import tarfile
+import time
 
-from editor_headers import LINEMARK, decode, load, write
+from editor_headers import LINEMARK, decode, load, sidecar, write
 
 FOLDER = 'pkp/wskazniki'
 
@@ -100,7 +105,7 @@ def header(sign, name, description, place, events=None):
 def made_text(entry, eol):
     file, sign, name, source, model, suffix, description = entry
     body = [
-        '//-- %s wydzielony z %s przez tools/editor/indicator_headers.py: model ma swoje położenie względem stopy semafora' % (name, source),
+        '//-- %s skopiowany z %s przez tools/editor/indicator_headers.py: model ma swoje położenie względem stopy semafora' % (name, source),
         '//-- p1=nazwa semafora, p2,p3,p4=położenie jak semafora, p5=obrót jak semafora, p6,p7=pochylenie (0)',
         'origin (p2) (p3) (p4)',
         'rotate (p6) (p5) (p7)',
@@ -141,17 +146,33 @@ def main():
         made.append((entry[0], content, state))
         print('%-18s %-4s foot %s (%s)' % (entry[0], entry[1], entry[4].split()[5], state))
     print('described: %d, made: %d' % (len(described), len([m for m in made if m[2] != 'same'])))
-    if writing:
-        if described:
-            write(sys.argv[1], os.path.join('scenery', FOLDER), 'indicators', described)
-        for file, content, state in made:
-            if state == 'same':
-                continue
-            if state == 'changed':
-                print('REPLACED', file)
-            with open(os.path.join(root, file), 'wb') as out:  # NOSONAR
-                out.write(content)
+    if '--sidecar' in sys.argv:
+        sidecar(sys.argv[1], os.path.join('scenery', FOLDER), described)
+    elif writing and described:
+        write(sys.argv[1], os.path.join('scenery', FOLDER), 'indicators', described)
+    if writing or '--sidecar' in sys.argv:
+        write_made(sys.argv[1], root, made)
     return 0
+
+
+def write_made(data, root, made):
+    """the indicators made, the ones there with other content kept in editor_backup first"""
+    replaced = [file for file, _, state in made if state == 'changed']
+    if replaced:
+        backup = os.path.join(data, 'editor_backup')
+        os.makedirs(backup, exist_ok=True)  # NOSONAR
+        archive = os.path.join(backup, time.strftime('indicators_made_%Y%m%d_%H%M%S.tar'))
+        with tarfile.open(archive, 'w') as tar:  # NOSONAR
+            for file in replaced:
+                tar.add(os.path.join(root, file), arcname=FOLDER + '/' + file)  # NOSONAR
+        print('replaced ones kept in', archive)
+    for file, content, state in made:
+        if state == 'same':
+            continue
+        if state == 'changed':
+            print('REPLACED', file)
+        with open(os.path.join(root, file), 'wb') as out:  # NOSONAR
+            out.write(content)
 
 
 if __name__ == '__main__':
