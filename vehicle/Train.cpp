@@ -12323,7 +12323,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 		gauge.Load(Parser, DynamicObject);
 		// the counter shows the odometer of the vehicle, kept between the sessions (eu07/maszyna#72). its offset
 		// was the state it started each session with, now it is that only for a vehicle with no known state
-		if (auto const seed{odometer::counter_seed(gauge.offset(), gauge.scale())})
+		if (auto const seed{odometer::counter_seed(gauge.offset(), gauge.scale())}; seed.has_value())
 			mvControlled->Odometer.seed(*seed);
 		gauge.offset(0.f);
 		gauge.AssignDouble(&mvControlled->Odometer.km);

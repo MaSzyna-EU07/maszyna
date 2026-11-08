@@ -153,9 +153,9 @@ double guessed_state(std::string const &Vehicle) {
 
 reading starting_state(store const &States, std::string const &Vehicle, std::filesystem::path const &Vehicledirectory) {
 	reading result;
-	if (auto const saved{States.find(Vehicle)}) {
+	if (auto const saved{States.find(Vehicle)}; saved.has_value()) {
 		result.begin(*saved, origin::saved);
-	} else if (auto const legacy{legacy_state(Vehicledirectory, Vehicle)}) {
+	} else if (auto const legacy{legacy_state(Vehicledirectory, Vehicle)}; legacy.has_value()) {
 		result.begin(*legacy, origin::legacy);
 	} else {
 		result.begin(guessed_state(Vehicle), origin::guessed);

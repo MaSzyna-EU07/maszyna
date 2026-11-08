@@ -24,13 +24,16 @@ odometer::reading run(double const Km, double const Metres) {
 	return reading;
 }
 
-// a directory of its own for a test, removed afterwards
+// a directory of its own for a test, removed afterwards. it's made in the working directory of the tests (the build
+// directory), not in the shared temporary one
 struct scratch_directory {
 	std::filesystem::path path;
-	explicit scratch_directory(std::string const &Name) : path{std::filesystem::temp_directory_path() / ("eu07_unit_" + Name)} {
+	explicit scratch_directory(std::string const &Name) : path{std::filesystem::current_path() / ("eu07_unit_" + Name)} {
 		std::filesystem::remove_all(path);
 		std::filesystem::create_directories(path);
 	}
+	scratch_directory(scratch_directory const &) = delete;
+	scratch_directory &operator=(scratch_directory const &) = delete;
 	~scratch_directory() {
 		std::error_code error;
 		std::filesystem::remove_all(path, error);
