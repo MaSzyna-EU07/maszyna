@@ -92,6 +92,25 @@ bool drawn_bent(segment_data const &Path)
 // the tangent at the start and the joint there; the path moves along itself by under a centimetre. Called where an edit sets the
 // second vector, or keeps a path drawn bent so. Undo: the second one back along the chord, a first one made longer here goes back to
 // a third of the chord, its direction kept too
+// how far a second control vector stands off the chord of the path, sideways and in height; off by this much it bends the path
+double off_chord(segment_data const &Path, glm::dvec3 const &Control2)
+{
+	auto const chord{Path.points[segment_data::point::end] - Path.points[segment_data::point::start]};
+	auto const length{glm::length(chord)};
+	if (length < 1e-6)
+		return 0.0;
+	auto const axis{chord / length};
+	return glm::length(Control2 - axis * glm::dot(Control2, axis));
+}
+double const kOffChord{0.02};
+
+// whether an edit at the end of a path, which set its second vector, is what took that vector off the chord: a path drawn straight is
+// kept bent only then, one whose second vector was off the chord already is left to the simulator as it is
+bool took_off_chord(double const Before, segment_data const &Path)
+{
+	return Before < kOffChord && off_chord(Path, Path.points[segment_data::point::control2]) >= kOffChord;
+}
+
 void keep_bent(TTrack const &Track, segment_data &Path, bool const Undo)
 {
 	if (Track.eType == tt_Cross)
@@ -100,12 +119,10 @@ void keep_bent(TTrack const &Track, segment_data &Path, bool const Undo)
 	auto const &end{Path.points[segment_data::point::end]};
 	auto &control1{Path.points[segment_data::point::control1]};
 	auto const &control2{Path.points[segment_data::point::control2]};
-	auto const chord{end - start};
-	auto const length{glm::length(chord)};
+	auto const length{glm::distance(start, end)};
 	if (length < 1e-6 || control1 == glm::dvec3{} || control2 == glm::dvec3{})
 		return;
-	auto const axis{chord / length};
-	if (glm::length(control2 - axis * glm::dot(control2, axis)) < 0.02)
+	if (off_chord(Path, control2) < kOffChord)
 	{
 		auto const third{glm::normalize(control1) * (length / 3.0)};
 		if (Undo && std::abs(glm::length(control1) - (length / 3.0 + kBentOff)) < 0.005 && TTrack::straightened(start, third, end))
@@ -823,7 +840,7 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
 		bool const bent{drawn_bent(path)};
-		auto const was{control};
+		auto const wasoff{off_chord(path, path.points[segment_data::point::control2])};
 		auto const fixed{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::end : segment_data::point::start]};
 		auto const before{plan_of(path.points[point_index(joint.theirs.kind)] - fixed)};
 		auto const target{point_position(Track, joint.own)};
@@ -838,9 +855,9 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		}
 		auto const moved{turned(plan_of(joint.control), angle)};
 		control = {moved.x, joint.control.y, moved.y};
-		// a path drawn bent, or its second vector turned with the track it follows, is kept bent; a neighbour whose second vector is
-		// written back as it was isn't touched
-		if (bent || (joint.theirs.kind == point_kind::end && glm::distance(control, was) > 1e-6))
+		// a path drawn bent is kept bent, and so is one drawn straight whose second vector the turn took off the chord; a neighbour
+		// whose second vector was off the chord already is left as the simulator draws it
+		if (bent || (joint.theirs.kind == point_kind::end && took_off_chord(wasoff, path)))
 			keep_bent(*joint.other, path, false);
 	}
 }
@@ -856,10 +873,10 @@ void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &J
 		auto &path{joint.other->m_paths[joint.theirs.path]};
 		bool const bent{drawn_bent(path)};
 		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
-		auto const was{control};
+		auto const wasoff{off_chord(path, path.points[segment_data::point::control2])};
 		control.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control));
-		// as in follow: only where the second vector took another grade
-		if (bent || (joint.theirs.kind == point_kind::end && glm::distance(control, was) > 1e-6))
+		// as in follow: a path drawn straight only where the grade took its second vector off the chord
+		if (bent || (joint.theirs.kind == point_kind::end && took_off_chord(wasoff, path)))
 			keep_bent(*joint.other, path, false);
 	}
 }
