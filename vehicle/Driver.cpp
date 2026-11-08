@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/MemCell.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
+#include "simulation/simulationtest.h"
 #include "world/Track.h"
 #include "world/station.h"
 #include "input/keyboardinput.h"
@@ -767,6 +768,7 @@ void TController::TableCheck(double fDistance)
         { // aktualizacja rekordów z wyjątkiem ostatniego
             if (sSpeedTable[i].iFlags & spEnabled) // jeśli pozycja istotna
             {
+                auto const passedbefore { TestFlag( sSpeedTable[ i ].iFlags, spElapsed ) };
                 if (sSpeedTable[i].Update())
                 {
                     if( Global.iWriteLogEnabled & 8 ) {
@@ -793,6 +795,8 @@ void TController::TableCheck(double fDistance)
                     // nie kontynuujemy pętli, trzeba doskanować ciąg dalszy
                     break;
                 }
+                // a switch is a track, the update of a signal never ends the loop above
+                CheckSignalPassedAtDanger( sSpeedTable[ i ], passedbefore );
                 if (sSpeedTable[i].iFlags & spTrack) // jeśli odcinek
                 {
                     if( sSpeedTable[ i ].fDist + sSpeedTable[ i ].trTrack->Length() < -fLength ) // a skład wyjechał całą długością poza
@@ -816,7 +820,10 @@ void TController::TableCheck(double fDistance)
 				}
             }
         }
+        auto const lastpassedbefore { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
         sSpeedTable[iLast].Update(); // aktualizacja ostatniego
+        // a signal at stop often is the last, the scan doesn't go past it
+        CheckSignalPassedAtDanger( sSpeedTable[ iLast ], lastpassedbefore );
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
             TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
@@ -826,6 +833,30 @@ void TController::TableCheck(double fDistance)
         TablePurger();
     }
 };
+
+namespace {
+
+// the position is a signal showing stop (SetVelocity 0 0). SetVelocity 0 x on automatic block isn't: it may be passed after a stop
+bool is_signal_at_stop( TSpeedPos const &Point )
+{
+    return TestFlag( Point.iFlags, spEvent )
+        && TestFlag( Point.iFlags, spSemaphor )
+        && false == TestFlag( Point.iFlags, spStopOnSBL )
+        && std::abs( Point.fVelNext ) <= 0.0
+        && Point.evEvent != nullptr;
+}
+
+} // namespace
+
+void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point, bool const Passedbefore ) const
+{
+    if( false == Passedbefore
+     && TestFlag( Point.iFlags, spElapsed )
+     && is_signal_at_stop( Point )
+     && ( mvOccupied->CategoryFlag & 1 ) != 0 ) { // railway only
+        simulation::test().signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
+    }
+}
 
 auto const passengerstopmaxdistance { 400.0 }; // maximum allowed distance between passenger stop point and consist head
 
@@ -1928,7 +1959,8 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
             << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
             << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
             << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
+            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+            << "VehicleVelocity[km/h]"
             << "\r\n";
         LogFile << std::fixed << std::setprecision( 4 );
 #endif
@@ -4885,7 +4917,9 @@ void TController::PhysicsLog()
             << mvControlling->dizel_heat.Ts << " "
             << mvControlling->dizel_heat.To << " "
             << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2
+            << mvControlling->dizel_heat.temperatura2 << " "
+            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+            << mvOccupied->V * 3.6
             << "\r\n";
 #endif
 #if LOGPRESS == 1

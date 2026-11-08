@@ -160,6 +160,7 @@ set(SOURCES
 "world/station.cpp"
 "application/application.cpp"
 "simulation/simulationtime.cpp"
+"simulation/simulationtest.cpp"
 "scene/sceneeditor.cpp"
 "rendering/screenshot.cpp"
 "input/driverkeyboardinput.cpp"
@@ -453,7 +454,7 @@ endif()
 add_library(eu07_settings INTERFACE)
 
 # the parts of the simulation the game shares with the unit tests: the vehicle physics, the vehicle
-# definition parser and the helpers they use. built once, and tested as the game uses them
+# definition parser, the helpers they use and the rules of the test mode. built once, and tested as the game uses them
 set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
@@ -462,6 +463,7 @@ set(CORE_SOURCES
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
+"simulation/simulationtestrules.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
