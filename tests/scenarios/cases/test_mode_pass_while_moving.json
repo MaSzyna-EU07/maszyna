@@ -1,0 +1,28 @@
+{
+  "description": "Test mode, pass without waiting for a stop: like test_mode_pass, but event2 of the track in front of the exit signal reports the pass as the train runs onto it, and with test.no_movement_before_pass no the test ends at once, the train still moving.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_red_signal_pass.scn",
+  "track_events": {
+    "tor1k": "event2 test_pass"
+  },
+  "test_config": [
+    "test.no_movement_before_pass no"
+  ],
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "expect": "pass",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 5,
+      "within": 150
+    },
+    {
+      "type": "ends_moving",
+      "min_speed": 3
+    }
+  ]
+}
