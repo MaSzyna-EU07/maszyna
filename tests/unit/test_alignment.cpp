@@ -61,9 +61,9 @@ std::vector<glm::dvec2> traced(alignment::result const &Line, double const Spaci
 		glm::dvec2 const across{-station.direction.z, station.direction.x};
 		return glm::dvec2{station.position.x, station.position.z} + glm::normalize(across) * Shift;
 	};
-	int count{0};
-	for (auto chainage{std::max(0.0, from - 30.0)}; chainage <= to; chainage += Spacing, ++count)
-		points.push_back(along(chainage, Noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
+	auto const first{std::max(0.0, from - 30.0)};
+	for (int count = 0; first + count * Spacing <= to; ++count)
+		points.push_back(along(first + count * Spacing, Noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
 	points.push_back(along(to + 30.0, Noise * 0.5));
 	points.push_back(along(to + 60.0, -Noise * 0.5));
 	return points;
@@ -768,7 +768,7 @@ TEST_CASE("alignment: a curve laid into a curved free end ends at it with its cu
 }
 
 TEST_CASE("alignment: the pieces of a compound curve are never of no length, whatever its arcs and transitions") {
-	std::mt19937 random{20261025};
+	std::mt19937 random{20261025}; // NOSONAR: seeded on purpose, so that the test draws the same curves each run; nothing secret is drawn
 	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>(Low, High)(random); };
 	auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>(0, Count - 1)(random); };
 	int bad{0}, valid{0};

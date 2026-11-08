@@ -2884,8 +2884,11 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 			// breaks the grade over them
 			Draw.PushClipRect(ImVec2(left, plottop), ImVec2(right, plotbottom), true);
 			auto const height{plotbottom - plottop};
-			for (auto x = left - height; x < right; x += 8.0f)
+			for (int k = 0; left - height + 8.0f * static_cast<float>(k) < right; ++k)
+			{
+				auto const x{left - height + 8.0f * static_cast<float>(k)};
 				Draw.AddLine(ImVec2(x, plotbottom), ImVec2(x + height, plottop), kShared, 1.5f);
+			}
 			Draw.PopClipRect();
 			Draw.AddLine(ImVec2(left, plottop), ImVec2(left, plotbottom), kSharedEdge, 1.0f);
 			Draw.AddLine(ImVec2(right, plottop), ImVec2(right, plotbottom), kSharedEdge, 1.0f);

@@ -432,7 +432,7 @@ public:
     // prepares event for use
     void init() override;
     // the animation it set brought to its end at once, for the editor which shows it with the time stopped
-    void finish();
+    void finish() const;
 
 private:
 // methods

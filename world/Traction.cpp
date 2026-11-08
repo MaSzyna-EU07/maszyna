@@ -611,7 +611,7 @@ TTraction::wire_color() const {
 
 // radius() subclass details, calculates node's bounding radius
 float
-TTraction::radius_() {
+TTraction::radius_() const {
 
     auto const points { endpoints() };
     auto radius { 0.f };

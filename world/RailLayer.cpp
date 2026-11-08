@@ -75,7 +75,8 @@ bool thin_corner( std::vector<glm::dvec2> const &Polygon, std::vector<std::size_
 // the first corner of no width of what's left of the outline taken out of it; false: there's none
 bool prune_thin( std::vector<glm::dvec2> const &Polygon, std::vector<std::size_t> &Remaining ) {
 
-    for( std::size_t j = 0; j < Remaining.size(); ++j ) {
+    auto const count { Remaining.size() };
+    for( std::size_t j = 0; j < count; ++j ) {
         if( thin_corner( Polygon, Remaining, j ) ) {
             Remaining.erase( Remaining.begin() + j );
             return true;
@@ -87,16 +88,10 @@ bool prune_thin( std::vector<glm::dvec2> const &Polygon, std::vector<std::size_t
 // a corner of what's left of the outline, but those at A, B and C, lies within the ear of them
 bool corner_within( std::vector<glm::dvec2> const &Polygon, std::vector<std::size_t> const &Remaining, glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C, double const Orientation ) {
 
-    for( auto const k : Remaining ) {
-        auto const &p { Polygon[ k ] };
-        if( p == A || p == B || p == C ) {
-            continue;
-        }
-        if( corner_cross( A, B, p ) * Orientation > 1e-12 && corner_cross( B, C, p ) * Orientation > 1e-12 && corner_cross( C, A, p ) * Orientation > 1e-12 ) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of( Remaining, [ &Polygon, &A, &B, &C, Orientation ]( std::size_t const K ) {
+        auto const &p { Polygon[ K ] };
+        return p != A && p != B && p != C
+            && corner_cross( A, B, p ) * Orientation > 1e-12 && corner_cross( B, C, p ) * Orientation > 1e-12 && corner_cross( C, A, p ) * Orientation > 1e-12; } );
 }
 
 // how the side of the outline from P to Q winds around the point: 1 going up past it with it on the left, -1 going down past it with it on the right
@@ -175,10 +170,12 @@ std::vector<std::array<std::size_t, 3>> ear_clip( std::vector<glm::dvec2> const 
         if( ear == remaining.size() ) {
             ear = 0;
         }
-        triangles.emplace_back( std::array { remaining[ ( ear + remaining.size() - 1 ) % remaining.size() ], remaining[ ear ], remaining[ ( ear + 1 ) % remaining.size() ] } );
+        std::array const corners { remaining[ ( ear + remaining.size() - 1 ) % remaining.size() ], remaining[ ear ], remaining[ ( ear + 1 ) % remaining.size() ] };
+        triangles.push_back( corners );
         remaining.erase( remaining.begin() + ear );
     }
-    triangles.emplace_back( std::array { remaining[ 0 ], remaining[ 1 ], remaining[ 2 ] } );
+    std::array const closing { remaining[ 0 ], remaining[ 1 ], remaining[ 2 ] };
+    triangles.push_back( closing );
     return triangles;
 }
 
@@ -378,7 +375,7 @@ float top_spread( gfx::vertex_array const &Outline, float const Highest ) {
 
 } // namespace
 
-TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &Bank ) {
+TTrack::rail_drawing TTrack::make_rail_drawing( gfx::geometrybank_handle const &Bank ) const {
 
     auto const sides = [ this ]( gfx::vertex_array const &Shape, std::array<gfx::vertex_array, 2> &Sides ) {
         create_track_rail_profile( Sides[ 0 ], Sides[ 1 ], &Shape );
@@ -738,6 +735,137 @@ void level_floor( gfx::vertex_array &Body, groove_floor const &Floor ) {
     }
 }
 
+// the profile of a grooved rail split by the floor of its groove: the body below it, the tops of the head and of the lip above it with
+// their flats laid over blocks, by the outline of the rail on the side Side
+class groove_splitter {
+
+public:
+// constructors
+    groove_splitter( gfx::vertex_array const &Profile, track_rails::rail_size const &Size, float const Platetexture, int const Side ) :
+        m_profile { Profile },
+        m_size { Size },
+        m_platetexture { Platetexture },
+        m_side { Side }
+    {}
+// methods
+    grooved_profile split_grooved( gfx::vertex_array const &Outline ) const;
+
+private:
+// methods
+    void groove_ridge( gfx::vertex_array const &Outline, std::size_t const First, std::size_t const Last, grooved_profile &Result, std::vector<std::size_t> &Floors ) const;
+    double groove_height( gfx::vertex_array const &Outline, std::size_t const Index ) const;
+    bool above_groove( gfx::vertex_array const &Outline, std::size_t const Index ) const;
+    gfx::basic_vertex floor_point( gfx::vertex_array const &Outline, std::size_t const A, std::size_t const B ) const;
+    gfx::basic_vertex flattened( gfx::vertex_array const &Outline, std::size_t const Index ) const;
+// members
+    gfx::vertex_array const &m_profile;
+    track_rails::rail_size const &m_size;
+    float const m_platetexture;
+    int const m_side;
+};
+
+grooved_profile groove_splitter::split_grooved( gfx::vertex_array const &Outline ) const {
+
+    auto const count { m_profile.size() };
+    grooved_profile result;
+    groove_floor floors;
+    std::size_t i { 0 };
+    while( i < count ) {
+        if( above_groove( Outline, i ) ) {
+            auto const first { i };
+            while( i + 1 < count && above_groove( Outline, i + 1 ) ) {
+                ++i;
+            }
+            groove_ridge( Outline, first, i, result, floors.points );
+        }
+        else {
+            if( groove_height( Outline, i ) > -1e-4 ) {
+                floors.points.push_back( result.body.size() );
+                floors.texture += m_profile[ i ].texture.x;
+                ++floors.count;
+            }
+            result.body.push_back( m_profile[ i ] );
+        }
+        ++i;
+    }
+    level_floor( result.body, floors );
+    result.wallu = ( floors.count > 0 ? floors.texture / static_cast<float>( floors.count ) : -1.f );
+    return result;
+}
+
+// the points First to Last of the profile above the floor of the groove as a top of the head or the lip and its flat, ending on the floor where the profile goes below it
+void groove_splitter::groove_ridge( gfx::vertex_array const &Outline, std::size_t const First, std::size_t const Last, grooved_profile &Result, std::vector<std::size_t> &Floors ) const {
+
+    auto &body { Result.body };
+    gfx::vertex_array top;
+    gfx::vertex_array flat;
+    if( First > 0 ) {
+        if( groove_height( Outline, First - 1 ) > -1e-4 ) {
+            top.push_back( m_profile[ First - 1 ] );
+            flat.push_back( flattened( Outline, First - 1 ) );
+        }
+        else {
+            top.push_back( floor_point( Outline, First - 1, First ) );
+            flat.push_back( top.back() );
+            body.push_back( top.back() );
+            Floors.push_back( body.size() );
+            body.push_back( top.back() );
+        }
+    }
+    for( auto k { First }; k <= Last; ++k ) {
+        top.push_back( m_profile[ k ] );
+        flat.push_back( flattened( Outline, k ) );
+    }
+    if( Last + 1 < m_profile.size() ) {
+        if( groove_height( Outline, Last + 1 ) > -1e-4 ) {
+            top.push_back( m_profile[ Last + 1 ] );
+            flat.push_back( flattened( Outline, Last + 1 ) );
+        }
+        else {
+            top.push_back( floor_point( Outline, Last, Last + 1 ) );
+            flat.push_back( top.back() );
+            Floors.push_back( body.size() );
+            body.push_back( top.back() );
+            body.push_back( top.back() );
+        }
+    }
+    Result.tops.push_back( doubled_strip( top ) );
+    Result.flats.push_back( doubled_strip( flat ) );
+}
+
+// how far the point Index of the profile lies above the floor of the groove, by the outline of the rail
+double groove_splitter::groove_height( gfx::vertex_array const &Outline, std::size_t const Index ) const {
+
+    return static_cast<double>( Outline[ m_side > 0 ? Index : m_profile.size() - 1 - Index ].position.y ) - m_size.groove;
+}
+
+// the point Index of the profile lies above the floor of the groove
+bool groove_splitter::above_groove( gfx::vertex_array const &Outline, std::size_t const Index ) const {
+
+    return groove_height( Outline, Index ) > 1e-4;
+}
+
+// the point on the floor of the groove between the points A and B of the profile
+gfx::basic_vertex groove_splitter::floor_point( gfx::vertex_array const &Outline, std::size_t const A, std::size_t const B ) const {
+
+    auto const t { static_cast<float>( groove_height( Outline, A ) / ( groove_height( Outline, A ) - groove_height( Outline, B ) ) ) };
+    auto point { m_profile[ above_groove( Outline, A ) ? A : B ] };
+    point.position = glm::mix( m_profile[ A ].position, m_profile[ B ].position, t );
+    point.texture = glm::mix( m_profile[ A ].texture, m_profile[ B ].texture, t );
+    return point;
+}
+
+// the point Index of the profile as it's laid over a block: on top of the head or of the lip, facing up in the texture of the plates
+gfx::basic_vertex groove_splitter::flattened( gfx::vertex_array const &Outline, std::size_t const Index ) const {
+
+    auto point { m_profile[ Index ] };
+    if( auto const &file { Outline[ m_side > 0 ? Index : m_profile.size() - 1 - Index ].position }; file.y > m_size.crest - 0.0005 || ( file.x < -0.02 && file.y > m_size.liptop - 0.0005 ) ) {
+        point.normal = { 0.f, 1.f, 0.f };
+        point.texture.x = m_platetexture;
+    }
+    return point;
+}
+
 // where the polish of the rail's own wheels, reaching to Rolled, meets that of the wheels beside, reaching to Worn: halfway, or past the overlap of the brighter
 double polish_meeting( double const Rolled, double const Worn, bool const Same, bool const Theirsbrighter ) {
 
@@ -815,12 +943,6 @@ private:
     material_handle brighter( material_handle const A, material_handle const B ) const;
     void lay_grooved( gfx::vertex_array const &Outline );
     std::vector<rail_tread> block_treads( knots::line const &Blocks ) const;
-    grooved_profile split_grooved( gfx::vertex_array const &Outline ) const;
-    void groove_ridge( gfx::vertex_array const &Outline, std::size_t const First, std::size_t const Last, grooved_profile &Result, std::vector<std::size_t> &Floors ) const;
-    double groove_height( gfx::vertex_array const &Outline, std::size_t const Index ) const;
-    bool above_groove( gfx::vertex_array const &Outline, std::size_t const Index ) const;
-    gfx::basic_vertex floor_point( gfx::vertex_array const &Outline, std::size_t const A, std::size_t const B ) const;
-    gfx::basic_vertex flattened( gfx::vertex_array const &Outline, std::size_t const Index ) const;
     std::vector<rail_cut> top_cuts( gfx::vertex_array const &Top ) const;
     double top_edge( gfx::vertex_array const &Top, bool const Head ) const;
     void running( rail_piece const &Whole, knots::line const &Rolled, knots::line const &Worn, material_handle const Wornby, piece_ends const &Ends );
@@ -1139,7 +1261,7 @@ material_handle TTrack::rail_layer::brighter( material_handle const A, material_
 
 void TTrack::rail_layer::lay_grooved( gfx::vertex_array const &Outline ) {
 
-    auto const grooved { split_grooved( Outline ) };
+    auto const grooved { groove_splitter { m_profile, m_drawing.size, m_drawing.platetexture, m_side }.split_grooved( Outline ) };
     auto const &bands { ours( m_layout.bands ) };
     auto wholecuts { ours( m_layout.plans ).cuts };
     auto const bodyreach { reaches( grooved.body ) };
@@ -1178,108 +1300,6 @@ std::vector<rail_tread> TTrack::rail_layer::block_treads( knots::line const &Blo
         }
     }
     return blocktreads;
-}
-
-grooved_profile TTrack::rail_layer::split_grooved( gfx::vertex_array const &Outline ) const {
-
-    auto const count { m_profile.size() };
-    grooved_profile result;
-    groove_floor floors;
-    std::size_t i { 0 };
-    while( i < count ) {
-        if( above_groove( Outline, i ) ) {
-            auto const first { i };
-            while( i + 1 < count && above_groove( Outline, i + 1 ) ) {
-                ++i;
-            }
-            groove_ridge( Outline, first, i, result, floors.points );
-        }
-        else {
-            if( groove_height( Outline, i ) > -1e-4 ) {
-                floors.points.push_back( result.body.size() );
-                floors.texture += m_profile[ i ].texture.x;
-                ++floors.count;
-            }
-            result.body.push_back( m_profile[ i ] );
-        }
-        ++i;
-    }
-    level_floor( result.body, floors );
-    result.wallu = ( floors.count > 0 ? floors.texture / static_cast<float>( floors.count ) : -1.f );
-    return result;
-}
-
-// the points First to Last of the profile above the floor of the groove as a top of the head or the lip and its flat, ending on the floor where the profile goes below it
-void TTrack::rail_layer::groove_ridge( gfx::vertex_array const &Outline, std::size_t const First, std::size_t const Last, grooved_profile &Result, std::vector<std::size_t> &Floors ) const {
-
-    auto &body { Result.body };
-    gfx::vertex_array top;
-    gfx::vertex_array flat;
-    if( First > 0 ) {
-        if( groove_height( Outline, First - 1 ) > -1e-4 ) {
-            top.push_back( m_profile[ First - 1 ] );
-            flat.push_back( flattened( Outline, First - 1 ) );
-        }
-        else {
-            top.push_back( floor_point( Outline, First - 1, First ) );
-            flat.push_back( top.back() );
-            body.push_back( top.back() );
-            Floors.push_back( body.size() );
-            body.push_back( top.back() );
-        }
-    }
-    for( auto k { First }; k <= Last; ++k ) {
-        top.push_back( m_profile[ k ] );
-        flat.push_back( flattened( Outline, k ) );
-    }
-    if( Last + 1 < m_profile.size() ) {
-        if( groove_height( Outline, Last + 1 ) > -1e-4 ) {
-            top.push_back( m_profile[ Last + 1 ] );
-            flat.push_back( flattened( Outline, Last + 1 ) );
-        }
-        else {
-            top.push_back( floor_point( Outline, Last, Last + 1 ) );
-            flat.push_back( top.back() );
-            Floors.push_back( body.size() );
-            body.push_back( top.back() );
-            body.push_back( top.back() );
-        }
-    }
-    Result.tops.push_back( doubled_strip( top ) );
-    Result.flats.push_back( doubled_strip( flat ) );
-}
-
-// how far the point Index of the profile lies above the floor of the groove, by the outline of the rail
-double TTrack::rail_layer::groove_height( gfx::vertex_array const &Outline, std::size_t const Index ) const {
-
-    return static_cast<double>( Outline[ m_side > 0 ? Index : m_profile.size() - 1 - Index ].position.y ) - m_drawing.size.groove;
-}
-
-// the point Index of the profile lies above the floor of the groove
-bool TTrack::rail_layer::above_groove( gfx::vertex_array const &Outline, std::size_t const Index ) const {
-
-    return groove_height( Outline, Index ) > 1e-4;
-}
-
-// the point on the floor of the groove between the points A and B of the profile
-gfx::basic_vertex TTrack::rail_layer::floor_point( gfx::vertex_array const &Outline, std::size_t const A, std::size_t const B ) const {
-
-    auto const t { static_cast<float>( groove_height( Outline, A ) / ( groove_height( Outline, A ) - groove_height( Outline, B ) ) ) };
-    auto point { m_profile[ above_groove( Outline, A ) ? A : B ] };
-    point.position = glm::mix( m_profile[ A ].position, m_profile[ B ].position, t );
-    point.texture = glm::mix( m_profile[ A ].texture, m_profile[ B ].texture, t );
-    return point;
-}
-
-// the point Index of the profile as it's laid over a block: on top of the head or of the lip, facing up in the texture of the plates
-gfx::basic_vertex TTrack::rail_layer::flattened( gfx::vertex_array const &Outline, std::size_t const Index ) const {
-
-    auto point { m_profile[ Index ] };
-    if( auto const &file { Outline[ m_side > 0 ? Index : m_profile.size() - 1 - Index ].position }; file.y > m_drawing.size.crest - 0.0005 || ( file.x < -0.02 && file.y > m_drawing.size.liptop - 0.0005 ) ) {
-        point.normal = { 0.f, 1.f, 0.f };
-        point.texture.x = m_drawing.platetexture;
-    }
-    return point;
 }
 
 std::vector<rail_cut> TTrack::rail_layer::top_cuts( gfx::vertex_array const &Top ) const {

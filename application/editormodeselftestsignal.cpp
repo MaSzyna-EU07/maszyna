@@ -34,6 +34,8 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <array>
+#include <ranges>
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -58,25 +60,25 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		show_track_tab(track_tab::srk);
 		signal_scan(true);
 		auto &tool{m_signal};
-		static char const *const kinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
+		static std::array<char const *, 7> constexpr kinds{"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
 		for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 		{
 			auto const &item{tool.templates[k]};
-			std::string aspects, repeats;
-			for (auto const &[name, event] : item.aspect_events)
-				aspects += (aspects.empty() ? "" : " ") + name + "=" + event;
-			for (auto const &[speed, event] : item.repeats)
-				repeats += (repeats.empty() ? "" : " ") + speed + "=" + event;
+			std::string aspects;
+			std::string repeats;
+			for (auto const &[name, called] : item.aspect_events)
+				aspects += (aspects.empty() ? "" : " ") + name + "=" + called;
+			for (auto const &[speed, called] : item.repeats)
+				repeats += (repeats.empty() ? "" : " ") + speed + "=" + called;
 			if (item.arms > 0 || false == item.aspect_events.empty() || false == item.repeats.empty() || values["all"] == "1")
 				WriteLog(format("SELFTEST signaltemplates %s: %s %s lamps=%s arms=%d aspects=[%s] repeats=[%s] linked=%d read=%s", item.file.c_str(), item.kind.c_str(), item.mount.c_str(), item.lamps.empty() ? "-" : item.lamps.c_str(), item.arms, aspects.c_str(), repeats.c_str(), item.linked ? 1 : 0,
 				                item.read.empty() ? "-" : item.read.c_str()));
-			if (values.count("file") && item.file == values["file"])
-				for (int i = 0; i < 7; ++i)
-					if (item.kind == kinds[i])
-					{
-						tool.kind = i;
-						tool.chosen[i] = k;
-					}
+			// the template named chosen for its kind
+			if (auto const kind{std::ranges::find_if(kinds, [&item](char const *Kind) { return item.kind == Kind; })}; values.contains("file") && item.file == values["file"] && kind != kinds.end())
+			{
+				tool.kind = static_cast<int>(kind - kinds.begin());
+				tool.chosen[tool.kind] = k;
+			}
 		}
 		std::vector<signal_head> heads;
 		signal_heads(heads, true);
@@ -87,7 +89,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		WriteLog(format("SELFTEST signaltemplates: %zu templates, %zu for the signalling, of them by arms or repeats:", tool.templates.size(), heads.size()) + known);
 		// what the signalling places of each kind, with no template asked for
 		std::string placed;
-		for (int i = 0; i < 7; ++i)
+		for (int i = 0; i < static_cast<int>(kinds.size()); ++i)
 		{
 			signal_order order;
 			order.kind = kinds[i];
@@ -105,21 +107,24 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		show_track_tab(track_tab::srk);
 		signal_scan(true);
 		signal_refresh(true);
-		auto const found{std::find_if(m_signal.standing.begin(), m_signal.standing.end(), [&](signal_standing const &Standing) { return Standing.name == values["name"]; })};
+		auto const found{std::ranges::find_if(m_signal.standing, [&values](signal_standing const &Standing) { return Standing.name == values["name"]; })};
 		auto const *item{found != m_signal.standing.end() ? signal_template_of(found->include.file) : nullptr};
-		std::pair<std::string, std::string> const *event{nullptr};
+		// of the aspects of the same name the last one, as the description lists them
+		std::pair<std::string, std::string> const *aspect_event{nullptr};
 		if (item != nullptr)
-			for (auto const &aspect : item->aspect_events)
-				if (aspect.first == values["aspect"])
-					event = &aspect;
-		if (event == nullptr)
+		{
+			auto const backwards{item->aspect_events | std::views::reverse};
+			if (auto const named{std::ranges::find_if(backwards, [&values](auto const &Aspect) { return Aspect.first == values["aspect"]; })}; named != backwards.end())
+				aspect_event = &*named;
+		}
+		if (aspect_event == nullptr)
 		{
 			WriteLog("SELFTEST signalaspect: no signal " + values["name"] + " with the aspect " + values["aspect"]);
 			return selftest_result::handled;
 		}
 		signal_select(found->include.instance);
 		select_include(found->include.instance);
-		auto const shown{signal_show_aspect(found->include.instance, event->first, event->second)};
+		auto const shown{signal_show_aspect(found->include.instance, aspect_event->first, aspect_event->second)};
 		WriteLog(std::string{"SELFTEST signalaspect "} + values["name"] + " " + values["aspect"] + (shown ? ": " : ": failed, ") + m_signal.status);
 		return selftest_result::handled;
 	}

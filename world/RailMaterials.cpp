@@ -103,8 +103,15 @@ void sample_dds( std::string const &File, glm::vec2 const &Band, colour_mean &Me
     auto const wide { ( width + 3 ) / 4 };
     auto const high { ( height + 3 ) / 4 };
     std::vector<std::byte> data( static_cast<std::size_t>( wide ) * high * blocksize );
-    if( !input.read( reinterpret_cast<char *>( data.data() ), data.size() ) ) {
-        return;
+    // the blocks of the top level of the texture, taken byte by byte off the file
+    std::istreambuf_iterator<char> source { input };
+    std::istreambuf_iterator<char> const end;
+    for( auto &byte : data ) {
+        if( source == end ) {
+            return;
+        }
+        byte = static_cast<std::byte>( *source );
+        ++source;
     }
     auto const [ first, last ] { band_columns( Band, width ) };
     for( int row = 0; row < high; ++row ) {

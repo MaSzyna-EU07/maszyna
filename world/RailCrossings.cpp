@@ -272,17 +272,22 @@ TTrack *path_neighbour( TTrack const &Track, int const Path, int const End ) {
 
 namespace {
 
+// a rail of a path of a track, looked at from a distance along it up to its length; const for the track whose crossings are looked for,
+// as the crossings found name only the track they cross
+template <typename Track_>
 struct rail_run {
-    TTrack *track { nullptr };
+    Track_ *track { nullptr };
     int path { 0 };
     int side { 0 };
     gauge_line const *line { nullptr };
     double from { 0.0 };
     double length { 0.0 };
 };
+using our_run = rail_run<TTrack const>;
+using their_run = rail_run<TTrack>;
 
 // the tracks with rails of a cell around the track, each added once: the ones whose rails are cut, or with Whole all of them
-void add_cell_rails( TTrack &Track, scene::basic_cell const &Cell, bool const Whole, std::vector<TTrack *> &Others ) {
+void add_cell_rails( TTrack const &Track, scene::basic_cell const &Cell, bool const Whole, std::vector<TTrack *> &Others ) {
 
     for( auto *other : Cell.m_directories.paths ) {
         if( other == nullptr || other == &Track || false == ( Whole ? railed( *other ) : cut_rails( *other ) ) ) {
@@ -298,7 +303,7 @@ void add_cell_rails( TTrack &Track, scene::basic_cell const &Cell, bool const Wh
 }
 
 // the tracks with rails around the track: the ones whose rails are cut, or with Whole all of them
-std::vector<TTrack *> nearby_rails( TTrack &Track, bool const Whole = false ) {
+std::vector<TTrack *> nearby_rails( TTrack const &Track, bool const Whole = false ) {
 
     std::vector<TTrack *> others;
     // a list of its own, not the one the region shares
@@ -360,7 +365,7 @@ void refine_meeting( gauge_line const &Ours, gauge_line const &Theirs, double &S
     }
 }
 
-rail_crossing make_crossing( rail_run const &Ours, rail_run const &Theirs, double const S, double const T, glm::dvec2 const &Tangent, glm::dvec2 const &Othertangent, double const Angle ) {
+rail_crossing make_crossing( our_run const &Ours, their_run const &Theirs, double const S, double const T, glm::dvec2 const &Tangent, glm::dvec2 const &Othertangent, double const Angle ) {
 
     auto const normal { glm::normalize( plan( Ours.line->normal( S, Ours.side ) ) ) };
     auto const othernormal { glm::normalize( plan( Theirs.line->normal( T, Theirs.side ) ) ) };
@@ -392,7 +397,7 @@ struct gauge_piece {
 };
 
 // where a piece of our rail crosses the piece of their rail ending at their point J, added unless a crossing is found there already
-void meet_pieces( rail_run const &Ours, rail_run const &Theirs, gauge_piece const &Piece, std::size_t const J, std::vector<rail_crossing> &Result ) {
+void meet_pieces( our_run const &Ours, their_run const &Theirs, gauge_piece const &Piece, std::size_t const J, std::vector<rail_crossing> &Result ) {
 
     auto const &line { *Ours.line };
     auto const &theirs { *Theirs.line };
@@ -443,7 +448,7 @@ void meet_pieces( rail_run const &Ours, rail_run const &Theirs, gauge_piece cons
     Result.push_back( make_crossing( Ours, Theirs, s, t, tangent, othertangent, angle ) );
 }
 
-void meet_rails( rail_run const &Ours, rail_run const &Theirs, std::vector<rail_crossing> &Result ) {
+void meet_rails( our_run const &Ours, their_run const &Theirs, std::vector<rail_crossing> &Result ) {
 
     auto const &line { *Ours.line };
     auto const &theirs { *Theirs.line };
@@ -466,7 +471,7 @@ void meet_rails( rail_run const &Ours, rail_run const &Theirs, std::vector<rail_
 }
 
 // the crossings of the rails of the track with a rail of another one
-void meet_track( TTrack &Track, rail_run const &Theirs, std::vector<rail_crossing> &Result ) {
+void meet_track( TTrack const &Track, their_run const &Theirs, std::vector<rail_crossing> &Result ) {
 
     for( int path = 0; path < path_count( Track ); ++path ) {
         auto const length { path_segment( Track, path ).GetLength() };
@@ -476,12 +481,12 @@ void meet_track( TTrack &Track, rail_run const &Theirs, std::vector<rail_crossin
     }
 }
 
-std::vector<rail_crossing> own_crossings( TTrack &Track ) {
+std::vector<rail_crossing> own_crossings( TTrack const &Track ) {
 
     std::vector<rail_crossing> result;
     for( auto *other : nearby_rails( Track ) ) {
         for( int otherpath = 0; otherpath < path_count( *other ); ++otherpath ) {
-            rail_run theirs { other, otherpath };
+            their_run theirs { other, otherpath };
             theirs.from = ( other->eType == tt_Switch ? blade_length( *other, otherpath ) : 0.0 );
             theirs.length = path_segment( *other, otherpath ).GetLength();
             for( int otherside = 0; otherside < 2; ++otherside ) {
@@ -501,16 +506,15 @@ std::vector<rail_crossing> own_crossings( TTrack &Track ) {
 // Whole: the rails of the tracks around taken whole too, where they aren't cut
 std::vector<rail_crossing> unbladed_crossings( TTrack const &Track, bool const Whole = false ) {
 
-    auto &track { const_cast<TTrack &>( Track ) };
     std::vector<rail_crossing> found;
-    for( auto *other : nearby_rails( track, Whole ) ) {
+    for( auto *other : nearby_rails( Track, Whole ) ) {
         for( int otherpath = 0; otherpath < path_count( *other ); ++otherpath ) {
-            rail_run theirs { other, otherpath };
+            their_run theirs { other, otherpath };
             theirs.length = path_segment( *other, otherpath ).GetLength();
             for( int otherside = 0; otherside < 2; ++otherside ) {
                 theirs.side = ( otherside ? 1 : -1 );
                 theirs.line = &rail_line( *other, otherpath, otherside, false );
-                meet_track( track, theirs, found );
+                meet_track( Track, theirs, found );
             }
         }
     }

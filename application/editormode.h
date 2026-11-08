@@ -261,7 +261,24 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_shortcuts_window();
 	bool m_shortcuts_open{false};
 	using first_step = editor_first_step;
+	// the tutorial: a window of lessons, each with a clip or a sketch, the mouse and the keys it teaches and the steps to try
+	struct tutorial_lesson;
+	static std::vector<tutorial_lesson> const &tutorial_lessons();
+	// a lesson is done once all its steps are
+	bool tutorial_done(tutorial_lesson const &Lesson) const;
 	void render_first_steps();
+	// the steps reached by what the editor is doing now
+	void note_first_steps();
+	// the lesson of the tool in use: the first of its lessons not done yet, or none
+	char const *tutorial_of_tool();
+	// the lesson the tool in use or a button of a panel asks for opened, and the clip of the lesson open loaded
+	void follow_tutorial();
+	void render_tutorial_media(tutorial_lesson const &Lesson, float const Width);
+	void render_tutorial_goals(tutorial_lesson const &Lesson);
+	// the button under a lesson, opening the tool it's about or switching the view
+	void render_tutorial_trial(tutorial_lesson const &Lesson);
+	// the buttons to the lesson before and after, and a dot for each lesson, green when it's done
+	void render_tutorial_pages();
 	void first_step_done(first_step const Step) override;
 	bool m_first_steps_open{false};
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
@@ -2699,6 +2716,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_signal_ui();
 	void render_signal_palette();
 	void render_signal_selected();
+	// of the signal selected: its template and another one for it, the aspects it can be set to; true when it got another one
+	bool render_signal_template(signal_standing const &Found, signal_template const &Item);
+	// the list of the templates the signal can take instead, Across those of another mount too: the file picked, empty for none
+	std::string signal_swap_combo(signal_template const &Item, bool const Across) const;
+	void render_signal_aspects(signal_standing const &Found, signal_template const &Item);
 	void draw_signal_overlay() const;
 	std::string signal_intent_label(signal_template const &Template, signal_spot const &Spot) const;
 	std::string signal_variant(signal_template const &Template, signal_spot const &Spot) const;

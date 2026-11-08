@@ -1787,7 +1787,7 @@ animation_event::run_() {
 }
 
 void
-animation_event::finish() {
+animation_event::finish() const {
 
     for (auto const &container : m_animationcontainers) {
         if (auto const target = container.lock()) {

@@ -329,10 +329,10 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 				from = std::min(from, e.chainage);
 				to = std::max(to, e.chainage + e.length);
 			}
-		int count{0};
-		for (auto chainage{std::max(0.0, from - 20.0)}; chainage <= std::min(result.length, to + 20.0); chainage += spacing, ++count)
+		auto const first{std::max(0.0, from - 20.0)};
+		for (int count = 0; first + count * spacing <= std::min(result.length, to + 20.0); ++count)
 		{
-			auto const station{alignment::evaluate(result, chainage)};
+			auto const station{alignment::evaluate(result, first + count * spacing)};
 			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
 			auto const shift{noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)};
 			m_route.trace.points.push_back(station.position + glm::normalize(across) * shift);
