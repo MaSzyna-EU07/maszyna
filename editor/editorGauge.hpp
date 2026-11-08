@@ -96,7 +96,7 @@ double widest(profile const &Profile);
 // 150 m, where the table ends, that of 150 m
 double curve_widening(double const Radius, bool const Inner);
 // widening of the gauge towards the centre of a curve on its cant, metres (the same table, bD = D Hi / 1500): the cars lean in,
-// the more the higher. Cant: the raise of the outer rail, Height: of the point of the outline over the rail top
+// the more the higher. Cant: the raise of one rail over the other, Height: of the point of the outline over the rail top
 double cant_widening(double const Cant, double const Height);
 
 } // namespace gauge

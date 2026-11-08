@@ -76,10 +76,14 @@ TEST_CASE("both tracks in curves under 250 m: the widenings of both are summed, 
 	CHECK(off == doctest::Approx(wanted).epsilon(0.003));
 }
 
-TEST_CASE("the cars of a track on a cant lean towards the other track lying on the inner side of its curve, at any radius") {
-	std::vector<double> const cant(200, 0.1);
+TEST_CASE("the cars of a track on a cant lean towards the other track when its lower rail is on that side, at any radius") {
+	// the curves of axis() turn to the right of the way they run, towards +x: the cant of a curve lowers its right rail,
+	// negative as widening_at takes it; positive the other way round
+	std::vector<double> const cant(200, -0.1);
+	std::vector<double> const against(200, 0.1);
 	auto const lean{0.1 * fouling::kLeanHeight / 1.5};
-	CHECK(gauge::cant_widening(0.1, fouling::kLeanHeight) == doctest::Approx(lean));
+	CHECK(fouling::kLeanHeight == doctest::Approx(3.25));
+	CHECK(gauge::cant_widening(-0.1, fouling::kLeanHeight) == doctest::Approx(lean));
 	fouling::place place;
 	// the branch inside the curve of the main track, on its inner side: the main track on the cant leans towards it
 	REQUIRE(fouling::find(axis(200.0), axis(180.0), fouling::kNominal, place, cant, {}));
@@ -89,8 +93,16 @@ TEST_CASE("the cars of a track on a cant lean towards the other track lying on t
 	REQUIRE(fouling::find(axis(0.0), axis(200.0), fouling::kNominal, place, {}, cant));
 	CHECK(place.spacing == doctest::Approx(3.5 + 60.0 / 200.0 - 0.225).epsilon(0.001));
 	CHECK(place.cant == doctest::Approx(0.0));
+	// a branch on a cant against its curve leans towards the main track on the outer side of the curve: the lean counts
+	REQUIRE(fouling::find(axis(0.0), axis(200.0), fouling::kNominal, place, {}, against));
+	CHECK(place.spacing == doctest::Approx(3.5 + 60.0 / 200.0 - 0.225 + lean).epsilon(0.001));
+	CHECK(place.cant == doctest::Approx(lean).epsilon(0.001));
 	// from 250 m up no widening from the radius, but the cars lean on the cant all the same
 	REQUIRE(fouling::find(axis(300.0), axis(260.0), fouling::kNominal, place, cant, {}));
+	CHECK(place.spacing == doctest::Approx(3.5 + lean).epsilon(0.001));
+	// and on the straight: a straight track on a cant leaning towards a straight branch
+	std::vector<double> const left(200, 0.1);
+	REQUIRE(fouling::find(axis(0.0), axis(0.0, -1.0 / 9.0), fouling::kNominal, place, left, {}));
 	CHECK(place.spacing == doctest::Approx(3.5 + lean).epsilon(0.001));
 }
 

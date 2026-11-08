@@ -57,7 +57,7 @@ double curve_widening(double const Radius, bool const Inner)
 
 double cant_widening(double const Cant, double const Height)
 {
-	return std::max(0.0, Cant) * Height / 1.5;
+	return std::abs(Cant) * Height / 1.5;
 }
 
 namespace

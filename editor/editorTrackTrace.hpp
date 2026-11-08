@@ -26,7 +26,7 @@ double constexpr kFoulingSpacing{3.5};
 
 // points along the track from the end of a path on, the way a train goes: through a switch along its main track
 std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit);
-// and Cant: the raise of the outer rail at each point, m
+// and Cant: the raise of one rail over the other at each point, m, positive with the cars leaning to the left of the way walked
 std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit, std::vector<double> &Cant);
 
 // the parameter of the point of a path nearest the point given in the plan

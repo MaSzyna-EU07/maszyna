@@ -90,12 +90,13 @@ void walk(TTrack &Track, int const Path, double const From, bool const Forward, 
 			Points.push_back(point);
 			Along.push_back(length);
 			Paths.emplace_back(track, path);
-			// the raise of the outer rail, from the roll of the path there, as the gauge of the editor takes it
+			// the raise of one rail over the other from the roll of the path there, as the gauge of the editor takes it: a roll
+			// above 0 lowers the left rail of the path, the cars lean to the left of it; turned to the way it's walked
 			if (Cant != nullptr)
 			{
 				auto const &rolls{track->m_paths[path].rolls};
 				auto const roll{static_cast<double>(rolls[0]) + static_cast<double>(rolls[1] - rolls[0]) * t};
-				Cant->push_back(1.5 * std::sin(std::abs(glm::radians(roll))));
+				Cant->push_back(1.5 * std::sin(glm::radians(roll)) * (forward ? 1.0 : -1.0));
 			}
 		}
 		auto const next{next_of(*track, Points.back())};

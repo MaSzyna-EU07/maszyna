@@ -112,9 +112,16 @@ double widening_at(std::vector<glm::dvec3> const &Line, std::size_t const Index,
 {
 	bool inner{false};
 	auto const radius{radius_at(Line, Index, Other, inner)};
-	if (radius <= 0.0)
-		return 0.0;
-	return gauge::curve_widening(radius, inner) + (inner ? gauge::cant_widening(Cant, kLeanHeight) : 0.0);
+	auto const curve{radius > 0.0 ? gauge::curve_widening(radius, inner) : 0.0};
+	if (Cant == 0.0 || Line.size() < 2 || Index >= Line.size())
+		return curve;
+	// the side of Other: across the way the line runs there, positive on its left, as the cars lean with a positive cant
+	auto const before{Index > 0 ? Index - 1 : Index};
+	auto const after{Index + 1 < Line.size() ? Index + 1 : Index};
+	auto const way{plan(Line[after]) - plan(Line[before])};
+	glm::dvec2 const left{-way.y, way.x};
+	auto const towards{glm::dot(plan(Other) - plan(Line[Index]), left) * Cant > 0.0};
+	return curve + (towards ? gauge::cant_widening(std::abs(Cant), kLeanHeight) : 0.0);
 }
 
 bool find(std::vector<glm::dvec3> const &Main, std::vector<glm::dvec3> const &Branch, double const Nominal, place &Place, std::vector<double> const &MainCant, std::vector<double> const &BranchCant)

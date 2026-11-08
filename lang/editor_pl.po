@@ -13770,5 +13770,5 @@ msgstr "Sygnalizatory / obiekty wzdłuż toru"
 msgid "the axes %.2f m apart there"
 msgstr "osie %.2f m od siebie"
 
-msgid "Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6),\nand the leaning of the cars on the cant towards a track on the inner side of the curve, taken 3.05 m up (Ie-1, bD)"
-msgstr "Nominalnie 3,50 m (Standardy techniczne PLK, tom II, 6.5). Gdy tor leży tam w łuku o promieniu poniżej 250 m,\nposzerzenie skrajni od promienia po stronie drugiego toru dolicza się samo, przy obu torach w łuku suma obu (6.6),\ni wychylenie wagonów na przechyłce w stronę toru po wewnętrznej stronie łuku, liczone 3,05 m nad główką szyny (Ie-1, bD)"
+msgid "Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6),\nand the leaning of the cars of a track on its cant towards the other one, taken 3.25 m up (Ie-1, bD)"
+msgstr "Nominalnie 3,50 m (Standardy techniczne PLK, tom II, 6.5). Gdy tor leży tam w łuku o promieniu poniżej 250 m,\nposzerzenie skrajni od promienia po stronie drugiego toru dolicza się samo, przy obu torach w łuku suma obu (6.6),\ni wychylenie wagonów toru na przechyłce w stronę drugiego toru, liczone 3,25 m nad główką szyny (Ie-1, bD)"
