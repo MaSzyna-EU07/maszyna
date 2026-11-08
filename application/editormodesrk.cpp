@@ -43,6 +43,12 @@ http://mozilla.org/MPL/2.0/.
 namespace
 {
 
+// the hint of an empty field, which mustn't read as a value typed in
+std::string example(char const *Text)
+{
+	return format(STR_C("e.g. %s"), Text);
+}
+
 char const *const kMark{"//$s"};
 double constexpr kOverlayRange{4000.0};
 double constexpr kJointRange{1500.0}; // m, of the joints shown in the scenery
@@ -965,10 +971,11 @@ void srk_tool::store()
 void srk_tool::open(TTrack &Track)
 {
 	m_status.clear();
+	m_status_refused = false;
 	auto found{station::find(Track)};
 	if (false == found.has_value())
 	{
-		m_status = STR_C("No switch near this track: it isn't a part of a station");
+		refuse(STR_C("No switch near this track: it isn't a part of a station"));
 		return;
 	}
 	m_layout = std::move(found);
@@ -1007,6 +1014,33 @@ void srk_tool::refresh()
 		m_view_state = view;
 		m_status = status;
 	}
+}
+
+bool srk_tool::circuits_set()
+{
+	auto const stem{stem_of_open()};
+	if (m_history.history_revision() != m_circuits_revision || stem != m_circuits_stem)
+	{
+		m_circuits_revision = m_history.history_revision();
+		m_circuits_stem = stem;
+		std::vector<station::numbered> tracks;
+		std::unordered_set<TTrack const *> inside;
+		m_circuits_known = station_tracks(tracks, inside);
+	}
+	return m_circuits_known;
+}
+
+bool srk_tool::told(std::string &Status, bool &Refused)
+{
+	if (m_status_count == m_told_count && m_status == m_told)
+		return false;
+	m_told_count = m_status_count;
+	m_told = m_status;
+	if (m_status.empty())
+		return false;
+	Status = m_status;
+	Refused = m_status_refused;
+	return true;
 }
 
 srk_tool::record &srk_tool::record_of_open()
@@ -1343,7 +1377,7 @@ void srk_tool::render_summary(bool const Line)
 	if (begin_fields("##srksummary"))
 	{
 		field_row("Code");
-		value(false == code.empty(), code, false);
+		value(false == code.empty(), code, true);
 		field_row("Line");
 		value(false == line.empty(), line, Line);
 		field_row("Km");
@@ -1373,11 +1407,11 @@ void srk_tool::render_station()
 			}
 		};
 		auto const *entry{m_record >= 0 ? &m_records[m_record] : nullptr};
-		text("Name", "##srkname", entry != nullptr ? entry->name : std::string{}, "Biała Podlaska", [&](std::string const &Value) { record_of_open().name = Value; });
-		text("Code", "##srkcode", entry != nullptr ? entry->code : std::string{}, "BPd", [&](std::string const &Value) { record_of_open().code = word_of(Value) == "-" ? std::string{} : word_of(Value); });
+		text("Name", "##srkname", entry != nullptr ? entry->name : std::string{}, example("Biała Podlaska").c_str(), [&](std::string const &Value) { record_of_open().name = Value; });
+		text("Code", "##srkcode", entry != nullptr ? entry->code : std::string{}, example("BPd").c_str(), [&](std::string const &Value) { record_of_open().code = word_of(Value) == "-" ? std::string{} : word_of(Value); });
 		item_tooltip("The abbreviation of the station: the names of its switches, track circuits and signals begin with it");
 		auto const line_hint{line_of_open()};
-		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, line_hint.empty() ? "2" : line_hint.c_str(), [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
+		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, line_hint.empty() ? example("2").c_str() : line_hint.c_str(), [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
 		item_tooltip("The number of the railway line the station lies on, as the block sections between the stations are named after it");
 		double known{0.0};
 		if (km_of_line((layout.from + layout.to) * 0.5, known))
@@ -1388,7 +1422,7 @@ void srk_tool::render_station()
 		}
 		else
 		{
-			auto const hint{layout.kilometrage && km_of_open((layout.from + layout.to) * 0.5, known) ? format("%.3f", known) : std::string{"189.563"}};
+			auto const hint{layout.kilometrage && km_of_open((layout.from + layout.to) * 0.5, known) ? format("%.3f", known) : example("189.563")};
 			text("Km", "##srkkm", entry != nullptr ? entry->km : std::string{}, hint.c_str(), [&](std::string const &Value) {
 				auto km{word_of(Value)};
 				std::replace(km.begin(), km.end(), ',', '.');
@@ -1431,6 +1465,9 @@ void srk_tool::render_station()
 			survey_signals();
 		}
 	}
+	auto const coded{false == stem_of_open().empty()};
+	if (false == coded)
+		ImGui::TextColored(kWrong, "%s", STR_C("Type the code of the station first: its switches, track circuits and signals are named after it"));
 	step_heading(1, STR_C("Switch numbers"));
 	int from{m_reversed ? 1 : 0};
 	if (segmented("##srkfrom", from,
@@ -1508,6 +1545,10 @@ void srk_tool::render_switches()
 void srk_tool::render_station_signals()
 {
 	render_summary(false);
+	auto const coded{false == stem_of_open().empty()};
+	auto const ready{coded && circuits_set()};
+	if (false == ready)
+		ImGui::TextColored(kWrong, "%s", coded ? STR_C("Set the track circuits of the station first, in the Station tool: the signals stand at their joints") : STR_C("Type the code of the station first, in the Station tool: the signals are named after it"));
 	if (main_button(STR_C("Set the signals"), ImVec2(-1.0f, tall_button_height())))
 		set_signals();
 	item_tooltip("Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on "
@@ -1983,6 +2024,7 @@ void srk_tool::render_lengths()
 	if (ImGui::Button(STR_C("Copy the list of tracks"), ImVec2(-1.0f, 0.0f)))
 	{
 		ImGui::SetClipboardText(lengths_table().c_str());
+		begin_status();
 		m_status = format(STR_P("The lengths of %zu track copied", "The lengths of %zu tracks copied", m_lengths.size()), m_lengths.size());
 	}
 	item_tooltip("The lengths of the station tracks as a table to paste into a spreadsheet: the construction length and the useful one each way with its limits, as the list of the tracks of a station gives them");
@@ -2224,11 +2266,11 @@ int srk_tool::length_of(TTrack const *Track) const
 
 void srk_tool::number_switches()
 {
-	m_status.clear();
+	begin_status();
 	auto const code{m_record >= 0 ? m_records[m_record].code : std::string{}};
 	if (code.empty())
 	{
-		m_status = STR_C("Give the station its code first: the switches are named after it");
+		refuse(STR_C("Give the station its code first: the switches are named after it"));
 		return;
 	}
 	if (m_records[m_record].reversed != m_reversed)
@@ -2251,12 +2293,12 @@ void srk_tool::number_switches()
 		TTrack *owner{nullptr};
 		if (false == scene::Layers.editable(track, &reason))
 		{
-			m_status = format(STR_C("%s can't be renamed: %s"), track->name().c_str(), reason.c_str());
+			refuse(format(STR_C("%s can't be renamed: %s"), track->name().c_str(), reason.c_str()));
 			return;
 		}
 		if (false == editor_track::name_valid(*track, name, reason, &owner) && (owner == nullptr || own.count(owner) == 0))
 		{
-			m_status = format(STR_C("%s can't be named %s: %s"), track->name().c_str(), name.c_str(), reason.c_str());
+			refuse(format(STR_C("%s can't be named %s: %s"), track->name().c_str(), name.c_str(), reason.c_str()));
 			return;
 		}
 	}
@@ -2285,7 +2327,7 @@ void srk_tool::number_switches()
 				listed += (i > 0 ? ", " : "") + unwritten[i];
 			if (unwritten.size() > 6)
 				listed += format(" (+%zu)", unwritten.size() - 6);
-			m_status = format(STR_C("These events aim at the switches by their old names, the editor doesn't write them and they'd lose them: %s. Number the switches again to rename them anyway"), listed.c_str());
+			refuse(format(STR_C("These events aim at the switches by their old names, the editor doesn't write them and they'd lose them: %s. Number the switches again to rename them anyway"), listed.c_str()));
 			return;
 		}
 	}
@@ -2355,11 +2397,11 @@ void srk_tool::number_switches()
 
 void srk_tool::set_circuits()
 {
-	m_status.clear();
+	begin_status();
 	auto const code{m_record >= 0 ? m_records[m_record].code : std::string{}};
 	if (code.empty())
 	{
-		m_status = STR_C("Give the station its code first: the track circuits are named after it");
+		refuse(STR_C("Give the station its code first: the track circuits are named after it"));
 		return;
 	}
 	auto const units{station::numbering(*m_layout, m_reversed)};
@@ -2367,13 +2409,13 @@ void srk_tool::set_circuits()
 	for (auto const &entry : planned)
 		if (std::string reason; entry.track != nullptr && false == editor_track::can_edit_geometry(*entry.track, reason))
 		{
-			m_status = format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str());
+			refuse(format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str()));
 			return;
 		}
 	for (auto const &path : m_layout->paths)
 		if (std::string reason; false == path.approach && false == scene::Layers.editable(path.track, &reason))
 		{
-			m_status = format(STR_C("%s can't be changed: %s"), name_of(*path.track).c_str(), reason.c_str());
+			refuse(format(STR_C("%s can't be changed: %s"), name_of(*path.track).c_str(), reason.c_str()));
 			return;
 		}
 	// the cuts: each track from its end back, so the pieces left to cut stay in the track
@@ -2557,7 +2599,7 @@ bool srk_tool::station_tracks(std::vector<station::numbered> &Tracks, std::unord
 
 void srk_tool::renumber_track(TTrack const &Track, std::string const &Number)
 {
-	m_status.clear();
+	begin_status();
 	auto const stem{stem_of_open()};
 	auto const from{Track.Isolated.empty() ? std::string{} : track_of(Track.Isolated.front()->asName, stem)};
 	std::string to;
@@ -2575,7 +2617,7 @@ void srk_tool::renumber_track(TTrack const &Track, std::string const &Number)
 		auto const number{track_of(path.track->Isolated.front()->asName, stem)};
 		if (number == to)
 		{
-			m_status = format(STR_C("The station has a track %s already"), to.c_str());
+			refuse(format(STR_C("The station has a track %s already"), to.c_str()));
 			return;
 		}
 		if (number == from)
@@ -2594,11 +2636,11 @@ void srk_tool::renumber_track(TTrack const &Track, std::string const &Number)
 
 void srk_tool::set_signals()
 {
-	m_status.clear();
+	begin_status();
 	auto const stem{stem_of_open()};
 	if (stem.empty())
 	{
-		m_status = STR_C("Give the station its code first: the signals are named after it");
+		refuse(STR_C("Give the station its code first: the signals are named after it"));
 		return;
 	}
 	auto const &layout{*m_layout};
@@ -2606,7 +2648,7 @@ void srk_tool::set_signals()
 	std::unordered_set<TTrack const *> inside;
 	if (false == station_tracks(tracks, inside))
 	{
-		m_status = STR_C("Set the track circuits first: the signals stand at their joints");
+		refuse(STR_C("Set the track circuits first: the signals stand at their joints"));
 		return;
 	}
 	auto plan{station::signals(layout, tracks, [&](TTrack const &Track) { return inside.count(&Track) > 0; })};
@@ -2705,13 +2747,13 @@ void srk_tool::set_signals()
 		}
 		else if (false == editor_track::can_edit_geometry(*entry.track, reason))
 		{
-			m_status = format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str());
+			refuse(format(STR_C("%s can't be cut: %s"), name_of(*entry.track).c_str(), reason.c_str()));
 			return;
 		}
 		for (auto *part : entry.named)
 			if (false == scene::Layers.editable(part, &reason))
 			{
-				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
+				refuse(format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str()));
 				return;
 			}
 		cuts.push_back(std::move(entry));
@@ -2727,7 +2769,7 @@ void srk_tool::set_signals()
 			}
 		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
 		{
-			m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
+			refuse(format(STR_C("The signals couldn't be placed: %s"), missing.c_str()));
 			return;
 		}
 	}
@@ -2839,7 +2881,7 @@ void srk_tool::set_signals()
 	auto const touched{false == before.empty() || false == created.empty()};
 	auto const count{m_signals.signal_batch({placed, renamed, {}, {}, {}}, std::move(before), std::move(created), error)};
 	if (false == error.empty())
-		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
+		refuse(format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{}));
 	else
 		m_status = format(STR_P("%zu signal placed", "%zu signals placed", count), count) + ", " + format(STR_P("%zu renamed", "%zu renamed", renamed.size()), renamed.size());
 	if (false == unfit.empty())
@@ -3228,6 +3270,7 @@ void srk_tool::render_problems()
 
 void srk_tool::fix_problems()
 {
+	begin_status();
 	std::vector<scene::instance_handle> signals;
 	auto lines{false};
 	for (auto const &problem : m_problems)
@@ -3258,7 +3301,7 @@ void srk_tool::fix_problems()
 
 void srk_tool::set_lines(block_edit const *Edit)
 {
-	m_status.clear();
+	begin_status();
 	auto const stem{stem_of_open()};
 	std::vector<standing_signal> standing;
 	m_signals.standing_signals(standing, true);
@@ -3324,12 +3367,12 @@ void srk_tool::set_lines(block_edit const *Edit)
 			drawn = station::distance_on(lines[edited], Edit->point, gap);
 		if (edited < 0 || gap > 5.0)
 		{
-			m_status = STR_C("The line drawn on isn't there any more");
+			refuse(STR_C("The line drawn on isn't there any more"));
 			return;
 		}
 		if (automatic[edited] != 1)
 		{
-			m_status = format(STR_C("The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"), Edit->entry.c_str());
+			refuse(format(STR_C("The line beyond %s has no automatic block the editor sets: choose one for it in the table of the lines"), Edit->entry.c_str()));
 			return;
 		}
 		processed[edited] = 1;
@@ -3349,7 +3392,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	}()};
 	if (blocked && (false == km_of_open(0.0, known) || described.empty()))
 	{
-		m_status = STR_C("Give the station its line and its km first: the block signals and the block sections are named after them");
+		refuse(STR_C("Give the station its line and its km first: the block signals and the block sections are named after them"));
 		return;
 	}
 	struct planned_signal
@@ -3714,7 +3757,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			}
 		if (auto const missing{m_signals.signal_templates_missing(wanted)}; false == missing.empty())
 		{
-			m_status = format(STR_C("The signals couldn't be placed: %s"), missing.c_str());
+			refuse(format(STR_C("The signals couldn't be placed: %s"), missing.c_str()));
 			return;
 		}
 	}
@@ -3735,7 +3778,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		std::string reason;
 		if (false == editor_track::can_edit_geometry(*at.track, reason))
 		{
-			m_status = format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str());
+			refuse(format(STR_C("%s can't be cut: %s"), name_of(*at.track).c_str(), reason.c_str()));
 			return false;
 		}
 		cuts.push_back({at.track, at.point});
@@ -3748,7 +3791,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		for (auto *part : line.tracks)
 			if (std::string reason; false == scene::Layers.editable(part, &reason) && std::any_of(sections.begin(), sections.end(), [&](section const &Found) { return &lines[Found.line] == &line; }))
 			{
-				m_status = format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str());
+				refuse(format(STR_C("%s can't be changed: %s"), name_of(*part).c_str(), reason.c_str()));
 				return;
 			}
 	std::vector<std::pair<TTrack *, editor_track::state>> before;
@@ -3941,7 +3984,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
 	if (false == error.empty())
 	{
-		m_status = format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{});
+		refuse(format(STR_C("The signals couldn't be placed: %s"), error.c_str()) + (touched ? ". " + STR("Ctrl+Z takes back the tracks cut") : std::string{}));
 		return;
 	}
 	m_status = format(STR_P("%zu block signal placed", "%zu block signals placed", blocks), blocks) + ", " + format(STR_P("%zu warning disc", "%zu warning discs", discs), discs) + ", " +
@@ -4138,6 +4181,31 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 		return ahead != by_file.end() && heads[ahead->second].arms > 0 ? &heads[ahead->second] : nullptr;
 	};
 	auto const triggers{shp_triggers()};
+	// the braking distance of the line out a signal stands along, beyond its entry signal, as Set the line signals goes by it; the one of
+	// the station elsewhere
+	std::vector<station::line> lines;
+	{
+		std::vector<station::signal> entries;
+		std::vector<std::size_t> line_owners;
+		std::string problem;
+		if (false == lines_of_open(Standing, lines, entries, line_owners, problem))
+			lines.clear();
+	}
+	auto const braking_on = [&](glm::dvec3 const &Position) {
+		auto nearest{4.5};
+		auto found{braking};
+		for (auto const &line : lines)
+		{
+			double gap{0.0};
+			auto const distance{station::distance_on(line, Position, gap)};
+			if (gap <= nearest && distance >= 0.0 && distance <= line.length())
+			{
+				nearest = gap;
+				found = line_braking(line);
+			}
+		}
+		return found;
+	};
 	for (auto const index : order)
 	{
 		auto const &signal{Standing[owners[index]]};
@@ -4180,6 +4248,9 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			check.shp_found = shp_before(way, signal.position, travel, triggers, check.shp);
 			check.shp_short = way.empty() || way.back().distance < check.shp - kShpTolerance;
 		}
+		// a signal of a line goes by the braking distance of its line, as Set the line signals placed it, the ones of the station by its
+		// own
+		auto const local{post.kind == role::warning || post.kind == role::block ? braking_on(signal.position) : braking};
 		if (post.kind == role::warning)
 		{
 			for (std::size_t k = 0; k < check.routes.size(); ++k)
@@ -4187,8 +4258,8 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 				auto const &route{check.routes[k]};
 				if (route.next < 0)
 					check.problems.push_back(format(STR_C("No main signal within %.0f m ahead of it to tell of"), route.length));
-				else if (route.length < braking - 1.0)
-					check.problems.push_back(format(STR_C("It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"), route.length, check.nexts[k].c_str(), braking));
+				else if (route.length < local - 1.0)
+					check.problems.push_back(format(STR_C("It stands %.0f m before %s, less than the braking distance of %.0f m: the trains don't stop by the signal in time"), route.length, check.nexts[k].c_str(), local));
 			}
 			// a shaped disc before a semaphore described with its arms: the events it repeats tell apart all the semaphore shows. One not
 			// described so may as well, it is offered the one described as a hint and the fitting leaves it be. A disc with lights isn't
@@ -4208,7 +4279,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 			continue;
 		}
 		auto const main{post.kind == role::entry};
-		auto const need{need_of(check.routes, main, line, braking)};
+		auto const need{need_of(check.routes, main, line, local)};
 		check.speeds = need.speeds;
 		check.informs = need.informs;
 		check.white = need.white;
@@ -4222,11 +4293,11 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 					continue;
 				if (template_of != nullptr && template_of->aspects == 4)
 				{
-					if (route.length < braking * 0.5 - 1.0)
-						check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"), check.nexts[k].c_str(), route.length, braking));
+					if (route.length < local * 0.5 - 1.0)
+						check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than half the braking distance of %.0f m, of the 4-aspect block"), check.nexts[k].c_str(), route.length, local));
 				}
-				else if (route.length < braking - 1.0)
-					check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"), check.nexts[k].c_str(), route.length, braking));
+				else if (route.length < local - 1.0)
+					check.problems.push_back(format(STR_C("The block section to %s is %.0f m long, shorter than the braking distance of %.0f m, Ie-4 § 8 ust. 1"), check.nexts[k].c_str(), route.length, local));
 			}
 		if (template_of != nullptr)
 		{
@@ -4251,7 +4322,7 @@ void srk_tool::check_heads(std::vector<standing_signal> const &Standing)
 
 void srk_tool::fit_heads()
 {
-	m_status.clear();
+	begin_status();
 	signal_changes changes;
 	// a semaphore described having what it needs keeps its arms, for the events written by hand to the aspects of a second one
 	for (auto const &head : m_heads)
@@ -4266,7 +4337,7 @@ void srk_tool::fit_heads()
 	m_signals.signal_batch(changes, {}, {}, error);
 	if (false == error.empty())
 	{
-		m_status = format(STR_C("The signals couldn't be changed: %s"), error.c_str());
+		refuse(format(STR_C("The signals couldn't be changed: %s"), error.c_str()));
 		return;
 	}
 	std::vector<standing_signal> standing;
@@ -4282,14 +4353,14 @@ void srk_tool::fit_heads()
 
 void srk_tool::set_shp()
 {
-	m_status.clear();
+	begin_status();
 	if (false == m_layout.has_value())
 		return;
 	include_info resonator;
 	std::string unreadable;
 	if (false == editor_includes::load(kResonator, resonator, unreadable))
 	{
-		m_status = format(STR_C("%s isn't in the scenery folder: the SHP resonators can't be placed"), kResonator);
+		refuse(format(STR_C("%s isn't in the scenery folder: the SHP resonators can't be placed"), kResonator));
 		return;
 	}
 	std::vector<standing_signal> standing;
@@ -4449,7 +4520,7 @@ void srk_tool::set_shp()
 	m_signals.signal_batch(changes, std::move(before), std::move(created), error);
 	if (false == error.empty())
 	{
-		m_status = format(STR_C("The SHP resonators couldn't be placed: %s. Ctrl+Z takes back the tracks cut"), error.c_str());
+		refuse(format(STR_C("The SHP resonators couldn't be placed: %s. Ctrl+Z takes back the tracks cut"), error.c_str()));
 		return;
 	}
 	m_status = format(STR_P("%zu SHP resonator placed", "%zu SHP resonators placed", placed), placed) + ", " + format(STR_P("%zu track cut", "%zu tracks cut", cuts), cuts) + ". " + STR("Ctrl+Z takes it back, the resonators work after the scenery is saved and opened again");

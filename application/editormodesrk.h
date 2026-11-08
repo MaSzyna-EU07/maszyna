@@ -57,6 +57,8 @@ class srk_tool final : public editor_tool
 	void boundary_click();
 	// the stations described go to the files of their layers, as "//$s" lines
 	void store();
+	// what the last action of the tool came to, once, to be told by the mouse: Refused when it did nothing for want of something
+	bool told(std::string &Status, bool &Refused);
 
   private:
 	editor_selection &m_selection;
@@ -303,6 +305,28 @@ class srk_tool final : public editor_tool
 		bool remove{false}; // the block signals standing there taken away, else placed
 	};
 	std::string m_status;
+	// the track circuits of the open station set, known again after each change and for its code
+	bool circuits_set();
+	std::size_t m_circuits_revision{static_cast<std::size_t>(-1)};
+	std::string m_circuits_stem;
+	bool m_circuits_known{false};
+	bool m_status_refused{false}; // the status tells why an action did nothing
+	std::size_t m_status_count{0}; // of the actions begun, so the same status of the next one is told again
+	std::size_t m_told_count{0};
+	std::string m_told;
+	// an action begun: its status in place of the last one
+	void begin_status()
+	{
+		m_status.clear();
+		m_status_refused = false;
+		++m_status_count;
+	}
+	// the action does nothing: why
+	void refuse(std::string const &Why)
+	{
+		m_status = Why;
+		m_status_refused = true;
+	}
 	// the renames Number the switches was clicked for while events aim at the switches by their old names: a second click with
 	// the same ones renames anyway
 	std::string m_numbering_confirm;

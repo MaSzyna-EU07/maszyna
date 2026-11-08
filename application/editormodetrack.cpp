@@ -759,6 +759,15 @@ void editor_mode::render_track_tool_options()
 		break;
 	}
 	ImGui::PopTextWrapPos();
+	// what a button of the station tools came to, by the mouse which clicked it: the panel keeps it at its foot, often scrolled away
+	std::string told;
+	if (bool refused{false}; m_srk.told(told, refused))
+	{
+		if (refused)
+			ui()->set_status(told, true);
+		else
+			ui()->set_notice(told);
+	}
 }
 
 void editor_mode::render_track_selection()

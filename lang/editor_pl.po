@@ -13772,3 +13772,15 @@ msgstr "osie %.2f m od siebie"
 
 msgid "Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6),\nand the leaning of the cars of a track on its cant towards the other one, taken 3.25 m up (Ie-1, bD)"
 msgstr "Nominalnie 3,50 m (Standardy techniczne PLK, tom II, 6.5). Gdy tor leży tam w łuku o promieniu poniżej 250 m,\nposzerzenie skrajni od promienia po stronie drugiego toru dolicza się samo, przy obu torach w łuku suma obu (6.6),\ni wychylenie wagonów toru na przechyłce w stronę drugiego toru, liczone 3,25 m nad główką szyny (Ie-1, bD)"
+
+msgid "e.g. %s"
+msgstr "np. %s"
+
+msgid "Type the code of the station first: its switches, track circuits and signals are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy rozjazdów, izolacji i semaforów"
+
+msgid "Set the track circuits of the station first, in the Station tool: the signals stand at their joints"
+msgstr "Najpierw ustaw izolacje stacji w narzędziu Stacja: semafory stają przy stykach"
+
+msgid "Type the code of the station first, in the Station tool: the signals are named after it"
+msgstr "Najpierw wpisz skrót stacji w narzędziu Stacja: od niego biorą się nazwy semaforów"
