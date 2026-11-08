@@ -84,15 +84,6 @@ void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const
     }
 }
 
-// whether the path was drawn straight before, told a straight by its first control vector alone, where its second one bends it
-// now; both of them along it, it bends a centimetre or so at most, a radius given or not
-bool straightened_before( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &Cp2, glm::dvec3 const &P2 ) {
-
-    return glm::length2( ( P1 + P1 + P2 ) / 3.0 - P1 - Cp1 ) < sq( 0.02 )
-        && Cp2 != glm::dvec3()
-        && glm::length2( ( P1 + P2 + P2 ) / 3.0 - P2 - Cp2 ) >= sq( 0.02 );
-}
-
 // a path of the switch made of the pieces given for it, where they join its ends and one another; the path as given where they don't
 void chain_switch_pieces( TTrack &Track, std::size_t const Index ) {
 
@@ -858,6 +849,14 @@ void TTrack::update_location() {
         / 3.0 );
 }
 
+// "prostowanie" prostych z kontrolnymi, dokładność 2cm: a path is a straight where its first control vector lies along the chord, whatever
+// the second one does, as the sceneries are made for. Length2 is better than length for comparing because it does not require sqrt
+bool TTrack::straightened( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &P2 ) {
+
+    return glm::length2( ( P1 + P1 + P2 ) / 3.0 - P1 - Cp1 ) < sq( 0.02 )
+        || glm::length2( ( P1 + P2 + P2 ) / 3.0 - P2 + Cp1 ) < sq( 0.02 );
+}
+
 void TTrack::init_segments( bool const Initial ) {
 
 	glm::dvec3 p1, p2, cp1, cp2, p3, p4, cp3, cp4; // dodatkowe punkty potrzebne do skrzyżowań
@@ -904,19 +903,9 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki
         }
 
-        // length2 is better than length for comparing because it does not require sqrt function
-        // "prostowanie" prostych z kontrolnymi, dokładność 2cm: a straight only where both control vectors lie along it, or aren't
-        // given; one of them moved off it, the other one left where a straight has it, makes a curve. One with its radius given is a
-        // curve however gently it bends, as a short path bent with the curve it's laid into
-        if( auto const along {
-                ( cp1 == glm::dvec3() || glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 ) )
-             && ( cp2 == glm::dvec3() || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) };
-            along && fRadius == 0 ) {
+        if( straightened( p1, cp1, p2 ) ) {
+            // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
-        }
-        else if( Initial && straightened_before( p1, cp1, cp2, p2 ) ) {
-            // a scenery made before may count on the straight; told once, as the track loads
-            WriteLog( "Track \"" + name() + "\" is drawn bent by its second control vector, it was drawn straight before" );
         }
 
         if( fRadius != 0 ) {
@@ -1007,17 +996,13 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross && fRadiusTable[ 0 ] == 0 ) {
-            // dla skrzyżowań muszą być podane kontrolne; a path with its radius given is a curve however gently it bends. With no
-            // radius a path of a switch is told a straight by its first control vector alone, as before, unlike a plain track
+        if( eType != tt_Cross ) {
+            // dla skrzyżowań muszą być podane kontrolne
 			// length2 is better than length for comparing because it does not require sqrt function
-            if( glm::length2(( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq(0.02) ) {
+            if( straightened( p1, cp1, p2 ) ) {
                 // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 				cp1 = cp2 = glm::dvec3(0, 0, 0);
             }
-        }
-        else if( Initial && eType != tt_Cross && straightened_before( p1, cp1, cp2, p2 ) ) {
-            WriteLog( "Track \"" + name() + "\": its first path is drawn bent by its second control vector, it was drawn straight before" );
         }
 
         if( fRadiusTable[ 0 ] != 0 ) {
@@ -1075,17 +1060,13 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki?
         }
 
-        if( eType != tt_Cross && fRadiusTable[ 1 ] == 0 ) {
-            // dla skrzyżowań muszą być podane kontrolne; a path with its radius given is a curve however gently it bends. With no
-            // radius a path of a switch is told a straight by its first control vector alone, as before, unlike a plain track
+        if( eType != tt_Cross ) {
+            // dla skrzyżowań muszą być podane kontrolne
 			// length2 is better than length for comparing because it does not require sqrt function
-            if( glm::length2((p3 + p3 + p4) / 3.0 - p3 - cp3) < sq(0.02) ) {
+            if( straightened( p3, cp3, p4 ) ) {
                 // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 				cp3 = cp4 = glm::dvec3(0, 0, 0);
             }
-        }
-        else if( Initial && eType != tt_Cross && straightened_before( p3, cp3, cp4, p4 ) ) {
-            WriteLog( "Track \"" + name() + "\": its second path is drawn bent by its second control vector, it was drawn straight before" );
         }
 
         if( fRadiusTable[ 1 ] != 0 ) {

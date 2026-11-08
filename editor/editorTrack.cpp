@@ -74,6 +74,37 @@ void add_unique(std::vector<TTrack *> &Tracks, TTrack *Track)
 		Tracks.emplace_back(Track);
 }
 
+// how far off the chord a first control vector is put to keep the bend of the second one, past the 2 cm the simulator takes for a straight
+double const kBentOff{0.025};
+
+// a path the simulator draws straight, its first control vector lying along the chord, though the second one is dragged off it: the
+// first one moved off the chord just past the tolerance, to the side the second one bends to, so the bend is drawn, saved and read back
+// as one; it shifts the path by a centimetre at most. The second one back along the chord, the first one goes back onto it too
+void keep_bent(TTrack const &Track, segment_data &Path)
+{
+	if (Track.eType == tt_Cross)
+		return;
+	auto const &start{Path.points[segment_data::point::start]};
+	auto const &end{Path.points[segment_data::point::end]};
+	auto &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	auto const chord{end - start};
+	auto const length{glm::length(chord)};
+	if (length < 1e-6 || control1 == glm::dvec3{} || control2 == glm::dvec3{})
+		return;
+	auto const axis{chord / length};
+	auto const off{control2 - axis * glm::dot(control2, axis)};
+	auto const side{glm::length(off)};
+	if (side < 0.02)
+	{
+		if (glm::length(control1 - chord / 3.0) <= kBentOff + 1e-6)
+			control1 = chord / 3.0;
+		return;
+	}
+	if (TTrack::straightened(start, control1, end))
+		control1 = chord / 3.0 + off / side * kBentOff;
+}
+
 glm::dvec3 path_tangent(segment_data const &Path, bool const Atend)
 {
 	auto const &start{Path.points[segment_data::point::start]};
@@ -658,12 +689,14 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 	{
 		auto control{Position - path.points[segment_data::point::start]};
 		path.points[segment_data::point::control1] = (glm::length(control) < 0.01 ? glm::dvec3{} : control);
+		keep_bent(Track, path);
 		break;
 	}
 	case point_kind::control2:
 	{
 		auto control{Position - path.points[segment_data::point::end]};
 		path.points[segment_data::point::control2] = (glm::length(control) < 0.01 ? glm::dvec3{} : control);
+		keep_bent(Track, path);
 		break;
 	}
 	}
@@ -1009,6 +1042,7 @@ void editor_track::align_controls(TTrack const &Track, point_ref const &Control,
 		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
 		auto const same{partner.first == &Track && partner.second.kind == end_of(Control).kind};
 		control = (same ? direction : -direction) * length;
+		keep_bent(*partner.first, path);
 	}
 }
 

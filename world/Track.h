@@ -335,6 +335,8 @@ public:
     int RouteDraw() const;
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     void init_segments( bool const Initial );
+    // whether a path is drawn as a straight, told by its first control vector alone
+    static bool straightened( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &P2 );
     track_rails::switch_frog frog() const;
     track_rails::switch_blade const &blade( int const Path ) const;
     double blades_throw() const; // how far the tips of the blades move over between the two paths
