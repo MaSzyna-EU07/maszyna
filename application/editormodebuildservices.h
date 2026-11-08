@@ -115,8 +115,6 @@ class editor_profile_services
 	virtual TTrack *grade_line_pick_aimed(int &Index) const = 0;
 	// whether the Tracks may be changed; Reason: why not
 	virtual bool tracks_editable_for(std::vector<TTrack *> const &Tracks, std::string &Reason) const = 0;
-	// the crossovers between the tracks of the route sampled Before and their neighbours led after the route changed; how many
-	virtual std::size_t follow_crossovers_of(std::vector<editor_track::route_sample> const &Before) = 0;
 	// the window converting the ground files of the scenery to the heightmap terrain
 	virtual void render_ground_conversion_panel() = 0;
 

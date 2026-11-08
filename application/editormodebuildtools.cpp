@@ -255,11 +255,6 @@ bool editor_mode::tracks_editable_for(std::vector<TTrack *> const &Tracks, std::
 	return tracks_editable(Tracks, Reason);
 }
 
-std::size_t editor_mode::follow_crossovers_of(std::vector<editor_track::route_sample> const &Before)
-{
-	return follow_crossovers(Before);
-}
-
 void editor_mode::render_ground_conversion_panel()
 {
 	render_ground_conversion();

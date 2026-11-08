@@ -1165,16 +1165,16 @@ bool editor_mode::slide_curved_connection(TTrack const &Switch, double const Dis
 
 // whether the line on the other side of a crossover follows the route: not on its grade line, which goes with the route anyway, not
 // one a fit to the terrain leaves as it is, not of the route itself nor one followed already
-bool editor_mode::crossover_followed(TTrack const &Other, editor_track::route const &Route, std::vector<TTrack const *> const &Done)
+bool profile_editor::crossover_followed(TTrack const &Other, editor_track::route const &Route, std::vector<TTrack const *> const &Done)
 {
 	// on the same grade line it goes with the route anyway, grade_line_follow sees to it; what a fit to the terrain leaves as it is stays
-	if ((m_profile.whole_grade_line && false == m_profile.fitting && m_build_tools->grade_lines.on_route_grade_line(Other)) || (m_profile.fitting && m_nmt_state.stayed.contains(&Other)))
+	if ((m_profile.whole_grade_line && false == m_profile.fitting && m_grade_lines.on_route_grade_line(Other)) || (m_profile.fitting && m_nmt_state.stayed.contains(&Other)))
 		return false;
 	return std::ranges::none_of(Route.spans, [&Other](auto const &Span) { return Span.track == &Other; }) && std::ranges::find(Done, &Other) == Done.end();
 }
 
 // the design of the line followed changed by as much as its heights, with a point at each break
-void editor_mode::follow_design(profile::line const &Designed, std::vector<double> const &Breaks, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes)
+void profile_editor::follow_design(profile::line const &Designed, std::vector<double> const &Breaks, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes)
 {
 	std::vector<profile::pvi> points;
 	for (auto point : Designed.points)
@@ -1199,14 +1199,14 @@ void editor_mode::follow_design(profile::line const &Designed, std::vector<doubl
 		m_profile.line = Designed;
 		m_profile.line.points = std::move(line);
 		m_profile.selected = -1;
-		m_build_tools->profile_edit.profile_check();
-		m_build_tools->library.profile_store();
+		profile_check();
+		m_library.profile_store();
 	}
 }
 
 // the line through the track takes the change of the heights of the route, After against Before, where it runs beside it, its design
 // with it; false where nothing of it changes
-bool editor_mode::follow_crossover(TTrack &Other, std::vector<editor_track::route_sample> const &Before, std::vector<editor_track::route_sample> const &After, profile::line const &Line)
+bool profile_editor::follow_crossover(TTrack &Other, std::vector<editor_track::route_sample> const &Before, std::vector<editor_track::route_sample> const &After, profile::line const &Line)
 {
 	auto route{editor_track::run_route(Other, 3000.0)};
 	auto const samples{editor_track::sample_route(route, 1.0)};
@@ -1225,32 +1225,31 @@ bool editor_mode::follow_crossover(TTrack &Other, std::vector<editor_track::rout
 		return false;
 	auto const change = [&samples, &changes](double const Chainage) { return change_along(samples, changes, Chainage); };
 	auto const breaks{followed_breaks(Line, After, samples, distances, route.length)};
-	m_build_tools->profile_edit.profile_take(route, route.spans.front().track, route.spans.back().track);
+	profile_take(route, route.spans.front().track, route.spans.back().track);
 	auto const designed{m_profile.line};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	editor_track::apply_profile(
 	    route, [&samples, &change](double const Chainage) { return editor_track::sampled_elevation(samples, Chainage) + change(Chainage); },
 	    [&samples, &change](double const Chainage) { return editor_track::sampled_grade(samples, Chainage) + (change(Chainage + 0.5) - change(Chainage - 0.5)); }, breaks, states, created);
-	m_build_tools->library.profile_library_load();
+	m_library.profile_library_load();
 	auto library{m_profiles};
-	push_track_snapshot(std::move(states), std::move(created));
-	m_history.back().profiles = true;
-	m_history.back().profile_library = std::move(library);
-	join_last_steps();
+	m_services.push_track_snapshot(std::move(states), std::move(created));
+	m_build.history_take_profiles(std::move(library));
+	m_build.join_last_history_steps();
 	// its design changed by as much
-	m_build_tools->profile_edit.profile_take(route, route.spans.front().track, route.spans.back().track);
+	profile_take(route, route.spans.front().track, route.spans.back().track);
 	follow_design(designed, breaks, samples, changes);
 	return true;
 }
 
-std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sample> const &Before)
+std::size_t profile_editor::follow_crossovers(std::vector<editor_track::route_sample> const &Before)
 {
 	auto const &state{m_profile};
 	auto const changedroute{state.route};
 	auto *changedfrom{state.from};
 	auto *changedto{state.to};
-	auto const after{state.samples}; // NOSONAR: a copy, m_build_tools->profile_edit.profile_take() below lays other routes into the state
+	auto const after{state.samples}; // NOSONAR: a copy, profile_take() below lays other routes into the state
 	auto const changedline{state.line}; // NOSONAR: a copy, as above
 	if (Before.size() < 2 || after.size() < 2)
 		return 0;
@@ -1260,7 +1259,7 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 	{
 		if (span.track == nullptr || span.track->eType != tt_Switch)
 			continue;
-		auto const crossover{crossover_of(*span.track)};
+		auto const crossover{m_build.crossover_at(*span.track)};
 		if (false == crossover.has_value())
 			continue;
 		auto *other{crossover->first == span.track ? crossover->second : crossover->first};
@@ -1275,7 +1274,7 @@ std::size_t editor_mode::follow_crossovers(std::vector<editor_track::route_sampl
 	if (followed > 0)
 	{
 		// the route the user works on open again
-		m_build_tools->profile_edit.profile_take(changedroute, changedfrom, changedto);
+		profile_take(changedroute, changedfrom, changedto);
 	}
 	return followed;
 }

@@ -2060,7 +2060,7 @@ void profile_editor::profile_apply(bool const Terrain, std::vector<profile::depa
 		state.status += format(STR_P("\nOver a bridge or a viaduct: %zu path", "\nOver a bridge or a viaduct: %zu paths", bridged), bridged);
 	state.status += gaps_told(gaps);
 	// the tracks on the other side of the crossovers of the route go up and down with it
-	if (auto const followed{m_build.follow_crossovers_of(before)}; followed > 0)
+	if (auto const followed{follow_crossovers(before)}; followed > 0)
 		state.status += format(STR_C("\nThe tracks across %zu crossover(s) followed the change"), followed);
 	// a line fitted to the terrain model goes by itself: the ones sharing its grade line are worked out after them all
 	if (auto const beside{state.fitting ? std::size_t{0} : m_grade_lines.grade_line_follow(before)}; beside > 0)

@@ -1411,13 +1411,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// a crossover laid again from the press on one track to the release by the other, as by the mouse. false if it doesn't fit
 	// Names: of the switch at the press and of the one at the release, kept when a crossover is laid again
 	bool lay_crossover(int const Shape, glm::dvec3 const &Press, glm::dvec3 const &Release, double const Reach = 3.0, std::vector<std::string> const &Names = {});
-	// after the grade line of the open route went on its paths: the line on the other side of each crossover of the route
-	// takes the same change of the heights where it runs beside, and its design with it. returns: how many lines followed
-	std::size_t follow_crossovers(std::vector<editor_track::route_sample> const &Before);
-	// its steps: whether the line across a crossover follows, the line following and its design
-	bool crossover_followed(TTrack const &Other, editor_track::route const &Route, std::vector<TTrack const *> const &Done);
-	bool follow_crossover(TTrack &Other, std::vector<editor_track::route_sample> const &Before, std::vector<editor_track::route_sample> const &After, profile::line const &Line);
-	void follow_design(profile::line const &Designed, std::vector<double> const &Breaks, std::vector<editor_track::route_sample> const &Samples, std::vector<double> const &Changes);
 	bool place_switch_on_straight(editor_track::straight const &Line, editor_track::switch_template const &Shape, TTrack const *Style, double const Along, int const Direction, int const Side, bool const Snap, std::vector<std::pair<TTrack *, editor_track::state>> &States, std::vector<TTrack *> &Created, std::vector<TTrack *> &Removed, std::string const &Name = {});
 	struct crossover_plan
 	{
@@ -2631,7 +2624,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> selected_track_list() override;
 	TTrack *grade_line_pick_aimed(int &Index) const override;
 	bool tracks_editable_for(std::vector<TTrack *> const &Tracks, std::string &Reason) const override;
-	std::size_t follow_crossovers_of(std::vector<editor_track::route_sample> const &Before) override;
 	void render_ground_conversion_panel() override;
 	editor_orthophoto &orthophoto() override;
 	std::vector<std::unique_ptr<editor_orthophoto>> &imagery_layers() override;
