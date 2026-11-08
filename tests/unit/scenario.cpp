@@ -5,6 +5,21 @@
 
 namespace test {
 
+namespace {
+
+// whether the pressure switch of a vehicle in the train still cuts the start off: a half of a locomotive whose
+// switch is on when the controller leaves zero doesn't close its line contactors until the controller is back at zero
+bool start_cut_off(consist &Train) {
+	for (std::size_t i = 0; i < Train.size(); ++i) {
+		if (Train[i].mover().ControlPressureSwitch) {
+			return true;
+		}
+	}
+	return false;
+}
+
+} // namespace
+
 scenario::scenario(std::string Name, std::vector<channel> Channels, track const &Track) : m_name(std::move(Name)), m_channels(std::move(Channels)), m_track(Track) {
 	reseed_random();
 }
@@ -53,6 +68,11 @@ void scenario::get_going() {
 
 void scenario::full_power(double Seconds) {
 	auto &controlling{driver().controlling};
+	// as a driver does, wait for the brakes to let go far enough for every pressure switch of the train to allow the
+	// start; otherwise whether all the halves of a locomotive start hangs on thousandths of a bar of their cylinders
+	for (int i = 0; i < 120 && start_cut_off(m_train); ++i) {
+		wait(1.0);
+	}
 	controlling.IncMainCtrl(1);
 	for (int i = 0; i < 90 && false == controlling.StLinFlag; ++i) {
 		wait(1.0);
