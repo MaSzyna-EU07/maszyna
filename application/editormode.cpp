@@ -4649,7 +4649,8 @@ void editor_mode::render_area_fill()
 {
     ImGui::TextDisabled(STR_C("LMB: add outline point   Backspace: remove last point"));
     double const area = polygon_area_xz(m_fill_points);
-    ImGui::Text(STR_C("Points: %zu   Area: %.0f m² (%.2f ha)"), m_fill_points.size(), area, area / 10000.0);
+    // the square sign written as its utf-8 bytes: the game is built without /utf-8 where it has the debug symbols
+    ImGui::Text(STR_C("Points: %zu   Area: %.0f m\xC2\xB2 (%.2f ha)"), m_fill_points.size(), area, area / 10000.0);
     if (ImGui::Button(STR_C("Remove last point")) && !m_fill_points.empty())
         m_fill_points.pop_back();
     ImGui::SameLine();
