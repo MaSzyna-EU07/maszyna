@@ -1822,6 +1822,10 @@ void opengl33_renderer::setup_matrices()
 
 void opengl33_renderer::setup_alpha_to_coverage(bool const Enable)
 {
+	// the shaders keep the plain alpha test unless told the coverage of their alpha is used;
+	// uploaded with the rest of the model block at the next draw
+	model_ubs.alpha_to_coverage = (Enable ? 1.f : 0.f);
+
 	if (Enable == m_alphatocoverageenabled)
 		return;
 
@@ -2390,11 +2394,13 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 
 		// the alpha test drops or keeps whole pixels, so multisampling alone leaves its edges (e.g. sides
 		// of the trackbed textures) jagged. the alpha tested materials of the opaque colour pass get them
-		// antialiased with alpha to coverage instead; their shaders give the coverage as the alpha
+		// antialiased with alpha to coverage instead; their shaders give the coverage as the alpha.
+		// the model previews draw in colour mode too, but to a single-sampled framebuffer
 		setup_alpha_to_coverage(
 			Global.iMultisampling > 0
 			&& false == m_blendingenabled
 			&& m_renderpass.draw_mode == rendermode::color
+			&& false == m_previewing
 			&& model_ubs.opacity > 0.f
 			&& material.shader->alpha_to_coverage );
 

@@ -65,6 +65,7 @@ void gl::glsl_common_setup()
             float fog_density;
             float alpha_mult;
             float shadow_tone;
+            float alpha_to_coverage;
     };
 
     layout (std140) uniform scene_ubo
@@ -117,12 +118,19 @@ void gl::glsl_common_setup()
     // multisampling; otherwise the alpha test keeps or drops whole pixels and its edges stay
     // jagged whatever the multisampling. the alpha is sharpened to go from 0 to 1 over about
     // a pixel around the test threshold, so the edge keeps the place and sharpness the alpha
-    // test gave it. computed before any discard, which leaves the derivatives undefined
+    // test gave it. computed before any discard, which leaves the derivatives undefined.
+    // alpha_to_coverage of model_ubo tells whether alpha to coverage is on for this draw; where
+    // it isn't (reflections, previews) the shaders keep the plain alpha test
     float alpha_coverage(float alpha)
     {
     #if ALPHA_TO_COVERAGE_ENABLED
-        if (opacity > 0.0)
-            return clamp((alpha - opacity) / max(fwidth(alpha), 0.0001) + 0.5, 0.0, 1.0);
+        if (opacity > 0.0 && alpha_to_coverage > 0.0)
+        {
+            // a flat alpha has no edge in the pixel and gets the plain test, so an alpha equal
+            // to the threshold stays fully covered
+            float fw = fwidth(alpha);
+            return (fw > 0.0 ? clamp((alpha - opacity) / fw + 0.5, 0.0, 1.0) : step(opacity, alpha));
+        }
     #endif
         return alpha;
     }
@@ -133,7 +141,7 @@ void gl::glsl_common_setup()
     bool alpha_test_fail(float alpha, float coverage)
     {
     #if ALPHA_TO_COVERAGE_ENABLED
-        if (opacity > 0.0)
+        if (opacity > 0.0 && alpha_to_coverage > 0.0)
             return coverage <= 0.0;
     #endif
         return (opacity >= 0.0 ? (alpha < opacity) : (alpha >= -opacity));
