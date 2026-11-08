@@ -13,12 +13,15 @@ The runner drives the simulator's test mode (eu07/maszyna#541), which works with
 runner too and is meant for scenery authors as well:
 
 ```
-eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [-seed <number|word>] [-ini <settings file>]
+eu07 --test -s <scenery.scn> [--test-timeout <seconds>] [--test-wall-timeout <seconds>] [-seed <number|word>] [-ini <settings file>]
 ```
 
 With `--test` the simulator:
 
 - needs `-s`; `-v` is ignored and every train is driven by AI (ghostview),
+- reads the settings of the game folder's `eu07.ini` and of the files given with `-ini` (in that
+  order), not the player's own `eu07.ini` in `%APPDATA%\MaSzyna` (`~/.config/MaSzyna` on Linux),
+  so a test runs the same for whoever runs it,
 - draws nothing: the null renderer loads the 3D models (the physics needs some of their
   data) but no textures, and the window stays hidden,
 - has no sound, no network, no python, no pause (not even one set by the scenery), and
@@ -29,13 +32,16 @@ With `--test` the simulator:
 - gives nothing to the outside either: no keyboard leds, LPT or PoKeys (`feedbackmode`), no
   messages to a multiplayer server (`multiplayer`), no program run at the end (`execonexit`),
   no console window of its own (`showsystemconsole`), and the game's `imgui.ini` stays as it is,
+- keeps all of the above whatever the `config` block of the scenery says: the settings of the
+  test mode are applied again after it,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
   frame (three 10 ms physics steps), whatever the real time, the time speed or the machine,
 - seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
   runs of a scenery come out the same (the physicslogs of two runs are byte for byte equal),
 - quits when the test ends, and says how it ended in the exit code and in a `test: ...`
   line on stdout and in the log. A command line it can't take, or a start that fails, ends
-  the same way with the `error` code.
+  the same way with the `error` code. That line is all there is on stdout: the log goes to
+  the log file only (`debuglog` doesn't print it on the console in test mode).
 
 On Windows the simulator is a windowed program, which the `cmd` prompt and PowerShell don't wait
 for. In a `.bat` file `eu07 --test ... > result.txt` waits and sets `%errorlevel%`; at the prompt
@@ -61,36 +67,52 @@ The test ends with the first of these:
 
 | exit code | result | when |
 | --- | --- | --- |
-| 0 | pass | `__test.result` was set to 1 and then every vehicle stood still for 1 s, so a train still moving towards a signal at stop has to stop first (with `test.no_movement_before_pass no` the pass ends the test at once). Also the standstill end with `test.pass_on_standstill yes` |
-| 1 | fail | `__test.result` was set to 0; ends at once |
-| 2 | signal passed at danger | a train went past a signal showing stop (`SetVelocity 0 0`; `SetVelocity 0 x` on automatic block, which may be passed after a stop, doesn't count); ends at once, unless `test.fail_if_stop_overran no` |
-| 3 | timeout | `test.timeout` seconds of simulation time went by (default 3600) |
-| 4 | standstill | every vehicle stood still for `test.standstill` seconds (default 300) and nothing reported a result. Trains waiting at a station or for a signal count as standing, so the limit has to be longer than such waits |
-| 5 | error | the run could not start: no `-s`, the scenery failed to load or has no vehicles, or the simulator threw |
+| 0 | pass | `__test.result` was set to 1 and then the tested trains stood still for 1 s, so a train still moving towards a signal at stop has to stop first (with `test.no_movement_before_pass no` the pass ends the test at once). Also the standstill end with `test.pass_on_standstill yes` |
+| 10 | fail | `__test.result` was set to 0; ends at once |
+| 11 | signal passed at danger | a train went past a signal showing stop (`SetVelocity 0 0`; `SetVelocity 0 x` on automatic block, which may be passed after a stop, doesn't count); ends at once, unless `test.fail_if_stop_overran no` |
+| 12 | timeout | `test.timeout` seconds of simulation time went by (default 3600), or `test.wall_timeout` seconds of real time since the start (see below) |
+| 13 | standstill | the tested trains stood still for `test.standstill` seconds (default 300) and nothing reported a result. Trains waiting at a station or for a signal count as standing, so the limit has to be longer than such waits |
+| 14 | error | the run could not start: no `-s`, the scenery failed to load or has no vehicles, or the simulator threw |
 
-A crash ends with the system's code instead (on Windows e.g. `0xC0000005`, -1073741819).
+A crash ends with the system's code instead (on Windows e.g. `0xC0000005`, -1073741819). The
+codes of the test mode keep clear of the ones a process gets when it goes wrong on its own: 1
+(killed with `TerminateProcess`, or a plain failure of most programs), 3 (`abort()` on Windows),
+126-127 (a shell that can't run the program) and 128 + a signal number (killed, on Linux).
 
 The limits go in a `config` block of the scenery:
 
 ```
 config
 test.timeout 600
+test.wall_timeout 900
 test.standstill 120
 test.pass_on_standstill no
 test.fail_if_stop_overran yes
 test.no_movement_before_pass yes
+test.vehicle ep07-424
 endconfig
 ```
 
 | key | default | meaning |
 | --- | --- | --- |
 | `test.timeout` | 3600 | seconds of simulation time before the test ends as `timeout`; 0 = never |
-| `test.standstill` | 300 | seconds with every vehicle still and no result before the test ends as `standstill`; 0 = never |
+| `test.wall_timeout` | `test.timeout` + 600 | seconds of real time since the start before the test ends as `timeout`; 0 = never |
+| `test.standstill` | 300 | seconds with the tested trains still and no result before the test ends as `standstill`; 0 = never |
 | `test.pass_on_standstill` | no | the standstill end passes the test instead |
 | `test.fail_if_stop_overran` | yes | a signal passed at danger ends the test; with `no` it's only logged |
-| `test.no_movement_before_pass` | yes | a pass waits until every vehicle stands still; with `no` it ends the test at once |
+| `test.no_movement_before_pass` | yes | a pass waits until the tested trains stand still; with `no` it ends the test at once |
+| `test.vehicle` | none | a vehicle of a train under test, by its name in the scenery (once for each train under test). The tested trains are the consists of these vehicles as they are at the moment (a train the tested one couples to joins it), and only they count for the pass and the standstill: other trains, AI traffic, may run on. A name the scenery doesn't have ends the test with `error`. Not given, every vehicle of the scenery counts. A signal passed at danger counts for every train either way |
 
-`--test-timeout` on the command line wins over `test.timeout` of the scenery.
+`--test-timeout` and `--test-wall-timeout` on the command line win over `test.timeout` and
+`test.wall_timeout` of the scenery and the settings files.
+
+`test.wall_timeout` is a watchdog in real time, for a run that hangs or crawls: when the
+simulator still runs that many seconds after its start, loading included, it says `test: timeout`
+and quits with the timeout code, whatever it is doing at the moment, with no dialog. Not given,
+it is `test.timeout` + 600 s: ten minutes for the loading, and a simulation that runs at least as
+fast as real time is never cut short by it. With `test.timeout 0` there is no watchdog unless
+`test.wall_timeout` is given; `test.wall_timeout 0` turns it off. A test that has ended but whose
+simulator doesn't close is ended by the watchdog too, with its own result.
 
 A signal is passed at danger when the head of a train goes past a signal which its driver
 has in its speed table, showing stop. So it's the driver's view that counts: a train without
@@ -111,14 +133,15 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 17 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. All 19 cases
   take about 30 s with `-j 4`, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
   watching what a case does.
 
 Exit code is 0 when every case passed. Logs of each run (`log.txt`, `errors.txt`,
-`stdout.txt`, the vehicle's physicslog) are moved to `tests/scenarios/out/<case>/`.
+`stdout.txt`, the physicslogs of the vehicle and of other trains of the case) are moved to
+`tests/scenarios/out/<case>/`.
 
 ## How it works
 
@@ -129,13 +152,15 @@ For each case the runner:
    added, and the case's `.scn` fragment added: its trainsets after `FirstInit`, everything
    else (the case's `test_config`, event launchers standing in for keys the scenery expects a
    player to press, extra events) before it,
-2. starts the simulator with `--test -s autotest_<case>.scn -ini out/<case>/autotest.ini`,
-   plus `--test-timeout <duration>` when the case gives a `duration`; the extra ini turns on
+2. starts the simulator with `--test -s autotest_<case>.scn -ini out/<case>/autotest.ini
+   --test-wall-timeout <timeout>`, plus `--test-timeout <duration>` when the case gives a
+   `duration`; the extra ini turns on
    `physicslog` and writes the logs to `logs/log (autotest_<case>) <date>.txt` rather than the
    shared `log.txt` (`multiplelogs`),
 3. waits until the simulator quits by itself. It gives up early when the log reports
-   `Bad vehicle` / `Bad trainset`, when the scenario has loaded and no physicslog appeared, or
-   after the case's `timeout` of wall-clock time,
+   `Bad vehicle` / `Bad trainset`, or when the scenario has loaded and no physicslog appeared.
+   After the case's `timeout` of wall-clock time the simulator ends itself with the timeout code;
+   one that doesn't is killed 30 s later,
 4. compares the result from the exit code with the case's `expect`, then runs the checks on
    the physicslog.
 
@@ -155,29 +180,40 @@ scenery is newer.
 | `time` | replace the scenery start time, `HH:MM` |
 | `track_friction` | set the friction of every track of the base scenery (default in the sceneries is 0.15), e.g. for slippery rail |
 | `track_events` | lines added to tracks of the base scenery, by track name, e.g. `{ "tor1k": "event0 test_pass" }`; only tracks in the scenery file itself, not in its includes |
-| `test_config` | lines of a `config` block added to the scenery, e.g. `["test.timeout 90"]` |
+| `test_config` | lines of a `config` block added to the scenery, e.g. `["test.timeout 90"]`; the block always has `test.vehicle` with the case's lead vehicle, so only its train counts for the pass and the standstill |
 | `ini` | extra `eu07.ini` lines for the run, after the common ones of the runner's `-ini` file, e.g. `["crashdamage yes"]` |
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
-| `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`. Default `timeout` for a case with `duration`, else `pass` |
+| `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
-| `timeout` | wall-clock seconds before giving up, loading included |
+| `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
 | `fail_on_errors` | fail when `errors.txt` is not empty (default `false`) |
 | `checks` | list of checks, below |
 
 `{{vehicle}}` is always set, also inside `vars` values: the node name of the lead vehicle,
-the one whose physicslog is checked. Other vehicles of the consist take names made from it,
-e.g. `{{vehicle}}_s`. The td.scn cases share two fragments, `td_timetable.scn` (route set,
+the one whose physicslog is checked, and the train under test (`test.vehicle`). Other vehicles
+of the consist take names made from it, e.g. `{{vehicle}}_s`; another train with a driver is named
+`<something>_{{vehicle}}`, so its physicslog is moved out of the game dir too. The td.scn cases share two fragments, `td_timetable.scn` (route set,
 train runs to Przystanek) and `td_red_signal.scn` (no route, exit signal at stop), and differ
-only in `vars.consist`. `td_red_signal_moving.scn` is the red signal one with the train
+only in `vars.consist`. Przystanek is a technical stop in that timetable (`pt`), where the AI
+doesn't wait for the departure time: it sets off as soon as it counts the train as standing at
+the W4, which is below 1 km/h, so the train stands there for a few seconds at most, or doesn't
+quite stop (since the AI braking of #264 the SN61 turns back at 0.4 km/h). The
+timetable cases therefore check that the train comes down to 1 km/h, with no hold, 1380-1420 m
+from the start (each of the seven trains stops at 1397-1401 m). `td_red_signal_moving.scn` is the red signal one with the train
 starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels when braking
 and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
 
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
-event), `test_mode_signal_passed_at_danger` (exit 2), `test_mode_timeout` (exit 3, from
-`test.timeout`) and `test_mode_standstill` (exit 4, from `test.standstill`).
+event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
+`test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
+`test_mode_wall_timeout` (exit 12 from the real time watchdog, which ends it while it loads).
+`test_mode_standstill_traffic` (fragment `td_traffic.scn`) has a train under test standing on
+track 2 of Stacja1 and AI traffic, `traffic_{{vehicle}}`, leaving track 1 on the timetable: the
+standstill of 100 s ends the test although the traffic runs on (counting every vehicle, it runs
+into the test timeout).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
 
@@ -196,13 +232,14 @@ the row instead, logged by builds from this branch on.
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
-- `stops` `moving_speed`, `stop_speed`, `hold`: after reaching `moving_speed`, stays at or
-  below `stop_speed` for `hold` seconds.
+- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`: after
+  reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the distances,
+  that stop has to be between them (metres travelled, as in `distance`).
 - `stays_stopped` `moving_speed`, `stop_speed`: after moving off and stopping, never goes
   above `stop_speed` again.
 - `distance` `min`, `max`: total distance travelled. The physicslog has no position, so the
   distance comes from integrating the speed; on td.scn every vehicle's first stop after
-  Stacja1 came out at 1400 m (+-3), and the red signal stop at 140 m.
+  Stacja1 came out at 1400 m (+-4), and the red signal stop at 140 m.
 - `slips` `within`: the lead vehicle's wheels slip or lock at some point (within `within`
   seconds if given), so a slippery rail case does what it's meant to.
 - `slip_clears` `moving_speed`, `stop_speed`, `within` (*vehicle speed*): once stopped after

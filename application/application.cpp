@@ -31,17 +31,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
-#ifdef _WIN32
-#include "Console.h"
-#endif
-#include <algorithm>
-#include <charconv>
 #include <chrono>
-#include <cmath>
 #include <format>
-#include <optional>
-#include <span>
-#include <string_view>
+#include <vector>
 #include "utilities/translation.h"
 
 #if WITH_DISCORD_RPC
@@ -330,6 +322,9 @@ int eu07_application::init(int Argc, char *Argv[])
 {
 
 	int result{0};
+	// a test run is known before anything is logged: whoever started it reads its result on the standard output,
+	// which the log isn't written to then (eu07/maszyna#541)
+	Global.test.enabled = simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc)).enabled;
 	// start logging service
 	std::thread sLoggingService(LogService);
 	Global.threads.emplace("LogService", std::move(sLoggingService));
@@ -1154,70 +1149,34 @@ void eu07_application::init_files()
 }
 namespace fs = std::filesystem;
 
-namespace
-{
-
-// the settings of the test mode (--test), over whatever the settings files say
-void apply_test_mode_settings()
-{
-	// nobody watches nor listens: no player vehicle, nothing drawn, no sound, no window in the way
-	Global.editor_session = false;
-	Global.local_start_vehicle = "ghostview";
-	Global.GfxRenderer = "null";
-	Global.NvRenderer = false;
-	Global.bSoundEnabled = false;
-	Global.python_enabled = false;
-	Global.bInactivePause = false;
-	Global.bFullScreen = false;
-	Global.fullscreen_windowed = false;
-	Global.VSync = false;
-	Global.iMultisampling = 0;
-	Global.gfx_usegles = false;
-	Global.minframetime = std::chrono::duration<float>(0.0f);
-	Global.extra_viewports.clear();
-	Global.headtrack_conf.joy.clear();
-	// a test runs on its own: no network, and no input from outside (eu07/maszyna#541)
-	Global.network_servers.clear();
-	Global.network_client.reset();
-	Global.InputGamepad = false;
-	Global.InputMouse = false;
-	Global.uart_conf.enable = false;
-	Global.motiontelemetry_conf.enable = false;
-#ifdef WITH_ZMQ
-	Global.zmq_address.clear();
-#endif
-	// nor anything to the outside: no keyboard leds, LPT or PoKeys desk (feedbackmode), no messages to a
-	// multiplayer server (multiplayer, which also holds some events back for it), no program run at the end
-	Global.iFeedbackMode = 0;
-#ifdef _WIN32
-	Console::ModeSet(Global.iFeedbackMode, Global.iFeedbackPort);
-#endif
-	Global.iMultiplayer = 0;
-	Global.exec_on_exit.clear();
-	// and the same way every time, unless given another seed (-seed, or randomseed in the settings)
-	if (!Global.random_seed)
-		Global.random_seed = seed_of("test");
-}
-
-// seconds given on the command line: a number, not negative. returns nothing for anything else
-std::optional<double> parse_seconds(std::string_view const Text)
-{
-	auto const *const last{Text.data() + Text.size()};
-	double value{0.0};
-	if (auto const [parsed, status]{std::from_chars(Text.data(), last, value)}; status != std::errc{} || parsed != last || false == std::isfinite(value) || value < 0.0)
-		return std::nullopt;
-	return value;
-}
-
-} // namespace
-
 int eu07_application::init_settings(int Argc, char *Argv[])
 {
 	Global.asVersion = VERSION_INFO;
 
+	// a test run is known before the rest of the command line is read (Global.test.enabled, see init()), so a
+	// command line it can't take ends with the error code of the test, not with 0, which would pass it
+	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
+	if (false == testcommandline.error.empty())
+	{
+		simulation::test().conclude(simulation::test_result::error, testcommandline.error);
+		return -1;
+	}
+	if (testcommandline.timeout.has_value())
+	{
+		Global.test.timeout = *testcommandline.timeout;
+		Global.test.timeout_from_command_line = true;
+	}
+	if (testcommandline.wall_timeout.has_value())
+	{
+		Global.test.wall_timeout = testcommandline.wall_timeout;
+		Global.test.wall_timeout_from_command_line = true;
+	}
+
 	fs::path iniPath = user_config_path("eu07.ini");
 
-	if (!iniPath.empty() && fs::exists(iniPath))
+	// a test reads the settings of the game folder only (and those given with -ini), not the player's own
+	// (%APPDATA%/MaSzyna, ~/.config/MaSzyna), so it runs the same for whoever runs it
+	if (false == Global.test.enabled && !iniPath.empty() && fs::exists(iniPath))
 	{
 		Global.LoadIniFile(iniPath.string().c_str());
 	}
@@ -1225,10 +1184,6 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 		Global.LoadIniFile("eu07.ini");
 	}
-
-	// a test run is known before the rest of the command line is read, so a command line it can't take
-	// ends with the error code of the test, not with 0, which would pass it
-	Global.test.enabled = std::ranges::any_of(std::span(Argv, static_cast<std::size_t>(Argc)), [](char const *Argument) { return std::string_view(Argument) == "--test"; });
 
 	// process command line arguments
 	bool sceneryfromcommandline{false};
@@ -1278,20 +1233,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 		else if (token == "--test")
 		{
-			// integration test: the scenery runs unattended and the exit code is the result (eu07/maszyna#541)
-			Global.test.enabled = true;
+			// integration test: the scenery runs unattended and the exit code is the result (eu07/maszyna#541),
+			// taken from the command line above
 		}
-		else if (token == "--test-timeout")
+		else if (token == "--test-timeout" || token == "--test-wall-timeout")
 		{
-			auto const timeout{i + 1 < Argc ? parse_seconds(Argv[++i]) : std::nullopt};
-			if (false == timeout.has_value())
-			{
-				// a typo would otherwise turn the timeout off
-				simulation::test().conclude(simulation::test_result::error, "--test-timeout needs a number of seconds");
-				return -1;
-			}
-			Global.test.timeout = *timeout;
-			Global.test.timeout_from_command_line = true;
+			// taken from the command line above, with its value
+			++i;
 		}
 		else if (token == "-ini")
 		{
@@ -1304,12 +1252,13 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		}
 		else
 		{
-			std::cout << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
+			// a test's standard output carries its result only
+			(Global.test.enabled ? std::cerr : std::cout) << "usage: " << std::string(Argv[0]) << " [-s sceneryfilepath]"
 			          << " [-v vehiclename]"
 			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]"
 			          << " [-ini settingsfile]"
-			          << " [--test [--test-timeout seconds]]" << std::endl;
+			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds]]" << std::endl;
 			simulation::test().conclude(simulation::test_result::error, std::format("unknown command line argument {}", token));
 			return -1;
 		}
@@ -1324,7 +1273,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			simulation::test().conclude(simulation::test_result::error, "--test needs a scenery given with -s");
 			return -1;
 		}
-		apply_test_mode_settings();
+		simulation::apply_test_mode_settings();
 	}
 
 	return 0;

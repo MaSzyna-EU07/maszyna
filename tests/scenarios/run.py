@@ -52,17 +52,22 @@ COL_COMMAND = 16  # text, read as None
 COL_WHEELSLIP = 20
 COL_VEHICLE_VELOCITY = 25  # signed vehicle speed, km/h; only in builds which log it
 
-# exit codes of the simulator's test mode (eu07 --test), see simulation/simulationtest.h
+# exit codes of the simulator's test mode (eu07 --test), see simulation/simulationtestrules.h
 EXIT_RESULTS = {
     0: "pass",
-    1: "fail",
-    2: "signal_passed_at_danger",
-    3: "timeout",
-    4: "standstill",
-    5: "error",
+    10: "fail",
+    11: "signal_passed_at_danger",
+    12: "timeout",
+    13: "standstill",
+    14: "error",
 }
+# the timeout of the simulator's real time watchdog (test.wall_timeout) has the timeout code too; told
+# apart by its verdict, so a run that hung doesn't pass a case that expects the simulation time to run out
+WALL_TIMEOUT = "wall_timeout"
+RESULTS = (*EXIT_RESULTS.values(), WALL_TIMEOUT)
 
-# settings layered over the user's eu07.ini for a test run; the window ones only matter
+# settings layered over the game's eu07.ini for a test run (test mode doesn't read the player's own
+# in %APPDATA%); the window ones only matter
 # with --watch, test mode keeps its window hidden and turns the sound off by itself
 TEST_INI = """\
 fullscreen no
@@ -153,9 +158,10 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     # events of the case go in before it (read after it they never fire), trainsets after it
     # (placed before it they stand on unlinked track and derail at once)
     before, trainsets = split_trainsets(fragment)
-    if case.get("test_config"):
-        # settings of the test mode (test.timeout and so on), read like any other config block
-        before = "config\n" + "".join(line + "\n" for line in case["test_config"]) + "endconfig\n" + before
+    # settings of the test mode, read like any other config block: the case's vehicle is the train under test,
+    # whose consist the pass and the standstill wait for, and the case's own (test.timeout and so on)
+    config = [f"test.vehicle {vehicle}", *case.get("test_config", [])]
+    before = "config\n" + "".join(line + "\n" for line in config) + "endconfig\n" + before
     header = f"\n// ---- autotest: {case_name} ----\n"
     firstinit = re.search(r"(?im)^\s*firstinit\b", text)
     if firstinit:
@@ -225,6 +231,8 @@ FATAL_LOG_LINES = ("Bad vehicle:", "Bad trainset:")
 # time" in the log is not the end of loading (the trainsets after FirstInit still follow),
 # and with several simulators loading at once the first rows took well over 15 s
 STARTUP_TIMEOUT = 120.0
+# wall seconds past a case's timeout before the runner kills a simulator that didn't end itself
+KILL_GRACE = 30.0
 
 
 @dataclass
@@ -245,7 +253,8 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
     if watch:
         cmd = [str(exe), "-s", scenery, "-v", "ghostview", "-ini", str(ini)]
     else:
-        cmd = [str(exe), "--test", "-s", scenery, "-ini", str(ini)]
+        # the simulator's own watchdog ends a run that takes too long, with the timeout code and its verdict
+        cmd = [str(exe), "--test", "-s", scenery, "-ini", str(ini), "--test-wall-timeout", f"{timeout:g}"]
         if duration is not None:
             cmd += ["--test-timeout", f"{duration:g}"]
     say("  $ " + " ".join(f'"{c}"' if " " in c else c for c in cmd), progress=True)
@@ -271,8 +280,9 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
                 break
             if watch and sim_t >= duration:
                 break
-            if wall > timeout:
-                result.failure = f"timed out after {timeout:.0f}s before {duration}s of simulation"
+            # in test mode a little later than the simulator's own limit, for a run that can't even end itself
+            if wall > timeout + (0 if watch else KILL_GRACE):
+                result.failure = f"timed out after {wall:.0f}s before {duration}s of simulation"
                 break
             if not result.rows:
                 result.logs = find_logs(game_dir, scenery, since)
@@ -344,7 +354,7 @@ def check_brakes(rows, min_pressure, moving_speed=20):
     return False, f"brake cylinder pressure never reached {min_pressure} bar after moving off"
 
 
-def check_stops(rows, moving_speed, stop_speed, hold):
+def check_stops(rows, moving_speed, stop_speed, hold, min_distance=None, max_distance=None):
     start = _first_moving(rows, moving_speed)
     if start is None:
         return False, f"never reached {moving_speed} km/h"
@@ -356,7 +366,11 @@ def check_stops(rows, moving_speed, stop_speed, hold):
             if stopped_at is None:
                 stopped_at = i
             if r[COL_TIME] - rows[stopped_at][COL_TIME] >= hold:
-                return True, f"came to a stop at t={rows[stopped_at][COL_TIME]:.1f}s after {dist[stopped_at]:.0f} m"
+                where = dist[stopped_at]
+                detail = f"came to a stop at t={rows[stopped_at][COL_TIME]:.1f}s after {where:.0f} m"
+                if (min_distance is not None and where < min_distance) or (max_distance is not None and where > max_distance):
+                    return False, f"{detail}, wanted between {min_distance} and {max_distance} m"
+                return True, detail
         else:
             stopped_at = None
     return False, f"did not stay below {stop_speed} km/h for {hold}s after moving off"
@@ -526,8 +540,8 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     # a case that only records `duration` seconds ends on the test timeout; one that says
     # how the test ends (a pass event, a signal passed at danger...) expects that result
     expect = case.get("expect", "timeout" if duration is not None else "pass")
-    if expect not in EXIT_RESULTS.values():
-        sys.exit(f"{name}: expect must be one of {', '.join(EXIT_RESULTS.values())}")
+    if expect not in RESULTS:
+        sys.exit(f"{name}: expect must be one of {', '.join(RESULTS)}")
     if watch and duration is None:
         sys.exit(f"{name}: --watch needs a case with duration")
     result = run_simulator(exe, game_dir, scenery, ini, physicslog,
@@ -538,6 +552,9 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
         shutil.move(path, out / f"{kind}.txt")
     if physicslog.exists():
         shutil.move(physicslog, out / physicslog.name)
+    # other trains of the case with a driver, named <something>_<vehicle>, log too
+    for other in physicslog.parent.glob(f"*_{vehicle}.dat"):
+        shutil.move(other, out / other.name)
 
     ok = True
     sim_t = result.rows[-1][COL_TIME] if result.rows else 0.0
@@ -550,8 +567,11 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
         if result.verdict:
             say(f"  {result.verdict}")
         got = EXIT_RESULTS.get(result.exit_code) if result.exit_code is not None else None
+        if got == "timeout" and "of real time" in result.verdict:
+            got = WALL_TIMEOUT
         passed = got == expect
-        say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}, expected {expect}")
+        watchdog = ", from the real time watchdog" if got == WALL_TIMEOUT else ""
+        say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}{watchdog}, expected {expect}")
         ok &= passed
     if result.failure:
         say(f"  FAIL  {result.failure}")

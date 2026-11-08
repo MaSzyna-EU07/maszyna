@@ -9,32 +9,22 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <string>
+#include "simulation/simulationtestrules.h"
+
+#include <atomic>
+#include <mutex>
 #include <string_view>
+#include <thread>
 
 // integration test mode (eu07 --test -s <scenery>, eu07/maszyna#541): the scenery runs unattended in a tight
 // fixed-step loop and the simulator quits with an exit code saying how the test went
 namespace simulation {
-
-// exit codes of a test run; public, scripts and CI read them
-enum class test_result : int {
-	pass = 0, // __test.result set to 1, then every vehicle came to rest (or test.pass_on_standstill)
-	fail = 1, // __test.result set to 0
-	signal_passed_at_danger = 2, // a train went past a stop signal (SetVelocity 0 0), unless test.fail_if_stop_overran no
-	timeout = 3, // test.timeout seconds of simulation time went by without a result
-	standstill = 4, // every vehicle stood still for test.standstill seconds without a result
-	error = 5, // the run could not start (no -s, the scenery failed to load) or the simulator threw
-};
-
-std::string_view to_string(test_result Result);
 
 class test_manager {
 
 public:
 	// name of the memory cell a scenery reports its result to
 	static constexpr std::string_view result_cell { "__test.result" };
-	// how long everything has to stand before a requested pass is granted [s]
-	static constexpr double pass_settle_time { 1.0 };
 	// fixed simulation time step of one frame in test mode [s]: 3 physics steps of 10 ms
 	static constexpr double frame_step { 0.03 };
 
@@ -51,21 +41,36 @@ public:
 	// ends the test with given result, without closing the application: for the ways out that close it anyway
 	// (a bad command line, a failed start, an exception). returns false if the test had already ended
 	bool conclude(test_result Result, std::string_view Reason);
+	// (re)sets the real time limit of the run [s] since the start of the simulator, 0 = none. the first limit
+	// starts the watchdog, which ends a run still going at the limit with the timeout code, whatever it's doing
+	void watch_wall_clock(double Limit);
 
 	bool finished() const { return m_finished; }
 	// exit code of the process: the result, or error while the test hasn't finished
-	int exit_code() const { return static_cast<int>(m_finished ? m_result : test_result::error); }
+	int exit_code() const;
 
 private:
+	// the watchdog's check, at Elapsed seconds of real time since the start of the simulator
+	void check_wall_clock(double Elapsed);
+	// every vehicle of the tested trains stands: the consists of test.vehicle, or every vehicle without it
+	bool tested_trains_at_rest() const;
+
+	// the watchdog may end the test from its own thread
+	mutable std::mutex m_lock;
 	bool m_started { false };
-	bool m_finished { false };
+	std::atomic<bool> m_finished { false };
 	test_result m_result { test_result::error };
-	bool m_passrequested { false };
-	double m_time { 0.0 }; // simulation time since the start [s]
-	double m_resttime { 0.0 }; // how long every vehicle has been standing [s]
+	test_progress m_progress;
+	std::atomic<double> m_walllimit { 0.0 }; // [s] since the start of the simulator, 0 = none
+	std::jthread m_watchdog;
 };
 
 // the test of the run
 test_manager &test();
+
+// the settings of the test mode, over whatever the settings files and the scenery say: applied once the command
+// line is read, and again after each config block of the scenery, which could turn the sound, the network or the
+// program run at the end back on
+void apply_test_mode_settings();
 
 } // namespace simulation
