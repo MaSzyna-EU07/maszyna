@@ -158,9 +158,10 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     # events of the case go in before it (read after it they never fire), trainsets after it
     # (placed before it they stand on unlinked track and derail at once)
     before, trainsets = split_trainsets(fragment)
-    if case.get("test_config"):
-        # settings of the test mode (test.timeout and so on), read like any other config block
-        before = "config\n" + "".join(line + "\n" for line in case["test_config"]) + "endconfig\n" + before
+    # settings of the test mode, read like any other config block: the case's vehicle is the train under test,
+    # whose consist the pass and the standstill wait for, and the case's own (test.timeout and so on)
+    config = [f"test.vehicle {vehicle}", *case.get("test_config", [])]
+    before = "config\n" + "".join(line + "\n" for line in config) + "endconfig\n" + before
     header = f"\n// ---- autotest: {case_name} ----\n"
     firstinit = re.search(r"(?im)^\s*firstinit\b", text)
     if firstinit:
@@ -526,6 +527,9 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
         shutil.move(path, out / f"{kind}.txt")
     if physicslog.exists():
         shutil.move(physicslog, out / physicslog.name)
+    # other trains of the case with a driver, named <something>_<vehicle>, log too
+    for other in physicslog.parent.glob(f"*_{vehicle}.dat"):
+        shutil.move(other, out / other.name)
 
     ok = True
     sim_t = result.rows[-1][COL_TIME] if result.rows else 0.0

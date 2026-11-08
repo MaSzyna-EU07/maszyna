@@ -52,6 +52,8 @@ public:
 private:
 	// the watchdog's check, at Elapsed seconds of real time since the start of the simulator
 	void check_wall_clock(double Elapsed);
+	// every vehicle of the tested trains stands: the consists of test.vehicle, or every vehicle without it
+	bool tested_trains_at_rest() const;
 
 	// the watchdog may end the test from its own thread
 	mutable std::mutex m_lock;

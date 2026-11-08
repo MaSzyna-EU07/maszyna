@@ -91,10 +91,11 @@ struct global_settings {
     struct test_settings {
         bool enabled{ false };
         double timeout{ 3600.0 }; // [s] of simulation time; no result by then fails the test
-        double standstill{ 300.0 }; // [s] every vehicle standing still this long ends the test; 0 = never
+        double standstill{ 300.0 }; // [s] the tested trains standing still this long ends the test; 0 = never
         bool pass_on_standstill{ false }; // the standstill end passes the test instead of failing it
         bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
-        bool no_movement_before_pass{ true }; // a pass waits until every vehicle stands still; with false it ends the test at once
+        bool no_movement_before_pass{ true }; // a pass waits until the tested trains stand still; with false it ends the test at once
+        std::vector<std::string> vehicles; // test.vehicle: the trains under test are the consists of these; none = every vehicle
         bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
         std::optional<double> wall_timeout; // [s] of real time since the start; none = test.timeout + time for the loading, 0 = no limit
         bool wall_timeout_from_command_line{ false }; // --test-wall-timeout given, the scenery doesn't override it

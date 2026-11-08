@@ -138,9 +138,9 @@ std::optional<test_verdict> evaluate_frame(test_progress &Progress, test_frame c
 	Progress.resttime = Frame.atrest ? Progress.resttime + Frame.deltatime : 0.0;
 
 	if (Progress.passrequested && Progress.resttime >= pass_settle_time)
-		return test_verdict{pass, "__test.result set to 1 and every vehicle stopped"};
+		return test_verdict{pass, "__test.result set to 1 and the tested trains stopped"};
 	if (Limits.standstill > 0.0 && Progress.resttime >= Limits.standstill)
-		return test_verdict{Limits.pass_on_standstill ? pass : standstill, std::format("every vehicle stood still for {:.0f} s", Limits.standstill)};
+		return test_verdict{Limits.pass_on_standstill ? pass : standstill, std::format("the tested trains stood still for {:.0f} s", Limits.standstill)};
 	if (Limits.timeout > 0.0 && Progress.time >= Limits.timeout)
 		return test_verdict{timeout, std::format("no result after {:.0f} s", Limits.timeout)};
 	return std::nullopt;

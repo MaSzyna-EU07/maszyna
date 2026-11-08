@@ -167,7 +167,7 @@ TEST_CASE("test mode: the end conditions")
 		CHECK(verdict->result == test_result::fail);
 		CHECK(verdict->reason == "__test.result set to 0 (wrong_track)");
 	}
-	SUBCASE("1 passes once every vehicle has stood for a second")
+	SUBCASE("1 passes once the tested trains have stood for a second")
 	{
 		CHECK_FALSE(simulation::evaluate_frame(progress, frame(false, 1.0), limits).has_value());
 		CHECK(progress.passrequested);

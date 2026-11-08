@@ -33,6 +33,11 @@ http://mozilla.org/MPL/2.0/.
 
 namespace {
 
+bool is_moving(TDynamicObject const *Vehicle)
+{
+	return std::abs(Vehicle->GetVelocity()) > 0.01;
+}
+
 // [s] of real time since the start of the simulator
 double elapsed_wall_time()
 {
@@ -117,10 +122,25 @@ void test_manager::start()
 		finish(test_result::error, "the scenery has no vehicles");
 		return;
 	}
+	for (auto const &name : Global.test.vehicles)
+	{
+		if (simulation::Vehicles.find(name) == nullptr)
+		{
+			finish(test_result::error, std::format("the scenery has no vehicle {} (test.vehicle)", name));
+			return;
+		}
+	}
 	// a pause set by the scenery or the settings would never be lifted, nobody is there to press the key
 	Global.iPause = 0;
+	auto tested { std::string("every vehicle") };
+	if (false == Global.test.vehicles.empty())
+	{
+		tested = "the consists of";
+		for (auto const &name : Global.test.vehicles)
+			tested += " " + name;
+	}
 	auto const walllimit { m_walllimit.load() };
-	WriteLog(std::format("test: started, timeout {:.0f} s, real time limit {}, standstill {:.0f} s{}{}{}", Global.test.timeout,
+	WriteLog(std::format("test: started, testing {}, timeout {:.0f} s, real time limit {}, standstill {:.0f} s{}{}{}", tested, Global.test.timeout,
 	                     walllimit > 0.0 ? std::format("{:.0f} s", walllimit) : std::string("none"), Global.test.standstill,
 	                     Global.test.pass_on_standstill ? ", standstill passes" : "",
 	                     Global.test.fail_if_stop_overran ? "" : ", signals passed at danger allowed",
@@ -132,8 +152,7 @@ void test_manager::update(double const Deltatime)
 	if (false == m_started || m_finished)
 		return;
 
-	test_frame frame { Deltatime, std::nullopt, {},
-	                   std::ranges::none_of(simulation::Vehicles.sequence(), [](TDynamicObject const *Vehicle) { return std::abs(Vehicle->GetVelocity()) > 0.01; }) };
+	test_frame frame { Deltatime, std::nullopt, {}, tested_trains_at_rest() };
 	if (auto const *cell = simulation::Memory.find(std::string(result_cell)))
 	{
 		frame.reported = cell->Value1();
@@ -156,9 +175,20 @@ void test_manager::update(double const Deltatime)
 	}
 	if (passrequested)
 	{
-		WriteLog(std::format("test: pass requested at {:.1f} s{}, waiting for every vehicle to stop", m_progress.time,
+		WriteLog(std::format("test: pass requested at {:.1f} s{}, waiting for the tested trains to stop", m_progress.time,
 		                     frame.reason.empty() ? std::string() : std::format(" ({})", frame.reason)));
 	}
+}
+
+bool test_manager::tested_trains_at_rest() const
+{
+	if (Global.test.vehicles.empty())
+		return std::ranges::none_of(simulation::Vehicles.sequence(), is_moving);
+	// the consists as they are now: a train the tested one couples to joins it, one it leaves behind doesn't
+	return std::ranges::none_of(Global.test.vehicles, [](std::string const &Name) {
+		auto *vehicle { simulation::Vehicles.find(Name) };
+		return vehicle != nullptr && vehicle->find_vehicle(coupling::coupler, is_moving) != nullptr;
+	});
 }
 
 void test_manager::signal_passed_at_danger(std::string_view const Vehicle, std::string_view const Signal)

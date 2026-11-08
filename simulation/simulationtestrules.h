@@ -22,11 +22,11 @@ namespace simulation {
 // when it goes wrong on its own: 1 (killed with TerminateProcess, or a plain failure of most programs), 3 (abort()
 // on Windows), 126-127 (a shell that can't run the program) or 128 + a signal number (killed, on Linux)
 enum class test_result : int {
-	pass = 0, // __test.result set to 1, then every vehicle came to rest (or test.pass_on_standstill)
+	pass = 0, // __test.result set to 1, then the tested trains came to rest (or test.pass_on_standstill)
 	fail = 10, // __test.result set to 0
 	signal_passed_at_danger = 11, // a train went past a stop signal (SetVelocity 0 0), unless test.fail_if_stop_overran no
 	timeout = 12, // test.timeout seconds of simulation time, or test.wall_timeout seconds of real time went by
-	standstill = 13, // every vehicle stood still for test.standstill seconds without a result
+	standstill = 13, // the tested trains stood still for test.standstill seconds without a result
 	error = 14, // the run could not start (a bad command line, the scenery failed to load) or the simulator threw
 };
 
@@ -64,7 +64,7 @@ double wall_clock_limit(std::optional<double> Given, double Simulationtimeout);
 // the limits and switches the end conditions go by
 struct test_limits {
 	double timeout{3600.0}; // [s] of simulation time; 0 = never
-	double standstill{300.0}; // [s] of every vehicle standing without a result; 0 = never
+	double standstill{300.0}; // [s] of the tested trains standing without a result; 0 = never
 	bool pass_on_standstill{false};
 	bool no_movement_before_pass{true};
 };
@@ -74,17 +74,17 @@ struct test_frame {
 	double deltatime{0.0}; // [s] of simulation time
 	std::optional<double> reported; // value of the result cell, if there is one
 	std::string_view reason; // text of the result cell
-	bool atrest{false}; // every vehicle stands
+	bool atrest{false}; // every vehicle of the tested trains stands (test.vehicle; every vehicle without it)
 };
 
 // the state of a test between frames
 struct test_progress {
 	double time{0.0}; // simulation time since the start [s]
-	double resttime{0.0}; // how long every vehicle has been standing [s]
-	bool passrequested{false}; // __test.result was set to 1, the pass waits for the vehicles to stop
+	double resttime{0.0}; // how long the tested trains have been standing [s]
+	bool passrequested{false}; // __test.result was set to 1, the pass waits for the tested trains to stop
 };
 
-// how long everything has to stand before a requested pass is granted [s]
+// how long the tested trains have to stand before a requested pass is granted [s]
 inline constexpr double pass_settle_time{1.0};
 
 // checks the end conditions after a frame and moves the progress on. returns the verdict once the test is over
