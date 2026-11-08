@@ -585,7 +585,11 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     for check in case.get("checks", []):
         params = {k: v for k, v in check.items() if k != "type"}
         if check["type"] in LOG_CHECKS:
-            passed, detail = LOG_CHECKS[check["type"]](log, **params)
+            # with no log text a log check proves nothing, log_lacks would pass vacuously
+            if log.strip():
+                passed, detail = LOG_CHECKS[check["type"]](log, **params)
+            else:
+                passed, detail = False, "log.txt is missing or empty"
         else:
             passed, detail = CHECKS[check["type"]](result.rows, **params)
         say(f"  {'PASS' if passed else 'FAIL'}  {check['type']}: {detail}")
