@@ -9,12 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-// features of the tracks built into the simulator but switched off in it as a whole, whatever the scenery or eu07.ini sets
+// features of the tracks switched on or off in the build as a whole, whatever the scenery or eu07.ini sets
 namespace track_features {
 
-// the blades of the switches with the key frogs shaped as their templates have them, from the tip their planed nose ends at to the heel,
-// with the rails left whole where the frogs aren't cut (frogs in eu07.ini off); off with the frogs too, they're laid from the start of
-// the switch as before
+// on: the blades of the switches with the key frogs shaped as their templates have them, from the tip their planed nose ends at to
+// the heel. that's whether frogs in eu07.ini is on or off: with it off only the frogs aren't cut, the rails are left whole there and
+// the blades shaped still. off: the blades laid from the start of the switch as before, for the switches with the key too
 bool constexpr blades { true };
 
 } // namespace track_features
