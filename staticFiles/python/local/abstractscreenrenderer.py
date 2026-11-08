@@ -1,6 +1,24 @@
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from math import ceil, floor, cos, sin, radians
 import os
+
+# Pillow 10 removed ImageFont.getsize(), ImageDraw.textsize() and Image.ANTIALIAS, which the screen scripts use; for
+# Python 3.14 only a newer Pillow is available, so they are put back, on top of getbbox() / textbbox() and LANCZOS
+def _font_getsize(self, text, *args, **kwargs):
+	box = self.getbbox(text, *args, **kwargs)
+	return (box[2], box[3])
+
+def _draw_textsize(self, text, font=None, *args, **kwargs):
+	box = self.textbbox((0, 0), text, font, *args, **kwargs)
+	return (box[2], box[3])
+
+for _fontclass in (ImageFont.FreeTypeFont, ImageFont.ImageFont, getattr(ImageFont, 'TransposedFont', None)):
+	if _fontclass is not None and not hasattr(_fontclass, 'getsize') and hasattr(_fontclass, 'getbbox'):
+		_fontclass.getsize = _font_getsize
+if not hasattr(ImageDraw.ImageDraw, 'textsize'):
+	ImageDraw.ImageDraw.textsize = _draw_textsize
+if not hasattr(Image, 'ANTIALIAS'):
+	Image.ANTIALIAS = Image.LANCZOS
 
 class abstractscreenrenderer():
 	def __init__(self, lookup_path):
