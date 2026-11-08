@@ -175,6 +175,8 @@ std::pair<GLuint, std::string> gl::shader::process_source(const std::string &fil
     str += "vec4 FBOUT(vec4 x) { return " + (Global.gfx_shadergamma ? std::string("vec4(pow(x.rgb, vec3(1.0 / 2.2)), x.a)") : std::string("x")) + "; }\n";
 
     str += read_file(basedir + filename);
+    // checked before the includes are expanded, since glsl_common defines the function
+    alpha_to_coverage = ( str.find( "alpha_test_fail(" ) != std::string::npos );
 
     expand_includes(str, basedir);
     parse_texture_entries(str);
@@ -381,6 +383,7 @@ void gl::program::attach(const gl::shader &s)
         texture_conf.try_emplace(texturename, std::move(textureentry));
     for (auto [paramname, paramentry] : s.param_conf)
         param_conf.try_emplace(paramname, std::move(paramentry));
+    alpha_to_coverage = alpha_to_coverage || s.alpha_to_coverage;
     glAttachShader(*this, *s);
 }
 

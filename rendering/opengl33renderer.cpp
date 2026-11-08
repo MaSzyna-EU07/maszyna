@@ -1820,6 +1820,18 @@ void opengl33_renderer::setup_matrices()
     OpenGLMatrices.load_matrix(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 }
 
+void opengl33_renderer::setup_alpha_to_coverage(bool const Enable)
+{
+	if (Enable == m_alphatocoverageenabled)
+		return;
+
+	if (Enable)
+		glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+	else
+		glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+	m_alphatocoverageenabled = Enable;
+}
+
 void opengl33_renderer::setup_drawing(bool const Alpha)
 {
 	if (Alpha)
@@ -1834,6 +1846,8 @@ void opengl33_renderer::setup_drawing(bool const Alpha)
 		glDepthMask(GL_TRUE);
 		m_blendingenabled = false;
 	}
+	// turned on again per material, by the ones which need it
+	setup_alpha_to_coverage(false);
 
 	switch (m_renderpass.draw_mode)
 	{
@@ -2373,6 +2387,16 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 			model_ubs.alpha_mult = sm->fVisible;
 		else
 			model_ubs.alpha_mult = 1.0f;
+
+		// the alpha test drops or keeps whole pixels, so multisampling alone leaves its edges (e.g. sides
+		// of the trackbed textures) jagged. the alpha tested materials of the opaque colour pass get them
+		// antialiased with alpha to coverage instead; their shaders give the coverage as the alpha
+		setup_alpha_to_coverage(
+			Global.iMultisampling > 0
+			&& false == m_blendingenabled
+			&& m_renderpass.draw_mode == rendermode::color
+			&& model_ubs.opacity > 0.f
+			&& material.shader->alpha_to_coverage );
 
 		// materials which declare texture variants provide a different texture set per model instance,
 		// picked from the seed of the rendered instance and the variant group of the submodel

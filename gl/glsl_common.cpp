@@ -11,6 +11,7 @@ void gl::glsl_common_setup()
     "#define MOTIONBLUR_ENABLED " + std::to_string((int)Global.gfx_postfx_motionblur_enabled) + "\n" +
     "#define POSTFX_ENABLED " + std::to_string((int)!Global.gfx_skippipeline) + "\n" +
     "#define EXTRAEFFECTS_ENABLED " + std::to_string((int)Global.gfx_extraeffects) + "\n" +
+    "#define ALPHA_TO_COVERAGE_ENABLED " + std::to_string((int)(Global.iMultisampling > 0)) + "\n" +
     "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "U\n" +
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
@@ -107,6 +108,35 @@ void gl::glsl_common_setup()
         mat3 instance_mv3 = mat3(instance_modelview[gl_InstanceID]);
         mat3 instance_normal = transpose(inverse(instance_mv3));
         return instance_normal * modelviewnormal;
+    }
+    #endif
+
+    #ifdef STAGE_FRAGMENT
+    // alpha tested surfaces (positive opacity, the opaque pass) get the coverage of their alpha
+    // test edge from GL_SAMPLE_ALPHA_TO_COVERAGE, which the renderer turns on for them with
+    // multisampling; otherwise the alpha test keeps or drops whole pixels and its edges stay
+    // jagged whatever the multisampling. the alpha is sharpened to go from 0 to 1 over about
+    // a pixel around the test threshold, so the edge keeps the place and sharpness the alpha
+    // test gave it. computed before any discard, which leaves the derivatives undefined
+    float alpha_coverage(float alpha)
+    {
+    #if ALPHA_TO_COVERAGE_ENABLED
+        if (opacity > 0.0)
+            return clamp((alpha - opacity) / max(fwidth(alpha), 0.0001) + 0.5, 0.0, 1.0);
+    #endif
+        return alpha;
+    }
+
+    // true for the fragments the alpha test drops: below the opacity threshold in the opaque
+    // pass, at or above it (negative opacity) in the translucent pass. with alpha to coverage
+    // only the fragments which cover no sample at all
+    bool alpha_test_fail(float alpha, float coverage)
+    {
+    #if ALPHA_TO_COVERAGE_ENABLED
+        if (opacity > 0.0)
+            return coverage <= 0.0;
+    #endif
+        return (opacity >= 0.0 ? (alpha < opacity) : (alpha >= -opacity));
     }
     #endif
 
