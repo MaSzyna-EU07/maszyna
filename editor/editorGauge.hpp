@@ -91,5 +91,8 @@ void ring(profile const &Profile, section const &Section, std::vector<place> &Po
 double intrusion(std::vector<place> const &Ring, place const &Point);
 // largest half-width of the outline, metres
 double widest(profile const &Profile);
+// widening of the unified gauge on one side of a curve from its radius, metres (Standardy techniczne PKP PLK, tom II, annex 1,
+// table 1): towards the centre of the curve or away from it; none from 250 m up, where the gauge includes it
+double curve_widening(double const Radius, bool const Inner);
 
 } // namespace gauge

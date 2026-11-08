@@ -414,9 +414,9 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
 					// the switch ahead of it, as its card shows it
 					if (auto const &metre{signal_metre_of(standing)}; metre.valid)
-						where += format("; offset %.2f m; switch ahead: %s %s %.2f m at %.2f %.2f", metre.spot.offset,
+						where += format("; offset %.2f m; switch ahead: %s %s %.2f m at %.2f %.2f, axes %.3f m apart", metre.spot.offset,
 						                metre.danger.what == track_trace::danger::kind::start ? "start" : metre.danger.what == track_trace::danger::kind::fouling ? "fouling" : "none",
-						                metre.danger.track != nullptr ? metre.danger.track->name().c_str() : "-", metre.danger.distance, metre.danger.point.x, metre.danger.point.z);
+						                metre.danger.track != nullptr ? metre.danger.track->name().c_str() : "-", metre.danger.distance, metre.danger.point.x, metre.danger.point.z, metre.danger.spacing);
 				}
 				// its indicators, over its foot and from its axis, and its lowest lamp
 				for (auto const &mark : standing.indicators)

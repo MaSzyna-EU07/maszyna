@@ -1029,7 +1029,7 @@ void fouling_tool::render_options()
 			field_row("Spacing of the axes (m)");
 			changed(ImGui::InputDouble("##foulingspacing", &tool.spacing, 0.0, 0.0, "%.2f"));
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
+				ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6)"));
 			field_row("Tolerance (m)");
 			changed(ImGui::InputDouble("##foulingtolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
 			item_tooltip("A marker standing farther than this from its place counts as wrong");

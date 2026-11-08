@@ -41,6 +41,19 @@ side_widening upper_widening(double const Radius)
 	return {std::max(0.0, 50.0 / Radius - 0.185), std::max(0.0, 60.0 / Radius - 0.225)};
 }
 
+} // namespace
+
+double curve_widening(double const Radius, bool const Inner)
+{
+	if (Radius <= 0.0)
+		return 0.0;
+	auto const widening{upper_widening(Radius)};
+	return Inner ? widening.inner : widening.outer;
+}
+
+namespace
+{
+
 side_widening lower_widening(double const Radius)
 {
 	if (Radius >= 250.0)

@@ -21,7 +21,7 @@ class TTrack;
 namespace track_trace
 {
 
-// m between the axes of the tracks at the fouling point of a switch, Ie-4
+// m between the axes of the tracks at the fouling point of a switch on the straight (Standardy techniczne PKP PLK, tom II, 6.5)
 double constexpr kFoulingSpacing{3.5};
 
 // points along the track from the end of a path on, the way a train goes: through a switch along its main track
@@ -33,12 +33,14 @@ glm::dvec3 nearest_on(std::vector<glm::dvec3> const &Line, glm::dvec3 const &Poi
 // the parameter of the point of a path nearest the point given in the plan
 double parameter_of(TTrack const &Track, int const Path, glm::dvec3 const &Point);
 
-// the fouling point of a switch: where its branch is Spacing from its main track, both followed Limit from its start
+// the fouling point of a switch: where its branch is Spacing from its main track, more in the curves under 250 m by the
+// widening of the gauge (editorFouling), both followed Limit from its start
 struct fouling
 {
 	glm::dvec3 main{0.0}; // on the axis of the main track
 	glm::dvec3 branch{0.0}; // on the axis of the branch
 	glm::dvec2 back{0.0, 1.0}; // the plan direction along the branch towards the start of the switch
+	double spacing{kFoulingSpacing}; // m between the axes there, with the widenings
 };
 bool fouling_of(TTrack &Switch, double const Spacing, double const Limit, fouling &Point);
 
@@ -56,6 +58,7 @@ struct danger
 	TTrack *track{nullptr}; // the switch
 	double distance{0.0}; // m along the track from the point to it, below 0 when it lies behind: the point in the fouling zone
 	glm::dvec3 point{0.0}; // on the axis of the track the train runs
+	double spacing{0.0}; // of a fouling point: m between the axes of the tracks there, the widenings in the curves with it
 	// the axis of the track from Behind before the point on, past the place, each point with the path it lies on and the distance
 	// from the point to it, below 0 behind
 	std::vector<glm::dvec3> line;

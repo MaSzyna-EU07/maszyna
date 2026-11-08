@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/editorTrackTrace.hpp"
+#include "editor/editorFouling.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorTrack.hpp"
 
@@ -184,31 +185,14 @@ bool fouling_of(TTrack &Switch, double const Spacing, double const Limit, foulin
 {
 	if (Switch.m_paths.size() < 2)
 		return false;
-	auto const main{trace(Switch, 0, true, Limit)};
-	auto const branch{trace(Switch, 1, true, Limit)};
-	if (main.size() < 2 || branch.size() < 2)
+	::fouling::place place;
+	if (false == ::fouling::find(trace(Switch, 0, true, Limit), trace(Switch, 1, true, Limit), Spacing, place))
 		return false;
-	glm::dvec3 previous{branch.front()};
-	double previousdistance{0.0};
-	for (std::size_t i = 1; i < branch.size(); ++i)
-	{
-		double distance;
-		nearest_on(main, branch[i], distance);
-		if (distance < Spacing)
-		{
-			previous = branch[i];
-			previousdistance = distance;
-			continue;
-		}
-		auto const f{distance - previousdistance > 1e-9 ? (Spacing - previousdistance) / (distance - previousdistance) : 1.0};
-		Point.branch = glm::mix(previous, branch[i], std::clamp(f, 0.0, 1.0));
-		double unused;
-		Point.main = nearest_on(main, Point.branch, unused);
-		auto const back{plan_of(previous - branch[i])};
-		Point.back = glm::length(back) > 1e-9 ? glm::normalize(back) : glm::dvec2{0.0, 1.0};
-		return true;
-	}
-	return false;
+	Point.main = place.main;
+	Point.branch = place.branch;
+	Point.back = place.back;
+	Point.spacing = place.spacing;
+	return true;
 }
 
 glm::dvec3 danger::at(double const Distance, std::pair<TTrack *, int> &Path) const
@@ -274,6 +258,7 @@ danger danger_ahead(TTrack &Track, int const Path, glm::dvec3 const &Point, bool
 		result.track = &Switch;
 		result.distance = distance;
 		result.point = point;
+		result.spacing = found.spacing;
 	};
 	// on a switch the train runs towards its start, its own fouling point, once the track ahead is known
 	auto own{Track.eType == tt_Switch && Track.m_paths.size() >= 2 && false == Forward};
