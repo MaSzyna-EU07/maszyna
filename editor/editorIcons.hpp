@@ -50,6 +50,10 @@ enum class icon
 	infra,
 	gauge,
 	turntable,
+	parallel,
+	station,
+	kilometrage,
+	more,
 	// the fields of work
 	work_surroundings,
 	work_tracks,

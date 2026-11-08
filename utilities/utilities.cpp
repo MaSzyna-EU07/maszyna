@@ -73,6 +73,24 @@ std::filesystem::path user_config_path(const std::string &filename)
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
 
+std::filesystem::path user_cache_path(const std::string &filename)
+{
+	namespace fs = std::filesystem;
+#if defined(_WIN32)
+	if (const char *local = std::getenv("LOCALAPPDATA"))
+		return fs::path(local) / "MaSzyna" / "cache" / filename;
+#elif defined(__APPLE__)
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / "Library" / "Caches" / "MaSzyna" / filename;
+#else
+	if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache != nullptr && *cache != '\0')
+		return fs::path(cache) / "MaSzyna" / filename;
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / ".cache" / "MaSzyna" / filename;
+#endif
+	return {};
+}
+
 // zwraca różnicę czasu
 // jeśli pierwsza jest aktualna, a druga rozkładowa, to ujemna oznacza opóżnienie
 // na dłuższą metę trzeba uwzględnić datę, jakby opóżnienia miały przekraczać 12h (towarowych)
@@ -330,6 +348,30 @@ std::string win1250_to_utf8(const std::string &Input)
 			output += lookup->second;
 		else
 			output += input;
+	}
+	return output;
+}
+
+// counterpart of win1250_to_utf8(). characters outside of the supported set are replaced with question marks
+std::string utf8_to_win1250(std::string const &Text)
+{
+	// polish letters, as utf-8 sequences; the same set win1250_to_utf8() handles
+	static std::unordered_map<std::string, char> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
+	                                                           {"\xC5\x9A", '\x8C'}, {"\xC5\xB9", '\x8F'}, {"\xC5\xBB", '\xAF'}, {"\xC4\x85", '\xB9'}, {"\xC4\x87", '\xE6'}, {"\xC4\x99", '\xEA'},
+	                                                           {"\xC5\x82", '\xB3'}, {"\xC5\x84", '\xF1'}, {"\xC3\xB3", '\xF3'}, {"\xC5\x9B", '\x9C'}, {"\xC5\xBA", '\x9F'}, {"\xC5\xBC", '\xBF'}};
+	std::string output;
+	for (std::size_t idx = 0; idx < Text.size();)
+	{
+		auto const lead{static_cast<unsigned char>(Text[idx])};
+		if (lead < 0x80)
+		{
+			output += Text[idx++];
+			continue;
+		}
+		auto const length{std::min<std::size_t>((lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1, Text.size() - idx)};
+		auto const lookup{charmap.find(Text.substr(idx, length))};
+		output += (lookup != charmap.end() ? lookup->second : '?');
+		idx += length;
 	}
 	return output;
 }

@@ -88,6 +88,23 @@ void TAnimContainer::SetTranslateAnim(glm::dvec3 vNewTranslate, double fNewSpeed
     }
 }
 
+void TAnimContainer::Finish()
+{
+    // the next UpdateModel() finds them there and ends the animation as it would have
+    if (fRotateSpeed != 0.0)
+        vRotateAngles = vDesiredAngles;
+    if (fTranslateSpeed != 0.0)
+        vTranslation = vTranslateTo;
+    // and the submodel takes them now: one brought back to its rest is no longer prepared, it'd keep the angles of the jump
+    // before, where the frames of a run leave it a step short of the rest only
+    if (pSubModel) {
+        if (iAnim & 1)
+            pSubModel->SetRotateXYZ(vRotateAngles);
+        if (iAnim & 2)
+            pSubModel->SetTranslate(vTranslation);
+    }
+}
+
 // przeliczanie animacji wykonać tylko raz na model
 void TAnimContainer::UpdateModel() {
 

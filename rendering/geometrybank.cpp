@@ -85,6 +85,26 @@ basic_vertex::deserialize_packed( std::istream &s, bool const Tangent ) {
     }
 }
 
+namespace {
+
+// the tangent of a vertex across its normal, from the direction the texture of its faces runs in
+glm::vec3 tangent_across( glm::vec3 const &Normal, glm::vec3 const &Texture ) {
+
+    if( auto const tangent { Texture - Normal * glm::dot( Normal, Texture ) };
+        glm::dot( tangent, tangent ) > 1e-12f ) {
+        return tangent;
+    }
+    // the texture of the faces gives the vertex no direction, as where they all have one spot of it like the cut ends of the rails;
+    // normalized, nothing would be NaN and the pixels black whatever the light and fog, any direction across the normal does
+    if( auto const tangent { glm::cross( Normal, ( std::abs( Normal.x ) < 0.9f ? glm::vec3 { 1.f, 0.f, 0.f } : glm::vec3 { 0.f, 1.f, 0.f } ) ) };
+        glm::dot( tangent, tangent ) > 1e-12f ) {
+        return tangent;
+    }
+    return { 1.f, 0.f, 0.f };
+}
+
+} // namespace
+
 // based on
 // Lengyel, Eric. “Computing Tangent Space Basis Vectors for an Arbitrary Mesh”.
 // Terathon Software, 2001. http://terathon.com/code/tangent.html
@@ -197,7 +217,7 @@ void calculate_tangents(vertex_array &vertices, index_array const &indices, int 
 
         vertices[a].tangent =
             glm::vec4(
-                glm::normalize((t - n * glm::dot(n, t))),
+                glm::normalize( tangent_across( n, t ) ),
                 (glm::dot(glm::cross(n, t), t2) < 0.0F) ?
                    -1.0F :
                     1.0F);
