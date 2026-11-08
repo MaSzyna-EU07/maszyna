@@ -13,9 +13,10 @@ class TMoverParameters;
 
 // starting the engines (closing the line breakers) of the vehicles in multiple from the cab (eu07/maszyna#80). in
 // vehicles like the ST43, the SP32 or the SN61 every engine of the train has its own switches in the cab: main_* work
-// the cab's own vehicle, mainb_* the second one and mainc_* the third one under its control. Engine:JointEngineStart=No
-// in the .fiz of the cab's vehicle keeps main_* to that vehicle alone (TMoverParameters::MainSwitchRange()); by
-// default it works all of them, as before.
+// the vehicle the cab controls (TTrain::mvControlled: the cab's own vehicle, on an EMU its motor car), mainb_* the
+// second one and mainc_* the third one under its control. Engine:JointEngineStart=No in the .fiz of the controlled
+// vehicle (on an EMU the motor car's, not the one of the car with the cab) keeps main_* to that vehicle alone
+// (TMoverParameters::MainSwitchRange()); by default it works all of them, as before.
 namespace engine_start {
 
 // the Number-th vehicle with an engine under the cab's control: 1 is Controlled, the cab's own; then the others

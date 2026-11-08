@@ -3727,6 +3727,18 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 		if (true == Train->mvControlled->MainSwitch(false, Train->mvControlled->MainSwitchRange()))
 		{
 			Train->m_linebreakerstate = 0;
+			if (Train->mvControlled->MainSwitchRange() != range_t::local)
+			{
+				// the engines of the vehicles in multiple stopped along: their two-state switches go off too, left on
+				// they'd start them again after the delay
+				for (auto &controls : Train->m_remotelinebreakers)
+				{
+					if (controls.main_switch.SubModel != nullptr && controls.main_switch.type() == TGaugeType::toggle)
+					{
+						controls.main_switch.UpdateValue(0.0);
+					}
+				}
+			}
 		}
 	}
 	else if (Command.action == GLFW_RELEASE)

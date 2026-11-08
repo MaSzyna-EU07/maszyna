@@ -42,10 +42,17 @@ bool running(TMoverParameters const &Vehicle) {
 	return Vehicle.Mains && Vehicle.enrot > 0.5 * Vehicle.dizel_nmin;
 }
 
+// the time step of the train in the loops below
+auto const dt{0.01};
+
+// the count of the steps of dt making up Seconds
+int steps(double const Seconds) {
+	return static_cast<int>(std::lround(Seconds / dt));
+}
+
 // the switch of Engine held closed for Seconds, then let go, in steps of the train
 void hold(consist &Train, engine_start::remote_switch &Switch, TMoverParameters *Engine, double const Seconds, bool const Closesonrelease = false) {
-	auto const dt{0.01};
-	for (auto time = 0.0; time < Seconds; time += dt) {
+	for (auto step = 0; step < steps(Seconds); ++step) {
 		Switch.update(Engine, true, false, dt, Closesonrelease);
 		Train.step({}, dt);
 	}
@@ -185,8 +192,7 @@ TEST_CASE("engine start: the switch of another vehicle is held for the vehicle's
 	hold(train, switchb, &second, 1.0);
 	CHECK_FALSE(engine_start::remote_switch::is_running(second));
 	// the switch opening the circuit held along, the closing one does nothing
-	auto const dt{0.01};
-	for (auto time = 0.0; time < 3.0; time += dt) {
+	for (auto step = 0; step < steps(3.0); ++step) {
 		switchb.update(&second, true, true, dt, false);
 		train.step({}, dt);
 	}
@@ -204,9 +210,8 @@ TEST_CASE("engine start: a switch closing on release, as an electric locomotive'
 	auto &second{train.add(sn61(false).set("Cntrl", "IniCDelay", "1.0")).mover()};
 	prepare(train);
 	engine_start::remote_switch switchb;
-	auto const dt{0.01};
 	// held past the delay, the circuit stays open while the switch is held
-	for (auto time = 0.0; time < 2.0; time += dt) {
+	for (auto step = 0; step < steps(2.0); ++step) {
 		switchb.update(&second, true, false, dt, true);
 		train.step({}, dt);
 	}

@@ -11394,7 +11394,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		// water heater
 		extract_value(WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "");
 		extract_value(WaterHeater.config.temp_max, "HeaterMaxTemperature", Input, "");
-		float pf;
+		float pf{ 1235.f };
 		extract_value(pf, "NominalCoolingPower", Input, "1235");
 		dizel_heat.powerfactor = 1235 / pf;
 	}
