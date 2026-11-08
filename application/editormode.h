@@ -2737,7 +2737,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void signal_release();
 	bool signal_place(signal_spot const &Spot, signal_template const &Template);
 	void signal_move_update();
-	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const;
+	// Moved: the signal moved from its track, the nearest track takes it if that's nearer by more than a little
+	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot, bool const Moved = false) const;
 	bool signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const;
 	bool signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread);
 	indicator_template const *indicator_template_of(std::string const &File) const;

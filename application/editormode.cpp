@@ -3390,6 +3390,9 @@ void editor_mode::apply_include()
     // a signal renamed: its indicators are named after it
     std::string name_before;
     glm::dvec3 standing{0.0};
+    // the signal templates known, though no signal tool looked for them yet
+    if (m_include.info.category == "signal")
+        signal_scan(true);
     if (false == m_include.info.signal_read.empty() || signal_template_of(m_include.target) != nullptr)
     {
         std::string file;
@@ -6533,6 +6536,8 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
 
     // only the axes the template has parameters for can be manipulated. a signal stands on the ground by its track: it is moved in
     // the plan, at the height it has
+    if (m_include.info.category == "signal")
+        signal_scan(true);
     auto const signal{signal_template_of(m_include.target) != nullptr};
     auto operation = 0;
     for (auto axis = 0; axis < 3; ++axis)

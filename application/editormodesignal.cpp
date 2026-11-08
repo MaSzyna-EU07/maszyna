@@ -59,6 +59,8 @@ float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
 double const kSignalReach{10.0};
+double const kTrackNearer{0.5}; // m another track has to be nearer by to take a signal moved from its own
+double const kOnTrack{1.2}; // m from the axis of a track a signal dropped stands on it rather than by it
 // a track laid in the place of a deleted one runs within it of its axis
 double const kOrphanReach{1.0};
 std::size_t const kOrphanRecords{64};
@@ -840,12 +842,13 @@ bool editor_mode::signal_drop_at(signal_standing const &Standing, TTrack &Track,
 	return signal_spot_at(Track, path, Point, Point, facing, Side * facing, *item, Spot);
 }
 
-bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const
+bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_spot &Spot, bool const Moved) const
 {
 	auto const &location{Standing.include.location};
 	TTrack *track{nullptr};
 	int path{0};
 	auto best{kSignalReach};
+	auto nearest{0.0}; // m from the axis a track takes it from
 	auto const consider = [&](TTrack *Track) {
 		if (Track == nullptr || Track->m_editorremoved)
 			return;
@@ -857,7 +860,7 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 			if (glm::length(glm::max(glm::max(low - plan_of(location), plan_of(location) - high), glm::dvec2{0.0})) >= best)
 				continue;
 			auto const distance{geometry::plan_distance(curve.point(nearest_on(*Track, p, location)), location)};
-			if (distance < best)
+			if (distance < best && distance >= nearest)
 			{
 				best = distance;
 				track = Track;
@@ -877,9 +880,22 @@ bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_s
 			if (track == neighbour && reader_at(*neighbour, path, bezier{neighbour->m_paths[path]}.point(nearest_on(*neighbour, path, location)), 2).first != Standing.track)
 				std::tie(track, path, best) = kept;
 		}
-	if (track == nullptr)
+	// moved, by another track: that one if it's the nearer by more than a little, so a signal only turned between two tracks keeps
+	// its own; not one it was dropped onto, its side of it unsure, the gauge would push it anywhere
+	if (track == nullptr || Moved)
+	{
+		auto const kept{std::make_tuple(track, path, best)};
+		if (track != nullptr)
+		{
+			best -= kTrackNearer;
+			nearest = kOnTrack;
+			track = nullptr;
+		}
 		for (auto *candidate : simulation::Paths.sequence())
 			consider(candidate);
+		if (track == nullptr)
+			std::tie(track, path, best) = kept;
+	}
 	if (track == nullptr)
 		return false;
 	auto const axis{bezier{track->m_paths[path]}.point(nearest_on(*track, path, location))};
@@ -1179,6 +1195,7 @@ void editor_mode::signal_indicators_renamed(std::string const &Before, std::stri
 {
 	if (Before == After)
 		return;
+	signal_scan(true);
 	for (auto const &mark : signal_indicators_of(Before, Location))
 	{
 		auto const had{scene::Layers.directive(mark.instance)};
@@ -1233,11 +1250,13 @@ void editor_mode::signal_gizmo_step()
 	auto &gizmo{m_signal.gizmo};
 	if (gizmo.instance == 0 || gizmo.instance != m_instance)
 		return;
+	// none before the gizmo made its step: grabbed and let go it changes nothing
+	if (m_history.size() != gizmo.history + 1)
+		return;
 	std::vector<std::pair<scene::instance_handle, std::string>> carried;
 	signal_indicators_follow(gizmo.from, gizmo.frame, carried);
 	// the step of the gizmo takes them back with the signal
-	if (m_history.size() == gizmo.history + 1)
-		history_add_directives(m_history.back(), gizmo.directives);
+	history_add_directives(m_history.back(), gizmo.directives);
 }
 
 void editor_mode::signal_gizmo_end()
@@ -1263,7 +1282,7 @@ void editor_mode::signal_gizmo_end()
 	moved.include.location = scene::Layers.instance(instance).context.offset + glm::dvec3{std::strtod(values[1].c_str(), nullptr), std::strtod(values[2].c_str(), nullptr), std::strtod(values[3].c_str(), nullptr)};
 	moved.include.yaw = std::strtod(values[4].c_str(), nullptr);
 	signal_spot spot;
-	auto const by_track{signal_standing_spot(moved, spot)};
+	auto const by_track{signal_standing_spot(moved, spot, true)};
 	// back where it stood, without the step of the gizmo: the move is one of its own, with the read, the gauge and the indicators.
 	// Away from every track it stays there, as a drag of the signal tool leaves it
 	auto step{std::move(m_history.back())};
@@ -1277,6 +1296,8 @@ void editor_mode::signal_gizmo_end()
 	{
 		m_signal.status = refused(STR_C("Drop the signal by a track"));
 		ui()->set_status(m_signal.status, true);
+		// the gizmo and the panel where it stands again
+		select_include(instance);
 		return;
 	}
 	auto const *standing{signal_standing_of(instance)};
@@ -1284,6 +1305,8 @@ void editor_mode::signal_gizmo_end()
 		return;
 	auto const done{signal_move_to(*standing, spot, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"))};
 	ui()->set_status(m_signal.status, false == done);
+	if (false == done)
+		select_include(instance);
 }
 
 bool editor_mode::signal_indicator_remove(scene::instance_handle const Indicator)
@@ -1335,7 +1358,10 @@ void editor_mode::signal_indicators_follow(signal_standing const &Standing, glm:
 		placed[2] = editor_includes::number(local.y);
 		placed[3] = editor_includes::number(local.z);
 		placed[4] = values[4];
-		set_include_directive(mark.instance, editor_includes::compose_directive(own, placed));
+		auto composed{editor_includes::compose_directive(own, placed)};
+		if (composed == directive)
+			continue;
+		set_include_directive(mark.instance, std::move(composed));
 		Directives.emplace_back(mark.instance, std::move(directive));
 	}
 }
