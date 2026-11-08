@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/Train.h"
 #include "vehicle/horn.h"
+#include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
 
 #include "utilities/Globals.h"
@@ -3662,8 +3663,12 @@ void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Comm
 	if (Command.action == GLFW_PRESS)
 	{
 		// press or hold...
-		if (Train->m_linebreakerstate == 0)
+		// a single two-state lever stays where it was put, also when the line breaker gets knocked out
+		auto const latchinglever{Train->ggMainOnButton.SubModel == nullptr && Train->ggMainOffButton.SubModel == nullptr && Train->ggMainButton.SubModel != nullptr &&
+		                         Train->ggMainButton.type() == TGaugeType::toggle};
+		switch (linebreaker::pressed(Train->m_linebreakerstate, latchinglever, Train->ggMainButton.GetDesiredValue() > 0.5))
 		{
+		case linebreaker::toggle::close:
 			// ...to close the circuit
 			if (is_hold_coil_lever(Train->ggMainOffButton) && hold_coil_lever::cuts_off(Train->ggMainOffButton.GetDesiredValue()))
 			{
@@ -3672,11 +3677,13 @@ void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Comm
 			}
 			// NOTE: bit of a dirty shortcut here
 			OnCommand_linebreakerclose(Train, Command);
-		}
-		else if (Train->m_linebreakerstate == 1)
-		{
-			// ...to open the circuit
+			break;
+		case linebreaker::toggle::open:
+			// ...to open the circuit, or to put the lever off if the circuit was already opened
 			OnCommand_linebreakeropen(Train, Command);
+			break;
+		default:
+			break;
 		}
 	}
 	else if (Command.action == GLFW_RELEASE)
@@ -3728,13 +3735,14 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 		{
 			Train->ggMainButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
-		else if (Train->ggMainOnButton.SubModel != nullptr)
+		else if (Train->ggMainOnButton.SubModel != nullptr && false == Train->mvControlled->MainCircuitOpensWithStarterOnly())
 		{
 			// NOTE: legacy behaviour, for vehicles equipped only with impulse close switch
 			// it doesn't make any real sense to animate this one, but some people can't get over how there's no visual reaction to their keypress
 			Train->ggMainOnButton.UpdateValue(1.0, Train->dsbSwitch);
 			return;
 		}
+		// a diesel with only the starter button gets its engine stopped. the button stays put: held down, it would start the engine again
 		// play sound immediately when the switch is hit, not after release
 		Train->fMainRelayTimer = 0.0f;
 
@@ -5261,15 +5269,37 @@ void TTrain::OnCommand_headlighttoggleleft(TTrain *Train, command_data const &Co
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0)
+
+		if (Train->ggLeftEndLightButton.SubModel != nullptr || Train->ggLeftLightButton.SubModel == nullptr)
 		{
-			// turn on
-			OnCommand_headlightenableleft(Train, Command);
-		}
-		else
-		{
-			// turn off
-			OnCommand_headlightdisableleft(Train, Command);
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableleft(Train, Command);
+			}
+			else
+			{
+				// turn off
+				OnCommand_headlightdisableleft(Train, Command);
+			}
+		} else {
+			// if the light is controlled by 3-way switch, handle both headlight and redmarker
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_left) == 0 &&
+				(Train->mvOccupied->iLights[vehicleend] & light::redmarker_left) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableleft(Train, Command);
+			}
+			else if (Train->mvOccupied->iLights[vehicleend] & light::headlight_left)
+			{
+				// switch to red
+				OnCommand_redmarkerenableleft(Train, Command);
+			}
+			else
+			{
+				// disable
+				OnCommand_redmarkerdisableleft(Train, Command);
+			}
 		}
 	}
 }
@@ -5344,15 +5374,37 @@ void TTrain::OnCommand_headlighttoggleright(TTrain *Train, command_data const &C
 	if (Command.action == GLFW_PRESS)
 	{
 		// only reacting to press, so the switch doesn't flip back and forth if key is held down
-		if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0)
+
+		if (Train->ggRightEndLightButton.SubModel != nullptr || Train->ggRightLightButton.SubModel == nullptr)
 		{
-			// turn on
-			OnCommand_headlightenableright(Train, Command);
-		}
-		else
-		{
-			// turn off
-			OnCommand_headlightdisableright(Train, Command);
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableright(Train, Command);
+			}
+			else
+			{
+				// turn off
+				OnCommand_headlightdisableright(Train, Command);
+			}
+		} else {
+			// if the light is controlled by 3-way switch, handle both headlight and redmarker
+			if ((Train->mvOccupied->iLights[vehicleend] & light::headlight_right) == 0 &&
+				(Train->mvOccupied->iLights[vehicleend] & light::redmarker_right) == 0)
+			{
+				// turn on
+				OnCommand_headlightenableright(Train, Command);
+			}
+			else if (Train->mvOccupied->iLights[vehicleend] & light::headlight_right)
+			{
+				// switch to red
+				OnCommand_redmarkerenableright(Train, Command);
+			}
+			else
+			{
+				// disable
+				OnCommand_redmarkerdisableright(Train, Command);
+			}
 		}
 	}
 }
@@ -9033,6 +9085,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSprezarka.Turn(mvControlled->CompressorFlag); // mutopsitka dziala
 		btLampkaSprezarkaOff.Turn(!mvControlled->CompressorFlag);
 		btLampkaFuelPumpOff.Turn(!mvControlled->FuelPump.is_active);
+		btLampkaOilPump.Turn(mvControlled->OilPump.is_active); // pre-lubrication pump, goes off once the engine is started
 
 		// boczniki
 		// Ra: w SU45 boczniki wchodzą na ScndCtrlPos, a nie na ScndCtrlActualPos
@@ -9104,7 +9157,17 @@ bool TTrain::Update(double const Deltatime)
 			btLampkaDoorLeft.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::left : side::right]);
 			btLampkaDoorRight.Turn(DynamicObject->Mechanik->IsAnyDoorOpen[cab_to_end() == end::front ? side::right : side::left]);
 		}
-		btLampkaBlokadaDrzwi.Turn(mvOccupied->Doors.is_locked);
+		if (DynamicObject->Mechanik != nullptr)
+		{
+			// with DoorClosureSignal in the definition of the cab's vehicle, the door closure signalling (SOD) of the whole
+			// consist: lit with all doors closed and locked, blinking with them closed but released, dark with a door open.
+			// without it, the lock of the vehicle's own doors, as before
+			btLampkaBlokadaDrzwi.Turn(mvOccupied->door_closure_lamp_lit(DynamicObject->Mechanik->DoorClosure, simulation::Time.data().wSecond % 2 < 1));
+		}
+		else
+		{
+			btLampkaBlokadaDrzwi.Turn(mvOccupied->Doors.is_locked);
+		}
 		btLampkaDoorLockOff.Turn(false == mvOccupied->Doors.lock_enabled);
 		btLampkaDepartureSignal.Turn(mvControlled->DepartureSignal);
 		btLampkaNapNastHam.Turn(mvControlled->DirActive != 0 && mvOccupied->EpFuse); // napiecie na nastawniku hamulcowym
@@ -9192,6 +9255,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSprezarka.Turn(false);
 		btLampkaSprezarkaOff.Turn(false);
 		btLampkaFuelPumpOff.Turn(false);
+		btLampkaOilPump.Turn(false);
 		btLampkaBezoporowa.Turn(false);
 		btLampkaHamowanie1zes.Turn(false);
 		btLampkaHamienie.Turn(false);
@@ -11225,6 +11289,7 @@ void TTrain::clear_cab_controls()
 	btLampkaSprezarkaOff.Clear();
 	btLampkaSprezarkaBOff.Clear();
 	btLampkaFuelPumpOff.Clear();
+	btLampkaOilPump.Clear();
 	btLampkaNapNastHam.Clear();
 	btLampkaOporyB.Clear();
 	btLampkaStycznB.Clear();
@@ -11647,6 +11712,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-compressoroff:", btLampkaSprezarkaOff},
 	    {"i-compressorboff:", btLampkaSprezarkaBOff},
 	    {"i-fuelpumpoff:", btLampkaFuelPumpOff},
+	    {"i-oilpump:", btLampkaOilPump},
 	    {"i-voltbrake:", btLampkaNapNastHam},
 	    {"i-resistorsb:", btLampkaOporyB},
 	    {"i-contactorsb:", btLampkaStycznB},

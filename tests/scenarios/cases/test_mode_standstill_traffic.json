@@ -1,0 +1,18 @@
+{
+  "description": "Test mode, standstill with traffic: an EU07 stands on track 2 of Stacja1 on td.scn while another EU07, AI traffic, leaves track 1 on the td/rozklad timetable at 10:35 and runs on. Only the train under test (test.vehicle, the case's vehicle) counts, so the test ends on test.standstill 100 although the traffic is moving; counting every vehicle, it would run into the 300 s test timeout.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_traffic.scn",
+  "test_config": [
+    "test.standstill 100"
+  ],
+  "expect": "standstill",
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "max_speed",
+      "limit": 0.5
+    }
+  ]
+}

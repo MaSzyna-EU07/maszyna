@@ -261,6 +261,22 @@ enum class range_t
 	/// <summary>Affects the entire consist.</summary>
 	consist
 };
+/// <summary>State of the door closure signalling (SOD) of a vehicle or a consist, ordered from the least to the most
+/// severe: the state of a consist is the most severe state of its vehicles.</summary>
+enum class door_closure_t
+{
+	/// <summary>No doors worked by the crew: the vehicle doesn't take part in the signalling.</summary>
+	none,
+	/// <summary>All doors closed and locked: they can't be opened.</summary>
+	locked,
+	/// <summary>All doors closed, but released: a permit is given, or no lock holds them shut.</summary>
+	released,
+	/// <summary>A door is open, or not fully closed yet.</summary>
+	open
+};
+/// <summary>Whether the door closure signalling lamp is lit: steadily for locked doors, in the lit phase of the
+/// blinking for released ones, never with a door open or with no doors signalled.</summary>
+bool door_closure_lamp(door_closure_t const State, bool const BlinkLit);
 /// <summary>Possible settings for an enable/disable input pair (mutually exclusive).</summary>
 enum class operation_t
 {
@@ -1439,6 +1455,7 @@ class TMoverParameters
 		float auto_velocity{-1.f}; // automatic door closure velocity threshold
 		bool auto_include_remote{false}; // automatic door closure applies also to remote control
 		bool permit_needed{false};
+		bool closure_signal{false}; // the door closure lamp (SOD) of the cab signals the doors of the whole consist in three states
 		std::vector<int> permit_presets; // permit presets selectable with preset switch
 		float voltage{0.f}; // power type required for door movement
 		// ld inputs
@@ -2461,10 +2478,23 @@ class TMoverParameters
 	{
 		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
 	}
-	// whether the lamp of the open line contactors is lit, telling the start can be made
+	// whether the lamp of the open line contactors is lit. on the electric locomotives it tells the start can be made, so
+	// it goes out with the start cut off; on the diesel-electric ones (the SU45 and SU46 family) it just tells the
+	// contactors are open, whatever opened them: the master controller at 0, or the pressure switch (eu07/maszyna#263)
 	bool LineContactorsLampLit() const
 	{
+		if (EngineType == TEngineType::DieselElectric)
+		{
+			return false == StLinFlag;
+		}
 		return false == StLinFlag && MainCircuitLampsEnabled();
+	}
+	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
+	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
+	// starts on its own (eu07/maszyna#427). the other vehicles with such a button keep ignoring the command
+	bool MainCircuitOpensWithStarterOnly() const
+	{
+		return EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric;
 	}
 	// whether the pumps a joint oil and fuel pump switch works, those not started automatically, are all switched on
 	bool OilFuelPumpsEnabled() const
@@ -2580,6 +2610,10 @@ class TMoverParameters
 	bool LockDoors(bool const State, range_t const Notify = range_t::consist);
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
+	door_closure_t door_closure() const; // state of the door closure signalling of this vehicle
+	// whether the door closure lamp in the cab of this vehicle is lit: with DoorClosureSignal, for the given state of the
+	// consist; without it, for the lock of the vehicle's own doors, as the lamp always worked
+	bool door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const;
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);
