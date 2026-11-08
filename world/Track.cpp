@@ -1611,8 +1611,9 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         gfx::vertex_array rpts1, rpts2;
         create_track_rail_profile( rpts1, rpts2 );
         auto const drawing { make_rail_drawing( Bank ) };
+        // the open ends of a track and the blade tips: no wheel runs over them, they aren't worn
         auto const cut_faces = [&]( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, geometryhandle_sequence &Geometry ) {
-            track_rails::cut_faces( Strip, Ring, Start, End, Bank, Geometry ); };
+            track_rails::cut_faces( Strip, Ring, Start, End, Bank, Geometry, false ); };
         m_materialcut1 = track_rails::cut_material( m_material1 );
         auto const layout { plan_rails( Bank != 0 ) };
         if( Bank != 0 ) {
@@ -2460,7 +2461,7 @@ TTrack * TTrack::RaAnimate()
                 if( false == Cuts.empty() ) {
                     gfx::vertex_array triangles;
                     track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
-                    auto userdata { track_rails::worn_userdata( triangles.size() ) };
+                    auto userdata { track_rails::worn_userdata( triangles.size(), false ) };
                     GfxRenderer->Replace( triangles, userdata, Cuts[ 0 ], GL_TRIANGLES );
                 }
                 GfxRenderer->Replace( vertices, empty_userdata, Geometry[ 0 ], GL_TRIANGLE_STRIP );

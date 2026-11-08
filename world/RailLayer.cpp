@@ -236,9 +236,9 @@ void cap_loft( gfx::vertex_array const &Strip, std::size_t const Ring, bool cons
     }
 }
 
-gfx::userdata_array worn_userdata( std::size_t const Count ) {
+gfx::userdata_array worn_userdata( std::size_t const Count, bool const Worn ) {
 
-    return gfx::userdata_array( Count, gfx::vertex_userdata{ glm::vec4{ 1.f, 0.f, 0.f, 0.f } } );
+    return gfx::userdata_array( Count, gfx::vertex_userdata{ glm::vec4{ Worn ? 1.f : 0.f, 0.f, 0.f, 0.f } } );
 }
 
 namespace {
@@ -293,12 +293,12 @@ gfx::geometry_handle insert_chunk( gfx::vertex_array &Vertices, gfx::userdata_ar
     return handle;
 }
 
-void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry ) {
+void cut_faces( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, gfx::geometrybank_handle const &Bank, TTrack::geometryhandle_sequence &Geometry, bool const Worn ) {
 
     gfx::vertex_array triangles;
     cap_loft( Strip, Ring, Start, End, triangles );
     if( false == triangles.empty() ) {
-        auto userdata { worn_userdata( triangles.size() ) };
+        auto userdata { worn_userdata( triangles.size(), Worn ) };
         Geometry.emplace_back( insert_chunk( triangles, userdata, Bank, GL_TRIANGLES ) );
     }
 }
