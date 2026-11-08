@@ -39,7 +39,7 @@ public:
 	static constexpr double frame_step { 0.03 };
 
 	// creates the result cell; called with the other scripting interface cells, before the scenery is read
-	void init_result_cell();
+	void init_result_cell() const;
 	// the simulation is ready: start the clocks
 	void start();
 	// checks the end conditions after a simulation frame of Deltatime seconds

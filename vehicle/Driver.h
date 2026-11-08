@@ -519,9 +519,9 @@ private:
     bool TableNotFound( basic_event const *Event, double const Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
-    // updates a position of the speed table, returns true when a switch on it changed (TSpeedPos::Update).
+    // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
     // reports the head of the train going past it, if it's a signal showing stop
-    bool UpdateSpeedPosition( TSpeedPos &Point ) const;
+    void CheckSignalPassedAtDanger( TSpeedPos const &Point, bool Passedbefore ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );

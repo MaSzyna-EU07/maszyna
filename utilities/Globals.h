@@ -95,7 +95,8 @@ struct global_settings {
         bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
         bool no_movement_before_pass{ true }; // a pass waits until every vehicle stands still; with false it ends the test at once
         bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
-    } test;
+    };
+    test_settings test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
@@ -387,7 +388,7 @@ struct global_settings {
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
-	bool ConfigParseTest(cParser& Parser, const std::string& token);
+	bool ConfigParseTest(cParser& Parser, std::string_view Token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void

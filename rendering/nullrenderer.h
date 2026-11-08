@@ -36,7 +36,7 @@ private:
 };
 
 // user interface backend which draws nothing: imgui still builds its frames, so the ui code runs as usual
-class null_imgui_renderer : public imgui_renderer {
+class null_imgui_renderer final : public imgui_renderer {
 public:
     bool Init() override { return true; }
     void Shutdown() override { /* null implementation, nothing to do */ }
