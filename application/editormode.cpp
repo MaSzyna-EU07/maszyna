@@ -1525,6 +1525,9 @@ bool editor_mode::update()
     {
         m_include_gesture = false;
     }
+    // the gizmo let go of a signal while it wasn't drawn
+    if (false == m_gizmo_using)
+        signal_gizmo_end();
     // models replaced after changes of includes are destroyed once the renderer can't have them among its pick candidates
     for (auto &retired : m_retired)
     {
@@ -3384,14 +3387,25 @@ void editor_mode::apply_include()
         return;
     std::string read_before;
     std::string read_after;
-    if (false == m_include.info.signal_read.empty())
+    // a signal renamed: its indicators are named after it
+    std::string name_before;
+    glm::dvec3 standing{0.0};
+    if (false == m_include.info.signal_read.empty() || signal_template_of(m_include.target) != nullptr)
     {
         std::string file;
         std::vector<std::string> previous;
         if (editor_includes::parse_directive(before, file, previous))
         {
-            read_before = editor_includes::substitute(m_include.info.signal_read, previous);
-            read_after = editor_includes::substitute(m_include.info.signal_read, m_include.values);
+            if (false == m_include.info.signal_read.empty())
+            {
+                read_before = editor_includes::substitute(m_include.info.signal_read, previous);
+                read_after = editor_includes::substitute(m_include.info.signal_read, m_include.values);
+            }
+            if (previous.size() >= 4 && false == m_include.values.empty() && previous.front() != m_include.values.front())
+            {
+                name_before = previous.front();
+                standing = scene::Layers.instance(m_instance).context.offset + glm::dvec3{std::strtod(previous[1].c_str(), nullptr), std::strtod(previous[2].c_str(), nullptr), std::strtod(previous[3].c_str(), nullptr)};
+            }
         }
     }
     if (false == m_include_gesture)
@@ -3410,6 +3424,12 @@ void editor_mode::apply_include()
     else if (read_before != read_after && false == m_history.empty())
         signal_renamed(read_before, read_after, m_history.back());
     set_include_directive(m_instance, directive);
+    if (false == name_before.empty() && false == m_history.empty())
+    {
+        std::vector<std::pair<scene::instance_handle, std::string>> carried;
+        signal_indicators_renamed(name_before, m_include.values.front(), standing, carried);
+        history_add_directives(m_history.back(), carried);
+    }
 }
 
 void editor_mode::place_include(std::string const &File, int const RotationMode, float const FixedRotation)
@@ -6511,11 +6531,13 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
     if (positions == 0)
         return; // nothing tells where the include is
 
-    // only the axes the template has parameters for can be manipulated
+    // only the axes the template has parameters for can be manipulated. a signal stands on the ground by its track: it is moved in
+    // the plan, at the height it has
+    auto const signal{signal_template_of(m_include.target) != nullptr};
     auto operation = 0;
     for (auto axis = 0; axis < 3; ++axis)
     {
-        if (m_gizmo_op == gizmo_operation::translate && position[axis] >= 0)
+        if (m_gizmo_op == gizmo_operation::translate && position[axis] >= 0 && false == (signal && axis == 1))
             operation |= (ImGuizmo::TRANSLATE_X << axis);
         else if (m_gizmo_op == gizmo_operation::rotate && rotation[axis] >= 0)
             operation |= (ImGuizmo::ROTATE_X << axis);
@@ -6546,8 +6568,12 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
     ImGuizmo::Enable(true);
 
     if (false == ImGuizmo::IsUsing())
+    {
+        signal_gizmo_end();
         return;
+    }
     m_gizmo_using = true;
+    signal_gizmo_begin();
 
     float newtranslation[3], newrotation[3], newscale[3];
     ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), newtranslation, newrotation, newscale);
@@ -6577,6 +6603,7 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
         }
     }
     apply_include();
+    signal_gizmo_step();
 }
 
 glm::mat4 editor_mode::projection_matrix(float const Aspect)

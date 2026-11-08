@@ -1188,6 +1188,10 @@ void editor_mode::infra_adopt(TTrack &Track)
 						if (false == event.first.empty())
 							readers.emplace(ToLower(event.first), track);
 		static auto const rules{infra::default_rules()};
+		// an indicator goes with its signal: by the path reading the signal named by its first parameter, not by the path nearest
+		// to it, which can be another one
+		std::unordered_map<std::string, std::string> signal_reads;
+		std::vector<std::pair<point_object, std::string>> marks;
 		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 		{
 			include_place place;
@@ -1197,12 +1201,19 @@ void editor_mode::infra_adopt(TTrack &Track)
 			object.include = handle;
 			object.location = include_location(place);
 			auto const file{ToLower(place.file)};
+			if (indicator_template_of(place.file) != nullptr)
+			{
+				object.group = infra::category::sign;
+				marks.emplace_back(std::move(object), ToLower(place.values.front()));
+				continue;
+			}
 			auto const *signal{signal_template_of(place.file)};
 			std::string read;
 			if (signal != nullptr)
 			{
 				object.group = infra::category::signal;
 				read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
+				signal_reads[ToLower(place.values.front())] = read;
 			}
 			else if (file == kResonatorFile)
 			{
@@ -1223,6 +1234,14 @@ void editor_mode::infra_adopt(TTrack &Track)
 					object.reader = reader->second;
 			m_point_objects.push_back(std::move(object));
 		}
+		// one whose signal no path reads is left where it is
+		for (auto &[object, name] : marks)
+			if (auto const read{signal_reads.find(name)}; read != signal_reads.end() && false == read->second.empty())
+				if (auto const reader{readers.find(ToLower(read->second))}; reader != readers.end())
+				{
+					object.reader = reader->second;
+					m_point_objects.push_back(std::move(object));
+				}
 		// the path nearest to each one no path reads, the objects by cells of the plan
 		auto constexpr cell{200.0};
 		auto const key = [&](double const Value) { return static_cast<long long>(std::floor(Value / cell)); };

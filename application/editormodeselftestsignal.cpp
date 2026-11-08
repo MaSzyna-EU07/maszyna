@@ -130,7 +130,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 	}
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap" ||
 	    command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault" || command == "signalindicator" ||
-	    command == "signalindicatordrop")
+	    command == "signalindicatordrop" || command == "signalgizmo")
 	{
 		auto values{selftest_values(words)};
 		show_track_tab(track_tab::srk);
@@ -317,6 +317,32 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			auto const *standing{standing_named(values["name"])};
 			auto const deleted{standing != nullptr && signal_delete(standing->include.instance)};
 			WriteLog(std::string{"SELFTEST signaldelete "} + values["name"] + (deleted ? ": removed with its event" : ": not removed by the signal tool"));
+		}
+		else if (command == "signalgizmo")
+		{
+			// signalgizmo name=<signal> turn=<degrees> x=<metres> z=<metres>: the signal turned and moved by the gizmo of its include
+			// as one drag, then let go
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST signalgizmo: no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			select_include(standing->include.instance);
+			m_include_gesture = false;
+			signal_gizmo_begin();
+			auto const shifted = [&](std::size_t const Index, char const *Key) {
+				if (values.count(Key) != 0 && Index < m_include.values.size())
+					m_include.values[Index] = editor_includes::number(std::strtod(m_include.values[Index].c_str(), nullptr) + std::stod(values[Key]));
+			};
+			shifted(1, "x");
+			shifted(3, "z");
+			shifted(4, "turn");
+			apply_include();
+			signal_gizmo_step();
+			signal_gizmo_end();
+			m_include_gesture = false;
+			WriteLog("SELFTEST signalgizmo " + values["name"] + ": " + m_signal.status);
 		}
 		else if (command == "signalrename")
 		{

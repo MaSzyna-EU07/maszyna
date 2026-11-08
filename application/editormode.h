@@ -2709,6 +2709,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			glm::dvec3 location{0.0}; // of the signal, which follows a dragged track without a new step of the history
 			gauge_tool::gauge_hit hit;
 		} gauge;
+		// the signal the gizmo has taken: as it stood then, the frame of its models, the size of the history before the step of the
+		// gizmo and the directives of its indicators
+		struct
+		{
+			scene::instance_handle instance{0};
+			signal_standing from;
+			glm::dmat3 frame{1.0};
+			std::size_t history{0};
+			std::vector<std::pair<scene::instance_handle, std::string>> directives;
+		} gizmo;
 		std::string status;
 	};
 	signal_tool m_signal;
@@ -2738,6 +2748,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// directives they had going to Directives
 	void signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);
 	bool render_signal_indicators(signal_standing const &Found);
+	// the indicators put on the signal named Name standing at Location, as the scenery has them now, the highest first: the list of
+	// the tool is kept up only while the tool is open
+	std::vector<standing_template> signal_indicators_of(std::string const &Name, glm::dvec3 const &Location) const;
+	// the indicators of the signal named Before at Location named After it, the directives they had going to Directives once each
+	void signal_indicators_renamed(std::string const &Before, std::string const &After, glm::dvec3 const &Location, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);
+	// the directives of more includes taken back by the step: one of a single include is made one of them
+	void history_add_directives(EditorSnapshot &Step, std::vector<std::pair<scene::instance_handle, std::string>> const &Directives);
+	// the signal of the selected include taken by the gizmo: its indicators go with it, and once it's let go it is moved as a drag of
+	// the signal tool moves it, read by the path it stands by then, out of the gauge, as one step of the history
+	void signal_gizmo_begin();
+	void signal_gizmo_step();
+	void signal_gizmo_end();
 	// the height of the lowest lamp of the signal in the world, from the geometry of its lamps; 0 when it has none
 	double signal_lowest_lamp(scene::instance_handle const Instance) const;
 	// the deepest entry of the models of the signal into the gauge of the paths around it

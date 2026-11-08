@@ -773,8 +773,12 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 	std::vector<signal_standing> standing;
 	if (scene::Layers.empty() || m_signal.templates.empty())
 		return standing;
-	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr; })};
-	auto const marks{m_signal.indicators.empty() ? std::vector<standing_template>{} : standing_templates([this](std::string const &File) { return indicator_template_of(File) != nullptr; })};
+	auto const found{standing_templates([this](std::string const &File) { return signal_template_of(File) != nullptr || indicator_template_of(File) != nullptr; })};
+	// the indicators by the name of their signal
+	std::unordered_map<std::string, std::vector<standing_template const *>> marks;
+	for (auto const &include : found)
+		if (false == include.values.empty() && indicator_template_of(include.file) != nullptr)
+			marks[ToLower(include.values.front())].push_back(&include);
 	std::unordered_map<std::string, std::vector<std::pair<TTrack *, int>>> readers;
 	for (auto *track : simulation::Paths.sequence())
 	{
@@ -808,9 +812,10 @@ std::vector<editor_mode::signal_standing> editor_mode::signal_standing_now() con
 				signal.list = signal.reads.front().second;
 			}
 		}
-		for (auto const &mark : marks)
-			if (false == mark.values.empty() && ToLower(mark.values.front()) == ToLower(signal.name) && geometry::plan_distance(mark.location, include.location) <= kIndicatorReach)
-				signal.indicators.push_back(mark);
+		if (auto const named{marks.find(ToLower(signal.name))}; named != marks.end())
+			for (auto const *mark : named->second)
+				if (geometry::plan_distance(mark->location, include.location) <= kIndicatorReach)
+					signal.indicators.push_back(*mark);
 		std::sort(signal.indicators.begin(), signal.indicators.end(), [](standing_template const &A, standing_template const &B) { return A.location.y > B.location.y; });
 		standing.push_back(std::move(signal));
 	}
@@ -990,6 +995,12 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	bound.include = instance;
 	if (auto const *found{infra_find(bound)}; found != nullptr && found->adopted)
 		infra_unbind({static_cast<std::size_t>(found - m_bindings.data())});
+	for (auto const &mark : Standing.indicators)
+	{
+		bound.include = mark.instance;
+		if (auto const *found{infra_find(bound)}; found != nullptr && found->adopted)
+			infra_unbind({static_cast<std::size_t>(found - m_bindings.data())});
+	}
 	if (states.empty())
 	{
 		EditorSnapshot snap;
@@ -1085,6 +1096,17 @@ bool editor_mode::signal_indicator_add(signal_standing const &Standing, indicato
 	auto const name{Standing.name};
 	auto const signal_file{Standing.include.file};
 	auto const models{include_models(instance, Standing.include.location)};
+	if (auto const *item{signal_template_of(signal_file)}; item != nullptr && item->mount == "gantry")
+	{
+		// it stands over the track, at the height of the gantry: neither a place under its lights nor a foot fit there
+		tool.status = refused(STR_C("A signal on a gantry takes no indicator from the list"));
+		return false;
+	}
+	if (std::any_of(Standing.indicators.begin(), Standing.indicators.end(), [&](standing_template const &Mark) { return ToLower(Mark.file) == ToLower(Indicator.file); }))
+	{
+		tool.status = refused(format(STR_C("Signal %s has the indicator %s already"), name.c_str(), Indicator.name.c_str()));
+		return false;
+	}
 	glm::dvec3 location{Standing.include.location};
 	if (Indicator.place == "head")
 	{
@@ -1140,6 +1162,128 @@ double editor_mode::signal_lowest_lamp(scene::instance_handle const Instance) co
 		return 0.0;
 	auto const lowest{lowest_lamp(include_models(Instance, standing->include.location))};
 	return lowest < std::numeric_limits<double>::max() ? lowest : 0.0;
+}
+
+std::vector<editor_mode::standing_template> editor_mode::signal_indicators_of(std::string const &Name, glm::dvec3 const &Location) const
+{
+	if (m_signal.indicators.empty() || Name.empty())
+		return {};
+	auto const name{ToLower(Name)};
+	auto marks{standing_templates([this](std::string const &File) { return indicator_template_of(File) != nullptr; })};
+	marks.erase(std::remove_if(marks.begin(), marks.end(), [&](standing_template const &Mark) { return Mark.values.empty() || ToLower(Mark.values.front()) != name || geometry::plan_distance(Mark.location, Location) > kIndicatorReach; }), marks.end());
+	std::sort(marks.begin(), marks.end(), [](standing_template const &A, standing_template const &B) { return A.location.y > B.location.y; });
+	return marks;
+}
+
+void editor_mode::signal_indicators_renamed(std::string const &Before, std::string const &After, glm::dvec3 const &Location, std::vector<std::pair<scene::instance_handle, std::string>> &Directives)
+{
+	if (Before == After)
+		return;
+	for (auto const &mark : signal_indicators_of(Before, Location))
+	{
+		auto const had{scene::Layers.directive(mark.instance)};
+		std::string own;
+		std::vector<std::string> placed;
+		if (false == scene::Layers.tracked(mark.instance) || false == scene::Layers.removable(mark.instance) || false == editor_includes::parse_directive(had, own, placed) || placed.empty())
+			continue;
+		placed[0] = After;
+		if (std::none_of(Directives.begin(), Directives.end(), [&](auto const &Entry) { return Entry.first == mark.instance; }))
+			Directives.emplace_back(mark.instance, had);
+		set_include_directive(mark.instance, editor_includes::compose_directive(own, placed));
+	}
+}
+
+void editor_mode::history_add_directives(EditorSnapshot &Step, std::vector<std::pair<scene::instance_handle, std::string>> const &Directives)
+{
+	if (Directives.empty())
+		return;
+	if (Step.instance != 0)
+	{
+		Step.directives.emplace_back(Step.instance, std::move(Step.serialized));
+		Step.instance = 0;
+		Step.serialized.clear();
+	}
+	for (auto const &entry : Directives)
+		if (std::none_of(Step.directives.begin(), Step.directives.end(), [&](auto const &Taken) { return Taken.first == entry.first; }))
+			Step.directives.push_back(entry);
+}
+
+void editor_mode::signal_gizmo_begin()
+{
+	auto &gizmo{m_signal.gizmo};
+	if (m_instance == 0 || gizmo.instance == m_instance || signal_template_of(m_include.target) == nullptr)
+		return;
+	signal_gizmo_end();
+	signal_refresh(true);
+	auto const *standing{signal_standing_of(m_instance)};
+	if (standing == nullptr)
+		return;
+	gizmo.instance = m_instance;
+	gizmo.from = *standing;
+	gizmo.frame = frame_of(include_models(m_instance, standing->include.location));
+	gizmo.history = m_history.size();
+	gizmo.directives.clear();
+	for (auto const &mark : standing->indicators)
+		if (scene::Layers.tracked(mark.instance) && scene::Layers.removable(mark.instance))
+			gizmo.directives.emplace_back(mark.instance, scene::Layers.directive(mark.instance));
+}
+
+void editor_mode::signal_gizmo_step()
+{
+	auto &gizmo{m_signal.gizmo};
+	if (gizmo.instance == 0 || gizmo.instance != m_instance)
+		return;
+	std::vector<std::pair<scene::instance_handle, std::string>> carried;
+	signal_indicators_follow(gizmo.from, gizmo.frame, carried);
+	// the step of the gizmo takes them back with the signal
+	if (m_history.size() == gizmo.history + 1)
+		history_add_directives(m_history.back(), gizmo.directives);
+}
+
+void editor_mode::signal_gizmo_end()
+{
+	auto &gizmo{m_signal.gizmo};
+	if (gizmo.instance == 0)
+		return;
+	auto const instance{gizmo.instance};
+	auto const from{std::move(gizmo.from)};
+	auto const history{gizmo.history};
+	gizmo.instance = 0;
+	gizmo.directives.clear();
+	if (m_history.size() != history + 1 || false == m_history.back().tracks.empty() || false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance))
+	{
+		signal_refresh(true);
+		return;
+	}
+	std::string file;
+	std::vector<std::string> values;
+	if (false == editor_includes::parse_directive(scene::Layers.directive(instance), file, values) || values.size() < 5)
+		return;
+	signal_standing moved{from};
+	moved.include.location = scene::Layers.instance(instance).context.offset + glm::dvec3{std::strtod(values[1].c_str(), nullptr), std::strtod(values[2].c_str(), nullptr), std::strtod(values[3].c_str(), nullptr)};
+	moved.include.yaw = std::strtod(values[4].c_str(), nullptr);
+	signal_spot spot;
+	auto const by_track{signal_standing_spot(moved, spot)};
+	// back where it stood, without the step of the gizmo: the move is one of its own, with the read, the gauge and the indicators.
+	// Away from every track it stays there, as a drag of the signal tool leaves it
+	auto step{std::move(m_history.back())};
+	m_history.pop_back();
+	for (auto const &[each, directive] : step.directives)
+		set_include_directive(each, directive);
+	if (step.instance != 0 && false == step.serialized.empty())
+		set_include_directive(step.instance, step.serialized);
+	signal_refresh(true);
+	if (false == by_track)
+	{
+		m_signal.status = refused(STR_C("Drop the signal by a track"));
+		ui()->set_status(m_signal.status, true);
+		return;
+	}
+	auto const *standing{signal_standing_of(instance)};
+	if (standing == nullptr)
+		return;
+	auto const done{signal_move_to(*standing, spot, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"))};
+	ui()->set_status(m_signal.status, false == done);
 }
 
 bool editor_mode::signal_indicator_remove(scene::instance_handle const Indicator)
@@ -1946,10 +2090,13 @@ bool editor_mode::signal_delete(scene::instance_handle const Instance)
 		return false;
 	auto const read{editor_includes::substitute(item->read, values)};
 	std::vector<scene::instance_handle> marks;
-	if (auto const *standing{signal_standing_of(Instance)}; standing != nullptr)
-		for (auto const &mark : standing->indicators)
+	if (values.size() >= 4)
+	{
+		glm::dvec3 const location{included.context.offset + glm::dvec3{std::strtod(values[1].c_str(), nullptr), std::strtod(values[2].c_str(), nullptr), std::strtod(values[3].c_str(), nullptr)}};
+		for (auto const &mark : signal_indicators_of(values.front(), location))
 			if (scene::Layers.tracked(mark.instance) && scene::Layers.removable(mark.instance))
 				marks.push_back(mark.instance);
+	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	signal_detach_events(read, states);
 	if (states.empty())
@@ -1993,11 +2140,14 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 		editor_track::bind_events(*track, missing);
 		track->mark_dirty();
 	}
-	if (Snapshot.tracks.empty() || Snapshot.instance == 0)
+	if (Snapshot.tracks.empty())
 		return;
-	Snapshot.directives.emplace_back(Snapshot.instance, std::move(Snapshot.serialized));
-	Snapshot.instance = 0;
-	Snapshot.serialized.clear();
+	if (Snapshot.instance != 0)
+	{
+		Snapshot.directives.emplace_back(Snapshot.instance, std::move(Snapshot.serialized));
+		Snapshot.instance = 0;
+		Snapshot.serialized.clear();
+	}
 	Snapshot.action = EditorSnapshot::Action::TrackEdit;
 	Snapshot.node_ptr = Snapshot.tracks.front().first;
 	Snapshot.node_name = Snapshot.tracks.front().first->name();
@@ -2145,6 +2295,19 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			set_include_directive(rename.instance, directive);
 			if (read_before != read_after)
 				signal_renamed(read_before, read_after, step);
+			if (temporary)
+				continue;
+			for (auto const &mark : standing->indicators)
+			{
+				auto const had{scene::Layers.directive(mark.instance)};
+				std::string own;
+				std::vector<std::string> placed;
+				if (false == scene::Layers.tracked(mark.instance) || false == scene::Layers.removable(mark.instance) || false == editor_includes::parse_directive(had, own, placed) || placed.empty())
+					continue;
+				placed[0] = rename.name;
+				record(mark.instance, had);
+				set_include_directive(mark.instance, editor_includes::compose_directive(own, placed));
+			}
 		}
 	for (auto const &[instance, values] : Changes.values)
 	{
@@ -2223,6 +2386,13 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		}
 		scene::Layers.removed(instance, true);
 		removed.push_back(instance);
+		if (standing != nullptr)
+			for (auto const &mark : standing->indicators)
+				if (scene::Layers.tracked(mark.instance) && scene::Layers.removable(mark.instance) && false == scene::Layers.instance(mark.instance).removed)
+				{
+					scene::Layers.removed(mark.instance, true);
+					removed.push_back(mark.instance);
+				}
 	}
 	std::vector<scene::instance_handle> instances;
 	if (Error.empty() && false == items.empty())
