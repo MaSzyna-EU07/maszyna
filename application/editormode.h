@@ -2282,7 +2282,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void open_terrain_workspace(bool const Open) override;
 	std::size_t shape_tracks_on_terrain(std::vector<TTrack *> const *Only) override;
 	void join_last_history_steps() override;
-	std::vector<TTrack *> selected_track_list() override;
 	TTrack *grade_line_pick_aimed(int &Index) const override;
 	bool tracks_editable_for(std::vector<TTrack *> const &Tracks, std::string &Reason) const override;
 	void render_ground_conversion_panel() override;
@@ -2304,12 +2303,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> const &select_grown_track_set(std::vector<TTrack *> const &Tracks) override;
 	std::vector<TTrack const *> tracks_made_since(std::size_t const From) const override;
 	bool terrain_is_work_area() const override;
-	std::size_t history_size() const override;
 	void join_last_step() override;
 	void join_history_from(std::size_t const Step) override;
 	void raise_model_joined(TAnimModel &Model, double const Rise) override;
 	void forget_ground_area(glm::dvec2 const &Min, glm::dvec2 const &Max) override;
-	void select_track_list(std::vector<TTrack *> const &Tracks) override;
 	void select_track_node(scene::basic_node *Node) override;
 	void toggle_orthographic() override;
 	bool orthophoto_settings_shown() const override;

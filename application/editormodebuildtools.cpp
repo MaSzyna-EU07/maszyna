@@ -237,11 +237,6 @@ void editor_mode::join_last_history_steps()
 	join_last_steps();
 }
 
-std::vector<TTrack *> editor_mode::selected_track_list()
-{
-	return selected_tracks();
-}
-
 TTrack *editor_mode::grade_line_pick_aimed(int &Index) const
 {
 	if (m_intent.what != track_intent::kind::grade_line_pick || m_intent.track == nullptr)
@@ -361,11 +356,6 @@ bool editor_mode::terrain_is_work_area() const
 	return current_work_area() == work_area::terrain;
 }
 
-std::size_t editor_mode::history_size() const
-{
-	return m_history.size();
-}
-
 void editor_mode::join_last_step()
 {
 	m_history.back().joined = true;
@@ -387,11 +377,6 @@ void editor_mode::raise_model_joined(TAnimModel &Model, double const Rise)
 void editor_mode::forget_ground_area(glm::dvec2 const &Min, glm::dvec2 const &Max)
 {
 	forget_ground_in(Min, Max);
-}
-
-void editor_mode::select_track_list(std::vector<TTrack *> const &Tracks)
-{
-	select_tracks(Tracks);
 }
 
 void editor_mode::select_track_node(scene::basic_node *Node)
