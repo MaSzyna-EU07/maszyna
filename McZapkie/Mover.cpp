@@ -1970,6 +1970,11 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 // the voltage passed through the vehicle to the coupler at its other end, from the coupled vehicle or its own source
 void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double const abslocalvoltage, bool const localpowersource)
 {
+	if (Couplers[end::front].power(Coupling) == nullptr)
+	{
+		// not a power coupling, there's no voltage to pass
+		return;
+	}
 	for (auto side = 0; side < 2; ++side)
 	{
 
@@ -2041,9 +2046,15 @@ void TMoverParameters::PowerCouplersVoltage(coupling const Coupling, double cons
 // the current drawn through the couplers, shared by their voltages, or added to the vehicle's own
 void TMoverParameters::PowerCouplersCurrent(coupling const Coupling, bool const localpowersource)
 {
-	// a power coupling, PowerCouplersCheck() takes no other
-	auto const couplervoltage{static_cast<int>(Couplers[end::front].power(Coupling)->voltage + Couplers[end::rear].power(Coupling)->voltage)};
+	auto const *frontcoupling{Couplers[end::front].power(Coupling)};
+	auto const *rearcoupling{Couplers[end::rear].power(Coupling)};
 	auto *totalcurrent{PowerCircuitCurrent(Coupling)};
+	if (frontcoupling == nullptr || rearcoupling == nullptr || totalcurrent == nullptr)
+	{
+		// not a power coupling, there's no current to share
+		return;
+	}
+	auto const couplervoltage{static_cast<int>(frontcoupling->voltage + rearcoupling->voltage)};
 
 	for (auto &thiscoupler : Couplers)
 	{
