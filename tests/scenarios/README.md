@@ -26,12 +26,21 @@ With `--test` the simulator:
 - takes no input from outside: keys and mouse sent to its window, gamepad, UART (a cab
   desk), ZeroMQ and commands sent by other programs (`WM_COPYDATA`) are all ignored, and
   motion telemetry is off,
+- gives nothing to the outside either: no keyboard leds, LPT or PoKeys (`feedbackmode`), no
+  messages to a multiplayer server (`multiplayer`), no program run at the end (`execonexit`),
+  no console window of its own (`showsystemconsole`), and the game's `imgui.ini` stays as it is,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
   frame (three 10 ms physics steps), whatever the real time, the time speed or the machine,
 - seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
   runs of a scenery come out the same (the physicslogs of two runs are byte for byte equal),
 - quits when the test ends, and says how it ended in the exit code and in a `test: ...`
-  line on stdout and in the log.
+  line on stdout and in the log. A command line it can't take, or a start that fails, ends
+  the same way with the `error` code.
+
+On Windows the simulator is a windowed program, so `cmd` and PowerShell don't wait for it nor
+show its output by themselves: run it with `start /wait eu07 --test ... > result.txt` and read
+`%errorlevel%` in `cmd`, or `(Start-Process eu07 '--test ...' -Wait -PassThru -RedirectStandardOutput result.txt).ExitCode`
+in PowerShell. Scripts (Python's `subprocess`, bash) wait for it as for any other program.
 
 A scenery reports its result to the memory cell `__test.result`, which the simulator creates
 (in every run, so a test scenery loads normally too). Write value 1 to it for a pass and 0
@@ -101,7 +110,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 14 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. All 15 cases
   take about 30 s with `-j 4`, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
