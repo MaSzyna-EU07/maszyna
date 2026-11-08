@@ -271,6 +271,8 @@ std::string locale::label_cab_control(std::string const &Label)
 	    { "converteroff_sw:", STRN("converter") },
 	    { "main_sw:", STRN("line breaker") },
 	    { "radio_sw:", STRN("radio") },
+	    { "radioon_sw:", STRN("radio") },
+	    { "radiooff_sw:", STRN("radio") },
 	    { "radiofuse_sw:", STRN("radio fuse") },
 	    { "radiofuseon_sw:", STRN("radio fuse") },
 	    { "radiofuseoff_sw:", STRN("radio fuse") },

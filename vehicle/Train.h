@@ -598,6 +598,10 @@ public: // reszta może by?publiczna
 	TGauge ggRadioVolumeSelector;
 	TGauge ggRadioVolumePrevious;
 	TGauge ggRadioVolumeNext;
+	TGauge ggRadioOnButton;
+	TGauge ggRadioOffButton;
+	TGauge ggRadioFuseOnButton;
+	TGauge ggRadioFuseOffButton;
     TGauge ggUpperLightButton;
     TGauge ggLeftLightButton;
     TGauge ggRightLightButton;
