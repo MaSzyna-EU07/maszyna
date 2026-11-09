@@ -202,9 +202,17 @@ namespace gl
         // world with them, inv_view and its modelview (the moment of its animation from its place)
         glm::vec4 camera_hi;
         glm::vec4 camera_lo;
+        // the rain the glass meets (mat_rain_windscreen): x the rain fallen so far, in seconds of the heaviest rain standing still (more
+        // at speed: the glass runs into it); y how wet the glass is, 0 dry .. 1 as full of drops as it gets (it fills with the rain,
+        // dries when it stops); z how fast the glass fills: the share left to fill goes down as exp(-z x the rain fallen); w unused
+        glm::vec4 rain_state;
+        // the rain fallen (rain_state.x) when the blades were at the ends of their sweep, as wiper_timer_out and wiper_timer_return
+        // (the drops come back with the rain fallen since); -1 not known
+        glm::vec4 wiper_rain_out;
+        glm::vec4 wiper_rain_return;
     };
 
-    static_assert(sizeof(scene_ubs) == 992 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 1040 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
 
     // the camera of a pass in the world for the scene block (scene_ubs::camera_hi, camera_lo)
     inline void set_camera_place(scene_ubs &Ubs, glm::dvec3 const &Place)

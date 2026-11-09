@@ -849,6 +849,9 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	TDynamicObject const *m_wipervehicle{nullptr};
 	// the insects that vehicle met so far: seconds of driving at 100 km/h (scene_ubs.rain_wind.w)
 	double m_wiperbugs{0.0};
+	// the rain the glass met so far and how wet it is (scene_ubs::rain_state)
+	double m_wiperrain{0.0};
+	double m_glasswet{0.0};
 	gl::light_data light_data;
 
 	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;
