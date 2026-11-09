@@ -47,7 +47,11 @@ struct reading {
 	bool moved() const;
 };
 
-// the saved odometer states of the vehicles, km by vehicle name
+// the saved odometer states of the vehicles, km by vehicle name. the name is the one the scenario gives the vehicle
+// (the name of its node, TDynamicObject::name(), e.g. EU07-424), the only identity a vehicle has between the sessions:
+// the vehicles of the same name in any scenarios share one state, whatever their type, and a vehicle the scenario
+// names otherwise starts over, from the legacy or a made up state. the sceneries name the real vehicles by their
+// numbers, so it's the same vehicle as a rule
 class store {
 public:
 	// reads the states written by write(). lines "<km> <vehicle name>", "~<km> <vehicle name>" for a state counted
