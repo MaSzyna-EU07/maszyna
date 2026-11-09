@@ -1698,6 +1698,8 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 			BRVentilators = false;
 	}
 
+	// the master controller set directly, not through IncMainCtrl()/DecMainCtrl() (AI, consist): the locked shunt follows it as well
+	ScndCtrlResistiveLockCheck();
 	// automatyczny rozruch
 	if (EngineType == TEngineType::ElectricSeriesMotor && AutoRelayCheck())
 	{
@@ -2604,6 +2606,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 
 	if (true == OK)
 	{
+		ScndCtrlResistiveLockCheck(); // e.g. from the last series position on to the resistive parallel ones
 		SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
 		SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 	}
@@ -2729,6 +2732,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 
 		if (OK)
 		{
+			ScndCtrlResistiveLockCheck(); // the shunt drops when the master controller leaves a resistance-free position
 			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); // hmmmm...???!!!
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
@@ -2818,7 +2822,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 	{
 		//     if (RList[MainCtrlPos].R=0) and (MainCtrlPos>0) and (ScndCtrlPos<ScndCtrlPosNo) and
 		//     (not CoupledCtrl) then
-		if (ScndCtrlPos < ScndCtrlPosNo && !CoupledCtrl)
+		if (ScndCtrlPos < ScndCtrlPosNo && !CoupledCtrl && !IsScndCtrlLockedByMainCtrl())
 		{
 			// TBD, TODO: refactor this validation as part of relay check routine (currently in tractionforce()
 			// TBD, TODO: diesel electric engine utilize scndctrlactualpos like the other types?
@@ -2889,7 +2893,7 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 	}
 	else if (ScndCtrlPosNo > 0 && CabActive != 0)
 	{
-		if (ScndCtrlPos > 0 && !CoupledCtrl && (EngineType != TEngineType::DieselElectric || !AutoRelayFlag))
+		if (ScndCtrlPos > 0 && !CoupledCtrl && (EngineType != TEngineType::DieselElectric || !AutoRelayFlag) && !IsScndCtrlLockedByMainCtrl())
 		{
 			if (CtrlSpeed == 1)
 			{
@@ -2937,6 +2941,22 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 	}
 
 	return OK;
+}
+
+bool TMoverParameters::IsScndCtrlLockedByMainCtrl() const
+{
+	// ET21, ET22, EP09: the field shunting engages only on the resistance-free positions of the master controller (eu07/maszyna#402)
+	return ScndCtrlResistiveLock && (IsMainCtrlNoPowerPos() || RList[MainCtrlPos].R >= 0.01);
+}
+
+void TMoverParameters::ScndCtrlResistiveLockCheck()
+{
+	// the shunt controller, locked in both directions on zero and the resistive positions, would otherwise stay engaged there once the
+	// master controller is taken back (or set from elsewhere, e.g. by the AI or another vehicle of the consist) with the shunt on
+	if (ScndCtrlPos > 0 && !CoupledCtrl && IsScndCtrlLockedByMainCtrl())
+	{
+		ScndCtrlPos = 0;
+	}
 }
 
 int TMoverParameters::GetVirtualScndPos() const
@@ -11105,6 +11125,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
 
 	extract_value(ScndS, "ScndS", line, ""); // brak pozycji rownoleglej przy niskiej nastawie PSR
+	extract_value(ScndCtrlResistiveLock, "ScndCtrlResistiveLock", line, ""); // bocznikowanie tylko na pozycjach bezoporowych
 
 	extract_value(InitialCtrlDelay, "IniCDelay", line, "");
 	extract_value(CtrlDelay, "SCDelay", line, "");
