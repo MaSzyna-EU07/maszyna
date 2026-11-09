@@ -151,6 +151,9 @@ enum class user_command
 	radiovolumeincrease,
 	radiovolumedecrease,
 	radiovolumeset,
+	radiofusetoggle,
+	radiofuseenable,
+	radiofusedisable,
 	cabchangeforward,
 	cabchangebackward,
 

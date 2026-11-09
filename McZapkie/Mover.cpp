@@ -3146,7 +3146,7 @@ void TMoverParameters::SecuritySystemCheck(double dt)
 	bool isPower = Power24vIsAvailable || Power110vIsAvailable;
 	SecuritySystem.update(dt, Vel, isPower, CabActive);
 
-	if (!Battery || !Radio)
+	if (!Battery || !Radio || !RadioFuse)
 	{ // wyłączenie baterii deaktywuje sprzęt
 		RadiostopSwitch(false);
 	}

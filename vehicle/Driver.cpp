@@ -2769,6 +2769,7 @@ bool TController::PrepareEngine()
 
     cue_action( driver_hint::batteryon );
 	cue_action( driver_hint::cabactivation);
+    cue_action( driver_hint::radiofuseon );
     cue_action( driver_hint::radioon );
 
     if( has_diesel_engine() ) {
@@ -6450,13 +6451,19 @@ TController::control_security_system( double const Timedelta ) {
         }
     }
     if( iEngineActive
-     && false == mvOccupied->Radio
+     && ( false == mvOccupied->Radio || false == mvOccupied->RadioFuse )
      && false == mvOccupied->RadioStopFlag ) {
         // otherwise if it's safe to do so, turn the radio back on
         // arbitrary 5 sec delay before switching radio back on
         m_radiocontroltime = std::min( m_radiocontroltime, 5.0 );
         if( m_radiocontroltime < 0.0 ) {
-            cue_action( driver_hint::radioon );
+            // hint at whichever of the two is open, the radio's switch or the cut-off in its power supply
+            if( false == mvOccupied->RadioFuse ) {
+                cue_action( driver_hint::radiofuseon );
+            }
+            if( false == mvOccupied->Radio ) {
+                cue_action( driver_hint::radioon );
+            }
         }
         else {
             m_radiocontroltime -= Timedelta;

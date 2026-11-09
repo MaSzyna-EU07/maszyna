@@ -7278,7 +7278,8 @@ void TDynamicObject::RadioStop()
     if( Mechanik ) {
         // o ile ktoś go prowadzi
 		if( MoverParameters->SecuritySystem.radiostop_available()
-         && MoverParameters->Radio ) {
+         && MoverParameters->Radio
+         && MoverParameters->RadioFuse ) {
             // jeśli pojazd ma RadioStop i jest on aktywny
             // HACK cast until math types unification
 			glm::dvec3 pos = static_cast<glm::dvec3>(vPosition);

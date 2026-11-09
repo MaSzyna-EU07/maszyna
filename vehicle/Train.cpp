@@ -497,6 +497,9 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::radiovolumeincrease, &TTrain::OnCommand_radiovolumeincrease},
     {user_command::radiovolumedecrease, &TTrain::OnCommand_radiovolumedecrease},
     {user_command::radiovolumeset, &TTrain::OnCommand_radiovolumeset},
+    {user_command::radiofusetoggle, &TTrain::OnCommand_radiofusetoggle},
+    {user_command::radiofuseenable, &TTrain::OnCommand_radiofuseenable},
+    {user_command::radiofusedisable, &TTrain::OnCommand_radiofusedisable},
     {user_command::cabchangeforward, &TTrain::OnCommand_cabchangeforward},
     {user_command::cabchangebackward, &TTrain::OnCommand_cabchangebackward},
     {user_command::generictoggle0, &TTrain::OnCommand_generictoggle},
@@ -797,6 +800,7 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 		}
 	}
 	dict->insert("radio", mvOccupied->Radio);
+	dict->insert("radio_fuse", mvOccupied->RadioFuse);
 	dict->insert("radio_channel", RadioChannel());
 	dict->insert("radio_volume", m_radiovolume);
 	dict->insert("door_lock", mvOccupied->Doors.lock_enabled);
@@ -8236,41 +8240,101 @@ void TTrain::OnCommand_radiotoggle(TTrain *Train, command_data const &Command)
 
 	// NOTE: works without the switch in the 3d model too, to allow system reset after receiving radio-stop signal
 	// only reacting to press, so the sound can loop uninterrupted
-	if (false == Train->mvOccupied->Radio)
-	{
-		// turn on
-		OnCommand_radioenable(Train, Command);
-	}
-	else
-	{
-		// turn off
-		OnCommand_radiodisable(Train, Command);
-	}
+	// NOTE: flips the state directly rather than through radioenable/radiodisable, so it doesn't move the radioon_sw:/radiooff_sw: buttons
+	Train->mvOccupied->Radio = (false == Train->mvOccupied->Radio);
 }
 
 void TTrain::OnCommand_radioenable(TTrain *Train, command_data const &Command)
 {
-	if (Command.action != GLFW_PRESS)
-	{
-		return;
-	}
-
-	if (false == Train->mvOccupied->Radio)
+	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->Radio = true;
+		// visual feedback
+		if (Train->m_controlmapper.contains("radioon_sw:"))
+		{
+			Train->ggRadioOnButton.UpdateValue(1.0f, Train->dsbSwitch);
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		if (Train->m_controlmapper.contains("radioon_sw:"))
+		{
+			Train->ggRadioOnButton.UpdateValue(0.0f, Train->dsbSwitch);
+		}
 	}
 }
 
 void TTrain::OnCommand_radiodisable(TTrain *Train, command_data const &Command)
 {
+	if (Command.action == GLFW_PRESS)
+	{
+		Train->mvOccupied->Radio = false;
+		// visual feedback
+		if (Train->m_controlmapper.contains("radiooff_sw:"))
+		{
+			Train->ggRadioOffButton.UpdateValue(1.0f, Train->dsbSwitch);
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		if (Train->m_controlmapper.contains("radiooff_sw:"))
+		{
+			Train->ggRadioOffButton.UpdateValue(0.0f, Train->dsbSwitch);
+		}
+	}
+}
+
+// the cut-off in the radio's power supply (eu07/maszyna#438); opening it works like switching the radio off, the
+// radio-stop flag included
+void TTrain::OnCommand_radiofusetoggle(TTrain *Train, command_data const &Command)
+{
 	if (Command.action != GLFW_PRESS)
 	{
 		return;
 	}
 
-	if (Train->mvOccupied->Radio)
+	// NOTE: flips the state directly rather than through radiofuseenable/radiofusedisable, so it doesn't move the
+	// radiofuseon_sw:/radiofuseoff_sw: buttons
+	Train->mvOccupied->RadioFuse = (false == Train->mvOccupied->RadioFuse);
+}
+
+void TTrain::OnCommand_radiofuseenable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action == GLFW_PRESS)
 	{
-		Train->mvOccupied->Radio = false;
+		Train->mvOccupied->RadioFuse = true;
+		// visual feedback
+		if (Train->m_controlmapper.contains("radiofuseon_sw:"))
+		{
+			Train->ggRadioFuseOnButton.UpdateValue(1.0f, Train->dsbSwitch);
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		if (Train->m_controlmapper.contains("radiofuseon_sw:"))
+		{
+			Train->ggRadioFuseOnButton.UpdateValue(0.0f, Train->dsbSwitch);
+		}
+	}
+}
+
+void TTrain::OnCommand_radiofusedisable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action == GLFW_PRESS)
+	{
+		Train->mvOccupied->RadioFuse = false;
+		// visual feedback
+		if (Train->m_controlmapper.contains("radiofuseoff_sw:"))
+		{
+			Train->ggRadioFuseOffButton.UpdateValue(1.0f, Train->dsbSwitch);
+		}
+	}
+	else if (Command.action == GLFW_RELEASE)
+	{
+		if (Train->m_controlmapper.contains("radiofuseoff_sw:"))
+		{
+			Train->ggRadioFuseOffButton.UpdateValue(0.0f, Train->dsbSwitch);
+		}
 	}
 }
 
@@ -9298,9 +9362,9 @@ bool TTrain::Update(double const Deltatime)
 		// KURS90
 		btLampkaMaxSila.Turn(abs(mvControlled->Im) >= 350);
 		btLampkaPrzekrMaxSila.Turn(abs(mvControlled->Im) >= 450);
-		btLampkaRadio.Turn(mvOccupied->Radio);
+		btLampkaRadio.Turn(mvOccupied->Radio && mvOccupied->RadioFuse);
 		btLampkaRadioMessage.Turn(radio_message_played);
-		btLampkaRadioStop.Turn(mvOccupied->Radio && mvOccupied->RadioStopFlag);
+		btLampkaRadioStop.Turn(mvOccupied->Radio && mvOccupied->RadioFuse && mvOccupied->RadioStopFlag);
 		btLampkaHamulecReczny.Turn(mvOccupied->ManualBrakePos > 0);
 		// NBMX wrzesien 2003 - drzwi oraz sygnał odjazdu
 		if (DynamicObject->Mechanik != nullptr)
@@ -9785,6 +9849,10 @@ bool TTrain::Update(double const Deltatime)
 	ggRadioVolumeSelector.Update();
 	ggRadioVolumePrevious.Update();
 	ggRadioVolumeNext.Update();
+	ggRadioOnButton.Update();
+	ggRadioOffButton.Update();
+	ggRadioFuseOnButton.Update();
+	ggRadioFuseOffButton.Update();
 	ggDepartureSignalButton.Update();
 	/*
 	    ggPantFrontButton.Update();
@@ -11332,6 +11400,10 @@ void TTrain::clear_cab_controls()
 	ggRadioVolumeSelector.Clear();
 	ggRadioVolumePrevious.Clear();
 	ggRadioVolumeNext.Clear();
+	ggRadioOnButton.Clear();
+	ggRadioOffButton.Clear();
+	ggRadioFuseOnButton.Clear();
+	ggRadioFuseOffButton.Clear();
 	ggDoorLeftPermitButton.Clear();
 	ggDoorRightPermitButton.Clear();
 	ggDoorPermitPresetButton.Clear();
@@ -12099,6 +12171,10 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"radiovolume_sw:", ggRadioVolumeSelector},
 	                                                          {"radiovolumeprev_sw:", ggRadioVolumePrevious},
 	                                                          {"radiovolumenext_sw:", ggRadioVolumeNext},
+	                                                          {"radioon_sw:", ggRadioOnButton},
+	                                                          {"radiooff_sw:", ggRadioOffButton},
+	                                                          {"radiofuseon_sw:", ggRadioFuseOnButton},
+	                                                          {"radiofuseoff_sw:", ggRadioFuseOffButton},
 	                                                          /*
 	                                                                  { "pantfront_sw:", ggPantFrontButton },
 	                                                                  { "pantrear_sw:", ggPantRearButton },
@@ -12256,6 +12332,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	    {"pantfrontoff_sw:", &mvPantographUnit->Pantographs[end::front].valve.is_disabled},
 	    {"pantrearoff_sw:", &mvPantographUnit->Pantographs[end::rear].valve.is_disabled},
 	    {"radio_sw:", &mvOccupied->Radio},
+	    {"radiofuse_sw:", &mvOccupied->RadioFuse},
 	    {"cablight_sw:", &Cabine[iCabn].bLight},
 	    {"springbraketoggle_bt:", &mvOccupied->SpringBrake.Activate},
 	    {"couplingdisconnect_sw:", &m_couplingdisconnect},

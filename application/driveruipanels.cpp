@@ -810,7 +810,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
 	              mover.HeatingAllow ? 'h' :
 	                                   '.',
         mover.Hamulec->Releaser() ? '^' : '.',
-        std::string( m_input.mechanik ? STR(" R") + ( mover.Radio ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
+        std::string( m_input.mechanik ? STR(" R") + ( mover.Radio && mover.RadioFuse ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
         std::string( isdieselenginepowered ? STR(" oil pressure: ") + to_string( mover.OilPump.pressure, 2 )  : "" ).c_str(),
         // power transfers
         // 3000v
