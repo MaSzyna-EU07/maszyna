@@ -153,11 +153,23 @@ void TSecuritySystem::update(double dt, double vel, bool pwr, int cab)
 	velocity = vel;
 	cabactive = cab;
 
-	if (vigilance_enabled && velocity > AwareMinSpeed)
-		vigilance_timer += dt;
+	if (vigilance_suspended)
+	{
+		// the vigilance device is switched off: no time counts towards a new alarm, of the alerter or of the button held
+		// too long. an alarm already on, with the emergency braking it leads to, stays until it's acknowledged as usual
+		if (vigilance_timer <= AwareDelay)
+			vigilance_timer = 0.0;
+		if (press_timer <= MaxHoldTime)
+			press_timer = 0.0;
+	}
+	else
+	{
+		if (vigilance_enabled && velocity > AwareMinSpeed)
+			vigilance_timer += dt;
 
-	if (pressed && (!is_sifa || velocity > AwareMinSpeed))
-		press_timer += dt;
+		if (pressed && (!is_sifa || velocity > AwareMinSpeed))
+			press_timer += dt;
+	}
 
 	if (vigilance_timer > AwareDelay || press_timer > MaxHoldTime || cabsignal_active)
 		alert_timer += dt;
@@ -232,6 +244,11 @@ void TSecuritySystem::set_cabsignal_lock(bool v)
 	cabsignal_lock = v;
 }
 
+void TSecuritySystem::set_shunt_mode(bool const State)
+{
+	vigilance_suspended = State && AwareOffInShuntMode;
+}
+
 bool TSecuritySystem::is_engine_blocked() const
 {
 	if (!is_sifa)
@@ -261,6 +278,7 @@ void TSecuritySystem::load(std::string const &line, double Vmax)
 	extract_value(radiostop_enabled, "RadioStop", line, "");
 	extract_value(MagnetLocation, "MagnetLocation", line, "");
 	extract_value(CabDependent, "CabDependent", line, "");
+	extract_value(AwareOffInShuntMode, "AwareOffInShuntMode", line, "");
 }
 
 double TableInterpolation(std::map<double, double> &Map, double Parameter)
@@ -823,6 +841,19 @@ bool TMoverParameters::ChangeCab(int direction)
 // rozruch wysoki (true) albo niski (false)
 bool TMoverParameters::CurrentSwitch(bool const State)
 {
+	// TBD, TODO: split off shunt mode toggle into a separate command? It doesn't make much sense to have these two together like that
+	// the diesels with a shunt mode have no motor overload relay threshold to switch, the switch sets their shunt mode alone.
+	// MaxCurrentSwitch() takes any change of the setting, so asked first it took the first move of the switch (eu07/maszyna#497)
+	if (true == ShuntModeAllow && (EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric))
+	{
+		// dla 2Ls150 przed ustawieniem kierunku, for SM42/SP42 at the controller's zero position
+		if (EngineType == TEngineType::DieselEngine ? DirActive != 0 : false == IsMainCtrlNoPowerPos())
+		{
+			return false;
+		}
+		ShuntMode = State;
+		return true;
+	}
 
 	if (MaxCurrentSwitch(State))
 	{
@@ -830,20 +861,6 @@ bool TMoverParameters::CurrentSwitch(bool const State)
 		{
 			MinCurrentSwitch(State);
 		}
-		return true;
-	}
-	// TBD, TODO: split off shunt mode toggle into a separate command? It doesn't make much sense to have these two together like that
-	// dla 2Ls150
-	if (EngineType == TEngineType::DieselEngine && true == ShuntModeAllow && DirActive == 0)
-	{
-		// przed ustawieniem kierunku
-		ShuntMode = State;
-		return true;
-	}
-	// for SM42/SP42
-	if (EngineType == TEngineType::DieselElectric && true == ShuntModeAllow && IsMainCtrlNoPowerPos())
-	{
-		ShuntMode = State;
 		return true;
 	}
 
@@ -3230,6 +3247,8 @@ void TMoverParameters::SecuritySystemReset(void) // zbijanie czuwaka/SHP
 void TMoverParameters::SecuritySystemCheck(double dt)
 {
 	bool isPower = Power24vIsAvailable || Power110vIsAvailable;
+	// the shunt mode of the SM42 switches its vigilance device (CA) off, on the vehicles with AwareOffInShuntMode=Yes (eu07/maszyna#457)
+	SecuritySystem.set_shunt_mode(ShuntMode);
 	SecuritySystem.update(dt, Vel, isPower, CabActive);
 
 	if (!Battery || !Radio || !RadioFuse)
