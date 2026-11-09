@@ -68,6 +68,28 @@ submodel_material( TSubModel const *Submodel ) {
             null_handle );
 }
 
+bool
+is_scaled( glm::vec3 const &Scale ) {
+
+    return ( Scale.x != 1.0f ) || ( Scale.y != 1.0f ) || ( Scale.z != 1.0f );
+}
+
+// pushes the placement of a scaled model instance: the translation and rotation of Render( TModel3d *, ..., Position, Angle ),
+// followed by the scale of the instance, applied before the submodel transforms (as in the opengl 3.3 renderer)
+void
+push_scaled_instance_transform( glm::dvec3 const &Position, glm::vec3 const &Angle, glm::vec3 const &Scale ) {
+
+    ::glPushMatrix();
+    ::glTranslated( Position.x, Position.y, Position.z );
+    if( Angle.y != 0.0 )
+        ::glRotatef( Angle.y, 0.f, 1.f, 0.f );
+    if( Angle.x != 0.0 )
+        ::glRotatef( Angle.x, 1.f, 0.f, 0.f );
+    if( Angle.z != 0.0 )
+        ::glRotatef( Angle.z, 0.f, 0.f, 1.f );
+    ::glScalef( Scale.x, Scale.y, Scale.z );
+}
+
 } // namespace
 
 float const EU07_OPACITYDEFAULT { 0.5f };
@@ -2475,12 +2497,23 @@ opengl_renderer::Render( TAnimModel *Instance ) {
     Instance->RaPrepare();
     if( Instance->pModel ) {
         // renderowanie rekurencyjne submodeli
-        Render(
-            Instance->pModel,
-            Instance->Material(),
-            distancesquared,
-            Instance->location() - m_renderpass.camera.position(),
-            Instance->vAngle );
+        auto const position { Instance->location() - m_renderpass.camera.position() };
+        if( is_scaled( Instance->Scale() ) ) {
+            // the scale stretches the normals too, they're normalized again for the lighting
+            push_scaled_instance_transform( position, Instance->vAngle, Instance->Scale() );
+            m_normalizenormals = true;
+            Render( Instance->pModel, Instance->Material(), distancesquared );
+            m_normalizenormals = false;
+            ::glPopMatrix();
+        }
+        else {
+            Render(
+                Instance->pModel,
+                Instance->Material(),
+                distancesquared,
+                position,
+                Instance->vAngle );
+        }
         // debug data
         ++m_renderpass.draw_stats.models;
     }
@@ -2848,7 +2881,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glEnable( GL_NORMALIZE );
                         }
 #endif
@@ -2937,7 +2970,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glDisable( GL_NORMALIZE );
                         }
 #endif
@@ -3632,12 +3665,23 @@ opengl_renderer::Render_Alpha( TAnimModel *Instance ) {
     Instance->RaPrepare();
     if( Instance->pModel ) {
         // renderowanie rekurencyjne submodeli
-        Render_Alpha(
-            Instance->pModel,
-            Instance->Material(),
-            distancesquared,
-            Instance->location() - m_renderpass.camera.position(),
-            Instance->vAngle );
+        auto const position { Instance->location() - m_renderpass.camera.position() };
+        if( is_scaled( Instance->Scale() ) ) {
+            // the scale stretches the normals too, they're normalized again for the lighting
+            push_scaled_instance_transform( position, Instance->vAngle, Instance->Scale() );
+            m_normalizenormals = true;
+            Render_Alpha( Instance->pModel, Instance->Material(), distancesquared );
+            m_normalizenormals = false;
+            ::glPopMatrix();
+        }
+        else {
+            Render_Alpha(
+                Instance->pModel,
+                Instance->Material(),
+                distancesquared,
+                position,
+                Instance->vAngle );
+        }
     }
 }
 
@@ -3940,7 +3984,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glEnable( GL_NORMALIZE );
                         }
 #endif
@@ -4010,7 +4054,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glDisable( GL_NORMALIZE );
                         }
 #endif
