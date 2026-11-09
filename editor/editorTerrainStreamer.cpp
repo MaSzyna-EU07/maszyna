@@ -810,6 +810,45 @@ editor_terrain *terrain_streamer::terrain_at(double X, double Z) const
 	return nullptr;
 }
 
+bool terrain_streamer::raycast(glm::dvec3 const &Origin, glm::dvec3 const &Direction, double const Reach, glm::dvec3 &Hit) const
+{
+	if (glm::length(Direction) < 1e-9)
+		return false;
+	auto const direction{glm::normalize(Direction)};
+	// above the ground (or where there's none) at the start of a step, below it at its end: the crossing is in between
+	auto const above = [&](double const T) {
+		auto const point{Origin + direction * T};
+		double height;
+		return false == height_at(point.x, point.z, height) || point.y > height;
+	};
+	if (false == above(0.0))
+		return false; // starts under the ground
+	double previous{0.0};
+	double t{0.0};
+	while (t < Reach)
+	{
+		// finer near the camera, where the brush is aimed most
+		t = std::min(Reach, t + std::max(0.25, t * 0.004));
+		if (above(t))
+		{
+			previous = t;
+			continue;
+		}
+		auto low{previous}, high{t};
+		for (int i = 0; i < 24; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			if (above(middle))
+				low = middle;
+			else
+				high = middle;
+		}
+		Hit = Origin + direction * high;
+		return true;
+	}
+	return false;
+}
+
 bool terrain_streamer::height_at(double X, double Z, double &Height) const
 {
 	auto const *chunk{terrain_at(X, Z)};
