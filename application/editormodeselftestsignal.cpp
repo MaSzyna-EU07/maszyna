@@ -225,10 +225,10 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			signal_select(standing->include.instance);
 			tool.moving = true;
 			tool.moved_valid = signal_drop_at(*standing, *track, path, point, side, tool.moved);
-		// as a drag does: what it had by its own track carried
-		if (signal_spot home; tool.moved_valid && signal_standing_spot(*standing, home))
-			if (auto const *item{signal_template_of(standing->include.file)})
-				signal_carry(home, tool.moved, *item);
+			// as a drag does: what it had by its own track carried
+			if (signal_spot home; tool.moved_valid && signal_standing_spot(*standing, home))
+				if (auto const *item{signal_template_of(standing->include.file)})
+					signal_carry(home, tool.moved, *item);
 			tool.pressed = {-1000.f, -1000.f};
 			signal_release();
 			WriteLog("SELFTEST signalmove: " + tool.status);

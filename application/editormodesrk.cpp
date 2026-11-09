@@ -2189,8 +2189,14 @@ void srk_tool::joints_changed(srk_hand_joints const &Before, bool const Forget)
 	set_circuits();
 	if (false == m_joint_change.has_value())
 		return;
-	// no step of the history took it, refused or with nothing to change: the joints as they were, the undo knowing of no other;
-	// forgotten, the ones that changed nothing go anyway
+	// forgotten, the ones that changed nothing go anyway, in a step of their own: the anchor as it is carries them
+	if (Forget && false == m_status_refused && entry.track != nullptr && (Before.added != entry.joints_added || Before.removed != entry.joints_removed))
+	{
+		m_history.push_track_snapshot({{entry.track, editor_track::capture(*entry.track)}});
+		if (false == m_joint_change.has_value())
+			return;
+	}
+	// no step of the history took it, refused or with nothing to change: the joints as they were, the undo knowing of no other
 	if (m_status_refused || false == Forget)
 	{
 		entry.joints_added = Before.added;
