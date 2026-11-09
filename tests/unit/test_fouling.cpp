@@ -11,7 +11,9 @@ namespace {
 // the axis from the origin along z, a point each metre; Radius 0 straight, else a curve towards +x (Radius > 0) or -x
 std::vector<glm::dvec3> axis(double const Radius, double const Slope = 0.0, double const Length = 150.0) {
 	std::vector<glm::dvec3> points;
-	for (double s = 0.0; s <= Length + 1e-9; s += 1.0) {
+	auto const metres{static_cast<int>(std::floor(Length + 1e-9))};
+	for (int metre = 0; metre <= metres; ++metre) {
+		auto const s{static_cast<double>(metre)};
 		if (Radius == 0.0) {
 			auto const along{s / std::sqrt(1.0 + Slope * Slope)};
 			points.emplace_back(along * Slope, 0.0, along);

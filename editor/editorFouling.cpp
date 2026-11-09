@@ -92,8 +92,12 @@ double radius_at(std::vector<glm::dvec3> const &Line, std::size_t const Index, g
 	// the middle one between them, by the length
 	auto const half{0.5 * (behind + ahead)};
 	auto middle{low};
-	for (double length{0.0}; middle + 1 < high && length < half; ++middle)
+	double length{0.0};
+	while (middle + 1 < high && length < half)
+	{
 		length += glm::length(plan(Line[middle + 1]) - plan(Line[middle]));
+		++middle;
+	}
 	auto const a{plan(Line[low])};
 	auto const b{plan(Line[middle])};
 	auto const c{plan(Line[high])};

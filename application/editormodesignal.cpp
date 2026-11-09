@@ -1090,6 +1090,8 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	if (item != nullptr && stood && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
 		file = signal_variant(*item, Spot);
 	auto const *next{signal_template_of(file)};
+	// kept apart: the refresh below may scan the templates again, and next would point into the old list
+	auto const gantry{next != nullptr && next->mount == "gantry"};
 	auto values{Standing.include.values};
 	auto local{Spot.position - included.context.offset};
 	if (item != nullptr && next != nullptr)
@@ -1135,7 +1137,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	set_include_directive(instance, editor_includes::compose_directive(file, values));
 	gauge_tool::gauge_hit hit;
 	double shift{0.0};
-	if (next != nullptr && next->mount == "gantry")
+	if (gantry)
 		hit = m_gauge.gauge_models(include_models(instance, Spot.position));
 	else
 		shift = signal_off_gauge(instance, file, values, local, hit);
@@ -1173,7 +1175,7 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	signal_select(instance);
 	auto const *moved{signal_standing_of(instance)};
 	tool.status = moved != nullptr && moved->track != nullptr ? format(Read, name.c_str(), editor_track::event_keyword(moved->list), moved->read.c_str(), name_of(*moved->track).c_str()) : format(Unread, name.c_str());
-	signal_gauge_note(tool.status, shift, hit, next != nullptr && next->mount == "gantry");
+	signal_gauge_note(tool.status, shift, hit, gantry);
 	return true;
 }
 
@@ -1868,8 +1870,10 @@ std::string editor_mode::signal_next_name(std::string const &Name) const
 	return Name + "2";
 }
 
-bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &Template)
+bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &Chosen)
 {
+	// a copy: the refresh below may scan the templates again, and the one given may be in the old list
+	auto const Template{Chosen};
 	auto &tool{m_signal};
 	std::string name{tool.name};
 	if (name.empty() || name.find_first_of(" \t\";") != std::string::npos)
@@ -3081,12 +3085,19 @@ void editor_mode::render_signal_selected()
 	if (auto const *item{signal_template_of(found->include.file)}; item != nullptr && render_signal_template(*found, *item))
 		return;
 	auto const width{(ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f};
+	// either refreshes the signals standing, found pointing into the list of before: the rest of the card in the next frame
 	if (ImGui::Button(STR_C("To the other side"), ImVec2(width, 0.0f)))
+	{
 		signal_flip(instance);
+		return;
+	}
 	item_tooltip("Takes the signal across the track, it keeps facing the same trains. Dragging it over the track does the same");
 	ImGui::SameLine();
 	if (ImGui::Button(STR_C("Turn around"), ImVec2(width, 0.0f)))
+	{
 		signal_turn(instance);
+		return;
+	}
 	item_tooltip("Turns the signal to the trains of the other direction, they read it by the other event of the path");
 	if (render_signal_indicators(*found))
 		return;
