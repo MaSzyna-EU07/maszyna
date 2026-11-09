@@ -138,6 +138,16 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     return mvOccupied->Radio == true; } );
             break;
         }
+        case driver_hint::radiofuseon: {
+            if( AIControllFlag ) {
+                mvOccupied->RadioFuse = true;
+            }
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return mvOccupied->RadioFuse == true; } );
+            break;
+        }
         case driver_hint::radiochannel: {
             if( AIControllFlag ) {
                 iRadioChannel = static_cast<int>( Actionparameter );

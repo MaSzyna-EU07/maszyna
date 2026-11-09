@@ -24,6 +24,7 @@ auto const EU07_AI_NOACCELERATION = -0.05;
 auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
+auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
@@ -312,6 +313,9 @@ private:
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
     double brake_increase_margin() const;
+    bool uphill_stop_hold() const;
+    bool uphill_brake_committed( double const Velocity ) const;
+    void control_uphill_start();
     std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
@@ -323,6 +327,7 @@ private:
     void scan_obstacles( double const Range );
     void control_wheelslip();
     void control_pantographs();
+    void control_pantographs_setup( int const Setup );
     void control_horns( double const Timedelta );
     void control_security_system( double const Timedelta );
     void control_handles();
@@ -347,6 +352,11 @@ private:
     void pick_optimal_speed( double const Range );
     void adjust_desired_speed_for_obstacles();
     void adjust_desired_speed_for_limits();
+    void set_velocity_for_uncoupling();
+    bool increase_train_brake();
+    void hold_train_coming_to_stand_uphill();
+    void adjust_desired_speed_for_final_approach( double const Vel );
+    void adjust_desired_speed_for_braking_curve( double const Vel );
     void adjust_desired_speed_for_target_speed( double const Range );
     void adjust_desired_speed_for_current_speed();
     void adjust_desired_speed_for_braking_test();
@@ -408,6 +418,8 @@ private:
     double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
+    bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    double fUphillStartTime = 0.0; // when the uphill start began
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
