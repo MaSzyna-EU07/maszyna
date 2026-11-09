@@ -1507,6 +1507,7 @@ void TController::update_point_limits() {
     }
     // a change of the vehicle (another cab) starts the measure from its place
     auto const vehiclechanged { m_pointlimitsvehicle != pVehicle };
+    auto const previousposition { m_pointlimitsposition };
     m_pointlimitsvehicle = pVehicle;
     m_pointlimitsposition = position;
     // the consist, as its end vehicles and its length
@@ -1520,12 +1521,17 @@ void TController::update_point_limits() {
     m_pointlimitsends[ 1 ] = rear;
     m_pointlimitslength = fLength;
     // vehicles coupled or uncoupled at the end towards the point move the head towards it or away. only a change of
-    // the consist counts: the end measured from the vehicle shifts on curves, and when another vehicle is measured from
+    // the consist counts, as the end measured from the vehicle shifts on curves. another vehicle measured from (a cab
+    // change, which may come with a coupling in the same order) moves the end measured before to its place
     for( auto &limit : m_pointlimits ) {
         if( glm::length( limit.heading ) < 0.5 ) { continue; }
         auto const consistend { point_limit_end( limit.heading ) };
-        if( limit.endknown && consistchanged && false == vehiclechanged ) {
-            limit.distance -= consistend - limit.end;
+        if( limit.endknown && consistchanged ) {
+            auto const previousend {
+                vehiclechanged ?
+                    limit.end + glm::dot( previousposition - position, limit.heading ) :
+                    limit.end };
+            limit.distance -= consistend - previousend;
         }
         limit.end = consistend;
         limit.endknown = true;
