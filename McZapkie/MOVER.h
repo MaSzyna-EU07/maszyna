@@ -1774,6 +1774,10 @@ class TMoverParameters
 	bool UniCtrlIntegratedBrakeCtrl = false; /*zintegrowany nastawnik JH obsluguje hamowanie*/
 	bool UniCtrlIntegratedLocalBrakeCtrl = false; /*zintegrowany nastawnik JH obsluguje hamowanie hamulcem pomocniczym*/
 	int UniCtrlNoPowerPos{0}; // cached highesr position not generating traction force
+	// UCList CtrlValStep: the universal controller (EIMCtrlType 3) changes its setting in steps of this size (e.g. 0.05 for the
+	// 5% steps of the 6Dg), one at once when moved to a raising or lowering position, then one each time its SpeedUp / SpeedDown
+	// covers a step; 0 (the default) changes it continuously
+	double UniCtrlValStep{0.0};
 	std::pair<std::string, std::array<int, 2>> PantsPreset{"0132", {0, 0}}; // pantograph preset switches; .first holds possible setups as chars, .second holds currently selected preset in each cab
 
 	/*-sekcja parametrow dla lokomotywy elektrycznej*/
@@ -2250,6 +2254,7 @@ class TMoverParameters
 	double eimic = 0; /*aktualna pozycja zintegrowanego sterowania jazda i hamowaniem*/
 	double eimic_analog = 0; /*pozycja zadajnika analogowa*/
 	double eimic_real = 0; /*faktycznie uzywana pozycja zintegrowanego sterowania jazda i hamowaniem*/
+	double eimic_step_progress{0.0}; // the part of the next UniCtrlValStep the controller has covered so far
 	double eim_localbrake = 0; /*nastawa hamowania dodatkowego pneumatycznego lokomotywy*/
 	int EIMCtrlType = 0; /*rodzaj wariantu zadajnika jazdy*/
 	bool SpeedCtrlTypeTime = false; /*czy tempomat sterowany czasowo*/

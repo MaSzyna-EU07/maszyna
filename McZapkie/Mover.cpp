@@ -7409,6 +7409,60 @@ bool TMoverParameters::DropAllPantographs(bool const State, range_t const Notify
 	return State != initialstate;
 }
 
+namespace
+{
+// the setting of the universal controller one UniCtrlValStep further from Value towards Limit, never past it
+double next_uc_step(double const Value, double const Limit, double const Step)
+{
+	constexpr double epsilon{1e-6};
+	if (Limit > Value)
+	{
+		return std::min((std::floor(Value / Step + epsilon) + 1.0) * Step, Limit);
+	}
+	return std::max((std::ceil(Value / Step - epsilon) - 1.0) * Step, Limit);
+}
+
+// the universal controller with UniCtrlValStep: the setting the continuous ramp got to (Ramped) turned into whole steps.
+// a move of the controller onto a position which changes the setting makes one step at once, the ramp then one step each
+// time it covers a step's length; the steps stop at the position's set value (or its bound, past which the ramp doesn't go)
+double stepped_uc_value(double const Current, double const Ramped, TUniversalCtrl const &Position, double const Step, bool const Moved, double &Progress)
+{
+	if (Moved)
+	{
+		Progress = 0.0;
+	}
+	double const delta{Ramped - Current};
+	if (std::abs(delta) < 1e-9)
+	{
+		Progress = 0.0;
+		return Ramped;
+	}
+	double limit{0.0};
+	if (delta > 0.0)
+	{
+		limit = Position.SetCtrlVal > Current ? Position.SetCtrlVal : Position.MaxCtrlVal;
+	}
+	else
+	{
+		limit = Position.SetCtrlVal < Current ? Position.SetCtrlVal : Position.MinCtrlVal;
+	}
+	Progress = Moved ? Step : Progress + std::abs(delta);
+	double value{Current};
+	bool reached{std::abs(value - limit) < 1e-9};
+	while (!reached && Progress >= Step - 1e-9)
+	{
+		value = next_uc_step(value, limit, Step);
+		Progress -= Step;
+		reached = std::abs(value - limit) < 1e-9;
+	}
+	if (reached)
+	{
+		Progress = 0.0;
+	}
+	return safe_clamp(value, Position.MinCtrlVal, Position.MaxCtrlVal);
+}
+} // namespace
+
 void TMoverParameters::CheckEIMIC(double dt)
 {
 	double offset = EIMCtrlAdditionalZeros ? 1.0 : 0.0;
@@ -7533,11 +7587,14 @@ void TMoverParameters::CheckEIMIC(double dt)
 
 		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
 		{
-			eimic -= safe_clamp(-UniCtrlList[MainCtrlPos].SetCtrlVal + eimic, 0.0,
-			               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedDown : sign(UniCtrlList[MainCtrlPos].SpeedDown) * 0.01); // odejmuj do X
-			eimic += safe_clamp(UniCtrlList[MainCtrlPos].SetCtrlVal - eimic, 0.0,
-			               MainCtrlActualPos == MainCtrlPos ? dt * UniCtrlList[MainCtrlPos].SpeedUp : sign(UniCtrlList[MainCtrlPos].SpeedUp) * 0.01); // dodawaj do X
-			eimic = safe_clamp(eimic, UniCtrlList[MainCtrlPos].MinCtrlVal, UniCtrlList[MainCtrlPos].MaxCtrlVal);
+			auto const &position{UniCtrlList[MainCtrlPos]};
+			double ramped{eimic};
+			ramped -= safe_clamp(-position.SetCtrlVal + ramped, 0.0,
+			               MainCtrlActualPos == MainCtrlPos ? dt * position.SpeedDown : sign(position.SpeedDown) * 0.01); // odejmuj do X
+			ramped += safe_clamp(position.SetCtrlVal - ramped, 0.0,
+			               MainCtrlActualPos == MainCtrlPos ? dt * position.SpeedUp : sign(position.SpeedUp) * 0.01); // dodawaj do X
+			ramped = safe_clamp(ramped, position.MinCtrlVal, position.MaxCtrlVal);
+			eimic = UniCtrlValStep > 0.0 ? stepped_uc_value(eimic, ramped, position, UniCtrlValStep, MainCtrlActualPos != MainCtrlPos, eimic_step_progress) : ramped;
 		}
 		if (MainCtrlActualPos == MainCtrlPos)
 			LastRelayTime += dt;
@@ -11765,6 +11822,8 @@ void TMoverParameters::LoadFIZ_UCList(std::string const &Input)
 	extract_value(UniCtrlIntegratedBrakeCtrl, "IntegratedBrake", Input, "");
 	extract_value(UniCtrlIntegratedLocalBrakeCtrl, "IntegratedLocBrake", Input, "");
 	extract_value(UniCtrlIntegratedBrakePNCtrl, "IntegratedBrakePN", Input, "");
+	extract_value(UniCtrlValStep, "CtrlValStep", Input, "");
+	UniCtrlValStep = std::max(UniCtrlValStep, 0.0);
 }
 
 void TMoverParameters::LoadFIZ_DList(std::string const &Input)
