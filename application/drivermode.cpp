@@ -1054,8 +1054,7 @@ void driver_mode::OnKeyDown(int cKey)
 			};
 
 			TDynamicObject *endpoint = current;
-			std::vector<TDynamicObject *> walked;
-			walked.push_back(endpoint);
+			std::vector<TDynamicObject *> walked{endpoint};
 			while (TDynamicObject *const previous = connected_vehicle(endpoint, end::front))
 			{
 				if (std::find(walked.begin(), walked.end(), previous) != walked.end())
@@ -1064,30 +1063,54 @@ void driver_mode::OnKeyDown(int cKey)
 				walked.push_back(endpoint);
 			}
 
-			std::vector<TDynamicObject *> consist;
+			struct accessible_group
+			{
+				TDynamicObject *first_vehicle;
+				int entry_end;
+				std::vector<TDynamicObject *> members;
+			};
+			std::vector<accessible_group> groups{{endpoint, -1, {endpoint}}};
+			walked.clear();
+			walked.push_back(endpoint);
 			TDynamicObject *previous = nullptr;
 			TDynamicObject *vehicle = endpoint;
-			while (vehicle && std::find(consist.begin(), consist.end(), vehicle) == consist.end())
+			while (vehicle)
 			{
-				consist.push_back(vehicle);
-				TDynamicObject *next = connected_vehicle(vehicle, end::front);
+				int connection_end = end::front;
+				TDynamicObject *next = connected_vehicle(vehicle, connection_end);
 				if (next == previous)
-					next = nullptr;
-				if (!next)
 				{
-					next = connected_vehicle(vehicle, end::rear);
+					connection_end = end::rear;
+					next = connected_vehicle(vehicle, connection_end);
 					if (next == previous)
 						next = nullptr;
 				}
+				if (!next || std::find(walked.begin(), walked.end(), next) != walked.end())
+					break;
+
+				auto const target_end = vehicle->MoverParameters->Neighbours[connection_end].vehicle_end;
+				if (TestFlag(vehicle->MoverParameters->Couplers[connection_end].CouplingFlag, coupling::gangway))
+					groups.back().members.push_back(next);
+				else
+					groups.push_back({next, target_end, {next}});
+				walked.push_back(next);
 				previous = vehicle;
 				vehicle = next;
 			}
 
-			auto const current_position = std::find(consist.begin(), consist.end(), current);
-			if (current_position == consist.end() || consist.size() < 2)
+			auto const current_group = std::find_if(
+				groups.begin(), groups.end(),
+				[current](accessible_group const &group) {
+					return std::find(group.members.begin(), group.members.end(), current) != group.members.end();
+				});
+			if (current_group == groups.end() || groups.size() < 2)
 				break;
-			auto const next_position = (std::distance(consist.begin(), current_position) + 1) % consist.size();
-			TDynamicObject *const target = consist[static_cast<std::size_t>(next_position)];
+			auto const next_group = std::next(current_group) == groups.end()
+			                            ? groups.begin()
+			                            : std::next(current_group);
+			TDynamicObject *const target = next_group->first_vehicle;
+			if (next_group->entry_end != -1)
+				target->MoverParameters->CabOccupied = next_group->entry_end ? -1 : 1;
 			m_relay.post(user_command::entervehicle, 1.0, simulation::Train->id(), GLFW_PRESS, 0,
 			             target->GetPosition(), &target->name());
 			break;
@@ -1097,6 +1120,7 @@ void driver_mode::OnKeyDown(int cKey)
 		{
 			auto *train = simulation::Train;
 			auto *vehicle = train->Dynamic();
+			bool const ai_was_controlling = vehicle->Mechanik && vehicle->Mechanik->AIControllFlag;
 			if (!FreeFlyModeFlag)
 				InOutKey();
 			else
@@ -1108,14 +1132,13 @@ void driver_mode::OnKeyDown(int cKey)
 			train->Occupied()->MainCtrlPos = train->Occupied()->MainCtrlNoPowerPos();
 			train->Occupied()->ScndCtrlPos = 0;
 			vehicle->MechInside = false;
-			vehicle->Controller = AIdriver;
+			vehicle->Controller = ai_was_controlling;
 			vehicle->bDisplayCab = false;
 			vehicle->ABuSetModelShake({});
-			if (vehicle->Mechanik)
-				vehicle->Mechanik->TakeControl(true);
 
 			train->pending_delete = true;
 			simulation::Train = nullptr;
+			m_vehicle_entry_side = 0;
 			update_window_title();
 			break;
 		}
@@ -1123,14 +1146,47 @@ void driver_mode::OnKeyDown(int cKey)
 		if (!FreeFlyModeFlag)
 			break;
 
-		TDynamicObject *dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
-
-		if (dynamic)
+		TDynamicObject *nearest_vehicle = nullptr;
+		int nearest_cab = 0;
+		int nearest_side = 0;
+		double nearest_distance = 50.0;
+		for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
 		{
-			m_relay.post(user_command::entervehicle, Global.ctrlState ? GLFW_MOD_CONTROL : 0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(),
-			             &dynamic->name());
+			auto const find_cab = [&](int const cab, int const cab_mask) {
+				if (!(vehicle->iCabs & cab_mask))
+					return;
 
-			change_train = dynamic->name();
+				glm::dvec3 const cab_position =
+					vehicle->GetPosition() + vehicle->VectorFront() * static_cast<double>(cab) *
+					                             std::max(0.0, vehicle->MoverParameters->Dim.L * 0.5 - 1.0) +
+					glm::dvec3(0.0, vehicle->MoverParameters->Dim.H * 0.5, 0.0);
+				for (int side : {-1, 1})
+				{
+					glm::dvec3 const entry_position =
+						cab_position + vehicle->VectorLeft() * static_cast<double>(side) * (vehicle->GetWidth() * 0.5 + 1.25);
+					double const distance = glm::length(entry_position - Camera.Pos);
+					if (distance < nearest_distance)
+					{
+						nearest_vehicle = vehicle;
+						nearest_cab = cab;
+						nearest_side = side;
+						nearest_distance = distance;
+					}
+				}
+			};
+
+			find_cab(1, 0x1);
+			find_cab(-1, 0x4);
+		}
+
+		if (nearest_vehicle)
+		{
+			nearest_vehicle->MoverParameters->CabOccupied = nearest_cab;
+			m_vehicle_entry_side = nearest_side;
+			m_relay.post(user_command::entervehicle, Global.ctrlState ? GLFW_MOD_CONTROL : 0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0,
+			             nearest_vehicle->GetPosition(), &nearest_vehicle->name());
+
+			change_train = nearest_vehicle->name();
 		}
 
 		break;
@@ -1202,7 +1258,7 @@ void driver_mode::OnKeyDown(int cKey)
 
 // places camera outside the controlled vehicle, or nearest if nothing is under control
 // depending on provided switch the view is placed right outside, or at medium distance
-void driver_mode::DistantView(bool const Near)
+void driver_mode::DistantView(bool const Near, bool const UseEntrySide)
 {
 
 	TDynamicObject const *vehicle = {(simulation::Train != nullptr ? simulation::Train->Dynamic() : pDynamicNearest)};
@@ -1217,8 +1273,21 @@ void driver_mode::DistantView(bool const Near)
 
 	if (true == Near)
 	{
-
-		Camera.Pos = glm::dvec3(Camera.Pos.x, vehicle->GetPosition().y, Camera.Pos.z) + left * vehicle->GetWidth() + glm::dvec3(1.25 * left.x, 1.6, 1.25 * left.z);
+		auto const cab_position = simulation::Train != nullptr
+		                              ? vehicle->GetWorldPosition(glm::dvec3(
+		                                    (simulation::Train->Cabine[simulation::Train->iCabn].CabPos1 +
+		                                     simulation::Train->Cabine[simulation::Train->iCabn].CabPos2) *
+		                                        0.5f))
+		                              : vehicle->GetPosition();
+		auto const cabside = vehicle->VectorLeft() * (vehicle->GetWidth() + 1.25);
+		auto const left_exit = cab_position + cabside + glm::dvec3(0.0, 0.2, 0.0);
+		auto const right_exit = cab_position - cabside + glm::dvec3(0.0, 0.2, 0.0);
+		if (UseEntrySide && m_vehicle_entry_side != 0)
+			Camera.Pos = cab_position + cabside * static_cast<double>(m_vehicle_entry_side) + glm::dvec3(0.0, 0.2, 0.0);
+		else
+			Camera.Pos = glm::length(left_exit - Camera.Pos) <= glm::length(right_exit - Camera.Pos)
+			                 ? left_exit
+			                 : right_exit;
 	}
 	else
 	{
@@ -1424,7 +1493,7 @@ void driver_mode::InOutKey()
 		train->pMechSittingPosition = train->pMechOffset;
 
 		vehicle->bDisplayCab = false;
-		DistantView(true);
+		DistantView(true, true);
 
 		DebugCamera = Camera;
 	}
@@ -1441,7 +1510,28 @@ void driver_mode::InOutKey()
 
 void driver_mode::update_window_title()
 {
-	auto const title{Global.AppName + " (" + Global.SceneryFile + (simulation::Train != nullptr ? " " + simulation::Train->Dynamic()->name() : "") + ")"};
+	std::string vehicle_label;
+	if (simulation::Train != nullptr)
+	{
+		auto const *current_vehicle = simulation::Train->Dynamic();
+		auto const *first_vehicle = current_vehicle;
+		std::vector<TDynamicObject const *> visited{first_vehicle};
+		while (auto const *previous_vehicle = first_vehicle->Prev())
+		{
+			if (std::find(visited.begin(), visited.end(), previous_vehicle) != visited.end())
+				break;
+			first_vehicle = previous_vehicle;
+			visited.push_back(first_vehicle);
+		}
+
+		vehicle_label = first_vehicle->Mechanik != nullptr ? first_vehicle->Mechanik->TrainName() : "";
+		if (vehicle_label.empty() || vehicle_label == "none")
+			vehicle_label = ToUpper(first_vehicle->name());
+	}
+
+	auto const title{Global.AppName + " (" + Global.SceneryFile +
+	                 (vehicle_label.empty() ? "" : " - " + vehicle_label) +
+	                 (simulation::Train != nullptr ? " [" + simulation::Train->name() + "]" : "") + ")"};
 	if (title != m_window_title)
 	{
 		Application.set_title(title);

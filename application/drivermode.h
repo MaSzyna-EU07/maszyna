@@ -96,7 +96,7 @@ private:
     void InOutKey();
     void CabView();
     void ExternalView();
-    void DistantView( bool const Near = false );
+    void DistantView( bool const Near = false, bool const UseEntrySide = false );
 	void update_window_title();
 	void set_picking( bool const Picking );
 
@@ -122,6 +122,7 @@ private:
     int iPause { 0 }; // wykrywanie zmian w zapauzowaniu
 	command_relay m_relay;
 	std::string change_train; // train name awaiting entering
+	int m_vehicle_entry_side { 0 };
 	std::string m_window_title;
 	bool m_editorpending { false }; // scenery was opened for editing, switch to the editor after the initial update
 };
