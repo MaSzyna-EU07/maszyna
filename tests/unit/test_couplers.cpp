@@ -525,3 +525,130 @@ TEST_CASE("couplers: a collision of coupled vehicles keeps the momentum of the p
 	CHECK(0.5 * (front_wagon.speed() + rear_wagon.speed()) > 13.5);
 	CHECK(0.5 * (front_wagon.speed() + rear_wagon.speed()) < 15.05 + 1e-6);
 }
+
+// eu07/maszyna#520: an electric and a diesel locomotive got their control coupled (multiple-unit control) when the
+// scenario or the Starter asked for it, or when the couplers let it through, as a Vectron and an SM42 did
+
+namespace {
+
+// the given setting of the control coupling check for the test, restored after it
+class control_coupling_check_setting {
+public:
+	explicit control_coupling_check_setting(bool Enabled) { Global.control_coupling_engine_check = Enabled; }
+	~control_coupling_check_setting() { Global.control_coupling_engine_check = m_previous; }
+	control_coupling_check_setting(control_coupling_check_setting const &) = delete;
+	control_coupling_check_setting &operator=(control_coupling_check_setting const &) = delete;
+
+private:
+	bool m_previous{Global.control_coupling_engine_check};
+};
+
+constexpr int scenario_coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+
+// couples the rear of the first vehicle to the front of the second one the way the scenery does (forced, from the
+// first one only), returns the coupling the pair got
+int scenario_couple(vehicle &First, vehicle &Second, int Coupling = scenario_coupling) {
+	REQUIRE(First->Attach(end::rear, end::front, &Second.mover(), Coupling, true, false));
+	CHECK(Second->Couplers[end::front].CouplingFlag == First->Couplers[end::rear].CouplingFlag);
+	return First->Couplers[end::rear].CouplingFlag;
+}
+
+} // namespace
+
+TEST_CASE("couplers: an electric and a diesel locomotive don't share their control") {
+	control_coupling_check_setting const check{true};
+	// the E6ACT names no control system (ControlType), as the Vectron doesn't; the SM42 names its own, the SM03 none
+	auto electric{vehicle{definition::fiz("e6act_v2/e6acta"), 0.0, "electric"}};
+	REQUIRE(electric->EngineType == TEngineType::ElectricInductionMotor);
+
+	SUBCASE("a diesel-electric one with its own control system") {
+		auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
+		REQUIRE(diesel->EngineType == TEngineType::DieselElectric);
+		CHECK_FALSE(electric->ControlCouplingAllowed(end::rear, diesel.mover(), end::front));
+		CHECK(scenario_couple(electric, diesel) == (scenario_coupling & ~coupling::control));
+	}
+	SUBCASE("a diesel-mechanical one without a control system named, either") {
+		auto diesel{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "diesel"}};
+		REQUIRE(diesel->EngineType == TEngineType::DieselEngine);
+		CHECK_FALSE(diesel->ControlCouplingAllowed(end::front, electric.mover(), end::rear));
+		CHECK(scenario_couple(diesel, electric) == (scenario_coupling & ~coupling::control));
+	}
+	SUBCASE("unless both name the same control system") {
+		auto diesel{vehicle{definition::fiz("sm03_v1/sm03").set("BuffCoupl", "ControlType", "shared"), 0.0, "diesel"}};
+		auto shared{vehicle{definition::fiz("e6act_v2/e6acta").set("BuffCoupl", "ControlType", "shared"), 0.0, "electric"}};
+		CHECK(scenario_couple(shared, diesel) == scenario_coupling);
+	}
+	SUBCASE("unless the vehicles make one unit, coupled for good") {
+		auto diesel{vehicle{definition::fiz("sm03_v1/sm03"), 0.0, "diesel"}};
+		auto const forgood{scenario_coupling | coupling::permanent};
+		CHECK(scenario_couple(electric, diesel, forgood) == forgood);
+	}
+	SUBCASE("unless the check is turned off") {
+		control_coupling_check_setting const off{false};
+		auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
+		CHECK(electric->ControlCouplingAllowed(end::rear, diesel.mover(), end::front));
+		CHECK(scenario_couple(electric, diesel) == scenario_coupling);
+	}
+}
+
+TEST_CASE("couplers: locomotives of the same traction and the cars keep their control coupling") {
+	control_coupling_check_setting const check{true};
+
+	SUBCASE("two locomotives or motor cars of the same traction") {
+		// two electric ones, an electric one of each motor type, two diesel ones, a diesel-mechanical and a
+		// diesel-electric one, an electric multiple unit's control trailer and its motor car
+		std::initializer_list<std::pair<char const *, char const *>> const pairs{
+		    {"ep09_v2/104e", "et22_v3/201e-w"},
+		    {"e6act_v2/e6acta", "eu04_v1/eu04-01"},
+		    {"sm03_v1/sm03", "wmb10_v1/wmb10"},
+		    {"sm03_v1/sm03", "st44_v2/m62-1151"},
+		    {"en57_v1/5bgb", "en57_v1/6bai"}};
+		for (auto const &paths : pairs) {
+			CAPTURE(paths.first);
+			CAPTURE(paths.second);
+			auto first{vehicle{definition::fiz(paths.first), 0.0, "first"}};
+			auto second{vehicle{definition::fiz(paths.second), 0.0, "second"}};
+			CHECK(scenario_couple(first, second) == scenario_coupling);
+		}
+	}
+	SUBCASE("a diesel locomotive and a car") {
+		auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
+		auto car{vehicle{definition::load("wagon"), 0.0, "car"}};
+		CHECK(scenario_couple(diesel, car) == scenario_coupling);
+	}
+}
+
+TEST_CASE("couplers: automatic couplers of an electric and a diesel locomotive couple without the control connection") {
+	crash_damage_setting const crashdamage{true};
+	control_coupling_check_setting const check{true};
+	auto const flag{coupling::coupler | coupling::brakehose | coupling::control};
+	auto automatic = [flag](std::string const &Path) {
+		return definition::fiz(Path).set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", flag);
+	};
+	auto moving{vehicle{automatic("e6act_v2/e6acta"), 5.0, "moving"}};
+
+	SUBCASE("a diesel one") {
+		auto standing{vehicle{automatic("sm03_v1/sm03"), 0.0, "standing"}};
+		test::pair pair{moving, end::front, standing, end::rear, 1.0};
+		REQUIRE(couple_during(pair, 3.0));
+		CHECK(pair.coupling() == (coupling::coupler | coupling::brakehose));
+	}
+	SUBCASE("an electric one") {
+		auto standing{vehicle{automatic("ep09_v2/104e"), 0.0, "standing"}};
+		test::pair pair{moving, end::front, standing, end::rear, 1.0};
+		REQUIRE(couple_during(pair, 3.0));
+		CHECK(pair.coupling() == flag);
+	}
+}
+
+TEST_CASE("couplers: the AI and the player get the coupling the vehicles can take") {
+	control_coupling_check_setting const check{true};
+	auto electric{vehicle{definition::fiz("e6act_v2/e6acta"), 0.0, "electric"}};
+	auto diesel{vehicle{definition::fiz("sm42_v1/6d1"), 0.0, "diesel"}};
+	auto other{vehicle{definition::fiz("ep09_v2/104e"), 0.0, "other"}};
+
+	CHECK(electric->CompatibleCoupling(end::rear, diesel.mover(), end::front, scenario_coupling) == (scenario_coupling & ~coupling::control));
+	CHECK(electric->CompatibleCoupling(end::rear, other.mover(), end::front, scenario_coupling) == scenario_coupling);
+	// nothing to take away without the control connection asked for
+	CHECK(electric->CompatibleCoupling(end::rear, diesel.mover(), end::front, coupling::coupler) == coupling::coupler);
+}

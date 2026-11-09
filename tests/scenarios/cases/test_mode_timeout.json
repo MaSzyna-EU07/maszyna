@@ -1,0 +1,21 @@
+{
+  "description": "Test mode, timeout: EU07 on td.scn with no route set pulls off towards the exit signal stacja1_j at stop; nothing reports a result and test.timeout 90 from the scenery's config block runs out first.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_red_signal.scn",
+  "test_config": [
+    "test.timeout 90"
+  ],
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "expect": "timeout",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 5,
+      "within": 90
+    }
+  ]
+}

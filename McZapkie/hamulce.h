@@ -421,6 +421,10 @@ class TBrake
 	double GetVRP() const; // cisnienie komory wstepnej rozdzielacza
 	/// <summary>Returns control reservoir (ZS) pressure [bar]; defaults to the auxiliary reservoir for valves without a dedicated ZS.</summary>
 	virtual double GetCRP(); // cisnienie zbiornika sterujacego
+	/// <summary>Share of the full cylinder pressure the distributor settles at for the given share
+	/// of the full service pipe drop. Used only to predict the brake force; the default is proportional.</summary>
+	/// <param name="Ratio">Share of the full service brake pipe drop.</param>
+	virtual double GetBrakeRatio(double const Ratio) const { return Ratio; }
 	/// <summary>
 	/// Sets the brake delay (G/P/R/M) selector if requested mode is supported.
 	/// </summary>
@@ -443,6 +447,11 @@ class TBrake
 	/// <summary>Sets the rapid step ratio. Default no-op; overridden where supported.</summary>
 	/// <param name="RMR">Rapid ratio.</param>
 	virtual void SetRM(double const RMR) { /* no effect for this device type */ } // ustalenie przelozenia rapida
+	/// <summary>Share of the full cylinder pressure the distributor delivers at the given speed
+	/// while the vehicle is slowing down through it, for a vehicle set to R. Used only to predict
+	/// the brake force; the default is the approximation BrakeForceR() has always used.</summary>
+	/// <param name="Vel">Vehicle velocity [km/h].</param>
+	virtual double GetRapidRatio(double const Vel) const { return Vel < 40.0 ? 0.5 : 1.0; }
 	/// <summary>Sets the velocity threshold for the rapid step.</summary>
 	/// <param name="RVR">Velocity threshold (same unit as Vel passed to GetPF).</param>
 	virtual void SetRV(double const RVR)
@@ -611,6 +620,15 @@ class TESt : public TBrake
 	/// <param name="BCP">Brake cylinder pressure.</param>
 	/// <returns>Dimensionless opening coefficient.</returns>
 	double BVs(double BCP) const; // napelniacz pomocniczego
+	/// <summary>
+	/// Refills the auxiliary reservoir (ZP) from the valve pre-chamber through the
+	/// check valve of the slide valve, opened as far as <see cref="BVs"/> says, while
+	/// the pre-chamber is above the reservoir. The flows wait for the caller's Act().
+	/// </summary>
+	/// <param name="BCP">Brake cylinder (or impulse-chamber) pressure for <see cref="BVs"/>.</param>
+	/// <param name="dt">Time step [s].</param>
+	/// <returns>Volume taken into the auxiliary reservoir, 0.96 of it drawn from the brake pipe.</returns>
+	double FillBrakeRes(double BCP, double dt) const; // napelnianie pomocniczego z rozdzielacza
 	/// <summary>Vents the valve, brake and control reservoirs to zero.</summary>
 	void ForceEmptiness() override; // wymuszenie bycia pustym
 
