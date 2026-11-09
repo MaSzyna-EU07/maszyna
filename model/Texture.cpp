@@ -28,6 +28,8 @@ http://mozilla.org/MPL/2.0/.
 #include "dds-ktx/dds-ktx.h"
 #include "winheaders.h"
 
+#include <bit>
+
 #define EU07_DEFERRED_TEXTURE_UPLOAD
 
 #ifndef FOURCC_DX10
@@ -302,6 +304,20 @@ bool bptc_supported() {
         return false;
     }();
     return supported; }
+
+// format of a compressed texture read back from the gpu, given as the image would have it: the driver tells the srgb variant
+// of the format, which the mapping doesn't take. with the components hint of the texture the linear one gives the same gl
+// format again on the next upload
+GLint readback_format( GLint const Internalformat ) {
+    switch( Internalformat ) {
+        case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:    { return GL_COMPRESSED_RGBA8_ETC2_EAC; }
+        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT: { return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT; }
+        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT: { return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT; }
+        case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT: { return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT; }
+        case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:    { return GL_COMPRESSED_RGBA_BPTC_UNORM; }
+        default:                                     { return Internalformat; }
+    }
+}
 
 } // namespace
 
@@ -1502,29 +1518,13 @@ opengl_texture::release() {
         }
         else {
 	        ::glBindTexture(target, id );
-	        GLint datasize {};
 	        GLint iscompressed {};
 	        ::glGetTexLevelParameteriv(target, 0, GL_TEXTURE_COMPRESSED, &iscompressed );
-	        if( iscompressed == GL_TRUE ) {
-	            // texture is compressed on the gpu side
-	            // query texture details needed to perform the backup...
-	            ::glGetTexLevelParameteriv(target, 0, GL_TEXTURE_INTERNAL_FORMAT, &data_format );
-	            ::glGetTexLevelParameteriv(target, 0, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &datasize );
-	            data.resize( datasize );
-	            // ...fetch the data...
-	            ::glGetCompressedTexImage(target, 0, &data[ 0 ] );
+	        if( ( iscompressed != GL_TRUE )
+	         || ( false == read_back_compressed() ) ) {
+	            // the texture didn't get compressed during upload, or got a format the upload doesn't take
+	            read_back_uncompressed();
 	        }
-	        else {
-	            // for whatever reason texture didn't get compressed during upload
-	            // fallback on plain rgba storage...
-	            data_format = GL_RGBA;
-	            data_type = GL_UNSIGNED_BYTE;
-	            data.resize( data_width * data_height * 4 );
-	            // ...fetch the data...
-	            ::glGetTexImage(target, 0, data_format, GL_UNSIGNED_BYTE, &data[ 0 ] );
-	        }
-	        // ...and update texture object state
-	        data_mapcount = 1; // we keep copy of only top mipmap level
 	        data_state = resource_state::good;
         }
     }
@@ -1534,6 +1534,56 @@ opengl_texture::release() {
     is_ready = false;
 
     return;
+}
+
+// copies all mipmaps of the compressed gl texture into the data, in the layout of a dds file. returns false, leaving the data as
+// it was, when the format can't be uploaded again as it is. all levels are kept since the driver may not generate mipmaps
+// of a compressed format; without them the texture would be incomplete and drawn black
+bool
+opengl_texture::read_back_compressed() {
+
+    GLint internalformat {};
+    ::glGetTexLevelParameteriv( target, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalformat );
+    auto const format { readback_format( internalformat ) };
+    if( ( false == precompressed_formats.contains( format ) )
+     || ( false == mapping.contains( format ) ) ) {
+        return false;
+    }
+    auto const levelcount { static_cast<int>( std::bit_width( std::max( data_width, data_height ) ) ) };
+    std::vector<unsigned char> leveldata;
+    auto mapcount { 0 };
+    while( mapcount < levelcount ) {
+        GLint levelwidth {};
+        GLint levelsize {};
+        ::glGetTexLevelParameteriv( target, mapcount, GL_TEXTURE_WIDTH, &levelwidth );
+        ::glGetTexLevelParameteriv( target, mapcount, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &levelsize );
+        if( ( levelwidth <= 0 ) || ( levelsize <= 0 ) ) {
+            // the levels past the last one present weren't made
+            break;
+        }
+        auto const offset { leveldata.size() };
+        leveldata.resize( offset + static_cast<std::size_t>( levelsize ) );
+        ::glGetCompressedTexImage( target, mapcount, &leveldata[ offset ] );
+        ++mapcount;
+    }
+    if( mapcount == 0 ) {
+        return false;
+    }
+    data.swap( leveldata );
+    data_format = format;
+    data_mapcount = static_cast<unsigned int>( mapcount );
+    return true;
+}
+
+// copies the top level of the gl texture into the data as plain rgba, the mipmaps are generated again on upload
+void
+opengl_texture::read_back_uncompressed() {
+
+    data_format = GL_RGBA;
+    data_type = GL_UNSIGNED_BYTE;
+    data.resize( data_width * data_height * 4 );
+    ::glGetTexImage( target, 0, data_format, GL_UNSIGNED_BYTE, &data[ 0 ] );
+    data_mapcount = 1;
 }
 
 void
