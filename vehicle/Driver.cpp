@@ -6229,6 +6229,13 @@ TController::control_pantographs() {
 		fActionTime = -2.0 - Random(10);
 	}
 
+    // the pantograph setup the .fiz suggests for shunting (AI: ShuntPantstate=, eu07/maszyna#461), 0 when there's none
+    // or the vehicle isn't shunting
+    auto const shuntpantographsetup {
+        ( OrderCurrentGet() & ( Shunt | Loose_shunt ) ) != 0 ?
+            mvOccupied->AIHintShuntPantstate :
+            0 };
+
     // raise/lower pantographs as needed
     auto const useregularpantographlayout {
         pVehicle->Next(coupling::control) == nullptr // standalone
@@ -6255,7 +6262,11 @@ TController::control_pantographs() {
             // jeśli nie trzeba opuszczać pantografów
             // TODO: check if faction alone reduces frequency enough
             if( fActionTime > 0.0 ) {
-                if( mvOccupied->AIHintPantstate == 0 ) {
+                if( shuntpantographsetup != 0 ) {
+                    // shunting with the pantograph setup the .fiz suggests for it
+                    control_pantographs_setup( shuntpantographsetup );
+                }
+                else if( mvOccupied->AIHintPantstate == 0 ) {
                     // jazda na tylnym
                     if( iDirection >= 0 && useregularpantographlayout ) {
                         // jak jedzie w kierunku sprzęgu 0
@@ -6308,6 +6319,12 @@ TController::control_pantographs() {
             }
         }
     }
+    else if( shuntpantographsetup != 0 ) {
+        // shunting with the suggested setup, also while standing, and without raising more pantographs when idling
+        if( fOverhead2 <= 0.0 && iOverheadDown == 0 ) {
+            control_pantographs_setup( shuntpantographsetup );
+        }
+    }
     else {
         if( !mvOccupied->AIHintPantUpIfIdle || IdleTime <= 45.0 || std::abs(fStopTime) <= 15.0 || mvPantographUnit->EnginePowerSource.CollectorParameters.CollectorsNo <= 1 )
 		{
@@ -6332,6 +6349,31 @@ TController::control_pantographs() {
 			}
 		}
 	}
+}
+
+// raises the pantographs of the suggested setup (bit 0: front, bit 1: rear) and lowers the others, these only once
+// a pantograph of the setup collects the voltage, so the vehicle doesn't lose its power on the way
+void
+TController::control_pantographs_setup( int const Setup ) {
+
+    auto const front { ( Setup & 1 << 0 ) != 0 };
+    auto const rear { ( Setup & 1 << 1 ) != 0 };
+    if( front ) {
+        cue_action( driver_hint::frontpantographvalveon );
+    }
+    if( rear ) {
+        cue_action( driver_hint::rearpantographvalveon );
+    }
+    if( auto const setuplive { ( front && mvPantographUnit->PantFrontVolt != 0.0 ) || ( rear && mvPantographUnit->PantRearVolt != 0.0 ) };
+        false == setuplive ) {
+        return;
+    }
+    if( false == front ) {
+        cue_action( driver_hint::frontpantographvalveoff );
+    }
+    if( false == rear ) {
+        cue_action( driver_hint::rearpantographvalveoff );
+    }
 }
 
 void

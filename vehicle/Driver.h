@@ -323,6 +323,7 @@ private:
     void scan_obstacles( double const Range );
     void control_wheelslip();
     void control_pantographs();
+    void control_pantographs_setup( int const Setup );
     void control_horns( double const Timedelta );
     void control_security_system( double const Timedelta );
     void control_handles();
