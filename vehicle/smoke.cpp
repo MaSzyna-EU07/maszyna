@@ -34,7 +34,7 @@ double engine_load(TMoverParameters const &Mover) {
 } // namespace
 
 float vehicle_spawn_count(TMoverParameters const &Mover, bool const Ontracks, spawn_rate const &Rate, double const Timedelta) {
-	if (false == Ontracks) {
+	if (false == Ontracks || Mover.dizel_FiringCountdown > 0.0) {
 		return 0.f;
 	}
 	// the steady rate of the source, the way a source of the scenery spawns...

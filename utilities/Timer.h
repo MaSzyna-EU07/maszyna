@@ -67,6 +67,7 @@ struct subsystem_stopwatches {
     stopwatch sim_events;
     stopwatch sim_ai;
     stopwatch mainloop_total;
+    stopwatch mainloop_period; // start to start, the wait for fpslimit included
 };
 
 extern subsystem_stopwatches subsystem;
