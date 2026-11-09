@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "input/editorkeyboardinput.h"
 #include "vehicle/Camera.h"
 #include "application/editormodegauge.h"
+#include "application/editormoderide.h"
 #include "application/editormodejoints.h"
 #include "application/editormodelineside.h"
 #include "application/editormodeparallel.h"
@@ -184,6 +185,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int m_track_edits{0};
 	// methods
 	void update_camera(double const Deltatime);
+	// the camera onto the track under the cursor, or the nearest one, to ride along it
+	void ride_enter();
+	// the way the camera looks, in the plan
+	glm::dvec3 camera_look() const;
 
 	editor_ui *ui() const;
 	void redo_last();
@@ -3186,7 +3191,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	parallel_tool m_parallel{*this, *this, *this, *this};
 	srk_tool m_srk{*this, *this, *this, *this, *this};
 	km_tool m_km{*this, *this, *this, *this};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km};
+	track_ride m_ride;
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride};
 
 	void infra_rebase();
 	void render_infra_search();

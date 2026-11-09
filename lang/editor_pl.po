@@ -13543,3 +13543,63 @@ msgstr "Jej szablon nie ma opisu tego, co zapowiada, więc nie jest sprawdzana: 
 
 msgid "not described"
 msgstr "bez opisu"
+
+msgid "height"
+msgstr "wysokość"
+
+msgid "to the left"
+msgstr "w lewo"
+
+msgid "to the right"
+msgstr "w prawo"
+
+msgid "Riding along the track"
+msgstr "Jazda po torze"
+
+msgid "Switch in %.0f m: %s"
+msgstr "Rozjazd za %.0f m: %s"
+
+msgid "W/S drive   Shift/Ctrl faster   A/D the track alongside   Z the way at the switch   Q/E, wheel: height   click: another track   Y/Esc: leave"
+msgstr "W/S jazda   Shift/Ctrl szybciej   A/D tor obok   Z droga na rozjeździe   Q/E, kółko: wysokość   klik: inny tor   Y/Esc: wyjście"
+
+msgid "No track alongside on that side"
+msgstr "Po tej stronie nie ma toru obok"
+
+msgid "The ride along the track ended"
+msgstr "Koniec jazdy po torze"
+
+msgid "Click a track to ride along it"
+msgstr "Kliknij tor, żeby nim jechać"
+
+msgid "Riding along the track: W/S drive, A/D the track alongside, Y or Esc leaves"
+msgstr "Jazda po torze: W/S jazda, A/D tor obok, Y albo Esc kończy"
+
+msgid "No track under the cursor or near it to ride along"
+msgstr "Pod kursorem ani w pobliżu nie ma toru do jazdy"
+
+msgid "straight on"
+msgstr "prosto"
+
+msgid "Ride along the track"
+msgstr "Jazda po torze"
+
+msgid "Ride along the track under the cursor, or the nearest one; Y or Esc again ends the ride"
+msgstr "Jazda po torze pod kursorem albo najbliższym; ponowne Y albo Esc kończy jazdę"
+
+msgid "Drive ahead / back, the way the camera looks; Shift faster, Ctrl much faster"
+msgstr "Jazda naprzód / wstecz, tam gdzie patrzy kamera; Shift szybciej, Ctrl dużo szybciej"
+
+msgid "Over to the track alongside on the left / right"
+msgstr "Na tor obok w lewo / w prawo"
+
+msgid "The way at the next switch from its blades: straight on or the turnout; the switch isn't thrown"
+msgstr "Droga na najbliższym rozjeździe od ostrza: prosto albo w bok; zwrotnica nie jest przekładana"
+
+msgid "E / Q, wheel"
+msgstr "E / Q, kółko"
+
+msgid "Higher / lower over the rails"
+msgstr "Wyżej / niżej nad szynami"
+
+msgid "Ride along that track"
+msgstr "Jazda po tym torze"

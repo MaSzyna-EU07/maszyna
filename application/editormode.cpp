@@ -27,6 +27,7 @@ extern char **environ;
 #include "application/editorprojection.h"
 
 #include "application/application.h"
+#include "editor/editorKilometrage.hpp"
 #include "editor/editorSettings.hpp"
 #include "editor/editorModelSets.hpp"
 #include "editor/editorTrackPresets.hpp"
@@ -1588,6 +1589,7 @@ bool editor_mode::update()
     render_gizmo();
     // the tools, the gizmo modes and the axes over the 3d view
     render_viewport_overlays();
+    m_ride.draw_hud();
 
     render_track_inspector();
     steps.step("inspector");
@@ -6138,6 +6140,13 @@ void editor_mode::render_shortcuts_window()
 	      {"RMB held, E / Q", "Fly up / down (Page Up / Page Down in the legacy scheme)"},
 	      {"F", "Fly to the selected"},
 	      {"O", "Top view, orthographic"}}},
+	    {"Ride along the track",
+	     {{"Y", "Ride along the track under the cursor, or the nearest one; Y or Esc again ends the ride"},
+	      {"W / S", "Drive ahead / back, the way the camera looks; Shift faster, Ctrl much faster"},
+	      {"A / D", "Over to the track alongside on the left / right"},
+	      {"Z", "The way at the next switch from its blades: straight on or the turnout; the switch isn't thrown"},
+	      {"E / Q, wheel", "Higher / lower over the rails"},
+	      {"LMB on a track", "Ride along that track"}}},
 	    {"Gizmo",
 	     {{"Q / W / E", "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"},
 	      {"R", "Local space"},
@@ -6637,6 +6646,13 @@ void editor_mode::ortho_pan_stop()
 
 void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
 {
+    // riding along the track the wheel raises and lowers the camera over the rails
+    if (m_ride.active())
+    {
+        if (false == ImGui::GetIO().WantCaptureMouse && Yoffset != 0.0)
+            m_ride.wheel(std::clamp(Yoffset, -2.0, 2.0));
+        return;
+    }
     if (false == ImGui::GetIO().WantCaptureMouse && track_wheel(Yoffset != 0.0 ? Yoffset : Xoffset))
         return;
     // a swipe on a touchpad goes on after the cursor left the window, with no place for the ray under it
@@ -6694,6 +6710,12 @@ void editor_mode::update_camera(double const Deltatime)
         Camera.Angle.x = -M_PI_2;
         Camera.Angle.z = 0.0;
     }
+    // riding along the track the camera goes where the track takes it, a framing doesn't fly it off
+    if (m_ride.active())
+    {
+        m_focus_active = false;
+        m_ride.advance(Camera, Deltatime);
+    }
 
     // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
     // it smoothly drives both position and orientation toward the framed object
@@ -6745,6 +6767,34 @@ void editor_mode::update_camera(double const Deltatime)
 
     // publish camera back to global copy
     Global.pCamera = Camera;
+}
+
+glm::dvec3 editor_mode::camera_look() const
+{
+    return {-std::sin(Camera.Angle.y), 0.0, -std::cos(Camera.Angle.y)};
+}
+
+void editor_mode::ride_enter()
+{
+    // the track under the cursor, else the one nearest the ground under it, else the one nearest the camera
+    auto under{track_under_cursor(nullptr, 30.0f)};
+    auto *track{under.track};
+    auto path{under.path};
+    auto point{under.point};
+    if (track == nullptr && ImGui::IsMousePosValid())
+    {
+        point = std::as_const(*this).cursor_ground();
+        track = kilometrage::track_near(point, 30.0, path);
+    }
+    if (track == nullptr)
+    {
+        point = Camera.Pos;
+        track = kilometrage::track_near(point, 200.0, path);
+    }
+    if (m_ride.enter(track, path, point, camera_look(), true))
+        ui()->set_status(STR_C("Riding along the track: W/S drive, A/D the track alongside, Y or Esc leaves"));
+    else
+        ui()->set_status(STR_C("No track under the cursor or near it to ride along"), true);
 }
 
 void editor_mode::enter()
@@ -6849,6 +6899,7 @@ void editor_mode::enter()
 
 void editor_mode::exit()
 {
+    m_ride.leave();
     track_sleepers::lay_in_background(true);
     Global.editor_tracks = false;
     EditorModeFlag = false;
@@ -6992,6 +7043,22 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     // first give UI a chance to handle the key
     if (!anyModifier && m_userinterface->on_key(Key, Action))
         return;
+
+    // riding along the track the keys drive the camera; Y starts the ride on the track under the cursor
+    if (false == ImGui::GetIO().WantTextInput)
+    {
+        std::string status;
+        auto const taken{m_ride.key(Key, Action, Mods, camera_look(), status)};
+        if (false == status.empty())
+            ui()->set_status(status, m_ride.active());
+        if (taken)
+            return;
+        if (Key == GLFW_KEY_Y && Action == GLFW_PRESS && false == anyModifier && false == m_ride.active() && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
+        {
+            ride_enter();
+            return;
+        }
+    }
 
     if (ui()->mode() == nodebank_panel::TRACK && is_press(Action) && (Mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT)) == 0 && typed_key(Key))
         return;
@@ -7313,6 +7380,19 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // UI first
     if (m_userinterface->on_mouse_button(Button, Action))
     {
+        m_input.mouse.button(Button, Action);
+        return;
+    }
+
+    // riding along the track a click on another track takes the camera over there, the tools wait till the ride ends
+    if (m_ride.active() && Button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        if (is_press(Action))
+        {
+            auto const under{track_under_cursor(nullptr, 30.0f)};
+            if (under.track == nullptr || false == m_ride.enter(under.track, under.path, under.point, camera_look(), false))
+                ui()->set_status(STR_C("Click a track to ride along it"), true);
+        }
         m_input.mouse.button(Button, Action);
         return;
     }
@@ -7694,7 +7774,9 @@ void editor_mode::on_event_poll()
     bool const flying = m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (flying)
     {
-        m_input.poll();
+        // riding along the track the camera only looks around, the keys drive the ride
+        if (false == m_ride.active())
+            m_input.poll();
         first_step_done(first_step::look);
     }
     else if (m_camera_flying)
