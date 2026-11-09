@@ -110,7 +110,7 @@ MaSzyna compiles and runs natively on **Linux** and **Windows**. Other platforms
 
 ## Windows
 
-Install **Python 3.14 x64** from [python.org](https://www.python.org/downloads/windows/) and include the optional **Python native development** feature (headers and `.lib` for embedding). Pass `-DPython3_ROOT_DIR="C:\Path\To\Python314"` on the `cmake` line when you want the layout under that directory used for embedding and for copying `Lib` / `DLLs` next to the executable.
+Install **Python 3.14 x64** from [python.org](https://www.python.org/downloads/windows/) and include the optional **Python native development** feature (headers and `.lib` for embedding). Pass `-DPython3_ROOT_DIR="C:\Path\To\Python314"` on the `cmake` line when you want the layout under that directory used for embedding and for copying `Lib` / `DLLs` next to the executable. The cab screens are drawn with [Pillow](https://pypi.org/project/pillow/): install it into that Python (`python -m pip install Pillow`) before building, so it is copied along with `Lib`.
 
 **AppVeyor CI** builds with the worker image’s preinstalled Python at `C:/Python314-x64` (see [`appveyor.yml`](./appveyor.yml): `-DPython3_ROOT_DIR=...`).
 
