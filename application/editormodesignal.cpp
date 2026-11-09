@@ -53,6 +53,9 @@ using geometry::heading_of;
 using geometry::plan_of;
 
 double const kRailTop{0.18};
+// m, of the zero of a signal model under the rail heads: the ground lies 0.35 m under them, Lx of Ie-102, the foot of the mast stands
+// on the foundation 3 cm over it in the models of the signals; the sceneries made by hand stand them 0.20 m under the rail foot so
+double const kFootUnder{0.38};
 double const kSignalRange{1500.0};
 double const kSignalHead{4.0};
 float const kSignalPick{12.0f};
@@ -631,7 +634,7 @@ bool editor_mode::signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const
 	Spot.list = facing > 0 ? 2 : 1;
 	Spot.offset = Template.mount == "gantry" ? 0.0 : EditorSettings.signal_offset();
 	auto const across{right * static_cast<double>(side) * Spot.offset};
-	Spot.position = {axis.x + across.x, axis.y + kRailTop + (Template.mount == "gantry" ? static_cast<double>(m_signal.height) : 0.0), axis.z + across.y};
+	Spot.position = {axis.x + across.x, axis.y + kRailTop + (Template.mount == "gantry" ? static_cast<double>(m_signal.height) : -kFootUnder), axis.z + across.y};
 	auto const yaw{heading_of(Spot.travel) + 180.0};
 	Spot.yaw = yaw >= 360.0 ? yaw - 360.0 : yaw;
 	std::tie(Spot.reader, Spot.reader_list) = reader_at(Track, path, axis, Spot.list);
@@ -1389,6 +1392,90 @@ bool editor_mode::signal_indicator_remove(scene::instance_handle const Indicator
 	return true;
 }
 
+bool editor_mode::signal_indicators_swap(signal_standing const &Standing, std::size_t const Upper, std::size_t const Lower)
+{
+	if (Upper >= Standing.indicators.size() || Lower >= Standing.indicators.size() || Upper == Lower)
+		return false;
+	auto const &upper{Standing.indicators[Upper]};
+	auto const &lower{Standing.indicators[Lower]};
+	// under the lights both: a plate at the foot keeps its place
+	for (auto const *mark : {&upper, &lower})
+		if (auto const *item{indicator_template_of(mark->file)}; item == nullptr || item->place != "head")
+		{
+			m_signal.status = refused(STR_C("Only the indicators under the lights change places, a plate at the foot keeps its own"));
+			return false;
+		}
+	std::string reason;
+	for (auto const instance : {upper.instance, lower.instance})
+		if (false == scene::Layers.tracked(instance) || false == scene::Layers.removable(instance, &reason))
+		{
+			m_signal.status = refused(format(STR_C("The indicator can't be moved: %s"), reason.c_str()));
+			return false;
+		}
+	// each where the other one stands
+	std::vector<std::pair<scene::instance_handle, std::string>> directives;
+	for (auto const &[mark, place] : {std::make_pair(&upper, lower.location), std::make_pair(&lower, upper.location)})
+	{
+		std::string file;
+		std::vector<std::string> values;
+		auto directive{scene::Layers.directive(mark->instance)};
+		if (false == editor_includes::parse_directive(directive, file, values) || values.size() < 5)
+			continue;
+		auto const local{place - scene::Layers.instance(mark->instance).context.offset};
+		values[1] = editor_includes::number(local.x);
+		values[2] = editor_includes::number(local.y);
+		values[3] = editor_includes::number(local.z);
+		set_include_directive(mark->instance, editor_includes::compose_directive(file, values));
+		directives.emplace_back(mark->instance, std::move(directive));
+	}
+	if (directives.empty())
+		return false;
+	auto const *first{indicator_template_of(upper.file)};
+	auto const *second{indicator_template_of(lower.file)};
+	auto const shown_first{first != nullptr ? first->name : upper.file};
+	auto const shown_second{second != nullptr ? second->name : lower.file};
+	EditorSnapshot snap;
+	snap.directives = std::move(directives);
+	snap.node_name = Standing.include.file;
+	trim_history();
+	m_history.push_back(std::move(snap));
+	g_redo.clear();
+	m_signal.status = format(STR_C("%s now under %s, Ctrl+Z takes it back"), shown_first.c_str(), shown_second.c_str());
+	auto const selected{m_signal.selected};
+	signal_refresh(true);
+	signal_select(selected);
+	return true;
+}
+
+bool editor_mode::signal_set_across(signal_standing const &Standing, std::optional<double> const Offset, std::optional<double> const Height)
+{
+	if (false == Offset.has_value() && false == Height.has_value())
+		return false;
+	signal_spot spot;
+	if (false == signal_standing_spot(Standing, spot))
+	{
+		m_signal.status = refused(STR_C("No track by the signal to take it from"));
+		return false;
+	}
+	if (Offset.has_value())
+	{
+		// out from the axis the way it stands, on the side it stands
+		auto away{plan_of(Standing.include.location) - plan_of(spot.axis)};
+		if (glm::length(away) < 1e-3)
+			away = right_of(spot.travel) * static_cast<double>(spot.side);
+		away = glm::normalize(away);
+		spot.offset = *Offset;
+		spot.position.x = spot.axis.x + away.x * *Offset;
+		spot.position.z = spot.axis.z + away.y * *Offset;
+	}
+	if (Height.has_value())
+	{
+		auto const *item{signal_template_of(Standing.include.file)};
+		spot.position.y = spot.axis.y + kRailTop + *Height - (item != nullptr && item->mount == "gantry" ? 0.0 : kFootUnder);
+	}
+	return signal_move_to(Standing, spot, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"));
+}
+
 void editor_mode::signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives)
 {
 	if (Standing.indicators.empty())
@@ -1446,9 +1533,33 @@ bool editor_mode::render_signal_indicators(signal_standing const &Found)
 				events += "\n" + shown + ": " + Found.name + "_" + event;
 			ImGui::SetTooltip("%s\n%s%s", mark.file.c_str(), item->description.c_str(), events.c_str());
 		}
+		// the ones under the lights, one above another: each changes places with the one above or below it
+		auto const head = [&](std::size_t const Index) {
+			auto const *other{indicator_template_of(Found.indicators[Index].file)};
+			return other != nullptr && other->place == "head";
+		};
+		auto const index{static_cast<std::size_t>(&mark - Found.indicators.data())};
+		std::optional<std::size_t> swap;
+		if (head(index))
+		{
+			ImGui::SameLine();
+			ImGui::BeginDisabled(index == 0 || false == head(index - 1));
+			if (ImGui::ArrowButton("##up", ImGuiDir_Up))
+				swap = index - 1;
+			ImGui::EndDisabled();
+			item_tooltip("Up: it changes places with the indicator above it. One step of undo");
+			ImGui::SameLine();
+			ImGui::BeginDisabled(index + 1 >= Found.indicators.size() || false == head(index + 1));
+			if (ImGui::ArrowButton("##down", ImGuiDir_Down))
+				swap = index + 1;
+			ImGui::EndDisabled();
+			item_tooltip("Down: it changes places with the indicator below it. One step of undo");
+		}
 		ImGui::SameLine();
 		auto const drop{ImGui::SmallButton(STR_C("Remove"))};
 		ImGui::PopID();
+		if (swap.has_value())
+			return signal_indicators_swap(Found, std::min(index, *swap), std::max(index, *swap));
 		if (drop)
 			return signal_indicator_remove(mark.instance);
 	}
@@ -2789,9 +2900,39 @@ void editor_mode::render_signal_selected()
 	// where it stands: from the axis of its track, along it to the switch ahead
 	if (auto const &metre{signal_metre_of(*found)}; metre.valid && begin_fields("##signalmetre"))
 	{
+		auto const *shape{signal_template_of(found->include.file)};
+		auto const gantry{shape != nullptr && shape->mount == "gantry"};
 		field_row("From the track axis");
-		ImGui::Text("%.2f m", metre.spot.offset);
-		item_tooltip("The distance of the mast from the axis of the track it stands by, in the plan");
+		if (gantry)
+			ImGui::Text("%.2f m", metre.spot.offset);
+		else
+		{
+			auto offset{static_cast<float>(metre.spot.offset)};
+			auto const before{offset};
+			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::InputFloat("##signalacross", &offset, 0.05f, 0.25f, "%.2f m");
+			if (ImGui::IsItemDeactivatedAfterEdit() && std::abs(offset - before) > 0.005f)
+			{
+				ImGui::EndTable();
+				signal_set_across(*found, std::clamp(static_cast<double>(offset), 0.0, 10.0), std::nullopt);
+				return;
+			}
+		}
+		item_tooltip("The distance of the mast from the axis of the track it stands by, in the plan: type another one and the signal moves across, as far along the track as it stands. Not nearer than the gauge lets it: the gauge chosen in the Gauge window pushes it out again. One step of undo");
+		field_row(gantry ? "Over the rails (m)" : "Raised (m)");
+		{
+			auto height{static_cast<float>(found->include.location.y - metre.spot.axis.y - kRailTop + (gantry ? 0.0 : kFootUnder))};
+			auto const before{height};
+			ImGui::SetNextItemWidth(-1.0f);
+			ImGui::InputFloat("##signalfoot", &height, 0.05f, 0.25f, "%.2f m");
+			if (ImGui::IsItemDeactivatedAfterEdit() && std::abs(height - before) > 0.005f)
+			{
+				ImGui::EndTable();
+				signal_set_across(*found, std::nullopt, std::clamp(static_cast<double>(height), -10.0, 20.0));
+				return;
+			}
+		}
+		item_tooltip(gantry ? "The head hangs this high over the rail heads of its track. One step of undo" : "0: the signal stands on the ground 0.35 m under the rail heads of its track, as Ie-102 draws it, its model on its foundation. Raise it where it stands higher, on a platform; lower it where the ground falls away, down an embankment. One step of undo");
 		field_row("To the switch ahead");
 		auto const text{danger_text(metre.danger)};
 		if (metre.danger.what == track_trace::danger::kind::none)

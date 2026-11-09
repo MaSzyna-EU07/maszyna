@@ -130,7 +130,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 	}
 	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap" ||
 	    command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault" || command == "signalindicator" ||
-	    command == "signalindicatordrop" || command == "signalgizmo")
+	    command == "signalindicatordrop" || command == "signalgizmo" || command == "signalindicatorswap" || command == "signalacross")
 	{
 		auto values{selftest_values(words)};
 		show_track_tab(track_tab::signals);
@@ -280,6 +280,34 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				done = index < standing->indicators.size() && signal_indicator_remove(standing->indicators[index].instance);
 			}
 			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
+		else if (command == "signalindicatorswap" || command == "signalacross")
+		{
+			// signalindicatorswap name=<signal> upper=<n> lower=<n>: two of its indicators under the lights swapped, the highest one 0;
+			// signalacross name=<signal> [offset=<m>] [height=<m>]: set from the axis of its track and raised so. Each logs the signal
+			// and its indicators from the top down after
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			auto const name{standing->name};
+			bool done{false};
+			if (command == "signalindicatorswap")
+				done = signal_indicators_swap(*standing, std::stoul(values["upper"]), std::stoul(values["lower"]));
+			else if (values.count("offset") > 0 || values.count("height") > 0)
+				done = signal_set_across(*standing, values.count("offset") ? std::optional<double>{std::stod(values["offset"])} : std::nullopt, values.count("height") ? std::optional<double>{std::stod(values["height"])} : std::nullopt);
+			WriteLog("SELFTEST " + command + " " + name + (done ? ": " : ": failed, ") + tool.status);
+			signal_refresh(true);
+			if (auto const *after{standing_named(name)})
+			{
+				signal_spot spot;
+				if (signal_standing_spot(*after, spot))
+					WriteLog(format("SELFTEST %s %s: %.3f m from the axis, foot %.3f m over the rail foot, at %.2f %.2f %.2f, the trains it faces run %.3f %.3f", command.c_str(), name.c_str(), geometry::plan_distance(after->include.location, spot.axis), after->include.location.y - spot.axis.y, after->include.location.x, after->include.location.y, after->include.location.z, spot.travel.x, spot.travel.y));
+				for (auto const &mark : after->indicators)
+					WriteLog(format("SELFTEST %s %s indicator %s at %.3f m over the foot, %.3f m aside", command.c_str(), name.c_str(), mark.file.c_str(), mark.location.y - after->include.location.y, geometry::plan_distance(mark.location, after->include.location)));
+			}
 		}
 		else if (command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault")
 		{

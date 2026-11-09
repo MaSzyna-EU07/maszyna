@@ -13844,3 +13844,30 @@ msgstr "LPM na styku"
 
 msgid "takes it: then on a track moves it, on it again away"
 msgstr "bierze go: potem na torze przesuwa, na nim samym usuwa"
+
+msgid "The indicator can't be moved: %s"
+msgstr "Wskaźnika nie da się przesunąć: %s"
+
+msgid "%s now under %s, Ctrl+Z takes it back"
+msgstr "%s jest teraz pod: %s, Ctrl+Z cofa"
+
+msgid "Only the indicators under the lights change places, a plate at the foot keeps its own"
+msgstr "Miejscami zamieniają się tylko wskaźniki pod latarnią, tablica przy stopie masztu zostaje na swoim"
+
+msgid "Raised (m)"
+msgstr "Podniesienie (m)"
+
+msgid "The distance of the mast from the axis of the track it stands by, in the plan: type another one and the signal moves across, as far along the track as it stands. Not nearer than the gauge lets it: the gauge chosen in the Gauge window pushes it out again. One step of undo"
+msgstr "Odległość masztu od osi toru, przy którym stoi, w rzucie: wpisz inną, a semafor przesunie się w poprzek, w tym samym miejscu wzdłuż toru. Nie bliżej, niż pozwala skrajnia: skrajnia wybrana w oknie Skrajnia odsunie go z powrotem. Jeden krok cofania"
+
+msgid "The head hangs this high over the rail heads of its track. One step of undo"
+msgstr "Głowica wisi tak wysoko nad główkami szyn swojego toru. Jeden krok cofania"
+
+msgid "0: the signal stands on the ground 0.35 m under the rail heads of its track, as Ie-102 draws it, its model on its foundation. Raise it where it stands higher, on a platform; lower it where the ground falls away, down an embankment. One step of undo"
+msgstr "0: semafor stoi na gruncie 0,35 m pod główkami szyn swojego toru, jak na rysunku w Ie-102, model na swoim fundamencie. Podnieś go, gdzie stoi wyżej, np. na peronie; obniż, gdzie grunt opada, np. na skarpie nasypu. Jeden krok cofania"
+
+msgid "Up: it changes places with the indicator above it. One step of undo"
+msgstr "W górę: zamienia się miejscem ze wskaźnikiem nad nim. Jeden krok cofania"
+
+msgid "Down: it changes places with the indicator below it. One step of undo"
+msgstr "W dół: zamienia się miejscem ze wskaźnikiem pod nim. Jeden krok cofania"

@@ -2767,6 +2767,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the indicator put on the signal, named after it: under its lights below the ones there, or at its foot. returns: false if it can't be
 	bool signal_indicator_add(signal_standing const &Standing, indicator_template const &Indicator);
 	bool signal_indicator_remove(scene::instance_handle const Indicator);
+	// the indicators under the lights of the signal at Upper and Lower in its list, the highest first, swapped: each takes the place of the other
+	bool signal_indicators_swap(signal_standing const &Standing, std::size_t const Upper, std::size_t const Lower);
+	// the signal set the distance from the axis of its track in the plan and its height, raised over where it stands by default (over the rail heads, on a gantry), unless none
+	bool signal_set_across(signal_standing const &Standing, std::optional<double> const Offset, std::optional<double> const Height);
 	// the indicators of the signal moved after it to the place and the frame it has now, at the same place by it as they were, the
 	// directives they had going to Directives
 	void signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);
