@@ -5518,6 +5518,18 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // with the road window open the left button works its tools, whichever edit mode is on but the track one
     if (m_roadtool.window && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
     {
+        // Alt+LMB on a point: its height (and the other selected ones') dragged up or down
+        if (is_press(Action) && Global.altState && false == ImGui::GetIO().WantCaptureMouse && road_lift_start())
+        {
+            m_input.mouse.button(Button, Action);
+            return;
+        }
+        if (false == is_press(Action) && m_roadtool.lifting)
+        {
+            road_lift_finish();
+            m_input.mouse.button(Button, Action);
+            return;
+        }
         if (is_press(Action))
         {
             // NOTE: the pick is resolved a few frames later, by then it's known whether the press was meant for the UI
