@@ -352,7 +352,8 @@ class srk_tool final : public editor_tool
 	// the joints of the open station changed by hand, the circuits set again so; one step of the history
 	void change_joints(std::optional<glm::dvec3> const &Remove, std::optional<glm::dvec3> const &Add);
 	// the hand joints of the open station changed from Before: the circuits set again, the change one step of the history with them
-	void joints_changed(srk_hand_joints const &Before);
+	// Forget: they were all forgotten, and the ones that changed nothing go too
+	void joints_changed(srk_hand_joints const &Before, bool const Forget = false);
 	// the track circuits of the open station set, known again after each change and for its code
 	bool circuits_set();
 	std::size_t m_circuits_revision{static_cast<std::size_t>(-1)};

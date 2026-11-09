@@ -1559,7 +1559,7 @@ void srk_tool::render_station()
 				srk_hand_joints const before{entry.track, entry.joints_added, entry.joints_removed};
 				entry.joints_added.clear();
 				entry.joints_removed.clear();
-				joints_changed(before);
+				joints_changed(before, true);
 			}
 			item_tooltip("The joints put and taken away by hand forgotten, the circuits set again as planned. One step of undo");
 		}
@@ -2181,7 +2181,7 @@ void srk_tool::change_joints(std::optional<glm::dvec3> const &Remove, std::optio
 	joints_changed(before);
 }
 
-void srk_tool::joints_changed(srk_hand_joints const &Before)
+void srk_tool::joints_changed(srk_hand_joints const &Before, bool const Forget)
 {
 	auto &entry{record_of_open()};
 	m_changed = true;
@@ -2189,9 +2189,13 @@ void srk_tool::joints_changed(srk_hand_joints const &Before)
 	set_circuits();
 	if (false == m_joint_change.has_value())
 		return;
-	// no step of the history took it, refused or with nothing to change: the joints as they were, the undo knowing of no other
-	entry.joints_added = Before.added;
-	entry.joints_removed = Before.removed;
+	// no step of the history took it, refused or with nothing to change: the joints as they were, the undo knowing of no other;
+	// forgotten, the ones that changed nothing go anyway
+	if (m_status_refused || false == Forget)
+	{
+		entry.joints_added = Before.added;
+		entry.joints_removed = Before.removed;
+	}
 	m_joint_change.reset();
 }
 
@@ -5734,7 +5738,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			srk_hand_joints const before{entry.track, entry.joints_added, entry.joints_removed};
 			entry.joints_added.clear();
 			entry.joints_removed.clear();
-			joints_changed(before);
+			joints_changed(before, true);
 			log("plan", true);
 			return editor_selftest_result::handled;
 		}

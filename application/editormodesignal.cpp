@@ -788,7 +788,12 @@ void editor_mode::signal_move_update()
 	}
 	tool.moved_valid = track != nullptr && signal_drop_at(*found, *track, path, held, 0, tool.moved);
 	if (auto const *item{signal_template_of(found->include.file)}; tool.moved_valid && item != nullptr)
+	{
+		// its distance from the axis and its height as it stood by its own track, before the drag
+		if (tool.home_valid)
+			signal_carry(tool.home, tool.moved, *item);
 		signal_snap(tool.moved, *item);
+	}
 }
 
 track_trace::danger editor_mode::signal_danger(signal_spot const &Spot) const
@@ -909,15 +914,7 @@ bool editor_mode::signal_drop_at(signal_standing const &Standing, TTrack &Track,
 	auto const path{std::clamp(Path, 0, static_cast<int>(Track.m_paths.size()) - 1)};
 	auto const forward{forward_at(Track, path, nearest_on(Track, path, Point))};
 	auto const facing{glm::dot(forward, travel_of(Standing.include.yaw)) >= 0.0 ? 1 : -1};
-	if (false == signal_spot_at(Track, path, Point, Point, facing, Side * facing, *item, Spot))
-		return false;
-	// as it stands now, by the same track
-	signal_spot standing;
-	standing.axis = bezier{Track.m_paths[path]}.point(nearest_on(Track, path, Standing.include.location));
-	standing.position = Standing.include.location;
-	standing.offset = geometry::plan_distance(standing.position, standing.axis);
-	signal_carry(standing, Spot, *item);
-	return true;
+	return signal_spot_at(Track, path, Point, Point, facing, Side * facing, *item, Spot);
 }
 
 void editor_mode::signal_carry(signal_spot const &From, signal_spot &To, signal_template const &Template) const
