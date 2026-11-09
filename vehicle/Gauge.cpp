@@ -273,6 +273,7 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
 		         gaugetype == "delayed"    ? push_delayed :
 		         gaugetype == "pushtoggle" ? pushtoggle :
 		                                     toggle; // "toggle" and default
+        m_typedeclared = true;
     }
     else if( key == "soundinc:" ) {
         m_soundfxincrease.deserialize( Input, sound_type::single );

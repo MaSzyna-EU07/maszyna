@@ -61,6 +61,9 @@ public:
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
     TGaugeType type() const;
+    // whether the definition of the control declared its type, rather than left it at the default
+    bool type_declared() const {
+        return m_typedeclared; }
     inline
     bool is_push() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::push ) ) != 0; }
@@ -97,6 +100,7 @@ private:
 // members
     TGaugeAnimation m_animation { TGaugeAnimation::gt_Unknown }; // typ ruchu
     TGaugeType m_type { TGaugeType::toggle }; // switch type
+    bool m_typedeclared { false }; // the type was given with type: in the definition
     float m_friction { 0.f }; // hamowanie przy zliżaniu się do zadanej wartości
     float m_targetvalue { 0.f }; // wartość docelowa
     float m_value { 0.f }; // wartość obecna
