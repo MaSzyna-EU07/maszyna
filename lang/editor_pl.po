@@ -13871,3 +13871,6 @@ msgstr "W górę: zamienia się miejscem ze wskaźnikiem nad nim. Jeden krok cof
 
 msgid "Down: it changes places with the indicator below it. One step of undo"
 msgstr "W dół: zamienia się miejscem ze wskaźnikiem pod nim. Jeden krok cofania"
+
+msgid "This joint parts the station from the line out of it: it stays where the station ends"
+msgstr "Ten styk oddziela stację od szlaku: zostaje tam, gdzie kończy się stacja"

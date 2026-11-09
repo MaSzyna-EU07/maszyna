@@ -347,6 +347,8 @@ class srk_tool final : public editor_tool
 	std::optional<station::joint> hand_joint(glm::dvec3 const &Point, std::string &Why) const;
 	// the joint of the circuits standing nearest the point, within reach
 	std::optional<glm::dvec3> joint_near(glm::dvec3 const &Point) const;
+	// the joint parts the station from a line out of it: it stays
+	bool joint_outer(glm::dvec3 const &Joint) const;
 	// the joints of the open station changed by hand, the circuits set again so; one step of the history
 	void change_joints(std::optional<glm::dvec3> const &Remove, std::optional<glm::dvec3> const &Add);
 	// the hand joints of the open station changed from Before: the circuits set again, the change one step of the history with them

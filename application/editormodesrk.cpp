@@ -989,6 +989,8 @@ void srk_tool::open(TTrack &Track)
 {
 	m_status.clear();
 	m_status_refused = false;
+	m_joint_held.reset();
+	m_joint_target = {};
 	auto found{station::find(Track)};
 	if (false == found.has_value())
 	{
@@ -1540,7 +1542,7 @@ void srk_tool::render_station()
 	item_tooltip("LMB on a plain track of the station: a new joint of the track circuits there. LMB on a joint: it is taken; then LMB on a "
 	             "track moves it there, LMB on it again takes it away. The circuits are set again at once, and Set the track circuits "
 	             "keeps the joints so changed. One step of undo each");
-	if (m_joint_editing)
+	if (m_joint_editing && m_record >= 0)
 	{
 		auto const &hand{m_records[m_record]};
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -2042,6 +2044,16 @@ std::optional<station::joint> srk_tool::hand_joint(glm::dvec3 const &Point, std:
 	return result;
 }
 
+bool srk_tool::joint_outer(glm::dvec3 const &Joint) const
+{
+	if (false == m_layout.has_value())
+		return false;
+	for (auto const &path : m_layout->paths)
+		if (path.approach && false == path.points.empty() && (glm::distance(path.points.front(), Joint) < 0.05 || glm::distance(path.points.back(), Joint) < 0.05))
+			return true;
+	return false;
+}
+
 std::optional<glm::dvec3> srk_tool::joint_near(glm::dvec3 const &Point) const
 {
 	std::optional<glm::dvec3> result;
@@ -2067,6 +2079,8 @@ std::string srk_tool::joint_hover(glm::dvec3 const &Point, bool &Valid)
 	if (stem_of_open().empty())
 		return STR("Type the code of the station first: its track circuits are named after it");
 	auto const standing{joint_near(Point)};
+	if (standing.has_value() && joint_outer(*standing))
+		return STR("This joint parts the station from the line out of it: it stays where the station ends");
 	std::string why;
 	auto const joint{hand_joint(Point, why)};
 	if (m_joint_held.has_value())
@@ -2082,6 +2096,12 @@ std::string srk_tool::joint_hover(glm::dvec3 const &Point, bool &Valid)
 			m_joint_target = {joint_target::kind::pick, *standing};
 			Valid = true;
 			return STR("Click: take this joint instead");
+		}
+		if (joint.has_value() && glm::distance(joint->point, *m_joint_held) < kJointSnap)
+		{
+			m_joint_target = {joint_target::kind::drop, *m_joint_held};
+			Valid = true;
+			return STR("Click: let the joint go, it stays where it stands");
 		}
 		if (joint.has_value())
 		{
@@ -2124,7 +2144,8 @@ void srk_tool::joint_click()
 	{
 		auto const from{*m_joint_held};
 		m_joint_held.reset();
-		change_joints(from, target.point);
+		if (glm::distance(from, target.point) >= kJointSnap)
+			change_joints(from, target.point);
 		break;
 	}
 	case joint_target::kind::remove:
@@ -2168,12 +2189,9 @@ void srk_tool::joints_changed(srk_hand_joints const &Before)
 	set_circuits();
 	if (false == m_joint_change.has_value())
 		return;
-	// no step of the history took it: refused, the joints as they were; or nothing to cut, the record kept
-	if (m_status_refused)
-	{
-		entry.joints_added = Before.added;
-		entry.joints_removed = Before.removed;
-	}
+	// no step of the history took it, refused or with nothing to change: the joints as they were, the undo knowing of no other
+	entry.joints_added = Before.added;
+	entry.joints_removed = Before.removed;
 	m_joint_change.reset();
 }
 
@@ -5700,8 +5718,9 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 		auto const log = [&](std::string const &Label, bool const Valid) {
 			if (m_history.history_revision() != m_history_revision)
 				refresh();
-			auto const &hand{m_records[m_record]};
-			WriteLog(format("SELFTEST srkjoint: %s valid %d held %d joints %zu circuits %zu added %zu removed %zu status %s", Label.c_str(), Valid ? 1 : 0, m_joint_held.has_value() ? 1 : 0, m_joints.size(), m_circuits.size(), hand.joints_added.size(), hand.joints_removed.size(), m_status.c_str()));
+			auto const added{m_record >= 0 ? m_records[m_record].joints_added.size() : 0};
+			auto const removed{m_record >= 0 ? m_records[m_record].joints_removed.size() : 0};
+			WriteLog(format("SELFTEST srkjoint: %s valid %d held %d joints %zu circuits %zu added %zu removed %zu status %s", Label.c_str(), Valid ? 1 : 0, m_joint_held.has_value() ? 1 : 0, m_joints.size(), m_circuits.size(), added, removed, m_status.c_str()));
 		};
 		if (values.count("list") > 0)
 			for (std::size_t index = 0; index < m_layout->paths.size(); ++index)
@@ -5726,7 +5745,7 @@ editor_selftest_result srk_tool::selftest(std::string const &Command, std::istri
 			if (index < m_joints.size())
 				point = m_joints[index].at;
 		}
-		else if (values.count("hand") > 0)
+		else if (values.count("hand") > 0 && m_record >= 0)
 		{
 			auto const &added{m_records[m_record].joints_added};
 			if (auto const index{static_cast<std::size_t>(std::atoi(values.at("hand").c_str()))}; index < added.size())
