@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "audio/sound.h"
+#include "vehicle/gaugescale.h"
 
 enum class TGaugeAnimation {
     // typ ruchu
@@ -72,6 +73,9 @@ public:
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::toggle ) ) != 0; }
     bool is_delayed() const {
         return ( static_cast<int>( type() ) & static_cast<int>( TGaugeType::delayed ) ) != 0; }
+    // true if the gauge was given a non-uniform scale (scaletable:)
+    bool has_scaletable() const {
+        return false == m_scaletable.empty(); }
 // members
     TSubModel *SubModel { nullptr }; // McZapkie-310302: zeby mozna bylo sprawdzac czy zainicjowany poprawnie
     TSubModel *SubModelOn { nullptr }; // optional submodel visible when the state input is set
@@ -81,11 +85,14 @@ private:
     struct scratch_data {
         std::optional< std::array<float, 6> > soundproofing;
         bool duplicate { false }; // the definition is a duplicate submodel of the control defined before
+        std::vector<gauge_scale::point> scaletable; // as read, in the units of the config
     };
 // methods
     // imports member data pair from the config file
     bool
         Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad );
+    static bool
+        Load_scaletable( cParser &Input, TGauge::scratch_data &Scratchpad );
     float
         GetScaledValue() const;
     void
@@ -109,6 +116,8 @@ private:
     float m_endscale { -1.f }; // scale applied to the value at the end of accepted value range
     float m_endvalue { -1.f }; // end value of accepted value range
     bool m_interpolatescale { false };
+    std::vector<gauge_scale::point> m_scaletable; // optional non-uniform scale, sorted by value; replaces scale and offset
+
     char m_datatype { '\0' }; // typ zmiennej parametru: f-float, d-double, i-int, b-bool; none until one is assigned
     union {
         // wskaźnik na parametr pokazywany przez animację
