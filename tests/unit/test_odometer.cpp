@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
+#include "utilities/Globals.h"
 #include "vehicle/odometer.h"
 
 #include <filesystem>
@@ -359,4 +360,26 @@ TEST_CASE("odometer: two simulations saving one file keep each other's states") 
 		REQUIRE(odometer::save(second, path));
 		CHECK(load().size() == 1);
 	}
+}
+
+TEST_CASE("odometer: a test run neither reads nor saves the player's store") {
+	if (false == Global.test.enabled)
+		CHECK(odometer::persistent());
+	// the autotests (--test) run the vehicles of the player's game, their runs aren't the player's
+	struct test_mode {
+		bool const was{Global.test.enabled};
+		test_mode() { Global.test.enabled = true; }
+		test_mode(test_mode const &) = delete;
+		test_mode &operator=(test_mode const &) = delete;
+		~test_mode() { Global.test.enabled = was; }
+	} const testmode;
+	// stops before the player's file is touched, if the gate is gone
+	REQUIRE_FALSE(odometer::persistent());
+
+	auto &states{odometer::states()};
+	states.record("tested", run(1000.0, 5000.0));
+	CHECK(states.find("tested").value() == doctest::Approx(1005.0));
+	CHECK(odometer::save());
+	// a save to the file would have cleared it
+	CHECK(states.modified());
 }

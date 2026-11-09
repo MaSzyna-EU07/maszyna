@@ -101,14 +101,18 @@ reading starting_state(store const &States, std::string const &Vehicle, std::fil
 // (the counter shows the odometer). nothing for a counter without an offset
 std::optional<double> counter_seed(float Offset, float Scale);
 
-// the odometer store of the simulation, read from the user's settings directory on the first use
+// the store of the simulation is the player's file: false in a test run (--test, Global.test.enabled), whose vehicles
+// neither start from the player's states nor change them
+bool persistent();
+// the odometer store of the simulation, read from the user's settings directory on the first use. in a test run an
+// empty one, not read from anywhere
 store &states();
 std::filesystem::path file();
 // writes the store to the file when anything was recorded since, merged with what other simulations saved in the
 // file meanwhile. it's written to a file of this process aside first, then put in place. returns false when the
 // write failed
 bool save(store &States, std::filesystem::path const &File);
-// saves the store of the simulation to its file
+// saves the store of the simulation to its file. a test run doesn't save it
 bool save();
 
 } // namespace odometer

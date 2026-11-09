@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/odometer.h"
 
+#include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
@@ -227,7 +228,17 @@ std::filesystem::path file() {
 	return path.empty() ? std::filesystem::path{"eu07_odometers.txt"} : path;
 }
 
+bool persistent() {
+	return false == Global.test.enabled;
+}
+
 store &states() {
+	if (false == persistent()) {
+		// the vehicles of a test run count their odometers as usual, from the guessed or legacy states, with nothing
+		// read from or saved to the player's file
+		static store scratch;
+		return scratch;
+	}
 	static store odometers = [] {
 		store result;
 		std::ifstream input{file(), std::ios::binary};
@@ -292,6 +303,8 @@ bool save(store &States, std::filesystem::path const &File) {
 }
 
 bool save() {
+	if (false == persistent())
+		return true;
 	return save(states(), file());
 }
 
