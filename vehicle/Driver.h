@@ -549,8 +549,12 @@ private:
     void update_point_limits();
     // the latched point limits ahead in the direction of travel, taken as the points of the speed table are
     void apply_point_limits( double &Velocity, double &Distance, double &Next, double &Acceleration );
-    // the way the consist runs, in the world; zero when it isn't known
+    // the way the consist runs, along the track under the vehicle whose movement is measured; zero when it isn't known
     glm::dvec3 travel_direction() const;
+    // how far the end of the consist lying the farthest along the heading is ahead of the measured vehicle
+    double point_limit_end( glm::dvec3 const &Heading ) const;
+    // whether the state of the cell is latched already
+    bool point_limit_latched( basic_event const *Cell ) const;
     // how far before a point limit the speed is held down to it
     double point_limit_approach() const;
     // returns most recently calculated distance to potential obstacle ahead
@@ -594,7 +598,10 @@ private:
         basic_event const *source { nullptr }; // the cell, as the head passed it
         double velocity { -1.0 }; // what the cell said then
         double distance { 0.0 }; // left for the head to the point, along the line
+        double celldistance { 0.0 }; // from the cell to the point; the head farther than that from the point is behind the cell
         glm::dvec3 heading { 0.0 }; // the way towards the point, in the world
+        double end { 0.0 }; // point_limit_end() at the last update, to follow vehicles coupled or uncoupled at that end
+        bool endknown { false };
     };
     std::vector<point_limit> m_pointlimits;
     TDynamicObject const *m_pointlimitsvehicle { nullptr }; // the vehicle whose movement moves the points
