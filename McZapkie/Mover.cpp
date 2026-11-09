@@ -4161,7 +4161,8 @@ bool TMoverParameters::SwitchEPBrake(int state)
 	OK = false;
 	if (BrakeHandle == TBrakeHandle::St113 && CabOccupied != 0)
 	{
-		if (state > 0)
+		// the handle works the EP contactors pneumatically, their supply is cut as the Oerlikon handle's is
+		if (state > 0 && EPBrakeControlPowered())
 			EpForce = Handle->GetEP(); // TODO: przetlumaczyc
 		else
 			EpForce = 0;
@@ -4171,6 +4172,11 @@ bool TMoverParameters::SwitchEPBrake(int state)
 	//  OK:=SetFlag(BrakeStatus,((2*State-1)*b_epused));
 	//  SendCtrlToNext('Brake',(state*(2*BrakeCtrlPos-1)),CabActive);
 	return OK;
+}
+
+bool TMoverParameters::EPBrakeControlPowered() const
+{
+	return Power24vIsAvailable && DirActive != 0 && EpFuse;
 }
 
 // *************************************************************************************************
@@ -4706,7 +4712,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	if ((BrakeHandle == TBrakeHandle::FVel6 || BrakeHandle == TBrakeHandle::FVE408) && CabOccupied != 0)
 	{
-		if (Power24vIsAvailable && DirActive != 0 && EpFuse) // tu powinien byc jeszcze bezpiecznik EP i baterie -
+		if (EPBrakeControlPowered()) // tu powinien byc jeszcze bezpiecznik EP i baterie -
 			// temp = (Handle as TFVel6).GetCP
 			EpForce = Handle->GetEP();
 		else
@@ -4724,6 +4730,11 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		TUHEX_Active = TUHEX_StageActual > 0;
 		// Ra 2014-11: na tym się wysypuje, ale nie wiem, w jakich warunkach
 		SendCtrlToNext("Brake", EpForce, CabActive);
+	}
+	else if (BrakeHandle == TBrakeHandle::St113 && CabOccupied != 0 && std::abs(EpForce) > 0.001 && !EPBrakeControlPowered())
+	{
+		// the EP brake switched on with the button drops out with the control's supply
+		SwitchEPBrake(0);
 	}
 
 	Pipe->Act();

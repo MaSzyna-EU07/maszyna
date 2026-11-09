@@ -2242,7 +2242,9 @@ void TTrain::OnCommand_wheelspinbrakeactivate(TTrain *Train, command_data const 
 			// visual feedback
 			Train->ggAntiSlipButton.UpdateValue(1.0, Train->dsbPneumaticSwitch);
 
-			if (Train->mvOccupied->BrakeHandle == TBrakeHandle::St113 && Train->mvControlled->EpFuse == true)
+			// the EP fuse is the cab car's (Ctrl+Z switches mvOccupied's), checked by SwitchEPBrake with the rest of
+			// the control's supply
+			if (Train->mvOccupied->BrakeHandle == TBrakeHandle::St113)
 			{
 				Train->mvOccupied->SwitchEPBrake(1);
 			}
