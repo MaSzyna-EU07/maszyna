@@ -13661,8 +13661,8 @@ msgstr "Wskaźniki na nim:"
 msgid "Add an indicator..."
 msgstr "Dołóż wskaźnik..."
 
-msgid "An indicator of the scenery templates described as one, named after the signal: a lit one under its lights below the ones there, a plate at its foot. It moves with the signal"
-msgstr "Wskaźnik spośród szablonów scenerii opisanych jako wskaźnik, nazwany jak sygnalizator: świetlny pod komorami, niżej niż te już tam są, tablica przy stopie masztu. Przesuwa się razem z sygnalizatorem"
+msgid "An indicator of the scenery templates described as one, named after the signal: a lit one under its lights in its place by Ie-117 (from the top W21, W24, W20, W19, W26, the others below them), a plate at its foot. It moves with the signal"
+msgstr "Wskaźnik spośród szablonów scenerii opisanych jako wskaźnik, nazwany jak sygnalizator: świetlny pod komorami, na swoim miejscu według Ie-117 (od góry W21, W24, W20, W19, W26, pozostałe pod nimi), tablica przy stopie masztu. Przesuwa się razem z sygnalizatorem"
 
 msgid "A signal on a gantry takes no indicator from the list"
 msgstr "Sygnalizator na bramownicy nie bierze wskaźnika z listy"

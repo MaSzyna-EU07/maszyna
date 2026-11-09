@@ -132,6 +132,24 @@ double constexpr kIndicatorHead{3.0}; // m, over the foot, of the first indicato
 double constexpr kIndicatorAhead{0.05}; // m, of an indicator under the lights before the mast
 double constexpr kIndicatorReach{1.0}; // m, in the plan, of an indicator named after a signal from its foot to be counted as its
 
+// the place of an indicator under the lights of a signal, from the top: Ie-117 § 12.1 orders them W21, W24, W20, W19, W26a or W26b;
+// the others under them
+int indicator_rank(std::string const &Sign)
+{
+	auto const sign{ToLower(Sign)};
+	if (sign == "w21")
+		return 0;
+	if (sign == "w24")
+		return 1;
+	if (sign == "w20")
+		return 2;
+	if (sign == "w19")
+		return 3;
+	if (sign.rfind("w26", 0) == 0)
+		return 4;
+	return 5;
+}
+
 glm::dmat4 placement_of(TAnimModel const &Instance)
 {
 	auto const angles{Instance.Angles()};
@@ -1242,6 +1260,8 @@ bool editor_mode::signal_indicator_add(signal_standing const &Standing, indicato
 		return false;
 	}
 	glm::dvec3 location{Standing.include.location};
+	// the ones under the lights below the place of the new one, each a place down, with the directives they had
+	std::vector<std::pair<scene::instance_handle, std::string>> moved;
 	if (Indicator.place == "head")
 	{
 		if (auto const *item{signal_template_of(signal_file)}; item != nullptr && item->mount == "dwarf")
@@ -1249,17 +1269,52 @@ bool editor_mode::signal_indicator_add(signal_standing const &Standing, indicato
 			tool.status = refused(STR_C("A dwarf signal has no mast for an indicator under its lights"));
 			return false;
 		}
-		// below the lowest one under the lights, else under the lowest lamp
-		auto height{std::numeric_limits<double>::max()};
+		// in its place by Ie-117 among the ones under the lights, from the top: under the last one it doesn't go above
+		std::vector<standing_template const *> heads;
 		for (auto const &mark : Standing.indicators)
 			if (auto const *other{indicator_template_of(mark.file)}; other != nullptr && other->place == "head")
-				height = std::min(height, mark.location.y - Standing.include.location.y - kIndicatorStep);
-		if (height == std::numeric_limits<double>::max())
+				heads.push_back(&mark);
+		std::sort(heads.begin(), heads.end(), [](standing_template const *A, standing_template const *B) { return A->location.y > B->location.y; });
+		auto const rank{indicator_rank(Indicator.sign)};
+		std::size_t place{0};
+		for (std::size_t i = 0; i < heads.size(); ++i)
+			if (auto const *other{indicator_template_of(heads[i]->file)}; other != nullptr && indicator_rank(other->sign) <= rank)
+				place = i + 1;
+		auto const frame{frame_of(models)};
+		if (place < heads.size())
 		{
-			auto const lamp{lowest_lamp(models) - Standing.include.location.y};
-			height = lamp > kIndicatorUnder + 1.0 && lamp < 50.0 ? lamp - kIndicatorUnder : kIndicatorHead;
+			// where the first one under it stands; that one and the ones under it a place down
+			location = heads[place]->location;
+			std::string reason;
+			for (auto i = place; i < heads.size(); ++i)
+				if (false == scene::Layers.tracked(heads[i]->instance) || false == scene::Layers.removable(heads[i]->instance, &reason))
+				{
+					tool.status = refused(format(STR_C("The indicator can't be moved: %s"), reason.c_str()));
+					return false;
+				}
+			for (auto i = place; i < heads.size(); ++i)
+			{
+				std::string file;
+				std::vector<std::string> values;
+				auto directive{scene::Layers.directive(heads[i]->instance)};
+				if (false == editor_includes::parse_directive(directive, file, values) || values.size() < 5)
+					continue;
+				auto const local{heads[i]->location + frame * glm::dvec3{0.0, -kIndicatorStep, 0.0} - scene::Layers.instance(heads[i]->instance).context.offset};
+				values[1] = editor_includes::number(local.x);
+				values[2] = editor_includes::number(local.y);
+				values[3] = editor_includes::number(local.z);
+				set_include_directive(heads[i]->instance, editor_includes::compose_directive(file, values));
+				moved.emplace_back(heads[i]->instance, std::move(directive));
+			}
 		}
-		location += frame_of(models) * glm::dvec3{0.0, height, kIndicatorAhead};
+		else if (false == heads.empty())
+			location = heads.back()->location + frame * glm::dvec3{0.0, -kIndicatorStep, 0.0};
+		else
+		{
+			// under the lowest lamp
+			auto const lamp{lowest_lamp(models) - Standing.include.location.y};
+			location += frame * glm::dvec3{0.0, lamp > kIndicatorUnder + 1.0 && lamp < 50.0 ? lamp - kIndicatorUnder : kIndicatorHead, kIndicatorAhead};
+		}
 	}
 	template_item item;
 	item.file = Indicator.file;
@@ -1270,9 +1325,13 @@ bool editor_mode::signal_indicator_add(signal_standing const &Standing, indicato
 	std::string error;
 	if (place_templates({item}, error, output_layer("srk")) == 0)
 	{
+		for (auto const &[instance, directive] : moved)
+			set_include_directive(instance, directive);
 		tool.status = refused(STR_C("The indicator couldn't be placed: ") + error);
 		return false;
 	}
+	// the ones moved down for it go back with it
+	history_add_directives(m_history.back(), moved);
 	tool.status = format(STR_C("Indicator %s put on signal %s, Ctrl+Z takes it back"), Indicator.name.c_str(), name.c_str());
 	// an event both define the scenery keeps once, the indicator's may be the one lost
 	std::vector<std::string> own;
@@ -1642,7 +1701,7 @@ bool editor_mode::render_signal_indicators(signal_standing const &Found)
 		}
 		ImGui::EndCombo();
 	}
-	item_tooltip("An indicator of the scenery templates described as one, named after the signal: a lit one under its lights below the ones there, a plate at its foot. It moves with the signal");
+	item_tooltip("An indicator of the scenery templates described as one, named after the signal: a lit one under its lights in its place by Ie-117 (from the top W21, W24, W20, W19, W26, the others below them), a plate at its foot. It moves with the signal");
 	return chosen != nullptr && signal_indicator_add(Found, *chosen);
 }
 
