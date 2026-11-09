@@ -434,3 +434,22 @@ TEST_CASE("odometer: only the vehicles with a driver's cab are recorded") {
 		CHECK(read.find("old wagon").value() == 300.0);
 	}
 }
+
+TEST_CASE("odometer: the files of both kinds of python screens are read, by the name each used") {
+	scratch_directory directory{"odometer_legacy_screens"};
+	auto const vehicles{directory.path / "dynamic" / "elf_v1"};
+	auto const scripts{directory.path / "scripts"};
+	// the renderers of the units, next to the .mmd: state['name'][:-1], the cab cars of a unit share the file
+	write_file(vehicles / "kilometry" / "EN76-022_przebieg.txt", "250000.5");
+	CHECK(odometer::legacy_state(vehicles, "EN76-022a", scripts).value() == 250000.5);
+	CHECK(odometer::legacy_state(vehicles, "EN76-022d", scripts).value() == 250000.5);
+	// the shared screens of scripts/ (koliber_*): the whole name
+	write_file(scripts / "kilometry" / "EU07-424_przebieg.txt", "123456.0");
+	CHECK(odometer::legacy_state(vehicles, "EU07-424", scripts).value() == 123456.0);
+	auto const started{odometer::starting_state(odometer::store{}, "EU07-424", vehicles, scripts)};
+	CHECK(started.source == odometer::origin::legacy);
+	CHECK(started.km == 123456.0);
+	// neither
+	CHECK_FALSE(odometer::legacy_state(vehicles, "EU07-425", scripts).has_value());
+	CHECK_FALSE(odometer::legacy_state(vehicles, "", scripts).has_value());
+}

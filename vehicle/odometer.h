@@ -95,10 +95,17 @@ private:
 // store already holds for any of them stay as they are
 void record(store &States, std::string const &Vehicle, bool Drivercab, reading const &Odometer);
 
-// state kept in the file of the python screens before (<vehicle directory>/kilometry/<name>_przebieg.txt,
-// where the screens dropped the last character of the vehicle name), when it holds a number
+// state kept in the file of the python screens before, when it holds a number. the screens opened the file in the
+// directory of their script (lookup_path), and two kinds of them kept one:
+// - the renderers of the units, next to the .mmd (elf_v1: EN62, EN76, EN96, SKM; impuls_v1: EN63), in
+//   <vehicle directory>/kilometry/<name without its last character>_przebieg.txt (state['name'][:-1]). the cars of
+//   these units are named after the unit and the letter of the car (EN76-022a .. EN76-022d, ED78-019A .. ED78-019D),
+//   so the cab cars at both ends of a unit share one file, the unit's odometer
+// - the shared screens in scripts/ (koliber_hasler_elektroniczny, koliber_unicontrols_tramex[_ic]), in
+//   <scripts directory>/kilometry/<name>_przebieg.txt, the whole name
 std::optional<double> read_legacy(std::istream &Input);
-std::optional<double> legacy_state(std::filesystem::path const &Vehicledirectory, std::string const &Vehicle);
+std::optional<double> legacy_state(std::filesystem::path const &Vehicledirectory, std::string const &Vehicle,
+                                   std::filesystem::path const &Scriptsdirectory = "scripts");
 
 // made up state of a vehicle nothing is known about: a number from the name, in [10 000, 500 000) km,
 // the same each session until the vehicle runs and gets its state saved
@@ -106,7 +113,8 @@ double guessed_state(std::string const &Vehicle);
 
 // state a vehicle starts the session with: the saved one, else the legacy one, else a guessed one. a saved state
 // counted from a guessed one stays guessed, so the cab's counter can still replace the made up part of it
-reading starting_state(store const &States, std::string const &Vehicle, std::filesystem::path const &Vehicledirectory);
+reading starting_state(store const &States, std::string const &Vehicle, std::filesystem::path const &Vehicledirectory,
+                       std::filesystem::path const &Scriptsdirectory = "scripts");
 
 // state the cab's counter with offset Offset and scale Scale shows, once its offset no longer applies
 // (the counter shows the odometer). nothing for a counter without an offset

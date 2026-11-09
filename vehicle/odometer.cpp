@@ -178,17 +178,32 @@ std::optional<double> read_legacy(std::istream &Input) {
 	return parse_number(content.str());
 }
 
-std::optional<double> legacy_state(std::filesystem::path const &Vehicledirectory, std::string const &Vehicle) {
-	if (Vehicle.size() < 2)
-		return std::nullopt;
-	auto const path{Vehicledirectory / "kilometry" / (Vehicle.substr(0, Vehicle.size() - 1) + "_przebieg.txt")};
+namespace {
+
+std::optional<double> read_legacy_file(std::filesystem::path const &Path) {
 	std::error_code error;
-	if (false == std::filesystem::is_regular_file(path, error))
+	if (false == std::filesystem::is_regular_file(Path, error))
 		return std::nullopt;
-	std::ifstream input{path, std::ios::binary};
+	std::ifstream input{Path, std::ios::binary};
 	if (false == input.is_open())
 		return std::nullopt;
 	return read_legacy(input);
+}
+
+} // namespace
+
+std::optional<double> legacy_state(std::filesystem::path const &Vehicledirectory, std::string const &Vehicle,
+                                   std::filesystem::path const &Scriptsdirectory) {
+	if (Vehicle.empty())
+		return std::nullopt;
+	// the renderers of the units drop the letter of the car, the file is the unit's (see the header)
+	if (Vehicle.size() > 1) {
+		auto const unit{read_legacy_file(Vehicledirectory / "kilometry" / (Vehicle.substr(0, Vehicle.size() - 1) + "_przebieg.txt"))};
+		if (unit.has_value())
+			return unit;
+	}
+	// the shared screens of scripts/ keep the whole name
+	return read_legacy_file(Scriptsdirectory / "kilometry" / (Vehicle + "_przebieg.txt"));
 }
 
 double guessed_state(std::string const &Vehicle) {
@@ -201,7 +216,8 @@ double guessed_state(std::string const &Vehicle) {
 	return 10000.0 + static_cast<double>(hash % 490000ull);
 }
 
-reading starting_state(store const &States, std::string const &Vehicle, std::filesystem::path const &Vehicledirectory) {
+reading starting_state(store const &States, std::string const &Vehicle, std::filesystem::path const &Vehicledirectory,
+                       std::filesystem::path const &Scriptsdirectory) {
 	reading result;
 	if (auto const saved{States.find(Vehicle)}; saved.has_value()) {
 		if (States.guessed(Vehicle)) {
@@ -212,7 +228,7 @@ reading starting_state(store const &States, std::string const &Vehicle, std::fil
 		} else {
 			result.begin(*saved, origin::saved);
 		}
-	} else if (auto const legacy{legacy_state(Vehicledirectory, Vehicle)}; legacy.has_value()) {
+	} else if (auto const legacy{legacy_state(Vehicledirectory, Vehicle, Scriptsdirectory)}; legacy.has_value()) {
 		result.begin(*legacy, origin::legacy);
 	} else {
 		result.begin(guessed_state(Vehicle), origin::guessed);
