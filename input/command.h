@@ -404,6 +404,12 @@ enum class user_command
 	wiperswitchdecrease,
 	lightsset,
 	oilfuelpumptoggle,
+	linebreakertoggleb,
+	linebreakeropenb,
+	linebreakercloseb,
+	linebreakertogglec,
+	linebreakeropenc,
+	linebreakerclosec,
 	none = -1
 };
 

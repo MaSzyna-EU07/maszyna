@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
+#include "vehicle/enginestart.h"
 #include "audio/sound.h"
 #include "scripting/PyInt.h"
 #include "input/command.h"
@@ -214,6 +215,10 @@ class TTrain {
     void change_pantograph_selection( int const Change );
     // helper, common part of pantograh valves state update methods
     void update_pantograph_valves();
+    // the Index-th other vehicle in multiple whose engine the cab starts with its own switches (0: mainb_*, 1: mainc_*)
+    TMoverParameters *remote_engine( std::size_t const Index ) const;
+    // the switches starting the engines of the other vehicles in multiple, for Deltatime seconds
+    void update_remote_linebreakers( double const Deltatime );
     // update function subroutines
     void update_sounds( double const Deltatime );
     void update_sounds_runningnoise( sound_source &Sound );
@@ -338,6 +343,9 @@ class TTrain {
     static void OnCommand_linebreakertoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_linebreakeropen( TTrain *Train, command_data const &Command );
     static void OnCommand_linebreakerclose( TTrain *Train, command_data const &Command );
+    static void OnCommand_linebreakertoggleremote( TTrain *Train, command_data const &Command );
+    static void OnCommand_linebreakeropenremote( TTrain *Train, command_data const &Command );
+    static void OnCommand_linebreakercloseremote( TTrain *Train, command_data const &Command );
     static void OnCommand_fuelpumptoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_fuelpumpenable( TTrain *Train, command_data const &Command );
     static void OnCommand_fuelpumpdisable( TTrain *Train, command_data const &Command );
@@ -570,6 +578,15 @@ public: // reszta może by?publiczna
     TGauge ggMainOffButton;
     TGauge ggMainOnButton;
     TGauge ggMainButton; // EZT
+    // the line breaker / engine start switches of the second and the third vehicle in multiple (mainb_*, mainc_*)
+    struct remote_linebreaker {
+        TGauge main_switch; // mainb_sw:
+        TGauge on_button; // mainb_on_bt:
+        TGauge off_button; // mainb_off_bt:
+        bool held_without_switch{ false }; // closed by a command, in a cab without a switch for it
+        engine_start::remote_switch state;
+    };
+    std::array<remote_linebreaker, 2> m_remotelinebreakers;
     TGauge ggSecurityResetButton;
     TGauge ggSHPResetButton;
     TGauge ggReleaserButton;

@@ -2110,6 +2110,9 @@ class TMoverParameters
 	double MainsInitTime{0.0}; // config, initialization time (in seconds) of the main circuit after it receives power, before it can be closed
 	double MainsInitTimeCountdown{0.0}; // current state of main circuit initialization, remaining time (in seconds) until it's ready
 	start_t MainsStart{start_t::manual};
+	// config, Engine:JointEngineStart. whether the cab's line breaker / engine start switch works the vehicles in multiple
+	// too; when it doesn't, the cab has separate switches for them (mainb_*, mainc_*)
+	bool JointEngineStart{true};
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
@@ -2488,6 +2491,12 @@ class TMoverParameters
 			return false == StLinFlag;
 		}
 		return false == StLinFlag && MainCircuitLampsEnabled();
+	}
+	// the vehicles the line breaker / engine start switch of this vehicle works, and its engine stopping on its own
+	// stops: the whole consist, or with JointEngineStart=No this vehicle alone (eu07/maszyna#80)
+	range_t MainSwitchRange() const
+	{
+		return JointEngineStart ? range_t::consist : range_t::local;
 	}
 	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
 	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump

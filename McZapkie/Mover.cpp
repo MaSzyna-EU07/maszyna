@@ -7869,7 +7869,8 @@ bool TMoverParameters::dizel_Update(double dt)
 	{
 		// knock out the engine if the fuel pump isn't feeding it
 		// TBD, TODO: grace period before the engine is starved for fuel and knocked out
-		MainSwitch(false);
+		// an engine started on its own stops on its own
+		MainSwitch(false, MainSwitchRange());
 	}
 
 	bool DU{false};
@@ -8160,7 +8161,13 @@ double TMoverParameters::dizel_Momentum(double Fill, double n, double dt)
 
 	if (enrot <= 0 && false == dizel_spinup)
 	{
-		MainSwitch(false);
+		// an engine stalling stops those started together with it, once. one already stopped, from its own switch or
+		// another vehicle's, or not started at all, has nothing to stop: it stays quiet, rather than stop every frame
+		// the engines started on their own or from the separate switches (eu07/maszyna#80)
+		if (true == Mains)
+		{
+			MainSwitch(false, MainSwitchRange());
+		}
 		enrot = 0;
 	}
 
@@ -11202,6 +11209,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 {
 
 	EngineType = LoadFIZ_EngineDecode(extract_value("EngineType", Input));
+	extract_value(JointEngineStart, "JointEngineStart", Input, "");
 
 	if (std::string transmission = extract_value("Trans", Input); false == transmission.empty())
 	{
@@ -11435,7 +11443,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		// water heater
 		extract_value(WaterHeater.config.temp_min, "HeaterMinTemperature", Input, "");
 		extract_value(WaterHeater.config.temp_max, "HeaterMaxTemperature", Input, "");
-		float pf;
+		float pf{ 1235.f };
 		extract_value(pf, "NominalCoolingPower", Input, "1235");
 		dizel_heat.powerfactor = 1235 / pf;
 	}
