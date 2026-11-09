@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/mainctrlact.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
@@ -9697,10 +9698,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 	if (ggMainCtrlAct.SubModel != nullptr)
 	{
-		if (mvControlled->CoupledCtrl)
-			ggMainCtrlAct.UpdateValue(static_cast<float>(double(mvControlled->MainCtrlActualPos + mvControlled->ScndCtrlActualPos)));
-		else
-			ggMainCtrlAct.UpdateValue(static_cast<float>(double(mvControlled->MainCtrlActualPos)));
+		ggMainCtrlAct.UpdateValue(main_ctrl_act::position(*mvControlled, ggMainCtrlAct.has_scaletable()));
 		ggMainCtrlAct.Update();
 	}
 	if (ggScndCtrl.SubModel != nullptr)

@@ -121,6 +121,8 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     Parser.getTokens();
     if( Parser.peek() != "{" ) {
         // old fixed size config
+        // it has no scaletable:, drop the one of an earlier definition of the same control
+        m_scaletable.clear();
         Parser >> submodelname;
         gaugetypename = Parser.getToken<std::string>( true );
         Parser.getTokens( 3, false );
@@ -160,6 +162,12 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
             while( true == Load_mapping( Parser, scratchpad ) ) {
                 // all work done by while()
             }
+            // the values of the table are in the units the config uses for the scale, which the multiplier converts the gauge's value to
+            for( auto &point : scratchpad.scaletable ) {
+                point.value = static_cast<float>( point.value / mul );
+            }
+            gauge_scale::sort( scratchpad.scaletable );
+            m_scaletable = std::move( scratchpad.scaletable );
             // post-deserialization cleanup
             // set provided custom soundproofing to assigned sounds (for sounds without their own custom soundproofing)
             if( scratchpad.soundproofing ) {
@@ -300,6 +308,10 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
             >> soundproofing[ 5 ];
         Scratchpad.soundproofing = soundproofing;
     }
+    else if( key == "scaletable:" ) {
+        // non-uniform scale in format [ value1 scaled1, value2 scaled2, ... ]
+        return Load_scaletable( Input, Scratchpad );
+    }
     else if( key.starts_with("sound") ) {
         // sounds assigned to specific gauge values, defined by key soundX: where X = value
         auto const indexstart { key.find_first_of( "-1234567890" ) };
@@ -311,6 +323,20 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
         }
     }
     return true; // return value marks a key: value pair was extracted, nothing about whether it's recognized
+}
+
+// imports the optional non-uniform scale (MaSzyna-EU07/maszyna#74); returns false if it ran into the end of the block
+bool
+TGauge::Load_scaletable( cParser &Input, TGauge::scratch_data &Scratchpad ) {
+
+    auto table { gauge_scale::read( Input ) };
+    if( table.malformed || false == table.closed || table.points.size() < 2 ) {
+        ErrorLog( "Bad model: malformed scaletable of a gauge, it needs [ value scaled, value scaled, ... ] with at least two pairs", logtype::model );
+    }
+    if( table.points.size() >= 2 ) {
+        Scratchpad.scaletable = std::move( table.points );
+    }
+    return false == table.block_end;
 }
 
 // ustawienie wartości docelowej. plays provided fallback sound, if no sound was defined in the control itself
@@ -441,6 +467,7 @@ TGauge TGauge::MirrorCopy() const {
     mirror.m_endscale = m_endscale;
     mirror.m_endvalue = m_endvalue;
     mirror.m_interpolatescale = m_interpolatescale;
+    mirror.m_scaletable = m_scaletable;
     mirror.m_state = m_state;
     mirror.m_sourcemodel = m_sourcemodel;
     return mirror;
@@ -503,6 +530,9 @@ void TGauge::AssignState( bool const *State ) {
 
 float TGauge::GetScaledValue() const {
 
+    if( false == m_scaletable.empty() ) {
+        return gauge_scale::interpolate( m_scaletable, m_value );
+    }
     return false == m_interpolatescale ? m_value * m_scale + m_offset : m_value * std::lerp(m_scale, m_endscale, std::clamp(m_value / m_endvalue, 0.f, 1.f)) + m_offset;
 }
 
