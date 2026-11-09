@@ -8817,7 +8817,7 @@ vehicle_table::save_odometers() {
     auto &odometers { odometer::states() };
     for( auto const *vehicle : m_items ) {
         if( vehicle->MoverParameters != nullptr ) {
-            odometers.record( vehicle->name(), vehicle->MoverParameters->Odometer );
+            odometer::record( odometers, vehicle->name(), vehicle->MoverParameters->HasDriverCab(), vehicle->MoverParameters->Odometer );
         }
     }
     odometer::save();
@@ -8970,7 +8970,7 @@ vehicle_table::erase_disabled() {
             // the distance the vehicle ran goes in the odometer store now, it doesn't depend on the vehicle being
             // kept on the list until the next save (eu07/maszyna#72)
             if( vehicle->MoverParameters != nullptr ) {
-                odometer::states().record( vehicle->name(), vehicle->MoverParameters->Odometer );
+                odometer::record( odometer::states(), vehicle->name(), vehicle->MoverParameters->HasDriverCab(), vehicle->MoverParameters->Odometer );
             }
             if( vehicle->MyTrack != nullptr
              && true == vehicle->MyTrack->RemoveDynamicObject(vehicle) ) {

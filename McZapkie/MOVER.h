@@ -2566,6 +2566,13 @@ class TMoverParameters
 	{
 		return JointEngineStart ? range_t::consist : range_t::local;
 	}
+	// whether the vehicle has a driver's cab: it has the driver's brake valve (BrakeHandle in the Cntrl. section of the
+	// .fiz), which the wagons and most cars of the units without a cab don't (a few copy the Cntrl. section of the cab
+	// car, as the EN57 s car does). it's the vehicle type's, unlike the cab the scenario puts a driver in
+	bool HasDriverCab() const
+	{
+		return BrakeHandle != TBrakeHandle::NoHandle;
+	}
 	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
 	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
 	// starts on its own (eu07/maszyna#427). the other vehicles with such a button keep ignoring the command

@@ -383,3 +383,54 @@ TEST_CASE("odometer: a test run neither reads nor saves the player's store") {
 	// a save to the file would have cleared it
 	CHECK(states.modified());
 }
+
+TEST_CASE("odometer: the vehicles with a driver's cab are the ones with the driver's brake valve") {
+	// the definitions of the game: a locomotive, cab cars of units, a motor car of a unit without a cab, the wagons
+	struct expected {
+		char const *path;
+		bool cab;
+	};
+	for (auto const &[path, cab] : {expected{"4e_v1/4e", true}, expected{"sm42_v1/6d1", true}, expected{"en57_v1/5bgb", true},
+	                                expected{"21xm_v1/214ma", true}, expected{"impuls_v1/31we-a_pr", true},
+	                                expected{"ed72_v1/6bs-sa", false}, expected{"impuls_v1/31we-b_pr", false},
+	                                expected{"11xa_v2/93a", false}, expected{"bdhpumn_v3/bdhpumn", false},
+	                                expected{"430w_v2/430w", false}}) {
+		CAPTURE(path);
+		test::vehicle vehicle{test::definition::fiz(path)};
+		CHECK(vehicle->HasDriverCab() == cab);
+	}
+	test::vehicle wagon{test::definition::load("wagon")};
+	CHECK_FALSE(wagon->HasDriverCab());
+	test::vehicle locomotive{test::definition::load("wagon").set("Cntrl", "BrakeHandle", "FV4a")};
+	CHECK(locomotive->HasDriverCab());
+}
+
+TEST_CASE("odometer: only the vehicles with a driver's cab are recorded") {
+	odometer::store store;
+	SUBCASE("a wagon which ran doesn't get in") {
+		odometer::record(store, "wagon", false, run(5000.0, 1000.0));
+		CHECK_FALSE(store.find("wagon").has_value());
+		CHECK_FALSE(store.modified());
+	}
+	SUBCASE("a locomotive the AI ran before any cab loaded it gets in with its made up state, still replaceable") {
+		odometer::reading ai;
+		ai.begin(odometer::guessed_state("ET22-100"), odometer::origin::guessed);
+		ai.run(2000.0);
+		odometer::record(store, "ET22-100", true, ai);
+		CHECK(store.find("ET22-100").value() == doctest::Approx(ai.km));
+		CHECK(store.guessed("ET22-100"));
+		CHECK(store.modified());
+	}
+	SUBCASE("the state of a wagon already in the file stays as it was, and is written back") {
+		std::stringstream file{"300 old wagon\n"};
+		store.read(file);
+		odometer::record(store, "old wagon", false, run(300.0, 1000.0));
+		CHECK(store.find("old wagon").value() == 300.0);
+		CHECK_FALSE(store.modified());
+		std::stringstream written;
+		store.write(written);
+		odometer::store read;
+		CHECK(read.read(written) == 1);
+		CHECK(read.find("old wagon").value() == 300.0);
+	}
+}

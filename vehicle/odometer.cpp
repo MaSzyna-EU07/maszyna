@@ -158,6 +158,12 @@ void store::record(std::string const &Vehicle, reading const &Odometer) {
 	m_modified = true;
 }
 
+void record(store &States, std::string const &Vehicle, bool const Drivercab, reading const &Odometer) {
+	if (false == Drivercab)
+		return;
+	States.record(Vehicle, Odometer);
+}
+
 void store::merge(store const &Other) {
 	for (auto const &[name, other] : Other.m_states) {
 		auto const [lookup, added] {m_states.try_emplace(name, other)};

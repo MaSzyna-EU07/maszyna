@@ -84,6 +84,13 @@ private:
 	bool m_modified{false};
 };
 
+// records the state of a vehicle in the store when it's one the store keeps: a vehicle with a driver's cab
+// (TMoverParameters::HasDriverCab()), which can show its odometer on the cab's counter or a python screen. that
+// includes the locomotives and units the AI runs before a player's cab loads them, their made up states stay
+// replaceable by the cab's counter. the wagons, which make most of the AI's trains, aren't recorded; the states the
+// store already holds for any of them stay as they are
+void record(store &States, std::string const &Vehicle, bool Drivercab, reading const &Odometer);
+
 // state kept in the file of the python screens before (<vehicle directory>/kilometry/<name>_przebieg.txt,
 // where the screens dropped the last character of the vehicle name), when it holds a number
 std::optional<double> read_legacy(std::istream &Input);
