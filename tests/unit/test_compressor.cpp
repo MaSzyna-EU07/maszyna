@@ -113,3 +113,93 @@ TEST_CASE("compressor: without a pressure switch the air over the cut-out pressu
 	REQUIRE(vehicle->CompressorFlag); // nothing stops it
 	CHECK(vehicle->CompressedVolume < 8.5 * 0.81); // a fifth of the air let out
 }
+
+TEST_CASE("compressor: an engine stopped before the delay passed counts the whole delay again") {
+	auto vehicle{compressor_vehicle(30.0)};
+	vehicle->Mains = true; // engine started
+	run_compressor(vehicle, 20.0);
+	REQUIRE_FALSE(vehicle->CompressorFlag);
+
+	vehicle->Mains = false; // engine stopped, 10 s short of the delay
+	run_compressor(vehicle, 1.0);
+	vehicle->Mains = true;
+	run_compressor(vehicle, 15.0); // 36 s since the first start, but only 15 s since this one
+	CHECK_FALSE(vehicle->CompressorFlag);
+
+	run_compressor(vehicle, 15.1);
+	CHECK(vehicle->CompressorFlag);
+}
+
+TEST_CASE("compressor: the start delay holds back a compressor switched on by hand too") {
+	auto vehicle{compressor_vehicle(30.0)};
+	vehicle->CompressorStart = start_t::manual;
+	vehicle->CompressorAllow = true; // switch in the cabinet on before the engine start
+	vehicle->Mains = true;
+
+	run_compressor(vehicle, 29.9);
+	CHECK_FALSE(vehicle->CompressorFlag);
+	run_compressor(vehicle, 0.2);
+	CHECK(vehicle->CompressorFlag);
+}
+
+TEST_CASE("compressor: the start delay is read from the brake section") {
+	auto const delay{[](std::string const &Section) {
+		return vehicle{definition::load("wagon").set(Section, "CompressorStartDelay", 30)}->CompressorStartDelay;
+	}};
+	CHECK(delay("Brake") == doctest::Approx(30.0));
+	CHECK(delay("Cntrl") == doctest::Approx(0.0)); // the key isn't taken from the control section
+}
+
+namespace {
+
+// 401Da: the compressor runs from the 110 V of the auxiliary generator driven by the engine, here the converter
+// started with the main circuit, which gets up to voltage the converter start delay after the engine start
+definition generator_vehicle(double const ConverterDelay, double const CompressorDelay) {
+	return definition::load("cab_vehicle")
+	    .set("Param", "PWR", 370)
+	    .set("Light", "Light", "Generator")
+	    .set("Light", "LMaxVoltage", 110)
+	    .set("Brake", "Vv", 0.6)
+	    .set("Brake", "MinCP", 6.5)
+	    .set("Brake", "MaxCP", 8.0)
+	    .set("Brake", "CompressorSpeed", 0.003)
+	    .set("Brake", "CompressorPower", "Converter")
+	    .set("Brake", "CompressorStartDelay", CompressorDelay)
+	    .set("Cntrl", "CompressorStart", "Automatic")
+	    .set("Cntrl", "ConverterStart", "Automatic")
+	    .set("Cntrl", "ConverterStartDelay", ConverterDelay);
+}
+
+} // namespace
+
+TEST_CASE("compressor: fed from the converter it waits for the converter start delay") {
+	vehicle loco{generator_vehicle(30.0, 0.0)};
+	REQUIRE(loco->CompressorPower == 2);
+	REQUIRE(loco->ConverterStartDelay == doctest::Approx(30.0));
+
+	loco.run(1.0); // engine off
+	CHECK_FALSE(loco->Power110vIsAvailable);
+
+	loco->Mains = true; // engine started
+	loco.run(25.0);
+	CHECK_FALSE(loco->Power110vIsAvailable);
+	CHECK_FALSE(loco->CompressorFlag);
+
+	loco.run(10.0);
+	CHECK(loco->Power110vIsAvailable);
+	CHECK(loco->CompressorFlag);
+}
+
+TEST_CASE("compressor: fed from the converter the start delay counts from the converter voltage") {
+	vehicle loco{generator_vehicle(20.0, 10.0)};
+	REQUIRE(loco->CompressorStartDelay == doctest::Approx(10.0));
+
+	loco.run(1.0); // engine off
+	loco->Mains = true; // engine started
+	loco.run(25.0);
+	REQUIRE(loco->Power110vIsAvailable); // the converter is up
+	CHECK_FALSE(loco->CompressorFlag); // but the compressor waits for its own delay as well
+
+	loco.run(10.0);
+	CHECK(loco->CompressorFlag);
+}
