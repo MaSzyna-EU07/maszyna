@@ -543,6 +543,7 @@ private:
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
     bool TableUpdateRoadVelocity( TSpeedPos &Point );
+    double held_road_velocity_beyond( TSpeedPos const &Point ) const;
     bool is_road_velocity_held( TSpeedPos const &Point ) const;
     void TableDropPassedEvent( TSpeedPos &Point ) const;
     // returns most recently calculated distance to potential obstacle ahead

@@ -1443,6 +1443,22 @@ TController::TableDropPassedEvent( TSpeedPos &Point ) const {
     Point.Clear();
 }
 
+// the lowest road speed of the signs past the given one, passed by the head and held until the rear is past them too;
+// -1 if there's none
+double
+TController::held_road_velocity_beyond( TSpeedPos const &Point ) const {
+
+    auto lowest { -1.0 };
+    for( auto const &held : sSpeedTable ) {
+        if( ( held.iFlags & ( spEnabled | spRoadVelHeld ) ) != ( spEnabled | spRoadVelHeld )
+         || held.fDist <= Point.fDist ) {
+            continue;
+        }
+        lowest = min_speed( lowest, held.fVelNext );
+    }
+    return lowest;
+}
+
 // a road speed (W27/W27a) lower than the one in force holds once the head passes the sign, a higher one only once the
 // whole train is past it (a car takes it from the head). the first pass after the head handles the sign as before, the
 // entry is then only held for the rear: returns true for it, so the rest of the table update leaves it out
@@ -1457,8 +1473,12 @@ TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
     }
 
     auto const isrearpast { Point.fDist < -fLength };
-    if( isrearpast
-     || Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
+    if( isrearpast ) {
+        // the rear past it, but not past a sign after it the head has passed too: none of those may be exceeded, so a
+        // lower one (W27a 60 within a train's length after a 120) stays in force
+        VelRoad = min_speed( Point.fVelNext, held_road_velocity_beyond( Point ) );
+    }
+    else if( Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
         VelRoad = Point.fVelNext;
     }
     if( false == TestFlag( Point.iFlags, spRoadVelHeld ) ) {
