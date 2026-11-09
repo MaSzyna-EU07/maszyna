@@ -548,6 +548,9 @@ void ui::map_panel::render_contents()
 	bool const zoom_out = ImGui::Button("-");
 	ImGui::SameLine();
 
+	if (!simulation::Train && mode == MODE_VEHICLE)
+		mode = MODE_MANUAL;
+
 	glm::mat4 transform;
 	transform[0][0] = -1.0f;
 
@@ -555,7 +558,9 @@ void ui::map_panel::render_contents()
 	ImGui::SameLine();
     ImGui::RadioButton(STR_C("Follow camera"), (int *)&mode, 1);
 	ImGui::SameLine();
+	ImGui::BeginDisabled(simulation::Train == nullptr);
     ImGui::RadioButton(STR_C("Follow vehicle"), (int *)&mode, 2);
+	ImGui::EndDisabled();
 	ImGui::SameLine();
 	ImGui::Checkbox(STR_C("Speed limits"), &m_show_speed_limits);
 	if (simulation::Train)

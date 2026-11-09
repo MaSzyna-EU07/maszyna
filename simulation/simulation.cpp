@@ -247,7 +247,8 @@ void state_manager::process_commands() {
                 continue;
             }
 
-            if (!commanddata.freefly)
+            bool const consist_transfer = commanddata.param1 == 1.0;
+            if (!commanddata.freefly && !consist_transfer)
                 // only available in free fly mode
                 continue;
 
@@ -273,6 +274,8 @@ void state_manager::process_commands() {
                 auto const sameconsist{
                     targetvehicle->ctOwner == currentvehicle->Mechanik
                  || targetvehicle->ctOwner == currentvehicle->ctOwner };
+                if (consist_transfer && !sameconsist)
+                    continue;
                 auto const isincharge{ currentvehicle->Mechanik->primary() };
                 auto const aidriveractive{ currentvehicle->Mechanik->AIControllFlag };
                 // TODO: support for primary mode request passed as commanddata.param1

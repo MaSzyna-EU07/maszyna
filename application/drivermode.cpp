@@ -293,6 +293,7 @@ bool driver_mode::update()
 			// fixup camera after vehicle switch
 			CabView();
 		}
+		update_window_title();
 
 		if (simulation::Train != nullptr)
 			TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(simulation::Train->Dynamic());
@@ -513,6 +514,17 @@ void driver_mode::on_key(int const Key, int const Scancode, int const Action, in
 	// give the ui first shot at the input processing...
 	if (!anyModifier && true == m_userinterface->on_key(Key, Action))
 	{
+		return;
+	}
+	if (!FreeFlyModeFlag && simulation::Train && (Mods & GLFW_MOD_SHIFT) &&
+	    Action == GLFW_PRESS && (Key == GLFW_KEY_HOME || Key == GLFW_KEY_END))
+	{
+		m_relay.post(
+			Key == GLFW_KEY_HOME ? user_command::cabchangeforward : user_command::cabchangebackward,
+			1.0,
+			0.0,
+			Action,
+			0);
 		return;
 	}
 	if (Key == GLFW_KEY_F12 && Global.shiftState && Action == GLFW_PRESS)
@@ -1026,32 +1038,95 @@ void driver_mode::OnKeyDown(int cKey)
 	}
 	case GLFW_KEY_F5:
 	{
-		// Shift cycles through the consist; ordinary F5 is only available in free fly.
-		if (!FreeFlyModeFlag && !Global.shiftState)
+		if (Global.shiftState)
+		{
+			if (FreeFlyModeFlag || !simulation::Train)
+				break;
+
+			TDynamicObject *const current = simulation::Train->Dynamic();
+			if (!current)
+				break;
+
+			auto const connected_vehicle = [](TDynamicObject *vehicle, int const side) {
+				if (!vehicle || !vehicle->MoverParameters->Couplers[side].Connected)
+					return static_cast<TDynamicObject *>(nullptr);
+				return vehicle->MoverParameters->Neighbours[side].vehicle;
+			};
+
+			TDynamicObject *endpoint = current;
+			std::vector<TDynamicObject *> walked;
+			walked.push_back(endpoint);
+			while (TDynamicObject *const previous = connected_vehicle(endpoint, end::front))
+			{
+				if (std::find(walked.begin(), walked.end(), previous) != walked.end())
+					break;
+				endpoint = previous;
+				walked.push_back(endpoint);
+			}
+
+			std::vector<TDynamicObject *> consist;
+			TDynamicObject *previous = nullptr;
+			TDynamicObject *vehicle = endpoint;
+			while (vehicle && std::find(consist.begin(), consist.end(), vehicle) == consist.end())
+			{
+				consist.push_back(vehicle);
+				TDynamicObject *next = connected_vehicle(vehicle, end::front);
+				if (next == previous)
+					next = nullptr;
+				if (!next)
+				{
+					next = connected_vehicle(vehicle, end::rear);
+					if (next == previous)
+						next = nullptr;
+				}
+				previous = vehicle;
+				vehicle = next;
+			}
+
+			auto const current_position = std::find(consist.begin(), consist.end(), current);
+			if (current_position == consist.end() || consist.size() < 2)
+				break;
+			auto const next_position = (std::distance(consist.begin(), current_position) + 1) % consist.size();
+			TDynamicObject *const target = consist[static_cast<std::size_t>(next_position)];
+			m_relay.post(user_command::entervehicle, 1.0, simulation::Train->id(), GLFW_PRESS, 0,
+			             target->GetPosition(), &target->name());
+			break;
+		}
+
+		if (simulation::Train)
+		{
+			auto *train = simulation::Train;
+			auto *vehicle = train->Dynamic();
+			if (!FreeFlyModeFlag)
+				InOutKey();
+			else
+				DistantView(true);
+
+			train->Occupied()->CabDeactivisation();
+			train->Occupied()->CabOccupied = 0;
+			train->Occupied()->BrakeLevelSet(train->Occupied()->Handle->GetPos(bh_NP));
+			train->Occupied()->MainCtrlPos = train->Occupied()->MainCtrlNoPowerPos();
+			train->Occupied()->ScndCtrlPos = 0;
+			vehicle->MechInside = false;
+			vehicle->Controller = AIdriver;
+			vehicle->bDisplayCab = false;
+			vehicle->ABuSetModelShake({});
+			if (vehicle->Mechanik)
+				vehicle->Mechanik->TakeControl(true);
+
+			train->pending_delete = true;
+			simulation::Train = nullptr;
+			update_window_title();
+			break;
+		}
+
+		if (!FreeFlyModeFlag)
 			break;
 
-		TDynamicObject *dynamic = nullptr;
-		if (Global.shiftState && simulation::Train)
-		{
-			TDynamicObject *current = simulation::Train->Dynamic();
-			dynamic = current ? current->Next() : nullptr;
-			if (!dynamic && current)
-			{
-				dynamic = current->Prev();
-				while (dynamic && dynamic->Prev())
-					dynamic = dynamic->Prev();
-			}
-		}
-		else
-		{
-			dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
-		}
+		TDynamicObject *dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
 
 		if (dynamic)
 		{
-			if (Global.shiftState && !FreeFlyModeFlag)
-				InOutKey();
-
 			m_relay.post(user_command::entervehicle, Global.ctrlState ? GLFW_MOD_CONTROL : 0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(),
 			             &dynamic->name());
 
@@ -1361,8 +1436,17 @@ void driver_mode::InOutKey()
 		vehicle->bDisplayCab = true;
 		CabView(); // na pozycję mecha
 	}
-	// update window title to reflect the situation
-	Application.set_title(Global.AppName + " (" + (train != nullptr ? train->Occupied()->Name : "") + " @ " + Global.SceneryFile + ")");
+	update_window_title();
+}
+
+void driver_mode::update_window_title()
+{
+	auto const title{Global.AppName + " (" + Global.SceneryFile + (simulation::Train != nullptr ? " " + simulation::Train->Dynamic()->name() : "") + ")"};
+	if (title != m_window_title)
+	{
+		Application.set_title(title);
+		m_window_title = title;
+	}
 }
 
 void driver_mode::set_picking(bool const Picking)
