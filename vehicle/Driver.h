@@ -144,7 +144,8 @@ enum TSpeedPosFlag
     spSemaphor = 0x4000, // semafor pociągowy
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000 // odcinek z ograniczeniem i podaną jego długościa
+    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
+    spRoadVelHeld = 0x100000 // a road speed sign passed by the head, handled, kept until the rear is past it
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -542,6 +543,8 @@ private:
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
     bool TableUpdateRoadVelocity( TSpeedPos &Point );
+    bool is_road_velocity_held( TSpeedPos const &Point ) const;
+    void TableDropPassedEvent( TSpeedPos &Point ) const;
     // returns most recently calculated distance to potential obstacle ahead
     double TrackObstacle() const;
     void TablePurger();

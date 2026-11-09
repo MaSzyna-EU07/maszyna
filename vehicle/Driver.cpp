@@ -1422,17 +1422,36 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     return false; //
 }
 
+// a road speed sign (W27/W27a) passed by the head stays in the table until the rear is past it too. not for cars: their
+// passed events leave the table at the latest when the rear passes them (TableCheck), before the table update sees that
+bool
+TController::is_road_velocity_held( TSpeedPos const &Point ) const {
+
+    return TestFlag( Point.iFlags, spRoadVel )
+        && mvOccupied->CategoryFlag != 2
+        && Point.fDist >= -fLength;
+}
+
+// a passed event is handled once and then dropped from the table, except a road speed sign held for the rear
+void
+TController::TableDropPassedEvent( TSpeedPos &Point ) const {
+
+    if( is_road_velocity_held( Point ) ) {
+        Point.iFlags |= spRoadVelHeld;
+        return;
+    }
+    Point.Clear();
+}
+
 // a road speed (W27/W27a) lower than the one in force holds once the head passes the sign, a higher one only once the
-// whole train is past it. returns true while the sign is passed by the head but is kept for the rear: it is then left
-// out of the rest of the table update, which would drop it from the table
+// whole train is past it (a car takes it from the head). the first pass after the head handles the sign as before, the
+// entry is then only held for the rear: returns true for it, so the rest of the table update leaves it out
 bool
 TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
 
     if( Point.fDist >= 0.0 ) { return false; }
 
-    if( is_car() ) {
-        // a car's passed events leave the table at the latest when its rear passes them (TableCheck),
-        // before this could see that, so a car keeps taking the road speed from the head
+    if( mvOccupied->CategoryFlag == 2 ) {
         VelRoad = Point.fVelNext;
         return false;
     }
@@ -1442,7 +1461,13 @@ TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
      || Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
         VelRoad = Point.fVelNext;
     }
-    return false == isrearpast;
+    if( false == TestFlag( Point.iFlags, spRoadVelHeld ) ) {
+        return false;
+    }
+    if( isrearpast ) {
+        Point.Clear();
+    }
+    return true;
 }
 
 bool
@@ -1740,20 +1765,18 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 						// jeśli przejechany
 						VelSignal = Velocity == 0.0 ? 0.0 : -1.0;
 						// ustawienie, gdy przejechany jest lepsze niż wcale, ale to jeszcze nie to
-						if (Point.iFlags & spEvent && (Point.evEvent != eSignSkip || Point.fVelNext != VelRestricted)
-						 && false == TestFlag(Point.iFlags, spRoadVel))
+						if (Point.iFlags & spEvent && (Point.evEvent != eSignSkip || Point.fVelNext != VelRestricted))
 						{
 							// jeśli event
 							// ale inny niż ten, na którym minięto S1, chyba że się już zmieniło
 							// sygnał zezwalający na jazdę wyłącza jazdę na widoczność (po S1 na SBL)
-							// a road speed sign (W27) is no signal and doesn't end it
 							iDrivigFlags &= ~moveVisibility;
 							// remove restricted speed
 							VelRestricted = -1.0;
 						}
 						// jeśli nie jest ograniczeniem prędkości to można usunąć
 						// (nie mogą być usuwane w skanowaniu)
-						Point.Clear();
+						TableDropPassedEvent( Point );
 					}
 				}
 				else if (Point.evEvent->is_command())
