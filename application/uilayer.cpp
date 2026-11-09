@@ -288,6 +288,11 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	if (Global.test.enabled)
+	{
+		// a test leaves the player's window layout alone (imgui.ini in the game folder), runs in parallel included
+		m_imguiio->IniFilename = nullptr;
+	}
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = ImGuiKey_None;
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = ImGuiKey_None;
 	// imgui.ini is read with the first frame, which may be of another mode than the editor
@@ -395,14 +400,23 @@ bool ui_layer::init(GLFWwindow *Window)
 	  }
 
 	// panels can be docked together, and dragged out of the simulator window into windows of their own (e.g. on another monitor)
-	// when both backends can do it. glfw can't place windows under wayland. both flags have to be set before the first frame
+	// when both backends can do it. glfw can't place windows under wayland. gamescope does not work well with popup windows.
+	// both flags have to be set before the first frame
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
+	const char* gamepadui = std::getenv("SteamGamepadUI");
+	if (!desktop) desktop = "";
+	if (!gamepadui) gamepadui = "";
 	auto const viewportsupport{(m_imguiio->BackendFlags & ImGuiBackendFlags_PlatformHasViewports) && (m_imguiio->BackendFlags & ImGuiBackendFlags_RendererHasViewports) &&
-	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND};
+	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND && std::string_view{desktop} != "gamescope" && std::string_view{gamepadui} != "1"};
+	// a tooltip as long as a paragraph is wrapped: in one line it can run past the screen
+	m_imguiio->ConfigTooltipsWrapWidth = std::round(Global.ui_fontsize * 40.0f);
 	if (Global.ui_viewports && viewportsupport)
 	{
 		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 		m_imguiio->ConfigViewportsNoTaskBarIcon = true;
+		// only dragging a panel with the cursor past the main window takes it out, not resizing it or placing it at the edge
+		m_imguiio->ConfigViewportsNoAutoDetach = true;
 		auto &platformio{ImGui::GetPlatformIO()};
 		imgui_create_window = platformio.Platform_CreateWindow;
 		platformio.Platform_CreateWindow = create_viewport_window;
@@ -567,7 +581,7 @@ void ui_layer::render_hierarchy(){
 	// fitted to the contents when it first appears; no auto resize, which a docked window can't do
 	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
 	ImGui::Begin((std::string(STR_C("Scene Hierarchy")) + "###scenehierarchy").c_str(), &m_editor_hierarchy);
-	ImGui::Text("Registered nodes: %zu", scene::Hierarchy.size());
+	ImGui::Text(STR_C("Registered nodes: %zu"), scene::Hierarchy.size());
     ImGui::BeginChild("hierarchy_list", ImVec2(500, 300), true);
 
 	for (auto &entry : scene::Hierarchy)
@@ -598,7 +612,7 @@ void ui_layer::render_hierarchy(){
 
                 if (ImGui::IsItemHovered())
                 {
-                    ImGui::SetTooltip("UUID: %s\nNode type: %s", uuid.c_str(), typeid(*node).name());
+                    ImGui::SetTooltip(STR_C("UUID: %s\nNode type: %s"), uuid.c_str(), typeid(*node).name());
                 }
             }
         }
@@ -708,14 +722,14 @@ void ui_layer::render_menu_contents()
 			GfxRenderer->Debug_Ui_State(ret);
 		}
 		if(EditorModeFlag){
-			ImGui::MenuItem("Hierarchy", nullptr, &m_editor_hierarchy);
+			ImGui::MenuItem(STR_C("Scene Hierarchy"), nullptr, &m_editor_hierarchy);
 			bool change_history_enabled = editor_mode::change_history();
-			if (ImGui::MenuItem("Change History", nullptr, &change_history_enabled))
+			if (ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
 			{
 				editor_mode::set_change_history(change_history_enabled);
 			}
 			bool settings_open = editor_mode::settings_open();
-			if (ImGui::MenuItem("Editor Settings", nullptr, &settings_open))
+			if (ImGui::MenuItem(STR_C("Editor Settings"), nullptr, &settings_open))
 			{
 				editor_mode::set_settings_open(settings_open);
 			}

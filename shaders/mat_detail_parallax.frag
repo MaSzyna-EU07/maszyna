@@ -49,7 +49,8 @@ void main()
 	vec4 detailnormal_map = texture(detailnormalmap, f_coord_p * param[2].x);
 	vec4 tex_color = texture(diffuse, f_coord_p);
 
-	bool alphatestfail = ( opacity >= 0.0 ? (tex_color.a < opacity) : (tex_color.a >= -opacity) );
+	float alphacoverage = alpha_coverage(tex_color.a);
+	bool alphatestfail = alpha_test_fail(tex_color.a, alphacoverage);
 	if(alphatestfail)
 		discard;
 //	if (tex_color.a < opacity)
@@ -72,7 +73,7 @@ void main()
 	
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);
 
-	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);
+	vec4 color = vec4(apply_fog(fragcolor), alphacoverage * alpha_mult);
 #if POSTFX_ENABLED
 	out_color = color;
 #else

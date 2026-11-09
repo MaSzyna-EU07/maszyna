@@ -6,20 +6,28 @@
 
 set(UNIT_TESTS_NAME eu07_unit_tests)
 
-# a new test_*.cpp file or data/*.json definition is picked up on its own
+# a new test_*.cpp file or file in data/ (definitions, real vehicles, golden traces) is picked up on its own
 file(GLOB UNIT_TEST_CASES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
-file(GLOB UNIT_TEST_DATA CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/*.json")
+file(GLOB_RECURSE UNIT_TEST_DATA CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/*")
 
 add_executable(${UNIT_TESTS_NAME}
 	main.cpp
 	vehicle.cpp
+	fiz.cpp
+	drive.cpp
+	consist.cpp
+	scenario.cpp
+	golden.cpp
+	invariants.cpp
+	figures.cpp
 	engine_stubs.cpp
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
 target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_core)
 target_include_directories(${UNIT_TESTS_NAME} PRIVATE "${DEPS_DIR}/doctest")
-target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+# the names the tests CAPTURE are often C strings, shown as text rather than pointers
+target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data" DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING)
 if (MSVC)
 	target_compile_options(${UNIT_TESTS_NAME} PRIVATE /bigobj)
 endif()

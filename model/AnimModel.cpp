@@ -506,6 +506,8 @@ bool anim_type_shared_by_instances( TAnimType a ) {
 // instanced path (one shared submodel tree across all instances) cannot serve.
 bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( Sub == nullptr ) { return false; }
+    // a text display shows the text of its instance, a tree shared by all instances can't do that
+    if( Sub->eType == TP_TEXT ) { return true; }
     if( anim_type_unsafe_for_instancing( Sub->b_Anim ) ) { return true; }
     if( ( ( Sub->iFlags & 0x4000 ) != 0 ) && ( false == anim_type_shared_by_instances( Sub->b_Anim ) ) ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Child ) ) { return true; }
@@ -515,6 +517,7 @@ bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
 } // anonymous namespace
 
 int TAnimModel::s_instanceable_total = 0;
+unsigned int TAnimModel::s_instanceable_revoked = 0;
 int TAnimModel::s_classified_total = 0;
 int TAnimModel::s_rejected_no_pmodel = 0;
 int TAnimModel::s_rejected_lights = 0;
@@ -552,6 +555,7 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		m_animlist.push_back(tmp);
 		// containers are added by events after the instance was loaded and bucketed;
 		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
+		if( m_instanceable ) { ++s_instanceable_revoked; }
 		m_instanceable = false;
 		return tmp;
     }
@@ -781,6 +785,7 @@ void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
 
     m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
     // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
+    if( m_instanceable ) { ++s_instanceable_revoked; }
     m_instanceable = false;
 }
 

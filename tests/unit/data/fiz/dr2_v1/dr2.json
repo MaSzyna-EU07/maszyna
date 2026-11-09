@@ -1,0 +1,13 @@
+{
+  "_source": "pkp/dr2_v1/dr2.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "300", "Vmax": "40", "PWR": "6"},
+  "Dimensions": {"L": "1.65", "H": "0.79", "W": "1.47", "Cx": "0.058"},
+  "Load": {"MaxLoad": "3", "LoadQ": "pieces", "LoadAccepted": "Passengers", "LoadSpeed": "0.5", "UnLoadSpeed": "0.5"},
+  "Wheels": {"D": "0.4", "AIM": "4.8", "Tw": "1.435", "Axle": "1'A", "Bd": "0.86", "Rmin": "20", "BearingType": "Slide"},
+  "BuffCoupl": {"CType": "None"},
+  "Brake": {"BrakeType": "Individual", "MBF": "0.2"},
+  "Cntrl": {"BrakeSystem": "Individual", "LocalBrake": "ManualBrake", "MCPN": "1", "SCDelay": "0.2", "rows": []},
+  "Power": {"EnginePower": "Internal", "PowerType": "BioPower"},
+  "Engine": {"EngineType": "WheelsDriven", "Trans": "9:2", "Ftmax": "1200"}
+}

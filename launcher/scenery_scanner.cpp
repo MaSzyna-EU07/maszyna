@@ -2,6 +2,8 @@
 #include "scenery_scanner.h"
 #include "utilities/Logs.h"
 
+#include <system_error>
+
 scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
     : bank(bank)
 {
@@ -10,13 +12,22 @@ scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
 
 void scenery_scanner::scan()
 {
-	for (auto &f : std::filesystem::directory_iterator("scenery")) {
-		std::filesystem::path path(std::filesystem::relative(f.path(), "scenery/"));
+	std::error_code error;
+	for (std::filesystem::directory_iterator f{"scenery", std::filesystem::directory_options::skip_permission_denied, error}, end; f != end; f.increment(error)) {
+		std::filesystem::path path(std::filesystem::relative(f->path(), "scenery/", error));
+		std::string name;
+		try {
+			name = path.string();
+		}
+		catch (std::system_error const &) {
+			// a name outside of the code page, which the path can't give as a string on Windows
+			continue;
+		}
 
-		if (*path.filename().string().begin() == '$')
+		if (name.empty() || path.filename().string().front() == '$')
 			continue;
 
-		if (path.string().ends_with(".scn"))
+		if (name.ends_with(".scn"))
 			scan_scn(path);
 	}
 

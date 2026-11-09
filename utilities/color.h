@@ -15,9 +15,9 @@ glm::vec3
 XYZtoRGB( glm::vec3 const &XYZ ) {
 
     // M^-1 for Adobe RGB from http://www.brucelindbloom.com/Eqn_RGB_XYZ_Matrix.html
-    float const mi[ 3 ][ 3 ] = { 2.041369f, -0.969266f, 0.0134474f, -0.5649464f, 1.8760108f, -0.1183897f, -0.3446944f, 0.041556f, 1.0154096f };
+//    float const mi[ 3 ][ 3 ] = { 2.041369f, -0.969266f, 0.0134474f, -0.5649464f, 1.8760108f, -0.1183897f, -0.3446944f, 0.041556f, 1.0154096f };
     // m^-1 for sRGB:
-//    float const mi[ 3 ][ 3 ] = { 3.240479f, -0.969256f, 0.055648f, -1.53715f, 1.875991f, -0.204043f, -0.49853f, 0.041556f, 1.057311f };
+    float const mi[ 3 ][ 3 ] = { 3.240479f, -0.969256f, 0.055648f, -1.53715f, 1.875991f, -0.204043f, -0.49853f, 0.041556f, 1.057311f };
 
     return glm::vec3{
         XYZ.x*mi[ 0 ][ 0 ] + XYZ.y*mi[ 1 ][ 0 ] + XYZ.z*mi[ 2 ][ 0 ],

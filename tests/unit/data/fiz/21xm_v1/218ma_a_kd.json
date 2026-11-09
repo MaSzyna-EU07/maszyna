@@ -1,0 +1,84 @@
+{
+  "_source": "pkp/21xm_v1/218ma_a_kd.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "38500", "Vmax": "120", "PWR": "360", "SandCap": "100", "Type": "dmu"},
+  "Load": {"MaxLoad": "50", "OverLoadFactor": "2.2", "LoadQ": "pieces", "LoadAccepted": "passengers", "LoadSpeed": "0.5", "UnLoadSpeed": "0.7"},
+  "Dimensions": {"L": "20.75", "H": "4.2", "W": "2.9", "Cx": "0.10"},
+  "Wheels": {"D": "0.84", "Tw": "1.435", "AIM": "300", "Axle": "B'1'", "Ad": "2", "Bd": "17.23", "Rmin": "75", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "EStED", "Size": "150", "NBpA": "4", "MBF": "2.74", "MaxBP": "2.9", "LocMaxBP": "3.8", "RV": "-1", "RM": "0.77", "BCN": "6", "BCR": "0.127", "BCD": "0.1", "BCM": "2.15", "HiPP": "5", "LoPP": "3.5", "Vv": "0.125", "MinCP": "7.0", "MaxCP": "8.0", "CompressorSpeed": "0.015", "CompressorPower": "Main", "BCS": "0.5", "BSA": "0", "BM": "Cosid", "BVV": "88", "BRE": "0.97", "TareMaxBP": "2.2", "LPOn": "3.0", "LPOff": "4.5", "UBB1": "2", "UBB2": "8"},
+  "SpringBrake": {"Volume": "15", "MBF": "4.35", "MaxSP": "5.5", "ResetP": "4.0", "MinFP": "3.5", "PressOff": "4.5", "PressOn": "0.5", "ValveOnArea": "0.0005", "ValveOffArea": "0.0005", "ValvePNBArea": "0.002", "MTC": "4"},
+  "Doors": {"OpenCtrl": "Mixed", "CloseCtrl": "DriverCtrl", "OpenSpeed": "0.25", "CloseSpeed": "0.19", "DoorCloseDelay": "0.1", "DoorMaxShiftL": "0.78", "DoorMaxShiftR": "0.78", "DoorOpenMethod": "Plug", "DoorClosureWarning": "No", "DoorBlocked": "Yes", "DoorMaxShiftPlug": "0.04", "MirrorMaxShift": "75", "DoorStayOpen": "10", "DoorNeedPermit": "Yes", "DoorPermitList": "1|0|2|3", "DoorPermitListDefault": "2", "DoorAutoCloseRemote": "No"},
+  "BuffCoupl1": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "39"},
+  "BuffCoupl2": {"CType": "Articulated", "AllowedFlag": "-55"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "BCPN": "3", "BDelay1": "15", "BDelay2": "4", "BDelay3": "35", "BDelay4": "25", "ASB": "Yes", "LocalBrake": "PneumaticBrake", "ManualBrake": "No", "MCPN": "5", "SCPN": "5", "AutoRelay": "Yes", "IniCDelay": "1.0", "SCDelay": "0.3", "BrakeDelays": "PR", "MaxBPMass": "55", "BrakeHandle": "MHZ_K5P", "LocBrakeHandle": "FD1", "WaterStart": "Battery", "OilStart": "Automatic", "FuelStart": "Automatic", "ConverterStart": "Automatic", "ConverterStartDelay": "4", "BrakeOpModes": "PN", "EIMCtrlType": "3", "DirChangeMaxPos": "4", "SBD": "0.47", "AutomaticCabActivation": "No", "InactiveCabFlag": "27", "CompartmentLightsStart": "Manual", "rows": [
+    ["-1","0.6","-1","20","Pneumatic"],
+    ["0","0.5","-1","2","Pneumatic"],
+    ["1","0.46","-1","2","Pneumatic"],
+    ["2","0.42","-1","2","Pneumatic"],
+    ["3","0.38","-1","2","Pneumatic"],
+    ["4","0.34","-1","2","Pneumatic"],
+    ["5","0.29","-1","2","Pneumatic"],
+    ["6","0","-1","40","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "2.4", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "2.1", "RadioStop": "Yes", "CabDependent": "Yes"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "28", "LMaxCurrent": "500"},
+  "Engine": {"EngineType": "DieselEngine", "Trans": "50:129", "TransEff": "0.95", "nmin": "800", "nmax": "1800", "nmax_cutoff": "1850", "nreg_acc": "150", "AIM": "30", "EUS": "102.5", "EDS": "102.0", "IsTC": "Yes", "TC_TMMax": "1.82", "TC_CP": "0.85", "TC_LT": "2500", "TC_LR": "1", "TC_ULR": "1", "TC_FRI": "1", "TC_FRD": "2", "TC_TII": "2.93", "TC_TIO": "0", "TC_TOO": "-1.65", "TC_LS": "22", "TC_ULS": "40", "IsRetarder": "Yes", "R_Place": "1", "R_TII": "5.0", "R_MT": "1500", "R_MP": "250", "R_FRI": "1", "R_FRD": "1", "R_MinVel": "1", "WaterMaxTemperature": "105", "WaterCoolingTemperature": "95", "WaterFlowTemperature": "75", "WaterAuxCircuit": "No", "WaterCoolingFanSpeed": "-100", "NominalCoolingPower": "300"},
+  "Clima": {"HMaxVoltage": "3000", "Heating": "Generator", "HGeneratorEngine": "Main", "HGeneratorMinRPM": "696", "HGeneratorMinVoltage": "2400", "HGeneratorMaxRPM": "1500", "HGeneratorMaxVoltage": "3300"},
+  "SpeedControl": {"SpeedCtrl": "Yes", "SpeedButtons": "0|30|40|50|60|70|80|90|100|120", "OverrideManual": "Yes", "InitPwr": "0.3", "MaxPwrVel": "5", "StartVel": "2", "VelStep": "5", "PwrStep": "0.1", "MinPwr": "0.3", "MaxPwr": "1.0", "MinVel": "0", "MaxVel": "120", "Offset": "-0.5", "kPpos": "0.1", "kPneg": "0.4", "kIpos": "0.06", "kIneg": "0.06", "BrakeIntervention": "Yes", "PowerUpSpeed": "0.17", "PowerDownSpeed": "0.17"},
+  "TurboPos": {"TurboPos": "1"},
+  "MotorParamTable": {"minVelfullengage": "3.0", "engageDia": "1", "engageMaxForce": "2300", "engagefriction": "1", "rows": []},
+  "MotorParamTable0": {"minVelfullengage": "3.0", "engageDia": "1", "engageMaxForce": "2300", "engagefriction": "1", "rows": [
+    ["0","0","0","0","-1","-1","0","1"],
+    ["1","2.81","-1","-1","31.3","33.7","0.17","1"],
+    ["2","1.84","17.4","29.9","47.9","51.5","0.11","1"],
+    ["3","1.36","26.6","45.0","64.8","69.7","0","1"],
+    ["4","1.00","61.1","61.1","84.2","90.8","0","1"],
+    ["5","0.80","80.2","80.2","200","200","0","1"]
+  ]},
+  "DList": {"Size": "5", "Mmax": "2450", "nMmax": "21.7", "nmax": "30", "Mnmax": "2160", "nominalfill": "1.0", "Mstand": "250.0", "NomFuelConsRate": "220", "rows": [
+    ["0","0.15","0"],
+    ["1","0.20","2"],
+    ["2","0.40","2"],
+    ["3","0.60","2"],
+    ["4","0.80","2"],
+    ["5","1.00","2"]
+  ]},
+  "DMList": {"rows": [
+    ["0","0"],
+    ["80","637"],
+    ["400","796"],
+    ["800","1592"],
+    ["1050","2090"],
+    ["1300","2200"],
+    ["1550","2032"],
+    ["1800","1910"],
+    ["2000","1547"]
+  ]},
+  "V2NList": {"rows": [
+    ["0","1200"],
+    ["40","1800"],
+    ["120","1800"]
+  ]},
+  "UCList": {"Size": "5", "IntegratedBrakePN": "Yes", "IntegratedBrake": "Yes", "rows": [
+    ["0","3","0","0","0","0.15","0.15","0","1","0"],
+    ["1","2","0","0","0","0.15","0.15","1","3","0"],
+    ["2","1","-1","0","-1","0.15","0.15","3","3","1"],
+    ["3","1","-1","1","0","0.00","0.15","3","4","1"],
+    ["4","0","-1","1","0","0.15","0.00","4","5","3"],
+    ["5","0","0","1","1","0.15","0.15","4","5","3"]
+  ]},
+  "LightsList": {"Size": "5", "Wrap": "no", "Default": "1", "rows": [
+    ["0","0"],
+    ["21","34"],
+    ["22","34"],
+    ["34","34"],
+    ["16","1"]
+  ]},
+  "WiperList": {"Size": "5", "Angle": "75", "Default": "1", "rows": [
+    ["3","0.5","0.5","0.0"],
+    ["0","0.8","0.0","0.5"],
+    ["3","0.8","6.0","0.5"],
+    ["3","0.8","3.0","0.0"],
+    ["3","0.8","1.0","0.0"]
+  ]}
+}

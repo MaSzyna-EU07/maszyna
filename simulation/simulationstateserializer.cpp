@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationsounds.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
 #include "scene/sceneterrain.h"
@@ -36,6 +37,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "editor/editorTerrainStreamer.hpp"
 
+#include <format>
 
 namespace simulation {
 
@@ -362,6 +364,10 @@ state_serializer::deserialize_config( cParser &Input, scene::scratch_data &Scrat
 
     // config parameters (re)definition
     Global.ConfigParse( Input );
+    if( Global.test.enabled ) {
+        // a scenery doesn't get to turn on what a test keeps off
+        simulation::apply_test_mode_settings();
+    }
 }
 
 void
@@ -542,7 +548,14 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     }
     else if( nodedata.type == "track" ) {
 
-        auto *path { deserialize_path( Input, Scratchpad, nodedata ) };
+        std::unique_ptr<TTrack> made { deserialize_path( Input, Scratchpad, nodedata ) };
+        if( made->eType == tt_Unknown ) {
+            // with no path made it can't be joined nor drawn, and nothing could run on it: it goes with its holder
+            ErrorLog( std::format( "Bad scenario: track \"{}\" of an unknown type defined in file \"{}\" (line {}) left out", made->name(), Input.Name(), inputline ) );
+            return;
+        }
+        // from here on the scene owns it
+        auto *path { made.release() };
         // duplicates of named tracks are currently experimentally allowed
         if( false == simulation::Paths.insert( path ) ) {
             ErrorLog( "Bad scenario: duplicate track name \"" + path->name() + "\" defined in file \"" + Input.Name() + "\" (line " + std::to_string( inputline ) + ")" );

@@ -158,6 +158,9 @@ commanddescription_sequence Commands_descriptions = {
     {"radiovolumeincrease", command_target::vehicle, command_mode::oneoff},
     {"radiovolumedecrease", command_target::vehicle, command_mode::oneoff},
     {"radiovolumeset", command_target::vehicle, command_mode::oneoff},
+    {"radiofusetoggle", command_target::vehicle, command_mode::oneoff},
+    {"radiofuseenable", command_target::vehicle, command_mode::oneoff},
+    {"radiofusedisable", command_target::vehicle, command_mode::oneoff},
     {"cabchangeforward", command_target::vehicle, command_mode::oneoff},
     {"cabchangebackward", command_target::vehicle, command_mode::oneoff},
     {"modernlightdimmerdecrease", command_target::vehicle, command_mode::oneoff},
@@ -405,6 +408,13 @@ commanddescription_sequence Commands_descriptions = {
     {"wiperswitchincrease", command_target::vehicle, command_mode::oneoff},
     {"wiperswitchdecrease", command_target::vehicle, command_mode::oneoff},
     {"lightsset", command_target::vehicle, command_mode::oneoff},
+    {"oilfuelpumptoggle", command_target::vehicle, command_mode::oneoff},
+    {"linebreakertoggleb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakeropenb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakercloseb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakertogglec", command_target::vehicle, command_mode::oneoff},
+    {"linebreakeropenc", command_target::vehicle, command_mode::oneoff},
+    {"linebreakerclosec", command_target::vehicle, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -543,6 +553,9 @@ std::unordered_map<std::string, user_command> const commandMap = {
 	{"radiovolumeincrease", user_command::radiovolumeincrease},
 	{"radiovolumedecrease", user_command::radiovolumedecrease},
 	{"radiovolumeset", user_command::radiovolumeset},
+	{"radiofusetoggle", user_command::radiofusetoggle},
+	{"radiofuseenable", user_command::radiofuseenable},
+	{"radiofusedisable", user_command::radiofusedisable},
 	{"cabchangeforward", user_command::cabchangeforward},
 	{"cabchangebackward", user_command::cabchangebackward},
 	{"viewturn", user_command::viewturn},
@@ -789,6 +802,13 @@ std::unordered_map<std::string, user_command> const commandMap = {
 	{"wiperswitchincrease", user_command::wiperswitchincrease},
 	{"wiperswitchdecrease", user_command::wiperswitchdecrease},
     {"lightsset", user_command::lightsset},
+    {"oilfuelpumptoggle", user_command::oilfuelpumptoggle},
+    {"linebreakertoggleb", user_command::linebreakertoggleb},
+    {"linebreakeropenb", user_command::linebreakeropenb},
+    {"linebreakercloseb", user_command::linebreakercloseb},
+    {"linebreakertogglec", user_command::linebreakertogglec},
+    {"linebreakeropenc", user_command::linebreakeropenc},
+    {"linebreakerclosec", user_command::linebreakerclosec},
 	{"none", user_command::none}};
 
 } // namespace simulation

@@ -1,0 +1,48 @@
+{
+  "_source": "pkp/sm40_v1/sm40.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "62000", "Mred": "10000", "Vmax": "80", "PWR": "1175", "SandCap": "400"},
+  "Dimensions": {"L": "11.30", "H": "4.44", "W": "3.05", "Cx": "0.3"},
+  "Wheels": {"D": "1.04", "AIM": "4000", "Tw": "1.435", "Axle": "Bo'Bo'", "Ad": "1.75", "Bd": "10.3", "Rmin": "100"},
+  "Brake": {"BrakeValve": "K", "NBpA": "4", "MBF": "85.0", "MaxBP": "4.0", "LocMaxBP": "5.0", "BCN": "4", "BCR": "0.236", "BCD": "0.1", "BCM": "6.54", "HiPP": "5", "LoPP": "3.5", "Vv": "0.50", "MinCP": "7.0", "MaxCP": "8.0", "CompressorSpeed": "0.0208", "CompressorPower": "Main", "BCS": "0.8", "BSA": "0", "BM": "P10-Bg", "BVV": "127", "BRE": "0.75"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "850", "beta": "0.5", "AllowedFlag": "39"},
+  "Cntrl": {"ControlType": "sm40", "BrakeSystem": "Pneumatic", "BCPN": "4", "BDelay1": "15", "BDelay2": "4", "BDelay3": "35", "BDelay4": "25", "ASB": "0", "LocalBrake": "PneumaticBrake", "ManualBrake": "Yes", "MCPN": "20", "SCPN": "1", "AutoRelay": "Yes", "IniCDelay": "0.4", "SCDelay": "0.4", "BrakeDelays": "GP", "BrakeHandle": "Knorr", "LocBrakeHandle": "Knorr", "ConverterStart": "Automatic", "rows": [
+    ["-1","0.90","0","15","Pneumatic"],
+    ["0","0.50","0","9","Pneumatic"],
+    ["1","-1","-1","0","Pneumatic"],
+    ["2","-1","-1","5","Pneumatic"],
+    ["3","0.001","-1","9","Pneumatic"],
+    ["4","0.00","-1","15","Pneumatic"]
+  ]},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "100"},
+  "Engine": {"EngineType": "DieselElectric", "Trans": "17:77", "Ftmax": "184500", "Flat": "1", "Vhyp": "5.5", "Vadd": "5.5", "Cr": "1.0", "RelayType": "41"},
+  "Clima": {"Heating": "PowerCable", "HPowerTrans": "ElectricPower", "HMaxVoltage": "3000"},
+  "MotorParamTable": {"rows": [
+    ["0","5.84","137","300","91","25","0"],
+    ["1","3.32","191","400","230","0","2700"]
+  ]},
+  "Circuit": {"CircuitRes": "0.01", "ImaxLo": "3350", "ImaxHi": "3350", "IminLo": "400", "IminHi": "400"},
+  "WWList": {"Size": "20", "rows": [
+    ["470","0","0","0"],
+    ["900","0","0","0"],
+    ["900","0","0","0"],
+    ["800","75","360","2600"],
+    ["800","100","405","2600"],
+    ["800","125","450","2600"],
+    ["800","145","450","2600"],
+    ["845","180","495","2600"],
+    ["890","230","540","2600"],
+    ["930","270","585","2600"],
+    ["970","315","630","2600"],
+    ["1005","355","675","2600"],
+    ["1100","360","410","2600"],
+    ["1100","365","285","2600"],
+    ["1100","370","405","2600"],
+    ["1100","375","440","2600"],
+    ["1100","380","468","2600"],
+    ["1100","385","490","2600"],
+    ["1100","390","502","2600"],
+    ["1100","400","512","2600"],
+    ["1100","412","540","2600"]
+  ]}
+}

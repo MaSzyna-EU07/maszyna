@@ -352,6 +352,7 @@ void
 basic_cell::insert( TAnimModel *Instance ) {
 
     m_active = true;
+    m_instancecache.boundsversion = 0; // the renderer builds it anew
 
     auto const flags = Instance->Flags();
     auto alpha =
@@ -453,6 +454,8 @@ basic_cell::unregister_end( TTrack *Path ) {
 // removes provided model instance from the cell
 void
 basic_cell::erase( TAnimModel *Instance ) {
+
+    m_instancecache.boundsversion = 0; // the renderer builds it anew
 
     auto const flags = Instance->Flags();
     auto alpha =

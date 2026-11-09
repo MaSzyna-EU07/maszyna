@@ -68,15 +68,15 @@ world_environment::compute_weather() const {
 	                 Global.AirTemperature > 1 ? "rain:" :
 	                                             "snow:";
 
-    Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
+    Global.fTurbidity = Global.Overcast <= 0.10 ? 4 :
 	                    Global.Overcast <= 0.20 ? 4 :
 	                    Global.Overcast <= 0.30 ? 5 :
 	                    Global.Overcast <= 0.40 ? 5 :
-	                    Global.Overcast <= 0.50 ? 5 :
-	                    Global.Overcast <= 0.60 ? 5 :
-	                    Global.Overcast <= 0.70 ? 6 :
-	                    Global.Overcast <= 0.80 ? 7 :
-	                    Global.Overcast <= 0.90 ? 8 :
+	                    Global.Overcast <= 0.50 ? 6 :
+	                    Global.Overcast <= 0.60 ? 6 :
+	                    Global.Overcast <= 0.70 ? 7 :
+	                    Global.Overcast <= 0.80 ? 8 :
+	                    Global.Overcast <= 0.90 ? 9 :
 	                                              9;
 }
 
@@ -167,9 +167,8 @@ world_environment::update() {
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
     auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
-    keylightcolor = keylightcolor * diffuselevel;
-    Global.DayLight.diffuse = glm::vec4( keylightcolor, Global.DayLight.diffuse.a );
-    Global.DayLight.specular = glm::vec4( keylightcolor * 0.85f, diffuselevel );
+    Global.DayLight.diffuse = glm::vec4( keylightcolor * diffuselevel, Global.DayLight.diffuse.a );
+    Global.DayLight.specular = glm::vec4( keylightcolor * diffuselevel * 0.85f, diffuselevel );
 
     // tonal impact of skydome color is inversely proportional to how high the sun is above the horizon
     // (this is pure conjecture, aimed more to 'look right' than be accurate)

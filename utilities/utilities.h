@@ -217,6 +217,9 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
+// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
+// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+std::string FileCased(std::filesystem::path const &Filename);
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 

@@ -2,7 +2,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "utilities/Globals.h"
+#include "vehicle.h"
 
 namespace {
 
@@ -13,8 +13,8 @@ class deterministic_random : public doctest::IReporter {
 public:
 	explicit deterministic_random(doctest::ContextOptions const &) {}
 
-	void test_case_start(doctest::TestCaseData const &) override { reseed(); }
-	void test_case_reenter(doctest::TestCaseData const &) override { reseed(); }
+	void test_case_start(doctest::TestCaseData const &) override { test::reseed_random(); }
+	void test_case_reenter(doctest::TestCaseData const &) override { test::reseed_random(); }
 
 	// the rest of doctest's reporter interface: a listener reports nothing, the console reporter does that
 	void report_query(doctest::QueryData const &) override { /* nothing to report */ }
@@ -27,12 +27,6 @@ public:
 	void log_assert(doctest::AssertData const &) override { /* nothing to report */ }
 	void log_message(doctest::MessageData const &) override { /* nothing to report */ }
 	void test_case_skipped(doctest::TestCaseData const &) override { /* nothing to report */ }
-
-private:
-	static void reseed() {
-		Global.random_engine.seed(1);
-		Global.local_random_engine.seed(1);
-	}
 };
 
 } // namespace

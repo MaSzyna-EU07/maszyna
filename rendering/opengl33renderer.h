@@ -66,6 +66,7 @@ class opengl33_renderer : public gfx_renderer {
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
     // adds supplied vertex data at the end of specified chunk
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	void Erase( gfx::geometry_handle const &Geometry ) override;
     // provides direct access to index data of specfied chunk
     gfx::index_array const &
         Indices( gfx::geometry_handle const &Geometry ) const override;
@@ -75,9 +76,15 @@ class opengl33_renderer : public gfx_renderer {
 	// provides direct access to vertex data of specfied chunk
 	gfx::userdata_array const &
 		UserData( gfx::geometry_handle const &Geometry ) const override;
+	int
+		Primitive( gfx::geometry_handle const &Geometry ) const override;
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
+    material_handle
+        Matte_Material( material_handle const Material ) override;
+    material_handle
+        Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) override;
     void
         Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) override;
     IMaterial const *
@@ -108,6 +115,8 @@ class opengl33_renderer : public gfx_renderer {
         Pick_Control() const override { return m_pickcontrolitem; }
     scene::basic_node const *
         Pick_Node() const override { return m_picksceneryitem; }
+    void
+        Forget_Node( scene::basic_node const *Node ) override;
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
     bool
@@ -268,6 +277,8 @@ class opengl33_renderer : public gfx_renderer {
 	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear = 0.f, float const Zfar = 1.f, bool const Ignoredebug = false);
 	void setup_matrices();
     void setup_drawing(bool const Alpha = false);
+    // alpha to coverage for the alpha tested materials of the opaque colour pass, when multisampled
+    void setup_alpha_to_coverage(bool const Enable);
     void setup_shadow_unbind_map();
     void setup_shadow_bind_map();
     void setup_shadow_color( glm::vec4 const &Shadowcolor );
@@ -293,12 +304,19 @@ class opengl33_renderer : public gfx_renderer {
 	// adds the bucketed instances of a scene cell to the frame-level buckets drawn by Render_Instanced(),
 	// less the ones the copies of their bounds show to be out of sight in the current render pass
 	void Queue_Instances( scene::basic_cell const *Cell );
+	// brings up to date what the renderer keeps of the instances of the cell; returns: true if the cache can be used
+	bool Prepare_Instances( scene::basic_cell &Cell );
+	// true if the cache of the cell is up to date
+	bool Instance_Cache_Valid( scene::basic_cell const &Cell ) const;
+	// true if nothing of the cell would be drawn by the color pass from the camera of the pass
+	bool Cell_Out_Of_Range( scene::basic_cell const &Cell ) const;
 	// makes the copies of the bounds of the instances held by a bucket of a scene cell
 	void Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket );
 	bool Render(TDynamicObject *Dynamic);
     bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render(TSubModel *Submodel);
+	void Render_text(TSubModel *Submodel); // opaque characters of a text display
 	void Render(TTrack *Track);
 	void Render(scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last);
 	// renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) via GPU instancing.
@@ -544,6 +562,7 @@ class opengl33_renderer : public gfx_renderer {
 	material_handle m_invalid_material;
 
     bool m_blendingenabled;
+    bool m_alphatocoverageenabled{ false };
 
 	bool m_widelines_supported;
 

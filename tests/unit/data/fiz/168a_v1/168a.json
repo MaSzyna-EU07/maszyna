@@ -1,0 +1,14 @@
+{
+  "_source": "pkp/168a_v1/168a.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "42000", "Mred": "1600", "Vmax": "160", "HeatingP": "20", "LightP": "0.56"},
+  "Load": {"MaxLoad": "56", "LoadQ": "pieces", "LoadAccepted": "Passengers,Luggage", "OverLoadFactor": "1.5", "LoadSpeed": "1", "UnLoadSpeed": "2"},
+  "Dimensions": {"L": "24.5", "H": "4", "W": "2.9", "Cx": "0.1"},
+  "Wheels": {"D": "0.92", "Tw": "1.435", "Axle": "2'2'", "Ad": "2.70", "Bd": "17.2", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "ESt4HBG300", "Size": "200", "NBpA": "4", "MBF": "90", "MaxBP": "3.8", "BCN": "2", "BCR": "0.1778", "BCD": "0.150", "BCM": "10.00", "BCS": "1.4", "BSA": "6.0", "BM": "P10-Bgu", "BVV": "200", "BRE": "0.9"},
+  "Doors": {"OpenCtrl": "Passenger", "CloseCtrl": "AutomaticCtrl", "OpenSpeed": "0.44", "CloseSpeed": "0.27", "DoorCloseDelay": "2.25", "DoorMaxShiftL": "0.9", "DoorMaxShiftR": "0.9", "DoorOpenMethod": "Plug", "DoorClosureWarning": "yes", "DoorBlocked": "Yes", "DoorMaxShiftPlug": "0.043", "PlatformMaxShift": "-45", "PlatformSpeed": "4", "PlatformOpenMethod": "Rotate", "DoorStayOpen": "10"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9200", "DmaxB": "0.11", "FmaxB": "320", "kC": "4500", "DmaxC": "0.1", "FmaxC": "850", "beta": "0.58", "AllowedFlag": "115"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "LocalBrake": "ManualBrake", "BrakeDelays": "R", "ASB": "Yes", "MCPN": "1", "rows": []},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "WheelsDriven", "LMaxVoltage": "24", "AlterLight": "Accu", "AlterLMaxVoltage": "24", "AlterLCap": "495", "AlterLRS": "Generator"},
+  "Clima": {"Heating": "PowerCable", "HPowerTrans": "ElectricPower", "HMaxVoltage": "3000"}
+}

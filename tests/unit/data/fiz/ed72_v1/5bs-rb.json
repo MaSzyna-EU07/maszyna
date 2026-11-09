@@ -1,0 +1,25 @@
+{
+  "_source": "pkp/ed72_v1/5bs-rb.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "35500", "Vmax": "110", "PWR": "0", "SandCap": "0", "Type": "ezt"},
+  "Load": {"MaxLoad": "54", "LoadQ": "pieces", "LoadAccepted": "Passengers,Pantstate", "OverLoadFactor": "2", "LoadSpeed": "1", "UnLoadSpeed": "1"},
+  "Dimensions": {"L": "20.87", "H": "4", "W": "2.9", "Cx": "0.2"},
+  "Wheels": {"D": "0.94", "AIM": "2000", "Tw": "1.435", "Axle": "2'2'", "Ad": "2.83", "Bd": "13.9", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "EP2", "NBpA": "4", "MBF": "85.0", "MaxBP": "4", "BCN": "1", "BCR": "0.203", "BCD": "0.15", "BCM": "9.39", "HiPP": "5", "LoPP": "3.5", "Vv": "0.3", "MinCP": "5.8", "MaxCP": "7.2", "CompressorSpeed": "0.013", "TareMaxBP": "2.5", "BVV": "88", "BM": "P10-Bgu", "BCS": "1.5", "BSA": "5", "BRE": "0.9", "CompressorPower": "Coupler1"},
+  "Doors": {"OpenCtrl": "DriverCtrl", "CloseCtrl": "DriverCtrl", "OpenSpeed": "0.315", "CloseSpeed": "0.325", "DoorMaxShiftL": "0.625", "DoorCloseDelay": "1.6", "DoorMaxShiftR": "0.625", "DoorOpenMethod": "Shift", "DoorClosureWarning": "Yes", "DoorBlocked": "Yes"},
+  "BuffCoupl1": {"ControlType": "ed72", "CType": "Automatic", "kB": "4200", "DmaxB": "0.05", "FmaxB": "1740", "kC": "6800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "-119"},
+  "BuffCoupl2": {"ControlType": "ed72", "CType": "Automatic", "kB": "4200", "DmaxB": "0.05", "FmaxB": "1740", "kC": "6800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "39", "AutomaticFlag": "39"},
+  "Cntrl": {"BrakeHandle": "FVel6", "BrakeSystem": "ElectroPneumatic", "MaxBPMass": "52", "BCPN": "6", "BDelay1": "15", "BDelay2": "4", "ASB": "Manual", "LocalBrake": "ManualBrake", "MCPN": "3", "SCPN": "3", "IniCDelay": "0.0", "SCDelay": "0.975", "CoupledCtrl": "Yes", "ScndS": "Yes", "ConverterStart": "Disabled", "rows": [
+    ["-1","0.5","0.0","6","ElectroPneumatic"],
+    ["0","0.5","-1","4","ElectroPneumatic"],
+    ["1","0.5","0.35","4","ElectroPneumatic"],
+    ["2","0.5","0.35","4","Pneumatic"],
+    ["3","0.5","0.35","4","Pneumatic"],
+    ["4","-1","0.35","4","Pneumatic"],
+    ["5","0.34","-1","4","Pneumatic"],
+    ["6","-1","-1","0","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "5", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "6", "RadioStop": "Yes", "MagnetLocation": "5"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "155"},
+  "Switches": {"Pantograph": "impulse", "Converter": "impulse"}
+}

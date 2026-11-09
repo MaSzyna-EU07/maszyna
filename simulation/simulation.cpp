@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 
 #include "utilities/Globals.h"
 #include "world/Event.h"
@@ -30,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "vehicle/Train.h"
 #include "application/application.h"
+#include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "vehicle/Driver.h"
 
@@ -108,6 +110,8 @@ state_manager::init_scripting_interface() {
         simulation::Memory.insert( memorycell );
         simulation::Region->insert( memorycell );
     }
+    // the cell a test scenery reports its result to
+    simulation::test().init_result_cell();
 }
 
 // legacy method, calculates changes in simulation state over specified time
@@ -561,6 +565,9 @@ std::pair<int, int> state_manager::rebuild_include(scene::instance_handle const 
 }
 
 void state_manager::delete_model(TAnimModel *model) {
+	if (GfxRenderer) {
+		GfxRenderer->Forget_Node(model);
+	}
 	scene::Layers.count(model->layer(), scene::layer_item::model, -1);
 	scene::Layers.forget(model);
 	Region->erase(model);

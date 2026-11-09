@@ -17,6 +17,7 @@ http:
 #include <glm/glm.hpp>
 
 #include "world/Segment.h"
+#include "world/TrackUneven.h"
 #include "utilities/Classes.h"
 
 class TTrack;
@@ -55,6 +56,7 @@ class editor_track
 		float texslope{0.9f};
 		std::vector<std::string> isolated;
 		float overhead{-1.f};
+		track_uneven::attribute uneven;
 		bool sleepers{false};
 		float sleeper_frequency{0.6f};
 		std::string sleeper_model;
@@ -91,7 +93,8 @@ class editor_track
 	static bool can_edit_geometry(TTrack const &Track, std::string &Reason);
 	static bool is_supported(TTrack const &Track);
 
-	static void commit(std::vector<TTrack *> const &Tracks);
+	// Dragging: on the way, what follows them from further off waits for the commit at the end of it
+	static void commit(std::vector<TTrack *> const &Tracks, bool const Dragging = false);
 	static void commit_parameters(TTrack &Track);
 
 	static glm::dvec3 point_position(TTrack const &Track, point_ref const &Point);
@@ -348,6 +351,8 @@ class editor_track
 	static void bind_switch_path(TTrack &Switch, int const Path);
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
+	// adds the tracks whose shape goes by a change of the given from further off: by the switches they meet, and by rail joints running on through them
+	static void add_followers(std::vector<TTrack *> &Tracks);
 	static TTrack *clone(TTrack const &Template);
 	static TTrack *load_text(std::string const &Text, TTrack const *Template, std::string const &Name);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);

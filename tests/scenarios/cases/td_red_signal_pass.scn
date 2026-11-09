@@ -1,0 +1,8 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// like td_red_signal.scn (no route, the exit signal stacja1_j about 150 m ahead stays at stop),
+// with the test mode's pass event: the case puts it as event0 on tor1k, the track in front of
+// the signal, so it runs once the train stands there. the test passes when every vehicle stopped.
+event test_pass UpdateValues 0 __test.result stopped_before_stacja1_j 1 * endevent
+trainset td/rozklad tdo_n1734 0.0 0.1
+{{consist}}
+endtrainset

@@ -14,12 +14,15 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 #include "application/application.h"
 #include "application/scenarioloaderuilayer.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "audio/audiorenderer.h"
+
+#include <format>
 
 scenarioloader_mode::scenarioloader_mode() {
     m_userinterface = std::make_shared<scenarioloader_ui>();
@@ -41,11 +44,30 @@ bool scenarioloader_mode::update() {
 		WriteLog("using simulation seed: " + std::to_string(Global.random_seed), logtype::generic);
         WriteLog("using simulation starting timestamp: " + std::to_string(Global.starting_timestamp), logtype::generic);
 
+		// the command line gives the name lowercased, the file may be named in another case, as a scenery made on Windows;
+		// the scenery is saved back to its own file then
+		if (auto const cased{FileCased(Global.asCurrentSceneryPath + Global.SceneryFile)}; cased.size() > Global.asCurrentSceneryPath.size())
+			Global.SceneryFile = cased.substr(Global.asCurrentSceneryPath.size());
         Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
         WriteLog( "\nLoading scenario \"" + Global.SceneryFile + "\"..." );
 
 		timestart = std::chrono::system_clock::now();
-		state = simulation::State.deserialize_begin(Global.SceneryFile);
+		try {
+			state = simulation::State.deserialize_begin(Global.SceneryFile);
+		}
+		// the file it can't read, as the parser and the scenery opening it report it
+		catch (std::runtime_error const &e) {
+			ErrorLog(std::format("Bad init: scenario \"{}\" couldn't be opened ({})", Global.SceneryFile, e.what()));
+			state.reset();
+			if (Global.test.enabled) {
+				simulation::test().finish(simulation::test_result::error, "scenario couldn't be opened");
+				return true;
+			}
+			Global.SceneryFile.clear();
+			Application.pop_mode();
+			Application.push_mode(eu07_application::mode::launcher);
+			return true;
+		}
 	}
 
 	try {
@@ -53,8 +75,18 @@ bool scenarioloader_mode::update() {
 			return true;
 	}
 	catch (invalid_scenery_exception &e) {
+		// back to the launcher as when the scenario can't be opened, not on to the driver mode with the scenery half loaded
 		ErrorLog( "Bad init: scenario loading failed" );
+		state.reset();
+		if( Global.test.enabled ) {
+			// there's nothing to test; the exit code says the run went wrong
+			simulation::test().finish( simulation::test_result::error, "scenario loading failed" );
+			return true;
+		}
+		Global.SceneryFile.clear();
 		Application.pop_mode();
+		Application.push_mode(eu07_application::mode::launcher);
+		return true;
 	}
 	// the loading state holds the scenario file open, which on some systems keeps the file from being replaced
 	// when the scenery is saved in the editor. it'd also get in the way of another load

@@ -104,6 +104,10 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
         glDebugMessageCallback( ErrorCallback, 0 );
     }
 
+	glClearColor( 0.f, 0.f, 0.f, 1.f );
+	glClear( GL_COLOR_BUFFER_BIT );
+	glfwSwapBuffers( Window );
+
 	if (!Init_caps())
 		return false;
 
@@ -1816,6 +1820,22 @@ void opengl33_renderer::setup_matrices()
     OpenGLMatrices.load_matrix(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 }
 
+void opengl33_renderer::setup_alpha_to_coverage(bool const Enable)
+{
+	// the shaders keep the plain alpha test unless told the coverage of their alpha is used;
+	// uploaded with the rest of the model block at the next draw
+	model_ubs.alpha_to_coverage = (Enable ? 1.f : 0.f);
+
+	if (Enable == m_alphatocoverageenabled)
+		return;
+
+	if (Enable)
+		glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+	else
+		glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+	m_alphatocoverageenabled = Enable;
+}
+
 void opengl33_renderer::setup_drawing(bool const Alpha)
 {
 	if (Alpha)
@@ -1830,6 +1850,8 @@ void opengl33_renderer::setup_drawing(bool const Alpha)
 		glDepthMask(GL_TRUE);
 		m_blendingenabled = false;
 	}
+	// turned on again per material, by the ones which need it
+	setup_alpha_to_coverage(false);
 
 	switch (m_renderpass.draw_mode)
 	{
@@ -2028,12 +2050,12 @@ bool opengl33_renderer::Render(world_environment *Environment)
 		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, std::clamp(1.5f - Global.Overcast, 0.f, 1.f) * fogfactor);
 		auto const sunvector = Environment->m_sun.getDirection();
 
-        /*float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
+        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0325f,
             0.0275f,
-            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );*/
+            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );
 		model_ubs.param[0] = color;
-        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), 0.00463f /* size */);
+        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), size);
 		model_ubs.param[2] = glm::vec4(0.0f, 1.0f, 1.0f, 0.0f);
 		model_ubo->update(model_ubs);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -2104,14 +2126,13 @@ bool opengl33_renderer::Render(world_environment *Environment)
 			moonu = 0.0f;
 		}
 
-        /*
         float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0160f,
             0.0135f,
-            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );*/
+            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );
 
 		model_ubs.param[0] = color;
-        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(moonvector, 1.0f)), 0.00451f /* size */);
+        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(moonvector, 1.0f)), size);
 		model_ubs.param[2] = glm::vec4(moonu, moonv, 0.333f, 0.0f);
 		model_ubo->update(model_ubs);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -2201,8 +2222,13 @@ bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
 
+void opengl33_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	m_geometry.erase(Geometry);
+}
+
 // provides direct access to index data of specfied chunk
-gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const 
+gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const
 {
     return m_geometry.indices(Geometry);
 }
@@ -2218,11 +2244,29 @@ gfx::userdata_array const &opengl33_renderer::UserData(const gfx::geometry_handl
 	return m_geometry.userdata(Geometry);
 }
 
+int opengl33_renderer::Primitive(gfx::geometry_handle const &Geometry) const
+{
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
+}
+
 // material methods
 material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
 
 	return m_materials.create(Filename, Loadnow);
+}
+
+material_handle opengl33_renderer::Matte_Material(material_handle const Material)
+{
+
+	return m_materials.create_matte(Material);
+}
+
+material_handle opengl33_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
 }
 
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
@@ -2347,6 +2391,18 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 			model_ubs.alpha_mult = sm->fVisible;
 		else
 			model_ubs.alpha_mult = 1.0f;
+
+		// the alpha test drops or keeps whole pixels, so multisampling alone leaves its edges (e.g. sides
+		// of the trackbed textures) jagged. the alpha tested materials of the opaque colour pass get them
+		// antialiased with alpha to coverage instead; their shaders give the coverage as the alpha.
+		// the model previews draw in colour mode too, but to a single-sampled framebuffer
+		setup_alpha_to_coverage(
+			Global.iMultisampling > 0
+			&& false == m_blendingenabled
+			&& m_renderpass.draw_mode == rendermode::color
+			&& false == m_previewing
+			&& model_ubs.opacity > 0.f
+			&& material.shader->alpha_to_coverage );
 
 		// materials which declare texture variants provide a different texture set per model instance,
 		// picked from the seed of the rendered instance and the variant group of the submodel
@@ -2639,6 +2695,12 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 			{
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
+					// a cell with nothing but instances too far to be drawn is left out of the color pass altogether
+					if( ( true == Prepare_Instances( cell ) )
+					 && ( m_renderpass.draw_mode == rendermode::color )
+					 && ( true == Cell_Out_Of_Range( cell ) ) ) {
+						continue;
+					}
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -2653,6 +2715,7 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 			{
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
+					Prepare_Instances( cell );
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -2844,8 +2907,10 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 					Queue_Instances( cell );
 				}
 			}
-			// remaining (non-instanceable) opaque instance nodes go through the per-node path
-			for (auto *instance : cell->m_instancesopaque)
+			// remaining (non-instanceable) opaque instance nodes go through the per-node path. the list of them kept for
+			// the cell spares going through every instance of it only to skip the instanceable ones - with many of these
+			// (vegetation) that took more time than drawing everything else
+			for (auto *instance : ( Instance_Cache_Valid( *cell ) ? cell->m_instancecache.single : cell->m_instancesopaque ))
 			{
 				if( instance->m_instanceable ) { continue; } // already handled via bucket
 				Render(instance);
@@ -3151,6 +3216,11 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
 	// up close the rounding of the copies is too large a part of the distance for the slack to cover it
 	auto const distancetested { sq( 64.0 ) };
+	// the nearest point of the bounding sphere of the cell, which holds the locations of all its instances. no instance
+	// of the cell is closer, so where this distance fails the range test below for the largest range in a bucket,
+	// it fails it for each instance of that bucket, and the bucket can be skipped without going through them
+	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell->m_area.center - cameraposition ) - Cell->m_area.radius ) };
+	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
 
 	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
 		auto const &instances { bucket.second.instances };
@@ -3162,6 +3232,11 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 		if( ( bucket.second.boundsversion != m_instanceboundsversion )
 		 || ( bucket.second.bounds.size() != instances.size() ) ) {
 			Update_Instance_Bounds( bucket.first.pModel, bucket.second );
+		}
+		else if( ( bucket.second.rangeversion == m_instanceboundsversion )
+		      && ( cellnearestdistancesquared > distancetested )
+		      && ( cellnearestdistancesquared * distancescale + distanceoffset >= slack * bucket.second.rangesquaredmax ) ) {
+			continue;
 		}
 		auto const &bounds { bucket.second.bounds };
 		std::vector<TAnimModel *> *dest { nullptr }; // looked up when there's something to put in it
@@ -3181,6 +3256,76 @@ void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
 			dest->emplace_back( instances[ idx ] );
 		}
 	}
+}
+
+// brings up to date what the renderer keeps of the instances of the cell: the copies of the bounds of the instances
+// and the largest range in each bucket, the largest range in the cell, and the list of its instances drawn one by one.
+// rebuilt after the content of the cell changed, or any instance lost its instanceable status (an event added an
+// animation container, or changed a skin). returns: true if the cache can be used; it can't in the editor, which
+// moves and resizes the instances in place, as with the copies of their bounds
+bool opengl33_renderer::Prepare_Instances( scene::basic_cell &Cell )
+{
+	if( EditorModeFlag ) { return false; }
+	if( Instance_Cache_Valid( Cell ) ) { return true; }
+
+	auto &cache { Cell.m_instancecache };
+	cache.rangesquaredmax = 0.f;
+	for( auto &[ key, bucket ] : Cell.m_instancebuckets_opaque ) {
+		if( ( bucket.boundsversion != m_instanceboundsversion )
+		 || ( bucket.bounds.size() != bucket.instances.size() ) ) {
+			Update_Instance_Bounds( key.pModel, bucket );
+		}
+		auto rangesquaredmax { 0.f };
+		for( auto const &instancebounds : bucket.bounds ) {
+			rangesquaredmax = std::max( rangesquaredmax, instancebounds.rangesquaredmax );
+		}
+		bucket.rangesquaredmax = rangesquaredmax;
+		bucket.rangeversion = m_instanceboundsversion;
+		cache.rangesquaredmax = std::max( cache.rangesquaredmax, rangesquaredmax );
+	}
+	cache.single.clear();
+	for( auto *instance : Cell.m_instancesopaque ) {
+		if( false == instance->m_instanceable ) {
+			cache.single.emplace_back( instance );
+		}
+	}
+	cache.instancedonly =
+		( false == Cell.m_instancebuckets_opaque.empty() )
+		&& Cell.m_paths.empty()
+		&& Cell.m_shapesopaque.empty()
+		&& Cell.m_shapestranslucent.empty()
+		&& Cell.m_lines.empty()
+		&& Cell.m_traction.empty()
+		&& Cell.m_instancetranslucent.empty()
+		&& cache.single.empty();
+	cache.boundsversion = m_instanceboundsversion;
+	cache.revoked = TAnimModel::s_instanceable_revoked;
+	return true;
+}
+
+bool opengl33_renderer::Instance_Cache_Valid( scene::basic_cell const &Cell ) const
+{
+	return ( false == EditorModeFlag )
+		&& ( Cell.m_instancecache.boundsversion == m_instanceboundsversion )
+		&& ( Cell.m_instancecache.revoked == TAnimModel::s_instanceable_revoked );
+}
+
+// true if nothing of the cell would be drawn by the color pass: it holds only instances drawn with the instanced path,
+// and the nearest point of the cell is past the largest range of them. the test is the one made for each bucket in
+// Queue_Instances(), done before the cell is put in the cell queue: a scenery with many small instances of a short
+// range has them in nearly every cell up to the draw range, and queueing, sorting and visiting these cells only
+// to skip all their buckets took a good part of the frame
+bool opengl33_renderer::Cell_Out_Of_Range( scene::basic_cell const &Cell ) const
+{
+	if( ( false == Instance_Cache_Valid( Cell ) ) || ( false == Cell.m_instancecache.instancedonly ) ) { return false; }
+	// same measures as in Queue_Instances() for the color pass
+	auto const distancescale { 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) };
+	auto const slack { 1.001 };
+	auto const distancetested { sq( 64.0 ) };
+	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell.m_area.center - m_renderpass.pass_camera.position() ) - Cell.m_area.radius ) };
+	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
+	return ( cellnearestdistancesquared > distancetested )
+		&& ( cellnearestdistancesquared * distancescale >= slack * Cell.m_instancecache.rangesquaredmax );
 }
 
 // makes the copies of the bounds of the instances held by a bucket of a scene cell
@@ -4036,6 +4181,23 @@ bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, f
 	return result;
 }
 
+// opaque characters of a text display, laid out in a row the same way as the translucent ones
+void opengl33_renderer::Render_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	::glPushMatrix();
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{
+		Render(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+	::glPopMatrix();
+}
+
 void opengl33_renderer::Render(TSubModel *Submodel)
 {
 	glDebug("Render TSubModel");
@@ -4186,9 +4348,17 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			}
 			}
 		}
-		if (Submodel->Child != nullptr)
-			if (Submodel->iAlpha & Submodel->iFlags & 0x001F0000)
+		if (Submodel->Child != nullptr && (TSubModel::iAlpha & Submodel->iFlags & 0x001F0000))
+		{
+			if (Submodel->eType == TP_TEXT)
+			{
+				Render_text(Submodel);
+			}
+			else
+			{
 				Render(Submodel->Child);
+			}
+		}
 
 		if (Submodel->iFlags & 0xC000)
 		{
@@ -5410,6 +5580,13 @@ void opengl33_renderer::Pick_Node_Callback(std::function<void(scene::basic_node 
 	m_node_pick_requests.push_back(callback);
 }
 
+void opengl33_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+		m_picksceneryitem = nullptr;
+	std::ranges::replace_if(m_picksceneryitems, [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
+}
+
 glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 {
 	if (!m_depth_pointer_pbo->is_busy())
@@ -5515,12 +5692,15 @@ void opengl33_renderer::Update(double const Deltatime)
 	}
 
 	m_updateaccumulator = 0.0;
-    m_framerate = 1000.f / ( Timer::subsystem.mainloop_total.average() );
+	// the frames actually shown, the wait for fpslimit included (eu07/maszyna#416)
+	m_framerate = 1000.f / ( Timer::subsystem.mainloop_period.average() );
+	// the frames the work alone would allow, so a frame rate held down by fpslimit doesn't cut the draw ranges
+	auto const workframerate{1000.f / Timer::subsystem.mainloop_total.average()};
 
 	// adjust draw ranges etc, based on recent performance
 
 	if (Global.targetfps != 0.0f) {
-		float fps_diff = Global.targetfps - m_framerate;
+		float fps_diff = Global.targetfps - workframerate;
 		if (fps_diff > 0.0f)
 			Global.fDistanceFactor = std::max(0.5f, Global.fDistanceFactor - 0.05f);
 		else
@@ -5528,7 +5708,7 @@ void opengl33_renderer::Update(double const Deltatime)
 	}
 	// legacy framerate parameters
 	else if (Global.fFpsAverage != 0.f) {
-		auto const fps_diff = m_framerate - Global.fFpsAverage;
+		auto const fps_diff = workframerate - Global.fFpsAverage;
 		if (fps_diff < -Global.fFpsDeviation) {
 			Global.fDistanceFactor = std::min(std::max(1.0f, Global.fDistanceFactor - 0.05f), Global.gfx_distance_factor_max);
 		}

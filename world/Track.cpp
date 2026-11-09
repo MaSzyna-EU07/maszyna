@@ -29,6 +29,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
 
+#include <format>
+
 // 101206 Ra: trapezoidalne drogi i tory
 // 110720 Ra: rozprucie zwrotnicy i odcinki izolowane
 
@@ -47,6 +49,7 @@ TIsolated *TIsolated::pRoot = nullptr;
 
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
+int TTrack::s_layoutstamp { 0 };
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
@@ -325,6 +328,7 @@ void TTrack::ConnectPrevPrev(TTrack *pTrack, int typ)
 { //łączenie torów - Point1 własny do Point1 cudzego
     if (pTrack)
     { //(pTrack) może być zwrotnicą, a (this) tylko zwykłym odcinkiem
+        ++s_layoutstamp;
         trPrev = pTrack;
         iPrevDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
@@ -335,6 +339,7 @@ void TTrack::ConnectPrevNext(TTrack *pTrack, int typ)
 { //łaczenie torów - Point1 własny do Point2 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trPrev = pTrack;
         iPrevDirection = typ | 1; // 1:zwykły lub pierwszy zwrotnicy, 3:drugi zwrotnicy
         pTrack->trNext = this;
@@ -354,6 +359,7 @@ void TTrack::ConnectNextPrev(TTrack *pTrack, int typ)
 { //łaczenie torów - Point2 własny do Point1 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trNext = pTrack;
         iNextDirection = pTrack->eType == tt_Switch ? 0 : typ & 2;
         pTrack->trPrev = this;
@@ -373,6 +379,7 @@ void TTrack::ConnectNextNext(TTrack *pTrack, int typ)
 { //łaczenie torów - Point2 własny do Point2 cudzego
     if (pTrack)
     {
+        ++s_layoutstamp;
         trNext = pTrack;
         iNextDirection = typ | 1; // 1:zwykły lub pierwszy zwrotnicy, 3:drugi zwrotnicy
         pTrack->trNext = this;
@@ -427,11 +434,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     }
     else if (str == "tributary")
     {
-        eType = tt_Tributary;
+        // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
+        // second one kept and written back
+        ErrorLog(std::format("Bad track: tributary \"{}\" in file \"{}\" (line {}) is drawn and run on as a river of its first path", m_name, parser->Name(), parser->Line()));
+        eType = tt_Normal;
         iCategoryFlag = 4;
+        m_tributary = true;
     }
     else
-        eType = tt_Unknown;
+        eType = tt_Unknown; // left out by the loader
     if (Global.iWriteLogEnabled & 4)
         WriteLog(str);
     parser->getTokens(4);
@@ -516,6 +527,11 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         default: {
             break;
         }
+    }
+    if( m_tributary ) {
+        // the second path of a tributary, kept to be written back
+        m_paths.emplace_back();
+        m_paths.back().deserialize( *parser, pOrigin );
     }
 
     init_segments( true );
@@ -633,6 +649,13 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 m_profile1 = fetch_track_rail_profile( railprofile );
             }
         }
+        else if( str == "uneven" ) {
+            // uneven <mm>[;<mm>...]: see TrackUneven.h. The semicolons stay in the token
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( ( eType == tt_Normal || eType == tt_Switch ) && iCategoryFlag == 1 ) {
+                m_uneven = track_uneven::read_attribute( values, eType == tt_Switch );
+            }
+        }
         else if( str == "friction" ) {
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
@@ -674,6 +697,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         *parser >> token;
 		str = token;
     }
+    // the segments were made before the attributes were read, and unevenness changes them
+    if( is_uneven() ) {
+        init_segments( false );
+    }
     // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
     if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
     {
@@ -681,6 +708,10 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         m_name = m_name.substr(0, i - 1); // usunięcie z nazwy
     }
 
+    if( CurrentSegment() == nullptr ) {
+        // of an unknown type, no path of it is made
+        return;
+    }
     update_location();
     // sleeper transforms are baked later in create_geometry(), once the owning cell has
     // assigned this track its m_origin (otherwise the local-space matrices would be relative
@@ -705,6 +736,14 @@ void TTrack::init_segments( bool const Initial ) {
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
     iTrapezoid = 0;
+    ++s_layoutstamp;
+    if( eType == tt_Switch && SwitchExtension ) {
+        SwitchExtension->Segments[ 0 ]->set_uneven( is_uneven() );
+        SwitchExtension->Segments[ 1 ]->set_uneven( is_uneven(), 1 );
+    }
+    else if( Segment ) {
+        Segment->set_uneven( is_uneven() );
+    }
 
     switch (eType) {
         // Ra: łuki segmentowane co 5m albo 314-kątem foremnym
@@ -1351,6 +1390,8 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
+    m_drawnrun = {};
+
     Geometry1.clear();
     Geometry2.clear();
     if( SwitchExtension ) {
@@ -1365,6 +1406,10 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
+    share_joints();
+    if( rail_phase( 0.0 ) >= 0.0 ) {
+        m_drawnrun = m_railrun;
+    }
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
     if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
@@ -2306,24 +2351,37 @@ TTrack::deserialize_( std::istream &Input ) {
     // TODO: implement
 }
 
+// the keyword the track is written with, by its type and for a plain one by what runs on it
+char const *
+TTrack::type_keyword() const {
+
+    if( eType == tt_Normal && m_tributary ) {
+        return "tributary";
+    }
+    if( eType == tt_Normal ) {
+        switch( iCategoryFlag ) {
+            case 1: { return "normal"; }
+            case 2: { return "road"; }
+            case 4: { return "river"; }
+            default: { return "none"; }
+        }
+    }
+    switch( eType ) {
+        case tt_Switch: { return "switch"; }
+        case tt_Cross: { return "cross"; }
+        case tt_Table: { return "turn"; }
+        case tt_Tributary: { return "tributary"; }
+        default: { return "none"; }
+    }
+}
+
 // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
 void
 TTrack::export_as_text_( std::ostream &Output ) const {
     // header
     Output << "track ";
     // type
-    Output << (
-            eType == tt_Normal ? (
-                iCategoryFlag == 1 ? "normal" :
-                iCategoryFlag == 2 ? "road" :
-                iCategoryFlag == 4 ? "river" :
-                "none" ) :
-            eType == tt_Switch ? "switch" :
-            eType == tt_Cross ? "cross" :
-            eType == tt_Table ? "turn" :
-            eType == tt_Tributary ? "tributary" :
-            "none" )
-            << ' ';
+    Output << type_keyword() << ' ';
     // basic attributes
     Output
         << Length() << ' '
@@ -2445,6 +2503,7 @@ TTrack::export_as_text_( std::ostream &Output ) const {
      && false == m_profile1.first.empty() ) {
         Output << "railprofile " << m_profile1.first << ' ';
     }
+    Output << track_uneven::write_attribute( m_uneven, eType == tt_Switch );
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
@@ -3630,6 +3689,11 @@ path_table::InitTracks() {
         isolated->pMemCell = memorycell;
 
         isolated = isolated->Next();
+    }
+
+    // the physics goes by the cant at the joints too, and comes before any geometry is made
+    for( auto *track : m_items ) {
+        track->share_joints();
     }
 
     TTrack::fetch_default_profiles();

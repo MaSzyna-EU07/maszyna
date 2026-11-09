@@ -442,12 +442,14 @@ void editor_mode::render_track_gizmo()
 
 void editor_mode::commit_track_drag(bool const Force)
 {
-	if (false == m_track_dirty || m_track_drag.empty())
+	// on letting go the rest of what follows the dragged tracks is yet to come, even with all of the drag committed
+	if ((false == m_track_dirty && false == (Force && m_track_drag_on_the_way)) || m_track_drag.empty())
 		return;
 	auto const now = std::chrono::steady_clock::now();
 	if (false == Force && now - m_track_last_commit < std::chrono::milliseconds(100))
 		return;
-	editor_track::commit(m_track_drag);
+	editor_track::commit(m_track_drag, false == Force);
+	m_track_drag_on_the_way = false == Force;
 	m_track_dirty = false;
 	m_track_last_commit = now;
 }
@@ -1159,7 +1161,39 @@ void editor_mode::render_path_parameters(TTrack &Track)
 		finish_edit(rebuild::none);
 		ImGui::InputFloat(STR_C("Sound distance"), &track->fSoundDistance, 0.0f, 0.0f, "%.1f");
 		item_tooltip("Distance between the rail joints in metres, sets the rhythm of the wheel clatter; -1: the default");
-		finish_edit(rebuild::none);
+		finish_edit(rebuild::parameters);
+		if ((track->eType == tt_Normal || track->eType == tt_Switch) && (track->iCategoryFlag & 15) == 1)
+		{
+			if (ImGui::InputFloat(STR_C("Unevenness (mm)"), &track->m_uneven.value, 0.0f, 0.0f, "%.1f"))
+				track->m_uneven.value = std::clamp(track->m_uneven.value, 0.f, track_uneven::most);
+			item_tooltip("Peak deviation of a rail on a 10 m chord. Id-14 limits: 6 mm at 160 km/h, 10 at 120, 18 at 80, 35 at 40.\nWith a sound distance set, the rails also dip at the joints. Joined switches use the lowest of their values");
+			finish_edit(rebuild::parameters);
+			auto const component = [&](char const *Label, float &Value) {
+				if (ImGui::InputFloat(STR_C(Label), &Value, 0.0f, 0.0f, "%.1f"))
+					Value = Value < 0.f ? -1.f : std::min(Value, track_uneven::most);
+				item_tooltip("Set apart from the unevenness, mm. Negative: the unevenness");
+				finish_edit(rebuild::parameters);
+			};
+			component("Up and down (mm)", track->m_uneven.up);
+			component("Sideways (mm)", track->m_uneven.side);
+			if (track->eType == tt_Normal)
+			{
+				component("Cross level (mm)", track->m_uneven.cross);
+			}
+			else
+			{
+				component("Diverging path (mm)", track->m_uneven.branch);
+				component("Diverging, up and down (mm)", track->m_uneven.branchup);
+				component("Diverging, sideways (mm)", track->m_uneven.branchside);
+			}
+		}
+		if (track->eType == tt_Normal && (track->iCategoryFlag & 15) == 1)
+		{
+			if (ImGui::InputFloat(STR_C("Dip at rail joints (mm)"), &track->m_uneven.dip, 0.0f, 0.0f, "%.1f"))
+				track->m_uneven.dip = track->m_uneven.dip < 0.f ? -1.f : std::min(track->m_uneven.dip, track_uneven::most);
+			item_tooltip("Depth of the dip at each rail joint, every sound distance. Works with unevenness at 0. Negative: 0.4 of the unevenness");
+			finish_edit(rebuild::parameters);
+		}
 		ImGui::InputInt(STR_C("Quality"), &track->iQualityFlag, 0);
 		item_tooltip("Quality of the track, 20 is the nominal one; lower values give a rougher ride");
 		finish_edit(rebuild::none);
@@ -1188,8 +1222,8 @@ void editor_mode::render_path_parameters(TTrack &Track)
 				if (m_track_material_edited[i] != nullptr)
 					continue;
 				auto const name = materials[i] ? editor_track::material_name(*materials[i]) : std::string{};
-				std::strncpy(m_track_materials[i].data(), name.c_str(), m_track_materials[i].size() - 1);
-				m_track_materials[i].back() = '\0';
+				auto &buffer{m_track_materials[i]};
+				buffer[name.copy(buffer.data(), buffer.size() - 1)] = '\0';
 			}
 		}
 		for (int i = 0; i < 3; ++i)
@@ -1238,8 +1272,7 @@ void editor_mode::render_path_circuits(TTrack &Track)
 {
 	auto *track{&Track};
 	auto const copy = [](std::array<char, 256> &Buffer, std::string const &Text) {
-		std::strncpy(Buffer.data(), Text.c_str(), Buffer.size() - 1);
-		Buffer.back() = '\0';
+		Buffer[Text.copy(Buffer.data(), Buffer.size() - 1)] = '\0';
 	};
 	auto const isolated_text = [&]() {
 		std::string text;

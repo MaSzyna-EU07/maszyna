@@ -639,6 +639,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	glm::mat4 m_track_gizmo{1.0f};
 	bool m_track_gizmo_using{false};
 	bool m_track_dirty{false};
+	bool m_track_drag_on_the_way{false}; // committed, but not as the end of the drag
 	std::chrono::steady_clock::time_point m_track_last_commit;
 	editor_track::state m_track_field_before;
 	std::array<std::array<char, 256>, 3> m_track_materials{};

@@ -1,0 +1,17 @@
+{
+  "description": "ET22 on td.scn, AI driver on the td/rozklad timetable: starts from Stacja1, keeps to the speed limit, brakes to a stop at Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\et22_v3 201E-1150 201E 0 headdriver 0 0 enddynamic"
+  },
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    { "type": "starts", "min_speed": 20, "within": 150 },
+    { "type": "max_speed", "limit": 90, "tolerance": 3 },
+    { "type": "brakes", "min_pressure": 0.5 },
+    { "type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420 }
+  ]
+}

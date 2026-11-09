@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "interfaces/ITexture.h"
 #include "audio/sound.h"
 #include "world/Spring.h"
+#include "vehicle/mirrors.h"
 
 #include <vector>
 
@@ -156,6 +157,9 @@ public:
     float fMaxDist; // do jakiej odległości wykonywana jest animacja NOTE: square of actual distance
     float fSpeed; // parametr szybkości animacji
     int iNumber; // numer kolejny obiektu
+    // door wings only: the submodel of the same name in the low poly interior, if it has one, posed along with
+    // smAnimated, so the inside of the door can be part of the interior and lit with it
+    TSubModel *smInterior { nullptr };
 
     TUpdate yUpdate; // metoda TDynamicObject aktualizująca animację
 /*
@@ -315,6 +319,16 @@ private:
     TSubModel *sm_summer_variant {}; // submodel letniego wariantu
     TSubModel *sm_autumn_variant {}; // submodel jesiennego wariantu
     double fWahaczeAmp;
+    // levers with a slot, turned by a pin on the coupling rod sliding in the slot (e.g. speedometer drive of 401Da)
+    struct slottedlever_data {
+        TSubModel *submodel { nullptr }; // lever, turned around its local X axis like the wheels
+        int axle { 0 }; // index of the axle animation, whose crank drives the coupling rod
+        glm::dvec2 pin { 0.0 }; // pin position relative to the lever axis for wheel angle 0, in local (Y, Z) plane [m]
+        glm::dvec2 crank { 0.0 }; // crank vector for wheel angle 0, in local (Y, Z) plane [m]
+    };
+    std::vector<slottedlever_data> m_slottedlevers;
+    static double slottedlever_angle( slottedlever_data const &Lever, double const Wheelangle );
+    void update_slottedlevers();
     // Winger 160204 - pantografy
     double pantspeedfactor;
     // animacje typu przesuw
@@ -393,6 +407,13 @@ private:
         side placement {};
     };
 
+    struct mirror_sounds {
+        sound_source unfold { sound_placement::general };
+        sound_source fold { sound_placement::general };
+        side placement {};
+        int end {}; // of the vehicle, the mirror moves with the cab at this end occupied
+    };
+
     struct exchange_sounds {
         sound_source loading { sound_placement::general };
         sound_source unloading { sound_placement::general };
@@ -402,7 +423,10 @@ private:
         double distance; // distance to rail joint
         double offset; // axle offset from centre of the vehicle
         sound_source clatter; // clatter emitter
+        bool atjoints { false }; // distance comes from TTrack::rail_phase
     };
+    // whether the axle has just passed a rail joint. On a track with dipping joints it goes by them, elsewhere the axle counts a rail off itself
+    bool axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction ) const;
 
     struct powertrain_sounds {
         sound_source inverter { sound_placement::engine };
@@ -567,6 +591,8 @@ private:
     std::vector<pantograph_sounds> m_pantographsounds; // typically 2 but can be less (or more?)
     std::vector<door_sounds> m_doorsounds; // can expect symmetrical arrangement, but don't count on it
     bool m_doorlocks { false }; // sound helper, current state of door locks
+    std::vector<mirror_sounds> m_mirrorsounds;
+    std::array<mirror_moves::motion, 2> m_mirrormotion; // indexed by side: right, left
     sound_source sHorn1 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
     sound_source sHorn2 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
     sound_source sHorn3 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
@@ -681,6 +707,8 @@ private:
         float Load, std::string LoadType, bool Reversed, std::string);
     int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool const Overrideselfillum );
     bool init_destination( TModel3d *Model );
+    // pairs the animated door wings with their namesakes in the low poly interior
+    void init_interior_doors();
     void create_controller( std::string const Type, bool const Trainset );
     void AttachNext(TDynamicObject *Object, int iType = 1);
     bool UpdateForce(double dt);
@@ -703,6 +731,8 @@ private:
     void Move(double fDistance);
     void FastMove(double fDistance);
     void RenderSounds();
+    // plays the sounds of the mirrors on the Side, of the occupied cab, starting the Event
+    void play_mirror_sounds( side const Side, mirror_moves::event const Event );
     inline glm::dvec3 GetPosition() const {
         return vPosition; };
     // converts location from vehicle coordinates frame to world frame
@@ -815,7 +845,9 @@ private:
     void ParamSet(int what, int into);
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
     int RouteWish(TTrack *tr);
-    void DestinationSet(std::string to, std::string numer);
+    void DestinationSet(std::string const &to, std::string const &numer);
+    // blanks electronic destination sign at the end of the service; physical signs stay until changed
+    void DestinationClear();
     material_handle DestinationFind( std::string Destination );
     void OverheadTrack(float o);
     glm::dvec3 get_future_movement() const;

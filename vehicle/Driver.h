@@ -24,6 +24,7 @@ auto const EU07_AI_NOACCELERATION = -0.05;
 auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
+auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
@@ -311,6 +312,12 @@ private:
         double DirectionalVel() const {
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
+    double brake_increase_margin() const;
+    bool uphill_stop_hold() const;
+    bool uphill_brake_committed( double const Velocity ) const;
+    void control_uphill_start();
+    std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
+
     void update_timers( double const dt );
     void update_logs( double const dt );
     void determine_consist_state();
@@ -320,6 +327,7 @@ private:
     void scan_obstacles( double const Range );
     void control_wheelslip();
     void control_pantographs();
+    void control_pantographs_setup( int const Setup );
     void control_horns( double const Timedelta );
     void control_security_system( double const Timedelta );
     void control_handles();
@@ -344,6 +352,11 @@ private:
     void pick_optimal_speed( double const Range );
     void adjust_desired_speed_for_obstacles();
     void adjust_desired_speed_for_limits();
+    void set_velocity_for_uncoupling();
+    bool increase_train_brake();
+    void hold_train_coming_to_stand_uphill();
+    void adjust_desired_speed_for_final_approach( double const Vel );
+    void adjust_desired_speed_for_braking_curve( double const Vel );
     void adjust_desired_speed_for_target_speed( double const Range );
     void adjust_desired_speed_for_current_speed();
     void adjust_desired_speed_for_braking_test();
@@ -358,7 +371,14 @@ private:
     void control_motor_connectors();
     void control_tractive_force();
     void increase_tractive_force();
+    bool is_too_fast_uphill() const;
     void control_braking_force();
+    // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
+    // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
+    double stopping_margin() const {
+        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && !IsAtPassengerStop ?
+            fMinProximityDist + 3.5 :
+            0.5 * fMinProximityDist; }
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
     void check_route_behind( double const Range );
@@ -393,6 +413,14 @@ private:
     double AccDesired = 0.0; // przyspieszenie, jakie ma utrzymywać (<0:nie przyspieszaj,<-0.1:hamuj)
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
+    double fBrakeHeldTime = 0.0; // czas od ostatniego przestawienia kranu hamulca zasadniczego
+    bool bStopTargetIsPassengerStop = false; // the point the train is to stop at, found by the last scan of the route, is a passenger stop
+    double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
+    double fShortfallTime = 0.0; // when that was checked
+    int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
+    bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    double fUphillStartTime = 0.0; // when the uphill start began
+    double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
     double VelLimit = -1.0; // predkość zadawana przez event jednokierunkowego ograniczenia prędkości // -1: brak ograniczenia prędkości
@@ -519,6 +547,9 @@ private:
     bool TableNotFound( basic_event const *Event, double const Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
+    // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
+    // reports the head of the train going past it, if it's a signal showing stop
+    void CheckSignalPassedAtDanger( TSpeedPos const &Point, bool Passedbefore ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
@@ -618,6 +649,7 @@ private:
     bool IsAnyDoorOpen[ 2 ]; // state of door in the consist
 	bool IsAnyDoorOnlyOpen[ 2 ]; // state of door in the consist regardless of step
     bool IsAnyDoorPermitActive[ 2 ]; // state of door permit in the consist
+    door_closure_t DoorClosure{ door_closure_t::none }; // state of the door closure signalling (SOD) of the consist
     bool IsAnyLineBreakerOpen{ false }; // state of line breaker in all powered vehicles under control
     bool IsAnyConverterOverloadRelayOpen{ false }; // state of converter overload relays in all vehicles under control
     bool IsAnyMotorOverloadRelayOpen{ false }; // state of motor overload relays in all vehicles under control
