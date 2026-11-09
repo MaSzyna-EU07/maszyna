@@ -464,6 +464,7 @@ set(CORE_SOURCES
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
 "simulation/simulationtestrules.cpp"
+"vehicle/enginestart.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
@@ -741,4 +742,4 @@ if(WITH_TESTS)
 	# Visual Studio builds rerun them with the next change of the game)
 	set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
 		$<TARGET_FILE:eu07_unit_tests> ${UNIT_TEST_DATA} "${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/run_tests.cmake")
-endif()
+endif()

@@ -379,8 +379,7 @@ void TNESt3::CheckState(double const BCP, double & /*dV1*/) // glowny przyrzad r
         Przys_blok = false;
 
     // sprawdzanie stanu
-    double const cel{ CelBCP( CVP, VVP ) };
-    if (BCP < cel - 0.01 * BVM && Przys_blok)
+    if (double const cel{ CelBCP( CVP, VVP ) }; BCP < cel - 0.01 * BVM && Przys_blok)
         BrakeStatus |= b_on | b_hld; // hamowanie stopniowe;
     else if (BCP - 0.1 > cel + 0.01 * BVM)
         BrakeStatus &= ~( b_on | b_hld ); // luzowanie;
@@ -484,6 +483,18 @@ void TNESt3::SetLP(double const TM, double const LM, double const TBP)
 void TNESt3::SetLBP(double const P)
 {
     LBP = P;
+}
+
+void TNESt3::ScaleNozzlesForAL2() // dysze cylindra przy przekladniku AL2
+{
+    if( PrzekCiagly == nullptr ) {
+        return;
+    }
+    // dysze cylindra skalibrowane na komore impulsowa przekladnika AL2 (1 l) wg czasow z tablicy 3-9
+    Nozzles[dON] *= 0.914;
+    Nozzles[dTN] *= 0.885;
+    Nozzles[dOO] *= 0.82;
+    Nozzles[dTO] *= 0.8;
 }
 
 void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie dysz (rozmiaru ZR)
@@ -673,13 +684,7 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     Nozzles[dSd] = 1.1;
     Nozzles[dSm] = 0.9;
 
-    if( PrzekCiagly != nullptr ) {
-        // dysze cylindra skalibrowane na komore impulsowa przekladnika AL2 (1 l) wg czasow z tablicy 3-9
-        Nozzles[dON] *= 0.914;
-        Nozzles[dTN] *= 0.885;
-        Nozzles[dOO] *= 0.82;
-        Nozzles[dTO] *= 0.8;
-    }
+    ScaleNozzlesForAL2();
 
     // przeliczanie z mm^2 na l/m
     for (auto &nozzle : Nozzles)

@@ -157,6 +157,9 @@ public:
     float fMaxDist; // do jakiej odległości wykonywana jest animacja NOTE: square of actual distance
     float fSpeed; // parametr szybkości animacji
     int iNumber; // numer kolejny obiektu
+    // door wings only: the submodel of the same name in the low poly interior, if it has one, posed along with
+    // smAnimated, so the inside of the door can be part of the interior and lit with it
+    TSubModel *smInterior { nullptr };
 
     TUpdate yUpdate; // metoda TDynamicObject aktualizująca animację
 /*
@@ -704,6 +707,8 @@ private:
         float Load, std::string LoadType, bool Reversed, std::string);
     int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool const Overrideselfillum );
     bool init_destination( TModel3d *Model );
+    // pairs the animated door wings with their namesakes in the low poly interior
+    void init_interior_doors();
     void create_controller( std::string const Type, bool const Trainset );
     void AttachNext(TDynamicObject *Object, int iType = 1);
     bool UpdateForce(double dt);
