@@ -276,6 +276,7 @@ void TSpeedPos::CommandCheck()
         // what it says then holds for the point (the warning disc of a level crossing, Osp1/Osp2)
         fVelNext = value1;
         fPointDist = std::max( value2, 0.0 );
+        iFlags &= ~(spShuntSemaphor | spPassengerStopPoint | spStopOnSBL | spSemaphor); // not a signal, even if the cell was one before
         iFlags |= spPointVelocity;
         break;
     case TCommandType::cm_OutsideStation:
@@ -348,10 +349,10 @@ bool TSpeedPos::Update()
             }
         }
     }
-    else if (iFlags & spEvent && ((iFlags & spElapsed) == 0 || (fVelNext == 0.0 && (iFlags & spPointVelocity) == 0))) {
+    else if (iFlags & spEvent && ((iFlags & spElapsed) == 0 || fVelNext == 0.0)) {
         // jeśli event
 		// ignore already passed signals, but keep an eye on overrun stops
-		// a PointVelocity cell is latched when the head passes it, even at 0
+		// (a PointVelocity cell is latched when the head passes it, except at 0, which has to be released by the cell)
 		// odczyt komórki pamięci najlepiej by było zrobić jako notyfikację,
 		// czyli zmiana komórki wywoła jakąś podaną funkcję
 		CommandCheck(); // sprawdzenie typu komendy w evencie i określenie prędkości
@@ -1091,7 +1092,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
 		}
         if (fNext >= 0.0)
         { // jeśli ograniczenie
-            if( (point.iFlags & (spEnabled | spEvent)) == (spEnabled | spEvent) && eSignNext == nullptr ) { // tylko sygnał przypisujemy
+            if( (point.iFlags & (spEnabled | spEvent)) == (spEnabled | spEvent) && (point.iFlags & spPointVelocity) == 0 && eSignNext == nullptr ) { // tylko sygnał przypisujemy (a point limit isn't one)
 				// jeśli jeszcze nic nie zapisane tam
 				eSignNext = point.evEvent; // dla informacji
 			}
