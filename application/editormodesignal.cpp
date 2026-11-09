@@ -3456,9 +3456,11 @@ void editor_mode::draw_signal_overlay() const
 			return Danger.at(Distance, unused) + lift + glm::dvec3{across.x, 0.0, across.y};
 		};
 		auto previous{aside(low, kWayAside)};
-		for (auto at{std::floor(low) + 1.0}; at < high; at += 1.0)
+		// each whole metre between them, counted by an int: the same points as stepping a double by 1, without a floating counter
+		auto const first{std::floor(low) + 1.0};
+		for (int whole = 0; first + whole < high; ++whole)
 		{
-			auto const next{aside(at, kWayAside)};
+			auto const next{aside(first + whole, kWayAside)};
 			thick(previous, next, colour, 3.0f);
 			previous = next;
 		}
