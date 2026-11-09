@@ -7431,9 +7431,7 @@ void TDynamicObject::RaLightsSet(int head, int rear)
 		bool tRight = MoverParameters->iLights[vehicleend] & (light::auxiliary_right | light::headlight_right); // a tu z prawej
         if (Controller == Humandriver) {
 
-            int &currentDimPos = MoverParameters->modernDimmerPosition;
-			auto &dimmerPositions = MoverParameters->dimPositions;
-			TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
+			auto const dps{MoverParameters->currentDimPosition()};
 
             // domyślnie
 			HighBeamLights = false;
@@ -7495,9 +7493,7 @@ void TDynamicObject::SetLightDimmings()
 	if (Controller == Humandriver)
 	{
 
-		int &currentDimPos = MoverParameters->modernDimmerPosition;
-		auto &dimmerPositions = MoverParameters->dimPositions;
-		TMoverParameters::dimPosition dps = dimmerPositions[currentDimPos];
+		auto const dps{MoverParameters->currentDimPosition()};
 
 		// domyślnie
 		HighBeamLights = false;

@@ -9508,6 +9508,52 @@ bool TMoverParameters::readDimmerList(std::string const &line)
 	return true;
 }
 
+int TMoverParameters::clampDimmerPosition(int const Position) const
+{
+	if (dimPositions.empty())
+	{
+		return 0;
+	}
+	return std::clamp(Position, 0, static_cast<int>(dimPositions.size()) - 1);
+}
+
+TMoverParameters::dimPosition TMoverParameters::currentDimPosition() const
+{
+	if (modernDimmerPosition < 0 || modernDimmerPosition >= static_cast<int>(dimPositions.size()))
+	{
+		return {};
+	}
+	return dimPositions[modernDimmerPosition];
+}
+
+bool TMoverParameters::stepDimmerPosition(int const Step)
+{
+	if (dimPositions.empty())
+	{
+		return false;
+	}
+	auto const last{static_cast<int>(dimPositions.size()) - 1};
+	auto const current{clampDimmerPosition(modernDimmerPosition)};
+	auto next{current + Step};
+	if (next < 0 || next > last)
+	{
+		if (false == modernDimmerCanCycle)
+		{
+			next = current;
+		}
+		else
+		{
+			next = (next < 0 ? last : 0);
+		}
+	}
+	if (next == modernDimmerPosition)
+	{
+		return false;
+	}
+	modernDimmerPosition = next;
+	return true;
+}
+
 // parsowanie WWList
 bool TMoverParameters::readWWList(std::string const &line)
 {
@@ -10309,6 +10355,9 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former b
 		result = false;
 
 	// ustawiamy domyslna pozycje dimmera
+	// the DefaultPos of a short or an empty DimmerList would put the dimmer outside of it
+	modernDimmerDefaultPosition = clampDimmerPosition(modernDimmerDefaultPosition);
+	modernDimmerPosition = clampDimmerPosition(modernDimmerPosition);
 	if (!enableModernDimmer)
 	{
 		modernDimmerPosition = modernDimmerDefaultPosition;
