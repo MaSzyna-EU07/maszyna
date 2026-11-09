@@ -225,6 +225,7 @@ class editor_mode : public application_mode, private editor_track::observer
 	double m_ortho_pitch{0.0};
 	bool m_ortho_pan{false};
 	glm::dvec2 m_ortho_pan_cursor{0.0};
+	double m_pan_metres{0.0}; // of the ground to a pixel, held by the panning in the perspective view
 	void ortho_pan_to(double const Horizontal, double const Vertical);
 	void ortho_pan_stop();
 	// camera fly-mode (right mouse button held); used to flush motion when it's released

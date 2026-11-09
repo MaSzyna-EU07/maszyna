@@ -4978,8 +4978,10 @@ void editor_mode::ortho_pan_to(double const Horizontal, double const Vertical)
     auto const dx{Horizontal - m_ortho_pan_cursor.x};
     auto const dy{Vertical - m_ortho_pan_cursor.y};
     m_ortho_pan_cursor = {Horizontal, Vertical};
-    auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y)};
-    auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale}, static_cast<double>(Camera.Angle.y))};
+    auto const scale{Global.EditorOrtho ? 2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y) : m_pan_metres};
+    // looked at from the side, a pixel up the screen is more of the ground than one across
+    auto const along{Global.EditorOrtho ? 1.0 : 1.0 / std::max(0.25, std::abs(std::sin(static_cast<double>(Camera.Angle.x))))};
+    auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale * along}, static_cast<double>(Camera.Angle.y))};
     Camera.Pos.x -= world.x;
     Camera.Pos.z -= world.z;
     Camera.Velocity = {};
@@ -5724,7 +5726,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         // game-engine style look: hide & grab the cursor while flying, restore it on release
         Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
     }
-    else if (Button == GLFW_MOUSE_BUTTON_MIDDLE && Global.EditorOrtho)
+    else if (Button == GLFW_MOUSE_BUTTON_MIDDLE)
     {
         if (is_press(Action))
         {
@@ -5732,6 +5734,17 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             m_ortho_pan_cursor = m_input.mouse.position();
             m_focus_active = false;
             Camera.Velocity = {};
+            // in the perspective view the ground under the cursor goes along with it: metres of it to a pixel there, as far as it is
+            m_pan_metres = 0.0;
+            if (false == Global.EditorOrtho)
+            {
+                auto const &io{ImGui::GetIO()};
+                auto const distance{glm::length(GfxRenderer->Mouse_Position())};
+                if (io.DisplaySize.y > 0.0f && distance > 0.5 && distance < 20000.0)
+                    m_pan_metres = 2.0 * distance * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5) / static_cast<double>(io.DisplaySize.y);
+                else
+                    m_ortho_pan = false; // nothing under the cursor to hold
+            }
         }
         else if (is_release(Action))
             ortho_pan_stop();
