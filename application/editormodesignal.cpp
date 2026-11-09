@@ -163,15 +163,6 @@ std::vector<std::string> const &plate_textures()
 	return plates;
 }
 
-std::string plate_for(std::string const &Plate, std::string const &Name)
-{
-	if (false == Plate.empty())
-		return Plate;
-	auto const &plates{plate_textures()};
-	auto const name{lower(Name)};
-	return std::binary_search(plates.begin(), plates.end(), name) ? name : std::string{"0_nothing"};
-}
-
 void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, std::string const &Mount, std::string const &Lamps, ImU32 const Frame)
 {
 	auto const lamps{std::max<int>(1, static_cast<int>(Lamps.size()))};
@@ -610,7 +601,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	item.described = true;
 	item.values["name"] = name;
 	if (Template.plate)
-		item.values["#6"] = plate_for(tool.plate, name);
+		item.values["#6"] = tool.plate[0] != '\0' ? std::string{tool.plate} : signal_plate(name);
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
 	std::string error;
@@ -734,6 +725,12 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 	Snapshot.action = EditorSnapshot::Action::TrackEdit;
 	Snapshot.node_ptr = Snapshot.tracks.front().first;
 	Snapshot.node_name = Snapshot.tracks.front().first->name();
+}
+
+std::string editor_mode::signal_plate(std::string const &Name)
+{
+	// the template puts it after a folder, "tabl/(p6)": material_data::assign() takes the folder off a texture made by a script
+	return "make:signal_plate?name=" + Name;
 }
 
 void editor_mode::signal_select(scene::instance_handle const Instance)
@@ -889,10 +886,10 @@ void editor_mode::render_signal_ui()
 		ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
 	if (armed != nullptr && armed->plate)
 	{
-		auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
+		auto const automatic{format(STR_C("auto: drawn \"%s\""), tool.name)};
 		ImGui::InputTextWithHint(STR_C("Plate"), automatic.c_str(), tool.plate, sizeof(tool.plate));
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
+			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: a plate with the name of the signal, drawn by python/local/signal_plate.py"));
 		auto const &plates{plate_textures()};
 		auto const typed{lower(tool.plate)};
 		auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};

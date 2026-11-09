@@ -4726,14 +4726,14 @@ msgstr "Brak szablonów sygnalizatorów: żaden szablon katalogu scenerii nie ma
 msgid "Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"
 msgstr "Nazwa następnego sygnalizatora; po każdym postawionym rośnie o jeden. Od niej biorą nazwy jego eventy i komórka pamięci"
 
-msgid "auto: %s"
-msgstr "auto: %s"
+msgid "auto: drawn \"%s\""
+msgstr "auto: rysowana „%s”"
 
 msgid "Plate"
 msgstr "Tablica"
 
-msgid "Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"
-msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: ta nazwana tak jak sygnalizator, jeśli istnieje"
+msgid "Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: a plate with the name of the signal, drawn by python/local/signal_plate.py"
+msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: tablica z nazwą sygnalizatora, rysowana przez python/local/signal_plate.py"
 
 msgid "no such texture"
 msgstr "nie ma takiej tekstury"

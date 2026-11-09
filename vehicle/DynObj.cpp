@@ -242,6 +242,13 @@ void TAnim::Parovoz(){
 void
 material_data::assign( std::string const &Replacableskin ) {
 
+    // a template puts its parameter after a folder ("tabl/(p6)"): a texture made by a script given there keeps its scheme
+    if( auto const scheme { Replacableskin.find( "/make:" ) };
+        scheme != std::string::npos
+     && false == contains( Replacableskin, '|' ) ) {
+        assign( Replacableskin.substr( scheme + 1 ) );
+        return;
+    }
     // check for the pipe method first
     if( contains( Replacableskin,  '|' ) ) {
         cParser nameparser( Replacableskin );
