@@ -207,6 +207,24 @@ drivingaid_panel::update() {
 }
 
 void
+drivingaid_panel::render_contents() {
+    ImGui::Checkbox(STR_C("expand"), &is_expanded);
+
+    ImGui::SameLine();
+
+    auto const *driver = (simulation::Train && simulation::Train->Dynamic()) ? simulation::Train->Dynamic()->Mechanik : nullptr;
+    if (driver && (false == Global.RealisticControlMode || DebugModeFlag)) {
+        bool autopilot = driver->AIControllFlag;
+        if (ImGui::Checkbox(STR_C("autopilot"), &autopilot)) {
+            command_relay commandrelay;
+            commandrelay.post(autopilot ? user_command::aidriverenable : user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+        }
+    }
+
+    ui_panel::render_contents();
+}
+
+void
 scenario_panel::update() {
 
     if( false == is_open ) { return; }
