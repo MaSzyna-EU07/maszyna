@@ -1126,13 +1126,16 @@ void driver_mode::OnKeyDown(int cKey)
 			else
 				DistantView(true);
 
-			train->Occupied()->CabDeactivisation();
-			train->Occupied()->CabOccupied = 0;
-			train->Occupied()->BrakeLevelSet(train->Occupied()->Handle->GetPos(bh_NP));
-			train->Occupied()->MainCtrlPos = train->Occupied()->MainCtrlNoPowerPos();
-			train->Occupied()->ScndCtrlPos = 0;
 			vehicle->MechInside = false;
-			vehicle->Controller = ai_was_controlling;
+			if (!ai_was_controlling)
+			{
+				train->Occupied()->CabDeactivisation();
+				train->Occupied()->CabOccupied = 0;
+				train->Occupied()->BrakeLevelSet(train->Occupied()->Handle->GetPos(bh_NP));
+				train->Occupied()->MainCtrlPos = train->Occupied()->MainCtrlNoPowerPos();
+				train->Occupied()->ScndCtrlPos = 0;
+				vehicle->Controller = Humandriver;
+			}
 			vehicle->bDisplayCab = false;
 			vehicle->ABuSetModelShake({});
 
