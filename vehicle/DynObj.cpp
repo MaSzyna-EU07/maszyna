@@ -1743,7 +1743,8 @@ TDynamicObject::couple( int const Side ) {
     if( false == TestFlag( MoverParameters->Couplers[ Side ].CouplingFlag, coupling::control ) ) {
         // ukrotnionko
         if( (coupler.AllowedFlag & othercoupler.AllowedFlag & coupling::control) == coupling::control
-         && coupler.control_type == othercoupler.control_type ) {
+         && coupler.control_type == othercoupler.control_type
+         && ( MoverParameters->CompatibleCoupling( Side, *othervehicleparams, neighbour.vehicle_end, coupler.CouplingFlag | coupling::control ) & coupling::control ) != 0 ) {
             if( MoverParameters->Attach(
                     Side, neighbour.vehicle_end,
                     othervehicleparams,
