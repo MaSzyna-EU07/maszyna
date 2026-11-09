@@ -2784,6 +2784,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the rail heads as its description gives, lower only where its bottom would hang over the ground; a gantry as high over the rails
 	// as chosen
 	double signal_default_height(signal_template const &Template, glm::dvec3 const &Axis, glm::dvec3 const &Position) const;
+	// how much higher the default height of To is than of From at Position by the track of the axis at Axis: what a signal given the
+	// template To in place of From goes up by, to stand as raised as it was
+	double signal_default_change(signal_template const &From, signal_template const &To, glm::dvec3 const &Axis, glm::dvec3 const &Position) const;
 	// the indicators of the signal moved after it to the place and the frame it has now, at the same place by it as they were, the
 	// directives they had going to Directives
 	void signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);

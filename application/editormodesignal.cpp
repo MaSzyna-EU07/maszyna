@@ -936,6 +936,13 @@ double editor_mode::signal_default_height(signal_template const &Template, glm::
 	return zero;
 }
 
+double editor_mode::signal_default_change(signal_template const &From, signal_template const &To, glm::dvec3 const &Axis, glm::dvec3 const &Position) const
+{
+	if (&From == &To || From.file == To.file)
+		return 0.0;
+	return signal_default_height(To, Axis, Position) - signal_default_height(From, Axis, Position);
+}
+
 void editor_mode::signal_carry(signal_spot const &From, signal_spot &To, signal_template const &Template) const
 {
 	auto const gantry{Template.mount == "gantry"};
@@ -1064,13 +1071,15 @@ bool editor_mode::signal_move_to(signal_standing const &Standing, signal_spot co
 	auto const *item{signal_template_of(Standing.include.file)};
 	if (item != nullptr && stood && travel_side(before.side, before.list) != travel_side(Spot.side, Spot.list))
 		file = signal_variant(*item, Spot);
+	auto const *next{signal_template_of(file)};
 	auto values{Standing.include.values};
-	auto const local{Spot.position - included.context.offset};
+	auto local{Spot.position - included.context.offset};
+	if (item != nullptr && next != nullptr)
+		local.y += signal_default_change(*item, *next, Spot.axis, Spot.position);
 	values[1] = editor_includes::number(local.x);
 	values[2] = editor_includes::number(local.y);
 	values[3] = editor_includes::number(local.z);
 	values[4] = editor_includes::number(Spot.yaw);
-	auto const *next{signal_template_of(file)};
 	auto const read{next != nullptr && false == next->read.empty() ? editor_includes::substitute(next->read, values) : Standing.read};
 	auto directive{scene::Layers.directive(instance)};
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
@@ -1649,7 +1658,12 @@ bool editor_mode::signal_flip(scene::instance_handle const Instance)
 	auto const across{plan_of(spot.position) - plan_of(spot.axis)};
 	auto const mirrored{plan_of(spot.axis) + spot.travel * glm::dot(across, spot.travel) - right_of(spot.travel) * glm::dot(across, right_of(spot.travel))};
 	spot.side = -spot.side;
+	auto const *item{signal_template_of(standing->include.file)};
+	// as raised over the ground on the other side as on this one
+	auto const raised{item != nullptr ? spot.position.y - signal_default_height(*item, spot.axis, spot.position) : 0.0};
 	spot.position = {mirrored.x, spot.position.y, mirrored.y};
+	if (item != nullptr)
+		spot.position.y = signal_default_height(*item, spot.axis, spot.position) + raised;
 	return signal_move_to(*standing, spot, STR_C("Signal %s moved to the other side of the track, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved to the other side of the track, Ctrl+Z takes it back"));
 }
 
@@ -1819,6 +1833,8 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	template_item item;
 	item.file = file;
 	item.location = Spot.position;
+	if (auto const *variant{signal_template_of(file)}; variant != nullptr)
+		item.location.y += signal_default_change(Template, *variant, Spot.axis, Spot.position);
 	item.yaw = Spot.yaw;
 	item.described = true;
 	item.values["name"] = name;
@@ -2492,6 +2508,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		auto const *variant{signal_template_of(placing.file)};
 		if (variant == nullptr)
 			variant = item;
+		placing.location.y += signal_default_change(*item, *variant, spot.axis, spot.position);
 		if (variant->plate)
 			placing.values["#6"] = plate_for(std::string{}, order.plate);
 		if (variant->linked)
@@ -2580,7 +2597,8 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 		if (item == nullptr || chosen == nullptr || chosen->kind != item->kind || false == editor_includes::parse_directive(before, file, values) || values.empty())
 			continue;
 		signal_spot spot;
-		auto const *variant{signal_standing_spot(*standing, spot) ? signal_template_of(signal_variant(*chosen, spot)) : chosen};
+		auto const stood{signal_standing_spot(*standing, spot)};
+		auto const *variant{stood ? signal_template_of(signal_variant(*chosen, spot)) : chosen};
 		if (variant == nullptr)
 			variant = chosen;
 		if (variant->file == item->file)
@@ -2605,6 +2623,9 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 				value = plate_for(std::string{}, values[0].substr(values[0].rfind('_') + 1));
 			if (value.empty())
 				value = info.parameter(id).value.empty() ? std::string{"none"} : info.parameter(id).value;
+			// as raised over where the template stands by default as it was over where the one it had does
+			if (role == "pos.y" && stood)
+				value = editor_includes::number(std::atof(value.c_str()) + signal_default_change(*item, *variant, spot.axis, spot.position));
 		}
 		auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
 		auto const read_after{variant->read.empty() ? std::string{} : editor_includes::substitute(variant->read, after)};
