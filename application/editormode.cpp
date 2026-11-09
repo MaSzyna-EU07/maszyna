@@ -1591,6 +1591,9 @@ bool editor_mode::update()
     draw_download_area();
     steps.step("imagery");
 
+    // the profile of a road, in a window of its own whichever part of the editor is open
+    render_road_profile_window();
+
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
     // the tools, the gizmo modes and the axes over the 3d view
@@ -7521,6 +7524,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             lay_enter();
         if (is_press(Action) && m_route.trace.active && route_active())
             route_trace_end(true);
+        break;
+
+    case GLFW_KEY_P:
+        // the vertical profile of the selected road, in its own window
+        if (is_press(Action) && false == anyModifier && false == ImGui::GetIO().WantTextInput && current_work_area() == work_area::roads)
+            road_profile_window_toggle();
         break;
 
     case GLFW_KEY_K:
