@@ -1989,10 +1989,7 @@ void NvRenderer::Animate(Renderable &renderable, TSubModel *Submodel,
     glm::dmat4 model_transform = transform;
 
     if (Submodel->iFlags & 0xC000) {
-      glm::mat4 anim_transform{1.f};
-      if (Submodel->fMatrix) {
-        anim_transform = glm::make_mat4(Submodel->fMatrix->readArray());
-      }
+      glm::mat4 anim_transform{Submodel->fMatrix};
       if (Submodel->b_aAnim != TAnimType::at_None) {
         Submodel->RaAnimation(anim_transform, Submodel->b_aAnim);
       }

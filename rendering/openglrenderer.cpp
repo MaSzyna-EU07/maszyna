@@ -2836,8 +2836,8 @@ opengl_renderer::Render_text( TSubModel *Submodel ) {
     ::glPushMatrix();
     for( auto *p : Submodel->text_letters( *TSubModel::pasText ) ) {
         Render( p );
-        if( p->fMatrix )
-            ::glMultMatrixf( p->fMatrix->readArray() ); // move on to the place of the next character
+        if( p->iFlags & 0x8000 )
+			::glMultMatrixf( glm::value_ptr(p->fMatrix) ); // move on to the place of the next character
     }
     ::glPopMatrix();
 }
