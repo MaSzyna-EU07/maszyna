@@ -7,7 +7,7 @@
 #include "common.glsl"
 
 layout(location = 0) uniform float rain_time;   // the time of the block of the scene (scene_ubs.time)
-layout(location = 1) uniform float rain_amount; // how hard it rains (scene_ubs.rain_params.x)
+layout(location = 1) uniform float rain_amount; // how wet the glass is (scene_ubs.rain_state.y, a little more)
 layout(location = 2) uniform int   rain_pass;   // 0 the cells, 1 the reach of the drops
 
 #include "random.glsl"
@@ -125,6 +125,7 @@ float drop_reach(uint A, uint B, float Spread)
 uvec4 drop_masks(ivec2 Cell)
 {
 	uvec4 result = uvec4(0u);
+	// as many drops as the glass is wet (rain_amount: the wetness of the glass, scene_ubs.rain_state.y)
 	float most   = min(rain_amount * drop_density, 0.95);
 	for (int dy = -1; dy <= 1; ++dy)
 	for (int dx = -1; dx <= 1; ++dx)

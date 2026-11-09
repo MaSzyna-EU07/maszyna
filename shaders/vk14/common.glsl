@@ -337,6 +337,11 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	// the place of the camera of the pass in the world (whole 64 m, the rest), see gl::scene_ubs
 	vec4 camera_hi;
 	vec4 camera_lo;
+	// the rain the glass meets: x fallen so far, y how wet the glass is, z how fast it fills (mat_rain_windscreen), see gl::scene_ubs
+	vec4 rain_state;
+	// the rain fallen when the blades were at the ends of their sweep, see gl::scene_ubs
+	vec4 wiper_rain_out;
+	vec4 wiper_rain_return;
 };
 
 #ifndef LAYOUT_COMPUTE
