@@ -31,7 +31,9 @@ http://mozilla.org/MPL/2.0/.
 #include "world/station.h"
 #include "input/keyboardinput.h"
 
+#include <algorithm>
 #include <format>
+#include <ranges>
 
 #define LOGVELOCITY 0
 #define LOGORDERS 1
@@ -851,6 +853,13 @@ bool is_signal_at_stop( TSpeedPos const &Point )
         && Point.evEvent != nullptr;
 }
 
+void clear_signal_area_end( TSpeedPos &Point )
+{
+    if( TestFlag( Point.iFlags, spSignalAreaEnd ) ) {
+        Point.Clear();
+    }
+}
+
 } // namespace
 
 void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point, bool const Passedbefore ) const
@@ -1446,9 +1455,11 @@ TController::TableUpdateSignalAreaEnd( TSpeedPos &Point ) {
         return;
     }
 
+    // in shunting the marker stays, a train order given before the next signal still finds it
+    if( false == TestFlag( OrderCurrentGet(), Obey_train ) ) { return; }
+
     // a passed signal at stop (0) keeps holding the train, only a reduced speed ends here
-    if( TestFlag( OrderCurrentGet(), Obey_train )
-     && VelSignalLast > 0.0 ) {
+    if( VelSignalLast > 0.0 ) {
         if( Global.iWriteLogEnabled & 8 ) {
             WriteLog( "Speed table update for " + OwnerName() + ", left the interlocking area at " + Point.evEvent->m_name );
         }
@@ -1616,6 +1627,9 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
             // for ai-driven vehicles always play by the rules
             else {
                 VelSignalLast = Point.fVelNext; //minięty daje prędkość obowiązującą
+                // a marker before this signal ends the interlocking area of an earlier signal, not the area of this one
+                // (a train longer than the way between the two, or one which started standing over the marker)
+                std::ranges::for_each( sSpeedTable | std::views::take( Pointindex ), clear_signal_area_end );
             }
         }
         else {
