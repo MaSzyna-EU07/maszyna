@@ -198,6 +198,18 @@ bool editorSettings::load()
 				layer.terms = fields[5];
 			m_wms_layers.push_back(layer);
 		}
+		else if (key == "camera_speed")
+		{
+			parse(value, m_camera.speed);
+			m_camera.speed = std::clamp(m_camera.speed, 0.05, 10.0);
+		}
+		else if (key == "camera_fast")
+		{
+			parse(value, m_camera.fast);
+			m_camera.fast = std::clamp(m_camera.fast, 1.0, 30.0);
+		}
+		else if (key == "camera_zoomed")
+			m_camera.zoomed = (value == "1");
 		else if (key.rfind(origin_prefix, 0) == 0)
 		{
 			// northing;easting
@@ -269,6 +281,9 @@ bool editorSettings::save()
 	stream << "laying_heights " << (m_heights == lay_heights::points ? "points" : m_heights == lay_heights::level ? "level" : "fitted") << "\n";
 	for (auto const &layer : m_wms_layers)
 		stream << "wms_layer " << (layer.visible ? 1 : 0) << ";" << layer.opacity << ";" << encoded(layer.url) << ";" << encoded(layer.layers) << ";" << encoded(layer.title) << ";" << encoded(layer.terms) << "\n";
+	stream << "camera_speed " << m_camera.speed << "\n";
+	stream << "camera_fast " << m_camera.fast << "\n";
+	stream << "camera_zoomed " << (m_camera.zoomed ? 1 : 0) << "\n";
 	stream << std::fixed << std::setprecision(3);
 	for (auto const &origin : m_orthophoto_origins)
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";

@@ -119,10 +119,19 @@ public:
 	};
 	lay_heights heights() const { return m_heights; }
 	void heights(lay_heights Heights) { m_heights = Heights; }
+	// the free camera: its speed, how many times faster Ctrl makes it, and in the top view as fast as the view is zoomed
+	struct camera_settings
+	{
+		double speed{1.0};
+		double fast{30.0};
+		bool zoomed{true};
+	};
+	camera_settings &camera() { return m_camera; }
 
 private:
 	movement_scheme m_movement{movement_scheme::wsad};
 	orthophoto_settings m_orthophoto;
+	camera_settings m_camera;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
 	std::vector<wms_layer> m_wms_layers;
 	double m_platform_edge{1.725};
