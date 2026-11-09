@@ -1506,13 +1506,25 @@ void TController::update_point_limits() {
         }
     }
     // a change of the vehicle (another cab) starts the measure from its place
+    auto const vehiclechanged { m_pointlimitsvehicle != pVehicle };
     m_pointlimitsvehicle = pVehicle;
     m_pointlimitsposition = position;
-    // vehicles coupled or uncoupled at the end towards the point move the head towards it or away
+    // the consist, as its end vehicles and its length
+    auto const *front { pVehicles[ end::front ] };
+    auto const *rear { pVehicles[ end::rear ] };
+    auto const consistchanged {
+        false == ( ( front == m_pointlimitsends[ 0 ] && rear == m_pointlimitsends[ 1 ] )
+                || ( front == m_pointlimitsends[ 1 ] && rear == m_pointlimitsends[ 0 ] ) )
+        || std::abs( fLength - m_pointlimitslength ) > 0.5 };
+    m_pointlimitsends[ 0 ] = front;
+    m_pointlimitsends[ 1 ] = rear;
+    m_pointlimitslength = fLength;
+    // vehicles coupled or uncoupled at the end towards the point move the head towards it or away. only a change of
+    // the consist counts: the end measured from the vehicle shifts on curves, and when another vehicle is measured from
     for( auto &limit : m_pointlimits ) {
         if( glm::length( limit.heading ) < 0.5 ) { continue; }
         auto const consistend { point_limit_end( limit.heading ) };
-        if( limit.endknown ) {
+        if( limit.endknown && consistchanged && false == vehiclechanged ) {
             limit.distance -= consistend - limit.end;
         }
         limit.end = consistend;
@@ -1588,23 +1600,13 @@ double TController::point_limit_approach() const {
 
 glm::dvec3 TController::travel_direction() const {
 
-    if( pVehicle == nullptr ) { return glm::dvec3 { 0.0 }; }
-    auto const *head { pVehicles[ end::front ] };
-    auto const *rear { pVehicles[ end::rear ] };
-    auto way { glm::dvec3 { 0.0 } };
-    if( head != nullptr && rear != nullptr && head != rear ) {
-        way = head->GetPosition() - rear->GetPosition();
-    }
-    else if( iDirection != 0 ) {
-        // a single vehicle runs towards the coupler of its direction
-        way = pVehicle->CouplerPosition( iDirection > 0 ? end::front : end::rear ) - pVehicle->GetPosition();
-    }
-    if( glm::length( way ) < 0.001 ) { return glm::dvec3 { 0.0 }; }
-    // the chord of a long consist on a curve is off the track; the measured vehicle moves along its own length
-    auto along { pVehicle->CouplerPosition( end::front ) - pVehicle->CouplerPosition( end::rear ) };
-    if( glm::length( along ) < 0.001 ) { along = way; }
-    if( glm::dot( along, way ) < 0.0 ) { along = -along; }
-    return glm::normalize( along );
+    if( pVehicle == nullptr || iDirection == 0 ) { return glm::dvec3 { 0.0 }; }
+    // the direction is given against the couplers of the vehicle the driver is in, which is the vehicle measured;
+    // along its own length it follows the track, where the chord of a long consist on a curve doesn't
+    auto const along { pVehicle->CouplerPosition( end::front ) - pVehicle->CouplerPosition( end::rear ) };
+    auto const length { glm::length( along ) };
+    if( length < 0.001 ) { return glm::dvec3 { 0.0 }; }
+    return ( iDirection > 0 ? along : -along ) / length;
 }
 
 bool

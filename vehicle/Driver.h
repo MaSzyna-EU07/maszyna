@@ -606,6 +606,8 @@ private:
     std::vector<point_limit> m_pointlimits;
     TDynamicObject const *m_pointlimitsvehicle { nullptr }; // the vehicle whose movement moves the points
     glm::dvec3 m_pointlimitsposition { 0.0 }; // where it was at the last update
+    TDynamicObject const *m_pointlimitsends[ 2 ] { nullptr, nullptr }; // the end vehicles of the consist at the last update
+    double m_pointlimitslength { 0.0 }; // and its length
     basic_event *eSignNext = nullptr; // sygnał zmieniający prędkość, do pokazania na [F2]
     neighbour_data Obstacle; // nearest vehicle detected ahead on current route
 
