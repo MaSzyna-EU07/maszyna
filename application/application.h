@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/applicationmode.h"
 #include "scripting/PyInt.h"
+#include "scripting/wasmscreens.h"
 #include "network/manager.h"
 #include "utilities/headtrack.h"
 #ifdef WITH_UART
@@ -49,6 +50,10 @@ public:
     // frees the python gil and swaps out the main thread
     void
         release_python_lock();
+    // the screens drawn by WebAssembly modules
+    wasm_screen_queue &
+        wasm_screens() {
+            return m_wasmqueue; }
     void
         exit();
     void
@@ -122,6 +127,7 @@ private:
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode
     python_taskqueue m_taskqueue;
+    wasm_screen_queue m_wasmqueue;
     std::vector<GLFWwindow *> m_windows;
     int m_glfwversion;
 

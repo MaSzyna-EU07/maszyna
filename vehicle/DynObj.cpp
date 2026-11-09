@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
+#include "application/application.h"
 #include "vehicle/Driver.h"
 
 // Ra: taki zapis funkcjonuje lepiej, ale może nie jest optymalny
@@ -3139,6 +3140,20 @@ void TDynamicObject::update_destinations() {
 	                                                                                        && ctOwner != nullptr)) ? // lcd signs are off for carriages without engine, potentially left on a siding
 	                                         DestinationSign.destination :
 	                                         DestinationSign.destination_off;
+
+    update_wasm_destination();
+}
+
+void TDynamicObject::update_wasm_destination() {
+
+    if( DestinationSign.wasm_sign == nullptr ) { return; }
+    // only while the sign shows the destination it draws
+    if( m_materialdata.replacable_skins[ 4 ] != DestinationSign.destination ) { return; }
+
+    auto &queue { Application.wasm_screens() };
+    if( false == queue.due( *DestinationSign.wasm_sign ) ) { return; }
+    // read anew on every refresh, so the sign follows the timetable
+    queue.submit( DestinationSign.wasm_sign, std::make_shared<dictionary_source>( DestinationSign.wasm_request ), 0 );
 }
 
 bool TDynamicObject::Update(double dt, double dt1)
@@ -7080,6 +7095,14 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                         DestinationSign.script = asBaseDir + DestinationSign.script;
                     }
                 }
+                else if( token == "wasmdestinationsign:" ) {
+                    DestinationSign.wasm.deserialize( parser );
+                    // supply vehicle folder as script path if none is provided
+                    if( false == DestinationSign.wasm.script.empty()
+                     && substr_path( DestinationSign.wasm.script ).empty() ) {
+                        DestinationSign.wasm.script = asBaseDir + DestinationSign.wasm.script;
+                    }
+                }
                 // NOTE: legacy key, now expected as optional "background:" parameter in pydestinationsign: { parameter block }
                 else if( token == "destinationsignbackground:" ) {
                     parser.getTokens();
@@ -7099,7 +7122,9 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 
     if( ReplacableSkin != "none" ) {
         // potentially set blank destination texture
-        DestinationSign.destination_off = DestinationFind( DestinationSign.background.empty() ? "nowhere" : DestinationSign.background );
+        auto const wasmbackground { Global.wasm_enabled && false == DestinationSign.wasm.script.empty() && false == DestinationSign.wasm.background.empty() };
+        auto const &background { wasmbackground ? DestinationSign.wasm.background : DestinationSign.background };
+        DestinationSign.destination_off = DestinationFind( background.empty() ? "nowhere" : background );
     }
 
     // assign default samples to sound emitters which weren't included in the config file
@@ -7920,6 +7945,7 @@ void TDynamicObject::DestinationClear() {
     if( false == DestinationSign.has_light ) { return; } // physical destination signs remain up until manually changed
     // update_destinations() shows the blank sign in place of the missing destination
     DestinationSign.destination = null_handle;
+    DestinationSign.wasm_sign.reset();
 }
 
 void TDynamicObject::DestinationSet(std::string const &to, std::string const &numer) {
@@ -7933,6 +7959,8 @@ void TDynamicObject::DestinationSet(std::string const &to, std::string const &nu
 
     if( std::abs( m_materialdata.multi_textures ) >= 4 ) { return; } // jak są 4 tekstury wymienne, to nie zmieniać rozkładem
     if( DestinationSign.sign == nullptr )                { return; } // no sign submodel, no problem
+    // a sign drawn for the previous destination
+    DestinationSign.wasm_sign.reset();
 
     // now see if we can find any version of the destination texture
     std::vector<std::string> const destinations = {
@@ -7948,21 +7976,27 @@ void TDynamicObject::DestinationSet(std::string const &to, std::string const &nu
         }
     }
     // if we didn't get static texture we might be able to make one
+    if( true == destination_set_wasm( numer ) ) { return; }
     if( DestinationSign.script.empty() ) { return; } // no script so no way to make the texture
     if( numer == "none" )                { return; } // blank or incomplete/malformed timetable, don't bother
+
+    DestinationSign.destination = GfxRenderer->Fetch_Material( destination_request( DestinationSign.script, DestinationSign.instancing, DestinationSign.parameters ) );
+}
+
+std::string TDynamicObject::destination_request( std::string const &Script, std::string const &Instancing, std::string const &Parameters ) const {
 
     auto const trainname { [this]() -> std::string {
         if( ctOwner != nullptr ) { return ctOwner->TrainName(); }
         if( Mechanik != nullptr ) { return Mechanik->TrainName(); }
         return "none"; } }; // shouldn't get here but, eh
-    auto const instance { [this]() -> std::string {
-        if( DestinationSign.instancing == "name" ) { return MoverParameters->Name; }
-        if( DestinationSign.instancing == "type" ) { return MoverParameters->TypeName; }
+    auto const instance { [this, &Instancing]() -> std::string {
+        if( Instancing == "name" ) { return MoverParameters->Name; }
+        if( Instancing == "type" ) { return MoverParameters->TypeName; }
         return "none"; } };
 
     std::string signrequest {
           "make:"
-        + DestinationSign.script
+        + Script
         + "?"
         // timetable include
         + "$timetable=" + (
@@ -7973,15 +8007,40 @@ void TDynamicObject::DestinationSet(std::string const &to, std::string const &nu
         // NOTE: underscore doesn't have any magic meaning for the time being, it's just less likely to conflict with regular dictionary keys
         + "&_id1=" + trainname() };
     // TBD, TODO: replace instancing with support for variables in extra parameters string?
-    if( false == DestinationSign.instancing.empty() ) {
+    if( false == Instancing.empty() ) {
         signrequest += "&_id2=" + instance();
     }
     // optionl extra parameters
-    if( false == DestinationSign.parameters.empty() ) {
-        signrequest += "&" + DestinationSign.parameters;
+    if( false == Parameters.empty() ) {
+        signrequest += "&" + Parameters;
     }
+    return signrequest;
+}
 
-    DestinationSign.destination = GfxRenderer->Fetch_Material( signrequest );
+bool TDynamicObject::destination_set_wasm( std::string const &Numer ) {
+
+    if( false == Global.wasm_enabled )            { return false; }
+    if( DestinationSign.wasm.script.empty() )     { return false; } // no wasm sign, maybe a python one
+    if( Numer == "none" )                         { return false; } // blank or incomplete/malformed timetable, don't bother
+
+    auto const signrequest { destination_request( DestinationSign.wasm.script, DestinationSign.wasm.instancing, DestinationSign.wasm.parameters ) };
+    auto const signmaterial { GfxRenderer->Fetch_Material( signrequest ) };
+    if( signmaterial == null_handle ) { return false; }
+    auto &signtexture { GfxRenderer->Texture( GfxRenderer->Material( signmaterial )->GetTexture( 0 ) ) };
+
+    // vehicles showing the same request (one train, one instance) share the screen, as they share the texture
+    auto sign { Application.wasm_screens().acquire( {
+        .kind = wasm_screen_kind::external,
+        .script = DestinationSign.wasm.script,
+        .key = signrequest,
+        .texture = &signtexture,
+        .frames = DestinationSign.wasm.frames } ) };
+    if( sign == nullptr ) { return false; } // the wasm screens are off
+
+    DestinationSign.destination = signmaterial;
+    DestinationSign.wasm_sign = std::move( sign );
+    DestinationSign.wasm_request = signrequest.substr( signrequest.find( '?' ) + 1 );
+    return true;
 }
 
 material_handle TDynamicObject::DestinationFind( std::string Destination ) {

@@ -722,6 +722,10 @@ void
 opengl_texture::make_request() {
 
     auto const components { Split( name, '?' ) };
+    if( components.front().ends_with( ".wasm" ) ) {
+        // wasm destination signs are drawn by the vehicles showing them (wasm_screen_queue)
+        return;
+    }
 
 	auto dictionary = std::make_shared<dictionary_source>( components.back() );
 

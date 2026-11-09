@@ -25,6 +25,11 @@ add_executable(${UNIT_TESTS_NAME}
 
 # the core library brings the game's build settings along
 target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_core)
+# the wasm screen host, tested with the real runtime (test_wasm_host.cpp)
+if (WITH_WASM)
+	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/wasmscreens.cpp")
+	target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_wamr)
+endif()
 target_include_directories(${UNIT_TESTS_NAME} PRIVATE "${DEPS_DIR}/doctest")
 # the names the tests CAPTURE are often C strings, shown as text rather than pointers
 target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data" DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING)

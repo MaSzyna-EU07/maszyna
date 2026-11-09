@@ -72,6 +72,7 @@ option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
+option(WITH_WASM "WebAssembly screens (wasmscreen:, wasmdestinationsign:), run by the WAMR interpreter in ref/wamr" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
 option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
@@ -321,6 +322,13 @@ if (WITH_LUA)
 	set(SOURCES ${SOURCES} "scripting/lua.cpp")
 endif()
 
+if (WITH_WASM)
+	set(DEFINITIONS ${DEFINITIONS} "WITH_WASM")
+	set(SOURCES ${SOURCES} "scripting/wasmscreens.cpp")
+else()
+	set(SOURCES ${SOURCES} "scripting/wasmscreensstub.cpp")
+endif()
+
 if (WITHDUMPGEN)
 	set(DEFINITIONS ${DEFINITIONS} "WITHDUMPGEN")
 endif()
@@ -463,6 +471,8 @@ set(CORE_SOURCES
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
+"scripting/wasmscreenrules.cpp"
+"scripting/wasmscreenkernels.cpp"
 "simulation/simulationtestrules.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/handover.cpp"
@@ -676,6 +686,11 @@ if(WIN32 AND WITH_PYTHON)
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
 	)
 endif()
+
+if (WITH_WASM)
+	add_subdirectory("CMake_modules/wamr" "${CMAKE_CURRENT_BINARY_DIR}/wamr")
+	target_link_libraries(${PROJECT_NAME} eu07_wamr)
+endif ()
 
 if (WITH_BETTER_RENDERER)
     add_subdirectory("betterRenderer")

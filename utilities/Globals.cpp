@@ -72,6 +72,10 @@ void global_settings::FinalizeConfig()
     python_enabled = false;
 #endif
 
+#ifndef WITH_WASM
+    wasm_enabled = false;
+#endif
+
 #ifdef _WIN32
     Console::ModeSet(iFeedbackMode, iFeedbackPort);
 #endif
@@ -877,6 +881,29 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
     return false;
 }
 
+bool global_settings::ConfigParseWasm(cParser& Parser, std::string_view const token)
+{
+    if (token == "wasm.enabled")
+    {
+        ParseOne(Parser, wasm_enabled, 1);
+        return true;
+    }
+
+    if (token == "wasm.cabframes")
+    {
+        ParseOneClamped(Parser, wasm_cabframes, 1, 1000);
+        return true;
+    }
+
+    if (token == "wasm.externalframes")
+    {
+        ParseOneClamped(Parser, wasm_externalframes, 1, 1000);
+        return true;
+    }
+
+    return false;
+}
+
 bool global_settings::ConfigParsePython(cParser& Parser, const std::string& token)
 {
     if (token == "python.enabled")
@@ -1373,6 +1400,9 @@ void global_settings::ConfigParse(cParser& Parser)
         if (ConfigParsePython(Parser, token))
             continue;
 
+        if (ConfigParseWasm(Parser, token))
+            continue;
+
         if (ConfigParseNetwork(Parser, token))
             continue;
 
@@ -1840,6 +1870,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );
     export_as_text( Output, "python.mipmaps", python_mipmaps );
+    export_as_text( Output, "wasm.enabled", wasm_enabled );
+    export_as_text( Output, "wasm.cabframes", wasm_cabframes );
+    export_as_text( Output, "wasm.externalframes", wasm_externalframes );
     export_as_text( Output, "async.trainThreads", trainThreads );
     for( auto const &server : network_servers ) {
         Output
