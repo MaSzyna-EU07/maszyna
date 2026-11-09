@@ -1422,6 +1422,22 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     return false; //
 }
 
+// a road speed (W27/W27a) lower than the one in force holds once the head passes the sign, a higher one only once the
+// whole train is past it. returns true while the sign is passed by the head but is kept for the rear: it is then left
+// out of the rest of the table update, which would drop it from the table
+bool
+TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
+
+    if( Point.fDist >= 0.0 ) { return false; }
+
+    auto const isrearpast { Point.fDist < -fLength };
+    if( isrearpast
+     || Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
+        VelRoad = Point.fVelNext;
+    }
+    return false == isrearpast;
+}
+
 bool
 TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex ) {
 
@@ -1600,12 +1616,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
         }
     }
     else if ( Point.iFlags & spRoadVel)
-    { // to W6
-        if ( Point.fDist < 0)
-            VelRoad = Point.fVelNext;
+    { // to W27/W27a
+        if( TableUpdateRoadVelocity( Point ) ) {
+            return true;
+        }
     }
     else if ( Point.iFlags & spSectionVel && Point.fDist < 0)
-    { // to W27
+    { // to W9
 		// teraz trzeba sprawdzić inne warunki
 		if (Point.fSectionVelocityDist == 0.0)
 		{
