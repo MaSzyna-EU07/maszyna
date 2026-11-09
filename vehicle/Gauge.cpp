@@ -467,6 +467,7 @@ TGauge TGauge::MirrorCopy() const {
     mirror.m_endscale = m_endscale;
     mirror.m_endvalue = m_endvalue;
     mirror.m_interpolatescale = m_interpolatescale;
+    mirror.m_scaletable = m_scaletable;
     mirror.m_state = m_state;
     mirror.m_sourcemodel = m_sourcemodel;
     return mirror;
