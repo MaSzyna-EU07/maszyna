@@ -4186,6 +4186,11 @@ void editor_mode::render_view_menu()
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
+    if (ImGui::MenuItem(STR_C("Cursor drawn into the picture (streams)"), nullptr, ui_layer::drawn_cursor()))
+        ui_layer::draw_cursor(false == ui_layer::drawn_cursor());
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\n"
+                                      "or a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
         m_gauge.toggle();
     if (ImGui::IsItemHovered())

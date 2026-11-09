@@ -104,6 +104,9 @@ public:
     static void begin_ui_frame_internal();
     //
 	static void set_cursor( int Mode );
+	// the cursor drawn into the picture by the interface instead of the system: seen in a stream or a recording of the window
+	static void draw_cursor( bool Draw );
+	static bool drawn_cursor() { return m_drawcursor; }
 	// loading
 	void set_progress(std::string const &Text);
 	void set_progress(float progress, float subtaskprogress);
@@ -139,6 +142,7 @@ protected:
 	static GLFWwindow *m_keywindow; // window of the key event being handled
     static ImGuiIO *m_imguiio;
     static bool m_cursorvisible;
+    static inline bool m_drawcursor{ false };
 
    virtual void render_menu_contents();
 	// items of the windows menu which belong to the ui of a mode, after the common ones
