@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 #include "hamulce.h"
 #include "scripting/ladderlogic.h"
-#include "vehicle/odometer.h"
+#include "vehicle/odometerreading.h"
 
 class cParser;
 /*

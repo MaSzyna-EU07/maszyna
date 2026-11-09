@@ -15,37 +15,13 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 #include <string>
 
+#include "vehicle/odometerreading.h"
+
 // the odometer of a vehicle: the total distance it has run, kept between the sessions (eu07/maszyna#72).
 // the analog counters in the cab (distcounter:) and the python screens (state["odometer_total"]) show
 // this one state, instead of the counters starting from their .mmd offset and the screens each keeping
 // their own files
 namespace odometer {
-
-// where the state of a vehicle came from
-enum class origin {
-	saved, // the odometer store of the earlier sessions
-	legacy, // the file a python screen kept it in before
-	counter, // the offset of the cab's counter, which used to show it on top of the distance run in the session
-	guessed // counted from a made up state, which the cab's counter can still replace, also once it was saved
-};
-
-// odometer of one vehicle
-struct reading {
-	double km{0.0}; // the state, km
-	double start{0.0}; // the state at the start of the session, km
-	origin source{origin::guessed};
-	double guess{0.0}; // the made up state a guessed one counts from, km
-
-	// sets the state the vehicle starts the session with
-	void begin(double Km, origin Source);
-	// replaces the made up state a guessed one counts from with the one the cab's counter showed at the start,
-	// the distance run on top of it kept, in this session and the earlier ones. a known state stays
-	void seed(double Km);
-	// counts the distance run, in metres either way
-	void run(double Metres);
-	// the vehicle has run in this session
-	bool moved() const;
-};
 
 // the saved odometer states of the vehicles, km by vehicle name. the name is the one the scenario gives the vehicle
 // (the name of its node, TDynamicObject::name(), e.g. EU07-424), the only identity a vehicle has between the sessions:

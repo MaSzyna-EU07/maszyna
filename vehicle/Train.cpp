@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/odometer.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
