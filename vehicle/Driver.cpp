@@ -1430,6 +1430,13 @@ TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
 
     if( Point.fDist >= 0.0 ) { return false; }
 
+    if( is_car() ) {
+        // a car's passed events leave the table at the latest when its rear passes them (TableCheck),
+        // before this could see that, so a car keeps taking the road speed from the head
+        VelRoad = Point.fVelNext;
+        return false;
+    }
+
     auto const isrearpast { Point.fDist < -fLength };
     if( isrearpast
      || Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
@@ -1733,11 +1740,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 						// jeśli przejechany
 						VelSignal = Velocity == 0.0 ? 0.0 : -1.0;
 						// ustawienie, gdy przejechany jest lepsze niż wcale, ale to jeszcze nie to
-						if (Point.iFlags & spEvent && (Point.evEvent != eSignSkip || Point.fVelNext != VelRestricted))
+						if (Point.iFlags & spEvent && (Point.evEvent != eSignSkip || Point.fVelNext != VelRestricted)
+						 && false == TestFlag(Point.iFlags, spRoadVel))
 						{
 							// jeśli event
 							// ale inny niż ten, na którym minięto S1, chyba że się już zmieniło
 							// sygnał zezwalający na jazdę wyłącza jazdę na widoczność (po S1 na SBL)
+							// a road speed sign (W27) is no signal and doesn't end it
 							iDrivigFlags &= ~moveVisibility;
 							// remove restricted speed
 							VelRestricted = -1.0;
