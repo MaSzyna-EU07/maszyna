@@ -1026,14 +1026,32 @@ void driver_mode::OnKeyDown(int cKey)
 	}
 	case GLFW_KEY_F5:
 	{
-		// przesiadka do innego pojazdu
-		if (!FreeFlyModeFlag)
-			// only available in free fly mode
+		// Shift cycles through the consist; ordinary F5 is only available in free fly.
+		if (!FreeFlyModeFlag && !Global.shiftState)
 			break;
 
-		TDynamicObject *dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
+		TDynamicObject *dynamic = nullptr;
+		if (Global.shiftState && simulation::Train)
+		{
+			TDynamicObject *current = simulation::Train->Dynamic();
+			dynamic = current ? current->Next() : nullptr;
+			if (!dynamic && current)
+			{
+				dynamic = current->Prev();
+				while (dynamic && dynamic->Prev())
+					dynamic = dynamic->Prev();
+			}
+		}
+		else
+		{
+			dynamic = std::get<TDynamicObject *>(simulation::Region->find_vehicle(Global.pCamera.Pos, 50, false, false));
+		}
+
 		if (dynamic)
 		{
+			if (Global.shiftState && !FreeFlyModeFlag)
+				InOutKey();
+
 			m_relay.post(user_command::entervehicle, Global.ctrlState ? GLFW_MOD_CONTROL : 0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(),
 			             &dynamic->name());
 
