@@ -307,6 +307,7 @@ public:
         endpoints() const;
 
 	gfx::geometrybank_handle extra_map_geometry; // handle for map highlighting
+	gfx::geometrybank_handle road_map_geometry; // geometry for map visualization of roads
 
 	TTrack *Next(TTrack *visitor);
 	double ActiveLength();

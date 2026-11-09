@@ -858,7 +858,7 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
 
     if (token == "gui.defaultwindows")
     {
-        ParseOne(Parser, gui_defaultwindows, 1);
+        ParseOne(Parser, gui_defaultwindows, 0);
         return true;
     }
 
@@ -870,7 +870,7 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
 
     if (token == "gui.trainingdefault")
     {
-        ParseOne(Parser, gui_trainingdefault, 1);
+        ParseOne(Parser, gui_trainingdefault, 0);
         return true;
     }
 

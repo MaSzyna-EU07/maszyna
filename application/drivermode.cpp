@@ -659,6 +659,13 @@ void driver_mode::update_camera(double const Deltatime)
 	}
 
 	// uwzględnienie ruchu wywołanego klawiszami
+	if (Global.FreeCameraTeleport && Camera.m_owner == nullptr)
+	{
+		Camera.Pos = *Global.FreeCameraTeleport;
+		Camera.Velocity = {};
+		Global.FreeCameraTeleport.reset();
+	}
+
 	if (false == DebugCameraFlag)
 	{
 		// regular camera

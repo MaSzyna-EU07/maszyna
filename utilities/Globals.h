@@ -54,6 +54,7 @@ struct global_settings {
     TCamera pDebugCamera;
     std::array<glm::dvec3, 10> FreeCameraInit; // pozycje kamery
     std::array<glm::vec3, 10> FreeCameraInitAngle;
+    std::optional<glm::dvec3> FreeCameraTeleport;
     int iCameraLast{ -1 };
     int iSlowMotion{ 0 }; // info o malym FPS: 0-OK, 1-wyłączyć multisampling, 3-promień 1.5km, 7-1km
     basic_light DayLight;
@@ -276,7 +277,7 @@ struct global_settings {
 	bool render_cab = true;
 	bool crash_damage = true;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
-	bool gui_defaultwindows = true;
+	bool gui_defaultwindows = false;
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
 

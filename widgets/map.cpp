@@ -1,80 +1,19 @@
 #include "stdafx.h"
 #include "widgets/map.h"
 #include "widgets/map_objects.h"
-#include "utilities/Logs.h"
 #include "vehicle/Train.h"
 #include "vehicle/Camera.h"
 #include "simulation/simulation.h"
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
 #include "application/application.h"
+#include "world/Sweep.h"
 
 ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 {
 	size_min = {200, 200};
 	size_max = {fb_size, fb_size};
 	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-
-#ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
-    if (!gl33) {
-        ErrorLog("map not supported on old renderer");
-        return;
-    }
-#else
-    ErrorLog("map not supported on old renderer");
-    return;
-#endif
-
-	gl::shader vert("map.vert");
-	gl::shader frag("map.frag");
-
-	m_track_shader = std::unique_ptr<gl::program>(new gl::program({vert, frag}));
-	if (!Global.gfx_usegles || GLAD_GL_EXT_geometry_shader) {
-		gl::shader poi_frag("map_poi.frag");
-		gl::shader poi_geom("map_poi.geom");
-		m_poi_shader = std::unique_ptr<gl::program>(new gl::program({vert, poi_frag, poi_geom}));
-        m_icon_atlas = GfxRenderer->Fetch_Texture("map_icons");
-	}
-
-	m_tex = std::make_unique<opengl_texture>();
-    m_tex->alloc_rendertarget(GL_RGB8, GL_RGB, fb_size, fb_size);
-
-	m_fb = std::make_unique<gl::framebuffer>();
-	m_fb->attach(*m_tex, GL_COLOR_ATTACHMENT0);
-
-	m_fb->setup_drawing(1);
-
-	if (!m_fb->is_complete())
-	{
-		ErrorLog("map framebuffer incomplete");
-		return;
-	}
-
-	if (Global.iMultisampling)
-	{
-		m_msaa_rb = std::make_unique<gl::renderbuffer>();
-		m_msaa_rb->alloc(GL_RGB8, fb_size, fb_size, 1 << Global.iMultisampling);
-
-		m_msaa_fb = std::make_unique<gl::framebuffer>();
-		m_msaa_fb->attach(*m_msaa_rb, GL_COLOR_ATTACHMENT0);
-
-		m_msaa_fb->setup_drawing(1);
-
-		if (!m_msaa_fb->is_complete())
-		{
-			ErrorLog("map multisampling framebuffer incomplete");
-			return;
-		}
-	}
-
-    glGetError();
-    glLineWidth(2.0f);
-    if (!glGetError())
-        m_widelines_supported = true;
-
-	scene_ubo = std::make_unique<gl::ubo>(sizeof(gl::scene_ubs), 0);
-
 	init_done = true;
 }
 
@@ -86,7 +25,7 @@ float ui::map_panel::get_vehicle_rotation()
 	return glm::atan(front.z, front.x) - glm::atan(north_ptr.y, north_ptr.x);
 }
 
-void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_size)
+void ui::map_panel::collect_map_geometry(glm::mat4 transform)
 {
 	cFrustum frustum;
 	frustum.calculate(transform, glm::mat4());
@@ -94,6 +33,7 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 	m_colored_paths.switches.clear();
 	m_colored_paths.occupied.clear();
 	m_colored_paths.future.clear();
+	m_colored_paths.roads.clear();
     m_colored_paths.highlighted.clear();
 	m_section_handles.clear();
 
@@ -106,10 +46,8 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
 			{
 				const gfx::geometrybank_handle handle = section->get_map_geometry();
 				if (handle != null_handle)
-				{
 					m_section_handles.push_back(handle);
-					section->get_map_active_paths(m_colored_paths);
-				}
+				section->get_map_active_paths(m_colored_paths);
 			}
 		}
 	}
@@ -122,86 +60,161 @@ void ui::map_panel::render_map_texture(glm::mat4 transform, glm::vec2 surface_si
         if (entry.first)
             entry.first->get_map_paths_for_state(m_colored_paths, entry.second);
     }
+}
 
-	glDisable(GL_DEPTH_TEST);
-	if (Global.iMultisampling)
+void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform)
+{
+	const auto to_screen = [&](glm::vec3 const &position) {
+		glm::vec4 ndc = transform * glm::vec4(position, 1.0f);
+		return ImVec2(origin.x + (ndc.x + 1.0f) * 0.5f * surface_size.x,
+		              origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y);
+	};
+
+	const auto draw_geometry = [&](gfx::geometrybank_handle const &handle, ImU32 color) {
+		if (handle == null_handle)
+			return;
+
+		auto const &vertices = GfxRenderer->Vertices(handle);
+		for (std::size_t idx = 0; idx + 1 < vertices.size(); idx += 2)
+			draw_list->AddLine(to_screen(vertices[idx].position), to_screen(vertices[idx + 1].position), color);
+	};
+
+	for (auto const &handle : m_section_handles)
+		draw_geometry(handle, IM_COL32(190, 195, 200, 255));
+	for (auto const &handle : m_colored_paths.roads)
+		draw_geometry(handle, IM_COL32(235, 165, 65, 255));
+	for (auto const &handle : m_colored_paths.future)
+		draw_geometry(handle, IM_COL32(180, 180, 65, 255));
+	for (auto const &handle : m_colored_paths.switches)
+		draw_geometry(handle, IM_COL32(0, 255, 0, 255));
+	for (auto const &handle : m_colored_paths.occupied)
+		draw_geometry(handle, IM_COL32(255, 0, 0, 255));
+	for (auto const &handle : m_colored_paths.highlighted)
+		draw_geometry(handle, IM_COL32(75, 75, 255, 255));
+
+	for (auto const &object : map::Objects.entries)
 	{
-		m_msaa_fb->clear(GL_COLOR_BUFFER_BIT);
-		m_msaa_fb->bind();
-	}
-	else
-	{
-		m_fb->clear(GL_COLOR_BUFFER_BIT);
-		m_fb->bind();
-	}
-
-	m_track_shader->bind();
-    if (m_widelines_supported)
-        glLineWidth(1.5f);
-	glViewport(0, 0, surface_size.x, surface_size.y);
-
-	scene_ubs.projection = transform;
-    scene_ubs.cascade_end = glm::vec4(0.5f, 0.5f, 0.5f, 0.0f);
-	scene_ubo->update(scene_ubs);
-	scene_ubo->bind_uniform();
-
-#ifdef WITH_OPENGL_MODERN
-    opengl33_renderer *gl33 = dynamic_cast<opengl33_renderer*>(GfxRenderer.get());
-
-    gl33->Draw_Geometry(m_section_handles.begin(), m_section_handles.end());
-
-    if (m_widelines_supported)
-        glLineWidth(4.5f);
-    scene_ubs.cascade_end = glm::vec4(0.7f, 0.7f, 0.0f, 0.0f);
-	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.future.begin(), m_colored_paths.future.end());
-
-    if (m_widelines_supported)
-        glLineWidth(3.0f);
-    scene_ubs.cascade_end = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
-	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.switches.begin(), m_colored_paths.switches.end());
-
-    if (m_widelines_supported)
-        glLineWidth(1.5f);
-    scene_ubs.cascade_end = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.occupied.begin(), m_colored_paths.occupied.end());
-
-    if (m_widelines_supported)
-        glLineWidth(4.0f);
-    scene_ubs.cascade_end = glm::vec4(0.3f, 0.3f, 1.0f, 0.0f);
-    scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(m_colored_paths.highlighted.begin(), m_colored_paths.highlighted.end());
-
-	if (!Global.gfx_usegles || GLAD_GL_EXT_geometry_shader) {
-        gl33->Bind_Texture(0, m_icon_atlas);
-		m_poi_shader->bind();
-        scene_ubs.cascade_end = glm::vec4(1.0f / (surface_size / 200.0f), 1.0f, 0.0f);
+		ImU32 color = IM_COL32(255, 220, 70, 255);
+		if (std::dynamic_pointer_cast<map::launcher>(object))
+			color = IM_COL32(255, 150, 50, 255);
+		else if (std::dynamic_pointer_cast<map::track_switch>(object))
+			color = IM_COL32(80, 190, 255, 255);
+		else if (std::dynamic_pointer_cast<map::obstacle>(object))
+			color = IM_COL32(255, 80, 80, 255);
+		draw_list->AddCircleFilled(to_screen(object->location), 3.0f, color);
 	}
 
-	if (map::Objects.poi_dirty) {
-		map::Objects.poi_dirty = false;
-		simulation::Region->update_poi_geometry();
-	}
-
-	scene_ubo->update(scene_ubs);
-    gl33->Draw_Geometry(simulation::Region->get_map_poi_geometry());
-#endif
-
-	if (Global.iMultisampling)
-		m_fb->blit_from(m_msaa_fb.get(), surface_size.x, surface_size.y, GL_COLOR_BUFFER_BIT, GL_COLOR_ATTACHMENT0);
-
-	gl::framebuffer::unbind();
-	gl::program::unbind();
 }
 
 void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size)
 {
+	ImDrawList *draw_list = ImGui::GetWindowDrawList();
+	std::vector<std::string> station_names;
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.9f, 1.0f, 1.0f));
+	for (basic_event *event : simulation::Events.sequence())
+	{
+		if (!event || event->input_command() != TCommandType::cm_PassengerStopPoint)
+			continue;
+
+		std::string name = event->input_text();
+		constexpr std::string_view stop_point_prefix = "PassengerStopPoint:";
+		if (!name.starts_with(stop_point_prefix))
+			continue;
+
+		name = Bezogonkow(name.substr(stop_point_prefix.size()), true);
+		if (name.empty() || std::find(station_names.begin(), station_names.end(), name) != station_names.end())
+			continue;
+
+		glm::vec4 ndc_pos = transform * glm::vec4(glm::vec3(event->input_location()), 1.0f);
+		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
+			continue;
+		station_names.push_back(name);
+
+		ImVec2 const text_size = ImGui::CalcTextSize(name.c_str());
+		glm::vec2 const gui_pos =
+			(glm::vec2(ndc_pos.x, -ndc_pos.z) / 2.0f + 0.5f) * glm::vec2(surface_size.x, surface_size.y);
+		ImGui::SetCursorPos(ImVec2(
+			origin.x + gui_pos.x - text_size.x / 2.0f,
+			origin.y + gui_pos.y - text_size.y / 2.0f));
+		ImGui::TextUnformatted(name.c_str());
+	}
+	ImGui::PopStyleColor();
+
+	ImVec2 const window_position = ImGui::GetWindowPos();
+	ImVec2 const map_screen_origin(window_position.x + origin.x, window_position.y + origin.y);
+	draw_list->PushClipRect(
+		map_screen_origin,
+		ImVec2(map_screen_origin.x + surface_size.x, map_screen_origin.y + surface_size.y),
+		true);
+	for (sweep_node *sweep : simulation::Sweeps.sequence())
+	{
+		if (!sweep || !sweep->definition().platform)
+			continue;
+
+		glm::dvec3 low, high, shift;
+		if (!sweep->bounds(low, high, shift))
+			continue;
+
+		auto const &definition = sweep->definition();
+		double const near_side = definition.lateral >= 0.0 ? low.y : high.y;
+		double const far_side = definition.lateral >= 0.0 ? high.y : low.y;
+		double const start = std::clamp(sweep->start(), 0.0, sweep->length());
+		double const end = std::clamp(sweep->end(), start, sweep->length());
+		if (end - start < 0.1)
+			continue;
+
+		auto const edge_position = [&](double distance, double side) {
+			auto const frame = sweep->frame_at(distance);
+			double const offset = definition.lateral + sweep->setback(frame) + side + shift.y;
+			return frame.position + frame.left * offset;
+		};
+		auto const to_screen = [&](glm::dvec3 const &position) {
+			glm::vec4 const ndc = transform * glm::vec4(glm::vec3(position), 1.0f);
+			return ImVec2(
+				map_screen_origin.x + (ndc.x + 1.0f) * 0.5f * surface_size.x,
+				map_screen_origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y);
+		};
+
+		double distance = start;
+		auto near_previous = edge_position(distance, near_side);
+		auto far_previous = edge_position(distance, far_side);
+		while (distance < end)
+		{
+			distance = std::min(distance + 3.0, end);
+			auto const near_current = edge_position(distance, near_side);
+			auto const far_current = edge_position(distance, far_side);
+			draw_list->AddLine(to_screen(near_previous), to_screen(near_current), IM_COL32(255, 190, 90, 255), 1.5f);
+			draw_list->AddLine(to_screen(far_previous), to_screen(far_current), IM_COL32(220, 155, 75, 220), 1.0f);
+			near_previous = near_current;
+			far_previous = far_current;
+		}
+		draw_list->AddLine(to_screen(edge_position(start, near_side)), to_screen(edge_position(start, far_side)), IM_COL32(255, 225, 160, 255), 1.0f);
+		draw_list->AddLine(to_screen(near_previous), to_screen(far_previous), IM_COL32(255, 225, 160, 255), 1.0f);
+	}
+	draw_list->PopClipRect();
+
+	for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
+	{
+		if (!vehicle->MyTrack || (vehicle->MyTrack->iCategoryFlag & 15) != 1)
+			continue;
+
+		glm::vec4 ndc_pos = transform * glm::vec4(glm::vec3(vehicle->GetPosition()), 1.0f);
+		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
+			continue;
+
+		ImVec2 const vehicle_pos(
+		    map_screen_origin.x + (ndc_pos.x + 1.0f) * 0.5f * surface_size.x,
+		    map_screen_origin.y + (1.0f - ndc_pos.z) * 0.5f * surface_size.y);
+		bool const is_train_front = vehicle->Prev() == nullptr;
+		float const marker_radius = is_train_front ? 4.0f : 3.0f;
+		draw_list->AddCircleFilled(vehicle_pos, marker_radius, IM_COL32(100, 255, 130, 255));
+		draw_list->AddCircle(vehicle_pos, marker_radius, IM_COL32(20, 35, 25, 255), 0, 1.0f);
+	}
+
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 1.0f, 0.7f, 1.0f));
 	for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
 	{
-		if (vehicle->Prev() || !vehicle->Mechanik)
+		if (!vehicle->MyTrack || (vehicle->MyTrack->iCategoryFlag & 15) != 1 || vehicle->Prev() || !vehicle->Mechanik)
 			continue;
 
 		std::string label = vehicle->Mechanik->TrainName();
@@ -213,8 +226,6 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 			continue;
 
 		glm::vec2 gui_pos = (glm::vec2(ndc_pos.x, -ndc_pos.z) / 2.0f + 0.5f) * glm::vec2(surface_size.x, surface_size.y);
-
-		TDynamicObject *veh = vehicle;
 
 		ImVec2 textsize = ImGui::CalcTextSize(label.c_str());
 		ImGui::SetCursorPos(ImVec2(origin.x + gui_pos.x - textsize.x / 2.0f, origin.y + gui_pos.y - textsize.y / 2.0f));
@@ -295,30 +306,20 @@ void ui::map_panel::render_contents()
 	transform = glm::translate(transform, glm::vec3(translate.x, 0.0f, translate.y));
 	transform = glm::scale(transform, glm::vec3(zoom));
 
-	render_map_texture(transform, surface_size);
+	collect_map_geometry(transform);
 
 	ImVec2 window_origin = ImGui::GetCursorPos();
 	ImVec2 screen_origin = ImGui::GetCursorScreenPos();
 
-	// Specify alpha for the map image tint so the map window
-	// honors the ui.bg.opacity setting like other windows.
-	// Make the button frame fully transparent so ImageButton's
-	// ImGuiCol_Button background (green and opaque on hover) doesn't
-	// show behind the tinted image.
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-	// imgui 1.89+ takes the frame padding of the image button from the style
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-	ImGui::ImageButton("##map",
-					   (ImTextureID)(intptr_t)(m_tex->id),
-					   surface_size_im,
-					   ImVec2(0, surface_size.y / fb_size),
-					   ImVec2(surface_size.x / fb_size, 0),
-					   ImVec4(0.0f, 0.0f, 0.0f, 0.0f),
-					   ImVec4(1.0f, 1.0f, 1.0f, Global.UIBgOpacity));
-	ImGui::PopStyleVar();
-	ImGui::PopStyleColor(3);
+	ImDrawList *draw_list = ImGui::GetWindowDrawList();
+	draw_list->PushClipRect(screen_origin, ImVec2(screen_origin.x + surface_size.x, screen_origin.y + surface_size.y), true);
+	draw_list->AddRectFilled(
+		screen_origin,
+		ImVec2(screen_origin.x + surface_size.x, screen_origin.y + surface_size.y),
+		IM_COL32(18, 22, 26, 255));
+	render_map_lines(draw_list, screen_origin, surface_size, transform);
+	draw_list->PopClipRect();
+	ImGui::InvisibleButton("##map", surface_size_im);
 
 	if (ImGui::IsItemHovered())
 	{
@@ -326,11 +327,18 @@ void ui::map_panel::render_contents()
 		const glm::vec2 surface_pos(screen_pos.x - screen_origin.x, screen_pos.y - screen_origin.y);
 		const glm::vec2 ndc_pos = surface_pos / surface_size * 2.0f - 1.0f;
 		const ImGuiIO &io = ImGui::GetIO();
+		const auto relocate_camera = [&] {
+			glm::vec3 const world_pos = glm::inverse(transform) * glm::vec4(ndc_pos.x, 0.0f, -ndc_pos.y, 1.0f);
+			glm::dvec3 const camera_position(world_pos.x, Global.pCamera.Pos.y, world_pos.z);
+			Global.FreeCameraInit[0] = camera_position;
+			Global.FreeCameraTeleport = camera_position;
+			Global.pCamera.Pos = camera_position;
+		};
 
 		if (io.MouseWheel != 0.0f)
 		{
 			float prev_zoom = zoom;
-			zoom *= std::pow(2.0, io.MouseWheel);
+			zoom *= std::pow(1.2, io.MouseWheel);
 			float x = zoom / prev_zoom;
 
 			glm::vec4 corrected = glm::inverse(aspect_transform) * glm::vec4(ndc_pos.x, 0.0f, ndc_pos.y, 1.0f);
@@ -341,13 +349,12 @@ void ui::map_panel::render_contents()
 			Application.set_cursor_pos(surface_screen_center.x, surface_screen_center.y);
 		}
 
-        if (FreeFlyModeFlag && ImGui::IsMouseClicked(2)) {
-            glm::vec3 world_pos = glm::inverse(transform) * glm::vec4(ndc_pos.x, 0.0f, -ndc_pos.y, 1.0f);
-
-            Global.FreeCameraInit[0].x = world_pos.x;
-            Global.FreeCameraInit[0].y = Global.pCamera.Pos.y;
-            Global.FreeCameraInit[0].z = world_pos.z;
-        }
+		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr
+			&& ImGui::IsMouseReleased(0)
+			&& io.MouseDragMaxDistanceSqr[0] < io.MouseDragThreshold * io.MouseDragThreshold)
+			relocate_camera();
+		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr && ImGui::IsMouseClicked(2))
+			relocate_camera();
 		if (mode == 0 && ImGui::IsMouseDragging(0))
 		{
 			ImVec2 delta_im = ImGui::GetMouseDragDelta();
@@ -424,9 +431,6 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 
 			for (int i = 0; i < iMaxNumLights; i++)
 			{
-#ifdef WITH_OPENGL_MODERN
-                dynamic_cast<opengl33_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
-#endif
 				auto state = model->LightGet(i);
 				if (!state)
 					continue;
@@ -480,9 +484,6 @@ void ui::semaphore_window::render_content()
 
 		for (int i = 0; i < iMaxNumLights; i++)
 		{
-#ifdef WITH_OPENGL_MODERN
-            dynamic_cast<opengl33_renderer*>(GfxRenderer.get())->Update_AnimModel(model); // update lamp opacities
-#endif
 			auto state = model->LightGet(i);
 			if (!state)
 				continue;
@@ -638,11 +639,6 @@ void ui::obstacle_insert_window::render_content()
 			obstacle->location = m_position;
 			obstacle->model_name = name;
 
-			std::vector<gfx::basic_vertex> vertices;
-			vertices.emplace_back(std::move(obstacle->vertex()));
-			gfx::userdata_array userdata{};
-			GfxRenderer->Append(vertices, userdata, simulation::Region->get_map_poi_geometry(), GL_POINTS);
-
 			map::Objects.entries.push_back(std::move(obstacle));
 
 			ImGui::CloseCurrentPopup();
@@ -665,8 +661,6 @@ void ui::obstacle_remove_window::render_content()
 				break;
 			}
 		}
-
-		map::Objects.poi_dirty = true;
 
 		ImGui::CloseCurrentPopup();
 	}

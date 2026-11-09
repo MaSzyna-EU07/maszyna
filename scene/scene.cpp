@@ -21,7 +21,6 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/sn_utils.h"
 #include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
-#include "widgets/map_objects.h"
 
 namespace scene {
 
@@ -1811,22 +1810,6 @@ void basic_region::load_terrain()
             section->load_terrain();
         }
     }
-}
-
-void basic_region::update_poi_geometry()
-{
-	std::vector<gfx::basic_vertex> vertices;
-	gfx::userdata_array userdata;
-	for (const auto &sem : map::Objects.entries)
-		vertices.push_back(std::move(sem->vertex()));
-
-	if (!m_map_poipoints) {
-        gfx::geometrybank_handle poibank = GfxRenderer->Create_Bank();
-        m_map_poipoints = GfxRenderer->Insert(vertices, userdata, poibank, GL_POINTS);
-	}
-	else {
-		GfxRenderer->Replace(vertices, userdata, m_map_poipoints, GL_POINTS);
-	}
 }
 
 } // scene

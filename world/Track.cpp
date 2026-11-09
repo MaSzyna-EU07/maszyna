@@ -1223,9 +1223,29 @@ void TTrack::RaAssign( TAnimModel *am, basic_event *done, basic_event *joined )
 
 void TTrack::create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra)
 {
-    if (iCategoryFlag != 1)
-        return; // only tracks for now
 	gfx::userdata_array empty_userdata{};
+
+	if (iCategoryFlag == 2)
+	{
+		std::vector<gfx::basic_vertex> vertices;
+		if (eType == tt_Normal)
+		{
+			Segment->render_lines(vertices, 0.5f);
+		}
+		else if (eType == tt_Cross)
+		{
+			for (auto const &segment : SwitchExtension->Segments)
+			{
+				if (segment)
+					segment->render_lines(vertices, 0.5f);
+			}
+		}
+		road_map_geometry = GfxRenderer->Insert(vertices, empty_userdata, Extra, GL_LINES);
+		return;
+	}
+
+	if (iCategoryFlag != 1)
+		return;
 
 	switch (eType)
 	{
@@ -1296,6 +1316,12 @@ double TTrack::ActiveLength() {
 
 void TTrack::get_map_active_paths(map_colored_paths &handles)
 {
+	if (iCategoryFlag == 2) {
+		if (road_map_geometry != null_handle)
+			handles.roads.push_back(road_map_geometry);
+		return;
+	}
+
 	if (iCategoryFlag != 1)
 		return;
 

@@ -1,15 +1,9 @@
 #pragma once
 
-#include "gl/shader.h"
-#include "model/Texture.h"
 #include "application/uilayer.h"
 #include "widgets/map_objects.h"
 #include "widgets/popup.h"
-#include "gl/framebuffer.h"
 #include "rendering/frustum.h"
-#ifdef WITH_OPENGL_MODERN
-#include "rendering/opengl33renderer.h"
-#endif
 
 namespace ui
 {
@@ -100,22 +94,8 @@ class map_panel : public ui_panel
 {
     friend class track_switch_window;
 
-	std::unique_ptr<gl::program> m_track_shader;
-	std::unique_ptr<gl::program> m_poi_shader;
-	std::unique_ptr<gl::framebuffer> m_msaa_fb;
-	std::unique_ptr<gl::renderbuffer> m_msaa_rb;
-	texture_handle m_icon_atlas;
-
-	std::unique_ptr<gl::framebuffer> m_fb;
-	std::unique_ptr<opengl_texture> m_tex;
-
-	std::unique_ptr<gl::ubo> scene_ubo;
-	gl::scene_ubs scene_ubs;
-
 	std::vector<gfx::geometrybank_handle> m_section_handles;
 	map_colored_paths m_colored_paths;
-
-	bool m_widelines_supported;
 
     const int fb_size = 1024;
 
@@ -124,7 +104,8 @@ class map_panel : public ui_panel
 	enum { MODE_MANUAL = 0, MODE_CAMERA, MODE_VEHICLE } mode = MODE_MANUAL;
 
 	float get_vehicle_rotation();
-	void render_map_texture(glm::mat4 transform, glm::vec2 surface_size);
+	void collect_map_geometry(glm::mat4 transform);
+	void render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform);
 	void render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);
 
 	bool init_done = false;
