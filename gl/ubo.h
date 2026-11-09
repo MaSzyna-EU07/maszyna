@@ -80,7 +80,11 @@ namespace gl
         float fog_density;
         float alpha_mult;
         float shadow_tone;
-        UBS_PAD(12);
+        // 1.0 while GL_SAMPLE_ALPHA_TO_COVERAGE is on, so the alpha tested shaders write the
+        // coverage of their test edge; 0.0 keeps their plain alpha test. set together with
+        // the GL state by opengl33_renderer::setup_alpha_to_coverage()
+        float alpha_to_coverage;
+        UBS_PAD(8);
 
         void set_modelview(const glm::mat4 &mv)
         {

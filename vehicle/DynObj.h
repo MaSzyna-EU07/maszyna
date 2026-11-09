@@ -157,6 +157,9 @@ public:
     float fMaxDist; // do jakiej odległości wykonywana jest animacja NOTE: square of actual distance
     float fSpeed; // parametr szybkości animacji
     int iNumber; // numer kolejny obiektu
+    // door wings only: the submodel of the same name in the low poly interior, if it has one, posed along with
+    // smAnimated, so the inside of the door can be part of the interior and lit with it
+    TSubModel *smInterior { nullptr };
 
     TUpdate yUpdate; // metoda TDynamicObject aktualizująca animację
 /*
@@ -316,6 +319,16 @@ private:
     TSubModel *sm_summer_variant {}; // submodel letniego wariantu
     TSubModel *sm_autumn_variant {}; // submodel jesiennego wariantu
     double fWahaczeAmp;
+    // levers with a slot, turned by a pin on the coupling rod sliding in the slot (e.g. speedometer drive of 401Da)
+    struct slottedlever_data {
+        TSubModel *submodel { nullptr }; // lever, turned around its local X axis like the wheels
+        int axle { 0 }; // index of the axle animation, whose crank drives the coupling rod
+        glm::dvec2 pin { 0.0 }; // pin position relative to the lever axis for wheel angle 0, in local (Y, Z) plane [m]
+        glm::dvec2 crank { 0.0 }; // crank vector for wheel angle 0, in local (Y, Z) plane [m]
+    };
+    std::vector<slottedlever_data> m_slottedlevers;
+    static double slottedlever_angle( slottedlever_data const &Lever, double const Wheelangle );
+    void update_slottedlevers();
     // Winger 160204 - pantografy
     double pantspeedfactor;
     // animacje typu przesuw
@@ -694,6 +707,8 @@ private:
         float Load, std::string LoadType, bool Reversed, std::string);
     int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool const Overrideselfillum );
     bool init_destination( TModel3d *Model );
+    // pairs the animated door wings with their namesakes in the low poly interior
+    void init_interior_doors();
     void create_controller( std::string const Type, bool const Trainset );
     void AttachNext(TDynamicObject *Object, int iType = 1);
     bool UpdateForce(double dt);

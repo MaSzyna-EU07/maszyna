@@ -280,6 +280,8 @@ class opengl33_renderer : public gfx_renderer {
 	void setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode, float const Znear = 0.f, float const Zfar = 1.f, bool const Ignoredebug = false);
 	void setup_matrices();
     void setup_drawing(bool const Alpha = false);
+    // alpha to coverage for the alpha tested materials of the opaque colour pass, when multisampled
+    void setup_alpha_to_coverage(bool const Enable);
     void setup_shadow_unbind_map();
     void setup_shadow_bind_map();
     void setup_shadow_color( glm::vec4 const &Shadowcolor );
@@ -602,6 +604,7 @@ class opengl33_renderer : public gfx_renderer {
 	material_handle m_invalid_material;
 
     bool m_blendingenabled;
+    bool m_alphatocoverageenabled{ false };
 
 	bool m_widelines_supported;
 

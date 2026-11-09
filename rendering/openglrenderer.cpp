@@ -81,6 +81,28 @@ submodel_material( TSubModel const *Submodel ) {
             null_handle );
 }
 
+bool
+is_scaled( glm::vec3 const &Scale ) {
+
+    return ( Scale.x != 1.0f ) || ( Scale.y != 1.0f ) || ( Scale.z != 1.0f );
+}
+
+// pushes the placement of a scaled model instance: the translation and rotation of Render( TModel3d *, ..., Position, Angle ),
+// followed by the scale of the instance, applied before the submodel transforms (as in the opengl 3.3 renderer)
+void
+push_scaled_instance_transform( glm::dvec3 const &Position, glm::vec3 const &Angle, glm::vec3 const &Scale ) {
+
+    ::glPushMatrix();
+    ::glTranslated( Position.x, Position.y, Position.z );
+    if( Angle.y != 0.0 )
+        ::glRotatef( Angle.y, 0.f, 1.f, 0.f );
+    if( Angle.x != 0.0 )
+        ::glRotatef( Angle.x, 1.f, 0.f, 0.f );
+    if( Angle.z != 0.0 )
+        ::glRotatef( Angle.z, 0.f, 0.f, 1.f );
+    ::glScalef( Scale.x, Scale.y, Scale.z );
+}
+
 } // namespace
 
 float const EU07_OPACITYDEFAULT { 0.5f };
@@ -2495,12 +2517,23 @@ opengl_renderer::Render( TAnimModel *Instance ) {
     Instance->RaPrepare();
     if( Instance->pModel ) {
         // renderowanie rekurencyjne submodeli
-        Render(
-            Instance->pModel,
-            Instance->Material(),
-            distancesquared,
-            Instance->location() - m_renderpass.camera.position(),
-            Instance->vAngle );
+        auto const position { Instance->location() - m_renderpass.camera.position() };
+        if( is_scaled( Instance->Scale() ) ) {
+            // the scale stretches the normals too, they're normalized again for the lighting
+            push_scaled_instance_transform( position, Instance->vAngle, Instance->Scale() );
+            m_normalizenormals = true;
+            Render( Instance->pModel, Instance->Material(), distancesquared );
+            m_normalizenormals = false;
+            ::glPopMatrix();
+        }
+        else {
+            Render(
+                Instance->pModel,
+                Instance->Material(),
+                distancesquared,
+                position,
+                Instance->vAngle );
+        }
         // debug data
         ++m_renderpass.draw_stats.models;
     }
@@ -2868,7 +2901,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glEnable( GL_NORMALIZE );
                         }
 #endif
@@ -2957,7 +2990,7 @@ opengl_renderer::Render( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glDisable( GL_NORMALIZE );
                         }
 #endif
@@ -3704,12 +3737,23 @@ opengl_renderer::Render_Alpha( TAnimModel *Instance ) {
     Instance->RaPrepare();
     if( Instance->pModel ) {
         // renderowanie rekurencyjne submodeli
-        Render_Alpha(
-            Instance->pModel,
-            Instance->Material(),
-            distancesquared,
-            Instance->location() - m_renderpass.camera.position(),
-            Instance->vAngle );
+        auto const position { Instance->location() - m_renderpass.camera.position() };
+        if( is_scaled( Instance->Scale() ) ) {
+            // the scale stretches the normals too, they're normalized again for the lighting
+            push_scaled_instance_transform( position, Instance->vAngle, Instance->Scale() );
+            m_normalizenormals = true;
+            Render_Alpha( Instance->pModel, Instance->Material(), distancesquared );
+            m_normalizenormals = false;
+            ::glPopMatrix();
+        }
+        else {
+            Render_Alpha(
+                Instance->pModel,
+                Instance->Material(),
+                distancesquared,
+                position,
+                Instance->vAngle );
+        }
     }
 }
 
@@ -4012,7 +4056,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glEnable( GL_NORMALIZE );
                         }
 #endif
@@ -4082,7 +4126,7 @@ opengl_renderer::Render_Alpha( TSubModel *Submodel ) {
                                 break; }
                         }
 #else
-                        if( true == m_renderspecular ) {
+                        if( ( true == m_renderspecular ) || ( true == m_normalizenormals ) ) {
                             ::glDisable( GL_NORMALIZE );
                         }
 #endif
@@ -4399,12 +4443,15 @@ opengl_renderer::Update( double const Deltatime ) {
     }
 
     m_updateaccumulator = 0.0;
-    m_framerate = 1000.f / ( Timer::subsystem.gfx_total.average() );
+    // the frames actually shown, the wait for fpslimit included (eu07/maszyna#416)
+    m_framerate = 1000.f / ( Timer::subsystem.mainloop_period.average() );
+    // the draw ranges follow the time spent on drawing alone, as before
+    auto const drawframerate { 1000.f / ( Timer::subsystem.gfx_total.average() ) };
 
 	// adjust draw ranges etc, based on recent performance
 	// TODO: it doesn't make much sense with vsync
     if( Global.targetfps != 0.f ) {
-        auto const fps_diff = m_framerate - Global.targetfps;
+        auto const fps_diff = drawframerate - Global.targetfps;
         if( fps_diff < -0.5f ) {
             Global.fDistanceFactor = std::min( std::max( 1.0f, Global.fDistanceFactor - 0.05f ), Global.gfx_distance_factor_max );
         }
@@ -4414,7 +4461,7 @@ opengl_renderer::Update( double const Deltatime ) {
     }
     // legacy framerate parameters
     else if( Global.fFpsAverage != 0.f ) {
-        auto const fps_diff = m_framerate - Global.fFpsAverage;
+        auto const fps_diff = drawframerate - Global.fFpsAverage;
         if( fps_diff < -Global.fFpsDeviation ) {
             Global.fDistanceFactor = std::min( std::max( 1.0f, Global.fDistanceFactor - 0.05f ), Global.gfx_distance_factor_max );
         }

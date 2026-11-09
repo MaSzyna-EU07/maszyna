@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 #include "application/application.h"
 #include "application/scenarioloaderuilayer.h"
 #include "rendering/renderer.h"
@@ -59,6 +60,10 @@ bool scenarioloader_mode::update() {
 		catch (std::runtime_error const &e) {
 			ErrorLog(std::format("Bad init: scenario \"{}\" couldn't be opened ({})", Global.SceneryFile, e.what()));
 			state.reset();
+			if (Global.test.enabled) {
+				simulation::test().finish(simulation::test_result::error, "scenario couldn't be opened");
+				return true;
+			}
 			Global.SceneryFile.clear();
 			Application.pop_mode();
 			Application.push_mode(eu07_application::mode::launcher);
@@ -74,6 +79,11 @@ bool scenarioloader_mode::update() {
 		// back to the launcher as when the scenario can't be opened, not on to the driver mode with the scenery half loaded
 		ErrorLog( "Bad init: scenario loading failed" );
 		state.reset();
+		if( Global.test.enabled ) {
+			// there's nothing to test; the exit code says the run went wrong
+			simulation::test().finish( simulation::test_result::error, "scenario loading failed" );
+			return true;
+		}
 		Global.SceneryFile.clear();
 		Application.pop_mode();
 		Application.push_mode(eu07_application::mode::launcher);

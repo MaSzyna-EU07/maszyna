@@ -63,6 +63,9 @@ namespace gl
         std::unordered_map<std::string, texture_entry> texture_conf;
         std::unordered_map<std::string, param_entry> param_conf;
         std::string name;
+        // the shader does its alpha test with alpha_test_fail() of glsl_common, so its alpha
+        // output can drive GL_SAMPLE_ALPHA_TO_COVERAGE in the opaque pass
+        bool alpha_to_coverage{ false };
 
 #ifndef SHADERVALIDATOR_STANDALONE
     private:
@@ -96,6 +99,7 @@ namespace gl
 
         std::unordered_map<std::string, shader::texture_entry> texture_conf;
         std::unordered_map<std::string, shader::param_entry> param_conf;
+        bool alpha_to_coverage{ false };
 
 	private:
         void init();

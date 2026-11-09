@@ -1,0 +1,26 @@
+{
+  "description": "Test mode, standstill: EU07 on td.scn with no route set stops before the exit signal stacja1_j at stop and stays; nothing reports a result, so the test ends once the train under test stood still for test.standstill 120 seconds (the train waits about 70 s before it pulls off, so less would end it before the start).",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_red_signal.scn",
+  "test_config": [
+    "test.standstill 120"
+  ],
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "expect": "standstill",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "stops",
+      "moving_speed": 5,
+      "stop_speed": 0.5,
+      "hold": 5
+    },
+    {
+      "type": "distance",
+      "max": 150
+    }
+  ]
+}
