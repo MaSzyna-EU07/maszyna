@@ -60,6 +60,11 @@ void control_mapper::insert(TGauge const &Gauge, std::string const &Label)
 	{
 		m_controlnames.try_emplace(Gauge.SubModelOn, Label);
 	}
+	// the duplicate submodels of a control (duplicate: yes) work the control as well (eu07/maszyna#527)
+	for (auto const &mirror : Gauge.mirrors())
+	{
+		insert(mirror, Label);
+	}
 
 	m_names.emplace(Label);
 }
@@ -11451,6 +11456,7 @@ void TTrain::clear_cab_controls()
 	ggLeftEndLightButton.Clear();
 	ggRightEndLightButton.Clear();
 	ggLightsButton.Clear();
+	ggCompressorListButton.Clear();
 	// hunter-230112
 	ggRearLeftLightButton.Clear();
 	ggRearRightLightButton.Clear();
