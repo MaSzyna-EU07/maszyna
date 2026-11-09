@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/DynObj.h"
 
+#include "vehicle/lightsprogrammer.h"
+
 #include "simulation/simulation.h"
 #include "rendering/lightarray.h"
 #include "vehicle/Camera.h"
@@ -7372,26 +7374,22 @@ void TDynamicObject::SetLights() {
     auto const isfrontcaboccupied { MoverParameters->CabOccupied * DirectionGet() >= 0 };
 	int const automaticmarkers { MoverParameters->CabActive == 0 && MoverParameters->InactiveCabFlag & activation::redmarkers
 								? light::redmarker_left + light::redmarker_right : 0 };
-    int const front { ( isfrontcaboccupied ? end::front : end::rear ) };
-    int const rear { 1 - front };
     auto const lightpos { MoverParameters->LightsPos - 1 };
-    auto const frontlights { automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ front ][ lightpos ] };
-    auto const rearlights { automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ rear ][ lightpos ] };
+    std::array<int, 2> const cablights {
+        automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ end::front ][ lightpos ],
+        automaticmarkers > 0 ? automaticmarkers : MoverParameters->Lights[ end::rear ][ lightpos ] };
+    // the custom position keeps the lights lit at coupled ends as well
+    auto const ignorecouplings { MoverParameters->LightsPos == 18 };
     auto *vehicle { GetFirstDynamic( MoverParameters->CabOccupied >= 0 ? end::front : end::rear, coupling::control ) };
     while( vehicle != nullptr ) {
         // set lights on given side if there's no coupling with another vehicle, turn them off otherwise
-		auto const *frontvehicle{(isfrontcaboccupied ? vehicle->Prev(coupling::coupler) : vehicle->Next(coupling::coupler))};
-		auto const *rearvehicle{(isfrontcaboccupied ? vehicle->Next(coupling::coupler) : vehicle->Prev(coupling::coupler))};
-
-        if (MoverParameters->LightsPos == 18)
-		{
-			frontvehicle = nullptr;
-			rearvehicle = nullptr;
-		}
-
-        vehicle->RaLightsSet(
-            frontvehicle == nullptr ? frontlights : 0,
-            rearvehicle == nullptr ? rearlights : 0 );
+        auto const iscoupled { [ vehicle, ignorecouplings ]( end const Side ) {
+            return false == ignorecouplings
+                && ( vehicle->MoverParameters->Couplers[ Side ].CouplingFlag & coupling::coupler ) != 0
+                && vehicle->MoverParameters->Neighbours[ Side ].vehicle != nullptr; } };
+        auto const lights { lights_programmer::vehicle_lights(
+            cablights, isfrontcaboccupied, vehicle->iDirection, { iscoupled( end::front ), iscoupled( end::rear ) } ) };
+        vehicle->RaLightsSet( lights.head, lights.rear );
         vehicle = isfrontcaboccupied ? vehicle->Next(coupling::control) : vehicle->Prev(coupling::control);
     }
 };
