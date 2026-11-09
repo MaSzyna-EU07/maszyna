@@ -45,6 +45,15 @@ jobs:
           python-version: "3.14"
           architecture: "x64"
 
+      # the cab screens are drawn with Pillow; CMake copies this Python's Lib, site-packages included, next to the
+      # executable as python64\Lib, so Pillow has to be installed here to come with the build (as on Linux)
+      - name: Install Pillow for the screens
+        shell: pwsh
+        run: |
+          $pythonExe = "${{ steps.python.outputs.python-path }}"
+          & $pythonExe -m pip install --no-cache-dir Pillow
+          & $pythonExe -c "from PIL import Image; print('Pillow:', Image.__version__)"
+
       - name: Show environment
         shell: pwsh
         run: |
@@ -111,6 +120,18 @@ jobs:
           Copy-Item `
             -Path "lang/*" `
             -Destination "$output/lang" `
+            -Recurse `
+            -Force
+
+          # the Python 3 version of the module every cab screen builds on; the game data still has the Python 2 one
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$output/python/local" | Out-Null
+
+          Copy-Item `
+            -Path "staticFiles/python/local/*" `
+            -Destination "$output/python/local" `
             -Recurse `
             -Force
 
@@ -251,9 +272,11 @@ jobs:
           
       - name: Copy shaders and translations
         run: |
-          mkdir -p build/bin/shaders build/bin/lang
+          mkdir -p build/bin/shaders build/bin/lang build/bin/python/local
           cp -R shaders/. build/bin/shaders/
           cp -R lang/. build/bin/lang/
+          # the Python 3 version of the module every cab screen builds on; the game data still has the Python 2 one
+          cp -R staticFiles/python/local/. build/bin/python/local/
 
       - name: Upload Linux build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
