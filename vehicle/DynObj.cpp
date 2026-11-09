@@ -582,7 +582,7 @@ void TDynamicObject::update_slottedlevers() {
                 1 ) }; // driving wheels and coupling rods by default
         auto const angle { slottedlever_angle( lever, dWheelAngle[ wheelid ] ) };
         auto const futureangle { slottedlever_angle( lever, dWheelAngle[ wheelid ] + m_future_wheels_angle[ wheelid ] ) };
-        lever.submodel->SetRotate( float3( 1, 0, 0 ), angle );
+        lever.submodel->SetRotate( glm::vec3( 1, 0, 0 ), angle );
         lever.submodel->future_transform = glm::rotate( (float)glm::radians( std::remainder( futureangle - angle, 360.0 ) ), glm::vec3( 1.0f, 0.0f, 0.0f ) );
     }
 }
@@ -609,15 +609,15 @@ void fold_wing( TSubModel *Wing, door_wings::fold_angles const &Angles ) {
 
     if( Wing == nullptr ) { return; }
     // skrzydło mniejsze
-    Wing->SetRotate( float3( 0, 0, 1 ), Angles.smaller );
+    Wing->SetRotate( glm::vec3( 0, 0, 1 ), Angles.smaller );
     // skrzydło większe
     auto *larger { Wing->ChildGet() };
     if( larger == nullptr ) { return; }
-    larger->SetRotate( float3( 0, 0, 1 ), Angles.larger );
+    larger->SetRotate( glm::vec3( 0, 0, 1 ), Angles.larger );
     // podnóżek?
     auto *step { larger->ChildGet() };
     if( step == nullptr ) { return; }
-    step->SetRotate( float3( 0, 1, 0 ), Angles.step );
+    step->SetRotate( glm::vec3( 0, 1, 0 ), Angles.step );
 }
 
 } // namespace
