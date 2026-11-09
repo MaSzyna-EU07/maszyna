@@ -587,20 +587,21 @@ void ui::map_panel::render_contents()
 
 	transform *= aspect_transform;
 
+	TDynamicObject const *followed_vehicle = nullptr;
+	glm::dvec3 follow_position{};
+	glm::dvec3 follow_direction{};
 	if (mode == MODE_VEHICLE && simulation::Train)
 	{
-		TDynamicObject const *vehicle = simulation::Train->Dynamic();
+		followed_vehicle = simulation::Train->Dynamic();
 		float rotation = get_vehicle_rotation();
 
 		transform = glm::rotate(transform, rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
-		glm::dvec3 position = vehicle->GetPosition();
-		glm::dvec3 direction = vehicle->VectorFront() * (vehicle->DirectionGet() > 0 ? 1.0 : -1.0);
-		double const direction_length = glm::length(direction);
-		double const lookahead = std::clamp(std::abs(vehicle->GetVelocity()) * 10.0, 0.0, 1500.0);
+		follow_position = followed_vehicle->GetPosition();
+		follow_direction = followed_vehicle->VectorFront() * (followed_vehicle->DirectionGet() > 0 ? 1.0 : -1.0);
+		double const direction_length = glm::length(follow_direction);
 		if (direction_length > 0.0)
-			position += direction / direction_length * lookahead;
-		translate = glm::vec2(position.x, position.z) * -zoom;
+			follow_direction /= direction_length;
 	}
 	if (mode == MODE_CAMERA)
 	{
@@ -635,6 +636,31 @@ void ui::map_panel::render_contents()
 		translate *= zoom / previous_zoom;
 	}
 
+	if (followed_vehicle)
+	{
+		double lookahead = 0.0;
+		double const direction_length = glm::length(follow_direction);
+		if (direction_length > 0.0)
+		{
+			glm::vec4 const screen_direction = transform * glm::vec4(glm::vec3(follow_direction), 0.0f);
+			double max_lookahead = std::numeric_limits<double>::infinity();
+			double const screen_margin = std::min(16.0, 0.1 * std::min(surface_size.x, surface_size.y));
+			double const available_width = std::max(0.0, surface_size.x * 0.5 - screen_margin);
+			double const available_height = std::max(0.0, surface_size.y * 0.5 - screen_margin);
+			double const pixels_per_meter_x = std::abs(screen_direction.x) * surface_size.x * 0.5 * zoom;
+			double const pixels_per_meter_y = std::abs(screen_direction.z) * surface_size.y * 0.5 * zoom;
+			if (pixels_per_meter_x > 1e-6)
+				max_lookahead = std::min(max_lookahead, available_width / pixels_per_meter_x);
+			if (pixels_per_meter_y > 1e-6)
+				max_lookahead = std::min(max_lookahead, available_height / pixels_per_meter_y);
+
+			double const desired_lookahead = std::abs(followed_vehicle->GetVelocity()) * 10.0;
+			lookahead = std::min(desired_lookahead, max_lookahead);
+		}
+		follow_position += follow_direction * lookahead;
+		translate = glm::vec2(follow_position.x, follow_position.z) * -zoom;
+	}
+
 	transform = glm::translate(transform, glm::vec3(translate.x, 0.0f, translate.y));
 	transform = glm::scale(transform, glm::vec3(zoom));
 
@@ -654,12 +680,15 @@ void ui::map_panel::render_contents()
 	if (map_has_vertex_budget(draw_list, 64))
 	{
 		TCamera const &camera = Global.pCamera;
-		glm::dvec3 forward;
+		double yaw = camera.Angle.y;
 		if (camera.m_owner != nullptr)
-			forward = camera.LookAt - camera.Pos;
-		else
-			forward = glm::dvec3(-std::sin(camera.Angle.y), 0.0, -std::cos(camera.Angle.y));
-		forward.y = 0.0;
+		{
+			glm::dvec3 owner_forward = camera.m_owner->VectorFront();
+			if (simulation::Train && simulation::Train->Dynamic() == camera.m_owner && simulation::Train->Occupied())
+				owner_forward *= simulation::Train->Occupied()->CabOccupied < 0 ? -1.0 : 1.0;
+			yaw += std::atan2(-owner_forward.x, -owner_forward.z);
+		}
+		glm::dvec3 forward(-std::sin(yaw), 0.0, -std::cos(yaw));
 		double const forward_length = glm::length(forward);
 		glm::vec4 const camera_ndc = transform * glm::vec4(glm::vec3(camera.Pos), 1.0f);
 		if (forward_length > 0.0 && glm::abs(camera_ndc.x) <= 1.0f && glm::abs(camera_ndc.z) <= 1.0f)
