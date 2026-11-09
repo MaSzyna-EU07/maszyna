@@ -665,6 +665,22 @@ void driver_mode::update_camera(double const Deltatime)
 		Camera.Velocity = {};
 		Global.FreeCameraTeleport.reset();
 	}
+	if (Global.FreeCameraMoveTarget)
+	{
+		FreeFlyModeFlag = true;
+		Camera.m_owner = nullptr;
+		Camera.Velocity = {};
+		Global.FreeCameraTeleport.reset();
+		m_free_camera_move_start = Camera.Pos;
+		m_free_camera_move_target = *Global.FreeCameraMoveTarget;
+		m_free_camera_move_elapsed = 0.0;
+		m_free_camera_move_duration = std::clamp(
+			glm::distance(m_free_camera_move_start, m_free_camera_move_target) / 300.0,
+			0.75,
+			3.0);
+		m_free_camera_move_active = true;
+		Global.FreeCameraMoveTarget.reset();
+	}
 
 	if (false == DebugCameraFlag)
 	{
@@ -678,6 +694,15 @@ void driver_mode::update_camera(double const Deltatime)
 		}
 
 		Camera.Update();
+		if (m_free_camera_move_active)
+		{
+			m_free_camera_move_elapsed += Deltatime;
+			double const progress = std::clamp(m_free_camera_move_elapsed / m_free_camera_move_duration, 0.0, 1.0);
+			double const eased_progress = progress * progress * (3.0 - 2.0 * progress);
+			Camera.Pos = glm::mix(m_free_camera_move_start, m_free_camera_move_target, eased_progress);
+			Camera.Velocity = {};
+			m_free_camera_move_active = progress < 1.0;
+		}
 
 		if (simulation::Train != nullptr && false == FreeFlyModeFlag)
 		{

@@ -107,6 +107,11 @@ private:
     int m_externalviewmode { view::consistfront }; // selected external view mode
 	bool m_externalview { true };
     std::array<view_config, view::count_> m_externalviewconfigs;
+    bool m_free_camera_move_active { false };
+    glm::dvec3 m_free_camera_move_start{};
+    glm::dvec3 m_free_camera_move_target{};
+    double m_free_camera_move_elapsed { 0.0 };
+    double m_free_camera_move_duration { 1.0 };
     TDynamicObject *pDynamicNearest { nullptr }; // vehicle nearest to the active camera. TODO: move to camera
     double fTime50Hz { 0.0 }; // bufor czasu dla komunikacji z PoKeys
     double const m_primaryupdaterate { 1.0 / 100.0 };

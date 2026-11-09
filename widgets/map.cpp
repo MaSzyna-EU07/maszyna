@@ -651,8 +651,54 @@ void ui::map_panel::render_contents()
 		IM_COL32(18, 22, 26, 255));
 	render_grid(draw_list, screen_origin, surface_size, transform);
 	render_map_lines(draw_list, screen_origin, surface_size, transform);
+	if (map_has_vertex_budget(draw_list, 64))
+	{
+		TCamera const &camera = Global.pCamera;
+		glm::dvec3 forward;
+		if (camera.m_owner != nullptr)
+			forward = camera.LookAt - camera.Pos;
+		else
+			forward = glm::dvec3(-std::sin(camera.Angle.y), 0.0, -std::cos(camera.Angle.y));
+		forward.y = 0.0;
+		double const forward_length = glm::length(forward);
+		glm::vec4 const camera_ndc = transform * glm::vec4(glm::vec3(camera.Pos), 1.0f);
+		if (forward_length > 0.0 && glm::abs(camera_ndc.x) <= 1.0f && glm::abs(camera_ndc.z) <= 1.0f)
+		{
+			forward /= forward_length;
+			glm::dvec3 const side(-forward.z, 0.0, forward.x);
+			double const half_fov = glm::radians(
+				static_cast<double>(Global.FieldOfView / std::max(Global.ZoomFactor, 0.01f))) * 0.5;
+			double const view_length = 300.0;
+			glm::dvec3 const left = camera.Pos + (forward * std::cos(half_fov) - side * std::sin(half_fov)) * view_length;
+			glm::dvec3 const right = camera.Pos + (forward * std::cos(half_fov) + side * std::sin(half_fov)) * view_length;
+			auto const to_screen = [&](glm::dvec3 const &position) {
+				glm::vec4 const ndc = transform * glm::vec4(glm::vec3(position), 1.0f);
+				return ImVec2(
+					screen_origin.x + (ndc.x + 1.0f) * 0.5f * surface_size.x,
+					screen_origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y);
+			};
+			ImVec2 const origin = to_screen(camera.Pos);
+			ImVec2 const left_screen = to_screen(left);
+			ImVec2 const right_screen = to_screen(right);
+			draw_list->AddTriangleFilled(origin, left_screen, right_screen, IM_COL32(100, 190, 255, 35));
+			draw_list->AddLine(origin, left_screen, IM_COL32(100, 190, 255, 160), 1.0f);
+			draw_list->AddLine(origin, right_screen, IM_COL32(100, 190, 255, 160), 1.0f);
+			draw_list->AddCircleFilled(origin, 5.0f, IM_COL32(100, 190, 255, 255));
+			draw_list->AddCircle(origin, 5.0f, IM_COL32(15, 25, 35, 255), 0, 1.5f);
+			ImVec2 const tip = to_screen(camera.Pos + forward * 9.0);
+			draw_list->AddLine(origin, tip, IM_COL32(15, 25, 35, 255), 2.0f);
+		}
+	}
 	draw_list->PopClipRect();
 	ImGui::InvisibleButton("##map", surface_size_im);
+
+	if (m_camera_click_pending && ImGui::GetTime() >= m_camera_click_deadline)
+	{
+		Global.FreeCameraInit[0] = m_camera_click_position;
+		Global.FreeCameraTeleport = m_camera_click_position;
+		Global.pCamera.Pos = m_camera_click_position;
+		m_camera_click_pending = false;
+	}
 
 	if (ImGui::IsItemHovered())
 	{
@@ -668,6 +714,11 @@ void ui::map_panel::render_contents()
 			Global.FreeCameraTeleport = camera_position;
 			Global.pCamera.Pos = camera_position;
 		};
+		if (ImGui::IsMouseDoubleClicked(0))
+		{
+			m_camera_click_pending = false;
+			Global.FreeCameraMoveTarget = glm::dvec3(world_pos.x, Global.pCamera.Pos.y, world_pos.z);
+		}
 
 		if (io.MouseWheel != 0.0f &&
 		    base_pixels_per_meter > 0.0f &&
@@ -686,12 +737,16 @@ void ui::map_panel::render_contents()
 			Application.set_cursor_pos(surface_screen_center.x, surface_screen_center.y);
 		}
 
-		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr
-			&& ImGui::IsMouseReleased(0)
-			&& io.MouseDragMaxDistanceSqr[0] < io.MouseDragThreshold * io.MouseDragThreshold)
-			relocate_camera();
 		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr && ImGui::IsMouseClicked(2))
 			relocate_camera();
+		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr
+		    && ImGui::IsMouseReleased(0)
+		    && io.MouseDragMaxDistanceSqr[0] < io.MouseDragThreshold * io.MouseDragThreshold)
+		{
+			m_camera_click_position = glm::dvec3(world_pos.x, Global.pCamera.Pos.y, world_pos.z);
+			m_camera_click_deadline = ImGui::GetTime() + io.MouseDoubleClickTime;
+			m_camera_click_pending = true;
+		}
 		if (mode == 0 && ImGui::IsMouseDragging(0))
 		{
 			ImVec2 delta_im = ImGui::GetMouseDragDelta();
