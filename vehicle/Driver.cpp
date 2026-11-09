@@ -202,6 +202,7 @@ void TSpeedPos::Clear()
     iFlags = 0; // brak flag to brak reakcji
     fVelNext = -1.0; // prędkość bez ograniczeń
 	fSectionVelocityDist = 0.0; //brak długości
+    fPointDist = 0.0;
     fDist = 0.0;
     vPos = glm::dvec3(0, 0, 0);
     trTrack = nullptr; // brak wskaźnika
@@ -212,6 +213,9 @@ void TSpeedPos::CommandCheck()
     TCommandType command = evEvent->input_command();
     double value1 = evEvent->input_value(1);
     double value2 = evEvent->input_value(2);
+    // the point of a PointVelocity limit is taken anew from the current command
+    iFlags &= ~spPointVelocity;
+    fPointDist = 0.0;
     switch (command)
     {
     case TCommandType::cm_ShuntVelocity:
@@ -265,6 +269,14 @@ void TSpeedPos::CommandCheck()
         fVelNext = -1;
         iFlags |= spProximityVelocity;
         // fSectionVelocityDist = value2;
+        break;
+    case TCommandType::cm_PointVelocity:
+        // PointVelocity v d: the head has to be at v (-1: no limit) at the point d metres beyond the cell,
+        // the limit ends when the head passes that point. the cell is read until the head passes the cell,
+        // what it says then holds for the point (the warning disc of a level crossing, Osp1/Osp2)
+        fVelNext = value1;
+        fPointDist = std::max( value2, 0.0 );
+        iFlags |= spPointVelocity;
         break;
     case TCommandType::cm_OutsideStation:
         // w trybie manewrowym: skanować od niej wstecz i stanąć po wyjechaniu za sygnalizator i
@@ -336,9 +348,10 @@ bool TSpeedPos::Update()
             }
         }
     }
-    else if (iFlags & spEvent && ((iFlags & spElapsed) == 0 || fVelNext == 0.0)) {
+    else if (iFlags & spEvent && ((iFlags & spElapsed) == 0 || (fVelNext == 0.0 && (iFlags & spPointVelocity) == 0))) {
         // jeśli event
 		// ignore already passed signals, but keep an eye on overrun stops
+		// a PointVelocity cell is latched when the head passes it, even at 0
 		// odczyt komórki pamięci najlepiej by było zrobić jako notyfikację,
 		// czyli zmiana komórki wywoła jakąś podaną funkcję
 		CommandCheck(); // sprawdzenie typu komendy w evencie i określenie prędkości
@@ -809,7 +822,7 @@ void TController::TableCheck(double fDistance)
 						sSpeedTable[i].iFlags = 0; // to nie ma go po co trzymać (odtykacz usunie ze środka)
 					}
                 }
-                else if (sSpeedTable[i].iFlags & spEvent && sSpeedTable[i].fDist < (typeid(*sSpeedTable[i].evEvent) == typeid(putvalues_event) ? -fLength : 0) && mvOccupied->CategoryFlag == 2 &&
+                else if (sSpeedTable[i].iFlags & spEvent && (sSpeedTable[i].iFlags & spPointVelocity) == 0 && sSpeedTable[i].fDist < (typeid(*sSpeedTable[i].evEvent) == typeid(putvalues_event) ? -fLength : 0) && mvOccupied->CategoryFlag == 2 &&
 				         sSpeedTable[i].fDist < -0.75) // jeśli event
                 {
 					// jeśli jest z tyłu
@@ -943,12 +956,14 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
         if( v >= 0.0 // pozycje z prędkością -1 można spokojnie pomijać
          || railwaytrackend ) {
 
-            d = point.fDist;
+            // a PointVelocity limit lies fPointDist beyond its entry and stays ahead of us until the head passes it
+            auto const ispointlimit { TestFlag( point.iFlags, spPointVelocity ) };
+            d = point.fDist + point.fPointDist;
 
             if( v >= 0.0 ) {
                 // points located in front of us can potentially affect our acceleration and target speed
                 if( d > 0.0
-                 && false == TestFlag(point.iFlags, spElapsed) ) {
+                 && ( false == TestFlag(point.iFlags, spElapsed) || ispointlimit ) ) {
                     // sygnał lub ograniczenie z przodu (+32=przejechane)
                     // 2014-02: jeśli stoi, a ma do przejechania kawałek, to niech jedzie
                     if( mvOccupied->Vel < 0.01
@@ -1051,7 +1066,9 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                 bStopTargetIsPassengerStop = ( v == 0.0 ) && ( ( point.iFlags & spPassengerStopPoint ) != 0 );
             }
             // potentially update our current speed limit
-            if( v < VelLimitLastDist.first
+            // a point limit binds only the head at its point, it neither extends nor breaks a limit over a stretch of the line
+            if( false == ispointlimit
+             && v < VelLimitLastDist.first
              && ( d < 0 // the point counts as part of last speed limit either if it's behind us
                || VelLimitLastDist.second > 0 ) ) { // or if we already have the last limit ongoing
                 VelLimitLastDist.second = d + fLength;
@@ -1059,18 +1076,17 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                     VelLimitLastDist.second += point.trTrack->Length();
                 }
             }
-            else {
+            else if( ( point.iFlags & ( spSwitch | spPassengerStopPoint | spPointVelocity ) ) == 0 ) {
                 // if we found a point which isn't part of the current speed limit mark the limit as broken
                 // NOTE: we exclude switches from this rule, as speed limits generally extend through these
-                if( ( point.iFlags & ( spSwitch | spPassengerStopPoint ) ) == 0 ) {
-                    speedlimitiscontinuous = false;
-                }
+                speedlimitiscontinuous = false;
             }
         } // if (v>=0.0)
         // finding a point which doesn't impose speed limit means any potential active speed limit can't extend through entire scan table
         // NOTE: we test actual speed value for the given point, as events may receive (v = -1) as a way to disable them in irrelevant modes
-        if( point.fVelNext < 0 && (point.iFlags & (spSwitch | spPassengerStopPoint)) == 0 ) {
+        if( point.fVelNext < 0 && (point.iFlags & (spSwitch | spPassengerStopPoint | spPointVelocity)) == 0 ) {
             // NOTE: we exclude switches from this rule, as speed limits generally extend through these
+            // and point limits, which say nothing of the line they lie on
 			speedlimitiscontinuous = false;
 		}
         if (fNext >= 0.0)
@@ -1424,6 +1440,18 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
 
 bool
 TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex ) {
+
+    if( TestFlag( Point.iFlags, spPointVelocity ) ) {
+        // PointVelocity: no signal, no command, only the limit at its point; done once the head passes the point
+        if( Point.fDist + Point.fPointDist < 0.0 ) {
+            if( Global.iWriteLogEnabled & 8 ) {
+                WriteLog( "Speed table update for " + OwnerName() + ", passed point limit of " + Point.GetName() );
+            }
+            Point.Clear();
+            return true;
+        }
+        return false;
+    }
 
     // sprawdzanie eventów pasywnych miniętych
     if( Point.fDist < 0.0 ) {
@@ -4609,6 +4637,11 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
             iDrivigFlags |= moveStopHere; // stać do momentu podania komendy jazdy
         SetVelocity(NewValue1, NewValue2, reason); // bylo: nic nie rob bo SetVelocity zewnetrznie
         // jest wywolywane przez dynobj.cpp
+        return true;
+    }
+
+    if( NewCommand == "PointVelocity" ) {
+        // read by the speed table scan only; when the cell's event runs, there is nothing to do
         return true;
     }
 

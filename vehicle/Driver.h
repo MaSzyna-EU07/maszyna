@@ -144,7 +144,8 @@ enum TSpeedPosFlag
     spSemaphor = 0x4000, // semafor pociągowy
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000 // odcinek z ograniczeniem i podaną jego długościa
+    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
+    spPointVelocity = 0x80000 // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -154,6 +155,7 @@ class TSpeedPos
     double fDist{ 0.0 }; // aktualna odległość (ujemna gdy minięte)
     double fVelNext{ -1.0 }; // prędkość obowiązująca od tego miejsca
     double fSectionVelocityDist{ 0.0 }; // długość ograniczenia prędkości
+    double fPointDist{ 0.0 }; // PointVelocity: o ile dalej od wpisu leży punkt, w którym czoło ma mieć fVelNext
     int iFlags{ spNone }; // flagi typu wpisu do tabelki
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
