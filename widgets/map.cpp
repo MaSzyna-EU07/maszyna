@@ -589,11 +589,17 @@ void ui::map_panel::render_contents()
 
 	if (mode == MODE_VEHICLE && simulation::Train)
 	{
+		TDynamicObject const *vehicle = simulation::Train->Dynamic();
 		float rotation = get_vehicle_rotation();
 
 		transform = glm::rotate(transform, rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
-		glm::dvec3 position = simulation::Train->Dynamic()->GetPosition();
+		glm::dvec3 position = vehicle->GetPosition();
+		glm::dvec3 direction = vehicle->VectorFront() * (vehicle->DirectionGet() > 0 ? 1.0 : -1.0);
+		double const direction_length = glm::length(direction);
+		double const lookahead = std::clamp(std::abs(vehicle->GetVelocity()) * 10.0, 0.0, 1500.0);
+		if (direction_length > 0.0)
+			position += direction / direction_length * lookahead;
 		translate = glm::vec2(position.x, position.z) * -zoom;
 	}
 	if (mode == MODE_CAMERA)
@@ -803,6 +809,41 @@ void ui::map_panel::render_contents()
 			draw_list->AddText(
 				ImVec2(scale_start.x, scale_y - text_size.y - 2.0f),
 				IM_COL32(245, 245, 245, 255), label);
+
+			ImVec2 const north_origin = to_screen(glm::dvec3(0.0));
+			ImVec2 const north_unit = to_screen(glm::dvec3(0.0, 0.0, 1.0));
+			glm::vec2 north_direction(north_unit.x - north_origin.x, north_unit.y - north_origin.y);
+			float const north_length = glm::length(north_direction);
+			if (north_length > 0.0f && std::isfinite(north_length))
+			{
+				north_direction /= north_length;
+				glm::vec2 const perpendicular(-north_direction.y, north_direction.x);
+				ImVec2 const compass_center(
+					screen_origin.x + surface_size.x - 34.0f,
+					screen_origin.y + surface_size.y - 34.0f);
+				glm::vec2 const center(compass_center.x, compass_center.y);
+				glm::vec2 const tip = center + north_direction * 11.0f;
+				glm::vec2 const base = center - north_direction * 7.0f;
+				draw_list->AddRectFilled(
+					ImVec2(compass_center.x - 26.0f, compass_center.y - 26.0f),
+					ImVec2(compass_center.x + 26.0f, compass_center.y + 26.0f),
+					IM_COL32(18, 22, 26, 190), 5.0f);
+				draw_list->AddLine(
+					ImVec2(base.x, base.y),
+					ImVec2(tip.x, tip.y),
+					IM_COL32(245, 245, 245, 235), 2.0f);
+				draw_list->AddTriangleFilled(
+					ImVec2(tip.x + north_direction.x * 4.0f, tip.y + north_direction.y * 4.0f),
+					ImVec2(tip.x - north_direction.x * 3.0f + perpendicular.x * 4.0f,
+					       tip.y - north_direction.y * 3.0f + perpendicular.y * 4.0f),
+					ImVec2(tip.x - north_direction.x * 3.0f - perpendicular.x * 4.0f,
+					       tip.y - north_direction.y * 3.0f - perpendicular.y * 4.0f),
+					IM_COL32(255, 95, 85, 255));
+				ImVec2 const north_label(
+					compass_center.x + north_direction.x * 19.0f - ImGui::CalcTextSize("N").x * 0.5f,
+					compass_center.y + north_direction.y * 19.0f - ImGui::CalcTextSize("N").y * 0.5f);
+				draw_list->AddText(north_label, IM_COL32(245, 245, 245, 255), "N");
+			}
 			draw_list->PopClipRect();
 		}
 	}
