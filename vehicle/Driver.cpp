@@ -1443,14 +1443,15 @@ TController::TableDropPassedEvent( TSpeedPos &Point ) const {
     Point.Clear();
 }
 
-// the lowest road speed of the signs past the given one, passed by the head and held until the rear is past them too;
-// -1 if there's none
+// the lowest road speed of the signs past the given one that the head has passed: held until the rear is past them too,
+// or passed in this very tick and not marked as held yet; -1 if there's none
 double
 TController::held_road_velocity_beyond( TSpeedPos const &Point ) const {
 
     auto lowest { -1.0 };
     for( auto const &held : sSpeedTable ) {
-        if( ( held.iFlags & ( spEnabled | spRoadVelHeld ) ) != ( spEnabled | spRoadVelHeld )
+        if( ( held.iFlags & ( spEnabled | spRoadVel ) ) != ( spEnabled | spRoadVel )
+         || held.fDist >= 0.0
          || held.fDist <= Point.fDist ) {
             continue;
         }
