@@ -144,7 +144,8 @@ enum TSpeedPosFlag
     spSemaphor = 0x4000, // semafor pociągowy
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000 // odcinek z ograniczeniem i podaną jego długościa
+    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
+    spSignalAreaEnd = 0x80000 // end of the interlocking area of the signal passed last
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -422,6 +423,7 @@ private:
     double ActualProximityDist = 1.0; // odległość brana pod uwagę przy wyliczaniu prędkości i przyspieszenia
     std::pair<double, double> VelLimitLastDist { 0.0, 0.0 }; // distance to velocity change point
     double SwitchClearDist { 0.0 }; // distance to point after farthest detected switch
+    double SignalAreaEndDist { -1.0 }; // distance the train has to go to be past the nearest end of an interlocking area, -1 when none is in the scan
     int iDirection = 0; // kierunek jazdy względem sprzęgów pojazdu, w którym siedzi AI (1=przód,-1=tył)
     int iDirectionOrder = 0; //żadany kierunek jazdy (służy do zmiany kierunku)
     std::optional<int> iDirectionBackup; // consist direction to be restored after coupling/uncoupling and similar direction-changing operations
@@ -541,6 +543,7 @@ private:
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    void TableUpdateSignalAreaEnd( TSpeedPos &Point );
     // returns most recently calculated distance to potential obstacle ahead
     double TrackObstacle() const;
     void TablePurger();

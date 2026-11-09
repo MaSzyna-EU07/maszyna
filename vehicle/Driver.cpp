@@ -279,6 +279,11 @@ void TSpeedPos::CommandCheck()
     case TCommandType::cm_SecuritySystemMagnet:
         fVelNext = -1;
         break;
+    case TCommandType::cm_SignalAreaEnd:
+        // imposes no speed of its own, it only ends the reduced speed of the signal passed last
+        fVelNext = -1;
+        iFlags |= spSignalAreaEnd;
+        break;
     default:
         // inna komenda w evencie skanowanym powoduje zatrzymanie i wysłanie tej komendy
         // nie manewrowa, nie przystanek, nie zatrzymać na SBL
@@ -918,6 +923,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
     mvOccupied->SecuritySystem.set_cabsignal_lock(false);
     // te flagi są ustawiane tutaj, w razie potrzeby
     iDrivigFlags &= ~(moveTrackEnd | moveSwitchFound | moveSignalFound | /*moveSpeedLimitFound*/ moveStopPointFound );
+    SignalAreaEndDist = -1.0;
 
     for( std::size_t idx = 0; idx < sSpeedTable.size(); ++idx ) {
         // o ile dana pozycja tabelki jest istotna
@@ -1097,8 +1103,10 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
         VelLimitLastDist.second = EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE;
     }
     // take into account the effect switches have on duration of signal-imposed speed limit, in calculation of speed limit end point
-    if( VelSignalLast >= 0.0 && SwitchClearDist >= 0.0 ) {
-        VelLimitLastDist.second = std::max( VelLimitLastDist.second, SwitchClearDist );
+    // a reduced speed ends where the interlocking area does, if that is marked, and not past the switches farther on
+    if( auto const signallimitend { VelSignalLast > 0.0 && SignalAreaEndDist >= 0.0 ? SignalAreaEndDist : SwitchClearDist };
+        VelSignalLast >= 0.0 && signallimitend >= 0.0 ) {
+        VelLimitLastDist.second = std::max( VelLimitLastDist.second, signallimitend );
     }
 
     //analiza spisanych z tabelki ograniczeń i nadpisanie aktualnego
@@ -1422,8 +1430,41 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     return false; //
 }
 
+// a reduced speed shown by a signal holds to the end of the interlocking area the signal guards (Ie-1), and that end is
+// marked on the main track with a SignalAreaEnd event. on a track without the marker the speed holds as it did before:
+// until the next signal, or until no signal, switch or stop point is left in the scan
+void
+TController::TableUpdateSignalAreaEnd( TSpeedPos &Point ) {
+
+    // the switches lie in front of the marker, so the whole train has left them once its rear end is past it
+    if( Point.fDist >= -fLength ) {
+        if( SignalAreaEndDist < 0.0
+         && TestFlag( OrderCurrentGet(), Obey_train ) ) {
+            // the table is sorted by distance, so the first marker is the nearest one
+            SignalAreaEndDist = Point.fDist + fLength;
+        }
+        return;
+    }
+
+    // a passed signal at stop (0) keeps holding the train, only a reduced speed ends here
+    if( TestFlag( OrderCurrentGet(), Obey_train )
+     && VelSignalLast > 0.0 ) {
+        if( Global.iWriteLogEnabled & 8 ) {
+            WriteLog( "Speed table update for " + OwnerName() + ", left the interlocking area at " + Point.evEvent->m_name );
+        }
+        VelSignalLast = -1.0;
+    }
+    Point.Clear();
+}
+
 bool
 TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex ) {
+
+    if( TestFlag( Point.iFlags, spSignalAreaEnd ) ) {
+        // not a signal: it neither sends a command nor counts as the end of a speed limit in the scan
+        TableUpdateSignalAreaEnd( Point );
+        return true;
+    }
 
     // sprawdzanie eventów pasywnych miniętych
     if( Point.fDist < 0.0 ) {
