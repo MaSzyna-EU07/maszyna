@@ -264,6 +264,9 @@ void read_signal(YAML::Node const &Signal, include_info &Info)
 	Info.signal_lean = Signal["lean"].as<std::string>("");
 	Info.signal_read = Signal["read"].as<std::string>("");
 	Info.signal_arms = Signal["arms"].as<int>(0);
+	Info.signal_height = Signal["height"].as<double>(0.0);
+	if (Signal["depth"].IsDefined())
+		Info.signal_depth = Signal["depth"].as<double>(0.0);
 	read_pairs(Signal["aspects"], Info.signal_aspects);
 	read_pairs(Signal["repeats"], Info.signal_repeats);
 }

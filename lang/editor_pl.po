@@ -13863,8 +13863,8 @@ msgstr "Odległość masztu od osi toru, przy którym stoi, w rzucie: wpisz inn�
 msgid "The head hangs this high over the rail heads of its track. One step of undo"
 msgstr "Głowica wisi tak wysoko nad główkami szyn swojego toru. Jeden krok cofania"
 
-msgid "0: the signal stands on the ground 0.35 m under the rail heads of its track, as Ie-102 draws it, its model on its foundation. Raise it where it stands higher, on a platform; lower it where the ground falls away, down an embankment. One step of undo"
-msgstr "0: semafor stoi na gruncie 0,35 m pod główkami szyn swojego toru, jak na rysunku w Ie-102, model na swoim fundamencie. Podnieś go, gdzie stoi wyżej, np. na peronie; obniż, gdzie grunt opada, np. na skarpie nasypu. Jeden krok cofania"
+msgid "0: the signal stands as high as its include gives for the rail heads of its track, by Ie-117 the top of its foundation 0.10 m under them, of a dwarf 0.20 m; where the ground falls away, down an embankment, lower, its foundation on the ground. Raise it where it stands higher, on a platform. One step of undo"
+msgstr "0: semafor stoi tak wysoko względem główek szyn swojego toru, jak podaje jego include; według Ie-117 wierzch fundamentu 0,10 m pod główkami, karzełka 0,20 m. Gdzie grunt opada, np. na skarpie nasypu, niżej, fundamentem na gruncie. Podnieś go, gdzie stoi wyżej, np. na peronie. Jeden krok cofania"
 
 msgid "Up: it changes places with the indicator above it. One step of undo"
 msgstr "W górę: zamienia się miejscem ze wskaźnikiem nad nim. Jeden krok cofania"

@@ -53,9 +53,8 @@ using geometry::heading_of;
 using geometry::plan_of;
 
 double const kRailTop{0.18};
-// m, of the zero of a signal model under the rail heads: the ground lies 0.35 m under them, Lx of Ie-102, the foot of the mast stands
-// on the foundation 3 cm over it in the models of the signals; the sceneries made by hand stand them 0.20 m under the rail foot so
-double const kFootUnder{0.38};
+// m, a signal lowered at most so far onto the ground under it; more is no ground of its own, under a bridge
+double const kGroundReach{3.0};
 double const kCarryRaise{3.0}; // m, of a signal over where it stands by default, kept as it is dragged; more is of another level
 double const kCarryNearest{1.0}; // m, of the distance of a dragged signal from the axis kept, outside it the default one
 double const kCarryFarthest{10.0};
@@ -496,6 +495,8 @@ bool editor_mode::signal_scan(bool const Wait)
 		item.lean = info.signal_lean;
 		item.read = info.signal_read;
 		item.arms = info.signal_arms;
+		item.height = info.signal_height;
+		item.depth = info.signal_depth;
 		item.aspect_events = info.signal_aspects;
 		item.repeats = info.signal_repeats;
 		for (auto const &parameter : info.parameters)
@@ -637,7 +638,8 @@ bool editor_mode::signal_spot_at(TTrack &Track, int const Path, glm::dvec3 const
 	Spot.list = facing > 0 ? 2 : 1;
 	Spot.offset = Template.mount == "gantry" ? 0.0 : EditorSettings.signal_offset();
 	auto const across{right * static_cast<double>(side) * Spot.offset};
-	Spot.position = {axis.x + across.x, axis.y + kRailTop + (Template.mount == "gantry" ? static_cast<double>(m_signal.height) : -kFootUnder), axis.z + across.y};
+	Spot.position = {axis.x + across.x, 0.0, axis.z + across.y};
+	Spot.position.y = signal_default_height(Template, axis, Spot.position);
 	auto const yaw{heading_of(Spot.travel) + 180.0};
 	Spot.yaw = yaw >= 360.0 ? yaw - 360.0 : yaw;
 	std::tie(Spot.reader, Spot.reader_list) = reader_at(Track, path, axis, Spot.list);
@@ -917,22 +919,38 @@ bool editor_mode::signal_drop_at(signal_standing const &Standing, TTrack &Track,
 	return signal_spot_at(Track, path, Point, Point, facing, Side * facing, *item, Spot);
 }
 
+double editor_mode::signal_default_height(signal_template const &Template, glm::dvec3 const &Axis, glm::dvec3 const &Position) const
+{
+	auto const rails{Axis.y + kRailTop};
+	if (Template.mount == "gantry")
+		return rails + static_cast<double>(m_signal.height);
+	// as the description of the template has it, its zero this far over the rail heads; the bottom of the model hanging over the
+	// ground, down an embankment: the signal on the ground
+	auto const zero{rails + Template.height};
+	if (false == Template.depth.has_value())
+		return zero;
+	auto const bottom{zero - *Template.depth};
+	auto const ground{ground_at({Position.x, rails, Position.z}).y};
+	if (ground < bottom && bottom - ground < kGroundReach)
+		return zero - (bottom - ground);
+	return zero;
+}
+
 void editor_mode::signal_carry(signal_spot const &From, signal_spot &To, signal_template const &Template) const
 {
 	auto const gantry{Template.mount == "gantry"};
-	auto const by_default = [&](glm::dvec3 const &Axis) { return Axis.y + kRailTop + (gantry ? static_cast<double>(m_signal.height) : -kFootUnder); };
-	// a height off by more is of another level, a track under a bridge or over it: the default there
-	if (auto const raised{From.position.y - by_default(From.axis)}; std::abs(raised) < kCarryRaise)
-		To.position.y = by_default(To.axis) + raised;
-	if (gantry || From.offset < kCarryNearest || From.offset > kCarryFarthest)
-		return;
-	auto const away{plan_of(To.position) - plan_of(To.axis)};
-	if (glm::length(away) < 1e-6)
-		return;
-	auto const out{glm::normalize(away) * From.offset};
-	To.position.x = To.axis.x + out.x;
-	To.position.z = To.axis.z + out.y;
-	To.offset = From.offset;
+	if (false == gantry && From.offset >= kCarryNearest && From.offset <= kCarryFarthest)
+		if (auto const away{plan_of(To.position) - plan_of(To.axis)}; glm::length(away) >= 1e-6)
+		{
+			auto const out{glm::normalize(away) * From.offset};
+			To.position.x = To.axis.x + out.x;
+			To.position.z = To.axis.z + out.y;
+			To.offset = From.offset;
+		}
+	// raised over where it stands by default, there and here; a height off by more is of another level, a track under a bridge or
+	// over it: the default there
+	if (auto const raised{From.position.y - signal_default_height(Template, From.axis, From.position)}; std::abs(raised) < kCarryRaise)
+		To.position.y = signal_default_height(Template, To.axis, To.position) + raised;
 }
 
 bool editor_mode::signal_standing_spot(signal_standing const &Standing, signal_spot &Spot, bool const Moved) const
@@ -1486,6 +1504,11 @@ bool editor_mode::signal_set_across(signal_standing const &Standing, std::option
 		m_signal.status = refused(STR_C("No track by the signal to take it from"));
 		return false;
 	}
+	auto const *item{signal_template_of(Standing.include.file)};
+	// raised over where it stands by default, kept as it moves across unless given
+	auto raised{item != nullptr ? spot.position.y - signal_default_height(*item, spot.axis, spot.position) : 0.0};
+	if (Height.has_value())
+		raised = *Height;
 	if (Offset.has_value())
 	{
 		// out from the axis the way it stands, on the side it stands
@@ -1497,11 +1520,10 @@ bool editor_mode::signal_set_across(signal_standing const &Standing, std::option
 		spot.position.x = spot.axis.x + away.x * *Offset;
 		spot.position.z = spot.axis.z + away.y * *Offset;
 	}
-	if (Height.has_value())
-	{
-		auto const *item{signal_template_of(Standing.include.file)};
-		spot.position.y = spot.axis.y + kRailTop + *Height - (item != nullptr && item->mount == "gantry" ? 0.0 : kFootUnder);
-	}
+	if (item != nullptr)
+		spot.position.y = signal_default_height(*item, spot.axis, spot.position) + raised;
+	else if (Height.has_value())
+		spot.position.y = spot.axis.y + kRailTop + *Height;
 	return signal_move_to(Standing, spot, STR_C("Signal %s moved, read by %s %s of %s, Ctrl+Z takes it back"), STR_C("Signal %s moved, Ctrl+Z takes it back"));
 }
 
@@ -2950,7 +2972,7 @@ void editor_mode::render_signal_selected()
 		item_tooltip("The distance of the mast from the axis of the track it stands by, in the plan: type another one and the signal moves across, as far along the track as it stands. Not nearer than the gauge lets it: the gauge chosen in the Gauge window pushes it out again. One step of undo");
 		field_row(gantry ? "Over the rails (m)" : "Raised (m)");
 		{
-			auto height{static_cast<float>(found->include.location.y - metre.spot.axis.y - kRailTop + (gantry ? 0.0 : kFootUnder))};
+			auto height{static_cast<float>(found->include.location.y - (shape != nullptr ? signal_default_height(*shape, metre.spot.axis, found->include.location) : metre.spot.axis.y + kRailTop))};
 			auto const before{height};
 			ImGui::SetNextItemWidth(-1.0f);
 			ImGui::InputFloat("##signalfoot", &height, 0.05f, 0.25f, "%.2f m");
@@ -2961,7 +2983,7 @@ void editor_mode::render_signal_selected()
 				return;
 			}
 		}
-		item_tooltip(gantry ? "The head hangs this high over the rail heads of its track. One step of undo" : "0: the signal stands on the ground 0.35 m under the rail heads of its track, as Ie-102 draws it, its model on its foundation. Raise it where it stands higher, on a platform; lower it where the ground falls away, down an embankment. One step of undo");
+		item_tooltip(gantry ? "The head hangs this high over the rail heads of its track. One step of undo" : "0: the signal stands as high as its include gives for the rail heads of its track, by Ie-117 the top of its foundation 0.10 m under them, of a dwarf 0.20 m; where the ground falls away, down an embankment, lower, its foundation on the ground. Raise it where it stands higher, on a platform. One step of undo");
 		field_row("To the switch ahead");
 		auto const text{danger_text(metre.danger)};
 		if (metre.danger.what == track_trace::danger::kind::none)

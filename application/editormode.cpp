@@ -3685,6 +3685,11 @@ void editor_mode::capture_terrain()
 // the orthophoto makes where it's not fitted to the ground. what's put in the scenery is to stand on the ground itself
 glm::dvec3 editor_mode::placement_on_ground(glm::dvec3 Location)
 {
+    return ground_at(Location);
+}
+
+glm::dvec3 editor_mode::ground_at(glm::dvec3 Location) const
+{
     double constexpr reach = 2.0; // the ground is asked about this far around the point
     double constexpr slack = 0.5; // a surface this far over the point still is what the cursor landed on
     double constexpr height_tolerance = 50.0; // with nothing there or lower, how far up the ground is looked for

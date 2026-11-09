@@ -307,8 +307,9 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			if (auto const *after{standing_named(name)})
 			{
 				signal_spot spot;
-				if (signal_standing_spot(*after, spot))
-					WriteLog(format("SELFTEST %s %s: %.3f m from the axis, foot %.3f m over the rail foot, at %.2f %.2f %.2f, the trains it faces run %.3f %.3f", command.c_str(), name.c_str(), geometry::plan_distance(after->include.location, spot.axis), after->include.location.y - spot.axis.y, after->include.location.x, after->include.location.y, after->include.location.z, spot.travel.x, spot.travel.y));
+				auto const *item{signal_template_of(after->include.file)};
+				if (signal_standing_spot(*after, spot) && item != nullptr)
+					WriteLog(format("SELFTEST %s %s: %.3f m from the axis, zero %.3f m over the rail heads, raised %.3f m, ground %.3f m over the rail heads, at %.2f %.2f %.2f, the trains it faces run %.3f %.3f", command.c_str(), name.c_str(), geometry::plan_distance(after->include.location, spot.axis), after->include.location.y - spot.axis.y - 0.18, after->include.location.y - signal_default_height(*item, spot.axis, after->include.location), ground_at({after->include.location.x, spot.axis.y + 0.18, after->include.location.z}).y - spot.axis.y - 0.18, after->include.location.x, after->include.location.y, after->include.location.z, spot.travel.x, spot.travel.y));
 				for (auto const &mark : after->indicators)
 					WriteLog(format("SELFTEST %s %s indicator %s at %.3f m over the foot, %.3f m aside", command.c_str(), name.c_str(), mark.file.c_str(), mark.location.y - after->include.location.y, geometry::plan_distance(mark.location, after->include.location)));
 			}

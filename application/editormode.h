@@ -253,6 +253,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 clamp_mouse_offset_to_max(const glm::dvec3 &offset);
 	// the ground under a point the cursor landed on, for things which are to stand on the ground
 	glm::dvec3 placement_on_ground(glm::dvec3 Location) override;
+	// the ground under a point, the point itself with none there
+	glm::dvec3 ground_at(glm::dvec3 Location) const;
 	// puts every instance of the model the selected node shows on the ground under it
 	void drop_model_instances();
 	void render_object_menu();
@@ -2631,6 +2633,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<int> speeds;
 		int aspects{0}; // of a block signal, 3 or 4
 		int arms{0}; // of a semaphore, 1 or 2, from its description
+		// m, of the zero of its model over the rail heads, from its description: where it stands by default
+		double height{0.0};
+		// m, how deep its model reaches under its zero, from its description: none, it isn't put on the ground
+		std::optional<double> depth;
 		// the aspects its description lists, by name (Sr1, Od2...) with the event giving each; empty for a template not described so
 		std::vector<std::pair<std::string, std::string>> aspect_events;
 		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
@@ -2774,6 +2780,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the distance from the axis and the height over where it stands by default From has, carried to To, a spot of the same signal
 	// along its track: a signal set across or raised by hand keeps it as it is dragged or snapped
 	void signal_carry(signal_spot const &From, signal_spot &To, signal_template const &Template) const;
+	// the height of the zero of the model of a signal at Position by the track of the axis at Axis, as it stands by default: as far over
+	// the rail heads as its description gives, lower only where its bottom would hang over the ground; a gantry as high over the rails
+	// as chosen
+	double signal_default_height(signal_template const &Template, glm::dvec3 const &Axis, glm::dvec3 const &Position) const;
 	// the indicators of the signal moved after it to the place and the frame it has now, at the same place by it as they were, the
 	// directives they had going to Directives
 	void signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);

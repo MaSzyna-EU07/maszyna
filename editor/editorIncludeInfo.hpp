@@ -48,6 +48,11 @@ struct include_info
 	std::string signal_lean;
 	std::string signal_read;
 	int signal_arms{0}; // of a semaphore: 1 or 2, 0 for a signal with lights or a disc
+	// m, of the zero of the model of the signal over the rail heads; under them below 0
+	double signal_height{0.0};
+	// m, how deep the model reaches under its zero, its foundation: with it the editor lowers a signal whose bottom would hang over the
+	// ground; none, it isn't
+	std::optional<double> signal_depth;
 	// the aspects the signal shows, each by its name in the signalling instruction (Sr1, S2, Od1...) with its event, the part after
 	// "(p1)_", in the order of the description. empty where the description doesn't list them
 	std::vector<std::pair<std::string, std::string>> signal_aspects;
