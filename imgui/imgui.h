@@ -2360,7 +2360,7 @@ struct ImGuiIO
     bool        ConfigViewportsNoTaskBarIcon;   // = false          // Disable default OS task bar icon flag for secondary viewports. When a viewport doesn't want a task bar icon, ImGuiViewportFlags_NoTaskBarIcon will be set on it.
     bool        ConfigViewportsNoDecoration;    // = true           // Disable default OS window decoration flag for secondary viewports. When a viewport doesn't want window decorations, ImGuiViewportFlags_NoDecoration will be set on it. Enabling decoration can create subsequent issues at OS levels (e.g. minimum window size).
     bool        ConfigViewportsNoDefaultParent; // = false          // Disable default OS parenting to main viewport for secondary viewports. By default, viewports are marked with ParentViewportId = <main_viewport>, expecting the platform backend to setup a parent/child relationship between the OS windows (some backend may ignore this). Set to true if you want the default to be 0, then all viewports will be top-level OS windows.
-    bool        ConfigViewportsNoAutoDetach;    // = false          // MaSzyna addition: a floating window stays inside its host viewport: a resize stops at its edge, and a window left past it, or too big for it, is moved and shrunk to fit. It gets a viewport of its own only when dragged with the mouse cursor past the host viewport. Popups and tooltips are not affected.
+    bool        ConfigViewportsNoAutoDetach;    // = false          // MaSzyna addition: a floating window stays inside its host viewport: a resize stops at its edge, and a window left past it, or too big for it, is moved and shrunk to fit. It gets a viewport of its own only when dragged with the mouse cursor past the host viewport. Tooltips and popups shown over the main viewport, or begun outside any window, get no viewport of their own either: they are placed inside the main viewport as with the viewports off.
 
     // Miscellaneous options
     // (you can visualize and interact with all options in 'Demo->Configuration')
@@ -2375,6 +2375,7 @@ struct ImGuiIO
     bool        ConfigWindowsCopyContentsWithCtrlC; // = false      // [EXPERIMENTAL] CTRL+C copy the contents of focused window into the clipboard. Experimental because: (1) has known issues with nested Begin/End pairs (2) text output quality varies (3) text output is in submission order rather than spatial order.
     bool        ConfigScrollbarScrollByPage;    // = true           // Enable scrolling page by page when clicking outside the scrollbar grab. When disabled, always scroll to clicked location. When enabled, Shift+Click scrolls to clicked location.
     float       ConfigMemoryCompactTimer;       // = 60.0f          // Timer (in seconds) to free transient windows/tables memory buffers when unused. Set to -1.0f to disable.
+    float       ConfigTooltipsWrapWidth;        // = 0.0f           // MaSzyna addition: the text of SetTooltip() and SetItemTooltip() wraps at this width, in pixels; 0: it doesn't wrap. BeginTooltip() is not affected.
 
     // Inputs Behaviors
     // (other variables, ones which are expected to be tweaked within UI code, are exposed in ImGuiStyle)
