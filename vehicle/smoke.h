@@ -25,6 +25,7 @@ struct spawn_rate {
 // number of particles the smoke source of a vehicle has to spawn after Timedelta seconds: the steady rate of the
 // source, plus a share which grows with the work of its engine. a vehicle taken off the tracks (Ontracks false: gone through a portal, or waiting in the pool of the road
 // traffic) puffs no more, the particles it already let out fade away as usual
+// an engine the starter turns but which hasn't fired yet (TMoverParameters::dizel_FiringCountdown) lets out no smoke either
 float vehicle_spawn_count(TMoverParameters const &Mover, bool Ontracks, spawn_rate const &Rate, double Timedelta);
 
 } // namespace smoke

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/gaugepositions.h"
+#include "vehicle/gaugeduplicates.h"
 #include "utilities/parser.h"
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
@@ -109,6 +110,14 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     endvalue = -1;
     bool interpolatescale { false };
 
+    // the control as defined so far in this cab, which a definition marked as its duplicate adds a copy to
+    // rather than replacing it (eu07/maszyna#527)
+    std::optional<TGauge> original;
+    if( gauge_duplicates::adds_copy<TModel3d>( true, m_sourcemodel, Owner->mdKabina, Owner->mdLowPolyInt ) ) {
+        original = *this;
+    }
+    scratch_data scratchpad;
+
     Parser.getTokens();
     if( Parser.peek() != "{" ) {
         // old fixed size config
@@ -148,7 +157,6 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         }
         // new, variable length section
         {
-            scratch_data scratchpad;
             while( true == Load_mapping( Parser, scratchpad ) ) {
                 // all work done by while()
             }
@@ -190,17 +198,20 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         endscale *= static_cast<float>(mul);
     }
     TSubModel *submodel { nullptr };
+    m_sourcemodel = nullptr;
     std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
     for( auto const *source : sources ) {
         if( source != nullptr
          && ( submodel = source->GetFromName( submodelname ) ) != nullptr ) {
             // got what we wanted, bail out
+            m_sourcemodel = source;
             break;
         }
         // there's a possibility the default submodel was named with _off suffix
         if( source != nullptr
          && ( submodel = source->GetFromName( submodelname + "_off" ) ) != nullptr ) {
             // got what we wanted, bail out
+            m_sourcemodel = source;
             break;
         }
     }
@@ -230,6 +241,14 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
 
     Init( submodel, submodelon, type, scale, offset, friction, 0, endvalue, endscale, interpolatescale );
 
+    if( scratchpad.duplicate && original ) {
+        // a duplicate submodel of the control already defined: the control stays as it was, with one more copy
+        // animated along with it. the duplicate's own sounds, if any, are left out so the control isn't heard twice
+        auto duplicate { MirrorCopy() };
+        *this = std::move( *original );
+        m_mirrors.emplace_back( std::move( duplicate ) );
+    }
+
 //    return md2 != nullptr; // true, gdy podany model zewnętrzny, a w kabinie nie było
 };
 
@@ -240,7 +259,12 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
     auto const key { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
     if( true == key.empty() || key == "}" ) { return false; }
     // if not block end then the key is followed by assigned value or sub-block
-    if( key == "type:" ) {
+    if( key == "duplicate:" ) {
+        // the definition is another submodel of the control defined before it, rather than its replacement
+        auto const duplicate { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
+        Scratchpad.duplicate = gauge_duplicates::is_duplicate( duplicate );
+    }
+    else if( key == "type:" ) {
         using enum TGaugeType;
         auto const gaugetype { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
         m_type = gaugetype == "push"       ? push :
@@ -249,6 +273,7 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
 		         gaugetype == "delayed"    ? push_delayed :
 		         gaugetype == "pushtoggle" ? pushtoggle :
 		                                     toggle; // "toggle" and default
+        m_typedeclared = true;
     }
     else if( key == "soundinc:" ) {
         m_soundfxincrease.deserialize( Input, sound_type::single );
@@ -376,6 +401,22 @@ void TGauge::Update( bool const Power ) {
         else                { m_soundfxoff.play(); }
     }
     m_state = state;
+    UpdateVisibility();
+    // update submodel animations
+    UpdateAnimation( SubModel );
+    UpdateAnimation( SubModelOn );
+    // the copies follow the control's value and state, each with its own animation
+    for( auto &mirror : m_mirrors ) {
+        mirror.m_value = m_value;
+        mirror.m_targetvalue = m_targetvalue;
+        mirror.m_state = m_state;
+        mirror.UpdateVisibility();
+        mirror.UpdateAnimation( mirror.SubModel );
+        mirror.UpdateAnimation( mirror.SubModelOn );
+    }
+};
+
+void TGauge::UpdateVisibility() const {
     // toggle submodel visibility only if the active state submodel is present,
     // keep the default model always visible otherwise
     if( SubModelOn != nullptr ) {
@@ -384,10 +425,26 @@ void TGauge::Update( bool const Power ) {
             SubModel->iVisible = !m_state;
         }
     }
-    // update submodel animations
-    UpdateAnimation( SubModel );
-    UpdateAnimation( SubModelOn );
-};
+}
+
+TGauge TGauge::MirrorCopy() const {
+
+    TGauge mirror;
+    mirror.SubModel = SubModel;
+    mirror.SubModelOn = SubModelOn;
+    mirror.m_animation = m_animation;
+    mirror.m_friction = m_friction;
+    mirror.m_targetvalue = m_targetvalue;
+    mirror.m_value = m_value;
+    mirror.m_offset = m_offset;
+    mirror.m_scale = m_scale;
+    mirror.m_endscale = m_endscale;
+    mirror.m_endvalue = m_endvalue;
+    mirror.m_interpolatescale = m_interpolatescale;
+    mirror.m_state = m_state;
+    mirror.m_sourcemodel = m_sourcemodel;
+    return mirror;
+}
 
 void TGauge::AssignFloat(float *fValue)
 {
