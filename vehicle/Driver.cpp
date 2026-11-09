@@ -932,6 +932,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
     mvOccupied->SecuritySystem.set_cabsignal_lock(false);
     // te flagi są ustawiane tutaj, w razie potrzeby
     iDrivigFlags &= ~(moveTrackEnd | moveSwitchFound | moveSignalFound | /*moveSpeedLimitFound*/ moveStopPointFound );
+    update_point_limits();
 
     for( std::size_t idx = 0; idx < sSpeedTable.size(); ++idx ) {
         // o ile dana pozycja tabelki jest istotna
@@ -987,7 +988,7 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
                                     a = std::lerp( a, AccPreferred, std::clamp( ( d - brakingdistance ) / brakingdistance, 0.0, 1.0 ) );
                                 }
                             }
-                            if( d < fMinProximityDist
+                            if( d < ( ispointlimit ? point_limit_approach() : fMinProximityDist )
                              && v < fVelDes ) {
                                 // jak jest już blisko, ograniczenie aktualnej prędkości
                                 fVelDes = v;
@@ -1101,6 +1102,9 @@ TCommandType TController::TableUpdate(double &fVelDes, double &fDist, double &fN
             }
         }
     }
+
+    // the point limits latched before, which aren't in the table any more
+    apply_point_limits( fVelDes, fDist, fNext, fAcc );
 
     // jeśli mieliśmy ograniczenie z semafora i nie ma przed nami
     if( VelSignalLast >= 0.0
@@ -1439,11 +1443,140 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     return false; //
 }
 
+void TController::latch_point_limit( TSpeedPos const &Point ) {
+
+    if( std::any_of(
+            m_pointlimits.begin(), m_pointlimits.end(),
+            [&]( point_limit const &Limit ) { return Limit.source == Point.evEvent; } ) ) {
+        // latched before; a table built anew found the cell under the consist again
+        return;
+    }
+    m_pointlimits.push_back( point_limit { Point.evEvent, Point.fVelNext, Point.fDist + Point.fPointDist, travel_direction() } );
+    if( Global.iWriteLogEnabled & 8 ) {
+        WriteLog( "Speed table update for " + OwnerName() + ", latched point limit of " + Point.evEvent->m_name
+            + ": " + to_string( Point.fVelNext, 0 ) + " in " + to_string( m_pointlimits.back().distance, 0 ) + " m" );
+    }
+}
+
+void TController::update_point_limits() {
+
+    if( pVehicle == nullptr ) { return; }
+    auto const position { pVehicle->GetPosition() };
+    if( m_pointlimitsvehicle == pVehicle ) {
+        auto const movement { position - m_pointlimitsposition };
+        auto const length { glm::length( movement ) };
+        // a longer jump between two updates isn't driving
+        if( length > 0.0 && length < 200.0 ) {
+            auto const step { movement / length };
+            for( auto &limit : m_pointlimits ) {
+                if( glm::length( limit.heading ) < 0.5 ) {
+                    // the way wasn't known when the limit was latched, the head was passing the cell
+                    limit.heading = step;
+                }
+                auto const along { glm::dot( step, limit.heading ) };
+                limit.distance += ( along >= 0.0 ? -length : length );
+                // the way towards the point follows the line, step by step; a step far off it
+                // (a jolt of a standing vehicle) doesn't turn it
+                if( std::abs( along ) > 0.5 ) {
+                    limit.heading = ( along >= 0.0 ? step : -step );
+                }
+            }
+        }
+    }
+    // a change of the vehicle (another cab) starts the measure from its place
+    m_pointlimitsvehicle = pVehicle;
+    m_pointlimitsposition = position;
+
+    auto const travel { travel_direction() };
+    std::erase_if(
+        m_pointlimits,
+        [&]( point_limit const &Limit ) {
+            // passed by the head
+            if( Limit.distance < 0.0 ) {
+                if( Global.iWriteLogEnabled & 8 ) {
+                    WriteLog( "Speed table update for " + OwnerName() + ", passed point limit of " + Limit.source->m_name );
+                }
+                return true;
+            }
+            // the cell ahead of the head again, going towards the point after backing up past the cell: it is read anew
+            // (not while backing up: the cell may as well be scanned from the other side)
+            return glm::dot( travel, Limit.heading ) > 0.0
+                && std::any_of(
+                sSpeedTable.begin(), sSpeedTable.end(),
+                [&]( TSpeedPos const &Point ) {
+                    return Point.evEvent == Limit.source
+                        && TestFlag( Point.iFlags, spEnabled | spEvent | spPointVelocity )
+                        && Point.fDist > 0.0; } ); } );
+}
+
+void TController::apply_point_limits( double &Velocity, double &Distance, double &Next, double &Acceleration ) {
+
+    auto const travel { travel_direction() };
+    for( auto const &limit : m_pointlimits ) {
+        // latched with no limit
+        if( limit.velocity < 0.0 ) { continue; }
+        // going away from the point, or the way isn't known
+        if( glm::dot( travel, limit.heading ) <= 0.0 ) { continue; }
+        // the same as for a point of the speed table ahead
+        auto const v { limit.velocity };
+        auto const d { std::max( limit.distance, 0.01 ) };
+        auto a { ( v * v - mvOccupied->Vel * mvOccupied->Vel ) / ( 25.92 * d ) };
+        if( mvOccupied->Vel < v ) {
+            auto const brakingdistance { 1.2 * fBrakeDist * braking_distance_multiplier( v ) };
+            if( brakingdistance > 0.0 ) {
+                a = std::lerp( a, AccPreferred, std::clamp( ( d - brakingdistance ) / brakingdistance, 0.0, 1.0 ) );
+            }
+        }
+        if( d < point_limit_approach() && v < Velocity ) {
+            Velocity = v;
+        }
+        if( a <= Acceleration
+         && ( v < Next || Next < 0 ) ) {
+            Acceleration = a;
+            Next = v;
+            Distance = d;
+            bStopTargetIsPassengerStop = false;
+        }
+    }
+}
+
+double TController::point_limit_approach() const {
+    // a point limit holds at its point and not a metre beyond, so the braking curve alone leaves a slow consist
+    // coasting above it (the deceleration asked for is below what makes the driver brake). within the final
+    // approach, and five seconds of the present speed before it, the speed is held down to it already
+    return fMaxProximityDist + mvOccupied->Vel / 3.6 * 5.0;
+}
+
+glm::dvec3 TController::travel_direction() const {
+
+    auto const *head { pVehicles[ end::front ] };
+    auto const *rear { pVehicles[ end::rear ] };
+    auto direction { glm::dvec3 { 0.0 } };
+    if( head != nullptr && rear != nullptr && head != rear ) {
+        direction = head->GetPosition() - rear->GetPosition();
+    }
+    else if( pVehicle != nullptr && iDirection != 0 ) {
+        // a single vehicle runs towards the coupler of its direction
+        direction = pVehicle->CouplerPosition( iDirection > 0 ? end::front : end::rear ) - pVehicle->GetPosition();
+    }
+    auto const length { glm::length( direction ) };
+    return ( length > 0.001 ? direction / length : glm::dvec3 { 0.0 } );
+}
+
 bool
 TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex ) {
 
     if( TestFlag( Point.iFlags, spPointVelocity ) ) {
-        // PointVelocity: no signal, no command, only the limit at its point; done once the head passes the point
+        // PointVelocity: no signal, no command, only the limit at its point
+        if( Point.fDist < 0.0
+         && Point.fVelNext != 0.0 ) {
+            // the head passed the cell: what it says now holds at the point, whatever happens to the table.
+            // a stop at 0 stays in the table, where the cell can still release it
+            latch_point_limit( Point );
+            Point.Clear();
+            return true;
+        }
+        // done once the head passes the point
         if( Point.fDist + Point.fPointDist < 0.0 ) {
             if( Global.iWriteLogEnabled & 8 ) {
                 WriteLog( "Speed table update for " + OwnerName() + ", passed point limit of " + Point.GetName() );
