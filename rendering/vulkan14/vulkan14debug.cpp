@@ -243,6 +243,7 @@ void vulkan14_renderer::draw_debug_ui()
 	if (ImGui::Begin("Sun shadows"))
 	{
 		ImGui::Checkbox("cascades fitted to the depth of the view (gfx.shadow.sdsm)", &Global.gfx_shadow_sdsm);
+		ImGui::Checkbox("the textures without translucent texels drawn without the alpha test", &m_shadowskipalphatest);
 		ImGui::SliderFloat("splits, 0 equal lengths .. 1 equal ratios (gfx.shadow.sdsm.split)", &Global.gfx_shadow_sdsm_split, 0.f, 1.f, "%.2f");
 		auto const &fit{m_shadowfitstate};
 		if (Global.gfx_shadow_sdsm)
@@ -386,6 +387,7 @@ void vulkan14_renderer::draw_debug_ui()
 			ImGui::Checkbox("keep the walks of the submodel trees of the instances from frame to frame (gfx.gpucull.walkcache)", &Global.gfx_gpucull_walkcache);
 		}
 		ImGui::Checkbox("draw the depth of the whole scene before its colour (gfx.depthprepass.scene)", &Global.gfx_depthprepass_scene);
+		ImGui::Checkbox("the colour pass leaves the depth of the alpha tested surfaces as the depth of the scene drew it", &m_keepprepassdepth);
 		if (Global.gfx_contactshadows > 0)
 		{
 			ImGui::TextUnformatted("(drawn anyway for the contact shadows, gfx.contactshadows)");

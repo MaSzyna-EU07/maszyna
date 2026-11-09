@@ -1680,7 +1680,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	auto const reflections{m_ssrframe && (false == Global.bWireFrame)};
 	// and the ambient occlusion in the light of the surfaces
 	auto const aolighting{ao_lighting_wanted(vp)};
-	if ((Global.gfx_depthprepass_scene || contactshadows || reflections || aolighting) && vp.main && (false == Global.bWireFrame))
+	auto const scenedepth{(Global.gfx_depthprepass_scene || contactshadows || reflections || aolighting) && vp.main && (false == Global.bWireFrame)};
+	if (scenedepth)
 	{
 		render_scene_depth(Index, future);
 		if (contactshadows)
@@ -1697,8 +1698,9 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		}
 	}
 
-	// opaque parts...
+	// opaque parts... what the prepass drew with the alpha test keeps its depth (draw_state::keepdepth)
 	ctx.passes.begin_pass("colour, opaque");
+	m_draw->keepdepth = scenedepth && m_keepprepassdepth && (false == m_prepassincomplete);
 	walk_blending(false);
 	// without rain/snow we can render the cab early to limit the overdraw
 	if (!FreeFlyModeFlag && Global.Overcast <= 1.0f && Global.render_cab && simulation::Train)
@@ -1716,6 +1718,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	model_ubs.future = future;
 	walk_region(simulation::Region, false);
 	m_indirectcolourpending = false;
+	m_draw->keepdepth = false;
+	m_draw->prepassed = false;
 
 	// the grass of the terrain, opaque, over the ground drawn
 	if (vp.main && (false == Global.bWireFrame))
@@ -1860,6 +1864,9 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	draw.weather_offset = offsets[3];
 	draw.depthpass = true;
 	draw.depthskip = true;
+	// what the prepass of this frame leaves out (keepdepth)
+	m_prepassincomplete = false;
+	m_prepassunready.clear();
 	commands->set_depth_bias_enable(VK_TRUE);
 	commands->set_depth_bias(-1.f, 0.f, -1.f);
 	auto const colourstats{m_renderpass.draw_stats};

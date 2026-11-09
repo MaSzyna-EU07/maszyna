@@ -342,6 +342,7 @@ set(SOURCES
 "rendering/common/localshadows.cpp"
 "rendering/common/cabprobe.cpp"
 "rendering/common/skyocclusion.cpp"
+"rendering/common/texturealpha.cpp"
 "rendering/common/terrainmaterials.cpp"
 "rendering/common/grassfield.cpp"
 "rendering/common/gpuparticles.cpp"

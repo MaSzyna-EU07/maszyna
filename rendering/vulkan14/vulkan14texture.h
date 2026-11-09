@@ -226,6 +226,12 @@ struct vulkan14_texture : public texture_source
 		return m_job != job_none;
 	}
 	void destroy() override;
+	// made from the data of a file of which every texel passes the alpha test of the shadow maps (gfx::texels_pass_alpha_test()):
+	// its shadows need no test. read after resident()
+	bool passes_alpha_test() const
+	{
+		return m_passesalphatest;
+	}
 
 	// the content given by update_from_memory() from another thread, uploaded by the thread of the renderer
 	void apply_pending();
@@ -284,6 +290,7 @@ struct vulkan14_texture : public texture_source
 	std::vector<std::uint8_t> m_pending;
 	std::size_t m_pendingwidth{0};
 	std::size_t m_pendingheight{0};
+	std::atomic<bool> m_passesalphatest{false};
 };
 
 } // namespace vk14

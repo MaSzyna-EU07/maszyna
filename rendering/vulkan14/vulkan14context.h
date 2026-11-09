@@ -730,6 +730,12 @@ struct vulkan14_renderer::draw_state
 	bool cullface{true};
 	bool glare{false};
 	bool depthmask_off{false}; // the editor overlay: no depth written whatever the blending
+	// the colour pass of the opaque scene after its depth (render_scene_depth()), keepdepth: the draws whose depth the prepass drew with
+	// the alpha test (prepassed, set by walk_material()) find it in the depth buffer and don't write it again. without the write the
+	// depth is tested before their fragment shaders, which discard, and the hidden leaves aren't lit. the solid surfaces write theirs
+	// as they did, so what's in front of what stays as it was
+	bool keepdepth{false};
+	bool prepassed{false};
 	// the pipelines and the textures a draw needs first may be made by the background threads, the draw left out till then (the walks
 	// of the scene, gfx.vulkan.asyncresources); the draws outside of them (the cab, the sky, the particles) wait for what they need
 	bool async{false};

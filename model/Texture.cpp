@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "scene/sn_utils.h"
 #include "rendering/flip-s3tc.h"
+#include "rendering/common/texturealpha.h"
 #include "stb/stb_image.h"
 //#include <png.h>
 #include "dds-ktx/dds-ktx.h"
@@ -54,11 +55,24 @@ struct texture_request {
     glm::dvec3 origin { 0.0 };
     // results, written by the thread reading the data
     std::vector<unsigned char> data;
+    // every texel passes the alpha test of the shadow maps: checked by the worker threads, not by a thread waiting for the data
+    std::optional<bool> alphakept;
     bool failed { false };
     bool done { false }; // guarded by the mutex of the loader
 };
 
 namespace {
+
+// the alpha test of the shadow maps checked on the data of a dds file, block by block of its format
+std::optional<bool> dds_alpha_kept( texture_request const &Request ) {
+    switch( Request.fourcc ) {
+        case FOURCC_DXT1: { return gfx::texels_pass_alpha_test( gfx::alpha_layout::bc1, Request.data ); }
+        case FOURCC_DXT3: { return gfx::texels_pass_alpha_test( gfx::alpha_layout::bc2, Request.data ); }
+        case FOURCC_DXT5: { return gfx::texels_pass_alpha_test( gfx::alpha_layout::bc3, Request.data ); }
+        // the only one load_DDS() takes of the dx10 formats
+        case FOURCC_DX10: { return gfx::texels_pass_alpha_test( gfx::alpha_layout::bc7, Request.data ); }
+        default: { return std::nullopt; }
+    } }
 
 // worker threads reading texture data from disk
 class texture_loader {
@@ -92,7 +106,8 @@ public:
         if( lookup != std::end( m_queue ) ) {
             m_queue.erase( lookup );
             lock.unlock();
-            read( *Request );
+            // the thread waiting for the data doesn't check its alpha: the one which makes the texture does it, if it can wait
+            read( *Request, false );
             lock.lock();
             Request->done = true;
             return;
@@ -111,6 +126,7 @@ public:
             return false;
         }
         Request.data = std::vector<unsigned char>();
+        Request.alphakept.reset();
         Request.done = false;
         Request.failed = false;
         return true; }
@@ -136,14 +152,14 @@ private:
             auto request { m_queue.front() };
             m_queue.pop_front();
             lock.unlock();
-            read( *request );
+            read( *request, true );
             lock.lock();
             request->done = true;
             m_read.notify_all();
         } }
 
-    // same as the reading part of texture_source::load_DDS()
-    static void read( texture_request &Request ) {
+    // same as the reading part of texture_source::load_DDS(). Check: the alpha of the texels checked too (on a worker thread)
+    static void read( texture_request &Request, bool const Check ) {
         std::ifstream file( Request.file, std::ios::binary );
         if( false == file.is_open() ) {
             Request.failed = true;
@@ -171,6 +187,10 @@ private:
                 height = std::max( height / 2, 4 );
                 --mapcount;
             }
+        }
+        Request.alphakept.reset();
+        if( Check && file.good() ) {
+            Request.alphakept = dds_alpha_kept( Request );
         } }
 
     std::mutex m_mutex;
@@ -438,6 +458,8 @@ texture_source::load() {
         WriteLog( "Loading texture data from \"" + name + "\"", logtype::texture );
 
         data_state = resource_state::loading;
+        // known only of the data a worker thread reads (complete_data())
+        data_alphakept.reset();
 
              if( type == ".dds" ) { load_DDS(); }
         else if( type == ".tga" ) { load_TGA(); }
@@ -1343,6 +1365,7 @@ texture_source::complete_data() {
         return;
     }
     data.swap( completed->data );
+    data_alphakept = completed->alphakept;
     data_state = resource_state::good;
     size = data.size() / 1024;
 }

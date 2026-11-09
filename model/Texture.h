@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <istream>
 #include <chrono>
 #include <limits>
+#include <optional>
 #include "winheaders.h"
 #include "utilities/memorystats.h"
 #include <string>
@@ -133,6 +134,9 @@ public:
     bool is_rendertarget = false; // is used as postfx rendertarget, without loaded data
     bool is_texstub = false; // for make_from_memory internal_src: functionality
     std::vector<unsigned char> data; // texture data (stored GL-style, bottom-left origin)
+    // whether every texel of the data passes the alpha test of the shadow maps (gfx::texels_pass_alpha_test()), when the worker
+    // thread which read it checked that; unknown otherwise
+    std::optional<bool> data_alphakept;
     resource_state data_state{ resource_state::none }; // current state of texture data
     unsigned int data_width{ 0 },
         data_height{ 0 },

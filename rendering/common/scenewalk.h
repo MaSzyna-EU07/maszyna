@@ -153,6 +153,8 @@ class scene_walk
 	void Queue_Instances(scene::basic_cell const *Cell);
 	// makes the records of the instances held by a bucket of a scene cell, with locations relative to Origin
 	void Update_Instance_Records(TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket, glm::dvec3 const &Origin);
+	// the opaque instances of a scene cell which aren't drawn with the others of their model, made anew with the instance records
+	scene::basic_cell::instance_sequence const &Single_Instances(scene::basic_cell const &Cell) const;
 	// whether none of the instances of a bucket can pass the culling of the current pass, by the bounds of their records
 	bool Bucket_Culled(scene::basic_cell::instance_bucket const &Bucket) const;
 	// the sphere around the locations of the visible instances of a bucket, with a margin for the precision of the records
@@ -344,8 +346,9 @@ class scene_walk
 	// whether two recorded draws can go in one multi draw of the colour pass: the same material and texture variant, geometry
 	// bank, primitive and blending
 	bool Indirect_Mergeable(std::size_t const First, std::size_t const Other) const;
-	// the texture the shadow material binds for the alpha test of a material, or null_handle (no test)
-	texture_handle Indirect_Shadow_Texture(material_handle const Material) const;
+	// the texture the shadow material binds for the alpha test of a material, or null_handle (no test). a renderer which knows a
+	// texture passes the test everywhere draws its shadows without one
+	virtual texture_handle Indirect_Shadow_Texture(material_handle const Material) const;
 	// the records of the sleepers and of the models drawn on their own not queued for a while are let go
 	void Expire_Indirect_Records();
 	// a scenery is being loaded: the tracks and the models the records were made for may be gone

@@ -643,9 +643,9 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
 				}
 				// remaining (non-instanceable) opaque instance nodes go through the per-node path, or with the instances
 				// to the gpu culling, each on its own
-				for (auto *instance : cell->m_instancesopaque)
+				// (the instanceable ones are handled via bucket)
+				for (auto *instance : Single_Instances(*cell))
 				{
-					if( instance->m_instanceable ) { continue; } // already handled via bucket
 					// the model of a lamp would shadow everything in the map of the lamp
 					if( instance == m_cubeskipinstance ) { continue; }
 					if( walk_queue_model( instance, cellinrange ) ) { continue; }
@@ -680,8 +680,7 @@ void scene_walk::Render(cell_sequence::iterator First, cell_sequence::iterator L
                 // opaque parts of instanced models -- accumulate into the
                 // frame-level map; flushed once per unique model after the loop.
                 Queue_Instances( cell );
-                for( auto *instance : cell->m_instancesopaque ) {
-                    if( instance->m_instanceable ) { continue; }
+                for( auto *instance : Single_Instances( *cell ) ) {
                     if( walk_queue_model( instance, true ) ) { continue; }
                     Render( instance );
                     m_modelcomparekey = nullptr;
@@ -1072,6 +1071,32 @@ void scene_walk::Update_Instance_Records( TModel3d const *Model, scene::basic_ce
 	}
 	Bucket.recordsversion = m_instancerecordsversion;
 	Bucket.gpustale = true;
+}
+
+// the opaque instances of a scene cell drawn each on its own. an instance stops being drawn with the others of its model by an event
+// (TAnimModel::AddContainer()), which changes scene::node_state_version and with it the version of the instance records; the editor
+// makes the records anew in every frame. the list is made once for a version, before any walk of the frame reads it, so a walk going
+// through it doesn't see it change
+scene::basic_cell::instance_sequence const &scene_walk::Single_Instances( scene::basic_cell const &Cell ) const
+{
+	auto const stale = [ this, &Cell ]() {
+		return ( Cell.m_instancessingleversion != m_instancerecordsversion )
+		    || ( Cell.m_instancessinglesource != Cell.m_instancesopaque.size() ); };
+	if( stale() ) {
+		// the lists the passes share are made by one walk at a time (walk_sync)
+		gfx::walk_sync::change change;
+		if( stale() ) {
+			Cell.m_instancessingle.clear();
+			for( auto *instance : Cell.m_instancesopaque ) {
+				if( false == instance->m_instanceable ) {
+					Cell.m_instancessingle.emplace_back( instance );
+				}
+			}
+			Cell.m_instancessinglesource = Cell.m_instancesopaque.size();
+			Cell.m_instancessingleversion = m_instancerecordsversion;
+		}
+	}
+	return Cell.m_instancessingle;
 }
 
 // whether none of the instances of a bucket can pass the tests of the culling of the pass (Render_Instanced(), on the gpu

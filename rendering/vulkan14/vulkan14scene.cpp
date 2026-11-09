@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/color.h"
 #include "utilities/utilities.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <unordered_set>
@@ -1456,6 +1457,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 	{
 		return;
 	}
+	m_draw->prepassed = false;
 	if (Material == null_handle)
 	{
 		if (Material != m_invalid_material)
@@ -1600,6 +1602,11 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 			auto &texture{m_context->textures->mark_as_used(materialtextures[0])};
 			if ((false == texture_ready(texture)) || (m_context->images.find(texture.get_id()) == nullptr))
 			{
+				// the colour pass writes the depth of the draws of the texture itself (prepassed_alpha())
+				if (std::ranges::find(m_prepassunready, materialtextures[0]) == m_prepassunready.end())
+				{
+					m_prepassunready.emplace_back(materialtextures[0]);
+				}
 				return;
 			}
 			walk_texture(0, materialtextures[0]);
@@ -1612,6 +1619,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 		draw.depthskip = false;
 		return;
 	}
+	draw.prepassed = draw.keepdepth && prepassed_alpha(Material, materialtextures[0]);
 	for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
 	{
 		if (draw.textures[unit] != materialtextures[unit])
@@ -1635,15 +1643,28 @@ void vulkan14_renderer::walk_shadow_material(material_handle const Material)
 	auto &draw{*m_draw};
 	auto &scene{m_context->scene};
 	// the cube maps of the lamps with programs of their own (the faces drawn by multiview)
-	if ((Material != null_handle) && (m_materials.material(Material).textures[0] != null_handle))
+	if (auto const texture{Indirect_Shadow_Texture(Material)}; texture != null_handle)
 	{
-		walk_texture(0, m_materials.material(Material).textures[0]);
+		walk_texture(0, texture);
 		draw.program = (m_cubeshadows ? scene.cube_alpha_shadow.get() : scene.alpha_shadow.get());
 	}
 	else
 	{
 		draw.program = (m_cubeshadows ? scene.cube_shadow.get() : scene.shadow.get());
 	}
+}
+
+texture_handle vulkan14_renderer::Indirect_Shadow_Texture(material_handle const Material) const
+{
+	auto const texture{gfx::scene_walk::Indirect_Shadow_Texture(Material)};
+	auto const &main{m_main != nullptr ? *m_main : *this};
+	if ((texture == null_handle) || (false == main.m_shadowskipalphatest))
+	{
+		return texture;
+	}
+	// a texture not made yet keeps the test: what it holds isn't known
+	auto const &source{static_cast<vk14::vulkan14_texture const &>(m_context->textures->texture(texture))};
+	return ((source.resident() && source.passes_alpha_test()) ? null_handle : texture);
 }
 
 opengl_material const &vulkan14_renderer::walk_material_data(material_handle const Material) const
@@ -2003,10 +2024,13 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	vk14::chunk_source chunk;
 	if (false == chunk_of(Geometry, chunk))
 	{
+		// what the prepass of the scene leaves out has its depth written by the colour pass (keepdepth)
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return;
 	}
 
-	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (topology_class(chunk.topology) != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
+	auto const triangles{topology_class(chunk.topology) == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (false == triangles)))
 	{
 		// the depth of the scene: what the programs of the prepass don't draw, and no points or lines
 		return;
@@ -2018,14 +2042,16 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	auto const blend{draw.glare ? vk14::blend_mode::scene_additive : (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)};
 	if (false == bind_scene_pipeline(*draw.program, *draw.targets, blend, static_cast<int>(chunk.topology)))
 	{
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return;
 	}
-	apply_draw_state();
+	apply_draw_state(triangles);
 	if (Newblock || (draw.block == ~0u))
 	{
 		draw.block = push_draw_block();
 		if (draw.block == ~0u)
 		{
+			m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 			return;
 		}
 	}
@@ -2507,7 +2533,7 @@ void vulkan14_renderer::context::save_scene_pipelines()
 }
 
 // the dynamic state of the draws for the state of the walk: the faces culled, the depth tested and written
-void vulkan14_renderer::apply_draw_state()
+void vulkan14_renderer::apply_draw_state(bool const Triangles)
 {
 	auto &draw{*m_draw};
 	auto const cull{draw.cullface ? (draw.shadows ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT) : VK_CULL_MODE_NONE};
@@ -2522,7 +2548,9 @@ void vulkan14_renderer::apply_draw_state()
 		draw.commands->set_depth_test_enable(depthtest ? VK_TRUE : VK_FALSE);
 		draw.depthtest = depthtest;
 	}
-	auto const depthwrite{(draw.blending || draw.depthmask_off) ? 0 : 1};
+	// the depth the prepass of the scene drew already isn't written again (draw_state::keepdepth)
+	auto const kept{draw.keepdepth && draw.prepassed && Triangles};
+	auto const depthwrite{(draw.blending || draw.depthmask_off || kept) ? 0 : 1};
 	if (depthwrite != draw.depthwrite)
 	{
 		draw.commands->set_depth_write_enable(depthwrite ? VK_TRUE : VK_FALSE);
@@ -2607,6 +2635,17 @@ int vulkan14_renderer::prepass_class(material_handle const Material)
 	}
 	scene.prepass_classes.emplace(material.shader.get(), prepassclass);
 	return prepassclass;
+}
+
+// what the prepass draws with the alpha test, as walk_material() and draw_indirect_depth() choose it: not blended, the alpha test of
+// the opaque pass, the program of the prepass with the test, the diffuse texture there and found loaded by the prepass
+bool vulkan14_renderer::prepassed_alpha(material_handle const Material, texture_handle const Texture)
+{
+	if (m_draw->blending || (model_ubs.opacity < 0.f) || (Texture == null_handle) || (prepass_class(Material) != 2))
+	{
+		return false;
+	}
+	return std::ranges::find(m_prepassunready, Texture) == m_prepassunready.end();
 }
 
 // textures: the files read and decoded as for the opengl renderer, made into images when they are first used

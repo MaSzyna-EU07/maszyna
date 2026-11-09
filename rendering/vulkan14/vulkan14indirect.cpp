@@ -326,17 +326,22 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 	{
 		return false;
 	}
-	// the buffers of the bank of the chunks, with their data on the gpu (the chunks of a multi draw are of one bank)
+	// the buffers of the bank of the chunks, with their data on the gpu (the chunks of a multi draw are of one bank). what the prepass
+	// of the scene leaves out has its depth written by the colour pass (keepdepth)
 	vk14::chunk_source chunk;
 	if (false == chunk_of(geometry, chunk))
 	{
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return false;
 	}
 	if (false == bind_scene_pipeline(Program, *draw.targets, Blend, static_cast<int>(chunk.topology)))
 	{
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return false;
 	}
-	apply_draw_state();
+	// the prepass draws the triangles of the draws (draw_indirect_depth())
+	auto const triangles{(first.type == GL_TRIANGLES) || (first.type == GL_TRIANGLE_STRIP) || (first.type == GL_TRIANGLE_FAN)};
+	apply_draw_state(triangles);
 	// the blocks of the draws, one after another in the window of the blocks: the multi draw picks them by the number of the draw
 	std::uint32_t block{~0u};
 	if (Count == 1)
@@ -377,6 +382,7 @@ bool vulkan14_renderer::draw_indirect(vk14::instance_cull &Cull, command_set con
 	draw.block = ~0u;
 	if (block == ~0u)
 	{
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return false;
 	}
 	if (draw.set_dirty)

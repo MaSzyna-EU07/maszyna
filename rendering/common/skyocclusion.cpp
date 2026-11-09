@@ -314,6 +314,8 @@ void sky_occlusion::stop()
 
 void sky_occlusion::clear()
 {
+	// the cells go with the scenery
+	m_cellsignatures.clear();
 	// once, until a scenery is there again
 	if ((m_side <= 0) || (m_region == nullptr))
 		return;
@@ -628,18 +630,37 @@ std::uint64_t sky_occlusion::signature(scene::basic_region *Region, glm::ivec2 c
 				if (overlaps(data.area, shape_reach(shape)))
 					hash = hash_mix(hash, static_cast<std::uint64_t>(data.geometry) ^ static_cast<std::uint64_t>(data.visible ? 1 : 0));
 			}
-			for (auto const *instance : cell.m_instancesopaque)
-			{
-				hash = hash_mix(hash, static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(instance)) ^ static_cast<std::uint64_t>(instance->visible() ? 1 : 0));
-				auto const location{instance->location()};
-				hash = hash_mix_double(hash, location.x);
-				hash = hash_mix_double(hash, location.y);
-				hash = hash_mix_double(hash, location.z);
-				hash = hash_mix_double(hash, static_cast<double>(instance->vAngle.y));
-			}
+			hash = hash_mix(hash, instances_signature(cell));
 		}
 	}
 	return hash;
+}
+
+std::uint64_t sky_occlusion::instances_signature(scene::basic_cell const &Cell)
+{
+	auto const make = [&Cell]() {
+		std::uint64_t hash{0x1a57a2ce};
+		for (auto const *instance : Cell.m_instancesopaque)
+		{
+			hash = hash_mix(hash, static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(instance)) ^ static_cast<std::uint64_t>(instance->visible() ? 1 : 0));
+			auto const location{instance->location()};
+			hash = hash_mix_double(hash, location.x);
+			hash = hash_mix_double(hash, location.y);
+			hash = hash_mix_double(hash, location.z);
+			hash = hash_mix_double(hash, static_cast<double>(instance->vAngle.y));
+		}
+		return hash;
+	};
+	// the editor moves the instances and hides them with their layers without the version changing: read anew each time there, and
+	// kept for when it's left
+	auto &kept{m_cellsignatures[&Cell]};
+	if (EditorModeFlag || (kept.version != scene::node_state_version) || (kept.count != Cell.m_instancesopaque.size()))
+	{
+		kept.hash = make();
+		kept.version = scene::node_state_version;
+		kept.count = Cell.m_instancesopaque.size();
+	}
+	return kept.hash;
 }
 
 void sky_occlusion::gather(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<triangle> &Triangles)
