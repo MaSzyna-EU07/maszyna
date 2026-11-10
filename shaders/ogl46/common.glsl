@@ -104,7 +104,6 @@
 #define HEADLIGHT_SHADOW_TEX 15
 #define MAX_HEADLIGHT_SHADOWS 4U
 #define MAX_CAB_PROBE_LAMPS 16U
-#define WIPER_PASS_BUCKETS 64
 #define FOG_VOLUME_TEX 16
 #define CLOUD_SHADOW_TEX 17
 #define CLOUD_TEX 18
@@ -130,6 +129,12 @@
 #define WEATHER_GROUP_SIZE 8
 #define FOG_VOLUME_BIAS 10.000000
 #endif
+
+// the places along the sweep of a blade whose rain is kept (gl::WIPER_PASS_BUCKETS): the renderer defines it, an older one doesn't
+#ifndef WIPER_PASS_BUCKETS
+#define WIPER_PASS_BUCKETS 64
+#endif
+
 
 const uint LIGHT_SPOT = 0U;
 const uint LIGHT_POINT = 1U;

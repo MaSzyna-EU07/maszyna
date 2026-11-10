@@ -898,6 +898,7 @@ std::string binding_preamble(bool const Raytracing)
 	define("MAX_PARAMS", static_cast<unsigned int>(gl::MAX_PARAMS), "U");
 	define("MAX_HEADLIGHT_SHADOWS", static_cast<unsigned int>(gl::MAX_HEADLIGHT_SHADOWS), "U");
 	define("MAX_CAB_PROBE_LAMPS", static_cast<unsigned int>(gl::MAX_CAB_PROBE_LAMPS), "U");
+	define("WIPER_PASS_BUCKETS", static_cast<unsigned int>(gl::WIPER_PASS_BUCKETS));
 	define("CLUSTER_GRID_X", gl::CLUSTER_GRID_X);
 	define("CLUSTER_GRID_Y", gl::CLUSTER_GRID_Y);
 	define("CLUSTER_GRID_Z", gl::CLUSTER_GRID_Z);
