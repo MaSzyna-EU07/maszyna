@@ -53,7 +53,7 @@ const float drop_life_min      = 14.0;  // seconds a drop sits on the glass
 const float drop_life_max      = 45.0;
 const float drop_appear        = 0.18;  // seconds of the landing "pop"
 const float drop_fade          = 1.5;   // seconds a drop takes to vanish at the end of its life
-const float wiper_miss         = 0.05;  // share of the drops a blade goes over without taking them
+const float wiper_miss         = 0.0167; // share of the drops a blade goes over without taking them (a third of the 0.05 it was)
 const float streak_period      = 40.0;  // seconds a rivulet lives (it runs for ~90% of that and then fades out), average
 const float wind_streak_period = 18.0;  // seconds a rivulet driven by the air lives (they run faster than the ones of gravity)
 
