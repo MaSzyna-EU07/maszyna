@@ -651,8 +651,8 @@ void ui::map_panel::render_contents()
 		screen_x.z * surface_size.y * -0.5f));
 	if (base_pixels_per_meter > 0.0f && std::isfinite(base_pixels_per_meter))
 	{
-		float const min_zoom = (110.0f / 2000.0f) / base_pixels_per_meter;
-		float const max_zoom = (110.0f / 50.0f) / base_pixels_per_meter;
+		float const min_zoom = (110.0f / 4000.0f) / base_pixels_per_meter;
+		float const max_zoom = (110.0f / 25.0f) / base_pixels_per_meter;
 		float const previous_zoom = zoom;
 		zoom = std::clamp(zoom, min_zoom, max_zoom);
 		if (zoom_in)
