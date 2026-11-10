@@ -678,13 +678,29 @@ if (WIN32)
 endif ()
 
 if(WIN32 AND WITH_PYTHON)
+	# the Python runtime next to the game, copied when it isn't there yet or the Python install changed, rather
+	# than after every link of the game: the library alone is thousands of files. the folder is the game's
+	# RUNTIME_OUTPUT_DIRECTORY, spelled out: $<TARGET_FILE_DIR:eu07> here would make this target depend on the game
+	get_property(EU07_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+	if (EU07_MULTI_CONFIG)
+		set(EU07_PY_TARGET_DIR "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+	else()
+		set(EU07_PY_TARGET_DIR "${CMAKE_BINARY_DIR}/bin")
+	endif()
+	set(EU07_PY_STAMP "${EU07_PY_TARGET_DIR}/python64/python_runtime.stamp")
 	add_custom_command(
-		TARGET ${PROJECT_NAME} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
-	)
+		OUTPUT "${EU07_PY_STAMP}"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "${EU07_PY_TARGET_DIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "${EU07_PY_TARGET_DIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${EU07_PY_LIBDIR}" "${EU07_PY_TARGET_DIR}/python64/Lib"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${EU07_PY_DLLSDIR}" "${EU07_PY_TARGET_DIR}/python64/DLLs"
+		COMMAND ${CMAKE_COMMAND} -E touch "${EU07_PY_STAMP}"
+		DEPENDS "${EU07_PY_DLL}" "${EU07_PY_ZLIB}"
+		COMMENT "Copying the Python runtime next to the game"
+		VERBATIM)
+	add_custom_target(eu07_python_runtime DEPENDS "${EU07_PY_STAMP}")
+	set_target_properties(eu07_python_runtime PROPERTIES FOLDER "libraries")
+	add_dependencies(${PROJECT_NAME} eu07_python_runtime)
 endif()
 
 if (WITH_WASM)
