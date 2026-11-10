@@ -416,6 +416,21 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 void opengl33_renderer::Shutdown()
 {
     vr.reset();
+    m_screen_post.reset();
+}
+
+script_screens::post_processor *opengl33_renderer::Screen_post_processor()
+{
+    // GLES converts what's written into an sRGB texture, and the passes give the bytes as they are: the cpu does it there
+    if (Global.gfx_usegles)
+    {
+        return nullptr;
+    }
+    if (m_screen_post == nullptr)
+    {
+        m_screen_post = std::make_unique<opengl33_screen_post>();
+    }
+    return m_screen_post.get();
 }
 
 bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config &conf)
@@ -5692,12 +5707,15 @@ void opengl33_renderer::Update(double const Deltatime)
 	}
 
 	m_updateaccumulator = 0.0;
-    m_framerate = 1000.f / ( Timer::subsystem.mainloop_total.average() );
+	// the frames actually shown, the wait for fpslimit included (eu07/maszyna#416)
+	m_framerate = 1000.f / ( Timer::subsystem.mainloop_period.average() );
+	// the frames the work alone would allow, so a frame rate held down by fpslimit doesn't cut the draw ranges
+	auto const workframerate{1000.f / Timer::subsystem.mainloop_total.average()};
 
 	// adjust draw ranges etc, based on recent performance
 
 	if (Global.targetfps != 0.0f) {
-		float fps_diff = Global.targetfps - m_framerate;
+		float fps_diff = Global.targetfps - workframerate;
 		if (fps_diff > 0.0f)
 			Global.fDistanceFactor = std::max(0.5f, Global.fDistanceFactor - 0.05f);
 		else
@@ -5705,7 +5723,7 @@ void opengl33_renderer::Update(double const Deltatime)
 	}
 	// legacy framerate parameters
 	else if (Global.fFpsAverage != 0.f) {
-		auto const fps_diff = m_framerate - Global.fFpsAverage;
+		auto const fps_diff = workframerate - Global.fFpsAverage;
 		if (fps_diff < -Global.fFpsDeviation) {
 			Global.fDistanceFactor = std::min(std::max(1.0f, Global.fDistanceFactor - 0.05f), Global.gfx_distance_factor_max);
 		}

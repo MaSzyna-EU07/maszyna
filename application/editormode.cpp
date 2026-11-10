@@ -4804,8 +4804,12 @@ void editor_mode::render_gizmo()
         snapvalue = glm::vec3(0.1f);
     float const *snap = Global.ctrlState && snapvalue.x > 0.0f ? glm::value_ptr(snapvalue) : nullptr;
 
+    // the change of this frame alone: a turn is taken from it, not from the angles the whole matrix decomposes into,
+    // which can't tell a turn of more than 90 degrees about the vertical axis (it comes out as 180 - angle with the
+    // other two axes flipped, and the model turned back and forth while dragged one way)
+    glm::mat4 delta(1.0f);
     ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
-                         operation, mode, glm::value_ptr(matrix), nullptr, snap);
+                         operation, mode, glm::value_ptr(matrix), glm::value_ptr(delta), snap);
 
     if (ImGuizmo::IsUsing())
     {
@@ -4822,9 +4826,11 @@ void editor_mode::render_gizmo()
 
         if (operation == ImGuizmo::ROTATE && model)
         {
-            // apply the rotation delta relative to the model's current orientation
-            glm::vec3 const newangles(newrotation[0], newrotation[1], newrotation[2]);
-            auto const turned{newangles - model->Angles()};
+            // the turn of this frame, small, so its angles decompose with no ambiguity
+            float deltatranslation[3], deltarotation[3], deltascale[3];
+            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(delta), deltatranslation, deltarotation, deltascale);
+            auto const wrapped = [](float Angle) { return Angle - 360.0f * std::floor((Angle + 180.0f) / 360.0f); };
+            glm::vec3 const turned{wrapped(deltarotation[0]), wrapped(deltarotation[1]), wrapped(deltarotation[2])};
             m_editor.rotate(model, turned, 0.0f);
             selection_follow(glm::dvec3(0.0), turned, model->location());
         }

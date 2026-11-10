@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/pbo.h"
 #include "gl/query.h"
 #include "rendering/opengl33terrain.h"
+#include "rendering/opengl33screenpost.h"
 
 // bare-bones render controller, in lack of anything better yet
 class opengl33_renderer : public gfx_renderer {
@@ -145,6 +146,7 @@ class opengl33_renderer : public gfx_renderer {
         info_stats() const override;
 	  void MakeScreenshot() override;
     bool Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) override;
+    script_screens::post_processor *Screen_post_processor() override;
 
 
 
@@ -515,6 +517,7 @@ class opengl33_renderer : public gfx_renderer {
     std::unique_ptr<gl::program> m_celestial_shader;
     std::unique_ptr<gl::program> m_hiddenarea_shader;
     std::unique_ptr<gl::program> m_copy_shader;
+    std::unique_ptr<opengl33_screen_post> m_screen_post; // made on the first request
 
     std::unique_ptr<gl::vao> m_empty_vao;
 
