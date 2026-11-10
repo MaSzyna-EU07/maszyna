@@ -364,6 +364,7 @@ private:
     float m_specularopaquescalefactor { 1.f };
     float m_speculartranslucentscalefactor { 1.f };
     bool m_renderspecular{ false }; // controls whether to include specular component in the calculations
+    bool m_normalizenormals{ false }; // set while a scaled model instance is drawn, its normals need normalizing for the lighting
 
     renderpass_config m_renderpass; // parameters for current render pass
     section_sequence m_sectionqueue; // list of sections in current render pass

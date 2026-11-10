@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
 #include "utilities/Timer.h"
+#include "utilities/framepacer.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
@@ -424,6 +425,16 @@ int eu07_application::init(int Argc, char *Argv[])
 	{
 		m_taskqueue.init();
 	}
+	crashreport_add_info("luascreens_enabled", Global.luascreens_enabled ? "yes" : "no");
+	crashreport_add_info("wasm_enabled", Global.wasm_enabled ? "yes" : "no");
+	if (Global.luascreens_enabled || Global.wasm_enabled)
+	{
+		m_screenqueue.init();
+		if (Global.screens_gpupost)
+		{
+			m_screenqueue.set_post_processor(GfxRenderer->Screen_post_processor());
+		}
+	}
 	if ((result = init_modes()) != 0)
 	{
 		ErrorLog("Failed to initialize game modes");
@@ -488,9 +499,14 @@ bool eu07_application::is_client() const
 int eu07_application::run()
 {
 	auto frame{0};
+	frame_pacer framepacer;
+	Timer::subsystem.mainloop_period.start();
 	// main application loop
 	while (!glfwWindowShouldClose(m_windows.front()) && !m_modestack.empty())
 	{
+		// the time from one frame's start to the next, the wait for fpslimit included
+		Timer::subsystem.mainloop_period.stop();
+		Timer::subsystem.mainloop_period.start();
 		Timer::subsystem.mainloop_total.start();
 		glfwPollEvents();
 
@@ -629,6 +645,7 @@ int eu07_application::run()
 			EditorTerrain.update(Global.pCamera.Pos);
 
 		m_taskqueue.update();
+		m_screenqueue.update();
 		opengl_texture::reset_unit_cache();
 
 		if (!GfxRenderer->Render())
@@ -650,10 +667,11 @@ int eu07_application::run()
 		if (m_network)
 			m_network->update();
 
-		auto const frametime{Timer::subsystem.mainloop_total.stop()};
-		if (Global.minframetime.count() != 0.0f && (Global.minframetime - frametime).count() > 0.0f)
+		Timer::subsystem.mainloop_total.stop();
+		// fpslimit: wait for the next frame's slot (eu07/maszyna#416)
+		if (auto const nextframe{framepacer.next_frame(frame_pacer::clock::now(), Global.minframetime)})
 		{
-			std::this_thread::sleep_for(Global.minframetime - frametime);
+			std::this_thread::sleep_until(*nextframe);
 		}
 	}
 	// Handled by application.exit
@@ -713,6 +731,8 @@ void eu07_application::exit()
 		mode.reset();
 
 	step("the renderer");
+	// the screens' post-processing goes with the renderer
+	m_screenqueue.set_post_processor(nullptr);
 	GfxRenderer->Shutdown();
 	m_network.reset();
 
@@ -725,6 +745,7 @@ void eu07_application::exit()
 
 	// the python workers detach their GL context on the way out, so they have to be done before the windows they use are destroyed
 	m_taskqueue.exit();
+	m_screenqueue.exit();
 	step("the windows");
 	for (auto *window : m_windows)
 	{
