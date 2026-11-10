@@ -269,6 +269,14 @@ vec4 wsOver(vec4 over, vec4 under)
 // ===========================================================================
 float GetMixFactor(in vec2 co, out float side);
 
+// the rain fallen when each blade last went over the place of its sweep given by the wiper mask (-1: not known), see
+// gl::scene_ubs::wiper_rain_pass
+vec4 wsWipePass(vec4 mask)
+{
+    ivec4 b = min(ivec4(max(mask, vec4(0.0)) * float(WIPER_PASS_BUCKETS)), ivec4(WIPER_PASS_BUCKETS - 1));
+    return vec4(wiper_rain_pass[b.x].x, wiper_rain_pass[b.y].y, wiper_rain_pass[b.z].z, wiper_rain_pass[b.w].w);
+}
+
 uvec2 cellKey(vec2 c);
 
 vec2 tileOffset(float choice)
@@ -563,14 +571,8 @@ float wsKept(vec2 cg, float rad, float sCW, float sCH, float gridSize)
 // the rain fallen (rain_state.x) since a blade last went over this place (texture UV); -1 where no blade goes or not known
 float wsWipeRain(vec2 co)
 {
-    vec4  movePhase = wiper_pos;
-    bvec4 is_out    = lessThanEqual(movePhase, vec4(1.));
-    movePhase = mix(vec4(2.) - movePhase, movePhase, is_out);
     vec4  mask    = textureLod(wipermask, co, 0.0);
-    vec4  maskVal = mix(1. - mask, mask, is_out);
-    vec4  passed  = step(maskVal, movePhase);
-    vec4  sideV   = mix(passed, vec4(1.) - passed, is_out);
-    vec4  at      = mix(wiper_rain_out, wiper_rain_return, sideV);
+    vec4  at      = wsWipePass(mask);
     float fallen  = -1.0;
     for (int i = 0; i < 4; ++i)
         if ((mask[i] > 0.001) && (at[i] >= 0.0))
@@ -1105,8 +1107,9 @@ float GetMixFactor(in vec2 co, out float side) {
     // "regeneration", raindrops gradually returning after wiper pass:
     // the share of the drops back: the glass fills with the rain fallen since the blade (rain_state), up to as wet as the glass is
     // where no blade goes (the drops of a cell are there only up to that share, so the share of those back is the fill over it)
-    vec4 fallen     = vec4(rain_state.x) - mix(wiper_rain_out, wiper_rain_return, side_v);
-    vec4 known      = step(vec4(0.), mix(wiper_rain_out, wiper_rain_return, side_v));
+    vec4 at         = wsWipePass(mask);
+    vec4 fallen     = vec4(rain_state.x) - at;
+    vec4 known      = step(vec4(0.), at);
     vec4 filled     = mix(vec4(1.), vec4(1.) - exp(-max(fallen, vec4(0.)) * rain_state.z), known);
     vec4 regenPhase = clamp(filled / max(rain_state.y, 1e-4), vec4(0.), vec4(1.));
 

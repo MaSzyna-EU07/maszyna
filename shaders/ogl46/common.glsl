@@ -104,6 +104,7 @@
 #define HEADLIGHT_SHADOW_TEX 15
 #define MAX_HEADLIGHT_SHADOWS 4U
 #define MAX_CAB_PROBE_LAMPS 16U
+#define WIPER_PASS_BUCKETS 64
 #define FOG_VOLUME_TEX 16
 #define CLOUD_SHADOW_TEX 17
 #define CLOUD_TEX 18
@@ -377,9 +378,8 @@ layout(std140, binding = SCENE_UBO_BINDING) uniform scene_ubo
     vec4 camera_lo;
     // the rain the glass meets: x fallen so far, y how wet the glass is, z how fast it fills (mat_rain_windscreen), see gl::scene_ubs
     vec4 rain_state;
-    // the rain fallen when the blades were at the ends of their sweep, see gl::scene_ubs
-    vec4 wiper_rain_out;
-    vec4 wiper_rain_return;
+    // the rain fallen when a blade last went over a place of its sweep (the wiper mask / 64), see gl::scene_ubs
+    vec4 wiper_rain_pass[WIPER_PASS_BUCKETS];
 };
 
 #ifdef STAGE_VERTEX

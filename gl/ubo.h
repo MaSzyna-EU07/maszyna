@@ -4,6 +4,7 @@
 #include "bindable.h"
 #include "buffer.h"
 #include <glm/glm.hpp>
+#include <algorithm>
 #include <cstddef>
 #include <array>
 #include <utility>
@@ -69,6 +70,9 @@ namespace gl
     const size_t MAX_HEADLIGHT_SHADOWS = 4;
     // lights of the occupied cab the probe of the cab is drawn with (gfx::cab_probe, gl::scene_ubs::cab_probe_lamp), at most
     const size_t MAX_CAB_PROBE_LAMPS = 16;
+    // the places along the sweep of a blade (dWiperPos 0 .. 1) the rain fallen when it last went over them is kept for
+    // (gl::scene_ubs::wiper_rain_pass)
+    const size_t WIPER_PASS_BUCKETS = 64;
     // weather (opengl46_weather): the fog of the main view (3d, apply_fog.glsl) and the shadows the clouds cast (2d), read by the
     // shading. bound directly, like the ones above
     const size_t FOG_VOLUME_TEX = MAX_TEXTURES + HELPER_TEXTURES + 4;
@@ -206,13 +210,28 @@ namespace gl
         // at speed: the glass runs into it); y how wet the glass is, 0 dry .. 1 as full of drops as it gets (it fills with the rain,
         // dries when it stops); z how fast the glass fills: the share left to fill goes down as exp(-z x the rain fallen); w unused
         glm::vec4 rain_state;
-        // the rain fallen (rain_state.x) when the blades were at the ends of their sweep, as wiper_timer_out and wiper_timer_return
-        // (the drops come back with the rain fallen since); -1 not known
-        glm::vec4 wiper_rain_out;
-        glm::vec4 wiper_rain_return;
+        // the rain fallen (rain_state.x) when a blade last went over a place of its sweep: element b for the places b / 64 .. (b + 1)
+        // / 64 of dWiperPos (the value of the wiper mask of a pixel), x .. w the blades (as wiper_pos); -1 not known. the drops and the
+        // haze come back with the rain fallen since. (the moments the blades were at the ends of their sweep, which the pixel took
+        // the one of by the way the blade went, gave the rain of a whole sweep back to the place a blade had just wiped)
+        glm::vec4 wiper_rain_pass[WIPER_PASS_BUCKETS];
     };
 
-    static_assert(sizeof(scene_ubs) == 1040 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 1008 + 16 * WIPER_PASS_BUCKETS + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+
+    // the bucket of scene_ubs::wiper_rain_pass a place of a blade (dWiperPos, 0 .. 1) falls in
+    inline std::size_t wiper_pass_bucket(double const Position)
+    {
+        return std::min(static_cast<std::size_t>(std::max(Position, 0.0) * static_cast<double>(WIPER_PASS_BUCKETS)), WIPER_PASS_BUCKETS - 1);
+    }
+
+    // the places blade Wiper went over from From to To (dWiperPos) get the rain fallen Value (-1: not known)
+    inline void wiper_pass_mark(scene_ubs &Scene, glm::length_t const Wiper, double const From, double const To, float const Value)
+    {
+        auto const last{wiper_pass_bucket(std::max(From, To))};
+        for (auto bucket{wiper_pass_bucket(std::min(From, To))}; bucket <= last; ++bucket)
+            Scene.wiper_rain_pass[bucket][Wiper] = Value;
+    }
 
     // the camera of a pass in the world for the scene block (scene_ubs::camera_hi, camera_lo)
     inline void set_camera_place(scene_ubs &Ubs, glm::dvec3 const &Place)
