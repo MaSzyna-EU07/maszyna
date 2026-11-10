@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"
 #include "world/Event.h"
+#include "world/deer.h"
 #include "input/messaging.h"
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
@@ -346,17 +347,7 @@ bool driver_mode::update()
 		Timer::subsystem.sim_lights.start();
 		simulation::Lights.update();
 		Timer::subsystem.sim_lights.stop();
-		{
-			// where the user looks from, for the black box
-			auto const &camera{DebugCameraFlag ? DebugCamera : Camera};
-			auto const mode{DebugCameraFlag      ? blackbox::camera_modes::debug :
-			                false == FreeFlyModeFlag ? blackbox::camera_modes::cab :
-			                m_externalview       ? blackbox::camera_modes::external :
-			                                       blackbox::camera_modes::free};
-			simulation::Blackbox.camera(blackbox_camera(camera, mode, mode == blackbox::camera_modes::external ? m_externalviewmode : 0),
-			    DebugCameraFlag ? nullptr : camera.m_owner);
-		}
-		simulation::Blackbox.update(deltatime);
+		simulation::Deer.update(deltatime);
 
 		if (Global.test.enabled && simulation::is_ready)
 		{
