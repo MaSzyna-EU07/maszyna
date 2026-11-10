@@ -11,7 +11,8 @@
 //   the water runs down as a film and is pushed by the air; and snow piled higher than its neighbours by more than it holds slips
 //   onto them (a ridge left by a blade spreads into a wedge). what goes over the edge of the glass falls off
 // - the blades: a blade going over a texel in the step takes its snow (a little stays, and a wet trace of the water), and pushes
-//   it on in front of itself: the texel just ahead of the line of texels the blade went over gets their snow, packed. at the end
+//   it on in front of itself: the texel just ahead of the line of texels the blade went over gets their snow, packed (each texel
+//   to one texel at most: the snow pushed along is never counted twice). at the end
 //   of its sweep the blade leaves it there, a ridge; pushed past the edge of the glass, it's gone
 // - the flakes land: as many as come to the glass facing the snow coming at it against the cab (and a few in the eddies of the
 //   air where it doesn't face it), each bringing its snow to the texel; the faster the vehicle the more of the dry ones bounce off
@@ -270,6 +271,16 @@ void main()
 			crossed = true;
 			continue;
 		}
+		// every texel the blade went over goes to one texel ahead at most, so the snow it pushes isn't counted twice (it would
+		// grow at every step): in the sweep the texel takes the line of texels behind itself along the way of the blade, off the
+		// sweep (the blade pushes the snow out at its edge) the line of one of its neighbours pointing at it
+		if (snow_blade(texel, blade) > 0.001)
+		{
+			ivec2 way = snow_blade_way(texel, blade);
+			if ((way != ivec2(0)) && snow_crossed(texel - way, blade))
+				pushed += snow_line(texel - way, blade, way);
+			continue;
+		}
 		for (int k = 0; k < 8; ++k)
 		{
 			ivec2 from = texel + SNOW_AROUND[k];
@@ -277,7 +288,10 @@ void main()
 				continue;
 			ivec2 way = snow_blade_way(from, blade);
 			if ((way != ivec2(0)) && (from + way == texel))
+			{
 				pushed += snow_line(from, blade, way);
+				break;
+			}
 		}
 	}
 	if (crossed)
