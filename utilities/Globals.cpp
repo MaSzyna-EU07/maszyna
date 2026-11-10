@@ -72,6 +72,14 @@ void global_settings::FinalizeConfig()
     python_enabled = false;
 #endif
 
+#ifndef WITH_WASM
+    wasm_enabled = false;
+#endif
+
+#ifndef WITH_LUA
+    luascreens_enabled = false;
+#endif
+
 #ifdef _WIN32
     Console::ModeSet(iFeedbackMode, iFeedbackPort);
 #endif
@@ -877,6 +885,42 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
     return false;
 }
 
+bool global_settings::ConfigParseScriptScreens(cParser& Parser, std::string_view const token)
+{
+    if (token == "luascreens.enabled")
+    {
+        ParseOne(Parser, luascreens_enabled, 1);
+        return true;
+    }
+
+    if (token == "wasm.enabled")
+    {
+        ParseOne(Parser, wasm_enabled, 1);
+        return true;
+    }
+
+    // wasm.cabframes and wasm.externalframes: the first names of the keys, from before the Lua screens
+    if (token == "screens.cabframes" || token == "wasm.cabframes")
+    {
+        ParseOneClamped(Parser, screens_cabframes, 1, 1000);
+        return true;
+    }
+
+    if (token == "screens.externalframes" || token == "wasm.externalframes")
+    {
+        ParseOneClamped(Parser, screens_externalframes, 1, 1000);
+        return true;
+    }
+
+    if (token == "screens.gpupost")
+    {
+        ParseOne(Parser, screens_gpupost, 1);
+        return true;
+    }
+
+    return false;
+}
+
 bool global_settings::ConfigParsePython(cParser& Parser, const std::string& token)
 {
     if (token == "python.enabled")
@@ -1373,6 +1417,9 @@ void global_settings::ConfigParse(cParser& Parser)
         if (ConfigParsePython(Parser, token))
             continue;
 
+        if (ConfigParseScriptScreens(Parser, token))
+            continue;
+
         if (ConfigParseNetwork(Parser, token))
             continue;
 
@@ -1840,6 +1887,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );
     export_as_text( Output, "python.mipmaps", python_mipmaps );
+    export_as_text( Output, "luascreens.enabled", luascreens_enabled );
+    export_as_text( Output, "wasm.enabled", wasm_enabled );
+    export_as_text( Output, "screens.cabframes", screens_cabframes );
+    export_as_text( Output, "screens.externalframes", screens_externalframes );
+    export_as_text( Output, "screens.gpupost", screens_gpupost );
     export_as_text( Output, "async.trainThreads", trainThreads );
     for( auto const &server : network_servers ) {
         Output

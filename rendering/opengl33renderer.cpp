@@ -416,6 +416,21 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 void opengl33_renderer::Shutdown()
 {
     vr.reset();
+    m_screen_post.reset();
+}
+
+script_screens::post_processor *opengl33_renderer::Screen_post_processor()
+{
+    // GLES converts what's written into an sRGB texture, and the passes give the bytes as they are: the cpu does it there
+    if (Global.gfx_usegles)
+    {
+        return nullptr;
+    }
+    if (m_screen_post == nullptr)
+    {
+        m_screen_post = std::make_unique<opengl33_screen_post>();
+    }
+    return m_screen_post.get();
 }
 
 bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config &conf)

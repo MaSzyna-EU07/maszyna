@@ -2624,7 +2624,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 	if (true == OK)
 	{
 		ScndCtrlResistiveLockCheck(); // e.g. from the last series position on to the resistive parallel ones
-		SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
+		SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
 		SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 	}
 
@@ -2750,7 +2750,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 		if (OK)
 		{
 			ScndCtrlResistiveLockCheck(); // the shunt drops when the master controller leaves a resistance-free position
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); // hmmmm...???!!!
+			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); // hmmmm...???!!!
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
 	}
@@ -2798,7 +2798,7 @@ int TMoverParameters::MainCtrlNoPowerPos() const
 	}
 	case 2:
 	{
-		return 3;
+		return 3 + EIMCtrlEmergencyPositions();
 	}
 	case 3:
 	{
@@ -2821,6 +2821,27 @@ int TMoverParameters::MainCtrlPowerPos() const
 {
 
 	return MainCtrlPos - MainCtrlNoPowerPos();
+}
+
+int TMoverParameters::EIMCtrlEmergencyPositions() const
+{
+	return (EIMCtrlType == 2 && EIMCtrlMainEmergency) ? 1 : 0;
+}
+
+bool TMoverParameters::IsMainCtrlEmergencyPos() const
+{
+	return MainCtrlPos < EIMCtrlEmergencyPositions();
+}
+
+int TMoverParameters::MainCtrlPosForCoupled() const
+{
+	// the emergency brake itself reaches the train through the brake pipe, vented by the vehicle driven from
+	return std::max(0, MainCtrlPos - EIMCtrlEmergencyPositions());
+}
+
+int TMoverParameters::MainCtrlPosFromCoupled(int const Position) const
+{
+	return Position + EIMCtrlEmergencyPositions();
 }
 
 // *************************************************************************************************
@@ -2864,7 +2885,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 			OK = false;
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
+			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
 	}
@@ -2926,7 +2947,7 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 			OK = false;
 		if (OK)
 		{
-			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPos, CabActive); //???
+			/*OK:=*/SendCtrlToNext("MainCtrl", MainCtrlPosForCoupled(), CabActive); //???
 			/*OK:=*/SendCtrlToNext("ScndCtrl", ScndCtrlPos, CabActive);
 		}
 	}
@@ -4688,8 +4709,9 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 
 	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
-	// the emergency brake (a broken coupler sets AlarmChainFlag instead)
-	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || SecuritySystem.is_braking() ||
+	// the emergency brake (a broken coupler sets AlarmChainFlag instead). the Elf's emergency brake position
+	// vents the pipe only from the vehicle driven from, whatever the controllers of the others show
+	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || (IsMainCtrlEmergencyPos() && IsCabMaster()) || SecuritySystem.is_braking() ||
 		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
 		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
 	{
@@ -7530,10 +7552,16 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic = 0;
 		break;
 	case 2:
-		if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
+		if (IsMainCtrlEmergencyPos())
+		{
+			// hamowanie nagle: pelne hamowanie od razu, przewod glowny oproznia UpdatePipePressure()
+			eimic = -1.0;
+		}
+		else if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
 		{
 			double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
-			switch (MainCtrlPos)
+			// the positions below are those of the controller without the emergency brake position
+			switch (MainCtrlPos - EIMCtrlEmergencyPositions())
 			{
 			case 0:
 			case 1:
@@ -11203,6 +11231,16 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(LocHandleTimeTraxx, "LocalBrakeTraxx", line, "");
 	extract_value(EIMCtrlAdditionalZeros, "EIMCtrlAddZeros", line, "");
 	extract_value(EIMCtrlEmergency, "EIMCtrlEmergency", line, "");
+	// Elf (EIMCtrlType 2): an emergency brake position below the controller's position 0, which shifts the other positions up by one
+	extract_value(EIMCtrlMainEmergency, "EIMCtrlMainEmergency", line, "");
+	if (auto const elfpositions{4 + EIMCtrlEmergencyPositions()}; EIMCtrlEmergencyPositions() > 0 && MainCtrlPosNo < elfpositions)
+	{
+		// the old positions in the file: without the fix-up the controller would have no power position, and the
+		// reverser would stop working at neutral (DirChangeMaxPos read before, in the old positions)
+		MainCtrlMaxDirChangePos += EIMCtrlEmergencyPositions();
+		ErrorLog(std::format("Bad fiz: EIMCtrlMainEmergency needs MCPN={} in {}, DirChangeMaxPos taken as {}", elfpositions, TypeName, MainCtrlMaxDirChangePos));
+		MainCtrlPosNo = elfpositions;
+	}
 
 	extract_value(ScndS, "ScndS", line, ""); // brak pozycji rownoleglej przy niskiej nastawie PSR
 	extract_value(ScndCtrlResistiveLock, "ScndCtrlResistiveLock", line, ""); // bocznikowanie tylko na pozycjach bezoporowych
@@ -12548,9 +12586,10 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 
 	if (Command == "MainCtrl")
 	{
-		if (MainCtrlPosNo >= floor(CValue1))
+		// sent as MainCtrlPosForCoupled(), passed on unchanged
+		if (auto const position{MainCtrlPosFromCoupled(static_cast<int>(floor(CValue1)))}; MainCtrlPosNo >= position)
 		{
-			MainCtrlPos = static_cast<int>(floor(CValue1));
+			MainCtrlPos = position;
 			if (DelayCtrlFlag)
 			{
 				if (LastRelayTime >= InitialCtrlDelay && MainCtrlPos == 1)

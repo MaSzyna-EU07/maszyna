@@ -731,6 +731,10 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         m_input.command_type = TCommandType::cm_SectionVelocity;
         m_passive = true;
     }
+    else if( token == "PointVelocity" ) {
+        m_input.command_type = TCommandType::cm_PointVelocity;
+        m_passive = true;
+    }
     else if( token == "ShuntVelocity" ) {
         m_input.command_type = TCommandType::cm_ShuntVelocity;
         m_passive = true;
