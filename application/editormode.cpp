@@ -6152,7 +6152,7 @@ void editor_mode::render_shortcuts_window()
 	      {"RMB held, A / D", "Next track on the left / right"},
 	      {"Z", "The way at the next switch (it isn't thrown)"},
 	      {"RMB held, E / Q; wheel", "Higher / lower"},
-		      {"Ctrl+M", "Minimap, stations by their W4"}}},
+	      {"Ctrl+M", "Minimap, stations by their W4"}}},
 	    {"Gizmo",
 	     {{"Q / W / E", "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"},
 	      {"R", "Local space"},
@@ -6612,6 +6612,8 @@ glm::mat4 editor_mode::projection_matrix(float const Aspect)
 
 void editor_mode::toggle_ortho()
 {
+    // the view from above isn't one from the track, the ride ends
+    m_ride.leave();
     Global.EditorOrtho = !Global.EditorOrtho;
     if (Global.EditorOrtho)
     {
@@ -6638,6 +6640,7 @@ void editor_mode::ortho_pan_to(double const Horizontal, double const Vertical)
     m_ortho_pan_cursor = {Horizontal, Vertical};
     auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y)};
     auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale}, static_cast<double>(Camera.Angle.y))};
+    m_ride.leave();
     Camera.Pos.x -= world.x;
     Camera.Pos.z -= world.z;
     Camera.Velocity = {};
@@ -6652,15 +6655,15 @@ void editor_mode::ortho_pan_stop()
 
 void editor_mode::on_scroll(double const Xoffset, double const Yoffset)
 {
-    // riding along the track the wheel raises and lowers the camera over the rails
+    if (false == ImGui::GetIO().WantCaptureMouse && track_wheel(Yoffset != 0.0 ? Yoffset : Xoffset))
+        return;
+    // riding along the track the wheel the tools left raises and lowers the camera over the rails
     if (m_ride.active())
     {
         if (false == ImGui::GetIO().WantCaptureMouse && Yoffset != 0.0)
             m_ride.wheel(std::clamp(Yoffset, -2.0, 2.0));
         return;
     }
-    if (false == ImGui::GetIO().WantCaptureMouse && track_wheel(Yoffset != 0.0 ? Yoffset : Xoffset))
-        return;
     // a swipe on a touchpad goes on after the cursor left the window, with no place for the ray under it
     if (ImGui::GetIO().WantCaptureMouse || Yoffset == 0.0 || false == ImGui::IsMousePosValid())
         return;
@@ -7056,7 +7059,11 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (false == status.empty())
             ui()->set_status(status, m_ride.active());
         if (taken)
+        {
+            // the right button held to drive isn't a click for the menu of the track under the cursor
+            m_track_context.armed = false;
             return;
+        }
         // not with a button held: a drag going on would lose its release to the ride
         if (Key == GLFW_KEY_Y && Action == GLFW_PRESS && false == anyModifier && false == m_ride.active() && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS && m_input.mouse.button(GLFW_MOUSE_BUTTON_LEFT) != GLFW_PRESS)
         {
