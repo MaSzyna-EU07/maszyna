@@ -165,6 +165,7 @@ halt walk(place &Place, double const Distance, int const Choice, int &Flips, boo
 	Facing = false;
 	if (segment(Place) == nullptr)
 		return halt::end;
+	Place.s = std::clamp(Place.s, 0.0, segment(Place)->GetLength());
 	auto direction{Distance >= 0.0 ? 1 : -1};
 	auto left{std::abs(Distance)};
 	// the joints passed in one step; a ring of tracks of no length would hold it here for ever
@@ -350,42 +351,49 @@ bool track_ride::key(int const Key, int const Action, int const Mods, glm::dvec3
 		return false;
 	auto const held{Action != GLFW_RELEASE};
 	auto const press{Action == GLFW_PRESS};
-	auto const alt{(Mods & GLFW_MOD_ALT) != 0};
-	// the releases go on to the rest of the editor too, it may have seen the key go down before the ride
+	// with Ctrl or Alt the ride keeps only Ctrl+W and Ctrl+arrows, the much faster drive; the shortcuts of the editor get the
+	// rest (Ctrl+S saves, Ctrl+Z and Ctrl+Y undo and redo). Releases go on to the editor too, it may have seen the key go down
+	// before the ride
+	auto const shortcut{(Mods & GLFW_MOD_ALT) != 0 || (m_ctrl && Key != GLFW_KEY_W && Key != GLFW_KEY_UP && Key != GLFW_KEY_DOWN)};
+	auto const hold = [&](bool &Flag) {
+		Flag = held && false == shortcut;
+		return Flag;
+	};
 	switch (Key)
 	{
 	case GLFW_KEY_W:
-	case GLFW_KEY_UP: m_forward = held; return held;
+	case GLFW_KEY_UP: return hold(m_forward);
 	case GLFW_KEY_S:
-	case GLFW_KEY_DOWN: m_back = held; return held;
+	case GLFW_KEY_DOWN: return hold(m_back);
 	case GLFW_KEY_E:
-	case GLFW_KEY_PAGE_UP: m_up = held; return held;
+	case GLFW_KEY_PAGE_UP: return hold(m_up);
 	case GLFW_KEY_Q:
-	case GLFW_KEY_PAGE_DOWN: m_down = held; return held;
+	case GLFW_KEY_PAGE_DOWN: return hold(m_down);
 	case GLFW_KEY_A:
 	case GLFW_KEY_LEFT:
 	case GLFW_KEY_D:
 	case GLFW_KEY_RIGHT:
-		if (press && false == alt && false == jump_side(Key == GLFW_KEY_A || Key == GLFW_KEY_LEFT ? -1 : 1, Look))
-			Status = STR("No track alongside on that side");
+		if (shortcut)
+			return false;
+		if (press && false == jump_side(Key == GLFW_KEY_A || Key == GLFW_KEY_LEFT ? -1 : 1, Look))
+			Status = STR("No track alongside");
 		return held;
 	case GLFW_KEY_Z:
-		// Ctrl+Z still undoes
-		if (m_ctrl || alt)
+		if (shortcut)
 			return false;
 		if (press)
 			cycle_choice();
 		return held;
-	case GLFW_KEY_Y:
-		if (m_ctrl || alt)
+	case GLFW_KEY_ESCAPE:
+		// Esc closes an open menu or popup first, as it does in the rest of the editor
+		if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 			return false;
 		[[fallthrough]];
-	case GLFW_KEY_ESCAPE:
+	case GLFW_KEY_Y:
+		if (shortcut)
+			return false;
 		if (press)
-		{
 			leave();
-			Status = STR("The ride along the track ended");
-		}
 		return held;
 	default: return false;
 	}
@@ -406,6 +414,11 @@ void track_ride::advance(TCamera &Camera, double const Deltatime)
 		return;
 	}
 	auto const dt{std::clamp(Deltatime, 0.0, 0.1)};
+	// the window takes the keys, their releases among them: none is held for the ride then
+	if (ImGui::GetIO().WantCaptureKeyboard)
+		m_forward = m_back = m_up = m_down = false;
+	// the path may have got shorter, an undo or a change of the track under the ride
+	m_place.s = std::clamp(m_place.s, 0.0, track_ride_walk::segment(m_place)->GetLength());
 	glm::dvec3 const look{-std::sin(Camera.Angle.y), 0.0, -std::cos(Camera.Angle.y)};
 	// standing, the way ahead is the one the camera looks; a camera about to be turned along the track looks there already
 	if (std::abs(m_speed) < 0.5 && false == m_orient_pending)
@@ -542,33 +555,35 @@ void track_ride::draw_hud() const
 	auto const pad{6.0f};
 	auto const height{ImGui::GetTextLineHeight()};
 
-	std::string line{STR("Riding along the track")};
-	line += "   " + (m_place.track->name().empty() ? std::string{"?"} : m_place.track->name());
+	std::string line{m_place.track->name().empty() ? std::string{"?"} : m_place.track->name()};
 	if (false == m_km.empty())
 		line += "   km " + m_km;
 	line += format("   %.0f km/h   %s %.1f m", std::abs(m_speed) * 3.6, STR_C("height"), m_height);
 	std::string ahead;
 	if (m_switch != nullptr)
-		ahead = format(STR_C("Switch in %.0f m: %s"), m_switch_distance, turn_name(*m_switch, track_ride_walk::switch_path(*m_switch, m_choice))) + "   [Z]";
-	std::string const keys{STR("W/S drive   Shift/Ctrl faster   A/D the track alongside   Z the way at the switch   Q/E, wheel: height   click: another track   Y/Esc: leave")};
+		ahead = format(STR_C("Switch in %.0f m: %s   (Z changes)"), m_switch_distance, turn_name(*m_switch, track_ride_walk::switch_path(*m_switch, m_choice)));
+	// the keys only standing, out of the way while driving
+	std::string keys;
+	if (std::abs(m_speed) < 0.5)
+		keys = STR("W/S drive   A/D next track   Q/E height   Esc leave");
 
+	// over the bottom of the view, above the bar of the keys of the tools; the rows keep their places as the others come and go
 	auto const centre{0.5f * (editor_ui::view_min().x + editor_ui::view_max().x)};
-	// over the bottom of the view, above the bar of the keys of the tools
-	auto const rows{ahead.empty() ? 2 : 3};
-	auto y{editor_ui::view_max().y - 12.0f - height * 2.5f - rows * (height + pad * 1.5f)};
+	auto y{editor_ui::view_max().y - 12.0f - height * 2.5f - 3.0f * (height + pad * 1.5f)};
 	auto const row = [&](std::string const &Text, ImU32 const Background, ImU32 const Foreground) {
-		if (Text.empty())
-			return;
-		auto const size{ImGui::CalcTextSize(Text.c_str())};
-		ImVec2 const from{centre - 0.5f * size.x - pad, y - pad * 0.5f};
-		ImVec2 const to{centre + 0.5f * size.x + pad, y + size.y + pad * 0.5f};
-		drawlist->AddRectFilled(from, to, Background, 4.0f);
-		drawlist->AddText(ImVec2(from.x + pad, y), Foreground, Text.c_str());
+		if (false == Text.empty())
+		{
+			auto const size{ImGui::CalcTextSize(Text.c_str())};
+			ImVec2 const from{centre - 0.5f * size.x - pad, y - pad * 0.5f};
+			ImVec2 const to{centre + 0.5f * size.x + pad, y + size.y + pad * 0.5f};
+			drawlist->AddRectFilled(from, to, Background, 4.0f);
+			drawlist->AddText(ImVec2(from.x + pad, y), Foreground, Text.c_str());
+		}
 		y += height + pad * 1.5f;
 	};
 	row(line, IM_COL32(20, 60, 110, 215), IM_COL32(255, 255, 255, 255));
 	row(ahead, m_choice != 0 ? IM_COL32(150, 100, 10, 225) : IM_COL32(0, 0, 0, 170), IM_COL32(255, 255, 255, 240));
-	row(keys, IM_COL32(0, 0, 0, 140), IM_COL32(230, 230, 230, 220));
+	row(keys, IM_COL32(0, 0, 0, 120), IM_COL32(220, 220, 220, 210));
 }
 
 editor_selftest_result track_ride::selftest(std::string const &Command, std::istringstream &Words)

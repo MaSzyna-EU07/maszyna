@@ -3820,6 +3820,9 @@ void editor_mode::render_map_menu()
 {
     if (false == ImGui::BeginMenu(STR_C("Map")))
         return;
+    if (ImGui::MenuItem(STR_C("Minimap"), "Ctrl+M", m_minimap.is_open()))
+        m_minimap.toggle();
+    ImGui::Separator();
     bool enabled = m_orthophoto.enabled();
     if (ImGui::MenuItem(STR_C("Orthophoto"), nullptr, enabled))
         choose_orthophoto(false == enabled);
@@ -4133,10 +4136,6 @@ void editor_mode::render_view_menu()
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
-    if (ImGui::MenuItem(STR_C("Minimap and stations (W4)"), "Ctrl+M", m_minimap.is_open()))
-        m_minimap.toggle();
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", STR_C("The tracks seen from above with the camera on them; a station found by the name of its W4 and gone to"));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
         m_gauge.toggle();
     if (ImGui::IsItemHovered())
@@ -6146,13 +6145,13 @@ void editor_mode::render_shortcuts_window()
 	      {"F", "Fly to the selected"},
 	      {"O", "Top view, orthographic"}}},
 	    {"Ride along the track",
-	     {{"Y", "Ride along the track under the cursor, or the nearest one; Y or Esc again ends the ride"},
-	      {"W / S", "Drive ahead / back, the way the camera looks; Shift faster, Ctrl much faster"},
-	      {"A / D", "Over to the track alongside on the left / right"},
-	      {"Z", "The way at the next switch from its blades: straight on or the turnout; the switch isn't thrown"},
-	      {"E / Q, wheel", "Higher / lower over the rails"},
+	     {{"Y", "Ride along the track under the cursor; Y or Esc leaves"},
+	      {"W / S", "Drive; Shift faster, Ctrl much faster"},
+	      {"A / D", "Next track on the left / right"},
+	      {"Z", "The way at the next switch (it isn't thrown)"},
+	      {"E / Q, wheel", "Higher / lower"},
 	      {"LMB on a track", "Ride along that track"},
-	      {"Ctrl+M", "Minimap and the stations by the names of their W4"}}},
+	      {"Ctrl+M", "Minimap, stations by their W4"}}},
 	    {"Gizmo",
 	     {{"Q / W / E", "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"},
 	      {"R", "Local space"},
@@ -6797,10 +6796,8 @@ void editor_mode::ride_enter()
         point = Camera.Pos;
         track = kilometrage::track_near(point, 200.0, path);
     }
-    if (m_ride.enter(track, path, point, camera_look(), true))
-        ui()->set_status(STR_C("Riding along the track: W/S drive, A/D the track alongside, Y or Esc leaves"));
-    else
-        ui()->set_status(STR_C("No track under the cursor or near it to ride along"), true);
+    if (false == m_ride.enter(track, path, point, camera_look(), true))
+        ui()->set_status(STR_C("No track nearby"), true);
 }
 
 void editor_mode::enter()
@@ -7059,7 +7056,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             ui()->set_status(status, m_ride.active());
         if (taken)
             return;
-        if (Key == GLFW_KEY_Y && Action == GLFW_PRESS && false == anyModifier && false == m_ride.active() && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS)
+        // not with a button held: a drag going on would lose its release to the ride
+        if (Key == GLFW_KEY_Y && Action == GLFW_PRESS && false == anyModifier && false == m_ride.active() && m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) != GLFW_PRESS && m_input.mouse.button(GLFW_MOUSE_BUTTON_LEFT) != GLFW_PRESS)
         {
             ride_enter();
             return;
@@ -7399,13 +7397,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     }
 
     // riding along the track a click on another track takes the camera over there, the tools wait till the ride ends
-    if (m_ride.active() && Button == GLFW_MOUSE_BUTTON_LEFT)
+    if (Button == GLFW_MOUSE_BUTTON_LEFT && (m_ride.active() || m_ride_click) && (is_press(Action) || m_ride_click))
     {
+        // the release goes where the press went
+        m_ride_click = is_press(Action);
         if (is_press(Action))
         {
-            auto const under{track_under_cursor(nullptr, 30.0f)};
-            if (under.track == nullptr || false == m_ride.enter(under.track, under.path, under.point, camera_look(), false))
-                ui()->set_status(STR_C("Click a track to ride along it"), true);
+            if (auto const under{track_under_cursor(nullptr, 30.0f)}; under.track != nullptr)
+                m_ride.enter(under.track, under.path, under.point, camera_look(), false);
         }
         m_input.mouse.button(Button, Action);
         return;

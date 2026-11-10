@@ -3193,6 +3193,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	srk_tool m_srk{*this, *this, *this, *this, *this};
 	km_tool m_km{*this, *this, *this, *this};
 	track_ride m_ride;
+	bool m_ride_click{false}; // the left button went down on the ride, its release is the ride's too
 	minimap_tool m_minimap{*this, *this, m_ride};
 	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride, &m_minimap};
 

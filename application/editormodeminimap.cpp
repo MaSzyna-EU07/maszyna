@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormodeminimap.h"
 #include "application/editormoderide.h"
+#include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorKilometrage.hpp"
 #include "simulation/simulation.h"
@@ -26,8 +27,10 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <map>
+#include <unordered_set>
 #include <sstream>
 
 namespace
@@ -155,7 +158,6 @@ void minimap_tool::gather_stations()
 			if (old.key == station.key)
 				station.next = old.next;
 	m_stations = std::move(stations);
-	m_marked = -1;
 }
 
 std::vector<minimap_tool::station> const &minimap_tool::stations()
@@ -170,7 +172,10 @@ void minimap_tool::go_to(station &Station)
 		return;
 	auto const &stop{Station.stops[Station.next % Station.stops.size()]};
 	++Station.next;
-	m_marked = static_cast<int>(&Station - m_stations.data());
+	m_marked = Station.key;
+	// a map not going with the camera goes over to the stop
+	if (false == m_follow)
+		m_centre = {stop.point.x, stop.point.z};
 	glm::dvec3 on{stop.point};
 	auto const path{stop.track != nullptr ? path_at(*stop.track, stop.point, on) : 0};
 	if (m_ride.active())
@@ -239,10 +244,10 @@ void minimap_tool::render_search()
 	gather_stations();
 	ImGui::SetNextItemWidth(-1.0f);
 	// enter goes to the first one found
-	auto const entered{ImGui::InputTextWithHint("##stationsearch", STR_C("Station (by the name of its W4)"), m_search, sizeof(m_search), ImGuiInputTextFlags_EnterReturnsTrue)};
+	auto const entered{ImGui::InputTextWithHint("##stationsearch", STR_C("Find a station"), m_search, sizeof(m_search), ImGuiInputTextFlags_EnterReturnsTrue)};
 	if (m_stations.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("The scenery marks no stops with W4 (PassengerStopPoint)"));
+		ImGui::TextDisabled("%s", STR_C("No W4 in the scenery"));
 		return;
 	}
 	auto const wanted{folded(utf8_to_win1250(m_search))};
@@ -253,21 +258,25 @@ void minimap_tool::render_search()
 	auto const rows{std::min<int>(static_cast<int>(shown.size()), 6)};
 	if (shown.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("No station of that name"));
+		ImGui::TextDisabled("%s", STR_C("Nothing found"));
 		return;
 	}
 	if (entered)
+	{
 		go_to(m_stations[shown.front()]);
+		// the field keeps the keys: Enter again goes to the next stop, it doesn't reach the tools of the editor
+		ImGui::SetKeyboardFocusHere(-1);
+	}
 	if (ImGui::BeginChild("##stations", ImVec2(0.0f, (rows + 0.3f) * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders))
 	{
 		for (auto const index : shown)
 		{
 			auto &station{m_stations[index]};
 			auto const label{station.stops.size() > 1 ? format("%s  (%d)##%d", station.name.c_str(), static_cast<int>(station.stops.size()), index) : format("%s##%d", station.name.c_str(), index)};
-			if (ImGui::Selectable(label.c_str(), index == m_marked))
+			if (ImGui::Selectable(label.c_str(), station.key == m_marked))
 				go_to(station);
 			if (ImGui::IsItemHovered() && station.stops.size() > 1)
-				ImGui::SetTooltip("%s", STR_C("Each click goes to the next W4 of the station"));
+				ImGui::SetTooltip("%s", STR_C("Click again for the next W4"));
 		}
 	}
 	ImGui::EndChild();
@@ -289,6 +298,12 @@ void minimap_tool::render_map(float const Height)
 	if (m_follow)
 		m_centre = {camera.x, camera.z};
 
+	// a window of its own: its own list of what's drawn, which mustn't go over 65536 vertices on the renderers without offsets
+	if (false == ImGui::BeginChild("##minimapcanvas", size, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+	{
+		ImGui::EndChild();
+		return;
+	}
 	ImGui::InvisibleButton("##minimap", size);
 	auto const hovered{ImGui::IsItemHovered()};
 	auto const &io{ImGui::GetIO()};
@@ -333,28 +348,51 @@ void minimap_tool::render_map(float const Height)
 	auto const low{to_world({origin.x, origin.y})};
 	auto const high{to_world({corner.x, corner.y})};
 	auto const *ridden{m_ride.track()};
+	// what's left of the vertices for the tracks, some kept for the stations, the camera and the scale
+	auto const budget{drawlist->VtxBuffer.Size + 56000};
+	auto full{false};
 	std::vector<ImVec2> points;
+	std::unordered_set<std::uint64_t> dots;
 	for (auto const &drawn : m_lines)
 	{
 		if (drawn.track == nullptr || drawn.high.x < low.x || drawn.low.x > high.x || drawn.high.y < low.y || drawn.low.y > high.y)
 			continue;
-		auto const colour{drawn.track == ridden ? IM_COL32(255, 170, 40, 255) : drawn.track->eType == tt_Switch ? IM_COL32(150, 200, 255, 230) : IM_COL32(200, 200, 200, 210)};
-		// a track a pixel long a dot, the rest the line through its points
-		if (std::max(drawn.high.x - drawn.low.x, drawn.high.y - drawn.low.y) < m_scale * 1.5)
+		if (drawlist->VtxBuffer.Size > budget)
 		{
-			drawlist->AddRectFilled(to_screen(drawn.low), ImVec2(to_screen(drawn.low).x + 1.0f, to_screen(drawn.low).y + 1.0f), colour);
+			full = true;
+			break;
+		}
+		auto const colour{drawn.track == ridden ? IM_COL32(255, 170, 40, 255) : drawn.track->eType == tt_Switch ? IM_COL32(150, 200, 255, 230) : IM_COL32(200, 200, 200, 210)};
+		auto const extent{std::max(drawn.high.x - drawn.low.x, drawn.high.y - drawn.low.y) / m_scale}; // px
+		// a track a pixel long a dot, one dot a pixel
+		if (extent < 1.5)
+		{
+			auto const at{to_screen(drawn.low)};
+			if (dots.insert((static_cast<std::uint64_t>(static_cast<std::uint32_t>(static_cast<std::int32_t>(std::floor(at.x)))) << 32) | static_cast<std::uint32_t>(static_cast<std::int32_t>(std::floor(at.y)))).second)
+				drawlist->AddRectFilled(at, ImVec2(at.x + 1.0f, at.y + 1.0f), colour);
+			continue;
+		}
+		auto const width{drawn.track == ridden ? 3.0f : 1.0f};
+		// a short one from end to end, the longer ones through their points a few pixels apart
+		if (extent < 16.0 && drawn.track != ridden)
+		{
+			drawlist->AddLine(to_screen(drawn.points.front()), to_screen(drawn.points.back()), colour, width);
 			continue;
 		}
 		points.clear();
 		for (auto const &point : drawn.points)
-			points.push_back(to_screen(point));
-		drawlist->AddPolyline(points.data(), static_cast<int>(points.size()), colour, ImDrawFlags_None, drawn.track == ridden ? 3.0f : 1.5f);
+		{
+			auto const at{to_screen(point)};
+			if (points.empty() || &point == &drawn.points.back() || std::abs(at.x - points.back().x) + std::abs(at.y - points.back().y) > 4.0f)
+				points.push_back(at);
+		}
+		drawlist->AddPolyline(points.data(), static_cast<int>(points.size()), colour, ImDrawFlags_None, width);
 	}
 	// the stations: a dot at each stop, the name at the first one in sight
 	for (int i = 0; i < static_cast<int>(m_stations.size()); ++i)
 	{
 		auto const &station{m_stations[i]};
-		auto const marked{i == m_marked};
+		auto const marked{station.key == m_marked};
 		bool named{false};
 		for (auto const &stop : station.stops)
 		{
@@ -390,16 +428,24 @@ void minimap_tool::render_map(float const Height)
 		auto const text{metres >= 1000.0 ? format("%g km", metres / 1000.0) : format("%g m", metres)};
 		drawlist->AddText(ImVec2(from.x, from.y - ImGui::GetTextLineHeight() - 2.0f), IM_COL32(255, 255, 255, 220), text.c_str());
 	}
+	if (full)
+	{
+		auto const *text{STR_C("Zoom in to see all the tracks")};
+		drawlist->AddText(ImVec2(origin.x + 8.0f, origin.y + 6.0f), IM_COL32(255, 200, 120, 255), text);
+	}
 	drawlist->PopClipRect();
-	if (hovered)
-		ImGui::SetTooltip("%s", STR_C("Click: the camera there (riding: onto the track there). Drag: move the map, wheel: zoom"));
+	ImGui::EndChild();
 }
 
 void minimap_tool::render_windows()
 {
 	if (false == m_open)
 		return;
-	ImGui::SetNextWindowSize(ImVec2(340.0f, 460.0f), ImGuiCond_FirstUseEver);
+	// first in the top right corner of the view, over the scene rather than over the panels
+	ImVec2 const size{340.0f * Global.ui_scale, 460.0f * Global.ui_scale};
+	ImGui::SetNextWindowPos(ImVec2(editor_ui::view_max().x - size.x - 60.0f, editor_ui::view_min().y + 50.0f), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowBgAlpha(0.97f);
 	if (false == ImGui::Begin((std::string(STR_C("Minimap")) + "###minimap").c_str(), &m_open))
 	{
 		ImGui::End();
@@ -410,6 +456,7 @@ void minimap_tool::render_windows()
 	ImGui::SameLine();
 	if (ImGui::SmallButton(STR_C("Whole scenery")) && false == m_lines.empty())
 	{
+		m_fitted = true;
 		m_follow = false;
 		m_centre = (m_low + m_high) * 0.5;
 		auto const room{ImGui::GetContentRegionAvail()};
@@ -423,10 +470,18 @@ editor_selftest_result minimap_tool::selftest(std::string const &Command, std::i
 {
 	if (Command == "minimap")
 	{
-		// minimap <0|1>: the window shown or hidden
+		// minimap <0|1|2>: the window shown or hidden, 2: shown with the whole scenery in it, as its button does
 		int open{1};
 		Words >> open;
 		m_open = open != 0;
+		if (open == 2)
+		{
+			gather_lines();
+			m_fitted = true;
+			m_follow = false;
+			m_centre = (m_low + m_high) * 0.5;
+			m_scale = std::max(m_high.x - m_low.x, m_high.y - m_low.y) / 300.0;
+		}
 		return editor_selftest_result::handled;
 	}
 	if (Command == "stations")

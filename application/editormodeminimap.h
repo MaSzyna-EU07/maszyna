@@ -74,7 +74,7 @@ class minimap_tool final : public editor_tool
 	std::vector<station> m_stations;
 	std::size_t m_stations_seen{~std::size_t{0}};
 	char m_search[64]{};
-	int m_marked{-1}; // the station last gone to, drawn larger
+	std::string m_marked; // the key of the station last gone to, drawn larger
 	// the map
 	glm::dvec2 m_centre{0.0}; // x, z
 	double m_scale{4.0}; // m a pixel

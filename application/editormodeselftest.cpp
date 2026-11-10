@@ -206,7 +206,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        choice (0 straighter, 1 the other); logs the place and whether any switch was thrown on the way
 //   ridejump <-1|1>                      the ride over to the track alongside on the left or the right of the way ahead
 //   rideahead, rideprobe, rideleave      logs the switch ahead from its blades / logs the place of the ride / ends the ride
-//   minimap <0|1>, stations              the minimap shown or hidden / logs the stations the W4 name with their stops
+//   minimap <0|1|2>, stations            the minimap shown or hidden (2: the whole scenery in it) / logs the stations the W4 name with their stops
 //   station <text>, minimapclick <x> <z> the camera to the next stop of the station whose name holds the text / as a click on the map there
 //   quit
 void editor_mode::selftest_step()

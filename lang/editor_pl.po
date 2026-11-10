@@ -13553,83 +13553,65 @@ msgstr "w lewo"
 msgid "to the right"
 msgstr "w prawo"
 
-msgid "Riding along the track"
-msgstr "Jazda po torze"
+msgid "Switch in %.0f m: %s   (Z changes)"
+msgstr "Rozjazd za %.0f m: %s   (Z zmienia)"
 
-msgid "Switch in %.0f m: %s"
-msgstr "Rozjazd za %.0f m: %s"
+msgid "W/S drive   A/D next track   Q/E height   Esc leave"
+msgstr "W/S jazda   A/D sąsiedni tor   Q/E wysokość   Esc wyjście"
 
-msgid "W/S drive   Shift/Ctrl faster   A/D the track alongside   Z the way at the switch   Q/E, wheel: height   click: another track   Y/Esc: leave"
-msgstr "W/S jazda   Shift/Ctrl szybciej   A/D tor obok   Z droga na rozjeździe   Q/E, kółko: wysokość   klik: inny tor   Y/Esc: wyjście"
+msgid "No track alongside"
+msgstr "Brak toru obok"
 
-msgid "No track alongside on that side"
-msgstr "Po tej stronie nie ma toru obok"
-
-msgid "The ride along the track ended"
-msgstr "Koniec jazdy po torze"
-
-msgid "Click a track to ride along it"
-msgstr "Kliknij tor, żeby nim jechać"
-
-msgid "Riding along the track: W/S drive, A/D the track alongside, Y or Esc leaves"
-msgstr "Jazda po torze: W/S jazda, A/D tor obok, Y albo Esc kończy"
-
-msgid "No track under the cursor or near it to ride along"
-msgstr "Pod kursorem ani w pobliżu nie ma toru do jazdy"
-
-msgid "straight on"
-msgstr "prosto"
+msgid "No track nearby"
+msgstr "Brak toru w pobliżu"
 
 msgid "Ride along the track"
 msgstr "Jazda po torze"
 
-msgid "Ride along the track under the cursor, or the nearest one; Y or Esc again ends the ride"
-msgstr "Jazda po torze pod kursorem albo najbliższym; ponowne Y albo Esc kończy jazdę"
+msgid "Ride along the track under the cursor; Y or Esc leaves"
+msgstr "Jazda po torze pod kursorem; Y lub Esc kończy"
 
-msgid "Drive ahead / back, the way the camera looks; Shift faster, Ctrl much faster"
-msgstr "Jazda naprzód / wstecz, tam gdzie patrzy kamera; Shift szybciej, Ctrl dużo szybciej"
+msgid "Drive; Shift faster, Ctrl much faster"
+msgstr "Jazda; Shift szybciej, Ctrl dużo szybciej"
 
-msgid "Over to the track alongside on the left / right"
-msgstr "Na tor obok w lewo / w prawo"
+msgid "Next track on the left / right"
+msgstr "Sąsiedni tor w lewo / w prawo"
 
-msgid "The way at the next switch from its blades: straight on or the turnout; the switch isn't thrown"
-msgstr "Droga na najbliższym rozjeździe od ostrza: prosto albo w bok; zwrotnica nie jest przekładana"
+msgid "The way at the next switch (it isn't thrown)"
+msgstr "Kierunek na najbliższym rozjeździe (zwrotnica się nie przestawia)"
 
 msgid "E / Q, wheel"
 msgstr "E / Q, kółko"
 
-msgid "Higher / lower over the rails"
-msgstr "Wyżej / niżej nad szynami"
+msgid "Higher / lower"
+msgstr "Wyżej / niżej"
 
 msgid "Ride along that track"
 msgstr "Jazda po tym torze"
 
-msgid "Minimap and stations (W4)"
-msgstr "Minimapa i stacje (W4)"
-
-msgid "The tracks seen from above with the camera on them; a station found by the name of its W4 and gone to"
-msgstr "Tory z góry z kamerą na nich; stację można znaleźć po nazwie z jej W4 i tam przejść"
-
-msgid "Minimap and the stations by the names of their W4"
-msgstr "Minimapa i stacje po nazwach z ich W4"
+msgid "Minimap, stations by their W4"
+msgstr "Minimapa, stacje po W4"
 
 msgid "Minimap"
 msgstr "Minimapa"
 
-msgid "Station (by the name of its W4)"
-msgstr "Stacja (po nazwie z W4)"
+msgid "Find a station"
+msgstr "Szukaj stacji"
 
-msgid "The scenery marks no stops with W4 (PassengerStopPoint)"
-msgstr "Sceneria nie ma przystanków oznaczonych W4 (PassengerStopPoint)"
+msgid "No W4 in the scenery"
+msgstr "Sceneria nie ma wskaźników W4"
 
-msgid "No station of that name"
-msgstr "Nie ma stacji o takiej nazwie"
+msgid "Nothing found"
+msgstr "Nie znaleziono"
 
-msgid "Each click goes to the next W4 of the station"
-msgstr "Każde kliknięcie przenosi do następnego W4 tej stacji"
+msgid "Click again for the next W4"
+msgstr "Kliknij ponownie: następny W4"
 
 msgid "Follow the camera"
 msgstr "Za kamerą"
 
-msgid "Click: the camera there (riding: onto the track there). Drag: move the map, wheel: zoom"
-msgstr "Klik: kamera tam (w czasie jazdy: na tor w tym miejscu). Przeciąganie: przesuwa mapę, kółko: przybliża"
+msgid "Zoom in to see all the tracks"
+msgstr "Przybliż, aby zobaczyć wszystkie tory"
+
+msgid "Ride along it"
+msgstr "Jedź po nim"
