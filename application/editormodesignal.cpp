@@ -2492,9 +2492,9 @@ bool editor_mode::signal_plate_drawn(std::string const &Plate)
 
 bool editor_mode::signal_plate_blank(std::string const &Name, std::string const &Plate)
 {
-	// what the editor gave before the plates were drawn: no plate, or the texture named like the signal, bpd_tm3 by tm3 too
-	auto const plate{ToLower(Plate)};
-	return Plate.empty() || Plate == "none" || Plate == "0_nothing" || plate == ToLower(Name) || plate == ToLower(signal_plate_text(Name));
+	// what the editor gave before the plates were drawn: no plate, or the texture named like the signal. A texture named like
+	// the end of its name, pzs_a by a, is one the scenery chose
+	return Plate.empty() || Plate == "none" || Plate == "0_nothing" || ToLower(Plate) == ToLower(Name);
 }
 
 std::string editor_mode::signal_plate_text(std::string const &Name)
@@ -2654,7 +2654,9 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			values[0] = rename.name + (temporary ? "~" : "");
 			// a plate picked by hand stays; the drawn one, none, or the texture named like the signal take the new name, in the look
 			// the plate had. A plate of no text asked for is one of a signal left for removal
-			if (item->plate && values.size() > 5 && false == rename.plate.empty() && (signal_plate_drawn(values[5]) || signal_plate_blank(named, values[5])))
+			// the station signalling looked the texture up by the end of the name, bpd_tm3 by tm3
+			if (item->plate && values.size() > 5 && false == rename.plate.empty()
+			 && (signal_plate_drawn(values[5]) || signal_plate_blank(named, values[5]) || ToLower(values[5]) == ToLower(signal_plate_text(named))))
 				values[5] = rename.plate == "0_nothing" ? rename.plate : signal_plate(rename.plate, signal_plate_look(values[5]));
 			if (item->linked && values.size() > 6 && false == rename.linked.empty())
 				values[6] = rename.linked;
