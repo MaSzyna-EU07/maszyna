@@ -36,16 +36,20 @@ const float SNOW_MOST = 40.0;
 const float SNOW_REPOSE = 3.0;
 // the share of the snow over the step slipping onto the neighbour in a second
 const float SNOW_SLIP = 6.0;
-// the share of the snow a blade leaves, of the water, and of the snow it takes which it leaves as a wet trace
+// the share of the snow a blade leaves (at most SNOW_WIPE_LEFT mm: the snow it pushes along goes with it), of the water, and
+// of the water of the snow it takes which it leaves as a wet trace (at most SNOW_WIPE_WET mm)
 const float SNOW_WIPE_MISS = 0.03;
-const float SNOW_WIPE_WATER = 0.25;
+const float SNOW_WIPE_LEFT = 0.03;
+const float SNOW_WIPE_WATER = 0.1;
 const float SNOW_WIPE_TRACE = 0.08;
+const float SNOW_WIPE_WET = 0.015;
 // the longest line of texels a blade goes over in a step, texels
 const int SNOW_WIPE_LINE = 12;
 // the water the snow melts into at the glass a second for each degree the glass is above zero, mm
 const float SNOW_MELT = 0.003;
-// the water drying a second, mm
+// the water drying a second, mm, and the share of a thin film going in a second (it dries and runs off as droplets)
 const float SNOW_DRY = 0.0004;
+const float SNOW_FILM_DRY = 0.15;
 // how fast slush slides down a vertical glass, how fast dry powder goes with the air (a share of the speed of the air along the
 // glass), how fast the film of water runs down a vertical glass and goes with the air, m/s
 const float SNOW_SLIDE = 0.03;
@@ -261,9 +265,10 @@ void main()
 	}
 	if (crossed)
 	{
-		float taken = state.x * (1.0 - SNOW_WIPE_MISS);
-		state.x -= taken;
-		state.y = state.y * SNOW_WIPE_WATER + taken * mix(SNOW_FRESH, SNOW_PACKED, state.z) * SNOW_WIPE_TRACE;
+		float left = min(state.x * SNOW_WIPE_MISS, SNOW_WIPE_LEFT);
+		float taken = state.x - left;
+		state.x = left;
+		state.y = state.y * SNOW_WIPE_WATER + min(taken * mix(SNOW_FRESH, SNOW_PACKED, state.z) * SNOW_WIPE_TRACE, SNOW_WIPE_WET);
 	}
 	if (pushed.x + pushed.y > 0.0)
 	{
@@ -271,7 +276,7 @@ void main()
 		// pressed by the blade
 		state.z = (snow > 1e-4) ? clamp((state.z * state.x + max(pushed.z, pushed.x * 0.85)) / snow, 0.0, 1.0) : state.z;
 		state.x = snow;
-		state.y += pushed.y * 0.7;
+		state.y += pushed.y * 0.5;
 	}
 
 	// the flakes landing
@@ -302,7 +307,8 @@ void main()
 	float glass = water_up.w + water_snow.y / (1.0 + speed / 12.0);
 	float melted = min(SNOW_MELT * max(glass, 0.0) * seconds, state.x * density);
 	state.x -= melted / max(density, 1e-3);
-	state.y = max(state.y + melted - SNOW_DRY * seconds, 0.0);
+	float film = state.y * (1.0 - smoothstep(0.5, 3.0, state.x)); // the water not soaked into the snow
+	state.y = max(state.y + melted - (SNOW_DRY + SNOW_FILM_DRY * film) * seconds, 0.0);
 
 	state.x = clamp(state.x, 0.0, SNOW_MOST);
 	state.y = min(state.y, 4.0);
