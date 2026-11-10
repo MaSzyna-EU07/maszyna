@@ -12,10 +12,10 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <span>
 
-// image filters the wasm screens call through the host (eu07.led_post, eu07.resize_lanczos), run natively rather than
+// image filters the script screens call through the host (led_post, resize_lanczos), run natively rather than
 // in the interpreter. they give the very pixels of the Python screens: led_util.render_post() and Pillow's
 // resize(..., Image.LANCZOS). the images are RGBA, 4 bytes a pixel, row by row; alpha is ignored and written as 255
-namespace wasm_screens
+namespace script_screens
 {
 
 // the size in bytes of an RGBA image
@@ -33,4 +33,4 @@ bool led_post(std::span<std::uint8_t const> Source, int Width, int Height, std::
 // for sizes that don't fit the spans
 bool resize_lanczos(std::span<std::uint8_t const> Source, int Width, int Height, std::span<std::uint8_t> Target, int TargetWidth, int TargetHeight);
 
-} // namespace wasm_screens
+} // namespace script_screens

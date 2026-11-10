@@ -296,9 +296,10 @@ struct global_settings {
 	bool python_sharectx = true;
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
+	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
 	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
-	int wasm_cabframes{4}; // the wasm screens in the cab are refreshed every so many rendered frames
-	int wasm_externalframes{30}; // the wasm screens outside the cab (destination signs) are refreshed every so many rendered frames
+	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
+	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
 
     bool gfx_skiprendering = false;
     int gfx_framebuffer_width = -1;
@@ -393,7 +394,7 @@ struct global_settings {
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);
 	bool ConfigParseUI(cParser& Parser, const std::string& token);
 	bool ConfigParsePython(cParser& Parser, const std::string& token);
-	bool ConfigParseWasm(cParser& Parser, std::string_view token);
+	bool ConfigParseScriptScreens(cParser& Parser, std::string_view token);
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);

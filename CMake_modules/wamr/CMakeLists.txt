@@ -1,4 +1,4 @@
-# The WebAssembly Micro Runtime (ref/wamr) for the wasm screens (scripting/wasmscreens.cpp).
+# The WebAssembly Micro Runtime (ref/wamr) for the WebAssembly script screens (scripting/wasmprogram.cpp).
 #
 # Built here, in a directory of its own, because the WAMR build scripts set their configuration with
 # add_definitions() and include_directories(): kept in this directory, none of it reaches the game's sources.

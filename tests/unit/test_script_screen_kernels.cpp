@@ -1,13 +1,13 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "scripting/wasmscreenkernels.h"
+#include "scripting/scriptscreenkernels.h"
 
 #include <array>
 #include <span>
 #include <vector>
 
-// the image filters the wasm screens call through the host give the pixels of the Python screens: led_util's
+// the image filters the script screens call through the host give the pixels of the Python screens: led_util's
 // render_post() and Pillow's resize(..., Image.LANCZOS). the expected images were made by them (Pillow 12.2) from a
 // 5x3 image of (x*53 + y*97, x*31 + y*17 + 100, x*7 + y*151 + 40) mod 256
 
@@ -90,32 +90,32 @@ std::vector<std::uint8_t> rgba(std::span<std::uint8_t const> const Rgb) {
 
 } // namespace
 
-TEST_CASE("wasm kernels: led_post gives the pixels of led_util.render_post") {
+TEST_CASE("script screen kernels: led_post gives the pixels of led_util.render_post") {
 	auto const input{rgba(source)};
-	std::vector<std::uint8_t> output(wasm_screens::image_size(12, 8), 7);
-	REQUIRE(wasm_screens::led_post(input, 5, 3, output, true));
+	std::vector<std::uint8_t> output(script_screens::image_size(12, 8), 7);
+	REQUIRE(script_screens::led_post(input, 5, 3, output, true));
 	CHECK(output == rgba(posted));
 
-	REQUIRE(wasm_screens::led_post(input, 5, 3, output, false));
+	REQUIRE(script_screens::led_post(input, 5, 3, output, false));
 	CHECK(output == rgba(plain));
 }
 
-TEST_CASE("wasm kernels: resize_lanczos gives the pixels of Pillow's resize with LANCZOS") {
+TEST_CASE("script screen kernels: resize_lanczos gives the pixels of Pillow's resize with LANCZOS") {
 	auto const input{rgba(posted)};
-	std::vector<std::uint8_t> larger(wasm_screens::image_size(17, 11));
-	REQUIRE(wasm_screens::resize_lanczos(input, 12, 8, larger, 17, 11));
+	std::vector<std::uint8_t> larger(script_screens::image_size(17, 11));
+	REQUIRE(script_screens::resize_lanczos(input, 12, 8, larger, 17, 11));
 	CHECK(larger == rgba(enlarged));
 
-	std::vector<std::uint8_t> smaller(wasm_screens::image_size(7, 5));
-	REQUIRE(wasm_screens::resize_lanczos(input, 12, 8, smaller, 7, 5));
+	std::vector<std::uint8_t> smaller(script_screens::image_size(7, 5));
+	REQUIRE(script_screens::resize_lanczos(input, 12, 8, smaller, 7, 5));
 	CHECK(smaller == rgba(reduced));
 }
 
-TEST_CASE("wasm kernels: images that don't fit their buffers are refused") {
-	std::vector<std::uint8_t> const input(wasm_screens::image_size(5, 3));
-	std::vector<std::uint8_t> output(wasm_screens::image_size(12, 8) - 1);
-	CHECK_FALSE(wasm_screens::led_post(input, 5, 3, output, true));
-	CHECK_FALSE(wasm_screens::led_post(input, 0, 3, output, true));
-	CHECK_FALSE(wasm_screens::resize_lanczos(input, 5, 3, output, 12, 8));
-	CHECK_FALSE(wasm_screens::resize_lanczos(input, 6, 3, output, 2, 2));
+TEST_CASE("script screen kernels: images that don't fit their buffers are refused") {
+	std::vector<std::uint8_t> const input(script_screens::image_size(5, 3));
+	std::vector<std::uint8_t> output(script_screens::image_size(12, 8) - 1);
+	CHECK_FALSE(script_screens::led_post(input, 5, 3, output, true));
+	CHECK_FALSE(script_screens::led_post(input, 0, 3, output, true));
+	CHECK_FALSE(script_screens::resize_lanczos(input, 5, 3, output, 12, 8));
+	CHECK_FALSE(script_screens::resize_lanczos(input, 6, 3, output, 2, 2));
 }

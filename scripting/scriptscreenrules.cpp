@@ -8,13 +8,13 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "scripting/wasmscreenrules.h"
+#include "scripting/scriptscreenrules.h"
 
 #include "utilities/parser.h"
 
 #include <algorithm>
 
-namespace wasm_screens
+namespace script_screens
 {
 
 void screen_config::deserialize(cParser &Input)
@@ -123,4 +123,4 @@ bool is_safe_relative_path(std::string_view const Path)
 	return true;
 }
 
-} // namespace wasm_screens
+} // namespace script_screens

@@ -1,0 +1,511 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#include "stdafx.h"
+#include "scripting/scriptscreens.h"
+#include "scripting/scriptscreenprogram.h"
+#include "scripting/scriptscreenkernels.h"
+
+#include "input/command.h"
+#include "interfaces/ITexture.h"
+#include "utilities/Globals.h"
+#include "utilities/Logs.h"
+#include "utilities/dictionary.h"
+#include "utilities/utilities.h"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstring>
+#include <deque>
+#include <format>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <mutex>
+#include <stop_token>
+#include <string_view>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+namespace script_screens
+{
+
+namespace
+{
+
+// the length of the UTF-8 sequence starting with the byte, 0 for a byte that can't start one
+std::size_t utf8_length(std::uint8_t const Lead)
+{
+	if (Lead < 0x80)
+	{
+		return 1;
+	}
+	if (Lead >= 0xC2 && Lead <= 0xDF)
+	{
+		return 2;
+	}
+	if (Lead >= 0xE0 && Lead <= 0xEF)
+	{
+		return 3;
+	}
+	if (Lead >= 0xF0 && Lead <= 0xF4)
+	{
+		return 4;
+	}
+	return 0;
+}
+
+bool is_utf8(std::string_view const Text)
+{
+	std::size_t idx{0};
+	while (idx < Text.size())
+	{
+		auto const length{utf8_length(static_cast<std::uint8_t>(Text[idx]))};
+		if (length == 0 || idx + length > Text.size())
+		{
+			return false;
+		}
+		auto const sequence{Text.substr(idx + 1, length - 1)};
+		if (false == std::ranges::all_of(sequence, [](char const Byte) { return (static_cast<std::uint8_t>(Byte) & 0xC0) == 0x80; }))
+		{
+			return false;
+		}
+		idx += length;
+	}
+	return true;
+}
+
+} // namespace
+
+std::string utf8_text(std::string const &Text)
+{
+	return is_utf8(Text) ? Text : win1250_to_utf8(Text);
+}
+
+std::optional<std::string> read_screen_file(std::string const &Folder, std::string_view const Path)
+{
+	if (false == is_safe_relative_path(Path))
+	{
+		return std::nullopt;
+	}
+	std::ifstream file{Folder + std::string{Path}, std::ios::binary};
+	if (false == file.is_open())
+	{
+		return std::nullopt;
+	}
+	return std::string{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+}
+
+double screen_time()
+{
+	static auto const start{std::chrono::steady_clock::now()};
+	return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+bool valid_image_side(int const Side)
+{
+	return Side > 0 && Side <= max_image_side;
+}
+
+} // namespace script_screens
+
+namespace
+{
+
+constexpr std::size_t no_texture{std::numeric_limits<std::size_t>::max()};
+
+std::string_view language_name(script_language const Language)
+{
+	return Language == script_language::lua ? "Lua" : "WASM";
+}
+
+} // namespace
+
+class script_screen
+{
+  public:
+	script_screen(script_screen_queue::screen_request const &Request, script_screens::frame_schedule const &Schedule)
+	    : kind{Request.kind}, language{Request.language}, script{Request.script}, texture{Request.texture}, m_schedule{Schedule}
+	{
+	}
+	~script_screen() = default;
+	script_screen(script_screen const &) = delete;
+	script_screen &operator=(script_screen const &) = delete;
+
+	bool poll(std::uint64_t const Frame)
+	{
+		std::scoped_lock lock{m_schedule_mutex};
+		return m_schedule.poll(Frame);
+	}
+
+	// set when made, read-only afterwards
+	script_screen_kind const kind;
+	script_language const language;
+	std::string const script;
+	ITexture *const texture;
+
+	// set by the worker when the screen can't run (any more); a failed screen isn't refreshed
+	std::atomic<bool> failed{false};
+	// the worker's, and the queue's once the worker stopped
+	std::unique_ptr<script_screens::program> program;
+
+	// the image, handed from the worker to the main thread, bottom row first as the texture takes it
+	std::mutex image_mutex;
+	std::vector<std::uint8_t> image;
+	int image_width{0};
+	int image_height{0};
+	bool image_pending{false}; // drawn and not yet uploaded
+	std::size_t uploaded_texture{no_texture}; // the gl texture the image went to, to upload it again when it's made anew
+
+  private:
+	std::mutex m_schedule_mutex;
+	script_screens::frame_schedule m_schedule;
+};
+
+struct script_screen_queue::implementation
+{
+	struct task
+	{
+		std::shared_ptr<script_screen> screen;
+		std::shared_ptr<dictionary_source> input;
+		std::uint32_t vehicle{0};
+	};
+
+	void run(std::stop_token const &Stop);
+	void process(task const &Task);
+	script_screens::runtime *runtime_of(script_language const Language) const
+	{
+		return Language == script_language::lua ? lua.get() : wasm.get();
+	}
+	static void present(script_screen &Screen, script_screens::render_call &Call);
+	static void upload(script_screen &Screen);
+	static void execute(script_screens::pending_command const &Command);
+
+	std::unique_ptr<script_screens::runtime> lua;
+	std::unique_ptr<script_screens::runtime> wasm;
+	bool initialized{false};
+	std::atomic<std::uint64_t> frame{0};
+
+	std::mutex screens_mutex;
+	std::unordered_map<std::string, std::weak_ptr<script_screen>> screens;
+
+	std::mutex tasks_mutex;
+	std::condition_variable_any tasks_condition;
+	std::deque<task> tasks;
+	std::jthread worker;
+
+	std::mutex commands_mutex;
+	std::vector<script_screens::pending_command> commands;
+};
+
+void script_screen_queue::implementation::run(std::stop_token const &Stop)
+{
+	for (auto *runtime : {lua.get(), wasm.get()})
+	{
+		if (runtime != nullptr)
+		{
+			runtime->attach_thread();
+		}
+	}
+	while (false == Stop.stop_requested())
+	{
+		task next;
+		{
+			std::unique_lock lock{tasks_mutex};
+			if (false == tasks_condition.wait(lock, Stop, [this] { return false == tasks.empty(); }))
+			{
+				break;
+			}
+			next = std::move(tasks.front());
+			tasks.pop_front();
+		}
+		process(next);
+	}
+	for (auto *runtime : {lua.get(), wasm.get()})
+	{
+		if (runtime != nullptr)
+		{
+			runtime->detach_thread();
+		}
+	}
+}
+
+void script_screen_queue::implementation::process(task const &Task)
+{
+	auto &screen{*Task.screen};
+	if (screen.failed)
+	{
+		return;
+	}
+	if (screen.program == nullptr)
+	{
+		auto *runtime{runtime_of(screen.language)};
+		screen.program = runtime != nullptr ? runtime->load(screen.script, screen.kind) : nullptr;
+		if (screen.program == nullptr)
+		{
+			screen.failed = true;
+			return;
+		}
+	}
+
+	script_screens::render_call call{*Task.input, Task.vehicle};
+	if (false == screen.program->render(call))
+	{
+		screen.failed = true;
+		return;
+	}
+	if (false == call.pixels.empty())
+	{
+		if (false == script_screens::valid_image_side(call.width) || false == script_screens::valid_image_side(call.height) ||
+		    call.pixels.size() != script_screens::image_size(call.width, call.height))
+		{
+			ErrorLog(std::format("{} screen \"{}\": invalid image size {}x{}", language_name(screen.language), screen.script, call.width, call.height));
+			screen.failed = true;
+			return;
+		}
+		present(screen, call);
+	}
+	if (false == call.commands.empty())
+	{
+		std::scoped_lock lock{commands_mutex};
+		commands.insert(commands.end(), std::make_move_iterator(call.commands.begin()), std::make_move_iterator(call.commands.end()));
+	}
+}
+
+// keeps the image the screen drew. the script draws from the top row down; the texture takes the bottom row first, as
+// the python screens give it (abstractscreenrenderer flips the image before handing it over)
+void script_screen_queue::implementation::present(script_screen &Screen, script_screens::render_call &Call)
+{
+	auto const row{static_cast<std::size_t>(Call.width) * 4};
+	auto const height{static_cast<std::size_t>(Call.height)};
+	std::scoped_lock lock{Screen.image_mutex};
+	Screen.image.resize(Call.pixels.size());
+	for (std::size_t y = 0; y < height; ++y)
+	{
+		std::memcpy(Screen.image.data() + (height - 1 - y) * row, Call.pixels.data() + y * row, row);
+	}
+	Screen.image_width = Call.width;
+	Screen.image_height = Call.height;
+	Screen.image_pending = true;
+}
+
+void script_screen_queue::implementation::upload(script_screen &Screen)
+{
+	if (Screen.texture == nullptr)
+	{
+		return;
+	}
+	std::scoped_lock lock{Screen.image_mutex};
+	if (Screen.image.empty() || false == Screen.texture->get_is_ready())
+	{
+		// nothing drawn yet, or the texture isn't made yet or was released: the image goes up once it's there
+		return;
+	}
+	if (false == Screen.image_pending && Screen.texture->get_id() == Screen.uploaded_texture)
+	{
+		return;
+	}
+	Screen.texture->update_from_memory(Screen.image_width, Screen.image_height, Screen.image.data());
+	Screen.uploaded_texture = Screen.texture->get_id();
+	Screen.image_pending = false;
+}
+
+void script_screen_queue::implementation::execute(script_screens::pending_command const &Command)
+{
+	auto const lookup{simulation::commandMap.find(Command.name)};
+	if (lookup == simulation::commandMap.end())
+	{
+		ErrorLog(std::format("Script screen: command [{}] not found", Command.name));
+		return;
+	}
+	command_data data{};
+	data.command = lookup->second;
+	data.action = GLFW_PRESS;
+	data.param1 = Command.param1;
+	data.param2 = Command.param2;
+	WriteLog(std::format("Script screen: executing command [{}] with params: P1={} P2={} Target ID={}", Command.name, Command.param1, Command.param2, Command.vehicle));
+	simulation::Commands.push(data, static_cast<std::uint32_t>(command_target::vehicle) | Command.vehicle);
+}
+
+script_screen_queue::script_screen_queue() : m_impl{std::make_unique<implementation>()} {}
+
+script_screen_queue::~script_screen_queue()
+{
+	exit();
+}
+
+bool script_screen_queue::init()
+{
+	if (m_impl->initialized)
+	{
+		return true;
+	}
+	if (Global.luascreens_enabled)
+	{
+		m_impl->lua = script_screens::make_lua_runtime();
+	}
+	if (Global.wasm_enabled)
+	{
+		m_impl->wasm = script_screens::make_wasm_runtime();
+	}
+	if (m_impl->lua == nullptr && m_impl->wasm == nullptr)
+	{
+		return false;
+	}
+	m_impl->initialized = true;
+	auto *impl{m_impl.get()};
+	m_impl->worker = std::jthread([impl](std::stop_token const &Stop) { impl->run(Stop); });
+	WriteLog(std::format("Script screens: setup complete (lua: {}, wasm: {}), refreshed every {} frames in the cab and every {} frames outside", m_impl->lua != nullptr ? "yes" : "no",
+	                     m_impl->wasm != nullptr ? "yes" : "no", Global.screens_cabframes, Global.screens_externalframes));
+	return true;
+}
+
+void script_screen_queue::exit()
+{
+	if (false == m_impl->initialized)
+	{
+		return;
+	}
+	if (m_impl->worker.joinable())
+	{
+		m_impl->worker.request_stop();
+		m_impl->worker.join();
+	}
+	{
+		std::scoped_lock lock{m_impl->tasks_mutex};
+		m_impl->tasks.clear();
+	}
+	{
+		std::scoped_lock lock{m_impl->commands_mutex};
+		m_impl->commands.clear();
+	}
+	{
+		// the vehicles may hold their screens past this point, but the runtimes go now
+		std::scoped_lock lock{m_impl->screens_mutex};
+		for (auto const &[key, screen] : m_impl->screens)
+		{
+			if (auto const live{screen.lock()}; live != nullptr)
+			{
+				live->program.reset();
+				live->failed = true;
+			}
+		}
+		m_impl->screens.clear();
+	}
+	m_impl->lua.reset();
+	m_impl->wasm.reset();
+	m_impl->initialized = false;
+}
+
+bool script_screen_queue::runs(script_language const Language) const
+{
+	return m_impl->initialized && m_impl->runtime_of(Language) != nullptr;
+}
+
+std::shared_ptr<script_screen> script_screen_queue::acquire(screen_request const &Request)
+{
+	if (false == runs(Request.language) || Request.script.empty())
+	{
+		return nullptr;
+	}
+	auto const key{Request.key.empty() ? Request.script : Request.key};
+	std::scoped_lock lock{m_impl->screens_mutex};
+	if (auto const lookup{m_impl->screens.find(key)}; lookup != m_impl->screens.end())
+	{
+		if (auto existing{lookup->second.lock()}; existing != nullptr)
+		{
+			return existing;
+		}
+	}
+	auto const configured{Request.kind == script_screen_kind::cab ? Global.screens_cabframes : Global.screens_externalframes};
+	auto const interval{script_screens::frame_schedule::effective_interval(configured, Request.frames)};
+	auto screen{std::make_shared<script_screen>(Request, script_screens::frame_schedule{m_impl->frame.load(), interval, script_screens::frame_schedule::phase(key, interval)})};
+	m_impl->screens.insert_or_assign(key, screen);
+	WriteLog(std::format("{} screen \"{}\": refreshed every {} frames", language_name(Request.language), Request.script, interval));
+	return screen;
+}
+
+bool script_screen_queue::due(script_screen &Screen) const
+{
+	if (false == m_impl->initialized || Screen.failed)
+	{
+		return false;
+	}
+	return Screen.poll(m_impl->frame.load());
+}
+
+void script_screen_queue::submit(std::shared_ptr<script_screen> const &Screen, std::shared_ptr<dictionary_source> Input, std::uint32_t const Vehicle)
+{
+	if (false == m_impl->initialized || Screen == nullptr || Input == nullptr || Screen->failed)
+	{
+		return;
+	}
+	{
+		std::scoped_lock lock{m_impl->tasks_mutex};
+		auto const pending{std::ranges::find(m_impl->tasks, Screen, &implementation::task::screen)};
+		if (pending != m_impl->tasks.end())
+		{
+			// the refresh still waiting gets the newer input
+			pending->input = std::move(Input);
+			pending->vehicle = Vehicle;
+		}
+		else
+		{
+			m_impl->tasks.emplace_back(Screen, std::move(Input), Vehicle);
+		}
+	}
+	m_impl->tasks_condition.notify_one();
+}
+
+void script_screen_queue::update()
+{
+	if (false == m_impl->initialized)
+	{
+		return;
+	}
+	++m_impl->frame;
+	{
+		std::scoped_lock lock{m_impl->screens_mutex};
+		std::erase_if(m_impl->screens, [](auto const &Entry) { return Entry.second.expired(); });
+		for (auto const &[key, screen] : m_impl->screens)
+		{
+			if (auto const live{screen.lock()}; live != nullptr)
+			{
+				implementation::upload(*live);
+			}
+		}
+	}
+	std::vector<script_screens::pending_command> sent;
+	{
+		std::scoped_lock lock{m_impl->commands_mutex};
+		sent.swap(m_impl->commands);
+	}
+	for (auto const &command : sent)
+	{
+		implementation::execute(command);
+	}
+}
+
+#ifndef WITH_LUA
+std::unique_ptr<script_screens::runtime> script_screens::make_lua_runtime()
+{
+	return nullptr;
+}
+#endif
+
+#ifndef WITH_WASM
+std::unique_ptr<script_screens::runtime> script_screens::make_wasm_runtime()
+{
+	return nullptr;
+}
+#endif

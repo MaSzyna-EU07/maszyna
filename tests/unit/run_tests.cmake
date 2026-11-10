@@ -2,6 +2,14 @@
 # prints a one line summary when they pass, the full report when they don't. a failure fails the build and
 # removes the game binary, so the next build links it again and reruns the tests
 
+# the tests load the libraries the game loads (lua51.dll for the Lua screens): on Windows they're looked for next to
+# the game binary as well, where they are for running the game, since nothing puts them next to the tests
+if(CMAKE_HOST_WIN32)
+	get_filename_component(game_folder "${GAME}" DIRECTORY)
+	file(TO_NATIVE_PATH "${game_folder}" game_folder)
+	set(ENV{PATH} "${game_folder};$ENV{PATH}")
+endif()
+
 execute_process(
 	COMMAND "${TESTS}" --no-intro --no-version
 	RESULT_VARIABLE result

@@ -425,10 +425,11 @@ int eu07_application::init(int Argc, char *Argv[])
 	{
 		m_taskqueue.init();
 	}
+	crashreport_add_info("luascreens_enabled", Global.luascreens_enabled ? "yes" : "no");
 	crashreport_add_info("wasm_enabled", Global.wasm_enabled ? "yes" : "no");
-	if (Global.wasm_enabled)
+	if (Global.luascreens_enabled || Global.wasm_enabled)
 	{
-		m_wasmqueue.init();
+		m_screenqueue.init();
 	}
 	if ((result = init_modes()) != 0)
 	{
@@ -640,7 +641,7 @@ int eu07_application::run()
 			EditorTerrain.update(Global.pCamera.Pos);
 
 		m_taskqueue.update();
-		m_wasmqueue.update();
+		m_screenqueue.update();
 		opengl_texture::reset_unit_cache();
 
 		if (!GfxRenderer->Render())
@@ -738,7 +739,7 @@ void eu07_application::exit()
 
 	// the python workers detach their GL context on the way out, so they have to be done before the windows they use are destroyed
 	m_taskqueue.exit();
-	m_wasmqueue.exit();
+	m_screenqueue.exit();
 	step("the windows");
 	for (auto *window : m_windows)
 	{

@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "scripting/wasmscreenkernels.h"
+#include "scripting/scriptscreenkernels.h"
 
 #include <algorithm>
 #include <array>
@@ -16,7 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include <numbers>
 #include <vector>
 
-namespace wasm_screens
+namespace script_screens
 {
 
 namespace
@@ -239,4 +239,4 @@ bool resize_lanczos(std::span<std::uint8_t const> const Source, int const Width,
 	return true;
 }
 
-} // namespace wasm_screens
+} // namespace script_screens

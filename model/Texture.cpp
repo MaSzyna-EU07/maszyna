@@ -722,8 +722,8 @@ void
 opengl_texture::make_request() {
 
     auto const components { Split( name, '?' ) };
-    if( components.front().ends_with( ".wasm" ) ) {
-        // wasm destination signs are drawn by the vehicles showing them (wasm_screen_queue)
+    if( components.front().ends_with( ".lua" ) || components.front().ends_with( ".wasm" ) ) {
+        // script destination signs are drawn by the vehicles showing them (script_screen_queue)
         return;
     }
 

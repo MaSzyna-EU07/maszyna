@@ -10038,7 +10038,7 @@ bool TTrain::Update(double const Deltatime)
 	if (!FreeFlyModeFlag && simulation::Train == this) // don't bother if we're outside
 	{
 		update_screens(Deltatime);
-		update_wasm_screens();
+		update_script_screens();
 	}
 
 	// update direction relay
@@ -10568,10 +10568,10 @@ void TTrain::update_screens(double dt)
 	}
 }
 
-void TTrain::update_wasm_screens()
+void TTrain::update_script_screens()
 {
-	auto &queue{Application.wasm_screens()};
-	for (auto &entry : m_wasmscreens)
+	auto &queue{Application.screens()};
+	for (auto &entry : m_scriptscreens)
 	{
 		if (false == queue.due(*entry.screen))
 		{
@@ -10606,10 +10606,10 @@ bool TTrain::find_screen_surface(std::string const &Target, std::string_view con
 	return true;
 }
 
-void TTrain::load_wasm_screen(cParser &Parser)
+void TTrain::load_script_screen(cParser &Parser, script_language const Language)
 {
-	wasm_screen_entry entry;
-	// the block is read whole even when the wasm screens are off
+	script_screen_entry entry;
+	// the block is read whole even when the script screens are off
 	entry.config.deserialize(Parser);
 	if (entry.config.script.empty())
 	{
@@ -10622,19 +10622,26 @@ void TTrain::load_wasm_screen(cParser &Parser)
 
 	TSubModel *submodel{nullptr};
 	ITexture *texture{nullptr};
-	if (entry.config.target != "none" && false == find_screen_surface(entry.config.target, "WASM Screen", submodel, texture))
+	auto &queue{Application.screens()};
+	if (false == queue.runs(Language))
+	{
+		// the screens of the language are off
+		return;
+	}
+	if (entry.config.target != "none" &&
+	    false == find_screen_surface(entry.config.target, Language == script_language::lua ? "Lua Screen" : "WASM Screen", submodel, texture))
 	{
 		return;
 	}
 
-	entry.screen = Application.wasm_screens().acquire({.kind = wasm_screen_kind::cab,
-	                                                   .script = entry.config.script,
-	                                                   .key = std::format("cab:{}:{}:{}", DynamicObject->name(), entry.config.target, entry.config.script),
-	                                                   .texture = texture,
-	                                                   .frames = entry.config.frames});
+	entry.screen = queue.acquire({.kind = script_screen_kind::cab,
+	                              .language = Language,
+	                              .script = entry.config.script,
+	                              .key = std::format("cab:{}:{}:{}", DynamicObject->name(), entry.config.target, entry.config.script),
+	                              .texture = texture,
+	                              .frames = entry.config.frames});
 	if (entry.screen == nullptr)
 	{
-		// the wasm screens are off
 		return;
 	}
 	if (texture != nullptr)
@@ -10651,7 +10658,7 @@ void TTrain::load_wasm_screen(cParser &Parser)
 	{
 		submodel->screen_touch_list = entry.touch_list;
 	}
-	m_wasmscreens.emplace_back(std::move(entry));
+	m_scriptscreens.emplace_back(std::move(entry));
 }
 
 void TTrain::add_distance(double const Distance)
@@ -10829,7 +10836,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	m_controlmapper.clear();
 	// clear python screens
 	m_screens.clear();
-	m_wasmscreens.clear();
+	m_scriptscreens.clear();
 	// reset sound positions
 	auto const nullvector{glm::vec3()};
 	std::vector<std::reference_wrapper<std::optional<sound_source>>> sounds = {
@@ -11051,9 +11058,13 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 				if (Global.python_displaywindows)
 					m_screens.back().viewer = std::make_unique<python_screen_viewer>(rt, m_screens.back().touch_list, m_screens.back().script);
 			}
+			else if (token == "luascreen:")
+			{
+				load_script_screen(parser, script_language::lua);
+			}
 			else if (token == "wasmscreen:")
 			{
-				load_wasm_screen(parser);
+				load_script_screen(parser, script_language::wasm);
 			}
 			else if (token == "pyscreenupdatetime:")
 			{

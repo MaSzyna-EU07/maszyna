@@ -1,16 +1,16 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "scripting/wasmscreenrules.h"
+#include "scripting/scriptscreenrules.h"
 #include "utilities/parser.h"
 
-// the parts of the wasm screens that don't need the runtime: the .mmd entries, the refresh schedule counted in
+// the parts of the script screens that don't need the runtime: the .mmd entries, the refresh schedule counted in
 // frames and the files a screen may read
 
-using wasm_screens::frame_schedule;
-using wasm_screens::screen_config;
+using script_screens::frame_schedule;
+using script_screens::screen_config;
 
-TEST_CASE("wasm screens: a cab screen entry with every key") {
+TEST_CASE("script screens: a cab screen entry with every key") {
 	cParser parser("{ ekran.wasm target: screen01 frames: 6 parameters: id=1&mode=full } next:", cParser::buffer_TEXT);
 	screen_config config;
 	config.deserialize(parser);
@@ -23,7 +23,7 @@ TEST_CASE("wasm screens: a cab screen entry with every key") {
 	CHECK(parser.getToken<std::string>() == "next:");
 }
 
-TEST_CASE("wasm screens: the optional keys keep their defaults, an unknown key is skipped with its value") {
+TEST_CASE("script screens: the optional keys keep their defaults, an unknown key is skipped with its value") {
 	cParser parser("{ tablica.wasm later: 12 instance: name background: tablica_off }", cParser::buffer_TEXT);
 	screen_config config;
 	config.deserialize(parser);
@@ -36,7 +36,7 @@ TEST_CASE("wasm screens: the optional keys keep their defaults, an unknown key i
 	CHECK(config.background == "tablica_off");
 }
 
-TEST_CASE("wasm screens: the interval set in eu07.ini, or the screen's own when it is longer") {
+TEST_CASE("script screens: the interval set in eu07.ini, or the screen's own when it is longer") {
 	CHECK(frame_schedule::effective_interval(4, 0) == 4);
 	CHECK(frame_schedule::effective_interval(4, 10) == 10);
 	CHECK(frame_schedule::effective_interval(4, 2) == 4);
@@ -45,7 +45,7 @@ TEST_CASE("wasm screens: the interval set in eu07.ini, or the screen's own when 
 	CHECK(frame_schedule::effective_interval(-3, -1) == 1);
 }
 
-TEST_CASE("wasm screens: a screen is due once per interval") {
+TEST_CASE("script screens: a screen is due once per interval") {
 	frame_schedule schedule{100, 3, 0};
 	CHECK(schedule.poll(100));
 	// asked again in the same frame (the vehicle drawn in more than one pass)
@@ -57,7 +57,7 @@ TEST_CASE("wasm screens: a screen is due once per interval") {
 	CHECK(schedule.poll(106));
 }
 
-TEST_CASE("wasm screens: a screen out of sight for a while is due on the first frame it is asked again") {
+TEST_CASE("script screens: a screen out of sight for a while is due on the first frame it is asked again") {
 	frame_schedule schedule{0, 5, 0};
 	CHECK(schedule.poll(0));
 	CHECK(schedule.poll(42));
@@ -65,7 +65,7 @@ TEST_CASE("wasm screens: a screen out of sight for a while is due on the first f
 	CHECK(schedule.poll(47));
 }
 
-TEST_CASE("wasm screens: the phase spreads the screens over the frames of an interval") {
+TEST_CASE("script screens: the phase spreads the screens over the frames of an interval") {
 	auto const interval{30};
 	auto const phase{frame_schedule::phase("make:dynamic/pkp/ed72/tablica.wasm?$timetable=ed72-001", interval)};
 	CHECK(phase >= 0);
@@ -86,18 +86,18 @@ TEST_CASE("wasm screens: the phase spreads the screens over the frames of an int
 	CHECK(first == 1000 + static_cast<std::uint64_t>(phase));
 }
 
-TEST_CASE("wasm screens: a screen reads files only below its own folder") {
-	CHECK(wasm_screens::is_safe_relative_path("font.png"));
-	CHECK(wasm_screens::is_safe_relative_path("data/font.png"));
-	CHECK(wasm_screens::is_safe_relative_path("data\\font.png"));
-	CHECK(wasm_screens::is_safe_relative_path("data/..font.png"));
+TEST_CASE("script screens: a screen reads files only below its own folder") {
+	CHECK(script_screens::is_safe_relative_path("font.png"));
+	CHECK(script_screens::is_safe_relative_path("data/font.png"));
+	CHECK(script_screens::is_safe_relative_path("data\\font.png"));
+	CHECK(script_screens::is_safe_relative_path("data/..font.png"));
 
-	CHECK_FALSE(wasm_screens::is_safe_relative_path(""));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path("../eu07.ini"));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path("data/../../eu07.ini"));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path("data\\..\\x"));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path(".."));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path("/etc/passwd"));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path("\\windows"));
-	CHECK_FALSE(wasm_screens::is_safe_relative_path("c:/windows/win.ini"));
+	CHECK_FALSE(script_screens::is_safe_relative_path(""));
+	CHECK_FALSE(script_screens::is_safe_relative_path("../eu07.ini"));
+	CHECK_FALSE(script_screens::is_safe_relative_path("data/../../eu07.ini"));
+	CHECK_FALSE(script_screens::is_safe_relative_path("data\\..\\x"));
+	CHECK_FALSE(script_screens::is_safe_relative_path(".."));
+	CHECK_FALSE(script_screens::is_safe_relative_path("/etc/passwd"));
+	CHECK_FALSE(script_screens::is_safe_relative_path("\\windows"));
+	CHECK_FALSE(script_screens::is_safe_relative_path("c:/windows/win.ini"));
 }

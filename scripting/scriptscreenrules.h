@@ -15,18 +15,19 @@ http://mozilla.org/MPL/2.0/.
 
 class cParser;
 
-// the parts of the wasm screens that don't need the runtime: the .mmd entries, the frame schedule and the
-// file access rules. kept apart from scripting/wasmscreens.cpp so the unit tests can check them
-namespace wasm_screens
+// the parts of the script screens (Lua, WebAssembly) that don't need a runtime: the .mmd entries, the frame
+// schedule and the file access rules. kept apart from scripting/scriptscreens.cpp so the unit tests can check them
+namespace script_screens
 {
 
-// a wasm screen as the .mmd file describes it:
-//   wasmscreen: { script.wasm target: submodel frames: 4 parameters: key=value&key=value }
-//   wasmdestinationsign: { script.wasm frames: 30 instance: name parameters: ... background: texture }
+// a script screen as the .mmd file describes it:
+//   luascreen: { script.lua target: submodel frames: 4 parameters: key=value&key=value }
+//   luadestinationsign: { script.lua frames: 30 instance: name parameters: ... background: texture }
+// and the same with wasmscreen:, wasmdestinationsign: and a .wasm module
 // every key but the script is optional, and an unknown key is skipped along with its value
 struct screen_config
 {
-	std::string script; // the .wasm file, relative to the vehicle folder when it has no path of its own
+	std::string script; // the .lua script or .wasm module, relative to the vehicle folder when it has no path of its own
 	std::string target{"none"}; // cab screens: the submodel the screen is drawn on
 	std::string parameters; // extra key=value pairs passed to the screen with the simulation state
 	std::string instancing; // destination signs: "name" or "type", one sign per vehicle or per vehicle type
@@ -71,4 +72,4 @@ class frame_schedule
 // drive or a leading separator
 bool is_safe_relative_path(std::string_view Path);
 
-} // namespace wasm_screens
+} // namespace script_screens

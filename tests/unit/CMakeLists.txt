@@ -25,9 +25,13 @@ add_executable(${UNIT_TESTS_NAME}
 
 # the core library brings the game's build settings along
 target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_core)
-# the wasm screen host, tested with the real runtime (test_wasm_host.cpp)
+# the script screen host, tested with the real runtimes (test_script_screen_host.cpp)
+target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/scriptscreens.cpp")
+if (WITH_LUA)
+	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/luaprogram.cpp" "${CMAKE_SOURCE_DIR}/stb/stb_image.c")
+endif()
 if (WITH_WASM)
-	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/wasmscreens.cpp")
+	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/wasmprogram.cpp")
 	target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_wamr)
 endif()
 target_include_directories(${UNIT_TESTS_NAME} PRIVATE "${DEPS_DIR}/doctest")
@@ -39,6 +43,10 @@ endif()
 set_target_properties(${UNIT_TESTS_NAME} PROPERTIES FOLDER "tests")
 
 add_test(NAME ${UNIT_TESTS_NAME} COMMAND ${UNIT_TESTS_NAME})
+if (WIN32)
+	# the libraries of the game (lua51.dll) are next to the game, see run_tests.cmake
+	set_tests_properties(${UNIT_TESTS_NAME} PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:eu07>")
+endif()
 
 # for running the tests at the end of building the game, see the main CMakeLists.txt
 set(UNIT_TEST_DATA ${UNIT_TEST_DATA} PARENT_SCOPE)

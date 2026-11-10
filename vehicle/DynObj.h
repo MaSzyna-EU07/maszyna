@@ -22,12 +22,13 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "world/Spring.h"
 #include "vehicle/mirrors.h"
-#include "scripting/wasmscreenrules.h"
+#include "scripting/scriptscreenrules.h"
 
 #include <vector>
 #include <memory>
 
-class wasm_screen; // scripting/wasmscreens.h
+class script_screen; // scripting/scriptscreens.h
+enum class script_language; // scripting/scriptscreens.h
 
 #define EU07_SOUND_BOGIESOUNDS
 
@@ -255,9 +256,11 @@ public:
         int update_rate { 0 }; // -1: per stop, 0: none, >0: fps // TBD, TODO: implement?
         std::string instancing; // potential method to generate more than one texture per timetable
         std::string parameters; // potential extra parameters supplied by mmd file
-        wasm_screens::screen_config wasm; // potential WebAssembly sign (wasmdestinationsign:), used in place of the python one while wasm screens are on
-        std::shared_ptr<wasm_screen> wasm_sign; // the wasm screen drawing the current destination
-        std::string wasm_request; // its input: the key=value pairs a python sign gets for its texture
+        script_screens::screen_config lua; // potential Lua sign (luadestinationsign:), used in place of the python one while the Lua screens are on
+        script_screens::screen_config wasm; // potential WebAssembly sign (wasmdestinationsign:), likewise, when there's no Lua one
+        std::shared_ptr<script_screen> script_sign; // the script screen drawing the current destination
+        std::string script_request; // its input: the key=value pairs a python sign gets for its texture
+        std::shared_ptr<script_screen> background_sign; // the script screen which drew the blank sign, when a script draws it
     // methods
         void deserialize( cParser &Input );
     private:
@@ -733,8 +736,8 @@ private:
     void update_load_offset();
     void shuffle_load_order();
     void update_destinations();
-    // feeds the wasm destination sign with fresh data, when it is shown and due
-    void update_wasm_destination();
+    // feeds the script destination sign with fresh data, when it is shown and due
+    void update_script_destination();
     bool Update(double dt, double dt1);
     bool FastUpdate(double dt);
     void Move(double fDistance);
@@ -860,8 +863,12 @@ private:
     material_handle DestinationFind( std::string Destination );
     // the name of a generated destination sign texture: the script, the timetable, the instancing and the parameters
     std::string destination_request( std::string const &Script, std::string const &Instancing, std::string const &Parameters ) const;
-    // makes the destination sign a wasm screen, when the vehicle has one and the wasm screens are on. returns true when it did
-    bool destination_set_wasm( std::string const &Numer );
+    // the script sign of the vehicle the game can run: the Lua one, else the WebAssembly one; nullptr for none
+    script_screens::screen_config const *script_destination( script_language &Language ) const;
+    // makes the destination sign a script screen, when the vehicle has one the game can run. returns true when it did
+    bool destination_set_script( std::string const &Numer );
+    // draws a texture named make:<script>.lua?<parameters> (or .wasm) once with its script; nullptr for other textures
+    std::shared_ptr<script_screen> draw_script_texture( std::string const &Name, material_handle Material );
     void OverheadTrack(float o);
     glm::dvec3 get_future_movement() const;
 	void move_set(double distance);
