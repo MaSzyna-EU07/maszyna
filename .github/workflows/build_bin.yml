@@ -269,7 +269,31 @@ jobs:
           cmake \
             --build build \
             --parallel "$(nproc)"
-            
+
+      # the build copies the shared libraries next to the game (CMake_modules/bundle_runtime_libs.cmake) and the
+      # game looks for them there first ($ORIGIN): each one it loads from outside build/bin has to be one of the system
+      - name: Check the bundled libraries
+        run: |
+          GAME="$(find build/bin -maxdepth 1 -type f -name 'eu07*' -perm -u+x | head -n 1)"
+          test -n "$GAME"
+          echo "Game: $GAME"
+          readelf -d "$GAME" | grep -E 'R(UN)?PATH'
+          readelf -d "$GAME" | grep -q 'Library rpath: \[\$ORIGIN\]'
+          cat build/bin/bundled_libs.txt
+          ldd "$GAME"
+          if ldd "$GAME" | grep -q 'not found'; then
+            echo "::error::the game needs a library that is neither bundled nor in the system"
+            exit 1
+          fi
+          while read -r name; do
+            [ -n "$name" ] || continue
+            loaded="$(ldd "$GAME" | awk -v n="$name" '$1 == n { print $3 }')"
+            if [ -z "$loaded" ] || [ "$(realpath "$loaded")" != "$(realpath "build/bin/$name")" ]; then
+              echo "::error::$name is bundled, but the game loads it from '$loaded'"
+              exit 1
+            fi
+          done < build/bin/bundled_libs.txt
+
       - name: Prepare Linux Python environment
         run: |
           PYTHON_ROOT="$(python -c 'import sys; print(sys.base_prefix)')"
