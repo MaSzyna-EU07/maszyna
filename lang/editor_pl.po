@@ -3762,6 +3762,18 @@ msgstr "nie ma takiej tekstury"
 msgid "Plate look"
 msgstr "Wygląd tablicy"
 
+msgid "Speed index"
+msgstr "Indeks prędkości"
+
+msgid "Shunting (m)"
+msgstr "Manewrowy (m)"
+
+msgid "The speed index after the name on the drawn plate: one digit, e.g. 4, or two drawn as a fraction, 12 for 1/2. Kept with the plate through a rename"
+msgstr "Indeks prędkości za nazwą na rysowanej tablicy: jedna cyfra, np. 4, albo dwie rysowane jako ułamek, 12 to 1/2. Zostaje z tablicą przy zmianie nazwy"
+
+msgid "The signal gives shunting signals too (Ms2): the drawn plate gets an \"m\" on a strip under the name, as Ie-1 marks it"
+msgstr "Sygnalizator podaje też sygnały manewrowe (Ms2): rysowana tablica dostaje „m” na pasku pod nazwą, tak jak oznacza to Ie-1"
+
 msgid "plain"
 msgstr "normalna"
 

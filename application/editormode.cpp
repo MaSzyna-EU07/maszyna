@@ -3388,12 +3388,12 @@ void editor_mode::apply_include()
         // the drawn plate of a signal follows its name; a plate picked from the textures stays, and so does a drawn one given
         // another name by hand. While the name is cleared or one the plate can't carry, the plate keeps the last name, and
         // follows again once a usable name is typed. No plate, or the texture named like the signal the editor gave before the
-        // plates were drawn, become the drawn one. The look of the plate goes with it
+        // plates were drawn, become the drawn one. The look, the index and the m of the plate go with it
         std::string file;
         std::vector<std::string> previous;
         if (editor_includes::parse_directive(before, file, previous) && previous.size() >= 6 && m_include.values.size() >= 6)
         {
-            auto const look{signal_plate_look(previous[5])};
+            auto const look{signal_plate_style(previous[5])};
             auto const carried = [&](std::string const &Name) { return Name != "none" && signal_plate_drawn(signal_plate(Name, look)); };
             if (previous[0] != m_include.values[0] && m_include.values[5] == previous[5] && carried(m_include.values[0])
              && (previous[5] == signal_plate(previous[0], look) || (false == carried(previous[0]) && signal_plate_drawn(previous[5])) || signal_plate_blank(previous[0], previous[5])))

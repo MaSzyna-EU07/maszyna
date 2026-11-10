@@ -173,6 +173,9 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				std::snprintf(tool.name, sizeof(tool.name), "%s", values["name"].c_str());
 			if (values.count("plate"))
 				std::snprintf(tool.plate, sizeof(tool.plate), "%s", values["plate"].c_str());
+			// index=<digits>, m=1: of the drawn plate
+			std::snprintf(tool.plate_index, sizeof(tool.plate_index), "%s", values["index"].c_str());
+			tool.plate_m = values["m"] == "1";
 			auto const side{values["side"] == "left" ? -1 : 1};
 			auto const facing{values["facing"] == "along" ? 1 : values["facing"] == "against" ? -1 : 0};
 			// offset=<m>: from the axis, for this signal only
