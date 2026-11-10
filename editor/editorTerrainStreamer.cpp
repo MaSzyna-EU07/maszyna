@@ -2443,7 +2443,7 @@ void terrain_streamer::clear_water(bool const Touch)
 	m_watershapes.clear();
 }
 
-gfx::geometry_handle terrain_streamer::water_geometry(gfx::vertex_array const &Vertices)
+gfx::geometry_handle terrain_streamer::water_geometry(gfx::vertex_array Vertices)
 {
 	// the geometry of water made before is filled anew, so editing the water doesn't pile up geometry
 	gfx::userdata_array nouserdata;
@@ -2507,7 +2507,7 @@ void terrain_streamer::build_water()
 				reach = std::max(reach, glm::length(point - centroid));
 			}
 		water_shape entry;
-		entry.geometry = water_geometry(vertices);
+		entry.geometry = water_geometry(std::move(vertices));
 		if (entry.geometry.chunk == 0)
 			continue;
 		// two bounding vertices give the shape its area, the triangles are in the geometry
@@ -2616,7 +2616,7 @@ void terrain_streamer::build_water()
 			vertices.push_back(vertex);
 		}
 		water_shape entry;
-		entry.geometry = water_geometry(vertices);
+		entry.geometry = water_geometry(std::move(vertices));
 		if (entry.geometry.chunk == 0)
 			continue;
 		auto const reach{glm::length(high - low) * 0.5};
