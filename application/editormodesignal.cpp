@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include "utilities/translation.h"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cfloat>
 #include <filesystem>
@@ -66,9 +67,9 @@ double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
 char const *const kDrawnPlate{"make:signal_plate?"}; // the plate drawn by python/local/signal_plate.py
 // looks of the drawn plates, in the order of the setting of the editor
-char const *const kPlateLooks[] = {"plain", "toned", "aged"};
-char const *const kPlateLookLabels[] = {"plain", "toned", "aged"};
-int const kPlateLookCount{3};
+std::array<char const *, 3> const kPlateLooks{"plain", "toned", "aged"};
+std::array<char const *, 3> const kPlateLookLabels{"plain", "toned", "aged"};
+int const kPlateLookCount{static_cast<int>(kPlateLooks.size())};
 
 // what a drawn plate is drawn with but its name: the look set in the editor, and the speed index and the m typed for it
 std::string set_plate_style(std::string const &Index = {}, bool const Shunting = false)
@@ -79,6 +80,20 @@ std::string set_plate_style(std::string const &Index = {}, bool const Shunting =
 	if (Shunting)
 		style += "&m=1";
 	return style;
+}
+
+// the pick of the look of the drawn plates, kept with the settings of the editor
+void plate_look_combo(int const Look)
+{
+	if (false == ImGui::BeginCombo("##signalplatelook", STR_C(kPlateLookLabels[Look])))
+		return;
+	for (int i = 0; i < kPlateLookCount; ++i)
+		if (ImGui::Selectable(STR_C(kPlateLookLabels[i]), i == Look))
+		{
+			EditorSettings.signal_plate_look(i);
+			EditorSettings.save();
+		}
+	ImGui::EndCombo();
 }
 
 // the text of the plate with its index and m, as the hint of the plate field names it: A 1/2 m
@@ -1920,7 +1935,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &C
 	item.described = true;
 	item.values["name"] = name;
 	if (Template.plate)
-		item.values["#6"] = tool.plate[0] != '\0' ? std::string{tool.plate} : signal_plate(name, set_plate_style(tool.plate_index, tool.plate_m));
+		item.values["#6"] = tool.plate[0] != '\0' ? std::string{tool.plate} : signal_plate(name, set_plate_style(tool.plate_index.data(), tool.plate_m));
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
 	std::string error;
@@ -2507,7 +2522,7 @@ std::string editor_mode::signal_plate(std::string const &Name, std::string const
 	return kDrawnPlate + Style + "&name=" + Name;
 }
 
-bool editor_mode::signal_plate_drawn(std::string const &Plate)
+bool editor_mode::signal_plate_drawn(std::string_view const Plate)
 {
 	return Plate.starts_with(kDrawnPlate);
 }
@@ -2523,9 +2538,9 @@ std::string editor_mode::signal_plate_text(std::string const &Name)
 {
 	// the station signalling names its signals in small letters after the stem, bpd_tm3: the plate says Tm3, as its schematic does
 	auto text{Name.substr(Name.rfind('_') + 1)};
-	if (std::any_of(text.begin(), text.end(), [](char const Letter) { return std::isupper(static_cast<unsigned char>(Letter)) != 0; }))
+	if (std::ranges::any_of(text, [](char const Letter) { return std::isupper(static_cast<unsigned char>(Letter)) != 0; }))
 		return text;
-	std::transform(text.begin(), text.end(), text.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+	std::ranges::transform(text, text.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
 	if (text.size() > 2 && text[0] == 'T' && (text[1] == 'M' || text[1] == 'O'))
 		text[1] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[1])));
 	return text;
@@ -3357,8 +3372,8 @@ void editor_mode::render_signal_ui()
 			if (armed != nullptr && armed->plate)
 			{
 				auto const look{std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)};
-				auto const plate{signal_plate(tool.name, set_plate_style(tool.plate_index, tool.plate_m))};
-				auto const automatic{signal_plate_drawn(plate) ? format(STR_C("auto: drawn \"%s\""), plate_shown(tool.name, tool.plate_index, tool.plate_m).c_str()) : format(STR_C("auto: %s"), plate.c_str())};
+				auto const plate{signal_plate(tool.name, set_plate_style(tool.plate_index.data(), tool.plate_m))};
+				auto const automatic{signal_plate_drawn(plate) ? format(STR_C("auto: drawn \"%s\""), plate_shown(tool.name, tool.plate_index.data(), tool.plate_m).c_str()) : format(STR_C("auto: %s"), plate.c_str())};
 				field_row("Plate");
 				ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
 				auto const typing{ImGui::IsItemActive()};
@@ -3373,22 +3388,13 @@ void editor_mode::render_signal_ui()
 				if (typed.empty())
 				{
 					field_row("Plate look");
-					if (ImGui::BeginCombo("##signalplatelook", STR_C(kPlateLookLabels[look])))
-					{
-						for (int i = 0; i < kPlateLookCount; ++i)
-							if (ImGui::Selectable(STR_C(kPlateLookLabels[i]), i == look))
-							{
-								EditorSettings.signal_plate_look(i);
-								EditorSettings.save();
-							}
-						ImGui::EndCombo();
-					}
+					plate_look_combo(look);
 					if (ImGui::IsItemHovered())
 						ImGui::SetTooltip("%s", STR_C("How the drawn plates look: plain is clean and bright, toned greyish and a little dusty, aged darker and dusty. The look is kept with the plate, a rename doesn't change it"));
 					field_row("Speed index");
 					// digits only, kept out of the field as they are typed: the decimal one lets in signs and dots too
 					auto const digits = [](ImGuiInputTextCallbackData *Data) { return Data->EventChar >= '0' && Data->EventChar <= '9' ? 0 : 1; };
-					ImGui::InputText("##signalplateindex", tool.plate_index, sizeof(tool.plate_index), ImGuiInputTextFlags_CallbackCharFilter, digits);
+					ImGui::InputText("##signalplateindex", tool.plate_index.data(), tool.plate_index.size(), ImGuiInputTextFlags_CallbackCharFilter, digits);
 					if (ImGui::IsItemHovered())
 						ImGui::SetTooltip("%s", STR_C("The speed index after the name on the drawn plate: one digit, e.g. 4, or two drawn as a fraction, 12 for 1/2. Kept with the plate through a rename"));
 					field_row("Shunting (m)");

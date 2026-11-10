@@ -61,6 +61,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class TAnimModel;
@@ -2692,7 +2693,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		char filter[64]{};
 		char name[64]{"A"};
 		char plate[64]{};
-		char plate_index[3]{}; // the speed index of the drawn plate, "4" or "12" for 1/2
+		std::array<char, 3> plate_index{}; // the speed index of the drawn plate, "4" or "12" for 1/2
 		bool plate_m{false}; // the drawn plate gets the "m" of a signal giving shunting signals too
 		char linked[64]{"none"};
 		float height{0.0f};
@@ -2837,7 +2838,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// ("look=toned", with "&index=12" and "&m=1" when it has them), or none for a name it can't carry
 	static std::string signal_plate(std::string const &Name, std::string const &Style);
 	// true for a plate signal_plate() gives, of any name and look
-	static bool signal_plate_drawn(std::string const &Plate);
+	static bool signal_plate_drawn(std::string_view Plate);
 	static bool signal_plate_blank(std::string const &Name, std::string const &Plate);
 	static std::string signal_plate_text(std::string const &Name);
 	// what a drawn plate is drawn with but its name, kept through a rename; for one not drawn the look set in the editor

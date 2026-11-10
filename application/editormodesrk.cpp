@@ -3151,7 +3151,7 @@ void srk_tool::set_signals()
 		order.kind = planned.kind == station::signal::role::shunting ? "shunt" : "main";
 		order.name = full(planned);
 		order.plate = plate;
-		placed.push_back(std::move(order));
+		placed.emplace_back(std::move(order));
 	}
 	// the others keep their names, unless one of these takes it
 	for (std::size_t k = 0; k < standing.size(); ++k)

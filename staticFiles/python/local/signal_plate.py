@@ -16,28 +16,28 @@ class signal_plate(abstractscreenrenderer):
 	# part of the plate, width of the edge, radius of the screws; the blur, the edge and the screws in pixels of a plate of 128,
 	# drawn bigger by as much as the plate is
 	LOOKS = {
-		"plain": dict(field=(239, 240, 239), edge=(96, 96, 96), screw=(80, 80, 80), ink=(0, 0, 0), grain=0, dust=0, soften=0.0, letters=0.62, rim=4, bolt=3),
-		"toned": dict(field=(212, 212, 206), edge=(140, 140, 136), screw=(125, 125, 120), ink=(28, 28, 28), grain=4, dust=10, soften=0.4, letters=0.52, rim=3, bolt=2),
-		"aged": dict(field=(200, 199, 190), edge=(120, 118, 112), screw=(105, 100, 92), ink=(35, 34, 32), grain=9, dust=28, soften=0.6, letters=0.52, rim=3, bolt=2),
+		"plain": {"field": (239, 240, 239), "edge": (96, 96, 96), "screw": (80, 80, 80), "ink": (0, 0, 0), "grain": 0, "dust": 0, "soften": 0.0, "letters": 0.62, "rim": 4, "bolt": 3},
+		"toned": {"field": (212, 212, 206), "edge": (140, 140, 136), "screw": (125, 125, 120), "ink": (28, 28, 28), "grain": 4, "dust": 10, "soften": 0.4, "letters": 0.52, "rim": 3, "bolt": 2},
+		"aged": {"field": (200, 199, 190), "edge": (120, 118, 112), "screw": (105, 100, 92), "ink": (35, 34, 32), "grain": 9, "dust": 28, "soften": 0.6, "letters": 0.52, "rim": 3, "bolt": 2},
 	}
 	FONTS = ["./fonts/arialnb.ttf", "./fonts/arialbd.ttf", "./fonts/dejavusans-bold.ttf"]
 
 	def __init__(self, lookup_path):
-		self.fonts = {}
+		self.loaded_fonts = {}
 		self.dusts = {}
 
 	def font(self, size):
-		if size not in self.fonts:
-			self.fonts[size] = None
+		if size not in self.loaded_fonts:
+			self.loaded_fonts[size] = None
 			for path in self.FONTS:
 				try:
-					self.fonts[size] = ImageFont.truetype(path, size)
+					self.loaded_fonts[size] = ImageFont.truetype(path, size)
 					break
 				except OSError:
 					continue
-			if self.fonts[size] is None:
-				self.fonts[size] = ImageFont.load_default()
-		return self.fonts[size]
+			if self.loaded_fonts[size] is None:
+				self.loaded_fonts[size] = ImageFont.load_default()
+		return self.loaded_fonts[size]
 
 	def dust(self, look):
 		# darker towards the bottom and the sides; the same for every plate of a look, so made once
@@ -88,7 +88,7 @@ class signal_plate(abstractscreenrenderer):
 	def draw_index(self, draw, index, x, top, tall, height, ink):
 		font = self.font(height)
 		box = draw.textbbox((0, 0), index[0], font=font)
-		digit, rise = box[2] - box[0], box[3] - box[1]
+		digit = box[2] - box[0]
 		draw.text((x - box[0], top - box[1]), index[0], font=font, fill=ink)
 		if len(index) > 1:
 			# the lower digit right of the upper one, the slash in the room between them: it passes the middle of the height
@@ -100,6 +100,34 @@ class signal_plate(abstractscreenrenderer):
 			middle = x + digit + room / 2
 			reach = room * 0.75
 			draw.line((round(middle - reach), top + tall, round(middle + reach), top), fill=ink, width=stroke)
+
+	def draw_name(self, draw, text, index, look, plate, room, tall):
+		# the biggest letters which fit between the screws, with the index after them, in the middle of the plate
+		size = self.SIZE
+		height = int(size * look["letters"])
+		while True:
+			height = self.fitting(draw, text, height, room, tall)
+			small = round(height * 0.46)
+			gap = round(height * 0.05) if index else 0
+			box = draw.textbbox((0, 0), text, font=self.font(height))
+			width = box[2] - box[0] + gap + self.index_width(draw, index, small)
+			if width <= room or height <= 8 * size / 128:
+				break
+			height -= 2
+		left = (size - width) // 2
+		top = (plate - (box[3] - box[1])) // 2
+		draw.text((left - box[0], top - box[1]), text, font=self.font(height), fill=look["ink"])
+		if index:
+			self.draw_index(draw, index, left + box[2] - box[0] + gap, top, box[3] - box[1], small, look["ink"])
+
+	def draw_shunting(self, draw, look, plate, rim, room):
+		# the m on its strip under the name
+		size = self.SIZE
+		strip = size - plate - rim
+		height = self.fitting(draw, "m", int(strip * 1.2), room, round(strip * 0.6))
+		font = self.font(height)
+		box = draw.textbbox((0, 0), "m", font=font)
+		draw.text(((size - (box[2] - box[0])) // 2 - box[0], plate + (strip - (box[3] - box[1])) // 2 - box[1]), "m", font=font, fill=look["ink"])
 
 	def _render(self, state):
 		size = self.SIZE
@@ -124,29 +152,9 @@ class signal_plate(abstractscreenrenderer):
 		room = size - 2 * (rim + 4 * bolt)
 		tall = plate - 2 * (rim + 4 * bolt) if shunting else room
 		if text:
-			# the biggest letters which fit between the screws, with the index after them
-			height = int(size * look["letters"])
-			while True:
-				height = self.fitting(draw, text, height, room, tall)
-				small = round(height * 0.46)
-				gap = round(height * 0.05) if index else 0
-				box = draw.textbbox((0, 0), text, font=self.font(height))
-				width = box[2] - box[0] + gap + self.index_width(draw, index, small)
-				if width <= room or height <= 8 * scale:
-					break
-				height -= 2
-			font = self.font(height)
-			left = (size - width) // 2
-			top = (plate - (box[3] - box[1])) // 2
-			draw.text((left - box[0], top - box[1]), text, font=font, fill=look["ink"])
-			if index:
-				self.draw_index(draw, index, left + box[2] - box[0] + gap, top, box[3] - box[1], small, look["ink"])
+			self.draw_name(draw, text, index, look, plate, room, tall)
 		if shunting:
-			strip = size - plate - rim
-			height = self.fitting(draw, "m", int(strip * 1.2), room, round(strip * 0.6))
-			font = self.font(height)
-			box = draw.textbbox((0, 0), "m", font=font)
-			draw.text(((size - (box[2] - box[0])) // 2 - box[0], plate + (strip - (box[3] - box[1])) // 2 - box[1]), "m", font=font, fill=look["ink"])
+			self.draw_shunting(draw, look, plate, rim, room)
 		if look["soften"] > 0:
 			image = image.filter(ImageFilter.GaussianBlur(look["soften"] * scale))
 		return image

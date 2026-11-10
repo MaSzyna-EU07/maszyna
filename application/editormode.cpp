@@ -3383,7 +3383,7 @@ void editor_mode::apply_include()
     }
     auto before = scene::Layers.directive(m_instance);
     if (false == m_include.info.signal_kind.empty()
-     && std::any_of(m_include.info.parameters.begin(), m_include.info.parameters.end(), [](auto const &Parameter) { return Parameter.id == 6 && Parameter.role == "texture"; }))
+     && std::ranges::any_of(m_include.info.parameters, [](auto const &Parameter) { return Parameter.id == 6 && Parameter.role == "texture"; }))
     {
         // the drawn plate of a signal follows its name; a plate picked from the textures stays, and so does a drawn one given
         // another name by hand. While the name is cleared or one the plate can't carry, the plate keeps the last name, and
