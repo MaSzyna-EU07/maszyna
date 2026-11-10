@@ -304,6 +304,9 @@ class terrain_streamer
 	void apply_modifiers(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	std::vector<std::pair<glm::dvec2, glm::dvec2>> modifier_bounds() const;
 	void build_water();
+	// the vertices of a shape of the water or of a field in the geometry of the water: one made before filled anew, or a new one;
+	// a handle of chunk 0 if it failed
+	gfx::geometry_handle water_geometry(gfx::vertex_array const &Vertices);
 	void clear_water(bool const Touch);
 	std::string pack_path(heightmap::pack_key const &Key) const;
 	// the state of a chunk (null: no chunk) or of the description is kept for the change in progress, if it's the first time

@@ -187,7 +187,17 @@ int floor_div(int const Value, int const Divisor)
 	return (Value >= 0 ? Value / Divisor : -((-Value + Divisor - 1) / Divisor));
 }
 
-// smooth noise of -1..1 in waves of about Scale metres, the same at the same place every time; Channel gives another one
+// the larger of two values, the corner between them rounded off over K
+double soft_max(double const A, double const B, double const K)
+{
+	if (K <= 1e-6)
+		return std::max(A, B);
+	auto const h{std::max(K - std::abs(A - B), 0.0) / K};
+	return std::max(A, B) + h * h * K * 0.25;
+}
+
+} // namespace
+
 double natural_noise(double const X, double const Z, double const Scale, int const Channel)
 {
 	auto const hash = [](std::int64_t const Ix, std::int64_t const Iz) {
@@ -215,17 +225,6 @@ double natural_noise(double const X, double const Z, double const Scale, int con
 	auto const v{Z / scale - Channel * 57.3};
 	return std::clamp(0.7 * octave(u, v) + 0.3 * octave(u * 2.7 + 17.3, v * 2.7 - 9.1), -1.0, 1.0);
 }
-
-// the larger of two values, the corner between them rounded off over K
-double soft_max(double const A, double const B, double const K)
-{
-	if (K <= 1e-6)
-		return std::max(A, B);
-	auto const h{std::max(K - std::abs(A - B), 0.0) / K};
-	return std::max(A, B) + h * h * K * 0.25;
-}
-
-} // namespace
 
 int cells_for(float const Spacing)
 {

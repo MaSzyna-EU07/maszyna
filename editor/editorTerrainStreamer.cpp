@@ -1425,35 +1425,6 @@ bool terrain_streamer::paint(double X, double Z, double Radius, double Strength,
 	});
 }
 
-namespace
-{
-// smooth noise of -1..1 in waves of about Scale metres, the same at the same place every time
-double edge_noise(double const X, double const Z, double const Scale)
-{
-	auto const hash = [](std::int64_t const Ix, std::int64_t const Iz) {
-		auto h{static_cast<std::uint64_t>(Ix) * 0x9E3779B97F4A7C15ull ^ static_cast<std::uint64_t>(Iz) * 0xC2B2AE3D27D4EB4Full};
-		h ^= h >> 31;
-		h *= 0xBF58476D1CE4E5B9ull;
-		h ^= h >> 29;
-		return static_cast<double>(h & 0xffffff) / static_cast<double>(0xffffff) * 2.0 - 1.0;
-	};
-	auto const octave = [&](double const U, double const V) {
-		auto const iu{std::floor(U)};
-		auto const iv{std::floor(V)};
-		auto const fu{U - iu};
-		auto const fv{V - iv};
-		auto const su{fu * fu * (3.0 - 2.0 * fu)};
-		auto const sv{fv * fv * (3.0 - 2.0 * fv)};
-		auto const x{static_cast<std::int64_t>(iu)};
-		auto const z{static_cast<std::int64_t>(iv)};
-		auto const a{hash(x, z) + (hash(x + 1, z) - hash(x, z)) * su};
-		auto const b{hash(x, z + 1) + (hash(x + 1, z + 1) - hash(x, z + 1)) * su};
-		return a + (b - a) * sv;
-	};
-	auto const scale{std::max(0.5, Scale)};
-	return std::clamp(0.7 * octave(X / scale, Z / scale) + 0.3 * octave(X / scale * 2.7 + 17.3, Z / scale * 2.7 - 9.1), -1.0, 1.0);
-}
-} // namespace
 
 bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength)
 {
@@ -1498,7 +1469,7 @@ bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feath
 		// signed distance from the outline, inside positive, the edge shifted by the noise, led smoothly through the blend
 		auto distance{inside ? nearest : -nearest};
 		if (Noise > 0.0)
-			distance += Noise * edge_noise(Px, Pz, NoiseScale);
+			distance += Noise * heightmap::natural_noise(Px, Pz, NoiseScale, 0);
 		if (Feather <= 0.0)
 			return distance > 0.0 ? Strength : 0.0;
 		auto const t{std::clamp((distance + margin) / Feather, 0.0, 1.0)};
@@ -2472,6 +2443,23 @@ void terrain_streamer::clear_water(bool const Touch)
 	m_watershapes.clear();
 }
 
+gfx::geometry_handle terrain_streamer::water_geometry(gfx::vertex_array const &Vertices)
+{
+	// the geometry of water made before is filled anew, so editing the water doesn't pile up geometry
+	gfx::userdata_array nouserdata;
+	gfx::geometry_handle geometry{0, 0};
+	if (false == m_waterfree.empty())
+	{
+		geometry = m_waterfree.back();
+		m_waterfree.pop_back();
+		GfxRenderer->Replace(Vertices, nouserdata, geometry, GL_TRIANGLES);
+		return geometry;
+	}
+	if (m_waterbank.bank == 0 && m_waterbank.chunk == 0)
+		m_waterbank = GfxRenderer->Create_Bank();
+	return GfxRenderer->Insert(Vertices, nouserdata, m_waterbank, GL_TRIANGLES);
+}
+
 void terrain_streamer::build_water()
 {
 	m_waterchanged = false;
@@ -2518,21 +2506,8 @@ void terrain_streamer::build_water()
 				vertices.push_back(vertex);
 				reach = std::max(reach, glm::length(point - centroid));
 			}
-		// the geometry of water made before is filled anew, so editing the water doesn't pile up geometry
-		gfx::userdata_array nouserdata;
 		water_shape entry;
-		if (false == m_waterfree.empty())
-		{
-			entry.geometry = m_waterfree.back();
-			m_waterfree.pop_back();
-			GfxRenderer->Replace(vertices, nouserdata, entry.geometry, GL_TRIANGLES);
-		}
-		else
-		{
-			if (m_waterbank.bank == 0 && m_waterbank.chunk == 0)
-				m_waterbank = GfxRenderer->Create_Bank();
-			entry.geometry = GfxRenderer->Insert(vertices, nouserdata, m_waterbank, GL_TRIANGLES);
-		}
+		entry.geometry = water_geometry(vertices);
 		if (entry.geometry.chunk == 0)
 			continue;
 		// two bounding vertices give the shape its area, the triangles are in the geometry
@@ -2640,20 +2615,8 @@ void terrain_streamer::build_water()
 			vertex.tangent = {static_cast<float>(along.x), 0.f, static_cast<float>(along.y), 1.f};
 			vertices.push_back(vertex);
 		}
-		gfx::userdata_array nouserdata;
 		water_shape entry;
-		if (false == m_waterfree.empty())
-		{
-			entry.geometry = m_waterfree.back();
-			m_waterfree.pop_back();
-			GfxRenderer->Replace(vertices, nouserdata, entry.geometry, GL_TRIANGLES);
-		}
-		else
-		{
-			if (m_waterbank.bank == 0 && m_waterbank.chunk == 0)
-				m_waterbank = GfxRenderer->Create_Bank();
-			entry.geometry = GfxRenderer->Insert(vertices, nouserdata, m_waterbank, GL_TRIANGLES);
-		}
+		entry.geometry = water_geometry(vertices);
 		if (entry.geometry.chunk == 0)
 			continue;
 		auto const reach{glm::length(high - low) * 0.5};

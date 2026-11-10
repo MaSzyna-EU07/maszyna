@@ -301,6 +301,8 @@ struct manifest
 
 // past this many the patches are saved to their own file (manifest::patches_file)
 std::size_t constexpr patches_inline{200};
+// smooth noise of -1..1 in waves of about Scale metres, the same at the same place every time; Channel gives another one
+double natural_noise(double X, double Z, double Scale, int Channel);
 bool load_patches(std::string const &Path, std::vector<surface_patch> &Patches);
 bool save_patches(std::string const &Path, std::vector<surface_patch> const &Patches);
 bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Error = nullptr);
