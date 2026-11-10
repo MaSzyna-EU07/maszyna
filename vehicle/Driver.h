@@ -145,7 +145,8 @@ enum TSpeedPosFlag
     spSemaphor = 0x4000, // semafor pociągowy
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000 // odcinek z ograniczeniem i podaną jego długościa
+    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
+    spPointVelocity = 0x80000 // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -155,6 +156,7 @@ class TSpeedPos
     double fDist{ 0.0 }; // aktualna odległość (ujemna gdy minięte)
     double fVelNext{ -1.0 }; // prędkość obowiązująca od tego miejsca
     double fSectionVelocityDist{ 0.0 }; // długość ograniczenia prędkości
+    double fPointDist{ 0.0 }; // PointVelocity: o ile dalej od wpisu leży punkt, w którym czoło ma mieć fVelNext
     int iFlags{ spNone }; // flagi typu wpisu do tabelki
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
@@ -553,6 +555,20 @@ private:
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    // keeps the PointVelocity limit of a speed table entry whose cell the head has just passed
+    void latch_point_limit( TSpeedPos const &Point );
+    // moves the latched point limits by the movement of the consist, drops those passed and those read anew
+    void update_point_limits();
+    // the latched point limits ahead in the direction of travel, taken as the points of the speed table are
+    void apply_point_limits( double &Velocity, double &Distance, double &Next, double &Acceleration );
+    // the way the consist runs, along the track under the vehicle whose movement is measured; zero when it isn't known
+    glm::dvec3 travel_direction() const;
+    // how far the end of the consist lying the farthest along the heading is ahead of the measured vehicle
+    double point_limit_end( glm::dvec3 const &Heading ) const;
+    // whether the state of the cell is latched already
+    bool point_limit_latched( basic_event const *Cell ) const;
+    // how far before a point limit the speed is held down to it
+    double point_limit_approach() const;
     // returns most recently calculated distance to potential obstacle ahead
     double TrackObstacle() const;
     void TablePurger();
@@ -587,6 +603,23 @@ private:
     std::size_t SemNextIndex{ npos };
     std::size_t SemNextStopIndex{ npos };
     double dMoveLen = 0.0; // odległość przejechana od ostatniego sprawdzenia tabelki
+    // a PointVelocity limit latched when the head passed its cell. kept apart from the speed table, which is built
+    // anew on a change of direction, a change of the consist or a takeover, and measured by the movement in the world,
+    // so stopping, backing up and going on between the cell and the point keeps it
+    struct point_limit {
+        basic_event const *source { nullptr }; // the cell, as the head passed it
+        double velocity { -1.0 }; // what the cell said then
+        double distance { 0.0 }; // left for the head to the point, along the line
+        double celldistance { 0.0 }; // from the cell to the point; the head farther than that from the point is behind the cell
+        glm::dvec3 heading { 0.0 }; // the way towards the point, in the world
+        double end { 0.0 }; // point_limit_end() at the last update, to follow vehicles coupled or uncoupled at that end
+        bool endknown { false };
+    };
+    std::vector<point_limit> m_pointlimits;
+    TDynamicObject const *m_pointlimitsvehicle { nullptr }; // the vehicle whose movement moves the points
+    glm::dvec3 m_pointlimitsposition { 0.0 }; // where it was at the last update
+    TDynamicObject const *m_pointlimitsends[ 2 ] { nullptr, nullptr }; // the end vehicles of the consist at the last update
+    double m_pointlimitslength { 0.0 }; // and its length
     basic_event *eSignNext = nullptr; // sygnał zmieniający prędkość, do pokazania na [F2]
     neighbour_data Obstacle; // nearest vehicle detected ahead on current route
 
