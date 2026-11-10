@@ -296,6 +296,11 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	if (Global.test.enabled)
+	{
+		// a test leaves the player's window layout alone (imgui.ini in the game folder), runs in parallel included
+		m_imguiio->IniFilename = nullptr;
+	}
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = ImGuiKey_None;
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = ImGuiKey_None;
 	// imgui.ini is read with the first frame, which may be of another mode than the editor
@@ -416,6 +421,8 @@ bool ui_layer::init(GLFWwindow *Window)
 	if (!gamepadui) gamepadui = "";
 	auto const viewportsupport{(m_imguiio->BackendFlags & ImGuiBackendFlags_PlatformHasViewports) && (m_imguiio->BackendFlags & ImGuiBackendFlags_RendererHasViewports) &&
 	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND && std::string_view{desktop} != "gamescope" && std::string_view{gamepadui} != "1"};
+	// a tooltip as long as a paragraph is wrapped: in one line it can run past the screen
+	m_imguiio->ConfigTooltipsWrapWidth = std::round(Global.ui_fontsize * 40.0f);
 	if (Global.ui_viewports && viewportsupport)
 	{
 		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;

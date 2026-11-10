@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 
 #include "utilities/Globals.h"
 #include "world/Event.h"
@@ -121,6 +122,8 @@ state_manager::init_scripting_interface() {
         simulation::Memory.insert( memorycell );
         simulation::Region->insert( memorycell );
     }
+    // the cell a test scenery reports its result to
+    simulation::test().init_result_cell();
 }
 
 // legacy method, calculates changes in simulation state over specified time

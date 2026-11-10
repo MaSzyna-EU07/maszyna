@@ -227,3 +227,204 @@ TEST_CASE("cab: the lamps and the buzzer of the security system left unattended"
 	CHECK(security.radiostop_available());
 	scenario.check();
 }
+
+namespace {
+
+// the SM42, its shunt mode switching its vigilance device (CA) off or not (AwareOffInShuntMode), set in the
+// test whatever the converted definition says
+definition sm42_vigilance(bool const Off) {
+	return definition::fiz("sm42_v1/6d1").set("Security", "AwareOffInShuntMode", Off ? "Yes" : "No");
+}
+
+// runs the train for Seconds with nobody acknowledging the vigilance; returns whether the vigilance alarm came
+bool unattended(scenario &Scenario, int const Seconds) {
+	bool blinked{false};
+	for (int i = 0; i < Seconds; ++i) {
+		Scenario.train().run(1.0, Scenario.line());
+		blinked |= Scenario.cab().SecuritySystem.is_vigilance_blinking();
+	}
+	return blinked;
+}
+
+} // namespace
+
+TEST_CASE("cab: the SM42's vigilance device switched off in the shunt mode, where its definition says so") {
+	// eu07/maszyna#457: with AwareOffInShuntMode=Yes the shunt mode of the SM42 switches its vigilance device (CA)
+	// off, it alerts again once the shunt mode is off
+	scenario scenario{"cab/sm42 vigilance in shunt mode", motion() + brakes(), test::track{}};
+	scenario.train().add(sm42_vigilance(true), 1);
+	REQUIRE(scenario.start_up());
+	auto &sm42{scenario.cab()};
+	auto const &security{sm42.SecuritySystem};
+	REQUIRE(sm42.CurrentSwitch(true));
+	REQUIRE(sm42.ShuntMode);
+	scenario.get_going();
+	sm42.AnPos = 0.3;
+	sm42.IncMainCtrl(1);
+	scenario.act("unattended in shunt mode");
+	bool blinked{false};
+	for (int i = 0; i < 120; ++i) {
+		scenario.train().run(1.0, scenario.line());
+		blinked |= security.is_blinking();
+	}
+	CHECK(sm42.Vel > 1.0);
+	CHECK_FALSE(blinked);
+	CHECK(sm42.PipePress > 3.5);
+	scenario.act("shunt mode off");
+	scenario.notch_back(0);
+	REQUIRE(sm42.CurrentSwitch(false));
+	sm42.IncMainCtrl(1);
+	scenario.act("unattended");
+	CHECK(unattended(scenario, 120));
+	scenario.check();
+}
+
+TEST_CASE("cab: the vigilance device of the SM42 kept in the shunt mode, by default") {
+	// without AwareOffInShuntMode the shunt mode leaves the vigilance device alone: unattended, it alerts and brakes
+	scenario scenario{"cab/sm42 vigilance kept in shunt mode", motion() + brakes(), test::track{}};
+	scenario.train().add(sm42_vigilance(false), 1);
+	REQUIRE(scenario.start_up());
+	auto &sm42{scenario.cab()};
+	REQUIRE(sm42.CurrentSwitch(true));
+	REQUIRE(sm42.ShuntMode);
+	scenario.get_going();
+	sm42.AnPos = 0.3;
+	sm42.IncMainCtrl(1);
+	scenario.act("unattended in shunt mode");
+	CHECK(unattended(scenario, 120));
+	CHECK(sm42.ShuntMode);
+	CHECK(sm42.PipePress < 1.0);
+	scenario.check();
+}
+
+TEST_CASE("cab: the SM42's vigilance alarm on, not cleared by switching into the shunt mode") {
+	// the shunt mode switches the vigilance device off for the time to come: an alarm already on goes on to the
+	// emergency braking, until the driver acknowledges it (#275 review)
+	scenario scenario{"cab/sm42 vigilance alarm into shunt mode", motion() + brakes(), test::track{}};
+	scenario.train().add(sm42_vigilance(true), 1);
+	REQUIRE(scenario.start_up());
+	auto &sm42{scenario.cab()};
+	auto const &security{sm42.SecuritySystem};
+	scenario.get_going();
+	sm42.IncMainCtrl(1);
+	scenario.act("unattended");
+	// the alerter counts only on the move, which takes a while on the first notch
+	for (int i = 0; i < 300 && false == security.is_vigilance_blinking(); ++i) {
+		scenario.train().run(1.0, scenario.line());
+	}
+	REQUIRE(security.is_vigilance_blinking());
+	REQUIRE_FALSE(security.is_braking());
+	scenario.act("shunt mode on");
+	for (int i = 0; i < 20 && false == sm42.IsMainCtrlNoPowerPos(); ++i) {
+		sm42.DecMainCtrl(1);
+	}
+	REQUIRE(sm42.CurrentSwitch(true));
+	REQUIRE(sm42.ShuntMode);
+	scenario.train().run(15.0, scenario.line());
+	CHECK(security.is_vigilance_blinking());
+	CHECK(security.is_beeping());
+	CHECK(security.is_braking());
+	CHECK(sm42.PipePress < 1.0);
+	scenario.act("acknowledged");
+	sm42.SecuritySystemReset();
+	scenario.train().run(1.0, scenario.line());
+	CHECK_FALSE(security.is_blinking());
+	CHECK_FALSE(security.is_braking());
+	scenario.check();
+}
+
+namespace {
+
+TSecuritySystem sm42_security(bool const OffInShuntMode) {
+	TSecuritySystem security;
+	security.load(std::string{"Security: AwareSystem=Active AwareMinSpeed=0.0 AwareDelay=60 SoundSignalDelay=2.5 MaxHoldTime=1.0 "
+	                          "EmergencyBrakeDelay=2.5 AwareOffInShuntMode="} +
+	                  (OffInShuntMode ? "Yes" : "No"),
+	              90.0);
+	security.set_enabled(true);
+	security.update(0.1, 20.0, true, 1);
+	return security;
+}
+
+void run(TSecuritySystem &Security, double const Seconds) {
+	for (int i = 0; i < std::lround(Seconds / 0.1); ++i) {
+		Security.update(0.1, 20.0, true, 1);
+	}
+}
+
+} // namespace
+
+TEST_CASE("cab: the alerter in the shunt mode, with and without AwareOffInShuntMode") {
+	for (auto const off : {false, true}) {
+		CAPTURE(off);
+		auto security{sm42_security(off)};
+		security.set_shunt_mode(true);
+		run(security, 120.0);
+		// without the key the shunt mode changes nothing: the alerter alerts and brakes
+		CHECK(security.is_vigilance_blinking() != off);
+		CHECK(security.is_braking() != off);
+	}
+}
+
+TEST_CASE("cab: the alerter's alarm on, not cleared by the shunt mode") {
+	auto security{sm42_security(true)};
+	run(security, 61.0);
+	REQUIRE(security.is_vigilance_blinking());
+	REQUIRE_FALSE(security.is_braking());
+	security.set_shunt_mode(true);
+	run(security, 10.0);
+	CHECK(security.is_vigilance_blinking());
+	CHECK(security.is_beeping());
+	CHECK(security.is_braking());
+	security.acknowledge_press();
+	security.acknowledge_release();
+	run(security, 0.1);
+	CHECK_FALSE(security.is_blinking());
+	CHECK_FALSE(security.is_braking());
+	// then nothing more on the move in the shunt mode
+	run(security, 300.0);
+	CHECK_FALSE(security.is_blinking());
+	// and back in the line mode the alerter counts again
+	security.set_shunt_mode(false);
+	run(security, 61.0);
+	CHECK(security.is_vigilance_blinking());
+}
+
+TEST_CASE("cab: the vigilance button held too long, its alarm not cleared by the shunt mode") {
+	// the alarm of the button held too long stays on in the shunt mode too, until the button is let go
+	TSecuritySystem security;
+	security.load("Security: AwareSystem=Active AwareMinSpeed=0.0 AwareDelay=60 SoundSignalDelay=2.5 MaxHoldTime=1.0 "
+	              "EmergencyBrakeDelay=2.5 AwareOffInShuntMode=Yes",
+	              90.0);
+	security.set_enabled(true);
+	security.update(0.1, 20.0, true, 1);
+	security.acknowledge_press();
+	for (int i = 0; i < 20; ++i) {
+		security.update(0.1, 20.0, true, 1);
+	}
+	REQUIRE(security.is_vigilance_blinking());
+	security.set_shunt_mode(true);
+	for (int i = 0; i < 60; ++i) {
+		security.update(0.1, 20.0, true, 1);
+	}
+	CHECK(security.is_vigilance_blinking());
+	CHECK(security.is_braking());
+	security.acknowledge_release();
+	security.update(0.1, 20.0, true, 1);
+	CHECK_FALSE(security.is_blinking());
+	CHECK_FALSE(security.is_braking());
+	// held again in the shunt mode, no new alarm
+	security.acknowledge_press();
+	for (int i = 0; i < 100; ++i) {
+		security.update(0.1, 20.0, true, 1);
+	}
+	CHECK_FALSE(security.is_blinking());
+	security.acknowledge_release();
+	// out of the shunt mode, held too long again
+	security.set_shunt_mode(false);
+	security.acknowledge_press();
+	for (int i = 0; i < 20; ++i) {
+		security.update(0.1, 20.0, true, 1);
+	}
+	CHECK(security.is_vigilance_blinking());
+}

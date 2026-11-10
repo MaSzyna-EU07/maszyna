@@ -1508,6 +1508,7 @@ ImGuiIO::ImGuiIO()
     ConfigWindowsCopyContentsWithCtrlC = false;
     ConfigScrollbarScrollByPage = true;
     ConfigMemoryCompactTimer = 60.0f;
+    ConfigTooltipsWrapWidth = 0.0f;
     ConfigDebugIsDebuggerPresent = false;
     ConfigDebugHighlightIdConflicts = true;
     ConfigDebugHighlightIdConflictsShowItemPicker = true;
@@ -12112,7 +12113,14 @@ void ImGui::SetTooltipV(const char* fmt, va_list args)
 {
     if (!BeginTooltipEx(ImGuiTooltipFlags_OverridePrevious, ImGuiWindowFlags_None))
         return;
+    // MaSzyna addition: see io.ConfigTooltipsWrapWidth
+    ImGuiContext& g = *GImGui;
+    const bool wrap = g.IO.ConfigTooltipsWrapWidth > 0.0f;
+    if (wrap)
+        PushTextWrapPos(GetCursorPosX() + g.IO.ConfigTooltipsWrapWidth);
     TextV(fmt, args);
+    if (wrap)
+        PopTextWrapPos();
     EndTooltip();
 }
 
@@ -16375,9 +16383,11 @@ static void ImGui::WindowSelectViewport(ImGuiWindow* window)
     }
 
     // Fallback: merge in default viewport if z-order matches, otherwise create a new viewport
+    // MaSzyna addition: with io.ConfigViewportsNoAutoDetach the tooltips and popups stay in the main viewport here too
     if (window->Viewport == NULL)
         if (!UpdateTryMergeWindowIntoHostViewport(window, main_viewport))
-            window->Viewport = WindowStaysInHostViewport(window, main_viewport) ? main_viewport : AddUpdateViewport(window, window->ID, window->Pos, window->Size, ImGuiViewportFlags_None);
+            window->Viewport = (WindowStaysInHostViewport(window, main_viewport) || (g.IO.ConfigViewportsNoAutoDetach && (flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip))))
+                ? main_viewport : AddUpdateViewport(window, window->ID, window->Pos, window->Size, ImGuiViewportFlags_None);
 
     // Mark window as allowed to protrude outside of its viewport and into the current monitor
     if (!lock_viewport)
@@ -16393,6 +16403,10 @@ static void ImGui::WindowSelectViewport(ImGuiWindow* window)
                 window->ViewportAllowPlatformMonitorExtend = FindPlatformMonitorForPos((use_mouse_ref && mouse_valid) ? mouse_ref : NavCalcPreferredRefPos());
             else
                 window->ViewportAllowPlatformMonitorExtend = window->Viewport->PlatformMonitor;
+            // MaSzyna addition: see io.ConfigViewportsNoAutoDetach. Over the main viewport they stay inside it: the late creation of a
+            // viewport in Begin() needs the extent of the monitor
+            if (g.IO.ConfigViewportsNoAutoDetach && window->Viewport == main_viewport)
+                window->ViewportAllowPlatformMonitorExtend = -1;
         }
         else if (window->Viewport && window != window->Viewport->Window && window->Viewport->Window && !(flags & ImGuiWindowFlags_ChildWindow) && window->DockNode == NULL)
         {

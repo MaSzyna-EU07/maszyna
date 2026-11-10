@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "utilities/motiontelemetry.h"
 #include <map>
+#include <optional>
 
 #ifdef WITH_UART
 #include "utilities/uart.h"
@@ -87,6 +88,20 @@ struct global_settings {
     std::string local_start_vehicle{ "EU07-424" };
     std::string editor_enter_vehicle; // vehicle placed in the editor, to be entered when the driving goes on
     bool editor_session{ false }; // scenery was opened for editing (-edit): loader keeps track of scenery layers and hands over to the editor
+    // integration test mode (--test, eu07/maszyna#541); the limits can be set in the scenery's config block (test.*)
+    struct test_settings {
+        bool enabled{ false };
+        double timeout{ 3600.0 }; // [s] of simulation time; no result by then fails the test
+        double standstill{ 300.0 }; // [s] the tested trains standing still this long ends the test; 0 = never
+        bool pass_on_standstill{ false }; // the standstill end passes the test instead of failing it
+        bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
+        bool no_movement_before_pass{ true }; // a pass waits until the tested trains stand still; with false it ends the test at once
+        std::vector<std::string> vehicles; // test.vehicle: the trains under test are the consists of these; none = every vehicle
+        bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
+        std::optional<double> wall_timeout; // [s] of real time since the start; none = test.timeout + time for the loading, 0 = no limit
+        bool wall_timeout_from_command_line{ false }; // --test-wall-timeout given, the scenery doesn't override it
+    };
+    test_settings test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
@@ -306,6 +321,7 @@ struct global_settings {
     bool captureonstart = true;
 	bool render_cab = true;
 	bool crash_damage = true;
+	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
@@ -326,6 +342,11 @@ struct global_settings {
 	bool python_sharectx = true;
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
+	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
+	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
+	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
+	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
+	bool screens_gpupost{true}; // the post-processing of the script screens (image:led_post, image:resize) on the gpu, when the renderer can
 
     bool gfx_skiprendering = false;
     // the size of the image the scene of the main window is drawn to: -1 until the renderer works it out from the window and
@@ -670,9 +691,11 @@ struct global_settings {
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);
 	bool ConfigParseUI(cParser& Parser, const std::string& token);
 	bool ConfigParsePython(cParser& Parser, const std::string& token);
+	bool ConfigParseScriptScreens(cParser& Parser, std::string_view token);
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
+	bool ConfigParseTest(cParser& Parser, std::string_view Token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
 	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.whitebalance*, gfx.postfx.ao*)
 	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );

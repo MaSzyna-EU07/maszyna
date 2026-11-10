@@ -201,6 +201,7 @@ class TNESt3 : public TBrake {
     void CheckState(double const BCP, double &dV1); // glowny przyrzad rozrzadczy
     void CheckReleaser(double const dt); // odluzniacz
     double CVs(double const BP) const; // napelniacz sterujacego
+    void ScaleNozzlesForAL2(); // dysze cylindra przy przekladniku AL2
     double BVs(double const BCP) const; // napelniacz pomocniczego
     void SetSize( int const size, std::string const &params ); // ustawianie dysz (rozmiaru ZR), przekladniki
     void PLC(double const mass) override; // wspolczynnik cisnienia przystawki wazacej

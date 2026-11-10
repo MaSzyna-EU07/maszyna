@@ -21,6 +21,7 @@ public:
     {}
 
     void update() override;
+    void render_contents() override;
 
 private:
 // members

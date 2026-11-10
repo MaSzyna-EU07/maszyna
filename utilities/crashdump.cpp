@@ -404,7 +404,9 @@ void write_report()
 		std::swprintf(message, std::size(message), L"The simulator has crashed.\n\nIts memory dump could not be written (error %lu), the description of the crash is in:\n%ls_info.txt",
 		              static_cast<unsigned long>(data.error), base);
 	}
-	::MessageBoxW(nullptr, message, L"MaSzyna", MB_ICONERROR | MB_OK | MB_TOPMOST | MB_SETFOREGROUND);
+	// in test mode nobody is there to close the box, and the run would wait for it until killed
+	if (false == Global.test.enabled)
+		::MessageBoxW(nullptr, message, L"MaSzyna", MB_ICONERROR | MB_OK | MB_TOPMOST | MB_SETFOREGROUND);
 	::SetEvent(report_done);
 }
 

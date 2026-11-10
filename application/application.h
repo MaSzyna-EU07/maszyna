@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/applicationmode.h"
 #include "scripting/PyInt.h"
+#include "scripting/scriptscreens.h"
 #include "network/manager.h"
 #include "utilities/headtrack.h"
 #ifdef WITH_UART
@@ -51,6 +52,10 @@ public:
     // frees the python gil and swaps out the main thread
     void
         release_python_lock();
+    // the screens drawn by scripts (Lua, WebAssembly)
+    script_screen_queue &
+        screens() {
+            return m_screenqueue; }
     void
         exit();
     void
@@ -129,6 +134,7 @@ private:
     modeptr_array m_modes { nullptr }; // collection of available application behaviour modes
     mode_stack m_modestack; // current behaviour mode
     python_taskqueue m_taskqueue;
+    script_screen_queue m_screenqueue;
     std::vector<GLFWwindow *> m_windows;
     gfx_backend_desc const *m_gfxbackend { nullptr }; // owned by gfx_renderer_factory
 

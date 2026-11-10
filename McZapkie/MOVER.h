@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 //---------------------------------------------------------------------------
 // Q: 20160805 - odlaczenie pliku fizyki .pas od kompilacji
+#include <array>
 #include <map>
+#include <optional>
 #include "hamulce.h"
 #include "scripting/ladderlogic.h"
 
@@ -263,6 +265,22 @@ enum class range_t
 	/// <summary>Affects the entire consist.</summary>
 	consist
 };
+/// <summary>State of the door closure signalling (SOD) of a vehicle or a consist, ordered from the least to the most
+/// severe: the state of a consist is the most severe state of its vehicles.</summary>
+enum class door_closure_t
+{
+	/// <summary>No doors worked by the crew: the vehicle doesn't take part in the signalling.</summary>
+	none,
+	/// <summary>All doors closed and locked: they can't be opened.</summary>
+	locked,
+	/// <summary>All doors closed, but released: a permit is given, or no lock holds them shut.</summary>
+	released,
+	/// <summary>A door is open, or not fully closed yet.</summary>
+	open
+};
+/// <summary>Whether the door closure signalling lamp is lit: steadily for locked doors, in the lit phase of the
+/// blinking for released ones, never with a door open or with no doors signalled.</summary>
+bool door_closure_lamp(door_closure_t const State, bool const BlinkLit);
 /// <summary>Possible settings for an enable/disable input pair (mutually exclusive).</summary>
 enum class operation_t
 {
@@ -324,6 +342,21 @@ enum light
 	highbeamlight_left = 1 << 9,
 	/// <summary>High-beam headlight, right.</summary>
 	highbeamlight_right = 1 << 10
+};
+
+/// <summary>The cab interior light a position of the light preset selector sets (eu07/maszyna#529).</summary>
+struct lights_preset_cablight
+{
+	/// <summary>Bits of the optional third column of a LightsList row.</summary>
+	enum flag
+	{
+		/// <summary>The cab light is on.</summary>
+		light_on = 1 << 0,
+		/// <summary>The cab light is dimmed.</summary>
+		light_dimmed = 1 << 1
+	};
+	bool light{false};
+	bool dim{false};
 };
 
 /// <summary>Door operation method (who controls them and how) — mutually exclusive.</summary>
@@ -1133,6 +1166,7 @@ class TSecuritySystem
 	bool is_sifa = false; // Sifa-like pedal device, with inverted input for convenient keyboard usage
 	bool separate_acknowledge = false; // cabsignal reset button is separate from vigilance
 	bool cabsignal_lock = false;
+	bool vigilance_suspended = false; // the vigilance device switched off by the shunt mode of the vehicle, see AwareOffInShuntMode
 
 	double vigilance_timer = 0.0;
 	double alert_timer = 0.0;
@@ -1148,6 +1182,7 @@ class TSecuritySystem
 	double EmergencyBrakeDelay = 5.0;
 	double MaxHoldTime = 1.5;
 	bool CabDependent = false;
+	bool AwareOffInShuntMode = false; // the shunt mode of the vehicle switches the vigilance device off, as on the SM42
 
   public:
 	void set_enabled(bool e);
@@ -1157,6 +1192,7 @@ class TSecuritySystem
 	void update(double dt, double Vel, bool pwr, int cab);
 	void set_cabsignal();
 	void set_cabsignal_lock(bool);
+	void set_shunt_mode(bool State);
 	bool is_blinking() const;
 	bool is_vigilance_blinking() const;
 	bool is_cabsignal_blinking() const;
@@ -1441,6 +1477,7 @@ class TMoverParameters
 		float auto_velocity{-1.f}; // automatic door closure velocity threshold
 		bool auto_include_remote{false}; // automatic door closure applies also to remote control
 		bool permit_needed{false};
+		bool closure_signal{false}; // the door closure lamp (SOD) of the cab signals the doors of the whole consist in three states
 		std::vector<int> permit_presets; // permit presets selectable with preset switch
 		float voltage{0.f}; // power type required for door movement
 		// ld inputs
@@ -1592,6 +1629,9 @@ class TMoverParameters
 	double EpForce = 0.0; /*Poziom zadanej sily EP*/
 	bool Signalling = false; /*Czy jest zalaczona sygnalizacja hamowania ostatniego wagonu*/
 	bool Radio = false; /*Czy jest zalaczony radiotelefon*/
+	// the cut-off in the radio's power supply: a fuse in the cabinet, a lever on the desk or the switch on the radio's power
+	// supply (eu07/maszyna#438). Closed unless the driver opens it, so vehicles without such a switch work as before
+	bool RadioFuse = true;
 	float NominalBatteryVoltage = 0.f; /*Winger - baterie w elektrykach*/
 	TDimension Dim; /*wymiary*/
 	double Cx = 0.0; /*wsp. op. aerodyn.*/
@@ -1705,6 +1745,13 @@ class TMoverParameters
 	int LightsDefPos = 1;
 	bool LightsWrap = false;
 	int Lights[2][18]; // pozycje świateł, przód - tył, 1 .. 16 (17 do lightsset)
+	// the cab interior light each light preset sets, from the optional third column of LightsList (bits of
+	// lights_preset_cablight::flag); -1: the preset leaves the cab light as it is (eu07/maszyna#529)
+	std::array<int, 18> LightsCabLight{[] {
+		std::array<int, 18> positions;
+		positions.fill(-1);
+		return positions;
+	}()};
 	int ScndInMain{0}; /*zaleznosc bocznika od nastawnika*/
 	bool MBrake = false; /*Czy jest hamulec reczny*/
 	double maxTachoSpeed = {0.0}; // maksymalna predkosc na tarczce predkosciomierza analogowego
@@ -1729,6 +1776,10 @@ class TMoverParameters
 	bool UniCtrlIntegratedBrakeCtrl = false; /*zintegrowany nastawnik JH obsluguje hamowanie*/
 	bool UniCtrlIntegratedLocalBrakeCtrl = false; /*zintegrowany nastawnik JH obsluguje hamowanie hamulcem pomocniczym*/
 	int UniCtrlNoPowerPos{0}; // cached highesr position not generating traction force
+	// UCList CtrlValStep: the universal controller (EIMCtrlType 3) changes its setting in steps of this size (e.g. 0.05 for the
+	// 5% steps of the 6Dg), one at once when moved to a raising or lowering position, then one each time its SpeedUp / SpeedDown
+	// covers a step; 0 (the default) changes it continuously
+	double UniCtrlValStep{0.0};
 	std::pair<std::string, std::array<int, 2>> PantsPreset{"0132", {0, 0}}; // pantograph preset switches; .first holds possible setups as chars, .second holds currently selected preset in each cab
 
 	/*-sekcja parametrow dla lokomotywy elektrycznej*/
@@ -1945,6 +1996,7 @@ class TMoverParameters
 	double MirrorVelClose{5.0};
 	bool MirrorForbidden{false}; /*czy jest pozwolenie na otworzenie lusterek (przycisk)*/
 	bool ScndS = false; /*Czy jest bocznikowanie na szeregowej*/
+	bool ScndCtrlResistiveLock{false}; // the shunt controller can't be moved, up or down, while the master controller is at zero or on a resistive position, and drops to 0 when the master controller gets there (ScndCtrlResistiveLock=Yes in Cntrl.)
 	bool SpeedCtrl = false; /*czy jest tempomat*/
 	speed_control SpeedCtrlUnit; /*parametry tempomatu*/
 	double SpeedCtrlButtons[10]{30, 40, 50, 60, 70, 80, 90, 100, 110, 120}; /*przyciski prędkości*/
@@ -2095,6 +2147,9 @@ class TMoverParameters
 	double MainsInitTime{0.0}; // config, initialization time (in seconds) of the main circuit after it receives power, before it can be closed
 	double MainsInitTimeCountdown{0.0}; // current state of main circuit initialization, remaining time (in seconds) until it's ready
 	start_t MainsStart{start_t::manual};
+	// config, Engine:JointEngineStart. whether the cab's line breaker / engine start switch works the vehicles in multiple
+	// too; when it doesn't, the cab has separate switches for them (mainb_*, mainc_*)
+	bool JointEngineStart{true};
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
@@ -2173,6 +2228,10 @@ class TMoverParameters
 	bool dizel_startup{false}; // engine startup procedure request indicator
 	bool dizel_ignition{false}; // engine ignition request indicator
 	bool dizel_spinup{false}; // engine spin up to idle speed flag
+	// the starter turns the engine a while before it fires: smoke comes out only after SmokeDelay (the Engine section of the vehicle's
+	// .fiz, seconds from the start of the spin up) has passed. 0, the default, lets it out as soon as the starter turns, as before eu07/maszyna#523
+	double dizel_SmokeDelay{0.0};
+	double dizel_FiringCountdown{0.0}; // seconds left until the engine being started fires, 0 once it runs on its own
 	double dizel_engagedeltaomega = 0.0; /*roznica predkosci katowych tarcz sprzegla*/
 	double dizel_n_old = 0.0; /*poredkosc na potrzeby obliczen sprzegiel*/
 	double dizel_Torque = 0.0; /*aktualny moment obrotowy silnika spalinowego*/
@@ -2201,12 +2260,14 @@ class TMoverParameters
 	double eimic = 0; /*aktualna pozycja zintegrowanego sterowania jazda i hamowaniem*/
 	double eimic_analog = 0; /*pozycja zadajnika analogowa*/
 	double eimic_real = 0; /*faktycznie uzywana pozycja zintegrowanego sterowania jazda i hamowaniem*/
+	double eimic_step_progress{0.0}; // the part of the next UniCtrlValStep the controller has covered so far
 	double eim_localbrake = 0; /*nastawa hamowania dodatkowego pneumatycznego lokomotywy*/
 	int EIMCtrlType = 0; /*rodzaj wariantu zadajnika jazdy*/
 	bool SpeedCtrlTypeTime = false; /*czy tempomat sterowany czasowo*/
 	int SpeedCtrlAutoTurnOffFlag = 0; /*czy tempomat sam się wyłącza*/
 	bool EIMCtrlAdditionalZeros = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlEmergency = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
+	bool EIMCtrlMainEmergency = false; /*czy zadajnik typu 2 (Elf) ma pozycje hamowania naglego ponizej swojej pozycji 0*/
 	double eimv_pr = 0; /*realizowany procent dostepnej sily rozruchu/hamowania*/
 	double eimv[21];
 	static std::vector<std::string> const eimv_labels;
@@ -2288,6 +2349,14 @@ class TMoverParameters
 	// bool modernContainOffPos{true};
 	bool enableModernDimmer{false};
 	bool modernDimmerCanCycle{false};
+	// the given dimmer position brought into the DimmerList, to its first or last entry; 0 for an empty list
+	int clampDimmerPosition(int Position) const;
+	// the entry of the current dimmer position, or a plain one (not off, not dimmed, no high beam) when the
+	// position is outside the DimmerList: the .fiz can give a short or an empty list, or a DefaultPos past its end
+	dimPosition currentDimPosition() const;
+	// moves the dimmer by Step positions within the DimmerList, around to its other end when it can cycle;
+	// a position outside the list is brought into it first. false when the dimmer doesn't move
+	bool stepDimmerPosition(int Step);
 
 	// Barwa reflektora
 	int refR{255}; // Czerwony
@@ -2302,6 +2371,9 @@ class TMoverParameters
 	plc::basic_controller m_plc;
 
 	int AIHintPantstate{0}; // suggested pantograph setup
+	// suggested pantograph setup in shunting (AI: ShuntPantstate=, eu07/maszyna#461), the bits as in Pantstate: 1 front,
+	// 2 rear, 3 both; 0 (the default) shunts with the pantographs handled as in train mode
+	int AIHintShuntPantstate{0};
 	bool AIHintPantUpIfIdle{true}; // whether raise both pantographs if idling for a while
 	double AIHintLocalBrakeAccFactor{1.05}; // suggested acceleration weight for local brake operation
 
@@ -2386,10 +2458,24 @@ class TMoverParameters
 	int MainCtrlNoPowerPos() const; // highest setting of master controller which won't cause engine to generate extra power
 	int MainCtrlActualPowerPos() const; // current actual setting of master controller, relative to the highest setting not generating extra power
 	int MainCtrlPowerPos() const; // current setting of master controller, relative to the highest setting not generating extra power
+	// positions the master controller of the EIMCtrlType 2 (Elf) has below its own position 0, the emergency brake (0 or 1)
+	int EIMCtrlEmergencyPositions() const;
+	// whether the master controller is in its emergency brake position (EIMCtrlType 2 with EIMCtrlMainEmergency)
+	bool IsMainCtrlEmergencyPos() const;
+	// the master controller position sent to the coupled vehicles ("MainCtrl"), the same with and without
+	// EIMCtrlMainEmergency: the Elf's positions without the emergency brake one, which goes as the full braking
+	int MainCtrlPosForCoupled() const;
+	// the master controller position of this vehicle for one received from a coupled vehicle ("MainCtrl")
+	int MainCtrlPosFromCoupled(int Position) const;
 	/*! pomocniczy nastawnik:*/
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);
 	int GetVirtualScndPos() const;
+	// whether ScndCtrlResistiveLock keeps the shunt controller from being moved at the current master controller position
+	bool IsScndCtrlLockedByMainCtrl() const;
+	// ScndCtrlResistiveLock: the shunt controller drops to 0 once the master controller is at zero or on a resistive position, so it
+	// can't stay engaged there, locked in place (eu07/maszyna#402)
+	void ScndCtrlResistiveLockCheck();
 	bool IsScndCtrlNoPowerPos() const;
 	bool IsScndCtrlMaxPowerPos() const;
 
@@ -2431,6 +2517,8 @@ class TMoverParameters
 	bool BrakeReleaser(int state);
 	bool UniversalBrakeButton(int button, int state); /*uniwersalny przycisk hamulca*/
 	bool SwitchEPBrake(int state);
+	// whether the EP brake control of the cab has power: battery, the reverser out of neutral and the EP fuse on
+	bool EPBrakeControlPowered() const;
 	bool AntiSlippingButton(void); /*! reczny wlacznik urzadzen antyposlizgowych*/
 
 	/*funkcje dla ukladow pneumatycznych*/
@@ -2471,6 +2559,14 @@ class TMoverParameters
 	// whether the automatic couplers at the End of this vehicle and the OtherEnd of the other one can catch each other on
 	// contact, rather than the vehicles colliding (with crash damage enabled, only at a closing speed which doesn't derail them)
 	bool AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// whether the control coupling (multiple-unit control) can join the End of this vehicle and the OtherEnd of the other
+	// one: not between an electric and a diesel traction vehicle, unless both couplers name the same control system
+	// (ControlType). Vehicles without own traction (cars, control trailers) take any. Global.control_coupling_engine_check
+	// off allows it always (eu07/maszyna#520)
+	bool ControlCouplingAllowed(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// the CouplingType to join the End of this vehicle and the OtherEnd of the other one with, without the control coupling
+	// when ControlCouplingAllowed() rules it out. a permanent coupling (of the vehicles of one unit) is kept whole
+	int CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, int const CouplingType) const;
 	// the horns of the Signal (WarningSignal bits) which have the air or the voltage they need to sound
 	int SoundingHorns(int const Signal) const;
 	// whether the signal lamps of the main circuit (line contactors, ground relay, motor overload relays) can light:
@@ -2490,6 +2586,12 @@ class TMoverParameters
 		}
 		return false == StLinFlag && MainCircuitLampsEnabled();
 	}
+	// the vehicles the line breaker / engine start switch of this vehicle works, and its engine stopping on its own
+	// stops: the whole consist, or with JointEngineStart=No this vehicle alone (eu07/maszyna#80)
+	range_t MainSwitchRange() const
+	{
+		return JointEngineStart ? range_t::consist : range_t::local;
+	}
 	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
 	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
 	// starts on its own (eu07/maszyna#427). the other vehicles with such a button keep ignoring the command
@@ -2504,10 +2606,10 @@ class TMoverParameters
 		auto const oilmanual{OilPump.start_type != start_t::automatic};
 		return (fuelmanual || oilmanual) && (false == fuelmanual || FuelPump.is_enabled) && (false == oilmanual || OilPump.is_enabled);
 	}
-	// whether the radio is switched on and has the low voltage to work
+	// whether the radio is switched on, its power supply isn't cut off and it has the low voltage to work
 	bool RadioPowered() const
 	{
-		return Radio && (Power24vIsAvailable || Power110vIsAvailable);
+		return Radio && RadioFuse && (Power24vIsAvailable || Power110vIsAvailable);
 	}
 	/*obrot kol uwzgledniajacy poslizg*/
 	double ComputeRotatingWheel(double WForce, double dt, double n) const;
@@ -2611,6 +2713,10 @@ class TMoverParameters
 	bool LockDoors(bool const State, range_t const Notify = range_t::consist);
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
+	door_closure_t door_closure() const; // state of the door closure signalling of this vehicle
+	// whether the door closure lamp in the cab of this vehicle is lit: with DoorClosureSignal, for the given state of the
+	// consist; without it, for the lock of the vehicle's own doors, as the lamp always worked
+	bool door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const;
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);
@@ -2620,6 +2726,8 @@ class TMoverParameters
 	bool LoadFIZ_Text(std::string const &Text); // the same, from text in the .fiz format
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
 	std::string EngineDescription(int what) const;
+	// the cab interior light the light preset at given position (1-based, as LightsPos) sets, if it sets one
+	std::optional<lights_preset_cablight> LightsPresetCabLight(int Position) const;
 
   private:
 	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above

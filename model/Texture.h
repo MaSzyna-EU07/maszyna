@@ -126,6 +126,9 @@ public:
     void prefetch( glm::dvec3 const *Origin = nullptr );
     // the data is read from the file when it's needed and not kept after the upload (gfx.textures.streaming)
     bool streamed() const;
+    // with gfx.resource.move, copies the gl texture back into the data before it's released. requires the texture bound
+    bool read_back_compressed();
+    void read_back_uncompressed();
 
 // members
     std::shared_ptr<texture_request> request; // data being read by a worker thread

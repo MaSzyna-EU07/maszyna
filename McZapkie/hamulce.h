@@ -628,6 +628,15 @@ class TESt : public TBrake
 	/// <param name="BCP">Brake cylinder pressure.</param>
 	/// <returns>Dimensionless opening coefficient.</returns>
 	double BVs(double BCP) const; // napelniacz pomocniczego
+	/// <summary>
+	/// Refills the auxiliary reservoir (ZP) from the valve pre-chamber through the
+	/// check valve of the slide valve, opened as far as <see cref="BVs"/> says, while
+	/// the pre-chamber is above the reservoir. The flows wait for the caller's Act().
+	/// </summary>
+	/// <param name="BCP">Brake cylinder (or impulse-chamber) pressure for <see cref="BVs"/>.</param>
+	/// <param name="dt">Time step [s].</param>
+	/// <returns>Volume taken into the auxiliary reservoir, 0.96 of it drawn from the brake pipe.</returns>
+	double FillBrakeRes(double BCP, double dt) const; // napelnianie pomocniczego z rozdzielacza
 	/// <summary>Vents the valve, brake and control reservoirs to zero.</summary>
 	void ForceEmptiness() override; // wymuszenie bycia pustym
 

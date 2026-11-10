@@ -91,7 +91,7 @@
 
 #if defined(__aarch64__) || defined(__arm64__)
 #define GLM_FORCE_NEON
-#else
+#elif defined(__AVX2__) // set by /arch:AVX2 or -mavx2 (ENABLE_AVX2); without it GLM falls back to SSE2
 #define GLM_FORCE_AVX2
 #endif
 #define GLM_FORCE_SWIZZLE

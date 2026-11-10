@@ -151,6 +151,9 @@ enum class user_command
 	radiovolumeincrease,
 	radiovolumedecrease,
 	radiovolumeset,
+	radiofusetoggle,
+	radiofuseenable,
+	radiofusedisable,
 	cabchangeforward,
 	cabchangebackward,
 
@@ -411,6 +414,12 @@ enum class user_command
 	fmradiotunedecrease,
 	fmradiotuneset,
 	oilfuelpumptoggle,
+	linebreakertoggleb,
+	linebreakeropenb,
+	linebreakercloseb,
+	linebreakertogglec,
+	linebreakeropenc,
+	linebreakerclosec,
 	none = -1
 };
 

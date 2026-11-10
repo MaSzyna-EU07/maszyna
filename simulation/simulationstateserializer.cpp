@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationsounds.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
 #include "scene/sceneterrain.h"
@@ -385,6 +386,10 @@ state_serializer::deserialize_config( cParser &Input, scene::scratch_data &Scrat
 
     // config parameters (re)definition
     Global.ConfigParse( Input );
+    if( Global.test.enabled ) {
+        // a scenery doesn't get to turn on what a test keeps off
+        simulation::apply_test_mode_settings();
+    }
 }
 
 void

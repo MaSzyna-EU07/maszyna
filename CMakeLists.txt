@@ -76,6 +76,7 @@ option(WITH_DLSS "Compile the Vulkan renderer with NVIDIA DLSS (gfx.antialiasing
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
+option(WITH_WASM "WebAssembly script screens (wasmscreen:, wasmdestinationsign:), run by the WAMR interpreter in ref/wamr" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
 option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
@@ -198,6 +199,7 @@ set(SOURCES
 "world/station.cpp"
 "application/application.cpp"
 "simulation/simulationtime.cpp"
+"simulation/simulationtest.cpp"
 "scene/sceneeditor.cpp"
 "rendering/screenshot.cpp"
 "input/driverkeyboardinput.cpp"
@@ -423,6 +425,16 @@ endif()
 if (WITH_LUA)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_LUA")
 	set(SOURCES ${SOURCES} "scripting/lua.cpp")
+endif()
+
+# the script screens (scripting/scriptscreens.cpp), with the Lua and the WebAssembly runtime when they're built
+set(SOURCES ${SOURCES} "scripting/scriptscreens.cpp")
+if (WITH_LUA)
+	set(SOURCES ${SOURCES} "scripting/luaprogram.cpp")
+endif()
+if (WITH_WASM)
+	set(DEFINITIONS ${DEFINITIONS} "WITH_WASM")
+	set(SOURCES ${SOURCES} "scripting/wasmprogram.cpp")
 endif()
 
 if (WITHDUMPGEN)
@@ -678,7 +690,7 @@ endif()
 add_library(eu07_settings INTERFACE)
 
 # the parts of the simulation the game shares with the unit tests: the vehicle physics, the vehicle
-# definition parser and the helpers they use. built once, and tested as the game uses them
+# definition parser, the helpers they use and the rules of the test mode. built once, and tested as the game uses them
 set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
@@ -687,8 +699,14 @@ set(CORE_SOURCES
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
+"scripting/scriptscreenrules.cpp"
+"scripting/scriptscreenkernels.cpp"
+"scripting/scriptscreendrawing.cpp"
+"simulation/simulationtestrules.cpp"
+"vehicle/enginestart.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
+"vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
@@ -931,6 +949,11 @@ if (MSVC AND BUNDLE_VC_RUNTIME)
 		message(WARNING "BUNDLE_VC_RUNTIME: the Visual C++ runtime libraries were not found, they are not copied")
 	endif()
 endif()
+
+if (WITH_WASM)
+	add_subdirectory("CMake_modules/wamr" "${CMAKE_CURRENT_BINARY_DIR}/wamr")
+	target_link_libraries(${PROJECT_NAME} eu07_wamr)
+endif ()
 
 # yaml-cpp, for the descriptions of scenery templates edited in the scenery editor and for the heightmap terrain
 add_subdirectory("ref/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)

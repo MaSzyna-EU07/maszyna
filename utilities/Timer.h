@@ -25,6 +25,9 @@ double GetDeltaRenderTime();
 
 void set_delta_override(double v);
 
+// every frame advances the clocks by this many seconds, whatever the real time; 0 = real time (test mode)
+void set_fixed_step(double v);
+
 void ResetTimers();
 
 void UpdateTimers(bool pause);
@@ -244,6 +247,7 @@ struct subsystem_stopwatches {
     stopwatch loop_renderer_update; // gfx_renderer::Update()
     stopwatch loop_terrain; // terrain streaming
     stopwatch loop_tasks; // task queue
+    stopwatch mainloop_period; // start to start, the wait for fpslimit included
 };
 
 extern subsystem_stopwatches subsystem;
