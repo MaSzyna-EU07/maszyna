@@ -126,9 +126,6 @@ public:
     void prefetch( glm::dvec3 const *Origin = nullptr );
     // the data is read from the file when it's needed and not kept after the upload (gfx.textures.streaming)
     bool streamed() const;
-    // with gfx.resource.move, copies the gl texture back into the data before it's released. requires the texture bound
-    bool read_back_compressed();
-    void read_back_uncompressed();
 
 // members
     std::shared_ptr<texture_request> request; // data being read by a worker thread
@@ -178,6 +175,9 @@ struct opengl_texture : public texture_source {
         alloc_rendertarget( GLint format, GLint components, int width, int height, int layers = 1, int samples = 1, GLint wrap = GL_CLAMP_TO_EDGE );
     static void
         reset_unit_cache();
+    // with gfx.resource.move, copies the gl texture back into the data before it's released. requires the texture bound
+    bool read_back_compressed();
+    void read_back_uncompressed();
     virtual
     size_t
         get_id() const override {
