@@ -3386,15 +3386,9 @@ void editor_mode::render_signal_ui()
 					if (ImGui::IsItemHovered())
 						ImGui::SetTooltip("%s", STR_C("How the drawn plates look: plain is clean and bright, toned greyish and a little dusty, aged darker and dusty. The look is kept with the plate, a rename doesn't change it"));
 					field_row("Speed index");
-					if (ImGui::InputText("##signalplateindex", tool.plate_index, sizeof(tool.plate_index), ImGuiInputTextFlags_CharsDecimal))
-					{
-						// digits only: the field takes signs and dots too
-						std::string digits;
-						for (char const *letter{tool.plate_index}; *letter != '\0'; ++letter)
-							if (std::isdigit(static_cast<unsigned char>(*letter)))
-								digits += *letter;
-						std::snprintf(tool.plate_index, sizeof(tool.plate_index), "%s", digits.c_str());
-					}
+					// digits only, kept out of the field as they are typed: the decimal one lets in signs and dots too
+					auto const digits = [](ImGuiInputTextCallbackData *Data) { return Data->EventChar >= '0' && Data->EventChar <= '9' ? 0 : 1; };
+					ImGui::InputText("##signalplateindex", tool.plate_index, sizeof(tool.plate_index), ImGuiInputTextFlags_CallbackCharFilter, digits);
 					if (ImGui::IsItemHovered())
 						ImGui::SetTooltip("%s", STR_C("The speed index after the name on the drawn plate: one digit, e.g. 4, or two drawn as a fraction, 12 for 1/2. Kept with the plate through a rename"));
 					field_row("Shunting (m)");
