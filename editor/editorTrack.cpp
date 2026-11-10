@@ -3863,6 +3863,38 @@ TTrack *editor_track::split_path(TTrack &Track, double const T, std::string cons
 				events(*created, index).push_back(event);
 		own.erase(std::remove_if(own.begin(), own.end(), [](auto const &Event) { return false == Event.first.empty(); }), own.end());
 	}
+	// a read the trains scan for (a passive event: a signal, a stop, a speed) in event1 or event2 goes to the piece by the point it
+	// is read at: a train measures the way to that point along a few paths only, so the read has to stay by it.
+	// one read far off the path, at the station building or nowhere, keeps the piece of its list; the trains don't scan the eventall lists
+	double constexpr reach{50.0};
+	auto const gap = [](TTrack const &Piece, glm::dvec3 const &Point) { return geometry::plan_distance(point_at(Piece, nearest_parameter(Piece, Point)), Point); };
+	auto const scanned = [](std::pair<std::string, basic_event *> const &Event) {
+		return false == Event.first.empty() && Event.second != nullptr && Event.second->m_passive && false == Event.second->m_ignored;
+	};
+	// the piece nearer to the point the event reads, when it reads one by the path: 0 the original, 1 the new one, -1 neither
+	auto const nearer = [&](std::pair<std::string, basic_event *> const &Event) {
+		if (false == scanned(Event))
+			return -1;
+		auto const point{Event.second->input_location()};
+		auto const first{gap(Track, point)};
+		auto const second{gap(*created, point)};
+		if (std::min(first, second) > reach)
+			return -1;
+		return second < first ? 1 : 0;
+	};
+	for (auto const index : {1, 2})
+	{
+		auto &own{events(Track, index)};
+		auto &theirs{events(*created, index)};
+		std::vector<std::pair<std::string, basic_event *>> kept;
+		std::vector<std::pair<std::string, basic_event *>> given;
+		for (auto const &event : own)
+			(nearer(event) == 1 ? given : kept).push_back(event);
+		for (auto const &event : theirs)
+			(nearer(event) == 0 ? kept : given).push_back(event);
+		own = std::move(kept);
+		theirs = std::move(given);
+	}
 	std::string missing;
 	bind_events(Track, missing);
 	bind_events(*created, missing);

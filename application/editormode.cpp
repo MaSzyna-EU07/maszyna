@@ -1528,6 +1528,9 @@ bool editor_mode::update()
     {
         m_include_gesture = false;
     }
+    // the gizmo let go of a signal while it wasn't drawn
+    if (false == m_gizmo_using)
+        signal_gizmo_end();
     // models replaced after changes of includes are destroyed once the renderer can't have them among its pick candidates
     for (auto &retired : m_retired)
     {
@@ -1621,7 +1624,7 @@ bool editor_mode::update()
         draw_switch_slide();
         if (m_track_tab == track_tab::turntable)
             draw_turntable_overlay();
-        if (m_track_tab == track_tab::srk)
+        if (m_track_tab == track_tab::signals)
         {
             signal_refresh();
             signal_move_update();
@@ -3389,14 +3392,28 @@ void editor_mode::apply_include()
         return;
     std::string read_before;
     std::string read_after;
-    if (false == m_include.info.signal_read.empty())
+    // a signal renamed: its indicators are named after it
+    std::string name_before;
+    glm::dvec3 standing{0.0};
+    // the signal templates known, though no signal tool looked for them yet
+    if (m_include.info.category == "signal")
+        signal_scan(true);
+    if (false == m_include.info.signal_read.empty() || signal_template_of(m_include.target) != nullptr)
     {
         std::string file;
         std::vector<std::string> previous;
         if (editor_includes::parse_directive(before, file, previous))
         {
-            read_before = editor_includes::substitute(m_include.info.signal_read, previous);
-            read_after = editor_includes::substitute(m_include.info.signal_read, m_include.values);
+            if (false == m_include.info.signal_read.empty())
+            {
+                read_before = editor_includes::substitute(m_include.info.signal_read, previous);
+                read_after = editor_includes::substitute(m_include.info.signal_read, m_include.values);
+            }
+            if (previous.size() >= 4 && false == m_include.values.empty() && previous.front() != m_include.values.front())
+            {
+                name_before = previous.front();
+                standing = scene::Layers.instance(m_instance).context.offset + glm::dvec3{std::strtod(previous[1].c_str(), nullptr), std::strtod(previous[2].c_str(), nullptr), std::strtod(previous[3].c_str(), nullptr)};
+            }
         }
     }
     if (false == m_include_gesture)
@@ -3415,6 +3432,12 @@ void editor_mode::apply_include()
     else if (read_before != read_after && false == m_history.empty())
         signal_renamed(read_before, read_after, m_history.back());
     set_include_directive(m_instance, directive);
+    if (false == name_before.empty() && false == m_history.empty())
+    {
+        std::vector<std::pair<scene::instance_handle, std::string>> carried;
+        signal_indicators_renamed(name_before, m_include.values.front(), standing, carried);
+        history_add_directives(m_history.back(), carried);
+    }
 }
 
 void editor_mode::place_include(std::string const &File, int const RotationMode, float const FixedRotation)
@@ -3666,6 +3689,11 @@ void editor_mode::capture_terrain()
 // other surface, so the point can hang over the ground by as much as the orthophoto is lifted, or lie on the flat sheet
 // the orthophoto makes where it's not fitted to the ground. what's put in the scenery is to stand on the ground itself
 glm::dvec3 editor_mode::placement_on_ground(glm::dvec3 Location)
+{
+    return ground_at(Location);
+}
+
+glm::dvec3 editor_mode::ground_at(glm::dvec3 Location) const
 {
     double constexpr reach = 2.0; // the ground is asked about this far around the point
     double constexpr slack = 0.5; // a surface this far over the point still is what the cursor landed on
@@ -5751,7 +5779,7 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	     tutorial_template_sketch},
 	    {"Signals and posts",
 	     nullptr,
-	     {{"I", "Turns Signalling on. Click a kind of signal in its Signals list; it shows the signals this scenery has"},
+	     {{"I", "Turns Signals on. Click a kind of signal in its list; it shows the signals this scenery has"},
 	      {"LMB", "Click beside a track: the signal stands on that side"},
 	      {"LMB + move", "Press beside the track and drag along it: the signal faces the trains going the way you dragged"},
 	      {"LMB + move", "Drag a signal that already stands: it slides along its track"},
@@ -5880,7 +5908,7 @@ char const *editor_mode::tutorial_of_tool()
 	case track_tab::route:
 	case track_tab::straights:
 		return undone({"Correcting a curve"});
-	case track_tab::srk:
+	case track_tab::signals:
 		return undone({"Signals and posts"});
 	default:
 		return "";
@@ -6048,7 +6076,7 @@ void editor_mode::render_tutorial_trial(tutorial_lesson const &Lesson)
 		button = {STR_C("The profile tool (P)"), track_tab::profile, track_tab::profile};
 		break;
 	case trial::signals:
-		button = {STR_C("The signalling tool (I)"), track_tab::srk, track_tab::srk};
+		button = {STR_C("The signals tool (I)"), track_tab::signals, track_tab::signals};
 		break;
 	case trial::plan:
 		button = {STR_C("The plan tool (G)"), track_tab::straights, track_tab::route};
@@ -6174,7 +6202,7 @@ void editor_mode::render_shortcuts_window()
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"H", "Throw the selected switch over to its other path, in the editor only"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
-	      {"I / B", "Signalling / objects along the track"},
+	      {"I / B", "Signals / objects along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
@@ -6299,7 +6327,7 @@ void editor_mode::render_gizmo_options()
         ImGui::SameLine();
         render_top_tracks_choice(true);
     }
-    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::srk &&
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab != track_tab::path && m_track_tab != track_tab::turnout && m_track_tab != track_tab::turntable && m_track_tab != track_tab::signals &&
         m_track_tab != track_tab::lineside)
         return;
     auto &enabled{ui()->mode() == nodebank_panel::TRACK ? m_track_gizmo_on : m_gizmo_enabled};
@@ -6532,11 +6560,16 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
     if (positions == 0)
         return; // nothing tells where the include is
 
-    // only the axes the template has parameters for can be manipulated
+    // only the axes the template has parameters for can be manipulated. a signal stands on the ground by its track: it is moved in
+    // the plan, at the height it has
+    // not waited for: a scan started again while a signal is selected would stop the editor for its whole length
+    if (m_include.info.category == "signal")
+        signal_scan(false);
+    auto const signal{signal_template_of(m_include.target) != nullptr};
     auto operation = 0;
     for (auto axis = 0; axis < 3; ++axis)
     {
-        if (m_gizmo_op == gizmo_operation::translate && position[axis] >= 0)
+        if (m_gizmo_op == gizmo_operation::translate && position[axis] >= 0 && false == (signal && axis == 1))
             operation |= (ImGuizmo::TRANSLATE_X << axis);
         else if (m_gizmo_op == gizmo_operation::rotate && rotation[axis] >= 0)
             operation |= (ImGuizmo::ROTATE_X << axis);
@@ -6561,14 +6594,18 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
 
     // in the signal tool a press on the mast drags the signal along its track: the gizmo, whose up axis runs along the
     // mast, gives way over a signal and while one is dragged
-    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::srk && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
+    auto const yield{ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::signals && false == ImGuizmo::IsUsing() && (m_signal.moving || m_signal.placing || signal_hit() >= 0)};
     ImGuizmo::Enable(false == yield);
     ImGuizmo::Manipulate(glm::value_ptr(View), glm::value_ptr(Projection), static_cast<ImGuizmo::OPERATION>(operation), mode, glm::value_ptr(matrix), nullptr, snap);
     ImGuizmo::Enable(true);
 
     if (false == ImGuizmo::IsUsing())
+    {
+        signal_gizmo_end();
         return;
+    }
     m_gizmo_using = true;
+    signal_gizmo_begin();
 
     float newtranslation[3], newrotation[3], newscale[3];
     ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), newtranslation, newrotation, newscale);
@@ -6598,6 +6635,7 @@ void editor_mode::render_include_gizmo(glm::mat4 const &View, glm::mat4 const &P
         }
     }
     apply_include();
+    signal_gizmo_step();
 }
 
 glm::mat4 editor_mode::projection_matrix(float const Aspect)
@@ -7278,7 +7316,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
                 cancel_track_tools();
                 m_straights.tool = 0;
             }
-            else if (m_track_tab == track_tab::srk && m_signal.armed)
+            else if (m_track_tab == track_tab::signals && m_signal.picking_read)
+                m_signal.picking_read = false;
+            else if (m_track_tab == track_tab::signals && m_signal.armed)
                 m_signal.armed = false;
             else if (m_track_tab == track_tab::path && m_track_set.size() >= 2)
                 select_tracks({});

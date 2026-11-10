@@ -57,10 +57,10 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		// signaltemplates [file=<template>]: the templates of the signals with what their descriptions give, the one named chosen
 		// for its kind in the palette, not placed
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::srk);
+		show_track_tab(track_tab::signals);
 		signal_scan(true);
 		auto &tool{m_signal};
-		static std::array<char const *, 7> constexpr kinds{"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
+		static std::array<char const *, 8> constexpr kinds{"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
 		for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 		{
 			auto const &item{tool.templates[k]};
@@ -104,7 +104,7 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 	{
 		// signalaspect name=<signal> aspect=<name>: the signal set to the aspect its description lists, in the editor
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::srk);
+		show_track_tab(track_tab::signals);
 		signal_scan(true);
 		signal_refresh(true);
 		auto const found{std::ranges::find_if(m_signal.standing, [&values](signal_standing const &Standing) { return Standing.name == values["name"]; })};
@@ -128,10 +128,12 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		WriteLog(std::string{"SELFTEST signalaspect "} + values["name"] + " " + values["aspect"] + (shown ? ": " : ": failed, ") + m_signal.status);
 		return selftest_result::handled;
 	}
-	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap")
+	if (command == "signal" || command == "signalmove" || command == "signaldelete" || command == "signalrename" || command == "signalprobe" || command == "signalflip" || command == "signalturn" || command == "signalselect" || command == "signalswap" ||
+	    command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault" || command == "signalindicator" ||
+	    command == "signalindicatordrop" || command == "signalgizmo" || command == "signalindicatorswap" || command == "signalacross")
 	{
 		auto values{selftest_values(words)};
-		show_track_tab(track_tab::srk);
+		show_track_tab(track_tab::signals);
 		signal_scan();
 		signal_refresh(true);
 		auto &tool{m_signal};
@@ -159,8 +161,8 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			for (int k = 0; k < static_cast<int>(tool.templates.size()); ++k)
 				if (&tool.templates[k] == item)
 				{
-					static char const *const kinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
-					for (int i = 0; i < 7; ++i)
+					static char const *const kinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater", "crossing"};
+					for (int i = 0; i < 8; ++i)
 						if (item->kind == kinds[i])
 						{
 							tool.kind = i;
@@ -173,11 +175,25 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				std::snprintf(tool.plate, sizeof(tool.plate), "%s", values["plate"].c_str());
 			auto const side{values["side"] == "left" ? -1 : 1};
 			auto const facing{values["facing"] == "along" ? 1 : values["facing"] == "against" ? -1 : 0};
+			// offset=<m>: from the axis, for this signal only
+			auto const kept{EditorSettings.signal_offset()};
+			if (values.count("offset"))
+				EditorSettings.signal_offset(std::stod(values["offset"]));
 			signal_spot spot;
-			if (false == spot_on(*signal_current(), facing, side, spot))
+			auto const found{spot_on(*signal_current(), facing, side, spot)};
+			EditorSettings.signal_offset(kept);
+			if (false == found)
 			{
 				WriteLog("SELFTEST signal: no such track " + values["track"]);
 				return selftest_result::handled;
+			}
+			// snap=1: to a round distance to the switch ahead, as placing it by hand does
+			if (values["snap"] == "1")
+			{
+				auto const before{signal_danger(spot)};
+				signal_snap(spot, *signal_current());
+				auto const after{signal_danger(spot)};
+				WriteLog(format("SELFTEST signal snap: %.2f m -> %.2f m to %s, on %s path %d", before.distance, after.distance, after.track != nullptr ? after.track->name().c_str() : "-", spot.track != nullptr ? spot.track->name().c_str() : "-", spot.path));
 			}
 			auto const placed{signal_place(spot, *signal_current())};
 			WriteLog(format("SELFTEST signal %s: %s", placed ? "placed" : "failed", tool.status.c_str()));
@@ -209,6 +225,10 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			signal_select(standing->include.instance);
 			tool.moving = true;
 			tool.moved_valid = signal_drop_at(*standing, *track, path, point, side, tool.moved);
+			// as a drag does: what it had by its own track carried
+			if (signal_spot home; tool.moved_valid && signal_standing_spot(*standing, home))
+				if (auto const *item{signal_template_of(standing->include.file)})
+					signal_carry(home, tool.moved, *item);
 			tool.pressed = {-1000.f, -1000.f};
 			signal_release();
 			WriteLog("SELFTEST signalmove: " + tool.status);
@@ -237,11 +257,133 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 			else
 				WriteLog("SELFTEST signalselect " + values["name"] + ": " + standing->include.file);
 		}
+		else if (command == "signalindicator" || command == "signalindicatordrop")
+		{
+			// signalindicator name=<signal> file=<indicator template>: the indicator put on it; signalindicatordrop name=<signal>
+			// index=<n>: its indicator removed, the highest one 0
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			bool done{false};
+			if (command == "signalindicator")
+			{
+				auto const *item{indicator_template_of(values["file"])};
+				if (item == nullptr)
+				{
+					WriteLog("SELFTEST signalindicator: no indicator template " + values["file"]);
+					return selftest_result::handled;
+				}
+				done = signal_indicator_add(*standing, *item);
+			}
+			else
+			{
+				auto const index{values.count("index") ? std::stoul(values["index"]) : 0ul};
+				done = index < standing->indicators.size() && signal_indicator_remove(standing->indicators[index].instance);
+			}
+			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
+		else if (command == "signalindicatorswap" || command == "signalacross")
+		{
+			// signalindicatorswap name=<signal> upper=<n> lower=<n>: two of its indicators under the lights swapped, the highest one 0;
+			// signalacross name=<signal> [offset=<m>] [height=<m>]: set from the axis of its track and raised so. Each logs the signal
+			// and its indicators from the top down after
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			auto const name{standing->name};
+			bool done{false};
+			if (command == "signalindicatorswap")
+				done = signal_indicators_swap(*standing, std::stoul(values["upper"]), std::stoul(values["lower"]));
+			else if (values.count("offset") > 0 || values.count("height") > 0)
+				done = signal_set_across(*standing, values.count("offset") ? std::optional<double>{std::stod(values["offset"])} : std::nullopt, values.count("height") ? std::optional<double>{std::stod(values["height"])} : std::nullopt);
+			WriteLog("SELFTEST " + command + " " + name + (done ? ": " : ": failed, ") + tool.status);
+			signal_refresh(true);
+			if (auto const *after{standing_named(name)})
+			{
+				signal_spot spot;
+				auto const *item{signal_template_of(after->include.file)};
+				if (signal_standing_spot(*after, spot) && item != nullptr)
+					WriteLog(format("SELFTEST %s %s: %.3f m from the axis, zero %.3f m over the rail heads, raised %.3f m, ground %.3f m over the rail heads, at %.2f %.2f %.2f, the trains it faces run %.3f %.3f", command.c_str(), name.c_str(), geometry::plan_distance(after->include.location, spot.axis), after->include.location.y - spot.axis.y - 0.18, after->include.location.y - signal_default_height(*item, spot.axis, after->include.location), ground_at({after->include.location.x, spot.axis.y + 0.18, after->include.location.z}).y - spot.axis.y - 0.18, after->include.location.x, after->include.location.y, after->include.location.z, spot.travel.x, spot.travel.y));
+				for (auto const &mark : after->indicators)
+					WriteLog(format("SELFTEST %s %s indicator %s at %.3f m over the foot, %.3f m aside", command.c_str(), name.c_str(), mark.file.c_str(), mark.location.y - after->include.location.y, geometry::plan_distance(mark.location, after->include.location)));
+			}
+		}
+		else if (command == "signalread" || command == "signalreadflip" || command == "signalreaddrop" || command == "signalreaddefault")
+		{
+			// signalread name=<signal> track=<path> [path=<n>] [add=1]: the path picked to read it, as a click (a Shift+click with add)
+			// while picking; signalreadflip and signalreaddrop name=<signal> index=<n>: a read of its list turned the other way or
+			// removed; signalreaddefault name=<signal>: the read where the editor puts it
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST " + command + ": no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			signal_select(standing->include.instance);
+			auto done{false};
+			if (command == "signalread")
+			{
+				auto *track{simulation::Paths.find(values["track"])};
+				tool.picking_read = true;
+				done = track != nullptr && signal_read_pick(*track, values.count("path") ? std::stoi(values["path"]) : 0, values["add"] == "1");
+			}
+			else if (command == "signalreaddefault")
+			{
+				signal_spot spot;
+				done = signal_standing_spot(*standing, spot) && spot.reader != nullptr && signal_read_set(*standing, {{spot.reader, spot.reader_list}});
+			}
+			else
+			{
+				auto reads{standing->reads};
+				auto const index{values.count("index") ? static_cast<std::size_t>(std::stoul(values["index"])) : std::size_t{0}};
+				if (index < reads.size())
+				{
+					if (command == "signalreaddrop")
+						reads.erase(reads.begin() + static_cast<std::ptrdiff_t>(index));
+					else
+						reads[index].second = reads[index].second % 3 == 2 ? reads[index].second - 1 : reads[index].second + 1;
+					done = signal_read_set(*standing, reads);
+				}
+			}
+			WriteLog("SELFTEST " + command + " " + values["name"] + (done ? ": " : ": failed, ") + tool.status);
+		}
 		else if (command == "signaldelete")
 		{
 			auto const *standing{standing_named(values["name"])};
 			auto const deleted{standing != nullptr && signal_delete(standing->include.instance)};
 			WriteLog(std::string{"SELFTEST signaldelete "} + values["name"] + (deleted ? ": removed with its event" : ": not removed by the signal tool"));
+		}
+		else if (command == "signalgizmo")
+		{
+			// signalgizmo name=<signal> turn=<degrees> x=<metres> z=<metres>: the signal turned and moved by the gizmo of its include
+			// as one drag, then let go
+			auto const *standing{standing_named(values["name"])};
+			if (standing == nullptr)
+			{
+				WriteLog("SELFTEST signalgizmo: no signal " + values["name"]);
+				return selftest_result::handled;
+			}
+			select_include(standing->include.instance);
+			m_include_gesture = false;
+			signal_gizmo_begin();
+			auto const shifted = [&](std::size_t const Index, char const *Key) {
+				if (values.count(Key) != 0 && Index < m_include.values.size())
+					m_include.values[Index] = editor_includes::number(std::strtod(m_include.values[Index].c_str(), nullptr) + std::stod(values[Key]));
+			};
+			shifted(1, "x");
+			shifted(3, "z");
+			shifted(4, "turn");
+			apply_include();
+			signal_gizmo_step();
+			signal_gizmo_end();
+			m_include_gesture = false;
+			WriteLog("SELFTEST signalgizmo " + values["name"] + ": " + m_signal.status);
 		}
 		else if (command == "signalrename")
 		{
@@ -261,8 +403,11 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 		{
 			signal_refresh(true);
 			WriteLog(format("SELFTEST signalprobe: %zu signals", tool.standing.size()));
+			auto const only{ToLower(values["name"])};
 			for (auto const &standing : tool.standing)
 			{
+				if (false == only.empty() && ToLower(standing.name) != only)
+					continue;
 				std::string where{"not read"};
 				if (standing.track != nullptr)
 				{
@@ -291,7 +436,31 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 					auto const bound{std::any_of(list.begin(), list.end(), [&](auto const &Event) { return Event.second != nullptr && ToLower(Event.first) == ToLower(standing.read); })};
 					where = std::string{bound ? "bound, " : "unbound, "} + format("%s of %s, %.3f m from the axis, %s of the trains, %.3f m over the axis, model turned %.1f deg from the travel", editor_track::event_keyword(standing.list), standing.track->name().c_str(), glm::length(offset), cross > 0.0 ? "right" : "left",
 					               standing.include.location.y - axis.y, turn);
+					// the path it stands by, which on a switch past the frog isn't the one reading it
+					if (standing.reads.size() > 1)
+					{
+						where += "; also";
+						for (std::size_t r = 1; r < standing.reads.size(); ++r)
+							where += format(" %s of %s", editor_track::event_keyword(standing.reads[r].second), standing.reads[r].first->name().c_str());
+					}
+					if (signal_spot spot; signal_standing_spot(standing, spot) && spot.track != nullptr)
+						where += format("; stands by %s path %d, %.3f m from its axis", spot.track->name().c_str(), spot.path, geometry::plan_distance(spot.axis, standing.include.location));
+					// the switch ahead of it, as its card shows it
+					if (auto const &metre{signal_metre_of(standing)}; metre.valid)
+						where += format("; offset %.2f m; switch ahead: %s %s %.2f m at %.2f %.2f, axes %.3f m apart", metre.spot.offset,
+						                metre.danger.what == track_trace::danger::kind::start ? "start" : metre.danger.what == track_trace::danger::kind::fouling ? "fouling" : "none",
+						                metre.danger.track != nullptr ? metre.danger.track->name().c_str() : "-", metre.danger.distance, metre.danger.point.x, metre.danger.point.z, metre.danger.spacing);
 				}
+				// its indicators, over its foot and from its axis, and its lowest lamp
+				for (auto const &mark : standing.indicators)
+					where += format("; indicator %s %.3f m up, %.3f m off", mark.file.c_str(), mark.location.y - standing.include.location.y, geometry::plan_distance(mark.location, standing.include.location));
+				if (auto const lamp{signal_lowest_lamp(standing.include.instance)}; lamp > 0.0)
+					where += format("; lowest lamp %.3f m up", lamp - standing.include.location.y);
+				// the gauge of the tracks around it
+				if (auto const hit{signal_gauge(standing.include.instance)}; hit.depth > 0.0 && hit.track != nullptr)
+					where += format("; in the gauge of %s path %d by %.3f m at %.2f %.2f %.2f", hit.track->name().c_str(), hit.path, hit.depth, hit.point.x, hit.point.y, hit.point.z);
+				else
+					where += "; out of the gauge";
 				WriteLog(format("SELFTEST signalprobe %s %s at %.3f %.3f %.3f yaw %.2f read %s: %s", standing.name.c_str(), standing.include.file.c_str(), standing.include.location.x, standing.include.location.y, standing.include.location.z, standing.include.yaw,
 				                standing.read.empty() ? "-" : standing.read.c_str(), where.c_str()));
 			}

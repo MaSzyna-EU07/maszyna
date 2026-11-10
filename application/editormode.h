@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorNmt.hpp"
 #include "editor/editorGeoMap.hpp"
 #include "editor/editorTrack.hpp"
+#include "editor/editorTrackTrace.hpp"
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
@@ -168,6 +169,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<stored_profile> profile_library;
 		std::optional<std::vector<alignment_store::record>> alignments; // the kept horizontal alignments changed too, these were the ones before
 		std::optional<std::vector<switch_store::record>> switch_records; // the kept switches changed too, these were the ones before
+		std::optional<srk_hand_joints> hand_joints; // the joints of a station put by hand changed too, these were the ones before
 		std::optional<kilometrage::state> kilometrage; // the kilometrage before the change (Action::Kilometrage)
 		std::vector<array_copy> copies; // models an array added to the one it was made of
 		bool joined{false}; // undone and redone together with the change before it
@@ -257,6 +259,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 clamp_mouse_offset_to_max(const glm::dvec3 &offset);
 	// the ground under a point the cursor landed on, for things which are to stand on the ground
 	glm::dvec3 placement_on_ground(glm::dvec3 Location) override;
+	// the ground under a point, the point itself with none there
+	glm::dvec3 ground_at(glm::dvec3 Location) const;
 	// puts every instance of the model the selected node shows on the ground under it
 	void drop_model_instances();
 	void render_object_menu();
@@ -2136,8 +2140,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 12> const &track_modes();
+	static std::array<track_mode, 15> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
+	// a tool of the station: they share its schematic
+	bool srk_tab() const { return m_track_tab == track_tab::station || m_track_tab == track_tab::station_signals || m_track_tab == track_tab::line_block; }
 	track_tab plan_tab_for(TTrack const *Track) const;
 	// the objects along the track: a tab for each tool
 	int m_lineside_tab{0};
@@ -2247,7 +2253,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, signal_read, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary, srk_joint };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -2615,7 +2621,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string signal_mount(std::string const &Kind, std::string const &File) override;
 	std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) override;
 	void select_signal(scene::instance_handle const Instance) override;
-	void render_signal_templates() override;
+	void render_signal_templates(std::vector<std::string> const &Kinds) override;
 
 	struct signal_template
 	{
@@ -2633,10 +2639,24 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<int> speeds;
 		int aspects{0}; // of a block signal, 3 or 4
 		int arms{0}; // of a semaphore, 1 or 2, from its description
+		// m, of the zero of its model over the rail heads, from its description: where it stands by default
+		double height{0.0};
+		// m, how deep its model reaches under its zero, from its description: none, it isn't put on the ground
+		std::optional<double> depth;
 		// the aspects its description lists, by name (Sr1, Od2...) with the event giving each; empty for a template not described so
 		std::vector<std::pair<std::string, std::string>> aspect_events;
 		// of a warning disc: its event for each speed class of the signal after it, stop, vmax, 100, 60, 40
 		std::vector<std::pair<std::string, std::string>> repeats;
+	};
+	// an indicator to put on a signal, a template described as one
+	struct indicator_template
+	{
+		std::string file;
+		std::string name;
+		std::string description;
+		std::string sign;
+		std::string place; // "head": under the lights of the signal, one under another; "foot": by its foot, the place in its model
+		std::vector<std::pair<std::string, std::string>> events;
 	};
 	struct signal_spot
 	{
@@ -2649,6 +2669,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double offset{0.0};
 		glm::dvec3 position{0.0};
 		double yaw{0.0};
+		// the path and its list that read the signal: the track it stands by, or past the frog of a switch the track joined to the end
+		// of its path, which only the trains of that path run on
+		TTrack *reader{nullptr};
+		int reader_list{2};
 	};
 	struct signal_standing
 	{
@@ -2658,13 +2682,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string read;
 		TTrack *track{nullptr};
 		int list{0};
+		// every path and list having the read, the first of them in track and list
+		std::vector<std::pair<TTrack *, int>> reads;
+		// the indicators put on it: named after it, at its foot, the highest first
+		std::vector<standing_template> indicators;
 	};
 	struct signal_tool
 	{
 		std::vector<signal_template> templates;
+		std::vector<indicator_template> indicators;
 		int revision{-1};
 		int kind{0};
-		std::array<int, 7> chosen{-1, -1, -1, -1, -1, -1, -1};
+		std::array<int, 8> chosen{-1, -1, -1, -1, -1, -1, -1, -1};
 		bool armed{false}; // a click by a track places the chosen template
 		char filter[64]{};
 		char name[64]{"A"};
@@ -2673,11 +2702,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		float height{0.0f};
 		bool placing{false};
 		signal_spot press;
+		signal_spot press_raw; // where the press was, before it went to a round distance to the switch ahead
 		glm::vec2 pressed{0.f};
 		int facing{0};
 		std::vector<signal_standing> standing;
 		std::size_t standing_history{static_cast<std::size_t>(-1)};
-		std::size_t standing_redo{static_cast<std::size_t>(-1)};
 		double standing_time{-1.0};
 		int hover{-1};
 		scene::instance_handle selected{0};
@@ -2687,9 +2716,46 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool home_valid{false};
 		signal_spot moved;
 		bool moved_valid{false};
+		// a click on a track gives the read of the signal selected to it
+		bool picking_read{false};
+		// the entry of the selected signal into the gauge of the paths around it, measured again as the history or the selection changes
+		struct
+		{
+			scene::instance_handle instance{0};
+			std::size_t history{static_cast<std::size_t>(-1)};
+			glm::dvec3 location{0.0}; // of the signal, which follows a dragged track without a new step of the history
+			gauge_tool::gauge_hit hit;
+		} gauge;
+		// the signal the gizmo has taken: as it stood then, the frame of its models, the size of the history before the step of the
+		// gizmo and the directives of its indicators
+		struct
+		{
+			scene::instance_handle instance{0};
+			signal_standing from;
+			glm::dmat3 frame{1.0};
+			std::size_t history{0};
+			std::vector<std::pair<scene::instance_handle, std::string>> directives;
+		} gizmo;
 		std::string status;
 	};
 	signal_tool m_signal;
+	// the way from the spot of a signal along its track to the switch the trains it faces come to first
+	track_trace::danger signal_danger(signal_spot const &Spot) const;
+	// the spot moved along its track to a round distance to the switch ahead, 50 m, 100 m..., when it's that near one; Alt leaves it
+	void signal_snap(signal_spot &Spot, signal_template const &Template) const;
+	// of the selected signal: the spot it stands at and the way to the switch ahead of it, kept until it or the history changes
+	struct signal_metre
+	{
+		scene::instance_handle instance{0};
+		std::size_t history{static_cast<std::size_t>(-1)};
+		glm::dvec3 location{0.0};
+		double yaw{0.0};
+		bool valid{false};
+		signal_spot spot;
+		track_trace::danger danger;
+	};
+	mutable signal_metre m_signal_metre;
+	signal_metre const &signal_metre_of(signal_standing const &Standing) const;
 	bool signal_scan(bool Wait = true);
 	signal_template const *signal_current() const;
 	signal_template const *signal_armed() const;
@@ -2705,9 +2771,53 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void signal_release();
 	bool signal_place(signal_spot const &Spot, signal_template const &Template);
 	void signal_move_update();
-	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot) const;
+	// Moved: the signal moved from its track, the nearest track takes it if that's nearer by more than a little
+	bool signal_standing_spot(signal_standing const &Standing, signal_spot &Spot, bool const Moved = false) const;
 	bool signal_drop_at(signal_standing const &Standing, TTrack &Track, int const Path, glm::dvec3 const &Point, int const Side, signal_spot &Spot) const;
 	bool signal_move_to(signal_standing const &Standing, signal_spot const &Spot, char const *Read, char const *Unread);
+	indicator_template const *indicator_template_of(std::string const &File) const;
+	// the indicator put on the signal, named after it: under its lights below the ones there, or at its foot. returns: false if it can't be
+	bool signal_indicator_add(signal_standing const &Standing, indicator_template const &Indicator);
+	bool signal_indicator_remove(scene::instance_handle const Indicator);
+	// the indicators under the lights of the signal at Upper and Lower in its list, the highest first, swapped: each takes the place of the other
+	bool signal_indicators_swap(signal_standing const &Standing, std::size_t const Upper, std::size_t const Lower);
+	// the signal set the distance from the axis of its track in the plan and its height, raised over where it stands by default (over the rail heads, on a gantry), unless none
+	bool signal_set_across(signal_standing const &Standing, std::optional<double> const Offset, std::optional<double> const Height);
+	// the distance from the axis and the height over where it stands by default From has, carried to To, a spot of the same signal
+	// along its track: a signal set across or raised by hand keeps it as it is dragged or snapped
+	void signal_carry(signal_spot const &From, signal_spot &To, signal_template const &Template) const;
+	// the height of the zero of the model of a signal at Position by the track of the axis at Axis, as it stands by default: as far over
+	// the rail heads as its description gives, lower only where its bottom would hang over the ground; a gantry as high over the rails
+	// as chosen
+	double signal_default_height(signal_template const &Template, glm::dvec3 const &Axis, glm::dvec3 const &Position) const;
+	// how much higher the default height of To is than of From at Position by the track of the axis at Axis: what a signal given the
+	// template To in place of From goes up by, to stand as raised as it was
+	double signal_default_change(signal_template const &From, signal_template const &To, glm::dvec3 const &Axis, glm::dvec3 const &Position) const;
+	// the indicators of the signal moved after it to the place and the frame it has now, at the same place by it as they were, the
+	// directives they had going to Directives
+	void signal_indicators_follow(signal_standing const &Standing, glm::dmat3 const &Before, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);
+	bool render_signal_indicators(signal_standing const &Found);
+	// the indicators put on the signal named Name standing at Location, as the scenery has them now, the highest first: the list of
+	// the tool is kept up only while the tool is open
+	std::vector<standing_template> signal_indicators_of(std::string const &Name, glm::dvec3 const &Location) const;
+	// the indicators of the signal named Before at Location named After it, the directives they had going to Directives once each
+	void signal_indicators_renamed(std::string const &Before, std::string const &After, glm::dvec3 const &Location, std::vector<std::pair<scene::instance_handle, std::string>> &Directives);
+	// the directives of more includes taken back by the step: one of a single include is made one of them
+	void history_add_directives(EditorSnapshot &Step, std::vector<std::pair<scene::instance_handle, std::string>> const &Directives);
+	// the signal of the selected include taken by the gizmo: its indicators go with it, and once it's let go it is moved as a drag of
+	// the signal tool moves it, read by the path it stands by then, out of the gauge, as one step of the history
+	void signal_gizmo_begin();
+	void signal_gizmo_step();
+	void signal_gizmo_end();
+	// the height of the lowest lamp of the signal in the world, from the geometry of its lamps; 0 when it has none
+	double signal_lowest_lamp(scene::instance_handle const Instance) const;
+	// the deepest entry of the models of the signal into the gauge of the paths around it
+	gauge_tool::gauge_hit signal_gauge(scene::instance_handle const Instance);
+	// the signal just placed or moved, at Local in its file, taken across away from the axis of each path whose gauge it enters, a few
+	// times at most, its directive changed with it. returns: the way it went, metres, and in Hit the entry it still makes
+	double signal_off_gauge(scene::instance_handle const Instance, std::string const &File, std::vector<std::string> &Values, glm::dvec3 Local, gauge_tool::gauge_hit &Hit);
+	// a sentence more to the status about it, none when the signal kept out of the gauge where it was put
+	void signal_gauge_note(std::string &Status, double const Shift, gauge_tool::gauge_hit const &Hit, bool const Gantry) const;
 	bool signal_flip(scene::instance_handle const Instance);
 	bool signal_turn(scene::instance_handle const Instance);
 	bool signal_swap(scene::instance_handle const Instance, std::string const &File);
@@ -2716,12 +2826,24 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	signal_standing const *signal_standing_of(scene::instance_handle const Instance) const;
 	bool signal_delete(scene::instance_handle const Instance);
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
+	// a track split in two: the reads of the signals placed since the scenery was opened, not bound yet, go to the piece by the signal
+	void signal_split(TTrack &Original, TTrack &Created);
+	// the list of a path the trains the signal faces read it from, as they run by the point of the path nearest to it
+	int signal_read_list(signal_standing const &Standing, TTrack const &Track, int const Path) const;
+	// the read of the signal in exactly these lists of these paths, as one step taken back by Ctrl+Z
+	bool signal_read_set(signal_standing const &Standing, std::vector<std::pair<TTrack *, int>> const &Reads);
+	// a click on a track while picking the path that reads the selected signal: its read goes there, or one more there with Add,
+	// or off it with Add when it's there already
+	bool signal_read_pick(TTrack &Track, int const Path, bool const Add);
+	std::string signal_read_label(TTrack const &Track, int const Path, bool const Add) const;
 	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);
 	void signal_select(scene::instance_handle const Instance);
 	std::string signal_next_name(std::string const &Name) const;
 	void render_signal_ui();
 	void render_signal_palette();
 	void render_signal_selected();
+	// the paths reading the signal, each turned the other way or removed, a path picked or the one the editor gives. returns: true when they changed
+	bool render_signal_reads(signal_standing const &Found);
 	// of the signal selected: its template and another one for it, the aspects it can be set to; true when it got another one
 	bool render_signal_template(signal_standing const &Found, signal_template const &Item);
 	// the list of the templates the signal can take instead, Across those of another mount too: the file picked, empty for none

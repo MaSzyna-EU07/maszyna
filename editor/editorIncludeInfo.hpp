@@ -48,11 +48,22 @@ struct include_info
 	std::string signal_lean;
 	std::string signal_read;
 	int signal_arms{0}; // of a semaphore: 1 or 2, 0 for a signal with lights or a disc
+	// m, of the zero of the model of the signal over the rail heads; under them below 0
+	double signal_height{0.0};
+	// m, how deep the model reaches under its zero, its foundation: with it the editor lowers a signal whose bottom would hang over the
+	// ground; none, it isn't
+	std::optional<double> signal_depth;
 	// the aspects the signal shows, each by its name in the signalling instruction (Sr1, S2, Od1...) with its event, the part after
 	// "(p1)_", in the order of the description. empty where the description doesn't list them
 	std::vector<std::pair<std::string, std::string>> signal_aspects;
 	// of a warning disc: its event for each speed class of the signal after it (stop, vmax, 100, 60, 40)
 	std::vector<std::pair<std::string, std::string>> signal_repeats;
+	// an indicator put on a signal: its sign (W24, W1, I...), where it goes, "head" under the lights of the signal, one under another,
+	// or "foot" at the foot of the signal, the model having its place by it built in, and its events by name (on, off, P, 60...), the
+	// part after "(p1)_"
+	std::string indicator_sign;
+	std::string indicator_place;
+	std::vector<std::pair<std::string, std::string>> indicator_events;
 	std::vector<include_parameter> parameters;
 
 	// description of specified parameter, created if there's none
@@ -77,6 +88,8 @@ int parameter_count(std::string const &File);
 // the speeds the events of a signal template set it to show, by their SetVelocity: of the signal itself, km/h, -1 the highest
 // allowed, 20 the substitute signal. returns: false if the file can't be read
 bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
+// the names of the events the template defines, as they're written after "event", lower case. returns: false if the file can't be read
+bool event_names(std::string const &File, std::vector<std::string> &Names);
 // the aspects of a block signal of the template: 4 where its events give S3, the green light flashing with the next signal at S5,
 // the warning two signals ahead, else 3. returns: 0 if the file can't be read
 int block_aspects(std::string const &File);

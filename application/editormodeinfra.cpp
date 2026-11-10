@@ -54,6 +54,7 @@ std::string const kBindingMark{"//$b"};
 std::string const kResonatorFile{"rezonator.inc"};
 std::string const kControlFile{"sbl_odstep.inc"};
 double constexpr kAdoptReach{12.0}; // m, of a point object from the axis of its path
+double constexpr kBoundReach{30.0}; // m, of a point object bound by hand, as far as a changed path looks for it
 
 template <typename Type_>
 bool contains(std::vector<Type_> const &Items, Type_ const &Item)
@@ -1187,6 +1188,10 @@ void editor_mode::infra_adopt(TTrack &Track)
 						if (false == event.first.empty())
 							readers.emplace(ToLower(event.first), track);
 		static auto const rules{infra::default_rules()};
+		// an indicator goes with its signal: by the path reading the signal named by its first parameter, not by the path nearest
+		// to it, which can be another one
+		std::unordered_map<std::string, std::string> signal_reads;
+		std::vector<std::pair<point_object, std::string>> marks;
 		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
 		{
 			include_place place;
@@ -1196,12 +1201,19 @@ void editor_mode::infra_adopt(TTrack &Track)
 			object.include = handle;
 			object.location = include_location(place);
 			auto const file{ToLower(place.file)};
+			if (indicator_template_of(place.file) != nullptr)
+			{
+				object.group = infra::category::sign;
+				marks.emplace_back(std::move(object), ToLower(place.values.front()));
+				continue;
+			}
 			auto const *signal{signal_template_of(place.file)};
 			std::string read;
 			if (signal != nullptr)
 			{
 				object.group = infra::category::signal;
 				read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
+				signal_reads[ToLower(place.values.front())] = read;
 			}
 			else if (file == kResonatorFile)
 			{
@@ -1222,6 +1234,14 @@ void editor_mode::infra_adopt(TTrack &Track)
 					object.reader = reader->second;
 			m_point_objects.push_back(std::move(object));
 		}
+		// one whose signal no path reads is left where it is
+		for (auto &[object, name] : marks)
+			if (auto const read{signal_reads.find(name)}; read != signal_reads.end() && false == read->second.empty())
+				if (auto const reader{readers.find(ToLower(read->second))}; reader != readers.end())
+				{
+					object.reader = reader->second;
+					m_point_objects.push_back(std::move(object));
+				}
 		// the path nearest to each one no path reads, the objects by cells of the plan
 		auto constexpr cell{200.0};
 		auto const key = [&](double const Value) { return static_cast<long long>(std::floor(Value / cell)); };
@@ -1311,16 +1331,20 @@ void editor_mode::track_captured(TTrack const &Track)
 	if (m_bindings.empty())
 		return;
 	Live.refresh();
-	for (auto &binding : m_bindings)
+	std::vector<std::size_t> gone;
+	for (std::size_t index = 0; index < m_bindings.size(); ++index)
 	{
+		auto &binding{m_bindings[index]};
 		if (std::none_of(binding.anchors.begin(), binding.anchors.end(), [&](infra::anchor const &Anchor) { return Anchor.at.track == &Track; }) || false == alive(binding))
 			continue;
-		// an object moved by hand since it was bound is measured again, as long as the path is the way it was measured
+		// an object moved by hand since it was bound is measured again, as long as the path is the way it was measured. one of a single
+		// point moved away from the track, off its side, doesn't follow it any more: measured along it, it would be taken back to its end
 		std::vector<glm::dvec3> points;
 		std::optional<double> yaw;
+		auto away{false};
 		if (object_points(binding, points, yaw) && points.size() == binding.anchors.size())
 		{
-			for (std::size_t i = 0; i < points.size(); ++i)
+			for (std::size_t i = 0; i < points.size() && false == away; ++i)
 			{
 				auto &anchor{binding.anchors[i]};
 				if (anchor.at.track != &Track || anchor.at.path >= static_cast<int>(Track.m_paths.size()))
@@ -1331,15 +1355,28 @@ void editor_mode::track_captured(TTrack const &Track)
 				auto placed{anchor};
 				if (glm::distance(infra::place(placed), points[i]) <= 0.01)
 					continue;
-				anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
+				infra::station station;
+				bool interior{false};
+				auto const reach{binding.adopted ? kAdoptReach : kBoundReach};
+				if (points.size() == 1 && (infra::project(const_cast<TTrack &>(Track), points[i], station, interior) > reach || false == beside(station, points[i], interior)))
+					away = true;
+				else
+					anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
 			}
-			if (binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
+			if (false == away && binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
 				binding.yaw = turn_of(binding, *yaw);
+		}
+		if (away)
+		{
+			WriteLog("Editor: " + binding.label + " moved away from track " + Track.name() + ", it doesn't follow it any more");
+			gone.push_back(index);
+			continue;
 		}
 		if (binding.adopted && false == points.empty())
 			binding.measured = points.front();
 		infra_buffer(binding, true);
 	}
+	infra_unbind(std::move(gone));
 }
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
@@ -1480,6 +1517,7 @@ void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data co
 {
 	sweeps_split(Original, Created);
 	grade_line_split(Original, Created);
+	signal_split(Original, Created);
 	if (m_infra_suspended || Created.m_paths.empty())
 		return;
 	auto const length{infra::plan_length(First)};

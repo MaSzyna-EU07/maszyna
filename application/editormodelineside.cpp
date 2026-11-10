@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorKilometrage.hpp"
+#include "editor/editorTrackTrace.hpp"
 
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
@@ -134,72 +135,6 @@ std::vector<std::string> hekto_digits(int const Hectometres)
 std::string km_text(int const Hectometres)
 {
 	return format("%d.%d", Hectometres / 10, Hectometres % 10);
-}
-
-// points along the track from the end of a path on, the way a train goes: through a switch along its main track
-std::vector<glm::dvec3> trace(TTrack &Track, int const Path, bool const Forward, double const Limit)
-{
-	std::vector<glm::dvec3> points;
-	auto *track{&Track};
-	auto path{Path};
-	auto forward{Forward};
-	double length{0.0};
-	for (int guard = 0; guard < 64 && track != nullptr && length < Limit; ++guard)
-	{
-		bezier const curve{track->m_paths[path]};
-		auto const count{std::clamp(static_cast<int>(curve.plan_length() / 1.0), 4, 400)};
-		for (int k = points.empty() ? 0 : 1; k <= count; ++k)
-		{
-			auto const point{curve.point(forward ? static_cast<double>(k) / count : 1.0 - static_cast<double>(k) / count)};
-			if (false == points.empty())
-				length += plan_distance(points.back(), point);
-			points.push_back(point);
-		}
-		auto const exit{points.back()};
-		TTrack *next{nullptr};
-		int nextpath{0};
-		bool nextforward{true};
-		for (auto const &connection : editor_track::connected_points(*track, exit))
-		{
-			auto *other{connection.first};
-			if (other == track || (other->iCategoryFlag & 15) != kRailCategory)
-				continue;
-			bool const start{connection.second.kind == editor_track::point_kind::start};
-			// entering a switch at its start the train takes the main track
-			if (next == nullptr || (other == next && start && connection.second.path == 0))
-			{
-				next = other;
-				nextpath = connection.second.path;
-				nextforward = start;
-			}
-		}
-		track = next;
-		path = nextpath;
-		forward = nextforward;
-	}
-	return points;
-}
-
-// nearest point of the polyline
-glm::dvec3 nearest_on(std::vector<glm::dvec3> const &Line, glm::dvec3 const &Point, double &Distance)
-{
-	Distance = std::numeric_limits<double>::max();
-	glm::dvec3 result{Point};
-	auto const point{plan_of(Point)};
-	for (std::size_t i = 1; i < Line.size(); ++i)
-	{
-		auto const a{plan_of(Line[i - 1])};
-		auto const ab{plan_of(Line[i]) - a};
-		auto const length2{glm::dot(ab, ab)};
-		auto const t{length2 > 1e-12 ? std::clamp(glm::dot(point - a, ab) / length2, 0.0, 1.0) : 0.0};
-		auto const distance{glm::length(point - (a + ab * t))};
-		if (distance < Distance)
-		{
-			Distance = distance;
-			result = glm::mix(Line[i - 1], Line[i], t);
-		}
-	}
-	return result;
 }
 
 void draw_label(ImDrawList *Draw, ImVec2 const At, ImU32 const Colour, std::string const &Text)
@@ -883,36 +818,16 @@ void fouling_tool::fouling_update()
 	{
 		if (track->m_paths.size() < 2 || false == editor_track::is_supported(*track))
 			continue;
-		auto const main{trace(*track, 0, true, kFoulingTrace)};
-		auto const branch{trace(*track, 1, true, kFoulingTrace)};
-		if (main.size() < 2 || branch.size() < 2)
+		track_trace::fouling found;
+		if (false == track_trace::fouling_of(*track, tool.spacing, kFoulingTrace, found))
 			continue;
-		glm::dvec3 previous{branch.front()};
-		double previousdistance{0.0};
-		for (std::size_t i = 1; i < branch.size(); ++i)
-		{
-			double distance;
-			nearest_on(main, branch[i], distance);
-			if (distance < tool.spacing)
-			{
-				previous = branch[i];
-				previousdistance = distance;
-				continue;
-			}
-			auto const f{distance - previousdistance > 1e-9 ? (tool.spacing - previousdistance) / (distance - previousdistance) : 1.0};
-			auto const onbranch{glm::mix(previous, branch[i], std::clamp(f, 0.0, 1.0))};
-			double unused;
-			auto const onmain{nearest_on(main, onbranch, unused)};
-			fouling_point point;
-			point.track = track;
-			auto const middle{(onbranch + onmain) * 0.5};
-			// the points of the paths are at the rail foot, the heads of the rails are the height of the rail over them
-			point.position = tool.height_mode == 1 ? glm::dvec3{middle.x, 0.5 * (onbranch.y + onmain.y) + kRailHeight + tool.height, middle.z} : m_ground.placement_on_ground({middle.x, std::max(onbranch.y, onmain.y), middle.z});
-			auto const back{plan_of(previous - branch[i])};
-			point.yaw = std::fmod(heading_of(glm::length(back) > 1e-9 ? glm::normalize(back) : glm::dvec2{0.0, 1.0}) + tool.turn, 360.0);
-			tool.points.push_back(point);
-			break;
-		}
+		fouling_point point;
+		point.track = track;
+		auto const middle{(found.branch + found.main) * 0.5};
+		// the points of the paths are at the rail foot, the heads of the rails are the height of the rail over them
+		point.position = tool.height_mode == 1 ? glm::dvec3{middle.x, 0.5 * (found.branch.y + found.main.y) + kRailHeight + tool.height, middle.z} : m_ground.placement_on_ground({middle.x, std::max(found.branch.y, found.main.y), middle.z});
+		point.yaw = std::fmod(heading_of(found.back) + tool.turn, 360.0);
+		tool.points.push_back(point);
 	}
 	// markers standing: each goes to the nearest fouling point, the others are left alone
 	auto const markers{m_templates.standing_templates([](std::string const &File) { return File.find("w17") != std::string::npos || File.find("ukres") != std::string::npos; })};
@@ -1114,7 +1029,7 @@ void fouling_tool::render_options()
 			field_row("Spacing of the axes (m)");
 			changed(ImGui::InputDouble("##foulingspacing", &tool.spacing, 0.0, 0.0, "%.2f"));
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("3.5 m on the straight track; more on the curves, where the cars lean out"));
+				ImGui::SetTooltip("%s\n%s", STR_C("W17 where the axes of the tracks meeting at a switch are the spacing apart,\nhalf way between them"), STR_C("Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6),\nand the leaning of the cars of a track on its cant towards the other one, taken 3.25 m up (Ie-1, bD)"));
 			field_row("Tolerance (m)");
 			changed(ImGui::InputDouble("##foulingtolerance", &tool.tolerance, 0.0, 0.0, "%.1f"));
 			item_tooltip("A marker standing farther than this from its place counts as wrong");

@@ -36,7 +36,7 @@ enum class editor_selftest_result
 
 enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, template_open, template_clicked, count };
 
-enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, srk, kilometrage };
+enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, signals, station, station_signals, line_block, kilometrage };
 
 struct track_hover
 {
@@ -234,8 +234,8 @@ class editor_signals
 	virtual std::size_t signal_reattach(std::vector<scene::instance_handle> const &Instances) = 0;
 	// the signal picked, its card at the top of the panel
 	virtual void select_signal(scene::instance_handle const Instance) = 0;
-	// the templates of the signals: the one of each kind placed by hand and with the signalling of a station
-	virtual void render_signal_templates() = 0;
+	// the template chosen for each of the kinds given, which the signalling of a station places: the one the Signals tool places too
+	virtual void render_signal_templates(std::vector<std::string> const &Kinds) = 0;
 
   protected:
 	~editor_signals() = default;

@@ -264,8 +264,21 @@ void read_signal(YAML::Node const &Signal, include_info &Info)
 	Info.signal_lean = Signal["lean"].as<std::string>("");
 	Info.signal_read = Signal["read"].as<std::string>("");
 	Info.signal_arms = Signal["arms"].as<int>(0);
+	Info.signal_height = Signal["height"].as<double>(0.0);
+	if (Signal["depth"].IsDefined())
+		Info.signal_depth = Signal["depth"].as<double>(0.0);
 	read_pairs(Signal["aspects"], Info.signal_aspects);
 	read_pairs(Signal["repeats"], Info.signal_repeats);
+}
+
+// an indicator of a signal, with the events it is shown by
+void read_indicator(YAML::Node const &Indicator, include_info &Info)
+{
+	if (false == Indicator.IsDefined() || false == Indicator.IsMap())
+		return;
+	Info.indicator_sign = Indicator["sign"].as<std::string>("");
+	Info.indicator_place = Indicator["place"].as<std::string>("");
+	read_pairs(Indicator["events"], Info.indicator_events);
 }
 
 // the size of a turntable and the places it stops at
@@ -319,6 +332,7 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 		Info.description = document["description"].as<std::string>("");
 		read_switch(document["switch"], Info);
 		read_signal(document["signal"], Info);
+		read_indicator(document["indicator"], Info);
 		read_turntable(document["turntable"], Info);
 		read_parameters(document["params"], Info);
 	}
@@ -512,6 +526,26 @@ int parameter_count(std::string const &File)
 	template_text text;
 	std::string error;
 	return read_template(File, text, error) ? count_parameters(text) : 0;
+}
+
+bool event_names(std::string const &File, std::vector<std::string> &Names)
+{
+	Names.clear();
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] == "event" && std::find(Names.begin(), Names.end(), tokens[idx + 1]) == Names.end())
+		{
+			Names.push_back(tokens[idx + 1]);
+		}
+	}
+	return true;
 }
 
 bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
