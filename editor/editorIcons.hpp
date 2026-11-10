@@ -55,6 +55,9 @@ enum class icon
 	work_tracks,
 	work_roads,
 	work_terrain,
+	camera,
+	zoom_in,
+	zoom_out,
 	count
 };
 
