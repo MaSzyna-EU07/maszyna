@@ -185,6 +185,8 @@ void writer::cab(cab_sample const &Sample) {
 	out.u8(Sample.movement);
 	out.u16(static_cast<std::uint16_t>(Sample.light_hint_head));
 	out.u16(static_cast<std::uint16_t>(Sample.light_hint_tail));
+	out.u16(Sample.equipped_head);
+	out.u16(Sample.equipped_tail);
 	emit(record::cab);
 }
 

@@ -162,7 +162,7 @@ record.
 
 ### 0x20 cab
 
-The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 132 bytes.
+The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 136 bytes.
 
 | type    | field                                                                  |
 |---------|------------------------------------------------------------------------|
@@ -201,11 +201,17 @@ The vehicle the user is in, every 0.1 s, also while the user looks around outsid
 | `u8`    | what the driver of the train goes by: 1 a train run, 2 shunting, 0 anything else or no driver |
 | `i16`   | the light pattern the timetable or the scenery asks for at the head, bits as the lights; -1 the usual one |
 | `i16`   | the same at the tail                                                   |
+| `u16`   | the lamps the vehicle at the head has at its outer end, bits as the lights |
+| `u16`   | the same of the vehicle at the tail                                    |
 
-The lights the train is to show follow from the last three: in a train run the head the pattern asked for,
+The lights the train is to show follow from the movement and the two patterns after it: in a train run the head the pattern asked for,
 the usual one Pc 1 (both headlights and the upper one; Pc 2 is the left red marker with the right and the
 upper headlight), and the tail the pattern asked for, the usual one Pc 5 (both red markers); shunting
-Tb 1, one headlight at each end. A recording made before these fields ends at the acceleration across.
+Tb 1, one headlight at each end. A pattern is checked against the lamps the vehicle has, as the driver
+checks it: one without the upper headlight shows Pc 1 with the two others, one with auxiliary lamps may
+show them instead of the headlights, and one with no lamps at all the rear-end signals; the tail shows
+Pc 5 with the red markers or the rear-end signals it has. A recording made before the movement ends at
+the acceleration across, and one made before the lamps at the light pattern of the tail.
 
 The flags:
 
@@ -261,7 +267,8 @@ The train protection, of the vehicle whose motors the cab drives; the alerter (C
 The AI fields are what the AI driver works out from the place and the speed the train has at the time.
 It works them out as it goes, also while the user drives, but doesn't act on them then. It is not a
 separate run of the AI. They are refreshed every half a second or so, and only once the consist is
-started (flag 0x02); before that they are 0.
+started (flag 0x02); before that the speed held, the acceleration and the braking distance are 0, the
+next limit, its distance and the top speeds of the timetable and the track -1.
 
 ### 0x21 vehicles
 
@@ -365,7 +372,8 @@ device. Held controls repeat their command while held; only the press and the re
 
 ### 0x31 driver change
 
-The user or the AI takes over a vehicle: the autopilot (Shift+Q on, Q off), entering a vehicle.
+The user or the AI takes over a vehicle: the autopilot switched on (Shift+Q) or off (Q), and entering a
+vehicle the AI was driving.
 
 | type  | field                          |
 |-------|--------------------------------|
@@ -387,7 +395,7 @@ overrun tells how far past it the train had got.
 | `text`  | name of the event telling the aspect                          |
 | `dvec3` | position of the signal                                        |
 | `f32`   | the aspect when passed: speed at the signal [km/h], 0 stop, -1 no limit |
-| `f32`   | speed at the next signal [km/h]                               |
+| `f32`   | speed at the next signal [km/h], as the signal shows it when the pass is noticed |
 | `f32`   | speed of the train [km/h]                                     |
 | `f32`   | overrun [m]                                                   |
 | `u8`    | flags: 0x01 a shunting signal, 0x02 passed at stop, 0x04 the stop of an automatic block signal; a shunting signal binds only shunting, so passed at stop by a train it has 0x01 alone |

@@ -884,7 +884,9 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
         simulation::test().signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
     }
     if( is_signal( Point ) ) {
-        auto const speedatsignal { Point.evEvent->input_value( 1 ) };
+        // the aspect the train had of it: the table keeps it once the signal is behind, while the memory cell
+        // may already show stop for the train itself, past the signal on the track it guards
+        auto const speedatsignal { Point.fVelNext };
         simulation::Blackbox.signal_passed(
             pVehicles[ end::front ], *Point.evEvent,
             speedatsignal, Point.evEvent->input_value( 2 ),

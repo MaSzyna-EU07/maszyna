@@ -85,6 +85,14 @@ std::uint16_t outward_lights(TDynamicObject const *Vehicle, bool const Head) {
 	return static_cast<std::uint16_t>(Vehicle->MoverParameters->iLights[Head == along ? end::front : end::rear]);
 }
 
+// the lamps the vehicle has at that end: the driver checks a pattern against those of it there are
+std::uint16_t outward_lamps(TDynamicObject const *Vehicle, bool const Head) {
+	if (Vehicle == nullptr)
+		return 0;
+	auto const along{Vehicle->iDirection > 0};
+	return static_cast<std::uint16_t>(Vehicle->LightList(Head == along ? end::front : end::rear));
+}
+
 // the scenario file without the starter's $, the folders and the extension, safe for a file name
 std::string scenery_stem(std::string_view const Scenery) {
 	auto stem{std::filesystem::path{Scenery}.stem().string()};
@@ -250,13 +258,14 @@ void blackbox_recorder::open() {
 	std::error_code error;
 	std::filesystem::create_directories("physicslog", error);
 	auto const filename{std::format("physicslog/{}_{}.blackbox", scenery_stem(Global.SceneryFile), local_time("%Y-%m-%d_%H-%M-%S"))};
-	// a buffer of its own, so the file is written to the disk in large pieces, mostly at the flush after a look
-	m_file.rdbuf()->pubsetbuf(m_filebuffer.data(), static_cast<std::streamsize>(m_filebuffer.size()));
 	m_file.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (false == m_file.is_open()) {
 		ErrorLog(std::format("Black box: can't create \"{}\"", filename));
 		return;
 	}
+	// a buffer of its own, so the file is written to the disk in large pieces, mostly at the flush after a look;
+	// given once the file is open and before anything is written: MSVC's file buffer passes over one given earlier
+	m_file.rdbuf()->pubsetbuf(m_filebuffer.data(), static_cast<std::streamsize>(m_filebuffer.size()));
 	m_writer = std::make_unique<blackbox::writer>(m_file);
 	WriteLog(std::format("Black box: recording to \"{}\"", filename));
 
@@ -407,6 +416,8 @@ void blackbox_recorder::write_cab() {
 	// the lights at the ends of the train: of the vehicles at its ends, at their ends turned away from the rest
 	sample.lights_head = outward_lights(owner != nullptr ? owner->Vehicle(end::front) : vehicle, true);
 	sample.lights_tail = outward_lights(owner != nullptr ? owner->Vehicle(end::rear) : vehicle, false);
+	sample.equipped_head = outward_lamps(owner != nullptr ? owner->Vehicle(end::front) : vehicle, true);
+	sample.equipped_tail = outward_lamps(owner != nullptr ? owner->Vehicle(end::rear) : vehicle, false);
 	auto const &security{controlling->SecuritySystem};
 	namespace flag = blackbox::security_flags;
 	sample.security = static_cast<std::uint8_t>((security.is_vigilance_blinking() ? flag::vigilance : 0) | (security.is_cabsignal_blinking() ? flag::cabsignal : 0) |
@@ -482,11 +493,11 @@ void blackbox_recorder::look_at_couplers() {
 			change.time = m_time;
 			change.vehicle = entry.id;
 			change.side = static_cast<std::uint8_t>(side);
-			change.other = now.other != nullptr ? vehicle_id(now.other) : blackbox::no_vehicle;
+			change.other = known_id(now.other);
 			change.other_side = static_cast<std::uint8_t>(now.other_side);
 			change.flags = static_cast<std::uint8_t>(now.flags);
 			change.previous_flags = static_cast<std::uint8_t>(entry.couplers_known ? before.flags : 0);
-			change.previous_other = entry.couplers_known && before.other != nullptr ? vehicle_id(before.other) : blackbox::no_vehicle;
+			change.previous_other = entry.couplers_known ? known_id(before.other) : blackbox::no_vehicle;
 			change.position = vehicle->CouplerPosition(static_cast<end>(side));
 			m_writer->coupling(change);
 		}
@@ -506,7 +517,7 @@ void blackbox_recorder::write_camera() {
 		return;
 	auto camera{m_camera};
 	camera.time = m_time;
-	camera.vehicle = m_cameraowner != nullptr ? vehicle_id(m_cameraowner) : blackbox::no_vehicle;
+	camera.vehicle = known_id(m_cameraowner);
 	auto const same{m_camerawrote && camera.mode == m_camerawritten.mode && camera.view == m_camerawritten.view && camera.vehicle == m_camerawritten.vehicle};
 	// In the cab and in the views of the train the camera goes with the train, whose way is written
 	// anyway: only a change of the view counts. The free camera is written as it moves and turns.
@@ -613,6 +624,11 @@ std::uint32_t blackbox_recorder::vehicle_id(TDynamicObject const *Vehicle) {
 	return entry.id;
 }
 
+std::uint32_t blackbox_recorder::known_id(TDynamicObject const *Vehicle) {
+	// a vehicle taken off the scenery is gone from the recording: one still pointed at gets no new number
+	return Vehicle != nullptr && Vehicle->bEnabled ? vehicle_id(Vehicle) : blackbox::no_vehicle;
+}
+
 std::uint32_t blackbox_recorder::signal_at(glm::dvec3 const &Location) const {
 	auto const found{std::ranges::find_if(m_signals, [&Location](signal_entry const &Signal) { return glm::distance(Signal.location, Location) < 0.01; })};
 	if (found == m_signals.end())
@@ -653,8 +669,9 @@ void blackbox_recorder::station(TDynamicObject const *Vehicle, blackbox::station
 		return;
 	// a train given its next timetable may come to the first station of it at once, before the next look: the
 	// timetable goes first, or the station would be read against the one before
-	if (auto const *train{simulation::Train}; m_userknown && m_uservehicle != blackbox::no_vehicle && train != nullptr && train->Dynamic() != nullptr)
-		look_at_timetable(*train->Dynamic(), m_uservehicle);
+	// the vehicle the user is in now, which may have changed since the last look
+	if (auto const *train{simulation::Train}; m_userknown && train != nullptr && train->Dynamic() != nullptr)
+		look_at_timetable(*train->Dynamic(), vehicle_id(train->Dynamic()));
 	Station.time = m_time;
 	Station.vehicle = vehicle_id(Vehicle);
 	Station.station = text_of(Station.station);
@@ -672,6 +689,8 @@ void blackbox_recorder::vehicle_removed(TDynamicObject const *Vehicle) {
 	std::scoped_lock lock{m_mutex};
 	if (Vehicle == m_timetablevehicle)
 		m_timetablevehicle = nullptr;
+	if (Vehicle == m_cameraowner)
+		m_cameraowner = nullptr;
 	auto const lookup{m_vehicles.find(Vehicle)};
 	if (lookup == m_vehicles.end())
 		return;

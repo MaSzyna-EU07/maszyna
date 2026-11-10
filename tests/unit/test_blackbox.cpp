@@ -107,6 +107,8 @@ blackbox::cab_sample sample() {
 	s.movement = blackbox::movements::shunting;
 	s.light_hint_head = -1;
 	s.light_hint_tail = 0x22;
+	s.equipped_head = 0x1B5;
+	s.equipped_tail = 0x22;
 	return s;
 }
 
@@ -241,6 +243,9 @@ TEST_CASE("blackbox: a sample of the user's train has the documented size and or
 	CHECK(cab.get<std::uint8_t>() == blackbox::movements::shunting);
 	CHECK(cab.get<std::int16_t>() == -1);
 	CHECK(cab.get<std::int16_t>() == 0x22);
+	// the lamps there are at the head and the tail
+	CHECK(cab.get<std::uint16_t>() == 0x1B5);
+	CHECK(cab.get<std::uint16_t>() == 0x22);
 	CHECK(cab.done());
 }
 

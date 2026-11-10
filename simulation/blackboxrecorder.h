@@ -98,6 +98,8 @@ private:
 	void look_at_timetable(TDynamicObject const &Vehicle, std::uint32_t Id);
 	// number of the vehicle, given (and the vehicle written) on first sight
 	std::uint32_t vehicle_id(TDynamicObject const *Vehicle);
+	// the number of a vehicle still on the scenery, no_vehicle for none or one taken off it
+	std::uint32_t known_id(TDynamicObject const *Vehicle);
 	std::uint32_t signal_at(glm::dvec3 const &Location) const;
 
 	std::mutex m_mutex;

@@ -213,6 +213,8 @@ struct cab_sample {
 	std::uint8_t movement{0}; // movements: what the driver of the train goes by, which sets the lights it is to show
 	std::int16_t light_hint_head{-1}; // the light pattern the timetable or the scenery asks for at the head, -1 the usual
 	std::int16_t light_hint_tail{-1}; // at the tail
+	std::uint16_t equipped_head{0}; // the lamps the vehicle at the head has at that end: what of a pattern it can show
+	std::uint16_t equipped_tail{0}; // at the tail
 };
 
 // a station of the timetable of the user's train; the times in minutes of the day, -1 none
@@ -310,7 +312,7 @@ struct signal_passing {
 // sizes of the parts of fixed size, as the readers expect them
 inline constexpr std::size_t header_size{12};
 inline constexpr std::size_t record_header_size{5};
-inline constexpr std::size_t cab_sample_size{132};
+inline constexpr std::size_t cab_sample_size{136};
 inline constexpr std::size_t vehicle_state_size{25};
 
 // writes the records to a stream. nothing is written until header() is
