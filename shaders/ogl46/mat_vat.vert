@@ -19,6 +19,9 @@
 //              right after another (vertex Frame * Vertices + Vertex of the whole image, row by row), else each in its own rows
 // the textures go with the trait r (texture_vatpos_hi: name:r), which keeps them as they are (never scaled down nor compressed)
 // param vat_speed (1 if not given): how fast the animation plays
+// param vat_random (1 if not given): 1 every model its own moment from its place; 0 the moment of the clock alone, for a model the game
+// moves (its place changes the whole time, the moment taken from it would jump); -1 the game picks the clip and the moment, by the
+// fraction of ten times the turn of the model about the vertical in degrees: (clip + 0.25 + 0.5 * moment) / clips (world/deer.cpp)
 layout(location = 0) in vec3 v_vert;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_coord;
@@ -31,6 +34,7 @@ layout(location = 4) in vec4 v_userdata;
 #pragma texture(vatpos_lo, 2, RGBA)
 #pragma texture(vatnormal, 3, RGBA)
 #pragma param(vat_speed, 2, 0, 1, one)
+#pragma param(vat_random, 2, 1, 1, one)
 layout(binding = 1) uniform sampler2D vatpos_hi;
 layout(binding = 2) uniform sampler2D vatpos_lo;
 layout(binding = 3) uniform sampler2D vatnormal;
@@ -143,8 +147,18 @@ void vat_animate(mat4 mv, out vec3 position, out vec3 normal)
 	int bin = int(mod(floor(yaw * 0.5 + 0.315), 180.0));
 	uint seed = uint(cell.x) * 73856093u ^ uint(cell.y) * 19349663u ^ uint(cell.z) * 83492791u ^ uint(bin) * 2654435761u;
 	seed ^= seed >> 16; seed *= 0x7feb352du; seed ^= seed >> 15; seed *= 0x846ca68bu; seed ^= seed >> 16;
-	float phase = float(seed & 0xffffu) / 65536.0;
-	float pick = float(seed >> 16) / 65536.0;
+	float random = clamp(param[2].y, 0.0, 1.0);
+	float phase = random * float(seed & 0xffffu) / 65536.0;
+	float pick = random * float(seed >> 16) / 65536.0;
+	if (param[2].y < -0.5)
+	{
+		// picked by the game: the fraction of the turn in tenths of a degree (the turn is -yaw), a quarter of a clip's span kept
+		// clear of its edges
+		float spin = fract(-yaw * 10.0) * float(h.clips);
+		float slot = floor(spin);
+		pick = (slot + 0.5) / float(h.clips);
+		phase = clamp((spin - slot - 0.25) * 2.0, 0.0, 1.0);
+	}
 	int clipframes = max(h.frames / h.clips, 1);
 	int clip = min(int(pick * float(h.clips)), h.clips - 1);
 	float t = (time * h.fps * max(param[2].x, 0.0)) + phase * float(clipframes);

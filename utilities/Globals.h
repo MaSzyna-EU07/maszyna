@@ -559,6 +559,14 @@ struct global_settings {
     float moths_share { 0.4f }; // part of the lamps with a swarm, 0-1
     float moths_range { 80.f }; // distance from the camera the swarms are shown at, metres
     float moths_temperature { 8.f }; // the lowest temperature of the air moths fly at, degrees Celsius
+    // deer at the tracks (world/deer.cpp): put on the path ahead of the train of the player, grazing, they run away from the horn
+    // or the train coming close. off unless turned on
+    bool deer { false };
+    float deer_interval { 2000.0f }; // metres the train covers between the deer, 0 none
+    float deer_distance { 2000.0f }; // metres ahead of the train a deer is put at
+    float deer_chance { 1.0f }; // of a deer at each interval, 0-1
+    float deer_hornrange { 600.0f }; // the horn sends away the deer within this many metres
+    float deer_fleedistance { 150.0f }; // a deer runs away from the train come this close, metres
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab
     int gfx_lights_shadows { 2 };

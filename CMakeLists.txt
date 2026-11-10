@@ -136,6 +136,7 @@ set(SOURCES
 "world/TractionPower.cpp"
 "vehicle/Train.cpp"
 "world/TrkFoll.cpp"
+"world/deer.cpp"
 "vehicle/AirCoupler.cpp"
 "model/AnimModel.cpp"
 "vehicle/Button.cpp"
