@@ -100,7 +100,6 @@
 #define MAX_PARAMS 3U
 #define MAX_HEADLIGHT_SHADOWS 4U
 #define MAX_CAB_PROBE_LAMPS 16U
-#define WIPER_PASS_BUCKETS 64
 #define CLUSTER_GRID_X 16
 #define CLUSTER_GRID_Y 9
 #define CLUSTER_GRID_Z 24
@@ -142,6 +141,12 @@
 #define CAB_PROBE_SH_SIZE 16
 #define CAB_PROBE_SH_GROUP_SIZE 64
 #endif
+
+// the places along the sweep of a blade whose rain is kept (gl::WIPER_PASS_BUCKETS): the renderer defines it, an older one doesn't
+#ifndef WIPER_PASS_BUCKETS
+#define WIPER_PASS_BUCKETS 64
+#endif
+
 
 #include "settings.glsl"
 
